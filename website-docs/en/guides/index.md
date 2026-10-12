@@ -4,6 +4,7 @@ Find the task you want to complete:
 
 | Task | Read |
 | --- | --- |
+| Ask questions, check updates and generate images in QQ groups | [StoryForge QQ bot guide](/en/guides/qqbot) |
 | Install plugins, develop with AI and share features | [Plugin Workshop](/en/workshop/) |
 | Connect your model | [Models and APIs](/en/getting-started/model-config) |
 | Import fiction, references, or backups | [Import and references](/en/guides/import) |

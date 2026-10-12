@@ -49,6 +49,7 @@ export const enLabels: Record<string, string> = {
   '封存、制作、发布与存档': 'Sealing, production, releases, and saves',
   '使用指南': 'Usage guides',
   '使用指南概览': 'Usage overview',
+  'QQ 群机器人使用说明': 'QQ group bot guide',
   '内置作品与示例': 'Built-in works and examples',
   '导入小说与参考资料': 'Import fiction and references',
   'AI 候选、确认与恢复': 'AI candidates, confirmation, and recovery',

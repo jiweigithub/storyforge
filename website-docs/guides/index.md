@@ -4,6 +4,7 @@
 
 | 任务 | 阅读 |
 | --- | --- |
+| 在 QQ 群答疑、看更新与文字生图 | [故事熔炉 bot 使用说明](/guides/qqbot) |
 | 安装插件、用 AI 开发和分享功能 | [插件与创意工坊](/workshop/) |
 | 接入自己的模型 | [模型与 API 配置](/getting-started/model-config) |
 | 导入小说、参考资料或备份 | [导入与参考资料](/guides/import) |

@@ -2,6 +2,12 @@
 
 Changes are organized by user impact. **Main-branch updates do not mean a new version has been released.** The package version remains 3.9.1; tagged releases retain their original content. Live deployments may lag; see [compatibility](/en/updates/compatibility).
 
+## October 12, 2026 · QQ group bot usage guide
+
+Added the [StoryForge QQ bot guide](/en/guides/qqbot), covering project Q&A, public commands, text-to-image generation, prompt refinement, consecutive requests from one member, image-and-text attribution, upload retries, update notifications and privacy. Results identify a nickname, task number and description summary; native mention notifications and visible references to the original command are not promised.
+
+This documents the configured group assistant. It does not add an image service to the StoryForge web app or mark a new release. Evidence: [documentation commit 0a2d7fc1](https://github.com/yuanbw2025/storyforge/commit/0a2d7fc1c2964bf4d5c0d37cf153ffbe2770308d). The group assistant runs independently from the app.
+
 ## October 10, 2026 · Reading unnamed Canon records
 
 Fixed false conflicts when multiple unnamed story-progress or crossing records shared a category title. AI retrieval distinguishes them by record identity. Conflict checks for author-named records and worldview titles retain their existing rules; no data migration is needed. See [longform settings](/en/features/longform/planning).
