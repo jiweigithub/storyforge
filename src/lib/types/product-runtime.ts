@@ -1204,6 +1204,8 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "interaction.player.message.committed",
   "interaction.character.reply.committed",
   "interaction.narrative.trigger.requested",
+  "interaction.narrative.edit.requested",
+  "interaction.narrative.edit.cancelled",
   "interaction.narrative.action.committed",
   "interaction.narrative.action-reviewed.committed",
   "interaction.narrative.situation.committed",

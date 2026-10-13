@@ -1,3 +1,4 @@
+import {updateChatMessageEditDraftV1} from './narrative-edit-contract'
 import type {
   FrozenInteractionCharacterProfile,
   FrozenInteractionSceneTemplate,
@@ -656,6 +657,9 @@ export function applyInteractionEvent(
       interruptChatNarrativeTriggerV1(state, event.sequence)
       break
     }
+    case 'interaction.narrative.edit.requested':
+    case 'interaction.narrative.edit.cancelled':
+      return updateChatMessageEditDraftV1(state, {sequence: event.sequence, text: body.text, cancel: event.type === 'interaction.narrative.edit.cancelled'})
     case 'interaction.narrative.trigger.requested':
       return requestChatNarrativeTriggerV1(state, {sequence: event.sequence, kind: body.kind, sourceEventSequence: body.sourceEventSequence, seed: body.seed})
     case 'interaction.narrative.situation.committed':

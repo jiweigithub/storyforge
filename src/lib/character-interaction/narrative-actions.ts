@@ -96,8 +96,9 @@ function advance(state: ChatNarrativeStateV1, sequence: number) {
 export function interruptChatNarrativeTriggerV1(state: CharacterInteractionRuntimeState, sequence: number): void {
   const story = state.chatNarrative
   const trigger = story?.triggers.slice(-1)[0]
-  if (story && (story.pendingSituation || trigger && ['ready', 'waiting-player'].includes(trigger.status))) {
+  if (story && (story.pendingEdit || story.pendingSituation || trigger && ['ready', 'waiting-player'].includes(trigger.status))) {
     delete story.pendingSituation
+    delete story.pendingEdit
     if (trigger && ['ready', 'waiting-player'].includes(trigger.status)) trigger.status = 'cancelled'
     advance(story, sequence)
   }
@@ -108,6 +109,7 @@ export function requestChatNarrativeTriggerV1(stateValue: CharacterInteractionRu
 }): CharacterInteractionRuntimeState {
   const state = structuredClone(stateValue)
   const story = narrative(state)
+  if (story.pendingEdit) fail('请先完成或取消待处理改写')
   choice(input.kind, CHAT_NARRATIVE_TRIGGERS_V1)
   const kind = input.kind as ChatNarrativeTriggerV1
   if (!story.permissions.triggers.includes(kind)) fail('该主动触发未经作品授权')
@@ -151,6 +153,8 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   }
   if (trigger.actionSequences.length >= story.permissions.maxActionsPerTrigger || state.remainingDirectorBudget < 1) fail('行动预算不足')
   const action = parseChatNarrativeActionV1(input.action)
+  if (story.pendingEdit && (story.pendingEdit.role !== 'character' || story.pendingEdit.actorKey !== actorKey || story.pendingEdit.text !== action.text || [...(story.pendingEdit.audienceKeys ?? [])].sort().join('\u0000') !== [...action.audienceKeys].sort().join('\u0000'))) fail('行动必须逐字采用所选角色的待处理改写')
+  delete story.pendingEdit
   if (action.text.length > story.permissions.maxActionCharacters) fail('行动表达超出授权长度')
   const audiences = [state.playerKey, ...state.activeScene!.activeParticipantKeys]
   if (!action.audienceKeys.includes(actorKey) || !action.audienceKeys.includes(state.playerKey)
@@ -242,6 +246,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
 
 /** Preserve the historical unreviewed event format without granting it new writes. */
 export function applyChatNarrativeActionV1(state: CharacterInteractionRuntimeState, input: Parameters<typeof applyActionBase>[1]) {
+  if (state.chatNarrative?.pendingEdit) fail('历史改写必须通过行动及后果审查')
   const action = parseChatNarrativeActionV1(input.action)
   if (action.relationshipUpdates !== undefined || action.nextPossibilities !== undefined || action.beliefUpdates !== undefined || action.goalUpdates !== undefined || action.situationRequest !== undefined) fail('旧行动事件不能写入关系、打算或附带目标后果')
   return applyActionBase(state, input)

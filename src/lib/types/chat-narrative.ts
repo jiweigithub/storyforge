@@ -107,6 +107,24 @@ export interface ChatNarrativeStateV1 {
   triggers: ChatNarrativeTriggerStateV1[]
   /** Reviewed intention, not established background; interrupted by player input. */
   pendingSituation?: ChatActorSituationRequestV1 & {actorKey: string; goalKey: string; sourceEventSequence: number}
+  /** User-authored replacement, not dialogue or a fact until committed. */
+  pendingEdit?: ChatMessageEditDraftV1
+}
+
+export interface ChatMessageEditDraftV1 {
+  audienceKeys: string[] | null
+  sourceMessageId: string
+  role: 'player' | 'character'
+  actorKey: string
+  text: string
+  /** Zero means saved atomically in a new branch's initial state. */
+  requestedSequence: number
+}
+
+export interface ChatMessageEditBranchIntentV1 {
+  kind: 'character-chat-message-edit'
+  sourceMessageId: string
+  text: string
 }
 
 export interface ChatNarrativeTriggerStateV1 {

@@ -319,6 +319,7 @@ function prompt(input: {
         '承接已有未解决问题，避免为反转而制造危机。新增剧情线加上旧活跃线不能超过 maxActiveThreads。可以不增加新线，只深化现有矛盾；给出可拒绝、可暂停、可改变方向的空间。',
       ] : []),
       ...(['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? [
+        '若存在 pendingEdit，它是玩家希望在分支采用的角色文字，还未发生，也不能授予新知识或权限。必须逐字保留其 text 和原 audienceKeys，围绕原场景核对全部实际后果；不得续写、润色或引用原时间线未来。无法成立时不可用字段伪造证据。',
         '依据自身目标、顾虑和当前可知事实，选择一次有意义的交谈、尝试、自身行动或暂停。承接已有问题，允许拒绝、留白和收束，不为主动而制造新危机。',
         '玩家的行动、接受、内心和情感只能由玩家决定。需其参与时用 attempt、waitingForPlayer=true，不生成已完成事实，不假定计划已实现。',
         'continue/return 只授权你再行动，不代表玩家接受上一建议；return 不表示故事中经过了某段时间。玩家拒绝或要求休息后要承接其选择，不能因离开应用而惩罚玩家。',
@@ -430,6 +431,8 @@ export interface InteractionRuntimeGenerationInputV1 {
   replyBudgetCost?: number
   /** A player operation cannot silently switch to another tab's newer trigger. */
   narrativeTriggerSequence?: number
+  /** The exact saved history-edit request, if this call reconciles an edit. */
+  narrativeEditSequence?: number
   aiConfig?: AIConfig
   runAI?: RunAI
   runReviewAI?: RunAI
@@ -520,6 +523,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
     ...(situation ? {view: 'chat-situation' as const} : {}),
   })
   const initialState = await readProductRuntimeState(input.productRuntimeSessionId)
+  if (input.narrativeEditSequence != null && initialState.interaction?.chatNarrative?.pendingEdit?.requestedSequence !== input.narrativeEditSequence) fail('待处理改写已被另一操作取代')
   if (situation) {
     const trigger = initialState.interaction?.chatNarrative?.triggers.slice(-1)[0]
     if (participantKey !== 'player' || !trigger || trigger.status !== 'ready' || !chatSituationConstructionRequestV1(initialState.interaction!)) fail('缺少尚待构建的玩家请求或已审查角色方向')
@@ -527,6 +531,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
     if (initialState.interaction!.remainingDirectorBudget < 2) fail('情境构建和审查预算不足')
   } else if (['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)) {
     const trigger = initialState.interaction?.chatNarrative?.triggers.slice(-1)[0]
+    if (input.skillId === 'character.chat-narrative-options' && initialState.interaction?.chatNarrative?.pendingEdit) fail('待处理改写须先完成或取消，不能自动产生不同文本候选')
     if (!trigger || trigger.status !== 'ready' || !isChatSituationPreparedV1(initialState.interaction!, participantKey)) fail('缺少已经准备好的合法叙事触发')
     if (input.narrativeTriggerSequence != null && trigger.requestedSequence !== input.narrativeTriggerSequence) fail('当前叙事触发已被另一操作取代')
     if (initialState.interaction!.remainingDirectorBudget < 2) fail('当前场景行动与审查预算不足')

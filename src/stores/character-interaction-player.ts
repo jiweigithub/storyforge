@@ -19,6 +19,7 @@ import {
   readProductRuntimeStateVersion,
   resolveInteractionMemory,
   startInteractionScene,
+  updateChatMessageEditDraft,
 } from '../lib/character-interaction/runtime-api'
 import {
   assertProductReleaseUnchanged,
@@ -45,6 +46,7 @@ import { advanceChatNarrativeTurnV1, createChatNarrativeSituationV1, readPending
 import {readChatNarrativeOptionsPreviewV1, type ChatNarrativeOptionsPreviewV1} from '../lib/character-interaction/narrative-options-preview'
 import type {ChatNarrativeOptionKeyV1} from '../lib/character-interaction/narrative-options'
 import {readResumableInteractionRunsV1} from '../lib/character-interaction/runtime-run-recovery'
+import {applyChatMessageEditV1, forkChatMessageEditV1, type ChatMessageEditPlanV1} from '../lib/character-interaction/narrative-edit'
 
 export interface CharacterInteractionLibraryItem {
   release: ProductRelease
@@ -82,6 +84,9 @@ interface CharacterInteractionPlayerState {
   createSituation(input: {aiConfig: AIConfig; actionAiConfig?: AIConfig; seed: string; participantKey?: string}): Promise<void>
   resumeNarrativeReview(runId: number, aiConfig: AIConfig): Promise<void>
   selectNarrativeOption(runId: number, optionKey: ChatNarrativeOptionKeyV1): Promise<void>
+  forkMessageEdit(plan: ChatMessageEditPlanV1, text: string): Promise<void>
+  applyMessageEdit(text: string, aiConfig?: AIConfig): Promise<void>
+  cancelMessageEdit(): Promise<void>
   cancelPendingRun(runId: number): Promise<void>
   retryReply(input: { aiConfig: AIConfig; replySequence: number }): Promise<void>
   cancelGeneration(): Promise<void>
@@ -495,6 +500,29 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       const scope = get().scope
       if (!scope || !get().narrativeOptions.some(row => row.runId === runId && !row.unavailableReason)) throw new Error('当前没有该可选行动。')
       await adoptInteractionRuntimeCandidateV1({scope, runId, optionKey})
+    }),
+
+    forkMessageEdit: async (plan, text) => withBusy(async () => {
+      const scope = get().scope
+      if (!scope || get().selectedSessionId !== plan.sessionId) throw new Error('改写目标已经切换。')
+      const child = await forkChatMessageEditV1({scope, plan, text})
+      await reload(child.id!)
+    }),
+
+    applyMessageEdit: async (text, aiConfig) => withBusy(async () => {
+      const scope = get().scope, sessionId = get().selectedSessionId
+      if (!scope || sessionId == null) throw new Error('请先选择改写分支。')
+      const controller = new AbortController(); generationAbortController = controller
+      try {
+        await applyChatMessageEditV1({scope, sessionId, expectedSequence: get().runtimeState.lastSequence, text, aiConfig,
+          signal: controller.signal, onRunCreated: id => set({generatingRunId: id})})
+      } catch (reason) {if (!controller.signal.aborted) throw reason}
+    }),
+
+    cancelMessageEdit: async () => withBusy(async () => {
+      const base = await version()
+      await updateChatMessageEditDraft({sessionId: base.id, commandId: commandId('chat.edit.cancel', base.id), baseSequence: base.sequence, baseStateHash: base.stateHash, text: '', cancel: true})
+      for (const runId of get().pendingNarrativeRunIds) await cancelInteractionRuntimeRunV1({scope: get().scope!, runId})
     }),
 
     cancelPendingRun: async runId => withBusy(async () => {

@@ -114,6 +114,10 @@ async function appendInteractionCommand(
   );
 }
 
+export async function updateChatMessageEditDraft(input: ProductRuntimeCommandEnvelopeV1 & {text: string; cancel?: boolean}): Promise<ProductRuntimeEvent> {
+  return appendInteractionCommand({...input, type: input.cancel ? 'interaction.narrative.edit.cancelled' : 'interaction.narrative.edit.requested', actorKey: 'player', payload: {text: input.cancel ? null : input.text.trim()}});
+}
+
 export async function requestChatNarrativeTrigger(input: ProductRuntimeCommandEnvelopeV1 & {
   kind: ChatNarrativeTriggerV1; sourceEventSequence: number; seed?: string | null;
 }): Promise<ProductRuntimeEvent> {

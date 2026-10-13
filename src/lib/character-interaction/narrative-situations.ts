@@ -168,6 +168,7 @@ export function chatSituationCoordinatorViewV1(state: CharacterInteractionRuntim
     activeParticipantKeys: state.activeScene.activeParticipantKeys, remainingBudget: state.remainingDirectorBudget,
     trigger: state.chatNarrative.triggers[state.chatNarrative.triggers.length - 1] ?? null,
     ...(state.chatNarrative.pendingSituation ? {pendingSituation: state.chatNarrative.pendingSituation, constructionRequest: chatSituationConstructionRequestV1(state)} : {}),
+    ...(state.chatNarrative.pendingEdit ? {pendingEdit: state.chatNarrative.pendingEdit} : {}),
     messages: state.messages.filter(m => m.eventSequence > state.activeScene!.startedAtSequence && m.supersededBySequence == null),
   })
 }
