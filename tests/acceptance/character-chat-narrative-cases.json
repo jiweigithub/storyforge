@@ -1204,7 +1204,43 @@
           "frozenWorldUnchanged": true,
           "outcome": "Unchanged closed live save; explicit player situation seed made rainwater and an at-risk box into a bounded new background/goal/thread. Role independently completed an exterior inspection and requested its limited result at event 19. Player said they would watch without helping and let the role decide; event 20 cleared pendingSituation before event 22 paused the goal without obtaining the result. All calls completed, but this does not establish meaningful progression.",
           "implementationFinding": "Completed observation results and future intentions share the same pending field. The old player-input interruption clears both. A new explicitly reviewed observation-result purpose must retain only completed-event evidence, resolve within permissions before the next authorized reply, and never authorize new actions or goals. Historical unmarked requests retain old replay semantics.",
-          "limitations": "Developer-directed diagnostic sample, not formal M1 or human evaluation; interruption is reproduced, while the model pause cannot be attributed solely to the missing pending field."
+          "limitations": "Developer-directed diagnostic sample, not formal M1 or human evaluation; interruption is reproduced, while the model pause cannot be attributed solely to the missing pending field.",
+          "observationResultRepairPreflight": {
+            "evidence": "codex-new-situation-after-closure-v33.json",
+            "sourceSnapshotHead": "1b416c280135c89fbec6a0930bcba0d450b19b66",
+            "sourceSnapshotManifestSha256": "36d9e1ddb3575b4a725b9d85db39940c0be6de7b6a2ebd0448c3e5244b392d93",
+            "rawEvidenceSha256": "da4fbe5620cd12c146ae173165cac1d6a592658fdb9014cf72c13862833c0b7a",
+            "backupSha256": "c75e0857158711f9cde620e49e0b64b5ce7a757151c138b1a1a60172d97f0fa4",
+            "status": "completed-observation-result-retained-adjudicated-and-used-in-reply",
+            "newModelRequests": 8,
+            "newModelResponses": 8,
+            "newCompletedRuns": 4,
+            "elapsedSeconds": 125.794,
+            "costUsd": null,
+            "usage": {
+              "inputTokens": 79246,
+              "outputTokens": 3159,
+              "reasoningOutputTokens": 796,
+              "totalTokens": 82405
+            },
+            "restorationEqual": true,
+            "refreshRetained": true,
+            "noNewModelRequestOnRefresh": true,
+            "oldGoalsAndThreadsRetained": true,
+            "existingFactsAndKnowledgeRetained": true,
+            "frozenWorldUnchanged": true,
+            "outcome": "Same original unchanged closed save and same player seed. Event 19 completed an exterior inspection and explicitly marked observation-result. Player refusal of personal participation at event 20 no longer erased it. Event 22 adjudicated visible wet marks at the box floor-contact edge, keeping the contents/other regions unknown. Event 23 used that bounded observation in the role reply and completed the inspection goal/thread, without moving/opening the box or involving the player.",
+            "limitations": "One developer-guided comparison, not controlled statistical evidence or formal M1. Useful information now follows the action, but the role stops at inspection and does not address the wet box; broader proactive story quality remains unproven.",
+            "portableRestoration": {
+              "evidence": "codex-observation-result-restoration-v33.json",
+              "rawEvidenceSha256": "a321f4686ca2a082edb015d764fdf6faf34afce38a3b6a826065896dd25efe26",
+              "backupSha256": "3ddedb4452f456be6950d69a0520e8637df6234223a77816f2f062f02d907a0e",
+              "actualModelRequests": 0,
+              "historicalRunsRetained": 10,
+              "stateEqual": true,
+              "refreshEqual": true
+            }
+          }
         }
       },
       {
