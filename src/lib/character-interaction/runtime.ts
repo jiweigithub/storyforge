@@ -276,6 +276,7 @@ export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonl
     || !Array.isArray(value.knowledge) || value.knowledge.length > 2000) throw new Error('角色资料运行投影无效')
   const allowed = new Set(['player', ...participantKeys])
   const known = new Set<string>()
+  const ranges = new Map<string, Array<{start: number; end: number}>>()
   for (const seed of value.knowledge) {
     if (!isObject(seed) || typeof seed.key !== 'string' || !seed.key || seed.key.length > 160 || known.has(seed.key)
       || Object.keys(seed).sort().join(',') !== 'audienceKeys,content,key,source'
@@ -284,10 +285,27 @@ export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonl
       || seed.audienceKeys.some(key => typeof key !== 'string' || !allowed.has(key))
       || new Set(seed.audienceKeys).size !== seed.audienceKeys.length
       || !isObject(seed.source) || !characterKeys.includes(String(seed.source.resourceKey))
-      || Object.keys(seed.source).sort().join(',') !== 'pointer,purpose,resourceKey,sourceHash'
+      || Object.keys(seed.source).sort().join(',') !== (Object.prototype.hasOwnProperty.call(seed.source, 'textRange')
+        ? 'pointer,purpose,resourceKey,sourceHash,textRange' : 'pointer,purpose,resourceKey,sourceHash')
       || !isSha256Hash(seed.source.sourceHash) || typeof seed.source.pointer !== 'string' || !seed.source.pointer.startsWith('/') || seed.source.pointer.length > 1000
       || !['identity', 'motivation', 'voice', 'knowledge'].includes(String(seed.source.purpose))) {
       throw new Error('角色资料来源、可见性或容量无效；单项资料最多 7900 字符')
+    }
+    if (Object.prototype.hasOwnProperty.call(seed.source, 'textRange')) {
+      const range = seed.source.textRange
+      let original: unknown
+      try { original = JSON.parse(seed.content) } catch { throw new Error('角色原文片段不是合法文本') }
+      if (!isObject(range) || Object.keys(range).sort().join(',') !== 'end,start'
+        || !Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end)
+        || Number(range.start) < 0 || Number(range.end) <= Number(range.start)
+        || typeof original !== 'string' || original.length !== Number(range.end) - Number(range.start)) {
+        throw new Error('角色原文片段范围与正文不一致')
+      }
+      const groupKey = JSON.stringify([seed.source.resourceKey, seed.source.pointer])
+      const previous = ranges.get(groupKey) ?? []
+      const current = {start: Number(range.start), end: Number(range.end)}
+      if (previous.some(r => current.start < r.end && current.end > r.start)) throw new Error('角色原文片段范围重复或重叠')
+      ranges.set(groupKey, [...previous, current])
     }
     const subjectKey = participantKeys[characterKeys.indexOf(String(seed.source.resourceKey))]
     if (!subjectKey || formatChatSourceKnowledge(seed as unknown as FrozenChatSourceProjectionV1['knowledge'][number], subjectKey).length > 8000) {
@@ -302,7 +320,8 @@ function formatChatSourceKnowledge(seed: FrozenChatSourceProjectionV1['knowledge
   const labels = {identity: '身份资料', motivation: '目标和动机（意愿，不代表已经发生）', voice: '语言资料', knowledge: '已知资料'}
   // The audience owns the knowledge; the subject owns the described trait.
   // Keeping these distinct prevents public facts about B becoming A's identity.
-  return `【${labels[seed.source.purpose]}；所属角色=${subjectKey}；字段=${seed.source.pointer}】${seed.content}`
+  const range = seed.source.textRange
+  return `【${labels[seed.source.purpose]}；所属角色=${subjectKey}；字段=${seed.source.pointer}${range ? `；原文区间=[${range.start},${range.end})` : ''}】${seed.content}`
 }
 
 /** Build the only release-entry projection for character interaction. */

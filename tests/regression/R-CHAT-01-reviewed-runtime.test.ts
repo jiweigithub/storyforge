@@ -7,7 +7,8 @@ import { confirmChatSourceReviewV1, createChatDraftV1, loadChatSourceProjectionV
 import { loadProductProductionConsultationSourceV2, loadProductProductionWorldSourceCatalogV2 } from '../../src/lib/product-production/world-source'
 import { draftProductProductionBriefV3, suggestProductStartingPoints } from '../../src/lib/product-production/consultation'
 import { compileInteractionModulesV1 } from '../../src/lib/product-production/product-module-compilers'
-import { applyInteractionEvent, createInitialInteractionState, interactionVisibilityView, parseInteractionState } from '../../src/lib/character-interaction/runtime'
+import { applyInteractionEvent, buildInteractionContextWindow, createInitialInteractionState, interactionVisibilityView, parseInteractionState } from '../../src/lib/character-interaction/runtime'
+import { formatInteractionRuntimeContextV1 } from '../../src/lib/character-interaction/context-format'
 import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
 import { consultChatV1 } from '../../src/lib/character-interaction/consultation'
 import type { ChatSourceReviewV1 } from '../../src/lib/character-interaction/source-projection'
@@ -15,8 +16,8 @@ import type { ChatSourceReviewV1 } from '../../src/lib/character-interaction/sou
 beforeEach(async () => { db.close(); await db.delete(); await db.open() })
 afterEach(() => db.close())
 
-async function setup() {
-  const world = await seedCurrentProductWorld('CHAT-REVIEW')
+async function setup(characterDetails?: {background?: string; personality?: string}) {
+  const world = await seedCurrentProductWorld('CHAT-REVIEW', {characterDetails})
   const {scope} = await createChatDraftV1('完整人物资料')
   const linked = await selectChatWorldV1(scope, 0, world.release.id!)
   const index = await loadProductProductionConsultationSourceV2({scope, worldReleaseId: linked.worldReleaseId!})
@@ -147,4 +148,62 @@ it('supports player-only source knowledge without granting it to any character',
   const forged = structuredClone(compiled)
   forged.sceneTemplates[0].publicKnowledgeKeys.push(forged.chatSource!.knowledge.find(k => k.audienceKeys.length === 1 && k.audienceKeys[0] === 'player')!.key)
   expect(() => createInitialInteractionState(forged)).toThrow('不能扩大')
+})
+
+it('preserves long background and voice passages through confirmed compilation, runtime context and portable backup', async () => {
+  const background = '他按日期记录每一次守灯经历。\n'.repeat(620) + '末尾线索：蓝色铃绳通向旧档案间。'
+  const personality = '说话先核对证据，避免替别人作主。\n'.repeat(500) + '末尾口吻：我会先查清，再给你答复。'
+  const input = await setup({background, personality})
+  const {compiled, settings} = await compile(input)
+  const profile = compiled.profiles.find(p => p.characterKey === input.keys[0])!
+  const state = createInitialInteractionState(compiled)
+  for (const [pointer, original] of [['/background', background], ['/personality', personality]]) {
+    const fragments = compiled.chatSource!.knowledge.filter(k => k.source.resourceKey === input.keys[0] && k.source.pointer === pointer)
+    expect(fragments.length).toBeGreaterThan(1)
+    expect(fragments.map(k => JSON.parse(k.content)).join('')).toBe(original)
+    expect(fragments.every(k => k.content.length <= 6000 && k.source.textRange)).toBe(true)
+  }
+  expect(profile.voiceRules.length).toBeLessThanOrEqual(8000)
+  expect(profile.voiceRules).toContain('完整语言样本')
+  const context = formatInteractionRuntimeContextV1(profile, buildInteractionContextWindow(state, profile.participantKey))
+  expect(context).toContain('末尾线索：蓝色铃绳通向旧档案间。')
+  expect(context).toContain('末尾口吻：我会先查清，再给你答复。')
+  expect(JSON.stringify(interactionVisibilityView(state, 'player'))).not.toContain('蓝色铃绳')
+  expect(parseInteractionState(JSON.parse(JSON.stringify(state)))).toEqual(state)
+  const importedId = await importProjectJSON(await exportProjectJSON(input.scope.projectId))
+  const restored = (await db.chatAuthoringDrafts.where('projectId').equals(importedId).first())!
+  const projection = await loadChatSourceProjectionV1({projectId: importedId, worldId: restored.worldId, workId: restored.workId}, restored.revision)
+  expect(projection.projectionHash).toBe(input.projection.projectionHash)
+  expect(JSON.parse(restored.settingsJson)).toEqual(settings)
+})
+
+it('classifies long passages independently; author-only tail cannot leak through role voice rules', async () => {
+  const input = await setup({personality: '他将查证放在表态之前。\n'.repeat(1100) + '幕后秘密：他的旧名字是守潮议员。'})
+  const owner = input.projection.characters.find(c => c.resourceKey === input.keys[0])!
+  const passages = owner.fragments.filter(f => f.pointer === '/personality')
+  const last = passages.at(-1)!
+  const decision = input.review.classifications.find(d => d.fragmentKey === last.fragmentKey)!
+  decision.visibility = 'author-only'; decision.audienceKeys = []
+  const {compiled} = await compile(input)
+  expect(JSON.stringify(compiled)).not.toContain('守潮议员')
+  expect(compiled.chatSource!.knowledge.filter(k => k.source.resourceKey === input.keys[0] && k.source.pointer === '/personality')).toHaveLength(passages.length - 1)
+})
+
+it('rejects malformed, duplicate, overlapping and forged text-range provenance before runtime starts', async () => {
+  const input = await setup({background: '守灯经历。'.repeat(2000)})
+  const {compiled, compilerInput} = await compile(input)
+  const key = compiled.chatSource!.knowledge.find(k => k.source.textRange)!.key
+  for (const range of [{start: -1, end: 4}, {start: 0, end: 0}, {start: 0.5, end: 1}, {start: 0, end: 4, foreign: true}, null]) {
+    const altered = structuredClone(compiled)
+    const seed = altered.chatSource!.knowledge.find(k => k.key === key)!
+    Object.assign(seed.source, {textRange: range})
+    expect(() => createInitialInteractionState(altered)).toThrow('片段范围')
+  }
+  const duplicate = structuredClone(compiled)
+  const seed = duplicate.chatSource!.knowledge.find(k => k.key === key)!
+  duplicate.chatSource!.knowledge.push({...structuredClone(seed), key: 'duplicate-range'})
+  expect(() => createInitialInteractionState(duplicate)).toThrow('重复或重叠')
+  const draft = compilerInput.sourceCatalog.chatSourceProjection!
+  draft.characters.flatMap(c => c.fragments).find(f => f.textRange)!.textRange!.start++
+  expect(() => compileInteractionModulesV1(compilerInput)).toThrow('重新核验')
 })

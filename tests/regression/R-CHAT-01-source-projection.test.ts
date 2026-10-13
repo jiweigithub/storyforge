@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../../src/lib/db/schema'
+import { hashCanonicalValue } from '../../src/lib/agent/run/hash'
 import { loadCurrentProductWorldSourceCatalogV1, seedCurrentProductWorld } from '../helpers/current-product-world'
 import {
   createChatSourceProjectionDraftV1, readChatSourceProjectionViewV1,
@@ -24,6 +25,28 @@ async function source() {
 }
 
 describe('CHAT-01 · immutable Gateway projection and viewpoint filtering', () => {
+  it('splits escaped and Unicode text without dropping whitespace, breaking pairs or changing short-field identity', async () => {
+    const {input, draft} = await source()
+    const target = input.resources.find(r => r.descriptor.resourceKey === input.characterResourceKeys[0])!
+    const value = '\u0000"\\\n🌕中文原文 '.repeat(1600) + '末尾证据'
+    target.value.background = value
+    target.descriptor.contentHash = await hashCanonicalValue(target.value)
+    const projected = await createChatSourceProjectionDraftV1(input)
+    const owner = projected.characters.find(c => c.resourceKey === target.descriptor.resourceKey)!
+    const fragments = owner.fragments.filter(f => f.pointer === '/background')
+    expect(fragments.length).toBeGreaterThan(1)
+    expect(fragments.map(f => JSON.parse(f.valueJson)).join('')).toBe(value)
+    let offset = 0
+    for (const f of fragments) {
+      const content = JSON.parse(f.valueJson) as string
+      expect(f.textRange).toEqual({start: offset, end: offset + content.length})
+      expect(f.valueJson.length).toBeLessThanOrEqual(6000)
+      expect(content).toBe(value.slice(f.textRange!.start, f.textRange!.end))
+      expect(/[\uD800-\uDBFF]$/.test(content)).toBe(false)
+      offset += content.length
+    }
+    expect(owner.fragments.find(f => f.pointer === '/name')).toEqual(draft.characters.find(c => c.resourceKey === owner.resourceKey)!.fragments.find(f => f.pointer === '/name'))
+  })
   it('keeps a caller transaction alive across source and projection hashing', async () => {
     const {input, world} = await source()
     await db.transaction('r', db.projects, async () => {

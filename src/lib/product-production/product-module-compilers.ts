@@ -298,11 +298,13 @@ export function compileInteractionModulesV1(input: ProductModuleCompilerInputV1)
     const settings = chat?.characters.find(c=>c.sourceKey===sourceCharacter?.resourceKey)
     const spoken = input.narrative.beats.filter(beat => beat.speakerKey === frozenCharacterKey)
       .slice(0, 12).map(beat => beat.text)
+    const reviewedVoice = projected ? `遵守已确认的身份、知识和动机；动机是意愿，不代表行动已经完成。不替玩家决定行动。${projected.voices[index]}\n作者补充：${settings?.voiceRules ?? ''}` : ''
     return {
       participantKey, characterKey: frozenCharacterKey,
       name: projected?.names[index] ?? sourceCharacter?.name ?? `产品角色 ${index + 1}`,
       roleLabel: index === 0 ? '核心互动角色' : '相关角色',
-      voiceRules: projected ? `遵守已确认的身份、知识和动机；动机是意愿，不代表行动已经完成。不替玩家决定行动。${projected.voices[index]}\n作者补充：${settings?.voiceRules ?? ''}`
+      voiceRules: projected ? reviewedVoice.length <= 8000 ? reviewedVoice
+        : `遵守已确认的身份、知识和动机；动机是意愿，不代表行动已经完成。不替玩家决定行动。完整语言样本保存在本角色获准读取的来源知识中，按各片段演绎。\n作者补充：${settings?.voiceRules ?? ''}`
         : `保持 ${sourceCharacter?.description || frozenCharacterKey} 的冻结事实和知识边界；遵守：${input.brief.intent.contentBoundaries.join('；')}。${settings?.voiceRules ?? ''}`,
       initialKnowledge: [...(projected ? [] : [{
         key: `profile.${pad(index)}`,
@@ -412,7 +414,8 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
       if (!audienceKeys?.length) return []
       const source = draft.characters.find(c => c.resourceKey === fragment.resourceKey)!
       return [{key: `chat-source.${draft.projectionHash}.${index}`, content: fragment.valueJson, audienceKeys,
-        source: {resourceKey: source.resourceKey, sourceHash: source.sourceHash, pointer: fragment.pointer, purpose: purposes.get(fragment.fragmentKey)!}}]
+        source: {resourceKey: source.resourceKey, sourceHash: source.sourceHash, pointer: fragment.pointer, purpose: purposes.get(fragment.fragmentKey)!,
+          ...(fragment.textRange ? {textRange: {...fragment.textRange}} : {})}}]
     }),
   }
   return {content,

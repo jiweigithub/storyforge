@@ -49,6 +49,12 @@ export interface FrozenInteractionCharacterProfile {
   maxMemoryEntries: number
 }
 
+export interface ChatSourceTextRangeV1 {
+  /** Half-open UTF-16 offsets in the original string at source.pointer. */
+  start: number
+  end: number
+}
+
 /** Chat-only, versioned source projection. Raw author-only material is omitted. */
 export interface FrozenChatSourceProjectionV1 {
   schema: 'storyforge.chat-runtime-source'
@@ -65,6 +71,7 @@ export interface FrozenChatSourceProjectionV1 {
       sourceHash: string
       pointer: string
       purpose: 'identity' | 'motivation' | 'voice' | 'knowledge'
+      textRange?: ChatSourceTextRangeV1
     }
   }>
 }

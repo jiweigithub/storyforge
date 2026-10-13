@@ -2,6 +2,7 @@ import Dexie from 'dexie'
 import type { WorldSemanticResourceSnapshotV1 } from '../context-gateway/world-release-client'
 import { hashProductProductionValueV2, isSha256Hash } from '../product-production/hash'
 import { canonicalStringify, hashCanonicalValue } from '../agent/run/hash'
+import type { ChatSourceTextRangeV1 } from '../types/character-interaction'
 
 export interface ChatSourceFragmentV1 {
   fragmentKey: string
@@ -9,6 +10,7 @@ export interface ChatSourceFragmentV1 {
   /** JSON pointer into the full, immutable semantic resource, not its summary. */
   pointer: string
   valueJson: string
+  textRange?: ChatSourceTextRangeV1
 }
 
 export interface ChatSourceProjectionDraftV1 {
@@ -84,6 +86,32 @@ function escapePointer(value: string): string {
   return value.replace(/~/g, '~0').replace(/\//g, '~1')
 }
 
+/** Lossless source passages; this is not a context-budget truncation or a summary. */
+function fragmentSourceField(resourceKey: string, pointer: string, value: unknown): ChatSourceFragmentV1[] {
+  const fragmentKey = `${resourceKey}#${pointer}`
+  const valueJson = canonicalStringify(value)
+  if (typeof value !== 'string' || valueJson.length <= 6000) return [{fragmentKey, resourceKey, pointer, valueJson}]
+  const fragments: ChatSourceFragmentV1[] = []
+  for (let start = 0; start < value.length;) {
+    let low = start + 1; let high = Math.min(value.length, start + 5998)
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2)
+      if (canonicalStringify(value.slice(start, middle)).length <= 6000) low = middle
+      else high = middle - 1
+    }
+    let end = low
+    // Keep a paragraph together when it fits, and never split a surrogate pair.
+    const paragraph = value.lastIndexOf('\n', end - 1) + 1
+    if (end < value.length && paragraph > start + (end - start) / 2) end = paragraph
+    if (end < value.length && /[\uD800-\uDBFF]/.test(value[end - 1]) && /[\uDC00-\uDFFF]/.test(value[end])) end--
+    const textRange = {start, end}
+    fragments.push({fragmentKey: `${fragmentKey}@${start}:${end}`, resourceKey, pointer,
+      valueJson: canonicalStringify(value.slice(start, end)), textRange})
+    start = end
+  }
+  return fragments
+}
+
 /** Pure preparation only. Production adoption/registration is a separate boundary. */
 export async function createChatSourceProjectionDraftV1(input: {
   worldReferenceHash: string
@@ -117,15 +145,12 @@ export async function createChatSourceProjectionDraftV1(input: {
       fail(`角色原文与资源证据不一致：${resourceKey}`)
     }
     const fragments: ChatSourceFragmentV1[] = []
-    // Preserve each top-level semantic field exactly, including arrays/objects.
+    // Preserve semantic fields; long strings retain exact, independently classified ranges.
     // Internal provider coordinates remain in provenance, never character facts.
     for (const field of Object.keys(source.value).sort()) {
       if (field.startsWith('_')) continue
       const pointer = `/${escapePointer(field)}`
-      fragments.push({
-        fragmentKey: `${resourceKey}#${pointer}`, resourceKey, pointer,
-        valueJson: canonicalStringify(source.value[field]),
-      })
+      fragments.push(...fragmentSourceField(resourceKey, pointer, source.value[field]))
     }
     if (!fragments.length) fail(`角色没有可投影的语义字段：${resourceKey}`)
     return {
@@ -133,6 +158,7 @@ export async function createChatSourceProjectionDraftV1(input: {
       label: source.descriptor.title, fragments,
     }
   }))
+  if (characters.reduce((sum, character) => sum + character.fragments.length, 0) > 2000) fail('角色资料片段超过 2000 项，请缩小本次来源范围')
   const body = {
     schema: 'storyforge.chat-source-projection' as const, version: 1 as const,
     worldReferenceHash: input.worldReferenceHash, worldReleaseHash: input.worldReleaseHash,
