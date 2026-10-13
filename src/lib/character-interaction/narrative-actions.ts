@@ -156,7 +156,12 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   }
   if (trigger.actionSequences.length >= story.permissions.maxActionsPerTrigger || state.remainingDirectorBudget < 1) fail('行动预算不足')
   const action = parseChatNarrativeActionV1(input.action)
-  if (story.pendingEdit && (story.pendingEdit.role !== 'character' || story.pendingEdit.actorKey !== actorKey || story.pendingEdit.text !== action.text || [...(story.pendingEdit.audienceKeys ?? [])].sort().join('\u0000') !== [...action.audienceKeys].sort().join('\u0000'))) fail('行动必须逐字采用所选角色的待处理改写')
+  if (story.pendingEdit) {
+    const edit = story.pendingEdit
+    const matchesText = edit.mode === 'continue' ? action.text.startsWith(edit.text) && !!action.text.slice(edit.text.length).trim() : edit.text === action.text
+    if (edit.role !== 'character' || edit.actorKey !== actorKey || !matchesText
+      || [...(edit.audienceKeys ?? [])].sort().join('\u0000') !== [...action.audienceKeys].sort().join('\u0000')) fail('行动必须逐字采用所选角色的待处理改写；续写只能在完整原文之后增加内容')
+  }
   delete story.pendingEdit
   if (action.text.length > story.permissions.maxActionCharacters) fail('行动表达超出授权长度')
   const audiences = [state.playerKey, ...state.activeScene!.activeParticipantKeys]

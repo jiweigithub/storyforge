@@ -5,6 +5,7 @@ import {readPendingChatNarrativeRunsV1} from './narrative-turn'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, updateChatMessageEditDraft} from './runtime-api'
 
 export interface ChatMessageEditPlanV1 {
+  mode?: 'continue'
   sessionId: number
   sourceSessionId: number
   sourceSequence: number
@@ -43,12 +44,23 @@ export async function readChatMessageEditPlanV1(scope: WorkspaceScope, sessionId
     baseSequence: version.sequence, stateHash: version.stateHash}
 }
 
+/** Current-reply continuation is an explicit historical branch, never a
+ * silent append of already-applied consequences in the original session. */
+export async function readChatMessageContinuationPlanV1(scope: WorkspaceScope, sessionId: number, messageId: string): Promise<ChatMessageEditPlanV1> {
+  const plan = await readChatMessageEditPlanV1(scope, sessionId, messageId)
+  if (plan.role !== 'character' || plan.removedMessageCount !== 1) throw new Error('只能续写当前最后一条角色回复；更早消息请使用历史改写分支。')
+  const state = (await readProductRuntimeState(sessionId)).interaction!
+  if (plan.text.length >= state.chatNarrative!.permissions.maxActionCharacters) throw new Error('这条回复已达到作品长度上限，请推进下一次角色行动。')
+  return {...plan, mode: 'continue'}
+}
+
 export async function forkChatMessageEditV1(input: {scope: WorkspaceScope; plan: ChatMessageEditPlanV1; text: string; title?: string}) {
-  const current = await readChatMessageEditPlanV1(input.scope, input.plan.sessionId, input.plan.messageId)
+  const current = await (input.plan.mode === 'continue' ? readChatMessageContinuationPlanV1 : readChatMessageEditPlanV1)(input.scope, input.plan.sessionId, input.plan.messageId)
+  if (current.mode === 'continue' && input.text !== current.text) throw new Error('续写必须保留完整原文，不能改写续写起点。')
   if (current.baseSequence !== input.plan.baseSequence || current.stateHash !== input.plan.stateHash
     || current.sourceSessionId !== input.plan.sourceSessionId || current.sourceSequence !== input.plan.sourceSequence) throw new Error('当前时间线已变化，请重新查看改写影响。')
   return branchProductRuntimeSession({parentSessionId: current.sourceSessionId, throughSequence: current.sourceSequence - 1,
-    title: input.title?.trim() || '历史改写分支', intent: {kind: 'character-chat-message-edit', sourceMessageId: current.messageId, text: input.text}})
+    title: input.title?.trim() || (current.mode === 'continue' ? '回复续写分支' : '历史改写分支'), intent: {kind: 'character-chat-message-edit', ...(current.mode ? {mode: current.mode} : {}), sourceMessageId: current.messageId, text: input.text}})
 }
 
 /** Every retry is a fresh, explicit edit request. Unfinished/unknown runs must
@@ -72,7 +84,7 @@ export async function applyChatMessageEditV1(input: {scope: WorkspaceScope; sess
   const candidate = await generateInteractionRuntimeCandidateV1({scope: input.scope, productRuntimeSessionId: input.sessionId, participantKey: draft.actorKey,
     narrativeEditSequence: saved.sequence,
     skillId: 'character.chat-narrative-action', narrativeTriggerSequence: state!.chatNarrative!.triggers.slice(-1)[0]!.requestedSequence,
-    objective: '逐字保留 pendingEdit.text，重新核对这段角色表达的实际后果，不读取原时间线后续结果，不增加台词；不成立或越权的改写必须拒绝。',
+    objective: draft.mode === 'continue' ? '将 pendingEdit.text 逐字作为开头，仅向后连贯续写当前这段回复。输出完整合并正文；从当前分支前态核对整段的全部实际后果，不遗漏前文已表达的后果，不重复计入同一事实或关系，不替玩家回应。' : '逐字保留 pendingEdit.text，重新核对这段角色表达的实际后果，不读取原时间线后续结果，不增加台词；不成立或越权的改写必须拒绝。',
     aiConfig: input.aiConfig, signal: input.signal, onRunCreated: input.onRunCreated})
   if (!input.signal?.aborted) await adoptInteractionRuntimeCandidateV1({scope: input.scope, runId: candidate.snapshot.run.id})
 }

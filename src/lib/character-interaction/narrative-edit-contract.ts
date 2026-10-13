@@ -5,8 +5,9 @@ function fail(message: string): never {throw new Error(`[chat-edit] ${message}`)
 
 export function validateChatMessageEditDraftV1(value: unknown, state: {playerKey: string; profiles: Array<{participantKey: string}>}, maxCharacters: number): asserts value is ChatMessageEditDraftV1 {
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || Object.keys(value).sort().join(',') !== 'actorKey,audienceKeys,requestedSequence,role,sourceMessageId,text') fail('改写草稿字段无效')
+    || Object.keys(value).sort().join(',') !== ('mode' in value ? 'actorKey,audienceKeys,mode,requestedSequence,role,sourceMessageId,text' : 'actorKey,audienceKeys,requestedSequence,role,sourceMessageId,text')) fail('改写草稿字段无效')
   const draft = value as ChatMessageEditDraftV1
+  if ('mode' in draft && (draft.mode !== 'continue' || draft.role !== 'character' || typeof draft.text !== 'string' || draft.text.length >= maxCharacters)) fail('续写必须保留角色原文并留有长度预算')
   if (!['player', 'character'].includes(draft.role) || typeof draft.sourceMessageId !== 'string' || !draft.sourceMessageId.trim() || draft.sourceMessageId.length > 200
     || !Number.isSafeInteger(draft.requestedSequence)) fail('改写草稿来源无效')
   if (draft.role === 'player' ? draft.actorKey !== state.playerKey : !state.profiles.some(p => p.participantKey === draft.actorKey)) fail('改写角色不属于当前会话')
@@ -17,14 +18,15 @@ export function validateChatMessageEditDraftV1(value: unknown, state: {playerKey
 /** Runs before any child is written: the durable branch starts before the real
  * source message and carries the new text as a draft, never as a past event. */
 export function prepareChatMessageEditBranchV1(before: ProductRuntimeState, after: ProductRuntimeState, intent: ChatMessageEditBranchIntentV1): void {
-  if (Object.keys(intent).sort().join(',') !== 'kind,sourceMessageId,text' || intent.kind !== 'character-chat-message-edit') fail('改写分支请求无效')
+  if (Object.keys(intent).sort().join(',') !== ('mode' in intent ? 'kind,mode,sourceMessageId,text' : 'kind,sourceMessageId,text') || intent.kind !== 'character-chat-message-edit') fail('改写分支请求无效')
   const state = before.interaction, story = state?.chatNarrative
   if (!state?.activeScene || !story || !after.interaction?.chatNarrative) fail('改写需要主动叙事场景')
   const source = after.interaction.messages.find(m => m.messageId === intent.sourceMessageId && m.eventSequence === before.lastSequence + 1 && m.supersededBySequence == null)
   if (!source || source.role !== 'player' && source.role !== 'character' || source.role !== 'player' && source.audienceKeys != null && !source.audienceKeys.includes(state.playerKey)
     || state.messages.some(m => m.messageId === source.messageId)) fail('改写点不是紧随分支边界的可见消息')
   if (source.role === 'character' && (story.triggers.slice(-1)[0]?.status !== 'ready' || !state.activeScene.activeParticipantKeys.includes(source.speakerKey))) fail('角色改写缺少原行动前的合法触发')
-  const draft: ChatMessageEditDraftV1 = {audienceKeys: source.audienceKeys == null ? null : [...source.audienceKeys], sourceMessageId: source.messageId, role: source.role, actorKey: source.speakerKey, text: intent.text.trim(), requestedSequence: 0}
+  if ('mode' in intent && (intent.mode !== 'continue' || source.role !== 'character' || intent.text !== source.text)) fail('续写必须从所选角色的完整原文开始')
+  const draft: ChatMessageEditDraftV1 = {...(intent.mode ? {mode: intent.mode} : {}), audienceKeys: source.audienceKeys == null ? null : [...source.audienceKeys], sourceMessageId: source.messageId, role: source.role, actorKey: source.speakerKey, text: intent.text.trim(), requestedSequence: 0}
   validateChatMessageEditDraftV1(draft, state, story.permissions.maxActionCharacters)
   story.pendingEdit = draft
 }
@@ -34,6 +36,7 @@ export function updateChatMessageEditDraftV1(stateValue: CharacterInteractionRun
   if (!state.activeScene || !story?.pendingEdit) fail('当前没有待处理改写')
   if (input.cancel) delete story.pendingEdit
   else {
+    if (story.pendingEdit.mode === 'continue' && input.text !== story.pendingEdit.text) fail('续写起点不能改写；如需修改原文，请使用历史改写')
     const draft = {...story.pendingEdit, text: input.text, requestedSequence: input.sequence}
     validateChatMessageEditDraftV1(draft, state, story.permissions.maxActionCharacters)
     story.pendingEdit = draft

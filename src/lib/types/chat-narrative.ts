@@ -114,6 +114,8 @@ export interface ChatNarrativeStateV1 {
 }
 
 export interface ChatMessageEditDraftV1 {
+  /** Absent means exact replacement; continue keeps text as an immutable prefix. */
+  mode?: 'continue'
   audienceKeys: string[] | null
   sourceMessageId: string
   role: 'player' | 'character'
@@ -125,6 +127,7 @@ export interface ChatMessageEditDraftV1 {
 
 export interface ChatMessageEditBranchIntentV1 {
   kind: 'character-chat-message-edit'
+  mode?: 'continue'
   sourceMessageId: string
   text: string
 }
