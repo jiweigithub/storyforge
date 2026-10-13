@@ -2,6 +2,12 @@
 
 Changes are organized by user impact. **Main-branch updates do not mean a new version has been released.** The package version remains 3.9.1; tagged releases retain their original content. Live deployments may lag; see [compatibility](/en/updates/compatibility).
 
+## October 13, 2026 · v4.0.0 local portable release
+
+The [latest release page](https://github.com/yuanbw2025/storyforge/releases/latest) provides Windows x64, Apple Silicon/Intel Mac and Linux x64 portable packages containing the current main-branch interface, media and Node.js. Extract and launch without npm installation, at the fixed `http://localhost:1111/storyforge/` address. Website and README download links point to the latest release; older releases remain historical records.
+
+The [installation guide](/en/getting-started/install) covers platform selection, launch, model configuration and upgrade backups. Built-in works are available for an initial trial; AI requires your own provider, Codex CLI requires separate installation/login, and preview features keep their maturity labels.
+
 ## October 12, 2026 · Website appearance and knowledge-base navigation
 
 The website hero now shares the project's default teal mountain artwork and palette. The project experience button opens a [separate experience page](https://storyforge-lab.com/storyforge/) with the real interface, examples and manual editing. API configuration and AI generation are unavailable there; download the project for full authoring.

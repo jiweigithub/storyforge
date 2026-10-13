@@ -16,6 +16,9 @@ StoryForge es una herramienta de código abierto para crear y vivir historias co
 
 <a id="try-a-story"></a>
 
+
+**Sin entorno de desarrollo:** [descarga la versión portátil más reciente](https://github.com/yuanbw2025/storyforge/releases/latest), elige Windows x64, Mac Apple Silicon/Intel o Linux x64, extrae toda la carpeta y ejecuta `Start-StoryForge`. Incluye aplicación, medios y Node.js; no requiere instalar npm. La IA necesita tu propio proveedor y las funciones preliminares conservan su estado.
+
 ## Web oficial, demostración y documentación
 
 Conoce el proyecto en la web, explora la interfaz real en la demostración aislada y descarga el código para crear con todas las funciones.

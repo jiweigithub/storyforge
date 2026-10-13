@@ -13,7 +13,7 @@ import { useDialog } from '../shared/Dialog'
 import { parseContextWindowInput } from '../../lib/ai/context-window-input'
 import { fetchOpenAIModels } from '../../lib/ai/model-list'
 import { normalizeOpenAIBaseUrl } from '../../lib/ai/openai-endpoint'
-import { AI_PROXY_ENDPOINTS } from '../../lib/ai/proxy-endpoints'
+import { AI_PROXY_ENDPOINTS, hasLocalProviderProxy } from '../../lib/ai/proxy-endpoints'
 import AIConfigPresetSection from './AIConfigPresetSection'
 import AITaskRoutingSection from './AITaskRoutingSection'
 import AIConnectionLogPanel from './AIConnectionLogPanel'
@@ -291,7 +291,7 @@ function AIConfigPanelFull() {
                 const isProxy = config.baseUrl.startsWith('/' + config.provider)
                 return (
                   <div className="mt-1.5 flex gap-2">
-                    {!isProxy && import.meta.env.DEV ? (
+                    {!isProxy && hasLocalProviderProxy() ? (
                       <button
                         onClick={() => setConfig({ baseUrl: pm.proxy })}
                         className="text-xs px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors"
@@ -306,7 +306,7 @@ function AIConfigPanelFull() {
                         🔗 恢复直连
                       </button>
                     ) : null}
-                    {!import.meta.env.DEV && (
+                    {!hasLocalProviderProxy() && (
                       <p className="text-xs text-text-muted">
                         线上部署不自带本地代理。直连需服务商允许跨域；自建代理请手动填写 Base URL。已有代理配置可保留或恢复直连。
                       </p>
@@ -493,7 +493,7 @@ function AIConfigPanelFull() {
             provider={config.provider}
             logCount={logs.length}
             showLogs={showLogs}
-            isDevelopment={import.meta.env.DEV}
+            isDevelopment={hasLocalProviderProxy()}
             onTest={() => { void handleTest() }}
             onToggleLogs={() => setShowLogs(!showLogs)}
           />
