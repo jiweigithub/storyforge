@@ -1,3 +1,4 @@
+import {chatTurnActionLimitV1} from './narrative-contract'
 import { assertInstanceBinding } from '../product/runtime-instances'
 import {db} from '../db/schema'
 import {readInstanceAgentRunV1} from '../agent/run/event-store'
@@ -31,8 +32,8 @@ export async function readChatNarrativeTurnResumeV1(scope: WorkspaceScope, sessi
   const story = state.chatNarrative, trigger = story?.triggers.slice(-1)[0]
   if (!state.activeScene || !story || story.pendingEdit || trigger?.status !== 'ready') return null
   const lastAction = trigger.actionSequences.slice(-1)[0]
-  const actorKey = lastAction == null ? null : state.messages.find(m => m.eventSequence === lastAction && m.role === 'character')?.speakerKey ?? null
-  const remainingActions = Math.max(0, story.permissions.maxActionsPerTrigger - trigger.actionSequences.length)
+  const actorKey = trigger.direction?.actorKey ?? (lastAction == null ? null : state.messages.find(m => m.eventSequence === lastAction && m.role === 'character')?.speakerKey ?? null)
+  const remainingActions = Math.max(0, chatTurnActionLimitV1(story.permissions, trigger) - trigger.actionSequences.length)
   const view = {triggerSequence: trigger.requestedSequence, actorKey, remainingActions, blockedReason: null as string | null}
   if (!remainingActions || state.remainingDirectorBudget < 2) return {...view, blockedReason: '本轮剩余额度不足，不能继续生成。'}
   if (lastAction != null && !actorKey) return {...view, blockedReason: '本轮原角色消息不完整，不能推定由谁继续。'}
@@ -130,6 +131,7 @@ export async function advanceChatNarrativeTurnV1(input: {
   expectedSequence: number
   replyToSequence?: number
   participantKey?: string
+  actionLimit?: number
   aiConfig: AIConfig
   /** Compare one next action after any explicitly authorized shared background. */
   compare?: boolean
@@ -158,7 +160,7 @@ export async function advanceChatNarrativeTurnV1(input: {
   if (state.chatNarrative.pendingSituation?.actorKey === actor && ['continue', 'return'].includes(input.kind) && state.remainingDirectorBudget < 4) throw new Error('当前预算不足以发展角色方向并继续演绎。')
   const requested = await requestChatNarrativeTrigger({sessionId: input.sessionId,
     commandId: `chat.turn:${crypto.randomUUID()}`, baseSequence: version.sequence, baseStateHash: version.stateHash,
-    kind: input.kind, sourceEventSequence: source})
+    kind: input.kind, sourceEventSequence: source, ...(input.actionLimit === undefined ? {} : {direction: {actorKey: actor, actionLimit: input.actionLimit}})})
   await performPreparedTurn({...input, actor, triggerSequence: requested.sequence, objective: objectives[input.kind]})
 }
 
@@ -168,7 +170,8 @@ async function performPreparedTurn(input: {
   compare?: boolean
 }): Promise<void> {
   const initial = (await readProductRuntimeState(input.sessionId)).interaction!
-  const remaining = initial.chatNarrative!.permissions.maxActionsPerTrigger - (initial.chatNarrative!.triggers.slice(-1)[0]?.actionSequences.length ?? 0)
+  const originalTrigger = initial.chatNarrative!.triggers.slice(-1)[0]!
+  const remaining = chatTurnActionLimitV1(initial.chatNarrative!.permissions, originalTrigger) - originalTrigger.actionSequences.length
   for (let i = 0; i < remaining; i++) {
     if (input.signal?.aborted) return
     let current = (await readProductRuntimeState(input.sessionId)).interaction!
@@ -205,7 +208,7 @@ async function performPreparedTurn(input: {
 /** An explicit backstage request is neither player dialogue nor an event that
  * has happened. Construct and review first, then let one selected role act. */
 export async function createChatNarrativeSituationV1(input: {
-  scope: WorkspaceScope; sessionId: number; expectedSequence: number; seed: string; participantKey?: string
+  scope: WorkspaceScope; sessionId: number; expectedSequence: number; seed: string; participantKey?: string; actionLimit?: number
   aiConfig: AIConfig; actionAiConfig?: AIConfig; signal?: AbortSignal; onRunCreated?: (id: number) => void
 }): Promise<void> {
   await assertInstanceBinding(input.sessionId, input.scope)
@@ -219,7 +222,7 @@ export async function createChatNarrativeSituationV1(input: {
   if (state.remainingDirectorBudget < 4) throw new Error('当前预算不足以构建、审查并演绎新情境。')
   if ((await readPendingChatNarrativeRunsV1(input.scope, input.sessionId, state)).length) throw new Error('请先恢复或取消尚未完成的行动。')
   const trigger = await requestChatNarrativeTrigger({sessionId: input.sessionId, commandId: `chat.seed:${crypto.randomUUID()}`,
-    baseSequence: version.sequence, baseStateHash: version.stateHash, kind: 'player-seed', sourceEventSequence: version.sequence, seed: input.seed})
+    baseSequence: version.sequence, baseStateHash: version.stateHash, kind: 'player-seed', sourceEventSequence: version.sequence, seed: input.seed, ...(input.actionLimit === undefined ? {} : {direction: {actorKey: actor, actionLimit: input.actionLimit}})})
   const generated = await generateInteractionRuntimeCandidateV1({scope: input.scope, productRuntimeSessionId: input.sessionId,
     skillId: 'character.chat-situation-construction', participantKey: 'player', narrativeTriggerSequence: trigger.sequence,
     objective: '将玩家最新情境请求内化为当前背景与开放方向，承接旧问题，保留玩家选择。',

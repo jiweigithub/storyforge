@@ -3167,7 +3167,7 @@ export const AGENT_SKILLS = [
     maxOutputTokens: 4_000,
     writeTargets: [],
     lastVerifiedAt: '2026-10-13',
-    regressionTests: ['R-CHAT-02-narrative-actions', 'R-CHAT-02-narrative-harness', 'R-CHAT-02-narrative-player', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression', 'R-CHAT-03-history-edit', 'R-CHAT-03-reply-continuation', 'R-CHAT-03-turn-resume', 'R-CHAT-03-options-history', 'R-CHAT-03-context-inspector'],
+    regressionTests: ['R-CHAT-02-narrative-actions', 'R-CHAT-02-narrative-harness', 'R-CHAT-02-narrative-player', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression', 'R-CHAT-03-history-edit', 'R-CHAT-03-reply-continuation', 'R-CHAT-03-turn-resume', 'R-CHAT-03-options-history', 'R-CHAT-03-context-inspector', 'R-CHAT-03-turn-direction'],
   },
   {
     version: 1, id: 'character.chat-narrative-action-review', agentId: 'character', defaultForAgent: false,
@@ -3184,7 +3184,7 @@ export const AGENT_SKILLS = [
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['interactionRuntime'], optionalContextSourceKeys: [], inputPolicy: INTERACTION_RUNTIME_INPUT_POLICY,
     contextCompression: INTERACTION_RUNTIME_COMPRESSION_POLICY, maxOutputTokens: 8000, writeTargets: [],
-    lastVerifiedAt: '2026-10-14', regressionTests: ['R-CHAT-03-action-options', 'R-CHAT-03-options-history', 'R-CHAT-03-context-inspector'],
+    lastVerifiedAt: '2026-10-14', regressionTests: ['R-CHAT-03-action-options', 'R-CHAT-03-options-history', 'R-CHAT-03-context-inspector', 'R-CHAT-03-turn-direction'],
   },
   {
     version: 1, id: 'character.chat-narrative-options-review', agentId: 'character', defaultForAgent: false,

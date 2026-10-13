@@ -148,6 +148,13 @@ export interface ChatNarrativeTriggerStateV1 {
   seed: string | null
   status: 'ready' | 'waiting-player' | 'complete' | 'cancelled'
   actionSequences: number[]
+  /** Explicit per-turn player choice; absent historical turns keep release limits. */
+  direction?: ChatTurnDirectionV1
+}
+
+export interface ChatTurnDirectionV1 {
+  actorKey: string
+  actionLimit: number
 }
 
 export interface ChatActorSituationRequestV1 {

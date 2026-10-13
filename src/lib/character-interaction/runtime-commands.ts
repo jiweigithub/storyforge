@@ -123,10 +123,10 @@ export async function updateChatMessageEditDraft(input: ProductRuntimeCommandEnv
 }
 
 export async function requestChatNarrativeTrigger(input: ProductRuntimeCommandEnvelopeV1 & {
-  kind: ChatNarrativeTriggerV1; sourceEventSequence: number; seed?: string | null;
+  kind: ChatNarrativeTriggerV1; sourceEventSequence: number; seed?: string | null; direction?: import('../types/chat-narrative').ChatTurnDirectionV1;
 }): Promise<ProductRuntimeEvent> {
   return appendInteractionCommand({...input, type: 'interaction.narrative.trigger.requested', actorKey: 'player',
-    payload: {kind: input.kind, sourceEventSequence: input.sourceEventSequence, seed: input.seed ?? null}});
+    payload: {kind: input.kind, sourceEventSequence: input.sourceEventSequence, seed: input.seed ?? null, ...(input.direction === undefined ? {} : {direction: input.direction})}});
 }
 
 export async function commitChatNarrativeAction(input: ProductRuntimeCommandEnvelopeV1 & {

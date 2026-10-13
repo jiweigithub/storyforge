@@ -3,7 +3,7 @@ import {canonicalStringify} from '../agent/run/hash'
 import type { CharacterInteractionRuntimeState } from '../types'
 import { CHAT_NARRATIVE_TRIGGERS_V1, CHAT_THREAD_STATUSES_V1, CHAT_ACTION_REVIEW_CHECKS_V1 } from '../types/chat-narrative'
 import type { ChatNarrativeActionV1, ChatNarrativeActionReviewV1, ChatNarrativeStateV1, ChatNarrativeTriggerV1 } from '../types/chat-narrative'
-import { parseChatNarrativeStateV1 } from './narrative-contract'
+import { chatTurnActionLimitV1, parseChatNarrativeStateV1, parseChatTurnDirectionV1 } from './narrative-contract'
 import { isChatSituationPreparedV1 } from './narrative-situations'
 import {applyChatRelationshipEffectsV1} from './narrative-relationships'
 import {applyChatActorReflectionV1} from './narrative-reflection'
@@ -106,13 +106,14 @@ export function interruptChatNarrativeTriggerV1(state: CharacterInteractionRunti
 }
 
 export function requestChatNarrativeTriggerV1(stateValue: CharacterInteractionRuntimeState, input: {
-  sequence: number; kind: unknown; sourceEventSequence: unknown; seed: unknown
+  sequence: number; kind: unknown; sourceEventSequence: unknown; seed: unknown; direction?: unknown
 }): CharacterInteractionRuntimeState {
   const state = structuredClone(stateValue)
   const story = narrative(state)
   if (story.pendingEdit) fail('请先完成或取消待处理改写')
   choice(input.kind, CHAT_NARRATIVE_TRIGGERS_V1)
   const kind = input.kind as ChatNarrativeTriggerV1
+  const direction = input.direction === undefined ? undefined : parseChatTurnDirectionV1(input.direction, state.activeScene!.activeParticipantKeys, story.permissions.maxActionsPerTrigger)
   if (!story.permissions.triggers.includes(kind)) fail('该主动触发未经作品授权')
   if (!Number.isSafeInteger(input.sourceEventSequence) || Number(input.sourceEventSequence) >= input.sequence) fail('触发来源事件无效')
   const source = Number(input.sourceEventSequence)
@@ -122,6 +123,7 @@ export function requestChatNarrativeTriggerV1(stateValue: CharacterInteractionRu
     const message = state.messages.filter(m => m.role === 'player' && m.supersededBySequence == null).slice(-1)[0]
     if (!message || message.eventSequence !== source || source < state.activeScene!.startedAtSequence) fail('回应触发必须指向当前场景最新玩家消息')
     if (!isChatMessageRetrievableV1(state, message)) fail('这条玩家消息已排除上下文，请先恢复或发送新消息')
+    if (direction && message.audienceKeys != null && !message.audienceKeys.includes(direction.actorKey)) fail('指定角色听不到这条玩家消息')
   }
   if (['continue', 'return', 'player-seed'].includes(kind) && source !== input.sequence - 1) fail('玩家操作必须基于当前事件头')
   if (['scene-start', 'player-response'].includes(kind) && story.triggers.some(t => t.kind === kind && t.sourceEventSequence === source)) fail('该开场或玩家消息已经触发过演绎')
@@ -131,7 +133,7 @@ export function requestChatNarrativeTriggerV1(stateValue: CharacterInteractionRu
   if (state.remainingDirectorBudget < 1) fail('当前场景行动预算不足')
   const previous = story.triggers.slice(-1)[0]
   if (previous && ['ready', 'waiting-player'].includes(previous.status)) previous.status = 'cancelled'
-  story.triggers.push({kind, requestedSequence: input.sequence, sourceEventSequence: source, seed: input.seed as string | null, status: 'ready', actionSequences: []})
+  story.triggers.push({kind, requestedSequence: input.sequence, sourceEventSequence: source, seed: input.seed as string | null, status: 'ready', actionSequences: [], ...(direction ? {direction} : {})})
   advance(story, input.sequence)
   return state
 }
@@ -147,6 +149,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   if (!state.activeScene!.activeParticipantKeys.includes(actorKey)) fail('行动角色不在当前场景')
   const trigger = story.triggers.slice(-1)[0]
   if (!trigger || trigger.requestedSequence !== input.triggerSequence || trigger.status !== 'ready') fail('行动触发已取消、已完成或正在等待玩家')
+  if (trigger.direction && trigger.direction.actorKey !== actorKey) fail('行动角色与本轮明确选择不一致')
   assertChatResponseRetrievableV1(state)
   // A seed must first pass the separate situation-construction candidate path.
   if (!isChatSituationPreparedV1(state, actorKey)) fail('玩家情境请求尚未完成情境构建')
@@ -154,7 +157,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
     const message = state.messages.find(m => m.eventSequence === trigger.sourceEventSequence)
     if (!message || message.audienceKeys != null && !message.audienceKeys.includes(actorKey)) fail('角色看不到触发的玩家消息')
   }
-  if (trigger.actionSequences.length >= story.permissions.maxActionsPerTrigger || state.remainingDirectorBudget < 1) fail('行动预算不足')
+  if (trigger.actionSequences.length >= chatTurnActionLimitV1(story.permissions, trigger) || state.remainingDirectorBudget < 1) fail('行动预算不足')
   const action = parseChatNarrativeActionV1(input.action)
   if (story.pendingEdit) {
     const edit = story.pendingEdit
@@ -241,7 +244,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   }
   trigger.actionSequences.push(input.sequence)
   trigger.status = action.waitingForPlayer ? 'waiting-player'
-    : action.kind === 'pause' || trigger.actionSequences.length >= story.permissions.maxActionsPerTrigger ? 'complete' : 'ready'
+    : action.kind === 'pause' || trigger.actionSequences.length >= chatTurnActionLimitV1(story.permissions, trigger) ? 'complete' : 'ready'
   advance(story, input.sequence)
   state.chatNarrative = parseChatNarrativeStateV1(story, {
     participantKeys: state.profiles.map(p => p.participantKey), characterKeys: state.profiles.map(p => p.characterKey), sceneKeys: state.sceneTemplates.map(s => s.sceneKey),

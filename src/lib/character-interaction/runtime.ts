@@ -665,7 +665,7 @@ export function applyInteractionEvent(
     case 'interaction.narrative.edit.cancelled':
       return updateChatMessageEditDraftV1(state, {sequence: event.sequence, text: body.text, cancel: event.type === 'interaction.narrative.edit.cancelled'})
     case 'interaction.narrative.trigger.requested':
-      return requestChatNarrativeTriggerV1(state, {sequence: event.sequence, kind: body.kind, sourceEventSequence: body.sourceEventSequence, seed: body.seed})
+      return requestChatNarrativeTriggerV1(state, {sequence: event.sequence, kind: body.kind, sourceEventSequence: body.sourceEventSequence, seed: body.seed, direction: body.direction})
     case 'interaction.narrative.situation.committed':
       return applyChatSituationV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, draft: body.draft, review: body.review})
     case 'interaction.narrative.action-reviewed.committed':

@@ -1,10 +1,20 @@
 import {validateChatMessageEditDraftV1} from './narrative-edit-contract'
 import { isSha256Hash } from '../product-production/hash'
 import { CHAT_NARRATIVE_TRIGGERS_V1, CHAT_THREAD_STATUSES_V1 } from '../types/chat-narrative'
-import type { ChatNarrativePermissionsV1, ChatNarrativeStateV1, ChatSituationV1, FrozenChatNarrativeV1 } from '../types/chat-narrative'
+import type { ChatNarrativePermissionsV1, ChatNarrativeStateV1, ChatNarrativeTriggerStateV1, ChatTurnDirectionV1, ChatSituationV1, FrozenChatNarrativeV1 } from '../types/chat-narrative'
 import type { FrozenChatSourceProjectionV1 } from '../types/character-interaction'
 
 type Row = Record<string, unknown>
+export function chatTurnActionLimitV1(permissions: ChatNarrativePermissionsV1, trigger: ChatNarrativeTriggerStateV1): number {
+  return trigger.direction?.actionLimit ?? permissions.maxActionsPerTrigger
+}
+
+export function parseChatTurnDirectionV1(value: unknown, participantKeys: readonly string[], maximum: number): ChatTurnDirectionV1 {
+  const direction = row(value, 'actorKey,actionLimit', '本轮演绎设置')
+  members([direction.actorKey], participantKeys, '本轮行动角色', true)
+  integer(direction.actionLimit, '本轮动作上限', 1, maximum)
+  return {actorKey: String(direction.actorKey), actionLimit: Number(direction.actionLimit)}
+}
 export interface ChatNarrativeBoundaryV1 {
   participantKeys: readonly string[]
   characterKeys: readonly string[]
@@ -169,7 +179,7 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
   if (parsed.revision === 0 && parsed.lastEventSequence !== 0 || parsed.revision !== 0 && parsed.lastEventSequence === 0) fail('叙事版本与事件头不符')
   validateSituation(parsed.situation, boundary, parsed.revision === 0, Number(permissions.maxActiveThreads))
   const state = structuredClone(value) as ChatNarrativeStateV1
-  const triggers = list(parsed.triggers, '主动触发记录', 5000).map(item => row(item, 'kind,requestedSequence,sourceEventSequence,seed,status,actionSequences', '主动触发记录'))
+  const triggers = list(parsed.triggers, '主动触发记录', 5000).map(item => row(item, 'kind,requestedSequence,sourceEventSequence,seed,status,actionSequences' + (item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'direction') ? ',direction' : ''), '主动触发记录'))
   if (state.revision === 0 && triggers.length) fail('初始情境不能伪造触发历史')
   const seen = new Set<number>()
   for (const [index, trigger] of triggers.entries()) {
@@ -184,12 +194,14 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
     if (index < triggers.length - 1 && ['ready', 'waiting-player'].includes(String(trigger.status))) fail('旧主动触发仍在等待执行')
     if (trigger.kind === 'player-seed') text(trigger.seed, '玩家情境请求')
     else if (trigger.seed !== null) fail('非情境请求不能添加种子')
-    const actions = list(trigger.actionSequences, '触发内行动', state.permissions.maxActionsPerTrigger)
+    const direction = trigger.direction === undefined ? undefined : parseChatTurnDirectionV1(trigger.direction, boundary.participantKeys, state.permissions.maxActionsPerTrigger)
+    const limit = direction?.actionLimit ?? state.permissions.maxActionsPerTrigger
+    const actions = list(trigger.actionSequences, '触发内行动', limit)
     actions.forEach((value, i) => {
       sequence(value, false, '行动事件')
       if (Number(value) <= Number(i ? actions[i - 1] : trigger.requestedSequence)) fail('行动事件顺序无效')
     })
-    if (trigger.status === 'ready' && actions.length >= state.permissions.maxActionsPerTrigger) fail('主动触发已耗尽动作预算')
+    if (trigger.status === 'ready' && actions.length >= limit) fail('主动触发已耗尽动作预算')
     if (trigger.status === 'waiting-player' && !actions.length) fail('等待玩家缺少角色行动')
   }
   if (state.pendingSituation !== undefined) {
