@@ -1,3 +1,4 @@
+import {applyChatMessageRetrievalPlanV1, type ChatMessageRetrievalPlanV1} from '../lib/character-interaction/narrative-retrieval-service'
 import { create } from 'zustand'
 import { db } from '../lib/db/schema'
 import {
@@ -84,6 +85,7 @@ interface CharacterInteractionPlayerState {
   createSituation(input: {aiConfig: AIConfig; actionAiConfig?: AIConfig; seed: string; participantKey?: string}): Promise<void>
   resumeNarrativeReview(runId: number, aiConfig: AIConfig): Promise<void>
   selectNarrativeOption(runId: number, optionKey: ChatNarrativeOptionKeyV1): Promise<void>
+  applyMessageRetrieval(plan: ChatMessageRetrievalPlanV1): Promise<void>
   forkMessageEdit(plan: ChatMessageEditPlanV1, text: string): Promise<void>
   applyMessageEdit(text: string, aiConfig?: AIConfig): Promise<void>
   cancelMessageEdit(): Promise<void>
@@ -500,6 +502,12 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       const scope = get().scope
       if (!scope || !get().narrativeOptions.some(row => row.runId === runId && !row.unavailableReason)) throw new Error('当前没有该可选行动。')
       await adoptInteractionRuntimeCandidateV1({scope, runId, optionKey})
+    }),
+
+    applyMessageRetrieval: async plan => withBusy(async () => {
+      const scope = get().scope
+      if (!scope || get().selectedSessionId !== plan.sessionId) throw new Error('消息上下文目标已经切换。')
+      await applyChatMessageRetrievalPlanV1(scope, plan)
     }),
 
     forkMessageEdit: async (plan, text) => withBusy(async () => {
