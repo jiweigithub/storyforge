@@ -591,6 +591,13 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       attempt: 1,
       manifestHash: manifest.manifestHash,
     })
+    if (['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)) {
+      snapshot = (await recordAgentRunArtifactV1({
+        scope: input.scope, runId: snapshot.run.id, productRuntimeSessionId: input.productRuntimeSessionId,
+        artifactKind: 'context-packet', content: JSON.stringify({version: 1, participantKey, manifest, text: assembled.text}),
+        stepId: INTERACTION_RUNTIME_STEP_ID_V1, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence,
+      })).snapshot
+    }
     const messages = prompt({ objective, skillId: input.skillId, context: assembled.text })
     snapshot = (await recordAgentRunArtifactV1({
       scope: input.scope, runId: snapshot.run.id, productRuntimeSessionId: input.productRuntimeSessionId,

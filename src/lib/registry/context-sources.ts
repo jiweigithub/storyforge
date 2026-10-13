@@ -783,29 +783,8 @@ async function readInteractionRuntimeContext(input: AssembleContextInput): Promi
     ...(townMemories.length ? townMemories.map(memory => `- ${memory.summary}｜证据=${memory.sourceSequences.join(',') || '初始'}`) : ['- 无']),
     '【小镇行为边界】你拥有自己的生活和立场；只能谈论自己知道的事实；不得替玩家决定行动；不得把私密想法当作玩家已知信息。',
   ] : []
-  return [
-    `【角色互动视角】${profile.name}｜key=${profile.participantKey}｜身份=${profile.roleLabel}`,
-    `【说话约束】${profile.voiceRules}`,
-    `【当前场景】${view.activeScene?.title ?? '未开始'}｜${view.activeScene?.purpose ?? ''}`,
-    ...(view.chatNarrative ? [
-      '【当前情境的单一角色视角】以下 facts 是确定事实；beliefs 是可能错误的猜测，goals 是意愿，possibilities 是尚未发生的方向，thread closureSignals 是可调整的收束条件。不得把后三类写成既成事实或替玩家决定。',
-      JSON.stringify(view.chatNarrative),
-    ] : []),
-    '【该角色已知事实】',
-    ...(view.knowledge.length ? view.knowledge.map(item => `- ${item.knowledgeKey}｜${item.status}｜${item.content}`) : ['- 无']),
-    '【该角色持久记忆】',
-    ...(view.memories.length ? view.memories.map(item => `- ${item.kind}｜重要度=${item.importance}｜${item.content}`) : ['- 无']),
-    '【该角色关系视图】',
-    ...(view.chatNarrative ? [
-      '以下是角色自身态度、冻结范围与相关真实变化原因，不代表玩家的感受或同意。relationshipEvidence 按各维度最近原因与当前玩家输入选取；未改变的维度保持原值。',
-      JSON.stringify({relationships: view.relationships, relationshipEvidence: view.relationshipEvidence ?? []}),
-    ] : view.relationships.length ? view.relationships.map(item => `- ${item.toParticipantKey}｜${item.label}=${item.value}`) : ['- 无']),
-    '【该角色可见对话】',
-    ...(view.messages.length ? view.messages.map(message => `- #${message.eventSequence}｜${message.speakerKey}｜${message.text}`) : ['- 无']),
-    ...(view.excludedMessageCount ? [`【消息选择】用户排除对话=${view.excludedMessageCount}；只影响对话原文选取，不撤销已确认事实、记忆或关系。`] : []),
-    `【预算证据】省略早期消息=${view.omittedMessageCount}｜字符=${view.characterCount}`,
-    ...townLines,
-  ].join('\n')
+  const {formatInteractionRuntimeContextV1} = await import('../character-interaction/context-format')
+  return formatInteractionRuntimeContextV1(profile, view, townLines)
 }
 
 async function readAiTownRuntimeContext(input: AssembleContextInput): Promise<string> {
