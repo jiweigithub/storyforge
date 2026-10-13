@@ -1015,6 +1015,63 @@
               "frozenWorldUnchanged": true,
               "outcome": "Player only said they entered to shelter from rain and sat near the door; no investigation target named. Three bounded explicit continues: Lin Zhou reassured the player, independently inspected the permitted parcel and box, and learned each original fact privately. The next candidate placed the discovered key visibly on the workbench but omitted disclosures. The real reviewer rejected visibility and consequence completeness. No revealing action or object-move fact was committed; player knowledge remained unchanged. Earlier investigations and both actor-only discoveries were retained.",
               "limitations": "Short synthetic initial situation with real actions/reviews, no independent rating or formal M1. This is a retained failure, not an overall initiative pass. No automatic retry; incomplete knowledge-consequence registration requires repair."
+            },
+            {
+              "evidence": "codex-physical-reveal-continuation-v31.json",
+              "sourceSnapshotHead": "ef451d55eb67a806eb720f5c7a1ffd011a4d0efd",
+              "sourceSnapshotManifestSha256": "6b5e03624876f67ed696b6a937ce39fa940620b48419e0e3ab6272fc4334c20d",
+              "rawEvidenceSha256": "8cbf1a35d57e177e5bd81406d23ad51d9bdce55af78aab94ab972fa58572a290",
+              "backupSha256": "1ff9f9a038a2a8c3c9fbf35562063caa7f6663ca821d711f4667dd0e3393f615",
+              "priorEvidence": "codex-unguided-investigation-preflight-v30.json",
+              "status": "unchanged-failed-save-resumes-as-legitimate-pause-not-physical-reveal-proof",
+              "unchangedInteractionRestored": true,
+              "newModelRequests": 2,
+              "newModelResponses": 2,
+              "newCompletedRuns": 1,
+              "importedHistoricalRuns": 6,
+              "elapsedSeconds": 41.539,
+              "costUsd": null,
+              "usage": {
+                "inputTokens": 17555,
+                "outputTokens": 640,
+                "reasoningOutputTokens": 226,
+                "totalTokens": 18195
+              },
+              "frozenWorldUnchanged": true,
+              "refreshRetained": true,
+              "noNewModelRequestOnRefresh": true,
+              "outcome": "Imported the unmodified V30 unguided-failure backup with its six historical runs, then explicitly continued once under action prompt v17. A fresh role/reviewer pair completed a legitimate pause, paused only the repair goal and cleared plans. Both discovered truths remained actor-only, no physical move or disclosure was falsely committed, and refresh preserved state. The original failure remains historical evidence.",
+              "limitations": "Proves unchanged-save recovery and safe continuation only. The model did not show an object, so this sample does not validate repair of physical-disclosure generation or overall weak-guidance quality."
+            },
+            {
+              "evidence": "codex-physical-reveal-request-v31.json",
+              "sourceSnapshotHead": "ef451d55eb67a806eb720f5c7a1ffd011a4d0efd",
+              "sourceSnapshotManifestSha256": "6b5e03624876f67ed696b6a937ce39fa940620b48419e0e3ab6272fc4334c20d",
+              "rawEvidenceSha256": "9ce0b37b44f3a7dd6edfc29a32187391347072f30ea70939b750c244f6886eb4",
+              "backupSha256": "cb481ee738cbed3f527bc98fc9af3c7c3e5eb69cd84ce76d0b8d026b898b21fc",
+              "priorEvidence": "codex-unguided-investigation-preflight-v30.json",
+              "status": "targeted-physical-display-with-two-canonical-disclosures",
+              "unchangedInteractionRestored": true,
+              "newModelRequests": 2,
+              "newModelResponses": 2,
+              "newCompletedRuns": 1,
+              "importedHistoricalRuns": 6,
+              "adoptedActions": 1,
+              "adoptedDisclosures": 2,
+              "newPhysicalFacts": 1,
+              "elapsedSeconds": 39.565,
+              "costUsd": null,
+              "usage": {
+                "inputTokens": 17925,
+                "outputTokens": 948,
+                "reasoningOutputTokens": 328,
+                "totalTokens": 18873
+              },
+              "frozenWorldUnchanged": true,
+              "refreshRetained": true,
+              "noNewModelRequestOnRefresh": true,
+              "outcome": "Starting from the unchanged V30 failed-save state, a new player input asked to see only confirmed findings, without naming either hidden truth. The role placed the discovered list on the workbench and pointed to the opened box, quoted both known facts, registered the physical move plus two canonical disclosures to the player, and passed the real six-part review. It did not act for the player, invent an author or key purpose, close the unrelated repair goal or rewrite world source. Text, physical consequence and knowledge changes committed together; refresh retained the result.",
+              "limitations": "One targeted failure-repair sample with an explicit player request. Same-model review, not independent acceptance or evidence that all unguided continuations succeed. The earlier failure and the separate legitimate-pause result remain recorded."
             }
           ],
           "zeroCallRestoration": {
@@ -1120,7 +1177,7 @@
         "sourceSnapshotHead": "7103b270bfeae0f7cf004b25083983e9aeb0ca82",
         "scope": "V28 private initial facts; V30 additionally supports explicit world-source discovery authorization, known-holder preservation, exact source/rule binding and author UI. Ordinary v2 and author-only source exclusions are unchanged.",
         "verified": "Canonical audience-only update, negative outcomes, staged disclosure, durable recovery, branch/import and 3 isolated browser paths. Synthetic review does not establish semantic correctness.",
-        "liveGap": "V28 phase-review failure retained. V29 private-fact and V30 frozen-world guided samples complete discovery and disclosure; V30 actual initial-candidate production and local release also succeed. The V30 short unguided sample independently inspects two objects and learns both facts but fails on a later physical reveal with missing disclosures; the reviewer rejects it atomically. This concrete omission, final full checks, longer episodes and independent acceptance remain pending."
+        "liveGap": "V28 phase-review and V30 unregistered physical-reveal failures remain recorded. V29/V30 guided runtime and V30 real initial-candidate production/local release succeed. V31 unchanged failed-save continuation safely pauses; a separate targeted display request commits one object consequence and two canonical disclosures after real review. These bounded samples do not establish sustained unguided quality, final full checks, longer episodes or independent acceptance."
       }
     }
   ]
