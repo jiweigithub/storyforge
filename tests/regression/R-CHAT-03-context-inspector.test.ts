@@ -1,6 +1,7 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import * as artifacts from '../../src/lib/memory/artifact-store'
+import * as context from '../../src/lib/registry/assemble-context'
 import {readInstanceAgentRunV1} from '../../src/lib/agent/run/event-store'
 import {listChatContextInspectionsV1, readChatContextInspectionV1} from '../../src/lib/character-interaction/context-inspector'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
@@ -11,6 +12,7 @@ import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '..
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => {vi.restoreAllMocks(); db.close()})
 const record = artifacts.recordAgentRunArtifactV1
+const assemble = context.assembleContext
 async function command(sessionId: number) {
   const v = await readProductRuntimeStateVersion(sessionId)
   return {sessionId, commandId: crypto.randomUUID(), baseSequence: v.sequence, baseStateHash: v.stateHash}
@@ -94,6 +96,14 @@ it('distinguishes saved preparation from an actually sent request', async () => 
   await expect(generate(f)).rejects.toThrow('stop before request')
   const [row] = await listChatContextInspectionsV1(f.scope, f.sessionId)
   expect(await readChatContextInspectionV1(f.scope, f.sessionId, row.runId)).toEqual({available: false, reason: '这次运行尚未记录实际发送模型请求。'})
+})
+
+it('reports budget-trimmed input without presenting reconstructed full details', async () => {
+  vi.spyOn(context, 'assembleContext').mockImplementation(input => assemble(input.sourceKeys?.includes('interactionRuntime') ? {...input, sourceBudgetScale: 0.1} : input))
+  const f = await start(), result = await generate(f)
+  const inspection = await readChatContextInspectionV1(f.scope, f.sessionId, result.snapshot.run.id)
+  expect(inspection.available).toBe(false)
+  if (!inspection.available) expect(inspection.reason).toContain('裁剪')
 })
 
 it.each(['corrupt', 'missing', 'evidence-pruned'])('rejects %s stored evidence without changing the story', async mode => {
