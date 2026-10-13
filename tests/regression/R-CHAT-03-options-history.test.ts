@@ -78,6 +78,17 @@ it('offers only verified visible expressions and branches before an older choice
   expect(state.chatNarrative!.pendingEdit).toBeUndefined()
   expect(await readProductRuntimeState(f.sessionId)).toEqual(parent)
   expect((await db.agentRuns.get(f.runId))!.productRuntimeSessionId).toBe(f.sessionId)
+  expect(await readChatHistoricalOptionMessageIdsV1(f.scope, child.id!)).toEqual([state.messages[0].messageId])
+  const nextPlan = await readChatHistoricalOptionsPlanV1(f.scope, child.id!, state.messages[0].messageId)
+  expect(nextPlan.selectedOptionKey).toBe('option-2')
+  const returned = await forkChatHistoricalOptionV1({scope: f.scope, plan: nextPlan, optionKey: 'option-1'})
+  expect((await readProductRuntimeState(returned.id!)).interaction!.chatNarrative!.pendingEdit).toMatchObject({text: options()[0].text, audienceKeys: options()[0].audienceKeys,
+    sourceOption: {candidateHash: plan.candidateHash, optionKey: 'option-1'}})
+  const projectId = await importProjectJSON(await exportProjectJSON(f.scope.projectId))
+  const importedChild = (await db.productRuntimeSessions.where('projectId').equals(projectId).toArray()).find(row => row.title === child.title)!
+  const importedPlan = await readChatHistoricalOptionsPlanV1({projectId, worldId: importedChild.worldId, workId: importedChild.workId}, importedChild.id!, state.messages[0].messageId)
+  expect(importedPlan.selectedOptionKey).toBe('option-2')
+  expect(importedPlan.options).toEqual(nextPlan.options)
 })
 
 it('resolves nested and imported ancestry without treating invalidated import receipts as new work', async () => {
