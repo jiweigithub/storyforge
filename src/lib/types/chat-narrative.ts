@@ -3,7 +3,8 @@ export interface ChatPersonaV1 {
   playerKey: 'player'
   name: string
   description: string
-  origin: 'product-private'
+  origin: 'product-private' | 'world-character'
+  source?: {resourceKey: string; sourceHash: string}
 }
 
 export const CHAT_NARRATIVE_TRIGGERS_V1 = ['scene-start', 'player-response', 'continue', 'return', 'player-seed'] as const

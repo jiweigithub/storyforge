@@ -26,13 +26,15 @@ export interface ChatSourceProjectionDraftV1 {
     label: string
     fragments: ChatSourceFragmentV1[]
   }>
+  /** The player's mapped character is a source subject, not an additional AI viewpoint. */
+  playerCharacter?: ChatSourceProjectionDraftV1['characters'][number]
   /** Optional to preserve historical character-only projection hashes. */
   background?: Array<ChatSourceProjectionDraftV1['characters'][number] & {resourceKind: string; relatedResourceKeys?: string[]}>
   projectionHash: string
 }
 
 export function chatProjectionResourcesV1(draft: ChatSourceProjectionDraftV1) {
-  return [...draft.characters, ...(draft.background ?? [])]
+  return [...draft.characters, ...(draft.playerCharacter ? [draft.playerCharacter] : []), ...(draft.background ?? [])]
 }
 
 export interface ChatSourceClassificationV1 {
@@ -124,6 +126,7 @@ export async function createChatSourceProjectionDraftV1(input: {
   worldReferenceHash: string
   worldReleaseHash: string
   characterResourceKeys: readonly string[]
+  playerCharacterKey?: string
   backgroundResourceKeys?: readonly string[]
   resources: readonly WorldSemanticResourceSnapshotV1[]
 }): Promise<ChatSourceProjectionDraftV1> {
@@ -141,6 +144,8 @@ export async function createChatSourceProjectionDraftV1(input: {
     byKey.set(snapshot.descriptor.resourceKey, snapshot)
   }
   const backgroundKeys = [...(input.backgroundResourceKeys ?? [])].sort()
+  if (input.playerCharacterKey !== undefined && (typeof input.playerCharacterKey !== 'string' || !input.playerCharacterKey.trim() || input.playerCharacterKey.length > 500
+    || input.characterResourceKeys.includes(input.playerCharacterKey))) fail('玩家人物来源无效或与 AI 角色重复')
   assertChatBackgroundSelectionV1(backgroundKeys, input.resources.map(source => source.descriptor))
   const project = async (resourceKey: string, character: boolean) => {
     const source = byKey.get(resourceKey)
@@ -163,6 +168,7 @@ export async function createChatSourceProjectionDraftV1(input: {
     return {resourceKey, sourceHash: source.descriptor.contentHash, label: source.descriptor.title, fragments}
   }
   const characters = await Promise.all([...input.characterResourceKeys].sort().map(key => project(key, true)))
+  const playerCharacter = input.playerCharacterKey ? await project(input.playerCharacterKey, true) : undefined
   const background = await Promise.all(backgroundKeys.map(async key => {
     const descriptor = byKey.get(key)!.descriptor
     const relatedResourceKeys = descriptor.worldSemantic.resourceKind === 'character-relation'
@@ -170,11 +176,11 @@ export async function createChatSourceProjectionDraftV1(input: {
     return {...await project(key, false), resourceKind: descriptor.worldSemantic.resourceKind,
       ...(relatedResourceKeys.length ? {relatedResourceKeys} : {})}
   }))
-  if ([...characters, ...background].reduce((sum, resource) => sum + resource.fragments.length, 0) > 2000) fail('来源资料片段超过 2000 项，请缩小本次来源范围')
+  if ([...characters, ...(playerCharacter ? [playerCharacter] : []), ...background].reduce((sum, resource) => sum + resource.fragments.length, 0) > 2000) fail('来源资料片段超过 2000 项，请缩小本次来源范围')
   const body = {
     schema: 'storyforge.chat-source-projection' as const, version: 1 as const,
     worldReferenceHash: input.worldReferenceHash, worldReleaseHash: input.worldReleaseHash,
-    characters, ...(background.length ? {background} : {}),
+    characters, ...(playerCharacter ? {playerCharacter} : {}), ...(background.length ? {background} : {}),
   }
   const draft = { ...body, projectionHash: await hashProductProductionValueV2(body) }
   verifiedDrafts.set(draft, canonicalStringify(draft))
@@ -229,6 +235,7 @@ function selectProjectionView(input: {
     if (!fragment || seen.has(decision.fragmentKey)) fail('知识分类引用缺失或重复')
     seen.add(decision.fragmentKey)
     if (body.background?.some(resource => resource.resourceKey === fragment.resourceKey) && decision.purpose !== 'knowledge') fail('世界背景资料只能作为事实与经历，不能变成人物身份、动机或口吻')
+    if (body.playerCharacter?.resourceKey === fragment.resourceKey && !['identity', 'knowledge'].includes(decision.purpose)) fail('玩家人物资料只能作为身份或知识，不能要求 AI 代演玩家的动机与口吻')
     if (!['identity', 'motivation', 'voice', 'knowledge'].includes(decision.purpose)
       || !['public', 'participants', 'author-only', 'unclassified'].includes(decision.visibility)
       || !Array.isArray(decision.audienceKeys)

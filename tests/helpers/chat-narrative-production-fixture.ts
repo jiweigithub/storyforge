@@ -5,20 +5,30 @@ import { loadProductProductionConsultationSourceV2, loadProductProductionWorldSo
 import { suggestProductStartingPoints, draftProductProductionBriefV3 } from '../../src/lib/product-production/consultation'
 import { prepareChatNarrativeCompilerSourceV1 } from '../../src/lib/product-production/product-module-compilers'
 import type { ChatNarrativeProductionSourceV1, ChatSituationCandidatesV1 } from '../../src/lib/character-interaction/narrative-production'
+import {chatProjectionResourcesV1} from '../../src/lib/character-interaction/source-projection'
 
-export async function seedChatNarrativeProductionFixture() {
+export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?: boolean} = {}) {
   const world = await seedCurrentProductWorld('CHAT situation production')
   const {scope} = await createChatDraftV3('修钟铺的一天')
   const linked = await selectChatWorldV1(scope, 0, world.release.id!)
   const index = await loadProductProductionConsultationSourceV2({scope, worldReleaseId: linked.worldReleaseId!})
   const sourceKey = index.selectionOptions.characters.find(c => c.label === '林舟')!.resourceKey
-  const draft = await saveChatDraftV1(scope, linked.revision, {...parseChatAuthoringSettings(JSON.parse(linked.settingsJson)),
-    playerRole: '来店里借书的旅人沈禾，没有答应帮忙修理。', openingSituation: '雨天，修钟铺的一台旧钟停了。',
+  const base = parseChatAuthoringSettings(JSON.parse(linked.settingsJson))
+  if (base.version !== 3) throw new Error('fixture version')
+  const playerCharacterKey = index.selectionOptions.characters.find(c => c.label === '守潮人')!.resourceKey
+  const draft = await saveChatDraftV1(scope, linked.revision, {...base,
+    ...(options.mappedPlayer ? {narrative: {...base.narrative, playerCharacterKey, personaName: '守潮人'}} : {}),
+    playerRole: options.mappedPlayer ? '来到修钟铺的守潮人，没有答应帮忙修理。' : '来店里借书的旅人沈禾，没有答应帮忙修理。', openingSituation: '雨天，修钟铺的一台旧钟停了。',
     characters: [{sourceKey, voiceRules: '', privateKnowledge: '', initialTrust: 0}]})
   const projection = await loadChatSourceProjectionV1(scope, draft.revision)
   const confirmed = await confirmChatSourceReviewV1(scope, draft.revision, {
     projectionHash: projection.projectionHash,
-    classifications: projection.characters.flatMap(c => c.fragments.map(f => ({
+    classifications: chatProjectionResourcesV1(projection).flatMap(c => c.fragments.map(f => c.resourceKey === projection.playerCharacter?.resourceKey ? ({
+      projectionHash: projection.projectionHash, fragmentKey: f.fragmentKey,
+      purpose: ['/name', '/identity'].includes(f.pointer) ? 'identity' : 'knowledge',
+      visibility: ['/name', '/identity'].includes(f.pointer) ? 'public' : f.pointer === '/background' ? 'participants' : 'author-only',
+      audienceKeys: f.pointer === '/background' ? ['player'] : [],
+    }) : ({
       projectionHash: projection.projectionHash, fragmentKey: f.fragmentKey,
       purpose: f.pointer === '/background' ? 'motivation' : f.pointer === '/personality' ? 'voice' : 'identity',
       visibility: f.pointer === '/name' ? 'public' : ['/background','/personality'].includes(f.pointer) ? 'participants' : 'author-only',

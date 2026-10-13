@@ -109,8 +109,8 @@ it('plans a durable author gate and prevents the situation model from rereading 
   expect(() => parseProductProductionCommandV1({...command, resolution: {...command.resolution, chatSituation: {...chatSituation, authorCommandId: 'forged'}}})).toThrow('字段')
 })
 
-it('runs the formal scheduler through author selection, refresh and integration without regenerating candidates', async () => {
-  const f = await seedChatNarrativeProductionFixture()
+it.each([false, true])('runs the formal scheduler through selection, release and transfer without regenerating candidates (mapped player=%s)', async (mappedPlayer) => {
+  const f = await seedChatNarrativeProductionFixture({mappedPlayer})
   const created = await executeProductProductionCommand({scope: f.scope, command: {
     type: 'create-intent', commandId: 'chat.intent', productionKey: 'chat.situation-production', productType: 'character-interaction',
     worldReleaseId: f.confirmed.worldReleaseId!, userText: '制作可以自由演绎的角色聊天',
@@ -229,6 +229,11 @@ it('runs the formal scheduler through author selection, refresh and integration 
   const state = await readProductRuntimeState(session.id!)
   expect(state.interaction!.chatNarrative!.situation.title).toBe('旧账本')
   expect(state.interaction!.chatNarrative!.persona.name).toBe(f.settings.narrative.personaName)
+  if (mappedPlayer) {
+    expect(state.interaction!.chatNarrative!.persona.origin).toBe('world-character')
+    expect(state.interaction!.chatNarrative!.persona.source).toEqual(f.source.source.playerCharacterSource)
+    expect(state.interaction!.profiles.some(p => p.characterKey === f.settings.narrative.playerCharacterKey)).toBe(false)
+  }
   db.close(); await db.open()
   expect(await readProductRuntimeState(session.id!)).toEqual(state)
   const importedId = await importProjectJSON(await exportProjectJSON(f.scope.projectId))

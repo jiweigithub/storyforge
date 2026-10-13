@@ -359,6 +359,7 @@ export async function draftProductProductionBriefV3(input: {
     }
     const available = new Set(source.selectionOptions.characters.map(c => c.resourceKey))
     if (keys.some(key => !available.has(key))) throw new Error('角色设置包含当前世界版本中不存在的人物，请重新选择。')
+    if (characterChat.version === 3 && characterChat.narrative.playerCharacterKey && !available.has(characterChat.narrative.playerCharacterKey)) throw new Error('玩家人物不属于当前冻结世界，请重新选择。')
     selectedCatalog.characterResourceKeys = keys
   }
   if (input.productType === 'ai-town') {
@@ -392,11 +393,13 @@ export async function draftProductProductionBriefV3(input: {
   const roleBindings = compileUpperProductWorldRoleBindingsV1(input.productType, selectedCatalog)
   const backgroundKeys = characterChat && characterChat.version !== 1 ? characterChat.backgroundResourceKeys ?? [] : []
   if (backgroundKeys.length) roleBindings.chatBackground = [...backgroundKeys]
+  const playerKeys = characterChat?.version === 3 && characterChat.narrative.playerCharacterKey ? [characterChat.narrative.playerCharacterKey] : []
+  if (playerKeys.length) roleBindings.chatPlayer = playerKeys
   const selection: ProductWorldSourceSelectionV1 = {
     schema: 'storyforge.product-world-source-selection', version: 1,
     productType: input.productType,
     worldReferenceHash: source.worldReference.referenceHash,
-    resourceKeys: [...new Set([...Object.values(selectedCatalog).flat(), ...backgroundKeys])].sort(),
+    resourceKeys: [...new Set([...Object.values(selectedCatalog).flat(), ...backgroundKeys, ...playerKeys])].sort(),
     roleBindings,
   }
   if (characterChat && characterChat.version !== 1) {

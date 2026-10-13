@@ -341,11 +341,14 @@ export async function loadProductProductionWorldSourceCatalogV2(input: {
   const chatCharacterKeys = input.selection.productType === 'character-interaction'
     ? (input.selection.roleBindings.characters ?? input.selection.roleBindings.participants ?? []).slice(0, 8)
     : []
+  const chatPlayerKeys = input.selection.productType === 'character-interaction' ? input.selection.roleBindings.chatPlayer ?? [] : []
+  if (chatPlayerKeys.length > 1 || chatPlayerKeys.some(key => chatCharacterKeys.includes(key))) throw new Error('玩家人物必须是一个独立的冻结来源')
   const chatSourceProjection = chatCharacterKeys.length
     ? await (await import('../character-interaction/source-projection')).createChatSourceProjectionDraftV1({
       worldReferenceHash: opened.description.worldReference.referenceHash,
       worldReleaseHash: opened.description.identity.releaseHash,
       characterResourceKeys: chatCharacterKeys,
+      playerCharacterKey: chatPlayerKeys[0],
       backgroundResourceKeys: input.selection.roleBindings.chatBackground,
       resources,
     })

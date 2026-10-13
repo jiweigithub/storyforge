@@ -41,7 +41,9 @@ export function parseChatAuthoringSettings(value: unknown): ChatAuthoringSetting
     if (row.version === 3) {
         const {narrative, ...base} = row;
         const parsed = parseChatAuthoringSettings({...base, version: 2}) as ChatAuthoringSettingsV2;
-        return {...parsed, version: 3, narrative: parseChatNarrativeSetupV1(narrative)};
+        const setup = parseChatNarrativeSetupV1(narrative);
+        if (setup.playerCharacterKey && parsed.characters.some(c => c.sourceKey === setup.playerCharacterKey)) throw new Error('同一世界人物不能同时由玩家与 AI 扮演');
+        return {...parsed, version: 3, narrative: setup};
     }
     if (row.version === 1) return parseChatAuthoringSettingsV1(row);
     if (row.version !== 2 || !Object.prototype.hasOwnProperty.call(row, 'sourceReview'))

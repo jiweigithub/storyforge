@@ -4,6 +4,7 @@ import { chatProjectionResourcesV1, readPreparedChatSourceProjectionViewV1 } fro
 import type { FrozenChatSourceProjectionV1 } from '../types/character-interaction'
 import type { FrozenChatNarrativeV1 } from '../types/chat-narrative'
 import { parseFrozenChatNarrativeV1 } from '../character-interaction/narrative-contract'
+import {createChatPersonaV1} from '../character-interaction/persona-source'
 import { canonicalStringify } from '../agent/run/hash'
 import type {
   AdventureContentV1,
@@ -322,7 +323,7 @@ export function compileInteractionModulesV1(input: ProductModuleCompilerInputV1)
     if (!input.chatNarrative || !projected) fail('主动叙事需要作者选定的初始情境，不能回退为旧版回复包')
     const content = parseFrozenChatNarrativeV1(input.chatNarrative, {source: projected.content,
       participantKeys, characterKeys: profiles.map(p => p.characterKey), sceneKeys: [input.chatNarrative.initialSituation.sceneKey]})
-    const expectedPersona = {playerKey: 'player', name: chat.narrative.personaName, description: chat.playerRole, origin: 'product-private'}
+    const expectedPersona = createChatPersonaV1(chat, projected.content)
     if (canonicalStringify(content.persona) !== canonicalStringify(expectedPersona)
       || canonicalStringify(content.permissions) !== canonicalStringify(chat.narrative.permissions)
       || content.initialSituation.seed.text !== chat.openingSituation
@@ -400,6 +401,9 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
     || keys.length !== participantKeys.length || input.brief.source.worldContentHash !== draft.worldReleaseHash
     || input.brief.source.selection.worldReferenceHash !== draft.worldReferenceHash) fail('角色投影与冻结选择不一致')
   const backgroundKeys = [...(chat.backgroundResourceKeys ?? [])].sort()
+  const playerKey = chat.version === 3 ? chat.narrative.playerCharacterKey : undefined
+  if (playerKey !== draft.playerCharacter?.resourceKey
+    || JSON.stringify(playerKey ? [playerKey] : []) !== JSON.stringify(input.brief.source.selection.roleBindings.chatPlayer ?? [])) fail('玩家人物投影与冻结选择不一致')
   if (JSON.stringify(backgroundKeys) !== JSON.stringify((draft.background ?? []).map(resource => resource.resourceKey))
     || JSON.stringify(backgroundKeys) !== JSON.stringify([...(input.brief.source.selection.roleBindings.chatBackground ?? [])].sort())) fail('背景资料投影与冻结选择不一致')
   const viewers = ['player', ...keys]
@@ -410,8 +414,9 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
   }
   const purposes = new Map(chat.sourceReview.classifications.map(item => [item.fragmentKey, item.purpose]))
   const content: FrozenChatSourceProjectionV1 = {
-    schema: 'storyforge.chat-runtime-source', version: draft.background?.length ? 2 : 1, projectionHash: draft.projectionHash,
-    ...(draft.background?.length ? {backgroundSources: draft.background.filter(resource => resource.fragments.some(fragment => visibleByFragment.has(fragment.fragmentKey)))
+    schema: 'storyforge.chat-runtime-source', version: draft.playerCharacter ? 3 : draft.background?.length ? 2 : 1, projectionHash: draft.projectionHash,
+    ...(draft.playerCharacter ? {playerCharacterSource: {resourceKey: draft.playerCharacter.resourceKey, sourceHash: draft.playerCharacter.sourceHash}} : {}),
+    ...(draft.background?.length || draft.playerCharacter ? {backgroundSources: (draft.background ?? []).filter(resource => resource.fragments.some(fragment => visibleByFragment.has(fragment.fragmentKey)))
       .map(({resourceKey, sourceHash, resourceKind, relatedResourceKeys}) => ({resourceKey, sourceHash, resourceKind,
         ...(relatedResourceKeys ? {relatedResourceKeys} : {})}))} : {}),
     worldReleaseHash: draft.worldReleaseHash, playerRole: input.brief.intent.playerRole,

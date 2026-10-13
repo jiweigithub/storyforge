@@ -4,6 +4,7 @@ import type { ChatAuthoringSettingsV3 } from './authoring-contract'
 import { parseChatAuthoringSettings } from './authoring-contract'
 import { parseFrozenChatNarrativeV1 } from './narrative-contract'
 import { parseFrozenChatSourceV1 } from './runtime'
+import {createChatPersonaV1} from './persona-source'
 import type { ChatSituationV1, FrozenChatNarrativeV1 } from '../types/chat-narrative'
 import type { FrozenChatSourceProjectionV1 } from '../types/character-interaction'
 import type { ProductRuntimePackageV1 } from '../types'
@@ -64,12 +65,13 @@ export function validateChatNarrativeProductionSourceV1(value: ChatNarrativeProd
   if (participantKeys.includes('player') || new Set(participantKeys).size !== participantKeys.length) fail('情境角色身份重复')
   for (const p of value.participants) {record(p, 'participantKey,characterKey,name,voiceRules'); key(p.participantKey); text(p.name, 240); text(p.voiceRules, 8000)}
   parseFrozenChatSourceV1(value.source, participantKeys, resourceKeys)
+  createChatPersonaV1(settings, value.source)
 }
 
 function frozen(option: ChatSituationOptionV1, input: ChatNarrativeProductionSourceV1): FrozenChatNarrativeV1 {
   return {
     schema: 'storyforge.chat-narrative-content', version: 1, worldReleaseHash: input.source.worldReleaseHash,
-    persona: {playerKey: 'player', name: input.settings.narrative.personaName, description: input.settings.playerRole, origin: 'product-private'},
+    persona: createChatPersonaV1(input.settings, input.source),
     permissions: structuredClone(input.settings.narrative.permissions),
     initialSituation: {...structuredClone(option.situation), seed: {text: input.settings.openingSituation, origin: 'author-confirmed', sourceEventSequence: 0, sourceThreadKey: null}},
   }

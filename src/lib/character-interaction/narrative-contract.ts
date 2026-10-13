@@ -1,4 +1,5 @@
 import {validateChatMessageEditDraftV1} from './narrative-edit-contract'
+import {parseChatPersonaV1} from './persona-source'
 import { isSha256Hash } from '../product-production/hash'
 import { CHAT_NARRATIVE_TRIGGERS_V1, CHAT_THREAD_STATUSES_V1 } from '../types/chat-narrative'
 import type { ChatNarrativePermissionsV1, ChatNarrativeStateV1, ChatNarrativeTriggerStateV1, ChatTurnDirectionV1, ChatSituationV1, FrozenChatNarrativeV1 } from '../types/chat-narrative'
@@ -68,9 +69,7 @@ function validateCommon(value: Row, boundary: ChatNarrativeBoundaryV1) {
   if (!boundary.participantKeys.length || boundary.participantKeys.includes('player')
     || new Set(boundary.participantKeys).size !== boundary.participantKeys.length
     || boundary.participantKeys.length !== boundary.characterKeys.length) fail('参与角色边界无效')
-  const persona = row(value.persona, 'playerKey,name,description,origin', '玩家身份')
-  if (persona.playerKey !== 'player' || persona.origin !== 'product-private') fail('玩家身份来源无效')
-  text(persona.name, '玩家名称', 200); text(persona.description, '玩家虚构背景')
+  parseChatPersonaV1(value.persona, boundary.characterKeys)
   return parseChatNarrativePermissionsV1(value.permissions)
 }
 
@@ -165,6 +164,8 @@ export function parseFrozenChatNarrativeV1(value: unknown, input: ChatNarrativeB
   if (parsed.worldReleaseHash !== input.source.worldReleaseHash) fail('叙事情境与已确认来源世界不同')
   validateSituation(parsed.initialSituation, input, true, Number(permissions.maxActiveThreads))
   const content = structuredClone(value) as FrozenChatNarrativeV1
+  if (content.persona.source?.resourceKey !== input.source.playerCharacterSource?.resourceKey
+    || content.persona.source?.sourceHash !== input.source.playerCharacterSource?.sourceHash) fail('玩家人物与冻结来源证据不一致')
   for (const fact of content.initialSituation.facts.filter(item => item.origin === 'reviewed-world')) {
     const source = input.source.knowledge.find(item => item.key === fact.sourceKnowledgeKey)
     if (!source || !['identity', 'knowledge'].includes(source.source.purpose) || source.content !== fact.text
