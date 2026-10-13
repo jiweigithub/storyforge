@@ -3167,7 +3167,7 @@ export const AGENT_SKILLS = [
     maxOutputTokens: 4_000,
     writeTargets: [],
     lastVerifiedAt: '2026-10-13',
-    regressionTests: ['R-CHAT-02-narrative-actions', 'R-CHAT-02-narrative-harness', 'R-CHAT-02-narrative-player', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression', 'R-CHAT-03-history-edit', 'R-CHAT-03-reply-continuation'],
+    regressionTests: ['R-CHAT-02-narrative-actions', 'R-CHAT-02-narrative-harness', 'R-CHAT-02-narrative-player', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression', 'R-CHAT-03-history-edit', 'R-CHAT-03-reply-continuation', 'R-CHAT-03-turn-resume'],
   },
   {
     version: 1, id: 'character.chat-narrative-action-review', agentId: 'character', defaultForAgent: false,
@@ -3200,7 +3200,7 @@ export const AGENT_SKILLS = [
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['chatSituationRuntime'], optionalContextSourceKeys: [], inputPolicy: CHAT_SITUATION_INPUT_POLICY,
     contextCompression: compressionPolicy(['chatSituationRuntime']), maxOutputTokens: 6000, writeTargets: [],
-    lastVerifiedAt: '2026-10-13', regressionTests: ['R-CHAT-02-runtime-situation', 'R-CHAT-02-situation-harness', 'R-CHAT-02-actor-progression'],
+    lastVerifiedAt: '2026-10-13', regressionTests: ['R-CHAT-02-runtime-situation', 'R-CHAT-02-situation-harness', 'R-CHAT-02-actor-progression', 'R-CHAT-03-turn-resume'],
   },
   {
     version: 1, id: 'character.chat-situation-review', agentId: 'character', defaultForAgent: false,
