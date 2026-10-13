@@ -3156,7 +3156,7 @@ export const AGENT_SKILLS = [
     defaultForAgent: false,
     label: '角色聊天情境行动候选',
     owner: 'character-chat-product',
-    promptVersion: 'chat-narrative-action-v14',
+    promptVersion: 'chat-narrative-action-v15',
     executionMode: 'character-reply',
     contextTaskKind: 'agent-character',
     readToolNames: [],
@@ -3167,7 +3167,7 @@ export const AGENT_SKILLS = [
     maxOutputTokens: 4_000,
     writeTargets: [],
     lastVerifiedAt: '2026-10-14',
-    regressionTests: ['R-CHAT-03-context-retrieval', 'R-CHAT-02-narrative-actions', 'R-CHAT-02-narrative-harness', 'R-CHAT-02-narrative-player', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression', 'R-CHAT-03-history-edit', 'R-CHAT-03-reply-continuation', 'R-CHAT-03-turn-resume', 'R-CHAT-03-options-history', 'R-CHAT-03-context-inspector', 'R-CHAT-03-turn-direction'],
+    regressionTests: ['R-CHAT-03-scheduling', 'R-CHAT-03-context-retrieval', 'R-CHAT-02-narrative-actions', 'R-CHAT-02-narrative-harness', 'R-CHAT-02-narrative-player', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression', 'R-CHAT-03-history-edit', 'R-CHAT-03-reply-continuation', 'R-CHAT-03-turn-resume', 'R-CHAT-03-options-history', 'R-CHAT-03-context-inspector', 'R-CHAT-03-turn-direction'],
   },
   {
     version: 1, id: 'character.chat-narrative-action-review', agentId: 'character', defaultForAgent: false,
@@ -3180,11 +3180,11 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'character.chat-narrative-options', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天两种行动候选', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-v4',
+    label: '角色聊天两种行动候选', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-v5',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['interactionRuntime'], optionalContextSourceKeys: [], inputPolicy: INTERACTION_RUNTIME_INPUT_POLICY,
     contextCompression: INTERACTION_RUNTIME_COMPRESSION_POLICY, maxOutputTokens: 8000, writeTargets: [],
-    lastVerifiedAt: '2026-10-14', regressionTests: ['R-CHAT-03-context-retrieval', 'R-CHAT-03-action-options', 'R-CHAT-03-options-history', 'R-CHAT-03-context-inspector', 'R-CHAT-03-turn-direction'],
+    lastVerifiedAt: '2026-10-14', regressionTests: ['R-CHAT-03-scheduling', 'R-CHAT-03-context-retrieval', 'R-CHAT-03-action-options', 'R-CHAT-03-options-history', 'R-CHAT-03-context-inspector', 'R-CHAT-03-turn-direction'],
   },
   {
     version: 1, id: 'character.chat-narrative-options-review', agentId: 'character', defaultForAgent: false,

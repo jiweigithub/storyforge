@@ -155,6 +155,8 @@ export interface ChatNarrativeTriggerStateV1 {
 export interface ChatTurnDirectionV1 {
   actorKey: string
   actionLimit: number
+  /** Absent on historical/manual turns. The pool is frozen for this trigger. */
+  scheduling?: {mode: 'natural' | 'round-robin'; participantKeys: string[]}
 }
 
 export interface ChatActorSituationRequestV1 {

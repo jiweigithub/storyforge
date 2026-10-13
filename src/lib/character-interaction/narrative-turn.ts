@@ -1,4 +1,5 @@
 import {chatTurnActionLimitV1} from './narrative-contract'
+import {createChatScheduledDirectionV1, nextChatScheduledActorV1, type ChatSchedulingModeV1} from './narrative-scheduling'
 import { assertInstanceBinding } from '../product/runtime-instances'
 import {db} from '../db/schema'
 import {readInstanceAgentRunV1} from '../agent/run/event-store'
@@ -25,6 +26,7 @@ export interface ChatNarrativeTurnResumeV1 {
   actorKey: string | null
   remainingActions: number
   blockedReason: string | null
+  schedulingMode?: Exclude<ChatSchedulingModeV1, 'manual'>
 }
 
 export async function readChatNarrativeTurnResumeV1(scope: WorkspaceScope, sessionId: number, state: CharacterInteractionRuntimeState): Promise<ChatNarrativeTurnResumeV1 | null> {
@@ -32,13 +34,17 @@ export async function readChatNarrativeTurnResumeV1(scope: WorkspaceScope, sessi
   const story = state.chatNarrative, trigger = story?.triggers.slice(-1)[0]
   if (!state.activeScene || !story || story.pendingEdit || trigger?.status !== 'ready') return null
   const lastAction = trigger.actionSequences.slice(-1)[0]
-  const actorKey = trigger.direction?.actorKey ?? (lastAction == null ? null : state.messages.find(m => m.eventSequence === lastAction && m.role === 'character')?.speakerKey ?? null)
+  const constructingSeed = chatSituationConstructionRequestV1(state)?.origin === 'player-request'
+  const actorKey = trigger.direction?.scheduling && !constructingSeed ? nextChatScheduledActorV1(state, trigger)
+    : trigger.direction?.actorKey ?? (lastAction == null ? null : state.messages.find(m => m.eventSequence === lastAction && m.role === 'character')?.speakerKey ?? null)
   const remainingActions = Math.max(0, chatTurnActionLimitV1(story.permissions, trigger) - trigger.actionSequences.length)
-  const view = {triggerSequence: trigger.requestedSequence, actorKey, remainingActions, blockedReason: null as string | null}
+  const view = {triggerSequence: trigger.requestedSequence, actorKey, remainingActions, blockedReason: null as string | null,
+    ...(trigger.direction?.scheduling ? {schedulingMode: trigger.direction.scheduling.mode} : {})}
   if (!remainingActions || state.remainingDirectorBudget < 2) return {...view, blockedReason: '本轮剩余额度不足，不能继续生成。'}
-  if (lastAction != null && !actorKey) return {...view, blockedReason: '本轮原角色消息不完整，不能推定由谁继续。'}
-  if (actorKey && !story.situation.goals.some(goal => goal.actorKey === actorKey && ['active', 'paused'].includes(goal.status))) return {...view, blockedReason: '本轮角色的目标已经结束，无需补齐行动。'}
-  if (story.pendingSituation?.actorKey === actorKey && story.situation.seed.origin === 'continued-thread'
+  if (trigger.direction?.scheduling && !actorKey) return {...view, blockedReason: '本轮已没有可继续行动的角色，无需补齐。'}
+  if (!trigger.direction?.scheduling && lastAction != null && !actorKey) return {...view, blockedReason: '本轮原角色消息不完整，不能推定由谁继续。'}
+  if (!constructingSeed && actorKey && !story.situation.goals.some(goal => goal.actorKey === actorKey && ['active', 'paused'].includes(goal.status))) return {...view, blockedReason: '本轮角色的目标已经结束，无需补齐行动。'}
+  if (story.pendingSituation && (trigger.direction?.scheduling || story.pendingSituation.actorKey === actorKey) && story.situation.seed.origin === 'continued-thread'
     && story.situation.seed.sourceEventSequence === trigger.requestedSequence) return {...view, blockedReason: '本轮已经发展过一次局面。新的角色方向需在下一轮明确继续。'}
   const [rows, events] = await Promise.all([
     db.agentRuns.where('productRuntimeSessionId').equals(sessionId).toArray(),
@@ -75,9 +81,10 @@ export async function resumeChatNarrativeTurnV1(input: {
   const view = await readChatNarrativeTurnResumeV1(input.scope, input.sessionId, state.interaction)
   if (!view) throw new Error('当前没有可以补齐的未完成轮次。')
   if (view.blockedReason) throw new Error(view.blockedReason)
-  if (view.actorKey && input.participantKey && input.participantKey !== view.actorKey) throw new Error('补齐本轮须沿用原行动角色；换角色请开始下一轮。')
+  if (!view.schedulingMode && view.actorKey && input.participantKey && input.participantKey !== view.actorKey) throw new Error('补齐本轮须沿用原行动角色；换角色请开始下一轮。')
   const trigger = state.interaction.chatNarrative!.triggers.slice(-1)[0]!
-  const actor = actorFor(state.interaction, trigger.kind === 'player-seed' ? 'continue' : trigger.kind, view.actorKey ?? input.participantKey)
+  const actor = view.schedulingMode || chatSituationConstructionRequestV1(state.interaction)?.origin === 'player-request'
+    ? view.actorKey ?? input.participantKey ?? null : actorFor(state.interaction, trigger.kind === 'player-seed' ? 'continue' : trigger.kind, view.actorKey ?? input.participantKey)
   if (!actor) throw new Error('角色当前目标已经结束，无需补齐行动。')
   if ((await readProductRuntimeStateVersion(input.sessionId)).sequence !== input.expectedSequence) throw new Error('当前情境已变化，请刷新后继续。')
   const request = chatSituationConstructionRequestV1(state.interaction, actor)
@@ -132,6 +139,7 @@ export async function advanceChatNarrativeTurnV1(input: {
   replyToSequence?: number
   participantKey?: string
   actionLimit?: number
+  schedulingMode?: ChatSchedulingModeV1
   aiConfig: AIConfig
   /** Compare one next action after any explicitly authorized shared background. */
   compare?: boolean
@@ -155,12 +163,14 @@ export async function advanceChatNarrativeTurnV1(input: {
   const pending = await readPendingChatNarrativeRunsV1(input.scope, input.sessionId, state)
   if (pending.length) throw new Error(`上次行动尚未结束（运行 #${pending.join('、#')}），请先恢复候选或取消该运行。`)
   // Do not spend a model call or consume a trigger when every role has concluded.
-  const actor = actorFor(state, input.kind, input.participantKey)
+  const direction = input.schedulingMode && input.schedulingMode !== 'manual'
+    ? createChatScheduledDirectionV1(state, {mode: input.schedulingMode, kind: input.kind, sourceSequence: source, actionLimit: input.actionLimit ?? 1}) : undefined
+  const actor = direction?.actorKey ?? actorFor(state, input.kind, input.participantKey)
   if (!actor) throw new Error('角色当前目标已经结束，可以结束场景或稍后设置新情境。')
   if (state.chatNarrative.pendingSituation?.actorKey === actor && ['continue', 'return'].includes(input.kind) && state.remainingDirectorBudget < 4) throw new Error('当前预算不足以发展角色方向并继续演绎。')
   const requested = await requestChatNarrativeTrigger({sessionId: input.sessionId,
     commandId: `chat.turn:${crypto.randomUUID()}`, baseSequence: version.sequence, baseStateHash: version.stateHash,
-    kind: input.kind, sourceEventSequence: source, ...(input.actionLimit === undefined ? {} : {direction: {actorKey: actor, actionLimit: input.actionLimit}})})
+    kind: input.kind, sourceEventSequence: source, ...(direction ? {direction} : input.actionLimit === undefined ? {} : {direction: {actorKey: actor, actionLimit: input.actionLimit}})})
   await performPreparedTurn({...input, actor, triggerSequence: requested.sequence, objective: objectives[input.kind]})
 }
 
@@ -177,12 +187,13 @@ async function performPreparedTurn(input: {
     let current = (await readProductRuntimeState(input.sessionId)).interaction!
     const trigger = current.chatNarrative!.triggers.slice(-1)[0]!
     if (trigger.requestedSequence !== input.triggerSequence || trigger.status !== 'ready' || current.remainingDirectorBudget < 2) return
-    if (!current.chatNarrative!.situation.goals.some(g => g.actorKey === input.actor && ['active', 'paused'].includes(g.status))) return
+    let actor = trigger.direction?.scheduling ? nextChatScheduledActorV1(current, trigger) : input.actor
+    if (!actor || !current.chatNarrative!.situation.goals.some(g => g.actorKey === actor && ['active', 'paused'].includes(g.status))) return
     const story = current.chatNarrative!
-    if (story.pendingSituation?.actorKey === input.actor && story.situation.seed.origin === 'continued-thread'
+    if (story.pendingSituation && (trigger.direction?.scheduling || story.pendingSituation.actorKey === actor) && story.situation.seed.origin === 'continued-thread'
       && story.situation.seed.sourceEventSequence === trigger.requestedSequence) return
-    const request = chatSituationConstructionRequestV1(current, input.actor)
-    if (request?.actorKey === input.actor) {
+    const request = chatSituationConstructionRequestV1(current, actor)
+    if (request?.actorKey === actor) {
       if (current.remainingDirectorBudget < 4) throw new Error('当前预算不足以发展角色方向并继续演绎。')
       const situation = await generateInteractionRuntimeCandidateV1({scope: input.scope, productRuntimeSessionId: input.sessionId,
         skillId: 'character.chat-situation-construction', participantKey: 'player', narrativeTriggerSequence: input.triggerSequence,
@@ -193,9 +204,11 @@ async function performPreparedTurn(input: {
       current = (await readProductRuntimeState(input.sessionId)).interaction!
       if (input.signal?.aborted || current.chatNarrative!.triggers.slice(-1)[0]?.requestedSequence !== input.triggerSequence
         || current.chatNarrative!.triggers.slice(-1)[0]?.status !== 'ready') return
+      if (trigger.direction?.scheduling) actor = nextChatScheduledActorV1(current, current.chatNarrative!.triggers.slice(-1)[0]!)
+      if (!actor) return
     }
     const generated = await generateInteractionRuntimeCandidateV1({scope: input.scope, productRuntimeSessionId: input.sessionId,
-      skillId: input.compare ? 'character.chat-narrative-options' : 'character.chat-narrative-action', participantKey: input.actor, narrativeTriggerSequence: input.triggerSequence,
+      skillId: input.compare ? 'character.chat-narrative-options' : 'character.chat-narrative-action', participantKey: actor, narrativeTriggerSequence: input.triggerSequence,
       objective: input.objective, aiConfig: input.aiConfig, signal: input.signal, onRunCreated: input.onRunCreated})
     if (input.signal?.aborted) return
     // Comparison ends at the reviewed checkpoint. Even a multi-action trigger
@@ -208,7 +221,7 @@ async function performPreparedTurn(input: {
 /** An explicit backstage request is neither player dialogue nor an event that
  * has happened. Construct and review first, then let one selected role act. */
 export async function createChatNarrativeSituationV1(input: {
-  scope: WorkspaceScope; sessionId: number; expectedSequence: number; seed: string; participantKey?: string; actionLimit?: number
+  scope: WorkspaceScope; sessionId: number; expectedSequence: number; seed: string; participantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1
   aiConfig: AIConfig; actionAiConfig?: AIConfig; signal?: AbortSignal; onRunCreated?: (id: number) => void
 }): Promise<void> {
   await assertInstanceBinding(input.sessionId, input.scope)
@@ -217,12 +230,14 @@ export async function createChatNarrativeSituationV1(input: {
   const state = (await readProductRuntimeState(input.sessionId)).interaction
   if (version.sequence !== input.expectedSequence || !state?.activeScene || !state.chatNarrative) throw new Error('当前情境已变化，请刷新后继续。')
   const active = state.activeScene.activeParticipantKeys
-  const actor = input.participantKey || (active.length === 1 ? active[0] : null)
+  const direction = input.schedulingMode && input.schedulingMode !== 'manual'
+    ? createChatScheduledDirectionV1(state, {mode: input.schedulingMode, kind: 'player-seed', sourceSequence: version.sequence, actionLimit: input.actionLimit ?? 1}) : undefined
+  const actor = direction?.actorKey ?? (input.participantKey || (active.length === 1 ? active[0] : null))
   if (!actor || !active.includes(actor)) throw new Error('请选择新情境中行动的在场角色。')
   if (state.remainingDirectorBudget < 4) throw new Error('当前预算不足以构建、审查并演绎新情境。')
   if ((await readPendingChatNarrativeRunsV1(input.scope, input.sessionId, state)).length) throw new Error('请先恢复或取消尚未完成的行动。')
   const trigger = await requestChatNarrativeTrigger({sessionId: input.sessionId, commandId: `chat.seed:${crypto.randomUUID()}`,
-    baseSequence: version.sequence, baseStateHash: version.stateHash, kind: 'player-seed', sourceEventSequence: version.sequence, seed: input.seed, ...(input.actionLimit === undefined ? {} : {direction: {actorKey: actor, actionLimit: input.actionLimit}})})
+    baseSequence: version.sequence, baseStateHash: version.stateHash, kind: 'player-seed', sourceEventSequence: version.sequence, seed: input.seed, ...(direction ? {direction} : input.actionLimit === undefined ? {} : {direction: {actorKey: actor, actionLimit: input.actionLimit}})})
   const generated = await generateInteractionRuntimeCandidateV1({scope: input.scope, productRuntimeSessionId: input.sessionId,
     skillId: 'character.chat-situation-construction', participantKey: 'player', narrativeTriggerSequence: trigger.sequence,
     objective: '将玩家最新情境请求内化为当前背景与开放方向，承接旧问题，保留玩家选择。',

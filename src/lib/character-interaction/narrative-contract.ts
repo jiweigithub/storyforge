@@ -10,9 +10,18 @@ export function chatTurnActionLimitV1(permissions: ChatNarrativePermissionsV1, t
 }
 
 export function parseChatTurnDirectionV1(value: unknown, participantKeys: readonly string[], maximum: number): ChatTurnDirectionV1 {
-  const direction = row(value, 'actorKey,actionLimit', '本轮演绎设置')
+  const hasScheduling = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'scheduling')
+  const direction = row(value, 'actorKey,actionLimit' + (hasScheduling ? ',scheduling' : ''), '本轮演绎设置')
   members([direction.actorKey], participantKeys, '本轮行动角色', true)
   integer(direction.actionLimit, '本轮动作上限', 1, maximum)
+  if (hasScheduling) {
+    const scheduling = row(direction.scheduling, 'mode,participantKeys', '本轮角色调度')
+    if (!['natural', 'round-robin'].includes(String(scheduling.mode))) fail('本轮角色调度方式无效')
+    const pool = members(scheduling.participantKeys, participantKeys, '本轮调度角色', true)
+    if (!pool.includes(String(direction.actorKey))) fail('本轮首选角色不在调度范围')
+    return {actorKey: String(direction.actorKey), actionLimit: Number(direction.actionLimit),
+      scheduling: {mode: scheduling.mode as 'natural' | 'round-robin', participantKeys: [...pool]}}
+  }
   return {actorKey: String(direction.actorKey), actionLimit: Number(direction.actionLimit)}
 }
 export interface ChatNarrativeBoundaryV1 {

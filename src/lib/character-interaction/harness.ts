@@ -1,4 +1,5 @@
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
+import {assertChatTurnActorV1} from './narrative-scheduling'
 import {buildInteractionContextWindow} from './runtime'
 import {CHAT_CONTEXT_READER_VERSION_V1} from './context-selection'
 import { chat } from '../ai/client'
@@ -341,6 +342,7 @@ function prompt(input: {
         '拒绝邀请、要求休息、另提方法或不愿亲近本身不是失信或不尊重，不能因此减信任/尊重/亲近或增戒备；继续、返回和离开应用不能产生关系奖励或惩罚。实际欺骗、威胁等独立行为才可依据其本身审查影响。',
         '每次结合本次选择与结果检查旧 possibilities 和 beliefs。玩家拒绝或另提办法后，不能在正文答应改变，却保留依赖玩家参与的旧打算；新的证据推翻猜测后，也不能继续把旧猜测当依据。没有必要时不机械重写背景。',
         'nextPossibilities=null 保留自己的打算；数组完整替换自己的打算，最多三项 {text,evidenceFactKeys}，[] 明确清空。系统指定行动角色，不能传 actorKey 或替其他人规划。每项引用自己已知事实，可引用本次实际完成并登记的新事实；打算仍是未执行、可改变的方向，不写成已发生结果，不替玩家决定。目标全部 fulfilled/abandoned 时必须清空旧打算。暂停可保留有明确恢复条件的打算，不按离线时间执行。',
+        '本轮可能由不同角色接续行动。只承接自己确实可见的对话，以自身目标决定补充、分歧、行动或暂停；不要轮流复述相同信息，不替其他角色发言或决定他们的回应。轮到你不代表你必须制造事件，没有可推进内容可以暂停。',
         'situationRequest 默认为 null。仅 allowActorSituationExpansion=true 且不等待玩家、不暂停、当前 goalKey 仍 active 时，可提出一次 {threadKey,direction,evidenceFactKeys,evidenceExcerpt}，关联自己知情且参与的 open/blocked 剧情线和已知事实，evidenceExcerpt 摘录本次表达。用于下一步确实需要补足的局部条件或线索方向，不是既成发现，不预定玩家、他人的行为或结局，不重复已拒绝方向。普通说话、自身小动作、已存在条件下的行动不需要它。玩家要求休息或等待决定时不提出；无须每次增加新剧情。',
         'beliefUpdates 每项 {beliefKey,text,evidenceFactKeys}：修正自己的已有猜测，或添加自己的新猜测；text=null 撤回既有猜测。每项需要可知事实依据，系统记录本次事件，不得添加 actorKey 或 updatedSequence。猜测不能变成确定事实、透露不可知真相或替其他角色决定内心；已证实的信息进入 newFacts，撤回不成立的猜测，不建立第二份真相。',
       ] : []),
@@ -539,7 +541,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
     if (input.skillId === 'character.chat-narrative-options' && initialState.interaction?.chatNarrative?.pendingEdit) fail('待处理改写须先完成或取消，不能自动产生不同文本候选')
     if (!trigger || trigger.status !== 'ready' || !isChatSituationPreparedV1(initialState.interaction!, participantKey)) fail('缺少已经准备好的合法叙事触发')
     if (input.narrativeTriggerSequence != null && trigger.requestedSequence !== input.narrativeTriggerSequence) fail('当前叙事触发已被另一操作取代')
-    if (trigger.direction && trigger.direction.actorKey !== participantKey) fail('行动角色与本轮明确选择不一致')
+    assertChatTurnActorV1(initialState.interaction!, trigger, participantKey)
     if (initialState.interaction!.remainingDirectorBudget < 2) fail('当前场景行动与审查预算不足')
   } else if (initialState.interaction?.chatNarrative && input.skillId === 'character.interaction-reply') {
     fail('叙事情境需要角色行动候选，不能只生成旧版回复')
