@@ -6,7 +6,7 @@
  * 失败抛错由调用方决定降级——绝不污染主流程。
  */
 import type { EmbeddingConfig } from '../../types'
-import { IS_SHOWCASE, assertGenerationAvailable } from '../../showcase/policy'
+import { IS_MODEL_DISABLED_BUILD, assertGenerationAvailable } from '../../showcase/policy'
 import { recordUsage } from '../usage-log'
 import { estimateTokens } from '../context-budget'
 
@@ -17,7 +17,7 @@ export function embeddingModelTag(cfg: EmbeddingConfig): string {
 
 /** 配置是否可用于真正发起嵌入调用。 */
 export function isEmbeddingReady(cfg: EmbeddingConfig | null | undefined): cfg is EmbeddingConfig {
-  return !IS_SHOWCASE && !!(cfg && cfg.provider !== 'codex' && cfg.enabled && cfg.baseUrl && cfg.model && (cfg.apiKey || cfg.provider === 'ollama'))
+  return !IS_MODEL_DISABLED_BUILD && !!(cfg && cfg.provider !== 'codex' && cfg.enabled && cfg.baseUrl && cfg.model && (cfg.apiKey || cfg.provider === 'ollama'))
 }
 
 const EMBED_TIMEOUT_MS = 60_000

@@ -366,6 +366,7 @@ test('normal narrative chat opens, accepts refusal, continues and reloads withou
     await expect(page.getByTestId('chat-narrative-controls')).toBeVisible();
     expect(calls).toBe(0);
     await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard');
+    await page.getByLabel('演绎节奏', {exact: true}).selectOption('3');
     await page.getByRole('button', {name: '让角色开场', exact: true}).click();
     await expect(page.getByText('角色正在等你的回应。', {exact: false})).toBeVisible();
     expect(calls).toBe(2);

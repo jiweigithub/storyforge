@@ -17,6 +17,7 @@ import {
   type DeleteImportedProductReleaseResultV1,
 } from '../../lib/product-platform/distribution-bundle'
 import { useDialog } from '../shared/Dialog'
+import { createAdventureWebZipV1 } from '../../lib/adventure/web-package'
 
 export interface TextAdventurePackagePanelProps {
   scope: WorkspaceScope
@@ -27,6 +28,7 @@ export interface TextAdventurePackagePanelProps {
   }) => void | Promise<void>
   onDeleted?: (result: DeleteImportedProductReleaseResultV1) => void | Promise<void>
   exportPackage?: typeof exportTextAdventureCommunityPackageV1
+  exportWebZip?: typeof createAdventureWebZipV1
   importPackage?: typeof importTextAdventureCommunityPackageV1
   listImportedReleases?: typeof listImportedProductReleasesV1
   deleteImportedRelease?: typeof deleteImportedProductReleaseV1
@@ -54,7 +56,7 @@ function dossierCards(dossier: TextAdventureCommunityCandidateDossierV1) {
 export default function TextAdventurePackagePanel(props: TextAdventurePackagePanelProps) {
   const dialog = useDialog()
   const { projectId, worldId, workId } = props.scope
-  const [busy, setBusy] = useState<'export' | 'import' | 'delete' | null>(null)
+  const [busy, setBusy] = useState<'export' | 'web-export' | 'import' | 'delete' | null>(null)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [dossier, setDossier] = useState<TextAdventureCommunityCandidateDossierV1 | null>(null)
@@ -74,30 +76,40 @@ export default function TextAdventurePackagePanel(props: TextAdventurePackagePan
     return () => { cancelled = true }
   }, [projectId, worldId, workId, props.listImportedReleases])
 
-  const runExport = async () => {
+  const runExport = async (web = false) => {
     if (!props.productReleaseId) return
-    setBusy('export'); setError(''); setMessage('')
+    setBusy(web ? 'web-export' : 'export'); setError(''); setMessage('')
     try {
       const candidate = await (props.exportPackage ?? exportTextAdventureCommunityPackageV1)({
         scope: props.scope,
         productReleaseId: props.productReleaseId,
       })
       setDossier(candidate.dossier)
-      const blob = new Blob([JSON.stringify(candidate, null, 2)], { type: 'application/json' })
+      let blob = new Blob([JSON.stringify(candidate, null, 2)], { type: 'application/json' })
+      let filename = textAdventureCommunityPackageFileNameV1({
+        title: candidate.dossier.title,
+        releaseVersion: candidate.distributionBundle.productRelease.manifest.lineage.releaseVersion,
+        candidatePackageHash: candidate.candidatePackageHash,
+      })
+      if (web) {
+        const response = await fetch(`${import.meta.env.BASE_URL}player/adventure-player-template.zip`, { cache: 'no-store' })
+        if (!response.ok) throw new Error('独立播放器模板尚未构建，请先构建项目后再导出。')
+        const result = await (props.exportWebZip ?? createAdventureWebZipV1)({ candidate, template: await response.arrayBuffer() })
+        blob = result.blob
+        filename = result.filename
+      }
       const url = URL.createObjectURL(blob)
       try {
         const anchor = document.createElement('a')
         anchor.href = url
-        anchor.download = textAdventureCommunityPackageFileNameV1({
-          title: candidate.dossier.title,
-          releaseVersion: candidate.distributionBundle.productRelease.manifest.lineage.releaseVersion,
-          candidatePackageHash: candidate.candidatePackageHash,
-        })
+        anchor.download = filename
         anchor.click()
       } finally {
         URL.revokeObjectURL(url)
       }
-      setMessage('社区候选资格已离线复验，完整产品包已下载。下载不会自动公开作品。')
+      setMessage(web
+        ? '独立网页游戏已下载。解压后可上传静态网站，玩家无需安装 StoryForge；作品尚未自动公开。'
+        : '社区候选资格已离线复验，完整产品包已下载。下载不会自动公开作品。')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -170,6 +182,10 @@ export default function TextAdventurePackagePanel(props: TextAdventurePackagePan
         <button type="button" disabled={!props.productReleaseId || busy != null} onClick={() => void runExport()} className="flex items-center gap-2 rounded border border-accent/40 bg-accent/10 px-4 py-2 text-xs text-accent disabled:opacity-40">
           {busy === 'export' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
           复验并导出产品包
+        </button>
+        <button type="button" disabled={!props.productReleaseId || busy != null} onClick={() => void runExport(true)} className="flex items-center gap-2 rounded border border-accent/40 bg-accent/10 px-4 py-2 text-xs text-accent disabled:opacity-40">
+          {busy === 'web-export' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          导出独立网页游戏
         </button>
         <button type="button" disabled={busy != null} onClick={() => inputRef.current?.click()} className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-xs text-white disabled:opacity-40">
           {busy === 'import' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
