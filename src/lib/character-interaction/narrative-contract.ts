@@ -235,7 +235,9 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
     if (trigger.status === 'waiting-player' && !actions.length) fail('等待玩家缺少角色行动')
   }
   if (state.pendingSituation !== undefined) {
-    const pending = row(state.pendingSituation, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt,actorKey,goalKey,sourceEventSequence', '待推进事项')
+    const hasPurpose = Object.prototype.hasOwnProperty.call(state.pendingSituation, 'purpose')
+    const pending = row(state.pendingSituation, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt,actorKey,goalKey,sourceEventSequence' + (hasPurpose ? ',purpose' : ''), '待推进事项')
+    if (hasPurpose && pending.purpose !== 'observation-result') fail('待推进事项用途无效')
     key(pending.actorKey, '推进角色'); key(pending.goalKey, '推进目标'); key(pending.threadKey, '推进剧情线')
     text(pending.direction, '推进方向', 1200); text(pending.evidenceExcerpt, '推进表达依据', 1200)
     sequence(pending.sourceEventSequence, false, '推进来源事件')
@@ -245,6 +247,8 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
       || !state.situation.threads.some(t => t.threadKey === pending.threadKey && t.participantKeys.includes(String(pending.actorKey))
         && t.audienceKeys.includes(String(pending.actorKey)) && ['open', 'blocked'].includes(t.status))) fail('待推进事项不属于角色的未完成事项')
     members(pending.evidenceFactKeys, state.situation.facts.filter(f => f.audienceKeys.includes(String(pending.actorKey))).map(f => f.factKey), '推进事实依据', true)
+    if (hasPurpose && !state.situation.facts.some(f => f.origin === 'runtime-consequence' && f.sourceEventSequence === pending.sourceEventSequence
+      && (pending.evidenceFactKeys as string[]).includes(f.factKey) && String(pending.evidenceExcerpt).includes(f.text))) fail('待观察结果缺少同一已完成行动的事实依据')
   }
   if (state.pendingEdit !== undefined) {
     validateChatMessageEditDraftV1(state.pendingEdit, {playerKey: 'player', profiles: boundary.participantKeys.map(participantKey => ({participantKey}))}, state.permissions.maxActionCharacters)

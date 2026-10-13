@@ -78,7 +78,9 @@ export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV
     keys(belief.evidenceFactKeys, 20)
   }
   if (optional.includes('situationRequest') && row.situationRequest !== null) {
-    const request = object(row.situationRequest, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt')
+    const hasPurpose = typeof row.situationRequest === 'object' && Object.prototype.hasOwnProperty.call(row.situationRequest, 'purpose')
+    const request = object(row.situationRequest, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt' + (hasPurpose ? ',purpose' : ''))
+    if (hasPurpose) choice(request.purpose, ['observation-result'])
     key(request.threadKey); text(request.direction, 1200); keys(request.evidenceFactKeys, 20); text(request.evidenceExcerpt, 1200)
   }
   return structuredClone(value) as ChatNarrativeActionV1
@@ -95,11 +97,11 @@ function advance(state: ChatNarrativeStateV1, sequence: number) {
 }
 
 /** Player input or scene end cancels the unexecuted portion, without undoing committed facts. */
-export function interruptChatNarrativeTriggerV1(state: CharacterInteractionRuntimeState, sequence: number): void {
+export function interruptChatNarrativeTriggerV1(state: CharacterInteractionRuntimeState, sequence: number, preserveCompletedObservation = false): void {
   const story = state.chatNarrative
   const trigger = story?.triggers.slice(-1)[0]
   if (story && (story.pendingEdit || story.pendingSituation || trigger && ['ready', 'waiting-player'].includes(trigger.status))) {
-    delete story.pendingSituation
+    if (!preserveCompletedObservation || story.pendingSituation?.purpose !== 'observation-result') delete story.pendingSituation
     delete story.pendingEdit
     if (trigger && ['ready', 'waiting-player'].includes(trigger.status)) trigger.status = 'cancelled'
     advance(story, sequence)
@@ -243,6 +245,8 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
     if (story.permissions.allowActorSituationExpansion !== true || action.waitingForPlayer || action.kind === 'pause' || !goal || goal.status !== 'active') fail('当前行动或作品权限不允许角色扩展情境')
     const request = action.situationRequest
     evidence(request.evidenceFactKeys); excerpt(request.evidenceExcerpt)
+    if (request.purpose === 'observation-result' && (action.kind !== 'complete'
+      || !action.newFacts.some(f => f.kind === 'observation' && request.evidenceFactKeys.includes(f.factKey) && request.evidenceExcerpt.includes(f.text)))) fail('观察结果请求必须绑定本次实际完成并登记的观察事实')
     const thread = story.situation.threads.find(t => t.threadKey === request.threadKey)
     if (!thread || !thread.participantKeys.includes(actorKey) || !thread.audienceKeys.includes(actorKey)
       || !['open', 'blocked'].includes(thread.status)) fail('推进方向缺少角色自己的未完成剧情线')

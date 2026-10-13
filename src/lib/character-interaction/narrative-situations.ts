@@ -111,6 +111,9 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
   if (!Number.isSafeInteger(input.sequence) || input.sequence <= 0 || input.sequence <= story.lastEventSequence) fail('情境提交事件无效')
   if (state.remainingDirectorBudget < 2) fail('情境构建与审查预算不足')
   const draft = parseChatSituationDraftV1(input.draft)
+  const observationResult = request.origin === 'continued-thread' && story.pendingSituation?.purpose === 'observation-result'
+  if (observationResult && (draft.title !== story.situation.title || draft.newGoals.length || draft.newThreads.length || draft.possibilities.length
+    || draft.newFacts.some(f => f.kind !== 'observation'))) fail('已完成观察的结果只能补充有限观察或授权发现，不能建立新目标、剧情线、计划或物件')
   if (draft.newFacts.length > story.permissions.maxNewFactsPerAction) fail('新增情境事实超出授权数量')
   if (!draft.newFacts.length && !draft.newGoals.length && !draft.newThreads.length && !draft.possibilities.length && !draft.discoveries?.length) fail('情境候选没有可执行的新方向')
   // Discoveries preserve canonical fact identity. New conditions cannot be
@@ -120,6 +123,8 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
   const viewers = [state.playerKey, ...scene.activeParticipantKeys]
   const initialFacts = new Map(story.situation.facts.map(fact => [fact.factKey, fact]))
   for (const item of draft.newFacts) {
+    if (observationResult && !story.situation.facts.some(f => f.origin === 'runtime-consequence' && f.sourceEventSequence === story.pendingSituation!.sourceEventSequence
+      && item.evidenceFactKeys.includes(f.factKey) && story.pendingSituation!.evidenceFactKeys.includes(f.factKey))) fail('观察结果必须引用原已完成观察的事实')
     if (!story.permissions.allowedNewFactKinds.includes(item.kind)) fail('新增情境事实类型未经作品授权')
     if (story.situation.facts.some(f => f.factKey === item.factKey || f.text === item.text)) fail('不得重写或重复创建既有事实')
     if (item.audienceKeys.some(viewer => !viewers.includes(viewer))) fail('新增事实引用场外人物')
@@ -151,7 +156,7 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
   }
   if (draft.possibilities.some(p => !scene.activeParticipantKeys.includes(p.actorKey))) fail('不能替玩家或场外角色预定行动')
   if (request.actorKey && draft.possibilities.some(p => p.actorKey !== request.actorKey || !p.evidenceFactKeys.length)) fail('角色推进不能替其他角色规划行动')
-  story.situation.possibilities = request.actorKey
+  if (!observationResult) story.situation.possibilities = request.actorKey
     ? [...story.situation.possibilities.filter(p => p.actorKey !== request.actorKey), ...draft.possibilities] : draft.possibilities
   story.situation.title = draft.title
   story.situation.location = draft.location; story.situation.timeLabel = draft.timeLabel

@@ -167,7 +167,9 @@ export async function advanceChatNarrativeTurnV1(input: {
     ? createChatScheduledDirectionV1(state, {mode: input.schedulingMode, kind: input.kind, sourceSequence: source, actionLimit: input.actionLimit ?? 1}) : undefined
   const actor = direction?.actorKey ?? actorFor(state, input.kind, input.participantKey)
   if (!actor) throw new Error('角色当前目标已经结束，可以结束场景或稍后设置新情境。')
-  if (state.chatNarrative.pendingSituation?.actorKey === actor && ['continue', 'return'].includes(input.kind) && state.remainingDirectorBudget < 4) throw new Error('当前预算不足以发展角色方向并继续演绎。')
+  if (state.chatNarrative.pendingSituation?.actorKey === actor
+    && (['continue', 'return'].includes(input.kind) || input.kind === 'player-response' && state.chatNarrative.pendingSituation.purpose === 'observation-result')
+    && state.remainingDirectorBudget < 4) throw new Error('当前预算不足以发展角色方向并继续演绎。')
   const requested = await requestChatNarrativeTrigger({sessionId: input.sessionId,
     commandId: `chat.turn:${crypto.randomUUID()}`, baseSequence: version.sequence, baseStateHash: version.stateHash,
     kind: input.kind, sourceEventSequence: source, ...(direction ? {direction} : input.actionLimit === undefined ? {} : {direction: {actorKey: actor, actionLimit: input.actionLimit}})})

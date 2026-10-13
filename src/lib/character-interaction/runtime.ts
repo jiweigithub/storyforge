@@ -727,7 +727,7 @@ export function applyInteractionEvent(
       })
       active.playerTurns += 1
       state.totalPlayerTurns += 1
-      interruptChatNarrativeTriggerV1(state, event.sequence)
+      interruptChatNarrativeTriggerV1(state, event.sequence, true)
       break
     }
     case 'interaction.narrative.message-retrieval.changed':

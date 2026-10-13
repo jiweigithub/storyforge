@@ -132,7 +132,8 @@ export interface ChatNarrativeStateV1 {
   lastEventSequence: number
   /** Durable authorizations; only the latest ready trigger may execute. */
   triggers: ChatNarrativeTriggerStateV1[]
-  /** Reviewed intention, not established background; interrupted by player input. */
+  /** Reviewed intention, or a bounded result of an already completed observation.
+   * Player input cancels intentions, but keeps explicitly marked observation results pending. */
   pendingSituation?: ChatActorSituationRequestV1 & {actorKey: string; goalKey: string; sourceEventSequence: number}
   /** User-authored replacement, not dialogue or a fact until committed. */
   pendingEdit?: ChatMessageEditDraftV1
@@ -189,6 +190,8 @@ export interface ChatTurnDirectionV1 {
 }
 
 export interface ChatActorSituationRequestV1 {
+  /** Historical requests without this field remain interruptible intentions. */
+  purpose?: 'observation-result'
   threadKey: string
   direction: string
   evidenceFactKeys: string[]

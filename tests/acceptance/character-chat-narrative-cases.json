@@ -1178,6 +1178,33 @@
               "refreshEqual": true
             }
           }
+        },
+        "newSituationAfterClosurePreflight": {
+          "evidence": "codex-new-situation-after-closure-v32.json",
+          "sourceSnapshotHead": "364ee810d78e4735b6d996818d009bb292884309",
+          "sourceSnapshotManifestSha256": "9da7fddf3b1404d52c93a9cb18a17e714a8b67bf4601f2045a2d659b04a7ce44",
+          "rawEvidenceSha256": "dc05923c937f78fbc44dceae658efa7c9a22dcc00607aa9d0690e7b5b458b3f7",
+          "backupSha256": "bba9363b16c39349f8efe3bbd67dff51728d05f7a81ea5222927fe8b3a7eb654",
+          "status": "construction-and-action-completed-but-pending-observation-lost-on-player-input",
+          "newModelRequests": 6,
+          "newModelResponses": 6,
+          "newCompletedRuns": 3,
+          "elapsedSeconds": 100.496,
+          "costUsd": null,
+          "usage": {
+            "inputTokens": 58363,
+            "outputTokens": 2470,
+            "reasoningOutputTokens": 609,
+            "totalTokens": 60833
+          },
+          "refreshRetained": true,
+          "noNewModelRequestOnRefresh": true,
+          "oldGoalsAndThreadsRetained": true,
+          "existingFactsAndKnowledgeRetained": true,
+          "frozenWorldUnchanged": true,
+          "outcome": "Unchanged closed live save; explicit player situation seed made rainwater and an at-risk box into a bounded new background/goal/thread. Role independently completed an exterior inspection and requested its limited result at event 19. Player said they would watch without helping and let the role decide; event 20 cleared pendingSituation before event 22 paused the goal without obtaining the result. All calls completed, but this does not establish meaningful progression.",
+          "implementationFinding": "Completed observation results and future intentions share the same pending field. The old player-input interruption clears both. A new explicitly reviewed observation-result purpose must retain only completed-event evidence, resolve within permissions before the next authorized reply, and never authorize new actions or goals. Historical unmarked requests retain old replay semantics.",
+          "limitations": "Developer-directed diagnostic sample, not formal M1 or human evaluation; interruption is reproduced, while the model pause cannot be attributed solely to the missing pending field."
         }
       },
       {
