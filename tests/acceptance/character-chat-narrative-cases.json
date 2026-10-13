@@ -745,7 +745,16 @@
               "priorMessagesAndSituationPreserved": true,
               "sourceSnapshotManifestSha256": "735af776a5f4aded7d9a79bfb57539517c9007f58d0f8680495c9998904f199d",
               "costUsd": null,
-              "outcome": "The local Codex bridge reported status unknown before returning a model response. The four-continuation probe stopped at the first new request. No automatic resend or substitute output; previous messages and situation are preserved. This is not narrative quality evidence."
+              "outcome": "The local Codex bridge reported status unknown before returning a model response. The four-continuation probe stopped at the first new request. No automatic resend or substitute output; previous messages and situation are preserved. This is not narrative quality evidence.",
+              "readOnlyReconciliation": {
+                "evidence": "codex-v12-unknown-reconciliation-v21.json",
+                "rawEvidenceSha256": "9f0c7a22c45fea94de35deafd22d332debdafb0e7fcf0d8537bff902c26313b0",
+                "checkedAt": "2026-10-14",
+                "newModelRequests": 0,
+                "recoverableResponseCharacters": 0,
+                "originalStatusPreserved": "unknown",
+                "finding": "The legacy message identifies a non-success turn/completed notification, but the receipt did not preserve the provider turn status or identity. No precise failure cause or retroactive classification is claimed; the ephemeral request is not replayed. Future bridge calls now retain verified terminal metadata."
+              }
             }
           ]
         }

@@ -77,6 +77,23 @@ describe('Codex subscription transport shares the governed client', () => {
     expect(result.requestLifecycle?.phase).toBe('request-dispatched')
     expect(fetchMock.mock.calls.filter(([url, init]) => url.endsWith('/requests') && init?.method === 'POST')).toHaveLength(1)
   })
+  it.each(['failed', 'cancelled'])('confirmed %s still blocks automatic retries and discards partial content', async terminal => {
+    const base = mockBridge()
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => url.includes('/requests/')
+      ? response({ status: terminal, text: 'must not become a candidate', dispatched: true,
+        providerTurn: { threadId: 'thread', turnId: 'turn', status: terminal === 'failed' ? 'failed' : 'interrupted' },
+        error: 'Codex 已确认本次生成失败；不会自动重发。' }) : base(url, init))
+    vi.stubGlobal('fetch', fetchMock)
+    const result: ChatResult = {}
+    const error = await chat(messages, config, undefined, undefined, result).catch(e => e)
+    expect(error).toBeInstanceOf(Error)
+    expect((await classifyAgentRunFailureV1(error)).retryable).toBe(false)
+    expect((await classifyHarnessFailureV1(error)).retryable).toBe(false)
+    expect(result.requestLifecycle?.phase).toBe('request-dispatched')
+    expect(result.finishReason).toBeUndefined()
+    expect(fetchMock.mock.calls.filter(([url, init]) => url.endsWith('/requests') && init?.method === 'POST')).toHaveLength(1)
+    expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/cancel'))).toBe(false)
+  })
   it('aborted calls never dispatch; closing a stream cancels its pending request', async () => {
     const fetchMock = mockBridge(); vi.stubGlobal('fetch', fetchMock)
     const controller = new AbortController(); controller.abort()

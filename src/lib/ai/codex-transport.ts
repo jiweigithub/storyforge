@@ -10,6 +10,7 @@ export interface CodexReceipt {
   id: string; model: string; createdAt: number
   status: 'accepted' | 'running' | 'completed' | 'failed' | 'cancelled' | 'unknown'
   text: string; dispatched: boolean; error?: string; usage?: TokenUsage
+  providerTurn?: { threadId: string; turnId: string; status: 'completed' | 'failed' | 'interrupted' }
 }
 export function isLocalCodexHost(): boolean {
   return typeof location !== 'undefined' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)

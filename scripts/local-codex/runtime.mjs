@@ -29,6 +29,16 @@ function toml(value) {
   }
   return JSON.stringify(value)
 }
+// Only a matching turn/completed notification establishes a provider terminal state.
+// Never persist provider error text: it can contain input, paths or credentials.
+export class CodexTurnError extends Error {
+  constructor(providerTurn) {
+    super(providerTurn.status === 'interrupted'
+      ? 'Codex 已确认本次生成被中断；未完成内容不会成为正式候选，不会自动重发。'
+      : 'Codex 已确认本次生成失败；未完成内容不会成为正式候选，不会自动重发。')
+    this.providerTurn = providerTurn
+  }
+}
 export class CodexRuntime {
   constructor({ executable = process.env.STORYFORGE_CODEX_BIN || 'codex', spawnProcess = spawn } = {}) {
     this.executable = executable; this.spawnProcess = spawnProcess
@@ -171,7 +181,8 @@ export class CodexRuntime {
             if (method === 'bridge/disconnected') return reject(new Error('Codex 已断开，在途请求结果未知。'))
             if (method === 'bridge/forbiddenTool') return abort('Codex 请求了不允许的工具；本次结果已被阻止。')
             if (p?.threadId !== threadId) return
-            if (method === 'turn/started') turnId = p.turn.id
+            if (method === 'turn/started' && !turnId) turnId = p.turn.id
+            if (p.turnId && turnId && p.turnId !== turnId) return
             if (method === 'item/started' && !['userMessage', 'agentMessage', 'reasoning'].includes(p.item.type)) {
               return abort('Codex 尝试执行文本生成范围外的工具；已阻止本次结果。')
             }
@@ -186,8 +197,8 @@ export class CodexRuntime {
             }
             if (method === 'thread/tokenUsage/updated') notify({ usage: p.tokenUsage.last })
             if (method === 'turn/completed') {
-              if (p.turn.status === 'completed') resolve()
-              else reject(new Error('Codex 未成功完成本次生成，请检查登录、套餐额度及模型权限。'))
+              if (turnId && typeof p.turn?.id === 'string' && p.turn.id !== turnId) return
+              resolve(p.turn)
             }
           } catch { abort('Codex 返回或恢复记录处理失败，已停止本次请求。') }
         })
@@ -205,7 +216,14 @@ export class CodexRuntime {
       })
       turnId = turn.turn.id
       if (signal.aborted) { void this.rpc('turn/interrupt', { threadId, turnId }).catch(() => {}); throw new Error('请求已取消。') }
-      await completion
+      const completed = await completion
+      if (!completed || completed.id !== turnId || typeof turnId !== 'string' || !turnId
+        || !['completed', 'failed', 'interrupted'].includes(completed.status)) {
+        throw new Error('Codex 结束通知无法核验，本次结果未知；不会自动重发。')
+      }
+      const providerTurn = { threadId, turnId, status: completed.status }
+      if (completed.status !== 'completed') throw new CodexTurnError(providerTurn)
+      notify({ providerTurn })
     } finally {
       clearTimeout(timer); unsubscribe()
       if (threadId) void this.rpc('thread/unsubscribe', { threadId }).catch(() => {})
