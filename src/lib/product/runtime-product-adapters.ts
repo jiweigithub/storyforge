@@ -24,10 +24,15 @@ import { assertInitialTtrpgProductStateV1 } from '../ttrpg/runtime'
 import { applyTtrpgRuntimeEventV1 } from '../ttrpg/runtime-event-reducer'
 import { cloneTtrpgRuntimeBranchExtensionsV1 } from '../ttrpg/runtime-branch'
 import { parseTtrpgState } from '../ttrpg/runtime-state'
+import { parseTtrpgRuntimeStateV2 } from '../ttrpg/open-runtime-contract'
 import { applyAiTownEventV1, createInitialAiTownStateV1, parseAiTownStateV1, rebaseAiTownStateForBranchV1 } from '../ai-town/runtime'
+import {
+  isTtrpgRuntimeContentV1,
+  isTtrpgRuntimeContentV2,
+  type ProductRuntimePackageWithTtrpgV2,
+} from '../ttrpg/content-version'
 import type {
   ProductRuntimeEvent,
-  ProductRuntimePackageV1,
   ProductRuntimeSession,
   ProductRuntimeState,
   FrozenNarrativeChoice,
@@ -45,7 +50,9 @@ export function parseProductOwnedRuntimeStateV1(
   'ttrpg' | 'interaction' | 'adventure' | 'presentation' | 'openWorldEvolution' | 'openWorld' | 'town' | 'textOpenWorld'
 > {
   return {
-    ttrpg: parseTtrpgState(value.ttrpg),
+    ttrpg: value.ttrpg && 'runFormat' in value.ttrpg && value.ttrpg.runFormat === 'open'
+      ? parseTtrpgRuntimeStateV2(value.ttrpg)
+      : parseTtrpgState(value.ttrpg),
     interaction: parseInteractionState(value.interaction),
     adventure: parseAdventureState(value.adventure),
     presentation: parseAvgPresentationState(value.presentation),
@@ -243,7 +250,7 @@ export function withOpenWorldNarrativeProjectionV1(
 
 export function assertFrozenProductRuntimeStateV1(input: {
   initial: ProductRuntimeState
-  runtimePackage: ProductRuntimePackageV1
+  runtimePackage: ProductRuntimePackageWithTtrpgV2
   runtimeSourceHash: string
   origin: 'release' | 'preview' | 'branch'
 }): void {
@@ -386,9 +393,48 @@ export function assertFrozenProductRuntimeStateV1(input: {
     return
   }
 
+  if (runtimePackage.ttrpg && isTtrpgRuntimeContentV2(runtimePackage.ttrpg)) {
+    const ttrpg = initial.ttrpg
+    const bindings = runtimePackage.ttrpg.campaign.entityBindings
+    if (
+      !ttrpg ||
+      !Object.prototype.hasOwnProperty.call(ttrpg, 'openRun') ||
+      ttrpg.openRun !== null ||
+      ttrpg.scene !== null ||
+      ttrpg.round !== 0 ||
+      ttrpg.turnOrder.length !== 0 ||
+      ttrpg.product.rulePackContentHash !== runtimePackage.ttrpg.rulePack.contentHash ||
+      ttrpg.product.campaignKey !== runtimePackage.ttrpg.campaign.campaignKey
+    ) {
+      throw new Error('open TTRPG 初始状态必须保留空 openRun 与冻结身份。')
+    }
+    for (const binding of bindings) {
+      const entity = initial.entities[binding.bindingKey]
+      if (!entity) {
+        throw new Error(`open TTRPG 初始实体缺失: ${binding.bindingKey}`)
+      }
+      const expectedKind =
+        binding.kind === 'location'
+          ? 'location'
+          : binding.kind === 'item'
+            ? 'item'
+            : runtimePackage.ttrpg.campaign.characterTemplates.find(
+                (template) => template.characterKey === binding.templateKey,
+              )?.role === 'player'
+              ? 'player'
+              : 'npc'
+      if (entity.kind !== expectedKind) {
+        throw new Error(`open TTRPG 初始实体类型不一致: ${binding.bindingKey}`)
+      }
+    }
+    return
+  }
+  if (!runtimePackage.ttrpg || !isTtrpgRuntimeContentV1(runtimePackage.ttrpg)) {
+    throw new Error('scripted TTRPG 初始状态缺少 protocol-1 内容。')
+  }
   assertInitialTtrpgProductStateV1({
     state: initial,
-    content: runtimePackage.ttrpg!,
+    content: runtimePackage.ttrpg,
     allowProgress: input.origin === 'branch',
   })
 }
@@ -397,6 +443,9 @@ export function rebaseProductRuntimeStateForBranchV1(
   state: ProductRuntimeState,
   throughSequence: number,
 ): ProductRuntimeState {
+  if (state.ttrpg && 'runFormat' in state.ttrpg && state.ttrpg.runFormat === 'open') {
+    throw new Error('[ttrpg] open 分支血缘与来源继承尚未交付，不能按 scripted 静默克隆')
+  }
   if (state.interaction) {
     state.interaction = rebaseInteractionStateForBranch(state.interaction, throughSequence)
   }

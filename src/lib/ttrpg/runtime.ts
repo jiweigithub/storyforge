@@ -1,5 +1,12 @@
-import type { ProductRuntimeState, TtrpgRuntimeContentV1 } from "../types";
-import { evaluateRuleNumberExpressionV1, parseRulePackV1 } from "./rule-pack";
+import type {
+  ProductRuntimeState,
+  RulePackV1,
+  TtrpgRuntimeContentV1,
+} from "../types";
+import {
+  evaluateRuleNumberExpressionV1,
+  parseRulePackV1,
+} from "./rule-pack";
 import { parseTtrpgCampaignContentV1 } from "./campaign";
 import { createDormantTtrpgActionEconomyV2 } from "./action-economy";
 import {
@@ -14,6 +21,8 @@ import {
 import { createEmptyTtrpgEffectLedgerV2 } from "./effect-runtime";
 import { parseTtrpgCharacterSheetV2 } from "./character-sheet";
 import { earnedTtrpgCharacterCurrencyV2 } from "./advancement";
+import type { TtrpgRuntimeContentV2 } from "./content-version";
+import type { TtrpgRuntimeStateV2 } from "./open-runtime-contract";
 
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -365,6 +374,242 @@ export function createInitialTtrpgProductStateV1(input: {
           },
     },
   };
+  return state;
+}
+
+function openRuntimeEntityKind(
+  template: TtrpgRuntimeContentV2["campaign"]["characterTemplates"][number] | null,
+  bindingKind: "actor" | "location" | "item",
+): "player" | "npc" | "character" | "location" | "item" {
+  if (bindingKind === "location") return "location";
+  if (bindingKind === "item") return "item";
+  return template?.role === "player" ? "player" : "npc";
+}
+
+function openEntityName(
+  campaign: TtrpgRuntimeContentV2["campaign"],
+  binding: TtrpgRuntimeContentV2["campaign"]["entityBindings"][number],
+): string {
+  const character = campaign.characterTemplates.find(
+    (template) => template.characterKey === binding.templateKey,
+  );
+  if (character) return character.name;
+  const visualLocation = campaign.visualBible?.locations?.find(
+    (location) => location.locationKey === binding.bindingKey,
+  );
+  return visualLocation?.anchors[0] ?? binding.bindingKey;
+}
+
+function createOpenCompatibilityProjection(input: {
+  state: ProductRuntimeState;
+  content: TtrpgRuntimeContentV2;
+  mechanicalRulePack: RulePackV1;
+}): TtrpgRuntimeStateV2 {
+  const { content, mechanicalRulePack } = input;
+  const campaign = content.campaign;
+  const playerTemplates = campaign.characterTemplates.filter(
+    (template) => template.role === "player",
+  );
+  const entities = input.state.entities;
+  for (const binding of campaign.entityBindings) {
+    if (entities[binding.bindingKey]) {
+      throw new Error(`[ttrpg-open-runtime] entity binding 已与现有实体冲突: ${binding.bindingKey}`);
+    }
+    const template =
+      binding.kind === "actor"
+        ? campaign.characterTemplates.find(
+            (item) => item.characterKey === binding.templateKey,
+          ) ?? null
+        : null;
+    entities[binding.bindingKey] = {
+      entityKey: binding.bindingKey,
+      kind: openRuntimeEntityKind(template, binding.kind),
+      sourceId: null,
+      name: openEntityName(campaign, binding),
+      locationKey: binding.initialLocationRef,
+      lifecycleStatus: "active",
+      attributes: {
+        productLocal: true,
+        templateKey: binding.templateKey,
+        sourceResourceRef: binding.sourceResourceRef,
+        audience: binding.audience,
+        role: template?.role ?? binding.kind,
+        controller: template?.controller ?? null,
+      },
+    };
+  }
+  const abilityStates = Object.fromEntries(
+    campaign.characterTemplates.flatMap((template) =>
+      mechanicalRulePack.actions.map((action) => {
+        const stateKey = ttrpgAbilityStateKeyV2(
+          template.characterKey,
+          action.key,
+        );
+        return [
+          stateKey,
+          createTtrpgAbilityRuntimeStateV2({
+            actorInstanceId: template.characterKey,
+            definition: {
+              abilityKey: action.key,
+              actionDefinitionKey: action.key,
+              usage: action.usage,
+            },
+          }),
+        ];
+      }),
+    ),
+  );
+  const compatibility: TtrpgRuntimeStateV2 = {
+    schema: "storyforge.ttrpg-runtime",
+    version: 2,
+    runFormat: "open",
+    scene: null,
+    round: 0,
+    activeActorKey: null,
+    turnOrder: [],
+    initiative: null,
+    actions: [],
+    checks: [],
+    attacks: [],
+    encounter: null,
+    campaign: {
+      summary: campaign.pitch,
+      quests: [],
+      npcSchedules: [],
+      activeSessionKey: null,
+      playSessions: [],
+      roster: playerTemplates.map((template) => ({
+        characterKey: template.characterKey,
+        status: "reserve",
+        joinedSessionKey: null,
+        leftSessionKey: null,
+        replacementFor: null,
+        reason: "",
+        updatedSequence: 0,
+      })),
+      memories: [],
+      supplements: [],
+      worldEvolution: [],
+      versionTransitions: [],
+    },
+    product: {
+      rulePackContentHash: content.rulePack.contentHash,
+      campaignKey: campaign.campaignKey,
+      campaignTitle: campaign.title,
+      openingSceneKey: "",
+      sessionZero: {
+        completed: false,
+        requiredItemKeys: campaign.sessionZero.consentChecklist.map(
+          (_, index) => `consent.${index + 1}`,
+        ),
+        acceptedItemKeys: [],
+        selectedCharacterKeys: [],
+        completedBy: null,
+        completedAtSequence: null,
+      },
+      safety: {
+        status: "active",
+        reason: null,
+        changedBy: null,
+        changedAtSequence: null,
+      },
+      hiddenDicePolicy: campaign.informationPolicy.hiddenDice,
+      sceneKeys: campaign.scenes.map((scene) => scene.sceneKey),
+      openedSceneKeys: [],
+      clueCatalog: [],
+      clockCatalog: campaign.clocks.map((clock) => ({
+        clockKey: clock.clockKey,
+        title: clock.title,
+        initialValue: clock.initialValue,
+        maximum: clock.maximum,
+        visibility: clock.visibility,
+        onComplete: clock.onComplete,
+      })),
+      discoveredClues: [],
+      conditions: {},
+      actionEconomy: createDormantTtrpgActionEconomyV2({
+        actionsPerTurn: mechanicalRulePack.turnStructure.actionsPerTurn,
+        reactionsPerRound: mechanicalRulePack.turnStructure.reactionsPerRound,
+      }),
+      inventory: createEmptyTtrpgInventoryV2(),
+      itemHistory: [],
+      abilityStates,
+      usagePools: {},
+      effectLedger: createEmptyTtrpgEffectLedgerV2(),
+      characterProgression: Object.fromEntries(
+        playerTemplates.map((template) => {
+          const progression = template.characterSheet.rules.progression;
+          return [
+            template.characterKey,
+            {
+              model: progression.model,
+              level: progression.level,
+              rankKey: progression.rankKey,
+              spentCurrency: 0,
+              attributeIncreases: {},
+              skillIncreases: {},
+              history: [],
+            },
+          ];
+        }),
+      ),
+      characterCustomizations: [],
+      actionHistory: [],
+      intentReceipts: [],
+      humanResponses: [],
+      restHistory: [],
+      gmNarrations: [],
+      directorDecisions: [],
+      privateGuidance: [],
+      questProgress: [],
+      endingCatalog: [],
+      ending: null,
+      advancement: {
+        currencyKey: mechanicalRulePack.advancement.currencyKey,
+        currencyName: mechanicalRulePack.advancement.currencyName,
+        totalAwarded: 0,
+        milestones: [],
+        awardedMilestoneKeys: [],
+      },
+      tabletop: null,
+      media: {
+        visualBibleHash: null,
+        generatedCount: 0,
+        runtimePolicy: structuredClone(campaign.mediaManifest.runtimePolicy),
+        slots: campaign.mediaManifest.slots.map((slot) => ({
+          slotKey: slot.slotKey,
+          kind: slot.kind,
+          targetRef: slot.targetRef,
+          audience: slot.audience,
+          fallbackText: slot.fallbackText,
+          altText: slot.altText,
+          status: slot.assetKey ? "available" : "placeholder",
+          requestKey: null,
+          assetKey: slot.assetKey,
+          mediaAssetId: null,
+          mediaAssetVersion: null,
+          mediaContentHash: null,
+          lastErrorCode: null,
+          updatedAtSequence: null,
+        })),
+      },
+    },
+    openRun: null,
+  };
+  return compatibility;
+}
+
+export function createInitialTtrpgOpenProductStateV1(input: {
+  initialState: ProductRuntimeState;
+  content: TtrpgRuntimeContentV2;
+  mechanicalRulePack: RulePackV1;
+}): ProductRuntimeState {
+  const state = structuredClone(input.initialState);
+  state.ttrpg = createOpenCompatibilityProjection({
+    state,
+    content: input.content,
+    mechanicalRulePack: input.mechanicalRulePack,
+  });
   return state;
 }
 

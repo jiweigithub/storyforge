@@ -11,6 +11,7 @@ import { transactionTablesForReferenceCascade } from "../registry/lifecycle";
 import { type ProductRuntimeKind, type ProductRuntimeState, type FrozenNarrativeBeat, NARRATIVE_BEAT_KINDS, type FrozenNarrativeChoice, type ProductNarrativeRuntimeNodeSnapshot, NARRATIVE_NODE_KINDS, type ProductNarrativeRuntimeState, NARRATIVE_MODULE_KINDS, type NarrativeChoiceHistoryEntry, type RuntimeAttributes, type RuntimeEntityState, RUNTIME_ENTITY_KINDS, RUNTIME_LIFECYCLE_STATUSES, type RuntimeMemory, type ProductRuntimeEvent, PRODUCT_RUNTIME_EVENT_TYPES, type ProductRuntimeSession, PRODUCT_RUNTIME_KINDS, EMPTY_PRODUCT_RUNTIME_STATE, type ProductRuntimePackageV1, type ProductRuntimeEventType, type ProductRelease, type ProductBuildRecordV1, type ProductProductionRecordV1, type ProductProductionBriefRecordV1, type ProductRuntimeCheckpoint, PRODUCT_RUNTIME_CHECKPOINT_PURPOSES_V1, type ProductRuntimeCheckpointPurposeV1 } from "../types";
 import { verifyProductReleaseManifestV1 } from "../product-production/runtime-package";
 import { verifyProductRuntimeSource, verifyProductRuntimeSessionSourceV1 } from "../product-production/preview-source";
+type ProductRuntimePackageWithTtrpgV2 = Awaited<ReturnType<typeof verifyProductRuntimeSessionSourceV1>>['runtimePackage'];
 import {
   applyProductOwnedRuntimeEventV1,
   assertProductNarrativeChoiceReadyV1,
@@ -1027,7 +1028,10 @@ export async function prepareReleasedProductRuntimeSessionRecordV1(
   ) {
     throw new Error("上层产品的 ProductRelease 绑定无效。");
   }
-  const manifest = await verifyProductReleaseManifestV1(productRelease.manifestJson);
+  const manifest = await verifyProductReleaseManifestV1(
+    productRelease.manifestJson,
+    { ttrpgProtocol: 2 },
+  );
   validateFrozenRuntimePackageSession({
     session: input,
     runtimePackage: manifest.runtimePackage,
@@ -1060,6 +1064,7 @@ export async function preparePreviewProductRuntimeSessionRecordV1(
       productBuildId: input.productBuildId,
       expectedPreviewHash: input.expectedPreviewHash,
     },
+    ttrpgProtocol: 2,
   });
   if (verified.runtimeSourceHash !== input.runtimeSourceHash) {
     throw new Error("上层产品的 Build Preview 冻结绑定无效。");
@@ -1101,7 +1106,7 @@ function sessionKindForProduct(
 
 function validateFrozenRuntimePackageSession(input: {
   session: CreateProductRuntimeSessionInput;
-  runtimePackage: ProductRuntimePackageV1;
+  runtimePackage: ProductRuntimePackageWithTtrpgV2;
   runtimeSourceHash: string;
   origin: "release" | "preview" | "branch";
 }): void {
@@ -1465,7 +1470,7 @@ export async function readProductRuntimeStateVersion(sessionId: number): Promise
 }
 
 export type VerifiedFormalRuntimeSourceV1 = {
-  runtimePackage: ProductRuntimePackageV1;
+  runtimePackage: ProductRuntimePackageWithTtrpgV2;
   packageHash: string;
   source:
     | { kind: "release"; release: ProductRelease & { id: number } }
@@ -1503,6 +1508,7 @@ export async function verifyFormalRuntimeSourceV1(
       workId: session.workId,
     },
     session,
+    ttrpgProtocol: session.kind === "ttrpg" ? 2 : undefined,
   });
   if (
     playable.packageHash !== session.runtimeSourceHash ||

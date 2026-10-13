@@ -5,6 +5,7 @@ import type {
   MediaBlobObjectRecordV1,
   ProductBuildArtifactRecordV1,
   ProductBuildRecordV1,
+  ProductProductionBriefV3,
   ProductProductionPlanV3,
   ProductProductionBriefRecordV1,
   ProductProductionCommandRecordV1,
@@ -25,6 +26,10 @@ import {
   createProductProductionSourcePlanV1,
   parseProductProductionSourcePlanV1,
 } from './source-contracts'
+import {
+  hashTtrpgProductionBriefContentV3,
+  type TtrpgProductionBriefContentV3,
+} from '../ttrpg/production-brief-v3'
 import { assertFormalProductProductionStartV1 } from '../product/source-contracts'
 import { createWorldReferenceV1 } from '../product/source'
 import { assertAiTownWorldSourceSelectionHashV1 } from '../ai-town/contracts'
@@ -119,6 +124,17 @@ export interface ProductProductionCommandReceiptV1 {
   replayed: boolean
 }
 
+/**
+ * The open TTRPG authoring service uses the existing save/authorize command
+ * types, but its frozen payload has a product-specific V3 envelope rather than
+ * the legacy generic production brief. This preparation is verified before the
+ * transaction and is consumed only by the corresponding command boundary.
+ */
+export interface TtrpgOpenBriefCommandPreparationV3 {
+  content: TtrpgProductionBriefContentV3
+  contentHash: string
+}
+
 class ExpectedCommandFailure extends Error {
   constructor(readonly code: ProductProductionErrorCodeV1, message: string) {
     super(message)
@@ -139,6 +155,30 @@ function safeJson(value: unknown): string {
     throw new Error('[product-production] command result 超出安全上限')
   }
   return json
+}
+
+function isTtrpgOpenBriefSaveCommand(value: unknown): value is {
+  type: 'save-brief-revision'
+  commandId: string
+  expectedStateRevision: number
+  parentRevision: number | null
+  brief: TtrpgProductionBriefContentV3
+} {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const row = value as Record<string, unknown>
+  const brief = row.brief
+  if (!brief || typeof brief !== 'object' || Array.isArray(brief)) return false
+  const candidate = brief as Record<string, unknown>
+  return row.type === 'save-brief-revision'
+    && typeof row.commandId === 'string'
+    && row.commandId.trim().length > 0
+    && Number.isSafeInteger(row.expectedStateRevision)
+    && Number(row.expectedStateRevision) >= 0
+    && (row.parentRevision === null
+      || (Number.isSafeInteger(row.parentRevision) && Number(row.parentRevision) >= 0))
+    && candidate.schema === 'storyforge.ttrpg-production-brief'
+    && candidate.version === 3
+    && candidate.runFormat === 'open'
 }
 
 interface PausedLedgerReservationV1 {
@@ -851,6 +891,7 @@ async function applyCommand(input: {
   preparedBriefHash: string | null
   preparedSourcePlan: ProductSourcePlanV1 | null
   preparedConfirmedBrief: ConfirmedProductBriefV1 | null
+  preparedTtrpgOpenBrief?: TtrpgOpenBriefCommandPreparationV3 | null
   preparedCreatorSource: {
     locator: TextOpenWorldCreatorSourceLocatorV1
     binding: TextOpenWorldCreatorSourceBindingV1
@@ -913,39 +954,74 @@ async function applyCommand(input: {
   }
 
   if (command.type === 'save-brief-revision') {
-    const brief = command.brief
-    if (brief.intent.productType !== production.productType) {
-      reject('production-state-conflict', 'Brief 产品身份与 Production 根记录不一致')
-    }
     const expectedParent = production.currentBriefRevision
     if (command.parentRevision !== expectedParent) reject('production-state-conflict', 'Brief parent revision 已过期')
     const revision = await nextBriefRevision(production.id)
-    const briefHash = input.preparedBriefHash!
-    const sourcePlan = input.preparedSourcePlan
-    if (!sourcePlan || sourcePlan.productInstanceKey !== production.productionKey
-      || sourcePlan.productType !== brief.intent.productType
-      || sourcePlan.worldReference.localReleaseRecordId !== brief.source.worldReleaseId
-      || sourcePlan.worldReference.releaseHash !== brief.source.worldContentHash) {
-      reject('source-stale', '保存 Brief 缺少与当前 Production/WorldRelease 一致的 SourcePlan')
+    const openBrief = input.preparedTtrpgOpenBrief
+    const brief = command.brief
+    const briefHash = openBrief?.contentHash ?? input.preparedBriefHash
+    const sourcePlan = openBrief?.content.sourcePlan ?? input.preparedSourcePlan
+    if (!briefHash || !sourcePlan) {
+      reject('source-stale', '保存 Brief 缺少经验证的内容 hash 或 SourcePlan')
     }
+    if (openBrief) {
+      if (production.productType !== 'ttrpg'
+        || openBrief.content.sourcePlan.productType !== 'ttrpg'
+        || openBrief.content.sourcePlan.productInstanceKey !== production.productionKey) {
+        reject('production-state-conflict', 'open Brief 产品身份与 Production 根记录不一致')
+      }
+      if (openBrief.content.sourcePlan.worldReference.localReleaseRecordId
+        !== openBrief.content.worldReference.localReleaseRecordId
+        || openBrief.content.sourcePlan.worldReference.releaseHash
+        !== openBrief.content.worldReference.releaseHash) {
+        reject('source-stale', 'open Brief 的 WorldReference 与 SourcePlan 不一致')
+      }
+    } else {
+      if (brief.intent.productType !== production.productType) {
+        reject('production-state-conflict', 'Brief 产品身份与 Production 根记录不一致')
+      }
+      if (sourcePlan.productInstanceKey !== production.productionKey
+        || sourcePlan.productType !== brief.intent.productType
+        || sourcePlan.worldReference.localReleaseRecordId !== brief.source.worldReleaseId
+        || sourcePlan.worldReference.releaseHash !== brief.source.worldContentHash) {
+        reject('source-stale', '保存 Brief 缺少与当前 Production/WorldRelease 一致的 SourcePlan')
+      }
+    }
+    const rawBrief = openBrief?.content ?? brief
     const row = stampNewRecord(scope, 'productProductionBriefs', {
       projectId: scope.projectId, worldId: scope.worldId, workId: scope.workId,
       productionId: production.id, revision, parentRevision: command.parentRevision, status: 'draft' as const,
       briefKind: 'product-production-v3' as const, sourceKind: 'world-release' as const,
-      sourceWorldReleaseId: brief.source.worldReleaseId, sourceWorldContentHash: brief.source.worldContentHash,
-      userIntentSummary: brief.intent.openingSituation, unresolvedJson: safeJson(brief.unresolvedDecisionKeys),
-      estimateJson: safeJson({
-        scale: brief.scale, media: brief.media, productionBudget: brief.productionBudget,
-        qualityProfile: brief.qualityProfile, externalDataPolicy: brief.externalDataPolicy,
-      }),
-      briefJson: canonicalProductProductionJsonV2(brief), briefHash,
+      sourceWorldReleaseId: openBrief
+        ? openBrief.content.worldReference.localReleaseRecordId
+        : brief.source.worldReleaseId,
+      sourceWorldContentHash: openBrief
+        ? openBrief.content.worldReference.releaseHash
+        : brief.source.worldContentHash,
+      userIntentSummary: openBrief
+        ? openBrief.content.settings.openingSituation
+        : brief.intent.openingSituation,
+      unresolvedJson: '[]',
+      estimateJson: safeJson(openBrief
+        ? {
+            runFormat: 'open',
+            settingsRevision: openBrief.content.settingsRevision,
+            qualityProfile: openBrief.content.settings.qualityProfile,
+          }
+        : {
+            scale: brief.scale, media: brief.media, productionBudget: brief.productionBudget,
+            qualityProfile: brief.qualityProfile, externalDataPolicy: brief.externalDataPolicy,
+          }),
+      briefJson: canonicalProductProductionJsonV2(rawBrief), briefHash,
       sourcePlanJson: canonicalProductProductionJsonV2(sourcePlan), sourcePlanHash: sourcePlan.planHash,
       confirmedBriefJson: '{}', confirmedBriefHash: '',
       authorizedAt: null, createdAt: now,
     } satisfies ProductProductionBriefRecordV1, { owner: 'work' })
     await db.productProductionBriefs.add(row)
     const stateRevision = production.stateRevision + 1
-    const status = brief.unresolvedDecisionKeys.length === 0 ? 'brief-ready' as const : 'consulting' as const
+    const status = openBrief || brief.unresolvedDecisionKeys.length === 0
+      ? 'brief-ready' as const
+      : 'consulting' as const
     await db.productProductions.update(production.id, { currentBriefRevision: revision, status, stateRevision, updatedAt: now })
     production = { ...production, currentBriefRevision: revision, status, stateRevision, updatedAt: now }
     return { production, result: { briefRevision: revision, briefHash, status } }
@@ -1052,11 +1128,17 @@ async function applyCommand(input: {
     if (briefRow.briefKind === 'text-open-world-creator-v1') {
       reject('brief-not-authorized', 'Creator Brief 尚未完成 G5-04 正式来源计划，不能创建 Build')
     }
-    const brief = parseProductProductionBriefV3(briefRow.briefJson)
-    if (brief.unresolvedDecisionKeys.length > 0) reject('brief-unresolved', 'Brief 仍有未解决决策')
+    const openBrief = input.preparedTtrpgOpenBrief
+    if (openBrief && (production.productType !== 'ttrpg'
+      || openBrief.contentHash !== briefRow.briefHash
+      || openBrief.content.sourcePlan.planHash !== briefRow.sourcePlanHash)) {
+      reject('brief-not-authorized', 'open Brief 当前保存内容或 SourcePlan 已变化')
+    }
+    const brief = openBrief ? null : parseProductProductionBriefV3(briefRow.briefJson)
+    if (brief && brief.unresolvedDecisionKeys.length > 0) reject('brief-unresolved', 'Brief 仍有未解决决策')
     const confirmedBrief = input.preparedConfirmedBrief
     if (!confirmedBrief || confirmedBrief.productInstanceKey !== production.productionKey
-      || confirmedBrief.productType !== brief.intent.productType
+      || confirmedBrief.productType !== (openBrief ? 'ttrpg' : brief?.intent.productType)
       || confirmedBrief.sourcePlanHash !== briefRow.sourcePlanHash
       || confirmedBrief.briefRevision !== briefRow.revision
       || confirmedBrief.briefContentHash !== briefRow.briefHash
@@ -2668,6 +2750,7 @@ async function executeTransaction(input: {
   preparedBriefHash: string | null
   preparedSourcePlan: ProductSourcePlanV1 | null
   preparedConfirmedBrief: ConfirmedProductBriefV1 | null
+  preparedTtrpgOpenBrief?: TtrpgOpenBriefCommandPreparationV3 | null
   preparedCreatorSource: {
     locator: TextOpenWorldCreatorSourceLocatorV1
     binding: TextOpenWorldCreatorSourceBindingV1
@@ -2829,6 +2912,7 @@ async function executeTransaction(input: {
         preparedBriefHash: input.preparedBriefHash,
         preparedSourcePlan: input.preparedSourcePlan,
         preparedConfirmedBrief: input.preparedConfirmedBrief,
+        preparedTtrpgOpenBrief: input.preparedTtrpgOpenBrief,
         preparedCreatorSource: input.preparedCreatorSource,
         preparedCreatorBrief: input.preparedCreatorBrief,
         preparedCreatorEvidence: input.preparedCreatorEvidence,
@@ -2877,11 +2961,36 @@ export async function executeProductProductionCommand(input: {
    * Creator media Build. The durable command/result stores hashes and rights,
    * never browser-local Blob ids. */
   preparedCreatorMedia?: TextOpenWorldCreatorMediaPreparationV1 | null
+  /** Verified open TTRPG Brief V3 used by the existing save/authorize
+   * command boundaries. It is never accepted as an arbitrary database write. */
+  preparedTtrpgOpenBrief?: TtrpgOpenBriefCommandPreparationV3 | null
   now?: number
 }): Promise<ProductProductionCommandReceiptV1> {
   const scope = await resolveScope({ scope: input.scope })
-  const command = parseProductProductionCommandV1(input.command)
-  const payloadHash = await hashProductProductionValueV2(command)
+  const openBriefSaveCommand = isTtrpgOpenBriefSaveCommand(input.command)
+    ? input.command
+    : null
+  const command = openBriefSaveCommand
+    ? {
+        type: 'save-brief-revision' as const,
+        commandId: openBriefSaveCommand.commandId,
+        expectedStateRevision: openBriefSaveCommand.expectedStateRevision,
+        parentRevision: openBriefSaveCommand.parentRevision,
+        // The open payload is carried by preparedTtrpgOpenBrief and is persisted
+        // verbatim by the save boundary below.
+        brief: null as unknown as ProductProductionBriefV3,
+      }
+    : parseProductProductionCommandV1(input.command)
+  if (openBriefSaveCommand) {
+    const prepared = input.preparedTtrpgOpenBrief
+    if (!prepared
+      || prepared.contentHash !== await hashTtrpgProductionBriefContentV3(openBriefSaveCommand.brief)
+      || canonicalProductProductionJsonV2(prepared.content)
+        !== canonicalProductProductionJsonV2(openBriefSaveCommand.brief)) {
+      throw new Error('[product-production] open Brief 保存候选与 command payload 不一致')
+    }
+  }
+  const payloadHash = await hashProductProductionValueV2(input.command)
   const emptyHash = await hashProductProductionValueV2({})
   const now = input.now ?? Date.now()
   // Durable command replay must not depend on the source still being locally
@@ -2944,7 +3053,7 @@ export async function executeProductProductionCommand(input: {
       return replay
     }
   }
-  const preparedBriefHash = command.type === 'save-brief-revision'
+  const preparedBriefHash = command.type === 'save-brief-revision' && !input.preparedTtrpgOpenBrief
     ? await hashProductProductionValueV2(command.brief)
     : null
   let preparedSourcePlan: ProductSourcePlanV1 | null = null
@@ -2987,13 +3096,21 @@ export async function executeProductProductionCommand(input: {
       throw new Error('[product-production] save-brief-revision 缺少 productionId')
     }
     const production = await productionInScope(scope, input.productionId!)
-    if (command.brief.aiTown) await assertAiTownWorldSourceSelectionHashV1(command.brief.aiTown.sourceSelection)
-    preparedSourcePlan = await createProductProductionSourcePlanV1({
-      scope,
-      productionKey: production.productionKey,
-      brief: command.brief,
-      createdAt: input.now,
-    })
+    if (input.preparedTtrpgOpenBrief) {
+      if (production.productType !== 'ttrpg'
+        || input.preparedTtrpgOpenBrief.content.sourcePlan.productInstanceKey !== production.productionKey) {
+        throw new Error('[product-production] open Brief 与当前 Production 不一致')
+      }
+      preparedSourcePlan = input.preparedTtrpgOpenBrief.content.sourcePlan
+    } else {
+      if (command.brief.aiTown) await assertAiTownWorldSourceSelectionHashV1(command.brief.aiTown.sourceSelection)
+      preparedSourcePlan = await createProductProductionSourcePlanV1({
+        scope,
+        productionKey: production.productionKey,
+        brief: command.brief,
+        createdAt: input.now,
+      })
+    }
   } else if (command.type === 'create-text-open-world-intent'
     || command.type === 'save-text-open-world-creator-brief') {
     const inspected = await inspectTextOpenWorldCreatorSourceLocatorV1({
@@ -3114,16 +3231,26 @@ export async function executeProductProductionCommand(input: {
     if (!briefRow || briefRow.briefHash !== command.briefHash) {
       throw new Error('[product-production] authorize-start 的 Brief 不存在或 hash 已变化')
     }
-    const storedBrief = parseProductProductionBriefV3(briefRow.briefJson)
-    if (storedBrief.aiTown) await assertAiTownWorldSourceSelectionHashV1(storedBrief.aiTown.sourceSelection)
     if (briefRow.briefKind !== 'text-open-world-creator-v1') {
-      preparedSourcePlan = await parseProductProductionSourcePlanV1(briefRow)
+      if (input.preparedTtrpgOpenBrief) {
+        if (production.productType !== 'ttrpg'
+          || input.preparedTtrpgOpenBrief.contentHash !== briefRow.briefHash
+          || input.preparedTtrpgOpenBrief.content.sourcePlan.planHash !== briefRow.sourcePlanHash
+          || input.preparedTtrpgOpenBrief.content.sourcePlan.productInstanceKey !== production.productionKey) {
+          throw new Error('[product-production] open Brief 授权候选与当前保存记录不一致')
+        }
+        preparedSourcePlan = input.preparedTtrpgOpenBrief.content.sourcePlan
+      } else {
+        const storedBrief = parseProductProductionBriefV3(briefRow.briefJson)
+        if (storedBrief.aiTown) await assertAiTownWorldSourceSelectionHashV1(storedBrief.aiTown.sourceSelection)
+        preparedSourcePlan = await parseProductProductionSourcePlanV1(briefRow)
+      }
       preparedConfirmedBrief = await createConfirmedProductBriefV1({
         productionKey: production.productionKey,
         briefRow,
         sourcePlan: preparedSourcePlan,
         authorStartRevision: command.expectedStateRevision,
-        confirmedAt: input.now,
+        confirmedAt: now,
       })
       await assertFormalProductProductionStartV1({
         sourcePlan: preparedSourcePlan,
@@ -3219,6 +3346,7 @@ export async function executeProductProductionCommand(input: {
     preparedBriefHash,
     preparedSourcePlan,
     preparedConfirmedBrief,
+    preparedTtrpgOpenBrief: input.preparedTtrpgOpenBrief,
     preparedCreatorSource,
     preparedCreatorBrief,
     preparedCreatorEvidence,

@@ -5,6 +5,9 @@ import type {
   TtrpgSessionConsentPolicyV2,
   TtrpgSessionParticipantRecordV2,
 } from "../types";
+import type { TtrpgCampaignContentV2 } from "./open-contract";
+
+type ParticipantCampaign = TtrpgCampaignContentV1 | TtrpgCampaignContentV2;
 
 function fail(message: string): never {
   throw new Error(`[ttrpg-participants] ${message}`);
@@ -95,7 +98,7 @@ function assertParticipant(
 
 export function buildInitialTtrpgParticipantsV2(input: {
   session: ProductRuntimeSession;
-  campaign: TtrpgCampaignContentV1;
+  campaign: ParticipantCampaign;
   now?: number;
 }): TtrpgSessionParticipantRecordV2[] {
   if (
@@ -112,7 +115,9 @@ export function buildInitialTtrpgParticipantsV2(input: {
   const gmMode = input.campaign.gmMode ?? "human";
   const hasAi =
     gmMode !== "human" ||
-    playerTemplates.some((character) => character.controller === "ai");
+    playerTemplates.some(
+      (character) => character.controller === "ai" || character.controller === "hybrid",
+    );
   const common = {
     projectId: input.session.projectId,
     worldGroupId: input.session.worldGroupId ?? null,
@@ -165,7 +170,7 @@ export function buildInitialTtrpgParticipantsV2(input: {
         viewerKey: `viewer.${seatKey}`,
         assignmentState: controller === "vacant" ? "vacant" : "assigned",
         humanAssignmentPolicy:
-          controller === "ai"
+          controller === "ai" || controller === "hybrid"
             ? null
             : controller === "vacant"
               ? null
@@ -197,7 +202,7 @@ export function buildInitialTtrpgParticipantsV2(input: {
 
 export async function installInitialTtrpgParticipantsV2(input: {
   session: ProductRuntimeSession;
-  campaign: TtrpgCampaignContentV1;
+  campaign: ParticipantCampaign;
 }): Promise<TtrpgSessionParticipantRecordV2[]> {
   const records = buildInitialTtrpgParticipantsV2(input);
   const existing = await db.ttrpgSessionParticipants

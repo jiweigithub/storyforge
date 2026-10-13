@@ -42,6 +42,12 @@ import {
   stableProductRuntimeJsonV1 as stableJson,
   type ProductRuntimeJsonObjectV1,
 } from '../product/runtime-values'
+import {
+  advanceOpenWorldTimeV1,
+  parseTtrpgOpenFailureRuntimeStateV1,
+  parseTtrpgOpenRunStateV1,
+  parseTtrpgOpenSituationRuntimeStateV1,
+} from './open-runtime-contract'
 
 export function applyTtrpgRuntimeEventV1(
   state: ProductRuntimeState,
@@ -49,6 +55,147 @@ export function applyTtrpgRuntimeEventV1(
   payload: ProductRuntimeJsonObjectV1,
 ): ProductRuntimeState {
   switch (event.type) {
+    case "ttrpg.open.run.started": {
+      const ttrpg = requireTtrpgState(state);
+      if (
+        !Object.prototype.hasOwnProperty.call(ttrpg, "openRun") ||
+        ttrpg.openRun !== null
+      ) {
+        throw new Error("open run 只能由第一次 started 事件初始化。");
+      }
+      if (Object.keys(payload).sort().join(",") !== "intent,openRun") {
+        throw new Error("open run started 事件字段不精确。");
+      }
+      const openRun = parseTtrpgOpenRunStateV1(payload.openRun);
+      if (
+        openRun.worldTime.worldTurn !== 0 ||
+        openRun.worldTime.lastAdvancedByEventSequence !== -1 ||
+        openRun.chaos.value !== 5 ||
+        openRun.stage.status !== "open"
+      ) {
+        throw new Error("open run started 初始状态不符合固定起点。");
+      }
+      ttrpg.openRun = openRun;
+      state.clock = 0;
+      break;
+    }
+    case "ttrpg.world-turn.advanced": {
+      const ttrpg = requireTtrpgState(state);
+      if (!Object.prototype.hasOwnProperty.call(ttrpg, "openRun")) {
+        throw new Error("world-turn 事件只能用于 protocol-2/open。");
+      }
+      const openRun = parseTtrpgOpenRunStateV1(ttrpg.openRun);
+      if (
+        Object.keys(payload).sort().join(",") !==
+        "byEventSequence,intent,reason"
+      ) {
+        throw new Error("world-turn 事件字段不精确。");
+      }
+      const byEventSequence = assertFiniteInteger(
+        payload.byEventSequence,
+        "world-turn.byEventSequence",
+        1,
+        Number.MAX_SAFE_INTEGER,
+      );
+      if (byEventSequence !== event.sequence) {
+        throw new Error("world-turn.byEventSequence 必须等于事件序号。");
+      }
+      const next = advanceOpenWorldTimeV1(
+        openRun,
+        String(payload.reason ?? "") as Parameters<
+          typeof advanceOpenWorldTimeV1
+        >[1],
+        byEventSequence,
+      );
+      ttrpg.openRun = next;
+      state.clock = next.worldTime.worldTurn;
+      break;
+    }
+    case "ttrpg.situation.changed": {
+      const ttrpg = requireTtrpgState(state);
+      if (!Object.prototype.hasOwnProperty.call(ttrpg, "openRun")) {
+        throw new Error("situation 事件只能用于 protocol-2/open。");
+      }
+      const openRun = parseTtrpgOpenRunStateV1(ttrpg.openRun);
+      if (
+        Object.keys(payload).sort().join(",") !==
+        "intent,mode,situation"
+      ) {
+        throw new Error("situation changed 事件字段不精确。");
+      }
+      const mode = String(payload.mode ?? "");
+      if (mode !== "activated" && mode !== "queued") {
+        throw new Error("situation changed mode 无效。");
+      }
+      const situation = parseTtrpgOpenSituationRuntimeStateV1(
+        payload.situation,
+        "situation.changed.situation",
+      );
+      if (
+        situation.activatedAtSequence !== event.sequence ||
+        situation.activatedAtWorldTurn !== openRun.worldTime.worldTurn
+      ) {
+        throw new Error("situation changed 没有绑定当前事件和世界轮次。");
+      }
+      if (
+        (mode === "activated" && situation.status !== "active") ||
+        (mode === "queued" && situation.status !== "queued")
+      ) {
+        throw new Error("situation changed mode 与状态不一致。");
+      }
+      if (
+        [...openRun.situations.active, ...openRun.situations.queued].some(
+          (item) => item.situationKey === situation.situationKey,
+        )
+      ) {
+        throw new Error("同一局势实例不能重复进入 active/queued。");
+      }
+      if (mode === "activated") {
+        if (openRun.situations.active.length >= 5) {
+          throw new Error("活跃局势不能超过 5 个。");
+        }
+        if (situation.queuePosition !== null) {
+          throw new Error("activated 局势不能携带 queuePosition。");
+        }
+        openRun.situations.active.push(situation);
+      } else {
+        const maxQueuePosition = openRun.situations.queued.reduce(
+          (maximum, item) =>
+            Math.max(maximum, item.queuePosition ?? -1),
+          -1,
+        );
+        if (situation.queuePosition !== maxQueuePosition + 1) {
+          throw new Error("queued 局势必须按 FIFO 顺序排队。");
+        }
+        openRun.situations.queued.push(situation);
+      }
+      ttrpg.openRun = openRun;
+      break;
+    }
+    case "ttrpg.open.failure.logged": {
+      const ttrpg = requireTtrpgState(state);
+      if (!Object.prototype.hasOwnProperty.call(ttrpg, "openRun")) {
+        throw new Error("failure 事件只能用于 protocol-2/open。");
+      }
+      const openRun = parseTtrpgOpenRunStateV1(ttrpg.openRun);
+      if (Object.keys(payload).sort().join(",") !== "failure,intent") {
+        throw new Error("open failure 事件字段不精确。");
+      }
+      const failure = parseTtrpgOpenFailureRuntimeStateV1(payload.failure);
+      if (
+        failure.atSequence !== event.sequence ||
+        failure.atWorldTurn !== openRun.worldTime.worldTurn ||
+        openRun.failures.some((item) => item.failureKey === failure.failureKey)
+      ) {
+        throw new Error("open failure 记录没有绑定当前事件或重复。");
+      }
+      openRun.failures.push(failure);
+      if (openRun.failures.length > 200) {
+        openRun.failures.splice(0, openRun.failures.length - 200);
+      }
+      ttrpg.openRun = openRun;
+      break;
+    }
     case "ttrpg.character.customized": {
       const ttrpg = requireTtrpgState(state);
       const product = ttrpg.product;

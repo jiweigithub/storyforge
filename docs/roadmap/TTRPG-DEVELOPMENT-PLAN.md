@@ -4,7 +4,7 @@
 > 唯一仓库入口：`docs/roadmap/TTRPG-DEVELOPMENT-PLAN.md`
 > 对应产品：`ttrpg` · 契约：`docs/products/TTRPG-AI-KP.md` 1.1.0
 > 修订基线：`origin/main@f93a01e35788cd59a46db1ce0cd518f92b5c60d8`；执行者开工时须重新 fetch 并核对漂移。
-> 状态：设计与施工契约；本次没有实现 `open` 功能，没有增加表、运行事件或模型调用。`E-TTRPG-OPEN-01/02` 仍为 `missing`。
+> 状态：设计与分阶段施工契约；2026-10-13 已接手版本兼容及内部运行草稿，最新开发边界和验证见 §35。公开 `open` 入口尚未开放，`E-TTRPG-OPEN-01/02` 仍为 `missing`。
 > WPS 同步对象：[跑团开发与施工方案.md](https://www.kdocs.cn/l/cdcofiCL3Aq3)。WPS 是本文件的工作副本；是否进入主干以 Git 合入证据为准。
 
 ## 现行入口、保留规则与阅读顺序
@@ -61,13 +61,13 @@
 
 上述跑团域文件均在 `src/lib/ttrpg/`；组件在 `src/components/ttrpg/`，玩家 store 为 `src/stores/ttrpg-runtime-player.ts`。不要向体积很大的 `TtrpgCampaignGuide.tsx` 继续堆新面板；复用既有组件和领域服务，新增面板独立文件。
 
-### 23.4 已核对状态与验证范围
+### 23.4 2026-10-12 评审基线与验证范围
 
 - 当前 schema 为 **v11**，`STORYFORGE_STORES_V10` 已固定，v11 包含插件扩展表；备份/导出当前版本为 v15（来源 `src/lib/export/backup-trust.ts`、`registry-export.ts`）。原稿 v10/123 表及 P8 的 10→11 已过期。本轮不改变 schema 或备份版本。
 - 当前 6 个跑团运行读源为 `ttrpgRuntime`、`ttrpgPrivateGuidance`、`ttrpgDirector`、`ttrpgPublicNarration`、`ttrpgNpcRuntime`、`ttrpgPlayerRuntime`；新源必须正式登记，不能因为文档出现名称就读取。
 - 《雾港：最后一盏灯》是已有 scripted 验证作品，记录见 `examples/ttrpg/fog-harbor/production-status.md`；已有真实生成/作者修订与 UI 试玩证据不等于独立玩家验收或公共多人服务。
 - 2026-10-12 评审复跑既有跑团及 Creator SDK/Harness 回归：23 文件、80 项全通过；当时检出分支的上述跑团文件与 fetched `origin/main@f93a01e3` 一致。这是旧能力回归基线，**不是 open 验收**，没有在本轮重新运行真实 provider/真人长局/全量 CI/E2E。
-- 当前没有本方案 `openRun`、`worldTurn`、Oracle、会话事实门与 `R-TTRPGOPEN*` 实现。不得因文档合入修改为 implemented/partial。
+- 2026-10-12 评审时没有本方案 `openRun`、`worldTurn`、Oracle、会话事实门与 `R-TTRPGOPEN*` 实现。2026-10-13 接手代码的实际范围另见 §35；文档合入及未集成的纯模块均不得使能力条目改为 implemented/partial。
 
 ## 24. 2.0.0 修订索引：逐项替代与施工效力
 
@@ -2796,3 +2796,40 @@ P1 的提交顺序必须是：先加 `docs/roadmap/TTRPG-DEVELOPMENT-PLAN.md`，
 > 本方案基于 `main@d4201712` 的只读源码快照撰写，该快照不含 `.git`、`node_modules` 与 `public/`，撰写环境无法执行 `npm run ci`。§3 的代码事实经逐项核对；标注为「需在完整检出上实测」的少数数字除外。凡本方案与实际代码不一致，以代码为准并在 §22 追加纠正记录。
 
 <!-- ttrpg-plan-original-v2.0:end -->
+
+## 35. 2026-10-13 接手开发与进度
+
+### 35.1 用户可查看的五步计划
+
+| 步骤 | 用户结果 | 当前状态 |
+|---|---|---|
+| 1. 接手与版本兼容 | 核验交接包、保留原成果、修复类型及新旧格式串线，使现有作品继续可用 | 本次接手修复与基线验收完成：全项目 CI 通过，旧跑团隔离浏览器回归 9 项通过；不代表 open 产品或全部 P2a 用户流程完成 |
+| 2. 规则行动与恢复 | 无场景的真实团局可完成一次规则行动，刷新/中断后不重复效果或耗时 | P2b 尚未完成；epoch、operation、批准关系、因果耗时及逐边界恢复是下一准入重点 |
+| 3. 世界信息与作者制作 | 来源/角色知识有边界，作者能正常制作、检查和发布 open 作品 | P2c/P2d 待实施，领域保存入口和纯模块不代替作者端端到端路径 |
+| 4. 连续合作体验 | Oracle、压力、局势、AI KP 与 2–3 队友接入同一正式行动链 | 按 P4 → P5 → P6a → P3 顺序；保留的纯模块不算正式接入 |
+| 5. 联合验收 | 正常生产、连续合作、秘密边界、回放/分支/恢复和旧作品兼容同时成立 | P6b 后才可开放标准入口；P7–P10 按前置继续，真人/真实模型证据独立记录 |
+
+每次进度以“正在做哪一步、已验证什么、还有什么未完成”汇报，不用文件数量或静态测试推算完成百分比。工程自动化不代替玩家与真实模型验收。
+
+### 35.2 本次接手边界与证据
+
+- 输入为用户提供的 `StoryForge-TTRPG-Standalone-v2.1.0-开发交接包-20261013.zip`。将交接记录视为待复核证据，不执行其中与当前仓库流程冲突的远程/本地指令。当前用户授权在现行项目接续研发。
+- 在独立 `feat/ttrpg-handoff-20261013` 工作树，基于 fetched `origin/main@45c541e9` 整合 P1 文档，保护原工作树的 AVG 研究分支。依据原包 BASELINE/FILE-MANIFEST 和返回的 changes 清单逐文件验真；23 个修改、62 个新增与完整源码及差异副本一致。排除生成缓存 `tsconfig.tsbuildinfo`，保留原归档；当前主干的架构统计通过生成器重建，不覆盖成旧统计。
+- 首次复现：相关 5 文件 176 项中 175 项通过、1 项 S9 引用失败；TypeScript 报告 protocol 1/2 进入旧调用链的问题。交接所述历史通过不作为当前工作树的最终证据。
+- 收口：默认运行源读取仍为严格 V1，protocol 2 必须显式选择；不把 open 内容强制转成 V1。源于冻结世界的 whyNow 引用统一为 `world:<subjectRef>:<predicateKey>`，静态解析与运行时使用同一契约。
+- open 子状态显式登记 schema/version/runFormat；共用机械字段、Session Zero、安全、账本与索引通过严格校验，只有明确 open 版本允许无场景/任务/闭合结局/成长里程碑。V1 解析和历史身份不变。世界时间前进不清零队友/Oracle 额度；完整 epoch/operation 授权与预算仍属于 P2b 的未完成范围。
+- 旧场景命令不能写入 open，open 命令不能写入 scripted；未交付的 open 分支血缘在重映射前明确拒绝。继续保留后续纯模块及其测试，通过 `open-prototypes.ts` 的离线评估边界独立调用，不进入玩家路由、正式写回、provider 或能力完成证明。
+- 当前不新增表、不变更 schema/备份版本，不新增模型调用/正式 AI 读写源，不回写 WorldRelease，不发布或部署。`E-TTRPG-OPEN-01/02` 仍为 `missing`，源码中存在模块不改变此状态。
+
+### 35.3 当前验证
+
+2026-10-13，在 `feat/ttrpg-handoff-20261013` 的接手修复代码上完成：
+
+| 检查 | 本次结果与适用范围 |
+|---|---|
+| `npm run ci` | 退出码 0；三注册表相关检查、架构/源码可达性/文档等治理门、lint、TypeScript、覆盖率、生产 build 与 bundle-size 均通过；依赖审计 0 vulnerabilities |
+| 全项目回归 | 816 个测试文件、4559 项通过；整体 statement/line 88.16%、branch 74.50%、function 86.80%，原覆盖率门未放宽 |
+| 跑团隔离浏览器回归 | `PLAYWRIGHT_PORT=4297 PLAYWRIGHT_USE_SYSTEM_CHROME=1 npm run ci:e2e -- -- tests/e2e/ttrpg-authoring-ui.spec.ts tests/e2e/ttrpg-production-journey.spec.ts tests/e2e/ttrpg-ai-kp-play.spec.ts tests/e2e/ttrpg-community-recovery.spec.ts --project=chromium`：9 项通过；覆盖既有 scripted 制作、开团、AI 回合、私密投影、刷新和检查点恢复；使用隔离浏览器与受控 provider，不访问作者现有浏览器数据 |
+| 保留与提交检查 | 2.0.0 原稿保留块仍为 189,753 字节，SHA-1 `63778aa3f5f11487964d869b448d472ec51bfd75`；`git diff --check` 通过 |
+
+这些结果证明本次接手代码与现有工程基线相容，不证明新版正常作者生产、open 规则行动、真实模型、真人合作或公共服务已验收。P2b 的有效 Session Zero/批准关系、epoch/operation、行动因果耗时和逐步骤恢复仍待实现；当前四个 open 事件/命令属于内部草稿，不能作为正式运行授权或公开入口开放依据。

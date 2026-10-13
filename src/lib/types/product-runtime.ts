@@ -221,6 +221,12 @@ export interface TtrpgRuntimeState {
   campaign: TtrpgRuntimeCampaignState;
   /** Formal ProductRelease projection. */
   product: TtrpgRuntimeProductStateV1;
+  /**
+   * Protocol-2/open sessions add this key only after the explicit
+   * `ttrpg.open.run.started` event. Legacy scripted readers must keep this
+   * field out of their exact-key parser.
+   */
+  openRun?: unknown;
 }
 
 export interface TtrpgRuntimeProductStateV1 {
@@ -1196,6 +1202,21 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "ttrpg.media.available",
   "ttrpg.media.failed",
   "ttrpg.media.cancelled",
+  "ttrpg.open.run.started",
+  "ttrpg.open.intent.previewed",
+  "ttrpg.open.intent.confirmed",
+  "ttrpg.oracle.consulted",
+  "ttrpg.fact.asserted",
+  "ttrpg.fact.retired",
+  "ttrpg.world-turn.advanced",
+  "ttrpg.clock.ticked",
+  "ttrpg.front.telegraphed",
+  "ttrpg.front.advanced",
+  "ttrpg.situation.changed",
+  "ttrpg.front.defeated",
+  "ttrpg.open.stage.closed",
+  "ttrpg.open.gates.evaluated",
+  "ttrpg.open.failure.logged",
   "interaction.scene.started",
   "interaction.scene.ended",
   "interaction.participant.joined",

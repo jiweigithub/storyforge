@@ -150,9 +150,18 @@ export async function createConfirmedProductBriefV1(input: {
   authorStartRevision: number
   confirmedAt?: number
 }): Promise<ConfirmedProductBriefV1> {
-  const parsedBrief = JSON.parse(input.briefRow.briefJson) as ProductProductionBriefV3
+  const parsedBrief = JSON.parse(input.briefRow.briefJson) as ProductProductionBriefV3 | {
+    schema: 'storyforge.ttrpg-production-brief'
+    version: 3
+    runFormat: 'open'
+  }
+  const productType = parsedBrief.schema === 'storyforge.ttrpg-production-brief'
+    && parsedBrief.version === 3
+    && parsedBrief.runFormat === 'open'
+    ? 'ttrpg'
+    : (parsedBrief as ProductProductionBriefV3).intent.productType
   return createConfirmedProductBriefContractV1({
-    productType: parsedBrief.intent.productType,
+    productType,
     productInstanceKey: input.productionKey,
     sourcePlan: input.sourcePlan,
     briefRevision: input.briefRow.revision,

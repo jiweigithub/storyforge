@@ -7,7 +7,6 @@ import { createTtrpgActionReceiptV2, parseTtrpgGmSynthesisFrameV2, assertTtrpgFe
 import { db } from "../db/schema";
 import { evaluateTtrpgActionRequirementsV2 } from "./action-requirement";
 import { parseRulePackV1, evaluateRuleNumberExpressionV1, resolveRulePackDiceModelV1, resolveRulePackCheckV1 } from "./rule-pack";
-import { parseTtrpgCampaignContentV1 } from "./campaign";
 import { parseTtrpgEffectPlanV2 } from "./effect-plan";
 import { parseTtrpgItemCommandV2, ttrpgItemDefinitionFromRuleV1, applyTtrpgItemCommandV2 } from "./item-ledger";
 import { readTtrpgSessionParticipantsV2, finalizeTtrpgSessionParticipantsV2 } from "./participants";
@@ -15,8 +14,22 @@ import { resetTtrpgAbilityUsageV2, ttrpgAbilityStateKeyV2, consumeTtrpgAbilityV2
 import { spendTtrpgActionEconomyV2 } from "./action-economy";
 import { applyProductRuntimeEvent, assertFiniteInteger, cloneState, hashStateJson, isObject, normalizeCommandId, parseEventPayload, parseProductRuntimeState, readLatestSessionEventSequenceV1, readProductRuntimeState, readProductRuntimeStateVersion, readSessionEvents, readVerifiedProductRuntimeHeadV1, replayProductRuntimeEvents, stableJson } from "../product/runtime-core";
 import { TTRPG_SHA256, applyTtrpgTabletopOperationV1, assertTtrpgCampaignMemoryV2, assertTtrpgRuleActionResult, longCampaignKey, longCampaignText, parseTtrpgIntentReceiptV2, parseTtrpgModelEvidenceV1, parseTtrpgTabletopOperationV1, ttrpgDegreeSucceededV2, type TtrpgTabletopOperationV1 } from "./runtime-state";
+import {
+  createTtrpgVerifiedContentViewV1,
+} from "./content-version";
 import { verifyProductReleaseManifestV1 } from "../product-production/runtime-package";
 import { verifyProductRuntimeSource } from "../product-production/preview-source";
+import type { TtrpgRuntimeContentV2 } from "./content-version";
+import {
+  advanceOpenWorldTimeV1,
+  createTtrpgOpenRunStateV1,
+  parseTtrpgOpenRunStateV1,
+  type TtrpgOpenFailureCategoryV1,
+  type TtrpgOpenFailureRuntimeStateV1,
+  type TtrpgOpenRunStateV1,
+  type TtrpgOpenSituationRuntimeStateV1,
+} from "./open-runtime-contract";
+import { instantiateTtrpgSituationV1 } from "./situation-engine";
 import type { ProductRuntimeEventType, ProductRuntimeSession, ProductRuntimeEvent, ProductRuntimeState, TtrpgCharacterSheetV2, TtrpgRuntimeCampaignSessionV2, TtrpgRuntimeCampaignMemoryV2, TtrpgRuntimeRosterEntryV2, TtrpgRuntimeSupplementReceiptV2, TtrpgRuntimeWorldEvolutionV2, TtrpgRuntimeVersionTransitionV2, TtrpgCampaignContentV1, TtrpgRuntimeIntentReceiptV2, TtrpgRuntimeHumanResponseV2, TtrpgRuntimeCheck, TtrpgRuntimeRestReceiptV2, TtrpgRuntimeModelEvidenceV1 } from "../types";
 export interface FormalTtrpgCommandEnvelope {
   sessionId: number;
@@ -52,7 +65,27 @@ type FormalTtrpgEventType = Extract<
   | "ttrpg.campaign.supplement.activated"
   | "ttrpg.campaign.world-evolution.recorded"
   | "ttrpg.campaign.version-transition.recorded"
+  | "ttrpg.open.run.started"
+  | "ttrpg.world-turn.advanced"
+  | "ttrpg.situation.changed"
+  | "ttrpg.open.failure.logged"
 >;
+
+function assertScriptedTtrpgCampaign(
+  campaign: TtrpgCampaignContentV1 | import("./open-contract").TtrpgCampaignContentV2,
+): asserts campaign is TtrpgCampaignContentV1 {
+  if (campaign.version !== 1) {
+    throw new Error("[ttrpg] 此旧版命令仅适用于 scripted；open 行动入口尚未交付。");
+  }
+}
+
+const OPEN_FOUNDATION_COMMANDS: readonly FormalTtrpgEventType[] = [
+  "ttrpg.open.run.started", "ttrpg.world-turn.advanced",
+  "ttrpg.situation.changed", "ttrpg.open.failure.logged",
+];
+const SHARED_SETUP_COMMANDS: readonly FormalTtrpgEventType[] = [
+  "ttrpg.character.customized", "ttrpg.session-zero.completed", "ttrpg.safety.changed",
+];
 
 async function verifyFormalTtrpgSource(session: ProductRuntimeSession) {
   const sourceCount = [
@@ -85,6 +118,7 @@ async function verifyFormalTtrpgSource(session: ProductRuntimeSession) {
         productBuildId: session.productBuildId,
         expectedPreviewHash: buildBefore.previewHash,
       },
+      ttrpgProtocol: 2,
     });
     const build = await db.productBuilds.get(session.productBuildId);
     if (!build || stableJson(build) !== stableJson(buildBefore)) {
@@ -97,23 +131,25 @@ async function verifyFormalTtrpgSource(session: ProductRuntimeSession) {
     ) {
       throw new Error("[ttrpg] 实例与冻结 TTRPG Build Preview 不一致。");
     }
-    const rulePack = parseRulePackV1(
-      playable.runtimePackage.ttrpg.rulePack.content,
+    const runtimeView = await createTtrpgVerifiedContentViewV1(
+      playable.runtimePackage.ttrpg,
     );
-    const campaign = parseTtrpgCampaignContentV1(
-      playable.runtimePackage.ttrpg.campaign,
-      rulePack,
-    );
+    const rulePack = runtimeView.mechanicalRulePack;
+    const campaign = runtimeView.rawContent.campaign;
     return {
       source: { kind: "build" as const, build },
       runtimePackage: playable.runtimePackage,
       packageHash: playable.packageHash,
       rulePack,
       campaign,
+      ttrpgContent: runtimeView.rawContent,
     };
   }
   const release = await assertProductReleaseUnchanged(session.productReleaseId!);
-  const manifest = await verifyProductReleaseManifestV1(release.manifestJson);
+  const manifest = await verifyProductReleaseManifestV1(
+    release.manifestJson,
+    { ttrpgProtocol: 2 },
+  );
   if (
     manifest.productType !== "ttrpg" ||
     !manifest.runtimePackage.ttrpg ||
@@ -121,19 +157,18 @@ async function verifyFormalTtrpgSource(session: ProductRuntimeSession) {
   ) {
     throw new Error("[ttrpg] 实例与冻结 TTRPG ProductRelease 不一致。");
   }
-  const rulePack = parseRulePackV1(
-    manifest.runtimePackage.ttrpg.rulePack.content,
+  const runtimeView = await createTtrpgVerifiedContentViewV1(
+    manifest.runtimePackage.ttrpg,
   );
-  const campaign = parseTtrpgCampaignContentV1(
-    manifest.runtimePackage.ttrpg.campaign,
-    rulePack,
-  );
+  const rulePack = runtimeView.mechanicalRulePack;
+  const campaign = runtimeView.rawContent.campaign;
   return {
     source: { kind: "release" as const, release },
     runtimePackage: manifest.runtimePackage,
     packageHash: manifest.packageHash,
     rulePack,
     campaign,
+    ttrpgContent: runtimeView.rawContent,
   };
 }
 
@@ -166,7 +201,8 @@ async function appendFormalTtrpgCommand(
       state: ProductRuntimeState;
       sequence: number;
       rulePack: ReturnType<typeof parseRulePackV1>;
-      campaign: ReturnType<typeof parseTtrpgCampaignContentV1>;
+      campaign: TtrpgCampaignContentV1 | import("./open-contract").TtrpgCampaignContentV2;
+      ttrpgContent: TtrpgRuntimeContentV2 | import("../types").TtrpgRuntimeContentV1;
       participants: import("../types").TtrpgSessionParticipantRecordV2[];
     }) => Promise<{
       actorKey: string | null;
@@ -178,7 +214,8 @@ async function appendFormalTtrpgCommand(
       state: ProductRuntimeState;
       event: ProductRuntimeEvent;
       rulePack: ReturnType<typeof parseRulePackV1>;
-      campaign: ReturnType<typeof parseTtrpgCampaignContentV1>;
+      campaign: TtrpgCampaignContentV1 | import("./open-contract").TtrpgCampaignContentV2;
+      ttrpgContent: TtrpgRuntimeContentV2 | import("../types").TtrpgRuntimeContentV1;
     }) => Promise<void>;
   },
 ): Promise<ProductRuntimeEvent> {
@@ -194,6 +231,13 @@ async function appendFormalTtrpgCommand(
   const previewSession = await db.productRuntimeSessions.get(input.sessionId);
   if (!previewSession) throw new Error("[ttrpg] 正式 TTRPG 实例不存在。");
   const frozen = await verifyFormalTtrpgSource(previewSession);
+  const open = frozen.ttrpgContent.campaign.version === 2;
+  if (open && !OPEN_FOUNDATION_COMMANDS.includes(input.type) && !SHARED_SETUP_COMMANDS.includes(input.type)) {
+    throw new Error("[ttrpg] open 尚未接入此 scripted 命令；不能回退到旧场景运行器。");
+  }
+  if (!open && OPEN_FOUNDATION_COMMANDS.includes(input.type)) {
+    throw new Error("[ttrpg] open 命令不能写入 scripted 团局。");
+  }
   const previewPrior = await db.productRuntimeEvents
     .where("[sessionId+commandId]")
     .equals([input.sessionId, commandId])
@@ -245,6 +289,7 @@ async function appendFormalTtrpgCommand(
     sequence: previewState.lastSequence + 1,
     rulePack: frozen.rulePack,
     campaign: frozen.campaign,
+    ttrpgContent: frozen.ttrpgContent,
     participants: previewParticipants,
   });
   const preparedEvent: ProductRuntimeEvent = {
@@ -386,6 +431,7 @@ async function appendFormalTtrpgCommand(
         event,
         rulePack: frozen.rulePack,
         campaign: frozen.campaign,
+        ttrpgContent: frozen.ttrpgContent,
       });
       await db.productRuntimeSessions.update(session.id!, {
         updatedAt: event.createdAt,
@@ -396,6 +442,177 @@ async function appendFormalTtrpgCommand(
       return event;
     },
   );
+}
+
+function requireTtrpgOpenContent(
+  content: TtrpgRuntimeContentV2 | import("../types").TtrpgRuntimeContentV1,
+): TtrpgRuntimeContentV2 {
+  if (content.campaign.version !== 2) {
+    throw new Error("[ttrpg] 此命令仅适用于 open 跑团。");
+  }
+  return content as TtrpgRuntimeContentV2;
+}
+
+function readOpenRunFromState(state: ProductRuntimeState): TtrpgOpenRunStateV1 {
+  const ttrpg = state.ttrpg;
+  if (
+    !ttrpg ||
+    !Object.prototype.hasOwnProperty.call(ttrpg, "openRun") ||
+    ttrpg.openRun === null
+  ) {
+    throw new Error("[ttrpg] open run 尚未启动。");
+  }
+  return parseTtrpgOpenRunStateV1(ttrpg.openRun);
+}
+
+export async function startTtrpgOpenRunV1(
+  input: FormalTtrpgCommandEnvelope,
+): Promise<ProductRuntimeEvent> {
+  return appendFormalTtrpgCommand({
+    ...input,
+    type: "ttrpg.open.run.started",
+    intent: { kind: "open-run-start" },
+    build: async ({ state, ttrpgContent }) => {
+      const content = requireTtrpgOpenContent(ttrpgContent);
+      if (
+        !state.ttrpg ||
+        !Object.prototype.hasOwnProperty.call(state.ttrpg, "openRun") ||
+        state.ttrpg.openRun !== null
+      ) {
+        throw new Error("[ttrpg] open run 只能启动一次。");
+      }
+      return {
+        actorKey: null,
+        targetKey: null,
+        payload: {
+          openRun: createTtrpgOpenRunStateV1(content.campaign),
+        },
+      };
+    },
+  });
+}
+
+export async function advanceTtrpgWorldTurnV1(
+  input: FormalTtrpgCommandEnvelope & {
+    reason:
+      | "game-action"
+      | "ai-companion-action"
+      | "idle-tick"
+      | "front-escalation"
+      | "situation-maintenance"
+      | "stage-close";
+  },
+): Promise<ProductRuntimeEvent> {
+  return appendFormalTtrpgCommand({
+    ...input,
+    type: "ttrpg.world-turn.advanced",
+    intent: { reason: input.reason },
+    build: async ({ state, sequence }) => {
+      const openRun = readOpenRunFromState(state);
+      advanceOpenWorldTimeV1(openRun, input.reason, sequence);
+      return {
+        actorKey: null,
+        targetKey: null,
+        payload: {
+          reason: input.reason,
+          byEventSequence: sequence,
+        },
+      };
+    },
+  });
+}
+
+export async function changeTtrpgSituationV1(
+  input: FormalTtrpgCommandEnvelope & {
+    templateKey: string;
+    activationReason: "opening" | "front-escalation" | "consequence";
+    mode: "activated" | "queued";
+  },
+): Promise<ProductRuntimeEvent> {
+  const templateKey = input.templateKey.trim();
+  return appendFormalTtrpgCommand({
+    ...input,
+    type: "ttrpg.situation.changed",
+    intent: {
+      templateKey,
+      activationReason: input.activationReason,
+      mode: input.mode,
+    },
+    build: async ({ state, sequence, ttrpgContent }) => {
+      const content = requireTtrpgOpenContent(ttrpgContent);
+      const openRun = readOpenRunFromState(state);
+      const template = content.campaign.situationTemplates.find(
+        (item) => item.templateKey === templateKey,
+      );
+      if (!template) throw new Error("[ttrpg] 局势模板不属于冻结 Campaign。");
+      const situation = instantiateTtrpgSituationV1({
+        template,
+        activatedAtSequence: sequence,
+        activatedAtWorldTurn: openRun.worldTime.worldTurn,
+        activationReason: input.activationReason,
+      });
+      const mode = input.mode;
+      if (mode === "activated" && openRun.situations.active.length >= 5) {
+        throw new Error("[ttrpg] 活跃局势已达到 5 个上限。");
+      }
+      const queuePosition =
+        mode === "queued"
+          ? openRun.situations.queued.reduce(
+              (maximum, item) =>
+                Math.max(maximum, item.queuePosition ?? -1),
+              -1,
+            ) + 1
+          : null;
+      const runtimeSituation: TtrpgOpenSituationRuntimeStateV1 = {
+        ...situation,
+        status: mode === "activated" ? "active" : "queued",
+        queuePosition,
+      };
+      return {
+        actorKey: null,
+        targetKey: templateKey,
+        payload: {
+          mode,
+          situation: runtimeSituation,
+        },
+      };
+    },
+  });
+}
+
+export async function recordTtrpgOpenFailureV1(
+  input: FormalTtrpgCommandEnvelope & {
+    category: TtrpgOpenFailureCategoryV1;
+    violatedRule: string;
+    failureKey?: string;
+  },
+): Promise<ProductRuntimeEvent> {
+  const violatedRule = input.violatedRule.trim();
+  const failureKey = (input.failureKey ?? input.commandId).trim();
+  return appendFormalTtrpgCommand({
+    ...input,
+    type: "ttrpg.open.failure.logged",
+    intent: {
+      category: input.category,
+      violatedRule,
+      failureKey,
+    },
+    build: async ({ state, sequence }) => {
+      const openRun = readOpenRunFromState(state);
+      const failure: TtrpgOpenFailureRuntimeStateV1 = {
+        failureKey,
+        atSequence: sequence,
+        atWorldTurn: openRun.worldTime.worldTurn,
+        category: input.category,
+        violatedRule,
+      };
+      return {
+        actorKey: null,
+        targetKey: null,
+        payload: { failure },
+      };
+    },
+  });
 }
 
 export async function customizeTtrpgPlayerCharacterV1(
@@ -2349,6 +2566,7 @@ export async function submitTtrpgActionIntentV2(
       throw new Error("[ttrpg] 当前 viewer 没有为该角色提交行动的席位权限。");
     }
   }
+  assertScriptedTtrpgCampaign(frozen.campaign);
   const classification = classifyTtrpgSubmittedIntentV2({
     state,
     campaign: frozen.campaign,
@@ -2407,6 +2625,7 @@ export async function submitTtrpgActionIntentV2(
       ) {
         throw new Error("[ttrpg] 当前 viewer 没有为该角色提交行动的席位权限。");
       }
+      assertScriptedTtrpgCampaign(campaign);
       const terminal = classifyTtrpgSubmittedIntentV2({
         state: current,
         campaign,
@@ -2637,6 +2856,7 @@ export async function commitTtrpgIntentDispositionV2(
       if (terminalStatus === "interrupted" && submittedBy.role !== "gm") {
         throw new Error("[ttrpg] 只有 KP/规则权威可以确认行动被正式打断。");
       }
+      assertScriptedTtrpgCampaign(campaign);
       const classification = classifyTtrpgSubmittedIntentV2({
         state,
         campaign,
@@ -2752,6 +2972,7 @@ export async function resolveTtrpgRuleCheck(
       }
       if (targetKey && !state.entities[targetKey])
         throw new Error("[ttrpg] 行动目标不存在。");
+      assertScriptedTtrpgCampaign(campaign);
       const actorSkill = resolveTtrpgActionSkillV2({
         state,
         campaign,
@@ -3082,6 +3303,7 @@ async function resolveTtrpgRuleActionWithAuthority(
       ) {
         throw new Error("[ttrpg] 行动者或目标不存在。");
       }
+      assertScriptedTtrpgCampaign(campaign);
       const actorSkill = resolveTtrpgActionSkillV2({
         state,
         campaign,
@@ -4302,6 +4524,7 @@ export async function commitTtrpgDirectorFromHarnessV1(input: { scope: import('.
     intent: { runId: input.runId, candidateHash },
     build: async ({ state, sequence, campaign, participants }) => {
       assertTtrpgDirectorAuthorityV1(participants);
+      assertScriptedTtrpgCampaign(campaign);
       const options = ttrpgDirectorOptionsV1(state, campaign);
       const reveals = candidate.payload.revealClueKeys.map(key => {
         const allowed = options.eligibleReveals.find(item => item.clueKey === key);
