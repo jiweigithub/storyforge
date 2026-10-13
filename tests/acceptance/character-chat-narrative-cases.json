@@ -1109,6 +1109,38 @@
             "outcome": "Two fresh Codex calls generated three complete initial situations and narrative output from frozen mapped-player/world-discovery sources. Every candidate retained exact source text, condition, authorized investigator and mapped prerequisite; author UI selected opening-1, the build reached release-ready and published locally. The required author-choice gate is recorded as one failed deterministic child and one cancelled root before selection; these expected historical statuses remain in the evidence and were not model-call failures. Refresh reused candidates and the released build without new requests.",
             "limitations": "Isolated engineering world; actual production candidates, author gate and local release verified. No player session or gameplay generated in this production sample, no external publishing, independent quality rating or formal M1."
           }
+        },
+        "generatedOpeningContinuationPreflight": {
+          "evidence": "codex-generated-opening-extended-v31.json",
+          "sourceSnapshotHead": "ef451d55eb67a806eb720f5c7a1ffd011a4d0efd",
+          "sourceSnapshotManifestSha256": "6b5e03624876f67ed696b6a937ce39fa940620b48419e0e3ab6272fc4334c20d",
+          "rawEvidenceSha256": "052ba4f0986917889fb6d52efa9af2ea734f48a2b52258ee3bc6a1443fd8e14f",
+          "backupSha256": "ca745029b4da64116cbad536d0ae1250ef299ebda7ee839f6bf9371552807b13",
+          "status": "naturally-closed-short-episode-followed-by-confirmed-conversation-blocker",
+          "newModelRequests": 10,
+          "newModelResponses": 10,
+          "newCompletedRuns": 5,
+          "opportunities": 3,
+          "elapsedSeconds": 359.295,
+          "costUsd": null,
+          "usage": {
+            "inputTokens": 87848,
+            "outputTokens": 3935,
+            "reasoningOutputTokens": 1312,
+            "totalTokens": 91783
+          },
+          "refreshRetained": true,
+          "noNewModelRequestOnRefresh": true,
+          "frozenWorldUnchanged": true,
+          "outcome": "Fresh formal session from the unchanged V30 real-generated and locally published opening. Role asked permission to explain its plan, respected refusal of hands-on participation, inspected the exterior independently, obtained a bounded observation through real situation construction/review, then chose to defer disassembly. Its initial inspection goal was fulfilled and thread resolved without solving the whole clock repair, conscripting the player or revealing the unrelated key. Natural early closure was retained rather than forced to 20 opportunities.",
+          "limitations": "Developer-guided short episode, not a registered 20–40-opportunity M1 or independent playtest. Automated generation/review does not establish user enjoyment.",
+          "postClosureDiagnostic": {
+            "evidence": "codex-post-closure-diagnostic-v31.json",
+            "rawEvidenceSha256": "4a19e1817ef8aca306ca4266611d62d5a10e8c187bd91513fb50bdb4126fef89",
+            "actualModelRequests": 0,
+            "attemptedModelRequests": 0,
+            "result": "An ordinary player topic change after closure was stored but reply generation was rejected with current goal concluded. Transport was guarded against new calls, but no call was attempted. This is a real product blocker for ongoing conversation, distinct from appropriately stopping autonomous plot advancement."
+          }
         }
       },
       {
