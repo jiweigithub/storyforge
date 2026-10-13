@@ -2,6 +2,10 @@ import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import * as artifacts from '../../src/lib/memory/artifact-store'
 import * as context from '../../src/lib/registry/assemble-context'
+import * as manifests from '../../src/lib/agent/run/context-manifest'
+import {CONTEXT_SOURCES} from '../../src/lib/registry/context-sources'
+import {buildInteractionContextWindow} from '../../src/lib/character-interaction/runtime'
+import {formatInteractionRuntimeContextV1} from '../../src/lib/character-interaction/context-format'
 import {readInstanceAgentRunV1} from '../../src/lib/agent/run/event-store'
 import {listChatContextInspectionsV1, readChatContextInspectionV1} from '../../src/lib/character-interaction/context-inspector'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
@@ -13,6 +17,7 @@ beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => {vi.restoreAllMocks(); db.close()})
 const record = artifacts.recordAgentRunArtifactV1
 const assemble = context.assembleContext
+const createManifest = manifests.createContextManifestFromAssemblyV1
 async function command(sessionId: number) {
   const v = await readProductRuntimeStateVersion(sessionId)
   return {sessionId, commandId: crypto.randomUUID(), baseSequence: v.sequence, baseStateHash: v.stateHash}
@@ -87,6 +92,20 @@ it('labels older calls without packets instead of reconstructing them as deliver
   expect(await readChatContextInspectionV1(f.scope, f.sessionId, result.snapshot.run.id)).toEqual({available: false, reason: '这次历史调用没有保存可核验的完整上下文；不会用当前局面代替。'})
 })
 
+it('verifies a preserved v3 historical input using its original selection policy', async () => {
+  const source = CONTEXT_SOURCES.find(s => s.key === 'interactionRuntime')!
+  vi.spyOn(source, 'read').mockImplementation(async input => {
+    const state = (await readProductRuntimeState(input.productRuntimeSessionId!)).interaction!
+    const key = input.interactionParticipantKey!
+    return formatInteractionRuntimeContextV1(state.profiles.find(p => p.participantKey === key)!, buildInteractionContextWindow(state, key, {retrievalVersion: 'legacy'}))
+  })
+  vi.spyOn(manifests, 'createContextManifestFromAssemblyV1').mockImplementation(input => createManifest({...input, readerVersion: 'chat-narrative-runtime-view-v3'}))
+  const f = await start(), result = await generate(f)
+  const inspected = await readChatContextInspectionV1(f.scope, f.sessionId, result.snapshot.run.id)
+  expect(inspected.available).toBe(true)
+  if (inspected.available) expect(inspected).not.toHaveProperty('selection')
+})
+
 it('distinguishes saved preparation from an actually sent request', async () => {
   vi.spyOn(artifacts, 'recordAgentRunArtifactV1').mockImplementation(async input => {
     if (input.artifactKind === 'rendered-request') throw new Error('stop before request')
@@ -115,15 +134,19 @@ it.each(['corrupt', 'missing', 'evidence-pruned'])('rejects %s stored evidence w
   expect(await readProductRuntimeState(f.sessionId)).toEqual(state)
 })
 
-it.each(['actor', 'manifest', 'text'])('rejects a consistently stored but mismatched %s packet', async mode => {
+it.each(['actor', 'manifest', 'text', 'selection'])('rejects a consistently stored but mismatched %s packet', async mode => {
   vi.spyOn(artifacts, 'recordAgentRunArtifactV1').mockImplementation(async input => {
     if (input.artifactKind !== 'context-packet') return record(input)
     const packet = JSON.parse(input.content)
     if (mode === 'actor') packet.participantKey = 'artisan'
     if (mode === 'manifest') packet.manifest.manifestHash = '0'.repeat(64)
     if (mode === 'text') packet.text = '伪造的已读内容。'
+    if (mode === 'selection') packet.selection.knowledge[0].included = !packet.selection.knowledge[0].included
     return record({...input, content: JSON.stringify(packet)})
   })
-  const f = await start(), result = await generate(f)
-  await expect(readChatContextInspectionV1(f.scope, f.sessionId, result.snapshot.run.id)).rejects.toThrow('上下文证据')
+  const f = await start()
+  if (mode === 'actor' || mode === 'manifest') await expect(generate(f)).rejects.toThrow('行动来源读取版本无法核验')
+  else await generate(f)
+  const run = (await db.agentRuns.where('productRuntimeSessionId').equals(f.sessionId).toArray())[0]
+  await expect(readChatContextInspectionV1(f.scope, f.sessionId, run.id!)).rejects.toThrow('上下文证据')
 })

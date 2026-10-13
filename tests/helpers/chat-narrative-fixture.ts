@@ -49,11 +49,14 @@ export function chatNarrativeFixture(worldReleaseHash = '1'.repeat(64), characte
 }
 
 /** Formal isolated release/instance, with a scene-start event and no fabricated player input. */
-export async function seedChatNarrativeRuntimeFixture(options: {maxActionsPerTrigger?: number; relationships?: boolean; additionalGuardGoal?: boolean; actorSituationExpansion?: boolean; directorBudget?: number} = {}) {
+export async function seedChatNarrativeRuntimeFixture(options: {maxActionsPerTrigger?: number; relationships?: boolean; additionalGuardGoal?: boolean; actorSituationExpansion?: boolean; directorBudget?: number; contextKnowledge?: Array<{key: string; content: string; audienceKeys: string[]}>} = {}) {
   const {scope, release} = await seedCurrentProductWorld('CHAT-02 narrative contract')
   const catalog = await loadCurrentProductWorldSourceCatalogV1({scope, worldReleaseId: release.id!, productType: 'character-interaction'})
   const keys = catalog.characters.slice(0, 2).map(c => c.resourceKey)
   const interaction = chatNarrativeFixture(release.contentHash, keys)
+  for (const [index, item] of (options.contextKnowledge ?? []).entries()) interaction.chatSource!.knowledge.push({
+    ...item, source: {...interaction.chatSource!.knowledge[0].source, pointer: `/context-fixture/${index}`},
+  })
   if (options.actorSituationExpansion) interaction.chatNarrative!.permissions.allowActorSituationExpansion = true
   if (options.additionalGuardGoal) interaction.chatNarrative!.initialSituation.goals.push({
     ...interaction.chatNarrative!.initialSituation.goals[0], goalKey: 'clarify', desire: '向旅人澄清寻找结果及猜测的依据',
@@ -64,6 +67,9 @@ export async function seedChatNarrativeRuntimeFixture(options: {maxActionsPerTri
   ]
   if (options.maxActionsPerTrigger != null) interaction.chatNarrative!.permissions.maxActionsPerTrigger = options.maxActionsPerTrigger
   if (options.directorBudget != null) interaction.sceneTemplates[0].directorBudget = options.directorBudget
+  for (const item of options.contextKnowledge ?? []) if (['player', ...interaction.profiles.map(p => p.participantKey)].every(key => item.audienceKeys.includes(key))) {
+    interaction.sceneTemplates[0].publicKnowledgeKeys.push(item.key)
+  }
   const {schema: _schema, version: _version, ...narrative} = chatNarrativeShellV1(interaction.chatNarrative!)
   const runtimePackage: ProductRuntimePackageV1 = {
     schema: 'storyforge.product-runtime-package', version: 1, productType: 'character-interaction',

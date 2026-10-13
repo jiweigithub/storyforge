@@ -25,6 +25,7 @@ import { chatNarrativeViewV1, createChatNarrativeStateV1, parseChatNarrativeStat
 import { applyChatNarrativeActionV1, applyReviewedChatNarrativeActionV1, interruptChatNarrativeTriggerV1, requestChatNarrativeTriggerV1 } from './narrative-actions'
 import { applyChatSituationV1 } from './narrative-situations'
 import {chatRelationshipEvidenceV1} from './narrative-relationships'
+import {selectChatContextWindowV1, type ChatContextSelectionV1} from './context-selection'
 
 type JsonObject = Record<string, unknown>
 
@@ -936,6 +937,7 @@ export function interactionRetrievalView(state: CharacterInteractionRuntimeState
 }
 
 export interface InteractionContextWindow extends InteractionVisibilityView {
+  selection?: ChatContextSelectionV1
   excludedMessageCount?: number
   omittedMessageCount: number
   characterCount: number
@@ -944,7 +946,7 @@ export interface InteractionContextWindow extends InteractionVisibilityView {
 export function buildInteractionContextWindow(
   state: CharacterInteractionRuntimeState,
   participantKey: string,
-  options: { maxCharacters?: number; maxRecentMessages?: number } = {},
+  options: { maxCharacters?: number; maxRecentMessages?: number; retrievalVersion?: 'legacy' | 'chat-relevance-v1' } = {},
 ): InteractionContextWindow {
   if (state.chatNarrative && state.activeScene && state.chatNarrative.situation.sceneKey !== state.activeScene.sceneKey) {
     throw new Error('当前场景尚未衔接叙事情境，请完成情境切换后继续')
@@ -953,6 +955,11 @@ export function buildInteractionContextWindow(
   const maxRecentMessages = Math.max(4, Math.min(options.maxRecentMessages ?? 32, 200))
   assertChatResponseRetrievableV1(state)
   const visible = interactionRetrievalView(state, participantKey)
+  if (state.chatNarrative && options.retrievalVersion !== 'legacy') {
+    const profile = state.profiles.find(p => p.participantKey === participantKey)
+    if (!profile) throw new Error('缺少角色视角，无法选择来源资料')
+    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages})
+  }
   const allMessages = visible.messages
   visible.messages = allMessages.slice(-maxRecentMessages)
   visible.memories.sort((left, right) => right.importance - left.importance || left.proposalSequence - right.proposalSequence)

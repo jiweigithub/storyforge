@@ -23,6 +23,7 @@ export function formatInteractionRuntimeContextV1(profile: InteractionRuntimePro
     '【该角色可见对话】',
     ...(view.messages.length ? view.messages.map(message => `- #${message.eventSequence}｜${message.speakerKey}｜${message.text}`) : ['- 无']),
     ...(view.excludedMessageCount ? [`【消息选择】用户排除对话=${view.excludedMessageCount}；只影响对话原文选取，不撤销已确认事实、记忆或关系。`] : []),
+    ...(view.selection ? [`【资料选择】按当前可见对话、自身目标、未完成事项与场景选择；来源知识省略=${view.selection.knowledge.filter(k => !k.included).length}；已确认记忆省略=${view.selection.memories.filter(m => !m.included).length}。省略不代表不存在，不得据此编造结论。`] : []),
     `【预算证据】省略早期消息=${view.omittedMessageCount}｜字符=${view.characterCount}`,
     ...townLines,
   ].join('\n')

@@ -1,4 +1,6 @@
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
+import {buildInteractionContextWindow} from './runtime'
+import {CHAT_CONTEXT_READER_VERSION_V1} from './context-selection'
 import { chat } from '../ai/client'
 import { createAgentSkillExecutionBindingV1, createAgentSkillExecutionBindingV2 } from '../agent/execution-binding'
 import { getAgentSkillV1, type AgentSkillId } from '../agent/skill-registry'
@@ -585,7 +587,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       declaredSourceKeys: [sourceKey],
       assembled,
-      readerVersion: situation ? 'chat-situation-runtime-view-v3' : ['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? 'chat-narrative-runtime-view-v3' : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? 'chat-situation-runtime-view-v4' : ['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? CHAT_CONTEXT_READER_VERSION_V1 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
@@ -595,7 +597,8 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
     if (['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)) {
       snapshot = (await recordAgentRunArtifactV1({
         scope: input.scope, runId: snapshot.run.id, productRuntimeSessionId: input.productRuntimeSessionId,
-        artifactKind: 'context-packet', content: JSON.stringify({version: 1, participantKey, manifest, text: assembled.text}),
+        artifactKind: 'context-packet', content: JSON.stringify({version: 1, participantKey, manifest, text: assembled.text,
+          selection: buildInteractionContextWindow(initialState.interaction!, participantKey).selection}),
         stepId: INTERACTION_RUNTIME_STEP_ID_V1, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence,
       })).snapshot
     }
