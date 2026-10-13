@@ -1240,6 +1240,43 @@
               "stateEqual": true,
               "refreshEqual": true
             }
+          },
+          "caretakingStakesCounterfactual": {
+            "evidence": "codex-owned-box-stakes-v33.json",
+            "sourceSnapshotHead": "1b416c280135c89fbec6a0930bcba0d450b19b66",
+            "sourceSnapshotManifestSha256": "36d9e1ddb3575b4a725b9d85db39940c0be6de7b6a2ebd0448c3e5244b392d93",
+            "rawEvidenceSha256": "93e94c00aecd4011ee3279379b9aae456c2835860480b267378f94a2362ee043",
+            "backupSha256": "525ae99c99efecec73596a4c591b6c8bee7c1039c2e76f1790bf8b21a83f58f0",
+            "status": "explicit-caretaking-stakes-produced-independent-protective-action-and-natural-closure",
+            "newModelRequests": 6,
+            "newModelResponses": 6,
+            "newCompletedRuns": 3,
+            "elapsedSeconds": 106.648,
+            "costUsd": null,
+            "usage": {
+              "inputTokens": 59367,
+              "outputTokens": 2317,
+              "reasoningOutputTokens": 579,
+              "totalTokens": 61684
+            },
+            "restorationEqual": true,
+            "refreshRetained": true,
+            "noNewModelRequestOnRefresh": true,
+            "oldGoalsAndThreadsRetained": true,
+            "existingFactsAndKnowledgeRetained": true,
+            "frozenWorldUnchanged": true,
+            "outcome": "Same V33 code and unchanged original closed save, but the explicit situation seed now states the role is keeping the box for a customer and cares about continued dampness. Construction preserved that concern as a protective goal. Before the next player message, the role independently moved the unopened box onto the existing workbench, away from the leaking door; the reviewed action committed its physical consequence and closed the new goal/thread. The subsequent nonparticipation message received a normal goal-free reply without restarting either closed issue.",
+            "interpretation": "The prior narrow inspection goal could reasonably close after inspection. This sample shows a concrete personal stake can support an independent meaningful action without a prewritten solution. It does not establish causality or justify forcing every completed goal into another conflict.",
+            "limitations": "One developer-directed counterfactual, with changed seed and model variation, not a controlled comparison, formal M1, sustained narrative or human evaluation. The same nonparticipation line came after the protective action, so it is not a matched test of refusal before action. No new continuation was forced after all goals closed.",
+            "portableRestoration": {
+              "evidence": "codex-owned-box-stakes-restoration-v33.json",
+              "rawEvidenceSha256": "ca89798fe30eef2b17ea9d42ea7cb7ab0004b4e245becb51955e532a05e0a23c",
+              "backupSha256": "5640ee35c17bb67bf784dc16d09f056eb02cb77438da384b4d00a1f16111b33d",
+              "actualModelRequests": 0,
+              "historicalRunsRetained": 9,
+              "stateEqual": true,
+              "refreshEqual": true
+            }
           }
         }
       },
