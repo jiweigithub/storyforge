@@ -1,7 +1,10 @@
 import type {ChatNarrativeSetupV1} from '../../lib/character-interaction/narrative-setup'
 import type {ChatNarrativePermissionsV1} from '../../lib/types/chat-narrative'
 
-export default function NarrativeSetup({value, onChange}: {value: ChatNarrativeSetupV1; onChange: (value: ChatNarrativeSetupV1) => void}) {
+export default function NarrativeSetup({value, onChange, characters, aiCharacterKeys}: {
+  value: ChatNarrativeSetupV1; onChange: (value: ChatNarrativeSetupV1) => void
+  characters: readonly {resourceKey: string; name: string}[]; aiCharacterKeys: readonly string[]
+}) {
   const permissions = value.permissions
   const change = (patch: Partial<ChatNarrativeSetupV1>) => onChange({...value, ...patch})
   const permit = (patch: Partial<ChatNarrativePermissionsV1>) => change({permissions: {...permissions, ...patch}})
@@ -15,7 +18,18 @@ export default function NarrativeSetup({value, onChange}: {value: ChatNarrativeS
     <h4>故事如何开始和推进</h4>
     <p>你提出情景后，先比较并选定初始局面，再由角色依据自身目标持续行动。玩家身份指故事中的虚构角色。</p>
     <div className="avg-form">
+      <label>玩家人物来源<select value={value.playerCharacterKey ?? ''} onChange={e => {
+        const next = {...value}
+        if (e.target.value) next.playerCharacterKey = e.target.value
+        else delete next.playerCharacterKey
+        onChange(next)
+      }}><option value="">自定义人物</option>
+        {value.playerCharacterKey && !characters.some(c => c.resourceKey === value.playerCharacterKey) && <option value={value.playerCharacterKey}>已选人物（等待来源载入）</option>}
+        {characters.map(c => <option key={c.resourceKey} value={c.resourceKey} disabled={aiCharacterKeys.includes(c.resourceKey)}>{c.name}{aiCharacterKeys.includes(c.resourceKey) ? '（已由 AI 扮演）' : ''}</option>)}
+      </select></label>
+      <p className="col-span-full">可自定义人物，也可扮演所选世界中的人物。玩家人物由你控制，不能同时作为 AI 参与角色；保存后请在“角色与场景”重新确认资料。</p>
       <label>玩家虚构角色的称呼<input value={value.personaName} maxLength={200} onChange={e => change({personaName: e.target.value})}/></label>
+      <p className="col-span-full">称呼与“玩家身份”会告诉所有角色。选择世界人物后，请核对这些已有文字；私有经历应在资料检查中设置知情者，不会自动填入公开身份。</p>
       <label>地点（可留空）<input value={value.location} maxLength={1000} onChange={e => change({location: e.target.value})}/></label>
       <label>时间（可留空）<input value={value.timeLabel} maxLength={1000} onChange={e => change({timeLabel: e.target.value})}/></label>
       <label>供比较的开场数<select value={value.openingCount} onChange={e => change({openingCount: Number(e.target.value)})}>{[3, 4, 5].map(n => <option key={n} value={n}>{n} 个</option>)}</select></label>

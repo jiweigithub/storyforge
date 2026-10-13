@@ -92,18 +92,19 @@ export default function SourceReview(props: {
     <button type="button" className="lf-action" disabled={disabled} onClick={() => void load()}>{busy ? '正在处理…' : '读取并检查完整资料'}</button>
     {projection && <>
       <div className="space-y-3">{chatProjectionResourcesV1(projection).map(character => <details key={character.resourceKey} open>
-        <summary>{character.label}{'resourceKind' in character && <span className="ml-2 text-xs text-text-muted">{CHAT_BACKGROUND_LABELS[String(character.resourceKind)] ?? '世界背景'}</span>}</summary>
-        {'relatedResourceKeys' in character && Array.isArray(character.relatedResourceKeys) && <p className="text-xs text-text-muted">关联人物：{character.relatedResourceKeys.map(key => audiences.find(a => a.key === key)?.name ?? '未加入聊天的人物').join('、')}</p>}
+        <summary>{character.label}{projection.playerCharacter?.resourceKey === character.resourceKey && <span className="ml-2 text-xs text-text-muted">玩家扮演</span>}{'resourceKind' in character && <span className="ml-2 text-xs text-text-muted">{CHAT_BACKGROUND_LABELS[String(character.resourceKind)] ?? '世界背景'}</span>}</summary>
+        {'relatedResourceKeys' in character && Array.isArray(character.relatedResourceKeys) && <p className="text-xs text-text-muted">关联人物：{character.relatedResourceKeys.map(key => projection.playerCharacter?.resourceKey === key ? '玩家' : audiences.find(a => a.key === key)?.name ?? '未加入聊天的人物').join('、')}</p>}
         {character.fragments.map(fragment => {
           const background = 'resourceKind' in character
+          const playerCharacter = projection.playerCharacter?.resourceKey === character.resourceKey
           const label = passageLabel(fragment, character.fragments, background)
           const decision = decisions.find(row => row.fragmentKey === fragment.fragmentKey) ?? {purpose: 'knowledge', visibility: 'unclassified', audienceKeys: []}
           return <div key={fragment.fragmentKey} className="my-3 space-y-2 rounded border border-border p-3">
             <strong>{label}</strong>
             <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">{readableValue(fragment.pointer, fragment.valueJson)}</pre>
             <div className="flex flex-wrap gap-3">
-              <label>资料用途<select disabled={disabled || background} aria-label={`${character.label} ${label} 用途`} value={decision.purpose} onChange={e => change(fragment.fragmentKey, {purpose: e.target.value as ChatSourceClassificationV1['purpose']})}>{Object.entries(PURPOSES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-              <label>谁知道<select disabled={disabled} aria-label={`${character.label} ${label} 可见范围`} value={decision.visibility} onChange={e => change(fragment.fragmentKey, {visibility: e.target.value as ChatSourceClassificationV1['visibility'], audienceKeys: e.target.value === 'participants' ? [background ? projection.characters[0].resourceKey : character.resourceKey] : []})}>{Object.entries(VISIBILITY).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+              <label>资料用途<select disabled={disabled || background} aria-label={`${character.label} ${label} 用途`} value={decision.purpose} onChange={e => change(fragment.fragmentKey, {purpose: e.target.value as ChatSourceClassificationV1['purpose']})}>{Object.entries(PURPOSES).filter(([value]) => !playerCharacter || ['identity', 'knowledge'].includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+              <label>谁知道<select disabled={disabled} aria-label={`${character.label} ${label} 可见范围`} value={decision.visibility} onChange={e => change(fragment.fragmentKey, {visibility: e.target.value as ChatSourceClassificationV1['visibility'], audienceKeys: e.target.value === 'participants' ? [playerCharacter ? 'player' : background ? projection.characters[0].resourceKey : character.resourceKey] : []})}>{Object.entries(VISIBILITY).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             </div>
             {decision.visibility === 'participants' && <div className="flex flex-wrap gap-3">{audiences.map(audience => <label key={audience.key}><input type="checkbox" disabled={disabled || decision.audienceKeys.length === 1 && decision.audienceKeys.includes(audience.key)} checked={decision.audienceKeys.includes(audience.key)} onChange={e => change(fragment.fragmentKey, {audienceKeys: e.target.checked ? [...decision.audienceKeys, audience.key] : decision.audienceKeys.filter(key => key !== audience.key)})}/>{audience.name}</label>)}</div>}
           </div>
