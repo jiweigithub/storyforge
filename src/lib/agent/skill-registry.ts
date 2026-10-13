@@ -4554,7 +4554,7 @@ export const AGENT_SKILLS = [
     defaultForAgent: false,
     label: '角色聊天初始情境制作',
     owner: 'outline-agent',
-    promptVersion: 'chat-situation-production-v2',
+    promptVersion: 'chat-situation-production-v3',
     executionMode: 'product-production',
     contextTaskKind: 'agent-outline',
     readToolNames: [],
@@ -4565,7 +4565,7 @@ export const AGENT_SKILLS = [
     maxOutputTokens: 16_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
     lastVerifiedAt: '2026-10-13',
-    regressionTests: ['R-CHAT-02-fact-discovery', 'R-CHAT-02-narrative-production'],
+    regressionTests: ['R-CHAT-01-world-discovery', 'R-CHAT-02-fact-discovery', 'R-CHAT-02-narrative-production'],
   },
   {
     version: 1,

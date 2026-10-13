@@ -413,18 +413,24 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
     visibleByFragment.set(fragment.fragmentKey, [...(visibleByFragment.get(fragment.fragmentKey) ?? []), index === 0 ? 'player' : participantKeys[index - 1]])
   }
   const purposes = new Map(chat.sourceReview.classifications.map(item => [item.fragmentKey, item.purpose]))
+  const discoveries = new Map(chat.sourceReview.classifications.filter(item => item.discovery).map(item => [item.fragmentKey, item.discovery!]))
+  if (discoveries.size && (chat.version !== 3 || !chat.narrative.permissions.maxDiscoveriesPerSituation)) fail('世界隐情没有作品级发现授权')
+  const fragments = chatProjectionResourcesV1(draft).flatMap(resource => resource.fragments)
+  const sourceKeys = new Map(fragments.map((fragment, index) => [fragment.fragmentKey, `chat-source.${draft.projectionHash}.${index}`]))
   const content: FrozenChatSourceProjectionV1 = {
-    schema: 'storyforge.chat-runtime-source', version: draft.playerCharacter ? 3 : draft.background?.length ? 2 : 1, projectionHash: draft.projectionHash,
-    ...(draft.playerCharacter ? {playerCharacterSource: {resourceKey: draft.playerCharacter.resourceKey, sourceHash: draft.playerCharacter.sourceHash}} : {}),
-    ...(draft.background?.length || draft.playerCharacter ? {backgroundSources: (draft.background ?? []).filter(resource => resource.fragments.some(fragment => visibleByFragment.has(fragment.fragmentKey)))
+    schema: 'storyforge.chat-runtime-source', version: discoveries.size ? 4 : draft.playerCharacter ? 3 : draft.background?.length ? 2 : 1, projectionHash: draft.projectionHash,
+    ...(draft.playerCharacter ? {playerCharacterSource: {resourceKey: draft.playerCharacter.resourceKey, sourceHash: draft.playerCharacter.sourceHash}} : discoveries.size ? {playerCharacterSource: null} : {}),
+    ...(draft.background?.length || draft.playerCharacter || discoveries.size ? {backgroundSources: (draft.background ?? []).filter(resource => resource.fragments.some(fragment => visibleByFragment.has(fragment.fragmentKey) || discoveries.has(fragment.fragmentKey)))
       .map(({resourceKey, sourceHash, resourceKind, relatedResourceKeys}) => ({resourceKey, sourceHash, resourceKind,
         ...(relatedResourceKeys ? {relatedResourceKeys} : {})}))} : {}),
     worldReleaseHash: draft.worldReleaseHash, playerRole: input.brief.intent.playerRole,
-    knowledge: chatProjectionResourcesV1(draft).flatMap(resource => resource.fragments).flatMap((fragment, index) => {
-      const audienceKeys = visibleByFragment.get(fragment.fragmentKey)
-      if (!audienceKeys?.length) return []
+    knowledge: fragments.flatMap((fragment, index) => {
+      const audienceKeys = visibleByFragment.get(fragment.fragmentKey) ?? [], discovery = discoveries.get(fragment.fragmentKey)
+      if (!audienceKeys.length && !discovery) return []
       const source = chatProjectionResourcesV1(draft).find(c => c.resourceKey === fragment.resourceKey)!
       return [{key: `chat-source.${draft.projectionHash}.${index}`, content: fragment.valueJson, audienceKeys,
+        ...(discovery ? {discovery: {actorKeys: discovery.actorKeys.map(key => participantKeys[keys.indexOf(key)]), condition: discovery.condition,
+          prerequisiteKnowledgeKeys: discovery.prerequisiteFragmentKeys.map(key => sourceKeys.get(key)!)}} : {}),
         source: {resourceKey: source.resourceKey, sourceHash: source.sourceHash, pointer: fragment.pointer, purpose: purposes.get(fragment.fragmentKey)!,
           ...(fragment.textRange ? {textRange: {...fragment.textRange}} : {})}}]
     }),

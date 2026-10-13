@@ -270,18 +270,18 @@ function thread(value: unknown): InteractionRuntimeThread {
 }
 
 export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonly string[], characterKeys: readonly string[]): FrozenChatSourceProjectionV1 {
-  if (!isObject(value) || value.schema !== 'storyforge.chat-runtime-source' || (value.version !== 1 && value.version !== 2 && value.version !== 3)
-    || Object.keys(value).sort().join(',') !== (value.version === 3 ? 'backgroundSources,knowledge,playerCharacterSource,playerRole,projectionHash,schema,version,worldReleaseHash' : value.version === 2 ? 'backgroundSources,knowledge,playerRole,projectionHash,schema,version,worldReleaseHash' : 'knowledge,playerRole,projectionHash,schema,version,worldReleaseHash')
+  if (!isObject(value) || value.schema !== 'storyforge.chat-runtime-source' || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4)
+    || Object.keys(value).sort().join(',') !== (value.version === 3 || value.version === 4 ? 'backgroundSources,knowledge,playerCharacterSource,playerRole,projectionHash,schema,version,worldReleaseHash' : value.version === 2 ? 'backgroundSources,knowledge,playerRole,projectionHash,schema,version,worldReleaseHash' : 'knowledge,playerRole,projectionHash,schema,version,worldReleaseHash')
     || !isSha256Hash(value.projectionHash) || !isSha256Hash(value.worldReleaseHash)
     || typeof value.playerRole !== 'string' || value.playerRole.length > 5000
     || !Array.isArray(value.knowledge) || value.knowledge.length > 2000) throw new Error('角色资料运行投影无效')
   const background = new Map<string, NonNullable<FrozenChatSourceProjectionV1['backgroundSources']>[number]>()
-  const playerSource = value.version === 3 ? value.playerCharacterSource : undefined
-  if (value.version === 3 && (!isObject(playerSource) || Object.keys(playerSource).sort().join(',') !== 'resourceKey,sourceHash'
+  const playerSource = value.version === 3 || value.version === 4 ? value.playerCharacterSource : undefined
+  if ((value.version === 3 || value.version === 4 && playerSource !== null) && (!isObject(playerSource) || Object.keys(playerSource).sort().join(',') !== 'resourceKey,sourceHash'
     || typeof playerSource.resourceKey !== 'string' || !playerSource.resourceKey.trim() || playerSource.resourceKey.length > 500
     || characterKeys.includes(playerSource.resourceKey) || !isSha256Hash(playerSource.sourceHash))) throw new Error('玩家人物来源身份或证据无效')
   const playerSourceKey = isObject(playerSource) ? String(playerSource.resourceKey) : undefined
-  if (value.version === 2 || value.version === 3) {
+  if (value.version === 2 || value.version === 3 || value.version === 4) {
     if (!Array.isArray(value.backgroundSources) || value.backgroundSources.length > 128) throw new Error('背景资料来源数量无效')
     for (const source of value.backgroundSources) {
       if (!isObject(source) || Object.keys(source).sort().join(',') !== (Object.prototype.hasOwnProperty.call(source, 'relatedResourceKeys') ? 'relatedResourceKeys,resourceKey,resourceKind,sourceHash' : 'resourceKey,resourceKind,sourceHash')
@@ -301,9 +301,9 @@ export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonl
   const ranges = new Map<string, Array<{start: number; end: number}>>()
   for (const seed of value.knowledge) {
     if (!isObject(seed) || typeof seed.key !== 'string' || !seed.key || seed.key.length > 160 || known.has(seed.key)
-      || Object.keys(seed).sort().join(',') !== 'audienceKeys,content,key,source'
+      || Object.keys(seed).sort().join(',') !== (value.version === 4 && Object.prototype.hasOwnProperty.call(seed, 'discovery') ? 'audienceKeys,content,discovery,key,source' : 'audienceKeys,content,key,source')
       || typeof seed.content !== 'string' || !seed.content || seed.content.length > 7900
-      || !Array.isArray(seed.audienceKeys) || !seed.audienceKeys.length
+      || !Array.isArray(seed.audienceKeys) || !seed.audienceKeys.length && !(value.version === 4 && seed.discovery)
       || seed.audienceKeys.some(key => typeof key !== 'string' || !allowed.has(key))
       || new Set(seed.audienceKeys).size !== seed.audienceKeys.length
       || !isObject(seed.source) || !characterKeys.includes(String(seed.source.resourceKey)) && !background.has(String(seed.source.resourceKey)) && seed.source.resourceKey !== playerSourceKey
@@ -312,6 +312,18 @@ export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonl
       || !isSha256Hash(seed.source.sourceHash) || typeof seed.source.pointer !== 'string' || !seed.source.pointer.startsWith('/') || seed.source.pointer.length > 1000
       || !['identity', 'motivation', 'voice', 'knowledge'].includes(String(seed.source.purpose))) {
       throw new Error('角色资料来源、可见性或容量无效；单项资料最多 7900 字符')
+    }
+    if (seed.discovery !== undefined) {
+      const rule = seed.discovery
+      if (value.version !== 4 || seed.source.purpose !== 'knowledge' || !isObject(rule)
+        || Object.keys(rule).sort().join(',') !== 'actorKeys,condition,prerequisiteKnowledgeKeys'
+        || typeof rule.condition !== 'string' || !rule.condition.trim() || rule.condition.length > 2000
+        || !Array.isArray(rule.actorKeys) || !rule.actorKeys.length || rule.actorKeys.length > 8
+        || rule.actorKeys.some(key => typeof key !== 'string' || !participantKeys.includes(key) || (seed.audienceKeys as string[]).includes(key))
+        || new Set(rule.actorKeys).size !== rule.actorKeys.length
+        || !Array.isArray(rule.prerequisiteKnowledgeKeys) || !rule.prerequisiteKnowledgeKeys.length || rule.prerequisiteKnowledgeKeys.length > 200
+        || rule.prerequisiteKnowledgeKeys.some(key => typeof key !== 'string' || !key || key.length > 160 || key === seed.key)
+        || new Set(rule.prerequisiteKnowledgeKeys).size !== rule.prerequisiteKnowledgeKeys.length) throw new Error('世界隐情发现来源授权无效')
     }
     if (background.has(String(seed.source.resourceKey)) && (seed.source.purpose !== 'knowledge'
       || background.get(String(seed.source.resourceKey))!.sourceHash !== seed.source.sourceHash)) throw new Error('背景资料不能替代人物身份且必须保持来源证据')
@@ -338,6 +350,13 @@ export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonl
       throw new Error('角色资料连同人物与字段归属超过运行知识容量，请缩小来源片段')
     }
     known.add(seed.key)
+  }
+  for (const seed of value.knowledge) if (seed.discovery) {
+    for (const key of seed.discovery.prerequisiteKnowledgeKeys) {
+      const prerequisite = value.knowledge.find(item => item.key === key)
+      if (!prerequisite || prerequisite.source.purpose !== 'knowledge'
+        || seed.discovery.actorKeys.some((actor: string) => !prerequisite.audienceKeys.includes(actor))) throw new Error('世界隐情的发现前提缺少角色可知原文依据')
+    }
   }
   return structuredClone(value) as unknown as FrozenChatSourceProjectionV1
 }

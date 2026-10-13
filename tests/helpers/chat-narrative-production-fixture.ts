@@ -7,8 +7,10 @@ import { prepareChatNarrativeCompilerSourceV1 } from '../../src/lib/product-prod
 import type { ChatNarrativeProductionSourceV1, ChatSituationCandidatesV1 } from '../../src/lib/character-interaction/narrative-production'
 import {chatProjectionResourcesV1} from '../../src/lib/character-interaction/source-projection'
 
-export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?: boolean; factDiscovery?: boolean} = {}) {
-  const world = await seedCurrentProductWorld('CHAT situation production')
+export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?: boolean; factDiscovery?: boolean; worldDiscovery?: boolean} = {}) {
+  const world = await seedCurrentProductWorld('CHAT situation production', options.worldDiscovery ? {characterDetails: {
+    background: '红铜钥匙藏在修钟台下的木匣里。', shortDescription: '修钟台下有一只获准由店主检查的木匣。',
+  }} : {})
   const {scope} = await createChatDraftV3('修钟铺的一天')
   const linked = await selectChatWorldV1(scope, 0, world.release.id!)
   const index = await loadProductProductionConsultationSourceV2({scope, worldReleaseId: linked.worldReleaseId!})
@@ -17,13 +19,18 @@ export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?
   if (base.version !== 3) throw new Error('fixture version')
   const playerCharacterKey = index.selectionOptions.characters.find(c => c.label === '守潮人')!.resourceKey
   const draft = await saveChatDraftV1(scope, linked.revision, {...base,
-    ...(options.mappedPlayer || options.factDiscovery ? {narrative: {...base.narrative, ...(options.mappedPlayer ? {playerCharacterKey, personaName: '守潮人'} : {}), ...(options.factDiscovery ? {permissions: {...base.narrative.permissions, allowActorSituationExpansion: true, maxDiscoveriesPerSituation: 2}} : {})}} : {}),
+    ...(options.mappedPlayer || options.factDiscovery || options.worldDiscovery ? {narrative: {...base.narrative, ...(options.mappedPlayer ? {playerCharacterKey, personaName: '守潮人'} : {}), ...(options.factDiscovery || options.worldDiscovery ? {permissions: {...base.narrative.permissions, allowActorSituationExpansion: true, maxDiscoveriesPerSituation: 2}} : {})}} : {}),
     playerRole: options.mappedPlayer ? '来到修钟铺的守潮人，没有答应帮忙修理。' : '来店里借书的旅人沈禾，没有答应帮忙修理。', openingSituation: '雨天，修钟铺的一台旧钟停了。',
     characters: [{sourceKey, voiceRules: '', privateKnowledge: '', initialTrust: 0}]})
   const projection = await loadChatSourceProjectionV1(scope, draft.revision)
   const confirmed = await confirmChatSourceReviewV1(scope, draft.revision, {
     projectionHash: projection.projectionHash,
-    classifications: chatProjectionResourcesV1(projection).flatMap(c => c.fragments.map(f => c.resourceKey === projection.playerCharacter?.resourceKey ? ({
+    classifications: chatProjectionResourcesV1(projection).flatMap(c => c.fragments.map(f => options.worldDiscovery && c.resourceKey === sourceKey && f.pointer === '/background' ? ({
+      projectionHash: projection.projectionHash, fragmentKey: f.fragmentKey, purpose: 'knowledge', visibility: 'discoverable', audienceKeys: [],
+      discovery: {actorKeys: [sourceKey], condition: '店主实际打开并查看修钟台下木匣的内部；仅查看外观不足以发现。', prerequisiteFragmentKeys: [c.fragments.find(item => item.pointer === '/shortDescription')!.fragmentKey]},
+    }) : options.worldDiscovery && c.resourceKey === sourceKey && f.pointer === '/shortDescription' ? ({
+      projectionHash: projection.projectionHash, fragmentKey: f.fragmentKey, purpose: 'knowledge', visibility: 'public', audienceKeys: [],
+    }) : c.resourceKey === projection.playerCharacter?.resourceKey ? ({
       projectionHash: projection.projectionHash, fragmentKey: f.fragmentKey,
       purpose: ['/name', '/identity'].includes(f.pointer) ? 'identity' : 'knowledge',
       visibility: ['/name', '/identity'].includes(f.pointer) ? 'public' : f.pointer === '/background' ? 'participants' : 'author-only',
@@ -53,6 +60,8 @@ export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?
 export function chatSituationCandidatesFixture(source: ChatNarrativeProductionSourceV1): ChatSituationCandidatesV1 {
   const actor = source.participants[0].participantKey
   const audienceKeys = ['player', actor]
+  const discoverySources = source.source.knowledge.filter(s => s.discovery || source.source.knowledge.some(t => t.discovery?.prerequisiteKnowledgeKeys.includes(s.key)))
+  const factKeys = new Map(discoverySources.map((s, index) => [s.key, `world-discovery-${index}`]))
   return {schema: 'storyforge.chat-situation-candidates', version: 1, options: ['缺失零件', '旧账本', '停摆的纪念钟'].map((title, i) => ({
     optionKey: `option-${i + 1}`, title, pitch: `从${title}展开，可以先喝茶也可以一起查看。`,
     situation: {situationKey: `situation-${i + 1}`, sceneKey: `scene-${i + 1}`, title, location: '修钟铺', timeLabel: '雨天下午',
@@ -60,7 +69,11 @@ export function chatSituationCandidatesFixture(source: ChatNarrativeProductionSo
         {factKey: 'parcel', text: '工作台上的蓝色布包获准由店主自行打开查看。', audienceKeys, origin: 'author-private' as const, sourceKnowledgeKey: null, sourceEventSequence: 0},
         {factKey: 'hidden-note', text: '蓝色布包里存着一张未署名的清单。', audienceKeys: [], origin: 'author-private' as const, sourceKnowledgeKey: null, sourceEventSequence: 0,
           discovery: {sceneKey: `scene-${i + 1}`, actorKeys: [actor], condition: '店主实际打开并查看获准检查的蓝色布包内部；这不证明谁写了清单。', prerequisiteFactKeys: ['parcel']}},
-      ] : [])],
+      ] : []), ...discoverySources.map(s => ({factKey: factKeys.get(s.key)!, text: s.content, audienceKeys: s.audienceKeys,
+        origin: 'reviewed-world' as const, sourceKnowledgeKey: s.key, sourceEventSequence: 0,
+        ...(s.discovery ? {discovery: {sceneKey: `scene-${i + 1}`, actorKeys: [...s.discovery.actorKeys], condition: s.discovery.condition,
+          prerequisiteFactKeys: s.discovery.prerequisiteKnowledgeKeys.map(key => factKeys.get(key)!)}} : {}),
+      }))],
       goals: [{goalKey: 'repair', actorKey: actor, desire: `了解${title}`, concern: '不想打扰旅人', boundary: '不强求帮忙', evidenceFactKeys: ['clock'], status: 'active', updatedSequence: 0}],
       beliefs: [],
       threads: [{threadKey: 'repair-clock', title, question: `${title}应如何处理？`, audienceKeys, participantKeys: [actor], evidenceFactKeys: ['clock'], closureSignals: ['解决问题或决定暂缓'], status: 'open', updatedSequence: 0}],

@@ -110,7 +110,7 @@ export async function loadCurrentProductWorldSourceCatalogV1(input: {
  * Minimal semanticContract=3 world used by upper-product architecture tests.
  * It deliberately contains no executable product graph or product media.
  */
-export async function seedCurrentProductWorld(name: string, options: { minimumCharacters?: number; characterDetails?: {background?: string; personality?: string} } = {}) {
+export async function seedCurrentProductWorld(name: string, options: { minimumCharacters?: number; characterDetails?: {background?: string; personality?: string; shortDescription?: string} } = {}) {
   const created = await createWorkspace({
     name,
     genres: ['interactive-fiction'],
@@ -155,7 +155,7 @@ export async function seedCurrentProductWorld(name: string, options: { minimumCh
   const characterRows = [
     stampNewRecord(created.scope, 'characters', {
       projectId: created.scope.projectId, name: '林舟', roleWeight: 'main', moralAxis: 'good', orderAxis: 'lawful',
-      identity: '谨慎的守灯调查者', shortDescription: '负责雾港灯塔的年轻守灯人。',
+      identity: '谨慎的守灯调查者', shortDescription: options.characterDetails?.shortDescription ?? '负责雾港灯塔的年轻守灯人。',
       background: options.characterDetails?.background ?? '熟悉潮汐钟结构。', personality: options.characterDetails?.personality ?? '谨慎而固执', createdAt: now, updatedAt: now,
     } as never, { owner: 'world' }),
     stampNewRecord(created.scope, 'characters', {

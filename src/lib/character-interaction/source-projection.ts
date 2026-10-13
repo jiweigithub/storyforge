@@ -41,9 +41,11 @@ export interface ChatSourceClassificationV1 {
   projectionHash: string
   fragmentKey: string
   purpose: 'identity' | 'motivation' | 'voice' | 'knowledge'
-  visibility: 'public' | 'participants' | 'author-only' | 'unclassified'
+  visibility: 'public' | 'participants' | 'author-only' | 'unclassified' | 'discoverable'
   /** Portable character resource keys or the explicit player viewpoint. */
   audienceKeys: string[]
+  /** Explicit S2 authorization, separate from initial knowledge and author-only exclusion. */
+  discovery?: {actorKeys: string[]; condition: string; prerequisiteFragmentKeys: string[]}
 }
 
 /** Author-owned decision saved in S2, then frozen with the authorized Brief. */
@@ -61,12 +63,12 @@ export function parseChatSourceReviewV1(value: unknown): ChatSourceReviewV1 {
   const seen = new Set<string>()
   for (const item of row.classifications) {
     if (!item || typeof item !== 'object'
-      || Object.keys(item).sort().join(',') !== 'audienceKeys,fragmentKey,projectionHash,purpose,visibility'
+      || Object.keys(item).sort().join(',') !== (Object.prototype.hasOwnProperty.call(item, 'discovery') ? 'audienceKeys,discovery,fragmentKey,projectionHash,purpose,visibility' : 'audienceKeys,fragmentKey,projectionHash,purpose,visibility')
       || item.projectionHash !== row.projectionHash
       || typeof item.fragmentKey !== 'string' || !item.fragmentKey || item.fragmentKey.length > 1000
       || seen.has(item.fragmentKey)
       || !['identity', 'motivation', 'voice', 'knowledge'].includes(item.purpose)
-      || !['public', 'participants', 'author-only', 'unclassified'].includes(item.visibility)
+      || !['public', 'participants', 'author-only', 'unclassified', 'discoverable'].includes(item.visibility)
       || !Array.isArray(item.audienceKeys) || item.audienceKeys.length > 9
       || item.audienceKeys.some((key: unknown) => typeof key !== 'string' || !key || key.length > 500)
       || new Set(item.audienceKeys).size !== item.audienceKeys.length
@@ -74,6 +76,19 @@ export function parseChatSourceReviewV1(value: unknown): ChatSourceReviewV1 {
       fail('来源分类字段、版本或接收者无效')
     }
     seen.add(item.fragmentKey)
+    if (item.visibility === 'discoverable' && !item.discovery) fail('可发现隐情必须明确允许角色与发现条件')
+    if (Object.prototype.hasOwnProperty.call(item, 'discovery')) {
+      const rule = item.discovery
+      if (!['discoverable', 'participants'].includes(item.visibility) || item.purpose !== 'knowledge'
+        || !rule || typeof rule !== 'object' || Object.keys(rule).sort().join(',') !== 'actorKeys,condition,prerequisiteFragmentKeys'
+        || typeof rule.condition !== 'string' || !rule.condition.trim() || rule.condition.length > 2000
+        || !Array.isArray(rule.actorKeys) || !rule.actorKeys.length || rule.actorKeys.length > 8
+        || rule.actorKeys.some((key: unknown) => typeof key !== 'string' || !key || key === 'player' || key.length > 500 || item.audienceKeys.includes(key))
+        || new Set(rule.actorKeys).size !== rule.actorKeys.length
+        || !Array.isArray(rule.prerequisiteFragmentKeys) || !rule.prerequisiteFragmentKeys.length || rule.prerequisiteFragmentKeys.length > 200
+        || rule.prerequisiteFragmentKeys.some((key: unknown) => typeof key !== 'string' || !key || key === item.fragmentKey || key.length > 1000)
+        || new Set(rule.prerequisiteFragmentKeys).size !== rule.prerequisiteFragmentKeys.length) fail('隐情发现授权字段、用途或范围无效')
+    }
   }
   return structuredClone(value) as ChatSourceReviewV1
 }
@@ -227,6 +242,9 @@ function selectProjectionView(input: {
   if (!viewers.has(input.viewerKey)) fail('视角不属于当前投影')
   const fragments = new Map(chatProjectionResourcesV1(input.draft).flatMap(resource => resource.fragments)
     .map(fragment => [fragment.fragmentKey, fragment]))
+  // Validate discovery authorizations even for a viewer who cannot read the truth.
+  if (input.classifications.some(item => item.discovery !== undefined || item.visibility === 'discoverable')) parseChatSourceReviewV1({projectionHash, classifications: input.classifications})
+  const decisions = new Map(input.classifications.map(item => [item.fragmentKey, item]))
   const seen = new Set<string>()
   const result: Array<ChatSourceFragmentV1 & { purpose: ChatSourceClassificationV1['purpose'] }> = []
   for (const decision of input.classifications) {
@@ -237,12 +255,21 @@ function selectProjectionView(input: {
     if (body.background?.some(resource => resource.resourceKey === fragment.resourceKey) && decision.purpose !== 'knowledge') fail('世界背景资料只能作为事实与经历，不能变成人物身份、动机或口吻')
     if (body.playerCharacter?.resourceKey === fragment.resourceKey && !['identity', 'knowledge'].includes(decision.purpose)) fail('玩家人物资料只能作为身份或知识，不能要求 AI 代演玩家的动机与口吻')
     if (!['identity', 'motivation', 'voice', 'knowledge'].includes(decision.purpose)
-      || !['public', 'participants', 'author-only', 'unclassified'].includes(decision.visibility)
+      || !['public', 'participants', 'author-only', 'unclassified', 'discoverable'].includes(decision.visibility)
       || !Array.isArray(decision.audienceKeys)
       || new Set(decision.audienceKeys).size !== decision.audienceKeys.length
       || decision.audienceKeys.some(key => !viewers.has(key))) fail('知识分类或接收者无效')
     if (decision.visibility === 'participants' ? decision.audienceKeys.length === 0 : decision.audienceKeys.length !== 0) {
       fail('可见性与接收者不匹配')
+    }
+    if (decision.discovery) {
+      const rule = decision.discovery
+      if (rule.actorKeys.some(actor => !body.characters.some(c => c.resourceKey === actor))) fail('可发现者必须是当前 AI 角色')
+      for (const key of rule.prerequisiteFragmentKeys) {
+        const prerequisite = decisions.get(key)
+        if (!fragments.has(key) || !prerequisite || prerequisite.purpose !== 'knowledge'
+          || !(prerequisite.visibility === 'public' || prerequisite.visibility === 'participants' && rule.actorKeys.every(actor => prerequisite.audienceKeys.includes(actor)))) fail('发现前提必须是调查角色已经获准知道的事实资料')
+      }
     }
     if (decision.visibility === 'public'
       || decision.visibility === 'participants' && decision.audienceKeys.includes(input.viewerKey)) {

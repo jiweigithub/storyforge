@@ -40,12 +40,18 @@ export function parseChatAuthoringSettings(value: unknown): ChatAuthoringSetting
     const row = value as Record<string, unknown>;
     if (row.version === 3) {
         const {narrative, ...base} = row;
-        const parsed = parseChatAuthoringSettings({...base, version: 2}) as ChatAuthoringSettingsV2;
+        const parsed = parseChatAuthoringSettingsV2({...base, version: 2});
         const setup = parseChatNarrativeSetupV1(narrative);
         if (setup.playerCharacterKey && parsed.characters.some(c => c.sourceKey === setup.playerCharacterKey)) throw new Error('同一世界人物不能同时由玩家与 AI 扮演');
+        if (parsed.sourceReview?.classifications.some(c => c.discovery) && !setup.permissions.maxDiscoveriesPerSituation) throw new Error('世界隐情发现需要明确启用调查额度');
         return {...parsed, version: 3, narrative: setup};
     }
     if (row.version === 1) return parseChatAuthoringSettingsV1(row);
+    const parsed = parseChatAuthoringSettingsV2(row);
+    if (parsed.sourceReview?.classifications.some(c => c.discovery)) throw new Error('世界隐情发现需要实验叙事方案及明确授权');
+    return parsed;
+}
+function parseChatAuthoringSettingsV2(row: Record<string, unknown>): ChatAuthoringSettingsV2 {
     if (row.version !== 2 || !Object.prototype.hasOwnProperty.call(row, 'sourceReview'))
         throw new Error('角色聊天方案版本无效');
     const {sourceReview, backgroundResourceKeys, ...base} = row;

@@ -109,8 +109,8 @@ it('plans a durable author gate and prevents the situation model from rereading 
   expect(() => parseProductProductionCommandV1({...command, resolution: {...command.resolution, chatSituation: {...chatSituation, authorCommandId: 'forged'}}})).toThrow('字段')
 })
 
-it.each([{mappedPlayer: false, factDiscovery: false}, {mappedPlayer: true, factDiscovery: false}, {mappedPlayer: false, factDiscovery: true}])('runs the formal scheduler through selection, release and transfer without regenerating candidates (mapped=$mappedPlayer, discovery=$factDiscovery)', async ({mappedPlayer, factDiscovery}) => {
-  const f = await seedChatNarrativeProductionFixture({mappedPlayer, factDiscovery})
+it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false}, {mappedPlayer: true, factDiscovery: false, worldDiscovery: false}, {mappedPlayer: false, factDiscovery: true, worldDiscovery: false}, {mappedPlayer: true, factDiscovery: false, worldDiscovery: true}])('runs the formal scheduler through selection, release and transfer without regenerating candidates (mapped=$mappedPlayer, discovery=$factDiscovery, world=$worldDiscovery)', async ({mappedPlayer, factDiscovery, worldDiscovery}) => {
+  const f = await seedChatNarrativeProductionFixture({mappedPlayer, factDiscovery, worldDiscovery})
   const created = await executeProductProductionCommand({scope: f.scope, command: {
     type: 'create-intent', commandId: 'chat.intent', productionKey: 'chat.situation-production', productType: 'character-interaction',
     worldReleaseId: f.confirmed.worldReleaseId!, userText: '制作可以自由演绎的角色聊天',
@@ -232,6 +232,12 @@ it.each([{mappedPlayer: false, factDiscovery: false}, {mappedPlayer: true, factD
     expect(state.interaction!.chatNarrative!.permissions.maxDiscoveriesPerSituation).toBe(2)
     expect(state.interaction!.chatNarrative!.situation.facts.find(f => f.factKey === 'hidden-note')?.discovery).toMatchObject({sceneKey: 'scene-2', prerequisiteFactKeys: ['parcel']})
     expect(JSON.stringify(interactionVisibilityView(state.interaction!, 'player'))).not.toContain('未署名的清单')
+  }
+  if (worldDiscovery) {
+    expect(runtime.interaction!.chatSource!.version).toBe(4)
+    const sourceTruth = f.source.source.knowledge.find(k => k.discovery)!
+    expect(state.interaction!.chatNarrative!.situation.facts.find(f => f.sourceKnowledgeKey === sourceTruth.key)).toMatchObject({text: sourceTruth.content, audienceKeys: [], origin: 'reviewed-world', discovery: {sceneKey: 'scene-2', condition: sourceTruth.discovery!.condition}})
+    expect(JSON.stringify(interactionVisibilityView(state.interaction!, 'player'))).not.toContain('红铜钥匙')
   }
   expect(state.interaction!.chatNarrative!.persona.name).toBe(f.settings.narrative.personaName)
   if (mappedPlayer) {

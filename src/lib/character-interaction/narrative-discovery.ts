@@ -23,9 +23,9 @@ export function validateChatFactDiscoveryRuleV1(fact: ChatSituationFactV1, facts
 }, maximum: number): void {
   if (fact.discovery === undefined) return
   const rule = row(fact.discovery, 'sceneKey,actorKeys,condition,prerequisiteFactKeys')
-  // Reviewed world facts need an explicit source-level discovery authorization;
-  // this initial contract only covers author-selected product-private fiction.
-  if (!maximum || fact.origin !== 'author-private' || fact.sourceEventSequence !== 0) fail('隐情缺少作者确认的私域来源或作品授权')
+  // The frozen-content parser additionally binds reviewed-world rules to the
+  // author's exact source-level authorization. Runtime events cannot edit rules.
+  if (!maximum || !['author-private', 'reviewed-world'].includes(fact.origin) || fact.sourceEventSequence !== 0) fail('隐情缺少作者确认的初始来源或作品授权')
   text(rule.condition)
   if (!boundary.sceneKeys.includes(String(rule.sceneKey))) fail('发现条件引用包外场景')
   const actors = keys(rule.actorKeys, 8), prerequisites = keys(rule.prerequisiteFactKeys)
