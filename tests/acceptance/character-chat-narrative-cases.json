@@ -757,6 +757,68 @@
               }
             }
           ]
+        },
+        "reviewedBackgroundPreflights": {
+          "status": "bounded-source-visibility-refusal-and-autonomous-continuation-verified-not-quality-acceptance",
+          "attempts": [
+            {
+              "sourceSnapshotHead": "a456ff7d1184128daf1d608851da3b6fe0cb5d3e",
+              "sourceSnapshotManifestSha256": "db120748e0847296130f1fabaeb9473a90ce67de397d145aa0348fb39132b3ee",
+              "newModelRequests": 6,
+              "newModelResponses": 6,
+              "newCompletedRuns": 3,
+              "costUsd": null,
+              "scope": "Isolated engineering fixture with explicitly reviewed frozen-world sources and an author-defined initial situation. Real runtime generation and review, not live authoring production, independent narrative evaluation or a formal M1 episode.",
+              "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation",
+              "refreshRetained": true,
+              "noNewRunOnRefresh": true,
+              "frozenWorldUnchanged": true,
+              "evidence": "codex-background-player-preflight-v26.json",
+              "rawEvidenceSha256": "14f78b2ef36f19a2f1c1320ce79a92cb8145057b01c0f665dc6eb3fcde0edcf3",
+              "backupSha256": "13ba4415b7066340729af7ee51aa6f558d3e289c3c5feeddea71725268e0fc21",
+              "elapsedSeconds": 112.442,
+              "adoptedActions": 3,
+              "adoptedSituations": 0,
+              "newRuntimeFacts": 0,
+              "usage": {
+                "inputTokens": 67405,
+                "outputTokens": 1915,
+                "reasoningOutputTokens": 528,
+                "totalTokens": 69320
+              },
+              "outcome": "Opening invited an optional inspection. After an explicit refusal the role changed its own plan to an independent check; the second role added a safety concern using public evidence. Actual request bodies carry the private key clue only to its owner, not the other role generator; author-only relationship and future plot are excluded from every request. These three actions do not yet produce external consequences or finish an investigation."
+            },
+            {
+              "sourceSnapshotHead": "a456ff7d1184128daf1d608851da3b6fe0cb5d3e",
+              "sourceSnapshotManifestSha256": "db120748e0847296130f1fabaeb9473a90ce67de397d145aa0348fb39132b3ee",
+              "newModelRequests": 6,
+              "newModelResponses": 6,
+              "newCompletedRuns": 3,
+              "costUsd": null,
+              "scope": "Isolated engineering fixture with explicitly reviewed frozen-world sources and an author-defined initial situation. Real runtime generation and review, not live authoring production, independent narrative evaluation or a formal M1 episode.",
+              "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation",
+              "refreshRetained": true,
+              "noNewRunOnRefresh": true,
+              "frozenWorldUnchanged": true,
+              "evidence": "codex-background-continuation-preflight-v26.json",
+              "rawEvidenceSha256": "fadd188973b6b9d0c59993de4f12d9f9aef8cd5de3bb59de1e2a27a6a202a6d5",
+              "backupSha256": "764a0ce54e5699a95c6692ae3bf46d79a97f697fd4d56837264781a68dae7e72",
+              "priorEvidence": "codex-background-player-preflight-v26.json",
+              "restorationEqual": true,
+              "newModelRequestsOnRestore": 0,
+              "elapsedSeconds": 122.098,
+              "adoptedActions": 2,
+              "adoptedSituations": 1,
+              "newRuntimeFacts": 2,
+              "usage": {
+                "inputTokens": 72570,
+                "outputTokens": 2454,
+                "reasoningOutputTokens": 640,
+                "totalTokens": 75024
+              },
+              "outcome": "Two explicit continues after importing the unchanged live save. First the role independently checked the entrance route and recorded that action, then requested local background linked to its existing goal and thread. The next trigger constructed one limited sightline observation and the following role action consumed it, explained the still-unverified section and revised its own plan. The player was not moved or forced to operate the key. Original facts remain and no goal is prematurely closed. This is a bounded progression sample, not evidence of clue payoff, resolved investigation or long-run quality."
+            }
+          ]
         }
       },
       {

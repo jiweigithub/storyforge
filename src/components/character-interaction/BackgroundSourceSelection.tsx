@@ -14,17 +14,18 @@ export default function BackgroundSourceSelection(props: {
   scope: WorkspaceScope; worldReleaseId: number | null; settings: ChatAuthoringSettings; disabled: boolean
   onChange: (keys: string[]) => void
 }) {
+  const {projectId, worldId, workId} = props.scope
   const [options, setOptions] = useState<Awaited<ReturnType<typeof loadChatBackgroundOptionsV1>>>([])
   const [error, setError] = useState(''), [loading, setLoading] = useState(false), [query, setQuery] = useState(''), [limit, setLimit] = useState(40)
   useEffect(() => {
     let active = true
     setOptions([]); setError(''); setQuery(''); setLimit(40); setLoading(!!props.worldReleaseId)
-    if (props.worldReleaseId) void loadChatBackgroundOptionsV1(props.scope, props.worldReleaseId)
+    if (props.worldReleaseId) void loadChatBackgroundOptionsV1({projectId, worldId, workId}, props.worldReleaseId)
       .then(rows => {if (active) setOptions(rows)})
       .catch(reason => {if (active) setError(reason instanceof Error ? reason.message : String(reason))})
       .finally(() => {if (active) setLoading(false)})
     return () => {active = false}
-  }, [props.scope.projectId, props.scope.worldId, props.scope.workId, props.worldReleaseId])
+  }, [projectId, worldId, workId, props.worldReleaseId])
   if (props.settings.version === 1) return <p>确认下方的完整人物资料后，可以选择世界背景资料。</p>
   const selected = props.settings.backgroundResourceKeys ?? []
   const shown = options.filter(option => `${option.label} ${CHAT_BACKGROUND_LABELS[option.resourceKind] ?? '世界资料'}`.includes(query.trim()))

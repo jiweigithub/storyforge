@@ -1,6 +1,5 @@
 import type {ContextResourceDescriptorV1} from '../registry/types'
 import type {WorkspaceScope} from '../types'
-import {openWorldSemanticResourceCatalogV1} from '../context-gateway/world-release-client'
 import {upperProductAllowedAreasV1, upperProductAllowedContextKindsV1} from '../product/world-requirement-adapters'
 
 /** Metadata only. No cross-world read or whole-release content fallback. */
@@ -14,6 +13,8 @@ export function isChatBackgroundDescriptorV1(descriptor: ContextResourceDescript
 }
 
 export async function loadChatBackgroundOptionsV1(scope: WorkspaceScope, worldReleaseId: number) {
+  // Contract validation also runs outside the browser; open storage only for an actual catalog read.
+  const {openWorldSemanticResourceCatalogV1} = await import('../context-gateway/world-release-client')
   const opened = await openWorldSemanticResourceCatalogV1({localReleaseRecordId: worldReleaseId,
     expectedProjectId: scope.projectId, expectedWorldId: scope.worldId})
   return opened.resources.filter(isChatBackgroundDescriptorV1).map(resource => ({
