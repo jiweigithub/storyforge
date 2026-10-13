@@ -2104,7 +2104,7 @@ async function branchProductRuntimeSessionInternal(
   );
   if (input.intent) {
     const after = replayProductRuntimeEvents(parseProductRuntimeState(parent.initialStateJson), events, input.throughSequence + 1);
-    prepareProductRuntimeBranchIntentV1(parent.kind, state, after, input.intent);
+    await prepareProductRuntimeBranchIntentV1(parent, state, after, input.intent);
   }
   rebaseProductRuntimeStateForBranchV1(state, input.throughSequence);
   state.lastSequence = 0;

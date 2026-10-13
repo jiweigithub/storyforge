@@ -12,7 +12,8 @@ import { adventureNarrativeActionCommandIdV1 } from '../adventure/command-identi
 import { parseAvgPresentationState, applyAvgPresentationEvent, createInitialAvgPresentationState } from '../avg/runtime'
 import { parseInteractionState, applyInteractionEvent, createInitialInteractionState, rebaseInteractionStateForBranch } from '../character-interaction/runtime'
 import {prepareChatMessageEditBranchV1} from '../character-interaction/narrative-edit-contract'
-import type {ChatMessageEditBranchIntentV1} from '../types/chat-narrative'
+import type {ChatHistoricalOptionBranchIntentV1, ChatMessageEditBranchIntentV1} from '../types/chat-narrative'
+import {prepareChatHistoricalOptionBranchV1} from '../character-interaction/narrative-options-history'
 import { evaluateNarrativeChoices } from './narrative-content'
 import { parseOpenWorldEvolutionState, applyOpenWorldEvolutionProductRuntimeEvent, openWorldEvolutionProjection, createInitialOpenWorldEvolutionState, rebaseOpenWorldEvolutionStateForBranch } from '../open-world/evolution-runtime'
 import { parseOpenWorldState, applyOpenWorldEvent, openWorldMainlineProjection, createInitialOpenWorldState, rebaseOpenWorldStateForBranch } from '../open-world/runtime'
@@ -40,11 +41,13 @@ import {
   type ProductRuntimeJsonObjectV1,
 } from './runtime-values'
 
-export type ProductRuntimeBranchIntentV1 = ChatMessageEditBranchIntentV1
+export type ProductRuntimeBranchIntentV1 = ChatMessageEditBranchIntentV1 | ChatHistoricalOptionBranchIntentV1
 
-export function prepareProductRuntimeBranchIntentV1(kind: ProductRuntimeSession['kind'], before: ProductRuntimeState, after: ProductRuntimeState, intent: ProductRuntimeBranchIntentV1): void {
-  if (kind !== 'character-interaction' || intent.kind !== 'character-chat-message-edit') throw new Error('分支改写请求与产品不匹配。')
-  prepareChatMessageEditBranchV1(before, after, intent)
+export async function prepareProductRuntimeBranchIntentV1(parent: ProductRuntimeSession, before: ProductRuntimeState, after: ProductRuntimeState, intent: ProductRuntimeBranchIntentV1): Promise<void> {
+  if (parent.kind !== 'character-interaction') throw new Error('分支改写请求与产品不匹配。')
+  if (intent.kind === 'character-chat-option-switch') await prepareChatHistoricalOptionBranchV1(parent, before, after, intent)
+  else if (intent.kind === 'character-chat-message-edit') prepareChatMessageEditBranchV1(before, after, intent)
+  else throw new Error('分支改写请求与产品不匹配。')
 }
 
 export function parseProductOwnedRuntimeStateV1(

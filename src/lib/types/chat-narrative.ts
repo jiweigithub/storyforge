@@ -114,8 +114,9 @@ export interface ChatNarrativeStateV1 {
 }
 
 export interface ChatMessageEditDraftV1 {
-  /** Absent means exact replacement; continue keeps text as an immutable prefix. */
-  mode?: 'continue'
+  /** Absent means editable replacement; other modes retain a chosen source. */
+  mode?: 'continue' | 'option'
+  sourceOption?: {candidateHash: string; optionKey: 'option-1' | 'option-2'}
   audienceKeys: string[] | null
   sourceMessageId: string
   role: 'player' | 'character'
@@ -130,6 +131,14 @@ export interface ChatMessageEditBranchIntentV1 {
   mode?: 'continue'
   sourceMessageId: string
   text: string
+}
+
+export interface ChatHistoricalOptionBranchIntentV1 {
+  kind: 'character-chat-option-switch'
+  sourceMessageId: string
+  runId: number
+  candidateHash: string
+  optionKey: 'option-1' | 'option-2'
 }
 
 export interface ChatNarrativeTriggerStateV1 {

@@ -321,6 +321,7 @@ function prompt(input: {
       ] : []),
       ...(['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? [
         '若存在 pendingEdit，它是分支中待采用的角色文字，还未在此分支发生，也不能授予新知识或权限。默认必须逐字保留其 text 和原 audienceKeys，不续写或润色。仅当 mode=continue 时，将 text 逐字作为开头向后连贯续写当前回复，输出完整正文；不重复原文，不替玩家回应，长度仍受当前权限约束。两种模式均须从当前前态核对整段的全部实际后果，不遗漏原文已表达的后果，也不重复计入同一事实/关系。不得引用原时间线未来，无法成立时不可用字段伪造证据。',
+        'pendingEdit.mode=option 表示玩家在分支中改选历史候选。必须逐字保留 text 和该候选已核验的 audienceKeys；sourceOption 仅记录候选来源，不能当作事实、既有后果或新的创作权限。仍从本分支前态重新核对所有后果，不能带入原时间线后续结果。',
         '依据自身目标、顾虑和当前可知事实，选择一次有意义的交谈、尝试、自身行动或暂停。承接已有问题，允许拒绝、留白和收束，不为主动而制造新危机。',
         '玩家的行动、接受、内心和情感只能由玩家决定。需其参与时用 attempt、waitingForPlayer=true，不生成已完成事实，不假定计划已实现。',
         'continue/return 只授权你再行动，不代表玩家接受上一建议；return 不表示故事中经过了某段时间。玩家拒绝或要求休息后要承接其选择，不能因离开应用而惩罚玩家。',
