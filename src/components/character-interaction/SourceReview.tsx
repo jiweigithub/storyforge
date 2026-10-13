@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { WorkspaceScope } from '../../lib/types'
 import type { ChatAuthoringDraftV1, ChatAuthoringSettings } from '../../lib/character-interaction/authoring-contract'
 import { confirmChatSourceReviewV1, loadChatSourceProjectionV1 } from '../../lib/character-interaction/draft-service'
-import { readPreparedChatSourceProjectionViewV1, type ChatSourceClassificationV1, type ChatSourceFragmentV1, type ChatSourceProjectionDraftV1 } from '../../lib/character-interaction/source-projection'
+import { chatProjectionResourcesV1, readPreparedChatSourceProjectionViewV1, type ChatSourceClassificationV1, type ChatSourceFragmentV1, type ChatSourceProjectionDraftV1 } from '../../lib/character-interaction/source-projection'
+import {CHAT_BACKGROUND_LABELS} from './BackgroundSourceSelection'
 import { FIELD_BY_TARGET } from '../../lib/registry/field-registry'
 import { MORAL_AXIS_LABELS, ORDER_AXIS_LABELS, ROLE_WEIGHT_LABELS } from '../../lib/character/character-axes'
 
@@ -14,10 +15,12 @@ const FIELD_LABELS: Record<string, string> = {
 }
 const fieldName = (pointer: string) => pointer.slice(1).replace(/~1/g, '/').replace(/~0/g, '~')
 const fieldLabel = (pointer: string) => FIELD_LABELS[fieldName(pointer)] ?? fieldName(pointer)
-function passageLabel(fragment: ChatSourceFragmentV1, fragments: ChatSourceFragmentV1[]): string {
-  if (!fragment.textRange) return fieldLabel(fragment.pointer)
+const BACKGROUND_FIELDS: Record<string, string> = {name: '名称', title: '标题', description: '说明', summary: '概述', content: '正文', label: '关系称谓', relationType: '关系类型', isBidirectional: '双向关系', stages: '发展阶段', globalNote: '总体规则', entries: '规则条目', mainPlot: '主线安排', subPlots: '支线安排', logline: '故事梗概', theme: '主题', centralConflict: '核心矛盾', plotPattern: '情节模式'}
+function passageLabel(fragment: ChatSourceFragmentV1, fragments: ChatSourceFragmentV1[], background = false): string {
+  const label = background ? BACKGROUND_FIELDS[fieldName(fragment.pointer)] ?? fieldName(fragment.pointer) : fieldLabel(fragment.pointer)
+  if (!fragment.textRange) return label
   const passages = fragments.filter(f => f.resourceKey === fragment.resourceKey && f.pointer === fragment.pointer)
-  return `${fieldLabel(fragment.pointer)}（片段 ${passages.findIndex(f => f.fragmentKey === fragment.fragmentKey) + 1}/${passages.length}）`
+  return `${label}（片段 ${passages.findIndex(f => f.fragmentKey === fragment.fragmentKey) + 1}/${passages.length}）`
 }
 function readableValue(pointer: string, valueJson: string): string {
   const value: unknown = JSON.parse(valueJson)
@@ -49,7 +52,7 @@ export default function SourceReview(props: {
       const saved = props.settings.version !== 1 && props.settings.sourceReview?.projectionHash === next.projectionHash ? props.settings.sourceReview : null
       if (saved) readPreparedChatSourceProjectionViewV1({draft: next, review: saved, viewerKey: 'player'})
       const savedDecisions = new Map(saved?.classifications.map(row => [row.fragmentKey, row]))
-      const nextDecisions = next.characters.flatMap(c => c.fragments.map(fragment => savedDecisions.get(fragment.fragmentKey) ?? ({
+      const nextDecisions = chatProjectionResourcesV1(next).flatMap(c => c.fragments.map(fragment => savedDecisions.get(fragment.fragmentKey) ?? ({
         projectionHash: next.projectionHash, fragmentKey: fragment.fragmentKey,
         purpose: 'knowledge' as const, visibility: 'unclassified' as const, audienceKeys: [],
       })))
@@ -80,6 +83,7 @@ export default function SourceReview(props: {
   return <section className="mt-6 space-y-3 border-t border-border pt-4" aria-label="角色来源资料检查">
     <h4>角色来源资料与知识范围</h4>
     <p>逐项决定谁知道什么。角色自己未知的真相、未来结局可保留给作者；待分类资料不会进入聊天。目标与顾虑表示角色的意愿。</p>
+    <p>背景资料与人物资料使用同一知情范围。未发生的故事安排、伏笔答案和角色自己未知的真相，请保留为作者资料或待分类。背景范围改变后也需要重新确认。</p>
     <p>长文本按原文顺序分段保留，每段可分别设置用途和知情者；未确认的片段不会自动沿用相邻段落的设置。</p>
     <p>{props.settings.version === 1 ? '当前方案使用旧版人物摘要。确认完整资料后，新制作将使用分角色的知识范围；已有发布与存档保持原样。'
       : props.settings.sourceReview ? '已保存资料确认。更换角色或世界后需要重新检查。' : '开始新制作前，请检查并确认角色资料的可见范围。'}</p>
@@ -87,24 +91,26 @@ export default function SourceReview(props: {
     {error && <p role="alert" className="text-danger">{error}</p>}
     <button type="button" className="lf-action" disabled={disabled} onClick={() => void load()}>{busy ? '正在处理…' : '读取并检查完整资料'}</button>
     {projection && <>
-      <div className="space-y-3">{projection.characters.map(character => <details key={character.resourceKey} open>
-        <summary>{character.label}</summary>
+      <div className="space-y-3">{chatProjectionResourcesV1(projection).map(character => <details key={character.resourceKey} open>
+        <summary>{character.label}{'resourceKind' in character && <span className="ml-2 text-xs text-text-muted">{CHAT_BACKGROUND_LABELS[String(character.resourceKind)] ?? '世界背景'}</span>}</summary>
+        {'relatedResourceKeys' in character && Array.isArray(character.relatedResourceKeys) && <p className="text-xs text-text-muted">关联人物：{character.relatedResourceKeys.map(key => audiences.find(a => a.key === key)?.name ?? '未加入聊天的人物').join('、')}</p>}
         {character.fragments.map(fragment => {
-          const label = passageLabel(fragment, character.fragments)
+          const background = 'resourceKind' in character
+          const label = passageLabel(fragment, character.fragments, background)
           const decision = decisions.find(row => row.fragmentKey === fragment.fragmentKey) ?? {purpose: 'knowledge', visibility: 'unclassified', audienceKeys: []}
           return <div key={fragment.fragmentKey} className="my-3 space-y-2 rounded border border-border p-3">
             <strong>{label}</strong>
             <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">{readableValue(fragment.pointer, fragment.valueJson)}</pre>
             <div className="flex flex-wrap gap-3">
-              <label>资料用途<select disabled={disabled} aria-label={`${character.label} ${label} 用途`} value={decision.purpose} onChange={e => change(fragment.fragmentKey, {purpose: e.target.value as ChatSourceClassificationV1['purpose']})}>{Object.entries(PURPOSES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-              <label>谁知道<select disabled={disabled} aria-label={`${character.label} ${label} 可见范围`} value={decision.visibility} onChange={e => change(fragment.fragmentKey, {visibility: e.target.value as ChatSourceClassificationV1['visibility'], audienceKeys: e.target.value === 'participants' ? [character.resourceKey] : []})}>{Object.entries(VISIBILITY).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+              <label>资料用途<select disabled={disabled || background} aria-label={`${character.label} ${label} 用途`} value={decision.purpose} onChange={e => change(fragment.fragmentKey, {purpose: e.target.value as ChatSourceClassificationV1['purpose']})}>{Object.entries(PURPOSES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+              <label>谁知道<select disabled={disabled} aria-label={`${character.label} ${label} 可见范围`} value={decision.visibility} onChange={e => change(fragment.fragmentKey, {visibility: e.target.value as ChatSourceClassificationV1['visibility'], audienceKeys: e.target.value === 'participants' ? [background ? projection.characters[0].resourceKey : character.resourceKey] : []})}>{Object.entries(VISIBILITY).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             </div>
             {decision.visibility === 'participants' && <div className="flex flex-wrap gap-3">{audiences.map(audience => <label key={audience.key}><input type="checkbox" disabled={disabled || decision.audienceKeys.length === 1 && decision.audienceKeys.includes(audience.key)} checked={decision.audienceKeys.includes(audience.key)} onChange={e => change(fragment.fragmentKey, {audienceKeys: e.target.checked ? [...decision.audienceKeys, audience.key] : decision.audienceKeys.filter(key => key !== audience.key)})}/>{audience.name}</label>)}</div>}
           </div>
         })}
       </details>)}</div>
       <details><summary>检查参与者实际获得的资料</summary><label>查看视角<select value={viewer} onChange={e => setViewer(e.target.value)}>{audiences.map(a => <option key={a.key} value={a.key}>{a.name}</option>)}</select></label>
-        {preview.length ? preview.map(fragment => <p className="whitespace-pre-wrap break-words text-xs" key={fragment.fragmentKey}>{PURPOSES[fragment.purpose]} · {passageLabel(fragment, projection.characters.flatMap(c => c.fragments))}：{readableValue(fragment.pointer, fragment.valueJson)}</p>) : <p>这个视角还没有获准读取的来源资料。</p>}
+        {preview.length ? preview.map(fragment => <p className="whitespace-pre-wrap break-words text-xs" key={fragment.fragmentKey}>{PURPOSES[fragment.purpose]} · {passageLabel(fragment, chatProjectionResourcesV1(projection).flatMap(c => c.fragments), !!projection.background?.some(r => r.resourceKey === fragment.resourceKey))}：{readableValue(fragment.pointer, fragment.valueJson)}</p>) : <p>这个视角还没有获准读取的来源资料。</p>}
       </details>
       <button type="button" className="lf-action lf-action-primary" disabled={disabled} onClick={() => void saveReview()}>确认可见范围并用于新制作</button>
     </>}
