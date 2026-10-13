@@ -104,6 +104,7 @@ export default defineConfig(({ mode }) => {
         order: 'pre' as const,
         handler(html: string) {
           return html.replace('/src/main.tsx', '/src/entry.ts').replace(/<script>([\s\S]*?)<\/script>/g, '')
+            .replace('</head>', '<script defer src="/site-metrics.js"></script></head>')
             .replace('<title>StoryForge / 故事熔炉</title>', '<title>项目体验版｜StoryForge 故事熔炉</title>')
             .replace('<div id="root"></div>', '<div id="root"><p>正在打开 StoryForge 项目体验版…</p></div><noscript><p>体验项目界面需要启用 JavaScript。<a href="/">返回官网</a></p></noscript><footer id="showcase-fallback-filing">北京悬象科技有限公司 · <a href="https://beian.miit.gov.cn/">京ICP备2026061833号-1</a> · <a href="https://beian.mps.gov.cn/#/query/webSearch?code=11011502040776">京公网安备11011502040776号</a></footer>')
         },

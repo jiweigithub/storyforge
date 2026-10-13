@@ -250,6 +250,7 @@ export default defineConfig({
   appearance: 'dark',
   sitemap: { hostname: 'https://docs.storyforge-lab.com' },
   head: [
+    ['script', { defer: '', src: 'https://storyforge-lab.com/site-metrics.js' }],
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/brand/storyforge-mark.svg' }],
     ['meta', { name: 'theme-color', content: '#0b1d1a' }],
   ],
