@@ -1,9 +1,10 @@
 import type {ChatNarrativeSetupV1} from '../../lib/character-interaction/narrative-setup'
 import type {ChatNarrativePermissionsV1} from '../../lib/types/chat-narrative'
 
-export default function NarrativeSetup({value, onChange, characters, aiCharacterKeys}: {
+export default function NarrativeSetup({value, onChange, characters, aiCharacterKeys, hasSourceDiscoveries = false}: {
   value: ChatNarrativeSetupV1; onChange: (value: ChatNarrativeSetupV1) => void
   characters: readonly {resourceKey: string; name: string}[]; aiCharacterKeys: readonly string[]
+  hasSourceDiscoveries?: boolean
 }) {
   const permissions = value.permissions
   const change = (patch: Partial<ChatNarrativeSetupV1>) => onChange({...value, ...patch})
@@ -37,9 +38,10 @@ export default function NarrativeSetup({value, onChange, characters, aiCharacter
       <label>情境强度<select value={permissions.intensity} onChange={e => permit({intensity: e.target.value as ChatNarrativePermissionsV1['intensity']})}><option value="everyday">日常</option><option value="tension">有张力</option><option value="danger">有危险</option></select></label>
       <fieldset><legend>允许角色主动行动的时机</legend>{triggers.map(([key, label]) => <label key={key}><input type="checkbox" checked={permissions.triggers.includes(key)} onChange={e => permit({triggers: e.target.checked ? [...permissions.triggers, key] : permissions.triggers.filter(t => t !== key)})}/>{label}</label>)}</fieldset>
       <fieldset><legend>允许引入的内容</legend>{kinds.map(([key, label]) => <label key={key}><input type="checkbox" checked={permissions.allowedNewFactKinds.includes(key)} onChange={e => permit({allowedNewFactKinds: e.target.checked ? [...permissions.allowedNewFactKinds, key] : permissions.allowedNewFactKinds.filter(t => t !== key)})}/>{label}</label>)}</fieldset>
-      <label><input type="checkbox" checked={permissions.allowActorSituationExpansion === true} onChange={e => permit({allowActorSituationExpansion: e.target.checked, ...(!e.target.checked && permissions.maxDiscoveriesPerSituation ? {maxDiscoveriesPerSituation: 0} : {})})}/>允许角色依据未完成事项发展新局面</label>
-      <label>每次调查最多揭示<select aria-label="每次调查最多揭示" disabled={permissions.allowActorSituationExpansion !== true} value={permissions.maxDiscoveriesPerSituation ?? 0} onChange={e => permit({maxDiscoveriesPerSituation: Number(e.target.value)})}><option value={0}>暂不启用隐情发现</option>{[1, 2, 3].map(n => <option key={n} value={n}>{n} 条已确认隐情</option>)}</select></label>
-      <p className="col-span-full">隐情发现只用于你确认的开场背景。选定开场前，请检查每条隐情的发现条件；角色实际调查并通过检查后才会获知。世界资料中标为“仅作者”的内容不会自动加入。</p>
+      <label><input type="checkbox" disabled={hasSourceDiscoveries} checked={permissions.allowActorSituationExpansion === true} onChange={e => permit({allowActorSituationExpansion: e.target.checked, ...(!e.target.checked && permissions.maxDiscoveriesPerSituation ? {maxDiscoveriesPerSituation: 0} : {})})}/>允许角色依据未完成事项发展新局面</label>
+      <label>每次调查最多揭示<select aria-label="每次调查最多揭示" disabled={permissions.allowActorSituationExpansion !== true} value={permissions.maxDiscoveriesPerSituation ?? 0} onChange={e => permit({maxDiscoveriesPerSituation: Number(e.target.value)})}><option value={0} disabled={hasSourceDiscoveries}>暂不启用隐情发现</option>{[1, 2, 3].map(n => <option key={n} value={n}>{n} 条已确认隐情</option>)}</select></label>
+      <p className="col-span-full">隐情发现用于你确认的开场背景和已授权的世界事实。世界来源在角色资料中逐项设置条件；选定开场前可再次检查。角色实际调查并通过检查后才会获知，标为“仅作者”的资料不会加入。</p>
+      {hasSourceDiscoveries && <p className="col-span-full">已有世界隐情发现授权。请先在角色来源资料中取消这些授权，再关闭调查发现；其他资料设置会保留。</p>}
       <label>同时推进的事项上限<input type="number" min={1} max={8} value={permissions.maxActiveThreads} onChange={e => permit({maxActiveThreads: Number(e.target.value)})}/></label>
       <label>每次触发的角色行动上限<input type="number" min={1} max={3} value={permissions.maxActionsPerTrigger} onChange={e => permit({maxActionsPerTrigger: Number(e.target.value)})}/></label>
       <label>每次行动可新增的事实数<input type="number" min={0} max={5} value={permissions.maxNewFactsPerAction} onChange={e => permit({maxNewFactsPerAction: Number(e.target.value)})}/></label>
