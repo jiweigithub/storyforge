@@ -616,6 +616,9 @@ export interface AssembleContextInput {
   textOpenWorldSourceUnitKeys?: string[]
   /** Character interaction: exactly one viewpoint for the registered reader. */
   interactionParticipantKey?: string
+  /** Exact durable situation candidate being reviewed within its owning instance. */
+  chatSituationCandidateRunId?: number
+  chatActionCandidateRunId?: number
   /** Character interaction: frozen product source + confirmed product Brief. */
   /** CM-1: 本次明确参与增量融合的碎片；由 inspirationWorkspace source 读取。 */
   inspirationFragmentIds?: string[]

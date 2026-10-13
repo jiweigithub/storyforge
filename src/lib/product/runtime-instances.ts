@@ -182,6 +182,8 @@ export function createProductInitialStateV1(input: {
       playerKey: runtimePackage.interaction!.playerKey,
       profiles: runtimePackage.interaction!.profiles,
       sceneTemplates: runtimePackage.interaction!.sceneTemplates,
+      chatSource: runtimePackage.interaction!.chatSource,
+      chatNarrative: runtimePackage.interaction!.chatNarrative,
     })
   }
   if (runtimePackage.productType === 'ai-town') {

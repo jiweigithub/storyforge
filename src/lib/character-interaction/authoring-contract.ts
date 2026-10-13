@@ -1,3 +1,5 @@
+import { parseChatSourceReviewV1, type ChatSourceReviewV1 } from './source-projection';
+import { DEFAULT_CHAT_NARRATIVE_SETUP_V1, parseChatNarrativeSetupV1, type ChatNarrativeSetupV1 } from './narrative-setup';
 /** Product-owned S2 settings; these never mutate a source WorldRelease. */
 export interface ChatAuthoringSettingsV1 {
     version: 1;
@@ -19,7 +21,36 @@ export interface ChatAuthoringSettingsV1 {
         initialTrust: number;
     }[];
 }
+/** Explicit upgrade only; existing drafts and frozen releases retain v1. */
+export interface ChatAuthoringSettingsV2 extends Omit<ChatAuthoringSettingsV1, 'version'> {
+    version: 2;
+    sourceReview: ChatSourceReviewV1 | null;
+}
+/** Explicit opt-in until the full narrative production/runtime path is verified. */
+export interface ChatAuthoringSettingsV3 extends Omit<ChatAuthoringSettingsV2, 'version'> {
+    version: 3;
+    narrative: ChatNarrativeSetupV1;
+}
+export type ChatAuthoringSettings = ChatAuthoringSettingsV1 | ChatAuthoringSettingsV2 | ChatAuthoringSettingsV3;
+export function parseChatAuthoringSettings(value: unknown): ChatAuthoringSettings {
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+        throw new Error('角色聊天方案必须是对象');
+    const row = value as Record<string, unknown>;
+    if (row.version === 3) {
+        const {narrative, ...base} = row;
+        const parsed = parseChatAuthoringSettings({...base, version: 2}) as ChatAuthoringSettingsV2;
+        return {...parsed, version: 3, narrative: parseChatNarrativeSetupV1(narrative)};
+    }
+    if (row.version === 1) return parseChatAuthoringSettingsV1(row);
+    if (row.version !== 2 || !Object.prototype.hasOwnProperty.call(row, 'sourceReview'))
+        throw new Error('角色聊天方案版本无效');
+    const {sourceReview, ...base} = row;
+    return {...parseChatAuthoringSettingsV1({...base, version: 1}), version: 2,
+        sourceReview: sourceReview === null ? null : parseChatSourceReviewV1(sourceReview)};
+}
 export const DEFAULT_CHAT_SETTINGS: ChatAuthoringSettingsV1 = { version: 1, playerRole: '', openingSituation: '', experience: '', mode: 'single', targetPlayMinutes: 30, maxTurns: 60, replyBudget: 120, maxMemoryEntries: 120, relationshipThreshold: 20, contentBoundaries: '不替玩家决定行动；不披露角色不知道的信息。', qualityProfile: 'prototype', characters: [] };
+export const DEFAULT_CHAT_SETTINGS_V2: ChatAuthoringSettingsV2 = {...DEFAULT_CHAT_SETTINGS, version: 2, sourceReview: null};
+export const DEFAULT_CHAT_SETTINGS_V3: ChatAuthoringSettingsV3 = {...DEFAULT_CHAT_SETTINGS_V2, version: 3, narrative: structuredClone(DEFAULT_CHAT_NARRATIVE_SETUP_V1)};
 export function parseChatAuthoringSettingsV1(value: unknown): ChatAuthoringSettingsV1 {
     if (!value || typeof value !== 'object' || Array.isArray(value))
         throw new Error('角色聊天方案必须是对象');

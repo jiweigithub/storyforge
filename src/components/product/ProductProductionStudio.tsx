@@ -1,4 +1,5 @@
-import type { ChatAuthoringSettingsV1 } from '../../lib/character-interaction/authoring-contract'
+import type { ChatAuthoringSettings } from '../../lib/character-interaction/authoring-contract'
+import SituationSelection from '../character-interaction/SituationSelection'
 import type { AvgAuthoringSettingsV1 } from '../../lib/avg/authoring-contract'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -24,6 +25,8 @@ import {
   isTextAdventureCommunityCandidateRepairRequiredV1,
   isTextAdventureMediaAnchorBlockerV1,
   isTextAdventureSourceDecisionBlockerV1,
+  isChatSituationDecisionBlockerV1,
+  confirmChatSituationDecisionV1,
   listProductProductionReviewArtifactsV1,
   listTextAdventureMediaAssetsV1,
   listProductProductionWorkspaceV1,
@@ -633,7 +636,7 @@ export default function ProductProductionStudio(props: {
   initialSource?: ProductProductionHandoffV1 | null
   managedCreation?: boolean
   embedded?: boolean
-  chatSetup?: {settings:ChatAuthoringSettingsV1;title:string;worldReleaseId:number|null}
+  chatSetup?: {settings:ChatAuthoringSettings;title:string;worldReleaseId:number|null}
   avgSetup?: { settings: AvgAuthoringSettingsV1; title: string; worldReleaseId: number | null }
   onProductionSelected?: (id: number | null) => void
   authorOptIn?: boolean
@@ -1654,6 +1657,13 @@ export default function ProductProductionStudio(props: {
           : '重试已由作者确认；已完成产物会跨 epoch 复用，不会重复调用。')
   }, '重试阻塞任务')
 
+  const selectChatSituation = (selection: {candidatesHash: string; sourceHash: string; selectedOptionKey: string}) => run(async () => {
+    if (!details) throw new Error('缺少制作记录')
+    await confirmChatSituationDecisionV1({scope: props.scope, details, ...selection})
+    await refresh(details.production.id!)
+    setMessage('初始情境已选定，正在继续制作。角色将从这个局面开始演绎。')
+  }, '选择初始情境')
+
   const resolveSourceDecision = (
     action: 'accept-product-private-expansion' | 'cancel',
   ) => run(async () => {
@@ -2089,6 +2099,7 @@ export default function ProductProductionStudio(props: {
           {isTextOpenWorldCreator && details.build && ['preview-ready', 'release-ready', 'released'].includes(details.build.status) && <p className="mt-3 rounded border border-border bg-bg-base p-3 text-[10px] leading-5 text-text-muted" data-testid="text-open-world-creator-release-stage-notice">{details.build.status === 'released' ? '当前 Release 保持不可变。可在下方修改受治理内容并创建子 Build；重新完成媒资、质量与作者确认后发布新版本。' : 'Creator Build 按“产物检查 → 媒资 → 灰盒与质量 → 作者最终确认 → 不可变 Release”顺序收口。'}</p>}
           {importedProofRecoveryRequired && <div className="mt-3 rounded border border-warning/40 bg-warning/5 p-3 text-[10px] leading-5 text-text-muted" data-testid="product-production-import-proof-recovery"><strong className="block text-text-main">导入内容等待本地证明复验</strong><span>备份中的内容与媒资已经恢复；本地 ID 已重绑，复验不会调用模型或媒资供应商。</span></div>}
           {details.production.status === 'brief-ready' && authorizationReadiness && !authorizationReadiness.ready && <div className="mt-3 rounded border border-error/30 bg-error/5 p-3 text-[10px] text-error" data-testid="product-production-authorization-blocker"><strong className="block">能力未绑定，尚未创建 Build</strong><span className="mt-1 block">{authorizationReadiness.blockerMessages.join('；')}</span></div>}
+          {isChatSituationDecisionBlockerV1(details) && <SituationSelection artifacts={reviewArtifacts} disabled={busy || productionRunning} onSelect={selectChatSituation}/>}
           {sourceDecisionBlocker && <div className="mt-3 rounded border border-accent/40 bg-accent/5 p-4 text-[10px] text-text-primary" data-testid="text-adventure-source-decision-blocker"><strong className="block text-xs">来源编辑已完成审查，等待作者决策</strong>{sourceDecision?.decision === 'ready-with-private-additions' ? <><p className="mt-2 leading-5 text-text-muted">冻结世界资料可以支撑主线，但需要以下内容仅作为本游戏私域事实补充。接受后不会回写或改变 WorldRelease。</p><ul className="mt-2 grid gap-2">{sourceDecision.privateAdditions.map(item => <li key={item.key} className="rounded bg-bg-base p-2"><strong>{item.title}</strong><span className="ml-2 text-text-muted">{item.rationale}</span></li>)}</ul></> : <><p className="mt-2 leading-5 text-error">来源中存在阻断缺口或事实冲突，系统禁止用 AI 私自补写来绕过。</p><ul className="mt-2 grid gap-1 text-text-muted">{sourceDecision?.gaps.map(gap => <li key={gap}>· {gap}</li>)}</ul></>}<p className="mt-3 text-text-muted">若不接受，请取消本 Build，返回来源选择或缩小产品范围后重新授权；系统不会原地改写已授权 Brief。</p></div>}
           {mediaAnchorBlocker && <div className="mt-3 rounded border border-accent/40 bg-accent/5 p-4 text-[10px] text-text-primary" data-testid="text-adventure-media-anchor-blocker">
             <strong className="block text-xs">美术总监已完成视觉圣经，等待作者确认角色锚点</strong>

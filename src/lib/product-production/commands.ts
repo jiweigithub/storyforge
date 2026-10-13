@@ -20,6 +20,7 @@ import type {
 import { assertRecordInScope, resolveScope, scopeTransactionTables, stampNewRecord } from '../workspace/scope'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from './hash'
 import { parseProductProductionBriefV3, parseProductProductionCommandV1 } from './contracts'
+import { selectChatNarrativeCandidateV1, type ChatNarrativeProductionSourceV1 } from '../character-interaction/narrative-production'
 import {
   createConfirmedProductBriefV1,
   createProductProductionSourcePlanV1,
@@ -1868,9 +1869,26 @@ async function applyCommand(input: {
       || previousFailure.taskKey !== 'media.anchor-author-gate')) {
       reject('invalid-state-transition', '角色视觉锚点确认只能用于文字冒险商业美术作者闸门')
     }
+    if (command.resolution.action === 'confirm-chat-situation') {
+      if (production.productType !== 'character-interaction' || command.blockerKey !== 'content.chat-author-gate'
+        || previousFailure.taskKey !== command.blockerKey || !command.resolution.chatSituation) {
+        reject('invalid-state-transition', '初始情境选择只能用于角色聊天作者确认步骤')
+      }
+      const rows = (await db.productBuildArtifacts.where('buildId').equals(build.id!).toArray())
+        .filter(row => row.controlEpoch === build.controlEpoch && ['accepted', 'carried-forward'].includes(row.status))
+      const source = rows.filter(row => row.artifactKey === 'design.game')
+      const candidates = rows.filter(row => row.artifactKey === 'content.chat-candidates')
+      if (source.length !== 1 || candidates.length !== 1) reject('invalid-state-transition', '初始情境来源或候选版本不唯一')
+      try {
+        await selectChatNarrativeCandidateV1({source: JSON.parse(source[0].payloadJson) as ChatNarrativeProductionSourceV1,
+          candidates: JSON.parse(candidates[0].payloadJson), selection: {
+            schema: 'storyforge.chat-situation-selection', version: 1, ...command.resolution.chatSituation!, authorCommandId: command.commandId,
+          }})
+      } catch { reject('invalid-state-transition', '初始情境选择无效或版本已变化，请重新比较并选择') }
+    }
     if (![
       'retry', 'author-edit', 'change-capability', 'accept-product-private-expansion',
-      'confirm-character-anchors', 'cancel',
+      'confirm-character-anchors', 'confirm-chat-situation', 'cancel',
     ].includes(command.resolution.action)) {
       reject('invalid-state-transition', '当前 blocker 只允许重试、更换能力、处理已登记作者闸门或取消；降级/豁免必须先生成新 Brief')
     }

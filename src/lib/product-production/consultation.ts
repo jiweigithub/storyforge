@@ -1,4 +1,5 @@
-import { parseChatAuthoringSettingsV1, type ChatAuthoringSettingsV1 } from '../character-interaction/authoring-contract'
+import { parseChatAuthoringSettings, type ChatAuthoringSettings } from '../character-interaction/authoring-contract'
+import { readPreparedChatSourceProjectionViewV1 } from '../character-interaction/source-projection'
 import { parseAvgAuthoringSettingsV1, type AvgAuthoringSettingsV1 } from '../avg/authoring-contract'
 import type {
   ProductionProductKindV1,
@@ -19,6 +20,7 @@ import { parseProductProductionBriefV3 } from './contracts'
 import { freezeAiTownWorldSourceSelectionV1, loadAiTownWorldSourceCatalogV1 } from '../ai-town/world-source'
 import {
   loadProductProductionConsultationSourceV2,
+  loadProductProductionWorldSourceCatalogV2,
   type ProductProductionConsultationSourceV2,
 } from './world-source'
 import {
@@ -324,7 +326,7 @@ export async function draftProductProductionBriefV3(input: {
   confirmTtrpgDefaultMappings?: boolean
   ttrpg?: TtrpgProductionBriefDraftInputV2
   aiTown?: AiTownBriefSettingsV1
-  characterChat?: ChatAuthoringSettingsV1
+  characterChat?: ChatAuthoringSettings
   avg?: AvgAuthoringSettingsV1
   textAdventure?: TextAdventureProductionBriefDraftV1
   sourceSelection?: ProductProductionSourceSelectionV1
@@ -342,7 +344,7 @@ export async function draftProductProductionBriefV3(input: {
   }
   const selectedScale = input.scale ?? selected.scale
   const qualityProfile = input.qualityProfile ?? 'prototype'
-  const characterChat = input.characterChat ? parseChatAuthoringSettingsV1(input.characterChat) : undefined
+  const characterChat = input.characterChat ? parseChatAuthoringSettings(input.characterChat) : undefined
   if(characterChat && input.productType !== 'character-interaction') throw new Error('角色聊天方案不能用于其他产品')
   const avg = input.avg ? parseAvgAuthoringSettingsV1(input.avg) : undefined
   if (avg && input.productType !== 'avg') throw new Error('AVG 方案不能用于其他产品')
@@ -394,6 +396,12 @@ export async function draftProductProductionBriefV3(input: {
     worldReferenceHash: source.worldReference.referenceHash,
     resourceKeys: [...new Set(Object.values(selectedCatalog).flat())].sort(),
     roleBindings,
+  }
+  if (characterChat && characterChat.version !== 1) {
+    if (!characterChat.sourceReview) throw new Error('请先检查并确认角色来源资料')
+    const catalog = await loadProductProductionWorldSourceCatalogV2({scope, worldReleaseId: input.worldReleaseId, selection})
+    if (!catalog.chatSourceProjection) throw new Error('角色来源投影未就绪')
+    readPreparedChatSourceProjectionViewV1({draft: catalog.chatSourceProjection, review: characterChat.sourceReview, viewerKey: 'player'})
   }
   const ttrpg = input.productType === 'ttrpg' ? await compileTtrpgProductionBriefV2({
     scope, selection, worldContentHash: source.release.contentHash,

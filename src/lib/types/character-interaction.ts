@@ -49,6 +49,26 @@ export interface FrozenInteractionCharacterProfile {
   maxMemoryEntries: number
 }
 
+/** Chat-only, versioned source projection. Raw author-only material is omitted. */
+export interface FrozenChatSourceProjectionV1 {
+  schema: 'storyforge.chat-runtime-source'
+  version: 1
+  projectionHash: string
+  worldReleaseHash: string
+  playerRole: string
+  knowledge: Array<{
+    key: string
+    content: string
+    audienceKeys: string[]
+    source: {
+      resourceKey: string
+      sourceHash: string
+      pointer: string
+      purpose: 'identity' | 'motivation' | 'voice' | 'knowledge'
+    }
+  }>
+}
+
 export interface FrozenInteractionSceneTemplate {
   sceneKey: string
   title: string

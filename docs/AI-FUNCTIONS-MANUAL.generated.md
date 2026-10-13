@@ -80,7 +80,7 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 134 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 137 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
@@ -152,6 +152,9 @@
 | `adventureRuntime` | 文字冒险玩家视角 | runtime | L0 | 8000 |
 | `textOpenWorldEvolutionRuntime` | 文字开放世界·内部状态演化玩家视角 | runtime | L0 | 8000 |
 | `openWorldRuntime` | 文字开放世界玩家视角 | runtime | L0 | 8000 |
+| `chatActionCandidate` | 待审查的持久化行动候选 | runtime | L0 | 8000 |
+| `chatSituationCandidate` | 待审查的持久化情境候选 | runtime | L0 | 8000 |
+| `chatSituationRuntime` | 角色聊天情境协调视角 | runtime | L0 | 12000 |
 | `interactionRuntime` | 角色互动单一视角 | runtime | L0 | 8000 |
 | `aiTownRuntime` | 后日谈 AI 小镇居民单一视角 | runtime | L0 | 8000 |
 | `aiTownDirectorRuntime` | 后日谈 AI 小镇导演公开运行视角 | runtime | L0 | 10000 |
@@ -358,7 +361,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 ## 四、AI 调用点（消耗统计 category · 在哪触发)
 
 共 43 个 category。
-未分类调用: 0 个。动态 category 调用: 38 个。
+未分类调用: 0 个。动态 category 调用: 39 个。
 
 | category | 触发文件 |
 |---|---|
@@ -432,7 +435,8 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 - `src/lib/agent/story-core-copilot.ts:557 · chat`
 - `src/lib/agent/storyline-progress-copilot.ts:366 · chat`
 - `src/lib/agent/worldview-field-copilot.ts:903 · chat`
-- `src/lib/character-interaction/harness.ts:404 · chat`
+- `src/lib/character-interaction/harness.ts:577 · chat`
+- `src/lib/character-interaction/situation-harness.ts:98 · chat`
 - `src/lib/comic/durable-production.ts:270 · chat`
 - `src/lib/evals/agent-harness/story-arc-main-path-browser.ts:98 · chat`
 - `src/lib/evals/creative-reliability/browser.ts:89 · chat`
@@ -504,4 +508,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `4576b572`
+生成时间基准:commit `646beba1`

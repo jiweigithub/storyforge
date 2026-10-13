@@ -45,6 +45,8 @@ import { buildUpperProductModulesV1 } from './product-adapters'
 import { parseTtrpgCampaignContentV1 } from '../ttrpg/campaign'
 import { parseRulePackV1 } from '../ttrpg/rule-pack'
 import { loadProductProductionWorldSourceCatalogV2 } from './world-source'
+import { chatSituationProductionPromptV1, parseChatSituationCandidatesV1, isChatNarrativeShellV1 } from '../character-interaction/narrative-production'
+import { chatProductionSourceV1, executeChatSituationDeterministicTaskV1, verifyChatNarrativeShellV1 } from './chat-situation-tasks'
 import { buildProductWorldSourceBundleV1, verifyProductWorldSourceBundleV1 } from '../product/runtime-canon'
 import { resolveTtrpgProductionRulePackV2 } from '../ttrpg/production-brief'
 import { bindProductionMediaToTtrpgCampaignV1, compileProductionTtrpgCampaignV2 } from '../ttrpg/production-compiler'
@@ -195,7 +197,7 @@ function productCharacterKeys(brief: ProductProductionBriefV3): string[] {
     ?? brief.source.selection.roleBindings.residents
     ?? brief.source.startingPoint.protagonistRefs
     ?? []
-  return resources.slice(0, 100).map((_, index) => `character:${index + 1}`)
+  return resources.slice(0, 100).map((key, index) => brief.characterChat && brief.characterChat.version !== 1 ? key : `character:${index + 1}`)
 }
 
 interface ProductDesignArtifactV1 {
@@ -6950,7 +6952,8 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
         }
       })()
     : undefined
-  const system = textSystem(
+  const system = options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.product-module'
+    ? chatSituationProductionPromptV1() : textSystem(
     input.task.taskKey,
     options.brief,
     input.attempt,
@@ -7389,7 +7392,9 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
       unregisteredStateFieldsDiscarded: legalized.discardedUnregisteredStateFields,
     }
   } else if (input.task.taskKey === 'content.product-module') {
-    payload = parseProductModule(raw, options.brief); kind = 'product-module'
+    payload = options.brief.characterChat?.version === 3
+      ? parseChatSituationCandidatesV1(raw, chatProductionSourceV1(input)) : parseProductModule(raw, options.brief)
+    kind = 'product-module'
     quality = {
       productTypeVerified: true,
       protocolDefaultsApplied: legalized.defaultedFields,
@@ -9933,7 +9938,8 @@ async function executeIntegrationTask(input: ProductProductionTaskExecutionInput
         locationTitles: textAdventureLocationTitles,
       })
     : undefined
-  const narrative = parseAcceptedNarrative(
+  const chat = options.brief.characterChat?.version === 3 ? await verifyChatNarrativeShellV1(input) : null
+  const narrative = chat?.shell ?? parseAcceptedNarrative(
     artifactPayload(input, 'content.narrative'),
     options.brief,
     textAdventureLocationTitles,
@@ -10079,6 +10085,7 @@ async function executeIntegrationTask(input: ProductProductionTaskExecutionInput
   }
   const modules = buildUpperProductModulesV1({
     brief: options.brief, narrative, sourceCatalog, ttrpg, textAdventureProduction,
+    ...(chat ? {chatNarrative: chat.content} : {}),
   })
   const hasAiTownPresentation = options.brief.intent.productType === 'ai-town' && assets.length > 0
   const boundNarrative = modules.adventure?.version === 2
@@ -10216,7 +10223,11 @@ async function executeQualityTask(input: ProductProductionTaskExecutionInputV1, 
       })
     : null
   const runtimeSpeakerKeys = runtimePackage.interaction?.profiles.map(profile => profile.characterKey) ?? []
-  const graph = validateNarrativeContentGraph({
+  const chatNarrative = runtimePackage.productType === 'character-interaction' ? runtimePackage.interaction?.chatNarrative : null
+  const graph = chatNarrative ? {
+    valid: isChatNarrativeShellV1(runtimePackage.narrative, chatNarrative),
+    entryKey: runtimePackage.narrative.entryNodeKey, reachableEndingKeys: [], errors: ['开放情境导航不匹配'],
+  } : validateNarrativeContentGraph({
     entryNodeKey: runtimePackage.narrative.entryNodeKey,
     nodes: runtimePackage.narrative.nodes, beats: runtimePackage.narrative.beats,
     choices: runtimePackage.narrative.choices,
@@ -10243,7 +10254,7 @@ async function executeQualityTask(input: ProductProductionTaskExecutionInputV1, 
   const hardEvidence: Record<string, { passed: boolean; evidence: string[] }> = {
     'runtime.package.valid': { passed: true, evidence: [packageHash] },
     'runtime.playable': { passed: graph.valid, evidence: graph.valid ? [graph.entryKey!] : graph.errors },
-    'narrative.graph.valid': { passed: graph.valid, evidence: graph.valid ? graph.reachableEndingKeys : graph.errors },
+    'narrative.graph.valid': { passed: graph.valid, evidence: graph.valid ? chatNarrative ? ['validated-initial-situation; no-prewritten-outcomes'] : graph.reachableEndingKeys : graph.errors },
     'rights.complete': {
       passed: rightsComplete,
       evidence: assets.length
@@ -10802,6 +10813,10 @@ export function createConfiguredProductProductionExecutorV1(input: {
     const sceneAssemblyActIndex = textAdventureSceneScriptAssemblyActIndex(request.task.taskKey)
     if (sceneAssemblyActIndex != null) {
       return executeTextAdventureSceneScriptActAssemblyTask(request, options.brief, sceneAssemblyActIndex)
+    }
+    if (options.brief.characterChat?.version === 3 && request.task.executionMode === 'deterministic'
+      && ['content.design', 'content.chat-author-gate', 'content.narrative'].includes(request.task.taskKey)) {
+      return executeChatSituationDeterministicTaskV1(request, options)
     }
     if (request.task.executionMode === 'model') return executeModelTask(request, options)
     if (request.task.taskKey === 'source.author-gate') {

@@ -513,7 +513,7 @@ export interface ProductProductionBriefV3 {
   completionContract: ProductProductionCompletionContractV1;
   unresolvedDecisionKeys: string[];
   /** Closed TTRPG construction contract; required exactly when productType=ttrpg. */
-  characterChat?: import('../character-interaction/authoring-contract').ChatAuthoringSettingsV1;
+  characterChat?: import('../character-interaction/authoring-contract').ChatAuthoringSettings;
   avg?: import('../avg/authoring-contract').AvgAuthoringSettingsV1;
   avgRevision?: { version: 1; basePackageHash: string; runtimePackage: import('./product-release').ProductRuntimePackageV1 };
   ttrpg?: TtrpgProductionBriefV2;
@@ -685,8 +685,10 @@ export interface ProductEvolutionImpactV1 {
 export interface ProductProductionBlockerResolutionV1 {
   action:
     "retry" | "author-edit" | "fallback" | "waive-soft-gate" | "change-capability"
-    | "accept-product-private-expansion" | "confirm-character-anchors" | "cancel";
+    | "accept-product-private-expansion" | "confirm-character-anchors" | "confirm-chat-situation" | "cancel";
   note: string;
+  /** Exact initial-situation candidate and source approved by the author. */
+  chatSituation?: {candidatesHash: string; sourceHash: string; selectedOptionKey: string};
   /** Explicit authored replacement; validated by the same task parser before acceptance. */
   authorDraftJson?: string;
   /**

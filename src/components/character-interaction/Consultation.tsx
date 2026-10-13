@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { WorkspaceScope } from "../../lib/types";
-import type { ChatAuthoringDraftV1, ChatAuthoringSettingsV1, } from "../../lib/character-interaction/authoring-contract";
+import type { ChatAuthoringDraftV1, ChatAuthoringSettings, } from "../../lib/character-interaction/authoring-contract";
 import { consultChatV1 } from "../../lib/character-interaction/consultation";
 import { archiveChatConversationV1, type ChatConversationTurnV1 } from "../../lib/character-interaction/draft-service";
 import { useAIConfigStore } from "../../stores/ai-config";
@@ -31,8 +31,8 @@ const VALUES: Record<string, string> = {
 export default function Consultation({ scope, draft, onConfirm, onSource, }: {
     scope: WorkspaceScope | null;
     draft?: ChatAuthoringDraftV1;
-    settings: ChatAuthoringSettingsV1;
-    onConfirm: (value: ChatAuthoringSettingsV1) => void;
+    settings: ChatAuthoringSettings;
+    onConfirm: (value: ChatAuthoringSettings) => void;
     onSource: () => void;
 }) {
     const config = useAIConfigStore((s) => s.config);

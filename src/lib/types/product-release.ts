@@ -127,6 +127,9 @@ export interface FrozenInteractionRuntimeV2 {
   playerKey: 'player'
   profiles: FrozenInteractionCharacterProfile[]
   sceneTemplates: FrozenInteractionSceneTemplate[]
+  chatSource?: import('./character-interaction').FrozenChatSourceProjectionV1
+  /** Experimental chat narrative module; absent in existing releases. */
+  chatNarrative?: import('./chat-narrative').FrozenChatNarrativeV1
 }
 
 export interface FrozenRuntimeMediaAssetV2 extends FrozenProductMediaAsset {

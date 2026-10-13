@@ -1181,6 +1181,23 @@ const INTERACTION_RUNTIME_INPUT_POLICY: AgentSkillInputPolicyV1 = {
   },
 }
 const INTERACTION_RUNTIME_COMPRESSION_POLICY = compressionPolicy(['interactionRuntime'])
+const CHAT_SITUATION_INPUT_POLICY: AgentSkillInputPolicyV1 = {
+  sourceKeys: ['chatSituationRuntime'],
+  states: {
+    empty: {handling: 'require-upstream', instruction: '缺少冻结实例情境时停止。'},
+    partial: {handling: 'require-upstream', instruction: '不得截断既有事实或跳过创作权限后继续构建。'},
+    complete: {handling: 'grounded-transform', instruction: '只在明确玩家情境请求与冻结权限内补充私域背景；既有事实和每个角色的信息边界保持不变。'},
+  },
+}
+const CHAT_SITUATION_REVIEW_INPUT_POLICY: AgentSkillInputPolicyV1 = {
+  sourceKeys: ['chatSituationRuntime', 'chatSituationCandidate'],
+  states: {
+    empty: {handling: 'require-upstream', instruction: '没有完整实例状态和已持久化候选时停止审查。'},
+    partial: {handling: 'require-upstream', instruction: '不能遗漏旧事实、权限或候选的一部分后放行。'},
+    complete: {handling: 'grounded-transform', instruction: '只对照实例证据审查候选，不生成剧情、不改写候选、不直接提交后果；幕后材料不得转交角色或玩家。'},
+  },
+}
+const CHAT_ACTION_REVIEW_INPUT_POLICY: AgentSkillInputPolicyV1 = {...CHAT_SITUATION_REVIEW_INPUT_POLICY, sourceKeys: ['chatSituationRuntime', 'chatActionCandidate']}
 const AI_TOWN_RUNTIME_INPUT_POLICY: AgentSkillInputPolicyV1 = {
   sourceKeys: ['aiTownRuntime'],
   states: {
@@ -3134,6 +3151,51 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1,
+    id: 'character.chat-narrative-action',
+    agentId: 'character',
+    defaultForAgent: false,
+    label: '角色聊天情境行动候选',
+    owner: 'character-chat-product',
+    promptVersion: 'chat-narrative-action-v9',
+    executionMode: 'character-reply',
+    contextTaskKind: 'agent-character',
+    readToolNames: [],
+    contextSourceKeys: ['interactionRuntime'],
+    optionalContextSourceKeys: [],
+    inputPolicy: INTERACTION_RUNTIME_INPUT_POLICY,
+    contextCompression: INTERACTION_RUNTIME_COMPRESSION_POLICY,
+    maxOutputTokens: 4_000,
+    writeTargets: [],
+    lastVerifiedAt: '2026-10-13',
+    regressionTests: ['R-CHAT-02-narrative-actions', 'R-CHAT-02-narrative-harness', 'R-CHAT-02-narrative-player', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection'],
+  },
+  {
+    version: 1, id: 'character.chat-narrative-action-review', agentId: 'character', defaultForAgent: false,
+    label: '角色聊天行动及后果审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-action-review-v4',
+    executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
+    contextSourceKeys: ['chatSituationRuntime', 'chatActionCandidate'], optionalContextSourceKeys: [],
+    inputPolicy: CHAT_ACTION_REVIEW_INPUT_POLICY,
+    contextCompression: compressionPolicy(['chatSituationRuntime', 'chatActionCandidate']), maxOutputTokens: 2400, writeTargets: [],
+    lastVerifiedAt: '2026-10-13', regressionTests: ['R-CHAT-02-action-review', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection'],
+  },
+  {
+    version: 1, id: 'character.chat-situation-construction', agentId: 'character', defaultForAgent: false,
+    label: '角色聊天运行情境候选', owner: 'character-chat-product', promptVersion: 'chat-situation-construction-v1',
+    executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
+    contextSourceKeys: ['chatSituationRuntime'], optionalContextSourceKeys: [], inputPolicy: CHAT_SITUATION_INPUT_POLICY,
+    contextCompression: compressionPolicy(['chatSituationRuntime']), maxOutputTokens: 6000, writeTargets: [],
+    lastVerifiedAt: '2026-10-13', regressionTests: ['R-CHAT-02-runtime-situation'],
+  },
+  {
+    version: 1, id: 'character.chat-situation-review', agentId: 'character', defaultForAgent: false,
+    label: '角色聊天运行情境语义审查', owner: 'character-chat-product', promptVersion: 'chat-situation-review-v1',
+    executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
+    contextSourceKeys: ['chatSituationRuntime', 'chatSituationCandidate'], optionalContextSourceKeys: [], inputPolicy: CHAT_SITUATION_REVIEW_INPUT_POLICY,
+    contextCompression: compressionPolicy(['chatSituationRuntime', 'chatSituationCandidate']), maxOutputTokens: 2000, writeTargets: [],
+    lastVerifiedAt: '2026-10-13', regressionTests: ['R-CHAT-02-runtime-situation'],
+  },
+  {
+    version: 1,
     id: 'character.ai-town-reply',
     agentId: 'character',
     defaultForAgent: false,
@@ -4468,6 +4530,26 @@ export const AGENT_SKILLS = [
     writeTargets: [{ table: 'productBuilds', fields: ['planJson'], adoptionExtension: 'product-production-builds' }],
     lastVerifiedAt: '2026-10-06',
     regressionTests: ['R-PRODUCTPROD1C-plan', 'R-PRODUCTPROD1D-scheduler'],
+  },
+  {
+    version: 1,
+    id: 'character.chat-situation-production',
+    agentId: 'outline',
+    defaultForAgent: false,
+    label: '角色聊天初始情境制作',
+    owner: 'outline-agent',
+    promptVersion: 'chat-situation-production-v1',
+    executionMode: 'product-production',
+    contextTaskKind: 'agent-outline',
+    readToolNames: [],
+    contextSourceKeys: ['product-production.artifact-inputs'],
+    optionalContextSourceKeys: ['product-production.repair-feedback'],
+    inputPolicy: productProductionInputPolicy(['product-production.artifact-inputs']),
+    contextCompression: compressionPolicy(['product-production.artifact-inputs', 'product-production.repair-feedback']),
+    maxOutputTokens: 16_000,
+    writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
+    lastVerifiedAt: '2026-10-13',
+    regressionTests: ['R-CHAT-02-narrative-production'],
   },
   {
     version: 1,

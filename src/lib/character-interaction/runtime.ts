@@ -16,6 +16,13 @@ import type {
   ProductRuntimeEvent,
   CharacterInteractionRuntimeState,
 } from '../types'
+import type { FrozenChatSourceProjectionV1 } from '../types/character-interaction'
+import { isSha256Hash } from '../product-production/hash'
+import type { FrozenChatNarrativeV1 } from '../types/chat-narrative'
+import { chatNarrativeViewV1, createChatNarrativeStateV1, parseChatNarrativeStateV1, parseFrozenChatNarrativeV1, rebaseChatNarrativeStateV1, type ChatNarrativeViewV1 } from './narrative-contract'
+import { applyChatNarrativeActionV1, applyReviewedChatNarrativeActionV1, interruptChatNarrativeTriggerV1, requestChatNarrativeTriggerV1 } from './narrative-actions'
+import { applyChatSituationV1 } from './narrative-situations'
+import {chatRelationshipEvidenceV1} from './narrative-relationships'
 
 type JsonObject = Record<string, unknown>
 
@@ -259,13 +266,53 @@ function thread(value: unknown): InteractionRuntimeThread {
   }
 }
 
+export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonly string[], characterKeys: readonly string[]): FrozenChatSourceProjectionV1 {
+  if (!isObject(value) || value.schema !== 'storyforge.chat-runtime-source' || value.version !== 1
+    || Object.keys(value).sort().join(',') !== 'knowledge,playerRole,projectionHash,schema,version,worldReleaseHash'
+    || !isSha256Hash(value.projectionHash) || !isSha256Hash(value.worldReleaseHash)
+    || typeof value.playerRole !== 'string' || value.playerRole.length > 5000
+    || !Array.isArray(value.knowledge) || value.knowledge.length > 2000) throw new Error('角色资料运行投影无效')
+  const allowed = new Set(['player', ...participantKeys])
+  const known = new Set<string>()
+  for (const seed of value.knowledge) {
+    if (!isObject(seed) || typeof seed.key !== 'string' || !seed.key || seed.key.length > 160 || known.has(seed.key)
+      || Object.keys(seed).sort().join(',') !== 'audienceKeys,content,key,source'
+      || typeof seed.content !== 'string' || !seed.content || seed.content.length > 7900
+      || !Array.isArray(seed.audienceKeys) || !seed.audienceKeys.length
+      || seed.audienceKeys.some(key => typeof key !== 'string' || !allowed.has(key))
+      || new Set(seed.audienceKeys).size !== seed.audienceKeys.length
+      || !isObject(seed.source) || !characterKeys.includes(String(seed.source.resourceKey))
+      || Object.keys(seed.source).sort().join(',') !== 'pointer,purpose,resourceKey,sourceHash'
+      || !isSha256Hash(seed.source.sourceHash) || typeof seed.source.pointer !== 'string' || !seed.source.pointer.startsWith('/') || seed.source.pointer.length > 1000
+      || !['identity', 'motivation', 'voice', 'knowledge'].includes(String(seed.source.purpose))) {
+      throw new Error('角色资料来源、可见性或容量无效；单项资料最多 7900 字符')
+    }
+    const subjectKey = participantKeys[characterKeys.indexOf(String(seed.source.resourceKey))]
+    if (!subjectKey || formatChatSourceKnowledge(seed as unknown as FrozenChatSourceProjectionV1['knowledge'][number], subjectKey).length > 8000) {
+      throw new Error('角色资料连同人物与字段归属超过运行知识容量，请缩小来源片段')
+    }
+    known.add(seed.key)
+  }
+  return structuredClone(value) as unknown as FrozenChatSourceProjectionV1
+}
+
+function formatChatSourceKnowledge(seed: FrozenChatSourceProjectionV1['knowledge'][number], subjectKey: string): string {
+  const labels = {identity: '身份资料', motivation: '目标和动机（意愿，不代表已经发生）', voice: '语言资料', knowledge: '已知资料'}
+  // The audience owns the knowledge; the subject owns the described trait.
+  // Keeping these distinct prevents public facts about B becoming A's identity.
+  return `【${labels[seed.source.purpose]}；所属角色=${subjectKey}；字段=${seed.source.pointer}】${seed.content}`
+}
+
 /** Build the only release-entry projection for character interaction. */
 export function createInitialInteractionState(input: {
   playerKey?: string
   profiles: readonly FrozenInteractionCharacterProfile[]
   sceneTemplates: readonly FrozenInteractionSceneTemplate[]
+  chatSource?: FrozenChatSourceProjectionV1
+  chatNarrative?: FrozenChatNarrativeV1
 }): CharacterInteractionRuntimeState {
   const playerKey = input.playerKey?.trim() || 'player'
+  if (input.chatNarrative !== undefined && playerKey !== 'player') throw new Error('叙事情境的玩家身份标识必须为 player')
   const profiles: InteractionRuntimeProfile[] = input.profiles.map(item => ({
     participantKey: item.participantKey,
     characterKey: item.characterKey,
@@ -307,6 +354,22 @@ export function createInitialInteractionState(input: {
       for (const target of targets) remember(seed.key, target, seed.content, seed.importance)
     }
   }
+  if (input.chatSource) {
+    const projected = parseFrozenChatSourceV1(input.chatSource, [...participantKeys], profiles.map(p => p.characterKey))
+    for (const scene of sceneTemplates) for (const knowledgeKey of scene.publicKnowledgeKeys) {
+      const source = projected.knowledge.find(k => k.key === knowledgeKey)
+      if (source && [playerKey, ...scene.participantKeys].some(viewer => !source.audienceKeys.includes(viewer))) {
+        throw new Error('场景公开知识不能扩大已确认资料的知情范围。')
+      }
+    }
+    for (const seed of projected.knowledge) for (const target of seed.audienceKeys) {
+      const subject = profiles.find(item => item.characterKey === seed.source.resourceKey)!
+      remember(seed.key, target, formatChatSourceKnowledge(seed, subject.participantKey), 100)
+    }
+    if (!input.chatNarrative && projected.playerRole.trim()) for (const target of [playerKey, ...participantKeys]) {
+      remember('chat.player-role', target, `玩家确认的虚构角色身份：${projected.playerRole}`, 100)
+    }
+  }
   const state: CharacterInteractionRuntimeState = {
     schema: 'storyforge.character-interaction',
     version: 1,
@@ -333,6 +396,12 @@ export function createInitialInteractionState(input: {
     threads: [],
     totalPlayerTurns: 0,
     remainingDirectorBudget: 0,
+  }
+  if (input.chatNarrative !== undefined) {
+    if (!input.chatSource) throw new Error('主动叙事情境需要已确认的角色资料投影')
+    const content = parseFrozenChatNarrativeV1(input.chatNarrative, {source: input.chatSource,
+      participantKeys: profiles.map(p => p.participantKey), characterKeys: profiles.map(p => p.characterKey), sceneKeys: sceneTemplates.map(s => s.sceneKey)})
+    state.chatNarrative = createChatNarrativeStateV1(content)
   }
   return parseInteractionState(state)!
 }
@@ -372,6 +441,12 @@ export function parseInteractionState(value: unknown): CharacterInteractionRunti
   assertUnique(result.memories.map(item => item.memoryId), '互动记忆 ID')
   assertUnique(result.threads.map(item => item.threadKey), '互动线索 key')
   assertUnique(result.relationships.map(relationshipKey), '互动关系维度')
+  if (value.chatNarrative !== undefined) {
+    if (result.playerKey !== 'player') throw new Error('叙事情境的玩家身份标识必须为 player')
+    result.chatNarrative = parseChatNarrativeStateV1(value.chatNarrative, {
+      participantKeys: result.profiles.map(p => p.participantKey), characterKeys: result.profiles.map(p => p.characterKey), sceneKeys: result.sceneTemplates.map(s => s.sceneKey),
+    })
+  }
   return result
 }
 
@@ -538,6 +613,7 @@ export function applyInteractionEvent(
       const active = requireScene(state)
       if (text(body.sceneId, '互动场景 ID', 200) !== active.sceneId) throw new Error('互动场景已经变化。')
       text(body.reason, '互动场景结束理由', 2_000)
+      interruptChatNarrativeTriggerV1(state, event.sequence)
       active.status = 'ended'
       active.endedAtSequence = event.sequence
       state.sceneHistory.push(structuredClone(active))
@@ -577,9 +653,19 @@ export function applyInteractionEvent(
       })
       active.playerTurns += 1
       state.totalPlayerTurns += 1
+      interruptChatNarrativeTriggerV1(state, event.sequence)
       break
     }
+    case 'interaction.narrative.trigger.requested':
+      return requestChatNarrativeTriggerV1(state, {sequence: event.sequence, kind: body.kind, sourceEventSequence: body.sourceEventSequence, seed: body.seed})
+    case 'interaction.narrative.situation.committed':
+      return applyChatSituationV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, draft: body.draft, review: body.review})
+    case 'interaction.narrative.action-reviewed.committed':
+      return applyReviewedChatNarrativeActionV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, actorKey: body.actorKey, messageId: body.messageId, action: body.action, review: body.review})
+    case 'interaction.narrative.action.committed':
+      return applyChatNarrativeActionV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, actorKey: body.actorKey, messageId: body.messageId, action: body.action})
     case 'interaction.character.reply.committed': {
+      if (state.chatNarrative) throw new Error('叙事情境中的角色表达必须与后果通过行动候选一起提交。')
       const active = requireScene(state)
       const speakerKey = text(body.speakerKey, '回复角色 key', 160)
       if (!active.activeParticipantKeys.includes(speakerKey)) throw new Error('回复角色不在当前场景中。')
@@ -791,6 +877,8 @@ export interface InteractionVisibilityView {
   memories: InteractionRuntimeMemory[]
   relationships: InteractionRuntimeRelationship[]
   threads: InteractionRuntimeThread[]
+  chatNarrative?: ChatNarrativeViewV1
+  relationshipEvidence?: InteractionRelationshipChange[]
 }
 
 export function interactionVisibilityView(
@@ -807,6 +895,7 @@ export function interactionVisibilityView(
     memories: state.memories.filter(item => item.participantKey === participantKey && item.status === 'accepted'),
     relationships: state.relationships.filter(item => item.fromParticipantKey === participantKey),
     threads: state.threads.filter(item => item.status === 'open'),
+    ...(state.chatNarrative ? {chatNarrative: chatNarrativeViewV1(state.chatNarrative, participantKey), relationshipEvidence: chatRelationshipEvidenceV1(state, participantKey)} : {}),
   }
 }
 
@@ -820,6 +909,9 @@ export function buildInteractionContextWindow(
   participantKey: string,
   options: { maxCharacters?: number; maxRecentMessages?: number } = {},
 ): InteractionContextWindow {
+  if (state.chatNarrative && state.activeScene && state.chatNarrative.situation.sceneKey !== state.activeScene.sceneKey) {
+    throw new Error('当前场景尚未衔接叙事情境，请完成情境切换后继续')
+  }
   const maxCharacters = Math.max(2_000, Math.min(options.maxCharacters ?? 24_000, 100_000))
   const maxRecentMessages = Math.max(4, Math.min(options.maxRecentMessages ?? 32, 200))
   const visible = interactionVisibilityView(state, participantKey)
@@ -838,7 +930,7 @@ export function buildInteractionContextWindow(
     result.omittedMessageCount += 1
   }
   while (size() > maxCharacters && result.knowledge.length > 1) result.knowledge.pop()
-  while (size() > maxCharacters && result.relationships.length > 1) result.relationships.pop()
+  while (size() > maxCharacters && !result.chatNarrative && result.relationships.length > 1) result.relationships.pop()
   if (size() > maxCharacters) throw new Error('角色关键记忆与安全上下文超过预算，请调整作者配置。')
   result.characterCount = size()
   return result
@@ -854,9 +946,13 @@ export function rebaseInteractionStateForBranch(
 ): CharacterInteractionRuntimeState {
   const state = requireInteraction(parseInteractionState(stateValue))
   const rebase = (sequence: number | null): number | null => {
-    if (sequence == null || sequence <= 0) return sequence
+    if (sequence == null || sequence === 0) return sequence
     if (sequence > parentThroughSequence) throw new Error('互动分支状态包含目标序号之后的引用。')
-    return sequence - parentThroughSequence - 1
+    // Shift older prehistory too: otherwise a branch of a branch can alias an
+    // old negative reference with a newly rebased event of the child session.
+    const next = sequence - parentThroughSequence - 1
+    if (!Number.isSafeInteger(next)) throw new Error('互动分支事件引用超出安全范围。')
+    return next
   }
   for (const item of state.messages) {
     item.eventSequence = rebase(item.eventSequence)!
@@ -878,6 +974,7 @@ export function rebaseInteractionStateForBranch(
     item.openedSequence = rebase(item.openedSequence)!
     item.resolvedSequence = rebase(item.resolvedSequence)
   }
+  if (state.chatNarrative) rebaseChatNarrativeStateV1(state.chatNarrative, value => rebase(value)!)
   const scenes = [...state.sceneHistory, ...(state.activeScene ? [state.activeScene] : [])]
   for (const item of scenes) {
     item.startedAtSequence = rebase(item.startedAtSequence)!

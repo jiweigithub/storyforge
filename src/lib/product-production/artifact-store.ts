@@ -1784,6 +1784,100 @@ async function verifySameBuildCarriedLineageV1(input: {
   throw new Error(`[product-production-artifact] terminal same-build lineage 超过 ${TERMINAL_SAME_BUILD_LINEAGE_DEPTH_LIMIT} 层安全上限`)
 }
 
+/** Character chat keeps the original producer on copied bytes. Prove both
+ * that immutable origin and the separate current-epoch zero-provider carry.
+ * Other products retain their existing terminal protocol. */
+async function verifyChatPreservedProducerCarryV1(input: {
+  scope: WorkspaceScope
+  build: ProductBuildRecordV1 & { id: number }
+  task: ProductProductionPlanTaskV3
+  siblings: ProductBuildArtifactRecordV1[]
+  allBuildRows: ProductBuildArtifactRecordV1[]
+  ledger: ProductProductionPortableTaskLedgerEntryV1
+  ledgerRunId: number
+  rootRunId: number
+  dependencies: Array<{ taskKey: string; receiptHash: string }>
+}): Promise<void> {
+  const { task, build, ledger } = input
+  const explicitDecision = ['source.author-gate', 'media.anchor-author-gate', 'content.chat-author-gate'].includes(task.taskKey)
+  if (task.reuse !== null || task.executionMode === 'human-import'
+    || (task.executionMode === 'deterministic' && !explicitDecision)
+    || ledger.attempt !== 1 || !isZeroPortableUsageV1(ledger.usage)
+    || canonicalProductProductionJsonV2(ledger.passedGateIds) !== canonicalProductProductionJsonV2(task.acceptanceGateIds)) {
+    throw new Error(`[product-production-artifact] chat carry task/ledger 不闭合:${task.taskKey}`)
+  }
+  const { productProductionTaskExecutionIdentityHashV1, frozenProductProductionTaskExecutionIdentityHashV1 } = await import('./scheduler')
+  const executionIdentityHash = await productProductionTaskExecutionIdentityHashV1(task)
+  const candidateHash = await hashProductProductionCarriedCandidateV1(input.siblings)
+  const receiptHash = await hashProductProductionValueV2({
+    schema: 'storyforge.product-production-carried-task-receipt', version: 1,
+    taskKey: task.taskKey, inputHash: ledger.idempotencyKey, candidateHash,
+    dependencies: input.dependencies, executionIdentityHash,
+    passedGateIds: task.acceptanceGateIds, controlEpoch: build.controlEpoch,
+  })
+  const snapshot = await readAgentRunV1(input.scope, input.ledgerRunId)
+  const boundary = snapshot.contract.scope.productProduction
+  const step = snapshot.projection.steps[task.taskKey]
+  const matchingChildren = await db.agentRuns.where('[parentRunId+parentRelation]')
+    .equals([input.rootRunId, `task:${task.taskKey}`]).toArray()
+  if (candidateHash !== ledger.candidateHash || receiptHash !== ledger.terminalReceiptHash
+    || matchingChildren.length !== 1 || matchingChildren[0].id !== input.ledgerRunId
+    || snapshot.run.parentRunId !== input.rootRunId || snapshot.run.parentRelation !== `task:${task.taskKey}`
+    || snapshot.run.productBuildId !== build.id || snapshot.run.status !== 'completed'
+    || snapshot.projection.state !== 'completed' || snapshot.run.terminalReceiptHash !== receiptHash
+    || snapshot.projection.terminalReceiptHash !== receiptHash
+    || step?.status !== 'succeeded' || step.attempt !== 1
+    || step.candidateHash != null || step.outputHash !== candidateHash
+    || await latestCheckpointForFingerprintV1(input.ledgerRunId) !== null
+    || snapshot.events.some(event => event.type === 'model.requested')
+    || !snapshot.events.some(event => event.type === 'verification.started'
+      && event.payload.verifierSetVersion === 'product-production-carried-task-v1')
+    || !boundary || boundary.productBuildId !== build.id || boundary.buildNumber !== build.buildNumber
+    || boundary.controlEpoch !== build.controlEpoch || boundary.planHash !== build.planHash
+    || boundary.taskKey !== task.taskKey
+    || await frozenProductProductionTaskExecutionIdentityHashV1(task, snapshot) !== executionIdentityHash) {
+    throw new Error(`[product-production-artifact] chat carry synthetic receipt 不闭合:${task.taskKey}`)
+  }
+  const origins: ProductBuildArtifactRecordV1[] = []
+  for (const target of input.siblings) {
+    let current = target
+    for (let depth = 0; ; depth += 1) {
+      if (depth >= TERMINAL_SAME_BUILD_LINEAGE_DEPTH_LIMIT) {
+        throw new Error('[product-production-artifact] chat carry lineage 超过安全上限')
+      }
+      const ref = current.carriedFrom
+      const parents = ref == null ? [] : input.allBuildRows.filter(row => row.artifactKey === ref.artifactKey
+        && row.version === ref.version && row.contentHash === ref.contentHash)
+      const parent = parents[0]
+      if (!ref || ref.buildNumber !== build.buildNumber || parents.length !== 1
+        || parent.id == null || parent.buildId !== build.id || parent.status !== 'invalid'
+        || parent.projectId !== input.scope.projectId || parent.worldId !== input.scope.worldId
+        || parent.workId !== input.scope.workId || parent.version >= current.version
+        || parent.controlEpoch >= current.controlEpoch || !sameCarriedArtifactEnvelopeV1(current, parent)
+        || parent.producerRunId == null || parent.producerReceiptHash == null
+        || current.producerRunId !== parent.producerRunId
+        || current.producerReceiptHash !== parent.producerReceiptHash || current.inputHash !== parent.inputHash) {
+        throw new Error(`[product-production-artifact] chat carry origin lineage 不闭合:${target.artifactKey}`)
+      }
+      if (parent.carriedFrom == null) { origins.push(parent); break }
+      current = parent
+    }
+  }
+  if (new Set(origins.map(row => row.producerRunId)).size !== 1
+    || new Set(origins.map(row => row.controlEpoch)).size !== 1) {
+    throw new Error(`[product-production-artifact] chat carry origin siblings 不闭合:${task.taskKey}`)
+  }
+  const historicalSiblings = historicalTaskSiblingsV1({ task, anchor: origins[0], allBuildRows: input.allBuildRows })
+  if (historicalSiblings.some(row => !origins.some(origin => origin.id === row.id))) {
+    throw new Error(`[product-production-artifact] chat carry origin sibling set 不闭合:${task.taskKey}`)
+  }
+  await verifyHistoricalAcceptedTaskV1({ scope: input.scope, build, task, siblings: origins })
+  const origin = await readAgentRunV1(input.scope, origins[0].producerRunId!)
+  if (await frozenProductProductionTaskExecutionIdentityHashV1(task, origin) !== executionIdentityHash) {
+    throw new Error(`[product-production-artifact] chat carry origin Skill 已变化:${task.taskKey}`)
+  }
+}
+
 function terminalLedgerRunIdV1(budgetLedgerJson: string, taskKey: string): number {
   const parsed = JSON.parse(budgetLedgerJson) as { tasks?: Record<string, { runId?: unknown }> }
   const runId = parsed.tasks?.[taskKey]?.runId
@@ -2179,6 +2273,19 @@ export async function verifyProductBuildTerminalArtifactSetV1(input: {
       continue
     }
 
+    if (production.productType === 'character-interaction'
+      && siblings.every(row => row.carriedFrom?.buildNumber === build.buildNumber)) {
+      await verifyChatPreservedProducerCarryV1({
+        scope, build, task, siblings, allBuildRows, ledger, ledgerRunId, rootRunId,
+        dependencies: task.dependsOn.map(taskKey => ({ taskKey, receiptHash: ledgerByTask.get(taskKey)!.terminalReceiptHash })),
+      })
+      proofMembers.push({ taskKey: task.taskKey, status: 'carried-forward',
+        producerRunId: ledgerRunId, inputHash: ledger.idempotencyKey,
+        candidateHash: ledger.candidateHash, receiptHash: ledger.terminalReceiptHash,
+        lineage: siblings.map(row => row.carriedFrom) })
+      continue
+    }
+
     const producerRunIds = new Set(siblings.map(row => row.producerRunId))
     const receiptHashes = new Set(siblings.map(row => row.producerReceiptHash))
     const inputHashes = new Set(siblings.map(row => row.inputHash))
@@ -2303,7 +2410,8 @@ export async function verifyProductBuildTerminalArtifactSetV1(input: {
       }
     }
   }
-  for (const target of carried.filter(row => row.carriedFrom?.buildNumber === build.buildNumber)) {
+  for (const target of carried.filter(row => row.carriedFrom?.buildNumber === build.buildNumber
+    && production.productType !== 'character-interaction')) {
     await verifySameBuildCarriedLineageV1({
       scope,
       build,
@@ -2313,7 +2421,9 @@ export async function verifyProductBuildTerminalArtifactSetV1(input: {
     })
   }
   if (carried.some(row => !row.carriedFrom
-    || (production.productType !== 'text-adventure' && !isSha256Hash(row.carriedFrom.proofHash ?? ''))
+    || (production.productType !== 'text-adventure'
+      && !(production.productType === 'character-interaction' && row.carriedFrom.buildNumber === build.buildNumber)
+      && !isSha256Hash(row.carriedFrom.proofHash ?? ''))
     || row.carriedFrom.artifactKey !== row.artifactKey
     || row.carriedFrom.contentHash !== row.contentHash
     || row.parentArtifactHash !== row.contentHash)) {

@@ -3,12 +3,14 @@ import { db } from "../db/schema";
 import type { ProductRuntimeCommandEnvelopeV1 } from "../product/runtime-command-id";
 import { JsonObject, applyProductRuntimeEvent, hashStateJson, normalizeCommandId, parseEventPayload, parseProductRuntimeState, readSessionEvents, replayProductRuntimeEvents, stableJson } from "../product/runtime-core";
 import type { ProductRuntimeEventType, ProductRuntimeEvent, InteractionMemoryKind } from "../types";
+import type { ChatNarrativeActionV1, ChatNarrativeActionReviewV1, ChatNarrativeTriggerV1, ChatSituationDraftV1, ChatSituationReviewV1 } from "../types/chat-narrative";
 async function appendInteractionCommand(
   input: ProductRuntimeCommandEnvelopeV1 & {
     type: Extract<ProductRuntimeEventType, `interaction.${string}`>;
     actorKey?: string | null;
     targetKey?: string | null;
     payload: JsonObject;
+    harnessRun?: {id: number; lastSequence: number};
   },
 ): Promise<ProductRuntimeEvent> {
   const commandId = normalizeCommandId(input.commandId);
@@ -30,6 +32,7 @@ async function appendInteractionCommand(
     "rw",
     db.productRuntimeSessions,
     db.productRuntimeEvents,
+    db.agentRuns,
     async () => {
       const session = await db.productRuntimeSessions.get(input.sessionId);
       if (!session) throw new Error("角色互动会话不存在。");
@@ -62,12 +65,23 @@ async function appendInteractionCommand(
       }
       if (session.status !== "active")
         throw new Error("只有 active 会话可以提交互动命令。");
+      if (input.harnessRun) {
+        const run = await db.agentRuns.get(input.harnessRun.id);
+        if (!run || run.projectId !== session.projectId || run.productRuntimeSessionId !== session.id
+          || run.status !== 'running' || run.lastSequence !== input.harnessRun.lastSequence) {
+          throw new Error('角色行动运行已取消、暂停或变化，未提交后果。');
+        }
+      }
       const state = replayProductRuntimeEvents(
         parseProductRuntimeState(session.initialStateJson),
         events,
       );
       if (!state.interaction)
         throw new Error("当前会话不是角色互动存档。");
+      if (state.interaction.chatNarrative && input.type === 'interaction.relationship.changed')
+        throw new Error('主动叙事关系变化必须随已审查的行动一起提交。');
+      if (input.type.startsWith('interaction.narrative.') && session.kind !== 'character-interaction')
+        throw new Error('主动叙事命令只属于角色聊天。');
       if (state.lastSequence !== input.baseSequence)
         throw new Error("互动状态已变化，请刷新后重试。");
       if (
@@ -98,6 +112,29 @@ async function appendInteractionCommand(
       return event;
     },
   );
+}
+
+export async function requestChatNarrativeTrigger(input: ProductRuntimeCommandEnvelopeV1 & {
+  kind: ChatNarrativeTriggerV1; sourceEventSequence: number; seed?: string | null;
+}): Promise<ProductRuntimeEvent> {
+  return appendInteractionCommand({...input, type: 'interaction.narrative.trigger.requested', actorKey: 'player',
+    payload: {kind: input.kind, sourceEventSequence: input.sourceEventSequence, seed: input.seed ?? null}});
+}
+
+export async function commitChatNarrativeAction(input: ProductRuntimeCommandEnvelopeV1 & {
+  actorKey: string; triggerSequence: number; messageId: string; action: ChatNarrativeActionV1; review: ChatNarrativeActionReviewV1;
+  harnessRun?: {id: number; lastSequence: number};
+}): Promise<ProductRuntimeEvent> {
+  return appendInteractionCommand({...input, type: 'interaction.narrative.action-reviewed.committed',
+    payload: {actorKey: input.actorKey, triggerSequence: input.triggerSequence, messageId: input.messageId, action: input.action, review: input.review}});
+}
+
+export async function commitChatSituation(input: ProductRuntimeCommandEnvelopeV1 & {
+  triggerSequence: number; draft: ChatSituationDraftV1; review: ChatSituationReviewV1;
+  harnessRun?: {id: number; lastSequence: number};
+}): Promise<ProductRuntimeEvent> {
+  return appendInteractionCommand({...input, type: 'interaction.narrative.situation.committed', actorKey: 'player',
+    payload: {triggerSequence: input.triggerSequence, draft: input.draft, review: input.review}});
 }
 
 export async function startInteractionScene(

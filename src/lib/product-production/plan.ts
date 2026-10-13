@@ -462,6 +462,7 @@ export async function createProductProductionPlanV3(input: {
     (_, index) => `media.audio.${String(index + 1).padStart(3, '0')}`,
   )
   const textAdventure = brief.intent.productType === 'text-adventure'
+  const narrativeChat = brief.intent.productType === 'character-interaction' && brief.characterChat?.version === 3
   const visualReviewBatches = textAdventure && activeVisual
     ? textAdventureVisualReviewArtifactBatchesV1(visualArtifactKeys)
         .map((batchVisualArtifactKeys, index) => {
@@ -796,13 +797,13 @@ export async function createProductProductionPlanV3(input: {
   }))
   tasks.push(productionTask({
     taskKey: 'content.design', lane: 'content', kind: 'product-design',
-    skillId: textAdventure ? 'text-adventure.creative-direction.v1' : 'product-production.content.v1',
-    executionMode: 'model', dependsOn: textAdventure ? ['source.author-gate', 'production.supervision'] : [],
+    skillId: narrativeChat ? null : textAdventure ? 'text-adventure.creative-direction.v1' : 'product-production.content.v1',
+    executionMode: narrativeChat ? 'deterministic' : 'model', dependsOn: textAdventure ? ['source.author-gate', 'production.supervision'] : [],
     inputArtifactKeys: textAdventure
       ? ['production.supervision', 'content.source-sufficiency', 'content.source-decision'] : [],
     outputArtifactKeys: ['design.game'], requirementKeys: [],
-    capabilityRequirementKeys: textCapabilities, concurrencyGroup: 'text-provider',
-    subjectLockKeys: ['design.game'], priority: 100, budgetReservation: modelBudget('content.design'),
+    capabilityRequirementKeys: narrativeChat ? [] : textCapabilities, concurrencyGroup: narrativeChat ? 'deterministic' : 'text-provider',
+    subjectLockKeys: ['design.game'], priority: 100, budgetReservation: narrativeChat ? reservation({inputTokens: perInput, durationMs: perDuration}) : modelBudget('content.design'),
     maxAttempts: 2, timeoutMs: 180_000, failurePolicy: 'pause', fallbackTaskKey: null,
     acceptanceGateIds: ['artifact.protocol', 'design.source-anchors'],
   }))
@@ -927,7 +928,38 @@ export async function createProductProductionPlanV3(input: {
       acceptanceGateIds: ['artifact.protocol', 'adventure.main-quest-plan'],
     }),
   )
-  if (!textAdventure) tasks.push(
+  if (narrativeChat) tasks.push(
+    productionTask({
+      taskKey: 'content.product-module', lane: 'content', kind: 'product-module',
+      skillId: 'character.chat-situation-production', executionMode: 'model', dependsOn: ['content.design'],
+      inputArtifactKeys: ['design.game'], outputArtifactKeys: ['content.chat-candidates'], requirementKeys: [],
+      capabilityRequirementKeys: textCapabilities, concurrencyGroup: 'text-provider',
+      subjectLockKeys: ['content.chat-candidates'], priority: 90, budgetReservation: modelBudget('content.product-module'),
+      maxAttempts: 2, timeoutMs: 240_000, failurePolicy: 'pause', fallbackTaskKey: null,
+      acceptanceGateIds: ['artifact.protocol', 'chat.situation-candidates'],
+    }),
+    productionTask({
+      taskKey: 'content.chat-author-gate', lane: 'content', kind: 'product-module',
+      skillId: null, executionMode: 'deterministic', dependsOn: ['content.product-module'],
+      inputArtifactKeys: ['design.game', 'content.chat-candidates'], outputArtifactKeys: ['content.chat-selection', 'content.product-module'], requirementKeys: [],
+      capabilityRequirementKeys: [], concurrencyGroup: 'deterministic',
+      subjectLockKeys: ['content.chat-selection', 'content.product-module'], priority: 89,
+      budgetReservation: reservation({durationMs: perDuration}),
+      maxAttempts: 1, timeoutMs: 30_000, failurePolicy: 'pause', fallbackTaskKey: null,
+      acceptanceGateIds: ['artifact.protocol', 'chat.situation-author-selected'],
+    }),
+    productionTask({
+      taskKey: 'content.narrative', lane: 'content', kind: 'narrative',
+      skillId: null, executionMode: 'deterministic', dependsOn: ['content.chat-author-gate'],
+      inputArtifactKeys: ['design.game', 'content.chat-candidates', 'content.chat-selection'], outputArtifactKeys: ['content.narrative'], requirementKeys: [],
+      capabilityRequirementKeys: [], concurrencyGroup: 'deterministic',
+      subjectLockKeys: ['content.narrative'], priority: 85,
+      budgetReservation: reservation({inputTokens: perInput, durationMs: perDuration}),
+      maxAttempts: 1, timeoutMs: 30_000, failurePolicy: 'pause', fallbackTaskKey: null,
+      acceptanceGateIds: ['artifact.protocol', 'chat.situation-navigation'],
+    }),
+  )
+  if (!textAdventure && !narrativeChat) tasks.push(
     productionTask({
       taskKey: 'content.narrative', lane: 'content', kind: 'narrative',
       skillId: 'product-production.content.v1', executionMode: 'model', dependsOn: ['content.design'],
@@ -1171,7 +1203,7 @@ export async function createProductProductionPlanV3(input: {
   }
   const mediaDependenciesForContent = textAdventure
     ? ['content.adventure-quality-review']
-    : ['content.design']
+    : narrativeChat ? ['content.narrative'] : ['content.design']
   const mediaInputsForContent = textAdventure
     ? [
         'content.story-bible', 'content.cast-bible', 'content.adventure-architecture',
@@ -1180,11 +1212,11 @@ export async function createProductProductionPlanV3(input: {
         'content.dialogue-pass.act-1', 'content.dialogue-pass.act-2',
         'content.dialogue-pass.act-3', 'content.narrative', 'quality.adventure-review',
       ]
-    : ['design.game']
+    : narrativeChat ? ['content.narrative', 'content.product-module'] : ['design.game']
   tasks.push(
     productionTask({
       taskKey: 'media.requirements', lane: 'planning', kind: 'media-requirements',
-      skillId: textAdventure ? 'text-adventure.visual-direction.v1' : 'product-production.media-requirements.v1',
+      skillId: narrativeChat ? 'character.chat-situation-production' : textAdventure ? 'text-adventure.visual-direction.v1' : 'product-production.media-requirements.v1',
       executionMode: 'model', dependsOn: mediaDependenciesForContent,
       inputArtifactKeys: mediaInputsForContent, outputArtifactKeys: ['media.requirements'], requirementKeys: [],
       capabilityRequirementKeys: textCapabilities, concurrencyGroup: 'text-provider',
@@ -1347,6 +1379,7 @@ export async function createProductProductionPlanV3(input: {
     skillId: null, executionMode: 'deterministic', dependsOn: integrationDependencies,
     inputArtifactKeys: [
       'content.narrative', 'content.product-module', ...textAdventureIntegrationArtifactKeys,
+      ...(narrativeChat ? ['design.game', 'content.chat-candidates', 'content.chat-selection'] : []),
       'media.requirements', ...(textAdventure ? ['media.visual-bible'] : []),
       ...(textAdventure && activeVisual ? ['media.anchor-decision'] : []),
       ...(textAdventure && activeVisual ? ['media.audit'] : []),

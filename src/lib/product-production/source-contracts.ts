@@ -117,6 +117,7 @@ export function productProductionTaskUsesWorldGatewayV1(task: ProductProductionP
   const skill = getAgentSkillV1(task.skillId ?? 'product-production.integrate.v1')
   return skill.contextGateway?.providerSourceKeys.includes('worldRelease') === true
     && (task.executionMode === 'model' || task.skillId === 'product-production.integrate.v1'
+      || task.taskKey === 'content.design'
       || isDeterministicIntegration)
 }
 

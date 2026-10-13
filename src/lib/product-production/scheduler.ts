@@ -1297,7 +1297,7 @@ export async function productProductionTaskExecutionIdentityHashV1(
   return hashProductProductionValueV2(productProductionTaskExecutionIdentityPayloadV1(task))
 }
 
-async function frozenProductProductionTaskExecutionIdentityHashV1(
+export async function frozenProductProductionTaskExecutionIdentityHashV1(
   task: ProductProductionPlanTaskV3,
   snapshot: Pick<AgentRunSnapshotV1, 'contract'>,
 ): Promise<string> {
@@ -2438,6 +2438,7 @@ async function ensurePlan(input: {
         const previous = previousTasks.get(task.taskKey)
         const carriesExplicitAuthorDecision = task.taskKey === 'source.author-gate'
           || task.taskKey === 'media.anchor-author-gate'
+          || task.taskKey === 'content.chat-author-gate'
         const clockCapacityRevision = task.taskKey === 'content.product-module'
           && parsedObject(state.build.failureJson).code === 'author-revised-content'
           && parsedObject(state.build.failureJson).blockerKey === task.taskKey
@@ -2515,7 +2516,7 @@ function authorResolutionEvidence(
   const candidate = resolution as Record<string, unknown>
   const actions: ProductProductionBlockerResolutionV1['action'][] = [
     'retry', 'author-edit', 'fallback', 'waive-soft-gate', 'change-capability',
-    'accept-product-private-expansion', 'confirm-character-anchors', 'cancel',
+    'accept-product-private-expansion', 'confirm-character-anchors', 'confirm-chat-situation', 'cancel',
   ]
   if (typeof candidate.action !== 'string'
     || !actions.includes(candidate.action as ProductProductionBlockerResolutionV1['action'])
@@ -2526,6 +2527,7 @@ function authorResolutionEvidence(
     resolution: {
       action: candidate.action as ProductProductionBlockerResolutionV1['action'],
       note: candidate.note,
+      ...(candidate.action === 'confirm-chat-situation' ? {chatSituation: structuredClone(candidate.chatSituation) as ProductProductionBlockerResolutionV1['chatSituation']} : {}),
     },
     resolvedAt: row.resolvedAt,
   }
@@ -4191,6 +4193,7 @@ async function ensureCarriedForwardTaskRuns(input: {
     for (const task of input.plan.tasks) {
       const carriesExplicitAuthorDecision = task.taskKey === 'source.author-gate'
         || task.taskKey === 'media.anchor-author-gate'
+        || task.taskKey === 'content.chat-author-gate'
       if (task.executionMode === 'deterministic' && task.reuse == null
         && !carriesExplicitAuthorDecision) continue
       const outputs = artifacts.filter(row => task.outputArtifactKeys.includes(row.artifactKey)

@@ -65,6 +65,7 @@
 - `docs/products/text-adventure-production/13-FIRST-FLAGSHIP-PRODUCTION-AND-SHOWCASE.md`
 - `docs/ROADMAP.md`
 - `docs/roadmap/README.md`
+- `docs/roadmap/CHARACTER-CHAT-DEVELOPMENT-PLAN.md`：E-CHAT-01 角色聊天专项开发计划，覆盖来源投影、情境与主动叙事、导演控制、长期关系、多人、发行及商业验收，提供可勾选开发步骤与进度证据规则；计划不代表实现完成。
 - `docs/roadmap/CAPABILITY-BASELINE.md`
 - `docs/roadmap/INDEPENDENT-CREATION-DEVELOPMENT-PLAN.md`
 - `docs/roadmap/SHORT-NOVEL-DEVELOPMENT-PLAN.md`

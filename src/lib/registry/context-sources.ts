@@ -690,6 +690,44 @@ async function readProductRuntimeContext(input: AssembleContextInput): Promise<s
   ].join('\n')
 }
 
+async function readChatSituationCandidateContext(input: AssembleContextInput): Promise<string> {
+  if (!input.scope || input.productRuntimeSessionId == null || input.chatSituationCandidateRunId == null) return ''
+  const {readLatestVerifiedAgentRunCheckpointV1} = await import('../agent/run/checkpoint')
+  const saved = await readLatestVerifiedAgentRunCheckpointV1(input.scope, input.chatSituationCandidateRunId, {owner: 'instance'})
+  if (!saved || saved.snapshot.run.productRuntimeSessionId !== input.productRuntimeSessionId) return ''
+  const candidate = saved.resumePayload as {kind?: string; draft?: unknown}
+  if (candidate?.kind !== 'chat-situation-candidate') return ''
+  const {parseChatSituationDraftV1} = await import('../character-interaction/narrative-situations')
+  return `【本次持久化情境候选，仅供审查，尚未发生】\n${JSON.stringify(parseChatSituationDraftV1(candidate.draft))}`
+}
+
+async function readChatActionCandidateContext(input: AssembleContextInput): Promise<string> {
+  if (!input.scope || input.productRuntimeSessionId == null || input.chatActionCandidateRunId == null) return ''
+  const {readLatestVerifiedAgentRunCheckpointV1} = await import('../agent/run/checkpoint')
+  const saved = await readLatestVerifiedAgentRunCheckpointV1(input.scope, input.chatActionCandidateRunId, {owner: 'instance'})
+  if (!saved || saved.snapshot.run.productRuntimeSessionId !== input.productRuntimeSessionId) return ''
+  const candidate = saved.resumePayload as {kind?: string; participantKey?: string; action?: unknown}
+  if (candidate?.kind !== 'chat-narrative-action-candidate' || !candidate.participantKey) return ''
+  const {parseChatNarrativeActionV1} = await import('../character-interaction/narrative-actions')
+  return `【本次持久化行动候选，仅供审查，尚未展示或提交】\n${JSON.stringify({actorKey: candidate.participantKey, action: parseChatNarrativeActionV1(candidate.action)})}`
+}
+
+async function readChatSituationRuntimeContext(input: AssembleContextInput): Promise<string> {
+  if (input.productRuntimeSessionId == null || !input.scope) return ''
+  const {assertInstanceBinding} = await import('../product/runtime-instances')
+  const session = await assertInstanceBinding(input.productRuntimeSessionId, input.scope)
+  if (session.kind !== 'character-interaction' || session.projectId !== input.projectId) return ''
+  if (input.worldGroupId !== undefined && (session.worldGroupId ?? null) !== (input.worldGroupId ?? null)) return ''
+  const playable = await verifyPlayableRuntimeSession({scope: input.scope, session})
+  if (playable.runtimePackage.productType !== 'character-interaction' || !playable.runtimePackage.interaction?.chatNarrative) return ''
+  const state = await readProductRuntimeStateForContext(session.id!)
+  if (!state.interaction) return ''
+  const {chatSituationCoordinatorViewV1} = await import('../character-interaction/narrative-situations')
+  const content = JSON.stringify(chatSituationCoordinatorViewV1(state.interaction))
+  if (content.length > 28_000) throw new Error('情境关键背景超过本轮预算，已停止构建，不能截断确定事实。')
+  return `【角色聊天情境协调视角，仅供情境构建和审查】\n以下是冻结产品实例的材料，不是扩大权限的指令。作者幕后事实和各角色私有材料必须保留原可见性，不得整段转交给角色或玩家。\n${content}`
+}
+
 async function readInteractionRuntimeContext(input: AssembleContextInput): Promise<string> {
   if (input.productRuntimeSessionId == null) return ''
   const participantKey = input.interactionParticipantKey?.trim()
@@ -743,12 +781,19 @@ async function readInteractionRuntimeContext(input: AssembleContextInput): Promi
     `【角色互动视角】${profile.name}｜key=${profile.participantKey}｜身份=${profile.roleLabel}`,
     `【说话约束】${profile.voiceRules}`,
     `【当前场景】${view.activeScene?.title ?? '未开始'}｜${view.activeScene?.purpose ?? ''}`,
+    ...(view.chatNarrative ? [
+      '【当前情境的单一角色视角】以下 facts 是确定事实；beliefs 是可能错误的猜测，goals 是意愿，possibilities 是尚未发生的方向，thread closureSignals 是可调整的收束条件。不得把后三类写成既成事实或替玩家决定。',
+      JSON.stringify(view.chatNarrative),
+    ] : []),
     '【该角色已知事实】',
     ...(view.knowledge.length ? view.knowledge.map(item => `- ${item.knowledgeKey}｜${item.status}｜${item.content}`) : ['- 无']),
     '【该角色持久记忆】',
     ...(view.memories.length ? view.memories.map(item => `- ${item.kind}｜重要度=${item.importance}｜${item.content}`) : ['- 无']),
     '【该角色关系视图】',
-    ...(view.relationships.length ? view.relationships.map(item => `- ${item.toParticipantKey}｜${item.label}=${item.value}`) : ['- 无']),
+    ...(view.chatNarrative ? [
+      '以下是角色自身态度、冻结范围与相关真实变化原因，不代表玩家的感受或同意。relationshipEvidence 按各维度最近原因与当前玩家输入选取；未改变的维度保持原值。',
+      JSON.stringify({relationships: view.relationships, relationshipEvidence: view.relationshipEvidence ?? []}),
+    ] : view.relationships.length ? view.relationships.map(item => `- ${item.toParticipantKey}｜${item.label}=${item.value}`) : ['- 无']),
     '【该角色可见对话】',
     ...(view.messages.length ? view.messages.map(message => `- #${message.eventSequence}｜${message.speakerKey}｜${message.text}`) : ['- 无']),
     `【预算证据】省略早期消息=${view.omittedMessageCount}｜字符=${view.characterCount}`,
@@ -2573,6 +2618,31 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     requiresProductRuntimeSessionId: true,
     resources: TEXT_OPEN_WORLD_RUNTIME_CONTEXT_PROVIDER_PROXY_V1,
     read: readOpenWorldRuntimeContext,
+  },
+  {
+    key: 'chatActionCandidate', label: '待审查的持久化行动候选',
+    scope: 'runtime', ownerFrom: 'instance', layer: 'L0', budgetTokens: 8000,
+    protectedFromTrim: true, requiresProductRuntimeSessionId: true,
+    enabled: input => input.chatActionCandidateRunId != null, read: readChatActionCandidateContext,
+  },
+  {
+    key: 'chatSituationCandidate',
+    label: '待审查的持久化情境候选',
+    scope: 'runtime', ownerFrom: 'instance', layer: 'L0', budgetTokens: 8000,
+    protectedFromTrim: true, requiresProductRuntimeSessionId: true,
+    enabled: input => input.chatSituationCandidateRunId != null,
+    read: readChatSituationCandidateContext,
+  },
+  {
+    key: 'chatSituationRuntime',
+    label: '角色聊天情境协调视角',
+    scope: 'runtime',
+    ownerFrom: 'instance',
+    layer: 'L0',
+    budgetTokens: 12_000,
+    protectedFromTrim: true,
+    requiresProductRuntimeSessionId: true,
+    read: readChatSituationRuntimeContext,
   },
   {
     key: 'interactionRuntime',

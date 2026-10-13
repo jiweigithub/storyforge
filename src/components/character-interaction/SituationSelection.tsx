@@ -1,0 +1,38 @@
+import {useMemo} from 'react'
+import type {ProductProductionReviewArtifactV1} from '../../lib/product-production/service'
+import {parseChatSituationCandidatesV1, type ChatNarrativeProductionSourceV1} from '../../lib/character-interaction/narrative-production'
+
+/** Author-facing comparison. Hidden facts are deliberately available here,
+ * before publication; the player receives only their filtered runtime view. */
+export default function SituationSelection({artifacts, disabled, onSelect}: {
+  artifacts: ProductProductionReviewArtifactV1[]; disabled: boolean
+  onSelect: (selection: {candidatesHash: string; sourceHash: string; selectedOptionKey: string}) => void
+}) {
+  const parsed = useMemo(() => {
+    try {
+      const source = artifacts.find(a => a.artifactKey === 'design.game')
+      const candidates = artifacts.find(a => a.artifactKey === 'content.chat-candidates')
+      if (!source || !candidates) throw new Error('情境候选尚未加载完整，请重新打开制作页。')
+      const content = source.payload as ChatNarrativeProductionSourceV1
+      return {source, candidates, content, options: parseChatSituationCandidatesV1(candidates.payload, content).options, error: null}
+    } catch (e) {return {error: e instanceof Error ? e.message : String(e)}}
+  }, [artifacts])
+  if (parsed.error || !parsed.options) return <p role="alert" className="mt-3 text-xs text-error">{parsed.error}</p>
+  const name = (key: string) => key === 'player' ? parsed.content.settings.narrative.personaName : parsed.content.participants.find(p => p.participantKey === key)?.name ?? key
+  return <section className="mt-3 rounded border border-accent/40 bg-accent/5 p-4 text-xs" data-testid="chat-situation-selection">
+    <h3 className="font-semibold">选择故事开始的局面</h3>
+    <p className="mt-2 text-text-muted">比较背景、角色想做的事和待解决的问题。选定后，角色会在这个局面中行动，你仍可拒绝、改道或休息。这里的可能方向不会锁定未来剧情。</p>
+    <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{parsed.options.map(option => <article key={option.optionKey} className="rounded border border-border bg-bg-base p-3">
+      <h4 className="font-semibold">{option.title}</h4><p className="mt-2">{option.pitch}</p>
+      <p className="mt-2 text-text-muted">{option.situation.location} · {option.situation.timeLabel}</p>
+      <ul className="mt-3 space-y-2">{option.situation.goals.map(goal => <li key={goal.goalKey}><strong>{name(goal.actorKey)}</strong>想要{goal.desire}；顾虑是{goal.concern}；边界是{goal.boundary}。</li>)}</ul>
+      <ul className="mt-3 space-y-1">{option.situation.threads.map(thread => <li key={thread.threadKey}>{thread.question}<span className="block text-text-muted">收束条件：{thread.closureSignals.join('；')}</span></li>)}</ul>
+      <details className="mt-3"><summary className="cursor-pointer">查看完整背景与角色视角（作者可见）</summary>
+        <ul className="mt-2 space-y-2">{option.situation.facts.map(fact => <li key={fact.factKey}>{fact.text}<span className="block text-text-muted">知情者：{fact.audienceKeys.length ? fact.audienceKeys.map(name).join('、') : '暂时无人知情'}</span></li>)}</ul>
+        {option.situation.beliefs.map(b => <p className="mt-2" key={b.beliefKey}>{name(b.actorKey)}目前相信：{b.text}</p>)}
+        {option.situation.possibilities.map((p, i) => <p className="mt-2 text-text-muted" key={`${p.actorKey}-${i}`}>{name(p.actorKey)}可能尝试：{p.text}</p>)}
+      </details>
+      <button className="mt-4 rounded bg-accent px-3 py-2 text-white disabled:opacity-40" disabled={disabled} onClick={() => onSelect({candidatesHash: parsed.candidates.contentHash, sourceHash: parsed.source.contentHash, selectedOptionKey: option.optionKey})}>选择「{option.title}」并继续</button>
+    </article>)}</div>
+  </section>
+}

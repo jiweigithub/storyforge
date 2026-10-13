@@ -1,0 +1,703 @@
+{
+  "schema": "storyforge.character-chat-evaluation-cases",
+  "version": 1,
+  "status": "draft-not-evaluated",
+  "purpose": "CHAT-00 原创工程与人工评测材料；不是已发布作品或真实模型通过证据。",
+  "behaviors": [
+    {
+      "id": "weak-guidance",
+      "instruction": "只提供起始局面，之后给简短自然回应，不替角色安排下一步。",
+      "expectation": "角色从自身目标发起相关行动，在玩家必须决定时等待。"
+    },
+    {
+      "id": "refuse",
+      "instruction": "拒绝角色首次提出的主要建议，并给出一个合理理由。",
+      "expectation": "拒绝改变后续办法、时机或关系理解，不换措辞强推原路线。"
+    },
+    {
+      "id": "alternative",
+      "instruction": "提出一种与角色建议不同但符合已知条件的办法。",
+      "expectation": "角色参与、补充或基于事实反对，新办法有可见后果。"
+    },
+    {
+      "id": "rest",
+      "instruction": "暂时转去闲聊或请求先休息。",
+      "expectation": "节奏降低，未完成事项可搁置，不凭空制造新危机。"
+    },
+    {
+      "id": "return",
+      "instruction": "短暂离开后返回，并提及之前已经发生的变化。",
+      "expectation": "承接同一背景和实际后果，不重开旧矛盾或更换真相。"
+    },
+    {
+      "id": "unexpected",
+      "instruction": "利用明确存在的条件作出情境没有预设的合理选择。",
+      "expectation": "允许新走向或说明真实限制，不暗改历史来守住结局。"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "daily-clock-promise",
+      "split": "development",
+      "mode": "single",
+      "style": "daily",
+      "title": "修好的旧钟",
+      "seed": "邻居约好今天和我一起修旧钟，傍晚我回到了他的修理铺。",
+      "publicFacts": [
+        "旧钟属于玩家，昨天双方约好尝试修复。",
+        "铺里有工具，但没有合适的替换发条。",
+        "附近旧货摊仍营业；玩家没有承诺购买任何东西。"
+      ],
+      "roles": [
+        {
+          "key": "keeper",
+          "name": "周砚",
+          "goals": [
+            "兑现一起修钟的约定",
+            "保留旧钟原有的声音"
+          ],
+          "values": [
+            "不擅自处置别人的物品"
+          ],
+          "privateFacts": [
+            "自己保存了一块能试用的旧发条，但不确定能否耐久。"
+          ],
+          "beliefs": []
+        }
+      ],
+      "authorOnlyFacts": [],
+      "openQuestions": [
+        "是否试用旧发条、找替换件或暂缓修理",
+        "这次合作如何改变两人的理解"
+      ],
+      "allowedIntroductions": [
+        "与修钟有关的可核实观察",
+        "是否愿意同行的邀请"
+      ],
+      "forbiddenChanges": [
+        "把玩家拒绝同行写成已同意",
+        "未经用户选择就宣告丢弃旧钟",
+        "为催促行动突然制造生命危险"
+      ],
+      "closureExamples": [
+        "约定新的修理办法或时间",
+        "决定保留现状并理解原因"
+      ],
+      "requiredConsequences": [
+        "提出试用不等于已安装",
+        "选定办法或暂缓的原因在回来时继续生效"
+      ]
+    },
+    {
+      "id": "inn-missing-seal",
+      "split": "development",
+      "mode": "single",
+      "style": "investigation",
+      "title": "暴雨驿站",
+      "seed": "我和守卫被暴雨困在驿站，驿站刚丢了一件重要物品。",
+      "publicFacts": [
+        "驿站丢失了用于开门验货的铜印。",
+        "停电期间后门没有上锁。",
+        "山路被倒树挡住，屋内暂时安全。"
+      ],
+      "roles": [
+        {
+          "key": "guard",
+          "name": "叶岑",
+          "goals": [
+            "找回铜印",
+            "避免无证据地指责住客"
+          ],
+          "values": [
+            "先核实再指控"
+          ],
+          "privateFacts": [
+            "之前误判过一名旅客，因此对公开指控格外谨慎。"
+          ],
+          "beliefs": [
+            "铜印可能被人借用，但目前没有证据。"
+          ]
+        }
+      ],
+      "authorOnlyFacts": [
+        "铜印被掌柜拿去拓印破损的通行单，放在柜台下的木箱里；守卫和玩家起初都不知道。"
+      ],
+      "openQuestions": [
+        "如何寻找物品或处理离开需求",
+        "信息不足时是否相互信任"
+      ],
+      "allowedIntroductions": [
+        "有位置和接触依据的线索",
+        "合同内临时住客的有限回应"
+      ],
+      "forbiddenChanges": [
+        "为了反转更换铜印去向",
+        "角色未调查就知道木箱秘密",
+        "替玩家接受搜查",
+        "为阻止离开临时改写山路规则"
+      ],
+      "closureExamples": [
+        "找回铜印并澄清误会",
+        "选择先修路，未解决事项明确暂缓"
+      ],
+      "requiredConsequences": [
+        "已检查地点保持检查结果",
+        "玩家拒绝搜查后不能声称已搜查"
+      ]
+    },
+    {
+      "id": "riverside-reading-evening",
+      "split": "development",
+      "mode": "single",
+      "style": "relationship",
+      "title": "尚未安排的朗读夜",
+      "seed": "我与旧书店店主约好筹备周五的朗读夜，今晚过来时发现报名者比预期少。",
+      "publicFacts": [
+        "活动定在两天后，书店的桌椅可以容纳六个人。",
+        "目前只有两人报名，活动尚未取消。",
+        "玩家曾答应一起讨论安排，没有承诺主持、出钱或上台。",
+        "店门口的公告板由书店自己管理，允许修改自己的活动告示。"
+      ],
+      "roles": [
+        {
+          "key": "bookseller",
+          "name": "许听澜",
+          "goals": [
+            "让愿意来的人得到一次值得参加的小型聚会",
+            "与玩家共同确定可承担的安排"
+          ],
+          "values": [
+            "不拿朋友的配合当作理所当然",
+            "宁可活动小，也不虚报报名人数"
+          ],
+          "privateFacts": [
+            "她已准备了一个可以由自己独自读完的短篇，但担心小场面让玩家失望。"
+          ],
+          "beliefs": [
+            "她猜测玩家更喜欢热闹的活动，尚未求证。"
+          ]
+        }
+      ],
+      "authorOnlyFacts": [],
+      "openQuestions": [
+        "保持小规模、另改形式、推迟或取消活动",
+        "谁愿意承担哪些准备工作"
+      ],
+      "allowedIntroductions": [
+        "现有书目内的朗读选段建议",
+        "不涉及强制他人参与的布置和告示安排"
+      ],
+      "forbiddenChanges": [
+        "把玩家的建议当作上台承诺",
+        "凭空增加报名者来消除困难",
+        "将玩家拒绝主持视为背叛",
+        "未征求同意便让玩家承担费用"
+      ],
+      "closureExamples": [
+        "双方确定自己愿意承担的任务",
+        "达成暂缓、缩小或取消活动的决定并留下理由"
+      ],
+      "requiredConsequences": [
+        "角色自己的猜测可以被玩家澄清，澄清后不继续当成事实",
+        "已确认的安排在刷新和回访后持续生效",
+        "玩家拒绝上台后可转为观众、协助或离开，不被强推回主持路线"
+      ]
+    },
+    {
+      "id": "station-misunderstanding",
+      "split": "development",
+      "mode": "multi",
+      "style": "relationship",
+      "title": "没有送到的便条",
+      "seed": "修理站的三名同伴因一张没送到的便条发生了误会，我刚走进来。",
+      "publicFacts": [
+        "今天的修理会议推迟了。",
+        "三人都希望设备尽快恢复工作。"
+      ],
+      "roles": [
+        {
+          "key": "mechanic",
+          "name": "程素",
+          "goals": [
+            "分清任务避免重复劳动"
+          ],
+          "values": [
+            "当面核实"
+          ],
+          "privateFacts": [
+            "昨天把改期便条交给了林照。"
+          ],
+          "beliefs": [
+            "以为顾遥已经收到通知。"
+          ]
+        },
+        {
+          "key": "messenger",
+          "name": "林照",
+          "goals": [
+            "解释自己的失误",
+            "继续帮忙修理"
+          ],
+          "values": [
+            "愿意承担具体责任"
+          ],
+          "privateFacts": [
+            "便条被雨水打湿，自己没及时补送。"
+          ],
+          "beliefs": []
+        },
+        {
+          "key": "planner",
+          "name": "顾遥",
+          "goals": [
+            "确认自己仍被团队重视"
+          ],
+          "values": [
+            "不愿被敷衍"
+          ],
+          "privateFacts": [
+            "为参加会议取消了另一项安排。"
+          ],
+          "beliefs": [
+            "以为自己被故意排除。"
+          ]
+        }
+      ],
+      "authorOnlyFacts": [],
+      "openQuestions": [
+        "便条经过如何被查清",
+        "解释和补救是否被接受"
+      ],
+      "allowedIntroductions": [
+        "基于各自经历的解释",
+        "可被接受或拒绝的补救建议"
+      ],
+      "forbiddenChanges": [
+        "没有转述就知道别人的私聊",
+        "强迫顾遥立刻原谅",
+        "所有角色同时附和同一种说法"
+      ],
+      "closureExamples": [
+        "明确责任并约好补救",
+        "暂未和解但各方决定下一步"
+      ],
+      "requiredConsequences": [
+        "披露只传播给实际听众",
+        "未被接受的道歉不自动变成和解"
+      ]
+    }
+  ],
+  "holdoutPolicy": "正式 M1 测试前另封存至少一个日常和一个调查情境；不把开发样例直接冒充留出集。多人情境在 CHAT-06 进入验收。",
+  "evaluationDesign": {
+    "minimumM1Situations": 3,
+    "behaviorsPerSituation": 6,
+    "modelConfigurations": 2,
+    "repeatsPerCombination": 2,
+    "minimumEpisodes": 72,
+    "usualOpportunitiesPerEpisode": [
+      20,
+      40
+    ],
+    "passedDimensionScore": 4,
+    "targetPassRate": 0.8,
+    "modelConfigurationsStatus": "providers-selected-model-versions-pending-verification",
+    "realModelRunsCompleted": 0,
+    "humanReviewsCompleted": 0,
+    "selectedProviders": [
+      "local-codex",
+      "agnes"
+    ],
+    "providerSelectionEvidence": "作者在本次开发会话中明确选择 Codex 和 Agnes；实际模型标识、连接可用性及费用证据须在运行前记录。",
+    "providerPreflight": [
+      {
+        "provider": "local-codex",
+        "model": "gpt-6.1-sol",
+        "modelSelection": "live-catalog-default",
+        "status": "authoring-candidate-generated-and-restored",
+        "bridgeVersion": "Codex 0.162.0-alpha.17.2",
+        "realGenerationVerified": true,
+        "verifiedAt": "2026-10-13",
+        "acceptedModelCalls": 1,
+        "durationSeconds": 25.256,
+        "inputTokens": 4875,
+        "cachedInputTokens": 3328,
+        "outputTokens": 267,
+        "reasoningOutputTokens": 74,
+        "costUsd": null,
+        "scope": "S2 authoring contract and refresh smoke only; not narrative acceptance",
+        "rawEvidenceSha256": "fa00ac3c252fa5bfd54e25d00b6d40931f69795bc5a3e6925425111b8f8ca117",
+        "actionContractPreflight": {
+          "verifiedAt": "2026-10-13",
+          "acceptedModelCalls": 1,
+          "durationSeconds": 42.779,
+          "kind": "attempt",
+          "waitingForPlayer": true,
+          "fabricatedPlayerMessages": 0,
+          "newFacts": 0,
+          "candidateDidNotWrite": true,
+          "refreshRetained": true,
+          "costUsd": null,
+          "scope": "Real Codex action contract call using an engineering fixture; not a production flow or narrative quality episode",
+          "rawEvidenceSha256": "034860126748a5b7c8f21ff992b8e37139e47879f0cd93c3ccf82060f0761aaf"
+        },
+        "situationProductionPreflight": {
+          "verifiedAt": "2026-10-13",
+          "acceptedModelCalls": 1,
+          "durationSeconds": 62.714,
+          "inputTokens": 8405,
+          "outputTokens": 2674,
+          "candidateCount": 3,
+          "awaitingAuthorSelection": true,
+          "costUsd": null,
+          "refreshObservation": "not-verified: visibility checked before UI settled; separate browser regression verifies refresh",
+          "scope": "Real Codex through formal S3 production Harness with engineering source fixture; not narrative quality evaluation or a human-selected published work",
+          "rawEvidenceSha256": "e1117c1ddff733a4b6a7ed7eca14b7fc6fa51a4dd0b0f8c0b7421145feb8854e",
+          "candidateContentHash": "05623b5d31fa387314511af7936ece378eba9c20cdbc1c8193f5f28723f65eb6"
+        },
+        "normalPlayerPreflights": {
+          "verifiedAt": "2026-10-13",
+          "scope": "Engineering fixture through normal player UI; not independent narrative quality episodes",
+          "costUsd": null,
+          "completeThreeStepFlowVerified": false,
+          "requests": 6,
+          "modelResponses": 5,
+          "adoptedActions": 4,
+          "contractRejections": 1,
+          "unknownResults": 1,
+          "attempts": [
+            {
+              "evidence": "codex-player-preflight.json",
+              "rawEvidenceSha256": "db1f57ed7c7da2643f0e74985b0b2ec43889b6c2ca02545dee5a4b8ae42697bd",
+              "outcome": "opening-adopted; refusal response rejected because private speech tried to pause a shared thread"
+            },
+            {
+              "evidence": "codex-player-preflight-v3.json",
+              "rawEvidenceSha256": "14c55a81f83726b3379c79f93b20151547db04e65fc05b386dce87613873544d",
+              "outcome": "opening/refusal adopted; stale HMR store observer made third-step and refresh observations invalid"
+            },
+            {
+              "evidence": "codex-player-preflight-v3-verified.json",
+              "rawEvidenceSha256": "e4a0c1998e0d08c708f90b6cb9d353760f8650675c667c46c80ec69ab67aaa8f",
+              "outcome": "opening adopted; provider returned unknown on refusal call; stopped without resend"
+            }
+          ]
+        },
+        "runtimeSituationPreflight": {
+          "verifiedAt": "2026-10-13",
+          "requests": 3,
+          "modelResponses": 3,
+          "completedRuns": 2,
+          "refreshRetained": true,
+          "fabricatedPlayerMessages": 0,
+          "addedSituationFacts": 1,
+          "actionKind": "attempt",
+          "waitingForPlayer": true,
+          "elapsedSeconds": 86.179,
+          "costUsd": null,
+          "scope": "Engineering fixture through normal player UI; verifies construction-review-action and persistence, not an independent narrative-quality episode",
+          "evidence": "codex-runtime-situation-preflight.json",
+          "rawEvidenceSha256": "e57b2289389e7f45d73f163bd0d793c86be3d38b41f5bbf2e76e94684bb4adae",
+          "usage": [
+            {
+              "totalTokens": 6929,
+              "inputTokens": 6360,
+              "cachedInputTokens": 0,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 569,
+              "reasoningOutputTokens": 205
+            },
+            {
+              "totalTokens": 6939,
+              "inputTokens": 6478,
+              "cachedInputTokens": 3328,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 461,
+              "reasoningOutputTokens": 61
+            },
+            {
+              "totalTokens": 6570,
+              "inputTokens": 6214,
+              "cachedInputTokens": 0,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 356,
+              "reasoningOutputTokens": 233
+            }
+          ]
+        },
+        "reviewedActionPreflights": {
+          "verifiedAt": "2026-10-13",
+          "scope": "Engineering fixture; not independent narrative quality acceptance",
+          "costUsd": null,
+          "attempts": [
+            {
+              "evidence": "codex-action-reviewed-player-preflight.json",
+              "rawEvidenceSha256": "025944ef0c15dbc1b79da75d6d4b9fcbf2e63522508b1771eb89d8d4b988ff22",
+              "requests": 1,
+              "responses": 1,
+              "completedRuns": 0,
+              "elapsedSeconds": 34.227,
+              "outcome": "opening candidate rejected by deterministic contract: disclosure recipient already knew the public fact; semantic review was not invoked; no player message or consequence committed"
+            },
+            {
+              "evidence": "codex-action-reviewed-player-preflight-v5.json",
+              "rawEvidenceSha256": "798b9ea3cdf1b60bcfa796a5caa47b2a7f18f3465d6b98bee991e4bac33601fb",
+              "requests": 6,
+              "responses": 6,
+              "completedRuns": 3,
+              "adoptedActions": 3,
+              "reviewedActions": 3,
+              "elapsedSeconds": 125.394,
+              "refreshRetained": true,
+              "inputTokens": 37662,
+              "outputTokens": 1571,
+              "costUsd": null,
+              "outcome": "opening invited voluntary input; refusal accepted; explicit continuation paused without pressure or fabricated player actions; no new facts claimed",
+              "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation"
+            }
+          ]
+        },
+        "relationshipPreflights": {
+          "verifiedAt": "2026-10-13",
+          "scope": "Engineering fixture; not independent quality acceptance",
+          "attempts": [
+            {
+              "evidence": "codex-relationship-player-preflight-v6.json",
+              "rawEvidenceSha256": "fd605abc7959b5348a7a3939b994c6ab29f398dae6387771f492e0c3e3fa7b2d",
+              "requests": 6,
+              "responses": 6,
+              "completedRuns": 3,
+              "adoptedActions": 3,
+              "relationshipChanges": 0,
+              "elapsedSeconds": 99.575,
+              "refreshRetained": true,
+              "costUsd": null,
+              "outcome": "advice accepted; refusal and rest respected; no relationship score changes. Precedes the fix exposing relationship limits and selected history to the actual role context, so it does not verify relationship consequence generation or consumption.",
+              "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation"
+            },
+            {
+              "evidence": "codex-relationship-player-preflight-v7.json",
+              "rawEvidenceSha256": "19651bce766a0c885c5bb9d47c015069883a813b974e4b5529cb218e52733de5",
+              "requests": 6,
+              "responses": 6,
+              "completedRuns": 3,
+              "adoptedActions": 3,
+              "relationshipChanges": 0,
+              "elapsedSeconds": 111.206,
+              "refreshRetained": true,
+              "costUsd": null,
+              "roleRequestsWithFrozenLimitsAndEvidence": [
+                {
+                  "hasLimits": true,
+                  "hasEvidence": true
+                },
+                {
+                  "hasLimits": true,
+                  "hasEvidence": true
+                },
+                {
+                  "hasLimits": true,
+                  "hasEvidence": true
+                }
+              ],
+              "usage": [
+                {
+                  "totalTokens": 6886,
+                  "inputTokens": 6508,
+                  "cachedInputTokens": 0,
+                  "cacheWriteInputTokens": 0,
+                  "outputTokens": 378,
+                  "reasoningOutputTokens": 231
+                },
+                {
+                  "totalTokens": 7087,
+                  "inputTokens": 6774,
+                  "cachedInputTokens": 3328,
+                  "cacheWriteInputTokens": 0,
+                  "outputTokens": 313,
+                  "reasoningOutputTokens": 46
+                },
+                {
+                  "totalTokens": 6838,
+                  "inputTokens": 6628,
+                  "cachedInputTokens": 0,
+                  "cacheWriteInputTokens": 0,
+                  "outputTokens": 210,
+                  "reasoningOutputTokens": 80
+                },
+                {
+                  "totalTokens": 7295,
+                  "inputTokens": 6983,
+                  "cachedInputTokens": 3328,
+                  "cacheWriteInputTokens": 0,
+                  "outputTokens": 312,
+                  "reasoningOutputTokens": 23
+                },
+                {
+                  "totalTokens": 6983,
+                  "inputTokens": 6695,
+                  "cachedInputTokens": 0,
+                  "cacheWriteInputTokens": 0,
+                  "outputTokens": 288,
+                  "reasoningOutputTokens": 167
+                },
+                {
+                  "totalTokens": 7394,
+                  "inputTokens": 7088,
+                  "cachedInputTokens": 0,
+                  "cacheWriteInputTokens": 0,
+                  "outputTokens": 306,
+                  "reasoningOutputTokens": 43
+                }
+              ],
+              "outcome": "advice accepted; refusal and rest respected with no automatic relationship penalties. All three role requests include the frozen relationship ranges and selected evidence. No relationship update was generated, so real-model positive consequence generation/consumption remains unverified.",
+              "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation"
+            }
+          ]
+        },
+        "actorReflectionPreflight": {
+          "evidence": "codex-reflection-player-preflight-v8.json",
+          "rawEvidenceSha256": "07799d5902799e7a65cb71d3140ffcbcd525db1aeb1914b753296c1227f8a1d5",
+          "elapsedSeconds": 142.201,
+          "requests": 6,
+          "responses": 6,
+          "completedRuns": 3,
+          "refreshRetained": true,
+          "costUsd": null,
+          "verifiedAt": "2026-10-13",
+          "scope": "Engineering fixture; not independent narrative quality acceptance",
+          "adoptedActions": 3,
+          "planChangedAtFirstTurn": true,
+          "laterRoleRequestsReadAdoptedPlan": [
+            true,
+            true
+          ],
+          "factCounts": [
+            4,
+            4,
+            4
+          ],
+          "beliefChanges": 0,
+          "outcome": "Actor replaced its initial invitation direction with independent evidence checking; next two actual role requests consumed the adopted plan. Refusal and rest respected; no new external facts or belief corrections were generated.",
+          "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation"
+        },
+        "phaseClosurePreflights": {
+          "status": "bounded-engineering-preflight-passed-not-quality-acceptance",
+          "attempts": [
+            {
+              "evidence": "codex-closure-player-preflight-v8.json",
+              "rawEvidenceSha256": "60ef38c9e3dfc7f637a0bede68859f7c403259c7a028f6590693519a48cb55fc",
+              "status": "closure-rejected",
+              "elapsedSeconds": 199.644,
+              "requests": 8,
+              "responses": 8,
+              "completedRuns": 3,
+              "failedRuns": 1,
+              "adoptedActions": 2,
+              "adoptedSituations": 1,
+              "refreshRetained": null,
+              "costUsd": null,
+              "scope": "Engineering fixture; not independent narrative quality acceptance",
+              "outcome": "Situation publicly established the returned seal. The closing action was rejected because it completed the new clarification goal but could not also complete the old search goal under the single-goal contract. Rejected text, belief withdrawal and plan clearing were not adopted; earlier valid turns and situation remained. No automatic retry.",
+              "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation"
+            },
+            {
+              "evidence": "codex-closure-player-preflight-v9.json",
+              "rawEvidenceSha256": "f6da9c3e9746578cbb91faa1aed058b22640ed39358250650dcc8ab776ef6e44",
+              "elapsedSeconds": 181.16,
+              "requests": 8,
+              "responses": 8,
+              "completedRuns": 4,
+              "refreshRetained": true,
+              "closureStopsNewRun": true,
+              "status": "engineering-preflight-passed",
+              "failedRuns": 0,
+              "adoptedActions": 3,
+              "adoptedSituations": 1,
+              "closedOwnGoals": 2,
+              "withdrawnHypotheses": 1,
+              "otherRoleGoalPreserved": true,
+              "sharedThreadStatus": "open",
+              "factCount": 6,
+              "costUsd": null,
+              "sourceSnapshotManifestSha256": "13c9a0036a380c52c3b8e8dd270ab7cfea8343f7b033a06068054f279d9c5fd4",
+              "scope": "Engineering fixture with explicit player-authored resolution; not autonomous discovery or independent narrative quality acceptance",
+              "outcome": "After a player situation request publicly established the returned seal, the actor completed both search and clarification goals in one reviewed action, withdrew the obsolete hypothesis, and cleared its plans. The artisan road goal and shared departure question remained unfinished. Refresh matched exactly; continuing the concluded actor caused no model call or state change.",
+              "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation"
+            }
+          ]
+        },
+        "creatorPlayerPublicationPreflights": {
+          "status": "recorded-production-output-replay-and-live-player-engineering-preflight-passed-not-formal-quality-acceptance",
+          "attempts": [
+            {
+              "evidence": "codex-creator-player-preflight-v9.json",
+              "rawEvidenceSha256": "3e0faad40bdb5515cf28077480c58f653ca8d747d3afd52056420e631521e9f5",
+              "status": "publication-blocked",
+              "elapsedSeconds": 421.796,
+              "requests": 2,
+              "responses": 2,
+              "initialCandidates": 3,
+              "authorSelectionRetainedAfterRefresh": true,
+              "releaseReady": true,
+              "released": false,
+              "playerSessionCreated": false,
+              "costUsd": null,
+              "scope": "Isolated engineering world; actual Codex production outputs; not formal narrative quality acceptance",
+              "outcome": "Actual creator flow reached release-ready but publication created no ProductRelease. Deterministic reproduction found that preserved original producer metadata conflicted with the terminal verifier synthetic carry identity. No new model request or candidate regeneration was used to hide this failure."
+            },
+            {
+              "evidence": "codex-creator-player-preflight-v10.json",
+              "rawEvidenceSha256": "66131bff2b757611ac2bba1f5d11d7d70fa8445166bef9bfeb2933a6f7cc694c",
+              "status": "publication-replay-and-live-player-passed",
+              "elapsedSeconds": 152.259,
+              "productionOutputReplay": {
+                "sourceEvidence": "codex-creator-player-preflight-v9.json",
+                "replayedCalls": 2,
+                "newProviderCalls": 0
+              },
+              "runtimeRequests": 6,
+              "runtimeResponses": 6,
+              "completedRuntimeRuns": 3,
+              "adoptedActions": 3,
+              "initialCandidates": 3,
+              "released": true,
+              "playerSessionCreated": true,
+              "personaPreserved": true,
+              "refreshRetained": true,
+              "noNewRunOnRefresh": true,
+              "costUsd": null,
+              "sourceSnapshotManifestSha256": "cf51a10a688cc60c329d4ee2ffb16bffd839f8e726a6dcc52e3585ee62545f05",
+              "scope": "Engineering fixture replaying unchanged real Codex production outputs, followed by three live Codex player turns. Not a new all-live production trial or independent narrative quality acceptance.",
+              "outcome": "Author selection published successfully; formal player session used the selected scene and Persona. Role offered a practical opening; after refusal/rest it paused its own goal and changed its plans without moving the clock or requiring player participation. Third turn respected quiet. Refresh matched and generated no additional run. No new external fact was produced.",
+              "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation"
+            }
+          ]
+        }
+      },
+      {
+        "provider": "agnes",
+        "model": null,
+        "status": "historical-configuration-found-current-credentials-unavailable",
+        "realGenerationVerified": false,
+        "historicalModel": "agnes-2.5-flash",
+        "historicalEvidence": "examples/ttrpg/fog-harbor/playthrough-2026-09-07.md",
+        "historicalUsedAt": "2026-09-07",
+        "configurationStorage": "browser-localStorage-or-sessionStorage",
+        "branchSearch": {
+          "checkedAt": "2026-10-13",
+          "refs": 78,
+          "worktrees": 54,
+          "uniqueHeads": 88,
+          "credentialFileFound": false
+        },
+        "currentConnectionVerified": false
+      }
+    ],
+    "m1ScenarioIds": [
+      "daily-clock-promise",
+      "inn-missing-seal",
+      "riverside-reading-evening"
+    ]
+  },
+  "evidencePolicy": "保存原始对话、状态前后、版本、模型配置、调用/费用和评分分歧；失败不删出分母。夹具成功与真人体验分开报告。"
+}

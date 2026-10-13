@@ -254,11 +254,18 @@ export function assertFrozenProductRuntimeStateV1(input: {
       playerKey: runtimePackage.interaction!.playerKey,
       profiles: runtimePackage.interaction!.profiles,
       sceneTemplates: runtimePackage.interaction!.sceneTemplates,
+      chatSource: runtimePackage.interaction!.chatSource,
+      chatNarrative: runtimePackage.interaction!.chatNarrative,
     })
     const frozenMismatch = !interaction
       || interaction.playerKey !== expected.playerKey
       || stableProductRuntimeJsonV1(interaction.profiles) !== stableProductRuntimeJsonV1(expected.profiles)
       || stableProductRuntimeJsonV1(interaction.sceneTemplates) !== stableProductRuntimeJsonV1(expected.sceneTemplates)
+      || Boolean(interaction.chatNarrative) !== Boolean(expected.chatNarrative)
+      || (expected.chatNarrative != null && (
+        interaction.chatNarrative?.worldReleaseHash !== expected.chatNarrative.worldReleaseHash
+        || stableProductRuntimeJsonV1(interaction.chatNarrative?.persona) !== stableProductRuntimeJsonV1(expected.chatNarrative.persona)
+        || stableProductRuntimeJsonV1(interaction.chatNarrative?.permissions) !== stableProductRuntimeJsonV1(expected.chatNarrative.permissions)))
     const entryStateMismatch = input.origin !== 'branch'
       && stableProductRuntimeJsonV1(interaction) !== stableProductRuntimeJsonV1(expected)
     if (frozenMismatch || entryStateMismatch) {

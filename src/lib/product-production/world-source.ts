@@ -12,6 +12,7 @@ import type {
   WorldReferenceV1,
 } from '../types'
 import { resolveScope } from '../workspace/scope'
+import type { ChatSourceProjectionDraftV1 } from '../character-interaction/source-projection'
 
 export interface ProductProductionWorldSourceItemV2 {
   resourceKey: string
@@ -42,6 +43,8 @@ export interface ProductProductionWorldSourceCatalogV2 {
   storyArcs: Array<ProductProductionWorldSourceItemV2 & { type: string }>
   /** Neutral resources are retained only in memory for product compilation. */
   resources: WorldSemanticResourceSnapshotV1[]
+  /** Author-side preparation only; no classification or publication is implied. */
+  chatSourceProjection?: ChatSourceProjectionDraftV1
 }
 
 export interface ProductProductionConsultationSourceV2 {
@@ -333,6 +336,19 @@ export async function loadProductProductionWorldSourceCatalogV2(input: {
     ...item(resource),
     type: text(resource.value.type),
   }))
+  // Match the existing interaction compiler's explicit eight-participant limit.
+  // Extra selected resources remain in `resources`; they are not silently lost.
+  const chatCharacterKeys = input.selection.productType === 'character-interaction'
+    ? (input.selection.roleBindings.characters ?? input.selection.roleBindings.participants ?? []).slice(0, 8)
+    : []
+  const chatSourceProjection = chatCharacterKeys.length
+    ? await (await import('../character-interaction/source-projection')).createChatSourceProjectionDraftV1({
+      worldReferenceHash: opened.description.worldReference.referenceHash,
+      worldReleaseHash: opened.description.identity.releaseHash,
+      characterResourceKeys: chatCharacterKeys,
+      resources,
+    })
+    : undefined
   return {
     schema: 'storyforge.product-production-world-source-catalog',
     version: 2,
@@ -356,5 +372,6 @@ export async function loadProductProductionWorldSourceCatalogV2(input: {
     loreEntries,
     storyArcs,
     resources,
+    ...(chatSourceProjection ? { chatSourceProjection } : {}),
   }
 }

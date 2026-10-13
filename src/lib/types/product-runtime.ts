@@ -1051,6 +1051,7 @@ export interface CharacterInteractionRuntimeState {
   threads: InteractionRuntimeThread[];
   totalPlayerTurns: number;
   remainingDirectorBudget: number;
+  chatNarrative?: import('./chat-narrative').ChatNarrativeStateV1;
 }
 
 export interface ProductNarrativeRuntimeNodeSnapshot {
@@ -1202,6 +1203,10 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "interaction.participant.left",
   "interaction.player.message.committed",
   "interaction.character.reply.committed",
+  "interaction.narrative.trigger.requested",
+  "interaction.narrative.action.committed",
+  "interaction.narrative.action-reviewed.committed",
+  "interaction.narrative.situation.committed",
   "interaction.memory.proposed",
   "interaction.memory.accepted",
   "interaction.memory.rejected",

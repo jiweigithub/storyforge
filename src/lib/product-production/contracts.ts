@@ -1,4 +1,4 @@
-import { parseChatAuthoringSettingsV1 } from '../character-interaction/authoring-contract'
+import { parseChatAuthoringSettings } from '../character-interaction/authoring-contract'
 import { parseAvgAuthoringSettingsV1 } from '../avg/authoring-contract'
 import type {
   ProductConsultationBudgetV1,
@@ -308,7 +308,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
   }
   const parsed: ProductProductionBriefV3 = {
     ...(avgRevision ? { avgRevision } : {}),
-    ...(row.characterChat ? { characterChat: parseChatAuthoringSettingsV1(row.characterChat) } : {}),
+    ...(row.characterChat ? { characterChat: parseChatAuthoringSettings(row.characterChat) } : {}),
     ...(row.avg ? { avg: parseAvgAuthoringSettingsV1(row.avg) } : {}),
     schema: 'storyforge.product-production-brief', version: 3,
     source: {
@@ -444,6 +444,7 @@ function parseResolution(value: unknown): ProductProductionBlockerResolutionV1 {
   exactKeys(row, [
     'action', 'note',
     ...(row.action === 'author-edit' ? ['authorDraftJson'] : []),
+    ...(row.action === 'confirm-chat-situation' ? ['chatSituation'] : []),
     ...(hasUnknownReservation ? ['unknownResultReservation'] : []),
   ], 'resolution')
   if (row.action === 'author-edit') record(JSON.parse(text(row.authorDraftJson, 'resolution.authorDraftJson', 120000)), 'authorDraft')
@@ -464,10 +465,16 @@ function parseResolution(value: unknown): ProductProductionBlockerResolutionV1 {
   return {
     action: enumValue(row.action, [
       'retry', 'author-edit', 'fallback', 'waive-soft-gate', 'change-capability',
-      'accept-product-private-expansion', 'confirm-character-anchors', 'cancel',
+      'accept-product-private-expansion', 'confirm-character-anchors', 'confirm-chat-situation', 'cancel',
     ], 'resolution.action'),
     note: text(row.note, 'resolution.note', 4000),
     ...(row.action === 'author-edit' ? { authorDraftJson: text(row.authorDraftJson, 'resolution.authorDraftJson', 120000) } : {}),
+    ...(row.action === 'confirm-chat-situation' ? {chatSituation: (() => {
+      const choice = record(row.chatSituation, 'resolution.chatSituation')
+      exactKeys(choice, ['candidatesHash', 'sourceHash', 'selectedOptionKey'], 'resolution.chatSituation')
+      if (!isSha256Hash(choice.candidatesHash) || !isSha256Hash(choice.sourceHash)) fail('情境选择需要精确候选与来源 hash')
+      return {candidatesHash: choice.candidatesHash, sourceHash: choice.sourceHash, selectedOptionKey: stableKey(choice.selectedOptionKey, 'selectedOptionKey')}
+    })()} : {}),
     ...(unknownResultReservation ? { unknownResultReservation } : {}),
   }
 }
