@@ -1,6 +1,6 @@
 # AVG 游戏系统、演出与恢复协议
 
-> L2 · 版本：1.0.0 · 生效：2026-10-13 · 受 [AVG 产品契约](../AVG.md)约束。
+> L2 · 版本：1.1.0 · 生效：2026-10-13 · 受 [AVG 产品契约](../AVG.md)约束。
 > 以下为目标协议；当前 V1 的叙事/Cue/checkpoint 底座不能据此宣称已有物品、消息或完整语音协调能力。
 
 ## 1 模块边界与版本
@@ -118,6 +118,8 @@ inventory 列表消费 icon，证据详情消费 detail，剧情特写消费 CG/
 
 加载验证 owner、package/hash、codec、checkpoint 完整性和资产闭包；失败保留原档并说明缺口。缺媒体按作品声明降级，损坏规则状态不“尽量恢复”。V1 存档继续绑定 V1；没有受审的显式 migration 就不能给 V2 使用或静默升级。
 
+回退/重访单独声明政策：首批只从合法 checkpoint 创建新分支会话，不把历史回听或直接跳 scene 当作状态回退。可选路线图任意跳转、逐句 rollback 和跨 release migration 后置，需明确物件/知识/消息/解锁与一次性声音的语义。旧 V1 的正常新游戏/继续/保存/分支恢复仍回归，禁止改写旧包不意味着禁用这些操作。
+
 线性、分支及启用物件的会话分别回归：选择前后、出示前后、消息投递前后、重复检查、auto/快进/后台切换、失败恢复、刷新及离线资源缺失。解锁导入、删除一个 Work 和多个 profile 的反例属于数据生命周期验收。
 
 ## 7 渲染消费与技术验收
@@ -127,3 +129,20 @@ stage、dialogue avatar/voice、inventory、evidence detail、menu、gallery、a
 验收证据须包含：有限规则正反例、路径/结局可达、事件重放等于 checkpoint、幂等/过期命令、句/声音打断、隐私/知识投影、各消费槽实际显示及真实保存恢复。无图/静音只证明允许的降级路径，不证明有声视听效果。
 
 当前接入点：`src/lib/avg/authoring-contract.ts`、`src/lib/types/avg.ts`、`src/lib/types/narrative-blueprint.ts`、`src/lib/types/product-release.ts`、`src/lib/product-production/product-adapters.ts`、`src/stores/avg-game-player.ts`、`src/components/text-game/AvgGamePlayer.tsx`、`src/components/avg/StageAudio.tsx`。路径存在性和具体调用方由工作包开工时复核；共享类型改变先经 AVG-BASE-00，不另建发布/runtime 框架。
+
+## 8 性能、资源、设备与语言边界
+
+现行 player 向 resolver 传全部资产，默认压缩字节预算为 64 MiB；这不等于解码图像/音频、DOM 或总 RAM 都受同一上限。商业候选不能靠增大这个数加载全作。03A 提供按当前场景/合法相邻路径的有限预加载、必需资源 pin、旧 object URL/Audio 释放及有界 cache；画廊/未选路线按用途加载，异步旧结果不能覆盖新位置。
+
+| 项目 | 设计验收 |
+|---|---|
+| 设备/性能 | CAL-00 冻结真实硬件/OS/browser、画幅/语言/资源大小、cold/warm 条件与数值上限；首戏暂定本地冷启动 ≤5s、已就绪资源下操作确认 p95≤100ms，排除作者声明的阅读/Cue 等待；实际测量后保留 pass/fail/unknown |
+| 内存/资源 | 分别记录编码 cache 上限、解码规模/实际可测峰值、重进场/连续换图/回听时释放；未测 RAM 不宣称低内存，不能只验单张 PNG |
+| 存储/配额 | 导入/生产前检查必要 Blob 闭包与可用空间；配额失败不删除旧档/已采用资产、不留半包正式 release，保留重试/清理说明 |
+| UI/输入 | 键盘/触屏/focus/关闭菜单/静音/减少动态、安全区/长句/字号、窗口 resize 和背景切换；实际目标设备各测，不由 desktop E2E 代证全部设备 |
+| 本地化 | 首批 zh-CN；未来 text/voice locale 分开冻结，稳定 line 关联 locale 文本/hash/读音/clip、姓名/字体及 fallback；缺/旧翻译不可静默串到另一语言 |
+| 离线/故障 | 本地包真实缺 Blob/解码失败/慢加载/声音权限/刷新/离线安装；显示有限结果，不用永久 loading 或隐藏模型请求恢复 |
+
+数值是拟定 Pilot 工程目标，不是已达成绩或全设备承诺，最终条件由对应 Brief/CAL-00 冻结。02A2 声明布局/消费能力，03A 负责加载/运行与观测，07 负责实际交付环境；新增语言制作/高级 renderer 需独立 typed schema/权限/回归，不在 Settings 中选上就算支持。
+
+接口取舍参考 [Naninovel 1.21 资源/内存政策](https://naninovel.com/guide/resource-providers)与 [Ren'Py 8.5.4 保存/回退文档](https://www.renpy.org/doc/html/save_load_rollback.html)（2026-10-13 核对）：本方案采用按消费者/场景控制资源及明确恢复边界；不引入这两套引擎，也不推定它们或 StoryForge 跨版本档案必然兼容。

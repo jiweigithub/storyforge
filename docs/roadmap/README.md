@@ -1,6 +1,6 @@
 # StoryForge 当前施工路线
 
-> 版本：1.6.0 · 更新：2026-10-13 · 权威层级：L2
+> 版本：1.6.1 · 更新：2026-10-13 · 权威层级：L2
 > 顺序来自项目总纲 §11。任务只有进入本文件并满足前置，才是当前 backlog；旧阶段号不自动续用。
 
 ## 状态
@@ -60,7 +60,7 @@ Phase 5 已完成世界观/故事/角色/主支线/大纲/细纲/正文、候选
 
 每项必须能映射 `WorldReference → 产品专用 Brief/SourcePlan → production run ContextManifests → SourceManifest/ProductRelease → runtime` 的共同交接语义，但不要求共用相同配置表、规模单位、Agent 图或运行 schema。
 
-AVG 以 [整体产品契约](../products/AVG.md)为唯一施工入口，[实施计划](AVG-IMPLEMENTATION-PLAN.md)与[工作包卡](AVG-WORK-PACKAGE-CARDS.md)登记 E-AVG-01 子队列。该子队列下一代码单元为 **AVG-BASE-00**；本次只交付设计，不启动代码/作品生产，也不变更其他产品的优先级。
+AVG 以 [整体产品契约](../products/AVG.md)为唯一施工入口，[实施计划](AVG-IMPLEMENTATION-PLAN.md)与[工作包卡](AVG-WORK-PACKAGE-CARDS.md)登记 E-AVG-01 子队列。该子队列下一代码单元为 **AVG-BASE-00A**，同期先冻结 **AVG-CAL-00** 的质量/能力/投入边界，最小专业路径就绪后先测收益；本次只交付设计，不启动代码/作品生产，也不变更其他产品的优先级。
 
 短篇/改编与各上层产品可以并行，但共享改动必须遵守以下集成顺序：
 

@@ -1,6 +1,6 @@
 # StoryForge 文档权威与归档规则
 
-> 版本：2.5.0 · 生效：2026-10-13
+> 版本：2.5.1 · 生效：2026-10-13
 > 本文回答“哪些文档仍可指导开发”。未列入现行清单的历史材料，不得作为设计或施工权威。
 
 ## 1. 裁决层级
@@ -80,7 +80,7 @@
 - `docs/roadmap/MOTION-DRAMA-CONTENT-PRODUCTION-FLOW.md`
 - `docs/roadmap/TEXT-OPEN-WORLD-IMPLEMENTATION-PLAN.md`：文字开放世界完整开发清单与当前进度口径。
 - `docs/roadmap/TEXT-OPEN-WORLD-WORK-PACKAGE-CARDS.md`：文字开放世界 G1/G2 功能开工卡与风险台账。
-- `docs/roadmap/AVG-IMPLEMENTATION-PLAN.md`：E-AVG-01 的分包依赖、基础协议升级与兼容切换；下一代码单元 AVG-BASE-00。
+- `docs/roadmap/AVG-IMPLEMENTATION-PLAN.md`：E-AVG-01 的增量依赖、早期校准、基础协议升级与兼容切换；下一代码单元 AVG-BASE-00A。
 - `docs/roadmap/AVG-WORK-PACKAGE-CARDS.md`：AVG 每包的入口/读取/候选采用/生命周期/消费者/正反例与完成边界。
 - `docs/roadmap/COMPLETED.md`
 
@@ -180,3 +180,5 @@
 本次 2.4.1 增量登记 AVG 三条生产流程商业对标与研发路线研究，保留其 L4 证据层级；研究建议不自动进入施工队列，不修改总纲、产品 owner、阶段或当前实现状态。
 
 本次 2.5.0 复审登记 AVG 整体产品契约、四份子规格、实施计划和工作包卡，共八份 L2 文档。AVG.md 是唯一整体施工入口，L4 研究保留论据和观察限制；设计明确三线岗位/工件、系统/存档、真实媒资/配音/消费者、版本兼容、质量与依赖。仅完成设计交付，产品仍为 partial，真实调用/首场景/作者玩家及商业证据未因登记而完成；总纲、产品 owner 和其他产品优先级不变。
+
+2.5.1 随 AVG 方案 1.1.0 细化近期施工增量：意图→规则骨架→分场→导演无循环前置，导入首戏先于完整工厂/工作台/跨周目，专业化及图/音实际校准提前，补充 S2 V2 选择、设备/资源与商业参照质量/投入门。后置模块/渠道/规模仍需按真实选用范围细化；不把岗位数、文档检查或短戏通过当作商业效果。
