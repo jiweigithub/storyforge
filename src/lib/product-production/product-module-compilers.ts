@@ -1,6 +1,6 @@
 import { parseAdventureContent } from '../adventure/runtime'
 import { parseAiTownRuntimeContentV1 } from '../ai-town/runtime'
-import { readPreparedChatSourceProjectionViewV1 } from '../character-interaction/source-projection'
+import { chatProjectionResourcesV1, readPreparedChatSourceProjectionViewV1 } from '../character-interaction/source-projection'
 import type { FrozenChatSourceProjectionV1 } from '../types/character-interaction'
 import type { FrozenChatNarrativeV1 } from '../types/chat-narrative'
 import { parseFrozenChatNarrativeV1 } from '../character-interaction/narrative-contract'
@@ -399,6 +399,9 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
   if (JSON.stringify([...keys].sort()) !== JSON.stringify(draft.characters.map(c => c.resourceKey))
     || keys.length !== participantKeys.length || input.brief.source.worldContentHash !== draft.worldReleaseHash
     || input.brief.source.selection.worldReferenceHash !== draft.worldReferenceHash) fail('角色投影与冻结选择不一致')
+  const backgroundKeys = [...(chat.backgroundResourceKeys ?? [])].sort()
+  if (JSON.stringify(backgroundKeys) !== JSON.stringify((draft.background ?? []).map(resource => resource.resourceKey))
+    || JSON.stringify(backgroundKeys) !== JSON.stringify([...(input.brief.source.selection.roleBindings.chatBackground ?? [])].sort())) fail('背景资料投影与冻结选择不一致')
   const viewers = ['player', ...keys]
   const views = viewers.map(viewerKey => readPreparedChatSourceProjectionViewV1({draft, review: chat.sourceReview!, viewerKey}))
   const visibleByFragment = new Map<string, string[]>()
@@ -407,12 +410,15 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
   }
   const purposes = new Map(chat.sourceReview.classifications.map(item => [item.fragmentKey, item.purpose]))
   const content: FrozenChatSourceProjectionV1 = {
-    schema: 'storyforge.chat-runtime-source', version: 1, projectionHash: draft.projectionHash,
+    schema: 'storyforge.chat-runtime-source', version: draft.background?.length ? 2 : 1, projectionHash: draft.projectionHash,
+    ...(draft.background?.length ? {backgroundSources: draft.background.filter(resource => resource.fragments.some(fragment => visibleByFragment.has(fragment.fragmentKey)))
+      .map(({resourceKey, sourceHash, resourceKind, relatedResourceKeys}) => ({resourceKey, sourceHash, resourceKind,
+        ...(relatedResourceKeys ? {relatedResourceKeys} : {})}))} : {}),
     worldReleaseHash: draft.worldReleaseHash, playerRole: input.brief.intent.playerRole,
-    knowledge: draft.characters.flatMap(character => character.fragments).flatMap((fragment, index) => {
+    knowledge: chatProjectionResourcesV1(draft).flatMap(resource => resource.fragments).flatMap((fragment, index) => {
       const audienceKeys = visibleByFragment.get(fragment.fragmentKey)
       if (!audienceKeys?.length) return []
-      const source = draft.characters.find(c => c.resourceKey === fragment.resourceKey)!
+      const source = chatProjectionResourcesV1(draft).find(c => c.resourceKey === fragment.resourceKey)!
       return [{key: `chat-source.${draft.projectionHash}.${index}`, content: fragment.valueJson, audienceKeys,
         source: {resourceKey: source.resourceKey, sourceHash: source.sourceHash, pointer: fragment.pointer, purpose: purposes.get(fragment.fragmentKey)!,
           ...(fragment.textRange ? {textRange: {...fragment.textRange}} : {})}}]

@@ -25,6 +25,8 @@ export interface ChatAuthoringSettingsV1 {
 export interface ChatAuthoringSettingsV2 extends Omit<ChatAuthoringSettingsV1, 'version'> {
     version: 2;
     sourceReview: ChatSourceReviewV1 | null;
+    /** Explicit frozen-world background selection; absent in historical drafts. */
+    backgroundResourceKeys?: string[];
 }
 /** Explicit opt-in until the full narrative production/runtime path is verified. */
 export interface ChatAuthoringSettingsV3 extends Omit<ChatAuthoringSettingsV2, 'version'> {
@@ -44,8 +46,13 @@ export function parseChatAuthoringSettings(value: unknown): ChatAuthoringSetting
     if (row.version === 1) return parseChatAuthoringSettingsV1(row);
     if (row.version !== 2 || !Object.prototype.hasOwnProperty.call(row, 'sourceReview'))
         throw new Error('角色聊天方案版本无效');
-    const {sourceReview, ...base} = row;
+    const {sourceReview, backgroundResourceKeys, ...base} = row;
+    const hasBackground = Object.prototype.hasOwnProperty.call(row, 'backgroundResourceKeys');
+    if (hasBackground && (!Array.isArray(backgroundResourceKeys) || backgroundResourceKeys.length > 128
+        || backgroundResourceKeys.some(key => typeof key !== 'string' || !key || key.length > 500)
+        || new Set(backgroundResourceKeys).size !== backgroundResourceKeys.length)) throw new Error('背景资料最多选择 128 个不同的冻结资源');
     return {...parseChatAuthoringSettingsV1({...base, version: 1}), version: 2,
+        ...(hasBackground ? {backgroundResourceKeys: [...backgroundResourceKeys as string[]].sort()} : {}),
         sourceReview: sourceReview === null ? null : parseChatSourceReviewV1(sourceReview)};
 }
 export const DEFAULT_CHAT_SETTINGS: ChatAuthoringSettingsV1 = { version: 1, playerRole: '', openingSituation: '', experience: '', mode: 'single', targetPlayMinutes: 30, maxTurns: 60, replyBudget: 120, maxMemoryEntries: 120, relationshipThreshold: 20, contentBoundaries: '不替玩家决定行动；不披露角色不知道的信息。', qualityProfile: 'prototype', characters: [] };

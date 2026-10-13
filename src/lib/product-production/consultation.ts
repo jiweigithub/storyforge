@@ -390,11 +390,13 @@ export async function draftProductProductionBriefV3(input: {
     qualityProfile,
   })
   const roleBindings = compileUpperProductWorldRoleBindingsV1(input.productType, selectedCatalog)
+  const backgroundKeys = characterChat && characterChat.version !== 1 ? characterChat.backgroundResourceKeys ?? [] : []
+  if (backgroundKeys.length) roleBindings.chatBackground = [...backgroundKeys]
   const selection: ProductWorldSourceSelectionV1 = {
     schema: 'storyforge.product-world-source-selection', version: 1,
     productType: input.productType,
     worldReferenceHash: source.worldReference.referenceHash,
-    resourceKeys: [...new Set(Object.values(selectedCatalog).flat())].sort(),
+    resourceKeys: [...new Set([...Object.values(selectedCatalog).flat(), ...backgroundKeys])].sort(),
     roleBindings,
   }
   if (characterChat && characterChat.version !== 1) {

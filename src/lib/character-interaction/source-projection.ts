@@ -1,4 +1,5 @@
 import Dexie from 'dexie'
+import {assertChatBackgroundSelectionV1} from './background-source'
 import type { WorldSemanticResourceSnapshotV1 } from '../context-gateway/world-release-client'
 import { hashProductProductionValueV2, isSha256Hash } from '../product-production/hash'
 import { canonicalStringify, hashCanonicalValue } from '../agent/run/hash'
@@ -25,7 +26,13 @@ export interface ChatSourceProjectionDraftV1 {
     label: string
     fragments: ChatSourceFragmentV1[]
   }>
+  /** Optional to preserve historical character-only projection hashes. */
+  background?: Array<ChatSourceProjectionDraftV1['characters'][number] & {resourceKind: string; relatedResourceKeys?: string[]}>
   projectionHash: string
+}
+
+export function chatProjectionResourcesV1(draft: ChatSourceProjectionDraftV1) {
+  return [...draft.characters, ...(draft.background ?? [])]
 }
 
 export interface ChatSourceClassificationV1 {
@@ -117,6 +124,7 @@ export async function createChatSourceProjectionDraftV1(input: {
   worldReferenceHash: string
   worldReleaseHash: string
   characterResourceKeys: readonly string[]
+  backgroundResourceKeys?: readonly string[]
   resources: readonly WorldSemanticResourceSnapshotV1[]
 }): Promise<ChatSourceProjectionDraftV1> {
   // Snapshot inputs before async hashing. Cast selection is a canonical set in the WorldSourceSelection contract.
@@ -132,37 +140,41 @@ export async function createChatSourceProjectionDraftV1(input: {
     if (byKey.has(snapshot.descriptor.resourceKey)) fail('来源资源 key 重复')
     byKey.set(snapshot.descriptor.resourceKey, snapshot)
   }
-  const characters = await Promise.all([...input.characterResourceKeys].sort().map(async resourceKey => {
+  const backgroundKeys = [...(input.backgroundResourceKeys ?? [])].sort()
+  assertChatBackgroundSelectionV1(backgroundKeys, input.resources.map(source => source.descriptor))
+  const project = async (resourceKey: string, character: boolean) => {
     const source = byKey.get(resourceKey)
     if (!source || source.descriptor.sourceKey !== 'worldRelease'
-      || source.descriptor.worldSemantic.resourceKind !== 'character'
+      || character && source.descriptor.worldSemantic.resourceKind !== 'character'
       || source.descriptor.scope.worldReleaseHash !== input.worldReleaseHash) {
       fail(`角色来源缺失、类型错误或世界版本不一致：${resourceKey}`)
     }
     requireHash(source.descriptor.contentHash, '资源')
     const sourceHash = hashCanonicalValue(source.value)
     if ((Dexie.currentTransaction ? await Dexie.waitFor(sourceHash) : await sourceHash) !== source.descriptor.contentHash) {
-      fail(`角色原文与资源证据不一致：${resourceKey}`)
+      fail(`原文与资源证据不一致：${resourceKey}`)
     }
     const fragments: ChatSourceFragmentV1[] = []
-    // Preserve semantic fields; long strings retain exact, independently classified ranges.
-    // Internal provider coordinates remain in provenance, never character facts.
     for (const field of Object.keys(source.value).sort()) {
       if (field.startsWith('_')) continue
-      const pointer = `/${escapePointer(field)}`
-      fragments.push(...fragmentSourceField(resourceKey, pointer, source.value[field]))
+      fragments.push(...fragmentSourceField(resourceKey, `/${escapePointer(field)}`, source.value[field]))
     }
-    if (!fragments.length) fail(`角色没有可投影的语义字段：${resourceKey}`)
-    return {
-      resourceKey, sourceHash: source.descriptor.contentHash,
-      label: source.descriptor.title, fragments,
-    }
+    if (!fragments.length) fail(`资源没有可投影的语义字段：${resourceKey}`)
+    return {resourceKey, sourceHash: source.descriptor.contentHash, label: source.descriptor.title, fragments}
+  }
+  const characters = await Promise.all([...input.characterResourceKeys].sort().map(key => project(key, true)))
+  const background = await Promise.all(backgroundKeys.map(async key => {
+    const descriptor = byKey.get(key)!.descriptor
+    const relatedResourceKeys = descriptor.worldSemantic.resourceKind === 'character-relation'
+      ? [...new Set(descriptor.relations.filter(r => r.kind === 'depends-on').map(r => r.targetResourceKey))].sort() : []
+    return {...await project(key, false), resourceKind: descriptor.worldSemantic.resourceKind,
+      ...(relatedResourceKeys.length ? {relatedResourceKeys} : {})}
   }))
-  if (characters.reduce((sum, character) => sum + character.fragments.length, 0) > 2000) fail('角色资料片段超过 2000 项，请缩小本次来源范围')
+  if ([...characters, ...background].reduce((sum, resource) => sum + resource.fragments.length, 0) > 2000) fail('来源资料片段超过 2000 项，请缩小本次来源范围')
   const body = {
     schema: 'storyforge.chat-source-projection' as const, version: 1 as const,
     worldReferenceHash: input.worldReferenceHash, worldReleaseHash: input.worldReleaseHash,
-    characters,
+    characters, ...(background.length ? {background} : {}),
   }
   const draft = { ...body, projectionHash: await hashProductProductionValueV2(body) }
   verifiedDrafts.set(draft, canonicalStringify(draft))
@@ -207,7 +219,7 @@ function selectProjectionView(input: {
   const { projectionHash, ...body } = input.draft
   const viewers = new Set(['player', ...body.characters.map(character => character.resourceKey)])
   if (!viewers.has(input.viewerKey)) fail('视角不属于当前投影')
-  const fragments = new Map(body.characters.flatMap(character => character.fragments)
+  const fragments = new Map(chatProjectionResourcesV1(input.draft).flatMap(resource => resource.fragments)
     .map(fragment => [fragment.fragmentKey, fragment]))
   const seen = new Set<string>()
   const result: Array<ChatSourceFragmentV1 & { purpose: ChatSourceClassificationV1['purpose'] }> = []
@@ -216,6 +228,7 @@ function selectProjectionView(input: {
     const fragment = fragments.get(decision.fragmentKey)
     if (!fragment || seen.has(decision.fragmentKey)) fail('知识分类引用缺失或重复')
     seen.add(decision.fragmentKey)
+    if (body.background?.some(resource => resource.resourceKey === fragment.resourceKey) && decision.purpose !== 'knowledge') fail('世界背景资料只能作为事实与经历，不能变成人物身份、动机或口吻')
     if (!['identity', 'motivation', 'voice', 'knowledge'].includes(decision.purpose)
       || !['public', 'participants', 'author-only', 'unclassified'].includes(decision.visibility)
       || !Array.isArray(decision.audienceKeys)

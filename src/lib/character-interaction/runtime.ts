@@ -270,11 +270,27 @@ function thread(value: unknown): InteractionRuntimeThread {
 }
 
 export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonly string[], characterKeys: readonly string[]): FrozenChatSourceProjectionV1 {
-  if (!isObject(value) || value.schema !== 'storyforge.chat-runtime-source' || value.version !== 1
-    || Object.keys(value).sort().join(',') !== 'knowledge,playerRole,projectionHash,schema,version,worldReleaseHash'
+  if (!isObject(value) || value.schema !== 'storyforge.chat-runtime-source' || (value.version !== 1 && value.version !== 2)
+    || Object.keys(value).sort().join(',') !== (value.version === 2 ? 'backgroundSources,knowledge,playerRole,projectionHash,schema,version,worldReleaseHash' : 'knowledge,playerRole,projectionHash,schema,version,worldReleaseHash')
     || !isSha256Hash(value.projectionHash) || !isSha256Hash(value.worldReleaseHash)
     || typeof value.playerRole !== 'string' || value.playerRole.length > 5000
     || !Array.isArray(value.knowledge) || value.knowledge.length > 2000) throw new Error('角色资料运行投影无效')
+  const background = new Map<string, NonNullable<FrozenChatSourceProjectionV1['backgroundSources']>[number]>()
+  if (value.version === 2) {
+    if (!Array.isArray(value.backgroundSources) || value.backgroundSources.length > 128) throw new Error('背景资料来源数量无效')
+    for (const source of value.backgroundSources) {
+      if (!isObject(source) || Object.keys(source).sort().join(',') !== (Object.prototype.hasOwnProperty.call(source, 'relatedResourceKeys') ? 'relatedResourceKeys,resourceKey,resourceKind,sourceHash' : 'resourceKey,resourceKind,sourceHash')
+        || typeof source.resourceKey !== 'string' || !source.resourceKey || source.resourceKey.length > 500
+        || background.has(source.resourceKey) || characterKeys.includes(source.resourceKey) || !isSha256Hash(source.sourceHash)
+        || typeof source.resourceKind !== 'string' || !/^[a-z][a-z-]{0,63}$/.test(source.resourceKind)
+        || ['character', 'world', 'world-link', 'codex-category'].includes(source.resourceKind)) throw new Error('背景资料来源身份或证据无效')
+      if (Object.prototype.hasOwnProperty.call(source, 'relatedResourceKeys') && (source.resourceKind !== 'character-relation'
+        || !Array.isArray(source.relatedResourceKeys) || !source.relatedResourceKeys.length || source.relatedResourceKeys.length > 2
+        || source.relatedResourceKeys.some(key => typeof key !== 'string' || !key || key.length > 500)
+        || new Set(source.relatedResourceKeys).size !== source.relatedResourceKeys.length)) throw new Error('关系背景的便携来源端点无效')
+      background.set(source.resourceKey, source as unknown as NonNullable<FrozenChatSourceProjectionV1['backgroundSources']>[number])
+    }
+  }
   const allowed = new Set(['player', ...participantKeys])
   const known = new Set<string>()
   const ranges = new Map<string, Array<{start: number; end: number}>>()
@@ -285,13 +301,15 @@ export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonl
       || !Array.isArray(seed.audienceKeys) || !seed.audienceKeys.length
       || seed.audienceKeys.some(key => typeof key !== 'string' || !allowed.has(key))
       || new Set(seed.audienceKeys).size !== seed.audienceKeys.length
-      || !isObject(seed.source) || !characterKeys.includes(String(seed.source.resourceKey))
+      || !isObject(seed.source) || !characterKeys.includes(String(seed.source.resourceKey)) && !background.has(String(seed.source.resourceKey))
       || Object.keys(seed.source).sort().join(',') !== (Object.prototype.hasOwnProperty.call(seed.source, 'textRange')
         ? 'pointer,purpose,resourceKey,sourceHash,textRange' : 'pointer,purpose,resourceKey,sourceHash')
       || !isSha256Hash(seed.source.sourceHash) || typeof seed.source.pointer !== 'string' || !seed.source.pointer.startsWith('/') || seed.source.pointer.length > 1000
       || !['identity', 'motivation', 'voice', 'knowledge'].includes(String(seed.source.purpose))) {
       throw new Error('角色资料来源、可见性或容量无效；单项资料最多 7900 字符')
     }
+    if (background.has(String(seed.source.resourceKey)) && (seed.source.purpose !== 'knowledge'
+      || background.get(String(seed.source.resourceKey))!.sourceHash !== seed.source.sourceHash)) throw new Error('背景资料不能替代人物身份且必须保持来源证据')
     if (Object.prototype.hasOwnProperty.call(seed.source, 'textRange')) {
       const range = seed.source.textRange
       let original: unknown
@@ -309,7 +327,7 @@ export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonl
       ranges.set(groupKey, [...previous, current])
     }
     const subjectKey = participantKeys[characterKeys.indexOf(String(seed.source.resourceKey))]
-    if (!subjectKey || formatChatSourceKnowledge(seed as unknown as FrozenChatSourceProjectionV1['knowledge'][number], subjectKey).length > 8000) {
+    if (formatChatSourceKnowledge(seed as unknown as FrozenChatSourceProjectionV1['knowledge'][number], subjectKey, chatRelationSubjects(background.get(String(seed.source.resourceKey))?.relatedResourceKeys, participantKeys, characterKeys)).length > 8000) {
       throw new Error('角色资料连同人物与字段归属超过运行知识容量，请缩小来源片段')
     }
     known.add(seed.key)
@@ -317,12 +335,16 @@ export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonl
   return structuredClone(value) as unknown as FrozenChatSourceProjectionV1
 }
 
-function formatChatSourceKnowledge(seed: FrozenChatSourceProjectionV1['knowledge'][number], subjectKey: string): string {
+function chatRelationSubjects(keys: readonly string[] | undefined, participants: readonly string[], characters: readonly string[]) {
+  return keys?.map(key => {const participant = participants[characters.indexOf(key)]; return participant ? `${participant}（${key}）` : key})
+}
+
+function formatChatSourceKnowledge(seed: FrozenChatSourceProjectionV1['knowledge'][number], subjectKey?: string, relatedResourceKeys?: readonly string[]): string {
   const labels = {identity: '身份资料', motivation: '目标和动机（意愿，不代表已经发生）', voice: '语言资料', knowledge: '已知资料'}
   // The audience owns the knowledge; the subject owns the described trait.
   // Keeping these distinct prevents public facts about B becoming A's identity.
   const range = seed.source.textRange
-  return `【${labels[seed.source.purpose]}；所属角色=${subjectKey}；字段=${seed.source.pointer}${range ? `；原文区间=[${range.start},${range.end})` : ''}】${seed.content}`
+  return `【${labels[seed.source.purpose]}；${subjectKey ? `所属角色=${subjectKey}` : `世界背景来源=${seed.source.resourceKey}${relatedResourceKeys?.length ? `；关联人物来源=${relatedResourceKeys.join('、')}` : ''}`}；字段=${seed.source.pointer}${range ? `；原文区间=[${range.start},${range.end})` : ''}】${seed.content}`
 }
 
 /** Build the only release-entry projection for character interaction. */
@@ -385,8 +407,8 @@ export function createInitialInteractionState(input: {
       }
     }
     for (const seed of projected.knowledge) for (const target of seed.audienceKeys) {
-      const subject = profiles.find(item => item.characterKey === seed.source.resourceKey)!
-      remember(seed.key, target, formatChatSourceKnowledge(seed, subject.participantKey), 100)
+      const subject = profiles.find(item => item.characterKey === seed.source.resourceKey)
+      remember(seed.key, target, formatChatSourceKnowledge(seed, subject?.participantKey, chatRelationSubjects(projected.backgroundSources?.find(source => source.resourceKey === seed.source.resourceKey)?.relatedResourceKeys, [...participantKeys], profiles.map(p => p.characterKey))), 100)
     }
     if (!input.chatNarrative && projected.playerRole.trim()) for (const target of [playerKey, ...participantKeys]) {
       remember('chat.player-role', target, `玩家确认的虚构角色身份：${projected.playerRole}`, 100)

@@ -346,6 +346,7 @@ export async function loadProductProductionWorldSourceCatalogV2(input: {
       worldReferenceHash: opened.description.worldReference.referenceHash,
       worldReleaseHash: opened.description.identity.releaseHash,
       characterResourceKeys: chatCharacterKeys,
+      backgroundResourceKeys: input.selection.roleBindings.chatBackground,
       resources,
     })
     : undefined
