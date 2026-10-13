@@ -732,6 +732,20 @@
               },
               "scope": "Engineering fixture continued from an unchanged real-model save; not independent narrative quality acceptance",
               "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation"
+            },
+            {
+              "evidence": "codex-progression-longer-preflight-v12.json",
+              "rawEvidenceSha256": "028468747843831e2b9e978bb45a079c0af798359749f6d8cd3085fb9800d7d8",
+              "status": "longer-continuation-provider-outcome-unknown",
+              "newModelRequests": 1,
+              "newModelResponses": 0,
+              "newCompletedRuns": 0,
+              "adoptedActions": 0,
+              "priorEvidence": "codex-progression-continuation-preflight-v12.json",
+              "priorMessagesAndSituationPreserved": true,
+              "sourceSnapshotManifestSha256": "735af776a5f4aded7d9a79bfb57539517c9007f58d0f8680495c9998904f199d",
+              "costUsd": null,
+              "outcome": "The local Codex bridge reported status unknown before returning a model response. The four-continuation probe stopped at the first new request. No automatic resend or substitute output; previous messages and situation are preserved. This is not narrative quality evidence."
             }
           ]
         }
