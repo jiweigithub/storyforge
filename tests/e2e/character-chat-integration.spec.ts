@@ -4,6 +4,7 @@ import { DEFAULT_CHAT_SETTINGS_V2 as DEFAULT_CHAT_SETTINGS } from '../../src/lib
 for (const rejectClosure of [false, true]) test(`related goal closure is atomic and a finished role does not keep generating (reject=${rejectClosure})`, async ({page}) => {
     test.setTimeout(120000);
     const reply = '铜印已经找到。寻找就此结束。我也已澄清此前只是猜测，现在撤回。';
+    const followup = '可以，我们聊会儿别的。眼下驿站里安全。';
     let calls = 0;
     await page.addInitScript(() => {
         localStorage.setItem('storyforge_guide_completed', 'e2e');
@@ -15,6 +16,7 @@ for (const rejectClosure of [false, true]) test(`related goal closure is atomic 
         const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n');
         const output = prompt.includes('本次持久化行动候选')
             ? {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'].map(check => ({check, passed: !(rejectClosure && check === 'consequences'), reason: '工程审查夹具，不是模型质量验收'}))}
+            : calls > 2 ? {kind: 'speak', text: followup, goalKey: null, evidenceFactKeys: ['road'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
             : {kind: 'complete', text: reply, goalKey: 'clarify', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player', 'artisan'], waitingForPlayer: false,
                 newFacts: [{factKey: 'found', kind: 'observation', text: '铜印已经找到。', evidenceFactKeys: ['lost'], evidenceExcerpt: '铜印已经找到。'}], disclosures: [],
                 threadUpdates: [{threadKey: 'investigate', status: 'resolved', evidenceExcerpt: '寻找就此结束。'}], goalStatus: 'fulfilled',
@@ -43,8 +45,17 @@ for (const rejectClosure of [false, true]) test(`related goal closure is atomic 
         await page.getByRole('button', {name: '让角色继续', exact: true}).click();
         await expect(page.getByText(/选定角色不在场、听不到此消息或当前目标已结束/)).toBeVisible();
         expect(await read()).toEqual(after);
+        expect(calls).toBe(2);
+        await page.getByPlaceholder('对当前场景中的角色说话…').fill('那就先聊会儿别的吧。');
+        await page.getByRole('button', {name: '发送并生成', exact: true}).click();
+        await expect(page.getByText(followup, {exact: true})).toBeVisible();
+        const responded = await read();
+        expect(responded.chatNarrative.situation).toEqual(after.chatNarrative.situation);
+        expect(responded.chatNarrative.triggers.at(-1)).toMatchObject({kind: 'player-response', status: 'complete', actionSequences: [expect.any(Number)]});
+        await page.reload(); await expect(page.getByText(followup, {exact: true})).toBeVisible();
+        expect(await read()).toEqual(responded);
     }
-    expect(calls).toBe(2);
+    expect(calls).toBe(rejectClosure ? 2 : 4);
 });
 for (const rejectReflection of [false, true]) test(`role revises its plans and hypotheses after refusal without inventing completed facts (reject=${rejectReflection})`, async ({page}) => {
     test.setTimeout(120000);

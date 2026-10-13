@@ -94,6 +94,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
         'meaningful-direction：打算应服务于当前目标和未完成事项、能因玩家选择调整；允许休息后等待明确恢复条件、暂停和结束，不能把暂未执行的计划记成已经兑现的承诺或自动启动下一轮。',
         'meaningful-direction 还须审 situationRequest：它只可请求发展当前角色仍 active 的目标及知情、参与的 open/blocked 剧情线，方向应可在现有时地展开，关联本次实际表达与已知事实。它不是事实，也不是自动接受玩家参与；普通行动无需重复申请新情境。休息、暂停、等待选择或未获授权时必须为空，不能用它重启被拒绝的邀请或泄露未知秘密。',
         'meaningful-direction：是否承接当前问题、动机和玩家输入，允许自主行动、拒绝、休息与收束；不得机械重复邀请、无故增加危机或强送固定结局。没有新矛盾本身不是失败。',
+        '剧情收束后的新玩家消息仍可得到一次普通回应：仅 player-response 的首次行动且 actorKey 没有 active/paused 目标时允许 goalKey=null。按是否自然承接玩家、符合已有角色材料与当前事实审查，不要求新增目标或矛盾才算有意义。不得重开已结束目标、改剧情线、创建新打算或 situationRequest，不得编造未给出的角色过往；事实、披露、关系与玩家自主权照常审查。',
         options ? '这是两条互斥候选；两条正文都会在选定前展示给玩家，因此 visibility 还必须拒绝对玩家未知既有事实的直接或间接披露，不能因为 disclosures 字段正确而放行预览剧透。各自从同一当前局面出发，不把另一候选的事实当作已发生。逐条审查完整表达及后果，再检查差异是否合理而非机械换词或编造危机。仅输出 JSON {"options":[{"optionKey":"option-1","checks":[{"check":"continuity|permissions|player-agency|visibility|consequences|meaningful-direction","passed":true,"reason":"结合本条实际内容说明"}]},{"optionKey":"option-2","checks":[]}]}。每条各有上述六项检查，不得缺项、改写候选或增加字段。'
           : '仅输出 JSON {"checks":[{"check":"continuity|permissions|player-agency|visibility|consequences|meaningful-direction","passed":true,"reason":"结合实际内容说明"}]}，上述六项各一次，不得额外字段。',
       ]).join('\n')}, {role: 'user', content: assembled.text}]

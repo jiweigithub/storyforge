@@ -1,5 +1,5 @@
 import {chatTurnActionLimitV1} from './narrative-contract'
-import {createChatScheduledDirectionV1, nextChatScheduledActorV1, type ChatSchedulingModeV1} from './narrative-scheduling'
+import {chatCanRespondAfterClosureV1, chatHasUnfinishedGoalV1, createChatScheduledDirectionV1, nextChatScheduledActorV1, type ChatSchedulingModeV1} from './narrative-scheduling'
 import { assertInstanceBinding } from '../product/runtime-instances'
 import {db} from '../db/schema'
 import {readInstanceAgentRunV1} from '../agent/run/event-store'
@@ -43,7 +43,7 @@ export async function readChatNarrativeTurnResumeV1(scope: WorkspaceScope, sessi
   if (!remainingActions || state.remainingDirectorBudget < 2) return {...view, blockedReason: '本轮剩余额度不足，不能继续生成。'}
   if (trigger.direction?.scheduling && !actorKey) return {...view, blockedReason: '本轮已没有可继续行动的角色，无需补齐。'}
   if (!trigger.direction?.scheduling && lastAction != null && !actorKey) return {...view, blockedReason: '本轮原角色消息不完整，不能推定由谁继续。'}
-  if (!constructingSeed && actorKey && !story.situation.goals.some(goal => goal.actorKey === actorKey && ['active', 'paused'].includes(goal.status))) return {...view, blockedReason: '本轮角色的目标已经结束，无需补齐行动。'}
+  if (!constructingSeed && actorKey && !chatHasUnfinishedGoalV1(state, actorKey) && !chatCanRespondAfterClosureV1(state, actorKey, trigger)) return {...view, blockedReason: '本轮角色的目标已经结束，无需补齐行动。'}
   if (story.pendingSituation && (trigger.direction?.scheduling || story.pendingSituation.actorKey === actorKey) && story.situation.seed.origin === 'continued-thread'
     && story.situation.seed.sourceEventSequence === trigger.requestedSequence) return {...view, blockedReason: '本轮已经发展过一次局面。新的角色方向需在下一轮明确继续。'}
   const [rows, events] = await Promise.all([
@@ -120,7 +120,7 @@ export async function readPendingChatNarrativeRunsV1(scope: WorkspaceScope, sess
 function actorFor(state: CharacterInteractionRuntimeState, kind: ChatPlayerTriggerV1, preferred?: string): string | null {
   const message = kind === 'player-response' ? state.messages.filter(m => m.role === 'player' && m.supersededBySequence == null).slice(-1)[0] : null
   const active = state.activeScene!.activeParticipantKeys.filter(key => (!message?.audienceKeys || message.audienceKeys.includes(key))
-    && state.chatNarrative!.situation.goals.some(g => g.actorKey === key && ['active', 'paused'].includes(g.status)))
+    && (kind === 'player-response' || chatHasUnfinishedGoalV1(state, key)))
   if (preferred) {
     if (!active.includes(preferred)) throw new Error('选定角色不在场、听不到此消息或当前目标已结束。')
     return preferred
@@ -162,7 +162,7 @@ export async function advanceChatNarrativeTurnV1(input: {
   }
   const pending = await readPendingChatNarrativeRunsV1(input.scope, input.sessionId, state)
   if (pending.length) throw new Error(`上次行动尚未结束（运行 #${pending.join('、#')}），请先恢复候选或取消该运行。`)
-  // Do not spend a model call or consume a trigger when every role has concluded.
+  // Autonomous continuation needs unfinished goals; fresh player input can still receive a reply.
   const direction = input.schedulingMode && input.schedulingMode !== 'manual'
     ? createChatScheduledDirectionV1(state, {mode: input.schedulingMode, kind: input.kind, sourceSequence: source, actionLimit: input.actionLimit ?? 1}) : undefined
   const actor = direction?.actorKey ?? actorFor(state, input.kind, input.participantKey)
@@ -188,7 +188,7 @@ async function performPreparedTurn(input: {
     const trigger = current.chatNarrative!.triggers.slice(-1)[0]!
     if (trigger.requestedSequence !== input.triggerSequence || trigger.status !== 'ready' || current.remainingDirectorBudget < 2) return
     let actor = trigger.direction?.scheduling ? nextChatScheduledActorV1(current, trigger) : input.actor
-    if (!actor || !current.chatNarrative!.situation.goals.some(g => g.actorKey === actor && ['active', 'paused'].includes(g.status))) return
+    if (!actor || !chatHasUnfinishedGoalV1(current, actor) && !chatCanRespondAfterClosureV1(current, actor, trigger)) return
     const story = current.chatNarrative!
     if (story.pendingSituation && (trigger.direction?.scheduling || story.pendingSituation.actorKey === actor) && story.situation.seed.origin === 'continued-thread'
       && story.situation.seed.sourceEventSequence === trigger.requestedSequence) return

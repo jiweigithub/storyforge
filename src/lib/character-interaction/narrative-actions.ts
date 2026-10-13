@@ -1,5 +1,5 @@
 import {assertChatResponseRetrievableV1, isChatMessageRetrievableV1} from './narrative-retrieval'
-import {assertChatTurnActorV1} from './narrative-scheduling'
+import {assertChatTurnActorV1, chatCanRespondAfterClosureV1} from './narrative-scheduling'
 import {canonicalStringify} from '../agent/run/hash'
 import type { CharacterInteractionRuntimeState } from '../types'
 import { CHAT_NARRATIVE_TRIGGERS_V1, CHAT_THREAD_STATUSES_V1, CHAT_ACTION_REVIEW_CHECKS_V1 } from '../types/chat-narrative'
@@ -41,7 +41,7 @@ export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV
   const optional = ['relationshipUpdates', 'nextPossibilities', 'beliefUpdates', 'goalUpdates', 'situationRequest'].filter(name => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, name))
   const row = object(value, ['kind,text,goalKey,evidenceFactKeys,audienceKeys,waitingForPlayer,newFacts,disclosures,threadUpdates,goalStatus', ...optional].join(','))
   choice(row.kind, ['speak', 'attempt', 'complete', 'pause'])
-  text(row.text, 8000); key(row.goalKey); keys(row.evidenceFactKeys); keys(row.audienceKeys, 33)
+  text(row.text, 8000); if (row.goalKey !== null) key(row.goalKey); keys(row.evidenceFactKeys); keys(row.audienceKeys, 33)
   if (typeof row.waitingForPlayer !== 'boolean') fail('等待玩家标记无效')
   for (const value of list(row.newFacts, 5)) {
     const fact = object(value, 'factKey,kind,text,evidenceFactKeys,evidenceExcerpt')
@@ -173,7 +173,11 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   if (!action.audienceKeys.includes(actorKey) || !action.audienceKeys.includes(state.playerKey)
     || action.audienceKeys.some(k => !audiences.includes(k))) fail('行动听众缺少玩家、行动者或引用场外人物')
   const goal = story.situation.goals.find(g => g.goalKey === action.goalKey && g.actorKey === actorKey)
-  if (!goal || !['active', 'paused'].includes(goal.status)) fail('行动缺少角色自身未完成目标')
+  if (action.goalKey === null) {
+    if (!chatCanRespondAfterClosureV1(state, actorKey, trigger)) fail('无目标回应只允许在自身目标收束后承接新的玩家消息')
+    if (action.goalStatus !== null || action.goalUpdates?.length || action.threadUpdates.length
+      || action.situationRequest != null || action.nextPossibilities?.length) fail('收束后的普通回应不能重开目标、剧情线或创建新打算')
+  } else if (!goal || !['active', 'paused'].includes(goal.status)) fail('行动缺少角色自身未完成目标')
   const fact = (id: string) => {
     const known = story.situation.facts.find(f => f.factKey === id)
     if (!known || !known.audienceKeys.includes(actorKey)) fail('行动引用角色不可知事实')
@@ -218,6 +222,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
     thread.status = item.status; thread.updatedSequence = input.sequence
   }
   if (action.goalStatus !== null) {
+    if (!goal) fail('行动没有可更新的目标')
     if (action.goalStatus === goal.status) fail('角色目标没有状态变化')
     goal.status = action.goalStatus; goal.updatedSequence = input.sequence
   }
@@ -235,18 +240,18 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
     || !story.situation.goals.some(g => g.goalKey === story.pendingSituation!.goalKey && g.status === 'active')
     || !story.situation.threads.some(t => t.threadKey === story.pendingSituation!.threadKey && ['open', 'blocked'].includes(t.status)))) delete story.pendingSituation
   if (action.situationRequest != null) {
-    if (story.permissions.allowActorSituationExpansion !== true || action.waitingForPlayer || action.kind === 'pause' || goal.status !== 'active') fail('当前行动或作品权限不允许角色扩展情境')
+    if (story.permissions.allowActorSituationExpansion !== true || action.waitingForPlayer || action.kind === 'pause' || !goal || goal.status !== 'active') fail('当前行动或作品权限不允许角色扩展情境')
     const request = action.situationRequest
     evidence(request.evidenceFactKeys); excerpt(request.evidenceExcerpt)
     const thread = story.situation.threads.find(t => t.threadKey === request.threadKey)
     if (!thread || !thread.participantKeys.includes(actorKey) || !thread.audienceKeys.includes(actorKey)
       || !['open', 'blocked'].includes(thread.status)) fail('推进方向缺少角色自己的未完成剧情线')
     if (story.pendingSituation) fail('已有其他角色的待推进事项，不能覆盖')
-    story.pendingSituation = {...request, actorKey, goalKey: action.goalKey, sourceEventSequence: input.sequence}
+    story.pendingSituation = {...request, actorKey, goalKey: goal.goalKey, sourceEventSequence: input.sequence}
   }
   trigger.actionSequences.push(input.sequence)
   trigger.status = action.waitingForPlayer ? 'waiting-player'
-    : action.kind === 'pause' || trigger.actionSequences.length >= chatTurnActionLimitV1(story.permissions, trigger) ? 'complete' : 'ready'
+    : action.goalKey === null || action.kind === 'pause' || trigger.actionSequences.length >= chatTurnActionLimitV1(story.permissions, trigger) ? 'complete' : 'ready'
   advance(story, input.sequence)
   state.chatNarrative = parseChatNarrativeStateV1(story, {
     participantKeys: state.profiles.map(p => p.participantKey), characterKeys: state.profiles.map(p => p.characterKey), sceneKeys: state.sceneTemplates.map(s => s.sceneKey),
@@ -261,6 +266,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
 export function applyChatNarrativeActionV1(state: CharacterInteractionRuntimeState, input: Parameters<typeof applyActionBase>[1]) {
   if (state.chatNarrative?.pendingEdit) fail('历史改写必须通过行动及后果审查')
   const action = parseChatNarrativeActionV1(input.action)
+  if (action.goalKey === null) fail('收束后的回应必须通过行动及后果审查')
   if (action.relationshipUpdates !== undefined || action.nextPossibilities !== undefined || action.beliefUpdates !== undefined || action.goalUpdates !== undefined || action.situationRequest !== undefined) fail('旧行动事件不能写入关系、打算或附带目标后果')
   return applyActionBase(state, input)
 }

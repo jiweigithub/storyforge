@@ -200,7 +200,8 @@ export interface ChatActorSituationRequestV1 {
 export interface ChatNarrativeActionV1 {
   kind: 'speak' | 'attempt' | 'complete' | 'pause'
   text: string
-  goalKey: string
+  /** Null only for the first reply to new player input after all own goals end. */
+  goalKey: string | null
   evidenceFactKeys: string[]
   audienceKeys: string[]
   waitingForPlayer: boolean
