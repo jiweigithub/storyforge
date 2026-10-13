@@ -802,6 +802,7 @@ async function readInteractionRuntimeContext(input: AssembleContextInput): Promi
     ] : view.relationships.length ? view.relationships.map(item => `- ${item.toParticipantKey}｜${item.label}=${item.value}`) : ['- 无']),
     '【该角色可见对话】',
     ...(view.messages.length ? view.messages.map(message => `- #${message.eventSequence}｜${message.speakerKey}｜${message.text}`) : ['- 无']),
+    ...(view.excludedMessageCount ? [`【消息选择】用户排除对话=${view.excludedMessageCount}；只影响对话原文选取，不撤销已确认事实、记忆或关系。`] : []),
     `【预算证据】省略早期消息=${view.omittedMessageCount}｜字符=${view.characterCount}`,
     ...townLines,
   ].join('\n')

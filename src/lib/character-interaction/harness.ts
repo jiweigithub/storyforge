@@ -1,3 +1,4 @@
+import {assertChatResponseRetrievableV1} from './narrative-retrieval'
 import { chat } from '../ai/client'
 import { createAgentSkillExecutionBindingV1, createAgentSkillExecutionBindingV2 } from '../agent/execution-binding'
 import { getAgentSkillV1, type AgentSkillId } from '../agent/skill-registry'
@@ -531,6 +532,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
     if (initialState.interaction!.remainingDirectorBudget < 2) fail('情境构建和审查预算不足')
   } else if (['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)) {
     const trigger = initialState.interaction?.chatNarrative?.triggers.slice(-1)[0]
+    assertChatResponseRetrievableV1(initialState.interaction!)
     if (input.skillId === 'character.chat-narrative-options' && initialState.interaction?.chatNarrative?.pendingEdit) fail('待处理改写须先完成或取消，不能自动产生不同文本候选')
     if (!trigger || trigger.status !== 'ready' || !isChatSituationPreparedV1(initialState.interaction!, participantKey)) fail('缺少已经准备好的合法叙事触发')
     if (input.narrativeTriggerSequence != null && trigger.requestedSequence !== input.narrativeTriggerSequence) fail('当前叙事触发已被另一操作取代')
@@ -581,7 +583,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       declaredSourceKeys: [sourceKey],
       assembled,
-      readerVersion: situation ? 'chat-situation-runtime-view-v2' : ['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? 'chat-narrative-runtime-view-v2' : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? 'chat-situation-runtime-view-v3' : ['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? 'chat-narrative-runtime-view-v3' : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,

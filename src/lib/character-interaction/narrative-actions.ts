@@ -1,3 +1,4 @@
+import {assertChatResponseRetrievableV1, isChatMessageRetrievableV1} from './narrative-retrieval'
 import {canonicalStringify} from '../agent/run/hash'
 import type { CharacterInteractionRuntimeState } from '../types'
 import { CHAT_NARRATIVE_TRIGGERS_V1, CHAT_THREAD_STATUSES_V1, CHAT_ACTION_REVIEW_CHECKS_V1 } from '../types/chat-narrative'
@@ -120,6 +121,7 @@ export function requestChatNarrativeTriggerV1(stateValue: CharacterInteractionRu
   if (kind === 'player-response') {
     const message = state.messages.filter(m => m.role === 'player' && m.supersededBySequence == null).slice(-1)[0]
     if (!message || message.eventSequence !== source || source < state.activeScene!.startedAtSequence) fail('回应触发必须指向当前场景最新玩家消息')
+    if (!isChatMessageRetrievableV1(state, message)) fail('这条玩家消息已排除上下文，请先恢复或发送新消息')
   }
   if (['continue', 'return', 'player-seed'].includes(kind) && source !== input.sequence - 1) fail('玩家操作必须基于当前事件头')
   if (['scene-start', 'player-response'].includes(kind) && story.triggers.some(t => t.kind === kind && t.sourceEventSequence === source)) fail('该开场或玩家消息已经触发过演绎')
@@ -145,6 +147,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   if (!state.activeScene!.activeParticipantKeys.includes(actorKey)) fail('行动角色不在当前场景')
   const trigger = story.triggers.slice(-1)[0]
   if (!trigger || trigger.requestedSequence !== input.triggerSequence || trigger.status !== 'ready') fail('行动触发已取消、已完成或正在等待玩家')
+  assertChatResponseRetrievableV1(state)
   // A seed must first pass the separate situation-construction candidate path.
   if (!isChatSituationPreparedV1(state, actorKey)) fail('玩家情境请求尚未完成情境构建')
   if (trigger.kind === 'player-response') {

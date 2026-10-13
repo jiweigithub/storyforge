@@ -1,3 +1,4 @@
+import {isChatMessageRetrievableV1} from './narrative-retrieval'
 import {canonicalStringify} from '../agent/run/hash'
 import type {CharacterInteractionRuntimeState} from '../types'
 import {CHAT_SITUATION_REVIEW_CHECKS_V1} from '../types/chat-narrative'
@@ -169,6 +170,6 @@ export function chatSituationCoordinatorViewV1(state: CharacterInteractionRuntim
     trigger: state.chatNarrative.triggers[state.chatNarrative.triggers.length - 1] ?? null,
     ...(state.chatNarrative.pendingSituation ? {pendingSituation: state.chatNarrative.pendingSituation, constructionRequest: chatSituationConstructionRequestV1(state)} : {}),
     ...(state.chatNarrative.pendingEdit ? {pendingEdit: state.chatNarrative.pendingEdit} : {}),
-    messages: state.messages.filter(m => m.eventSequence > state.activeScene!.startedAtSequence && m.supersededBySequence == null),
+    messages: state.messages.filter(m => m.eventSequence > state.activeScene!.startedAtSequence && m.supersededBySequence == null && isChatMessageRetrievableV1(state, m)),
   })
 }

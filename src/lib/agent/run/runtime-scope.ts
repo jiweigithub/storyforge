@@ -78,13 +78,13 @@ export async function captureRuntimeHarnessBoundaryV1(input: {
     frozenRuntimeSource(session.id!),
   ]);
   if (!state.interaction) fail("实例没有角色互动状态");
-  const { interactionVisibilityView } = await import("../../character-interaction/runtime");
+  const { interactionRetrievalView } = await import("../../character-interaction/runtime");
   if (input.view === 'chat-situation' && (session.kind !== 'character-interaction' || participantKey !== state.interaction.playerKey)) {
     fail('情境协调视角仅限角色聊天的明确玩家请求');
   }
   const visible = input.view === 'chat-situation'
     ? (await import('../../character-interaction/narrative-situations')).chatSituationCoordinatorViewV1(state.interaction)
-    : interactionVisibilityView(state.interaction, participantKey);
+    : interactionRetrievalView(state.interaction, participantKey);
   const visibilityHash = await hashCanonicalValue(visible);
   const runtime = {
     productRuntimeSessionId: session.id!,

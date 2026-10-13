@@ -7,6 +7,7 @@ export {
   commitChatSituation,
   requestChatNarrativeTrigger,
   updateChatMessageEditDraft,
+  setChatMessageRetrieval,
   endInteractionScene,
   joinInteractionParticipant,
   leaveInteractionParticipant,

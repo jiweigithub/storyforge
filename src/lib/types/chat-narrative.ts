@@ -109,6 +109,8 @@ export interface ChatNarrativeStateV1 {
   pendingSituation?: ChatActorSituationRequestV1 & {actorKey: string; goalKey: string; sourceEventSequence: number}
   /** User-authored replacement, not dialogue or a fact until committed. */
   pendingEdit?: ChatMessageEditDraftV1
+  /** User-selected dialogue omissions, not erased facts or revoked knowledge. */
+  excludedMessageIds?: string[]
 }
 
 export interface ChatMessageEditDraftV1 {

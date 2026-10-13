@@ -1,3 +1,4 @@
+import {assertChatResponseRetrievableV1, isChatMessageRetrievableV1, requireChatRetrievalMessageV1, setChatMessageRetrievalV1} from './narrative-retrieval'
 import {updateChatMessageEditDraftV1} from './narrative-edit-contract'
 import type {
   FrozenInteractionCharacterProfile,
@@ -448,6 +449,7 @@ export function parseInteractionState(value: unknown): CharacterInteractionRunti
       participantKeys: result.profiles.map(p => p.participantKey), characterKeys: result.profiles.map(p => p.characterKey), sceneKeys: result.sceneTemplates.map(s => s.sceneKey),
     })
   }
+  for (const id of result.chatNarrative?.excludedMessageIds ?? []) requireChatRetrievalMessageV1(result, id)
   return result
 }
 
@@ -657,6 +659,8 @@ export function applyInteractionEvent(
       interruptChatNarrativeTriggerV1(state, event.sequence)
       break
     }
+    case 'interaction.narrative.message-retrieval.changed':
+      return setChatMessageRetrievalV1(state, {sequence: event.sequence, messageId: body.messageId, excluded: body.excluded})
     case 'interaction.narrative.edit.requested':
     case 'interaction.narrative.edit.cancelled':
       return updateChatMessageEditDraftV1(state, {sequence: event.sequence, text: body.text, cancel: event.type === 'interaction.narrative.edit.cancelled'})
@@ -903,7 +907,17 @@ export function interactionVisibilityView(
   }
 }
 
+/** Model retrieval keeps the visibility boundary and only omits user-selected
+ * dialogue. The ordinary visibility view still supports reading the full log. */
+export function interactionRetrievalView(state: CharacterInteractionRuntimeState, participantKey: string) {
+  const view = interactionVisibilityView(state, participantKey)
+  const all = view.messages
+  view.messages = all.filter(m => isChatMessageRetrievableV1(state, m))
+  return {...view, ...(all.length !== view.messages.length ? {excludedMessageCount: all.length - view.messages.length} : {})}
+}
+
 export interface InteractionContextWindow extends InteractionVisibilityView {
+  excludedMessageCount?: number
   omittedMessageCount: number
   characterCount: number
 }
@@ -918,7 +932,8 @@ export function buildInteractionContextWindow(
   }
   const maxCharacters = Math.max(2_000, Math.min(options.maxCharacters ?? 24_000, 100_000))
   const maxRecentMessages = Math.max(4, Math.min(options.maxRecentMessages ?? 32, 200))
-  const visible = interactionVisibilityView(state, participantKey)
+  assertChatResponseRetrievableV1(state)
+  const visible = interactionRetrievalView(state, participantKey)
   const allMessages = visible.messages
   visible.messages = allMessages.slice(-maxRecentMessages)
   visible.memories.sort((left, right) => right.importance - left.importance || left.proposalSequence - right.proposalSequence)

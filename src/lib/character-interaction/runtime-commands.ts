@@ -114,6 +114,10 @@ async function appendInteractionCommand(
   );
 }
 
+export async function setChatMessageRetrieval(input: ProductRuntimeCommandEnvelopeV1 & {messageId: string; excluded: boolean}): Promise<ProductRuntimeEvent> {
+  return appendInteractionCommand({...input, type: 'interaction.narrative.message-retrieval.changed', actorKey: 'player', payload: {messageId: input.messageId, excluded: input.excluded}});
+}
+
 export async function updateChatMessageEditDraft(input: ProductRuntimeCommandEnvelopeV1 & {text: string; cancel?: boolean}): Promise<ProductRuntimeEvent> {
   return appendInteractionCommand({...input, type: input.cancel ? 'interaction.narrative.edit.cancelled' : 'interaction.narrative.edit.requested', actorKey: 'player', payload: {text: input.cancel ? null : input.text.trim()}});
 }

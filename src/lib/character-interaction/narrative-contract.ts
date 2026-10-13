@@ -160,7 +160,7 @@ export function createChatNarrativeStateV1(content: FrozenChatNarrativeV1): Chat
 }
 
 export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativeBoundaryV1): ChatNarrativeStateV1 {
-  const extra = ['pendingSituation', 'pendingEdit'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
+  const extra = ['pendingSituation', 'pendingEdit', 'excludedMessageIds'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
   const parsed = row(value, 'schema,version,worldReleaseHash,persona,permissions,situation,revision,lastEventSequence,triggers' + extra, '叙事状态')
   if (parsed.schema !== 'storyforge.chat-narrative-state') fail('叙事状态类型无效')
   const permissions = validateCommon(parsed, boundary)
@@ -207,6 +207,11 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
   if (state.pendingEdit !== undefined) {
     validateChatMessageEditDraftV1(state.pendingEdit, {playerKey: 'player', profiles: boundary.participantKeys.map(participantKey => ({participantKey}))}, state.permissions.maxActionCharacters)
     if (state.pendingEdit.requestedSequence > state.lastEventSequence && state.pendingEdit.requestedSequence !== 0) fail('改写引用尚未发生')
+  }
+  if (state.excludedMessageIds !== undefined) {
+    const ids = list(state.excludedMessageIds, '排除消息', 5000)
+    ids.forEach(id => text(id, '排除消息 ID', 200))
+    if (new Set(ids).size !== ids.length) fail('排除消息 ID 重复')
   }
   const sequences = [state.pendingSituation?.sourceEventSequence ?? 0, state.situation.seed.sourceEventSequence, ...state.situation.facts.map(f => f.sourceEventSequence),
     ...state.situation.goals.map(g => g.updatedSequence), ...state.situation.beliefs.map(b => b.updatedSequence), ...state.situation.threads.map(t => t.updatedSequence),
