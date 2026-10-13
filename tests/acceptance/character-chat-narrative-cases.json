@@ -1140,6 +1140,43 @@
             "actualModelRequests": 0,
             "attemptedModelRequests": 0,
             "result": "An ordinary player topic change after closure was stored but reply generation was rejected with current goal concluded. Transport was guarded against new calls, but no call was attempted. This is a real product blocker for ongoing conversation, distinct from appropriately stopping autonomous plot advancement."
+          },
+          "postClosureRepairPreflight": {
+            "evidence": "codex-post-closure-response-v32.json",
+            "sourceSnapshotHead": "364ee810d78e4735b6d996818d009bb292884309",
+            "sourceSnapshotManifestSha256": "9da7fddf3b1404d52c93a9cb18a17e714a8b67bf4601f2045a2d659b04a7ce44",
+            "rawEvidenceSha256": "374855be5bb0fd127951ae21ad48a494baf94ec58b660efef9d4f94a4e700dee",
+            "backupSha256": "9d8bfe1b671afe52e34ce83485deb95e7950ff1a0a34e0235d431d4c385065f8",
+            "status": "post-closure-player-response-reviewed-committed-and-restored",
+            "newModelRequests": 2,
+            "newModelResponses": 2,
+            "newCompletedRuns": 1,
+            "elapsedSeconds": 46.107,
+            "costUsd": null,
+            "usage": {
+              "inputTokens": 18761,
+              "outputTokens": 746,
+              "reasoningOutputTokens": 329,
+              "totalTokens": 19507
+            },
+            "restorationEqual": true,
+            "refreshRetained": true,
+            "noNewModelRequestOnRefresh": true,
+            "closedGoalsRetained": true,
+            "closedThreadsRetained": true,
+            "existingFactsAndKnowledgeRetained": true,
+            "frozenWorldUnchanged": true,
+            "outcome": "Original naturally closed V31 live save restored unchanged. The same ordinary new-topic input that previously failed now produced one reviewed goalKey=null reply based on supplied cautious/stubborn character material. No old goal or thread revival, new facts, disclosures, new plans or situation request. Returned control waiting for player.",
+            "limitations": "One targeted Codex engineering replay, not a formal M1 episode, independent model judgment, long conversation or human playtest.",
+            "portableRestoration": {
+              "evidence": "codex-post-closure-restoration-v32.json",
+              "rawEvidenceSha256": "5618302ec22c1e5b5e0b5fdf203fc36826008a55ba9be79d6a05edc01d7480c8",
+              "backupSha256": "3a5f6e31d0348b2356a43b6dfbcea3d021cb88e890854de7bd8ff4cabd333dca",
+              "actualModelRequests": 0,
+              "historicalRunsRetained": 6,
+              "stateEqual": true,
+              "refreshEqual": true
+            }
           }
         }
       },
