@@ -7,9 +7,9 @@ import {applyReviewedChatNarrativeActionV1, requestChatNarrativeTriggerV1} from 
 import {parseChatNarrativeStateV1, parseFrozenChatNarrativeV1, rebaseChatNarrativeStateV1} from '../../src/lib/character-interaction/narrative-contract'
 import {applyChatSituationV1, parseChatSituationDraftV1, chatSituationCoordinatorViewV1} from '../../src/lib/character-interaction/narrative-situations'
 import {generateInteractionRuntimeCandidateV1, adoptInteractionRuntimeCandidateV1, resumeChatSituationReviewV1} from '../../src/lib/character-interaction/harness'
-import {requestChatNarrativeTrigger, commitChatNarrativeAction, readProductRuntimeState, readProductRuntimeStateVersion, branchProductRuntimeSession} from '../../src/lib/character-interaction/runtime-api'
+import {requestChatNarrativeTrigger, readProductRuntimeState, readProductRuntimeStateVersion, branchProductRuntimeSession} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatNarrativeFixture, enableChatFactDiscoveryFixture, chatActionReviewFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatNarrativeFixture, enableChatFactDiscoveryFixture, chatActionReviewFixture, chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
 import {CHAT_SITUATION_REVIEW_CHECKS_V1, type ChatNarrativeActionV1, type ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
 
 const boundary = {participantKeys: ['guard', 'artisan'], characterKeys: ['character:guard', 'character:artisan'], sceneKeys: ['inn']}
@@ -124,12 +124,26 @@ it('recovers a persisted discovery candidate, adopts once, and preserves causali
   const f = await seedChatNarrativeRuntimeFixture({factDiscovery: true})
   let v = await readProductRuntimeStateVersion(f.sessionId)
   const trigger = await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'open', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'scene-start', sourceEventSequence: f.sceneSequence})
-  v = await readProductRuntimeStateVersion(f.sessionId); const action = inspection()
-  const committed = await commitChatNarrativeAction({sessionId: f.sessionId, commandId: 'inspect', baseSequence: v.sequence, baseStateHash: v.stateHash,
-    triggerSequence: trigger.sequence, actorKey: 'guard', messageId: 'inspect', action, review: chatActionReviewFixture(action)})
+  const action = inspection()
+  const inspected = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard',
+    skillId: 'character.chat-narrative-action', objective: '独立调查已获准的木箱，不提前知道结果', narrativeTriggerSequence: trigger.sequence,
+    runAI: async messages => {expect(JSON.stringify(messages)).not.toContain(truth); return JSON.stringify(action)},
+    runReviewAI: async messages => {
+      const request = JSON.stringify(messages)
+      expect(request).toContain(truth); expect(request).toContain('调查发现分两阶段'); expect(request).toContain(investigated)
+      return JSON.stringify(chatActionReviewOutputFixture())
+    },
+  })
+  expect(inspected.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-narrative-action-review')?.promptVersion).toBe('chat-narrative-action-review-v10')
+  await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: inspected.snapshot.run.id})
   v = await readProductRuntimeStateVersion(f.sessionId)
+  const value = draft(v.sequence)
+  const afterInspection = (await readProductRuntimeState(f.sessionId)).interaction!.chatNarrative!
+  expect(afterInspection.situation.facts.find(f => f.factKey === 'secret')!.audienceKeys).toEqual([])
+  expect(afterInspection.situation.goals[0].status).toBe('active')
+  expect(afterInspection.pendingSituation!.sourceEventSequence).toBe(v.sequence)
   const continued = await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'continue', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'continue', sourceEventSequence: v.sequence})
-  const value = draft(committed.sequence); let runId = 0, generated = 0, reviewed = 0
+  let runId = 0, generated = 0, reviewed = 0
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'player', skillId: 'character.chat-situation-construction',
     objective: '审查实际调查结果', narrativeTriggerSequence: continued.sequence,
     runAI: async messages => {generated++; expect(JSON.stringify(messages)).toContain(truth); return JSON.stringify(value)},

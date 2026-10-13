@@ -870,6 +870,35 @@
             "refreshRetained": true,
             "outcome": "Imported the unmodified generated save into a fresh isolated browser context. Persona source, messages and consequences match the original interaction state; refresh adds no requests. Historical imported runs are not treated as new generation."
           }
+        },
+        "factDiscoveryPreflight": {
+          "scope": "Author-confirmed private-fact investigation engineering samples. Real generation and runtime review, not independent scoring or formal M1 episodes.",
+          "segments": [
+            {
+              "evidence": "codex-fact-discovery-preflight-v28.json",
+              "sourceSnapshotHead": "7103b270bfeae0f7cf004b25083983e9aeb0ca82",
+              "sourceSnapshotManifestSha256": "1a684ae4de06c04d6ab9d8bcf90355baf637939af611152ee5d5f6612550cf8c",
+              "rawEvidenceSha256": "ac1c4a50ac573cf937768a10ee244d30635f0e60c9b9420a2731d84932ff9556",
+              "backupSha256": "092ff6a36e0bf1afe737780ba56ad7cd4fdf0f556f1ad165007ec3a88c4d88bd",
+              "status": "action-rejected-before-discovery",
+              "newModelRequests": 2,
+              "newModelResponses": 2,
+              "newCompletedRuns": 0,
+              "failedRuns": 1,
+              "adoptedActions": 0,
+              "elapsedSeconds": 39.844,
+              "costUsd": null,
+              "usage": {
+                "inputTokens": 15077,
+                "outputTokens": 1009,
+                "reasoningOutputTokens": 420,
+                "totalTokens": 16086
+              },
+              "frozenWorldUnchanged": true,
+              "outcome": "The role respected refusal, completed a permitted inspection without naming the unknown truth, registered the inspection fact and requested outcome adjudication. The action reviewer rejected it for failing to reveal the hidden seal and complete the goal before the separate discovery stage. No candidate action or hidden knowledge was committed; original failure retained, no request automatically resent.",
+              "reviewerIndependence": "same-provider-and-model runtime review, not independent evaluation"
+            }
+          ]
         }
       },
       {
@@ -933,6 +962,12 @@
         "rawEvidenceSha256": "b2c737641183f330bc9a44af9c19ca59ae3913cfb59b4edf79768e11f03096d8",
         "status": "invalid-setup-no-model-request",
         "reason": "The first hand-built in-memory scene omitted its action budget. Corrected the diagnostic setup; product code unchanged."
+      },
+      "partialImplementation": {
+        "sourceSnapshotHead": "7103b270bfeae0f7cf004b25083983e9aeb0ca82",
+        "scope": "Opt-in author-confirmed initial private facts only; explicit world-source discovery authorization remains pending.",
+        "verified": "Canonical audience-only update, negative outcomes, staged disclosure, durable recovery, branch/import and 3 isolated browser paths. Synthetic review does not establish semantic correctness.",
+        "liveGap": "V28 real action-review rejected correct staging by demanding hidden knowledge before discovery; V29 clarifies review responsibilities. Fresh real-model validation is required."
       }
     }
   ]
