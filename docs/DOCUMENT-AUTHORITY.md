@@ -1,6 +1,6 @@
 # StoryForge 文档权威与归档规则
 
-> 版本：2.4.2 · 生效：2026-10-13
+> 版本：2.4.3 · 生效：2026-10-13
 > 本文回答“哪些文档仍可指导开发”。未列入现行清单的历史材料，不得作为设计或施工权威。
 
 ## 1. 裁决层级
@@ -88,6 +88,8 @@
 - `docs/audits/TEXT-OPEN-WORLD-CAPABILITY-AUDIT-20260906.md`：文字开放世界开工时的能力审计快照；只作实施证据，当前实现以代码、测试与能力基线为准。
 - `docs/audits/GAME-PRODUCT-LIFECYCLE-COMPLETENESS-REVIEW-20260927.md`：游戏产品双生命周期、现行 S1/S2/S3 全流程、横切缺口、采纳决议与后续验证任务；七项原则已进入 L0/L1/L2，本文继续作为 L4 论证和实现审计证据，不替代上位规则或宣称实现完成。
 - `docs/audits/AVG-PRODUCTION-RESEARCH-20261013.md`：AVG 三条生产流程的历史追溯、头部成品对标、代码基线、专业 Agent/Skill 提案、系统/媒资能力矩阵、联合评测和建议工作包；属于 L4 研究证据，工作包须落实到 AVG 专项 L2 契约和当前路线图后施工，不宣称产品能力、生成效果或作品商业验收完成。
+- `docs/audits/AVG-PROFESSIONAL-METHODS-20261013.md`：AVG 主创方法访谈、官方宣传帧观察、生成方法/参考图接口与许可、专业 Skill 方法草案和原创正反例；属于 L4 研究与未校准提案，不能作为已注册岗位、完整游戏场景研究或真实生成/作品验收证明。
+- `docs/audits/evidence/avg-scenes-20261013/public-frame-observations.json`：上述 AVG 研究的公开视频来源、时间码、帧 hash 与观察范围索引；不含商业源图像，不是产品媒资清单、生成 receipt 或作品验收。
 
 ### 2.4 用户、维护与法律资料
 

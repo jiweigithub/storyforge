@@ -93,6 +93,8 @@ const activeDocs = [
   'docs/audits/TEXT-OPEN-WORLD-CAPABILITY-AUDIT-20260906.md',
   'docs/audits/GAME-PRODUCT-LIFECYCLE-COMPLETENESS-REVIEW-20260927.md',
   'docs/audits/AVG-PRODUCTION-RESEARCH-20261013.md',
+  'docs/audits/AVG-PROFESSIONAL-METHODS-20261013.md',
+  'docs/audits/evidence/avg-scenes-20261013/public-frame-observations.json',
   'docs/ttrpg/licenses/SRD-5.2.1-CC-BY-4.0.md',
 ]
 
