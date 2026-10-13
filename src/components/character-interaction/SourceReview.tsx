@@ -6,6 +6,7 @@ import { chatProjectionResourcesV1, readPreparedChatSourceProjectionViewV1, type
 import {CHAT_BACKGROUND_LABELS} from './BackgroundSourceSelection'
 import { FIELD_BY_TARGET } from '../../lib/registry/field-registry'
 import { MORAL_AXIS_LABELS, ORDER_AXIS_LABELS, ROLE_WEIGHT_LABELS } from '../../lib/character/character-axes'
+import SourceSuggestions from './SourceSuggestions'
 
 const PURPOSES = {identity: '身份与价值观', motivation: '目标与顾虑', voice: '语言与举止', knowledge: '事实与经历'} as const
 const VISIBILITY = {unclassified: '待分类，暂不使用', public: '所有参与者知道', participants: '仅指定参与者知道', 'author-only': '仅作者掌握', discoverable: '暂时无人知道，允许调查发现'} as const
@@ -45,8 +46,9 @@ export default function SourceReview(props: {
   const [viewer, setViewer] = useState('player')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [suggestionKeys, setSuggestionKeys] = useState<string[]>([])
   const generation = useRef({value: 0}).current
-  useEffect(() => { generation.value++; setProjection(null); setDecisions([]); setError(''); setViewer('player'); setBusy(false)
+  useEffect(() => { generation.value++; setProjection(null); setDecisions([]); setSuggestionKeys([]); setError(''); setViewer('player'); setBusy(false)
     return () => { generation.value++ }
   }, [generation, props.scope.workId, props.draft.revision])
   const load = async () => {
@@ -63,7 +65,7 @@ export default function SourceReview(props: {
       })))
       readPreparedChatSourceProjectionViewV1({draft: next, review: {projectionHash: next.projectionHash, classifications: nextDecisions}, viewerKey: 'player'})
       if (ticket !== generation.value) return
-      setProjection(next); setDecisions(nextDecisions)
+      setProjection(next); setDecisions(nextDecisions); setSuggestionKeys([])
     } catch (reason) { if (ticket === generation.value) setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { if (ticket === generation.value) setBusy(false) }
   }
@@ -113,6 +115,9 @@ export default function SourceReview(props: {
     {error && <p role="alert" className="text-danger">{error}</p>}
     <button type="button" className="lf-action" disabled={disabled} onClick={() => void load()}>{busy ? '正在处理…' : '读取并检查完整资料'}</button>
     {projection && <>
+      {props.settings.version !== 1 && <SourceSuggestions scope={props.scope} revision={props.draft.revision} projectionHash={projection.projectionHash}
+        fragmentKeys={suggestionKeys} disabled={disabled} labels={new Map(chatProjectionResourcesV1(projection).flatMap(resource => resource.fragments.map(fragment =>
+          [fragment.fragmentKey, `${resource.label} · ${passageLabel(fragment, resource.fragments, 'resourceKind' in resource)}`] as const)))}/>}
       <div className="space-y-3">{chatProjectionResourcesV1(projection).map(character => <details key={character.resourceKey} open>
         <summary>{character.label}{projection.playerCharacter?.resourceKey === character.resourceKey && <span className="ml-2 text-xs text-text-muted">玩家扮演</span>}{'resourceKind' in character && <span className="ml-2 text-xs text-text-muted">{CHAT_BACKGROUND_LABELS[String(character.resourceKind)] ?? '世界背景'}</span>}</summary>
         {'relatedResourceKeys' in character && Array.isArray(character.relatedResourceKeys) && <p className="text-xs text-text-muted">关联人物：{character.relatedResourceKeys.map(key => projection.playerCharacter?.resourceKey === key ? '玩家' : audiences.find(a => a.key === key)?.name ?? '未加入聊天的人物').join('、')}</p>}
@@ -123,6 +128,9 @@ export default function SourceReview(props: {
           const decision: ChatSourceClassificationV1 = decisionsByKey.get(fragment.fragmentKey) ?? {projectionHash: projection.projectionHash, fragmentKey: fragment.fragmentKey, purpose: 'knowledge', visibility: 'unclassified', audienceKeys: []}
           return <div key={fragment.fragmentKey} data-testid="chat-source-fragment" className="my-3 space-y-2 rounded border border-border p-3">
             <strong>{label}</strong>
+            {props.settings.version !== 1 && <label className="ml-3 text-xs"><input type="checkbox" aria-label={`${character.label} ${label} 加入整理建议`}
+              disabled={disabled || suggestionKeys.length >= 12 && !suggestionKeys.includes(fragment.fragmentKey)} checked={suggestionKeys.includes(fragment.fragmentKey)}
+              onChange={e => setSuggestionKeys(keys => e.target.checked ? [...keys, fragment.fragmentKey] : keys.filter(key => key !== fragment.fragmentKey))}/>加入整理建议</label>}
             <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">{readableValue(fragment.pointer, fragment.valueJson)}</pre>
             <div className="flex flex-wrap gap-3">
               <label>资料用途<select disabled={disabled || background || !!decision.discovery} aria-label={`${character.label} ${label} 用途`} value={decision.purpose} onChange={e => change(fragment.fragmentKey, {purpose: e.target.value as ChatSourceClassificationV1['purpose']})}>{Object.entries(PURPOSES).filter(([value]) => !playerCharacter || ['identity', 'knowledge'].includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>

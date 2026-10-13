@@ -3679,6 +3679,19 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1,
+    id: 'chat.source-review.v1', agentId: 'outline', defaultForAgent: false,
+    label: '角色聊天原文整理建议', owner: 'outline-agent', promptVersion: 'chat-source-review-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: ['chat.source-review'], optionalContextSourceKeys: [],
+    inputPolicy: {sourceKeys: ['chat.source-review'], states: {
+      empty: {handling: 'require-upstream', instruction: '缺少作者选中的已保存资料投影时停止，不得另取其他作品或世界。'},
+      partial: {handling: 'require-upstream', instruction: '选中的原文未完整交付时停止，缩小本次作者选择后再开始，不截断证据。'},
+      complete: {handling: 'grounded-transform', instruction: '仅解释S2作者所选原文，保留逐字引用并提示不确定性；不替换来源，不修改资料用途、知情范围或发现权限。'},
+    }}, contextCompression: compressionPolicy(['chat.source-review']),
+    maxOutputTokens: 6000, writeTargets: [], lastVerifiedAt: '2026-10-14', regressionTests: ['R-CHAT-01-source-suggestions'],
+  },
+  {
+    version: 1,
     id: 'text-open-world.production.source-curation.v1',
     agentId: 'outline',
     defaultForAgent: false,
