@@ -336,6 +336,7 @@ function prompt(input: {
         'kind=complete 仅能陈述角色自己已完成的行为。既有事实不可改写；beliefs 是猜测，possibilities 是未发生的打算。',
         'newFacts 每项为 {factKey,kind,text,evidenceFactKeys,evidenceExcerpt}；只有 complete 且不等玩家时可新增，kind 限作品权限，text 必须逐字出现在实际表达与 evidenceExcerpt 中。',
         'disclosures 每项为 {factKey,toParticipantKeys,evidenceExcerpt}，只可披露自己知道的事实，事实原文须逐字出现在表达和摘录中，接收者必须是听众，而且原先不在该事实的 audienceKeys 中。再次提及双方都知道的事实属于普通表达，不要写 disclosures。',
+        '通过动作展示信息同样是披露：拿出物品、展开纸条、展示所见，即使角色没有说话，也可能让听众知道原先未知的事实。输出前逐项对照所用事实的 audienceKeys 与本次听众；正文揭示了哪条既有事实，就为实际新获知者登记 disclosures，物理变化另记 newFacts，不能只写物件移动来代替知情变化。披露仍须在正文和摘录中明确包含该事实原文；不要改写真相、复制同义事实或借旁白绕过登记。若只是私下检查而不披露，面向玩家的正文也不能显示未知内容。互斥候选预览仍不得揭示玩家未知事实。',
         'threadUpdates 每项为 {threadKey,status,evidenceExcerpt}，只更新自己参与且知情的剧情线；status 可 open/blocked/paused/resolved/abandoned，须真正改变状态。等待玩家时不能标记 resolved。',
         '共有剧情线不是角色的个人打算：只暂停自己的寻找时更新自己的 goalStatus，不要顺带暂停大家的剧情线。threadUpdates 只有在实际表达足以支持整条线的变化时填写，并且该线全部 audienceKeys 必须包含在本次表达的 audienceKeys 中；私下对话不能改变其他知情者的共同局面。',
         'goalStatus 仅改变当前 goalKey 的 active/paused/fulfilled/abandoned 状态，不变则 null。证据摘录均为本次 text 的子串。听众至少包括自己与 player。',

@@ -66,6 +66,22 @@ it.each(['not-discovered', 'inconclusive'] as const)('retains %s without leaking
   expect(state.chatNarrative!.pendingSituation).toBeUndefined()
 })
 
+it('commits a physical reveal and its knowledge consequence together, while a rejected missing disclosure changes neither', () => {
+  const state = apply(), before = structuredClone(state)
+  const moved = '叶岑从打开的木箱里取出铜印，放在柜台上。'
+  const action: ChatNarrativeActionV1 = {kind: 'complete', text: `${truth}${moved}`, goalKey: 'find-seal', evidenceFactKeys: ['secret', 'inspected'], audienceKeys: ['player', 'guard'], waitingForPlayer: false,
+    newFacts: [{factKey: 'seal-on-counter', kind: 'object', text: moved, evidenceFactKeys: ['secret', 'inspected'], evidenceExcerpt: moved}],
+    disclosures: [{factKey: 'secret', toParticipantKeys: ['player'], evidenceExcerpt: truth}], threadUpdates: [], goalStatus: null}
+  const omitted = {...action, disclosures: []}, denied = chatActionReviewFixture(omitted)
+  for (const check of denied.checks) if (['visibility', 'consequences'].includes(check.check)) {check.passed = false; check.reason = '向玩家展示物品但遗漏知情变化'}
+  expect(() => applyReviewedChatNarrativeActionV1(state, {sequence: 6, triggerSequence: 4, actorKey: 'guard', messageId: 'show-denied', action: omitted, review: denied})).toThrow('审查')
+  expect(state).toEqual(before)
+  const shown = applyReviewedChatNarrativeActionV1(state, {sequence: 6, triggerSequence: 4, actorKey: 'guard', messageId: 'show', action, review: chatActionReviewFixture(action)})
+  expect(shown.chatNarrative!.situation.facts.find(f => f.factKey === 'secret')).toEqual({...before.chatNarrative!.situation.facts.find(f => f.factKey === 'secret')!, audienceKeys: ['guard', 'player']})
+  expect(shown.chatNarrative!.situation.facts.find(f => f.factKey === 'seal-on-counter')).toMatchObject({text: moved, sourceEventSequence: 6, audienceKeys: ['player', 'guard']})
+  expect(JSON.stringify(interactionVisibilityView(shown, 'artisan'))).not.toContain(moved)
+})
+
 it.each(['wrong-actor', 'wrong-event', 'missing-prerequisite', 'hidden-evidence', 'false-excerpt', 'old-inspection', 'wrong-scene', 'no-permission', 'no-rule'] as const)('rejects %s atomically', kind => {
   const state = prepared(), value = draft()
   if (kind === 'wrong-actor') value.discoveries![0].actorKey = 'artisan'
@@ -127,7 +143,7 @@ it('recovers a persisted discovery candidate, adopts once, and preserves causali
   const action = inspection()
   const inspected = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard',
     skillId: 'character.chat-narrative-action', objective: '独立调查已获准的木箱，不提前知道结果', narrativeTriggerSequence: trigger.sequence,
-    runAI: async messages => {expect(JSON.stringify(messages)).not.toContain(truth); return JSON.stringify(action)},
+    runAI: async messages => {expect(JSON.stringify(messages)).not.toContain(truth); expect(JSON.stringify(messages)).toContain('通过动作展示信息同样是披露'); return JSON.stringify(action)},
     runReviewAI: async messages => {
       const request = JSON.stringify(messages)
       expect(request).toContain(truth); expect(request).toContain('调查发现分两阶段'); expect(request).toContain(investigated)
@@ -135,6 +151,7 @@ it('recovers a persisted discovery candidate, adopts once, and preserves causali
     },
   })
   expect(inspected.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-narrative-action-review')?.promptVersion).toBe('chat-narrative-action-review-v10')
+  expect(inspected.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-narrative-action')?.promptVersion).toBe('chat-narrative-action-v17')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: inspected.snapshot.run.id})
   v = await readProductRuntimeStateVersion(f.sessionId)
   const value = draft(v.sequence)
