@@ -180,6 +180,7 @@ export function createProductRuntimeCanonSnapshotV1(input: {
 export function createProductInitialStateV1(input: {
   runtimePackage: ProductRuntimePackageWithTtrpgV2
   runtimeSourceHash: string
+  ttrpgSessionKey?: string
 }): ProductRuntimeState {
   const runtimePackage = input.runtimePackage
   let state = structuredClone(EMPTY_PRODUCT_RUNTIME_STATE)
@@ -259,6 +260,7 @@ export function createProductInitialStateV1(input: {
         initialState: state,
         content: runtimePackage.ttrpg,
         mechanicalRulePack: projectTtrpgRulePackMechanicalCoreV1(rulePack),
+        sessionKey: input.ttrpgSessionKey ?? `ttrpg.${crypto.randomUUID()}`,
       })
     } else if (isTtrpgRuntimeContentV1(runtimePackage.ttrpg)) {
       state = createInitialTtrpgProductStateV1({

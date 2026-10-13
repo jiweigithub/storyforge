@@ -227,6 +227,10 @@ export interface TtrpgRuntimeState {
    * field out of their exact-key parser.
    */
   openRun?: unknown;
+  /** Explicit protocol-2 child identity/authority; never inserted into V1 JSON. */
+  sessionKey?: string;
+  authorization?: unknown;
+  epochBudget?: unknown;
 }
 
 export interface TtrpgRuntimeProductStateV1 {
@@ -1203,6 +1207,12 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "ttrpg.media.failed",
   "ttrpg.media.cancelled",
   "ttrpg.open.run.started",
+  "ttrpg.open.epoch.started",
+  "ttrpg.open.epoch.closed",
+  "ttrpg.open.operation.started",
+  "ttrpg.open.operation.step.completed",
+  "ttrpg.open.operation.completed",
+  "ttrpg.open.intent.disposed",
   "ttrpg.open.intent.previewed",
   "ttrpg.open.intent.confirmed",
   "ttrpg.oracle.consulted",

@@ -22,12 +22,16 @@ import { rebaseProductRuntimeStateForBranchV1 } from "../../src/lib/product/runt
 import { parseRulePackV2, projectTtrpgRulePackMechanicalCoreV1 } from "../../src/lib/ttrpg/rule-pack-v2";
 import { instantiateTtrpgSituationV1 } from "../../src/lib/ttrpg/situation-engine";
 import { openCampaignFixture, openRuleFixture } from "../helpers/ttrpg-open-content";
+import { createTtrpgOpenAuthorizationV1 } from "../../src/lib/ttrpg/open-authorization";
+import { buildInitialTtrpgParticipantsV2 } from "../../src/lib/ttrpg/participants";
+import type { ProductRuntimeSession } from "../../src/lib/types";
 
 function event(
   state: ProductRuntimeState,
   sequence: number,
   type: ProductRuntimeEvent["type"],
   payload: Record<string, unknown>,
+  actorKey: string | null = null,
 ): ProductRuntimeEvent {
   return {
     projectId: 1,
@@ -35,7 +39,7 @@ function event(
     sessionId: 1,
     sequence,
     type,
-    actorKey: null,
+    actorKey,
     targetKey: null,
     commandId: `test.${sequence}`,
     baseSequence: sequence - 1,
@@ -43,6 +47,30 @@ function event(
     payloadJson: JSON.stringify(payload),
     createdAt: sequence,
   };
+}
+
+/** Pure replay fixture. Database/seat atomicity is covered by authorization-epoch. */
+function startedFixture() {
+  const initial = openInitialState(), campaign = openCampaignFixture();
+  const session = { id: 1, projectId: 1, worldId: 1, workId: 1, worldGroupId: null, kind: "ttrpg" } as ProductRuntimeSession;
+  const participants = buildInitialTtrpgParticipantsV2({ session, campaign }).map(seat => ({ ...seat,
+    assignmentState: seat.controller === "ai" ? "assigned" as const : "claimed" as const,
+    consent: { ...seat.consent, aiIdentityDisclosed: true } }));
+  const authorization = createTtrpgOpenAuthorizationV1({ campaign, participants, sequence: 1,
+    sessionKey: "ttrpg.foundation",
+    selectedActorKeys: ["hero", "companion.1", "companion.2"], viewerKey: "viewer.seat.hero" });
+  const zero = event(initial, 1, "ttrpg.session-zero.completed", {
+    acceptedItemKeys: initial.ttrpg!.product.sessionZero.requiredItemKeys,
+    selectedCharacterKeys: authorization.selectedActorKeys, completedBy: authorization.completedBySeatKey,
+    authorization, intent: {},
+  }, authorization.completedBySeatKey);
+  const setup = applyProductRuntimeEvent(initial, zero);
+  const e1 = event(setup, 2, "ttrpg.open.run.started", {
+    openRun: createTtrpgOpenRunStateV1(campaign), authorizationRevision: authorization.revision,
+    startedBySeatKey: authorization.completedBySeatKey, viewerKey: authorization.viewerKey,
+    intent: { kind: "open-run-start", viewerKey: authorization.viewerKey },
+  }, "hero");
+  return { initial, zero, setup, e1, started: applyProductRuntimeEvent(setup, e1), campaign };
 }
 
 function openInitialState(): ProductRuntimeState {
@@ -56,6 +84,7 @@ function openInitialState(): ProductRuntimeState {
       compatibility: { runtimeProtocol: 2, minimumPlayerVersion: 2 },
     },
     mechanicalRulePack: projectTtrpgRulePackMechanicalCoreV1(rule),
+    sessionKey: "ttrpg.foundation",
   });
 }
 
@@ -108,29 +137,17 @@ describe("R-TTRPGOPEN1 runtime foundation", () => {
     expect(state).toEqual(before);
   });
 
-  it("replays E1, E7, E11 and E18 through the single reducer", () => {
-    const initial = openInitialState();
-    const campaign = openCampaignFixture();
-    const e1 = event(initial, 1, "ttrpg.open.run.started", {
-      openRun: createTtrpgOpenRunStateV1(campaign),
-      intent: { kind: "open-run-start" },
-    });
-    const afterE1 = applyProductRuntimeEvent(initial, e1);
-    const e7 = event(afterE1, 2, "ttrpg.world-turn.advanced", {
-      reason: "game-action",
-      byEventSequence: 2,
-      intent: { reason: "game-action" },
-    });
-    const afterE7 = applyProductRuntimeEvent(afterE1, e7);
+  it("replays valid Session Zero, E1, E11 and E18 through the single reducer", () => {
+    const { initial, zero, e1, started, campaign } = startedFixture();
     const rawSituation = instantiateTtrpgSituationV1({
       template: campaign.situationTemplates[0],
       activatedAtSequence: 3,
       activatedAtWorldTurn: parseTtrpgOpenRunStateV1(
-        afterE7.ttrpg!.openRun,
+        started.ttrpg!.openRun,
       ).worldTime.worldTurn,
       activationReason: "opening",
     });
-    const e11 = event(afterE7, 3, "ttrpg.situation.changed", {
+    const e11 = event(started, 3, "ttrpg.situation.changed", {
       mode: "activated",
       situation: {
         ...rawSituation,
@@ -143,12 +160,12 @@ describe("R-TTRPGOPEN1 runtime foundation", () => {
         mode: "activated",
       },
     });
-    const afterE11 = applyProductRuntimeEvent(afterE7, e11);
+    const afterE11 = applyProductRuntimeEvent(started, e11);
     const e18 = event(afterE11, 4, "ttrpg.open.failure.logged", {
       failure: {
         failureKey: "failure.test",
         atSequence: 4,
-        atWorldTurn: 1,
+        atWorldTurn: 0,
         category: "gate-failed",
         violatedRule: "测试门未通过",
       },
@@ -160,48 +177,28 @@ describe("R-TTRPGOPEN1 runtime foundation", () => {
     });
     const finalState = applyProductRuntimeEvent(afterE11, e18);
     const finalOpenRun = parseTtrpgOpenRunStateV1(finalState.ttrpg!.openRun);
-    expect(finalOpenRun.worldTime.worldTurn).toBe(1);
-    expect(finalState.clock).toBe(1);
+    expect(finalOpenRun.worldTime.worldTurn).toBe(0);
+    expect(finalState.clock).toBe(0);
     expect(finalOpenRun.situations.active).toHaveLength(1);
     expect(finalOpenRun.failures).toHaveLength(1);
     expect(
-      replayProductRuntimeEvents(initial, [e1, e7, e11, e18]),
+      replayProductRuntimeEvents(initial, [zero, e1, e11, e18]),
     ).toEqual(finalState);
   });
 
-  it("rejects command payload extensions, duplicate world turns, and duplicate failures", () => {
-    const initial = openInitialState();
-    const e1 = event(initial, 1, "ttrpg.open.run.started", {
-      openRun: createTtrpgOpenRunStateV1(openCampaignFixture()),
-      intent: { kind: "open-run-start" },
-      extra: true,
-    });
-    expect(() => applyProductRuntimeEvent(initial, e1)).toThrow(/字段不精确/);
-
-    const started = applyProductRuntimeEvent(
-      initial,
-      event(initial, 1, "ttrpg.open.run.started", {
-        openRun: createTtrpgOpenRunStateV1(openCampaignFixture()),
-        intent: { kind: "open-run-start" },
-      }),
-    );
-    const advanced = applyProductRuntimeEvent(
-      started,
-      event(started, 2, "ttrpg.world-turn.advanced", {
-        reason: "game-action",
-        byEventSequence: 2,
-        intent: { reason: "game-action" },
-      }),
-    );
+  it("rejects command payload extensions and world ticks without settled operation evidence", () => {
+    const { setup, e1, started } = startedFixture();
+    expect(() => applyProductRuntimeEvent(setup, { ...e1,
+      payloadJson: JSON.stringify({ ...JSON.parse(e1.payloadJson), extra: true }) })).toThrow(/字段不精确/);
     expect(() =>
       applyProductRuntimeEvent(
-        advanced,
-        event(advanced, 3, "ttrpg.world-turn.advanced", {
+        started,
+        event(started, 3, "ttrpg.world-turn.advanced", {
           reason: "game-action",
           byEventSequence: 2,
           intent: { reason: "game-action" },
         }),
       ),
-    ).toThrow(/byEventSequence/);
+    ).toThrow(/operation/);
   });
 });

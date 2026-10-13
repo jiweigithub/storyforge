@@ -20,7 +20,8 @@ import {
   parseTextOpenWorldSessionProjectionV1,
   rebaseTextOpenWorldSessionProjectionForBranchV1,
 } from '../open-world/session-projection'
-import { assertInitialTtrpgProductStateV1 } from '../ttrpg/runtime'
+import { assertInitialTtrpgProductStateV1, assertInitialTtrpgOpenProductStateV1 } from '../ttrpg/runtime'
+import { projectTtrpgRulePackMechanicalCoreV1 } from '../ttrpg/rule-pack-v2'
 import { applyTtrpgRuntimeEventV1 } from '../ttrpg/runtime-event-reducer'
 import { cloneTtrpgRuntimeBranchExtensionsV1 } from '../ttrpg/runtime-branch'
 import { parseTtrpgState } from '../ttrpg/runtime-state'
@@ -394,39 +395,8 @@ export function assertFrozenProductRuntimeStateV1(input: {
   }
 
   if (runtimePackage.ttrpg && isTtrpgRuntimeContentV2(runtimePackage.ttrpg)) {
-    const ttrpg = initial.ttrpg
-    const bindings = runtimePackage.ttrpg.campaign.entityBindings
-    if (
-      !ttrpg ||
-      !Object.prototype.hasOwnProperty.call(ttrpg, 'openRun') ||
-      ttrpg.openRun !== null ||
-      ttrpg.scene !== null ||
-      ttrpg.round !== 0 ||
-      ttrpg.turnOrder.length !== 0 ||
-      ttrpg.product.rulePackContentHash !== runtimePackage.ttrpg.rulePack.contentHash ||
-      ttrpg.product.campaignKey !== runtimePackage.ttrpg.campaign.campaignKey
-    ) {
-      throw new Error('open TTRPG 初始状态必须保留空 openRun 与冻结身份。')
-    }
-    for (const binding of bindings) {
-      const entity = initial.entities[binding.bindingKey]
-      if (!entity) {
-        throw new Error(`open TTRPG 初始实体缺失: ${binding.bindingKey}`)
-      }
-      const expectedKind =
-        binding.kind === 'location'
-          ? 'location'
-          : binding.kind === 'item'
-            ? 'item'
-            : runtimePackage.ttrpg.campaign.characterTemplates.find(
-                (template) => template.characterKey === binding.templateKey,
-              )?.role === 'player'
-              ? 'player'
-              : 'npc'
-      if (entity.kind !== expectedKind) {
-        throw new Error(`open TTRPG 初始实体类型不一致: ${binding.bindingKey}`)
-      }
-    }
+    assertInitialTtrpgOpenProductStateV1({ state: initial, content: runtimePackage.ttrpg,
+      mechanicalRulePack: projectTtrpgRulePackMechanicalCoreV1(runtimePackage.ttrpg.rulePack.content) })
     return
   }
   if (!runtimePackage.ttrpg || !isTtrpgRuntimeContentV1(runtimePackage.ttrpg)) {

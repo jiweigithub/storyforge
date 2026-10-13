@@ -1,3 +1,4 @@
+import { resolveTtrpgRuleActionMechanicalV1 } from './rule-action-mechanical';
 /** Product-owned deterministic runtime commands: ttrpg. */
 import { applyTtrpgEffectPlanToRuntimeV2, proposeTtrpgEffectChoiceToRuntimeV2, resolveTtrpgEffectChoiceToRuntimeV2 } from "./effect-runtime";
 import { assertProductReleaseUnchanged } from "../product/releases";
@@ -10,7 +11,7 @@ import { parseRulePackV1, evaluateRuleNumberExpressionV1, resolveRulePackDiceMod
 import { parseTtrpgEffectPlanV2 } from "./effect-plan";
 import { parseTtrpgItemCommandV2, ttrpgItemDefinitionFromRuleV1, applyTtrpgItemCommandV2 } from "./item-ledger";
 import { readTtrpgSessionParticipantsV2, finalizeTtrpgSessionParticipantsV2 } from "./participants";
-import { resetTtrpgAbilityUsageV2, ttrpgAbilityStateKeyV2, consumeTtrpgAbilityV2 } from "./ability-ledger";
+import { resetTtrpgAbilityUsageV2, ttrpgAbilityStateKeyV2 } from "./ability-ledger";
 import { spendTtrpgActionEconomyV2 } from "./action-economy";
 import { applyProductRuntimeEvent, assertFiniteInteger, cloneState, hashStateJson, isObject, normalizeCommandId, parseEventPayload, parseProductRuntimeState, readLatestSessionEventSequenceV1, readProductRuntimeState, readProductRuntimeStateVersion, readSessionEvents, readVerifiedProductRuntimeHeadV1, replayProductRuntimeEvents, stableJson } from "../product/runtime-core";
 import { TTRPG_SHA256, applyTtrpgTabletopOperationV1, assertTtrpgCampaignMemoryV2, assertTtrpgRuleActionResult, longCampaignKey, longCampaignText, parseTtrpgIntentReceiptV2, parseTtrpgModelEvidenceV1, parseTtrpgTabletopOperationV1, ttrpgDegreeSucceededV2, type TtrpgTabletopOperationV1 } from "./runtime-state";
@@ -21,7 +22,6 @@ import { verifyProductReleaseManifestV1 } from "../product-production/runtime-pa
 import { verifyProductRuntimeSource } from "../product-production/preview-source";
 import type { TtrpgRuntimeContentV2 } from "./content-version";
 import {
-  advanceOpenWorldTimeV1,
   createTtrpgOpenRunStateV1,
   parseTtrpgOpenRunStateV1,
   type TtrpgOpenFailureCategoryV1,
@@ -30,7 +30,16 @@ import {
   type TtrpgOpenSituationRuntimeStateV1,
 } from "./open-runtime-contract";
 import { instantiateTtrpgSituationV1 } from "./situation-engine";
-import type { ProductRuntimeEventType, ProductRuntimeSession, ProductRuntimeEvent, ProductRuntimeState, TtrpgCharacterSheetV2, TtrpgRuntimeCampaignSessionV2, TtrpgRuntimeCampaignMemoryV2, TtrpgRuntimeRosterEntryV2, TtrpgRuntimeSupplementReceiptV2, TtrpgRuntimeWorldEvolutionV2, TtrpgRuntimeVersionTransitionV2, TtrpgCampaignContentV1, TtrpgRuntimeIntentReceiptV2, TtrpgRuntimeHumanResponseV2, TtrpgRuntimeCheck, TtrpgRuntimeRestReceiptV2, TtrpgRuntimeModelEvidenceV1 } from "../types";
+import { parseTtrpgRuntimeStateV2 } from "./open-runtime-contract";
+import { createTtrpgOpenAuthorizationV1, assertTtrpgOpenAuthorizationCurrentV1 } from "./open-authorization";
+import { parseTtrpgOpenEpochV1, frozenTtrpgOpenEpochBudgetV1,
+  ttrpgOpenScopedKeyV1, assertTtrpgOpenEpochAuthorityV1 } from "./open-coordination";
+import { key as openKey, text as openText } from "./open-contract-parse";
+import { hashProductProductionValueV2 } from "../product-production/hash";
+import { createTtrpgOpenRulePlanV1, ttrpgOpenMechanicalStateHashV1, parseTtrpgOpenRuleRequestV1, type TtrpgOpenRuleRequestV1 } from './open-rule-plan';
+import { parseTtrpgOpenOperationV1, ttrpgOpenOperationStepsV1, nextTtrpgOpenOperationStepV1 } from './open-operation';
+import { resolveTtrpgOpenRuleMechanicalV1 } from './open-rule-resolution';
+import type { ProductRuntimeEventType, ProductRuntimeSession, ProductRuntimeEvent, ProductRuntimeState, TtrpgCharacterSheetV2, TtrpgRuntimeCampaignSessionV2, TtrpgRuntimeCampaignMemoryV2, TtrpgRuntimeRosterEntryV2, TtrpgRuntimeSupplementReceiptV2, TtrpgRuntimeWorldEvolutionV2, TtrpgRuntimeVersionTransitionV2, TtrpgCampaignContentV1, TtrpgRuntimeIntentReceiptV2, TtrpgRuntimeHumanResponseV2, TtrpgRuntimeRestReceiptV2, TtrpgRuntimeModelEvidenceV1 } from "../types";
 export interface FormalTtrpgCommandEnvelope {
   sessionId: number;
   commandId: string;
@@ -66,6 +75,13 @@ type FormalTtrpgEventType = Extract<
   | "ttrpg.campaign.world-evolution.recorded"
   | "ttrpg.campaign.version-transition.recorded"
   | "ttrpg.open.run.started"
+  | "ttrpg.open.epoch.started"
+  | "ttrpg.open.epoch.closed"
+  | "ttrpg.open.operation.started"
+  | "ttrpg.open.operation.step.completed"
+  | "ttrpg.open.operation.completed"
+  | "ttrpg.open.intent.confirmed"
+  | "ttrpg.open.intent.disposed"
   | "ttrpg.world-turn.advanced"
   | "ttrpg.situation.changed"
   | "ttrpg.open.failure.logged"
@@ -81,6 +97,9 @@ function assertScriptedTtrpgCampaign(
 
 const OPEN_FOUNDATION_COMMANDS: readonly FormalTtrpgEventType[] = [
   "ttrpg.open.run.started", "ttrpg.world-turn.advanced",
+  "ttrpg.open.epoch.started", "ttrpg.open.epoch.closed",
+  "ttrpg.open.operation.started", "ttrpg.open.operation.step.completed", "ttrpg.open.operation.completed",
+  "ttrpg.open.intent.confirmed", "ttrpg.open.intent.disposed", "ttrpg.rule.action.resolved", "ttrpg.effects.applied",
   "ttrpg.situation.changed", "ttrpg.open.failure.logged",
 ];
 const SHARED_SETUP_COMMANDS: readonly FormalTtrpgEventType[] = [
@@ -235,7 +254,7 @@ async function appendFormalTtrpgCommand(
   if (open && !OPEN_FOUNDATION_COMMANDS.includes(input.type) && !SHARED_SETUP_COMMANDS.includes(input.type)) {
     throw new Error("[ttrpg] open 尚未接入此 scripted 命令；不能回退到旧场景运行器。");
   }
-  if (!open && OPEN_FOUNDATION_COMMANDS.includes(input.type)) {
+  if (!open && OPEN_FOUNDATION_COMMANDS.includes(input.type) && !["ttrpg.rule.action.resolved", "ttrpg.effects.applied"].includes(input.type)) {
     throw new Error("[ttrpg] open 命令不能写入 scripted 团局。");
   }
   const previewPrior = await db.productRuntimeEvents
@@ -276,7 +295,7 @@ async function appendFormalTtrpgCommand(
   }
   if (
     previewState.ttrpg.product.safety.status === "paused" &&
-    input.type !== "ttrpg.safety.changed"
+    !["ttrpg.safety.changed", "ttrpg.open.failure.logged", "ttrpg.open.epoch.closed", "ttrpg.open.intent.disposed"].includes(input.type)
   ) {
     throw new Error(
       "[ttrpg] 战役已由安全工具暂停；恢复后才能继续规则、场景或 AI 主持。",
@@ -466,14 +485,20 @@ function readOpenRunFromState(state: ProductRuntimeState): TtrpgOpenRunStateV1 {
 }
 
 export async function startTtrpgOpenRunV1(
-  input: FormalTtrpgCommandEnvelope,
+  input: FormalTtrpgCommandEnvelope & { viewerKey?: string },
 ): Promise<ProductRuntimeEvent> {
   return appendFormalTtrpgCommand({
     ...input,
     type: "ttrpg.open.run.started",
-    intent: { kind: "open-run-start" },
-    build: async ({ state, ttrpgContent }) => {
+    intent: { kind: "open-run-start", viewerKey: input.viewerKey ?? null },
+    build: async ({ state, ttrpgContent, participants }) => {
       const content = requireTtrpgOpenContent(ttrpgContent);
+      const runtime = parseTtrpgRuntimeStateV2(state.ttrpg);
+      if (!runtime?.authorization || !runtime.product.sessionZero.completed) {
+        throw new Error("[ttrpg] 请先完成有效 open Session Zero 和真人批准关系。");
+      }
+      const seat = assertTtrpgOpenAuthorizationCurrentV1({ authorization: runtime.authorization,
+        participants, viewerKey: input.viewerKey ?? "" });
       if (
         !state.ttrpg ||
         !Object.prototype.hasOwnProperty.call(state.ttrpg, "openRun") ||
@@ -481,13 +506,290 @@ export async function startTtrpgOpenRunV1(
       ) {
         throw new Error("[ttrpg] open run 只能启动一次。");
       }
+      const openRun = createTtrpgOpenRunStateV1(content.campaign);
+      openRun.companions = openRun.companions.filter(companion => runtime.authorization!.selectedActorKeys.includes(companion.actorKey));
       return {
-        actorKey: null,
+        actorKey: seat.actorKey,
         targetKey: null,
         payload: {
-          openRun: createTtrpgOpenRunStateV1(content.campaign),
+          openRun,
+          authorizationRevision: runtime.authorization.revision,
+          startedBySeatKey: seat.seatKey,
+          viewerKey: seat.viewerKey,
         },
       };
+    },
+  });
+}
+
+/** New authority is explicit; the scripted Session Zero API retains its original payload. */
+export async function completeTtrpgOpenSessionZeroV1(input: FormalTtrpgCommandEnvelope & {
+  acceptedItemKeys: string[]; selectedCharacterKeys: string[]; viewerKey: string;
+}): Promise<ProductRuntimeEvent> {
+  const acceptedItemKeys = input.acceptedItemKeys.map(item => openKey(item, "acceptedItemKey")).sort();
+  const selectedCharacterKeys = input.selectedCharacterKeys.map(item => openKey(item, "selectedCharacterKey"));
+  const viewerKey = openKey(input.viewerKey, "viewerKey");
+  return appendFormalTtrpgCommand({ ...input, type: "ttrpg.session-zero.completed",
+    intent: { acceptedItemKeys, selectedCharacterKeys, viewerKey },
+    build: async ({ state, sequence, ttrpgContent, participants }) => {
+      const content = requireTtrpgOpenContent(ttrpgContent);
+      const runtime = parseTtrpgRuntimeStateV2(state.ttrpg);
+      if (!runtime || runtime.product.sessionZero.completed || runtime.authorization !== null) {
+        throw new Error("[ttrpg] open Session Zero 已完成或运行态缺失。");
+      }
+      if (stableJson(acceptedItemKeys) !== stableJson([...runtime.product.sessionZero.requiredItemKeys].sort())) {
+        throw new Error("[ttrpg] 必须确认全部 Session Zero 安全与共识事项。");
+      }
+      const authorization = createTtrpgOpenAuthorizationV1({ campaign: content.campaign, participants,
+        selectedActorKeys: selectedCharacterKeys, viewerKey, sequence, sessionKey: runtime.sessionKey });
+      return { actorKey: authorization.completedBySeatKey, targetKey: content.campaign.campaignKey,
+        payload: { acceptedItemKeys, selectedCharacterKeys,
+          completedBy: authorization.completedBySeatKey, authorization } };
+    },
+    afterCommit: async ({ event }) => finalizeTtrpgSessionParticipantsV2({ sessionId: input.sessionId,
+      selectedCharacterKeys, eventSequence: event.sequence, completedBy: viewerKey }),
+  });
+}
+
+export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; triggerKind: "submit-action" | "continue-host"; rawInput: string;
+}): Promise<ProductRuntimeEvent> {
+  const viewerKey = openKey(input.viewerKey, "viewerKey");
+  const rawInput = openText(input.rawInput, "rawInput", 10_000);
+  if (input.triggerKind !== "submit-action" && input.triggerKind !== "continue-host") throw new Error("[ttrpg] epoch 触发种类无效。");
+  return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.epoch.started",
+    intent: { viewerKey, rawInput, triggerKind: input.triggerKind },
+    build: async ({ state, sequence, ttrpgContent, participants }) => {
+      const content = requireTtrpgOpenContent(ttrpgContent);
+      const runtime = parseTtrpgRuntimeStateV2(state.ttrpg);
+      if (!runtime?.openRun || !runtime.authorization) throw new Error("[ttrpg] 请先启动已授权的 open 团局。");
+      if (runtime.openRun.stage.status !== "open" || runtime.openRun.coordination.activeEpochKey !== null) {
+        throw new Error("[ttrpg] 同一团局最多一个 active epoch，不能以新 commandId 重开授权窗口。");
+      }
+      const seat = assertTtrpgOpenAuthorizationCurrentV1({ authorization: runtime.authorization, participants, viewerKey });
+      const authorizationHash = await hashProductProductionValueV2(runtime.authorization);
+      const inputRevision = await hashProductProductionValueV2({ sessionKey: runtime.sessionKey,
+        triggerKind: input.triggerKind, rawInput, viewerKey, authorizationHash });
+      const epoch = parseTtrpgOpenEpochV1({
+        epochKey: await ttrpgOpenScopedKeyV1(runtime.sessionKey, "epoch", [String(sequence), inputRevision]),
+        startedRef: { sessionKey: runtime.sessionKey, sequence }, closedRef: null, status: "active",
+        triggeredBySeatKey: seat.seatKey, viewerKey, triggerKind: input.triggerKind, inputRevision,
+        sessionZeroRevision: runtime.authorization.revision, authorizationHash,
+        budget: frozenTtrpgOpenEpochBudgetV1(content.campaign), successfulActorKeys: [],
+        reservedCalls: 0, consumedTokens: 0, actualCostUsd: 0, stopReason: null,
+      });
+      return { actorKey: seat.actorKey, targetKey: null, payload: { epoch } };
+    },
+  });
+}
+
+/** Cancellation closes authority, without claiming any unfinished business step succeeded. */
+export async function closeTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & {
+  epochKey: string; viewerKey: string; reason: string;
+}): Promise<ProductRuntimeEvent> {
+  const epochKey = openKey(input.epochKey, "epochKey");
+  const viewerKey = openKey(input.viewerKey, "viewerKey");
+  const reason = openText(input.reason, "reason", 2000);
+  return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.epoch.closed", intent: { epochKey, viewerKey, reason },
+    build: async ({ state, participants }) => {
+      const runtime = parseTtrpgRuntimeStateV2(state.ttrpg);
+      const authorization = runtime?.authorization;
+      const epoch = runtime?.openRun?.coordination.epochs.find(item => item.epochKey === epochKey);
+      if (!runtime?.openRun || !authorization || !epoch || runtime.openRun.coordination.activeEpochKey !== epochKey) {
+        throw new Error("[ttrpg] 当前 epoch 不存在或已关闭。");
+      }
+      const seat = assertTtrpgOpenAuthorizationCurrentV1({ authorization, participants, viewerKey });
+      assertTtrpgOpenEpochAuthorityV1({ epoch, authorization, viewerKey,
+        authorizationHash: await hashProductProductionValueV2(authorization) });
+      if (epoch.reservedCalls > 0
+        || runtime.openRun.operations.some(operation => operation.authorizationEpochKey === epochKey && ["awaiting-approval", "executing"].includes(operation.status))) throw new Error("[ttrpg] 已执行业务的 epoch 必须等待结算和调用回执闭合。");
+      return { actorKey: seat.actorKey, targetKey: null, payload: { epochKey, viewerKey, reason } };
+    },
+  });
+}
+
+export interface TtrpgOpenOperationCommandV1 extends FormalTtrpgCommandEnvelope {
+  operationKey: string; frozenPlanHash: string; viewerKey: string;
+}
+
+export async function ttrpgOpenOperationCommandIdV1(sessionKey: string, operationKey: string, stepKey: string): Promise<string> {
+  return ttrpgOpenScopedKeyV1(sessionKey, "op", [operationKey, stepKey]);
+}
+
+/** Qualified step keys prove replay identity; the original baseline is retained on retries. */
+async function openOperationEnvelopeV1(input: TtrpgOpenOperationCommandV1, stepKey: string): Promise<FormalTtrpgCommandEnvelope> {
+  const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg);
+  const operation = runtime?.openRun?.operations.find(operation => operation.operationKey === input.operationKey);
+  if (!runtime || !operation || operation.planHash !== input.frozenPlanHash) throw new Error("[ttrpg] operation/plan 不存在或已变化。");
+  const commandId = await ttrpgOpenOperationCommandIdV1(runtime.sessionKey, operation.operationKey, stepKey);
+  if (input.commandId !== commandId) throw new Error("[ttrpg] operation 命令必须使用内核生成的步骤 key。");
+  const prior = await db.productRuntimeEvents.where("[sessionId+commandId]").equals([input.sessionId, commandId]).first();
+  return prior ? { sessionId: input.sessionId, commandId, baseSequence: prior.baseSequence!, baseStateHash: prior.baseStateHash! } : input;
+}
+
+async function openOperationCallerV1(context: Parameters<Parameters<typeof appendFormalTtrpgCommand>[0]["build"]>[0],
+  input: TtrpgOpenOperationCommandV1, requireStarter = true) {
+  const runtime = parseTtrpgRuntimeStateV2(context.state.ttrpg);
+  const authorization = runtime?.authorization;
+  const operation = runtime?.openRun?.operations.find(operation => operation.operationKey === input.operationKey);
+  if (!runtime?.openRun || !authorization || !operation || operation.planHash !== input.frozenPlanHash) throw new Error("[ttrpg] operation/plan 不存在或已变化。");
+  const seat = assertTtrpgOpenAuthorizationCurrentV1({ authorization, participants: context.participants, viewerKey: input.viewerKey });
+  const epoch = runtime.openRun.coordination.epochs.find(epoch => epoch.epochKey === operation.authorizationEpochKey);
+  const authorizationHash = await hashProductProductionValueV2(authorization);
+  if (!epoch || epoch.status !== "active" || runtime.openRun.coordination.activeEpochKey !== epoch.epochKey
+    || epoch.authorizationHash !== authorizationHash || operation.plan.authorizationHash !== authorizationHash
+    || operation.plan.runtimeSourceHash !== context.session.runtimeSourceHash
+    || (requireStarter && epoch.viewerKey !== seat.viewerKey)) throw new Error("[ttrpg] operation 授权 stale 或不属于当前启动者。");
+  return { runtime, operation, epoch, seat };
+}
+
+export async function startTtrpgOpenOperationV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; request: TtrpgOpenRuleRequestV1;
+}): Promise<ProductRuntimeEvent> {
+  const viewerKey = openKey(input.viewerKey, "viewerKey"), request = parseTtrpgOpenRuleRequestV1(input.request);
+  return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.operation.started", intent: { viewerKey, request },
+    build: async ({ state, session, sequence, ttrpgContent, participants }) => {
+      const content = requireTtrpgOpenContent(ttrpgContent);
+      const runtime = parseTtrpgRuntimeStateV2(state.ttrpg);
+      if (!runtime?.authorization || !runtime.openRun) throw new Error("[ttrpg] open 团局未启动。");
+      assertTtrpgOpenAuthorizationCurrentV1({ authorization: runtime.authorization, participants, viewerKey });
+      const epoch = runtime.openRun.coordination.epochs.find(epoch => epoch.epochKey === runtime.openRun!.coordination.activeEpochKey);
+      if (!epoch || epoch.viewerKey !== viewerKey || runtime.openRun.operations.some(operation => ["awaiting-approval", "executing"].includes(operation.status))) throw new Error("[ttrpg] 没有本人活动窗口或已有未完成操作。");
+      const plan = await createTtrpgOpenRulePlanV1({ state, content, runtimeSourceHash: session.runtimeSourceHash, request });
+      const planHash = await hashProductProductionValueV2(plan);
+      const operation = parseTtrpgOpenOperationV1({
+        operationKey: await ttrpgOpenScopedKeyV1(runtime.sessionKey, "operation", [epoch.epochKey, input.commandId]),
+        rootCommandId: input.commandId, inputHash: await hashProductProductionValueV2({ request, inputRevision: epoch.inputRevision }),
+        planHash, riskHash: await hashProductProductionValueV2({ planHash, affectedActorKeys: plan.affectedActorKeys, timeCostWorldTurns: plan.timeCostWorldTurns }),
+        authorizationEpochKey: epoch.epochKey, startedRef: { sessionKey: runtime.sessionKey, sequence },
+        status: "awaiting-approval", plan, plannedSteps: ttrpgOpenOperationStepsV1(plan), approvals: [], businessRefs: [], receipts: [], completedRef: null, pendingChoice: null,
+      }, runtime.sessionKey);
+      return { actorKey: request.actorKey, targetKey: request.targetKey, payload: { operation } };
+    },
+  });
+}
+
+export async function confirmTtrpgOpenOperationV1(input: TtrpgOpenOperationCommandV1 & {
+  actorKey: string; riskHash: string; decision: "approve" | "reject";
+}): Promise<ProductRuntimeEvent> {
+  const envelope = await openOperationEnvelopeV1(input, `approval.${openKey(input.actorKey, "actorKey")}`);
+  const intent = { operationKey: input.operationKey, frozenPlanHash: input.frozenPlanHash, viewerKey: input.viewerKey,
+    actorKey: input.actorKey, riskHash: input.riskHash, decision: input.decision };
+  return appendFormalTtrpgCommand({ ...envelope, type: "ttrpg.open.intent.confirmed", intent,
+    build: async context => {
+      const { operation, seat } = await openOperationCallerV1(context, input, false);
+      if (operation.plan.mechanicalStateHash !== await ttrpgOpenMechanicalStateHashV1(context.state)) throw new Error("[ttrpg] 确认前机械状态已变化，计划 stale。");
+      return { actorKey: seat.actorKey, targetKey: operation.plan.request.actorKey,
+        payload: { ...intent, approverSeatKey: seat.seatKey, confirmationKind: "operation", alternativeKey: null } };
+    },
+  });
+}
+
+export async function selectTtrpgOpenOperationEffectV1(input: TtrpgOpenOperationCommandV1 & { alternativeKey: string; riskHash: string }): Promise<ProductRuntimeEvent> {
+  const envelope = await openOperationEnvelopeV1(input, "effect-choice");
+  return appendFormalTtrpgCommand({ ...envelope, type: "ttrpg.open.intent.confirmed",
+    intent: { operationKey: input.operationKey, frozenPlanHash: input.frozenPlanHash, viewerKey: input.viewerKey,
+      alternativeKey: openKey(input.alternativeKey, "alternativeKey"), riskHash: input.riskHash },
+    build: async context => {
+      const { operation, seat } = await openOperationCallerV1(context, input, false);
+      return { actorKey: seat.actorKey, targetKey: operation.plan.request.actorKey,
+        payload: { operationKey: operation.operationKey, frozenPlanHash: operation.planHash, riskHash: input.riskHash,
+          actorKey: operation.plan.request.actorKey, approverSeatKey: seat.seatKey, viewerKey: seat.viewerKey,
+          decision: "approve", confirmationKind: "effect-choice", alternativeKey: input.alternativeKey } };
+    },
+  });
+}
+
+/** Withdrawal preserves the journal and cannot abandon already committed business effects. */
+export async function disposeTtrpgOpenIntentV1(input: TtrpgOpenOperationCommandV1 & { reason: string }): Promise<ProductRuntimeEvent> {
+  const envelope = await openOperationEnvelopeV1(input, "disposed");
+  const reason = openText(input.reason, "dispose reason", 2000);
+  return appendFormalTtrpgCommand({ ...envelope, type: "ttrpg.open.intent.disposed",
+    intent: { operationKey: input.operationKey, frozenPlanHash: input.frozenPlanHash, viewerKey: input.viewerKey, reason },
+    build: async context => {
+      const { operation, seat } = await openOperationCallerV1(context, input);
+      if (!["awaiting-approval", "executing"].includes(operation.status) || operation.businessRefs.length) throw new Error("[ttrpg] 只能撤销未执行业务的本人计划；已提交后果必须恢复结算。");
+      return { actorKey: seat.actorKey, targetKey: operation.plan.request.actorKey,
+        payload: { operationKey: operation.operationKey, frozenPlanHash: operation.planHash, viewerKey: seat.viewerKey, reason } };
+    },
+  });
+}
+
+export async function resolveTtrpgOpenOperationRuleV1(input: TtrpgOpenOperationCommandV1): Promise<ProductRuntimeEvent> {
+  const envelope = await openOperationEnvelopeV1(input, "rule");
+  return appendFormalTtrpgCommand({ ...envelope, type: "ttrpg.rule.action.resolved",
+    intent: { operationKey: input.operationKey, frozenPlanHash: input.frozenPlanHash, viewerKey: input.viewerKey },
+    build: async context => {
+      const { runtime, operation } = await openOperationCallerV1(context, input);
+      if (operation.status !== "executing" || nextTtrpgOpenOperationStepV1(operation)?.kind !== "rule"
+        || operation.plan.mechanicalStateHash !== await ttrpgOpenMechanicalStateHashV1(context.state)) throw new Error("[ttrpg] 规则计划未批准、顺序不正确或已 stale。");
+      const result = await resolveTtrpgOpenRuleMechanicalV1({ state: context.state, plan: operation.plan,
+        seed: context.session.seed, operationKey: operation.operationKey, sequence: context.sequence });
+      return { actorKey: operation.plan.request.actorKey, targetKey: operation.plan.request.targetKey,
+        payload: { operationKey: operation.operationKey, frozenPlanHash: operation.planHash, stepKey: "rule", causeRef: operation.startedRef,
+          receipt: { operationKey: operation.operationKey, frozenPlanHash: operation.planHash,
+            sourceRef: { sessionKey: runtime.sessionKey, sequence: context.sequence }, result } } };
+    },
+  });
+}
+
+export async function applyTtrpgOpenOperationEffectV1(input: TtrpgOpenOperationCommandV1 & { stepKey: "mechanics" | "effect" }): Promise<ProductRuntimeEvent> {
+  const envelope = await openOperationEnvelopeV1(input, input.stepKey);
+  return appendFormalTtrpgCommand({ ...envelope, type: "ttrpg.effects.applied",
+    intent: { operationKey: input.operationKey, frozenPlanHash: input.frozenPlanHash, viewerKey: input.viewerKey, stepKey: input.stepKey },
+    build: async context => {
+      const { runtime, operation } = await openOperationCallerV1(context, input);
+      const receipt = runtime.openRun!.ruleReceipts.find(receipt => receipt.operationKey === operation.operationKey);
+      if (!receipt || operation.status !== "executing" || nextTtrpgOpenOperationStepV1(operation)?.stepKey !== input.stepKey) throw new Error("[ttrpg] 效果缺少真实裁定或步骤不正确。");
+      if (input.stepKey === "mechanics" && operation.plan.mechanicalStateHash !== await ttrpgOpenMechanicalStateHashV1(context.state)) throw new Error("[ttrpg] 机械效果基线已 stale。");
+      let effectPlan: import("../types").TtrpgEffectPlanV2 | null = null;
+      const degree = receipt.result.outcome;
+      const templateKey = degree === "automatic" ? null : operation.plan.genericCheck?.effectPlanByDegree[degree] ?? null;
+      if (input.stepKey === "effect" && templateKey !== null) {
+        const template = operation.plan.effectTemplates.find(template => template.planKey === templateKey)!;
+        if (template.alternatives.length && !operation.pendingChoice?.selectedAlternativeKey) throw new Error("[ttrpg] 后果需要持久化真人选择，不能自动提交。");
+        const bindings = operation.plan.request.effectBindings[templateKey];
+        const primitives = template.alternatives.length ? template.alternatives.find(alternative => alternative.alternativeKey === operation.pendingChoice!.selectedAlternativeKey)!.effects : template.effects;
+        const effects: import("../types").TtrpgEffectPrimitiveV2[] = primitives.flatMap(effect => {
+          if (effect.family === "knowledge" || effect.family === "story") throw new Error("[ttrpg] 后果 owner 尚未接入，必须保留待办。");
+          const targetRef = effect.targetRef.startsWith("parameter:") ? bindings[effect.targetRef.slice(10)] : effect.targetRef;
+          return targetRef === null ? [] : [{ ...effect, targetRef }];
+        });
+        effectPlan = parseTtrpgEffectPlanV2({ schema: "storyforge.ttrpg-effect-plan", version: 2,
+          planKey: await ttrpgOpenOperationCommandIdV1(runtime.sessionKey, operation.operationKey, "effect-plan"),
+          degree, sourceEventId: `event.${receipt.sourceRef.sequence}`, ruleRef: template.ruleRef, reason: template.reason,
+          audience: template.audience, status: "immediate", effects,
+          idempotencyKey: envelope.commandId });
+      }
+      return { actorKey: operation.plan.request.actorKey, targetKey: operation.plan.request.targetKey,
+        payload: { operationKey: operation.operationKey, frozenPlanHash: operation.planHash, stepKey: input.stepKey, causeRef: receipt.sourceRef, effectPlan } };
+    },
+  });
+}
+
+export async function completeTtrpgOpenOperationStepV1(input: TtrpgOpenOperationCommandV1 & { stepKey: string }): Promise<ProductRuntimeEvent> {
+  const envelope = await openOperationEnvelopeV1(input, `${openKey(input.stepKey, "stepKey")}.receipt`);
+  return appendFormalTtrpgCommand({ ...envelope, type: "ttrpg.open.operation.step.completed",
+    intent: { operationKey: input.operationKey, frozenPlanHash: input.frozenPlanHash, viewerKey: input.viewerKey, stepKey: input.stepKey },
+    build: async context => {
+      const { operation } = await openOperationCallerV1(context, input);
+      const business = operation.businessRefs.find(ref => ref.stepKey === input.stepKey);
+      if (!business) throw new Error("[ttrpg] 步骤尚无真实业务事件，不能完成回执。");
+      return { actorKey: operation.plan.request.actorKey, targetKey: operation.plan.request.targetKey,
+        payload: { operationKey: operation.operationKey, frozenPlanHash: operation.planHash, stepKey: input.stepKey, businessRef: business.sourceRef } };
+    },
+  });
+}
+
+export async function completeTtrpgOpenOperationV1(input: TtrpgOpenOperationCommandV1): Promise<ProductRuntimeEvent> {
+  const envelope = await openOperationEnvelopeV1(input, "completed");
+  return appendFormalTtrpgCommand({ ...envelope, type: "ttrpg.open.operation.completed",
+    intent: { operationKey: input.operationKey, frozenPlanHash: input.frozenPlanHash, viewerKey: input.viewerKey },
+    build: async context => {
+      const { operation } = await openOperationCallerV1(context, input);
+      if (nextTtrpgOpenOperationStepV1(operation)) throw new Error("[ttrpg] 必需 owner/业务步骤仍未完成。");
+      return { actorKey: operation.plan.request.actorKey, targetKey: operation.plan.request.targetKey,
+        payload: { operationKey: operation.operationKey, frozenPlanHash: operation.planHash } };
     },
   });
 }
@@ -501,23 +803,35 @@ export async function advanceTtrpgWorldTurnV1(
       | "front-escalation"
       | "situation-maintenance"
       | "stage-close";
+    operationKey?: string;
+    frozenPlanHash?: string;
+    viewerKey?: string;
+    stepKey?: string;
   },
 ): Promise<ProductRuntimeEvent> {
+  if (input.operationKey && input.frozenPlanHash && input.viewerKey && input.stepKey) {
+    const operationInput: TtrpgOpenOperationCommandV1 = { ...input, operationKey: input.operationKey,
+      frozenPlanHash: input.frozenPlanHash, viewerKey: input.viewerKey };
+    const envelope = await openOperationEnvelopeV1(operationInput, input.stepKey);
+    return appendFormalTtrpgCommand({ ...envelope, type: "ttrpg.world-turn.advanced",
+      intent: { operationKey: input.operationKey, frozenPlanHash: input.frozenPlanHash, viewerKey: input.viewerKey, stepKey: input.stepKey, reason: input.reason },
+      build: async context => {
+        const { operation } = await openOperationCallerV1(context, operationInput);
+        const step = nextTtrpgOpenOperationStepV1(operation);
+        const rule = operation.businessRefs.find(ref => ref.stepKey === "rule");
+        if (!step || step.kind !== "time" || step.stepKey !== input.stepKey || !rule) throw new Error("[ttrpg] 世界耗时缺少已结算行动和冻结步骤。");
+        return { actorKey: operation.plan.request.actorKey, targetKey: operation.plan.request.targetKey,
+          payload: { operationKey: operation.operationKey, frozenPlanHash: operation.planHash, stepKey: step.stepKey,
+            causeRef: rule.sourceRef, byEventSequence: rule.sourceRef.sequence, tickIndex: step.tickIndex, reason: input.reason } };
+      },
+    });
+  }
   return appendFormalTtrpgCommand({
     ...input,
     type: "ttrpg.world-turn.advanced",
     intent: { reason: input.reason },
-    build: async ({ state, sequence }) => {
-      const openRun = readOpenRunFromState(state);
-      advanceOpenWorldTimeV1(openRun, input.reason, sequence);
-      return {
-        actorKey: null,
-        targetKey: null,
-        payload: {
-          reason: input.reason,
-          byEventSequence: sequence,
-        },
-      };
+    build: async () => {
+      throw new Error("[ttrpg] 世界时间推进必须引用已结算 operation；因果耗时入口尚在施工，禁止直接 tick。");
     },
   });
 }
@@ -1015,6 +1329,7 @@ export async function completeTtrpgSessionZero(
     type: "ttrpg.session-zero.completed",
     intent: { acceptedItemKeys, selectedCharacterKeys, completedBy },
     build: async ({ state, campaign }) => {
+      if (campaign.version !== 1) throw new Error("[ttrpg] open 必须使用显式真人授权的 Session Zero 入口。");
       const product = state.ttrpg?.product;
       if (!product || product.sessionZero.completed)
         throw new Error("[ttrpg] Session Zero 已完成或产品状态缺失。");
@@ -1101,6 +1416,7 @@ export async function changeTtrpgSafetyStatus(
     status: "active" | "paused";
     reason?: string | null;
     changedBy: string;
+    viewerKey?: string;
   },
 ): Promise<ProductRuntimeEvent> {
   const changedBy = input.changedBy.trim();
@@ -1116,13 +1432,25 @@ export async function changeTtrpgSafetyStatus(
   return appendFormalTtrpgCommand({
     ...input,
     type: "ttrpg.safety.changed",
-    intent: { status: input.status, reason, changedBy },
-    build: async ({ state }) => {
+    intent: { status: input.status, reason, changedBy,
+      ...(input.viewerKey === undefined ? {} : { viewerKey: input.viewerKey }) },
+    build: async ({ state, ttrpgContent, participants }) => {
       const product = state.ttrpg?.product;
       if (!product?.sessionZero.completed || product.ending)
         throw new Error("[ttrpg] 当前正式战役不能变更安全状态。");
       if (product.safety.status === input.status)
         throw new Error("[ttrpg] 安全状态没有变化。");
+      if (ttrpgContent.campaign.version === 2) {
+        const runtime = parseTtrpgRuntimeStateV2(state.ttrpg);
+        if (!runtime?.authorization) throw new Error("[ttrpg] open 安全工具缺少真人授权。");
+        const seat = assertTtrpgOpenAuthorizationCurrentV1({ authorization: runtime.authorization,
+          participants, viewerKey: input.viewerKey ?? "" });
+        if (![seat.seatKey, seat.actorKey, seat.viewerKey].includes(changedBy)) {
+          throw new Error("[ttrpg] open 安全状态更改者与 claimed 真人席位不一致。");
+        }
+        return { actorKey: changedBy, targetKey: product.campaignKey,
+          payload: { status: input.status, reason, changedBy, viewerKey: seat.viewerKey } };
+      }
       return {
         actorKey: changedBy,
         targetKey: product.campaignKey,
@@ -3320,304 +3648,14 @@ async function resolveTtrpgRuleActionWithAuthority(
               actionKey,
             });
 
-      const resourceChanges: import("../types").TtrpgRuntimeRuleActionResultV1["resourceChanges"] =
-        [];
-      const resourceCurrent = (
-        entityKey: string,
-        resourceKey: string,
-      ): { current: number; maximum: number } => {
-        const prior = [...resourceChanges]
-          .reverse()
-          .find(
-            (item) =>
-              item.entityKey === entityKey && item.resourceKey === resourceKey,
-          );
-        if (prior) return { current: prior.after, maximum: prior.maximum };
-        const entity = state.entities[entityKey];
-        const current = entity?.attributes[`resource.${resourceKey}`];
-        const maximum = entity?.attributes[`resourceMax.${resourceKey}`];
-        if (
-          !Number.isInteger(current) ||
-          !Number.isInteger(maximum) ||
-          Number(maximum) <= 0
-        ) {
-          throw new Error(
-            `[ttrpg] 角色缺少规则资源:${entityKey}.${resourceKey}`,
-          );
-        }
-        return { current: Number(current), maximum: Number(maximum) };
-      };
-      const addResourceChange = (
-        entityKey: string,
-        resourceKey: string,
-        delta: number,
-        proofHash: string | null,
-      ) => {
-        const { current, maximum } = resourceCurrent(entityKey, resourceKey);
-        const after = Math.max(0, Math.min(maximum, current + delta));
-        resourceChanges.push({
-          entityKey,
-          resourceKey,
-          before: current,
-          delta,
-          after,
-          maximum,
-          proofHash,
-        });
-      };
-      const abilityStateKey = ttrpgAbilityStateKeyV2(actorKey, actionKey);
-      const beforeAbility = product.abilityStates?.[abilityStateKey];
-      if (!beforeAbility)
-        throw new Error(`[ttrpg] 角色缺少冻结能力次数账本:${abilityStateKey}`);
-      const sharedPoolKey = action.usage.sharedPoolKey;
-      const beforeSharedPool =
-        sharedPoolKey == null
-          ? null
-          : (product.usagePools?.[sharedPoolKey] ?? null);
-      const abilityResource =
-        action.usage.resourceKey == null
-          ? null
-          : resourceCurrent(actorKey, action.usage.resourceKey).current;
-      const abilityUse = consumeTtrpgAbilityV2({
-        definition: {
-          abilityKey: action.key,
-          actionDefinitionKey: action.key,
-          usage: action.usage,
-        },
-        state: beforeAbility,
-        eventId: `event.${sequence}`,
-        currentRound: ttrpg.round,
-        resourceCurrent: abilityResource,
-        sharedPool: beforeSharedPool,
-      });
-      if (abilityUse.resourceDelta !== 0 && action.usage.resourceKey) {
-        addResourceChange(
-          actorKey,
-          action.usage.resourceKey,
-          abilityUse.resourceDelta,
-          null,
-        );
-      }
-      const abilityChange: import("../types").TtrpgRuntimeRuleActionResultV1["abilityChange"] =
-        {
-          stateKey: abilityStateKey,
-          before: structuredClone(beforeAbility),
-          after: abilityUse.state,
-          sharedPoolKey,
-          sharedPoolBefore:
-            beforeSharedPool == null ? null : structuredClone(beforeSharedPool),
-          sharedPoolAfter: abilityUse.sharedPool,
-        };
-      if (action.costResourceKey && action.costAmount > 0) {
-        const resource = resourceCurrent(actorKey, action.costResourceKey);
-        if (resource.current < action.costAmount)
-          throw new Error(`[ttrpg] ${action.name}所需资源不足。`);
-        addResourceChange(
-          actorKey,
-          action.costResourceKey,
-          -action.costAmount,
-          null,
-        );
-      }
-
-      const checkEffects = action.effects.filter(
-        (effect): effect is Extract<typeof effect, { kind: "check" }> =>
-          effect.kind === "check",
-      );
-      if (checkEffects.length > 1)
-        throw new Error("[ttrpg] v1 规则行动最多包含一个检定效果。");
-      const activeConditions = product.conditions[actorKey] ?? [];
-      const conditionModifier = activeConditions.reduce((sum, condition) => {
-        const definition = rulePack.conditions.find(
-          (item) => item.key === condition.conditionKey,
-        );
-        return sum + (definition?.checkModifier ?? 0) * condition.stacks;
-      }, 0);
-      let check: TtrpgRuntimeCheck | null = null;
-      let outcome: import("../types").TtrpgRuntimeRuleActionResultV1["outcome"] =
-        "automatic";
-      if (checkEffects[0]) {
-        const effect = checkEffects[0];
-        const resolution = await resolveRulePackCheckV1({
-          rulePack,
-          checkKey: effect.checkKey,
-          attributeKey: effect.attributeKey,
-          attributes: Object.fromEntries(
-            [...rulePack.attributes, ...rulePack.derivedStats].map(
-              (attribute) => [
-                attribute.key,
-                Number(state.entities[actorKey]?.attributes[attribute.key]),
-              ],
-            ),
-          ),
-          seed: session.seed,
-          nonce: `${input.commandId}:${sequence}:${actionKey}`,
-          difficulty,
-          situationalModifier:
-            situationalModifier + conditionModifier + actorSkill.skillValue,
-          contestantRef: actorKey,
-          opponent:
-            resolvedTargetKey == null
-              ? undefined
-              : {
-                  contestantRef: resolvedTargetKey,
-                  attributeKey: effect.attributeKey,
-                  situationalModifier: opponentSkill?.skillValue ?? 0,
-                  attributes: Object.fromEntries(
-                    [...rulePack.attributes, ...rulePack.derivedStats].map(
-                      (attribute) => [
-                        attribute.key,
-                        Number(
-                          state.entities[resolvedTargetKey]?.attributes[
-                            attribute.key
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                },
-        });
-        const model = rulePack.diceModels.find(
-          (item) => item.key === resolution.diceModelKey,
-        )!;
-        const modifier = ["total-vs-target", "opposed"].includes(
-          resolution.mode,
-        )
-          ? resolution.attributeModifier + resolution.situationalModifier
-          : 0;
-        const expression = `${resolution.keptDice.length}d${model.sides}${modifier > 0 ? `+${modifier}` : modifier < 0 ? modifier : ""}`;
-        outcome = resolution.degree;
-        check = {
-          eventSequence: sequence,
-          actorKey,
-          skill: action.name,
-          expression,
-          dice: resolution.keptDice,
-          modifier,
-          total: resolution.total,
-          dc: resolution.difficulty,
-          success: ttrpgDegreeSucceededV2(resolution.degree),
-          visibility: rollVisibility,
-          rule: {
-            actionKey,
-            checkKey: resolution.checkKey,
-            attributeKey: resolution.attributeKey,
-            skillKey: actorSkill.skillKey,
-            skillValue: actorSkill.skillValue,
-            diceModelKey: resolution.diceModelKey,
-            rolledDice: resolution.dice,
-            keptDice: resolution.keptDice,
-            degree: resolution.degree,
-            mode: resolution.mode,
-            successes: resolution.successes,
-            winnerRef: resolution.winnerRef,
-            tiedRefs: resolution.tiedRefs,
-            calculationTrace: resolution.calculationTrace,
-            opponent:
-              resolution.opponent == null
-                ? null
-                : {
-                    contestantRef: resolution.opponent.contestantRef,
-                    attributeKey: resolution.opponent.attributeKey,
-                    rolledDice: resolution.opponent.dice,
-                    keptDice: resolution.opponent.keptDice,
-                    attributeModifier: resolution.opponent.attributeModifier,
-                    total: resolution.opponent.total,
-                    degree: resolution.opponent.degree,
-                    rollTrace: resolution.opponent.rollTrace,
-                    proofHash: resolution.opponent.proofHash,
-                  },
-            rollTrace: resolution.rollTrace,
-            seedCommitment: resolution.seedCommitment,
-            nonce: resolution.nonce,
-            proofHash: resolution.proofHash,
-            rulePackContentHash: product.rulePackContentHash,
-          },
-        };
-      }
-      const effectSucceeded = check == null || check.success;
-      const conditionChanges: import("../types").TtrpgRuntimeRuleActionResultV1["conditionChanges"] =
-        [];
-      for (const [effectIndex, effect] of action.effects.entries()) {
-        if (effect.kind === "check") continue;
-        const shouldApply = effect.appliesOnDegrees
-          ? effect.appliesOnDegrees.includes(outcome)
-          : effectSucceeded;
-        if (!shouldApply) continue;
-        const effectTargetKey =
-          effect.targetScope === "actor"
-            ? actorKey
-            : (resolvedTargetKey ?? actorKey);
-        if (effect.kind === "resource") {
-          addResourceChange(
-            effectTargetKey,
-            effect.resourceKey,
-            effect.delta,
-            null,
-          );
-        } else if (effect.kind === "damage") {
-          const modifier =
-            effect.modifierAttributeKey == null
-              ? 0
-              : Number(
-                  state.entities[actorKey].attributes[
-                    effect.modifierAttributeKey
-                  ],
-                );
-          if (!Number.isFinite(modifier))
-            throw new Error(
-              `[ttrpg] 伤害修正属性无效:${effect.modifierAttributeKey}`,
-            );
-          const damage = await resolveRulePackDiceModelV1({
-            rulePack,
-            diceModelKey: effect.diceModelKey,
-            seed: session.seed,
-            nonce: `${input.commandId}:${sequence}:${actionKey}:damage:${effectIndex}`,
-            modifier,
-          });
-          addResourceChange(
-            effectTargetKey,
-            effect.resourceKey,
-            -Math.max(0, damage.total),
-            damage.proofHash,
-          );
-        } else if (effect.kind === "condition") {
-          const definition = rulePack.conditions.find(
-            (item) => item.key === effect.conditionKey,
-          )!;
-          const existing = product.conditions[effectTargetKey]?.find(
-            (item) => item.conditionKey === effect.conditionKey,
-          );
-          const stacks =
-            definition.stacking === "replace"
-              ? Math.min(definition.maximumStacks, effect.stacks)
-              : Math.min(
-                  definition.maximumStacks,
-                  (existing?.stacks ?? 0) + effect.stacks,
-                );
-          conditionChanges.push({
-            entityKey: effectTargetKey,
-            conditionKey: effect.conditionKey,
-            stacks,
-            duration: definition.defaultDurationRounds,
-          });
-        }
-      }
       const completesTurn = economyTransition
         ? economyTransition.nextActorKey != null
         : action.phase === "action";
-      if (completesTurn) {
-        for (const condition of activeConditions) {
-          if (condition.duration == null) continue;
-          const duration = condition.duration - 1;
-          conditionChanges.push({
-            entityKey: actorKey,
-            conditionKey: condition.conditionKey,
-            stacks: duration > 0 ? condition.stacks : 0,
-            duration: duration > 0 ? duration : null,
-          });
-        }
-      }
+      const { outcome, check, resourceChanges, conditionChanges, abilityChange } =
+        await resolveTtrpgRuleActionMechanicalV1({ state, rulePack, action, actorKey,
+          targetKey: resolvedTargetKey, seed: session.seed, commandId: input.commandId,
+          sequence, currentRound: ttrpg.round, advanceConditions: completesTurn,
+          difficulty, situationalModifier, rollVisibility, actorSkill, opponentSkill });
       const currentIndex = ttrpg.turnOrder.indexOf(actorKey);
       const shouldAdvance = action.phase === "action";
       const nextIndex = (currentIndex + 1) % ttrpg.turnOrder.length;

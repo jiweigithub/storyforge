@@ -2,6 +2,7 @@ import type { RulePackV1 } from '../types'
 import type { RulePackV2, TtrpgOpenFactPolicyV1, TtrpgOpenGenericCheckV1, TtrpgOracleTableV1, TtrpgOpenSocialTierMappingV1, TtrpgOpenTimePolicyV1 } from './open-contract'
 import { OPEN_FACT_PREDICATES } from './open-contract'
 import { parseRulePackV1 } from './rule-pack'
+import { createTtrpgOpenUsagePoolsV1 } from './ability-ledger'
 import { parsePredicate } from './open-content-predicates'
 import * as p from './open-contract-parse'
 export type { RulePackV2 } from './open-contract'
@@ -100,7 +101,7 @@ function oracle(value: unknown, label: string, rule: RulePackV1): TtrpgOracleTab
     interpretation: { mustRespect: p.texts(i.mustRespect, label, 100, 1), forbiddenScopes, maxNewEntities: p.integer(i.maxNewEntities, label, 0, 3) },
     tests, sourceRefs: p.keys(r.sourceRefs, label, 100, 1) }
 }
-function genericCheck(value: unknown, label: string, rule: RulePackV1): TtrpgOpenGenericCheckV1 {
+export function parseTtrpgOpenGenericCheckV1(value: unknown, label: string, rule: RulePackV1): TtrpgOpenGenericCheckV1 {
   const r = p.record(value, ['checkKey', 'title', 'actorAttributeKey', 'diceModelKey', 'difficulty', 'preconditions', 'targetKinds', 'effectPlanByDegree', 'riskFactRefs', 'resourceCosts', 'timeCostWorldTurns', 'audience', 'sourceRefs'], label)
   const checkKey = p.key(r.checkKey, label)
   const actorAttributeKey = p.key(r.actorAttributeKey, label)
@@ -147,13 +148,14 @@ export function parseRulePackV2(input: unknown): RulePackV2 {
   const root = p.record(p.json(input), [...MECHANICAL_FIELDS, ...OPEN_FIELDS], 'rulePackV2')
   p.literal(root.version, 2, 'rulePackV2.version'); p.literal(root.runFormat, 'open', 'rulePackV2.runFormat')
   const core = parseRulePackV1(mechanicalInput(root))
+  createTtrpgOpenUsagePoolsV1(core.actions)
   const oracles = p.list(root.oracles, 'oracles', (v, l) => oracle(v, l, core), 100, 1)
   const policies = p.list(root.factPolicy, 'factPolicy', factPolicy, 12, 12)
   p.unique(policies.map(f => f.predicateKey), 'factPolicy')
   for (const f of policies) for (const other of f.mutuallyExclusiveWith) {
     if (!policies.find(p => p.predicateKey === other)?.mutuallyExclusiveWith.includes(f.predicateKey)) p.fail('factPolicy: 互斥必须对称')
   }
-  const genericChecks = p.list(root.genericChecks, 'genericChecks', (v, l) => genericCheck(v, l, core))
+  const genericChecks = p.list(root.genericChecks, 'genericChecks', (v, l) => parseTtrpgOpenGenericCheckV1(v, l, core))
   const socialTierMappings = p.list(root.socialTierMappings, 'socialTierMappings', (v, l): TtrpgOpenSocialTierMappingV1 => {
     const r = p.record(v, ['mappingKey', 'balanceKey', 'oracleKey', 'ranges', 'defaultTierKey'], l)
     const oracleKey = p.key(r.oracleKey, l); const table = oracles.find(o => o.oracleKey === oracleKey)

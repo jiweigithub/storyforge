@@ -138,6 +138,7 @@ export function validateOpenContentReferences(c: TtrpgCampaignContentV2, rule: R
     p.known(b.initialLocationRef, locations, b.bindingKey)
     refs(b.initialInventoryRefs, items, b.bindingKey)
     if (b.kind === 'actor') {
+      if (b.initialLocationRef === null) p.fail(`${b.bindingKey}: actor 必须具有可解析初始地点`)
       p.known(b.templateKey, actors.keys(), b.bindingKey)
       if (b.bindingKey !== b.templateKey) p.fail(`${b.bindingKey}: actor key 必须沿用角色模板 key`)
     } else if (b.kind === 'item') p.known(b.templateKey, rule.items.map(i => i.key), b.bindingKey)

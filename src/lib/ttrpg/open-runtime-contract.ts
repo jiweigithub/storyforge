@@ -2,6 +2,13 @@ import type {
   TtrpgRuntimeState,
 } from "../types";
 import { parseTtrpgOpenMechanicalStateV1 } from "./runtime-state";
+import { key as parseKey } from "./open-contract-parse";
+import { parseTtrpgOpenAuthorizationV1, type TtrpgOpenAuthorizationV1 } from "./open-authorization";
+import { parseTtrpgOpenCoordinationV1, parseTtrpgOpenEpochBudgetV1,
+  type TtrpgOpenCoordinationV1, type TtrpgOpenEpochBudgetV1 } from "./open-coordination";
+import { stableProductRuntimeJsonV1 } from "../product/runtime-values";
+import { parseTtrpgOpenOperationV1, parseTtrpgOpenRuleReceiptV1,
+  type TtrpgOpenOperationV1, type TtrpgOpenRuleReceiptV1 } from "./open-operation";
 import type {
   TtrpgOpenCampaignClockV1,
   TtrpgOpenCampaignFrontV1,
@@ -106,6 +113,9 @@ export interface TtrpgOpenRunStateV1 {
   };
   stage: TtrpgOpenStageRuntimeStateV1;
   consultedThisWorldTurn: number;
+  coordination: TtrpgOpenCoordinationV1;
+  operations: TtrpgOpenOperationV1[];
+  ruleReceipts: TtrpgOpenRuleReceiptV1[];
 }
 
 /**
@@ -118,6 +128,9 @@ export type TtrpgRuntimeStateV2 = TtrpgRuntimeState & {
   schema: "storyforge.ttrpg-runtime";
   version: 2;
   runFormat: "open";
+  sessionKey: string;
+  authorization: TtrpgOpenAuthorizationV1 | null;
+  epochBudget: TtrpgOpenEpochBudgetV1;
   openRun: TtrpgOpenRunStateV1 | null;
 };
 
@@ -487,6 +500,7 @@ function parseWorldTime(value: unknown): TtrpgWorldTimeV1 {
 
 export function parseTtrpgOpenRunStateV1(
   value: unknown,
+  sessionKey?: string,
 ): TtrpgOpenRunStateV1 {
   const row = record(value, "openRun");
   exact(
@@ -505,6 +519,9 @@ export function parseTtrpgOpenRunStateV1(
       "situations",
       "stage",
       "consultedThisWorldTurn",
+      "coordination",
+      "operations",
+      "ruleReceipts",
     ],
     "openRun",
   );
@@ -618,6 +635,9 @@ export function parseTtrpgOpenRunStateV1(
       "openRun.consultedThisWorldTurn",
       0,
     ),
+    coordination: parseTtrpgOpenCoordinationV1(row.coordination, sessionKey),
+    operations: Array.isArray(row.operations) ? row.operations.map(value => parseTtrpgOpenOperationV1(value, sessionKey)) : fail("operations 必须是数组"),
+    ruleReceipts: Array.isArray(row.ruleReceipts) ? row.ruleReceipts.map(parseTtrpgOpenRuleReceiptV1) : fail("ruleReceipts 必须是数组"),
   };
 }
 
@@ -632,6 +652,9 @@ export function parseTtrpgRuntimeStateV2(
       "schema",
       "version",
       "runFormat",
+      "sessionKey",
+      "authorization",
+      "epochBudget",
       "scene",
       "round",
       "activeActorKey",
@@ -663,16 +686,50 @@ export function parseTtrpgRuntimeStateV2(
   if (row.encounter !== null) fail("open 运行态不能携带 scripted encounter");
   // Validate shared mechanical fields with the existing strict parser in memory.
   // This validation view is never persisted or used for the original state hash.
-  const { schema: _schema, version: _version, runFormat: _format, openRun: _run, ...mechanical } = row;
+  const { schema: _schema, version: _version, runFormat: _format, openRun: _run,
+    sessionKey: _session, authorization: _authorization, epochBudget: _budget, ...mechanical } = row;
   const parsed = parseTtrpgOpenMechanicalStateV1(mechanical);
   if (!parsed) return fail("open 运行态 compatibility projection 不完整");
+  const sessionKey = parseKey(row.sessionKey, "open.sessionKey");
+  const authorization = row.authorization === null ? null : parseTtrpgOpenAuthorizationV1(row.authorization);
+  const epochBudget = parseTtrpgOpenEpochBudgetV1(row.epochBudget);
+  if (parsed.product.sessionZero.completed !== (authorization !== null)
+    || (authorization !== null && (authorization.revision !== parsed.product.sessionZero.completedAtSequence
+      || authorization.sourceRef.sessionKey !== sessionKey
+      || authorization.completedBySeatKey !== parsed.product.sessionZero.completedBy
+      || JSON.stringify([...authorization.selectedActorKeys].sort()) !== JSON.stringify([...parsed.product.sessionZero.selectedCharacterKeys].sort())))
+    || (row.openRun !== null && authorization === null)) fail("open 授权与 Session Zero 状态不一致");
+  const openRun = row.openRun === null ? null : parseTtrpgOpenRunStateV1(row.openRun, sessionKey);
+  if (openRun && authorization) {
+    if (new Set(openRun.operations.map(operation => operation.operationKey)).size !== openRun.operations.length
+      || new Set(openRun.ruleReceipts.map(receipt => receipt.operationKey)).size !== openRun.ruleReceipts.length
+      || openRun.operations.filter(operation => ["awaiting-approval", "executing"].includes(operation.status)).length > 1
+      || openRun.operations.some(operation => operation.plan.epochKey !== operation.authorizationEpochKey
+        || !openRun.coordination.epochs.some(epoch => epoch.epochKey === operation.authorizationEpochKey))
+      || openRun.ruleReceipts.some(receipt => receipt.sourceRef.sessionKey !== sessionKey
+        || !openRun.operations.some(operation => operation.operationKey === receipt.operationKey && operation.planHash === receipt.frozenPlanHash))) {
+      fail("operation 身份/epoch/规则回执不一致");
+    }
+    for (const epoch of openRun.coordination.epochs) {
+      const seat = authorization.seats.find(item => item.seatKey === epoch.triggeredBySeatKey && item.viewerKey === epoch.viewerKey);
+      if (!seat || seat.controller === "ai" || seat.assignmentState !== "claimed"
+        || epoch.sessionZeroRevision !== authorization.revision
+        || stableProductRuntimeJsonV1(epoch.budget) !== stableProductRuntimeJsonV1(epochBudget)
+        || epoch.successfulActorKeys.length > epochBudget.maximumAiActions
+        || epoch.successfulActorKeys.some(actorKey => !authorization.seats.some(item => item.actorKey === actorKey && item.role === "player" && item.controller !== "human"))) {
+        fail("epoch 与冻结预算、Session Zero 或队友控制权不一致");
+      }
+    }
+  }
   return {
     ...parsed,
     schema: "storyforge.ttrpg-runtime",
     version: 2,
     runFormat: "open",
-    openRun:
-      row.openRun === null ? null : parseTtrpgOpenRunStateV1(row.openRun),
+    sessionKey,
+    authorization,
+    epochBudget,
+    openRun,
   };
 }
 
@@ -741,6 +798,9 @@ export function createTtrpgOpenRunStateV1(
       closedAtWorldTurn: null,
     },
     consultedThisWorldTurn: 0,
+    coordination: { activeEpochKey: null, epochs: [] },
+    operations: [],
+    ruleReceipts: [],
   };
 }
 

@@ -2804,7 +2804,7 @@ P1 的提交顺序必须是：先加 `docs/roadmap/TTRPG-DEVELOPMENT-PLAN.md`，
 | 步骤 | 用户结果 | 当前状态 |
 |---|---|---|
 | 1. 接手与版本兼容 | 核验交接包、保留原成果、修复类型及新旧格式串线，使现有作品继续可用 | 本次接手修复与基线验收完成：全项目 CI 通过，旧跑团隔离浏览器回归 9 项通过；不代表 open 产品或全部 P2a 用户流程完成 |
-| 2. 规则行动与恢复 | 无场景的真实团局可完成一次规则行动，刷新/中断后不重复效果或耗时 | P2b 尚未完成；epoch、operation、批准关系、因果耗时及逐边界恢复是下一准入重点 |
+| 2. 规则行动与恢复 | 无场景的真实团局可完成一次规则行动，刷新/中断后不重复效果或耗时 | 进行中：Session Zero/epoch、初始机械状态、规则裁定/后果/因果耗时与待选恢复已实现；必需后续 owner 与跨阶段合作链待接入 |
 | 3. 世界信息与作者制作 | 来源/角色知识有边界，作者能正常制作、检查和发布 open 作品 | P2c/P2d 待实施，领域保存入口和纯模块不代替作者端端到端路径 |
 | 4. 连续合作体验 | Oracle、压力、局势、AI KP 与 2–3 队友接入同一正式行动链 | 按 P4 → P5 → P6a → P3 顺序；保留的纯模块不算正式接入 |
 | 5. 联合验收 | 正常生产、连续合作、秘密边界、回放/分支/恢复和旧作品兼容同时成立 | P6b 后才可开放标准入口；P7–P10 按前置继续，真人/真实模型证据独立记录 |
@@ -2821,7 +2821,7 @@ P1 的提交顺序必须是：先加 `docs/roadmap/TTRPG-DEVELOPMENT-PLAN.md`，
 - 旧场景命令不能写入 open，open 命令不能写入 scripted；未交付的 open 分支血缘在重映射前明确拒绝。继续保留后续纯模块及其测试，通过 `open-prototypes.ts` 的离线评估边界独立调用，不进入玩家路由、正式写回、provider 或能力完成证明。
 - 当前不新增表、不变更 schema/备份版本，不新增模型调用/正式 AI 读写源，不回写 WorldRelease，不发布或部署。`E-TTRPG-OPEN-01/02` 仍为 `missing`，源码中存在模块不改变此状态。
 
-### 35.3 当前验证
+### 35.3 接手修复提交 `200e9984` 的验证
 
 2026-10-13，在 `feat/ttrpg-handoff-20261013` 的接手修复代码上完成：
 
@@ -2832,4 +2832,29 @@ P1 的提交顺序必须是：先加 `docs/roadmap/TTRPG-DEVELOPMENT-PLAN.md`，
 | 跑团隔离浏览器回归 | `PLAYWRIGHT_PORT=4297 PLAYWRIGHT_USE_SYSTEM_CHROME=1 npm run ci:e2e -- -- tests/e2e/ttrpg-authoring-ui.spec.ts tests/e2e/ttrpg-production-journey.spec.ts tests/e2e/ttrpg-ai-kp-play.spec.ts tests/e2e/ttrpg-community-recovery.spec.ts --project=chromium`：9 项通过；覆盖既有 scripted 制作、开团、AI 回合、私密投影、刷新和检查点恢复；使用隔离浏览器与受控 provider，不访问作者现有浏览器数据 |
 | 保留与提交检查 | 2.0.0 原稿保留块仍为 189,753 字节，SHA-1 `63778aa3f5f11487964d869b448d472ec51bfd75`；`git diff --check` 通过 |
 
-这些结果证明本次接手代码与现有工程基线相容，不证明新版正常作者生产、open 规则行动、真实模型、真人合作或公共服务已验收。P2b 的有效 Session Zero/批准关系、epoch/operation、行动因果耗时和逐步骤恢复仍待实现；当前四个 open 事件/命令属于内部草稿，不能作为正式运行授权或公开入口开放依据。
+这些结果证明该接手提交与现有工程基线相容，不证明新版正常作者生产、open 规则行动、真实模型、真人合作或公共服务已验收。该提交中的 P2b 仍为内部草稿；后续增量必须单独留下证据，不能沿用该提交的通过记录。
+
+### 35.4 P2b 授权与初始状态增量
+
+- 用户已明确开启持续目标，直到完成本方案。继续在现有独立产品分支施工，不把原包中的“已完成”记录视作新的验收证明。
+- open 子状态增加稳定 portable `sessionKey`、冻结 `epochBudget` 和 `authorization`。旧 scripted JSON、解析字段闭集和历史哈希不变；这些是尚未公开的新格式内部字段，不对旧 JSON 补字段或重算身份。
+- 初始实体实际装入冻结属性、衍生数值、资源上限和库存；共用已有机械编译与物品账本，不复制机械算法。安装边界对新格式逐项核对完整实体、库存、能力与产品身份，拒绝仅“类型一致”的篡改状态。
+- `completeTtrpgOpenSessionZeroV1` 校验活动人数、已 claimed 真人、AI 身份披露、每名 AI/hybrid 队友的真人批准关系。授权回执、正式事件、参与席位接受/revision 与 runtime head 在既有单事务内落库；事务失败不留下半完成接受状态。旧 Session Zero 入口不代替新版真人授权。hybrid 席位具有真人认领策略和显式 AI profile。
+- `startTtrpgOpenRunV1` 仅在有效授权后运行；`startTtrpgOpenEpochV1` 冻结真实触发输入 revision、授权 hash、Session Zero revision 和预算。一个团局只允许一个 active epoch；查看与刷新不产生新 epoch；同 commandId 同输入返回原回执，换输入拒绝。
+- Session Zero 授权和 epoch 的起止来源使用 `{sessionKey, sequence}`，拒绝同序号的跨团局授权；内核生成 key，超长身份按 canonical hash 压缩。`closeTtrpgOpenEpochV1` 当前只关闭未执行业务的取消窗口，不以取消冒充操作结算完成；历史预算与授权证据保留。
+- 新格式安全状态只能由当前已确认真人席位修改；AI 不能恢复真人暂停。暂停状态仍允许记录失败诊断和撤销空授权窗口。正式命令和纯 reducer 均拒绝没有已结算 operation 因果的直接世界 tick；后续在同一事件入口交付合法耗时推进。
+- 此单元无新表、无 schema/备份升级、无新正式 AI 来源/写回或模型请求；WorldRelease 只读，公开 open 玩家入口仍关闭。P2b 规则行动/operation、模型请求 reservation、来源知识、作者生产与合作体验继续按 §31 推进。
+
+本次增量定向回归 2 文件、22 项通过（其中新版授权/epoch 16 项）；引入安全控制前后的既有跑团回归及 9 个浏览器旧路径保持通过，新版授权 API 在真实 IndexedDB 中的双标签竞争、刷新、暂停/恢复、取消和纯回放通过，并在加入 qualified Session Zero sourceRef 后单独复跑通过。后续补齐初始库存正反例后定向回归仍通过。全项目 CI 待本增量最终回执，未结束的检查不记为通过。
+
+### 35.5 P2b 规则结算与因果恢复增量
+
+- `open-rule-plan.ts` 在正式业务前冻结规则/来源/授权/机械状态 hash、位置、能力与物品授予、目标、资源及次数、七档后果参数、耗时和受影响真人批准集合。generic check 的难度与费用来自冻结定义，客户端不得增设难度。共享池由 V2 冻结行动的 maximum/cost/reset 定义初始化；同池定义必须一致，缺失或超出容量拒绝发布。V1 解析策略不变。
+- 正式 journal 只保存计划、审批、进度及真实来源；E4 裁定回执保存实际骰子与机械结果作为审计依据。资源/条件/能力/共享池仍由既有实体和机械账本拥有，后续 `effects.applied` 一次写入；复用 scripted 的机械结算算法，保留旧骰子 nonce、旧回执形状和断言。
+- operation 按 rule → mechanics → 可选 effect → 冻结 time ticks 顺序恢复。每个步骤业务事件与步骤完成回执分开保存，回执必须引用已经提交的真实业务事件；内核生成 qualified step key，重复恢复返回原事件，不重掷、不重扣资源、不重复计时。尚未接入的 pressure/situations/terminal/gates/narration/handoff 保留必需步骤，恢复返回 awaiting-owner，不能用空成功回执结束 operation。
+- E7 的事件 sequence 排序存储，独立 causeRef/byEventSequence 引用真实 E4；耗时 0 不产 tick，耗时 N 顺序产生 N 个 tick。open 共用能力的 cooldownRounds 与条件的 defaultDurationRounds 分别按 worldTurn 与真实 tick 计算，兼容 round 保持 0；scripted 原回合逻辑不变。每个 tick 只重置 Oracle 的 consultedThisWorldTurn，epoch 级 AI 行动和模型预算不清零。
+- 冻结后果的 alternatives 持久保存并等待该角色的真人批准者选择；AI 不能自选/代批。当前 E3 为确定性内核规则计划的确认/后果选择变体，P3 的模型语义意图、candidate/run/manifest/visibility 证明仍待正式 Harness 接入，不伪造这些证据。
+- `disposeTtrpgOpenIntentV1` 保留撤销事件，仅可撤销尚未提交业务的本人计划；允许安全暂停时撤销，不消费资源。已经提交 E4 的计划必须继续恢复，不能抹去骰子。安全 pause/resume 的审计字段不改变机械基线，暂停阻止执行、恢复继续原结果；其他机械变化仍使计划 stale。
+- 此增量未新增表、schema/备份版本、正式模型调用或公共玩家入口。来源知识、作者端生产、Oracle/事实/压力/局势与合作链继续按 §31 施工，能力基线保持未完成。定向跑团回归 51 文件、389 项通过；浏览器旧流程 9 项加 open 授权/规则恢复 2 项共 11 项通过。全项目 CI 以本增量最终回执为准，未完成的检查不记为通过。
+
+本增量最终工程回执：`npm run ci` 通过（818 测试文件、4,596 项测试；覆盖率、构建、依赖审计及全部工程闸门通过），`npm run ci:e2e` 跑团定向 11 项通过。检查期间源码指纹一致。以上仅证明本增量工程与隔离浏览器路径，不代表正常 open 作者生产、完整行动后续 owner、真实模型或真人合作验收。

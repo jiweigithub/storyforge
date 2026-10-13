@@ -16,13 +16,16 @@ import {
 } from "./item-ledger";
 import {
   createTtrpgAbilityRuntimeStateV2,
+  createTtrpgOpenUsagePoolsV1,
   ttrpgAbilityStateKeyV2,
 } from "./ability-ledger";
 import { createEmptyTtrpgEffectLedgerV2 } from "./effect-runtime";
 import { parseTtrpgCharacterSheetV2 } from "./character-sheet";
 import { earnedTtrpgCharacterCurrencyV2 } from "./advancement";
 import type { TtrpgRuntimeContentV2 } from "./content-version";
-import type { TtrpgRuntimeStateV2 } from "./open-runtime-contract";
+import { parseTtrpgRuntimeStateV2, type TtrpgRuntimeStateV2 } from "./open-runtime-contract";
+import { key as parseOpenKey } from "./open-contract-parse";
+import { frozenTtrpgOpenEpochBudgetV1 } from "./open-coordination";
 
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -33,6 +36,29 @@ function stableJson(value: unknown): string {
       .map(([field, child]) => `${JSON.stringify(field)}:${stableJson(child)}`)
       .join(",")}}`;
   return JSON.stringify(value) ?? "null";
+}
+
+/** One mechanical compiler is shared by both formats; it owns no scene semantics. */
+function initialCharacterAttributes(input: {
+  attributes: Record<string, number>; resources: Record<string, number>;
+}, rulePack: RulePackV1): import("../types").RuntimeAttributes {
+  const derived = Object.fromEntries(rulePack.derivedStats.map(stat => {
+    let value = evaluateRuleNumberExpressionV1(stat.formula, input.attributes);
+    if (stat.minimum != null) value = Math.max(stat.minimum, value);
+    if (stat.maximum != null) value = Math.min(stat.maximum, value);
+    return [stat.key, value];
+  }));
+  const maximums = Object.fromEntries(rulePack.resources.map(resource => [resource.key,
+    evaluateRuleNumberExpressionV1(resource.maximumFormula, input.attributes)]));
+  return {
+    ...input.attributes, ...derived,
+    ...Object.fromEntries(Object.entries(input.resources).map(([key, value]) => [`resource.${key}`, value])),
+    ...Object.fromEntries(Object.entries(maximums).map(([key, value]) => [`resourceMax.${key}`, value])),
+    hp: input.resources.vigor ?? 1,
+    maxHp: maximums.vigor ?? input.resources.vigor ?? 1,
+    armorClass: derived.defense ?? 8,
+    initiative: input.attributes[rulePack.turnStructure.initiativeAttributeKey] ?? 0,
+  };
 }
 
 export function createInitialTtrpgProductStateV1(input: {
@@ -109,49 +135,10 @@ export function createInitialTtrpgProductStateV1(input: {
           description: template.description,
         },
       });
-    const derived = Object.fromEntries(
-      rulePack.derivedStats.map((stat) => {
-        let value = evaluateRuleNumberExpressionV1(
-          stat.formula,
-          template.attributes,
-        );
-        if (stat.minimum != null) value = Math.max(stat.minimum, value);
-        if (stat.maximum != null) value = Math.min(stat.maximum, value);
-        return [stat.key, value];
-      }),
-    );
-    const maximums = Object.fromEntries(
-      rulePack.resources.map((resource) => [
-        resource.key,
-        evaluateRuleNumberExpressionV1(
-          resource.maximumFormula,
-          template.attributes,
-        ),
-      ]),
-    );
     entity.kind = template.role === "player" ? "player" : "npc";
     entity.attributes = {
       ...entity.attributes,
-      ...template.attributes,
-      ...derived,
-      ...Object.fromEntries(
-        Object.entries(template.resources).map(([key, value]) => [
-          `resource.${key}`,
-          value,
-        ]),
-      ),
-      ...Object.fromEntries(
-        Object.entries(maximums).map(([key, value]) => [
-          `resourceMax.${key}`,
-          value,
-        ]),
-      ),
-      // Current encounter-core attributes compiled from the selected rule pack.
-      hp: template.resources.vigor ?? 1,
-      maxHp: maximums.vigor ?? template.resources.vigor ?? 1,
-      armorClass: derived.defense ?? 8,
-      initiative:
-        template.attributes[rulePack.turnStructure.initiativeAttributeKey] ?? 0,
+      ...initialCharacterAttributes(template, rulePack),
     };
   }
   const visualLocations = new Map(
@@ -404,6 +391,7 @@ function createOpenCompatibilityProjection(input: {
   state: ProductRuntimeState;
   content: TtrpgRuntimeContentV2;
   mechanicalRulePack: RulePackV1;
+  sessionKey: string;
 }): TtrpgRuntimeStateV2 {
   const { content, mechanicalRulePack } = input;
   const campaign = content.campaign;
@@ -435,8 +423,18 @@ function createOpenCompatibilityProjection(input: {
         audience: binding.audience,
         role: template?.role ?? binding.kind,
         controller: template?.controller ?? null,
+        ...(template ? initialCharacterAttributes(template, mechanicalRulePack) : {}),
       },
     };
+  }
+  const itemDefinitions = Object.fromEntries(mechanicalRulePack.items.map(item => [item.key, ttrpgItemDefinitionFromRuleV1(item)]));
+  let inventory = createEmptyTtrpgInventoryV2();
+  for (const binding of campaign.entityBindings.filter(binding => binding.kind === "item")) {
+    const owner = campaign.entityBindings.find(actor => actor.kind === "actor" && actor.initialInventoryRefs.includes(binding.bindingKey));
+    inventory = applyTtrpgItemCommandV2({ state: inventory, definitions: itemDefinitions,
+      command: { kind: "grant", commandId: binding.bindingKey, instanceId: binding.bindingKey,
+        definitionRef: binding.templateKey, ownerRef: owner?.bindingKey ?? null,
+        locationRef: owner ? null : binding.initialLocationRef, quantity: 1, eventId: "release.initial" } }).state;
   }
   const abilityStates = Object.fromEntries(
     campaign.characterTemplates.flatMap((template) =>
@@ -463,6 +461,9 @@ function createOpenCompatibilityProjection(input: {
     schema: "storyforge.ttrpg-runtime",
     version: 2,
     runFormat: "open",
+    sessionKey: parseOpenKey(input.sessionKey, "open.sessionKey"),
+    authorization: null,
+    epochBudget: frozenTtrpgOpenEpochBudgetV1(campaign),
     scene: null,
     round: 0,
     activeActorKey: null,
@@ -531,10 +532,10 @@ function createOpenCompatibilityProjection(input: {
         actionsPerTurn: mechanicalRulePack.turnStructure.actionsPerTurn,
         reactionsPerRound: mechanicalRulePack.turnStructure.reactionsPerRound,
       }),
-      inventory: createEmptyTtrpgInventoryV2(),
+      inventory,
       itemHistory: [],
       abilityStates,
-      usagePools: {},
+      usagePools: createTtrpgOpenUsagePoolsV1(mechanicalRulePack.actions),
       effectLedger: createEmptyTtrpgEffectLedgerV2(),
       characterProgression: Object.fromEntries(
         playerTemplates.map((template) => {
@@ -603,14 +604,33 @@ export function createInitialTtrpgOpenProductStateV1(input: {
   initialState: ProductRuntimeState;
   content: TtrpgRuntimeContentV2;
   mechanicalRulePack: RulePackV1;
+  sessionKey: string;
 }): ProductRuntimeState {
   const state = structuredClone(input.initialState);
   state.ttrpg = createOpenCompatibilityProjection({
     state,
     content: input.content,
     mechanicalRulePack: input.mechanicalRulePack,
+    sessionKey: input.sessionKey,
   });
   return state;
+}
+
+export function assertInitialTtrpgOpenProductStateV1(input: {
+  state: ProductRuntimeState; content: TtrpgRuntimeContentV2; mechanicalRulePack: RulePackV1;
+}): void {
+  const runtime = parseTtrpgRuntimeStateV2(input.state.ttrpg);
+  if (!runtime || runtime.openRun !== null || runtime.authorization !== null) {
+    throw new Error("[ttrpg] open 初始状态不能携带运行或已完成授权。");
+  }
+  const expected = createInitialTtrpgOpenProductStateV1({
+    initialState: { ...structuredClone(input.state), entities: {}, ttrpg: null },
+    content: input.content, mechanicalRulePack: input.mechanicalRulePack, sessionKey: runtime.sessionKey,
+  });
+  if (stableJson(input.state.ttrpg) !== stableJson(expected.ttrpg)
+    || stableJson(input.state.entities) !== stableJson(expected.entities)) {
+    throw new Error("[ttrpg] open 初始机械状态/库存/身份必须精确来自冻结内容。");
+  }
 }
 
 export function assertInitialTtrpgProductStateV1(input: {

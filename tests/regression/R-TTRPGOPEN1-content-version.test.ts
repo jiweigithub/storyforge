@@ -16,6 +16,28 @@ import type { TtrpgCharacterTemplateV1 } from '../../src/lib/types'
 const rule = openRuleFixture()
 const campaign = openCampaignFixture()
 
+describe('R-TTRPGOPEN1 frozen shared pools', () => {
+  it('rejects missing, unaffordable and conflicting pool definitions without altering V1 parsing', () => {
+    const value = openRuleFixture()
+    value.actions[0].usage = { mode: 'shared-pool', maximum: null, resourceKey: null, cost: 1,
+      sharedPoolKey: 'party.pool', cooldownRounds: null, reset: ['session'] }
+    expect(() => parseRulePackV2(value)).toThrow(/maximum/)
+    expect(() => parseRulePackV1({ ...STORYFORGE_RULE_PACK_V1, actions: value.actions })).not.toThrow()
+    value.actions[0].usage.maximum = 1
+    value.actions[0].usage.cost = 2
+    expect(() => parseRulePackV2(value)).toThrow(/可支付/)
+    value.actions[0].usage.maximum = 3
+    const other = structuredClone(value.actions[0])
+    other.key = 'other.pool.action'; other.usage.maximum = 4
+    value.actions.push(other)
+    expect(() => parseRulePackV2(value)).toThrow(/一致/)
+    other.usage.maximum = 3; other.usage.reset = ['long-rest']
+    expect(() => parseRulePackV2(value)).toThrow(/一致/)
+    other.usage.reset = ['session']
+    expect(() => parseRulePackV2(value)).not.toThrow()
+  })
+})
+
 describe('R-TTRPGOPEN1 shared situation timing references', () => {
   it('keeps the frozen parser and runtime S9 on the same subject/predicate identity', () => {
     const c = openCampaignFixture()

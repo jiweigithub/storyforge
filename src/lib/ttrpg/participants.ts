@@ -170,7 +170,7 @@ export function buildInitialTtrpgParticipantsV2(input: {
         viewerKey: `viewer.${seatKey}`,
         assignmentState: controller === "vacant" ? "vacant" : "assigned",
         humanAssignmentPolicy:
-          controller === "ai" || controller === "hybrid"
+          controller === "ai"
             ? null
             : controller === "vacant"
               ? null
@@ -178,7 +178,7 @@ export function buildInitialTtrpgParticipantsV2(input: {
         activation: controller === "ai" ? "initiative" : "manual",
         substitutionPolicy: "never",
         aiProfile:
-          controller === "ai"
+          controller === "ai" || controller === "hybrid"
             ? {
                 agency: "balanced",
                 riskTolerance: "balanced",

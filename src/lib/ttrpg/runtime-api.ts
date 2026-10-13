@@ -32,8 +32,25 @@ export {
   startTtrpgCampaignSessionV2,
   submitTtrpgActionIntentV2,
   updateTtrpgTabletopV1,
+  completeTtrpgOpenSessionZeroV1,
+  startTtrpgOpenRunV1,
+  startTtrpgOpenEpochV1,
+  closeTtrpgOpenEpochV1,
+  startTtrpgOpenOperationV1,
+  confirmTtrpgOpenOperationV1,
+  selectTtrpgOpenOperationEffectV1,
+  disposeTtrpgOpenIntentV1,
+  resolveTtrpgOpenOperationRuleV1,
+  applyTtrpgOpenOperationEffectV1,
+  completeTtrpgOpenOperationStepV1,
+  completeTtrpgOpenOperationV1,
+  advanceTtrpgWorldTurnV1,
+  ttrpgOpenOperationCommandIdV1,
   type FormalTtrpgCommandEnvelope,
 } from './runtime-commands'
+
+/** Internal open recovery is explicit; player routes remain gated until joint acceptance. */
+export { resumeTtrpgOpenOperationV1 } from './open-operation-coordinator'
 
 export {
   applyProductRuntimeEvent,
