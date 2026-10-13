@@ -42,6 +42,7 @@ import type {
 } from '../lib/types'
 import { EMPTY_PRODUCT_RUNTIME_STATE } from '../lib/types'
 import { advanceChatNarrativeTurnV1, createChatNarrativeSituationV1, readPendingChatNarrativeRunsV1, type ChatPlayerTriggerV1 } from '../lib/character-interaction/narrative-turn'
+import {readResumableInteractionRunsV1} from '../lib/character-interaction/runtime-run-recovery'
 
 export interface CharacterInteractionLibraryItem {
   release: ProductRelease
@@ -150,7 +151,7 @@ async function details(scope: WorkspaceScope, sessionId: number) {
     db.productRuntimeEvents.where('sessionId').equals(sessionId).sortBy('sequence'),
     db.productRuntimeCheckpoints.where('sessionId').equals(sessionId).toArray(),
     readProductRuntimeState(sessionId),
-    db.agentRuns.where('productRuntimeSessionId').equals(sessionId).toArray(),
+    readResumableInteractionRunsV1(scope, sessionId),
   ])
   checkpoints.sort((a, b) => b.createdAt - a.createdAt)
   const resumableRows = runRows.filter(row => !['completed', 'failed', 'cancelled'].includes(row.status))

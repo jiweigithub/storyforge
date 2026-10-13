@@ -55,7 +55,9 @@ function validateCommon(value: Row, boundary: ChatNarrativeBoundaryV1) {
 }
 
 export function parseChatNarrativePermissionsV1(value: unknown): ChatNarrativePermissionsV1 {
-  const permissions = row(value, 'mode,triggers,allowedNewFactKinds,maxNewFactsPerAction,maxActiveThreads,maxActionsPerTrigger,maxActionCharacters,intensity', '运行权限')
+  const extra = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'allowActorSituationExpansion') ? ',allowActorSituationExpansion' : ''
+  const permissions = row(value, 'mode,triggers,allowedNewFactKinds,maxNewFactsPerAction,maxActiveThreads,maxActionsPerTrigger,maxActionCharacters,intensity' + extra, '运行权限')
+  if (extra && typeof permissions.allowActorSituationExpansion !== 'boolean') fail('角色推进授权无效')
   if (!['story', 'companionship'].includes(String(permissions.mode)) || !['everyday', 'tension', 'danger'].includes(String(permissions.intensity))) fail('叙事节奏或事件强度无效')
   members(permissions.triggers, CHAT_NARRATIVE_TRIGGERS_V1, '主动触发', true)
   const kinds = members(permissions.allowedNewFactKinds, ['observation', 'object', 'place', 'temporary-character'], '私域新增事实类型')
@@ -157,7 +159,8 @@ export function createChatNarrativeStateV1(content: FrozenChatNarrativeV1): Chat
 }
 
 export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativeBoundaryV1): ChatNarrativeStateV1 {
-  const parsed = row(value, 'schema,version,worldReleaseHash,persona,permissions,situation,revision,lastEventSequence,triggers', '叙事状态')
+  const extra = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'pendingSituation') ? ',pendingSituation' : ''
+  const parsed = row(value, 'schema,version,worldReleaseHash,persona,permissions,situation,revision,lastEventSequence,triggers' + extra, '叙事状态')
   if (parsed.schema !== 'storyforge.chat-narrative-state') fail('叙事状态类型无效')
   const permissions = validateCommon(parsed, boundary)
   integer(parsed.revision, '叙事 revision', 0, Number.MAX_SAFE_INTEGER)
@@ -188,7 +191,19 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
     if (trigger.status === 'ready' && actions.length >= state.permissions.maxActionsPerTrigger) fail('主动触发已耗尽动作预算')
     if (trigger.status === 'waiting-player' && !actions.length) fail('等待玩家缺少角色行动')
   }
-  const sequences = [state.situation.seed.sourceEventSequence, ...state.situation.facts.map(f => f.sourceEventSequence),
+  if (state.pendingSituation !== undefined) {
+    const pending = row(state.pendingSituation, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt,actorKey,goalKey,sourceEventSequence', '待推进事项')
+    key(pending.actorKey, '推进角色'); key(pending.goalKey, '推进目标'); key(pending.threadKey, '推进剧情线')
+    text(pending.direction, '推进方向', 1200); text(pending.evidenceExcerpt, '推进表达依据', 1200)
+    sequence(pending.sourceEventSequence, false, '推进来源事件')
+    if (state.revision === 0 || state.permissions.allowActorSituationExpansion !== true
+      || pending.sourceEventSequence === 0 || !state.triggers.some(t => t.actionSequences.includes(Number(pending.sourceEventSequence)))) fail('待推进事项缺少授权或已审查行动')
+    if (!state.situation.goals.some(g => g.goalKey === pending.goalKey && g.actorKey === pending.actorKey && g.status === 'active')
+      || !state.situation.threads.some(t => t.threadKey === pending.threadKey && t.participantKeys.includes(String(pending.actorKey))
+        && t.audienceKeys.includes(String(pending.actorKey)) && ['open', 'blocked'].includes(t.status))) fail('待推进事项不属于角色的未完成事项')
+    members(pending.evidenceFactKeys, state.situation.facts.filter(f => f.audienceKeys.includes(String(pending.actorKey))).map(f => f.factKey), '推进事实依据', true)
+  }
+  const sequences = [state.pendingSituation?.sourceEventSequence ?? 0, state.situation.seed.sourceEventSequence, ...state.situation.facts.map(f => f.sourceEventSequence),
     ...state.situation.goals.map(g => g.updatedSequence), ...state.situation.beliefs.map(b => b.updatedSequence), ...state.situation.threads.map(t => t.updatedSequence),
     ...state.triggers.flatMap(t => [t.requestedSequence, t.sourceEventSequence, ...t.actionSequences])]
   if (sequences.some(seq => seq !== 0 && (state.lastEventSequence === 0 || seq > state.lastEventSequence))) fail('叙事状态含尚未发生的事件引用')
@@ -207,6 +222,7 @@ export function chatNarrativeViewV1(state: ChatNarrativeStateV1, viewerKey: stri
     beliefs: situation.beliefs.filter(b => b.actorKey === viewerKey),
     threads: situation.threads.filter(t => t.audienceKeys.includes(viewerKey)),
     possibilities: situation.possibilities.filter(p => p.actorKey === viewerKey),
+    ...(state.pendingSituation?.actorKey === viewerKey ? {pendingSituation: state.pendingSituation} : {}),
     // A scene-setting request can contain coordinator-only directions. Roles
     // receive the constructed view, never the player's raw backstage request.
     trigger: state.triggers.length ? {...state.triggers[state.triggers.length - 1], seed: null} : null,
@@ -215,6 +231,7 @@ export function chatNarrativeViewV1(state: ChatNarrativeStateV1, viewerKey: stri
 
 export function rebaseChatNarrativeStateV1(state: ChatNarrativeStateV1, rebase: (sequence: number) => number): void {
   state.lastEventSequence = rebase(state.lastEventSequence)
+  if (state.pendingSituation) state.pendingSituation.sourceEventSequence = rebase(state.pendingSituation.sourceEventSequence)
   state.situation.seed.sourceEventSequence = rebase(state.situation.seed.sourceEventSequence)
   for (const fact of state.situation.facts) fact.sourceEventSequence = rebase(fact.sourceEventSequence)
   for (const item of [...state.situation.goals, ...state.situation.beliefs, ...state.situation.threads]) item.updatedSequence = rebase(item.updatedSequence)

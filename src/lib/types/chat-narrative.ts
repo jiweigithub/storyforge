@@ -20,6 +20,8 @@ export interface ChatNarrativePermissionsV1 {
   maxActionsPerTrigger: number
   maxActionCharacters: number
   intensity: 'everyday' | 'tension' | 'danger'
+  /** Missing in historical Releases means no autonomous situation expansion. */
+  allowActorSituationExpansion?: boolean
 }
 
 export interface ChatSituationFactV1 {
@@ -103,6 +105,8 @@ export interface ChatNarrativeStateV1 {
   lastEventSequence: number
   /** Durable authorizations; only the latest ready trigger may execute. */
   triggers: ChatNarrativeTriggerStateV1[]
+  /** Reviewed intention, not established background; interrupted by player input. */
+  pendingSituation?: ChatActorSituationRequestV1 & {actorKey: string; goalKey: string; sourceEventSequence: number}
 }
 
 export interface ChatNarrativeTriggerStateV1 {
@@ -112,6 +116,13 @@ export interface ChatNarrativeTriggerStateV1 {
   seed: string | null
   status: 'ready' | 'waiting-player' | 'complete' | 'cancelled'
   actionSequences: number[]
+}
+
+export interface ChatActorSituationRequestV1 {
+  threadKey: string
+  direction: string
+  evidenceFactKeys: string[]
+  evidenceExcerpt: string
 }
 
 /** The model may cite existing evidence events, never assign new event numbers,
@@ -150,6 +161,8 @@ export interface ChatNarrativeActionV1 {
   /** Own hypotheses only. Null withdraws an existing hypothesis; these never
    * become facts or another participant's beliefs. */
   beliefUpdates?: Array<{beliefKey: string; text: string | null; evidenceFactKeys: string[]}>
+  /** A reviewed request to develop an existing own goal, not a new fact. */
+  situationRequest?: ChatActorSituationRequestV1 | null
 }
 
 /** A local background extension, never a replacement of established truth or a

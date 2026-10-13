@@ -672,6 +672,68 @@
               "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation"
             }
           ]
+        },
+        "autonomousSituationPreflights": {
+          "status": "bounded-autonomous-situation-and-restoration-verified-not-quality-acceptance",
+          "attempts": [
+            {
+              "evidence": "codex-progression-player-preflight-v11.json",
+              "rawEvidenceSha256": "0cd67b7373fcc2bbeae9fda04c4dfd3e2118c84782fa52122a6b955c9fe6eae0",
+              "status": "reviewed-role-direction-persisted",
+              "elapsedSeconds": 154.864,
+              "refreshRetained": true,
+              "sourceSnapshotManifestSha256": "0ea738298ea96e0f505ee146fd8af3b12e64cc7651880e6a5a768763847da1ea",
+              "costUsd": null,
+              "outcome": "Three live role actions: the actor independently checked the rear door, recorded the negative observation, moved itself to a public area, then requested local background development tied to its existing goal and thread. Two external consequences and the pending reviewed direction survived refresh. No situation-construction call in this first segment.",
+              "scope": "Engineering fixture with real Codex outputs; not independent narrative quality acceptance",
+              "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation",
+              "newModelRequests": 6,
+              "newModelResponses": 6
+            },
+            {
+              "evidence": "codex-progression-continuation-preflight-v11.json",
+              "rawEvidenceSha256": "98f412877d9dfce2e3233740b231a9e65fa09058339f5af4ccc3cd719c83815d",
+              "status": "imported-history-blocked-player-ui",
+              "elapsedSeconds": 30.738,
+              "refreshRetained": null,
+              "sourceSnapshotManifestSha256": "0ea738298ea96e0f505ee146fd8af3b12e64cc7651880e6a5a768763847da1ea",
+              "costUsd": null,
+              "outcome": "Restoring the unchanged save exposed that completed historical runs invalidated by import were offered as pending recovery, disabling the role selector. Existing state and direction were preserved. Zero new provider calls; no hidden retry.",
+              "scope": "Engineering fixture with real Codex outputs; not independent narrative quality acceptance",
+              "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation",
+              "newModelRequests": 0,
+              "newModelResponses": 0
+            },
+            {
+              "evidence": "codex-progression-continuation-preflight-v12.json",
+              "rawEvidenceSha256": "a9640d64ff0f8d86d409590a7a6f28214cbb7f40961d4da428b5a9e573766678",
+              "status": "live-construction-and-action-completed-observer-timeout-retained",
+              "totalObservationSeconds": 250.688,
+              "newRunElapsedSeconds": 88.287,
+              "newModelRequests": 4,
+              "newModelResponses": 4,
+              "newCompletedRuns": 2,
+              "adoptedSituations": 1,
+              "adoptedActions": 1,
+              "newBackgroundFacts": 2,
+              "newActionConsequences": 1,
+              "sourceSnapshotManifestSha256": "735af776a5f4aded7d9a79bfb57539517c9007f58d0f8680495c9998904f199d",
+              "priorEvidence": "codex-progression-player-preflight-v11.json",
+              "costUsd": null,
+              "outcome": "The saved role direction generated two local background observations. The following role request read these new facts without author-only truth; its reviewed action independently inspected the area, recorded a negative finding, and revised its own next plan. Previous facts and the hidden seal location remained. The observer timed out because it counted imported historical running/staled rows as unfinished; both new runs were durably completed. No repeated generation.",
+              "observerFailure": "Preserved in raw evidence; not a model or product failure and not counted as a fully successful observation script.",
+              "restorationCheck": {
+                "evidence": "codex-progression-v12-restoration-check.json",
+                "rawEvidenceSha256": "2bcb12b21f77a2d39c27ff49753fab873b7bd465eb51f08fa1aceeb06df2bc01",
+                "unchangedFromLiveResult": true,
+                "refreshRetained": true,
+                "continueEnabled": true,
+                "newModelRequests": 0
+              },
+              "scope": "Engineering fixture continued from an unchanged real-model save; not independent narrative quality acceptance",
+              "reviewerIndependence": "same-provider-and-model runtime check, not independent evaluation"
+            }
+          ]
         }
       },
       {

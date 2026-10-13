@@ -36,7 +36,7 @@ function choice(value: unknown, allowed: readonly string[]) {
 
 /** Structural parse also runs on restored candidates; state-dependent checks run again at commit. */
 export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV1 {
-  const optional = ['relationshipUpdates', 'nextPossibilities', 'beliefUpdates', 'goalUpdates'].filter(name => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, name))
+  const optional = ['relationshipUpdates', 'nextPossibilities', 'beliefUpdates', 'goalUpdates', 'situationRequest'].filter(name => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, name))
   const row = object(value, ['kind,text,goalKey,evidenceFactKeys,audienceKeys,waitingForPlayer,newFacts,disclosures,threadUpdates,goalStatus', ...optional].join(','))
   choice(row.kind, ['speak', 'attempt', 'complete', 'pause'])
   text(row.text, 8000); key(row.goalKey); keys(row.evidenceFactKeys); keys(row.audienceKeys, 33)
@@ -75,6 +75,10 @@ export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV
     key(belief.beliefKey); if (belief.text !== null) text(belief.text, 1200)
     keys(belief.evidenceFactKeys, 20)
   }
+  if (optional.includes('situationRequest') && row.situationRequest !== null) {
+    const request = object(row.situationRequest, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt')
+    key(request.threadKey); text(request.direction, 1200); keys(request.evidenceFactKeys, 20); text(request.evidenceExcerpt, 1200)
+  }
   return structuredClone(value) as ChatNarrativeActionV1
 }
 
@@ -92,8 +96,9 @@ function advance(state: ChatNarrativeStateV1, sequence: number) {
 export function interruptChatNarrativeTriggerV1(state: CharacterInteractionRuntimeState, sequence: number): void {
   const story = state.chatNarrative
   const trigger = story?.triggers.slice(-1)[0]
-  if (story && trigger && ['ready', 'waiting-player'].includes(trigger.status)) {
-    trigger.status = 'cancelled'
+  if (story && (story.pendingSituation || trigger && ['ready', 'waiting-player'].includes(trigger.status))) {
+    delete story.pendingSituation
+    if (trigger && ['ready', 'waiting-player'].includes(trigger.status)) trigger.status = 'cancelled'
     advance(story, sequence)
   }
 }
@@ -117,7 +122,7 @@ export function requestChatNarrativeTriggerV1(stateValue: CharacterInteractionRu
   if (['continue', 'return', 'player-seed'].includes(kind) && source !== input.sequence - 1) fail('玩家操作必须基于当前事件头')
   if (['scene-start', 'player-response'].includes(kind) && story.triggers.some(t => t.kind === kind && t.sourceEventSequence === source)) fail('该开场或玩家消息已经触发过演绎')
   if (story.triggers.length >= 5000) fail('当前会话触发记录已达上限，请保存并停止演绎')
-  if (kind === 'player-seed') text(input.seed)
+  if (kind === 'player-seed') {text(input.seed); delete story.pendingSituation}
   else if (input.seed !== null) fail('只有明确的情境请求可以携带种子')
   if (state.remainingDirectorBudget < 1) fail('当前场景行动预算不足')
   const previous = story.triggers.slice(-1)[0]
@@ -139,7 +144,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   const trigger = story.triggers.slice(-1)[0]
   if (!trigger || trigger.requestedSequence !== input.triggerSequence || trigger.status !== 'ready') fail('行动触发已取消、已完成或正在等待玩家')
   // A seed must first pass the separate situation-construction candidate path.
-  if (!isChatSituationPreparedV1(state)) fail('玩家情境请求尚未完成情境构建')
+  if (!isChatSituationPreparedV1(state, actorKey)) fail('玩家情境请求尚未完成情境构建')
   if (trigger.kind === 'player-response') {
     const message = state.messages.find(m => m.eventSequence === trigger.sourceEventSequence)
     if (!message || message.audienceKeys != null && !message.audienceKeys.includes(actorKey)) fail('角色看不到触发的玩家消息')
@@ -209,6 +214,19 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
     target.status = effect.status; target.updatedSequence = input.sequence
     changedGoals.add(effect.goalKey)
   }
+  if (story.pendingSituation && (story.pendingSituation.actorKey === actorKey
+    || !story.situation.goals.some(g => g.goalKey === story.pendingSituation!.goalKey && g.status === 'active')
+    || !story.situation.threads.some(t => t.threadKey === story.pendingSituation!.threadKey && ['open', 'blocked'].includes(t.status)))) delete story.pendingSituation
+  if (action.situationRequest != null) {
+    if (story.permissions.allowActorSituationExpansion !== true || action.waitingForPlayer || action.kind === 'pause' || goal.status !== 'active') fail('当前行动或作品权限不允许角色扩展情境')
+    const request = action.situationRequest
+    evidence(request.evidenceFactKeys); excerpt(request.evidenceExcerpt)
+    const thread = story.situation.threads.find(t => t.threadKey === request.threadKey)
+    if (!thread || !thread.participantKeys.includes(actorKey) || !thread.audienceKeys.includes(actorKey)
+      || !['open', 'blocked'].includes(thread.status)) fail('推进方向缺少角色自己的未完成剧情线')
+    if (story.pendingSituation) fail('已有其他角色的待推进事项，不能覆盖')
+    story.pendingSituation = {...request, actorKey, goalKey: action.goalKey, sourceEventSequence: input.sequence}
+  }
   trigger.actionSequences.push(input.sequence)
   trigger.status = action.waitingForPlayer ? 'waiting-player'
     : action.kind === 'pause' || trigger.actionSequences.length >= story.permissions.maxActionsPerTrigger ? 'complete' : 'ready'
@@ -225,7 +243,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
 /** Preserve the historical unreviewed event format without granting it new writes. */
 export function applyChatNarrativeActionV1(state: CharacterInteractionRuntimeState, input: Parameters<typeof applyActionBase>[1]) {
   const action = parseChatNarrativeActionV1(input.action)
-  if (action.relationshipUpdates !== undefined || action.nextPossibilities !== undefined || action.beliefUpdates !== undefined || action.goalUpdates !== undefined) fail('旧行动事件不能写入关系、打算或附带目标后果')
+  if (action.relationshipUpdates !== undefined || action.nextPossibilities !== undefined || action.beliefUpdates !== undefined || action.goalUpdates !== undefined || action.situationRequest !== undefined) fail('旧行动事件不能写入关系、打算或附带目标后果')
   return applyActionBase(state, input)
 }
 

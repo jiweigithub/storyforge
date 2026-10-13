@@ -3,6 +3,7 @@ import type {CharacterInteractionRuntimeState} from '../types'
 import {CHAT_SITUATION_REVIEW_CHECKS_V1} from '../types/chat-narrative'
 import type {ChatSituationDraftV1, ChatSituationReviewV1} from '../types/chat-narrative'
 import {parseChatNarrativeStateV1} from './narrative-contract'
+import {chatSituationConstructionRequestV1} from './narrative-progression'
 import {chatRelationshipEvidenceV1} from './narrative-relationships'
 
 function fail(message: string): never {throw new Error(`[chat-situation] ${message}`)}
@@ -74,10 +75,12 @@ export function parseChatSituationReviewV1(value: unknown, draft: ChatSituationD
   return structuredClone(value) as ChatSituationReviewV1
 }
 
-export function isChatSituationPreparedV1(state: CharacterInteractionRuntimeState): boolean {
-  const story = state.chatNarrative, trigger = story?.triggers[story.triggers.length - 1]
-  return !!story && !!trigger && (trigger.kind !== 'player-seed'
-    || story.situation.seed.origin === 'player-request' && story.situation.seed.sourceEventSequence === trigger.requestedSequence)
+export function isChatSituationPreparedV1(state: CharacterInteractionRuntimeState, actorKey?: string): boolean {
+  const story = state.chatNarrative, trigger = story?.triggers.slice(-1)[0]
+  if (!story || !trigger) return false
+  if (trigger.kind === 'player-seed') return story.situation.seed.origin === 'player-request'
+    && story.situation.seed.sourceEventSequence === trigger.requestedSequence
+  return chatSituationConstructionRequestV1(state, actorKey) === null
 }
 
 /** Preserve every established fact, goal and unresolved thread. The constructor
@@ -98,9 +101,9 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
   const state = structuredClone(stateValue), story = state.chatNarrative, scene = state.activeScene
   if (!story || !scene || story.situation.sceneKey !== scene.sceneKey) fail('缺少已衔接的当前情境')
   const trigger = story.triggers[story.triggers.length - 1]
-  if (!trigger || trigger.kind !== 'player-seed' || trigger.status !== 'ready' || trigger.requestedSequence !== input.triggerSequence
-    || trigger.actionSequences.length || !trigger.seed) fail('情境构建必须来自尚未执行的明确玩家请求')
-  if (story.situation.seed.origin === 'player-request' && story.situation.seed.sourceEventSequence === trigger.requestedSequence) fail('该请求已经构建情境')
+  if (trigger && ['player-request', 'continued-thread'].includes(story.situation.seed.origin) && story.situation.seed.sourceEventSequence === trigger.requestedSequence) fail('该请求已经构建情境')
+  const request = chatSituationConstructionRequestV1(state)
+  if (!trigger || trigger.status !== 'ready' || trigger.requestedSequence !== input.triggerSequence || !request) fail('情境构建必须来自尚未执行的明确玩家请求或已审查角色方向')
   if (!Number.isSafeInteger(input.sequence) || input.sequence <= 0 || input.sequence <= story.lastEventSequence) fail('情境提交事件无效')
   if (state.remainingDirectorBudget < 2) fail('情境构建与审查预算不足')
   const draft = parseChatSituationDraftV1(input.draft)
@@ -112,7 +115,8 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
     if (!story.permissions.allowedNewFactKinds.includes(item.kind)) fail('新增情境事实类型未经作品授权')
     if (story.situation.facts.some(f => f.factKey === item.factKey || f.text === item.text)) fail('不得重写或重复创建既有事实')
     if (item.audienceKeys.some(viewer => !viewers.includes(viewer))) fail('新增事实引用场外人物')
-    if (!trigger.seed.includes(item.seedExcerpt)) fail('新增情境事实缺少真实请求依据')
+    if (!request.text.includes(item.seedExcerpt)) fail('新增情境事实缺少真实请求依据')
+    if (request.actorKey && (!item.audienceKeys.includes(request.actorKey) || !item.evidenceFactKeys.length)) fail('角色推进只能补充有可知依据的自身局面')
     for (const factKey of item.evidenceFactKeys) {
       const fact = initialFacts.get(factKey)
       if (!fact || item.audienceKeys.some(viewer => !fact.audienceKeys.includes(viewer))) fail('新增事实不能传播不可知的依据')
@@ -120,25 +124,31 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
     story.situation.facts.push({factKey: item.factKey, text: item.text, audienceKeys: item.audienceKeys,
       origin: 'runtime-situation', sourceKnowledgeKey: null, sourceEventSequence: input.sequence})
   }
+  if (request.actorKey && (draft.location !== story.situation.location || draft.timeLabel !== story.situation.timeLabel)) fail('角色推进不能擅自改变玩家所处时间地点')
   if (draft.location !== story.situation.location && (!story.permissions.allowedNewFactKinds.includes('place')
-    || !trigger.seed.includes(draft.location) || !draft.newFacts.some(f => f.kind === 'place' && f.text.includes(draft.location) && viewers.every(v => f.audienceKeys.includes(v))))) fail('地点变化缺少明确请求及授权的公开地点事实')
-  if (draft.timeLabel !== story.situation.timeLabel && (!trigger.seed.includes(draft.timeLabel)
+    || !request.text.includes(draft.location) || !draft.newFacts.some(f => f.kind === 'place' && f.text.includes(draft.location) && viewers.every(v => f.audienceKeys.includes(v))))) fail('地点变化缺少明确请求及授权的公开地点事实')
+  if (draft.timeLabel !== story.situation.timeLabel && (!request.text.includes(draft.timeLabel)
     || !draft.newFacts.some(f => f.kind === 'observation' && f.text.includes(draft.timeLabel) && viewers.every(v => f.audienceKeys.includes(v))))) fail('时间变化缺少明确请求及公开观察')
   for (const goal of draft.newGoals) {
+    if (request.actorKey && (goal.actorKey !== request.actorKey || !goal.evidenceFactKeys.length)) fail('角色推进不能替其他角色设定目标')
     if (!scene.activeParticipantKeys.includes(goal.actorKey)) fail('不能替玩家或场外角色设定目标')
     if (story.situation.goals.some(g => g.goalKey === goal.goalKey || g.actorKey === goal.actorKey && g.desire === goal.desire)) fail('不得重复或覆写旧目标')
     story.situation.goals.push({...goal, status: 'active', updatedSequence: input.sequence})
   }
   for (const thread of draft.newThreads) {
+    if (request.actorKey && (!thread.participantKeys.includes(request.actorKey) || !thread.audienceKeys.includes(request.actorKey) || !thread.evidenceFactKeys.length)) fail('角色推进的新问题须关联自身可知事项')
     if (story.situation.threads.some(t => t.threadKey === thread.threadKey || t.question === thread.question)) fail('不得重复或覆写旧剧情线')
     if (thread.participantKeys.some(actor => !scene.activeParticipantKeys.includes(actor)) || thread.audienceKeys.some(viewer => !viewers.includes(viewer))) fail('新剧情线引用了场外人物')
     story.situation.threads.push({...thread, status: 'open', updatedSequence: input.sequence})
   }
   if (draft.possibilities.some(p => !scene.activeParticipantKeys.includes(p.actorKey))) fail('不能替玩家或场外角色预定行动')
-  story.situation.possibilities = draft.possibilities
+  if (request.actorKey && draft.possibilities.some(p => p.actorKey !== request.actorKey || !p.evidenceFactKeys.length)) fail('角色推进不能替其他角色规划行动')
+  story.situation.possibilities = request.actorKey
+    ? [...story.situation.possibilities.filter(p => p.actorKey !== request.actorKey), ...draft.possibilities] : draft.possibilities
   story.situation.title = draft.title
   story.situation.location = draft.location; story.situation.timeLabel = draft.timeLabel
-  story.situation.seed = {text: trigger.seed, origin: 'player-request', sourceEventSequence: trigger.requestedSequence, sourceThreadKey: null}
+  story.situation.seed = {text: request.text, origin: request.origin, sourceEventSequence: trigger.requestedSequence, sourceThreadKey: request.sourceThreadKey}
+  delete story.pendingSituation
   story.revision++; story.lastEventSequence = input.sequence
   state.chatNarrative = parseChatNarrativeStateV1(story, {participantKeys: state.profiles.map(p => p.participantKey), characterKeys: state.profiles.map(p => p.characterKey), sceneKeys: state.sceneTemplates.map(s => s.sceneKey)})
   scene.title = draft.title; scene.location = draft.location; scene.timeLabel = draft.timeLabel
@@ -157,6 +167,7 @@ export function chatSituationCoordinatorViewV1(state: CharacterInteractionRuntim
     permissions: state.chatNarrative.permissions, situation: state.chatNarrative.situation,
     activeParticipantKeys: state.activeScene.activeParticipantKeys, remainingBudget: state.remainingDirectorBudget,
     trigger: state.chatNarrative.triggers[state.chatNarrative.triggers.length - 1] ?? null,
+    ...(state.chatNarrative.pendingSituation ? {pendingSituation: state.chatNarrative.pendingSituation, constructionRequest: chatSituationConstructionRequestV1(state)} : {}),
     messages: state.messages.filter(m => m.eventSequence > state.activeScene!.startedAtSequence && m.supersededBySequence == null),
   })
 }

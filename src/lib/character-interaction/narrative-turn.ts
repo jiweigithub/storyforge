@@ -1,9 +1,9 @@
-import { db } from '../db/schema'
-import { readInstanceAgentRunV1 } from '../agent/run/event-store'
 import { assertInstanceBinding } from '../product/runtime-instances'
 import type { AIConfig, CharacterInteractionRuntimeState, WorkspaceScope } from '../types'
 import type { ChatNarrativeTriggerV1 } from '../types/chat-narrative'
 import { adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1 } from './harness'
+import {chatSituationConstructionRequestV1} from './narrative-progression'
+import {readResumableInteractionRunsV1} from './runtime-run-recovery'
 import { readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger } from './runtime-api'
 
 export type ChatPlayerTriggerV1 = Exclude<ChatNarrativeTriggerV1, 'player-seed'>
@@ -20,14 +20,13 @@ const objectives: Record<ChatPlayerTriggerV1, string> = {
 export async function readPendingChatNarrativeRunsV1(scope: WorkspaceScope, sessionId: number, state: CharacterInteractionRuntimeState): Promise<number[]> {
   const trigger = state.chatNarrative?.triggers.slice(-1)[0]
   if (!trigger || trigger.status === 'cancelled') return []
-  const rows = await db.agentRuns.where('productRuntimeSessionId').equals(sessionId).toArray()
+  const rows = await readResumableInteractionRunsV1(scope, sessionId)
   const pending: number[] = []
   for (const row of rows) {
     if (['completed', 'failed', 'cancelled'].includes(row.status)) continue
     const contract = JSON.parse(row.contractJson)
     if (contract.scope?.runtime?.baseSequence < trigger.requestedSequence
       || !contract.executionBindings?.some((b: {skillId?: string}) => ['character.chat-narrative-action', 'character.chat-situation-construction'].includes(b.skillId ?? ''))) continue
-    await readInstanceAgentRunV1(scope, row.id!)
     pending.push(row.id!)
   }
   return pending
@@ -77,6 +76,7 @@ export async function advanceChatNarrativeTurnV1(input: {
   // Do not spend a model call or consume a trigger when every role has concluded.
   const actor = actorFor(state, input.kind, input.participantKey)
   if (!actor) throw new Error('角色当前目标已经结束，可以结束场景或稍后设置新情境。')
+  if (state.chatNarrative.pendingSituation?.actorKey === actor && ['continue', 'return'].includes(input.kind) && state.remainingDirectorBudget < 4) throw new Error('当前预算不足以发展角色方向并继续演绎。')
   const requested = await requestChatNarrativeTrigger({sessionId: input.sessionId,
     commandId: `chat.turn:${crypto.randomUUID()}`, baseSequence: version.sequence, baseStateHash: version.stateHash,
     kind: input.kind, sourceEventSequence: source})
@@ -90,10 +90,26 @@ async function performPreparedTurn(input: {
   const initial = (await readProductRuntimeState(input.sessionId)).interaction!
   for (let i = 0; i < initial.chatNarrative!.permissions.maxActionsPerTrigger; i++) {
     if (input.signal?.aborted) return
-    const current = (await readProductRuntimeState(input.sessionId)).interaction!
+    let current = (await readProductRuntimeState(input.sessionId)).interaction!
     const trigger = current.chatNarrative!.triggers.slice(-1)[0]!
     if (trigger.requestedSequence !== input.triggerSequence || trigger.status !== 'ready' || current.remainingDirectorBudget < 2) return
     if (!current.chatNarrative!.situation.goals.some(g => g.actorKey === input.actor && ['active', 'paused'].includes(g.status))) return
+    const story = current.chatNarrative!
+    if (story.pendingSituation?.actorKey === input.actor && story.situation.seed.origin === 'continued-thread'
+      && story.situation.seed.sourceEventSequence === trigger.requestedSequence) return
+    const request = chatSituationConstructionRequestV1(current, input.actor)
+    if (request?.actorKey === input.actor) {
+      if (current.remainingDirectorBudget < 4) throw new Error('当前预算不足以发展角色方向并继续演绎。')
+      const situation = await generateInteractionRuntimeCandidateV1({scope: input.scope, productRuntimeSessionId: input.sessionId,
+        skillId: 'character.chat-situation-construction', participantKey: 'player', narrativeTriggerSequence: input.triggerSequence,
+        objective: '依已经审查的角色方向补足当前局面中的开放条件，承接自己的未完成事项，保留其他角色的打算与玩家选择。',
+        aiConfig: input.aiConfig, signal: input.signal, onRunCreated: input.onRunCreated})
+      if (input.signal?.aborted) return
+      await adoptInteractionRuntimeCandidateV1({scope: input.scope, runId: situation.snapshot.run.id})
+      current = (await readProductRuntimeState(input.sessionId)).interaction!
+      if (input.signal?.aborted || current.chatNarrative!.triggers.slice(-1)[0]?.requestedSequence !== input.triggerSequence
+        || current.chatNarrative!.triggers.slice(-1)[0]?.status !== 'ready') return
+    }
     const generated = await generateInteractionRuntimeCandidateV1({scope: input.scope, productRuntimeSessionId: input.sessionId,
       skillId: 'character.chat-narrative-action', participantKey: input.actor, narrativeTriggerSequence: input.triggerSequence,
       objective: input.objective, aiConfig: input.aiConfig, signal: input.signal, onRunCreated: input.onRunCreated})

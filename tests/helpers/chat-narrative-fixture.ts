@@ -49,11 +49,12 @@ export function chatNarrativeFixture(worldReleaseHash = '1'.repeat(64), characte
 }
 
 /** Formal isolated release/instance, with a scene-start event and no fabricated player input. */
-export async function seedChatNarrativeRuntimeFixture(options: {maxActionsPerTrigger?: number; relationships?: boolean; additionalGuardGoal?: boolean} = {}) {
+export async function seedChatNarrativeRuntimeFixture(options: {maxActionsPerTrigger?: number; relationships?: boolean; additionalGuardGoal?: boolean; actorSituationExpansion?: boolean; directorBudget?: number} = {}) {
   const {scope, release} = await seedCurrentProductWorld('CHAT-02 narrative contract')
   const catalog = await loadCurrentProductWorldSourceCatalogV1({scope, worldReleaseId: release.id!, productType: 'character-interaction'})
   const keys = catalog.characters.slice(0, 2).map(c => c.resourceKey)
   const interaction = chatNarrativeFixture(release.contentHash, keys)
+  if (options.actorSituationExpansion) interaction.chatNarrative!.permissions.allowActorSituationExpansion = true
   if (options.additionalGuardGoal) interaction.chatNarrative!.initialSituation.goals.push({
     ...interaction.chatNarrative!.initialSituation.goals[0], goalKey: 'clarify', desire: '向旅人澄清寻找结果及猜测的依据',
   })
@@ -62,6 +63,7 @@ export async function seedChatNarrativeRuntimeFixture(options: {maxActionsPerTri
     {key: 'respect', label: '尊重', minimum: -100, maximum: 100, initial: 0, largeChangeThreshold: 20},
   ]
   if (options.maxActionsPerTrigger != null) interaction.chatNarrative!.permissions.maxActionsPerTrigger = options.maxActionsPerTrigger
+  if (options.directorBudget != null) interaction.sceneTemplates[0].directorBudget = options.directorBudget
   const {schema: _schema, version: _version, ...narrative} = chatNarrativeShellV1(interaction.chatNarrative!)
   const runtimePackage: ProductRuntimePackageV1 = {
     schema: 'storyforge.product-runtime-package', version: 1, productType: 'character-interaction',
