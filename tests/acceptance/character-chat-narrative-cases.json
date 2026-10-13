@@ -897,5 +897,43 @@
       "riverside-reading-evening"
     ]
   },
-  "evidencePolicy": "保存原始对话、状态前后、版本、模型配置、调用/费用和评分分歧；失败不删出分母。夹具成功与真人体验分开报告。"
+  "evidencePolicy": "保存原始对话、状态前后、版本、模型配置、调用/费用和评分分歧；失败不删出分母。夹具成功与真人体验分开报告。",
+  "readinessFindings": [
+    {
+      "id": "M1-hidden-fact-discovery",
+      "status": "confirmed-engineering-gap-not-quality-acceptance",
+      "affects": [
+        "CHAT-01.08",
+        "CHAT-02.08",
+        "CHAT-02.09",
+        "CHAT-02.14"
+      ],
+      "sourceSnapshotHead": "97f35827450992ecc3c37c6f1a187d64d80e1116",
+      "sourceSnapshotManifestSha256": "6258033ac58ad41df72eadf8e2faa115df04c679e29b9dba789237c45c7ce6fc",
+      "evidence": "chat-discovery-readiness-v27-second.json",
+      "rawEvidenceSha256": "bd618dace1f833263874df6b0169af07c8543f5a4b466429083f493c524aaa0d",
+      "newModelRequests": 0,
+      "setup": "Isolated engineering fixture. A reviewed action opens a box the guard is explicitly allowed to inspect. A frozen truth about its contents has no initial audience; synthetic review is used only to inspect deterministic boundaries.",
+      "verifiedControls": [
+        "Opening action committed without moving or conscripting the player.",
+        "The coordinator retains the hidden fact while role and player views exclude it.",
+        "A control in which the guard already knows the truth can disclose the same fact to the player.",
+        "Rejected candidates leave the original state unchanged.",
+        "World fields marked author-only remain excluded from runtime production sources."
+      ],
+      "observedGap": [
+        "An initially unaware actor cannot use disclosure to gain knowledge after investigation.",
+        "Recreating the same truth as a new fact is rejected as a duplicate.",
+        "Using the hidden fact as evidence for a visible situation observation is rejected as unauthorized propagation."
+      ],
+      "interpretation": "These are correct defenses for existing disclosure and fact-creation contracts. A distinct, causally justified discovery transition is absent from these tested paths. This does not prove that every paraphrased model output is rejected; such paraphrases would not establish a canonical, auditable discovery path.",
+      "requiredNextWork": "Explicit author authorization for discoverable hidden facts and conditions; bounded coordinator discovery based on actual permitted investigation; reviewed atomic audience update preserving fact identity; subsequent role consumption, branch/recovery/lifecycle and premature-discovery negative tests. Do not broaden existing disclosure or silently import author-only material.",
+      "firstProbe": {
+        "evidence": "chat-discovery-readiness-v27.json",
+        "rawEvidenceSha256": "b2c737641183f330bc9a44af9c19ca59ae3913cfb59b4edf79768e11f03096d8",
+        "status": "invalid-setup-no-model-request",
+        "reason": "The first hand-built in-memory scene omitted its action budget. Corrected the diagnostic setup; product code unchanged."
+      }
+    }
+  ]
 }
