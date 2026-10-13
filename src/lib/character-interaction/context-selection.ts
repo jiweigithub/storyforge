@@ -4,7 +4,7 @@ import type {InteractionContextWindow, InteractionVisibilityView} from './runtim
 import {formatInteractionRuntimeContextV1} from './context-format'
 import {estimateTokens} from '../ai/context-budget'
 
-export const CHAT_CONTEXT_READER_VERSION_V1 = 'chat-narrative-runtime-view-v4'
+export const CHAT_CONTEXT_READER_VERSION_V1 = 'chat-narrative-runtime-view-v5'
 export const CHAT_CONTEXT_SOURCE_TOKENS_V1 = 8000
 
 export type ChatContextSelectionReasonV1 = 'current-fact' | 'protected-memory' | 'dialogue' | 'goal' | 'thread' | 'scene' | 'importance'

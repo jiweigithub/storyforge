@@ -1,3 +1,4 @@
+import {parseChatFactDiscoveriesV1, applyChatFactDiscoveriesV1} from './narrative-discovery'
 import {isChatMessageRetrievableV1} from './narrative-retrieval'
 import {canonicalStringify} from '../agent/run/hash'
 import type {CharacterInteractionRuntimeState} from '../types'
@@ -31,7 +32,9 @@ function keys(value: unknown, max = 200): string[] {
 }
 
 export function parseChatSituationDraftV1(value: unknown): ChatSituationDraftV1 {
-  const draft = object(value, 'kind,title,location,timeLabel,newFacts,newGoals,newThreads,possibilities')
+  const hasDiscoveries = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'discoveries')
+  const draft = object(value, 'kind,title,location,timeLabel,newFacts,newGoals,newThreads,possibilities' + (hasDiscoveries ? ',discoveries' : ''))
+  if (hasDiscoveries) parseChatFactDiscoveriesV1(draft.discoveries)
   if (draft.kind !== 'chat-situation') fail('情境候选类型无效')
   text(draft.title, 1000); text(draft.location, 1000); text(draft.timeLabel, 1000)
   for (const value of list(draft.newFacts, 5)) {
@@ -109,7 +112,11 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
   if (state.remainingDirectorBudget < 2) fail('情境构建与审查预算不足')
   const draft = parseChatSituationDraftV1(input.draft)
   if (draft.newFacts.length > story.permissions.maxNewFactsPerAction) fail('新增情境事实超出授权数量')
-  if (!draft.newFacts.length && !draft.newGoals.length && !draft.newThreads.length && !draft.possibilities.length) fail('情境候选没有可执行的新方向')
+  if (!draft.newFacts.length && !draft.newGoals.length && !draft.newThreads.length && !draft.possibilities.length && !draft.discoveries?.length) fail('情境候选没有可执行的新方向')
+  // Discoveries preserve canonical fact identity. New conditions cannot be
+  // invented here; author-selected rules and the exact investigation are checked.
+  if (draft.discoveries?.length && (request.actorKey == null || draft.location !== story.situation.location || draft.timeLabel !== story.situation.timeLabel)) fail('发现必须绑定角色实际调查且保持原时地')
+  applyChatFactDiscoveriesV1(state, draft.discoveries ?? [], input.sequence)
   const viewers = [state.playerKey, ...scene.activeParticipantKeys]
   const initialFacts = new Map(story.situation.facts.map(fact => [fact.factKey, fact]))
   for (const item of draft.newFacts) {
@@ -163,6 +170,7 @@ export function chatSituationCoordinatorViewV1(state: CharacterInteractionRuntim
   if (!state.chatNarrative || !state.activeScene) fail('当前实例没有叙事情境')
   return structuredClone({
     profiles: state.profiles, knowledge: state.knowledge, persona: state.chatNarrative.persona,
+    ...(state.chatNarrative.discoveryHistory ? {discoveryHistory: state.chatNarrative.discoveryHistory} : {}),
     relationships: state.relationships,
     relationshipEvidence: state.profiles.flatMap(p => chatRelationshipEvidenceV1(state, p.participantKey)),
     permissions: state.chatNarrative.permissions, situation: state.chatNarrative.situation,

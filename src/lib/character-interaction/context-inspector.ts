@@ -67,7 +67,7 @@ export async function readChatContextInspectionV1(scope: WorkspaceScope, session
   const legacy = source.readerVersion === 'chat-narrative-runtime-view-v3'
   const view = buildInteractionContextWindow(state, packet.participantKey, {maxCharacters: 24_000, maxRecentMessages: 32,
     retrievalVersion: legacy ? 'legacy' : 'chat-relevance-v1'})
-  if (!legacy && source.readerVersion !== CHAT_CONTEXT_READER_VERSION_V1 || formatInteractionRuntimeContextV1(profile, view) !== packet.text) {
+  if (!legacy && source.readerVersion !== 'chat-narrative-runtime-view-v4' && source.readerVersion !== CHAT_CONTEXT_READER_VERSION_V1 || formatInteractionRuntimeContextV1(profile, view) !== packet.text) {
     return {available: false as const, reason: '这次输入经过裁剪或使用了不同的读取版本，无法完整还原可见条目；不会冒充完整上下文。'}
   }
   if (!legacy && (!packet.selection || await hashCanonicalValue(packet.selection) !== await hashCanonicalValue(view.selection))) fail()

@@ -48,8 +48,18 @@ export function chatNarrativeFixture(worldReleaseHash = '1'.repeat(64), characte
   }
 }
 
+export function enableChatFactDiscoveryFixture(content: FrozenInteractionRuntimeV2): void {
+  const story = content.chatNarrative!
+  story.permissions.allowActorSituationExpansion = true
+  story.permissions.maxDiscoveriesPerSituation = 2
+  story.initialSituation.facts.push({factKey: 'box', text: '柜台下有一只获准让守卫检查的木箱。', audienceKeys: ['player', 'guard', 'artisan'], origin: 'author-private', sourceKnowledgeKey: null, sourceEventSequence: 0})
+  const secret = story.initialSituation.facts.find(f => f.factKey === 'secret')!
+  secret.text = '铜印在柜台下的木箱里。'
+  secret.discovery = {sceneKey: 'inn', actorKeys: ['guard'], prerequisiteFactKeys: ['lost', 'box'], condition: '守卫实际打开并查看获准检查的木箱内部；打算检查或只打开而未查看不足以发现。'}
+}
+
 /** Formal isolated release/instance, with a scene-start event and no fabricated player input. */
-export async function seedChatNarrativeRuntimeFixture(options: {maxActionsPerTrigger?: number; relationships?: boolean; additionalGuardGoal?: boolean; actorSituationExpansion?: boolean; directorBudget?: number; contextKnowledge?: Array<{key: string; content: string; audienceKeys: string[]}>} = {}) {
+export async function seedChatNarrativeRuntimeFixture(options: {factDiscovery?: boolean; maxActionsPerTrigger?: number; relationships?: boolean; additionalGuardGoal?: boolean; actorSituationExpansion?: boolean; directorBudget?: number; contextKnowledge?: Array<{key: string; content: string; audienceKeys: string[]}>} = {}) {
   const {scope, release} = await seedCurrentProductWorld('CHAT-02 narrative contract')
   const catalog = await loadCurrentProductWorldSourceCatalogV1({scope, worldReleaseId: release.id!, productType: 'character-interaction'})
   const keys = catalog.characters.slice(0, 2).map(c => c.resourceKey)
@@ -57,6 +67,7 @@ export async function seedChatNarrativeRuntimeFixture(options: {maxActionsPerTri
   for (const [index, item] of (options.contextKnowledge ?? []).entries()) interaction.chatSource!.knowledge.push({
     ...item, source: {...interaction.chatSource!.knowledge[0].source, pointer: `/context-fixture/${index}`},
   })
+  if (options.factDiscovery) enableChatFactDiscoveryFixture(interaction)
   if (options.actorSituationExpansion) interaction.chatNarrative!.permissions.allowActorSituationExpansion = true
   if (options.additionalGuardGoal) interaction.chatNarrative!.initialSituation.goals.push({
     ...interaction.chatNarrative!.initialSituation.goals[0], goalKey: 'clarify', desire: '向旅人澄清寻找结果及猜测的依据',

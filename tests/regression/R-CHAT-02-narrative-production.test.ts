@@ -109,8 +109,8 @@ it('plans a durable author gate and prevents the situation model from rereading 
   expect(() => parseProductProductionCommandV1({...command, resolution: {...command.resolution, chatSituation: {...chatSituation, authorCommandId: 'forged'}}})).toThrow('字段')
 })
 
-it.each([false, true])('runs the formal scheduler through selection, release and transfer without regenerating candidates (mapped player=%s)', async (mappedPlayer) => {
-  const f = await seedChatNarrativeProductionFixture({mappedPlayer})
+it.each([{mappedPlayer: false, factDiscovery: false}, {mappedPlayer: true, factDiscovery: false}, {mappedPlayer: false, factDiscovery: true}])('runs the formal scheduler through selection, release and transfer without regenerating candidates (mapped=$mappedPlayer, discovery=$factDiscovery)', async ({mappedPlayer, factDiscovery}) => {
+  const f = await seedChatNarrativeProductionFixture({mappedPlayer, factDiscovery})
   const created = await executeProductProductionCommand({scope: f.scope, command: {
     type: 'create-intent', commandId: 'chat.intent', productionKey: 'chat.situation-production', productType: 'character-interaction',
     worldReleaseId: f.confirmed.worldReleaseId!, userText: '制作可以自由演绎的角色聊天',
@@ -228,6 +228,11 @@ it.each([false, true])('runs the formal scheduler through selection, release and
     productReleaseId: published.receipt.productReleaseId, title: '从正式开场继续'})
   const state = await readProductRuntimeState(session.id!)
   expect(state.interaction!.chatNarrative!.situation.title).toBe('旧账本')
+  if (factDiscovery) {
+    expect(state.interaction!.chatNarrative!.permissions.maxDiscoveriesPerSituation).toBe(2)
+    expect(state.interaction!.chatNarrative!.situation.facts.find(f => f.factKey === 'hidden-note')?.discovery).toMatchObject({sceneKey: 'scene-2', prerequisiteFactKeys: ['parcel']})
+    expect(JSON.stringify(interactionVisibilityView(state.interaction!, 'player'))).not.toContain('未署名的清单')
+  }
   expect(state.interaction!.chatNarrative!.persona.name).toBe(f.settings.narrative.personaName)
   if (mappedPlayer) {
     expect(state.interaction!.chatNarrative!.persona.origin).toBe('world-character')

@@ -7,7 +7,7 @@ import { prepareChatNarrativeCompilerSourceV1 } from '../../src/lib/product-prod
 import type { ChatNarrativeProductionSourceV1, ChatSituationCandidatesV1 } from '../../src/lib/character-interaction/narrative-production'
 import {chatProjectionResourcesV1} from '../../src/lib/character-interaction/source-projection'
 
-export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?: boolean} = {}) {
+export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?: boolean; factDiscovery?: boolean} = {}) {
   const world = await seedCurrentProductWorld('CHAT situation production')
   const {scope} = await createChatDraftV3('修钟铺的一天')
   const linked = await selectChatWorldV1(scope, 0, world.release.id!)
@@ -17,7 +17,7 @@ export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?
   if (base.version !== 3) throw new Error('fixture version')
   const playerCharacterKey = index.selectionOptions.characters.find(c => c.label === '守潮人')!.resourceKey
   const draft = await saveChatDraftV1(scope, linked.revision, {...base,
-    ...(options.mappedPlayer ? {narrative: {...base.narrative, playerCharacterKey, personaName: '守潮人'}} : {}),
+    ...(options.mappedPlayer || options.factDiscovery ? {narrative: {...base.narrative, ...(options.mappedPlayer ? {playerCharacterKey, personaName: '守潮人'} : {}), ...(options.factDiscovery ? {permissions: {...base.narrative.permissions, allowActorSituationExpansion: true, maxDiscoveriesPerSituation: 2}} : {})}} : {}),
     playerRole: options.mappedPlayer ? '来到修钟铺的守潮人，没有答应帮忙修理。' : '来店里借书的旅人沈禾，没有答应帮忙修理。', openingSituation: '雨天，修钟铺的一台旧钟停了。',
     characters: [{sourceKey, voiceRules: '', privateKnowledge: '', initialTrust: 0}]})
   const projection = await loadChatSourceProjectionV1(scope, draft.revision)
@@ -56,7 +56,11 @@ export function chatSituationCandidatesFixture(source: ChatNarrativeProductionSo
   return {schema: 'storyforge.chat-situation-candidates', version: 1, options: ['缺失零件', '旧账本', '停摆的纪念钟'].map((title, i) => ({
     optionKey: `option-${i + 1}`, title, pitch: `从${title}展开，可以先喝茶也可以一起查看。`,
     situation: {situationKey: `situation-${i + 1}`, sceneKey: `scene-${i + 1}`, title, location: '修钟铺', timeLabel: '雨天下午',
-      facts: [{factKey: 'clock', text: `${title}放在工作台上。`, audienceKeys, origin: 'author-private', sourceKnowledgeKey: null, sourceEventSequence: 0}],
+      facts: [{factKey: 'clock', text: `${title}放在工作台上。`, audienceKeys, origin: 'author-private', sourceKnowledgeKey: null, sourceEventSequence: 0}, ...(source.settings.narrative.permissions.maxDiscoveriesPerSituation ? [
+        {factKey: 'parcel', text: '工作台上的蓝色布包获准由店主自行打开查看。', audienceKeys, origin: 'author-private' as const, sourceKnowledgeKey: null, sourceEventSequence: 0},
+        {factKey: 'hidden-note', text: '蓝色布包里存着一张未署名的清单。', audienceKeys: [], origin: 'author-private' as const, sourceKnowledgeKey: null, sourceEventSequence: 0,
+          discovery: {sceneKey: `scene-${i + 1}`, actorKeys: [actor], condition: '店主实际打开并查看获准检查的蓝色布包内部；这不证明谁写了清单。', prerequisiteFactKeys: ['parcel']}},
+      ] : [])],
       goals: [{goalKey: 'repair', actorKey: actor, desire: `了解${title}`, concern: '不想打扰旅人', boundary: '不强求帮忙', evidenceFactKeys: ['clock'], status: 'active', updatedSequence: 0}],
       beliefs: [],
       threads: [{threadKey: 'repair-clock', title, question: `${title}应如何处理？`, audienceKeys, participantKeys: [actor], evidenceFactKeys: ['clock'], closureSignals: ['解决问题或决定暂缓'], status: 'open', updatedSequence: 0}],

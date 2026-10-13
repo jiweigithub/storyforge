@@ -23,6 +23,8 @@ export interface ChatNarrativePermissionsV1 {
   intensity: 'everyday' | 'tension' | 'danger'
   /** Missing in historical Releases means no autonomous situation expansion. */
   allowActorSituationExpansion?: boolean
+  /** Explicit opt-in; absent historical Releases cannot unlock hidden facts. */
+  maxDiscoveriesPerSituation?: number
 }
 
 export interface ChatSituationFactV1 {
@@ -33,6 +35,30 @@ export interface ChatSituationFactV1 {
   origin: 'reviewed-world' | 'author-private' | 'runtime-consequence' | 'runtime-situation'
   sourceKnowledgeKey: string | null
   sourceEventSequence: number
+  /** Author-selected discovery conditions, never part of a role's input. */
+  discovery?: ChatFactDiscoveryRuleV1
+}
+
+export interface ChatFactDiscoveryRuleV1 {
+  sceneKey: string
+  actorKeys: string[]
+  condition: string
+  prerequisiteFactKeys: string[]
+}
+
+export interface ChatFactDiscoveryV1 {
+  factKey: string
+  actorKey: string
+  actionSequence: number
+  evidenceFactKeys: string[]
+  evidenceExcerpt: string
+  result: 'discovered' | 'not-discovered' | 'inconclusive'
+  reason: string
+}
+
+export interface ChatFactDiscoveryRecordV1 extends ChatFactDiscoveryV1 {
+  /** Assigned by the committing event, never by the model. */
+  discoverySequence: number
 }
 
 export interface ChatActorGoalV1 {
@@ -112,6 +138,8 @@ export interface ChatNarrativeStateV1 {
   pendingEdit?: ChatMessageEditDraftV1
   /** User-selected dialogue omissions, not erased facts or revoked knowledge. */
   excludedMessageIds?: string[]
+  /** Coordinator evidence; role readers receive only their safe outcome summary. */
+  discoveryHistory?: ChatFactDiscoveryRecordV1[]
 }
 
 export interface ChatMessageEditDraftV1 {
@@ -225,6 +253,8 @@ export interface ChatSituationDraftV1 {
   newGoals: Array<Omit<ChatActorGoalV1, 'status' | 'updatedSequence'>>
   newThreads: Array<Omit<ChatNarrativeThreadV1, 'status' | 'updatedSequence'>>
   possibilities: ChatSituationV1['possibilities']
+  /** Optional to preserve canonical historical candidates and reviews. */
+  discoveries?: ChatFactDiscoveryV1[]
 }
 
 export const CHAT_SITUATION_REVIEW_CHECKS_V1 = ['continuity', 'permissions', 'player-agency', 'visibility', 'meaningful-direction'] as const
