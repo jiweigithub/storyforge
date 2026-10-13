@@ -99,6 +99,14 @@ export default function SourceReview(props: {
   const discoveryEnabled = props.settings.version === 3 && !!props.settings.narrative.permissions.maxDiscoveriesPerSituation
   const decisionsByKey = new Map(decisions.map(row => [row.fragmentKey, row]))
   const audiences = [{key: 'player', name: '玩家'}, ...(projection?.characters.map(c => ({key: c.resourceKey, name: c.label})) ?? [])]
+  const suggestionActors = (projection?.characters ?? []).map(character => {
+    let knownFragmentKeys: string[] | null = null
+    if (projection && props.settings.version !== 1 && props.settings.sourceReview) {
+      try {knownFragmentKeys = readPreparedChatSourceProjectionViewV1({draft: projection, review: props.settings.sourceReview, viewerKey: character.resourceKey}).map(fragment => fragment.fragmentKey)}
+      catch { /* Stale or incomplete decisions cannot authorize actor-scoped reading. */ }
+    }
+    return {key: character.resourceKey, label: character.label, knownFragmentKeys}
+  })
   let preview: ReturnType<typeof readPreparedChatSourceProjectionViewV1> = [], previewIssue = ''
   if (projection) try {preview = readPreparedChatSourceProjectionViewV1({draft: projection, review: {projectionHash: projection.projectionHash, classifications: decisions}, viewerKey: viewer})}
   catch (reason) {previewIssue = (reason instanceof Error ? reason.message : String(reason)).replace(/^\[chat-source-projection\] /, '')}
@@ -116,7 +124,7 @@ export default function SourceReview(props: {
     <button type="button" className="lf-action" disabled={disabled} onClick={() => void load()}>{busy ? '正在处理…' : '读取并检查完整资料'}</button>
     {projection && <>
       {props.settings.version !== 1 && <SourceSuggestions scope={props.scope} revision={props.draft.revision} projectionHash={projection.projectionHash}
-        fragmentKeys={suggestionKeys} disabled={disabled} labels={new Map(chatProjectionResourcesV1(projection).flatMap(resource => resource.fragments.map(fragment =>
+        fragmentKeys={suggestionKeys} disabled={disabled} actors={suggestionActors} labels={new Map(chatProjectionResourcesV1(projection).flatMap(resource => resource.fragments.map(fragment =>
           [fragment.fragmentKey, `${resource.label} · ${passageLabel(fragment, resource.fragments, 'resourceKind' in resource)}`] as const)))}/>}
       <div className="space-y-3">{chatProjectionResourcesV1(projection).map(character => <details key={character.resourceKey} open>
         <summary>{character.label}{projection.playerCharacter?.resourceKey === character.resourceKey && <span className="ml-2 text-xs text-text-muted">玩家扮演</span>}{'resourceKind' in character && <span className="ml-2 text-xs text-text-muted">{CHAT_BACKGROUND_LABELS[String(character.resourceKind)] ?? '世界背景'}</span>}</summary>

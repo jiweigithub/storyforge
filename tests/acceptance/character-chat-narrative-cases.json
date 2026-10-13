@@ -1278,6 +1278,43 @@
               "refreshEqual": true
             }
           }
+        },
+        "sourceSuggestionsPreflight": {
+          "verifiedAt": "2026-10-14",
+          "sourceHead": "71eefcabc6988225fa37905964e389b13d5a0e81",
+          "promptVersion": "chat-source-review-v1",
+          "acceptedModelCalls": 1,
+          "selectedPassages": 4,
+          "durationSeconds": 29.136,
+          "inputTokens": 6348,
+          "outputTokens": 1106,
+          "totalTokens": 7454,
+          "costUsd": null,
+          "scope": "Four explicitly authored engineering passages in the normal source-review UI; author-review mode only. Not actor-scoped V38, formal narrative episodes, independent quality grading or human acceptance.",
+          "developmentReview": [
+            "Distinguished past events, mistaken belief, an unknown truth and a possible future reunion.",
+            "Preserved the stated motivation and conditional language habits without inventing an accident or a completed investigation.",
+            "Did not turn a quoted manuscript instruction into authorization or expand the mapped player background into goals."
+          ],
+          "refreshRetained": true,
+          "refreshAdditionalCalls": 0,
+          "authorDraftUnchanged": true,
+          "worldsUnchanged": true,
+          "evidence": "codex-source-suggestions-v37-selected.json",
+          "rawEvidenceSha256": "0f666c8cb81e226669e0d0b19de793e16a98166ed671ddb158808c3b2b0052ad",
+          "restoration": {
+            "evidence": "codex-source-suggestions-restoration-v37.json",
+            "rawEvidenceSha256": "a21287c1d0d1e35b588456f39bda5ebd71c28fffd3002767a8efefdad67114eb",
+            "newModelCalls": 0,
+            "reportAndSourceContextEqual": true,
+            "importedReceiptReverified": true
+          },
+          "preDispatchProbe": {
+            "status": "selection-script-wait-failed-before-dispatch",
+            "modelCalls": 0,
+            "evidence": "codex-source-suggestions-v37.json",
+            "rawEvidenceSha256": "4b6299c8e535858713189ed1b6be676896379f6e035df4b9f0079bb061aa65a0"
+          }
         }
       },
       {
