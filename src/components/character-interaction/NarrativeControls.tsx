@@ -6,6 +6,8 @@ export default function NarrativeControls(props: {
   interaction: CharacterInteractionRuntimeState
   participantKey: string
   onParticipantChange: (key: string) => void
+  actionLimit: number
+  onActionLimitChange: (limit: number) => void
   disabled: boolean
   actionDisabled?: boolean
   onAdvance: (kind: ChatPlayerTriggerV1) => void
@@ -30,6 +32,7 @@ export default function NarrativeControls(props: {
   const resumeActor = props.turnResume?.actorKey || participantKey
   const needsSituation = trigger?.kind === 'player-seed' && story.situation.seed.sourceEventSequence !== trigger.requestedSequence
   return <section data-testid="chat-narrative-controls" className="space-y-3 rounded border border-border bg-bg-surface p-4">
+    <label className="block text-xs">演绎节奏<select aria-label="演绎节奏" value={props.actionLimit} disabled={props.disabled} onChange={event => props.onActionLimitChange(Number(event.target.value))} className="ml-2 rounded border border-border bg-bg-base p-2">{Array.from({length: story.permissions.maxActionsPerTrigger}, (_, index) => index + 1).map(limit => <option key={limit} value={limit}>{limit === 1 ? '一步一停' : `最多连续 ${limit} 步`}</option>)}</select><span className="mt-1 block text-text-muted">只影响下一轮开场、回应或继续。连续演绎遇到需要你决定、角色暂停或额度上限就停；你可以取消或发消息打断。补齐未完成本轮仍沿用原角色和原额度。</span></label>
     <div><h2 className="text-sm font-semibold">{story.situation.title}</h2><p className="mt-1 text-xs text-text-muted">你扮演 {story.persona.name} · {story.situation.location} · {story.situation.timeLabel}</p></div>
     <details className="text-xs"><summary className="cursor-pointer text-text-muted">当前已知的局面</summary><ul className="mt-2 list-disc space-y-1 pl-4">{story.situation.facts.filter(f => f.audienceKeys.includes(interaction.playerKey)).map(f => <li key={f.factKey}>{f.text}</li>)}</ul></details>
     {active.length > 1 && <label className="block text-xs">本轮行动角色<select aria-label="本轮行动角色" value={participantKey} disabled={props.disabled} onChange={event => props.onParticipantChange(event.target.value)} className="ml-2 max-w-full rounded border border-border bg-bg-base p-2"><option value="">请选择</option>{active.map(p => <option key={p.participantKey} value={p.participantKey}>{p.name}</option>)}</select><span className="mt-1 block text-text-muted">当前由你选择一名角色行动；自动多人调度仍在开发。</span></label>}

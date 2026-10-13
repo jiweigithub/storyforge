@@ -2,7 +2,7 @@ import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import * as harness from '../../src/lib/character-interaction/harness'
 import {previewChatNarrativeActionV1} from '../../src/lib/character-interaction/narrative-actions'
-import {advanceChatNarrativeTurnV1, readChatNarrativeTurnResumeV1, resumeChatNarrativeTurnV1} from '../../src/lib/character-interaction/narrative-turn'
+import {advanceChatNarrativeTurnV1, createChatNarrativeSituationV1, readChatNarrativeTurnResumeV1, resumeChatNarrativeTurnV1} from '../../src/lib/character-interaction/narrative-turn'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
@@ -51,6 +51,18 @@ it('binds the chosen role before the first call and rejects role changes on gene
   await expect(generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'artisan', skillId: 'character.chat-narrative-action', objective: '错误角色',
     runAI: async () => {throw new Error('must not call')}})).rejects.toThrow('明确选择')
   await expect(resumeChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, expectedSequence: (await readProductRuntimeStateVersion(f.sessionId)).sequence, participantKey: 'artisan', aiConfig: {} as never})).rejects.toThrow('沿用原行动角色')
+  expect(await db.agentRuns.count()).toBe(0)
+})
+
+it('persists direction before constructing a player-seeded situation and retains it when construction has not started', async () => {
+  const f = await seedChatNarrativeRuntimeFixture({maxActionsPerTrigger: 3})
+  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockRejectedValue(new Error('stop before construction'))
+  await expect(createChatNarrativeSituationV1({scope: f.scope, sessionId: f.sessionId, expectedSequence: f.sceneSequence, seed: '门外出现了陌生的敲门声。',
+    participantKey: 'guard', actionLimit: 2, aiConfig: {} as never})).rejects.toThrow('stop before construction')
+  const state = (await readProductRuntimeState(f.sessionId)).interaction!
+  expect(state.chatNarrative!.triggers[0]).toMatchObject({kind: 'player-seed', direction: {actorKey: 'guard', actionLimit: 2}, status: 'ready'})
+  expect(await readChatNarrativeTurnResumeV1(f.scope, f.sessionId, state)).toMatchObject({actorKey: 'guard', remainingActions: 2, blockedReason: null})
+  expect(state.messages).toHaveLength(0)
   expect(await db.agentRuns.count()).toBe(0)
 })
 

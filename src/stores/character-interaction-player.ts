@@ -83,10 +83,10 @@ interface CharacterInteractionPlayerState {
   startScene(sceneKey: string): Promise<void>
   sendPlayerMessage(text: string, audienceKeys?: string[] | null): Promise<number>
   applyFixedAction(ruleKey: string): Promise<void>
-  generateReplies(input: { aiConfig: AIConfig; replyToSequence: number; preferredParticipantKey?: string }): Promise<void>
-  advanceNarrative(input: { aiConfig: AIConfig; kind: ChatPlayerTriggerV1; compare?: boolean; participantKey?: string }): Promise<void>
+  generateReplies(input: { aiConfig: AIConfig; replyToSequence: number; preferredParticipantKey?: string; actionLimit?: number }): Promise<void>
+  advanceNarrative(input: { aiConfig: AIConfig; kind: ChatPlayerTriggerV1; compare?: boolean; participantKey?: string; actionLimit?: number }): Promise<void>
   resumeNarrativeTurn(input: {aiConfig: AIConfig; situationAiConfig?: AIConfig; participantKey?: string}): Promise<void>
-  createSituation(input: {aiConfig: AIConfig; actionAiConfig?: AIConfig; seed: string; participantKey?: string}): Promise<void>
+  createSituation(input: {aiConfig: AIConfig; actionAiConfig?: AIConfig; seed: string; participantKey?: string; actionLimit?: number}): Promise<void>
   resumeNarrativeReview(runId: number, aiConfig: AIConfig): Promise<void>
   selectNarrativeOption(runId: number, optionKey: ChatNarrativeOptionKeyV1): Promise<void>
   applyMessageRetrieval(plan: ChatMessageRetrievalPlanV1): Promise<void>
@@ -256,7 +256,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
     await assertInteractionSession(get().scope!, id)
     return { id, ...await readProductRuntimeStateVersion(id) }
   }
-  const performNarrative = async (input: {aiConfig: AIConfig; kind: ChatPlayerTriggerV1; compare?: boolean; participantKey?: string; replyToSequence?: number}) => {
+  const performNarrative = async (input: {aiConfig: AIConfig; kind: ChatPlayerTriggerV1; compare?: boolean; participantKey?: string; actionLimit?: number; replyToSequence?: number}) => {
     const scope = get().scope, sessionId = get().selectedSessionId
     if (!scope || sessionId == null) throw new Error('请先选择角色聊天存档。')
     const controller = new AbortController()
@@ -410,7 +410,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
 
     generateReplies: async input => withBusy(async () => {
       if (get().runtimeState.interaction?.chatNarrative) {
-        await performNarrative({aiConfig: input.aiConfig, kind: 'player-response', replyToSequence: input.replyToSequence, participantKey: input.preferredParticipantKey})
+        await performNarrative({aiConfig: input.aiConfig, kind: 'player-response', replyToSequence: input.replyToSequence, participantKey: input.preferredParticipantKey, actionLimit: input.actionLimit})
         return
       }
       const scope = get().scope
