@@ -2000,6 +2000,17 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     },
   },
   {
+    key: 'chat.source-review', label: '角色聊天作者选中的原文资料', scope: 'project', layer: 'L0', ownerFrom: 'work',
+    budgetTokens: 20_000, protectedFromTrim: true, atomic: true,
+    enabled: input => input.chatSourceReviewRequest !== undefined,
+    read: async input => {
+      if (!input.chatSourceReviewRequest) throw new Error('请明确选择需要整理的原文片段')
+      const request = structuredClone(input.chatSourceReviewRequest)
+      const {readChatSourceReviewContextV1} = await import('../character-interaction/source-review-context')
+      return JSON.stringify(await readChatSourceReviewContextV1(await resolveScope(input), request))
+    },
+  },
+  {
     key: 'product-production.brief',
     label: '已授权上层产品生产 Brief',
     scope: 'project',

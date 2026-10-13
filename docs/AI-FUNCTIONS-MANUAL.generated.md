@@ -80,7 +80,7 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 135 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 136 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
@@ -97,6 +97,7 @@
 | `ai-town.authoring` | AI 小镇 作者方案与会谈 | project | L0 | 16000 |
 | `avg.authoring` | AVG 作者方案与会谈 | project | L0 | 16000 |
 | `chat.authoring` | 角色聊天作者方案与会谈 | project | L0 | 16000 |
+| `chat.source-review` | 角色聊天作者选中的原文资料 | project | L0 | 20000 |
 | `product-production.brief` | 已授权上层产品生产 Brief | project | L0 | 8000 |
 | `product-production.artifact-inputs` | 上层产品生产任务依赖 | project | L1 | 24000 |
 | `product-production.adventure-scene-script-inputs` | 文字冒险单幕分场写作投影 | project | L0 | 15100 |
@@ -506,4 +507,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `1dbe1922`
+生成时间基准:commit `4a0ba401`
