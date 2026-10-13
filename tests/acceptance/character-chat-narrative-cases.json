@@ -960,6 +960,98 @@
             "refreshRetained": true,
             "outcome": "Imported the unchanged live-model backup into a fresh isolated browser. Canonical fact identity, discovery evidence, disclosure, recovered object and goal closure match exactly. Historical three runs are imported evidence, not fresh generation."
           }
+        },
+        "worldFactDiscoveryPreflight": {
+          "scope": "Explicit author-approved frozen-world discovery. Original source, condition and initial holders are frozen; source text is never rewritten. Engineering runtime evidence, not formal M1.",
+          "segments": [
+            {
+              "evidence": "codex-world-discovery-preflight-v30.json",
+              "sourceSnapshotHead": "3fa3d418b25aafd74540939e98a2564327ff3d02",
+              "sourceSnapshotManifestSha256": "74b7a4031d877130daeeffd98dfd56753f1f2a622722041ffb5e8ebaacf793f8",
+              "rawEvidenceSha256": "2b14a90f00ce66f2d2f5a34f5236c9776955e5d599b6ced7826ffa181a45031a",
+              "backupSha256": "4e2a9173cdc60aa681f5016dfa908f9e2c46e58ed2869a4ea49cbdee20823c05",
+              "status": "reviewed-world-investigation-canonical-discovery-and-disclosure",
+              "newModelRequests": 6,
+              "newModelResponses": 6,
+              "newCompletedRuns": 3,
+              "adoptedActions": 2,
+              "adoptedDiscoveries": 1,
+              "elapsedSeconds": 87.563,
+              "costUsd": null,
+              "usage": {
+                "inputTokens": 49407,
+                "outputTokens": 2060,
+                "reasoningOutputTokens": 487,
+                "totalTokens": 51467
+              },
+              "frozenWorldUnchanged": true,
+              "refreshRetained": true,
+              "noNewModelRequestOnRefresh": true,
+              "outcome": "The player refused participation and named an already permitted box. Lin Zhou opened and inspected it without prior access to its hidden contents. At event 8 only the investigator learned the original reviewed-world fact with its unchanged source identity; event 9 explicitly disclosed that same fact to the player. The unrelated private parcel remained unknown. The role did not invent who placed the key, assume it was the missing part, or falsely close the repair goal. Initial role input excluded both hidden truths and discovery conditions; later role input contained only its discovered truth, while coordinator/reviewer requests retained authorized hidden context.",
+              "limitations": "Author-confirmed initial candidates are engineering fixtures; six actual Codex generation/review calls test runtime behavior. The player named the target. Not weak-guidance, formal 20–40-turn M1, independent scoring or commercial latency evidence.",
+              "reviewerIndependence": "same-provider-and-model runtime review, not independent evaluation"
+            },
+            {
+              "evidence": "codex-unguided-investigation-preflight-v30.json",
+              "sourceSnapshotHead": "3fa3d418b25aafd74540939e98a2564327ff3d02",
+              "sourceSnapshotManifestSha256": "74b7a4031d877130daeeffd98dfd56753f1f2a622722041ffb5e8ebaacf793f8",
+              "rawEvidenceSha256": "b9f598d04e380c77e8c348fa8d69facd4b36eabdaefef0725332701106875538",
+              "backupSha256": "b7dbe4ec82b30647d4d2319b5490c0170037195b1fa045a0333d1ca5b5b6cf75",
+              "newModelRequests": 12,
+              "newModelResponses": 12,
+              "elapsedSeconds": 260.689,
+              "costUsd": null,
+              "usage": {
+                "inputTokens": 99779,
+                "outputTokens": 4302,
+                "reasoningOutputTokens": 1264,
+                "totalTokens": 104081
+              },
+              "status": "independent-investigations-then-rejected-unregistered-physical-disclosure",
+              "newCompletedRuns": 5,
+              "failedRuns": 1,
+              "adoptedActions": 3,
+              "adoptedDiscoveries": 2,
+              "frozenWorldUnchanged": true,
+              "outcome": "Player only said they entered to shelter from rain and sat near the door; no investigation target named. Three bounded explicit continues: Lin Zhou reassured the player, independently inspected the permitted parcel and box, and learned each original fact privately. The next candidate placed the discovered key visibly on the workbench but omitted disclosures. The real reviewer rejected visibility and consequence completeness. No revealing action or object-move fact was committed; player knowledge remained unchanged. Earlier investigations and both actor-only discoveries were retained.",
+              "limitations": "Short synthetic initial situation with real actions/reviews, no independent rating or formal M1. This is a retained failure, not an overall initiative pass. No automatic retry; incomplete knowledge-consequence registration requires repair."
+            }
+          ],
+          "zeroCallRestoration": {
+            "evidence": "codex-world-discovery-restoration-v30.json",
+            "rawEvidenceSha256": "1ba3c0c8e7ed5d20042be5261cf1bd8449d23c22c9d310bc8c90f8d14f4af5fe",
+            "backupSha256": "6d8e2f37f393814d61ad06af09565a0058463f629ed4902a626d816cd6c90999",
+            "newModelRequests": 0,
+            "unchangedInteractionState": true,
+            "refreshRetained": true,
+            "outcome": "Unmodified live-model save imported into a fresh isolated browser. Canonical world source, investigation, discovered audience, subsequent disclosure and still-hidden parcel are identical before and after refresh. Three historical runs are restored evidence, not fresh generation."
+          },
+          "production": {
+            "evidence": "codex-creator-player-world-production-preflight-v30.json",
+            "sourceSnapshotHead": "3fa3d418b25aafd74540939e98a2564327ff3d02",
+            "sourceSnapshotManifestSha256": "74b7a4031d877130daeeffd98dfd56753f1f2a622722041ffb5e8ebaacf793f8",
+            "rawEvidenceSha256": "831e7de9f72c4c152d72e2686097b396dffc8002161138b72e9c01493bbfa2d2",
+            "backupSha256": "00b85adefad8d8627a86091fee797045d318f1587569ab154074dc3744347303",
+            "newModelRequests": 2,
+            "newModelResponses": 2,
+            "elapsedSeconds": 129.018,
+            "costUsd": null,
+            "usage": {
+              "inputTokens": 17553,
+              "outputTokens": 4321,
+              "reasoningOutputTokens": 239,
+              "totalTokens": 21874
+            },
+            "status": "real-candidates-author-selection-and-local-release",
+            "candidateCount": 3,
+            "modelResponsesCompleted": 2,
+            "frozenWorldUnchanged": true,
+            "candidateRefreshNoGeneration": true,
+            "releaseRefreshRetained": true,
+            "noNewModelRequestOnRefresh": true,
+            "outcome": "Two fresh Codex calls generated three complete initial situations and narrative output from frozen mapped-player/world-discovery sources. Every candidate retained exact source text, condition, authorized investigator and mapped prerequisite; author UI selected opening-1, the build reached release-ready and published locally. The required author-choice gate is recorded as one failed deterministic child and one cancelled root before selection; these expected historical statuses remain in the evidence and were not model-call failures. Refresh reused candidates and the released build without new requests.",
+            "limitations": "Isolated engineering world; actual production candidates, author gate and local release verified. No player session or gameplay generated in this production sample, no external publishing, independent quality rating or formal M1."
+          }
         }
       },
       {
@@ -1026,9 +1118,9 @@
       },
       "partialImplementation": {
         "sourceSnapshotHead": "7103b270bfeae0f7cf004b25083983e9aeb0ca82",
-        "scope": "Opt-in author-confirmed initial private facts only; explicit world-source discovery authorization remains pending.",
+        "scope": "V28 private initial facts; V30 additionally supports explicit world-source discovery authorization, known-holder preservation, exact source/rule binding and author UI. Ordinary v2 and author-only source exclusions are unchanged.",
         "verified": "Canonical audience-only update, negative outcomes, staged disclosure, durable recovery, branch/import and 3 isolated browser paths. Synthetic review does not establish semantic correctness.",
-        "liveGap": "V28 action review incorrectly demanded hidden discovery before adjudication. V29 clarifies phase responsibilities; one fresh live Codex sample completed investigation, canonical discovery, disclosure and search-goal closure, with zero-call save restoration. World-source authorization, weak-guidance initiative, longer episodes and independent acceptance remain pending."
+        "liveGap": "V28 phase-review failure retained. V29 private-fact and V30 frozen-world guided samples complete discovery and disclosure; V30 actual initial-candidate production and local release also succeed. The V30 short unguided sample independently inspects two objects and learns both facts but fails on a later physical reveal with missing disclosures; the reviewer rejects it atomically. This concrete omission, final full checks, longer episodes and independent acceptance remain pending."
       }
     }
   ]
