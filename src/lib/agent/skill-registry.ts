@@ -3179,6 +3179,22 @@ export const AGENT_SKILLS = [
     lastVerifiedAt: '2026-10-13', regressionTests: ['R-CHAT-02-action-review', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression'],
   },
   {
+    version: 1, id: 'character.chat-narrative-options', agentId: 'character', defaultForAgent: false,
+    label: '角色聊天两种行动候选', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-v1',
+    executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
+    contextSourceKeys: ['interactionRuntime'], optionalContextSourceKeys: [], inputPolicy: INTERACTION_RUNTIME_INPUT_POLICY,
+    contextCompression: INTERACTION_RUNTIME_COMPRESSION_POLICY, maxOutputTokens: 8000, writeTargets: [],
+    lastVerifiedAt: '2026-10-13', regressionTests: ['R-CHAT-03-action-options'],
+  },
+  {
+    version: 1, id: 'character.chat-narrative-options-review', agentId: 'character', defaultForAgent: false,
+    label: '角色聊天行动候选组审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-review-v1',
+    executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
+    contextSourceKeys: ['chatSituationRuntime', 'chatActionCandidate'], optionalContextSourceKeys: [], inputPolicy: CHAT_ACTION_REVIEW_INPUT_POLICY,
+    contextCompression: compressionPolicy(['chatSituationRuntime', 'chatActionCandidate']), maxOutputTokens: 4800, writeTargets: [],
+    lastVerifiedAt: '2026-10-13', regressionTests: ['R-CHAT-03-action-options'],
+  },
+  {
     version: 1, id: 'character.chat-situation-construction', agentId: 'character', defaultForAgent: false,
     label: '角色聊天运行情境候选', owner: 'character-chat-product', promptVersion: 'chat-situation-construction-v2',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],

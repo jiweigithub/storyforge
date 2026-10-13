@@ -706,8 +706,14 @@ async function readChatActionCandidateContext(input: AssembleContextInput): Prom
   const {readLatestVerifiedAgentRunCheckpointV1} = await import('../agent/run/checkpoint')
   const saved = await readLatestVerifiedAgentRunCheckpointV1(input.scope, input.chatActionCandidateRunId, {owner: 'instance'})
   if (!saved || saved.snapshot.run.productRuntimeSessionId !== input.productRuntimeSessionId) return ''
-  const candidate = saved.resumePayload as {kind?: string; participantKey?: string; action?: unknown}
-  if (candidate?.kind !== 'chat-narrative-action-candidate' || !candidate.participantKey) return ''
+  const candidate = saved.resumePayload as {kind?: string; participantKey?: string; action?: unknown; options?: unknown}
+  if (!candidate?.participantKey) return ''
+  if (candidate.kind === 'chat-narrative-options-candidate') {
+    const {parseChatNarrativeOptionsV1, CHAT_NARRATIVE_OPTION_KEYS_V1} = await import('../character-interaction/narrative-options')
+    return `【本次持久化行动候选组，仅供逐项审查，彼此互斥且均未发生】\n${JSON.stringify({actorKey: candidate.participantKey,
+      options: parseChatNarrativeOptionsV1(candidate.options).map((action, index) => ({optionKey: CHAT_NARRATIVE_OPTION_KEYS_V1[index], action}))})}`
+  }
+  if (candidate.kind !== 'chat-narrative-action-candidate') return ''
   const {parseChatNarrativeActionV1} = await import('../character-interaction/narrative-actions')
   return `【本次持久化行动候选，仅供审查，尚未展示或提交】\n${JSON.stringify({actorKey: candidate.participantKey, action: parseChatNarrativeActionV1(candidate.action)})}`
 }

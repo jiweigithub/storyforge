@@ -26,7 +26,7 @@ export async function readPendingChatNarrativeRunsV1(scope: WorkspaceScope, sess
     if (['completed', 'failed', 'cancelled'].includes(row.status)) continue
     const contract = JSON.parse(row.contractJson)
     if (contract.scope?.runtime?.baseSequence < trigger.requestedSequence
-      || !contract.executionBindings?.some((b: {skillId?: string}) => ['character.chat-narrative-action', 'character.chat-situation-construction'].includes(b.skillId ?? ''))) continue
+      || !contract.executionBindings?.some((b: {skillId?: string}) => ['character.chat-narrative-action', 'character.chat-narrative-options', 'character.chat-situation-construction'].includes(b.skillId ?? ''))) continue
     pending.push(row.id!)
   }
   return pending
@@ -54,6 +54,8 @@ export async function advanceChatNarrativeTurnV1(input: {
   replyToSequence?: number
   participantKey?: string
   aiConfig: AIConfig
+  /** Compare one next action after any explicitly authorized shared background. */
+  compare?: boolean
   signal?: AbortSignal
   onRunCreated?: (id: number) => void
 }): Promise<void> {
@@ -86,6 +88,7 @@ export async function advanceChatNarrativeTurnV1(input: {
 async function performPreparedTurn(input: {
   scope: WorkspaceScope; sessionId: number; actor: string; triggerSequence: number; objective: string; aiConfig: AIConfig
   signal?: AbortSignal; onRunCreated?: (id: number) => void
+  compare?: boolean
 }): Promise<void> {
   const initial = (await readProductRuntimeState(input.sessionId)).interaction!
   for (let i = 0; i < initial.chatNarrative!.permissions.maxActionsPerTrigger; i++) {
@@ -111,9 +114,12 @@ async function performPreparedTurn(input: {
         || current.chatNarrative!.triggers.slice(-1)[0]?.status !== 'ready') return
     }
     const generated = await generateInteractionRuntimeCandidateV1({scope: input.scope, productRuntimeSessionId: input.sessionId,
-      skillId: 'character.chat-narrative-action', participantKey: input.actor, narrativeTriggerSequence: input.triggerSequence,
+      skillId: input.compare ? 'character.chat-narrative-options' : 'character.chat-narrative-action', participantKey: input.actor, narrativeTriggerSequence: input.triggerSequence,
       objective: input.objective, aiConfig: input.aiConfig, signal: input.signal, onRunCreated: input.onRunCreated})
     if (input.signal?.aborted) return
+    // Comparison ends at the reviewed checkpoint. Even a multi-action trigger
+    // cannot select an alternative or execute a sequel without player input.
+    if (input.compare) return
     await adoptInteractionRuntimeCandidateV1({scope: input.scope, runId: generated.snapshot.run.id})
   }
 }

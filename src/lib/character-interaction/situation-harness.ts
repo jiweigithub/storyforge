@@ -8,8 +8,9 @@ import {assembleContext} from '../registry/assemble-context'
 import {readAgentRunArtifactExactV1, recordAgentRunArtifactV1} from '../memory/artifact-store'
 import {parseChatNarrativeActionReviewV1} from './narrative-actions'
 import {parseChatSituationReviewV1} from './narrative-situations'
+import {bindChatNarrativeOptionsReviewV1} from './narrative-options'
 import type {ChatMessage, WorkspaceScope} from '../types'
-import type {ChatSituationCandidateV1, ChatNarrativeActionCandidateV1, InteractionRuntimeGenerationInputV1} from './harness'
+import type {ChatSituationCandidateV1, ChatNarrativeActionCandidateV1, ChatNarrativeOptionsCandidateV1, InteractionRuntimeGenerationInputV1} from './harness'
 
 export const CHAT_SITUATION_REVIEW_STEP_V1 = 'interaction:situation-review'
 export const CHAT_ACTION_REVIEW_STEP_V1 = 'interaction:action-review'
@@ -22,13 +23,14 @@ async function append(scope: WorkspaceScope, snapshot: AgentRunSnapshotV1, type:
 
 /** The caller holds the same cross-tab lock as construction. Recovery consumes
  * retained raw output, never resends a request with unknown outcome. */
-export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandidateV1 | ChatNarrativeActionCandidateV1>(input: InteractionRuntimeGenerationInputV1 & {
+export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandidateV1 | ChatNarrativeActionCandidateV1 | ChatNarrativeOptionsCandidateV1>(input: InteractionRuntimeGenerationInputV1 & {
   snapshot: AgentRunSnapshotV1; candidate: T
 }): Promise<{snapshot: AgentRunSnapshotV1; candidate: T}> {
   let snapshot = await readInstanceAgentRunV1(input.scope, input.snapshot.run.id)
   const candidate = input.candidate, situation = candidate.kind === 'chat-situation-candidate'
+  const options = candidate.kind === 'chat-narrative-options-candidate'
   const stepId = situation ? CHAT_SITUATION_REVIEW_STEP_V1 : CHAT_ACTION_REVIEW_STEP_V1
-  const reviewSkill = situation ? 'character.chat-situation-review' : 'character.chat-narrative-action-review'
+  const reviewSkill = situation ? 'character.chat-situation-review' : options ? 'character.chat-narrative-options-review' : 'character.chat-narrative-action-review'
   const freshness = {scope: input.scope, contractScope: snapshot.contract.scope, participantKey: candidate.participantKey,
     ...(situation ? {view: 'chat-situation' as const} : {})}
   const reviewBinding = snapshot.contract.executionBindings?.find(b => b.stepId === stepId && b.skillId === reviewSkill)
@@ -86,7 +88,8 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
         'meaningful-direction：打算应服务于当前目标和未完成事项、能因玩家选择调整；允许休息后等待明确恢复条件、暂停和结束，不能把暂未执行的计划记成已经兑现的承诺或自动启动下一轮。',
         'meaningful-direction 还须审 situationRequest：它只可请求发展当前角色仍 active 的目标及知情、参与的 open/blocked 剧情线，方向应可在现有时地展开，关联本次实际表达与已知事实。它不是事实，也不是自动接受玩家参与；普通行动无需重复申请新情境。休息、暂停、等待选择或未获授权时必须为空，不能用它重启被拒绝的邀请或泄露未知秘密。',
         'meaningful-direction：是否承接当前问题、动机和玩家输入，允许自主行动、拒绝、休息与收束；不得机械重复邀请、无故增加危机或强送固定结局。没有新矛盾本身不是失败。',
-        '仅输出 JSON {"checks":[{"check":"continuity|permissions|player-agency|visibility|consequences|meaningful-direction","passed":true,"reason":"结合实际内容说明"}]}，上述六项各一次，不得额外字段。',
+        options ? '这是两条互斥候选；两条正文都会在选定前展示给玩家，因此 visibility 还必须拒绝对玩家未知既有事实的直接或间接披露，不能因为 disclosures 字段正确而放行预览剧透。各自从同一当前局面出发，不把另一候选的事实当作已发生。逐条审查完整表达及后果，再检查差异是否合理而非机械换词或编造危机。仅输出 JSON {"options":[{"optionKey":"option-1","checks":[{"check":"continuity|permissions|player-agency|visibility|consequences|meaningful-direction","passed":true,"reason":"结合本条实际内容说明"}]},{"optionKey":"option-2","checks":[]}]}。每条各有上述六项检查，不得缺项、改写候选或增加字段。'
+          : '仅输出 JSON {"checks":[{"check":"continuity|permissions|player-agency|visibility|consequences|meaningful-direction","passed":true,"reason":"结合实际内容说明"}]}，上述六项各一次，不得额外字段。',
       ]).join('\n')}, {role: 'user', content: assembled.text}]
       snapshot = (await recordAgentRunArtifactV1({scope: input.scope, runId: snapshot.run.id,
         productRuntimeSessionId: input.productRuntimeSessionId, artifactKind: 'rendered-request', content: JSON.stringify(messages),
@@ -110,17 +113,19 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
     let row: Record<string, unknown>
     try {row = JSON.parse(source) as Record<string, unknown>}
     catch {fail('审查响应格式无效；原始结果已保存，尚未提交表达或后果')}
-    if (!row || Array.isArray(row) || Object.keys(row).join(',') !== 'checks') fail('叙事审查输出字段无效')
+    if (!row || Array.isArray(row) || Object.keys(row).join(',') !== (options ? 'options' : 'checks')) fail('叙事审查输出字段无效')
     const review = candidate.kind === 'chat-situation-candidate'
       ? parseChatSituationReviewV1({...row, reviewedProposalJson: canonicalStringify(candidate.draft)}, candidate.draft)
-      : parseChatNarrativeActionReviewV1({...row, reviewedActionJson: canonicalStringify(candidate.action)}, candidate.action)
-    if (review.checks.some(check => !check.passed)) fail(situation ? '情境语义审查未通过，原有局面保留' : '行动语义审查未通过，表达与后果均未提交')
+      : candidate.kind === 'chat-narrative-options-candidate' ? bindChatNarrativeOptionsReviewV1(row, candidate.options)
+        : parseChatNarrativeActionReviewV1({...row, reviewedActionJson: canonicalStringify(candidate.action)}, candidate.action)
+    const checks = 'optionReviews' in review ? review.optionReviews.flatMap(r => r.review.checks) : review.checks
+    if (checks.some(check => !check.passed)) fail(situation ? '情境语义审查未通过，原有局面保留' : '行动语义审查未通过，表达与后果均未提交')
     await assertRuntimeHarnessFreshV1(freshness)
     if (snapshot.projection.steps[stepId]?.status !== 'succeeded') snapshot = await append(input.scope, snapshot, 'step.succeeded', {stepId, attempt: 1, outputHash: await hashCanonicalValue(review)})
     const {candidateHash: _oldHash, ...body} = candidate
     const reviewed = {...body, review}
     const finalCandidate = {...reviewed, candidateHash: await hashCanonicalValue(reviewed)} as T
-    snapshot = await append(input.scope, snapshot, 'candidate.persisted', {stepId: candidateStep, attempt: 1, candidateHash: finalCandidate.candidateHash, requiresConfirmation: false})
+    snapshot = await append(input.scope, snapshot, 'candidate.persisted', {stepId: candidateStep, attempt: 1, candidateHash: finalCandidate.candidateHash, requiresConfirmation: options})
     const saved = await createAgentRunCheckpointV1({scope: input.scope, runId: snapshot.run.id,
       productRuntimeSessionId: input.productRuntimeSessionId, resumePayload: finalCandidate, expectedLastSequence: snapshot.projection.lastSequence})
     return {snapshot: saved.snapshot, candidate: finalCandidate}
