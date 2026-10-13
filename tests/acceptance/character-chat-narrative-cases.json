@@ -897,8 +897,69 @@
               "frozenWorldUnchanged": true,
               "outcome": "The role respected refusal, completed a permitted inspection without naming the unknown truth, registered the inspection fact and requested outcome adjudication. The action reviewer rejected it for failing to reveal the hidden seal and complete the goal before the separate discovery stage. No candidate action or hidden knowledge was committed; original failure retained, no request automatically resent.",
               "reviewerIndependence": "same-provider-and-model runtime review, not independent evaluation"
+            },
+            {
+              "evidence": "codex-fact-discovery-preflight-v29.json",
+              "sourceSnapshotHead": "915d5d7b4c4a949299bce5b06b94be70e41c5467",
+              "sourceSnapshotManifestSha256": "e9e5d86087e12e47cbfde36b7911d271ecce6a4619fb5744ac5431e65c18775e",
+              "rawEvidenceSha256": "2bece413689e9881009dc7c37f1642cd9ae3bf55f1f8657fb87afa29b23ee2e8",
+              "backupSha256": "711ab0e599a93b30c0e8eaca91e8d418fc6c3ce47eec884a6772dc6b6c9443ab",
+              "status": "reviewed-investigation-discovery-disclosure-and-goal-closure",
+              "newModelRequests": 6,
+              "newModelResponses": 6,
+              "newCompletedRuns": 3,
+              "adoptedActions": 2,
+              "adoptedDiscoveries": 1,
+              "elapsedSeconds": 108.777,
+              "costUsd": null,
+              "usage": {
+                "inputTokens": 45322,
+                "outputTokens": 2224,
+                "reasoningOutputTokens": 568,
+                "totalTokens": 47546
+              },
+              "frozenWorldUnchanged": true,
+              "refreshRetained": true,
+              "noNewModelRequestOnRefresh": true,
+              "outcome": "After the player refused participation and explicitly named the permitted box, the role independently inspected it without knowing the hidden truth. Real construction and review learned the same canonical fact for the guard only. The next role action disclosed it to the player, retrieved the seal, completed its search goal and cleared its plans. It did not invent who placed the seal, close the artisan road goal or the shared thread. The initial role request excluded both truth and condition; the later role request included truth but not condition. Coordinator requests retained authorized hidden context.",
+              "limitations": "The player named the investigation target. This sample does not establish weak-guidance initiative, 20–40-turn quality, cross-scene performance, independent evaluation or commercial latency.",
+              "reviewerIndependence": "same-provider-and-model runtime review, not independent evaluation"
+            },
+            {
+              "evidence": "codex-fact-discovery-incomplete-v29.json",
+              "sourceSnapshotHead": "915d5d7b4c4a949299bce5b06b94be70e41c5467",
+              "sourceSnapshotManifestSha256": "e9e5d86087e12e47cbfde36b7911d271ecce6a4619fb5744ac5431e65c18775e",
+              "rawEvidenceSha256": "75b76ed05170b0d4f15129aa50a79338ff7a89292877afc7deb7658035bccda7",
+              "backupSha256": "d009b1658c4b910e1b21d800de795be7f7e8354b5d2ab7bb91a307c026abaef3",
+              "status": "incomplete-investigation-keeps-truth-unknown",
+              "setup": "Synthetic committed action and synthetic action review: the guard inspected only the outside of the box, explicitly did not open or look inside. Subsequent construction and situation review are real Codex calls.",
+              "newModelRequests": 2,
+              "newModelResponses": 2,
+              "newCompletedRuns": 1,
+              "elapsedSeconds": 24.411,
+              "costUsd": null,
+              "usage": {
+                "inputTokens": 14076,
+                "outputTokens": 482,
+                "reasoningOutputTokens": 28,
+                "totalTokens": 14558
+              },
+              "frozenWorldUnchanged": true,
+              "refreshRetained": true,
+              "noNewModelRequestOnRefresh": true,
+              "outcome": "Both real steps preserved the author condition: not-discovered, original fact audience remains empty, search goal remains active, no fabricated new clue or crisis. The canonical outcome survives refresh.",
+              "reviewerIndependence": "same-provider-and-model runtime review; synthetic action setup, not independent evaluation or a formal M1 episode"
             }
-          ]
+          ],
+          "zeroCallRestoration": {
+            "evidence": "codex-fact-discovery-restoration-v29.json",
+            "rawEvidenceSha256": "18d5d1e49c23c0f0d348753a1983f5b5a94a31fe16018fd53e9e9fb8691cc97d",
+            "backupSha256": "da118e1add82ff0a8231d0689b260120e96df4d5f443b1646a2f9ced177798c1",
+            "newModelRequests": 0,
+            "unchangedInteractionState": true,
+            "refreshRetained": true,
+            "outcome": "Imported the unchanged live-model backup into a fresh isolated browser. Canonical fact identity, discovery evidence, disclosure, recovered object and goal closure match exactly. Historical three runs are imported evidence, not fresh generation."
+          }
         }
       },
       {
@@ -967,7 +1028,7 @@
         "sourceSnapshotHead": "7103b270bfeae0f7cf004b25083983e9aeb0ca82",
         "scope": "Opt-in author-confirmed initial private facts only; explicit world-source discovery authorization remains pending.",
         "verified": "Canonical audience-only update, negative outcomes, staged disclosure, durable recovery, branch/import and 3 isolated browser paths. Synthetic review does not establish semantic correctness.",
-        "liveGap": "V28 real action-review rejected correct staging by demanding hidden knowledge before discovery; V29 clarifies review responsibilities. Fresh real-model validation is required."
+        "liveGap": "V28 action review incorrectly demanded hidden discovery before adjudication. V29 clarifies phase responsibilities; one fresh live Codex sample completed investigation, canonical discovery, disclosure and search-goal closure, with zero-call save restoration. World-source authorization, weak-guidance initiative, longer episodes and independent acceptance remain pending."
       }
     }
   ]
