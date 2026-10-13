@@ -14,10 +14,15 @@ const FIELD_LABELS: Record<string, string> = {
   ...Object.fromEntries((FIELD_BY_TARGET.get('characters') ?? []).filter(field => field.labels?.length).map(field => [field.field, field.labels![0]])),
 }
 const fieldName = (pointer: string) => pointer.slice(1).replace(/~1/g, '/').replace(/~0/g, '~')
-const fieldLabel = (pointer: string) => FIELD_LABELS[fieldName(pointer)] ?? fieldName(pointer)
-const BACKGROUND_FIELDS: Record<string, string> = {name: '名称', title: '标题', description: '说明', summary: '概述', content: '正文', label: '关系称谓', relationType: '关系类型', isBidirectional: '双向关系', stages: '发展阶段', globalNote: '总体规则', entries: '规则条目', mainPlot: '主线安排', subPlots: '支线安排', logline: '故事梗概', theme: '主题', centralConflict: '核心矛盾', plotPattern: '情节模式'}
+const BACKGROUND_FIELDS: Record<string, string> = {name: '名称', title: '标题', description: '说明', summary: '概述', content: '正文', label: '关系称谓', relationType: '关系类型', isBidirectional: '双向关系', stages: '发展阶段', globalNote: '总体规则', entries: '规则条目', customNodes: '自定义规则', mainPlot: '主线安排', subPlots: '支线安排', logline: '故事梗概', theme: '主题', centralConflict: '核心矛盾', plotPattern: '情节模式'}
+const NESTED_FIELDS: Record<string, string> = {name: '名称', title: '标题', description: '说明', content: '正文', label: '名称', hints: '提示', historicalAnchors: '历史依据', fictionalAdaptations: '架空设定', priority: '冲突优先级'}
 function passageLabel(fragment: ChatSourceFragmentV1, fragments: ChatSourceFragmentV1[], background = false): string {
-  const label = background ? BACKGROUND_FIELDS[fieldName(fragment.pointer)] ?? fieldName(fragment.pointer) : fieldLabel(fragment.pointer)
+  const path = fragment.pointer.slice(1).split('/').map(key => key.replace(/~1/g, '/').replace(/~0/g, '~'))
+  const labels = background ? BACKGROUND_FIELDS : FIELD_LABELS
+  const label = path.map((key, index) => {
+    const names = index === 0 ? labels : NESTED_FIELDS
+    return Object.prototype.hasOwnProperty.call(names, key) ? names[key] : key
+  }).join(' · ')
   if (!fragment.textRange) return label
   const passages = fragments.filter(f => f.resourceKey === fragment.resourceKey && f.pointer === fragment.pointer)
   return `${label}（片段 ${passages.findIndex(f => f.fragmentKey === fragment.fragmentKey) + 1}/${passages.length}）`
@@ -101,6 +106,7 @@ export default function SourceReview(props: {
     <p>背景资料与人物资料使用同一知情范围。未发生的故事安排和不打算在聊天中揭示的真相，请保留为作者资料或待分类。背景范围改变后也需要重新确认。</p>
     {discoveryEnabled && <p>已经成立、允许调查揭示的世界隐情，可单独设置发现条件。真相保持原文；角色只能在实际调查满足条件后获知。“仅作者掌握”的资料仍不会进入聊天。</p>}
     <p>长文本按原文顺序分段保留，每段可分别设置用途和知情者；未确认的片段不会自动沿用相邻段落的设置。</p>
+    <p>较长的资料列表与结构按原有层级展开，条目分别确认；拆开显示不代表其中的内容已经公开。</p>
     <p>{props.settings.version === 1 ? '当前方案使用旧版人物摘要。确认完整资料后，新制作将使用分角色的知识范围；已有发布与存档保持原样。'
       : props.settings.sourceReview ? '已保存资料确认。更换角色或世界后需要重新检查。' : '开始新制作前，请检查并确认角色资料的可见范围。'}</p>
     {props.dirty && <p>请先保存方案，再检查资料。</p>}

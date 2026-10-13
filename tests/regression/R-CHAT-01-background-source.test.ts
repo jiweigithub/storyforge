@@ -1,6 +1,6 @@
 import {afterEach, beforeEach, expect, it} from 'vitest'
 import {db} from '../../src/lib/db/schema'
-import {seedChatBackgroundSourceFixture, compileChatBackgroundSourceFixture} from '../helpers/chat-background-source'
+import {seedChatBackgroundSourceFixture, compileChatBackgroundSourceFixture, chatStructuredWorldRulesFixture} from '../helpers/chat-background-source'
 import {createChatSourceProjectionDraftV1, readChatSourceProjectionViewV1, readPreparedChatSourceProjectionViewV1} from '../../src/lib/character-interaction/source-projection'
 import {createInitialInteractionState, interactionVisibilityView, buildInteractionContextWindow, parseFrozenChatSourceV1} from '../../src/lib/character-interaction/runtime'
 import {formatInteractionRuntimeContextV1} from '../../src/lib/character-interaction/context-format'
@@ -17,6 +17,51 @@ import {hashProductProductionValueV2} from '../../src/lib/product-production/has
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => db.close())
+
+it('carries separately authorized structured source leaves through confirmation, runtime and portable restoration', async () => {
+  const original = chatStructuredWorldRulesFixture()
+  const f = await seedChatBackgroundSourceFixture(original)
+  const rules = f.projection.background!.find(r => r.resourceKind === 'world-rules')!
+  expect(rules.fragments.every(p => p.valueJson.length <= 6000)).toBe(true)
+  expect(rules.fragments.filter(p => p.pointer.startsWith('/customNodes/'))).toHaveLength(12)
+  expect(rules.fragments.filter(p => p.pointer === '/entries/harbor~1public/historicalAnchors').map(p => JSON.parse(p.valueJson)).join('')).toBe(original.entries['harbor/public'].historicalAnchors)
+  const allowed = new Set(rules.fragments.filter(p => p.pointer.startsWith('/entries/harbor~1public/') || p.pointer === '/customNodes/11').map(p => p.fragmentKey))
+  for (const decision of f.review.classifications) if (allowed.has(decision.fragmentKey)) {
+    decision.visibility = 'participants'; decision.audienceKeys = [f.keys[0]]
+  }
+  const {compiled, confirmed, settings, compilerInput} = await compileChatBackgroundSourceFixture(f)
+  const state = createInitialInteractionState(compiled), actor = compiled.profiles.find(p => p.characterKey === f.keys[0])!
+  const own = formatInteractionRuntimeContextV1(actor, buildInteractionContextWindow(state, actor.participantKey))
+  expect(own).toContain('末段规则：蓝铃响起时先检查水尺')
+  expect(own).toContain('末项线索：晚班记录放在蓝色柜中')
+  expect(own).toContain('字段=/customNodes/11')
+  expect(JSON.stringify(compiled)).not.toContain('作者秘密')
+  for (const key of ['player', ...compiled.profiles.filter(p => p !== actor).map(p => p.participantKey)]) {
+    expect(JSON.stringify(interactionVisibilityView(state, key))).not.toContain('蓝色柜')
+  }
+  const release = (await db.worldReleases.get(confirmed.worldReleaseId!))!
+  const {session} = await seedCurrentProductBuild({scope: f.scope, worldRelease: release, title: '结构化资料往返', runtimePackage: {
+    schema: 'storyforge.product-runtime-package', version: 1, productType: 'character-interaction',
+    definition: {productKey: 'chat.structured', title: '结构化资料往返', description: '结构来源工程验证', enabledCapabilities: ['narrative', 'interaction'], rulesetVersion: 1, initialVariables: {}},
+    sourceWorld: {contentHash: release.contentHash, selection: compilerInput.brief.source.selection},
+    narrative: {...compilerInput.narrative, choices: [{choiceKey: 'finish', sourceNodeKey: 'opening', targetNodeKey: 'end', text: '结束核对', description: '完成验证', unavailableReason: '', displayConditionJson: '{}', availableConditionJson: '{}', effectsJson: '[]', tags: [], order: 0}]}, interaction: compiled,
+  }})
+  const installed = await readProductRuntimeState(session.id!)
+  const projectId = await importProjectJSON(await exportProjectJSON(f.scope.projectId))
+  const restored = (await db.chatAuthoringDrafts.where('projectId').equals(projectId).first())!
+  expect(JSON.parse(restored.settingsJson)).toEqual(settings)
+  const projection = await loadChatSourceProjectionV1({projectId, workId: restored.workId, worldId: restored.worldId}, restored.revision)
+  expect(projection.projectionHash).toBe(f.projection.projectionHash)
+  expect(projection.background!.find(r => r.resourceKind === 'world-rules')).toEqual(rules)
+  const imported = (await db.productRuntimeSessions.where('projectId').equals(projectId).first())!
+  expect((await readProductRuntimeState(imported.id!)).interaction!.knowledge).toEqual(installed.interaction!.knowledge)
+  const portable = JSON.parse(JSON.stringify(compiled))
+  expect(createInitialInteractionState(portable)).toEqual(state)
+  const broken = structuredClone(compiled)
+  broken.chatSource!.knowledge.find(k => k.source.pointer === '/entries/harbor~1public/historicalAnchors')!.source.textRange!.end++
+  expect(() => createInitialInteractionState(broken)).toThrow('片段范围')
+  expect((await db.worldReleases.get(confirmed.worldReleaseId!))!.contentHash).toBe(f.world.release.contentHash)
+})
 
 it('loads selected non-character resources losslessly and defaults all new background to no audience', async () => {
   const f = await seedChatBackgroundSourceFixture()

@@ -8,8 +8,20 @@ import {draftProductProductionBriefV3, suggestProductStartingPoints} from '../..
 import {compileInteractionModulesV1} from '../../src/lib/product-production/product-module-compilers'
 import {characterChatBaselineInput} from './character-chat-baseline'
 
-export async function seedChatBackgroundSourceFixture() {
-  const world = await seedCurrentProductWorld('CHAT-BACKGROUND')
+export function chatStructuredWorldRulesFixture() {
+  return {
+    entries: {
+      'harbor/public': {historicalAnchors: '潮门每天由当班守灯人检查。\n'.repeat(600), fictionalAdaptations: '末段规则：蓝铃响起时先检查水尺。', priority: 'fictional' as const},
+      'harbor/private': {historicalAnchors: '作者秘密：旧船舱里保存着失踪船队的名册。', fictionalAdaptations: '', priority: 'fictional' as const},
+      constructor: {historicalAnchors: '同名自定义条目仍须作者单独确认。', fictionalAdaptations: '', priority: 'fictional' as const},
+    },
+    customNodes: Array.from({length: 12}, (_, i) => ({id: `harbor-${i}`, parentId: null, label: `港口约定 ${i}`,
+      hints: ['日常安排需先查看值班记录。'.repeat(50), i === 11 ? '末项线索：晚班记录放在蓝色柜中。' : `保留原序号 ${i}`]})),
+  }
+}
+
+export async function seedChatBackgroundSourceFixture(worldRules?: NonNullable<Parameters<typeof seedCurrentProductWorld>[1]>['worldRules']) {
+  const world = await seedCurrentProductWorld('CHAT-BACKGROUND', {worldRules})
   const {scope} = await createChatDraftV2('世界背景资料工程夹具')
   const linked = await selectChatWorldV1(scope, 0, world.release.id!)
   const index = await loadProductProductionConsultationSourceV2({scope, worldReleaseId: linked.worldReleaseId!})

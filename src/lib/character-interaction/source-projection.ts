@@ -114,7 +114,19 @@ function escapePointer(value: string): string {
 function fragmentSourceField(resourceKey: string, pointer: string, value: unknown): ChatSourceFragmentV1[] {
   const fragmentKey = `${resourceKey}#${pointer}`
   const valueJson = canonicalStringify(value)
-  if (typeof value !== 'string' || valueJson.length <= 6000) return [{fragmentKey, resourceKey, pointer, valueJson}]
+  if (fragmentKey.length > 1000) fail('来源资料层级或字段名过长，请缩小本次来源范围')
+  if (valueJson.length <= 6000) return [{fragmentKey, resourceKey, pointer, valueJson}]
+  if (value && typeof value === 'object') {
+    const entries = Array.isArray(value) ? Array.from(value, (item, index) => [String(index), item ?? null] as const)
+      : Object.keys(value).filter(key => (value as Record<string, unknown>)[key] !== undefined).sort().map(key => [key, (value as Record<string, unknown>)[key]] as const)
+    const fragments: ChatSourceFragmentV1[] = []
+    for (const [key, item] of entries) {
+      fragments.push(...fragmentSourceField(resourceKey, `${pointer}/${escapePointer(key)}`, item))
+      if (fragments.length > 2000) fail('来源资料片段超过 2000 项，请缩小本次来源范围')
+    }
+    return fragments
+  }
+  if (typeof value !== 'string') fail('来源资料不是可分段的文本或结构')
   const fragments: ChatSourceFragmentV1[] = []
   for (let start = 0; start < value.length;) {
     let low = start + 1; let high = Math.min(value.length, start + 5998)
@@ -129,8 +141,11 @@ function fragmentSourceField(resourceKey: string, pointer: string, value: unknow
     if (end < value.length && paragraph > start + (end - start) / 2) end = paragraph
     if (end < value.length && /[\uD800-\uDBFF]/.test(value[end - 1]) && /[\uDC00-\uDFFF]/.test(value[end])) end--
     const textRange = {start, end}
-    fragments.push({fragmentKey: `${fragmentKey}@${start}:${end}`, resourceKey, pointer,
+    const passageKey = `${fragmentKey}@${start}:${end}`
+    if (passageKey.length > 1000) fail('来源资料层级或字段名过长，请缩小本次来源范围')
+    fragments.push({fragmentKey: passageKey, resourceKey, pointer,
       valueJson: canonicalStringify(value.slice(start, end)), textRange})
+    if (fragments.length > 2000) fail('来源资料片段超过 2000 项，请缩小本次来源范围')
     start = end
   }
   return fragments

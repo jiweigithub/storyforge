@@ -1,5 +1,55 @@
 import {test, expect} from '@playwright/test'
 
+test('author reviews large rule objects and lists by source path without carrying private siblings into the chat', async ({page}) => {
+  let modelRequests = 0
+  await page.addInitScript(() => localStorage.setItem('storyforge_guide_completed', 'e2e'))
+  await page.route('**/chat/completions', async route => {modelRequests++; await route.abort()})
+  await page.goto('./chat/library')
+  const scope = await page.evaluate(async () => {
+    const load = new Function('p', 'return import(p)'), helper = await load('/storyforge/tests/helpers/chat-background-source.ts')
+    return (await helper.seedChatBackgroundSourceFixture(helper.chatStructuredWorldRulesFixture())).scope
+  })
+  await page.goto(`./chat/cast?project=${scope.projectId}&work=${scope.workId}`)
+  const read = page.getByRole('button', {name: '读取并检查完整资料', exact: true})
+  await read.click()
+  const paragraphs = page.getByRole('combobox', {name: /规则条目 · harbor\/public · 历史依据（片段 \d+\/\d+） 可见范围$/})
+  await expect(paragraphs).toHaveCount(2)
+  await paragraphs.first().selectOption('participants')
+  await expect(paragraphs.last()).toHaveValue('unclassified')
+  await paragraphs.last().selectOption('author-only')
+  const finalItem = page.getByRole('combobox', {name: /自定义规则 · 11 可见范围$/})
+  await finalItem.selectOption('participants')
+  const secret = page.getByRole('combobox', {name: /规则条目 · harbor\/private 可见范围$/})
+  await expect(secret).toHaveValue('unclassified')
+  await expect(page.getByRole('combobox', {name: /规则条目 · constructor 可见范围$/})).toHaveValue('unclassified')
+  await page.getByRole('button', {name: '确认可见范围并用于新制作', exact: true}).click()
+  await expect(page.getByText('已保存资料确认。更换角色或世界后需要重新检查。', {exact: true})).toBeVisible()
+  await page.reload(); await read.click()
+  await expect(paragraphs.first()).toHaveValue('participants')
+  await expect(paragraphs.last()).toHaveValue('author-only')
+  await expect(finalItem).toHaveValue('participants')
+  await expect(secret).toHaveValue('unclassified')
+  const compiled = await page.evaluate(async scope => {
+    const load = new Function('p', 'return import(p)')
+    const draft = await (await load('/storyforge/src/lib/character-interaction/draft-service.ts')).readChatDraftV1(scope)
+    const settings = JSON.parse(draft.settingsJson)
+    const {compiled} = await (await load('/storyforge/tests/helpers/chat-background-source.ts')).compileChatBackgroundSourceFixture({scope, draft, review: settings.sourceReview, keys: settings.characters.map((c: {sourceKey: string}) => c.sourceKey)})
+    const runtime = await load('/storyforge/src/lib/character-interaction/runtime.ts')
+    const state = runtime.createInitialInteractionState(compiled)
+    const actor = compiled.profiles.find((p: {characterKey: string}) => p.characterKey === settings.characters[0].sourceKey)
+    return {compiled, role: runtime.interactionVisibilityView(state, actor.participantKey), player: runtime.interactionVisibilityView(state, 'player')}
+  }, scope)
+  expect(JSON.stringify(compiled.compiled)).not.toContain('失踪船队的名册')
+  const parts = compiled.compiled.chatSource.knowledge.filter((k: {source: {pointer: string}}) => k.source.pointer === '/entries/harbor~1public/historicalAnchors')
+  expect(parts).toHaveLength(1)
+  expect(parts[0].source.textRange.start).toBe(0)
+  expect(JSON.stringify(compiled.role)).toContain('末项线索：晚班记录放在蓝色柜中')
+  expect(JSON.stringify(compiled.player)).not.toContain('蓝色柜')
+  expect(modelRequests).toBe(0)
+  await page.setViewportSize({width: 390, height: 844})
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
 test('author classifies long passages independently and confirmed compilation preserves only approved text', async ({page}) => {
   let modelRequests = 0
   await page.addInitScript(() => localStorage.setItem('storyforge_guide_completed', 'e2e'))

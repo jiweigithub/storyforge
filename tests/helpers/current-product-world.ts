@@ -6,6 +6,7 @@ import type {
   ProductionProductKindV1,
   ProductWorldSourceSelectionV1,
   WorkspaceScope,
+  WorldRulesProfile,
 } from '../../src/lib/types'
 import {
   loadProductProductionConsultationSourceV2,
@@ -110,7 +111,7 @@ export async function loadCurrentProductWorldSourceCatalogV1(input: {
  * Minimal semanticContract=3 world used by upper-product architecture tests.
  * It deliberately contains no executable product graph or product media.
  */
-export async function seedCurrentProductWorld(name: string, options: { minimumCharacters?: number; characterDetails?: {background?: string; personality?: string; shortDescription?: string} } = {}) {
+export async function seedCurrentProductWorld(name: string, options: { minimumCharacters?: number; characterDetails?: {background?: string; personality?: string; shortDescription?: string}; worldRules?: Pick<WorldRulesProfile, 'entries' | 'customNodes'> } = {}) {
   const created = await createWorkspace({
     name,
     genres: ['interactive-fiction'],
@@ -141,7 +142,7 @@ export async function seedCurrentProductWorld(name: string, options: { minimumCh
   } as never, { owner: 'world' }))
   await db.worldRulesProfiles.add(stampNewRecord(created.scope, 'worldRulesProfiles', {
     projectId: created.scope.projectId,
-    entries: {}, customNodes: [], globalNote: '满月时潮门开启。',
+    entries: {}, customNodes: [], ...options.worldRules, globalNote: '满月时潮门开启。',
     createdAt: now, updatedAt: now,
   } as never, { owner: 'world' }))
   const storyCoreId = await db.storyCores.add(stampNewRecord(created.scope, 'storyCores', {

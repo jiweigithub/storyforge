@@ -54,6 +54,48 @@ describe('CHAT-01 · immutable Gateway projection and viewpoint filtering', () =
       expect(await db.projects.get(world.scope.projectId)).toBeDefined()
     })
   })
+  it('preserves nested arrays, escaped object paths, empty values and long Unicode leaves without oversized fragments', async () => {
+    const {input} = await source()
+    const target = input.resources.find(r => r.descriptor.resourceKey === input.characterResourceKeys[0])!
+    const original = {
+      'a/b~c': [{title: '经历一', text: '🌕守灯记事。\n'.repeat(1600)}, {title: '经历二', text: '不可漏掉的末条'}],
+      '': {empty: [], blank: {}, none: null, no: false, zero: 0},
+      '0': ['数组次序一', '数组次序二'],
+    }
+    target.value.records = original
+    target.descriptor.contentHash = await hashCanonicalValue(target.value)
+    const draft = await createChatSourceProjectionDraftV1(input)
+    const fragments = draft.characters.find(c => c.resourceKey === target.descriptor.resourceKey)!.fragments.filter(f => f.pointer.startsWith('/records/'))
+    expect(fragments.length).toBeGreaterThan(3)
+    expect(fragments.every(f => f.valueJson.length <= 6000)).toBe(true)
+    expect(fragments.some(f => f.pointer === '/records/a~1b~0c/0/text' && f.textRange)).toBe(true)
+    const restore = (value: unknown, pointer: string): unknown => {
+      const parts = fragments.filter(f => f.pointer === pointer)
+      if (parts.length) return parts[0].textRange ? parts.map(f => JSON.parse(f.valueJson)).join('') : JSON.parse(parts[0].valueJson)
+      if (Array.isArray(value)) return value.map((v, i) => restore(v, `${pointer}/${i}`))
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, v]) => [key, restore(v, `${pointer}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`)]))
+      throw new Error(`uncovered source: ${pointer}`)
+    }
+    expect(restore(original, '/records')).toEqual(original)
+    expect(await createChatSourceProjectionDraftV1(input)).toEqual(draft)
+    expect(await readChatSourceProjectionViewV1({draft, classifications: [], viewerKey: 'player'})).toEqual([])
+    const publicItem = fragments.find(f => f.pointer === '/records/a~1b~0c/1')!
+    const view = await readChatSourceProjectionViewV1({draft, viewerKey: 'player', classifications: [{
+      projectionHash: draft.projectionHash, fragmentKey: publicItem.fragmentKey, purpose: 'knowledge', visibility: 'public', audienceKeys: [],
+    }]})
+    expect(view.map(f => f.fragmentKey)).toEqual([publicItem.fragmentKey])
+    expect(JSON.stringify(view)).not.toContain('守灯记事')
+  })
+  it('rejects excessive structured fragments and unrepresentable source paths without truncating the source', async () => {
+    const {input} = await source()
+    const target = input.resources.find(r => r.descriptor.resourceKey === input.characterResourceKeys[0])!
+    target.value.records = Array.from({length: 2001}, (_, i) => `条目 ${i}`)
+    target.descriptor.contentHash = await hashCanonicalValue(target.value)
+    await expect(createChatSourceProjectionDraftV1(input)).rejects.toThrow('超过 2000 项')
+    target.value.records = {['x'.repeat(1000)]: '长正文'.repeat(3000)}
+    target.descriptor.contentHash = await hashCanonicalValue(target.value)
+    await expect(createChatSourceProjectionDraftV1(input)).rejects.toThrow('字段名过长')
+  })
   it('retains full semantic fields, portable identities and evidence from the actual frozen gateway', async () => {
     const { input, draft } = await source()
     expect(draft.characters.map(character => character.resourceKey)).toEqual([...input.characterResourceKeys].sort())
