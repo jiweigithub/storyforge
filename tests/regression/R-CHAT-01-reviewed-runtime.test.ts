@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { seedCurrentProductWorld } from '../helpers/current-product-world'
+import { seedCurrentProductBuild } from '../helpers/current-product-build'
+import { readProductRuntimeState } from '../../src/lib/character-interaction/runtime-api'
 import { characterChatBaselineInput } from '../helpers/character-chat-baseline'
 import { DEFAULT_CHAT_SETTINGS, parseChatAuthoringSettings } from '../../src/lib/character-interaction/authoring-contract'
 import { confirmChatSourceReviewV1, createChatDraftV1, loadChatSourceProjectionV1, readChatDraftV1, saveChatDraftV1, selectChatWorldV1 } from '../../src/lib/character-interaction/draft-service'
@@ -154,7 +156,7 @@ it('preserves long background and voice passages through confirmed compilation, 
   const background = '他按日期记录每一次守灯经历。\n'.repeat(620) + '末尾线索：蓝色铃绳通向旧档案间。'
   const personality = '说话先核对证据，避免替别人作主。\n'.repeat(500) + '末尾口吻：我会先查清，再给你答复。'
   const input = await setup({background, personality})
-  const {compiled, settings} = await compile(input)
+  const {compiled, settings, confirmed, compilerInput} = await compile(input)
   const profile = compiled.profiles.find(p => p.characterKey === input.keys[0])!
   const state = createInitialInteractionState(compiled)
   for (const [pointer, original] of [['/background', background], ['/personality', personality]]) {
@@ -170,11 +172,21 @@ it('preserves long background and voice passages through confirmed compilation, 
   expect(context).toContain('末尾口吻：我会先查清，再给你答复。')
   expect(JSON.stringify(interactionVisibilityView(state, 'player'))).not.toContain('蓝色铃绳')
   expect(parseInteractionState(JSON.parse(JSON.stringify(state)))).toEqual(state)
+  const release = (await db.worldReleases.get(confirmed.worldReleaseId!))!
+  const {session} = await seedCurrentProductBuild({scope: input.scope, worldRelease: {...release, id: confirmed.worldReleaseId!}, title: '长资料运行往返', runtimePackage: {
+    schema: 'storyforge.product-runtime-package', version: 1, productType: 'character-interaction',
+    definition: {productKey: 'chat.long-source', title: '长资料运行往返', description: '长资料工程验证', enabledCapabilities: ['narrative', 'interaction'], rulesetVersion: 1, initialVariables: {}},
+    sourceWorld: {contentHash: release.contentHash, selection: compilerInput.brief.source.selection},
+    narrative: {...compilerInput.narrative, choices: [{choiceKey: 'finish', sourceNodeKey: 'opening', targetNodeKey: 'end', text: '结束核对', description: '完成本次资料验证', unavailableReason: '', displayConditionJson: '{}', availableConditionJson: '{}', effectsJson: '[]', tags: [], order: 0}]}, interaction: compiled,
+  }})
+  expect((await readProductRuntimeState(session.id!)).interaction!.knowledge).toEqual(state.knowledge)
   const importedId = await importProjectJSON(await exportProjectJSON(input.scope.projectId))
   const restored = (await db.chatAuthoringDrafts.where('projectId').equals(importedId).first())!
   const projection = await loadChatSourceProjectionV1({projectId: importedId, worldId: restored.worldId, workId: restored.workId}, restored.revision)
   expect(projection.projectionHash).toBe(input.projection.projectionHash)
   expect(JSON.parse(restored.settingsJson)).toEqual(settings)
+  const importedSession = (await db.productRuntimeSessions.where('projectId').equals(importedId).first())!
+  expect((await readProductRuntimeState(importedSession.id!)).interaction!.knowledge).toEqual(state.knowledge)
 })
 
 it('classifies long passages independently; author-only tail cannot leak through role voice rules', async () => {
