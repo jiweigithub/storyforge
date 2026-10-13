@@ -819,6 +819,57 @@
               "outcome": "Two explicit continues after importing the unchanged live save. First the role independently checked the entrance route and recorded that action, then requested local background linked to its existing goal and thread. The next trigger constructed one limited sightline observation and the following role action consumed it, explained the still-unverified section and revised its own plan. The player was not moved or forced to operate the key. Original facts remain and no goal is prematurely closed. This is a bounded progression sample, not evidence of clue payoff, resolved investigation or long-run quality."
             }
           ]
+        },
+        "mappedPlayerPreflight": {
+          "status": "bounded-mapped-persona-visibility-refusal-and-restoration-verified-not-quality-acceptance",
+          "sourceSnapshotHead": "97f35827450992ecc3c37c6f1a187d64d80e1116",
+          "sourceSnapshotManifestSha256": "6258033ac58ad41df72eadf8e2faa115df04c679e29b9dba789237c45c7ce6fc",
+          "provider": "local-codex",
+          "model": "gpt-6.1-sol",
+          "costUsd": null,
+          "scope": "Isolated engineering fixture with reviewed world player source and a fixture-selected initial situation. Real runtime generation and review, not live authoring production, independent evaluation or a formal M1 episode.",
+          "reviewerIndependence": "same-provider-and-model runtime review, not independent evaluation",
+          "attempts": [
+            {
+              "evidence": "codex-mapped-player-preflight-v27.json",
+              "rawEvidenceSha256": "4cab22271f5fb3fa2a8217cdfb031eaa73e2af0e8cc5467825dd86a365489fd9",
+              "backupSha256": "d9f390a2ea564178d0e3f0255eaa3220b08998d2a4c251cf9f9e37762ba5e3c3",
+              "newModelRequests": 0,
+              "newModelResponses": 0,
+              "newCompletedRuns": 0,
+              "outcome": "Probe timed out selecting an actor control that is intentionally absent in a single-AI-role scene. No model request occurred. Probe corrected to use the shared scheduling control; product code unchanged and original failure retained."
+            },
+            {
+              "evidence": "codex-mapped-player-preflight-v27-second.json",
+              "rawEvidenceSha256": "4136e53cd43c27a9558b942a3c1b5b86e892d6a18fb9d84c32bc96d660cb98a9",
+              "backupSha256": "c6231c8626d2a2038ad224f17375fbf119942b4442e273eed3101f831f328ce3",
+              "newModelRequests": 4,
+              "newModelResponses": 4,
+              "newCompletedRuns": 2,
+              "elapsedSeconds": 66.993,
+              "adoptedActions": 2,
+              "newRuntimeFacts": 1,
+              "refreshRetained": true,
+              "noNewModelRequestOnRefresh": true,
+              "frozenWorldUnchanged": true,
+              "usage": {
+                "inputTokens": 30865,
+                "outputTokens": 1395,
+                "reasoningOutputTokens": 441,
+                "totalTokens": 32260
+              },
+              "outcome": "The role addressed the mapped player by the explicit public name. On refusal it inspected the part itself without dismantling the clock or assigning player work, and kept its goal active. Both role-generation inputs excluded the player-only background; the coordinator review could read that background to enforce its audience. Author-only source remained absent from every request. This produced an inspection action, not a new clue, resolved uncertainty or narrative closure."
+            }
+          ],
+          "zeroCallRestoration": {
+            "evidence": "codex-mapped-player-restoration-v27.json",
+            "rawEvidenceSha256": "5971125cd03dec10f75617e40437a29a7be7a9557c91a06d210a49ec01ae96a5",
+            "backupSha256": "4388056ef7bff91f0a68f62330bfa49ac3af501c947975054b3e3c4e0885b84c",
+            "newModelRequests": 0,
+            "unchangedInteractionState": true,
+            "refreshRetained": true,
+            "outcome": "Imported the unmodified generated save into a fresh isolated browser context. Persona source, messages and consequences match the original interaction state; refresh adds no requests. Historical imported runs are not treated as new generation."
+          }
         }
       },
       {
