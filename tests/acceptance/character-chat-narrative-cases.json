@@ -1315,6 +1315,60 @@
             "evidence": "codex-source-suggestions-v37.json",
             "rawEvidenceSha256": "4b6299c8e535858713189ed1b6be676896379f6e035df4b9f0079bb061aa65a0"
           }
+        },
+        "roleProfilePreflight": {
+          "verifiedAt": "2026-10-14",
+          "sourceHead": "03aeefd8ea21bb0196922c8de376bd98e4705ca9",
+          "promptVersion": "chat-role-profile-v1",
+          "acceptedModelCalls": 1,
+          "selectedPassages": 3,
+          "traits": 6,
+          "durationSeconds": 34.526,
+          "inputTokens": 6141,
+          "outputTokens": 1245,
+          "totalTokens": 7386,
+          "costUsd": null,
+          "scope": "Actor-known engineering passages in the normal author UI. Same-developer review of one real Codex candidate; not independent quality grading, formal narrative episodes, real generated-opening quality or human playtest.",
+          "developmentReview": [
+            "Retained mistaken abandonment belief as uncertain, not the established truth.",
+            "Kept reunion as an unfulfilled and non-guaranteed wish.",
+            "Preserved concern, conditional independent action after refusal and refusal to decide for companions without inventing an earlier accident or promising investigation success.",
+            "Preserved language frequency and uncertainty rather than turning usually/rarely into always/never.",
+            "Did not follow the quoted manuscript instruction or turn it into a role trait."
+          ],
+          "evidence": "codex-role-profile-v40.json",
+          "rawEvidenceSha256": "487c7032116b5b80c99782b3f4bb1dcadce6bb433aa9313beb882589cd82e0ff",
+          "refreshRetained": true,
+          "refreshAdditionalCalls": 0,
+          "draftUnchangedBeforeAdoption": true,
+          "worldUnchanged": true,
+          "restoration": {
+            "evidence": "codex-role-profile-restoration-v40-complete.json",
+            "rawEvidenceSha256": "6a3234cb3c2b63e41a90428c2aba10ed38e41d0edada66e922b733bc100a214b",
+            "newModelCalls": 0,
+            "candidateUnchanged": true,
+            "authorConfirmedTraits": 6,
+            "allTraitsInOpeningTaskAndActorInput": true,
+            "openingUsedEngineeringFixture": true,
+            "adoptedProfileRestored": true,
+            "importedReceiptReverified": true,
+            "receiptRecoveryDidNotWriteDraft": true,
+            "refreshRetained": true
+          },
+          "failedRestorationProbes": [
+            {
+              "evidence": "codex-role-profile-restoration-v40.json",
+              "rawEvidenceSha256": "80064b0ce77d099e7a046018ce831df11894fef6ea8cdd75e9c72ea5a3a79c02",
+              "modelCalls": 0,
+              "reason": "Script supplied backup text instead of a JSON object; rejected before import."
+            },
+            {
+              "evidence": "codex-role-profile-restoration-v40-verified.json",
+              "rawEvidenceSha256": "d76403bb75b78d5a55ee6376739588d0efbaea66a97e593915b1908a2f1f501e",
+              "modelCalls": 0,
+              "reason": "Imported candidate was adopted, then opening-consumer check correctly rejected the test draft missing player background/opening seed. Final probe supplied these explicit engineering settings after adoption."
+            }
+          ]
         }
       },
       {
