@@ -19,6 +19,8 @@ export {
   shareInteractionKnowledge,
   startInteractionScene,
   supersedeInteractionMemory,
+  changeChatMemoryUse,
+  correctChatMemory,
 } from './runtime-commands'
 export {readChatComposerDraftV1} from './composer-draft-read'
 export type {ChatComposerSendBindingV1} from './runtime-commands'

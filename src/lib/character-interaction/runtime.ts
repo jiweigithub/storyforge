@@ -38,7 +38,7 @@ const MEMORY_KINDS = new Set<InteractionMemoryKind>([
   'conflict',
   'gift',
 ])
-const MEMORY_STATUSES = new Set(['proposed', 'accepted', 'rejected', 'superseded'])
+const MEMORY_STATUSES = new Set(['proposed', 'accepted', 'rejected', 'superseded', 'disabled', 'revoked'])
 const KNOWLEDGE_STATUSES = new Set<RuntimeMemoryStatus>(['known', 'mistaken', 'forgotten'])
 
 function isObject(value: unknown): value is JsonObject {
@@ -203,6 +203,7 @@ function memory(value: unknown): InteractionRuntimeMemory {
   const status = String(value.status ?? '') as InteractionRuntimeMemory['status']
   if (!MEMORY_KINDS.has(kind)) throw new Error('互动记忆类型无效。')
   if (!MEMORY_STATUSES.has(status)) throw new Error('互动记忆状态无效。')
+  if (value.authorship !== undefined && value.authorship !== 'player-correction') throw new Error('互动记忆内容来源无效。')
   return {
     memoryId: text(value.memoryId, '互动记忆 ID', 200),
     participantKey: text(value.participantKey, '互动记忆角色', 160),
@@ -218,6 +219,7 @@ function memory(value: unknown): InteractionRuntimeMemory {
       ? null
       : integer(value.decisionSequence, '互动记忆决定序号', Number.MIN_SAFE_INTEGER),
     supersededByMemoryId: nullableText(value.supersededByMemoryId, '替代记忆 ID', 200),
+    ...(value.authorship === 'player-correction' ? {authorship: 'player-correction' as const} : {}),
   }
 }
 
@@ -839,6 +841,49 @@ export function applyInteractionEvent(
         decisionSequence: null,
         supersededByMemoryId: null,
       })
+      break
+    }
+    case 'interaction.narrative.memory-control.changed':
+    case 'interaction.narrative.memory.corrected': {
+      if (!state.chatNarrative || event.actorKey !== state.playerKey) throw new Error('记忆管理需要玩家在主动叙事聊天中明确操作。')
+      const memoryId = text(body.memoryId, '互动记忆 ID', 200)
+      const target = state.memories.find(item => item.memoryId === memoryId)
+      if (!target || !['accepted', 'disabled'].includes(target.status) || target.supersededByMemoryId != null) throw new Error('这条记忆已变化，不能继续本次管理操作。')
+      // A player may stop using a memory whose old message was superseded,
+      // but cannot inspect or manipulate another role's private sources.
+      if (!target.sourceEventSequences.length || target.sourceEventSequences.some(sequence => {
+        const source = state.messages.find(item => item.eventSequence === sequence)
+        return !source || !visibleTo(source, state.playerKey) || !visibleTo(source, target.participantKey)
+      })) throw new Error('玩家不能管理来源不可见的角色记忆。')
+      text(body.reason, '记忆调整原因', 1_000)
+      if (event.type === 'interaction.narrative.memory-control.changed') {
+        const action = body.action
+        if (action === 'disable' && target.status === 'accepted') target.status = 'disabled'
+        else if (action === 'revoke') target.status = 'revoked'
+        else if (action === 'enable' && target.status === 'disabled') {
+          requireEvidence(state, target.participantKey, target.sourceEventSequences, target.evidenceExcerpt)
+          const max = requireParticipant(state, target.participantKey).maxMemoryEntries
+          if (state.memories.filter(item => item.participantKey === target.participantKey && item.status === 'accepted').length >= max) throw new Error('角色持久记忆已达上限，不能恢复这条记忆。')
+          target.status = 'accepted'
+        } else throw new Error('记忆状态不支持本次调整。')
+        target.decisionSequence = event.sequence
+      } else {
+        const replacementId = text(body.replacementMemoryId, '修正记忆 ID', 200)
+        if (state.memories.some(item => item.memoryId === replacementId)) throw new Error('修正记忆 ID 已使用。')
+        const sourceEventSequences = strings(body.sourceEventSequences, '修正记忆来源序号')
+          .map(item => integer(Number(item), '修正记忆来源序号', Number.MIN_SAFE_INTEGER, event.sequence - 1))
+        const evidenceExcerpt = text(body.evidenceExcerpt, '修正记忆证据摘录', 1_000)
+        const sources = requireEvidence(state, target.participantKey, sourceEventSequences, evidenceExcerpt)
+        if (sources.some(source => !visibleTo(source, state.playerKey))) throw new Error('修正记忆不能引用玩家不可见的消息。')
+        // One event replaces the active entry at capacity. A disabled entry
+        // stays disabled; correction is not an implicit re-enable operation.
+        state.memories.push({...target, memoryId: replacementId, content: text(body.content, '修正记忆内容', 8_000),
+          sourceEventSequences, evidenceExcerpt, proposalSequence: event.sequence, decisionSequence: event.sequence,
+          supersededByMemoryId: null, authorship: 'player-correction'})
+        target.status = 'superseded'
+        target.decisionSequence = event.sequence
+        target.supersededByMemoryId = replacementId
+      }
       break
     }
     case 'interaction.memory.accepted':

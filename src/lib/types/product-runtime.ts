@@ -921,7 +921,7 @@ export interface TtrpgRuntimeCampaignState {
 
 export type InteractionSceneStatus = "active" | "ended";
 export type InteractionMemoryStatus =
-  "proposed" | "accepted" | "rejected" | "superseded";
+  "proposed" | "accepted" | "rejected" | "superseded" | "disabled" | "revoked";
 export type InteractionMemoryKind =
   | "scene-summary"
   | "key-memory"
@@ -999,6 +999,9 @@ export interface InteractionRuntimeMemory {
   proposalSequence: number;
   decisionSequence: number | null;
   supersededByMemoryId: string | null;
+  /** Present only for a player-confirmed correction; legacy/model proposals
+   * must not be inferred to have passed a visibility or fidelity review. */
+  authorship?: "player-correction";
 }
 
 export interface InteractionRuntimeRelationship {
@@ -1209,6 +1212,8 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "interaction.narrative.edit.requested",
   "interaction.narrative.edit.cancelled",
   "interaction.narrative.message-retrieval.changed",
+  "interaction.narrative.memory-control.changed",
+  "interaction.narrative.memory.corrected",
   "interaction.narrative.action.committed",
   "interaction.narrative.action-reviewed.committed",
   "interaction.narrative.situation.committed",

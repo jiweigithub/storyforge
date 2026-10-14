@@ -348,6 +348,21 @@ export async function supersedeInteractionMemory(
   });
 }
 
+export async function changeChatMemoryUse(input: ProductRuntimeCommandEnvelopeV1 & {
+  memoryId: string; action: 'disable' | 'enable' | 'revoke'; reason: string;
+}): Promise<ProductRuntimeEvent> {
+  return appendInteractionCommand({...input, type: 'interaction.narrative.memory-control.changed', actorKey: 'player',
+    targetKey: input.memoryId.trim(), payload: {memoryId: input.memoryId.trim(), action: input.action, reason: input.reason.trim()}});
+}
+
+export async function correctChatMemory(input: ProductRuntimeCommandEnvelopeV1 & {
+  memoryId: string; replacementMemoryId: string; content: string; sourceEventSequences: number[]; evidenceExcerpt: string; reason: string;
+}): Promise<ProductRuntimeEvent> {
+  return appendInteractionCommand({...input, type: 'interaction.narrative.memory.corrected', actorKey: 'player', targetKey: input.memoryId.trim(),
+    payload: {memoryId: input.memoryId.trim(), replacementMemoryId: input.replacementMemoryId.trim(), content: input.content.trim(),
+      sourceEventSequences: input.sourceEventSequences, evidenceExcerpt: input.evidenceExcerpt.trim(), reason: input.reason.trim()}});
+}
+
 export async function shareInteractionKnowledge(
   input: ProductRuntimeCommandEnvelopeV1 & {
     knowledgeKey: string;

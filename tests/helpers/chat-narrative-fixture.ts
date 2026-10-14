@@ -59,7 +59,7 @@ export function enableChatFactDiscoveryFixture(content: FrozenInteractionRuntime
 }
 
 /** Formal isolated release/instance, with a scene-start event and no fabricated player input. */
-export async function seedChatNarrativeRuntimeFixture(options: {factDiscovery?: boolean; maxActionsPerTrigger?: number; relationships?: boolean; additionalGuardGoal?: boolean; actorSituationExpansion?: boolean; playerFollowup?: boolean; directorBudget?: number; contextKnowledge?: Array<{key: string; content: string; audienceKeys: string[]}>} = {}) {
+export async function seedChatNarrativeRuntimeFixture(options: {maxMemoryEntries?: number; factDiscovery?: boolean; maxActionsPerTrigger?: number; relationships?: boolean; additionalGuardGoal?: boolean; actorSituationExpansion?: boolean; playerFollowup?: boolean; directorBudget?: number; contextKnowledge?: Array<{key: string; content: string; audienceKeys: string[]}>} = {}) {
   const {scope, release} = await seedCurrentProductWorld('CHAT-02 narrative contract')
   const catalog = await loadCurrentProductWorldSourceCatalogV1({scope, worldReleaseId: release.id!, productType: 'character-interaction'})
   const keys = catalog.characters.slice(0, 2).map(c => c.resourceKey)
@@ -77,6 +77,7 @@ export async function seedChatNarrativeRuntimeFixture(options: {factDiscovery?: 
     {key: 'trust', label: '信任', minimum: -100, maximum: 100, initial: 0, largeChangeThreshold: 20},
     {key: 'respect', label: '尊重', minimum: -100, maximum: 100, initial: 0, largeChangeThreshold: 20},
   ]
+  if (options.maxMemoryEntries != null) for (const profile of interaction.profiles) profile.maxMemoryEntries = options.maxMemoryEntries
   if (options.maxActionsPerTrigger != null) interaction.chatNarrative!.permissions.maxActionsPerTrigger = options.maxActionsPerTrigger
   if (options.directorBudget != null) interaction.sceneTemplates[0].directorBudget = options.directorBudget
   for (const item of options.contextKnowledge ?? []) if (['player', ...interaction.profiles.map(p => p.participantKey)].every(key => item.audienceKeys.includes(key))) {
