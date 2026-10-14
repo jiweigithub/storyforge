@@ -1,7 +1,7 @@
 # AVG 专业岗位、工件与生产图
 
-> L2 · 版本：1.1.0 · 生效：2026-10-13 · 受 [AVG 产品契约](../AVG.md)约束。
-> 下列 ID/schema 是正式目标合同，尚未进入 Agent/Skill/L3 注册表；设计登记不等于 Skill 实现。
+> L2 · 版本：1.2.0 · 生效：2026-10-14 · 受 [AVG 产品契约](../AVG.md)约束。
+> 22 岗位/Skill 是目标合同；BASE-00B 已登记首批八种 inert schema、输出 key 和采用拒绝接缝，实际状态见实施计划。未登记的专业 Skill/作者采用尚不可调用，schema 登记不等于岗位实现。
 
 ## 1 主助手、岗位与确定性职责
 
@@ -102,7 +102,7 @@ flowchart TD
 
 ## 4 Run、上下文和有界执行
 
-每任务冻结具体 key/scene/主体、输入 Artifact revision/hash、WorldReference/SourcePlan、purpose/允许来源、能力、provider/model、输出 schema/大小、调用/token/时间/现金或可验证费用上界、尝试数及终止策略。预算值须在开始前有具体值，不能以“自动优化”留无限额度；未知费用不是零，现金硬上限无法验证时不发收费调用。
+每任务冻结具体 key/scene/主体、输入 Artifact revision/hash、WorldReference/SourcePlan、purpose/允许来源、能力、provider/model、输出 schema/大小、调用/token/时间/现金或可验证费用上界、尝试数及终止策略。每批调用/token/时长/attempt 必须有具体值，不能以“自动优化”开启无界重试；总现金/人工上限允许作者显式不设，本次首轮已取得该授权。未知费用不是零；若作者设置现金硬上限而系统无法验证，停止收费调用。无总上限也须记录真实费用/unknown 和全部失败、废弃及人工投入。
 
 模型先看目录/相关摘要，再渐进读取当前工件、相邻进入/退出状态、角色/路线或必要原文；必读/禁止由 Gateway 校验。固定前 N 条不作为来源策略；最终 token 裁剪不能删除必读约束后继续运行。
 

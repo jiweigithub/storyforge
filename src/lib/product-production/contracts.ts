@@ -1,5 +1,5 @@
 import { parseChatAuthoringSettingsV1 } from '../character-interaction/authoring-contract'
-import { parseAvgAuthoringSettingsV1 } from '../avg/authoring-contract'
+import { parseAvgSettingsForLegacyProduction } from '../avg/settings-v2'
 import type {
   TextAdventureContentRevisionV1,
   ProductConsultationBudgetV1,
@@ -310,7 +310,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
   const parsed: ProductProductionBriefV3 = {
     ...(avgRevision ? { avgRevision } : {}),
     ...(row.characterChat ? { characterChat: parseChatAuthoringSettingsV1(row.characterChat) } : {}),
-    ...(row.avg ? { avg: parseAvgAuthoringSettingsV1(row.avg) } : {}),
+    ...(row.avg ? { avg: parseAvgSettingsForLegacyProduction(row.avg) } : {}),
     schema: 'storyforge.product-production-brief', version: 3,
     source: {
       worldReleaseId: positiveId(source.worldReleaseId, 'source.worldReleaseId'),
