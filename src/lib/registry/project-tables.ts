@@ -1874,6 +1874,25 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
         exportAs: "_budgetLedgerPortableJson",
         onUnmapped: "require-if-present",
       },
+      {
+        // Failure recovery and paused request accounting point to the same
+        // durable Runs as the budget ledger. Keep their IDs portable too.
+        field: "failureJson",
+        remapVia: "agentRuns",
+        kind: "json-id-paths",
+        paths: [
+          "failureProvenance.runId", "failureProvenance.rootRunId",
+          "taskFailures.*.failureProvenance.runId", "taskFailures.*.failureProvenance.rootRunId",
+          "previousFailure.failureProvenance.runId", "previousFailure.failureProvenance.rootRunId",
+          "previousFailure.taskFailures.*.failureProvenance.runId", "previousFailure.taskFailures.*.failureProvenance.rootRunId",
+          "repairCause.failureProvenance.runId", "repairCause.failureProvenance.rootRunId",
+          "pausedProviderReservations.*.runId", "automaticallySettledReservations.*.runId",
+          "unknownResultAccounting.runId", "resolution.unknownResultAccounting.runId",
+          "resolution.unknownResultReservation.runId",
+        ],
+        exportAs: "_failurePortableJson",
+        onUnmapped: "require-if-present",
+      },
     ],
     defaults: {
       parentBuildNumber: null,
