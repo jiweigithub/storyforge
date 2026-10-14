@@ -22,7 +22,7 @@ import {
   getUpperProductWorldRequirementAdapterV1,
   type UpperProductWorldRequirementGoalV1,
 } from '../product/world-requirement-adapters'
-import { createWorldReferenceV1 } from '../world-engine/world-reference'
+import { createWorldReferenceV1, resolveWorldReferenceResourceScopeV1 } from '../world-engine/world-reference'
 import { resolveProductProductionWorldCompilationDescriptorsV2 } from './world-source'
 import { textAdventureMandatoryFullWorldResourcesV1 } from '../adventure/world-source-requirements'
 
@@ -148,6 +148,26 @@ export async function parseProductProductionSourcePlanV1(
   return plan
 }
 
+/** The Brief is immutable evidence, including its historical local ID. Only
+ * SourcePlan carries the remappable locator used for execution after import. */
+export async function resolveProductProductionWorldScopeV1(input: {
+  scope: WorkspaceScope
+  sourcePlan: ProductSourcePlanV1
+  brief: ProductProductionBriefV3
+}) {
+  const plan = await validateProductSourcePlanV1(input.sourcePlan)
+  if (plan.productType !== input.brief.intent.productType
+    || plan.worldReference.releaseHash !== input.brief.source.worldContentHash) {
+    throw new Error('[product-production-source] SourcePlan 与冻结 Brief 来源不一致')
+  }
+  const scope = await resolveWorldReferenceResourceScopeV1(plan.worldReference)
+  if (scope.projectId !== input.scope.projectId || scope.worldId !== input.scope.worldId) {
+    throw new Error('[product-production-source] WorldReference 超出当前世界作用域')
+  }
+  return {...scope, worldReleaseId: plan.worldReference.localReleaseRecordId,
+    worldReleaseHash: plan.worldReference.releaseHash}
+}
+
 export async function createConfirmedProductBriefV1(input: {
   productionKey: string
   briefRow: ProductProductionBriefRecordV1
@@ -233,10 +253,11 @@ export async function executeProductProductionWorldGatewayV1(input: {
   signal?: AbortSignal
 }): Promise<ContextGatewayExecutionV1> {
   const skill = getAgentSkillV1(input.task.skillId ?? 'product-production.integrate.v1')
+  const worldScope = await resolveProductProductionWorldScopeV1(input)
   const compilationDescriptors = input.requireCompilationResources
     ? resolveProductProductionWorldCompilationDescriptorsV2({
       descriptors: (await openWorldSemanticResourceCatalogV1({
-        localReleaseRecordId: input.brief.source.worldReleaseId,
+        localReleaseRecordId: worldScope.worldReleaseId,
         expectedProjectId: input.scope.projectId,
         expectedWorldId: input.scope.worldId,
       })).resources,

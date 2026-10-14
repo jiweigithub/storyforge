@@ -6,6 +6,7 @@ import { parseTtrpgAuthoredScenarioV1, type TtrpgAuthoredScenarioV1 } from '../t
 import type { ChatResult } from '../ai/client'
 import { estimateTokens } from '../ai/context-budget'
 import { db } from '../db/schema'
+import { readProductProductionBuildWorldScopeV1 } from './world-binding'
 import { validateNarrativeContentGraph } from '../product/narrative-content'
 import type {
   ProductMediaKind,
@@ -10045,13 +10046,14 @@ async function executeIntegrationTask(input: ProductProductionTaskExecutionInput
     : undefined
   const media = input.inputArtifacts.filter(row => row.blobObjectId != null).map(mediaAsset)
   const assets = media.map(item => item.asset)
+  const worldScope = await readProductProductionBuildWorldScopeV1({...input, brief: options.brief})
   const sourceCatalog = await loadProductProductionWorldSourceCatalogV2({
     scope: {
       projectId: options.production.projectId,
       worldId: options.production.worldId,
       workId: options.production.workId,
     },
-    worldReleaseId: options.brief.source.worldReleaseId,
+    worldReleaseId: worldScope.worldReleaseId,
     selection: options.brief.source.selection,
     chatPrivateCharacters: options.brief.characterChat?.version === 3 ? options.brief.characterChat.privateCharacters : undefined,
   })

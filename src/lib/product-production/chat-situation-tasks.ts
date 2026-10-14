@@ -2,6 +2,7 @@ import {CHAT_OPENING_REVIEW_KEY, assertChatOpeningReviewedV1} from '../character
 import type { ProductProductionBriefV3, ProductProductionRecordV1 } from '../types'
 import type { ProductProductionTaskExecutionInputV1, ProductProductionTaskExecutionResultV1 } from './scheduler'
 import { loadProductProductionWorldSourceCatalogV2 } from './world-source'
+import { readProductProductionBuildWorldScopeV1 } from './world-binding'
 import { prepareChatNarrativeCompilerSourceV1 } from './product-module-compilers'
 import {composeChatRoleVoiceRulesV1} from '../character-interaction/role-profile'
 import { canonicalProductProductionJsonV2 } from './hash'
@@ -41,8 +42,9 @@ export async function executeChatSituationDeterministicTaskV1(input: ProductProd
   if (options.brief.intent.productType !== 'character-interaction' || settings?.version !== 3) fail('情境制作需要聊天 v3 Brief')
   const artifacts: ProductProductionTaskExecutionResultV1['artifacts'] = []
   if (input.task.taskKey === 'content.design') {
+    const worldScope = await readProductProductionBuildWorldScopeV1({...input, brief: options.brief})
     const sourceCatalog = await loadProductProductionWorldSourceCatalogV2({scope: input.scope,
-      worldReleaseId: options.brief.source.worldReleaseId, selection: options.brief.source.selection, chatPrivateCharacters: settings.privateCharacters})
+      worldReleaseId: worldScope.worldReleaseId, selection: options.brief.source.selection, chatPrivateCharacters: settings.privateCharacters})
     const projected = prepareChatNarrativeCompilerSourceV1({brief: options.brief, sourceCatalog})
     // Raw authored prose can be unclassified or author-only. Only the reviewed
     // projection may enter a production model's input, including for new cast.

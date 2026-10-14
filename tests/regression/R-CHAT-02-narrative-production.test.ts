@@ -1,5 +1,6 @@
 import {beforeEach, afterEach, expect, it} from 'vitest'
 import {db} from '../../src/lib/db/schema'
+import {resolveWorkspaceOwnership} from '../../src/lib/workspace/ownership'
 import {seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
 import {parseChatSituationCandidatesV1, selectChatNarrativeCandidateV1, chatNarrativeShellV1} from '../../src/lib/character-interaction/narrative-production'
 import {parseChatAuthoringSettings} from '../../src/lib/character-interaction/authoring-contract'
@@ -14,7 +15,9 @@ import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-ex
 import {interactionVisibilityView, createInitialInteractionState} from '../../src/lib/character-interaction/runtime'
 import {executeProductProductionCommand} from '../../src/lib/product-production/commands'
 import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
-import {runProductProductionUntilBlockedV1} from '../../src/lib/product-production/scheduler'
+import {runProductProductionUntilBlockedV1, recoverImportedChatProductionPrefixV1} from '../../src/lib/product-production/scheduler'
+import {readProductProductionBuildWorldScopeV1} from '../../src/lib/product-production/world-binding'
+import {aggregateProductSourceManifestFromExactRunsV1} from '../../src/lib/product/source-contracts'
 import {readProductProductionDetailsV1, confirmChatSituationDecisionV1, listProductProductionReviewArtifactsV1, retryProductProductionBlockerV1, publishProductProductionV1} from '../../src/lib/product-production/service'
 import {chatSituationCandidatesFixture, chatOpeningReviewFixture} from '../helpers/chat-narrative-production-fixture'
 import type {ChatNarrativeProductionSourceV1} from '../../src/lib/character-interaction/narrative-production'
@@ -109,14 +112,14 @@ it('plans a durable author gate and prevents the situation model from rereading 
   expect(() => parseProductProductionCommandV1({...command, resolution: {...command.resolution, chatSituation: {...chatSituation, authorCommandId: 'forged'}}})).toThrow('字段')
 })
 
-it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false, privateCast: undefined}, {mappedPlayer: true, factDiscovery: false, worldDiscovery: false, privateCast: undefined}, {mappedPlayer: false, factDiscovery: true, worldDiscovery: false, privateCast: undefined}, {mappedPlayer: true, factDiscovery: false, worldDiscovery: true, privateCast: undefined}, {mappedPlayer: true, factDiscovery: true, worldDiscovery: false, privateCast: 'only' as const}, {mappedPlayer: false, factDiscovery: false, worldDiscovery: false, privateCast: 'mixed' as const}])('runs the formal scheduler through selection, release and transfer without regenerating candidates (mapped=$mappedPlayer, discovery=$factDiscovery, world=$worldDiscovery, private=$privateCast)', async ({mappedPlayer, factDiscovery, worldDiscovery, privateCast}) => {
+it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false, privateCast: undefined, transferAtSelection: true}, {mappedPlayer: true, factDiscovery: false, worldDiscovery: false, privateCast: undefined}, {mappedPlayer: false, factDiscovery: true, worldDiscovery: false, privateCast: undefined}, {mappedPlayer: true, factDiscovery: false, worldDiscovery: true, privateCast: undefined}, {mappedPlayer: true, factDiscovery: true, worldDiscovery: false, privateCast: 'only' as const}, {mappedPlayer: false, factDiscovery: false, worldDiscovery: false, privateCast: 'mixed' as const}])('runs the formal scheduler through selection, release and transfer without regenerating candidates (mapped=$mappedPlayer, discovery=$factDiscovery, world=$worldDiscovery, private=$privateCast, transfer=$transferAtSelection)', async ({mappedPlayer, factDiscovery, worldDiscovery, privateCast, transferAtSelection}) => {
   const f = await seedChatNarrativeProductionFixture({mappedPlayer, factDiscovery, worldDiscovery, privateCast, consultation: privateCast === 'mixed'})
   const created = await executeProductProductionCommand({scope: f.scope, command: {
     type: 'create-intent', commandId: 'chat.intent', productionKey: 'chat.situation-production', productType: 'character-interaction',
     worldReleaseId: f.confirmed.worldReleaseId!, userText: '制作可以自由演绎的角色聊天',
   }})
   expect(created.ok).toBe(true)
-  const productionId = created.productionId
+  let productionId = created.productionId
   const saved = await executeProductProductionCommand({scope: f.scope, productionId, command: {
     type: 'save-brief-revision', commandId: 'chat.brief', expectedStateRevision: 0, parentRevision: null, brief: f.brief,
   }})
@@ -154,6 +157,80 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false, priv
   let details = await readProductProductionDetailsV1(f.scope, productionId)
   expect(JSON.parse(details.build!.failureJson), details.build!.failureJson).toMatchObject({taskKey: 'content.chat-author-gate'})
   expect(calls).toEqual(['situations', 'opening-review'])
+  if (transferAtSelection) {
+    const before = details.brief!
+    const originalArtifacts = await db.productBuildArtifacts.where('buildId').equals(details.build!.id!).toArray()
+    const importedId = await importProjectJSON(await exportProjectJSON(f.scope.projectId))
+    f.scope = (await resolveWorkspaceOwnership(importedId)).scope
+    productionId = (await db.productProductions.where('projectId').equals(importedId).first())!.id!
+    details = await readProductProductionDetailsV1(f.scope, productionId)
+    expect(details.brief!.sourceWorldReleaseId).not.toBe(before.sourceWorldReleaseId)
+    expect(details.brief!.briefJson).toBe(before.briefJson)
+    expect(details.brief!.briefHash).toBe(before.briefHash)
+    expect(details.brief!.sourcePlanHash).toBe(before.sourcePlanHash)
+    const restoredArtifacts = await db.productBuildArtifacts.where('buildId').equals(details.build!.id!).toArray()
+    expect(restoredArtifacts.map(row => [row.artifactKey, row.contentHash, row.payloadJson]))
+      .toEqual(originalArtifacts.map(row => [row.artifactKey, row.contentHash, row.payloadJson]))
+    expect(calls).toEqual(['situations', 'opening-review'])
+    const briefRow = details.brief!, buildId = details.build!.id!
+    const bind = () => readProductProductionBuildWorldScopeV1({scope: f.scope, productionId, buildId, brief: f.brief})
+    for (const patch of [
+      {sourceWorldReleaseId: null}, {sourceWorldContentHash: 'f'.repeat(64)},
+      {sourcePlanHash: 'f'.repeat(64)}, {briefJson: '{}'},
+    ]) {
+      await db.productProductionBriefs.update(briefRow.id!, patch)
+      await expect(bind()).rejects.toThrow()
+      await db.productProductionBriefs.put(briefRow)
+    }
+    const wrongScope = JSON.parse(briefRow.sourcePlanJson)
+    wrongScope.worldReference.localReleaseRecordId = before.sourceWorldReleaseId
+    await db.productProductionBriefs.update(briefRow.id!, {
+      sourceWorldReleaseId: before.sourceWorldReleaseId, sourcePlanJson: JSON.stringify(wrongScope),
+    })
+    await expect(bind()).rejects.toThrow('世界作用域')
+    await db.productProductionBriefs.put(briefRow)
+    await expect(bind()).resolves.toMatchObject({worldReleaseId: briefRow.sourceWorldReleaseId})
+    const recover = () => recoverImportedChatProductionPrefixV1({scope: f.scope, productionId,
+      expectedStateRevision: details.production.stateRevision})
+    const originalDesign = originalArtifacts.find(row => row.artifactKey === 'design.game')!
+    const restoredDesign = restoredArtifacts.find(row => row.artifactKey === 'design.game')!
+    const assembled = (await db.agentRunEvents.where('runId').equals(originalDesign.producerRunId!).toArray())
+      .find(event => event.type === 'context.assembled')!
+    const pointer = JSON.parse(assembled.payloadJson)
+    const aggregate = (scope: typeof f.scope, runId: number) => aggregateProductSourceManifestFromExactRunsV1({
+      scope, sourcePlan: JSON.parse(briefRow.sourcePlanJson), runContextManifests: [{runId,
+        stepId: pointer.stepId, attempt: pointer.attempt, manifestHash: pointer.manifestHash}],
+    })
+    // Even identical portable content cannot excuse a scope mismatch without
+    // an actual imported, locally revalidated completed producer.
+    await expect(aggregate({projectId: before.projectId, worldId: before.worldId, workId: before.workId},
+      originalDesign.producerRunId!)).rejects.toThrow('release/policy')
+    await expect(aggregate(f.scope, restoredDesign.producerRunId!)).rejects.toThrow('release/policy')
+    const candidate = restoredArtifacts.find(row => row.artifactKey === 'content.chat-candidates')!
+    // Matching payload/hash alone is insufficient: the exact original candidate
+    // and envelope must agree with the settled producer checkpoint.
+    const forgedPayload = {...JSON.parse(candidate.payloadJson), title: '伪造导入候选'}
+    await db.productBuildArtifacts.update(candidate.id!, {payloadJson: JSON.stringify(forgedPayload),
+      contentHash: await hashProductProductionValueV2(forgedPayload)})
+    await expect(recover()).rejects.toThrow('完成证据')
+    await db.productBuildArtifacts.put(candidate)
+    await db.productBuildArtifacts.update(candidate.id!, {metadataJson: '{"forged":true}'})
+    await expect(recover()).rejects.toThrow('完成证据')
+    await db.productBuildArtifacts.put(candidate)
+    const checkpoint = (await db.agentRunCheckpoints.where('runId').equals(candidate.producerRunId!).toArray()).at(-1)!
+    await db.agentRunCheckpoints.delete(checkpoint.id!)
+    await expect(recover()).rejects.toThrow('checkpoint')
+    await db.agentRunCheckpoints.put(checkpoint)
+    const eventsBefore = await db.agentRunEvents.where('runId').equals(candidate.producerRunId!).count()
+    await recover()
+    await expect(aggregate(f.scope, restoredDesign.producerRunId!)).resolves.toMatchObject({sourcePlanHash: briefRow.sourcePlanHash})
+    const eventsAfter = await db.agentRunEvents.where('runId').equals(candidate.producerRunId!).count()
+    expect(eventsAfter).toBeGreaterThan(eventsBefore)
+    await recover()
+    expect(await db.agentRunEvents.where('runId').equals(candidate.producerRunId!).count()).toBe(eventsAfter)
+    expect((await db.productBuilds.get(buildId))!.budgetLedgerJson).toBe(details.build!.budgetLedgerJson)
+    expect(calls).toEqual(['situations', 'opening-review'])
+  }
   db.close(); await db.open()
   details = await readProductProductionDetailsV1(f.scope, productionId)
   const artifacts = await listProductProductionReviewArtifactsV1({scope: f.scope, buildId: details.build!.id!})

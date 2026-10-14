@@ -70,6 +70,7 @@ import { verifyTextOpenWorldCreatorProductionPreflightConfirmationV1 } from '../
 import { useAIConfigStore } from '../../stores/ai-config'
 import {
   assertProductProductionBudgetLedgerV1,
+  recoverImportedChatProductionPrefixV1,
   prepareLegacyPausedProductBuildV1,
   resolveProductProductionUnknownResultReservationLedgerV2,
 } from './scheduler'
@@ -3131,6 +3132,12 @@ export async function executeProductProductionCommand(input: {
       notifyProductionChanged(replay)
       return replay
     }
+  }
+  if ((command.type === 'resolve-blocker' || command.type === 'resume')
+    && Number.isInteger(input.productionId)) {
+    await recoverImportedChatProductionPrefixV1({
+      scope, productionId: input.productionId!, expectedStateRevision: command.expectedStateRevision,
+    })
   }
   const preparedBriefHash = command.type === 'save-brief-revision'
     ? await hashProductProductionValueV2(command.brief)

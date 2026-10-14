@@ -408,7 +408,8 @@ test('normal narrative chat opens, accepts refusal, continues and reloads withou
     await page.screenshot({path: info.outputPath('narrative-player-mobile.png')});
 });
 
-test('v3 production offers initial situations, retains them across refresh and freezes the author selection', async ({page}, info) => {
+for (const transfer of [false, true]) {
+test(`v3 production offers initial situations, retains them across refresh and freezes the author selection (transfer=${transfer})`, async ({page}, info) => {
     test.setTimeout(120000);
     const response: {candidateOutput: unknown; reviewOutput: unknown; actor: string} = {candidateOutput: null, reviewOutput: null, actor: ''};
     const calls: string[] = [];
@@ -433,7 +434,7 @@ test('v3 production offers initial situations, retains them across refresh and f
         await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(content)}, finish_reason: 'stop'}], usage: {prompt_tokens: 100, completion_tokens: 100, total_tokens: 200}})});
     });
     await page.goto('./chat/library');
-    const fixture = await page.evaluate(async () => {
+    let fixture = await page.evaluate(async () => {
         const load = new Function('p', 'return import(p)');
         const f = await (await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts')).seedChatNarrativeProductionFixture();
         const execute = (await load('/storyforge/src/lib/product-production/commands.ts')).executeProductProductionCommand;
@@ -446,7 +447,7 @@ test('v3 production offers initial situations, retains them across refresh and f
     response.candidateOutput = fixture.candidates;
     response.reviewOutput = fixture.review;
     response.actor = fixture.candidates.options[1].situation.goals[0].actorKey;
-    const query = `project=${fixture.scope.projectId}&work=${fixture.scope.workId}&production=${fixture.productionId}`;
+    let query = `project=${fixture.scope.projectId}&work=${fixture.scope.workId}&production=${fixture.productionId}`;
     await page.goto(`./chat/vision?${query}`);
     await expect(page.getByTestId('chat-narrative-setup')).toBeVisible();
     await page.getByLabel('玩家虚构角色的称呼', {exact: true}).fill('沈禾');
@@ -463,6 +464,23 @@ test('v3 production offers initial situations, retains them across refresh and f
     await page.reload();
     await expect(page.getByRole('button', {name: '选择「旧账本」并继续', exact: true})).toBeEnabled();
     expect(calls).toEqual(['situations', 'opening-review']);
+    if (transfer) {
+        fixture = await page.evaluate(async f => {
+            const load = new Function('p', 'return import(p)');
+            const db = (await load('/storyforge/src/lib/db/schema.ts')).db;
+            const backup = await load('/storyforge/src/lib/export/json-export.ts');
+            const projectId = await backup.importProjectJSON(await backup.exportProjectJSON(f.scope.projectId));
+            const scope = (await (await load('/storyforge/src/lib/workspace/ownership.ts')).resolveWorkspaceOwnership(projectId)).scope;
+            const production = await db.productProductions.where('projectId').equals(projectId).first();
+            const brief = await db.productProductionBriefs.where('productionId').equals(production.id).first();
+            if (brief.sourceWorldReleaseId === JSON.parse(brief.briefJson).source.worldReleaseId) throw Error('Transfer must change source locator');
+            return {...f, scope, productionId: production.id};
+        }, fixture);
+        query = `project=${fixture.scope.projectId}&work=${fixture.scope.workId}&production=${fixture.productionId}`;
+        await page.goto(`./chat/production?${query}`);
+        await expect(page.getByRole('button', {name: '选择「旧账本」并继续', exact: true})).toBeEnabled();
+        expect(calls).toEqual(['situations', 'opening-review']);
+    }
     await page.setViewportSize({width: 390, height: 844});
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByTestId('chat-situation-selection').screenshot({path: info.outputPath('chat-situation-selection-mobile.png')});
@@ -502,6 +520,7 @@ test('v3 production offers initial situations, retains them across refresh and f
     expect(await readPlayer()).toEqual(before);
     expect(calls).toEqual(['situations', 'opening-review', 'media', 'action', 'review']);
 });
+}
 test('a persisted narrative action resumes in the browser without another model call and keeps its consequence', async ({page}) => {
     await page.goto('./chat/library');
     const fixture = await page.evaluate(async () => {

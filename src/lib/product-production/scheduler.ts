@@ -1,3 +1,4 @@
+import { readProductProductionBuildWorldScopeV1 } from './world-binding'
 import { isTextRevisionRetainedVisualTaskV1, textRevisionRecoveryPreservesVisualContractV1, validateTextContentRevisionAuthorityV1, verifiedTextRevisionVisualCarryTaskKeysV1 } from './text-content-revision-authority'
 import { verifiedHumanImportCarryProofsV1 } from './text-adventure-artifact-store'
 import { isTextAdventureClockCapacityRevisionV1 } from './clock-capacity-revision'
@@ -5818,6 +5819,24 @@ async function revalidateImportedCheckpointedTaskV1(input: {
       && input.task.outputArtifactKeys.includes(row.artifactKey))
   const expectedKeys = [...input.task.outputArtifactKeys].sort()
   const actualKeys = rows.map(row => row.artifactKey).sort()
+  // A matching producer/receipt cannot bless an edited Artifact envelope.
+  // Compare the restored rows with the exact checkpoint that was signed.
+  const expectedArtifacts = new Map(await Promise.all(input.candidate.result.artifacts.map(async artifact => [
+    artifact.artifactKey,
+    {
+      kind: artifact.kind, requirementKey: artifact.requirementKey ?? null,
+      mediaKind: artifact.mediaKind ?? null,
+      payloadJson: canonicalProductProductionJsonV2(artifact.payload),
+      metadataJson: canonicalProductProductionJsonV2(artifact.metadata ?? {}),
+      qualityJson: canonicalProductProductionJsonV2(artifact.quality ?? {}),
+      rightsJson: canonicalProductProductionJsonV2(artifact.rights ?? {}),
+      contentHash: artifact.contentHash ?? await hashProductProductionValueV2(artifact.payload),
+      // Import remaps the Blob's local ID. Its bytes were independently
+      // verified above; identity is the hash/MIME/size, not that old locator.
+      mimeType: artifact.mimeType ?? null,
+      byteSize: artifact.byteSize ?? new TextEncoder().encode(canonicalProductProductionJsonV2(artifact.payload)).byteLength,
+    },
+  ] as const)))
   if (!build || build.controlEpoch !== input.controlEpoch
     || candidateHash !== input.candidate.candidateHash
     || receiptHash !== previousReceiptHash
@@ -5836,7 +5855,12 @@ async function revalidateImportedCheckpointedTaskV1(input: {
     || expectedKeys.some((key, index) => key !== actualKeys[index])
     || rows.some(row => row.producerRunId !== input.snapshot.run.id
       || row.producerReceiptHash !== receiptHash
-      || row.inputHash !== input.candidate.inputHash)) {
+      || row.inputHash !== input.candidate.inputHash
+      || (row.blobObjectId != null) !== (input.candidate.result.artifacts
+        .find(artifact => artifact.artifactKey === row.artifactKey)?.blobObjectId != null)
+      || Object.entries(expectedArtifacts.get(row.artifactKey) ?? {}).some(([key, value]) => (
+        row[key as keyof ProductBuildArtifactRecordV1] !== value
+      )))) {
     throw new Error(
       `[product-production-scheduler] 导入 task 完成证据无法在新 scope 复验:${input.task.taskKey}`,
     )
@@ -5902,42 +5926,15 @@ async function revalidateImportedCarriedTaskV1(input: {
   return snapshot
 }
 
-/**
- * Complete project backup import deliberately invalidates cloned Harness
- * receipts after local IDs are rebound. A sealed text-adventure or text-open-world Build carries
- * every candidate checkpoint, Artifact envelope, ledger entry and root seal,
- * so the proof can be reconstructed locally without another provider call.
- */
-export async function recoverImportedProductProductionProofsV1(input: {
+async function revalidateImportedProductionTasksV1(input: {
   scope: WorkspaceScope
-  productionId: number
-}): Promise<ProductProductionSchedulerProjectionV1> {
-  const scope = await resolveScope({ scope: input.scope })
-  const current = await currentProductionBuild(scope, input.productionId)
-  if (!['text-adventure', 'text-open-world'].includes(current.brief.intent.productType)) {
-    throw new Error('[product-production-scheduler] 当前产品不支持导入生产证明复验')
-  }
-  if (!['preview-ready', 'release-ready', 'released'].includes(current.build.status)) {
-    throw new Error('[product-production-scheduler] 只有已封存的导入 Build 可以执行本地证明复验')
-  }
-  const plan = parseProductProductionPlanV3(
-    current.build.planJson,
-    current.brief,
-    current.briefRow.briefHash,
-  )
-  const ledger = parseLedger(current.build.budgetLedgerJson)
-  if (ledger.rootRunId == null
-    || ledger.attempts.some(attempt => !attempt.usageKnown && attempt.resolution == null)) {
-    throw new Error('[product-production-scheduler] 导入 Build 缺少已结算 root/预算证明')
-  }
-  let root = await readAgentRunV1(scope, ledger.rootRunId)
-  if (root.projection.state !== 'completed' && !importedScopeReboundReceiptV1(root)) {
-    throw new Error('[product-production-scheduler] root 不是可复验的导入完成态')
-  }
-  const children = await childSnapshots(scope, current.build.id!, root.run.id)
-  if (children.size !== plan.tasks.length) {
-    throw new Error('[product-production-scheduler] 导入 Build 的 task Run 集合不完整')
-  }
+  current: Awaited<ReturnType<typeof currentProductionBuild>>
+  plan: ProductProductionPlanV3
+  children: Map<string, AgentRunSnapshotV1>
+  importedOnly: boolean
+}): Promise<void> {
+  const importedOnly = input.importedOnly
+  const {scope, current, plan, children} = input
   const artifacts = (await db.productBuildArtifacts.where('buildId').equals(current.build.id!).toArray())
     .filter(row => row.controlEpoch === current.build.controlEpoch
       && (row.status === 'accepted' || row.status === 'carried-forward'))
@@ -5967,6 +5964,7 @@ export async function recoverImportedProductProductionProofsV1(input: {
     for (const task of plan.tasks) {
       const snapshot = children.get(task.taskKey)
       if (!snapshot || snapshot.projection.state === 'completed'
+        || (importedOnly && !importedScopeReboundReceiptV1(snapshot))
         || task.dependsOn.some(dependency => !completed.has(dependency))) continue
       const outputs = (await db.productBuildArtifacts
         .where('buildId').equals(current.build.id!).toArray())
@@ -6028,10 +6026,78 @@ export async function recoverImportedProductProductionProofsV1(input: {
       progressed = true
     }
   }
-  if ([...children.values()].some(child => child.projection.state !== 'completed'
-    || !child.projection.terminalReceiptHash)) {
+  if ([...children.values()].some(child => importedOnly
+    ? importedScopeReboundReceiptV1(child) != null
+    : child.projection.state !== 'completed' || !child.projection.terminalReceiptHash)) {
     throw new Error('[product-production-scheduler] 导入 task 依赖闭包无法完成本地复验')
   }
+}
+
+/** Restore only already-completed imported chat tasks before an author command
+ * advances the epoch. Never complete the root, retry a failed task, or invoke a
+ * provider. The normal execution-binding check still decides later reuse. */
+export async function recoverImportedChatProductionPrefixV1(input: {
+  scope: WorkspaceScope
+  productionId: number
+  expectedStateRevision: number
+}): Promise<void> {
+  const production = await db.productProductions.get(input.productionId)
+  if (!production || production.productType !== 'character-interaction') return
+  const current = await currentProductionBuild(input.scope, input.productionId)
+  if (current.brief.characterChat?.version !== 3) return
+  if (current.production.stateRevision !== input.expectedStateRevision) {
+    throw new Error('[product-production-scheduler] 导入复验的作者命令已过期')
+  }
+  const ledger = parseLedger(current.build.budgetLedgerJson)
+  if (ledger.rootRunId == null) return
+  const children = await childSnapshots(input.scope, current.build.id!, ledger.rootRunId)
+  if (![...children.values()].some(snapshot => importedScopeReboundReceiptV1(snapshot))) return
+  const plan = parseProductProductionPlanV3(current.build.planJson, current.brief, current.briefRow.briefHash)
+  if (plan.controlEpoch !== current.build.controlEpoch
+    || await hashProductProductionValueV2(plan) !== current.build.planHash) {
+    throw new Error('[product-production-scheduler] 导入复验的 Plan/epoch 不一致')
+  }
+  await readProductProductionBuildWorldScopeV1({ ...input, buildId: current.build.id!, brief: current.brief })
+  await revalidateImportedProductionTasksV1({scope: input.scope, current, plan, children, importedOnly: true})
+}
+
+/**
+ * Complete project backup import deliberately invalidates cloned Harness
+ * receipts after local IDs are rebound. A sealed text-adventure or text-open-world Build carries
+ * every candidate checkpoint, Artifact envelope, ledger entry and root seal,
+ * so the proof can be reconstructed locally without another provider call.
+ */
+export async function recoverImportedProductProductionProofsV1(input: {
+  scope: WorkspaceScope
+  productionId: number
+}): Promise<ProductProductionSchedulerProjectionV1> {
+  const scope = await resolveScope({ scope: input.scope })
+  const current = await currentProductionBuild(scope, input.productionId)
+  if (!['text-adventure', 'text-open-world'].includes(current.brief.intent.productType)) {
+    throw new Error('[product-production-scheduler] 当前产品不支持导入生产证明复验')
+  }
+  if (!['preview-ready', 'release-ready', 'released'].includes(current.build.status)) {
+    throw new Error('[product-production-scheduler] 只有已封存的导入 Build 可以执行本地证明复验')
+  }
+  const plan = parseProductProductionPlanV3(
+    current.build.planJson,
+    current.brief,
+    current.briefRow.briefHash,
+  )
+  const ledger = parseLedger(current.build.budgetLedgerJson)
+  if (ledger.rootRunId == null
+    || ledger.attempts.some(attempt => !attempt.usageKnown && attempt.resolution == null)) {
+    throw new Error('[product-production-scheduler] 导入 Build 缺少已结算 root/预算证明')
+  }
+  let root = await readAgentRunV1(scope, ledger.rootRunId)
+  if (root.projection.state !== 'completed' && !importedScopeReboundReceiptV1(root)) {
+    throw new Error('[product-production-scheduler] root 不是可复验的导入完成态')
+  }
+  const children = await childSnapshots(scope, current.build.id!, root.run.id)
+  if (children.size !== plan.tasks.length) {
+    throw new Error('[product-production-scheduler] 导入 Build 的 task Run 集合不完整')
+  }
+  await revalidateImportedProductionTasksV1({scope, current, plan, children, importedOnly: false})
   root = await readAgentRunV1(scope, root.run.id)
   await compileTerminalBuild({
     scope,
