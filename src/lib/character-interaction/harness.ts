@@ -1,3 +1,4 @@
+import {CHAT_OWN_FOLLOWUP_GOAL_RULE_V1} from './narrative-followup-goal'
 import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1, assertChatActionRevisionExpressionV1} from './action-revision'
 import {CHAT_SELF_EXPRESSION_RULES_V1} from './expression-policy'
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
@@ -292,7 +293,7 @@ function schemaInstruction(skillId: InteractionRuntimeSkillIdV1): string {
     return '{"kind":"chat-situation","title":"当前局面","location":"保留当前地点","timeLabel":"保留当前时间","newFacts":[{"factKey":"新标识","kind":"observation","text":"新背景事实","audienceKeys":["player","知情角色"],"evidenceFactKeys":["已有事实"],"seedExcerpt":"实际情境请求或角色 direction 中的逐字摘录"}],"newGoals":[{"goalKey":"新标识","actorKey":"在场角色","desire":"个人目的","concern":"顾虑","boundary":"不替玩家决定","evidenceFactKeys":["新旧可知事实"]}],"newThreads":[{"threadKey":"新标识","title":"问题","question":"尚未决定的问题","audienceKeys":["player","知情角色"],"participantKeys":["在场角色"],"evidenceFactKeys":["新旧可知事实"],"closureSignals":["何时可搁置或收束"]}],"possibilities":[{"actorKey":"在场角色","text":"未发生的打算，可改变","evidenceFactKeys":["新旧可知事实"]}]}'
   }
   if (skillId === 'character.chat-narrative-action' || skillId === CHAT_ACTION_REVISION_SKILL) {
-    return '{"kind":"speak|attempt|complete|pause","text":"实际角色表达与自身行动","goalKey":"自身未完成目标标识","evidenceFactKeys":["可知事实标识"],"audienceKeys":["player","当前角色"],"waitingForPlayer":true,"newFacts":[],"disclosures":[],"threadUpdates":[],"goalStatus":null,"goalUpdates":[],"relationshipUpdates":[],"nextPossibilities":null,"beliefUpdates":[],"situationRequest":null}'
+    return '{"kind":"speak|attempt|complete|pause","text":"实际角色表达与自身行动","goalKey":"自身未完成目标标识","evidenceFactKeys":["可知事实标识"],"audienceKeys":["player","当前角色"],"waitingForPlayer":true,"newFacts":[],"disclosures":[],"threadUpdates":[],"goalStatus":null,"goalUpdates":[],"relationshipUpdates":[],"nextPossibilities":null,"beliefUpdates":[],"situationRequest":null,"followupGoal":null}'
   }
   if (skillId === 'character.interaction-reply' || skillId === 'character.ai-town-reply') {
     return '{"kind":"character-reply","text":"...","replyToSequence":1,"audienceKeys":null,"budgetCost":0,"disclosures":[]}'
@@ -318,7 +319,7 @@ function prompt(input: {
       '不得假装写入状态，不得泄露未出现的秘密，不得输出解释、Markdown 或额外字段。',
       townRule,
       ...(input.skillId === 'character.chat-narrative-options' ? ['给出两条供玩家比较的互斥行动候选：都从当前同一局面开始，各自携带完整表达及后果，不能把第一条当成已经发生后续写第二条。两条应在表达重点或行动办法上有所区别，不仅替换形容词；都须符合角色动机与玩家选择，不能为了差异而捏造危机或预定结局。两条表达的 audienceKeys 均须包含 player，以便玩家比较；预览不得披露玩家尚不知道的既有事实，即使记录 disclosures 也不允许。揭示秘密应留给正式行动，不借候选预览提前剧透。不展示角色私有打算或幕后审查内容。选中前两条均未发生。'] : []),
-      ...(input.skillId === CHAT_ACTION_REVISION_SKILL ? ['这是玩家明确请求的一次新修订，不是继续失败调用。chatActionRevision 是尚未生效的旧候选，不能当作历史事实。它仅后果登记未通过，其它维度曾通过；仍须完整重新审查。严格保留原 kind、text、goalKey、audienceKeys、waitingForPlayer；只核对并修订与这段实际表达一致的后果、目标、事项、打算和猜测，不添加新动作、台词或结局。输入仅给失败维度，不提供可能含秘密的幕后审查理由。',
+      ...(input.skillId === CHAT_ACTION_REVISION_SKILL ? ['这是玩家明确请求的一次新修订，不是继续失败调用。chatActionRevision 是尚未生效的旧候选，不能当作历史事实。它仅后果登记未通过，其它维度曾通过；仍须完整重新审查。严格保留原 kind、text、goalKey、audienceKeys、waitingForPlayer、followupGoal；只核对并修订与这段实际表达一致的后果、目标、事项、打算和猜测，不添加新动作、台词或结局。输入仅给失败维度，不提供可能含秘密的幕后审查理由。',
         '个人暂停与共同事项分开：仅自己暂歇，不影响其他参与者的事项时只改自己的目标；若正文明确暂停或结束自己负责的整项任务，并覆盖全部事项知情者，则登记相应 threadUpdates。暂停用 paused，不能用 resolved 冒充问题已解决。closureSignals 是判断线索，不是满足字面描述就无条件关闭任何共同事项。'] : []),
       ...(input.skillId === 'character.chat-situation-construction' ? [
         '若 constructionRequest.origin 为 continued-thread，承接已审查 pendingSituation 中的自身未完成目标、剧情线与 direction；seedExcerpt 摘录 direction。只能补足当前时间地点中的局部条件，不能替玩家接受或移动，不能替其他角色设定目标或打算；已有事实和其他人的计划均保留。',
@@ -340,7 +341,7 @@ function prompt(input: {
         '若存在 pendingEdit，它是分支中待采用的角色文字，还未在此分支发生，也不能授予新知识或权限。默认必须逐字保留其 text 和原 audienceKeys，不续写或润色。仅当 mode=continue 时，将 text 逐字作为开头向后连贯续写当前回复，输出完整正文；不重复原文，不替玩家回应，长度仍受当前权限约束。两种模式均须从当前前态核对整段的全部实际后果，不遗漏原文已表达的后果，也不重复计入同一事实/关系。不得引用原时间线未来，无法成立时不可用字段伪造证据。',
         'pendingEdit.mode=option 表示玩家在分支中改选历史候选。必须逐字保留 text 和该候选已核验的 audienceKeys；sourceOption 仅记录候选来源，不能当作事实、既有后果或新的创作权限。仍从本分支前态重新核对所有后果，不能带入原时间线后续结果。',
         '依据自身目标、顾虑和当前可知事实，选择一次有意义的交谈、尝试、自身行动或暂停。承接已有问题，允许拒绝、留白和收束，不为主动而制造新危机。',
-        'goalKey 通常引用自己的 active/paused 目标。仅当 trigger.kind=player-response、actionSequences 为空且自己的目标全部已收束（没有 active/paused）时，使用 JSON null，正常承接这条新玩家消息一次。允许交谈、休息或自己的小行动，不为能回复而重开旧目标、编造新矛盾或无依据补写角色过往。此时 goalStatus=null、goalUpdates=[]、threadUpdates=[]、nextPossibilities=null 或 []；不能直接创建新目标或打算。situationRequest 通常 null，只有下述 player-followup 规则可提出待审的新事项。表达仍需已知事实依据，实际后果和披露仍须完整登记。',
+        'goalKey 通常引用自己的 active/paused 目标；下述 followupGoal 可同时提出新的自身目标与行动。除此之外，仅当 trigger.kind=player-response、actionSequences 为空且自己的目标全部已收束（没有 active/paused）时，使用 JSON null，正常承接这条新玩家消息一次。允许交谈、休息或自己的小行动，不为能回复而重开旧目标、编造新矛盾或无依据补写角色过往。此时 goalStatus=null、goalUpdates=[]、threadUpdates=[]、nextPossibilities=null 或 []；不能直接创建新目标或打算。situationRequest 通常 null，只有下述 player-followup 规则可提出待审的新事项。表达仍需已知事实依据，实际后果和披露仍须完整登记。',
         '玩家的行动、接受、内心和情感只能由玩家决定。需其参与时用 attempt、waitingForPlayer=true，不生成已完成事实，不假定计划已实现。',
         '区分玩家“不亲自参与”和“要求角色停止”：前者不取消角色独立处理自身事项的理由。结合当前消息、最新情境和可知结果决定如何行动或说明真实阻碍；不要沿用更早的换话题要求机械暂停新情境，也不必为了证明主动性强行行动。',
         'continue/return 只授权你再行动，不代表玩家接受上一建议；return 不表示故事中经过了某段时间。玩家拒绝或要求休息后要承接其选择，不能因离开应用而惩罚玩家。',
@@ -363,7 +364,8 @@ function prompt(input: {
         'nextPossibilities=null 保留自己的打算；数组完整替换自己的打算，最多三项 {text,evidenceFactKeys}，[] 明确清空。系统指定行动角色，不能传 actorKey 或替其他人规划。每项引用自己已知事实，可引用本次实际完成并登记的新事实；打算仍是未执行、可改变的方向，不写成已发生结果，不替玩家决定。目标全部 fulfilled/abandoned 时必须清空旧打算。暂停可保留有明确恢复条件的打算，不按离线时间执行。',
         '本轮可能由不同角色接续行动。只承接自己确实可见的对话，以自身目标决定补充、分歧、行动或暂停；不要轮流复述相同信息，不替其他角色发言或决定他们的回应。轮到你不代表你必须制造事件，没有可推进内容可以暂停。',
         '若 maxDiscoveriesPerSituation>0，在实际完成有依据、获准的检查后仍需要判定观察结果，可把检查动作登记为 newFacts，并用 situationRequest 请求确认结果，引用这次检查事实。不要声称看见尚未获知的答案，不从未知真相倒推必须调查的位置。下一次的 investigations 是已经审查的调查结果：仅 discoveredFactKeys 所指事实已经获知，其他结果不表示目标不存在；据此调整计划或暂停，不机械重复同一次调查。',
-        '收束后若 permissions.allowPlayerFollowupSituations=true，且这次新玩家消息明确提出或请求一个尚未解决的具体事项，可在 goalKey=null 的首次回应中提出 situationRequest={purpose:"player-followup",threadKey:null,playerEventSequence:trigger.sourceEventSequence,playerExcerpt:"本次玩家请求原文",direction:"承接请求的局部新方向",evidenceFactKeys:["自己可知事实"],evidenceExcerpt:"本次自己表达的逐字摘录"}。只在普通回答不足、确需建立新目标或局部条件时使用；不复活旧目标、不把新事说成已完成、不预定玩家参与。自己明确愿意采取的方向应在实际表达中说明，waitingForPlayer=false 且 kind 不能 pause。普通闲聊、拒绝、休息、仅表示看看或离开都不授权新事项，不把问题中的猜测当成事实。已完成的旧安排保留；例如新请求希望了解店主为何喜欢某本书，可建立寻找具体理由的方向，不重新摆一遍已经摆好的书架。',
+        CHAT_OWN_FOLLOWUP_GOAL_RULE_V1,
+        '收束后若 permissions.allowPlayerFollowupSituations=true，且这次新玩家消息明确提出或请求一个尚未解决的具体事项，可在 goalKey=null 的首次回应中提出 situationRequest={purpose:"player-followup",threadKey:null,playerEventSequence:trigger.sourceEventSequence,playerExcerpt:"本次玩家请求原文",direction:"承接请求的局部新方向",evidenceFactKeys:["自己可知事实"],evidenceExcerpt:"本次自己表达的逐字摘录"}。只在普通回答不足且需要先补足未知局部背景时使用；已有条件足以行动时优先按 followupGoal 同时提出自己的目标与实际行动；不复活旧目标、不把新事说成已完成、不预定玩家参与。自己明确愿意采取的方向应在实际表达中说明，waitingForPlayer=false 且 kind 不能 pause。普通闲聊、拒绝、休息、仅表示看看或离开都不授权新事项，不把问题中的猜测当成事实。已完成的旧安排保留；例如新请求希望了解店主为何喜欢某本书，可建立寻找具体理由的方向，不重新摆一遍已经摆好的书架。',
         'situationRequest 默认为 null。除上述 player-followup 外，仅 allowActorSituationExpansion=true 且不等待玩家、不暂停、当前 goalKey 仍 active 时，可提出一次 {threadKey,direction,evidenceFactKeys,evidenceExcerpt}，关联自己知情且参与的 open/blocked 剧情线和已知事实，evidenceExcerpt 摘录本次表达。用于下一步确实需要补足的局部条件或线索方向，不是既成发现，不预定玩家、他人的行为或结局，不重复已拒绝方向。普通说话、自身小动作、已存在条件下的行动不需要它。玩家要求休息或等待决定时不提出；无须每次增加新剧情。',
         'beliefUpdates 每项 {beliefKey,text,evidenceFactKeys}：修正自己的已有猜测，或添加自己的新猜测；text=null 撤回既有猜测。每项需要可知事实依据，系统记录本次事件，不得添加 actorKey 或 updatedSequence。猜测不能变成确定事实、透露不可知真相或替其他角色决定内心；已证实的信息进入 newFacts，撤回不成立的猜测，不建立第二份真相。',
       ] : []),

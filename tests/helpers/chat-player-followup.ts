@@ -28,6 +28,13 @@ export function followupResultAction(): ChatNarrativeActionV1 {
     disclosures: [], threadUpdates: [], goalStatus: null,
     situationRequest: {purpose: 'observation-result', threadKey: 'entry-condition', direction: '确认已经完成的门内观察所见，不追加新动作。', evidenceFactKeys: ['entry-observed'], evidenceExcerpt: '我站在门内向外查看了门口的积水。'}}
 }
+/** Existing background permits an own goal and actual observation in one reviewed action. */
+export function followupOwnAction(playerEventSequence: number): ChatNarrativeActionV1 {
+  const {actorKey: _actor, ...goal} = followupSituation().newGoals[0]
+  const {audienceKeys: _audience, participantKeys: _participants, ...thread} = followupSituation().newThreads[0]
+  return {...followupResultAction(), followupGoal: {playerEventSequence, playerExcerpt: '可以看看雨停后门口有没有积水吗',
+    evidenceExcerpt: '我站在门内向外查看了门口的积水。', goal, thread}}
+}
 export async function seedClosedChatFollowupFixtureV1(options: {maxActionsPerTrigger?: number; directorBudget?: number; playerFollowup?: boolean} = {}) {
   const f = await seedChatNarrativeRuntimeFixture({...options, playerFollowup: options.playerFollowup ?? true})
   let v = await readProductRuntimeStateVersion(f.sessionId)

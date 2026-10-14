@@ -208,6 +208,16 @@ export type ChatActorSituationRequestV1 = {
 
 /** The model may cite existing evidence events, never assign new event numbers,
  * world references or player-state writes. */
+/** A bounded own intention accepted together with the first response to a new
+ * player request. The runtime assigns ownership, visibility and event identity. */
+export interface ChatActorFollowupGoalV1 {
+  playerEventSequence: number
+  playerExcerpt: string
+  evidenceExcerpt: string
+  goal: Pick<ChatActorGoalV1, 'goalKey' | 'desire' | 'concern' | 'boundary' | 'evidenceFactKeys'>
+  thread: Pick<ChatNarrativeThreadV1, 'threadKey' | 'title' | 'question' | 'evidenceFactKeys' | 'closureSignals'>
+}
+
 export interface ChatNarrativeActionV1 {
   kind: 'speak' | 'attempt' | 'complete' | 'pause'
   text: string
@@ -245,6 +255,8 @@ export interface ChatNarrativeActionV1 {
   beliefUpdates?: Array<{beliefKey: string; text: string | null; evidenceFactKeys: string[]}>
   /** A reviewed request to develop an existing own goal, not a new fact. */
   situationRequest?: ChatActorSituationRequestV1 | null
+  /** No new background or authority. Omitted in historical action bindings. */
+  followupGoal?: ChatActorFollowupGoalV1 | null
 }
 
 /** A local background extension, never a replacement of established truth or a

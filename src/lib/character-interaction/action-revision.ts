@@ -65,6 +65,7 @@ export async function readChatActionRevisionSourceV1(input: {
 /** The revised action keeps the expression and its agency boundary unchanged.
  * Full deterministic and semantic checks still apply to every consequence. */
 export function assertChatActionRevisionExpressionV1(source: ChatActionRevisionSourceV1, action: ChatNarrativeActionV1) {
+  if (canonicalStringify(source.action.followupGoal ?? null) !== canonicalStringify(action.followupGoal ?? null)) throw new Error('[chat-revision] 后果修订不能更换原表达承接的新目标与请求依据')
   for (const key of ['kind', 'text', 'goalKey', 'audienceKeys', 'waitingForPlayer'] as const) {
     if (canonicalStringify(source.action[key]) !== canonicalStringify(action[key])) throw new Error('[chat-revision] 修订不能改变原表达、行动角色目标或玩家选择边界')
   }

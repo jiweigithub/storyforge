@@ -20,7 +20,7 @@ test('author explicitly controls new player followups and the persisted permissi
   expect(calls).toBe(0)
 })
 
-for (const continuous of [false, true]) test(`a new player request reaches a reviewed result and survives recovery (continuous=${continuous})`, async ({page}, info) => {
+for (const [continuous, ownGoal] of [[false, false], [true, false], [false, true], [true, true]]) test(`a new player request reaches a reviewed result and survives recovery (continuous=${continuous}, ownGoal=${ownGoal})`, async ({page}, info) => {
   let f: {scope: {projectId: number; worldId: number; workId: number}; sessionId: number}
   let actions = 0, constructions = 0
   const calls: string[] = []
@@ -38,27 +38,28 @@ for (const continuous of [false, true]) test(`a new player request reaches a rev
     if (actionReview || situationReview) output = {checks: ['continuity', 'permissions', 'player-agency', 'visibility', ...(actionReview ? ['consequences'] : []), 'meaningful-direction'].map(check => ({check, passed: true, reason: '工程夹具，不是语义质量验收'}))}
     else if (construction) {
       constructions++
-      if (constructions === 1) {
+      if (constructions === 1 && !ownGoal) {
         expect(prompt).toContain('player-followup')
         output = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-player-followup.ts')).followupSituation()})
       } else {
         expect(prompt).toContain('observation-result')
-        output = {kind: 'chat-situation', title: '门口的有限观察', location: '驿站', timeLabel: '傍晚',
+        output = {kind: 'chat-situation', title: ownGoal ? '暴雨驿站' : '门口的有限观察', location: '驿站', timeLabel: '傍晚',
           newFacts: [{factKey: 'entry-result', kind: 'observation', text: '门口石阶边缘有一小片积水，门内落脚处没有积水。', audienceKeys: ['guard', 'player'], evidenceFactKeys: ['entry-observed'], seedExcerpt: '确认已经完成的门内观察所见'}],
           newGoals: [], newThreads: [], possibilities: []}
       }
     } else {
       actions++; expect(prompt).not.toContain('柜台下')
-      output = await page.evaluate(async ({f, actions}) => {
+      output = await page.evaluate(async ({f, actions, ownGoal}) => {
         const load = new Function('p', 'return import(p)'), helper = await load('/storyforge/tests/helpers/chat-player-followup.ts')
         const state = (await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(f.sessionId)).interaction
+        if (actions === 1 && ownGoal) return helper.followupOwnAction(state.chatNarrative.triggers.at(-1).sourceEventSequence)
         if (actions === 1) return helper.followupAction(state.chatNarrative.triggers.at(-1).sourceEventSequence)
-        if (actions === 2) return helper.followupResultAction()
+        if (actions === 2 && !ownGoal) return helper.followupResultAction()
         return {kind: 'complete', text: '我已看清门口：门口石阶边缘有一小片积水，门内落脚处没有积水。门口的观察完成了，整条山路如何仍不能由此判断。',
           goalKey: 'check-entry', evidenceFactKeys: ['entry-observed', 'entry-result'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
           newFacts: [], disclosures: [], goalStatus: 'fulfilled', nextPossibilities: [],
           threadUpdates: [{threadKey: 'entry-condition', status: 'resolved', evidenceExcerpt: '门口的观察完成了'}]}
-      }, {f, actions})
+      }, {f, actions, ownGoal})
     }
     await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
   })
@@ -73,12 +74,12 @@ for (const continuous of [false, true]) test(`a new player request reaches a rev
   if (continuous) {await page.getByTestId('chat-narrative-tools').locator(':scope > summary').click(); await page.getByLabel('演绎节奏', {exact: true}).selectOption('3')}
   await page.getByPlaceholder('对当前场景中的角色说话…').fill('那可以看看雨停后门口有没有积水吗？我先留在屋里。')
   await page.getByRole('button', {name: '发送并生成', exact: true}).click()
-  await expect(page.getByText('我可以看看门口的积水。你留在屋里就好，这不需要重新寻找铜印。', {exact: true})).toBeVisible()
+  await expect(page.getByRole('paragraph').filter({hasText: ownGoal ? /^我站在门内向外查看了门口的积水。$/ : /^我可以看看门口的积水。你留在屋里就好，这不需要重新寻找铜印。$/})).toBeVisible()
   if (!continuous) {
   expect(calls).toHaveLength(2)
   const pending = await read()
   expect(pending.chatNarrative.situation.goals[0].status).toBe('abandoned')
-  expect(pending.chatNarrative.pendingSituation.purpose).toBe('player-followup')
+  expect(pending.chatNarrative.pendingSituation.purpose).toBe(ownGoal ? 'observation-result' : 'player-followup')
   await page.reload(); await expect(page.getByTestId('chat-narrative-controls')).toBeVisible()
   expect(await read()).toEqual(pending); expect(calls).toHaveLength(2)
   f = await page.evaluate(async f => {
@@ -88,18 +89,20 @@ for (const continuous of [false, true]) test(`a new player request reaches a rev
   }, f)
   await open(); expect(calls).toHaveLength(2)
   await page.getByRole('button', {name: '让角色继续', exact: true}).click()
-  await expect(page.getByRole('paragraph').filter({hasText: /^我站在门内向外查看了门口的积水。$/})).toBeVisible()
-  expect(calls).toHaveLength(6)
-  await page.getByRole('button', {name: '让角色继续', exact: true}).click()
+  if (!ownGoal) {
+    await expect(page.getByRole('paragraph').filter({hasText: /^我站在门内向外查看了门口的积水。$/})).toBeVisible()
+    expect(calls).toHaveLength(6)
+    await page.getByRole('button', {name: '让角色继续', exact: true}).click()
+  }
   }
   await expect(page.getByText('我已看清门口：门口石阶边缘有一小片积水，门内落脚处没有积水。门口的观察完成了，整条山路如何仍不能由此判断。', {exact: true})).toBeVisible()
-  expect(calls).toHaveLength(10)
+  expect(calls).toHaveLength(ownGoal ? 6 : 10)
   const final = await read()
   expect(final.chatNarrative.situation.goals.find((g: {goalKey: string}) => g.goalKey === 'check-entry').status).toBe('fulfilled')
   expect(final.chatNarrative.situation.goals[0].status).toBe('abandoned')
   expect(final.chatNarrative.pendingSituation).toBeUndefined()
   await page.reload(); await expect(page.getByTestId('chat-narrative-controls')).toBeVisible()
-  expect(await read()).toEqual(final); expect(calls).toHaveLength(10)
+  expect(await read()).toEqual(final); expect(calls).toHaveLength(ownGoal ? 6 : 10)
   await page.setViewportSize({width: 390, height: 844})
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
   await page.getByText('我已看清门口：门口石阶边缘有一小片积水，门内落脚处没有积水。门口的观察完成了，整条山路如何仍不能由此判断。', {exact: true}).scrollIntoViewIfNeeded()
