@@ -20,7 +20,7 @@ test('author explicitly controls new player followups and the persisted permissi
   expect(calls).toBe(0)
 })
 
-test('a new player request after closure becomes a reviewed direction, survives import and produces a concrete result on continue', async ({page}, info) => {
+for (const continuous of [false, true]) test(`a new player request reaches a reviewed result and survives recovery (continuous=${continuous})`, async ({page}, info) => {
   let f: {scope: {projectId: number; worldId: number; workId: number}; sessionId: number}
   let actions = 0, constructions = 0
   const calls: string[] = []
@@ -63,16 +63,18 @@ test('a new player request after closure becomes a reviewed direction, survives 
     await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
-  f = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-player-followup.ts')).seedClosedChatFollowupFixtureV1()})
+  f = await page.evaluate(async continuous => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-player-followup.ts')).seedClosedChatFollowupFixtureV1({maxActionsPerTrigger: continuous ? 3 : 1})}, continuous)
   const open = async () => {
     await page.goto(`./chat/play?project=${f.scope.projectId}&work=${f.scope.workId}&session=${f.sessionId}`)
     await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
   }
   const read = () => page.evaluate(async f => {const load = new Function('p', 'return import(p)'); return (await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(f.sessionId)).interaction}, f)
   await open()
+  if (continuous) {await page.getByTestId('chat-narrative-tools').locator(':scope > summary').click(); await page.getByLabel('演绎节奏', {exact: true}).selectOption('3')}
   await page.getByPlaceholder('对当前场景中的角色说话…').fill('那可以看看雨停后门口有没有积水吗？我先留在屋里。')
   await page.getByRole('button', {name: '发送并生成', exact: true}).click()
   await expect(page.getByText('我可以看看门口的积水。你留在屋里就好，这不需要重新寻找铜印。', {exact: true})).toBeVisible()
+  if (!continuous) {
   expect(calls).toHaveLength(2)
   const pending = await read()
   expect(pending.chatNarrative.situation.goals[0].status).toBe('abandoned')
@@ -89,6 +91,7 @@ test('a new player request after closure becomes a reviewed direction, survives 
   await expect(page.getByRole('paragraph').filter({hasText: /^我站在门内向外查看了门口的积水。$/})).toBeVisible()
   expect(calls).toHaveLength(6)
   await page.getByRole('button', {name: '让角色继续', exact: true}).click()
+  }
   await expect(page.getByText('我已看清门口：门口石阶边缘有一小片积水，门内落脚处没有积水。门口的观察完成了，整条山路如何仍不能由此判断。', {exact: true})).toBeVisible()
   expect(calls).toHaveLength(10)
   const final = await read()

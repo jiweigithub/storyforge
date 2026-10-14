@@ -14,14 +14,25 @@ export function chatHasPendingPlayerFollowupV1(state: CharacterInteractionRuntim
     && !state.messages.some(m => m.role === 'player' && m.supersededBySequence == null && m.eventSequence > pending.sourceEventSequence)
 }
 
-/** Only an already reviewed intention can request a local background extension.
- * A trigger authorizes at most one construction, with no offline or mount work. */
+/** A new direction can expand once per turn. A later, actually completed
+ * observation can still resolve its result within that turn's remaining actions.
+ * Consuming the pending result is atomic; it grants no new direction or action. */
+export function chatSituationConstructionBlockedV1(state: CharacterInteractionRuntimeState): boolean {
+  const story = state.chatNarrative, trigger = story?.triggers.slice(-1)[0]
+  if (!story || !trigger || story.situation.seed.sourceEventSequence !== trigger.requestedSequence
+    || !['player-request', 'continued-thread', 'player-followup'].includes(story.situation.seed.origin)) return false
+  const pending = story.pendingSituation
+  return pending?.purpose !== 'observation-result' || !trigger.actionSequences.includes(pending.sourceEventSequence)
+    || pending.sourceEventSequence !== trigger.actionSequences.slice(-1)[0]
+}
+
+/** Only an already reviewed intention or completed observation may request
+ * construction. No offline or mount work and no extra autonomous-action quota. */
 export function chatSituationConstructionRequestV1(state: CharacterInteractionRuntimeState, actorKey?: string) {
   const story = state.chatNarrative, trigger = story?.triggers.slice(-1)[0]
   if (!story || !state.activeScene || !trigger || trigger.status !== 'ready') return null
-  if (story.situation.seed.sourceEventSequence === trigger.requestedSequence
-    && ['player-request', 'continued-thread', 'player-followup'].includes(story.situation.seed.origin)) return null
-  if (trigger.kind === 'player-seed') return trigger.seed && !trigger.actionSequences.length
+  if (chatSituationConstructionBlockedV1(state)) return null
+  if (trigger.kind === 'player-seed' && !trigger.actionSequences.length) return trigger.seed
     ? {text: trigger.seed, origin: 'player-request' as const, actorKey: null, sourceThreadKey: null} : null
   const pending = story.pendingSituation
   if (pending?.purpose === 'player-followup') {

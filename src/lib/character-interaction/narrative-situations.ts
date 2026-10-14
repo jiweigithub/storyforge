@@ -5,7 +5,7 @@ import type {CharacterInteractionRuntimeState} from '../types'
 import {CHAT_SITUATION_REVIEW_CHECKS_V1} from '../types/chat-narrative'
 import type {ChatSituationDraftV1, ChatSituationReviewV1} from '../types/chat-narrative'
 import {parseChatNarrativeStateV1} from './narrative-contract'
-import {chatSituationConstructionRequestV1} from './narrative-progression'
+import {chatSituationConstructionBlockedV1, chatSituationConstructionRequestV1} from './narrative-progression'
 import {chatRelationshipEvidenceV1} from './narrative-relationships'
 
 function fail(message: string): never {throw new Error(`[chat-situation] ${message}`)}
@@ -82,8 +82,8 @@ export function parseChatSituationReviewV1(value: unknown, draft: ChatSituationD
 export function isChatSituationPreparedV1(state: CharacterInteractionRuntimeState, actorKey?: string): boolean {
   const story = state.chatNarrative, trigger = story?.triggers.slice(-1)[0]
   if (!story || !trigger) return false
-  if (trigger.kind === 'player-seed') return story.situation.seed.origin === 'player-request'
-    && story.situation.seed.sourceEventSequence === trigger.requestedSequence
+  if (trigger.kind === 'player-seed') return ['player-request', 'continued-thread'].includes(story.situation.seed.origin)
+    && story.situation.seed.sourceEventSequence === trigger.requestedSequence && chatSituationConstructionRequestV1(state, actorKey) === null
   return chatSituationConstructionRequestV1(state, actorKey) === null
 }
 
@@ -105,7 +105,7 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
   const state = structuredClone(stateValue), story = state.chatNarrative, scene = state.activeScene
   if (!story || !scene || story.situation.sceneKey !== scene.sceneKey) fail('缺少已衔接的当前情境')
   const trigger = story.triggers[story.triggers.length - 1]
-  if (trigger && ['player-request', 'continued-thread', 'player-followup'].includes(story.situation.seed.origin) && story.situation.seed.sourceEventSequence === trigger.requestedSequence) fail('该请求已经构建情境')
+  if (chatSituationConstructionBlockedV1(state)) fail('该请求已经构建情境')
   const request = chatSituationConstructionRequestV1(state)
   if (!trigger || trigger.status !== 'ready' || trigger.requestedSequence !== input.triggerSequence || !request) fail('情境构建必须来自尚未执行的明确玩家请求或已审查角色方向')
   if (!Number.isSafeInteger(input.sequence) || input.sequence <= 0 || input.sequence <= story.lastEventSequence) fail('情境提交事件无效')

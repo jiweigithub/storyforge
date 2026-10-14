@@ -6,7 +6,7 @@ import {readInstanceAgentRunV1} from '../agent/run/event-store'
 import type { AIConfig, CharacterInteractionRuntimeState, WorkspaceScope } from '../types'
 import type { ChatNarrativeTriggerV1 } from '../types/chat-narrative'
 import { adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1 } from './harness'
-import {chatHasPendingPlayerFollowupV1, chatSituationConstructionRequestV1} from './narrative-progression'
+import {chatHasPendingPlayerFollowupV1, chatSituationConstructionBlockedV1, chatSituationConstructionRequestV1} from './narrative-progression'
 import {isImportedCompletedInteractionRunV1, readResumableInteractionRunsV1} from './runtime-run-recovery'
 import { readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger } from './runtime-api'
 
@@ -44,8 +44,8 @@ export async function readChatNarrativeTurnResumeV1(scope: WorkspaceScope, sessi
   if (trigger.direction?.scheduling && !actorKey) return {...view, blockedReason: '本轮已没有可继续行动的角色，无需补齐。'}
   if (!trigger.direction?.scheduling && lastAction != null && !actorKey) return {...view, blockedReason: '本轮原角色消息不完整，不能推定由谁继续。'}
   if (!constructingSeed && actorKey && !chatHasUnfinishedGoalV1(state, actorKey) && !chatHasPendingPlayerFollowupV1(state, actorKey) && !chatCanRespondAfterClosureV1(state, actorKey, trigger)) return {...view, blockedReason: '本轮角色的目标已经结束，无需补齐行动。'}
-  if (story.pendingSituation && (trigger.direction?.scheduling || story.pendingSituation.actorKey === actorKey) && ['continued-thread', 'player-followup'].includes(story.situation.seed.origin)
-    && story.situation.seed.sourceEventSequence === trigger.requestedSequence) return {...view, blockedReason: '本轮已经发展过一次局面。新的角色方向需在下一轮明确继续。'}
+  if (story.pendingSituation && (trigger.direction?.scheduling || story.pendingSituation.actorKey === actorKey)
+    && chatSituationConstructionBlockedV1(state)) return {...view, blockedReason: '本轮已经发展过一次局面。新的角色方向需在下一轮明确继续。'}
   const [rows, events] = await Promise.all([
     db.agentRuns.where('productRuntimeSessionId').equals(sessionId).toArray(),
     db.productRuntimeEvents.where('sessionId').equals(sessionId).toArray(),
@@ -192,8 +192,8 @@ async function performPreparedTurn(input: {
     let actor = trigger.direction?.scheduling ? nextChatScheduledActorV1(current, trigger) : input.actor
     if (!actor || !chatHasUnfinishedGoalV1(current, actor) && !chatHasPendingPlayerFollowupV1(current, actor) && !chatCanRespondAfterClosureV1(current, actor, trigger)) return
     const story = current.chatNarrative!
-    if (story.pendingSituation && (trigger.direction?.scheduling || story.pendingSituation.actorKey === actor) && ['continued-thread', 'player-followup'].includes(story.situation.seed.origin)
-      && story.situation.seed.sourceEventSequence === trigger.requestedSequence) return
+    if (story.pendingSituation && (trigger.direction?.scheduling || story.pendingSituation.actorKey === actor)
+      && chatSituationConstructionBlockedV1(current)) return
     const request = chatSituationConstructionRequestV1(current, actor)
     if (request?.actorKey === actor) {
       if (current.remainingDirectorBudget < 4) throw new Error('当前预算不足以发展角色方向并继续演绎。')
