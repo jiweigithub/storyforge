@@ -13,6 +13,7 @@ import type {
 } from '../types'
 import { resolveScope } from '../workspace/scope'
 import type { ChatSourceProjectionDraftV1 } from '../character-interaction/source-projection'
+import {parseChatPrivateCharactersV1, type ChatPrivateCharacterV1} from '../character-interaction/private-character'
 
 export interface ProductProductionWorldSourceItemV2 {
   resourceKey: string
@@ -274,7 +275,12 @@ export async function loadProductProductionWorldSourceCatalogV2(input: {
    * no "read the whole release" fallback: diagnostics and tests must traverse
    * the same consultation -> adapter -> selection boundary as production. */
   selection: ProductWorldSourceSelectionV1
+  /** Chat-owned authored content, never registered as a WorldRelease resource. */
+  chatPrivateCharacters?: readonly ChatPrivateCharacterV1[]
 }): Promise<ProductProductionWorldSourceCatalogV2> {
+  input = structuredClone(input)
+  const privateCharacters = parseChatPrivateCharactersV1(input.chatPrivateCharacters ?? [])
+  if (privateCharacters.length && input.selection.productType !== 'character-interaction') throw new Error('体验新角色仅属于角色聊天产品')
   const scope = await resolveScope({ scope: input.scope })
   const opened = await openWorldSemanticResourceCatalogV1({
     localReleaseRecordId: input.worldReleaseId,
@@ -343,11 +349,12 @@ export async function loadProductProductionWorldSourceCatalogV2(input: {
     : []
   const chatPlayerKeys = input.selection.productType === 'character-interaction' ? input.selection.roleBindings.chatPlayer ?? [] : []
   if (chatPlayerKeys.length > 1 || chatPlayerKeys.some(key => chatCharacterKeys.includes(key))) throw new Error('玩家人物必须是一个独立的冻结来源')
-  const chatSourceProjection = chatCharacterKeys.length
+  const chatSourceProjection = chatCharacterKeys.length || privateCharacters.length
     ? await (await import('../character-interaction/source-projection')).createChatSourceProjectionDraftV1({
       worldReferenceHash: opened.description.worldReference.referenceHash,
       worldReleaseHash: opened.description.identity.releaseHash,
       characterResourceKeys: chatCharacterKeys,
+      privateCharacters,
       playerCharacterKey: chatPlayerKeys[0],
       backgroundResourceKeys: input.selection.roleBindings.chatBackground,
       resources,

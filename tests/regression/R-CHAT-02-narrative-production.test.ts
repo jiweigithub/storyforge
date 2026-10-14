@@ -109,8 +109,8 @@ it('plans a durable author gate and prevents the situation model from rereading 
   expect(() => parseProductProductionCommandV1({...command, resolution: {...command.resolution, chatSituation: {...chatSituation, authorCommandId: 'forged'}}})).toThrow('字段')
 })
 
-it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false}, {mappedPlayer: true, factDiscovery: false, worldDiscovery: false}, {mappedPlayer: false, factDiscovery: true, worldDiscovery: false}, {mappedPlayer: true, factDiscovery: false, worldDiscovery: true}])('runs the formal scheduler through selection, release and transfer without regenerating candidates (mapped=$mappedPlayer, discovery=$factDiscovery, world=$worldDiscovery)', async ({mappedPlayer, factDiscovery, worldDiscovery}) => {
-  const f = await seedChatNarrativeProductionFixture({mappedPlayer, factDiscovery, worldDiscovery})
+it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false, privateCast: undefined}, {mappedPlayer: true, factDiscovery: false, worldDiscovery: false, privateCast: undefined}, {mappedPlayer: false, factDiscovery: true, worldDiscovery: false, privateCast: undefined}, {mappedPlayer: true, factDiscovery: false, worldDiscovery: true, privateCast: undefined}, {mappedPlayer: true, factDiscovery: true, worldDiscovery: false, privateCast: 'only' as const}, {mappedPlayer: false, factDiscovery: false, worldDiscovery: false, privateCast: 'mixed' as const}])('runs the formal scheduler through selection, release and transfer without regenerating candidates (mapped=$mappedPlayer, discovery=$factDiscovery, world=$worldDiscovery, private=$privateCast)', async ({mappedPlayer, factDiscovery, worldDiscovery, privateCast}) => {
+  const f = await seedChatNarrativeProductionFixture({mappedPlayer, factDiscovery, worldDiscovery, privateCast})
   const created = await executeProductProductionCommand({scope: f.scope, command: {
     type: 'create-intent', commandId: 'chat.intent', productionKey: 'chat.situation-production', productType: 'character-interaction',
     worldReleaseId: f.confirmed.worldReleaseId!, userText: '制作可以自由演绎的角色聊天',
@@ -133,6 +133,7 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false}, {ma
   let rejectMedia = true
   const runText: ProductionTextRunnerV1 = async request => {
     expect(request.contextText).not.toContain('知道失踪船队真相')
+    expect(JSON.stringify(request)).not.toContain('仅作者掌握的私域结局')
     const isSituation = request.system.includes('初始情境编辑'), isReview = request.system.includes('开场的语义审查者')
     calls.push(isSituation ? 'situations' : isReview ? 'opening-review' : 'media')
     const sourceRow = await db.productBuildArtifacts.filter(row => row.artifactKey === 'design.game').last()
@@ -179,6 +180,12 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false}, {ma
   const completed = await listProductProductionReviewArtifactsV1({scope: f.scope, buildId: details.build!.id!})
   const runtime = parseProductRuntimePackageV1(completed.find(a => a.artifactKey === 'runtime.package')!.payload)
   expect(runtime.interaction?.chatNarrative?.initialSituation.title).toBe('旧账本')
+  if (privateCast) {
+    expect(runtime.interaction!.chatSource!.version).toBe(5)
+    expect(runtime.interaction!.chatSource!.privateCharacterSources!.map(c => c.resourceKey)).toEqual(f.settings.privateCharacters!.map(c => c.characterKey))
+    expect(runtime.interaction!.profiles.some(p => p.characterKey === f.settings.privateCharacters![0].characterKey && p.name === '苏禾')).toBe(true)
+    expect(JSON.stringify(runtime)).not.toContain('仅作者掌握的私域结局')
+  }
   expect(runtime.narrative.choices).toEqual([])
   expect(runtime.narrative.nodes.some(n => n.kind === 'ending')).toBe(false)
   const exposed = structuredClone(runtime)

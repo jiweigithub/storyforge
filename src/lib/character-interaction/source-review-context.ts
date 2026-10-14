@@ -26,6 +26,7 @@ export interface ChatSourceReviewContextV1 {
   fragments: Array<ChatSourceFragmentV1 & {
     sourceHash: string
     resourceKind: string
+    origin?: 'product-private'
     confirmedClassification: ChatSourceClassificationV1 | null
     /** Actor-limited reading excludes author permissions and discovery conditions. */
     knownPurpose?: ChatSourceClassificationV1['purpose']
@@ -73,6 +74,7 @@ export async function readChatSourceReviewContextV1(
   const fragments: ChatSourceReviewContextV1['fragments'] = chatProjectionResourcesV1(projection).flatMap(resource =>
     resource.fragments.filter(fragment => selected.has(fragment.fragmentKey)).map(fragment => ({
       ...fragment, sourceHash: resource.sourceHash,
+      ...(resource.origin ? {origin: resource.origin} : {}),
       resourceKind: projection.background?.find(row => row.resourceKey === resource.resourceKey)?.resourceKind ?? 'character',
       confirmedClassification: known ? null : confirmed.get(fragment.fragmentKey) ?? null,
       ...(known ? {knownPurpose: known.get(fragment.fragmentKey)!} : {}),

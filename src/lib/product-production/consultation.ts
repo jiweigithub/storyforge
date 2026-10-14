@@ -357,7 +357,8 @@ export async function draftProductProductionBriefV3(input: {
   })
   if (characterChat) {
     const keys = characterChat.characters.map(c => c.sourceKey)
-    if (!keys.length || (characterChat.mode === 'single' && keys.length !== 1)) {
+    const castCount = keys.length + (characterChat.version === 3 ? characterChat.privateCharacters?.length ?? 0 : 0)
+    if (!castCount || (characterChat.mode === 'single' && castCount !== 1)) {
       throw new Error('请在角色与场景中选择参与者；单角色模式需要恰好一名角色。')
     }
     const available = new Set(source.selectionOptions.characters.map(c => c.resourceKey))
@@ -407,7 +408,8 @@ export async function draftProductProductionBriefV3(input: {
   }
   if (characterChat && characterChat.version !== 1) {
     if (!characterChat.sourceReview) throw new Error('请先检查并确认角色来源资料')
-    const catalog = await loadProductProductionWorldSourceCatalogV2({scope, worldReleaseId: input.worldReleaseId, selection})
+    const catalog = await loadProductProductionWorldSourceCatalogV2({scope, worldReleaseId: input.worldReleaseId, selection,
+      chatPrivateCharacters: characterChat.version === 3 ? characterChat.privateCharacters : undefined})
     if (!catalog.chatSourceProjection) throw new Error('角色来源投影未就绪')
     readPreparedChatSourceProjectionViewV1({draft: catalog.chatSourceProjection, review: characterChat.sourceReview, viewerKey: 'player'})
     if (characterChatProfiles) validateChatRoleProfilesForSourceV1(characterChatProfiles, catalog.chatSourceProjection, characterChat.sourceReview)

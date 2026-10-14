@@ -10053,6 +10053,7 @@ async function executeIntegrationTask(input: ProductProductionTaskExecutionInput
     },
     worldReleaseId: options.brief.source.worldReleaseId,
     selection: options.brief.source.selection,
+    chatPrivateCharacters: options.brief.characterChat?.version === 3 ? options.brief.characterChat.privateCharacters : undefined,
   })
   if (sourceCatalog.release.contentHash !== options.brief.source.worldContentHash) {
     fail('Production 的冻结 WorldRelease 不存在、跨世界或已漂移')

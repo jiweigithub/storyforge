@@ -76,6 +76,7 @@ export async function saveChatDraftV1(scope: WorkspaceScope, revision: number, s
         // but require the author to review the new viewpoints before a build.
         if (parsed.version !== 1 && (previous.mode !== parsed.mode ||
             (previous.version === 3 ? previous.narrative.playerCharacterKey : undefined) !== (parsed.version === 3 ? parsed.narrative.playerCharacterKey : undefined) ||
+            canonicalStringify(previous.version === 3 ? previous.privateCharacters ?? [] : []) !== canonicalStringify(parsed.version === 3 ? parsed.privateCharacters ?? [] : []) ||
             JSON.stringify(previous.characters.map(c => c.sourceKey)) !== JSON.stringify(parsed.characters.map(c => c.sourceKey)) ||
             JSON.stringify(previous.version === 1 ? [] : previous.backgroundResourceKeys ?? []) !== JSON.stringify(parsed.backgroundResourceKeys ?? [])))
             parsed.sourceReview = null;
@@ -124,12 +125,14 @@ export async function loadChatSourceProjectionV1(scope: WorkspaceScope, revision
     if (row.revision !== revision) throw new Error('方案已变化，请保存并重新检查资料');
     const settings = parseChatAuthoringSettings(JSON.parse(row.settingsJson));
     const keys = settings.characters.map(c => c.sourceKey);
+    const privateCharacters = settings.version === 3 ? settings.privateCharacters ?? [] : [];
     const background = settings.version === 1 ? [] : settings.backgroundResourceKeys ?? [];
     const player = settings.version === 3 && settings.narrative.playerCharacterKey ? [settings.narrative.playerCharacterKey] : [];
-    if (!row.worldReleaseId || !keys.length || (settings.mode === 'single' && keys.length !== 1))
+    if (!row.worldReleaseId || keys.length + privateCharacters.length === 0 || (settings.mode === 'single' && keys.length + privateCharacters.length !== 1))
         throw new Error('请先选择冻结世界和参与角色，单角色模式须选择一人');
     const source = await loadProductProductionConsultationSourceV2({scope, worldReleaseId: row.worldReleaseId});
     const catalog = await loadProductProductionWorldSourceCatalogV2({scope, worldReleaseId: row.worldReleaseId,
+        chatPrivateCharacters: privateCharacters,
         selection: {schema: 'storyforge.product-world-source-selection', version: 1, productType: 'character-interaction',
             worldReferenceHash: source.worldReference.referenceHash, resourceKeys: [...keys, ...player, ...background].sort(), roleBindings: {characters: keys, ...(player.length ? {chatPlayer: player} : {}), ...(background.length ? {chatBackground: background} : {})}}});
     if (!catalog.chatSourceProjection) throw new Error('角色来源投影未就绪');

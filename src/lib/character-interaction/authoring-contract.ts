@@ -1,5 +1,6 @@
 import { parseChatSourceReviewV1, type ChatSourceReviewV1 } from './source-projection';
 import { DEFAULT_CHAT_NARRATIVE_SETUP_V1, parseChatNarrativeSetupV1, type ChatNarrativeSetupV1 } from './narrative-setup';
+import {isChatPrivateCharacterKeyV1, parseChatPrivateCharactersV1, type ChatPrivateCharacterV1} from './private-character';
 /** Product-owned S2 settings; these never mutate a source WorldRelease. */
 export interface ChatAuthoringSettingsV1 {
     version: 1;
@@ -32,6 +33,8 @@ export interface ChatAuthoringSettingsV2 extends Omit<ChatAuthoringSettingsV1, '
 export interface ChatAuthoringSettingsV3 extends Omit<ChatAuthoringSettingsV2, 'version'> {
     version: 3;
     narrative: ChatNarrativeSetupV1;
+    /** Explicit author-created cast; absent in historical settings. */
+    privateCharacters?: ChatPrivateCharacterV1[];
 }
 export type ChatAuthoringSettings = ChatAuthoringSettingsV1 | ChatAuthoringSettingsV2 | ChatAuthoringSettingsV3;
 export function parseChatAuthoringSettings(value: unknown): ChatAuthoringSettings {
@@ -39,12 +42,15 @@ export function parseChatAuthoringSettings(value: unknown): ChatAuthoringSetting
         throw new Error('角色聊天方案必须是对象');
     const row = value as Record<string, unknown>;
     if (row.version === 3) {
-        const {narrative, ...base} = row;
+        const {narrative, privateCharacters, ...base} = row;
         const parsed = parseChatAuthoringSettingsV2({...base, version: 2});
         const setup = parseChatNarrativeSetupV1(narrative);
+        const authored = Object.prototype.hasOwnProperty.call(row, 'privateCharacters') ? parseChatPrivateCharactersV1(privateCharacters) : undefined;
+        if (parsed.characters.some(c => isChatPrivateCharacterKeyV1(c.sourceKey)) || isChatPrivateCharacterKeyV1(setup.playerCharacterKey)) throw new Error('体验新角色不能伪装成世界人物或玩家来源');
+        if (parsed.characters.length + (authored?.length ?? 0) > 8) throw new Error('世界人物与体验新角色合计最多 8 人');
         if (setup.playerCharacterKey && parsed.characters.some(c => c.sourceKey === setup.playerCharacterKey)) throw new Error('同一世界人物不能同时由玩家与 AI 扮演');
         if (parsed.sourceReview?.classifications.some(c => c.discovery) && !setup.permissions.maxDiscoveriesPerSituation) throw new Error('世界隐情发现需要明确启用调查额度');
-        return {...parsed, version: 3, narrative: setup};
+        return {...parsed, version: 3, narrative: setup, ...(authored === undefined ? {} : {privateCharacters: authored})};
     }
     if (row.version === 1) return parseChatAuthoringSettingsV1(row);
     const parsed = parseChatAuthoringSettingsV2(row);

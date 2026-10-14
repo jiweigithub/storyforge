@@ -42,10 +42,13 @@ export async function executeChatSituationDeterministicTaskV1(input: ProductProd
   const artifacts: ProductProductionTaskExecutionResultV1['artifacts'] = []
   if (input.task.taskKey === 'content.design') {
     const sourceCatalog = await loadProductProductionWorldSourceCatalogV2({scope: input.scope,
-      worldReleaseId: options.brief.source.worldReleaseId, selection: options.brief.source.selection})
+      worldReleaseId: options.brief.source.worldReleaseId, selection: options.brief.source.selection, chatPrivateCharacters: settings.privateCharacters})
     const projected = prepareChatNarrativeCompilerSourceV1({brief: options.brief, sourceCatalog})
+    // Raw authored prose can be unclassified or author-only. Only the reviewed
+    // projection may enter a production model's input, including for new cast.
+    const {privateCharacters: _privateCharacters, ...reviewedSettings} = settings
     const source: ChatNarrativeProductionSourceV1 = {
-      schema: 'storyforge.chat-narrative-production-source', version: 1, settings,
+      schema: 'storyforge.chat-narrative-production-source', version: 1, settings: reviewedSettings,
       source: projected.content,
       participants: projected.participantKeys.map((participantKey, index) => ({
         participantKey, characterKey: projected.characterKeys[index], name: projected.names[index],

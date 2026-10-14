@@ -58,7 +58,9 @@ export interface ChatSourceTextRangeV1 {
 /** Chat-only, versioned source projection. Raw author-only material is omitted. */
 export interface FrozenChatSourceProjectionV1 {
   schema: 'storyforge.chat-runtime-source'
-  version: 1 | 2 | 3 | 4
+  version: 1 | 2 | 3 | 4 | 5
+  /** v5: Work-authored identities and original-content hashes, never world IDs. */
+  privateCharacterSources?: Array<{resourceKey: string; sourceHash: string}>
   /** v2/v3: visible non-character sources, never a new character identity. */
   backgroundSources?: Array<{resourceKey: string; sourceHash: string; resourceKind: string; relatedResourceKeys?: string[]}>
   /** v3 only: a separate source subject, never an AI-controlled participant. */

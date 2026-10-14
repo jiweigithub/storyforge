@@ -3680,7 +3680,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'chat.consult.v1', agentId: 'outline', defaultForAgent: false,
-    label: '角色聊天 制作方案会谈', owner: 'outline-agent', promptVersion: 'chat-consult-v1',
+    label: '角色聊天 制作方案会谈', owner: 'outline-agent', promptVersion: 'chat-consult-v2',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: ['chat.authoring'], optionalContextSourceKeys: [],
     inputPolicy: productProductionInputPolicy(['chat.authoring']), contextCompression: compressionPolicy(['chat.authoring']),
@@ -3702,7 +3702,7 @@ export const AGENT_SKILLS = [
   {
     version: 1,
     id: 'chat.source-review.v1', agentId: 'outline', defaultForAgent: false,
-    label: '角色聊天原文整理建议', owner: 'outline-agent', promptVersion: 'chat-source-review-v2',
+    label: '角色聊天原文整理建议', owner: 'outline-agent', promptVersion: 'chat-source-review-v3',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: ['chat.source-review'], optionalContextSourceKeys: [],
     inputPolicy: {sourceKeys: ['chat.source-review'], states: {

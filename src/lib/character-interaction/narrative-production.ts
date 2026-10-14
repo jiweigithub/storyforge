@@ -56,11 +56,12 @@ export function validateChatNarrativeProductionSourceV1(value: ChatNarrativeProd
   if (value.schema !== 'storyforge.chat-narrative-production-source' || value.version !== 1) fail('情境来源类型无效')
   const settings = parseChatAuthoringSettings(value.settings)
   if (settings.version !== 3 || !settings.sourceReview || !settings.playerRole.trim() || !settings.openingSituation.trim()) fail('情境制作需要已确认资料、玩家虚构背景和开场种子')
+  if (settings.privateCharacters !== undefined) fail('情境模型不能读取未分类的体验新角色原文')
   if (settings.sourceReview.projectionHash !== value.source.projectionHash) fail('情境来源确认已过期')
   if (!Array.isArray(value.participants) || !value.participants.length || value.participants.length > 8 || settings.mode === 'single' && value.participants.length !== 1) fail('情境参与角色与模式不符')
   const resourceKeys = value.participants.map(p => p.characterKey)
   if (new Set(resourceKeys).size !== resourceKeys.length
-    || canonicalStringify([...resourceKeys].sort()) !== canonicalStringify(settings.characters.map(c => c.sourceKey).sort())) fail('情境参与者与作者选择不符')
+    || canonicalStringify([...resourceKeys].sort()) !== canonicalStringify([...settings.characters.map(c => c.sourceKey), ...(value.source.privateCharacterSources ?? []).map(c => c.resourceKey)].sort())) fail('情境参与者与作者选择不符')
   const participantKeys = value.participants.map(p => p.participantKey)
   if (participantKeys.includes('player') || new Set(participantKeys).size !== participantKeys.length) fail('情境角色身份重复')
   for (const p of value.participants) {record(p, 'participantKey,characterKey,name,voiceRules'); key(p.participantKey); text(p.name, 240); text(p.voiceRules, 8000)}

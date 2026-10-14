@@ -1,5 +1,6 @@
 import {assertChatResponseRetrievableV1, isChatMessageRetrievableV1, requireChatRetrievalMessageV1, setChatMessageRetrievalV1} from './narrative-retrieval'
 import {updateChatMessageEditDraftV1} from './narrative-edit-contract'
+import {isChatPrivateCharacterKeyV1} from './private-character'
 import type {
   FrozenInteractionCharacterProfile,
   FrozenInteractionSceneTemplate,
@@ -270,23 +271,33 @@ function thread(value: unknown): InteractionRuntimeThread {
 }
 
 export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonly string[], characterKeys: readonly string[]): FrozenChatSourceProjectionV1 {
-  if (!isObject(value) || value.schema !== 'storyforge.chat-runtime-source' || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4)
-    || Object.keys(value).sort().join(',') !== (value.version === 3 || value.version === 4 ? 'backgroundSources,knowledge,playerCharacterSource,playerRole,projectionHash,schema,version,worldReleaseHash' : value.version === 2 ? 'backgroundSources,knowledge,playerRole,projectionHash,schema,version,worldReleaseHash' : 'knowledge,playerRole,projectionHash,schema,version,worldReleaseHash')
+  if (!isObject(value) || value.schema !== 'storyforge.chat-runtime-source' || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4 && value.version !== 5)
+    || Object.keys(value).sort().join(',') !== (value.version === 5 ? 'backgroundSources,knowledge,playerCharacterSource,playerRole,privateCharacterSources,projectionHash,schema,version,worldReleaseHash' : value.version === 3 || value.version === 4 ? 'backgroundSources,knowledge,playerCharacterSource,playerRole,projectionHash,schema,version,worldReleaseHash' : value.version === 2 ? 'backgroundSources,knowledge,playerRole,projectionHash,schema,version,worldReleaseHash' : 'knowledge,playerRole,projectionHash,schema,version,worldReleaseHash')
     || !isSha256Hash(value.projectionHash) || !isSha256Hash(value.worldReleaseHash)
     || typeof value.playerRole !== 'string' || value.playerRole.length > 5000
     || !Array.isArray(value.knowledge) || value.knowledge.length > 2000) throw new Error('角色资料运行投影无效')
   const background = new Map<string, NonNullable<FrozenChatSourceProjectionV1['backgroundSources']>[number]>()
-  const playerSource = value.version === 3 || value.version === 4 ? value.playerCharacterSource : undefined
-  if ((value.version === 3 || value.version === 4 && playerSource !== null) && (!isObject(playerSource) || Object.keys(playerSource).sort().join(',') !== 'resourceKey,sourceHash'
+  const authored = new Map<string, string>()
+  if (value.version === 5) {
+    if (!Array.isArray(value.privateCharacterSources) || !value.privateCharacterSources.length || value.privateCharacterSources.length > 8) throw new Error('体验新角色来源数量无效')
+    for (const source of value.privateCharacterSources) {
+      if (!isObject(source) || Object.keys(source).sort().join(',') !== 'resourceKey,sourceHash' || !isChatPrivateCharacterKeyV1(source.resourceKey)
+        || !characterKeys.includes(source.resourceKey) || authored.has(source.resourceKey) || !isSha256Hash(source.sourceHash)) throw new Error('体验新角色来源身份或证据无效')
+      authored.set(source.resourceKey, source.sourceHash)
+    }
+  }
+  if (characterKeys.some(key => isChatPrivateCharacterKeyV1(key) && !authored.has(key))) throw new Error('体验新角色缺少独立来源身份')
+  const playerSource = value.version === 3 || value.version === 4 || value.version === 5 ? value.playerCharacterSource : undefined
+  if ((value.version === 3 || (value.version === 4 || value.version === 5) && playerSource !== null) && (!isObject(playerSource) || Object.keys(playerSource).sort().join(',') !== 'resourceKey,sourceHash'
     || typeof playerSource.resourceKey !== 'string' || !playerSource.resourceKey.trim() || playerSource.resourceKey.length > 500
-    || characterKeys.includes(playerSource.resourceKey) || !isSha256Hash(playerSource.sourceHash))) throw new Error('玩家人物来源身份或证据无效')
+    || isChatPrivateCharacterKeyV1(playerSource.resourceKey) || characterKeys.includes(playerSource.resourceKey) || !isSha256Hash(playerSource.sourceHash))) throw new Error('玩家人物来源身份或证据无效')
   const playerSourceKey = isObject(playerSource) ? String(playerSource.resourceKey) : undefined
-  if (value.version === 2 || value.version === 3 || value.version === 4) {
+  if (value.version === 2 || value.version === 3 || value.version === 4 || value.version === 5) {
     if (!Array.isArray(value.backgroundSources) || value.backgroundSources.length > 128) throw new Error('背景资料来源数量无效')
     for (const source of value.backgroundSources) {
       if (!isObject(source) || Object.keys(source).sort().join(',') !== (Object.prototype.hasOwnProperty.call(source, 'relatedResourceKeys') ? 'relatedResourceKeys,resourceKey,resourceKind,sourceHash' : 'resourceKey,resourceKind,sourceHash')
         || typeof source.resourceKey !== 'string' || !source.resourceKey || source.resourceKey.length > 500
-        || background.has(source.resourceKey) || characterKeys.includes(source.resourceKey) || source.resourceKey === playerSourceKey || !isSha256Hash(source.sourceHash)
+        || isChatPrivateCharacterKeyV1(source.resourceKey) || background.has(source.resourceKey) || characterKeys.includes(source.resourceKey) || source.resourceKey === playerSourceKey || !isSha256Hash(source.sourceHash)
         || typeof source.resourceKind !== 'string' || !/^[a-z][a-z-]{0,63}$/.test(source.resourceKind)
         || ['character', 'world', 'world-link', 'codex-category'].includes(source.resourceKind)) throw new Error('背景资料来源身份或证据无效')
       if (Object.prototype.hasOwnProperty.call(source, 'relatedResourceKeys') && (source.resourceKind !== 'character-relation'
@@ -301,9 +312,9 @@ export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonl
   const ranges = new Map<string, Array<{start: number; end: number}>>()
   for (const seed of value.knowledge) {
     if (!isObject(seed) || typeof seed.key !== 'string' || !seed.key || seed.key.length > 160 || known.has(seed.key)
-      || Object.keys(seed).sort().join(',') !== (value.version === 4 && Object.prototype.hasOwnProperty.call(seed, 'discovery') ? 'audienceKeys,content,discovery,key,source' : 'audienceKeys,content,key,source')
+      || Object.keys(seed).sort().join(',') !== ((value.version === 4 || value.version === 5) && Object.prototype.hasOwnProperty.call(seed, 'discovery') ? 'audienceKeys,content,discovery,key,source' : 'audienceKeys,content,key,source')
       || typeof seed.content !== 'string' || !seed.content || seed.content.length > 7900
-      || !Array.isArray(seed.audienceKeys) || !seed.audienceKeys.length && !(value.version === 4 && seed.discovery)
+      || !Array.isArray(seed.audienceKeys) || !seed.audienceKeys.length && !((value.version === 4 || value.version === 5) && seed.discovery)
       || seed.audienceKeys.some(key => typeof key !== 'string' || !allowed.has(key))
       || new Set(seed.audienceKeys).size !== seed.audienceKeys.length
       || !isObject(seed.source) || !characterKeys.includes(String(seed.source.resourceKey)) && !background.has(String(seed.source.resourceKey)) && seed.source.resourceKey !== playerSourceKey
@@ -315,7 +326,7 @@ export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonl
     }
     if (seed.discovery !== undefined) {
       const rule = seed.discovery
-      if (value.version !== 4 || seed.source.purpose !== 'knowledge' || !isObject(rule)
+      if (value.version !== 4 && value.version !== 5 || seed.source.purpose !== 'knowledge' || !isObject(rule)
         || Object.keys(rule).sort().join(',') !== 'actorKeys,condition,prerequisiteKnowledgeKeys'
         || typeof rule.condition !== 'string' || !rule.condition.trim() || rule.condition.length > 2000
         || !Array.isArray(rule.actorKeys) || !rule.actorKeys.length || rule.actorKeys.length > 8
@@ -325,6 +336,7 @@ export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonl
         || rule.prerequisiteKnowledgeKeys.some(key => typeof key !== 'string' || !key || key.length > 160 || key === seed.key)
         || new Set(rule.prerequisiteKnowledgeKeys).size !== rule.prerequisiteKnowledgeKeys.length) throw new Error('世界隐情发现来源授权无效')
     }
+    if (authored.has(String(seed.source.resourceKey)) && authored.get(String(seed.source.resourceKey)) !== seed.source.sourceHash) throw new Error('体验新角色资料的来源证据不一致')
     if (background.has(String(seed.source.resourceKey)) && (seed.source.purpose !== 'knowledge'
       || background.get(String(seed.source.resourceKey))!.sourceHash !== seed.source.sourceHash)) throw new Error('背景资料不能替代人物身份且必须保持来源证据')
     if (seed.source.resourceKey === playerSourceKey && (!['identity', 'knowledge'].includes(String(seed.source.purpose))
@@ -370,7 +382,7 @@ function formatChatSourceKnowledge(seed: FrozenChatSourceProjectionV1['knowledge
   // The audience owns the knowledge; the subject owns the described trait.
   // Keeping these distinct prevents public facts about B becoming A's identity.
   const range = seed.source.textRange
-  return `【${labels[seed.source.purpose]}；${subjectKey ? `所属角色=${subjectKey}` : `世界背景来源=${seed.source.resourceKey}${relatedResourceKeys?.length ? `；关联人物来源=${relatedResourceKeys.join('、')}` : ''}`}；字段=${seed.source.pointer}${range ? `；原文区间=[${range.start},${range.end})` : ''}】${seed.content}`
+  return `【${labels[seed.source.purpose]}；${subjectKey ? `所属角色=${subjectKey}${isChatPrivateCharacterKeyV1(seed.source.resourceKey) ? '；来源=本体验新角色' : ''}` : `世界背景来源=${seed.source.resourceKey}${relatedResourceKeys?.length ? `；关联人物来源=${relatedResourceKeys.join('、')}` : ''}`}；字段=${seed.source.pointer}${range ? `；原文区间=[${range.start},${range.end})` : ''}】${seed.content}`
 }
 
 /** Build the only release-entry projection for character interaction. */

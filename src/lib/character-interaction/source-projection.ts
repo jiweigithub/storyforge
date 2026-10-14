@@ -4,6 +4,7 @@ import type { WorldSemanticResourceSnapshotV1 } from '../context-gateway/world-r
 import { hashProductProductionValueV2, isSha256Hash } from '../product-production/hash'
 import { canonicalStringify, hashCanonicalValue } from '../agent/run/hash'
 import type { ChatSourceTextRangeV1 } from '../types/character-interaction'
+import {parseChatPrivateCharactersV1, type ChatPrivateCharacterV1} from './private-character'
 
 export interface ChatSourceFragmentV1 {
   fragmentKey: string
@@ -22,6 +23,8 @@ export interface ChatSourceProjectionDraftV1 {
   characters: Array<{
     resourceKey: string
     sourceHash: string
+    /** Omitted for historical frozen-world subjects; never a world resource. */
+    origin?: 'product-private'
     /** Author-side label. This does not make the source name public knowledge. */
     label: string
     fragments: ChatSourceFragmentV1[]
@@ -97,6 +100,12 @@ export function parseChatSourceReviewV1(value: unknown): ChatSourceReviewV1 {
 // serialized body also detects mutation after preparation; a hash alone is not
 // accepted as proof that a caller actually verified source content.
 const verifiedDrafts = new WeakMap<ChatSourceProjectionDraftV1, string>()
+const verifiedPrivateCharacters = new WeakMap<ChatSourceProjectionDraftV1, string>()
+
+export function assertPreparedChatPrivateCharactersV1(draft: ChatSourceProjectionDraftV1, characters: readonly ChatPrivateCharacterV1[] = []) {
+  if (verifiedDrafts.get(draft) !== canonicalStringify(draft)) fail('已核验的资料投影发生变化，构建需要重新核验')
+  if (verifiedPrivateCharacters.get(draft) !== canonicalStringify([...characters].sort((a, b) => a.characterKey.localeCompare(b.characterKey)))) fail('体验新角色与已核验的作者原文不一致')
+}
 
 function fail(message: string): never {
   throw new Error(`[chat-source-projection] ${message}`)
@@ -156,6 +165,7 @@ export async function createChatSourceProjectionDraftV1(input: {
   worldReferenceHash: string
   worldReleaseHash: string
   characterResourceKeys: readonly string[]
+  privateCharacters?: readonly ChatPrivateCharacterV1[]
   playerCharacterKey?: string
   backgroundResourceKeys?: readonly string[]
   resources: readonly WorldSemanticResourceSnapshotV1[]
@@ -164,9 +174,10 @@ export async function createChatSourceProjectionDraftV1(input: {
   input = structuredClone(input)
   requireHash(input.worldReferenceHash, 'WorldReference')
   requireHash(input.worldReleaseHash, 'WorldRelease')
-  if (!input.characterResourceKeys.length || input.characterResourceKeys.length > 8
+  const authored = parseChatPrivateCharactersV1(input.privateCharacters ?? [])
+  if (!input.characterResourceKeys.length && !authored.length || input.characterResourceKeys.length + authored.length > 8
     || new Set(input.characterResourceKeys).size !== input.characterResourceKeys.length) {
-    fail('请选择 1～8 个不重复的冻结角色')
+    fail('请选择或创建 1～8 个不重复的角色')
   }
   const byKey = new Map<string, WorldSemanticResourceSnapshotV1>()
   for (const snapshot of input.resources) {
@@ -197,7 +208,15 @@ export async function createChatSourceProjectionDraftV1(input: {
     if (!fragments.length) fail(`资源没有可投影的语义字段：${resourceKey}`)
     return {resourceKey, sourceHash: source.descriptor.contentHash, label: source.descriptor.title, fragments}
   }
-  const characters = await Promise.all([...input.characterResourceKeys].sort().map(key => project(key, true)))
+  const characters: ChatSourceProjectionDraftV1['characters'] = await Promise.all([...input.characterResourceKeys].sort().map(key => project(key, true)))
+  for (const character of authored.slice().sort((a, b) => a.characterKey.localeCompare(b.characterKey))) {
+    if (byKey.has(character.characterKey) || input.characterResourceKeys.includes(character.characterKey) || input.playerCharacterKey === character.characterKey) fail('体验新角色不能借用世界或玩家身份')
+    const {characterKey, ...content} = character
+    const hash = hashCanonicalValue(character)
+    characters.push({resourceKey: characterKey, sourceHash: Dexie.currentTransaction ? await Dexie.waitFor(hash) : await hash,
+      origin: 'product-private', label: character.name,
+      fragments: Object.keys(content).sort().flatMap(field => fragmentSourceField(characterKey, `/${field}`, content[field as keyof typeof content]))})
+  }
   const playerCharacter = input.playerCharacterKey ? await project(input.playerCharacterKey, true) : undefined
   const background = await Promise.all(backgroundKeys.map(async key => {
     const descriptor = byKey.get(key)!.descriptor
@@ -214,6 +233,7 @@ export async function createChatSourceProjectionDraftV1(input: {
   }
   const draft = { ...body, projectionHash: await hashProductProductionValueV2(body) }
   verifiedDrafts.set(draft, canonicalStringify(draft))
+  verifiedPrivateCharacters.set(draft, canonicalStringify(authored.sort((a, b) => a.characterKey.localeCompare(b.characterKey))))
   return draft
 }
 

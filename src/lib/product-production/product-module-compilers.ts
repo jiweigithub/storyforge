@@ -1,6 +1,7 @@
 import { parseAdventureContent } from '../adventure/runtime'
 import { parseAiTownRuntimeContentV1 } from '../ai-town/runtime'
-import { chatProjectionResourcesV1, readPreparedChatSourceProjectionViewV1 } from '../character-interaction/source-projection'
+import { assertPreparedChatPrivateCharactersV1, chatProjectionResourcesV1, readPreparedChatSourceProjectionViewV1 } from '../character-interaction/source-projection'
+import {chatPrivateCharacterKeysV1} from '../character-interaction/private-character'
 import {composeChatRoleVoiceRulesV1, formatChatRoleProfileV1, validateChatRoleProfilesForSourceV1} from '../character-interaction/role-profile'
 import type { FrozenChatSourceProjectionV1 } from '../types/character-interaction'
 import type { FrozenChatNarrativeV1 } from '../types/chat-narrative'
@@ -47,16 +48,18 @@ function endings(input: ProductModuleCompilerInputV1) {
 }
 
 function participants(input: Pick<ProductModuleCompilerInputV1, 'brief'>): string[] {
-  const keys = (input.brief.source.selection.roleBindings.characters
-    ?? input.brief.source.selection.roleBindings.participants
-    ?? input.brief.source.selection.roleBindings.residents ?? []).slice(0, 8)
+  const keys = interactionCharacterKeys(input).slice(0, 8)
   return keys.length ? keys.map((_, index) => `participant.${pad(index)}`) : ['participant.001']
 }
 
-function characterKey(input: Pick<ProductModuleCompilerInputV1, 'brief'>, index: number): string {
-  const key = (input.brief.source.selection.roleBindings.characters
+function interactionCharacterKeys(input: Pick<ProductModuleCompilerInputV1, 'brief'>): string[] {
+  return [...(input.brief.source.selection.roleBindings.characters
     ?? input.brief.source.selection.roleBindings.participants
-    ?? input.brief.source.selection.roleBindings.residents ?? [])[index]
+    ?? input.brief.source.selection.roleBindings.residents ?? []), ...chatPrivateCharacterKeysV1(input.brief.characterChat)]
+}
+
+function characterKey(input: Pick<ProductModuleCompilerInputV1, 'brief'>, index: number): string {
+  const key = interactionCharacterKeys(input)[index]
   if (key == null) return `generated:participant.${pad(index)}`
   // AI Town residents already carry the immutable WorldRelease resource key.
   // Preserve that same portable identity in the interaction profile so the
@@ -396,8 +399,9 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
   if (input.brief.intent.productType !== 'character-interaction' || !chat || chat.version === 1 || !chat.sourceReview || !draft) {
     fail('角色聊天需要作者确认的完整资料投影')
   }
-  const keys = input.brief.source.selection.roleBindings.characters ?? input.brief.source.selection.roleBindings.participants ?? []
-  if (JSON.stringify([...keys].sort()) !== JSON.stringify(draft.characters.map(c => c.resourceKey))
+  const keys = interactionCharacterKeys(input)
+  assertPreparedChatPrivateCharactersV1(draft, chat.version === 3 ? chat.privateCharacters : undefined)
+  if (JSON.stringify([...keys].sort()) !== JSON.stringify(draft.characters.map(c => c.resourceKey).sort())
     || keys.length !== participantKeys.length || input.brief.source.worldContentHash !== draft.worldReleaseHash
     || input.brief.source.selection.worldReferenceHash !== draft.worldReferenceHash) fail('角色投影与冻结选择不一致')
   const backgroundKeys = [...(chat.backgroundResourceKeys ?? [])].sort()
@@ -418,10 +422,12 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
   if (discoveries.size && (chat.version !== 3 || !chat.narrative.permissions.maxDiscoveriesPerSituation)) fail('世界隐情没有作品级发现授权')
   const fragments = chatProjectionResourcesV1(draft).flatMap(resource => resource.fragments)
   const sourceKeys = new Map(fragments.map((fragment, index) => [fragment.fragmentKey, `chat-source.${draft.projectionHash}.${index}`]))
+  const privateSources = draft.characters.filter(c => c.origin === 'product-private').map(({resourceKey, sourceHash}) => ({resourceKey, sourceHash}))
   const content: FrozenChatSourceProjectionV1 = {
-    schema: 'storyforge.chat-runtime-source', version: discoveries.size ? 4 : draft.playerCharacter ? 3 : draft.background?.length ? 2 : 1, projectionHash: draft.projectionHash,
-    ...(draft.playerCharacter ? {playerCharacterSource: {resourceKey: draft.playerCharacter.resourceKey, sourceHash: draft.playerCharacter.sourceHash}} : discoveries.size ? {playerCharacterSource: null} : {}),
-    ...(draft.background?.length || draft.playerCharacter || discoveries.size ? {backgroundSources: (draft.background ?? []).filter(resource => resource.fragments.some(fragment => visibleByFragment.has(fragment.fragmentKey) || discoveries.has(fragment.fragmentKey)))
+    schema: 'storyforge.chat-runtime-source', version: privateSources.length ? 5 : discoveries.size ? 4 : draft.playerCharacter ? 3 : draft.background?.length ? 2 : 1, projectionHash: draft.projectionHash,
+    ...(privateSources.length ? {privateCharacterSources: privateSources} : {}),
+    ...(draft.playerCharacter ? {playerCharacterSource: {resourceKey: draft.playerCharacter.resourceKey, sourceHash: draft.playerCharacter.sourceHash}} : discoveries.size || privateSources.length ? {playerCharacterSource: null} : {}),
+    ...(draft.background?.length || draft.playerCharacter || discoveries.size || privateSources.length ? {backgroundSources: (draft.background ?? []).filter(resource => resource.fragments.some(fragment => visibleByFragment.has(fragment.fragmentKey) || discoveries.has(fragment.fragmentKey)))
       .map(({resourceKey, sourceHash, resourceKind, relatedResourceKeys}) => ({resourceKey, sourceHash, resourceKind,
         ...(relatedResourceKeys ? {relatedResourceKeys} : {})}))} : {}),
     worldReleaseHash: draft.worldReleaseHash, playerRole: input.brief.intent.playerRole,

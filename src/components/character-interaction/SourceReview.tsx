@@ -12,7 +12,7 @@ import RoleProfiles from './RoleProfiles'
 const PURPOSES = {identity: '身份与价值观', motivation: '目标与顾虑', voice: '语言与举止', knowledge: '事实与经历'} as const
 const VISIBILITY = {unclassified: '待分类，暂不使用', public: '所有参与者知道', participants: '仅指定参与者知道', 'author-only': '仅作者掌握', discoverable: '暂时无人知道，允许调查发现'} as const
 const FIELD_LABELS: Record<string, string> = {
-  roleWeight: '人物地位', moralAxis: '道德立场', orderAxis: '秩序立场',
+  voice: '说话方式', roleWeight: '人物地位', moralAxis: '道德立场', orderAxis: '秩序立场',
   ...Object.fromEntries((FIELD_BY_TARGET.get('characters') ?? []).filter(field => field.labels?.length).map(field => [field.field, field.labels![0]])),
 }
 const fieldName = (pointer: string) => pointer.slice(1).replace(/~1/g, '/').replace(/~0/g, '~')
@@ -114,6 +114,7 @@ export default function SourceReview(props: {
   return <section className="mt-6 space-y-3 border-t border-border pt-4" aria-label="角色来源资料检查">
     <h4>角色来源资料与知识范围</h4>
     <p>逐项决定谁知道什么。角色自己未知的真相、未来结局可保留给作者；待分类资料不会进入聊天。目标与顾虑表示角色的意愿。</p>
+    <p>编辑本体验新角色的资料后，也需要重新确认知情范围。</p>
     <p>背景资料与人物资料使用同一知情范围。未发生的故事安排和不打算在聊天中揭示的真相，请保留为作者资料或待分类。背景范围改变后也需要重新确认。</p>
     {discoveryEnabled && <p>已经成立、允许调查揭示的世界隐情，可单独设置发现条件。真相保持原文；角色只能在实际调查满足条件后获知。“仅作者掌握”的资料仍不会进入聊天。</p>}
     <p>长文本按原文顺序分段保留，每段可分别设置用途和知情者；未确认的片段不会自动沿用相邻段落的设置。</p>
@@ -130,7 +131,7 @@ export default function SourceReview(props: {
       {props.settings.version !== 1 && <RoleProfiles scope={props.scope} draft={props.draft} settings={props.settings} projection={projection}
         selectedKeys={suggestionKeys} disabled={disabled} onConfirmed={props.onConfirmed}/>}
       <div className="space-y-3">{chatProjectionResourcesV1(projection).map(character => <details key={character.resourceKey} open>
-        <summary>{character.label}{projection.playerCharacter?.resourceKey === character.resourceKey && <span className="ml-2 text-xs text-text-muted">玩家扮演</span>}{'resourceKind' in character && <span className="ml-2 text-xs text-text-muted">{CHAT_BACKGROUND_LABELS[String(character.resourceKind)] ?? '世界背景'}</span>}</summary>
+        <summary>{character.label}{'origin' in character && character.origin === 'product-private' && <span className="ml-2 text-xs text-text-muted">本体验新角色</span>}{projection.playerCharacter?.resourceKey === character.resourceKey && <span className="ml-2 text-xs text-text-muted">玩家扮演</span>}{'resourceKind' in character && <span className="ml-2 text-xs text-text-muted">{CHAT_BACKGROUND_LABELS[String(character.resourceKind)] ?? '世界背景'}</span>}</summary>
         {'relatedResourceKeys' in character && Array.isArray(character.relatedResourceKeys) && <p className="text-xs text-text-muted">关联人物：{character.relatedResourceKeys.map(key => projection.playerCharacter?.resourceKey === key ? '玩家' : audiences.find(a => a.key === key)?.name ?? '未加入聊天的人物').join('、')}</p>}
         {character.fragments.map(fragment => {
           const background = 'resourceKind' in character
