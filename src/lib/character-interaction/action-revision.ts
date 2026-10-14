@@ -54,10 +54,11 @@ export async function readChatActionRevisionSourceV1(input: {
   let review
   try {
     const body = JSON.parse(raw.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, '$1'))
-    if (!body || Array.isArray(body) || Object.keys(body).join(',') !== 'checks') return null
+    if (!body || Array.isArray(body) || !['checks', 'checks,disclosureChecks'].includes(Object.keys(body).sort().join(','))) return null
     review = parseChatNarrativeActionReviewV1({...body, reviewedActionJson: canonicalStringify(candidate.action)}, candidate.action)
   } catch {return null}
-  if (!review.checks.some(c => c.check === 'consequences' && !c.passed) || review.checks.some(c => c.check !== 'consequences' && !c.passed)) return null
+  if (!review.checks.some(c => c.check === 'consequences' && !c.passed) || review.checks.some(c => c.check !== 'consequences' && !c.passed)
+    || review.disclosureChecks?.some(c => !c.passed)) return null
   return {runId: snapshot.run.id, actorKey: candidate.participantKey, triggerSequence: candidate.triggerSequence,
     candidateHash: candidate.candidateHash, reviewHash, action: candidate.action}
 }

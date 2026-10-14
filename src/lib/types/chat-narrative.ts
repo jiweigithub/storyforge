@@ -233,7 +233,7 @@ export interface ChatNarrativeActionV1 {
     evidenceFactKeys: string[]
     evidenceExcerpt: string
   }>
-  disclosures: Array<{factKey: string; toParticipantKeys: string[]; evidenceExcerpt: string}>
+  disclosures: Array<{factKey: string; toParticipantKeys: string[]; evidenceExcerpt: string; wording?: 'equivalent'}>
   threadUpdates: Array<{threadKey: string; status: ChatThreadStatusV1; evidenceExcerpt: string}>
   goalStatus: ChatActorGoalV1['status'] | null
   /** Other existing goals belonging to this actor, changed by the same action. */
@@ -294,4 +294,6 @@ export interface ChatNarrativeActionReviewV1 {
   /** System-bound exact action, not a hash supplied by the reviewing model. */
   reviewedActionJson: string
   checks: Array<{check: typeof CHAT_ACTION_REVIEW_CHECKS_V1[number]; passed: boolean; reason: string}>
+  /** Every natural paraphrase needs a separately bound full-equivalence review. */
+  disclosureChecks?: Array<{factKey: string; passed: boolean; reason: string}>
 }

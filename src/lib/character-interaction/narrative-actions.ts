@@ -50,8 +50,10 @@ export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV
     text(fact.text, 7900); keys(fact.evidenceFactKeys); text(fact.evidenceExcerpt, 8000)
   }
   for (const value of list(row.disclosures, 12)) {
-    const disclosure = object(value, 'factKey,toParticipantKeys,evidenceExcerpt')
+    const equivalent = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'wording')
+    const disclosure = object(value, 'factKey,toParticipantKeys,evidenceExcerpt' + (equivalent ? ',wording' : ''))
     key(disclosure.factKey); keys(disclosure.toParticipantKeys, 33); text(disclosure.evidenceExcerpt, 8000)
+    if (equivalent) choice(disclosure.wording, ['equivalent'])
   }
   for (const value of list(row.threadUpdates, 8)) {
     const thread = object(value, 'threadKey,status,evidenceExcerpt')
@@ -230,7 +232,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
     if (disclosed.has(item.factKey) || !item.toParticipantKeys.length
       || item.toParticipantKeys.some(k => !action.audienceKeys.includes(k) || known.audienceKeys.includes(k))) fail('披露对象不在场、已经知情或重复')
     disclosed.add(item.factKey); excerpt(item.evidenceExcerpt)
-    if (!item.evidenceExcerpt.includes(known.text)) fail('事实披露缺少逐字证据')
+    if (item.wording !== 'equivalent' && !item.evidenceExcerpt.includes(known.text)) fail('事实披露缺少逐字证据')
     known.audienceKeys.push(...item.toParticipantKeys)
   }
   const changedThreads = new Set<string>()
@@ -297,6 +299,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
 export function applyChatNarrativeActionV1(state: CharacterInteractionRuntimeState, input: Parameters<typeof applyActionBase>[1]) {
   if (state.chatNarrative?.pendingEdit) fail('历史改写必须通过行动及后果审查')
   const action = parseChatNarrativeActionV1(input.action)
+  if (action.disclosures.some(d => d.wording !== undefined)) fail('自然转述必须经过逐条等义审查，旧行动事件不可采用')
   if (action.goalKey === null) fail('收束后的回应必须通过行动及后果审查')
   if (action.relationshipUpdates !== undefined || action.nextPossibilities !== undefined || action.beliefUpdates !== undefined || action.goalUpdates !== undefined || action.situationRequest !== undefined || action.followupGoal !== undefined) fail('旧行动事件不能写入关系、打算或附带目标后果')
   return applyActionBase(state, input)
@@ -311,7 +314,8 @@ export function previewChatNarrativeActionV1(state: CharacterInteractionRuntimeS
 
 
 export function parseChatNarrativeActionReviewV1(value: unknown, action: ChatNarrativeActionV1): ChatNarrativeActionReviewV1 {
-  const row = object(value, 'reviewedActionJson,checks')
+  const hasDisclosureChecks = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'disclosureChecks')
+  const row = object(value, 'reviewedActionJson,checks' + (hasDisclosureChecks ? ',disclosureChecks' : ''))
   if (row.reviewedActionJson !== canonicalStringify(action)) fail('行动审查绑定了另一份候选')
   const checks = list(row.checks, CHAT_ACTION_REVIEW_CHECKS_V1.length), seen = new Set<string>()
   if (checks.length !== CHAT_ACTION_REVIEW_CHECKS_V1.length) fail('行动语义审查不完整')
@@ -321,7 +325,20 @@ export function parseChatNarrativeActionReviewV1(value: unknown, action: ChatNar
     if (seen.has(String(item.check)) || typeof item.passed !== 'boolean') fail('行动审查项目重复或无效')
     text(item.reason, 2000); seen.add(String(item.check))
   }
+  const equivalent = action.disclosures.filter(d => d.wording === 'equivalent')
+  const disclosures = hasDisclosureChecks ? list(row.disclosureChecks, 12) : [], disclosed = new Set<string>()
+  if (disclosures.length !== equivalent.length) fail('自然转述逐条等义审查不完整')
+  for (const value of disclosures) {
+    const item = object(value, 'factKey,passed,reason')
+    key(item.factKey); text(item.reason, 2000)
+    if (!equivalent.some(d => d.factKey === item.factKey) || disclosed.has(item.factKey) || typeof item.passed !== 'boolean') fail('自然转述审查事实无效或重复')
+    disclosed.add(item.factKey)
+  }
   return structuredClone(value) as ChatNarrativeActionReviewV1
+}
+
+export function chatNarrativeActionReviewPassedV1(review: ChatNarrativeActionReviewV1): boolean {
+  return review.checks.every(check => check.passed) && (review.disclosureChecks ?? []).every(check => check.passed)
 }
 
 /** New writes require reviewed expression and consequences. The original
@@ -330,7 +347,7 @@ export function applyReviewedChatNarrativeActionV1(state: CharacterInteractionRu
   const result = previewChatNarrativeActionV1(state, input)
   if (state.remainingDirectorBudget < 2) fail('角色行动与审查预算不足')
   const review = parseChatNarrativeActionReviewV1(input.review, parseChatNarrativeActionV1(input.action))
-  if (review.checks.some(check => !check.passed)) fail('行动语义审查未通过，表达与后果均未提交')
+  if (!chatNarrativeActionReviewPassedV1(review)) fail('行动语义审查未通过，表达与后果均未提交')
   result.remainingDirectorBudget -= 1
   return result
 }

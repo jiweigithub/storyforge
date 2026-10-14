@@ -9,7 +9,7 @@ import {assertRuntimeHarnessFreshV1} from '../agent/run/runtime-scope'
 import {canonicalStringify, hashCanonicalValue} from '../agent/run/hash'
 import {assembleContext} from '../registry/assemble-context'
 import {readAgentRunArtifactExactV1, recordAgentRunArtifactV1} from '../memory/artifact-store'
-import {parseChatNarrativeActionReviewV1} from './narrative-actions'
+import {chatNarrativeActionReviewPassedV1, parseChatNarrativeActionReviewV1} from './narrative-actions'
 import {parseChatSituationReviewV1} from './narrative-situations'
 import {bindChatNarrativeOptionsReviewV1} from './narrative-options'
 import type {ChatMessage, WorkspaceScope} from '../types'
@@ -38,6 +38,9 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
     ...(situation ? {view: 'chat-situation' as const} : {})}
   const reviewBinding = snapshot.contract.executionBindings?.find(b => b.stepId === stepId && b.skillId === reviewSkill)
   if (!reviewBinding) fail('旧候选没有审查合同，请取消后明确发起新行动；原有内容仍保留')
+  const actions = situation ? [] : options ? candidate.options : [candidate.action]
+  const naturalDisclosure = ['chat-narrative-action-review-v18', 'chat-narrative-options-review-v12'].includes(reviewBinding.promptVersion)
+  if (!naturalDisclosure && actions.some(a => a.disclosures.some(d => d.wording === 'equivalent'))) fail('旧审查合同不支持自然转述；保留原候选，不自动更换合同或重发')
   if (candidate.review) return {snapshot, candidate}
   if (snapshot.projection.state !== 'running') fail('当前叙事运行已停止，不能继续审查')
   await assertRuntimeHarnessFreshV1(freshness)
@@ -66,7 +69,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
         projectId: input.scope.projectId, worldGroupId: snapshot.contract.scope.worldGroupId, declaredSourceKeys: sourceKeys,
         assembled, readerVersion: situation ? 'chat-situation-review-v5' : 'chat-action-review-v5'})
       snapshot = await append(input.scope, snapshot, 'context.assembled', {stepId, attempt: 1, manifestHash: manifest.manifestHash})
-      const compact = ['chat-narrative-action-review-v17', 'chat-narrative-options-review-v11'].includes(reviewBinding.promptVersion)
+      const compact = naturalDisclosure || ['chat-narrative-action-review-v17', 'chat-narrative-options-review-v11'].includes(reviewBinding.promptVersion)
       const roleContext = !situation && compact ? interactionRetrievalView((await readProductRuntimeState(input.productRuntimeSessionId)).interaction!, candidate.participantKey) : undefined
       await assertRuntimeHarnessFreshV1(freshness)
       const messages: ChatMessage[] = [{role: 'system', content: (situation ? [
@@ -84,7 +87,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
         'visibility：是否借描述、暗示、新目标或问句泄露角色或玩家不可知的秘密；引用正确也不能洗白语义泄露。',
         'meaningful-direction：是否承接当前局面、提供有动机且可改变的行动方向，而非机械制造危机、重复问题或预写结局。',
         '仅输出 JSON {"checks":[{"check":"continuity|permissions|player-agency|visibility|meaningful-direction","passed":true,"reason":"引用实际内容解释判断"}]}，必须分别包含上述五项，不得有其他字段。',
-      ] : chatActionReviewPromptRulesV1({view: roleContext, actions: situation ? [] : options ? candidate.options : [candidate.action], options, compact})).join('\n')}, {role: 'user', content: assembled.text}]
+      ] : chatActionReviewPromptRulesV1({view: roleContext, actions, options, compact, naturalDisclosure})).join('\n')}, {role: 'user', content: assembled.text}]
       snapshot = (await recordAgentRunArtifactV1({scope: input.scope, runId: snapshot.run.id,
         productRuntimeSessionId: input.productRuntimeSessionId, artifactKind: 'rendered-request', content: JSON.stringify(messages),
         stepId, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence})).snapshot
@@ -107,13 +110,14 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
     let row: Record<string, unknown>
     try {row = JSON.parse(source) as Record<string, unknown>}
     catch {fail('审查响应格式无效；原始结果已保存，尚未提交表达或后果')}
-    if (!row || Array.isArray(row) || Object.keys(row).join(',') !== (options ? 'options' : 'checks')) fail('叙事审查输出字段无效')
+    if (!row || Array.isArray(row) || !(options ? ['options'] : situation ? ['checks'] : ['checks', 'checks,disclosureChecks']).includes(Object.keys(row).sort().join(','))) fail('叙事审查输出字段无效')
     const review = candidate.kind === 'chat-situation-candidate'
       ? parseChatSituationReviewV1({...row, reviewedProposalJson: canonicalStringify(candidate.draft)}, candidate.draft)
       : candidate.kind === 'chat-narrative-options-candidate' ? bindChatNarrativeOptionsReviewV1(row, candidate.options)
         : parseChatNarrativeActionReviewV1({...row, reviewedActionJson: canonicalStringify(candidate.action)}, candidate.action)
-    const checks = 'optionReviews' in review ? review.optionReviews.flatMap(r => r.review.checks) : review.checks
-    if (checks.some(check => !check.passed)) fail(situation ? '情境语义审查未通过，原有局面保留' : '行动语义审查未通过，表达与后果均未提交')
+    const passed = 'optionReviews' in review ? review.optionReviews.every(r => chatNarrativeActionReviewPassedV1(r.review))
+      : 'reviewedActionJson' in review ? chatNarrativeActionReviewPassedV1(review) : review.checks.every(check => check.passed)
+    if (!passed) fail(situation ? '情境语义审查未通过，原有局面保留' : '行动语义审查未通过，表达与后果均未提交')
     await assertRuntimeHarnessFreshV1(freshness)
     if (snapshot.projection.steps[stepId]?.status !== 'succeeded') snapshot = await append(input.scope, snapshot, 'step.succeeded', {stepId, attempt: 1, outputHash: await hashCanonicalValue(review)})
     const {candidateHash: _oldHash, ...body} = candidate
