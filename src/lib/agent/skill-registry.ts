@@ -3687,6 +3687,19 @@ export const AGENT_SKILLS = [
     maxOutputTokens: 8000, writeTargets: [], lastVerifiedAt: '2026-09-15', regressionTests: ['R-CHAT-UI-authoring'],
   },
   {
+    version: 1, id: 'chat.consult.v2', agentId: 'outline', defaultForAgent: false,
+    label: '角色聊天证据方案会谈', owner: 'outline-agent', promptVersion: 'chat-consultation-v2',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: ['chat.consultation'], optionalContextSourceKeys: [],
+    inputPolicy: {sourceKeys: ['chat.consultation'], states: {
+      empty: {handling: 'require-upstream', instruction: '需要已保存方案和作者本轮问题。'},
+      partial: {handling: 'require-upstream', instruction: '所选原文与讨论不得截断；缩小选择或开始新讨论。'},
+      complete: {handling: 'grounded-transform', instruction: '只依当前所选证据与作者问题提出字段候选，区分原文与创作提议。作者逐项确认，不改身份、知情范围或运行权限，不开始制作。'},
+    }}, contextCompression: compressionPolicy(['chat.consultation']), maxOutputTokens: 6000,
+    writeTargets: [{table: 'chatAuthoringDrafts', fields: ['settingsJson']}],
+    lastVerifiedAt: '2026-10-14', regressionTests: ['R-CHAT-02-consultation'],
+  },
+  {
     version: 1, id: 'chat.role-profile.v1', agentId: 'outline', defaultForAgent: false,
     label: '角色聊天人物特征整理', owner: 'outline-agent', promptVersion: 'chat-role-profile-v1',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],

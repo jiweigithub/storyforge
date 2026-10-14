@@ -1,5 +1,6 @@
 /** FIELD_REGISTRY · 当前 AI/结构化采纳允许写入字段的单一事实源。 */
 import type { FieldSpec } from './types'
+import {parseChatAuthoringSettings} from '../character-interaction/authoring-contract'
 import {parseChatRoleProfileSetV1} from '../character-interaction/role-profile'
 
 const trimString = (val: unknown): unknown =>
@@ -766,6 +767,8 @@ export const FIELD_REGISTRY: FieldSpec[] = [
 
   // PRODUCTPROD-1: stable CreativeArtifact output ids. These fields are adopted
   // only by the production command/artifact/package extensions, never by a component.
+  { ...json('chatAuthoringDrafts', 'settingsJson'), candidateId: 'chat.plan',
+    sanitize: value => JSON.stringify(parseChatAuthoringSettings(typeof value === 'string' ? JSON.parse(value) : value)) },
   { ...json('chatAuthoringDrafts', 'roleProfilesJson'), candidateId: 'chat.roleProfiles',
     sanitize: value => JSON.stringify(parseChatRoleProfileSetV1(typeof value === 'string' ? JSON.parse(value) : value)) },
   { ...longtext('productProductionBriefs', 'userIntentSummary'), candidateId: 'productProduction.startingPointSuggestions' },

@@ -5,7 +5,7 @@ import {parseChatAuthoringSettings} from '../../src/lib/character-interaction/au
 import {loadChatSourceProjectionV1, readChatDraftV1, saveChatDraftV1, selectChatWorldV1} from '../../src/lib/character-interaction/draft-service'
 import {readChatSourceProjectionViewV1} from '../../src/lib/character-interaction/source-projection'
 import {readChatSourceReviewContextV1} from '../../src/lib/character-interaction/source-review-context'
-import {consultChatV1} from '../../src/lib/character-interaction/consultation'
+import {generateChatConsultationV2} from '../../src/lib/character-interaction/consultation-harness'
 import {compileInteractionModulesV1, prepareChatNarrativeCompilerSourceV1} from '../../src/lib/product-production/product-module-compilers'
 import {parseFrozenChatSourceV1} from '../../src/lib/character-interaction/runtime'
 import {chatNarrativeShellV1, selectChatNarrativeCandidateV1, validateChatNarrativeProductionSourceV1} from '../../src/lib/character-interaction/narrative-production'
@@ -105,9 +105,12 @@ it('keeps author-only private prose out of actor/player/production views and rea
 
 it('does not let S2 consultation replace authored identities, while preserving untouched private cast', async () => {
   const f = await seedChatNarrativeProductionFixture({privateCast: 'only'})
-  await expect(consultChatV1({scope: f.scope, question: '讨论开场', runAI: async () => JSON.stringify({answer: '换一段背景', settings: {...f.settings, privateCharacters: []}})})).rejects.toThrow('不能改写')
-  const candidate = await consultChatV1({scope: f.scope, question: '解释当前开场', runAI: async () => JSON.stringify({answer: '保留资料', settings: f.settings})})
-  expect(candidate.settings).toEqual(f.settings)
+  const request = {draftRevision: f.confirmed.revision, question: '讨论开场', source: null, priorRunId: null}
+  const rejected = await generateChatConsultationV2({scope: f.scope, request, runAI: async () => JSON.stringify({answer: '换掉人物', changes: [{field: 'privateCharacters', value: [], reason: '替换', basis: 'proposal', evidence: []}]})})
+  expect(rejected.status).toBe('blocked')
+  const candidate = await generateChatConsultationV2({scope: f.scope, request, runAI: async () => JSON.stringify({answer: '保留资料', changes: []})})
+  expect(candidate.status).toBe('ready')
+  expect(JSON.parse((await readChatDraftV1(f.scope)).settingsJson)).toEqual(f.settings)
 })
 
 it('rejects private source impersonation, missing provenance, mismatched hashes and a mutated prepared source', async () => {

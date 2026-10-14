@@ -2011,6 +2011,16 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     },
   },
   {
+    key: 'chat.consultation', label: '角色聊天本轮方案与所选证据', scope: 'project', layer: 'L0', ownerFrom: 'work',
+    budgetTokens: 20_000, protectedFromTrim: true, atomic: true,
+    enabled: input => input.chatConsultationRequest !== undefined,
+    read: async input => {
+      if (!input.chatConsultationRequest) throw new Error('请指定本轮方案会谈')
+      const {readChatConsultationContextV2} = await import('../character-interaction/consultation-context')
+      return JSON.stringify(await readChatConsultationContextV2(await resolveScope(input), input.chatConsultationRequest))
+    },
+  },
+  {
     key: 'chat.source-review', label: '角色聊天作者选中的原文资料', scope: 'project', layer: 'L0', ownerFrom: 'work',
     budgetTokens: 20_000, protectedFromTrim: true, atomic: true,
     enabled: input => input.chatSourceReviewRequest !== undefined,
