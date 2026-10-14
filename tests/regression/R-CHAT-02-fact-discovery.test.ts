@@ -147,10 +147,11 @@ it('recovers a persisted discovery candidate, adopts once, and preserves causali
     runReviewAI: async messages => {
       const request = JSON.stringify(messages)
       expect(request).toContain(truth); expect(request).toContain('调查发现分两阶段'); expect(request).toContain(investigated)
+      expect(request).toContain('个人暂停不等于共同事项结束')
       return JSON.stringify(chatActionReviewOutputFixture())
     },
   })
-  expect(inspected.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-narrative-action-review')?.promptVersion).toBe('chat-narrative-action-review-v12')
+  expect(inspected.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-narrative-action-review')?.promptVersion).toBe('chat-narrative-action-review-v13')
   expect(inspected.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-narrative-action')?.promptVersion).toBe('chat-narrative-action-v19')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: inspected.snapshot.run.id})
   v = await readProductRuntimeStateVersion(f.sessionId)
