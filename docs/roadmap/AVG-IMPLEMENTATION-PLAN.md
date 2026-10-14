@@ -66,7 +66,7 @@ CAL-00 已进入准备。作者于 2026-10-14 明确答复“没有上限”，�
 
 ### 2.2 AVG-BASE-00B 当前增量
 
-使用独立工作树 `avg-base00b-20261014` / 分支 `feat/avg-base00b-20261014`，从最新远程主干 `cfc5ed3f` 建立并显式依赖已验收的 00A `18218f73`。本包是 AVG 产品能力研发的私有协议接缝：S2 的作者期望与显式 V1→V2 提案、S3 的专业候选验证和冻结载体，owner 留在 AVG Work / production / 产品媒资，世界仅按原冻结来源只读引用。不创建具体作品或调用模型/媒资。
+使用独立工作树 `avg-base00b-20261014` / 分支 `feat/avg-base00b-20261014`，协议子增量代码为 `274ccf84`，[草稿 PR #140](https://github.com/yuanbw2025/storyforge/pull/140)，从最新远程主干 `cfc5ed3f` 建立并显式依赖已验收的 00A `18218f73`。本包是 AVG 产品能力研发的私有协议接缝：S2 的作者期望与显式 V1→V2 提案、S3 的专业候选验证和冻结载体，owner 留在 AVG Work / production / 产品媒资，世界仅按原冻结来源只读引用。不创建具体作品或调用模型/媒资。
 
 实际首批 schema 为 production-plan、source-audit、story-bible、cast-bible、route-plan、scene-script、dialogue-patch、review-issues；其余规则/导演/视觉/声音 DTO 和 22 岗位目录中未实现的 Skill 保留为后续包，不能通过任意 JSON 或旧通用采用口启用。已接入严格 key/schema/kind/场景写域校验与采用拒绝边界；表达补丁只返回新脚本候选及 base/patch/hash，不直接写 DB。
 
@@ -74,7 +74,7 @@ V2 可承载至多一个已登记 AVG 基础模块，逐句身份/文本与公�
 
 复用已有 FIELD_REGISTRY / adoption extension / PROJECT_TABLES，未增加 AI 写字段、Context Source、表/索引、迁移或正式入口。旧 S2/V1 生产、采用、发布与玩家路径继续回归；新专业上下文/Skill/作者采用将在 01A/01B 等各自包登记。这是私有承载与拒绝接缝，不是已完成专业生成、自动绑定或新播放器。
 
-当前工程结果（2026-10-14）：定向 9 文件 / 61 测试通过；隔离 Chromium 全量 255 通过 / 2 项既有条件跳过；全量 CI 首轮 793 文件、4,359 通过 / 13 超时失败（5 文件），正在单进程复核，尚未取得 CI 全绿。性能 smoke 仍给出 long-run-incomplete，不是长时性能验收。
+当前工程结果（2026-10-14）：定向 9 文件 / 61 测试通过；隔离 Chromium 全量 255 通过 / 2 项既有条件跳过；全量 CI 首轮 793 文件、4,359 通过 / 13 超时失败（5 文件），5 个文件 / 189 测试在 CI 模式、隔离单进程下全部复测通过；完整 CI 已按共享资源串行执行重新启动，终态仍待取得，不以定向复测代替 CI 全绿。性能 smoke 仍给出 long-run-incomplete，不是长时性能验收。
 
 当前只是 00B 的协议与拒绝边界子增量。专业工件的作者确认、冻结写域/来源/receipt 验证、正式 revision 持久化及采用刷新恢复仍待完成；本子增量即使全量 CI/E2E 通过，也不能把 00B 整包标为分支验收，更不能提前放行依赖完整 00B 的代码包。后续正反例须包含实际合法采用和原子拒绝，不以纯 prepare/补丁返回值代替 DB 写入闭环。
 
