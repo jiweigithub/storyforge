@@ -454,10 +454,11 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ## 五、正式 AI 入口（FormalAIEntryBindingV1）
 
-共 49 个操作级绑定。运行时按 entryId 校验 category 和 Skill；采纳权限不由文字说明决定。
+共 50 个操作级绑定。运行时按 entryId 校验 category 和 Skill；采纳权限不由文字说明决定。
 
 | entryId | Skill | category | 边界 | 候选 | 采纳目标 | 调用方 |
 |---|---|---|---|---|---|---|
+| `chat.role-profile` | `chat.role-profile.v1` | `authoring.chat-role-profile` | formal / durable-run | `chat-role-profile` | `chatAuthoringDrafts` | `src/lib/character-interaction/role-profile-harness.ts` |
 | `chat.source-review` | `chat.source-review.v1` | `authoring.chat-source-review` | formal / durable-run | `chat-source-review-suggestions` | 禁止 | `src/lib/character-interaction/source-review-harness.ts` |
 | `extensions.generate` | `extensions.generate` | `extension.generate` | formal / durable-run | `extension-record-candidate` | `extensionRecords` | `src/lib/extensions/ai-run.ts` |
 | `ai-town.authoring.consult` | `ai-town.consult.v1` | `authoring.ai-town-consult` | auxiliary / durable-run | `ai-town-settings-preview` | 禁止 | `src/lib/ai-town/consultation.ts` |
@@ -510,4 +511,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `7b023682`
+生成时间基准:commit `60d1f37e`

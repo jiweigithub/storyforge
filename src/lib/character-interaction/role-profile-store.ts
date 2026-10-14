@@ -13,8 +13,8 @@ export async function readChatRoleProfilesV1(scope: WorkspaceScope): Promise<Cha
   return draft?.roleProfilesJson === undefined ? undefined : parseChatRoleProfileSetV1(JSON.parse(draft.roleProfilesJson))
 }
 
-/** Explicit author editing only. AI generation must use its own writable run contract. */
-export async function confirmChatRoleProfileV1(scopeInput: WorkspaceScope, requestInput: ChatSourceReviewRequestV1, candidateInput: unknown) {
+/** Inert evidence preparation shared by manual confirmation and the writable AI run. */
+export async function prepareChatRoleProfileWriteV1(scopeInput: WorkspaceScope, requestInput: ChatSourceReviewRequestV1, candidateInput: unknown) {
   const scope = structuredClone(scopeInput), request = structuredClone(requestInput), candidate = structuredClone(candidateInput)
   const context = await readChatSourceReviewContextV1(scope, request)
   const draft = await readChatDraftV1(scope)
@@ -26,7 +26,15 @@ export async function confirmChatRoleProfileV1(scopeInput: WorkspaceScope, reque
   const set: ChatRoleProfileSetV1 = {schema: 'storyforge.chat-role-profiles', version: 1, profiles}
   // Re-read original evidence at the same revision before the atomic author write.
   validateChatRoleProfilesForSourceV1({ ...set, profiles: [profile]}, await loadChatSourceProjectionV1(scope, draft.revision), settings.sourceReview)
-  return write(scope, draft, set)
+  return {scope, expected: draft, set}
+}
+
+/** Both manual and durable AI confirmation share the same source preparation and atomic write. */
+export async function confirmChatRoleProfileV1(scope: WorkspaceScope, request: ChatSourceReviewRequestV1, candidate: unknown) {
+  return commitChatRoleProfileWriteV1(await prepareChatRoleProfileWriteV1(scope, request, candidate))
+}
+export async function commitChatRoleProfileWriteV1(input: Awaited<ReturnType<typeof prepareChatRoleProfileWriteV1>>) {
+  return write(input.scope, input.expected, input.set)
 }
 
 /** Removing one obsolete interpretation does not discard other authored profiles. */

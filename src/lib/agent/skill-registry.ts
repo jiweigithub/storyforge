@@ -3678,6 +3678,19 @@ export const AGENT_SKILLS = [
     maxOutputTokens: 8000, writeTargets: [], lastVerifiedAt: '2026-09-15', regressionTests: ['R-CHAT-UI-authoring'],
   },
   {
+    version: 1, id: 'chat.role-profile.v1', agentId: 'outline', defaultForAgent: false,
+    label: '角色聊天人物特征整理', owner: 'outline-agent', promptVersion: 'chat-role-profile-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: ['chat.source-review'], optionalContextSourceKeys: [],
+    inputPolicy: {sourceKeys: ['chat.source-review'], states: {
+      empty: {handling: 'require-upstream', instruction: '必须指定AI角色和已确认可读的本人原文，否则停止。'},
+      partial: {handling: 'require-upstream', instruction: '全部所选原文须完整交付，不截断引用；请缩小选择。'},
+      complete: {handling: 'grounded-transform', instruction: '仅整理指定角色已知资料，每项有本人逐字依据；保留主体、否定、条件和时态。只生成候选，作者核对后采纳；不改世界或知情范围。'},
+    }}, contextCompression: compressionPolicy(['chat.source-review']), maxOutputTokens: 6000,
+    writeTargets: [{table: 'chatAuthoringDrafts', fields: ['roleProfilesJson']}],
+    lastVerifiedAt: '2026-10-14', regressionTests: ['R-CHAT-01-role-profile-harness'],
+  },
+  {
     version: 1,
     id: 'chat.source-review.v1', agentId: 'outline', defaultForAgent: false,
     label: '角色聊天原文整理建议', owner: 'outline-agent', promptVersion: 'chat-source-review-v2',

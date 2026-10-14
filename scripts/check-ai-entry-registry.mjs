@@ -215,8 +215,9 @@ const scannedFiles = [
   // remain outside the UI/generation scanners merely because it predates them.
   'src/lib/ai/batch-detail-runner.ts',
   'src/lib/ai-town/consultation.ts',
-  // CHAT-01: author source interpretation is a bounded, read-only durable entry.
+  // CHAT-01: source suggestions remain read-only; role profiles require explicit governed adoption.
   'src/lib/character-interaction/source-review-harness.ts',
+  'src/lib/character-interaction/role-profile-harness.ts',
   // G5-02 creator consultation is a formal durable service rather than a UI
   // hook; keep its literal entry/category binding under the same machine gate.
   'src/lib/open-world/creator-brief.ts',
