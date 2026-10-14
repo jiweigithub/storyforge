@@ -2,6 +2,8 @@ import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1} from '../lib
 import type {ChatSchedulingModeV1} from '../lib/character-interaction/narrative-scheduling'
 import {applyChatMessageRetrievalPlanV1, type ChatMessageRetrievalPlanV1} from '../lib/character-interaction/narrative-retrieval-service'
 import { create } from 'zustand'
+import type {ChatComposerSendBindingV1} from '../lib/character-interaction/runtime-api'
+import {ChatComposerConflictError} from '../lib/character-interaction/composer-draft-contract'
 import { db } from '../lib/db/schema'
 import {
   readInteractionDirectorPlanV1,
@@ -84,7 +86,7 @@ interface CharacterInteractionPlayerState {
   select(sessionId: number | null): Promise<void>
   start(productReleaseId: number, title?: string): Promise<number>
   startScene(sceneKey: string): Promise<void>
-  sendPlayerMessage(text: string, audienceKeys?: string[] | null): Promise<number>
+  sendPlayerMessage(text: string, audienceKeys?: string[] | null, draft?: {binding: ChatComposerSendBindingV1; onCommitted: () => void}): Promise<number>
   applyFixedAction(ruleKey: string): Promise<void>
   generateReplies(input: { aiConfig: AIConfig; replyToSequence: number; preferredParticipantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1 }): Promise<void>
   advanceNarrative(input: { aiConfig: AIConfig; kind: ChatPlayerTriggerV1; compare?: boolean; participantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1 }): Promise<void>
@@ -249,7 +251,8 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
     if (get().busy) throw new Error('当前操作尚未结束，请稍后再试。')
     set({ busy: true, error: '' })
     try { return await operation() } catch (reason) {
-      set({ error: reason instanceof Error ? reason.message : String(reason) })
+      // The composer presents both drafts and owns this actionable conflict.
+      set({ error: reason instanceof ChatComposerConflictError ? '' : reason instanceof Error ? reason.message : String(reason) })
       throw reason
     } finally {
       generationAbortController = null
@@ -357,9 +360,11 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       await refresh()
     }),
 
-    sendPlayerMessage: async (text, audienceKeys) => {
+    sendPlayerMessage: async (text, audienceKeys, draft) => {
       const save = async () => {
         const base = await version()
+        if (draft && (base.id !== draft.binding.sessionId || get().scope?.projectId !== draft.binding.scope.projectId
+          || get().scope?.worldId !== draft.binding.scope.worldId || get().scope?.workId !== draft.binding.scope.workId)) throw new Error('已经切换存档，未发送原草稿。')
         const event = await commitInteractionPlayerMessage({
           sessionId: base.id,
           commandId: commandId('interaction.message', base.id),
@@ -368,7 +373,10 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
           messageId: `message:player:${crypto.randomUUID()}`,
           text,
           audienceKeys: audienceKeys ?? null,
+          ...(draft ? {composerDraft: draft.binding} : {}),
         })
+        // The message and consumed draft are durable even if the following UI refresh fails.
+        draft?.onCommitted()
         await refresh()
         return event.sequence
       }
