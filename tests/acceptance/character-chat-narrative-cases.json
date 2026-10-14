@@ -1457,7 +1457,63 @@
             "reviewRetained": true,
             "worldPreserved": true
           },
-          "nextWork": "Reconcile personal-goal pauses and shared-thread consequences, then provide bounded and visible candidate repair with re-review under the authorized budget. Preserve the original failure; do not weaken the gate or resend unknown requests."
+          "nextWork": "V43 explicit consequence revision and fresh review now have a narrow same-prefix diagnostic (see actionRevisionPreflight). Preserve the original failure. Sustained meaningful progression across everyday, investigation and relationship scenarios remains unaccepted."
+        },
+        "actionRevisionPreflight": {
+          "verifiedAt": "2026-10-14",
+          "sourceHead": "0925d6291714b2ebca24ff54ee9d937250e2fe8b",
+          "snapshotManifestSha256": "5b8021cfcd97bbcba9f75e4941429a3a9de36355543074996ef2a84010d01a16",
+          "status": "explicit-revision-supported-in-same-prefix-development-diagnostic",
+          "scope": "Exact recorded V42 failed candidate/review replay through the formal Harness in a rebased branch, with zero setup model calls; only the explicit revision and fresh review are new real Codex calls. Same developer, not a new natural episode, independent reviewer, human playtest or formal M1 acceptance.",
+          "evidence": "codex-action-revision-v43-verified.json",
+          "rawEvidenceSha256": "55e73d0fd24ac62dd5eaa1535097ea1b7b9a2034bd37415092773726872cd4ea",
+          "acceptedModelCalls": 2,
+          "completedProviderResponses": 2,
+          "inputTokens": 21629,
+          "outputTokens": 871,
+          "totalTokens": 22500,
+          "durationIncludingSetupMs": 48207,
+          "costUsd": null,
+          "developmentReview": [
+            "Only threadUpdates changed: thread-1 became paused with an exact quote from the original expression. All locked expression/agency fields and the other consequences stayed identical.",
+            "Fresh real six-dimension review passed. Exactly one revised action committed; the original failed run remained failed and the parent timeline/world were unchanged.",
+            "This repairs state bookkeeping for an otherwise unchanged pause. It does not establish sustained autonomous progression or entertaining dialogue."
+          ],
+          "refreshRetained": true,
+          "refreshAdditionalCalls": 0,
+          "restoration": {
+            "evidence": "codex-action-revision-restoration-v43-verified.json",
+            "rawEvidenceSha256": "08d1f098505003d2e9948896ae9f023f06eef6a377ea8d16a71767e0e8924a16",
+            "newModelCalls": 0,
+            "interactionEqual": true,
+            "refreshEqual": true,
+            "parentPreserved": true,
+            "worldPreserved": true,
+            "originalFailureRetained": true,
+            "sourceReviewRetained": true,
+            "completedHistoryRecognized": true,
+            "resumableRunIds": [],
+            "receiptPolicy": "Imported old receipt remains stale; completed prefix and same-session adopted command exclude it from resumable runs. No receipt rewritten."
+          },
+          "setupAndRestorationFailures": [
+            {
+              "status": "setup-script-error-before-browser-and-model",
+              "cause": "Looked for runId/stepId on content-addressed artifacts instead of joining recorded events by contentHash.",
+              "modelCalls": 0
+            },
+            {
+              "evidence": "codex-action-revision-v43.json",
+              "rawEvidenceSha256": "a0dd7c07ac2fa8df733a4a966d4d8a2e1340d1deda8281db1c6bfed7b71a9515",
+              "cause": "Branch equality assertion omitted registered event-sequence rebasing.",
+              "modelCalls": 0
+            },
+            {
+              "evidence": "codex-action-revision-restoration-v43.json",
+              "rawEvidenceSha256": "53d1cd99aec2b7003601eadfe5ddc6aa95111017d1f23303571522692be68159",
+              "cause": "Expected completed row status after import despite intentional old-receipt invalidation; final check uses the existing verified-completed-prefix classifier.",
+              "modelCalls": 0
+            }
+          ]
         }
       },
       {
