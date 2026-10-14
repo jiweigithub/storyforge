@@ -501,6 +501,24 @@ test(`v3 production offers initial situations, retains them across refresh and f
     }, fixture);
     // A later S2 edit must not mutate the already-frozen Brief or selected Build.
     expect(frozen).toEqual({title: '旧账本', persona: '你', choices: []});
+    if (transfer) {
+        fixture = await page.evaluate(async f => {
+            const load = new Function('p', 'return import(p)');
+            const db = (await load('/storyforge/src/lib/db/schema.ts')).db;
+            const backup = await load('/storyforge/src/lib/export/json-export.ts');
+            const projectId = await backup.importProjectJSON(await backup.exportProjectJSON(f.scope.projectId));
+            const scope = (await (await load('/storyforge/src/lib/workspace/ownership.ts')).resolveWorkspaceOwnership(projectId)).scope;
+            const production = await db.productProductions.where('projectId').equals(projectId).first();
+            return {...f, scope, productionId: production.id};
+        }, fixture);
+        query = `project=${fixture.scope.projectId}&work=${fixture.scope.workId}&production=${fixture.productionId}`;
+        await page.goto(`./chat/production?${query}`);
+        await page.getByTestId('product-production-recover-import-proof').click();
+        await expect(page.getByRole('button', {name: '复验并原子发布', exact: true})).toBeEnabled();
+        expect(calls).toEqual(['situations', 'opening-review', 'media']);
+        await page.reload();
+        await expect(page.getByTestId('product-production-recover-import-proof')).toHaveCount(0);
+    }
     await page.getByRole('button', {name: '复验并原子发布', exact: true}).click();
     const readRelease = () => page.evaluate(async f => {const load = new Function('p', 'return import(p)'); const db = (await load('/storyforge/src/lib/db/schema.ts')).db;
         return (await db.productProductions.get(f.productionId)).currentProductReleaseId;}, fixture);

@@ -15,7 +15,7 @@ import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-ex
 import {interactionVisibilityView, createInitialInteractionState} from '../../src/lib/character-interaction/runtime'
 import {executeProductProductionCommand} from '../../src/lib/product-production/commands'
 import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
-import {runProductProductionUntilBlockedV1, recoverImportedChatProductionPrefixV1} from '../../src/lib/product-production/scheduler'
+import {runProductProductionUntilBlockedV1, recoverImportedChatProductionPrefixV1, recoverImportedProductProductionProofsV1} from '../../src/lib/product-production/scheduler'
 import {readProductProductionBuildWorldScopeV1} from '../../src/lib/product-production/world-binding'
 import {aggregateProductSourceManifestFromExactRunsV1} from '../../src/lib/product/source-contracts'
 import {readProductProductionDetailsV1, confirmChatSituationDecisionV1, listProductProductionReviewArtifactsV1, retryProductProductionBlockerV1, publishProductProductionV1} from '../../src/lib/product-production/service'
@@ -157,6 +157,8 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false, priv
   let details = await readProductProductionDetailsV1(f.scope, productionId)
   expect(JSON.parse(details.build!.failureJson), details.build!.failureJson).toMatchObject({taskKey: 'content.chat-author-gate'})
   expect(calls).toEqual(['situations', 'opening-review'])
+  expect(JSON.parse(details.build!.budgetLedgerJson).attempts.find((a: {taskKey: string}) => a.taskKey === 'content.chat-author-gate'))
+    .toMatchObject({usageKnown: true, usage: {modelCalls: 0, mediaCalls: 0, costUsd: 0}})
   if (transferAtSelection) {
     const before = details.brief!
     const originalArtifacts = await db.productBuildArtifacts.where('buildId').equals(details.build!.id!).toArray()
@@ -245,6 +247,12 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false, priv
   details = await readProductProductionDetailsV1(f.scope, productionId)
   expect(JSON.parse(details.build!.failureJson)).toMatchObject({taskKey: 'media.requirements'})
   expect(calls).toEqual(['situations', 'opening-review', 'media', 'media'])
+  if (transferAtSelection) {
+    const importedId = await importProjectJSON(await exportProjectJSON(f.scope.projectId))
+    f.scope = (await resolveWorkspaceOwnership(importedId)).scope
+    productionId = (await db.productProductions.where('projectId').equals(importedId).first())!.id!
+    expect(calls).toEqual(['situations', 'opening-review', 'media', 'media'])
+  }
   // The selected situation is a durable author decision and must survive a
   // later task failure; ordinary retries cannot silently choose a new opening.
   db.close(); await db.open()
@@ -312,6 +320,52 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false, priv
   await db.productBuilds.update(build.id!, {budgetLedgerJson: JSON.stringify(forgedLedger)})
   await expect(verify()).rejects.toThrow(/chat carry/)
   await db.productBuilds.put(build)
+  if (transferAtSelection) {
+    // Legacy backups predate explicit zero-cost author-choice bookkeeping.
+    const legacyLedger = JSON.parse(build.budgetLedgerJson)
+    const gate = legacyLedger.attempts.find((a: {taskKey: string; controlEpoch: number}) =>
+      a.taskKey === 'content.chat-author-gate' && a.controlEpoch === 0)
+    gate.usageKnown = false; gate.usage = null
+    await db.productBuilds.update(build.id!, {budgetLedgerJson: JSON.stringify(legacyLedger)})
+    const importedId = await importProjectJSON(await exportProjectJSON(f.scope.projectId))
+    f.scope = (await resolveWorkspaceOwnership(importedId)).scope
+    productionId = (await db.productProductions.where('projectId').equals(importedId).first())!.id!
+    details = await readProductProductionDetailsV1(f.scope, productionId)
+    const restoredBuild = details.build!
+    const restoredRows = await db.productBuildArtifacts.where('buildId').equals(restoredBuild.id!).toArray()
+    const original = restoredRows.find(row => row.artifactKey === 'content.chat-candidates'
+      && row.status === 'invalid' && row.carriedFrom === null)!
+    const recover = () => recoverImportedProductProductionProofsV1({scope: f.scope, productionId})
+    await expect(recoverImportedProductProductionProofsV1({scope: {projectId: build.projectId, workId: build.workId, worldId: build.worldId}, productionId})).rejects.toThrow()
+    const historicalCheckpoint = (await db.agentRunCheckpoints.where('runId').equals(original.producerRunId!).toArray()).at(-1)!
+    await db.agentRunCheckpoints.delete(historicalCheckpoint.id!)
+    await expect(recover()).rejects.toThrow('checkpoint')
+    await db.agentRunCheckpoints.put(historicalCheckpoint)
+    await db.productBuildArtifacts.update(original.id!, {metadataJson: '{"forged":true}'})
+    await expect(recover()).rejects.toThrow('historical accepted payload')
+    await db.productBuildArtifacts.put(original)
+    const importedLedger = JSON.parse(restoredBuild.budgetLedgerJson)
+    const missingAttempt = structuredClone(importedLedger)
+    missingAttempt.attempts = missingAttempt.attempts.filter((a: {runId: number}) => a.runId !== original.producerRunId)
+    await db.productBuilds.update(restoredBuild.id!, {budgetLedgerJson: JSON.stringify(missingAttempt)})
+    await expect(recover()).rejects.toThrow('结算证据')
+    await db.productBuilds.put(restoredBuild)
+    const unknownPaid = structuredClone(importedLedger)
+    const paid = unknownPaid.attempts.find((a: {runId: number}) => a.runId === original.producerRunId)
+    paid.usageKnown = false
+    await db.productBuilds.update(restoredBuild.id!, {budgetLedgerJson: JSON.stringify(unknownPaid)})
+    await expect(recover()).rejects.toThrow('预算证明')
+    await db.productBuilds.put(restoredBuild)
+    const recovered = await recover()
+    expect(recovered.terminal).toBe(true)
+    const count = await db.agentRunEvents.where('projectId').equals(f.scope.projectId).count()
+    await recover()
+    expect(await db.agentRunEvents.where('projectId').equals(f.scope.projectId).count()).toBe(count)
+    expect((await db.productBuilds.get(restoredBuild.id!))!.budgetLedgerJson).toBe(restoredBuild.budgetLedgerJson)
+    expect((await db.productBuilds.get(restoredBuild.id!))!.packageHash).toBe(build.packageHash)
+    expect(await db.productBuildArtifacts.where('buildId').equals(restoredBuild.id!).toArray()).toEqual(restoredRows)
+    expect(calls).toEqual(['situations', 'opening-review', 'media', 'media', 'media'])
+  }
   const published = await publishProductProductionV1({scope: f.scope, productionId})
   expect(published.receipt.productReleaseId).toBeGreaterThan(0)
   const session = await createCharacterInteractionInstance({scope: f.scope,

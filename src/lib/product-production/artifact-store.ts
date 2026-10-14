@@ -3,6 +3,7 @@ import { db } from '../db/schema'
 import { readLatestVerifiedAgentRunCheckpointV1 } from '../agent/run/checkpoint'
 import { readAgentRunV1, type AgentRunSnapshotV1 } from '../agent/run/event-store'
 import { canonicalStringify as canonicalAgentRunJsonV1 } from '../agent/run/hash'
+import { replayAgentRunEventsV1 } from '../agent/run/projection'
 import type {
   AgentRunCheckpointRecord,
   AgentRunEventRecord,
@@ -1524,7 +1525,8 @@ async function verifyHistoricalAcceptedTaskV1(input: {
   build: ProductBuildRecordV1 & { id: number }
   task: ProductProductionPlanTaskV3
   siblings: ProductBuildArtifactRecordV1[]
-}): Promise<void> {
+  restoreImportedScope?: boolean
+}) {
   const anchor = input.siblings[0]
   if (anchor.producerRunId == null || anchor.producerReceiptHash == null
     || input.siblings.some(row => row.carriedFrom !== null || row.parentArtifactHash !== null
@@ -1538,19 +1540,35 @@ async function verifyHistoricalAcceptedTaskV1(input: {
   }
   const snapshot = verified.snapshot
   const boundary = snapshot.contract.scope.productProduction
-  if (snapshot.run.status !== 'completed' || snapshot.projection.state !== 'completed'
+  let terminal = snapshot.projection
+  let importedScopeRebound = hasImportedScopeRevalidationV1(snapshot)
+  if (input.restoreImportedScope) {
+    const last = snapshot.events[snapshot.events.length - 1]
+    const completed = replayAgentRunEventsV1(snapshot.events.slice(0, -1))
+    if (snapshot.run.status !== 'running' || snapshot.projection.state !== 'running'
+      || last?.type !== 'verification.staled'
+      || last.payload.reason !== 'project-import-scope-rebound'
+      || completed.errors.length > 0 || completed.state !== 'completed'
+      || completed.terminalReceiptHash !== last.payload.previousReceiptHash) {
+      throw new Error(`[product-production-artifact] terminal historical import prefix 不闭合:${input.task.taskKey}`)
+    }
+    terminal = completed
+    importedScopeRebound = true
+  }
+  if ((!input.restoreImportedScope && snapshot.run.status !== 'completed') || terminal.state !== 'completed'
     || snapshot.run.productBuildId !== input.build.id
     || snapshot.run.projectId !== input.scope.projectId || snapshot.run.workId !== input.scope.workId
     || snapshot.run.parentRunId == null || snapshot.run.parentRelation !== `task:${input.task.taskKey}`
-    || snapshot.run.terminalReceiptHash !== anchor.producerReceiptHash
-    || snapshot.projection.terminalReceiptHash !== anchor.producerReceiptHash
+    || (!input.restoreImportedScope && snapshot.run.terminalReceiptHash !== anchor.producerReceiptHash)
+    || terminal.terminalReceiptHash !== anchor.producerReceiptHash
     || boundary?.productBuildId !== input.build.id || boundary.buildNumber !== input.build.buildNumber
     || boundary.controlEpoch !== anchor.controlEpoch || boundary.taskKey !== input.task.taskKey) {
     throw new Error(`[product-production-artifact] terminal historical accepted Run 不闭合:${input.task.taskKey}`)
   }
   const root = await readAgentRunV1(input.scope, snapshot.run.parentRunId)
   const rootBoundary = root.contract.scope.productProduction
-  if (root.run.productBuildId !== input.build.id || root.run.parentRunId != null
+  if (root.run.projectId !== input.scope.projectId || root.run.workId !== input.scope.workId
+    || root.run.productBuildId !== input.build.id || root.run.parentRunId != null
     || root.run.parentRelation != null || rootBoundary?.productBuildId !== input.build.id
     || rootBoundary.buildNumber !== input.build.buildNumber || rootBoundary.taskKey !== '$root'
     || rootBoundary.controlEpoch !== anchor.controlEpoch || rootBoundary.planHash !== boundary.planHash) {
@@ -1587,7 +1605,7 @@ async function verifyHistoricalAcceptedTaskV1(input: {
     controlEpoch: anchor.controlEpoch,
   })
   const checkpointStep = verified.projection.steps[input.task.taskKey]
-  const terminalStep = snapshot.projection.steps[input.task.taskKey]
+  const terminalStep = terminal.steps[input.task.taskKey]
   if (candidateHash !== candidate.candidateHash || receiptHash !== anchor.producerReceiptHash
     || checkpointStep?.attempt !== Number(candidate.attempt)
     || checkpointStep.candidateHash !== candidateHash
@@ -1635,8 +1653,8 @@ async function verifyHistoricalAcceptedTaskV1(input: {
   if (prepared.size !== input.task.outputArtifactKeys.length
     || input.siblings.some(row => {
       const expected = prepared.get(row.artifactKey)
-      return !expected || canonicalProductProductionJsonV2(expected)
-        !== canonicalProductProductionJsonV2({
+      return !expected || !samePreparedProducerArtifactV1({expected, importedScopeRebound,
+        actual: {
           artifactKey: row.artifactKey,
           requirementKey: row.requirementKey,
           kind: row.kind,
@@ -1649,11 +1667,34 @@ async function verifyHistoricalAcceptedTaskV1(input: {
           blobObjectId: row.blobObjectId,
           mimeType: row.mimeType,
           byteSize: row.byteSize,
-        } satisfies PreparedArtifactAcceptanceV1)
+        } satisfies PreparedArtifactAcceptanceV1})
     })) {
     throw new Error(`[product-production-artifact] terminal historical accepted payload 不闭合:${input.task.taskKey}`)
   }
   await verifiedBlobProofsV1({ scope: input.scope, artifacts: input.siblings, label: 'terminal historical accepted' })
+  return {runId: snapshot.run.id, attempt: Number(candidate.attempt), inputHash: anchor.inputHash,
+    usage: result.usage, receiptHash}
+}
+
+/** Read-only proof of an original, superseded producer after project import.
+ * The completed prefix and exact candidate remain authoritative; the caller
+ * must also prove the immutable budget settlement before accepting the run. */
+export async function verifyImportedHistoricalProductProductionTaskV1(input: {
+  scope: WorkspaceScope
+  build: ProductBuildRecordV1 & {id: number}
+  task: ProductProductionPlanTaskV3
+  anchor: ProductBuildArtifactRecordV1
+  allBuildRows: ProductBuildArtifactRecordV1[]
+}) {
+  const siblings = historicalTaskSiblingsV1(input)
+  for (const row of siblings) {
+    if (row.buildId !== input.build.id || row.controlEpoch >= input.build.controlEpoch
+      || !await assertRecordInScope(input.scope, 'productBuildArtifacts', row, {owner: 'work'})) {
+      throw new Error('[product-production-artifact] historical import Artifact scope 不闭合')
+    }
+    await preparedStoredArtifactV1(row)
+  }
+  return verifyHistoricalAcceptedTaskV1({...input, siblings, restoreImportedScope: true})
 }
 
 async function verifyHistoricalCarriedTaskV1(input: {

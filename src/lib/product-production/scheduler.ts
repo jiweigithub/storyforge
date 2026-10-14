@@ -48,6 +48,7 @@ import {
   acceptTextOpenWorldSourcePinBundleArtifactsV1,
   carryForwardProductBuildArtifactsAcrossBuildsV1,
   carryForwardProductBuildArtifactsToEpochV1,
+  verifyImportedHistoricalProductProductionTaskV1,
 } from './artifact-store'
 import { parseProductBuildQualityReportV1 } from './adoption'
 import { createProductBuildCompatibilityReportV1 } from './compatibility'
@@ -5009,6 +5010,8 @@ async function runClaimedTaskCore(input: {
       ?? (error instanceof ProductProductionDraftRejectedErrorV1
         || error instanceof ProductProductionRetryableExecutionErrorV1
         ? error.usage : paidUsageFromExecutorError(error))
+      ?? (input.task.taskKey === 'content.chat-author-gate'
+        && input.task.executionMode === 'deterministic' && !costBearing(input.task) ? zeroUsage() : null)
     let paidUsageBudgetExceeded = false
     if (paidUsage != null) {
       try {
@@ -6058,12 +6061,83 @@ export async function recoverImportedChatProductionPrefixV1(input: {
     throw new Error('[product-production-scheduler] 导入复验的 Plan/epoch 不一致')
   }
   await readProductProductionBuildWorldScopeV1({ ...input, buildId: current.build.id!, brief: current.brief })
+  await revalidateImportedChatHistoricalProducersV1({scope: input.scope, current, plan, ledger})
   await revalidateImportedProductionTasksV1({scope: input.scope, current, plan, children, importedOnly: true})
+}
+
+async function revalidateImportedChatHistoricalProducersV1(input: {
+  scope: WorkspaceScope
+  current: Awaited<ReturnType<typeof currentProductionBuild>>
+  plan: ProductProductionPlanV3
+  ledger: SchedulerLedgerV2
+}): Promise<void> {
+  const {scope, current, plan, ledger} = input
+  const build = {...current.build, id: current.build.id!}
+  const allBuildRows = await db.productBuildArtifacts.where('buildId').equals(build.id).toArray()
+  const origins = new Map(allBuildRows.filter(row => row.controlEpoch < build.controlEpoch
+    && row.status === 'invalid' && row.carriedFrom === null && row.producerRunId != null)
+    .map(row => [row.producerRunId!, row]))
+  const verified: Array<{snapshot: AgentRunSnapshotV1; receiptHash: string}> = []
+  // Verify every historical witness before adding any recovery event. A
+  // missing paid attempt or edited old candidate must never be bypassed by
+  // re-signing only today's synthetic carry runs.
+  for (const [runId, anchor] of origins) {
+    const snapshot = await readAgentRunV1(scope, runId)
+    const receiptHash = importedScopeReboundReceiptV1(snapshot)
+    if (!receiptHash) continue
+    const task = plan.tasks.find(task => snapshot.run.parentRelation === `task:${task.taskKey}`)
+    if (!task) throw new Error('[product-production-scheduler] 导入历史 producer 缺少 task')
+    const proof = await verifyImportedHistoricalProductProductionTaskV1({scope, build, task, anchor, allBuildRows})
+    const attempts = ledger.attempts.filter(attempt => attempt.runId === runId && attempt.attempt === proof.attempt)
+    if (attempts.length !== 1 || attempts[0].controlEpoch !== anchor.controlEpoch
+      || attempts[0].taskKey !== task.taskKey || attempts[0].attempt !== proof.attempt
+      || attempts[0].idempotencyKey !== proof.inputHash || attempts[0].outcome !== 'settled'
+      || !attempts[0].usageKnown || attempts[0].errorCode !== null
+      || canonicalProductProductionJsonV2(attempts[0].usage) !== canonicalProductProductionJsonV2(proof.usage)
+      || proof.receiptHash !== receiptHash) {
+      throw new Error(`[product-production-scheduler] 导入历史 producer 结算证据不闭合:${task.taskKey}`)
+    }
+    verified.push({snapshot, receiptHash})
+  }
+  for (const proof of verified) {
+    const snapshot = await append(scope, proof.snapshot, 'verification.started', {
+      verifierSetVersion: 'product-production-task-import-rebind-v1',
+    })
+    await append(scope, snapshot, 'verification.accepted', {receiptHash: proof.receiptHash})
+  }
+}
+
+async function verifiedLegacyChatAuthorGateNoChargeV1(input: {
+  scope: WorkspaceScope
+  build: ProductBuildRecordV1
+  plan: ProductProductionPlanV3
+  attempt: LedgerAttemptV2
+}): Promise<boolean> {
+  const {attempt, build, scope} = input
+  const task = input.plan.tasks.find(task => task.taskKey === attempt.taskKey)
+  if (attempt.taskKey !== 'content.chat-author-gate' || attempt.outcome !== 'failed'
+    || attempt.usage !== null || attempt.errorCode !== 'task-executor-failed'
+    || !task || task.executionMode !== 'deterministic' || costBearing(task)
+    || attempt.controlEpoch >= build.controlEpoch) return false
+  const snapshot = await readAgentRunV1(scope, attempt.runId)
+  const boundary = snapshot.contract.scope.productProduction
+  const step = snapshot.projection.steps[attempt.taskKey]
+  return snapshot.run.productBuildId === build.id && snapshot.run.parentRunId != null
+    && snapshot.run.parentRelation === `task:${attempt.taskKey}`
+    && boundary != null && boundary.productBuildId === build.id && boundary.buildNumber === build.buildNumber
+    && boundary.controlEpoch === attempt.controlEpoch && boundary.taskKey === attempt.taskKey
+    && snapshot.run.status === 'failed' && snapshot.projection.state === 'failed'
+    && step?.status === 'failed' && step.attempt === attempt.attempt
+    && snapshot.events.some(event => event.type === 'step.failed'
+      && event.payload.stepId === attempt.taskKey && event.payload.attempt === attempt.attempt
+      && event.payload.code === attempt.errorCode)
+    && !snapshot.events.some(event => ['model.requested', 'model.responded', 'tool.called', 'tool.returned',
+      'candidate.persisted', 'verification.accepted'].includes(event.type))
 }
 
 /**
  * Complete project backup import deliberately invalidates cloned Harness
- * receipts after local IDs are rebound. A sealed text-adventure or text-open-world Build carries
+ * receipts after local IDs are rebound. A supported sealed Build carries
  * every candidate checkpoint, Artifact envelope, ledger entry and root seal,
  * so the proof can be reconstructed locally without another provider call.
  */
@@ -6073,7 +6147,9 @@ export async function recoverImportedProductProductionProofsV1(input: {
 }): Promise<ProductProductionSchedulerProjectionV1> {
   const scope = await resolveScope({ scope: input.scope })
   const current = await currentProductionBuild(scope, input.productionId)
-  if (!['text-adventure', 'text-open-world'].includes(current.brief.intent.productType)) {
+  const chatV3 = current.brief.intent.productType === 'character-interaction'
+    && current.brief.characterChat?.version === 3
+  if (!chatV3 && !['text-adventure', 'text-open-world'].includes(current.brief.intent.productType)) {
     throw new Error('[product-production-scheduler] 当前产品不支持导入生产证明复验')
   }
   if (!['preview-ready', 'release-ready', 'released'].includes(current.build.status)) {
@@ -6085,9 +6161,16 @@ export async function recoverImportedProductProductionProofsV1(input: {
     current.briefRow.briefHash,
   )
   const ledger = parseLedger(current.build.budgetLedgerJson)
-  if (ledger.rootRunId == null
-    || ledger.attempts.some(attempt => !attempt.usageKnown && attempt.resolution == null)) {
+  if (ledger.rootRunId == null) {
     throw new Error('[product-production-scheduler] 导入 Build 缺少已结算 root/预算证明')
+  }
+  for (const attempt of ledger.attempts.filter(attempt => !attempt.usageKnown && attempt.resolution == null)) {
+    // Older chat Builds recorded the deterministic author-choice pause with
+    // null usage. Prove that exact failed gate never dispatched anything; keep
+    // the original ledger and failure intact. Paid unknown requests still block.
+    if (!chatV3 || !await verifiedLegacyChatAuthorGateNoChargeV1({scope, build: current.build, plan, attempt})) {
+      throw new Error('[product-production-scheduler] 导入 Build 缺少已结算 root/预算证明')
+    }
   }
   let root = await readAgentRunV1(scope, ledger.rootRunId)
   if (root.projection.state !== 'completed' && !importedScopeReboundReceiptV1(root)) {
@@ -6096,6 +6179,14 @@ export async function recoverImportedProductProductionProofsV1(input: {
   const children = await childSnapshots(scope, current.build.id!, root.run.id)
   if (children.size !== plan.tasks.length) {
     throw new Error('[product-production-scheduler] 导入 Build 的 task Run 集合不完整')
+  }
+  if (chatV3) {
+    if (plan.controlEpoch !== current.build.controlEpoch
+      || await hashProductProductionValueV2(plan) !== current.build.planHash) {
+      throw new Error('[product-production-scheduler] 导入复验的 Plan/epoch 不一致')
+    }
+    await readProductProductionBuildWorldScopeV1({...input, scope, buildId: current.build.id!, brief: current.brief})
+    await revalidateImportedChatHistoricalProducersV1({scope, current, plan, ledger})
   }
   await revalidateImportedProductionTasksV1({scope, current, plan, children, importedOnly: false})
   root = await readAgentRunV1(scope, root.run.id)
