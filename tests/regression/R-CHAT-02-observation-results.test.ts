@@ -148,6 +148,24 @@ it('preserves the unresolved observation after a failed adjudication and blocks 
   expect(f.spy).toHaveBeenCalledTimes(2)
 })
 
+it('retains an empty-result candidate rejected by semantic review without erasing the pending observation or generating a reply', async () => {
+  const f = await runtime(), before = (await readProductRuntimeState(f.sessionId)).interaction!
+  const draft = outcome()
+  draft.newFacts[0].text = '检查已经完成，但检查没有提供结果，仍需等待检查结果。'
+  const rejected = {checks: review(draft).checks.map(check => check.check === 'meaningful-direction'
+    ? {...check, passed: false, reason: '工程审查夹具：没有具体观察限制，只重复缺少结果。'} : check)}
+  f.spy.mockImplementation(i => generate({...i, runAI: async () => JSON.stringify(draft), runReviewAI: async () => JSON.stringify(rejected)}))
+  await expect(advanceChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, expectedSequence: f.sent.sequence,
+    kind: 'player-response', replyToSequence: f.sent.sequence, participantKey: 'guard', aiConfig: {} as never})).rejects.toThrow('情境语义审查未通过')
+  db.close(); await db.open()
+  const after = (await readProductRuntimeState(f.sessionId)).interaction!
+  expect(after.chatNarrative!.pendingSituation).toEqual(before.chatNarrative!.pendingSituation)
+  expect(after.chatNarrative!.situation).toEqual(before.chatNarrative!.situation)
+  expect(after.messages).toEqual(before.messages)
+  expect((await db.agentRunArtifacts.toArray()).filter(a => a.artifactKind === 'raw-response').map(a => a.content)).toContain(JSON.stringify(rejected))
+  expect(f.spy.mock.calls.slice(1).map(([input]) => input.skillId)).toEqual(['character.chat-situation-construction'])
+})
+
 it('does not start adjudication without its construction, review and reply allowance', async () => {
   const f = await runtime(5), before = await readProductRuntimeState(f.sessionId)
   await expect(advanceChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, expectedSequence: f.sent.sequence, kind: 'player-response', replyToSequence: f.sent.sequence, participantKey: 'guard', aiConfig: {} as never})).rejects.toThrow('预算不足')

@@ -1369,6 +1369,26 @@
               "reason": "Imported candidate was adopted, then opening-consumer check correctly rejected the test draft missing player background/opening seed. Final probe supplied these explicit engineering settings after adoption."
             }
           ]
+        },
+        "observationResultPreflight": {
+          "verifiedAt": "2026-10-14",
+          "scope": "Same-developer development diagnostic from an author-confirmed real profile and real generated opening; not a formal M1 episode or independent human acceptance.",
+          "baseline": {
+            "sourceHead": "03aeefd8ea21bb0196922c8de376bd98e4705ca9",
+            "status": "meaningful-progression-failed",
+            "evidence": "codex-profile-story-v41.json",
+            "rawEvidenceSha256": "0390e34a91b9e3be473bfde8601e7a758d554e75f821d0d9fc3c01911b675e0e",
+            "acceptedModelCalls": 10,
+            "opportunities": 2,
+            "inputTokens": 89614,
+            "outputTokens": 7278,
+            "totalTokens": 96892,
+            "costUsd": null,
+            "finding": "Completed rope inspection produced a no-result assertion solely because the previous action did not supply a result. Goal paused, thread resolved, and explicit continuation repeated waiting without a concrete observation barrier.",
+            "refreshRetained": true,
+            "refreshAdditionalCalls": 0
+          },
+          "repairStatus": "Bounded observation synthesis and semantic review clarified; same-prefix real-model comparison pending."
         }
       },
       {
