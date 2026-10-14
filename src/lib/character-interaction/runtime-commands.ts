@@ -1,9 +1,27 @@
 /** Product-owned deterministic runtime commands: character. */
 import { db } from "../db/schema";
+import {scopeTransactionTables} from '../workspace/scope';
+import type {WorkspaceScope, ChatComposerDraftV1} from '../types';
+import {ChatComposerConflictError, parseChatComposerDraftV1} from './composer-draft-contract';
+import {readChatComposerSessionV1} from './composer-draft-read';
 import type { ProductRuntimeCommandEnvelopeV1 } from "../product/runtime-command-id";
 import { JsonObject, applyProductRuntimeEvent, hashStateJson, normalizeCommandId, parseEventPayload, parseProductRuntimeState, readSessionEvents, replayProductRuntimeEvents, stableJson } from "../product/runtime-core";
 import type { ProductRuntimeEventType, ProductRuntimeEvent, InteractionMemoryKind } from "../types";
 import type { ChatNarrativeActionV1, ChatNarrativeActionReviewV1, ChatNarrativeTriggerV1, ChatSituationDraftV1, ChatSituationReviewV1 } from "../types/chat-narrative";
+
+export interface ChatComposerSendBindingV1 {scope: WorkspaceScope; sessionId: number; revision: number; text: string}
+export async function saveChatComposerDraftV1(input: {scope: WorkspaceScope; sessionId: number; expectedRevision: number; text: string}): Promise<ChatComposerDraftV1> {
+  const request = structuredClone(input);
+  const draft = parseChatComposerDraftV1({version: 1, text: request.text, revision: request.expectedRevision + 1, updatedAt: Date.now()});
+  return db.transaction('rw', scopeTransactionTables(db.productRuntimeSessions), async () => {
+    const session = await readChatComposerSessionV1(request.scope, request.sessionId);
+    if (!['active', 'paused'].includes(session.status)) throw new Error('已结束或归档的存档不能修改输入草稿。');
+    const current = session.chatComposerDraft === undefined ? null : parseChatComposerDraftV1(session.chatComposerDraft);
+    if ((current?.revision ?? 0) !== request.expectedRevision) throw new ChatComposerConflictError(current);
+    await db.productRuntimeSessions.update(request.sessionId, {chatComposerDraft: draft});
+    return draft;
+  });
+}
 async function appendInteractionCommand(
   input: ProductRuntimeCommandEnvelopeV1 & {
     type: Extract<ProductRuntimeEventType, `interaction.${string}`>;
@@ -11,6 +29,7 @@ async function appendInteractionCommand(
     targetKey?: string | null;
     payload: JsonObject;
     harnessRun?: {id: number; lastSequence: number};
+    composerDraft?: ChatComposerSendBindingV1;
   },
 ): Promise<ProductRuntimeEvent> {
   const commandId = normalizeCommandId(input.commandId);
@@ -30,12 +49,15 @@ async function appendInteractionCommand(
   const previewStateHash = await hashStateJson(JSON.stringify(previewState));
   return db.transaction(
     "rw",
-    db.productRuntimeSessions,
-    db.productRuntimeEvents,
-    db.agentRuns,
+    input.composerDraft ? scopeTransactionTables(db.productRuntimeSessions, db.productRuntimeEvents, db.agentRuns)
+      : [db.productRuntimeSessions, db.productRuntimeEvents, db.agentRuns],
     async () => {
       const session = await db.productRuntimeSessions.get(input.sessionId);
       if (!session) throw new Error("角色互动会话不存在。");
+      if (input.composerDraft) {
+        if (input.type !== 'interaction.player.message.committed' || input.composerDraft.sessionId !== input.sessionId) throw new Error('草稿只能由对应存档的玩家发送。');
+        await readChatComposerSessionV1(input.composerDraft.scope, input.sessionId);
+      }
       if (
         session.kind !== "character-interaction" &&
         session.kind !== "ai-town" &&
@@ -62,6 +84,13 @@ async function appendInteractionCommand(
           throw new Error("互动命令 commandId 已被不同命令使用。");
         }
         return prior;
+      }
+      let consumedDraft: ChatComposerDraftV1 | undefined;
+      if (input.composerDraft) {
+        const current = session.chatComposerDraft === undefined ? null : parseChatComposerDraftV1(session.chatComposerDraft);
+        if (!current || current.revision !== input.composerDraft.revision || current.text !== input.composerDraft.text
+          || current.text.trim() !== input.payload.text) throw new ChatComposerConflictError(current);
+        consumedDraft = parseChatComposerDraftV1({...current, text: '', revision: current.revision + 1, updatedAt: Date.now()});
       }
       if (session.status !== "active")
         throw new Error("只有 active 会话可以提交互动命令。");
@@ -108,6 +137,7 @@ async function appendInteractionCommand(
       event.id = (await db.productRuntimeEvents.add(event)) as number;
       await db.productRuntimeSessions.update(input.sessionId, {
         updatedAt: event.createdAt,
+        ...(consumedDraft ? {chatComposerDraft: consumedDraft} : {}),
       });
       return event;
     },
@@ -206,10 +236,12 @@ export async function commitInteractionPlayerMessage(
     messageId: string;
     text: string;
     audienceKeys?: string[] | null;
+    composerDraft?: ChatComposerSendBindingV1;
   },
 ): Promise<ProductRuntimeEvent> {
   return appendInteractionCommand({
     ...input,
+    ...(input.composerDraft ? {composerDraft: structuredClone(input.composerDraft)} : {}),
     type: "interaction.player.message.committed",
     actorKey: "player",
     payload: {

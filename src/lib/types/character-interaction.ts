@@ -1,5 +1,13 @@
 /** Runtime contracts for self-contained character-interaction product packages. */
 
+/** Player-owned unsent text, outside the canonical story and all model contexts. */
+export interface ChatComposerDraftV1 {
+  version: 1
+  text: string
+  revision: number
+  updatedAt: number
+}
+
 export const INTERACTION_RELATIONSHIP_DIMENSIONS = [
   'trust',
   'closeness',

@@ -1141,6 +1141,8 @@ interface ProductRuntimeSessionBase {
   runtimeHeadSequence: number;
   runtimeHeadStateJson: string;
   runtimeHeadStateHash: string;
+  /** Character-chat UI draft only; absent on old saves and never copied into a branch. */
+  chatComposerDraft?: import('./character-interaction').ChatComposerDraftV1;
   parentSessionId: number | null;
   parentThroughSequence: number | null;
   createdAt: number;

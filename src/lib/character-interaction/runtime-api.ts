@@ -3,6 +3,7 @@ export {
   changeInteractionRelationship,
   commitInteractionCharacterReply,
   commitInteractionPlayerMessage,
+  saveChatComposerDraftV1,
   commitChatNarrativeAction,
   commitChatSituation,
   requestChatNarrativeTrigger,
@@ -19,6 +20,8 @@ export {
   startInteractionScene,
   supersedeInteractionMemory,
 } from './runtime-commands'
+export {readChatComposerDraftV1} from './composer-draft-read'
+export type {ChatComposerSendBindingV1} from './runtime-commands'
 
 export {
   branchProductRuntimeSession,

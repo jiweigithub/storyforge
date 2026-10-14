@@ -1,4 +1,5 @@
 import { validateExtensionBackup } from '../extensions/portable'
+import {parseChatComposerDraftV1} from '../character-interaction/composer-draft-contract'
 /**
  * 注册表派生的项目导入引擎(AUDIT-1)
  *
@@ -477,6 +478,10 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
     }
   }
   for (const session of runtimeSessions) {
+    if (session.chatComposerDraft !== undefined) {
+      if (session.kind !== 'character-interaction') throw new Error('[deriveImport] 聊天输入草稿不能归入其他产品存档')
+      parseChatComposerDraftV1(session.chatComposerDraft)
+    }
     const releaseId = session._productReleaseExportId
     const buildId = session._productBuildExportId
     if (!productKinds.has(session.kind) || (releaseId == null) === (buildId == null)
