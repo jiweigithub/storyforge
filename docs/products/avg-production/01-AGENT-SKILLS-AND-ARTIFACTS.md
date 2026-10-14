@@ -1,7 +1,7 @@
 # AVG 专业岗位、工件与生产图
 
 > L2 · 版本：1.2.0 · 生效：2026-10-14 · 受 [AVG 产品契约](../AVG.md)约束。
-> 22 岗位/Skill 是目标合同；BASE-00B 已登记首批八种 inert schema、输出 key 和采用拒绝接缝，实际状态见实施计划。未登记的专业 Skill/作者采用尚不可调用，schema 登记不等于岗位实现。
+> 22 岗位/Skill 是目标合同；BASE-00B 已登记首批八种 schema、输出 key、关闭的专业 AI 写口和作者输入采用接缝，实际验证状态见实施计划。未登记的专业 Skill 尚不可调用，schema 或作者输入采用不等于岗位实现。
 
 ## 1 主助手、岗位与确定性职责
 
@@ -49,6 +49,8 @@ CAL-00 冻结启用清单/预算，CAL-01 提前测试最小专业路径的收�
 ## 2 工件最小 schema 与 ownership
 
 所有工件复用现行候选容器和 `product-production-artifacts` adoption extension，增加 AVG 类型化 payload/metadata validator。公共 envelope 由系统添加：Work/production/build、artifact key/revision、schema/version、producer/Skill/Prompt、输入引用/hash、实际 Context Manifest、候选/采用/拒绝/stale、Run/attempt 和预算证据。模型只返回本 schema 的语义 payload，不自报真实 hash、授权、模型版本、质量通过或发布 lineage。
+
+BASE-00B 的确定性作者输入先绑定已冻结 human-import 任务，只写 pending；作者通过 `adopt-avg-artifact` 命令确认后，才保存正式 revision 和事务回执。此路径无 provider/模型 Run，标为 author-import；不伪造 Context Manifest、专业岗位或人工艺术质量通过。来源引用暂限 SourcePlan 的初始资源，进一步读取与专业 AI producer 的真实 manifest/receipt 由 01A/01B 登记。刷新和备份后仍检查同一 hash/版本/上游，不能用 schema 正例或自报 authorAccepted 绕过命令确认。
 
 | payload schema（统一前缀 storyforge.avg，version 1） | 必需内容 | 确定性检查 |
 |---|---|---|

@@ -179,4 +179,20 @@ describe('AVG-BASE-00B · private carrier validation and closed professional adm
     expect(() => parseAvgPresentationContentV2({ schema: 'storyforge.avg.presentation', version: 2,
       aspectRatio: '16:9', consumers: new Array(1), cues: [] })).toThrow(/稀疏数组/)
   })
+  it('preserves V1 numbered author media adoption while rejecting schema laundering through the same key', async () => {
+    const s = await seedBuild()
+    const data = new Uint8Array([137, 80, 78, 71]).buffer
+    const bytes = await crypto.subtle.digest('SHA-256', data)
+    const contentHash = Array.from(new Uint8Array(bytes), value => value.toString(16).padStart(2, '0')).join('')
+    const now = Date.now()
+    const blobObjectId = await db.mediaBlobObjects.add({ ...s.scope, contentHash, mimeType: 'image/png', byteSize: data.byteLength,
+      backend: 'indexeddb', storageState: 'ready', data, opfsPath: null, leaseOwner: null, leaseExpiresAt: null,
+      lastVerifiedAt: now, createdAt: now, updatedAt: now }) as number
+    const input = { scope: s.scope, buildId: s.buildId, controlEpoch: 1, artifactKey: 'avg.media.0', kind: 'image' as const,
+      mediaKind: 'background' as const, payload: { assetKey: 'author.background' }, metadata: { assetKey: 'author.background' },
+      inputHash: 'a'.repeat(64), contentHash, blobObjectId, mimeType: 'image/png', byteSize: data.byteLength }
+    expect((await acceptProductBuildArtifact(input)).status).toBe('accepted')
+    await expect(acceptProductBuildArtifact({ ...input, payload: AVG_SCRIPT })).rejects.toThrow(/未登记/)
+    expect(await db.productBuildArtifacts.count()).toBe(1)
+  })
 })

@@ -5,7 +5,10 @@ export function isAvgProfessionalArtifactV1(input: { artifactKey: string; payloa
   const hasAvgSchema = (value: unknown) => value !== null && typeof value === 'object' && !Array.isArray(value)
     && typeof (value as Record<string, unknown>).schema === 'string'
     && String((value as Record<string, unknown>).schema).startsWith('storyforge.avg.')
-  return input.artifactKey.startsWith('avg.') || hasAvgSchema(input.payload) || hasAvgSchema(input.metadata)
+  // V1 author-edited media uses these numbered keys. New schemas still cannot
+  // hide behind one of them, but ordinary V1 media keeps its existing writer.
+  const legacyMediaKey = /^avg\.media\.(0|[1-9][0-9]*)$/.test(input.artifactKey)
+  return input.artifactKey.startsWith('avg.') && !legacyMediaKey || hasAvgSchema(input.payload) || hasAvgSchema(input.metadata)
 }
 /** New AVG schemas cannot borrow the legacy generic writer while their Skills/adoption are unready. */
 export function assertAvgProfessionalArtifactAdmissionV1(input: {

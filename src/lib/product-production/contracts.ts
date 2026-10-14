@@ -539,6 +539,15 @@ export function parseProductProductionCommandV1(value: unknown): ProductProducti
     if (!isSha256Hash(row.briefHash)) fail('briefHash 无效')
     return { type, commandId, expectedStateRevision: expectedRevision(row.expectedStateRevision), briefRevision: positiveId(row.briefRevision, 'briefRevision'), briefHash: row.briefHash, authorizationNonce: stableKey(row.authorizationNonce, 'authorizationNonce') }
   }
+  if (type === 'adopt-avg-artifact') {
+    const commandId = commandHeader(row, type, ['expectedStateRevision', 'expectedBuildRevision', 'controlEpoch',
+      'buildNumber', 'artifactKey', 'candidateVersion', 'candidateHash'])
+    if (!isSha256Hash(row.candidateHash)) fail('AVG candidateHash 无效')
+    return { type, commandId, expectedStateRevision: expectedRevision(row.expectedStateRevision),
+      expectedBuildRevision: expectedRevision(row.expectedBuildRevision), controlEpoch: expectedRevision(row.controlEpoch),
+      buildNumber: positiveId(row.buildNumber, 'buildNumber'), artifactKey: stableKey(row.artifactKey, 'artifactKey'),
+      candidateVersion: positiveId(row.candidateVersion, 'candidateVersion'), candidateHash: row.candidateHash }
+  }
   if (type === 'authorize-text-open-world-creator-start') {
     const commandId = commandHeader(row, type, [
       'expectedStateRevision', 'briefRevision', 'briefHash', 'sourceLocator', 'preflight',

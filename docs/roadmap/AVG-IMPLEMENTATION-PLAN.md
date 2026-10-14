@@ -68,15 +68,19 @@ CAL-00 已进入准备。作者于 2026-10-14 明确答复“没有上限”，�
 
 使用独立工作树 `avg-base00b-20261014` / 分支 `feat/avg-base00b-20261014`，协议子增量代码为 `274ccf84`，[草稿 PR #140](https://github.com/yuanbw2025/storyforge/pull/140)，从最新远程主干 `cfc5ed3f` 建立并显式依赖已验收的 00A `18218f73`。本包是 AVG 产品能力研发的私有协议接缝：S2 的作者期望与显式 V1→V2 提案、S3 的专业候选验证和冻结载体，owner 留在 AVG Work / production / 产品媒资，世界仅按原冻结来源只读引用。不创建具体作品或调用模型/媒资。
 
-实际首批 schema 为 production-plan、source-audit、story-bible、cast-bible、route-plan、scene-script、dialogue-patch、review-issues；其余规则/导演/视觉/声音 DTO 和 22 岗位目录中未实现的 Skill 保留为后续包，不能通过任意 JSON 或旧通用采用口启用。已接入严格 key/schema/kind/场景写域校验与采用拒绝边界；表达补丁只返回新脚本候选及 base/patch/hash，不直接写 DB。
+实际首批 schema 为 production-plan、source-audit、story-bible、cast-bible、route-plan、scene-script、dialogue-patch、review-issues；其余规则/导演/视觉/声音 DTO 和 22 岗位目录中未实现的 Skill 保留为后续包，不能通过任意 JSON 或旧通用采用口启用。严格 key/schema/kind/场景写域校验已接入；旧通用写口仍拒绝专业 AI 工件，V1 作者媒体编号继续兼容并有实际媒资写入回归。
+
+本轮补充登记的作者输入接缝：`stageAvgAuthorArtifactV1` 只接收已冻结 human-import 任务的输出/输入闭集，写 pending 候选；`adopt-avg-artifact` 复用生产命令 claim/CAS/幂等回执，确认后正式采用。事务校验 AVG Work/Production、开始命令、Brief/ConfirmedBrief/SourcePlan/Plan、epoch、候选真实 hash、上游与当前正式 revision。来源引用暂限冻结初始资源；新增读取等待 01A 的真实 manifest。作者输入无模型 Run，不冒充专业 AI 或观察证据。
+
+表达补丁采用会原子保存补丁和脚本新 revision、实际 base/patch/receipt/hash，并失效被替换版本及受影响的正式消费者；历史文本保留。纯 patch 函数仍只返回候选。表达字段限制不证明句意/事实正确，01B 的内容审校仍必需。已覆盖 pending 和 accepted 两类备份 remap、恢复后实际采用/读取、跨 Work、篡改、过期来源/基线、重复确认及删除隔离。
 
 V2 可承载至多一个已登记 AVG 基础模块，逐句身份/文本与公共 narrative 对齐；Presentation V2、Binding V1 和九域消费槽有独立严格 codec。可执行状态/行动/Cue、实际绑定、progress/assist 均仍关闭，V2 的正式生产和运行继续拒绝。Settings V2 是有界作者期望，不接收作者/模型自报的 capability ready、质量通过、调用或发布回执；旧 V1 设置/声音/字节/hash 不改写。提案的 null 总上限表示未设作者上限，不能代替开始授权；派生默认零调用。
 
-复用已有 FIELD_REGISTRY / adoption extension / PROJECT_TABLES，未增加 AI 写字段、Context Source、表/索引、迁移或正式入口。旧 S2/V1 生产、采用、发布与玩家路径继续回归；新专业上下文/Skill/作者采用将在 01A/01B 等各自包登记。这是私有承载与拒绝接缝，不是已完成专业生成、自动绑定或新播放器。
+复用已有 FIELD_REGISTRY / adoption extension / PROJECT_TABLES，未增加 AI 写字段、Context Source、表/索引或迁移；新增确定性作者采用命令。旧 S2/V1 生产、采用、发布与玩家路径继续回归；新专业上下文/Skill/producer 验证与实际计划编译由 01A/01B 各自包登记。当前作者采用仅验证私有承载接缝，尚不提供新的工作台 UI，不是已完成专业生成、自动绑定或新播放器。
 
 当前工程结果（2026-10-14）：定向 9 文件 / 61 测试通过；隔离 Chromium 全量 255 通过 / 2 项既有条件跳过。全量 CI 首轮 4,359 通过 / 13 超时失败（5 文件），5 文件 / 189 测试隔离复测通过后，完整 CI 按共享资源串行执行，793 文件 / 4,372 测试、构建及包体检查全部通过（exit 0）；未修改测试时限或断言。此证据对应协议子增量 `274ccf84`，不覆盖后续采用代码。性能 smoke 仍给出 long-run-incomplete，不是长时性能验收。
 
-当前只是 00B 的协议与拒绝边界子增量。专业工件的作者确认、冻结写域/来源/receipt 验证、正式 revision 持久化及采用刷新恢复仍待完成；本子增量即使全量 CI/E2E 通过，也不能把 00B 整包标为分支验收，更不能提前放行依赖完整 00B 的代码包。后续正反例须包含实际合法采用和原子拒绝，不以纯 prepare/补丁返回值代替 DB 写入闭环。
+作者采用本轮：定向 10 文件 / 72 测试通过；隔离 Chromium 的 AVG 草稿/修订/版本/采用/恢复 6 条 E2E 通过。必需检查及构建待终态核对，完整 CI 尚待本轮新代码重跑；不能借用协议子增量 4,372 项通过结果关闭 00B。完成本轮交付验证前，00B 继续施工/验证，不放行依赖完整 00B 的代码包。
 
 ## 3 内容与系统没有循环前置
 
