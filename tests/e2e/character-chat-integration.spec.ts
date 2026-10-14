@@ -1,6 +1,6 @@
+import {openChatNarrativeTools} from './helpers/character-chat-ui'
 import { test, expect } from '@playwright/test';
 import { CHAT_PAGES } from '../../src/components/character-interaction/navigation';
-import { DEFAULT_CHAT_SETTINGS_V2 as DEFAULT_CHAT_SETTINGS } from '../../src/lib/character-interaction/authoring-contract';
 for (const rejectClosure of [false, true]) test(`related goal closure is atomic and a finished role does not keep generating (reject=${rejectClosure})`, async ({page}) => {
     test.setTimeout(120000);
     const reply = '铜印已经找到。寻找就此结束。我也已澄清此前只是猜测，现在撤回。';
@@ -205,6 +205,7 @@ for (const rejectReview of [false, true]) test(`player situation request is revi
     const fixture = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture({maxActionsPerTrigger: 3});});
     await page.goto(`./chat/play?project=${fixture.scope.projectId}&work=${fixture.scope.workId}&session=${fixture.sessionId}`);
     await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard');
+    await openChatNarrativeTools(page)
     await page.getByText('提出新的情境或矛盾', {exact: true}).click();
     await page.getByLabel('新的情境或矛盾', {exact: true}).fill('门外传来敲门声。幕后要求不要预设来者身份。');
     await page.getByRole('button', {name: '构建情境并演绎', exact: true}).click();
@@ -221,6 +222,7 @@ for (const rejectReview of [false, true]) test(`player situation request is revi
     expect(calls).toBe(rejectReview ? 2 : 4);
     if (!rejectReview) {
         await page.setViewportSize({width: 390, height: 844});
+        await openChatNarrativeTools(page)
         await page.getByText('提出新的情境或矛盾', {exact: true}).click();
         await page.getByTestId('chat-narrative-controls').scrollIntoViewIfNeeded();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -377,6 +379,7 @@ test('normal narrative chat opens, accepts refusal, continues and reloads withou
     await expect(page.getByTestId('chat-narrative-controls')).toBeVisible();
     expect(calls).toBe(0);
     await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard');
+    await openChatNarrativeTools(page)
     await page.getByLabel('演绎节奏', {exact: true}).selectOption('3');
     await page.getByRole('button', {name: '让角色开场', exact: true}).click();
     await expect(page.getByText('角色正在等你的回应。', {exact: false})).toBeVisible();
@@ -560,7 +563,7 @@ test('narrative situation survives browser reload and checkpoint branch with rol
 test('character chat pages stay open; draft and confirmed main Agent candidate survive refresh', async ({ page }, info) => {
     test.setTimeout(120000);
     await page.addInitScript(() => { localStorage.setItem('storyforge_guide_completed', 'e2e'); localStorage.setItem('storyforge-ai-config', JSON.stringify({ provider: 'openai', baseUrl: 'https://chat-test.invalid/v1', model: 'test', temperature: .2, maxTokens: 8000 })); sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key'); });
-    await page.route('https://chat-test.invalid/**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: JSON.stringify({ answer: '建议让玩家成为档案员，请确认。', settings: { ...DEFAULT_CHAT_SETTINGS, playerRole: '档案员' } }) }, finish_reason: 'stop' }], usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200 } }) }));
+    await page.route('https://chat-test.invalid/**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: JSON.stringify({ answer: '建议让玩家成为档案员，请确认。', changes: [{field: 'playerRole', value: '档案员', reason: '按作者本次要求起草身份提议，不改动其他设置。', basis: 'proposal', evidence: []}] }) }, finish_reason: 'stop' }], usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200 } }) }));
     for (const [id] of CHAT_PAGES) {
         await page.goto(`./chat/${id}`);
         await expect(page.getByTestId('character-chat-page')).toBeVisible();
@@ -579,10 +582,10 @@ test('character chat pages stay open; draft and confirmed main Agent candidate s
     await nav.getByRole('button', { name: '方案会谈', exact: true }).click();
     await page.getByLabel('角色聊天 会谈输入').fill('玩家改为档案员');
     await page.getByRole('button', { name: '发送', exact: true }).click();
-    await expect(page.getByRole('button', { name: '确认并回填制作方案' })).toBeEnabled({ timeout: 20000 });
+    await expect(page.getByRole('button', { name: '采用勾选的修改', exact: true })).toBeEnabled({ timeout: 20000 });
     await page.reload();
-    await page.getByRole('button', { name: '确认并回填制作方案' }).click();
-    await expect(page.getByRole('status')).toContainText('已采用');
+    await page.getByRole('button', { name: '采用勾选的修改', exact: true }).click();
+    await expect(page.getByText('已采用所选修改；其他方案设置保持原样。', {exact: true})).toBeVisible();
     await nav.getByRole('button', { name: '互动目标', exact: true }).click();
     await expect(page.getByLabel('玩家身份', { exact: true })).toHaveValue('档案员');
     await page.screenshot({ path: info.outputPath('chat-s2.png') });

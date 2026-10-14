@@ -1,3 +1,4 @@
+import {openChatNarrativeTools} from './helpers/character-chat-ui'
 import {test, expect, type Page} from '@playwright/test'
 
 test.beforeEach(async ({page}) => {
@@ -62,8 +63,10 @@ test('bounded round-robin passes visible consequences between roles; natural rep
   const receipt = await provider(page), f = await seed(page)
   await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('1')
   await expect(page.getByRole('button', {name: '让角色开场', exact: true})).toBeDisabled()
+  await openChatNarrativeTools(page)
   await page.getByLabel('角色接续方式', {exact: true}).selectOption('round-robin')
   await expect(page.getByLabel('本轮行动角色', {exact: true})).toHaveCount(0)
+  await openChatNarrativeTools(page)
   await page.getByLabel('演绎节奏', {exact: true}).selectOption('3')
   expect(receipt.calls).toBe(0)
   await page.getByRole('button', {name: '让角色开场', exact: true}).click()
@@ -76,6 +79,7 @@ test('bounded round-robin passes visible consequences between roles; natural rep
   await expect(page.getByLabel('角色接续方式', {exact: true})).toHaveValue('manual')
   await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('1')
   expect(receipt.calls).toBe(6)
+  await openChatNarrativeTools(page)
   await page.getByLabel('角色接续方式', {exact: true}).selectOption('natural')
   await page.getByPlaceholder('对当前场景中的角色说话…').fill('程素，山路何时恢复通行？')
   await page.getByRole('button', {name: '发送并生成', exact: true}).click()
@@ -96,6 +100,7 @@ test('refresh and changed new-turn controls preserve the scheduled next actor an
   await page.reload()
   await expect(page.getByLabel('角色接续方式', {exact: true})).toHaveValue('manual')
   await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
+  await openChatNarrativeTools(page)
   await page.getByLabel('演绎节奏', {exact: true}).selectOption('3')
   expect(receipt.calls).toBe(0)
   await page.getByRole('button', {name: '补齐未完成本轮', exact: true}).click()
@@ -110,7 +115,9 @@ test('refresh and changed new-turn controls preserve the scheduled next actor an
 
 test('waiting for the player stops the entire group without generating the next role', async ({page}) => {
   const receipt = await provider(page, true), f = await seed(page)
+  await openChatNarrativeTools(page)
   await page.getByLabel('角色接续方式', {exact: true}).selectOption('round-robin')
+  await openChatNarrativeTools(page)
   await page.getByLabel('演绎节奏', {exact: true}).selectOption('3')
   await page.getByRole('button', {name: '让角色开场', exact: true}).click()
   await expect(page.getByText('接下来需要你决定，我先等你。', {exact: true})).toBeVisible()

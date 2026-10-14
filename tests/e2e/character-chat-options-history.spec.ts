@@ -1,3 +1,4 @@
+import {openChatNarrativeTools, openChatMessageTools} from './helpers/character-chat-ui'
 import {test, expect} from '@playwright/test'
 
 test('switches an older reviewed alternative in a refreshed branch, preserves its audience and retains the original history', async ({page}) => {
@@ -32,6 +33,7 @@ test('switches an older reviewed alternative in a refreshed branch, preserves it
   const f = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture()})
   await page.goto(`./chat/play?project=${f.scope.projectId}&work=${f.scope.workId}&session=${f.sessionId}`)
   await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
+  await openChatNarrativeTools(page)
   await page.getByRole('button', {name: '比较两种行动', exact: true}).click()
   await page.getByRole('button', {name: '采用行动 1', exact: true}).click()
   await expect(page.getByText(original, {exact: true})).toBeVisible()
@@ -40,6 +42,7 @@ test('switches an older reviewed alternative in a refreshed branch, preserves it
   await expect(page.getByRole('paragraph').filter({hasText: future})).toBeVisible()
   const readParent = () => page.evaluate(async f => {const load = new Function('p', 'return import(p)'); return (await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(f.sessionId)).interaction}, f)
   const parent = await readParent()
+  await openChatMessageTools(page, `历史候选 ${parent.messages[0].eventSequence}`)
   const historyButton = page.getByRole('button', {name: `历史候选 ${parent.messages[0].eventSequence}`, exact: true})
   await expect(page.getByRole('button', {name: /^历史候选 /})).toHaveCount(1)
   await historyButton.click()
@@ -72,6 +75,7 @@ test('switches an older reviewed alternative in a refreshed branch, preserves it
   expect(calls).toEqual(['options', 'options-review', 'future', 'action-review', 'alternate', 'action-review'])
   await page.reload()
   await expect(page.getByText(alternate, {exact: true})).toBeVisible()
+  await openChatMessageTools(page, `历史候选 ${child.state.messages[0].eventSequence}`)
   await page.getByRole('button', {name: `历史候选 ${child.state.messages[0].eventSequence}`, exact: true}).click()
   await expect(preview).toContainText('候选 2 · 原时间线已采用')
   await expect(preview.getByRole('button', {name: '选择候选 1 并分支', exact: true})).toBeEnabled()

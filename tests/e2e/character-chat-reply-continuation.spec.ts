@@ -1,3 +1,4 @@
+import {openChatMessageTools} from './helpers/character-chat-ui'
 import {test, expect} from '@playwright/test'
 
 test('continues the current reply with an immutable prefix in a refreshed branch, then advances a separate next action', async ({page}) => {
@@ -34,8 +35,10 @@ test('continues the current reply with an immutable prefix in a refreshed branch
   const read = () => page.evaluate(async () => {const load = new Function('p', 'return import(p)'); const s = (await load('/storyforge/src/stores/character-interaction-player.ts')).useCharacterInteractionPlayerStore.getState(); return {sessionId: s.selectedSessionId, state: s.runtimeState.interaction}})
   const parent = await read()
   // Switching from an edited textarea must reset it to the actual immutable prefix.
+  await openChatMessageTools(page, `改写消息 ${parent.state.messages[0].eventSequence}`)
   await page.getByRole('button', {name: `改写消息 ${parent.state.messages[0].eventSequence}`, exact: true}).click()
   await page.getByLabel('改写历史消息', {exact: true}).fill('尚未保存的另一个开头。')
+  await openChatMessageTools(page, `续写消息 ${parent.state.messages[0].eventSequence}`)
   await page.getByRole('button', {name: `续写消息 ${parent.state.messages[0].eventSequence}`, exact: true}).click()
   await expect(page.getByLabel('续写原文', {exact: true})).toHaveValue(prefix)
   await expect(page.getByLabel('续写原文', {exact: true})).toHaveJSProperty('readOnly', true)
@@ -63,6 +66,6 @@ test('continues the current reply with an immutable prefix in a refreshed branch
   await page.getByRole('button', {name: '让角色继续', exact: true}).click()
   await expect(page.getByText('现在我再检查一下门槛。', {exact: true})).toBeVisible()
   expect((await read()).state.messages.map((m: {text: string}) => m.text)).toEqual([prefix + suffix, '现在我再检查一下门槛。'])
-  await expect(page.getByRole('button', {name: `续写消息 ${child.state.messages[0].eventSequence}`, exact: true})).toHaveCount(0)
+  await expect(page.getByRole('button', {name: `续写消息 ${child.state.messages[0].eventSequence}`, exact: true, includeHidden: true})).toHaveCount(0)
   expect(actions).toBe(3); expect(reviews).toBe(3)
 })

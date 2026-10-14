@@ -1,3 +1,4 @@
+import {openChatMessageTools} from './helpers/character-chat-ui'
 import {test, expect} from '@playwright/test'
 
 test('exclusion previews retained consequences, survives refresh and affects the next real request; restore is reversible', async ({page}) => {
@@ -34,6 +35,7 @@ test('exclusion previews retained consequences, survives refresh and affects the
   await expect(page.getByText(original, {exact: true})).toBeVisible()
   const read = () => page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/src/stores/character-interaction-player.ts')).useCharacterInteractionPlayerStore.getState().runtimeState.interaction})
   const before = await read(), sequence = before.messages[0].eventSequence
+  await openChatMessageTools(page, `上下文设置 ${sequence}`)
   await page.getByRole('button', {name: `上下文设置 ${sequence}`, exact: true}).click()
   const preview = page.getByTestId('chat-message-retrieval-preview')
   await expect(preview).toContainText('事实 1')
@@ -52,6 +54,7 @@ test('exclusion previews retained consequences, survives refresh and affects the
   await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
   await page.getByRole('button', {name: '让角色继续', exact: true}).click()
   await expect(page.getByText('灯还亮着，我先看看桌下。', {exact: true})).toBeVisible()
+  await openChatMessageTools(page, `上下文设置 ${sequence}`)
   await page.getByRole('button', {name: `上下文设置 ${sequence}`, exact: true}).click()
   await page.getByRole('button', {name: '确认恢复上下文', exact: true}).click()
   await expect(preview).toHaveCount(0)
@@ -73,9 +76,11 @@ test('canceling a preview changes nothing, and correcting history goes through a
     return {...f, sequence: event.sequence}
   })
   await page.goto(`./chat/play?project=${f.scope.projectId}&work=${f.scope.workId}&session=${f.sessionId}`)
+  await openChatMessageTools(page, `上下文设置 ${f.sequence}`)
   await page.getByRole('button', {name: `上下文设置 ${f.sequence}`, exact: true}).click()
   await page.getByTestId('chat-message-retrieval-preview').getByRole('button', {name: '取消', exact: true}).click()
   await expect(page.getByTestId('chat-message-excluded')).toHaveCount(0)
+  await openChatMessageTools(page, `上下文设置 ${f.sequence}`)
   await page.getByRole('button', {name: `上下文设置 ${f.sequence}`, exact: true}).click()
   await page.getByRole('button', {name: '改为改写并分支', exact: true}).click()
   await expect(page.getByTestId('chat-message-retrieval-preview')).toHaveCount(0)

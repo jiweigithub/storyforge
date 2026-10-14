@@ -1,3 +1,4 @@
+import {openChatNarrativeTools} from './helpers/character-chat-ui'
 import {test, expect} from '@playwright/test'
 
 test('compares two actions, keeps the choice over refresh, and applies only the chosen consequences', async ({page}) => {
@@ -24,6 +25,7 @@ test('compares two actions, keeps the choice over refresh, and applies only the 
   const f = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture({maxActionsPerTrigger: 3})})
   await page.goto(`./chat/play?project=${f.scope.projectId}&work=${f.scope.workId}&session=${f.sessionId}`)
   await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
+  await openChatNarrativeTools(page)
   await page.getByRole('button', {name: '比较两种行动', exact: true}).click()
   const choices = page.getByTestId('chat-narrative-options')
   await expect(choices.getByText(texts[0], {exact: true})).toBeVisible()

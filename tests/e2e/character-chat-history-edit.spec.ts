@@ -1,3 +1,4 @@
+import {openChatMessageTools} from './helpers/character-chat-ui'
 import {test, expect} from '@playwright/test'
 
 test('saving within the selected session keeps the reader scroll position', async ({page}) => {
@@ -52,6 +53,7 @@ test('editing a character message creates a recoverable draft branch and reconci
   await page.getByRole('button', {name: '让角色开场', exact: true}).click()
   await expect(page.getByText(original, {exact: true})).toBeVisible()
   const parent = await read()
+  await openChatMessageTools(page, `改写消息 ${parent.messages[0].eventSequence}`)
   await page.getByRole('button', {name: `改写消息 ${parent.messages[0].eventSequence}`, exact: true}).click()
   await page.getByLabel('改写历史消息', {exact: true}).fill(edited)
   await page.getByRole('button', {name: '建立改写分支', exact: true}).click()
@@ -85,6 +87,7 @@ test('a player edit preserves private recipients and can be saved without a mode
     return {...f, sequence: message.sequence}
   })
   await page.goto(`./chat/play?project=${f.scope.projectId}&work=${f.scope.workId}&session=${f.sessionId}`)
+  await openChatMessageTools(page, `改写消息 ${f.sequence}`)
   await page.getByRole('button', {name: `改写消息 ${f.sequence}`, exact: true}).click()
   await page.getByLabel('改写历史消息', {exact: true}).fill('我改为等一会儿。')
   await page.evaluate(async parentId => {

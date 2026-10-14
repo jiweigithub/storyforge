@@ -1,3 +1,4 @@
+import {openChatNarrativeTools} from './helpers/character-chat-ui'
 import {test, expect, type Page} from '@playwright/test'
 
 async function seed(page: Page) {
@@ -31,6 +32,7 @@ test('defaults to one step, explicitly permits two, and stops for player decisio
   await expect(page.getByRole('button', {name: '让角色继续', exact: true})).toBeEnabled()
   expect(actions).toBe(1); expect(calls).toBe(2)
   expect((await read()).chatNarrative.triggers[0]).toMatchObject({direction: {actorKey: 'guard', actionLimit: 1}, status: 'complete'})
+  await openChatNarrativeTools(page)
   await page.getByLabel('演绎节奏', {exact: true}).selectOption('2')
   await page.getByRole('button', {name: '让角色继续', exact: true}).click()
   await expect(page.getByText('我独自核对第 3 项。', {exact: true})).toBeVisible()
@@ -41,6 +43,7 @@ test('defaults to one step, explicitly permits two, and stops for player decisio
   await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('1')
   expect(actions).toBe(3)
   await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
+  await openChatNarrativeTools(page)
   await page.getByLabel('演绎节奏', {exact: true}).selectOption('3')
   await page.getByRole('button', {name: '让角色继续', exact: true}).click()
   await expect(page.getByText('后续需要你决定，我先等你。', {exact: true})).toBeVisible()
@@ -49,6 +52,7 @@ test('defaults to one step, explicitly permits two, and stops for player decisio
   expect(actions).toBe(4); expect(calls).toBe(8)
   expect(state.chatNarrative.triggers[2]).toMatchObject({direction: {actorKey: 'guard', actionLimit: 3}, status: 'waiting-player'})
   expect(state.chatNarrative.triggers[2].actionSequences).toHaveLength(1)
+  await openChatNarrativeTools(page)
   await page.getByLabel('演绎节奏', {exact: true}).selectOption('2')
   await page.getByPlaceholder('对当前场景中的角色说话…').fill('我想先听你自己的办法。')
   await page.getByRole('button', {name: '发送并生成', exact: true}).click()
@@ -70,6 +74,7 @@ for (const interrupt of ['message', 'stop'] as const) test(`${interrupt} interru
     await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
   })
   const f = await seed(page)
+  await openChatNarrativeTools(page)
   await page.getByLabel('演绎节奏', {exact: true}).selectOption('3')
   await page.getByRole('button', {name: '让角色开场', exact: true}).click()
   await expect.poll(() => actions).toBe(2)
