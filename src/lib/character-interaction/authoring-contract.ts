@@ -97,6 +97,8 @@ export interface ChatAuthoringDraftV1 {
     workId: number;
     revision: number;
     settingsJson: string;
+    /** Optional in historical drafts; governed, author-confirmed product interpretations. */
+    roleProfilesJson?: string;
     worldReleaseId: number | null;
     productionId: number | null;
     conversationJson: string;

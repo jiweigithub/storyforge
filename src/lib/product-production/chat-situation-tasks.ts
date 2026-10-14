@@ -2,6 +2,7 @@ import type { ProductProductionBriefV3, ProductProductionRecordV1 } from '../typ
 import type { ProductProductionTaskExecutionInputV1, ProductProductionTaskExecutionResultV1 } from './scheduler'
 import { loadProductProductionWorldSourceCatalogV2 } from './world-source'
 import { prepareChatNarrativeCompilerSourceV1 } from './product-module-compilers'
+import {composeChatRoleVoiceRulesV1} from '../character-interaction/role-profile'
 import { canonicalProductProductionJsonV2 } from './hash'
 import {
   chatNarrativeShellV1, selectChatNarrativeCandidateV1, validateChatNarrativeProductionSourceV1,
@@ -43,7 +44,8 @@ export async function executeChatSituationDeterministicTaskV1(input: ProductProd
       source: projected.content,
       participants: projected.participantKeys.map((participantKey, index) => ({
         participantKey, characterKey: projected.characterKeys[index], name: projected.names[index],
-        voiceRules: [projected.voices[index], settings.characters.find(c => c.sourceKey === projected.characterKeys[index])?.voiceRules].filter(Boolean).join('\n') || '按已确认的人物性格自然表达',
+        voiceRules: projected.roleProfiles[index] ? composeChatRoleVoiceRulesV1(projected.voices[index], settings.characters.find(c => c.sourceKey === projected.characterKeys[index])?.voiceRules ?? '', projected.roleProfiles[index])
+          : [projected.voices[index], settings.characters.find(c => c.sourceKey === projected.characterKeys[index])?.voiceRules].filter(Boolean).join('\n') || '按已确认的人物性格自然表达',
       })),
     }
     validateChatNarrativeProductionSourceV1(source)

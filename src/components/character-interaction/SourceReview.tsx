@@ -7,6 +7,7 @@ import {CHAT_BACKGROUND_LABELS} from './BackgroundSourceSelection'
 import { FIELD_BY_TARGET } from '../../lib/registry/field-registry'
 import { MORAL_AXIS_LABELS, ORDER_AXIS_LABELS, ROLE_WEIGHT_LABELS } from '../../lib/character/character-axes'
 import SourceSuggestions from './SourceSuggestions'
+import RoleProfiles from './RoleProfiles'
 
 const PURPOSES = {identity: '身份与价值观', motivation: '目标与顾虑', voice: '语言与举止', knowledge: '事实与经历'} as const
 const VISIBILITY = {unclassified: '待分类，暂不使用', public: '所有参与者知道', participants: '仅指定参与者知道', 'author-only': '仅作者掌握', discoverable: '暂时无人知道，允许调查发现'} as const
@@ -126,6 +127,8 @@ export default function SourceReview(props: {
       {props.settings.version !== 1 && <SourceSuggestions scope={props.scope} revision={props.draft.revision} projectionHash={projection.projectionHash}
         fragmentKeys={suggestionKeys} disabled={disabled} actors={suggestionActors} labels={new Map(chatProjectionResourcesV1(projection).flatMap(resource => resource.fragments.map(fragment =>
           [fragment.fragmentKey, `${resource.label} · ${passageLabel(fragment, resource.fragments, 'resourceKind' in resource)}`] as const)))}/>}
+      {props.settings.version !== 1 && <RoleProfiles scope={props.scope} draft={props.draft} settings={props.settings} projection={projection}
+        selectedKeys={suggestionKeys} disabled={disabled} onConfirmed={props.onConfirmed}/>}
       <div className="space-y-3">{chatProjectionResourcesV1(projection).map(character => <details key={character.resourceKey} open>
         <summary>{character.label}{projection.playerCharacter?.resourceKey === character.resourceKey && <span className="ml-2 text-xs text-text-muted">玩家扮演</span>}{'resourceKind' in character && <span className="ml-2 text-xs text-text-muted">{CHAT_BACKGROUND_LABELS[String(character.resourceKind)] ?? '世界背景'}</span>}</summary>
         {'relatedResourceKeys' in character && Array.isArray(character.relatedResourceKeys) && <p className="text-xs text-text-muted">关联人物：{character.relatedResourceKeys.map(key => projection.playerCharacter?.resourceKey === key ? '玩家' : audiences.find(a => a.key === key)?.name ?? '未加入聊天的人物').join('、')}</p>}

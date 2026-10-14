@@ -1,5 +1,7 @@
 import { parseChatAuthoringSettings, type ChatAuthoringSettings } from '../character-interaction/authoring-contract'
 import { readPreparedChatSourceProjectionViewV1 } from '../character-interaction/source-projection'
+import {readChatRoleProfilesV1} from '../character-interaction/role-profile-store'
+import {validateChatRoleProfilesForSourceV1} from '../character-interaction/role-profile'
 import { parseAvgAuthoringSettingsV1, type AvgAuthoringSettingsV1 } from '../avg/authoring-contract'
 import type {
   ProductionProductKindV1,
@@ -345,6 +347,7 @@ export async function draftProductProductionBriefV3(input: {
   const selectedScale = input.scale ?? selected.scale
   const qualityProfile = input.qualityProfile ?? 'prototype'
   const characterChat = input.characterChat ? parseChatAuthoringSettings(input.characterChat) : undefined
+  const characterChatProfiles = characterChat && characterChat.version !== 1 ? await readChatRoleProfilesV1(scope) : undefined
   if(characterChat && input.productType !== 'character-interaction') throw new Error('角色聊天方案不能用于其他产品')
   const avg = input.avg ? parseAvgAuthoringSettingsV1(input.avg) : undefined
   if (avg && input.productType !== 'avg') throw new Error('AVG 方案不能用于其他产品')
@@ -407,6 +410,7 @@ export async function draftProductProductionBriefV3(input: {
     const catalog = await loadProductProductionWorldSourceCatalogV2({scope, worldReleaseId: input.worldReleaseId, selection})
     if (!catalog.chatSourceProjection) throw new Error('角色来源投影未就绪')
     readPreparedChatSourceProjectionViewV1({draft: catalog.chatSourceProjection, review: characterChat.sourceReview, viewerKey: 'player'})
+    if (characterChatProfiles) validateChatRoleProfilesForSourceV1(characterChatProfiles, catalog.chatSourceProjection, characterChat.sourceReview)
   }
   const ttrpg = input.productType === 'ttrpg' ? await compileTtrpgProductionBriefV2({
     scope, selection, worldContentHash: source.release.contentHash,
@@ -574,6 +578,7 @@ export async function draftProductProductionBriefV3(input: {
     schema: 'storyforge.product-production-brief', version: 3,
     ...(avg ? { avg } : {}),
     ...(characterChat ? { characterChat } : {}),
+    ...(characterChatProfiles ? {characterChatProfiles} : {}),
     source: {
       worldReleaseId: input.worldReleaseId, worldContentHash: source.release.contentHash, selection,
       startingPoint: {

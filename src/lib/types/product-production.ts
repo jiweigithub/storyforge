@@ -515,6 +515,8 @@ export interface ProductProductionBriefV3 {
   unresolvedDecisionKeys: string[];
   /** Closed TTRPG construction contract; required exactly when productType=ttrpg. */
   characterChat?: import('../character-interaction/authoring-contract').ChatAuthoringSettings;
+  /** Snapshot of separately governed, author-confirmed role interpretation records. */
+  characterChatProfiles?: import('../character-interaction/role-profile').ChatRoleProfileSetV1;
   avg?: import('../avg/authoring-contract').AvgAuthoringSettingsV1;
   avgRevision?: { version: 1; basePackageHash: string; runtimePackage: import('./product-release').ProductRuntimePackageV1 };
   ttrpg?: TtrpgProductionBriefV2;

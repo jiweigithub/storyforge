@@ -1,6 +1,7 @@
 import { parseAdventureContent } from '../adventure/runtime'
 import { parseAiTownRuntimeContentV1 } from '../ai-town/runtime'
 import { chatProjectionResourcesV1, readPreparedChatSourceProjectionViewV1 } from '../character-interaction/source-projection'
+import {composeChatRoleVoiceRulesV1, formatChatRoleProfileV1, validateChatRoleProfilesForSourceV1} from '../character-interaction/role-profile'
 import type { FrozenChatSourceProjectionV1 } from '../types/character-interaction'
 import type { FrozenChatNarrativeV1 } from '../types/chat-narrative'
 import { parseFrozenChatNarrativeV1 } from '../character-interaction/narrative-contract'
@@ -299,13 +300,12 @@ export function compileInteractionModulesV1(input: ProductModuleCompilerInputV1)
     const settings = chat?.characters.find(c=>c.sourceKey===sourceCharacter?.resourceKey)
     const spoken = input.narrative.beats.filter(beat => beat.speakerKey === frozenCharacterKey)
       .slice(0, 12).map(beat => beat.text)
-    const reviewedVoice = projected ? `遵守已确认的身份、知识和动机；动机是意愿，不代表行动已经完成。不替玩家决定行动。${projected.voices[index]}\n作者补充：${settings?.voiceRules ?? ''}` : ''
+    const reviewedVoice = projected ? composeChatRoleVoiceRulesV1(projected.voices[index], settings?.voiceRules ?? '', projected.roleProfiles[index]) : ''
     return {
       participantKey, characterKey: frozenCharacterKey,
       name: projected?.names[index] ?? sourceCharacter?.name ?? `产品角色 ${index + 1}`,
       roleLabel: index === 0 ? '核心互动角色' : '相关角色',
-      voiceRules: projected ? reviewedVoice.length <= 8000 ? reviewedVoice
-        : `遵守已确认的身份、知识和动机；动机是意愿，不代表行动已经完成。不替玩家决定行动。完整语言样本保存在本角色获准读取的来源知识中，按各片段演绎。\n作者补充：${settings?.voiceRules ?? ''}`
+      voiceRules: projected ? reviewedVoice
         : `保持 ${sourceCharacter?.description || frozenCharacterKey} 的冻结事实和知识边界；遵守：${input.brief.intent.contentBoundaries.join('；')}。${settings?.voiceRules ?? ''}`,
       initialKnowledge: [...(projected ? [] : [{
         key: `profile.${pad(index)}`,
@@ -408,6 +408,7 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
     || JSON.stringify(backgroundKeys) !== JSON.stringify([...(input.brief.source.selection.roleBindings.chatBackground ?? [])].sort())) fail('背景资料投影与冻结选择不一致')
   const viewers = ['player', ...keys]
   const views = viewers.map(viewerKey => readPreparedChatSourceProjectionViewV1({draft, review: chat.sourceReview!, viewerKey}))
+  const roleProfiles = input.brief.characterChatProfiles ? validateChatRoleProfilesForSourceV1(input.brief.characterChatProfiles, draft, chat.sourceReview) : undefined
   const visibleByFragment = new Map<string, string[]>()
   for (const [index, view] of views.entries()) for (const fragment of view) {
     visibleByFragment.set(fragment.fragmentKey, [...(visibleByFragment.get(fragment.fragmentKey) ?? []), index === 0 ? 'player' : participantKeys[index - 1]])
@@ -436,6 +437,7 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
     }),
   }
   return {content,
+    roleProfiles: keys.map(key => {const profile = roleProfiles?.profiles.find(row => row.actorKey === key); return profile ? formatChatRoleProfileV1(profile) : ''}),
     names: keys.map((key, index) => {
       const name = views[0].find(fragment => fragment.resourceKey === key && fragment.pointer === '/name')
       const value: unknown = name ? JSON.parse(name.valueJson) : null

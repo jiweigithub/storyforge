@@ -237,6 +237,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `characterDrivenPlans` | `generatedVolumes` `status` |
 | `characterRelations` | `description` `fromCharacterId` `isBidirectional` `label` `relationType` `toCharacterId` |
 | `characters` | `abilities` `activeChapterRange` `appearance` `arc` `background` `cultivationStageId` `cultivationSystemId` `ending` `exitChapterId` `fears` `firstAppearChapterId` `firstAppearance` `goals` `habits` `homeWorldGroupId` `identity` `importantLocationId` `innerConflict` `isCrossWorld` `keyEvents` `location` `moralAxis` `motivation` `name` `narrativeStatus` `orderAxis` `personality` `powerLevel` `powerSystemId` `profile` `raceEntryId` `relationships` `roleWeight` `shortDescription` `signatureItem` `speechStyle` `statusEvidenceChapterId` `statusEvidenceStoryArcId` `statusProducerCandidateHash` `statusProducerContractHash` `statusReason` `storyRole` `strengths` `values` `weaknesses` |
+| `chatAuthoringDrafts` | `roleProfilesJson` |
 | `codexCategories` | `builtInKey` `domain` `fieldSchema` `hidden` `icon` `name` `order` `parentId` |
 | `codexEntries` | `categoryId` `cultivationStageId` `cultivationSystemId` `description` `fields` `icon` `importance` `importantLocationId` `name` `order` `origin` `producerCandidateHash` `producerRunId` `refs` `sourceContentHash` `sourceEvidenceQuotes` `summary` `tags` `worldGroupId` |
 | `comicPagePlans` | `beatKeys` `endReveal` `goal` `pageTurn` |
@@ -297,6 +298,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 | ID | 目标表 | 领域策略注册表 | 唯一入口 | 复审日期 |
 |---|---|---|---|---|
+| `chat-authoring-draft-lifecycle` | `chatAuthoringDrafts` | `PROJECT_TABLES + WorkspaceScope + draft revision CAS + FIELD_REGISTRY roleProfilesJson` | `src/lib/character-interaction/draft-service.ts`<br/>`src/lib/character-interaction/role-profile-store.ts` | 2027-10-01 |
 | `extension-record-lifecycle` | `extensionRecords` | `ExtensionRegistrySnapshot + PROJECT_TABLES + bounded DataSchema` | `src/lib/extensions/store.ts` | 2027-01-01 |
 | `reference-analysis-run-lifecycle` | `referenceAnalysisRuns` | `REFERENCE_ANALYSIS_RUN_POLICY + ADOPTION_SCHEMAS + PROJECT_TABLES` | `src/lib/reference-analysis/lifecycle.ts` | 2027-01-01 |
 | `reference-analysis-source-lifecycle` | `referenceAnalysisSources` | `REFERENCE_ANALYSIS_RUN_POLICY + PROJECT_TABLES` | `src/lib/reference-analysis/lifecycle.ts` | 2027-01-01 |
@@ -508,4 +510,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `20dde66b`
+生成时间基准:commit `7b023682`
