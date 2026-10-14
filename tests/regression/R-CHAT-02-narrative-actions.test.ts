@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, describe, expect, it} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import {createInitialInteractionState, parseInteractionState, rebaseInteractionStateForBranch} from '../../src/lib/character-interaction/runtime'
-import {applyChatNarrativeActionV1, interruptChatNarrativeTriggerV1, requestChatNarrativeTriggerV1} from '../../src/lib/character-interaction/narrative-actions'
+import {applyChatNarrativeActionV1, interruptChatNarrativeTriggerV1, previewChatNarrativeActionV1, requestChatNarrativeTriggerV1} from '../../src/lib/character-interaction/narrative-actions'
 import {branchProductRuntimeSession, commitChatNarrativeAction, commitInteractionCharacterReply, commitInteractionPlayerMessage, createProductRuntimeCheckpoint, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 import {chatNarrativeFixture, seedChatNarrativeRuntimeFixture, chatActionReviewFixture} from '../helpers/chat-narrative-fixture'
@@ -66,6 +66,17 @@ it('records a proposal as waiting and leaves established facts unchanged until t
   expect(() => applyChatNarrativeActionV1(state, {sequence: 4, triggerSequence: 2, actorKey: 'guard', messageId: 'second', action: inspection()})).toThrow('等待玩家')
   interruptChatNarrativeTriggerV1(state, 4)
   expect(state.chatNarrative!.triggers.at(-1)!.status).toBe('cancelled')
+})
+
+it.each(['goal', 'thread'] as const)('requires complete for a final spoken decision that closes a %s, even without a new fact', target => {
+  const before = opening(), saved = structuredClone(before)
+  const decision: ChatNarrativeActionV1 = {...inspection(), text: '依据检查结果，这项检查到此为止。', newFacts: [],
+    goalStatus: target === 'goal' ? 'fulfilled' : null,
+    threadUpdates: target === 'thread' ? [{threadKey: 'investigate', status: 'resolved', evidenceExcerpt: '这项检查到此为止。'}] : [], nextPossibilities: []}
+  const preview = (action: ChatNarrativeActionV1) => previewChatNarrativeActionV1(before, {sequence: 3, triggerSequence: 2, actorKey: 'guard', messageId: 'closure', action})
+  expect(() => preview({...decision, kind: 'speak'})).toThrow('意图或等待选择不能写成已完成后果')
+  expect(before).toEqual(saved)
+  expect(preview(decision).messages.at(-1)?.text).toBe(decision.text)
 })
 
 it('allows a meaningful pause and explicit disclosure without inventing completed player actions', () => {

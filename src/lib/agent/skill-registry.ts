@@ -3156,7 +3156,7 @@ export const AGENT_SKILLS = [
     defaultForAgent: false,
     label: '角色聊天情境行动候选',
     owner: 'character-chat-product',
-    promptVersion: 'chat-narrative-action-v23',
+    promptVersion: 'chat-narrative-action-v24',
     executionMode: 'character-reply',
     contextTaskKind: 'agent-character',
     readToolNames: [],
@@ -3171,7 +3171,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'character.chat-action-revision', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天未通过回复的后果修订', owner: 'character-chat-product', promptVersion: 'chat-action-revision-v5',
+    label: '角色聊天未通过回复的后果修订', owner: 'character-chat-product', promptVersion: 'chat-action-revision-v6',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['interactionRuntime', 'chatActionRevision'], optionalContextSourceKeys: [],
     inputPolicy: {...INTERACTION_RUNTIME_INPUT_POLICY, sourceKeys: ['interactionRuntime', 'chatActionRevision']},
@@ -3189,7 +3189,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'character.chat-narrative-options', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天两种行动候选', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-v13',
+    label: '角色聊天两种行动候选', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-v14',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['interactionRuntime'], optionalContextSourceKeys: [], inputPolicy: INTERACTION_RUNTIME_INPUT_POLICY,
     contextCompression: INTERACTION_RUNTIME_COMPRESSION_POLICY, maxOutputTokens: 8000, writeTargets: [],

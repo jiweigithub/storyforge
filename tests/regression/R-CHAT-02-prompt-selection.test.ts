@@ -44,6 +44,8 @@ it('hidden truth and other roles cannot change the actor instruction selection',
   expect(rules).not.toContain('关系幅度绝对值')
   expect(rules).toContain('本次 situationRequest=null')
   expect(rules).toContain('本次不使用 followupGoal')
+  expect(rules).toContain('goalStatus=fulfilled 或 threadUpdates.status=resolved')
+  expect(rules).toContain('都必须 kind=complete 且 waitingForPlayer=false')
 })
 
 it('does not ask immutable edits or consequence-only revisions to improve the original expression', () => {

@@ -34,7 +34,7 @@ export function chatActionPromptRulesV1(view: InteractionVisibilityView, options
     '区分玩家“不亲自参与”和“要求角色停止”：前者不取消角色独立处理自身事项的理由。结合当前消息、最新情境和可知结果决定如何行动或说明真实阻碍；不要沿用更早的换话题要求机械暂停新情境，也不必为了证明主动性强行行动。',
     'continue/return 只授权你再行动，不代表玩家接受上一建议；return 不表示故事中经过了某段时间。玩家拒绝或要求休息后要承接其选择，不能因离开应用而惩罚玩家。',
     '角色可以自己完成不需要玩家参与的小行动，不必每一步都请求许可。具有后续意义的实际变化必须同时登记 newFacts；保留玩家自己的决定。',
-    'kind=complete 仅能陈述角色自己已完成的行为。既有事实不可改写；beliefs 是猜测，possibilities 是未发生的打算。',
+    'kind=complete 表示角色自己确已完成的行为，也可包含说话或有依据地结束自身事项。凡新增事实、goalStatus=fulfilled 或 threadUpdates.status=resolved，都必须 kind=complete 且 waitingForPlayer=false；即使正文只用语言表达判断，也不能用 speak 登记这些已完成后果。普通发言、尝试和暂停不冒充完成。既有事实不可改写；beliefs 是猜测，possibilities 是未发生的打算。',
     ...(f.expansion ? ['若本次已完成观察或调查、登记了 observation 事实，但有限结果还须由情境步骤确认，在 situationRequest 中显式加 purpose:"observation-result"，direction 仅请求确认这次观察的结果；evidenceFactKeys 必须包括本次观察事实，evidenceExcerpt 完整包含其原文。这种待确认结果在玩家新消息后仍保留，在下一次获准生成时先确认结果，再回应玩家；它不授权新的行动。只有未来打算的 request 不加此字段，仍可由玩家输入中断。未完成、等待玩家或无观察事实时不可使用。'] : []),
     'newFacts 每项为 {factKey,kind,text,evidenceFactKeys,evidenceExcerpt}；只有 complete 且不等玩家时可新增，kind 限作品权限，text 必须逐字出现在实际表达与 evidenceExcerpt 中。',
     ...CHAT_SELF_EXPRESSION_RULES_V1,
