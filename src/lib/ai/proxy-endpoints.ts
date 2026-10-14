@@ -17,3 +17,9 @@ export const AI_PROXY_ENDPOINTS: Partial<Record<AIProvider, AIProxyEndpoint>> = 
   longcat: { proxy: '/longcat-proxy/openai/v1', direct: 'https://api.longcat.chat/openai/v1' },
   opencode: { proxy: '/opencode-proxy/v1', direct: 'https://opencode.ai/zen/go/v1' },
 }
+
+/** Portable builds expose the existing proxy only on a loopback origin. */
+export function hasLocalProviderProxy(): boolean {
+  return import.meta.env.DEV || (import.meta.env.MODE === 'portable'
+    && typeof location !== 'undefined' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname))
+}

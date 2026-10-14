@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { localCodexPlugin } from './scripts/local-codex/bridge.mjs'
 import { execSync } from 'node:child_process'
+import { providerProxies } from './scripts/distribution/proxies.mjs'
 
 function resolveBuildSha(): string {
   const envSha = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA
@@ -176,87 +177,7 @@ export default defineConfig(({ mode }) => {
     // 实际打开的却是被旧进程占用的 1111（错误服务 / 重定向循环）。
     strictPort: true,
     open: '/storyforge/',
-    proxy: showcase ? {} : {
-      '/deepseek-proxy': {
-        target: 'https://api.deepseek.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/deepseek-proxy/, ''),
-        secure: true,
-      },
-      '/openai-proxy': {
-        target: 'https://api.openai.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/openai-proxy/, ''),
-        secure: true,
-      },
-      '/kimi-proxy': {
-        target: 'https://api.moonshot.cn',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/kimi-proxy/, ''),
-        secure: true,
-      },
-      '/claude-proxy': {
-        target: 'https://api.anthropic.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/claude-proxy/, ''),
-        secure: true,
-      },
-      '/nvidia-proxy': {
-        target: 'https://integrate.api.nvidia.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/nvidia-proxy/, ''),
-        secure: true,
-      },
-      '/gemini-proxy': {
-        target: 'https://generativelanguage.googleapis.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/gemini-proxy/, ''),
-        secure: true,
-      },
-      '/doubao-proxy': {
-        target: 'https://ark.cn-beijing.volces.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/doubao-proxy/, ''),
-        secure: true,
-      },
-      '/agnes-proxy': {
-        target: 'https://apihub.agnes-ai.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/agnes-proxy/, ''),
-        secure: true,
-      },
-      '/longcat-proxy': {
-        target: 'https://api.longcat.chat',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/longcat-proxy/, ''),
-        secure: true,
-      },
-      '/opencode-proxy': {
-        target: 'https://opencode.ai',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/opencode-proxy/, '/zen/go'),
-        secure: true,
-      },
-      // NS-5 embedding：国内嵌入服务本地代理（绕浏览器 CORS）
-      '/siliconflow-proxy': {
-        target: 'https://api.siliconflow.cn',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/siliconflow-proxy/, ''),
-        secure: true,
-      },
-      '/qwen-proxy': {
-        target: 'https://dashscope.aliyuncs.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/qwen-proxy/, ''),
-        secure: true,
-      },
-      '/glm-proxy': {
-        target: 'https://open.bigmodel.cn',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/glm-proxy/, ''),
-        secure: true,
-      },
-    },
+    proxy: showcase ? {} : providerProxies,
   },
   build: {
     outDir: showcase ? 'dist-showcase' : 'dist',

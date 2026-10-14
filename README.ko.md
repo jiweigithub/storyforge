@@ -16,6 +16,9 @@ StoryForge는 데이터를 로컬에 보관하는 방식을 기본으로 하는 
 
 <a id="try-a-story"></a>
 
+
+**개발 환경 없이 실행:** [최신 포터블 버전](https://github.com/yuanbw2025/storyforge/releases/latest)에서 Windows x64, Apple Silicon/Intel Mac, Linux x64용 ZIP을 내려받아 전체를 압축 해제하고 `Start-StoryForge`를 실행하세요. 앱, 미디어와 Node.js가 포함되어 npm 설치가 필요 없습니다. AI는 직접 모델 서비스를 설정해야 하며 미리보기 기능의 상태 표시는 유지됩니다.
+
 ## 공식 사이트·체험판·공식 지식 베이스
 
 공식 사이트에서 개요를 보고, 분리된 체험판에서 실제 화면을 살펴본 뒤, 정식 창작은 소스를 내려받아 시작하세요.

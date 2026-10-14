@@ -17,6 +17,7 @@
 <p align="center">
   <a href="https://storyforge-lab.com/">官网</a> ·
   <a href="https://docs.storyforge-lab.com/">官方知识库</a> ·
+  <a href="https://github.com/yuanbw2025/storyforge/releases/latest">下载最新版</a> ·
   <a href="#快速开始">开始创作</a> ·
   <a href="#先体验一个故事">体验《雾港》</a> ·
   <a href="#共享技术底座">查看技术架构</a>
@@ -33,7 +34,7 @@
 
 ## 官网、体验与官方知识库
 
-首次了解项目，先看官网介绍；想看真实界面，可进入独立体验页；准备正式创作，再下载源码并按知识库配置。
+首次了解项目，先看官网介绍；想看真实界面，可进入独立体验页；准备正式创作，再下载最新便携版并按知识库配置。
 
 | 入口 | 可以做什么 |
 |---|---|
@@ -143,7 +144,7 @@
 
 建议从《两声之间》开始。桌面可用 WASD/方向键或点击移动，E 就近交互；手机可用界面按钮，设置提供文字探索、轻量画面与阅读方式。首次明确开始会准备独立的世界版本与游戏发布，进度保存在当前浏览器；新旅程与检查点分支保留原存档，完整项目备份可恢复游戏进度。安装 npm 依赖需要联网，完成加载后主线可离线游玩。
 
-三款作品使用冻结脚本，无自由输入 AI 对话或角色配音，不代表通用游戏生产能力已全部完成。旧 Release 压缩包不会自动增加本次内容；下载时请选择包含本次更新的 `main` 或后续正式版本。
+三款作品使用冻结脚本，无自由输入 AI 对话或角色配音，不代表通用游戏生产能力已全部完成。旧 Release 压缩包不会自动增加本次内容；请优先下载[最新便携版](https://github.com/yuanbw2025/storyforge/releases/latest)，也可以运行最新 `main`。
 
 ## 为什么选择 StoryForge
 
@@ -184,9 +185,11 @@ npm run dev
 
 打开终端显示的地址，应用路径为 `/storyforge/`。例如默认端口可用时是 `http://localhost:5173/storyforge/`；端口被占用时以终端输出为准。使用期间保持终端运行，退出时按 `Ctrl+C`。
 
+**不想安装开发环境：**打开[最新版本下载页](https://github.com/yuanbw2025/storyforge/releases/latest)，选择对应电脑的 v4.0.0 便携 ZIP，解压整个文件夹后启动 `Start-StoryForge`。包内已包含当前界面、内置媒资和 Node.js，无需安装 npm 依赖。Windows 双击 `.cmd`，Mac 双击 `.command`，Linux 运行 `.sh`；详细步骤见[安装指南](https://docs.storyforge-lab.com/getting-started/install)。AI 创作需要自行配置模型服务，预览产品仍保留预览标记。
+
 不使用 Git 也可以[下载最新 main 源码 ZIP](https://github.com/yuanbw2025/storyforge/archive/refs/heads/main.zip)，解压后在项目目录运行 `npm ci` 和 `npm run dev`。
 
-[已发布版本与更新说明](https://github.com/yuanbw2025/storyforge/releases)用于查看固定历史版本。**源码 ZIP 需要上述运行步骤，不是双击安装包。**
+[最新发行与下载](https://github.com/yuanbw2025/storyforge/releases/latest)提供当前便携包；[全部历史版本](https://github.com/yuanbw2025/storyforge/releases)保留旧发行。**Source code ZIP 仍是源码，需要上述命令；请与便携 ZIP 区分。**
 
 ### 第一次接入 AI
 
@@ -525,7 +528,7 @@ StoryForge 使用你自己的模型服务，API 费用由相应服务商收取�
 
 **为什么下载 Release 后没有这里的新功能？**
 
-Release 对应发布当时的固定代码。本文描述当前主干，使用最新源码才能取得后续更新；运行中的版本号也包含提交标识，反馈时可以一起提供。
+请优先选择[最新发行](https://github.com/yuanbw2025/storyforge/releases/latest)里的便携 ZIP，旧发行不会自动加入新功能。发行固定在发布时的提交；之后的开发可通过最新 main 源码获取，反馈时请提供发行版本和提交标识。
 
 **为什么模型连接失败，或测试成功却生成失败？**
 

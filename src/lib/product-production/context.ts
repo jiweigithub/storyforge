@@ -151,7 +151,7 @@ export async function validateProductProductionRecoveryDirectiveV1(input: {
   if (failureState.code === 'author-revised-content') {
     const command = parseProductProductionCommandV1(failureState.revisionCommand)
     if (production.productType !== 'text-adventure' || input.expectedState === 'blocked'
-      || action !== 'author-edit' || !['content.product-module', 'content.story-bible', 'content.cast-bible', 'content.adventure-architecture', 'content.narrative-arc-scenes', 'content.narrative-decision-plan', 'content.ending-route-plan', 'content.main-quest-plan', 'content.adventure-side-quests', 'content.adventure-ambient-events', 'content.scene-script.act-1.part-1', 'content.scene-script.act-1.part-2', 'content.scene-script.act-2.part-1', 'content.scene-script.act-2.part-2', 'content.scene-script.act-3.part-1', 'content.scene-script.act-3.part-2', 'content.dialogue-pass.act-1', 'content.dialogue-pass.act-2', 'content.dialogue-pass.act-3'].includes(input.productProductionTaskKey)
+      || action !== 'author-edit' || !['content.product-module', 'content.story-bible', 'content.cast-bible', 'content.adventure-architecture', 'content.narrative-arc-scenes', 'content.narrative-decision-plan', 'content.ending-route-plan', 'content.main-quest-plan', 'content.adventure-side-quests', 'content.adventure-ambient-events', 'content.scene-script.act-1.part-1', 'content.scene-script.act-1.part-2', 'content.scene-script.act-2.part-1', 'content.scene-script.act-2.part-2', 'content.scene-script.act-3.part-1', 'content.scene-script.act-3.part-2', 'content.dialogue-pass.act-1', 'content.dialogue-pass.act-2', 'content.dialogue-pass.act-3', 'content.quest-script.main.act-1.single', 'content.quest-script.main.act-1.multi', 'content.quest-script.main.act-2.single', 'content.quest-script.main.act-2.multi', 'content.quest-script.main.act-3.single', 'content.quest-script.main.act-3.multi', 'content.quest-script.supplemental'].includes(input.productProductionTaskKey)
       || command.type !== 'resume' || !command.contentRevision || command.contentRevision.artifactKey !== input.productProductionTaskKey
       || command.commandId !== failureState.commandId) {
       throw new ProductProductionRecoveryDirectiveErrorV1('[product-production-context] 内容修订缺少准确的恢复命令')
@@ -504,10 +504,15 @@ export async function readTextAdventureSceneScriptInputsV1(input: AssembleContex
   const projectMainScript = (script: Record<string, unknown>) => ({
     objectiveKey: script.objectiveKey,
     sceneKey: script.sceneKey,
+    ...('itemBinding' in script ? { itemBinding: script.itemBinding } : {}),
     alternatives: contextRows(script.alternatives).map(alternative => ({
       alternativeKey: alternative.alternativeKey,
       resolution: alternative.resolution,
       timeCostMinutes: alternative.timeCostMinutes,
+      ...('resourceCosts' in alternative ? {
+        resourceCosts: alternative.resourceCosts,
+        recipientCharacterKey: alternative.recipientCharacterKey,
+      } : {}),
       successText: contextText(alternative.successText, 360),
       costlySuccessText: contextText(alternative.costlySuccessText, 360),
       failureForwardText: contextText(alternative.failureForwardText, 360),
@@ -949,6 +954,11 @@ export async function readTextAdventureQualityInputsV1(input: AssembleContextInp
     irreversibleTurn: contextText(act.irreversibleTurn, 160),
     sceneCards: contextRows(act.sceneCards).map(projectSceneCard),
   }))
+  // Keep authored prose in graphFacts only; do not duplicate it in arcPlan.
+  const authoredEchoTexts = new Map(contextRows(arcPlan.decisions).flatMap(decision =>
+    contextRows(decision.options).map(option => [option.key,
+      option.echoTextByScene && typeof option.echoTextByScene === 'object'
+        ? option.echoTextByScene as Record<string, string> : undefined] as const)))
   const decisions = contextRows(arcPlan.decisions)
     .filter(decision => scope === 'structure' || activeSceneKeys.has(contextText(decision.sceneKey, 200)))
     .map(projectDecision)
@@ -1023,6 +1033,7 @@ export async function readTextAdventureQualityInputsV1(input: AssembleContextInp
             optionCost: contextText(option.cost, 90),
             sceneTitle: contextText(sceneCard.title, 80),
             sceneConflict: contextText(sceneCard.conflict, 100),
+            authoredText: authoredEchoTexts.get(option.key)?.[value],
           })
           return [{
             sceneKey: value,
@@ -1034,7 +1045,7 @@ export async function readTextAdventureQualityInputsV1(input: AssembleContextInp
                 .split(/(?=你先前面对|眼前的冲突)/u).map(internEchoText),
             } : {
               label: presentation.label,
-              successText: contextText(presentation.successText, 260),
+              successText: authoredEchoTexts.get(option.key)?.[value] ?? contextText(presentation.successText, 260),
             }),
           }]
         }),
@@ -1209,10 +1220,15 @@ export async function readTextAdventureQualityInputsV1(input: AssembleContextInp
   const projectMainScript = (script: Record<string, unknown>) => ({
     objectiveKey: script.objectiveKey,
     sceneKey: script.sceneKey,
+    ...('itemBinding' in script ? { itemBinding: script.itemBinding } : {}),
     alternatives: contextRows(script.alternatives).map(alternative => ({
       alternativeKey: alternative.alternativeKey,
       resolution: alternative.resolution,
       timeCostMinutes: alternative.timeCostMinutes,
+      ...('resourceCosts' in alternative ? {
+        resourceCosts: alternative.resourceCosts,
+        recipientCharacterKey: alternative.recipientCharacterKey,
+      } : {}),
     })),
   })
   const supplementalEntries = (artifactKey: string) => contextRows(payloadByKey.get(artifactKey)?.entries)

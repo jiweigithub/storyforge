@@ -10,6 +10,7 @@ const configuredPort = Number(portFlagIndex >= 0 ? process.argv[portFlagIndex + 
 const port = Number.isInteger(configuredPort) && configuredPort > 0 ? configuredPort : 4178
 const snapshotEntries = [
   'scripts/local-codex',
+  'scripts/distribution/proxies.mjs',
   'data',
   'showcase/short-novel',
   'showcase/screenplay',

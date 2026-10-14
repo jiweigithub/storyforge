@@ -11,6 +11,7 @@ import { useAIConfigStore } from '../../stores/ai-config'
 import { useProjectStore } from '../../stores/project'
 import { ensureChunkEmbeddings, rebuildProjectNarrativeSummaries, rebuildProjectRetrievalChunks } from '../../lib/retrieval/retrieval'
 import { isEmbeddingReady } from '../../lib/ai/adapters/embedding-adapter'
+import { hasLocalProviderProxy } from '../../lib/ai/proxy-endpoints'
 import type { EmbeddingConfig } from '../../lib/types'
 
 // 本地代理 ↔ 直连 地址对（与聊天配置同套路：本地运行用代理绕 CORS，线上部署用直连）。
@@ -107,7 +108,7 @@ function EmbeddingConfigCardFull() {
             {PRESETS.map(p => (
               <button key={p.label} onClick={() => {
                 const pair = PROXY_PAIRS.find(item => item.proxy === p.cfg.baseUrl)
-                setEmbeddingConfig(!import.meta.env.DEV && pair ? { ...p.cfg, baseUrl: pair.direct } : p.cfg)
+                setEmbeddingConfig(!hasLocalProviderProxy() && pair ? { ...p.cfg, baseUrl: pair.direct } : p.cfg)
               }}
                 className="text-xs px-2.5 py-1.5 rounded-lg bg-bg-elevated border border-border text-text-secondary hover:text-accent hover:border-accent/50 transition-colors text-left">
                 <div className="font-medium">{p.label}</div>
@@ -116,7 +117,7 @@ function EmbeddingConfigCardFull() {
             ))}
           </div>
           <p className="text-[11px] text-text-muted">
-            {import.meta.env.DEV
+            {hasLocalProviderProxy()
               ? '国内预设默认使用开发服务器的本地代理。'
               : '线上部署不自带本地代理，预设使用服务商直连地址。直连仍需服务商允许跨域；自建代理请手动填写 Base URL。'}
           </p>
@@ -134,7 +135,7 @@ function EmbeddingConfigCardFull() {
                     className="mt-1 text-[11px] px-2 py-1 rounded bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors">
                     🔗 切换到直连(线上部署用)
                   </button>
-                ) : import.meta.env.DEV ? (
+                ) : hasLocalProviderProxy() ? (
                   <button onClick={() => setEmbeddingConfig({ baseUrl: pair.proxy })}
                     className="mt-1 text-[11px] px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors">
                     🔄 切换到本地代理(本地运行用)

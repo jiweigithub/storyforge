@@ -2,6 +2,12 @@
 
 本页按用户可感知的变化整理。**main 的功能更新不等于已经发布新版本**：当前 package 版本仍为 3.9.1，正式 Release 保持其发布时内容。在线部署可能有时差，见[版本与兼容说明](/updates/compatibility)。
 
+## 2026-10-13 · v4.0.0 本地便携版
+
+[最新发行页](https://github.com/yuanbw2025/storyforge/releases/latest)提供 Windows x64、Mac Apple Silicon/Intel 和 Linux x64 便携包，包含当前主干界面、内置媒资与 Node.js。解压后启动，不需要安装 npm 依赖；固定地址为 `http://localhost:1111/storyforge/`。官网和 README 下载入口同步指向最新发行，旧版继续作为历史记录。
+
+[安装指南](/getting-started/install)说明平台选择、启动、模型配置和升级备份。内置作品可先体验；AI 创作需自行配置服务，Codex CLI 需另外安装登录，预览功能保持原成熟度标记。
+
 ## 2026-10-12 · 官网外观与知识库导航
 
 官网首屏沿用项目默认的青绿山水背景和配色；点击“进入项目体验”按钮，前往独立的[项目体验页](https://storyforge-lab.com/storyforge/)，浏览真实界面、阅读示例和尝试编辑。体验页不开放 API 配置或 AI 生成，正式创作请下载项目。

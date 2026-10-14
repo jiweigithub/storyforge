@@ -20,6 +20,7 @@ export type AdventurePlayerCommandResult =
   | { kind: 'unknown'; suggestions: string[] }
 
 export interface AdventureTranscriptEntry {
+  commandId: string
   eventSequence: number
   actionKey: string
   actionLabel: string
@@ -254,25 +255,14 @@ function actionStoryNodeKey(
     const choice = manifest.narrative.choices.find(item => item.choiceKey === action.narrativeChoiceKey)
     if (choice) return choice.targetNodeKey
   }
-  if (action.kind === 'look' && action.locationKey === manifest.adventure.initialLocationKey) {
-    return manifest.narrative.entryNodeKey
-  }
-  if (action.interaction) {
-    const profile = manifest.interaction.profiles.find(item => item.participantKey === action.interaction?.participantKey)
-    if (profile) {
-      const dialogue = manifest.narrative.beats.find(beat => beat.kind === 'dialogue'
-        && beat.speakerKey != null && profileForSpeaker(manifest, beat.speakerKey)?.participantKey === profile.participantKey)
-      if (dialogue) return dialogue.nodeKey
-    }
-  }
-  const enteredLocationKey = action.successEffects.find(effect => effect.op === 'enter-location')?.locationKey
-  const targetTitle = manifest.adventure.locations.find(item => item.key === enteredLocationKey || item.key === action.targetKey)?.title
-    ?? manifest.adventure.objects.find(item => item.key === action.targetKey)?.title
-    ?? manifest.adventure.items.find(item => item.key === action.targetKey)?.title
-  if (!targetTitle) return null
-  return manifest.narrative.nodes.find(node => node.title.includes(targetTitle))?.key
-    ?? manifest.narrative.beats.find(beat => beat.text.includes(targetTitle))?.nodeKey
-    ?? null
+  // Props, locations and speakers may recur across acts. Only the frozen
+  // narrative-node requirement identifies the scene in which this action ran.
+  // Legacy actions without that binding keep their own authored result text.
+  const nodeKeys = [...new Set(action.requirements
+    .filter(requirement => requirement.narrativePath === '__storyforge.currentNarrativeNodeKey')
+    .map(requirement => requirement.narrativeEquals))]
+  return nodeKeys.length === 1 && typeof nodeKeys[0] === 'string'
+    && manifest.narrative.nodes.some(node => node.key === nodeKeys[0]) ? nodeKeys[0] : null
 }
 
 function projectActionNarrativeBlocks(
@@ -280,9 +270,14 @@ function projectActionNarrativeBlocks(
   action: AdventureActionHistoryEntry,
 ): AdventureNarrativeBlock[] {
   const base = parseAdventureNarrativeBlocks(action.narrative)
+  if (action.outcome !== 'success' && action.outcome !== 'costly-success') return base
   if (base.some(block => block.kind === 'dialogue') || action.narrative.length >= 260) return base
   const definition = manifest.adventure.actions.find(item => item.key === action.actionKey)
   if (!definition) return base
+  // Ordinary settlements should not replay scene-entry prose after using or
+  // handing over an item. Only reading/conversation or travel through a choice
+  // can request scene prose in addition to their short result.
+  if (!definition.narrativeChoiceKey && definition.kind !== 'look' && definition.kind !== 'talk') return base
   const nodeKey = actionStoryNodeKey(manifest, definition)
   if (!nodeKey) return base
   const beats = manifest.narrative.beats
@@ -363,14 +358,28 @@ export function projectAdventureTranscript(
   history: AdventureActionHistoryEntry[],
   events: ProductRuntimeEvent[],
 ): AdventureTranscriptEntry[] {
-  let previousActionSequence = 0
+  // A fork inherits parent history, but its own event ledger starts at 1.
+  // Anchor effects to local committed commands before joining that history;
+  // sequence alone can both hide child costs and attach them to a parent row.
+  const settlements = new Map<string, { sequence: number; actionKey: unknown; changes: string[] }>()
+  let pendingChanges: string[] = []
+  for (const event of [...events].sort((left, right) => left.sequence - right.sequence)) {
+    const change = eventChange(event, manifest)
+    if (change != null) pendingChanges.push(change)
+    if (event.type !== 'adventure.action.committed') continue
+    const body = payload(event)
+    const commandId = typeof body.commandId === 'string' ? body.commandId : event.commandId
+    if (commandId) settlements.set(commandId, {
+      sequence: event.sequence, actionKey: body.actionKey, changes: pendingChanges,
+    })
+    pendingChanges = []
+  }
   return history.map(action => {
-    const changes = events
-      .filter(event => event.sequence > previousActionSequence && event.sequence <= action.eventSequence)
-      .map(event => eventChange(event, manifest))
-      .filter((value): value is string => value != null)
-    previousActionSequence = action.eventSequence
+    const settlement = settlements.get(action.commandId)
+    const changes = settlement?.sequence === action.eventSequence && settlement.actionKey === action.actionKey
+      ? settlement.changes : []
     return {
+      commandId: action.commandId,
       eventSequence: action.eventSequence,
       actionKey: action.actionKey,
       actionLabel: manifest.adventure.actions.find(item => item.key === action.actionKey)?.label ?? action.actionKey,

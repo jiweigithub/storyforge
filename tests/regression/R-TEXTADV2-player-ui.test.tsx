@@ -56,9 +56,15 @@ describe('TEXTADV-2 · 玩家界面纵切面', () => {
     legacyClock.maximum = 10_000
     runtimePackage.adventure.resources.find(resource => resource.role === 'skill-points')!.initial = 1
     runtimePackage.adventure.locations[0].title = '**封港仓房**'
+    // Visible ending choices still depend on their frozen adventure-action guards.
+    for (const choice of runtimePackage.narrative.choices.filter(item => item.targetNodeKey.startsWith('ending.'))) {
+      choice.availableConditionJson = '{}'
+    }
     runtimePackage.interaction.profiles = runtimePackage.interaction.profiles.map((profile, index) => ({
       ...profile, characterKey: `generated:participant.${index + 1}`, name: `产品角色 ${index + 1}`,
     }))
+    await seedCurrentProductBuild({ scope: owned.scope, worldRelease: owned.release as typeof owned.release & { id: number },
+      runtimePackage, title: '另一个作品版本' })
     const built = await seedCurrentProductBuild({
       scope: owned.scope,
       worldRelease: owned.release as typeof owned.release & { id: number },
@@ -205,7 +211,9 @@ describe('TEXTADV-2 · 玩家界面纵切面', () => {
     await clickNavigation('存档')
     const saves = host.querySelector('[aria-label="存档与时间线"]')
     expect(saves?.textContent).toContain('运行版本')
-    expect(saves?.textContent).toContain('Build 预览 #')
+    expect(built.buildId).not.toBe(1)
+    expect(saves?.textContent).toContain('Build 预览 #1')
+    expect(saves?.textContent).not.toContain(`Build 预览 #${built.buildId}`)
     expect(saves?.textContent).toContain('内容校验')
     expect(saves?.textContent).toContain('纯文字完整模式')
     await closePanel()
@@ -270,10 +278,14 @@ describe('TEXTADV-2 · 玩家界面纵切面', () => {
       await act(async () => useAdventureGamePlayerStore.getState().act(actionKey, `ui-complete:${actionKey}`))
     }
     await act(async () => useAdventureGamePlayerStore.getState().choose('choice.enter-core'))
+    expect(host.textContent).toContain('先完成现场探索，再作最终抉择')
+    expect(host.textContent).not.toContain('最终抉择已经解锁')
     await act(async () => useAdventureGamePlayerStore.getState().act(
       'action.prepare.rescue',
       'ui-complete:action.prepare.rescue',
     ))
+    expect(host.textContent).toContain('最终抉择已经解锁')
+    expect(host.textContent).not.toContain('先完成现场探索，再作最终抉择')
     await act(async () => useAdventureGamePlayerStore.getState().choose('choice.rescue'))
     expect(useAdventureGamePlayerStore.getState().runtimeState.narrative).toMatchObject({
       completed: true,
@@ -283,6 +295,60 @@ describe('TEXTADV-2 · 玩家界面纵切面', () => {
     expect(host.textContent).toContain('冒险存档')
     expect(host.textContent).toContain('已通关')
     expect(host.textContent).not.toContain('新冒险 · 可继续')
+  })
+
+  it('父子序号相同时仅播放新行动，润色也不覆盖继承的父记录', async () => {
+    const owned = await seedCurrentProductWorld('分支逐句播放')
+    const sourceCatalog = await loadCurrentProductWorldSourceCatalogV1({
+      scope: owned.scope, worldReleaseId: owned.release.id!, productType: 'text-adventure',
+    })
+    const runtimePackage = createTextAdventureFoundationRuntimePackageV2({
+      worldRelease: owned.release as typeof owned.release & { id: number }, sourceCatalog,
+    })
+    const action = runtimePackage.adventure.actions.find(item => item.kind === 'look')!
+    action.repeatable = true
+    const built = await seedCurrentProductBuild({ scope: owned.scope,
+      worldRelease: owned.release as typeof owned.release & { id: number }, runtimePackage, title: '分支播放' })
+    const store = useAdventureGamePlayerStore.getState
+    await store().load(owned.scope, null)
+    await store().select(built.session.id!)
+    await store().act(action.key, 'ui.branch.parent')
+    const childId = await store().forkCurrent('子时间线')
+    await act(async () => {
+      root.render(createElement(DialogProvider, null, createElement(AdventureGamePlayer, {
+        project: owned.project, scope: owned.scope, worldGroupId: null, initialSessionId: childId,
+      })))
+    })
+    await act(async () => vi.waitFor(() => {
+      expect(store().loading).toBe(false)
+      expect(store().selectedSessionId).toBe(childId)
+    }))
+    await act(async () => store().act(action.key, 'ui.branch.child-first'))
+    const firstReveal = Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === '展开本场全文')!
+    await act(async () => firstReveal.click())
+    await act(async () => store().act(action.key, 'ui.branch.child-collision'))
+    const history = store().runtimeState.adventure!.actionHistory
+    expect(history).toHaveLength(3)
+    expect(history[0].eventSequence).toBe(history[2].eventSequence)
+    const entries = host.querySelectorAll('.adventure-console-entry')
+    expect(entries).toHaveLength(3)
+    expect(entries[0].className).not.toContain('is-playing')
+    expect(entries[2].className).toContain('is-playing')
+    expect(host.querySelectorAll('.adventure-console-entry.is-playing')).toHaveLength(1)
+    await act(async () => useAdventureGamePlayerStore.setState({ generatedNarrative: {
+      version: 1, portable: false, kind: 'adventure-narration-candidate', runId: 1,
+      productRuntimeSessionId: childId, baseSequence: history[2].eventSequence,
+      stateHash: '', visibilityHash: '', releaseHash: '', contextManifestHash: '',
+      commandId: null, candidateHash: '', narrative: '本次分支专属润色。',
+      evidenceEventSequences: [history[2].eventSequence],
+    } }))
+    const reveal = Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === '展开本场全文')!
+    await act(async () => reveal.click())
+    const revealed = host.querySelectorAll('.adventure-console-entry')
+    expect(revealed[0].textContent).not.toContain('本次分支专属润色')
+    expect(revealed[2].textContent).toContain('本次分支专属润色')
   })
 
   it('全量媒资验收默认使用冻结目录总 bytes，不会用 64 MiB 隐式丢弃后续素材', async () => {
