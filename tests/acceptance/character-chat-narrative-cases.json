@@ -1,7 +1,7 @@
 {
   "schema": "storyforge.character-chat-evaluation-cases",
   "version": 1,
-  "status": "draft-not-evaluated",
+  "status": "collection-started-not-accepted",
   "purpose": "CHAT-00 原创工程与人工评测材料；不是已发布作品或真实模型通过证据。",
   "behaviors": [
     {
@@ -1655,7 +1655,11 @@
       "daily-clock-promise",
       "inn-missing-seal",
       "riverside-reading-evening"
-    ]
+    ],
+    "formalProtocol": "character-chat-m1-protocol-v1.json",
+    "formalCohortEvidence": "character-chat-m1-evidence-v1.json",
+    "realModelRunsStarted": 1,
+    "realModelRunsUnknown": 1
   },
   "evidencePolicy": "保存原始对话、状态前后、版本、模型配置、调用/费用和评分分歧；失败不删出分母。夹具成功与真人体验分开报告。",
   "readinessFindings": [
