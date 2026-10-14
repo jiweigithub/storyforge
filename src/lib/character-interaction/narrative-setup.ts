@@ -18,7 +18,7 @@ export const DEFAULT_CHAT_NARRATIVE_SETUP_V1: ChatNarrativeSetupV1 = {
   permissions: {
     mode: 'story', triggers: ['scene-start', 'player-response', 'continue', 'return', 'player-seed'],
     allowedNewFactKinds: ['observation', 'object'], maxNewFactsPerAction: 2,
-    maxActiveThreads: 2, maxActionsPerTrigger: 1, maxActionCharacters: 1800, intensity: 'everyday', allowActorSituationExpansion: true,
+    maxActiveThreads: 2, maxActionsPerTrigger: 1, maxActionCharacters: 1800, intensity: 'everyday', allowActorSituationExpansion: true, allowPlayerFollowupSituations: true,
   },
 }
 

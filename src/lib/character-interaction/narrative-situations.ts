@@ -105,12 +105,16 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
   const state = structuredClone(stateValue), story = state.chatNarrative, scene = state.activeScene
   if (!story || !scene || story.situation.sceneKey !== scene.sceneKey) fail('缺少已衔接的当前情境')
   const trigger = story.triggers[story.triggers.length - 1]
-  if (trigger && ['player-request', 'continued-thread'].includes(story.situation.seed.origin) && story.situation.seed.sourceEventSequence === trigger.requestedSequence) fail('该请求已经构建情境')
+  if (trigger && ['player-request', 'continued-thread', 'player-followup'].includes(story.situation.seed.origin) && story.situation.seed.sourceEventSequence === trigger.requestedSequence) fail('该请求已经构建情境')
   const request = chatSituationConstructionRequestV1(state)
   if (!trigger || trigger.status !== 'ready' || trigger.requestedSequence !== input.triggerSequence || !request) fail('情境构建必须来自尚未执行的明确玩家请求或已审查角色方向')
   if (!Number.isSafeInteger(input.sequence) || input.sequence <= 0 || input.sequence <= story.lastEventSequence) fail('情境提交事件无效')
   if (state.remainingDirectorBudget < 2) fail('情境构建与审查预算不足')
   const draft = parseChatSituationDraftV1(input.draft)
+  if (request.origin === 'player-followup' && (!draft.newGoals.some(g => g.actorKey === request.actorKey)
+    || !draft.newThreads.some(t => t.participantKeys.includes(request.actorKey)))) fail('新事项须给出有依据的自身新目标和可收束问题，不能只生成背景后继续空转')
+  if (request.origin === 'player-followup' && (draft.newFacts.some(f => f.audienceKeys.some(k => !request.audienceKeys.includes(k)))
+    || draft.newThreads.some(t => t.audienceKeys.some(k => !request.audienceKeys.includes(k)) || t.participantKeys.some(k => k !== request.actorKey)))) fail('新事项不能向原对话之外传播请求或替其他角色承接')
   const observationResult = request.origin === 'continued-thread' && story.pendingSituation?.purpose === 'observation-result'
   if (observationResult && (draft.title !== story.situation.title || draft.newGoals.length || draft.newThreads.length || draft.possibilities.length
     || draft.newFacts.some(f => f.kind !== 'observation'))) fail('已完成观察的结果只能补充有限观察或授权发现，不能建立新目标、剧情线、计划或物件')

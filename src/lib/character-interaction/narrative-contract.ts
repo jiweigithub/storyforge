@@ -75,9 +75,11 @@ function validateCommon(value: Row, boundary: ChatNarrativeBoundaryV1) {
 }
 
 export function parseChatNarrativePermissionsV1(value: unknown): ChatNarrativePermissionsV1 {
-  const extra = ['allowActorSituationExpansion', 'maxDiscoveriesPerSituation'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
+  const extra = ['allowActorSituationExpansion', 'allowPlayerFollowupSituations', 'maxDiscoveriesPerSituation'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
   const permissions = row(value, 'mode,triggers,allowedNewFactKinds,maxNewFactsPerAction,maxActiveThreads,maxActionsPerTrigger,maxActionCharacters,intensity' + extra, '运行权限')
   if (Object.prototype.hasOwnProperty.call(permissions, 'allowActorSituationExpansion') && typeof permissions.allowActorSituationExpansion !== 'boolean') fail('角色推进授权无效')
+  if (Object.prototype.hasOwnProperty.call(permissions, 'allowPlayerFollowupSituations') && typeof permissions.allowPlayerFollowupSituations !== 'boolean') fail('新事项承接授权无效')
+  if (permissions.allowPlayerFollowupSituations === true && permissions.allowActorSituationExpansion !== true) fail('新事项承接需要角色情境推进授权')
   if (!['story', 'companionship'].includes(String(permissions.mode)) || !['everyday', 'tension', 'danger'].includes(String(permissions.intensity))) fail('叙事节奏或事件强度无效')
   if (permissions.maxDiscoveriesPerSituation !== undefined) {
     integer(permissions.maxDiscoveriesPerSituation, '单次调查事实数', 0, 3)
@@ -100,7 +102,7 @@ function validateSituation(value: unknown, boundary: ChatNarrativeBoundaryV1, in
   for (const field of ['title', 'location', 'timeLabel']) text(situation[field], `情境 ${field}`, 1000)
   const seed = row(situation.seed, 'text,origin,sourceEventSequence,sourceThreadKey', '情境种子')
   text(seed.text, '情境种子')
-  if (!['author-confirmed', 'player-request', 'continued-thread'].includes(String(seed.origin))) fail('种子来源无效')
+  if (!['author-confirmed', 'player-request', 'continued-thread', 'player-followup'].includes(String(seed.origin))) fail('种子来源无效')
   sequence(seed.sourceEventSequence, initial, '种子事件')
   if (initial && seed.origin !== 'author-confirmed') fail('初始情境必须来自作者确认')
   if (seed.origin === 'continued-thread') key(seed.sourceThreadKey, '种子剧情线')
@@ -208,6 +210,7 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
   if (parsed.revision === 0 && parsed.lastEventSequence !== 0 || parsed.revision !== 0 && parsed.lastEventSequence === 0) fail('叙事版本与事件头不符')
   validateSituation(parsed.situation, boundary, parsed.revision === 0, Number(permissions.maxActiveThreads))
   const state = structuredClone(value) as ChatNarrativeStateV1
+  if (state.situation.seed.origin === 'player-followup' && state.permissions.allowPlayerFollowupSituations !== true) fail('新事项情境缺少作品授权')
   for (const fact of state.situation.facts) validateChatFactDiscoveryRuleV1(fact, state.situation.facts, boundary, state.permissions.maxDiscoveriesPerSituation ?? 0)
   const triggers = list(parsed.triggers, '主动触发记录', 5000).map(item => row(item, 'kind,requestedSequence,sourceEventSequence,seed,status,actionSequences' + (item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'direction') ? ',direction' : ''), '主动触发记录'))
   if (state.revision === 0 && triggers.length) fail('初始情境不能伪造触发历史')
@@ -236,18 +239,26 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
   }
   if (state.pendingSituation !== undefined) {
     const hasPurpose = Object.prototype.hasOwnProperty.call(state.pendingSituation, 'purpose')
-    const pending = row(state.pendingSituation, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt,actorKey,goalKey,sourceEventSequence' + (hasPurpose ? ',purpose' : ''), '待推进事项')
-    if (hasPurpose && pending.purpose !== 'observation-result') fail('待推进事项用途无效')
-    key(pending.actorKey, '推进角色'); key(pending.goalKey, '推进目标'); key(pending.threadKey, '推进剧情线')
+    const followup = state.pendingSituation.purpose === 'player-followup'
+    const pending = row(state.pendingSituation, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt,actorKey,goalKey,sourceEventSequence' + (hasPurpose ? ',purpose' : '') + (followup ? ',playerEventSequence,playerExcerpt' : ''), '待推进事项')
+    if (hasPurpose && !['observation-result', 'player-followup'].includes(String(pending.purpose))) fail('待推进事项用途无效')
+    key(pending.actorKey, '推进角色')
+    if (followup) {
+      if (pending.goalKey !== null || pending.threadKey !== null || state.permissions.allowPlayerFollowupSituations !== true
+        || state.situation.goals.some(g => g.actorKey === pending.actorKey && ['active', 'paused'].includes(g.status))) fail('新事项必须承接已收束角色且具有单独授权')
+      sequence(pending.playerEventSequence, false, '新事项玩家来源'); text(pending.playerExcerpt, '新事项玩家原话', 1200)
+      if (pending.playerEventSequence === 0 || !state.triggers.some(t => t.kind === 'player-response'
+        && t.sourceEventSequence === pending.playerEventSequence && t.actionSequences[0] === pending.sourceEventSequence)) fail('新事项缺少本轮玩家回应的已审查行动')
+    } else {key(pending.goalKey, '推进目标'); key(pending.threadKey, '推进剧情线')}
     text(pending.direction, '推进方向', 1200); text(pending.evidenceExcerpt, '推进表达依据', 1200)
     sequence(pending.sourceEventSequence, false, '推进来源事件')
     if (state.revision === 0 || state.permissions.allowActorSituationExpansion !== true
       || pending.sourceEventSequence === 0 || !state.triggers.some(t => t.actionSequences.includes(Number(pending.sourceEventSequence)))) fail('待推进事项缺少授权或已审查行动')
-    if (!state.situation.goals.some(g => g.goalKey === pending.goalKey && g.actorKey === pending.actorKey && g.status === 'active')
+    if (!followup && (!state.situation.goals.some(g => g.goalKey === pending.goalKey && g.actorKey === pending.actorKey && g.status === 'active')
       || !state.situation.threads.some(t => t.threadKey === pending.threadKey && t.participantKeys.includes(String(pending.actorKey))
-        && t.audienceKeys.includes(String(pending.actorKey)) && ['open', 'blocked'].includes(t.status))) fail('待推进事项不属于角色的未完成事项')
+        && t.audienceKeys.includes(String(pending.actorKey)) && ['open', 'blocked'].includes(t.status)))) fail('待推进事项不属于角色的未完成事项')
     members(pending.evidenceFactKeys, state.situation.facts.filter(f => f.audienceKeys.includes(String(pending.actorKey))).map(f => f.factKey), '推进事实依据', true)
-    if (hasPurpose && !state.situation.facts.some(f => f.origin === 'runtime-consequence' && f.sourceEventSequence === pending.sourceEventSequence
+    if (pending.purpose === 'observation-result' && !state.situation.facts.some(f => f.origin === 'runtime-consequence' && f.sourceEventSequence === pending.sourceEventSequence
       && (pending.evidenceFactKeys as string[]).includes(f.factKey) && String(pending.evidenceExcerpt).includes(f.text))) fail('待观察结果缺少同一已完成行动的事实依据')
   }
   if (state.pendingEdit !== undefined) {
@@ -259,7 +270,7 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
     ids.forEach(id => text(id, '排除消息 ID', 200))
     if (new Set(ids).size !== ids.length) fail('排除消息 ID 重复')
   }
-  const sequences = [state.pendingSituation?.sourceEventSequence ?? 0, state.situation.seed.sourceEventSequence, ...state.situation.facts.map(f => f.sourceEventSequence),
+  const sequences = [state.pendingSituation?.sourceEventSequence ?? 0, state.pendingSituation?.purpose === 'player-followup' ? state.pendingSituation.playerEventSequence : 0, state.situation.seed.sourceEventSequence, ...state.situation.facts.map(f => f.sourceEventSequence),
     ...state.situation.goals.map(g => g.updatedSequence), ...state.situation.beliefs.map(b => b.updatedSequence), ...state.situation.threads.map(t => t.updatedSequence),
     ...state.triggers.flatMap(t => [t.requestedSequence, t.sourceEventSequence, ...t.actionSequences])]
   if (sequences.some(seq => seq !== 0 && (state.lastEventSequence === 0 || seq > state.lastEventSequence))) fail('叙事状态含尚未发生的事件引用')
@@ -292,6 +303,7 @@ export function rebaseChatNarrativeStateV1(state: ChatNarrativeStateV1, rebase: 
   state.lastEventSequence = rebase(state.lastEventSequence)
   if (state.pendingEdit) state.pendingEdit.requestedSequence = rebase(state.pendingEdit.requestedSequence)
   if (state.pendingSituation) state.pendingSituation.sourceEventSequence = rebase(state.pendingSituation.sourceEventSequence)
+  if (state.pendingSituation?.purpose === 'player-followup') state.pendingSituation.playerEventSequence = rebase(state.pendingSituation.playerEventSequence)
   state.situation.seed.sourceEventSequence = rebase(state.situation.seed.sourceEventSequence)
   for (const fact of state.situation.facts) fact.sourceEventSequence = rebase(fact.sourceEventSequence)
   for (const record of state.discoveryHistory ?? []) {record.actionSequence = rebase(record.actionSequence); record.discoverySequence = rebase(record.discoverySequence)}

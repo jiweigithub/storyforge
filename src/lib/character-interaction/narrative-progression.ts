@@ -1,4 +1,18 @@
 import type {CharacterInteractionRuntimeState} from '../types'
+import {isChatMessageRetrievableV1} from './narrative-retrieval'
+
+/** A reviewed new direction keeps its exact player source through save/branch.
+ * Later player input interrupts it; mere elapsed time never executes it. */
+export function chatHasPendingPlayerFollowupV1(state: CharacterInteractionRuntimeState, actorKey: string): boolean {
+  const story = state.chatNarrative, pending = story?.pendingSituation
+  if (!story || pending?.purpose !== 'player-followup' || pending.actorKey !== actorKey
+    || story.permissions.allowPlayerFollowupSituations !== true || story.permissions.allowActorSituationExpansion !== true
+    || pending.goalKey !== null || story.situation.goals.some(g => g.actorKey === actorKey && ['active', 'paused'].includes(g.status))) return false
+  const source = state.messages.find(m => m.role === 'player' && m.eventSequence === pending.playerEventSequence)
+  return !!source && isChatMessageRetrievableV1(state, source) && (source.audienceKeys == null || source.audienceKeys.includes(actorKey))
+    && source.text.includes(pending.playerExcerpt)
+    && !state.messages.some(m => m.role === 'player' && m.supersededBySequence == null && m.eventSequence > pending.sourceEventSequence)
+}
 
 /** Only an already reviewed intention can request a local background extension.
  * A trigger authorizes at most one construction, with no offline or mount work. */
@@ -6,10 +20,18 @@ export function chatSituationConstructionRequestV1(state: CharacterInteractionRu
   const story = state.chatNarrative, trigger = story?.triggers.slice(-1)[0]
   if (!story || !state.activeScene || !trigger || trigger.status !== 'ready') return null
   if (story.situation.seed.sourceEventSequence === trigger.requestedSequence
-    && ['player-request', 'continued-thread'].includes(story.situation.seed.origin)) return null
+    && ['player-request', 'continued-thread', 'player-followup'].includes(story.situation.seed.origin)) return null
   if (trigger.kind === 'player-seed') return trigger.seed && !trigger.actionSequences.length
     ? {text: trigger.seed, origin: 'player-request' as const, actorKey: null, sourceThreadKey: null} : null
   const pending = story.pendingSituation
+  if (pending?.purpose === 'player-followup') {
+    if (actorKey != null && pending.actorKey !== actorKey || !state.activeScene.activeParticipantKeys.includes(pending.actorKey)
+      || !chatHasPendingPlayerFollowupV1(state, pending.actorKey)
+      || !['continue', 'return'].includes(trigger.kind) && !trigger.actionSequences.includes(pending.sourceEventSequence)) return null
+    const source = state.messages.find(m => m.role === 'player' && m.eventSequence === pending.playerEventSequence)!
+    return {text: pending.direction, origin: 'player-followup' as const, actorKey: pending.actorKey, sourceThreadKey: null,
+      audienceKeys: source.audienceKeys ?? [state.playerKey, ...state.activeScene.activeParticipantKeys]}
+  }
   const observationResult = pending?.purpose === 'observation-result'
   if (!pending || story.permissions.allowActorSituationExpansion !== true
     || actorKey != null && pending.actorKey !== actorKey

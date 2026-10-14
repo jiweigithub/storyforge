@@ -79,9 +79,14 @@ export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV
   }
   if (optional.includes('situationRequest') && row.situationRequest !== null) {
     const hasPurpose = typeof row.situationRequest === 'object' && Object.prototype.hasOwnProperty.call(row.situationRequest, 'purpose')
-    const request = object(row.situationRequest, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt' + (hasPurpose ? ',purpose' : ''))
-    if (hasPurpose) choice(request.purpose, ['observation-result'])
-    key(request.threadKey); text(request.direction, 1200); keys(request.evidenceFactKeys, 20); text(request.evidenceExcerpt, 1200)
+    const followup = hasPurpose && (row.situationRequest as {purpose: unknown}).purpose === 'player-followup'
+    const request = object(row.situationRequest, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt' + (hasPurpose ? ',purpose' : '') + (followup ? ',playerEventSequence,playerExcerpt' : ''))
+    if (hasPurpose) choice(request.purpose, ['observation-result', 'player-followup'])
+    if (followup) {
+      if (request.threadKey !== null || !Number.isSafeInteger(request.playerEventSequence) || request.playerEventSequence === 0) fail('新事项来源无效')
+      text(request.playerExcerpt, 1200)
+    } else key(request.threadKey)
+    text(request.direction, 1200); keys(request.evidenceFactKeys, 20); text(request.evidenceExcerpt, 1200)
   }
   return structuredClone(value) as ChatNarrativeActionV1
 }
@@ -178,7 +183,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   if (action.goalKey === null) {
     if (!chatCanRespondAfterClosureV1(state, actorKey, trigger)) fail('无目标回应只允许在自身目标收束后承接新的玩家消息')
     if (action.goalStatus !== null || action.goalUpdates?.length || action.threadUpdates.length
-      || action.situationRequest != null || action.nextPossibilities?.length) fail('收束后的普通回应不能重开目标、剧情线或创建新打算')
+      || action.situationRequest != null && action.situationRequest.purpose !== 'player-followup' || action.nextPossibilities?.length) fail('收束后的普通回应不能重开目标、剧情线或创建新打算')
   } else if (!goal || !['active', 'paused'].includes(goal.status)) fail('行动缺少角色自身未完成目标')
   const fact = (id: string) => {
     const known = story.situation.facts.find(f => f.factKey === id)
@@ -239,23 +244,31 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
     changedGoals.add(effect.goalKey)
   }
   if (story.pendingSituation && (story.pendingSituation.actorKey === actorKey
-    || !story.situation.goals.some(g => g.goalKey === story.pendingSituation!.goalKey && g.status === 'active')
-    || !story.situation.threads.some(t => t.threadKey === story.pendingSituation!.threadKey && ['open', 'blocked'].includes(t.status)))) delete story.pendingSituation
+    || story.pendingSituation.purpose !== 'player-followup' && (!story.situation.goals.some(g => g.goalKey === story.pendingSituation!.goalKey && g.status === 'active')
+    || !story.situation.threads.some(t => t.threadKey === story.pendingSituation!.threadKey && ['open', 'blocked'].includes(t.status))))) delete story.pendingSituation
   if (action.situationRequest != null) {
-    if (story.permissions.allowActorSituationExpansion !== true || action.waitingForPlayer || action.kind === 'pause' || !goal || goal.status !== 'active') fail('当前行动或作品权限不允许角色扩展情境')
     const request = action.situationRequest
+    if (story.permissions.allowActorSituationExpansion !== true || action.waitingForPlayer || action.kind === 'pause') fail('当前行动或作品权限不允许角色扩展情境')
     evidence(request.evidenceFactKeys); excerpt(request.evidenceExcerpt)
-    if (request.purpose === 'observation-result' && (action.kind !== 'complete'
-      || !action.newFacts.some(f => f.kind === 'observation' && request.evidenceFactKeys.includes(f.factKey) && request.evidenceExcerpt.includes(f.text)))) fail('观察结果请求必须绑定本次实际完成并登记的观察事实')
-    const thread = story.situation.threads.find(t => t.threadKey === request.threadKey)
-    if (!thread || !thread.participantKeys.includes(actorKey) || !thread.audienceKeys.includes(actorKey)
-      || !['open', 'blocked'].includes(thread.status)) fail('推进方向缺少角色自己的未完成剧情线')
+    if (request.purpose === 'player-followup') {
+      const source = state.messages.find(m => m.role === 'player' && m.eventSequence === request.playerEventSequence)
+      if (story.permissions.allowPlayerFollowupSituations !== true || action.goalKey !== null || !chatCanRespondAfterClosureV1(state, actorKey, trigger)
+        || trigger.sourceEventSequence !== request.playerEventSequence || !source || !isChatMessageRetrievableV1(state, source)
+        || source.audienceKeys != null && !source.audienceKeys.includes(actorKey) || !source.text.includes(request.playerExcerpt)) fail('新事项须引用本轮角色可见的真实玩家请求及作品授权')
+    } else {
+      if (!goal || goal.status !== 'active') fail('当前行动或作品权限不允许角色扩展情境')
+      if (request.purpose === 'observation-result' && (action.kind !== 'complete'
+        || !action.newFacts.some(f => f.kind === 'observation' && request.evidenceFactKeys.includes(f.factKey) && request.evidenceExcerpt.includes(f.text)))) fail('观察结果请求必须绑定本次实际完成并登记的观察事实')
+      const thread = story.situation.threads.find(t => t.threadKey === request.threadKey)
+      if (!thread || !thread.participantKeys.includes(actorKey) || !thread.audienceKeys.includes(actorKey)
+        || !['open', 'blocked'].includes(thread.status)) fail('推进方向缺少角色自己的未完成剧情线')
+    }
     if (story.pendingSituation) fail('已有其他角色的待推进事项，不能覆盖')
-    story.pendingSituation = {...request, actorKey, goalKey: goal.goalKey, sourceEventSequence: input.sequence}
+    story.pendingSituation = {...request, actorKey, goalKey: goal?.goalKey ?? null, sourceEventSequence: input.sequence}
   }
   trigger.actionSequences.push(input.sequence)
   trigger.status = action.waitingForPlayer ? 'waiting-player'
-    : action.goalKey === null || action.kind === 'pause' || trigger.actionSequences.length >= chatTurnActionLimitV1(story.permissions, trigger) ? 'complete' : 'ready'
+    : action.goalKey === null && action.situationRequest?.purpose !== 'player-followup' || action.kind === 'pause' || trigger.actionSequences.length >= chatTurnActionLimitV1(story.permissions, trigger) ? 'complete' : 'ready'
   advance(story, input.sequence)
   state.chatNarrative = parseChatNarrativeStateV1(story, {
     participantKeys: state.profiles.map(p => p.participantKey), characterKeys: state.profiles.map(p => p.characterKey), sceneKeys: state.sceneTemplates.map(s => s.sceneKey),

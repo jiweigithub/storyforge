@@ -23,6 +23,8 @@ export interface ChatNarrativePermissionsV1 {
   intensity: 'everyday' | 'tension' | 'danger'
   /** Missing in historical Releases means no autonomous situation expansion. */
   allowActorSituationExpansion?: boolean
+  /** Explicit opt-in for a new player request after the actor's old goals end. */
+  allowPlayerFollowupSituations?: boolean
   /** Explicit opt-in; absent historical Releases cannot unlock hidden facts. */
   maxDiscoveriesPerSituation?: number
 }
@@ -100,7 +102,7 @@ export interface ChatSituationV1 {
   timeLabel: string
   seed: {
     text: string
-    origin: 'author-confirmed' | 'player-request' | 'continued-thread'
+    origin: 'author-confirmed' | 'player-request' | 'continued-thread' | 'player-followup'
     sourceEventSequence: number
     sourceThreadKey: string | null
   }
@@ -134,7 +136,7 @@ export interface ChatNarrativeStateV1 {
   triggers: ChatNarrativeTriggerStateV1[]
   /** Reviewed intention, or a bounded result of an already completed observation.
    * Player input cancels intentions, but keeps explicitly marked observation results pending. */
-  pendingSituation?: ChatActorSituationRequestV1 & {actorKey: string; goalKey: string; sourceEventSequence: number}
+  pendingSituation?: ChatActorSituationRequestV1 & {actorKey: string; goalKey: string | null; sourceEventSequence: number}
   /** User-authored replacement, not dialogue or a fact until committed. */
   pendingEdit?: ChatMessageEditDraftV1
   /** User-selected dialogue omissions, not erased facts or revoked knowledge. */
@@ -189,14 +191,20 @@ export interface ChatTurnDirectionV1 {
   scheduling?: {mode: 'natural' | 'round-robin'; participantKeys: string[]}
 }
 
-export interface ChatActorSituationRequestV1 {
-  /** Historical requests without this field remain interruptible intentions. */
-  purpose?: 'observation-result'
-  threadKey: string
+export type ChatActorSituationRequestV1 = {
   direction: string
   evidenceFactKeys: string[]
   evidenceExcerpt: string
-}
+} & ({
+  /** Historical requests without this field remain interruptible intentions. */
+  purpose?: 'observation-result'
+  threadKey: string
+} | {
+  purpose: 'player-followup'
+  threadKey: null
+  playerEventSequence: number
+  playerExcerpt: string
+})
 
 /** The model may cite existing evidence events, never assign new event numbers,
  * world references or player-state writes. */
