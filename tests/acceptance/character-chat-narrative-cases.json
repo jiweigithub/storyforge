@@ -1556,6 +1556,49 @@
               "cause": "Expected failed build status, but the original and imported build both correctly retained recovery-required; final verification compares the exact original backup state and failure."
             }
           ]
+        },
+        "bookCornerPreflight": {
+          "verifiedAt": "2026-10-14",
+          "sourceHead": "b20f15fb4ab9e7fbe8dc0020cd8b21a20396509d",
+          "snapshotManifestSha256": "3b99f282655f09efaaacf59652d81afdaa0144286b6c11867382472f1d4127f0",
+          "scenarioId": "book-corner-at-closing",
+          "status": "engineering-complete-sustained-progression-gap-observed",
+          "scope": "Fresh everyday development diagnostic from reviewed character sources through real S2 consultation, explicit opening-only adoption, frozen consultation lineage, generated and reviewed opening, local release and five player opportunities. Not holdout, independent human review or formal M1.",
+          "evidence": "codex-book-corner-v47.json",
+          "rawEvidenceSha256": "6e125e8f96a1ffad490a7013f53eddc03d34692649e25f53676d1161764349d5",
+          "acceptedModelCalls": 16,
+          "completedProviderResponses": 16,
+          "failedProviderTurns": 0,
+          "generatedOpenings": 3,
+          "runtimeOpportunities": 5,
+          "completedRuntimeActions": 6,
+          "totalTokens": 163410,
+          "inputTokens": 150530,
+          "outputTokens": 12880,
+          "costUsd": null,
+          "observations": [
+            "Actor independently completed the display arrangement in the opening; selected goal and thread closed with a persisted physical consequence.",
+            "A brief player response received a natural reply. The player proposed a signed recommendation card; the actor wrote and placed it without assigning work or buying obligations to the player.",
+            "The player declined writing and buying, then asked why the book mattered. The actor accepted refusal but could not give a specific example. Asked to look, the actor opened the book and saved that action; a further question still produced no concrete reading result.",
+            "All runtime semantic reviews passed, so passing the six checks alone did not detect the failed sustained progression.",
+            "No pending situation was created. Code inspection confirms goal-free post-closure replies prohibit situationRequest, new intentions and goal/thread changes; new intent handoff and ordinary unspecified detail resolution need investigation. This does not establish the sole cause or justify reopening completed goals."
+          ],
+          "timing": {
+            "wholeDiagnosticSeconds": 819.378,
+            "includesManualChoiceAndInspection": true,
+            "notModelLatencyBenchmark": true
+          },
+          "restoration": {
+            "evidence": "codex-book-corner-restoration-v47.json",
+            "rawEvidenceSha256": "bcb910551ccfbfa4f67bda5e3c5b72473c68fddef94d300a6e4c4240bff241eb",
+            "newModelCalls": 0,
+            "consultationLineageRetained": true,
+            "openingReviewRetained": true,
+            "interactionEqual": true,
+            "refreshEqual": true,
+            "worldPreserved": true
+          },
+          "nextWork": "CHAT-02.07/08/11: distinguish casual post-closure reply from a concrete new player request. Add a reviewed bounded transition to a new situation without resurrecting old goals, forcing consent, rewriting established book content or granting hidden knowledge. Complete ordinary observation results under existing author permissions. Compare the preserved prefix plus an independent fresh scenario before acceptance."
         }
       },
       {
