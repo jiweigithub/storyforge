@@ -1420,6 +1420,44 @@
               "worldPreserved": true
             }
           }
+        },
+        "initialOpeningReviewPreflight": {
+          "verifiedAt": "2026-10-14",
+          "sourceHead": "781f0477977729f901761a5bc9e77f1fd1f4519e",
+          "snapshotManifestSha256": "793ec3f6abbcc0e63d39c7be811144334d5f15be11dafc2f52907c34c32cbde9",
+          "status": "production-review-supported-runtime-episode-failed",
+          "scope": "One same-developer diagnostic with real generated openings and review; not an independent reviewer, formal M1 episode, human playtest or negative-case calibration.",
+          "evidence": "codex-opening-review-v42.json",
+          "rawEvidenceSha256": "59f3451b12272b035769dac645680189a8991c3c1067159fa1bf11433032d4f9",
+          "acceptedModelCalls": 15,
+          "completedProviderResponses": 15,
+          "inputTokens": 144014,
+          "outputTokens": 13040,
+          "totalTokens": 157054,
+          "costUsd": null,
+          "generatedOpenings": 3,
+          "passedOpeningReviews": 3,
+          "authorSelectedOption": "opening-3",
+          "followupOpportunities": 3,
+          "runtimeRunsCompleted": 5,
+          "runtimeRunsFailed": 1,
+          "developmentReview": [
+            "All three openings kept the gate-inspection purpose and a feasible independent preparatory action. All passed the real five-dimension review; rejection sensitivity remains uncalibrated.",
+            "After a minimal player response declining participation, the actor inspected the swept threshold, consumed a bounded observation, and tried looking at an alternative foothold.",
+            "A later candidate paused the personal goal and disclosed the observation but left threadUpdates empty. The real reviewer rejected the missing thread update against this opening closure signal. The rejected pause and disclosure were not committed; the previous completed observation remains actor-private.",
+            "The sample still trends toward early suspension and repetitive caution. Preserving the original goal and adding an opening review does not establish sustained meaningful story progression."
+          ],
+          "worldUnchanged": true,
+          "restoration": {
+            "evidence": "codex-opening-review-restoration-v42.json",
+            "rawEvidenceSha256": "5c152ea1593869af7712b7229e8f4cfadab8d05ba476b3645ff19cb6f231abc4",
+            "newModelCalls": 0,
+            "interactionEqual": true,
+            "refreshEqual": true,
+            "reviewRetained": true,
+            "worldPreserved": true
+          },
+          "nextWork": "Reconcile personal-goal pauses and shared-thread consequences, then provide bounded and visible candidate repair with re-review under the authorized budget. Preserve the original failure; do not weaken the gate or resend unknown requests."
         }
       },
       {
