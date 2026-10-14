@@ -1514,6 +1514,48 @@
               "modelCalls": 0
             }
           ]
+        },
+        "readingEveningPreflight": {
+          "verifiedAt": "2026-10-14",
+          "sourceHead": "0925d6291714b2ebca24ff54ee9d937250e2fe8b",
+          "snapshotManifestSha256": "5b8021cfcd97bbcba9f75e4941429a3a9de36355543074996ef2a84010d01a16",
+          "scenarioId": "riverside-reading-evening",
+          "status": "provider-terminal-failure-before-opening-candidate",
+          "scope": "Low-risk development variation, not holdout or formal M1. Actor name 林舟 retained from the source scaffold; four explicitly reviewed source fields only; excluded fixture investigation identity and tide-gate material checked before generation.",
+          "evidence": "codex-reading-evening-v43-verified.json",
+          "rawEvidenceSha256": "b36768716e0d0542015fb45b790c336c866cbcbf72b090d17d2eccca7554ac08",
+          "acceptedModelCalls": 1,
+          "completedProviderResponses": 0,
+          "failedProviderTurns": 1,
+          "generatedOpenings": 0,
+          "runtimeOpportunities": 0,
+          "totalTokens": null,
+          "costUsd": null,
+          "diagnosis": "Matching provider turn confirmed failed. The bridge retains a sanitized failure only, so underlying provider cause is not established. No automatic retry, candidate adoption, local product release or runtime session. Do not score narrative quality from this attempt.",
+          "restoration": {
+            "evidence": "codex-reading-evening-restoration-v43-complete.json",
+            "rawEvidenceSha256": "71b77517687f2bcc227cc9a0ea091d7c20d0832738f9843a02dd23aea059e1a7",
+            "newModelCalls": 0,
+            "originalRecoveryRequiredStatusRetained": true,
+            "failureRetained": true,
+            "refreshEqual": true,
+            "worldPreserved": true,
+            "noRuntimeCreated": true
+          },
+          "zeroCallScriptFailures": [
+            {
+              "evidence": "codex-reading-evening-v43.json",
+              "cause": "Used original release ID after product-world selection imported it into another scope; corrected to linked.worldReleaseId."
+            },
+            {
+              "evidence": "codex-reading-evening-restoration-v43.json",
+              "cause": "Assumed production had a worldReleaseId field; corrected to registered imported-world readback."
+            },
+            {
+              "evidence": "codex-reading-evening-restoration-v43-verified.json",
+              "cause": "Expected failed build status, but the original and imported build both correctly retained recovery-required; final verification compares the exact original backup state and failure."
+            }
+          ]
         }
       },
       {
