@@ -228,7 +228,7 @@
   ],
   "unexecutedSlots": "All other IDs are derived deterministically from protocol matrix; no replacement/retry is counted as this original episode.",
   "limits": [
-    "Full engineering gates for the fixed code are still queued, not passed.",
+    "Original V59 full CI failed before all tests because its snapshot lacked Git metadata; document check passes in a byte-identical corrected CI copy, full CI is queued, and original full E2E is running. No full-pass claim.",
     "Agnes has no usable current configuration; its 60 scheduled slots remain unstarted.",
     "No independent human scoring, fair SillyTavern comparison or commercial acceptance.",
     "New holdout cases remain unexecuted and were not used for implementation tuning."
@@ -292,5 +292,46 @@
       "sha256": "6c44dd803a0905dbe8d1fa850937d7fa967cc3a1774283029499ec55083f6c26"
     },
     "qaScope": "1280px and 390px layouts, no horizontal overflow, no network calls, blank-score defaults, empty-export prevention, synthetic insufficient-evidence export; not an actual human rating."
+  },
+  "engineeringValidation": {
+    "codeHead": "104624e8856e3a31d6b9c95d9e730ee45e483189",
+    "manifestSha256": "918e5d24a6fe9ae7736b650253eff80cf0527f7d5a33c4f2af0d3f0d263b319d",
+    "originalFullCi": {
+      "status": "failed",
+      "exitCode": 1,
+      "cause": "Plain snapshot had no Git metadata; document-authority checker could not run git ls-files. Full test suite was not reached.",
+      "failurePreserved": true
+    },
+    "environmentCorrection": {
+      "filesVerified": 3324,
+      "sourceBytesUnchanged": true,
+      "newGitIndexMatchesHead": true,
+      "newSnapshotClean": true,
+      "targetedDocumentCheckExit": 0,
+      "separateCiCopy": true,
+      "activeE2ESnapshotUntouched": true
+    },
+    "correctedFullCi": {
+      "status": "queued",
+      "newReceiptRequired": true
+    },
+    "fullE2E": {
+      "status": "running",
+      "complete": false
+    },
+    "evidence": [
+      {
+        "file": "character-chat-v61-ci-environment-proof.json",
+        "sha256": "62bdee51976dbf11f69737f2047b0a27ad43a6e464ea965529cefa56ce9c725f"
+      },
+      {
+        "file": "character-chat-v59-full-ci-failed-environment.log",
+        "sha256": "504a2aa203b7c26d9f32c0de030854a02ff5adda2756e963f27bc086af0400c4"
+      },
+      {
+        "file": "character-chat-v59-full-ci-failed-environment-receipt.json",
+        "sha256": "cd91a01b213c23d73fb6f6476522cc9a40918293e43c6742731caf049fa63074"
+      }
+    ]
   }
 }
