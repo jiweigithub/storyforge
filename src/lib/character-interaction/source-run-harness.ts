@@ -4,7 +4,9 @@ import {computeKnownCostUsd} from '../ai/usage-log'
 import {createAgentSkillExecutionBindingV1} from '../agent/execution-binding'
 import {freezeFormalAIEntryBindingV1} from '../agent/formal-ai-entry'
 import {createAgentRunCheckpointV1, readLatestVerifiedAgentRunCheckpointV1} from '../agent/run/checkpoint'
-import {createContextManifestFromAssemblyV1} from '../agent/run/context-manifest'
+import {createContextManifestFromAssemblyV1, verifyContextManifestIntegrityV1} from '../agent/run/context-manifest'
+import {sha256Text} from '../ai/chapter-memory/text-normalization'
+import type {ContextManifestV1} from '../types/agent-run'
 import {appendAgentRunEventV1, createAgentRunV1, readAgentRunV1, type AgentRunSnapshotV1} from '../agent/run/event-store'
 import {hashCanonicalValue} from '../agent/run/hash'
 import {createVerificationReceiptV1} from '../agent/run/verification-receipt'
@@ -26,6 +28,8 @@ export interface ChatSourceRunPayloadV1<R, Q = ChatSourceReviewRequestV1, C = Ch
   model: {provider: string; model: string}
   messages: ChatMessage[]
   manifestHash: string
+  /** Old runs retain their original hash-only history; never fabricate a manifest for them. */
+  manifest?: {value: ContextManifestV1; sourceText: string}
   response: {raw: string; call: CreativeCallEvidenceV1} | null
   result: R | null
 }
@@ -90,6 +94,14 @@ async function load(scope: WorkspaceScope, runId: number) {
     || snapshot.contract.executionBindings?.[0]?.skillId !== SKILL
     || snapshot.contract.executionBindings?.[0]?.stepId !== STEP
     || snapshot.contract.runtimeBindingHash !== await bindingHash(payload)) throw new Error('资料整理的来源或运行绑定不一致')
+  if (payload.manifest) {
+    const {value, sourceText} = payload.manifest, source = value.sources[0]
+    if (!await verifyContextManifestIntegrityV1(value) || value.manifestHash !== payload.manifestHash
+      || value.stepId !== STEP || value.attempt !== 1 || value.sources.length !== 1 || source?.key !== SOURCE
+      || source.status !== 'included' || source.delivery !== 'full' || source.contentHash !== await sha256Text(sourceText)
+      || await hashCanonicalValue(JSON.parse(sourceText)) !== await hashCanonicalValue(payload.context)
+      || !payload.messages.some(message => message.role === 'user' && message.content.includes(sourceText))) throw new Error('资料整理的完整读取清单与实际模型输入不一致')
+  }
   const requested = snapshot.events.filter(event => event.type === 'model.requested')
   const responded = snapshot.events.filter(event => event.type === 'model.responded')
   const promptHash = await hashCanonicalValue(payload.messages)
@@ -225,6 +237,7 @@ async function generate(input: {
     const manifest = await createContextManifestFromAssemblyV1({runId: snapshot.run.id, stepId: STEP, attempt: 1, projectId: scope.projectId, worldGroupId: null,
       declaredSourceKeys: [SOURCE], assembled, readerVersion: VERIFIER})
     payload.manifestHash = manifest.manifestHash
+    payload.manifest = {value: manifest, sourceText: assembled.segments[0].content}
     snapshot = await append(scope, snapshot, 'context.assembled', {stepId: STEP, attempt: 1, manifestHash: manifest.manifestHash})
     snapshot = await checkpoint(scope, snapshot, payload)
     await input.onBoundary?.('prepared', snapshot.run.id)
@@ -257,5 +270,5 @@ async function generate(input: {
   })
 }
 
-return {generate, read, latest, recover, cancel, load, withLock, append, checkpoint, finish}
+return {generate, read, latest, recover, cancel, load, withLock, append, checkpoint, finish, runs: reviewRuns}
 }

@@ -97,12 +97,16 @@ export async function createProductProductionSourcePlanV1(input: {
     ...roleAnchors,
   ]).filter(key => input.brief.source.selection.resourceKeys.includes(key))
   if (!initialResourceKeys.length) initialResourceKeys.push(input.brief.source.selection.resourceKeys[0]!)
+  const consultationContextManifests = input.brief.intent.productType === 'character-interaction'
+    ? (await (await import('../character-interaction/consultation-harness')).readChatConsultationProductionEvidenceV1(input.scope, input.brief)).map(row => row.pointer)
+    : []
   return freezeProductSourcePlanV1({
     productInstanceKey: input.productionKey,
     worldReference: await createWorldReferenceV1(input.brief.source.worldReleaseId),
     adapter,
     goal: requirementGoal({ brief: input.brief, descriptors }),
     missingStrategy: 'block',
+    consultationContextManifests,
     initialResourceKeys,
     allowedDepths: ['index', 'summary', 'focused', 'full', 'original'],
     maxReadCalls: Math.min(20_000, Math.max(200, descriptors.length + 50)),

@@ -1,6 +1,7 @@
 import {CHAT_OPENING_CHECKS, type ChatOpeningReviewDraftV1} from '../../src/lib/character-interaction/situation-production-review'
 import { seedCurrentProductWorld } from './current-product-world'
-import { createChatDraftV3, selectChatWorldV1, saveChatDraftV1, loadChatSourceProjectionV1, confirmChatSourceReviewV1 } from '../../src/lib/character-interaction/draft-service'
+import { createChatDraftV3, selectChatWorldV1, saveChatDraftV1, loadChatSourceProjectionV1, confirmChatSourceReviewV1, readChatDraftV1 } from '../../src/lib/character-interaction/draft-service'
+import {generateChatConsultationV2, adoptChatConsultationV2} from '../../src/lib/character-interaction/consultation-harness'
 import { parseChatAuthoringSettings } from '../../src/lib/character-interaction/authoring-contract'
 import { loadProductProductionConsultationSourceV2, loadProductProductionWorldSourceCatalogV2 } from '../../src/lib/product-production/world-source'
 import { suggestProductStartingPoints, draftProductProductionBriefV3 } from '../../src/lib/product-production/consultation'
@@ -9,7 +10,7 @@ import type { ChatNarrativeProductionSourceV1, ChatSituationCandidatesV1 } from 
 import {chatProjectionResourcesV1} from '../../src/lib/character-interaction/source-projection'
 import {createChatPrivateCharacterV1} from '../../src/lib/character-interaction/private-character'
 
-export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?: boolean; factDiscovery?: boolean; worldDiscovery?: boolean; privateCast?: 'only' | 'mixed'} = {}) {
+export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?: boolean; factDiscovery?: boolean; worldDiscovery?: boolean; privateCast?: 'only' | 'mixed'; consultation?: boolean} = {}) {
   const world = await seedCurrentProductWorld('CHAT situation production', options.worldDiscovery ? {characterDetails: {
     background: '红铜钥匙藏在修钟台下的木匣里。', shortDescription: '修钟台下有一只获准由店主检查的木匣。',
   }} : {})
@@ -26,7 +27,7 @@ export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?
     playerRole: options.mappedPlayer ? '来到修钟铺的守潮人，没有答应帮忙修理。' : '来店里借书的旅人沈禾，没有答应帮忙修理。', openingSituation: '雨天，修钟铺的一台旧钟停了。',
     characters: options.privateCast === 'only' ? [] : [{sourceKey, voiceRules: '', privateKnowledge: '', initialTrust: 0}]})
   const projection = await loadChatSourceProjectionV1(scope, draft.revision)
-  const confirmed = await confirmChatSourceReviewV1(scope, draft.revision, {
+  let confirmed = await confirmChatSourceReviewV1(scope, draft.revision, {
     projectionHash: projection.projectionHash,
     classifications: chatProjectionResourcesV1(projection).flatMap(c => c.fragments.map(f => options.worldDiscovery && c.resourceKey === sourceKey && f.pointer === '/background' ? ({
       projectionHash: projection.projectionHash, fragmentKey: f.fragmentKey, purpose: 'knowledge', visibility: 'discoverable', audienceKeys: [],
@@ -45,6 +46,16 @@ export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?
       audienceKeys: ['/background','/personality'].includes(f.pointer) ? [c.resourceKey] : [],
     }))),
   })
+  if (options.consultation) {
+    const fragment = projection.characters.find(c => c.origin === 'product-private')!.fragments.find(f => f.pointer === '/background')!
+    const view = await generateChatConsultationV2({scope, request: {draftRevision: confirmed.revision, question: '让角色自己尝试，不要求旅人参与。', priorRunId: null,
+      source: {draftRevision: confirmed.revision, projectionHash: projection.projectionHash, fragmentKeys: [fragment.fragmentKey]}},
+      runAI: async () => JSON.stringify({answer: '只给作者的会谈备注 S2AUTHOR-ONLY-LINEAGE-NOTE', changes: [{field: 'openingSituation', value: '雨天旧钟停了，苏禾可以先自己检查，旅人可继续看书。',
+        basis: 'proposal', reason: '保留角色自己的愿望和玩家选择', evidence: [{fragmentKey: fragment.fragmentKey, quote: '希望修好旧钟，愿意自己检查工具。'}]}]}),
+    })
+    await adoptChatConsultationV2({scope, runId: view.runId, expectedCandidateHash: view.candidateHash!, fields: ['openingSituation']})
+    confirmed = await readChatDraftV1(scope)
+  }
   const settings = parseChatAuthoringSettings(JSON.parse(confirmed.settingsJson))
   if (settings.version !== 3) throw new Error('fixture version')
   const starting = await suggestProductStartingPoints({scope, worldReleaseId: confirmed.worldReleaseId!})

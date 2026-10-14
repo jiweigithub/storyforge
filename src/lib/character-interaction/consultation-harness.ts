@@ -1,7 +1,7 @@
 import Dexie from 'dexie'
 import {db} from '../db/schema'
 import {scopeTransactionTables} from '../workspace/scope'
-import type {WorkspaceScope} from '../types'
+import type {WorkspaceScope, ProductProductionBriefV3, ContextManifestPointerV1} from '../types'
 import {executeFrozenFormalAIEntryV1} from '../agent/formal-ai-entry'
 import {hashCanonicalValue, canonicalStringify} from '../agent/run/hash'
 import {createVerificationReceiptV1} from '../agent/run/verification-receipt'
@@ -11,7 +11,7 @@ import {CHAT_CONSULTATION_PROMPT_V2, createChatPlanArtifactV2, parseChatPlanCand
 import {readChatConsultationContextV2, validateChatConsultationRequestV2, type ChatConsultationContextV2, type ChatConsultationRequestV2} from './consultation-context'
 import {prepareChatPlanWriteV2, commitChatPlanWriteV2} from './consultation-store'
 import {parseChatAuthoringSettings, type ChatAuthoringSettings} from './authoring-contract'
-import type {ChatPlanFieldV1} from './consultation-plan'
+import {chatPlanValuesV1, type ChatPlanFieldV1, type ChatPlanChangeV1} from './consultation-plan'
 
 const STEP = 'chat:consult-v2', VERIFIER = 'chat-consult-v2', CRITERION = 'plan.grounded-fields'
 const CONFIRMATION = ['plan.confirmed', 'plan.adopted', 'plan.post-state'] as const
@@ -37,6 +37,8 @@ async function checked(scope: WorkspaceScope, runId: number) {
     parseChatAuthoringSettings(saved.settings)
     const candidate = parseChatPlanCandidateV2(payload.result?.candidate, payload.context)
     if (!saved.fields.length || new Set(saved.fields).size !== saved.fields.length || saved.fields.some(field => !candidate.changes.some(change => change.field === field))) throw new Error('方案采纳字段不属于原候选')
+    const values = chatPlanValuesV1(saved.settings)
+    if (saved.revision !== payload.context.draftRevision + 1 || saved.fields.some(field => values[field] !== candidate.changes.find(change => change.field === field)!.value)) throw new Error('方案采纳值与作者选择的候选不一致')
     const originalCandidateHash = await hash(payload.result), candidateHash = await hash({originalCandidateHash, fields: saved.fields})
     const postStateHash = await hash({settings: saved.settings, revision: saved.revision}), adoptionHash = await hash({candidateHash, postStateHash})
     if (saved.originalCandidateHash !== originalCandidateHash || saved.candidateHash !== candidateHash || saved.postStateHash !== postStateHash || saved.adoptionHash !== adoptionHash
@@ -45,6 +47,48 @@ async function checked(scope: WorkspaceScope, runId: number) {
       || !loaded.snapshot.events.some(event => event.type === 'confirmation.recorded' && event.payload.candidateHash === candidateHash && event.payload.decision === 'adopt')) throw new Error('方案选择、确认或采纳证据不一致')
   }
   return {...loaded, payload}
+}
+
+export interface ChatConsultationProductionEvidenceV1 {
+  runId: number
+  pointer: ContextManifestPointerV1
+  changes: ChatPlanChangeV1[]
+  hasSelectedSources: boolean
+}
+/** Cheap transaction witness after semantic verification; no crypto or nested run-reader transaction. */
+export async function readChatConsultationLineageWitnessV1(scope: WorkspaceScope): Promise<string> {
+  const rows = await harness.runs(scope)
+  return canonicalStringify(await Promise.all(rows.map(async row => {
+    const checkpoints = await db.agentRunCheckpoints.where('runId').equals(row.id!).toArray()
+    return {run: row, checkpoints: checkpoints.map(checkpoint => ({id: checkpoint.id, throughSequence: checkpoint.throughSequence,
+      checkpointHash: checkpoint.checkpointHash, resumePayloadHash: checkpoint.resumePayloadHash}))}
+  })))
+}
+/** Author-only lineage. Match the actual frozen Brief, never infer adoption from an answer or a pending run. */
+export async function readChatConsultationProductionEvidenceV1(scope: WorkspaceScope, brief: ProductProductionBriefV3, pointers?: readonly ContextManifestPointerV1[]): Promise<ChatConsultationProductionEvidenceV1[]> {
+  if (brief.intent.productType !== 'character-interaction' || !brief.characterChat) return []
+  const settings = brief.characterChat, values = chatPlanValuesV1(settings), claimed = new Set<ChatPlanFieldV1>()
+  const evidence: ChatConsultationProductionEvidenceV1[] = []
+  for (const row of await harness.runs(scope)) {
+    const snapshot = await readAgentRunV1(scope, row.id!)
+    if (!snapshot.events.some(event => event.type === 'adoption.committed')) continue
+    const {payload} = await checked(scope, row.id!)
+    if (!payload.adoption || !payload.manifest || !snapshot.events.some(event => event.type === 'verification.accepted')) continue
+    if (pointers && !pointers.some(pointer => pointer.stepId === STEP && pointer.attempt === 1 && pointer.manifestHash === payload.manifestHash)) continue
+    const source = payload.context.source
+    if (source && (source.worldReleaseHash !== brief.source.worldContentHash || settings.version === 1 || source.projectionHash !== settings.sourceReview?.projectionHash)) continue
+    const changes = payload.result!.candidate!.changes.filter(change => payload.adoption!.fields.includes(change.field)
+      && !claimed.has(change.field) && values[change.field] === change.value
+      && (change.field !== 'openingSituation' || brief.intent.openingSituation === change.value)
+      && (change.field !== 'playerRole' || brief.intent.playerRole === change.value)
+      && (change.field !== 'experience' || brief.intent.coreExperience.includes(String(change.value)))
+      && (change.field !== 'contentBoundaries' || canonicalStringify(brief.intent.contentBoundaries) === canonicalStringify(String(change.value).split('\n').map(line => line.trim()).filter(Boolean)))
+      && (change.field !== 'targetPlayMinutes' || brief.scale.targetPlayMinutes === change.value))
+    if (!changes.length) continue
+    changes.forEach(change => claimed.add(change.field))
+    evidence.push({runId: row.id!, pointer: {stepId: STEP, attempt: 1, manifestHash: payload.manifestHash}, changes: structuredClone(changes), hasSelectedSources: source !== null})
+  }
+  return evidence.sort((a, b) => a.pointer.manifestHash.localeCompare(b.pointer.manifestHash))
 }
 async function verify(scope: WorkspaceScope, snapshot: AgentRunSnapshotV1, payload: Payload) {
   if (snapshot.projection.state === 'completed') return

@@ -1,4 +1,5 @@
 import {CHAT_OPENING_REVIEW_KEY, assertChatOpeningReviewedV1} from '../character-interaction/situation-production-review'
+import {readChatConsultationLineageWitnessV1} from '../character-interaction/consultation-harness'
 import { canReviseTextContentBuildV1, createTextContentRevisionPlanV1 } from './text-content-revision'
 import Dexie from 'dexie'
 import { db } from '../db/schema'
@@ -2842,6 +2843,7 @@ async function applyCommand(input: {
 }
 
 async function executeTransaction(input: {
+  preparedChatConsultationWitness?: string
   preparedTextRevision?: Awaited<ReturnType<typeof prepareTextContentRevisionV1>> | null
   preparedPausedBuild?: PreparedPausedBuildV1 | null
   scope: WorkspaceScope
@@ -3007,6 +3009,8 @@ async function executeTransaction(input: {
           reject('creator-media-stale', 'Creator media 的 Production、Build、Artifact、Blob 或命令链已变化')
         }
       }
+      if (input.preparedChatConsultationWitness !== undefined
+        && await readChatConsultationLineageWitnessV1(scope) !== input.preparedChatConsultationWitness) reject('source-stale', '会谈采纳证据在保存前发生变化，请重新保存方案')
       const applied = await applyCommand({
         preparedTextRevision: input.preparedTextRevision,
         scope, production, command,
@@ -3132,6 +3136,7 @@ export async function executeProductProductionCommand(input: {
     ? await hashProductProductionValueV2(command.brief)
     : null
   let preparedSourcePlan: ProductSourcePlanV1 | null = null
+  let preparedChatConsultationWitness: string | undefined
   let preparedConfirmedBrief: ConfirmedProductBriefV1 | null = null
   let preparedCreatorSource: {
     locator: TextOpenWorldCreatorSourceLocatorV1
@@ -3174,6 +3179,7 @@ export async function executeProductProductionCommand(input: {
     }
     const production = await productionInScope(scope, input.productionId!)
     if (command.brief.aiTown) await assertAiTownWorldSourceSelectionHashV1(command.brief.aiTown.sourceSelection)
+    if (command.brief.intent.productType === 'character-interaction') preparedChatConsultationWitness = await readChatConsultationLineageWitnessV1(scope)
     preparedSourcePlan = await createProductProductionSourcePlanV1({
       scope,
       productionKey: production.productionKey,
@@ -3398,6 +3404,7 @@ export async function executeProductProductionCommand(input: {
     preparedPausedBuild = { before, after, runs }
   }
   const request = {
+    preparedChatConsultationWitness,
     preparedTextRevision,
     scope,
     productionId: input.productionId,
