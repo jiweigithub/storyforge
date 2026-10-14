@@ -1,10 +1,25 @@
 # Changelog
 
-Changes are organized by user impact. **Main-branch updates do not mean a new version has been released.** The package version remains 3.9.1; tagged releases retain their original content. Live deployments may lag; see [compatibility](/en/updates/compatibility).
+Changes are organized by user impact. **Main-branch updates do not mean a new version has been released.** The package version is 4.0.0; tagged releases retain their original content, and later main-branch changes do not automatically enter downloaded archives. Live deployments may lag; see [compatibility](/en/updates/compatibility).
+
+## October 14, 2026 · Knowledge-base scrolling
+
+The header and navigation now share an opaque surface that follows light and dark themes, preventing scrolling document text from showing through navigation labels. Persistent tabs remain visible on desktop and narrow screens.
+
+## October 14, 2026 · Text adventure image-preserving revisions, recovery, and web export
+
+This review confirms that [PR #119](https://github.com/yuanbw2025/storyforge/pull/119) entered main (`e40fadce`). These are **main-branch changes after the fixed v4.0.0 release**, not automatic updates to existing downloads or the hosted experience. The product remains a preview.
+
+- Revise final text and retain illustrations (advanced) exports the current draft as JSON, imports text edits, and requires explicit image-retention consent before creating a new version for narrative, dialogue, continuity, and visual checks. Older Builds, images, and saves remain; failed reviews still block publication.
+- Complete backup import rebinds production evidence and restores authorized retained images. Run-ledger export is more efficient for large backups. Missing, corrupt, or unverifiable assets still block recovery rather than being silently replaced with blank images.
+- Frozen rules explicitly settle quest completion and rewards. Feedback and generated prose bind to the current scene, committed actions, and branch, preventing another route's content from leaking into the current save. Saves display verified work versions.
+- Formally released works meeting the existing human-playtest and candidate requirements can Export standalone web game as a static ZIP. Players need neither StoryForge nor an AI configuration. Export does not upload or publish the work, and unpublished playtests cannot bypass eligibility gates.
+
+See [Text adventure](/en/features/interactive/text-adventure), [Backup and restore](/en/guides/backup-restore), and [Compatibility](/en/updates/compatibility). Technical cases and merged code do not establish human acceptance or public release of specific works such as Tidal Bell Isles.
 
 ## October 13, 2026 · v4.0.0 local portable release
 
-The [latest release page](https://github.com/yuanbw2025/storyforge/releases/latest) provides Windows x64, Apple Silicon/Intel Mac and Linux x64 portable packages containing the current main-branch interface, media and Node.js. Extract and launch without npm installation, at the fixed `http://localhost:1111/storyforge/` address. Website and README download links point to the latest release; older releases remain historical records.
+The [latest release page](https://github.com/yuanbw2025/storyforge/releases/latest) provides Windows x64, Apple Silicon/Intel Mac and Linux x64 portable packages containing the interface, media and Node.js frozen for that release. Extract and launch without npm installation, at the fixed `http://localhost:1111/storyforge/` address. Website and README download links point to the latest release; older releases remain historical records.
 
 The [installation guide](/en/getting-started/install) covers platform selection, launch, model configuration and upgrade backups. Built-in works are available for an initial trial; AI requires your own provider, Codex CLI requires separate installation/login, and preview features keep their maturity labels.
 

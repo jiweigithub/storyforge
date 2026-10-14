@@ -44,7 +44,7 @@ Text settings do not automatically configure images, audio, or external video to
 
 ## Cross-origin access and proxies
 
-Browsers may restrict direct calls to third-party APIs. When running locally with `npm run dev`, supported providers can use the development server's local proxy through settings. Deployed builds do not include these proxies and do not show the switch-to-local-proxy button.
+Browsers may restrict direct calls to third-party APIs. When running locally through `npm run dev` or the v4.0.0 portable launcher, supported providers can use a local proxy through settings. The launcher listens only on the local machine and limits supported routes in code. Ordinary hosted deployments do not include these proxies and do not show the switch-to-local-proxy button.
 
 Semantic retrieval presets in deployed builds use the provider's direct endpoint, which still requires the provider to allow browser cross-origin requests. If your deployment supplies a same-origin reverse proxy, enter its Base URL manually. Saved proxy addresses are preserved, and you can explicitly switch back to direct access; opening settings never automatically rewrites saved configuration.
 

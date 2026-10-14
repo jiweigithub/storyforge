@@ -73,3 +73,9 @@ Restore JSON or workspace packages through their supported entries. If an old ba
 The October 4 mainline update improves large JSON file reading and writing, reducing failures caused by constructing one complete string in memory. Image-heavy backups still need sufficient storage and processing time. Confirm the downloaded file exists and verify recovery in an isolated environment before retiring the original environment. Large-file support does not guarantee every device can restore a backup of any size.
 
 Evidence: [Large backups and pause recovery](https://github.com/yuanbw2025/storyforge/commit/3ad7d59d).
+
+### Text-adventure production evidence and large backups
+
+The October 14, 2026 main-branch review confirms that [PR #119](https://github.com/yuanbw2025/storyforge/pull/119) improves production-evidence rebinding after backup import, authorized image recovery, and indexed run-ledger export. Open the restored text-adventure production and check frozen sources, Builds, illustrations, and recovery notices. Evidence requiring review is not publication permission; keep the old environment if media is missing or verification fails.
+
+These main-branch changes came after the fixed v4.0.0 archives and do not automatically enter existing downloads. See [Text adventure](/en/features/interactive/text-adventure) for image-preserving revisions and standalone web packages; complete-project backups still use the dedicated recovery entry described here.

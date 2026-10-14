@@ -1,10 +1,25 @@
 # 更新日志
 
-本页按用户可感知的变化整理。**main 的功能更新不等于已经发布新版本**：当前 package 版本仍为 3.9.1，正式 Release 保持其发布时内容。在线部署可能有时差，见[版本与兼容说明](/updates/compatibility)。
+本页按用户可感知的变化整理。**main 的功能更新不等于已经发布新版本**：当前 package 版本为 4.0.0，正式 Release 保持其发布时内容，后续 main 变化不会自动进入已下载的压缩包。在线部署可能有时差，见[版本与兼容说明](/updates/compatibility)。
+
+## 2026-10-14 · 知识库滚动阅读
+
+顶部标题栏与导航统一采用随浅色、深色主题切换的不透明背景，滚动正文时不再与导航文字叠在一起；桌面和窄屏继续保留常驻页签。
+
+## 2026-10-14 · 文字冒险保图修订、恢复与网页导出
+
+本轮核对确认 [PR #119](https://github.com/yuanbw2025/storyforge/pull/119) 已合入 main（`e40fadce`）。这是 **v4.0.0 固定发布包之后的主干更新**，不会自动出现在现有下载包或官网体验包中；产品仍标为预览。
+
+- “修订定稿并保留插图（高级）”允许下载当前定稿 JSON、导入文字修改并显式确认保图，创建新版本重新审校、检查连贯性和视觉依据；旧 Build、图片与存档保留，未通过审查仍不能发布。
+- 完整备份导入后重新绑定生产证据，恢复受授权图片；优化大备份中的运行账本导出。缺失、损坏或不能复核的素材继续明确阻断，不以空白图片代替成功恢复。
+- 任务完成与奖励按冻结规则显式结算；行动反馈和生成正文绑定当前场景、已提交行动及分支，避免把另一条路线的内容混入当前存档。存档界面显示经核验的作品版本。
+- 已签发且满足既有真人验收与候选资格的作品可“导出独立网页游戏”，生成静态 ZIP；玩家无需安装 StoryForge 或配置 AI。导出不会自动上传公开，未发布试玩不能绕过资格门。
+
+操作见[文字冒险](/features/interactive/text-adventure)、[备份与恢复](/guides/backup-restore)和[版本与兼容](/updates/compatibility)。技术用例与代码交付不代表《潮钟群岛》等具体作品已完成真人验收或公开发布。
 
 ## 2026-10-13 · v4.0.0 本地便携版
 
-[最新发行页](https://github.com/yuanbw2025/storyforge/releases/latest)提供 Windows x64、Mac Apple Silicon/Intel 和 Linux x64 便携包，包含当前主干界面、内置媒资与 Node.js。解压后启动，不需要安装 npm 依赖；固定地址为 `http://localhost:1111/storyforge/`。官网和 README 下载入口同步指向最新发行，旧版继续作为历史记录。
+[最新发行页](https://github.com/yuanbw2025/storyforge/releases/latest)提供 Windows x64、Mac Apple Silicon/Intel 和 Linux x64 便携包，包含发布时冻结的界面、内置媒资与 Node.js。解压后启动，不需要安装 npm 依赖；固定地址为 `http://localhost:1111/storyforge/`。官网和 README 下载入口同步指向最新发行，旧版继续作为历史记录。
 
 [安装指南](/getting-started/install)说明平台选择、启动、模型配置和升级备份。内置作品可先体验；AI 创作需自行配置服务，Codex CLI 需另外安装登录，预览功能保持原成熟度标记。
 
