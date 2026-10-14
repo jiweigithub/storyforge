@@ -407,7 +407,7 @@ test('normal narrative chat opens, accepts refusal, continues and reloads withou
 
 test('v3 production offers initial situations, retains them across refresh and freezes the author selection', async ({page}, info) => {
     test.setTimeout(120000);
-    const response: {candidateOutput: unknown; actor: string} = {candidateOutput: null, actor: ''};
+    const response: {candidateOutput: unknown; reviewOutput: unknown; actor: string} = {candidateOutput: null, reviewOutput: null, actor: ''};
     const calls: string[] = [];
     await page.addInitScript(() => {
         localStorage.setItem('storyforge_guide_completed', 'e2e');
@@ -419,9 +419,10 @@ test('v3 production offers initial situations, retains them across refresh and f
         const prompt = JSON.stringify(body.messages);
         const initial = prompt.includes('初始情境编辑');
         const reviewing = prompt.includes('本次持久化行动候选');
-        const production = calls.length < 2;
-        calls.push(initial ? 'situations' : production ? 'media' : reviewing ? 'review' : 'action');
-        const content = initial ? response.candidateOutput : production
+        const openingReview = prompt.includes('开场的语义审查者');
+        const production = calls.length < 3;
+        calls.push(initial ? 'situations' : openingReview ? 'opening-review' : production ? 'media' : reviewing ? 'review' : 'action');
+        const content = initial ? response.candidateOutput : openingReview ? response.reviewOutput : production
             ? {schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: []}
             : reviewing ? {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'].map(check => ({check, passed: true, reason: '工程夹具，不是质量验收'}))}
             : {kind: 'pause', text: '我先自己核对旧账本，你可以安心休息。', goalKey: 'repair', evidenceFactKeys: ['clock'], audienceKeys: ['player', response.actor], waitingForPlayer: false,
@@ -437,9 +438,10 @@ test('v3 production offers initial situations, retains them across refresh and f
         if (!created.ok) throw new Error(JSON.stringify(created));
         const saved = await execute({scope: f.scope, productionId: created.productionId, command: {type: 'save-brief-revision', commandId: 'e2e.chat-brief', expectedStateRevision: 0, parentRevision: null, brief: f.brief}});
         if (!saved.ok) throw new Error(JSON.stringify(saved));
-        return {scope: f.scope, productionId: created.productionId, candidates: f.candidates};
+        return {scope: f.scope, productionId: created.productionId, candidates: f.candidates, review: (await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts')).chatOpeningReviewFixture(f.candidates, 'option-1')};
     });
     response.candidateOutput = fixture.candidates;
+    response.reviewOutput = fixture.review;
     response.actor = fixture.candidates.options[1].situation.goals[0].actorKey;
     const query = `project=${fixture.scope.projectId}&work=${fixture.scope.workId}&production=${fixture.productionId}`;
     await page.goto(`./chat/vision?${query}`);
@@ -452,10 +454,12 @@ test('v3 production offers initial situations, retains them across refresh and f
     await page.getByRole('button', {name: '启用自动制作', exact: true}).click();
     await page.getByRole('button', {name: '作者授权并开始自动制作', exact: true}).click();
     await expect(page.getByTestId('chat-situation-selection')).toBeVisible({timeout: 60000});
-    expect(calls).toEqual(['situations']);
+    expect(calls).toEqual(['situations', 'opening-review']);
+    await expect(page.getByRole('button', {name: '选择「缺失零件」并继续', exact: true})).toBeDisabled();
+    await expect(page.getByTestId('chat-opening-review')).toHaveCount(3);
     await page.reload();
     await expect(page.getByRole('button', {name: '选择「旧账本」并继续', exact: true})).toBeEnabled();
-    expect(calls).toEqual(['situations']);
+    expect(calls).toEqual(['situations', 'opening-review']);
     await page.setViewportSize({width: 390, height: 844});
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByTestId('chat-situation-selection').screenshot({path: info.outputPath('chat-situation-selection-mobile.png')});
@@ -465,7 +469,7 @@ test('v3 production offers initial situations, retains them across refresh and f
         const db = (await load('/storyforge/src/lib/db/schema.ts')).db;
         return (await db.productBuilds.where('productionId').equals(f.productionId).last())?.status;
     }, fixture), {timeout: 60000}).toBe('release-ready');
-    expect(calls).toEqual(['situations', 'media']);
+    expect(calls).toEqual(['situations', 'opening-review', 'media']);
     const frozen = await page.evaluate(async f => {
         const load = new Function('p', 'return import(p)');
         const service = await load('/storyforge/src/lib/product-production/service.ts');
@@ -490,10 +494,10 @@ test('v3 production offers initial situations, retains them across refresh and f
         return {releaseId: session.productReleaseId, narrative: state.interaction.chatNarrative, messages: state.interaction.messages};}, fixture);
     const before = await readPlayer();
     expect(before.releaseId).toBe(releaseId); expect(before.narrative.situation.title).toBe('旧账本'); expect(before.narrative.persona.name).toBe('你');
-    expect(calls).toEqual(['situations', 'media', 'action', 'review']);
+    expect(calls).toEqual(['situations', 'opening-review', 'media', 'action', 'review']);
     await page.reload(); await expect(page.getByTestId('chat-narrative-controls')).toBeVisible();
     expect(await readPlayer()).toEqual(before);
-    expect(calls).toEqual(['situations', 'media', 'action', 'review']);
+    expect(calls).toEqual(['situations', 'opening-review', 'media', 'action', 'review']);
 });
 test('a persisted narrative action resumes in the browser without another model call and keeps its consequence', async ({page}) => {
     await page.goto('./chat/library');

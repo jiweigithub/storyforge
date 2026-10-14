@@ -16,7 +16,7 @@ import {executeProductProductionCommand} from '../../src/lib/product-production/
 import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
 import {runProductProductionUntilBlockedV1} from '../../src/lib/product-production/scheduler'
 import {readProductProductionDetailsV1, confirmChatSituationDecisionV1, listProductProductionReviewArtifactsV1, retryProductProductionBlockerV1, publishProductProductionV1} from '../../src/lib/product-production/service'
-import {chatSituationCandidatesFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatSituationCandidatesFixture, chatOpeningReviewFixture} from '../helpers/chat-narrative-production-fixture'
 import type {ChatNarrativeProductionSourceV1} from '../../src/lib/character-interaction/narrative-production'
 import {verifyProductBuildTerminalArtifactSetV1} from '../../src/lib/product-production/artifact-store'
 import {createCharacterInteractionInstance} from '../../src/lib/product/runtime-instances'
@@ -133,11 +133,11 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false}, {ma
   let rejectMedia = true
   const runText: ProductionTextRunnerV1 = async request => {
     expect(request.contextText).not.toContain('知道失踪船队真相')
-    const isSituation = request.system.includes('初始情境编辑')
-    calls.push(isSituation ? 'situations' : 'media')
+    const isSituation = request.system.includes('初始情境编辑'), isReview = request.system.includes('开场的语义审查者')
+    calls.push(isSituation ? 'situations' : isReview ? 'opening-review' : 'media')
     const sourceRow = await db.productBuildArtifacts.filter(row => row.artifactKey === 'design.game').last()
     const source = JSON.parse(sourceRow!.payloadJson) as ChatNarrativeProductionSourceV1
-    const output = isSituation ? chatSituationCandidatesFixture(source) : rejectMedia ? {invalid: 'bounded failure after author selection'} : {
+    const output = isSituation ? chatSituationCandidatesFixture(source) : isReview ? chatOpeningReviewFixture(chatSituationCandidatesFixture(source), 'option-1') : rejectMedia ? {invalid: 'bounded failure after author selection'} : {
       schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: [],
     }
     return {output: JSON.stringify(output), usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {
@@ -151,7 +151,7 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false}, {ma
   await execute()
   let details = await readProductProductionDetailsV1(f.scope, productionId)
   expect(JSON.parse(details.build!.failureJson), details.build!.failureJson).toMatchObject({taskKey: 'content.chat-author-gate'})
-  expect(calls).toEqual(['situations'])
+  expect(calls).toEqual(['situations', 'opening-review'])
   db.close(); await db.open()
   details = await readProductProductionDetailsV1(f.scope, productionId)
   const artifacts = await listProductProductionReviewArtifactsV1({scope: f.scope, buildId: details.build!.id!})
@@ -159,12 +159,13 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false}, {ma
   const source = artifacts.find(a => a.artifactKey === 'design.game')!
   expect(candidates).toBeDefined(); expect(source).toBeDefined()
   await expect(confirmChatSituationDecisionV1({scope: f.scope, details, candidatesHash: 'f'.repeat(64), sourceHash: source.contentHash, selectedOptionKey: 'option-2'})).rejects.toThrow('版本')
+  await expect(confirmChatSituationDecisionV1({scope: f.scope, details, candidatesHash: candidates.contentHash, sourceHash: source.contentHash, selectedOptionKey: 'option-1'})).rejects.toThrow()
   await confirmChatSituationDecisionV1({scope: f.scope, details, candidatesHash: candidates.contentHash, sourceHash: source.contentHash, selectedOptionKey: 'option-2'})
   await expect(confirmChatSituationDecisionV1({scope: f.scope, details, candidatesHash: candidates.contentHash, sourceHash: source.contentHash, selectedOptionKey: 'option-3'})).rejects.toThrow()
   await execute()
   details = await readProductProductionDetailsV1(f.scope, productionId)
   expect(JSON.parse(details.build!.failureJson)).toMatchObject({taskKey: 'media.requirements'})
-  expect(calls).toEqual(['situations', 'media', 'media'])
+  expect(calls).toEqual(['situations', 'opening-review', 'media', 'media'])
   // The selected situation is a durable author decision and must survive a
   // later task failure; ordinary retries cannot silently choose a new opening.
   db.close(); await db.open()
@@ -174,7 +175,7 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false}, {ma
   await execute()
   details = await readProductProductionDetailsV1(f.scope, productionId)
   expect(details.build!.status, details.build!.failureJson).toBe('release-ready')
-  expect(calls).toEqual(['situations', 'media', 'media', 'media'])
+  expect(calls).toEqual(['situations', 'opening-review', 'media', 'media', 'media'])
   const completed = await listProductProductionReviewArtifactsV1({scope: f.scope, buildId: details.build!.id!})
   const runtime = parseProductRuntimePackageV1(completed.find(a => a.artifactKey === 'runtime.package')!.payload)
   expect(runtime.interaction?.chatNarrative?.initialSituation.title).toBe('旧账本')
@@ -187,7 +188,7 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false}, {ma
   fixedEnding.narrative.nodes[0].kind = 'ending'
   expect(() => parseProductRuntimePackageV1(fixedEnding)).toThrow('不能混入')
   await execute()
-  expect(calls).toEqual(['situations', 'media', 'media', 'media'])
+  expect(calls).toEqual(['situations', 'opening-review', 'media', 'media', 'media'])
   // Publication must prove both the original paid candidate and the later
   // zero-provider reuse. A valid root row seal alone cannot authorize it.
   const build = details.build!
@@ -250,5 +251,5 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false}, {ma
   const importedId = await importProjectJSON(await exportProjectJSON(f.scope.projectId))
   const restored = (await db.productRuntimeSessions.where('projectId').equals(importedId).toArray()).find(row => row.title === session.title)!
   expect((await readProductRuntimeState(restored.id!)).interaction!.chatNarrative).toEqual(state.interaction!.chatNarrative)
-  expect(calls).toEqual(['situations', 'media', 'media', 'media'])
+  expect(calls).toEqual(['situations', 'opening-review', 'media', 'media', 'media'])
 }, 60_000)

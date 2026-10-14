@@ -585,7 +585,7 @@ export function canRepairTextAdventureRuntimeCopyV1(details: ProductProductionDe
 }
 
 const AUTHOR_REVIEW_ARTIFACT_KEYS = new Set([
-  'content.chat-candidates', 'content.chat-selection',
+  'content.chat-candidates', 'content.chat-selection', 'quality.chat-openings',
   'production.supervision',
   'design.game',
   'content.source-sufficiency',

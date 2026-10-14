@@ -142,6 +142,7 @@ export function isChatNarrativeShellV1(narrative: ProductRuntimePackageV1['narra
 export function chatSituationProductionPromptV1(): string {
   return `你是角色聊天的初始情境编辑。只使用输入中经过作者确认的聊天来源。输出严格 JSON，不加 Markdown。
 生成 settings.narrative.openingCount 个不同且符合 openingSituation 的初始局面；不是完整故事，不写未来分支、结局或玩家承诺。
+保留种子真正要处理的事情。可把眼前的准备或工具检查作为第一步，但不要用它替换原目标；其受阻时仍能选择其他有依据的办法或明确暂停原任务，不能把准备结束当作原任务完成。目标和事项可以保持精简，不要求每个开场都增加主支线。给角色可自行尝试的当前条件，不把所有可能都交还玩家安排。谨慎等人物特征影响方法，不扩成无依据的全面退缩。
 每个局面包含：已发生的背景事实、每位角色自身的欲望/顾虑/边界、角色当前所信、未完成事项及可收束信号、若干可能方向。可能方向不是事实或必须发生的剧情。
 尊重 settings.narrative.permissions 的模式、强度和事项数量；陪伴模式可以没有冲突，允许休息、拒绝和改道。玩家虚构身份来自 playerRole，不推断现实用户信息，不替玩家设定目标、心理、行动或台词。
 使用 participants 中精确的 participantKey。player 是玩家。所有事实与事项必须明确 audienceKeys；未知或秘密不得扩大传播。每个 goal、belief、possibility 只属于该角色，证据必须是该角色可见的事实。

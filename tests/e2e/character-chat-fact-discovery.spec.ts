@@ -32,9 +32,10 @@ test('author explicitly enables hidden-fact discovery and reviews conditions in 
     await execute({scope: f.scope, productionId, command: {type: 'authorize-start', commandId: 'discovery.start', expectedStateRevision: 1, briefRevision: 1, briefHash: saved.result.briefHash, authorizationNonce: 'author.start'}})
     const requirementKey = brief.capabilityRequirements.find((r: {mediaClass: string}) => r.mediaClass === 'text').requirementKey, bindingHash = 'a'.repeat(64)
     const executor = (await load('/storyforge/src/lib/product-production/production-executor.ts')).createConfiguredProductProductionExecutorV1({production: await db.productProductions.get(productionId), brief,
-      runText: async () => {
+      runText: async (request: {system: string}) => {
         const source = JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'design.game').last()).payloadJson)
-        const output = (await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts')).chatSituationCandidatesFixture(source)
+        const helper = await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts'), candidates = helper.chatSituationCandidatesFixture(source)
+        const output = request.system.includes('开场的语义审查者') ? helper.chatOpeningReviewFixture(candidates) : candidates
         return {output: JSON.stringify(output), usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {schema: 'storyforge.provider-binding-receipt', version: 1, requirementKey, adapterId: 'configured-text.v1', adapterVersion: 1, provider: 'fixture', model: 'fixture-model', endpointOrigin: 'https://fixture.invalid', executionLocation: 'browser-direct', credentialSource: 'existing-ai-config', credentialPresent: true, capabilityHash: bindingHash, boundAt: 1, receiptHash: 'b'.repeat(64)}}
       }})
     await (await load('/storyforge/src/lib/product-production/scheduler.ts')).runProductProductionUntilBlockedV1({scope: f.scope, productionId, capabilityBindings: [{requirementKey, adapterId: 'configured-text.v1', bindingHash}], executor})

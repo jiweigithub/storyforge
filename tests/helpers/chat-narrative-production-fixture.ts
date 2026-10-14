@@ -1,3 +1,4 @@
+import {CHAT_OPENING_CHECKS, type ChatOpeningReviewDraftV1} from '../../src/lib/character-interaction/situation-production-review'
 import { seedCurrentProductWorld } from './current-product-world'
 import { createChatDraftV3, selectChatWorldV1, saveChatDraftV1, loadChatSourceProjectionV1, confirmChatSourceReviewV1 } from '../../src/lib/character-interaction/draft-service'
 import { parseChatAuthoringSettings } from '../../src/lib/character-interaction/authoring-contract'
@@ -80,4 +81,11 @@ export function chatSituationCandidatesFixture(source: ChatNarrativeProductionSo
       possibilities: [{actorKey: actor, text: '可以自己检查，也可以先停下来喝茶。', evidenceFactKeys: ['clock']}],
     },
   }))}
+}
+
+export function chatOpeningReviewFixture(candidates: ChatSituationCandidatesV1, rejectedOptionKey?: string): ChatOpeningReviewDraftV1 {
+  return {options: candidates.options.map(option => ({optionKey: option.optionKey, checks: CHAT_OPENING_CHECKS.map(check => ({
+    check, passed: option.optionKey !== rejectedOptionKey || check !== 'viable-agency', reason: '工程审查夹具，不是叙事质量验收。',
+    evidence: [{target: 'option' as const, pointer: '/title', quote: option.title}],
+  }))}))}
 }

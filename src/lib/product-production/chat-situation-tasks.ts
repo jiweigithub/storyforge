@@ -1,3 +1,4 @@
+import {CHAT_OPENING_REVIEW_KEY, assertChatOpeningReviewedV1} from '../character-interaction/situation-production-review'
 import type { ProductProductionBriefV3, ProductProductionRecordV1 } from '../types'
 import type { ProductProductionTaskExecutionInputV1, ProductProductionTaskExecutionResultV1 } from './scheduler'
 import { loadProductProductionWorldSourceCatalogV2 } from './world-source'
@@ -5,7 +6,7 @@ import { prepareChatNarrativeCompilerSourceV1 } from './product-module-compilers
 import {composeChatRoleVoiceRulesV1} from '../character-interaction/role-profile'
 import { canonicalProductProductionJsonV2 } from './hash'
 import {
-  chatNarrativeShellV1, selectChatNarrativeCandidateV1, validateChatNarrativeProductionSourceV1,
+  chatNarrativeShellV1, selectChatNarrativeCandidateV1, validateChatNarrativeProductionSourceV1, parseChatSituationCandidatesV1,
   type ChatNarrativeProductionSourceV1, type ChatSituationSelectionV1,
 } from '../character-interaction/narrative-production'
 
@@ -20,13 +21,17 @@ export function chatProductionSourceV1(input: Pick<ProductProductionTaskExecutio
   validateChatNarrativeProductionSourceV1(source)
   return source
 }
-export async function selectedChatProductionNarrativeV1(input: Pick<ProductProductionTaskExecutionInputV1, 'inputArtifacts'>) {
-  return selectChatNarrativeCandidateV1({
-    source: chatProductionSourceV1(input),
-    candidates: chatProductionArtifactPayloadV1(input, 'content.chat-candidates'),
-    selection: chatProductionArtifactPayloadV1(input, 'content.chat-selection') as ChatSituationSelectionV1,
-  })
+async function reviewedSelection(input: Pick<ProductProductionTaskExecutionInputV1, 'inputArtifacts' | 'task'>, selection: ChatSituationSelectionV1) {
+  const source = chatProductionSourceV1(input), candidates = chatProductionArtifactPayloadV1(input, 'content.chat-candidates')
+  if (input.task.inputArtifactKeys.includes(CHAT_OPENING_REVIEW_KEY)) await assertChatOpeningReviewedV1(
+    chatProductionArtifactPayloadV1(input, CHAT_OPENING_REVIEW_KEY), source, parseChatSituationCandidatesV1(candidates, source), selection.selectedOptionKey)
+  return selectChatNarrativeCandidateV1({source, candidates, selection})
 }
+export async function selectedChatProductionNarrativeV1(input: Pick<ProductProductionTaskExecutionInputV1, 'inputArtifacts' | 'task'>) {
+  return reviewedSelection(input, chatProductionArtifactPayloadV1(input, 'content.chat-selection') as ChatSituationSelectionV1)
+}
+/* Author-gated selections from old frozen plans remain readable. New plans
+ * require the review dependency at selection, assembly and publication. */
 
 export async function executeChatSituationDeterministicTaskV1(input: ProductProductionTaskExecutionInputV1, options: {
   production: ProductProductionRecordV1; brief: ProductProductionBriefV3
@@ -57,8 +62,7 @@ export async function executeChatSituationDeterministicTaskV1(input: ProductProd
       schema: 'storyforge.chat-situation-selection', version: 1,
       ...decision.resolution.chatSituation, authorCommandId: decision.commandId,
     }
-    await selectChatNarrativeCandidateV1({source: chatProductionSourceV1(input),
-      candidates: chatProductionArtifactPayloadV1(input, 'content.chat-candidates'), selection})
+    await reviewedSelection(input, selection)
     artifacts.push(
       {artifactKey: 'content.chat-selection', kind: 'product-design', payload: selection, quality: {authorSelected: true}, rights: {}},
       {artifactKey: 'content.product-module', kind: 'product-module', payload: {
@@ -77,7 +81,7 @@ export async function executeChatSituationDeterministicTaskV1(input: ProductProd
   }}
 }
 
-export async function verifyChatNarrativeShellV1(input: Pick<ProductProductionTaskExecutionInputV1, 'inputArtifacts'>) {
+export async function verifyChatNarrativeShellV1(input: Pick<ProductProductionTaskExecutionInputV1, 'inputArtifacts' | 'task'>) {
   const content = await selectedChatProductionNarrativeV1(input)
   const shell = chatNarrativeShellV1(content)
   if (canonicalProductProductionJsonV2(chatProductionArtifactPayloadV1(input, 'content.narrative')) !== canonicalProductProductionJsonV2(shell)) fail('情境导航与作者选定开场不一致')

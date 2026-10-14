@@ -1,3 +1,4 @@
+import {chatOpeningReviewPromptV1, createChatOpeningReviewV1} from '../character-interaction/situation-production-review'
 import { parseTextAdventureQuestScriptArtifact, textAdventureQuestRecipientsV3 } from '../adventure/quest-settlement'
 import { hasFrozenAuthorUploadRightsV1 } from './media-rights'
 import { TTRPG_SCENARIO_PROMPT_V1 } from '../ttrpg/scenario-prompt'
@@ -47,7 +48,7 @@ import { parseTtrpgCampaignContentV1 } from '../ttrpg/campaign'
 import { parseRulePackV1 } from '../ttrpg/rule-pack'
 import { loadProductProductionWorldSourceCatalogV2 } from './world-source'
 import { chatSituationProductionPromptV1, parseChatSituationCandidatesV1, isChatNarrativeShellV1 } from '../character-interaction/narrative-production'
-import { chatProductionSourceV1, executeChatSituationDeterministicTaskV1, verifyChatNarrativeShellV1 } from './chat-situation-tasks'
+import { chatProductionArtifactPayloadV1, chatProductionSourceV1, executeChatSituationDeterministicTaskV1, verifyChatNarrativeShellV1 } from './chat-situation-tasks'
 import { buildProductWorldSourceBundleV1, verifyProductWorldSourceBundleV1 } from '../product/runtime-canon'
 import { resolveTtrpgProductionRulePackV2 } from '../ttrpg/production-brief'
 import { bindProductionMediaToTtrpgCampaignV1, compileProductionTtrpgCampaignV2 } from '../ttrpg/production-compiler'
@@ -6956,7 +6957,8 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
       })()
     : undefined
   const system = options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.product-module'
-    ? chatSituationProductionPromptV1() : textSystem(
+    ? chatSituationProductionPromptV1() : options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.chat-opening-review'
+      ? chatOpeningReviewPromptV1() : textSystem(
     input.task.taskKey,
     options.brief,
     input.attempt,
@@ -7404,6 +7406,11 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
       productTypeVerified: true,
       protocolDefaultsApplied: legalized.defaultedFields,
     }
+  } else if (input.task.taskKey === 'content.chat-opening-review') {
+    const source = chatProductionSourceV1(input)
+    const report = await createChatOpeningReviewV1(raw, source, parseChatSituationCandidatesV1(chatProductionArtifactPayloadV1(input, 'content.chat-candidates'), source))
+    payload = report; kind = 'quality-report'
+    quality = {reviewedOptions: report.options.length, eligibleOptions: report.options.filter(option => option.checks.every(check => check.passed)).length}
   } else if (input.task.taskKey === 'media.requirements') {
     const cast = options.brief.textAdventure
       ? parseTextAdventureCastBibleArtifactV1({

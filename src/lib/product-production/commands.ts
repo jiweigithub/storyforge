@@ -1,3 +1,4 @@
+import {CHAT_OPENING_REVIEW_KEY, assertChatOpeningReviewedV1} from '../character-interaction/situation-production-review'
 import { canReviseTextContentBuildV1, createTextContentRevisionPlanV1 } from './text-content-revision'
 import Dexie from 'dexie'
 import { db } from '../db/schema'
@@ -21,7 +22,7 @@ import type {
 import { assertRecordInScope, resolveScope, scopeTransactionTables, stampNewRecord } from '../workspace/scope'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from './hash'
 import { parseProductProductionBriefV3, parseProductProductionCommandV1 } from './contracts'
-import { selectChatNarrativeCandidateV1, type ChatNarrativeProductionSourceV1 } from '../character-interaction/narrative-production'
+import { selectChatNarrativeCandidateV1, parseChatSituationCandidatesV1, type ChatNarrativeProductionSourceV1 } from '../character-interaction/narrative-production'
 import {
   createConfirmedProductBriefV1,
   createProductProductionSourcePlanV1,
@@ -2045,6 +2046,12 @@ async function applyCommand(input: {
       const candidates = rows.filter(row => row.artifactKey === 'content.chat-candidates')
       if (source.length !== 1 || candidates.length !== 1) reject('invalid-state-transition', '初始情境来源或候选版本不唯一')
       try {
+        if (parseProductProductionPlanV3(build.planJson).tasks.find(task => task.taskKey === command.blockerKey)?.inputArtifactKeys.includes(CHAT_OPENING_REVIEW_KEY)) {
+          const reports = rows.filter(row => row.artifactKey === CHAT_OPENING_REVIEW_KEY)
+          if (reports.length !== 1) reject('invalid-state-transition', '缺少唯一开场叙事审查')
+          const input = JSON.parse(source[0].payloadJson) as ChatNarrativeProductionSourceV1
+          await assertChatOpeningReviewedV1(JSON.parse(reports[0].payloadJson), input, parseChatSituationCandidatesV1(JSON.parse(candidates[0].payloadJson), input), command.resolution.chatSituation.selectedOptionKey)
+        }
         await selectChatNarrativeCandidateV1({source: JSON.parse(source[0].payloadJson) as ChatNarrativeProductionSourceV1,
           candidates: JSON.parse(candidates[0].payloadJson), selection: {
             schema: 'storyforge.chat-situation-selection', version: 1, ...command.resolution.chatSituation!, authorCommandId: command.commandId,
