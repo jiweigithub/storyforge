@@ -1599,6 +1599,37 @@
             "worldPreserved": true
           },
           "nextWork": "CHAT-02.07/08/11: distinguish casual post-closure reply from a concrete new player request. Add a reviewed bounded transition to a new situation without resurrecting old goals, forcing consent, rewriting established book content or granting hidden knowledge. Complete ordinary observation results under existing author permissions. Compare the preserved prefix plus an independent fresh scenario before acceptance."
+        },
+        "playerFollowupPreflight": {
+          "verifiedAt": "2026-10-14",
+          "sourceHead": "8c4e3d3ba822abd7738b7a919ef87fa1c0e87906",
+          "snapshotManifestSha256": "d90008edff0f964e0c7dbdca1981f4e0f4f706ca738f26e2e0e2e1afe216f88c",
+          "scenarioId": "book-corner-at-closing",
+          "status": "provider-terminal-failure-before-S2-candidate",
+          "scope": "Fresh V48 author draft with explicit allowPlayerFollowupSituations permission. Not a matched-prefix replay; old V47 release and raw failure remain unchanged. Provider failed before any story was generated, so this does not evaluate followup quality.",
+          "evidence": "codex-book-corner-v48.json",
+          "rawEvidenceSha256": "a4efd59259fbc0fab70586405867d0cb3172ce1f0c08ad93307488c450962c71",
+          "acceptedModelCalls": 1,
+          "completedProviderResponses": 0,
+          "failedProviderTurns": 1,
+          "generatedOpenings": 0,
+          "runtimeOpportunities": 0,
+          "totalTokens": null,
+          "costUsd": null,
+          "automaticRetry": false,
+          "diagnosis": "Matching provider turn confirmed failed; sanitized bridge does not establish underlying cause. Diagnostic incorrectly checked view.state rather than status and ended after observation timeout; original timeout and provider terminal proof are both retained. Shared source Harness conservatively retains no-result/unknown; no success or terminal failure was fabricated in its ledger.",
+          "restoration": {
+            "evidence": "codex-book-corner-failure-restoration-v48.json",
+            "rawEvidenceSha256": "f22632a91e4aeef672bfe600297174c3823c05c221d473e5153b7e08233cd7d3",
+            "newModelCalls": 0,
+            "draftEqual": true,
+            "harnessNoResultRetained": true,
+            "requestButtonDisabled": true,
+            "refreshEqual": true,
+            "worldPreserved": true,
+            "noProductionOrRuntime": true
+          },
+          "nextWork": "Obtain real bounded followup-to-result evidence and independent fresh scenario when a chosen provider is available. Preserve historical failed requests without replay. Correct diagnostic state observation for future new runs; formal72episodes and independenthumanreviews remain0."
         }
       },
       {
