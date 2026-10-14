@@ -1,4 +1,5 @@
 import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1, assertChatActionRevisionExpressionV1} from './action-revision'
+import {CHAT_SELF_EXPRESSION_RULES_V1} from './expression-policy'
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1} from './narrative-scheduling'
 import {buildInteractionContextWindow} from './runtime'
@@ -347,6 +348,7 @@ function prompt(input: {
         'kind=complete 仅能陈述角色自己已完成的行为。既有事实不可改写；beliefs 是猜测，possibilities 是未发生的打算。',
         '若本次已完成观察或调查、登记了 observation 事实，但有限结果还须由情境步骤确认，在 situationRequest 中显式加 purpose:"observation-result"，direction 仅请求确认这次观察的结果；evidenceFactKeys 必须包括本次观察事实，evidenceExcerpt 完整包含其原文。这种待确认结果在玩家新消息后仍保留，在下一次获准生成时先确认结果，再回应玩家；它不授权新的行动。只有未来打算的 request 不加此字段，仍可由玩家输入中断。未完成、等待玩家或无观察事实时不可使用。',
         'newFacts 每项为 {factKey,kind,text,evidenceFactKeys,evidenceExcerpt}；只有 complete 且不等玩家时可新增，kind 限作品权限，text 必须逐字出现在实际表达与 evidenceExcerpt 中。',
+        ...CHAT_SELF_EXPRESSION_RULES_V1,
         'disclosures 每项为 {factKey,toParticipantKeys,evidenceExcerpt}，只可披露自己知道的事实，事实原文须逐字出现在表达和摘录中，接收者必须是听众，而且原先不在该事实的 audienceKeys 中。再次提及双方都知道的事实属于普通表达，不要写 disclosures。',
         '通过动作展示信息同样是披露：拿出物品、展开纸条、展示所见，即使角色没有说话，也可能让听众知道原先未知的事实。输出前逐项对照所用事实的 audienceKeys 与本次听众；正文揭示了哪条既有事实，就为实际新获知者登记 disclosures，物理变化另记 newFacts，不能只写物件移动来代替知情变化。披露仍须在正文和摘录中明确包含该事实原文；不要改写真相、复制同义事实或借旁白绕过登记。若只是私下检查而不披露，面向玩家的正文也不能显示未知内容。互斥候选预览仍不得揭示玩家未知事实。',
         'threadUpdates 每项为 {threadKey,status,evidenceExcerpt}，只更新自己参与且知情的剧情线；status 可 open/blocked/paused/resolved/abandoned，须真正改变状态。等待玩家时不能标记 resolved。',

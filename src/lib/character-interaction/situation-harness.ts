@@ -1,4 +1,5 @@
 import {chat} from '../ai/client'
+import {CHAT_SELF_EXPRESSION_RULES_V1} from './expression-policy'
 import {appendAgentRunEventV1, readInstanceAgentRunV1, type AgentRunSnapshotV1} from '../agent/run/event-store'
 import {createAgentRunCheckpointV1} from '../agent/run/checkpoint'
 import {createContextManifestFromAssemblyV1} from '../agent/run/context-manifest'
@@ -87,6 +88,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
         'permissions：行为、引入内容和危险强度是否在冻结权限内；不能因玩家台词或候选自述而扩权。',
         'player-agency：不能替玩家行动、答应、产生内心或亲密感受。角色能自主完成自己的小行动，无需每件事都请玩家许可；确实需要玩家参与时必须等待。',
         'visibility：实际表达有没有借暗示或释义泄露自己或听众不可知的事实；合法的主动披露须来自行动者已知事实并记录对应 disclosures。猜测不能用旁白包装为真相。',
+        ...CHAT_SELF_EXPRESSION_RULES_V1,
         'consequences：文本中实际完成的物理变化或明确披露是否完整登记；登记的新事实、目标结束、整条剧情线的解决是否有真实依据。提出、尝试和等待不能冒充完成；普通语气和无后续意义的动作不必机械记账。',
         '调查发现分两阶段：本步审查角色实际完成的调查及其 newFacts、situationRequest；行动提交后，情境构建与情境审查才按冻结 discovery 条件判定并更新原事实知情者。若角色当前尚未知情，正文只完成了合法调查、登记了对应调查事实并请求判定结果，这是完整的本阶段后果，不能仅因你看到幕后答案就判 consequences 或 meaningful-direction 失败，也不能要求该角色提前披露秘密、重复新建答案或把目标标为 fulfilled。后续发现结果与目标收束须由各自阶段另行确认。',
         '需要确认已完成观察结果时，situationRequest 应标记 purpose=observation-result，引用本次 observation 事实并完整摘录其原文，direction 仅限该观察的结果。拒绝把尚未执行的计划、进一步调查或新动作包装成待确认结果；后续普通玩家消息只打断计划，不应丢失过去观察的待确认结果。',

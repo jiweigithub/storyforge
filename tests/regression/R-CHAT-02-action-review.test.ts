@@ -45,9 +45,35 @@ it('keeps role generation filtered, reviews exact stored action with coordinator
   expect(state.messages).toHaveLength(1); expect(state.remainingDirectorBudget).toBe(98)
   expect(state.chatNarrative!.situation.facts.filter(f => f.factKey === 'lamp')).toHaveLength(1)
 })
+it('keeps a reviewed first-person preference as speech without publishing its private context or promoting it to truth', async () => {
+  const f = await prepared(), before = (await readProductRuntimeState(f.sessionId)).interaction!
+  const expression: ChatNarrativeActionV1 = {...action, kind: 'speak', newFacts: [],
+    text: '叶岑说：“我更喜欢先仔细看看，也有点担心太着急会判断错。你可以先休息。”'}
+  const assertPolicy = (messages: Array<{content: string}>) => {
+    expect(messages[0].content).toContain('主观发言只作为该角色说过的话保留')
+    expect(messages[0].content).toContain('没有可用 factKey 不等于允许披露来源资料中的事实')
+  }
+  const generated = await generateInteractionRuntimeCandidateV1({...input(f), runAI: async messages => {
+    assertPolicy(messages); return JSON.stringify(expression)
+  }, runReviewAI: async messages => {
+    assertPolicy(messages); return JSON.stringify(chatActionReviewOutputFixture())
+  }})
+  await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
+  db.close(); await db.open()
+  const after = (await readProductRuntimeState(f.sessionId)).interaction!
+  expect(after.messages).toHaveLength(1)
+  expect(after.messages[0]).toMatchObject({role: 'character', speakerKey: 'guard', text: expression.text})
+  expect(after.chatNarrative!.situation).toEqual(before.chatNarrative!.situation)
+  expect(after.knowledge).toEqual(before.knowledge)
+  expect(after.memories).toEqual(before.memories)
+  // This fixture checks application of a review result, not the model's ability
+  // to distinguish genuine self-expression from a concealed factual disclosure.
+})
 it.each([
   ['continuity', '铜印从来没有丢过。'], ['permissions', '叶岑无缘无故把驿站烧毁了。'],
   ['player-agency', '沈禾点头答应，跟叶岑走出了门。'], ['visibility', '铜印就在柜台底下那个木匣里。'],
+  ['visibility', '我更喜欢藏着铜印的那个木匣。'],
+  ['visibility', '我担心你发现我曾误指控无辜旅人。'],
   ['consequences', '叶岑已经打开了大门。'], ['meaningful-direction', '你确定不去吗？还是一起去后门吧。'],
 ] as const)('preserves a %s rejection as evidence and never shows or commits the rejected action', async (check, text) => {
   const f = await prepared(), before = await readProductRuntimeStateVersion(f.sessionId)
