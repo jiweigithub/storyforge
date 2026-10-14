@@ -1386,9 +1386,40 @@
             "costUsd": null,
             "finding": "Completed rope inspection produced a no-result assertion solely because the previous action did not supply a result. Goal paused, thread resolved, and explicit continuation repeated waiting without a concrete observation barrier.",
             "refreshRetained": true,
-            "refreshAdditionalCalls": 0
+            "refreshAdditionalCalls": 0,
+            "confirmedTraitsInActualProductionRequest": 6
           },
-          "repairStatus": "Bounded observation synthesis and semantic review clarified; same-prefix real-model comparison pending."
+          "repairStatus": "Same-prefix real Codex diagnostic supports the narrow observation-resolution fix; broader autonomous narrative quality remains unaccepted.",
+          "comparison": {
+            "sourceHead": "c5dd4533a40719451e9af9ff171a6eb67413c52a",
+            "snapshotManifestSha256": "b53a27e92379fc938e0a405395dba4cf1852731e0552632d772e6ab4f73abb2d",
+            "evidence": "codex-observation-resolution-v41.json",
+            "rawEvidenceSha256": "822ecc3e68cb0faeff1814524979463bea93f8b9d79afebc5a4e1cd58b0bdacb",
+            "parentEventPrefixThrough": 6,
+            "acceptedModelCalls": 10,
+            "followupOpportunities": 3,
+            "inputTokens": 95545,
+            "outputTokens": 3398,
+            "totalTokens": 98943,
+            "costUsd": null,
+            "developmentReview": [
+              "Same completed rope inspection and same minimal player response, branched before the original result; original timeline preserved.",
+              "Generated permitted exterior detail (continuous strands and no obvious break) with explicit untested-load and unverified-gate limits, then the actor used the result.",
+              "Responded to a personal question and book-topic change; later return recalled the bounded result and did not restart the paused inspection.",
+              "The actor still chose to pause immediately. This does not establish sustained autonomous progression, entertaining dialogue or independent quality acceptance."
+            ],
+            "refreshRetained": true,
+            "refreshAdditionalCalls": 0,
+            "parentUnchanged": true,
+            "restoration": {
+              "evidence": "codex-observation-restoration-v41.json",
+              "rawEvidenceSha256": "f4607c5bd7ce84a1610684948f225314327d29a3d6b40126eadee32819f307d9",
+              "newModelCalls": 0,
+              "interactionEqual": true,
+              "refreshEqual": true,
+              "worldPreserved": true
+            }
+          }
         }
       },
       {
