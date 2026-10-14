@@ -1,3 +1,4 @@
+import SourceRunFailure from './SourceRunFailure'
 import {useEffect, useRef, useState} from 'react'
 import type {WorkspaceScope} from '../../lib/types'
 import {useAIConfigStore} from '../../stores/ai-config'
@@ -58,16 +59,17 @@ export default function SourceSuggestions(props: {
     </button>
     {error && <p role="alert" className="text-danger">{error}</p>}
     {unfinished && <div className="space-y-2">
-      <p>{view.status === 'unknown' ? '这次请求的结果尚未留存，刷新不会重新发送。可稍后查看；结束等待后，再次生成会发起新请求。'
-        : view.result ? '这次整理尚未完成，可恢复已保存的结果；恢复不调用模型。' : '这次准备尚未完成，没有可恢复的模型回复。请结束该任务后重新选择资料。'}</p>
-      {view.result && <button type="button" className="lf-action" disabled={busy} onClick={() => void act(() => recoverChatSourceReviewRunV1(props.scope, view.runId))}>恢复已保存的建议</button>}
+      {!view.failure && <p>{view.status === 'unknown' ? '这次请求的结果尚未留存，刷新不会重新发送。可稍后查看；结束等待后，再次生成会发起新请求。'
+        : view.result ? '这次整理尚未完成，可恢复已保存的结果；恢复不调用模型。' : '这次准备尚未完成，没有可恢复的模型回复。请结束该任务后重新选择资料。'}</p>}
+      {(view.result || view.failure) && <button type="button" className="lf-action" disabled={busy} onClick={() => void act(() => recoverChatSourceReviewRunV1(props.scope, view.runId))}>{view.failure ? '恢复失败记录' : '恢复已保存的建议'}</button>}
       <button type="button" className="lf-action" disabled={busy} onClick={() => void act(() => cancelChatSourceReviewRunV1(props.scope, view.runId))}>结束这次整理</button>
       <button type="button" className="lf-action" disabled={busy} onClick={() => void act(async () => undefined)}>查看最新结果</button>
     </div>}
     {view?.status === 'stale' && <p role="status">方案或来源已经变化，下面是历史建议，请按当前资料重新判断。</p>}
     {view?.result && <p>下面的建议依据：{view.context?.perspective ? `${props.actors.find(row => row.key === view.context?.perspective?.actorKey)?.label ?? '历史角色'}当时已知的所选资料` : '作者完整审查的所选资料'}。</p>}
     {view?.status === 'cancelled' && <p>这次整理已结束，没有自动重发。</p>}
-    {view?.status === 'blocked' && !view.result && <p>模型服务拒绝了这次请求，没有生成建议。请检查配置或服务状态后再明确发起新请求。</p>}
+    {view?.failure && <SourceRunFailure failure={view.failure} pending={view.status === 'pending'}/>}
+    {view?.status === 'blocked' && !view.result && !view.failure && <p>模型服务拒绝了这次请求，没有生成建议。请检查配置或服务状态后再明确发起新请求。</p>}
     {view?.result?.artifact.issues.map(issue => <p key={issue.code} className={issue.severity === 'error' ? 'text-danger' : 'text-text-muted'}>{issue.message}</p>)}
     {view?.result?.suggestions?.suggestions.map(row => <article key={row.fragmentKey} className="space-y-1 rounded bg-bg-base p-3" data-testid="chat-source-suggestion">
       <strong>{props.labels.get(row.fragmentKey) ?? '历史资料片段'} · {PURPOSES[row.purpose]}</strong>

@@ -1,3 +1,4 @@
+import SourceRunFailure from './SourceRunFailure'
 import {useEffect, useRef, useState} from 'react'
 import type {WorkspaceScope} from '../../lib/types'
 import {parseChatAuthoringSettings, type ChatAuthoringDraftV1} from '../../lib/character-interaction/authoring-contract'
@@ -81,9 +82,9 @@ export default function Consultation({scope, draft, dirty, onSource, onProductio
         {!isAIConfigReady(config) && <p>请先在全局设置中配置文本模型。</p>}
         <button className="lf-action lf-action-primary" disabled={busy || dirty || unfinished || !question.trim() || !isAIConfigReady(config)} onClick={() => void send()}>{busy ? '会谈中…' : '发送'}</button>
         {busy && <button className="lf-action" onClick={() => controller.current?.abort()}>停止</button>}
-        {unfinished && <p>{view?.status === 'unknown' ? '这次请求的结果尚未留存。刷新不会重发；结束等待后，下一次发送会发起新请求。' : '本次会谈尚未完成。已有回复可以恢复；恢复不调用模型。'}</p>}
+        {unfinished && !view?.failure && <p>{view?.status === 'unknown' ? '这次请求的结果尚未留存。刷新不会重发；结束等待后，下一次发送会发起新请求。' : '本次会谈尚未完成。已有回复可以恢复；恢复不调用模型。'}</p>}
         {view && <div className="avg-actions">
-          {unfinished && view.result && <button className="lf-action" disabled={busy} onClick={() => void act(() => recoverChatConsultationV2(scope, view.runId))}>恢复已保存结果</button>}
+          {unfinished && (view.result || view.failure) && <button className="lf-action" disabled={busy} onClick={() => void act(() => recoverChatConsultationV2(scope, view.runId))}>{view.failure ? '恢复失败记录' : '恢复已保存结果'}</button>}
           {view.status !== 'adopted' && view.status !== 'cancelled' && <button className="lf-action" disabled={busy} onClick={() => void act(() => cancelChatConsultationV2(scope, view.runId))}>结束本次讨论</button>}
           <button className="lf-action" disabled={busy} onClick={() => void act(async () => undefined)}>查看最新结果</button>
         </div>}
@@ -97,7 +98,8 @@ export default function Consultation({scope, draft, dirty, onSource, onProductio
       {view?.status === 'cancelled' && <p>本次讨论已结束，候选保留供查阅。</p>}
       {view?.result?.artifact.issues.map(issue => <p key={issue.code}>{issue.message}</p>)}
       {view?.result && !candidate && <details><summary>查看保留的原始回复</summary><p className="whitespace-pre-wrap break-words">{view.result.artifact.originalText}</p></details>}
-      {view?.status === 'blocked' && !view.result && <p>模型服务拒绝了这次请求，没有生成方案；没有自动重发。</p>}
+      {view?.failure && <SourceRunFailure failure={view.failure} pending={view.status === 'pending'}/>}
+      {view?.status === 'blocked' && !view.result && !view.failure && <p>模型服务拒绝了这次请求，没有生成方案；没有自动重发。</p>}
       {candidate ? <>
         <p className="whitespace-pre-wrap">{candidate.answer}</p>
         {candidate.changes.map(change => <article key={change.field} className="space-y-2 rounded border border-border p-3" data-testid="chat-plan-change">

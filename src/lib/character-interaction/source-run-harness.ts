@@ -1,4 +1,5 @@
 import {resolveRequestConfig, type ChatResult} from '../ai/client'
+import {CodexTerminalFailureV1Schema, type CodexTerminalFailureV1} from '../ai/codex-terminal-failure'
 import {estimateTokens} from '../ai/context-budget'
 import {computeKnownCostUsd} from '../ai/usage-log'
 import {createAgentSkillExecutionBindingV1} from '../agent/execution-binding'
@@ -32,14 +33,17 @@ export interface ChatSourceRunPayloadV1<R, Q = ChatSourceReviewRequestV1, C = Ch
   manifest?: {value: ContextManifestV1; sourceText: string}
   response: {raw: string; call: CreativeCallEvidenceV1} | null
   result: R | null
+  /** Absent on historical runs; never reconstructed from an error string. */
+  failure?: CodexTerminalFailureV1
 }
 export interface ChatSourceRunViewV1<R, C = ChatSourceReviewContextV1> {
   runId: number
   status: 'ready' | 'blocked' | 'pending' | 'unknown' | 'cancelled' | 'stale' | 'adopted'
   context: C | null
   result: R | null
+  failure?: CodexTerminalFailureV1
 }
-export type ChatSourceRunBoundaryV1 = 'prepared' | 'model.requested' | 'response.saved' | 'model.responded' | 'candidate.persisted'
+export type ChatSourceRunBoundaryV1 = 'prepared' | 'model.requested' | 'response.saved' | 'model.responded' | 'candidate.persisted' | 'failure.saved' | 'failure.recorded'
 export interface ChatSourceRunProtocolV1<R, Q = ChatSourceReviewRequestV1, C = ChatSourceReviewContextV1> {
   step: string; skill: string; entry: string; category: string; kind: string; verifier: string; lockKey: string
   prompt: string; objective: string; criterion: string; writeTargets: AgentRunWriteTargetV1[]
@@ -118,12 +122,32 @@ async function load(scope: WorkspaceScope, runId: number) {
     if (payload.result && await hashCanonicalValue(payload.result) !== candidateHash
       || snapshot.events.some(event => event.type === 'candidate.persisted' && (!payload.result || event.payload.candidateHash !== candidateHash))) throw new Error('资料整理候选与原始回复不一致')
   }
+  if (payload.failure !== undefined) {
+    const failure = CodexTerminalFailureV1Schema.parse(payload.failure)
+    const code = `codex-turn-${failure.providerTurn.status}`
+    if (payload.model.provider !== failure.provider || payload.model.model !== failure.model || requested.length !== 1
+      || payload.response !== null || payload.result !== null
+      || snapshot.events.some(event => event.type === 'candidate.persisted' || event.type === 'verification.accepted'
+        || event.type === 'step.failed' && (event.payload.stepId !== STEP || event.payload.attempt !== 1 || event.payload.code !== code || event.payload.retryable)
+        || event.type === 'run.failed' && (event.payload.code !== code || event.payload.retryable))) throw new Error('资料整理的失败回执与请求不一致')
+  }
   return {snapshot, payload}
+}
+
+async function finishFailure(scope: WorkspaceScope, snapshot: AgentRunSnapshotV1, failure: CodexTerminalFailureV1,
+  onBoundary?: (boundary: ChatSourceRunBoundaryV1, runId: number) => void | Promise<void>) {
+  if (terminal.has(snapshot.projection.state)) return
+  const code = `codex-turn-${failure.providerTurn.status}`
+  if (snapshot.projection.steps[STEP]?.status !== 'failed')
+    snapshot = await append(scope, snapshot, 'step.failed', {stepId: STEP, attempt: 1, code, retryable: false, category: 'deterministic', action: 'fail'})
+  await onBoundary?.('failure.recorded', snapshot.run.id)
+  await append(scope, snapshot, 'run.failed', {code, retryable: false})
 }
 
 /** Finish a retained response without any provider/config access or new call. */
 async function finish(scope: WorkspaceScope, snapshot: AgentRunSnapshotV1, payload: ChatSourceRunPayloadV1<R, Q, C>,
   onBoundary?: (boundary: ChatSourceRunBoundaryV1, runId: number) => void | Promise<void>) {
+  if (payload.failure) return finishFailure(scope, snapshot, payload.failure, onBoundary)
   if (!payload.response) throw new Error('请求结果尚未留存，不能自动重发')
   const responseHash = await hashCanonicalValue(payload.response.raw)
   if (!snapshot.events.some(event => event.type === 'model.responded'))
@@ -163,15 +187,15 @@ async function read(scope: WorkspaceScope, runId: number): Promise<ChatSourceRun
   const result = payload.result ?? (payload.response ? protocol.createArtifact(payload.response.raw, payload.context, payload.response.call) : null)
   let status: ChatSourceRunViewV1<R, C>['status'] = snapshot.projection.state === 'cancelled' ? 'cancelled'
     : snapshot.projection.state === 'failed' ? 'blocked'
-    : !payload.response ? snapshot.events.some(event => event.type === 'model.requested') ? 'unknown' : 'pending'
+    : !payload.response ? payload.failure ? 'pending' : snapshot.events.some(event => event.type === 'model.requested') ? 'unknown' : 'pending'
     : snapshot.projection.state === 'completed' ? writable ? 'adopted' : 'ready'
     : writable && snapshot.projection.state === 'awaiting_confirmation' ? 'ready' : 'pending'
-  if (status === 'ready' || status === 'blocked') {
+  if (status === 'ready' || status === 'blocked' && result) {
     try {
       if (await hashCanonicalValue(await readContext(scope, payload.request)) !== await hashCanonicalValue(payload.context)) status = 'stale'
     } catch {status = 'stale'}
   }
-  return {runId, status, context: payload.context, result}
+  return {runId, status, context: payload.context, result, ...(payload.failure ? {failure: payload.failure} : {})}
 }
 async function latest(scope: WorkspaceScope) {
   const row = (await reviewRuns(scope))[0]
@@ -250,6 +274,13 @@ async function generate(input: {
     try {
       raw = input.runAI ? await input.runAI(messages) : await protocol.runModel({formalEntry, skill, messages, resolved: resolved!, scope, signal: input.signal, result})
     } catch (cause) {
+      if (result.terminalFailure && model.provider === 'codex' && result.terminalFailure.model === model.model) {
+        payload.failure = CodexTerminalFailureV1Schema.parse(result.terminalFailure)
+        snapshot = await checkpoint(scope, snapshot, payload)
+        await input.onBoundary?.('failure.saved', snapshot.run.id)
+        await finishFailure(scope, snapshot, payload.failure, input.onBoundary)
+        throw cause
+      }
       const status = result.requestLifecycle?.responseStatus
       if (result.requestLifecycle?.phase === 'response-observed' && status != null && status >= 400 && status < 500) {
         snapshot = await append(scope, snapshot, 'step.failed', {stepId: STEP, attempt: 1, code: `provider-rejected-${status}`, retryable: false, category: 'deterministic', action: 'fail'})

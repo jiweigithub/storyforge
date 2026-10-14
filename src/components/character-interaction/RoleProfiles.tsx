@@ -1,3 +1,4 @@
+import SourceRunFailure from './SourceRunFailure'
 import {useEffect, useRef, useState} from 'react'
 import {useAIConfigStore} from '../../stores/ai-config'
 import {isAIConfigReady} from '../../lib/ai/config-readiness'
@@ -81,18 +82,19 @@ export default function RoleProfiles(props: {
       onClick={() => void act(async () => {await generateChatRoleProfileCandidateV1({scope: props.scope, request: {actorKey, fragmentKeys: [...props.selectedKeys], draftRevision: props.draft.revision, projectionHash: props.projection.projectionHash}, config})})}>AI整理人物特征</button>
     {view && <div className="space-y-2" data-testid="chat-role-profile-candidate">
       {view.status === 'unknown' && <p role="status">这次请求结果尚未留存，刷新不会重发。结束等待后才能明确发起新请求。</p>}
-      {view.status === 'pending' && <p role="status">人物整理尚未完成；已有回复可零调用恢复，没有回复时须结束本次任务。</p>}
+      {view.status === 'pending' && !view.failure && <p role="status">人物整理尚未完成；已有回复可零调用恢复，没有回复时须结束本次任务。</p>}
       {view.status === 'stale' && <p role="status">候选依据的方案或来源已经变化，不能采纳；请结束本次任务并按当前资料重新整理。</p>}
       {view.status === 'adopted' && <p role="status">这次候选已采纳；后续修改请编辑上方已保存的人物整理。</p>}
       {view.status === 'cancelled' && <p>本次候选已结束，没有自动重发。</p>}
-      {view.status === 'blocked' && <p role="status">本次人物整理未通过检查，未写入角色资料。可检查原始回复或手工整理。</p>}
+      {view.failure && <SourceRunFailure failure={view.failure} pending={view.status === 'pending'}/>}
+      {view.status === 'blocked' && !view.failure && <p role="status">本次人物整理未通过检查，未写入角色资料。可检查原始回复或手工整理。</p>}
       {view.result?.artifact.issues.map(issue => <p key={issue.code} className={issue.severity === 'error' ? 'text-danger' : 'text-text-muted'}>{issue.message}</p>)}
       {view.result && <details><summary>查看人物整理原始回复</summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">{view.result.artifact.originalText}</pre></details>}
       {view.status === 'ready' && view.result?.candidate && view.context && view.candidateHash && <button type="button" className="lf-action" disabled={disabled} onClick={() => {
         setContext(structuredClone(view.context!)); setTraits(structuredClone(view.result!.candidate!.traits)); setActorKey(view.context!.perspective!.actorKey)
         setAIOrigin({runId: view.runId, candidateHash: view.candidateHash!}); setError('')
       }}>检查并编辑AI人物候选</button>}
-      {view.status === 'pending' && view.result && <button type="button" className="lf-action" disabled={disabled} onClick={() => void act(async () => {await recoverChatRoleProfileRunV1(props.scope, view.runId)})}>恢复已保存的人物整理</button>}
+      {view.status === 'pending' && (view.result || view.failure) && <button type="button" className="lf-action" disabled={disabled} onClick={() => void act(async () => {await recoverChatRoleProfileRunV1(props.scope, view.runId)})}>{view.failure ? '恢复失败记录' : '恢复已保存的人物整理'}</button>}
       {unfinished && <button type="button" className="lf-action" disabled={disabled} onClick={() => void act(async () => {await cancelChatRoleProfileRunV1(props.scope, view.runId); setAIOrigin(null); setContext(null); setTraits([])})}>结束本次人物候选</button>}
       {unfinished && <button type="button" className="lf-action" disabled={disabled} onClick={() => void act(async () => undefined)}>查看人物整理最新结果</button>}
     </div>}
