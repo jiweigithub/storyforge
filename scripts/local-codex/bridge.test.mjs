@@ -81,12 +81,14 @@ test('provider-confirmed failure/interruption persists across restart without re
     const providerTurn = { threadId: 'thread', turnId: 'turn', status }; let calls = 0
     const f = await fixture(t, async (_input, notify) => {
       calls++; notify({ dispatched: true }); notify({ text: 'unaccepted partial output' })
-      throw new CodexTurnError(providerTurn)
+      throw new CodexTurnError(providerTurn, {httpConnectionFailed: {httpStatusCode: 429, raw: 'private diagnostic'}})
     })
     const body = input(); await f.request('/requests', body)
     const record = await (await f.request(`/requests/${body.id}`)).json()
     assert.equal(record.status, status === 'failed' ? 'failed' : 'cancelled')
     assert.deepEqual(record.providerTurn, providerTurn)
+    assert.equal(JSON.stringify(record).includes('private'), false)
+    if (status === 'failed') assert.match(record.error, /httpConnectionFailed，HTTP 429/)
     assert.equal(record.dispatched, true)
     assert.equal((await f.request('/requests', body)).status, 200)
     const directory = mkdtempSync(join(tmpdir(), 'sf-terminal-restart-'))

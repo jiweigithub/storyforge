@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events'
 import { PassThrough, Writable } from 'node:stream'
 import { CodexRuntime, ISOLATION } from './runtime.mjs'
 
-function fixture(t, { account = { type: 'chatgpt', email: 'test@example.com' }, config = ISOLATION, instructions = [], model = 'test', tool = false, version = '0.162.0', terminal = 'completed', foreignTerminal = false, disconnected = false } = {}) {
+function fixture(t, { account = { type: 'chatgpt', email: 'test@example.com' }, config = ISOLATION, instructions = [], model = 'test', tool = false, version = '0.162.0', terminal = 'completed', foreignTerminal = false, disconnected = false, codexErrorInfo } = {}) {
   const calls = []; const spawned = []
   const runtime = new CodexRuntime({ spawnProcess: (executable, args, options) => {
     spawned.push({ executable, args, options })
@@ -32,7 +32,7 @@ function fixture(t, { account = { type: 'chatgpt', email: 'test@example.com' }, 
         emit({ method: 'item/completed', params: { threadId: 'thread', item: { type: 'agentMessage', id: 'comment', phase: 'commentary', text: 'not author content' } } })
         emit({ method: 'item/completed', params: { threadId: 'thread', item: { type: 'agentMessage', id: 'answer', phase: 'final_answer', text: '{"title":"候选"}' } } })
         emit({ method: 'thread/tokenUsage/updated', params: { threadId: 'thread', tokenUsage: { last: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } } } })
-        emit({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn', status: terminal, error: { message: 'private provider diagnostic', additionalDetails: 'private input' } } } })
+        emit({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn', status: terminal, error: { message: 'private provider diagnostic', additionalDetails: 'private input', codexErrorInfo } } } })
       })
     } })
     return child
@@ -103,5 +103,35 @@ test('disconnect and unrecognized completion remain unknown without terminal pro
     assert.equal(error.providerTurn, undefined)
     assert.match(error.message, /未知/)
     assert.equal(calls.filter(v => v.method === 'turn/start').length, 1)
+  }
+})
+
+test('matched terminal failure exposes only allowlisted protocol types and bounded HTTP status', async t => {
+  for (const [codexErrorInfo, expected] of [
+    ['usageLimitExceeded', '使用额度已达上限；usageLimitExceeded'],
+    ['badRequest', '请求参数未被提供商接受；badRequest'],
+    [{httpConnectionFailed: {httpStatusCode: 429, private: 'private token'}}, '上游连接失败；httpConnectionFailed，HTTP 429'],
+    [{responseStreamDisconnected: {httpStatusCode: 503}}, '回复流已断开；responseStreamDisconnected，HTTP 503'],
+    [{responseStreamDisconnected: {httpStatusCode: 'private token'}}, '回复流已断开；responseStreamDisconnected'],
+    [{httpConnectionFailed: {httpStatusCode: 700}}, '上游连接失败；httpConnectionFailed'],
+  ]) {
+    const {runtime, calls} = fixture(t, {terminal: 'failed', codexErrorInfo})
+    const error = await runtime.generate(input, () => {}, new AbortController().signal).catch(e => e)
+    assert.ok(error.message.includes(expected))
+    assert.equal(JSON.stringify(error).includes('private'), false)
+    assert.equal(error.message.includes('private'), false)
+    assert.equal(calls.filter(v => v.method === 'turn/start').length, 1)
+    assert.deepEqual(error.providerTurn, {threadId: 'thread', turnId: 'turn', status: 'failed'})
+  }
+})
+test('missing, unknown or malformed error variants do not leak or invent a diagnosis', async t => {
+  for (const codexErrorInfo of [null, 'private-token-variant', '__proto__', 'httpConnectionFailed', ['unauthorized'],
+    {private: 'private input'}, {unauthorized: {private: 'private input'}},
+    {httpConnectionFailed: {httpStatusCode: 401}, private: 'private input'},
+  ]) {
+    const {runtime} = fixture(t, {terminal: 'failed', codexErrorInfo})
+    const error = await runtime.generate(input, () => {}, new AbortController().signal).catch(e => e)
+    assert.equal(error.message, 'Codex 已确认本次生成失败；未完成内容不会成为正式候选，不会自动重发。')
+    assert.equal(JSON.stringify(error).includes('private'), false)
   }
 })
