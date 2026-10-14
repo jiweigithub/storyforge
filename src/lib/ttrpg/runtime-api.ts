@@ -36,6 +36,9 @@ export {
   startTtrpgOpenRunV1,
   startTtrpgOpenEpochV1,
   closeTtrpgOpenEpochV1,
+  reserveTtrpgOpenModelCallV1,
+  dispatchTtrpgOpenModelCallV1,
+  finishTtrpgOpenModelCallV1,
   startTtrpgOpenOperationV1,
   confirmTtrpgOpenOperationV1,
   selectTtrpgOpenOperationEffectV1,
@@ -47,10 +50,13 @@ export {
   advanceTtrpgWorldTurnV1,
   ttrpgOpenOperationCommandIdV1,
   type FormalTtrpgCommandEnvelope,
+  type TtrpgOpenModelCallCommandV1,
 } from './runtime-commands'
 
 /** Internal open recovery is explicit; player routes remain gated until joint acceptance. */
 export { resumeTtrpgOpenOperationV1 } from './open-operation-coordinator'
+/** Actor reader foundation; formal open Skill/Context registration is still required before model dispatch. */
+export { loadTtrpgOpenPlayerContextV1 } from './open-player-context'
 
 export {
   applyProductRuntimeEvent,

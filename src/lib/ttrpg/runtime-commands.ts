@@ -39,6 +39,9 @@ import { hashProductProductionValueV2 } from "../product-production/hash";
 import { createTtrpgOpenRulePlanV1, ttrpgOpenMechanicalStateHashV1, parseTtrpgOpenRuleRequestV1, type TtrpgOpenRuleRequestV1 } from './open-rule-plan';
 import { parseTtrpgOpenOperationV1, ttrpgOpenOperationStepsV1, nextTtrpgOpenOperationStepV1 } from './open-operation';
 import { resolveTtrpgOpenRuleMechanicalV1 } from './open-rule-resolution';
+import { parseTtrpgOpenModelCallV1, assertTtrpgOpenCallReservationV1, type TtrpgOpenModelCallV1 } from './open-model-calls';
+import { verifyTtrpgOpenModelCallEvidenceV1, assertTtrpgOpenAgentEvidenceUnchangedV1, type TtrpgOpenAgentEvidenceV1 } from './open-model-call-evidence';
+import { resolveScope } from '../workspace/scope';
 import type { ProductRuntimeEventType, ProductRuntimeSession, ProductRuntimeEvent, ProductRuntimeState, TtrpgCharacterSheetV2, TtrpgRuntimeCampaignSessionV2, TtrpgRuntimeCampaignMemoryV2, TtrpgRuntimeRosterEntryV2, TtrpgRuntimeSupplementReceiptV2, TtrpgRuntimeWorldEvolutionV2, TtrpgRuntimeVersionTransitionV2, TtrpgCampaignContentV1, TtrpgRuntimeIntentReceiptV2, TtrpgRuntimeHumanResponseV2, TtrpgRuntimeRestReceiptV2, TtrpgRuntimeModelEvidenceV1 } from "../types";
 export interface FormalTtrpgCommandEnvelope {
   sessionId: number;
@@ -77,6 +80,9 @@ type FormalTtrpgEventType = Extract<
   | "ttrpg.open.run.started"
   | "ttrpg.open.epoch.started"
   | "ttrpg.open.epoch.closed"
+  | "ttrpg.open.call.reserved"
+  | "ttrpg.open.call.dispatched"
+  | "ttrpg.open.call.finished"
   | "ttrpg.open.operation.started"
   | "ttrpg.open.operation.step.completed"
   | "ttrpg.open.operation.completed"
@@ -98,6 +104,7 @@ function assertScriptedTtrpgCampaign(
 const OPEN_FOUNDATION_COMMANDS: readonly FormalTtrpgEventType[] = [
   "ttrpg.open.run.started", "ttrpg.world-turn.advanced",
   "ttrpg.open.epoch.started", "ttrpg.open.epoch.closed",
+  "ttrpg.open.call.reserved", "ttrpg.open.call.dispatched", "ttrpg.open.call.finished",
   "ttrpg.open.operation.started", "ttrpg.open.operation.step.completed", "ttrpg.open.operation.completed",
   "ttrpg.open.intent.confirmed", "ttrpg.open.intent.disposed", "ttrpg.rule.action.resolved", "ttrpg.effects.applied",
   "ttrpg.situation.changed", "ttrpg.open.failure.logged",
@@ -227,6 +234,7 @@ async function appendFormalTtrpgCommand(
       actorKey: string | null;
       targetKey: string | null;
       payload: Record<string, unknown>;
+      agentEvidence?: TtrpgOpenAgentEvidenceV1;
     }>;
     afterCommit?: (context: {
       session: ProductRuntimeSession;
@@ -295,7 +303,7 @@ async function appendFormalTtrpgCommand(
   }
   if (
     previewState.ttrpg.product.safety.status === "paused" &&
-    !["ttrpg.safety.changed", "ttrpg.open.failure.logged", "ttrpg.open.epoch.closed", "ttrpg.open.intent.disposed"].includes(input.type)
+    !["ttrpg.safety.changed", "ttrpg.open.failure.logged", "ttrpg.open.epoch.closed", "ttrpg.open.intent.disposed", "ttrpg.open.call.finished"].includes(input.type)
   ) {
     throw new Error(
       "[ttrpg] 战役已由安全工具暂停；恢复后才能继续规则、场景或 AI 主持。",
@@ -342,6 +350,7 @@ async function appendFormalTtrpgCommand(
       db.ttrpgSessionParticipants,
       db.productReleases,
       db.productBuilds,
+      ...(previewBuilt.agentEvidence ? [db.agentRuns, db.agentRunEvents, db.agentRunArtifacts] : []),
     ],
     async () => {
       const session = await db.productRuntimeSessions.get(input.sessionId);
@@ -438,6 +447,7 @@ async function appendFormalTtrpgCommand(
       // The state hash, release bytes, seed and next sequence were all compared
       // above, so the preflight result is the exact deterministic command plan.
       // Reusing it also keeps WebCrypto outside Dexie's active transaction.
+      if (previewBuilt.agentEvidence) await assertTtrpgOpenAgentEvidenceUnchangedV1(previewBuilt.agentEvidence);
       const event: ProductRuntimeEvent = { ...preparedEvent };
       state = applyProductRuntimeEvent(state, event);
       if (stableJson(state) !== stableJson(preparedState)) {
@@ -608,6 +618,111 @@ export async function closeTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
   });
 }
 
+export interface TtrpgOpenModelCallCommandV1 extends FormalTtrpgCommandEnvelope {
+  requestKey: string; viewerKey: string; runId: number;
+}
+
+async function openModelCallEnvelopeV1(input: TtrpgOpenModelCallCommandV1, step: 'dispatch' | 'finish'): Promise<FormalTtrpgCommandEnvelope> {
+  const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg);
+  if (!runtime?.openRun?.coordination.calls.some(call => call.requestKey === input.requestKey)) throw new Error('[ttrpg-open-call] 请求预留不存在');
+  const commandId = await ttrpgOpenScopedKeyV1(runtime.sessionKey, 'call', [input.requestKey, step]);
+  const prior = await db.productRuntimeEvents.where('[sessionId+commandId]').equals([input.sessionId, commandId]).first();
+  return { sessionId: input.sessionId, commandId, baseSequence: prior?.baseSequence ?? input.baseSequence,
+    baseStateHash: prior?.baseStateHash ?? input.baseStateHash };
+}
+
+async function openModelCallCallerV1(context: {
+  session: ProductRuntimeSession; state: ProductRuntimeState; participants: import('../types').TtrpgSessionParticipantRecordV2[];
+}, viewerKey: string, checkCurrentAuthorization: boolean) {
+  const runtime = parseTtrpgRuntimeStateV2(context.state.ttrpg);
+  const epoch = runtime?.openRun?.coordination.epochs.find(epoch => epoch.epochKey === runtime.openRun!.coordination.activeEpochKey);
+  if (!runtime?.openRun || !runtime.authorization || !epoch || epoch.status !== 'active' || epoch.viewerKey !== viewerKey) throw new Error('[ttrpg-open-call] 缺少本人活动授权窗口');
+  if (checkCurrentAuthorization) {
+    assertTtrpgOpenAuthorizationCurrentV1({ authorization: runtime.authorization, participants: context.participants, viewerKey });
+    assertTtrpgOpenEpochAuthorityV1({ epoch, authorization: runtime.authorization, viewerKey,
+      authorizationHash: await hashProductProductionValueV2(runtime.authorization) });
+  }
+  const scope = await resolveScope({ scope: { projectId: context.session.projectId, worldId: context.session.worldId!, workId: context.session.workId! } });
+  return { runtime, epoch, scope };
+}
+
+/** No provider is sent here. The exact request and manifest must already belong to a durable Run. */
+export async function reserveTtrpgOpenModelCallV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; runId: number; actorKey: string; skillId: string; stepId: string; attempt: number;
+  runContractHash: string; inputManifestHash: string; requestHash: string;
+  admissionStateHash: string; visibilityHash: string; runtimeSourceHash: string;
+  reservedInputTokens: number; reservedOutputTokens: number; reservedCostUsd: number;
+}): Promise<ProductRuntimeEvent> {
+  const viewerKey = openKey(input.viewerKey, 'viewerKey');
+  const metadata = { actorKey: input.actorKey, skillId: input.skillId, stepId: input.stepId, attempt: input.attempt,
+    runContractHash: input.runContractHash, inputManifestHash: input.inputManifestHash, requestHash: input.requestHash,
+    admissionStateHash: input.admissionStateHash, visibilityHash: input.visibilityHash, runtimeSourceHash: input.runtimeSourceHash,
+    reservedInputTokens: input.reservedInputTokens, reservedOutputTokens: input.reservedOutputTokens, reservedCostUsd: input.reservedCostUsd };
+  return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.open.call.reserved', intent: { viewerKey, ...metadata },
+    build: async context => {
+      const content = requireTtrpgOpenContent(context.ttrpgContent);
+      if (!content.campaign.runtimePolicy.enabled || metadata.reservedOutputTokens > content.campaign.runtimePolicy.maximumOutputTokens) {
+        throw new Error('[ttrpg-open-call] 冻结运行策略未启用 AI 或输出超过授权上限');
+      }
+      const { runtime, epoch, scope } = await openModelCallCallerV1(context, viewerKey, true);
+      const call = parseTtrpgOpenModelCallV1({ ...metadata,
+        requestKey: await ttrpgOpenScopedKeyV1(runtime.sessionKey, 'request', [epoch.epochKey, input.commandId]), authorizationEpochKey: epoch.epochKey,
+        createdRef: { sessionKey: runtime.sessionKey, sequence: context.sequence }, dispatchRef: null, terminalRef: null,
+        status: 'prepared', providerRequestId: null, responseArtifactHash: null, usage: null, terminalReason: null });
+      assertTtrpgOpenCallReservationV1({ epoch, calls: runtime.openRun!.coordination.calls, requestKey: call.requestKey,
+        inputTokens: call.reservedInputTokens, outputTokens: call.reservedOutputTokens, maximumCostUsd: call.reservedCostUsd });
+      const agentEvidence = await verifyTtrpgOpenModelCallEvidenceV1({ scope, sessionId: input.sessionId, runId: input.runId, call, mode: 'reserve' });
+      return { actorKey: call.actorKey, targetKey: null, payload: { call, viewerKey }, agentEvidence };
+    },
+  });
+}
+
+/** Persist immediately before the external send; a lost result becomes unknown, never an implicit retry. */
+export async function dispatchTtrpgOpenModelCallV1(input: TtrpgOpenModelCallCommandV1 & {
+  providerRequestId?: string | null;
+}): Promise<{ event: ProductRuntimeEvent; sendAuthorized: boolean }> {
+  const viewerKey = openKey(input.viewerKey, 'viewerKey');
+  const envelope = await openModelCallEnvelopeV1(input, 'dispatch');
+  const providerRequestId = input.providerRequestId ?? null;
+  let sendAuthorized = false;
+  const event = await appendFormalTtrpgCommand({ ...envelope, type: 'ttrpg.open.call.dispatched', intent: { requestKey: input.requestKey, viewerKey, providerRequestId },
+    build: async context => {
+      const { runtime, scope } = await openModelCallCallerV1(context, viewerKey, true);
+      const previous = runtime.openRun!.coordination.calls.find(call => call.requestKey === input.requestKey);
+      if (!previous || previous.status !== 'prepared') throw new Error('[ttrpg-open-call] 请求只能由 prepared 派发一次');
+      const call = parseTtrpgOpenModelCallV1({ ...previous, status: 'dispatched', providerRequestId,
+        dispatchRef: { sessionKey: runtime.sessionKey, sequence: context.sequence } });
+      const agentEvidence = await verifyTtrpgOpenModelCallEvidenceV1({ scope, sessionId: input.sessionId, runId: input.runId, call, mode: 'dispatch' });
+      return { actorKey: call.actorKey, targetKey: null, payload: { call, viewerKey }, agentEvidence };
+    },
+    afterCommit: async () => { sendAuthorized = true; },
+  });
+  return { event, sendAuthorized };
+}
+
+/** Completion records external usage even after safety pause or stale input; it cannot apply model output. */
+export async function finishTtrpgOpenModelCallV1(input: TtrpgOpenModelCallCommandV1 & {
+  status: 'succeeded' | 'failed' | 'unknown'; responseArtifactHash: string | null;
+  providerRequestId?: string | null; usage: NonNullable<TtrpgOpenModelCallV1['usage']>; terminalReason: string;
+}): Promise<ProductRuntimeEvent> {
+  const viewerKey = openKey(input.viewerKey, 'viewerKey');
+  const envelope = await openModelCallEnvelopeV1(input, 'finish');
+  const terminal = structuredClone({ status: input.status, responseArtifactHash: input.responseArtifactHash,
+    usage: input.usage, terminalReason: input.terminalReason });
+  return appendFormalTtrpgCommand({ ...envelope, type: 'ttrpg.open.call.finished',
+    intent: { requestKey: input.requestKey, viewerKey, providerRequestId: input.providerRequestId ?? null, ...terminal },
+    build: async context => {
+      const { runtime, scope } = await openModelCallCallerV1(context, viewerKey, false);
+      const previous = runtime.openRun!.coordination.calls.find(call => call.requestKey === input.requestKey);
+      if (!previous || !['prepared', 'dispatched'].includes(previous.status)) throw new Error('[ttrpg-open-call] 请求已终态或不存在');
+      const call = parseTtrpgOpenModelCallV1({ ...previous, ...terminal, providerRequestId: input.providerRequestId ?? previous.providerRequestId,
+        terminalRef: { sessionKey: runtime.sessionKey, sequence: context.sequence } });
+      const agentEvidence = await verifyTtrpgOpenModelCallEvidenceV1({ scope, sessionId: input.sessionId, runId: input.runId, call, mode: 'finish' });
+      return { actorKey: call.actorKey, targetKey: null, payload: { call, viewerKey }, agentEvidence };
+    },
+  });
+}
+
 export interface TtrpgOpenOperationCommandV1 extends FormalTtrpgCommandEnvelope {
   operationKey: string; frozenPlanHash: string; viewerKey: string;
 }
@@ -751,7 +866,7 @@ export async function applyTtrpgOpenOperationEffectV1(input: TtrpgOpenOperationC
         const bindings = operation.plan.request.effectBindings[templateKey];
         const primitives = template.alternatives.length ? template.alternatives.find(alternative => alternative.alternativeKey === operation.pendingChoice!.selectedAlternativeKey)!.effects : template.effects;
         const effects: import("../types").TtrpgEffectPrimitiveV2[] = primitives.flatMap(effect => {
-          if (effect.family === "knowledge" || effect.family === "story") throw new Error("[ttrpg] 后果 owner 尚未接入，必须保留待办。");
+          if (effect.family === "knowledge" || (effect.family === "story" && effect.operation !== "location.set")) throw new Error("[ttrpg] 后果 owner 尚未接入，必须保留待办。");
           const targetRef = effect.targetRef.startsWith("parameter:") ? bindings[effect.targetRef.slice(10)] : effect.targetRef;
           return targetRef === null ? [] : [{ ...effect, targetRef }];
         });

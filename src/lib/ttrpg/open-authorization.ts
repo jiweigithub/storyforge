@@ -147,17 +147,26 @@ export function createTtrpgOpenAuthorizationV1(input: {
   })
 }
 
-export function assertTtrpgOpenAuthorizationCurrentV1(input: {
+/** Shared current-row check; read-only actor views do not grant approval authority. */
+export function assertTtrpgOpenAuthorizationRowsCurrentV1(input: {
   authorization: TtrpgOpenAuthorizationV1
   participants: TtrpgSessionParticipantRecordV2[]
-  viewerKey: string
-}): TtrpgOpenSeatAuthorityV1 {
+}): TtrpgOpenAuthorizationV1 {
   const authorization = parseTtrpgOpenAuthorizationV1(input.authorization)
   const expected = [...authorization.seats].sort((a, b) => a.seatKey.localeCompare(b.seatKey))
   const selected = new Set(authorization.selectedActorKeys)
   const actual = input.participants.filter(seat => seat.role === 'gm' || (seat.actorKey !== null && selected.has(seat.actorKey)))
     .map(seatProjection).sort((a, b) => String(a.seatKey).localeCompare(String(b.seatKey)))
   if (stableProductRuntimeJsonV1(actual) !== stableProductRuntimeJsonV1(expected)) fail('授权席位 revision/控制权/同意策略已变化，计划 stale')
+  return authorization
+}
+
+export function assertTtrpgOpenAuthorizationCurrentV1(input: {
+  authorization: TtrpgOpenAuthorizationV1
+  participants: TtrpgSessionParticipantRecordV2[]
+  viewerKey: string
+}): TtrpgOpenSeatAuthorityV1 {
+  const authorization = assertTtrpgOpenAuthorizationRowsCurrentV1(input)
   const actor = authorization.seats.find(seat => seat.viewerKey === input.viewerKey)
   if (!actor || actor.controller === 'ai' || actor.assignmentState !== 'claimed') fail('当前 viewer 没有真人主持授权')
   return actor

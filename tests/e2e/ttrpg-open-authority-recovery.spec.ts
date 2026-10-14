@@ -133,3 +133,63 @@ test('open operation: causal effects and time resume after a real browser reload
   expect(final.ticks).toHaveLength(1)
   expect(final.ticks[0].byEventSequence).toBe(fixture.ruleSequence)
 })
+
+test('open model journal: one two-tab send permit and unknown result survive reload without resend', async ({ page, context }) => {
+  await page.goto('./')
+  const fixture = await page.evaluate(async () => {
+    const importer = new Function('path', 'return import(path)') as (path: string) => Promise<any>
+    const { preparedOpenTtrpgCallV1 } = await importer('/storyforge/tests/helpers/open-ttrpg-call.ts')
+    const { openEnvelopeV1 } = await importer('/storyforge/tests/helpers/open-ttrpg-session.ts')
+    const call = await preparedOpenTtrpgCallV1()
+    const event = await call.reserve()
+    const requestKey = JSON.parse(event.payloadJson).call.requestKey
+    return { sessionId: call.fixture.sessionId, requestKey, runId: call.snapshot().run.id,
+      viewerKey: call.reservation.viewerKey, reservation: call.reservation,
+      ...await openEnvelopeV1(call.fixture.sessionId, 'browser.call.dispatch') }
+  })
+  const other = await context.newPage()
+  await other.goto('./')
+  const dispatch = (tab: typeof page) => tab.evaluate(async input => {
+    const importer = new Function('path', 'return import(path)') as (path: string) => Promise<any>
+    const { dispatchTtrpgOpenModelCallV1 } = await importer('/storyforge/src/lib/ttrpg/runtime-api.ts')
+    const result = await dispatchTtrpgOpenModelCallV1(input)
+    return { eventId: result.event.id, sendAuthorized: result.sendAuthorized }
+  }, fixture)
+  const results = await Promise.all([dispatch(page), dispatch(other)])
+  expect(results.filter(result => result.sendAuthorized)).toHaveLength(1)
+  expect(results[0].eventId).toBe(results[1].eventId)
+  await other.close()
+  await page.reload()
+  const unknown = await page.evaluate(async input => {
+    const importer = new Function('path', 'return import(path)') as (path: string) => Promise<any>
+    const { db } = await importer('/storyforge/src/lib/db/schema.ts')
+    const api = await importer('/storyforge/src/lib/ttrpg/runtime-api.ts')
+    const { openEnvelopeV1 } = await importer('/storyforge/tests/helpers/open-ttrpg-session.ts')
+    const beforeCount = await db.productRuntimeEvents.where('sessionId').equals(input.sessionId).count()
+    const before = await api.readProductRuntimeState(input.sessionId)
+    await api.readProductRuntimeState(input.sessionId)
+    const readCount = await db.productRuntimeEvents.where('sessionId').equals(input.sessionId).count()
+    await api.finishTtrpgOpenModelCallV1({ ...input, ...await openEnvelopeV1(input.sessionId, 'browser.call.unknown'),
+      status: 'unknown', responseArtifactHash: null,
+      usage: { source: 'unknown', inputTokens: null, outputTokens: null, actualCostUsd: null }, terminalReason: 'interrupted-after-dispatch' })
+    let rejectedResend = ''
+    try { await api.reserveTtrpgOpenModelCallV1({ ...input.reservation, ...await openEnvelopeV1(input.sessionId, 'browser.call.new') }) }
+    catch (error) { rejectedResend = String(error) }
+    const state = await api.readProductRuntimeState(input.sessionId)
+    return { beforeCount, readCount, beforeStatus: before.ttrpg.openRun.coordination.calls[0].status,
+      state, rejectedResend, afterCount: await db.productRuntimeEvents.where('sessionId').equals(input.sessionId).count() }
+  }, fixture)
+  expect(unknown.beforeStatus).toBe('dispatched')
+  expect(unknown.beforeCount).toBe(unknown.readCount)
+  expect(unknown.afterCount).toBe(unknown.beforeCount + 1)
+  expect(unknown.rejectedResend).toMatch(/预算/)
+  expect(unknown.state.ttrpg.openRun.coordination.calls[0].status).toBe('unknown')
+  expect(unknown.state.ttrpg.openRun.coordination.epochs[0].actualCostUsd).toBeNull()
+  await page.reload()
+  const reloaded = await page.evaluate(async sessionId => {
+    const importer = new Function('path', 'return import(path)') as (path: string) => Promise<any>
+    const { readProductRuntimeState } = await importer('/storyforge/src/lib/ttrpg/runtime-api.ts')
+    return readProductRuntimeState(sessionId)
+  }, fixture.sessionId)
+  expect(reloaded).toEqual(unknown.state)
+})

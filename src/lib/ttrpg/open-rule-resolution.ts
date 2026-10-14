@@ -18,7 +18,7 @@ export async function resolveTtrpgOpenRuleMechanicalV1(input: {
     return resolveTtrpgRuleActionMechanicalV1({ state, rulePack: plan.rulePack, action,
       actorKey: request.actorKey, targetKey: request.targetKey, seed: input.seed, commandId: input.operationKey,
       sequence, currentRound: runtime.openRun.worldTime.worldTurn, advanceConditions: false,
-      situationalModifier: 0, rollVisibility: 'public', actorSkill: skill(request.actorKey),
+      situationalModifier: 0, rollVisibility: plan.rollVisibility, actorSkill: skill(request.actorKey),
       opponentSkill: request.targetKey ? skill(request.targetKey) : null })
   }
   const definition = plan.genericCheck!
@@ -35,7 +35,7 @@ export async function resolveTtrpgOpenRuleMechanicalV1(input: {
   const check: TtrpgRuntimeCheck = { eventSequence: sequence, actorKey: request.actorKey, skill: definition.title,
     expression: `${resolved.keptDice.length}d${model.sides}${modifier > 0 ? `+${modifier}` : modifier < 0 ? modifier : ''}`,
     dice: resolved.keptDice, modifier, total: resolved.total, dc: resolved.difficulty,
-    success: ttrpgDegreeSucceededV2(resolved.degree), visibility: 'public',
+    success: ttrpgDegreeSucceededV2(resolved.degree), visibility: plan.rollVisibility,
     rule: { actionKey: definition.checkKey, checkKey: resolved.checkKey, attributeKey: resolved.attributeKey,
       skillKey: definition.checkKey, skillValue: 0, diceModelKey: resolved.diceModelKey, rolledDice: resolved.dice,
       keptDice: resolved.keptDice, degree: resolved.degree, mode: resolved.mode, successes: resolved.successes,

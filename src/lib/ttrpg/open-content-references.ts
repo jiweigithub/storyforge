@@ -223,7 +223,10 @@ export function validateOpenContentReferences(c: TtrpgCampaignContentV2, rule: R
       case 'advancement': p.known(e.advancementKey, [...c.advancementMilestones.map(m => m.milestoneKey), ...rule.attributes.map(a => a.key), ...rule.characterSheetUi.sections.flatMap(s => s.fieldKeys), rule.advancement.currencyKey], e.effectKey); break
       case 'social': p.known(e.socialKey, socialKeys, e.effectKey); break
       case 'story':
-        if (e.operation === 'location.set') { target(e.targetRef, template, ['actor']); p.known(e.storyKey, locations, e.effectKey) }
+        if (e.operation === 'location.set') {
+          target(e.targetRef, template, ['actor']); p.known(e.storyKey, locations, e.effectKey)
+          if (e.value !== e.storyKey) p.fail(`${e.effectKey}: location.set 的 value 必须等于冻结地点 storyKey`)
+        }
         if (e.operation === 'secret.reveal') p.known(e.storyKey, secrets.keys(), e.effectKey)
         if (e.operation === 'quest.set') p.known(e.storyKey, quests.keys(), e.effectKey)
         if (e.operation === 'world-fact.candidate') p.known(e.storyKey, facts.keys(), e.effectKey)

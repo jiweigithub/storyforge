@@ -68,6 +68,9 @@ export async function createContextGatewayToolSessionV1(input: {
     .map(source => ({ source, provider: source.resources }))
     .sort((left, right) => left.source.key.localeCompare(right.source.key))
   if (!providers.length) fail('provider', 'Policy 没有可用的 CONTEXT_SOURCES Provider')
+  if (providers.some(binding => binding.source.requiresResourceKeyAllowList) && input.allowedResourceKeys == null) {
+    fail('resource-allow-list', '角色运行来源必须提供内核计算的明确资源 allow-list')
+  }
   const fingerprints = await Promise.all(providers.map(binding => binding.provider.fingerprint(input.scope)))
   if (new Set(fingerprints).size !== 1) fail('scope', 'Provider 对冻结 scope 的 fingerprint 不一致')
   const allowedResourceKeys = input.allowedResourceKeys == null

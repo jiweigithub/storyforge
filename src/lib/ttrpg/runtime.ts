@@ -1,3 +1,4 @@
+import { initializeTtrpgOpenMechanicalFactsV1 } from './open-fact-authority';
 import type {
   ProductRuntimeState,
   RulePackV1,
@@ -613,6 +614,7 @@ export function createInitialTtrpgOpenProductStateV1(input: {
     mechanicalRulePack: input.mechanicalRulePack,
     sessionKey: input.sessionKey,
   });
+  initializeTtrpgOpenMechanicalFactsV1(state, input.content);
   return state;
 }
 

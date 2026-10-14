@@ -1,3 +1,4 @@
+import { parseTtrpgOpenKnowledgeV1, type TtrpgOpenKnowledgeEntryV1 } from './open-knowledge';
 import type {
   TtrpgRuntimeState,
 } from "../types";
@@ -116,6 +117,7 @@ export interface TtrpgOpenRunStateV1 {
   coordination: TtrpgOpenCoordinationV1;
   operations: TtrpgOpenOperationV1[];
   ruleReceipts: TtrpgOpenRuleReceiptV1[];
+  knowledge: TtrpgOpenKnowledgeEntryV1[];
 }
 
 /**
@@ -521,7 +523,7 @@ export function parseTtrpgOpenRunStateV1(
       "consultedThisWorldTurn",
       "coordination",
       "operations",
-      "ruleReceipts",
+      "ruleReceipts", "knowledge",
     ],
     "openRun",
   );
@@ -638,6 +640,7 @@ export function parseTtrpgOpenRunStateV1(
     coordination: parseTtrpgOpenCoordinationV1(row.coordination, sessionKey),
     operations: Array.isArray(row.operations) ? row.operations.map(value => parseTtrpgOpenOperationV1(value, sessionKey)) : fail("operations 必须是数组"),
     ruleReceipts: Array.isArray(row.ruleReceipts) ? row.ruleReceipts.map(parseTtrpgOpenRuleReceiptV1) : fail("ruleReceipts 必须是数组"),
+    knowledge: parseTtrpgOpenKnowledgeV1(row.knowledge),
   };
 }
 
@@ -701,6 +704,8 @@ export function parseTtrpgRuntimeStateV2(
     || (row.openRun !== null && authorization === null)) fail("open 授权与 Session Zero 状态不一致");
   const openRun = row.openRun === null ? null : parseTtrpgOpenRunStateV1(row.openRun, sessionKey);
   if (openRun && authorization) {
+    if (openRun.knowledge.some(entry => entry.acquisitionRef.sessionKey !== sessionKey
+      || entry.recipientActorKeys.some(actorKey => !authorization.seats.some(seat => seat.role === "player" && seat.actorKey === actorKey)))) fail("knowledge 身份/来源不闭合");
     if (new Set(openRun.operations.map(operation => operation.operationKey)).size !== openRun.operations.length
       || new Set(openRun.ruleReceipts.map(receipt => receipt.operationKey)).size !== openRun.ruleReceipts.length
       || openRun.operations.filter(operation => ["awaiting-approval", "executing"].includes(operation.status)).length > 1
@@ -798,9 +803,9 @@ export function createTtrpgOpenRunStateV1(
       closedAtWorldTurn: null,
     },
     consultedThisWorldTurn: 0,
-    coordination: { activeEpochKey: null, epochs: [] },
+    coordination: { activeEpochKey: null, epochs: [], calls: [] },
     operations: [],
-    ruleReceipts: [],
+    ruleReceipts: [], knowledge: [],
   };
 }
 

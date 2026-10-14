@@ -26,8 +26,10 @@ export function parseTtrpgMechanicalResultV1(value: unknown): TtrpgMechanicalRes
   }, 1000)
   const abilityChange = row.abilityChange === null ? null : (() => {
     const r = p.record(row.abilityChange, ['stateKey', 'before', 'after', 'sharedPoolKey', 'sharedPoolBefore', 'sharedPoolAfter'], 'ability change')
-    return { stateKey: p.key(r.stateKey, 'ability state key'), before: parseTtrpgAbilityRuntimeStateV2(r.before),
-      after: parseTtrpgAbilityRuntimeStateV2(r.after), sharedPoolKey: p.nullable(r.sharedPoolKey, p.key, 'shared pool key'),
+    const before = parseTtrpgAbilityRuntimeStateV2(r.before), after = parseTtrpgAbilityRuntimeStateV2(r.after)
+    const stateKey = ttrpgAbilityStateKeyV2(before.actorInstanceId, before.abilityKey)
+    if (r.stateKey !== stateKey || after.actorInstanceId !== before.actorInstanceId || after.abilityKey !== before.abilityKey) p.fail('能力结果的复合身份不匹配')
+    return { stateKey, before, after, sharedPoolKey: p.nullable(r.sharedPoolKey, p.key, 'shared pool key'),
       sharedPoolBefore: r.sharedPoolBefore === null ? null : parseTtrpgUsagePoolStateV2(r.sharedPoolBefore),
       sharedPoolAfter: r.sharedPoolAfter === null ? null : parseTtrpgUsagePoolStateV2(r.sharedPoolAfter) }
   })()

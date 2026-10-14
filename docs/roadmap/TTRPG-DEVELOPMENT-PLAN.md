@@ -2805,7 +2805,7 @@ P1 的提交顺序必须是：先加 `docs/roadmap/TTRPG-DEVELOPMENT-PLAN.md`，
 |---|---|---|
 | 1. 接手与版本兼容 | 核验交接包、保留原成果、修复类型及新旧格式串线，使现有作品继续可用 | 本次接手修复与基线验收完成：全项目 CI 通过，旧跑团隔离浏览器回归 9 项通过；不代表 open 产品或全部 P2a 用户流程完成 |
 | 2. 规则行动与恢复 | 无场景的真实团局可完成一次规则行动，刷新/中断后不重复效果或耗时 | 进行中：Session Zero/epoch、初始机械状态、规则裁定/后果/因果耗时与待选恢复已实现；必需后续 owner 与跨阶段合作链待接入 |
-| 3. 世界信息与作者制作 | 来源/角色知识有边界，作者能正常制作、检查和发布 open 作品 | P2c/P2d 待实施，领域保存入口和纯模块不代替作者端端到端路径 |
+| 3. 世界信息与作者制作 | 来源/角色知识有边界，作者能正常制作、检查和发布 open 作品 | 进行中：P2c 的机械初值/当前谓词、知识容器/投影、真实世界字段来源校验已接入；正式发现/传播、来源血缘/模型调用、P2d 正常作者端端到端路径继续实施 |
 | 4. 连续合作体验 | Oracle、压力、局势、AI KP 与 2–3 队友接入同一正式行动链 | 按 P4 → P5 → P6a → P3 顺序；保留的纯模块不算正式接入 |
 | 5. 联合验收 | 正常生产、连续合作、秘密边界、回放/分支/恢复和旧作品兼容同时成立 | P6b 后才可开放标准入口；P7–P10 按前置继续，真人/真实模型证据独立记录 |
 
@@ -2858,3 +2858,25 @@ P1 的提交顺序必须是：先加 `docs/roadmap/TTRPG-DEVELOPMENT-PLAN.md`，
 - 此增量未新增表、schema/备份版本、正式模型调用或公共玩家入口。来源知识、作者端生产、Oracle/事实/压力/局势与合作链继续按 §31 施工，能力基线保持未完成。定向跑团回归 51 文件、389 项通过；浏览器旧流程 9 项加 open 授权/规则恢复 2 项共 11 项通过。全项目 CI 以本增量最终回执为准，未完成的检查不记为通过。
 
 本增量最终工程回执：`npm run ci` 通过（818 测试文件、4,596 项测试；覆盖率、构建、依赖审计及全部工程闸门通过），`npm run ci:e2e` 跑团定向 11 项通过。检查期间源码指纹一致。以上仅证明本增量工程与隔离浏览器路径，不代表正常 open 作者生产、完整行动后续 owner、真实模型或真人合作验收。
+
+### 35.6 P2c 来源权威与角色知识增量（施工中）
+
+- `open-fact-authority.ts` 由冻结 initial-state 条目建立既有机械 owner 的开局值。位置/物品持有分别校验实体绑定和库存；位置的物理 open/blocked/damaged 存实体属性，destroyed 使用 lifecycleStatus；角色 damaged 由现有 HP 求值且初值不得与冻结角色卡冲突；物品损伤与位置委托现有耐久/库存/持有人位置，不建立镜像值。社会关系使用现有 `subject:relationship:object` 有符号余额（正为 allied、负为 hostile），债务使用 `subject:debt:object`；相互矛盾的初值拒绝。
+- 正式 open 的 world-fact 谓词读当前 owner 投影，冻结语义 invariant 与发布索引/来源 hash 不变。初始位置、持有或耐久不会在行动后仍作为“最终值”裁定。知识也进入准入基线；确认事件不使计划过期，但实际准入知识变化使旧计划 stale。
+- `openRun.knowledge` 有严格来源/接收者/密级/可靠性/字段 hash 解析与初始化。角色知识不依赖局势仍 active，也不以模板的 party 标记表示已经发现；只有 observed 授予可过客观 evidence 门，hearsay/belief 保留标签供阅读。历史 party 授予不自动扩展给后来角色，公开投影排除 private/gm-only。正式 discovery/share 写入仍属于后续 P4，当前容器保持空初始化，不伪造发现事件。
+- 规则目标与效果绑定验证行动者自己的冻结受众、活动实体和已选真人名单，不能借真人批准者的秘密替 AI 队友获得知情。复合能力 stateKey 从真实 actor/ability 身份校验，允许两个合法长 key 的组合，拒绝混合身份。
+- open Brief 的准备/保存/开始复用中立世界网关与冻结 SourcePlan 权限，读取实际冻结资源，核对 sourceFieldRefs 的资源 hash 和真实字段路径，最后复验 WorldRelease 身份。读取权限、hash 或路径不合法时不保存 Brief、不开始 Build；正常作者测试使用实际世界字段，不用编造字段来源充数。这是可追溯性校验，不宣称自然语言推断的事实绝对正确；作者确认仍独立保留。
+- `coordination.calls` 的版本化生命周期及纯预算约束已接入解析，区分 prepared/dispatched/succeeded/failed/unknown、原始响应工件 hash、实际/估算/未知用量。未知派发结果保留预算并拒绝新请求；失败不抹去请求次数或费用，实际超额也须保留证据而后停止。请求摘要由真实回执派生，导入时拒绝隐藏 pending 的伪造汇总。
+- `reserveTtrpgOpenModelCallV1` / `dispatchTtrpgOpenModelCallV1` / `finishTtrpgOpenModelCallV1` 已接入具名事件和纯 reducer。预留要求冻结策略启用 AI、当前真人 epoch、同一实例/角色的真实 Run、已登记 `prose.ttrpg-open-intent` Skill、完整实际 Context Manifest、同 attempt 的原始请求和模型请求绑定；输入/输出/调用/费用同时受 Run、Skill 与 epoch 限制。Run、事件与 exact 工件在运行事件事务内再次比较，不能用手填 hash 替代证据。调用 payload 只保存稳定角色、session/epoch 引用和 hash，不保存本机 runId、provider 配置或密钥。
+- 派发返回 `{ event, sendAuthorized }`，只有首次成功事务返回一次性 `sendAuthorized: true`；重放和并发竞争者只拿到历史回执，不能再次发送。派发前复验授权/角色视图/机械准入 hash；派发后中断且无响应记 unknown，读状态不触发请求。成功/有响应失败先通过现有受治理 exact artifact 入口保存原始响应，并要求同 attempt 的模型响应事件。终态可在安全暂停或机械输入过期后保存已产生费用，但不能采纳旧输出或执行行动。正式 provider 执行器和候选采纳仍待接通，目前这些测试未发送真实模型请求。
+- `loadTtrpgOpenPlayerContextV1` 只读取一个已确认玩家的资料，核对当前席位/同意策略与跨来源读取期间的状态。其他角色仅有可见的同地身份，未读取 GM profile 或其他玩家秘密；开局观察明确标为 release 时点，不以隐藏 NPC 的当前状态覆盖角色记忆。知识字段 hash 必须仍对应冻结可读字段。
+- `ttrpgOpenAuthority` / `ttrpgOpenKnowledge` 已登记 CONTEXT_SOURCES 和 AI Manual，分别提供完整角色契约、自己的能力账本、必读规则目录、逐条获授行动/可见 generic check、开局观察及知识资源。规则目录不泄露 GM 后果模板或隐藏前置谓词；能力可用性读当前次数、冷却、共享池、条件和资源，查询不扣账。Context Gateway 使用固定 instance/World/Work/稳定 runtimeActorKey 和内核资源 allow-list，拒绝无明确资源边界的宽读。JSON 只能 full 读取，超预算拒绝而非截断；原始 runtime head/其他角色原文不可读取。metadata cursor 绑定角色、状态与查询，缓存每次先重新验证源/权限，返回副本避免调用方污染。登记来源和候选 Skill 不代表完整 AI 跑团交付。
+- 规则计划冻结 rollVisibility 并遵守现有暗骰策略，generic 的 gm/actor 受众保守使用 gm-only；不会把暗骰强制公开。location.set 已作为既有实体 owner 的机械效果接入同一幂等结算链，value 必须等于已冻结合法地点 storyKey；其他未交付 story/knowledge 效果仍保留待办，不写入旧故事账本充数。
+- 本增量无新增表、schema/备份版本或公开玩家入口。P2c 尚需完整来源血缘/切点与剩余结算、正式 provider 执行器/候选链和实际 Gateway 运行清单的贯通；P2d 及后续 Oracle/压力/局势/合作/四门和 P7–P10 仍按 §31 完成。`bdda6ee6` 的全 CI/11 项 E2E 回执仅属于上一提交，不能用于宣布本增量全项目验证通过。
+
+本段定向证据：接入工作树后的跑团回归 56 文件、408 项通过；加入真实来源校验及伪造 hash/path/permission 零写入反例后，作者路径 33 项通过。全项目 CI 与本段最终浏览器验证待最终稳定快照，不记为已通过。
+
+
+### 35.9 工具 schema 版本绑定复验
+
+P2c 冻结快照的整仓 CI 跑完 827 文件、4648 项测试：4647 项通过，`R-HARNESS18-execution-version-freshness` 的真实工具 schema hash 校验失败。因此该次 CI 明确记为失败。实测工具快照 SHA-256 为 `3e56e3ab40a630f0d39f22072e8423688b880b050d3fdcdb591bdc76c0fcb46a`；从快照删去新增 `ttrpgOpenAuthority` / `ttrpgOpenKnowledge` 两个注册源后恰好恢复旧哈希，证明失败由注册源闭集扩展引起。工具 schema 版本按已有约束升级为 `agent-read-tools-v7`，架构门同步锁定真实新哈希，未放松校验。修复后的版本绑定及模型请求账本 16 项定向测试通过；完整 CI 仍须属于修复后快照，未通过前不提交该交付单元。

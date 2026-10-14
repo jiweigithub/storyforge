@@ -114,6 +114,16 @@ describe('R-TTRPGOPEN1 deterministic operations and causal time', () => {
     await assertReplay(fixture.sessionId)
   })
 
+  it.each(['existing-action', 'generic-check'] as const)('keeps the frozen hidden dice policy for %s', async route => {
+    const fixture = await setup(route)
+    await approve(fixture.sessionId)
+    await resolveTtrpgOpenOperationRuleV1(await input(fixture.sessionId, 'rule'))
+    const after = await runtime(fixture.sessionId)
+    expect(after.runtime.openRun!.operations[0].plan.rollVisibility).toBe('gm-only')
+    expect(after.runtime.openRun!.ruleReceipts[0].result.check!.visibility).toBe('gm-only')
+    await assertReplay(fixture.sessionId)
+  })
+
   it.each(['rule', 'mechanics', 'time.1', 'time.1.receipt'])('recovers after interruption at %s without duplicate effects or time', async boundary => {
     const fixture = await setup()
     await approve(fixture.sessionId)
@@ -273,6 +283,28 @@ describe('R-TTRPGOPEN1 deterministic operations and causal time', () => {
     await finishMechanical(fixture.sessionId)
     expect((await runtime(fixture.sessionId)).runtime.product.conditions.hero).toHaveLength(0)
     expect((await runtime(fixture.sessionId)).runtime.round).toBe(0)
+    await assertReplay(fixture.sessionId)
+  })
+
+  it('applies a frozen move once through the entity owner and restores it without repeating time', async () => {
+    const fixture = await setup('generic-check', 'hero', pkg => {
+      const campaign = pkg.ttrpg!.campaign
+      campaign.entityBindings.push({ bindingKey: 'market', templateKey: 'market', kind: 'location', sourceResourceRef: null,
+        sourceFieldRefs: [], initialLocationRef: null, initialInventoryRefs: [], audience: 'public', knownByActorKeys: [] })
+      const base = campaign.effectPlanTemplates[0]
+      campaign.effectPlanTemplates = DEGREES.map(degree => ({ ...structuredClone(base), degree,
+        planKey: degree === 'success' ? 'plan.success' : `move.${degree}`,
+        effects: [{ effectKey: 'move.market', family: 'story', operation: 'location.set',
+          targetRef: 'parameter:actor', storyKey: 'market', value: 'market' }] }))
+      for (const template of campaign.effectPlanTemplates) pkg.ttrpg!.rulePack.content.genericChecks[0].effectPlanByDegree[template.degree] = template.planKey
+    })
+    await approve(fixture.sessionId)
+    await finishMechanical(fixture.sessionId)
+    const after = await runtime(fixture.sessionId), op = after.runtime.openRun!.operations[0]
+    expect(after.state.entities.hero.locationKey).toBe('market')
+    expect(after.state.clock).toBe(1)
+    await resumeTtrpgOpenOperationV1({ sessionId: fixture.sessionId, operationKey: op.operationKey, frozenPlanHash: op.planHash, viewerKey: OPEN_HUMAN_VIEWER })
+    expect((await runtime(fixture.sessionId)).state.clock).toBe(1)
     await assertReplay(fixture.sessionId)
   })
 

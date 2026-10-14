@@ -22,7 +22,8 @@ import type { RulePackV2 } from "../../src/lib/ttrpg/open-contract";
 import { parseRulePackV2 } from "../../src/lib/ttrpg/rule-pack-v2";
 import { hashProductProductionValueV2 } from "../../src/lib/product-production/hash";
 import { executeProductProductionCommand } from "../../src/lib/product-production/commands";
-import { createConfirmedProductBriefV1 } from "../../src/lib/product/source-contracts";
+import { createConfirmedProductBriefV1, resolveProductSourceReadBoundaryV1 } from "../../src/lib/product/source-contracts";
+import { listWorldSemanticResourceDescriptorsV1, readWorldSemanticResourceV1 } from "../../src/lib/context-gateway/world-release-client";
 import { createMistHarborWorld } from "../../src/lib/world-engine/mist-harbor-preset";
 import { createWorldRevision, publishWorldRevision } from "../../src/lib/world-engine/releases";
 import * as worldReferenceApi from "../../src/lib/world-engine/world-reference";
@@ -120,6 +121,22 @@ async function openBriefFixture() {
 async function openDomainFixture() {
   const existing = await scriptedProduction();
   const settings = readySettings();
+  const sourcePlan = JSON.parse(existing.briefRow.sourcePlanJson) as ProductSourcePlanV1;
+  const boundary = await resolveProductSourceReadBoundaryV1(sourcePlan);
+  const descriptors = await listWorldSemanticResourceDescriptorsV1(boundary.sourceScope);
+  const descriptor = descriptors.find(item => boundary.allowedResourceKeys.includes(item.resourceKey) && item.worldSemantic?.resourceKind === "location")!;
+  const resource = await readWorldSemanticResourceV1({ scope: boundary.sourceScope, descriptor });
+  if (typeof resource.value.name !== "string") throw new Error("fixture location has no canonical name");
+  for (const row of settings.openAuthoring.factPolicy) {
+    row.fact.sourceResourceRefs = [descriptor.resourceKey];
+    row.fact.sourceFieldRefs = [{ resourceKey: descriptor.resourceKey, fieldPath: "name", contentHash: descriptor.contentHash }];
+  }
+  for (const template of settings.openAuthoring.situationTemplates) {
+    template.sourceRefs = [descriptor.resourceKey];
+    for (const evidence of template.evidence) evidence.sourceResourceRefs = [descriptor.resourceKey];
+  }
+  for (const clock of settings.openAuthoring.pressure.clocks) clock.sourceRefs = [descriptor.resourceKey];
+  for (const front of settings.openAuthoring.pressure.fronts) front.sourceRefs = [descriptor.resourceKey];
   const rule = await saveTtrpgRulePackV2({ scope: existing.made.scope, rulePack: openRule() });
   settings.wizard.ruleOrigin = "saved-rule-pack";
   settings.wizard.savedRulePackId = rule.id!;
@@ -381,6 +398,27 @@ describe("open Brief V3 冻結合同", () => {
 });
 
 describe("open Brief V3 DB domain", () => {
+  it.each(["hash", "path", "permission"] as const)("rejects forged source %s before saving a Brief or starting a Build", async mutation => {
+    const fixture = await openDomainFixture();
+    const settings = settingsFromTtrpgDraft(fixture.draft);
+    if (!isTtrpgAuthoringSettingsV2(settings) || settings.runFormat !== "open") throw new Error("requires open Settings");
+    const fact = settings.openAuthoring.factPolicy[0].fact;
+    if (mutation === "hash") fact.sourceFieldRefs[0].contentHash = "0".repeat(64);
+    else if (mutation === "path") fact.sourceFieldRefs[0].fieldPath = "missing.field";
+    else {
+      fact.sourceResourceRefs = ["world.unselected"];
+      fact.sourceFieldRefs[0].resourceKey = "world.unselected";
+    }
+    const edited = await saveTtrpgDraft(fixture.request.scope, fixture.draft.revision, settings, "open");
+    const before = await db.productProductions.get(fixture.production.id!);
+    const briefs = await db.productProductionBriefs.where("productionId").equals(fixture.production.id!).toArray();
+    const builds = await db.productBuilds.count();
+    await expect(saveTtrpgOpenBriefV3({ ...fixture.request, revision: edited.revision, commandId: `forged.source.${mutation}` }))
+      .rejects.toThrow(/来源|permission/);
+    expect(await db.productProductions.get(fixture.production.id!)).toEqual(before);
+    expect(await db.productProductionBriefs.where("productionId").equals(fixture.production.id!).toArray()).toEqual(briefs);
+    expect(await db.productBuilds.count()).toBe(builds);
+  });
   it("saves raw V3 through the public service, confirms start through authorize-start, and replays duplicates", async () => {
     const fixture = await openDomainFixture();
     const oldBrief = fixture.briefRow;

@@ -1,3 +1,4 @@
+import { projectTtrpgOpenWorldFactsV1 } from './open-fact-authority'
 /** Frozen deterministic rule admission. Model suggestions cannot set difficulty or costs. */
 import type { ProductRuntimeState, RulePackV1 } from '../types'
 import type { TtrpgRuntimeContentV2 } from './content-version'
@@ -36,6 +37,7 @@ export interface TtrpgOpenRulePlanV1 {
   affectedActorKeys: string[]
   requiredApprovals: Array<{ actorKey: string; allowedSeatKeys: string[] }>
   skillValues: Record<string, number>
+  rollVisibility: 'public' | 'gm-only'
 }
 function fail(message: string): never { throw new Error(`[ttrpg-open-rule-plan] ${message}`) }
 
@@ -55,7 +57,7 @@ export function parseTtrpgOpenRuleRequestV1(value: unknown): TtrpgOpenRuleReques
     controllerMode: p.oneOf(r.controllerMode, ['human', 'ai'], 'controllerMode'), effectBindings }
 }
 
-/** Only mechanical authorities contribute; confirmations and display events do not stale a plan. */
+/** Admission owners contribute; confirmations and display events do not stale a plan. */
 export async function ttrpgOpenMechanicalStateHashV1(state: ProductRuntimeState): Promise<string> {
   const runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
   if (!runtime?.openRun) fail('open 团局未启动')
@@ -63,6 +65,7 @@ export async function ttrpgOpenMechanicalStateHashV1(state: ProductRuntimeState)
     inventory: runtime.product.inventory, abilities: runtime.product.abilityStates, pools: runtime.product.usagePools,
     effectLedger: runtime.product.effectLedger, customizations: runtime.product.characterCustomizations,
     worldTime: runtime.openRun.worldTime, clocks: runtime.openRun.clocks, fronts: runtime.openRun.fronts,
+    knowledge: runtime.openRun.knowledge,
     situations: runtime.openRun.situations, safetyStatus: runtime.product.safety.status })
 }
 
@@ -70,9 +73,40 @@ export function ttrpgOpenPredicateContextV1(state: ProductRuntimeState, content:
   const runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
   if (!runtime?.openRun) fail('open 团局未启动')
   const product = runtime.product
+  const rulePack = projectTtrpgRulePackMechanicalCoreV1(content.rulePack.content)
+  const availableAbilityKeys = (actorKey: string, granted: readonly string[]) => granted.filter(abilityKey => {
+    const actor = state.entities[actorKey]
+    const action = rulePack.actions.find(action => action.key === abilityKey)
+    const ability = product.abilityStates[ttrpgAbilityStateKeyV2(actorKey, abilityKey)]
+    if (!actor || !action || !ability) fail('能力谓词缺少冻结定义或当前账本')
+    if (ability.actorInstanceId !== actorKey || ability.abilityKey !== abilityKey) fail('能力谓词账本身份不匹配')
+    if (action.usage.mode === 'shared-pool') {
+      const pool = product.usagePools[action.usage.sharedPoolKey!]
+      if (!pool || pool.poolKey !== action.usage.sharedPoolKey) fail('能力谓词共享池身份不匹配')
+    }
+    if (actor.lifecycleStatus !== 'active' || product.safety.status !== 'active'
+      || !evaluateTtrpgActionRequirementsV2({ action, rulePack, actorAttributes: actor.attributes, actorConditions: product.conditions[actorKey] }).met) return false
+    try {
+      const use = consumeTtrpgAbilityV2({ definition: { abilityKey, actionDefinitionKey: abilityKey, usage: action.usage }, state: ability,
+        eventId: 'predicate.preflight', currentRound: runtime.openRun!.worldTime.worldTurn,
+        resourceCurrent: action.usage.resourceKey === null ? null : Number(actor.attributes[`resource.${action.usage.resourceKey}`]),
+        sharedPool: action.usage.sharedPoolKey === null ? null : product.usagePools[action.usage.sharedPoolKey] ?? null })
+      if (action.costResourceKey !== null) {
+        const current = actor.attributes[`resource.${action.costResourceKey}`]
+        const required = action.costAmount + (action.costResourceKey === action.usage.resourceKey ? Math.max(0, -use.resourceDelta) : 0)
+        if (typeof current !== 'number' || !Number.isSafeInteger(current) || current < required) return false
+      }
+      return true
+    } catch (error) {
+      if (error instanceof Error && /^\[ttrpg-ability\].*(已禁用|耗尽|资源不足|共享次数池不足|冷却)/u.test(error.message)) return false
+      throw error
+    }
+  })
   return {
     frozenWorldPredicateIndex: content.campaign.frozenWorldPredicateIndex,
     sessionFacts: [], // P4 facts join this owner explicitly; no invented facts here.
+    knowledge: runtime.openRun.knowledge,
+    worldFacts: projectTtrpgOpenWorldFactsV1({ state, content, sessionFacts: [] }),
     effectLedger: { storyFacts: product.effectLedger.storyFacts, socialBalances: product.effectLedger.socialBalances },
     pressure: {
       clocks: Object.fromEntries(runtime.openRun.clocks.map(clock => [clock.clockKey, { value: clock.value }])),
@@ -81,9 +115,11 @@ export function ttrpgOpenPredicateContextV1(state: ProductRuntimeState, content:
     },
     actors: Object.fromEntries(content.campaign.characterTemplates.map(actor => [actor.characterKey, {
       locationRef: state.entities[actor.characterKey]?.locationKey ?? null,
-      itemKeys: Object.values(product.inventory.items).filter(item => item.ownerRef === actor.characterKey && !item.stateTags.includes('broken'))
+      itemKeys: Object.values(product.inventory.items).filter(item => item.ownerRef === actor.characterKey && item.quantity > 0 && !item.stateTags.includes('broken'))
         .flatMap(item => [item.itemInstanceId, item.definitionRef]),
-      abilityKeys: actor.actionKeys,
+      abilityKeys: availableAbilityKeys(actor.characterKey, [...new Set([...actor.actionKeys,
+        ...Object.values(product.inventory.items).filter(item => item.ownerRef === actor.characterKey && item.quantity > 0 && !item.stateTags.includes('broken'))
+          .flatMap(item => rulePack.items.find(definition => definition.key === item.definitionRef)?.grantedActionKeys ?? [])])]),
       resources: Object.fromEntries(content.rulePack.content.resources.map(resource => [resource.key,
         Number(state.entities[actor.characterKey]?.attributes[`resource.${resource.key}`])])),
     }])),
@@ -96,7 +132,7 @@ export function ttrpgOpenPredicateContextV1(state: ProductRuntimeState, content:
 export function parseTtrpgOpenRulePlanV1(value: unknown): TtrpgOpenRulePlanV1 {
   const r = p.record(value, ['schema', 'version', 'request', 'epochKey', 'rulePackContentHash', 'runtimeSourceHash',
     'authorizationHash', 'mechanicalStateHash', 'rulePack', 'genericCheck', 'effectTemplates', 'timeCostWorldTurns',
-    'affectedActorKeys', 'requiredApprovals', 'skillValues'], 'rule plan')
+    'affectedActorKeys', 'requiredApprovals', 'skillValues', 'rollVisibility'], 'rule plan')
   p.literal(r.schema, 'storyforge.ttrpg-open-rule-plan', 'schema'); p.literal(r.version, 1, 'version')
   const request = parseTtrpgOpenRuleRequestV1(r.request), rulePack = parseRulePackV1(r.rulePack)
   const genericCheck = r.genericCheck === null ? null : parseTtrpgOpenGenericCheckV1(r.genericCheck, 'genericCheck', rulePack)
@@ -115,7 +151,7 @@ export function parseTtrpgOpenRulePlanV1(value: unknown): TtrpgOpenRulePlanV1 {
     runtimeSourceHash: p.hash(r.runtimeSourceHash, 'source hash'), authorizationHash: p.hash(r.authorizationHash, 'authorization hash'),
     mechanicalStateHash: p.hash(r.mechanicalStateHash, 'mechanical hash'),
     timeCostWorldTurns: p.integer(r.timeCostWorldTurns, 'time cost', 0, 10), affectedActorKeys, requiredApprovals,
-    skillValues: p.numericRecord(r.skillValues, 'skillValues') }
+    skillValues: p.numericRecord(r.skillValues, 'skillValues'), rollVisibility: p.oneOf(r.rollVisibility, ['public', 'gm-only'], 'roll visibility') }
 }
 
 export async function createTtrpgOpenRulePlanV1(input: {
@@ -136,7 +172,15 @@ export async function createTtrpgOpenRulePlanV1(input: {
   const actor = input.state.entities[request.actorKey]
   const location = actor?.locationKey
   if (!actor || actor.lifecycleStatus !== 'active' || !location || input.state.entities[location]?.kind !== 'location') fail('行动者缺少可解析地点或不可行动')
+  const readableBinding = (entityKey: string) => {
+    if (entityKey === request.actorKey) return true
+    const binding = input.content.campaign.entityBindings.find(binding => binding.bindingKey === entityKey)
+    return binding?.audience === 'public' || binding?.audience === 'party'
+      || (binding?.audience === 'private' && binding.knownByActorKeys.includes(request.actorKey))
+  }
   const target = request.targetKey === null ? null : input.state.entities[request.targetKey]
+  if (request.targetKey !== null && !readableBinding(request.targetKey)) fail('目标不在该行动者获授权的信息范围')
+  if (target?.kind === 'player' && !auth.selectedActorKeys.includes(target.entityKey)) fail('目标真人角色不在已确认活动名单')
   if (request.targetKey !== null && (!target || target.lifecycleStatus !== 'active'
     || (target.entityKey !== request.actorKey && target.kind !== 'location' && target.locationKey !== location)
     || (target.kind === 'location' && target.entityKey !== location))) fail('目标不存在或不在同一地点')
@@ -147,7 +191,7 @@ export async function createTtrpgOpenRulePlanV1(input: {
   const affected = new Set([request.actorKey])
   if (request.route === 'existing-action') {
     const action = rulePack.actions.find(action => action.key === request.ruleKey)
-    const inventory = Object.values(runtime.product.inventory.items).filter(item => item.ownerRef === request.actorKey && !item.stateTags.includes('broken'))
+    const inventory = Object.values(runtime.product.inventory.items).filter(item => item.ownerRef === request.actorKey && item.quantity > 0 && !item.stateTags.includes('broken'))
     if (!action || (!template.actionKeys.includes(action.key) && !inventory.some(item => rulePack.items.find(definition => definition.key === item.definitionRef)?.grantedActionKeys.includes(action.key)))) fail('角色或现持物品未授予该冻结行动')
     if ((action.target === 'self' && request.targetKey !== request.actorKey)
       || (action.target === 'scene' && request.targetKey !== null)
@@ -193,7 +237,8 @@ export async function createTtrpgOpenRulePlanV1(input: {
         if (ref === null) { if (parameter.required) fail('缺少必需后果参数'); continue }
         const entity = input.state.entities[ref]
         const kind = entity?.kind === 'item' ? 'item' : entity?.kind === 'location' ? 'location' : entity ? 'actor' : null
-        if (!entity || !kind || !parameter.entityKinds.includes(kind)
+        if (!entity || !kind || !readableBinding(ref) || entity.lifecycleStatus !== 'active'
+          || (entity.kind === 'player' && !auth.selectedActorKeys.includes(entity.entityKey)) || !parameter.entityKinds.includes(kind)
           || (!parameter.allowedRefs.includes(ref) && !parameter.allowDynamicFromTemplateKeys.includes(String(entity.attributes.templateKey)))) fail('后果绑定不属于冻结允许范围')
       }
       for (const primitive of [...effect.effects, ...effect.alternatives.flatMap(alternative => alternative.effects)]) {
@@ -217,6 +262,8 @@ export async function createTtrpgOpenRulePlanV1(input: {
     epochKey: epoch.epochKey, rulePackContentHash: input.content.rulePack.contentHash, runtimeSourceHash: input.runtimeSourceHash,
     authorizationHash: await hashProductProductionValueV2(auth), mechanicalStateHash: await ttrpgOpenMechanicalStateHashV1(input.state),
     rulePack, genericCheck, effectTemplates, timeCostWorldTurns, affectedActorKeys: [...affected], requiredApprovals,
+    rollVisibility: runtime.product.hiddenDicePolicy === 'gm-only' || genericCheck?.audience === 'gm'
+      || genericCheck?.audience.startsWith('actor:') ? 'gm-only' : 'public',
     skillValues: Object.fromEntries([...new Set([request.actorKey, ...(request.targetKey ? [request.targetKey] : [])])].map(actorKey => {
       const template = input.content.campaign.characterTemplates.find(template => template.characterKey === actorKey)
       const custom = runtime.product.characterCustomizations.find(custom => custom.characterKey === actorKey)

@@ -38,6 +38,7 @@ import {
   type TtrpgAuthoringSettings,
 } from "./authoring-contract";
 import { assertTtrpgScriptedAuthoringSettings } from "./authoring-settings";
+import { verifyTtrpgOpenAuthoringSourceProvenanceV1 } from "./open-source-provenance";
 export async function createTtrpgDraft(
   title: string,
   settings: TtrpgAuthoringSettings = defaultTtrpgSettings(),
@@ -438,6 +439,7 @@ async function withTtrpgOpenBriefSnapshotV3<T>(
     throw new Error("open Brief 规则在核验期间已 stale");
   if (record.status !== "validated" || rulePack.version !== 2)
     throw new Error("open Brief 必须绑定当前作品已验证的 RulePack V2");
+  await verifyTtrpgOpenAuthoringSourceProvenanceV1({ sourcePlan, facts: settings.openAuthoring.factPolicy.map(item => item.fact) });
   const content = await createTtrpgProductionBriefContentV3({
     settingsRevision: draft.revision, settings, rulePack, worldReference, sourcePlan,
   });

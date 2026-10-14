@@ -51,13 +51,14 @@ import {
 import { parseTtrpgOpenAuthorizationV1 } from './open-authorization'
 import { parseTtrpgOpenEpochV1 } from './open-coordination'
 import { applyTtrpgOpenOperationEventV1 } from './open-operation-reducer'
+import { applyTtrpgOpenModelCallEventV1 } from './open-model-call-reducer'
 
 export function applyTtrpgRuntimeEventV1(
   state: ProductRuntimeState,
   event: ProductRuntimeEvent,
   payload: ProductRuntimeJsonObjectV1,
 ): ProductRuntimeState {
-  if (state.ttrpg?.sessionKey && applyTtrpgOpenOperationEventV1(state, event, payload)) {
+  if (state.ttrpg?.sessionKey && (applyTtrpgOpenOperationEventV1(state, event, payload) || applyTtrpgOpenModelCallEventV1(state, event, payload))) {
     state.lastSequence = event.sequence;
     return state;
   }
@@ -85,8 +86,8 @@ export function applyTtrpgRuntimeEventV1(
         openRun.chaos.value !== 5 ||
         openRun.stage.status !== "open" || openRun.stage.openedAtWorldTurn !== 0 ||
         openRun.stage.closedAtWorldTurn !== null || openRun.consultedThisWorldTurn !== 0 ||
-        openRun.coordination.epochs.length !== 0 || openRun.coordination.activeEpochKey !== null ||
-        openRun.operations.length !== 0 || openRun.ruleReceipts.length !== 0 ||
+        openRun.coordination.epochs.length !== 0 || openRun.coordination.calls.length !== 0 || openRun.coordination.activeEpochKey !== null ||
+        openRun.operations.length !== 0 || openRun.ruleReceipts.length !== 0 || openRun.knowledge.length !== 0 ||
         openRun.gates.length !== 0 || openRun.failures.length !== 0 ||
         openRun.situations.active.length !== 0 || openRun.situations.queued.length !== 0 ||
         Object.keys(openRun.situations.cooldowns).length !== 0 ||

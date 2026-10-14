@@ -1,3 +1,4 @@
+import { ttrpgOpenActorKnowsEvidenceV1, type TtrpgOpenKnowledgeEntryV1 } from './open-knowledge'
 import { parsePredicate } from './open-content-predicates'
 import { json } from './open-contract-parse'
 import { lookupTtrpgFrozenWorldPredicateV1 } from './frozen-facts'
@@ -47,6 +48,8 @@ export interface TtrpgPredicateFrontSnapshotV1 {
 export interface TtrpgPredicateEvaluationContextV1 {
   frozenWorldPredicateIndex: TtrpgFrozenWorldPredicateIndexV1
   sessionFacts: readonly TtrpgPredicateFactSnapshotV1[]
+  /** Formal runtime reads mutable facts through owner adapters. */
+  worldFacts?: readonly TtrpgPredicateFactSnapshotV1[]
   effectLedger: {
     storyFacts: Readonly<Record<string, TtrpgOpenScalar | null>>
     socialBalances: Readonly<Record<string, number>>
@@ -62,6 +65,8 @@ export interface TtrpgPredicateEvaluationContextV1 {
   }
   chaos: number
   worldTurn: number
+  /** Formal open callers always provide this owner; omitted only by offline prototype fixtures. */
+  knowledge?: readonly TtrpgOpenKnowledgeEntryV1[]
   knownRefs?: readonly string[]
 }
 
@@ -209,6 +214,7 @@ function evaluateLeaf(
 ): boolean {
   switch (predicate.op) {
     case 'world-fact':
+      if (context.worldFacts !== undefined) return context.worldFacts.some(fact => matchesFact(fact, predicate.subjectRef, predicate.predicateKey, predicate.objectRef, predicate.value))
       return lookupTtrpgFrozenWorldPredicateV1(
         context.frozenWorldPredicateIndex,
         predicate.subjectRef,
@@ -219,6 +225,7 @@ function evaluateLeaf(
       return context.sessionFacts.some(fact =>
         matchesFact(fact, predicate.subjectRef, predicate.predicateKey, predicate.objectRef, predicate.value))
     case 'evidence-known-by': {
+      if (context.knowledge !== undefined) return ttrpgOpenActorKnowsEvidenceV1(context.knowledge, predicate.actorKey, predicate.clueRef)
       for (const situation of context.situations.active) {
         if (situation.discoveredEvidenceRefs.includes(predicate.clueRef)) return true
       }

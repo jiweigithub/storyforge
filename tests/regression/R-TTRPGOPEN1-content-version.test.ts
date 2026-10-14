@@ -453,7 +453,7 @@ describe('R-TTRPGOPEN1 independent content versions', () => {
       { effectKey: 'ability', family: 'ability', operation: 'usage.consume', targetRef: 'hero', abilityKey: rule.actions[0].key, amount: 1, clockRef: null },
       { effectKey: 'advancement', family: 'advancement', operation: 'xp', targetRef: 'hero', advancementKey: rule.advancement.currencyKey, amount: 1 },
       { effectKey: 'social', family: 'social', operation: 'relationship', targetRef: 'hero', socialKey: 'trust', amount: 1 },
-      { effectKey: 'location', family: 'story', operation: 'location.set', targetRef: 'hero', storyKey: 'harbor', value: null },
+      { effectKey: 'location', family: 'story', operation: 'location.set', targetRef: 'hero', storyKey: 'harbor', value: 'harbor' },
       { effectKey: 'knowledge', family: 'knowledge', operation: 'knowledge.discover', targetRef: 'hero', evidenceRef: 'evidence.door' },
     )
     c.effectPlanTemplates.push({ ...structuredClone(t), planKey: 'plan.choice', effects: [],

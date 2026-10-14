@@ -163,6 +163,18 @@ const TEXT_OPEN_WORLD_RUNTIME_CONTEXT_PROVIDER_PROXY_V1: ContextResourceProvider
     .TEXT_OPEN_WORLD_RUNTIME_CONTEXT_PROVIDER_V1.fingerprint(scope),
 }
 
+function ttrpgOpenProvider(sourceKey: 'ttrpgOpenAuthority' | 'ttrpgOpenKnowledge'): ContextResourceProviderV1 {
+  const load = async () => {
+    const module = await import('../ttrpg/open-context-provider')
+    return sourceKey === 'ttrpgOpenAuthority' ? module.TTRPG_OPEN_AUTHORITY_PROVIDER_V1 : module.TTRPG_OPEN_KNOWLEDGE_PROVIDER_V1
+  }
+  return { version: 'context-resource-provider-v1', providerId: `storyforge.${sourceKey}`,
+    providerVersion: 'ttrpg-open-actor-provider-v1', normalizationVersion: 'ttrpg-open-actor-json-v1', kinds: ['fact'],
+    listMetadata: async input => (await load()).listMetadata(input), searchMetadata: async input => (await load()).searchMetadata(input),
+    read: async input => (await load()).read(input), readOriginal: async input => (await load()).readOriginal(input),
+    fingerprint: async scope => (await load()).fingerprint(scope) }
+}
+
 // Upper-product readers are lazy for the same reason as adaptation readers:
 // their production Harnesses import the Skill registry, so eager imports here
 // would create CONTEXT_SOURCES -> product Harness -> Skill -> CONTEXT_SOURCES.
@@ -1866,6 +1878,20 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     protectedFromTrim: true,
     requiresProductRuntimeSessionId: true,
     read: readTtrpgGmRuntimeContextV1,
+  },
+  {
+    key: 'ttrpgOpenAuthority', label: 'open 跑团角色权限与机械状态',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 10_000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenProvider('ttrpgOpenAuthority'),
+    read: async () => { throw new Error('[ttrpg-open-context] 角色来源只经有明确 POV/allow-list 的 Context Gateway 渐进读取') },
+  },
+  {
+    key: 'ttrpgOpenKnowledge', label: 'open 跑团当前角色知识',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 10_000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenProvider('ttrpgOpenKnowledge'),
+    read: async () => { throw new Error('[ttrpg-open-context] 角色来源只经有明确 POV/allow-list 的 Context Gateway 渐进读取') },
   },
   {
     key: 'ttrpgPrivateGuidance', label: '正式 TTRPG 单角色私密指引', scope: 'runtime', layer: 'L0', ownerFrom: 'work',

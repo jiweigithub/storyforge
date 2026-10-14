@@ -134,7 +134,7 @@ export function applyTtrpgOpenOperationEventV1(state: ProductRuntimeState, event
         const bindings = operation.plan.request.effectBindings[templateKey]
         const primitives = template.alternatives.length ? template.alternatives.find(alternative => alternative.alternativeKey === operation.pendingChoice!.selectedAlternativeKey)!.effects : template.effects
         const effects: TtrpgEffectPrimitiveV2[] = primitives.flatMap(effect => {
-          if (effect.family === 'knowledge' || effect.family === 'story') return p.fail('后果 owner 尚未接入，必须保留待办')
+          if (effect.family === 'knowledge' || (effect.family === 'story' && effect.operation !== 'location.set')) return p.fail('后果 owner 尚未接入，必须保留待办')
           const targetRef = effect.targetRef.startsWith('parameter:') ? bindings[effect.targetRef.slice(10)] : effect.targetRef
           return targetRef === null ? [] : [{ ...effect, targetRef }]
         })
