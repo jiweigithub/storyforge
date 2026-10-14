@@ -90,6 +90,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
         '调查发现分两阶段：本步审查角色实际完成的调查及其 newFacts、situationRequest；行动提交后，情境构建与情境审查才按冻结 discovery 条件判定并更新原事实知情者。若角色当前尚未知情，正文只完成了合法调查、登记了对应调查事实并请求判定结果，这是完整的本阶段后果，不能仅因你看到幕后答案就判 consequences 或 meaningful-direction 失败，也不能要求该角色提前披露秘密、重复新建答案或把目标标为 fulfilled。后续发现结果与目标收束须由各自阶段另行确认。',
         '需要确认已完成观察结果时，situationRequest 应标记 purpose=observation-result，引用本次 observation 事实并完整摘录其原文，direction 仅限该观察的结果。拒绝把尚未执行的计划、进一步调查或新动作包装成待确认结果；后续普通玩家消息只打断计划，不应丢失过去观察的待确认结果。',
         '两阶段并不豁免漏记或泄露：已知事实、正文已经明确声称的结果仍须完整核对；未经发现就声称未知答案须拒绝。仅计划、未完成、无调查事实或缺乏已授权 situationRequest 的行为不能以待判定为由冒充有效调查；候选不得保证一定找到、预定他人行为或扩大调查权限。',
+        '个人暂停不等于共同事项结束。只暂停自身目标、其他参与者仍可继续时不要求 threadUpdates；若表达明确暂停或结束整项事务，并覆盖该事项全部知情者，才须登记对应变化。暂停用 paused，实际解决才用 resolved；closureSignals 只是具体判断线索，不是机械触发关闭的命令。',
         'consequences 还须对照 goalStatus 与 goalUpdates 的整体结果：同一行动已结束多个自己的目标时都须登记，不能只结束新的澄清目标而遗留已经完成的旧目标；每项目标须分别有实际依据，不能顺带关闭其他角色或仍未完成的事项。',
         'consequences 还必须核对 relationshipUpdates：只改变 actorKey 对 player 的已有态度，证据必须是本轮玩家实际行为和当前角色表达，变化方向须匹配维度和文字。不能仅因拒绝、休息、另提方法、不愿亲近而惩罚关系，不能把许诺当履约或重复客套当长期积累。没有关系变化本身不算失败。',
         'meaningful-direction 还需核对当前关系及其依据、未完成事项对本次表达的影响；关系只代表角色自己的态度，不等于玩家同意、恋爱承诺或已经完成共同计划。',

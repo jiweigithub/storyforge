@@ -1,3 +1,4 @@
+import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1} from '../lib/character-interaction/action-revision'
 import type {ChatSchedulingModeV1} from '../lib/character-interaction/narrative-scheduling'
 import {applyChatMessageRetrievalPlanV1, type ChatMessageRetrievalPlanV1} from '../lib/character-interaction/narrative-retrieval-service'
 import { create } from 'zustand'
@@ -70,6 +71,7 @@ interface CharacterInteractionPlayerState {
   narrativeTurnResume: ChatNarrativeTurnResumeV1 | null
   pendingNarrativeReviewRunIds: number[]
   pendingActionReviewRunIds: number[]
+  actionRevisionRunId: number | null
   narrativeOptions: ChatNarrativeOptionsPreviewV1[]
   narrativeOptionRunIds: number[]
   historicalOptionMessageIds: string[]
@@ -88,6 +90,7 @@ interface CharacterInteractionPlayerState {
   advanceNarrative(input: { aiConfig: AIConfig; kind: ChatPlayerTriggerV1; compare?: boolean; participantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1 }): Promise<void>
   resumeNarrativeTurn(input: {aiConfig: AIConfig; situationAiConfig?: AIConfig; participantKey?: string}): Promise<void>
   createSituation(input: {aiConfig: AIConfig; actionAiConfig?: AIConfig; seed: string; participantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1}): Promise<void>
+  reviseNarrativeAction(runId: number, aiConfig: AIConfig): Promise<void>
   resumeNarrativeReview(runId: number, aiConfig: AIConfig): Promise<void>
   selectNarrativeOption(runId: number, optionKey: ChatNarrativeOptionKeyV1): Promise<void>
   applyMessageRetrieval(plan: ChatMessageRetrievalPlanV1): Promise<void>
@@ -178,7 +181,9 @@ async function details(scope: WorkspaceScope, sessionId: number) {
     : []
   const optionRows = resumableRows.filter(row => JSON.parse(row.contractJson).executionBindings?.some((b: {skillId?: string}) => b.skillId === 'character.chat-narrative-options'))
   const optionRunIds = optionRows.map(row => row.id!)
+  const revision = runtimeState.interaction?.chatNarrative ? await readChatActionRevisionSourceV1({scope, sessionId}).catch(() => null) : null
   return {
+    actionRevisionRunId: revision?.runId ?? null,
     historicalOptionMessageIds: runtimeState.interaction?.chatNarrative ? await readChatHistoricalOptionMessageIdsV1(scope, sessionId) : [],
     narrativeTurnResume: runtimeState.interaction?.chatNarrative
       ? await readChatNarrativeTurnResumeV1(scope, sessionId, runtimeState.interaction) : null,
@@ -238,7 +243,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       ? current : sessions[0]?.id ?? null
     set({ releases, sessions, selectedSessionId })
     if (selectedSessionId != null) await refresh()
-    else set({ events: [], checkpoints: [], recoverableRunIds: [], pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE) })
+    else set({ events: [], checkpoints: [], recoverableRunIds: [], pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE) })
   }
   const withBusy = async <T>(operation: () => Promise<T>): Promise<T> => {
     if (get().busy) throw new Error('当前操作尚未结束，请稍后再试。')
@@ -279,7 +284,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
     events: [],
     checkpoints: [],
     recoverableRunIds: [],
-    pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [],
+    pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [],
     runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE),
     loading: false,
     busy: false,
@@ -307,7 +312,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       const epoch = ++loadEpoch
       set({ selectedSessionId, loading: true, error: '' })
       try {
-        if (selectedSessionId == null) set({ events: [], checkpoints: [], recoverableRunIds: [], pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE) })
+        if (selectedSessionId == null) set({ events: [], checkpoints: [], recoverableRunIds: [], pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE) })
         else await refresh()
       } catch (reason) { if (epoch === loadEpoch) set({ error: reason instanceof Error ? reason.message : String(reason) }) }
       finally { if (epoch === loadEpoch) set({ loading: false }) }
@@ -505,6 +510,21 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
           signal: controller.signal, onRunCreated: id => set({generatingRunId: id})})
       } catch (reason) {if (!controller.signal.aborted) throw reason}
     }),
+    reviseNarrativeAction: async (runId, aiConfig) => withBusy(async () => {
+      const scope = get().scope, sessionId = get().selectedSessionId
+      if (!scope || sessionId == null || get().actionRevisionRunId !== runId) throw new Error('当前没有该可修订回复。')
+      const source = await readChatActionRevisionSourceV1({scope, sessionId})
+      if (!source || source.runId !== runId) throw new Error('局面或未通过回复已经变化，请刷新后继续。')
+      const controller = new AbortController(); generationAbortController = controller
+      try {
+        const generated = await generateInteractionRuntimeCandidateV1({scope, productRuntimeSessionId: sessionId,
+          skillId: CHAT_ACTION_REVISION_SKILL, participantKey: source.actorKey, narrativeTriggerSequence: source.triggerSequence,
+          objective: '玩家明确请求修订上一条未生效回复的后果登记。保留原表达和玩家选择，重新审查后才可生效；最多一次，不继续下一次行动。',
+          aiConfig, signal: controller.signal, onRunCreated: id => set({generatingRunId: id})})
+        if (!controller.signal.aborted) await adoptInteractionRuntimeCandidateV1({scope, runId: generated.snapshot.run.id})
+      } catch (reason) {if (!controller.signal.aborted) throw reason}
+    }),
+
     resumeNarrativeReview: async (runId, aiConfig) => withBusy(async () => {
       const scope = get().scope
       if (!scope || !get().pendingNarrativeReviewRunIds.includes(runId)) throw new Error('当前没有该待审查候选。')

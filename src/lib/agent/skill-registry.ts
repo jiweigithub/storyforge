@@ -3170,8 +3170,17 @@ export const AGENT_SKILLS = [
     regressionTests: ['R-CHAT-02-observation-results', 'R-CHAT-02-post-closure', 'R-CHAT-02-fact-discovery', 'R-CHAT-03-scheduling', 'R-CHAT-03-context-retrieval', 'R-CHAT-02-narrative-actions', 'R-CHAT-02-narrative-harness', 'R-CHAT-02-narrative-player', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression', 'R-CHAT-03-history-edit', 'R-CHAT-03-reply-continuation', 'R-CHAT-03-turn-resume', 'R-CHAT-03-options-history', 'R-CHAT-03-context-inspector', 'R-CHAT-03-turn-direction'],
   },
   {
+    version: 1, id: 'character.chat-action-revision', agentId: 'character', defaultForAgent: false,
+    label: '角色聊天未通过回复的后果修订', owner: 'character-chat-product', promptVersion: 'chat-action-revision-v1',
+    executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
+    contextSourceKeys: ['interactionRuntime', 'chatActionRevision'], optionalContextSourceKeys: [],
+    inputPolicy: {...INTERACTION_RUNTIME_INPUT_POLICY, sourceKeys: ['interactionRuntime', 'chatActionRevision']},
+    contextCompression: INTERACTION_RUNTIME_COMPRESSION_POLICY, maxOutputTokens: 4000, writeTargets: [],
+    lastVerifiedAt: '2026-10-14', regressionTests: ['R-CHAT-02-action-revision'],
+  },
+  {
     version: 1, id: 'character.chat-narrative-action-review', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天行动及后果审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-action-review-v12',
+    label: '角色聊天行动及后果审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-action-review-v13',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['chatSituationRuntime', 'chatActionCandidate'], optionalContextSourceKeys: [],
     inputPolicy: CHAT_ACTION_REVIEW_INPUT_POLICY,

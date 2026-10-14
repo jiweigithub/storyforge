@@ -53,7 +53,7 @@ export async function readChatNarrativeTurnResumeV1(scope: WorkspaceScope, sessi
   for (const row of rows) {
     const contract = JSON.parse(row.contractJson)
     if (contract.scope?.runtime?.baseSequence < trigger.requestedSequence
-      || !contract.executionBindings?.some((binding: {skillId?: string}) => ['character.chat-narrative-action', 'character.chat-narrative-options', 'character.chat-situation-construction'].includes(binding.skillId ?? ''))) continue
+      || !contract.executionBindings?.some((binding: {skillId?: string}) => ['character.chat-narrative-action', 'character.chat-narrative-options', 'character.chat-situation-construction', 'character.chat-action-revision'].includes(binding.skillId ?? ''))) continue
     const snapshot = await readInstanceAgentRunV1(scope, row.id!)
     if (isImportedCompletedInteractionRunV1(snapshot, events)) continue
     const adopted = snapshot.events.find(event => event.type === 'runtime.candidate.adopted')
@@ -111,7 +111,7 @@ export async function readPendingChatNarrativeRunsV1(scope: WorkspaceScope, sess
     if (['completed', 'failed', 'cancelled'].includes(row.status)) continue
     const contract = JSON.parse(row.contractJson)
     if (contract.scope?.runtime?.baseSequence < trigger.requestedSequence
-      || !contract.executionBindings?.some((b: {skillId?: string}) => ['character.chat-narrative-action', 'character.chat-narrative-options', 'character.chat-situation-construction'].includes(b.skillId ?? ''))) continue
+      || !contract.executionBindings?.some((b: {skillId?: string}) => ['character.chat-narrative-action', 'character.chat-narrative-options', 'character.chat-situation-construction', 'character.chat-action-revision'].includes(b.skillId ?? ''))) continue
     pending.push(row.id!)
   }
   return pending

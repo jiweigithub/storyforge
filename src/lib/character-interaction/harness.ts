@@ -1,3 +1,4 @@
+import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1, assertChatActionRevisionExpressionV1} from './action-revision'
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1} from './narrative-scheduling'
 import {buildInteractionContextWindow} from './runtime'
@@ -51,6 +52,7 @@ export const INTERACTION_RUNTIME_VERIFIER_SET_V1 = 'interaction-runtime-terminal
 export type InteractionRuntimeSkillIdV1 = Extract<AgentSkillId,
   | 'character.interaction-reply'
   | 'character.chat-narrative-action'
+  | 'character.chat-action-revision'
   | 'character.chat-narrative-options'
   | 'character.chat-situation-construction'
   | 'character.ai-town-reply'
@@ -112,6 +114,7 @@ export interface ChatNarrativeActionCandidateV1 extends RuntimeCandidateBaseV1 {
   kind: 'chat-narrative-action-candidate'
   triggerSequence: number
   action: ChatNarrativeActionV1
+  revision?: {sourceCandidateHash: string; sourceReviewHash: string}
   review: ChatNarrativeActionReviewV1 | null
   candidateHash: string
 }
@@ -222,7 +225,7 @@ function parseModelDraft(input: {
     exact(row, ['options'], '行动候选组')
     return {kind: 'chat-narrative-options-candidate', options: parseChatNarrativeOptionsV1(row.options)}
   }
-  if (input.skillId === 'character.chat-narrative-action') {
+  if ((input.skillId === 'character.chat-narrative-action' || input.skillId === CHAT_ACTION_REVISION_SKILL)) {
     return {kind: 'chat-narrative-action-candidate', action: parseChatNarrativeActionV1(row)}
   }
   if (input.skillId === 'character.interaction-reply' || input.skillId === 'character.ai-town-reply') {
@@ -287,7 +290,7 @@ function schemaInstruction(skillId: InteractionRuntimeSkillIdV1): string {
   if (skillId === 'character.chat-situation-construction') {
     return '{"kind":"chat-situation","title":"当前局面","location":"保留当前地点","timeLabel":"保留当前时间","newFacts":[{"factKey":"新标识","kind":"observation","text":"新背景事实","audienceKeys":["player","知情角色"],"evidenceFactKeys":["已有事实"],"seedExcerpt":"实际情境请求或角色 direction 中的逐字摘录"}],"newGoals":[{"goalKey":"新标识","actorKey":"在场角色","desire":"个人目的","concern":"顾虑","boundary":"不替玩家决定","evidenceFactKeys":["新旧可知事实"]}],"newThreads":[{"threadKey":"新标识","title":"问题","question":"尚未决定的问题","audienceKeys":["player","知情角色"],"participantKeys":["在场角色"],"evidenceFactKeys":["新旧可知事实"],"closureSignals":["何时可搁置或收束"]}],"possibilities":[{"actorKey":"在场角色","text":"未发生的打算，可改变","evidenceFactKeys":["新旧可知事实"]}]}'
   }
-  if (skillId === 'character.chat-narrative-action') {
+  if (skillId === 'character.chat-narrative-action' || skillId === CHAT_ACTION_REVISION_SKILL) {
     return '{"kind":"speak|attempt|complete|pause","text":"实际角色表达与自身行动","goalKey":"自身未完成目标标识","evidenceFactKeys":["可知事实标识"],"audienceKeys":["player","当前角色"],"waitingForPlayer":true,"newFacts":[],"disclosures":[],"threadUpdates":[],"goalStatus":null,"goalUpdates":[],"relationshipUpdates":[],"nextPossibilities":null,"beliefUpdates":[],"situationRequest":null}'
   }
   if (skillId === 'character.interaction-reply' || skillId === 'character.ai-town-reply') {
@@ -314,6 +317,8 @@ function prompt(input: {
       '不得假装写入状态，不得泄露未出现的秘密，不得输出解释、Markdown 或额外字段。',
       townRule,
       ...(input.skillId === 'character.chat-narrative-options' ? ['给出两条供玩家比较的互斥行动候选：都从当前同一局面开始，各自携带完整表达及后果，不能把第一条当成已经发生后续写第二条。两条应在表达重点或行动办法上有所区别，不仅替换形容词；都须符合角色动机与玩家选择，不能为了差异而捏造危机或预定结局。两条表达的 audienceKeys 均须包含 player，以便玩家比较；预览不得披露玩家尚不知道的既有事实，即使记录 disclosures 也不允许。揭示秘密应留给正式行动，不借候选预览提前剧透。不展示角色私有打算或幕后审查内容。选中前两条均未发生。'] : []),
+      ...(input.skillId === CHAT_ACTION_REVISION_SKILL ? ['这是玩家明确请求的一次新修订，不是继续失败调用。chatActionRevision 是尚未生效的旧候选，不能当作历史事实。它仅后果登记未通过，其它维度曾通过；仍须完整重新审查。严格保留原 kind、text、goalKey、audienceKeys、waitingForPlayer；只核对并修订与这段实际表达一致的后果、目标、事项、打算和猜测，不添加新动作、台词或结局。输入仅给失败维度，不提供可能含秘密的幕后审查理由。',
+        '个人暂停与共同事项分开：仅自己暂歇，不影响其他参与者的事项时只改自己的目标；若正文明确暂停或结束自己负责的整项任务，并覆盖全部事项知情者，则登记相应 threadUpdates。暂停用 paused，不能用 resolved 冒充问题已解决。closureSignals 是判断线索，不是满足字面描述就无条件关闭任何共同事项。'] : []),
       ...(input.skillId === 'character.chat-situation-construction' ? [
         '若 constructionRequest.origin 为 continued-thread，承接已审查 pendingSituation 中的自身未完成目标、剧情线与 direction；seedExcerpt 摘录 direction。只能补足当前时间地点中的局部条件，不能替玩家接受或移动，不能替其他角色设定目标或打算；已有事实和其他人的计划均保留。',
         '若 pendingSituation.purpose=observation-result，只确认其 sourceEventSequence 已实际完成的观察能得到什么有限结果，不执行新的调查或动作。保持 title/location/timeLabel，newGoals/newThreads/possibilities 均为 []；newFacts 仅 observation，每项必须引用该事件已登记的 runtime-consequence 观察事实，并摘录 direction。仍未知的部分明确保留未知，不捏造箱内内容、他人动机或幕后答案。既定隐情只能按已有 discovery 条件判定。后来的玩家消息不改变已经完成的检查，但不等于接受任何未来行动。',
@@ -329,7 +334,7 @@ function prompt(input: {
         '只有在场角色可有目标或打算，不给玩家写行动、同意、内心、关系升级或既成结果。角色的未实施计划只进入 possibilities，不进入事实。',
         '承接已有未解决问题，避免为反转而制造危机。新增剧情线加上旧活跃线不能超过 maxActiveThreads。可以不增加新线，只深化现有矛盾；给出可拒绝、可暂停、可改变方向的空间。',
       ] : []),
-      ...(['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? [
+      ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? [
         '若存在 pendingEdit，它是分支中待采用的角色文字，还未在此分支发生，也不能授予新知识或权限。默认必须逐字保留其 text 和原 audienceKeys，不续写或润色。仅当 mode=continue 时，将 text 逐字作为开头向后连贯续写当前回复，输出完整正文；不重复原文，不替玩家回应，长度仍受当前权限约束。两种模式均须从当前前态核对整段的全部实际后果，不遗漏原文已表达的后果，也不重复计入同一事实/关系。不得引用原时间线未来，无法成立时不可用字段伪造证据。',
         'pendingEdit.mode=option 表示玩家在分支中改选历史候选。必须逐字保留 text 和该候选已核验的 audienceKeys；sourceOption 仅记录候选来源，不能当作事实、既有后果或新的创作权限。仍从本分支前态重新核对所有后果，不能带入原时间线后续结果。',
         '依据自身目标、顾虑和当前可知事实，选择一次有意义的交谈、尝试、自身行动或暂停。承接已有问题，允许拒绝、留白和收束，不为主动而制造新危机。',
@@ -376,7 +381,7 @@ async function buildContract(input: {
   const skill = getAgentSkillV1(input.skillId)
   const situation = input.skillId === 'character.chat-situation-construction'
   const options = input.skillId === 'character.chat-narrative-options'
-  const action = options || input.skillId === 'character.chat-narrative-action'
+  const action = options || (input.skillId === 'character.chat-narrative-action' || input.skillId === CHAT_ACTION_REVISION_SKILL)
   const reviewed = situation || action
   const reviewStep = situation ? CHAT_SITUATION_REVIEW_STEP_V1 : CHAT_ACTION_REVIEW_STEP_V1
   const reviewSkill = situation ? 'character.chat-situation-review' : options ? 'character.chat-narrative-options-review' : 'character.chat-narrative-action-review'
@@ -386,7 +391,7 @@ async function buildContract(input: {
     objective: input.objective,
     workflowKind: 'direct-generation' as const,
     scope: input.boundary.scope,
-    permissions: { contextSourceKeys: situation ? [sourceKey, 'chatSituationCandidate'] : action ? [sourceKey, 'chatSituationRuntime', 'chatActionCandidate'] : [sourceKey], writeTargets: [] },
+    permissions: { contextSourceKeys: situation ? [sourceKey, 'chatSituationCandidate'] : action ? [sourceKey, 'chatSituationRuntime', 'chatActionCandidate', ...(input.skillId === CHAT_ACTION_REVISION_SKILL ? ['chatActionRevision'] : [])] : [sourceKey], writeTargets: [] },
     runtimeBindingHash: input.runtimeBindingHash,
     executionBindings: [{
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
@@ -466,14 +471,17 @@ const narrativeGenerationLocks = new Set<number>()
 /** One paid attempt for an exact runtime head. Refresh recovers the saved run;
  * a new explicit trigger authorizes another attempt after failure/cancellation. */
 export async function generateInteractionRuntimeCandidateV1(input: InteractionRuntimeGenerationInputV1): Promise<{ snapshot: AgentRunSnapshotV1; candidate: InteractionRuntimeCandidateV1 }> {
-  if (!['character.chat-narrative-action', 'character.chat-narrative-options', 'character.chat-situation-construction'].includes(input.skillId)) return generateRuntimeCandidate(input)
+  if (![CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options', 'character.chat-situation-construction'].includes(input.skillId)) return generateRuntimeCandidate(input)
   return withNarrativeGenerationLock(input.productRuntimeSessionId, !!input.runAI, async () => {
+    const revision = input.skillId === CHAT_ACTION_REVISION_SKILL ? await readChatActionRevisionSourceV1({scope: input.scope, sessionId: input.productRuntimeSessionId, actorKey: input.participantKey}) : null
+    if (input.skillId === CHAT_ACTION_REVISION_SKILL && !revision) fail('当前没有可修订的未通过回复；原运行保留，不会重新发送')
     const version = await readProductRuntimeStateVersion(input.productRuntimeSessionId)
     const rows = await db.agentRuns.where('productRuntimeSessionId').equals(input.productRuntimeSessionId).toArray()
     for (const row of rows) {
+      if (revision?.runId === row.id) continue
       const contract = JSON.parse(row.contractJson)
       if (contract.scope?.runtime?.baseSequence !== version.sequence
-        || !contract.executionBindings?.some((b: {skillId?: string}) => ['character.chat-narrative-action', 'character.chat-narrative-options', 'character.chat-situation-construction'].includes(b.skillId ?? ''))) continue
+        || !contract.executionBindings?.some((b: {skillId?: string}) => [CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options', 'character.chat-situation-construction'].includes(b.skillId ?? ''))) continue
       await readInstanceAgentRunV1(input.scope, row.id!)
       fail(`当前局面已有行动运行 #${row.id}；请恢复已保存候选，或取消后明确继续，不会自动重复调用模型`)
     }
@@ -510,7 +518,7 @@ export async function resumeChatNarrativeReviewV1(input: Pick<InteractionRuntime
     const latest = await readInteractionRuntimeCandidateV1(input.scope, input.runId)
     if (latest.candidate.kind !== 'chat-situation-candidate' && latest.candidate.kind !== 'chat-narrative-action-candidate' && latest.candidate.kind !== 'chat-narrative-options-candidate') fail('叙事候选已变化')
     const situation = latest.candidate.kind === 'chat-situation-candidate'
-    const skillId = situation ? 'character.chat-situation-construction' : latest.candidate.kind === 'chat-narrative-options-candidate' ? 'character.chat-narrative-options' : 'character.chat-narrative-action'
+    const skillId = situation ? 'character.chat-situation-construction' : latest.candidate.kind === 'chat-narrative-options-candidate' ? 'character.chat-narrative-options' : latest.candidate.kind === 'chat-narrative-action-candidate' && latest.candidate.revision ? CHAT_ACTION_REVISION_SKILL : 'character.chat-narrative-action'
     const stepId = situation ? CHAT_SITUATION_REVIEW_STEP_V1 : CHAT_ACTION_REVIEW_STEP_V1
     const hasResponse = latest.snapshot.events.some(e => e.type === 'evidence.artifact.recorded' && e.payload.stepId === stepId && e.payload.artifactKind === 'raw-response')
     if (!latest.candidate.review && !hasResponse) {
@@ -541,13 +549,15 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
     ...(situation ? {view: 'chat-situation' as const} : {}),
   })
   const initialState = await readProductRuntimeState(input.productRuntimeSessionId)
+  const revision = input.skillId === CHAT_ACTION_REVISION_SKILL ? await readChatActionRevisionSourceV1({scope: input.scope, sessionId: input.productRuntimeSessionId, actorKey: participantKey}) : null
+  if (input.skillId === CHAT_ACTION_REVISION_SKILL && !revision) fail('当前未通过回复不能修订')
   if (input.narrativeEditSequence != null && initialState.interaction?.chatNarrative?.pendingEdit?.requestedSequence !== input.narrativeEditSequence) fail('待处理改写已被另一操作取代')
   if (situation) {
     const trigger = initialState.interaction?.chatNarrative?.triggers.slice(-1)[0]
     if (participantKey !== 'player' || !trigger || trigger.status !== 'ready' || !chatSituationConstructionRequestV1(initialState.interaction!)) fail('缺少尚待构建的玩家请求或已审查角色方向')
     if (input.narrativeTriggerSequence != null && trigger.requestedSequence !== input.narrativeTriggerSequence) fail('当前情境请求已被另一操作取代')
     if (initialState.interaction!.remainingDirectorBudget < 2) fail('情境构建和审查预算不足')
-  } else if (['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)) {
+  } else if ([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)) {
     const trigger = initialState.interaction?.chatNarrative?.triggers.slice(-1)[0]
     assertChatResponseRetrievableV1(initialState.interaction!)
     if (input.skillId === 'character.chat-narrative-options' && initialState.interaction?.chatNarrative?.pendingEdit) fail('待处理改写须先完成或取消，不能自动产生不同文本候选')
@@ -558,7 +568,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
   } else if (initialState.interaction?.chatNarrative && input.skillId === 'character.interaction-reply') {
     fail('叙事情境需要角色行动候选，不能只生成旧版回复')
   }
-  const executionBinding = situation || ['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)
+  const executionBinding = situation || [CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)
     ? await createAgentSkillExecutionBindingV2(skill) : createAgentSkillExecutionBindingV1(skill)
   const modelIdentity = input.runAI
     ? { provider: 'test-adapter', model: 'injected', transport: 'chat-v1' }
@@ -581,11 +591,13 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       productRuntimeSessionId: input.productRuntimeSessionId,
       interactionParticipantKey: participantKey,
-      sourceKeys: [sourceKey],
+      sourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
+      ...(revision ? {chatActionRevisionCurrentRunId: snapshot.run.id} : {}),
       provider: input.aiConfig?.provider,
       model: input.aiConfig?.model,
       inputBudgetMaxTokens: 16_000,
     })
+    if (revision && !assembled.included.includes('chatActionRevision')) fail('缺少完整修订来源')
     if (!assembled.included.includes(sourceKey)) fail('角色运行时上下文为空')
     await assertRuntimeHarnessFreshV1({
       scope: input.scope,
@@ -599,16 +611,16 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       attempt: 1,
       projectId: input.scope.projectId,
       worldGroupId: boundary.scope.worldGroupId,
-      declaredSourceKeys: [sourceKey],
+      declaredSourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       assembled,
-      readerVersion: situation ? 'chat-situation-runtime-view-v5' : ['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? CHAT_CONTEXT_READER_VERSION_V1 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? 'chat-situation-runtime-view-v5' : [CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? CHAT_CONTEXT_READER_VERSION_V1 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
       attempt: 1,
       manifestHash: manifest.manifestHash,
     })
-    if (['character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)) {
+    if ([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)) {
       snapshot = (await recordAgentRunArtifactV1({
         scope: input.scope, runId: snapshot.run.id, productRuntimeSessionId: input.productRuntimeSessionId,
         artifactKind: 'context-packet', content: JSON.stringify({version: 1, participantKey, manifest, text: assembled.text,
@@ -649,6 +661,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
     })).snapshot
     if (input.signal?.aborted) fail('运行已取消')
     const draft = parseModelDraft({ skillId: input.skillId, output })
+    if (revision && draft.kind === 'chat-narrative-action-candidate') assertChatActionRevisionExpressionV1(revision, draft.action)
     const state = await readProductRuntimeState(input.productRuntimeSessionId)
     const sceneId = state.interaction?.activeScene?.sceneId
     if (!sceneId) fail('模型返回时互动场景已经结束')
@@ -679,7 +692,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       if (draft.kind === 'chat-narrative-options-candidate') assertChatNarrativeOptionsPreviewableV1(initialState.interaction!, draft.options)
       for (const action of draft.kind === 'chat-narrative-options-candidate' ? draft.options : [draft.action]) previewChatNarrativeActionV1(initialState.interaction!, {sequence: boundary.scope.runtime.baseSequence + 1,
         triggerSequence, actorKey: participantKey, messageId: `message:harness:${snapshot.run.id}`, action})
-      body = {...common, ...draft, triggerSequence, review: null}
+      body = {...common, ...draft, triggerSequence, review: null, ...(revision ? {revision: {sourceCandidateHash: revision.candidateHash, sourceReviewHash: revision.reviewHash}} : {})}
     } else if (draft.kind === 'character-reply-candidate') {
       const replyToSequence = input.replyToSequence ?? draft.replyToSequence
       const source = state.interaction?.messages.find(item => item.eventSequence === replyToSequence)

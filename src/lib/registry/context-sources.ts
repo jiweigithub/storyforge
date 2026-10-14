@@ -720,6 +720,17 @@ async function readChatActionCandidateValue(input: AssembleContextInput) {
   return {snapshot: saved.snapshot, value: {actorKey: candidate.participantKey, action: parseChatNarrativeActionV1(candidate.action)}}
 }
 
+async function readChatActionRevisionContext(input: AssembleContextInput): Promise<string> {
+  if (!input.scope || input.productRuntimeSessionId == null || !input.interactionParticipantKey || input.chatActionRevisionCurrentRunId == null) return ''
+  const {readChatActionRevisionSourceV1} = await import('../character-interaction/action-revision')
+  const source = await readChatActionRevisionSourceV1({scope: input.scope, sessionId: input.productRuntimeSessionId,
+    actorKey: input.interactionParticipantKey, currentRunId: input.chatActionRevisionCurrentRunId})
+  if (!source) return ''
+  // Only a failed check code, never coordinator reasons or hidden facts.
+  return `【明确请求修订的未生效行动；不是已发生事实】\n${JSON.stringify({schema: 'storyforge.chat-action-revision-source', version: 1,
+    candidateHash: source.candidateHash, reviewHash: source.reviewHash, failedChecks: ['consequences'], action: source.action})}`
+}
+
 async function readChatActionCandidateContext(input: AssembleContextInput): Promise<string> {
   const saved = await readChatActionCandidateValue(input)
   if (!saved) return ''
@@ -2640,6 +2651,12 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     requiresProductRuntimeSessionId: true,
     resources: TEXT_OPEN_WORLD_RUNTIME_CONTEXT_PROVIDER_PROXY_V1,
     read: readOpenWorldRuntimeContext,
+  },
+  {
+    key: 'chatActionRevision', label: '未通过回复的受限修订来源',
+    scope: 'runtime', ownerFrom: 'instance', layer: 'L0', budgetTokens: 6000,
+    atomic: true, protectedFromTrim: true, requiresProductRuntimeSessionId: true,
+    enabled: input => input.chatActionRevisionCurrentRunId != null, read: readChatActionRevisionContext,
   },
   {
     key: 'chatActionCandidate', label: '待审查的持久化行动候选',
