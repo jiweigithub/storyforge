@@ -14,9 +14,9 @@ concurrency:
 
 jobs:
   diagnose:
-    name: Linux node quality / durable evidence
+    name: Linux UI synchronization / original assertions
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       CI: "true"
       PLAYWRIGHT_FROZEN_WORKSPACE: "1"
@@ -35,8 +35,8 @@ jobs:
         run: npm ci
       - name: Install browser and system dependencies
         run: npx playwright install --with-deps chromium
-      - name: Run isolated node quality paths
-        run: npx playwright test tests/e2e/longform-node-quality.spec.ts --reporter=list --output=test-results-node-quality
+      - name: Run the five affected browser paths
+        run: npx playwright test tests/e2e/longform-chapter-draft-save.spec.ts tests/e2e/text-open-world-combat.spec.ts tests/e2e/text-open-world-complete-journey.spec.ts --reporter=list --output=test-results-node-quality
       - name: Preserve actual durable and browser evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
