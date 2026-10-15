@@ -8,6 +8,7 @@ import { readTtrpgOpenFactNormalizationCandidateV1 } from '../../src/lib/ttrpg/o
 import { readInstanceAgentRunV1 } from '../../src/lib/agent/run/event-store'
 import { prepareTtrpgOpenFactNormalizationInputV1,prepareTtrpgOpenOracleInputV1,prepareTtrpgOpenIntentInputV1 } from '../../src/lib/ttrpg/open-intent-input'
 import { exportProjectJSON,importProjectJSON } from '../../src/lib/export/json-export'
+import { hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 
 const fact = { kind: 'relation',subjectRef: 'keeper',predicateKey: 'promised',objectRef: 'harbor',canonicalValue: '提供地图',detail: '守灯人承诺提供地图。',
   sourceFactRefs: ['fact.harbor'],audience: 'party',knownByActorKeys: ['hero','companion.1','companion.2'],supersedes: null,supersedeReason: null }
@@ -40,7 +41,14 @@ describe('R-TTRPGOPEN4 formal normalization of a genuinely accepted interpretati
   it('reads exactly the contract, original Oracle and accepted review under a distinct frozen Skill',async () => {
     const { fixture,review,input } = await setup()
     const prepared = await prepareTtrpgOpenFactNormalizationInputV1({ ...input,modelIdentity: { provider: 'test-adapter',model: 'injected' } })
-    expect(prepared.evidence.selector.selected).toHaveLength(3)
+    const sessionKey = (await readProductRuntimeState(fixture.sessionId)).ttrpg!.sessionKey
+    const prefix = `fact:ttrpg-open:${sessionKey}:gm:`
+    expect(prepared.evidence.selector.selected.map(row => [row.sourceKey,row.resourceKey]).sort()).toEqual([
+      ['ttrpgOpenGmOracleInput',`${prefix}gm-oracle-contract`],
+      ['ttrpgOpenGmOracleInput',`${prefix}oracle.${await hashProductProductionValueV2(review.oracleSourceRef)}`],
+      ['ttrpgOpenGmOracleInput',`${prefix}review.${await hashProductProductionValueV2(review.sourceRef)}`],
+      ['ttrpgOpenGmContext',`${prefix}context-contract.gm-assistant`],
+    ].sort())
     const snapshot = await readInstanceAgentRunV1(fixture.scope,prepared.runId)
     expect(snapshot.contract.executionBindings![0].skillId).toBe('prose.ttrpg-open-fact-normalize')
     const call = (await readProductRuntimeState(fixture.sessionId)).ttrpg!.openRun!.coordination.calls[1]
