@@ -89,7 +89,7 @@
   "countSemantics": "Independent new source-corrected cohort. Collection completion is a terminal outcome, not quality acceptance; no combined denominator or replacement of older failures.",
   "cohort": "m1-v90-source-admitted",
   "registeredAt": "2026-10-15T16:05:49.272493+00:00",
-  "status": "registered-before-first-call",
+  "status": "first weak-guidance collection ended in stagnation; remaining paired behaviors pending",
   "code": {
     "gitHistory": "depth-1; exact HEAD and tracked tree verified",
     "head": "9a66f52c3ab63a12e3c1a57173410eaf9e88af0e",
@@ -107,15 +107,15 @@
   "counts": {
     "scheduled": 120,
     "productionUnitsPlanned": 20,
-    "productionUnitsStarted": 0,
-    "productionUnitsCompleted": 0,
+    "productionUnitsStarted": 1,
+    "productionUnitsCompleted": 1,
     "productionBlockedEpisodes": 0,
-    "started": 0,
-    "collectionCompleted": 0,
+    "started": 1,
+    "collectionCompleted": 1,
     "narrativePassed": 0,
-    "failed": 0,
+    "failed": 1,
     "unknown": 0,
-    "notStarted": 120,
+    "notStarted": 119,
     "humanScored": 0
   },
   "evidenceFolder": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v90-m1-source-admitted",
@@ -125,5 +125,143 @@
     "character-chat-m1-cohort-v77.json": "98b3dea026d14e21be049773a65dffef2dfee4ad5c9284cc0cbb7c41ac672eb3",
     "character-chat-m1-cohort-v89.json": "9cc915bb35d9576b9550b65536d8464ccb5b3c3b32ebd38c02e4b33b7c098d39"
   },
-  "firstEpisode": "m1-v90-source-admitted/daily-clock-promise/local-codex/r1/weak-guidance"
+  "firstEpisode": "m1-v90-source-admitted/daily-clock-promise/local-codex/r1/weak-guidance",
+  "sourceAdmission": {
+    "passed": true,
+    "checkedAt": "2026-10-15T16:08:28.619080+00:00",
+    "helper": "character-chat-m1-source.ts",
+    "modelCallsAtCheck": 0,
+    "privateFacts": 1,
+    "goals": 2,
+    "beliefs": 0,
+    "publicFacts": 3,
+    "evidence": "prepared.json"
+  },
+  "productionUnits": [
+    {
+      "id": "m1-v90-source-admitted/daily-clock-promise/local-codex/r1",
+      "status": "source-admitted-local-release",
+      "firstAttempt": true,
+      "modelCalls": 3,
+      "openingSelection": "first candidate in original order; all 3 passed required review",
+      "localReleaseId": 1,
+      "sourceAdmission": "prepared.json"
+    }
+  ],
+  "recordedAt": "2026-10-15T16:27:01.555895+00:00",
+  "episodes": [
+    {
+      "id": "m1-v90-source-admitted/daily-clock-promise/local-codex/r1/weak-guidance",
+      "status": "failed",
+      "failureKind": "narrative-stagnation",
+      "ending": "stagnation",
+      "collectionCompleted": true,
+      "playerOpportunities": 13,
+      "runtimeRequests": 30,
+      "completedReviewedActions": 14,
+      "completedSituationUpdates": 1,
+      "rawRunFailures": 0,
+      "humanScored": false,
+      "narrativeQualityAccepted": false,
+      "artifact": "clock-r1-weak-guidance.json",
+      "interpretation": "interpretation.json"
+    }
+  ],
+  "aggregateUsage": {
+    "uniqueProviderRequests": 33,
+    "sharedProductionRequests": 3,
+    "runtimeRequests": 30,
+    "completedProviderResponses": 33,
+    "totalTokens": 406520,
+    "inputTokens": 387970,
+    "outputTokens": 18550,
+    "cachedInputTokens": 38272,
+    "reasoningOutputTokens": 3942,
+    "costUsd": null,
+    "productionCountedOnce": true
+  },
+  "restoration": {
+    "stem": "clock-r1-weak-guidance",
+    "runStatusesPreserved": true,
+    "verifiedCompletedHistories": 15,
+    "retainedFailedRuns": 0,
+    "resumableRuns": 0,
+    "openingReviewRetained": true,
+    "modelCalls": 0,
+    "interactionEqual": true,
+    "refreshEqual": true,
+    "worldPreserved": true,
+    "rawEvidenceRetained": true
+  },
+  "metadataCaveat": {
+    "field": "preregistration.coreMaterialSha256",
+    "issue": "Inherited hash points to the earlier full cases file, whose evaluation metadata later changed. Original registration retained; no material or score changed retrospectively.",
+    "recordedHash": "59f2bd90272abae0f53e57765953827d8673b1269048e63c642ef01741fb542f",
+    "actualFrozenFileHash": "17bab4b4b160e8f9072ce73897b41f848490ec004f0ea1e8b9cfc13f0896ae4e",
+    "exactScenarioEqualToEmbeddedPreregistration": true,
+    "sourceAuthority": "correct frozen snapshot manifest plus complete embedded preregistered scenario; future registration must compute whole-file hash from its actual snapshot"
+  },
+  "rawEvidence": [
+    {
+      "file": "clock-r1-weak-guidance-backup.json",
+      "sha256": "1d2074209cf5f74c65cc40a0380627060dc352ff61c6c8ebfc35ea57d4d19e71"
+    },
+    {
+      "file": "clock-r1-weak-guidance-progress.json",
+      "sha256": "bf65db1e8fd968ff4020cd66f1486b7a50f3d6399ae512999caed6f658395c33"
+    },
+    {
+      "file": "clock-r1-weak-guidance.json",
+      "sha256": "b31c3ddfd6e05bd83d51913519a4348cb0e38390975a018e6873a647831231bb"
+    },
+    {
+      "file": "interpretation.json",
+      "sha256": "1e3956eae8af1d453246e11749c1228060dc0a8f47723f2770490a19a13d591d"
+    },
+    {
+      "file": "operator-decisions.jsonl",
+      "sha256": "b659f53e4b302266bd841d429a70d06092d35b303fe106bacf69da7781b627e3"
+    },
+    {
+      "file": "paired-registration.json",
+      "sha256": "07a1519b932e7eb5f20855adcef9f9059ecd38326dfe2726637644843a322302"
+    },
+    {
+      "file": "paired-runner-v1.mjs",
+      "sha256": "a3f8f590c812235d322f608b3da0bb3f40781c8db4c095c5001214a1d183c0cb"
+    },
+    {
+      "file": "paired-runner.mjs",
+      "sha256": "b0f500e57e7e842e4e5d3b08a2b8141c79c035ee36e4c5fbd1f00e5b1ece346a"
+    },
+    {
+      "file": "prepared.json",
+      "sha256": "4ef066023e2a5ba15b4468ed3f3e49d709777a521aeefd3a856fde5b9bfe01f4"
+    },
+    {
+      "file": "preregistration.json",
+      "sha256": "c30ed79c7d078d2f1f41db881b33c405be022bbbdb003c105ba549f254ebaf0f"
+    },
+    {
+      "file": "restoration-verified.json",
+      "sha256": "62ed08c71b31e2e13836b158037e2bd9e28b0b8d297a0cefc92439974f709f16"
+    },
+    {
+      "file": "restoration.mjs",
+      "sha256": "73268e586658f44f50ab5651eb74610f469f400042fbc2ec7f582d0433cd998b"
+    },
+    {
+      "file": "runner.mjs",
+      "sha256": "cc3a7f370352f867688dc3c454db52c647a4f2138b6985be885a1d48ff1db6a1"
+    },
+    {
+      "file": "terminal-request-proof.json",
+      "sha256": "63248651cb74888830e4299646643cc3586ed622fac9cc24cc86288dbd77f971"
+    },
+    {
+      "file": "transport-progress.json",
+      "sha256": "07d51e1713381316c18d08e4e2336b0df43ea918f99f0723df52484affa67642"
+    }
+  ],
+  "next": "Keep this failed weak-guidance episode and frozen release; next collect refuse, alternative, rest, return and unexpected as fresh independent sessions from the same release. Paired runner registered with zero calls; not yet executed. Do not tune on holdouts."
 }
