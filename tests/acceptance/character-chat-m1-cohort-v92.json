@@ -5,7 +5,7 @@
   "parentProtocol": "character-chat-m1-protocol-v1.json",
   "parentProtocolSha256": "a70ce9a0395edb55216420b07f321fc9c21d840bbb8b3a3b5a48c0f9762e8b25",
   "registeredAt": "2026-10-15T17:38:46.898797+00:00",
-  "status": "registered; zero model calls; source admission and first production pending",
+  "status": "two episodes collected: alternative failed on action-kind contract after valid arrival; weak-guidance ended in stagnation; no quality acceptance",
   "implementationHead": "5ed264c7ebfb41c698163ee900281f66e5e55883",
   "code": {
     "gitHistory": "depth-1; exact HEAD and tracked tree verified",
@@ -131,18 +131,132 @@
   "counts": {
     "scheduled": 120,
     "productionUnitsPlanned": 20,
-    "productionUnitsStarted": 0,
-    "productionUnitsCompleted": 0,
+    "productionUnitsStarted": 1,
+    "productionUnitsCompleted": 1,
     "productionBlockedEpisodes": 0,
-    "started": 0,
-    "collectionCompleted": 0,
+    "started": 2,
+    "collectionCompleted": 2,
     "narrativePassed": 0,
-    "failed": 0,
+    "failed": 2,
     "unknown": 0,
-    "notStarted": 120,
+    "notStarted": 118,
     "humanScored": 0,
-    "intentionalPause": 0
+    "intentionalPause": 0,
+    "inProgress": 0
   },
-  "productionUnits": [],
-  "episodes": []
+  "productionUnits": [
+    {
+      "id": "m1-v92-shared-place-transition/daily-clock-promise/local-codex/r1",
+      "status": "source-admitted-local-release",
+      "firstAttempt": true,
+      "modelCalls": 3,
+      "openingSelection": "first passing in original order; all three passed",
+      "productReleaseHash": "448f0be8b6232a0e70d6bc55b00d5c1b5e47b460fc0d83d4b513573ba5f967e7"
+    }
+  ],
+  "episodes": [
+    {
+      "id": "m1-v92-shared-place-transition/daily-clock-promise/local-codex/r1/alternative",
+      "status": "failed",
+      "ending": "failure",
+      "failureKind": "action-kind-waiting-contract",
+      "collectionCompleted": true,
+      "playerOpportunities": 2,
+      "productionRequests": 3,
+      "runtimeRequests": 5,
+      "completedReviewedActions": 2,
+      "completedSituationUpdates": 0,
+      "rawRunFailures": 1,
+      "humanScored": false,
+      "narrativeQualityAccepted": false,
+      "artifact": "clock-r1-alternative.json",
+      "evidenceSha256": "ec554344350be8be5be1539fd9696df886204c9c99c932a180b0353f2951f5e4",
+      "backupSha256": "5b5c793b5bebf8da741d09394f424a0a7e57f0f21dd767eddee8f662a6c2afa1",
+      "restoration": {
+        "stem": "clock-r1-alternative",
+        "runStatusesPreserved": true,
+        "verifiedCompletedHistories": 2,
+        "retainedFailedRuns": 1,
+        "resumableRuns": 0,
+        "openingReviewRetained": true,
+        "modelCalls": 0,
+        "interactionEqual": true,
+        "refreshEqual": true,
+        "worldPreserved": true,
+        "rawEvidenceRetained": true
+      },
+      "sceneAudit": "clock-r1-alternative-scene-audit.json",
+      "interpretation": "clock-r1-alternative-interpretation.json"
+    },
+    {
+      "id": "m1-v92-shared-place-transition/daily-clock-promise/local-codex/r1/weak-guidance",
+      "status": "failed",
+      "ending": "stagnation",
+      "failureKind": "repeated-waiting-without-new-direction",
+      "collectionCompleted": true,
+      "playerOpportunities": 7,
+      "productionRequests": 0,
+      "runtimeRequests": 18,
+      "completedReviewedActions": 8,
+      "completedSituationUpdates": 1,
+      "rawRunFailures": 0,
+      "humanScored": false,
+      "narrativeQualityAccepted": false,
+      "artifact": "clock-r1-weak-guidance.json",
+      "evidenceSha256": "637761b03eb6d2677917416eb70a0cf95a5f58bd515e07e8ed3e697c6bdd753d",
+      "backupSha256": "8f361b0902b7b23df724b0adde2414b8b6ca20685158a7a3154c9cfdbaa5cf05",
+      "restoration": {
+        "stem": "clock-r1-weak-guidance",
+        "runStatusesPreserved": true,
+        "verifiedCompletedHistories": 9,
+        "retainedFailedRuns": 0,
+        "resumableRuns": 0,
+        "openingReviewRetained": true,
+        "modelCalls": 0,
+        "interactionEqual": true,
+        "refreshEqual": true,
+        "worldPreserved": true,
+        "rawEvidenceRetained": true
+      },
+      "terminalRequestProof": "clock-r1-weak-guidance-terminal-request-proof.json",
+      "priorPreservedProof": "clock-r1-weak-guidance-prior-preserved.json",
+      "interpretation": "clock-r1-weak-guidance-interpretation.json"
+    }
+  ],
+  "sourceAdmission": {
+    "passed": true,
+    "evidence": "prepared.json",
+    "modelCallsAtCheck": 0
+  },
+  "aggregateUsage": {
+    "scope": "both collected episodes; shared production counted once",
+    "uniqueProviderRequests": 26,
+    "sharedProductionRequests": 3,
+    "runtimeRequests": 23,
+    "completedProviderResponses": 26,
+    "totalTokens": 318857,
+    "inputTokens": 301955,
+    "outputTokens": 16902,
+    "cachedInputTokens": 43136,
+    "cacheWriteInputTokens": 0,
+    "reasoningOutputTokens": 3759,
+    "costUsd": null,
+    "productionCountedOnce": true
+  },
+  "pairedCollection": {
+    "registration": "paired-registration.json",
+    "registrationSha256": "4811fa86d73c0cc761f7e69591805146b7f6952f1e51598331a4b22f6e8a88e3",
+    "runner": "paired-runner.mjs",
+    "runnerSha256": "68663ef9e8d8a0eef7380f103b6ad7ce4ef085223b17718033b39ca659932179",
+    "existingFailurePreserved": true
+  },
+  "collectorClosed": {
+    "at": "2026-10-15T18:04:45.797836+00:00",
+    "runnerHandle": 20406,
+    "runnerExit": 0,
+    "serverHandle": 49589,
+    "serverExit": 130,
+    "reason": "all 26 provider terminals read back, two isolated restores passed, prior evidence unchanged; server intentionally stopped"
+  },
+  "next": "Preserve both failed episodes and all 118 unstarted slots. Clarify current action kinds versus waiting for player in a new frozen producer version; never repair or replay either scored episode silently. Persistent indecision remains an independent quality issue."
 }
