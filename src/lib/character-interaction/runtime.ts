@@ -29,6 +29,7 @@ import {chatRelationshipEvidenceV1} from './narrative-relationships'
 import {selectChatContextWindowV1, type ChatContextSelectionV1} from './context-selection'
 import {interactionMessageVisibleTo as visibleTo} from './message-visibility'
 import {hasChatMemoryContentReviewV1, interactionMemoryForContextV1, parseChatMemoryReceiptV1} from './memory-review-contract'
+import {requiredChatCommitmentKeysV1} from './commitment-context'
 import {assertChatCommitmentSourcesV1, chatVisibleCommitmentsV1} from './narrative-commitments'
 
 type JsonObject = Record<string, unknown>
@@ -1086,7 +1087,8 @@ export function buildInteractionContextWindow(
   if (state.chatNarrative && options.retrievalVersion !== 'legacy') {
     const profile = state.profiles.find(p => p.participantKey === participantKey)
     if (!profile) throw new Error('缺少角色视角，无法选择来源资料')
-    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v2'})
+    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v3',
+      requiredCommitmentKeys: requiredChatCommitmentKeysV1(state.chatNarrative!.situation.goals)})
   }
   const allMessages = visible.messages
   visible.messages = allMessages.slice(-maxRecentMessages)

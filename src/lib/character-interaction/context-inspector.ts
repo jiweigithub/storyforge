@@ -85,6 +85,12 @@ export async function readChatContextInspectionV1(scope: WorkspaceScope, session
       const decision = view.selection!.knowledge.find(d => d.key === k.knowledgeKey)!
       return {content: k.content, included: decision.included, reason: decision.reason}
     }),
+    ...(view.selection.commitments ? {commitments: [
+      ...(shared.chatNarrative?.goals.flatMap(g => g.commitments ?? []) ?? []), ...(shared.sharedCommitments ?? []),
+    ].filter(c => c.audienceKeys.includes(state.playerKey)).map(c => {
+      const decision = view.selection!.commitments!.find(d => d.key === c.commitmentKey)!
+      return {content: c.terms, included: decision.included, reason: decision.reason}
+    })} : {}),
     memories: shared.memories.filter(m => memories.has(m.memoryId)).map(m => {
       const decision = view.selection!.memories.find(d => d.key === m.memoryId)!
       return {content: m.content, included: decision.included, reason: decision.reason}

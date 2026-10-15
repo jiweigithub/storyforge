@@ -70,7 +70,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
       await assertRuntimeHarnessFreshV1(freshness)
       const manifest = await createContextManifestFromAssemblyV1({runId: snapshot.run.id, stepId, attempt: 1,
         projectId: input.scope.projectId, worldGroupId: snapshot.contract.scope.worldGroupId, declaredSourceKeys: sourceKeys,
-        assembled, readerVersion: situation ? 'chat-situation-review-v6' : 'chat-action-review-v6'})
+        assembled, readerVersion: situation ? 'chat-situation-review-v7' : 'chat-action-review-v7'})
       snapshot = await append(input.scope, snapshot, 'context.assembled', {stepId, attempt: 1, manifestHash: manifest.manifestHash})
       const compact = naturalDisclosure || ['chat-narrative-action-review-v17', 'chat-narrative-options-review-v11'].includes(reviewBinding.promptVersion)
       const roleContext = !situation && compact ? interactionRetrievalView((await readProductRuntimeState(input.productRuntimeSessionId)).interaction!, candidate.participantKey) : undefined
