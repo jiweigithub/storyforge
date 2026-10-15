@@ -157,6 +157,6 @@ it('rejects adoption of a saved pause after another player message without an ex
   const v = await readProductRuntimeStateVersion(f.sessionId)
   await commitInteractionPlayerMessage({sessionId: f.sessionId, commandId: 'hold.new-player', messageId: 'hold.new-player-message', baseSequence: v.sequence, baseStateHash: v.stateHash, text: '这次先只听你说。', audienceKeys: audience})
   const before = await readProductRuntimeState(f.sessionId)
-  await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: candidate.runId})).rejects.toThrow()
+  await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: candidate.snapshot.run.id})).rejects.toThrow()
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before); expect(calls).toBe(2)
 })

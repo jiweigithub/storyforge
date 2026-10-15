@@ -1,3 +1,4 @@
+import {assertChatSceneTransitionSourcesV1} from './narrative-scene-transition'
 import {assertChatPlayerPauseSourcesV1} from './narrative-player-pause'
 import {chatMemoryCorrectionContextV1, type ChatMemoryCorrectionContextV1} from './memory-correction-context'
 import {assertChatMemoryReconciliationSourcesV1} from './memory-reconciliation'
@@ -546,6 +547,7 @@ export function parseInteractionState(value: unknown): CharacterInteractionRunti
   }
   for (const id of result.chatNarrative?.excludedMessageIds ?? []) requireChatRetrievalMessageV1(result, id)
   assertChatPlayerPauseSourcesV1(result)
+  assertChatSceneTransitionSourcesV1(result)
   assertChatCommitmentSourcesV1(result)
   assertChatMemoryReconciliationSourcesV1(result)
   return result
@@ -681,6 +683,15 @@ export function applyInteractionEvent(
         startedAtSequence: event.sequence,
         endedAtSequence: null,
         playerTurns: 0,
+      }
+      // A completed visit belongs to this instance. Reopening its scene does
+      // not teleport back to the release template. Old events without visit
+      // history retain their exact historical behavior.
+      if (state.chatNarrative?.sceneTransitions?.length && state.chatNarrative.situation.sceneKey === sceneKey) {
+        const current = state.chatNarrative.situation
+        state.activeScene.title = current.title
+        state.activeScene.location = current.location
+        state.activeScene.timeLabel = current.timeLabel
       }
       for (const knowledgeKey of template.publicKnowledgeKeys) {
         const sources = state.knowledge.filter(item => item.knowledgeKey === knowledgeKey && item.status === 'known')

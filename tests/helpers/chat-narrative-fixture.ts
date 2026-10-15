@@ -59,7 +59,7 @@ export function enableChatFactDiscoveryFixture(content: FrozenInteractionRuntime
 }
 
 /** Formal isolated release/instance, with a scene-start event and no fabricated player input. */
-export async function seedChatNarrativeRuntimeFixture(options: {maxMemoryEntries?: number; factDiscovery?: boolean; maxActionsPerTrigger?: number; relationships?: boolean; additionalGuardGoal?: boolean; actorSituationExpansion?: boolean; actorThreadFollowup?: boolean; onlyGuard?: boolean; playerFollowup?: boolean; directorBudget?: number; contextKnowledge?: Array<{key: string; content: string; audienceKeys: string[]}>} = {}) {
+export async function seedChatNarrativeRuntimeFixture(options: {knownDestination?: boolean; maxMemoryEntries?: number; factDiscovery?: boolean; maxActionsPerTrigger?: number; relationships?: boolean; additionalGuardGoal?: boolean; actorSituationExpansion?: boolean; actorThreadFollowup?: boolean; onlyGuard?: boolean; playerFollowup?: boolean; directorBudget?: number; contextKnowledge?: Array<{key: string; content: string; audienceKeys: string[]}>} = {}) {
   const {scope, release} = await seedCurrentProductWorld('CHAT-02 narrative contract')
   const catalog = await loadCurrentProductWorldSourceCatalogV1({scope, worldReleaseId: release.id!, productType: 'character-interaction'})
   const keys = catalog.characters.slice(0, 2).map(c => c.resourceKey)
@@ -67,6 +67,7 @@ export async function seedChatNarrativeRuntimeFixture(options: {maxMemoryEntries
   for (const [index, item] of (options.contextKnowledge ?? []).entries()) interaction.chatSource!.knowledge.push({
     ...item, source: {...interaction.chatSource!.knowledge[0].source, pointer: `/context-fixture/${index}`},
   })
+  if (options.knownDestination) interaction.chatNarrative!.initialSituation.facts.push({factKey: 'courtyard', text: '后院就在驿站旁边，仍可通行。', audienceKeys: ['player', 'guard'], origin: 'author-private', sourceKnowledgeKey: null, sourceEventSequence: 0})
   if (options.onlyGuard) interaction.sceneTemplates[0].participantKeys = ['guard']
   if (options.factDiscovery) enableChatFactDiscoveryFixture(interaction)
   if (options.actorSituationExpansion) interaction.chatNarrative!.permissions.allowActorSituationExpansion = true

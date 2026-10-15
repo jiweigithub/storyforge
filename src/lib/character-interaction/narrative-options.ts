@@ -41,6 +41,7 @@ export function bindChatNarrativeOptionsReviewV1(value: unknown, actions: ChatNa
     return {optionKey, review: parseChatNarrativeActionReviewV1({checks: (row as {checks: unknown}).checks,
       ...('disclosureChecks' in row ? {disclosureChecks: row.disclosureChecks} : {}),
       ...('commitmentChecks' in row ? {commitmentChecks: row.commitmentChecks} : {}),
+      ...('sceneTransitionCheck' in row ? {sceneTransitionCheck: row.sceneTransitionCheck} : {}),
       ...('memoryChecks' in row ? {memoryChecks: row.memoryChecks} : {}), reviewedActionJson: canonicalStringify(action)}, action)}
   })
   return {optionReviews: CHAT_NARRATIVE_OPTION_KEYS_V1.map(key => optionReviews.find(r => r.optionKey === key)!)}

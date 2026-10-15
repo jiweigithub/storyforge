@@ -3,6 +3,8 @@ import {parseContextManifestV1, verifyContextManifestIntegrityV1} from '../agent
 import {readAgentRunArtifactExactV1} from '../memory/artifact-store'
 import {sha256Text} from '../ai/chapter-memory/text-normalization'
 import {chatRetrievalVersionForReader, type ChatRetrievalVersion} from './context-selection'
+import type {ChatNarrativeActionV1} from '../types/chat-narrative'
+import {supportsChatSceneTransitionPromptV1} from './narrative-scene-transition'
 import type {CharacterInteractionRuntimeState} from '../types'
 import {buildInteractionContextWindow} from './runtime'
 import {formatInteractionRuntimeContextV1} from './context-format'
@@ -39,4 +41,24 @@ export async function readChatCandidateRetrievalVersion(snapshot: AgentRunSnapsh
     if (source.contentHash !== await sha256Text(expected) || !body.text.includes(expected)) throw new Error('行动来源正文与读取版本不一致。')
   } else if (source.contentHash !== await sha256Text(body.text)) throw new Error('情境来源正文与记录不一致。')
   return version
+}
+
+/** Authorization must be in the actor's saved input, not merely available to the coordinator. */
+export async function assertChatSceneTransitionInputV1(snapshot: AgentRunSnapshotV1, projectId: number,
+  state: CharacterInteractionRuntimeState, actorKey: string, actions: readonly ChatNarrativeActionV1[]): Promise<void> {
+  const transitions = actions.flatMap(a => a.sceneTransition ? [a.sceneTransition] : [])
+  if (!transitions.length) return
+  const producer = snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:runtime-candidate')
+  if (!supportsChatSceneTransitionPromptV1(producer?.promptVersion)) throw new Error('旧生成合同不支持转场；保留候选，不自动换约或重发。')
+  const version = await readChatCandidateRetrievalVersion(snapshot, projectId, 'interactionRuntime', actorKey, state)
+  if (version !== 'chat-relevance-v4') throw new Error('转场缺少可核验的原角色输入。')
+  const view = buildInteractionContextWindow(state, actorKey, {retrievalVersion: version})
+  for (const t of transitions) {
+    const source = view.messages.find(m => m.role === 'player' && m.eventSequence === t.playerEventSequence)
+    const original = state.messages.find(m => m.role === 'player' && m.eventSequence === t.playerEventSequence)
+    if (!source || source.text !== original?.text || !source.text.includes(t.playerExcerpt)
+      || !view.chatNarrative?.facts.some(f => f.factKey === t.destinationFactKey && f.text.includes(t.destinationExcerpt))) {
+      throw new Error('转场原输入缺少完整玩家消息或目的地事实；不能使用协调者额外知识补授权。')
+    }
+  }
 }

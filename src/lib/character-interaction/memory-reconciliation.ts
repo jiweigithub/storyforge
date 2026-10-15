@@ -91,7 +91,7 @@ export function applyChatMemoryReconciliationsV1(before: CharacterInteractionRun
 
 /** New fields cannot be smuggled through older frozen reviewer contracts. */
 export function supportsChatMemoryReconciliationV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v20', 'chat-narrative-options-review-v14', 'chat-narrative-action-review-v21', 'chat-narrative-options-review-v15', 'chat-narrative-action-review-v22', 'chat-narrative-options-review-v16', 'chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18', 'chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20', 'chat-narrative-action-review-v27', 'chat-narrative-options-review-v21'].includes(version ?? '')
+  return ['chat-narrative-action-review-v20', 'chat-narrative-options-review-v14', 'chat-narrative-action-review-v21', 'chat-narrative-options-review-v15', 'chat-narrative-action-review-v22', 'chat-narrative-options-review-v16', 'chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18', 'chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20', 'chat-narrative-action-review-v27', 'chat-narrative-options-review-v21', 'chat-narrative-action-review-v28', 'chat-narrative-options-review-v22'].includes(version ?? '')
 }
 
 export function assertChatMemoryReconciliationReviewVersionV1(reviews: readonly (ChatNarrativeActionReviewV1 | null)[], version: string | undefined): void {
@@ -114,5 +114,5 @@ export function assertChatMemoryReconciliationReviewsV1(state: CharacterInteract
 
 export function isChatActionReviewOutputV1(value: unknown, extraRequired: string[] = []): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value) && ['checks', ...extraRequired].every(k => Object.prototype.hasOwnProperty.call(value, k))
-    && Object.keys(value).every(k => ['checks', 'disclosureChecks', 'commitmentChecks', 'memoryChecks', ...extraRequired].includes(k))
+    && Object.keys(value).every(k => ['checks', 'disclosureChecks', 'commitmentChecks', 'memoryChecks', 'sceneTransitionCheck', ...extraRequired].includes(k))
 }

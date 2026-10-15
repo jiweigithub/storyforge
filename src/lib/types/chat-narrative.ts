@@ -184,6 +184,35 @@ export interface ChatNarrativeStateV1 {
   /** A reviewed action reconsidered a particular player-authored correction.
    * This acknowledges use, never certifies the summary as a world fact. */
   memoryReconciliations?: ChatMemoryReconciliationRecordV1[]
+  /** Completed, player-authorized visits to an already shared-known place.
+   * Never a movement permission inferred from a scene description. */
+  sceneTransitions?: ChatSceneTransitionRecordV1[]
+}
+
+export interface ChatSceneTransitionV1 extends ChatPlayerRequestEvidenceV1 {
+  destinationFactKey: string
+  destinationExcerpt: string
+  arrivalFactKey: string
+  evidenceExcerpt: string
+}
+
+export interface ChatSceneTransitionRecordV1 {
+  sceneKey: string
+  actorKey: string
+  fromLocation: string
+  destinationFactKey: string
+  destinationExcerpt: string
+  arrivalFactKey: string
+  requested: ChatCommitmentEvidenceV1
+  arrived: ChatCommitmentEvidenceV1
+}
+
+export interface ChatSceneTransitionCheckV1 {
+  destinationFactKey: string
+  arrivalFactKey: string
+  playerEventSequence: number
+  passed: boolean
+  reason: string
 }
 
 export interface ChatMemoryReconciliationRecordV1 {
@@ -323,6 +352,8 @@ export interface ChatNarrativeActionV1 {
   pauseGoal?: (ChatPlayerRequestEvidenceV1 & {threadKey: string; evidenceExcerpt: string}) | null
   /** Explicit latest-player-request basis for a new own promise only. */
   promiseRequest?: ChatPlayerRequestEvidenceV1 | null
+  /** A completed shared visit, not an invitation or an attempt to depart. */
+  sceneTransition?: ChatSceneTransitionV1 | null
 }
 
 export interface ChatActorThreadFollowupGoalV1 {
@@ -372,4 +403,5 @@ export interface ChatNarrativeActionReviewV1 {
   disclosureChecks?: Array<{factKey: string; passed: boolean; reason: string}>
   commitmentChecks?: Array<{effectIndex: number; passed: boolean; reason: string}>
   memoryChecks?: ChatMemoryReconciliationCheckV1[]
+  sceneTransitionCheck?: ChatSceneTransitionCheckV1
 }

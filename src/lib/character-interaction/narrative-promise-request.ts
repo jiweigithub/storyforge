@@ -27,10 +27,10 @@ export function requireChatPromiseRequestV1(state: CharacterInteractionRuntimeSt
 }
 
 export function supportsChatPromiseRequestV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20', 'chat-narrative-action-review-v27', 'chat-narrative-options-review-v21'].includes(version ?? '')
+  return ['chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20', 'chat-narrative-action-review-v27', 'chat-narrative-options-review-v21', 'chat-narrative-action-review-v28', 'chat-narrative-options-review-v22'].includes(version ?? '')
 }
 export function supportsChatPromiseRequestPromptV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-v32', 'chat-narrative-options-v22', 'chat-action-revision-v14', 'chat-narrative-action-v33', 'chat-narrative-options-v23', 'chat-action-revision-v15'].includes(version ?? '')
+  return ['chat-narrative-action-v32', 'chat-narrative-options-v22', 'chat-action-revision-v14', 'chat-narrative-action-v33', 'chat-narrative-options-v23', 'chat-action-revision-v15', 'chat-narrative-action-v34', 'chat-narrative-options-v24', 'chat-action-revision-v16'].includes(version ?? '')
 }
 export function assertChatPromiseRequestReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
   if (actions.some(a => a.promiseRequest != null) && !supportsChatPromiseRequestV1(version)) fail('旧审查合同不支持玩家请求约定；保留原候选，不自动换约或重发')

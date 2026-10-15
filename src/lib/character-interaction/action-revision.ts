@@ -78,6 +78,7 @@ export function assertChatActionRevisionExpressionV1(source: ChatActionRevisionS
   if (canonicalStringify(source.action.followupGoal ?? null) !== canonicalStringify(action.followupGoal ?? null)) throw new Error('[chat-revision] 后果修订不能更换原表达承接的新目标与请求依据')
   if (canonicalStringify(source.action.threadFollowupGoal ?? null) !== canonicalStringify(action.threadFollowupGoal ?? null)) throw new Error('[chat-revision] 后果修订不能更换原表达接续的事项与目标')
   if (canonicalStringify(source.action.promiseRequest ?? null) !== canonicalStringify(action.promiseRequest ?? null)) throw new Error('[chat-revision] 后果修订不能更换原约定的玩家请求依据')
+  if (canonicalStringify(source.action.sceneTransition ?? null) !== canonicalStringify(action.sceneTransition ?? null)) throw new Error('[chat-revision] 后果修订不能更换转场授权与到达依据')
   if (canonicalStringify(source.action.pauseGoal ?? null) !== canonicalStringify(action.pauseGoal ?? null)) throw new Error('[chat-revision] 后果修订不能更换已有目标暂停的玩家请求依据')
   if (canonicalStringify(source.action.resumeGoal ?? null) !== canonicalStringify(action.resumeGoal ?? null)) throw new Error('[chat-revision] 后果修订不能更换恢复玩家暂停的依据')
   for (const key of ['kind', 'text', 'goalKey', 'audienceKeys', 'waitingForPlayer'] as const) {

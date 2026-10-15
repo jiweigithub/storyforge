@@ -65,10 +65,10 @@ export function requireChatExistingGoalPauseV1(state: CharacterInteractionRuntim
 }
 
 export function supportsChatExistingGoalPauseV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v27', 'chat-narrative-options-review-v21'].includes(version ?? '')
+  return ['chat-narrative-action-review-v27', 'chat-narrative-options-review-v21', 'chat-narrative-action-review-v28', 'chat-narrative-options-review-v22'].includes(version ?? '')
 }
 export function supportsChatExistingGoalPausePromptV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-v33', 'chat-narrative-options-v23', 'chat-action-revision-v15'].includes(version ?? '')
+  return ['chat-narrative-action-v33', 'chat-narrative-options-v23', 'chat-action-revision-v15', 'chat-narrative-action-v34', 'chat-narrative-options-v24', 'chat-action-revision-v16'].includes(version ?? '')
 }
 export function assertChatExistingGoalPauseReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
   if (actions.some(a => a.pauseGoal != null) && !supportsChatExistingGoalPauseV1(version)) fail('旧审查合同不支持已有目标的玩家暂停；保留原候选，不自动换约或重发')
@@ -123,7 +123,7 @@ export function rebaseChatPlayerPausesV1(goals: ChatActorGoalV1[], rebase: (sequ
   }
 }
 export function supportsChatPlayerPauseV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v22', 'chat-narrative-options-review-v16', 'chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18', 'chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20', 'chat-narrative-action-review-v27', 'chat-narrative-options-review-v21'].includes(version ?? '')
+  return ['chat-narrative-action-review-v22', 'chat-narrative-options-review-v16', 'chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18', 'chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20', 'chat-narrative-action-review-v27', 'chat-narrative-options-review-v21', 'chat-narrative-action-review-v28', 'chat-narrative-options-review-v22'].includes(version ?? '')
 }
 
 export const CHAT_PLAYER_PAUSE_ACTION_RULE_V1 = '以下明确暂停路径是原线接续首步须实际行动的唯一例外：若符合 threadFollowupGoal 的原线接续条件，但本轮玩家明确要求暂缓角色尚负责的剩余事项，可在该字段加 pauseRequest:{playerEventSequence:trigger.sourceEventSequence,playerExcerpt:"本轮要求暂缓的逐字摘录"}。新目标只描述原责任剩余部分，不能复活旧目标或将拒绝变成新任务；kind=speak、waitingForPlayer=true、goalStatus=paused，只表达接受暂缓，newFacts/disclosures/goalUpdates/relationshipUpdates/beliefUpdates=[]，nextPossibilities=null或[]，situationRequest=null，不作实际推进。threadUpdates 只能按实际表达与知情范围把原线设为 paused，个人暂停不强制暂停共同行动。若明确答应等待，完整条款仍登记 commitmentEffects.promise；不得登记履行。系统保存真实请求和确认到新目标 playerPause。原线不存在角色自己的剩余责任时，不能为了存暂停强造目标，应自然回应。'
