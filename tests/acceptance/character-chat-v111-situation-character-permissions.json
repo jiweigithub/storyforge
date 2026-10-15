@@ -1,0 +1,95 @@
+{
+  "schema": "storyforge.character-chat-situation-character-permissions-evidence",
+  "version": 1,
+  "label": "V111 observation results cannot smuggle new people",
+  "base": {
+    "gitHistory": "depth-1; exact HEAD and tracked tree verified",
+    "head": "43ba97eab1f96198d018cf5514413fa77d4961d3",
+    "root": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v111-baseline-sdz7nt9g/storyforge",
+    "manifestPath": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v111-baseline-sdz7nt9g/manifest.json",
+    "manifestSha256": "36e63964e5605d52b78ca5efbe7d804a1154441822a5c4b9c9b332e728495216",
+    "files": 3453
+  },
+  "boundary": {
+    "product": "character-chat",
+    "lifecycle": "product-development",
+    "stage": "S3 runtime",
+    "owner": "existing product instance and durable run",
+    "world": "read-only frozen release",
+    "media": "unchanged product-owned assets",
+    "newTables": false,
+    "newContextSources": false,
+    "newAdoptionTargets": false,
+    "releaseOrPermissionRetrofit": false
+  },
+  "implementation": {
+    "construction": "chat-situation-construction-v9",
+    "review": "chat-situation-review-v8",
+    "inquiryBindings": [
+      "v8/v7",
+      "v9/v8"
+    ],
+    "legacyPromptBytesPreserved": true,
+    "boundedCallsUnchanged": true
+  },
+  "legacySystemHashes": {
+    "construction-v8": "057a52f39ea9067d6607e5526e5bd0760118d109b53f86377090e5d353a9c2f2",
+    "review-v7": "2be4898f1ab2469e7ca5d1f3d238bc1dc399e32a1db18b532b2e3cc223bf3065"
+  },
+  "tests": {
+    "status": "engineering passed; real diagnostic and full final-code CI/E2E pending",
+    "newRegressionFile": "tests/regression/R-CHAT-02-situation-character-permissions.test.ts",
+    "newCases": 6,
+    "firstTestHarnessIssues": [
+      "Missing explicit scene-start trigger in new fixture; corrected fixture only.",
+      "New fixture referenced trigger instead of existing triggers array; corrected test only."
+    ],
+    "originalLogs": [
+      "/tmp/storyforge-chat-v111-targeted.log",
+      "/tmp/storyforge-chat-v111-character-tests.log"
+    ],
+    "regressionFiles": 92,
+    "regressionTests": 1170,
+    "browserCases": 6,
+    "gates": 10,
+    "bundleSizePassed": true,
+    "logs": {
+      "regression": "/tmp/storyforge-chat-v111-final-regression.log",
+      "town": "/tmp/storyforge-chat-v111-town-regression.log",
+      "browser": "/tmp/storyforge-chat-v111-targeted-e2e.log",
+      "gates": "/tmp/storyforge-chat-v111-final-gates-receipt.json",
+      "bundle": "/tmp/storyforge-chat-v111-final-bundle-size.log"
+    },
+    "logHashes": {
+      "/tmp/storyforge-chat-v111-final-regression.log": "963b55eb43726dd8c6de57bc47808ba1a2ae41e768595187d54809efcf3c529f",
+      "/tmp/storyforge-chat-v111-town-regression.log": "9ef9acfb9eacaf3ccf7b78fc192f4b3ecfbe17c6a1a4be97d101fe86cb5b6a88",
+      "/tmp/storyforge-chat-v111-targeted-e2e.log": "513e20d49867b3fb5cb12412c3bc51533e68ac1a24db3a458ffc9fef2326d775",
+      "/tmp/storyforge-chat-v111-final-gates-receipt.json": "d378329c803eb7407bc0b9e7e3a9f840dc13247115bbe3689163b01409e1d811",
+      "/tmp/storyforge-chat-v111-final-bundle-size.log": "93b31ffe483c35f0fff831462d1033cfbd37fa3454919aef60239d1ae5aca314"
+    }
+  },
+  "priorFullCI": {
+    "snapshotHead": "6cc08b98224c0bb3bf1a1e72e0acb6ccc5014725",
+    "exitCode": 1,
+    "passedFiles": 872,
+    "failedFiles": 1,
+    "passedTests": 5485,
+    "failedTests": 3,
+    "failure": "R-HARNESS59 hardcoded 51 entries/55 calls/formal28; actual54/58/formal31 after three registered chat source-unit entries. Updated expected counts after registry and AST audit.",
+    "log": "/tmp/storyforge-chat-v107-full-ci.log",
+    "receipt": "/tmp/storyforge-chat-v107-full-ci-receipt.json"
+  },
+  "realModel": {
+    "newCalls": 0,
+    "originalV110FailurePreserved": true,
+    "planned": "Separate registered diagnostic from exact V110 backup on a new branch; no overwrite of original or formal cohort."
+  },
+  "acceptance": {
+    "M1Accepted": false,
+    "AgnesAvailable": false,
+    "humanScored": 0,
+    "holdoutsInspected": false,
+    "commercialAccepted": false,
+    "goalStatus": "active"
+  }
+}

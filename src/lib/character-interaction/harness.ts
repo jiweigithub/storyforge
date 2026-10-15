@@ -50,6 +50,7 @@ import {chatSituationConstructionRequestV1} from './narrative-progression'
 import {assertChatNarrativeOptionsPreviewableV1, parseChatNarrativeOptionsV1, selectedChatNarrativeOptionV1, type ChatNarrativeOptionsReviewV1} from './narrative-options'
 import {isChatSituationPreparedV1, parseChatSituationDraftV1, previewChatSituationV1} from './narrative-situations'
 import {chatSituationResponseRulesV1} from './narrative-situation-prompt'
+import {chatSituationCharacterRulesV1} from './situation-character-permissions'
 import {chatInquiryGenerationRulesV1} from './inquiry-prompt'
 import {assertChatInquiryBindingV1} from './narrative-inquiry'
 import {reviewRuntimeChatCandidateV1, CHAT_SITUATION_REVIEW_STEP_V1, CHAT_ACTION_REVIEW_STEP_V1} from './situation-harness'
@@ -347,6 +348,7 @@ function prompt(input: {
         '个人暂停与共同事项分开：仅自己暂歇，不影响其他参与者的事项时只改自己的目标；若正文明确暂停或结束自己负责的整项任务，并覆盖全部事项知情者，则登记相应 threadUpdates。暂停用 paused，不能用 resolved 冒充问题已解决。closureSignals 是判断线索，不是满足字面描述就无条件关闭任何共同事项。'] : []),
       ...(input.skillId === 'character.chat-situation-construction' ? [
         ...chatSituationResponseRulesV1(input.producerVersion),
+        ...chatSituationCharacterRulesV1(input.producerVersion),
         '若 constructionRequest.origin 为 continued-thread，承接已审查 pendingSituation 中的自身未完成目标、剧情线与 direction；seedExcerpt 摘录 direction。只能补足当前时间地点中的局部条件，不能替玩家接受或移动，不能替其他角色设定目标或打算；已有事实和其他人的计划均保留。',
         '若 constructionRequest.origin=player-followup，pendingSituation 是针对新玩家请求的已审查承接意向，playerEventSequence/playerExcerpt 保留真实台词依据，direction 是待发展的方向。为该角色建立至少一个有已知依据、可完成的新目标和新问题，不能复活或复制已结束的目标/剧情线，不能替其他角色设定目标或打算；保持当前时地，旧结果与其它角色方向保留。新事实和问题的知情者不得超出原玩家消息听众，不替对话外的人承接新事项。可在冻结的创作权限内补足尚未写定的普通局部细节，为后续实际行动提供条件，不以“原文未提供”冒充故事内阻碍；不可改写已有书中文字、假托真实引文、提前完成未来调查或泄露既定隐情。新背景不等于玩家接受，也不预写整个故事或结果。',
         '若 pendingSituation.purpose=observation-result，只确认其 sourceEventSequence 已实际完成的观察能得到什么有限结果，不执行新的调查或动作。保持 title/location/timeLabel，newGoals/newThreads/possibilities 均为 []；newFacts 仅 observation，每项必须引用该事件已登记的 runtime-consequence 观察事实，并摘录 direction。仍未知的部分明确保留未知，不捏造箱内内容、他人动机或幕后答案。既定隐情只能按已有 discovery 条件判定。后来的玩家消息不改变已经完成的检查，但不等于接受任何未来行动。',
@@ -647,7 +649,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       declaredSourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       assembled,
-      readerVersion: situation ? (executionBinding.promptVersion === 'chat-situation-construction-v8' ? 'chat-situation-runtime-view-v9' : 'chat-situation-runtime-view-v8') : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V4 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? (['chat-situation-construction-v8', 'chat-situation-construction-v9'].includes(executionBinding.promptVersion) ? 'chat-situation-runtime-view-v9' : 'chat-situation-runtime-view-v8') : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V4 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
