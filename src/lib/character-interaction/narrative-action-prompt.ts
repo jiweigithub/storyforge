@@ -6,7 +6,7 @@ import type {InteractionVisibilityView} from './runtime'
 import type {ChatNarrativeActionV1} from '../types/chat-narrative'
 import {CHAT_SELF_EXPRESSION_RULES_V1} from './expression-policy'
 import {CHAT_OWN_FOLLOWUP_GOAL_RULE_V1, CHAT_OWN_FOLLOWUP_GOAL_REVIEW_RULE_V1} from './narrative-followup-goal'
-import {CHAT_COMMITMENT_ACTION_RULES_V1, CHAT_COMMITMENT_REVIEW_RULES_V1} from './commitment-prompt'
+import {CHAT_COMMITMENT_ACTION_RULES_V1, CHAT_COMMITMENT_ACTION_RULES_V2, CHAT_COMMITMENT_REVIEW_RULES_V1} from './commitment-prompt'
 
 /** Instruction selection uses only the registered role retrieval view. Hidden
  * facts, other roles' goals and private pending work cannot influence it.
@@ -32,7 +32,7 @@ export function chatActionPromptFeaturesV1(view: InteractionVisibilityView) {
   }
 }
 
-export function chatActionPromptRulesV1(view: InteractionVisibilityView, options: {preserveExpression?: boolean; playerPause?: boolean; conversationEvidence?: boolean} = {}): string[] {
+export function chatActionPromptRulesV1(view: InteractionVisibilityView, options: {preserveExpression?: boolean; playerPause?: boolean; conversationEvidence?: boolean; commitmentSemanticsV2?: boolean} = {}): string[] {
   const f = chatActionPromptFeaturesV1(view)
   return [
     ...(f.edit ? ['若存在 pendingEdit，它是分支中待采用的角色文字，还未在此分支发生，也不能授予新知识或权限。默认必须逐字保留其 text 和原 audienceKeys，不续写或润色。仅当 mode=continue 时，将 text 逐字作为开头向后连贯续写当前回复，输出完整正文；不重复原文，不替玩家回应，长度仍受当前权限约束。两种模式均须从当前前态核对整段的全部实际后果，不遗漏原文已表达的后果，也不重复计入同一事实/关系。不得引用原时间线未来，无法成立时不可用字段伪造证据。'] : []),
@@ -56,7 +56,7 @@ export function chatActionPromptRulesV1(view: InteractionVisibilityView, options
     ...(options.conversationEvidence ? [CHAT_CONVERSATION_EVIDENCE_ACTION_RULE_V1] : []),
     ...(options.playerPause ? [CHAT_PLAYER_RESUME_ACTION_RULE_V1] : []),
     ...(f.threadFollowup ? [CHAT_THREAD_FOLLOWUP_ACTION_RULE_V1, ...(options.playerPause ? [CHAT_PLAYER_PAUSE_ACTION_RULE_V1] : [])] : ['本次 threadFollowupGoal=null；不能借原事项建立新目标。']),
-    ...CHAT_COMMITMENT_ACTION_RULES_V1,
+    ...(options.commitmentSemanticsV2 ? CHAT_COMMITMENT_ACTION_RULES_V2 : CHAT_COMMITMENT_ACTION_RULES_V1),
     ...CHAT_MEMORY_CORRECTION_ACTION_RULES_V1,
     ...(f.multipleGoals ? ['同一次表达还实际改变了自己其他已有目标时，写 goalUpdates，最多四项 {goalKey,status,evidenceFactKeys,evidenceExcerpt}；不得重复当前 goalKey，不得修改玩家/他人目标、重开已结束目标或重复原状态。每项必须引用自己已知事实和本次 text 原文；fulfilled 仅可用于 complete 且不等待玩家的行动。不要只结束新建澄清目标却把已找回失物的旧寻找目标留成 active，也不要无依据批量结束其他事项。'] : []),
     ...(f.relationships ? ['先读取当前 relationships、relationshipEvidence 和未完成 threads，再决定如何承接：自己的信任变化应影响措辞或是否愿意合作，尚未完成的问题可以推进、说明阻碍、暂缓或收束；不要只报数值，也不要无故重置态度。关系数值不是玩家的感受或同意。'] : []),

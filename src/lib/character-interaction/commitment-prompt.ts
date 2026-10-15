@@ -6,6 +6,23 @@ export const CHAT_COMMITMENT_ACTION_RULES_V1 = [
   '改约必须同时明确 withdraw 原约并 promise 新条款，两份记录都保留；这只改变角色自己的承担，不表示玩家接受新安排。处置须包含原约全部听众，目标结束前必须履行或明确撤回未处理承诺。不要用完成整个 goal 代替处理具体约定；也不必为一次履约结束仍有其它事项的目标。所有摘录只来自本次 text。',
 ]
 
+/** V2 clarifies when a future-condition undertaking is already established.
+ * Older producers keep V1; this changes instructions, never review/adoption. */
+export function supportsChatCommitmentPromptV2(version: string | undefined): boolean {
+  return ['chat-narrative-action-v31', 'chat-narrative-options-v21', 'chat-action-revision-v13'].includes(version ?? '')
+}
+
+export const CHAT_COMMITMENT_ACTION_RULES_V2 = [
+  CHAT_COMMITMENT_ACTION_RULES_V1[0],
+  '先根据本次实际 text 判断是否成立、履行、撤回或改动自己的约定，再填写 commitmentEffects（最多四项）；确实没有变化才用 []。新约定用 {kind:"promise",terms:"完整逐字条款",evidenceExcerpt:"本次原话"}；terms 必须完整出现在摘录中，系统生成身份、听众和事件。仅绑定自己的当前 active/paused 目标，同一目标只能有一个未处理承诺，不替玩家或别人承担。',
+  '约定成立的时点与履行条件发生的时点不同：角色现在明确接受的后续义务或持续限制已经成立，即使将来某个条件出现时才需履行。例如“转交资料之前我会先征求你的同意”已经约束自己的后续行为；不能因尚未转交就把它当作未定提议。核对完整范围、触发条件和保留给玩家的决定，不只截取“我会”或“好的”。',
+  '仅描述本次已经完成的行为或当前动作范围，不自动成为以后仍须遵守的承诺；“如果你愿意，我们可以再商量”这类尚未明确承担的提议、普通打算、邀约、客套和猜测也不登记。不要为了填字段强造承诺，也不要删掉自然成立的约定来规避登记。明确作出的声明可用 speak/complete；等待玩家回答另一件事不推迟已经作出的声明，但不能把等待中的事项登记为履约。',
+  CHAT_COMMITMENT_ACTION_RULES_V1[2],
+  CHAT_COMMITMENT_ACTION_RULES_V1[3],
+]
+
+export const CHAT_COMMITMENT_OUTPUT_CHECK_V2 = '输出前以每条候选完整 text 为准复核 commitmentEffects：已明确接受的未来义务、先征求同意或持续限制须保留完整条款；只有当前动作范围或未定提议则不强造承诺。示例空数组不等于本次无需登记。修订或历史编辑仍保留规定不可改的正文及玩家选择边界，不借核对增加新台词；不要输出核对过程或额外字段。'
+
 export const CHAT_COMMITMENT_REVIEW_RULES_V1 = [
   '承诺专审：先读本次正文，再核对 commitmentEffects 与自身目标中的原 commitments。明确的新约定、实际履行或明确撤回若漏记，在 consequences 判失败；普通计划、客套、邀约或条件未定的提议不得硬登记成承诺。不能只凭类型、摘录相符或摘要里写着“答应”就通过。',
   '对每个 commitmentEffects 的原数组索引给出 commitmentChecks={effectIndex,passed,reason}。promise 要有完整、明确、可履行的自身条款，适合当前目标和动机，不能替玩家或别人承担；fulfill 要逐项对照原 terms 与本次已完成行为/交付，确认范围、时点和必要条件，不接受自称完成却无实际依据、只完成部分、语义偷换、意向、尝试或等待选择。withdraw 必须实际明确撤回原约，不能因玩家拒绝、休息或离线推断失约。',

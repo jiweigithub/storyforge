@@ -1,3 +1,4 @@
+import {supportsChatCommitmentPromptV2, CHAT_COMMITMENT_OUTPUT_CHECK_V2} from './commitment-prompt'
 import {assertChatConversationEvidenceReviewVersionV1} from './narrative-conversation-evidence'
 import {assertChatThreadFollowupReviewVersionV1} from './narrative-thread-followup'
 import {assertChatMemoryCorrectionInputV1} from './context-reader-version'
@@ -316,7 +317,9 @@ function prompt(input: {
   skillId: InteractionRuntimeSkillIdV1
   context: string
   roleContext?: InteractionContextWindow
+  producerVersion?: string
 }): ChatMessage[] {
+  const commitmentSemanticsV2 = supportsChatCommitmentPromptV2(input.producerVersion)
   const townRule = input.skillId === 'character.ai-town-reply'
     ? '你是结局后继续生活的自主居民。回应当下但保留自己的日程、目标和拒绝权；不得把其他居民的私密状态当作已知事实。'
     : ''
@@ -345,8 +348,9 @@ function prompt(input: {
         '只有在场角色可有目标或打算，不给玩家写行动、同意、内心、关系升级或既成结果。角色的未实施计划只进入 possibilities，不进入事实。',
         '承接已有未解决问题，避免为反转而制造危机。新增剧情线加上旧活跃线不能超过 maxActiveThreads。可以不增加新线，只深化现有矛盾；给出可拒绝、可暂停、可改变方向的空间。',
       ] : []),
-      ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? chatActionPromptRulesV1(input.roleContext!, {preserveExpression: input.skillId === CHAT_ACTION_REVISION_SKILL, playerPause: true, conversationEvidence: true}) : []),
+      ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? chatActionPromptRulesV1(input.roleContext!, {preserveExpression: input.skillId === CHAT_ACTION_REVISION_SKILL, playerPause: true, conversationEvidence: true, commitmentSemanticsV2}) : []),
       `严格输出 JSON：${schemaInstruction(input.skillId)}`,
+      ...(commitmentSemanticsV2 ? [CHAT_COMMITMENT_OUTPUT_CHECK_V2] : []),
     ].join('\n'),
   }, {
     role: 'user',
@@ -645,7 +649,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
         stepId: INTERACTION_RUNTIME_STEP_ID_V1, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence,
       })).snapshot
     }
-    const messages = prompt({ objective, skillId: input.skillId, context: assembled.text, roleContext })
+    const messages = prompt({ objective, skillId: input.skillId, context: assembled.text, roleContext, producerVersion: executionBinding.promptVersion })
     snapshot = (await recordAgentRunArtifactV1({
       scope: input.scope, runId: snapshot.run.id, productRuntimeSessionId: input.productRuntimeSessionId,
       artifactKind: 'rendered-request', content: JSON.stringify(messages),
