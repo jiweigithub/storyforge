@@ -8,6 +8,7 @@ import { FIELD_BY_TARGET } from '../../lib/registry/field-registry'
 import { MORAL_AXIS_LABELS, ORDER_AXIS_LABELS, ROLE_WEIGHT_LABELS } from '../../lib/character/character-axes'
 import SourceSuggestions from './SourceSuggestions'
 import RoleProfiles from './RoleProfiles'
+import SourceUnits from './SourceUnits'
 
 const PURPOSES = {identity: '身份与价值观', motivation: '目标与顾虑', voice: '语言与举止', knowledge: '事实与经历'} as const
 const VISIBILITY = {unclassified: '待分类，暂不使用', public: '所有参与者知道', participants: '仅指定参与者知道', 'author-only': '仅作者掌握', discoverable: '暂时无人知道，允许调查发现'} as const
@@ -125,6 +126,7 @@ export default function SourceReview(props: {
     {error && <p role="alert" className="text-danger">{error}</p>}
     <button type="button" className="lf-action" disabled={disabled} onClick={() => void load()}>{busy ? '正在处理…' : '读取并检查完整资料'}</button>
     {projection && <>
+      {props.settings.version === 3 && <SourceUnits scope={props.scope} revision={props.draft.revision} projection={projection} selectedKeys={suggestionKeys} disabled={disabled}/>}
       {props.settings.version !== 1 && <SourceSuggestions scope={props.scope} revision={props.draft.revision} projectionHash={projection.projectionHash}
         fragmentKeys={suggestionKeys} disabled={disabled} actors={suggestionActors} labels={new Map(chatProjectionResourcesV1(projection).flatMap(resource => resource.fragments.map(fragment =>
           [fragment.fragmentKey, `${resource.label} · ${passageLabel(fragment, resource.fragments, 'resourceKind' in resource)}`] as const)))}/>}

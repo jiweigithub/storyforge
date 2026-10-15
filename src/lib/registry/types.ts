@@ -625,6 +625,8 @@ export interface AssembleContextInput {
   /** S2 author-only source review: exact saved draft, projection and selected passages. */
   chatConsultationRequest?: import('../character-interaction/consultation-context').ChatConsultationRequestV2
   chatSourceReviewRequest?: import('../character-interaction/source-review-context').ChatSourceReviewRequestV1
+  chatSourceUnitsRequest?: import('../character-interaction/source-review-context').ChatSourceReviewRequestV1
+  chatSourceUnitsReviewRequest?: import('../character-interaction/source-units-context').ChatSourceUnitsReviewRequestV1
   /** Character interaction: frozen product source + confirmed product Brief. */
   /** CM-1: 本次明确参与增量融合的碎片；由 inspirationWorkspace source 读取。 */
   inspirationFragmentIds?: string[]

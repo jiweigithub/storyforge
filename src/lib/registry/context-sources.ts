@@ -2033,6 +2033,26 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     },
   },
   {
+    key: 'chat.source-units', label: '角色聊天待整理事实的完整原文', scope: 'project', layer: 'L0', ownerFrom: 'work',
+    budgetTokens: 20_000, protectedFromTrim: true, atomic: true,
+    enabled: input => input.chatSourceUnitsRequest !== undefined,
+    read: async input => {
+      if (!input.chatSourceUnitsRequest) throw new Error('请指定事实整理原文')
+      const {readChatSourceUnitsContextV1} = await import('../character-interaction/source-units-context')
+      return JSON.stringify(await readChatSourceUnitsContextV1(await resolveScope(input), input.chatSourceUnitsRequest))
+    },
+  },
+  {
+    key: 'chat.source-units-review', label: '角色聊天事实候选与完整原文复核', scope: 'project', layer: 'L0', ownerFrom: 'work',
+    budgetTokens: 20_000, protectedFromTrim: true, atomic: true,
+    enabled: input => input.chatSourceUnitsReviewRequest !== undefined,
+    read: async input => {
+      if (!input.chatSourceUnitsReviewRequest) throw new Error('请指定事实复核候选')
+      const {readChatSourceUnitsReviewContextV1} = await import('../character-interaction/source-units-context')
+      return JSON.stringify(await readChatSourceUnitsReviewContextV1(await resolveScope(input), input.chatSourceUnitsReviewRequest))
+    },
+  },
+  {
     key: 'product-production.brief',
     label: '已授权上层产品生产 Brief',
     scope: 'project',

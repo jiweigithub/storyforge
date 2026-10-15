@@ -3727,6 +3727,32 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1,
+    id: 'chat.source-units.v1', agentId: 'outline', defaultForAgent: false,
+    label: '角色聊天事实拆分候选', owner: 'outline-agent', promptVersion: 'chat-source-units-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: ['chat.source-units'], optionalContextSourceKeys: [],
+    inputPolicy: {sourceKeys: ['chat.source-units'], states: {
+      empty: {handling: 'require-upstream', instruction: '须选择实验叙事方案中的完整原文。'},
+      partial: {handling: 'require-upstream', instruction: '不截断原文，缩小选择后再生成。'},
+      complete: {handling: 'grounded-transform', instruction: '逐段整理事实与限制，保留主体、时态、否定和全部实质含义；只形成候选，独立复核与作者确认前不用于生产。'},
+    }}, contextCompression: compressionPolicy(['chat.source-units']),
+    maxOutputTokens: 6000, writeTargets: [], lastVerifiedAt: '2026-10-16', regressionTests: ['R-CHAT-02-source-units'],
+  },
+  {
+    version: 1,
+    id: 'chat.source-units-review.v1', agentId: 'outline', defaultForAgent: false,
+    label: '角色聊天事实独立复核', owner: 'outline-agent', promptVersion: 'chat-source-units-review-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: ['chat.source-units-review'], optionalContextSourceKeys: [],
+    inputPolicy: {sourceKeys: ['chat.source-units-review'], states: {
+      empty: {handling: 'require-upstream', instruction: '缺少候选或完整原文时停止。'},
+      partial: {handling: 'require-upstream', instruction: '全部候选及原文须完整交付，不能只审引用。'},
+      complete: {handling: 'grounded-transform', instruction: '独立逐项判断忠实性、原子性、独立可读、既有事实和整段覆盖；保留拒绝原因，不修改或采纳候选。'},
+    }}, contextCompression: compressionPolicy(['chat.source-units-review']),
+    maxOutputTokens: 6000, writeTargets: [], lastVerifiedAt: '2026-10-16', regressionTests: ['R-CHAT-02-source-units'],
+  },
+  {
+    version: 1,
     id: 'chat.source-review.v1', agentId: 'outline', defaultForAgent: false,
     label: '角色聊天原文整理建议', owner: 'outline-agent', promptVersion: 'chat-source-review-v3',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
