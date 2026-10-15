@@ -16,15 +16,34 @@ export default function RevisionNodeSelection({ projectId, worldGroupId, node, o
   const [refresh, setRefresh] = useState(0)
   useEffect(() => {
     setData(null); setError('')
-    const subscription = liveQuery(async () => {
-      // Observe run metadata before native hashing in report verification can
-      // leave Dexie's tracking context. No polling or model replay on refresh.
-      await db.agentRuns.where('projectId').equals(projectId).toArray()
-      const { scope, chapter } = await resolveQualityAuthoringChapterV1({ projectId, worldGroupId, node: { config: { chapterTitle: title } } })
-      const [report, view] = await Promise.all([readLatestWholeChapterQualityReviewV1({ scope, chapterId: chapter.id!, mode }), readLatestQualityRevisionV1({ scope, chapterId: chapter.id! })])
-      return { report, view, text: htmlToPlainText(chapter.content) }
-    }).subscribe({ next: value => { setData(value); setError('') }, error: cause => setError(cause instanceof Error ? cause.message : '审修证据读取失败。') })
-    return () => subscription.unsubscribe()
+    let active = true, readVersion = 0
+    let subscription: { unsubscribe: () => void } | null = null
+    const resolveTarget = () => resolveQualityAuthoringChapterV1({ projectId, worldGroupId, node: { config: { chapterTitle: title } } })
+    const showError = (cause: unknown) => {
+      if (!active) return
+      setData(null)
+      setError(cause instanceof Error ? cause.message : '审修证据读取失败。')
+    }
+    const readVerified = () => {
+      const version = ++readVersion
+      // Cryptographic verification can leave Dexie's observation context.
+      // Run it outside the indexed subscription, and reject late older reads.
+      void (async () => {
+        const { scope, chapter } = await resolveTarget()
+        const [report, view] = await Promise.all([readLatestWholeChapterQualityReviewV1({ scope, chapterId: chapter.id!, mode }), readLatestQualityRevisionV1({ scope, chapterId: chapter.id! })])
+        if (!active || version !== readVersion) return
+        setData({ report, view, text: htmlToPlainText(chapter.content) }); setError('')
+      })().catch(cause => { if (active && version === readVersion) showError(cause) })
+    }
+    void resolveTarget().then(({ chapter }) => {
+      if (!active) return
+      subscription = liveQuery(() => Promise.all([
+        db.agentRuns.where('projectId').equals(projectId).toArray(),
+        db.agentRunEvents.where('projectId').equals(projectId).count(),
+        db.chapters.get(chapter.id!),
+      ])).subscribe({ next: readVerified, error: cause => { readVersion += 1; showError(cause) } })
+    }).catch(showError)
+    return () => { active = false; readVersion += 1; subscription?.unsubscribe() }
   }, [projectId, worldGroupId, title, mode, refresh])
   const bound = Boolean(data?.report && node.config.reportHash === data.report.report.artifactHash)
   const selected = bound && Array.isArray(node.config.selectedIssueIds) ? node.config.selectedIssueIds.filter((value): value is string => typeof value === 'string') : []
