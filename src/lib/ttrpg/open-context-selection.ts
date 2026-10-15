@@ -18,6 +18,7 @@ import { evaluateTtrpgOpenContextPredicateV1, type TtrpgOpenContextPredicateView
 import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { ttrpgOpenContextConsumerForPurposeV1, TTRPG_OPEN_GUIDANCE_SOURCE_KEYS_V1, type TtrpgOpenModelPurposeV1 } from './open-model-purpose-contract'
 import type { loadTtrpgOpenModelContextV1 } from './open-model-purpose'
+import { selectTtrpgOpenMemoryResourcesV1 } from './open-memory-selection'
 import type { TtrpgOpenSourceRefV1 } from './open-coordination'
 
 interface TriggerHistoryReceiptV1 { schema: string; version: number; domainHash: string; receiptHash: string; worldTurn: number; matchedTriggerKeys: string[]; deliveredTriggerKeys: string[]; deliveredTriggers: Array<{ triggerKey: string; matchedBy: string }> }
@@ -101,10 +102,15 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
     accessPolicy: createContextAccessPolicyForExecutionV1(input.skill), scope, descriptors: ruleRows, query: input.rawInput,
     budgetTokens: Math.max(1, Math.floor(Math.min(input.budgetTokens, policy?.maximumContextTokens ?? 16000) / 4)), readsAllowed: false }) : undefined
   const selectedRules = new Set(rules?.selected.map(row => row.resourceKey))
-  const candidates = eligible.filter(row => !ruleRows.includes(row) || selectedRules.has(row.resourceKey)).sort((a, b) => a.resourceKey < b.resourceKey ? -1 : a.resourceKey > b.resourceKey ? 1 : 0)
+  const memoryRows = eligible.filter(row => ['ttrpgOpenMemory', 'ttrpgOpenPartyMemory'].includes(row.sourceKey) && row.priority !== 'must-read')
+  const memoryKeys = await selectTtrpgOpenMemoryResourcesV1({ ...input, scope, rows: memoryRows,
+    budgetTokens: Math.min(8000, Math.max(1, Math.floor(Math.min(input.budgetTokens, policy?.maximumContextTokens ?? 16000) / 4))) })
+  const candidates = eligible.filter(row => (!ruleRows.includes(row) || selectedRules.has(row.resourceKey))
+    && (!memoryRows.includes(row) || memoryKeys.has(row.resourceKey))).sort((a, b) => a.resourceKey < b.resourceKey ? -1 : a.resourceKey > b.resourceKey ? 1 : 0)
   const tierFor = (row: ContextResourceDescriptorV1): TtrpgContextTierKeyV1 => {
     if (row.priority === 'must-read') return /:rules-core$/.test(row.resourceKey) ? 'rules' : 'authority-state'
     if (row.sourceKey === 'ttrpgOpenAuthority' && /:(action|check)\./.test(row.resourceKey)) return 'rules'
+    if (['ttrpgOpenMemory', 'ttrpgOpenPartyMemory'].includes(row.sourceKey)) return 'memory-summary'
     if (row.resourceKey.includes(':trigger.')) return 'dynamic-injection'
     if (row.resourceKey.includes(':recent.')) return 'recent-events'
     if (row.resourceKey.includes(':pressure.') || row.resourceKey.includes(':kp-entry.signal.')) return 'active-situations'

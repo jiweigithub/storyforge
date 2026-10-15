@@ -39,11 +39,12 @@ async function all(provider: ContextResourceProviderV1, scope: FrozenResourceSco
 describe('R-TTRPGOPEN8 actual consumer-scoped memory sources', { timeout: 90000 }, () => {
   beforeEach(async () => { await db.delete(); await db.open() })
   afterEach(() => db.close())
-  it('matches the actual tool schema and registers separate sources without silently granting existing Skills recall', async () => {
+  it('matches the actual tool schema and registers separate sources with explicit consumer grants', async () => {
     expect(await hashCanonicalValue(getAgentToolSchemaSnapshotV1())).toBe(AGENT_TOOL_SCHEMA_HASH_V1)
     expect(CONTEXT_SOURCE_BY_KEY.get('ttrpgOpenMemory')?.resources?.providerId).toBe('storyforge.ttrpgOpenMemory')
     expect(CONTEXT_SOURCE_BY_KEY.get('ttrpgOpenPartyMemory')?.resources?.providerId).toBe('storyforge.ttrpgOpenPartyMemory')
-    expect(getAgentSkillV1('prose.ttrpg-open-intent').contextSourceKeys).not.toContain('ttrpgOpenMemory')
+    expect(getAgentSkillV1('prose.ttrpg-open-intent').contextSourceKeys).toContain('ttrpgOpenMemory')
+    expect(getAgentSkillV1('prose.ttrpg-open-intent').contextSourceKeys).not.toContain('ttrpgOpenPartyMemory')
     expect(getAgentSkillV1('prose.ttrpg-open-oracle-interpret').contextSourceKeys).not.toContain('ttrpgOpenPartyMemory')
   })
   it('keeps the human AI-GM owner authority out of actor and party metadata, search, counts and full text', async () => {
@@ -74,7 +75,7 @@ describe('R-TTRPGOPEN8 actual consumer-scoped memory sources', { timeout: 90000 
       const pages = await Promise.all(sourceKeys.map(key => CONTEXT_SOURCE_BY_KEY.get(key)!.resources!.listMetadata({ scope, limit: 100 })))
       expect(new Set(pages.map(p => p.scopeFingerprint)).size).toBe(1)
       const policy = createContextAccessPolicyForExecutionV1(getAgentSkillV1(skillId))
-      // Explicit test policy exercises the registered foundation before production Skills gain memory grants.
+      // Explicit test policy exercises the registered foundation under its explicit consumer grants.
       const session = await createContextGatewayToolSessionV1({ scope, freezeProviderReads: true,
         policy: { ...policy, allowedSourceKeys: sourceKeys, mandatorySourceKeys: sourceKeys, allowedResourceKinds: ['fact', 'reference'] },
         allowedResourceKeys: pages.flatMap(p => p.items.map(d => d.resourceKey)) })

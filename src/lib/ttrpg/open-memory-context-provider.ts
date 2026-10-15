@@ -11,7 +11,8 @@ import { loadTtrpgOpenKpContextV1 } from './open-kp-context'
 import { nextTtrpgOpenOperationStepV1 } from './open-operation'
 import { TtrpgOpenReadConflictV1 } from './open-read-conflict'
 
-export const TTRPG_OPEN_MEMORY_SOURCE_KEYS_V1 = { actor: 'ttrpgOpenMemory', 'party-narrator': 'ttrpgOpenPartyMemory' } as const
+import { TTRPG_OPEN_MEMORY_SOURCE_KEYS_V1 } from './open-model-purpose-contract'
+export { TTRPG_OPEN_MEMORY_SOURCE_KEYS_V1 } from './open-model-purpose-contract'
 export type TtrpgOpenMemoryConsumerV1 = keyof typeof TTRPG_OPEN_MEMORY_SOURCE_KEYS_V1
 
 export function createTtrpgOpenMemoryContextProviderV1(consumer: TtrpgOpenMemoryConsumerV1) {
@@ -43,7 +44,7 @@ async function catalog(scope: FrozenResourceScopeV1, consumer: TtrpgOpenMemoryCo
     || receipt.draft.audience !== 'gm-only' && recipients.every(key => receipt.recipientActorKeys.includes(key)))
   const sourceKey = TTRPG_OPEN_MEMORY_SOURCE_KEYS_V1[consumer]
   const values: Array<{ suffix: string; title: string; summary: string; searchText?: string; value: unknown;
-    mandatory: boolean; refs: ContextResourceDescriptorV1['sourceRefs'] }> = [{ suffix: `memory-contract.${consumer}`,
+    mandatory: boolean; revision?: number; timeRange?: ContextResourceDescriptorV1['timeRange']; refs: ContextResourceDescriptorV1['sourceRefs'] }> = [{ suffix: `memory-contract.${consumer}`,
     title: '记忆召回的视角与可靠性边界', summary: '保留原观察者和可靠性；记忆不授予知识或规则权威', mandatory: true, refs: [],
     value: { schema: 'storyforge.ttrpg-open-memory-context-contract', version: 1, consumer,
       preserveObserverAndReliability: true, noMechanicalAuthority: true, noKnowledgeGrant: true,
@@ -52,6 +53,7 @@ async function catalog(scope: FrozenResourceScopeV1, consumer: TtrpgOpenMemoryCo
     values.push({ suffix: `memory.${await hashCanonicalValue({ revisionKey: row.revisionKey, sourceRef: receipt.sourceRef })}`,
       title: `冒险记忆 · ${row.reliability} · ${receipt.recordedAtWorldTurn}`,
       summary: row.summary.slice(0, 240), searchText: row.summary, mandatory: false,
+      revision: receipt.sourceRef.sequence, timeRange: { start: receipt.recordedAt, end: receipt.recordedAt },
       refs: [{ table: 'ttrpgNarrativeMemories', recordId: row.id!, field: 'summary', revision: row.derivedFromHash, contentHash: await sha256Text(row.summary) }],
       value: { schema: 'storyforge.ttrpg-open-memory-context', version: 1, revisionKey: row.revisionKey,
         summary: row.summary, observerKey: row.observerKey, reliability: row.reliability, audience: row.audience,
@@ -69,9 +71,9 @@ async function catalog(scope: FrozenResourceScopeV1, consumer: TtrpgOpenMemoryCo
     return { content: text, tokenCount, ...(item.searchText ? { searchText: item.searchText } : {}), descriptor: {
       version: 1, resourceKey: `fact:ttrpg-open:${runtime.sessionKey}:${scope.runtimeActorKey}:${item.suffix}`, sourceKey,
       kind: item.mandatory ? 'fact' : 'reference', title: item.title, shortSummary: item.summary,
-      authority: item.mandatory ? 'confirmed-evidence' : 'derived-summary', contentRevision: state.lastSequence, contentHash,
+      authority: item.mandatory ? 'confirmed-evidence' : 'derived-summary', contentRevision: item.revision ?? state.lastSequence, contentHash,
       policyRevision: 1, policyHash, scope: { projectId: workspace.projectId, worldId: workspace.worldId, workId: workspace.workId,
-        productRuntimeSessionId: scope.productRuntimeSessionId, runtimeActorKey: scope.runtimeActorKey }, relations: [],
+        productRuntimeSessionId: scope.productRuntimeSessionId, runtimeActorKey: scope.runtimeActorKey }, relations: [], ...(item.timeRange ? { timeRange: item.timeRange } : {}),
       sourceRefs: [...commonRefs, ...item.refs], tokenEstimate: { full: tokenCount }, availableDepths: ['full'], priority: item.mandatory ? 'must-read' : 'normal' } }
   }))
   await loaded.assertCurrent()
