@@ -46,6 +46,48 @@ test('native stage recap source reads without a KP operation and retains semanti
   expect(requests).toEqual([])
 })
 
+test('native confirmed model recap keeps its origin, source basis and one terminal receipt through refresh', async ({ page }) => {
+  test.setTimeout(120000)
+  await page.goto('./')
+  const result = await page.evaluate(async () => {
+    const importer = new Function('p', 'return import(p)') as (path: string) => Promise<any>
+    const helper = await importer('/storyforge/tests/helpers/open-ttrpg-session.ts')
+    const api = await importer('/storyforge/src/lib/ttrpg/runtime-commands.ts')
+    const inputs = await importer('/storyforge/src/lib/ttrpg/open-intent-input.ts')
+    const harness = await importer('/storyforge/src/lib/ttrpg/open-intent-harness.ts')
+    const { readProductRuntimeState } = await importer('/storyforge/src/lib/product/runtime-core.ts')
+    const f = await helper.readyOpenTtrpgSessionV1('Native model memory', (p: any) => { p.ttrpg.campaign.runtimePolicy.enabled = true })
+    const viewerKey = helper.OPEN_HUMAN_VIEWER, rawInput = '复盘本桌当前共同资料。'
+    await api.startTtrpgOpenEpochV1({ ...await helper.openEnvelopeV1(f.sessionId, 'native.memory.epoch'), viewerKey, triggerKind: 'request-brief', rawInput })
+    const p = await inputs.prepareTtrpgOpenBriefInputV1({ ...await helper.openEnvelopeV1(f.sessionId, 'native.memory.prepare'), scope: f.scope, viewerKey, rawInput,
+      modelIdentity: { provider: 'test-adapter', model: 'injected' }, maximumOutputTokens: 800, maximumCostUsd: 0.1 })
+    const read = { scope: f.scope, sessionId: f.sessionId, viewerKey, runId: p.runId, requestKey: p.requestKey }
+    const generated = await harness.executeTtrpgOpenBriefRequestV1({ ...read, runAI: async () => JSON.stringify({ paragraphs: [{ text: '依据当前共同资料完成的阶段回顾。', sourceKeys: ['brief.frame'] }] }) })
+    const id = { ...read, candidateHash: generated.candidate.candidateHash }, before = await readProductRuntimeState(f.sessionId)
+    const event = await api.acceptTtrpgOpenBriefMemoryV1({ ...await helper.openEnvelopeV1(f.sessionId, 'native.memory.accept'), ...id })
+    const after = await readProductRuntimeState(f.sessionId)
+    return { id, receipt: JSON.parse(event.payloadJson).memory, sameTime: JSON.stringify(before.ttrpg.openRun.worldTime) === JSON.stringify(after.ttrpg.openRun.worldTime),
+      sameEntities: JSON.stringify(before.entities) === JSON.stringify(after.entities) }
+  })
+  expect(result.receipt).toMatchObject({ version: 2, origin: 'model-reviewed', draft: { reliability: 'hearsay', observerKey: 'gm' } })
+  expect(result.sameTime && result.sameEntities).toBe(true)
+  await page.reload()
+  const restored = await page.evaluate(async id => {
+    const importer = new Function('p', 'return import(p)') as (path: string) => Promise<any>
+    const memory = await importer('/storyforge/src/lib/ttrpg/open-memory-service.ts')
+    const adoption = await importer('/storyforge/src/lib/ttrpg/open-brief-adoption.ts')
+    const { readInstanceAgentRunV1 } = await importer('/storyforge/src/lib/agent/run/event-store.ts')
+    const { db } = await importer('/storyforge/src/lib/db/schema.ts')
+    const before = await db.productRuntimeEvents.count(), receiptHash = await adoption.reconcileTtrpgOpenBriefMemoryRunV1(id)
+    return { memories: (await memory.readTtrpgOpenNarrativeMemoriesV1(id)).entries, receiptHash,
+      state: (await readInstanceAgentRunV1(id.scope, id.runId)).projection.state, eventCountStable: before === await db.productRuntimeEvents.count() }
+  }, result.id)
+  expect(restored.state).toBe('completed'); expect(restored.eventCountStable).toBe(true)
+  expect(restored.memories).toHaveLength(1)
+  expect(restored.memories[0]).toMatchObject({ origin: 'model-reviewed', noMechanicalAuthority: true, noKnowledgeGrant: true })
+  expect(restored.receiptHash).toMatch(/^[a-f0-9]{64}$/)
+})
+
 test('native recap authority and attributed output preserve belief and refuse gameplay, Oracle and model relabeling', async ({ page }) => {
   test.setTimeout(120000)
   await page.goto('./')

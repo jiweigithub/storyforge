@@ -472,6 +472,13 @@ const ADOPTION_SCHEMAS_RAW: CollectionAdoptionSpec[] = [
 
 export const ADOPTION_EXTENSIONS: readonly AdoptionExtensionSpec[] = Object.freeze([
   {
+    id: 'ttrpg-model-memory-adoption', target: 'ttrpgNarrativeMemories',
+    entrypoints: ['src/lib/ttrpg/runtime-commands.ts'],
+    policyRegistry: 'verifyTtrpgOpenBriefCandidateProofV1 + parseTtrpgOpenModelMemoryReceiptV2 + E15 + PROJECT_TABLES',
+    reason: '真人主持明确确认同一正式复盘候选；核对原回答、完整来源、当前权限与被动窗口，E15与唯一记忆投影原子追加，保留model-reviewed和原始观察者/可靠性。无规则、知识或世界写入。',
+    reviewAfter: '2027-08-21',
+  },
+  {
     id: 'ttrpg-human-memory-lifecycle', target: 'ttrpgNarrativeMemories',
     entrypoints: ['src/lib/ttrpg/runtime-commands.ts', 'src/lib/ttrpg/runtime-branch.ts'],
     policyRegistry: 'parseTtrpgOpenMemoryReceiptV1 + verifyTtrpgOpenMemoryReceiptsV1 + PRODUCT_RUNTIME_EVENT_TYPES + PROJECT_TABLES',

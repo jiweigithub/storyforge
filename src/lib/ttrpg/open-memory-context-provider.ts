@@ -43,12 +43,13 @@ async function catalog(scope: FrozenResourceScopeV1, consumer: TtrpgOpenMemoryCo
       summary: row.summary.slice(0, 240), searchText: row.summary, mandatory: false,
       revision: receipt.sourceRef.sequence, timeRange: { start: receipt.recordedAt, end: receipt.recordedAt },
       refs: [{ table: 'ttrpgNarrativeMemories', recordId: row.id!, field: 'summary', revision: row.derivedFromHash, contentHash: await sha256Text(row.summary) }],
-      value: { schema: 'storyforge.ttrpg-open-memory-context', version: 1, revisionKey: row.revisionKey,
+      value: { schema: 'storyforge.ttrpg-open-memory-context', version: receipt.version, revisionKey: row.revisionKey,
         summary: row.summary, observerKey: row.observerKey, reliability: row.reliability, audience: row.audience,
         knownBy: receipt.recipientActorKeys, sourceRef: receipt.sourceRef,
         fromEventSequence: row.fromEventSequence, toEventSequence: row.toEventSequence,
         recordedAtWorldTurn: receipt.recordedAtWorldTurn, historical: receipt.sourceRef.sessionKey !== runtime.sessionKey,
-        origin: receipt.origin, noMechanicalAuthority: true, noKnowledgeGrant: true } })
+        origin: receipt.origin, ...(receipt.version === 2 ? { sourceAttributions: receipt.model.attributions, paragraphs: receipt.model.brief.paragraphs,
+          modelSource: { requestKey: receipt.model.requestKey, candidateHash: receipt.model.candidateHash, rawResponseHash: receipt.model.rawResponseHash } } : {}), noMechanicalAuthority: true, noKnowledgeGrant: true } })
   }
   const policyHash = await hashCanonicalValue({ sourceKey, consumer, fullIsAtomic: true, originalRead: false, version: 1 })
   const commonRefs: ContextResourceDescriptorV1['sourceRefs'] = [

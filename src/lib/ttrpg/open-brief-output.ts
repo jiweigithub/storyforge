@@ -1,6 +1,7 @@
 /** Citation selection is semantic; authority and attribution come only from exact delivered source bytes. */
 import type { ContextGatewaySourceSnapshotInputV1 } from '../context-gateway/attempt-evidence'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
+import { canonicalStringify } from '../agent/run/hash'
 import { parseTtrpgOpenSourceRefV1 } from './open-coordination'
 import * as p from './open-contract-parse'
 
@@ -13,7 +14,7 @@ export async function ttrpgOpenDeliveredBriefAttributionsV1(reads: readonly Cont
     if (!['ttrpgOpenBriefInput', 'ttrpgOpenPartyMemory'].includes(read.sourceKey ?? '') || !read.resourceKey?.includes(':gm:')
       || typeof read.content !== 'string') p.fail('复盘引用只接受本次准确的共同资料完整读取')
     const value = p.object(JSON.parse(read.content as string), 'delivered recap resource')
-    if (value.version !== 1) p.fail('复盘引用来源版本未支持')
+    if (value.version !== 1 && !(read.sourceKey === 'ttrpgOpenPartyMemory' && value.schema === 'storyforge.ttrpg-open-memory-context' && value.version === 2)) p.fail('复盘引用来源版本未支持')
     return { read, value }
   })
   const contracts = bodies.filter(({ read, value }) => read.sourceKey === 'ttrpgOpenBriefInput' && value.schema === 'storyforge.ttrpg-open-brief-contract')
@@ -50,6 +51,18 @@ export async function ttrpgOpenDeliveredBriefAttributionsV1(reads: readonly Cont
       source = { citationKey: `memory.${revisionKey}`, kind: 'memory', reliability: p.oneOf(value.reliability, ['observed', 'hearsay', 'belief'], 'memory original reliability'),
         observerKey: p.nullable(value.observerKey, p.key, 'memory original observer'), origin: p.oneOf(value.origin, ['human-authored', 'model-reviewed'], 'memory original origin'),
         sourceRef: parseTtrpgOpenSourceRefV1(value.sourceRef) }
+      if (value.version === 2) {
+        if (source.origin !== 'model-reviewed') p.fail('模型记忆来源代际不一致')
+        const previous = p.list(value.sourceAttributions, 'actual model memory original sources', parseTtrpgOpenBriefAttributionV1, 256, 1)
+        const flattened = previous.flatMap(attribution => attribution.originalSources ?? [attribution])
+        const unique = new Map<string, typeof flattened[number]>()
+        for (const attribution of flattened) {
+          const identity = `${attribution.resourceKey}:${attribution.contentHash}`, existing = unique.get(identity)
+          if (existing && canonicalStringify(existing) !== canonicalStringify(attribution)) p.fail('多代记忆的同一原始来源标记发生冲突')
+          unique.set(identity, attribution)
+        }
+        source.originalSources = [...unique.values()]
+      }
     } else p.fail('复盘引用混入其他来源或非完整资源')
     if (result.some(previous => previous.citationKey === source.citationKey)) p.fail('复盘引用身份重复或存在冲突')
     result.push(parseTtrpgOpenBriefAttributionV1({ ...source, resourceKey: read.resourceKey!, contextSourceKey: read.sourceKey as TtrpgOpenBriefAttributionV1['contextSourceKey'], contentHash: await sha256Text(read.content as string) }))

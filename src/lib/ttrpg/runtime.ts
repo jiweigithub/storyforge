@@ -26,7 +26,7 @@ import { earnedTtrpgCharacterCurrencyV2 } from "./advancement";
 import type { TtrpgRuntimeContentV2 } from "./content-version";
 import { parseTtrpgRuntimeStateV2, type TtrpgRuntimeStateV2 } from "./open-runtime-contract";
 import { key as parseOpenKey } from "./open-contract-parse";
-import { frozenTtrpgOpenEpochBudgetV1 } from "./open-coordination";
+import { frozenTtrpgOpenEpochBudgetV1, ttrpgOpenEpochBudgetForTriggerV1 } from "./open-coordination";
 
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -627,7 +627,7 @@ export function assertInitialTtrpgOpenProductStateV1(input: {
     if (!runtime?.branchLineage || runtime.product.rulePackContentHash !== input.content.rulePack.contentHash
       || runtime.product.campaignKey !== input.content.campaign.campaignKey
       || runtime.branchLineage.ancestors.some(ancestor => ancestor.snapshot.openRun?.coordination.epochs.some(epoch =>
-        JSON.stringify(epoch.budget) !== JSON.stringify(runtime.epochBudget)))) {
+        JSON.stringify(epoch.budget) !== JSON.stringify(ttrpgOpenEpochBudgetForTriggerV1(runtime.epochBudget, epoch.triggerKind))))) {
       throw new Error("[ttrpg] open 分支必须绑定真实祖先、冻结规则与原运行预算");
     }
     return;

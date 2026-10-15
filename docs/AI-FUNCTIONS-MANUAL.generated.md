@@ -307,6 +307,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 | ID | 目标表 | 领域策略注册表 | 唯一入口 | 复审日期 |
 |---|---|---|---|---|
+| `ttrpg-model-memory-adoption` | `ttrpgNarrativeMemories` | `verifyTtrpgOpenBriefCandidateProofV1 + parseTtrpgOpenModelMemoryReceiptV2 + E15 + PROJECT_TABLES` | `src/lib/ttrpg/runtime-commands.ts` | 2027-08-21 |
 | `ttrpg-human-memory-lifecycle` | `ttrpgNarrativeMemories` | `parseTtrpgOpenMemoryReceiptV1 + verifyTtrpgOpenMemoryReceiptsV1 + PRODUCT_RUNTIME_EVENT_TYPES + PROJECT_TABLES` | `src/lib/ttrpg/runtime-commands.ts`<br/>`src/lib/ttrpg/runtime-branch.ts` | 2027-08-21 |
 | `extension-record-lifecycle` | `extensionRecords` | `ExtensionRegistrySnapshot + PROJECT_TABLES + bounded DataSchema` | `src/lib/extensions/store.ts` | 2027-01-01 |
 | `reference-analysis-run-lifecycle` | `referenceAnalysisRuns` | `REFERENCE_ANALYSIS_RUN_POLICY + ADOPTION_SCHEMAS + PROJECT_TABLES` | `src/lib/reference-analysis/lifecycle.ts` | 2027-01-01 |
@@ -523,4 +524,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `fa286698`
+生成时间基准:commit `21a18f11`

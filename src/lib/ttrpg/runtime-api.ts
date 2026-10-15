@@ -146,3 +146,5 @@ export { resumeTtrpgOpenHostingV1, type TtrpgOpenHostingInputV1, type TtrpgOpenH
 export { prepareTtrpgOpenBriefInputV1 } from './open-intent-input'
 export { generateTtrpgOpenBriefCandidateV1, executeTtrpgOpenBriefRequestV1 } from './open-intent-harness'
 export { readTtrpgOpenBriefCandidateV1 } from './open-brief-candidate'
+export { acceptTtrpgOpenBriefMemoryV1 } from './runtime-commands'
+export { reconcileTtrpgOpenBriefMemoryRunV1, TtrpgOpenBriefMemoryReceiptPendingError } from './open-brief-adoption'

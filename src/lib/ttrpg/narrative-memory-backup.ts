@@ -1,7 +1,7 @@
 /** Validate memory projections against replayed real E15 receipts, including preserved ancestors. */
 import type { ProductRuntimeEvent } from '../types'
 import { parseTtrpgNarrativeMemoryV1 } from './narrative-memory'
-import type { TtrpgOpenMemoryReceiptV1 } from './open-memory-contract'
+import type { TtrpgOpenMemoryReceipt } from './open-memory-receipt'
 import { parseProductRuntimeState, replayProductRuntimeEvents } from '../product/runtime-core'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { verifyTtrpgOpenMemoryReceiptsV1 } from './open-memory-proof'
@@ -11,7 +11,7 @@ export async function assertTtrpgNarrativeMemoryBackupV1(backup: Record<string, 
   const rows = backup.ttrpgNarrativeMemories, sessions = backup.productRuntimeSessions, events = backup.productRuntimeEvents
   if (!Array.isArray(rows) || !Array.isArray(sessions) || !Array.isArray(events)) throw new Error('[ttrpg-memory-backup] 缺少实例、事件或记忆表')
   const byId = new Map(sessions.map(row => [row._exportId, row]))
-  const receipts = new Map<number, readonly TtrpgOpenMemoryReceiptV1[]>()
+  const receipts = new Map<number, readonly TtrpgOpenMemoryReceipt[]>()
   const eventsBySession = new Map<number, typeof events>()
   for (const event of events) { const bucket = eventsBySession.get(event._productRuntimeSessionExportId) ?? []; bucket.push(event); eventsBySession.set(event._productRuntimeSessionExportId, bucket) }
   const ownersWithRows = new Set(rows.map(row => row._productRuntimeSessionExportId))

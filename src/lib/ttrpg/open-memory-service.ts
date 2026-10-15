@@ -15,7 +15,7 @@ export async function readTtrpgOpenNarrativeMemoriesV1(input: { scope: Workspace
     || receipt.draft.audience === 'gm-only' && humanHost
     || receipt.draft.audience === 'private' && (seat.actorKey !== null && receipt.recipientActorKeys.includes(seat.actorKey) || humanHost && receipt.recipientActorKeys.includes('gm')))
     .map(({ row, receipt }) => ({ revisionKey: row.revisionKey, summary: row.summary, reliability: row.reliability, audience: row.audience,
-      observerKey: row.observerKey, knownBy: receipt.recipientActorKeys, fromEventSequence: row.fromEventSequence, toEventSequence: row.toEventSequence,
+      observerKey: row.observerKey, origin: receipt.origin, ...(receipt.version === 2 ? { sourceAttributions: receipt.model.attributions, paragraphs: receipt.model.brief.paragraphs } : {}), knownBy: receipt.recipientActorKeys, fromEventSequence: row.fromEventSequence, toEventSequence: row.toEventSequence,
       recordedAtWorldTurn: receipt.recordedAtWorldTurn, historical: receipt.sourceRef.sessionKey !== runtime.sessionKey,
       noMechanicalAuthority: true as const, noKnowledgeGrant: true as const }))
   await loaded.assertCurrent()

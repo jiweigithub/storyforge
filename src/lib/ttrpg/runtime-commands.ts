@@ -1,4 +1,9 @@
 import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1 } from './open-coordination'
+import { verifyTtrpgOpenBriefCandidateProofV1 } from './open-brief-candidate'
+import { parseTtrpgOpenModelMemoryReceiptV2 } from './open-model-memory-contract'
+import { ttrpgOpenMemoryPrefixRootsV2, ttrpgOpenModelMemoryWindowBodyV2 } from './open-memory-prefix-proof'
+import { loadTtrpgOpenBriefContextV1 } from './open-brief-context'
+import { reconcileTtrpgOpenBriefMemoryRunV1, TtrpgOpenBriefMemoryReceiptPendingError } from './open-brief-adoption'
 import { ttrpgOpenOperationEffectTemplateKeyV1,ttrpgOpenOperationEffectDegreeV1,buildTtrpgOpenInteractionEffectV1,assertTtrpgOpenInteractionKnownCostsV1,assertTtrpgOpenInteractionChoiceCostV1 } from './open-interaction'
 import { runtimeInstanceTablesV1 } from '../registry/lifecycle'
 import { parseTtrpgOpenMemoryDraftV1, authorizeTtrpgOpenMemoryDraftV1, parseTtrpgOpenMemoryReceiptV1, assertTtrpgOpenManualMemoryInputV1,
@@ -6012,4 +6017,61 @@ export async function recordTtrpgOpenNarrativeMemoryV1(input: FormalTtrpgCommand
       await db.ttrpgNarrativeMemories.add(projectTtrpgOpenMemoryRowV1(receipt, session))
     },
   })
+}
+
+/** Explicit confirmation of a formal model candidate; never enters the manual author API. */
+export async function acceptTtrpgOpenBriefMemoryV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; runId: number; requestKey: string; candidateHash: string
+}): Promise<ProductRuntimeEvent> {
+  const session = await db.productRuntimeSessions.get(input.sessionId)
+  if (!session?.worldId || !session.workId) throw new Error('[ttrpg-brief] 当前跑团实例不存在')
+  const scope = await resolveScope({ scope: { projectId: session.projectId, worldId: session.worldId, workId: session.workId } })
+  const initial = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
+  if (!initial?.openRun) throw new Error('[ttrpg-brief] 当前不是已开团的开放模式')
+  const commandId = await ttrpgOpenScopedKeyV1(initial.sessionKey, 'model-memory', [input.requestKey, input.candidateHash])
+  const prior = await db.productRuntimeEvents.where('[sessionId+commandId]').equals([input.sessionId, commandId]).first()
+  const event = await appendFormalTtrpgCommand({ ...input, commandId, baseSequence: prior?.baseSequence ?? input.baseSequence,
+    baseStateHash: prior?.baseStateHash ?? input.baseStateHash, type: 'ttrpg.memory.recorded',
+    intent: { viewerKey: input.viewerKey, origin: 'model-reviewed', requestKey: input.requestKey, candidateHash: input.candidateHash },
+    build: async context => {
+      const runtime = parseTtrpgRuntimeStateV2(context.state.ttrpg)
+      if (!runtime?.openRun || !runtime.authorization) throw new Error('[ttrpg-brief] 缺少实际授权')
+      assertTtrpgOpenAuthorizationRowsCurrentV1({ authorization: runtime.authorization, participants: context.participants })
+      assertTtrpgOpenModelActorV1(runtime.authorization, 'prose.ttrpg-open-brief', 'gm', input.viewerKey)
+      const proof = await verifyTtrpgOpenBriefCandidateProofV1({ ...input, scope, currentSources: true }), candidate = proof.candidate
+      const view = await loadTtrpgOpenBriefContextV1({ scope, sessionId: input.sessionId, actorKey: 'gm' })
+      const call = runtime.openRun.coordination.calls.find(call => call.requestKey === input.requestKey)
+      const baseline = proof.snapshot.contract.scope.runtime
+      if (!call || candidate.viewerKey !== input.viewerKey || candidate.epochKey !== runtime.openRun.coordination.activeEpochKey
+        || candidate.admissionStateHash !== view.admissionStateHash || candidate.visibilityHash !== view.visibilityHash
+        || candidate.runtimeSourceHash !== context.session.runtimeSourceHash || !baseline || baseline.baseSequence !== call.createdRef.sequence - 1) throw new Error('[ttrpg-brief] 复盘来源、权限、阶段或原始窗口已经 stale')
+      const draft: TtrpgOpenMemoryDraftV1 = { revisionKey: commandId, observerKey: 'gm', reliability: 'hearsay', audience: 'party', knownBy: [],
+        summary: candidate.brief!.paragraphs.map(paragraph => paragraph.text).join('\n'), fromEventSequence: 1, toEventSequence: baseline.baseSequence }
+      const { seat, recipientActorKeys } = authorizeTtrpgOpenMemoryDraftV1(draft, runtime.authorization, input.viewerKey)
+      const events = await readSessionEvents(context.session, context.state.lastSequence)
+      if (stableJson(replayProductRuntimeEvents(parseProductRuntimeState(context.session.initialStateJson), events)) !== stableJson(context.state)) throw new Error('[ttrpg-brief] 实际事件与当前状态不一致')
+      await verifyTtrpgOpenMemoryReceiptsV1({ runtime, runtimeSourceHash: context.session.runtimeSourceHash, events })
+      const digests = await Promise.all(events.filter(event => event.sequence <= draft.toEventSequence).map(event => ttrpgOpenMemoryEventDigestV1(event, runtime.sessionKey)))
+      const roots = await ttrpgOpenMemoryPrefixRootsV2(runtime.sessionKey, digests), portableChainHash = roots.get(draft.toEventSequence)
+      if (!portableChainHash) throw new Error('[ttrpg-brief] 原始来源前缀不完整')
+      const base = { schema: 'storyforge.ttrpg-open-memory-receipt' as const, version: 2 as const, commandId, draft,
+        viewerKey: input.viewerKey, authorActorKey: seat.actorKey, authorizationRef: runtime.authorization.sourceRef,
+        sourceRef: { sessionKey: runtime.sessionKey, sequence: context.sequence }, runtimeSourceHash: context.session.runtimeSourceHash,
+        sourceLineageHash: await hashProductProductionValueV2(ttrpgOpenMemoryLineageBodyV1(runtime.sessionKey, context.session.runtimeSourceHash, runtime.branchLineage?.ancestors ?? [])),
+        sourceWindow: { eventCount: draft.toEventSequence, portableChainHash }, recipientActorKeys, recordedAt: Date.now(), recordedAtWorldTurn: runtime.openRun.worldTime.worldTurn,
+        origin: 'model-reviewed' as const, noMechanicalAuthority: true as const, noKnowledgeGrant: true as const,
+        model: { requestKey: input.requestKey, epochKey: candidate.epochKey, candidateHash: candidate.candidateHash, rawResponseHash: candidate.rawResponseHash,
+          runContractHash: proof.evidence.run.contractHash, inputManifestHash: candidate.inputManifestHash, contextHash: candidate.visibilityHash,
+          brief: candidate.brief!, attributions: proof.attributions } }
+      const body = { ...base, derivedFromHash: await hashProductProductionValueV2(ttrpgOpenModelMemoryWindowBodyV2(base)) }
+      const receipt = parseTtrpgOpenModelMemoryReceiptV2({ ...body, receiptHash: await hashProductProductionValueV2(body) })
+      return { actorKey: seat.actorKey, targetKey: null, payload: { commandId, memory: receipt, sourceLineageHash: receipt.sourceLineageHash },
+        agentEvidence: proof.evidence, eventEvidence: events }
+    }, afterCommit: async ({ session, event }) => {
+      const receipt = parseTtrpgOpenModelMemoryReceiptV2(JSON.parse(event.payloadJson).memory)
+      await db.ttrpgNarrativeMemories.add(projectTtrpgOpenMemoryRowV1(receipt, session))
+    } })
+  try { await reconcileTtrpgOpenBriefMemoryRunV1({ ...input, scope }) }
+  catch (error) { throw new TtrpgOpenBriefMemoryReceiptPendingError(input.sessionId, event.sequence, input.runId, error) }
+  return event
 }

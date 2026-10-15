@@ -17,6 +17,8 @@ export interface TtrpgOpenBriefAttributionV1 {
   observerKey: string | null
   origin: 'human-authored' | 'model-reviewed' | null
   sourceRef: TtrpgOpenSourceRefV1 | null
+  /** Flat original sources, not recursively embedded summaries. Only derived model memories carry these. */
+  originalSources?: Array<Omit<TtrpgOpenBriefAttributionV1, 'originalSources'>>
 }
 
 export function parseTtrpgOpenBriefV1(value: unknown, sources: readonly TtrpgOpenBriefAttributionV1[]): TtrpgOpenBriefV1 {
@@ -33,7 +35,12 @@ export function parseTtrpgOpenBriefV1(value: unknown, sources: readonly TtrpgOpe
 }
 
 export function parseTtrpgOpenBriefAttributionV1(value: unknown): TtrpgOpenBriefAttributionV1 {
-  const r = p.record(value, ['citationKey', 'resourceKey', 'contextSourceKey', 'contentHash', 'kind', 'reliability', 'observerKey', 'origin', 'sourceRef'], 'recap source attribution')
+  return parseAttribution(value, true)
+}
+function parseAttribution(value: unknown, allowOriginals: boolean): TtrpgOpenBriefAttributionV1 {
+  const hasOriginals = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'originalSources')
+  const r = p.record(value, ['citationKey', 'resourceKey', 'contextSourceKey', 'contentHash', 'kind', 'reliability', 'observerKey', 'origin', 'sourceRef',
+    ...(allowOriginals && hasOriginals ? ['originalSources'] : [])], 'recap source attribution')
   const kind = p.oneOf(r.kind, ['stage', ...TTRPG_OPEN_BRIEF_ENTRY_KINDS_V1, 'memory'], 'attribution kind')
   const reliability = p.oneOf(r.reliability, TTRPG_OPEN_BRIEF_RELIABILITY_V1, 'attribution reliability')
   const observerKey = p.nullable(r.observerKey, p.key, 'attribution observer')
@@ -46,7 +53,10 @@ export function parseTtrpgOpenBriefAttributionV1(value: unknown): TtrpgOpenBrief
   const sourceRef = p.nullable(r.sourceRef, parseTtrpgOpenSourceRefV1, 'attribution source reference')
   if ((['memory', 'retained-narration'].includes(kind) ? origin === null || sourceRef === null : origin !== null)
     || kind === 'retained-narration' && observerKey !== 'gm') p.fail('引用必须保留实际叙述/记忆来源，不能补造作者或观察者')
+  const originalSources = hasOriginals ? p.list(r.originalSources, 'flat original recap sources', v => parseAttribution(v, false), 1024, 1) : undefined
+  if (originalSources && (kind !== 'memory' || origin !== 'model-reviewed'
+    || new Set(originalSources.map(source => `${source.resourceKey}:${source.contentHash}`)).size !== originalSources.length)) p.fail('原始来源只能由模型记忆继承且不得重复或递归嵌套')
   return { citationKey: p.text(r.citationKey, 'attribution citation', 512), resourceKey: p.text(r.resourceKey, 'attribution resource', 2000),
     contextSourceKey, contentHash: p.hash(r.contentHash, 'actual source content hash'), kind, reliability, observerKey,
-    origin, sourceRef }
+    origin, sourceRef, ...(originalSources ? { originalSources } : {}) }
 }
