@@ -66,6 +66,7 @@ export default function NarrativeContextInspector(props: {scope: WorkspaceScope;
         <div><h3 className="mb-1 font-semibold">已读的来源知识</h3>{list(inspection.knowledge)}</div>
         <div><h3 className="mb-1 font-semibold">共同已知的剧情线</h3>{list(inspection.threads.map(t => `${t.title}：${t.question}`))}</div>
         <div><h3 className="mb-1 font-semibold">双方已有的已确认记忆</h3>{list(inspection.memories)}</div>
+        {!!inspection.commitments.length && <div data-testid="chat-context-commitments"><h3 className="mb-1 font-semibold">本次实际读取的约定</h3>{list(inspection.commitments.map(c => `${c.actorName}：${c.terms}（${c.resolution === null ? '当时待履行' : c.resolution.kind === 'fulfilled' ? '当时已履行' : '当时已撤回'}）`))}</div>}
         {inspection.selection && <div className="space-y-2" data-testid="chat-context-selection">
           <p className="text-text-muted">以下只列双方当时共同已知的资料。省略仅表示本轮没有选入，不代表遗忘或删除；私有目标的选择依据不在这里展开。</p>
           <SelectionDetails key={`${inspection.runId}:knowledge`} title="来源知识的选入与省略" items={inspection.selection.knowledge} />

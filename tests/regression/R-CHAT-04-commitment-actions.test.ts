@@ -69,7 +69,7 @@ it('makes a completed act resolve a promise, while a goal cannot discard its unr
 })
 
 it('requires review for both withdrawal and replacement and never silently alters terms', () => {
-  const s = next(apply()), replacement = '我改为天亮后报告，这个新安排只约束我自己。', withdrawal = '我撤回今晚报告的约定。'
+  const s = next(apply()), replacement = '我改为天亮后报告，这个新安排只约束我自己。', withdrawal = '我撤回检查后门后向你报告的约定。'
   const a: ChatNarrativeActionV1 = {...promise(), text: `${withdrawal}${replacement}`, commitmentEffects: [
     {kind: 'withdraw', commitmentKey: 'commitment:3:promise', evidenceExcerpt: withdrawal},
     {kind: 'promise', terms: replacement, evidenceExcerpt: replacement},

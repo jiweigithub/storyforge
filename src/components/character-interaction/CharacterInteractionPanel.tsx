@@ -1,4 +1,5 @@
 import MemoryPanel from './MemoryPanel'
+import CommitmentPanel from './CommitmentPanel'
 import type {ChatSchedulingModeV1} from '../../lib/character-interaction/narrative-scheduling'
 import { useEffect, useMemo, useState, useRef } from 'react'
 import {
@@ -203,7 +204,8 @@ export default function CharacterInteractionPanel(props: {
         {story && store.scope && <NarrativeContextInspector key={selected.id} scope={store.scope} sessionId={selected.id!} disabled={store.busy || store.loading} sequence={store.runtimeState.lastSequence} />}
 
         <section data-section="memory" className="grid gap-3 lg:grid-cols-2"><div className="rounded border border-border bg-bg-surface p-4"><h2 className="mb-3 text-sm font-semibold">关系摘要与原因</h2><div className="space-y-2">{interaction.relationships.map(item => { const last = [...interaction.relationshipHistory].reverse().find(change => change.fromParticipantKey === item.fromParticipantKey && change.toParticipantKey === item.toParticipantKey && change.dimensionKey === item.dimensionKey); return <article key={`${item.fromParticipantKey}:${item.toParticipantKey}:${item.dimensionKey}`} className="rounded bg-bg-base p-2 text-xs"><div className="flex justify-between"><strong>{interaction.profiles.find(profile => profile.participantKey === item.fromParticipantKey)?.name} → {item.toParticipantKey === 'player' ? '你' : interaction.profiles.find(profile => profile.participantKey === item.toParticipantKey)?.name} · {item.label}</strong><span>{item.value}</span></div>{last && <p className="mt-1 text-[10px] text-text-muted">{last.before} → {last.after}：{last.reason} · 证据 #{last.sourceEventSequence}</p>}</article>})}</div></div>
-          {store.scope && <MemoryPanel key={selected.id} scope={store.scope} sessionId={selected.id!} interaction={interaction} sequence={store.runtimeState.lastSequence} disabled={store.busy || store.loading || selected.status !== 'active'} onApply={store.manageMemory} />}</section>
+          {store.scope && <MemoryPanel key={selected.id} scope={store.scope} sessionId={selected.id!} interaction={interaction} sequence={store.runtimeState.lastSequence} disabled={store.busy || store.loading || selected.status !== 'active'} onApply={store.manageMemory} />}
+          {story && <CommitmentPanel interaction={interaction} />}</section>
 
         {!story && store.runtimeState.narrative?.version === 2 && !store.runtimeState.narrative.completed && <section className="rounded border border-border bg-bg-surface p-4"><h2 className="mb-3 text-sm font-semibold">Narrative Choice 连接</h2><div className="flex flex-wrap gap-2">{(store.runtimeState.narrative.choices ?? []).filter(choice => store.runtimeState.narrative?.visibleChoiceKeys?.includes(choice.choiceKey)).map(choice => <button key={choice.choiceKey} disabled={!store.runtimeState.narrative?.availableChoiceKeys?.includes(choice.choiceKey) || store.busy} onClick={() => void run(async () => { await store.chooseNarrative(choice.choiceKey) })} className="rounded border border-border px-3 py-2 text-xs disabled:opacity-40">{choice.text}</button>)}</div></section>}
 
