@@ -1937,6 +1937,136 @@
               "sha256": "aad4a77c6b81f0afb8f415e18d733d735bb06929b077a5991f90ba21f626448e"
             }
           ]
+        },
+        "reviewNormalizationPreflight": {
+          "at": "2026-10-15T10:43:55.838Z",
+          "implementationHead": "e3b1f0f3bc29c7a744dee27587d8802af28665ec",
+          "type": "read-only deterministic diagnostic of the actual V77 action/review pair; not fresh generation",
+          "evidenceFolder": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v79-review-normalization-diagnostic",
+          "modelCalls": 0,
+          "result": {
+            "oldContract": {
+              "parsed": false,
+              "error": "Error: [chat-action] 自然转述逐条等义审查不完整"
+            },
+            "newContract": {
+              "parsed": true,
+              "passed": true,
+              "removed": [
+                {
+                  "optionKey": null,
+                  "factKey": "fact-7"
+                }
+              ],
+              "normalizedOutputHash": null
+            },
+            "negative": {
+              "parsed": false,
+              "error": "Error: [chat-review-normalization] 逐字披露审查未通过，不能忽略失败判定"
+            },
+            "sourceUnchanged": true,
+            "noAdoptionAttempted": true,
+            "noRuntimeImported": true
+          },
+          "countsTowardM1": false,
+          "hashes": {
+            "registration.json": "b7bedbe46c9d55b54daf7534fa87884be5bc9ceb10e1e9d85263b99507cfd25b",
+            "runner.mjs": "accffdfcf6c6e6f1c66d495bde137fe48f9cc9b1c7c05941909312ba06d85b8d",
+            "result.json": "ece27a2d8d48f0e059ee80bcd7663137a98f4d8391a5f6bcb54cd5ff689eb922"
+          }
+        },
+        "alternativeContinuationPreflight": {
+          "at": "2026-10-15T11:05:30.079176+00:00",
+          "status": "failed-after-two-successful-opportunities",
+          "purpose": "Bounded new-model diagnostic from the unchanged terminal V77 state imported into an isolated browser; no replay or replacement of formal failure",
+          "implementationHead": "e3b1f0f3bc29c7a744dee27587d8802af28665ec",
+          "manifestSha256": "baaeea021d60ca06da73f98973cc04456ec61dcf83f6aa45ef9457f36d56ce64",
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "newRequests": 8,
+          "completedProviderRequests": 8,
+          "usage": {
+            "totalTokens": 90286,
+            "inputTokens": 86130,
+            "cachedInputTokens": 13312,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 4156,
+            "reasoningOutputTokens": 1239
+          },
+          "costUsd": null,
+          "opportunitiesStarted": 3,
+          "opportunitiesCompleted": 2,
+          "newReviewedActions": 2,
+          "newSituationUpdates": 1,
+          "automaticRetries": 0,
+          "manualRepairs": 0,
+          "observations": [
+            "角色实际询问旧钟零件类别及适配规格，局面更新提供回答；角色回到修理铺说明得到的规格信息，同时保留库存与适配的不确定性，没有购买。",
+            "玩家根据已公开的信息允许开壳但不换件、查清后再决定修法。候选正文接受这项限制并描述检查，却漏记以后仍须遵守的约定；审查仅后果维度拒绝。检查行为和候选未提交。",
+            "新调用使用 action-v30/review-v24；本次新回复没有冗余逐字披露检查，不能声称真实续轮直接重现并验证了V79转换分支。该分支另有原始响应的零调用复现和工程正反例。"
+          ],
+          "failedCandidateNotPublic": true,
+          "originalFailureRetained": true,
+          "worldPreserved": true,
+          "normalizationReports": 0,
+          "restoration": {
+            "openingReviewRetained": true,
+            "modelCalls": 0,
+            "interactionEqual": true,
+            "refreshEqual": true,
+            "worldPreserved": true,
+            "rawEvidenceRetained": true,
+            "runStatusesPreserved": false,
+            "verifiedCompletedHistories": 3,
+            "retainedFailedRuns": 2,
+            "resumableRuns": 0
+          },
+          "restorationFinding": "Five earlier completed calls, already invalidated by the first import, are cancelled by a second import because their historical checkpoints are nonportable. All story, raw responses, world and two failed runs remain; three newly completed calls are still recognized. Recovery not accepted. Existing first raw-status probe was too strict for ordinary receipt invalidation; verified-prefix probe independently confirms the older-history defect.",
+          "formalM1CountsChanged": false,
+          "humanScored": false,
+          "secondProvider": false,
+          "evidenceFolder": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v80-alternative-continuation-diagnostic",
+          "interpretationSha256": "e5c36ad271e34a9b35f94f6bad35e2fe3011c811d12b3d9e6829a8c573ebfba8",
+          "hashes": {
+            "preregistration.json": "d3f67d2d5bc868b369592f1836dadce1aa35ef176a7f865cb800cbe686ec09e8",
+            "runner.mjs": "65a3f2dc25f7a09bf68c5fbe2e12282a0eb89a5ec9209585d159a87bbad3f603",
+            "prepared.json": "b4fc63adf5bf3a3ec45e7ee1805647af2ac1165dff1b09d42af3acd64e2fea67",
+            "alternative-continuation.json": "d9b9070689723f4733c3995a7ce096326feef683efd00d83cb8b1a9d9d8ed859",
+            "alternative-continuation-backup.json": "46745dec3b9a06d96b3d1f4d1786841e1d0eaa371cde3806e173697651ca53fe",
+            "terminal-read-http-diagnostic.json": "54df77b36b8b6a0a0dc8c94d92f215ef33af9e8bdac76b6d44f90cd6e842e655",
+            "terminal-proof.json": "a199df8a644749cec0bfea095fc066ff217328bdd1b0edc9effbc5d963d6cb93",
+            "restoration.mjs": "7d2709e912bbe079cbf894e59de4894f7ba31534517b9a26216f4272a30d4e09",
+            "restoration.json": "5e9fcc9126d49cca8142867775168dce257c602ef510f55a38f12e2c148d7ace",
+            "restoration-verified.mjs": "4317461375d82da6dc0912e9f8af8f0779ac7d95a2856e729987c895717e6cc6",
+            "restoration-verified.json": "6086f66faae0c21b93fa2c5d2627eedd469ae9fc4f1f59ada770cb4882a27642"
+          },
+          "restorationFollowup": {
+            "implementationHead": "ddf6c76437367ca4cc76425652ac59727eba8e53",
+            "evidenceFolder": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v81-reimport-history-diagnostic",
+            "source": "exact original V80 backup, not the cancelled-history diagnostic output",
+            "result": {
+              "stem": "alternative-continuation",
+              "runStatusesPreserved": true,
+              "verifiedCompletedHistories": 8,
+              "retainedFailedRuns": 2,
+              "resumableRuns": 0,
+              "openingReviewRetained": true,
+              "modelCalls": 0,
+              "interactionEqual": true,
+              "refreshEqual": true,
+              "worldPreserved": true,
+              "rawEvidenceRetained": true
+            },
+            "hashes": {
+              "registration.json": "28b028bedaa36789d8ffed8954b247a2d6a07429bda9aa3b90860463002aaac1",
+              "runner.mjs": "8258d889147b53e3a714faed5cae7d9fb6f7170fdb5bd4b269f10cd137146c1e",
+              "restoration-verified.json": "d80c4f1dddc4e1f18cd7fee05a8d8b0f0b217cb5b338b5c32c3f939ca06c77aa"
+            },
+            "oldFailuresRetained": true,
+            "storyFailureReclassified": false,
+            "modelCalls": 0,
+            "limits": "Preserves future imports of verifiable completion prefixes; does not silently rewrite previously cancelled records."
+          }
         }
       },
       {

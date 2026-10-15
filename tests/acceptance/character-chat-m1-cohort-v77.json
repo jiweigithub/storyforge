@@ -149,7 +149,7 @@
     }
   ],
   "countSemantics": "collectionCompleted counts a protocol terminal collection, including failure; it is independent of narrativePassed/humanScored. The original cohort retains its original counts and records.",
-  "next": "Preserve all three terminal failures. Verify the narrow new-version response normalization and continue later formal collection only with separately registered source/contract identity; diagnostics do not replace failed slots.",
+  "next": "Preserve three original failures and separate V79/V80/V81 diagnostics. Address repeated missing commitment effects, collect final fixed-code engineering receipts, then register any new formal implementation/cohort without replacing slots.",
   "rawEvidence": [
     {
       "file": "cohort-registration.json",
@@ -505,6 +505,22 @@
       "type": "explicit one-shot consequence revision in a closed-profile copy",
       "evidence": "character-chat-narrative-cases.json:evaluationDesign.providerPreflight[0].commitmentRevisionPreflight",
       "newRequests": 2,
+      "replacesFailedEpisode": false,
+      "countsTowardCohort": false
+    },
+    {
+      "version": "V79",
+      "type": "recorded-response normalization, zero new generation",
+      "evidence": "character-chat-narrative-cases.json:evaluationDesign.providerPreflight[0]",
+      "newRequests": 0,
+      "replacesFailedEpisode": false,
+      "countsTowardCohort": false
+    },
+    {
+      "version": "V80",
+      "type": "new real continuation from copied terminal state; final commitment omission failure",
+      "evidence": "character-chat-narrative-cases.json:evaluationDesign.providerPreflight[0]",
+      "newRequests": 8,
       "replacesFailedEpisode": false,
       "countsTowardCohort": false
     }
