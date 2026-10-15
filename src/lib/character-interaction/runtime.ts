@@ -29,6 +29,7 @@ import {chatRelationshipEvidenceV1} from './narrative-relationships'
 import {selectChatContextWindowV1, type ChatContextSelectionV1} from './context-selection'
 import {interactionMessageVisibleTo as visibleTo} from './message-visibility'
 import {hasChatMemoryContentReviewV1, interactionMemoryForContextV1, parseChatMemoryReceiptV1} from './memory-review-contract'
+import {assertChatCommitmentSourcesV1} from './narrative-commitments'
 
 type JsonObject = Record<string, unknown>
 
@@ -540,6 +541,7 @@ export function parseInteractionState(value: unknown): CharacterInteractionRunti
     })
   }
   for (const id of result.chatNarrative?.excludedMessageIds ?? []) requireChatRetrievalMessageV1(result, id)
+  assertChatCommitmentSourcesV1(result)
   return result
 }
 

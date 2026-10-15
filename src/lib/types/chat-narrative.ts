@@ -72,7 +72,27 @@ export interface ChatActorGoalV1 {
   evidenceFactKeys: string[]
   status: 'active' | 'paused' | 'fulfilled' | 'abandoned'
   updatedSequence: number
+  /** Runtime declarations owned by this goal, never inferred from summaries. */
+  commitments?: ChatGoalCommitmentV1[]
 }
+
+export interface ChatCommitmentEvidenceV1 {
+  messageId: string
+  sequence: number
+  excerpt: string
+}
+
+export interface ChatGoalCommitmentV1 {
+  commitmentKey: string
+  terms: string
+  audienceKeys: string[]
+  declared: ChatCommitmentEvidenceV1
+  resolution: null | (ChatCommitmentEvidenceV1 & {kind: 'fulfilled' | 'withdrawn'})
+}
+
+/** Candidate effects; runtime supplies identity, speaker, audience and sequence. */
+export type ChatCommitmentEffectV1 = {kind: 'promise'; terms: string; evidenceExcerpt: string}
+  | {kind: 'fulfill' | 'withdraw'; commitmentKey: string; evidenceExcerpt: string}
 
 export interface ChatActorBeliefV1 {
   beliefKey: string
