@@ -173,7 +173,12 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
         {contextTrace?.generation === 'legacy' && <p>这是较早的请求，保留原有上下文证据，没有分层预算记录。</p>}
         {contextTrace?.generation === 'p7' && <div aria-label="实际上下文记录">{contextTrace.historical && <p>这是导入前的原始记录。尚未发送的请求可以明确取消；新的 AI 请求需要当前玩家重新授权。</p>}<p>第 {contextTrace.worldTurn} 轮请求：实际交付 {contextTrace.resourceCount} 条资料、{contextTrace.contextTokens} 个正文 token；上下文上限 {contextTrace.budgetTokens}，采用 {contextTrace.triggerCount} 条情境指引。</p>
           <ul>{contextTrace.tiers.filter(tier => tier.tokens > 0 || tier.omitted).map(tier => <li key={tier.tierKey}>{{ rules: '规则', 'authority-state': '权限与当前状态', 'active-situations': '当前预警', 'known-facts': '已知资料', 'recent-events': '近期叙述', 'memory-summary': '记忆摘要', 'dynamic-injection': '情境指引', flavor: '氛围资料' }[tier.tierKey]}：{tier.omitted ? '本次预算内未交付' : `${tier.tokens} 个正文 token`}</li>)}</ul>
-          <p>记录已与原请求和实际读取回执核对。情境指引和历史叙述不会自动成为规则、事实或角色知识。</p></div>}
+          <details><summary>查看实际资料与触发依据</summary>
+            <ul aria-label="实际交付资料">{contextTrace.inspection.resources.map(row => <li key={row.label}>{row.label} · {row.category} · {row.source} · {row.origin} · {row.tokens} 个正文 token</li>)}</ul>
+            {contextTrace.inspection.injections.length > 0 && <ul aria-label="实际指引触发依据">{contextTrace.inspection.injections.map(row => <li key={row.label}>{row.label}：{row.reason}</li>)}</ul>}
+            {contextTrace.inspection.omissions.length > 0 && <ul aria-label="本次资料省略原因">{contextTrace.inspection.omissions.map(row => <li key={row.category}>{row.category}：{row.reason}，仅交付预算允许的完整条目。</li>)}</ul>}
+          </details>
+          <p>记录已与原请求和实际读取回执核对。列出的资料均来自当时的实际读取，不代表当前仍授权再次发送。情境指引和历史叙述不会自动成为规则、事实或角色知识。</p></div>}
       </section>
       {p.requests.length > 0 && <aside className="sf-open-table-card"><h2>模型请求进度</h2>{p.requests.map(r => <p key={r.requestKey}>{r.purpose}：{r.status === 'unknown' ? '发送结果未知，请先核对原请求；不会自动重发。' : r.status === 'prepared' ? '请求已准备，尚未发送。' : r.status === 'dispatched' ? '已发送，正在等待原请求结果。' : '请求已停止，请检查配置或已有错误。'}{r.status === 'prepared' && <button disabled={busy} onClick={() => void perform(async () => { await cancelTtrpgOpenTablePreparedRequestV1({ ...input(), requestKey: r.requestKey }) })}>取消尚未发送的请求</button>}</p>)}</aside>}
       <TtrpgOpenHistoricalResponses key={`history:${sessionId}:${viewerKey}:${view.sequence}`} input={input()} entries={p.historicalResponses ?? []} busy={busy} perform={job => perform(() => job())} />

@@ -1,5 +1,6 @@
 import { listTtrpgOpenHistoricalResponsesV1, readTtrpgOpenHistoricalResponseV1 } from './open-imported-response'
 import { readTtrpgOpenModelCallRunsV1 } from './open-model-call-evidence'
+import { projectTtrpgOpenContextInspectionV1 } from './open-context-inspection'
 import { createTtrpgOpenHostingDelegationV1 } from './open-hosting-delegation'
 import { resumeTtrpgOpenHostingV1, type TtrpgOpenHostingInputV1 } from './open-hosting-coordinator'
 import { delegateTtrpgOpenHostingV1, stopTtrpgOpenHostingV1, disposeTtrpgOpenIntentV1 } from './runtime-commands'
@@ -336,7 +337,7 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
 }
 export type TtrpgOpenTableViewV1 = Awaited<ReturnType<typeof readTtrpgOpenTableV1>>
 
-/** Explicit, receipt-bound inspection. Counts only; no other POV text or authored secret names. */
+/** Explicit, receipt-bound inspection. No other POV text or authored secret names. */
 export async function readTtrpgOpenTableContextTraceV1(input: TtrpgOpenTableInputV1) {
   const f = await humanTable(input), run = f.runtime.openRun
   if (!run) return null
@@ -361,7 +362,8 @@ export async function readTtrpgOpenTableContextTraceV1(input: TtrpgOpenTableInpu
     omitted: tier.demoted || receipt.resourceCountBudget.tiers.some(count => count.tierKey === tier.tierKey && count.demoted) }))
   return { generation: 'p7' as const, historical: Boolean(historical), requestKey: call.requestKey, worldTurn: receipt.worldTurn,
     contextTokens: receipt.selected.reduce((sum, row) => sum + row.tokens, 0), budgetTokens: receipt.budgetTokens,
-    resourceCount: receipt.selected.length, triggerCount: receipt.deliveredTriggerKeys.length, tiers }
+    resourceCount: receipt.selected.length, triggerCount: receipt.deliveredTriggerKeys.length, tiers,
+    inspection: projectTtrpgOpenContextInspectionV1(receipt) }
 }
 export type TtrpgOpenTableContextTraceV1 = Awaited<ReturnType<typeof readTtrpgOpenTableContextTraceV1>>
 
