@@ -1,3 +1,4 @@
+import {applyChatThreadFollowupGoalV1, chatCanFollowThreadV1} from './narrative-thread-followup'
 import {applyChatMemoryReconciliationsV1, parseChatMemoryReconciliationChecksV1} from './memory-reconciliation'
 import {assertChatResponseRetrievableV1, isChatMessageRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1, chatCanRespondAfterClosureV1} from './narrative-scheduling'
@@ -41,7 +42,7 @@ function choice(value: unknown, allowed: readonly string[]) {
 
 /** Structural parse also runs on restored candidates; state-dependent checks run again at commit. */
 export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV1 {
-  const optional = ['relationshipUpdates', 'nextPossibilities', 'beliefUpdates', 'goalUpdates', 'situationRequest', 'followupGoal', 'commitmentEffects'].filter(name => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, name))
+  const optional = ['relationshipUpdates', 'nextPossibilities', 'beliefUpdates', 'goalUpdates', 'situationRequest', 'followupGoal', 'threadFollowupGoal', 'commitmentEffects'].filter(name => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, name))
   const row = object(value, ['kind,text,goalKey,evidenceFactKeys,audienceKeys,waitingForPlayer,newFacts,disclosures,threadUpdates,goalStatus', ...optional].join(','))
   choice(row.kind, ['speak', 'attempt', 'complete', 'pause'])
   text(row.text, 8000); if (row.goalKey !== null) key(row.goalKey); keys(row.evidenceFactKeys); keys(row.audienceKeys, 33)
@@ -105,6 +106,12 @@ export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV
     const signals = list(thread.closureSignals, 8)
     if (!signals.length) fail('新问题缺少收束条件')
     signals.forEach(value => text(value, 1000))
+  }
+  if (optional.includes('threadFollowupGoal') && row.threadFollowupGoal !== null) {
+    const proposal = object(row.threadFollowupGoal, 'threadKey,evidenceExcerpt,goal')
+    key(proposal.threadKey); text(proposal.evidenceExcerpt, 2000)
+    const goal = object(proposal.goal, 'goalKey,desire,concern,boundary,evidenceFactKeys')
+    key(goal.goalKey); text(goal.desire, 1200); text(goal.concern, 1200); text(goal.boundary, 1200); keys(goal.evidenceFactKeys, 20)
   }
   return structuredClone(value) as ChatNarrativeActionV1
 }
@@ -187,6 +194,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   if (trigger.actionSequences.length >= chatTurnActionLimitV1(story.permissions, trigger) || state.remainingDirectorBudget < 1) fail('行动预算不足')
   const action = parseChatNarrativeActionV1(input.action)
   if (story.pendingEdit) {
+    if (action.threadFollowupGoal != null) fail('待处理改写不能建立既有事项接续目标')
     const edit = story.pendingEdit
     const matchesText = edit.mode === 'continue' ? action.text.startsWith(edit.text) && !!action.text.slice(edit.text.length).trim() : edit.text === action.text
     if (edit.role !== 'character' || edit.actorKey !== actorKey || !matchesText
@@ -197,10 +205,11 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   const audiences = [state.playerKey, ...state.activeScene!.activeParticipantKeys]
   if (!action.audienceKeys.includes(actorKey) || !action.audienceKeys.includes(state.playerKey)
     || action.audienceKeys.some(k => !audiences.includes(k))) fail('行动听众缺少玩家、行动者或引用场外人物')
+  applyChatThreadFollowupGoalV1(state, {action, actorKey, sequence: input.sequence, trigger})
   applyChatOwnFollowupGoalV1(state, {action, actorKey, sequence: input.sequence, trigger})
   const goal = story.situation.goals.find(g => g.goalKey === action.goalKey && g.actorKey === actorKey)
   if (action.goalKey === null) {
-    if (!chatCanRespondAfterClosureV1(state, actorKey, trigger)) fail('无目标回应只允许在自身目标收束后承接新的玩家消息')
+    if (!chatCanRespondAfterClosureV1(state, actorKey, trigger) && !chatCanFollowThreadV1(state, actorKey, trigger)) fail('无目标回应只允许在自身目标收束后承接新的玩家消息或已授权的事项接续机会')
     if (action.goalStatus !== null || action.goalUpdates?.length || action.threadUpdates.length
       || action.situationRequest != null && action.situationRequest.purpose !== 'player-followup' || action.nextPossibilities?.length) fail('收束后的普通回应不能重开目标、剧情线或创建新打算')
   } else if (!goal || !['active', 'paused'].includes(goal.status)) fail('行动缺少角色自身未完成目标')
@@ -306,7 +315,7 @@ export function applyChatNarrativeActionV1(state: CharacterInteractionRuntimeSta
   if (action.commitmentEffects !== undefined) fail('承诺变化必须通过独立审查，旧行动事件不可采用')
   if (action.disclosures.some(d => d.wording !== undefined)) fail('自然转述必须经过逐条等义审查，旧行动事件不可采用')
   if (action.goalKey === null) fail('收束后的回应必须通过行动及后果审查')
-  if (action.relationshipUpdates !== undefined || action.nextPossibilities !== undefined || action.beliefUpdates !== undefined || action.goalUpdates !== undefined || action.situationRequest !== undefined || action.followupGoal !== undefined) fail('旧行动事件不能写入关系、打算或附带目标后果')
+  if (action.relationshipUpdates !== undefined || action.nextPossibilities !== undefined || action.beliefUpdates !== undefined || action.goalUpdates !== undefined || action.situationRequest !== undefined || action.followupGoal !== undefined || action.threadFollowupGoal !== undefined) fail('旧行动事件不能写入关系、打算或附带目标后果')
   return applyActionBase(state, input)
 }
 

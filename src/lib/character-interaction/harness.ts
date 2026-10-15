@@ -1,3 +1,4 @@
+import {assertChatThreadFollowupReviewVersionV1} from './narrative-thread-followup'
 import {assertChatMemoryCorrectionInputV1} from './context-reader-version'
 import {assertChatMemoryReconciliationReviewsV1, assertChatMemoryReconciliationReviewVersionV1} from './memory-reconciliation'
 import {CHAT_MEMORY_REVIEW_STEP, CHAT_MEMORY_REVIEW_SKILL, chatMemoryReviewBindingV1, parseChatMemoryReceiptV1} from './memory-review-contract'
@@ -298,7 +299,7 @@ function schemaInstruction(skillId: InteractionRuntimeSkillIdV1): string {
     return '{"kind":"chat-situation","title":"当前局面","location":"保留当前地点","timeLabel":"保留当前时间","newFacts":[{"factKey":"新标识","kind":"observation","text":"新背景事实","audienceKeys":["player","知情角色"],"evidenceFactKeys":["已有事实"],"seedExcerpt":"实际情境请求或角色 direction 中的逐字摘录"}],"newGoals":[{"goalKey":"新标识","actorKey":"在场角色","desire":"个人目的","concern":"顾虑","boundary":"不替玩家决定","evidenceFactKeys":["新旧可知事实"]}],"newThreads":[{"threadKey":"新标识","title":"问题","question":"尚未决定的问题","audienceKeys":["player","知情角色"],"participantKeys":["在场角色"],"evidenceFactKeys":["新旧可知事实"],"closureSignals":["何时可搁置或收束"]}],"possibilities":[{"actorKey":"在场角色","text":"未发生的打算，可改变","evidenceFactKeys":["新旧可知事实"]}]}'
   }
   if (skillId === 'character.chat-narrative-action' || skillId === CHAT_ACTION_REVISION_SKILL) {
-    return '{"kind":"speak|attempt|complete|pause","text":"实际角色表达与自身行动","goalKey":"自身未完成目标标识","evidenceFactKeys":["可知事实标识"],"audienceKeys":["player","当前角色"],"waitingForPlayer":true,"newFacts":[],"disclosures":[],"threadUpdates":[],"goalStatus":null,"goalUpdates":[],"commitmentEffects":[],"relationshipUpdates":[],"nextPossibilities":null,"beliefUpdates":[],"situationRequest":null,"followupGoal":null}'
+    return '{"kind":"speak|attempt|complete|pause","text":"实际角色表达与自身行动","goalKey":"自身未完成目标标识","evidenceFactKeys":["可知事实标识"],"audienceKeys":["player","当前角色"],"waitingForPlayer":true,"newFacts":[],"disclosures":[],"threadUpdates":[],"goalStatus":null,"goalUpdates":[],"commitmentEffects":[],"relationshipUpdates":[],"nextPossibilities":null,"beliefUpdates":[],"situationRequest":null,"followupGoal":null,"threadFollowupGoal":null}'
   }
   if (skillId === 'character.interaction-reply' || skillId === 'character.ai-town-reply') {
     return '{"kind":"character-reply","text":"...","replyToSequence":1,"audienceKeys":null,"budgetCost":0,"disclosures":[]}'
@@ -882,6 +883,8 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
     }
   }
   if (candidate.kind === 'chat-narrative-action-candidate' || candidate.kind === 'chat-narrative-options-candidate') {
+    assertChatThreadFollowupReviewVersionV1(candidate.kind === 'chat-narrative-action-candidate' ? [candidate.action] : candidate.options,
+      snapshot.contract.executionBindings?.find(b => b.stepId === CHAT_ACTION_REVIEW_STEP_V1)?.promptVersion)
     assertChatCommitmentReviewVersionV1(candidate.kind === 'chat-narrative-action-candidate' ? [candidate.action] : candidate.options,
       snapshot.contract.executionBindings?.find(b => b.stepId === CHAT_ACTION_REVIEW_STEP_V1)?.promptVersion)
     assertChatMemoryReconciliationReviewVersionV1(candidate.kind === 'chat-narrative-action-candidate'

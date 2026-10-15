@@ -1,3 +1,4 @@
+import {chatCanFollowThreadV1} from './narrative-thread-followup'
 import {chatTurnActionLimitV1} from './narrative-contract'
 import {chatCanRespondAfterClosureV1, chatHasUnfinishedGoalV1, createChatScheduledDirectionV1, nextChatScheduledActorV1, type ChatSchedulingModeV1} from './narrative-scheduling'
 import { assertInstanceBinding } from '../product/runtime-instances'
@@ -43,7 +44,7 @@ export async function readChatNarrativeTurnResumeV1(scope: WorkspaceScope, sessi
   if (!remainingActions || state.remainingDirectorBudget < 2) return {...view, blockedReason: '本轮剩余额度不足，不能继续生成。'}
   if (trigger.direction?.scheduling && !actorKey) return {...view, blockedReason: '本轮已没有可继续行动的角色，无需补齐。'}
   if (!trigger.direction?.scheduling && lastAction != null && !actorKey) return {...view, blockedReason: '本轮原角色消息不完整，不能推定由谁继续。'}
-  if (!constructingSeed && actorKey && !chatHasUnfinishedGoalV1(state, actorKey) && !chatHasPendingPlayerFollowupV1(state, actorKey) && !chatCanRespondAfterClosureV1(state, actorKey, trigger)) return {...view, blockedReason: '本轮角色的目标已经结束，无需补齐行动。'}
+  if (!constructingSeed && actorKey && !chatHasUnfinishedGoalV1(state, actorKey) && !chatHasPendingPlayerFollowupV1(state, actorKey) && !chatCanRespondAfterClosureV1(state, actorKey, trigger) && !chatCanFollowThreadV1(state, actorKey, trigger)) return {...view, blockedReason: '本轮角色的目标已经结束，无需补齐行动。'}
   if (story.pendingSituation && (trigger.direction?.scheduling || story.pendingSituation.actorKey === actorKey)
     && chatSituationConstructionBlockedV1(state)) return {...view, blockedReason: '本轮已经发展过一次局面。新的角色方向需在下一轮明确继续。'}
   const [rows, events] = await Promise.all([
@@ -120,7 +121,7 @@ export async function readPendingChatNarrativeRunsV1(scope: WorkspaceScope, sess
 function actorFor(state: CharacterInteractionRuntimeState, kind: ChatPlayerTriggerV1, preferred?: string): string | null {
   const message = kind === 'player-response' ? state.messages.filter(m => m.role === 'player' && m.supersededBySequence == null).slice(-1)[0] : null
   const active = state.activeScene!.activeParticipantKeys.filter(key => (!message?.audienceKeys || message.audienceKeys.includes(key))
-    && (kind === 'player-response' || chatHasPendingPlayerFollowupV1(state, key) || chatHasUnfinishedGoalV1(state, key)))
+    && (kind === 'player-response' || chatCanFollowThreadV1(state, key, {kind, actionSequences: []}) || chatHasPendingPlayerFollowupV1(state, key) || chatHasUnfinishedGoalV1(state, key)))
   if (preferred) {
     if (!active.includes(preferred)) throw new Error('选定角色不在场、听不到此消息或当前目标已结束。')
     return preferred
@@ -190,7 +191,7 @@ async function performPreparedTurn(input: {
     const trigger = current.chatNarrative!.triggers.slice(-1)[0]!
     if (trigger.requestedSequence !== input.triggerSequence || trigger.status !== 'ready' || current.remainingDirectorBudget < 2) return
     let actor = trigger.direction?.scheduling ? nextChatScheduledActorV1(current, trigger) : input.actor
-    if (!actor || !chatHasUnfinishedGoalV1(current, actor) && !chatHasPendingPlayerFollowupV1(current, actor) && !chatCanRespondAfterClosureV1(current, actor, trigger)) return
+    if (!actor || !chatHasUnfinishedGoalV1(current, actor) && !chatHasPendingPlayerFollowupV1(current, actor) && !chatCanRespondAfterClosureV1(current, actor, trigger) && !chatCanFollowThreadV1(current, actor, trigger)) return
     const story = current.chatNarrative!
     if (story.pendingSituation && (trigger.direction?.scheduling || story.pendingSituation.actorKey === actor)
       && chatSituationConstructionBlockedV1(current)) return

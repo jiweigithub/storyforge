@@ -1,3 +1,4 @@
+import {assertChatThreadFollowupReviewVersionV1} from './narrative-thread-followup'
 import {assertChatMemoryReconciliationReviewsV1, isChatActionReviewOutputV1} from './memory-reconciliation'
 import {db} from '../db/schema'
 import {canonicalStringify} from '../agent/run/hash'
@@ -54,6 +55,7 @@ export async function readChatActionRevisionSourceV1(input: {
   const raw = await readAgentRunArtifactExactV1({projectId: input.scope.projectId, artifactKind: 'raw-response', contentHash: reviewHash})
   let review
   try {
+    assertChatThreadFollowupReviewVersionV1([candidate.action], snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:action-review')?.promptVersion)
     const body = JSON.parse(raw.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, '$1'))
     if (!isChatActionReviewOutputV1(body)) return null
     review = parseChatNarrativeActionReviewV1({...body, reviewedActionJson: canonicalStringify(candidate.action)}, candidate.action)
@@ -69,6 +71,7 @@ export async function readChatActionRevisionSourceV1(input: {
  * Full deterministic and semantic checks still apply to every consequence. */
 export function assertChatActionRevisionExpressionV1(source: ChatActionRevisionSourceV1, action: ChatNarrativeActionV1) {
   if (canonicalStringify(source.action.followupGoal ?? null) !== canonicalStringify(action.followupGoal ?? null)) throw new Error('[chat-revision] 后果修订不能更换原表达承接的新目标与请求依据')
+  if (canonicalStringify(source.action.threadFollowupGoal ?? null) !== canonicalStringify(action.threadFollowupGoal ?? null)) throw new Error('[chat-revision] 后果修订不能更换原表达接续的事项与目标')
   for (const key of ['kind', 'text', 'goalKey', 'audienceKeys', 'waitingForPlayer'] as const) {
     if (canonicalStringify(source.action[key]) !== canonicalStringify(action[key])) throw new Error('[chat-revision] 修订不能改变原表达、行动角色目标或玩家选择边界')
   }

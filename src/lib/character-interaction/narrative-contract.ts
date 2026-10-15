@@ -77,10 +77,12 @@ function validateCommon(value: Row, boundary: ChatNarrativeBoundaryV1) {
 }
 
 export function parseChatNarrativePermissionsV1(value: unknown): ChatNarrativePermissionsV1 {
-  const extra = ['allowActorSituationExpansion', 'allowPlayerFollowupSituations', 'maxDiscoveriesPerSituation'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
+  const extra = ['allowActorSituationExpansion', 'allowPlayerFollowupSituations', 'allowActorThreadFollowups', 'maxDiscoveriesPerSituation'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
   const permissions = row(value, 'mode,triggers,allowedNewFactKinds,maxNewFactsPerAction,maxActiveThreads,maxActionsPerTrigger,maxActionCharacters,intensity' + extra, '运行权限')
   if (Object.prototype.hasOwnProperty.call(permissions, 'allowActorSituationExpansion') && typeof permissions.allowActorSituationExpansion !== 'boolean') fail('角色推进授权无效')
   if (Object.prototype.hasOwnProperty.call(permissions, 'allowPlayerFollowupSituations') && typeof permissions.allowPlayerFollowupSituations !== 'boolean') fail('新事项承接授权无效')
+  if (Object.prototype.hasOwnProperty.call(permissions, 'allowActorThreadFollowups') && typeof permissions.allowActorThreadFollowups !== 'boolean') fail('既有事项接续授权无效')
+  if (permissions.allowActorThreadFollowups === true && permissions.allowActorSituationExpansion !== true) fail('既有事项接续需要角色情境推进授权')
   if (permissions.allowPlayerFollowupSituations === true && permissions.allowActorSituationExpansion !== true) fail('新事项承接需要角色情境推进授权')
   if (!['story', 'companionship'].includes(String(permissions.mode)) || !['everyday', 'tension', 'danger'].includes(String(permissions.intensity))) fail('叙事节奏或事件强度无效')
   if (permissions.maxDiscoveriesPerSituation !== undefined) {

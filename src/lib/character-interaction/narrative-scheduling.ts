@@ -1,3 +1,4 @@
+import {chatCanFollowThreadV1} from './narrative-thread-followup'
 import type {CharacterInteractionRuntimeState} from '../types'
 import type {ChatNarrativeTriggerStateV1, ChatNarrativeTriggerV1, ChatTurnDirectionV1} from '../types/chat-narrative'
 import {createContextTextScorerV1} from '../context-gateway/lexical-query'
@@ -53,7 +54,7 @@ export function createChatScheduledDirectionV1(state: CharacterInteractionRuntim
   mode: Exclude<ChatSchedulingModeV1, 'manual'>; kind: ChatNarrativeTriggerV1; sourceSequence: number; actionLimit: number
 }): ChatTurnDirectionV1 {
   const participantKeys = chatSchedulingPoolV1(state, input.kind, input.sourceSequence)
-  const eligible = ['player-seed', 'player-response'].includes(input.kind) ? participantKeys : participantKeys.filter(key => chatHasPendingPlayerFollowupV1(state, key) || state.chatNarrative!.situation.goals.some(g => g.actorKey === key && g.status === 'active'))
+  const eligible = ['player-seed', 'player-response'].includes(input.kind) ? participantKeys : participantKeys.filter(key => chatCanFollowThreadV1(state, key, {kind: input.kind, actionSequences: []}) || chatHasPendingPlayerFollowupV1(state, key) || state.chatNarrative!.situation.goals.some(g => g.actorKey === key && g.status === 'active'))
   const actorKey = choose(state, eligible, input.mode, undefined, participantKeys)
   if (!actorKey) throw new Error('当前没有能听到这轮对话且仍有可推进目标的角色；可指定角色或提出新情境。')
   return {actorKey, actionLimit: input.actionLimit, scheduling: {mode: input.mode, participantKeys}}
@@ -68,7 +69,7 @@ export function nextChatScheduledActorV1(state: CharacterInteractionRuntimeState
   const allowed = new Set(chatSchedulingPoolV1(state, trigger.kind, trigger.sourceEventSequence))
   const pool = direction.scheduling.participantKeys.filter(key => allowed.has(key)
     && (trigger.kind === 'player-response' && trigger.actionSequences.length === 0
-      || chatHasPendingPlayerFollowupV1(state, key) || state.chatNarrative!.situation.goals.some(g => g.actorKey === key && g.status === 'active')))
+      || chatCanFollowThreadV1(state, key, trigger) || chatHasPendingPlayerFollowupV1(state, key) || state.chatNarrative!.situation.goals.some(g => g.actorKey === key && g.status === 'active')))
   return choose(state, pool, direction.scheduling.mode, trigger.actionSequences.length ? undefined : direction.actorKey, direction.scheduling.participantKeys)
 }
 
