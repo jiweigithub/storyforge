@@ -2483,6 +2483,100 @@
             "terminal-request-proof.json": "19e1ba84e9d23d51507a4019b8d5311975b86495e641d247bc2f8434424fc037",
             "transport-progress.json": "8c915cf92ab743f2e7720279e434586061ad368dcb2f7925cd3a5dc27ccea3c4"
           }
+        },
+        "planExecutionPreflight": {
+          "at": "2026-10-15T15:21:30.729294+00:00",
+          "status": "six-opportunity-plan-and-search-diagnostic-completed-not-story-closure",
+          "sourceSnapshotHead": "9817ff1cd18352db837f82a163da51538909328c",
+          "implementationHead": "0114d7a8780041ddde553a2c33156fa3d43311c1",
+          "manifestSha256": "8c66040f3c010af5105b259996366dd7f2f6e7a3cb7747bc434a4bcecc1e5d32",
+          "countsTowardM1": false,
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "playerOpportunities": 6,
+          "newRequests": 16,
+          "completedRequests": 16,
+          "adoptedActions": 6,
+          "adoptedSituations": 2,
+          "usage": {
+            "totalTokens": 239385,
+            "inputTokens": 232033,
+            "outputTokens": 7352,
+            "cachedInputTokens": 21888,
+            "reasoningOutputTokens": 2109
+          },
+          "costUsd": null,
+          "latency": {
+            "sampleCount": 8,
+            "measure": "durable run createdAt to updatedAt, including generation/review/adoption; excludes operator time but not first-feedback latency",
+            "valuesSeconds": [
+              31.085,
+              33.053,
+              36.534,
+              36.687,
+              41.164,
+              41.378,
+              43.927,
+              45.637
+            ],
+            "p50Seconds": 36.687,
+            "p95Seconds": 45.637
+          },
+          "durationSecondsIncludingOperatorObservation": 650.95,
+          "outcome": [
+            "Actor admits proposed disassembly is not yet executable. Player declines it, retaining no-operation/test constraint.",
+            "Actor proposes reference lookup as a different approach; after approval writes observed search clues and persists its own plan/pending context.",
+            "Actual continue steps construct a bounded reference-book context, perform lookup, then determine and report limited diagram similarities and missing installation/dimension/hidden-connection evidence.",
+            "Result changes the next proposed direction toward detailed connection/installation references; no unsupported model, fault or safe-operation conclusion, no unauthorized physical action."
+          ],
+          "terminalState": {
+            "factsBefore": 15,
+            "factsAfter": 19,
+            "sameGoalIdentity": true,
+            "activeGoals": 1,
+            "openThreads": 1,
+            "nextPossibilities": 0,
+            "newPromises": 0
+          },
+          "limits": [
+            "Six-opportunity continuation of a preexisting formal release; not a fresh paired episode, weak-guidance proof, complete story or comparative acceptance.",
+            "First alternative method appears after player asks. Two continue controls are required to pass from preparation to lookup and then report. Repeated cautious/permission language and user effort remain.",
+            "Final new direction is only discussed; no confirmed source, saved further possibility, execution, repair, promise fulfillment or closure.",
+            "Single provider, no independent human rating, unknown cost; original M1/V77 failures and denominators unchanged."
+          ],
+          "restoration": {
+            "stem": "clock-plan-execution",
+            "runStatusesPreserved": true,
+            "verifiedCompletedHistories": 26,
+            "retainedFailedRuns": 4,
+            "resumableRuns": 0,
+            "openingReviewRetained": true,
+            "modelCalls": 0,
+            "interactionEqual": true,
+            "refreshEqual": true,
+            "worldPreserved": true,
+            "rawEvidenceRetained": true
+          },
+          "providerTerminalReadback": true,
+          "serverClosed": true,
+          "serverExitCode": 130,
+          "originalFailureRetained": true,
+          "noRetryOrRepair": true,
+          "localEvidenceDirectory": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v88-produced-clock-plan-execution",
+          "evidenceHashes": {
+            "clock-plan-execution-backup.json": "9008b36730fb98865f095c842105de04be0a30bd6720a798dc56257cd6e2c672",
+            "clock-plan-execution-progress.json": "732e66b961e87c9dc33613960a580c84d735244799881273c4e6126a1ff4d3fd",
+            "clock-plan-execution.json": "3aff750ce3cecc8c97d80384b7f2bb2efd46940822b235f2a6c53e6c28b795ae",
+            "interpretation.json": "d0535aaa44a8f4c01b3c383fca9548f54deca20752ecfbffcc1154cdb5735843",
+            "operator-decisions.jsonl": "b933c5079d5b806708a807eeaa490d0552e568c056c800372d9093bd43b6c51c",
+            "prepared.json": "8eb85c66e76c3704529965eb0cc26716c85927d032d5adae6d58afa3658093b4",
+            "preregistration.json": "4af4c7402f3ccea3a991e149852e9dc9cdfbdb86cb4b8504d047f2945a86b2dd",
+            "restoration-verified.json": "0a8e6a4bf2b85d7ab4167b2a71ea402aa264fef987592e5ea0a5b31533e8d309",
+            "restoration.mjs": "4f984f9355d88e0faee0eda4daa9eab146a74d645a3357d3d6852d741efa9f47",
+            "runner.mjs": "cbbafa02d930792b2c8362be59934397a209c5102ab4ed8c7952343315cf9f6a",
+            "terminal-request-proof.json": "f5f7997f4cb82676c347b9cbfde750506dc369ea4df47cca028e50ec964c99ce",
+            "transport-progress.json": "6c82f72a5ba923ef43fb276dd4263555e37430bf28aa4a7d8556a5ea1e92388c"
+          }
         }
       },
       {
