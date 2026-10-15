@@ -196,11 +196,11 @@ export async function portableizeAgentRunLedgerExportV1(
       fail(`run ${run._exportId} 事件世界组与运行不一致`)
     }
     await verifyPortableAgentRunProjectionV1(run, runEvents)
-    const localRunId = localRunIds.get(run._exportId)
-    if (localRunId == null) fail(`run ${run._exportId} 缺少原始导出映射`)
     // World封存 preserves existing upper-product evidence as data; only a full
     // workspace backup may enter those owners to freeze additional proof.
     if (options.freezeContextEvidence !== false) {
+      const localRunId = localRunIds.get(run._exportId)
+      if (localRunId == null) fail(`run ${run._exportId} 缺少原始导出映射`)
       const { freezeTtrpgWorldContextBindingsForExportV1 } = await import('../../product/world-context-portability')
       const worldBindings = await freezeTtrpgWorldContextBindingsForExportV1(localRunId)
       if (worldBindings !== undefined) run.portableWorldContextBindingsJson = worldBindings
