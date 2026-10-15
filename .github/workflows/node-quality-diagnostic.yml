@@ -1,0 +1,47 @@
+name: Isolated node quality diagnostic
+
+# Temporary diagnostic branch; full product validation continues on PR141.
+on:
+  push:
+    branches: [fix/longform-node-recheck-ci-20261015]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: node-quality-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    name: Linux node quality / durable evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: "true"
+      PLAYWRIGHT_FROZEN_WORKSPACE: "1"
+      PLAYWRIGHT_PORT: "56860"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Record exact diagnostic source
+        run: git rev-parse HEAD
+      - name: Install dependencies
+        run: npm ci
+      - name: Install browser and system dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Run isolated node quality paths
+        run: npx playwright test tests/e2e/longform-node-quality.spec.ts --reporter=list --output=test-results-node-quality
+      - name: Preserve actual durable and browser evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-quality-diagnostic-${{ github.sha }}
+          path: test-results-node-quality/
+          if-no-files-found: error
+          retention-days: 14

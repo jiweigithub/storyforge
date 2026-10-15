@@ -1,6 +1,42 @@
 import { expect, test, type Page } from '@playwright/test'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { createLongform } from './helpers/product-entry'
 import { openLongformLeaf } from './helpers/longform-navigation'
+
+test.afterEach(async ({ page }, testInfo) => {
+  const failed = testInfo.status !== testInfo.expectedStatus
+  try {
+    const evidence = await page.evaluate(async () => {
+      const imp = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+      const [{ db }, { resolveScope, readOwnedRows }, { readLatestQualityRevisionV1 }, { readAgentRunV1 }] = await Promise.all([
+        imp('/storyforge/src/lib/db/schema.ts'), imp('/storyforge/src/lib/workspace/scope.ts'),
+        imp('/storyforge/src/lib/agent/run/quality-revision-durable.ts'), imp('/storyforge/src/lib/agent/run/event-store.ts'),
+      ])
+      const project = await db.projects.toCollection().first()
+      if (!project) return { noTestWorkspace: true }
+      const scope = await resolveScope({ projectId: project.id })
+      const runs = await readOwnedRows(scope, 'nodeRuns', { owner: 'work' })
+      const nodeRuns = runs.map((run: any) => ({ id: run.id, status: run.status, nodes: Object.entries(JSON.parse(run.nodeResultsJson || '{}')).map(([id, value]: [string, any]) => ({ id, status: value.status, errors: value.errors ?? [], domain: value.domain?.kind })) }))
+      const chapter = (await readOwnedRows(scope, 'chapters', { owner: 'work' }))[0]
+      let view = null, snapshot = null, revisionReadError = null
+      try {
+        view = chapter ? await readLatestQualityRevisionV1({ scope, chapterId: chapter.id }) : null
+        snapshot = view ? await readAgentRunV1(scope, view.runId) : null
+      } catch (error) { revisionReadError = error instanceof Error ? error.message : String(error) }
+      return { nodeRuns, revision: view ? { runId: view.runId, state: view.state, current: view.current, hasCandidate: Boolean(view.candidate), hasPreview: Boolean(view.draft.outputText), selectedIssueIds: view.draft.plan.issueIds } : null,
+        revisionReadError,
+        events: snapshot?.events.slice(-16).map((event: any) => ({ type: event.type, stepId: event.payload?.stepId, code: event.payload?.code, reason: event.payload?.reason, attempt: event.payload?.attempt })) ?? [] }
+    })
+    const body = JSON.stringify(evidence, null, 2)
+    const path = testInfo.outputPath('node-quality-durable-state.json')
+    await mkdir(testInfo.outputDir, { recursive: true })
+    await writeFile(path, body)
+    await testInfo.attach('node-quality-durable-state', { path, contentType: 'application/json' })
+    if (failed) console.log('[NODE-QUALITY-DURABLE-FAILURE]', body)
+  } catch (error) {
+    console.log('[NODE-QUALITY-DIAGNOSTIC-UNAVAILABLE]', error instanceof Error ? error.message : String(error))
+  }
+})
 
 async function setup(page: Page, revision = false) {
   await page.addInitScript(() => localStorage.setItem('storyforge-ai-config', JSON.stringify({ provider: 'ollama', model: 'node-quality-test', baseUrl: 'https://node-quality.invalid/v1', temperature: .7, maxTokens: 4000, contextWindow: 128000 })))
