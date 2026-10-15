@@ -6,6 +6,9 @@ import {canonicalStringify} from '../../src/lib/agent/run/hash'
 import {createInitialInteractionState} from '../../src/lib/character-interaction/runtime'
 import {chatNarrativeFixture, chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
 import {db} from '../../src/lib/db/schema'
+import {readInstanceAgentRunV1} from '../../src/lib/agent/run/event-store'
+import {isImportedCompletedInteractionRunV1, readResumableInteractionRunsV1} from '../../src/lib/character-interaction/runtime-run-recovery'
+import {readChatContextInspectionV1} from '../../src/lib/character-interaction/context-inspector'
 import {readChatActionRevisionSourceV1} from '../../src/lib/character-interaction/action-revision'
 import * as skills from '../../src/lib/agent/skill-registry'
 import {generateInteractionRuntimeCandidateV1, adoptInteractionRuntimeCandidateV1, resumeChatNarrativeReviewV1, readInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
@@ -106,6 +109,27 @@ describe('durable review normalization', () => {
     const imported = (await db.productRuntimeSessions.where('projectId').equals(projectId).toArray()).find(s => s.title === branch.title)!
     expect((await readProductRuntimeState(imported.id!)).interaction).toEqual(expected)
     expect((await db.agentRunArtifacts.where('projectId').equals(projectId).toArray()).some(a => a.content === reports[0].content)).toBe(true)
+  })
+
+  it('keeps completed runtime and context history across three imports without restarting old calls', async () => {
+    const f = await prepared(), candidate = await generateInteractionRuntimeCandidateV1(input(f))
+    await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: candidate.snapshot.run.id})
+    const expected = (await readProductRuntimeState(f.sessionId)).interaction
+    let currentProjectId = f.scope.projectId
+    for (let count = 0; count < 3; count++) {
+      const projectId = await importProjectJSON(await exportProjectJSON(currentProjectId))
+      const session = (await db.productRuntimeSessions.where('projectId').equals(projectId).toArray())[0]
+      const scope = {projectId, worldId: session.worldId!, workId: session.workId!}
+      const row = (await db.agentRuns.where('productRuntimeSessionId').equals(session.id!).toArray())[0]
+      const snapshot = await readInstanceAgentRunV1(scope, row.id!), events = await db.productRuntimeEvents.where('sessionId').equals(session.id!).toArray()
+      expect(isImportedCompletedInteractionRunV1(snapshot, events)).toBe(true)
+      expect(await readResumableInteractionRunsV1(scope, session.id!)).toEqual([])
+      expect((await readChatContextInspectionV1(scope, session.id!, row.id!)).available).toBe(true)
+      expect((await readProductRuntimeState(session.id!)).interaction).toEqual(expected)
+      expect(snapshot.events.filter(e => e.type === 'verification.staled')).toHaveLength(1)
+      expect(snapshot.projection.terminalReceiptHash).toBeUndefined()
+      currentProjectId = projectId
+    }
   })
 
   it.each(['old-contract', 'literal-rejection', 'missing-paraphrase'] as const)('keeps %s failed and unadopted with no hidden retry', async kind => {
