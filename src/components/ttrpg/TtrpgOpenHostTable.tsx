@@ -1,4 +1,5 @@
 import TtrpgOpenHistoricalResponses from './TtrpgOpenHistoricalResponses'
+import TtrpgOpenMemoryPanel from './TtrpgOpenMemoryPanel'
 import TtrpgOpenTableConversation from './TtrpgOpenTableConversation'
 import TtrpgOpenPrivateChoicePanel from './TtrpgOpenPrivateChoicePanel'
 import { useCallback,useEffect,useRef,useState } from 'react'
@@ -49,6 +50,7 @@ export default function TtrpgOpenHostTable(props: TtrpgPlayTablePropsV1 & { view
       <button disabled={!accepted} onClick={() => void perform(async () => { await startTtrpgOpenTableV1({ ...input(),acceptedItemKeys: view.requiredItemKeys }) })}>由真人主持开始冒险</button>
     </fieldset>}
     {host && <TtrpgOpenHistoricalResponses key={`history:${sessionId}:${viewerKey}:${props.state.lastSequence}`} input={input()} entries={host.historicalResponses ?? []} busy={busy} perform={perform} />}
+    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenMemoryPanel key={`memory:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenTableConversation key={`${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => { await job() })} />}
     {host && <>
       <div className="sf-open-table-toolbar"><span>世界轮次 {host.worldTurn} · {host.stageStatus === 'closed' ? '阶段已收束' : '阶段进行中'}</span>

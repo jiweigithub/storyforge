@@ -1,4 +1,5 @@
 import TtrpgOpenHistoricalResponses from './TtrpgOpenHistoricalResponses'
+import TtrpgOpenMemoryPanel from './TtrpgOpenMemoryPanel'
 import { readTtrpgOpenTableContextTraceV1, type TtrpgOpenTableContextTraceV1 } from '../../lib/ttrpg/open-table-service'
 import { delegateTtrpgOpenTableHostingV1, resumeTtrpgOpenTableHostingV1, stopTtrpgOpenTableHostingV1 } from '../../lib/ttrpg/open-table-service'
 import TtrpgOpenTableConversation from './TtrpgOpenTableConversation'
@@ -125,6 +126,7 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
       <button disabled={!accepted} onClick={() => void perform(async () => { await startTtrpgOpenTableV1({ ...input(), acceptedItemKeys: view.requiredItemKeys });setNotice('冒险已经开始。') })}>开始冒险</button>
     </fieldset>}
     {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenTableConversation key={`${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => { await job() })} />}
+    {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenMemoryPanel key={`memory:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(() => job())} />}
     {p && <>
       {(p.hosting?.canDelegate || p.hosting?.permission) && <section className="sf-open-table-card" aria-label="本轮自动主持">
         <h2>本轮自动主持</h2>
