@@ -56,6 +56,8 @@ test('explains selected and omitted promise history, retains exact historical ev
   const preview = page.getByTestId('chat-message-retrieval-preview')
   await expect(preview).toContainText('排除原话不会撤销承诺或履约记录')
   await preview.getByRole('button', {name: '仅排除对话上下文', exact: true}).click()
+  // The click starts a durable update; the preview closes only after it is saved.
+  await expect(preview).toHaveCount(0)
   const result = await page.evaluate(async f => {
     const load = new Function('p', 'return import(p)'), api = await load('/storyforge/src/lib/character-interaction/runtime-api.ts')
     const runtime = await load('/storyforge/src/lib/character-interaction/runtime.ts')

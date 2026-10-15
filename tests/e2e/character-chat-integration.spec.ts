@@ -591,6 +591,7 @@ test('narrative situation survives browser reload and checkpoint branch with rol
     await page.getByPlaceholder('检查点名称').fill('情境检查点');
     await page.getByRole('button', {name: '保存', exact: true}).click();
     await page.getByRole('button', {name: /情境检查点.*分支/}).click();
+    await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page).not.toHaveURL(new RegExp(`session=${fixture.sessionId}$`));
     const branch = await read();
     expect(branch.narrative).toEqual(initial.narrative);
