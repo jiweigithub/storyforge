@@ -77,6 +77,19 @@ export interface ChatActorGoalV1 {
   updatedSequence: number
   /** Runtime declarations owned by this goal, never inferred from summaries. */
   commitments?: ChatGoalCommitmentV1[]
+  /** A player-requested hold on this actor's remaining responsibility. */
+  playerPause?: ChatGoalPlayerPauseV1
+}
+
+export interface ChatGoalPlayerPauseV1 {
+  threadKey: string
+  requested: ChatCommitmentEvidenceV1
+  acknowledged: ChatCommitmentEvidenceV1
+}
+
+export interface ChatPlayerRequestEvidenceV1 {
+  playerEventSequence: number
+  playerExcerpt: string
 }
 
 export interface ChatCommitmentEvidenceV1 {
@@ -302,12 +315,16 @@ export interface ChatNarrativeActionV1 {
   followupGoal?: ChatActorFollowupGoalV1 | null
   /** Continues an existing known thread; never creates or reopens a thread. */
   threadFollowupGoal?: ChatActorThreadFollowupGoalV1 | null
+  /** Only a new visible player message can release a recorded player hold. */
+  resumeGoal?: ChatPlayerRequestEvidenceV1 | null
 }
 
 export interface ChatActorThreadFollowupGoalV1 {
   threadKey: string
   evidenceExcerpt: string
   goal: Pick<ChatActorGoalV1, 'goalKey' | 'desire' | 'concern' | 'boundary' | 'evidenceFactKeys'>
+  /** Acknowledges a hold on the remaining responsibility, not a new task. */
+  pauseRequest?: ChatPlayerRequestEvidenceV1
 }
 
 /** A local background extension, never a replacement of established truth or a
