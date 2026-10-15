@@ -471,6 +471,13 @@ const ADOPTION_SCHEMAS_RAW: CollectionAdoptionSpec[] = [
 ]
 
 export const ADOPTION_EXTENSIONS: readonly AdoptionExtensionSpec[] = Object.freeze([
+  {
+    id: 'ttrpg-human-memory-lifecycle', target: 'ttrpgNarrativeMemories',
+    entrypoints: ['src/lib/ttrpg/runtime-commands.ts', 'src/lib/ttrpg/runtime-branch.ts'],
+    policyRegistry: 'parseTtrpgOpenMemoryReceiptV1 + verifyTtrpgOpenMemoryReceiptsV1 + PRODUCT_RUNTIME_EVENT_TYPES + PROJECT_TABLES',
+    reason: '人工确认只追加 E15 并同事务物化唯一记忆投影；分支只复制切点前已确认且证明匹配的记录。摘要保留观察者和可信度，规则与知识权威归原台账。模型摘要须另经 CreativeArtifact/adopt；当前人工入口不接受模型来源。',
+    reviewAfter: '2027-08-21',
+  },
   { id: 'extension-record-lifecycle', target: 'extensionRecords', entrypoints: ['src/lib/extensions/store.ts'], policyRegistry: 'ExtensionRegistrySnapshot + PROJECT_TABLES + bounded DataSchema', reason: '普通作者编辑、内容包、迁移与历史代恢复通过命名空间、schema 和 revision CAS；模型候选必须由 adopt 委托同一事务写入。', reviewAfter: '2027-01-01' },
   {
     id: 'reference-analysis-run-lifecycle',

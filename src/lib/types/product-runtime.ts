@@ -1191,6 +1191,7 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "ttrpg.character.customized",
   "ttrpg.character.advanced",
   "ttrpg.session-zero.completed",
+  "ttrpg.memory.recorded",
   "ttrpg.safety.changed",
   "ttrpg.clue.discovered",
   "ttrpg.intent.receipted",

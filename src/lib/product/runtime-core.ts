@@ -7,7 +7,7 @@ import { evaluateNarrativeChoices, applyNarrativeChoiceEffects } from "./narrati
 import { normalizeProductRuntimeCommandIdV1 } from "./runtime-command-id";
 import { assertProductRuntimeIntegerV1, isProductRuntimeJsonObjectV1, stableProductRuntimeJsonV1, type ProductRuntimeJsonObjectV1 } from "./runtime-values";
 import { parseNarrativeCondition, parseNarrativeEffects, evaluateNarrativeCondition, applyNarrativeEffects } from "../narrative/blueprint";
-import { transactionTablesForReferenceCascade } from "../registry/lifecycle";
+import { transactionTablesForReferenceCascade, runtimeInstanceTablesV1 } from "../registry/lifecycle";
 import { type ProductRuntimeKind, type ProductRuntimeState, type FrozenNarrativeBeat, NARRATIVE_BEAT_KINDS, type FrozenNarrativeChoice, type ProductNarrativeRuntimeNodeSnapshot, NARRATIVE_NODE_KINDS, type ProductNarrativeRuntimeState, NARRATIVE_MODULE_KINDS, type NarrativeChoiceHistoryEntry, type RuntimeAttributes, type RuntimeEntityState, RUNTIME_ENTITY_KINDS, RUNTIME_LIFECYCLE_STATUSES, type RuntimeMemory, type ProductRuntimeEvent, PRODUCT_RUNTIME_EVENT_TYPES, type ProductRuntimeSession, PRODUCT_RUNTIME_KINDS, EMPTY_PRODUCT_RUNTIME_STATE, type ProductRuntimePackageV1, type ProductRuntimeEventType, type ProductRelease, type ProductBuildRecordV1, type ProductProductionRecordV1, type ProductProductionBriefRecordV1, type ProductRuntimeCheckpoint, PRODUCT_RUNTIME_CHECKPOINT_PURPOSES_V1, type ProductRuntimeCheckpointPurposeV1 } from "../types";
 import { verifyProductReleaseManifestV1 } from "../product-production/runtime-package";
 import { verifyProductRuntimeSource, verifyProductRuntimeSessionSourceV1 } from "../product-production/preview-source";
@@ -2130,8 +2130,7 @@ async function branchProductRuntimeSessionInternal(
       : (() => { throw new Error('open 分支冻结运行源不存在'); })();
     prepared.parentSessionId = parent.id!; prepared.parentThroughSequence = input.throughSequence;
     const cutEvents = events.filter(event => event.sequence <= input.throughSequence).sort((a, b) => a.sequence - b.sequence);
-    return db.transaction('rw', [db.productRuntimeSessions, db.productRuntimeEvents, db.productReleases, db.productBuilds,
-      db.ttrpgSessionParticipants, db.ttrpgRuntimeAssetRequests], async () => {
+    return db.transaction('rw', [db.productReleases, db.productBuilds, ...runtimeInstanceTablesV1()], async () => {
       const currentParent = await db.productRuntimeSessions.get(parent.id!);
       const currentSource = release ? await db.productReleases.get(release.id!) : await db.productBuilds.get(build!.id!);
       const currentEvents = (await db.productRuntimeEvents.where('sessionId').equals(parent.id!).toArray())
