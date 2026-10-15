@@ -1,0 +1,129 @@
+{
+  "schema": "storyforge.chat-m1-cohort",
+  "version": 1,
+  "parentProtocol": "character-chat-m1-protocol-v1.json",
+  "parentProtocolSha256": "a70ce9a0395edb55216420b07f321fc9c21d840bbb8b3a3b5a48c0f9762e8b25",
+  "implementationHead": "0114d7a8780041ddde553a2c33156fa3d43311c1",
+  "matrix": {
+    "coreScenarioIds": [
+      "daily-clock-promise",
+      "inn-missing-seal",
+      "riverside-reading-evening"
+    ],
+    "coreMaterial": "character-chat-narrative-cases.json:scenarios",
+    "coreSplit": "development-regression; never relabelled holdout",
+    "holdoutScenarioIds": [
+      "pottery-gift-deadline",
+      "archive-missing-map"
+    ],
+    "holdoutMaterial": "character-chat-m1-holdouts-v1.json",
+    "behaviorIds": [
+      "weak-guidance",
+      "refuse",
+      "alternative",
+      "rest",
+      "return",
+      "unexpected"
+    ],
+    "providerSlots": [
+      "local-codex",
+      "agnes"
+    ],
+    "repeats": [
+      1,
+      2
+    ],
+    "coreEpisodes": 72,
+    "holdoutEpisodes": 48,
+    "totalScheduledEpisodes": 120,
+    "productionUnits": 20,
+    "episodeId": "m1-v90-source-admitted/{scenarioId}/{providerSlot}/r{repeat}/{behaviorId}",
+    "pairing": "每个情境/提供商/重复单独生产一个冻结 release；六种行为从该 release 的同一初始状态创建独立会话，不共享运行记忆。两次重复重新生产。",
+    "order": "core scenarios in listed order, then holdouts; provider slots independently runnable; repeat 1 before 2; behaviors in listed order",
+    "productionFailure": "保留该生产单元及其六个 production-blocked episode 槽位；不重抽开场，不以未运行冒充通过。运行质量仅对实际运行报告，端到端分母保留全部计划槽位。"
+  },
+  "budget": {
+    "usualOpportunities": [
+      20,
+      40
+    ],
+    "maximumPlayerOpportunities": 20,
+    "maximumProductionRequests": 6,
+    "maximumRuntimeRequests": 90,
+    "maximumObservedTotalTokens": 1000000,
+    "maximumWallMinutes": 60,
+    "observationTimeoutMinutes": 20,
+    "automaticRetries": 0,
+    "manualRepairInScoredEpisode": false,
+    "stopCheck": "每次新触发前检查预算，已发请求只观察到终态；上限含审查/局面/发现调用，不把玩家输入次数冒充调用次数。正常产品有界链可能越过软 token 上限一次，记录实际值，不悄悄继续。"
+  },
+  "models": [
+    {
+      "slot": "local-codex",
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "transport": "local subscription bridge; no paid API fallback",
+      "appSettings": {
+        "temperature": 0.2,
+        "maxTokens": 16000
+      },
+      "effectiveSampling": "bridge request accepts model/messages/output schema only; app temperature and maxTokens are not passed to Codex; retain actual request and usage, do not claim controlled sampling",
+      "costUsd": null
+    },
+    {
+      "slot": "agnes",
+      "model": null,
+      "status": "configuration-unavailable; not runnable",
+      "condition": "在此槽位首次调用之前追加配置修订，冻结实际模型、采样、预算及连接核验；不得用历史模型记录代替当次配置。"
+    }
+  ],
+  "authorPermissionOverrides": {
+    "allowActorThreadFollowups": true
+  },
+  "limitations": [
+    "Collection is scripted, not a real human participant or independent quality assessment",
+    "Agnes configuration remains unavailable; no substitute provider",
+    "No holdout material opened or used to tune this run",
+    "Local isolated author material, formal S3 production and local ProductRelease only; no online publication"
+  ],
+  "countSemantics": "Independent new source-corrected cohort. Collection completion is a terminal outcome, not quality acceptance; no combined denominator or replacement of older failures.",
+  "cohort": "m1-v90-source-admitted",
+  "registeredAt": "2026-10-15T16:05:49.272493+00:00",
+  "status": "registered-before-first-call",
+  "code": {
+    "gitHistory": "depth-1; exact HEAD and tracked tree verified",
+    "head": "9a66f52c3ab63a12e3c1a57173410eaf9e88af0e",
+    "root": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v90-real-hnlj6yec/storyforge",
+    "manifestPath": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v90-real-hnlj6yec/manifest.json",
+    "manifestSha256": "3d731fa052ed202b6f20fdf983400767c219b61ea816d638cc3b7772dd9c108a",
+    "files": 3400
+  },
+  "engineeringGate": "V90 zero-call source regression and required gates passed; original V86 full CI/E2E still queued. No quality acceptance.",
+  "changes": [
+    "Evaluation source authoring corrected: background=privateFacts as knowledge; goals=intentions; motivation=explicitly unconfirmed beliefs. Facts no longer merged with intentions.",
+    "Compiled source must pass purpose, pointer, exact actor and audience checks before first model call. Failed admission cannot be repaired in a scored episode.",
+    "Same original materials, player policies, budgets and first-passing opening selection. New independent cohort; all older failures and denominators preserved."
+  ],
+  "counts": {
+    "scheduled": 120,
+    "productionUnitsPlanned": 20,
+    "productionUnitsStarted": 0,
+    "productionUnitsCompleted": 0,
+    "productionBlockedEpisodes": 0,
+    "started": 0,
+    "collectionCompleted": 0,
+    "narrativePassed": 0,
+    "failed": 0,
+    "unknown": 0,
+    "notStarted": 120,
+    "humanScored": 0
+  },
+  "evidenceFolder": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v90-m1-source-admitted",
+  "actualGenerationRequestsAtRegistration": 0,
+  "priorCohortHashes": {
+    "character-chat-m1-evidence-v1.json": "ee16ee227fd8ca4a2954345f2f6788d615a002de4fe3b37f87c1852c53d4cbcc",
+    "character-chat-m1-cohort-v77.json": "98b3dea026d14e21be049773a65dffef2dfee4ad5c9284cc0cbb7c41ac672eb3",
+    "character-chat-m1-cohort-v89.json": "9cc915bb35d9576b9550b65536d8464ccb5b3c3b32ebd38c02e4b33b7c098d39"
+  },
+  "firstEpisode": "m1-v90-source-admitted/daily-clock-promise/local-codex/r1/weak-guidance"
+}

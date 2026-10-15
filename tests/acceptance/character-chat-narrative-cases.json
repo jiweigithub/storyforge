@@ -2610,7 +2610,8 @@
     "realModelRunsFailed": 1,
     "implementationCohorts": [
       "character-chat-m1-cohort-v77.json",
-      "character-chat-m1-cohort-v89.json"
+      "character-chat-m1-cohort-v89.json",
+      "character-chat-m1-cohort-v90.json"
     ]
   },
   "evidencePolicy": "保存原始对话、状态前后、版本、模型配置、调用/费用和评分分歧；失败不删出分母。夹具成功与真人体验分开报告。",
