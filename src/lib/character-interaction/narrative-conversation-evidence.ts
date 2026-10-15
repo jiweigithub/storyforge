@@ -33,7 +33,7 @@ export function chatConversationEvidenceV1(state: CharacterInteractionRuntimeSta
 }
 
 export function supportsChatConversationEvidenceV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18', 'chat-narrative-action-review-v25', 'chat-narrative-options-review-v19'].includes(version ?? '')
+  return ['chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18', 'chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20'].includes(version ?? '')
 }
 export function assertChatConversationEvidenceReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
   assertChatPromiseRequestReviewVersionV1(actions, version)

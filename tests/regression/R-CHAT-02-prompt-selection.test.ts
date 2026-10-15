@@ -136,3 +136,12 @@ it('does not use prompt selection to authorize a stale saved candidate', async (
   await expect(resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async () => {reviews++; return JSON.stringify(chatActionReviewOutputFixture())}})).rejects.toThrow()
   expect(reviews).toBe(0)
 })
+
+it('gives new reviewers the exact required disclosure keys without changing old prompt text', () => {
+  const a = action(), b = {...action(), disclosures: [{factKey: 'regret', toParticipantKeys: ['player'], evidenceExcerpt: '旧日误会', wording: 'equivalent' as const}]}
+  const input = {view: view(), actions: [a, b], options: true, compact: true, naturalDisclosure: true}
+  const old = chatActionReviewPromptRulesV1(input).join('\n'), current = chatActionReviewPromptRulesV1({...input, knownFactReview: true}).join('\n')
+  expect(old).not.toContain('本次必须逐项返回的')
+  expect(current).toContain(JSON.stringify([{optionKey: 'option-1', factKeys: []}, {optionKey: 'option-2', factKeys: ['regret']}]))
+  expect(current).toContain('否定结论不能省略'); expect(current).toContain(old)
+})

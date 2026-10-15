@@ -78,6 +78,61 @@ it('binds reversed option reviews to the right candidate and refuses mixed or du
   expect(() => normalize({options: [row.options[0], row.options[0]]})).toThrow('重复')
 })
 
+const sharedVersion = 'chat-narrative-action-review-v26'
+function sharedAction(): ChatNarrativeActionV1 {
+  return {...action(), text: '山路被倒树挡住，驿站里暂时安全。', evidenceFactKeys: ['road'], disclosures: []}
+}
+function sharedInput() {
+  const state = createInitialInteractionState(chatNarrativeFixture())
+  state.activeScene = {...state.sceneTemplates[0], sceneId: 'inn.current', status: 'active', activeParticipantKeys: ['guard', 'artisan'], startedAtSequence: 1, endedAtSequence: null, playerTurns: 0}
+  return {output: {...output(), disclosureChecks: [check('road')]}, actions: [sharedAction()], options: false,
+    promptVersion: sharedVersion, state, actorKey: 'guard'}
+}
+it('normalizes only affirmative checks for cited pre-existing facts already known to every listener', () => {
+  const input = sharedInput(), original = structuredClone(input), normalized = normalizeChatReviewResponseV1(input)
+  expect(normalized.removed).toEqual([{optionKey: null, factKey: 'road', basis: 'already-known'}])
+  expect(input).toEqual(original)
+  const review = parseChatNarrativeActionReviewV1({...normalized.output, reviewedActionJson: canonicalStringify(input.actions[0])}, input.actions[0])
+  expect(review.disclosureChecks).toEqual([]); expect(chatNarrativeActionReviewPassedV1(review)).toBe(true)
+})
+it.each(['old-v24', 'old-v25', 'old-options', 'no-state', 'no-actor', 'offstage', 'not-cited', 'not-found', 'duplicate-fact', 'private', 'actor-unaware', 'listener-unaware', 'player-unaware', 'new-fact', 'rejected', 'duplicate-check', 'extra-field'] as const)('rejects invalid common-fact normalization: %s', kind => {
+  const input = sharedInput(), a = input.actions[0], fact = input.state.chatNarrative!.situation.facts.find(f => f.factKey === 'road')!
+  if (kind === 'old-v24') input.promptVersion = 'chat-narrative-action-review-v24'
+  if (kind === 'old-v25') input.promptVersion = 'chat-narrative-action-review-v25'
+  if (kind === 'old-options') input.promptVersion = 'chat-narrative-options-review-v19'
+  if (kind === 'no-state') Reflect.deleteProperty(input, 'state')
+  if (kind === 'no-actor') Reflect.deleteProperty(input, 'actorKey')
+  if (kind === 'offstage') input.actorKey = 'outsider'
+  if (kind === 'not-cited') a.evidenceFactKeys = ['lost']
+  if (kind === 'not-found') input.state.chatNarrative!.situation.facts = []
+  if (kind === 'duplicate-fact') input.state.chatNarrative!.situation.facts.push({...fact})
+  if (kind === 'private') fact.audienceKeys = []
+  if (kind === 'actor-unaware') fact.audienceKeys = ['player']
+  if (kind === 'listener-unaware') {a.audienceKeys.push('artisan'); fact.audienceKeys = ['player', 'guard']}
+  if (kind === 'player-unaware') fact.audienceKeys = ['guard']
+  if (kind === 'new-fact') a.newFacts = [{factKey: 'road', kind: 'observation', text: a.text, evidenceFactKeys: ['lost'], evidenceExcerpt: a.text}]
+  if (kind === 'rejected') input.output.disclosureChecks[0].passed = false
+  if (kind === 'duplicate-check') input.output.disclosureChecks.push(check('road'))
+  if (kind === 'extra-field') Object.assign(input.output.disclosureChecks[0], {ignore: true})
+  const original = structuredClone(input)
+  expect(() => normalizeChatReviewResponseV1(input)).toThrow(); expect(input).toEqual(original)
+})
+it('keeps core and required paraphrase rejection alongside redundant common-fact approval', () => {
+  const input = sharedInput(), a = input.actions[0]
+  a.disclosures = [{factKey: 'regret', toParticipantKeys: ['player'], evidenceExcerpt: '旧日误会', wording: 'equivalent'}]
+  expect(() => parseChatNarrativeActionReviewV1({...normalizeChatReviewResponseV1(input).output, reviewedActionJson: canonicalStringify(a)}, a)).toThrow()
+  input.output.disclosureChecks.push(check('regret', false)); input.output.checks.find(c => c.check === 'continuity')!.passed = false
+  const review = parseChatNarrativeActionReviewV1({...normalizeChatReviewResponseV1(input).output, reviewedActionJson: canonicalStringify(a)}, a)
+  expect(review.disclosureChecks).toEqual([check('regret', false)]); expect(chatNarrativeActionReviewPassedV1(review)).toBe(false)
+})
+it('does not borrow facts or listener knowledge from the other option', () => {
+  const input = sharedInput(), b = {...sharedAction(), text: '铜印失踪。', evidenceFactKeys: ['lost']}
+  const options = [{optionKey: 'option-2', ...output(), disclosureChecks: [check('lost')]}, {optionKey: 'option-1', ...input.output}]
+  const normalize = () => normalizeChatReviewResponseV1({...input, actions: [input.actions[0], b], options: true, promptVersion: 'chat-narrative-options-review-v20', output: {options}})
+  expect(bindChatNarrativeOptionsReviewV1(normalize().output, [input.actions[0], b]).optionReviews.every(r => chatNarrativeActionReviewPassedV1(r.review))).toBe(true)
+  options[0].disclosureChecks = [check('road')]; expect(normalize).toThrow()
+})
+
 describe('durable review normalization', () => {
   beforeEach(async () => {db.close(); await db.delete(); await db.open()})
   afterEach(() => {vi.restoreAllMocks(); db.close()})
@@ -109,6 +164,24 @@ describe('durable review normalization', () => {
     const imported = (await db.productRuntimeSessions.where('projectId').equals(projectId).toArray()).find(s => s.title === branch.title)!
     expect((await readProductRuntimeState(imported.id!)).interaction).toEqual(expected)
     expect((await db.agentRunArtifacts.where('projectId').equals(projectId).toArray()).some(a => a.content === reports[0].content)).toBe(true)
+  })
+
+  it('resumes a shared-fact review with the unchanged pre-state, preserving conversion and source across import', async () => {
+    const f = await prepared(), a = sharedAction(), row = sharedInput().output; let runId = 0, calls = 0
+    await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => {calls++; return JSON.stringify(a)}, onNarrativeActionSaved: id => {runId = id; throw Error('saved')}})).rejects.toThrow('saved')
+    const before = await readProductRuntimeState(f.sessionId); db.close(); await db.open()
+    await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async () => {calls++; return JSON.stringify(row)}})
+    await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId}); await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
+    const after = await readProductRuntimeState(f.sessionId), artifacts = await db.agentRunArtifacts.toArray()
+    expect(calls).toBe(2); expect(after.interaction!.messages).toHaveLength(1)
+    expect(after.interaction!.chatNarrative!.situation).toEqual(before.interaction!.chatNarrative!.situation)
+    const report = artifacts.find(a => a.artifactKind === 'tool-result' && a.content?.includes('redundant-affirmative-disclosure-checks-v2'))!
+    expect(JSON.parse(report.content!).removed).toEqual([{optionKey: null, factKey: 'road', basis: 'already-known'}])
+    expect(JSON.parse(report.content!).baseStateHash).toBe((await readInstanceAgentRunV1(f.scope, runId)).contract.scope.runtime!.stateHash)
+    const importedProject = await importProjectJSON(await exportProjectJSON(f.scope.projectId)), imported = (await db.productRuntimeSessions.where('projectId').equals(importedProject).toArray())[0]
+    expect((await readProductRuntimeState(imported.id!)).interaction).toEqual(after.interaction)
+    const retained = (await db.agentRunArtifacts.where('projectId').equals(importedProject).toArray()).map(a => a.content)
+    expect(retained).toContain(report.content); expect(retained).toContain(JSON.stringify(row))
   })
 
   it('keeps completed runtime and context history across three imports without restarting old calls', async () => {
@@ -145,6 +218,14 @@ describe('durable review normalization', () => {
     await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})).rejects.toThrow()
     expect((await db.agentRuns.get(runId))!.status).toBe('failed')
     expect((await db.agentRunArtifacts.toArray()).some(a => a.artifactKind === 'raw-response' && a.content === JSON.stringify(row))).toBe(true)
+  })
+
+  it('allows only consequence-only revision after common-fact normalization', async () => {
+    const f = await prepared(), row = sharedInput().output; let runId = 0
+    row.checks.find(c => c.check === 'consequences')!.passed = false
+    await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => JSON.stringify(sharedAction()), runReviewAI: async () => JSON.stringify(row), onRunCreated: id => {runId = id}})).rejects.toThrow('语义审查未通过')
+    expect((await readChatActionRevisionSourceV1({scope: f.scope, sessionId: f.sessionId}))?.runId).toBe(runId)
+    expect((await readProductRuntimeState(f.sessionId)).interaction!.messages).toHaveLength(0)
   })
 
   it('retains consequence-only revision eligibility under the same new normalization contract', async () => {

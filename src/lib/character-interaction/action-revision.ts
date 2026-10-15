@@ -61,7 +61,7 @@ export async function readChatActionRevisionSourceV1(input: {
     assertChatThreadFollowupReviewVersionV1([candidate.action], snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:action-review')?.promptVersion)
     const body = JSON.parse(raw.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, '$1'))
     if (!isChatActionReviewOutputV1(body)) return null
-    const normalized = normalizeChatReviewResponseV1({output: body, actions: [candidate.action], options: false,
+    const normalized = normalizeChatReviewResponseV1({output: body, actions: [candidate.action], options: false, state, actorKey: candidate.participantKey,
       promptVersion: snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:action-review')?.promptVersion})
     review = parseChatNarrativeActionReviewV1({...normalized.output, reviewedActionJson: canonicalStringify(candidate.action)}, candidate.action)
     assertChatMemoryReconciliationReviewsV1(state, candidate.participantKey, [review], snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:action-review')?.promptVersion)

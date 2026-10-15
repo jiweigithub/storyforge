@@ -1,6 +1,6 @@
 import {expect, test} from '@playwright/test'
 
-for (const rejected of [false, true]) test(`exact disclosure retains redundant review evidence without hiding rejection (${rejected})`, async ({page}) => {
+for (const shared of [false, true]) for (const rejected of [false, true]) test(`disclosure retains redundant review evidence without hiding rejection (shared=${shared}, rejected=${rejected})`, async ({page}) => {
   let spoken = '', rawReview = ''
   const calls: string[] = []
   await page.addInitScript(() => {
@@ -14,24 +14,24 @@ for (const rejected of [false, true]) test(`exact disclosure retains redundant r
     calls.push(review ? 'review' : 'action')
     const value = review
       ? {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'].map(check => ({check, passed: true, reason: '注入工程判定，不是模型质量证据。'})),
-        disclosureChecks: [{factKey: 'regret', passed: !rejected, reason: '逐字披露的附加检查；失败不可忽略。'}]}
-      : {kind: 'speak', text: spoken, goalKey: 'find-seal', evidenceFactKeys: ['regret'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
-        newFacts: [], disclosures: [{factKey: 'regret', toParticipantKeys: ['player'], evidenceExcerpt: spoken}], threadUpdates: [], goalStatus: null}
+        disclosureChecks: [{factKey: shared ? 'road' : 'regret', passed: !rejected, reason: '逐字披露的附加检查；失败不可忽略。'}]}
+      : {kind: 'speak', text: spoken, goalKey: 'find-seal', evidenceFactKeys: [shared ? 'road' : 'regret'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
+        newFacts: [], disclosures: shared ? [] : [{factKey: 'regret', toParticipantKeys: ['player'], evidenceExcerpt: spoken}], threadUpdates: [], goalStatus: null}
     if (review) rawReview = JSON.stringify(value)
     await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(value)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
-  const f = await page.evaluate(async () => {
+  const f = await page.evaluate(async shared => {
     const load = new Function('p', 'return import(p)'), f = await (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture()
     const state = await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(f.sessionId)
-    return {...f, original: state.interaction.chatNarrative.situation.facts.find((fact: {factKey: string}) => fact.factKey === 'regret')}
-  })
+    return {...f, original: state.interaction.chatNarrative.situation.facts.find((fact: {factKey: string}) => fact.factKey === (shared ? 'road' : 'regret'))}
+  }, shared)
   spoken = f.original.text
   await page.goto(`./chat/play?project=${f.scope.projectId}&work=${f.scope.workId}&session=${f.sessionId}`)
   await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
   await page.getByRole('button', {name: '让角色开场', exact: true}).click()
   if (rejected) {
-    await expect(page.getByText(/逐字披露审查未通过/)).toBeVisible()
+    await expect(page.getByText(shared ? /既有共同事实审查未通过/ : /逐字披露审查未通过/)).toBeVisible()
     await expect(page.getByRole('article').getByText(spoken, {exact: true})).toHaveCount(0)
   } else await expect(page.getByRole('article').getByText(spoken, {exact: true})).toBeVisible()
   const evidence = await page.evaluate(async f => {
@@ -42,7 +42,7 @@ for (const rejected of [false, true]) test(`exact disclosure retains redundant r
       reports: artifacts.filter((a: {artifactKind: string; content: string}) => a.artifactKind === 'tool-result' && a.content.includes('storyforge.chat-review-normalization')).map((a: {content: string}) => a.content)}
   }, f)
   expect(evidence.state.interaction.messages).toHaveLength(rejected ? 0 : 1)
-  expect(evidence.state.interaction.chatNarrative.situation.facts.find((fact: {factKey: string}) => fact.factKey === 'regret')).toEqual({...f.original, audienceKeys: rejected ? ['guard'] : ['guard', 'player']})
+  expect(evidence.state.interaction.chatNarrative.situation.facts.find((fact: {factKey: string}) => fact.factKey === f.original.factKey)).toEqual(shared ? f.original : {...f.original, audienceKeys: rejected ? ['guard'] : ['guard', 'player']})
   expect(evidence.raw).toContain(rawReview); expect(evidence.reports).toHaveLength(rejected ? 0 : 1)
   await page.reload(); await expect(page.getByTestId('chat-narrative-controls')).toBeVisible()
   const restored = await page.evaluate(async f => {
