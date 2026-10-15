@@ -1,6 +1,6 @@
 # AVG 实施计划与依赖顺序
 
-> L2 · 版本：1.12.0 · 生效：2026-10-15 · 上位条目：E-AVG-01。
+> L2 · 版本：1.13.0 · 生效：2026-10-15 · 上位条目：E-AVG-01。
 > 唯一产品施工入口：[AVG.md](../products/AVG.md)；逐包开工与验收：[工作包卡](AVG-WORK-PACKAGE-CARDS.md)。
 > 正式设计已交付并经内容复审；公共/私有版本接缝已通过分支工程验收；真实生成、质量校准与首戏尚未通过。产品仍为 partial。
 
@@ -160,6 +160,12 @@ V2 可承载至多一个已登记 AVG 基础模块，逐句身份/文本与公�
 自查实际复现并修复问题：失败候选清理会遗漏 avgDraftMedia 引用，现从 PROJECT_TABLES 派生所有 mediaRef 原子检查；新版 Brief 的媒体域被误用于校验旧 Plan，现按旧 Build 的准确已授权方案读取。import 在解码后才存 Blob，并在创建引用事务再次检查存储/owner/hash；作者输入在首条执行回执前原子封闭，防止旧回执与后续编辑混用。 截图复核还发现 night/day 只有状态标签而无画面样式，已补舞台底色/媒资滤镜；线性浏览器断言实际 computed background/filter 变化。
 
 当前最终 native 定向 8 项、累计 AVG/媒体回归 16 文件 / 121 项通过；隔离 Chromium 的实际工作台 2 条通过，覆盖六项真实 PNG/WAV 导入、同字节不同用途、逐项确认、根回执、图标/详情/出示/配音结束、快速存档/刷新、返回制作台换图生成子 Build并保留旧档，以及无库存的独立线性配置/导航保存/night→day Cue。原创色块与 PCM 非人声仅作工程媒资，QA 的 releaseReady 为 false。旧 V1/作者导入/声音浏览器回归另 14 条通过；已查看工作台、换图后舞台及线性配置截图。治理/必需表/AI Manual/源码可达、文档/统计、定向 lint、TypeScript、build/包体与 diff 均通过。共享生产调用方回归继续核对，完整 CI 单独串行运行；正式 Release 接口、场景 cache 与整体框架门继续施工，不签商业或文学质量。
+
+### 2.10 场景资源窗口底座
+
+独立 `avg-scene-resources-20261015` / `feat/avg-scene-resources-20261015` 从原生工作台 bde3c826 / [PR #152](https://github.com/yuanbw2025/storyforge/pull/152) 建立，前树冻结给共享调用回归与完整 CI。AVG 产品研发，完善 S3 冻结包的临时资源读取；Work 仍拥有媒资，会话拥有运行状态，世界只读，无新表/迁移/AI 写口或调用。
+
+先拆共享小增量：resolver 显式选择 retainOnlyRequested 才替换有界窗口，默认旧缓存语义保留；同时清理旧 URL 与 Build 原始字节缓存，实际读取/替换串行，释放屏障等待在途操作且不自依赖。3 文件 / 11 项定向回归及工作台/旧 V1/阅读声音 12 条隔离 Chromium 通过，治理/必需表/AI Manual、源码可达、TypeScript/lint、文档/统计、生产 build/包体与 diff 检查通过。原生 AVG 尚未接当前舞台/物件/回听资源选择，03A 和整体目标继续施工，未取得完整场景 cache 或正式发布验收。
 
 ## 3 调整后的依赖
 
