@@ -74,7 +74,8 @@
     "restoration-verified.json": "37f46ecd19d9cb86cb266f4649fb516ee7ae2372a2d8915831b55b038b97f58d",
     "restoration.mjs": "88763f0393279dbce6a3e148cb67645443dd956a0e6d1f2fc536e03add2e31b5",
     "runner.mjs": "91e7483df77878cbd3c70012be1213cad2ddda8eedb9375fe6a01528f0e2d185",
-    "transport-progress.json": "68235e32a5c86acc1f52cc4479d005d148a0a44d6a3a7e2f276f9d9934084c1c"
+    "transport-progress.json": "68235e32a5c86acc1f52cc4479d005d148a0a44d6a3a7e2f276f9d9934084c1c",
+    "usage-ledger.json": "3a582fc1bd5cf535d24e0096529f8f8b497179dfca0a6ce1a2b1f8737ad943ee"
   },
   "observed": {
     "sameGoalReactivated": true,
@@ -101,5 +102,18 @@
     "refreshEqual": true,
     "worldPreserved": true,
     "rawEvidenceRetained": true
+  },
+  "observedUsage": {
+    "totals": {
+      "totalTokens": 245231,
+      "inputTokens": 237592,
+      "cachedInputTokens": 53248,
+      "outputTokens": 7639,
+      "reasoningOutputTokens": 2346
+    },
+    "inputShare": 0.9688,
+    "costUsd": null,
+    "scope": "Provider-reported request usage; cached input is included in input, reasoning output included in output; do not add subfields twice.",
+    "next": "Validate existing explicit two/three-action pacing and production opportunity viability before adding a new loop; reduce evidenced duplication under new frozen prompt bindings only."
   }
 }
