@@ -7,7 +7,7 @@ export type TtrpgNarrativeMemoryAudienceV1 = TtrpgOpenAudience
 export interface TtrpgNarrativeMemoryV1 {
   id?: number
   projectId: number
-  worldGroupId: number
+  worldGroupId: number | null
   worldId: number
   workId: number
   sessionId: number
@@ -126,7 +126,7 @@ function parseMemory(value: unknown, label: string): TtrpgNarrativeMemoryV1 {
   p.exact(row, hasId ? MEMORY_FIELDS_WITH_ID : MEMORY_FIELDS, label)
 
   const projectId = integer(row.projectId, `${label}.projectId`)
-  const worldGroupId = integer(row.worldGroupId, `${label}.worldGroupId`)
+  const worldGroupId = p.nullable(row.worldGroupId, integer, `${label}.worldGroupId`)
   const worldId = integer(row.worldId, `${label}.worldId`)
   const workId = integer(row.workId, `${label}.workId`)
   const sessionId = integer(row.sessionId, `${label}.sessionId`)

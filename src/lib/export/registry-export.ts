@@ -22,7 +22,7 @@ import type { ProductRuntimeEvent } from '../types'
 import type { ProductReleaseManifestWithTtrpgV2 } from '../ttrpg/content-version'
 
 /** 当前完整便携备份契约。 */
-export const CURRENT_EXPORT_VERSION = 15
+export const CURRENT_EXPORT_VERSION = 16
 
 export interface StrictProjectExportSnapshot {
   data: ProjectExportData

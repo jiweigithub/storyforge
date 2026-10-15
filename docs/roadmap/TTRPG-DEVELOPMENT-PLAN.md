@@ -63,7 +63,7 @@
 
 ### 23.4 2026-10-12 评审基线与验证范围
 
-- 当前 schema 为 **v11**，`STORYFORGE_STORES_V10` 已固定，v11 包含插件扩展表；备份/导出当前版本为 v15（来源 `src/lib/export/backup-trust.ts`、`registry-export.ts`）。原稿 v10/123 表及 P8 的 10→11 已过期。本轮不改变 schema 或备份版本。
+- 当前 P8 存储治理基础将 schema 从 **v11 升为 v12**：固定 `STORYFORGE_STORES_V11`，仅增加 `ttrpgNarrativeMemories`；备份从 v15 升为 v16，并严格转换完整的 v14/v15。此为开发分支状态，正式记忆采用/召回与分支来源合同仍待接通（§35.54）。
 - 当前 6 个跑团运行读源为 `ttrpgRuntime`、`ttrpgPrivateGuidance`、`ttrpgDirector`、`ttrpgPublicNarration`、`ttrpgNpcRuntime`、`ttrpgPlayerRuntime`；新源必须正式登记，不能因为文档出现名称就读取。
 - 《雾港：最后一盏灯》是已有 scripted 验证作品，记录见 `examples/ttrpg/fog-harbor/production-status.md`；已有真实生成/作者修订与 UI 试玩证据不等于独立玩家验收或公共多人服务。
 - 2026-10-12 评审复跑既有跑团及 Creator SDK/Harness 回归：23 文件、80 项全通过；当时检出分支的上述跑团文件与 fetched `origin/main@f93a01e3` 一致。这是旧能力回归基线，**不是 open 验收**，没有在本轮重新运行真实 provider/真人长局/全量 CI/E2E。
@@ -3521,3 +3521,18 @@ AI GM 模式中，Session Zero 原真人确认者可以明确撤回已经采用�
 刷新保持原证据，切换真人身份清空；跨电脑完整导入可检视原始回执，但检视不恢复发送权限或授予新模型请求。零业务写入、不推进时间。条件求值继续仅使用本次接收场景已经允许的投影，未读/隐藏操作数含 NOT/ANY 均保持 unknown 并跳过，不能借触发与否探测秘密。更完整的可读条件覆盖、P8–P10 与完整真实验收仍按原目标继续。
 
 本单元定向正反例 4 条通过，覆盖实际条目/预算省略、刷新/身份隔离、跨工作区导入与原工件篡改拒绝。原生浏览器 1 条通过，实际展开资料与触发详情并刷新/换人，确认游戏状态不变；使用工程 fixture，没有真实 provider/独立玩家参与。最终直接检查、构建与累计 CI 分别留证，未据此公开入口或部署。
+
+
+### 35.54 P8 唯一记忆表的治理基础施工（2026-10-15）
+
+产品为跑团，生命周期为 S3 运行能力研发；实例拥有记忆，世界版本只读，媒资 owner 不变。此次先建立共享迁移/备份基础，再接产品事件、候选采用与召回。前文旧快照数字保留为历史，不得照搬原稿10→11重复创建表。
+
+- 原基线记录：- 当前 schema 为 **v11**，`STORYFORGE_STORES_V10` 已固定，v11 包含插件扩展表；备份/导出当前版本为 v15（来源 `src/lib/export/backup-trust.ts`、`registry-export.ts`）。原稿 v10/123 表及 P8 的 10→11 已过期。本轮不改变 schema 或备份版本。
+- 当前增量固定 v11 全部128张表的原定义，v12只新增唯一记忆表，注册 PROJECT_TABLES/REQUIRED_TABLES；原稿 `worldGroupId:number` 改为与现行实例一致的 `number|null`。无新 AI 读写入口，FIELD_REGISTRY/CONTEXT_SOURCES 不以空登记宣称功能已可用。
+- 便携备份 v16。完整 v14/v15 先按其真实表集核验，再只补后续新增空表；不得夹带未来表或吞掉缺失旧表。新表按真实实例、World/Work 与原实例引用转换编号，闭集字段与 observer/reliability、区间、未来事件、重复版本和作用域反例拒绝。原始 hash 和私密边界不改写。
+- 当前仍是存储治理基础，正式 memory recorded 事件、CreativeArtifact 候选/作者 adopt、按 observer/reliability 的渐进召回、分支切点与祖先保留/删除后稳定来源核验，以及世界补丁候选导出仍须完成。`sourceSessionId` 的本地引用清理不能代替稳定证据，也不能把导入结构校验冒充事实采用。未接通上述合同前不启用正式记忆读写；不发布、不部署、不改变 open 默认隐藏。
+
+工程证据以本单元最终回执为准，不沿用 P7 快照 CI。迁移验证必须包含原稿/插件保留和真实 IndexedDB 建表失败的原子回滚、重试；备份验证包含当前非空记忆与旧版空转换的正反例。此前 DATA-GOVERNANCE §7 的 v4 描述已按当前分支更新，旧 Work-owned 与纯加表决策仍保留。
+
+
+P8 基础联测补充：共享账本在明确 `freezeContextEvidence:false` 的数据型重导出中，不再要求原 Run 的物理编号映射，也不生成或升级原来源证明；默认真实工作区导出仍须匹配原 Run 映射才可冻结新证据。主线多 Run 线性分桶回归原先只传便携映射，现明确走数据型协议，并追加“要求冻结但没有原映射仍拒绝”的反例。保留乱序数组身份、线性键读取上限及 worldGroup 损坏检查。此兼容问题由联合测试发现，原失败证据保留，修复与 P8 表迁移分为独立基础提交；不能借数据型转换取得任何发送或采用权限。

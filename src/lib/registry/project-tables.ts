@@ -1283,6 +1283,8 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
       { kind: 'simple', field: 'id', target: 'productRuntimeEvents[sessionId]', onDelete: 'cascade' },
       { kind: 'simple', field: 'id', target: 'productRuntimeCheckpoints[sessionId]', onDelete: 'cascade' },
       { kind: 'simple', field: 'id', target: 'ttrpgSessionParticipants[sessionId]', onDelete: 'cascade' },
+      { kind: 'simple', field: 'id', target: 'ttrpgNarrativeMemories[sessionId]', onDelete: 'cascade' },
+      { kind: 'simple', field: 'id', target: 'ttrpgNarrativeMemories[sourceSessionId]', onDelete: 'setNull' },
       { kind: 'simple', field: 'id', target: 'ttrpgRuntimeAssetRequests[sessionId]', onDelete: 'cascade' },
       { kind: 'simple', field: 'id', target: 'productMediaAssets[productRuntimeSessionId]', onDelete: 'cascade' },
       { kind: 'simple', field: 'id', target: 'agentRuns[productRuntimeSessionId]', onDelete: 'cascade' },
@@ -2029,6 +2031,27 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
     },
     defaults: { status: "draft", rulePackJson: "{}", contentHash: "" },
     note: "TTRPG-2A Work-owned 声明式规则包、许可、版本、夹具和验证 hash；禁止任意脚本",
+  },
+
+  {
+    table: db.ttrpgNarrativeMemories,
+    name: 'ttrpgNarrativeMemories',
+    owner: 'project',
+    domainOwner: { allowed: ['instance'], defaultOwner: 'instance',
+      locator: { kind: 'parent', owner: 'instance', table: 'productRuntimeSessions', field: 'sessionId' } },
+    worldScoped: true,
+    exportable: true,
+    exportIdField: true,
+    introducedBackupVersion: 16,
+    exportRemap: [
+      { field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' },
+      { field: 'worldId', remapVia: 'worlds', exportAs: '_worldExportId', onUnmapped: 'require' },
+      { field: 'workId', remapVia: 'works', exportAs: '_workExportId', onUnmapped: 'require' },
+      { field: 'sessionId', remapVia: 'productRuntimeSessions', exportAs: '_productRuntimeSessionExportId', onUnmapped: 'require' },
+      { field: 'sourceSessionId', remapVia: 'productRuntimeSessions', exportAs: '_sourceSessionExportId', onUnmapped: 'require' },
+    ],
+    defaults: { sourceSessionId: null, stale: false },
+    note: 'TTRPG P8 唯一实例叙事记忆表；原事件区间与来源 hash 不改写。当前仅治理基础，尚无正式记忆读写入口；后续须先验证真实事件与候选采纳，不能把导入结构通过视为规则事实。',
   },
 
   {

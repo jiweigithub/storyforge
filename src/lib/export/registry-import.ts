@@ -18,6 +18,7 @@ import { transactionTablesFor } from '../registry/lifecycle'
 import type { ExportRefRemap, TableSpec } from '../registry/types'
 import type { ProjectExportData } from './json-export'
 import { CURRENT_BACKUP_VERSION, normalizeProjectBackup } from './backup-trust'
+import { assertTtrpgNarrativeMemoryBackupV1 } from '../ttrpg/narrative-memory-backup'
 import { rebindPortableAgentRunContractV1 } from '../agent/run/contract-portability'
 import {
   finalizeImportedAgentRunLedgersV1,
@@ -860,6 +861,7 @@ async function validateCurrentBackup(data: ProjectExportData): Promise<void> {
   validateComicMediaBackup(value)
   await validateMotionDramaBackup(value)
   await validateProductArchitectureBackup(value)
+  assertTtrpgNarrativeMemoryBackupV1(value)
   await validateIndependentCreationBackup(value)
   for (const spec of PROJECT_TABLES) {
     if (!spec.exportable || spec.name === 'projects' || spec.name === 'worlds' || spec.name === 'works') continue
