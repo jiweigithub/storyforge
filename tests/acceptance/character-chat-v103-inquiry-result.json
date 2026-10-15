@@ -46,6 +46,20 @@
     "finalTargeted": {
       "passed": 17,
       "log": "/tmp/storyforge-chat-v103-inquiry-r6.log"
+    },
+    "merged": {
+      "gatesPassed": 10,
+      "receipt": "/tmp/storyforge-chat-v103-merged-gates-receipt.json",
+      "bundleSize": "/tmp/storyforge-chat-v103-merged-bundle-size.log",
+      "regression": {
+        "files": 4,
+        "passed": 47,
+        "log": "/tmp/storyforge-chat-v103-merged-regression.log"
+      },
+      "browser": {
+        "passed": 12,
+        "log": "/tmp/storyforge-chat-v103-merged-e2e.log"
+      }
     }
   },
   "initialFailuresPreserved": [
@@ -69,9 +83,11 @@
     "independent human and commercial acceptance"
   ],
   "historicalEvidence": "V97/V99 and all earlier failures/denominators untouched; no holdout inspection",
-  "nextMainSync": {
+  "mainSync": {
     "originMain": "ce49309b619880bcb79836c09356ee1cead0cb8a",
     "incomingCommits": 2,
-    "scope": "longform outline Gateway skill fix; integrate after saving this increment"
-  }
+    "scope": "longform outline Gateway skill fix",
+    "resolution": "Only generated AI manual and architecture counts conflicted; regenerated via official scripts."
+  },
+  "featureCommit": "4ad143b2"
 }

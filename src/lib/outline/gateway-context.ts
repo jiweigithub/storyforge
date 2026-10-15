@@ -92,6 +92,7 @@ export async function prepareOutlineGatewayAssemblyV1(input: {
   scope?: WorkspaceScope
   worldGroupId: number | null
   request: OutlineGenerationRequest
+  skillId?: string
   authorRequest: string
   config: AIConfig
   contextProfile?: AgentContextProfile
@@ -104,7 +105,7 @@ export async function prepareOutlineGatewayAssemblyV1(input: {
     worldGroupId: input.worldGroupId,
     request: input.request,
   })
-  const skill = resolveAgentSkillV1('outline', outlineSkillId(input.request))
+  const skill = resolveAgentSkillV1('outline', input.skillId ?? outlineSkillId(input.request))
   if (skill.contextGateway?.rollout !== 'required') {
     throw new Error(`${skill.id} 尚未进入 required Context Gateway。`)
   }
