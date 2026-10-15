@@ -1,3 +1,4 @@
+import {isChatActionReviewOutputV1} from './memory-reconciliation'
 import {canonicalStringify} from '../agent/run/hash'
 import type {ChatNarrativeActionV1, ChatNarrativeActionReviewV1} from '../types/chat-narrative'
 import type {CharacterInteractionRuntimeState} from '../types'
@@ -32,14 +33,15 @@ export function bindChatNarrativeOptionsReviewV1(value: unknown, actions: ChatNa
   if (!Array.isArray(options) || options.length !== 2) fail('候选组审查必须覆盖两条候选')
   const seen = new Set<string>()
   const optionReviews = options.map(row => {
-    if (!row || typeof row !== 'object' || Array.isArray(row) || !['checks,optionKey', 'checks,disclosureChecks,optionKey', 'checks,commitmentChecks,optionKey', 'checks,commitmentChecks,disclosureChecks,optionKey'].includes(Object.keys(row).sort().join(','))) fail('单条候选审查字段无效')
+    if (!isChatActionReviewOutputV1(row, ['optionKey'])) fail('单条候选审查字段无效')
     const key = (row as {optionKey: unknown}).optionKey
     if (!CHAT_NARRATIVE_OPTION_KEYS_V1.includes(key as ChatNarrativeOptionKeyV1) || seen.has(String(key))) fail('审查候选标识无效或重复')
     const optionKey = key as ChatNarrativeOptionKeyV1; seen.add(optionKey)
     const action = actions[CHAT_NARRATIVE_OPTION_KEYS_V1.indexOf(optionKey)]
     return {optionKey, review: parseChatNarrativeActionReviewV1({checks: (row as {checks: unknown}).checks,
       ...('disclosureChecks' in row ? {disclosureChecks: row.disclosureChecks} : {}),
-      ...('commitmentChecks' in row ? {commitmentChecks: row.commitmentChecks} : {}), reviewedActionJson: canonicalStringify(action)}, action)}
+      ...('commitmentChecks' in row ? {commitmentChecks: row.commitmentChecks} : {}),
+      ...('memoryChecks' in row ? {memoryChecks: row.memoryChecks} : {}), reviewedActionJson: canonicalStringify(action)}, action)}
   })
   return {optionReviews: CHAT_NARRATIVE_OPTION_KEYS_V1.map(key => optionReviews.find(r => r.optionKey === key)!)}
 }

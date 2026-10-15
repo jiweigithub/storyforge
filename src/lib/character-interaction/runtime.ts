@@ -1,3 +1,4 @@
+import {assertChatMemoryReconciliationSourcesV1} from './memory-reconciliation'
 import {assertChatResponseRetrievableV1, isChatMessageRetrievableV1, requireChatRetrievalMessageV1, setChatMessageRetrievalV1} from './narrative-retrieval'
 import {updateChatMessageEditDraftV1} from './narrative-edit-contract'
 import {isChatPrivateCharacterKeyV1} from './private-character'
@@ -543,6 +544,7 @@ export function parseInteractionState(value: unknown): CharacterInteractionRunti
   }
   for (const id of result.chatNarrative?.excludedMessageIds ?? []) requireChatRetrievalMessageV1(result, id)
   assertChatCommitmentSourcesV1(result)
+  assertChatMemoryReconciliationSourcesV1(result)
   return result
 }
 

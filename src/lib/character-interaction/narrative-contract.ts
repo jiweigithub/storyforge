@@ -1,3 +1,4 @@
+import {validateChatMemoryReconciliationRecordsV1} from './memory-reconciliation'
 import {validateChatFactDiscoveryRuleV1, validateChatDiscoveryHistoryV1, chatActorInvestigationResultsV1} from './narrative-discovery'
 import {validateChatMessageEditDraftV1} from './narrative-edit-contract'
 import {chatCommitmentSequencesV1, rebaseChatCommitmentsV1, validateChatGoalCommitmentsV1} from './narrative-commitments'
@@ -204,7 +205,7 @@ export function createChatNarrativeStateV1(content: FrozenChatNarrativeV1): Chat
 }
 
 export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativeBoundaryV1): ChatNarrativeStateV1 {
-  const extra = ['pendingSituation', 'pendingEdit', 'excludedMessageIds', 'discoveryHistory'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
+  const extra = ['pendingSituation', 'pendingEdit', 'excludedMessageIds', 'discoveryHistory', 'memoryReconciliations'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
   const parsed = row(value, 'schema,version,worldReleaseHash,persona,permissions,situation,revision,lastEventSequence,triggers' + extra, '叙事状态')
   if (parsed.schema !== 'storyforge.chat-narrative-state') fail('叙事状态类型无效')
   const permissions = validateCommon(parsed, boundary)
@@ -213,6 +214,7 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
   if (parsed.revision === 0 && parsed.lastEventSequence !== 0 || parsed.revision !== 0 && parsed.lastEventSequence === 0) fail('叙事版本与事件头不符')
   validateSituation(parsed.situation, boundary, parsed.revision === 0, Number(permissions.maxActiveThreads))
   const state = structuredClone(value) as ChatNarrativeStateV1
+  validateChatMemoryReconciliationRecordsV1(state, boundary.participantKeys)
   if (state.situation.seed.origin === 'player-followup' && state.permissions.allowPlayerFollowupSituations !== true) fail('新事项情境缺少作品授权')
   for (const fact of state.situation.facts) validateChatFactDiscoveryRuleV1(fact, state.situation.facts, boundary, state.permissions.maxDiscoveriesPerSituation ?? 0)
   const triggers = list(parsed.triggers, '主动触发记录', 5000).map(item => row(item, 'kind,requestedSequence,sourceEventSequence,seed,status,actionSequences' + (item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'direction') ? ',direction' : ''), '主动触发记录'))
@@ -309,6 +311,7 @@ export function rebaseChatNarrativeStateV1(state: ChatNarrativeStateV1, rebase: 
   if (state.pendingSituation?.purpose === 'player-followup') state.pendingSituation.playerEventSequence = rebase(state.pendingSituation.playerEventSequence)
   state.situation.seed.sourceEventSequence = rebase(state.situation.seed.sourceEventSequence)
   for (const fact of state.situation.facts) fact.sourceEventSequence = rebase(fact.sourceEventSequence)
+  for (const record of state.memoryReconciliations ?? []) {record.sourceSequence = rebase(record.sourceSequence); record.sequence = rebase(record.sequence)}
   for (const record of state.discoveryHistory ?? []) {record.actionSequence = rebase(record.actionSequence); record.discoverySequence = rebase(record.discoverySequence)}
   for (const item of [...state.situation.goals, ...state.situation.beliefs, ...state.situation.threads]) item.updatedSequence = rebase(item.updatedSequence)
   rebaseChatCommitmentsV1(state.situation.goals, rebase)

@@ -1,3 +1,4 @@
+import {applyChatMemoryReconciliationsV1, parseChatMemoryReconciliationChecksV1} from './memory-reconciliation'
 import {assertChatResponseRetrievableV1, isChatMessageRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1, chatCanRespondAfterClosureV1} from './narrative-scheduling'
 import {canonicalStringify} from '../agent/run/hash'
@@ -320,7 +321,8 @@ export function previewChatNarrativeActionV1(state: CharacterInteractionRuntimeS
 export function parseChatNarrativeActionReviewV1(value: unknown, action: ChatNarrativeActionV1): ChatNarrativeActionReviewV1 {
   const hasDisclosureChecks = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'disclosureChecks')
   const hasCommitmentChecks = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'commitmentChecks')
-  const row = object(value, 'reviewedActionJson,checks' + (hasDisclosureChecks ? ',disclosureChecks' : '') + (hasCommitmentChecks ? ',commitmentChecks' : ''))
+  const hasMemoryChecks = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'memoryChecks')
+  const row = object(value, 'reviewedActionJson,checks' + (hasMemoryChecks ? ',memoryChecks' : '') + (hasDisclosureChecks ? ',disclosureChecks' : '') + (hasCommitmentChecks ? ',commitmentChecks' : ''))
   if (row.reviewedActionJson !== canonicalStringify(action)) fail('行动审查绑定了另一份候选')
   const checks = list(row.checks, CHAT_ACTION_REVIEW_CHECKS_V1.length), seen = new Set<string>()
   if (checks.length !== CHAT_ACTION_REVIEW_CHECKS_V1.length) fail('行动语义审查不完整')
@@ -341,12 +343,14 @@ export function parseChatNarrativeActionReviewV1(value: unknown, action: ChatNar
   }
   if (hasCommitmentChecks && row.commitmentChecks == null) fail('承诺逐条审查无效')
   validateChatCommitmentChecksV1(row.commitmentChecks, action)
+  if (hasMemoryChecks) parseChatMemoryReconciliationChecksV1(row.memoryChecks)
   return structuredClone(value) as ChatNarrativeActionReviewV1
 }
 
 export function chatNarrativeActionReviewPassedV1(review: ChatNarrativeActionReviewV1): boolean {
   return review.checks.every(check => check.passed) && (review.disclosureChecks ?? []).every(check => check.passed)
     && (review.commitmentChecks ?? []).every(check => check.passed)
+    && (review.memoryChecks ?? []).every(check => check.passed)
 }
 
 /** New writes require reviewed expression and consequences. The original
@@ -356,6 +360,7 @@ export function applyReviewedChatNarrativeActionV1(state: CharacterInteractionRu
   if (state.remainingDirectorBudget < 2) fail('角色行动与审查预算不足')
   const review = parseChatNarrativeActionReviewV1(input.review, parseChatNarrativeActionV1(input.action))
   if (!chatNarrativeActionReviewPassedV1(review)) fail('行动语义审查未通过，表达与后果均未提交')
+  applyChatMemoryReconciliationsV1(state, result, {actorKey: input.actorKey as string, messageId: input.messageId as string, sequence: input.sequence, review})
   result.remainingDirectorBudget -= 1
   return result
 }

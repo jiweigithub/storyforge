@@ -1,3 +1,4 @@
+import {assertChatMemoryReconciliationCoverageV1, assertChatMemoryReconciliationReviewVersionV1, isChatActionReviewOutputV1} from './memory-reconciliation'
 import {chatActionReviewPromptRulesV1} from './narrative-action-prompt'
 import {interactionRetrievalView} from './runtime'
 import {readProductRuntimeState} from './runtime-api'
@@ -44,6 +45,8 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
   const commitments = ['chat-narrative-action-review-v19', 'chat-narrative-options-review-v13'].includes(reviewBinding.promptVersion)
   const naturalDisclosure = commitments || ['chat-narrative-action-review-v18', 'chat-narrative-options-review-v12'].includes(reviewBinding.promptVersion)
   if (!naturalDisclosure && actions.some(a => a.disclosures.some(d => d.wording === 'equivalent'))) fail('旧审查合同不支持自然转述；保留原候选，不自动更换合同或重发')
+  if (!situation && candidate.review) assertChatMemoryReconciliationReviewVersionV1(
+    options ? candidate.review.optionReviews.map(r => r.review) : [candidate.review], reviewBinding.promptVersion)
   if (candidate.review) return {snapshot, candidate}
   if (snapshot.projection.state !== 'running') fail('当前叙事运行已停止，不能继续审查')
   await assertRuntimeHarnessFreshV1(freshness)
@@ -113,11 +116,19 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
     let row: Record<string, unknown>
     try {row = JSON.parse(source) as Record<string, unknown>}
     catch {fail('审查响应格式无效；原始结果已保存，尚未提交表达或后果')}
-    if (!row || Array.isArray(row) || !(options ? ['options'] : situation ? ['checks'] : ['checks', 'checks,disclosureChecks', 'checks,commitmentChecks', 'checks,commitmentChecks,disclosureChecks']).includes(Object.keys(row).sort().join(','))) fail('叙事审查输出字段无效')
+    if (!row || Array.isArray(row) || !(options ? Object.keys(row).join(',') === 'options' : situation ? Object.keys(row).join(',') === 'checks' : isChatActionReviewOutputV1(row))) fail('叙事审查输出字段无效')
     const review = candidate.kind === 'chat-situation-candidate'
       ? parseChatSituationReviewV1({...row, reviewedProposalJson: canonicalStringify(candidate.draft)}, candidate.draft)
       : candidate.kind === 'chat-narrative-options-candidate' ? bindChatNarrativeOptionsReviewV1(row, candidate.options)
         : parseChatNarrativeActionReviewV1({...row, reviewedActionJson: canonicalStringify(candidate.action)}, candidate.action)
+    if ('optionReviews' in review || 'reviewedActionJson' in review) assertChatMemoryReconciliationReviewVersionV1(
+      'optionReviews' in review ? review.optionReviews.map(r => r.review) : [review], reviewBinding.promptVersion)
+    const actionReviews = 'optionReviews' in review ? review.optionReviews.map(r => r.review) : 'reviewedActionJson' in review ? [review] : []
+    if (actionReviews.some(r => r.memoryChecks !== undefined)) {
+      const state = (await readProductRuntimeState(input.productRuntimeSessionId)).interaction
+      if (!state) fail('记忆修正核对缺少角色运行状态')
+      for (const r of actionReviews) if (r.memoryChecks !== undefined) assertChatMemoryReconciliationCoverageV1(state, candidate.participantKey, r.memoryChecks)
+    }
     const passed = 'optionReviews' in review ? review.optionReviews.every(r => chatNarrativeActionReviewPassedV1(r.review))
       : 'reviewedActionJson' in review ? chatNarrativeActionReviewPassedV1(review) : review.checks.every(check => check.passed)
     if (!passed) fail(situation ? '情境语义审查未通过，原有局面保留' : '行动语义审查未通过，表达与后果均未提交')

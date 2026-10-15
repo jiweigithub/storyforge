@@ -1,3 +1,4 @@
+import {assertChatMemoryReconciliationReviewVersionV1} from './memory-reconciliation'
 import {CHAT_MEMORY_REVIEW_STEP, CHAT_MEMORY_REVIEW_SKILL, chatMemoryReviewBindingV1, parseChatMemoryReceiptV1} from './memory-review-contract'
 import {reviewChatMemoryCandidateV1} from './memory-review-harness'
 import {chatActionPromptRulesV1} from './narrative-action-prompt'
@@ -882,6 +883,9 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
   if (candidate.kind === 'chat-narrative-action-candidate' || candidate.kind === 'chat-narrative-options-candidate') {
     assertChatCommitmentReviewVersionV1(candidate.kind === 'chat-narrative-action-candidate' ? [candidate.action] : candidate.options,
       snapshot.contract.executionBindings?.find(b => b.stepId === CHAT_ACTION_REVIEW_STEP_V1)?.promptVersion)
+    assertChatMemoryReconciliationReviewVersionV1(candidate.kind === 'chat-narrative-action-candidate'
+      ? [candidate.review] : candidate.review?.optionReviews.map(r => r.review) ?? [],
+    snapshot.contract.executionBindings?.find(b => b.stepId === CHAT_ACTION_REVIEW_STEP_V1)?.promptVersion)
   }
   if (candidate.kind === 'memory-curator-candidate'
     && (await db.productRuntimeSessions.get(candidate.productRuntimeSessionId))?.kind === 'character-interaction') {

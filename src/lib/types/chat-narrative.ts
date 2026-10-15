@@ -163,6 +163,24 @@ export interface ChatNarrativeStateV1 {
   excludedMessageIds?: string[]
   /** Coordinator evidence; role readers receive only their safe outcome summary. */
   discoveryHistory?: ChatFactDiscoveryRecordV1[]
+  /** A reviewed action reconsidered a particular player-authored correction.
+   * This acknowledges use, never certifies the summary as a world fact. */
+  memoryReconciliations?: ChatMemoryReconciliationRecordV1[]
+}
+
+export interface ChatMemoryReconciliationRecordV1 {
+  memoryId: string
+  sourceSequence: number
+  actorKey: string
+  messageId: string
+  sequence: number
+}
+
+export interface ChatMemoryReconciliationCheckV1 {
+  memoryId: string
+  sourceSequence: number
+  passed: boolean
+  reason: string
 }
 
 export interface ChatMessageEditDraftV1 {
@@ -319,4 +337,5 @@ export interface ChatNarrativeActionReviewV1 {
   /** Every natural paraphrase needs a separately bound full-equivalence review. */
   disclosureChecks?: Array<{factKey: string; passed: boolean; reason: string}>
   commitmentChecks?: Array<{effectIndex: number; passed: boolean; reason: string}>
+  memoryChecks?: ChatMemoryReconciliationCheckV1[]
 }

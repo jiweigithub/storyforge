@@ -1,3 +1,4 @@
+import {isChatActionReviewOutputV1} from './memory-reconciliation'
 import {db} from '../db/schema'
 import {canonicalStringify} from '../agent/run/hash'
 import {assertRuntimeHarnessFreshV1} from '../agent/run/runtime-scope'
@@ -54,11 +55,11 @@ export async function readChatActionRevisionSourceV1(input: {
   let review
   try {
     const body = JSON.parse(raw.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, '$1'))
-    if (!body || Array.isArray(body) || !['checks', 'checks,disclosureChecks', 'checks,commitmentChecks', 'checks,commitmentChecks,disclosureChecks'].includes(Object.keys(body).sort().join(','))) return null
+    if (!isChatActionReviewOutputV1(body)) return null
     review = parseChatNarrativeActionReviewV1({...body, reviewedActionJson: canonicalStringify(candidate.action)}, candidate.action)
   } catch {return null}
   if (!review.checks.some(c => c.check === 'consequences' && !c.passed) || review.checks.some(c => c.check !== 'consequences' && !c.passed)
-    || review.disclosureChecks?.some(c => !c.passed) || review.commitmentChecks?.some(c => !c.passed)) return null
+    || review.memoryChecks?.some(c => !c.passed) || review.disclosureChecks?.some(c => !c.passed) || review.commitmentChecks?.some(c => !c.passed)) return null
   return {runId: snapshot.run.id, actorKey: candidate.participantKey, triggerSequence: candidate.triggerSequence,
     candidateHash: candidate.candidateHash, reviewHash, action: candidate.action}
 }
