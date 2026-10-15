@@ -97,6 +97,11 @@ export async function readChatContextInspectionV1(scope: WorkspaceScope, session
     threads: view.chatNarrative!.threads.filter(t => t.audienceKeys.includes(state.playerKey)).map(t => ({title: t.title, question: t.question, status: t.status})),
     knowledge: view.knowledge.filter(k => known.has(`${k.knowledgeKey}\0${k.content}`)).map(k => k.content),
     memories: view.memories.filter(m => memories.has(m.memoryId)).map(m => m.content),
+    commitments: [
+      ...view.chatNarrative!.goals.flatMap(g => (g.commitments ?? []).map(c => ({...c, actorKey: g.actorKey}))),
+      ...(view.sharedCommitments ?? []),
+    ].filter(c => c.audienceKeys.includes(state.playerKey)).map(c => ({actorName: state.profiles.find(p => p.participantKey === c.actorKey)?.name ?? '角色',
+      terms: c.terms, declared: c.declared.excerpt, resolution: c.resolution ? {kind: c.resolution.kind, excerpt: c.resolution.excerpt} : null})),
     ...(selection ? {selection} : {}),
     messages: view.messages.filter(m => playerMessages.has(m.messageId)).map(m => ({messageId: m.messageId, text: m.text,
       speaker: m.speakerKey === state.playerKey ? state.chatNarrative!.persona.name : state.profiles.find(p => p.participantKey === m.speakerKey)?.name ?? '角色'})),

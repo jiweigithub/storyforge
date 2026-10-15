@@ -29,7 +29,7 @@ import {chatRelationshipEvidenceV1} from './narrative-relationships'
 import {selectChatContextWindowV1, type ChatContextSelectionV1} from './context-selection'
 import {interactionMessageVisibleTo as visibleTo} from './message-visibility'
 import {hasChatMemoryContentReviewV1, interactionMemoryForContextV1, parseChatMemoryReceiptV1} from './memory-review-contract'
-import {assertChatCommitmentSourcesV1} from './narrative-commitments'
+import {assertChatCommitmentSourcesV1, chatVisibleCommitmentsV1} from './narrative-commitments'
 
 type JsonObject = Record<string, unknown>
 
@@ -1031,6 +1031,8 @@ export interface InteractionVisibilityView {
   threads: InteractionRuntimeThread[]
   chatNarrative?: ChatNarrativeViewV1
   relationshipEvidence?: InteractionRelationshipChange[]
+  /** Other actors' spoken promises only; never their associated private goals. */
+  sharedCommitments?: ReturnType<typeof chatVisibleCommitmentsV1>
 }
 
 export function interactionVisibilityView(
@@ -1039,6 +1041,7 @@ export function interactionVisibilityView(
 ): InteractionVisibilityView {
   const state = requireInteraction(parseInteractionState(stateValue))
   if (participantKey !== state.playerKey) requireParticipant(state, participantKey)
+  const sharedCommitments = chatVisibleCommitmentsV1(state, participantKey).filter(c => c.actorKey !== participantKey)
   return {
     participantKey,
     activeScene: state.activeScene ? structuredClone(state.activeScene) : null,
@@ -1048,6 +1051,7 @@ export function interactionVisibilityView(
     relationships: state.relationships.filter(item => item.fromParticipantKey === participantKey),
     threads: state.threads.filter(item => item.status === 'open'),
     ...(state.chatNarrative ? {chatNarrative: chatNarrativeViewV1(state.chatNarrative, participantKey), relationshipEvidence: chatRelationshipEvidenceV1(state, participantKey)} : {}),
+    ...(sharedCommitments.length ? {sharedCommitments} : {}),
   }
 }
 

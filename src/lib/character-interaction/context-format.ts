@@ -11,6 +11,7 @@ export function formatInteractionRuntimeContextV1(profile: InteractionRuntimePro
       '【当前情境的单一角色视角】以下 facts 是确定事实；beliefs 是可能错误的猜测，goals 是意愿，possibilities 是尚未发生的方向，thread closureSignals 是可调整的收束条件。不得把后三类写成既成事实或替玩家决定。',
       JSON.stringify(view.chatNarrative),
     ] : []),
+    ...(view.sharedCommitments?.length ? ['【共同知晓的角色约定】只含原约与实际处置证据，不代表玩家同意，也不透露对方私有目标。', JSON.stringify(view.sharedCommitments)] : []),
     '【该角色已知事实】',
     ...(view.knowledge.length ? view.knowledge.map(item => `- ${item.knowledgeKey}｜${item.status}｜${item.content}`) : ['- 无']),
     '【该角色持久记忆】',

@@ -91,7 +91,7 @@ export function applyChatCommitmentEffectsV1(state: CharacterInteractionRuntimeS
     sequence(input.sequence); text(input.messageId, 200)
     if (input.sequence <= 0 || input.sequence <= story.lastEventSequence
       || state.messages.some(m => m.messageId === input.messageId || m.eventSequence >= input.sequence)) fail('承诺表达事件已经使用或过期')
-    if (input.action.waitingForPlayer || ['attempt', 'pause'].includes(input.action.kind)) fail('条件意向、尝试或等待不能登记为已经作出的承诺变化')
+    if (['attempt', 'pause'].includes(input.action.kind)) fail('条件意向、尝试或暂停不能登记为已经作出的承诺变化')
   }
   const changed = new Set<string>()
   // Resolve explicitly first, then permit a replacement declaration in the same
@@ -112,7 +112,7 @@ export function applyChatCommitmentEffectsV1(state: CharacterInteractionRuntimeS
       if (!goal || !item || goal.actorKey !== input.actorKey || item.resolution !== null || changed.has(effect.commitmentKey)
         || goal.goalKey !== input.action.goalKey && !input.action.goalUpdates?.some(g => g.goalKey === goal.goalKey)) fail('承诺不属于本次角色目标、已处理或重复')
       if (item.audienceKeys.some(v => !input.action.audienceKeys.includes(v))) fail('承诺处置不能越过原知情范围')
-      if (effect.kind === 'fulfill' && input.action.kind !== 'complete') fail('只有实际完成的行动可以登记履行')
+      if (effect.kind === 'fulfill' && (input.action.kind !== 'complete' || input.action.waitingForPlayer)) fail('只有实际完成且不等待玩家的行动可以登记履行')
       if (input.sequence <= item.declared.sequence) fail('承诺处置必须晚于声明')
       item.resolution = {kind: effect.kind === 'fulfill' ? 'fulfilled' : 'withdrawn', messageId: input.messageId, sequence: input.sequence, excerpt: effect.evidenceExcerpt}
       goal.updatedSequence = input.sequence; changed.add(effect.commitmentKey)

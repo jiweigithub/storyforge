@@ -41,7 +41,8 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
   if (!reviewBinding) fail('旧候选没有审查合同，请取消后明确发起新行动；原有内容仍保留')
   const actions = situation ? [] : options ? candidate.options : [candidate.action]
   assertChatCommitmentReviewVersionV1(actions, reviewBinding.promptVersion)
-  const naturalDisclosure = ['chat-narrative-action-review-v18', 'chat-narrative-options-review-v12'].includes(reviewBinding.promptVersion)
+  const commitments = ['chat-narrative-action-review-v19', 'chat-narrative-options-review-v13'].includes(reviewBinding.promptVersion)
+  const naturalDisclosure = commitments || ['chat-narrative-action-review-v18', 'chat-narrative-options-review-v12'].includes(reviewBinding.promptVersion)
   if (!naturalDisclosure && actions.some(a => a.disclosures.some(d => d.wording === 'equivalent'))) fail('旧审查合同不支持自然转述；保留原候选，不自动更换合同或重发')
   if (candidate.review) return {snapshot, candidate}
   if (snapshot.projection.state !== 'running') fail('当前叙事运行已停止，不能继续审查')
@@ -89,7 +90,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
         'visibility：是否借描述、暗示、新目标或问句泄露角色或玩家不可知的秘密；引用正确也不能洗白语义泄露。',
         'meaningful-direction：是否承接当前局面、提供有动机且可改变的行动方向，而非机械制造危机、重复问题或预写结局。',
         '仅输出 JSON {"checks":[{"check":"continuity|permissions|player-agency|visibility|meaningful-direction","passed":true,"reason":"引用实际内容解释判断"}]}，必须分别包含上述五项，不得有其他字段。',
-      ] : chatActionReviewPromptRulesV1({view: roleContext, actions, options, compact, naturalDisclosure})).join('\n')}, {role: 'user', content: assembled.text}]
+      ] : chatActionReviewPromptRulesV1({view: roleContext, actions, options, compact, naturalDisclosure, commitments})).join('\n')}, {role: 'user', content: assembled.text}]
       snapshot = (await recordAgentRunArtifactV1({scope: input.scope, runId: snapshot.run.id,
         productRuntimeSessionId: input.productRuntimeSessionId, artifactKind: 'rendered-request', content: JSON.stringify(messages),
         stepId, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence})).snapshot
