@@ -190,6 +190,16 @@ function ttrpgOpenGuidanceProvider(consumer: 'actor' | 'party-narrator' | 'gm-as
     openReadSession: async scope => (await load()).openReadSession!(scope) }
 }
 
+function ttrpgOpenMemoryProvider(consumer: 'actor' | 'party-narrator', sourceKey: string): ContextResourceProviderV1 {
+  const load = async () => (await import('../ttrpg/open-memory-context-provider')).createTtrpgOpenMemoryContextProviderV1(consumer)
+  return { version: 'context-resource-provider-v1', providerId: `storyforge.${sourceKey}`,
+    providerVersion: 'ttrpg-open-memory-provider-v1', normalizationVersion: 'ttrpg-open-memory-json-v1', kinds: ['fact', 'reference'],
+    listMetadata: async input => (await load()).listMetadata(input), searchMetadata: async input => (await load()).searchMetadata(input),
+    read: async input => (await load()).read(input), readOriginal: async input => (await load()).readOriginal(input),
+    fingerprint: async scope => (await load()).fingerprint(scope),
+    openReadSession: async scope => (await load()).openReadSession!(scope) }
+}
+
 // Upper-product readers are lazy for the same reason as adaptation readers:
 // their production Harnesses import the Skill registry, so eager imports here
 // would create CONTEXT_SOURCES -> product Harness -> Skill -> CONTEXT_SOURCES.
@@ -1954,6 +1964,20 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
     requiresResourceKeyAllowList: true, resources: ttrpgOpenGuidanceProvider('gm-assistant', 'ttrpgOpenGmContext'),
     read: async () => { throw new Error('[ttrpg-open-context] 情境只经准确消费角色、冻结 allow-list 与完整 JSON 渐进读取') },
+  },
+  {
+    key: 'ttrpgOpenMemory', label: 'open 跑团活动角色获准接收的记忆',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 8000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenMemoryProvider('actor', 'ttrpgOpenMemory'),
+    read: async () => { throw new Error('[ttrpg-memory] 记忆只经准确角色、冻结 allow-list 与完整 JSON 渐进读取') },
+  },
+  {
+    key: 'ttrpgOpenPartyMemory', label: 'open 跑团全队共同可见的记忆',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 8000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenMemoryProvider('party-narrator', 'ttrpgOpenPartyMemory'),
+    read: async () => { throw new Error('[ttrpg-memory] 共同记忆只经全队接收者交集、冻结 allow-list 与完整 JSON 渐进读取') },
   },
   {
     key: 'ttrpgPrivateGuidance', label: '正式 TTRPG 单角色私密指引', scope: 'runtime', layer: 'L0', ownerFrom: 'work',

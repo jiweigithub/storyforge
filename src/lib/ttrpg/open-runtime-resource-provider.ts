@@ -2,7 +2,7 @@ import { canonicalStringify } from '../agent/run/hash'
 /** Shared full-JSON runtime resource transport. Owning loaders enforce instance and observer authority. */
 import type { ContextResourceProviderV1, ContextResourceDescriptorV1, FrozenResourceScopeV1, ResourceListInputV1, ContextResourceKind } from '../registry/types'
 import { hashCanonicalValue } from '../agent/run/hash'
-export interface TtrpgOpenResourceRowV1 { descriptor: ContextResourceDescriptorV1; content: string; tokenCount: number }
+export interface TtrpgOpenResourceRowV1 { descriptor: ContextResourceDescriptorV1; content: string; tokenCount: number; /** Authorized search corpus, never raw unfiltered state. */ searchText?: string }
 export interface TtrpgOpenResourceCatalogV1 { fingerprint: string; resources: TtrpgOpenResourceRowV1[]; legacyResources?: TtrpgOpenResourceRowV1[] }
 export function createTtrpgOpenRuntimeResourceProviderV1(input: {
   sourceKey: string; providerVersion: string; normalizationVersion: string; kinds: ContextResourceKind[]
@@ -20,7 +20,7 @@ export function createTtrpgOpenRuntimeResourceProviderV1(input: {
       offset = Number(rawOffset)
     }
     const rows = data.resources.filter(row => (!request.kinds || request.kinds.includes(row.descriptor.kind))
-      && (!query || `${row.descriptor.title} ${row.descriptor.shortSummary}`.includes(query)))
+      && (!query || `${row.descriptor.title} ${row.descriptor.shortSummary} ${row.searchText ?? ''}`.includes(query)))
     if (offset > rows.length) throw new Error('[ttrpg-open-provider] cursor 超过目录范围')
     const items = rows.slice(offset, offset + request.limit).map(row => structuredClone(row.descriptor))
     return { version: 1 as const, items, nextCursor: offset + items.length < rows.length ? `${data.fingerprint}/${requestHash}/${offset + items.length}` : null, scopeFingerprint: data.fingerprint }
