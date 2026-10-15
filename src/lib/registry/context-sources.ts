@@ -755,6 +755,7 @@ async function readChatSituationRuntimeContext(input: AssembleContextInput): Pro
   const state = await readProductRuntimeStateForContext(session.id!)
   if (!state.interaction) return ''
   const {selectChatCoordinatorContextV1} = await import('../character-interaction/coordinator-selection')
+  const sourceUnits = playable.runtimePackage.interaction.chatSource?.version === 6 ? playable.runtimePackage.interaction.chatSource.sourceUnits : undefined
   const saved = await readChatActionCandidateValue(input)
   const {readChatCandidateRetrievalVersion} = await import('../character-interaction/context-reader-version')
   if (!saved) {
@@ -765,10 +766,10 @@ async function readChatSituationRuntimeContext(input: AssembleContextInput): Pro
       if (!producer || producer.snapshot.run.productRuntimeSessionId !== input.productRuntimeSessionId) return ''
       retrievalVersion = await readChatCandidateRetrievalVersion(producer.snapshot, input.projectId, 'chatSituationRuntime')
     }
-    return selectChatCoordinatorContextV1(state.interaction, {text: await readChatSituationCandidateContext(input), retrievalVersion})
+    return selectChatCoordinatorContextV1(state.interaction, {text: await readChatSituationCandidateContext(input), retrievalVersion, ...(sourceUnits ? {sourceUnits} : {})})
   }
   const retrievalVersion = await readChatCandidateRetrievalVersion(saved.snapshot, input.projectId, 'interactionRuntime', saved.value.actorKey, state.interaction)
-  return selectChatCoordinatorContextV1(state.interaction, {text: JSON.stringify(saved.value), actorKey: saved.value.actorKey, retrievalVersion})
+  return selectChatCoordinatorContextV1(state.interaction, {text: JSON.stringify(saved.value), actorKey: saved.value.actorKey, retrievalVersion, ...(sourceUnits ? {sourceUnits} : {})})
 }
 
 async function readInteractionRuntimeContext(input: AssembleContextInput): Promise<string> {
@@ -2050,6 +2051,16 @@ export const CONTEXT_SOURCES: ContextSource[] = [
       if (!input.chatSourceUnitsReviewRequest) throw new Error('请指定事实复核候选')
       const {readChatSourceUnitsReviewContextV1} = await import('../character-interaction/source-units-context')
       return JSON.stringify(await readChatSourceUnitsReviewContextV1(await resolveScope(input), input.chatSourceUnitsReviewRequest))
+    },
+  },
+  {
+    key: 'chat.source-unit-confirmation', label: '角色聊天事实与权限确认复核', scope: 'project', layer: 'L0', ownerFrom: 'work',
+    budgetTokens: 20_000, protectedFromTrim: true, atomic: true,
+    enabled: input => input.chatSourceUnitConfirmationRequest !== undefined,
+    read: async input => {
+      if (!input.chatSourceUnitConfirmationRequest) throw new Error('请指定待确认的事实与权限')
+      const {readChatSourceUnitConfirmationContextV1} = await import('../character-interaction/source-unit-confirmation-context')
+      return JSON.stringify(await readChatSourceUnitConfirmationContextV1(await resolveScope(input), input.chatSourceUnitConfirmationRequest))
     },
   },
   {

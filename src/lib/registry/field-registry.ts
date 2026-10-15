@@ -2,6 +2,7 @@
 import type { FieldSpec } from './types'
 import {parseChatAuthoringSettings} from '../character-interaction/authoring-contract'
 import {parseChatRoleProfileSetV1} from '../character-interaction/role-profile'
+import {parseChatSourceUnitSetV1} from '../character-interaction/source-unit-authorization'
 
 const trimString = (val: unknown): unknown =>
   typeof val === 'string' ? val.trim() : val
@@ -771,6 +772,8 @@ export const FIELD_REGISTRY: FieldSpec[] = [
     sanitize: value => JSON.stringify(parseChatAuthoringSettings(typeof value === 'string' ? JSON.parse(value) : value)) },
   { ...json('chatAuthoringDrafts', 'roleProfilesJson'), candidateId: 'chat.roleProfiles',
     sanitize: value => JSON.stringify(parseChatRoleProfileSetV1(typeof value === 'string' ? JSON.parse(value) : value)) },
+  { ...json('chatAuthoringDrafts', 'sourceUnitsJson'), candidateId: 'chat.sourceUnits',
+    sanitize: value => JSON.stringify(parseChatSourceUnitSetV1(typeof value === 'string' ? JSON.parse(value) : value)) },
   { ...longtext('productProductionBriefs', 'userIntentSummary'), candidateId: 'productProduction.startingPointSuggestions' },
   { ...json('productProductionBriefs', 'briefJson'), candidateId: 'productProduction.briefCandidate' },
   { ...json('productBuilds', 'planJson'), candidateId: 'productProduction.planCandidate' },

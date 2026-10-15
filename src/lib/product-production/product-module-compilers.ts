@@ -3,6 +3,8 @@ import { parseAiTownRuntimeContentV1 } from '../ai-town/runtime'
 import { assertPreparedChatPrivateCharactersV1, chatProjectionResourcesV1, readPreparedChatSourceProjectionViewV1 } from '../character-interaction/source-projection'
 import {chatPrivateCharacterKeysV1} from '../character-interaction/private-character'
 import {composeChatRoleVoiceRulesV1, formatChatRoleProfileV1, validateChatRoleProfilesForSourceV1} from '../character-interaction/role-profile'
+import {validateChatSourceUnitSetForProjectionV1} from '../character-interaction/source-unit-authorization'
+import {compileChatSourceUnitKnowledgeV1} from '../character-interaction/source-unit-runtime'
 import type { FrozenChatSourceProjectionV1 } from '../types/character-interaction'
 import type { FrozenChatNarrativeV1 } from '../types/chat-narrative'
 import { parseFrozenChatNarrativeV1 } from '../character-interaction/narrative-contract'
@@ -413,6 +415,8 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
   const viewers = ['player', ...keys]
   const views = viewers.map(viewerKey => readPreparedChatSourceProjectionViewV1({draft, review: chat.sourceReview!, viewerKey}))
   const roleProfiles = input.brief.characterChatProfiles ? validateChatRoleProfilesForSourceV1(input.brief.characterChatProfiles, draft, chat.sourceReview) : undefined
+  const sourceUnits = input.brief.characterChatSourceUnits?.bundles.length ? validateChatSourceUnitSetForProjectionV1(input.brief.characterChatSourceUnits, draft, chat.sourceReview) : undefined
+  const interpreted = new Set(sourceUnits?.bundles.flatMap(bundle => bundle.candidate.fragments.map(row => row.fragmentKey)) ?? [])
   const visibleByFragment = new Map<string, string[]>()
   for (const [index, view] of views.entries()) for (const fragment of view) {
     visibleByFragment.set(fragment.fragmentKey, [...(visibleByFragment.get(fragment.fragmentKey) ?? []), index === 0 ? 'player' : participantKeys[index - 1]])
@@ -420,18 +424,21 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
   const purposes = new Map(chat.sourceReview.classifications.map(item => [item.fragmentKey, item.purpose]))
   const discoveries = new Map(chat.sourceReview.classifications.filter(item => item.discovery).map(item => [item.fragmentKey, item.discovery!]))
   if (discoveries.size && (chat.version !== 3 || !chat.narrative.permissions.maxDiscoveriesPerSituation)) fail('世界隐情没有作品级发现授权')
+  if (sourceUnits?.bundles.some(bundle => bundle.permissions.some(row => row.discovery)) && (chat.version !== 3 || !chat.narrative.permissions.maxDiscoveriesPerSituation)) fail('逐项事实发现没有作品级授权')
   const fragments = chatProjectionResourcesV1(draft).flatMap(resource => resource.fragments)
   const sourceKeys = new Map(fragments.map((fragment, index) => [fragment.fragmentKey, `chat-source.${draft.projectionHash}.${index}`]))
   const privateSources = draft.characters.filter(c => c.origin === 'product-private').map(({resourceKey, sourceHash}) => ({resourceKey, sourceHash}))
   const content: FrozenChatSourceProjectionV1 = {
-    schema: 'storyforge.chat-runtime-source', version: privateSources.length ? 5 : discoveries.size ? 4 : draft.playerCharacter ? 3 : draft.background?.length ? 2 : 1, projectionHash: draft.projectionHash,
-    ...(privateSources.length ? {privateCharacterSources: privateSources} : {}),
-    ...(draft.playerCharacter ? {playerCharacterSource: {resourceKey: draft.playerCharacter.resourceKey, sourceHash: draft.playerCharacter.sourceHash}} : discoveries.size || privateSources.length ? {playerCharacterSource: null} : {}),
-    ...(draft.background?.length || draft.playerCharacter || discoveries.size || privateSources.length ? {backgroundSources: (draft.background ?? []).filter(resource => resource.fragments.some(fragment => visibleByFragment.has(fragment.fragmentKey) || discoveries.has(fragment.fragmentKey)))
+    schema: 'storyforge.chat-runtime-source', version: sourceUnits ? 6 : privateSources.length ? 5 : discoveries.size ? 4 : draft.playerCharacter ? 3 : draft.background?.length ? 2 : 1, projectionHash: draft.projectionHash,
+    ...(sourceUnits ? {sourceUnits: structuredClone(sourceUnits)} : {}),
+    ...(privateSources.length || sourceUnits ? {privateCharacterSources: privateSources} : {}),
+    ...(draft.playerCharacter ? {playerCharacterSource: {resourceKey: draft.playerCharacter.resourceKey, sourceHash: draft.playerCharacter.sourceHash}} : discoveries.size || privateSources.length || sourceUnits ? {playerCharacterSource: null} : {}),
+    ...(draft.background?.length || draft.playerCharacter || discoveries.size || privateSources.length || sourceUnits ? {backgroundSources: (draft.background ?? []).filter(resource => resource.fragments.some(fragment => interpreted.has(fragment.fragmentKey) || visibleByFragment.has(fragment.fragmentKey) || discoveries.has(fragment.fragmentKey)))
       .map(({resourceKey, sourceHash, resourceKind, relatedResourceKeys}) => ({resourceKey, sourceHash, resourceKind,
         ...(relatedResourceKeys ? {relatedResourceKeys} : {})}))} : {}),
     worldReleaseHash: draft.worldReleaseHash, playerRole: input.brief.intent.playerRole,
-    knowledge: fragments.flatMap((fragment, index) => {
+    knowledge: [...fragments.flatMap((fragment, index) => {
+      if (interpreted.has(fragment.fragmentKey)) return []
       const audienceKeys = visibleByFragment.get(fragment.fragmentKey) ?? [], discovery = discoveries.get(fragment.fragmentKey)
       if (!audienceKeys.length && !discovery) return []
       const source = chatProjectionResourcesV1(draft).find(c => c.resourceKey === fragment.resourceKey)!
@@ -440,7 +447,7 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
           prerequisiteKnowledgeKeys: discovery.prerequisiteFragmentKeys.map(key => sourceKeys.get(key)!)}} : {}),
         source: {resourceKey: source.resourceKey, sourceHash: source.sourceHash, pointer: fragment.pointer, purpose: purposes.get(fragment.fragmentKey)!,
           ...(fragment.textRange ? {textRange: {...fragment.textRange}} : {})}}]
-    }),
+    }), ...(sourceUnits ? compileChatSourceUnitKnowledgeV1(sourceUnits, draft, sourceKeys, keys, participantKeys) : [])],
   }
   return {content,
     roleProfiles: keys.map(key => {const profile = roleProfiles?.profiles.find(row => row.actorKey === key); return profile ? formatChatRoleProfileV1(profile) : ''}),

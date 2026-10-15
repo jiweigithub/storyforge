@@ -126,7 +126,8 @@ export default function SourceReview(props: {
     {error && <p role="alert" className="text-danger">{error}</p>}
     <button type="button" className="lf-action" disabled={disabled} onClick={() => void load()}>{busy ? '正在处理…' : '读取并检查完整资料'}</button>
     {projection && <>
-      {props.settings.version === 3 && <SourceUnits scope={props.scope} revision={props.draft.revision} projection={projection} selectedKeys={suggestionKeys} disabled={disabled}/>}
+      {props.settings.version === 3 && <SourceUnits scope={props.scope} revision={props.draft.revision} projection={projection} selectedKeys={suggestionKeys} disabled={disabled}
+        draft={props.draft} settings={props.settings} onConfirmed={props.onConfirmed}/>}
       {props.settings.version !== 1 && <SourceSuggestions scope={props.scope} revision={props.draft.revision} projectionHash={projection.projectionHash}
         fragmentKeys={suggestionKeys} disabled={disabled} actors={suggestionActors} labels={new Map(chatProjectionResourcesV1(projection).flatMap(resource => resource.fragments.map(fragment =>
           [fragment.fragmentKey, `${resource.label} · ${passageLabel(fragment, resource.fragments, 'resourceKind' in resource)}`] as const)))}/>}

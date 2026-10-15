@@ -188,6 +188,7 @@ export function parseFrozenChatNarrativeV1(value: unknown, input: ChatNarrativeB
     const source = input.source.knowledge.find(item => item.key === fact.sourceKnowledgeKey)
     if (!source || !['identity', 'knowledge'].includes(source.source.purpose) || source.content !== fact.text
       || fact.audienceKeys.some(viewer => !source.audienceKeys.includes(viewer))) fail('情境世界事实缺少原文证据、用途不符或扩大了知情者')
+    if (source.source.unit && [...fact.audienceKeys].sort().join('\0') !== [...source.audienceKeys].sort().join('\0')) fail('已确认事实单位的初始知情范围必须完整保留')
     if (fact.discovery && !source.discovery) fail('世界隐情没有来源级发现授权')
     if (source.discovery) {
       const rule = fact.discovery, authorization = source.discovery
@@ -199,7 +200,7 @@ export function parseFrozenChatNarrativeV1(value: unknown, input: ChatNarrativeB
         || prerequisites.map(f => f!.sourceKnowledgeKey).sort().join('\0') !== [...authorization.prerequisiteKnowledgeKeys].sort().join('\0')) fail('世界隐情发现条件、角色或前提必须逐项保留作者来源授权')
     }
   }
-  for (const source of input.source.knowledge.filter(item => item.discovery)) {
+  for (const source of input.source.knowledge.filter(item => item.discovery || item.source.unit)) {
     if (content.initialSituation.facts.filter(f => f.origin === 'reviewed-world' && f.sourceKnowledgeKey === source.key).length !== 1) fail('每条已授权世界隐情必须保留唯一原文事实与发现条件')
   }
   return content

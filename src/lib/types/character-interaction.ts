@@ -63,10 +63,12 @@ export interface ChatSourceTextRangeV1 {
   end: number
 }
 
-/** Chat-only, versioned source projection. Raw author-only material is omitted. */
+/** Chat-only source projection. v6 retains original evidence exclusively for the coordinator. */
 export interface FrozenChatSourceProjectionV1 {
   schema: 'storyforge.chat-runtime-source'
-  version: 1 | 2 | 3 | 4 | 5
+  version: 1 | 2 | 3 | 4 | 5 | 6
+  /** v6: full author-reviewed provenance/constraints; never delivered to actor context. */
+  sourceUnits?: import('../character-interaction/source-unit-authorization').ChatSourceUnitSetV1
   /** v5: Work-authored identities and original-content hashes, never world IDs. */
   privateCharacterSources?: Array<{resourceKey: string; sourceHash: string}>
   /** v2/v3: visible non-character sources, never a new character identity. */
@@ -88,6 +90,8 @@ export interface FrozenChatSourceProjectionV1 {
       pointer: string
       purpose: 'identity' | 'motivation' | 'voice' | 'knowledge'
       textRange?: ChatSourceTextRangeV1
+      /** v6 derived fact identity; original text/ranges stay in the author-only sourceUnits. */
+      unit?: {fragmentKey: string; unitKey: string}
     }
   }>
 }

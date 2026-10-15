@@ -3727,6 +3727,19 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1,
+    id: 'chat.source-unit-confirmation.v1', agentId: 'outline', defaultForAgent: false,
+    label: '角色聊天事实与权限确认', owner: 'outline-agent', promptVersion: 'chat-source-unit-confirmation-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: ['chat.source-unit-confirmation'], optionalContextSourceKeys: [],
+    inputPolicy: {sourceKeys: ['chat.source-unit-confirmation'], states: {
+      empty: {handling: 'require-upstream', instruction: '必须有完整原文、事实候选和明确的逐项知情/发现授权。'},
+      partial: {handling: 'require-upstream', instruction: '全部原文、候选和前提必须完整交付；不截断证据。'},
+      complete: {handling: 'grounded-transform', instruction: '独立复核忠实性、原子性、覆盖及初知/发现授权；任何否决都阻止采纳。只有精确候选获作者确认后才可写产品私域事实整理，不改世界。'},
+    }}, contextCompression: compressionPolicy(['chat.source-unit-confirmation']), maxOutputTokens: 6000,
+    writeTargets: [{table: 'chatAuthoringDrafts', fields: ['sourceUnitsJson']}], lastVerifiedAt: '2026-10-16', regressionTests: ['R-CHAT-02-source-unit-confirmation'],
+  },
+  {
+    version: 1,
     id: 'chat.source-units.v1', agentId: 'outline', defaultForAgent: false,
     label: '角色聊天事实拆分候选', owner: 'outline-agent', promptVersion: 'chat-source-units-v1',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
@@ -4641,7 +4654,7 @@ export const AGENT_SKILLS = [
     defaultForAgent: false,
     label: '角色聊天初始情境制作',
     owner: 'outline-agent',
-    promptVersion: 'chat-situation-production-v4',
+    promptVersion: 'chat-situation-production-v5',
     executionMode: 'product-production',
     contextTaskKind: 'agent-outline',
     readToolNames: [],

@@ -75,7 +75,7 @@ export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?
 export function chatSituationCandidatesFixture(source: ChatNarrativeProductionSourceV1): ChatSituationCandidatesV1 {
   const actor = source.participants[0].participantKey
   const audienceKeys = ['player', ...source.participants.map(p => p.participantKey)]
-  const discoverySources = source.source.knowledge.filter(s => s.discovery || source.source.knowledge.some(t => t.discovery?.prerequisiteKnowledgeKeys.includes(s.key)))
+  const discoverySources = source.source.knowledge.filter(s => s.discovery || s.source.unit || source.source.knowledge.some(t => t.discovery?.prerequisiteKnowledgeKeys.includes(s.key)))
   const factKeys = new Map(discoverySources.map((s, index) => [s.key, `world-discovery-${index}`]))
   return {schema: 'storyforge.chat-situation-candidates', version: 1, options: ['缺失零件', '旧账本', '停摆的纪念钟'].map((title, i) => ({
     optionKey: `option-${i + 1}`, title, pitch: `从${title}展开，可以先喝茶也可以一起查看。`,

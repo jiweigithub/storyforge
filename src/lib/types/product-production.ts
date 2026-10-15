@@ -517,6 +517,7 @@ export interface ProductProductionBriefV3 {
   characterChat?: import('../character-interaction/authoring-contract').ChatAuthoringSettings;
   /** Snapshot of separately governed, author-confirmed role interpretation records. */
   characterChatProfiles?: import('../character-interaction/role-profile').ChatRoleProfileSetV1;
+  characterChatSourceUnits?: import('../character-interaction/source-unit-authorization').ChatSourceUnitSetV1;
   avg?: import('../avg/authoring-contract').AvgAuthoringSettingsV1;
   avgRevision?: { version: 1; basePackageHash: string; runtimePackage: import('./product-release').ProductRuntimePackageV1 };
   ttrpg?: TtrpgProductionBriefV2;

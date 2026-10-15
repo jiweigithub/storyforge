@@ -457,7 +457,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
       { field: 'productionId', remapVia: 'productProductions', exportAs: '_productionExportId' },
     ],
     exportRefRemap: [{field:'conversationJson',remapVia:'agentRuns',kind:'object-array-id',exportAs:'_conversationRunExportIds',itemField:'runId',storage:'json-string'}],
-    note: '角色聊天 S2 独立可恢复草稿；可选 roleProfilesJson 只含产品人物解读和便携来源/分类证据，无本地 ID；完整随 Work 导入导出、删除。正式执行复用 Production/Build。',
+    note: '角色聊天 S2 独立可恢复草稿；可选 roleProfilesJson/sourceUnitsJson 只含产品解读、逐项权限和便携来源/分类/独立复核证据，无本地 ID；完整随 Work 导入导出、删除。正式执行复用 Production/Build。',
   },
 
   { table: db.motionDramaProductions, name: 'motionDramaProductions', owner: 'project', exportable: true, exportIdField: true,

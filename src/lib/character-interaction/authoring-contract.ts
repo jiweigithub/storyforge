@@ -105,6 +105,8 @@ export interface ChatAuthoringDraftV1 {
     settingsJson: string;
     /** Optional in historical drafts; governed, author-confirmed product interpretations. */
     roleProfilesJson?: string;
+    /** Optional source interpretations, requiring independent review and explicit author confirmation. */
+    sourceUnitsJson?: string;
     worldReleaseId: number | null;
     productionId: number | null;
     conversationJson: string;

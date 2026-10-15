@@ -1,5 +1,6 @@
 import { parseChatAuthoringSettings } from '../character-interaction/authoring-contract'
 import {parseChatRoleProfileSetV1} from '../character-interaction/role-profile'
+import {parseChatSourceUnitSetV1} from '../character-interaction/source-unit-authorization'
 import { parseAvgAuthoringSettingsV1 } from '../avg/authoring-contract'
 import type {
   TextAdventureContentRevisionV1,
@@ -273,6 +274,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
     'fallbackPolicy', 'completionContract', 'unresolvedDecisionKeys',
     ...(Object.prototype.hasOwnProperty.call(row, 'characterChat') ? ['characterChat'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'characterChatProfiles') ? ['characterChatProfiles'] : []),
+    ...(Object.prototype.hasOwnProperty.call(row, 'characterChatSourceUnits') ? ['characterChatSourceUnits'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'avg') ? ['avg'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgRevision') ? ['avgRevision'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'ttrpg') ? ['ttrpg'] : []),
@@ -300,6 +302,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
 
   if (row.characterChat && productType !== 'character-interaction') fail('角色聊天设置不能用于其他产品')
   if (row.characterChatProfiles !== undefined && (productType !== 'character-interaction' || !row.characterChat || parseChatAuthoringSettings(row.characterChat).version === 1)) fail('人物整理仅适用于带完整来源的角色聊天')
+  if (row.characterChatSourceUnits !== undefined && (productType !== 'character-interaction' || !row.characterChat || parseChatAuthoringSettings(row.characterChat).version !== 3)) fail('逐项事实仅适用于实验角色聊天方案')
   if (row.avg && productType !== 'avg') fail('AVG 设置只能用于 AVG')
   let avgRevision: ProductProductionBriefV3['avgRevision']
   if (row.avgRevision != null) {
@@ -314,6 +317,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
     ...(avgRevision ? { avgRevision } : {}),
     ...(row.characterChat ? { characterChat: parseChatAuthoringSettings(row.characterChat) } : {}),
     ...(row.characterChatProfiles !== undefined ? {characterChatProfiles: parseChatRoleProfileSetV1(row.characterChatProfiles)} : {}),
+    ...(row.characterChatSourceUnits !== undefined ? {characterChatSourceUnits: parseChatSourceUnitSetV1(row.characterChatSourceUnits)} : {}),
     ...(row.avg ? { avg: parseAvgAuthoringSettingsV1(row.avg) } : {}),
     schema: 'storyforge.product-production-brief', version: 3,
     source: {

@@ -219,6 +219,7 @@ const scannedFiles = [
   'src/lib/character-interaction/source-review-harness.ts',
   'src/lib/character-interaction/role-profile-harness.ts',
   'src/lib/character-interaction/source-units-harness.ts',
+  'src/lib/character-interaction/source-unit-confirmation-harness.ts',
   'src/lib/character-interaction/consultation-harness.ts',
   // G5-02 creator consultation is a formal durable service rather than a UI
   // hook; keep its literal entry/category binding under the same machine gate.

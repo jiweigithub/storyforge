@@ -6958,7 +6958,7 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
       })()
     : undefined
   const system = options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.product-module'
-    ? chatSituationProductionPromptV1() : options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.chat-opening-review'
+    ? chatSituationProductionPromptV1(!!options.brief.characterChatSourceUnits?.bundles.length) : options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.chat-opening-review'
       ? chatOpeningReviewPromptV1() : textSystem(
     input.task.taskKey,
     options.brief,

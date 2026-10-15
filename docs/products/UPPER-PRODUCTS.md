@@ -76,6 +76,8 @@ S2 属于具体上层产品，而不属于世界引擎。用户在该产品入�
 
 用户开始前，系统可以提供只读分析、建议和估算；这些调用也要留下 Context Manifest。不得偷偷启动会产生正式 product production、媒资或 runtime 的工作。开始时冻结 `WorldReference`、`ConfirmedProductBrief`、`ProductSourcePlan` 和用户授权 revision。SourcePlan 锁定世界版本、需求适配器、读取范围、缺失策略与咨询证据，但不假装预先列出生产阶段可能读取的全部资源。
 
+角色聊天实验性 v3 的逐项事实整理归 Chat Work。完整原段先确认为仅作者掌握的事实资料，登记 Agent 生成候选或由作者手工编辑；独立复核同时检查解释、覆盖、初知者及发现条件，作者确认精确候选后才通过 `adopt()` 保存到既有草稿的 `sourceUnitsJson`。旧只读整理/复核 run 不因此取得写权限。新 Brief 携带便携原文证据和确认权限，来源 v6 编译为分别可知的事实；完整原文与限制仅进入协调视角，超出预算必须停止。事实始终保留，包括无人知晓且未允许调查的事实；发现位置不能自动获得经手者或用途。来源、分类或前提过期时拒绝新制作，作者可重新整理或明确移除；已有 Build/Release/Session 不随草稿修改。旧来源 v1—v5 无自动迁移，无新表或世界写入。
+
 ### 3.3 S3 产品执行
 
 S3 由具体产品的主 Agent 和内部能力完成。内容、规则、媒资、build、质量证据、ProductRelease、runtime、记忆、存档与私域演化全部归产品实例。Agent 可在 SourcePlan 允许的不可变 WorldRelease 内继续渐进式检索；每个 durable run 保存不可变 Context Manifest。确定性组装器也是正式执行者，不得绕过网关重读世界；它要求的“用户选择 + 语义依赖闭包”必须先在同一 run 中留下可验签原文证据，才能编译 RuntimePackage。

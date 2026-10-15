@@ -3,34 +3,42 @@ import type {WorkspaceScope} from '../../lib/types'
 import {useAIConfigStore} from '../../stores/ai-config'
 import {isAIConfigReady} from '../../lib/ai/config-readiness'
 import {chatProjectionResourcesV1, type ChatSourceProjectionDraftV1} from '../../lib/character-interaction/source-projection'
-import type {ChatSourceReviewRequestV1} from '../../lib/character-interaction/source-review-context'
+import type {ChatSourceReviewRequestV1, ChatSourceReviewContextV1} from '../../lib/character-interaction/source-review-context'
 import {sameChatSourceUnitsCandidateV1, type ChatSourceUnitsCandidateV1, type ChatSourceUnitV1} from '../../lib/character-interaction/source-units'
 import {generateChatSourceUnitsV1, reviewChatSourceUnitsV1, readLatestChatSourceUnitsRunV1, readLatestChatSourceUnitsReviewRunV1,
   recoverChatSourceUnitsRunV1, recoverChatSourceUnitsReviewRunV1, cancelChatSourceUnitsRunV1, cancelChatSourceUnitsReviewRunV1,
   type ChatSourceUnitsRunViewV1, type ChatSourceUnitsReviewRunViewV1} from '../../lib/character-interaction/source-units-harness'
 import SourceRunFailure from './SourceRunFailure'
+import SourceUnitConfirmation from './SourceUnitConfirmation'
+import {readLatestChatSourceUnitConfirmationRunV1} from '../../lib/character-interaction/source-unit-confirmation-harness'
+import type {ChatAuthoringDraftV1, ChatAuthoringSettingsV3} from '../../lib/character-interaction/authoring-contract'
 
 const pending = (view: ChatSourceUnitsRunViewV1 | ChatSourceUnitsReviewRunViewV1 | null) => view?.status === 'unknown' || view?.status === 'pending'
-export default function SourceUnits(props: {scope: WorkspaceScope; revision: number; projection: ChatSourceProjectionDraftV1; selectedKeys: string[]; disabled: boolean}) {
+export default function SourceUnits(props: {scope: WorkspaceScope; revision: number; projection: ChatSourceProjectionDraftV1; selectedKeys: string[]; disabled: boolean;
+  draft: ChatAuthoringDraftV1; settings: ChatAuthoringSettingsV3; onConfirmed: () => void}) {
   const config = useAIConfigStore(state => state.config)
   const [generation, setGeneration] = useState<ChatSourceUnitsRunViewV1 | null>(null)
   const [review, setReview] = useState<ChatSourceUnitsReviewRunViewV1 | null>(null)
   const [candidate, setCandidate] = useState<ChatSourceUnitsCandidateV1 | null>(null)
   const [source, setSource] = useState<ChatSourceReviewRequestV1 | null>(null)
+  const [retainedContext, setRetainedContext] = useState<ChatSourceReviewContextV1 | null>(null)
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
   const epoch = useRef({value: 0}).current
   const {projectId, worldId, workId} = props.scope, {projectionHash} = props.projection
   useEffect(() => {
     const ticket = ++epoch.value
-    setGeneration(null); setReview(null); setCandidate(null); setSource(null); setBusy(false); setError('')
-    void Promise.all([readLatestChatSourceUnitsRunV1({projectId, worldId, workId}), readLatestChatSourceUnitsReviewRunV1({projectId, worldId, workId})])
-      .then(([generated, reviewed]) => {
+    setGeneration(null); setReview(null); setCandidate(null); setSource(null); setRetainedContext(null); setBusy(false); setError('')
+    void Promise.all([readLatestChatSourceUnitsRunV1({projectId, worldId, workId}), readLatestChatSourceUnitsReviewRunV1({projectId, worldId, workId}), readLatestChatSourceUnitConfirmationRunV1({projectId, worldId, workId})])
+      .then(([generated, reviewed, confirmation]) => {
         if (ticket !== epoch.value) return
         setGeneration(generated); setReview(reviewed)
-        const context = reviewed?.context && (!generated || reviewed.runId > generated.runId) ? reviewed.context.source : generated?.context
-        const saved = reviewed?.context && (!generated || reviewed.runId > generated.runId) ? reviewed.context.candidate : generated?.result?.candidate
+        const newest = [generated?.context && {runId: generated.runId, context: generated.context, candidate: generated.result?.candidate},
+          reviewed?.context && {runId: reviewed.runId, context: reviewed.context.source, candidate: reviewed.context.candidate},
+          confirmation?.context && {runId: confirmation.runId, context: confirmation.context.source, candidate: confirmation.context.candidate}]
+          .filter((row): row is NonNullable<typeof row> => !!row).sort((a, b) => b.runId - a.runId)[0]
+        const context = newest?.context, saved = newest?.candidate
         if (context && saved) {
-          setCandidate(saved); setSource({draftRevision: context.draftRevision, projectionHash: context.projectionHash, fragmentKeys: context.fragments.map(row => row.fragmentKey)})
+          setCandidate(saved); setRetainedContext(context); setSource({draftRevision: context.draftRevision, projectionHash: context.projectionHash, fragmentKeys: context.fragments.map(row => row.fragmentKey)})
         }
       }).catch(cause => {if (ticket === epoch.value) setError(String(cause instanceof Error ? cause.message : cause))})
     return () => {epoch.value++}
@@ -54,16 +62,16 @@ export default function SourceUnits(props: {scope: WorkspaceScope; revision: num
   const stale = !source || source.draftRevision !== props.revision || source.projectionHash !== projectionHash
   const matchesReview = review?.status === 'ready' && !stale && sameChatSourceUnitsCandidateV1(candidate, review.context?.candidate)
   const resources = chatProjectionResourcesV1(props.projection)
-  const retainedSource = [review?.context?.source, generation?.context].find(context => context?.projectionHash === source?.projectionHash && context?.draftRevision === source?.draftRevision)
+  const retainedSource = [retainedContext, review?.context?.source, generation?.context].find(context => context?.projectionHash === source?.projectionHash && context?.draftRevision === source?.draftRevision)
   const change = (fragmentKey: string, kind: 'facts' | 'constraints', items: ChatSourceUnitV1[]) => setCandidate(previous => previous && ({fragments: previous.fragments.map(row => row.fragmentKey === fragmentKey ? {...row, [kind]: items} : row)}))
   return <section aria-label="事实拆分与复核" className="space-y-3 rounded border border-border p-3">
     <h5>事实拆分与复核 · 实验</h5>
     <p>把位置、经手者、用途等整理为可分别验证的事实。完整原文始终保留；未来安排、初始未知和其他限制须单独列出。</p>
-    <p>当前工作台保存候选与复核结果。尚未接入确认制作；这些内容不会进入角色聊天。编辑后须重新复核，未提交复核的手工修改刷新后会丢失。</p>
+    <p>候选不会自动进入聊天。须在下方设置逐项知情范围，复核并明确确认后才用于新制作。编辑后须重新复核；未提交复核的手工修改刷新后会丢失。</p>
     <div className="flex flex-wrap gap-2">
       <button type="button" className="lf-action" disabled={disabled || !selected || pending(generation) || pending(review) || !isAIConfigReady(config)} onClick={() => void act(async ticket => {
         const selectedSource = request(), view = await generateChatSourceUnitsV1({scope: props.scope, request: selectedSource, config})
-        if (ticket === epoch.value && view.result?.candidate) {setCandidate(view.result.candidate); setSource(selectedSource)}
+        if (ticket === epoch.value && view.result?.candidate) {setCandidate(view.result.candidate); setRetainedContext(view.context); setSource(selectedSource)}
       })}>整理所选原文的事实</button>
       <button type="button" className="lf-action" disabled={disabled || !selected || pending(generation) || pending(review)} onClick={() => {
         const selectedSource = request(); setSource(selectedSource); setCandidate({fragments: selectedSource.fragmentKeys.map(fragmentKey => ({fragmentKey, facts: [], constraints: []}))})
@@ -80,7 +88,7 @@ export default function SourceUnits(props: {scope: WorkspaceScope; revision: num
           if (ticket === epoch.value && 'candidate' in (restored.result ?? {}) && restored.context && 'fragments' in restored.context) {
             const generated = restored as ChatSourceUnitsRunViewV1
             if (generated.result?.candidate && generated.context) {
-              setCandidate(generated.result.candidate); setSource({draftRevision: generated.context.draftRevision, projectionHash: generated.context.projectionHash, fragmentKeys: generated.context.fragments.map(row => row.fragmentKey)})
+              setCandidate(generated.result.candidate); setRetainedContext(generated.context); setSource({draftRevision: generated.context.draftRevision, projectionHash: generated.context.projectionHash, fragmentKeys: generated.context.fragments.map(row => row.fragmentKey)})
             }
           }
         })}>恢复{label}记录</button>
@@ -129,5 +137,8 @@ export default function SourceUnits(props: {scope: WorkspaceScope; revision: num
           ?? review.context?.candidate.fragments.find(row => row.fragmentKey === fragment.fragmentKey)?.constraints.find(row => row.key === item.key)?.text}：{item.reason}</p>)}
       </div>)}
     </details>}
+    <SourceUnitConfirmation scope={props.scope} draft={props.draft} settings={props.settings} projection={props.projection}
+      source={source ?? {draftRevision: props.revision, projectionHash, fragmentKeys: []}} candidate={candidate ?? {fragments: []}}
+      disabled={disabled} onConfirmed={props.onConfirmed}/>
   </section>
 }

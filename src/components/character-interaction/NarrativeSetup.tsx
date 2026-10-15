@@ -1,11 +1,17 @@
 import type {ChatNarrativeSetupV1} from '../../lib/character-interaction/narrative-setup'
 import type {ChatNarrativePermissionsV1} from '../../lib/types/chat-narrative'
+import {parseChatSourceUnitSetV1} from '../../lib/character-interaction/source-unit-authorization'
 
-export default function NarrativeSetup({value, onChange, characters, aiCharacterKeys, hasSourceDiscoveries = false}: {
+export default function NarrativeSetup({value, onChange, characters, aiCharacterKeys, hasSourceDiscoveries = false, sourceUnitsJson}: {
   value: ChatNarrativeSetupV1; onChange: (value: ChatNarrativeSetupV1) => void
   characters: readonly {resourceKey: string; name: string}[]; aiCharacterKeys: readonly string[]
   hasSourceDiscoveries?: boolean
+  sourceUnitsJson?: string
 }) {
+  if (sourceUnitsJson !== undefined) {
+    try {hasSourceDiscoveries ||= parseChatSourceUnitSetV1(JSON.parse(sourceUnitsJson)).bundles.some(bundle => bundle.permissions.some(row => row.discovery))}
+    catch {hasSourceDiscoveries = true}
+  }
   const permissions = value.permissions
   const change = (patch: Partial<ChatNarrativeSetupV1>) => onChange({...value, ...patch})
   const permit = (patch: Partial<ChatNarrativePermissionsV1>) => change({permissions: {...permissions, ...patch}})
@@ -43,7 +49,7 @@ export default function NarrativeSetup({value, onChange, characters, aiCharacter
       <label><input type="checkbox" disabled={permissions.allowActorSituationExpansion !== true} checked={permissions.allowActorThreadFollowups === true} onChange={e => permit({allowActorThreadFollowups: e.target.checked})}/>完成自己的一个目标后，允许角色接续参与中的未完成事项</label>
       <label>每次调查最多揭示<select aria-label="每次调查最多揭示" disabled={permissions.allowActorSituationExpansion !== true} value={permissions.maxDiscoveriesPerSituation ?? 0} onChange={e => permit({maxDiscoveriesPerSituation: Number(e.target.value)})}><option value={0} disabled={hasSourceDiscoveries}>暂不启用隐情发现</option>{[1, 2, 3].map(n => <option key={n} value={n}>{n} 条已确认隐情</option>)}</select></label>
       <p className="col-span-full">隐情发现用于你确认的开场背景和已授权的世界事实。世界来源在角色资料中逐项设置条件；选定开场前可再次检查。角色实际调查并通过检查后才会获知，标为“仅作者”的资料不会加入。</p>
-      {hasSourceDiscoveries && <p className="col-span-full">已有世界隐情发现授权。请先在角色来源资料中取消这些授权，再关闭调查发现；其他资料设置会保留。</p>}
+      {hasSourceDiscoveries && <p className="col-span-full">已有来源事实的发现授权。请先在角色来源资料中取消原文发现授权，或移除、重新确认逐项事实整理，再关闭调查发现；其他资料设置会保留。</p>}
       <label>同时推进的事项上限<input type="number" min={1} max={8} value={permissions.maxActiveThreads} onChange={e => permit({maxActiveThreads: Number(e.target.value)})}/></label>
       <label>每次触发的角色行动上限<input type="number" min={1} max={3} value={permissions.maxActionsPerTrigger} onChange={e => permit({maxActionsPerTrigger: Number(e.target.value)})}/></label>
       <label>每次行动可新增的事实数<input type="number" min={0} max={5} value={permissions.maxNewFactsPerAction} onChange={e => permit({maxNewFactsPerAction: Number(e.target.value)})}/></label>
