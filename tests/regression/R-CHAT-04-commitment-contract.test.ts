@@ -3,7 +3,7 @@ import type {CharacterInteractionRuntimeState} from '../../src/lib/types'
 import type {ChatCommitmentEffectV1, ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 import {applyChatCommitmentEffectsV1, CHAT_GOAL_COMMITMENT_LIMIT_V1, chatVisibleCommitmentsV1, parseChatCommitmentEffectsV1} from '../../src/lib/character-interaction/narrative-commitments'
 import {createInitialInteractionState, parseInteractionState, rebaseInteractionStateForBranch} from '../../src/lib/character-interaction/runtime'
-import {parseChatNarrativeActionV1, requestChatNarrativeTriggerV1} from '../../src/lib/character-interaction/narrative-actions'
+import {applyChatNarrativeActionV1, requestChatNarrativeTriggerV1} from '../../src/lib/character-interaction/narrative-actions'
 import {chatNarrativeFixture} from '../helpers/chat-narrative-fixture'
 
 // State-contract fixtures only. No model, formal action commit or UI is enabled.
@@ -67,12 +67,13 @@ describe('goal-owned commitment foundation, not model acceptance', () => {
     expect(state.chatNarrative!.situation.goals[1]).toEqual(opening().chatNarrative!.situation.goals[1])
   })
 
-  it('cannot infer a declaration from a summary or expand the formal action parser yet', () => {
+  it('cannot infer a declaration from a summary or write through the legacy unreviewed action', () => {
     const state = opening()
     state.memories.push({memoryId: 'summary', participantKey: 'guard', kind: 'commitment', summary: terms, importance: 100,
       sourceEventSequences: [], status: 'accepted', proposalSequence: 2, decisionSequence: 2})
     expect(chatVisibleCommitmentsV1(state, 'player')).toEqual([])
-    expect(() => parseChatNarrativeActionV1({...action(), commitmentEffects: input(state).effects})).toThrow()
+    expect(() => applyChatNarrativeActionV1(state, {sequence: 3, triggerSequence: 2, actorKey: 'guard', messageId: 'legacy',
+      action: {...action(), commitmentEffects: input(state).effects}})).toThrow('旧行动事件不可采用')
     const reviewSpoof = {...input(state).effects[0], reviewed: true, commitmentKey: 'forged'}
     expect(() => parseChatCommitmentEffectsV1([reviewSpoof])).toThrow('字段')
   })

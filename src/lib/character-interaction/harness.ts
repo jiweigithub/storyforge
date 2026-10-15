@@ -1,6 +1,7 @@
 import {CHAT_MEMORY_REVIEW_STEP, CHAT_MEMORY_REVIEW_SKILL, chatMemoryReviewBindingV1, parseChatMemoryReceiptV1} from './memory-review-contract'
 import {reviewChatMemoryCandidateV1} from './memory-review-harness'
 import {chatActionPromptRulesV1} from './narrative-action-prompt'
+import {assertChatCommitmentReviewVersionV1} from './narrative-commitments'
 import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1, assertChatActionRevisionExpressionV1} from './action-revision'
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1} from './narrative-scheduling'
@@ -877,6 +878,10 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
         : null,
       receiptHash: snapshot.projection.terminalReceiptHash ?? fail('已采用运行缺少终验回执'),
     }
+  }
+  if (candidate.kind === 'chat-narrative-action-candidate' || candidate.kind === 'chat-narrative-options-candidate') {
+    assertChatCommitmentReviewVersionV1(candidate.kind === 'chat-narrative-action-candidate' ? [candidate.action] : candidate.options,
+      snapshot.contract.executionBindings?.find(b => b.stepId === CHAT_ACTION_REVIEW_STEP_V1)?.promptVersion)
   }
   if (candidate.kind === 'memory-curator-candidate'
     && (await db.productRuntimeSessions.get(candidate.productRuntimeSessionId))?.kind === 'character-interaction') {

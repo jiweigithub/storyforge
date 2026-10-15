@@ -256,6 +256,8 @@ export interface ChatNarrativeActionV1 {
   disclosures: Array<{factKey: string; toParticipantKeys: string[]; evidenceExcerpt: string; wording?: 'equivalent'}>
   threadUpdates: Array<{threadKey: string; status: ChatThreadStatusV1; evidenceExcerpt: string}>
   goalStatus: ChatActorGoalV1['status'] | null
+  /** Only independently reviewed, exact expressions can change a promise. */
+  commitmentEffects?: ChatCommitmentEffectV1[]
   /** Other existing goals belonging to this actor, changed by the same action. */
   goalUpdates?: Array<{goalKey: string; status: ChatActorGoalV1['status']; evidenceFactKeys: string[]; evidenceExcerpt: string}>
   /** Optional so historical canonical action/review bindings remain unchanged.
@@ -316,4 +318,5 @@ export interface ChatNarrativeActionReviewV1 {
   checks: Array<{check: typeof CHAT_ACTION_REVIEW_CHECKS_V1[number]; passed: boolean; reason: string}>
   /** Every natural paraphrase needs a separately bound full-equivalence review. */
   disclosureChecks?: Array<{factKey: string; passed: boolean; reason: string}>
+  commitmentChecks?: Array<{effectIndex: number; passed: boolean; reason: string}>
 }

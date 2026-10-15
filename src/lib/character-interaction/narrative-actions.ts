@@ -9,6 +9,7 @@ import { isChatSituationPreparedV1 } from './narrative-situations'
 import {applyChatRelationshipEffectsV1} from './narrative-relationships'
 import {applyChatActorReflectionV1} from './narrative-reflection'
 import {applyChatOwnFollowupGoalV1} from './narrative-followup-goal'
+import {applyChatCommitmentEffectsV1, parseChatCommitmentEffectsV1, validateChatCommitmentChecksV1} from './narrative-commitments'
 
 function fail(message: string): never { throw new Error(`[chat-action] ${message}`) }
 function object(value: unknown, keys: string): Record<string, unknown> {
@@ -39,7 +40,7 @@ function choice(value: unknown, allowed: readonly string[]) {
 
 /** Structural parse also runs on restored candidates; state-dependent checks run again at commit. */
 export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV1 {
-  const optional = ['relationshipUpdates', 'nextPossibilities', 'beliefUpdates', 'goalUpdates', 'situationRequest', 'followupGoal'].filter(name => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, name))
+  const optional = ['relationshipUpdates', 'nextPossibilities', 'beliefUpdates', 'goalUpdates', 'situationRequest', 'followupGoal', 'commitmentEffects'].filter(name => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, name))
   const row = object(value, ['kind,text,goalKey,evidenceFactKeys,audienceKeys,waitingForPlayer,newFacts,disclosures,threadUpdates,goalStatus', ...optional].join(','))
   choice(row.kind, ['speak', 'attempt', 'complete', 'pause'])
   text(row.text, 8000); if (row.goalKey !== null) key(row.goalKey); keys(row.evidenceFactKeys); keys(row.audienceKeys, 33)
@@ -60,6 +61,7 @@ export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV
     key(thread.threadKey); choice(thread.status, CHAT_THREAD_STATUSES_V1); text(thread.evidenceExcerpt, 8000)
   }
   if (row.goalStatus !== null) choice(row.goalStatus, ['active', 'paused', 'fulfilled', 'abandoned'])
+  if (optional.includes('commitmentEffects')) parseChatCommitmentEffectsV1(row.commitmentEffects)
   if (optional.includes('goalUpdates')) for (const value of list(row.goalUpdates, 4)) {
     const goal = object(value, 'goalKey,status,evidenceFactKeys,evidenceExcerpt')
     key(goal.goalKey); choice(goal.status, ['active', 'paused', 'fulfilled', 'abandoned'])
@@ -259,6 +261,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
     target.status = effect.status; target.updatedSequence = input.sequence
     changedGoals.add(effect.goalKey)
   }
+  applyChatCommitmentEffectsV1(state, {actorKey, messageId: input.messageId, sequence: input.sequence, action, effects: action.commitmentEffects ?? []})
   if (story.pendingSituation && (story.pendingSituation.actorKey === actorKey
     || story.pendingSituation.purpose !== 'player-followup' && (!story.situation.goals.some(g => g.goalKey === story.pendingSituation!.goalKey && g.status === 'active')
     || !story.situation.threads.some(t => t.threadKey === story.pendingSituation!.threadKey && ['open', 'blocked'].includes(t.status))))) delete story.pendingSituation
@@ -299,6 +302,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
 export function applyChatNarrativeActionV1(state: CharacterInteractionRuntimeState, input: Parameters<typeof applyActionBase>[1]) {
   if (state.chatNarrative?.pendingEdit) fail('历史改写必须通过行动及后果审查')
   const action = parseChatNarrativeActionV1(input.action)
+  if (action.commitmentEffects !== undefined) fail('承诺变化必须通过独立审查，旧行动事件不可采用')
   if (action.disclosures.some(d => d.wording !== undefined)) fail('自然转述必须经过逐条等义审查，旧行动事件不可采用')
   if (action.goalKey === null) fail('收束后的回应必须通过行动及后果审查')
   if (action.relationshipUpdates !== undefined || action.nextPossibilities !== undefined || action.beliefUpdates !== undefined || action.goalUpdates !== undefined || action.situationRequest !== undefined || action.followupGoal !== undefined) fail('旧行动事件不能写入关系、打算或附带目标后果')
@@ -315,7 +319,8 @@ export function previewChatNarrativeActionV1(state: CharacterInteractionRuntimeS
 
 export function parseChatNarrativeActionReviewV1(value: unknown, action: ChatNarrativeActionV1): ChatNarrativeActionReviewV1 {
   const hasDisclosureChecks = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'disclosureChecks')
-  const row = object(value, 'reviewedActionJson,checks' + (hasDisclosureChecks ? ',disclosureChecks' : ''))
+  const hasCommitmentChecks = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'commitmentChecks')
+  const row = object(value, 'reviewedActionJson,checks' + (hasDisclosureChecks ? ',disclosureChecks' : '') + (hasCommitmentChecks ? ',commitmentChecks' : ''))
   if (row.reviewedActionJson !== canonicalStringify(action)) fail('行动审查绑定了另一份候选')
   const checks = list(row.checks, CHAT_ACTION_REVIEW_CHECKS_V1.length), seen = new Set<string>()
   if (checks.length !== CHAT_ACTION_REVIEW_CHECKS_V1.length) fail('行动语义审查不完整')
@@ -334,11 +339,14 @@ export function parseChatNarrativeActionReviewV1(value: unknown, action: ChatNar
     if (!equivalent.some(d => d.factKey === item.factKey) || disclosed.has(item.factKey) || typeof item.passed !== 'boolean') fail('自然转述审查事实无效或重复')
     disclosed.add(item.factKey)
   }
+  if (hasCommitmentChecks && row.commitmentChecks == null) fail('承诺逐条审查无效')
+  validateChatCommitmentChecksV1(row.commitmentChecks, action)
   return structuredClone(value) as ChatNarrativeActionReviewV1
 }
 
 export function chatNarrativeActionReviewPassedV1(review: ChatNarrativeActionReviewV1): boolean {
   return review.checks.every(check => check.passed) && (review.disclosureChecks ?? []).every(check => check.passed)
+    && (review.commitmentChecks ?? []).every(check => check.passed)
 }
 
 /** New writes require reviewed expression and consequences. The original

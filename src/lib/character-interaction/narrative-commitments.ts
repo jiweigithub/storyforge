@@ -77,8 +77,8 @@ export function assertChatCommitmentSourcesV1(state: CharacterInteractionRuntime
   }
 }
 
-/** Foundation for the reviewed action preview; no model entry calls this yet.
- * Goal status has already been previewed. Assign only after all effects pass. */
+/** Goal status has already been previewed. Assign only after all effects pass;
+ * the action appends the source message and reviews before durable commit. */
 export function applyChatCommitmentEffectsV1(state: CharacterInteractionRuntimeState, input: {
   actorKey: string; messageId: string; sequence: number; action: ChatNarrativeActionV1; effects: unknown
 }): void {
@@ -141,3 +141,22 @@ export function rebaseChatCommitmentsV1(goals: ChatActorGoalV1[], rebase: (seque
 }
 
 export type {ChatGoalCommitmentV1}
+
+export function validateChatCommitmentChecksV1(value: unknown, action: ChatNarrativeActionV1): void {
+  const effects = action.commitmentEffects ?? [], checks = value ?? []
+  if (!Array.isArray(checks) || checks.length !== effects.length) fail('承诺逐条审查不完整')
+  const seen = new Set<number>()
+  for (const entry of checks) {
+    const item = object(entry, 'effectIndex,passed,reason')
+    if (typeof item.effectIndex !== 'number' || !Number.isSafeInteger(item.effectIndex)
+      || item.effectIndex < 0 || item.effectIndex >= effects.length || seen.has(item.effectIndex)
+      || typeof item.passed !== 'boolean') fail('承诺审查索引或结论无效')
+    text(item.reason, 2000); seen.add(item.effectIndex)
+  }
+}
+
+/** Version gate also applies when a retained review is resumed or adopted. */
+export function assertChatCommitmentReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
+  if (actions.some(a => a.commitmentEffects !== undefined)
+    && !['chat-narrative-action-review-v19', 'chat-narrative-options-review-v13'].includes(version ?? '')) fail('旧审查合同不支持承诺变化；保留原候选，不自动更换合同或重发')
+}

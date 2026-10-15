@@ -10,6 +10,7 @@ import {canonicalStringify, hashCanonicalValue} from '../agent/run/hash'
 import {assembleContext} from '../registry/assemble-context'
 import {readAgentRunArtifactExactV1, recordAgentRunArtifactV1} from '../memory/artifact-store'
 import {chatNarrativeActionReviewPassedV1, parseChatNarrativeActionReviewV1} from './narrative-actions'
+import {assertChatCommitmentReviewVersionV1} from './narrative-commitments'
 import {parseChatSituationReviewV1} from './narrative-situations'
 import {bindChatNarrativeOptionsReviewV1} from './narrative-options'
 import type {ChatMessage, WorkspaceScope} from '../types'
@@ -39,6 +40,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
   const reviewBinding = snapshot.contract.executionBindings?.find(b => b.stepId === stepId && b.skillId === reviewSkill)
   if (!reviewBinding) fail('旧候选没有审查合同，请取消后明确发起新行动；原有内容仍保留')
   const actions = situation ? [] : options ? candidate.options : [candidate.action]
+  assertChatCommitmentReviewVersionV1(actions, reviewBinding.promptVersion)
   const naturalDisclosure = ['chat-narrative-action-review-v18', 'chat-narrative-options-review-v12'].includes(reviewBinding.promptVersion)
   if (!naturalDisclosure && actions.some(a => a.disclosures.some(d => d.wording === 'equivalent'))) fail('旧审查合同不支持自然转述；保留原候选，不自动更换合同或重发')
   if (candidate.review) return {snapshot, candidate}
@@ -110,7 +112,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
     let row: Record<string, unknown>
     try {row = JSON.parse(source) as Record<string, unknown>}
     catch {fail('审查响应格式无效；原始结果已保存，尚未提交表达或后果')}
-    if (!row || Array.isArray(row) || !(options ? ['options'] : situation ? ['checks'] : ['checks', 'checks,disclosureChecks']).includes(Object.keys(row).sort().join(','))) fail('叙事审查输出字段无效')
+    if (!row || Array.isArray(row) || !(options ? ['options'] : situation ? ['checks'] : ['checks', 'checks,disclosureChecks', 'checks,commitmentChecks', 'checks,commitmentChecks,disclosureChecks']).includes(Object.keys(row).sort().join(','))) fail('叙事审查输出字段无效')
     const review = candidate.kind === 'chat-situation-candidate'
       ? parseChatSituationReviewV1({...row, reviewedProposalJson: canonicalStringify(candidate.draft)}, candidate.draft)
       : candidate.kind === 'chat-narrative-options-candidate' ? bindChatNarrativeOptionsReviewV1(row, candidate.options)
