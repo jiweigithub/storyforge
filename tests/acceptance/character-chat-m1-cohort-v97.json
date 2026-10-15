@@ -78,7 +78,7 @@
   ],
   "cohort": "m1-v97-investigation-core",
   "registeredAt": "2026-10-15T18:45:20.769276+00:00",
-  "status": "registered; zero model calls; full-source admission and first investigation production pending",
+  "status": "collection stopped after first runtime semantic failure; original source and all unstarted denominator retained",
   "implementationHead": "ce546498101ff16dae39f93841ec597c128d929c",
   "code": {
     "gitHistory": "depth-1; exact HEAD and tracked tree verified",
@@ -144,18 +144,94 @@
   "counts": {
     "scheduled": 120,
     "productionUnitsPlanned": 20,
-    "productionUnitsStarted": 0,
-    "productionUnitsCompleted": 0,
+    "productionUnitsStarted": 1,
+    "productionUnitsCompleted": 1,
     "productionBlockedEpisodes": 0,
-    "started": 0,
-    "collectionCompleted": 0,
+    "started": 1,
+    "collectionCompleted": 1,
     "narrativePassed": 0,
-    "failed": 0,
+    "failed": 1,
     "unknown": 0,
-    "notStarted": 120,
+    "notStarted": 119,
     "humanScored": 0,
     "intentionalPause": 0
   },
-  "productionUnits": [],
-  "episodes": []
+  "productionUnits": [
+    {
+      "id": "m1-v97-investigation-core/inn-missing-seal/local-codex/r1",
+      "status": "source-admitted-local-release",
+      "firstAttempt": true,
+      "modelCalls": 3,
+      "openingSelection": "first passing in original order; all three passed",
+      "productReleaseHash": "8ebdd145afc40ce07468f83460184a09d565d7f6e37d3c4700959ae471e78cb2"
+    }
+  ],
+  "episodes": [
+    {
+      "id": "m1-v97-investigation-core/inn-missing-seal/local-codex/r1/weak-guidance",
+      "status": "failed",
+      "ending": "failure",
+      "failureKind": "situation-response-stagnation-rejected",
+      "collectionCompleted": true,
+      "playerOpportunities": 3,
+      "productionRequests": 3,
+      "runtimeRequests": 12,
+      "completedReviewedActions": 3,
+      "completedSituationUpdates": 2,
+      "rawRunFailures": 1,
+      "humanScored": false,
+      "narrativeQualityAccepted": false,
+      "artifact": "inn-r1-weak-guidance.json",
+      "evidenceSha256": "1e79dd8a5230d1a4d2f85f778c4cc8d386e382dd82d47abaf3ac4621fd9669cb",
+      "backupSha256": "aac27ae3019c47c8762f0a81e4e63e769ecc247803725287b63a0e559a1a72c1",
+      "restoration": {
+        "stem": "inn-r1-weak-guidance",
+        "runStatusesPreserved": true,
+        "verifiedCompletedHistories": 5,
+        "retainedFailedRuns": 1,
+        "resumableRuns": 0,
+        "openingReviewRetained": true,
+        "modelCalls": 0,
+        "interactionEqual": true,
+        "refreshEqual": true,
+        "worldPreserved": true,
+        "rawEvidenceRetained": true
+      },
+      "interpretation": "inn-r1-weak-guidance-interpretation.json",
+      "interpretationSha256": "65411c2af74f0ec48379b11c12aaa659d93205732b5aae4d84eb1781afa01bb9"
+    }
+  ],
+  "sourceAdmission": {
+    "passed": true,
+    "helper": "tests/acceptance/character-chat-m1-source.ts",
+    "stage": "after frozen-world/S2 compilation, before first model request",
+    "privateFacts": 1,
+    "goals": 2,
+    "beliefs": 1,
+    "publicFacts": 3,
+    "authorOnlyFacts": 1
+  },
+  "aggregateUsage": {
+    "totalTokens": 178598,
+    "inputTokens": 166095,
+    "cachedInputTokens": 6656,
+    "cacheWriteInputTokens": 0,
+    "outputTokens": 12503,
+    "reasoningOutputTokens": 2001,
+    "costUsd": null,
+    "uniqueProviderRequests": 15,
+    "terminalReadbackEqual": true,
+    "productionCountedOnce": true
+  },
+  "collectorClosed": {
+    "runnerHandle": 42914,
+    "runnerExit": 1,
+    "restoreHandle": 63587,
+    "restoreExit": 0,
+    "serverHandle": 50783,
+    "serverExit": 1,
+    "serverExitNote": "Closed via explicit Ctrl-C only after all 15 provider requests were terminal and readback-equal, backup and zero-call restoration completed.",
+    "at": "2026-10-15T18:59:43.225294+00:00"
+  },
+  "next": "Investigate response-stagnation generation without relaxing review, original hidden truth or authority; any changed-code run remains a separate diagnostic/cohort, never a replacement of this failure."
 }
