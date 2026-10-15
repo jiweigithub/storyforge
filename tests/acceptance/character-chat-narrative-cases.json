@@ -1682,6 +1682,53 @@
             "cause": "diagnostic used unsupported intensity gentle; corrected to existing everyday enum before any model call"
           },
           "nextWork": "Separate bounded diagnostic in a retained isolated browser for explicit consequence revision. Evaluate own-goal completion versus unresolved delivery or confirmation; keep original failed opportunity. No imported candidate authority, replay or replacement of frozen cases."
+        },
+        "threadFollowupPreflight": {
+          "verifiedAt": "2026-10-15",
+          "sourceHead": "3f50e902d420c170e18ebcf2af5ef6c9789ae11c",
+          "snapshotManifestSha256": "72ff4e2a2e586d9fc2382e33ad800201a8d3dbd0769ae480506e8b1fed3b05f4",
+          "scenarioId": "archive-list-thread-followup-v74",
+          "status": "existing-thread-continuation-passed; explicit-pause-response-rejected",
+          "scope": "Synthetic authored background and injected completed-goal prefix; two independent real runtime opportunities. Development diagnostic only, outside frozen M1 and holdouts.",
+          "runEvidence": "v74-thread-followup-real/run.json",
+          "runEvidenceSha256": "40aa8e1499d430c143b1bc50197d1a213b8b458e491e879bc4f99d017026927a",
+          "acceptedModelCalls": 4,
+          "completedProviderResponses": 4,
+          "runtimeOpportunities": 2,
+          "completedRuntimeActions": 1,
+          "failedRuntimeActions": 1,
+          "totalTokens": 36221,
+          "costUsd": null,
+          "automaticRetry": false,
+          "explicitRevisionCalls": 0,
+          "observations": [
+            "The positive opportunity created its own delivery goal on the existing unfinished thread, placed the checked list on the receiving shelf and resolved the thread without inventing confirmation from the absent recipient. Original completed goal preserved.",
+            "The independent stop branch replied naturally to the explicit request to wait, but independent review rejected missing thread pause and promise effects. The no-goal response contract forbids those writes. No reply or effects were adopted; this is a pause-state contract gap, not successful pause acceptance.",
+            "Script exit zero records completion of the diagnostic, not overall quality acceptance. Original failed candidate and review remain unchanged."
+          ],
+          "rejectedPauseDidNotWrite": true,
+          "oldGoalPreserved": true,
+          "threadCountUnchanged": true,
+          "reviewerIndependence": "Separate model request using the same Codex model; not an independent provider or human.",
+          "restoration": {
+            "restore.json": {
+              "evidence": "v74-thread-followup-real/restore.json",
+              "rawEvidenceSha256": "53238df50d7c8d5a1b5910d3dc00d1004391aa4958d681303df41df702b415d1",
+              "newModelCalls": 0,
+              "matchesSavedInteraction": true,
+              "refreshEqual": true
+            },
+            "restore-stop.json": {
+              "evidence": "v74-thread-followup-real/restore-stop.json",
+              "rawEvidenceSha256": "cf2c4f9f5454b2c1f94e3a3d7c8aba2ad0dad230a9c1433350f1724213429e93",
+              "newModelCalls": 0,
+              "matchesSavedInteraction": true,
+              "refreshEqual": true
+            }
+          },
+          "nextWork": "Represent explicit pause of the actor own unfinished responsibility without reviving a completed goal, then require actual evidence before resuming. Preserve this failed branch; new bounded diagnostic only, no replay or frozen-cohort replacement.",
+          "evidence": "v74-thread-followup-real/interpretation.json",
+          "rawEvidenceSha256": "44a17308bf26ea0cf0f40d113b25a27238c84d88febaa204463fbe6b4e334490"
         }
       },
       {
