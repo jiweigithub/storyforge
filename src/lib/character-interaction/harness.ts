@@ -49,6 +49,8 @@ import {chatSituationConstructionRequestV1} from './narrative-progression'
 import {assertChatNarrativeOptionsPreviewableV1, parseChatNarrativeOptionsV1, selectedChatNarrativeOptionV1, type ChatNarrativeOptionsReviewV1} from './narrative-options'
 import {isChatSituationPreparedV1, parseChatSituationDraftV1, previewChatSituationV1} from './narrative-situations'
 import {chatSituationResponseRulesV1} from './narrative-situation-prompt'
+import {chatInquiryGenerationRulesV1} from './inquiry-prompt'
+import {assertChatInquiryBindingV1} from './narrative-inquiry'
 import {reviewRuntimeChatCandidateV1, CHAT_SITUATION_REVIEW_STEP_V1, CHAT_ACTION_REVIEW_STEP_V1} from './situation-harness'
 import type { ChatNarrativeActionV1, ChatNarrativeActionReviewV1, ChatSituationDraftV1, ChatSituationReviewV1 } from '../types/chat-narrative'
 import type {
@@ -361,6 +363,7 @@ function prompt(input: {
       ] : []),
       ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? chatActionPromptRulesV1(input.roleContext!, {preserveExpression: input.skillId === CHAT_ACTION_REVISION_SKILL, playerPause: true, conversationEvidence: true, commitmentSemanticsV2, promiseRequest, existingGoalPause, sceneTransition, actionKind: supportsChatActionKindPromptV1(input.producerVersion)}) : []),
       `严格输出 JSON：${schemaInstruction(input.skillId, promiseRequest, existingGoalPause, sceneTransition)}`,
+      ...(input.skillId === 'character.chat-situation-construction' ? chatInquiryGenerationRulesV1(input.producerVersion) : []),
       ...(commitmentSemanticsV2 ? [CHAT_COMMITMENT_OUTPUT_CHECK_V2 + (existingGoalPause ? CHAT_EXISTING_GOAL_PAUSE_COMMITMENT_RULE_V1 : '')] : []),
     ].join('\n'),
   }, {
@@ -643,7 +646,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       declaredSourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       assembled,
-      readerVersion: situation ? 'chat-situation-runtime-view-v8' : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V4 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? (executionBinding.promptVersion === 'chat-situation-construction-v8' ? 'chat-situation-runtime-view-v9' : 'chat-situation-runtime-view-v8') : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V4 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
@@ -712,6 +715,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
     }
     let body: Record<string, unknown>
     if (draft.kind === 'chat-situation-candidate') {
+      assertChatInquiryBindingV1(draft.draft.inquiryResult, executionBinding.promptVersion, snapshot.contract.executionBindings?.find(binding => binding.skillId === 'character.chat-situation-review')?.promptVersion)
       const triggerSequence = initialState.interaction!.chatNarrative!.triggers.slice(-1)[0]!.requestedSequence
       await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: snapshot.contract.scope, participantKey, view: 'chat-situation'})
       previewChatSituationV1(initialState.interaction!, {sequence: boundary.scope.runtime.baseSequence + 1, triggerSequence, draft: draft.draft})
@@ -884,6 +888,9 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
     if (confirmation?.type === 'confirmation.recorded' && (confirmation.payload.candidateHash !== candidate.candidateHash || recordedOption !== optionKey)) fail('该运行已选择另一条候选；改换已发生走向须从选择前分支')
   } else if (input.optionKey != null) fail('当前运行不是可比较的行动候选组')
   const commandId = options ? `${candidate.commandId}:${optionKey}` : candidate.commandId
+  if (candidate.kind === 'chat-situation-candidate') assertChatInquiryBindingV1(candidate.draft.inquiryResult,
+    snapshot.contract.executionBindings?.find(binding => binding.skillId === 'character.chat-situation-construction')?.promptVersion,
+    snapshot.contract.executionBindings?.find(binding => binding.skillId === 'character.chat-situation-review')?.promptVersion)
   let adopted = snapshot.events.find(event => event.type === 'runtime.candidate.adopted')
   const completedAdoption = adopted?.type === 'runtime.candidate.adopted' ? adopted : null
   if (completedAdoption && snapshot.projection.state === 'completed') {

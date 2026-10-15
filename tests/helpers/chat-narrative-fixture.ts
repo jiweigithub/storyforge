@@ -59,7 +59,7 @@ export function enableChatFactDiscoveryFixture(content: FrozenInteractionRuntime
 }
 
 /** Formal isolated release/instance, with a scene-start event and no fabricated player input. */
-export async function seedChatNarrativeRuntimeFixture(options: {knownDestination?: boolean; maxMemoryEntries?: number; factDiscovery?: boolean; maxActionsPerTrigger?: number; relationships?: boolean; additionalGuardGoal?: boolean; actorSituationExpansion?: boolean; actorThreadFollowup?: boolean; onlyGuard?: boolean; playerFollowup?: boolean; directorBudget?: number; contextKnowledge?: Array<{key: string; content: string; audienceKeys: string[]}>} = {}) {
+export async function seedChatNarrativeRuntimeFixture(options: {inquiryResults?: boolean; knownDestination?: boolean; maxMemoryEntries?: number; factDiscovery?: boolean; maxActionsPerTrigger?: number; relationships?: boolean; additionalGuardGoal?: boolean; actorSituationExpansion?: boolean; actorThreadFollowup?: boolean; onlyGuard?: boolean; playerFollowup?: boolean; directorBudget?: number; contextKnowledge?: Array<{key: string; content: string; audienceKeys: string[]}>} = {}) {
   const {scope, release} = await seedCurrentProductWorld('CHAT-02 narrative contract')
   const catalog = await loadCurrentProductWorldSourceCatalogV1({scope, worldReleaseId: release.id!, productType: 'character-interaction'})
   const keys = catalog.characters.slice(0, 2).map(c => c.resourceKey)
@@ -70,6 +70,15 @@ export async function seedChatNarrativeRuntimeFixture(options: {knownDestination
   if (options.knownDestination) interaction.chatNarrative!.initialSituation.facts.push({factKey: 'courtyard', text: '后院就在驿站旁边，仍可通行。', audienceKeys: ['player', 'guard'], origin: 'author-private', sourceKnowledgeKey: null, sourceEventSequence: 0})
   if (options.onlyGuard) interaction.sceneTemplates[0].participantKeys = ['guard']
   if (options.factDiscovery) enableChatFactDiscoveryFixture(interaction)
+  if (options.inquiryResults) {
+    const story = interaction.chatNarrative!
+    story.permissions.allowInquiryResults = true
+    story.permissions.allowActorSituationExpansion = true
+    story.initialSituation.facts.push({factKey: 'clerk-present', text: '掌柜在柜台另一端，可以当面交谈。', audienceKeys: ['player', 'guard', 'artisan'], origin: 'author-private', sourceKnowledgeKey: null, sourceEventSequence: 0})
+    // Frozen synthetic condition for inquiry tests only. Physical discovery fixtures stay unchanged.
+    if (options.factDiscovery) story.initialSituation.facts.find(f => f.factKey === 'secret')!.discovery!.condition = '掌柜亲口说明铜印仍在柜台下的木箱里；他是保管者，明确确认位置时可以确认这一项，不涉及经手用途。'
+    story.initialSituation.facts.push({factKey: 'purpose', text: '铜印用于拓印破损的通行单。', audienceKeys: [], origin: 'author-private', sourceKnowledgeKey: null, sourceEventSequence: 0})
+  }
   if (options.actorSituationExpansion) interaction.chatNarrative!.permissions.allowActorSituationExpansion = true
   if (options.actorThreadFollowup) {interaction.chatNarrative!.permissions.allowActorSituationExpansion = true; interaction.chatNarrative!.permissions.allowActorThreadFollowups = true}
   if (options.playerFollowup) {interaction.chatNarrative!.permissions.allowActorSituationExpansion = true; interaction.chatNarrative!.permissions.allowPlayerFollowupSituations = true}

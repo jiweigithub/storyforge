@@ -1,4 +1,5 @@
 import {parseChatFactDiscoveriesV1, applyChatFactDiscoveriesV1} from './narrative-discovery'
+import {parseChatInquiryResultV1, parseChatInquiryReviewV1, chatInquiryReviewPassedV1, applyChatInquiryResultV1} from './narrative-inquiry'
 import {isChatMessageRetrievableV1} from './narrative-retrieval'
 import {canonicalStringify} from '../agent/run/hash'
 import type {CharacterInteractionRuntimeState} from '../types'
@@ -33,8 +34,10 @@ function keys(value: unknown, max = 200): string[] {
 
 export function parseChatSituationDraftV1(value: unknown): ChatSituationDraftV1 {
   const hasDiscoveries = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'discoveries')
-  const draft = object(value, 'kind,title,location,timeLabel,newFacts,newGoals,newThreads,possibilities' + (hasDiscoveries ? ',discoveries' : ''))
+  const hasInquiry = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'inquiryResult')
+  const draft = object(value, 'kind,title,location,timeLabel,newFacts,newGoals,newThreads,possibilities' + (hasDiscoveries ? ',discoveries' : '') + (hasInquiry ? ',inquiryResult' : ''))
   if (hasDiscoveries) parseChatFactDiscoveriesV1(draft.discoveries)
+  if (hasInquiry) parseChatInquiryResultV1(draft.inquiryResult)
   if (draft.kind !== 'chat-situation') fail('情境候选类型无效')
   text(draft.title, 1000); text(draft.location, 1000); text(draft.timeLabel, 1000)
   for (const value of list(draft.newFacts, 5)) {
@@ -65,7 +68,8 @@ export function parseChatSituationDraftV1(value: unknown): ChatSituationDraftV1 
 /** Review findings are evidence, not a claim of infallible semantic validation.
  * All five questions must be answered for this exact proposal before adoption. */
 export function parseChatSituationReviewV1(value: unknown, draft: ChatSituationDraftV1): ChatSituationReviewV1 {
-  const review = object(value, 'reviewedProposalJson,checks')
+  const review = object(value, 'reviewedProposalJson,checks' + (draft.inquiryResult ? ',inquiryReview' : ''))
+  if (draft.inquiryResult) parseChatInquiryReviewV1(review.inquiryReview, draft.inquiryResult)
   if (review.reviewedProposalJson !== canonicalStringify(draft)) fail('情境审查绑定了另一份候选')
   const checks = list(review.checks, CHAT_SITUATION_REVIEW_CHECKS_V1.length)
   if (checks.length !== CHAT_SITUATION_REVIEW_CHECKS_V1.length) fail('情境语义审查不完整')
@@ -93,7 +97,7 @@ export function applyChatSituationV1(stateValue: CharacterInteractionRuntimeStat
   sequence: number; triggerSequence: unknown; draft: unknown; review: unknown
 }): CharacterInteractionRuntimeState {
   const draft = parseChatSituationDraftV1(input.draft), review = parseChatSituationReviewV1(input.review, draft)
-  if (review.checks.some(check => !check.passed)) fail('情境语义审查未通过，原有局面保留')
+  if (review.checks.some(check => !check.passed) || review.inquiryReview && !chatInquiryReviewPassedV1(review.inquiryReview)) fail('情境语义审查未通过，原有局面保留')
   return previewChatSituationV1(stateValue, {...input, draft})
 }
 
@@ -119,7 +123,12 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
   if (observationResult && (draft.title !== story.situation.title || draft.newGoals.length || draft.newThreads.length || draft.possibilities.length
     || draft.newFacts.some(f => f.kind !== 'observation'))) fail('已完成观察的结果只能补充有限观察或授权发现，不能建立新目标、剧情线、计划或物件')
   if (draft.newFacts.length > story.permissions.maxNewFactsPerAction) fail('新增情境事实超出授权数量')
-  if (!draft.newFacts.length && !draft.newGoals.length && !draft.newThreads.length && !draft.possibilities.length && !draft.discoveries?.length) fail('情境候选没有可执行的新方向')
+  if (!draft.newFacts.length && !draft.newGoals.length && !draft.newThreads.length && !draft.possibilities.length && !draft.discoveries?.length && !draft.inquiryResult) fail('情境候选没有可执行的新方向')
+  if (draft.inquiryResult) {
+    if (request.origin !== 'continued-thread' || draft.title !== story.situation.title || draft.location !== story.situation.location || draft.timeLabel !== story.situation.timeLabel
+      || draft.newFacts.length || draft.newGoals.length || draft.newThreads.length || draft.possibilities.length || draft.discoveries?.length) fail('实际答复只能记录本次说法及授权事实，不能同时预执行新的剧情或改变时地')
+    applyChatInquiryResultV1(state, draft.inquiryResult, input.sequence)
+  }
   // Discoveries preserve canonical fact identity. New conditions cannot be
   // invented here; author-selected rules and the exact investigation are checked.
   if (draft.discoveries?.length && (request.actorKey == null || draft.location !== story.situation.location || draft.timeLabel !== story.situation.timeLabel)) fail('发现必须绑定角色实际调查且保持原时地')
@@ -160,7 +169,7 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
   }
   if (draft.possibilities.some(p => !scene.activeParticipantKeys.includes(p.actorKey))) fail('不能替玩家或场外角色预定行动')
   if (request.actorKey && draft.possibilities.some(p => p.actorKey !== request.actorKey || !p.evidenceFactKeys.length)) fail('角色推进不能替其他角色规划行动')
-  if (!observationResult) story.situation.possibilities = request.actorKey
+  if (!observationResult && !draft.inquiryResult) story.situation.possibilities = request.actorKey
     ? [...story.situation.possibilities.filter(p => p.actorKey !== request.actorKey), ...draft.possibilities] : draft.possibilities
   story.situation.title = draft.title
   story.situation.location = draft.location; story.situation.timeLabel = draft.timeLabel
@@ -180,6 +189,7 @@ export function chatSituationCoordinatorViewV1(state: CharacterInteractionRuntim
   return structuredClone({
     profiles: state.profiles, knowledge: state.knowledge, persona: state.chatNarrative.persona,
     ...(state.chatNarrative.discoveryHistory ? {discoveryHistory: state.chatNarrative.discoveryHistory} : {}),
+    ...(state.chatNarrative.inquiryHistory ? {inquiryHistory: state.chatNarrative.inquiryHistory} : {}),
     relationships: state.relationships,
     relationshipEvidence: state.profiles.flatMap(p => chatRelationshipEvidenceV1(state, p.participantKey)),
     permissions: state.chatNarrative.permissions, situation: state.chatNarrative.situation,

@@ -1,4 +1,5 @@
 import {validateChatSceneTransitionRecordsV1} from './narrative-scene-transition'
+import {validateChatInquiryHistoryV1, chatInquiryRepliesV1} from './narrative-inquiry'
 import {chatPlayerPauseSequencesV1, rebaseChatPlayerPausesV1, validateChatGoalPlayerPauseV1} from './narrative-player-pause'
 import {validateChatMemoryReconciliationRecordsV1} from './memory-reconciliation'
 import {validateChatFactDiscoveryRuleV1, validateChatDiscoveryHistoryV1, chatActorInvestigationResultsV1} from './narrative-discovery'
@@ -79,11 +80,13 @@ function validateCommon(value: Row, boundary: ChatNarrativeBoundaryV1) {
 }
 
 export function parseChatNarrativePermissionsV1(value: unknown): ChatNarrativePermissionsV1 {
-  const extra = ['allowActorSituationExpansion', 'allowPlayerFollowupSituations', 'allowActorThreadFollowups', 'maxDiscoveriesPerSituation'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
+  const extra = ['allowActorSituationExpansion', 'allowPlayerFollowupSituations', 'allowActorThreadFollowups', 'maxDiscoveriesPerSituation', 'allowInquiryResults'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
   const permissions = row(value, 'mode,triggers,allowedNewFactKinds,maxNewFactsPerAction,maxActiveThreads,maxActionsPerTrigger,maxActionCharacters,intensity' + extra, '运行权限')
   if (Object.prototype.hasOwnProperty.call(permissions, 'allowActorSituationExpansion') && typeof permissions.allowActorSituationExpansion !== 'boolean') fail('角色推进授权无效')
   if (Object.prototype.hasOwnProperty.call(permissions, 'allowPlayerFollowupSituations') && typeof permissions.allowPlayerFollowupSituations !== 'boolean') fail('新事项承接授权无效')
   if (Object.prototype.hasOwnProperty.call(permissions, 'allowActorThreadFollowups') && typeof permissions.allowActorThreadFollowups !== 'boolean') fail('既有事项接续授权无效')
+  if (permissions.allowInquiryResults !== undefined && typeof permissions.allowInquiryResults !== 'boolean') fail('询问结果授权无效')
+  if (permissions.allowInquiryResults === true && permissions.allowActorSituationExpansion !== true) fail('询问结果需要角色情境推进授权')
   if (permissions.allowActorThreadFollowups === true && permissions.allowActorSituationExpansion !== true) fail('既有事项接续需要角色情境推进授权')
   if (permissions.allowPlayerFollowupSituations === true && permissions.allowActorSituationExpansion !== true) fail('新事项承接需要角色情境推进授权')
   if (!['story', 'companionship'].includes(String(permissions.mode)) || !['everyday', 'tension', 'danger'].includes(String(permissions.intensity))) fail('叙事节奏或事件强度无效')
@@ -94,6 +97,7 @@ export function parseChatNarrativePermissionsV1(value: unknown): ChatNarrativePe
   members(permissions.triggers, CHAT_NARRATIVE_TRIGGERS_V1, '主动触发', true)
   const kinds = members(permissions.allowedNewFactKinds, ['observation', 'object', 'place', 'temporary-character'], '私域新增事实类型')
   integer(permissions.maxNewFactsPerAction, '单次新增事实', 0, 5)
+  if (permissions.allowInquiryResults === true && (!kinds.includes('observation') || Number(permissions.maxNewFactsPerAction) < 1)) fail('询问结果须有至少一条观察事实记录额度')
   if (!kinds.length && permissions.maxNewFactsPerAction !== 0) fail('未授权创作类型却分配了新增事实预算')
   integer(permissions.maxActiveThreads, '活跃剧情线上限', 1, 8)
   integer(permissions.maxActionsPerTrigger, '触发动作上限', 1, 3)
@@ -212,7 +216,7 @@ export function createChatNarrativeStateV1(content: FrozenChatNarrativeV1): Chat
 }
 
 export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativeBoundaryV1): ChatNarrativeStateV1 {
-  const extra = ['pendingSituation', 'pendingEdit', 'excludedMessageIds', 'discoveryHistory', 'memoryReconciliations', 'sceneTransitions'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
+  const extra = ['pendingSituation', 'pendingEdit', 'excludedMessageIds', 'discoveryHistory', 'inquiryHistory', 'memoryReconciliations', 'sceneTransitions'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
   const parsed = row(value, 'schema,version,worldReleaseHash,persona,permissions,situation,revision,lastEventSequence,triggers' + extra, '叙事状态')
   if (parsed.schema !== 'storyforge.chat-narrative-state') fail('叙事状态类型无效')
   const permissions = validateCommon(parsed, boundary)
@@ -288,6 +292,7 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
     ...state.triggers.flatMap(t => [t.requestedSequence, t.sourceEventSequence, ...t.actionSequences])]
   if (sequences.some(seq => seq !== 0 && (state.lastEventSequence === 0 || seq > state.lastEventSequence))) fail('叙事状态含尚未发生的事件引用')
   validateChatDiscoveryHistoryV1(state)
+  validateChatInquiryHistoryV1(state, boundary)
   return state
 }
 
@@ -300,6 +305,7 @@ export function chatNarrativeViewV1(state: ChatNarrativeStateV1, viewerKey: stri
     permissions: state.permissions,
     facts: situation.facts.filter(f => f.audienceKeys.includes(viewerKey)).map(({discovery: _rule, ...fact}) => fact),
     ...(state.discoveryHistory?.some(record => record.actorKey === viewerKey) ? {investigations: chatActorInvestigationResultsV1(state, viewerKey)} : {}),
+    ...(state.inquiryHistory?.some(record => record.audienceKeys.includes(viewerKey)) ? {inquiryReplies: chatInquiryRepliesV1(state, viewerKey)} : {}),
     goals: situation.goals.filter(g => g.actorKey === viewerKey),
     beliefs: situation.beliefs.filter(b => b.actorKey === viewerKey),
     threads: situation.threads.filter(t => t.audienceKeys.includes(viewerKey)),
@@ -322,6 +328,7 @@ export function rebaseChatNarrativeStateV1(state: ChatNarrativeStateV1, rebase: 
   for (const record of state.memoryReconciliations ?? []) {record.sourceSequence = rebase(record.sourceSequence); record.sequence = rebase(record.sequence)}
   for (const record of state.sceneTransitions ?? []) {record.requested.sequence = rebase(record.requested.sequence); record.arrived.sequence = rebase(record.arrived.sequence)}
   for (const record of state.discoveryHistory ?? []) {record.actionSequence = rebase(record.actionSequence); record.discoverySequence = rebase(record.discoverySequence)}
+  for (const record of state.inquiryHistory ?? []) {record.questionSequence = rebase(record.questionSequence); record.resultSequence = rebase(record.resultSequence)}
   for (const item of [...state.situation.goals, ...state.situation.beliefs, ...state.situation.threads]) item.updatedSequence = rebase(item.updatedSequence)
   rebaseChatCommitmentsV1(state.situation.goals, rebase)
   rebaseChatPlayerPausesV1(state.situation.goals, rebase)

@@ -1,0 +1,83 @@
+import {test, expect} from '@playwright/test'
+import {inquiryAnswer, inquiryQuestion, inquiryPurpose, inquiryTruth, chatInquiryReviewFixture} from '../helpers/chat-inquiry-output'
+import type {ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
+
+for (const privateAnswer of [false, true]) test(`actual NPC reply is displayed only to its listeners and feeds the next actor turn (private=${privateAnswer})`, async ({page}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('storyforge_guide_completed', 'e2e')
+    localStorage.setItem('storyforge-ai-config', JSON.stringify({provider: 'openai', baseUrl: 'https://chat-inquiry.invalid/v1', model: 'test', maxTokens: 6000}))
+    sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
+  })
+  const calls: string[] = []; let actions = 0, proposal: ChatSituationDraftV1
+  const followup = '叶岑点点头：“我记下了，接下来会核对具体物件。你可以先做自己的事。”'
+  await page.route('https://chat-inquiry.invalid/**', async route => {
+    const messages = route.request().postDataJSON().messages as Array<{content: string}>, prompt = messages.map(m => m.content).join('\n')
+    const actionReview = prompt.includes('本次持久化行动候选'), situationReview = prompt.includes('本次持久化情境候选')
+    const construction = !situationReview && prompt.includes('你是 StoryForge 受治理的幕后情境构建器')
+    calls.push(actionReview ? 'action-review' : situationReview ? 'situation-review' : construction ? 'construction' : 'action')
+    let output: unknown
+    if (situationReview) {expect(messages[0].content).toContain('actual-audience'); output = chatInquiryReviewFixture(proposal)}
+    else if (actionReview) output = {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'].map(check => ({check, passed: true, reason: '工程夹具，不是语义验收'}))}
+    else if (construction) {
+      const pending = JSON.parse(prompt.match(/"pendingSituation":(\{[^}]+\})/)![1])
+      proposal = {kind: 'chat-situation', title: '暴雨驿站', location: '驿站', timeLabel: '傍晚', newFacts: [], newGoals: [], newThreads: [], possibilities: [],
+        inquiryResult: {actorKey: 'guard', questionSequence: pending.sourceEventSequence, questionExcerpt: inquiryQuestion,
+          respondentFactKey: 'clerk-present', respondentExcerpt: '掌柜在柜台另一端，可以当面交谈。', respondentName: '掌柜', statementFactKey: 'clerk-statement',
+          answerKind: 'statement', answerText: inquiryAnswer, audienceKeys: privateAnswer ? ['guard'] : ['guard', 'player'], evidenceFactKeys: ['lost', 'clerk-present', 'box'],
+          discoveries: [{factKey: 'secret', answerExcerpt: '铜印仍在柜台下的木箱里', reason: '工程条件授权保管人确认此位置，不解锁用途'}]}}
+      output = proposal
+    } else {
+      actions++; expect(prompt).not.toContain(inquiryPurpose)
+      if (actions === 1) expect(prompt).not.toContain(inquiryTruth)
+      else {expect(prompt).toContain(inquiryAnswer); expect(prompt).toContain(inquiryTruth); expect(prompt).not.toContain('他是保管者')}
+      output = {kind: 'speak', text: actions === 1 ? inquiryQuestion : followup, goalKey: 'find-seal', audienceKeys: ['guard', 'player'],
+        evidenceFactKeys: actions === 1 ? ['lost', 'clerk-present', 'box'] : ['clerk-statement'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
+        ...(actions === 1 ? {situationRequest: {threadKey: 'investigate', direction: '承接向掌柜提出的具体位置问题，不预定答复。', evidenceFactKeys: ['lost', 'clerk-present', 'box'], evidenceExcerpt: inquiryQuestion}} : {})}
+    }
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+  })
+  await page.goto('./chat/library')
+  const f = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture({inquiryResults: true, factDiscovery: true})})
+  const read = () => page.evaluate(async f => {const load = new Function('p', 'return import(p)'); return (await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(f.sessionId)).interaction}, f)
+  await page.goto(`./chat/play?project=${f.scope.projectId}&work=${f.scope.workId}&session=${f.sessionId}`)
+  await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
+  await page.getByRole('button', {name: '让角色开场', exact: true}).click()
+  await expect(page.getByRole('article').getByText(inquiryQuestion, {exact: true})).toBeVisible()
+  await page.getByRole('button', {name: '让角色继续', exact: true}).click()
+  await expect(page.getByRole('article').getByText(followup, {exact: true})).toBeVisible()
+  const transcript = page.getByRole('region', {name: '对话记录', exact: true})
+  await expect(transcript.getByTestId('chat-inquiry-reply')).toHaveCount(privateAnswer ? 0 : 1)
+  if (privateAnswer) await expect(transcript.getByText(inquiryAnswer, {exact: true})).toHaveCount(0)
+  else {
+    const reply = transcript.getByRole('article').filter({has: page.getByTestId('chat-inquiry-reply')})
+    await expect(reply).toContainText('掌柜'); await expect(reply).toContainText(inquiryAnswer)
+    await expect(reply.getByTestId('chat-message-tools')).toHaveCount(0)
+  }
+  await expect(page.getByText(inquiryPurpose, {exact: true})).toHaveCount(0)
+  expect(calls).toEqual(['action', 'action-review', 'construction', 'situation-review', 'action', 'action-review'])
+  const before = await read()
+  expect(before.chatNarrative.inquiryHistory).toHaveLength(1)
+  expect(before.chatNarrative.situation.facts.find((f: {factKey: string}) => f.factKey === 'secret').audienceKeys).toEqual(privateAnswer ? ['guard'] : ['guard', 'player'])
+  expect(before.chatNarrative.situation.facts.find((f: {factKey: string}) => f.factKey === 'purpose').audienceKeys).toEqual([])
+  await page.reload(); await expect(page.getByTestId('chat-narrative-controls')).toBeVisible()
+  expect(await read()).toEqual(before); expect(calls).toHaveLength(6)
+  await expect(transcript.getByTestId('chat-inquiry-reply')).toHaveCount(privateAnswer ? 0 : 1)
+  await page.setViewportSize({width: 390, height: 844})
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+})
+
+test('author opts into inquiry results explicitly and removing prerequisite permission clears the opt-in', async ({page}) => {
+  await page.addInitScript(() => localStorage.setItem('storyforge_guide_completed', 'e2e'))
+  await page.goto('./chat/library')
+  const f = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); const f = await (await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts')).seedChatNarrativeProductionFixture(); return {scope: f.scope}})
+  await page.goto(`./chat/vision?project=${f.scope.projectId}&work=${f.scope.workId}`)
+  const option = page.getByLabel('允许已在场的场景人物回应角色实际提出的问题', {exact: true})
+  await expect(option).not.toBeChecked(); await option.check()
+  await page.getByRole('button', {name: '保存方案', exact: true}).click()
+  await expect(page.getByText('方案已保存', {exact: true})).toBeVisible(); await page.reload()
+  await expect(option).toBeChecked()
+  await page.getByLabel('观察到的新细节', {exact: true}).uncheck()
+  await expect(option).not.toBeChecked(); await expect(option).toBeDisabled()
+  await page.getByRole('button', {name: '保存方案', exact: true}).click()
+  await expect(page.getByText('方案已保存', {exact: true})).toBeVisible()
+})

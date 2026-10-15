@@ -30,6 +30,8 @@ export interface ChatNarrativePermissionsV1 {
   allowActorThreadFollowups?: boolean
   /** Explicit opt-in; absent historical Releases cannot unlock hidden facts. */
   maxDiscoveriesPerSituation?: number
+  /** New releases may explicitly allow grounded scene-NPC replies to actual questions. */
+  allowInquiryResults?: boolean
 }
 
 export interface ChatSituationFactV1 {
@@ -64,6 +66,27 @@ export interface ChatFactDiscoveryV1 {
 export interface ChatFactDiscoveryRecordV1 extends ChatFactDiscoveryV1 {
   /** Assigned by the committing event, never by the model. */
   discoverySequence: number
+}
+
+export interface ChatInquiryResultV1 {
+  actorKey: string
+  questionSequence: number
+  questionExcerpt: string
+  respondentFactKey: string
+  respondentExcerpt: string
+  respondentName: string
+  statementFactKey: string
+  answerKind: 'statement' | 'uncertain' | 'declined'
+  answerText: string
+  audienceKeys: string[]
+  evidenceFactKeys: string[]
+  discoveries: Array<{factKey: string; answerExcerpt: string; reason: string}>
+}
+export interface ChatInquiryResultRecordV1 extends ChatInquiryResultV1 {resultSequence: number; sceneKey: string}
+export const CHAT_INQUIRY_REVIEW_CHECKS_V1 = ['actual-question', 'grounded-respondent', 'bounded-answer', 'actual-audience', 'meaningful-result'] as const
+export interface ChatInquiryReviewV1 {
+  checks: Array<{check: typeof CHAT_INQUIRY_REVIEW_CHECKS_V1[number]; passed: boolean; reason: string}>
+  discoveries: Array<{factKey: string; passed: boolean; reason: string}>
 }
 
 export interface ChatActorGoalV1 {
@@ -181,6 +204,8 @@ export interface ChatNarrativeStateV1 {
   excludedMessageIds?: string[]
   /** Coordinator evidence; role readers receive only their safe outcome summary. */
   discoveryHistory?: ChatFactDiscoveryRecordV1[]
+  /** Full evidence stays in the coordinator; listeners receive only their actual reply. */
+  inquiryHistory?: ChatInquiryResultRecordV1[]
   /** A reviewed action reconsidered a particular player-authored correction.
    * This acknowledges use, never certifies the summary as a world fact. */
   memoryReconciliations?: ChatMemoryReconciliationRecordV1[]
@@ -384,6 +409,7 @@ export interface ChatSituationDraftV1 {
   possibilities: ChatSituationV1['possibilities']
   /** Optional to preserve canonical historical candidates and reviews. */
   discoveries?: ChatFactDiscoveryV1[]
+  inquiryResult?: ChatInquiryResultV1
 }
 
 export const CHAT_SITUATION_REVIEW_CHECKS_V1 = ['continuity', 'permissions', 'player-agency', 'visibility', 'meaningful-direction'] as const
@@ -391,6 +417,7 @@ export interface ChatSituationReviewV1 {
   /** Canonical exact input retained by the system, not an AI-computed hash. */
   reviewedProposalJson: string
   checks: Array<{check: typeof CHAT_SITUATION_REVIEW_CHECKS_V1[number]; passed: boolean; reason: string}>
+  inquiryReview?: ChatInquiryReviewV1
 }
 
 

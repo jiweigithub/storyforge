@@ -1,4 +1,5 @@
 import {validateFrozenChatSourceUnitsV1} from './source-unit-runtime'
+import {assertChatInquirySourcesV1} from './narrative-inquiry'
 import {assertChatSceneTransitionSourcesV1} from './narrative-scene-transition'
 import {assertChatPlayerPauseSourcesV1} from './narrative-player-pause'
 import {chatMemoryCorrectionContextV1, type ChatMemoryCorrectionContextV1} from './memory-correction-context'
@@ -555,6 +556,7 @@ export function parseInteractionState(value: unknown): CharacterInteractionRunti
   assertChatSceneTransitionSourcesV1(result)
   assertChatCommitmentSourcesV1(result)
   assertChatMemoryReconciliationSourcesV1(result)
+  assertChatInquirySourcesV1(result)
   return result
 }
 

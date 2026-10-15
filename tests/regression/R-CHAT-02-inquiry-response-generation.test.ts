@@ -50,10 +50,10 @@ function input(f: Awaited<ReturnType<typeof prepared>>) {
 
 it.each([false, true])('binds inquiry guidance to the saved producer, keeping old bytes and unchanged independent review (legacy=%s)', async legacy => {
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId), raw = JSON.stringify(response())
-  if (legacy) {
-    const original = skills.getAgentSkillV1
-    vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === skillId ? {...original(id), promptVersion: 'chat-situation-construction-v6'} : original(id))
-  }
+  const original = skills.getAgentSkillV1
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === skillId
+    ? {...original(id), promptVersion: `chat-situation-construction-v${legacy ? 6 : 7}`}
+    : id === 'character.chat-situation-review' ? {...original(id), promptVersion: 'chat-situation-review-v6'} : original(id))
   let calls = 0, rendered = ''
   const result = await generateInteractionRuntimeCandidateV1({...input(f), runAI: async messages => {
     calls++; rendered = JSON.stringify(messages)

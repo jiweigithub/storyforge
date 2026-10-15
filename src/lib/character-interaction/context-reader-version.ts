@@ -32,7 +32,7 @@ export async function readChatCandidateRetrievalVersion(snapshot: AgentRunSnapsh
     || source.status !== 'included' || assembled?.type !== 'context.assembled' || assembled.payload.manifestHash !== manifest.manifestHash
     || participantKey != null && body.participantKey !== participantKey) throw new Error('行动来源读取版本无法核验，已停止审查。')
   const version = sourceKey === 'interactionRuntime' ? chatRetrievalVersionForReader(source.readerVersion)
-    : source.readerVersion === 'chat-situation-runtime-view-v8' ? 'chat-relevance-v4' : source.readerVersion === 'chat-situation-runtime-view-v7' ? 'chat-relevance-v3' : source.readerVersion === 'chat-situation-runtime-view-v6' ? 'chat-relevance-v2' : source.readerVersion === 'chat-situation-runtime-view-v5' ? 'chat-relevance-v1' : null
+    : ['chat-situation-runtime-view-v8', 'chat-situation-runtime-view-v9'].includes(source.readerVersion ?? '') ? 'chat-relevance-v4' : source.readerVersion === 'chat-situation-runtime-view-v7' ? 'chat-relevance-v3' : source.readerVersion === 'chat-situation-runtime-view-v6' ? 'chat-relevance-v2' : source.readerVersion === 'chat-situation-runtime-view-v5' ? 'chat-relevance-v1' : null
   if (!version) throw new Error('行动来源读取版本无法核验，已停止审查。')
   if (sourceKey === 'interactionRuntime') {
     const profile = state?.profiles.find(p => p.participantKey === participantKey)

@@ -1,4 +1,6 @@
 import {supportsChatSceneTransitionV1, assertChatSceneTransitionReviewVersionV1} from './narrative-scene-transition'
+import {assertChatInquiryBindingV1, chatInquiryReviewPassedV1} from './narrative-inquiry'
+import {chatInquiryReviewRulesV1} from './inquiry-prompt'
 import {supportsChatPromiseRequestV1} from './narrative-promise-request'
 import {assertChatConversationEvidenceReviewVersionV1, supportsChatConversationEvidenceV1} from './narrative-conversation-evidence'
 import {normalizeChatReviewResponseV1, supportsChatKnownFactReviewNormalizationV1} from './review-normalization'
@@ -47,6 +49,8 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
     ...(situation ? {view: 'chat-situation' as const} : {})}
   const reviewBinding = snapshot.contract.executionBindings?.find(b => b.stepId === stepId && b.skillId === reviewSkill)
   if (!reviewBinding) fail('旧候选没有审查合同，请取消后明确发起新行动；原有内容仍保留')
+  if (situation) assertChatInquiryBindingV1(candidate.draft.inquiryResult,
+    snapshot.contract.executionBindings?.find(binding => binding.skillId === 'character.chat-situation-construction')?.promptVersion, reviewBinding.promptVersion)
   const actions = situation ? [] : options ? candidate.options : [candidate.action]
   assertChatSceneTransitionReviewVersionV1(actions, reviewBinding.promptVersion)
   assertChatConversationEvidenceReviewVersionV1(actions, reviewBinding.promptVersion)
@@ -96,7 +100,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
       await assertRuntimeHarnessFreshV1(freshness)
       const manifest = await createContextManifestFromAssemblyV1({runId: snapshot.run.id, stepId, attempt: 1,
         projectId: input.scope.projectId, worldGroupId: snapshot.contract.scope.worldGroupId, declaredSourceKeys: sourceKeys,
-        assembled, readerVersion: situation ? 'chat-situation-review-v7' : memoryReconciliation ? 'chat-action-review-v8' : 'chat-action-review-v7'})
+        assembled, readerVersion: situation ? (reviewBinding.promptVersion === 'chat-situation-review-v7' ? 'chat-situation-review-v8' : 'chat-situation-review-v7') : memoryReconciliation ? 'chat-action-review-v8' : 'chat-action-review-v7'})
       snapshot = await append(input.scope, snapshot, 'context.assembled', {stepId, attempt: 1, manifestHash: manifest.manifestHash})
       const compact = naturalDisclosure || ['chat-narrative-action-review-v17', 'chat-narrative-options-review-v11'].includes(reviewBinding.promptVersion)
       const roleContext = !situation && compact ? interactionRetrievalView((await readProductRuntimeState(input.productRuntimeSessionId)).interaction!, candidate.participantKey) : undefined
@@ -115,7 +119,8 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
         'player-agency：是否替玩家做决定、行动、内心或亲密关系升级，是否给拒绝与暂停留下空间。',
         'visibility：是否借描述、暗示、新目标或问句泄露角色或玩家不可知的秘密；引用正确也不能洗白语义泄露。',
         'meaningful-direction：是否承接当前局面、提供有动机且可改变的行动方向，而非机械制造危机、重复问题或预写结局。',
-        '仅输出 JSON {"checks":[{"check":"continuity|permissions|player-agency|visibility|meaningful-direction","passed":true,"reason":"引用实际内容解释判断"}]}，必须分别包含上述五项，不得有其他字段。',
+        ...(candidate.kind === 'chat-situation-candidate' && candidate.draft.inquiryResult ? [] : ['仅输出 JSON {"checks":[{"check":"continuity|permissions|player-agency|visibility|meaningful-direction","passed":true,"reason":"引用实际内容解释判断"}]}，必须分别包含上述五项，不得有其他字段。']),
+        ...(candidate.kind === 'chat-situation-candidate' && candidate.draft.inquiryResult ? chatInquiryReviewRulesV1() : []),
       ] : chatActionReviewPromptRulesV1({view: roleContext, actions, options, compact, naturalDisclosure, commitments, memoryReconciliation, threadFollowup, playerPause, conversationEvidence, promiseRequest, knownFactReview: supportsChatKnownFactReviewNormalizationV1(reviewBinding.promptVersion), existingGoalPause: supportsChatExistingGoalPauseV1(reviewBinding.promptVersion), sceneTransition: supportsChatSceneTransitionV1(reviewBinding.promptVersion)})).join('\n')}, {role: 'user', content: assembled.text}]
       snapshot = (await recordAgentRunArtifactV1({scope: input.scope, runId: snapshot.run.id,
         productRuntimeSessionId: input.productRuntimeSessionId, artifactKind: 'rendered-request', content: JSON.stringify(messages),
@@ -139,7 +144,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
     let row: Record<string, unknown>
     try {row = JSON.parse(source) as Record<string, unknown>}
     catch {fail('审查响应格式无效；原始结果已保存，尚未提交表达或后果')}
-    if (!row || Array.isArray(row) || !(options ? Object.keys(row).join(',') === 'options' : situation ? Object.keys(row).join(',') === 'checks' : isChatActionReviewOutputV1(row))) fail('叙事审查输出字段无效')
+    if (!row || Array.isArray(row) || !(options ? Object.keys(row).join(',') === 'options' : situation ? Object.keys(row).sort().join(',') === (candidate.kind === 'chat-situation-candidate' && candidate.draft.inquiryResult ? 'checks,inquiryReview' : 'checks') : isChatActionReviewOutputV1(row))) fail('叙事审查输出字段无效')
     if (!situation) {
       await assertRuntimeHarnessFreshV1(freshness)
       const normalizationState = (await readProductRuntimeState(input.productRuntimeSessionId)).interaction!
@@ -170,7 +175,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
       assertChatMemoryReconciliationReviewsV1(state, candidate.participantKey, actionReviews, reviewBinding.promptVersion)
     }
     const passed = 'optionReviews' in review ? review.optionReviews.every(r => chatNarrativeActionReviewPassedV1(r.review))
-      : 'reviewedActionJson' in review ? chatNarrativeActionReviewPassedV1(review) : review.checks.every(check => check.passed)
+      : 'reviewedActionJson' in review ? chatNarrativeActionReviewPassedV1(review) : review.checks.every(check => check.passed) && (!review.inquiryReview || chatInquiryReviewPassedV1(review.inquiryReview))
     if (!passed) fail(situation ? '情境语义审查未通过，原有局面保留' : '行动语义审查未通过，表达与后果均未提交')
     await assertRuntimeHarnessFreshV1(freshness)
     if (snapshot.projection.steps[stepId]?.status !== 'succeeded') snapshot = await append(input.scope, snapshot, 'step.succeeded', {stepId, attempt: 1, outputHash: await hashCanonicalValue(review)})
