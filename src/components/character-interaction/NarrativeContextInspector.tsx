@@ -5,6 +5,8 @@ import type {ChatContextSelectionReasonV1} from '../../lib/character-interaction
 
 const selectionReason = (reason: ChatContextSelectionReasonV1) => reason === 'current-fact' ? '当前事实的来源'
   : reason === 'player-pin' ? '由你固定，每轮保留'
+  : reason === 'open-commitment' ? '尚未处理的约定，每轮保留'
+  : reason === 'latest-resolution' ? '这件事最近一次履行或撤回'
   : reason === 'protected-memory' ? '已确认承诺或关键记忆'
     : reason === 'dialogue' ? '与本轮对话相关' : reason === 'importance' ? '作为补充背景' : '与当前演绎相关'
 
@@ -70,6 +72,7 @@ export default function NarrativeContextInspector(props: {scope: WorkspaceScope;
         {inspection.selection && <div className="space-y-2" data-testid="chat-context-selection">
           <p className="text-text-muted">以下只列双方当时共同已知的资料。省略仅表示本轮没有选入，不代表遗忘或删除；私有目标的选择依据不在这里展开。</p>
           <SelectionDetails key={`${inspection.runId}:knowledge`} title="来源知识的选入与省略" items={inspection.selection.knowledge} />
+          {inspection.selection.commitments && <SelectionDetails key={`${inspection.runId}:commitments`} title="约定历史的选入与省略" items={inspection.selection.commitments} />}
           <SelectionDetails key={`${inspection.runId}:memories`} title="已确认记忆的选入与省略" items={inspection.selection.memories} />
         </div>}
         <div><h3 className="mb-1 font-semibold">实际选入的共同对话</h3>{list(inspection.messages.map(m => `${m.speaker}：${m.text}`))}</div>
