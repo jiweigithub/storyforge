@@ -5,7 +5,7 @@ import { parseTtrpgOpenPressureEffectReviewV1, type TtrpgOpenPressureEffectRevie
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import type { ProductRuntimeState } from '../types'
 import type { TtrpgRuntimeContentV2 } from './content-version'
-import { parseTtrpgRuntimeContentVersionedV1, isTtrpgRuntimeContentV2 } from './content-version'
+import { parseTtrpgFrozenRuntimeContentV1, isTtrpgRuntimeContentV2 } from './content-version'
 import type { TtrpgOpenOperationV1, TtrpgOpenRuleReceiptV1 } from './open-operation'
 import type { TtrpgOpenSourceRefV1 } from './open-coordination'
 import { parseTtrpgOpenSourceRefV1 } from './open-coordination'
@@ -51,7 +51,7 @@ export function parseTtrpgOpenPressureCycleV1(value: unknown): TtrpgOpenPressure
   const operationStepKey = hasStep ? p.key(r.operationStepKey,'pressure owner step') : undefined
   if (operationStepKey && !/^pressure\.(?:[1-9]|10)$/.test(operationStepKey)) p.fail('压力 owner 必须是实际逐轮步骤')
   const raw = p.object(r.frozenContent, 'pressure content'), world = p.object(p.object(raw.campaign, 'pressure campaign').sourceWorld, 'pressure world')
-  const content = parseTtrpgRuntimeContentVersionedV1(raw, p.hash(world.contentHash, 'pressure world hash'), 2)
+  const content = parseTtrpgFrozenRuntimeContentV1(r.frozenContent, p.hash(world.contentHash, 'pressure world hash'))
   if (!isTtrpgRuntimeContentV2(content)) p.fail('压力只读取冻结 open 内容')
   const tickQueue = p.list(r.tickQueue, 'pressure ticks', value => {
     const t = p.record(value, ['clockKey', 'delta', 'triggerSource', 'triggerKey', 'valueBefore', 'valueAfter', 'atWorldTurn'], 'pressure tick')
@@ -226,7 +226,7 @@ export interface TtrpgOpenPressureSignalV1 {
 export function parseTtrpgOpenPressureSignalV1(value: unknown): TtrpgOpenPressureSignalV1 {
   const s = p.record(value, ['sourceRef', 'frontKey', 'telegraphKey', 'worldTurn', 'audience', 'recipientActorKeys', 'signalText', 'frozenContent', 'contentHash', 'runtimeSourceHash'], 'pressure signal')
   const raw = p.object(s.frozenContent, 'pressure signal content'), world = p.object(p.object(raw.campaign, 'pressure signal campaign').sourceWorld, 'pressure signal world')
-  const content = parseTtrpgRuntimeContentVersionedV1(raw, p.hash(world.contentHash, 'signal world hash'), 2)
+  const content = parseTtrpgFrozenRuntimeContentV1(s.frozenContent, p.hash(world.contentHash, 'signal world hash'))
   if (!isTtrpgRuntimeContentV2(content)) p.fail('征兆仅支持冻结 open 来源')
   const frontKey = p.key(s.frontKey, 'signal front'), telegraphKey = p.key(s.telegraphKey, 'signal key')
   const definition = content.campaign.fronts.find(f => f.frontKey === frontKey)?.telegraph.find(t => t.telegraphKey === telegraphKey)

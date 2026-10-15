@@ -1,6 +1,6 @@
 /** Actual situation admission/terminal owner, with frozen causes and persistent knowledge. */
 import type { ProductRuntimeState } from '../types'
-import { parseTtrpgRuntimeContentVersionedV1, isTtrpgRuntimeContentV2 } from './content-version'
+import { parseTtrpgFrozenRuntimeContentV1, isTtrpgRuntimeContentV2 } from './content-version'
 import type { TtrpgRuntimeContentV2 } from './content-version'
 import type { TtrpgRuntimeStateV2, TtrpgOpenSituationRuntimeStateV1 } from './open-runtime-contract'
 import { parseTtrpgRuntimeStateV2, parseTtrpgOpenSituationRuntimeStateV1 } from './open-runtime-contract'
@@ -92,7 +92,7 @@ export function settleTtrpgOpenSituationWorkV1(input: { state: ProductRuntimeSta
 
 export function parseTtrpgOpenSituationFrozenContentV1(value: unknown): TtrpgRuntimeContentV2 {
   const raw = p.object(value, 'situation frozen content'), world = p.object(p.object(raw.campaign, 'situation frozen campaign').sourceWorld, 'situation world')
-  const content = parseTtrpgRuntimeContentVersionedV1(raw, p.hash(world.contentHash, 'situation world hash'), 2)
+  const content = parseTtrpgFrozenRuntimeContentV1(value, p.hash(world.contentHash, 'situation world hash'))
   if (!isTtrpgRuntimeContentV2(content)) return p.fail('局势只读冻结 open 版本')
   return content
 }

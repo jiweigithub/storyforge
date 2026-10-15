@@ -11,6 +11,7 @@ import { parseTtrpgCampaignContentV2 } from "./campaign-v2";
 import { parseRulePackV2, projectTtrpgRulePackMechanicalCoreV1 } from "./rule-pack-v2";
 import type { RulePackV2, TtrpgCampaignContentV2 } from "./open-contract";
 import { assertTtrpgPlayerProtocolV1 } from "./run-format";
+import { parseTtrpgFrozenContentCachedV1 } from './frozen-content-cache'
 
 export interface TtrpgRuntimeContentV2 {
   rulePack: { content: RulePackV2; contentHash: string };
@@ -55,6 +56,14 @@ export function parseTtrpgRuntimeContentVersionedV1(
   sourceWorldHash: string,
   playerVersion: 1 | 2,
 ): TtrpgVersionedRuntimeContent {
+  return parseTtrpgFrozenContentCachedV1(value, sourceWorldHash, playerVersion, parseTtrpgRuntimeContentUncachedV1)
+}
+
+function parseTtrpgRuntimeContentUncachedV1(
+  value: unknown,
+  sourceWorldHash: string,
+  playerVersion: 1 | 2,
+): TtrpgVersionedRuntimeContent {
   const raw = object(value, ["rulePack", "campaign", "compatibility"], "ttrpg");
   const frozen = object(raw.rulePack, ["content", "contentHash"], "ttrpg.rulePack");
   const compatibility = object(raw.compatibility, ["runtimeProtocol", "minimumPlayerVersion"], "ttrpg.compatibility");
@@ -91,6 +100,11 @@ export function parseTtrpgRuntimeContentVersionedV1(
     throw new Error("跑团战役来源与 RuntimePackage 不一致");
   }
   return parsed;
+}
+
+/** Frozen runtime snapshots only. Authoring/parser callers keep independent mutable values above. */
+export function parseTtrpgFrozenRuntimeContentV1(value: unknown, sourceWorldHash: string): TtrpgVersionedRuntimeContent {
+  return parseTtrpgFrozenContentCachedV1(value, sourceWorldHash, 2, parseTtrpgRuntimeContentUncachedV1, true)
 }
 
 export type TtrpgVerifiedContentViewV1 =
