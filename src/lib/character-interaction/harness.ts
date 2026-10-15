@@ -1,3 +1,4 @@
+import {supportsChatReplanningPromptV1} from './narrative-replanning'
 import {supportsChatSceneTransitionPromptV1, assertChatSceneTransitionReviewVersionV1} from './narrative-scene-transition'
 import {CHAT_EXISTING_GOAL_PAUSE_COMMITMENT_RULE_V1, supportsChatExistingGoalPausePromptV1} from './narrative-player-pause'
 import {supportsChatPromiseRequestPromptV1} from './narrative-promise-request'
@@ -361,7 +362,7 @@ function prompt(input: {
         '只有在场角色可有目标或打算，不给玩家写行动、同意、内心、关系升级或既成结果。角色的未实施计划只进入 possibilities，不进入事实。',
         '承接已有未解决问题，避免为反转而制造危机。新增剧情线加上旧活跃线不能超过 maxActiveThreads。可以不增加新线，只深化现有矛盾；给出可拒绝、可暂停、可改变方向的空间。',
       ] : []),
-      ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? chatActionPromptRulesV1(input.roleContext!, {preserveExpression: input.skillId === CHAT_ACTION_REVISION_SKILL, playerPause: true, conversationEvidence: true, commitmentSemanticsV2, promiseRequest, existingGoalPause, sceneTransition, actionKind: supportsChatActionKindPromptV1(input.producerVersion)}) : []),
+      ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? chatActionPromptRulesV1(input.roleContext!, {preserveExpression: input.skillId === CHAT_ACTION_REVISION_SKILL, playerPause: true, conversationEvidence: true, commitmentSemanticsV2, promiseRequest, existingGoalPause, sceneTransition, actionKind: supportsChatActionKindPromptV1(input.producerVersion), replanning: supportsChatReplanningPromptV1(input.producerVersion)}) : []),
       `严格输出 JSON：${schemaInstruction(input.skillId, promiseRequest, existingGoalPause, sceneTransition)}`,
       ...(input.skillId === 'character.chat-situation-construction' ? chatInquiryGenerationRulesV1(input.producerVersion) : []),
       ...(commitmentSemanticsV2 ? [CHAT_COMMITMENT_OUTPUT_CHECK_V2 + (existingGoalPause ? CHAT_EXISTING_GOAL_PAUSE_COMMITMENT_RULE_V1 : '')] : []),

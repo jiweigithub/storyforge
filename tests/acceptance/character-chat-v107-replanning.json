@@ -1,0 +1,42 @@
+{
+  "schema": "storyforge.character-chat-replanning-evidence",
+  "version": 1,
+  "label": "V107 self-paused original goal replanning; engineering evidence before real diagnostic",
+  "baseHead": "d45248bb0dc903e301a92fbff54da9516177b31a",
+  "scope": "New versioned generation and semantic review instructions on existing goal/situation APIs; no schema, permission or adoption change",
+  "bindings": [
+    "chat-narrative-action-v36",
+    "chat-narrative-options-v26",
+    "chat-narrative-action-review-v29",
+    "chat-narrative-options-review-v23"
+  ],
+  "engineering": {
+    "regressionFiles": 90,
+    "regressionTests": 1157,
+    "focusedBrowserTests": 6,
+    "requiredGates": 10,
+    "bundleSize": "passed",
+    "historicalPromptBytes": "Four generation/review hashes match independent d45248bb archive; see R-CHAT-02-replanning",
+    "fullCI": "prior snapshot queued; current snapshot pending",
+    "fullE2E": "prior snapshot running; current snapshot pending"
+  },
+  "evidence": {
+    "/tmp/storyforge-chat-v107-replanning-r2.log": "23367d21ecb80689d4affe24829ad385c7a46ab03d19c4e52762fee37e0e4cc3",
+    "/tmp/storyforge-chat-v107-chat-aitown-regression.log": "1fe01072a3fe9dd9c3edfb2a184daef04be6aba98ec7880f1405c5e56f7161d1",
+    "/tmp/storyforge-chat-v107-chat-tsx-regression.log": "43e3890c096b9c0a429c60295356fb1f5add01e952970283137c70947cd442ba",
+    "/tmp/storyforge-chat-v107-final-gates-receipt.json": "57448848374f9cdf35cee93259513ab759926e9fad15b8a85655b78053c7b5f6",
+    "/tmp/storyforge-chat-v107-final-bundle-size.log": "d10a3a054ab876cc7269c98ca45abd901695bf9cdfffc7ad972a7f6450cac794",
+    "/tmp/storyforge-chat-v107-targeted-e2e.log": "3eeb8e0954a092ebef0159fe6fd4809e799bc1284e0a7fca217d2f8d936f21b6"
+  },
+  "realModel": {
+    "requests": 0,
+    "status": "not started"
+  },
+  "limits": [
+    "Engineering mocks do not establish meaningful narrative or real-model quality.",
+    "V106 stagnation and original cohort denominators retained.",
+    "Player pause, secrets and candidate approval remain mandatory.",
+    "No Agnes, human, holdout, comparative or commercial acceptance."
+  ],
+  "goalStatus": "active"
+}
