@@ -121,7 +121,7 @@ export function validateChatSceneTransitionCheckV1(value: unknown, action: ChatN
 }
 
 export function supportsChatSceneTransitionV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v28', 'chat-narrative-options-review-v22', 'chat-narrative-action-review-v29', 'chat-narrative-options-review-v23'].includes(version ?? '')
+  return ['chat-narrative-action-review-v28', 'chat-narrative-options-review-v22', 'chat-narrative-action-review-v29', 'chat-narrative-options-review-v23', 'chat-narrative-action-review-v30', 'chat-narrative-options-review-v24'].includes(version ?? '')
 }
 export function supportsChatSceneTransitionPromptV1(version: string | undefined): boolean {
   return ['chat-narrative-action-v34', 'chat-narrative-options-v24', 'chat-action-revision-v16', 'chat-narrative-action-v35', 'chat-narrative-options-v25', 'chat-narrative-action-v36', 'chat-narrative-options-v26'].includes(version ?? '')

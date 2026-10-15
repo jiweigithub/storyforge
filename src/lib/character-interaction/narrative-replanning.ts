@@ -4,7 +4,7 @@ export function supportsChatReplanningPromptV1(version: string | undefined): boo
   return ['chat-narrative-action-v36', 'chat-narrative-options-v26'].includes(version ?? '')
 }
 export function supportsChatReplanningReviewV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v29', 'chat-narrative-options-review-v23'].includes(version ?? '')
+  return ['chat-narrative-action-review-v29', 'chat-narrative-options-review-v23', 'chat-narrative-action-review-v30', 'chat-narrative-options-review-v24'].includes(version ?? '')
 }
 
 export const CHAT_REPLANNING_ACTION_RULES_V1 = [

@@ -60,7 +60,7 @@ it.each([false, true])('new frozen rules recover the same goal and preserve an u
     }})
   expect(calls).toBe(2); expect(generated.snapshot.contract.budget.maxModelCalls).toBe(2)
   expect(generated.snapshot.contract.executionBindings!.map(b => b.promptVersion)).toContain(options ? 'chat-narrative-options-v26' : 'chat-narrative-action-v36')
-  expect(generated.snapshot.contract.executionBindings!.map(b => b.promptVersion)).toContain(options ? 'chat-narrative-options-review-v23' : 'chat-narrative-action-review-v29')
+  expect(generated.snapshot.contract.executionBindings!.map(b => b.promptVersion)).toContain(options ? 'chat-narrative-options-review-v24' : 'chat-narrative-action-review-v30')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id, ...(options ? {optionKey: 'option-1'} : {})})
   const after = (await readProductRuntimeState(f.sessionId)).interaction!, story = after.chatNarrative!

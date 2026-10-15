@@ -27,7 +27,7 @@ export function requireChatPromiseRequestV1(state: CharacterInteractionRuntimeSt
 }
 
 export function supportsChatPromiseRequestV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20', 'chat-narrative-action-review-v27', 'chat-narrative-options-review-v21', 'chat-narrative-action-review-v28', 'chat-narrative-options-review-v22', 'chat-narrative-action-review-v29', 'chat-narrative-options-review-v23'].includes(version ?? '')
+  return ['chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20', 'chat-narrative-action-review-v27', 'chat-narrative-options-review-v21', 'chat-narrative-action-review-v28', 'chat-narrative-options-review-v22', 'chat-narrative-action-review-v29', 'chat-narrative-options-review-v23', 'chat-narrative-action-review-v30', 'chat-narrative-options-review-v24'].includes(version ?? '')
 }
 export function supportsChatPromiseRequestPromptV1(version: string | undefined): boolean {
   return ['chat-narrative-action-v32', 'chat-narrative-options-v22', 'chat-action-revision-v14', 'chat-narrative-action-v33', 'chat-narrative-options-v23', 'chat-action-revision-v15', 'chat-narrative-action-v34', 'chat-narrative-options-v24', 'chat-action-revision-v16', 'chat-narrative-action-v35', 'chat-narrative-options-v25', 'chat-narrative-action-v36', 'chat-narrative-options-v26'].includes(version ?? '')

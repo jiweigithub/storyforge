@@ -1,4 +1,13 @@
 /** New contracts alone describe typed replies. Historical prompt bytes stay intact. */
+export function supportsChatSpokenInquiryReviewV1(version: string | undefined): boolean {
+  return ['chat-narrative-action-review-v30', 'chat-narrative-options-review-v24'].includes(version ?? '')
+}
+
+export const CHAT_SPOKEN_INQUIRY_REVIEW_RULES_V1 = [
+  '区分已经说出的询问与已经完成的物理观察。speak 的真实问话会随行动原子保存为角色消息，普通 situationRequest 的 sourceEventSequence 由系统绑定该消息；newFacts=[] 正是这种纯语言行为的合法形式，不要求另记“问过”的调查事实，也不因此判 consequences 或 meaningful-direction 失败。不能用 speak 掩盖正文实际完成的移动、翻动、检查、得到答复或发现；物理后果、披露及其它真实变化仍须按各自合同核对。',
+  '向非玩家对象发问且不需玩家决定时，speak + waitingForPlayer=false 可以成立；实际请求玩家许可仍须交还选择。问话不证明有人在场、听到、愿意作答或已经回答。公开呼唤不能凭空建立答复者，普通情境请求不应冒充 observation-result；后续 inquiryResult 仍须已有在场人物、实际问题、答复听众和冻结发现证据。合法问话仍须有意义且不泄密，不能因形式合法而放过重复追问、预写他人回答或替玩家决定。',
+]
+
 export function chatInquiryGenerationRulesV1(version: string | undefined): string[] {
   if (!['chat-situation-construction-v8', 'chat-situation-construction-v9'].includes(version ?? '')) return []
   return [
