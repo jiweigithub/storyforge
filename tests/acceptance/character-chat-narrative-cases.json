@@ -1830,6 +1830,113 @@
             },
             "oldQueuedV76Jobs": "cancelled before test start; final fixed-commit jobs replace outdated fixtures"
           }
+        },
+        "commitmentRevisionPreflight": {
+          "at": "2026-10-15T10:05:43.671082+00:00",
+          "status": "completed",
+          "purpose": "Existing one-shot consequence revision in a clone of the real V77 failed session; not new formal story or M1 recovery success",
+          "implementationHead": "1f2bbb1ef9be155d06333ae37dd8466bf79ff45e",
+          "sourceSnapshot": {
+            "gitHistory": "depth-1; exact HEAD and tracked tree verified",
+            "head": "6ca589602f9093d5eeea01793f9873f8399fb740",
+            "root": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v77-real-haj7ozpp/storyforge",
+            "manifestPath": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v77-real-haj7ozpp/manifest.json",
+            "manifestSha256": "de7314ae97d8d33cb555ad4c46410b034c7dfb2d9d74170b6b5ac21c83579512",
+            "files": 3378
+          },
+          "originalFailure": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v77-m1-clock-cohort/clock-r1-refuse-runtime.json",
+          "originalFailureSha256": "d104553285bd043764879e904e671b5f85b365da1f519c129fce277b842c3e6c",
+          "profileIsolation": "Exact closed isolated evaluation browser profile copied; original not opened or modified; no candidate or failed review replay/injection.",
+          "newModelRequests": 2,
+          "providerCompleted": 2,
+          "automaticRetries": 0,
+          "costUsd": null,
+          "usage": {
+            "totalTokens": 22807,
+            "inputTokens": 21703,
+            "cachedInputTokens": 3328,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 1104,
+            "reasoningOutputTokens": 236
+          },
+          "changedCandidateFields": [
+            "commitmentEffects",
+            "nextPossibilities"
+          ],
+          "checks": {
+            "refreshEqual": true,
+            "noModelRequestOnRefresh": true,
+            "textPreserved": true,
+            "oldFailureRetained": true,
+            "revisionUnavailable": true,
+            "originalEvidenceUnchanged": true
+          },
+          "originalAgencyFieldsPreserved": true,
+          "newPromises": 1,
+          "newPromiseTerms": "要开壳检查时，再问你。",
+          "pendingObservation": "observation-result",
+          "worldPreserved": true,
+          "restoration": {
+            "stem": "commitment-revision",
+            "openingReviewRetained": true,
+            "modelCalls": 0,
+            "interactionEqual": true,
+            "refreshEqual": true,
+            "worldPreserved": true,
+            "rawEvidenceRetained": true
+          },
+          "formalM1CountsChanged": false,
+          "humanScored": false,
+          "limitations": [
+            "Old failed episode stays failed; this manually requested extra diagnostic cannot substitute for it.",
+            "Only explicit new promise and related future plans were corrected; no repair result or story closure obtained.",
+            "Same provider action revision and review, not independent human evaluation or second model.",
+            "Full fixed-code CI/E2E are still live and queued; this source snapshot is unchanged."
+          ],
+          "next": "Keep original failures and the successful explicit recovery separately. Continue the next preregistered alternative behavior on the same frozen release, while examining whether commitment omissions repeat before changing generator contracts; do not remove the semantic review.",
+          "evidenceFolder": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v78-commitment-revision-diagnostic",
+          "rawEvidence": [
+            {
+              "file": "preregistration.json",
+              "sha256": "788b8feb2a39a546acd045f63213382035dde1e322a7e6d635eb08c049641a66"
+            },
+            {
+              "file": "script-binding.json",
+              "sha256": "a680804da2b5cec4f8550e1855a5604e598131b3ce6ef5227266fcc0aad60c1e"
+            },
+            {
+              "file": "runner.mjs",
+              "sha256": "c5d71e5cb472ce9b9bb80098e8338f393e6d868851d3966251933490ae33308b"
+            },
+            {
+              "file": "prepared.json",
+              "sha256": "e8a841b00c9e9fa2f3e451af3900245d6004810891fcce374122030103917cbf"
+            },
+            {
+              "file": "commitment-revision.json",
+              "sha256": "501754877dd1848538a80d2543376552e7fc0a0a287396821873b4f3a9e81dc0"
+            },
+            {
+              "file": "commitment-revision-backup.json",
+              "sha256": "06b6a780d74a4e06168ce2688920ae9b56d9f48ab371e775aa1e7b731216765b"
+            },
+            {
+              "file": "terminal-proof.json",
+              "sha256": "d35b152fe79420ac0be83c22519d4cf79e43dd5e3f009c692bb02cf226ca3257"
+            },
+            {
+              "file": "restoration.mjs",
+              "sha256": "2c81ca3eacf087d76b061cc012307b11cd6150c2206b8ade737b855b95b36918"
+            },
+            {
+              "file": "restoration.json",
+              "sha256": "dfe246d81163efd6922240b26cc0575f9f530b28ba357ce516bf55d775ae20d5"
+            },
+            {
+              "file": "interpretation.json",
+              "sha256": "aad4a77c6b81f0afb8f415e18d733d735bb06929b077a5991f90ba21f626448e"
+            }
+          ]
         }
       },
       {
