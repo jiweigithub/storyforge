@@ -174,17 +174,24 @@
     "currentCodeHead": "0b107a60180df809e3814371599b3bc936e61f2f",
     "ci": {
       "handle": 8981,
-      "status": "queued",
+      "status": "passed on fixed 0b107a60; does not cover later V113 code",
       "log": "/tmp/storyforge-chat-v111-full-ci.log",
-      "receipt": "/tmp/storyforge-chat-v111-full-ci-receipt.json"
+      "receipt": "/tmp/storyforge-chat-v111-full-ci-receipt.json",
+      "exitCode": 0,
+      "passedFiles": 874,
+      "passedTests": 5494,
+      "receiptSha256": "ae56980f7d87aef46b289b8e8c835651527bbbf411a3447889e63c8059086548",
+      "logSha256": "b6c4c9a8d2cefbe63c239ed5bef0831a02f4d2dfe39940287f465129156b16bb"
     },
     "e2e": {
       "handle": 14059,
-      "status": "queued",
+      "status": "verified unstarted queue superseded by V113 committed code",
       "log": "/tmp/storyforge-chat-v111-full-e2e.log",
-      "receipt": "/tmp/storyforge-chat-v111-full-e2e-receipt.json"
+      "receipt": "/tmp/storyforge-chat-v111-full-e2e-receipt.json",
+      "exitCode": 143,
+      "proof": "/tmp/storyforge-chat-v111-e2e-superseded.json"
     },
-    "priorV108CI": "Already running, retained without restart.",
+    "priorV108CI": "Terminal failure retained: 872 files/5485 tests passed, 1 file/3 stale registry count assertions failed. Fixed in V111; /tmp/storyforge-chat-v108-full-ci-receipt.json",
     "priorV108E2E": "Verified unstarted own job superseded after code change, exit143; /tmp/storyforge-chat-v108-e2e-superseded.json"
   }
 }

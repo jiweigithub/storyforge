@@ -342,9 +342,14 @@
     }
   },
   "fullCI": {
-    "v111": "running on 0b107a60, retained",
+    "v111": {
+      "status": "passed on 0b107a60, not V113",
+      "files": 874,
+      "tests": 5494,
+      "receipt": "/tmp/storyforge-chat-v111-full-ci-receipt.json"
+    },
     "v113": {
-      "status": "queued",
+      "status": "running",
       "handle": 83944,
       "snapshotHead": "691619a3748e47438150553b546965f5a1159af1",
       "log": "/tmp/storyforge-chat-v113-full-ci.log"
