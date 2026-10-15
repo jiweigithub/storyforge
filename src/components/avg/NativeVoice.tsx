@@ -53,7 +53,7 @@ export function NativeVoice(props: { sessionId:number; lineKey: string; visit: n
     {failed && <div className="avg-voice-recovery" role="status"><span>{error || c?.reason || '配音无法播放'}</span>
       <button type="button" onClick={() => { audio.current?.pause(); setError(''); setGeneration(null); setRetry(n => n+1) }}>重试配音</button>
       {props.plan.manualVoice === 'interrupt' && c?.generation && <button type="button" onClick={() => {
-        void useAvgGamePlayerStore.getState().voiceCommand({ type: 'observe', lineKey: props.lineKey, visit: props.visit, generation: c.generation, outcome: 'interrupted', reason: '用户确认静音继续', playedMs: c.playedMs ?? 0 }).catch(cause => setError(String(cause)))
+        void useAvgGamePlayerStore.getState().voiceCommand({ type: 'observe', expectedSessionId:props.sessionId, lineKey: props.lineKey, visit: props.visit, generation: c.generation, outcome: 'interrupted', reason: '用户确认静音继续', playedMs: c.playedMs ?? 0 }).catch(cause => setError(String(cause)))
       }}>静音继续</button>}
     </div>}
   </div>
