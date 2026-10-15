@@ -1,6 +1,6 @@
 # AVG 工作包开工卡
 
-> L2 · 版本：1.4.0 · 生效：2026-10-15 · 产品：AVG/Galgame · 上位条目：E-AVG-01。
+> L2 · 版本：1.5.0 · 生效：2026-10-15 · 产品：AVG/Galgame · 上位条目：E-AVG-01。
 > [产品契约](../products/AVG.md)裁决边界，[实施计划](AVG-IMPLEMENTATION-PLAN.md)裁决顺序。AVG-00 已设计交付，AVG-BASE-00A/00B 已分支验收，CAL-00 正在准备，下一代码包为 BASE-01；详见实施计划的当前状态。
 
 ## 0 所有代码包的共同交付约束
@@ -56,7 +56,7 @@
 
 ## 3 AVG-BASE-01 · 实际参考与媒体传输
 
-- **状态/前置**：QUEUED；BASE-00。S3 产品媒资输入/候选 owner 不变。
+- **状态/前置**：开工准备；00A/00B 已分支验收。独立 `avg-base01-20261015` 工作树从 `origin/main 5147924e` 建立并接入 00B `13ce6792`；当前尚无新媒体实现/真实生成，详细范围见实施计划 §2.3。S3 产品媒资输入/候选 owner 不变。
 - **入口/闭包**：`product-media.ts/media-contracts.ts` → `media-adapters.ts/media-transport.ts` → Harness receipt → `media-blob-store.ts/artifact-store.ts` → adoption/binding。读取合法参考 Blob 和冻结媒体需求，不重读整个世界。
 - **交付**：请求 V2 的 ReferenceInput、purpose/mask/crop、能力快照/费用上界、真实参考字节 hash/处理版本、async 查询/结果未知策略与 bounded attempt。共享升级须证明 AVG + 至少另一真实调用方需求，否则 AVG adapter 扩展。
 - **注册表/采用**：参考/数据政策走登记 Context 投影；需求 metadata 与真实候选沿现行写口，权利/传输/hash 为系统证据；不新增第二素材库。
