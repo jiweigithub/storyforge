@@ -1,4 +1,5 @@
-import {assertChatMemoryReconciliationReviewVersionV1} from './memory-reconciliation'
+import {assertChatMemoryCorrectionInputV1} from './context-reader-version'
+import {assertChatMemoryReconciliationReviewsV1, assertChatMemoryReconciliationReviewVersionV1} from './memory-reconciliation'
 import {CHAT_MEMORY_REVIEW_STEP, CHAT_MEMORY_REVIEW_SKILL, chatMemoryReviewBindingV1, parseChatMemoryReceiptV1} from './memory-review-contract'
 import {reviewChatMemoryCandidateV1} from './memory-review-harness'
 import {chatActionPromptRulesV1} from './narrative-action-prompt'
@@ -7,7 +8,7 @@ import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1, assertChatAc
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1} from './narrative-scheduling'
 import {buildInteractionContextWindow, type InteractionContextWindow} from './runtime'
-import {CHAT_CONTEXT_READER_VERSION_V3} from './context-selection'
+import {CHAT_CONTEXT_READER_VERSION_V4} from './context-selection'
 import { chat } from '../ai/client'
 import { createAgentSkillExecutionBindingV1, createAgentSkillExecutionBindingV2 } from '../agent/execution-binding'
 import { getAgentSkillV1, type AgentSkillId } from '../agent/skill-registry'
@@ -625,7 +626,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       declaredSourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       assembled,
-      readerVersion: situation ? 'chat-situation-runtime-view-v7' : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V3 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? 'chat-situation-runtime-view-v8' : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V4 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
@@ -911,6 +912,11 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
       })
       const state = await readProductRuntimeState(candidate.productRuntimeSessionId)
       if (state.interaction?.activeScene?.sceneId !== candidate.sceneId) fail('互动场景已经变化')
+      if (state.interaction && (candidate.kind === 'chat-narrative-action-candidate' || candidate.kind === 'chat-narrative-options-candidate')) {
+        assertChatMemoryReconciliationReviewsV1(state.interaction, candidate.participantKey, candidate.kind === 'chat-narrative-action-candidate'
+          ? [candidate.review] : candidate.review?.optionReviews.map(r => r.review) ?? [], snapshot.contract.executionBindings?.find(b => b.stepId === CHAT_ACTION_REVIEW_STEP_V1)?.promptVersion)
+        await assertChatMemoryCorrectionInputV1(snapshot, input.scope.projectId, state.interaction, candidate.participantKey)
+      }
     } catch (error) {
       snapshot = await append(input.scope, snapshot, 'candidate.staled', {
         stepId: INTERACTION_RUNTIME_STEP_ID_V1,

@@ -1,4 +1,5 @@
-import {assertChatMemoryReconciliationCoverageV1, assertChatMemoryReconciliationReviewVersionV1, isChatActionReviewOutputV1} from './memory-reconciliation'
+import {assertChatMemoryCorrectionInputV1} from './context-reader-version'
+import {assertChatMemoryReconciliationReviewsV1, supportsChatMemoryReconciliationV1, assertChatMemoryReconciliationReviewVersionV1, isChatActionReviewOutputV1} from './memory-reconciliation'
 import {chatActionReviewPromptRulesV1} from './narrative-action-prompt'
 import {interactionRetrievalView} from './runtime'
 import {readProductRuntimeState} from './runtime-api'
@@ -42,11 +43,19 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
   if (!reviewBinding) fail('旧候选没有审查合同，请取消后明确发起新行动；原有内容仍保留')
   const actions = situation ? [] : options ? candidate.options : [candidate.action]
   assertChatCommitmentReviewVersionV1(actions, reviewBinding.promptVersion)
-  const commitments = ['chat-narrative-action-review-v19', 'chat-narrative-options-review-v13'].includes(reviewBinding.promptVersion)
+  const memoryReconciliation = supportsChatMemoryReconciliationV1(reviewBinding.promptVersion)
+  const commitments = memoryReconciliation || ['chat-narrative-action-review-v19', 'chat-narrative-options-review-v13'].includes(reviewBinding.promptVersion)
   const naturalDisclosure = commitments || ['chat-narrative-action-review-v18', 'chat-narrative-options-review-v12'].includes(reviewBinding.promptVersion)
   if (!naturalDisclosure && actions.some(a => a.disclosures.some(d => d.wording === 'equivalent'))) fail('旧审查合同不支持自然转述；保留原候选，不自动更换合同或重发')
   if (!situation && candidate.review) assertChatMemoryReconciliationReviewVersionV1(
     options ? candidate.review.optionReviews.map(r => r.review) : [candidate.review], reviewBinding.promptVersion)
+  if (!situation && snapshot.projection.state !== 'completed') {
+    await assertRuntimeHarnessFreshV1(freshness)
+    const state = (await readProductRuntimeState(input.productRuntimeSessionId)).interaction!
+    assertChatMemoryReconciliationReviewsV1(state, candidate.participantKey, candidate.review
+      ? options ? candidate.review.optionReviews.map(r => r.review) : [candidate.review] : [], reviewBinding.promptVersion)
+    await assertChatMemoryCorrectionInputV1(snapshot, input.scope.projectId, state, candidate.participantKey)
+  }
   if (candidate.review) return {snapshot, candidate}
   if (snapshot.projection.state !== 'running') fail('当前叙事运行已停止，不能继续审查')
   await assertRuntimeHarnessFreshV1(freshness)
@@ -73,7 +82,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
       await assertRuntimeHarnessFreshV1(freshness)
       const manifest = await createContextManifestFromAssemblyV1({runId: snapshot.run.id, stepId, attempt: 1,
         projectId: input.scope.projectId, worldGroupId: snapshot.contract.scope.worldGroupId, declaredSourceKeys: sourceKeys,
-        assembled, readerVersion: situation ? 'chat-situation-review-v7' : 'chat-action-review-v7'})
+        assembled, readerVersion: situation ? 'chat-situation-review-v7' : memoryReconciliation ? 'chat-action-review-v8' : 'chat-action-review-v7'})
       snapshot = await append(input.scope, snapshot, 'context.assembled', {stepId, attempt: 1, manifestHash: manifest.manifestHash})
       const compact = naturalDisclosure || ['chat-narrative-action-review-v17', 'chat-narrative-options-review-v11'].includes(reviewBinding.promptVersion)
       const roleContext = !situation && compact ? interactionRetrievalView((await readProductRuntimeState(input.productRuntimeSessionId)).interaction!, candidate.participantKey) : undefined
@@ -93,7 +102,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
         'visibility：是否借描述、暗示、新目标或问句泄露角色或玩家不可知的秘密；引用正确也不能洗白语义泄露。',
         'meaningful-direction：是否承接当前局面、提供有动机且可改变的行动方向，而非机械制造危机、重复问题或预写结局。',
         '仅输出 JSON {"checks":[{"check":"continuity|permissions|player-agency|visibility|meaningful-direction","passed":true,"reason":"引用实际内容解释判断"}]}，必须分别包含上述五项，不得有其他字段。',
-      ] : chatActionReviewPromptRulesV1({view: roleContext, actions, options, compact, naturalDisclosure, commitments})).join('\n')}, {role: 'user', content: assembled.text}]
+      ] : chatActionReviewPromptRulesV1({view: roleContext, actions, options, compact, naturalDisclosure, commitments, memoryReconciliation})).join('\n')}, {role: 'user', content: assembled.text}]
       snapshot = (await recordAgentRunArtifactV1({scope: input.scope, runId: snapshot.run.id,
         productRuntimeSessionId: input.productRuntimeSessionId, artifactKind: 'rendered-request', content: JSON.stringify(messages),
         stepId, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence})).snapshot
@@ -124,10 +133,10 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
     if ('optionReviews' in review || 'reviewedActionJson' in review) assertChatMemoryReconciliationReviewVersionV1(
       'optionReviews' in review ? review.optionReviews.map(r => r.review) : [review], reviewBinding.promptVersion)
     const actionReviews = 'optionReviews' in review ? review.optionReviews.map(r => r.review) : 'reviewedActionJson' in review ? [review] : []
-    if (actionReviews.some(r => r.memoryChecks !== undefined)) {
+    if (actionReviews.length) {
       const state = (await readProductRuntimeState(input.productRuntimeSessionId)).interaction
       if (!state) fail('记忆修正核对缺少角色运行状态')
-      for (const r of actionReviews) if (r.memoryChecks !== undefined) assertChatMemoryReconciliationCoverageV1(state, candidate.participantKey, r.memoryChecks)
+      assertChatMemoryReconciliationReviewsV1(state, candidate.participantKey, actionReviews, reviewBinding.promptVersion)
     }
     const passed = 'optionReviews' in review ? review.optionReviews.every(r => chatNarrativeActionReviewPassedV1(r.review))
       : 'reviewedActionJson' in review ? chatNarrativeActionReviewPassedV1(review) : review.checks.every(check => check.passed)

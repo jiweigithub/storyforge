@@ -53,7 +53,7 @@ it('delivers selected promise history through registered sources and preserves e
   expect(calls).toBe(2)
 }, 60_000)
 
-it('resumes a saved v6 promise context with its original full-history policy after the v7 reader is activated', async () => {
+it('resumes a saved v6 promise context with its original full-history policy after the v8 reader is activated', async () => {
   const f = await seedChatNarrativeRuntimeFixture()
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'scene-start', sourceEventSequence: f.sceneSequence})
   const first = chatPromiseActionFixture(), base = {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '旧读取版本恢复'}
@@ -70,7 +70,7 @@ it('resumes a saved v6 promise context with its original full-history policy aft
   })
   const create = manifests.createContextManifestFromAssemblyV1
   vi.spyOn(manifests, 'createContextManifestFromAssemblyV1').mockImplementation(input => create({...input,
-    readerVersion: input.readerVersion === 'chat-narrative-runtime-view-v7' ? 'chat-narrative-runtime-view-v6' : input.readerVersion}))
+    readerVersion: input.readerVersion === 'chat-narrative-runtime-view-v8' ? 'chat-narrative-runtime-view-v6' : input.readerVersion}))
   const record = artifacts.recordAgentRunArtifactV1
   vi.spyOn(artifacts, 'recordAgentRunArtifactV1').mockImplementation(input => record(input.artifactKind === 'context-packet'
     ? {...input, content: JSON.stringify({...JSON.parse(input.content), selection: oldSelection})} : input))

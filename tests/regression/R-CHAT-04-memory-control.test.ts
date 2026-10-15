@@ -94,7 +94,7 @@ it('keeps a corrected disabled entry disabled and enforces capacity when the pla
 
 it('does not adopt an action generated against the old memory after a correction', async () => {
   const f = await start(), result = await generated(f)
-  await correctChatMemory(await correction(f))
+  const correctedEvent = await correctChatMemory(await correction(f))
   await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})).rejects.toThrow()
   expect((await state(f.sessionId)).messages.filter(m => m.role === 'character')).toEqual([])
   const v = await readProductRuntimeStateVersion(f.sessionId)
@@ -111,7 +111,7 @@ it('does not adopt an action generated against the old memory after a correction
       reads++
       expect(JSON.stringify(messages)).toContain(corrected)
       expect(JSON.stringify(messages)).not.toContain(oldContent)
-      return JSON.stringify(chatActionReviewOutputFixture())
+      return JSON.stringify({...chatActionReviewOutputFixture(), memoryChecks: [{memoryId: 'corrected', sourceSequence: correctedEvent.sequence, passed: true, reason: '注入判定仅验证新修正输入与状态链路。'}]})
     }})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: fresh.snapshot.run.id})
   expect(reads).toBe(2)

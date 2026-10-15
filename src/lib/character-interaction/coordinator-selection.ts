@@ -15,7 +15,7 @@ const HEADER = '【角色聊天情境协调视角，仅供情境构建和审查�
  * hashes. v1 keeps every accepted memory; v2 ranks unpinned summaries. Neither
  * may omit established facts, permissions or material delivered to the actor. */
 export function selectChatCoordinatorContextV1(state: CharacterInteractionRuntimeState, candidate: {text: string; actorKey?: string; retrievalVersion?: ChatRetrievalVersion} = {text: ''}) {
-  const corrections = candidate.retrievalVersion === 'chat-relevance-v4'
+  const corrections = candidate.retrievalVersion == null || candidate.retrievalVersion === 'chat-relevance-v4'
   const memoryCorrections = corrections ? (candidate.actorKey ? [candidate.actorKey] : state.profiles.map(p => p.participantKey)).flatMap(key => chatMemoryCorrectionContextV1(state, key)) : []
   const promises = corrections || candidate.retrievalVersion == null || candidate.retrievalVersion === 'chat-relevance-v3'
   const modern = promises || candidate.retrievalVersion === 'chat-relevance-v2'
@@ -43,7 +43,7 @@ export function selectChatCoordinatorContextV1(state: CharacterInteractionRuntim
     if (candidate.text.includes(JSON.stringify(item.commitmentKey))) requiredCommitments.add(item.commitmentKey)
   }
   if (candidate.actorKey) {
-    const delivered = buildInteractionContextWindow(state, candidate.actorKey, {retrievalVersion: candidate.retrievalVersion ?? 'chat-relevance-v3'})
+    const delivered = buildInteractionContextWindow(state, candidate.actorKey, {retrievalVersion: candidate.retrievalVersion ?? 'chat-relevance-v4'})
     for (const item of delivered.knowledge) required.add(item.knowledgeKey)
     for (const item of delivered.memories) requiredMemories.add(item.memoryId)
     if (promises) for (const item of [...(delivered.chatNarrative?.goals.flatMap(g => g.commitments ?? []) ?? []), ...(delivered.sharedCommitments ?? [])]) requiredCommitments.add(item.commitmentKey)

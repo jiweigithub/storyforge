@@ -1092,8 +1092,8 @@ export function buildInteractionContextWindow(
   if (state.chatNarrative && options.retrievalVersion !== 'legacy') {
     const profile = state.profiles.find(p => p.participantKey === participantKey)
     if (!profile) throw new Error('缺少角色视角，无法选择来源资料')
-    if (options.retrievalVersion === 'chat-relevance-v4') visible.memoryCorrections = chatMemoryCorrectionContextV1(state, participantKey)
-    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v3',
+    if ((options.retrievalVersion ?? 'chat-relevance-v4') === 'chat-relevance-v4') visible.memoryCorrections = chatMemoryCorrectionContextV1(state, participantKey)
+    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v4',
       requiredCommitmentKeys: requiredChatCommitmentKeysV1(state.chatNarrative!.situation.goals)})
   }
   const allMessages = visible.messages

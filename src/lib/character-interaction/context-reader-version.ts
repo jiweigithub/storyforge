@@ -6,6 +6,15 @@ import {chatRetrievalVersionForReader, type ChatRetrievalVersion} from './contex
 import type {CharacterInteractionRuntimeState} from '../types'
 import {buildInteractionContextWindow} from './runtime'
 import {formatInteractionRuntimeContextV1} from './context-format'
+import {pendingChatMemoryCorrectionsV1} from './memory-reconciliation'
+
+export async function assertChatMemoryCorrectionInputV1(snapshot: AgentRunSnapshotV1, projectId: number,
+  state: CharacterInteractionRuntimeState, actorKey: string): Promise<void> {
+  if (pendingChatMemoryCorrectionsV1(state, actorKey).length
+    && await readChatCandidateRetrievalVersion(snapshot, projectId, 'interactionRuntime', actorKey, state) !== 'chat-relevance-v4') {
+    throw new Error('原行动没有读取完整记忆修正依据，请取消后明确发起新行动；不会自动替换旧输入或重发。')
+  }
+}
 
 /** A review follows its saved producer's reader. Old situation runs did not
  * retain a packet and keep the conservative v1 memory policy. */

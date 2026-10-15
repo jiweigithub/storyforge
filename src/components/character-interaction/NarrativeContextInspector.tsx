@@ -5,6 +5,7 @@ import type {ChatContextSelectionReasonV1} from '../../lib/character-interaction
 
 const selectionReason = (reason: ChatContextSelectionReasonV1) => reason === 'current-fact' ? '当前事实的来源'
   : reason === 'player-pin' ? '由你固定，每轮保留'
+  : reason === 'pending-correction' ? '这条修正尚待行动核对，本次完整保留'
   : reason === 'open-commitment' ? '尚未处理的约定，每轮保留'
   : reason === 'latest-resolution' ? '这件事最近一次履行或撤回'
   : reason === 'protected-memory' ? '已确认承诺或关键记忆'
@@ -68,6 +69,14 @@ export default function NarrativeContextInspector(props: {scope: WorkspaceScope;
         <div><h3 className="mb-1 font-semibold">已读的来源知识</h3>{list(inspection.knowledge)}</div>
         <div><h3 className="mb-1 font-semibold">共同已知的剧情线</h3>{list(inspection.threads.map(t => `${t.title}：${t.question}`))}</div>
         <div><h3 className="mb-1 font-semibold">双方已有的已确认记忆</h3>{list(inspection.memories)}</div>
+        {!!inspection.memoryCorrections.length && <div data-testid="chat-context-corrections" className="space-y-2">
+          <h3 className="font-semibold">本次必须核对的记忆修正</h3>
+          <p className="text-text-muted">以下修正和原话已进入这次输入。读到它们不等于行动已通过核对，也不会改写已经发生的事实。</p>
+          {inspection.memoryCorrections.map((correction, i) => <details key={i} className="rounded border border-border p-2">
+            <summary className="cursor-pointer whitespace-pre-wrap break-words">{correction.content}</summary>
+            <div className="mt-2">{list(correction.sources.map(source => `${source.speaker}：${source.text}`))}</div>
+          </details>)}
+        </div>}
         {!!inspection.commitments.length && <div data-testid="chat-context-commitments"><h3 className="mb-1 font-semibold">本次实际读取的约定</h3>{list(inspection.commitments.map(c => `${c.actorName}：${c.terms}（${c.resolution === null ? '当时待履行' : c.resolution.kind === 'fulfilled' ? '当时已履行' : '当时已撤回'}）`))}</div>}
         {inspection.selection && <div className="space-y-2" data-testid="chat-context-selection">
           <p className="text-text-muted">以下只列双方当时共同已知的资料。省略仅表示本轮没有选入，不代表遗忘或删除；私有目标的选择依据不在这里展开。</p>

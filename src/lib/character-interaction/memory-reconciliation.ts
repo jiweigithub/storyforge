@@ -90,9 +90,26 @@ export function applyChatMemoryReconciliationsV1(before: CharacterInteractionRun
 }
 
 /** New fields cannot be smuggled through older frozen reviewer contracts. */
+export function supportsChatMemoryReconciliationV1(version: string | undefined): boolean {
+  return ['chat-narrative-action-review-v20', 'chat-narrative-options-review-v14'].includes(version ?? '')
+}
+
 export function assertChatMemoryReconciliationReviewVersionV1(reviews: readonly (ChatNarrativeActionReviewV1 | null)[], version: string | undefined): void {
-  if (reviews.some(r => r?.memoryChecks !== undefined)
-    && !['chat-narrative-action-review-v20', 'chat-narrative-options-review-v14'].includes(version ?? '')) fail('旧审查合同不支持记忆修正核对；保留原候选，不自动换约或重发')
+  if (reviews.some(r => r?.memoryChecks !== undefined) && !supportsChatMemoryReconciliationV1(version)) fail('旧审查合同不支持记忆修正核对；保留原候选，不自动换约或重发')
+}
+
+/** Live approval/adoption gate, deliberately separate from historical replay.
+ * Empty reviews check admission before any reviewer request is made. */
+export function assertChatMemoryReconciliationReviewsV1(state: CharacterInteractionRuntimeState, actorKey: string,
+  reviews: readonly (ChatNarrativeActionReviewV1 | null)[], version: string | undefined): void {
+  assertChatMemoryReconciliationReviewVersionV1(reviews, version)
+  const pending = pendingChatMemoryCorrectionsV1(state, actorKey)
+  if (pending.length && !supportsChatMemoryReconciliationV1(version)) fail('旧审查合同不能处理待核对的记忆修正，请取消后明确发起新行动；原候选保留，不自动换约或重发')
+  for (const review of reviews) {
+    if (review?.memoryChecks === undefined) {
+      if (pending.length) fail('行动审查缺少待处理记忆修正的逐项核对')
+    } else assertChatMemoryReconciliationCoverageV1(state, actorKey, review.memoryChecks)
+  }
 }
 
 export function isChatActionReviewOutputV1(value: unknown, extraRequired: string[] = []): value is Record<string, unknown> {

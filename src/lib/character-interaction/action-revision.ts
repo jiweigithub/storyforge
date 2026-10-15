@@ -1,4 +1,4 @@
-import {isChatActionReviewOutputV1} from './memory-reconciliation'
+import {assertChatMemoryReconciliationReviewsV1, isChatActionReviewOutputV1} from './memory-reconciliation'
 import {db} from '../db/schema'
 import {canonicalStringify} from '../agent/run/hash'
 import {assertRuntimeHarnessFreshV1} from '../agent/run/runtime-scope'
@@ -57,6 +57,7 @@ export async function readChatActionRevisionSourceV1(input: {
     const body = JSON.parse(raw.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, '$1'))
     if (!isChatActionReviewOutputV1(body)) return null
     review = parseChatNarrativeActionReviewV1({...body, reviewedActionJson: canonicalStringify(candidate.action)}, candidate.action)
+    assertChatMemoryReconciliationReviewsV1(state, candidate.participantKey, [review], snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:action-review')?.promptVersion)
   } catch {return null}
   if (!review.checks.some(c => c.check === 'consequences' && !c.passed) || review.checks.some(c => c.check !== 'consequences' && !c.passed)
     || review.memoryChecks?.some(c => !c.passed) || review.disclosureChecks?.some(c => !c.passed) || review.commitmentChecks?.some(c => !c.passed)) return null

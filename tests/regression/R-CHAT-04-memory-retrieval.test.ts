@@ -125,17 +125,17 @@ it('delivers selected memory through the registered Harness and shows only revie
     await resolveInteractionMemory({...await command(f.sessionId), memoryId: `old-${i}`, resolution: 'accepted'})
   }
   await proposeInteractionMemory({...await command(f.sessionId), memoryId: 'new', participantKey: 'guard', kind: 'commitment', content: '旧的未检查摘要', importance: 1, sourceEventSequences: [sent.sequence], evidenceExcerpt: '靛蓝地图'})
-  await correctChatMemory({...await command(f.sessionId), memoryId: 'new', replacementMemoryId: 'relevant', content: '约好在北侧石墙交还靛蓝地图。', sourceEventSequences: [sent.sequence], evidenceExcerpt: '北侧石墙', reason: '据原话填写'})
+  const corrected = await correctChatMemory({...await command(f.sessionId), memoryId: 'new', replacementMemoryId: 'relevant', content: '约好在北侧石墙交还靛蓝地图。', sourceEventSequences: [sent.sequence], evidenceExcerpt: '北侧石墙', reason: '据原话填写'})
   await endInteractionScene({...await command(f.sessionId), sceneId: 'inn.current', reason: '暂别后返回'})
   const returned = await startInteractionScene({...await command(f.sessionId), sceneId: 'inn.return', sceneKey: 'inn'})
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'scene-start', sourceEventSequence: returned.sequence})
   let calls = 0
   const result = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '依据承诺继续演绎',
     runAI: async messages => {calls++; expect(JSON.stringify(messages)).toContain('约好在北侧石墙交还靛蓝地图'); return JSON.stringify({kind: 'speak', text: '我先核对靛蓝地图，再继续找铜印。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})},
-    runReviewAI: async messages => {calls++; expect(JSON.stringify(messages)).toContain('约好在北侧石墙交还靛蓝地图'); return JSON.stringify(chatActionReviewOutputFixture())}})
+    runReviewAI: async messages => {calls++; expect(JSON.stringify(messages)).toContain('约好在北侧石墙交还靛蓝地图'); return JSON.stringify({...chatActionReviewOutputFixture(), memoryChecks: [{memoryId: 'relevant', sourceSequence: corrected.sequence, passed: true, reason: '注入的工程判定。'}]})}})
   const inspected = await readChatContextInspectionV1(f.scope, f.sessionId, result.snapshot.run.id)
   expect(inspected.available).toBe(true)
-  if (inspected.available) expect(inspected.selection?.memories).toContainEqual({content: '约好在北侧石墙交还靛蓝地图。', included: true, reason: 'dialogue'})
+  if (inspected.available) expect(inspected.selection?.memories).toContainEqual({content: '约好在北侧石墙交还靛蓝地图。', included: true, reason: 'pending-correction'})
   expect(JSON.stringify(inspected)).not.toContain('PRIVATE-UNCHECKED')
   expect(calls).toBe(2)
 })
