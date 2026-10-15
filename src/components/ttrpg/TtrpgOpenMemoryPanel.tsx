@@ -59,7 +59,7 @@ export default function TtrpgOpenMemoryPanel(props: {
     {page && <section aria-label="当前身份可见的冒险记忆">
       {!page.entries.length && <p>暂时没有当前身份可见的记忆。</p>}
       {page.entries.map(entry => <article key={entry.revisionKey}>
-        <p><strong>{reliabilityLabels[entry.reliability]}</strong> · {audienceLabels[entry.audience]} · 世界第 {entry.recordedAtWorldTurn} 轮{entry.historical ? ' · 继承自先前分支' : ''}</p>
+        <p><strong>{reliabilityLabels[entry.reliability]}</strong>{entry.origin === 'model-reviewed' ? ' · AI复盘，经主持确认' : ' · 手写记录'} · {audienceLabels[entry.audience]} · 世界第 {entry.recordedAtWorldTurn} 轮{entry.historical ? ' · 继承自先前分支' : ''}</p>
         <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{entry.summary}</p>
         <p>视角：{entry.observerKey === null ? '本桌记录' : entry.observerKey === 'gm' ? '主持' : page.actors.find(actor => actor.key === entry.observerKey)?.name ?? '原记录角色'}；来源：事件 {entry.fromEventSequence}–{entry.toEventSequence}</p>
         {entry.audience === 'private' && <p>可见角色：{entry.knownBy.map(key => key === 'gm' ? '主持' : page.actors.find(actor => actor.key === key)?.name ?? '原接收角色').join('、')}</p>}

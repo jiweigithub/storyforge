@@ -472,17 +472,10 @@ const ADOPTION_SCHEMAS_RAW: CollectionAdoptionSpec[] = [
 
 export const ADOPTION_EXTENSIONS: readonly AdoptionExtensionSpec[] = Object.freeze([
   {
-    id: 'ttrpg-model-memory-adoption', target: 'ttrpgNarrativeMemories',
-    entrypoints: ['src/lib/ttrpg/runtime-commands.ts'],
-    policyRegistry: 'verifyTtrpgOpenBriefCandidateProofV1 + parseTtrpgOpenModelMemoryReceiptV2 + E15 + PROJECT_TABLES',
-    reason: '真人主持明确确认同一正式复盘候选；核对原回答、完整来源、当前权限与被动窗口，E15与唯一记忆投影原子追加，保留model-reviewed和原始观察者/可靠性。无规则、知识或世界写入。',
-    reviewAfter: '2027-08-21',
-  },
-  {
     id: 'ttrpg-human-memory-lifecycle', target: 'ttrpgNarrativeMemories',
     entrypoints: ['src/lib/ttrpg/runtime-commands.ts', 'src/lib/ttrpg/runtime-branch.ts'],
-    policyRegistry: 'parseTtrpgOpenMemoryReceiptV1 + verifyTtrpgOpenMemoryReceiptsV1 + PRODUCT_RUNTIME_EVENT_TYPES + PROJECT_TABLES',
-    reason: '人工确认只追加 E15 并同事务物化唯一记忆投影；分支只复制切点前已确认且证明匹配的记录。摘要保留观察者和可信度，规则与知识权威归原台账。模型摘要须另经 CreativeArtifact/adopt；当前人工入口不接受模型来源。',
+    policyRegistry: 'parseTtrpgOpenMemoryReceipt + verifyTtrpgOpenBriefCandidateProofV1 + verifyTtrpgOpenMemoryReceiptsV1 + E15 + PROJECT_TABLES',
+    reason: '同一表唯一领域治理入口：原人工 V1 只接受手写来源；模型 V2 必须经正式 CreativeArtifact、真人明确确认与实际来源证明，E15和唯一记忆投影原子追加。分支只复制切点前已确认记录；原始观察者/可靠性与model-reviewed保留，不授予规则、知识或世界权威。',
     reviewAfter: '2027-08-21',
   },
   { id: 'extension-record-lifecycle', target: 'extensionRecords', entrypoints: ['src/lib/extensions/store.ts'], policyRegistry: 'ExtensionRegistrySnapshot + PROJECT_TABLES + bounded DataSchema', reason: '普通作者编辑、内容包、迁移与历史代恢复通过命名空间、schema 和 revision CAS；模型候选必须由 adopt 委托同一事务写入。', reviewAfter: '2027-01-01' },

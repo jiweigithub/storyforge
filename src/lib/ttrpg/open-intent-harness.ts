@@ -463,8 +463,8 @@ async function buildSucceededCandidate(args: {
     else intent = parseSemanticIntent(output, { actorKey: call.actorKey, source, inputRevision: epoch.inputRevision,
       intentKey: await ttrpgOpenScopedKeyV1(runtime!.sessionKey, 'intent', [call.requestKey]), visibleRefs, visibleResources })
   } catch {
-    issues.push(createCreativeIssueV1({ code: 'ttrpg-open-intent-protocol', path: 'intent',
-      message: '意图格式不完整，或引用了本次未授权读取的对象；原始响应已保留。', action: 'edit' }))
+    issues.push(createCreativeIssueV1({ code: purpose === 'stage-brief' ? 'ttrpg-open-brief-protocol' : 'ttrpg-open-intent-protocol', path: purpose === 'stage-brief' ? 'brief' : 'intent',
+      message: purpose === 'stage-brief' ? '复盘格式不完整，或引用了本次未实际交付的资料；原始回复已保留。' : '意图格式不完整，或引用了本次未授权读取的对象；原始响应已保留。', action: 'edit' }))
   }
   if (inputTokens > call.reservedInputTokens || outputTokens > call.reservedOutputTokens || estimateTokens(output) > call.reservedOutputTokens) {
     issues.push(createCreativeIssueV1({ code: 'ttrpg-open-intent-budget', path: 'usage',

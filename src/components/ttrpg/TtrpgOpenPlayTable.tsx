@@ -1,3 +1,4 @@
+import TtrpgOpenBriefPanel from './TtrpgOpenBriefPanel'
 import TtrpgOpenHistoricalResponses from './TtrpgOpenHistoricalResponses'
 import TtrpgOpenMemoryPanel from './TtrpgOpenMemoryPanel'
 import { readTtrpgOpenTableContextTraceV1, type TtrpgOpenTableContextTraceV1 } from '../../lib/ttrpg/open-table-service'
@@ -127,8 +128,9 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
     </fieldset>}
     {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenTableConversation key={`${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => { await job() })} />}
     {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenMemoryPanel key={`memory:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(() => job())} />}
+    {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenBriefPanel key={`brief:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(signal => job(signal))} />}
     {p && <>
-      {(p.hosting?.canDelegate || p.hosting?.permission) && <section className="sf-open-table-card" aria-label="本轮自动主持">
+      {!p.passiveRecap && (p.hosting?.canDelegate || p.hosting?.permission) && <section className="sf-open-table-card" aria-label="本轮自动主持">
         <h2>本轮自动主持</h2>
         <p>沿用本轮剩余额度，推进已确认行动、安全队友协作和已结算结果的 KP 叙述。风险、选择和权限问题交回真人。</p>
         {p.hosting.canDelegate && <>
@@ -143,7 +145,7 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
         {p.hosting.permission?.stoppedRef && <p role="status">本轮自动主持已停止。可继续处理已保存的进度；新的自动主持需要明确开始下一轮。</p>}
       </section>}
       {p.stageStatus === 'closed' && <p role="status">本阶段已明确收束；请完成剩余后果与叙述，并保存进度。</p>}
-      <div className="sf-open-table-toolbar"><span>{p.view.self.name} · 世界轮次 {p.view.authority.worldTurn}</span><span>本轮剩余请求额度：{p.remainingCalls}</span>
+      <div className="sf-open-table-toolbar"><span>{p.view.self.name} · 世界轮次 {p.view.authority.worldTurn}</span><span>{p.passiveRecap ? '当前为阶段复盘' : <>本轮剩余请求额度：{p.remainingCalls}</>}</span>
         <button disabled={busy} onClick={() => void perform(async () => {})}>读取最新进度</button>
         <button disabled={busy} onClick={() => void perform(async () => { await changeTtrpgOpenTableSafetyV1({ ...input(), status: view.safetyStatus === 'paused' ? 'active' : 'paused', reason: view.safetyStatus === 'paused' ? '真人明确恢复冒险' : '真人使用安全暂停' }) })}>{view.safetyStatus === 'paused' ? '恢复冒险' : '暂停冒险'}</button>
         <button disabled={busy} onClick={() => { ++revision.current;activeViewer.current = '';setViewerKey('');setSelected('');setView(null);setDraft('');setManualDraft('');setError('');setNotice('') }}>交接给另一位玩家</button>
@@ -169,7 +171,7 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
       {p.pendingCancellations.map(requestKey => <aside className="sf-open-table-card" key={requestKey}><p>尚未发送的请求已取消，停止回执需要补齐。</p><button disabled={busy} onClick={() => void perform(async () => { await cancelTtrpgOpenTablePreparedRequestV1({ ...input(), requestKey }) })}>补齐请求取消回执</button></aside>)}
       {p.modelNarrationRepairs.map(receipt => <aside className="sf-open-table-card" key={receipt.requestKey}><p>KP 叙述已保存，最终采用回执需要补齐；不会重发模型。</p><button disabled={busy} onClick={() => void perform(async () => { await repairTtrpgOpenTableModelNarrationV1({ ...input(), ...receipt }) })}>补齐 KP 叙述回执</button></aside>)}
       {p.humanNarrationRepairs.map(operationKey => <aside className="sf-open-table-card" key={operationKey}><p>人工叙述已保存，原模型候选的停止回执尚待补齐。</p><button disabled={busy} onClick={() => void perform(async () => { await repairTtrpgOpenTableHumanNarrationV1({ ...input(), operationKey }) })}>补齐人工叙述回执</button></aside>)}
-      <fieldset className="sf-open-table-actions" disabled={view.safetyStatus === 'paused'}>
+      <fieldset className="sf-open-table-actions" disabled={view.safetyStatus === 'paused' || p.passiveRecap}>
       <section className="sf-open-table-card"><h2>模型使用了哪些资料</h2>
         <button disabled={busy} onClick={() => void perform(async () => { const trace = await readTtrpgOpenTableContextTraceV1(input());setContextTrace(trace);if (!trace) setNotice('当前身份还没有模型请求记录。') })}>查看最近一次上下文记录</button>
         {contextTrace?.generation === 'legacy' && <p>这是较早的请求，保留原有上下文证据，没有分层预算记录。</p>}
@@ -231,7 +233,7 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
         {op.nextStepKey === 'narration' && !op.narrationRecorded && p.canRequestKp && p.hostingAllowed && <button disabled={busy || p.blockedByModel || p.remainingCalls <= 0 || p.candidates.length > 0} onClick={() => void request('kp')}>生成本次 KP 叙述</button>}
       </section>}
       {!op && !p.manualEpoch && p.isEpochStarter && p.handoff?.kind === 'companion-ready' && <button disabled={busy || p.stageStatus === 'closed' || p.blockedByModel || p.remainingCalls <= 0 || p.candidates.length > 0} onClick={() => void request('companion', p.handoff!.actorKey!)}>请下一位 AI 队友提出行动</button>}
-      {!op && p.epochKey && p.isEpochStarter && <button disabled={busy || p.hasPendingModelRequest || p.candidates.length > 0 || (p.candidateRecoveries?.length ?? 0) > 0} onClick={() => void perform(async () => { await finishTtrpgOpenTableWindowV1(input());setDraft('');setNotice('本轮主持已结束，可以输入下一次行动。') })}>{p.hasUnknownModelResult ? '明确停止本轮授权，保留未知请求记录' : '结束本轮主持，准备下一次行动'}</button>}
+      {!op && !p.passiveRecap && p.epochKey && p.isEpochStarter && <button disabled={busy || p.hasPendingModelRequest || p.candidates.length > 0 || (p.candidateRecoveries?.length ?? 0) > 0} onClick={() => void perform(async () => { await finishTtrpgOpenTableWindowV1(input());setDraft('');setNotice('本轮主持已结束，可以输入下一次行动。') })}>{p.hasUnknownModelResult ? '明确停止本轮授权，保留未知请求记录' : '结束本轮主持，准备下一次行动'}</button>}
       {!op && p.manualActionPending && <aside className="sf-open-table-card"><p>本人的人工行动已授权，提案回执尚需补齐；不会新开授权或调用模型。</p><button disabled={busy} onClick={() => void perform(async () => { await resumeTtrpgOpenManualActionV1({ ...input(),epochKey: p.manualActionPending!.epochKey }) })}>继续提交已授权的人工行动</button></aside>}
       {!op && !p.epochKey && p.stageStatus === 'open' && <TtrpgOpenManualAction key={`${sessionId}:${viewerKey}`} input={input()} sequence={view.sequence} busy={busy} perform={job => perform(async () => { await job() })} />}
       {!op && <fieldset disabled={busy || p.stageStatus === 'closed' || p.blockedByModel || p.candidates.length > 0 || p.remainingCalls <= 0 || !p.aiAllowed || Boolean(p.epochKey)} className="sf-open-table-card"><legend>我想采取的行动</legend>
