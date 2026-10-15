@@ -43,6 +43,7 @@ export default function MemoryPanel(props: Props) {
       <div className="flex flex-wrap items-center justify-between gap-2"><strong>{item.participantName} · {CHAT_MEMORY_KIND_LABELS[item.kind]}</strong><span className="text-xs text-text-muted">{CHAT_MEMORY_STATUS_LABELS[item.status]}</span></div>
       <p className="whitespace-pre-wrap break-words text-text-secondary">{item.content ?? legacyNotice}</p>
       {item.authoredByPlayer && <p className="text-xs text-text-muted">由你修正 · 作为记忆摘要使用，不改写已发生的故事</p>}
+      {item.playerPinned && <p className="text-xs text-accent">已固定 · 使用期间每轮保留，停用期间不读取</p>}
       <details className="text-xs"><summary className="cursor-pointer py-1 text-accent">查看原消息依据（{item.sources.length}）</summary><div className="mt-2 space-y-2">{item.sources.map(source => <blockquote key={source.messageId} className="border-l-2 border-border pl-3">
         <p className="mb-1 text-text-muted">{source.speaker}{source.replaced ? ' · 已被后续回复替换' : ''}</p><p className="whitespace-pre-wrap break-words">{source.text}</p>
       </blockquote>)}</div></details>
@@ -51,6 +52,9 @@ export default function MemoryPanel(props: Props) {
         <button className={button} disabled={disabled || plan !== null} onClick={() => void perform(async () => {setPlan(await read(item.memoryId))})}>{item.status === 'proposed' ? '依据原消息修正并采用' : '修正记忆'}</button>
         {item.status === 'accepted' && <button className={button} disabled={disabled} onClick={() => void apply(item, {kind: 'disable'})}>停用</button>}
         {item.status === 'disabled' && <button className={button} disabled={disabled || item.sources.some(s => s.replaced)} onClick={() => void apply(item, {kind: 'enable'})}>恢复使用</button>}
+        {props.interaction.chatNarrative && ['accepted', 'disabled'].includes(item.status) && <button className={button}
+          disabled={disabled || !item.playerPinned && (item.content === null || item.sources.some(s => s.replaced))}
+          onClick={() => void apply(item, {kind: item.playerPinned ? 'unpin' : 'pin'})}>{item.playerPinned ? '取消固定' : '固定为必读记忆'}</button>}
         {['accepted', 'disabled'].includes(item.status) && <button className={button} disabled={disabled} onClick={() => void apply(item, {kind: 'revoke'})}>撤回并保留历史</button>}
       </div>}
       {replacement && <button type="button" className={button} onClick={() => followCorrection(replacement.memoryId)}>查看修正后的条目 · {CHAT_MEMORY_STATUS_LABELS[replacement.status]}</button>}
@@ -60,6 +64,7 @@ export default function MemoryPanel(props: Props) {
   return <div data-testid="chat-memory-panel" className="min-w-0 rounded border border-border bg-bg-surface p-4">
     <h2 className="text-sm font-semibold">角色关键记忆</h2>
     <p className="mb-3 mt-1 text-xs text-text-muted">使用中的摘要会影响后续对话。停用可恢复；撤回保留历史。修正不改变原消息或已经发生的剧情。</p>
+    {props.interaction.chatNarrative && <p className="mb-3 text-xs text-text-muted">普通记忆按本轮话题、角色目标和未完成事项选取。固定记忆每轮保留；固定内容超出预算时会暂停，请减少固定范围。旧摘要须先修正再固定。</p>}
     {error && <p role="alert" className="mb-3 break-words text-sm text-danger">{error}</p>}
     {plan && <MemoryEditor key={plan.memory.memoryId} plan={plan} stale={props.sequence !== plan.baseSequence} disabled={disabled}
       onRefresh={() => perform(async () => {setPlan(await read(plan.memory.memoryId))})}

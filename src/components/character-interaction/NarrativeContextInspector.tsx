@@ -4,6 +4,7 @@ import {listChatContextInspectionsV1, readChatContextInspectionV1, type ChatCont
 import type {ChatContextSelectionReasonV1} from '../../lib/character-interaction/context-selection'
 
 const selectionReason = (reason: ChatContextSelectionReasonV1) => reason === 'current-fact' ? '当前事实的来源'
+  : reason === 'player-pin' ? '由你固定，每轮保留'
   : reason === 'protected-memory' ? '已确认承诺或关键记忆'
     : reason === 'dialogue' ? '与本轮对话相关' : reason === 'importance' ? '作为补充背景' : '与当前演绎相关'
 
