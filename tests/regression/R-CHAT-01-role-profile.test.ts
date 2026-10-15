@@ -158,10 +158,23 @@ it('delivers the confirmed profile to the v3 opening situation task and rejects 
     type: 'create-intent', commandId: 'profile.intent', productionKey: 'profile.production', productType: 'character-interaction', worldReleaseId: f.confirmed.worldReleaseId!, userText: '用人物整理制作开场',
   }})
   expect(created.ok).toBe(true)
+  const saved = await executeProductProductionCommand({scope: f.scope, productionId: created.productionId, command: {
+    type: 'save-brief-revision', commandId: 'profile.brief', expectedStateRevision: 0, parentRevision: null, brief,
+  }})
+  expect(saved.ok, JSON.stringify(saved.result)).toBe(true)
+  const authorized = await executeProductProductionCommand({scope: f.scope, productionId: created.productionId, command: {
+    type: 'authorize-start', commandId: 'profile.start', expectedStateRevision: 1, briefRevision: 1,
+    briefHash: saved.result.briefHash as string, authorizationNonce: 'profile.author-click',
+  }})
+  expect(authorized.ok, JSON.stringify(authorized.result)).toBe(true)
   const production = (await db.productProductions.get(created.productionId))!
-  const result = await executeChatSituationDeterministicTaskV1({scope: f.scope, productionId: production.id!, buildId: 1, buildNumber: 1, controlEpoch: 0,
+  const build = (await db.productBuilds.where('[productionId+buildNumber]').equals([production.id!, production.currentBuildNumber!]).first())!
+  expect(build).toBeDefined()
+  const input = {scope: f.scope, productionId: production.id!, buildId: build.id!, buildNumber: build.buildNumber, controlEpoch: build.controlEpoch,
     planHash: await hashProductProductionValueV2(plan), task: plan.tasks.find(row => row.taskKey === 'content.design')!, attempt: 1, idempotencyKey: 'profile.design',
-    contextText: '', inputArtifacts: [], capabilityBindings: [], authorResolution: null, signal: new AbortController().signal}, {production, brief})
+    contextText: '', inputArtifacts: [], capabilityBindings: [], authorResolution: null, signal: new AbortController().signal}
+  await expect(executeChatSituationDeterministicTaskV1({...input, buildId: build.id! + 1000}, {production, brief})).rejects.toThrow('世界来源作用域不一致')
+  const result = await executeChatSituationDeterministicTaskV1(input, {production, brief})
   const source = result.artifacts.find(row => row.artifactKey === 'design.game')!.payload
   validateChatNarrativeProductionSourceV1(source)
   expect(JSON.stringify(source)).toContain(candidate.traits[0].text)

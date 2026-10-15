@@ -365,7 +365,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 ## 四、AI 调用点（消耗统计 category · 在哪触发)
 
 共 43 个 category。
-未分类调用: 0 个。动态 category 调用: 39 个。
+未分类调用: 0 个。动态 category 调用: 40 个。
 
 | category | 触发文件 |
 |---|---|
@@ -439,7 +439,8 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 - `src/lib/agent/story-core-copilot.ts:557 · chat`
 - `src/lib/agent/storyline-progress-copilot.ts:366 · chat`
 - `src/lib/agent/worldview-field-copilot.ts:903 · chat`
-- `src/lib/character-interaction/harness.ts:622 · chat`
+- `src/lib/character-interaction/harness.ts:657 · chat`
+- `src/lib/character-interaction/memory-review-harness.ts:72 · chat`
 - `src/lib/character-interaction/situation-harness.ts:100 · chat`
 - `src/lib/comic/durable-production.ts:270 · chat`
 - `src/lib/evals/agent-harness/story-arc-main-path-browser.ts:98 · chat`
@@ -515,4 +516,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `098b0ae5`
+生成时间基准:commit `aa539371`

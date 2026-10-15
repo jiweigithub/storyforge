@@ -1,3 +1,4 @@
+import {hasChatMemoryContentReviewV1} from '../lib/character-interaction/memory-review-contract'
 import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1} from '../lib/character-interaction/action-revision'
 import type {ChatSchedulingModeV1} from '../lib/character-interaction/narrative-scheduling'
 import {applyChatMessageRetrievalPlanV1, type ChatMessageRetrievalPlanV1} from '../lib/character-interaction/narrative-retrieval-service'
@@ -11,6 +12,7 @@ import {
   cancelInteractionRuntimeRunV1,
   generateInteractionRuntimeCandidateV1,
   resumeChatNarrativeReviewV1,
+  resumeChatMemoryReviewV1,
 } from '../lib/character-interaction/harness'
 import {
   branchProductRuntimeSession,
@@ -72,6 +74,7 @@ interface CharacterInteractionPlayerState {
   pendingNarrativeRunIds: number[]
   narrativeTurnResume: ChatNarrativeTurnResumeV1 | null
   pendingNarrativeReviewRunIds: number[]
+  pendingMemoryReviewRunIds: number[]
   pendingActionReviewRunIds: number[]
   actionRevisionRunId: number | null
   narrativeOptions: ChatNarrativeOptionsPreviewV1[]
@@ -194,13 +197,20 @@ async function details(scope: WorkspaceScope, sessionId: number) {
     events,
     checkpoints,
     runtimeState,
-    pendingNarrativeRunIds: runtimeState.interaction?.chatNarrative
-      ? await readPendingChatNarrativeRunsV1(scope, sessionId, runtimeState.interaction) : [],
+    pendingNarrativeRunIds: [...new Set([
+      ...(runtimeState.interaction?.chatNarrative ? await readPendingChatNarrativeRunsV1(scope, sessionId, runtimeState.interaction) : []),
+      ...resumableRows.filter(row => JSON.parse(row.contractJson).executionBindings?.some((b: {skillId?: string}) => b.skillId === 'character.interaction-memory-curator')).map(row => row.id!),
+    ])],
     pendingNarrativeReviewRunIds: resumableRows.filter(row => {
       const saved = resumeCheckpoints.filter(c => c.runId === row.id).sort((a, b) => b.throughSequence - a.throughSequence)[0]
       if (!saved?.resumePayloadJson) return false
       const candidate = JSON.parse(saved.resumePayloadJson)
-      return ['chat-situation-candidate', 'chat-narrative-action-candidate', 'chat-narrative-options-candidate'].includes(candidate.kind) && !candidate.review
+      return (['chat-situation-candidate', 'chat-narrative-action-candidate', 'chat-narrative-options-candidate'].includes(candidate.kind) && !candidate.review)
+        || (candidate.kind === 'memory-curator-candidate' && !candidate.contentReview)
+    }).map(row => row.id!),
+    pendingMemoryReviewRunIds: resumableRows.filter(row => {
+      const saved = resumeCheckpoints.filter(c => c.runId === row.id).sort((a, b) => b.throughSequence - a.throughSequence)[0]
+      return saved?.resumePayloadJson && JSON.parse(saved.resumePayloadJson).kind === 'memory-curator-candidate'
     }).map(row => row.id!),
     pendingActionReviewRunIds: resumableRows.filter(row => {
       const saved = resumeCheckpoints.filter(c => c.runId === row.id).sort((a, b) => b.throughSequence - a.throughSequence)[0]
@@ -245,7 +255,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       ? current : sessions[0]?.id ?? null
     set({ releases, sessions, selectedSessionId })
     if (selectedSessionId != null) await refresh()
-    else set({ events: [], checkpoints: [], recoverableRunIds: [], pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE) })
+    else set({ events: [], checkpoints: [], recoverableRunIds: [], pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], pendingMemoryReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE) })
   }
   const withBusy = async <T>(operation: () => Promise<T>): Promise<T> => {
     if (get().busy) throw new Error('当前操作尚未结束，请稍后再试。')
@@ -287,7 +297,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
     events: [],
     checkpoints: [],
     recoverableRunIds: [],
-    pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [],
+    pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], pendingMemoryReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [],
     runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE),
     loading: false,
     busy: false,
@@ -315,7 +325,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       const epoch = ++loadEpoch
       set({ selectedSessionId, loading: true, error: '' })
       try {
-        if (selectedSessionId == null) set({ events: [], checkpoints: [], recoverableRunIds: [], pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE) })
+        if (selectedSessionId == null) set({ events: [], checkpoints: [], recoverableRunIds: [], pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], pendingMemoryReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE) })
         else await refresh()
       } catch (reason) { if (epoch === loadEpoch) set({ error: reason instanceof Error ? reason.message : String(reason) }) }
       finally { if (epoch === loadEpoch) set({ loading: false }) }
@@ -539,7 +549,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       const controller = new AbortController(); generationAbortController = controller
       set({generatingRunId: runId})
       try {
-        await resumeChatNarrativeReviewV1({scope, runId, aiConfig, signal: controller.signal})
+        await (get().pendingMemoryReviewRunIds.includes(runId) ? resumeChatMemoryReviewV1 : resumeChatNarrativeReviewV1)({scope, runId, aiConfig, signal: controller.signal})
         if (!controller.signal.aborted && !get().narrativeOptionRunIds.includes(runId)) await adoptInteractionRuntimeCandidateV1({scope, runId})
       } catch (reason) {if (!controller.signal.aborted) throw reason}
     }),
@@ -638,6 +648,9 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
 
     resolveMemory: async (memoryId, resolution) => withBusy(async () => {
       const base = await version()
+      const current = (await readProductRuntimeState(base.id)).interaction!
+      const memory = current.memories.find(m => m.memoryId === memoryId)
+      if (resolution === 'accepted' && (!memory || !hasChatMemoryContentReviewV1(current, memory))) throw new Error('旧记忆缺少正文审查，不能直接采用；原记录保留。')
       await resolveInteractionMemory({
         sessionId: base.id,
         commandId: commandId(`interaction.memory.${resolution}`, base.id),
@@ -679,6 +692,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
         }
       }
       if (signal.aborted) throw new Error('已停止整理，场景未结束。')
+      if (curatorFailure) throw new Error(`记忆整理未完成，场景保留以供恢复：${curatorFailure}`)
       const base = await version()
       await endInteractionScene({
         sessionId: base.id,
@@ -690,7 +704,6 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       })
       set({ generatingRunId: null })
       await refresh()
-      if (curatorFailure) set({ error: `场景已结束；记忆整理未完成，原始消息和存档未受影响：${curatorFailure}` })
     }),
 
     chooseNarrative: async choiceKey => withBusy(async () => {

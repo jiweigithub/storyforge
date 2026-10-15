@@ -1,3 +1,5 @@
+import {CHAT_MEMORY_REVIEW_STEP, CHAT_MEMORY_REVIEW_SKILL, chatMemoryReviewBindingV1, parseChatMemoryReceiptV1} from './memory-review-contract'
+import {reviewChatMemoryCandidateV1} from './memory-review-harness'
 import {chatActionPromptRulesV1} from './narrative-action-prompt'
 import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1, assertChatActionRevisionExpressionV1} from './action-revision'
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
@@ -103,6 +105,7 @@ export interface InteractionDirectorCandidateV1 extends RuntimeCandidateBaseV1 {
 export interface InteractionMemoryCandidateV1 extends RuntimeCandidateBaseV1 {
   kind: 'memory-curator-candidate'
   memoryId: string
+  contentReview?: import('../types/chat-memory').ChatMemoryReviewReceiptV1
   memoryKind: InteractionMemoryKind
   content: string
   importance: number
@@ -351,22 +354,23 @@ async function buildContract(input: {
   boundary: Awaited<ReturnType<typeof captureRuntimeHarnessBoundaryV1>>
   skillId: InteractionRuntimeSkillIdV1
   runtimeBindingHash: string
+  memoryReview?: boolean
   executionBinding: ReturnType<typeof createAgentSkillExecutionBindingV1> | Awaited<ReturnType<typeof createAgentSkillExecutionBindingV2>>
 }) {
   const skill = getAgentSkillV1(input.skillId)
   const situation = input.skillId === 'character.chat-situation-construction'
   const options = input.skillId === 'character.chat-narrative-options'
   const action = options || (input.skillId === 'character.chat-narrative-action' || input.skillId === CHAT_ACTION_REVISION_SKILL)
-  const reviewed = situation || action
-  const reviewStep = situation ? CHAT_SITUATION_REVIEW_STEP_V1 : CHAT_ACTION_REVIEW_STEP_V1
-  const reviewSkill = situation ? 'character.chat-situation-review' : options ? 'character.chat-narrative-options-review' : 'character.chat-narrative-action-review'
+  const reviewed = situation || action || input.memoryReview
+  const reviewStep = input.memoryReview ? CHAT_MEMORY_REVIEW_STEP : situation ? CHAT_SITUATION_REVIEW_STEP_V1 : CHAT_ACTION_REVIEW_STEP_V1
+  const reviewSkill = input.memoryReview ? CHAT_MEMORY_REVIEW_SKILL : situation ? 'character.chat-situation-review' : options ? 'character.chat-narrative-options-review' : 'character.chat-narrative-action-review'
   const sourceKey = situation ? 'chatSituationRuntime' : input.skillId === 'character.ai-town-reply' ? 'aiTownRuntime' : 'interactionRuntime'
   return {
     version: reviewed ? 2 as const : 1 as const,
     objective: input.objective,
     workflowKind: 'direct-generation' as const,
     scope: input.boundary.scope,
-    permissions: { contextSourceKeys: situation ? [sourceKey, 'chatSituationCandidate'] : action ? [sourceKey, 'chatSituationRuntime', 'chatActionCandidate', ...(input.skillId === CHAT_ACTION_REVISION_SKILL ? ['chatActionRevision'] : [])] : [sourceKey], writeTargets: [] },
+    permissions: { contextSourceKeys: input.memoryReview ? [sourceKey, 'chatMemoryReview'] : situation ? [sourceKey, 'chatSituationCandidate'] : action ? [sourceKey, 'chatSituationRuntime', 'chatActionCandidate', ...(input.skillId === CHAT_ACTION_REVISION_SKILL ? ['chatActionRevision'] : [])] : [sourceKey], writeTargets: [] },
     runtimeBindingHash: input.runtimeBindingHash,
     executionBindings: [{
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
@@ -439,6 +443,8 @@ export interface InteractionRuntimeGenerationInputV1 {
   /** Host crash-injection boundary after the unreviewed draft is durably saved. */
   onSituationDraftSaved?: (runId: number) => void | Promise<void>
   onNarrativeActionSaved?: (runId: number) => void | Promise<void>
+  onMemoryCandidateSaved?: (runId: number) => void | Promise<void>
+  onMemoryReviewResponseSaved?: (runId: number) => void | Promise<void>
 }
 
 const narrativeGenerationLocks = new Set<number>()
@@ -446,7 +452,9 @@ const narrativeGenerationLocks = new Set<number>()
 /** One paid attempt for an exact runtime head. Refresh recovers the saved run;
  * a new explicit trigger authorizes another attempt after failure/cancellation. */
 export async function generateInteractionRuntimeCandidateV1(input: InteractionRuntimeGenerationInputV1): Promise<{ snapshot: AgentRunSnapshotV1; candidate: InteractionRuntimeCandidateV1 }> {
-  if (![CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options', 'character.chat-situation-construction'].includes(input.skillId)) return generateRuntimeCandidate(input)
+  const memoryReview = input.skillId === 'character.interaction-memory-curator'
+    && (await db.productRuntimeSessions.get(input.productRuntimeSessionId))?.kind === 'character-interaction'
+  if (!memoryReview && ![CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options', 'character.chat-situation-construction'].includes(input.skillId)) return generateRuntimeCandidate(input)
   return withNarrativeGenerationLock(input.productRuntimeSessionId, !!input.runAI, async () => {
     const revision = input.skillId === CHAT_ACTION_REVISION_SKILL ? await readChatActionRevisionSourceV1({scope: input.scope, sessionId: input.productRuntimeSessionId, actorKey: input.participantKey}) : null
     if (input.skillId === CHAT_ACTION_REVISION_SKILL && !revision) fail('当前没有可修订的未通过回复；原运行保留，不会重新发送')
@@ -456,11 +464,15 @@ export async function generateInteractionRuntimeCandidateV1(input: InteractionRu
       if (revision?.runId === row.id) continue
       const contract = JSON.parse(row.contractJson)
       if (contract.scope?.runtime?.baseSequence !== version.sequence
-        || !contract.executionBindings?.some((b: {skillId?: string}) => [CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options', 'character.chat-situation-construction'].includes(b.skillId ?? ''))) continue
+        || !contract.executionBindings?.some((b: {skillId?: string}) => (memoryReview ? ['character.interaction-memory-curator'] : [CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options', 'character.chat-situation-construction']).includes(b.skillId ?? ''))) continue
       await readInstanceAgentRunV1(input.scope, row.id!)
       fail(`当前局面已有行动运行 #${row.id}；请恢复已保存候选，或取消后明确继续，不会自动重复调用模型`)
     }
     const generated = await generateRuntimeCandidate(input)
+    if (memoryReview && generated.candidate.kind === 'memory-curator-candidate') {
+      await input.onMemoryCandidateSaved?.(generated.snapshot.run.id)
+      return reviewChatMemoryCandidateV1({...input, ...generated, candidate: generated.candidate})
+    }
     if (generated.candidate.kind !== 'chat-situation-candidate' && generated.candidate.kind !== 'chat-narrative-action-candidate' && generated.candidate.kind !== 'chat-narrative-options-candidate') return generated
     if (generated.candidate.kind === 'chat-situation-candidate') await input.onSituationDraftSaved?.(generated.snapshot.run.id)
     else await input.onNarrativeActionSaved?.(generated.snapshot.run.id)
@@ -508,6 +520,27 @@ export async function resumeChatNarrativeReviewV1(input: Pick<InteractionRuntime
   })
 }
 
+export async function resumeChatMemoryReviewV1(input: Pick<InteractionRuntimeGenerationInputV1, 'scope' | 'aiConfig' | 'runAI' | 'runReviewAI' | 'signal'> & {runId: number}) {
+  const saved = await readInteractionRuntimeCandidateV1(input.scope, input.runId)
+  if (saved.candidate.kind !== 'memory-curator-candidate') fail('当前候选不是记忆')
+  return withNarrativeGenerationLock(saved.candidate.productRuntimeSessionId, !!(input.runAI || input.runReviewAI), async () => {
+    const {snapshot, candidate} = await readInteractionRuntimeCandidateV1(input.scope, input.runId)
+    if (candidate.kind !== 'memory-curator-candidate') fail('记忆候选已变化')
+    const hasResponse = snapshot.events.some(e => e.type === 'evidence.artifact.recorded' && e.payload.stepId === CHAT_MEMORY_REVIEW_STEP && e.payload.artifactKind === 'raw-response')
+    if (!candidate.contentReview && !hasResponse) {
+      const executionBinding = await createAgentSkillExecutionBindingV2(getAgentSkillV1('character.interaction-memory-curator'))
+      const modelIdentity = input.runAI || input.runReviewAI ? {provider: 'test-adapter', model: 'injected', transport: 'chat-v1'}
+        : {provider: input.aiConfig?.provider, model: input.aiConfig?.model, transport: 'chat-v1'}
+      const expected = {stepId: CHAT_MEMORY_REVIEW_STEP, ...await createAgentSkillExecutionBindingV2(getAgentSkillV1(CHAT_MEMORY_REVIEW_SKILL))}
+      const binding = snapshot.contract.executionBindings?.find(b => b.stepId === CHAT_MEMORY_REVIEW_STEP)
+      if (!binding || await hashCanonicalValue(expected) !== await hashCanonicalValue(binding)
+        || await hashCanonicalValue({executionBinding, modelIdentity}) !== snapshot.contract.runtimeBindingHash) fail('记忆配置或审查版本已变化，请保留或取消原运行；不会自动重发')
+    }
+    return reviewChatMemoryCandidateV1({...input, snapshot, candidate, productRuntimeSessionId: candidate.productRuntimeSessionId,
+      participantKey: candidate.participantKey, skillId: 'character.interaction-memory-curator', objective: snapshot.contract.objective})
+  })
+}
+
 export const resumeChatSituationReviewV1 = resumeChatNarrativeReviewV1
 
 async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInputV1): Promise<{ snapshot: AgentRunSnapshotV1; candidate: InteractionRuntimeCandidateV1 }> {
@@ -543,7 +576,9 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
   } else if (initialState.interaction?.chatNarrative && input.skillId === 'character.interaction-reply') {
     fail('叙事情境需要角色行动候选，不能只生成旧版回复')
   }
-  const executionBinding = situation || [CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)
+  const memoryReview = input.skillId === 'character.interaction-memory-curator'
+    && (await db.productRuntimeSessions.get(input.productRuntimeSessionId))?.kind === 'character-interaction'
+  const executionBinding = memoryReview || situation || [CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)
     ? await createAgentSkillExecutionBindingV2(skill) : createAgentSkillExecutionBindingV1(skill)
   const modelIdentity = input.runAI
     ? { provider: 'test-adapter', model: 'injected', transport: 'chat-v1' }
@@ -554,7 +589,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
     scope: input.scope,
     productRuntimeSessionId: input.productRuntimeSessionId,
     worldGroupId: boundary.scope.worldGroupId,
-    contract: await buildContract({ objective, boundary, skillId: input.skillId, runtimeBindingHash, executionBinding }),
+    contract: await buildContract({ objective, boundary, skillId: input.skillId, runtimeBindingHash, executionBinding, memoryReview }),
   })
   await input.onRunCreated?.(snapshot.run.id)
   snapshot = await append(input.scope, snapshot, 'step.scheduled', { stepId: INTERACTION_RUNTIME_STEP_ID_V1 })
@@ -806,6 +841,7 @@ async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSeque
     importance: candidate.importance,
     sourceEventSequences: candidate.sourceEventSequences,
     evidenceExcerpt: candidate.evidenceExcerpt,
+    ...(candidate.contentReview ? {contentReview: candidate.contentReview, harnessRun: {id: candidate.runId, lastSequence: runSequence}} : {}),
   })
 }
 
@@ -841,6 +877,14 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
         : null,
       receiptHash: snapshot.projection.terminalReceiptHash ?? fail('已采用运行缺少终验回执'),
     }
+  }
+  if (candidate.kind === 'memory-curator-candidate'
+    && (await db.productRuntimeSessions.get(candidate.productRuntimeSessionId))?.kind === 'character-interaction') {
+    if (!candidate.contentReview) fail('记忆正文尚未审查，不能创建可见提议；旧记录仍保留')
+    const receipt = parseChatMemoryReceiptV1(candidate.contentReview)
+    if (!snapshot.events.some(e => e.type === 'step.succeeded' && e.payload.stepId === CHAT_MEMORY_REVIEW_STEP && e.payload.outputHash === receipt.reviewHash)) fail('记忆缺少对应的审查完成证据')
+    const state = (await readProductRuntimeState(candidate.productRuntimeSessionId)).interaction!
+    if (chatMemoryReviewBindingV1(state, {...candidate, kind: candidate.memoryKind}) !== receipt.bindingJson) fail('记忆正文或来源已变化')
   }
   const priorCommand = commandId == null
     ? null

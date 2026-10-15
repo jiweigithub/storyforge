@@ -257,11 +257,11 @@ test('refresh resumes an unreviewed situation with one explicit review and no re
     });
     expect(calls).toBe(1);
     await page.goto(`./chat/play?project=${fixture.scope.projectId}&work=${fixture.scope.workId}&session=${fixture.sessionId}`);
-    await expect(page.getByRole('heading', {name: '叙事候选等待审查', exact: true})).toBeVisible();
+    await expect(page.getByRole('heading', {name: '候选等待审查', exact: true})).toBeVisible();
     await expect(page.getByRole('button', {name: '让角色继续', exact: true})).toBeDisabled();
     await page.reload();
     await page.getByRole('button', {name: /继续审查并应用 #/}).click();
-    await expect(page.getByRole('heading', {name: '叙事候选等待审查', exact: true})).toHaveCount(0);
+    await expect(page.getByRole('heading', {name: '候选等待审查', exact: true})).toHaveCount(0);
     expect(calls).toBe(2);
     await page.reload();
     await page.getByText('当前已知的局面', {exact: true}).click();
@@ -326,7 +326,7 @@ test('two browser pages cannot duplicate a narrative model call and player inter
         await requested;
         const other = await context.newPage();
         await other.goto(url);
-        await expect(other.getByRole('heading', {name: '上次角色行动尚未结束', exact: true})).toBeVisible();
+        await expect(other.getByRole('heading', {name: '上次聊天处理尚未结束', exact: true})).toBeVisible();
         await expect(other.getByRole('button', {name: '让角色继续', exact: true})).toBeDisabled();
         const concurrent = await other.evaluate(async f => {
             const load = new Function('p', 'return import(p)');

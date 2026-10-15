@@ -46,7 +46,7 @@ export async function readChatRunProgressV1(scope: WorkspaceScope, sessionId: nu
     return result('applied', '结果已应用，正在核对保存记录', '已经发生的故事不会因停止等待而撤销。')
   }
   if (state === 'awaiting_confirmation') return result('choice', '候选已保存，等待选择', '选定前不会应用候选的行动后果。')
-  const review = snapshot.contract.executionBindings?.find(b => ['interaction:action-review', 'interaction:situation-review'].includes(b.stepId))
+  const review = snapshot.contract.executionBindings?.find(b => ['interaction:action-review', 'interaction:situation-review', 'interaction:memory-review'].includes(b.stepId))
   const reviewing = review && snapshot.projection.steps[review.stepId]
   if (reviewing?.status === 'succeeded') return result('ready', '检查已通过，等待保存结果', '保存完成后才会更新故事。')
   const stepId = reviewing ? review!.stepId : GENERATION_STEP
