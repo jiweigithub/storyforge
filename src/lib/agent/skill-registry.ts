@@ -3205,11 +3205,11 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'character.chat-situation-construction', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天运行情境候选', owner: 'character-chat-product', promptVersion: 'chat-situation-construction-v6',
+    label: '角色聊天运行情境候选', owner: 'character-chat-product', promptVersion: 'chat-situation-construction-v7',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['chatSituationRuntime'], optionalContextSourceKeys: [], inputPolicy: CHAT_SITUATION_INPUT_POLICY,
     contextCompression: compressionPolicy(['chatSituationRuntime']), maxOutputTokens: 6000, writeTargets: [],
-    lastVerifiedAt: '2026-10-14', regressionTests: ['R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-fact-discovery', 'R-CHAT-03-context-retrieval', 'R-CHAT-02-runtime-situation', 'R-CHAT-02-situation-harness', 'R-CHAT-02-actor-progression', 'R-CHAT-03-turn-resume'],
+    lastVerifiedAt: '2026-10-16', regressionTests: ['R-CHAT-02-inquiry-response-generation', 'R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-fact-discovery', 'R-CHAT-03-context-retrieval', 'R-CHAT-02-runtime-situation', 'R-CHAT-02-situation-harness', 'R-CHAT-02-actor-progression', 'R-CHAT-03-turn-resume'],
   },
   {
     version: 1, id: 'character.chat-situation-review', agentId: 'character', defaultForAgent: false,

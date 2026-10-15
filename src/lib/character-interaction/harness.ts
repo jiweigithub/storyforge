@@ -48,6 +48,7 @@ import { previewChatNarrativeActionV1, parseChatNarrativeActionV1 } from './narr
 import {chatSituationConstructionRequestV1} from './narrative-progression'
 import {assertChatNarrativeOptionsPreviewableV1, parseChatNarrativeOptionsV1, selectedChatNarrativeOptionV1, type ChatNarrativeOptionsReviewV1} from './narrative-options'
 import {isChatSituationPreparedV1, parseChatSituationDraftV1, previewChatSituationV1} from './narrative-situations'
+import {chatSituationResponseRulesV1} from './narrative-situation-prompt'
 import {reviewRuntimeChatCandidateV1, CHAT_SITUATION_REVIEW_STEP_V1, CHAT_ACTION_REVIEW_STEP_V1} from './situation-harness'
 import type { ChatNarrativeActionV1, ChatNarrativeActionReviewV1, ChatSituationDraftV1, ChatSituationReviewV1 } from '../types/chat-narrative'
 import type {
@@ -342,6 +343,7 @@ function prompt(input: {
       ...(input.skillId === CHAT_ACTION_REVISION_SKILL ? ['这是玩家明确请求的一次新修订，不是继续失败调用。chatActionRevision 是尚未生效的旧候选，不能当作历史事实。它仅后果登记未通过，其它维度曾通过；仍须完整重新审查。严格保留原 kind、text、goalKey、audienceKeys、waitingForPlayer、followupGoal、threadFollowupGoal、resumeGoal；只核对并修订与这段实际表达一致的后果、目标、事项、打算和猜测，不添加新动作、台词或结局。输入仅给失败维度，不提供可能含秘密的幕后审查理由。',
         '个人暂停与共同事项分开：仅自己暂歇，不影响其他参与者的事项时只改自己的目标；若正文明确暂停或结束自己负责的整项任务，并覆盖全部事项知情者，则登记相应 threadUpdates。暂停用 paused，不能用 resolved 冒充问题已解决。closureSignals 是判断线索，不是满足字面描述就无条件关闭任何共同事项。'] : []),
       ...(input.skillId === 'character.chat-situation-construction' ? [
+        ...chatSituationResponseRulesV1(input.producerVersion),
         '若 constructionRequest.origin 为 continued-thread，承接已审查 pendingSituation 中的自身未完成目标、剧情线与 direction；seedExcerpt 摘录 direction。只能补足当前时间地点中的局部条件，不能替玩家接受或移动，不能替其他角色设定目标或打算；已有事实和其他人的计划均保留。',
         '若 constructionRequest.origin=player-followup，pendingSituation 是针对新玩家请求的已审查承接意向，playerEventSequence/playerExcerpt 保留真实台词依据，direction 是待发展的方向。为该角色建立至少一个有已知依据、可完成的新目标和新问题，不能复活或复制已结束的目标/剧情线，不能替其他角色设定目标或打算；保持当前时地，旧结果与其它角色方向保留。新事实和问题的知情者不得超出原玩家消息听众，不替对话外的人承接新事项。可在冻结的创作权限内补足尚未写定的普通局部细节，为后续实际行动提供条件，不以“原文未提供”冒充故事内阻碍；不可改写已有书中文字、假托真实引文、提前完成未来调查或泄露既定隐情。新背景不等于玩家接受，也不预写整个故事或结果。',
         '若 pendingSituation.purpose=observation-result，只确认其 sourceEventSequence 已实际完成的观察能得到什么有限结果，不执行新的调查或动作。保持 title/location/timeLabel，newGoals/newThreads/possibilities 均为 []；newFacts 仅 observation，每项必须引用该事件已登记的 runtime-consequence 观察事实，并摘录 direction。仍未知的部分明确保留未知，不捏造箱内内容、他人动机或幕后答案。既定隐情只能按已有 discovery 条件判定。后来的玩家消息不改变已经完成的检查，但不等于接受任何未来行动。',
