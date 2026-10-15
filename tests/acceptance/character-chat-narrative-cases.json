@@ -1630,6 +1630,58 @@
             "noProductionOrRuntime": true
           },
           "nextWork": "Obtain real bounded followup-to-result evidence and independent fresh scenario when a chosen provider is available. Preserve historical failed requests without replay. Correct diagnostic state observation for future new runs; formal72episodes and independenthumanreviews remain0."
+        },
+        "memoryCorrectionPreflight": {
+          "verifiedAt": "2026-10-15",
+          "sourceHead": "81e846f02cc3d226df6bba7c0b84b7483aa5f43f",
+          "snapshotManifestSha256": "605fc3d394d968f24f2c0f1efb8015af1c500def8ba5afc97adacbdce4292f85",
+          "scenarioId": "theatre-poster-corrected-participation-v73",
+          "status": "correction-positive-and-negative-controls-verified; weak-followup-rejected",
+          "scope": "Synthetic authored background. Two real runtime opportunities plus one injected negative control with real independent review; development diagnostic only, outside frozen M1 and holdouts.",
+          "evidence": "v73-memory-correction-real/interpretation.json",
+          "rawEvidenceSha256": "112453d7de4d601c65a0d44c3060eb89751d8cc4e46a761778b5fe16f41f2647",
+          "runEvidence": "v73-memory-correction-real/run.json",
+          "runEvidenceSha256": "a34749b1b8109f5f8aadcdf5d4ebe33557b167e1a5f75bbb27e49325ee0883c8",
+          "acceptedModelCalls": 5,
+          "completedProviderResponses": 5,
+          "runtimeOpportunities": 2,
+          "completedRuntimeActions": 1,
+          "failedRuntimeActions": 1,
+          "inputTokens": 42996,
+          "outputTokens": 2660,
+          "totalTokens": 45656,
+          "costUsd": null,
+          "automaticRetry": false,
+          "observations": [
+            "First real action removed contradicted belief and hosting-dependent plan, drew a draft and left its own actionable next step. Correction receipt was committed with the action.",
+            "Weak followup generated a completed layout but also resolved a thread whose question includes handing it to the organizer. The independent reviewer rejected premature thread closure. Original candidate and review retained; this opportunity did not complete.",
+            "Injected contradictory-plan action received one real independent review. It was rejected for continuity, consequences, meaningful direction and correction reconciliation; branch state unchanged.",
+            "The raw diagnostic runner exited zero because its primary correction-positive and negative-control checks passed. This is not overall episode or sustained progression acceptance."
+          ],
+          "negativeControl": {
+            "injectedAction": true,
+            "realReviewCalls": 1,
+            "rejected": true,
+            "stateUnchanged": true
+          },
+          "worldUnchanged": true,
+          "relationshipUnchanged": true,
+          "rejectedFollowupDidNotWrite": true,
+          "reviewerIndependence": "Separate model request using the same Codex model; not an independent provider or human review.",
+          "restoration": {
+            "evidence": "v73-memory-correction-real/restore.json",
+            "rawEvidenceSha256": "c25b84d89b2ed1af6f85f63ec2c60677ecd8b42e9533f51dfa0eebddb4491a29",
+            "newModelCalls": 0,
+            "refreshEqual": true,
+            "matchesSavedInteraction": true,
+            "worldUnchanged": true
+          },
+          "setupFailure": {
+            "evidence": "prepare.json",
+            "requests": 0,
+            "cause": "diagnostic used unsupported intensity gentle; corrected to existing everyday enum before any model call"
+          },
+          "nextWork": "Separate bounded diagnostic in a retained isolated browser for explicit consequence revision. Evaluate own-goal completion versus unresolved delivery or confirmation; keep original failed opportunity. No imported candidate authority, replay or replacement of frozen cases."
         }
       },
       {
