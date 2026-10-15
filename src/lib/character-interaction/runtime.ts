@@ -845,10 +845,11 @@ export function applyInteractionEvent(
     }
     case 'interaction.narrative.memory-control.changed':
     case 'interaction.narrative.memory.corrected': {
-      if (!state.chatNarrative || event.actorKey !== state.playerKey) throw new Error('记忆管理需要玩家在主动叙事聊天中明确操作。')
+      if (event.actorKey !== state.playerKey) throw new Error('记忆管理需要玩家明确操作。')
       const memoryId = text(body.memoryId, '互动记忆 ID', 200)
       const target = state.memories.find(item => item.memoryId === memoryId)
-      if (!target || !['accepted', 'disabled'].includes(target.status) || target.supersededByMemoryId != null) throw new Error('这条记忆已变化，不能继续本次管理操作。')
+      const allowedStatuses = event.type === 'interaction.narrative.memory.corrected' ? ['accepted', 'disabled', 'proposed'] : ['accepted', 'disabled']
+      if (!target || !allowedStatuses.includes(target.status) || target.supersededByMemoryId != null) throw new Error('这条记忆已变化，不能继续本次管理操作。')
       // A player may stop using a memory whose old message was superseded,
       // but cannot inspect or manipulate another role's private sources.
       if (!target.sourceEventSequences.length || target.sourceEventSequences.some(sequence => {
@@ -875,10 +876,14 @@ export function applyInteractionEvent(
         const evidenceExcerpt = text(body.evidenceExcerpt, '修正记忆证据摘录', 1_000)
         const sources = requireEvidence(state, target.participantKey, sourceEventSequences, evidenceExcerpt)
         if (sources.some(source => !visibleTo(source, state.playerKey))) throw new Error('修正记忆不能引用玩家不可见的消息。')
+        if (target.status === 'proposed') {
+          const max = requireParticipant(state, target.participantKey).maxMemoryEntries
+          if (state.memories.filter(item => item.participantKey === target.participantKey && item.status === 'accepted').length >= max) throw new Error('角色持久记忆已达上限，请先停用或撤回其他记忆。')
+        }
         // One event replaces the active entry at capacity. A disabled entry
         // stays disabled; correction is not an implicit re-enable operation.
         const {contentReview: _oldReview, ...prior} = target
-        state.memories.push({...prior, memoryId: replacementId, content: text(body.content, '修正记忆内容', 8_000),
+        state.memories.push({...prior, memoryId: replacementId, content: text(body.content, '修正记忆内容', 8_000), status: target.status === 'proposed' ? 'accepted' : target.status,
           sourceEventSequences, evidenceExcerpt, proposalSequence: event.sequence, decisionSequence: event.sequence,
           supersededByMemoryId: null, authorship: 'player-correction'})
         target.status = 'superseded'

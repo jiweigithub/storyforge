@@ -1,4 +1,4 @@
-import {hasChatMemoryContentReviewV1} from '../lib/character-interaction/memory-review-contract'
+import {applyChatMemoryManagementPlanV1, type ChatMemoryManagementPlanV1, type ChatMemoryManagementActionV1} from '../lib/character-interaction/memory-management'
 import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1} from '../lib/character-interaction/action-revision'
 import type {ChatSchedulingModeV1} from '../lib/character-interaction/narrative-scheduling'
 import {applyChatMessageRetrievalPlanV1, type ChatMessageRetrievalPlanV1} from '../lib/character-interaction/narrative-retrieval-service'
@@ -24,7 +24,6 @@ import {
   endInteractionScene,
   readProductRuntimeState,
   readProductRuntimeStateVersion,
-  resolveInteractionMemory,
   startInteractionScene,
   updateChatMessageEditDraft,
 } from '../lib/character-interaction/runtime-api'
@@ -107,7 +106,7 @@ interface CharacterInteractionPlayerState {
   retryReply(input: { aiConfig: AIConfig; replySequence: number }): Promise<void>
   cancelGeneration(): Promise<void>
   resumeRun(runId: number): Promise<void>
-  resolveMemory(memoryId: string, resolution: 'accepted' | 'rejected'): Promise<void>
+  manageMemory(plan: ChatMemoryManagementPlanV1, action: ChatMemoryManagementActionV1): Promise<void>
   finishScene(reason?: string, aiConfig?: AIConfig): Promise<void>
   chooseNarrative(choiceKey: string): Promise<void>
   saveCheckpoint(name: string): Promise<void>
@@ -257,12 +256,12 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
     if (selectedSessionId != null) await refresh()
     else set({ events: [], checkpoints: [], recoverableRunIds: [], pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], pendingMemoryReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE) })
   }
-  const withBusy = async <T>(operation: () => Promise<T>): Promise<T> => {
+  const withBusy = async <T>(operation: () => Promise<T>, reportError = true): Promise<T> => {
     if (get().busy) throw new Error('当前操作尚未结束，请稍后再试。')
     set({ busy: true, error: '' })
     try { return await operation() } catch (reason) {
       // The composer presents both drafts and owns this actionable conflict.
-      set({ error: reason instanceof ChatComposerConflictError ? '' : reason instanceof Error ? reason.message : String(reason) })
+      set({ error: !reportError || reason instanceof ChatComposerConflictError ? '' : reason instanceof Error ? reason.message : String(reason) })
       throw reason
     } finally {
       generationAbortController = null
@@ -646,21 +645,11 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       await refresh()
     }),
 
-    resolveMemory: async (memoryId, resolution) => withBusy(async () => {
-      const base = await version()
-      const current = (await readProductRuntimeState(base.id)).interaction!
-      const memory = current.memories.find(m => m.memoryId === memoryId)
-      if (resolution === 'accepted' && (!memory || !hasChatMemoryContentReviewV1(current, memory))) throw new Error('旧记忆缺少正文审查，不能直接采用；原记录保留。')
-      await resolveInteractionMemory({
-        sessionId: base.id,
-        commandId: commandId(`interaction.memory.${resolution}`, base.id),
-        baseSequence: base.sequence,
-        baseStateHash: base.stateHash,
-        memoryId,
-        resolution,
-      })
-      await refresh()
-    }),
+    manageMemory: async (plan, action) => withBusy(async () => {
+      const scope = get().scope
+      if (!scope || get().selectedSessionId !== plan.sessionId) throw new Error('已切换聊天，原记忆操作未提交。')
+      await applyChatMemoryManagementPlanV1(scope, plan, action)
+    }, false),
 
     finishScene: async (reason, aiConfig) => withBusy(async () => {
       const state = get().runtimeState.interaction
