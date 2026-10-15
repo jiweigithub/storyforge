@@ -2,7 +2,7 @@ import {CHAT_NARRATIVE_OPTION_KEYS_V1} from './narrative-options'
 import type {ChatNarrativeActionV1} from '../types/chat-narrative'
 
 export function supportsChatReviewNormalizationV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v24', 'chat-narrative-options-review-v18'].includes(version ?? '')
+  return ['chat-narrative-action-review-v24', 'chat-narrative-options-review-v18', 'chat-narrative-action-review-v25', 'chat-narrative-options-review-v19'].includes(version ?? '')
 }
 
 /** The stored review contract requires per-fact checks for paraphrases only.

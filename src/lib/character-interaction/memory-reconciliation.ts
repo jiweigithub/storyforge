@@ -91,7 +91,7 @@ export function applyChatMemoryReconciliationsV1(before: CharacterInteractionRun
 
 /** New fields cannot be smuggled through older frozen reviewer contracts. */
 export function supportsChatMemoryReconciliationV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v20', 'chat-narrative-options-review-v14', 'chat-narrative-action-review-v21', 'chat-narrative-options-review-v15', 'chat-narrative-action-review-v22', 'chat-narrative-options-review-v16', 'chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18'].includes(version ?? '')
+  return ['chat-narrative-action-review-v20', 'chat-narrative-options-review-v14', 'chat-narrative-action-review-v21', 'chat-narrative-options-review-v15', 'chat-narrative-action-review-v22', 'chat-narrative-options-review-v16', 'chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18', 'chat-narrative-action-review-v25', 'chat-narrative-options-review-v19'].includes(version ?? '')
 }
 
 export function assertChatMemoryReconciliationReviewVersionV1(reviews: readonly (ChatNarrativeActionReviewV1 | null)[], version: string | undefined): void {

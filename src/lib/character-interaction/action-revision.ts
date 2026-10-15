@@ -77,6 +77,7 @@ export async function readChatActionRevisionSourceV1(input: {
 export function assertChatActionRevisionExpressionV1(source: ChatActionRevisionSourceV1, action: ChatNarrativeActionV1) {
   if (canonicalStringify(source.action.followupGoal ?? null) !== canonicalStringify(action.followupGoal ?? null)) throw new Error('[chat-revision] 后果修订不能更换原表达承接的新目标与请求依据')
   if (canonicalStringify(source.action.threadFollowupGoal ?? null) !== canonicalStringify(action.threadFollowupGoal ?? null)) throw new Error('[chat-revision] 后果修订不能更换原表达接续的事项与目标')
+  if (canonicalStringify(source.action.promiseRequest ?? null) !== canonicalStringify(action.promiseRequest ?? null)) throw new Error('[chat-revision] 后果修订不能更换原约定的玩家请求依据')
   if (canonicalStringify(source.action.resumeGoal ?? null) !== canonicalStringify(action.resumeGoal ?? null)) throw new Error('[chat-revision] 后果修订不能更换恢复玩家暂停的依据')
   for (const key of ['kind', 'text', 'goalKey', 'audienceKeys', 'waitingForPlayer'] as const) {
     if (canonicalStringify(source.action[key]) !== canonicalStringify(action[key])) throw new Error('[chat-revision] 修订不能改变原表达、行动角色目标或玩家选择边界')

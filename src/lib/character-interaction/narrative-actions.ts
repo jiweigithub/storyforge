@@ -1,3 +1,4 @@
+import {requireChatPromiseRequestV1} from './narrative-promise-request'
 import {chatConversationEvidenceV1} from './narrative-conversation-evidence'
 import {applyChatPlayerGoalResumeV1, validateChatPlayerRequestEvidenceV1} from './narrative-player-pause'
 import {applyChatThreadFollowupGoalV1, chatCanFollowThreadV1} from './narrative-thread-followup'
@@ -44,7 +45,7 @@ function choice(value: unknown, allowed: readonly string[]) {
 
 /** Structural parse also runs on restored candidates; state-dependent checks run again at commit. */
 export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV1 {
-  const optional = ['relationshipUpdates', 'nextPossibilities', 'beliefUpdates', 'goalUpdates', 'situationRequest', 'followupGoal', 'threadFollowupGoal', 'resumeGoal', 'commitmentEffects'].filter(name => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, name))
+  const optional = ['relationshipUpdates', 'nextPossibilities', 'beliefUpdates', 'goalUpdates', 'situationRequest', 'followupGoal', 'threadFollowupGoal', 'resumeGoal', 'promiseRequest', 'commitmentEffects'].filter(name => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, name))
   const row = object(value, ['kind,text,goalKey,evidenceFactKeys,audienceKeys,waitingForPlayer,newFacts,disclosures,threadUpdates,goalStatus', ...optional].join(','))
   choice(row.kind, ['speak', 'attempt', 'complete', 'pause'])
   text(row.text, 8000); if (row.goalKey !== null) key(row.goalKey); keys(row.evidenceFactKeys); keys(row.audienceKeys, 33)
@@ -117,6 +118,7 @@ export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV
     const goal = object(proposal.goal, 'goalKey,desire,concern,boundary,evidenceFactKeys')
     key(goal.goalKey); text(goal.desire, 1200); text(goal.concern, 1200); text(goal.boundary, 1200); keys(goal.evidenceFactKeys, 20)
   }
+  if (optional.includes('promiseRequest') && row.promiseRequest !== null) validateChatPlayerRequestEvidenceV1(row.promiseRequest)
   if (optional.includes('resumeGoal') && row.resumeGoal !== null) validateChatPlayerRequestEvidenceV1(row.resumeGoal)
   return structuredClone(value) as ChatNarrativeActionV1
 }
@@ -231,7 +233,8 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   const excerpt = (value: string) => {
     if (!action.text.includes(value)) fail('后果证据未出现在实际表达中')
   }
-  if (action.evidenceFactKeys.length || !chatConversationEvidenceV1(state, actorKey, trigger, action)) evidence(action.evidenceFactKeys)
+  const promiseRequest = requireChatPromiseRequestV1(state, actorKey, trigger, action)
+  if (!promiseRequest && (action.evidenceFactKeys.length || !chatConversationEvidenceV1(state, actorKey, trigger, action))) evidence(action.evidenceFactKeys)
   if (action.kind === 'attempt' && !action.waitingForPlayer) fail('行动尝试必须交还玩家决定')
   if ((action.kind !== 'complete' || action.waitingForPlayer) && (action.newFacts.length || action.goalStatus === 'fulfilled'
     || action.threadUpdates.some(t => t.status === 'resolved' || t.status === 'transformed'))) fail('意图或等待选择不能写成已完成后果')
@@ -322,7 +325,7 @@ export function applyChatNarrativeActionV1(state: CharacterInteractionRuntimeSta
   if (action.commitmentEffects !== undefined) fail('承诺变化必须通过独立审查，旧行动事件不可采用')
   if (action.disclosures.some(d => d.wording !== undefined)) fail('自然转述必须经过逐条等义审查，旧行动事件不可采用')
   if (action.goalKey === null) fail('收束后的回应必须通过行动及后果审查')
-  if (action.relationshipUpdates !== undefined || action.nextPossibilities !== undefined || action.beliefUpdates !== undefined || action.goalUpdates !== undefined || action.situationRequest !== undefined || action.followupGoal !== undefined || action.threadFollowupGoal !== undefined || action.resumeGoal !== undefined) fail('旧行动事件不能写入关系、打算或附带目标后果')
+  if (action.relationshipUpdates !== undefined || action.nextPossibilities !== undefined || action.beliefUpdates !== undefined || action.goalUpdates !== undefined || action.situationRequest !== undefined || action.followupGoal !== undefined || action.threadFollowupGoal !== undefined || action.resumeGoal !== undefined || action.promiseRequest !== undefined) fail('旧行动事件不能写入关系、打算或附带目标后果')
   return applyActionBase(state, input)
 }
 

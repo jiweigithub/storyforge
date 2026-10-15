@@ -1,3 +1,4 @@
+import {requireChatPromiseRequestV1} from './narrative-promise-request'
 import type {CharacterInteractionRuntimeState} from '../types'
 import type {ChatActorGoalV1, ChatCommitmentEffectV1, ChatGoalCommitmentV1, ChatNarrativeActionV1} from '../types/chat-narrative'
 import {interactionMessageVisibleTo} from './message-visibility'
@@ -37,13 +38,19 @@ export function validateChatGoalCommitmentsV1(value: unknown, input: {actorKey: 
   let open = 0
   let previous: {declared: number; resolved: number | null} | null = null
   for (const valueItem of value) {
-    const item = object(valueItem, 'commitmentKey,terms,audienceKeys,declared,resolution')
+    const hasRequest = valueItem != null && typeof valueItem === 'object' && Object.prototype.hasOwnProperty.call(valueItem, 'requested')
+    const item = object(valueItem, 'commitmentKey,terms,audienceKeys,declared,resolution' + (hasRequest ? ',requested' : ''))
     text(item.commitmentKey, 240); text(item.terms)
     const declared = object(item.declared, 'messageId,sequence,excerpt')
     text(declared.messageId, 200); text(declared.excerpt); sequence(declared.sequence)
     if (item.commitmentKey !== `${declared.messageId}:promise` || ids.has(item.commitmentKey)) fail('承诺身份与原表达不一致或重复')
     ids.add(item.commitmentKey)
     if (!declared.excerpt.includes(item.terms) || declared.sequence > input.updatedSequence) fail('承诺条款或事件来源不一致')
+    if (hasRequest) {
+      const requested = object(item.requested, 'messageId,sequence,excerpt')
+      text(requested.messageId, 200); text(requested.excerpt, 1200); sequence(requested.sequence)
+      if (requested.sequence >= declared.sequence || requested.messageId === declared.messageId) fail('约定请求必须早于角色声明')
+    }
     if (previous && (declared.sequence <= previous.declared || previous.resolved === null || declared.sequence < previous.resolved)) fail('承诺历史必须按先处置、后改约的真实事件排列')
     if (!Array.isArray(item.audienceKeys) || new Set(item.audienceKeys).size !== item.audienceKeys.length
       || !item.audienceKeys.includes(input.actorKey) || !item.audienceKeys.includes('player')
@@ -68,6 +75,11 @@ export function assertChatCommitmentSourcesV1(state: CharacterInteractionRuntime
   for (const goal of state.chatNarrative?.situation.goals ?? []) for (const item of goal.commitments ?? []) {
     if (seen.has(item.commitmentKey)) fail('不同目标不能共用同一个承诺身份')
     seen.add(item.commitmentKey)
+    if (item.requested) {
+      const request = state.messages.find(m => m.messageId === item.requested!.messageId && m.eventSequence === item.requested!.sequence)
+      if (!request || request.role !== 'player' || request.speakerKey !== state.playerKey || request.supersededBySequence != null
+        || !request.text.includes(item.requested.excerpt) || item.audienceKeys.some(v => !interactionMessageVisibleTo(request, v))) fail('约定缺少真实可见的玩家请求依据')
+    }
     for (const evidence of [item.declared, ...(item.resolution ? [item.resolution] : [])]) {
       const message = state.messages.find(m => m.messageId === evidence.messageId && m.eventSequence === evidence.sequence)
       if (!message || message.role !== 'character' || message.speakerKey !== goal.actorKey || message.supersededBySequence != null
@@ -84,6 +96,9 @@ export function applyChatCommitmentEffectsV1(state: CharacterInteractionRuntimeS
 }): void {
   const effects = parseChatCommitmentEffectsV1(input.effects), story = state.chatNarrative
   if (!story) fail('承诺属于主动叙事实例')
+  const trigger = story.triggers.slice(-1)[0]
+  if (input.action.promiseRequest != null && !trigger) fail('对话约定缺少当前触发')
+  const requested = input.action.promiseRequest != null ? requireChatPromiseRequestV1(state, input.actorKey, trigger!, input.action) : null
   const goals = structuredClone(story.situation.goals)
   if (effects.length) {
     if (!state.activeScene?.activeParticipantKeys.includes(input.actorKey) || !input.action.audienceKeys.includes(input.actorKey)
@@ -104,7 +119,8 @@ export function applyChatCommitmentEffectsV1(state: CharacterInteractionRuntimeS
       if (goal.commitments?.some(c => c.resolution === null)) fail('原承诺未处理，不能覆盖条款')
       if ((goal.commitments?.length ?? 0) >= CHAT_GOAL_COMMITMENT_LIMIT_V1) fail('承诺历史已达容量，停止而不删除原记录')
       goal.commitments = [...(goal.commitments ?? []), {commitmentKey: `${input.messageId}:promise`, terms: effect.terms, audienceKeys: [...input.action.audienceKeys],
-        declared: {messageId: input.messageId, sequence: input.sequence, excerpt: effect.evidenceExcerpt}, resolution: null}]
+        declared: {messageId: input.messageId, sequence: input.sequence, excerpt: effect.evidenceExcerpt},
+        ...(requested ? {requested: {messageId: requested.messageId, sequence: requested.eventSequence, excerpt: input.action.promiseRequest!.playerExcerpt}} : {}), resolution: null}]
       goal.updatedSequence = input.sequence
     } else {
       const goal = goals.find(g => g.commitments?.some(c => c.commitmentKey === effect.commitmentKey))
@@ -131,11 +147,12 @@ export function chatVisibleCommitmentsV1(state: CharacterInteractionRuntimeState
 }
 
 export function chatCommitmentSequencesV1(goals: ChatActorGoalV1[]) {
-  return goals.flatMap(g => (g.commitments ?? []).flatMap(c => [c.declared.sequence, ...(c.resolution ? [c.resolution.sequence] : [])]))
+  return goals.flatMap(g => (g.commitments ?? []).flatMap(c => [c.declared.sequence, ...(c.requested ? [c.requested.sequence] : []), ...(c.resolution ? [c.resolution.sequence] : [])]))
 }
 export function rebaseChatCommitmentsV1(goals: ChatActorGoalV1[], rebase: (sequence: number) => number): void {
   for (const goal of goals) for (const item of goal.commitments ?? []) {
     item.declared.sequence = rebase(item.declared.sequence)
+    if (item.requested) item.requested.sequence = rebase(item.requested.sequence)
     if (item.resolution) item.resolution.sequence = rebase(item.resolution.sequence)
   }
 }
@@ -158,5 +175,5 @@ export function validateChatCommitmentChecksV1(value: unknown, action: ChatNarra
 /** Version gate also applies when a retained review is resumed or adopted. */
 export function assertChatCommitmentReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
   if (actions.some(a => a.commitmentEffects !== undefined)
-    && !['chat-narrative-action-review-v19', 'chat-narrative-options-review-v13', 'chat-narrative-action-review-v20', 'chat-narrative-options-review-v14', 'chat-narrative-action-review-v21', 'chat-narrative-options-review-v15', 'chat-narrative-action-review-v22', 'chat-narrative-options-review-v16', 'chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18'].includes(version ?? '')) fail('旧审查合同不支持承诺变化；保留原候选，不自动更换合同或重发')
+    && !['chat-narrative-action-review-v19', 'chat-narrative-options-review-v13', 'chat-narrative-action-review-v20', 'chat-narrative-options-review-v14', 'chat-narrative-action-review-v21', 'chat-narrative-options-review-v15', 'chat-narrative-action-review-v22', 'chat-narrative-options-review-v16', 'chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18', 'chat-narrative-action-review-v25', 'chat-narrative-options-review-v19'].includes(version ?? '')) fail('旧审查合同不支持承诺变化；保留原候选，不自动更换合同或重发')
 }

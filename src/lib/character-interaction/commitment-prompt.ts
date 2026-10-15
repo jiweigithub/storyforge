@@ -9,7 +9,7 @@ export const CHAT_COMMITMENT_ACTION_RULES_V1 = [
 /** V2 clarifies when a future-condition undertaking is already established.
  * Older producers keep V1; this changes instructions, never review/adoption. */
 export function supportsChatCommitmentPromptV2(version: string | undefined): boolean {
-  return ['chat-narrative-action-v31', 'chat-narrative-options-v21', 'chat-action-revision-v13'].includes(version ?? '')
+  return ['chat-narrative-action-v31', 'chat-narrative-options-v21', 'chat-action-revision-v13', 'chat-narrative-action-v32', 'chat-narrative-options-v22', 'chat-action-revision-v14'].includes(version ?? '')
 }
 
 export const CHAT_COMMITMENT_ACTION_RULES_V2 = [

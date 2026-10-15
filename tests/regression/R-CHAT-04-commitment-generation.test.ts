@@ -47,7 +47,7 @@ it.each([false, true])('records the exact producer instructions while keeping th
     },
   })
   expect(generated.snapshot.contract.budget.maxModelCalls).toBe(2); expect(calls).toBe(2)
-  expect(generated.snapshot.contract.executionBindings!.find(b => b.stepId === 'interaction:runtime-candidate')!.promptVersion).toBe(legacy ? 'chat-narrative-action-v30' : 'chat-narrative-action-v31')
+  expect(generated.snapshot.contract.executionBindings!.find(b => b.stepId === 'interaction:runtime-candidate')!.promptVersion).toBe(legacy ? 'chat-narrative-action-v30' : 'chat-narrative-action-v32')
   expect((await db.agentRunArtifacts.toArray()).some(a => a.artifactKind === 'rendered-request' && a.content === rendered)).toBe(true)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!

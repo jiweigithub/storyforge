@@ -103,6 +103,8 @@ export interface ChatGoalCommitmentV1 {
   terms: string
   audienceKeys: string[]
   declared: ChatCommitmentEvidenceV1
+  /** Runtime-bound player request; absent on existing fact-grounded promises. */
+  requested?: ChatCommitmentEvidenceV1
   resolution: null | (ChatCommitmentEvidenceV1 & {kind: 'fulfilled' | 'withdrawn'})
 }
 
@@ -317,6 +319,8 @@ export interface ChatNarrativeActionV1 {
   threadFollowupGoal?: ChatActorThreadFollowupGoalV1 | null
   /** Only a new visible player message can release a recorded player hold. */
   resumeGoal?: ChatPlayerRequestEvidenceV1 | null
+  /** Explicit latest-player-request basis for a new own promise only. */
+  promiseRequest?: ChatPlayerRequestEvidenceV1 | null
 }
 
 export interface ChatActorThreadFollowupGoalV1 {
