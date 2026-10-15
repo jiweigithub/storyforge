@@ -1,3 +1,4 @@
+import {assertChatConversationEvidenceReviewVersionV1, supportsChatConversationEvidenceV1} from './narrative-conversation-evidence'
 import {supportsChatPlayerPauseV1} from './narrative-player-pause'
 import {assertChatThreadFollowupReviewVersionV1, supportsChatThreadFollowupV1} from './narrative-thread-followup'
 import {assertChatMemoryCorrectionInputV1} from './context-reader-version'
@@ -44,7 +45,9 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
   const reviewBinding = snapshot.contract.executionBindings?.find(b => b.stepId === stepId && b.skillId === reviewSkill)
   if (!reviewBinding) fail('旧候选没有审查合同，请取消后明确发起新行动；原有内容仍保留')
   const actions = situation ? [] : options ? candidate.options : [candidate.action]
+  assertChatConversationEvidenceReviewVersionV1(actions, reviewBinding.promptVersion)
   assertChatThreadFollowupReviewVersionV1(actions, reviewBinding.promptVersion)
+  const conversationEvidence = supportsChatConversationEvidenceV1(reviewBinding.promptVersion)
   const playerPause = supportsChatPlayerPauseV1(reviewBinding.promptVersion)
   const threadFollowup = supportsChatThreadFollowupV1(reviewBinding.promptVersion)
   assertChatCommitmentReviewVersionV1(actions, reviewBinding.promptVersion)
@@ -107,7 +110,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
         'visibility：是否借描述、暗示、新目标或问句泄露角色或玩家不可知的秘密；引用正确也不能洗白语义泄露。',
         'meaningful-direction：是否承接当前局面、提供有动机且可改变的行动方向，而非机械制造危机、重复问题或预写结局。',
         '仅输出 JSON {"checks":[{"check":"continuity|permissions|player-agency|visibility|meaningful-direction","passed":true,"reason":"引用实际内容解释判断"}]}，必须分别包含上述五项，不得有其他字段。',
-      ] : chatActionReviewPromptRulesV1({view: roleContext, actions, options, compact, naturalDisclosure, commitments, memoryReconciliation, threadFollowup, playerPause})).join('\n')}, {role: 'user', content: assembled.text}]
+      ] : chatActionReviewPromptRulesV1({view: roleContext, actions, options, compact, naturalDisclosure, commitments, memoryReconciliation, threadFollowup, playerPause, conversationEvidence})).join('\n')}, {role: 'user', content: assembled.text}]
       snapshot = (await recordAgentRunArtifactV1({scope: input.scope, runId: snapshot.run.id,
         productRuntimeSessionId: input.productRuntimeSessionId, artifactKind: 'rendered-request', content: JSON.stringify(messages),
         stepId, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence})).snapshot

@@ -1772,6 +1772,64 @@
           "nextWork": "Permit only an effect-free acknowledgement grounded in the existing confirmed player hold, without requiring unrelated world facts. Keep explicit resume authority and independent semantic review; preserve this failed branch and use a new bounded case for validation.",
           "evidence": "v75-player-pause-real/interpretation.json",
           "rawEvidenceSha256": "70be528103a1bb2c139d7aa8e41fa61848ef6903be4461aa428d8358f8802bed"
+        },
+        "conversationEvidencePreflight": {
+          "date": "2026-10-15",
+          "status": "four-local-opportunities-passed-full-validation-pending",
+          "sourceBaseCommit": "157ab1eb3a8103b6a8c014ff9293d85c133938fe",
+          "sourceUncommitted": true,
+          "sourceManifestSha256": "a6132a397f1b72f5db522cbe82b6144548043edd45fcb3a158d754f76a6a5f3f",
+          "evidenceFolder": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v76-conversation-evidence-real",
+          "requests": 8,
+          "completedRequests": 8,
+          "tokens": 76711,
+          "costUsd": null,
+          "opportunities": 4,
+          "adoptedActions": 4,
+          "continueAndWeakAssentFactFree": true,
+          "pausePreservedUntilExplicitResume": true,
+          "restoredBothBranchesWithZeroCalls": true,
+          "worldUnchanged": true,
+          "retries": 0,
+          "revisions": 0,
+          "countsTowardM1": false,
+          "humanRatings": 0,
+          "secondProvider": false,
+          "interpretationSha256": "60b74b038169e596509cda9df2f7611504776433cd06dee582fd74271abc3d91",
+          "hashes": {
+            "run.json": "7c8ab4613783df6a092568331534b1714d64bb6ff201cfbad51a682b89483ce1",
+            "restore.json": "8917fa39424832ee2b6aa2b2b4a6fdefa65334b377cf1a0ceebb9159e5528d3d",
+            "preregistration.json": "cb0ed645fd97c9b56a685aceb95990203960bc4e200f35e8ef9691f409198340",
+            "diagnostic.mjs": "1ca8372e2f97740fd2761d4e8e8deeebd09469a997f288d0fb2263ebd795a1ae",
+            "prepared-backup.json": "aaaf6b3e4bfaae14793db22cef2f85ff63bb26ec10e5a9f5db27160ef3e81e50",
+            "provider-terminal-proof.json": "4bda090f80e06bc6eed32f763dc01d247fa3a699b59a73df7e899ff240b5408f"
+          },
+          "limitations": [
+            "Synthetic production and checking prefix",
+            "One new Codex sample",
+            "Independent review step uses same model",
+            "Current source not committed; adjacent long-history timing checks unresolved",
+            "Full CI/E2E queued, not passed",
+            "Frozen M1 and human counts unchanged"
+          ],
+          "engineeringFollowup": {
+            "originalTimeoutsRetained": true,
+            "sameSourceProfileSeconds": 34.9,
+            "unchangedNormalFilePassed": 2,
+            "normalTestSeconds": [
+              22.2,
+              0.3
+            ],
+            "testTimeoutsUnchanged": true,
+            "uniqueProductTestsWithPassEvidence": 902,
+            "affectedBrowserPathsWithPassEvidence": 6,
+            "olderV75FullE2E": {
+              "passed": 351,
+              "skipped": 2,
+              "failed": 2
+            },
+            "oldQueuedV76Jobs": "cancelled before test start; final fixed-commit jobs replace outdated fixtures"
+          }
         }
       },
       {

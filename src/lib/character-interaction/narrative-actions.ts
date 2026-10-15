@@ -1,3 +1,4 @@
+import {chatConversationEvidenceV1} from './narrative-conversation-evidence'
 import {applyChatPlayerGoalResumeV1, validateChatPlayerRequestEvidenceV1} from './narrative-player-pause'
 import {applyChatThreadFollowupGoalV1, chatCanFollowThreadV1} from './narrative-thread-followup'
 import {applyChatMemoryReconciliationsV1, parseChatMemoryReconciliationChecksV1} from './memory-reconciliation'
@@ -230,7 +231,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   const excerpt = (value: string) => {
     if (!action.text.includes(value)) fail('后果证据未出现在实际表达中')
   }
-  evidence(action.evidenceFactKeys)
+  if (action.evidenceFactKeys.length || !chatConversationEvidenceV1(state, actorKey, trigger, action)) evidence(action.evidenceFactKeys)
   if (action.kind === 'attempt' && !action.waitingForPlayer) fail('行动尝试必须交还玩家决定')
   if ((action.kind !== 'complete' || action.waitingForPlayer) && (action.newFacts.length || action.goalStatus === 'fulfilled'
     || action.threadUpdates.some(t => t.status === 'resolved' || t.status === 'transformed'))) fail('意图或等待选择不能写成已完成后果')
@@ -317,6 +318,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
 export function applyChatNarrativeActionV1(state: CharacterInteractionRuntimeState, input: Parameters<typeof applyActionBase>[1]) {
   if (state.chatNarrative?.pendingEdit) fail('历史改写必须通过行动及后果审查')
   const action = parseChatNarrativeActionV1(input.action)
+  if (!action.evidenceFactKeys.length) fail('无事实引用的对话回应必须通过独立审查，旧行动事件不可采用')
   if (action.commitmentEffects !== undefined) fail('承诺变化必须通过独立审查，旧行动事件不可采用')
   if (action.disclosures.some(d => d.wording !== undefined)) fail('自然转述必须经过逐条等义审查，旧行动事件不可采用')
   if (action.goalKey === null) fail('收束后的回应必须通过行动及后果审查')

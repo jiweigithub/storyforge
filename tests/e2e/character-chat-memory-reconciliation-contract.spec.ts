@@ -37,7 +37,7 @@ test('persists reviewed memory reconciliation through browser reload and portabl
     return {sessionId: imported.id, expected, injectedCalls, productionBinding: skill.promptVersion}
   })
   expect(f.injectedCalls).toBe(2)
-  expect(f.productionBinding).toBe('chat-narrative-action-review-v22')
+  expect(f.productionBinding).toBe('chat-narrative-action-review-v23')
   expect(f.expected.chatNarrative.memoryReconciliations).toHaveLength(1)
   expect(f.expected.chatNarrative.memoryReconciliations[0].sourceSequence).toBeLessThan(0)
   await page.reload()
@@ -47,7 +47,7 @@ test('persists reviewed memory reconciliation through browser reload and portabl
     const state = (await api.readProductRuntimeState(sessionId)).interaction
     return {state, pending: rules.pendingChatMemoryCorrectionsV1(state, 'guard'), productionBinding: skills.getAgentSkillV1('character.chat-narrative-action-review').promptVersion}
   }, f.sessionId)
-  expect(after).toEqual({state: f.expected, pending: [], productionBinding: 'chat-narrative-action-review-v22'})
+  expect(after).toEqual({state: f.expected, pending: [], productionBinding: 'chat-narrative-action-review-v23'})
 })
 
 test('shows the exact delivered correction and shared evidence after adoption and reload without a new model call', async ({page}, info) => {

@@ -87,7 +87,7 @@ it.each(['continue', 'return', 'wrong-quote', 'no-release', 'other-goal', 'uncha
   const before = structuredClone(s); expect(() => apply(s, a, 7, kind === 'no-hold' ? 3 : 6)).toThrow(); expect(s).toEqual(before)
 })
 it('permits a quiet response without lifting the hold and refuses forged or initial pause evidence', () => {
-  const s = resumeState('continue'), a: ChatNarrativeActionV1 = {kind: 'speak', text: '不急，我还在这里等。', goalKey: 'assess-road', evidenceFactKeys: ['road'], audienceKeys: audience, waitingForPlayer: true, goalStatus: null, newFacts: [], disclosures: [], threadUpdates: []}
+  const s = resumeState('continue'), a: ChatNarrativeActionV1 = {kind: 'speak', text: '不急，我还在这里等。', goalKey: 'assess-road', evidenceFactKeys: [], audienceKeys: audience, waitingForPlayer: true, goalStatus: null, newFacts: [], disclosures: [], threadUpdates: []}
   const held = apply(s, a, 7, 6); expect(held.chatNarrative!.situation.goals).toEqual(s.chatNarrative!.situation.goals)
   const broken = structuredClone(held); broken.chatNarrative!.situation.goals.at(-1)!.playerPause!.requested.messageId = 'fake'
   expect(() => parseInteractionState(broken)).toThrow('消息依据')
@@ -138,9 +138,14 @@ it('saves before review, recovers once, branches twice, deletes parent, imports 
   await deleteProductRuntimeSession(first.id!); await deleteProductRuntimeSession(f.sessionId)
   const projectId = await importProjectJSON(await exportProjectJSON(f.scope.projectId)), imported = (await db.productRuntimeSessions.where('projectId').equals(projectId).toArray()).find(s => s.title === child.title)!
   expect((await readProductRuntimeState(imported.id!)).interaction).toEqual(held.interaction)
+  const importedScope = {projectId, worldId: imported.worldId, workId: imported.workId}
+  await freshMessage(imported.id!, '嗯。')
+  const quiet: ChatNarrativeActionV1 = {kind: 'pause', text: '好，不急。', goalKey: 'assess-road', evidenceFactKeys: [], audienceKeys: audience, waitingForPlayer: true, goalStatus: null, newFacts: [], disclosures: [], threadUpdates: []}
+  const response = await generateInteractionRuntimeCandidateV1(candidate({scope: importedScope, sessionId: imported.id!}, quiet))
+  await adoptInteractionRuntimeCandidateV1({scope: importedScope, runId: response.snapshot.run.id})
+  expect((await readProductRuntimeState(imported.id!)).interaction!.chatNarrative!.situation).toEqual(held.interaction!.chatNarrative!.situation)
   const seq = await freshMessage(imported.id!, release), a = resumeAction(seq)
   a.commitmentEffects![0] = {kind: 'fulfill', commitmentKey: held.interaction!.chatNarrative!.situation.goals.at(-1)!.commitments![0].commitmentKey, evidenceExcerpt: a.text}
-  const importedScope = {projectId, worldId: imported.worldId, workId: imported.workId}
   const next = await generateInteractionRuntimeCandidateV1(candidate({scope: importedScope, sessionId: imported.id!}, a))
   await adoptInteractionRuntimeCandidateV1({scope: importedScope, runId: next.snapshot.run.id})
   const after = await readProductRuntimeState(imported.id!); expect(after.interaction!.chatNarrative!.situation.goals.at(-1)).toMatchObject({status: 'fulfilled'})

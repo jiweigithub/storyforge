@@ -16,8 +16,8 @@ test('player pause survives portable branches, ignores continue and weak assent,
     calls.push(review ? 'review' : 'action'); let value: unknown
     if (review) {
       expect(messages[0].content).toContain('玩家暂停及恢复专审')
-      value = {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'].map(check => ({check, passed: actions !== 3 || check !== 'player-agency', reason: '工程注入判定，非模型语义质量验收。'})),
-        disclosureChecks: [], memoryChecks: [], commitmentChecks: actions === 2 ? [] : [{effectIndex: 0, passed: true, reason: '工程注入约定检查'}]}
+      value = {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'].map(check => ({check, passed: true, reason: '工程注入判定，非模型语义质量验收。'})),
+        disclosureChecks: [], memoryChecks: [], commitmentChecks: actions === 2 || actions === 3 ? [] : [{effectIndex: 0, passed: true, reason: '工程注入约定检查'}]}
     } else {
       actions++; const state = await read(), seq = state.chatNarrative.triggers.at(-1).sourceEventSequence
       expect(messages[1].content).not.toContain('柜台下')
@@ -26,7 +26,7 @@ test('player pause survives portable branches, ignores continue and weak assent,
         commitmentEffects: [{kind: 'promise', terms: ack, evidenceExcerpt: ack}], nextPossibilities: [],
         threadFollowupGoal: {threadKey: 'investigate', evidenceExcerpt: ack, pauseRequest: {playerEventSequence: seq, playerExcerpt: stop},
           goal: {goalKey: 'assess-road', desire: '判断自己能如何帮助恢复通行', concern: '天黑后处理倒树有危险', boundary: '等玩家明确确认再检查，不要求玩家同行', evidenceFactKeys: ['road']}}}
-      else if (actions === 2) value = {...base, text: waiting}
+      else if (actions === 2 || actions === 3) value = {...base, text: actions === 2 ? waiting : '好，不急。', evidenceFactKeys: []}
       else {
         expect(messages[1].content).toContain('playerPause'); expect(messages[1].content).toContain(stop)
         value = {...base, kind: 'complete', text: done, waitingForPlayer: false, goalStatus: 'fulfilled',
@@ -69,7 +69,7 @@ test('player pause survives portable branches, ignores continue and weak assent,
   await page.getByRole('button', {name: '让角色继续', exact: true}).click()
   await expect(page.getByRole('article').getByText(waiting, {exact: true})).toBeVisible()
   expect((await read()).chatNarrative.situation.goals.at(-1).status).toBe('paused')
-  await send('嗯。'); await expect(page.getByText(/行动语义审查未通过/)).toBeVisible()
+  await send('嗯。'); await expect(page.getByRole('article').getByText('好，不急。', {exact: true})).toBeVisible()
   expect((await read()).chatNarrative.situation.goals.at(-1).status).toBe('paused')
   await send(release); await expect(page.getByRole('article').getByText(done, {exact: true})).toBeVisible()
   const after = await read(); expect(after.chatNarrative.situation.goals.at(-1).status).toBe('fulfilled'); expect(after.chatNarrative.situation.goals.at(-1)).not.toHaveProperty('playerPause')

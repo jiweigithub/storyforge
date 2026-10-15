@@ -151,15 +151,36 @@ test('pins a player-corrected memory, retains its historical input evidence, and
     const harness = await load('/storyforge/src/lib/character-interaction/harness.ts'), fixture = await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')
     const v = await api.readProductRuntimeStateVersion(f.sessionId)
     await api.requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: crypto.randomUUID(), baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'continue', sourceEventSequence: v.sequence})
+    const state = (await api.readProductRuntimeState(f.sessionId)).interaction
+    const corrected = state.memories.filter((m: {authorship?: string; content: string; supersededByMemoryId: string | null}) => m.authorship === 'player-correction' && m.content === '玩家约定周五再来。' && m.supersededByMemoryId == null)
+    if (corrected.length !== 1) throw new Error('缺少当前真实记忆修正')
+    const memory = corrected[0]
     let calls = 0
     const result = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '固定记忆页面工程检查',
       runAI: async (messages: unknown) => {calls++; if (!JSON.stringify(messages).includes('玩家约定周五再来。')) throw new Error('固定记忆未送入实际输入')
         return JSON.stringify({kind: 'speak', text: '我先查看门边，再核对铜印的去向。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})},
-      runReviewAI: async () => {calls++; return JSON.stringify(fixture.chatActionReviewOutputFixture())}})
+      runReviewAI: async (messages: unknown) => {
+        calls++
+        if (!JSON.stringify(messages).includes('我约好周五再来。')) throw new Error('修正原话未送入审查')
+        return JSON.stringify({...fixture.chatActionReviewOutputFixture(), memoryChecks: [{memoryId: memory.memoryId, sourceSequence: memory.proposalSequence, passed: true, reason: '查看门边不改变周五再来的约定，也未要求玩家提前参与。'}]})
+      }})
     await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
+    const after = (await api.readProductRuntimeState(f.sessionId)).interaction
+    if (!after.chatNarrative.memoryReconciliations?.some((r: {memoryId: string; sourceSequence: number}) => r.memoryId === memory.memoryId && r.sourceSequence === memory.proposalSequence)) throw new Error('修正核对未随实际行动提交')
+    // Once the correction has been processed, pinning itself must keep it in
+    // the next actual input. The first request was required by correction.
+    const next = await api.readProductRuntimeStateVersion(f.sessionId)
+    await api.requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: crypto.randomUUID(), baseSequence: next.sequence, baseStateHash: next.stateHash, kind: 'continue', sourceEventSequence: next.sequence})
+    const pinned = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '已核对记忆继续按固定读取',
+      runAI: async (messages: unknown) => {
+        calls++
+        if (!JSON.stringify(messages).includes('玩家约定周五再来。')) throw new Error('核对之后的固定记忆未送入实际输入')
+        return JSON.stringify({kind: 'speak', text: '接下来我想核对门口的脚印。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})
+      }, runReviewAI: async () => {calls++; return JSON.stringify(fixture.chatActionReviewOutputFixture())}})
+    await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: pinned.snapshot.run.id})
     return calls
   }, f)
-  expect(calls).toBe(2)
+  expect(calls).toBe(4)
   await open(page, f)
   await expect(panel).toContainText('已固定 · 使用期间每轮保留')
   await page.getByRole('button', {name: '查看本次上下文', exact: true}).click()

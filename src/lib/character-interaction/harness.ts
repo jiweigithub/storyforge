@@ -1,3 +1,4 @@
+import {assertChatConversationEvidenceReviewVersionV1} from './narrative-conversation-evidence'
 import {assertChatThreadFollowupReviewVersionV1} from './narrative-thread-followup'
 import {assertChatMemoryCorrectionInputV1} from './context-reader-version'
 import {assertChatMemoryReconciliationReviewsV1, assertChatMemoryReconciliationReviewVersionV1} from './memory-reconciliation'
@@ -344,7 +345,7 @@ function prompt(input: {
         '只有在场角色可有目标或打算，不给玩家写行动、同意、内心、关系升级或既成结果。角色的未实施计划只进入 possibilities，不进入事实。',
         '承接已有未解决问题，避免为反转而制造危机。新增剧情线加上旧活跃线不能超过 maxActiveThreads。可以不增加新线，只深化现有矛盾；给出可拒绝、可暂停、可改变方向的空间。',
       ] : []),
-      ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? chatActionPromptRulesV1(input.roleContext!, {preserveExpression: input.skillId === CHAT_ACTION_REVISION_SKILL, playerPause: true}) : []),
+      ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? chatActionPromptRulesV1(input.roleContext!, {preserveExpression: input.skillId === CHAT_ACTION_REVISION_SKILL, playerPause: true, conversationEvidence: true}) : []),
       `严格输出 JSON：${schemaInstruction(input.skillId)}`,
     ].join('\n'),
   }, {
@@ -883,6 +884,8 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
     }
   }
   if (candidate.kind === 'chat-narrative-action-candidate' || candidate.kind === 'chat-narrative-options-candidate') {
+    assertChatConversationEvidenceReviewVersionV1(candidate.kind === 'chat-narrative-action-candidate' ? [candidate.action] : candidate.options,
+      snapshot.contract.executionBindings?.find(b => b.stepId === CHAT_ACTION_REVIEW_STEP_V1)?.promptVersion)
     assertChatThreadFollowupReviewVersionV1(candidate.kind === 'chat-narrative-action-candidate' ? [candidate.action] : candidate.options,
       snapshot.contract.executionBindings?.find(b => b.stepId === CHAT_ACTION_REVIEW_STEP_V1)?.promptVersion)
     assertChatCommitmentReviewVersionV1(candidate.kind === 'chat-narrative-action-candidate' ? [candidate.action] : candidate.options,

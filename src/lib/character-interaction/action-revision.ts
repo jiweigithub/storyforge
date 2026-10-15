@@ -1,3 +1,4 @@
+import {assertChatConversationEvidenceReviewVersionV1} from './narrative-conversation-evidence'
 import {assertChatThreadFollowupReviewVersionV1} from './narrative-thread-followup'
 import {assertChatMemoryReconciliationReviewsV1, isChatActionReviewOutputV1} from './memory-reconciliation'
 import {db} from '../db/schema'
@@ -55,6 +56,7 @@ export async function readChatActionRevisionSourceV1(input: {
   const raw = await readAgentRunArtifactExactV1({projectId: input.scope.projectId, artifactKind: 'raw-response', contentHash: reviewHash})
   let review
   try {
+    assertChatConversationEvidenceReviewVersionV1([candidate.action], snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:action-review')?.promptVersion)
     assertChatThreadFollowupReviewVersionV1([candidate.action], snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:action-review')?.promptVersion)
     const body = JSON.parse(raw.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, '$1'))
     if (!isChatActionReviewOutputV1(body)) return null
