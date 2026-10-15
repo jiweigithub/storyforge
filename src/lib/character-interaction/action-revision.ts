@@ -1,4 +1,5 @@
 import {assertChatConversationEvidenceReviewVersionV1} from './narrative-conversation-evidence'
+import {normalizeChatReviewResponseV1} from './review-normalization'
 import {assertChatThreadFollowupReviewVersionV1} from './narrative-thread-followup'
 import {assertChatMemoryReconciliationReviewsV1, isChatActionReviewOutputV1} from './memory-reconciliation'
 import {db} from '../db/schema'
@@ -60,7 +61,9 @@ export async function readChatActionRevisionSourceV1(input: {
     assertChatThreadFollowupReviewVersionV1([candidate.action], snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:action-review')?.promptVersion)
     const body = JSON.parse(raw.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, '$1'))
     if (!isChatActionReviewOutputV1(body)) return null
-    review = parseChatNarrativeActionReviewV1({...body, reviewedActionJson: canonicalStringify(candidate.action)}, candidate.action)
+    const normalized = normalizeChatReviewResponseV1({output: body, actions: [candidate.action], options: false,
+      promptVersion: snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:action-review')?.promptVersion})
+    review = parseChatNarrativeActionReviewV1({...normalized.output, reviewedActionJson: canonicalStringify(candidate.action)}, candidate.action)
     assertChatMemoryReconciliationReviewsV1(state, candidate.participantKey, [review], snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:action-review')?.promptVersion)
   } catch {return null}
   if (!review.checks.some(c => c.check === 'consequences' && !c.passed) || review.checks.some(c => c.check !== 'consequences' && !c.passed)

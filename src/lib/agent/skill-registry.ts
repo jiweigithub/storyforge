@@ -3180,12 +3180,12 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'character.chat-narrative-action-review', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天行动及后果审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-action-review-v23',
+    label: '角色聊天行动及后果审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-action-review-v24',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['chatSituationRuntime', 'chatActionCandidate'], optionalContextSourceKeys: [],
     inputPolicy: CHAT_ACTION_REVIEW_INPUT_POLICY,
     contextCompression: compressionPolicy(['chatSituationRuntime', 'chatActionCandidate']), maxOutputTokens: 2400, writeTargets: [],
-    lastVerifiedAt: '2026-10-15', regressionTests: ['R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-post-closure', 'R-CHAT-02-fact-discovery', 'R-CHAT-03-context-retrieval', 'R-CHAT-02-action-review', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression', 'R-CHAT-03-history-edit', 'R-CHAT-03-reply-continuation', 'R-CHAT-03-options-history'],
+    lastVerifiedAt: '2026-10-15', regressionTests: ['R-CHAT-02-review-normalization', 'R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-post-closure', 'R-CHAT-02-fact-discovery', 'R-CHAT-03-context-retrieval', 'R-CHAT-02-action-review', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression', 'R-CHAT-03-history-edit', 'R-CHAT-03-reply-continuation', 'R-CHAT-03-options-history'],
   },
   {
     version: 1, id: 'character.chat-narrative-options', agentId: 'character', defaultForAgent: false,
@@ -3197,11 +3197,11 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'character.chat-narrative-options-review', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天行动候选组审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-review-v17',
+    label: '角色聊天行动候选组审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-review-v18',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['chatSituationRuntime', 'chatActionCandidate'], optionalContextSourceKeys: [], inputPolicy: CHAT_ACTION_REVIEW_INPUT_POLICY,
     contextCompression: compressionPolicy(['chatSituationRuntime', 'chatActionCandidate']), maxOutputTokens: 4800, writeTargets: [],
-    lastVerifiedAt: '2026-10-15', regressionTests: ['R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-post-closure', 'R-CHAT-03-context-retrieval', 'R-CHAT-03-action-options', 'R-CHAT-03-options-history'],
+    lastVerifiedAt: '2026-10-15', regressionTests: ['R-CHAT-02-review-normalization', 'R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-post-closure', 'R-CHAT-03-context-retrieval', 'R-CHAT-03-action-options', 'R-CHAT-03-options-history'],
   },
   {
     version: 1, id: 'character.chat-situation-construction', agentId: 'character', defaultForAgent: false,

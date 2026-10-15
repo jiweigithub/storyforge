@@ -32,7 +32,7 @@ export function chatConversationEvidenceV1(state: CharacterInteractionRuntimeSta
 }
 
 export function supportsChatConversationEvidenceV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v23', 'chat-narrative-options-review-v17'].includes(version ?? '')
+  return ['chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18'].includes(version ?? '')
 }
 export function assertChatConversationEvidenceReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
   if (actions.some(a => !a.evidenceFactKeys.length) && !supportsChatConversationEvidenceV1(version)) throw new Error('[chat-conversation] 旧审查合同不支持无事实引用的对话回应；保留原候选，不自动换约或重发')

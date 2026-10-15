@@ -3,7 +3,7 @@
   "version": 1,
   "cohort": "m1-v77-thread-followup",
   "registeredAt": "2026-10-15T09:03:59.895620+00:00",
-  "status": "two-episodes-terminal-not-accepted",
+  "status": "three-episodes-terminal; implementation-fix-under-verification",
   "parentProtocol": "character-chat-m1-protocol-v1.json",
   "parentProtocolSha256": "a70ce9a0395edb55216420b07f321fc9c21d840bbb8b3a3b5a48c0f9762e8b25",
   "priorCohort": "character-chat-m1-evidence-v1.json",
@@ -105,12 +105,12 @@
     "productionUnitsStarted": 1,
     "productionUnitsCompleted": 1,
     "productionBlockedEpisodes": 0,
-    "started": 2,
-    "collectionCompleted": 2,
+    "started": 3,
+    "collectionCompleted": 3,
     "narrativePassed": 0,
-    "failed": 2,
+    "failed": 3,
     "unknown": 0,
-    "notStarted": 118,
+    "notStarted": 117,
     "humanScored": 0
   },
   "firstEpisode": "m1-v77-thread-followup/daily-clock-promise/local-codex/r1/weak-guidance",
@@ -122,7 +122,7 @@
     "No holdout material opened or used to tune this run",
     "Local isolated author material, formal S3 production and local ProductRelease only; no online publication"
   ],
-  "recordedAt": "2026-10-15T09:58:29.945007+00:00",
+  "recordedAt": "2026-10-15T10:38:25.020958+00:00",
   "productionUnits": [
     {
       "id": "m1-v77-thread-followup/daily-clock-promise/local-codex/r1",
@@ -149,7 +149,7 @@
     }
   ],
   "countSemantics": "collectionCompleted counts a protocol terminal collection, including failure; it is independent of narrativePassed/humanScored. The original cohort retains its original counts and records.",
-  "next": "Continue the next preregistered alternative behavior as an independent session from the same frozen release. The separately labelled V78 one-shot revision passed; both formal failed slots remain unchanged. Inspect whether omissions repeat before changing producer contracts; fixed-code full CI/E2E continue to terminal.",
+  "next": "Preserve all three terminal failures. Verify the narrow new-version response normalization and continue later formal collection only with separately registered source/contract identity; diagnostics do not replace failed slots.",
   "rawEvidence": [
     {
       "file": "cohort-registration.json",
@@ -254,6 +254,54 @@
     {
       "file": "clock-r1-refuse-interpretation.json",
       "sha256": "74e234f0a743b8c6a8f413705f991d616cd2cba61bdc6b3c50f3d1b8dcecb0c5"
+    },
+    {
+      "file": "alternative-preregistration.json",
+      "sha256": "66e7daee31cad07e55db4b59f3781f7e6614a9fc22f31687cbb179c4ee3a49da"
+    },
+    {
+      "file": "alternative-script-binding.json",
+      "sha256": "edd030a074a512f381e548ef28dc52d0d6be84279480f068514df9960eb30809"
+    },
+    {
+      "file": "alternative-runner.mjs",
+      "sha256": "9e92fff335430b5985fc9fb45e13260bfb50bac8540dfaec323d988b0fbdedb1"
+    },
+    {
+      "file": "alternative-prepared.json",
+      "sha256": "9c1b1fd1a52f80fadde667ee0239c28100c95e159db4c9231c0f7c4d74a3ee8d"
+    },
+    {
+      "file": "clock-r1-alternative-runtime.json",
+      "sha256": "fb41006006c941b706d7b43dfaa91a6bfc207f37cef810e00fa35b539b89cc88"
+    },
+    {
+      "file": "clock-r1-alternative-runtime-backup.json",
+      "sha256": "e5ff901903414c2f48a07ca0e9530dc259f7d55979efb6c714282de4f5804271"
+    },
+    {
+      "file": "alternative-terminal-proof.json",
+      "sha256": "efcfa07cca231a0cf6b994f73dc356f7c928c8f99da4bec7d5f222974556ad31"
+    },
+    {
+      "file": "alternative-restoration.mjs",
+      "sha256": "9f993f9ae277b5edeb88256b18a7e347cccac0ef956c883608ed176580ddc772"
+    },
+    {
+      "file": "alternative-restoration.json",
+      "sha256": "146e849494b262d51d0d86a753b25935ea63b67a3a79438eb1b334923a23697e"
+    },
+    {
+      "file": "alternative-parser-reproduction.mjs",
+      "sha256": "09adfa783d93bc63966ed03b2ffd8f62cd0251252373ed5699377760e09eb31c"
+    },
+    {
+      "file": "alternative-parser-reproduction.json",
+      "sha256": "ada9be293962373596820f6eaa7c842289593de7d995073fd5c4dbb28b18f78e"
+    },
+    {
+      "file": "clock-r1-alternative-interpretation.json",
+      "sha256": "996ef0dce846007203eca8e4c2ba672cb4ca46c99702ec1a22a5b475b4a583d6"
     }
   ],
   "episodes": [
@@ -379,14 +427,74 @@
       "artifact": "clock-r1-refuse-runtime.json",
       "interpretation": "clock-r1-refuse-interpretation.json",
       "sharedProductionUnit": "m1-v77-thread-followup/daily-clock-promise/local-codex/r1"
+    },
+    {
+      "id": "m1-v77-thread-followup/daily-clock-promise/local-codex/r1/alternative",
+      "status": "failed",
+      "termination": "failure",
+      "failureStage": "action review response parsing; redundant positive exact-disclosure check",
+      "collectionCompleted": true,
+      "playerOpportunitiesStarted": 3,
+      "playerOpportunitiesFinished": 2,
+      "completedReviewedActions": 3,
+      "completedSituationUpdates": 2,
+      "newProductionRequests": 0,
+      "runtimeRequests": 12,
+      "providerCompleted": 12,
+      "usage": {
+        "totalTokens": 124595,
+        "inputTokens": 118376,
+        "cachedInputTokens": 6656,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 6219,
+        "reasoningOutputTokens": 2381
+      },
+      "costUsd": null,
+      "automaticRetries": 0,
+      "manualRepairs": 0,
+      "sourceMaterialChanged": false,
+      "worldPreserved": true,
+      "unadoptedCandidateNotInPublicMessages": true,
+      "restoration": {
+        "stem": "clock-r1-alternative-runtime",
+        "openingReviewRetained": true,
+        "modelCalls": 0,
+        "interactionEqual": true,
+        "refreshEqual": true,
+        "worldPreserved": true,
+        "rawEvidenceRetained": true
+      },
+      "humanScored": false,
+      "narrativePassed": false,
+      "artifact": "clock-r1-alternative-runtime.json",
+      "interpretation": "clock-r1-alternative-interpretation.json",
+      "sharedProductionUnit": "m1-v77-thread-followup/daily-clock-promise/local-codex/r1",
+      "observations": [
+        "玩家提出先去公开背景中仍营业的旧货摊询问、不购买、之后再谈开壳。角色接受顺序，更新打算，随后独自到摊前，旧钟留在铺中；没有替玩家承诺购买或同行。",
+        "局面构建补足摊前条件。下一行动候选向玩家逐字披露新得知的现场事实并询问摊主；六维审查全部通过，但审查额外给出逐字披露的通过项。既有解析器只接受等义转述的逐项检查，因此拒绝整条候选。",
+        "正式失败保留；先前3条行动和2次局面更新保留，最终询问及其待确认结果未提交。12次提供商请求均已完成，未重发。",
+        "另行零调用只读复现：原响应解析失败，仅删除多余肯定检查即可严格解析通过；未采用该反事实结果，不能计作本片段成功。"
+      ],
+      "readOnlyDiagnosis": {
+        "artifact": "alternative-parser-reproduction.json",
+        "modelCalls": 0,
+        "originalParsed": false,
+        "counterfactualParsed": true,
+        "adoptionAttempted": false
+      },
+      "limitations": [
+        "替代方案已改变角色行动，但完整修钟剧情未完成。",
+        "独立真人评分、第二提供商、留出场景及竞品对照均未增加。",
+        "后续代码修复须登记新版本；不得重写本次失败或以诊断替换原槽位。"
+      ]
     }
   ],
   "aggregateUsage": {
-    "uniqueProviderRequests": 33,
+    "uniqueProviderRequests": 45,
     "sharedProductionRequests": 3,
-    "runtimeRequests": 30,
-    "completedProviderResponses": 33,
-    "totalTokens": 367679,
+    "runtimeRequests": 42,
+    "completedProviderResponses": 45,
+    "totalTokens": 492274,
     "costUsd": null,
     "productionCountedOnce": true,
     "humanScored": 0

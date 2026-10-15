@@ -1,4 +1,5 @@
 import {assertChatConversationEvidenceReviewVersionV1, supportsChatConversationEvidenceV1} from './narrative-conversation-evidence'
+import {normalizeChatReviewResponseV1} from './review-normalization'
 import {supportsChatPlayerPauseV1} from './narrative-player-pause'
 import {assertChatThreadFollowupReviewVersionV1, supportsChatThreadFollowupV1} from './narrative-thread-followup'
 import {assertChatMemoryCorrectionInputV1} from './context-reader-version'
@@ -134,6 +135,18 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
     try {row = JSON.parse(source) as Record<string, unknown>}
     catch {fail('审查响应格式无效；原始结果已保存，尚未提交表达或后果')}
     if (!row || Array.isArray(row) || !(options ? Object.keys(row).join(',') === 'options' : situation ? Object.keys(row).join(',') === 'checks' : isChatActionReviewOutputV1(row))) fail('叙事审查输出字段无效')
+    if (!situation) {
+      const normalized = normalizeChatReviewResponseV1({output: row, actions, options, promptVersion: reviewBinding.promptVersion})
+      if (normalized.removed.length) {
+        snapshot = (await recordAgentRunArtifactV1({scope: input.scope, runId: snapshot.run.id,
+          productRuntimeSessionId: input.productRuntimeSessionId, artifactKind: 'tool-result',
+          content: canonicalStringify({schema: 'storyforge.chat-review-normalization', version: 1, promptVersion: reviewBinding.promptVersion,
+            modelOutputHash: await hashCanonicalValue(output), parsedResponseHash: await hashCanonicalValue(row), normalizedOutputHash: await hashCanonicalValue(normalized.output),
+            rule: 'redundant-affirmative-exact-disclosure-checks', removed: normalized.removed}),
+          stepId, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence})).snapshot
+      }
+      row = normalized.output
+    }
     const review = candidate.kind === 'chat-situation-candidate'
       ? parseChatSituationReviewV1({...row, reviewedProposalJson: canonicalStringify(candidate.draft)}, candidate.draft)
       : candidate.kind === 'chat-narrative-options-candidate' ? bindChatNarrativeOptionsReviewV1(row, candidate.options)
