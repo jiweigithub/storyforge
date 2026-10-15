@@ -119,8 +119,10 @@ it('distinguishes saved preparation from an actually sent request', async () => 
 
 it('reports budget-trimmed input without presenting reconstructed full details', async () => {
   vi.spyOn(context, 'assembleContext').mockImplementation(input => assemble(input.sourceKeys?.includes('interactionRuntime') ? {...input, sourceBudgetScale: 0.1} : input))
-  const f = await start(), result = await generate(f)
-  const inspection = await readChatContextInspectionV1(f.scope, f.sessionId, result.snapshot.run.id)
+  const f = await start()
+  await expect(generate(f)).rejects.toThrow('行动来源正文与读取版本不一致')
+  const [row] = await listChatContextInspectionsV1(f.scope, f.sessionId)
+  const inspection = await readChatContextInspectionV1(f.scope, f.sessionId, row.runId)
   expect(inspection.available).toBe(false)
   if (!inspection.available) expect(inspection.reason).toContain('裁剪')
 })
@@ -146,7 +148,23 @@ it.each(['actor', 'manifest', 'text', 'selection'])('rejects a consistently stor
   })
   const f = await start()
   if (mode === 'actor' || mode === 'manifest') await expect(generate(f)).rejects.toThrow('行动来源读取版本无法核验')
+  else if (mode === 'text') await expect(generate(f)).rejects.toThrow('行动来源正文与读取版本不一致')
   else await generate(f)
   const run = (await db.agentRuns.where('productRuntimeSessionId').equals(f.sessionId).toArray())[0]
   await expect(readChatContextInspectionV1(f.scope, f.sessionId, run.id!)).rejects.toThrow('上下文证据')
+})
+
+it('verifies a preserved v5 input and its original selection after the memory retrieval upgrade', async () => {
+  let selection: unknown
+  vi.spyOn(CONTEXT_SOURCES.find(s => s.key === 'interactionRuntime')!, 'read').mockImplementation(async input => {
+    const state = (await readProductRuntimeState(input.productRuntimeSessionId!)).interaction!, key = input.interactionParticipantKey!
+    const view = buildInteractionContextWindow(state, key, {retrievalVersion: 'chat-relevance-v1'})
+    selection = view.selection
+    return formatInteractionRuntimeContextV1(state.profiles.find(p => p.participantKey === key)!, view)
+  })
+  vi.spyOn(manifests, 'createContextManifestFromAssemblyV1').mockImplementation(input => createManifest(input.stepId === 'interaction:runtime-candidate' ? {...input, readerVersion: 'chat-narrative-runtime-view-v5'} : input))
+  vi.spyOn(artifacts, 'recordAgentRunArtifactV1').mockImplementation(input => input.artifactKind === 'context-packet'
+    ? record({...input, content: JSON.stringify({...JSON.parse(input.content), selection})}) : record(input))
+  const f = await start(), result = await generate(f)
+  expect((await readChatContextInspectionV1(f.scope, f.sessionId, result.snapshot.run.id)).available).toBe(true)
 })

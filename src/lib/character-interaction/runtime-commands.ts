@@ -352,7 +352,7 @@ export async function supersedeInteractionMemory(
 }
 
 export async function changeChatMemoryUse(input: ProductRuntimeCommandEnvelopeV1 & {
-  memoryId: string; action: 'disable' | 'enable' | 'revoke'; reason: string;
+  memoryId: string; action: 'disable' | 'enable' | 'revoke' | 'pin' | 'unpin'; reason: string;
 }): Promise<ProductRuntimeEvent> {
   return appendInteractionCommand({...input, type: 'interaction.narrative.memory-control.changed', actorKey: 'player',
     targetKey: input.memoryId.trim(), payload: {memoryId: input.memoryId.trim(), action: input.action, reason: input.reason.trim()}});

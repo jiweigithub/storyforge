@@ -10,7 +10,8 @@ import {formatInteractionRuntimeContextV1} from './context-format'
 import {buildInteractionContextWindow, interactionRetrievalView, interactionVisibilityView} from './runtime'
 import {readProductRuntimeState} from './runtime-api'
 import {isImportedCompletedInteractionRunV1} from './runtime-run-recovery'
-import {CHAT_CONTEXT_READER_VERSION_V1} from './context-selection'
+import {chatRetrievalVersionForReader} from './context-selection'
+import {chatMemoryPlayerViewV1} from './memory-management'
 
 const STEP = 'interaction:runtime-candidate'
 const SKILLS = ['character.chat-narrative-action', 'character.chat-narrative-options']
@@ -64,10 +65,11 @@ export async function readChatContextInspectionV1(scope: WorkspaceScope, session
   if (!profile) fail()
   if (await hashCanonicalValue(interactionRetrievalView(state, packet.participantKey)) !== boundary.visibilityHash) fail()
   const source = manifest.sources[0]
-  const legacy = source.readerVersion === 'chat-narrative-runtime-view-v3'
+  const retrievalVersion = chatRetrievalVersionForReader(source.readerVersion)
+  const legacy = retrievalVersion === 'legacy'
   const view = buildInteractionContextWindow(state, packet.participantKey, {maxCharacters: 24_000, maxRecentMessages: 32,
-    retrievalVersion: legacy ? 'legacy' : 'chat-relevance-v1'})
-  if (!legacy && source.readerVersion !== 'chat-narrative-runtime-view-v4' && source.readerVersion !== CHAT_CONTEXT_READER_VERSION_V1 || formatInteractionRuntimeContextV1(profile, view) !== packet.text) {
+    retrievalVersion: retrievalVersion ?? 'legacy'})
+  if (retrievalVersion == null || formatInteractionRuntimeContextV1(profile, view) !== packet.text) {
     return {available: false as const, reason: '这次输入经过裁剪或使用了不同的读取版本，无法完整还原可见条目；不会冒充完整上下文。'}
   }
   if (!legacy && (!packet.selection || await hashCanonicalValue(packet.selection) !== await hashCanonicalValue(view.selection))) fail()
@@ -76,14 +78,14 @@ export async function readChatContextInspectionV1(scope: WorkspaceScope, session
   const sharedMessages = interactionVisibilityView(state, packet.participantKey).messages.filter(m => playerMessages.has(m.messageId))
   const excluded = new Set(state.chatNarrative.excludedMessageIds ?? [])
   const known = new Set(visible.knowledge.map(k => `${k.knowledgeKey}\0${k.content}`))
-  const memories = new Set(visible.memories.map(m => `${m.kind}\0${m.content}`))
+  const memories = new Set(state.memories.filter(m => chatMemoryPlayerViewV1(state, m)?.content === m.content).map(m => m.memoryId))
   const shared = interactionVisibilityView(state, packet.participantKey)
   const selection = view.selection ? {
     knowledge: shared.knowledge.filter(k => known.has(`${k.knowledgeKey}\0${k.content}`)).map(k => {
       const decision = view.selection!.knowledge.find(d => d.key === k.knowledgeKey)!
       return {content: k.content, included: decision.included, reason: decision.reason}
     }),
-    memories: shared.memories.filter(m => memories.has(`${m.kind}\0${m.content}`)).map(m => {
+    memories: shared.memories.filter(m => memories.has(m.memoryId)).map(m => {
       const decision = view.selection!.memories.find(d => d.key === m.memoryId)!
       return {content: m.content, included: decision.included, reason: decision.reason}
     }),
@@ -94,7 +96,7 @@ export async function readChatContextInspectionV1(scope: WorkspaceScope, session
     facts: view.chatNarrative!.facts.filter(f => f.audienceKeys.includes(state.playerKey)).map(f => f.text),
     threads: view.chatNarrative!.threads.filter(t => t.audienceKeys.includes(state.playerKey)).map(t => ({title: t.title, question: t.question, status: t.status})),
     knowledge: view.knowledge.filter(k => known.has(`${k.knowledgeKey}\0${k.content}`)).map(k => k.content),
-    memories: view.memories.filter(m => memories.has(`${m.kind}\0${m.content}`)).map(m => m.content),
+    memories: view.memories.filter(m => memories.has(m.memoryId)).map(m => m.content),
     ...(selection ? {selection} : {}),
     messages: view.messages.filter(m => playerMessages.has(m.messageId)).map(m => ({messageId: m.messageId, text: m.text,
       speaker: m.speakerKey === state.playerKey ? state.chatNarrative!.persona.name : state.profiles.find(p => p.participantKey === m.speakerKey)?.name ?? '角色'})),

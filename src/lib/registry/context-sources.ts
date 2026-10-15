@@ -756,23 +756,18 @@ async function readChatSituationRuntimeContext(input: AssembleContextInput): Pro
   if (!state.interaction) return ''
   const {selectChatCoordinatorContextV1} = await import('../character-interaction/coordinator-selection')
   const saved = await readChatActionCandidateValue(input)
-  if (!saved) return selectChatCoordinatorContextV1(state.interaction, {text: await readChatSituationCandidateContext(input)})
-  // A saved pre-upgrade action must retain the knowledge selected by its own
-  // reader, rather than silently reinterpreting it under today's ranking.
-  let retrievalVersion: 'legacy' | 'chat-relevance-v1' = 'legacy'
-  const packet = saved.snapshot.events.find(e => e.type === 'evidence.artifact.recorded' && e.payload.artifactKind === 'context-packet'
-    && e.payload.stepId === 'interaction:runtime-candidate' && e.payload.attempt === 1)
-  if (packet?.type === 'evidence.artifact.recorded') {
-    const {readAgentRunArtifactExactV1} = await import('../memory/artifact-store')
-    const {parseContextManifestV1, verifyContextManifestIntegrityV1} = await import('../agent/run/context-manifest')
-    const {CHAT_CONTEXT_READER_VERSION_V1} = await import('../character-interaction/context-selection')
-    const body = JSON.parse(await readAgentRunArtifactExactV1({projectId: input.projectId, artifactKind: 'context-packet', contentHash: packet.payload.contentHash}))
-    const manifest = parseContextManifestV1(body.manifest)
-    const source = manifest.sources.find(s => s.key === 'interactionRuntime')
-    if (!await verifyContextManifestIntegrityV1(manifest) || body.participantKey !== saved.value.actorKey
-      || !source?.readerVersion || ![CHAT_CONTEXT_READER_VERSION_V1, 'chat-narrative-runtime-view-v3'].includes(source.readerVersion)) throw new Error('行动来源读取版本无法核验，已停止审查。')
-    if (source.readerVersion === CHAT_CONTEXT_READER_VERSION_V1) retrievalVersion = 'chat-relevance-v1'
+  const {readChatCandidateRetrievalVersion} = await import('../character-interaction/context-reader-version')
+  if (!saved) {
+    let retrievalVersion: import('../character-interaction/context-selection').ChatRetrievalVersion = 'chat-relevance-v2'
+    if (input.chatSituationCandidateRunId != null) {
+      const {readLatestVerifiedAgentRunCheckpointV1} = await import('../agent/run/checkpoint')
+      const producer = await readLatestVerifiedAgentRunCheckpointV1(input.scope, input.chatSituationCandidateRunId, {owner: 'instance'})
+      if (!producer || producer.snapshot.run.productRuntimeSessionId !== input.productRuntimeSessionId) return ''
+      retrievalVersion = await readChatCandidateRetrievalVersion(producer.snapshot, input.projectId, 'chatSituationRuntime')
+    }
+    return selectChatCoordinatorContextV1(state.interaction, {text: await readChatSituationCandidateContext(input), retrievalVersion})
   }
+  const retrievalVersion = await readChatCandidateRetrievalVersion(saved.snapshot, input.projectId, 'interactionRuntime', saved.value.actorKey, state.interaction)
   return selectChatCoordinatorContextV1(state.interaction, {text: JSON.stringify(saved.value), actorKey: saved.value.actorKey, retrievalVersion})
 }
 

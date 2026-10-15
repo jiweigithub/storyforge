@@ -27,6 +27,7 @@ export function chatMemoryPlayerViewV1(state: CharacterInteractionRuntimeState, 
     kind: memory.kind, status: memory.status,
     content: memory.authorship === 'player-correction' || reviewed ? memory.content : null,
     authoredByPlayer: memory.authorship === 'player-correction', reviewed,
+    playerPinned: memory.playerPinned === true,
     sources: sources.map(s => sourceView(state, s!)),
     excerpt: sources.some(s => s!.text.includes(memory.evidenceExcerpt)) ? memory.evidenceExcerpt : '',
     replacedBy: memory.supersededByMemoryId,
@@ -40,7 +41,7 @@ export interface ChatMemoryManagementPlanV1 {
   memory: ChatMemoryPlayerViewV1
   availableSources: ChatMemoryPlayerViewV1['sources']
 }
-export type ChatMemoryManagementActionV1 = {kind: 'accept' | 'reject' | 'disable' | 'enable' | 'revoke'}
+export type ChatMemoryManagementActionV1 = {kind: 'accept' | 'reject' | 'disable' | 'enable' | 'revoke' | 'pin' | 'unpin'}
   | {kind: 'correct'; content: string; sourceEventSequences: number[]; evidenceExcerpt: string; reason: string}
 
 export async function readChatMemoryManagementPlanV1(scope: WorkspaceScope, sessionId: number, memoryId: string): Promise<ChatMemoryManagementPlanV1> {
@@ -72,5 +73,6 @@ export async function applyChatMemoryManagementPlanV1(scope: WorkspaceScope, pla
     return resolveInteractionMemory({...envelope, memoryId: current.memory.memoryId, resolution: action.kind === 'accept' ? 'accepted' : 'rejected'})
   }
   return changeChatMemoryUse({...envelope, memoryId: current.memory.memoryId, action: action.kind,
-    reason: {disable: '玩家明确停用这条记忆', enable: '玩家明确恢复使用这条记忆', revoke: '玩家明确撤回这条记忆并保留历史'}[action.kind]})
+    reason: {disable: '玩家明确停用这条记忆', enable: '玩家明确恢复使用这条记忆', revoke: '玩家明确撤回这条记忆并保留历史',
+      pin: '玩家明确固定这条记忆的后续检索', unpin: '玩家明确取消固定并恢复按相关性检索'}[action.kind]})
 }

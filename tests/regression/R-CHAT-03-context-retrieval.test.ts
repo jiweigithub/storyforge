@@ -66,10 +66,10 @@ it('keeps commitments and current fact provenance; insufficient essential budget
   const state = crowded()
   state.memories.push({memoryId: 'promise', participantKey: 'guard', kind: 'commitment', content: '我答应把托管物品交还本人。'.repeat(150), importance: 1,
     sourceEventSequences: [], evidenceExcerpt: '我答应', status: 'accepted', proposalSequence: 0, decisionSequence: 0, supersededByMemoryId: null})
-  const view = buildInteractionContextWindow(state, 'guard', {maxCharacters: 8500})
+  const view = buildInteractionContextWindow(state, 'guard', {maxCharacters: 8500, retrievalVersion: 'chat-relevance-v1'})
   expect(view.memories.map(m => m.memoryId)).toContain('promise')
   expect(view.knowledge.map(k => k.knowledgeKey)).toContain('source.lost')
-  expect(() => buildInteractionContextWindow(state, 'guard', {maxCharacters: 2000})).toThrow('不会静默省略关键记忆')
+  expect(() => buildInteractionContextWindow(state, 'guard', {maxCharacters: 2000, retrievalVersion: 'chat-relevance-v1'})).toThrow('不会静默省略关键记忆')
 })
 it('retains original passage order after selection and leaves non-narrative runtime behavior unchanged', () => {
   const state = crowded()
@@ -101,7 +101,7 @@ it('refuses to trim coordinator facts or accepted commitments even when source b
   const state = coordinatorState()
   state.memories = Array.from({length: 8}, (_, i) => ({memoryId: `promise-${i}`, participantKey: 'guard', kind: 'commitment' as const, content: '已经承诺归还托管物品。'.repeat(300), importance: 1,
     sourceEventSequences: [], evidenceExcerpt: '已承诺', status: 'accepted' as const, proposalSequence: 0, decisionSequence: 0, supersededByMemoryId: null}))
-  expect(() => selectChatCoordinatorContextV1(state)).toThrow('不能截断确定事实、承诺')
+  expect(() => selectChatCoordinatorContextV1(state, {text: '', retrievalVersion: 'chat-relevance-v1'})).toThrow('不能截断确定事实、承诺')
 })
 it('records the actual model selection and exposes only shared historical reasons and omissions', async () => {
   const f = await seedChatNarrativeRuntimeFixture({contextKnowledge: [

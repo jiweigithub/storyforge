@@ -206,6 +206,7 @@ function memory(value: unknown): InteractionRuntimeMemory {
   if (!MEMORY_KINDS.has(kind)) throw new Error('互动记忆类型无效。')
   if (!MEMORY_STATUSES.has(status)) throw new Error('互动记忆状态无效。')
   if (value.authorship !== undefined && value.authorship !== 'player-correction') throw new Error('互动记忆内容来源无效。')
+  if (value.playerPinned !== undefined && value.playerPinned !== true) throw new Error('记忆固定设置无效。')
   return {
     memoryId: text(value.memoryId, '互动记忆 ID', 200),
     participantKey: text(value.participantKey, '互动记忆角色', 160),
@@ -223,6 +224,7 @@ function memory(value: unknown): InteractionRuntimeMemory {
     supersededByMemoryId: nullableText(value.supersededByMemoryId, '替代记忆 ID', 200),
     ...(value.authorship === 'player-correction' ? {authorship: 'player-correction' as const} : {}),
     ...(value.contentReview === undefined ? {} : {contentReview: parseChatMemoryReceiptV1(value.contentReview)}),
+    ...(value.playerPinned === true ? {playerPinned: true as const} : {}),
   }
 }
 
@@ -859,7 +861,13 @@ export function applyInteractionEvent(
       text(body.reason, '记忆调整原因', 1_000)
       if (event.type === 'interaction.narrative.memory-control.changed') {
         const action = body.action
-        if (action === 'disable' && target.status === 'accepted') target.status = 'disabled'
+        if ((action === 'pin' || action === 'unpin') && !state.chatNarrative) throw new Error('固定检索需要主动叙事聊天。')
+        if (action === 'pin' && !target.playerPinned) {
+          requireEvidence(state, target.participantKey, target.sourceEventSequences, target.evidenceExcerpt)
+          if (target.authorship !== 'player-correction' && !hasChatMemoryContentReviewV1(state, target)) throw new Error('旧摘要尚未检查，请先依据原消息修正后再固定。')
+          target.playerPinned = true
+        } else if (action === 'unpin' && target.playerPinned) delete target.playerPinned
+        else if (action === 'disable' && target.status === 'accepted') target.status = 'disabled'
         else if (action === 'revoke') target.status = 'revoked'
         else if (action === 'enable' && target.status === 'disabled') {
           requireEvidence(state, target.participantKey, target.sourceEventSequences, target.evidenceExcerpt)
@@ -1060,7 +1068,7 @@ export interface InteractionContextWindow extends InteractionVisibilityView {
 export function buildInteractionContextWindow(
   state: CharacterInteractionRuntimeState,
   participantKey: string,
-  options: { maxCharacters?: number; maxRecentMessages?: number; retrievalVersion?: 'legacy' | 'chat-relevance-v1' } = {},
+  options: { maxCharacters?: number; maxRecentMessages?: number; retrievalVersion?: import('./context-selection').ChatRetrievalVersion } = {},
 ): InteractionContextWindow {
   if (state.chatNarrative && state.activeScene && state.chatNarrative.situation.sceneKey !== state.activeScene.sceneKey) {
     throw new Error('当前场景尚未衔接叙事情境，请完成情境切换后继续')
@@ -1072,7 +1080,7 @@ export function buildInteractionContextWindow(
   if (state.chatNarrative && options.retrievalVersion !== 'legacy') {
     const profile = state.profiles.find(p => p.participantKey === participantKey)
     if (!profile) throw new Error('缺少角色视角，无法选择来源资料')
-    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages})
+    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v2'})
   }
   const allMessages = visible.messages
   visible.messages = allMessages.slice(-maxRecentMessages)
