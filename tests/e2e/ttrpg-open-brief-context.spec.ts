@@ -98,3 +98,48 @@ test('native recap authority and attributed output preserve belief and refuse ga
   }, result.sessionId)
   expect(restored).toEqual(result.epoch)
 })
+
+test('native formal recap persists exact raw answer and candidate across refresh without writing memory or resending', async ({ page }) => {
+  test.setTimeout(120000)
+  const requests: string[] = []
+  page.on('request', r => { if (/\/v1\/(?:chat\/completions|responses)/.test(r.url())) requests.push(r.url()) })
+  await page.goto('./')
+  const prepared = await page.evaluate(async () => {
+    const importer = new Function('p', 'return import(p)') as (path: string) => Promise<any>
+    const helper = await importer('/storyforge/tests/helpers/open-ttrpg-session.ts')
+    const api = await importer('/storyforge/src/lib/ttrpg/runtime-commands.ts')
+    const inputs = await importer('/storyforge/src/lib/ttrpg/open-intent-input.ts')
+    const f = await helper.readyOpenTtrpgSessionV1('Native formal recap', (p: any) => { p.ttrpg.campaign.runtimePolicy.enabled = true })
+    const viewerKey = helper.OPEN_HUMAN_VIEWER, rawInput = '根据共同资料复盘，保留不确定性。'
+    await api.startTtrpgOpenEpochV1({ ...await helper.openEnvelopeV1(f.sessionId, 'native.formal.brief.epoch'), viewerKey, triggerKind: 'request-brief', rawInput })
+    const p = await inputs.prepareTtrpgOpenBriefInputV1({ ...await helper.openEnvelopeV1(f.sessionId, 'native.formal.brief.prepare'), scope: f.scope, viewerKey, rawInput,
+      modelIdentity: { provider: 'test-adapter', model: 'injected' }, maximumOutputTokens: 800, maximumCostUsd: 0.1 })
+    return { scope: f.scope, sessionId: f.sessionId, viewerKey, runId: p.runId, requestKey: p.requestKey }
+  })
+  await page.reload()
+  const result = await page.evaluate(async input => {
+    const importer = new Function('p', 'return import(p)') as (path: string) => Promise<any>
+    const harness = await importer('/storyforge/src/lib/ttrpg/open-intent-harness.ts')
+    const raw = JSON.stringify({ paragraphs: [{ text: '这是本桌当前阶段的共同资料回顾。', sourceKeys: ['brief.frame'] }] })
+    const result = await harness.executeTtrpgOpenBriefRequestV1({ ...input, runAI: async () => raw })
+    if (result.status !== 'candidate') throw new Error('missing candidate')
+    return { raw, candidate: result.candidate }
+  }, prepared)
+  expect(result.candidate.artifact.status).toBe('usable-with-warnings')
+  await page.reload()
+  const restored = await page.evaluate(async input => {
+    const importer = new Function('p', 'return import(p)') as (path: string) => Promise<any>
+    const candidates = await importer('/storyforge/src/lib/ttrpg/open-brief-candidate.ts')
+    const candidate = await candidates.readTtrpgOpenBriefCandidateV1(input)
+    await candidates.verifyTtrpgOpenBriefCandidateProofV1({ ...input, candidateHash: candidate.candidateHash })
+    const harness = await importer('/storyforge/src/lib/ttrpg/open-intent-harness.ts')
+    const duplicate = await harness.executeTtrpgOpenBriefRequestV1({ ...input, runAI: async () => { throw new Error('must not resend') } })
+    const { db } = await importer('/storyforge/src/lib/db/schema.ts')
+    const { readAgentRunArtifactExactV1 } = await importer('/storyforge/src/lib/memory/artifact-store.ts')
+    return { candidate, duplicate, memories: await db.ttrpgNarrativeMemories.count(),
+      raw: await readAgentRunArtifactExactV1({ projectId: input.scope.projectId, artifactKind: 'raw-response', contentHash: candidate.rawResponseHash }) }
+  }, prepared)
+  expect(restored.candidate).toEqual(result.candidate); expect(restored.raw).toBe(result.raw)
+  expect(restored.duplicate).toEqual({ status: 'not-sent' }); expect(restored.memories).toBe(0)
+  expect(requests).toEqual([])
+})

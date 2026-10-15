@@ -22,6 +22,8 @@ export const TTRPG_OPEN_MODEL_PURPOSES_V1 = {
     sourceKeys: TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1.actor, actorRole: 'player' },
   'kp-narration': { skillId: 'prose.ttrpg-open-kp', entryId: 'ttrpg.open.kp', stepId: 'ttrpg.open.kp',
     sourceKeys: TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1['party-narrator'], actorRole: 'gm' },
+  'stage-brief': { skillId: 'prose.ttrpg-open-brief', entryId: 'ttrpg.open.brief', stepId: 'ttrpg.open.brief',
+    sourceKeys: ['ttrpgOpenBriefInput', 'ttrpgOpenPartyMemory'], actorRole: 'gm' },
   'oracle-interpret': { skillId: 'prose.ttrpg-open-oracle-interpret', entryId: 'ttrpg.open.oracle-interpret', stepId: 'ttrpg.open.oracle-interpret',
     sourceKeys: TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1['gm-assistant'], actorRole: 'gm' },
   'fact-normalize': { skillId: 'prose.ttrpg-open-fact-normalize', entryId: 'ttrpg.open.fact-normalize', stepId: 'ttrpg.open.fact-normalize',
@@ -29,7 +31,7 @@ export const TTRPG_OPEN_MODEL_PURPOSES_V1 = {
 } as const
 export type TtrpgOpenModelPurposeV1 = keyof typeof TTRPG_OPEN_MODEL_PURPOSES_V1
 export function ttrpgOpenContextConsumerForPurposeV1(purpose: TtrpgOpenModelPurposeV1): TtrpgOpenContextConsumerV1 {
-  return purpose === 'intent' || purpose === 'companion' ? 'actor' : purpose === 'kp-narration' ? 'party-narrator' : 'gm-assistant'
+  return purpose === 'intent' || purpose === 'companion' ? 'actor' : purpose === 'kp-narration' || purpose === 'stage-brief' ? 'party-narrator' : 'gm-assistant'
 }
 /** Frozen runs retain their exact historical grant. Only explicitly supported closed protocol generations are valid. */
 export function assertTtrpgOpenFrozenContextSourcesV1(skillId: string, actual: readonly string[]): readonly string[] {
@@ -39,7 +41,8 @@ export function assertTtrpgOpenFrozenContextSourcesV1(skillId: string, actual: r
   const modern = TTRPG_OPEN_P7_CONTEXT_SOURCES_V1[consumer]
   const current = TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1[consumer]
   const key = [...actual].sort().join(',')
-  if (new Set(actual).size !== actual.length || ![legacy, modern, current].some(keys => [...keys].sort().join(',') === key)) {
+  const supported = definition.purpose === 'stage-brief' ? [definition.sourceKeys] : [legacy, modern, current]
+  if (new Set(actual).size !== actual.length || !supported.some(keys => [...keys].sort().join(',') === key)) {
     throw new Error('[ttrpg-open-call] 冻结来源不是此目的登记的准确协议权限')
   }
   return actual

@@ -1,4 +1,5 @@
 import type { TtrpgOpenKpCandidateV1 } from './open-kp-candidate'
+import type { TtrpgOpenBriefCandidateV1 } from './open-brief-candidate'
 /** Shared exact-byte evidence verification for closed runtime candidate purposes. */
 import type { WorkspaceScope } from '../types'
 import type { TtrpgOpenIntentCandidateV1 } from './open-intent-candidate'
@@ -15,7 +16,7 @@ import { db } from '../db/schema'
 export interface TtrpgOpenCandidateReadV1 {
   scope: WorkspaceScope; sessionId: number; runId: number; requestKey: string; viewerKey: string
 }
-export type TtrpgOpenRuntimeCandidateV1 = TtrpgOpenIntentCandidateV1 | TtrpgOpenOracleCandidateV1 | TtrpgOpenKpCandidateV1
+export type TtrpgOpenRuntimeCandidateV1 = TtrpgOpenIntentCandidateV1 | TtrpgOpenOracleCandidateV1 | TtrpgOpenKpCandidateV1 | TtrpgOpenBriefCandidateV1
 /** Exact candidate bytes are recoverable even when the final checkpoint write was interrupted. */
 export async function readTtrpgOpenRuntimeCandidateV1(input: TtrpgOpenCandidateReadV1, purpose: TtrpgOpenModelPurposeV1): Promise<TtrpgOpenRuntimeCandidateV1 | null> {
   return readCandidateArtifact(input, purpose, false)
@@ -42,7 +43,7 @@ async function readCandidateArtifact(input: TtrpgOpenCandidateReadV1, purpose: T
       || event.payload.stepId !== call.stepId || event.payload.attempt !== call.attempt) continue
     const body = JSON.parse(await readAgentRunArtifactExactV1({ projectId: input.scope.projectId,
       artifactKind: 'source-snapshot', contentHash: event.payload.contentHash })) as TtrpgOpenRuntimeCandidateV1
-    if (body.schema !== (purpose === 'intent' || purpose === 'companion' ? 'storyforge.ttrpg-open-intent-candidate' : purpose === 'kp-narration' ? 'storyforge.ttrpg-open-kp-candidate' : 'storyforge.ttrpg-open-oracle-candidate')) continue
+    if (body.schema !== (purpose === 'intent' || purpose === 'companion' ? 'storyforge.ttrpg-open-intent-candidate' : purpose === 'stage-brief' ? 'storyforge.ttrpg-open-brief-candidate' : purpose === 'kp-narration' ? 'storyforge.ttrpg-open-kp-candidate' : 'storyforge.ttrpg-open-oracle-candidate')) continue
     const { candidateHash, ...payload } = body
     if (body.version !== 1 || body.portable !== false || body.runId !== input.runId || body.productRuntimeSessionId !== input.sessionId
       || body.requestKey !== input.requestKey || body.viewerKey !== input.viewerKey || body.actorKey !== call.actorKey

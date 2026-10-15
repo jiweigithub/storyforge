@@ -1,6 +1,7 @@
 /** Closed formal-purpose map; callers cannot supply arbitrary Skill, source permission or POV. */
 import type { WorkspaceScope } from '../types'
 import type { TtrpgOpenAuthorizationV1 } from './open-authorization'
+import { assertTtrpgOpenHumanHostV1 } from './open-authorization'
 import { assertTtrpgOpenModelFactApproverV1 } from './open-fact-ledger'
 
 import { ttrpgOpenModelPurposeForSkillV1 } from './open-model-purpose-contract'
@@ -17,12 +18,17 @@ export function assertTtrpgOpenModelActorV1(authorization: TtrpgOpenAuthorizatio
       || !authorization.approvalBindings.some(binding => binding.companionActorKey === actorKey && binding.approverSeatKeys.includes(requester.seatKey)))) throw new Error('[ttrpg-open-call] 不可读取或请求其他真人角色的私域候选')
   } else {
     assertTtrpgOpenModelFactApproverV1(authorization,viewerKey)
+    if (definition.purpose === 'stage-brief') {
+      assertTtrpgOpenHumanHostV1(authorization, viewerKey)
+      if (authorization.seats.some(seat => !seat.consent.sessionLoggingAllowed)) throw new Error('[ttrpg-brief] 复盘需要当前全桌记录同意')
+    }
     const gm = authorization.seats.find(seat => seat.role === 'gm')
     if (actorKey !== 'gm' || !gm?.consent.aiAdviceAllowed || !gm.consent.aiIdentityDisclosed) throw new Error('[ttrpg-open-call] GM 解释未获桌面授权')
   }
 }
 export async function loadTtrpgOpenModelContextV1(input: { scope: WorkspaceScope; sessionId: number; actorKey: string; skillId: string }) {
   const purpose = ttrpgOpenModelPurposeForSkillV1(input.skillId)
+  if (purpose.purpose === 'stage-brief') return (await import('./open-brief-context')).loadTtrpgOpenBriefContextV1(input)
   if (purpose.purpose === 'kp-narration') return (await import('./open-kp-context')).loadTtrpgOpenKpContextV1(input)
   return purpose.actorRole === 'gm'
     ? (await import('./open-gm-oracle-context')).loadTtrpgOpenGmOracleContextV1(input) : (await import('./open-player-context')).loadTtrpgOpenPlayerContextV1(input)

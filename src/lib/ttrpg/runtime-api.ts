@@ -142,3 +142,7 @@ export { cancelTtrpgOpenPreparedRequestV1 } from './open-request-cancellation'
 export { recoverTtrpgOpenOperationGatesV1, stopTtrpgOpenOperationGateRecoveryV1 } from './runtime-commands'
 
 export { resumeTtrpgOpenHostingV1, type TtrpgOpenHostingInputV1, type TtrpgOpenHostingResultV1 } from './open-hosting-coordinator'
+
+export { prepareTtrpgOpenBriefInputV1 } from './open-intent-input'
+export { generateTtrpgOpenBriefCandidateV1, executeTtrpgOpenBriefRequestV1 } from './open-intent-harness'
+export { readTtrpgOpenBriefCandidateV1 } from './open-brief-candidate'

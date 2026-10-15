@@ -51,7 +51,7 @@ export async function listTtrpgOpenHistoricalResponsesV1(input: HistoricalInput)
         && event.payload.attempt === call.attempt && event.payload.bindingHash === call.requestHash))
     if (owners.length > 1) throw new Error('[ttrpg-imported-response] 原回答不能唯一定位')
     if (owners.length) result.push({ runId: owners[0].runId, requestKey: call.requestKey,
-      purpose: ({ intent: '行动建议', companion: '队友行动', 'kp-narration': 'KP 叙述', 'oracle-interpret': 'Oracle 解释', 'fact-normalize': '事实整理' })[ttrpgOpenModelPurposeForSkillV1(call.skillId).purpose] })
+      purpose: ({ intent: '行动建议', companion: '队友行动', 'kp-narration': 'KP 叙述', 'stage-brief': '阶段复盘', 'oracle-interpret': 'Oracle 解释', 'fact-normalize': '事实整理' })[ttrpgOpenModelPurposeForSkillV1(call.skillId).purpose] })
   }
   return result
 }

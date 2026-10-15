@@ -1,4 +1,5 @@
 import type { loadTtrpgOpenKpContextV1 } from './open-kp-context'
+import type { loadTtrpgOpenBriefContextV1 } from './open-brief-context'
 import type { loadTtrpgOpenGmOracleContextV1 } from './open-gm-oracle-context'
 /** Formal P7 selection. This module plans metadata; only Context Gateway supplies model text. */
 import type { WorkspaceScope } from '../types'
@@ -22,6 +23,10 @@ import { selectTtrpgOpenMemoryResourcesV1 } from './open-memory-selection'
 import type { TtrpgOpenSourceRefV1 } from './open-coordination'
 
 interface TriggerHistoryReceiptV1 { schema: string; version: number; domainHash: string; receiptHash: string; worldTurn: number; matchedTriggerKeys: string[]; deliveredTriggerKeys: string[]; deliveredTriggers: Array<{ triggerKey: string; matchedBy: string }> }
+function hasPartyPredicateFacts(context: Awaited<ReturnType<typeof loadTtrpgOpenModelContextV1>>): context is
+  Awaited<ReturnType<typeof loadTtrpgOpenKpContextV1>> | Awaited<ReturnType<typeof loadTtrpgOpenBriefContextV1>> {
+  return 'predicateFacts' in context
+}
 export type TtrpgOpenContextSelectionReceiptV1 = Awaited<ReturnType<typeof selectTtrpgOpenContextResourcesV1>>['receipt']
 export async function selectTtrpgOpenContextResourcesV1(input: {
   scope: WorkspaceScope; sessionId: number; actorKey: string; purpose: TtrpgOpenModelPurposeV1
@@ -35,6 +40,7 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
   const content = source.runtimePackage.ttrpg, run = input.runtime.openRun!, authorization = input.runtime.authorization!
   if (!content || !isTtrpgRuntimeContentV2(content) || source.runtimeSourceHash !== input.context.readEvidence.runtimeSourceHash) throw new Error('[ttrpg-context] 情境计划需要准确冻结 open 来源')
   const policy = content.campaign.contextPolicy, consumer = ttrpgOpenContextConsumerForPurposeV1(input.purpose)
+  const brief = input.purpose === 'stage-brief'
   const guidanceKey = TTRPG_OPEN_GUIDANCE_SOURCE_KEYS_V1[consumer]
   const recipients = consumer === 'actor' ? [input.actorKey] : [...authorization.selectedActorKeys].sort()
   const oracle = input.oracleSourceRef ? run.oracleReceipts?.find(receipt => canonicalStringify(receipt.sourceRef) === canonicalStringify(input.oracleSourceRef)) : undefined
@@ -42,10 +48,10 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
   if (consumer === 'gm-assistant' && !consultationAudience) throw new Error('[ttrpg-context] GM 情境需要明确真实咨询密级')
   const policyHash = await hashCanonicalValue(policy ?? null)
   const domainHash = await hashCanonicalValue({ consumer, actorKey: input.actorKey, recipients, consultationAudience: consultationAudience ?? null,
-    policyHash, runtimeSourceHash: source.runtimeSourceHash })
+    policyHash, runtimeSourceHash: source.runtimeSourceHash, ...(brief ? { purpose: input.purpose } : {}) })
   const states = new Map<string, TtrpgContextTriggerStateV1>()
   // Prepared/cancelled-unsent calls do not consume timing; dispatched unknown calls do.
-  const calls = [...(input.runtime.branchLineage?.ancestors.flatMap(ancestor => ancestor.snapshot.openRun?.coordination.calls ?? []) ?? []), ...run.coordination.calls]
+  const calls = brief ? [] : [...(input.runtime.branchLineage?.ancestors.flatMap(ancestor => ancestor.snapshot.openRun?.coordination.calls ?? []) ?? []), ...run.coordination.calls]
   const seen = new Set<string>()
   for (const call of calls) {
     if (!call.dispatchRef || seen.has(call.requestHash)) continue
@@ -71,7 +77,7 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
     }
   }
   const player = 'view' in input.context ? input.context.view : undefined
-  const kp = consumer === 'party-narrator' ? input.context as Awaited<ReturnType<typeof loadTtrpgOpenKpContextV1>> : undefined
+  const kp = consumer === 'party-narrator' && hasPartyPredicateFacts(input.context) ? input.context : undefined
   const gm = consumer === 'gm-assistant' ? input.context as Awaited<ReturnType<typeof loadTtrpgOpenGmOracleContextV1>> : undefined
   const oraclePacket = gm?.resources.map(row => row.value).find(value => value && typeof value === 'object' && 'schema' in value
     && value.schema === 'storyforge.ttrpg-open-gm-oracle-input' && 'sourceRef' in value && canonicalStringify(value.sourceRef) === canonicalStringify(input.oracleSourceRef)) as Record<string, unknown> | undefined
@@ -83,7 +89,7 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
     projection.sessionFacts = oraclePacket.permittedSessionFacts as TtrpgOpenContextPredicateViewV1['sessionFacts']
   }
   const rank = { public: 0, party: 1, private: 2, 'gm-only': 3 }
-  const triggers = (policy?.triggers ?? []).filter(row => row.consumers.includes(consumer)).map(row => row.trigger).filter(trigger => {
+  const triggers = (brief ? [] : policy?.triggers ?? []).filter(row => row.consumers.includes(consumer)).map(row => row.trigger).filter(trigger => {
     const audienceAllowed = trigger.audience === 'public' || trigger.audience === 'party'
       || consumer === 'gm-assistant' && trigger.audience === 'gm-only'
       || trigger.audience === 'private' && (consumer === 'gm-assistant' ? trigger.knownByActorKeys.includes('gm') : recipients.every(key => trigger.knownByActorKeys.includes(key)))
@@ -105,8 +111,12 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
   const memoryRows = eligible.filter(row => ['ttrpgOpenMemory', 'ttrpgOpenPartyMemory'].includes(row.sourceKey) && row.priority !== 'must-read')
   const memoryKeys = await selectTtrpgOpenMemoryResourcesV1({ ...input, scope, rows: memoryRows,
     budgetTokens: Math.min(8000, Math.max(1, Math.floor(Math.min(input.budgetTokens, policy?.maximumContextTokens ?? 16000) / 4))) })
+  const briefRows = brief ? eligible.filter(row => row.sourceKey === 'ttrpgOpenBriefInput' && row.priority !== 'must-read') : []
+  const briefKeys = await selectTtrpgOpenMemoryResourcesV1({ ...input, scope, rows: briefRows,
+    budgetTokens: Math.max(1, Math.floor(Math.min(input.budgetTokens, policy?.maximumContextTokens ?? 16000) / 2)) })
   const candidates = eligible.filter(row => (!ruleRows.includes(row) || selectedRules.has(row.resourceKey))
-    && (!memoryRows.includes(row) || memoryKeys.has(row.resourceKey))).sort((a, b) => a.resourceKey < b.resourceKey ? -1 : a.resourceKey > b.resourceKey ? 1 : 0)
+    && (!memoryRows.includes(row) || memoryKeys.has(row.resourceKey))
+    && (!briefRows.includes(row) || briefKeys.has(row.resourceKey))).sort((a, b) => a.resourceKey < b.resourceKey ? -1 : a.resourceKey > b.resourceKey ? 1 : 0)
   const tierFor = (row: ContextResourceDescriptorV1): TtrpgContextTierKeyV1 => {
     if (row.priority === 'must-read') return /:rules-core$/.test(row.resourceKey) ? 'rules' : 'authority-state'
     if (row.sourceKey === 'ttrpgOpenAuthority' && /:(action|check)\./.test(row.resourceKey)) return 'rules'
