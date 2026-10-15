@@ -2341,7 +2341,8 @@
             ],
             "newRealModelAcceptance": false,
             "originalOutcomeUnchanged": true,
-            "engineering": "110 directed; 991 product cases have passing evidence across original run plus unchanged-timeout recheck (initial six timeouts retained); 9 browser paths; required gates. Merged source: 92 directed, 5 distribution tests, 11 browser paths, gates/types/full lint/build. Full CI/E2E queued, not passed."
+            "engineering": "110 directed; 991 product cases have passing evidence across original run plus unchanged-timeout recheck (initial six timeouts retained); 9 browser paths; required gates. Merged source: 92 directed, 5 distribution tests, 11 browser paths, gates/types/full lint/build. Full CI/E2E queued, not passed.",
+            "fullValidationStatus": "V85 CI/E2E confirmed unstarted and superseded by V86 implementation; cancelled143 receipts retained. Current V86 fixed-source CI/E2E queued, not passed."
           }
         },
         "existingGoalPausePreflight": {
@@ -2390,7 +2391,7 @@
             "transport-progress.json": "d828eba50ac894e279ab84d85a8ef21c9926e1f550e30f42e9771404114ab2be"
           },
           "repairImplementation": {
-            "status": "engineering checks passed; full CI/E2E and new actual-model diagnostic pending",
+            "status": "engineering passed; limited new real control diagnostic completed; full CI/E2E queued, not passed",
             "producerVersions": [
               "chat-narrative-action-v33",
               "chat-narrative-options-v23",
@@ -2411,7 +2412,76 @@
               "/tmp/storyforge-chat-v86-gates-receipt.json": "293cf89155051c60f52bf5a5c388a2046872d4f2ceaff133318aeec48fc21765",
               "/tmp/storyforge-chat-v86-browser-receipt.json": "25652a4763e7ded4c8102350a2fc0e0e03ec241722427b6b808701636e95a74b",
               "/tmp/storyforge-chat-v86-docs-receipt.json": "6cc4bc15df1feefd93476be64d974c0c13057e12aaf78cac2fef9088ec2acee0"
-            }
+            },
+            "commit": "0114d7a8780041ddde553a2c33156fa3d43311c1",
+            "realControlDiagnostic": "existingGoalPauseReturnPreflight",
+            "fixedSourceManifestSha256": "6deb7907ca48abd63ebf910c6a997e4ffb9a086ddb1006faf69b6cb514772ed8"
+          }
+        },
+        "existingGoalPauseReturnPreflight": {
+          "at": "2026-10-15T13:37:27.848665+00:00",
+          "status": "four-opportunity-control-chain-completed-not-narrative-acceptance",
+          "sourceSnapshotHead": "0114d7a8780041ddde553a2c33156fa3d43311c1",
+          "manifestSha256": "6deb7907ca48abd63ebf910c6a997e4ffb9a086ddb1006faf69b6cb514772ed8",
+          "countsTowardM1": false,
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "playerOpportunities": 4,
+          "newRequests": 8,
+          "completedRequests": 8,
+          "adoptedActions": 4,
+          "adoptedSituations": 0,
+          "usage": {
+            "totalTokens": 112775,
+            "inputTokens": 110130,
+            "outputTokens": 2645,
+            "cachedInputTokens": 9984,
+            "reasoningOutputTokens": 613
+          },
+          "costUsd": null,
+          "durationSecondsIncludingOperatorObservation": 293.801,
+          "outcome": [
+            "Real report states only already-observed structures and unresolved limits. Existing same goal becomes paused with source-bound playerPause, no duplicate waiting promise or new facts.",
+            "Actual return and weak acknowledgement preserve the entire held situation unchanged.",
+            "Later explicit permission restores the same goal to active and clears its hold. Actor proposes discussing further disassembly with risks before consent; no operation, inspection or result is invented."
+          ],
+          "limits": [
+            "Single model and one produced clock scene; no independent human assessment or comparison.",
+            "Final response only resumes discussion. No new inspection, repair, fulfillment, closure or later execution verified.",
+            "Goal remains active, thread open, next possibilities empty; dialogue proposal is not evidence of later plan uptake.",
+            "Four opportunities use eight requests and 112775 tokens; cost unknown. Total elapsed includes operator observation; not pure model latency or commercial suitability.",
+            "Original V86 and formal M1 failures and denominators retained; no retries or manual repairs."
+          ],
+          "restoration": {
+            "stem": "existing-goal-pause-return",
+            "runStatusesPreserved": true,
+            "verifiedCompletedHistories": 18,
+            "retainedFailedRuns": 4,
+            "resumableRuns": 0,
+            "openingReviewRetained": true,
+            "modelCalls": 0,
+            "interactionEqual": true,
+            "refreshEqual": true,
+            "worldPreserved": true,
+            "rawEvidenceRetained": true
+          },
+          "providerTerminalReadback": true,
+          "originalFailureRetained": true,
+          "noRetryOrRepair": true,
+          "serverClosed": true,
+          "localEvidenceDirectory": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v87-existing-goal-pause-return",
+          "evidenceHashes": {
+            "existing-goal-pause-return-backup.json": "e475870cc4d285d9d5eb11024985e63168fbdc7bc6fbc9db0c8afba0992af193",
+            "existing-goal-pause-return-progress.json": "c51ccdc8a12b9e6c4ef23261789d77d644e4c90725622aa9e4c9e76784ff04ad",
+            "existing-goal-pause-return.json": "635d9f4e53308a37755c6a3b35cd08ed42d5f217ee2f19df3b09e300fbc380f3",
+            "interpretation.json": "a2ad255a3c9f405f19c98ba75bebf7710c73287cd3479fb1057fb10067ca395b",
+            "prepared.json": "40967b7bc0b5d2bf87c9dd4a8125c241473666ca1a130422af38596cff52d864",
+            "preregistration.json": "7d8d74ec1da01d408f7a8ef99ca92b6f24595daf5238f9d99150c06472bada93",
+            "restoration-verified.json": "57e555d9d3959399f7ec356cb158ef9f4e6b00ca47c3a29579a6dec54f10e430",
+            "restoration.mjs": "2b93b35e37ec1ee09021cc4455706f2c1f10609b3d85701606093f3084765c47",
+            "runner.mjs": "b8ba78faff17140c293ffcac829430176e14cc3d6b632d54acfd16bb08abba92",
+            "terminal-request-proof.json": "19e1ba84e9d23d51507a4019b8d5311975b86495e641d247bc2f8434424fc037",
+            "transport-progress.json": "8c915cf92ab743f2e7720279e434586061ad368dcb2f7925cd3a5dc27ccea3c4"
           }
         }
       },
