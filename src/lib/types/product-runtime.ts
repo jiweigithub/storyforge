@@ -1004,6 +1004,9 @@ export interface InteractionRuntimeMemory {
    * must not be inferred to have passed a visibility or fidelity review. */
   authorship?: "player-correction";
   contentReview?: ChatMemoryReviewReceiptV1;
+  /** Explicit player retrieval preference. Absence keeps legacy serialization;
+   * importance and memory kind never imply that the player pinned an entry. */
+  playerPinned?: true;
 }
 
 export interface InteractionRuntimeRelationship {
