@@ -3,6 +3,7 @@ import { avgPlayerSourceMatchesV1, sameAvgPlayerScopeV1 } from '../../lib/avg/pl
 import { loadAvgReaderPreferencesV1, saveAvgReaderPreferencesV1 } from '../../lib/avg/reader-preferences'
 import { NativeVoice } from '../avg/NativeVoice'
 import { NativeVisualCue } from '../avg/NativeVisualCue'
+import { useStageCssPause } from '../avg/useStageCssPause'
 import { selectAvgTransientCuesV1,avgVisibleCueDurationsV1 } from '../../lib/avg/visual-cues'
 import { ReadingHistory } from '../avg/ReadingHistory'
 import { useCueClock } from '../avg/useCueClock'
@@ -150,6 +151,8 @@ export default function AvgGamePlayer(props: { project: Project; scope: Workspac
     const visible = [...initial,...timeline.entries.filter(entry=>entry.at<=elapsed).map(entry=>entry.cue)]
     return visible.reduce((next,cue)=>applyAvgCue(next,cue,presentation.assets,presentation.snapshots),stage)
   }, [stage,presentation,currentBeat,finishingBeat,elapsed]) // eslint-disable-line react-hooks/exhaustive-deps
+  useStageCssPause({ target:stageRef, enabled:!!nativeModule, paused:pausedTransport, stage:visualStage,
+    images:prefs.images, reducedMotion:prefs.reducedMotion })
   const activeCueEntries = [...(finishingBeat ? avgCueTimeline(currentCues,false).entries : []),...timeline.entries.filter(e => e.at <= elapsed)]
   const activeCues=activeCueEntries.map(entry=>entry.cue)
   const transientCues=nativeModule?selectAvgTransientCuesV1(activeCues):[]
