@@ -2330,6 +2330,18 @@
             "notModelAcceptance": true,
             "evidenceSha256": "583fcf05268f1f62b424753b247ead9be38be24053ebc0fab516c3b1e6bf35b5",
             "initialNavigationFailure": "Application-load timeout before evaluation; retained. Origin-only evaluation succeeded; UI verified separately."
+          },
+          "repairImplementation": {
+            "commit": "c2ef8237758b0c77c3a8064347231ccbfdfa2530",
+            "mergedHead": "1eaf36366e421b0879d5794777467c553a534f83",
+            "upstreamMain": "e8ce0a0dbab8b25be6851cf7d77c9e7c4786ed2b",
+            "reviewVersions": [
+              "chat-narrative-action-review-v26",
+              "chat-narrative-options-review-v20"
+            ],
+            "newRealModelAcceptance": false,
+            "originalOutcomeUnchanged": true,
+            "engineering": "110 directed; 991 product cases have passing evidence across original run plus unchanged-timeout recheck (initial six timeouts retained); 9 browser paths; required gates. Merged source: 92 directed, 5 distribution tests, 11 browser paths, gates/types/full lint/build. Full CI/E2E queued, not passed."
           }
         }
       },
