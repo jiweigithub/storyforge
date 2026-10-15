@@ -1,3 +1,4 @@
+import {chatMemoryCorrectionContextV1, type ChatMemoryCorrectionContextV1} from './memory-correction-context'
 import {assertChatMemoryReconciliationSourcesV1} from './memory-reconciliation'
 import {assertChatResponseRetrievableV1, isChatMessageRetrievableV1, requireChatRetrievalMessageV1, setChatMessageRetrievalV1} from './narrative-retrieval'
 import {updateChatMessageEditDraftV1} from './narrative-edit-contract'
@@ -1036,6 +1037,8 @@ export interface InteractionVisibilityView {
   relationshipEvidence?: InteractionRelationshipChange[]
   /** Other actors' spoken promises only; never their associated private goals. */
   sharedCommitments?: ReturnType<typeof chatVisibleCommitmentsV1>
+  /** Versioned model input only, never part of the ordinary visibility hash. */
+  memoryCorrections?: ChatMemoryCorrectionContextV1
 }
 
 export function interactionVisibilityView(
@@ -1089,6 +1092,7 @@ export function buildInteractionContextWindow(
   if (state.chatNarrative && options.retrievalVersion !== 'legacy') {
     const profile = state.profiles.find(p => p.participantKey === participantKey)
     if (!profile) throw new Error('缺少角色视角，无法选择来源资料')
+    if (options.retrievalVersion === 'chat-relevance-v4') visible.memoryCorrections = chatMemoryCorrectionContextV1(state, participantKey)
     return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v3',
       requiredCommitmentKeys: requiredChatCommitmentKeysV1(state.chatNarrative!.situation.goals)})
   }

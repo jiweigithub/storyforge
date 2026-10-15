@@ -117,14 +117,16 @@ it('distinguishes saved preparation from an actually sent request', async () => 
   expect(await readChatContextInspectionV1(f.scope, f.sessionId, row.runId)).toEqual({available: false, reason: '这次运行尚未记录实际发送模型请求。'})
 })
 
-it('reports budget-trimmed input without presenting reconstructed full details', async () => {
+it('stops before sending when the protected role input cannot fit its atomic budget', async () => {
   vi.spyOn(context, 'assembleContext').mockImplementation(input => assemble(input.sourceKeys?.includes('interactionRuntime') ? {...input, sourceBudgetScale: 0.1} : input))
   const f = await start()
-  await expect(generate(f)).rejects.toThrow('行动来源正文与读取版本不一致')
+  await expect(generate(f)).rejects.toThrow('原子来源 interactionRuntime 超出预算')
   const [row] = await listChatContextInspectionsV1(f.scope, f.sessionId)
+  const saved = await readInstanceAgentRunV1(f.scope, row.runId)
+  expect(saved.events.some(e => e.type === 'model.requested')).toBe(false)
   const inspection = await readChatContextInspectionV1(f.scope, f.sessionId, row.runId)
   expect(inspection.available).toBe(false)
-  if (!inspection.available) expect(inspection.reason).toContain('裁剪')
+  if (!inspection.available) expect(inspection.reason).toContain('没有保存')
 })
 
 it.each(['corrupt', 'missing', 'evidence-pruned'])('rejects %s stored evidence without changing the story', async mode => {

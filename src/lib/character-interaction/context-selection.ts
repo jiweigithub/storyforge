@@ -8,18 +8,20 @@ import {estimateTokens} from '../ai/context-budget'
 export const CHAT_CONTEXT_READER_VERSION_V1 = 'chat-narrative-runtime-view-v5'
 export const CHAT_CONTEXT_READER_VERSION_V2 = 'chat-narrative-runtime-view-v6'
 export const CHAT_CONTEXT_READER_VERSION_V3 = 'chat-narrative-runtime-view-v7'
-export type ChatRetrievalVersion = 'legacy' | 'chat-relevance-v1' | 'chat-relevance-v2' | 'chat-relevance-v3'
+export const CHAT_CONTEXT_READER_VERSION_V4 = 'chat-narrative-runtime-view-v8'
+export type ChatRetrievalVersion = 'legacy' | 'chat-relevance-v1' | 'chat-relevance-v2' | 'chat-relevance-v3' | 'chat-relevance-v4'
 export function chatRetrievalVersionForReader(reader: string | undefined): ChatRetrievalVersion | null {
   if (reader === 'chat-narrative-runtime-view-v3') return 'legacy'
   if (reader === 'chat-narrative-runtime-view-v4' || reader === CHAT_CONTEXT_READER_VERSION_V1) return 'chat-relevance-v1'
   if (reader === CHAT_CONTEXT_READER_VERSION_V2) return 'chat-relevance-v2'
+  if (reader === CHAT_CONTEXT_READER_VERSION_V4) return 'chat-relevance-v4'
   return reader === CHAT_CONTEXT_READER_VERSION_V3 ? 'chat-relevance-v3' : null
 }
 export const CHAT_CONTEXT_SOURCE_TOKENS_V1 = 8000
 
-export type ChatContextSelectionReasonV1 = 'current-fact' | 'protected-memory' | 'player-pin' | 'dialogue' | 'goal' | 'thread' | 'scene' | 'importance' | 'open-commitment' | 'latest-resolution'
+export type ChatContextSelectionReasonV1 = 'current-fact' | 'protected-memory' | 'player-pin' | 'dialogue' | 'goal' | 'thread' | 'scene' | 'importance' | 'open-commitment' | 'latest-resolution' | 'pending-correction'
 export interface ChatContextSelectionV1 {
-  version: 1 | 2 | 3
+  version: 1 | 2 | 3 | 4
   knowledge: Array<{key: string; included: boolean; reason: ChatContextSelectionReasonV1}>
   memories: Array<{key: string; included: boolean; reason: ChatContextSelectionReasonV1}>
   commitments?: Array<{key: string; included: boolean; reason: ChatContextSelectionReasonV1}>
@@ -32,7 +34,9 @@ export function selectChatContextWindowV1(
   profile: InteractionRuntimeProfile,
   limits: {maxCharacters: number; maxRecentMessages: number; retrievalVersion?: ChatRetrievalVersion; requiredCommitmentKeys?: ReadonlySet<string>},
 ): InteractionContextWindow {
-  const promises = limits.retrievalVersion === 'chat-relevance-v3'
+  const corrections = limits.retrievalVersion === 'chat-relevance-v4'
+  const pending = new Set(corrections ? view.memoryCorrections?.map(m => m.memoryId) : [])
+  const promises = corrections || limits.retrievalVersion === 'chat-relevance-v3'
   const modern = promises || limits.retrievalVersion === 'chat-relevance-v2'
   const narrative = view.chatNarrative!
   const lastPlayer = [...view.messages].reverse().find(m => m.speakerKey === 'player')
@@ -59,7 +63,7 @@ export function selectChatContextWindowV1(
     ...view.knowledge.map((item, index) => ({kind: 'knowledge' as const, key: item.knowledgeKey, index, importance: item.importance,
       required: requiredKnowledge.has(item.knowledgeKey), ...relevance(item.content)})),
     ...view.memories.map((item, index) => ({kind: 'memories' as const, key: item.memoryId, index, importance: item.importance,
-      required: modern ? item.playerPinned === true : ['commitment', 'key-memory'].includes(item.kind) || item.importance >= 90, ...relevance(item.content)})),
+      required: modern ? pending.has(item.memoryId) || item.playerPinned === true : ['commitment', 'key-memory'].includes(item.kind) || item.importance >= 90, ...relevance(item.content)})),
     ...commitments.map((item, index) => ({kind: 'commitments' as const, key: item.commitmentKey, index, importance: 0,
       required: item.resolution === null || requiredCommitments.has(item.commitmentKey), ...relevance(chatCommitmentContextTextV1(item))})),
   ]
@@ -73,7 +77,7 @@ export function selectChatContextWindowV1(
     if (shared?.length) result.sharedCommitments = shared; else delete result.sharedCommitments
   }
   projectCommitments()
-  if (modern) result.selection = {version: promises ? 3 : 2,
+  if (modern) result.selection = {version: corrections ? 4 : promises ? 3 : 2,
     knowledge: candidates.filter(c => c.kind === 'knowledge').map(c => ({key: c.key, included: false, reason: c.reason})),
     memories: candidates.filter(c => c.kind === 'memories').map(c => ({key: c.key, included: false, reason: c.reason})),
     ...(promises ? {commitments: commitments.map(c => ({key: c.commitmentKey, included: false, reason: 'importance' as const}))} : {})}
@@ -96,6 +100,7 @@ export function selectChatContextWindowV1(
     include(candidate); selected.add(`${candidate.kind}:${candidate.key}`)
   }
   while (!fits() && result.messages.length > 1) result.messages.shift()
+  if (!fits() && corrections && pending.size) throw new Error('待处理记忆修正及完整来源超过预算，已停止发送；不会静默省略修正、固定记忆或未处理约定。')
   if (!fits() && promises) throw new Error('当前事实、未处理承诺、最近处置或玩家固定记忆超过预算，已停止发送；不会静默省略固定记忆或未处理约定。')
   if (!fits()) throw new Error(modern ? '当前事实、玩家固定记忆或安全上下文超过预算，请调整固定范围后继续；不会静默省略固定记忆。' : '当前事实、已确认承诺或安全上下文超过预算，请调整配置后继续；不会静默省略关键记忆。')
   for (const candidate of candidates.filter(c => !c.required).sort((a, b) => b.score - a.score || b.importance - a.importance || a.kind.localeCompare(b.kind) || a.index - b.index)) {
@@ -122,9 +127,9 @@ export function selectChatContextWindowV1(
   result.characterCount = size()
   const decisions = (kind: 'knowledge' | 'memories' | 'commitments') => candidates.filter(c => c.kind === kind).map(c => ({
     key: c.key, included: selected.has(`${kind}:${c.key}`),
-    reason: c.required ? kind === 'commitments' ? commitments[c.index].resolution === null ? 'open-commitment' as const : 'latest-resolution' as const : kind === 'knowledge' ? 'current-fact' as const : modern ? 'player-pin' as const : 'protected-memory' as const : c.reason,
+    reason: c.required ? kind === 'commitments' ? commitments[c.index].resolution === null ? 'open-commitment' as const : 'latest-resolution' as const : kind === 'knowledge' ? 'current-fact' as const : pending.has(c.key) ? 'pending-correction' as const : modern ? 'player-pin' as const : 'protected-memory' as const : c.reason,
   }))
-  result.selection = {version: promises ? 3 : modern ? 2 : 1, knowledge: decisions('knowledge'), memories: decisions('memories'),
+  result.selection = {version: corrections ? 4 : promises ? 3 : modern ? 2 : 1, knowledge: decisions('knowledge'), memories: decisions('memories'),
     ...(promises ? {commitments: decisions('commitments')} : {})}
   if (modern) {
     result.characterCount = size()

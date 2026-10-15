@@ -2704,6 +2704,7 @@ export const CONTEXT_SOURCES: ContextSource[] = [
   {
     key: 'interactionRuntime',
     label: '角色互动单一视角',
+    atomic: true,
     scope: 'runtime',
     ownerFrom: 'instance',
     layer: 'L0',
