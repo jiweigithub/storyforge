@@ -80,7 +80,7 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 145 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 146 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
@@ -100,6 +100,7 @@
 | `ttrpgOpenGmContext` | open 跑团GM 助手情境指引与已保存叙述 | runtime | L0 | 16000 |
 | `ttrpgOpenMemory` | open 跑团活动角色获准接收的记忆 | runtime | L0 | 8000 |
 | `ttrpgOpenPartyMemory` | open 跑团全队共同可见的记忆 | runtime | L0 | 8000 |
+| `ttrpgOpenBriefInput` | open 跑团阶段复盘的全队共同资料 | runtime | L0 | 16000 |
 | `ttrpgPrivateGuidance` | 正式 TTRPG 单角色私密指引 | runtime | L0 | 8000 |
 | `ttrpgDirector` | 正式 TTRPG AI KP 决策与冻结揭示条件 | runtime | L0 | 12000 |
 | `ttrpgPublicNarration` | 正式 TTRPG 已授权公开叙述素材 | runtime | L0 | 10000 |
@@ -521,4 +522,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `d45b08b6`
+生成时间基准:commit `ff6be2e2`

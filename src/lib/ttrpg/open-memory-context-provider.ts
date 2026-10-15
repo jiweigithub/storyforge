@@ -6,11 +6,8 @@ import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import { estimateTokens } from '../ai/context-budget'
 import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
 import { createTtrpgOpenRuntimeResourceProviderV1, type TtrpgOpenResourceRowV1 } from './open-runtime-resource-provider'
-import { loadTtrpgOpenPlayerContextV1 } from './open-player-context'
-import { loadTtrpgOpenKpContextV1 } from './open-kp-context'
-import { nextTtrpgOpenOperationStepV1 } from './open-operation'
-import { TtrpgOpenReadConflictV1 } from './open-read-conflict'
 
+import { ttrpgOpenRecallReadStampV1 } from './open-recall-read-stamp'
 import { TTRPG_OPEN_MEMORY_SOURCE_KEYS_V1 } from './open-model-purpose-contract'
 export { TTRPG_OPEN_MEMORY_SOURCE_KEYS_V1 } from './open-model-purpose-contract'
 export type TtrpgOpenMemoryConsumerV1 = keyof typeof TTRPG_OPEN_MEMORY_SOURCE_KEYS_V1
@@ -28,16 +25,7 @@ async function catalog(scope: FrozenResourceScopeV1, consumer: TtrpgOpenMemoryCo
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ scope: workspace, sessionId: scope.productRuntimeSessionId,
     reader: consumer === 'actor' ? { kind: 'actor', actorKey: scope.runtimeActorKey } : { kind: 'party' } })
   const { runtime, state, stateHash, source, authorization, immutable } = loaded
-  // Existing actor/KP sources share a read stamp. Retain it when recalling alongside those sources.
-  // Stage recall is also valid outside a KP narration operation and has its own party-only stamp.
-  const contextInput = { scope: workspace, sessionId: scope.productRuntimeSessionId, actorKey: scope.runtimeActorKey }
-  const context = consumer === 'actor' ? await loadTtrpgOpenPlayerContextV1(contextInput)
-    : runtime.openRun!.operations.some(o => o.status === 'executing' && nextTtrpgOpenOperationStepV1(o)?.kind === 'narration')
-      ? await loadTtrpgOpenKpContextV1(contextInput) : undefined
-  if (context && (context.readEvidence.sequence !== state.lastSequence || context.readEvidence.stateHash !== stateHash
-    || context.readEvidence.runtimeSourceHash !== source.runtimeSourceHash)) throw new TtrpgOpenReadConflictV1('读取记忆与角色视图期间进度已变化')
-  const fingerprint = context ? await hashCanonicalValue({ scope, runtimeSourceHash: source.runtimeSourceHash, stateHash, visibilityHash: context.visibilityHash })
-    : await hashCanonicalValue({ scope, runtimeSourceHash: source.runtimeSourceHash, stateHash, consumer })
+  const fingerprint = await ttrpgOpenRecallReadStampV1({ scope, workspace, loaded, consumer })
   const recipients = consumer === 'actor' ? [scope.runtimeActorKey] : authorization.selectedActorKeys
   // Filter before titles, search text, counts, hashes or cursors can expose hidden notes.
   const visible = loaded.entries.filter(({ receipt }) => receipt.draft.audience === 'public'

@@ -200,6 +200,16 @@ function ttrpgOpenMemoryProvider(consumer: 'actor' | 'party-narrator', sourceKey
     openReadSession: async scope => (await load()).openReadSession!(scope) }
 }
 
+function ttrpgOpenBriefProvider(): ContextResourceProviderV1 {
+  const load = async () => (await import('../ttrpg/open-brief-context')).createTtrpgOpenBriefContextProviderV1()
+  return { version: 'context-resource-provider-v1', providerId: 'storyforge.ttrpgOpenBriefInput',
+    providerVersion: 'ttrpg-open-brief-provider-v1', normalizationVersion: 'ttrpg-open-brief-json-v1', kinds: ['fact', 'reference'],
+    listMetadata: async input => (await load()).listMetadata(input), searchMetadata: async input => (await load()).searchMetadata(input),
+    read: async input => (await load()).read(input), readOriginal: async input => (await load()).readOriginal(input),
+    fingerprint: async scope => (await load()).fingerprint(scope),
+    openReadSession: async scope => (await load()).openReadSession!(scope) }
+}
+
 // Upper-product readers are lazy for the same reason as adaptation readers:
 // their production Harnesses import the Skill registry, so eager imports here
 // would create CONTEXT_SOURCES -> product Harness -> Skill -> CONTEXT_SOURCES.
@@ -1978,6 +1988,13 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
     requiresResourceKeyAllowList: true, resources: ttrpgOpenMemoryProvider('party-narrator', 'ttrpgOpenPartyMemory'),
     read: async () => { throw new Error('[ttrpg-memory] 共同记忆只经全队接收者交集、冻结 allow-list 与完整 JSON 渐进读取') },
+  },
+  {
+    key: 'ttrpgOpenBriefInput', label: 'open 跑团阶段复盘的全队共同资料',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 16000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenBriefProvider(),
+    read: async () => { throw new Error('[ttrpg-brief] 复盘只经准确本桌交集、冻结 allow-list 和实际交付来源读取') },
   },
   {
     key: 'ttrpgPrivateGuidance', label: '正式 TTRPG 单角色私密指引', scope: 'runtime', layer: 'L0', ownerFrom: 'work',
