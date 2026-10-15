@@ -1,6 +1,6 @@
 import {afterEach, beforeEach, expect, it} from 'vitest'
 import cases from '../acceptance/character-chat-narrative-cases.json'
-import {m1CharacterFieldsV1, m1ActorSourceClassificationsV1, assertM1ActorSourceFidelityV1} from '../acceptance/character-chat-m1-source'
+import {m1CharacterFieldsV1, m1ActorSourceClassificationsV1, assertM1ActorSourceFidelityV1, assertM1ScenarioSourceFidelityV1} from '../acceptance/character-chat-m1-source'
 import {db} from '../../src/lib/db/schema'
 import {createWorkspace} from '../../src/lib/workspace/create-workspace'
 import {stampNewRecord} from '../../src/lib/workspace/scope'
@@ -39,6 +39,7 @@ async function prepare(legacyMixed = false) {
 it('preserves factual private material and separate intentions through real frozen-world/S2 compilation before any model call', async () => {
   const f = await prepare(), before = structuredClone(f.input.source)
   expect(() => assertM1ActorSourceFidelityV1(f.input)).not.toThrow()
+  expect(() => assertM1ScenarioSourceFidelityV1({...f.input, authorOnlyFacts: material.authorOnlyFacts, discoveries: []})).not.toThrow()
   expect(f.input.source).toEqual(before)
   expect((await db.worldReleases.get(f.world.id!))!.contentHash).toBe(f.world.contentHash)
   expect(await db.agentRuns.count()).toBe(0)
