@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { localCodexPlugin } from './scripts/local-codex/bridge.mjs'
 import { execSync } from 'node:child_process'
+import { providerProxies } from './scripts/distribution/proxies.mjs'
 
 function resolveBuildSha(): string {
   const envSha = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA
@@ -13,6 +14,40 @@ function resolveBuildSha(): string {
     return 'local'
   }
 }
+
+// Actual static replay dependency groups: leaves -> open state -> event adapters.
+// Keep adapters separate from their prerequisites to avoid circular chunk loading.
+const TTRPG_REPLAY_CHUNK_MODULES = {
+  state: [
+    'ability-ledger', 'action-economy', 'action-feedback', 'action-requirement',
+    'advancement', 'campaign', 'campaign-v2', 'character-sheet',
+    'content-version', 'dice', 'director-model', 'effect-plan',
+    'effect-runtime', 'frozen-facts', 'item-ledger', 'media-contract',
+    'open-authorization', 'open-chaos', 'open-content-authoring', 'open-content-common',
+    'open-content-predicates', 'open-content-references', 'open-content-situations', 'open-content-templates',
+    'open-contract', 'open-contract-parse', 'context-trigger-contract', 'open-context-policy', 'open-model-purpose-contract', 'open-private-choice-contract', 'open-coordination', 'open-effect-binding',
+    'open-fact-authority', 'open-fact-ledger', 'open-gates', 'open-intent',
+    'open-knowledge', 'open-knowledge-share', 'open-kp-binding', 'open-kp-narration',
+    'open-kp-receipt', 'open-model-calls', 'open-model-purpose', 'open-oracle-contract',
+    'open-interaction', 'oracle', 'participants', 'predicate', 'pressure-runtime',
+    'private-guidance-model', 'resolution', 'rule-action-mechanical', 'rule-pack',
+    'rule-pack-v2', 'run-format', 'runtime-state', 'session-facts',
+    'situation-engine', 'world-time',
+  ],
+  open: [
+    'open-branch-contract', 'open-branch-recovery', 'open-companion-preauthorization', 'open-handoff', 'open-hosting-delegation',
+    'open-gate-recovery', 'open-knowledge-discovery', 'open-discovery-effect-templates', 'open-operation', 'open-oracle-review', 'open-pressure-cycle',
+    'open-pressure-effect', 'open-table-conversation', 'open-table-conversation-reducer', 'open-turn-settlement', 'open-manual-action', 'open-manual-catalog', 'open-private-choice', 'open-table-risk', 'open-rule-plan', 'open-runtime-contract', 'open-situation-cycle',
+    'open-situation-runtime', 'open-stage-close', 'open-terminal-gates',
+  ],
+  adapters: [
+    'open-branch-reducer', 'open-gate-recovery-reducer', 'open-fact-reducer', 'open-knowledge-settlement', 'open-knowledge-share-reducer',
+    'open-kp-reducer', 'open-private-choice-reducer', 'open-model-call-reducer', 'open-operation-reducer', 'open-oracle-reducer',
+    'open-oracle-review-reducer', 'open-pressure-effect-reducer', 'open-pressure-reducer', 'open-situation-cycle-reducer',
+    'open-situation-work-reducer', 'open-stage-close-reducer', 'open-terminal-gates-reducer', 'runtime',
+    'runtime-branch', 'runtime-event-reducer',
+  ],
+} as const
 
 function manualChunkFor(moduleId: string): string | undefined {
   const id = moduleId.replaceAll('\\', '/')
@@ -52,13 +87,13 @@ function manualChunkFor(moduleId: string): string | undefined {
   if (id.endsWith('/src/lib/product-production/compatibility.ts')) {
     return 'product-production-quality'
   }
-  // The product-neutral runtime delegates deterministic rule reduction to
-  // product-owned adapters. Keep the sizeable TTRPG rule reducer separate so
-  // text/AVG/open-world players do not parse an unrelated ruleset up front.
-  // Files that call back into runtime-core (commands/context readers) are
-  // intentionally excluded to preserve an acyclic chunk graph.
-  if (/\/src\/lib\/ttrpg\/(?:runtime-state|runtime-event-reducer|runtime|runtime-branch|campaign|action-feedback|effect-runtime|participants|item-ledger|character-sheet|media-contract|effect-plan|action-economy|advancement|director-model|private-guidance-model)\.ts$/.test(id)) {
-    return 'runtime-domain-ttrpg'
+  // All groups retain the standard scriptChunk size budget. AI/context and
+  // author-production modules stay outside this deterministic replay closure.
+  const ttrpgModule = id.match(/\/src\/lib\/ttrpg\/([^/]+)\.ts$/)?.[1]
+  if (ttrpgModule) {
+    for (const [group, names] of Object.entries(TTRPG_REPLAY_CHUNK_MODULES)) {
+      if ((names as readonly string[]).includes(ttrpgModule)) return `runtime-domain-ttrpg-${group}`
+    }
   }
   // The retired four-module open-world reducer is loaded only for immutable
   // legacy Releases. Do not make every vNext player parse that compatibility
@@ -104,6 +139,7 @@ export default defineConfig(({ mode }) => {
         order: 'pre' as const,
         handler(html: string) {
           return html.replace('/src/main.tsx', '/src/entry.ts').replace(/<script>([\s\S]*?)<\/script>/g, '')
+            .replace('</head>', '<script defer src="/site-metrics.js"></script></head>')
             .replace('<title>StoryForge / 故事熔炉</title>', '<title>项目体验版｜StoryForge 故事熔炉</title>')
             .replace('<div id="root"></div>', '<div id="root"><p>正在打开 StoryForge 项目体验版…</p></div><noscript><p>体验项目界面需要启用 JavaScript。<a href="/">返回官网</a></p></noscript><footer id="showcase-fallback-filing">北京悬象科技有限公司 · <a href="https://beian.miit.gov.cn/">京ICP备2026061833号-1</a> · <a href="https://beian.mps.gov.cn/#/query/webSearch?code=11011502040776">京公网安备11011502040776号</a></footer>')
         },
@@ -175,87 +211,7 @@ export default defineConfig(({ mode }) => {
     // 实际打开的却是被旧进程占用的 1111（错误服务 / 重定向循环）。
     strictPort: true,
     open: '/storyforge/',
-    proxy: showcase ? {} : {
-      '/deepseek-proxy': {
-        target: 'https://api.deepseek.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/deepseek-proxy/, ''),
-        secure: true,
-      },
-      '/openai-proxy': {
-        target: 'https://api.openai.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/openai-proxy/, ''),
-        secure: true,
-      },
-      '/kimi-proxy': {
-        target: 'https://api.moonshot.cn',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/kimi-proxy/, ''),
-        secure: true,
-      },
-      '/claude-proxy': {
-        target: 'https://api.anthropic.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/claude-proxy/, ''),
-        secure: true,
-      },
-      '/nvidia-proxy': {
-        target: 'https://integrate.api.nvidia.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/nvidia-proxy/, ''),
-        secure: true,
-      },
-      '/gemini-proxy': {
-        target: 'https://generativelanguage.googleapis.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/gemini-proxy/, ''),
-        secure: true,
-      },
-      '/doubao-proxy': {
-        target: 'https://ark.cn-beijing.volces.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/doubao-proxy/, ''),
-        secure: true,
-      },
-      '/agnes-proxy': {
-        target: 'https://apihub.agnes-ai.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/agnes-proxy/, ''),
-        secure: true,
-      },
-      '/longcat-proxy': {
-        target: 'https://api.longcat.chat',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/longcat-proxy/, ''),
-        secure: true,
-      },
-      '/opencode-proxy': {
-        target: 'https://opencode.ai',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/opencode-proxy/, '/zen/go'),
-        secure: true,
-      },
-      // NS-5 embedding：国内嵌入服务本地代理（绕浏览器 CORS）
-      '/siliconflow-proxy': {
-        target: 'https://api.siliconflow.cn',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/siliconflow-proxy/, ''),
-        secure: true,
-      },
-      '/qwen-proxy': {
-        target: 'https://dashscope.aliyuncs.com',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/qwen-proxy/, ''),
-        secure: true,
-      },
-      '/glm-proxy': {
-        target: 'https://open.bigmodel.cn',
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/glm-proxy/, ''),
-        secure: true,
-      },
-    },
+    proxy: showcase ? {} : providerProxies,
   },
   build: {
     outDir: showcase ? 'dist-showcase' : 'dist',

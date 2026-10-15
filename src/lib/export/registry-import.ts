@@ -54,7 +54,6 @@ import type {
   ComicMediaAsset,
   CreationReleaseV1,
   ProductQualityGateReceiptRecordV1,
-  ProductReleaseManifestV1,
   ProductRuntimeEvent,
   ScreenplayBlock,
   Work,
@@ -86,7 +85,8 @@ import {
 } from '../open-world/source-pin'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import { verifyProductQualityGateReceiptRecordV1 } from '../product-production/quality-receipts'
-import { verifyProductReleaseManifestV1 } from '../product-production/runtime-package'
+import { verifyProductReleaseManifestV1, parseProductReleaseManifestV1 } from '../product-production/runtime-package'
+import type { ProductReleaseManifestWithTtrpgV2 } from '../ttrpg/content-version'
 import {
   replayTextOpenWorldMigrationSourceStateHashV1,
   verifyTextOpenWorldSaveMigrationBranchV1,
@@ -458,13 +458,13 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
     }
   }
   await validateTextOpenWorldSourcePinArtifactsV10({ artifacts, builds, productions })
-  const releaseManifests = new Map<number, ProductReleaseManifestV1>()
+  const releaseManifests = new Map<number, ProductReleaseManifestWithTtrpgV2>()
   for (const release of releases.values()) {
     if (!productKinds.has(release.productType) || !/^[a-f0-9]{64}$/.test(String(release.contentHash ?? ''))) {
       throw new Error('[deriveImport] v12 ProductRelease 身份或 hash 无效')
     }
     try {
-      const manifest = await verifyProductReleaseManifestV1(String(release.manifestJson ?? ''))
+      const manifest = await verifyProductReleaseManifestV1(String(release.manifestJson ?? ''),{ ttrpgProtocol: 2 })
       if (await hashProductProductionValueV2(manifest) !== release.contentHash
         || manifest.productType !== release.productType
         || manifest.productionProvenance.productionKey !== release.productionKey
@@ -586,8 +586,8 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
         childSession: session as unknown as import('../types').ProductRuntimeSession,
         parentRelease: parentRelease as unknown as import('../types').ProductRelease,
         childRelease: childRelease as unknown as import('../types').ProductRelease,
-        parentManifest,
-        childManifest,
+        parentManifest: parseProductReleaseManifestV1(parentManifest),
+        childManifest: parseProductReleaseManifestV1(childManifest),
         sourceStateHash,
       })
     } catch (error) {

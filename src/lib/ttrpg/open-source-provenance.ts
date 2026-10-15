@@ -44,9 +44,20 @@ export function assertTtrpgOpenSourceFieldProvenanceV1(input: {
 export async function verifyTtrpgOpenAuthoringSourceProvenanceV1(input: {
   sourcePlan: ProductSourcePlanV1; facts: readonly TtrpgOpenFrozenFactV1[]
 }): Promise<TtrpgOpenSourceFieldRef[]> {
-  if (input.facts.length > 20_000 || input.facts.reduce((count, fact) => count + fact.sourceFieldRefs.length, 0) > 100_000) p.fail('事实或来源字段总量超限');
+  const facts = input.facts.map(fact => frozenFact(fact, 'source fact'))
+  return verifyTtrpgOpenSourceClaimsV1({ sourcePlan: input.sourcePlan, claims: facts.map(fact => ({
+    label: fact.factKey, sourceResourceRefs: fact.sourceResourceRefs, sourceFieldRefs: fact.sourceFieldRefs,
+  })) })
+}
+
+/** Independent entity provenance uses source claims, never manufactured semantic facts. */
+export async function verifyTtrpgOpenSourceClaimsV1(input: {
+  sourcePlan: ProductSourcePlanV1
+  claims: readonly { label: string; sourceResourceRefs: readonly string[]; sourceFieldRefs: readonly TtrpgOpenSourceFieldRef[] }[]
+}): Promise<TtrpgOpenSourceFieldRef[]> {
+  if (input.claims.length > 20_000 || input.claims.reduce((count, claim) => count + claim.sourceFieldRefs.length, 0) > 100_000) p.fail('事实或来源字段总量超限');
   const boundary = await resolveProductSourceReadBoundaryV1(input.sourcePlan)
-  const keys = [...new Set(input.facts.flatMap(fact => fact.sourceFieldRefs.map(field => field.resourceKey)))]
+  const keys = [...new Set(input.claims.flatMap(claim => [...claim.sourceResourceRefs, ...claim.sourceFieldRefs.map(field => field.resourceKey)]))]
   const allowedKeys = new Set(boundary.allowedResourceKeys);
   if (keys.length > 20_000 || keys.some(key => !allowedKeys.has(key))) p.fail('事实来源越过冻结 SourcePlan permission')
   if (!input.sourcePlan.permission.allowedDepths.includes('full') && keys.length) p.fail('事实字段验证需要允许 full 来源读取')
@@ -54,7 +65,19 @@ export async function verifyTtrpgOpenAuthoringSourceProvenanceV1(input: {
   const descriptorByKey = new Map(descriptors.map(descriptor => [descriptor.resourceKey, descriptor]));
   const selected = keys.map(key => descriptorByKey.get(key) ?? p.fail('冻结世界缺少事实来源资源'))
   const resources = await readWorldSemanticResourcesV1({ scope: boundary.sourceScope, descriptors: selected })
-  const fields = assertTtrpgOpenSourceFieldProvenanceV1({ facts: input.facts, resources })
+  const byKey = new Map(resources.map(resource => [resource.descriptor.resourceKey, resource]))
+  const fields: TtrpgOpenSourceFieldRef[] = []
+  for (const claim of input.claims) {
+    if (!claim.sourceResourceRefs.length || !claim.sourceFieldRefs.length
+      || claim.sourceResourceRefs.some(key => !claim.sourceFieldRefs.some(field => field.resourceKey === key))) p.fail(`来源资源缺少字段证据:${claim.label}`)
+    for (const field of claim.sourceFieldRefs) {
+      const resource = byKey.get(field.resourceKey)
+      if (!claim.sourceResourceRefs.includes(field.resourceKey) || !resource
+        || resource.descriptor.sourceKey !== 'worldRelease' || resource.descriptor.contentHash !== field.contentHash
+        || !hasSourcePath(resource.value, field.fieldPath)) p.fail(`来源缺失、hash 不一致或字段路径不存在:${claim.label}`)
+      fields.push({ ...field })
+    }
+  }
   await assertWorldSemanticReleaseCurrentV1({ localReleaseRecordId: boundary.sourceScope.worldReleaseId ?? p.fail('冻结来源作用域缺少已解析的世界 locator'),
     expectedProjectId: boundary.sourceScope.projectId, expectedWorldId: boundary.sourceScope.worldId,
     expectedReleaseHash: input.sourcePlan.worldReference.releaseHash })

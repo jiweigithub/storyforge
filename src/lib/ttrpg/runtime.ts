@@ -620,8 +620,18 @@ export function createInitialTtrpgOpenProductStateV1(input: {
 
 export function assertInitialTtrpgOpenProductStateV1(input: {
   state: ProductRuntimeState; content: TtrpgRuntimeContentV2; mechanicalRulePack: RulePackV1;
+  allowProgress?: boolean;
 }): void {
   const runtime = parseTtrpgRuntimeStateV2(input.state.ttrpg);
+  if (input.allowProgress) {
+    if (!runtime?.branchLineage || runtime.product.rulePackContentHash !== input.content.rulePack.contentHash
+      || runtime.product.campaignKey !== input.content.campaign.campaignKey
+      || runtime.branchLineage.ancestors.some(ancestor => ancestor.snapshot.openRun?.coordination.epochs.some(epoch =>
+        JSON.stringify(epoch.budget) !== JSON.stringify(runtime.epochBudget)))) {
+      throw new Error("[ttrpg] open 分支必须绑定真实祖先、冻结规则与原运行预算");
+    }
+    return;
+  }
   if (!runtime || runtime.openRun !== null || runtime.authorization !== null) {
     throw new Error("[ttrpg] open 初始状态不能携带运行或已完成授权。");
   }

@@ -356,7 +356,7 @@ export async function createProductRuntimeInstance(
   }
 
   const productRelease = input.productSource.kind === 'release'
-    ? await assertProductReleaseUnchanged(input.productSource.productReleaseId)
+    ? await assertProductReleaseUnchanged(input.productSource.productReleaseId, input.kind === 'ttrpg' ? { ttrpgProtocol: 2 } : undefined)
     : null
   const productBuild = input.productSource.kind === 'build'
     ? await db.productBuilds.get(input.productSource.productBuildId)

@@ -176,6 +176,16 @@ describe('R-TTRPGOPEN9 P7 context trigger and protected budget', () => {
     expect(state).toEqual({ triggerKey: 'storm-warning', lastTriggeredWorldTurn: 3 })
   })
 
+  it('zero sticky duration cannot bypass cooldown in the original world turn', () => {
+    const candidate = trigger({ logic: 'text-match', textPatterns: ['alarm'], predicate: null, group: null,
+      timing: { stickyWorldTurns: 0, cooldownWorldTurns: 2, delayWorldTurns: 0 } })
+    expect(selectTtrpgContextInjectionsV1({ triggers: [candidate], text: 'alarm', worldTurn: 3,
+      triggerStates: [{ triggerKey: candidate.triggerKey, lastTriggeredWorldTurn: 3 }], audience: 'party' })).toEqual([])
+    const noTiming = { ...candidate, timing: { stickyWorldTurns: 0, cooldownWorldTurns: 0, delayWorldTurns: 0 } }
+    expect(selectTtrpgContextInjectionsV1({ triggers: [noTiming], text: 'alarm', worldTurn: 3,
+      triggerStates: [{ triggerKey: candidate.triggerKey, lastTriggeredWorldTurn: 3 }], audience: 'party' })).toHaveLength(1)
+  })
+
   it('demotes complete tiers in the fixed order and retains required/protected layers', () => {
     const blocks = [
       ['rules', 'ttrpgRuntime', 20, true, false],

@@ -126,3 +126,39 @@ export function emptyOpenAuthoringFixture(): TtrpgOpenAuthoringV1 {
   return { factPolicy: [], situationTemplates: [], openingSituationKeys: [], effectPlanTemplates: [], pressure: { clocks: [], fronts: [] },
     companionPolicy: null, stageClosurePolicy: null, dynamicEntityTemplates: [], runtimePolicy: null }
 }
+
+export function openPublicationCampaignFixture() {
+  const campaign = structuredClone(openCampaignFixture())
+  campaign.sessionZero.consentChecklist = ['尊重玩家决定', '允许暂停', '确认边界']
+  campaign.situationTemplates = Array.from({ length: 3 }, (_, index) => {
+    const template = structuredClone(campaign.situationTemplates[0])
+    const suffix = index === 0 ? '' : `.${index + 1}`
+    template.templateKey = `situation.lighthouse${suffix}`
+    template.whyNowRefs = ['world:harbor:exists', 'clock:flood']
+    template.obstacles = template.obstacles.map(obstacle => ({
+      ...obstacle,
+      obstacleKey: `${obstacle.obstacleKey}${suffix}`,
+      dependsOn: obstacle.dependsOn.map(key => `${key}${suffix}`),
+    }))
+    template.interventionPoints = template.interventionPoints.map(point => ({
+      ...point,
+      pointKey: `${point.pointKey}${suffix}`,
+      targetsObstacleKeys: point.targetsObstacleKeys.map(key => `${key}${suffix}`),
+    }))
+    template.evidence = template.evidence.map(evidence => ({
+      ...evidence,
+      clueRef: `${evidence.clueRef}${suffix}`,
+      coversObstacleKeys: evidence.coversObstacleKeys.map(key => `${key}${suffix}`),
+      discoveryPolicy: {
+        ...evidence.discoveryPolicy,
+        paths: evidence.discoveryPolicy.paths.map(path => ({
+          ...path,
+          interventionPointKey: `${path.interventionPointKey}${suffix}`,
+        })),
+      },
+    }))
+    return template
+  })
+  campaign.effectPlanTemplates[0].effects[0].targetRef = 'parameter:actor'
+  return campaign
+}

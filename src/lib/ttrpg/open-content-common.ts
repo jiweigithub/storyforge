@@ -1,5 +1,5 @@
 import type { RulePackV1, TtrpgCampaignContentV1, TtrpgTabletopPresentationV1 } from '../types'
-import type { TtrpgCharacterTemplateV2 } from './open-contract'
+import type { TtrpgCharacterTemplateV2, TtrpgOpenDesignProvenanceV1 } from './open-contract'
 import { parseTtrpgCharacterSheetV2 } from './character-sheet'
 import { evaluateRuleNumberExpressionV1 } from './rule-pack'
 import * as p from './open-contract-parse'
@@ -49,14 +49,20 @@ export function character(value: unknown, label: string, rule: RulePackV1): Ttrp
   }, rule)
   return { ...template, characterSheet }
 }
-export function commonMetadata(r: Record<string, unknown>): Pick<TtrpgCampaignContentV1,
-  'campaignKey' | 'title' | 'pitch' | 'playerCount' | 'estimatedMinutes' | 'tags' | 'difficulty' | 'contentWarnings' | 'sessionZero' | 'sourceWorld' | 'gmMode' | 'informationPolicy' | 'bible' | 'designProvenance'> {
+type LegacyCampaignMetadata = Pick<TtrpgCampaignContentV1,
+  'campaignKey' | 'title' | 'pitch' | 'playerCount' | 'estimatedMinutes' | 'tags' | 'difficulty' | 'contentWarnings' | 'sessionZero' | 'sourceWorld' | 'gmMode' | 'informationPolicy' | 'bible' | 'designProvenance'>
+export function commonMetadata(r: Record<string, unknown>): LegacyCampaignMetadata
+export function commonMetadata(r: Record<string, unknown>, provenance: TtrpgOpenDesignProvenanceV1):
+  Omit<LegacyCampaignMetadata, 'designProvenance'> & { designProvenance: TtrpgOpenDesignProvenanceV1 }
+export function commonMetadata(r: Record<string, unknown>, provenance?: TtrpgOpenDesignProvenanceV1):
+  Omit<LegacyCampaignMetadata, 'designProvenance'> & { designProvenance: LegacyCampaignMetadata['designProvenance'] | TtrpgOpenDesignProvenanceV1 } {
   const pc = p.record(r.playerCount, ['minimum', 'maximum'], 'playerCount')
   const minimum = p.integer(pc.minimum, 'playerCount.minimum', 1, 20)
   const s = p.record(r.sessionZero, ['premise', 'consentChecklist', 'lines', 'veils', 'pauseSignal', 'openDoor'], 'sessionZero')
   const b = p.record(r.bible, ['premise', 'background', 'coreConflict', 'themes', 'canonInvariants', 'sourceRefs'], 'bible')
   const i = p.record(r.informationPolicy, ['characterPrivateChannels', 'gmSecrets', 'hiddenNpcState', 'hiddenDice', 'interPlayerWhispers', 'revealAuditTrail'], 'informationPolicy')
   const w = p.record(r.sourceWorld, ['contentHash', 'bundleHash'], 'sourceWorld')
+  const designProvenance = provenance ?? (() => {
   const d = p.record(r.designProvenance, ['origin', 'proposalKeys', 'baseProposalKey', 'sectionSources', 'lockedSections', 'candidateHash'], 'designProvenance')
   const sections = ['background', 'coreConflict', 'opening', 'fronts', 'secrets', 'endings'] as const
   const proposalKeys = p.keys(d.proposalKeys, 'proposalKeys', 3, 2), baseProposalKey = p.key(d.baseProposalKey, 'baseProposalKey')
@@ -65,6 +71,10 @@ export function commonMetadata(r: Record<string, unknown>): Pick<TtrpgCampaignCo
   const section = (k: string) => { const ref = p.key(sources[k], k); p.known(ref, proposalKeys, k); return ref }
   const origin = p.oneOf(d.origin, ['author-guided', 'ai-candidate'], 'origin'), candidateHash = p.nullable(d.candidateHash, p.hash, 'candidateHash')
   if ((origin === 'ai-candidate') !== (candidateHash !== null)) p.fail('designProvenance: candidateHash 不匹配')
+    return { origin, proposalKeys, baseProposalKey, candidateHash,
+      sectionSources: { background: section('background'), coreConflict: section('coreConflict'), opening: section('opening'), fronts: section('fronts'), secrets: section('secrets'), endings: section('endings') },
+      lockedSections: p.unique(p.list(d.lockedSections, 'lockedSections', (v, l) => p.oneOf(v, sections, l), 6), 'lockedSections') }
+  })()
   return {
     campaignKey: p.key(r.campaignKey, 'campaignKey'), title: p.text(r.title, 'title', 300), pitch: p.text(r.pitch, 'pitch', 10_000),
     playerCount: { minimum, maximum: p.integer(pc.maximum, 'playerCount.maximum', minimum, 20) },
@@ -80,9 +90,7 @@ export function commonMetadata(r: Record<string, unknown>): Pick<TtrpgCampaignCo
       revealAuditTrail: p.bool(i.revealAuditTrail, 'revealAuditTrail') },
     bible: { premise: p.text(b.premise, 'bible.premise'), background: p.text(b.background, 'bible.background'), coreConflict: p.text(b.coreConflict, 'bible.coreConflict'),
       themes: p.texts(b.themes, 'themes', 100), canonInvariants: p.texts(b.canonInvariants, 'canonInvariants', 200, 1), sourceRefs: p.keys(b.sourceRefs, 'bible.sourceRefs', 200, 1) },
-    designProvenance: { origin, proposalKeys, baseProposalKey, candidateHash,
-      sectionSources: { background: section('background'), coreConflict: section('coreConflict'), opening: section('opening'), fronts: section('fronts'), secrets: section('secrets'), endings: section('endings') },
-      lockedSections: p.unique(p.list(d.lockedSections, 'lockedSections', (v, l) => p.oneOf(v, sections, l), 6), 'lockedSections') },
+    designProvenance,
   }
 }
 export function tabletop(value: unknown, label: string): TtrpgTabletopPresentationV1 {

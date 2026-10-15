@@ -14,6 +14,9 @@ StoryForge is an open-source, local-first AI narrative creation and experience t
 
 > Long fiction, short fiction, screenplays, comics, motion-drama preproduction, and the world engine have released entries. Nodes and interactive products are previews. This README is available in nine languages; this does not imply matching coverage in the interface or linked documents. Screenshots and many guides are in Chinese.
 
+
+**Run without a development setup:** [Download the latest portable release](https://github.com/yuanbw2025/storyforge/releases/latest). Extract the ZIP for Windows x64, Apple Silicon/Intel Mac or Linux x64 and launch `Start-StoryForge`. The built app, media and Node.js runtime are included; no npm installation is required. AI requires your own provider, and preview products keep their maturity labels. [Installation guide](https://docs.storyforge-lab.com/en/getting-started/install).
+
 ## Official website, preview, and knowledge base
 
 Start with the website overview, explore the real interface in the isolated preview, then download the source and follow the knowledge base for full creation.

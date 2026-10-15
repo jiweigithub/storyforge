@@ -238,6 +238,9 @@ export async function prepareTtrpgBrief(
   const row = await readTtrpgDraft(scope);
   if (row.revision !== revision) throw new Error("方案已变化，请刷新");
   const settings = settingsFromTtrpgDraft(row);
+  if (isTtrpgAuthoringSettingsV2(settings) && settings.runFormat === 'open') {
+    return prepareTtrpgOpenProductionBriefV3({ scope, revision })
+  }
   assertTtrpgScriptedAuthoringSettings(settings);
   if (!row.worldReleaseId) throw new Error("开始制作，需要一个世界引擎");
   const {
@@ -338,6 +341,81 @@ export async function prepareTtrpgBrief(
     },
   );
   return id!;
+}
+
+/** Normal open S2 preparation: creates its own intent and SourcePlan without a scripted Brief. */
+export async function prepareTtrpgOpenProductionBriefV3(input: {
+  scope: WorkspaceScope; revision: number; commandId?: string
+}): Promise<number> {
+  const scope = await resolveScope({ scope: input.scope }), draft = await readTtrpgDraft(scope)
+  if (draft.revision !== input.revision) throw new Error('open 方案已变化，请刷新')
+  const settings = settingsFromTtrpgDraft(draft)
+  if (!isTtrpgAuthoringSettingsV2(settings) || settings.runFormat !== 'open') throw new Error('需要 open Settings V2')
+  if (!draft.worldReleaseId) throw new Error('open 制作需要明确选择冻结世界版本')
+  if (settings.wizard.ruleOrigin !== 'saved-rule-pack' || !draft.savedRulePackId) throw new Error('open 制作需要本作品已保存的 RulePack V2')
+  if ([settings.wizard.initiativeDiceSides, settings.wizard.actionsPerTurn, settings.wizard.reactionsPerRound,
+    settings.wizard.deathRecoveryHeroicDiceCost].some(value => value !== null) || settings.wizard.customHouseRulePatches.length) {
+    throw new Error('open 村规请先确认并保存为新的 RulePack V2')
+  }
+  const work = await db.works.get(scope.workId)
+  if (!work || work.kind !== 'ttrpg') throw new Error('open 制作必须属于跑团 Work')
+  const rule = await readTtrpgRulePackVersionedV1({ scope, rulePackId: draft.savedRulePackId })
+  if (rule.rulePack.version !== 2) throw new Error('open 制作不能使用旧 RulePack V1')
+  const { draftTtrpgOpenProductionCommonBriefV3, suggestProductStartingPoints } = await import('../product-production/consultation')
+  const { createProductProductionSourcePlanV1 } = await import('../product-production/source-contracts')
+  const { createTtrpgOpenProductionBriefV3 } = await import('./open-production-brief')
+  const { hashProductProductionValueV2 } = await import('../product-production/hash')
+  const { executeProductProductionCommand } = await import('../product-production/commands')
+  const worldReference = await createWorldReferenceV1(draft.worldReleaseId)
+  const suggestions = await suggestProductStartingPoints({ scope, worldReleaseId: draft.worldReleaseId })
+  const suggestion = suggestions.suggestions.find(item => item.suggestionKey === draft.suggestionKey)
+    ?? suggestions.suggestions.find(item => item.recommendedProductTypes.includes('ttrpg'))
+  if (!suggestion) throw new Error('open 世界没有可用起点')
+  const selection = draft.selectionJson ? JSON.parse(draft.selectionJson) : suggestions.selectionDefaults[suggestion.suggestionKey]
+  const common = await draftTtrpgOpenProductionCommonBriefV3({ scope, worldReleaseId: draft.worldReleaseId,
+    suggestionKey: suggestion.suggestionKey, qualityProfile: settings.qualityProfile, scale: 'campaign',
+    visualLevel: settings.wizard.maximumGeneratedAssets > 0 ? 'key-scenes' : 'none', audioLevel: 'none',
+    playerRole: settings.playerRole, openingSituation: settings.openingSituation, sourceSelection: selection })
+  const prior = draft.productionId ? await db.productProductions.get(draft.productionId) : null
+  if (prior && !(await assertRecordInScope(scope, 'productProductions', prior, { owner: 'work' }))) throw new Error('open 当前制作记录不属于本作品')
+  const priorBuild = prior?.id ? await db.productBuilds.where('productionId').equals(prior.id).first() : null
+  const priorBrief = prior?.id && prior.currentBriefRevision !== null ? await db.productProductionBriefs
+    .where('[productionId+revision]').equals([prior.id, prior.currentBriefRevision]).first() : null
+  const reuse = prior && !priorBuild && prior.productType === 'ttrpg' && prior.worldId === scope.worldId
+    && priorBrief?.sourceWorldReleaseId === draft.worldReleaseId
+  const commandId = input.commandId ?? crypto.randomUUID()
+  const productionKey = reuse ? prior.productionKey : `productprod.open.${(await hashProductProductionValueV2({ scope,
+    revision: input.revision, commandId, worldReferenceHash: worldReference.referenceHash })).slice(0, 40)}`
+  const sourcePlan = await createProductProductionSourcePlanV1({ scope, productionKey, brief: common })
+  await verifyTtrpgOpenAuthoringSourceProvenanceV1({ sourcePlan, facts: settings.openAuthoring.factPolicy.map(item => item.fact) })
+  const content = await createTtrpgProductionBriefContentV3({ settingsRevision: input.revision, settings,
+    rulePack: rule.rulePack, worldReference, sourcePlan })
+  const brief = await createTtrpgOpenProductionBriefV3({ common, content })
+  if (JSON.stringify(await readTtrpgDraft(scope)) !== JSON.stringify(draft)
+    || JSON.stringify((await readTtrpgRulePackVersionedV1({ scope, rulePackId: draft.savedRulePackId })).record) !== JSON.stringify(rule.record)) {
+    throw new Error('open 编译期间方案或规则已 stale，未保存制作方案')
+  }
+  await assertWorldSemanticReleaseCurrentV1({ localReleaseRecordId: draft.worldReleaseId,
+    expectedProjectId: scope.projectId, expectedWorldId: scope.worldId, expectedReleaseHash: worldReference.releaseHash })
+  let productionId = reuse ? prior.id! : null
+  if (productionId === null) {
+    const created = await executeProductProductionCommand({ scope, command: { type: 'create-intent', commandId: `${commandId}.intent`,
+      productionKey, productType: 'ttrpg', worldReleaseId: draft.worldReleaseId, userText: work.title } })
+    if (!created.ok) throw new Error(String(created.result.message ?? 'open 制作意图创建失败'))
+    productionId = created.productionId
+  }
+  const production = (await db.productProductions.get(productionId))!
+  const saved = await executeProductProductionCommand({ scope, productionId, command: { type: 'save-brief-revision',
+    commandId: `${commandId}.brief`, expectedStateRevision: production.stateRevision,
+    parentRevision: production.currentBriefRevision, brief } })
+  if (!saved.ok) throw new Error(String(saved.result.message ?? 'open 制作方案保存失败'))
+  await db.transaction('rw', scopeTransactionTables(db.ttrpgAuthoringDrafts), async () => {
+    const latest = await readTtrpgDraft(scope)
+    if (JSON.stringify(latest) !== JSON.stringify(draft)) throw new Error('open 方案已变化，已保存版本保留在制作记录中，请重新核对')
+    await db.ttrpgAuthoringDrafts.put({ ...latest, productionId, preparedRevision: input.revision + 1,
+      revision: input.revision + 1, updatedAt: Date.now() })
+  })
+  return productionId
 }
 
 export interface TtrpgOpenBriefRequestV3 {
@@ -592,3 +670,4 @@ export async function verifyTtrpgOpenBriefV3(
     return createTtrpgProductionBriefV3({ content: candidate.content, startAuthorization });
   });
 }
+export { createTtrpgOpenProductionBriefV3 } from './open-production-brief';

@@ -1,4 +1,15 @@
+import { parseTextAdventureQuestScriptArtifact, textAdventureQuestRecipientsV3 } from '../adventure/quest-settlement'
 import { hasFrozenAuthorUploadRightsV1 } from './media-rights'
+import { ttrpgOpenProductionSystemPromptV1 } from '../ttrpg/open-production-prompts'
+import { ttrpgOpenProductionMediaContextV1, ttrpgOpenProductionMediaPromptV1, assertTtrpgOpenProductionMediaRequirementsV1,
+  bindTtrpgOpenProductionMediaV1 } from '../ttrpg/open-production-media'
+import { compileProductionTtrpgOpenCampaignV2 } from '../ttrpg/open-production-compiler'
+import { isTtrpgRuntimeContentV2, verifyTtrpgFrozenContentHashesV1, type ProductRuntimePackageWithTtrpgV2 } from '../ttrpg/content-version'
+import { assertTtrpgOpenPublicationGatesV1 } from '../ttrpg/open-gates'
+import { validateTtrpgOpenNarrativeEnvelopeV1 } from '../ttrpg/open-narrative-envelope'
+import { parseProductProductionSourcePlanV1 } from './source-contracts'
+import { parseTtrpgOpenSourceFactsArtifactV1, parseTtrpgOpenRuleSystemArtifactV1,
+  parseTtrpgOpenSituationLayerArtifactV1 } from '../ttrpg/open-production-artifacts'
 import { TTRPG_SCENARIO_PROMPT_V1 } from '../ttrpg/scenario-prompt'
 import { parseTtrpgAuthoredScenarioV1, type TtrpgAuthoredScenarioV1 } from '../ttrpg/scenario-authoring'
 import type { ChatResult } from '../ai/client'
@@ -30,7 +41,7 @@ import {
 } from './capabilities'
 import { ProductProductionDraftRejectedErrorV1 } from './scheduler'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from './hash'
-import { putMediaBlobObject, readMediaBlobObjectData, sha256MediaData } from './media-blob-store'
+import { putMediaBlobObject, readMediaBlobObjectData, readVerifiedMediaBlobObjectData, sha256MediaData } from './media-blob-store'
 import {
   detectProductImageDimensionsV1,
   isProductImageDeliveryDimensionCompatibleV1,
@@ -74,7 +85,6 @@ import {
   parseTextAdventureEndingRoutePlanArtifactV1,
   parseTextAdventureMediaAnchorDecisionArtifactV1,
   parseTextAdventureQuestPlanArtifactV1,
-  parseTextAdventureQuestScriptArtifactV2,
   parseTextAdventureSourceDecisionArtifactV1,
   parseTextAdventureSourceSufficiencyArtifactV1,
   parseTextAdventureStoryBibleArtifactV1,
@@ -2632,7 +2642,7 @@ function expectedVisualKeys(brief: ProductProductionBriefV3): string[] {
 }
 
 function expectedAudioKeys(brief: ProductProductionBriefV3): string[] {
-  if (brief.intent.productType !== 'avg' && brief.intent.productType !== 'ai-town') return []
+  if (brief.intent.productType !== 'avg' && brief.intent.productType !== 'ai-town' && !brief.ttrpgOpen) return []
   const count = brief.media.musicTrackCount + brief.media.sfxCount + brief.media.voiceLineCount
   return Array.from({ length: count }, (_, index) => `media.audio.${String(index + 1).padStart(3, '0')}`)
 }
@@ -3466,6 +3476,12 @@ function artifactRecord(input: ProductProductionTaskExecutionInputV1, artifactKe
   const artifact = input.inputArtifacts.find(row => row.artifactKey === artifactKey)
   if (!artifact) fail(`输入 Artifact 缺失:${artifactKey}`)
   return artifact
+}
+
+function openMediaContext(input: ProductProductionTaskExecutionInputV1, brief: ProductProductionBriefV3) {
+  if (!brief.ttrpgOpen) return null
+  return ttrpgOpenProductionMediaContextV1({ ruleSystem: artifactPayload(input, 'ttrpg.open.rule-system'),
+    situationLayer: artifactPayload(input, 'ttrpg.open.situation-layer'), rulePack: brief.ttrpgOpen.rulePack })
 }
 
 function textAdventureLocationTitlesFromArchitectureV1(
@@ -5111,7 +5127,7 @@ export function textAdventureQuestScriptResolutionRetryDirectiveV1(
   if (!rejectedResolutionShape && !rejectedCheckBinding && !rejectedAlternativeShape) return ''
   return '上一候选被确定性 resolution 门拒绝。本次逐项检查每个 mainObjectiveScripts[].alternatives[]：resolution 对象必须且只能含 mode、abilityKey、difficulty、costlySuccessFloor 四个字段；timeCostMinutes、successText、costlySuccessText、failureForwardText 必须是 alternative 对象中与 resolution 同级的四个字段。不得把任何同级字段嵌进 resolution，也不得把 resolution 的四个字段提升到 alternative。' +
     (rejectedAlternativeShape
-      ? '每个 alternative 对象必须且只能含 alternativeKey、resolution、timeCostMinutes、successText、costlySuccessText、failureForwardText 六个字段；这里的失败字段名必须逐字为 failureForwardText，严禁沿用上游任务计划字段 failureForwardConsequence，也不得同时输出两个名称。'
+      ? '每个 alternative 对象必须且只能含 alternativeKey、resolution、timeCostMinutes、successText、costlySuccessText、failureForwardText、resourceCosts、recipientCharacterKey 八个字段；这里的失败字段名必须逐字为 failureForwardText，严禁沿用上游任务计划字段 failureForwardConsequence，也不得同时输出两个名称。'
       : '') +
     (rejectedCheckBinding
       ? '凡 mode="check" 的 resolution，abilityKey 必须逐字复制系统提示列出的一个已登记能力 key，difficulty 必须是 2–30 的整数，costlySuccessFloor 必须是 1–29 且严格小于 difficulty；这三个字段都禁止为 null。只有 mode="automatic" 才允许后三个字段全部为 null。'
@@ -5136,11 +5152,12 @@ export function textAdventureQuestScriptRootRetryDirectiveV1(
       if (!value || typeof value !== 'object' || Array.isArray(value)) return false
       const row = value as JsonRecord
       return row.taskKey === taskKey && typeof row.detail === 'string'
-        && row.detail === '[text-adventure-production-artifact-v2] questScript schema/version 无效'
+        && (row.detail === '[text-adventure-production-artifact-v2] questScript schema/version 无效'
+          || row.detail.includes('当前任务脚本合同要求 version=3'))
     })
   }
   if (!rejectedRootIdentity) return ''
-  return '上一候选被任务脚本根身份门拒绝。根对象的 schema 必须逐字等于 "storyforge.text-adventure-quest-script-artifact"，version 必须是不带引号的 JSON 整数 2；严禁输出版本 1、字符串 "2"、省略任一字段或沿用上游 quest-plan/quest-bundle 的 schema。根对象仍必须且只能含 schema、version、mainObjectiveScripts、sideQuestScripts、ambientEventScripts 五个字段。'
+  return '上一候选被任务脚本根身份门拒绝。根对象的 schema 必须逐字等于 "storyforge.text-adventure-quest-script-artifact"，version 必须是不带引号的 JSON 整数 3；严禁输出旧版本 1/2、字符串 "3"、省略任一字段或沿用上游 quest-plan/quest-bundle 的 schema。根对象仍必须且只能含 schema、version、mainObjectiveScripts、sideQuestScripts、ambientEventScripts 五个字段。'
 }
 
 export function textAdventureQuestScriptOutcomeRetryDirectiveV1(
@@ -5328,6 +5345,9 @@ function textSystem(
   textAdventureEndingRouteDecisions: readonly TextAdventureEndingRoutePromptDecisionV1[] = [],
   contextText = '',
 ): string {
+  const openPrompt = brief.ttrpgOpen ? ttrpgOpenProductionSystemPromptV1(taskKey) : null
+  if (openPrompt) return openPrompt
+  if (brief.ttrpgOpen && taskKey === 'ttrpg.open.media-plan') taskKey = 'media.requirements'
   const qualityReviewScope = textAdventureQualityReviewScopeFromTaskKeyV1(taskKey)
   const qualityReviewTask = qualityReviewScope != null
   const sceneLocalizationRetryDirective = textAdventureSceneLocalizationRetryDirectiveV1(
@@ -5522,10 +5542,10 @@ function textSystem(
       ),
     }))
     return `${common}\n你是同一位叙事设计师的决定设计 Run，只负责为已经冻结的三幕场景卡设计玩家决定，不得改写场景、地点或结局。` +
-      '输出字段必须精确为：{"schema":"storyforge.text-adventure-narrative-decision-plan-artifact","version":1,"decisions":[{"key":"decision.some-key","sceneKey":"scene.001","prompt":"...","options":[{"key":"option.some-key","label":"...","cost":"...","persistentEffectKey":"flag.some-key","echoSceneKeys":["scene.002","scene.003"]}]}]}。' +
+      '输出字段必须精确为：{"schema":"storyforge.text-adventure-narrative-decision-plan-artifact","version":1,"decisions":[{"key":"decision.some-key","sceneKey":"scene.001","prompt":"...","options":[{"key":"option.some-key","label":"...","cost":"...","persistentEffectKey":"flag.some-key","echoSceneKeys":["scene.002","scene.003"],"echoTextByScene":{"scene.002":"本路线在此处发生的具体回响正文","scene.003":"另一个后续场景中的具体回响正文"}}]}]}。' +
       `decisions 必须恰好 ${decisionSceneKeys.length} 项；稳定身份冻结映射=${JSON.stringify(decisionIdentityPlan)}，必须逐项复制 decisionKey→key、sceneKey、optionKeys→两个 option.key、persistentEffectKeys→两个 option.persistentEffectKey，不得错位、跳号或自造身份。系统还会按数组序号再次冻结这些纯机器身份；它们不得承载世界事实。` +
       '逐项以 sceneKey 对照已冻结场景卡的 title、purpose、conflict、entryState 与 exitState：prompt 只能描述该场已经成立的情境，label/cost 只能回应这个当场冲突，不得提前搬用后续地点、人物发现或终局抉择。若返修建议要求移动 decision.sceneKey，必须保留冻结 sceneKey，改写错位的 prompt、label、cost 与回响，使语义回到该场；反馈编号与引用摘录冲突时，以引用的实际内容为线索审查全部 decisions，不能误改本来正确的条目。' +
-      `每个决定恰好两个立场、代价或手段显著不同的选项；每个 option.echoSceneKeys 必须包含至少两个在该 decision.sceneKey 之后出现的冻结场景 key，禁止引用决定当场或已经走过的场景。冻结场景顺序=${JSON.stringify(skeleton.sceneKeys)}。prompt、label、cost 必须简洁具体，不得输出场景正文、背景复述或系统解释。`
+      `每个决定恰好两个立场、代价或手段显著不同的选项；每个 option.echoSceneKeys 必须包含至少两个在该 decision.sceneKey 之后出现的冻结场景 key，禁止引用决定当场或已经走过的场景。冻结场景顺序=${JSON.stringify(skeleton.sceneKeys)}。prompt、label、cost 必须简洁具体。每个 option.echoTextByScene 的键必须精确覆盖 echoSceneKeys，每段最多600字，直接写玩家在该场景观察到的具体反应或记起的细节，因不同选择而异。不得套用“后果显现”“只属于这条路线的回应”等占位模板，不得在回响里宣告尚未执行的任务成功、凭空发放物品或替玩家选择。正文必须适用于持有本 option 条件的全部后续路径，不得假定其他决定的取值。`
   }
   if (taskKey === 'content.ending-route-plan') {
     if (!adventure) return `${common}\n缺少文字冒险专用 Brief，停止。`
@@ -5663,9 +5683,11 @@ function textSystem(
       runBoundary +
       outcomeAnchors +
       (boundary == null ? '' : `这里的“第 ${boundary.actIndex + 1} 幕”由 objective.sceneKey 所属的正文分幕决定，不等于主线任务计划里的 stageKey 编号；即使某个目标的 stageKey 看起来属于上一阶段，只要它出现在本 Run 的冻结身份清单中就必须输出。冻结身份清单是本 Run 唯一的条目边界。`) +
-      '输出字段必须精确为：{"schema":"storyforge.text-adventure-quest-script-artifact","version":2,"mainObjectiveScripts":[{"objectiveKey":"objective.some-key","sceneKey":"scene.001","alternatives":[{"alternativeKey":"alternative.some-key","resolution":{"mode":"automatic|check","abilityKey":null,"difficulty":null,"costlySuccessFloor":null},"timeCostMinutes":5,"successText":"...","costlySuccessText":"...","failureForwardText":"..."}]}],"sideQuestScripts":[{"entryKey":"side-key","stages":[{"stageKey":"stage-one","actionKind":"inspect|attempt|use|quest-action","abilityKey":"ability.some-key","difficulty":10,"costlySuccessFloor":6,"timeCostMinutes":8,"successText":"...","costlySuccessText":"...","failureForwardText":"..."}]}],"ambientEventScripts":[]}。' +
+      '输出字段必须精确为：{"schema":"storyforge.text-adventure-quest-script-artifact","version":3,"mainObjectiveScripts":[{"objectiveKey":"objective.some-key","sceneKey":"scene.001","itemBinding":null,"alternatives":[{"alternativeKey":"alternative.some-key","resourceCosts":{"success":[],"costlySuccess":[],"failure":[]},"recipientCharacterKey":null,"resolution":{"mode":"automatic|check","abilityKey":null,"difficulty":null,"costlySuccessFloor":null},"timeCostMinutes":5,"successText":"...","costlySuccessText":"...","failureForwardText":"..."}]}],"sideQuestScripts":[{"entryKey":"side-key","stages":[{"stageKey":"stage-one","actionKind":"inspect|attempt|use|quest-action","abilityKey":"ability.some-key","difficulty":10,"costlySuccessFloor":6,"timeCostMinutes":8,"successText":"...","costlySuccessText":"...","failureForwardText":"..."}]}],"ambientEventScripts":[]}。' +
       `上游已冻结的脚本身份与顺序=${JSON.stringify(textAdventureQuestScriptIdentityPlan)}；必须逐项原样复制 objectiveKey、sceneKey、alternativeKeys→alternativeKey，以及每个补充任务的 entryKey、stages[].stageKey/actionKind/abilityKey/difficulty/costlySuccessFloor/timeCostMinutes，不得重新命名、翻译、合并阶段、重设补充任务数值或按自己的理解排序。` +
-      (boundary == null ? '' : '主线每个 alternative 对象必须恰好含 alternativeKey、resolution、timeCostMinutes、successText、costlySuccessText、failureForwardText 六个字段；其中 resolution 必须且只能含 mode、abilityKey、difficulty、costlySuccessFloor，timeCostMinutes 与三档文本永远是 resolution 的同级字段。') +
+      (boundary == null ? '' : '主线每个 alternative 对象必须恰好含 alternativeKey、resolution、timeCostMinutes、successText、costlySuccessText、failureForwardText、resourceCosts、recipientCharacterKey 八个字段；其中 resolution 必须且只能含 mode、abilityKey、difficulty、costlySuccessFloor，timeCostMinutes 与三档文本永远是 resolution 的同级字段。') +
+      'V3 每个主线目标必须显式声明 itemBinding：没有 take/give/use 时为 null；产品私域任务物品用 {kind:"quest",title:"真实物品名称",description:"来源与用途"}，已有初始装备用 {kind:"starter",itemKey:"上游精确 key"}，冻结世界物品用 {kind:"world",resourceKey:"Brief 已选择的精确来源 key"}。禁止用任务标题或占位物品冒充正文中的关键钥匙。give 必须把 recipientCharacterKey 绑定到当前场景 nonPlayerCastKeys，其他行动为 null；交付会转移所有权，use 不消耗物品，take 只允许领取本目标产品物品。已有装备与世界物品沿原取得入口，不额外生成副本。' +
+      '每个主线解法 resourceCosts 必须含 success/costlySuccess/failure 三个数组，每项精确为 {resourceKey,amount}；只允许已登记 health/mana/stamina/currency，amount 为正整数，重复资源拒绝。这些数组就是三档结果实际扣除的全部资源，不会自动追加生命扣除；时间仍由 timeCostMinutes 单独结算。automatic 的 costlySuccess/failure 消耗必须为空。文字中承诺的每项资源代价必须进入对应数组；结算前按各资源最大可能消耗检查余额，不足则不执行、不部分扣款。保留可达的替代路径，不能用隐藏补给掩盖软锁。' +
       '补充任务的每个 sideQuestScripts[].stages[] 和 ambientEventScripts[].stages[] 必须恰好只有 stageKey、actionKind、abilityKey、difficulty、costlySuccessFloor、timeCostMinutes、successText、costlySuccessText、failureForwardText 这 9 个字段。补充任务的失败推进字段名也是 failureForwardText，不是上游任务计划使用的 failureText；严禁混用或同时输出两者。' +
       `check.resolution.abilityKey 只能逐字使用这些上游已登记能力=${JSON.stringify(textAdventureQuestScriptAbilityKeys)}；不得用能力标题、中文简称、动作类型或自造 key。` +
       'mainObjectiveScripts 必须按主线 stage.objectiveKeys 的顺序不重不漏覆盖全部目标，sceneKey 必须等于该目标首个 sceneKey，每个 alternatives 必须不重不漏覆盖计划解法。automatic 的三个检查参数必须全为 null；check 必须复用 systems.abilities 的 key，difficulty 为 2–30，costlySuccessFloor 为 1–29 且严格小于 difficulty。' +
@@ -6524,6 +6546,11 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
   const requirementKey = input.task.capabilityRequirementKeys[0]
   const binding = input.capabilityBindings.find(item => item.requirementKey === requirementKey)
   if (!requirementKey || !binding) fail(`${input.task.taskKey} 缺少已冻结文本 capability binding`)
+  if (options.brief.ttrpgOpen && input.authorDraftJson
+    && (!input.authorResolution || input.authorResolution.resolution.action !== 'author-edit'
+      || input.authorResolution.blockerKey !== input.task.taskKey || !input.authorResolution.commandId)) {
+    fail('open 作者修订缺少当前任务的明确人工确认回执')
+  }
   const startedAt = performance.now()
   const sceneScriptBoundary = textAdventureSceneScriptBoundary(input.task.taskKey)
   const dialoguePassActIndex = textAdventureDialoguePassActIndex(input.task.taskKey)
@@ -6950,7 +6977,8 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
         }
       })()
     : undefined
-  const system = textSystem(
+  const system = options.brief.ttrpgOpen && input.task.taskKey === 'ttrpg.open.media-plan'
+    ? ttrpgOpenProductionMediaPromptV1(options.brief, openMediaContext(input, options.brief)!) : textSystem(
     input.task.taskKey,
     options.brief,
     input.attempt,
@@ -7041,7 +7069,25 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
   let payload: unknown
   let kind: ProductProductionTaskArtifactV1['kind']
   let quality: unknown
-  if (input.task.taskKey === 'production.supervision') {
+  if (options.brief.ttrpgOpen && input.task.taskKey === 'ttrpg.open.source-facts') {
+    const facts = parseTtrpgOpenSourceFactsArtifactV1(raw)
+    if (!input.authorDraftJson) {
+      for (const item of facts.factPolicy) item.authorConfirmed = options.brief.ttrpgOpen.settings.openAuthoring.factPolicy
+        .some(locked => canonicalProductProductionJsonV2(locked.fact) === canonicalProductProductionJsonV2(item.fact) && locked.authorConfirmed)
+    }
+    payload = facts; kind = 'product-design'; quality = { openSourceFactsVerified: true,
+      requiresAuthorConfirmation: facts.factPolicy.some(item => !item.authorConfirmed) }
+  } else if (options.brief.ttrpgOpen && input.task.taskKey === 'ttrpg.open.rule-system') {
+    const system = parseTtrpgOpenRuleSystemArtifactV1(raw, options.brief.ttrpgOpen.rulePack)
+    if (!input.authorDraftJson) for (const template of system.characterTemplates) {
+      for (const mapping of Object.values(template.attributeMappings)) mapping.authorConfirmed = false
+    }
+    payload = system; kind = 'product-module'; quality = { openRuleSystemVerified: true,
+      requiresAuthorConfirmation: system.characterTemplates.some(template => Object.values(template.attributeMappings).some(mapping => !mapping.authorConfirmed)) }
+  } else if (options.brief.ttrpgOpen && input.task.taskKey === 'ttrpg.open.situation-layer') {
+    const facts = parseTtrpgOpenSourceFactsArtifactV1(artifactPayload(input, 'ttrpg.open.source-facts'))
+    payload = parseTtrpgOpenSituationLayerArtifactV1(raw, facts); kind = 'product-module'; quality = { openSituationLayerVerified: true }
+  } else if (input.task.taskKey === 'production.supervision') {
     const supervision = parseTextAdventureProductionSupervisionArtifactV1({
       value: raw,
       allowedAgentIds: TEXT_ADVENTURE_PRODUCTION_AGENT_IDS,
@@ -7204,6 +7250,7 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
       objectiveCount: mainQuestPlan.quests[0].objectives.length,
     }
   } else if (questScriptModelTask) {
+    if (raw.version !== 3) fail('当前任务脚本合同要求 version=3；旧 V2 仅用于读取已封存工件')
     if (!options.brief.textAdventure) fail('文字冒险任务脚本缺少专用 Brief')
     const systems = parseTextAdventureSystemsArtifactV1(
       artifactPayload(input, 'content.product-module'), options.brief.textAdventure,
@@ -7282,8 +7329,9 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
             ambientEvents: emptyQuestBundle('ambient'),
           }
         })()
-    const questScript = parseTextAdventureQuestScriptArtifactV2({
+    const questScript = parseTextAdventureQuestScriptArtifact({
       value: raw,
+      recipientKeysByScene: Object.fromEntries(textAdventureSceneConstraints.map(scene => [scene.sceneKey, scene.nonPlayerCastKeys ?? []])),
       brief: options.brief,
       systems,
       mainQuestPlan: projected.mainQuestPlan,
@@ -7394,7 +7442,7 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
       productTypeVerified: true,
       protocolDefaultsApplied: legalized.defaultedFields,
     }
-  } else if (input.task.taskKey === 'media.requirements') {
+  } else if (input.task.taskKey === 'media.requirements' || input.task.taskKey === 'ttrpg.open.media-plan') {
     const cast = options.brief.textAdventure
       ? parseTextAdventureCastBibleArtifactV1({
           value: artifactPayload(input, 'content.cast-bible'),
@@ -7410,12 +7458,15 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
           cast?.characters.map(character => character.key) ?? [],
         )
       : null
-    payload = parseProductMediaRequirementsArtifactV2(
+    const mediaRequirements = parseProductMediaRequirementsArtifactV2(
       raw,
       options.brief,
-      cast ? textAdventureCharacterAnchors(cast) : [],
+      cast ? textAdventureCharacterAnchors(cast) : openMediaContext(input, options.brief)?.characterAnchors ?? [],
       acceptedNarrative,
-    ); kind = 'asset-manifest'
+    );
+    const openContext = openMediaContext(input, options.brief)
+    if (openContext) assertTtrpgOpenProductionMediaRequirementsV1({ context: openContext, ...mediaRequirements })
+    payload = mediaRequirements; kind = 'asset-manifest'
     quality = { planKeysVerified: true }
   } else if (input.task.taskKey === 'content.adventure-side-quests'
     || input.task.taskKey === 'content.adventure-ambient-events') {
@@ -7693,6 +7744,11 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
       )).join('；')
       fail(`文字冒险玩家可见字段混入未本地化外语:${evidence}`)
     }
+  }
+  if (options.brief.ttrpgOpen && quality && typeof quality === 'object'
+    && (quality as JsonRecord).requiresAuthorConfirmation === true) {
+    throw new ProductProductionDraftRejectedErrorV1(
+      '开放跑团来源事实或角色数值仍需作者逐项确认；请检查保留的原文并提交当前任务的人工修订，不能自动重试或继续下游。', paidUsage)
   }
   return {
     artifacts: [{
@@ -8312,8 +8368,10 @@ async function executeVisualTask(input: ProductProductionTaskExecutionInputV1, o
   const requirements = parseProductMediaRequirementsArtifactV2(
     artifactPayload(input, 'media.requirements'),
     options.brief,
-    cast ? textAdventureCharacterAnchors(cast) : [], null, 'frozen',
+    cast ? textAdventureCharacterAnchors(cast) : openMediaContext(input, options.brief)?.characterAnchors ?? [], null, 'frozen',
   )
+  const openContext = openMediaContext(input, options.brief)
+  if (openContext) assertTtrpgOpenProductionMediaRequirementsV1({ context: openContext, ...requirements })
   let visualStyleContract = ''
   if (cast) {
     const visualBible = parseTextAdventureVisualBibleArtifactV1({
@@ -8599,7 +8657,10 @@ async function executeAudioTask(input: ProductProductionTaskExecutionInputV1, op
   mediaCapabilities: ReadonlyMap<string, ResolvedProductMediaCapabilityV1>
 }): Promise<ProductProductionTaskExecutionResultV1> {
   const startedAt = performance.now()
-  const requirements = parseProductMediaRequirementsArtifactV2(artifactPayload(input, 'media.requirements'), options.brief, [], null, 'frozen')
+  const requirements = parseProductMediaRequirementsArtifactV2(artifactPayload(input, 'media.requirements'), options.brief,
+    openMediaContext(input, options.brief)?.characterAnchors ?? [], null, 'frozen')
+  const openContext = openMediaContext(input, options.brief)
+  if (openContext) assertTtrpgOpenProductionMediaRequirementsV1({ context: openContext, ...requirements })
   const byKey = new Map(requirements.audio.map(item => [item.artifactKey, item]))
   const artifacts: ProductProductionTaskArtifactV1[] = []
   let storageBytes = 0
@@ -9879,6 +9940,105 @@ async function executeTextAdventureSceneScriptActAssemblyTask(
   }
 }
 
+async function executeTtrpgOpenIntegrationTask(input: ProductProductionTaskExecutionInputV1, options: {
+  production: ProductProductionRecordV1; brief: ProductProductionBriefV3
+}): Promise<ProductProductionTaskExecutionResultV1> {
+  const startedAt = performance.now(), build = await db.productBuilds.get(input.buildId)
+  if (!options.brief.ttrpgOpen || !build || build.productionId !== input.productionId
+    || build.buildNumber !== input.buildNumber || build.controlEpoch !== input.controlEpoch
+    || build.planHash !== input.planHash || build.briefHash !== await hashProductProductionValueV2(options.brief)
+    || ['projectId', 'worldId', 'workId'].some(key => build[key as keyof typeof build] !== input.scope[key as keyof typeof input.scope])) {
+    fail('open 集成缺少当前 Build/Brief/作用域证据')
+  }
+  const briefRow = await db.productProductionBriefs.where('[productionId+revision]')
+    .equals([input.productionId, build.briefRevision]).first()
+  if (!briefRow || briefRow.briefHash !== build.briefHash) fail('open 集成缺少冻结 Brief row')
+  const sourcePlan = await parseProductProductionSourcePlanV1(briefRow)
+  const accepted = async (artifactKey: string) => {
+    const row = artifactRecord(input, artifactKey), stored = row.id ? await db.productBuildArtifacts.get(row.id) : null
+    if (!stored || stored.buildId !== input.buildId || stored.contentHash !== row.contentHash
+      || stored.payloadJson !== row.payloadJson || stored.artifactKey !== artifactKey
+      || !['accepted', 'carried-forward'].includes(stored.status)
+      || ['projectId', 'worldId', 'workId'].some(key => stored[key as keyof typeof stored] !== input.scope[key as keyof typeof input.scope])) {
+      fail(`open 集成需要当前 Build 已采纳的产物:${artifactKey}`)
+    }
+    const payload: unknown = JSON.parse(stored.payloadJson)
+    if (await hashProductProductionValueV2(payload) !== stored.contentHash) fail(`open 采纳产物 hash 不一致:${artifactKey}`)
+    return { payload, contentHash: stored.contentHash }
+  }
+  let campaign = await compileProductionTtrpgOpenCampaignV2({ brief: options.brief, briefHash: build.briefHash,
+    campaignKey: `${options.production.productionKey}.open`, verifiedSourcePlan: sourcePlan,
+    sourceFacts: await accepted('ttrpg.open.source-facts'), ruleSystem: await accepted('ttrpg.open.rule-system'),
+    situationLayer: await accepted('ttrpg.open.situation-layer') })
+  const mediaPlan = await accepted('media.requirements')
+  const requirements = parseProductMediaRequirementsArtifactV2(mediaPlan.payload, options.brief,
+    openMediaContext(input, options.brief)?.characterAnchors ?? [], null, 'frozen')
+  assertTtrpgOpenProductionMediaRequirementsV1({ context: openMediaContext(input, options.brief)!, ...requirements })
+  const assetsByArtifact = new Map<string, ReturnType<typeof mediaAsset>['asset']>()
+  const mediaRights: { assetKey: string; contentHash: string; source: string; license: string; declaration: unknown }[] = []
+  for (const requirement of [...requirements.visual, ...requirements.audio]) {
+    const row = artifactRecord(input, requirement.artifactKey), stored = row.id ? await db.productBuildArtifacts.get(row.id) : null
+    if (!stored || stored.buildId !== input.buildId || stored.controlEpoch !== build.controlEpoch
+      || !['accepted', 'carried-forward'].includes(stored.status)
+      || stored.contentHash !== row.contentHash || stored.payloadJson !== row.payloadJson || stored.metadataJson !== row.metadataJson
+      || ['projectId', 'worldId', 'workId'].some(key => stored[key as keyof typeof stored] !== input.scope[key as keyof typeof input.scope])) {
+      fail(`open 媒资缺少当前 Build 采纳证据:${requirement.artifactKey}`)
+    }
+    const media = mediaAsset(stored)
+    if (canonicalProductProductionJsonV2(record(JSON.parse(stored.payloadJson), 'media payload').request)
+      !== canonicalProductProductionJsonV2(requirement)) fail(`open 素材没有消费冻结需求:${requirement.artifactKey}`)
+    const blob = stored.blobObjectId ? await db.mediaBlobObjects.get(stored.blobObjectId) : null
+    if (!blob || blob.contentHash !== stored.contentHash || blob.mimeType !== stored.mimeType || blob.byteSize !== stored.byteSize
+      || ['projectId', 'worldId', 'workId'].some(key => blob[key as keyof typeof blob] !== input.scope[key as keyof typeof input.scope])) {
+      fail(`open 媒资文件/hash/作用域不一致:${requirement.artifactKey}`)
+    }
+    const bytes = await readVerifiedMediaBlobObjectData(blob)
+    if (stored.mediaKind && ['background', 'character-pose', 'character-expression', 'cg', 'ui'].includes(stored.mediaKind)) {
+      const visualRequirement = requirements.visual.find(item => item.artifactKey === requirement.artifactKey)
+      const governedSvg = stored.mimeType === 'image/svg+xml' && media.asset.source === 'storyforge-procedural-svg-v1'
+        && visualRequirement && await sha256MediaData(visualSvg(visualRequirement, options.production.title,
+          requirements.visual.indexOf(visualRequirement))) === stored.contentHash
+      const dimensions = governedSvg && visualRequirement
+        ? { width: visualRequirement.width, height: visualRequirement.height } : detectProductImageDimensionsV1(bytes)
+      if (!dimensions || dimensions.width !== media.asset.width || dimensions.height !== media.asset.height) {
+        fail(`open 素材实际图片与尺寸声明不一致:${requirement.artifactKey}`)
+      }
+    }
+    assetsByArtifact.set(requirement.artifactKey, media.asset)
+    mediaRights.push({ assetKey: media.asset.assetKey, contentHash: media.asset.contentHash,
+      source: media.asset.source, license: media.asset.license, declaration: JSON.parse(stored.rightsJson) })
+  }
+  campaign = bindTtrpgOpenProductionMediaV1({ campaign, visual: requirements.visual, assetsByArtifact })
+  const rule = options.brief.ttrpgOpen.rulePack
+  const pkg: ProductRuntimePackageWithTtrpgV2 = {
+    schema: 'storyforge.product-runtime-package', version: 1, productType: 'ttrpg',
+    definition: { productKey: options.production.productionKey, title: campaign.title, description: campaign.pitch,
+      enabledCapabilities: ['narrative', 'ttrpg'], rulesetVersion: 1,
+      initialVariables: { productAdapterId: 'storyforge.ttrpg-open.v2', productAdapterCommercialReady: false } },
+    sourceWorld: { contentHash: options.brief.source.worldContentHash, selection: options.brief.source.selection },
+    narrative: { moduleKind: 'opening', moduleTitle: campaign.title, entryNodeKey: 'open.entry',
+      nodes: [{ key: 'open.entry', kind: 'entry', title: campaign.title, summary: options.brief.intent.openingSituation,
+        conditionJson: '{}', effectsJson: '[]', successorKeys: [] }],
+      beats: [{ beatKey: 'open.entry.text', nodeKey: 'open.entry', kind: 'narration', speakerKey: null,
+        text: options.brief.intent.openingSituation, order: 0 }], choices: [] },
+    ttrpg: { rulePack: { content: rule, contentHash: options.brief.ttrpgOpen.rulePackHash }, campaign,
+      compatibility: { runtimeProtocol: 2, minimumPlayerVersion: 2 } },
+  }
+  if (assetsByArtifact.size) {
+    pkg.presentation = { version: 1, assets: [...assetsByArtifact.values()], cues: [] }
+    pkg.definition.enabledCapabilities.push('presentation')
+  }
+  const parsed = parseProductRuntimePackageV1(pkg, { ttrpgProtocol: 2 })
+  return { artifacts: [
+    { artifactKey: 'ttrpg.rule-pack', kind: 'rule-pack', payload: rule,
+      quality: { compiler: 'storyforge.ttrpg-open.v2' }, rights: { license: rule.license } },
+    { artifactKey: 'ttrpg.campaign-pack', kind: 'campaign-pack', payload: campaign,
+      quality: { exactAdoptedInputsVerified: true }, rights: { origin: 'author-adopted-open-artifacts' } },
+    { artifactKey: 'runtime.package', kind: 'presentation', payload: parsed,
+      quality: { parser: 'parseProductRuntimePackageV1', runtimeProtocol: 2, narrativeEnvelopeVerified: true }, rights: { mediaLicenses: mediaRights } },
+  ], passedGateIds: [...input.task.acceptanceGateIds], usage: zeroUsage(elapsed(startedAt)) }
+}
+
 async function executeIntegrationTask(input: ProductProductionTaskExecutionInputV1, options: {
   production: ProductProductionRecordV1
   brief: ProductProductionBriefV3
@@ -10014,9 +10174,10 @@ async function executeIntegrationTask(input: ProductProductionTaskExecutionInput
           arcPlan: textAdventureArcPlan,
           endingRoutePlan: textAdventureEndingRoutePlan,
           mainQuestPlan: textAdventureMainQuestPlan,
-          questScript: parseTextAdventureQuestScriptArtifactV2({
+          questScript: parseTextAdventureQuestScriptArtifact({
             value: artifactPayload(input, 'content.quest-script'), brief: options.brief,
             systems, mainQuestPlan: textAdventureMainQuestPlan, sideQuests, ambientEvents,
+            recipientKeysByScene: textAdventureQuestRecipientsV3(textAdventureCast, textAdventureArcPlan),
             locationTitles: textAdventureLocationTitlesFromArchitectureV1(textAdventureArchitecture),
           }),
           sideQuests,
@@ -10333,6 +10494,55 @@ async function executeQualityTask(input: ProductProductionTaskExecutionInputV1, 
   }
 }
 
+async function executeTtrpgOpenQualityTask(input: ProductProductionTaskExecutionInputV1, options: {
+  brief: ProductProductionBriefV3
+}): Promise<ProductProductionTaskExecutionResultV1> {
+  const startedAt = performance.now()
+  const pkg = parseProductRuntimePackageV1(artifactPayload(input, 'runtime.package'), { ttrpgProtocol: 2 })
+  if (!options.brief.ttrpgOpen || !pkg.ttrpg || !isTtrpgRuntimeContentV2(pkg.ttrpg)) fail('open QA 缺少协议 2 内容')
+  await verifyTtrpgFrozenContentHashesV1(pkg.ttrpg)
+  for (const [key, payload] of [['ttrpg.rule-pack', pkg.ttrpg.rulePack.content],
+    ['ttrpg.campaign-pack', pkg.ttrpg.campaign]] as const) {
+    const artifact = artifactRecord(input, key), value = artifactPayload(input, key)
+    if (canonicalProductProductionJsonV2(value) !== canonicalProductProductionJsonV2(payload)
+      || await hashProductProductionValueV2(value) !== artifact.contentHash) fail(`open QA 独立产物与 runtime 不一致:${key}`)
+  }
+  const packageHash = await hashProductProductionValueV2(pkg)
+  if (packageHash !== artifactRecord(input, 'runtime.package').contentHash) fail('open QA package hash 不一致')
+  const publication = assertTtrpgOpenPublicationGatesV1(pkg.ttrpg.campaign, pkg.ttrpg.rulePack.content)
+  const envelope = validateTtrpgOpenNarrativeEnvelopeV1(pkg.narrative,
+    new Set(pkg.ttrpg.campaign.characterTemplates.map(template => template.characterKey)))
+  const playable = publication.valid && envelope.valid
+  const requiredKinds = new Set(options.brief.media.requiredMediaKinds), assets = pkg.presentation?.assets ?? []
+  const coveredKinds = new Set(assets.map(asset => asset.kind).filter(kind => requiredKinds.has(kind)))
+  const mediaCoverage = requiredKinds.size ? coveredKinds.size / requiredKinds.size : 1
+  const rightsValid = options.brief.qualityProfile !== 'commercial-candidate'
+    && assets.every(asset => asset.source.trim() && asset.license.trim())
+  const evidence = new Map([
+    ...publication.gates.map(gate => [gate.gateId, gate] as const),
+    ['runtime.package.valid', { gateId: 'runtime.package.valid', passed: true, evidence: [packageHash] }] as const,
+    ['runtime.playable', { gateId: 'runtime.playable', passed: playable, evidence: ['open-content-structural-loop', ...envelope.errors] }] as const,
+    ['narrative.graph.valid', { gateId: 'narrative.graph.valid', passed: envelope.valid, evidence: ['open-read-only-envelope', ...envelope.errors] }] as const,
+    ['rights.complete', { gateId: 'rights.complete', passed: rightsValid,
+      evidence: [...(assets.length ? assets.map(asset => `${asset.assetKey}:${asset.source}:${asset.license}`) : ['no-media-assets']), 'adapterCommercialReady=false'] }] as const,
+  ])
+  const hardGateResults = [...new Set([...options.brief.completionContract.requiredGateIds,
+    ...publication.gates.map(gate => gate.gateId)])].map(gateId => evidence.get(gateId)
+      ?? { gateId, passed: false, evidence: [`unsupported-gate:${gateId}`] })
+  if (hardGateResults.some(gate => !gate.passed)) fail(`open QA 硬门失败:${hardGateResults.filter(gate => !gate.passed).map(gate => gate.gateId).join(',')}`)
+  const releaseReady = mediaCoverage >= options.brief.completionContract.minimumMediaCoverage
+  const report: ProductBuildQualityReportV1 = { schema: 'storyforge.product-build-quality-report', version: 1,
+    buildNumber: input.buildNumber, packageHash, hardGateResults,
+    softGateResults: [{ gateId: 'media.coverage', passed: releaseReady, evidence: [`coverage=${mediaCoverage}`] }],
+    mediaCoverage, playable, releaseReady, warnings: [
+      '本报告只验证已采纳内容的结构与引用；真实模型、长局、人类游玩和商业验收需独立证据。',
+      '开放模式产品入口仍为实验性；通过内容结构检查不改变入口开放状态。',
+    ] }
+  return { artifacts: [{ artifactKey: 'quality.report', kind: 'quality-report', payload: report,
+    quality: { hardGatesPassed: true, releaseReady }, rights: {} }], passedGateIds: [...input.task.acceptanceGateIds],
+    usage: zeroUsage(elapsed(startedAt)) }
+}
+
 async function executeTextAdventureAutoplayTask(
   input: ProductProductionTaskExecutionInputV1,
 ): Promise<ProductProductionTaskExecutionResultV1> {
@@ -10515,10 +10725,12 @@ async function executeTextAdventureQuestScriptAssemblyTask(
   const supplemental = artifactPayload(
     input, TEXT_ADVENTURE_QUEST_SCRIPT_SUPPLEMENTAL,
   ) as JsonRecord
-  const assembled = parseTextAdventureQuestScriptArtifactV2({
+  const scriptVersions = new Set([...mainParts, supplemental].map(part => part.version))
+  if (scriptVersions.size !== 1 || ![2, 3].includes(Number(mainParts[0]?.version))) fail('任务脚本分片版本不一致，必须显式修订全部分片')
+  const assembled = parseTextAdventureQuestScriptArtifact({
     value: {
       schema: 'storyforge.text-adventure-quest-script-artifact',
-      version: 2,
+      version: mainParts[0].version,
       mainObjectiveScripts: mainParts.flatMap(part => (
         Array.isArray(part.mainObjectiveScripts) ? part.mainObjectiveScripts : []
       )),
@@ -10533,6 +10745,7 @@ async function executeTextAdventureQuestScriptAssemblyTask(
     sideQuests,
     ambientEvents,
     locationTitles,
+    recipientKeysByScene: textAdventureQuestRecipientsV3(cast, arcPlan),
   })
   return {
     artifacts: [{
@@ -10780,6 +10993,10 @@ export function createConfiguredProductProductionExecutorV1(input: {
         usage: zeroUsage(0),
       }
     }
+    if (request.task.executionMode === 'human-import'
+      && (request.task.kind === 'image-asset' || request.task.kind === 'audio-asset')) {
+      fail('作者保留或导入的媒资缺失，必须显式修复；禁止自动调用 Provider 重生成')
+    }
     if (request.task.taskKey === 'media.vision-preflight') {
       return executeTextAdventureVisionCapabilityPreflightTask(request, options)
     }
@@ -10827,6 +11044,8 @@ export function createConfiguredProductProductionExecutorV1(input: {
         : executeAudioTask(request, options)
     }
     if (request.task.taskKey === 'integration.narrative') return executeNarrativeIntegrationTask(request, options)
+    if (request.task.taskKey === 'ttrpg.open.integration') return executeTtrpgOpenIntegrationTask(request, options)
+    if (request.task.taskKey === 'ttrpg.open.quality') return executeTtrpgOpenQualityTask(request, options)
     if (request.task.taskKey === 'integration.package') return executeIntegrationTask(request, options)
     if (request.task.taskKey === 'qa.autoplay') return executeTextAdventureAutoplayTask(request)
     if (request.task.taskKey === 'qa.release') return executeQualityTask(request, options)

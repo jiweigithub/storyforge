@@ -72,6 +72,8 @@ export interface TtrpgSessionFactGateInputV1 {
   factPolicy?: readonly TtrpgOpenFactPolicyV1[]
   rulePack?: RulePackV2
   effectLedgerStoryFacts?: Readonly<Record<string, TtrpgOpenScalar | null>>
+  /** Deterministically resolved from frozen product entity bindings, never model claims. */
+  knownEntityRefs?: readonly string[]
   revealEvents?: readonly TtrpgSessionFactSourceEventV1[]
 }
 
@@ -264,6 +266,10 @@ function conflicts(left: TtrpgSessionFactV1, right: TtrpgSessionFactV1): boolean
   if (MUTUALLY_EXCLUSIVE.get(left.predicateKey)?.includes(right.predicateKey)
     && pairEqual(left, right)
     && left.canonicalValue === true && right.canonicalValue === true) return true
+  if (left.predicateKey === 'knows' && right.predicateKey === 'knows' && pairEqual(left, right)
+    && typeof left.canonicalValue === 'boolean' && typeof right.canonicalValue === 'boolean') {
+    return left.canonicalValue !== right.canonicalValue
+  }
   if (['knows', 'owes', 'promised', 'damaged'].includes(left.predicateKey)
     || ['knows', 'owes', 'promised', 'damaged'].includes(right.predicateKey)) return false
   if (left.predicateKey === right.predicateKey && slotEqual(left, right)) {
@@ -301,6 +307,7 @@ function assertFactPolicy(input: TtrpgSessionFactGateInputV1): void {
   if (!policy.allowedKinds.includes(input.fact.kind)) fail('authority-conflict:kind-not-allowed')
   if (!policy.allowNewSubjects) {
     const known = new Set([
+      ...(input.knownEntityRefs ?? []),
       ...input.frozenWorldPredicateIndex.entries.flatMap(entry => [entry.subjectRef, entry.objectRef]),
       ...(input.existingFacts ?? []).flatMap(fact => [fact.subjectRef, fact.objectRef]),
     ])
@@ -369,9 +376,8 @@ function assertF3(input: TtrpgSessionFactGateInputV1): void {
     if (!target) fail('F3:supersedes-target-missing')
     if (!slotEqual(input.fact, target) && !(input.fact.predicateKey === 'owns' && target.predicateKey === 'owns'
       && input.fact.objectRef === target.objectRef)) fail('F3:supersedes-slot-mismatch')
-    return
   }
-  const conflict = existing.find(existingFact => conflicts(input.fact, existingFact))
+  const conflict = existing.find(existingFact => existingFact.factKey !== input.fact.supersedes && conflicts(input.fact, existingFact))
   if (conflict) fail(`F3:${conflict.factKey}:需要supersedes`)
 }
 

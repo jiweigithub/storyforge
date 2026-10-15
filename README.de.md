@@ -16,6 +16,9 @@ StoryForge ist ein quelloffenes, lokal orientiertes Werkzeug für KI-gestütztes
 
 <a id="try-a-story"></a>
 
+
+**Ohne Entwicklungsumgebung starten:** [Neueste portable Version herunterladen](https://github.com/yuanbw2025/storyforge/releases/latest), ZIP für Windows x64, Apple-Silicon-/Intel-Mac oder Linux x64 vollständig entpacken und `Start-StoryForge` starten. Anwendung, Medien und Node.js sind enthalten; keine npm-Installation nötig. KI erfordert einen eigenen Anbieter; Vorschaufunktionen behalten ihre Kennzeichnung.
+
 ## Offizielle Website, Vorschau und Wissensdatenbank
 
 Lernen Sie das Projekt auf der Website kennen, erkunden Sie die echte Oberfläche in der isolierten Vorschau und laden Sie für die vollständige Arbeit den Quellcode herunter.

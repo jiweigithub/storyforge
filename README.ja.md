@@ -16,6 +16,9 @@ StoryForge は、ローカルでのデータ保持を基本とする、オープ
 
 <a id="try-a-story"></a>
 
+
+**開発環境なしで起動：**[最新のポータブル版](https://github.com/yuanbw2025/storyforge/releases/latest)から Windows x64、Apple Silicon/Intel Mac、Linux x64 用 ZIP を選び、全体を展開して `Start-StoryForge` を起動します。アプリ、素材、Node.js を同梱し、npm のインストールは不要です。AI は自分のモデルサービスを設定し、プレビュー機能の状態表示は維持されます。
+
 ## 公式サイト・体験版・公式ナレッジベース
 
 公式サイトで概要を知り、独立した体験版で実際の画面を確認し、本格的な制作はソースをダウンロードして始められます。

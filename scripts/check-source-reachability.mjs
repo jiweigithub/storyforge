@@ -21,6 +21,8 @@ const entrypoints = [
   'src/main.tsx',
   // Showcase HTML alone selects this entry to isolate stores before loading the app.
   'src/entry.ts',
+  // Independent static game entry loads only its frozen package and canonical player.
+  'src/adventure-web-entry.ts',
   // Product-approved i18n scaffold: retained until the English milestone is decided.
   'src/i18n/index.ts',
   // AGENT-1 Phase 27.1-a/b is a headless public boundary for tools and the read-only AgentRunner.

@@ -1,3 +1,4 @@
+import type { TtrpgOpenManualActionAuthorizationV1 } from './open-manual-action'
 import { parseTtrpgOpenModelCallV1, updateTtrpgOpenEpochCallTotalsV1, type TtrpgOpenModelCallV1 } from './open-model-calls'
 /** Durable authority windows are independent of game time and event ordering. */
 import type { TtrpgCampaignContentV2 } from './open-contract'
@@ -6,6 +7,13 @@ import { hashProductProductionValueV2 } from '../product-production/hash'
 import { hash, integer, key, list, number, record, text } from './open-contract-parse'
 
 export interface TtrpgOpenSourceRefV1 { sessionKey: string; sequence: number }
+export const TTRPG_OPEN_HOSTING_CAPABILITIES_V1 = ['companion-proposal','safe-companion-action','kp-narration'] as const
+export interface TtrpgOpenHostingDelegationV1 {
+  schema: 'storyforge.ttrpg-open-hosting-delegation';version: 1
+  epochKey: string;viewerKey: string;sourceRef: TtrpgOpenSourceRefV1;authorizationRef: TtrpgOpenSourceRefV1
+  capabilities: typeof TTRPG_OPEN_HOSTING_CAPABILITIES_V1
+  maximumCostUsdPerCall: number;stoppedRef: TtrpgOpenSourceRefV1 | null;stopReason: string | null
+}
 export interface TtrpgOpenEpochBudgetV1 {
   maximumCalls: number
   maximumTokens: number
@@ -13,6 +21,8 @@ export interface TtrpgOpenEpochBudgetV1 {
   maximumAiActions: number
 }
 export interface TtrpgOpenEpochV1 {
+  manualAction?: TtrpgOpenManualActionAuthorizationV1
+  hostingDelegation?: TtrpgOpenHostingDelegationV1
   epochKey: string
   startedRef: TtrpgOpenSourceRefV1
   closedRef: TtrpgOpenSourceRefV1 | null
@@ -42,6 +52,18 @@ export function parseTtrpgOpenSourceRefV1(value: unknown): TtrpgOpenSourceRefV1 
   return { sessionKey: key(row.sessionKey, 'sourceRef.sessionKey'),
     sequence: integer(row.sequence, 'sourceRef.sequence', 1, Number.MAX_SAFE_INTEGER) }
 }
+export function parseTtrpgOpenHostingDelegationV1(value: unknown): TtrpgOpenHostingDelegationV1 {
+  const r = record(value,['schema','version','epochKey','viewerKey','sourceRef','authorizationRef','capabilities','maximumCostUsdPerCall','stoppedRef','stopReason'],'hosting delegation')
+  if (r.schema !== 'storyforge.ttrpg-open-hosting-delegation' || r.version !== 1
+    || JSON.stringify(r.capabilities) !== JSON.stringify(TTRPG_OPEN_HOSTING_CAPABILITIES_V1)) fail('有限主持委托能力不符合当前闭集')
+  const sourceRef = parseTtrpgOpenSourceRefV1(r.sourceRef),authorizationRef = parseTtrpgOpenSourceRefV1(r.authorizationRef)
+  const stoppedRef = r.stoppedRef === null ? null : parseTtrpgOpenSourceRefV1(r.stoppedRef)
+  const stopReason = r.stopReason === null ? null : text(r.stopReason,'hosting stop reason',2000)
+  if (sourceRef.sessionKey !== authorizationRef.sessionKey || sourceRef.sequence <= authorizationRef.sequence
+    || Boolean(stoppedRef) !== Boolean(stopReason) || stoppedRef && (stoppedRef.sessionKey !== sourceRef.sessionKey || stoppedRef.sequence <= sourceRef.sequence)) fail('有限主持委托来源或停止回执不闭合')
+  return { schema: 'storyforge.ttrpg-open-hosting-delegation',version: 1,epochKey: key(r.epochKey,'delegation epoch'),viewerKey: key(r.viewerKey,'delegating viewer'),
+    sourceRef,authorizationRef,capabilities: [...TTRPG_OPEN_HOSTING_CAPABILITIES_V1],maximumCostUsdPerCall: number(r.maximumCostUsdPerCall,'hosting per-call budget',0,1000),stoppedRef,stopReason }
+}
 export function parseTtrpgOpenEpochBudgetV1(value: unknown): TtrpgOpenEpochBudgetV1 {
   const row = record(value, ['maximumCalls', 'maximumTokens', 'maximumCostUsd', 'maximumAiActions'], 'epoch budget')
   return {
@@ -58,9 +80,14 @@ export function frozenTtrpgOpenEpochBudgetV1(campaign: TtrpgCampaignContentV2): 
     maximumAiActions: policy.maxAiActions })
 }
 export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
+  const hasManual = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value,'manualAction')
+  const hasHosting = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value,'hostingDelegation')
   const row = record(value, ['epochKey', 'startedRef', 'closedRef', 'status', 'triggeredBySeatKey',
     'viewerKey', 'triggerKind', 'inputRevision', 'sessionZeroRevision', 'authorizationHash', 'budget',
-    'successfulActorKeys', 'reservedCalls', 'consumedTokens', 'actualCostUsd', 'stopReason'], 'epoch')
+    'successfulActorKeys', 'reservedCalls', 'consumedTokens', 'actualCostUsd', 'stopReason', ...(hasManual ? ['manualAction'] : []),...(hasHosting ? ['hostingDelegation'] : [])], 'epoch')
+  const manual = hasManual ? record(row.manualAction,['requestJson','requestHash'],'manual action authorization') : null
+  const manualAction = manual ? { requestJson: text(manual.requestJson,'manual request',100_000),requestHash: hash(manual.requestHash,'manual request hash') } : undefined
+  if (manualAction && row.triggerKind !== 'submit-action') fail('人工行动只能使用明确的新行动授权')
   if (row.status !== 'active' && row.status !== 'closed') fail('epoch.status 无效')
   if (row.triggerKind !== 'submit-action' && row.triggerKind !== 'continue-host') fail('epoch.triggerKind 无效')
   const startedRef = parseTtrpgOpenSourceRefV1(row.startedRef)
@@ -69,12 +96,18 @@ export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
   if ((row.status === 'active') !== (closedRef === null) || (row.status === 'active') !== (stopReason === null)) fail('epoch 终态回执不一致')
   if (closedRef && (closedRef.sessionKey !== startedRef.sessionKey || closedRef.sequence <= startedRef.sequence)) fail('epoch 关闭来源不属于当前 session 或不晚于开始')
   const budget = parseTtrpgOpenEpochBudgetV1(row.budget)
+  const hostingDelegation = hasHosting ? parseTtrpgOpenHostingDelegationV1(row.hostingDelegation) : undefined
+  if (hostingDelegation && (manualAction || hostingDelegation.epochKey !== row.epochKey || hostingDelegation.viewerKey !== row.viewerKey
+    || hostingDelegation.sourceRef.sessionKey !== startedRef.sessionKey || hostingDelegation.sourceRef.sequence <= startedRef.sequence
+    || hostingDelegation.authorizationRef.sequence >= startedRef.sequence
+    || hostingDelegation.maximumCostUsdPerCall > budget.maximumCostUsd || closedRef && (hostingDelegation.sourceRef.sequence >= closedRef.sequence
+      || hostingDelegation.stoppedRef && hostingDelegation.stoppedRef.sequence >= closedRef.sequence))) fail('有限主持委托不属于原窗口或超出原预算')
   const successfulActorKeys = list(row.successfulActorKeys, 'successfulActorKeys', v => key(v, 'successful actor'), 1000, 0)
   if (new Set(successfulActorKeys).size !== successfulActorKeys.length) fail('同 epoch 不能重复成功执行同一队友')
   const reservedCalls = integer(row.reservedCalls, 'reservedCalls', 0, budget.maximumCalls)
   const consumedTokens = integer(row.consumedTokens, 'consumedTokens', 0, Number.MAX_SAFE_INTEGER)
   const actualCostUsd = row.actualCostUsd === null ? null : number(row.actualCostUsd, 'actualCostUsd', 0, 1_000_000)
-  return { epochKey: key(row.epochKey, 'epochKey'), startedRef, closedRef, status: row.status,
+  return { ...(hostingDelegation ? { hostingDelegation } : {}),...(manualAction ? { manualAction } : {}), epochKey: key(row.epochKey, 'epochKey'), startedRef, closedRef, status: row.status,
     triggeredBySeatKey: key(row.triggeredBySeatKey, 'triggeredBySeatKey'), viewerKey: key(row.viewerKey, 'viewerKey'),
     triggerKind: row.triggerKind, inputRevision: hash(row.inputRevision, 'inputRevision'),
     sessionZeroRevision: integer(row.sessionZeroRevision, 'sessionZeroRevision', 1, Number.MAX_SAFE_INTEGER),
@@ -92,6 +125,10 @@ export function parseTtrpgOpenCoordinationV1(value: unknown, sessionKey?: string
     const epoch = epochsByKey.get(call.authorizationEpochKey)
     const group = callsByEpoch.get(call.authorizationEpochKey) ?? []
     group.push(call); callsByEpoch.set(call.authorizationEpochKey, group)
+    const hosting = epoch?.hostingDelegation,ref = call.hostingDelegationRef
+    if (ref && (!hosting || hosting.sourceRef.sessionKey !== ref.sessionKey || hosting.sourceRef.sequence !== ref.sequence
+      || call.reservedCostUsd > hosting.maximumCostUsdPerCall || hosting.stoppedRef && (call.createdRef.sequence >= hosting.stoppedRef.sequence
+        || call.dispatchRef && call.dispatchRef.sequence >= hosting.stoppedRef.sequence))) fail('模型调用不能借用其他委托、超额或在撤销后派发')
     return !epoch || call.createdRef.sessionKey !== epoch.startedRef.sessionKey || call.createdRef.sequence <= epoch.startedRef.sequence
       || (epoch.status === 'closed' && (call.status === 'prepared' || call.status === 'dispatched'))
   })) fail('模型调用的 epoch/来源/终态不闭合')

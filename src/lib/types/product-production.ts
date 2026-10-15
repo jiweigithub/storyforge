@@ -147,6 +147,7 @@ export const PRODUCT_PRODUCTION_COMMAND_TYPES = [
   "request-preview",
   "revise-media-asset",
   "revise-media-assets",
+  "revise-text-content",
   "publish",
   "evolve",
   "archive",
@@ -517,6 +518,8 @@ export interface ProductProductionBriefV3 {
   avg?: import('../avg/authoring-contract').AvgAuthoringSettingsV1;
   avgRevision?: { version: 1; basePackageHash: string; runtimePackage: import('./product-release').ProductRuntimePackageV1 };
   ttrpg?: TtrpgProductionBriefV2;
+  /** Open construction uses the same production budgets and lifecycle, with its own frozen content contract. */
+  ttrpgOpen?: import('../ttrpg/production-brief-v3').TtrpgProductionBriefContentV3;
   /** Closed AI Town construction contract; required exactly when productType=ai-town. */
   aiTown?: AiTownProductionBriefV1;
   /** Closed text-adventure construction contract; required exactly for text-adventure. */
@@ -575,6 +578,8 @@ export interface ProductProductionPlanTaskV3 {
   fallbackTaskKey: string | null;
   acceptanceGateIds: string[];
   reuse: ProductArtifactReuseDecisionV1 | null;
+  /** Exact author draft, authorized by a durable child-Build command. */
+  authorRevision?: TextAdventureContentRevisionV1 & { commandId: string; sourceBuildNumber: number };
 }
 
 export interface ProductProductionPlanV3 {
@@ -706,7 +711,7 @@ export interface ProductProductionBlockerResolutionV1 {
 
 /** Explicit replacement bound to one accepted, registered content artifact. */
 export interface TextAdventureContentRevisionV1 {
-  artifactKey: 'content.product-module' | 'content.story-bible' | 'content.cast-bible' | 'content.adventure-architecture' | 'content.narrative-arc-scenes' | 'content.narrative-decision-plan' | 'content.ending-route-plan' | 'content.main-quest-plan' | 'content.adventure-side-quests' | 'content.adventure-ambient-events' | 'content.scene-script.act-1.part-1' | 'content.scene-script.act-1.part-2' | 'content.scene-script.act-2.part-1' | 'content.scene-script.act-2.part-2' | 'content.scene-script.act-3.part-1' | 'content.scene-script.act-3.part-2' | 'content.dialogue-pass.act-1' | 'content.dialogue-pass.act-2' | 'content.dialogue-pass.act-3';
+  artifactKey: 'content.product-module' | 'content.story-bible' | 'content.cast-bible' | 'content.adventure-architecture' | 'content.narrative-arc-scenes' | 'content.narrative-decision-plan' | 'content.ending-route-plan' | 'content.main-quest-plan' | 'content.adventure-side-quests' | 'content.adventure-ambient-events' | 'content.scene-script.act-1.part-1' | 'content.scene-script.act-1.part-2' | 'content.scene-script.act-2.part-1' | 'content.scene-script.act-2.part-2' | 'content.scene-script.act-3.part-1' | 'content.scene-script.act-3.part-2' | 'content.dialogue-pass.act-1' | 'content.dialogue-pass.act-2' | 'content.dialogue-pass.act-3' | 'content.quest-script.main.act-1.single' | 'content.quest-script.main.act-1.multi' | 'content.quest-script.main.act-2.single' | 'content.quest-script.main.act-2.multi' | 'content.quest-script.main.act-3.single' | 'content.quest-script.main.act-3.multi' | 'content.quest-script.supplemental';
   expectedArtifactVersion: number;
   expectedArtifactHash: string;
   note: string;
@@ -865,6 +870,16 @@ export type ProductProductionCommandV1 =
       commandId: string;
       expectedStateRevision: number;
       buildNumber: number;
+    }
+  | {
+      type: "revise-text-content";
+      commandId: string;
+      expectedStateRevision: number;
+      buildNumber: number;
+      revisions: TextAdventureContentRevisionV1[];
+      retainedImages: Array<{ artifactKey: string; expectedArtifactHash: string }>;
+      /** Preserve the parent's visual contract; independent review runs again. */
+      preserveVisualContract: true;
     }
   | {
       type: "revise-media-asset";

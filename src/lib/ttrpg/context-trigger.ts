@@ -1,30 +1,10 @@
 import { CONTEXT_SOURCE_BY_KEY } from '../registry/context-sources'
-import type { TtrpgOpenAudience, TtrpgPredicateV1 } from './open-contract'
 import * as p from './open-contract-parse'
-import { evaluateTtrpgPredicateV1, parseTtrpgPredicateV1 } from './predicate'
+import { evaluateTtrpgPredicateV1 } from './predicate'
 import type { TtrpgPredicateEvaluationContextV1 } from './predicate'
 
-export type TtrpgContextTriggerLogicV1 = 'text-match' | 'predicate' | 'both' | 'always'
-export type TtrpgContextAudienceV1 = TtrpgOpenAudience
-
-export interface TtrpgContextTriggerV1 {
-  triggerKey: string
-  logic: TtrpgContextTriggerLogicV1
-  textPatterns: string[]
-  predicate: TtrpgPredicateV1 | null
-  audience: TtrpgContextAudienceV1
-  knownByActorKeys: string[]
-  injectText: string
-  group: string | null
-  priority: number
-  timing: {
-    stickyWorldTurns: number
-    cooldownWorldTurns: number
-    delayWorldTurns: number
-  }
-  sourceRefs: string[]
-}
-
+export type { TtrpgContextTriggerLogicV1, TtrpgContextAudienceV1, TtrpgContextTriggerV1 } from './context-trigger-contract'
+import { normalizeTtrpgContextTextV1, parseTtrpgContextTriggerDefinitionV1, type TtrpgContextAudienceV1, type TtrpgContextTriggerV1 } from './context-trigger-contract'
 export interface TtrpgContextTriggerStateV1 {
   triggerKey: string
   matchedWorldTurn?: number
@@ -58,6 +38,7 @@ export interface TtrpgContextTriggerSelectionInputV1 {
   text?: string
   inputText?: string
   predicateContext?: TtrpgPredicateEvaluationContextV1
+  evaluatePredicate?: (predicate: NonNullable<TtrpgContextTriggerV1['predicate']>) => boolean
   viewer?: TtrpgContextViewerV1
   audience?: TtrpgContextAudienceV1
   actorKey?: string | null
@@ -67,7 +48,6 @@ export interface TtrpgContextTriggerSelectionInputV1 {
   [key: string]: unknown
 }
 
-const LOGICS = ['text-match', 'predicate', 'both', 'always'] as const
 const AUDIENCES = ['gm-only', 'party', 'private', 'public'] as const
 const MAX_WORLD_TURNS = 1_000_000
 const AUDIENCE_RANK: Readonly<Record<TtrpgContextAudienceV1, number>> = {
@@ -81,9 +61,6 @@ function fail(message: string): never {
   return p.fail(`[ttrpg-context-trigger] ${message}`)
 }
 
-function normalizeText(value: string): string {
-  return value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/gu, ' ').trim()
-}
 
 function hasCjk(value: string): boolean {
   return /[\u3400-\u9fff\uf900-\ufaff]/u.test(value)
@@ -113,62 +90,10 @@ function registeredSourceRefs(value: unknown, label: string): string[] {
   return refs
 }
 
-function parseTiming(value: unknown, label: string): TtrpgContextTriggerV1['timing'] {
-  const row = p.record(value, ['stickyWorldTurns', 'cooldownWorldTurns', 'delayWorldTurns'], label)
-  return {
-    stickyWorldTurns: p.integer(row.stickyWorldTurns, `${label}.stickyWorldTurns`, 0, MAX_WORLD_TURNS),
-    cooldownWorldTurns: p.integer(row.cooldownWorldTurns, `${label}.cooldownWorldTurns`, 0, MAX_WORLD_TURNS),
-    delayWorldTurns: p.integer(row.delayWorldTurns, `${label}.delayWorldTurns`, 0, MAX_WORLD_TURNS),
-  }
-}
-
 export function parseTtrpgContextTriggerV1(value: unknown): TtrpgContextTriggerV1 {
-  const row = p.record(p.json(value), [
-    'triggerKey', 'logic', 'textPatterns', 'predicate', 'audience', 'knownByActorKeys',
-    'injectText', 'group', 'priority', 'timing', 'sourceRefs',
-  ], 'contextTrigger')
-  const logic = p.oneOf(row.logic, LOGICS, 'contextTrigger.logic')
-  const textPatterns = p.texts(row.textPatterns, 'contextTrigger.textPatterns', 64, 0)
-    .map(normalizeText)
-  const uniquePatterns = [...new Set(textPatterns)]
-  const predicate = p.nullable(row.predicate, parseTtrpgPredicateV1, 'contextTrigger.predicate')
-  const audience = p.oneOf(row.audience, AUDIENCES, 'contextTrigger.audience')
-  const knownByActorKeys = p.keys(row.knownByActorKeys, 'contextTrigger.knownByActorKeys', 256, 0)
-  const injectText = p.text(row.injectText, 'contextTrigger.injectText', 20_000)
-  const group = p.nullable(row.group, p.key, 'contextTrigger.group')
-  const priority = p.integer(row.priority, 'contextTrigger.priority', 0, 100)
-  const timing = parseTiming(row.timing, 'contextTrigger.timing')
-  const sourceRefs = registeredSourceRefs(row.sourceRefs, 'contextTrigger.sourceRefs')
-
-  if (logic === 'text-match' && (uniquePatterns.length === 0 || predicate !== null)) {
-    fail('text-match 必须有 textPatterns 且 predicate 必须为 null')
-  }
-  if (logic === 'predicate' && (uniquePatterns.length !== 0 || predicate === null)) {
-    fail('predicate 必须只有 predicate 且 textPatterns 必须为空')
-  }
-  if (logic === 'both' && (uniquePatterns.length === 0 || predicate === null)) {
-    fail('both 必须同时有 textPatterns 与 predicate')
-  }
-  if (logic === 'always' && (uniquePatterns.length !== 0 || predicate !== null)) {
-    fail('always 不得携带 textPatterns 或 predicate')
-  }
-  if (audience === 'private' && knownByActorKeys.length === 0) {
-    fail('private trigger 必须有 knownByActorKeys')
-  }
-
-  return {
-    triggerKey: p.key(row.triggerKey, 'contextTrigger.triggerKey'),
-    logic,
-    textPatterns: uniquePatterns,
-    predicate,
-    audience,
-    knownByActorKeys,
-    injectText,
-    group,
-    priority,
-    timing,
-    sourceRefs,
-  }
+  const result = parseTtrpgContextTriggerDefinitionV1(value)
+  registeredSourceRefs(result.sourceRefs, 'contextTrigger.sourceRefs')
+  return result
 }
 
 function stateMap(
@@ -228,10 +153,12 @@ function triggerMatches(
   trigger: TtrpgContextTriggerV1,
   inputText: string,
   predicateContext: TtrpgPredicateEvaluationContextV1 | undefined,
+  evaluatePredicate?: TtrpgContextTriggerSelectionInputV1['evaluatePredicate'],
 ): { matched: boolean; matchedBy: TtrpgContextInjectionV1['matchedBy'] } {
   const textMatched = trigger.textPatterns.some(pattern => containsWholeWord(inputText, pattern))
   const predicateMatched = trigger.predicate === null
     ? false
+    : evaluatePredicate ? evaluatePredicate(trigger.predicate)
     : predicateContext === undefined
       ? fail(`trigger ${trigger.triggerKey} 求值缺少 predicateContext`)
       : evaluateTtrpgPredicateV1(trigger.predicate, predicateContext)
@@ -239,6 +166,10 @@ function triggerMatches(
   if (trigger.logic === 'text-match') return { matched: textMatched, matchedBy: 'text-match' }
   if (trigger.logic === 'predicate') return { matched: predicateMatched, matchedBy: 'predicate' }
   return { matched: textMatched && predicateMatched, matchedBy: 'both' }
+}
+
+export function matchesTtrpgContextTriggerV1(trigger: TtrpgContextTriggerV1, input: Pick<TtrpgContextTriggerSelectionInputV1, 'text' | 'inputText' | 'predicateContext' | 'evaluatePredicate'>): boolean {
+  return triggerMatches(parseTtrpgContextTriggerV1(trigger), normalizeTtrpgContextTextV1(input.text ?? input.inputText ?? ''), input.predicateContext, input.evaluatePredicate).matched
 }
 
 function selectionAllowedByTiming(
@@ -249,14 +180,14 @@ function selectionAllowedByTiming(
   const lastTriggered = stateNumber(state, ['lastTriggeredWorldTurn'])
   const stickyUntil = stateNumber(state, ['stickyUntilWorldTurn'])
     ?? (lastTriggered === undefined ? undefined : lastTriggered + trigger.timing.stickyWorldTurns)
-  const sticky = lastTriggered !== undefined
+  const sticky = trigger.timing.stickyWorldTurns > 0 && lastTriggered !== undefined
     && stickyUntil !== undefined
     && worldTurn >= lastTriggered
     && worldTurn <= stickyUntil
   if (sticky) return { allowed: true, sticky: true }
 
   const cooldownUntil = stateNumber(state, ['cooldownUntilWorldTurn'])
-    ?? (lastTriggered === undefined ? undefined : lastTriggered + trigger.timing.cooldownWorldTurns + 1)
+    ?? (lastTriggered === undefined || trigger.timing.cooldownWorldTurns === 0 ? undefined : lastTriggered + trigger.timing.cooldownWorldTurns + 1)
   if (cooldownUntil !== undefined && worldTurn < cooldownUntil) return { allowed: false, sticky: false }
 
   if (trigger.timing.delayWorldTurns > 0) {
@@ -273,7 +204,7 @@ function betterTrigger(
   right: TtrpgContextTriggerV1,
 ): TtrpgContextTriggerV1 {
   return left.priority > right.priority
-    || (left.priority === right.priority && left.triggerKey.localeCompare(right.triggerKey) < 0)
+    || (left.priority === right.priority && left.triggerKey < right.triggerKey)
     ? left
     : right
 }
@@ -286,7 +217,7 @@ export function selectTtrpgContextInjectionsV1(
   }
   const viewer = viewerFor(input)
   const states = stateMap(input)
-  const normalizedText = normalizeText(input.text ?? input.inputText ?? '')
+  const normalizedText = normalizeTtrpgContextTextV1(input.text ?? input.inputText ?? '')
   const candidates: Array<{ trigger: TtrpgContextTriggerV1; matchedBy: TtrpgContextInjectionV1['matchedBy'] }> = []
 
   for (const rawTrigger of input.triggers) {
@@ -296,7 +227,7 @@ export function selectTtrpgContextInjectionsV1(
     if (!timing.allowed) continue
     const match = timing.sticky
       ? { matched: true, matchedBy: 'sticky' as const }
-      : triggerMatches(trigger, normalizedText, input.predicateContext)
+      : triggerMatches(trigger, normalizedText, input.predicateContext, input.evaluatePredicate)
     if (match.matched) candidates.push({ trigger, matchedBy: match.matchedBy })
   }
 
@@ -314,7 +245,7 @@ export function selectTtrpgContextInjectionsV1(
 
   return [...selectedUngrouped, ...selectedByGroup.values()]
     .sort((left, right) => right.trigger.priority - left.trigger.priority
-      || left.trigger.triggerKey.localeCompare(right.trigger.triggerKey))
+      || (left.trigger.triggerKey < right.trigger.triggerKey ? -1 : left.trigger.triggerKey > right.trigger.triggerKey ? 1 : 0))
     .map(({ trigger, matchedBy }) => ({
       triggerKey: trigger.triggerKey,
       sourceKey: trigger.sourceRefs[0] ?? null,

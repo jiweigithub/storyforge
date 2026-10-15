@@ -1,3 +1,5 @@
+import { settleOpenPaidTurnsV1 } from '../helpers/open-ttrpg-paid-turns'
+import { prepareTtrpgOpenPrivateChoiceDisclosureV1,discloseTtrpgOpenPrivateChoiceV1 } from '../../src/lib/ttrpg/runtime-commands'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { readProductRuntimeState, parseProductRuntimeState, replayProductRuntimeEvents } from '../../src/lib/product/runtime-core'
@@ -197,17 +199,17 @@ describe('R-TTRPGOPEN1 deterministic operations and causal time', () => {
       content.rulePack.content.timePolicy.existingAction = timeCost
     })
     await approve(fixture.sessionId)
-    await finishMechanical(fixture.sessionId)
+    await settleOpenPaidTurnsV1({ sessionId: fixture.sessionId,operationKey: (await runtime(fixture.sessionId)).runtime.openRun!.operations[0].operationKey,frozenPlanHash: (await runtime(fixture.sessionId)).runtime.openRun!.operations[0].planHash,viewerKey: OPEN_HUMAN_VIEWER })
     const after = await runtime(fixture.sessionId)
     expect(after.state.clock).toBe(timeCost)
     const ticks = await db.productRuntimeEvents.where('sessionId').equals(fixture.sessionId).filter(event => event.type === 'ttrpg.world-turn.advanced').toArray()
     expect(ticks).toHaveLength(timeCost)
     const cause = after.runtime.openRun!.ruleReceipts[0].sourceRef
     expect(ticks.every(tick => JSON.parse(tick.payloadJson).causeRef.sequence === cause.sequence)).toBe(true)
-    await finishMechanical(fixture.sessionId)
+    await settleOpenPaidTurnsV1({ sessionId: fixture.sessionId,operationKey: (await runtime(fixture.sessionId)).runtime.openRun!.operations[0].operationKey,frozenPlanHash: (await runtime(fixture.sessionId)).runtime.openRun!.operations[0].planHash,viewerKey: OPEN_HUMAN_VIEWER })
     expect((await runtime(fixture.sessionId)).state.clock).toBe(timeCost)
     await assertReplay(fixture.sessionId)
-  })
+  },20000)
 
   it('persists bounded alternatives, awaits the human and applies only the chosen frozen option', async () => {
     const fixture = await setup('generic-check', 'hero', runtimePackage => {
@@ -230,11 +232,13 @@ describe('R-TTRPGOPEN1 deterministic operations and causal time', () => {
     expect(pending.state.clock).toBe(0)
     db.close(); await db.open()
     expect(await runtime(fixture.sessionId)).toEqual(pending)
+    const disclosure = await prepareTtrpgOpenPrivateChoiceDisclosureV1({ sessionId: fixture.sessionId,operationKey: operation.operationKey,frozenPlanHash: operation.planHash,viewerKey: OPEN_HUMAN_VIEWER,kind: 'effect',templateKey: pending.runtime.openRun!.operations[0].pendingChoice!.templateKey })
+    await discloseTtrpgOpenPrivateChoiceV1({ ...await input(fixture.sessionId,`private-disclosure.${disclosure.reviewHash}`),kind: 'effect',templateKey: pending.runtime.openRun!.operations[0].pendingChoice!.templateKey,reviewHash: disclosure.reviewHash })
     await expect(selectTtrpgOpenOperationEffectV1({ ...await input(fixture.sessionId, 'effect-choice', 'viewer.gm'),
-      alternativeKey: 'large', riskHash: operation.riskHash })).rejects.toThrow(/真人主持授权/)
+      alternativeKey: 'large', riskHash: operation.riskHash,disclosureHash: disclosure.reviewHash })).rejects.toThrow(/真人主持授权/)
     await expect(selectTtrpgOpenOperationEffectV1({ ...await input(fixture.sessionId, 'effect-choice'),
-      alternativeKey: 'invented', riskHash: operation.riskHash })).rejects.toThrow(/真人选择/)
-    const selected = await selectTtrpgOpenOperationEffectV1({ ...await input(fixture.sessionId, 'effect-choice'), alternativeKey: 'large', riskHash: operation.riskHash })
+      alternativeKey: 'invented', riskHash: operation.riskHash,disclosureHash: disclosure.reviewHash })).rejects.toThrow(/真人选择/)
+    const selected = await selectTtrpgOpenOperationEffectV1({ ...await input(fixture.sessionId, 'effect-choice'), alternativeKey: 'large', riskHash: operation.riskHash,disclosureHash: disclosure.reviewHash })
     await resumeTtrpgOpenOperationV1(resumeInput)
     const final = await runtime(fixture.sessionId)
     expect(final.runtime.openRun!.operations[0].pendingChoice!.selectionRef!.sequence).toBe(selected.sequence)

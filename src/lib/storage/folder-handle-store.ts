@@ -13,7 +13,9 @@
 import type { Project } from '../types/project'
 import { IS_SHOWCASE, SHOWCASE_DATABASE } from '../showcase/policy'
 
-const DB_NAME = IS_SHOWCASE ? `${SHOWCASE_DATABASE}-fsa` : 'storyforge-fsa'
+import { IS_ADVENTURE_WEB_PLAYER, adventureWebPlayerIdentity, adventureWebPlayerStorageName } from '../adventure/web-player-policy'
+
+const DB_NAME = IS_ADVENTURE_WEB_PLAYER ? `${adventureWebPlayerStorageName(adventureWebPlayerIdentity())}-fsa` : IS_SHOWCASE ? `${SHOWCASE_DATABASE}-fsa` : 'storyforge-fsa'
 const STORE = 'handles'
 
 // A handle selected in the current document does not need an immediate

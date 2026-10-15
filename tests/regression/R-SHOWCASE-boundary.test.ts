@@ -29,8 +29,11 @@ describe('website experience boundaries', () => {
     }
     expect(isShowcaseAssetRequest('/storyforge/games/catalog.json', 'POST', origin)).toBe(false)
   })
-  it('refuses model configuration and even explicitly supplied AI credentials in the showcase build', async () => {
-    vi.stubEnv('MODE', 'showcase')
+  it.each(['showcase', 'adventure-player'])('refuses configuration and explicit AI credentials in %s', async mode => {
+    const meta = document.createElement('meta')
+    meta.name = 'storyforge-game'; meta.content = 'a'.repeat(64); document.head.append(meta)
+    const notice = mode === 'showcase' ? '官网体验版' : '独立游戏播放器'
+    vi.stubEnv('MODE', mode)
     vi.resetModules()
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     try {
@@ -41,17 +44,18 @@ describe('website experience boundaries', () => {
       expect((await state.testConnection()).ok).toBe(false)
       const { chat, streamChat, chatWithImagesV1 } = await import('../../src/lib/ai/client')
       const config = { ...state.config, apiKey: 'explicit-bypass-attempt' }
-      await expect(chat([], config)).rejects.toThrow('官网体验版')
-      await expect(streamChat([], config).next()).rejects.toThrow('官网体验版')
-      await expect(chatWithImagesV1([], [], config)).rejects.toThrow('官网体验版')
+      await expect(chat([], config)).rejects.toThrow(notice)
+      await expect(streamChat([], config).next()).rejects.toThrow(notice)
+      await expect(chatWithImagesV1([], [], config)).rejects.toThrow(notice)
       const { codexRequest } = await import('../../src/lib/ai/codex-transport')
-      await expect(codexRequest('/status')).rejects.toThrow('官网体验版')
+      await expect(codexRequest('/status')).rejects.toThrow(notice)
       const { embedTexts, isEmbeddingReady } = await import('../../src/lib/ai/adapters/embedding-adapter')
       const embedding = { ...state.embedding, enabled: true }
       expect(isEmbeddingReady(embedding)).toBe(false)
-      await expect(embedTexts(['private'], embedding)).rejects.toThrow('官网体验版')
+      await expect(embedTexts(['private'], embedding)).rejects.toThrow(notice)
       expect(fetchSpy).not.toHaveBeenCalled()
     } finally {
+      meta.remove()
       fetchSpy.mockRestore()
       vi.unstubAllEnvs()
       vi.resetModules()

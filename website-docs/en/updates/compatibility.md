@@ -2,9 +2,11 @@
 
 ## Which version these docs describe
 
-These instructions were checked against **main baseline dd253f85 on October 4, 2026**. The package version remains **3.9.1**, but main includes features and UI changes added after the formal v3.9.1 release.
+This incremental review covers **main baseline cfc5ed3f on October 14, 2026**, checking user-visible changes since the last successful maintenance baseline `ce1cfd6c`. Each product retains its own guide status; the maintenance date does not raise maturity.
 
-Two builds both labeled 3.9.1 need not contain identical code. Include the build commit, address, and date when reporting issues.
+The package version is **4.0.0**. The [formal v4.0.0 release](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.0) was published on October 13, 2026 at fixed commit `78416965`. The later main-branch changes from [PR #119](https://github.com/yuanbw2025/storyforge/pull/119), including text-adventure recovery, image-preserving revisions, and standalone web export, are **not in those fixed downloads**. Documentation maintenance does not rebuild releases or replace the separately deployed hosted experience.
+
+Two builds both labeled 4.0.0 need not contain identical code. Include the build commit, address, and date when reporting issues.
 
 Live sites may lag deployment. [Tagged releases](https://github.com/yuanbw2025/storyforge/releases) do not automatically gain later main-branch features.
 

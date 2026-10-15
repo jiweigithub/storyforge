@@ -636,11 +636,11 @@ export function evaluateTtrpgSituationProgressV1(
       .map(obstacle => obstacle.obstacleKey)
     : []
   const discoveredEvidenceRefs = uniqueStrings(
-    [...args.instance.discoveredEvidenceRefs, ...requestedEvidence],
+    [...new Set([...args.instance.discoveredEvidenceRefs, ...requestedEvidence])],
     'instance.discoveredEvidenceRefs',
   )
   const satisfiedObstacleKeys = uniqueStrings(
-    [...args.instance.satisfiedObstacleKeys, ...requestedObstacles, ...evaluatedObstacles],
+    [...new Set([...args.instance.satisfiedObstacleKeys, ...requestedObstacles, ...evaluatedObstacles])],
     'instance.satisfiedObstacleKeys',
   )
   const newlyDiscoveredEvidenceRefs = discoveredEvidenceRefs.filter(

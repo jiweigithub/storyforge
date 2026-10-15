@@ -171,3 +171,10 @@ export function assertTtrpgOpenAuthorizationCurrentV1(input: {
   if (!actor || actor.controller === 'ai' || actor.assignmentState !== 'claimed') fail('当前 viewer 没有真人主持授权')
   return actor
 }
+
+/** Human host authority is independent of permission to send private data to a model. */
+export function assertTtrpgOpenHumanHostV1(authorization: TtrpgOpenAuthorizationV1, viewerKey: string): TtrpgOpenSeatAuthorityV1 {
+  const seat = authorization.seats.find(s => s.viewerKey === viewerKey), gm = authorization.seats.find(s => s.role === 'gm')
+  if (!seat || !gm || seat.controller === 'ai' || seat.assignmentState !== 'claimed' || (gm.controller === 'ai' ? seat.seatKey !== authorization.completedBySeatKey : seat.role !== 'gm')) fail('人工主持需要真人 GM 或 AI GM 模式的 Session Zero 确认者')
+  return seat
+}

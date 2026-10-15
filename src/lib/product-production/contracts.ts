@@ -1,6 +1,7 @@
 import { parseChatAuthoringSettingsV1 } from '../character-interaction/authoring-contract'
 import { parseAvgAuthoringSettingsV1 } from '../avg/authoring-contract'
 import type {
+  TextAdventureContentRevisionV1,
   ProductConsultationBudgetV1,
   ProductProductionBlockerResolutionV1,
   ProductProductionBriefV3,
@@ -21,6 +22,7 @@ import { PRODUCT_MEDIA_KINDS, PRODUCT_PRODUCTION_COMMAND_TYPES, PRODUCTION_PRODU
 import { isSha256Hash, canonicalProductProductionJsonV2 } from './hash'
 import { parseProductRuntimePackageV1, parseProductWorldSourceSelectionV1 } from './runtime-package'
 import { parseTtrpgProductionBriefV2 } from '../ttrpg/production-brief'
+import { parseTtrpgProductionBriefContentShapeV3 } from '../ttrpg/production-brief-v3'
 import { parseAiTownProductionBriefV1 } from '../ai-town/contracts'
 import { parseTextAdventureProductionBriefV1 } from '../adventure/production-brief'
 import {
@@ -273,6 +275,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
     ...(Object.prototype.hasOwnProperty.call(row, 'avg') ? ['avg'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgRevision') ? ['avgRevision'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'ttrpg') ? ['ttrpg'] : []),
+    ...(Object.prototype.hasOwnProperty.call(row, 'ttrpgOpen') ? ['ttrpgOpen'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'aiTown') ? ['aiTown'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'textAdventure') ? ['textAdventure'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'authorConfirmations') ? ['authorConfirmations'] : []),
@@ -339,6 +342,9 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
     ...(Object.prototype.hasOwnProperty.call(row, 'ttrpg')
       ? { ttrpg: parseTtrpgProductionBriefV2(row.ttrpg) }
       : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, 'ttrpgOpen')
+      ? { ttrpgOpen: parseTtrpgProductionBriefContentShapeV3(row.ttrpgOpen) }
+      : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'aiTown')
       ? { aiTown: parseAiTownProductionBriefV1(row.aiTown) }
       : {}),
@@ -364,8 +370,21 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
   if (parsed.intent.protagonistRefs.some(ref => !parsed.source.startingPoint.protagonistRefs.includes(ref))) {
     fail('intent.protagonistRefs 必须来自 startingPoint 候选')
   }
-  if ((parsed.intent.productType === 'ttrpg') !== (parsed.ttrpg != null)) {
-    fail('ttrpg 产品与 TtrpgProductionBriefV2 不闭合')
+  if ((parsed.intent.productType === 'ttrpg') !== (parsed.ttrpg != null || parsed.ttrpgOpen != null)
+    || (parsed.ttrpg != null && parsed.ttrpgOpen != null)) {
+    fail('ttrpg 产品必须且只能绑定一个 scripted/open 制作契约')
+  }
+  if (parsed.ttrpgOpen) {
+    const open = parsed.ttrpgOpen
+    if (open.worldReference.localReleaseRecordId !== parsed.source.worldReleaseId
+      || open.worldReference.releaseHash !== parsed.source.worldContentHash
+      || open.worldReference.referenceHash !== parsed.source.selection.worldReferenceHash
+      || open.sourcePlan.productType !== parsed.intent.productType
+      || open.settings.openingSituation !== parsed.intent.openingSituation
+      || open.settings.playerRole !== parsed.intent.playerRole
+      || parsed.scale.targetEndingCount !== 0) {
+      fail('open 跑团方向/来源与共同制作合同不一致，不能伪造结局下限')
+    }
   }
   if ((parsed.intent.productType === 'ai-town') !== (parsed.aiTown != null)) {
     fail('ai-town 产品与 AiTownProductionBriefV1 不闭合')
@@ -469,6 +488,22 @@ function parseResolution(value: unknown): ProductProductionBlockerResolutionV1 {
     note: text(row.note, 'resolution.note', 4000),
     ...(row.action === 'author-edit' ? { authorDraftJson: text(row.authorDraftJson, 'resolution.authorDraftJson', 120000) } : {}),
     ...(unknownResultReservation ? { unknownResultReservation } : {}),
+  }
+}
+
+export function parseTextAdventureContentRevisionV1(value: unknown): TextAdventureContentRevisionV1 {
+  const revision = record(value, 'contentRevision')
+  exactKeys(revision, ['artifactKey', 'expectedArtifactVersion', 'expectedArtifactHash', 'note', 'authorDraftJson'], 'contentRevision')
+  const expectedArtifactHash = text(revision.expectedArtifactHash, 'contentRevision.expectedArtifactHash', 64)
+  if (!/^[a-f0-9]{64}$/.test(expectedArtifactHash)) fail('contentRevision.expectedArtifactHash 无效')
+  const authorDraftJson = text(revision.authorDraftJson, 'contentRevision.authorDraftJson', 120_000)
+  try { record(JSON.parse(authorDraftJson), 'contentRevision.authorDraftJson') } catch { fail('contentRevision.authorDraftJson 必须是 JSON 对象') }
+  return {
+    artifactKey: enumValue(revision.artifactKey, ['content.product-module', 'content.story-bible', 'content.cast-bible', 'content.adventure-architecture', 'content.narrative-arc-scenes', 'content.narrative-decision-plan', 'content.ending-route-plan', 'content.main-quest-plan', 'content.adventure-side-quests', 'content.adventure-ambient-events', 'content.scene-script.act-1.part-1', 'content.scene-script.act-1.part-2', 'content.scene-script.act-2.part-1', 'content.scene-script.act-2.part-2', 'content.scene-script.act-3.part-1', 'content.scene-script.act-3.part-2', 'content.dialogue-pass.act-1', 'content.dialogue-pass.act-2', 'content.dialogue-pass.act-3', 'content.quest-script.main.act-1.single', 'content.quest-script.main.act-1.multi', 'content.quest-script.main.act-2.single', 'content.quest-script.main.act-2.multi', 'content.quest-script.main.act-3.single', 'content.quest-script.main.act-3.multi', 'content.quest-script.supplemental'], 'contentRevision.artifactKey'),
+    expectedArtifactVersion: positiveId(revision.expectedArtifactVersion, 'contentRevision.expectedArtifactVersion'),
+    expectedArtifactHash,
+    note: text(revision.note, 'contentRevision.note', 2000),
+    authorDraftJson,
   }
 }
 
@@ -636,21 +671,7 @@ export function parseProductProductionCommandV1(value: unknown): ProductProducti
       ...(hasPausedReservations ? ['pausedReservationDispositions'] : []),
       ...(hasContentRevision ? ['contentRevision'] : []),
     ])
-    const contentRevision = hasContentRevision ? (() => {
-      const revision = record(row.contentRevision, 'resume.contentRevision')
-      exactKeys(revision, ['artifactKey', 'expectedArtifactVersion', 'expectedArtifactHash', 'note', 'authorDraftJson'], 'resume.contentRevision')
-      const expectedArtifactHash = text(revision.expectedArtifactHash, 'resume.contentRevision.expectedArtifactHash', 64)
-      if (!/^[a-f0-9]{64}$/.test(expectedArtifactHash)) fail('resume.contentRevision.expectedArtifactHash 无效')
-      const authorDraftJson = text(revision.authorDraftJson, 'resume.contentRevision.authorDraftJson', 120_000)
-      try { record(JSON.parse(authorDraftJson), 'resume.contentRevision.authorDraftJson') } catch { fail('resume.contentRevision.authorDraftJson 必须是 JSON 对象') }
-      return {
-        artifactKey: enumValue(revision.artifactKey, ['content.product-module', 'content.story-bible', 'content.cast-bible', 'content.adventure-architecture', 'content.narrative-arc-scenes', 'content.narrative-decision-plan', 'content.ending-route-plan', 'content.main-quest-plan', 'content.adventure-side-quests', 'content.adventure-ambient-events', 'content.scene-script.act-1.part-1', 'content.scene-script.act-1.part-2', 'content.scene-script.act-2.part-1', 'content.scene-script.act-2.part-2', 'content.scene-script.act-3.part-1', 'content.scene-script.act-3.part-2', 'content.dialogue-pass.act-1', 'content.dialogue-pass.act-2', 'content.dialogue-pass.act-3'], 'resume.contentRevision.artifactKey'),
-        expectedArtifactVersion: positiveId(revision.expectedArtifactVersion, 'resume.contentRevision.expectedArtifactVersion'),
-        expectedArtifactHash,
-        note: text(revision.note, 'resume.contentRevision.note', 2000),
-        authorDraftJson,
-      }
-    })() : undefined
+    const contentRevision = hasContentRevision ? parseTextAdventureContentRevisionV1(row.contentRevision) : undefined
     const pausedReservationDispositions = hasPausedReservations
       ? (() => {
           if (!Array.isArray(row.pausedReservationDispositions)
@@ -698,6 +719,25 @@ export function parseProductProductionCommandV1(value: unknown): ProductProducti
   if (type === 'restore') return { type, commandId: commandHeader(row, type, ['expectedStateRevision']), expectedStateRevision: expectedRevision(row.expectedStateRevision) }
   if (type === 'resolve-blocker') return { type, commandId: commandHeader(row, type, ['expectedStateRevision', 'blockerKey', 'resolution']), expectedStateRevision: expectedRevision(row.expectedStateRevision), blockerKey: stableKey(row.blockerKey, 'blockerKey'), resolution: parseResolution(row.resolution) }
   if (type === 'request-preview') return { type, commandId: commandHeader(row, type, ['expectedStateRevision', 'buildNumber']), expectedStateRevision: expectedRevision(row.expectedStateRevision), buildNumber: positiveId(row.buildNumber, 'buildNumber') }
+  if (type === 'revise-text-content') {
+    const commandId = commandHeader(row, type, ['expectedStateRevision', 'buildNumber', 'revisions', 'retainedImages', 'preserveVisualContract'])
+    if (row.preserveVisualContract !== true) fail('文字修订必须明确保留视觉合同；视觉变化请使用视觉演化')
+    if (!Array.isArray(row.revisions) || row.revisions.length < 1 || row.revisions.length > 24) fail('内容修订必须是 1～24 项数组')
+    const revisions = row.revisions.map(parseTextAdventureContentRevisionV1)
+    if (new Set(revisions.map(item => item.artifactKey)).size !== revisions.length
+      || revisions.reduce((sum, item) => sum + item.authorDraftJson.length, 0) > 600_000) fail('内容修订重复或超过总长度预算')
+    if (!Array.isArray(row.retainedImages) || row.retainedImages.length > 24) fail('保留图片必须是有界数组')
+    const retainedImages = row.retainedImages.map((value, index) => {
+      const item = record(value, `retainedImages[${index}]`)
+      exactKeys(item, ['artifactKey', 'expectedArtifactHash'], 'retainedImages')
+      const artifactKey = stableKey(item.artifactKey, 'retainedImages.artifactKey')
+      if (!/^media\.visual\.\d{3}$/.test(artifactKey) || !isSha256Hash(item.expectedArtifactHash)) fail('保留图片 key/hash 无效')
+      return { artifactKey, expectedArtifactHash: item.expectedArtifactHash }
+    })
+    if (new Set(retainedImages.map(item => item.artifactKey)).size !== retainedImages.length) fail('保留图片重复')
+    return { type, commandId, expectedStateRevision: expectedRevision(row.expectedStateRevision),
+      buildNumber: positiveId(row.buildNumber, 'buildNumber'), revisions, retainedImages, preserveVisualContract: true }
+  }
   if (type === 'revise-media-asset') {
     const commandId = commandHeader(row, type, [
       'expectedStateRevision', 'buildNumber', 'artifactKey', 'expectedArtifactHash', 'action',

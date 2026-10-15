@@ -10,7 +10,7 @@ import {
   type ProductTtrpgProtocol2ReaderV1,
 } from './runtime-package'
 
-type ResolvedProductRuntimeSourceWithTtrpgV2 = Omit<
+export type ResolvedProductRuntimeSourceWithTtrpgV2 = Omit<
   ResolvedProductRuntimeSourceV1,
   'runtimePackage'
 > & {
@@ -43,10 +43,9 @@ export async function verifyProductRuntimeSessionSourceV1(input: RuntimeSessionS
   })
 }
 
-export async function resolveProductRuntimeSource(input: {
-  scope: WorkspaceScope
-  source: ProductRuntimeSourceV1
-}): Promise<ResolvedProductRuntimeSourceV1> {
+export function resolveProductRuntimeSource(input: RuntimeSourceInput & { ttrpgProtocol: 2 }): Promise<ResolvedProductRuntimeSourceWithTtrpgV2>
+export function resolveProductRuntimeSource(input: RuntimeSourceInput & { ttrpgProtocol?: 1 }): Promise<ResolvedProductRuntimeSourceV1>
+export async function resolveProductRuntimeSource(input: RuntimeSourceInput & { ttrpgProtocol?: 1 | 2 }): Promise<ResolvedProductRuntimeSourceWithTtrpgV2> {
   const verified = await verifyProductRuntimeSource(input)
   const mediaResolver = input.source.kind === 'release'
     ? await createReleaseProductMediaResolver({
@@ -57,9 +56,9 @@ export async function resolveProductRuntimeSource(input: {
     : await createBuildProductMediaResolver({
       scope: input.scope,
       productBuildId: input.source.productBuildId,
-      preview: await verifyProductBuildPreviewManifestV1(
-        (await db.productBuilds.get(input.source.productBuildId))?.previewManifestJson ?? '',
-      ),
+      preview: input.ttrpgProtocol === 2
+        ? await verifyProductBuildPreviewManifestV1((await db.productBuilds.get(input.source.productBuildId))?.previewManifestJson ?? '', { ttrpgProtocol: 2 })
+        : await verifyProductBuildPreviewManifestV1((await db.productBuilds.get(input.source.productBuildId))?.previewManifestJson ?? ''),
     })
   return { ...verified, mediaResolver }
 }
@@ -75,7 +74,7 @@ export function verifyProductRuntimeSource(input: RuntimeSourceInput & { ttrpgPr
 export async function verifyProductRuntimeSource(input: RuntimeSourceInput & { ttrpgProtocol?: 1 | 2 }): Promise<VersionedVerifiedRuntimeSource> {
   const scope = await resolveScope({ scope: input.scope })
   if (input.source.kind === 'release') {
-    const release = await assertProductReleaseUnchanged(input.source.productReleaseId)
+    const release = await assertProductReleaseUnchanged(input.source.productReleaseId, input.ttrpgProtocol === 2 ? { ttrpgProtocol: 2 } : undefined)
     if (!await assertRecordInScope(scope, 'productReleases', release, { owner: 'work' })) {
       throw new Error('[product-runtime-source] ProductRelease 不属于当前 Work')
     }

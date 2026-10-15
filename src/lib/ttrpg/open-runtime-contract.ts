@@ -1,4 +1,19 @@
+import { parseTtrpgOpenTableMessageV1,assertTtrpgOpenTableMessageHistoryV1,type TtrpgOpenTableMessageV1 } from './open-table-conversation'
+import { parseTtrpgOpenGateRecoveryV1, type TtrpgOpenGateRecoveryV1 } from './open-gate-recovery'
+import { parseTtrpgOpenNarrationReceiptV1, type TtrpgOpenNarrationReceiptV1 } from './open-kp-receipt'
+import { parseTtrpgOpenStageClosureV1, ttrpgOpenStageClosureOriginV1, type TtrpgOpenStageClosureV1 } from './open-stage-close'
+import { parseTtrpgOpenTerminalReceiptV1, parseTtrpgOpenGateReceiptV1, type TtrpgOpenTerminalReceiptV1, type TtrpgOpenGateReceiptV1 } from './open-terminal-gates'
+import { parseTtrpgOpenSituationCycleV1, assertTtrpgOpenSituationCycleHistoryV1, type TtrpgOpenSituationCycleV1 } from './open-situation-cycle'
+import { parseTtrpgOpenSituationHistoryV1, type TtrpgOpenSituationHistoryV1 } from './open-situation-runtime'
+import { parseTtrpgOpenPressureCycleV1, assertTtrpgOpenPressureHistoryV1, parseTtrpgOpenPressureSignalV1, type TtrpgOpenPressureSignalV1, type TtrpgOpenPressureCycleV1 } from './open-pressure-cycle'
+import { assertTtrpgOpenNormalizationSourceV1 } from './open-model-calls';
+import { parseTtrpgOpenOracleReviewV1, assertTtrpgOpenOracleReviewJournalV1, type TtrpgOpenOracleReviewV1 } from './open-oracle-review';
 import { parseTtrpgOpenKnowledgeV1, type TtrpgOpenKnowledgeEntryV1 } from './open-knowledge';
+import { parseTtrpgOpenOracleReceiptV1, type TtrpgOpenOracleReceiptV1 } from './open-oracle-contract';
+import { parseTtrpgOpenFactLedgerV1, assertTtrpgOpenModelFactApproverV1, assertTtrpgOpenFactModelCallV1, type TtrpgOpenFactLedgerV1 } from './open-fact-ledger';
+import { parseTtrpgOpenKnowledgeShareReceiptV1, type TtrpgOpenKnowledgeShareReceiptV1 } from './open-knowledge-share';
+import { parseTtrpgOpenBranchLineageV1, ttrpgOpenAncestorSourceAllowedV1, type TtrpgOpenBranchLineageV1 } from './open-branch-contract';
+import { assertTtrpgOpenRecoveredOperationV1 } from './open-branch-recovery';
 import type {
   TtrpgRuntimeState,
 } from "../types";
@@ -8,7 +23,7 @@ import { parseTtrpgOpenAuthorizationV1, type TtrpgOpenAuthorizationV1 } from "./
 import { parseTtrpgOpenCoordinationV1, parseTtrpgOpenEpochBudgetV1,
   type TtrpgOpenCoordinationV1, type TtrpgOpenEpochBudgetV1 } from "./open-coordination";
 import { stableProductRuntimeJsonV1 } from "../product/runtime-values";
-import { parseTtrpgOpenOperationV1, parseTtrpgOpenRuleReceiptV1,
+import { parseTtrpgOpenOperationV1, parseTtrpgOpenRuleReceiptV1, assertTtrpgOpenOperationIntentCallV1,
   type TtrpgOpenOperationV1, type TtrpgOpenRuleReceiptV1 } from "./open-operation";
 import type {
   TtrpgOpenCampaignClockV1,
@@ -59,6 +74,7 @@ export interface TtrpgOpenFrontRuntimeStateV1 {
   stageKey: string | null;
   defeated: boolean;
   telegraphedStageKeys: string[];
+  telegraphWorldTurns?: Record<string, number>;
   lastEvaluatedWorldTurn: number | null;
 }
 
@@ -101,6 +117,7 @@ export interface TtrpgOpenRunStateV1 {
   worldTime: TtrpgWorldTimeV1;
   chaos: {
     value: number;
+    lastChangedAtSequence?: number;
   };
   clocks: TtrpgOpenClockRuntimeStateV1[];
   fronts: TtrpgOpenFrontRuntimeStateV1[];
@@ -111,6 +128,7 @@ export interface TtrpgOpenRunStateV1 {
     active: TtrpgOpenSituationRuntimeStateV1[];
     queued: TtrpgOpenSituationRuntimeStateV1[];
     cooldowns: Record<string, number>;
+    history?: TtrpgOpenSituationHistoryV1[];
   };
   stage: TtrpgOpenStageRuntimeStateV1;
   consultedThisWorldTurn: number;
@@ -118,6 +136,21 @@ export interface TtrpgOpenRunStateV1 {
   operations: TtrpgOpenOperationV1[];
   ruleReceipts: TtrpgOpenRuleReceiptV1[];
   knowledge: TtrpgOpenKnowledgeEntryV1[];
+  /** Absent on older states; first real consultation introduces the journal. */
+  oracleReceipts?: TtrpgOpenOracleReceiptV1[];
+  /** Introduced only by the first real semantic fact event. */
+  factLedger?: TtrpgOpenFactLedgerV1;
+  knowledgeShares?: TtrpgOpenKnowledgeShareReceiptV1[];
+  oracleReviews?: TtrpgOpenOracleReviewV1[];
+  tableMessages?: TtrpgOpenTableMessageV1[];
+  narrations?: TtrpgOpenNarrationReceiptV1[];
+  stageClosures?: TtrpgOpenStageClosureV1[];
+  terminalReceipts?: TtrpgOpenTerminalReceiptV1[];
+  gateReceipts?: TtrpgOpenGateReceiptV1[];
+  gateRecoveries?: TtrpgOpenGateRecoveryV1[];
+  situationCycles?: TtrpgOpenSituationCycleV1[];
+  pressureCycles?: TtrpgOpenPressureCycleV1[];
+  pressureSignals?: TtrpgOpenPressureSignalV1[];
 }
 
 /**
@@ -134,6 +167,8 @@ export type TtrpgRuntimeStateV2 = TtrpgRuntimeState & {
   authorization: TtrpgOpenAuthorizationV1 | null;
   epochBudget: TtrpgOpenEpochBudgetV1;
   openRun: TtrpgOpenRunStateV1 | null;
+  /** Present only on a branch; ordinary V2 states retain their original JSON shape. */
+  branchLineage?: TtrpgOpenBranchLineageV1;
 };
 
 function fail(message: string): never {
@@ -270,6 +305,7 @@ function parseFront(value: unknown, index: number): TtrpgOpenFrontRuntimeStateV1
       "defeated",
       "telegraphedStageKeys",
       "lastEvaluatedWorldTurn",
+      ...(Object.prototype.hasOwnProperty.call(row, "telegraphWorldTurns") ? ["telegraphWorldTurns"] : []),
     ],
     `openRun.fronts[${index}]`,
   );
@@ -288,6 +324,7 @@ function parseFront(value: unknown, index: number): TtrpgOpenFrontRuntimeStateV1
       "front.lastEvaluatedWorldTurn",
       0,
     ),
+    ...(Object.prototype.hasOwnProperty.call(row, 'telegraphWorldTurns') ? { telegraphWorldTurns: Object.fromEntries(Object.entries(record(row.telegraphWorldTurns, 'front telegraphs')).map(([key, turn]) => [text(key, 'telegraph key'), integer(turn, 'telegraph turn', 0)])) } : {}),
   };
 }
 
@@ -524,6 +561,19 @@ export function parseTtrpgOpenRunStateV1(
       "coordination",
       "operations",
       "ruleReceipts", "knowledge",
+      ...(Object.prototype.hasOwnProperty.call(row, "oracleReceipts") ? ["oracleReceipts"] : []),
+    ...(Object.prototype.hasOwnProperty.call(row, "factLedger") ? ["factLedger"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "knowledgeShares") ? ["knowledgeShares"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "oracleReviews") ? ["oracleReviews"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "tableMessages") ? ["tableMessages"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "narrations") ? ["narrations"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "stageClosures") ? ["stageClosures"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "terminalReceipts") ? ["terminalReceipts"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "gateReceipts") ? ["gateReceipts"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "gateRecoveries") ? ["gateRecoveries"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "situationCycles") ? ["situationCycles"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "pressureCycles") ? ["pressureCycles"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "pressureSignals") ? ["pressureSignals"] : []),
     ],
     "openRun",
   );
@@ -535,7 +585,7 @@ export function parseTtrpgOpenRunStateV1(
     fail("openRun schema/version/runFormat 无效");
   }
   const chaos = record(row.chaos, "openRun.chaos");
-  exact(chaos, ["value"], "openRun.chaos");
+  exact(chaos, ["value", ...(Object.prototype.hasOwnProperty.call(chaos, "lastChangedAtSequence") ? ["lastChangedAtSequence"] : [])], "openRun.chaos");
   const chaosValue = integer(chaos.value, "openRun.chaos.value", 0);
   if (chaosValue > 100) fail("openRun.chaos.value 超出范围");
   const clocks = Array.isArray(row.clocks)
@@ -556,7 +606,7 @@ export function parseTtrpgOpenRunStateV1(
   const situations = record(row.situations, "openRun.situations");
   exact(
     situations,
-    ["active", "queued", "cooldowns"],
+    ["active", "queued", "cooldowns", ...(Object.prototype.hasOwnProperty.call(situations, "history") ? ["history"] : [])],
     "openRun.situations",
   );
   const active = Array.isArray(situations.active)
@@ -620,7 +670,7 @@ export function parseTtrpgOpenRunStateV1(
     version: 1,
     runFormat: "open",
     worldTime: parseWorldTime(row.worldTime),
-    chaos: { value: chaosValue },
+    chaos: { value: chaosValue, ...(Object.prototype.hasOwnProperty.call(chaos, "lastChangedAtSequence") ? { lastChangedAtSequence: integer(chaos.lastChangedAtSequence, "chaos change source", 1) } : {}) },
     clocks,
     fronts,
     companions,
@@ -630,6 +680,8 @@ export function parseTtrpgOpenRunStateV1(
       active,
       queued,
       cooldowns: parsedCooldowns,
+      ...(Object.prototype.hasOwnProperty.call(situations, "history") ? { history: Array.isArray(situations.history) && situations.history.length <= 100000
+        ? situations.history.map(parseTtrpgOpenSituationHistoryV1) : fail("situation history 必须是有界实际记录") } : {}),
     },
     stage: parsedStage,
     consultedThisWorldTurn: integer(
@@ -641,6 +693,29 @@ export function parseTtrpgOpenRunStateV1(
     operations: Array.isArray(row.operations) ? row.operations.map(value => parseTtrpgOpenOperationV1(value, sessionKey)) : fail("operations 必须是数组"),
     ruleReceipts: Array.isArray(row.ruleReceipts) ? row.ruleReceipts.map(parseTtrpgOpenRuleReceiptV1) : fail("ruleReceipts 必须是数组"),
     knowledge: parseTtrpgOpenKnowledgeV1(row.knowledge),
+    ...(Object.prototype.hasOwnProperty.call(row, "oracleReceipts") ? {
+      oracleReceipts: Array.isArray(row.oracleReceipts) && row.oracleReceipts.length <= 100_000
+        ? row.oracleReceipts.map(parseTtrpgOpenOracleReceiptV1) : fail("oracleReceipts 必须是有限数组"),
+    } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "oracleReviews") ? { oracleReviews: Array.isArray(row.oracleReviews) && row.oracleReviews.length <= 100000
+      ? row.oracleReviews.map(parseTtrpgOpenOracleReviewV1) : fail("oracleReviews 必须是有限数组") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "factLedger") ? { factLedger: parseTtrpgOpenFactLedgerV1(row.factLedger) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "knowledgeShares") ? {
+      knowledgeShares: Array.isArray(row.knowledgeShares) && row.knowledgeShares.length <= 100000
+        ? row.knowledgeShares.map(parseTtrpgOpenKnowledgeShareReceiptV1) : fail("knowledgeShares 必须是有限数组"),
+    } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "tableMessages") ? { tableMessages: Array.isArray(row.tableMessages) && row.tableMessages.length <= 100000 ? row.tableMessages.map(parseTtrpgOpenTableMessageV1) : fail("tableMessages 必须有界") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "narrations") ? { narrations: Array.isArray(row.narrations) && row.narrations.length <= 100000 ? row.narrations.map(parseTtrpgOpenNarrationReceiptV1) : fail("narrations 必须有界") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "stageClosures") ? { stageClosures: Array.isArray(row.stageClosures) && row.stageClosures.length <= 100000 ? row.stageClosures.map(parseTtrpgOpenStageClosureV1) : fail("stageClosures 必须有界") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "terminalReceipts") ? { terminalReceipts: Array.isArray(row.terminalReceipts) && row.terminalReceipts.length <= 100000 ? row.terminalReceipts.map(parseTtrpgOpenTerminalReceiptV1) : fail("terminalReceipts 必须有界") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "gateReceipts") ? { gateReceipts: Array.isArray(row.gateReceipts) && row.gateReceipts.length <= 100000 ? row.gateReceipts.map(parseTtrpgOpenGateReceiptV1) : fail("gateReceipts 必须有界") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "situationCycles") ? { situationCycles: Array.isArray(row.situationCycles) && row.situationCycles.length <= 100000
+      ? row.situationCycles.map(parseTtrpgOpenSituationCycleV1) : fail("situationCycles 必须是有限数组") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "pressureCycles") ? { pressureCycles: Array.isArray(row.pressureCycles) && row.pressureCycles.length <= 100000
+      ? row.pressureCycles.map(parseTtrpgOpenPressureCycleV1) : fail("pressureCycles 必须是有限数组") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "pressureSignals") ? { pressureSignals: Array.isArray(row.pressureSignals) && row.pressureSignals.length <= 100000
+      ? row.pressureSignals.map(parseTtrpgOpenPressureSignalV1) : fail("pressureSignals 必须是有限数组") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "gateRecoveries") ? { gateRecoveries: Array.isArray(row.gateRecoveries) && row.gateRecoveries.length <= 100000 ? row.gateRecoveries.map(parseTtrpgOpenGateRecoveryV1) : fail("gateRecoveries 必须有界") } : {}),
   };
 }
 
@@ -670,6 +745,7 @@ export function parseTtrpgRuntimeStateV2(
       "campaign",
       "product",
       "openRun",
+      ...(Object.prototype.hasOwnProperty.call(row, "branchLineage") ? ["branchLineage"] : []),
     ],
     "正式 TTRPG open 运行态",
   );
@@ -690,10 +766,12 @@ export function parseTtrpgRuntimeStateV2(
   // Validate shared mechanical fields with the existing strict parser in memory.
   // This validation view is never persisted or used for the original state hash.
   const { schema: _schema, version: _version, runFormat: _format, openRun: _run,
-    sessionKey: _session, authorization: _authorization, epochBudget: _budget, ...mechanical } = row;
+    sessionKey: _session, authorization: _authorization, epochBudget: _budget, branchLineage: _lineage, ...mechanical } = row;
   const parsed = parseTtrpgOpenMechanicalStateV1(mechanical);
   if (!parsed) return fail("open 运行态 compatibility projection 不完整");
   const sessionKey = parseKey(row.sessionKey, "open.sessionKey");
+  const branchLineage = Object.prototype.hasOwnProperty.call(row, "branchLineage")
+    ? parseTtrpgOpenBranchLineageV1(row.branchLineage, sessionKey) : undefined;
   const authorization = row.authorization === null ? null : parseTtrpgOpenAuthorizationV1(row.authorization);
   const epochBudget = parseTtrpgOpenEpochBudgetV1(row.epochBudget);
   if (parsed.product.sessionZero.completed !== (authorization !== null)
@@ -701,11 +779,163 @@ export function parseTtrpgRuntimeStateV2(
       || authorization.sourceRef.sessionKey !== sessionKey
       || authorization.completedBySeatKey !== parsed.product.sessionZero.completedBy
       || JSON.stringify([...authorization.selectedActorKeys].sort()) !== JSON.stringify([...parsed.product.sessionZero.selectedCharacterKeys].sort())))
-    || (row.openRun !== null && authorization === null)) fail("open 授权与 Session Zero 状态不一致");
+    || (row.openRun !== null && authorization === null && branchLineage === undefined)) fail("open 授权与 Session Zero 状态不一致");
   const openRun = row.openRun === null ? null : parseTtrpgOpenRunStateV1(row.openRun, sessionKey);
+  if (openRun && authorization === null && (openRun.coordination.epochs.length || openRun.coordination.calls.length
+    || openRun.operations.length || openRun.ruleReceipts.length
+    || openRun.tableMessages?.some(message => message.sourceRef.sessionKey === sessionKey)
+    || openRun.knowledge.some(entry => entry.acquisitionRef.sessionKey === sessionKey)
+    || branchLineage?.recoveryTasks.some(task => task.status !== "awaiting-authorization" && task.status !== "withdrawn"))) {
+    fail("未重新确认的分支不得拥有活动授权或恢复执行");
+  }
+  for (const history of openRun?.situations.history ?? []) {
+    if (history.sourceRef.sessionKey !== sessionKey && !branchLineage?.ancestors.some(a => a.sessionKey === history.sourceRef.sessionKey && a.throughSequence >= history.sourceRef.sequence
+      && a.snapshot.openRun?.situations.history?.some(h => stableProductRuntimeJsonV1(h) === stableProductRuntimeJsonV1(history)))) fail("局势终态缺少实际祖先处置记录");
+  }
+  for (const receipt of [...(openRun?.terminalReceipts ?? []), ...(openRun?.gateReceipts ?? [])]) {
+    if (receipt.sourceRef.sessionKey !== sessionKey && !branchLineage?.ancestors.some(a => a.sessionKey === receipt.sourceRef.sessionKey && a.throughSequence >= receipt.sourceRef.sequence
+      && [...(a.snapshot.openRun?.terminalReceipts ?? []), ...(a.snapshot.openRun?.gateReceipts ?? [])].some(r => stableProductRuntimeJsonV1(r) === stableProductRuntimeJsonV1(receipt)))) fail("终态/门缺少实际祖先评估记录");
+  }
+  const recoveries = openRun?.gateRecoveries ?? [];
+  if (new Set(recoveries.map(r => r.recoveryKey)).size !== recoveries.length || new Set(recoveries.map(r => `${r.operationKey}:${r.authorizationEpochKey}`)).size !== recoveries.length) fail("局部恢复只能按真实操作窗口执行一次");
+  for (const recovery of recoveries) {
+    if (recovery.sourceRef.sessionKey !== sessionKey) {
+      if (!branchLineage?.ancestors.some(a => a.sessionKey === recovery.sourceRef.sessionKey && a.throughSequence >= (recovery.stoppedRef?.sequence ?? recovery.sourceRef.sequence) && a.snapshot.openRun?.gateRecoveries?.some(r => stableProductRuntimeJsonV1(r) === stableProductRuntimeJsonV1(recovery)))) fail("局部恢复缺少真实祖先记录");
+    } else if (!openRun!.operations.some(o => o.operationKey === recovery.operationKey && o.planHash === recovery.frozenPlanHash && o.authorizationEpochKey === recovery.authorizationEpochKey)
+      || !openRun!.gateReceipts?.some(r => r.sourceRef.sessionKey === recovery.evaluationRef.sessionKey && r.sourceRef.sequence === recovery.evaluationRef.sequence && r.actorKey === recovery.actorKey && r.result.evaluationBasisHash === recovery.evaluationBasisHash && r.result.results[recovery.gateKey].passed === false)) fail("局部恢复必须引用该操作真实失败评估");
+    if (recovery.action === 'evidence' && !openRun!.knowledge.some(k => k.knowledgeKey === recovery.recoveryKey && k.evidenceRef === recovery.targetRef && k.publicFieldsHash === recovery.publicFieldsHash && k.acquisitionRef.sessionKey === recovery.sourceRef.sessionKey && k.acquisitionRef.sequence === recovery.sourceRef.sequence && k.reliability === 'observed' && k.audience === 'private' && k.recipientActorKeys.length === 1 && k.recipientActorKeys[0] === recovery.actorKey)) fail("恢复线索没有真实定向知识记录");
+    if (recovery.stoppedRef && recovery.sourceRef.sessionKey === sessionKey && !openRun!.coordination.epochs.some(e => e.epochKey === recovery.authorizationEpochKey && e.status === 'closed' && e.closedRef?.sequence === recovery.stoppedRef!.sequence && e.stopReason === recovery.stopReason)) fail("恢复停止必须闭合实际原授权窗口");
+    if (recovery.failedEvaluationRefs.some(ref => !openRun!.gateReceipts?.some(g => g.sourceRef.sessionKey === ref.sessionKey && g.sourceRef.sequence === ref.sequence && g.authorizationEpochKey === recovery.authorizationEpochKey && !g.result.allApplicablePassed))) fail("恢复停止引用了不存在或并未失败的评估");
+  }
+  const closures = openRun?.stageClosures ?? [];
+  if (new Set(closures.map(c => c.cycleKey)).size !== closures.length || closures.some((c, i) => c.stageIndex !== i)) fail("阶段收束身份/索引必须唯一且有序");
+  for (const closure of closures) {
+    if (closure.sourceRef.sessionKey !== sessionKey) {
+      const captured = branchLineage?.ancestors.find(a => a.sessionKey === closure.sourceRef.sessionKey && a.throughSequence >= closure.sourceRef.sequence)?.snapshot.openRun?.stageClosures?.find(c => c.cycleKey === closure.cycleKey);
+      if (!captured || stableProductRuntimeJsonV1(ttrpgOpenStageClosureOriginV1(captured)) !== stableProductRuntimeJsonV1(ttrpgOpenStageClosureOriginV1(closure))) fail("阶段收束不可改写已冻结祖先起源");
+    }
+    const refs = [closure.sourceRef, closure.terminalRef, closure.ruleSourceRef, ...closure.ticks.flatMap(t => [t.causeRef, ...(t.completedRef ? [t.completedRef] : [])]), ...closure.work.flatMap(w => [w.causeRef, ...(w.completedRef ? [w.completedRef] : []), ...(w.effectReviews?.flatMap(r => r.decisions.map(d => d.sourceRef)) ?? [])]), ...(closure.completedRef ? [closure.completedRef] : [])];
+    for (const ref of refs) {
+      if (ref.sessionKey === sessionKey) continue;
+      const ancestor = branchLineage?.ancestors.find(a => a.sessionKey === ref.sessionKey && a.throughSequence >= ref.sequence);
+      const sameRef = (r: { sessionKey: string; sequence: number }) => r.sessionKey === ref.sessionKey && r.sequence === ref.sequence;
+      const captured = ancestor?.snapshot.openRun?.stageClosures?.find(c => c.cycleKey === closure.cycleKey);
+      const capturedRefs = captured ? [captured.sourceRef, captured.terminalRef, captured.ruleSourceRef, ...captured.ticks.flatMap(t => [t.causeRef, ...(t.completedRef ? [t.completedRef] : [])]), ...captured.work.flatMap(w => [w.causeRef, ...(w.completedRef ? [w.completedRef] : []), ...(w.effectReviews?.flatMap(r => r.decisions.map(d => d.sourceRef)) ?? [])]), ...(captured.completedRef ? [captured.completedRef] : [])] : [];
+      const terminal = sameRef(closure.terminalRef) && ancestor?.snapshot.openRun?.terminalReceipts?.some(r => sameRef(r.sourceRef));
+      const rule = sameRef(closure.ruleSourceRef) && ttrpgOpenAncestorSourceAllowedV1(branchLineage, ref, ['ttrpg.rule.action.resolved']);
+      if (!ancestor || !capturedRefs.some(sameRef) && !terminal && !rule) fail("阶段收束缺少真实祖先来源");
+    }
+  }
+  for (const receipt of openRun?.narrations ?? []) {
+    if (receipt.sourceRef.sessionKey !== sessionKey && !branchLineage?.ancestors.some(a => a.sessionKey === receipt.sourceRef.sessionKey && a.throughSequence >= receipt.sourceRef.sequence && a.snapshot.openRun?.narrations?.some(r => stableProductRuntimeJsonV1(r) === stableProductRuntimeJsonV1(receipt)))) fail("已采用叙述缺少真实封存祖先回执");
+  }
+  const inheritedKnowledge = new Set(branchLineage?.ancestors.flatMap(ancestor =>
+    (ancestor.snapshot.openRun?.knowledge ?? []).map(entry => stableProductRuntimeJsonV1(entry))) ?? []);
+  if (openRun?.knowledge.some(entry => entry.acquisitionRef.sessionKey !== sessionKey
+    && (!ttrpgOpenAncestorSourceAllowedV1(branchLineage, entry.acquisitionRef)
+      || !inheritedKnowledge.has(stableProductRuntimeJsonV1(entry))))) fail("knowledge 缺少精确祖先授予证据");
+  if (openRun) {
+    if (openRun.knowledgeShares) {
+      const inheritedShares = new Set(branchLineage?.ancestors.flatMap(ancestor =>
+        (ancestor.snapshot.openRun?.knowledgeShares ?? []).map(receipt => stableProductRuntimeJsonV1(receipt))) ?? []);
+      if (new Set(openRun.knowledgeShares.map(receipt => receipt.knowledge.knowledgeKey)).size !== openRun.knowledgeShares.length
+        || openRun.knowledgeShares.some(receipt => {
+          const source = openRun.knowledge.find(entry => entry.knowledgeKey === receipt.sourceKnowledgeKey);
+          return !source || stableProductRuntimeJsonV1(source.acquisitionRef) !== stableProductRuntimeJsonV1(receipt.sourceAcquisitionRef)
+            || !openRun.knowledge.some(entry => stableProductRuntimeJsonV1(entry) === stableProductRuntimeJsonV1(receipt.knowledge))
+            || (source.acquisitionRef.sessionKey === receipt.knowledge.acquisitionRef.sessionKey && source.acquisitionRef.sequence >= receipt.knowledge.acquisitionRef.sequence)
+            || (receipt.knowledge.acquisitionRef.sessionKey === sessionKey
+              ? !authorization || !openRun.coordination.epochs.some(epoch => epoch.epochKey === receipt.authorizationEpochKey && epoch.viewerKey === receipt.viewerKey
+                && receipt.knowledge.acquisitionRef.sequence > epoch.startedRef.sequence
+                && (epoch.closedRef === null || receipt.knowledge.acquisitionRef.sequence < epoch.closedRef.sequence))
+              : !ttrpgOpenAncestorSourceAllowedV1(branchLineage, receipt.knowledge.acquisitionRef, ['ttrpg.open.knowledge.shared'])
+                || !inheritedShares.has(stableProductRuntimeJsonV1(receipt)));
+        })) fail("知识分享缺少真实获得记录、窗口或精确祖先事件");
+    }
+    assertTtrpgOpenOracleReviewJournalV1({ sessionKey, authorization, openRun, branchLineage });
+    const seenOracleRefs = new Set<string>();
+    const assistedTurns = new Set<number>(branchLineage?.ancestors.flatMap(ancestor =>
+      ancestor.snapshot.openRun?.coordination.calls.flatMap(call => call.supportSlot ? [call.supportSlot.worldTurn] : []) ?? []) ?? []);
+    for (const call of openRun.coordination.calls) {
+      if (!call.supportSlot) continue;
+      assertTtrpgOpenNormalizationSourceV1({ openRun },call);
+      if (call.supportSlot.worldTurn > openRun.worldTime.worldTurn || assistedTurns.has(call.supportSlot.worldTurn)) fail("每世界轮辅助槽最多一次，且不得来自未来");
+      assistedTurns.add(call.supportSlot.worldTurn);
+    }
+    const interpretedTurns = new Set<number>(branchLineage?.ancestors.flatMap(ancestor =>
+      ancestor.snapshot.openRun?.coordination.calls.flatMap(call => call.oracleInterpretation ? [call.oracleInterpretation.worldTurn] : []) ?? []) ?? []);
+    for (const call of openRun.coordination.calls) {
+      if (!call.oracleInterpretation) continue;
+      const marker = call.oracleInterpretation;
+      if (marker.worldTurn > openRun.worldTime.worldTurn || interpretedTurns.has(marker.worldTurn)
+        || !openRun.oracleReceipts?.some(receipt => stableProductRuntimeJsonV1(receipt.sourceRef) === stableProductRuntimeJsonV1(marker.oracleSourceRef)
+          && (receipt.sourceRef.sessionKey !== call.createdRef.sessionKey || receipt.sourceRef.sequence < call.createdRef.sequence))) {
+        fail("Oracle 解释槽位必须绑定真实咨询，且每个世界轮最多一次");
+      }
+      interpretedTurns.add(marker.worldTurn);
+    }
+    const previousByOracle = new Map<string, string>();
+    const inheritedOracles = new Set(branchLineage?.ancestors.flatMap(ancestor =>
+      (ancestor.snapshot.openRun?.oracleReceipts ?? []).map(receipt => stableProductRuntimeJsonV1(receipt))) ?? []);
+    for (const receipt of openRun.oracleReceipts ?? []) {
+      const ref = stableProductRuntimeJsonV1(receipt.sourceRef);
+      const oracleKey = receipt.resolution.outcome.oracleKey;
+      if (seenOracleRefs.has(ref) || receipt.resolution.rollReceipt.rulePackContentHash !== parsed.product.rulePackContentHash
+        || stableProductRuntimeJsonV1(receipt.previousOracleRef) !== (previousByOracle.get(oracleKey) ?? "null")
+        || (receipt.sourceRef.sessionKey !== sessionKey && (!branchLineage
+          || !ttrpgOpenAncestorSourceAllowedV1(branchLineage, receipt.sourceRef, ['ttrpg.oracle.consulted'])
+          || !inheritedOracles.has(stableProductRuntimeJsonV1(receipt))))
+        || (receipt.sourceRef.sessionKey === sessionKey && !openRun.coordination.epochs.some(epoch =>
+          epoch.epochKey === receipt.authorizationEpochKey && epoch.viewerKey === receipt.viewerKey
+          && receipt.sourceRef.sequence > epoch.startedRef.sequence
+          && (epoch.closedRef === null || receipt.sourceRef.sequence < epoch.closedRef.sequence)))) fail("Oracle 回执来源/前序/授权窗口不闭合");
+      seenOracleRefs.add(ref); previousByOracle.set(oracleKey, ref);
+    }
+    if (openRun.oracleReceipts && (openRun.oracleReceipts.some(receipt => receipt.worldTurn > openRun.worldTime.worldTurn)
+      || openRun.consultedThisWorldTurn !== openRun.oracleReceipts.filter(receipt => receipt.worldTurn === openRun.worldTime.worldTurn).length
+      || openRun.consultedThisWorldTurn > 2)) fail("Oracle 本世界轮咨询额度必须由真实结果派生");
+    if (openRun.factLedger) {
+      const ledger = openRun.factLedger;
+      const inheritedFacts = new Set(branchLineage?.ancestors.flatMap(ancestor =>
+        (ancestor.snapshot.openRun?.factLedger?.entries ?? []).map(entry => stableProductRuntimeJsonV1(entry))) ?? []);
+      const inheritedRetirements = new Set(branchLineage?.ancestors.flatMap(ancestor =>
+        (ancestor.snapshot.openRun?.factLedger?.retirements ?? []).map(entry => stableProductRuntimeJsonV1(entry))) ?? []);
+      const currentEpochAllows = (entry: { sourceRef: { sessionKey: string; sequence: number }; viewerKey: string; authorizationEpochKey: string }) =>
+        authorization !== null && openRun.coordination.epochs.some(epoch => epoch.epochKey === entry.authorizationEpochKey
+          && epoch.viewerKey === entry.viewerKey && entry.sourceRef.sequence > epoch.startedRef.sequence
+          && (epoch.closedRef === null || entry.sourceRef.sequence < epoch.closedRef.sequence));
+      const factSourceAuthorityAllows = (entry: typeof ledger.entries[number]) => {
+        const sourceAuthority = entry.sourceRef.sessionKey === sessionKey ? authorization
+          : branchLineage?.ancestors.find(ancestor => ancestor.sessionKey === entry.sourceRef.sessionKey)?.snapshot.authorization;
+        const sourceSeat = sourceAuthority?.seats.find(seat => seat.viewerKey === entry.viewerKey);
+        if (entry.modelCandidate && sourceAuthority) {
+          assertTtrpgOpenModelFactApproverV1(sourceAuthority, entry.viewerKey);
+          const sourceCalls = entry.sourceRef.sessionKey === sessionKey ? openRun.coordination.calls
+            : branchLineage?.ancestors.find(ancestor => ancestor.sessionKey === entry.sourceRef.sessionKey)?.snapshot.openRun?.coordination.calls ?? [];
+          assertTtrpgOpenFactModelCallV1(entry, sourceCalls);
+        }
+        return sourceAuthority !== null && sourceAuthority !== undefined && (entry.modelCandidate !== undefined || sourceSeat?.role === "gm")
+          && sourceSeat?.controller !== "ai" && sourceSeat?.assignmentState === "claimed"
+          && !entry.fact.knownBy.some(actorKey => !sourceAuthority.selectedActorKeys.includes(actorKey))
+          && (entry.fact.audience !== "party" || stableProductRuntimeJsonV1([...entry.fact.knownBy].sort())
+            === stableProductRuntimeJsonV1([...sourceAuthority.selectedActorKeys].sort()));
+      };
+      if (ledger.basis.rulePackContentHash !== parsed.product.rulePackContentHash
+        || new Set(ledger.entries.map(entry => stableProductRuntimeJsonV1([entry.sourceRef, entry.modelCandidate?.reviewHash ? entry.modelCandidate.proposalIndex : null]))).size !== ledger.entries.length
+        || ledger.entries.some(entry => !factSourceAuthorityAllows(entry)
+          || !openRun.oracleReceipts?.some(oracle => stableProductRuntimeJsonV1(oracle.sourceRef) === stableProductRuntimeJsonV1(entry.oracleSourceRef))
+          || (entry.sourceRef.sessionKey === sessionKey ? !currentEpochAllows(entry)
+            : !ttrpgOpenAncestorSourceAllowedV1(branchLineage, entry.sourceRef, ['ttrpg.fact.asserted', 'ttrpg.open.oracle.reviewed']) || !inheritedFacts.has(stableProductRuntimeJsonV1(entry))))
+        || ledger.retirements.some(entry => entry.sourceRef.sessionKey === sessionKey ? !currentEpochAllows(entry)
+          : !ttrpgOpenAncestorSourceAllowedV1(branchLineage, entry.sourceRef, ['ttrpg.fact.asserted', 'ttrpg.fact.retired', 'ttrpg.open.oracle.reviewed']) || !inheritedRetirements.has(stableProductRuntimeJsonV1(entry)))) {
+        fail("事实账本缺少冻结来源、真实 Oracle、授权窗口或精确祖先事件");
+      }
+    }
+  }
   if (openRun && authorization) {
-    if (openRun.knowledge.some(entry => entry.acquisitionRef.sessionKey !== sessionKey
-      || entry.recipientActorKeys.some(actorKey => !authorization.seats.some(seat => seat.role === "player" && seat.actorKey === actorKey)))) fail("knowledge 身份/来源不闭合");
+    for (const operation of openRun.operations) assertTtrpgOpenOperationIntentCallV1(operation, openRun.coordination.calls)
+    if (openRun.knowledge.some(entry => entry.acquisitionRef.sessionKey === sessionKey
+      && entry.recipientActorKeys.some(actorKey => !authorization.seats.some(seat => seat.role === "player" && seat.actorKey === actorKey)))) fail("knowledge 身份/来源不闭合");
     if (new Set(openRun.operations.map(operation => operation.operationKey)).size !== openRun.operations.length
       || new Set(openRun.ruleReceipts.map(receipt => receipt.operationKey)).size !== openRun.ruleReceipts.length
       || openRun.operations.filter(operation => ["awaiting-approval", "executing"].includes(operation.status)).length > 1
@@ -717,6 +947,7 @@ export function parseTtrpgRuntimeStateV2(
     }
     for (const epoch of openRun.coordination.epochs) {
       const seat = authorization.seats.find(item => item.seatKey === epoch.triggeredBySeatKey && item.viewerKey === epoch.viewerKey);
+      if (epoch.hostingDelegation && stableProductRuntimeJsonV1(epoch.hostingDelegation.authorizationRef) !== stableProductRuntimeJsonV1(authorization.sourceRef)) fail('有限主持委托未绑定本桌真实 Session Zero')
       if (!seat || seat.controller === "ai" || seat.assignmentState !== "claimed"
         || epoch.sessionZeroRevision !== authorization.revision
         || stableProductRuntimeJsonV1(epoch.budget) !== stableProductRuntimeJsonV1(epochBudget)
@@ -725,8 +956,14 @@ export function parseTtrpgRuntimeStateV2(
         fail("epoch 与冻结预算、Session Zero 或队友控制权不一致");
       }
     }
+    for (const operation of openRun.operations) {
+      if (!operation.inheritance) continue;
+      const receipt = openRun.ruleReceipts.find(receipt => receipt.operationKey === operation.operationKey);
+      if (!branchLineage || !receipt) fail("继承操作缺少祖先与真实裁定");
+      assertTtrpgOpenRecoveredOperationV1({ lineage: branchLineage, authorization, operation, receipt, mode: "stored" });
+    }
   }
-  return {
+  const result: TtrpgRuntimeStateV2 = {
     ...parsed,
     schema: "storyforge.ttrpg-runtime",
     version: 2,
@@ -735,7 +972,12 @@ export function parseTtrpgRuntimeStateV2(
     authorization,
     epochBudget,
     openRun,
+    ...(branchLineage ? { branchLineage } : {}),
   };
+  assertTtrpgOpenTableMessageHistoryV1(result);
+  assertTtrpgOpenPressureHistoryV1(result);
+  assertTtrpgOpenSituationCycleHistoryV1(result);
+  return result;
 }
 
 function openClock(

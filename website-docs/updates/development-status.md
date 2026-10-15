@@ -1,5 +1,34 @@
 # 待合并开发记录与分支核对
 
+## 2026-10-14 本轮核对
+
+增量范围：上次成功基线 `ce1cfd6c` → 最新远程 main `cfc5ed3f`。完整枚举 **51 个本地分支（含本轮维护分支）及 68 个关联工作区**，含 detached；23 个本地分支 head 尚非 main 祖先。数字是 Git 身份关系，不是 23 项遗漏功能。作者工作区只读，下面记录的是核对时快照，后续提交和 PR 状态可能继续变化。
+
+### 已交付变化
+
+- [PR #119](https://github.com/yuanbw2025/storyforge/pull/119) 已合入 `e40fadce`：文字冒险保图定稿修订、生产证据和备份恢复、任务结算、分支正文隔离及独立网页游戏导出已进入 main。详见[操作指南](/features/interactive/text-adventure)和[更新日志](/updates/changelog)。原快照中的“PR #119 待合并”已失效。
+- v4.0.0 已在 2026-10-13 正式发布，固定源码 `78416965`；[安装指南](/getting-started/install)、[模型配置](/getting-started/model-config)和[兼容说明](/updates/compatibility)区分便携下载、后续 main 与官网体验。#119 晚于固定发布包，不宣称已有下载自动包含这些改动。
+- 官网体验、顶部导航、README 和公开统计隐私说明已有主干文档，本轮补查后保留；流量 CSV 归档不计作产品功能。官网图形替换属于独立平台仓库的展示调整，不代表编辑器新增能力。
+
+### 新增或仍活动的未交付开发
+
+“仅本地”按当前获取的全部 origin 引用判断，不按落后 upstream 的领先数判断。以下均未进入 main，不能按此表当作已上线操作指南。工作区名相对本机 `.codex/worktrees/`；完整路径、提交与补丁证据保存在本轮维护记录。
+
+| 分支 / 核对 head | 观察到的范围 | 状态与去重 |
+| --- | --- | --- |
+| `feat/character-chat-optimization-20261006` · `b2aefa94`；`character-chat-plan/storyforge` | 角色定向与情境、行动候选、历史修订/分支、逐轮节奏、上下文证据、会谈采纳、草稿持久化、失败和备份恢复 | 99 个主干外提交均未被 origin 引用包含，含文档与合并历史；尚无对应开放 PR。另有 7 个未提交条目。10 个临时 detached 核验工作区的 head 均为此分支祖先，只计同一开发链，不计十项独立功能。 |
+| `feat/longform-system-quality-plan-20261013` · `e3499e6e` | 正文采纳与记忆冻结时序修复、系统文 Q01 基线及问题清单 | 已推送，[草稿 PR #135](https://github.com/yuanbw2025/storyforge/pull/135) 未合并；包含在下列 Q02–Q10 开发链中，不重复算一项缺失功能。 |
+| `feat/longform-quality-m2-20261014` 与 `feat/longform-system-quality-q02-q10-20261014` · 同为 `744d84b9`；`longform-quality-m2/storyforge`、`longform-node-experience/storyforge` | 系统文技法/元素、场景任务到正文、上下文一致性、作者要求与文风、可保存的单页问卷 | 两分支同 head，合计作为一条链；18 个主干外提交中 12 个仅本地，不能当作 12 个功能。前者另有 17 个未提交条目，涉及正文请求证据、长度观察与中断处理，仅登记观察范围。 |
+| `feat/avg-production-research-20261013-latest` · `8df94be1`；`feat/avg-base00a-20261014` · `18218f73` | AVG 三线制作设计、工作包；BASE-00A 版本化承载和旧包兼容边界 | 分别已推送至[草稿 PR #133](https://github.com/yuanbw2025/storyforge/pull/133)、[PR #137](https://github.com/yuanbw2025/storyforge/pull/137)，均未合并；设计已包含在 BASE-00A，设计文件不证明完整 AVG 已实现。 |
+| `feat/avg-base00b-20261014` · `1d64da10`；`avg-base00b-20261014/storyforge` | 私有工件/运行契约、设置、准入与采纳规则等后续改动 | 唯一仅本地提交为合入 BASE-00A 的 merge，无新增普通提交；21 个未提交条目才是观察到的新开发，不能声称已完成或已推送。 |
+| `feat/narrative-domain-projection-20261014` · `f52f5d4d`；`narrative-world-design/storyforge` | 叙事领域设计、NW-0B 评估基线、NW-1A 身份/时间与 IR 编解码；工作区另涉及投影、采纳、生命周期与后续语义索引 | 4 个主干外提交均仅本地，其中 1 个 merge；116 个未提交状态条目，不能按条目数认定完成。NW-0B、NW-1A 为此链祖先；两个设计分支同 head `ab9e5ed0`，其设计补丁与链内 `4861441b` 等价。`nw1b-verification/storyforge` 是同 head 的 detached 核验副本，另有 86 个未提交条目，重叠范围去重、剩余差异待核对。 |
+| `feat/text-open-world-productization-20261013` · `2e9146a4`；`open-world-productization/storyforge` | W1–W3 制作职责和进度、图片逐项审查、装配证据、发布人审与本地反馈导出 | 已推送，[PR #134](https://github.com/yuanbw2025/storyforge/pull/134) 未合并；不是主干已上线能力。 |
+| `feat/ttrpg-handoff-20261013` · `2bda43a7`；`ttrpg-handoff-20261013/storyforge` | open 规则结算授权、因果恢复、冻结角色上下文和持久调用证据 | 已推送，[草稿 PR #128](https://github.com/yuanbw2025/storyforge/pull/128) 未合并；与方案 [PR #124](https://github.com/yuanbw2025/storyforge/pull/124) 共享 `a207227c` 文档提交，不能算两套独立实现。 |
+
+8 个工作区有未提交状态：上述 5 处活动工作区（含 detached 核验副本），以及既有内置游戏旧工作区、宣传截图 CSS 工作区和一处仅含 `.vite-e2e-cache/` 的历史录制工作区。后三处范围与上次相同，缓存不计功能，旧内置作品已由 PR #111 迁入 main；不重复提醒为新开发。历史雾港、世界媒资、旧开放世界、UI 与备份分支的 head 未变，继续沿用下方去重结论；不自动采用、合并或清理。
+
+本轮只维护知识库并做文档必要检查；产品分支的验收、模型效果与完整游戏质量不在本轮验证范围。下方所有旧日期内容保留为历史快照，不覆盖本节当前结论。
+
 ## 2026-10-12 专项交付 · 官网体验与导航
 
 官网真实界面的源码交付见 [PR #122](https://github.com/yuanbw2025/storyforge/pull/122)：独立展示构建复用项目界面、工作台与示例，隔离浏览器存储并关闭模型配置和 AI 调用。普通下载版继续保留完整创作能力；没有新增业务表、迁移或改变作品归属。官网入口、青绿山水主题和公开工坊平台的主干交付见 [平台 PR #2](https://github.com/yuanbw2025/storyforge-platform/pull/2)。

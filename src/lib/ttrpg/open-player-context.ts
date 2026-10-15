@@ -1,3 +1,7 @@
+import { verifyTtrpgOpenManualEpochsV1 } from './open-manual-action'
+import { verifyTtrpgOpenPrivateChoiceHashesV1 } from './open-private-choice'
+import { TtrpgOpenReadConflictV1 } from './open-read-conflict'
+import { verifyTtrpgOpenOracleReviewHashesV1 } from './open-oracle-review'
 /** Actor-only read model. Raw responses, GM plans and other characters' private fields stay outside it. */
 import type { WorkspaceScope } from '../types'
 import { assertInstanceBinding } from '../product/runtime-instances'
@@ -11,8 +15,24 @@ import { projectTtrpgOpenKnowledgeForViewerV1, hashTtrpgOpenEvidenceFieldsV1 } f
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import { ttrpgOpenMechanicalStateHashV1, ttrpgOpenPredicateContextV1 } from './open-rule-plan'
 import { projectTtrpgRulePackMechanicalCoreV1 } from './rule-pack-v2'
+import { verifyTtrpgOpenOracleJournalV1 } from './open-oracle-contract'
+import { verifyTtrpgOpenFactLedgerV1, projectTtrpgOpenSessionFactsForActorV1 } from './open-fact-ledger'
+import { ttrpgOpenKnowledgeDiscoveryOriginV1 } from './open-knowledge-share'
+import { evaluateTtrpgPredicateV1 } from './predicate'
 
-export async function loadTtrpgOpenPlayerContextV1(input: { scope: WorkspaceScope; sessionId: number; actorKey: string }) {
+type OpenPlayerReadV1 = { scope: WorkspaceScope; sessionId: number; actorKey: string }
+export async function loadTtrpgOpenPlayerContextV1(input: OpenPlayerReadV1) { return loadOpenPlayerProjectionV1(input) }
+/** Human display does not grant a model permission to read the actor. */
+export async function loadTtrpgOpenHumanViewV1(input: OpenPlayerReadV1 & { viewerKey: string }) {
+  return loadOpenPlayerProjectionV1(input, input.viewerKey)
+}
+/** Common-view narration sees no self profile, sheet, inventory or private goals. */
+export async function loadTtrpgOpenPartyProjectionV1(input: OpenPlayerReadV1) {
+  const loaded = await loadOpenPlayerProjectionV1(input, undefined, true)
+  const { actorsHere, initialObservations, knowledge, sessionFacts, pressureSignals } = loaded.view
+  return { view: { actorsHere, initialObservations, knowledge, sessionFacts, pressureSignals }, readEvidence: loaded.readEvidence }
+}
+async function loadOpenPlayerProjectionV1(input: OpenPlayerReadV1, humanViewerKey?: string, partyNarration = false) {
   const session = await assertInstanceBinding(input.sessionId, input.scope)
   if (session.kind !== 'ttrpg') throw new Error('[ttrpg-open-context] Instance 不是跑团')
   const source = await verifyProductRuntimeSessionSourceV1({ scope: input.scope, session, ttrpgProtocol: 2 })
@@ -24,12 +44,27 @@ export async function loadTtrpgOpenPlayerContextV1(input: { scope: WorkspaceScop
   if (!runtime?.authorization || !runtime.openRun || runtime.product.rulePackContentHash !== content.rulePack.contentHash
     || runtime.product.campaignKey !== content.campaign.campaignKey) throw new Error('[ttrpg-open-context] 团局没有有效冻结来源与授权')
   const participants = await readTtrpgSessionParticipantsV2(input.sessionId)
+  await verifyTtrpgOpenPrivateChoiceHashesV1(runtime.openRun.operations)
+  await verifyTtrpgOpenManualEpochsV1(runtime.openRun.coordination.epochs)
+  await verifyTtrpgOpenOracleJournalV1({ receipts: runtime.openRun.oracleReceipts ?? [], rulePack: content.rulePack.content,
+    sessionKey: runtime.sessionKey, seed: session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] })
+  await verifyTtrpgOpenOracleReviewHashesV1(runtime.openRun.oracleReviews ?? [])
+  await verifyTtrpgOpenFactLedgerV1({ ledger: runtime.openRun.factLedger, content, runtimeSourceHash: session.runtimeSourceHash,
+    oracleReceipts: runtime.openRun.oracleReceipts ?? [], storyFacts: runtime.product.effectLedger.storyFacts })
+  for (const knowledge of runtime.openRun.knowledge) {
+    const origin = ttrpgOpenKnowledgeDiscoveryOriginV1(runtime, knowledge)
+    if (origin.contentHash !== await hashProductProductionValueV2(content)) throw new Error('[ttrpg-open-context] 知识发现来源与当前冻结内容不一致')
+  }
   const authorization = assertTtrpgOpenAuthorizationRowsCurrentV1({ authorization: runtime.authorization, participants })
   const seat = authorization.seats.find(seat => seat.role === 'player' && seat.actorKey === input.actorKey)
   const actor = state.entities[input.actorKey]
   const template = content.campaign.characterTemplates.find(template => template.characterKey === input.actorKey)
   if (!seat || !actor || !template || !authorization.selectedActorKeys.includes(input.actorKey)) throw new Error('[ttrpg-open-context] 角色不是已确认活动玩家')
-  if (!seat.consent.aiAdviceAllowed) throw new Error('[ttrpg-open-context] 该角色未授权 AI 读取与建议')
+  if (humanViewerKey !== undefined) {
+    if (seat.viewerKey !== humanViewerKey || seat.controller === 'ai' || seat.assignmentState !== 'claimed') throw new Error('[ttrpg-open-context] 只能读取本人已认领的真人角色')
+  } else if (partyNarration) {
+    if (!seat.consent.aiIdentityDisclosed || !seat.consent.safetyBoundariesAccepted || !content.campaign.runtimePolicy.enabled) throw new Error('[ttrpg-open-context] 共同叙述未获本桌 AI 主持授权')
+  } else if (!seat.consent.aiAdviceAllowed) throw new Error('[ttrpg-open-context] 该角色未授权 AI 读取与建议')
   const visible = (audience: string, knownBy: readonly string[]) => audience === 'public' || audience === 'party'
     || (audience === 'private' && knownBy.includes(input.actorKey))
   const visibleRef = (ref: string | null) => {
@@ -53,6 +88,11 @@ export async function loadTtrpgOpenPlayerContextV1(input: { scope: WorkspaceScop
   const availableActions = new Set(ttrpgOpenPredicateContextV1(state, content).actors![input.actorKey].abilityKeys)
   const actionDefinitions = mechanicalRules.actions.filter(action => grantedActions.has(action.key))
   const genericChecks = content.rulePack.content.genericChecks.filter(check => ['public', 'party', `actor:${input.actorKey}`].includes(check.audience))
+  const interactionBindings = content.rulePack.content.interactionBindings?.filter(binding => grantedActions.has(binding.actionKey))
+    .map(binding => ({ interactionKey: binding.interactionKey,kind: binding.kind,title: binding.title,actionKey: binding.actionKey,
+      timeCostWorldTurns: binding.timeCostWorldTurns,requiresEffectReview: binding.effectPlanRef !== null,
+      available: availableActions.has(binding.actionKey) && (binding.kind !== 'retreat' || seat.controller === 'human' || seat.controller === 'hybrid')
+        && binding.preconditions.every(predicate => evaluateTtrpgPredicateV1(predicate,ttrpgOpenPredicateContextV1(state,content))) }))
   const view = {
     schema: 'storyforge.ttrpg-open-player-context', version: 1,
     source: { campaignKey: content.campaign.campaignKey, rulePackContentHash: content.rulePack.contentHash,
@@ -78,7 +118,25 @@ export async function loadTtrpgOpenPlayerContextV1(input: { scope: WorkspaceScop
       && (binding.bindingKey === input.actorKey || visible(binding.audience, binding.knownByActorKeys))
       && state.entities[binding.bindingKey]?.locationKey === actor.locationKey).map(binding => ({
         actorKey: binding.bindingKey, name: state.entities[binding.bindingKey].name, role: state.entities[binding.bindingKey].kind })),
+    pressureSignals: [
+      ...(runtime.openRun.pressureSignals ?? []).filter(signal => signal.audience === 'public' || signal.recipientActorKeys.includes(input.actorKey)).map(signal => ({
+        sourceRef: structuredClone(signal.sourceRef), signalText: signal.signalText, atWorldTurn: signal.worldTurn, audience: signal.audience })),
+      ...(runtime.openRun.pressureCycles ?? []).flatMap(cycle => cycle.frontReceipts.filter(receipt => receipt.kind === 'telegraph'
+        && (receipt.audience === 'public' || receipt.recipientActorKeys.includes(input.actorKey))).map(receipt => ({
+        sourceRef: structuredClone(receipt.sourceRef), signalText: cycle.frozenContent.campaign.fronts.find(f => f.frontKey === receipt.frontKey)!.telegraph.find(t => t.telegraphKey === receipt.definitionKey)!.signalText,
+        atWorldTurn: receipt.atWorldTurn, audience: receipt.audience }))),
+    ],
     knowledge,
+    sessionFacts: projectTtrpgOpenSessionFactsForActorV1(runtime.openRun.factLedger, input.actorKey)
+      .filter(fact => visibleRef(fact.subjectRef) && visibleRef(fact.objectRef)),
+    oracleHistory: (runtime.openRun.oracleReceipts ?? []).filter(receipt => receipt.audience === 'public'
+      || (receipt.audience === 'party' && (receipt.sourceRef.sessionKey === runtime.sessionKey ? authorization
+        : runtime.branchLineage?.ancestors.find(ancestor => ancestor.sessionKey === receipt.sourceRef.sessionKey)?.snapshot.authorization)
+        ?.selectedActorKeys.includes(input.actorKey))).map(receipt => ({
+      sourceRef: structuredClone(receipt.sourceRef), previousOracleRef: structuredClone(receipt.previousOracleRef),
+      worldTurn: receipt.worldTurn, audience: receipt.audience, outcome: structuredClone(receipt.resolution.outcome),
+      // Dice proof and seed material are not necessary for the actor's knowledge projection.
+    })),
     rules: {
       // Only the acting player's grants and explicitly visible checks. No GM outcome templates or hidden predicates.
       core: { rulePackContentHash: content.rulePack.contentHash, attributes: mechanicalRules.attributes,
@@ -86,6 +144,7 @@ export async function loadTtrpgOpenPlayerContextV1(input: { scope: WorkspaceScop
         actionCatalog: actionDefinitions.map(action => ({ actionKey: action.key, name: action.name, target: action.target,
           available: availableActions.has(action.key) })),
         genericCheckCatalog: genericChecks.map(check => ({ checkKey: check.checkKey, title: check.title, targetKinds: check.targetKinds })) },
+      ...(interactionBindings ? { interactions: interactionBindings } : {}),
       actions: actionDefinitions.map(action => ({ actionKey: action.key, name: action.name, description: action.description,
         target: action.target, costResourceKey: action.costResourceKey, costAmount: action.costAmount, usage: action.usage,
         timeCostWorldTurns: content.rulePack.content.timePolicy.actionOverrides.find(override => override.actionKey === action.key)?.timeCostWorldTurns
@@ -99,7 +158,7 @@ export async function loadTtrpgOpenPlayerContextV1(input: { scope: WorkspaceScop
   const admissionStateHash = await ttrpgOpenMechanicalStateHashV1(state)
   const stateHash = await hashProductRuntimeStateV1(state)
   const after = await readProductRuntimeStateVersion(input.sessionId)
-  if (after.sequence !== state.lastSequence || after.stateHash !== stateHash) throw new Error('[ttrpg-open-context] 读取期间运行状态已变化')
+  if (after.sequence !== state.lastSequence || after.stateHash !== stateHash) throw new TtrpgOpenReadConflictV1('[ttrpg-open-context] 读取期间运行状态已变化')
   assertTtrpgOpenAuthorizationRowsCurrentV1({ authorization, participants: await readTtrpgSessionParticipantsV2(input.sessionId) })
   return { view, visibilityHash, admissionStateHash, readEvidence: { sequence: state.lastSequence, stateHash,
     runtimeSourceHash: session.runtimeSourceHash, sessionKey: runtime.sessionKey } }

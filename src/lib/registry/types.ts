@@ -824,6 +824,8 @@ export interface ContextResourceProviderV1 {
   read(input: ResourceReadInputV1): Promise<ContextResourceReadV1>
   readOriginal(input: OriginalEvidenceReadInputV1): Promise<OriginalEvidenceReadV1>
   fingerprint(scope: FrozenResourceScopeV1): Promise<string>
+  /** Optional owner-created immutable read view; executor MUST verify freshness before using its result. */
+  openReadSession?(scope: FrozenResourceScopeV1): Promise<{ provider: ContextResourceProviderV1; assertCurrent(): Promise<void> }>
 }
 
 export interface ContextAccessPolicyV1 {

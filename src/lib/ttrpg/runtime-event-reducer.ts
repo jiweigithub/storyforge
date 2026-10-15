@@ -1,3 +1,19 @@
+import { applyTtrpgOpenTableMessageEventV1 } from './open-table-conversation-reducer'
+import { applyTtrpgOpenHostingDelegationEventV1 } from './open-hosting-delegation'
+import { parseTtrpgOpenManualRequestV1 } from './open-manual-action'
+import { applyTtrpgOpenPrivateChoiceDisclosureEventV1 } from './open-private-choice-reducer'
+import { applyTtrpgOpenGateRecoveryEventV1 } from './open-gate-recovery-reducer'
+import { applyTtrpgOpenHandoffEventV1 } from './open-handoff'
+import { applyTtrpgOpenCompanionPreauthorizationEventV1 } from './open-companion-preauthorization'
+import { applyTtrpgOpenNarrationEventV1 } from './open-kp-reducer'
+import { ttrpgOpenClosedStageRecoveryAllowedV1 } from './open-stage-close'
+import { applyTtrpgOpenStageClosureEventV1 } from './open-stage-close-reducer'
+import { applyTtrpgOpenTerminalGateEventV1 } from './open-terminal-gates-reducer'
+import { applyTtrpgOpenSituationCycleEventV1 } from './open-situation-cycle-reducer'
+import { applyTtrpgOpenSituationWorkEventV1 } from './open-situation-work-reducer'
+import { applyTtrpgOpenPressureEffectEventV1 } from './open-pressure-effect-reducer'
+import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
+import { applyTtrpgOpenPressureEventV1 } from './open-pressure-reducer'
 import { applyTtrpgMechanicalResultV1 } from './rule-action-mechanical';
 import { parseTtrpgPrivateGuidanceReceiptV1 } from './private-guidance-model'
 import { parseTtrpgDirectorReceiptV1 } from './director-model'
@@ -52,13 +68,27 @@ import { parseTtrpgOpenAuthorizationV1 } from './open-authorization'
 import { parseTtrpgOpenEpochV1 } from './open-coordination'
 import { applyTtrpgOpenOperationEventV1 } from './open-operation-reducer'
 import { applyTtrpgOpenModelCallEventV1 } from './open-model-call-reducer'
+import { applyTtrpgOpenBranchEventV1 } from './open-branch-reducer'
+import { applyTtrpgOpenOracleEventV1 } from './open-oracle-reducer'
+import { applyTtrpgOpenFactEventV1 } from './open-fact-reducer'
+import { applyTtrpgOpenOracleReviewEventV1 } from './open-oracle-review-reducer'
+import { applyTtrpgOpenKnowledgeShareEventV1 } from './open-knowledge-share-reducer'
 
 export function applyTtrpgRuntimeEventV1(
   state: ProductRuntimeState,
   event: ProductRuntimeEvent,
   payload: ProductRuntimeJsonObjectV1,
 ): ProductRuntimeState {
-  if (state.ttrpg?.sessionKey && (applyTtrpgOpenOperationEventV1(state, event, payload) || applyTtrpgOpenModelCallEventV1(state, event, payload))) {
+  if (state.ttrpg?.sessionKey && (applyTtrpgOpenHostingDelegationEventV1(state,event,payload) || applyTtrpgOpenTableMessageEventV1(state,event,payload) || applyTtrpgOpenPrivateChoiceDisclosureEventV1(state,event,payload) || applyTtrpgOpenHandoffEventV1(state, event, payload) || applyTtrpgOpenCompanionPreauthorizationEventV1(state, event, payload) || applyTtrpgOpenNarrationEventV1(state, event, payload) || applyTtrpgOpenGateRecoveryEventV1(state, event, payload) || applyTtrpgOpenStageClosureEventV1(state, event, payload) || applyTtrpgOpenTerminalGateEventV1(state, event, payload) || applyTtrpgOpenSituationCycleEventV1(state, event, payload) || applyTtrpgOpenSituationWorkEventV1(state, event, payload) || applyTtrpgOpenPressureEffectEventV1(state, event, payload) || applyTtrpgOpenPressureEventV1(state, event, payload))) {
+    state.ttrpg = parseTtrpgRuntimeStateV2(state.ttrpg)!;
+    state.lastSequence = event.sequence;
+    return state;
+  }
+  if (state.ttrpg?.sessionKey && (applyTtrpgOpenOperationEventV1(state, event, payload) || applyTtrpgOpenModelCallEventV1(state, event, payload)
+    || applyTtrpgOpenBranchEventV1(state, event, payload) || applyTtrpgOpenOracleEventV1(state, event, payload) || applyTtrpgOpenFactEventV1(state, event, payload)
+    || applyTtrpgOpenKnowledgeShareEventV1(state, event, payload) || applyTtrpgOpenOracleReviewEventV1(state, event, payload))) {
+    const openState = parseTtrpgRuntimeStateV2(state.ttrpg)!;
+    if (openState.openRun?.operations.some(o => o.pressureTurnConditions) || openState.openRun?.narrations || openState.openRun?.stageClosures || openState.openRun?.terminalReceipts || openState.openRun?.gateReceipts || openState.openRun?.situationCycles || openState.openRun?.pressureCycles || openState.openRun?.pressureSignals) state.ttrpg = openState;
     state.lastSequence = event.sequence;
     return state;
   }
@@ -88,6 +118,9 @@ export function applyTtrpgRuntimeEventV1(
         openRun.stage.closedAtWorldTurn !== null || openRun.consultedThisWorldTurn !== 0 ||
         openRun.coordination.epochs.length !== 0 || openRun.coordination.calls.length !== 0 || openRun.coordination.activeEpochKey !== null ||
         openRun.operations.length !== 0 || openRun.ruleReceipts.length !== 0 || openRun.knowledge.length !== 0 ||
+        (openRun.oracleReceipts?.length ?? 0) !== 0 ||
+        openRun.factLedger !== undefined ||
+        (openRun.knowledgeShares?.length ?? 0) !== 0 ||
         openRun.gates.length !== 0 || openRun.failures.length !== 0 ||
         openRun.situations.active.length !== 0 || openRun.situations.queued.length !== 0 ||
         Object.keys(openRun.situations.cooldowns).length !== 0 ||
@@ -108,6 +141,7 @@ export function applyTtrpgRuntimeEventV1(
       const openRun = parseTtrpgOpenRunStateV1(ttrpg.openRun, ttrpg.sessionKey);
       if (Object.keys(payload).sort().join(",") !== "epoch,intent") throw new Error("epoch.started 字段不精确。");
       const epoch = parseTtrpgOpenEpochV1(payload.epoch);
+      if (openRun.gateRecoveries?.some(r => r.stoppedRef && openRun.operations.some(o => o.operationKey === r.operationKey && o.status === 'executing'))) throw new Error('本轮质量门恢复已停止，未完成业务不能借新 epoch 绕过');
       const seat = authorization.seats.find(item => item.seatKey === epoch.triggeredBySeatKey && item.viewerKey === epoch.viewerKey);
       if (!ttrpg.sessionKey || !seat || seat.controller === "ai" || seat.assignmentState !== "claimed"
         || event.actorKey !== seat.actorKey || !isObject(payload.intent)
@@ -115,13 +149,18 @@ export function applyTtrpgRuntimeEventV1(
         || typeof payload.intent.rawInput !== "string" || !payload.intent.rawInput.trim()
         || epoch.startedRef.sessionKey !== ttrpg.sessionKey || epoch.startedRef.sequence !== event.sequence
         || epoch.sessionZeroRevision !== authorization.revision || epoch.status !== "active"
-        || epoch.closedRef !== null || epoch.stopReason !== null || epoch.successfulActorKeys.length !== 0
+        || epoch.closedRef !== null || epoch.stopReason !== null || epoch.hostingDelegation || epoch.successfulActorKeys.length !== 0
         || epoch.reservedCalls !== 0 || epoch.consumedTokens !== 0 || epoch.actualCostUsd !== 0
         || stableJson(epoch.budget) !== stableJson(ttrpg.epochBudget)
-        || openRun.stage.status !== "open" || openRun.coordination.activeEpochKey !== null
+        || openRun.stage.status !== "open" && !ttrpgOpenClosedStageRecoveryAllowedV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.triggerKind) || openRun.coordination.activeEpochKey !== null
         || openRun.coordination.epochs.some(item => item.epochKey === epoch.epochKey)) {
         throw new Error("epoch.started 的真人授权、初始额度或活动窗口无效。");
       }
+      if (epoch.manualAction) {
+        const request = parseTtrpgOpenManualRequestV1(epoch.manualAction);
+        if (seat.role !== 'player' || request.actorKey !== seat.actorKey || !isObject(payload.intent)
+          || stableJson(payload.intent.manualAction) !== stableJson(epoch.manualAction)) throw new Error('人工 epoch 未绑定本人的明确请求');
+      } else if (isObject(payload.intent) && Object.prototype.hasOwnProperty.call(payload.intent,'manualAction')) throw new Error('人工请求元数据不闭合');
       openRun.coordination.epochs.push(epoch);
       openRun.coordination.activeEpochKey = epoch.epochKey;
       ttrpg.openRun = openRun;
@@ -443,6 +482,11 @@ export function applyTtrpgRuntimeEventV1(
           throw new Error("open Session Zero 授权与本事件不一致。");
         }
         ttrpg.authorization = authorization;
+        if (ttrpg.openRun && Object.prototype.hasOwnProperty.call(ttrpg, 'branchLineage')) {
+          const run = parseTtrpgOpenRunStateV1(ttrpg.openRun);
+          run.companions = run.companions.filter(companion => selectedCharacterKeys.includes(companion.actorKey));
+          ttrpg.openRun = run;
+        }
       } else if (Object.prototype.hasOwnProperty.call(payload, "authorization")) {
         throw new Error("scripted Session Zero 不能接受 open 授权。");
       }

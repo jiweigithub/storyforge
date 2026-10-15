@@ -486,6 +486,7 @@ export async function carryTtrpgContinuationParticipantsV2(input: {
 export async function cloneTtrpgSessionParticipantsV2(input: {
   parentSessionId: number;
   child: ProductRuntimeSession;
+  parentSessionKey?: string;
 }): Promise<void> {
   const parentRows = await db.ttrpgSessionParticipants
     .where("sessionId")
@@ -509,9 +510,9 @@ export async function cloneTtrpgSessionParticipantsV2(input: {
       workId: input.child.workId!,
       sessionId: input.child.id!,
       revision: 1,
-      lastCommandId: `branch-from.${input.parentSessionId}`,
+      lastCommandId: input.parentSessionKey ? 'branch-initialization' : `branch-from.${input.parentSessionId}`,
       lastCommandFingerprint: stableJson({
-        parentSessionId: input.parentSessionId,
+        ...(input.parentSessionKey ? { parentSessionKey: input.parentSessionKey } : { parentSessionId: input.parentSessionId }),
         seatKey: row.seatKey,
       }),
       createdAt: now,

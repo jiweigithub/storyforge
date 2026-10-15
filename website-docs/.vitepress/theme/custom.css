@@ -16,6 +16,9 @@ body { background-image:radial-gradient(circle at 12% 0%,rgba(51,139,118,.12),tr
 /* Keep primary tabs visible in their own row. The shared height also offsets
    VitePress content, sidebar and anchor targets on narrow screens. */
 :root{--vp-nav-height:120px}
+/* Cover every navigation row while document content scrolls underneath.
+   The parent surface also covers VitePress's transparent sidebar navbar. */
+.VPNav{background-color:var(--vp-nav-bg-color)}
 .VPNavBar .container>.title,.VPNavBar.has-sidebar .container>.title,.VPNavBar .VPNavBarTitle .title,.VPNavBar .content-body{height:64px}
 .VPNavBar .content-body{--vp-nav-height:64px}
 .VPNavBar.has-sidebar .content,.VPNavBar.has-sidebar:not(.home.top) .content-body{position:static}

@@ -163,16 +163,31 @@ const TEXT_OPEN_WORLD_RUNTIME_CONTEXT_PROVIDER_PROXY_V1: ContextResourceProvider
     .TEXT_OPEN_WORLD_RUNTIME_CONTEXT_PROVIDER_V1.fingerprint(scope),
 }
 
-function ttrpgOpenProvider(sourceKey: 'ttrpgOpenAuthority' | 'ttrpgOpenKnowledge'): ContextResourceProviderV1 {
+function ttrpgOpenProvider(sourceKey: 'ttrpgOpenAuthority' | 'ttrpgOpenKnowledge' | 'ttrpgOpenOracleHistory' | 'ttrpgOpenFacts' | 'ttrpgOpenGmOracleInput' | 'ttrpgOpenKpInput'): ContextResourceProviderV1 {
   const load = async () => {
     const module = await import('../ttrpg/open-context-provider')
-    return sourceKey === 'ttrpgOpenAuthority' ? module.TTRPG_OPEN_AUTHORITY_PROVIDER_V1 : module.TTRPG_OPEN_KNOWLEDGE_PROVIDER_V1
+    if (sourceKey === 'ttrpgOpenKpInput') return module.TTRPG_OPEN_KP_INPUT_PROVIDER_V1
+    return sourceKey === 'ttrpgOpenAuthority' ? module.TTRPG_OPEN_AUTHORITY_PROVIDER_V1
+      : sourceKey === 'ttrpgOpenKnowledge' ? module.TTRPG_OPEN_KNOWLEDGE_PROVIDER_V1
+        : sourceKey === 'ttrpgOpenOracleHistory' ? module.TTRPG_OPEN_ORACLE_HISTORY_PROVIDER_V1
+          : sourceKey === 'ttrpgOpenFacts' ? module.TTRPG_OPEN_FACTS_PROVIDER_V1 : module.TTRPG_OPEN_GM_ORACLE_INPUT_PROVIDER_V1
   }
   return { version: 'context-resource-provider-v1', providerId: `storyforge.${sourceKey}`,
-    providerVersion: 'ttrpg-open-actor-provider-v1', normalizationVersion: 'ttrpg-open-actor-json-v1', kinds: ['fact'],
+    providerVersion: sourceKey === 'ttrpgOpenAuthority' ? 'ttrpg-open-actor-provider-v3' : sourceKey === 'ttrpgOpenKpInput' ? 'ttrpg-open-kp-provider-v2' : 'ttrpg-open-actor-provider-v1', normalizationVersion: 'ttrpg-open-actor-json-v1', kinds: ['fact'],
     listMetadata: async input => (await load()).listMetadata(input), searchMetadata: async input => (await load()).searchMetadata(input),
     read: async input => (await load()).read(input), readOriginal: async input => (await load()).readOriginal(input),
-    fingerprint: async scope => (await load()).fingerprint(scope) }
+    fingerprint: async scope => (await load()).fingerprint(scope),
+    openReadSession: async scope => (await load()).openReadSession!(scope) }
+}
+
+function ttrpgOpenGuidanceProvider(consumer: 'actor' | 'party-narrator' | 'gm-assistant', sourceKey: string): ContextResourceProviderV1 {
+  const load = async () => (await import('../ttrpg/open-context-guidance-provider')).createTtrpgOpenGuidanceProviderV1(consumer)
+  return { version: 'context-resource-provider-v1', providerId: `storyforge.${sourceKey}`,
+    providerVersion: 'ttrpg-open-guidance-provider-v1', normalizationVersion: 'ttrpg-open-guidance-json-v1', kinds: ['fact', 'reference'],
+    listMetadata: async input => (await load()).listMetadata(input), searchMetadata: async input => (await load()).searchMetadata(input),
+    read: async input => (await load()).read(input), readOriginal: async input => (await load()).readOriginal(input),
+    fingerprint: async scope => (await load()).fingerprint(scope),
+    openReadSession: async scope => (await load()).openReadSession!(scope) }
 }
 
 // Upper-product readers are lazy for the same reason as adaptation readers:
@@ -1892,6 +1907,53 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
     requiresResourceKeyAllowList: true, resources: ttrpgOpenProvider('ttrpgOpenKnowledge'),
     read: async () => { throw new Error('[ttrpg-open-context] 角色来源只经有明确 POV/allow-list 的 Context Gateway 渐进读取') },
+  },
+  {
+    key: 'ttrpgOpenOracleHistory', label: 'open 跑团角色可读 Oracle 历史',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 6000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenProvider('ttrpgOpenOracleHistory'),
+    read: async () => { throw new Error('[ttrpg-open-context] Oracle 历史只经明确 POV/allow-list 的 Context Gateway 读取') },
+  },
+  {
+    key: 'ttrpgOpenFacts', label: 'open 跑团角色可读会话叙事事实',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 10000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenProvider('ttrpgOpenFacts'),
+    read: async () => { throw new Error('[ttrpg-open-context] 会话事实只经明确 POV/allow-list 的 Context Gateway 读取') },
+  },
+  {
+    key: 'ttrpgOpenKpInput', label: 'open 跑团共同可见结算叙述输入', scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 16000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true, requiresResourceKeyAllowList: true, resources: ttrpgOpenProvider('ttrpgOpenKpInput'),
+    read: async () => { throw new Error('[ttrpg-kp] KP 只经登记 Skill、实际叙述步骤与冻结共同可见 allow-list 读取') },
+  },
+  {
+    key: 'ttrpgOpenGmOracleInput', label: 'open 跑团受限 GM Oracle 解释输入',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 16000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenProvider('ttrpgOpenGmOracleInput'),
+    read: async () => { throw new Error('[ttrpg-open-gm] 主持解释只经登记 Skill、明确 GM POV 和冻结单个 Oracle allow-list 读取') },
+  },
+  {
+    key: 'ttrpgOpenActorContext', label: 'open 跑团角色情境指引与已保存叙述',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 16000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenGuidanceProvider('actor', 'ttrpgOpenActorContext'),
+    read: async () => { throw new Error('[ttrpg-open-context] 情境只经准确消费角色、冻结 allow-list 与完整 JSON 渐进读取') },
+  },
+  {
+    key: 'ttrpgOpenPartyContext', label: 'open 跑团共同叙述情境指引与已保存叙述',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 16000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenGuidanceProvider('party-narrator', 'ttrpgOpenPartyContext'),
+    read: async () => { throw new Error('[ttrpg-open-context] 情境只经准确消费角色、冻结 allow-list 与完整 JSON 渐进读取') },
+  },
+  {
+    key: 'ttrpgOpenGmContext', label: 'open 跑团GM 助手情境指引与已保存叙述',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 16000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenGuidanceProvider('gm-assistant', 'ttrpgOpenGmContext'),
+    read: async () => { throw new Error('[ttrpg-open-context] 情境只经准确消费角色、冻结 allow-list 与完整 JSON 渐进读取') },
   },
   {
     key: 'ttrpgPrivateGuidance', label: '正式 TTRPG 单角色私密指引', scope: 'runtime', layer: 'L0', ownerFrom: 'work',

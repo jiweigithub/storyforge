@@ -1,11 +1,15 @@
+import { ADVENTURE_WEB_PLAYER_NOTICE, IS_ADVENTURE_WEB_PLAYER } from '../adventure/web-player-policy'
+
 /** A build profile, never a URL switch or a user preference. */
 export const IS_SHOWCASE = import.meta.env.MODE === 'showcase'
+export const IS_MODEL_DISABLED_BUILD = IS_SHOWCASE || IS_ADVENTURE_WEB_PLAYER
 export const SHOWCASE_DATABASE = 'storyforge-website-experience-v1'
 export const SHOWCASE_STORAGE_PREFIX = 'storyforge-website-experience-v1:'
 export const SHOWCASE_NOTICE = '官网体验版不连接模型或外部服务。请下载 StoryForge，在本机配置后使用 AI 创作。'
 
 export function assertGenerationAvailable(): void {
   if (IS_SHOWCASE) throw new Error(SHOWCASE_NOTICE)
+  if (IS_ADVENTURE_WEB_PLAYER) throw new Error(ADVENTURE_WEB_PLAYER_NOTICE)
 }
 
 /** Only packaged, same-origin assets may be fetched by the public experience. */
@@ -32,3 +36,5 @@ export function scopedStorage(storage: Storage, prefix = SHOWCASE_STORAGE_PREFIX
     clear() { keys().forEach(key => storage.removeItem(key)) },
   }
 }
+
+export const MODEL_DISABLED_NOTICE = IS_ADVENTURE_WEB_PLAYER ? ADVENTURE_WEB_PLAYER_NOTICE : SHOWCASE_NOTICE

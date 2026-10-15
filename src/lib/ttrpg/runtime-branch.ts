@@ -6,6 +6,7 @@ import type {
   TtrpgRuntimeAssetRequestRecordV1,
 } from '../types'
 import { cloneTtrpgSessionParticipantsV2 } from './participants'
+import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 
 /**
  * Clone the TTRPG-owned side tables represented by a replayed branch state.
@@ -24,6 +25,8 @@ export async function cloneTtrpgRuntimeBranchExtensionsV1(input: {
   await cloneTtrpgSessionParticipantsV2({
     parentSessionId: input.parent.id,
     child: input.child,
+    ...(input.state.ttrpg && 'runFormat' in input.state.ttrpg && input.state.ttrpg.runFormat === 'open'
+      ? { parentSessionKey: parseTtrpgRuntimeStateV2(input.state.ttrpg)!.branchLineage!.parentSessionKey } : {}),
   })
 
   const media = input.state.ttrpg?.product?.media

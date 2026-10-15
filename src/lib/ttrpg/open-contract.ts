@@ -105,9 +105,19 @@ export interface TtrpgOpenTimePolicyV1 {
   oracleConsultation: 0
   actionOverrides: Array<{ actionKey: string; timeCostWorldTurns: number }>
 }
+export interface TtrpgOpenInteractionBindingV1 {
+  interactionKey: string
+  kind: 'dialogue' | 'observe' | 'move' | 'assist' | 'retreat'
+  title: string
+  actionKey: string
+  effectPlanRef: string | null
+  preconditions: TtrpgPredicateV1[]
+  timeCostWorldTurns: number
+}
 export interface RulePackV2 extends Omit<RulePackV1, 'version'> {
   version: 2
   runFormat: 'open'
+  interactionBindings?: TtrpgOpenInteractionBindingV1[]
   oracles: TtrpgOracleTableV1[]
   factPolicy: TtrpgOpenFactPolicyV1[]
   genericChecks: TtrpgOpenGenericCheckV1[]
@@ -283,6 +293,7 @@ export interface TtrpgOpenRuntimePolicyV1 {
   outputMode: 'text'
 }
 export interface TtrpgOpenAuthoringV1 {
+  contextPolicy?: import('./open-context-policy').TtrpgOpenContextPolicyV1
   factPolicy: Array<{ fact: TtrpgOpenFrozenFactV1; authorConfirmed: boolean }>
   situationTemplates: TtrpgSituationTemplateV1[]
   openingSituationKeys: string[]
@@ -293,10 +304,20 @@ export interface TtrpgOpenAuthoringV1 {
   dynamicEntityTemplates: TtrpgOpenDynamicEntityTemplateV1[]
   runtimePolicy: TtrpgOpenRuntimePolicyV1 | null
 }
+export interface TtrpgOpenDesignProvenanceV1 {
+  schema: 'storyforge.ttrpg-open-design-provenance'
+  version: 1
+  briefHash: string
+  sourcePlanHash: string
+  sourceFactsArtifactHash: string
+  ruleSystemArtifactHash: string
+  situationLayerArtifactHash: string
+}
 export interface TtrpgCampaignContentV2 extends Omit<TtrpgCampaignContentV1,
-  'version' | 'openingSceneKey' | 'clocks' | 'fronts' | 'characterTemplates'> {
+  'version' | 'openingSceneKey' | 'clocks' | 'fronts' | 'characterTemplates' | 'designProvenance'> {
   version: 2
   runFormat: 'open'
+  contextPolicy?: import('./open-context-policy').TtrpgOpenContextPolicyV1
   characterTemplates: TtrpgCharacterTemplateV2[]
   openingSceneKey: string | null
   clocks: TtrpgOpenCampaignClockV1[]
@@ -311,4 +332,5 @@ export interface TtrpgCampaignContentV2 extends Omit<TtrpgCampaignContentV1,
   dynamicEntityTemplates: TtrpgOpenDynamicEntityTemplateV1[]
   entityBindings: TtrpgOpenEntityBindingV1[]
   runtimePolicy: TtrpgOpenRuntimePolicyV1
+  designProvenance: TtrpgCampaignContentV1['designProvenance'] | TtrpgOpenDesignProvenanceV1
 }

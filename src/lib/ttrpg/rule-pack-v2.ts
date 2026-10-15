@@ -1,3 +1,4 @@
+import { parseTtrpgOpenInteractionBindingV1,assertTtrpgOpenInteractionActionV1 } from './open-interaction'
 import type { RulePackV1 } from '../types'
 import type { RulePackV2, TtrpgOpenFactPolicyV1, TtrpgOpenGenericCheckV1, TtrpgOracleTableV1, TtrpgOpenSocialTierMappingV1, TtrpgOpenTimePolicyV1 } from './open-contract'
 import { OPEN_FACT_PREDICATES } from './open-contract'
@@ -13,7 +14,7 @@ const OPEN_FIELDS = ['runFormat', 'oracles', 'factPolicy', 'genericChecks', 'soc
 function mechanicalInput(root: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(MECHANICAL_FIELDS.map(k => [k, k === 'version' ? 1 : root[k]]))
 }
-function factPolicy(value: unknown, label: string): TtrpgOpenFactPolicyV1 {
+export function parseTtrpgOpenFactPolicyV1(value: unknown, label = 'factPolicy'): TtrpgOpenFactPolicyV1 {
   const r = p.record(value, ['predicateKey', 'valueType', 'cardinality', 'allowedKinds', 'mutuallyExclusiveWith', 'authority', 'allowNewSubjects'], label)
   const a = p.record(r.authority, ['invariant', 'initialState', 'session'], `${label}.authority`)
   const owner = (v: unknown, l: string) => p.oneOf(v, ['semantic-fact', 'entity', 'inventory', 'social-ledger'], l)
@@ -111,7 +112,7 @@ export function parseTtrpgOpenGenericCheckV1(value: unknown, label: string, rule
   // The common check is the frozen resolver authority; no implicit resolver is invented.
   const check = rule.checks.find(c => c.key === checkKey)
   if (!check || !check.attributeKeys.includes(actorAttributeKey) || check.diceModelKey !== diceModelKey) return p.fail(`${label}: 必须绑定相同 check/attribute/dice`)
-  const difficulty = p.number(r.difficulty, label)
+  const difficulty = p.number(r.difficulty, label, -1000, 1000)
   if (!('targetMode' in check)) {
     if (check.resolver.mode === 'opposed') p.fail(`${label}: 不支持的 generic resolver`)
     if (check.resolver.mode === 'roll-under') p.integer(difficulty, label, 1, 100)
@@ -145,12 +146,15 @@ function timePolicy(value: unknown): TtrpgOpenTimePolicyV1 {
     preflight: p.literal(r.preflight, 0, l), oracleConsultation: p.literal(r.oracleConsultation, 0, l), actionOverrides }
 }
 export function parseRulePackV2(input: unknown): RulePackV2 {
-  const root = p.record(p.json(input), [...MECHANICAL_FIELDS, ...OPEN_FIELDS], 'rulePackV2')
+  const raw = p.json(input),hasInteractions = Object.prototype.hasOwnProperty.call(p.object(raw,'rulePackV2'),'interactionBindings')
+  const root = p.record(raw, [...MECHANICAL_FIELDS, ...OPEN_FIELDS,...(hasInteractions ? ['interactionBindings'] : [])], 'rulePackV2')
   p.literal(root.version, 2, 'rulePackV2.version'); p.literal(root.runFormat, 'open', 'rulePackV2.runFormat')
   const core = parseRulePackV1(mechanicalInput(root))
   createTtrpgOpenUsagePoolsV1(core.actions)
+  const interactionBindings = hasInteractions ? p.list(root.interactionBindings,'interaction bindings',parseTtrpgOpenInteractionBindingV1,100) : undefined
+  if (interactionBindings) { p.unique(interactionBindings.map(b => b.interactionKey),'interaction keys');for (const binding of interactionBindings) assertTtrpgOpenInteractionActionV1(binding,core) }
   const oracles = p.list(root.oracles, 'oracles', (v, l) => oracle(v, l, core), 100, 1)
-  const policies = p.list(root.factPolicy, 'factPolicy', factPolicy, 12, 12)
+  const policies = p.list(root.factPolicy, 'factPolicy', parseTtrpgOpenFactPolicyV1, 12, 12)
   p.unique(policies.map(f => f.predicateKey), 'factPolicy')
   for (const f of policies) for (const other of f.mutuallyExclusiveWith) {
     if (!policies.find(p => p.predicateKey === other)?.mutuallyExclusiveWith.includes(f.predicateKey)) p.fail('factPolicy: 互斥必须对称')
@@ -181,7 +185,7 @@ export function parseRulePackV2(input: unknown): RulePackV2 {
   p.unique(oracles.map(o => o.oracleKey), 'oracles')
   p.unique(genericChecks.map(c => c.checkKey), 'genericChecks')
   p.unique(socialTierMappings.map(m => m.mappingKey), 'socialTierMappings')
-  return { ...core, version: 2, runFormat: 'open', oracles, factPolicy: policies, genericChecks, socialTierMappings, timePolicy: time }
+  return { ...core, version: 2, runFormat: 'open',...(interactionBindings ? { interactionBindings } : {}),oracles, factPolicy: policies, genericChecks, socialTierMappings, timePolicy: time }
 }
 
 /** A transient algorithm input only. Never use this projection for release identity/hash. */

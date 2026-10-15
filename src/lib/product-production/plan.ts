@@ -5,7 +5,10 @@ import type {
   ProductTaskBudgetReservationV1,
 } from '../types'
 import { PRODUCTION_PRODUCT_KINDS_V1 } from '../types'
-import { parseProductProductionBriefV3 } from './contracts'
+import { parseTextAdventureContentRevisionV1, parseProductProductionBriefV3 } from './contracts'
+import { buildTtrpgOpenProductionPlanV3 } from '../ttrpg/open-production-plan'
+import { createCommonProductMediaBundleTasksV3 } from './media-plan-tasks'
+import { validateTtrpgProductionBriefContentV3 } from '../ttrpg/production-brief-v3'
 import { hashProductProductionValueV2, isSha256Hash } from './hash'
 import { textAdventureSceneScriptPartSceneKeysV1 } from '../adventure/scene-script'
 import {
@@ -212,6 +215,7 @@ function parseTask(value: unknown, index: number): ProductProductionPlanTaskV3 {
     'inputArtifactKeys', 'outputArtifactKeys', 'requirementKeys', 'capabilityRequirementKeys',
     'concurrencyGroup', 'subjectLockKeys', 'priority', 'budgetReservation', 'maxAttempts',
     'timeoutMs', 'failurePolicy', 'fallbackTaskKey', 'acceptanceGateIds', 'reuse',
+    ...(Object.prototype.hasOwnProperty.call(row, 'authorRevision') ? ['authorRevision'] : []),
   ], label)
   if (!Array.isArray(row.requiredReceipts) || row.requiredReceipts.length > 1_000) fail(`${label}.requiredReceipts 无效`)
   const requiredReceipts = row.requiredReceipts.map((value, receiptIndex) => {
@@ -241,6 +245,17 @@ function parseTask(value: unknown, index: number): ProductProductionPlanTaskV3 {
       reason: candidate.reason.trim(),
     }
   }
+  let authorRevision: ProductProductionPlanTaskV3['authorRevision']
+  if (Object.prototype.hasOwnProperty.call(row, 'authorRevision')) {
+    const revision = record(row.authorRevision, `${label}.authorRevision`)
+    const { commandId, sourceBuildNumber, ...content } = revision
+    authorRevision = { ...parseTextAdventureContentRevisionV1(content),
+      commandId: key(commandId, `${label}.authorRevision.commandId`),
+      sourceBuildNumber: integer(sourceBuildNumber, `${label}.authorRevision.sourceBuildNumber`) }
+    if (sourceBuildNumber === 0 || row.executionMode !== 'model' || row.reuse != null
+      || authorRevision.artifactKey !== row.taskKey || !Array.isArray(row.outputArtifactKeys)
+      || row.outputArtifactKeys.length !== 1 || row.outputArtifactKeys[0] !== row.taskKey) fail(`${label}.authorRevision 任务不闭合`)
+  }
   return {
     taskKey: key(row.taskKey, `${label}.taskKey`),
     lane: enumValue(row.lane, LANES, `${label}.lane`),
@@ -265,6 +280,7 @@ function parseTask(value: unknown, index: number): ProductProductionPlanTaskV3 {
     fallbackTaskKey: row.fallbackTaskKey === null ? null : key(row.fallbackTaskKey, `${label}.fallbackTaskKey`),
     acceptanceGateIds: keys(row.acceptanceGateIds, `${label}.acceptanceGateIds`),
     reuse,
+    ...(authorRevision ? { authorRevision } : {}),
   }
 }
 
@@ -298,6 +314,7 @@ export function parseProductProductionPlanV3(
   if (Object.values(parsedConcurrency).some(value => value < 1)) fail('concurrency 必须大于零')
   if (!Array.isArray(row.tasks) || row.tasks.length < 1 || row.tasks.length > 100) fail('tasks 数量无效')
   const tasks = row.tasks.map(parseTask)
+  if (tasks.some(task => task.authorRevision) && productType !== 'text-adventure') fail('作者批量修订只用于文字冒险')
   const taskByKey = new Map(tasks.map(task => [task.taskKey, task]))
   if (taskByKey.size !== tasks.length) fail('taskKey 重复')
   const terminalTaskKey = key(row.terminalTaskKey, 'terminalTaskKey')
@@ -352,6 +369,16 @@ export function parseProductProductionPlanV3(
     requirement.required && !tasks.some(task => task.capabilityRequirementKeys.includes(requirement.requirementKey))
   ))) fail('必需 capability 未覆盖')
   if (brief) {
+    if (brief.ttrpgOpen) {
+      const expected = buildTtrpgOpenProductionPlanV3({ brief, briefHash: row.briefHash as string,
+        buildNumber: Number(row.buildNumber), controlEpoch: Number(row.controlEpoch) })
+      // Reuse is separately authorized against the exact parent proof. It must
+      // not change the product's task graph, budgets or execution contracts.
+      if (JSON.stringify(tasks.map(task => ({ ...task, reuse: null }))) !== JSON.stringify(expected.tasks) || terminalTaskKey !== expected.terminalTaskKey
+        || JSON.stringify(parsedConcurrency) !== JSON.stringify(expected.concurrency)) {
+        fail('open 跑团计划必须绑定专属任务、真实依赖与授权预算，不能偷换 scripted DAG')
+      }
+    }
     const totals = tasks.reduce((sum, task) => ({
       modelCalls: sum.modelCalls + task.budgetReservation.modelCalls,
       inputTokens: sum.inputTokens + task.budgetReservation.inputTokens,
@@ -439,6 +466,11 @@ export async function createProductProductionPlanV3(input: {
   if (await hashProductProductionValueV2(brief) !== input.briefHash) fail('briefHash 与 Brief 内容不一致')
   const controlEpoch = input.controlEpoch ?? 0
   if (!Number.isInteger(controlEpoch) || controlEpoch < 0) fail('controlEpoch 无效')
+  if (brief.ttrpgOpen) {
+    await validateTtrpgProductionBriefContentV3(brief.ttrpgOpen)
+    return parseProductProductionPlanV3(buildTtrpgOpenProductionPlanV3({ brief, briefHash: input.briefHash,
+      buildNumber: input.buildNumber, controlEpoch }), brief, input.briefHash)
+  }
 
   const capabilityKeys = (classes: Array<ProductProductionBriefV3['capabilityRequirements'][number]['mediaClass']>) => (
     brief.capabilityRequirements
@@ -1225,7 +1257,13 @@ export async function createProductProductionPlanV3(input: {
     acceptanceGateIds: ['artifact.protocol', 'media.character-anchors-authorized'],
   }))
   const mediaDependencies: string[] = []
-  if (activeVisual) {
+  if (!textAdventure) {
+    const mediaTasks = createCommonProductMediaBundleTasksV3({ brief, dependsOn: ['media.requirements'],
+      inputArtifactKeys: ['media.requirements'], visualArtifactKeys, audioArtifactKeys,
+      durationMs: perDuration, storageBytes: mediaStorage, maximumCostUsd: perCost })
+    tasks.push(...mediaTasks); mediaDependencies.push(...mediaTasks.map(task => task.taskKey))
+  }
+  if (textAdventure && activeVisual) {
     const taskKeys = textAdventure ? visualArtifactKeys : ['media.visual']
     mediaDependencies.push(...taskKeys)
     for (const taskKey of taskKeys) tasks.push(productionTask({
@@ -1248,7 +1286,7 @@ export async function createProductProductionPlanV3(input: {
       fallbackTaskKey: null, acceptanceGateIds: ['media.integrity', 'media.rights'],
     }))
   }
-  if (activeAudio) {
+  if (textAdventure && activeAudio) {
     const taskKeys = textAdventure ? audioArtifactKeys : ['media.audio']
     mediaDependencies.push(...taskKeys)
     for (const taskKey of taskKeys) tasks.push(productionTask({

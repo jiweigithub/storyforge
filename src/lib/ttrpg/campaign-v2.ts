@@ -1,3 +1,4 @@
+import { parseTtrpgOpenContextPolicyV1 } from './open-context-policy'
 import type { RulePackV2, TtrpgCampaignContentV2 } from './open-contract'
 import { parseRulePackV2, projectTtrpgRulePackMechanicalCoreV1 } from './rule-pack-v2'
 import { character, commonMetadata, tabletop } from './open-content-common'
@@ -13,15 +14,27 @@ export type { TtrpgCampaignContentV2, TtrpgOpenAuthoringV1 } from './open-contra
 export function parseTtrpgCampaignContentV2(input: unknown, rule: RulePackV2): TtrpgCampaignContentV2 {
   const validatedRule = parseRulePackV2(rule)
   const core = projectTtrpgRulePackMechanicalCoreV1(validatedRule)
-  const r = p.record(p.json(input), [
+  const raw = p.object(p.json(input), 'campaignV2')
+  const hasContextPolicy = Object.prototype.hasOwnProperty.call(raw, 'contextPolicy')
+  const r = p.record(raw, [
     'schema', 'version', 'runFormat', 'campaignKey', 'title', 'pitch', 'playerCount', 'estimatedMinutes', 'tags', 'difficulty', 'contentWarnings',
     'sessionZero', 'openingSceneKey', 'characterTemplates', 'scenes', 'clues', 'quests', 'endings', 'handouts', 'advancementMilestones', 'sourceWorld',
     'gmMode', 'informationPolicy', 'bible', 'clocks', 'fronts', 'secrets', 'designProvenance', 'tabletop', 'visualBible', 'mediaManifest',
     'frozenWorldPredicateIndex', 'canonInvariantPredicates', 'situationTemplates', 'openingSituationKeys', 'effectPlanTemplates',
-    'companionPolicy', 'stageClosurePolicy', 'dynamicEntityTemplates', 'entityBindings', 'runtimePolicy',
+    'companionPolicy', 'stageClosurePolicy', 'dynamicEntityTemplates', 'entityBindings', 'runtimePolicy', ...(hasContextPolicy ? ['contextPolicy'] : []),
   ], 'campaignV2')
   p.literal(r.schema, 'storyforge.ttrpg-campaign', 'schema'); p.literal(r.version, 2, 'version'); p.literal(r.runFormat, 'open', 'runFormat')
-  const metadata = commonMetadata(r)
+  const provenance = p.object(r.designProvenance, 'designProvenance')
+  const metadata = provenance.schema === 'storyforge.ttrpg-open-design-provenance' ? (() => {
+    const d = p.record(provenance, ['schema', 'version', 'briefHash', 'sourcePlanHash', 'sourceFactsArtifactHash',
+      'ruleSystemArtifactHash', 'situationLayerArtifactHash'], 'open design provenance')
+    p.literal(d.version, 1, 'open design provenance version')
+    return commonMetadata(r, { schema: 'storyforge.ttrpg-open-design-provenance', version: 1,
+      briefHash: p.hash(d.briefHash, 'brief hash'), sourcePlanHash: p.hash(d.sourcePlanHash, 'source plan hash'),
+      sourceFactsArtifactHash: p.hash(d.sourceFactsArtifactHash, 'facts artifact hash'),
+      ruleSystemArtifactHash: p.hash(d.ruleSystemArtifactHash, 'rules artifact hash'),
+      situationLayerArtifactHash: p.hash(d.situationLayerArtifactHash, 'situations artifact hash') })
+  })() : commonMetadata(r)
   const characterTemplates = p.list(r.characterTemplates, 'characterTemplates', (v, l) => character(v, l, core), 1000, 1)
   const characterKeys = p.unique(characterTemplates.map(c => c.characterKey), 'characterTemplates')
   p.unique(characterTemplates.flatMap(c => c.seatKey === null ? [] : [c.seatKey]), 'seatKeys')
@@ -69,7 +82,8 @@ export function parseTtrpgCampaignContentV2(input: unknown, rule: RulePackV2): T
   const table = p.nullable(r.tabletop, tabletop, 'tabletop')
   const index = p.record(r.frozenWorldPredicateIndex, ['worldReleaseHash', 'indexHash', 'entries'], 'frozenWorldPredicateIndex')
   const result: TtrpgCampaignContentV2 = {
-    schema: 'storyforge.ttrpg-campaign', version: 2, runFormat: 'open', ...metadata, characterTemplates, entityBindings,
+    schema: 'storyforge.ttrpg-campaign', version: 2, runFormat: 'open', ...metadata,
+    ...(hasContextPolicy ? { contextPolicy: parseTtrpgOpenContextPolicyV1(r.contextPolicy) } : {}), characterTemplates, entityBindings,
     openingSceneKey: p.nullable(r.openingSceneKey, p.key, 'openingSceneKey'), scenes, clues, quests, endings, handouts, advancementMilestones, secrets,
     clocks: p.list(r.clocks, 'clocks', clock, 256, 1), fronts: p.list(r.fronts, 'fronts', front, 128, 1), tabletop: table,
     visualBible: parseTtrpgVisualBibleV1(r.visualBible, { characterKeys: new Set(characterKeys), locationKeys }),

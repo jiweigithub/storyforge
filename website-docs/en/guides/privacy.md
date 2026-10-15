@@ -24,4 +24,10 @@ Official feedback creates GitHub Issues. Prepare descriptions and attachments as
 
 Manual editing, local checks of existing content, and backups need no cloud model. Whether the app itself loads offline depends on installation, cache, and browser state. Remote models require network access; local models require a running local service.
 
+## Website PV and daily UV
+
+The website, knowledge base, and hosted project preview share page views (PV) and daily browser visitors (UV). Reports are available only from the server backend; public pages show no counts. Days follow Beijing time (Asia/Shanghai). A browser counts once per day for UV; refreshes and page navigation add PV, while same-page anchors do not. Existing cumulative PV is retained. Daily reports start with this upgrade, making the first day partial; no historical data is invented. Future shared-entry pages participate, while local creation and previews do not.
+
+UV uses a first-party random cookie valid for 30 days and renewed on visits, restricted to the metrics endpoint. It is not an account or login credential. The website and knowledge base share it. The server stores date-specific deduplication digests for about 31 days, not raw cookies. Aggregates are retained and random retry receipts expire after about a day. No account, IP, browser fingerprint, page URL, query parameters, manuscript, or API key is submitted. Different browsers/devices or cookie deletion create a new identity, so UV is not a count of real people. Blocked cookies still permit PV without inventing UV; disabled scripts, blocked requests, or network errors can undercount.
+
 Continue: [Backup and recovery](/en/guides/backup-restore) · [Model configuration](/en/getting-started/model-config).

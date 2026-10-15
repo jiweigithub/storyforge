@@ -116,6 +116,8 @@ readOriginalEvidence(release ref, resource id) → immutable original text + has
 
 Provider 的缓存必须同时绑定 release UID、content hash 与投影版本，并设置明确容量上限；世界切换或 hash 不符时不得复用。多世界目录通过冻结的稳定关系导航，不得退回读取可变底表。规模门应覆盖千级目录检索和单项详情/原文读取，避免逐行 IndexedDB cursor/事务链形成二次方退化。
 
+跑团完整作品备份的本地编号重绑不得重写原 Context Manifest、scope fingerprint 或原 Brief hash。导出 owner 可在移除本地编号前，从实际已验证的世界读取冻结 `portableWorldContextBindingsJson`：只含 exact manifest hash、原 scope fingerprint、世界 release UID/hash 与确定性证明 hash，没有本地主键。它沿 `agentRuns` 的既有注册表生命周期搬运；只在真实导入失效事件之后、原候选/运行证明已显式本地复验、当前 SourcePlan 指向同一 UID/hash 且每项读取的版本/字段/内容及权限仍一致时，允许聚合原读取证据。本地定位使用已重映射的 Brief 行指针与 WorldReference，原 Brief 内的旧编号仅保留为历史输入。此证明不代表新读取，不授权换世界、改权限或绕过必读约束；缺失证明的旧备份保持可保存和只读，不补造来源或自动获得发布权。此路径当前限于跑团，其他产品仍沿各自契约。
+
 ### 5.7 ProductRelease 谱系
 
 - `ProductRelease` 必须不可变，并记录 product instance、父 ProductRelease（如有）、来源 Brief revision、source plan/manifest hash、build/quality evidence、运行时 AI 契约引用、验收成熟度和兼容策略。
@@ -176,3 +178,20 @@ npm run build
 ```
 
 交付运行完整 `npm run ci`；涉及真实迁移、备份恢复或跨产品版本引用时，增加隔离数据库往返和 E2E。
+
+
+### TTRPG P7 的来源与单次只读会话（2026-10-15）
+
+`ttrpgOpenActorContext`、`ttrpgOpenPartyContext`、`ttrpgOpenGmContext` 是现行注册的 runtime 实例来源；角色/接收范围在元数据暴露前校验，作者策略引用依赖不能冒充事实 provenance 或知识授予。可选 Provider `openReadSession` 只复用同次执行中 owner 建立的完整读取视图，登记来源/版本/种类不得变化，执行器须在使用结果前调用 `assertCurrent`；常规独立读取不借用该视图。E14 保存于既有 Run 工件与证据事件，世界和游戏机械 owner 不变。编号重映射后的 prepared 请求恢复仍待独立协议修复，不自动续发。
+
+
+### 跑团运行证明的备份交接（2026-10-15）
+
+`agentRuns.portableRuntimeOriginJson` 是完整备份 owner 冻结的历史原文/事件证明，沿原 Run 表生命周期保留；原数字是历史身份，不是可解析的当前外键。当前 owner、原输入 Manifest/工件与严格事件前缀共同验证来源，当前 Project/Instance 定位和 Workspace UID 变化不重写原证据。证明不授予发送、采纳或用量改写权限；仅明确未发送的请求可在当前玩家确认后沿原取消状态机终结，原 slot 记录保留，新调用另需授权。裁剪证明可归档搬运，恢复仍要求原文。世界封存保留已有上层证明，生成新证明仅属于完整工作区备份，避免世界语义事务进入上层运行读取。细节和未完成边界见跑团现行方案 §35.49。
+
+
+### Context Gateway 的 owner 读取会话与逐字证据事务
+
+Provider 可按冻结 scope 返回本次装配专用的只读视图及 assertCurrent。视图必须保持登记的 provider 身份、版本与资源种类；Gateway 在本次实际读取结束后执行 owner 的版本核验，变化则不返回可用上下文包。会话只在一次装配内使用，不作为跨调用或跨 owner 的全局缓存。要求内核资源 allow-list 的来源不能由宽泛读取入口绕过；明确的空列表不授予读取权限。角色 POV 必须同时绑定实例，字符串本身不授予角色权限。
+
+AgentRun 的可选历史来源 JSON 仅携带不可变证据，不是当前数据库 locator、发送许可或写入许可；拥有者在使用前校验，搬运不能生成权限。逐字工件在 caller-owned IndexedDB 事务内核对原文摘要时，仅对纯摘要计算保活，不把包含数据库读取的整个流程包进等待。原文损坏仍须明确拒绝，不能以保持事务为由跳过完整性校验。

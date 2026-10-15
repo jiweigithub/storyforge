@@ -1,3 +1,5 @@
+import { assertTtrpgOpenFrozenContextSourcesV1 } from './open-model-purpose-contract'
+import { assertInstanceBinding } from '../product/runtime-instances'
 /** Exact governed Run/evidence proof checked again by the runtime command transaction. */
 import { db } from '../db/schema'
 import type { AgentRunRecord, AgentRunEventRecord, AgentRunArtifactRecordV1, WorkspaceScope } from '../types'
@@ -7,12 +9,15 @@ import { verifyContextManifestIntegrityV1, verifyContextManifestIntegrityV2, ver
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import type { TtrpgOpenModelCallV1 } from './open-model-calls'
-import { loadTtrpgOpenPlayerContextV1 } from './open-player-context'
+import { loadTtrpgOpenModelContextV1, ttrpgOpenModelPurposeForSkillV1 } from './open-model-purpose'
 import { estimateTokens } from '../ai/context-budget'
 import { getAgentSkillV1 } from '../agent/skill-registry'
-import { assertAgentSkillExecutionBindingV1 } from '../agent/execution-binding'
+import { assertAgentSkillExecutionBindingV1, assertAgentSkillExecutionBindingIntegrityV2,
+  projectFrozenAgentSkillDefinitionV1 } from '../agent/execution-binding'
+import { assertFormalAIEntrySnapshotIntegrityV1 } from '../agent/formal-ai-entry'
 import { readProductRuntimeState } from '../product/runtime-core'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
+import { verifyTtrpgOpenInputEvidenceV1, type TtrpgOpenInputEvidenceV1 } from './open-input-evidence'
 
 export interface TtrpgOpenAgentEvidenceV1 {
   run: AgentRunRecord & { id: number }
@@ -20,7 +25,7 @@ export interface TtrpgOpenAgentEvidenceV1 {
   artifacts: AgentRunArtifactRecordV1[]
 }
 export async function ttrpgOpenCallBindingHashV1(input: Pick<TtrpgOpenModelCallV1,
-  'actorKey' | 'authorizationEpochKey' | 'admissionStateHash' | 'visibilityHash' | 'runtimeSourceHash'> & { sessionKey: string }) {
+  'actorKey' | 'authorizationEpochKey' | 'admissionStateHash' | 'visibilityHash' | 'runtimeSourceHash' | 'oracleInterpretation' | 'supportSlot' | 'narrationBinding' | 'hostingDelegationRef'> & { sessionKey: string }) {
   return hashProductProductionValueV2({ schema: 'storyforge.ttrpg-open-call-binding', version: 1, ...input })
 }
 
@@ -30,34 +35,47 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
 }): Promise<TtrpgOpenAgentEvidenceV1> {
   const snapshot = await readInstanceAgentRunV1(input.scope, input.runId)
   const { call } = input
+  const definition = ttrpgOpenModelPurposeForSkillV1(call.skillId), expectedSources = [...assertTtrpgOpenFrozenContextSourcesV1(call.skillId, snapshot.contract.permissions.contextSourceKeys)].sort().join(',')
   const bound = snapshot.contract.scope.runtime
   const binding = snapshot.contract.executionBindings?.find(binding => binding.stepId === call.stepId)
   const step = snapshot.projection.steps[call.stepId]
   if (snapshot.run.productRuntimeSessionId !== input.sessionId || snapshot.run.contractHash !== call.runContractHash
     || !bound || bound.productRuntimeSessionId !== input.sessionId || bound.visibilityHash !== call.visibilityHash
     || bound.releaseHash !== call.runtimeSourceHash || binding?.skillId !== call.skillId
-    || call.skillId !== 'prose.ttrpg-open-intent' || snapshot.contract.permissions.writeTargets.length
-    || [...snapshot.contract.permissions.contextSourceKeys].sort().join(',') !== 'ttrpgOpenAuthority,ttrpgOpenKnowledge'
+    || snapshot.contract.permissions.writeTargets.length
+    || [...snapshot.contract.permissions.contextSourceKeys].sort().join(',') !== expectedSources
     || step?.attempt !== call.attempt || (input.mode !== 'finish' && step.status !== 'running')
     || snapshot.contract.runtimeBindingHash !== await ttrpgOpenCallBindingHashV1({ sessionKey: call.createdRef.sessionKey,
       actorKey: call.actorKey, authorizationEpochKey: call.authorizationEpochKey, admissionStateHash: call.admissionStateHash,
-      visibilityHash: call.visibilityHash, runtimeSourceHash: call.runtimeSourceHash })) {
+      visibilityHash: call.visibilityHash, runtimeSourceHash: call.runtimeSourceHash,
+      ...(call.hostingDelegationRef ? { hostingDelegationRef: call.hostingDelegationRef } : {}),
+      ...(call.oracleInterpretation ? { oracleInterpretation: call.oracleInterpretation } : {}),...(call.supportSlot ? { supportSlot: call.supportSlot } : {}), ...(call.narrationBinding ? { narrationBinding: call.narrationBinding } : {}) })) {
     throw new Error('[ttrpg-open-call] 模型请求没有同一实例/角色/Skill 的真实运行契约')
   }
   if (binding.version === 1 && input.mode !== 'finish') {
     const { stepId: _stepId, formalEntry: _formalEntry, promptExecution: _promptExecution, ...skillBinding } = binding
     assertAgentSkillExecutionBindingV1(skillBinding, getAgentSkillV1(call.skillId))
   }
+  if (binding.version === 2) {
+    await assertAgentSkillExecutionBindingIntegrityV2(binding)
+    if (binding.contextSourceKeys.slice().sort().join(',') !== expectedSources
+      || binding.writeTargets.length || call.reservedOutputTokens > binding.maxOutputTokens) {
+      throw new Error('[ttrpg-open-call] 冻结 Skill 来源/写权限/预算不一致')
+    }
+    if (!binding.formalEntry) throw new Error('[ttrpg-open-call] 正式调用缺少冻结 AI 入口')
+    const entry = await assertFormalAIEntrySnapshotIntegrityV1(binding.formalEntry,
+      new Map([[call.skillId, projectFrozenAgentSkillDefinitionV1(binding)]]))
+    if (entry.entryId !== definition.entryId || entry.adoptAllowed || entry.executionBoundary !== 'product-runtime') {
+      throw new Error('[ttrpg-open-call] 正式入口不能获得机械状态写权限')
+    }
+  }
   if (input.mode === 'reserve') {
     const state = await readProductRuntimeState(input.sessionId)
     const alreadyCounted = parseTtrpgRuntimeStateV2(state.ttrpg)?.openRun?.coordination.calls.filter(previous => previous.runContractHash === call.runContractHash).length ?? 0
     if (alreadyCounted >= snapshot.contract.budget.maxModelCalls || call.reservedInputTokens > snapshot.contract.budget.maxInputTokens
-      || call.reservedOutputTokens > Math.min(snapshot.contract.budget.maxOutputTokens, getAgentSkillV1(call.skillId).maxOutputTokens)
+      || call.reservedOutputTokens > Math.min(snapshot.contract.budget.maxOutputTokens,
+        binding.version === 2 ? binding.maxOutputTokens : getAgentSkillV1(call.skillId).maxOutputTokens)
       || call.attempt > snapshot.contract.budget.maxAttemptsPerStep) throw new Error('[ttrpg-open-call] 请求超过冻结 Run/Skill 硬预算')
-  }
-  if (!snapshot.events.some(event => event.type === 'context.assembled' && event.payload.stepId === call.stepId
-    && event.payload.attempt === call.attempt && event.payload.manifestHash === call.inputManifestHash)) {
-    throw new Error('[ttrpg-open-call] 缺少同一 attempt 的实际上下文回执')
   }
   if (!snapshot.events.some(event => event.type === 'model.requested' && event.payload.stepId === call.stepId
     && event.payload.attempt === call.attempt && event.payload.bindingHash === call.requestHash)) {
@@ -82,12 +100,43 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
   if (estimateTokens(renderedRequest) > call.reservedInputTokens) throw new Error('[ttrpg-open-call] 实际请求超过预留输入预算')
   // Context snapshots use governed exact storage; a caller-provided hash alone is insufficient.
   let foundManifest = false
+  let verifiedPreflight = false
   for (const event of snapshot.events) {
     if (event.type !== 'evidence.artifact.recorded' || event.payload.artifactKind !== 'source-snapshot'
       || event.payload.stepId !== call.stepId || event.payload.attempt !== call.attempt) continue
     const body = await exact('source-snapshot', event.payload.contentHash)
     let manifest: unknown
     try { manifest = JSON.parse(body) } catch { continue }
+    if (manifest && typeof manifest === 'object' && 'schema' in manifest
+      && manifest.schema === 'storyforge.ttrpg-open-input-evidence') {
+      const evidence = manifest as TtrpgOpenInputEvidenceV1
+      if (evidence.manifest?.manifestHash !== call.inputManifestHash) continue
+      await verifyTtrpgOpenInputEvidenceV1({ ...input, evidence, requestHash: call.requestHash,
+        inputManifestHash: call.inputManifestHash, stepId: call.stepId, attempt: call.attempt,
+        sessionKey: call.createdRef.sessionKey, actorKey: call.actorKey, skillId: call.skillId })
+      const oracleRef = call.oracleInterpretation?.oracleSourceRef ?? call.supportSlot?.oracleSourceRef
+      let oracleInputMatched = !oracleRef, acceptedReviewMatched = !call.supportSlot
+      for (const ref of evidence.preflight.artifacts) {
+        const bytes = await exact(ref.artifactKind, ref.contentHash)
+        if (ref.role === 'source-snapshot' && oracleRef) {
+          const source = JSON.parse(bytes) as { content: string }
+          const packet = JSON.parse(source.content) as { schema: string; sourceRef: unknown;reviewHash?: string;oracleSourceRef?: unknown }
+          if (packet.schema === 'storyforge.ttrpg-open-gm-oracle-input') {
+            if (await hashProductProductionValueV2(packet.sourceRef) !== await hashProductProductionValueV2(oracleRef)) throw new Error('[ttrpg-open-call] Oracle 槽位与实际读取不一致')
+            oracleInputMatched = true
+          }
+          if (packet.schema === 'storyforge.ttrpg-open-gm-fact-normalization-input' && call.supportSlot) {
+            if (packet.reviewHash !== call.supportSlot.sourceHash || await hashProductProductionValueV2(packet.sourceRef) !== await hashProductProductionValueV2(call.supportSlot.sourceRef)
+              || await hashProductProductionValueV2(packet.oracleSourceRef) !== await hashProductProductionValueV2(oracleRef)) throw new Error('[ttrpg-open-call] 事实归一与实际已确认解释读取不一致')
+            acceptedReviewMatched = true
+          }
+        }
+      }
+      if (!oracleInputMatched) throw new Error('[ttrpg-open-call] 缺少指定 Oracle 的真实输入字节')
+      if (!acceptedReviewMatched) throw new Error('[ttrpg-open-call] 缺少已接受解释的真实完整输入字节')
+      verifiedPreflight = true
+      manifest = evidence.manifest
+    }
     if (!manifest || typeof manifest !== 'object' || !('manifestHash' in manifest) || manifest.manifestHash !== call.inputManifestHash) continue
     const version = 'version' in manifest ? manifest.version : null
     const valid = version === 1 ? await verifyContextManifestIntegrityV1(manifest)
@@ -100,13 +149,17 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
       throw new Error('[ttrpg-open-call] 实际 Context Manifest 不属于冻结工作区')
     }
     const sources = 'sources' in manifest && Array.isArray(manifest.sources) ? manifest.sources : []
-    if (sources.map(source => source.key).sort().join(',') !== 'ttrpgOpenAuthority,ttrpgOpenKnowledge'
+    if (sources.map(source => source.key).sort().join(',') !== expectedSources
       || sources.some(source => source.status !== 'included' || source.delivery !== 'full' || !source.contentHash)
       || !('totalInputTokens' in manifest) || typeof manifest.totalInputTokens !== 'number'
       || manifest.totalInputTokens > call.reservedInputTokens) throw new Error('[ttrpg-open-call] 角色契约/知识来源不完整或超过实际输入预算')
     foundManifest = true; break
   }
   if (!foundManifest) throw new Error('[ttrpg-open-call] 缺少可回读的实际 Context Manifest')
+  if (!verifiedPreflight && !snapshot.events.some(event => event.type === 'context.assembled' && event.payload.stepId === call.stepId
+    && event.payload.attempt === call.attempt && event.payload.manifestHash === call.inputManifestHash)) {
+    throw new Error('[ttrpg-open-call] 缺少同一 attempt 的实际上下文回执')
+  }
   if (call.responseArtifactHash !== null) {
     await exact('raw-response', call.responseArtifactHash)
     if (!snapshot.events.some(event => event.type === 'model.responded' && event.payload.stepId === call.stepId
@@ -115,7 +168,7 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
     }
   }
   if (input.mode !== 'finish') {
-    const context = await loadTtrpgOpenPlayerContextV1({ scope: input.scope, sessionId: input.sessionId, actorKey: call.actorKey })
+    const context = await loadTtrpgOpenModelContextV1({ scope: input.scope, sessionId: input.sessionId, actorKey: call.actorKey, skillId: call.skillId })
     if (context.visibilityHash !== call.visibilityHash || context.admissionStateHash !== call.admissionStateHash
       || context.readEvidence.runtimeSourceHash !== call.runtimeSourceHash
       || (input.mode === 'reserve' && (context.readEvidence.sequence !== bound.baseSequence || context.readEvidence.stateHash !== bound.stateHash))) {
@@ -129,7 +182,7 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
       const expected = snapshot.events[index]
       return event.sequence !== expected.sequence || event.type !== expected.type || event.contractHash !== expected.contractHash
         || stable(JSON.parse(event.payloadJson)) !== stable(expected.payload)
-    })) throw new Error('[ttrpg-open-call] 运行证据读取期间发生变化')
+    })) throw Object.assign(new Error('[ttrpg-open-call] 运行证据读取期间发生变化'), { code: 'sequence-conflict' })
   return { run: snapshot.run, events, artifacts }
 }
 
@@ -141,4 +194,40 @@ export async function assertTtrpgOpenAgentEvidenceUnchangedV1(evidence: TtrpgOpe
   for (const artifact of evidence.artifacts) {
     if (stable(await db.agentRunArtifacts.get(artifact.id!)) !== stable(artifact)) throw new Error('[ttrpg-open-call] 提交期间原始工件已变化')
   }
+}
+
+
+/** Equal contracts can belong to competing Runs. Resolve their actual request/input proof, never the first hash match. */
+export async function readTtrpgOpenModelCallRunsV1(input: {
+  scope: WorkspaceScope; sessionId: number; calls: readonly TtrpgOpenModelCallV1[]
+}) {
+  await assertInstanceBinding(input.sessionId, input.scope)
+  const rows = await db.agentRuns.where('productRuntimeSessionId').equals(input.sessionId).toArray()
+  const selected = new Map<string, number>()
+  for (const call of input.calls) {
+    const sameContract = rows.filter(row => row.contractHash === call.runContractHash)
+    if (sameContract.length <= 1) continue
+    const matching: number[] = []
+    for (const row of sameContract) {
+      if (!row.id) throw new Error('[ttrpg-open-call] 原 Run 缺少稳定身份')
+      const snapshot = await readInstanceAgentRunV1(input.scope, row.id)
+      if (!snapshot.events.some(event => event.type === 'model.requested' && event.payload.stepId === call.stepId
+        && event.payload.attempt === call.attempt && event.payload.bindingHash === call.requestHash)) continue
+      let matched = false
+      for (const event of snapshot.events) {
+        if (event.type !== 'evidence.artifact.recorded' || event.payload.artifactKind !== 'source-snapshot'
+          || event.payload.stepId !== call.stepId || event.payload.attempt !== call.attempt) continue
+        const body = JSON.parse(await readAgentRunArtifactExactV1({ projectId: input.scope.projectId,
+          artifactKind: 'source-snapshot', contentHash: event.payload.contentHash })) as TtrpgOpenInputEvidenceV1
+        if (body.schema === 'storyforge.ttrpg-open-input-evidence' && body.manifest.runId === row.id
+          && body.manifest.manifestHash === call.inputManifestHash && await verifyContextManifestIntegrityV2(body.manifest)) matched = true
+      }
+      if (matched) matching.push(row.id)
+    }
+    if (matching.length !== 1 || selected.has(call.runContractHash) && selected.get(call.runContractHash) !== matching[0]) {
+      throw new Error('[ttrpg-open-call] 原请求不能由唯一的实际 Run/input 证据定位，不得创建替代请求')
+    }
+    selected.set(call.runContractHash, matching[0])
+  }
+  return rows.filter(row => !selected.has(row.contractHash) || selected.get(row.contractHash) === row.id)
 }

@@ -1,8 +1,11 @@
+import { parseTtrpgOpenNarrationBindingV1, type TtrpgOpenNarrationBindingV1 } from './open-kp-binding'
 /** Persisted request lifecycle. Only a dispatched call may have an unknown external result. */
 import type { TtrpgOpenEpochV1, TtrpgOpenSourceRefV1 } from './open-coordination'
 import { parseTtrpgOpenSourceRefV1 } from './open-coordination'
 import * as p from './open-contract-parse'
+import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
 export interface TtrpgOpenModelCallV1 {
+  hostingDelegationRef?: TtrpgOpenSourceRefV1
   requestKey: string; authorizationEpochKey: string
   actorKey: string; admissionStateHash: string; visibilityHash: string; runtimeSourceHash: string
   skillId: string; runContractHash: string; inputManifestHash: string; requestHash: string
@@ -13,13 +16,40 @@ export interface TtrpgOpenModelCallV1 {
   providerRequestId: string | null; responseArtifactHash: string | null
   usage: { source: 'provider' | 'estimated' | 'unknown'; inputTokens: number | null; outputTokens: number | null; actualCostUsd: number | null } | null
   terminalReason: string | null
+  intentRejection?: { sourceRef: TtrpgOpenSourceRefV1; candidateHash: string }
+  narrationBinding?: TtrpgOpenNarrationBindingV1
+  oracleInterpretation?: { worldTurn: number; oracleSourceRef: TtrpgOpenSourceRefV1 }
+  supportSlot?: { worldTurn: number; purpose: 'fact-normalize'; sourceRef: TtrpgOpenSourceRefV1; sourceHash: string; oracleSourceRef: TtrpgOpenSourceRefV1 }
 }
 export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 {
   const r = p.record(value, ['requestKey','authorizationEpochKey','actorKey','admissionStateHash','visibilityHash','runtimeSourceHash',
     'skillId','runContractHash','inputManifestHash','requestHash','stepId','attempt',
     'createdRef','dispatchRef','terminalRef','status','reservedInputTokens','reservedOutputTokens','reservedCostUsd',
-    'providerRequestId','responseArtifactHash','usage','terminalReason'], 'model call')
+    'providerRequestId','responseArtifactHash','usage','terminalReason',
+    ...(Object.prototype.hasOwnProperty.call(value,'hostingDelegationRef') ? ['hostingDelegationRef'] : []),
+    ...(Object.prototype.hasOwnProperty.call(value, 'oracleInterpretation') ? ['oracleInterpretation'] : []),
+    ...(Object.prototype.hasOwnProperty.call(value, 'supportSlot') ? ['supportSlot'] : []),
+    ...(Object.prototype.hasOwnProperty.call(value, 'narrationBinding') ? ['narrationBinding'] : []),
+    ...(Object.prototype.hasOwnProperty.call(value, 'intentRejection') ? ['intentRejection'] : [])], 'model call')
+  const narrationBinding = Object.prototype.hasOwnProperty.call(r, 'narrationBinding') ? parseTtrpgOpenNarrationBindingV1(r.narrationBinding) : undefined
+  if ((r.skillId === 'prose.ttrpg-open-kp') !== Boolean(narrationBinding)) p.fail('KP 必须绑定实际叙述步骤，其他目的不能占用')
+  const supportSlot = Object.prototype.hasOwnProperty.call(r,'supportSlot') ? (() => {
+    const slot = p.record(r.supportSlot,['worldTurn','purpose','sourceRef','sourceHash','oracleSourceRef'],'semantic assistance slot')
+    return { worldTurn: p.integer(slot.worldTurn,'assistance worldTurn',0,Number.MAX_SAFE_INTEGER),
+      purpose: p.literal(slot.purpose,'fact-normalize','assistance purpose'),sourceRef: parseTtrpgOpenSourceRefV1(slot.sourceRef),
+      sourceHash: p.hash(slot.sourceHash,'assistance accepted review hash'),oracleSourceRef: parseTtrpgOpenSourceRefV1(slot.oracleSourceRef) }
+  })() : undefined
+  if ((r.skillId === 'prose.ttrpg-open-fact-normalize') !== (supportSlot !== undefined)) p.fail('事实归一必须绑定唯一辅助槽和已确认来源，其他调用不能占用')
+  const oracleInterpretation = Object.prototype.hasOwnProperty.call(r, 'oracleInterpretation') ? (() => {
+    const marker = p.record(r.oracleInterpretation, ['worldTurn', 'oracleSourceRef'], 'Oracle interpretation slot')
+    return { worldTurn: p.integer(marker.worldTurn, 'Oracle interpretation worldTurn', 0, Number.MAX_SAFE_INTEGER),
+      oracleSourceRef: parseTtrpgOpenSourceRefV1(marker.oracleSourceRef) }
+  })() : undefined
+  if ((r.skillId === 'prose.ttrpg-open-oracle-interpret') !== (oracleInterpretation !== undefined)) p.fail('Oracle 解释必须绑定唯一世界轮槽位，其他调用不能占用')
   const createdRef = parseTtrpgOpenSourceRefV1(r.createdRef)
+  const hostingDelegationRef = Object.prototype.hasOwnProperty.call(r,'hostingDelegationRef') ? parseTtrpgOpenSourceRefV1(r.hostingDelegationRef) : undefined
+  if (hostingDelegationRef && (!['prose.ttrpg-open-companion','prose.ttrpg-open-kp'].includes(String(r.skillId))
+    || hostingDelegationRef.sessionKey !== createdRef.sessionKey || hostingDelegationRef.sequence >= createdRef.sequence)) p.fail('有限主持请求必须引用更早的本窗口委托，不能扩展用途')
   const dispatchRef = r.dispatchRef === null ? null : parseTtrpgOpenSourceRefV1(r.dispatchRef)
   const terminalRef = r.terminalRef === null ? null : parseTtrpgOpenSourceRefV1(r.terminalRef)
   const status = p.oneOf(r.status, ['prepared','dispatched','succeeded','failed','unknown'], 'call status')
@@ -44,6 +74,11 @@ export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 
     || (dispatchRef && terminalRef && terminalRef.sequence <= dispatchRef.sequence)
     || (status === 'unknown' && (responseArtifactHash !== null || usage?.source !== 'unknown' || usage.inputTokens !== null || usage.outputTokens !== null || usage.actualCostUsd !== null))
     || (usage && usage.source !== 'unknown' && (usage.inputTokens === null || usage.outputTokens === null))) p.fail('模型调用的派发/终态/原始响应/用量证据不一致')
+  const intentRejection = r.intentRejection === undefined ? undefined : (() => {
+    const row = p.record(r.intentRejection, ['sourceRef', 'candidateHash'], 'intent rejection'), sourceRef = parseTtrpgOpenSourceRefV1(row.sourceRef)
+    if (!['prose.ttrpg-open-intent', 'prose.ttrpg-open-companion'].includes(String(r.skillId)) || status !== 'succeeded' || sourceRef.sessionKey !== createdRef.sessionKey || !terminalRef || sourceRef.sequence <= terminalRef.sequence) p.fail('拒绝必须来自实际角色候选终态之后')
+    return { sourceRef, candidateHash: p.hash(row.candidateHash, 'rejected intent candidate') }
+  })()
   return { requestKey: p.key(r.requestKey, 'requestKey'), authorizationEpochKey: p.key(r.authorizationEpochKey, 'call epoch'),
     actorKey: p.key(r.actorKey, 'call actor'), admissionStateHash: p.hash(r.admissionStateHash, 'call admission'),
     visibilityHash: p.hash(r.visibilityHash, 'call visibility'), runtimeSourceHash: p.hash(r.runtimeSourceHash, 'call source'),
@@ -51,7 +86,39 @@ export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 
     requestHash: p.hash(r.requestHash, 'request hash'), stepId: p.key(r.stepId, 'step'), attempt: p.integer(r.attempt, 'attempt',1,4),
     createdRef, dispatchRef, terminalRef, status, reservedInputTokens: p.integer(r.reservedInputTokens, 'reserved input',0,1_000_000),
     reservedOutputTokens: p.integer(r.reservedOutputTokens, 'reserved output',1,100_000), reservedCostUsd: p.number(r.reservedCostUsd, 'reserved cost',0,1000),
-    providerRequestId: p.nullable(r.providerRequestId, (v,l) => p.text(v,l,500), 'provider request ID'), responseArtifactHash, usage, terminalReason }
+    providerRequestId: p.nullable(r.providerRequestId, (v,l) => p.text(v,l,500), 'provider request ID'), responseArtifactHash, usage, terminalReason,
+    ...(hostingDelegationRef ? { hostingDelegationRef } : {}),...(oracleInterpretation ? { oracleInterpretation } : {}),...(supportSlot ? { supportSlot } : {}), ...(narrationBinding ? { narrationBinding } : {}), ...(intentRejection ? { intentRejection } : {}) }
+}
+export function assertTtrpgOpenSupportSlotV1(runtime: Pick<TtrpgRuntimeStateV2,'openRun'|'branchLineage'>,worldTurn: number): void {
+  const calls = [...(runtime.openRun?.coordination.calls ?? []),
+    ...(runtime.branchLineage?.ancestors.flatMap(ancestor => ancestor.snapshot.openRun?.coordination.calls ?? []) ?? [])]
+  if (calls.some(call => call.supportSlot?.worldTurn === worldTurn)) p.fail('每个 worldTurn 最多占用一次征兆/事实归一辅助槽，请复用已有候选')
+}
+export function assertTtrpgOpenNormalizationSourceV1(runtime: Pick<TtrpgRuntimeStateV2,'openRun'>,call: TtrpgOpenModelCallV1): void {
+  if (!call.supportSlot) return
+  const slot = call.supportSlot
+  const review = runtime.openRun?.oracleReviews?.find(review => review.sourceRef.sessionKey === slot.sourceRef.sessionKey && review.sourceRef.sequence === slot.sourceRef.sequence)
+  if (!review || review.interpretationDecision !== 'accept' || review.normalizationOf || review.reviewHash !== slot.sourceHash
+    || (slot.sourceRef.sessionKey === call.createdRef.sessionKey && slot.sourceRef.sequence >= call.createdRef.sequence)
+    || review.oracleSourceRef.sessionKey !== slot.oracleSourceRef.sessionKey || review.oracleSourceRef.sequence !== slot.oracleSourceRef.sequence) p.fail('事实归一没有明确已接受的真实解释来源')
+}
+export function assertTtrpgOpenSemanticCallOriginV1(call: TtrpgOpenModelCallV1,oracleSourceRef: TtrpgOpenSourceRefV1,
+  normalizationOf?: { sourceRef: TtrpgOpenSourceRefV1;reviewHash: string }): void {
+  const actual = call.oracleInterpretation?.oracleSourceRef ?? call.supportSlot?.oracleSourceRef
+  if (!actual || actual.sessionKey !== oracleSourceRef.sessionKey || actual.sequence !== oracleSourceRef.sequence) p.fail('语义候选没有同一真实 Oracle 输入')
+  if (call.skillId === 'prose.ttrpg-open-oracle-interpret') {
+    if (normalizationOf) p.fail('原始解释不能冒充事实归一')
+  } else if (call.skillId === 'prose.ttrpg-open-fact-normalize') {
+    if (!call.supportSlot || !normalizationOf || normalizationOf.reviewHash !== call.supportSlot.sourceHash
+      || normalizationOf.sourceRef.sessionKey !== call.supportSlot.sourceRef.sessionKey || normalizationOf.sourceRef.sequence !== call.supportSlot.sourceRef.sequence) p.fail('事实归一没有同一已确认解释来源')
+  } else p.fail('此正式 Skill 无语义事实候选权限')
+}
+
+/** Reservations also consume the slot: cancellation, a new epoch or a branch cannot conceal a previous attempt. */
+export function assertTtrpgOpenOracleInterpretationSlotV1(runtime: TtrpgRuntimeStateV2, worldTurn: number): void {
+  const calls = [...(runtime.openRun?.coordination.calls ?? []),
+    ...(runtime.branchLineage?.ancestors.flatMap(ancestor => ancestor.snapshot.openRun?.coordination.calls ?? []) ?? [])]
+  if (calls.some(call => call.oracleInterpretation?.worldTurn === worldTurn)) p.fail('每个 worldTurn 最多一次模型 Oracle 解释，请复用已有候选')
 }
 
 /** Ledger summaries are derived from actual call receipts, never accepted from a model. */
@@ -72,7 +139,9 @@ export function ttrpgOpenCallBudgetV1(epoch: TtrpgOpenEpochV1, calls: readonly T
     costUsd += call.usage?.actualCostUsd ?? call.reservedCostUsd
   }
   return { countedRequests: owned.length, committedOrReservedTokens: tokens, committedOrReservedCostUsd: costUsd,
-    blockedByUnknown: owned.some(call => call.status === 'unknown'), pending: owned.some(call => call.status === 'prepared' || call.status === 'dispatched') }
+    blockedByUnknown: owned.some(call => call.status === 'unknown'),
+    blockedByDenial: owned.some(call => call.status === 'failed' && call.terminalReason === 'provider-denied-no-retry'),
+    pending: owned.some(call => call.status === 'prepared' || call.status === 'dispatched') }
 }
 export function assertTtrpgOpenCallReservationV1(input: {
   epoch: TtrpgOpenEpochV1; calls: readonly TtrpgOpenModelCallV1[]; requestKey: string
@@ -82,7 +151,17 @@ export function assertTtrpgOpenCallReservationV1(input: {
   const cost = p.number(input.maximumCostUsd,'maximum request cost',0,1000)
   const budget = ttrpgOpenCallBudgetV1(input.epoch,input.calls)
   if (input.epoch.status !== 'active' || input.calls.some(call => call.requestKey === input.requestKey)
-    || budget.blockedByUnknown || budget.pending || budget.countedRequests >= input.epoch.budget.maximumCalls
+    || budget.blockedByUnknown || budget.blockedByDenial || budget.pending || budget.countedRequests >= input.epoch.budget.maximumCalls
     || budget.committedOrReservedTokens + tokens > input.epoch.budget.maximumTokens
     || budget.committedOrReservedCostUsd + cost > input.epoch.budget.maximumCostUsd) p.fail('模型请求缺少新授权/确定回执或剩余硬预算')
+}
+
+export function assertTtrpgOpenNarrationCallV1(runtime: TtrpgRuntimeStateV2, call: TtrpgOpenModelCallV1, mode: 'reserve' | 'dispatch' | 'finish') {
+  if (!call.narrationBinding) return
+  const n = call.narrationBinding, operation = runtime.openRun?.operations.find(o => o.operationKey === n.operationKey)
+  const rule = runtime.openRun?.ruleReceipts.find(r => r.operationKey === n.operationKey), original = rule?.inheritedFrom?.originalSourceRef ?? rule?.sourceRef
+  if (!operation || !rule || !original || operation.planHash !== n.frozenPlanHash || operation.authorizationEpochKey !== call.authorizationEpochKey
+    || original.sessionKey !== n.ruleSourceRef.sessionKey || original.sequence !== n.ruleSourceRef.sequence || call.actorKey !== 'gm'
+    || (mode !== 'finish' && (operation.status !== 'executing' || operation.businessRefs.some(r => r.stepKey === 'narration') || operation.plannedSteps[operation.receipts.length]?.kind !== 'narration'))) p.fail('KP 没有当前真实规则/检查后的叙述授权')
+  if (mode === 'reserve' && runtime.openRun!.coordination.calls.some(c => c.narrationBinding?.operationKey === n.operationKey)) p.fail('本操作已经请求过 KP，请复用或修订已有候选，不得重发')
 }

@@ -59,6 +59,15 @@ describe('R-TTRPGOPEN6 situation maintenance', () => {
       discoveredEvidenceRefs: [template.evidence[0].clueRef],
       satisfiedObstacleKeys: [template.obstacles[0].obstacleKey],
     })
+    const repeated = evaluateTtrpgSituationProgressV1({
+      template,instance: { ...instance,discoveredEvidenceRefs: first.discoveredEvidenceRefs,satisfiedObstacleKeys: first.satisfiedObstacleKeys },
+      discoveredEvidenceRefs: [template.evidence[0].clueRef],satisfiedObstacleKeys: [template.obstacles[0].obstacleKey],
+    })
+    expect(repeated.discoveredEvidenceRefs).toEqual(first.discoveredEvidenceRefs)
+    expect(repeated.satisfiedObstacleKeys).toEqual(first.satisfiedObstacleKeys)
+    expect(repeated.newlyDiscoveredEvidenceRefs).toEqual([])
+    expect(repeated.newlySatisfiedObstacleKeys).toEqual([])
+    expect(() => evaluateTtrpgSituationProgressV1({ template,instance,satisfiedObstacleKeys: [template.obstacles[0].obstacleKey,template.obstacles[0].obstacleKey] })).toThrow(/重复/)
     const next = evaluateTtrpgSituationProgressV1({
       template,
       instance: {

@@ -51,17 +51,18 @@ function readJson(input: unknown): unknown {
   if (typeof input !== "string") return structuredClone(input);
   try { return JSON.parse(input); } catch { return fail("JSON 无效"); }
 }
-async function parseWorldReference(input: unknown): Promise<WorldReferenceV1> {
+function parseWorldReferenceShape(input: unknown): WorldReferenceV1 {
   const row = object(input, [
     "schema", "version", "worldCode", "releaseUid", "releaseVersion", "releaseHash",
     "localReleaseRecordId", "manifestIdentity", "capabilityIdentity", "referenceHash",
   ], "WorldReference");
   object(row.manifestIdentity, ["schema", "version", "semanticContract", "schemaHash"], "manifestIdentity");
   object(row.capabilityIdentity, ["catalogHash", "profileHash"], "capabilityIdentity");
-  return validatePortableWorldReferenceV1(row as unknown as WorldReferenceV1);
+  return row as unknown as WorldReferenceV1;
 }
 
-async function parseContent(input: unknown): Promise<TtrpgProductionBriefContentV3> {
+/** Shape parsing is synchronous for the shared production envelope. It does not grant source rights or prove hashes. */
+export function parseTtrpgProductionBriefContentShapeV3(input: unknown): TtrpgProductionBriefContentV3 {
   const row = object(input, CONTENT_FIELDS, "Brief V3");
   if (row.schema !== "storyforge.ttrpg-production-brief" || row.version !== 3 || row.runFormat !== "open")
     fail("schema/version/runFormat 无效，Brief V3 只接受 open");
@@ -82,21 +83,21 @@ async function parseContent(input: unknown): Promise<TtrpgProductionBriefContent
   if (authoring.factPolicy.some((item) => !item.authorConfirmed))
     fail("正式 Brief 的事实候选尚未经作者确认");
   const rulePack = parseRulePackV2(row.rulePack);
-  if (typeof row.rulePackHash !== "string" || !HASH.test(row.rulePackHash) ||
-    await hashProductProductionValueV2(rulePack) !== row.rulePackHash)
+  if (typeof row.rulePackHash !== "string" || !HASH.test(row.rulePackHash))
     fail("RulePack V2 canonical hash 不一致");
-  const worldReference = await parseWorldReference(row.worldReference);
+  const worldReference = parseWorldReferenceShape(row.worldReference);
   const planRow = object(row.sourcePlan, [
     "schema", "version", "productType", "productInstanceKey", "worldReference", "adapter",
     "requirements", "initialResourceKeys", "permission", "gatewayPolicy", "gatewayPolicyHash",
     "missingStrategy", "consultationContextManifests", "readiness", "createdAt", "planHash",
   ], "SourcePlan");
-  await parseWorldReference(planRow.worldReference);
-  const sourcePlan = await validateProductSourcePlanV1(planRow as unknown as ProductSourcePlanV1);
-  if (sourcePlan.productType !== "ttrpg" || sourcePlan.adapter.productType !== "ttrpg" ||
+  parseWorldReferenceShape(planRow.worldReference);
+  const sourcePlan = planRow as unknown as ProductSourcePlanV1;
+  if (sourcePlan.schema !== 'storyforge.product-source-plan' || sourcePlan.version !== 1
+    || sourcePlan.productType !== "ttrpg" || sourcePlan.adapter?.productType !== "ttrpg" ||
     !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(sourcePlan.productInstanceKey))
     fail("SourcePlan 不属于有效的 ttrpg production");
-  if (sourcePlan.readiness === "blocked" || !sourcePlan.initialResourceKeys.length)
+  if (sourcePlan.readiness === "blocked" || !Array.isArray(sourcePlan.initialResourceKeys) || !sourcePlan.initialResourceKeys.length)
     fail("SourcePlan 尚未就绪");
   if (worldReference.referenceHash !== sourcePlan.worldReference.referenceHash ||
     worldReference.localReleaseRecordId !== sourcePlan.worldReference.localReleaseRecordId)
@@ -112,6 +113,20 @@ async function parseContent(input: unknown): Promise<TtrpgProductionBriefContent
     worldReference,
     sourcePlan,
   };
+}
+
+async function parseContent(input: unknown): Promise<TtrpgProductionBriefContentV3> {
+  const content = parseTtrpgProductionBriefContentShapeV3(input);
+  if (await hashProductProductionValueV2(content.rulePack) !== content.rulePackHash) fail("RulePack V2 canonical hash 不一致");
+  const worldReference = await validatePortableWorldReferenceV1(content.worldReference);
+  const sourcePlan = await validateProductSourcePlanV1(content.sourcePlan);
+  await validatePortableWorldReferenceV1(sourcePlan.worldReference);
+  return { ...content, worldReference, sourcePlan };
+}
+
+/** Full immutable proof for plan/save/start boundaries; caller must still verify actual local source resources. */
+export async function validateTtrpgProductionBriefContentV3(input: unknown): Promise<TtrpgProductionBriefContentV3> {
+  return parseContent(input);
 }
 
 function portableContent(content: TtrpgProductionBriefContentV3): TtrpgProductionBriefContentV3 {

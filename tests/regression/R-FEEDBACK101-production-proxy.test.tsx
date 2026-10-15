@@ -20,7 +20,7 @@ beforeEach(() => {
 })
 afterEach(async () => {
   await act(async () => root.unmount())
-  host.remove(); vi.unstubAllEnvs(); useAIConfigStore.setState(initial)
+  host.remove(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); useAIConfigStore.setState(initial)
 })
 async function mount(Component: typeof AIConfigPanel) {
   await act(async () => root.render(createElement(DialogProvider, null, createElement(Component))))
@@ -65,6 +65,21 @@ describe('Feedback #101: development proxy controls in production', () => {
     expect(useAIConfigStore.getState().embedding.baseUrl).toBe('/siliconflow-proxy/v1')
     await click('切换到直连')
     expect(useAIConfigStore.getState().embedding.baseUrl).toBe('https://api.siliconflow.cn/v1')
+  })
+  it('offers local proxies in the production-built portable package on localhost', async () => {
+    vi.stubEnv('MODE', 'portable')
+    await mount(AIConfigPanel)
+    await click('切换到本地代理')
+    expect(useAIConfigStore.getState().config.baseUrl).toBe('/deepseek-proxy/v1')
+    await click('硅基流动')
+    expect(useAIConfigStore.getState().embedding.baseUrl).toBe('/siliconflow-proxy/v1')
+  })
+  it('keeps proxy controls unavailable when a portable build is hosted publicly', async () => {
+    vi.stubEnv('MODE', 'portable')
+    vi.stubGlobal('location', { hostname: 'storyforge-lab.com' })
+    await mount(AIConfigPanel)
+    expect(buttons().filter(button => button.textContent?.includes('切换到本地代理'))).toHaveLength(0)
+    expect(host.textContent).toContain('线上部署不自带本地代理')
   })
   it('keeps saved embedding proxies intact until the author chooses direct access', async () => {
     useAIConfigStore.setState({ embedding: { ...useAIConfigStore.getState().embedding, baseUrl: '/glm-proxy/api/paas/v4' } })

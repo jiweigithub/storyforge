@@ -77,6 +77,7 @@ export interface TtrpgOpenIntentResolutionBindingV1 {
   actionKey: string | null
   checkKey: string | null
   oracleKey: string | null
+  interactionKey?: string
 }
 
 export type TtrpgOpenIntentAuthorizationV1 =
@@ -92,6 +93,7 @@ export interface TtrpgOpenIntentPreviewV1 {
     actionKey: string | null
     checkKey: string | null
     oracleKey: string | null
+    interactionKey?: string
   }
   actionKind: TtrpgOpenIntentActionKindV1
   isRetreat: boolean
@@ -618,7 +620,17 @@ function routeWithSnapshot(intent: TtrpgOpenIntentV1, snapshot: TtrpgOpenIntentR
   const unknownTargets = intent.targetRefs.filter(target => allRefs.size > 0 && !allRefs.has(target))
   if (unknownTargets.length > 0) return clarificationPreview(intent, ['targetRefs'], '目标引用无法唯一绑定，请补充可识别的目标')
 
-  const action = explicitActionMatch(intent, rulePack.actions)
+  // The method names one frozen interaction exactly. Natural-language keywords alone
+  // cannot choose among distinct destinations, costs or consequences.
+  const interactions = (rulePack.interactionBindings ?? []).filter(binding =>
+    normalizedText(intent.method) === normalizedText(binding.interactionKey) || normalizedText(intent.method) === normalizedText(binding.title))
+  if (interactions.length > 1) return clarificationPreview(intent,['method'],'互动名称不唯一，请指定冻结 interactionKey')
+  const interaction = interactions[0]
+  const action = interaction ? rulePack.actions.find(a => a.key === interaction.actionKey)! : explicitActionMatch(intent, rulePack.actions)
+  if (!interaction && action && rulePack.interactionBindings?.some(b => b.actionKey === action.key)) {
+    return clarificationPreview(intent,['method'],'该行动要求明确选择冻结互动，请指定 interactionKey')
+  }
+  if (interaction?.kind === 'retreat' && intent.source !== 'player') return rejectedPreview(intent,'撤退必须由控制角色的真人明确提出')
   const check = action === null ? explicitGenericCheckMatch(intent, rulePack.genericChecks) : null
   const oracle = action === null && check === null ? explicitOracleMatch(intent, rulePack) : null
   const explicitOracleRequest = containsAny(text, ['oracle', '命运', '占卜', '问骰', '问问命运', 'yes-no'])
@@ -656,7 +668,8 @@ function routeWithSnapshot(intent: TtrpgOpenIntentV1, snapshot: TtrpgOpenIntentR
   if (uncertainCost) return clarificationPreview(intent, [], '玩家尚不能确认这项行动的代价')
 
   let route: TtrpgOpenIntentRouteV1
-  if (action) route = 'existing-action'
+  if (interaction) route = 'no-roll'
+  else if (action) route = 'existing-action'
   else if (check) route = 'generic-check'
   else if (oracle || explicitOracleRequest) {
     if (!oracle) return rejectedPreview(intent, '请求的 Oracle 不在冻结规则包中')
@@ -683,6 +696,7 @@ function routeWithSnapshot(intent: TtrpgOpenIntentV1, snapshot: TtrpgOpenIntentR
     actionKey: action?.key ?? null,
     checkKey: check?.checkKey ?? null,
     oracleKey: oracle?.oracleKey ?? null,
+    ...(interaction ? { interactionKey: interaction.interactionKey } : {}),
   }
   preview.resolutionBinding = {
     actorKey: intent.actorKey,
@@ -691,20 +705,25 @@ function routeWithSnapshot(intent: TtrpgOpenIntentV1, snapshot: TtrpgOpenIntentR
     actionKey: action?.key ?? null,
     checkKey: check?.checkKey ?? null,
     oracleKey: oracle?.oracleKey ?? null,
+    ...(interaction ? { interactionKey: interaction.interactionKey } : {}),
   }
   preview.targetMethod = { targetRefs: [...intent.targetRefs], method: intent.method }
-  preview.timeCostWorldTurns = timeCostFor({ rulePack, action, check, route })
+  preview.timeCostWorldTurns = interaction?.timeCostWorldTurns ?? timeCostFor({ rulePack, action, check, route })
+  if (interaction) {
+    preview.actionKind = interaction.kind === 'dialogue' ? 'talk' : interaction.kind === 'retreat' ? 'move' : interaction.kind
+    preview.isRetreat = interaction.kind === 'retreat'
+  }
   preview.affectedActorKeys = uniqueLimited([
     intent.actorKey,
     ...intent.targetRefs.filter(target => actors.some(candidate => candidate.characterKey === target)),
   ], 16)
 
-  if (route === 'existing-action' || route === 'generic-check') {
+  if (route === 'existing-action' || route === 'generic-check' || interaction) {
     const predicateResult = action
-      ? unsatisfiedPredicates([], snapshot.predicateContext)
+      ? unsatisfiedPredicates(interaction?.preconditions ?? [], snapshot.predicateContext)
       : unsatisfiedPredicates(check?.preconditions ?? [], snapshot.predicateContext)
-    preview.unsatisfiedPredicates = predicateResult.values
-    if (predicateResult.error) return rejectedPreview(intent, `前置谓词无法求值：${predicateResult.error}`)
+    preview.unsatisfiedPredicates = interaction ? predicateResult.values.map(() => '冻结互动条件尚未满足') : predicateResult.values
+    if (predicateResult.error) return rejectedPreview(intent,interaction ? '冻结互动条件无法验证' : `前置谓词无法求值：${predicateResult.error}`)
   }
 
   const details = riskAndCosts({
@@ -716,6 +735,15 @@ function routeWithSnapshot(intent: TtrpgOpenIntentV1, snapshot: TtrpgOpenIntentR
   preview.riskSummary = details.riskSummary
   preview.possibleCosts = details.possibleCosts
   preview.irreversible = details.irreversible
+  if (interaction?.effectPlanRef) {
+    // The actual risk owner projects visible details. Never disclose hidden templates here.
+    preview.riskSummary.push('包含冻结互动后果，执行前须审阅并确认')
+    preview.requiresConfirmation = true
+  }
+  if (interaction?.kind === 'retreat') {
+    preview.riskSummary.push('撤退会增加混乱值')
+    details.reasons.add('irreversible');preview.irreversible = true
+  }
   for (const effect of [
     ...(action ? actionEffects(action) : []),
     ...(check ? effectsForCheck(check, campaign) : []),
@@ -768,7 +796,7 @@ function routeWithSnapshot(intent: TtrpgOpenIntentV1, snapshot: TtrpgOpenIntentR
     preview.authorization = 'not-applicable'
   }
   if (preview.confirmationReasonKinds.length > 0) preview.requiresConfirmation = true
-  if (preview.route === 'oracle' || preview.route === 'no-roll') {
+  if (preview.route === 'oracle' || (preview.route === 'no-roll' && !interaction)) {
     preview.confirmationReasonKinds = preview.confirmationReasonKinds.filter(kind => kind !== 'resource-spend')
   }
   return preview

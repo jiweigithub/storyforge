@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import * as playerContext from '../../src/lib/ttrpg/open-player-context'
+import { TtrpgOpenReadConflictV1 } from '../../src/lib/ttrpg/open-read-conflict'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { preparedOpenTtrpgCallV1 } from '../helpers/open-ttrpg-call'
 import { openEnvelopeV1, OPEN_HUMAN_VIEWER } from '../helpers/open-ttrpg-session'
@@ -9,7 +11,7 @@ import { ttrpgOpenCallBudgetV1 } from '../../src/lib/ttrpg/open-model-calls'
 import { parseTtrpgOpenCoordinationV1 } from '../../src/lib/ttrpg/open-coordination'
 describe('R-TTRPGOPEN1 durable request journal and exact response evidence', () => {
   beforeEach(async () => { await db.delete(); await db.open() })
-  afterEach(() => db.close())
+  afterEach(() => { vi.restoreAllMocks(); db.close() })
   async function setup() {
     const call = await preparedOpenTtrpgCallV1()
     const event = await call.reserve()
@@ -98,6 +100,32 @@ describe('R-TTRPGOPEN1 durable request journal and exact response evidence', () 
     expect(results.filter(result => result.sendAuthorized)).toHaveLength(1)
     expect(results[0].event.id).toBe(results[1].event.id)
     expect(await db.productRuntimeEvents.where('sessionId').equals(call.fixture.sessionId).filter(event => event.type === 'ttrpg.open.call.dispatched').count()).toBe(1)
+  })
+  it('recovers only the real winning receipt when the competing reader observes a changed head', async () => {
+    const call = await setup(), envelope = await call.envelope('controlled.concurrent')
+    const realLoad = playerContext.loadTtrpgOpenPlayerContextV1
+    let releaseSecond!: () => void, releaseWinner!: () => void
+    const secondEntered = new Promise<void>(resolve => { releaseSecond = resolve })
+    const winnerCommitted = new Promise<void>(resolve => { releaseWinner = resolve })
+    let reads = 0
+    vi.spyOn(playerContext, 'loadTtrpgOpenPlayerContextV1').mockImplementation(async input => {
+      reads++
+      if (reads === 1) { await secondEntered; return realLoad(input) }
+      releaseSecond(); await winnerCommitted
+      throw new TtrpgOpenReadConflictV1('controlled changed read head')
+    })
+    const winner = dispatchTtrpgOpenModelCallV1(envelope).then(result => { releaseWinner(); return result })
+    const competitor = dispatchTtrpgOpenModelCallV1(envelope)
+    const results = await Promise.all([winner, competitor])
+    expect(results.map(r => r.sendAuthorized)).toEqual([true, false])
+    expect(results[0].event.id).toBe(results[1].event.id)
+    expect(await db.productRuntimeEvents.where('sessionId').equals(call.fixture.sessionId).filter(e => e.type === 'ttrpg.open.call.dispatched').count()).toBe(1)
+  })
+  it('does not turn an unrelated read conflict into a send permit or a fabricated receipt', async () => {
+    const call = await setup()
+    vi.spyOn(playerContext, 'loadTtrpgOpenPlayerContextV1').mockRejectedValueOnce(new TtrpgOpenReadConflictV1('controlled unrelated read drift'))
+    await expect(dispatchTtrpgOpenModelCallV1(await call.envelope('unrelated.drift'))).rejects.toThrow(/unrelated read drift/)
+    expect(await db.productRuntimeEvents.where('sessionId').equals(call.fixture.sessionId).filter(e => e.type === 'ttrpg.open.call.dispatched').count()).toBe(0)
   })
   it('refuses forged Run identity and excessive budgets without adding a reservation', async () => {
     const call = await preparedOpenTtrpgCallV1()

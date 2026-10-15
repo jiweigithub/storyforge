@@ -247,6 +247,16 @@ export function validateOpenContentReferences(c: TtrpgCampaignContentV2, rule: R
     t.effects.forEach(e => effect(e, t))
     t.alternatives.forEach(a => a.effects.forEach(e => effect(e, t)))
   }
+  for (const interaction of rule.interactionBindings ?? []) {
+    interaction.preconditions.forEach(t => predicate(t,interaction.interactionKey))
+    planRef(interaction.effectPlanRef,interaction.interactionKey)
+    if (interaction.effectPlanRef !== null && plans.get(interaction.effectPlanRef)?.degree !== 'success') p.fail(`${interaction.interactionKey}: no-roll 互动只引用确定成功模板`)
+    if (interaction.kind === 'move' || interaction.kind === 'retreat') {
+      const plan = plans.get(interaction.effectPlanRef!)!
+      const choices = plan.alternatives.length ? plan.alternatives.map(a => a.effects) : [plan.effects]
+      if (choices.some(effects => !effects.some(e => e.family === 'story' && e.operation === 'location.set'))) p.fail(`${interaction.interactionKey}: 移动/撤退必须有真实位置后果`)
+    }
+  }
   for (const check of rule.genericChecks) {
     effectAudience(check.audience, check.checkKey)
     check.preconditions.forEach(t => predicate(t, check.checkKey))
@@ -327,6 +337,10 @@ export function validateOpenContentReferences(c: TtrpgCampaignContentV2, rule: R
   }
   refs(c.openingSituationKeys, situations.keys(), 'openingSituationKeys')
   for (const t of c.stageClosurePolicy.triggers) predicate(t.predicate, t.triggerKey)
+  for (const { trigger } of c.contextPolicy?.triggers ?? []) {
+    for (const actorKey of trigger.knownByActorKeys) p.known(actorKey, new Set([...actors.keys(), 'gm']), trigger.triggerKey)
+    if (trigger.predicate) predicate(trigger.predicate, trigger.triggerKey)
+  }
   if (c.runtimePolicy.maximumCallsPerEpoch > c.companionPolicy.maximumCompanions + 4 || c.runtimePolicy.maxAiActions > c.companionPolicy.maximumCompanions) p.fail('runtimePolicy: 超过队友数+4预算/队友动作上限')
   validateTtrpgOpenApprovalBindingsV1(c.companionPolicy, c.characterTemplates)
   p.known(c.openingSceneKey, scenes.keys(), 'openingSceneKey')

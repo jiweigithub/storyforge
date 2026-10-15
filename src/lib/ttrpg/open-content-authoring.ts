@@ -1,3 +1,4 @@
+import { parseTtrpgOpenContextPolicyV1 } from './open-context-policy'
 import type { TtrpgOpenAuthoringV1 } from './open-contract'
 import * as p from './open-contract-parse'
 import { frozenFact } from './open-content-predicates'
@@ -6,9 +7,12 @@ import { effectTemplate, dynamicTemplate, companionPolicy, closurePolicy, runtim
 
 /** Drafts may be empty. Cross-resource closure belongs to Campaign V2 publication parsing. */
 export function parseTtrpgOpenAuthoringV1(input: unknown): TtrpgOpenAuthoringV1 {
-  const r = p.record(p.json(input), ['factPolicy', 'situationTemplates', 'openingSituationKeys', 'effectPlanTemplates', 'pressure', 'companionPolicy', 'stageClosurePolicy', 'dynamicEntityTemplates', 'runtimePolicy'], 'openAuthoring')
+  const raw = p.object(p.json(input), 'openAuthoring')
+  const hasContextPolicy = Object.prototype.hasOwnProperty.call(raw, 'contextPolicy')
+  const r = p.record(raw, ['factPolicy', 'situationTemplates', 'openingSituationKeys', 'effectPlanTemplates', 'pressure', 'companionPolicy', 'stageClosurePolicy', 'dynamicEntityTemplates', 'runtimePolicy', ...(hasContextPolicy ? ['contextPolicy'] : [])], 'openAuthoring')
   const pressure = p.record(r.pressure, ['clocks', 'fronts'], 'openAuthoring.pressure')
   const result: TtrpgOpenAuthoringV1 = {
+    ...(hasContextPolicy ? { contextPolicy: parseTtrpgOpenContextPolicyV1(r.contextPolicy) } : {}),
     factPolicy: p.list(r.factPolicy, 'factPolicy', (v, l) => {
       const a = p.record(v, ['fact', 'authorConfirmed'], l)
       return { fact: frozenFact(a.fact, l), authorConfirmed: p.bool(a.authorConfirmed, l) }

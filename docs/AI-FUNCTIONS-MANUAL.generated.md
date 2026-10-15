@@ -80,7 +80,7 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 136 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 143 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
@@ -91,6 +91,13 @@
 | `ttrpgRuntime` | 正式 TTRPG 主持人运行视角 | runtime | L0 | 10000 |
 | `ttrpgOpenAuthority` | open 跑团角色权限与机械状态 | runtime | L0 | 10000 |
 | `ttrpgOpenKnowledge` | open 跑团当前角色知识 | runtime | L0 | 10000 |
+| `ttrpgOpenOracleHistory` | open 跑团角色可读 Oracle 历史 | runtime | L0 | 6000 |
+| `ttrpgOpenFacts` | open 跑团角色可读会话叙事事实 | runtime | L0 | 10000 |
+| `ttrpgOpenKpInput` | open 跑团共同可见结算叙述输入 | runtime | L0 | 16000 |
+| `ttrpgOpenGmOracleInput` | open 跑团受限 GM Oracle 解释输入 | runtime | L0 | 16000 |
+| `ttrpgOpenActorContext` | open 跑团角色情境指引与已保存叙述 | runtime | L0 | 16000 |
+| `ttrpgOpenPartyContext` | open 跑团共同叙述情境指引与已保存叙述 | runtime | L0 | 16000 |
+| `ttrpgOpenGmContext` | open 跑团GM 助手情境指引与已保存叙述 | runtime | L0 | 16000 |
 | `ttrpgPrivateGuidance` | 正式 TTRPG 单角色私密指引 | runtime | L0 | 8000 |
 | `ttrpgDirector` | 正式 TTRPG AI KP 决策与冻结揭示条件 | runtime | L0 | 12000 |
 | `ttrpgPublicNarration` | 正式 TTRPG 已授权公开叙述素材 | runtime | L0 | 10000 |
@@ -451,10 +458,15 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ## 五、正式 AI 入口（FormalAIEntryBindingV1）
 
-共 48 个操作级绑定。运行时按 entryId 校验 category 和 Skill；采纳权限不由文字说明决定。
+共 53 个操作级绑定。运行时按 entryId 校验 category 和 Skill；采纳权限不由文字说明决定。
 
 | entryId | Skill | category | 边界 | 候选 | 采纳目标 | 调用方 |
 |---|---|---|---|---|---|---|
+| `ttrpg.open.oracle-interpret` | `prose.ttrpg-open-oracle-interpret` | `runtime.ttrpg-open.oracle-interpret` | formal / product-runtime | `storyforge.ttrpg-open-oracle-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
+| `ttrpg.open.fact-normalize` | `prose.ttrpg-open-fact-normalize` | `runtime.ttrpg-open.fact-normalize` | formal / product-runtime | `storyforge.ttrpg-open-oracle-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
+| `ttrpg.open.intent` | `prose.ttrpg-open-intent` | `runtime.ttrpg-open.intent` | formal / product-runtime | `storyforge.ttrpg-open-intent-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
+| `ttrpg.open.companion` | `prose.ttrpg-open-companion` | `runtime.ttrpg-open.companion` | formal / product-runtime | `storyforge.ttrpg-open-intent-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
+| `ttrpg.open.kp` | `prose.ttrpg-open-kp` | `runtime.ttrpg-open.kp` | formal / product-runtime | `storyforge.ttrpg-open-kp-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
 | `extensions.generate` | `extensions.generate` | `extension.generate` | formal / durable-run | `extension-record-candidate` | `extensionRecords` | `src/lib/extensions/ai-run.ts` |
 | `ai-town.authoring.consult` | `ai-town.consult.v1` | `authoring.ai-town-consult` | auxiliary / durable-run | `ai-town-settings-preview` | 禁止 | `src/lib/ai-town/consultation.ts` |
 | `prose.chapter.generate` | `prose.generate` | `chapter.content` | formal / durable-run | `chapter-draft` | `chapters` | `src/lib/generation/chapter-generation-node.ts` |
@@ -506,4 +518,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `bdda6ee6`
+生成时间基准:commit `2bda43a7`

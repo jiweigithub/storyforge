@@ -468,6 +468,62 @@ function assertReceiptShape(receipt: TtrpgOracleRollReceiptV1): void {
   }
 }
 
+/** Closed persisted values; cryptographic seed/receipt verification remains asynchronous. */
+export function parseTtrpgOracleResolutionV1(value: unknown, rulePack: RulePackV2): TtrpgOracleResolutionV1 {
+  const root = p.record(value, ['outcome', 'rollReceipt'], 'oracle resolution')
+  const o = p.record(root.outcome, ['oracleKey', 'question', 'askedBy', 'likelihoodTierKey', 'chaosValueAtRoll', 'rawResult', 'finalized', 'interpretationCandidateId'], 'oracle outcome')
+  const r = p.record(root.rollReceipt, ['rulePackContentHash', 'oracleKey', 'commandId', 'eventSequence', 'diceModelKey', 'nonce', 'diceResolution', 'chaosBefore', 'chaosAfter', 'likelihoodTierKey', 'entrySelection', 'selectedEntryKey', 'receiptHash'], 'oracle receipt')
+  const table = rulePack.oracles.find(table => table.oracleKey === o.oracleKey) ?? fail('结果没有冻结 Oracle 表')
+  const core = mechanicalRulePack(rulePack)
+  const model = core.diceModels.find(model => model.key === table.diceModelKey) ?? fail('结果缺少骰子模型')
+  const d = p.record(r.diceResolution, ['diceModelKey', 'dice', 'keptDice', 'modifier', 'total', 'rollTrace', 'seedCommitment', 'nonce', 'proofHash'], 'oracle dice')
+  const t = p.record(d.rollTrace, ['algorithm', 'sides', 'requestedDice', 'consumedSamples', 'rejectedSamples'], 'oracle dice trace')
+  const dice = p.list(d.dice, 'oracle dice', v => p.integer(v, 'die', 1, model.sides), model.count, model.count)
+  const keptDice = p.list(d.keptDice, 'oracle kept dice', v => p.integer(v, 'kept die', 1, model.sides), model.count, 1)
+  const expectedKept = model.keep === 'all' ? dice : [model.keep === 'highest' ? Math.max(...dice) : Math.min(...dice)]
+  const modifier = p.integer(d.modifier, 'oracle modifier', -1000, 1000)
+  const total = p.integer(d.total, 'oracle total', -1000, 1_000_000)
+  const nonce = p.text(r.nonce, 'oracle nonce', 2000)
+  const commandId = p.key(r.commandId, 'oracle command')
+  const chaosBefore = parseChaos(r.chaosBefore, 'oracle chaos')
+  const likelihoodTierKey = p.nullable(r.likelihoodTierKey, p.key, 'oracle tier')
+  const entrySelection = r.entrySelection === null ? null : (() => {
+    const e = p.record(r.entrySelection, ['nonce', 'weightTotal', 'consumedSamples', 'rejectedSamples', 'index'], 'oracle entry selection')
+    const weightTotal = p.integer(e.weightTotal, 'oracle weight', 1, 100000)
+    const consumedSamples = p.integer(e.consumedSamples, 'entry consumed', 1, Number.MAX_SAFE_INTEGER)
+    const rejectedSamples = p.integer(e.rejectedSamples, 'entry rejected', 0, Number.MAX_SAFE_INTEGER)
+    if (consumedSamples !== rejectedSamples + 1 || e.nonce !== `${nonce}:entry`
+      || weightTotal !== table.entries?.reduce((sum, entry) => sum + entry.weight, 0)) fail('词条采样回执不一致')
+    return { nonce: p.text(e.nonce, 'entry nonce', 2000), weightTotal, consumedSamples, rejectedSamples, index: p.integer(e.index, 'entry index', 0, weightTotal - 1) }
+  })()
+  const selectedEntryKey = p.nullable(r.selectedEntryKey, p.key, 'selected entry')
+  const rawResult: TtrpgOracleRawResultV1 = typeof o.rawResult === 'string'
+    ? p.oneOf(o.rawResult, ['yes', 'yes-but', 'no-but', 'no'], 'oracle result')
+    : { entryKey: p.key(p.record(o.rawResult, ['entryKey'], 'entry result').entryKey, 'entry key') }
+  const tier = resolveTier(table, likelihoodTierKey)
+  const bounds = diceBounds(core, model.key)
+  const expectedRaw = table.kind === 'yes-no'
+    ? rawResultForYesNo(total, tier!, chaosBefore, bounds.minimum + modifier, bounds.maximum + modifier, table.chaosCoupled)
+    : entrySelection ? { entryKey: selectedEntry(table, entrySelection) } : fail('词条结果缺少采样')
+  if (JSON.stringify(keptDice) !== JSON.stringify(expectedKept) || total !== keptDice.reduce((sum, die) => sum + die, 0) + modifier
+    || d.diceModelKey !== model.key || r.diceModelKey !== model.key || r.oracleKey !== table.oracleKey
+    || nonce !== `oracle:${table.oracleKey}:${commandId}` || d.nonce !== nonce || modifier !== 0
+    || t.algorithm !== 'uint32-rejection-v2' || t.sides !== model.sides || t.requestedDice !== model.count
+    || Number(t.consumedSamples) !== Number(t.rejectedSamples) + model.count
+    || r.chaosAfter !== chaosBefore || o.chaosValueAtRoll !== chaosBefore || table.chaosCoupled !== (chaosBefore !== null)
+    || (tier?.tierKey ?? null) !== likelihoodTierKey || o.likelihoodTierKey !== likelihoodTierKey
+    || (table.kind === 'yes-no') !== (entrySelection === null) || selectedEntryKey !== (entrySelection ? selectedEntry(table, entrySelection) : null)
+    || JSON.stringify(rawResult) !== JSON.stringify(expectedRaw) || o.interpretationCandidateId !== null) fail('Oracle 原始结果或冻结回执被改换')
+  return { outcome: { oracleKey: table.oracleKey, question: p.text(o.question, 'oracle question', 2000), askedBy: parseAskedBy(o.askedBy, 'oracle askedBy'),
+    likelihoodTierKey, chaosValueAtRoll: chaosBefore, rawResult, finalized: p.literal(o.finalized, true, 'oracle finalized'), interpretationCandidateId: null },
+    rollReceipt: { rulePackContentHash: p.hash(r.rulePackContentHash, 'oracle rule hash'), oracleKey: table.oracleKey, commandId,
+      eventSequence: p.integer(r.eventSequence, 'oracle sequence', 1, Number.MAX_SAFE_INTEGER), diceModelKey: model.key, nonce,
+      diceResolution: { diceModelKey: model.key, dice, keptDice, modifier, total, rollTrace: { algorithm: 'uint32-rejection-v2', sides: model.sides, requestedDice: model.count,
+        consumedSamples: p.integer(t.consumedSamples, 'dice consumed', model.count, Number.MAX_SAFE_INTEGER), rejectedSamples: p.integer(t.rejectedSamples, 'dice rejected', 0, Number.MAX_SAFE_INTEGER) },
+        seedCommitment: p.hash(d.seedCommitment, 'oracle seed'), nonce, proofHash: p.hash(d.proofHash, 'oracle dice proof') },
+      chaosBefore, chaosAfter: chaosBefore, likelihoodTierKey, entrySelection, selectedEntryKey, receiptHash: p.hash(r.receiptHash, 'oracle receipt hash') } }
+}
+
 export async function verifyTtrpgOracleOutcomeV1(input: {
   rulePack: RulePackV1 | RulePackV2
   seed: string

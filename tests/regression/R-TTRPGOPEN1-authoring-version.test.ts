@@ -298,7 +298,7 @@ describe("Settings V2 版本与闭集", () => {
     expect(await hashProductProductionValueV2(parsedBefore)).toBe(await hashProductProductionValueV2(legacy));
     const saved = await saveTtrpgDraft(made.scope, draft.revision, openSettings(), "open");
     expect(() => assertTtrpgScriptedAuthoringSettings(settingsFromTtrpgDraft(saved))).toThrow("P2a");
-    await expect(prepareTtrpgBrief(made.scope, saved.revision)).rejects.toThrow("不能编译为 scripted");
+    await expect(prepareTtrpgBrief(made.scope, saved.revision)).rejects.toThrow("open 制作需要本作品已保存的 RulePack V2");
     expect(await db.productProductionBriefs.get(briefRow.id!)).toEqual(briefRow);
     const after = await db.productProductionBriefs.get(briefRow.id!);
     expect(after!.briefJson).toBe(beforeBytes);

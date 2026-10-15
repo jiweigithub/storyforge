@@ -388,6 +388,7 @@ export async function executeContextGatewayV1(
     scope: frozenScope(input),
     policy: accessPolicy,
     allowedResourceKeys: input.allowedResourceKeys,
+    freezeProviderReads: true,
   })
   const catalog = await collectCatalog(session)
   const readsAllowed = input.additionalReadsEnabled !== false
@@ -647,6 +648,7 @@ export async function executeContextGatewayV1(
     normalizationVersion: 'context-gateway-execution-v1',
   })
   const content = packetBlocks.join('\n\n')
+  for (const assertCurrent of session.readSessionGuards ?? []) await assertCurrent()
   const contextPacket = await createContextPacketV1({
     scopeFingerprint: session.scopeFingerprint,
     gatewayVersionHash: contract.gateway.versionHash,
