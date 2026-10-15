@@ -123,8 +123,10 @@ test('全文报告连入独立修订节点：作者勾选→一次修订复核�
   await expect(page.getByTestId('node-revision-selection')).toContainText('结尾混入任务说明')
   await page.getByRole('checkbox', { name: '处理第2段问题', exact: true }).check()
   await page.getByRole('button', { name: '运行到此节点', exact: true }).click()
+  // A preview exists before recheck completes. Wait for the actual node candidate,
+  // then require the verified view; mocked transport does not make durable hashing instantaneous.
+  await expect(page.getByLabel('候选输出')).toHaveValue(/陈禾签字。/, { timeout: 30_000 })
   await expect(page.getByTestId('quality-revision-preview')).toContainText('模型认为已有改善')
-  await expect(page.getByLabel('候选输出')).toHaveValue(/陈禾签字。/)
   expect(calls).toHaveLength(3)
   await page.reload(); await page.locator('[data-authoring-node-template="chapter.quality-revision"]').click()
   await expect(page.getByTestId('quality-revision-preview')).toContainText('模型认为已有改善')
@@ -146,6 +148,7 @@ test('独立修订节点拒绝同一正式候选：刷新只读回决定，不�
   await page.locator('[data-authoring-node-template="chapter.quality-revision"]').click()
   await page.getByRole('checkbox', { name: '处理第2段问题', exact: true }).check()
   await page.getByRole('button', { name: '运行到此节点', exact: true }).click()
+  await expect(page.getByLabel('候选输出')).toHaveValue(/陈禾签字。/, { timeout: 30_000 })
   await expect(page.getByTestId('quality-revision-preview')).toContainText('模型认为已有改善')
   await page.getByRole('button', { name: '拒绝候选', exact: true }).click()
   await expect(page.getByTestId('quality-revision-preview')).toContainText('已放弃，原稿保留')
