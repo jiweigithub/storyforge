@@ -40,8 +40,8 @@ function createResolver(input: {
   }
   // A window switch cannot revoke a URL midway through an earlier preload.
   // Use the internal reader below, never recursively enqueue this.read().
-  const enqueue = <T>(operation:()=>Promise<T>):Promise<T> => {
-    const result=pending.then(()=>{ensureActive();return operation()})
+  const enqueue = <T>(operation:()=>Promise<T>,checkActive=true):Promise<T> => {
+    const result=pending.then(()=>{if(checkActive)ensureActive();return operation()})
     pending=result.then(()=>undefined,()=>undefined)
     return result
   }
@@ -56,7 +56,10 @@ function createResolver(input: {
   return {
     read: assetKey=>enqueue(()=>read(assetKey)),
     preload({ assetKeys, maximumBytes, retainOnlyRequested }): Promise<ResolvedMediaCatalogV1> {
+      if(disposed)return Promise.reject(new Error('[product-media-resolver] resolver 已释放'))
       const keys=[...new Set(assetKeys)]
+      // An issued preload keeps its historical per-asset failure result if
+      // disposal happens in the queue; a new call after disposal rejects above.
       return enqueue(async()=>{
       if (!Number.isFinite(maximumBytes) || maximumBytes < 0) {
         throw new Error('[product-media-resolver] maximumBytes 无效')
@@ -97,7 +100,7 @@ function createResolver(input: {
         }
       }
       return result
-      })
+      },false)
     },
     dispose() {
       if (disposed) return

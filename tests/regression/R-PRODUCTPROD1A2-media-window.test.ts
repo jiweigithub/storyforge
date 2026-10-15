@@ -67,4 +67,11 @@ describe('registered media resolver bounded windows',()=>{
     expect(result.failures).toEqual([]);expect(result.urls[a]).toBeTruthy()
     await expect(old.read(a)).rejects.toThrow(/释放/)
   })
+  it('preserves per-asset failure results when an already requested legacy preload is disposed before its queued read starts',async()=>{
+    const s=await fixture(),reader=await s.create(),key=s.media[0].asset.assetKey
+    const pending=reader.preload({assetKeys:[key],maximumBytes:4096})
+    reader.dispose()
+    expect(await pending).toEqual({urls:{},usedBytes:0,failures:[{assetKey:key,reason:expect.stringMatching(/已释放/)}]})
+    await expect(reader.preload({assetKeys:[key],maximumBytes:4096})).rejects.toThrow(/已释放/)
+  })
 })
