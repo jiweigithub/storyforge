@@ -25,6 +25,9 @@ export interface ChatNarrativePermissionsV1 {
   allowActorSituationExpansion?: boolean
   /** Explicit opt-in for a new player request after the actor's old goals end. */
   allowPlayerFollowupSituations?: boolean
+  /** Explicit opt-in for an own next goal within an existing unfinished thread.
+   * Historical Releases do not grant this authority. */
+  allowActorThreadFollowups?: boolean
   /** Explicit opt-in; absent historical Releases cannot unlock hidden facts. */
   maxDiscoveriesPerSituation?: number
 }
@@ -297,6 +300,14 @@ export interface ChatNarrativeActionV1 {
   situationRequest?: ChatActorSituationRequestV1 | null
   /** No new background or authority. Omitted in historical action bindings. */
   followupGoal?: ChatActorFollowupGoalV1 | null
+  /** Continues an existing known thread; never creates or reopens a thread. */
+  threadFollowupGoal?: ChatActorThreadFollowupGoalV1 | null
+}
+
+export interface ChatActorThreadFollowupGoalV1 {
+  threadKey: string
+  evidenceExcerpt: string
+  goal: Pick<ChatActorGoalV1, 'goalKey' | 'desire' | 'concern' | 'boundary' | 'evidenceFactKeys'>
 }
 
 /** A local background extension, never a replacement of established truth or a
