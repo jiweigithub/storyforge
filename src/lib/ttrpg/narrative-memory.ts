@@ -460,8 +460,9 @@ export function recallTtrpgNarrativeMemoryV1(
 }
 
 export function isTtrpgNarrativeMemoryRuleEligibleV1(value: unknown): boolean {
-  const memory = parseMemory(value, 'narrativeMemory')
-  return !memory.stale && memory.reliability !== 'belief'
+  parseMemory(value, 'narrativeMemory')
+  // A human-confirmed synopsis is still prose. Rules/evidence use their own actual ledgers.
+  return false
 }
 
 function parseMarkStaleOptions(value: unknown): {

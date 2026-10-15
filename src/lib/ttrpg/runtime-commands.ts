@@ -1,4 +1,9 @@
 import { ttrpgOpenOperationEffectTemplateKeyV1,ttrpgOpenOperationEffectDegreeV1,buildTtrpgOpenInteractionEffectV1,assertTtrpgOpenInteractionKnownCostsV1,assertTtrpgOpenInteractionChoiceCostV1 } from './open-interaction'
+import { runtimeInstanceTablesV1 } from '../registry/lifecycle'
+import { parseTtrpgOpenMemoryDraftV1, authorizeTtrpgOpenMemoryDraftV1, parseTtrpgOpenMemoryReceiptV1, assertTtrpgOpenManualMemoryInputV1,
+  type TtrpgOpenMemoryDraftV1 } from './open-memory-contract'
+import { assertTtrpgOpenAuthorizationRowsCurrentV1 } from './open-authorization'
+import { ttrpgOpenMemoryEventDigestV1, ttrpgOpenMemoryWindowBodyV1, ttrpgOpenMemoryLineageBodyV1, verifyTtrpgOpenMemoryReceiptsV1, projectTtrpgOpenMemoryRowV1 } from './open-memory-proof'
 import { createTtrpgOpenHostingDelegationV1,assertTtrpgOpenHostingRequestV1,assertTtrpgOpenHostingDelegationV1,assertTtrpgOpenDelegatedCompanionProposalV1,assertTtrpgOpenDelegatedNarrationV1 } from './open-hosting-delegation'
 import { createTtrpgOpenTableMessageV1,parseTtrpgOpenTableMessageRequestV1,type TtrpgOpenTableMessageRequestV1 } from './open-table-conversation'
 import { ttrpgOpenTurnOwnerStepV1,ttrpgOpenTurnCycleMatchesV1,ttrpgOpenTurnCycleMetadataV1 } from './open-turn-settlement'
@@ -105,6 +110,7 @@ type FormalTtrpgEventType = Extract<
   | "ttrpg.character.customized"
   | "ttrpg.character.advanced"
   | "ttrpg.session-zero.completed"
+  | "ttrpg.memory.recorded"
   | "ttrpg.scene.opened"
   | "ttrpg.clue.discovered"
   | "ttrpg.intent.receipted"
@@ -192,6 +198,7 @@ function assertScriptedTtrpgCampaign(
 }
 
 const OPEN_FOUNDATION_COMMANDS: readonly FormalTtrpgEventType[] = [
+  "ttrpg.memory.recorded",
   "ttrpg.open.run.started", "ttrpg.world-turn.advanced",
   "ttrpg.open.epoch.started", "ttrpg.open.epoch.closed", "ttrpg.open.hosting.delegated", "ttrpg.open.hosting.stopped",
   "ttrpg.open.call.reserved", "ttrpg.open.call.dispatched", "ttrpg.open.call.finished",
@@ -335,6 +342,7 @@ async function appendFormalTtrpgCommand(
       targetKey: string | null;
       payload: Record<string, unknown>;
       agentEvidence?: TtrpgOpenAgentEvidenceV1;
+      eventEvidence?: readonly ProductRuntimeEvent[];
     }>;
     afterCommit?: (context: {
       session: ProductRuntimeSession;
@@ -451,6 +459,7 @@ async function appendFormalTtrpgCommand(
       db.productReleases,
       db.productBuilds,
       ...(previewBuilt.agentEvidence ? [db.agentRuns, db.agentRunEvents, db.agentRunArtifacts] : []),
+      ...(input.type === 'ttrpg.memory.recorded' ? runtimeInstanceTablesV1() : []),
     ],
     async () => {
       const session = await db.productRuntimeSessions.get(input.sessionId);
@@ -548,6 +557,12 @@ async function appendFormalTtrpgCommand(
       // above, so the preflight result is the exact deterministic command plan.
       // Reusing it also keeps WebCrypto outside Dexie's active transaction.
       if (previewBuilt.agentEvidence) await assertTtrpgOpenAgentEvidenceUnchangedV1(previewBuilt.agentEvidence);
+      if (previewBuilt.eventEvidence) {
+        const expected = previewBuilt.eventEvidence
+        if (expected.some(event => event.id == null || event.sessionId !== session.id)) throw new Error('[ttrpg] 来源事件没有确切实例定位')
+        const actual = await db.productRuntimeEvents.bulkGet(expected.map(event => event.id!))
+        if (stableJson(actual) !== stableJson(expected)) throw new Error('[ttrpg] 记忆来源事件在提交期间发生变化')
+      }
       const event: ProductRuntimeEvent = { ...preparedEvent };
       state = applyProductRuntimeEvent(state, event);
       if (stableJson(state) !== stableJson(preparedState)) {
@@ -5954,4 +5969,42 @@ export async function postTtrpgOpenTableMessageV1(input: FormalTtrpgCommandEnvel
       return { actorKey: seat.actorKey,targetKey: null,payload: { message } };
     },
   });
+}
+
+/** Human-authored notes only. Formal AI candidates will use a separately registered adoption path. */
+export async function recordTtrpgOpenNarrativeMemoryV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; draft: TtrpgOpenMemoryDraftV1
+}): Promise<ProductRuntimeEvent> {
+  assertTtrpgOpenManualMemoryInputV1(input)
+  const viewerKey = input.viewerKey.trim(), draft = parseTtrpgOpenMemoryDraftV1(input.draft), commandId = normalizeCommandId(input.commandId)
+  const intent = { viewerKey, origin: 'human-authored' as const, draft }
+  return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.memory.recorded', intent,
+    build: async ({ session, state, sequence, participants }) => {
+      const runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
+      if (!runtime?.authorization || !runtime.openRun) throw new Error('[ttrpg-memory] 请先完成实际开团')
+      assertTtrpgOpenAuthorizationRowsCurrentV1({ authorization: runtime.authorization, participants })
+      const { seat, recipientActorKeys } = authorizeTtrpgOpenMemoryDraftV1(draft, runtime.authorization, viewerKey)
+      if (draft.toEventSequence > state.lastSequence || runtime.openRun.memoryReceipts?.some(r => r.draft.revisionKey === draft.revisionKey)) throw new Error('[ttrpg-memory] 区间越界或版本已被确认')
+      const events = await readSessionEvents(session, state.lastSequence)
+      const replayed = replayProductRuntimeEvents(parseProductRuntimeState(session.initialStateJson), events)
+      if (stableJson(replayed) !== stableJson(state)) throw new Error('[ttrpg-memory] 实际事件重放与当前基线不一致，请先恢复原记录')
+      await verifyTtrpgOpenMemoryReceiptsV1({ runtime, runtimeSourceHash: session.runtimeSourceHash, events })
+      const window = events.filter(event => event.sequence >= draft.fromEventSequence && event.sequence <= draft.toEventSequence).sort((a, b) => a.sequence - b.sequence)
+      const sourceEvents = await Promise.all(window.map(event => ttrpgOpenMemoryEventDigestV1(event, runtime.sessionKey)))
+      const sourceRef = { sessionKey: runtime.sessionKey, sequence }
+      const base = { schema: 'storyforge.ttrpg-open-memory-receipt' as const, version: 1 as const, commandId,
+        draft, viewerKey, authorActorKey: seat.actorKey, authorizationRef: runtime.authorization.sourceRef, sourceRef,
+        runtimeSourceHash: session.runtimeSourceHash, sourceLineageHash: await hashProductProductionValueV2(ttrpgOpenMemoryLineageBodyV1(runtime.sessionKey, session.runtimeSourceHash, runtime.branchLineage?.ancestors ?? [])), sourceEvents, recipientActorKeys,
+        recordedAt: Date.now(), recordedAtWorldTurn: runtime.openRun.worldTime.worldTurn,
+        origin: 'human-authored' as const, noMechanicalAuthority: true as const, noKnowledgeGrant: true as const }
+      const body = { ...base, derivedFromHash: await hashProductProductionValueV2(ttrpgOpenMemoryWindowBodyV1(base)) }
+      const receipt = parseTtrpgOpenMemoryReceiptV1({ ...body, receiptHash: await hashProductProductionValueV2(body) })
+      return { actorKey: seat.actorKey, targetKey: null, payload: { commandId, memory: receipt, sourceLineageHash: receipt.sourceLineageHash },
+        eventEvidence: events }
+    },
+    afterCommit: async ({ session, event }) => {
+      const receipt = parseTtrpgOpenMemoryReceiptV1(JSON.parse(event.payloadJson).memory)
+      await db.ttrpgNarrativeMemories.add(projectTtrpgOpenMemoryRowV1(receipt, session))
+    },
+  })
 }

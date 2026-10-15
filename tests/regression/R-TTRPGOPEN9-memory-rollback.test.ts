@@ -216,7 +216,8 @@ describe('R-TTRPGOPEN9 narrative memory rollback', () => {
     })
     expect(recallTtrpgNarrativeMemoryV1([belief], { audience: 'public' })).toHaveLength(1)
     expect(isTtrpgNarrativeMemoryRuleEligibleV1(belief)).toBe(false)
-    expect(isTtrpgNarrativeMemoryRuleEligibleV1(before)).toBe(true)
+    expect(isTtrpgNarrativeMemoryRuleEligibleV1(before)).toBe(false)
+    expect(isTtrpgNarrativeMemoryRuleEligibleV1(memory({ reliability: 'hearsay', observerKey: 'actor:hero' }))).toBe(false)
   })
 
   it('clones only complete records at or before a branch cut point and keeps ancestor source evidence', () => {

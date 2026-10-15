@@ -5,18 +5,17 @@ import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-
 import { CURRENT_BACKUP_VERSION, inspectProjectBackup, normalizeProjectBackup } from '../../src/lib/export/backup-trust'
 import { PROJECT_TABLES } from '../../src/lib/registry/project-tables'
 import { deleteProductRuntimeSession } from '../../src/lib/product/runtime-core'
-import type { TtrpgNarrativeMemoryV1 } from '../../src/lib/ttrpg/narrative-memory'
+import { recordTtrpgOpenNarrativeMemoryV1 } from '../../src/lib/ttrpg/runtime-commands'
+import { openEnvelopeV1, OPEN_HUMAN_VIEWER } from '../helpers/open-ttrpg-session'
 
-async function setup() {
+async function setup(withMemory = true) {
   const f = await readyOpenTtrpgSessionV1('memory storage boundary')
   const session = (await db.productRuntimeSessions.get(f.sessionId))!
-  // Internal storage fixture; not a formal author-adopted or model-generated memory.
-  const memory: TtrpgNarrativeMemoryV1 = { projectId: f.scope.projectId, worldGroupId: session.worldGroupId,
-    worldId: f.scope.worldId, workId: f.scope.workId, sessionId: f.sessionId, revisionKey: 'fixture-memory.1',
-    observerKey: 'hero', reliability: 'belief', audience: 'private', knownBy: ['hero'], summary: '角色认为灯塔里还有人。',
-    fromEventSequence: 1, toEventSequence: session.runtimeHeadSequence, sourceSessionId: null,
-    derivedFromHash: 'a'.repeat(64), stale: false, updatedAt: 1 }
-  await db.ttrpgNarrativeMemories.add(memory)
+  const draft = { revisionKey: 'fixture-memory.1',
+    observerKey: 'hero', reliability: 'belief' as const, audience: 'private' as const, knownBy: ['hero'], summary: '角色认为灯塔里还有人。',
+    fromEventSequence: 1, toEventSequence: session.runtimeHeadSequence }
+  if (withMemory) await recordTtrpgOpenNarrativeMemoryV1({ ...await openEnvelopeV1(f.sessionId, 'fixture.memory.confirm'), viewerKey: OPEN_HUMAN_VIEWER, draft })
+  const memory = (await db.ttrpgNarrativeMemories.where('sessionId').equals(f.sessionId).toArray())[0]
   return { ...f, memory }
 }
 describe('R-TTRPGOPEN8 unique memory storage foundation', { timeout: 60000 }, () => {
@@ -40,7 +39,7 @@ describe('R-TTRPGOPEN8 unique memory storage foundation', { timeout: 60000 }, ()
     expect(await db.ttrpgNarrativeMemories.where('sessionId').equals(f.sessionId).count()).toBe(1)
   })
   it.each([14, 15])('explicitly converts complete v%i backups by adding only newly introduced empty tables', async version => {
-    const f = await setup(), backup = await exportProjectJSON(f.scope.projectId) as unknown as Record<string, unknown> & { version: number }
+    const f = await setup(false), backup = await exportProjectJSON(f.scope.projectId) as unknown as Record<string, unknown> & { version: number }
     backup.version = version
     for (const spec of PROJECT_TABLES.filter(spec => spec.exportable && (spec.introducedBackupVersion ?? 1) > version)) delete backup[spec.name]
     const before = structuredClone(backup)

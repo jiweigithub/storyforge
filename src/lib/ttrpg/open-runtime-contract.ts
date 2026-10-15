@@ -1,4 +1,5 @@
 import { parseTtrpgOpenTableMessageV1,assertTtrpgOpenTableMessageHistoryV1,type TtrpgOpenTableMessageV1 } from './open-table-conversation'
+import { parseTtrpgOpenMemoryReceiptV1, type TtrpgOpenMemoryReceiptV1 } from './open-memory-contract'
 import { parseTtrpgOpenGateRecoveryV1, type TtrpgOpenGateRecoveryV1 } from './open-gate-recovery'
 import { parseTtrpgOpenNarrationReceiptV1, type TtrpgOpenNarrationReceiptV1 } from './open-kp-receipt'
 import { parseTtrpgOpenStageClosureV1, ttrpgOpenStageClosureOriginV1, type TtrpgOpenStageClosureV1 } from './open-stage-close'
@@ -151,6 +152,7 @@ export interface TtrpgOpenRunStateV1 {
   situationCycles?: TtrpgOpenSituationCycleV1[];
   pressureCycles?: TtrpgOpenPressureCycleV1[];
   pressureSignals?: TtrpgOpenPressureSignalV1[];
+  memoryReceipts?: TtrpgOpenMemoryReceiptV1[];
 }
 
 /**
@@ -567,6 +569,7 @@ export function parseTtrpgOpenRunStateV1(
       ...(Object.prototype.hasOwnProperty.call(row, "oracleReviews") ? ["oracleReviews"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "tableMessages") ? ["tableMessages"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "narrations") ? ["narrations"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "memoryReceipts") ? ["memoryReceipts"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "stageClosures") ? ["stageClosures"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "terminalReceipts") ? ["terminalReceipts"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "gateReceipts") ? ["gateReceipts"] : []),
@@ -706,6 +709,7 @@ export function parseTtrpgOpenRunStateV1(
     } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "tableMessages") ? { tableMessages: Array.isArray(row.tableMessages) && row.tableMessages.length <= 100000 ? row.tableMessages.map(parseTtrpgOpenTableMessageV1) : fail("tableMessages 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "narrations") ? { narrations: Array.isArray(row.narrations) && row.narrations.length <= 100000 ? row.narrations.map(parseTtrpgOpenNarrationReceiptV1) : fail("narrations 必须有界") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "memoryReceipts") ? { memoryReceipts: Array.isArray(row.memoryReceipts) && row.memoryReceipts.length <= 100000 ? row.memoryReceipts.map(parseTtrpgOpenMemoryReceiptV1) : fail("memoryReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "stageClosures") ? { stageClosures: Array.isArray(row.stageClosures) && row.stageClosures.length <= 100000 ? row.stageClosures.map(parseTtrpgOpenStageClosureV1) : fail("stageClosures 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "terminalReceipts") ? { terminalReceipts: Array.isArray(row.terminalReceipts) && row.terminalReceipts.length <= 100000 ? row.terminalReceipts.map(parseTtrpgOpenTerminalReceiptV1) : fail("terminalReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "gateReceipts") ? { gateReceipts: Array.isArray(row.gateReceipts) && row.gateReceipts.length <= 100000 ? row.gateReceipts.map(parseTtrpgOpenGateReceiptV1) : fail("gateReceipts 必须有界") } : {}),
@@ -828,6 +832,13 @@ export function parseTtrpgRuntimeStateV2(
   }
   for (const receipt of openRun?.narrations ?? []) {
     if (receipt.sourceRef.sessionKey !== sessionKey && !branchLineage?.ancestors.some(a => a.sessionKey === receipt.sourceRef.sessionKey && a.throughSequence >= receipt.sourceRef.sequence && a.snapshot.openRun?.narrations?.some(r => stableProductRuntimeJsonV1(r) === stableProductRuntimeJsonV1(receipt)))) fail("已采用叙述缺少真实封存祖先回执");
+  }
+  const memoryRevisions = new Set<string>()
+  for (const receipt of openRun?.memoryReceipts ?? []) {
+    if (memoryRevisions.has(receipt.draft.revisionKey)) fail('记忆版本重复')
+    memoryRevisions.add(receipt.draft.revisionKey)
+    if (receipt.sourceRef.sessionKey !== sessionKey && !branchLineage?.ancestors.some(a => a.sessionKey === receipt.sourceRef.sessionKey
+      && a.throughSequence >= receipt.sourceRef.sequence && a.snapshot.openRun?.memoryReceipts?.some(r => stableProductRuntimeJsonV1(r) === stableProductRuntimeJsonV1(receipt)))) fail('记忆缺少切点前的真实祖先回执')
   }
   const inheritedKnowledge = new Set(branchLineage?.ancestors.flatMap(ancestor =>
     (ancestor.snapshot.openRun?.knowledge ?? []).map(entry => stableProductRuntimeJsonV1(entry))) ?? []);

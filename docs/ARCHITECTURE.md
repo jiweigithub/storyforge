@@ -108,7 +108,7 @@ flowchart TB
 | 当前事实 | 数值 | 单一事实源 |
 |---|---:|---|
 | 应用语义版本 | `4.0.0` | `package.json` |
-| TypeScript 生产源码 | 1607 个文件 / 546830 行 | `tsconfig.json` |
+| TypeScript 生产源码 | 1612 个文件 / 547220 行 | `tsconfig.json` |
 | IndexedDB schema | v12 / 129 张 required tables | `schema.ts` / `REQUIRED_TABLES` |
 | PROJECT_TABLES | 129 张表 | `project-tables.ts` |
 | Prompt 主线 | 65 个 moduleKey / 238 条内置模板 | `PromptModuleKey` / `prompt-seeds*.ts` |

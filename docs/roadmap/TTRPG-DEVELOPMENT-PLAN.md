@@ -63,7 +63,7 @@
 
 ### 23.4 2026-10-12 评审基线与验证范围
 
-- 当前 P8 存储治理基础将 schema 从 **v11 升为 v12**：固定 `STORYFORGE_STORES_V11`，仅增加 `ttrpgNarrativeMemories`；备份从 v15 升为 v16，并严格转换完整的 v14/v15。此为开发分支状态，正式记忆采用/召回与分支来源合同仍待接通（§35.54）。
+- 当前 P8 开发分支为 **schema v12 /129 表 /备份 v16**，保留完整 v14/v15 明确转换。人工记忆 E15、只读本人档案、分支切点与稳定来源已接入引擎（§35.55）；模型候选/adopt、注册召回、作者与玩家界面、世界补丁及长局验收继续实施。
 - 当前 6 个跑团运行读源为 `ttrpgRuntime`、`ttrpgPrivateGuidance`、`ttrpgDirector`、`ttrpgPublicNarration`、`ttrpgNpcRuntime`、`ttrpgPlayerRuntime`；新源必须正式登记，不能因为文档出现名称就读取。
 - 《雾港：最后一盏灯》是已有 scripted 验证作品，记录见 `examples/ttrpg/fog-harbor/production-status.md`；已有真实生成/作者修订与 UI 试玩证据不等于独立玩家验收或公共多人服务。
 - 2026-10-12 评审复跑既有跑团及 Creator SDK/Harness 回归：23 文件、80 项全通过；当时检出分支的上述跑团文件与 fetched `origin/main@f93a01e3` 一致。这是旧能力回归基线，**不是 open 验收**，没有在本轮重新运行真实 provider/真人长局/全量 CI/E2E。
@@ -3536,3 +3536,22 @@ AI GM 模式中，Session Zero 原真人确认者可以明确撤回已经采用�
 
 
 P8 基础联测补充：共享账本在明确 `freezeContextEvidence:false` 的数据型重导出中，不再要求原 Run 的物理编号映射，也不生成或升级原来源证明；默认真实工作区导出仍须匹配原 Run 映射才可冻结新证据。主线多 Run 线性分桶回归原先只传便携映射，现明确走数据型协议，并追加“要求冻结但没有原映射仍拒绝”的反例。保留乱序数组身份、线性键读取上限及 worldGroup 损坏检查。此兼容问题由联合测试发现，原失败证据保留，修复与 P8 表迁移分为独立基础提交；不能借数据型转换取得任何发送或采用权限。
+
+
+### 35.55 P8 人工记忆确认与稳定事件区间（2026-10-15）
+
+本单元是跑团 open S3 运行研发。ProductRuntimeSession 拥有记录、确认回执和唯一记忆投影，WorldRelease 与媒资 owner 不变。新增人工领域命令 `recordTtrpgOpenNarrativeMemoryV1` 与本人档案读取 `readTtrpgOpenNarrativeMemoriesV1`，复用真实冻结来源、Session Zero/席位同意、事件回放和三注册表生命周期。当前是引擎/API 增量；用户界面、AI 候选/adopt、注册上下文召回、世界补丁和完整长局继续开发，公共 open 入口仍默认隐藏。
+
+- E15 使用原计划名称 `ttrpg.memory.recorded`，同步登记权威事件闭集与 FormalTtrpgEventType。payload 包含 commandId、memory、sourceLineageHash 与原意图；memory 是闭集的可搬运确认回执，包含 draft、原始来源、实际作者/接收者和原区间。事件、记忆行和 runtime head 在同一事务提交。相同 commandId/基线/意图重试返回原事件，改变同一确认或覆盖已有版本拒绝。规则、资源、时间、事实、知识和 AI 用量保持原状态。
+- 个人观察/传闻/信念由实际真人本人确认；共享或主持记录由实际人工主持确认，保留本桌记录同意。private 由原观察者明确选择当次知悉角色；只向本人选择的合法同桌角色/主持展示，保留原观察者与可信度。将其他角色列为观察者、借 GM 代写玩家内心、越界接收者或隐式分享拒绝。party 接收者冻结为当次真实活动角色。人工读取不依赖 AI 建议权限，也不授予模型读取该表的权限。
+- 来源用稳定 sessionKey+sequence、确认事件、sourceLineageHash、冻结 runtimeSourceHash 与实际完整源事件区间绑定。区间最多1000个完整事件，超过时明确拆分，不默默裁剪。确认前完整重放真实事件并核对当前基线，再计算区间 hash；事务内比对完整原前缀，包含摘要区间之前的授权事件，防止中途改变；没有网络/散列等待跨越写事务。sourceSessionId 只作本地定位，清空后仍以原稳定证明核验来源。
+- 已登记的 envelope.sessionId 是唯一会在便携导入中改写的运行 payload 定位。记录同时保留原语义摘要与将该定位归零后的摘要，其余正文、密级与语义都继续验签；错误实例定位拒绝。祖先仅在存在记忆时增添可选便携摘要，旧无记忆祖先和旧状态保持原序列化形状及 hash。
+- 分支以真实回放切点中的已确认回执复制记忆，校验原表与回执，排除“区间已结束但尚未确认”的未来笔记。原父子事件坐标不混用；父团局删除后由封存祖先的事件摘要与确认回执验证，支持多代分支与反复完整导入。分支事务所需实例表从 PROJECT_TABLES owner 派生，表写失败回滚整个子团局及席位复制。旧 scripted 分支继续原解析路径。
+- 新备份验证在写库前回放有关实例，核对真实 E15、源事件/祖先、记忆行、唯一版本及完整投影。仅结构有效的行不能作为已确认记忆导入；缺原证明、篡改正文/可信度/区间、错误 owner 或来源定位均拒绝，原项目保留。
+- 原型 `isTtrpgNarrativeMemoryRuleEligibleV1` 原先仅排除 belief，允许观察/传闻摘要作为规则输入；现统一保持摘要为叙事参考。规则裁定继续读取原始知识/事实台账，摘要保留观察者、可信度和时间标签供角色参考，不产生新的事实或证据授权。原型旧判断保留在 Git 历史，本节为现行裁决。
+
+三注册表边界：PROJECT_TABLES 继续派生导出/导入/删除/重映射；ADOPTION_EXTENSIONS 登记人工确认与分支领域写入口；当前没有新增模型可写字段、Prompt、Skill 或 CONTEXT_SOURCES，正式 AI 路径必须在下一单元先登记 summary 候选/adopt 与 consumer-scoped 读取，不能把人工命令当作模型写回旁路。
+
+工程证据以最终日志/回执为准。已完成源区间/幂等/原业务不变、本人隐私、存储失败及提交期间来源变化回滚、切点前后、多代父子坐标、祖先删除、重复完整导入与篡改拒绝的定向测试；真实浏览器/API 使用隔离 IndexedDB 验证实际事务失败/重试、私密隔离、刷新、分支与两次完整导入，无模型请求。它们不等于真实模型、作者/玩家界面或完整产品验收。完整 CI/E2E 仍须对应当前冻结 head，旧 P7/存储基础快照不能代替本单元。
+
+纯模块 `recordTtrpgNarrativeMemoryV1` 保留为离线内存评估，正式写入使用本节的 `recordTtrpgOpenNarrativeMemoryV1`。纯模块旧 `sourceLineageHash` 形参是 `derivedFromHash` 的兼容别名；正式回执分别保存稳定祖先链 hash 与确切事件区间 hash，不能混用。

@@ -7,6 +7,7 @@ import { parseTtrpgOpenOperationV1, type TtrpgOpenOperationV1 } from './open-ope
 import { parseTtrpgOpenSourceRefV1, ttrpgOpenScopedKeyV1, type TtrpgOpenSourceRefV1 } from './open-coordination'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
+import { ttrpgOpenMemoryEventDigestV1 } from './open-memory-event-digest'
 import * as p from './open-contract-parse'
 
 export interface TtrpgOpenAncestorEvidenceV1 {
@@ -15,7 +16,7 @@ export interface TtrpgOpenAncestorEvidenceV1 {
   stateHash: string
   runtimeSourceHash: string
   randomSource: { seed: string; seedCommitment: string }
-  events: Array<{ sourceRef: TtrpgOpenSourceRefV1; type: ProductRuntimeEvent['type']; payloadHash: string }>
+  events: Array<{ sourceRef: TtrpgOpenSourceRefV1; type: ProductRuntimeEvent['type']; payloadHash: string; portablePayloadHash?: string }>
   snapshot: { authorization: TtrpgOpenAuthorizationV1 | null; openRun: TtrpgOpenRunStateV1 | null }
   evidenceHash: string
 }
@@ -43,9 +44,10 @@ function parseAncestor(value: unknown): TtrpgOpenAncestorEvidenceV1 {
   const random = p.record(a.randomSource, ['seed', 'seedCommitment'], 'ancestor random source')
   const snapshot = p.record(a.snapshot, ['authorization', 'openRun'], 'ancestor snapshot')
   const events = p.list(a.events, 'ancestor events', value => {
-    const row = p.record(value, ['sourceRef', 'type', 'payloadHash'], 'ancestor event')
+    const row = p.record(value, ['sourceRef', 'type', 'payloadHash', ...(Object.prototype.hasOwnProperty.call(value, 'portablePayloadHash') ? ['portablePayloadHash'] : [])], 'ancestor event')
     const type = p.oneOf(row.type, PRODUCT_RUNTIME_EVENT_TYPES, 'ancestor event type')
-    return { sourceRef: parseTtrpgOpenSourceRefV1(row.sourceRef), type, payloadHash: p.hash(row.payloadHash, 'ancestor payload hash') }
+    return { sourceRef: parseTtrpgOpenSourceRefV1(row.sourceRef), type, payloadHash: p.hash(row.payloadHash, 'ancestor payload hash'),
+      ...(Object.prototype.hasOwnProperty.call(row, 'portablePayloadHash') ? { portablePayloadHash: p.hash(row.portablePayloadHash, 'ancestor portable payload hash') } : {}) }
   }, 100_000)
   if (events.length !== throughSequence || events.some((event, index) => event.sourceRef.sessionKey !== sessionKey
     || event.sourceRef.sequence !== index + 1)) fail('祖先事件必须是切点内的连续真实序列')
@@ -111,9 +113,11 @@ export async function captureTtrpgOpenAncestorV1(input: {
 }): Promise<TtrpgOpenAncestorEvidenceV1> {
   if (input.state.lastSequence !== input.throughSequence) fail('父状态不是请求的切点')
   const events = await Promise.all(input.events.filter(event => event.sequence <= input.throughSequence)
-    .sort((a, b) => a.sequence - b.sequence).map(async event => ({
-    sourceRef: { sessionKey: input.sessionKey, sequence: event.sequence }, type: event.type,
-    payloadHash: await hashProductProductionValueV2(JSON.parse(event.payloadJson)) })))
+    .sort((a, b) => a.sequence - b.sequence).map(async event => {
+      if (input.openRun?.memoryReceipts?.length) return ttrpgOpenMemoryEventDigestV1(event, input.sessionKey)
+      return { sourceRef: { sessionKey: input.sessionKey, sequence: event.sequence }, type: event.type,
+        payloadHash: await hashProductProductionValueV2(JSON.parse(event.payloadJson)) }
+    }))
   const body = { sessionKey: input.sessionKey, throughSequence: input.throughSequence,
     stateHash: await sha256Text(JSON.stringify(input.state)), runtimeSourceHash: input.runtimeSourceHash,
     randomSource: { seed: input.seed, seedCommitment: await sha256Text(input.seed) }, events,

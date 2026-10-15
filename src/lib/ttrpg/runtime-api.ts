@@ -134,6 +134,8 @@ export { acceptTtrpgOpenDelegatedKpNarrationV1 } from './runtime-commands'
 export { resumeTtrpgOpenPlayV1 } from './open-play-coordinator'
 
 export { recordTtrpgOpenHumanNarrationV1 } from './runtime-commands'
+export { recordTtrpgOpenNarrativeMemoryV1 } from './runtime-commands'
+export { readTtrpgOpenNarrativeMemoriesV1 } from './open-memory-service'
 export { reconcileTtrpgOpenHumanNarrationV1 } from './open-human-narration-recovery'
 export { cancelTtrpgOpenPreparedRequestV1 } from './open-request-cancellation'
 

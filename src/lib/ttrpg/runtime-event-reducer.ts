@@ -1,4 +1,5 @@
 import { applyTtrpgOpenTableMessageEventV1 } from './open-table-conversation-reducer'
+import { applyTtrpgOpenMemoryEventV1 } from './open-memory-reducer'
 import { applyTtrpgOpenHostingDelegationEventV1 } from './open-hosting-delegation'
 import { parseTtrpgOpenManualRequestV1 } from './open-manual-action'
 import { applyTtrpgOpenPrivateChoiceDisclosureEventV1 } from './open-private-choice-reducer'
@@ -79,6 +80,11 @@ export function applyTtrpgRuntimeEventV1(
   event: ProductRuntimeEvent,
   payload: ProductRuntimeJsonObjectV1,
 ): ProductRuntimeState {
+  if (applyTtrpgOpenMemoryEventV1(state, event, payload)) {
+    state.ttrpg = parseTtrpgRuntimeStateV2(state.ttrpg)!
+    state.lastSequence = event.sequence
+    return state
+  }
   if (state.ttrpg?.sessionKey && (applyTtrpgOpenHostingDelegationEventV1(state,event,payload) || applyTtrpgOpenTableMessageEventV1(state,event,payload) || applyTtrpgOpenPrivateChoiceDisclosureEventV1(state,event,payload) || applyTtrpgOpenHandoffEventV1(state, event, payload) || applyTtrpgOpenCompanionPreauthorizationEventV1(state, event, payload) || applyTtrpgOpenNarrationEventV1(state, event, payload) || applyTtrpgOpenGateRecoveryEventV1(state, event, payload) || applyTtrpgOpenStageClosureEventV1(state, event, payload) || applyTtrpgOpenTerminalGateEventV1(state, event, payload) || applyTtrpgOpenSituationCycleEventV1(state, event, payload) || applyTtrpgOpenSituationWorkEventV1(state, event, payload) || applyTtrpgOpenPressureEffectEventV1(state, event, payload) || applyTtrpgOpenPressureEventV1(state, event, payload))) {
     state.ttrpg = parseTtrpgRuntimeStateV2(state.ttrpg)!;
     state.lastSequence = event.sequence;
