@@ -3156,7 +3156,7 @@ export const AGENT_SKILLS = [
     defaultForAgent: false,
     label: '角色聊天情境行动候选',
     owner: 'character-chat-product',
-    promptVersion: 'chat-narrative-action-v34',
+    promptVersion: 'chat-narrative-action-v35',
     executionMode: 'character-reply',
     contextTaskKind: 'agent-character',
     readToolNames: [],
@@ -3189,7 +3189,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'character.chat-narrative-options', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天两种行动候选', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-v24',
+    label: '角色聊天两种行动候选', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-v25',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['interactionRuntime'], optionalContextSourceKeys: [], inputPolicy: INTERACTION_RUNTIME_INPUT_POLICY,
     contextCompression: INTERACTION_RUNTIME_COMPRESSION_POLICY, maxOutputTokens: 8000, writeTargets: [],

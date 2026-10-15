@@ -68,7 +68,7 @@ export function supportsChatExistingGoalPauseV1(version: string | undefined): bo
   return ['chat-narrative-action-review-v27', 'chat-narrative-options-review-v21', 'chat-narrative-action-review-v28', 'chat-narrative-options-review-v22'].includes(version ?? '')
 }
 export function supportsChatExistingGoalPausePromptV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-v33', 'chat-narrative-options-v23', 'chat-action-revision-v15', 'chat-narrative-action-v34', 'chat-narrative-options-v24', 'chat-action-revision-v16'].includes(version ?? '')
+  return ['chat-narrative-action-v33', 'chat-narrative-options-v23', 'chat-action-revision-v15', 'chat-narrative-action-v34', 'chat-narrative-options-v24', 'chat-action-revision-v16', 'chat-narrative-action-v35', 'chat-narrative-options-v25'].includes(version ?? '')
 }
 export function assertChatExistingGoalPauseReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
   if (actions.some(a => a.pauseGoal != null) && !supportsChatExistingGoalPauseV1(version)) fail('旧审查合同不支持已有目标的玩家暂停；保留原候选，不自动换约或重发')

@@ -124,7 +124,7 @@ export function supportsChatSceneTransitionV1(version: string | undefined): bool
   return ['chat-narrative-action-review-v28', 'chat-narrative-options-review-v22'].includes(version ?? '')
 }
 export function supportsChatSceneTransitionPromptV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-v34', 'chat-narrative-options-v24', 'chat-action-revision-v16'].includes(version ?? '')
+  return ['chat-narrative-action-v34', 'chat-narrative-options-v24', 'chat-action-revision-v16', 'chat-narrative-action-v35', 'chat-narrative-options-v25'].includes(version ?? '')
 }
 export function assertChatSceneTransitionReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
   if (actions.some(a => a.sceneTransition != null) && !supportsChatSceneTransitionV1(version)) fail('旧审查合同不支持玩家授权转场；保留原候选，不自动换约或重发')

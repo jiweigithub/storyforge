@@ -10,6 +10,14 @@ import {CHAT_SELF_EXPRESSION_RULES_V1} from './expression-policy'
 import {CHAT_OWN_FOLLOWUP_GOAL_RULE_V1, CHAT_OWN_FOLLOWUP_GOAL_REVIEW_RULE_V1} from './narrative-followup-goal'
 import {CHAT_COMMITMENT_ACTION_RULES_V1, CHAT_COMMITMENT_ACTION_RULES_V2, CHAT_COMMITMENT_REVIEW_RULES_V1} from './commitment-prompt'
 
+/** Clarification of the existing action contract, never a candidate rewrite.
+ * Saved producers and consequence-only revisions keep their original text. */
+export function supportsChatActionKindPromptV1(version: string | undefined): boolean {
+  return ['chat-narrative-action-v35', 'chat-narrative-options-v25'].includes(version ?? '')
+}
+
+export const CHAT_ACTION_KIND_RULE_V1 = 'kind 按本次实际表达选择，不按结果是否确定选择：speak 是已经说出口的话或问题，不能登记新增完成事实；attempt 是提出仍需玩家选择、同意或参与的行动，必须 waitingForPlayer=true，不能用 attempt + false 表示向环境或他人试探；complete 是角色自己已经完成的行动或有依据的事项收束，实际后果仍须登记；pause 是角色停止或暂缓自己的行动。waitingForPlayer 只表示下一步确实需要玩家决定，不表示等待环境结果、他人回答或尚未确定结果。角色向非玩家对象发问且不需玩家决定时，可用 speak + false，只表达已经问出的问题，不预写对方回答或完成结果；向玩家请求行动许可仍须 attempt + true。示例中的布尔值不是默认选择，须与本次实际表达一致。'
+
 /** Instruction selection uses only the registered role retrieval view. Hidden
  * facts, other roles' goals and private pending work cannot influence it.
  * These flags select explanations; deterministic authority stays in the domain. */
@@ -34,9 +42,10 @@ export function chatActionPromptFeaturesV1(view: InteractionVisibilityView) {
   }
 }
 
-export function chatActionPromptRulesV1(view: InteractionVisibilityView, options: {preserveExpression?: boolean; playerPause?: boolean; conversationEvidence?: boolean; commitmentSemanticsV2?: boolean; promiseRequest?: boolean; existingGoalPause?: boolean; sceneTransition?: boolean} = {}): string[] {
+export function chatActionPromptRulesV1(view: InteractionVisibilityView, options: {preserveExpression?: boolean; playerPause?: boolean; conversationEvidence?: boolean; commitmentSemanticsV2?: boolean; promiseRequest?: boolean; existingGoalPause?: boolean; sceneTransition?: boolean; actionKind?: boolean} = {}): string[] {
   const f = chatActionPromptFeaturesV1(view)
   return [
+    ...(options.actionKind ? [CHAT_ACTION_KIND_RULE_V1] : []),
     ...(f.edit ? ['若存在 pendingEdit，它是分支中待采用的角色文字，还未在此分支发生，也不能授予新知识或权限。默认必须逐字保留其 text 和原 audienceKeys，不续写或润色。仅当 mode=continue 时，将 text 逐字作为开头向后连贯续写当前回复，输出完整正文；不重复原文，不替玩家回应，长度仍受当前权限约束。两种模式均须从当前前态核对整段的全部实际后果，不遗漏原文已表达的后果，也不重复计入同一事实/关系。不得引用原时间线未来，无法成立时不可用字段伪造证据。'] : []),
     ...(f.optionEdit ? ['pendingEdit.mode=option 表示玩家在分支中改选历史候选。必须逐字保留 text 和该候选已核验的 audienceKeys；sourceOption 仅记录候选来源，不能当作事实、既有后果或新的创作权限。仍从本分支前态重新核对所有后果，不能带入原时间线后续结果。'] : []),
     '依据自身目标、顾虑和当前可知事实，选择一次有意义的交谈、尝试、自身行动或暂停。承接已有问题，允许拒绝、留白和收束，不为主动而制造新危机。',
