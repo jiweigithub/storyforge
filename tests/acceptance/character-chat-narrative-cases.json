@@ -1729,6 +1729,49 @@
           "nextWork": "Represent explicit pause of the actor own unfinished responsibility without reviving a completed goal, then require actual evidence before resuming. Preserve this failed branch; new bounded diagnostic only, no replay or frozen-cohort replacement.",
           "evidence": "v74-thread-followup-real/interpretation.json",
           "rawEvidenceSha256": "44a17308bf26ea0cf0f40d113b25a27238c84d88febaa204463fbe6b4e334490"
+        },
+        "playerPausePreflight": {
+          "verifiedAt": "2026-10-15",
+          "sourceHead": "dba9886f88258421639e82b03645ab6e51bf32ab",
+          "snapshotManifestSha256": "9c7c9876231e6c2da1f9d81be12a82c0e6133c3734049a96315cf36512046ed2",
+          "scenarioId": "bookshop-display-player-pause-v75",
+          "status": "pause-continue-resume-passed; weak-assent-acknowledgement-rejected",
+          "scope": "Synthetic authored bookshop background and injected completed-checking prefix. Four independently triggered real opportunities, outside frozen M1, holdouts and human acceptance.",
+          "runEvidence": "v75-player-pause-real/run.json",
+          "runEvidenceSha256": "5a68a2a2183f297a4f1026def3e4bad539bda9e15179c981ceea07aeb59023d1",
+          "acceptedModelCalls": 7,
+          "completedProviderResponses": 7,
+          "runtimeOpportunities": 4,
+          "completedRuntimeActions": 3,
+          "failedRuntimeActions": 1,
+          "totalTokens": 66411,
+          "costUsd": null,
+          "automaticRetry": false,
+          "explicitRevisionCalls": 0,
+          "observations": [
+            "Pause created only the actor remaining posting responsibility and exact player/actor evidence, preserved the completed checking goal, and registered a waiting promise with the original thread paused.",
+            "Explicit continue produced a quiet wait with no situation changes.",
+            "Independent weak-assent branch generated a natural acknowledgement but evidenceFactKeys was empty. The deterministic fact-evidence requirement rejected it before review, so no reply or effects were adopted. The hold survived; this is not acknowledgement quality acceptance.",
+            "After a separate explicit player confirmation, the original branch resumed the same goal, posted the labels, fulfilled the original waiting promise and resolved the original thread. No player participation or absent-recipient confirmation was invented."
+          ],
+          "originalGoalPreserved": true,
+          "threadCountUnchanged": true,
+          "worldUnchanged": true,
+          "reviewerIndependence": "Separate Codex requests with the same model, not a second provider or human.",
+          "restoration": {
+            "evidence": "v75-player-pause-real/restore.json",
+            "rawEvidenceSha256": "75b8df0eedec7dee41490663aaf256a1bebeeac3e85669c9af9271bc8ac758c1",
+            "newModelCalls": 0,
+            "mainInteractionAndRefreshEqual": true,
+            "weakInteractionAndRefreshEqual": true
+          },
+          "setupFailures": [
+            "ENOSPC before isolated server startup, zero model calls. Removed only this task terminal generated dist outputs, preserving source and evidence.",
+            "Readiness GET omitted the required application header and returned 403; corrected against the bridge contract before generation."
+          ],
+          "nextWork": "Permit only an effect-free acknowledgement grounded in the existing confirmed player hold, without requiring unrelated world facts. Keep explicit resume authority and independent semantic review; preserve this failed branch and use a new bounded case for validation.",
+          "evidence": "v75-player-pause-real/interpretation.json",
+          "rawEvidenceSha256": "70be528103a1bb2c139d7aa8e41fa61848ef6903be4461aa428d8358f8802bed"
         }
       },
       {
