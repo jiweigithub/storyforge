@@ -1,3 +1,4 @@
+import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1 } from './open-coordination'
 import { applyTtrpgOpenTableMessageEventV1 } from './open-table-conversation-reducer'
 import { applyTtrpgOpenMemoryEventV1 } from './open-memory-reducer'
 import { applyTtrpgOpenHostingDelegationEventV1 } from './open-hosting-delegation'
@@ -157,11 +158,12 @@ export function applyTtrpgRuntimeEventV1(
         || epoch.sessionZeroRevision !== authorization.revision || epoch.status !== "active"
         || epoch.closedRef !== null || epoch.stopReason !== null || epoch.hostingDelegation || epoch.successfulActorKeys.length !== 0
         || epoch.reservedCalls !== 0 || epoch.consumedTokens !== 0 || epoch.actualCostUsd !== 0
-        || stableJson(epoch.budget) !== stableJson(ttrpg.epochBudget)
-        || openRun.stage.status !== "open" && !ttrpgOpenClosedStageRecoveryAllowedV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.triggerKind) || openRun.coordination.activeEpochKey !== null
+        || stableJson(epoch.budget) !== stableJson(ttrpgOpenEpochBudgetForTriggerV1(ttrpg.epochBudget, epoch.triggerKind))
+        || openRun.stage.status !== "open" && epoch.triggerKind !== "request-brief" && !ttrpgOpenClosedStageRecoveryAllowedV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.triggerKind) || openRun.coordination.activeEpochKey !== null
         || openRun.coordination.epochs.some(item => item.epochKey === epoch.epochKey)) {
         throw new Error("epoch.started 的真人授权、初始额度或活动窗口无效。");
       }
+      if (epoch.triggerKind === 'request-brief') assertTtrpgOpenBriefEpochAuthorityV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.viewerKey);
       if (epoch.manualAction) {
         const request = parseTtrpgOpenManualRequestV1(epoch.manualAction);
         if (seat.role !== 'player' || request.actorKey !== seat.actorKey || !isObject(payload.intent)

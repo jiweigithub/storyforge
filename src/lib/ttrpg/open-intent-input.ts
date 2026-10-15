@@ -1,3 +1,4 @@
+import { assertTtrpgOpenEpochPurposeV1 } from './open-coordination'
 import { recordTtrpgContextAssemblyV1 } from './open-context-assembly'
 import { selectTtrpgOpenContextResourcesV1 } from './open-context-selection'
 import { CONTEXT_SOURCE_BY_KEY } from '../registry/context-sources'
@@ -91,6 +92,7 @@ async function prepareTtrpgOpenModelInputV1(input: TtrpgOpenRuntimeModelInputV1,
       triggerKind: epoch.triggerKind, rawInput, viewerKey: epoch.viewerKey, authorizationHash: epoch.authorizationHash }))) {
     throw new Error('[ttrpg-open-input] 需要同一真人输入的活动授权窗口')
   }
+  assertTtrpgOpenEpochPurposeV1(epoch, definition.skillId)
   if (runtime.branchLineage?.recoveryTasks.some(task => !['completed', 'withdrawn'].includes(task.status) && !(purpose === 'kp-narration' && task.status === 'executing'
     && runtime.openRun!.operations.some(o => o.operationKey === task.childOperationKey && o.plannedSteps[o.receipts.length]?.kind === 'narration')))) {
     throw new Error('[ttrpg-open-input] 请先完成继承的确定性结算')

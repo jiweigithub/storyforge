@@ -2,7 +2,8 @@ import type { TtrpgOpenManualActionAuthorizationV1 } from './open-manual-action'
 import { parseTtrpgOpenModelCallV1, updateTtrpgOpenEpochCallTotalsV1, type TtrpgOpenModelCallV1 } from './open-model-calls'
 /** Durable authority windows are independent of game time and event ordering. */
 import type { TtrpgCampaignContentV2 } from './open-contract'
-import type { TtrpgOpenAuthorizationV1 } from './open-authorization'
+import { assertTtrpgOpenHumanHostV1, type TtrpgOpenAuthorizationV1 } from './open-authorization'
+import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import { hash, integer, key, list, number, record, text } from './open-contract-parse'
 
@@ -29,7 +30,7 @@ export interface TtrpgOpenEpochV1 {
   status: 'active' | 'closed'
   triggeredBySeatKey: string
   viewerKey: string
-  triggerKind: 'submit-action' | 'continue-host'
+  triggerKind: 'submit-action' | 'continue-host' | 'request-brief'
   inputRevision: string
   sessionZeroRevision: number
   authorizationHash: string
@@ -79,6 +80,23 @@ export function frozenTtrpgOpenEpochBudgetV1(campaign: TtrpgCampaignContentV2): 
     maximumTokens: policy.maximumEpochTokens, maximumCostUsd: policy.maximumEpochCostUsd,
     maximumAiActions: policy.maxAiActions })
 }
+/** Recap is a separate explicit one-call window and grants no player/companion action. */
+export function ttrpgOpenEpochBudgetForTriggerV1(budget: unknown, triggerKind: TtrpgOpenEpochV1['triggerKind']): TtrpgOpenEpochBudgetV1 {
+  const base = parseTtrpgOpenEpochBudgetV1(budget)
+  return triggerKind === 'request-brief' ? { ...base, maximumCalls: Math.min(1, base.maximumCalls), maximumAiActions: 0 } : base
+}
+export function assertTtrpgOpenEpochPurposeV1(epoch: Pick<TtrpgOpenEpochV1, 'triggerKind'>, skillId: string): void {
+  if ((epoch.triggerKind === 'request-brief') !== (skillId === 'prose.ttrpg-open-brief')) fail('复盘窗口与模型用途不一致，不得借用普通行动授权')
+}
+export function assertTtrpgOpenBriefEpochAuthorityV1(runtime: Pick<TtrpgRuntimeStateV2, 'authorization' | 'openRun' | 'branchLineage'>, viewerKey: string): void {
+  if (!runtime.authorization || !runtime.openRun) fail('复盘需要有效开团授权')
+  assertTtrpgOpenHumanHostV1(runtime.authorization, viewerKey)
+  if (runtime.authorization.seats.some(seat => !seat.consent.sessionLoggingAllowed)
+    || runtime.openRun.operations.some(operation => ['awaiting-approval', 'executing'].includes(operation.status))
+    || runtime.openRun.coordination.calls.some(call => ['prepared', 'dispatched'].includes(call.status))
+    || runtime.branchLineage?.recoveryTasks.some(task => !['completed', 'withdrawn'].includes(task.status))) fail('复盘前须完成当前行动/继承恢复、原请求并取得本桌记录同意')
+}
+
 export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
   const hasManual = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value,'manualAction')
   const hasHosting = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value,'hostingDelegation')
@@ -89,7 +107,7 @@ export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
   const manualAction = manual ? { requestJson: text(manual.requestJson,'manual request',100_000),requestHash: hash(manual.requestHash,'manual request hash') } : undefined
   if (manualAction && row.triggerKind !== 'submit-action') fail('人工行动只能使用明确的新行动授权')
   if (row.status !== 'active' && row.status !== 'closed') fail('epoch.status 无效')
-  if (row.triggerKind !== 'submit-action' && row.triggerKind !== 'continue-host') fail('epoch.triggerKind 无效')
+  if (row.triggerKind !== 'submit-action' && row.triggerKind !== 'continue-host' && row.triggerKind !== 'request-brief') fail('epoch.triggerKind 无效')
   const startedRef = parseTtrpgOpenSourceRefV1(row.startedRef)
   const closedRef = row.closedRef === null ? null : parseTtrpgOpenSourceRefV1(row.closedRef)
   const stopReason = row.stopReason === null ? null : text(row.stopReason, 'stopReason', 2000)
@@ -104,6 +122,7 @@ export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
       || hostingDelegation.stoppedRef && hostingDelegation.stoppedRef.sequence >= closedRef.sequence))) fail('有限主持委托不属于原窗口或超出原预算')
   const successfulActorKeys = list(row.successfulActorKeys, 'successfulActorKeys', v => key(v, 'successful actor'), 1000, 0)
   if (new Set(successfulActorKeys).size !== successfulActorKeys.length) fail('同 epoch 不能重复成功执行同一队友')
+  if (row.triggerKind === 'request-brief' && (manualAction || hostingDelegation || budget.maximumCalls !== 1 || budget.maximumAiActions !== 0 || successfulActorKeys.length)) fail('复盘窗口只能保留一次模型额度，不能授予行动或主持委托')
   const reservedCalls = integer(row.reservedCalls, 'reservedCalls', 0, budget.maximumCalls)
   const consumedTokens = integer(row.consumedTokens, 'consumedTokens', 0, Number.MAX_SAFE_INTEGER)
   const actualCostUsd = row.actualCostUsd === null ? null : number(row.actualCostUsd, 'actualCostUsd', 0, 1_000_000)
@@ -123,6 +142,7 @@ export function parseTtrpgOpenCoordinationV1(value: unknown, sessionKey?: string
   const callsByEpoch = new Map<string, TtrpgOpenModelCallV1[]>()
   if (new Set(calls.map(call => call.requestKey)).size !== calls.length || calls.some(call => {
     const epoch = epochsByKey.get(call.authorizationEpochKey)
+    if (epoch) assertTtrpgOpenEpochPurposeV1(epoch, call.skillId)
     const group = callsByEpoch.get(call.authorizationEpochKey) ?? []
     group.push(call); callsByEpoch.set(call.authorizationEpochKey, group)
     const hosting = epoch?.hostingDelegation,ref = call.hostingDelegationRef

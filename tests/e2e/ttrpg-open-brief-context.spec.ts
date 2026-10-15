@@ -45,3 +45,56 @@ test('native stage recap source reads without a KP operation and retains semanti
   expect(restored.frame).toEqual(result.frame); expect(restored.entries).toEqual(result.entries)
   expect(requests).toEqual([])
 })
+
+test('native recap authority and attributed output preserve belief and refuse gameplay, Oracle and model relabeling', async ({ page }) => {
+  test.setTimeout(120000)
+  await page.goto('./')
+  const result = await page.evaluate(async () => {
+    const importer = new Function('p', 'return import(p)') as (path: string) => Promise<any>
+    const helper = await importer('/storyforge/tests/helpers/open-ttrpg-session.ts')
+    const api = await importer('/storyforge/src/lib/ttrpg/runtime-commands.ts')
+    const { readProductRuntimeState } = await importer('/storyforge/src/lib/product/runtime-core.ts')
+    const { CONTEXT_SOURCE_BY_KEY } = await importer('/storyforge/src/lib/registry/context-sources.ts')
+    const output = await importer('/storyforge/src/lib/ttrpg/open-brief-output.ts')
+    const f = await helper.readyOpenTtrpgSessionV1('Native passive recap', (p: any) => { p.ttrpg.campaign.runtimePolicy.enabled = true })
+    const viewerKey = helper.OPEN_HUMAN_VIEWER, e = await helper.openEnvelopeV1(f.sessionId, 'native.brief.belief')
+    await api.recordTtrpgOpenNarrativeMemoryV1({ ...e, viewerKey, draft: { revisionKey: 'native.brief.belief', observerKey: 'hero', reliability: 'belief',
+      audience: 'party', knownBy: [], summary: '我怀疑港口有人跟踪。', fromEventSequence: 1, toEventSequence: e.baseSequence } })
+    const before = await readProductRuntimeState(f.sessionId)
+    await api.startTtrpgOpenEpochV1({ ...await helper.openEnvelopeV1(f.sessionId, 'native.brief.window'), viewerKey,
+      triggerKind: 'request-brief', rawInput: '请复盘本桌共同资料' })
+    const scope = { ...f.scope, productRuntimeSessionId: f.sessionId, runtimeActorKey: 'gm' }, reads: any[] = []
+    for (const key of ['ttrpgOpenBriefInput', 'ttrpgOpenPartyMemory']) {
+      const snapshot = await CONTEXT_SOURCE_BY_KEY.get(key).resources.openReadSession(scope)
+      const page = await snapshot.provider.listMetadata({ scope, limit: 1000 })
+      for (const d of page.items) reads.push({ sourceKey: key, resourceKey: d.resourceKey,
+        content: (await snapshot.provider.read({ scope, resourceKey: d.resourceKey, depth: 'full', maxTokens: 16000 })).content })
+      await snapshot.assertCurrent()
+    }
+    const sources = await output.ttrpgOpenDeliveredBriefAttributionsV1(reads), memory = sources.find((s: any) => s.kind === 'memory')
+    const brief = output.parseTtrpgOpenBriefV1({ paragraphs: [{ text: '主角保留着个人推测。', sourceKeys: [memory.citationKey] }] }, sources)
+    let relabelRejected = false
+    try { output.parseTtrpgOpenBriefV1({ paragraphs: [{ ...brief.paragraphs[0], reliability: 'observed' }] }, sources) } catch { relabelRejected = true }
+    let oracleRejected = false, actionRejected = false
+    try { await api.consultTtrpgOracleV1({ ...await helper.openEnvelopeV1(f.sessionId, 'native.brief.no.oracle'), viewerKey,
+      askedBy: 'player:hero', oracleKey: 'oracle.yes', question: '码头安全吗？', likelihoodTierKey: 'even' }) } catch { oracleRejected = true }
+    const action = f.runtimePackage.ttrpg.rulePack.content.actions[0]
+    try { await api.startTtrpgOpenOperationV1({ ...await helper.openEnvelopeV1(f.sessionId, 'native.brief.no.action'), viewerKey,
+      request: { route: 'existing-action', actorKey: 'hero', controllerMode: 'human', ruleKey: action.key,
+        targetKey: action.target === 'self' ? 'hero' : action.target === 'scene' ? null : 'keeper', effectBindings: {} } }) } catch { actionRejected = true }
+    const after = await readProductRuntimeState(f.sessionId)
+    return { sessionId: f.sessionId, memory, brief, relabelRejected, oracleRejected, actionRejected,
+      epoch: after.ttrpg.openRun.coordination.epochs[0], originalWorldTime: before.ttrpg.openRun.worldTime, worldTime: after.ttrpg.openRun.worldTime,
+      unchangedEntities: JSON.stringify(before.entities) === JSON.stringify(after.entities) }
+  })
+  expect(result.memory).toMatchObject({ observerKey: 'hero', reliability: 'belief', origin: 'human-authored' })
+  expect(result.relabelRejected && result.oracleRejected && result.actionRejected && result.unchangedEntities).toBe(true)
+  expect(result.epoch).toMatchObject({ triggerKind: 'request-brief', budget: { maximumCalls: 1, maximumAiActions: 0 } })
+  expect(result.worldTime).toEqual(result.originalWorldTime)
+  await page.reload()
+  const restored = await page.evaluate(async sessionId => {
+    const importer = new Function('p', 'return import(p)') as (path: string) => Promise<any>
+    return (await (await importer('/storyforge/src/lib/product/runtime-core.ts')).readProductRuntimeState(sessionId)).ttrpg.openRun.coordination.epochs[0]
+  }, result.sessionId)
+  expect(restored).toEqual(result.epoch)
+})

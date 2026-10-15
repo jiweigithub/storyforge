@@ -11,11 +11,11 @@ import { ttrpgOpenRecallReadStampV1 } from './open-recall-read-stamp'
 import { TtrpgOpenReadConflictV1 } from './open-read-conflict'
 import { createTtrpgOpenRuntimeResourceProviderV1, type TtrpgOpenResourceRowV1 } from './open-runtime-resource-provider'
 
-export const TTRPG_OPEN_BRIEF_INPUT_SOURCE_V1 = 'ttrpgOpenBriefInput'
-export type TtrpgOpenBriefReliabilityV1 = 'release-time' | 'confirmed' | 'observed' | 'hearsay' | 'belief' | 'narrated'
+import { TTRPG_OPEN_BRIEF_INPUT_SOURCE_V1, type TtrpgOpenBriefReliabilityV1, type TtrpgOpenBriefEntryKindV1 } from './open-brief-contract'
+export { TTRPG_OPEN_BRIEF_INPUT_SOURCE_V1, type TtrpgOpenBriefReliabilityV1 } from './open-brief-contract'
 export interface TtrpgOpenBriefInputEntryV1 {
   sourceKey: string
-  kind: 'release-observation' | 'known-evidence' | 'confirmed-session-fact' | 'published-telegraph' | 'retained-narration'
+  kind: TtrpgOpenBriefEntryKindV1
   reliability: TtrpgOpenBriefReliabilityV1
   observerKey: string | null
   value: unknown

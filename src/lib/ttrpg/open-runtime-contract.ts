@@ -1,3 +1,4 @@
+import { ttrpgOpenEpochBudgetForTriggerV1 } from './open-coordination'
 import { parseTtrpgOpenTableMessageV1,assertTtrpgOpenTableMessageHistoryV1,type TtrpgOpenTableMessageV1 } from './open-table-conversation'
 import { parseTtrpgOpenMemoryReceiptV1, type TtrpgOpenMemoryReceiptV1 } from './open-memory-contract'
 import { parseTtrpgOpenGateRecoveryV1, type TtrpgOpenGateRecoveryV1 } from './open-gate-recovery'
@@ -951,7 +952,7 @@ export function parseTtrpgRuntimeStateV2(
       || new Set(openRun.ruleReceipts.map(receipt => receipt.operationKey)).size !== openRun.ruleReceipts.length
       || openRun.operations.filter(operation => ["awaiting-approval", "executing"].includes(operation.status)).length > 1
       || openRun.operations.some(operation => operation.plan.epochKey !== operation.authorizationEpochKey
-        || !openRun.coordination.epochs.some(epoch => epoch.epochKey === operation.authorizationEpochKey))
+        || !openRun.coordination.epochs.some(epoch => epoch.epochKey === operation.authorizationEpochKey && epoch.triggerKind !== 'request-brief'))
       || openRun.ruleReceipts.some(receipt => receipt.sourceRef.sessionKey !== sessionKey
         || !openRun.operations.some(operation => operation.operationKey === receipt.operationKey && operation.planHash === receipt.frozenPlanHash))) {
       fail("operation 身份/epoch/规则回执不一致");
@@ -961,8 +962,8 @@ export function parseTtrpgRuntimeStateV2(
       if (epoch.hostingDelegation && stableProductRuntimeJsonV1(epoch.hostingDelegation.authorizationRef) !== stableProductRuntimeJsonV1(authorization.sourceRef)) fail('有限主持委托未绑定本桌真实 Session Zero')
       if (!seat || seat.controller === "ai" || seat.assignmentState !== "claimed"
         || epoch.sessionZeroRevision !== authorization.revision
-        || stableProductRuntimeJsonV1(epoch.budget) !== stableProductRuntimeJsonV1(epochBudget)
-        || epoch.successfulActorKeys.length > epochBudget.maximumAiActions
+        || stableProductRuntimeJsonV1(epoch.budget) !== stableProductRuntimeJsonV1(ttrpgOpenEpochBudgetForTriggerV1(epochBudget, epoch.triggerKind))
+        || epoch.successfulActorKeys.length > epoch.budget.maximumAiActions
         || epoch.successfulActorKeys.some(actorKey => !authorization.seats.some(item => item.actorKey === actorKey && item.role === "player" && item.controller !== "human"))) {
         fail("epoch 与冻结预算、Session Zero 或队友控制权不一致");
       }

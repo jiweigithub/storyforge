@@ -1,3 +1,4 @@
+import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1 } from './open-coordination'
 import { ttrpgOpenOperationEffectTemplateKeyV1,ttrpgOpenOperationEffectDegreeV1,buildTtrpgOpenInteractionEffectV1,assertTtrpgOpenInteractionKnownCostsV1,assertTtrpgOpenInteractionChoiceCostV1 } from './open-interaction'
 import { runtimeInstanceTablesV1 } from '../registry/lifecycle'
 import { parseTtrpgOpenMemoryDraftV1, authorizeTtrpgOpenMemoryDraftV1, parseTtrpgOpenMemoryReceiptV1, assertTtrpgOpenManualMemoryInputV1,
@@ -666,7 +667,7 @@ export async function consultTtrpgOracleV1(input: FormalTtrpgCommandEnvelope & {
       await verifyTtrpgOpenOracleJournalV1({ receipts: run.oracleReceipts ?? [], rulePack: content.rulePack.content,
         sessionKey: runtime.sessionKey, seed: session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] });
       const epoch = run.coordination.epochs.find(epoch => epoch.epochKey === run.coordination.activeEpochKey);
-      if (!epoch || epoch.status !== 'active' || epoch.viewerKey !== viewerKey
+      if (!epoch || epoch.status !== 'active' || epoch.viewerKey !== viewerKey || epoch.triggerKind === 'request-brief'
         || epoch.authorizationHash !== await hashProductProductionValueV2(authorization)
         || run.stage.status !== 'open' || runtime.product.safety.status !== 'active') throw new Error('[ttrpg-oracle] Oracle 需要本人当前活动窗口且团局未暂停。');
       if (run.consultedThisWorldTurn >= 2) throw new Error('[ttrpg-oracle] 每个 worldTurn 最多咨询两次，不能以新 commandId 重置额度。');
@@ -924,11 +925,11 @@ export async function retireTtrpgOpenSessionFactV1(input: FormalTtrpgCommandEnve
 }
 
 export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & {
-  viewerKey: string; triggerKind: "submit-action" | "continue-host"; rawInput: string; manualAction?: TtrpgOpenManualActionAuthorizationV1;
+  viewerKey: string; triggerKind: "submit-action" | "continue-host" | "request-brief"; rawInput: string; manualAction?: TtrpgOpenManualActionAuthorizationV1;
 }): Promise<ProductRuntimeEvent> {
   const viewerKey = openKey(input.viewerKey, "viewerKey");
   const rawInput = openText(input.rawInput, "rawInput", 10_000);
-  if (input.triggerKind !== "submit-action" && input.triggerKind !== "continue-host") throw new Error("[ttrpg] epoch 触发种类无效。");
+  if (input.triggerKind !== "submit-action" && input.triggerKind !== "continue-host" && input.triggerKind !== "request-brief") throw new Error("[ttrpg] epoch 触发种类无效。");
   return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.epoch.started",
     intent: { viewerKey, rawInput, triggerKind: input.triggerKind, ...(input.manualAction ? { manualAction: input.manualAction } : {}) },
     build: async ({ state, session, sequence, ttrpgContent, participants }) => {
@@ -936,11 +937,15 @@ export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
       const runtime = parseTtrpgRuntimeStateV2(state.ttrpg);
       if (!runtime?.openRun || !runtime.authorization) throw new Error("[ttrpg] 请先启动已授权的 open 团局。");
       if (runtime.openRun.gateRecoveries?.some(r => r.stoppedRef && runtime.openRun!.operations.some(o => o.operationKey === r.operationKey && o.status === 'executing'))) throw new Error('质量门恢复已停止，请保存并显式处理待办，不能重开窗口绕过');
-      if (runtime.openRun.stage.status !== "open" && !ttrpgOpenClosedStageRecoveryAllowedV1(runtime, input.triggerKind) || runtime.openRun.coordination.activeEpochKey !== null) {
+      if (runtime.openRun.stage.status !== "open" && input.triggerKind !== "request-brief" && !ttrpgOpenClosedStageRecoveryAllowedV1(runtime, input.triggerKind) || runtime.openRun.coordination.activeEpochKey !== null) {
         throw new Error("[ttrpg] 同一团局最多一个 active epoch，不能以新 commandId 重开授权窗口。");
       }
       const seat = assertTtrpgOpenAuthorizationCurrentV1({ authorization: runtime.authorization, participants, viewerKey });
       const authorizationHash = await hashProductProductionValueV2(runtime.authorization);
+      if (input.triggerKind === 'request-brief') {
+        if (!content.campaign.runtimePolicy.enabled) throw new Error('[ttrpg-brief] 冻结作品未允许模型复盘');
+        assertTtrpgOpenBriefEpochAuthorityV1(runtime, viewerKey);
+      }
       const inputRevision = await hashProductProductionValueV2({ sessionKey: runtime.sessionKey,
         triggerKind: input.triggerKind, rawInput, viewerKey, authorizationHash, ...(input.manualAction ? { manualAction: input.manualAction } : {}) });
       const epoch = parseTtrpgOpenEpochV1({
@@ -949,7 +954,7 @@ export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
         startedRef: { sessionKey: runtime.sessionKey, sequence }, closedRef: null, status: "active",
         triggeredBySeatKey: seat.seatKey, viewerKey, triggerKind: input.triggerKind, inputRevision,
         sessionZeroRevision: runtime.authorization.revision, authorizationHash,
-        budget: frozenTtrpgOpenEpochBudgetV1(content.campaign), successfulActorKeys: [],
+        budget: ttrpgOpenEpochBudgetForTriggerV1(frozenTtrpgOpenEpochBudgetV1(content.campaign), input.triggerKind), successfulActorKeys: [],
         reservedCalls: 0, consumedTokens: 0, actualCostUsd: 0, stopReason: null,
       });
       if (epoch.manualAction) {

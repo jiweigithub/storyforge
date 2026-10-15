@@ -1,3 +1,4 @@
+import { assertTtrpgOpenEpochPurposeV1 } from './open-coordination'
 /** Pure external-request journal: replay never dispatches a provider or reads evidence storage. */
 import type { ProductRuntimeEvent, ProductRuntimeState } from '../types'
 import type { ProductRuntimeJsonObjectV1 } from '../product/runtime-values'
@@ -34,11 +35,12 @@ export function applyTtrpgOpenModelCallEventV1(state: ProductRuntimeState, event
   if (!epoch || epoch.status !== 'active' || coordination.activeEpochKey !== epoch.epochKey
     || call.createdRef.sessionKey !== runtime.sessionKey || !seat || seat.controller === 'ai' || seat.assignmentState !== 'claimed'
     || (call.narrationBinding?.viewerKey ?? epoch.viewerKey) !== seat.viewerKey || event.actorKey !== call.actorKey) p.fail('模型调用不属于当前真人授权窗口')
+  assertTtrpgOpenEpochPurposeV1(epoch, call.skillId);
   assertTtrpgOpenModelActorV1(runtime.authorization, call.skillId, call.actorKey,seat.viewerKey)
   const ref = { sessionKey: runtime.sessionKey, sequence: event.sequence }
   const previousIndex = coordination.calls.findIndex(previous => previous.requestKey === call.requestKey)
   assertTtrpgOpenNarrationCallV1(runtime, call, event.type === 'ttrpg.open.call.reserved' ? 'reserve' : event.type === 'ttrpg.open.call.dispatched' ? 'dispatch' : 'finish')
-  if (event.type !== 'ttrpg.open.call.finished' && runtime.openRun.stage.status !== 'open' && !call.narrationBinding) p.fail('关闭阶段只能续作已提交后果，不能新预留或发送模型请求')
+  if (event.type !== 'ttrpg.open.call.finished' && runtime.openRun.stage.status !== 'open' && !call.narrationBinding && call.skillId !== 'prose.ttrpg-open-brief') p.fail('关闭阶段只能续作已提交后果，不能新预留或发送模型请求')
   if (event.type === 'ttrpg.open.call.reserved') {
     if (previousIndex !== -1 || call.status !== 'prepared' || stable(call.createdRef) !== stable(ref)) p.fail('请求预留身份或初始回执无效')
     if (call.hostingDelegationRef) assertTtrpgOpenHostingRequestV1(state,{ epochKey: epoch.epochKey,viewerKey: seat.viewerKey,delegationRef: call.hostingDelegationRef,

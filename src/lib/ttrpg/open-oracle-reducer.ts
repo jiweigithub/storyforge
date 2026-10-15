@@ -17,7 +17,7 @@ export function applyTtrpgOpenOracleEventV1(state: ProductRuntimeState, event: P
     askedBy: receipt.resolution.outcome.askedBy, audience: receipt.audience })
   const intent = p.record(payload.intent, ['viewerKey', 'askedBy', 'oracleKey', 'question', 'likelihoodTierKey'], 'oracle intent')
   const table = receipt.frozenRulePack.oracles.find(table => table.oracleKey === receipt.resolution.outcome.oracleKey)!
-  if (!epoch || epoch.status !== 'active' || run.coordination.activeEpochKey !== epoch.epochKey || epoch.viewerKey !== receipt.viewerKey
+  if (!epoch || epoch.status !== 'active' || epoch.triggerKind === 'request-brief' || run.coordination.activeEpochKey !== epoch.epochKey || epoch.viewerKey !== receipt.viewerKey
     || run.stage.status !== 'open' || runtime.product.safety.status !== 'active' || run.consultedThisWorldTurn >= 2
     || run.operations.some(operation => ['awaiting-approval', 'executing'].includes(operation.status))
     || runtime.branchLineage?.recoveryTasks.some(task => !['completed', 'withdrawn'].includes(task.status))
