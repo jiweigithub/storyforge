@@ -40,6 +40,45 @@ export function requireChatPlayerRequestV1(state: CharacterInteractionRuntimeSta
   return source
 }
 
+/** A hold on an existing responsibility needs no invented followup goal.
+ * Only the current player's request authorizes this new boundary; the review
+ * still verifies the acknowledgement and every separately promised term. */
+export function requireChatExistingGoalPauseV1(state: CharacterInteractionRuntimeState, actorKey: string, trigger: ChatNarrativeTriggerStateV1, action: ChatNarrativeActionV1) {
+  const pause = action.pauseGoal
+  if (pause == null) return null
+  const story = state.chatNarrative, goal = story?.situation.goals.find(g => g.actorKey === actorKey && g.goalKey === action.goalKey)
+  const thread = story?.situation.threads.find(t => t.threadKey === pause.threadKey)
+  if (!goal || !['active', 'paused'].includes(goal.status) || goal.playerPause
+    || !thread || !['open', 'blocked', 'paused'].includes(thread.status)
+    || !thread.participantKeys.includes(actorKey) || !thread.audienceKeys.includes(actorKey)
+    || action.kind !== 'speak' || !action.waitingForPlayer
+    || action.goalStatus !== (goal.status === 'active' ? 'paused' : null)
+    || action.followupGoal != null || action.threadFollowupGoal != null || action.resumeGoal != null || action.promiseRequest != null
+    || action.newFacts.length || action.goalUpdates?.length || action.relationshipUpdates?.length || action.beliefUpdates?.length
+    || action.nextPossibilities?.length || action.situationRequest != null
+    || action.commitmentEffects?.some(e => e.kind !== 'promise')
+    || action.threadUpdates.some(e => e.threadKey !== pause.threadKey || e.status !== 'paused')
+    || !action.evidenceFactKeys.length && action.disclosures.length
+    || !action.text.includes(pause.evidenceExcerpt)) fail('已有目标暂停只能确认当前自身剩余责任及真实请求，不能推进、换目标或处置旧约')
+  const source = requireChatPlayerRequestV1(state, actorKey, trigger, pause, action.audienceKeys)
+  return {goal, source, pause}
+}
+
+export function supportsChatExistingGoalPauseV1(version: string | undefined): boolean {
+  return ['chat-narrative-action-review-v27', 'chat-narrative-options-review-v21'].includes(version ?? '')
+}
+export function supportsChatExistingGoalPausePromptV1(version: string | undefined): boolean {
+  return ['chat-narrative-action-v33', 'chat-narrative-options-v23', 'chat-action-revision-v15'].includes(version ?? '')
+}
+export function assertChatExistingGoalPauseReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
+  if (actions.some(a => a.pauseGoal != null) && !supportsChatExistingGoalPauseV1(version)) fail('旧审查合同不支持已有目标的玩家暂停；保留原候选，不自动换约或重发')
+}
+
+export const CHAT_EXISTING_GOAL_PAUSE_COMMITMENT_RULE_V1 = '仅在合法 pauseGoal 完整承载同一暂停条件时，该条件已有 playerPause 来源和恢复约束，不重复建立 promise；额外独立的未来义务仍须登记，原承诺不可因此抹除。'
+
+export const CHAT_EXISTING_GOAL_PAUSE_ACTION_RULE_V1 = 'pauseGoal 默认为 null。玩家本轮明确要求暂停你已有的 active/paused 责任，而你接受时，不新建目标：goalKey 保留原目标，填 pauseGoal={threadKey:"自己参与且知情的未结束原事项",playerEventSequence:trigger.sourceEventSequence,playerExcerpt:"完整暂停条件的玩家原话",evidenceExcerpt:"本次明确接受的逐字原话"}。只能首次player-response、speak、waitingForPlayer=true；active目标用goalStatus=paused，已自行paused但没有playerPause的目标用goalStatus=null。系统在原目标记录真实playerPause，继续/返回不会解除。可同时如实报告已完成观察，但须引用可知事实、完整登记实际披露；只确认暂停时可以evidenceFactKeys=[]，不引用无关世界事实。不得做新动作、生成结果、改其他目标/关系/猜测、增加打算或情境，也不能同时followupGoal/threadFollowupGoal/resumeGoal/promiseRequest。nextPossibilities=null或[]，threadUpdates仅可按实际范围把原线paused。同一暂停条件由playerPause完整保存并强制执行，不需要再为相同等待条件新增promise；尤其不能覆盖原有未履行承诺。正文另有独立未来义务时仍完整登记commitmentEffects.promise；不能在暂停路径履行、撤回或改约。已有playerPause只能沿原resumeGoal规则处理，不能覆盖原请求；普通客套、含糊回应或玩家不亲自参与不自动构成暂停。'
+export const CHAT_EXISTING_GOAL_PAUSE_REVIEW_RULE_V1 = '已有目标暂停专审：接受玩家对已有自身责任的明确暂停，须用pauseGoal把原目标与本轮真实请求及完整确认绑定，不能只改goalStatus而丢失恢复条件，也不能另建目标绕过。核对原责任、threadKey、完整暂停范围、条件与否定、摘录和听众；不是仅因玩家消息较新或字段合法就放行。允许在暂停未来行动时报告已完成观察，不能借报告继续检查或新增结果；空事实引用只支持确认这项暂停和对应等待约定，不能支持背景断言或知识披露。合法pauseGoal把本次暂停条件、玩家原请求和完整确认保存为可执行控制边界；同一等待条件已经由playerPause承载，没有重复promise不构成漏记。这仅覆盖该原责任的暂停及恢复条件，不能豁免额外独立的未来义务；额外承诺仍按commitmentChecks核验，旧约不得在此路径履行、撤回或偷偷改写。原已有playerPause不可覆盖，继续/返回或普通回复不能解除；解除后仍按原resumeGoal及原约核验。没有明确玩家暂停的自主暂缓保持原规则，不强造控制边界或承诺。'
+
 export function assertChatPlayerPauseSourcesV1(state: CharacterInteractionRuntimeState): void {
   for (const goal of state.chatNarrative?.situation.goals ?? []) {
     const pause = goal.playerPause
@@ -84,7 +123,7 @@ export function rebaseChatPlayerPausesV1(goals: ChatActorGoalV1[], rebase: (sequ
   }
 }
 export function supportsChatPlayerPauseV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v22', 'chat-narrative-options-review-v16', 'chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18', 'chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20'].includes(version ?? '')
+  return ['chat-narrative-action-review-v22', 'chat-narrative-options-review-v16', 'chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18', 'chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20', 'chat-narrative-action-review-v27', 'chat-narrative-options-review-v21'].includes(version ?? '')
 }
 
 export const CHAT_PLAYER_PAUSE_ACTION_RULE_V1 = '以下明确暂停路径是原线接续首步须实际行动的唯一例外：若符合 threadFollowupGoal 的原线接续条件，但本轮玩家明确要求暂缓角色尚负责的剩余事项，可在该字段加 pauseRequest:{playerEventSequence:trigger.sourceEventSequence,playerExcerpt:"本轮要求暂缓的逐字摘录"}。新目标只描述原责任剩余部分，不能复活旧目标或将拒绝变成新任务；kind=speak、waitingForPlayer=true、goalStatus=paused，只表达接受暂缓，newFacts/disclosures/goalUpdates/relationshipUpdates/beliefUpdates=[]，nextPossibilities=null或[]，situationRequest=null，不作实际推进。threadUpdates 只能按实际表达与知情范围把原线设为 paused，个人暂停不强制暂停共同行动。若明确答应等待，完整条款仍登记 commitmentEffects.promise；不得登记履行。系统保存真实请求和确认到新目标 playerPause。原线不存在角色自己的剩余责任时，不能为了存暂停强造目标，应自然回应。'

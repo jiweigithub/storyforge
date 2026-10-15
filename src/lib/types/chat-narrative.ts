@@ -319,6 +319,8 @@ export interface ChatNarrativeActionV1 {
   threadFollowupGoal?: ChatActorThreadFollowupGoalV1 | null
   /** Only a new visible player message can release a recorded player hold. */
   resumeGoal?: ChatPlayerRequestEvidenceV1 | null
+  /** Accepts a current player hold on an existing own unfinished goal. */
+  pauseGoal?: (ChatPlayerRequestEvidenceV1 & {threadKey: string; evidenceExcerpt: string}) | null
   /** Explicit latest-player-request basis for a new own promise only. */
   promiseRequest?: ChatPlayerRequestEvidenceV1 | null
 }

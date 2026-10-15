@@ -1,3 +1,4 @@
+import {assertChatExistingGoalPauseReviewVersionV1} from './narrative-player-pause'
 import {requireChatPlayerRequestV1, supportsChatPlayerPauseV1} from './narrative-player-pause'
 import type {CharacterInteractionRuntimeState} from '../types'
 import type {ChatNarrativeActionV1, ChatNarrativeTriggerStateV1} from '../types/chat-narrative'
@@ -53,6 +54,7 @@ export function supportsChatThreadFollowupV1(version: string | undefined): boole
 }
 
 export function assertChatThreadFollowupReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
+  assertChatExistingGoalPauseReviewVersionV1(actions, version)
   if (actions.some(a => a.resumeGoal !== undefined || a.threadFollowupGoal?.pauseRequest !== undefined) && !supportsChatPlayerPauseV1(version)) fail('旧审查合同不支持玩家暂停与恢复；保留原候选，不自动换约或重发')
   if (actions.some(a => a.threadFollowupGoal !== undefined) && !supportsChatThreadFollowupV1(version)) fail('旧审查合同不支持既有事项接续；保留原候选，不自动换约或重发')
 }

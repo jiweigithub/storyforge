@@ -15,7 +15,7 @@ export function chatConversationEvidenceV1(state: CharacterInteractionRuntimeSta
     || action.newFacts.length || action.disclosures.length || action.threadUpdates.length || action.goalUpdates?.length
     || action.relationshipUpdates?.length || action.beliefUpdates?.length || action.commitmentEffects?.length
     || action.nextPossibilities?.length || action.nextPossibilities != null && story.situation.possibilities.some(p => p.actorKey === actorKey)
-    || action.situationRequest != null || action.followupGoal != null || action.threadFollowupGoal != null || action.resumeGoal != null || action.promiseRequest != null) return null
+    || action.situationRequest != null || action.followupGoal != null || action.threadFollowupGoal != null || action.resumeGoal != null || action.pauseGoal != null || action.promiseRequest != null) return null
   const visible = state.messages.filter(m => m.supersededBySequence == null && interactionMessageVisibleTo(m, actorKey) && isChatMessageRetrievableV1(state, m))
   const latest = visible.slice(-1)[0]
   // The latest visible message is retained by the registered role reader even
@@ -33,7 +33,7 @@ export function chatConversationEvidenceV1(state: CharacterInteractionRuntimeSta
 }
 
 export function supportsChatConversationEvidenceV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18', 'chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20'].includes(version ?? '')
+  return ['chat-narrative-action-review-v23', 'chat-narrative-options-review-v17', 'chat-narrative-action-review-v24', 'chat-narrative-options-review-v18', 'chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20', 'chat-narrative-action-review-v27', 'chat-narrative-options-review-v21'].includes(version ?? '')
 }
 export function assertChatConversationEvidenceReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
   assertChatPromiseRequestReviewVersionV1(actions, version)

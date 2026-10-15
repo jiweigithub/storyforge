@@ -17,7 +17,7 @@ export function requireChatPromiseRequestV1(state: CharacterInteractionRuntimeSt
     || effects.length !== 1 || effects[0].kind !== 'promise'
     || action.newFacts.length || action.disclosures.length || action.threadUpdates.length || action.goalUpdates?.length
     || action.relationshipUpdates?.length || action.beliefUpdates?.length || action.nextPossibilities != null
-    || action.situationRequest != null || action.followupGoal != null || action.threadFollowupGoal != null || action.resumeGoal != null) {
+    || action.pauseGoal != null || action.situationRequest != null || action.followupGoal != null || action.threadFollowupGoal != null || action.resumeGoal != null) {
     fail('对话约定只可登记已有自身目标的一项新承诺，不能附带事实、履行、改约、恢复或其他后果')
   }
   const source = requireChatPlayerRequestV1(state, actorKey, trigger, action.promiseRequest, action.audienceKeys)
@@ -27,10 +27,10 @@ export function requireChatPromiseRequestV1(state: CharacterInteractionRuntimeSt
 }
 
 export function supportsChatPromiseRequestV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20'].includes(version ?? '')
+  return ['chat-narrative-action-review-v25', 'chat-narrative-options-review-v19', 'chat-narrative-action-review-v26', 'chat-narrative-options-review-v20', 'chat-narrative-action-review-v27', 'chat-narrative-options-review-v21'].includes(version ?? '')
 }
 export function supportsChatPromiseRequestPromptV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-v32', 'chat-narrative-options-v22', 'chat-action-revision-v14'].includes(version ?? '')
+  return ['chat-narrative-action-v32', 'chat-narrative-options-v22', 'chat-action-revision-v14', 'chat-narrative-action-v33', 'chat-narrative-options-v23', 'chat-action-revision-v15'].includes(version ?? '')
 }
 export function assertChatPromiseRequestReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
   if (actions.some(a => a.promiseRequest != null) && !supportsChatPromiseRequestV1(version)) fail('旧审查合同不支持玩家请求约定；保留原候选，不自动换约或重发')

@@ -1,3 +1,4 @@
+import {CHAT_EXISTING_GOAL_PAUSE_COMMITMENT_RULE_V1, supportsChatExistingGoalPausePromptV1} from './narrative-player-pause'
 import {supportsChatPromiseRequestPromptV1} from './narrative-promise-request'
 import {supportsChatCommitmentPromptV2, CHAT_COMMITMENT_OUTPUT_CHECK_V2} from './commitment-prompt'
 import {assertChatConversationEvidenceReviewVersionV1} from './narrative-conversation-evidence'
@@ -296,13 +297,13 @@ function parseModelDraft(input: {
   }
 }
 
-function schemaInstruction(skillId: InteractionRuntimeSkillIdV1, promiseRequest = false): string {
-  if (skillId === 'character.chat-narrative-options') return `{"options":[${schemaInstruction('character.chat-narrative-action', promiseRequest)},${schemaInstruction('character.chat-narrative-action', promiseRequest)}]}`
+function schemaInstruction(skillId: InteractionRuntimeSkillIdV1, promiseRequest = false, existingGoalPause = false): string {
+  if (skillId === 'character.chat-narrative-options') return `{"options":[${schemaInstruction('character.chat-narrative-action', promiseRequest, existingGoalPause)},${schemaInstruction('character.chat-narrative-action', promiseRequest, existingGoalPause)}]}`
   if (skillId === 'character.chat-situation-construction') {
     return '{"kind":"chat-situation","title":"当前局面","location":"保留当前地点","timeLabel":"保留当前时间","newFacts":[{"factKey":"新标识","kind":"observation","text":"新背景事实","audienceKeys":["player","知情角色"],"evidenceFactKeys":["已有事实"],"seedExcerpt":"实际情境请求或角色 direction 中的逐字摘录"}],"newGoals":[{"goalKey":"新标识","actorKey":"在场角色","desire":"个人目的","concern":"顾虑","boundary":"不替玩家决定","evidenceFactKeys":["新旧可知事实"]}],"newThreads":[{"threadKey":"新标识","title":"问题","question":"尚未决定的问题","audienceKeys":["player","知情角色"],"participantKeys":["在场角色"],"evidenceFactKeys":["新旧可知事实"],"closureSignals":["何时可搁置或收束"]}],"possibilities":[{"actorKey":"在场角色","text":"未发生的打算，可改变","evidenceFactKeys":["新旧可知事实"]}]}'
   }
   if (skillId === 'character.chat-narrative-action' || skillId === CHAT_ACTION_REVISION_SKILL) {
-    return '{"kind":"speak|attempt|complete|pause","text":"实际角色表达与自身行动","goalKey":"自身未完成目标标识","evidenceFactKeys":["可知事实标识"],"audienceKeys":["player","当前角色"],"waitingForPlayer":true,"newFacts":[],"disclosures":[],"threadUpdates":[],"goalStatus":null,"goalUpdates":[],"commitmentEffects":[],"relationshipUpdates":[],"nextPossibilities":null,"beliefUpdates":[],"situationRequest":null,"followupGoal":null,"threadFollowupGoal":null,"resumeGoal":null}'.replace('"resumeGoal":null}', promiseRequest ? '"resumeGoal":null,"promiseRequest":null}' : '"resumeGoal":null}')
+    return '{"kind":"speak|attempt|complete|pause","text":"实际角色表达与自身行动","goalKey":"自身未完成目标标识","evidenceFactKeys":["可知事实标识"],"audienceKeys":["player","当前角色"],"waitingForPlayer":true,"newFacts":[],"disclosures":[],"threadUpdates":[],"goalStatus":null,"goalUpdates":[],"commitmentEffects":[],"relationshipUpdates":[],"nextPossibilities":null,"beliefUpdates":[],"situationRequest":null,"followupGoal":null,"threadFollowupGoal":null,"resumeGoal":null}'.replace('"resumeGoal":null}', promiseRequest ? '"resumeGoal":null,"promiseRequest":null}' : '"resumeGoal":null}').replace(/}$/, existingGoalPause ? ',"pauseGoal":null}' : '}')
   }
   if (skillId === 'character.interaction-reply' || skillId === 'character.ai-town-reply') {
     return '{"kind":"character-reply","text":"...","replyToSequence":1,"audienceKeys":null,"budgetCost":0,"disclosures":[]}'
@@ -320,6 +321,7 @@ function prompt(input: {
   roleContext?: InteractionContextWindow
   producerVersion?: string
 }): ChatMessage[] {
+  const existingGoalPause = supportsChatExistingGoalPausePromptV1(input.producerVersion)
   const promiseRequest = supportsChatPromiseRequestPromptV1(input.producerVersion)
   const commitmentSemanticsV2 = supportsChatCommitmentPromptV2(input.producerVersion)
   const townRule = input.skillId === 'character.ai-town-reply'
@@ -331,6 +333,7 @@ function prompt(input: {
       input.skillId === 'character.chat-situation-construction' ? '你是 StoryForge 受治理的幕后情境构建器。输入含幕后事实，必须保持逐角色知识边界。' : '你是 StoryForge 受治理的运行时候选生成器。只依据给出的单一角色可见上下文。',
       '不得假装写入状态，不得泄露未出现的秘密，不得输出解释、Markdown 或额外字段。',
       townRule,
+      ...(existingGoalPause && input.skillId === CHAT_ACTION_REVISION_SKILL ? ['pauseGoal 同样必须逐字保留原来源，不得新增、删除或更换暂停请求依据。'] : []),
       ...(promiseRequest && input.skillId === CHAT_ACTION_REVISION_SKILL ? ['promiseRequest 同样必须逐字保留原来源，不得新增、删除或更换玩家请求依据。'] : []),
       ...(input.skillId === 'character.chat-narrative-options' ? ['给出两条供玩家比较的互斥行动候选：都从当前同一局面开始，各自携带完整表达及后果，不能把第一条当成已经发生后续写第二条。两条应在表达重点或行动办法上有所区别，不仅替换形容词；都须符合角色动机与玩家选择，不能为了差异而捏造危机或预定结局。两条表达的 audienceKeys 均须包含 player，以便玩家比较；预览不得披露玩家尚不知道的既有事实，即使记录 disclosures 也不允许。揭示秘密应留给正式行动，不借候选预览提前剧透。不展示角色私有打算或幕后审查内容。选中前两条均未发生。'] : []),
       ...(input.skillId === CHAT_ACTION_REVISION_SKILL ? ['这是玩家明确请求的一次新修订，不是继续失败调用。chatActionRevision 是尚未生效的旧候选，不能当作历史事实。它仅后果登记未通过，其它维度曾通过；仍须完整重新审查。严格保留原 kind、text、goalKey、audienceKeys、waitingForPlayer、followupGoal、threadFollowupGoal、resumeGoal；只核对并修订与这段实际表达一致的后果、目标、事项、打算和猜测，不添加新动作、台词或结局。输入仅给失败维度，不提供可能含秘密的幕后审查理由。',
@@ -351,9 +354,9 @@ function prompt(input: {
         '只有在场角色可有目标或打算，不给玩家写行动、同意、内心、关系升级或既成结果。角色的未实施计划只进入 possibilities，不进入事实。',
         '承接已有未解决问题，避免为反转而制造危机。新增剧情线加上旧活跃线不能超过 maxActiveThreads。可以不增加新线，只深化现有矛盾；给出可拒绝、可暂停、可改变方向的空间。',
       ] : []),
-      ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? chatActionPromptRulesV1(input.roleContext!, {preserveExpression: input.skillId === CHAT_ACTION_REVISION_SKILL, playerPause: true, conversationEvidence: true, commitmentSemanticsV2, promiseRequest}) : []),
-      `严格输出 JSON：${schemaInstruction(input.skillId, promiseRequest)}`,
-      ...(commitmentSemanticsV2 ? [CHAT_COMMITMENT_OUTPUT_CHECK_V2] : []),
+      ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? chatActionPromptRulesV1(input.roleContext!, {preserveExpression: input.skillId === CHAT_ACTION_REVISION_SKILL, playerPause: true, conversationEvidence: true, commitmentSemanticsV2, promiseRequest, existingGoalPause}) : []),
+      `严格输出 JSON：${schemaInstruction(input.skillId, promiseRequest, existingGoalPause)}`,
+      ...(commitmentSemanticsV2 ? [CHAT_COMMITMENT_OUTPUT_CHECK_V2 + (existingGoalPause ? CHAT_EXISTING_GOAL_PAUSE_COMMITMENT_RULE_V1 : '')] : []),
     ].join('\n'),
   }, {
     role: 'user',
