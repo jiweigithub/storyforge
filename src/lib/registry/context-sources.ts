@@ -692,6 +692,12 @@ async function readProductRuntimeContext(input: AssembleContextInput): Promise<s
   ].join('\n')
 }
 
+async function readChatMemoryReviewContext(input: AssembleContextInput): Promise<string> {
+  if (!input.scope || input.productRuntimeSessionId == null || input.chatMemoryCandidateRunId == null) return ''
+  const {readChatMemoryReviewSourceV1} = await import('../character-interaction/memory-review-source')
+  return `【待审查记忆及实际共同可见来源；尚未采用】\n${await readChatMemoryReviewSourceV1(input.scope, input.productRuntimeSessionId, input.chatMemoryCandidateRunId, input.worldGroupId ?? null)}`
+}
+
 async function readChatSituationCandidateContext(input: AssembleContextInput): Promise<string> {
   if (!input.scope || input.productRuntimeSessionId == null || input.chatSituationCandidateRunId == null) return ''
   const {readLatestVerifiedAgentRunCheckpointV1} = await import('../agent/run/checkpoint')
@@ -2667,6 +2673,12 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     scope: 'runtime', ownerFrom: 'instance', layer: 'L0', budgetTokens: 6000,
     atomic: true, protectedFromTrim: true, requiresProductRuntimeSessionId: true,
     enabled: input => input.chatActionRevisionCurrentRunId != null, read: readChatActionRevisionContext,
+  },
+  {
+    key: 'chatMemoryReview', label: '记忆正文与实际共同来源', atomic: true,
+    scope: 'runtime', ownerFrom: 'instance', layer: 'L0', budgetTokens: 20000,
+    protectedFromTrim: true, requiresProductRuntimeSessionId: true,
+    enabled: input => input.chatMemoryCandidateRunId != null, read: readChatMemoryReviewContext,
   },
   {
     key: 'chatActionCandidate', label: '待审查的持久化行动候选',

@@ -80,7 +80,7 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 138 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 139 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
@@ -155,6 +155,7 @@
 | `textOpenWorldEvolutionRuntime` | 文字开放世界·内部状态演化玩家视角 | runtime | L0 | 8000 |
 | `openWorldRuntime` | 文字开放世界玩家视角 | runtime | L0 | 8000 |
 | `chatActionRevision` | 未通过回复的受限修订来源 | runtime | L0 | 6000 |
+| `chatMemoryReview` | 记忆正文与实际共同来源 | runtime | L0 | 20000 |
 | `chatActionCandidate` | 待审查的持久化行动候选 | runtime | L0 | 8000 |
 | `chatSituationCandidate` | 待审查的持久化情境候选 | runtime | L0 | 8000 |
 | `aiTownRuntime` | 后日谈 AI 小镇居民单一视角 | runtime | L0 | 8000 |
@@ -514,4 +515,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `60593586`
+生成时间基准:commit `098b0ae5`

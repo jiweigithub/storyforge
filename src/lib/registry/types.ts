@@ -619,6 +619,7 @@ export interface AssembleContextInput {
   /** Exact durable situation candidate being reviewed within its owning instance. */
   chatSituationCandidateRunId?: number
   chatActionCandidateRunId?: number
+  chatMemoryCandidateRunId?: number
   /** Current explicit revision Run; used only to verify its source read. */
   chatActionRevisionCurrentRunId?: number
   /** S2 author-only source review: exact saved draft, projection and selected passages. */

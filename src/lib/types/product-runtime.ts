@@ -10,6 +10,7 @@ import type {
   NarrativeChoiceHistoryEntry,
 } from "./text-game";
 import type { InteractionRelationshipRule } from "./character-interaction";
+import type {ChatMemoryReviewReceiptV1} from './chat-memory';
 import type { AdventureRuntimeState } from "./adventure";
 import type { AvgRuntimePresentationState } from "./avg";
 import type { OpenWorldEvolutionState } from "./open-world-evolution";
@@ -1002,6 +1003,7 @@ export interface InteractionRuntimeMemory {
   /** Present only for a player-confirmed correction; legacy/model proposals
    * must not be inferred to have passed a visibility or fidelity review. */
   authorship?: "player-correction";
+  contentReview?: ChatMemoryReviewReceiptV1;
 }
 
 export interface InteractionRuntimeRelationship {

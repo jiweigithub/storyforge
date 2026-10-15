@@ -27,6 +27,8 @@ import { applyChatNarrativeActionV1, applyReviewedChatNarrativeActionV1, interru
 import { applyChatSituationV1 } from './narrative-situations'
 import {chatRelationshipEvidenceV1} from './narrative-relationships'
 import {selectChatContextWindowV1, type ChatContextSelectionV1} from './context-selection'
+import {interactionMessageVisibleTo as visibleTo} from './message-visibility'
+import {hasChatMemoryContentReviewV1, interactionMemoryForContextV1, parseChatMemoryReceiptV1} from './memory-review-contract'
 
 type JsonObject = Record<string, unknown>
 
@@ -220,6 +222,7 @@ function memory(value: unknown): InteractionRuntimeMemory {
       : integer(value.decisionSequence, '互动记忆决定序号', Number.MIN_SAFE_INTEGER),
     supersededByMemoryId: nullableText(value.supersededByMemoryId, '替代记忆 ID', 200),
     ...(value.authorship === 'player-correction' ? {authorship: 'player-correction' as const} : {}),
+    ...(value.contentReview === undefined ? {} : {contentReview: parseChatMemoryReceiptV1(value.contentReview)}),
   }
 }
 
@@ -577,12 +580,6 @@ function requireParticipant(state: CharacterInteractionRuntimeState, participant
   return result
 }
 
-function visibleTo(message: InteractionRuntimeMessage, participantKey: string): boolean {
-  return message.speakerKey === participantKey
-    || message.audienceKeys == null
-    || message.audienceKeys.includes(participantKey)
-}
-
 function requireEvidence(
   state: CharacterInteractionRuntimeState,
   participantKey: string,
@@ -828,7 +825,7 @@ export function applyInteractionEvent(
         .map(item => integer(Number(item), '互动记忆来源序号', Number.MIN_SAFE_INTEGER, event.sequence - 1))
       const evidenceExcerpt = text(body.evidenceExcerpt, '互动记忆证据摘录', 1_000)
       requireEvidence(state, participantKey, sourceEventSequences, evidenceExcerpt)
-      state.memories.push({
+      const proposed: InteractionRuntimeMemory = {
         memoryId,
         participantKey,
         kind,
@@ -840,7 +837,10 @@ export function applyInteractionEvent(
         proposalSequence: event.sequence,
         decisionSequence: null,
         supersededByMemoryId: null,
-      })
+        ...(body.contentReview === undefined ? {} : {contentReview: parseChatMemoryReceiptV1(body.contentReview)}),
+      }
+      if (proposed.contentReview && !hasChatMemoryContentReviewV1(state, proposed)) throw new Error('记忆审查凭据与正文或来源不一致。')
+      state.memories.push(proposed)
       break
     }
     case 'interaction.narrative.memory-control.changed':
@@ -877,7 +877,8 @@ export function applyInteractionEvent(
         if (sources.some(source => !visibleTo(source, state.playerKey))) throw new Error('修正记忆不能引用玩家不可见的消息。')
         // One event replaces the active entry at capacity. A disabled entry
         // stays disabled; correction is not an implicit re-enable operation.
-        state.memories.push({...target, memoryId: replacementId, content: text(body.content, '修正记忆内容', 8_000),
+        const {contentReview: _oldReview, ...prior} = target
+        state.memories.push({...prior, memoryId: replacementId, content: text(body.content, '修正记忆内容', 8_000),
           sourceEventSequences, evidenceExcerpt, proposalSequence: event.sequence, decisionSequence: event.sequence,
           supersededByMemoryId: null, authorship: 'player-correction'})
         target.status = 'superseded'
@@ -1028,7 +1029,7 @@ export function interactionVisibilityView(
     activeScene: state.activeScene ? structuredClone(state.activeScene) : null,
     messages: state.messages.filter(item => item.supersededBySequence == null && visibleTo(item, participantKey)),
     knowledge: state.knowledge.filter(item => item.participantKey === participantKey && item.status !== 'forgotten'),
-    memories: state.memories.filter(item => item.participantKey === participantKey && item.status === 'accepted'),
+    memories: state.memories.filter(item => item.participantKey === participantKey && item.status === 'accepted').map(interactionMemoryForContextV1),
     relationships: state.relationships.filter(item => item.fromParticipantKey === participantKey),
     threads: state.threads.filter(item => item.status === 'open'),
     ...(state.chatNarrative ? {chatNarrative: chatNarrativeViewV1(state.chatNarrative, participantKey), relationshipEvidence: chatRelationshipEvidenceV1(state, participantKey)} : {}),

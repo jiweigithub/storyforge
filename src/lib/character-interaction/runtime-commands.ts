@@ -295,6 +295,8 @@ export async function proposeInteractionMemory(
     importance: number;
     sourceEventSequences: number[];
     evidenceExcerpt: string;
+    contentReview?: import('../types/chat-memory').ChatMemoryReviewReceiptV1;
+    harnessRun?: {id: number; lastSequence: number};
   },
 ): Promise<ProductRuntimeEvent> {
   return appendInteractionCommand({
@@ -310,6 +312,7 @@ export async function proposeInteractionMemory(
       importance: input.importance,
       sourceEventSequences: input.sourceEventSequences,
       evidenceExcerpt: input.evidenceExcerpt.trim(),
+      ...(input.contentReview === undefined ? {} : {contentReview: input.contentReview}),
     },
   });
 }

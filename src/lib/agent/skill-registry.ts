@@ -3280,6 +3280,19 @@ export const AGENT_SKILLS = [
     regressionTests: ['R-AITOWN2-director'],
   },
   {
+    version: 1, id: 'character.interaction-memory-review', agentId: 'character', defaultForAgent: false,
+    label: '角色聊天记忆正文审查', owner: 'character-agent', promptVersion: 'chat-memory-review-v1',
+    executionMode: 'memory-curator', contextTaskKind: 'agent-character', readToolNames: [],
+    contextSourceKeys: ['chatMemoryReview'], optionalContextSourceKeys: [],
+    inputPolicy: {sourceKeys: ['chatMemoryReview'], states: {
+      empty: {handling: 'require-upstream', instruction: '缺少持久化记忆候选及共同来源时停止。'},
+      partial: {handling: 'require-upstream', instruction: '候选和引用必须完整，不允许截断证据后审查。'},
+      complete: {handling: 'grounded-transform', instruction: '仅依据共同来源检查正文忠实性、玩家可见性和隐私推断，不改写或自动采用记忆。'},
+    }},
+    contextCompression: compressionPolicy(['chatMemoryReview']), maxOutputTokens: 2000, writeTargets: [],
+    lastVerifiedAt: '2026-10-15', regressionTests: ['R-CHAT-04-memory-review-contract'],
+  },
+  {
     version: 1,
     id: 'character.interaction-memory-curator',
     agentId: 'character',
