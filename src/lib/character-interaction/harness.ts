@@ -299,7 +299,7 @@ function schemaInstruction(skillId: InteractionRuntimeSkillIdV1): string {
     return '{"kind":"chat-situation","title":"当前局面","location":"保留当前地点","timeLabel":"保留当前时间","newFacts":[{"factKey":"新标识","kind":"observation","text":"新背景事实","audienceKeys":["player","知情角色"],"evidenceFactKeys":["已有事实"],"seedExcerpt":"实际情境请求或角色 direction 中的逐字摘录"}],"newGoals":[{"goalKey":"新标识","actorKey":"在场角色","desire":"个人目的","concern":"顾虑","boundary":"不替玩家决定","evidenceFactKeys":["新旧可知事实"]}],"newThreads":[{"threadKey":"新标识","title":"问题","question":"尚未决定的问题","audienceKeys":["player","知情角色"],"participantKeys":["在场角色"],"evidenceFactKeys":["新旧可知事实"],"closureSignals":["何时可搁置或收束"]}],"possibilities":[{"actorKey":"在场角色","text":"未发生的打算，可改变","evidenceFactKeys":["新旧可知事实"]}]}'
   }
   if (skillId === 'character.chat-narrative-action' || skillId === CHAT_ACTION_REVISION_SKILL) {
-    return '{"kind":"speak|attempt|complete|pause","text":"实际角色表达与自身行动","goalKey":"自身未完成目标标识","evidenceFactKeys":["可知事实标识"],"audienceKeys":["player","当前角色"],"waitingForPlayer":true,"newFacts":[],"disclosures":[],"threadUpdates":[],"goalStatus":null,"goalUpdates":[],"commitmentEffects":[],"relationshipUpdates":[],"nextPossibilities":null,"beliefUpdates":[],"situationRequest":null,"followupGoal":null,"threadFollowupGoal":null}'
+    return '{"kind":"speak|attempt|complete|pause","text":"实际角色表达与自身行动","goalKey":"自身未完成目标标识","evidenceFactKeys":["可知事实标识"],"audienceKeys":["player","当前角色"],"waitingForPlayer":true,"newFacts":[],"disclosures":[],"threadUpdates":[],"goalStatus":null,"goalUpdates":[],"commitmentEffects":[],"relationshipUpdates":[],"nextPossibilities":null,"beliefUpdates":[],"situationRequest":null,"followupGoal":null,"threadFollowupGoal":null,"resumeGoal":null}'
   }
   if (skillId === 'character.interaction-reply' || skillId === 'character.ai-town-reply') {
     return '{"kind":"character-reply","text":"...","replyToSequence":1,"audienceKeys":null,"budgetCost":0,"disclosures":[]}'
@@ -326,7 +326,7 @@ function prompt(input: {
       '不得假装写入状态，不得泄露未出现的秘密，不得输出解释、Markdown 或额外字段。',
       townRule,
       ...(input.skillId === 'character.chat-narrative-options' ? ['给出两条供玩家比较的互斥行动候选：都从当前同一局面开始，各自携带完整表达及后果，不能把第一条当成已经发生后续写第二条。两条应在表达重点或行动办法上有所区别，不仅替换形容词；都须符合角色动机与玩家选择，不能为了差异而捏造危机或预定结局。两条表达的 audienceKeys 均须包含 player，以便玩家比较；预览不得披露玩家尚不知道的既有事实，即使记录 disclosures 也不允许。揭示秘密应留给正式行动，不借候选预览提前剧透。不展示角色私有打算或幕后审查内容。选中前两条均未发生。'] : []),
-      ...(input.skillId === CHAT_ACTION_REVISION_SKILL ? ['这是玩家明确请求的一次新修订，不是继续失败调用。chatActionRevision 是尚未生效的旧候选，不能当作历史事实。它仅后果登记未通过，其它维度曾通过；仍须完整重新审查。严格保留原 kind、text、goalKey、audienceKeys、waitingForPlayer、followupGoal；只核对并修订与这段实际表达一致的后果、目标、事项、打算和猜测，不添加新动作、台词或结局。输入仅给失败维度，不提供可能含秘密的幕后审查理由。',
+      ...(input.skillId === CHAT_ACTION_REVISION_SKILL ? ['这是玩家明确请求的一次新修订，不是继续失败调用。chatActionRevision 是尚未生效的旧候选，不能当作历史事实。它仅后果登记未通过，其它维度曾通过；仍须完整重新审查。严格保留原 kind、text、goalKey、audienceKeys、waitingForPlayer、followupGoal、threadFollowupGoal、resumeGoal；只核对并修订与这段实际表达一致的后果、目标、事项、打算和猜测，不添加新动作、台词或结局。输入仅给失败维度，不提供可能含秘密的幕后审查理由。',
         '个人暂停与共同事项分开：仅自己暂歇，不影响其他参与者的事项时只改自己的目标；若正文明确暂停或结束自己负责的整项任务，并覆盖全部事项知情者，则登记相应 threadUpdates。暂停用 paused，不能用 resolved 冒充问题已解决。closureSignals 是判断线索，不是满足字面描述就无条件关闭任何共同事项。'] : []),
       ...(input.skillId === 'character.chat-situation-construction' ? [
         '若 constructionRequest.origin 为 continued-thread，承接已审查 pendingSituation 中的自身未完成目标、剧情线与 direction；seedExcerpt 摘录 direction。只能补足当前时间地点中的局部条件，不能替玩家接受或移动，不能替其他角色设定目标或打算；已有事实和其他人的计划均保留。',
@@ -344,7 +344,7 @@ function prompt(input: {
         '只有在场角色可有目标或打算，不给玩家写行动、同意、内心、关系升级或既成结果。角色的未实施计划只进入 possibilities，不进入事实。',
         '承接已有未解决问题，避免为反转而制造危机。新增剧情线加上旧活跃线不能超过 maxActiveThreads。可以不增加新线，只深化现有矛盾；给出可拒绝、可暂停、可改变方向的空间。',
       ] : []),
-      ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? chatActionPromptRulesV1(input.roleContext!, {preserveExpression: input.skillId === CHAT_ACTION_REVISION_SKILL}) : []),
+      ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? chatActionPromptRulesV1(input.roleContext!, {preserveExpression: input.skillId === CHAT_ACTION_REVISION_SKILL, playerPause: true}) : []),
       `严格输出 JSON：${schemaInstruction(input.skillId)}`,
     ].join('\n'),
   }, {

@@ -1,3 +1,4 @@
+import {requireChatPlayerRequestV1, supportsChatPlayerPauseV1} from './narrative-player-pause'
 import type {CharacterInteractionRuntimeState} from '../types'
 import type {ChatNarrativeActionV1, ChatNarrativeTriggerStateV1} from '../types/chat-narrative'
 
@@ -22,26 +23,37 @@ export function chatCanFollowThreadV1(state: CharacterInteractionRuntimeState, a
 /** Preview only; the existing reviewed action atomically commits the new goal
  * and first step. Historical goals, threads and facts remain unchanged. */
 export function applyChatThreadFollowupGoalV1(state: CharacterInteractionRuntimeState, input: {
-  action: ChatNarrativeActionV1; actorKey: string; sequence: number; trigger: ChatNarrativeTriggerStateV1
+  action: ChatNarrativeActionV1; actorKey: string; sequence: number; messageId: string; trigger: ChatNarrativeTriggerStateV1
 }): void {
-  const {action, actorKey, sequence, trigger} = input, proposal = action.threadFollowupGoal
+  const {action, actorKey, sequence, messageId, trigger} = input, proposal = action.threadFollowupGoal
   if (proposal == null) return
   const threads = chatThreadFollowupThreadsV1(state, actorKey, trigger), story = state.chatNarrative!
   if (!threads.some(t => t.threadKey === proposal.threadKey)) fail('没有授权、参与且可接续的未完成事项')
-  if (action.followupGoal != null || action.goalKey !== proposal.goal.goalKey || action.waitingForPlayer
-    || ['attempt', 'pause'].includes(action.kind) || !action.text.includes(proposal.evidenceExcerpt)
+  const pause = proposal.pauseRequest
+  if (action.followupGoal != null || action.resumeGoal != null || action.goalKey !== proposal.goal.goalKey
+    || !pause && (action.waitingForPlayer || ['attempt', 'pause'].includes(action.kind)) || !action.text.includes(proposal.evidenceExcerpt)
     || action.situationRequest != null && (action.situationRequest.purpose !== 'observation-result' || action.situationRequest.threadKey !== proposal.threadKey)) fail('接续目标必须与自己的实际行动一起成立，不能代替新背景或玩家决定')
   if (story.situation.goals.some(g => g.goalKey === proposal.goal.goalKey || g.actorKey === actorKey && g.desire === proposal.goal.desire)) fail('接续不能复活、复制或覆盖旧目标')
-  if (story.situation.goals.length >= 64) fail('目标历史已达上限，请保存并停止演绎')
+  if (story.situation.goals.length >= 32) fail('目标历史已达上限，请保存并停止演绎')
   if (!proposal.goal.evidenceFactKeys.length || proposal.goal.evidenceFactKeys.some(id => !story.situation.facts.some(f => f.factKey === id && f.audienceKeys.includes(actorKey)))) fail('接续目标缺少角色当前可知的事实依据')
-  story.situation.goals.push({...proposal.goal, actorKey, status: 'active', updatedSequence: sequence})
+  let playerPause
+  if (pause) {
+    const source = requireChatPlayerRequestV1(state, actorKey, trigger, pause, action.audienceKeys)
+    if (action.kind !== 'speak' || !action.waitingForPlayer || action.goalStatus !== 'paused' || action.newFacts.length || action.disclosures.length
+      || action.goalUpdates?.length || action.relationshipUpdates?.length || action.beliefUpdates?.length || action.nextPossibilities?.length || action.situationRequest != null
+      || action.commitmentEffects?.some(e => e.kind !== 'promise') || action.threadUpdates.some(e => e.threadKey !== proposal.threadKey || e.status !== 'paused')) fail('明确暂停只能确认自身剩余责任及约定，不能夹带推进或其他后果')
+    playerPause = {threadKey: proposal.threadKey, requested: {messageId: source.messageId, sequence: source.eventSequence, excerpt: pause.playerExcerpt},
+      acknowledged: {messageId, sequence, excerpt: proposal.evidenceExcerpt}}
+  }
+  story.situation.goals.push({...proposal.goal, actorKey, status: 'active', updatedSequence: sequence, ...(playerPause ? {playerPause} : {})})
 }
 
 export function supportsChatThreadFollowupV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v21', 'chat-narrative-options-review-v15'].includes(version ?? '')
+  return supportsChatPlayerPauseV1(version) || ['chat-narrative-action-review-v21', 'chat-narrative-options-review-v15'].includes(version ?? '')
 }
 
 export function assertChatThreadFollowupReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
+  if (actions.some(a => a.resumeGoal !== undefined || a.threadFollowupGoal?.pauseRequest !== undefined) && !supportsChatPlayerPauseV1(version)) fail('旧审查合同不支持玩家暂停与恢复；保留原候选，不自动换约或重发')
   if (actions.some(a => a.threadFollowupGoal !== undefined) && !supportsChatThreadFollowupV1(version)) fail('旧审查合同不支持既有事项接续；保留原候选，不自动换约或重发')
 }
 

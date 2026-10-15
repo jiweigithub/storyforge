@@ -1,3 +1,4 @@
+import {assertChatPlayerPauseSourcesV1} from './narrative-player-pause'
 import {chatMemoryCorrectionContextV1, type ChatMemoryCorrectionContextV1} from './memory-correction-context'
 import {assertChatMemoryReconciliationSourcesV1} from './memory-reconciliation'
 import {assertChatResponseRetrievableV1, isChatMessageRetrievableV1, requireChatRetrievalMessageV1, setChatMessageRetrievalV1} from './narrative-retrieval'
@@ -544,6 +545,7 @@ export function parseInteractionState(value: unknown): CharacterInteractionRunti
     })
   }
   for (const id of result.chatNarrative?.excludedMessageIds ?? []) requireChatRetrievalMessageV1(result, id)
+  assertChatPlayerPauseSourcesV1(result)
   assertChatCommitmentSourcesV1(result)
   assertChatMemoryReconciliationSourcesV1(result)
   return result

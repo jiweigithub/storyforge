@@ -158,5 +158,5 @@ export function validateChatCommitmentChecksV1(value: unknown, action: ChatNarra
 /** Version gate also applies when a retained review is resumed or adopted. */
 export function assertChatCommitmentReviewVersionV1(actions: readonly ChatNarrativeActionV1[], version: string | undefined): void {
   if (actions.some(a => a.commitmentEffects !== undefined)
-    && !['chat-narrative-action-review-v19', 'chat-narrative-options-review-v13', 'chat-narrative-action-review-v20', 'chat-narrative-options-review-v14', 'chat-narrative-action-review-v21', 'chat-narrative-options-review-v15'].includes(version ?? '')) fail('旧审查合同不支持承诺变化；保留原候选，不自动更换合同或重发')
+    && !['chat-narrative-action-review-v19', 'chat-narrative-options-review-v13', 'chat-narrative-action-review-v20', 'chat-narrative-options-review-v14', 'chat-narrative-action-review-v21', 'chat-narrative-options-review-v15', 'chat-narrative-action-review-v22', 'chat-narrative-options-review-v16'].includes(version ?? '')) fail('旧审查合同不支持承诺变化；保留原候选，不自动更换合同或重发')
 }

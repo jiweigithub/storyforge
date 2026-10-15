@@ -1,3 +1,4 @@
+import {chatPlayerPauseSequencesV1, rebaseChatPlayerPausesV1, validateChatGoalPlayerPauseV1} from './narrative-player-pause'
 import {validateChatMemoryReconciliationRecordsV1} from './memory-reconciliation'
 import {validateChatFactDiscoveryRuleV1, validateChatDiscoveryHistoryV1, chatActorInvestigationResultsV1} from './narrative-discovery'
 import {validateChatMessageEditDraftV1} from './narrative-edit-contract'
@@ -136,7 +137,8 @@ function validateSituation(value: unknown, boundary: ChatNarrativeBoundaryV1, in
     evidence(item, [String(item.actorKey)], label)
   }
   const goals = list(situation.goals, '角色目标', 32).map(item => row(item, 'goalKey,actorKey,desire,concern,boundary,evidenceFactKeys,status,updatedSequence'
-    + (item != null && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'commitments') ? ',commitments' : ''), '角色目标'))
+    + (item != null && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'commitments') ? ',commitments' : '')
+    + (item != null && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'playerPause') ? ',playerPause' : ''), '角色目标'))
   if (!goals.length) fail('情境缺少角色自身目标')
   unique(goals, 'goalKey', '目标标识')
   for (const goal of goals) {
@@ -144,6 +146,7 @@ function validateSituation(value: unknown, boundary: ChatNarrativeBoundaryV1, in
     for (const field of ['desire', 'concern', 'boundary']) text(goal[field], `目标 ${field}`)
     if (!['active', 'paused', 'fulfilled', 'abandoned'].includes(String(goal.status)) || initial && goal.status !== 'active') fail('目标状态无效')
     sequence(goal.updatedSequence, initial, '目标事件')
+    validateChatGoalPlayerPauseV1(goal.playerPause, {initial, status: String(goal.status), updatedSequence: Number(goal.updatedSequence), threadKeys: Array.isArray(situation.threads) ? situation.threads.map(t => t?.threadKey) : []})
     validateChatGoalCommitmentsV1(goal.commitments, {actorKey: String(goal.actorKey), viewers, goalStatus: String(goal.status), updatedSequence: Number(goal.updatedSequence), initial})
   }
   const beliefs = list(situation.beliefs, '角色猜测', 64).map(item => row(item, 'beliefKey,actorKey,text,evidenceFactKeys,updatedSequence', '角色猜测'))
@@ -278,7 +281,7 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
     if (new Set(ids).size !== ids.length) fail('排除消息 ID 重复')
   }
   const sequences = [state.pendingSituation?.sourceEventSequence ?? 0, state.pendingSituation?.purpose === 'player-followup' ? state.pendingSituation.playerEventSequence : 0, state.situation.seed.sourceEventSequence, ...state.situation.facts.map(f => f.sourceEventSequence),
-    ...state.situation.goals.map(g => g.updatedSequence), ...chatCommitmentSequencesV1(state.situation.goals), ...state.situation.beliefs.map(b => b.updatedSequence), ...state.situation.threads.map(t => t.updatedSequence),
+    ...state.situation.goals.map(g => g.updatedSequence), ...chatCommitmentSequencesV1(state.situation.goals), ...chatPlayerPauseSequencesV1(state.situation.goals), ...state.situation.beliefs.map(b => b.updatedSequence), ...state.situation.threads.map(t => t.updatedSequence),
     ...state.triggers.flatMap(t => [t.requestedSequence, t.sourceEventSequence, ...t.actionSequences])]
   if (sequences.some(seq => seq !== 0 && (state.lastEventSequence === 0 || seq > state.lastEventSequence))) fail('叙事状态含尚未发生的事件引用')
   validateChatDiscoveryHistoryV1(state)
@@ -317,6 +320,7 @@ export function rebaseChatNarrativeStateV1(state: ChatNarrativeStateV1, rebase: 
   for (const record of state.discoveryHistory ?? []) {record.actionSequence = rebase(record.actionSequence); record.discoverySequence = rebase(record.discoverySequence)}
   for (const item of [...state.situation.goals, ...state.situation.beliefs, ...state.situation.threads]) item.updatedSequence = rebase(item.updatedSequence)
   rebaseChatCommitmentsV1(state.situation.goals, rebase)
+  rebaseChatPlayerPausesV1(state.situation.goals, rebase)
   for (const trigger of state.triggers) {
     trigger.requestedSequence = rebase(trigger.requestedSequence)
     trigger.sourceEventSequence = rebase(trigger.sourceEventSequence)
