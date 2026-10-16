@@ -228,6 +228,15 @@ function ttrpgOpenPublicSituationProvider(): ContextResourceProviderV1 {
     fingerprint: async scope => (await load()).fingerprint(scope),
     openReadSession: async scope => (await load()).openReadSession!(scope) }
 }
+function ttrpgOpenEntityProvider(): ContextResourceProviderV1 {
+  const load = async () => (await import('../ttrpg/open-entity-context')).createTtrpgOpenEntityContextProviderV1()
+  return { version: 'context-resource-provider-v1', providerId: 'storyforge.ttrpgOpenEntityInput',
+    providerVersion: 'ttrpg-open-entity-provider-v1', normalizationVersion: 'ttrpg-open-entity-json-v1', kinds: ['fact', 'reference'],
+    listMetadata: async input => (await load()).listMetadata(input), searchMetadata: async input => (await load()).searchMetadata(input),
+    read: async input => (await load()).read(input), readOriginal: async input => (await load()).readOriginal(input),
+    fingerprint: async scope => (await load()).fingerprint(scope),
+    openReadSession: async scope => (await load()).openReadSession!(scope) }
+}
 
 // Upper-product readers are lazy for the same reason as adaptation readers:
 // their production Harnesses import the Skill registry, so eager imports here
@@ -2028,6 +2037,13 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
     requiresResourceKeyAllowList: true, resources: ttrpgOpenPublicSituationProvider(),
     read: async () => { throw new Error('[ttrpg-public-situation] 共同局势只经真实全体交集、冻结 allow-list 与完整来源读取') },
+  },
+  {
+    key: 'ttrpgOpenEntityInput', label: 'open 跑团原咨询下的分范围实体提案资料',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 16000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenEntityProvider(),
+    read: async () => { throw new Error('[ttrpg-entity] 实体提案只经原咨询、单一接收者范围和完整模板/地点资源读取') },
   },
   {
     key: 'ttrpgPrivateGuidance', label: '正式 TTRPG 单角色私密指引', scope: 'runtime', layer: 'L0', ownerFrom: 'work',
