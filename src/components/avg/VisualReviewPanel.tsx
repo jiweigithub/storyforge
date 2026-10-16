@@ -27,15 +27,16 @@ function ReferenceView({scope,reference,ratio,onObserved}:{scope:WorkspaceScope;
 
 /** Author observations become a separate pending/accepted issue Artifact.
  * A decoder callback proves display availability, never artistic correctness. */
-export default function VisualReviewPanel({scope,productionId,requirement:r,raw,accepted,pending,image,rawObserved,disabled,canAdopt,locked,declaration,onPending,onAction,onReload}:{
+export default function VisualReviewPanel({scope,productionId,requirement:r,raw,reviewedImage=raw,accepted,pending,image,rawObserved,disabled,canAdopt,locked,declaration,onPending,onAction,onReload}:{
   scope:WorkspaceScope;productionId:number;requirement:AvgVisualProductionRequirementV1;raw:ProductBuildArtifactRecordV1;accepted?:ProductBuildArtifactRecordV1;pending?:ProductBuildArtifactRecordV1;
   image:ReactNode;rawObserved:boolean;disabled:boolean;canAdopt:boolean;locked:boolean;declaration:string;onPending:(value:boolean)=>void;
+  reviewedImage?:ProductBuildArtifactRecordV1;
   onAction:(task:()=>Promise<void>)=>Promise<void>;onReload:()=>Promise<void>
 }){
   const [observed,setObserved]=useState<string[]>([]),[checks,setChecks]=useState(()=>defaults(r)),[dirty,setDirty]=useState(false)
   const [repair,setRepair]=useState(''),[reviewed,setReviewed]=useState('')
   const [note,setNote]=useState('')
-  const identity=`${raw.version}:${raw.contentHash}:${JSON.stringify(r.references)}`
+  const identity=`${raw.version}:${raw.contentHash}:${reviewedImage.version}:${reviewedImage.contentHash}:${JSON.stringify(r.references)}`
   useEffect(()=>{setObserved([]);setChecks(defaults(r));setDirty(false);setRepair('');setReviewed('');setNote('')},[identity]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{onPending(dirty)},[dirty,onPending])
   useEffect(()=>()=>onPending(false),[onPending])
@@ -46,10 +47,10 @@ export default function VisualReviewPanel({scope,productionId,requirement:r,raw,
     const issues=checks.filter(c=>c.result==='fail').map(c=>({issueKey:`visual.${c.criterion}`,locationKey:r.assetKey,evidence:c.note,severity:'blocking' as const,owner:'media' as const,
       allowedChange:repair,impact:'本候选不能选用；保留原图、费用与评审记录',recheck:`重新查看准确图像与参考，并复验${LABELS[c.criterion]}`}))
     return {schema:'storyforge.avg.review-issues',version:1,targetKey:r.requirementKey,observations:rawObserved?['visual']:[],unobserved:unavailable,issues,
-      visualEvidence:{imageHash:rawObserved?raw.contentHash:null,referenceHashes:r.references.filter(ref=>observed.includes(ref.contentHash)).map(ref=>ref.contentHash),checks,note}}
+      visualEvidence:{imageHash:rawObserved?reviewedImage.contentHash:null,referenceHashes:r.references.filter(ref=>observed.includes(ref.contentHash)).map(ref=>ref.contentHash),checks,note}}
   }
   return <section className="avg-visual-review" aria-label={`视觉评审：${r.name}`}><h6>作者视觉观察</h6>
-    <p>并列查看原图与本次准确参考，按共同画布检查身份、比例、构图、辨认和透明边缘。这里的展示不会加工原图，也不能代替最终舞台和专业艺术验收。</p>
+    <p>并列查看原图、冻结配方的加工结果（如有）与本次准确参考，按共同画布检查身份、比例、构图、辨认和透明边缘。评审绑定实际将选用的图片版本，不能代替最终舞台和专业艺术验收。</p>
     <div className="avg-visual-review-grid">{image}{r.references.map((reference,i)=><ReferenceView key={`${reference.assetKey}:${i}`} scope={scope} reference={reference} ratio={r.width/r.height}
       onObserved={hash=>setObserved(old=>old.includes(hash)?old:[...old,hash])}/>)}</div>
     <p>{rawObserved?'准确原图已显示':'原图尚未显示'} · 参考 {observed.length}/{new Set(r.references.map(ref=>ref.contentHash)).size}。{!r.references.length&&'本项没有参考，不能据此证明跨图连续性。'}</p>

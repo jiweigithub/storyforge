@@ -74,7 +74,7 @@
 
 AVG 专用 adapter 已支持已授权 Work-owned 参考的真实 Data URI、用途/允许变化/顺序和 1K/2K 档位；crop/mask 仍拒绝，alpha 仍须实际检查。默认关闭的实验性 V2 共享服务已接明确开始、固定路由 hash、有界预算/Run、解析前原始响应、严格 producer 接收、独立作者选图与最终演出确认。原图已全部接收后可离线继续组装；备份 remap 与恢复会话已在受控浏览器验证。范围和未完成项以[实施计划 §1.3](../../roadmap/AVG-IMPLEMENTATION-PLAN.md#13-当前媒资自动生产目标2026-10-16)及[工作包 §3.3](../../roadmap/AVG-WORK-PACKAGE-CARDS.md#33-base-01b-的实验性共享服务链路)为准。
 
-工程验证使用原创 PNG 和拦截的 HTTP，不是实际 Agnes 调用或家族艺术验收；默认关闭的工作台增量已接需求表单、合法参考授权、原图/选图确认和演出配置，见[工作包 §3.4](../../roadmap/AVG-WORK-PACKAGE-CARDS.md#34-base-01b-的工作台增量)。同一冻结批次的失败恢复已接明确保留原图、子版本零调用复验和仅重做未保留项，含连续返修与备份 remap；必须重新开始及采用，不继承未知请求的重发权限，见[工作包 §3.7](../../roadmap/AVG-WORK-PACKAGE-CARDS.md#37-base-01b-的明确原图保留与局部重做)。已采用生成图的后续参考见 §3.3；作者家族方案和跨批演出原图继承见 §3.4。加工 lineage、专业视觉岗位及真实 TTS 尚未完成。当前确定性 stage/item 槽配置不表示目标 `AvgMediaBindingV1` 的全部 provenance/版本/返修合同已落地。
+工程验证使用原创 PNG 和拦截的 HTTP，不是实际 Agnes 调用或家族艺术验收；默认关闭的工作台增量已接需求表单、合法参考授权、原图/选图确认和演出配置，见[工作包 §3.4](../../roadmap/AVG-WORK-PACKAGE-CARDS.md#34-base-01b-的工作台增量)。同一冻结批次的失败恢复已接明确保留原图、子版本零调用复验和仅重做未保留项，含连续返修与备份 remap；必须重新开始及采用，不继承未知请求的重发权限，见[工作包 §3.7](../../roadmap/AVG-WORK-PACKAGE-CARDS.md#37-base-01b-的明确原图保留与局部重做)。已采用生成图的后续参考见 §3.3；作者家族方案和跨批演出原图继承见 §3.4。本地裁切/画布加工与衍生来源见 §3.5；专业语义加工、视觉岗位及真实 TTS 尚未完成。当前确定性 stage/item 槽配置不表示目标 `AvgMediaBindingV1` 的全部 provenance/版本/返修合同已落地。
 
 ### 3.3 已采用生成图作为后续参考
 
@@ -98,7 +98,7 @@ AVG 专用 adapter 已支持已授权 Work-owned 参考的真实 Data URI、用�
 
 当前本地能力为有界裁切、等比 contain/cover、画布/锚点、透明留边或明确 RGBA 底色，输出 PNG；不做隐式拉伸、自动抠图、面部修复、mask 或供应商 edit。裁切是原图万分比坐标，cover 在源范围内取样，不创建无限中间画布。输入 32 MiB、解码/画布 16M 像素、单边 4096 的输出边界及原生解码/编码超时由代码执行；已知不符合需求尺寸/画幅，或透明需求配不透明底色，在收费开始前拒绝。已有透明像素可保留，透明留边不能证明主体边缘已抠好。
 
-加工 task 是登记原生 Plan 的 deterministic Run，单次、零 model/media/cash 调用，预算另记本地耗时/储存。回执冻结 processor 版本、准确原图 hash/尺寸、配方 hash、实际取样/目标几何、PNG/hash/像素观察、alpha 和浏览器；由共享 Harness/producer checkpoint/ledger 接收独立 `avg.media.processed.<key>` 工件与 Blob。原图及加工图有各自准确 producer 回执，不把本地处理伪装成供应商响应。失败保留原图和零调用失败证据，不自动重试。
+加工 task 是登记原生 Plan 的 deterministic Run，单次、零 model/media/cash 调用，预算另记本地耗时/储存。回执冻结 processor 版本、准确原图 hash/尺寸、配方 hash、实际取样/目标几何、PNG/hash/像素观察、alpha 和浏览器；由共享 Harness/producer checkpoint/ledger 接收独立 `avg.media.processed.<key>` 工件与 Blob。原图及加工图有各自准确 producer 回执，不把本地处理伪装成供应商响应。失败保留原图和零调用失败证据，不自动重试。当前分支工程验证与保留边界见[工作包 §9.4](../../roadmap/AVG-WORK-PACKAGE-CARDS.md#94-avg-04a4-本地加工衍生选择与真实像素消费)。
 
 V1 选择合同继续只准原图；显式 V2 选择同时绑定准确 raw 与 processed revision/hash。评审绑定实际将选用的加工图，原图意见不能冒充对新图的查看。采用、当前/冻结编译、生成参考及舞台继承复验原图 producer、加工 Run/配方/字节和作者输入依赖；不能以同名导入代替。已采用小图可按新用途另外授权参考，8 MiB 输入上限仍按实际发送图计算。备份/remap 保留便携来源和两份 Blob，不重编码恢复；Work 删除/垃圾回收沿既有注册表。
 

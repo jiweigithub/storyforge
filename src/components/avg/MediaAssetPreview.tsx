@@ -1,25 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FrozenRuntimeMediaAssetV2, ProductMediaKind, WorkspaceScope } from '../../lib/types'
 import { readAvgDraftMediaV1 } from '../../lib/avg/editor-service'
-import { readAvgRawImageCandidateBytesV2, readAvgRetainedImageCandidateBytesV1 } from '../../lib/avg/assembly-service'
+import { readAvgRawImageCandidateBytesV2, readAvgRetainedImageCandidateBytesV1,readAvgProcessedImageCandidateBytesV1 } from '../../lib/avg/assembly-service'
 import { canonicalProductProductionJsonV2 } from '../../lib/product-production/hash'
 import { readAvgAdoptedGeneratedImageV1 } from '../../lib/avg/media-generated-reference'
 import type { AvgGeneratedReferenceSourceV1 } from '../../lib/avg/media-generated-reference-contract'
 
 export const AVG_MEDIA_KIND_LABELS: Record<ProductMediaKind, string> = { background: '背景', 'character-pose': '角色姿势', 'character-expression': '角色表情',
   cg: 'CG', ui: '图标与界面', bgm: '音乐', ambience: '环境声', sfx: '音效', voice: '配音' }
-export interface AvgRawPreviewReference { requirementKey: string; version: number; contentHash: string; retained?:boolean }
+export interface AvgRawPreviewReference { requirementKey: string; version: number; contentHash: string; retained?:boolean;processed?:boolean }
 
 /** Local URLs are created only after the existing owner/hash proof reader.
  * Provider URL strings and arbitrary Blob IDs are never displayed directly. */
-export default function MediaAssetPreview({ scope, asset, productionId, raw, generatedSource, onObserved,comparisonAspectRatio,smallImageSizes }: {
+export default function MediaAssetPreview({ scope, asset, productionId, raw, generatedSource, onObserved,comparisonAspectRatio,smallImageSizes,caption }: {
   scope: WorkspaceScope; asset: FrozenRuntimeMediaAssetV2; productionId?: number | null; raw?: AvgRawPreviewReference; generatedSource?: AvgGeneratedReferenceSourceV1; onObserved?: () => void
-  comparisonAspectRatio?:number;smallImageSizes?:readonly number[]
+  comparisonAspectRatio?:number;smallImageSizes?:readonly number[];caption?:string
 }) {
   const [url, setUrl] = useState(''), [error, setError] = useState('')
   const audio = useRef<HTMLAudioElement>(null)
   const requirementKey = raw?.requirementKey, version = raw?.version, contentHash = raw?.contentHash
   const retained=raw?.retained??false
+  const processed=raw?.processed??false
   const generatedSourceJson=generatedSource?JSON.stringify(generatedSource):''
   const assetJson = JSON.stringify(asset)
   useEffect(() => {
@@ -36,7 +37,7 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
       }
       if (!requirementKey) return readAvgDraftMediaV1(scope, current)
       if (!productionId || version === undefined || !contentHash) throw new Error('原图缺少准确制作来源')
-      const reader=retained?readAvgRetainedImageCandidateBytesV1:readAvgRawImageCandidateBytesV2
+      const reader=processed?readAvgProcessedImageCandidateBytesV1:retained?readAvgRetainedImageCandidateBytesV1:readAvgRawImageCandidateBytesV2
       const candidate = await reader({ scope, productionId, requirementKey, version, contentHash })
       if (canonicalProductProductionJsonV2(candidate.asset) !== canonicalProductProductionJsonV2(current)) throw new Error('显示图片与准确原图不一致')
       return candidate.data
@@ -46,8 +47,8 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
       created = URL.createObjectURL(new Blob([bytes], { type: current.mimeType })); setUrl(created)
     }).catch(cause => { if (alive) setError(String(cause)) })
     return () => { alive = false; element?.pause(); if (created) URL.revokeObjectURL(created) }
-  }, [scope, assetJson, productionId, requirementKey, version, contentHash, retained, generatedSourceJson])
-  return <figure className="avg-assembly-media-preview"><figcaption>{asset.name} · {AVG_MEDIA_KIND_LABELS[asset.kind]}</figcaption>
+  }, [scope, assetJson, productionId, requirementKey, version, contentHash, retained, processed, generatedSourceJson])
+  return <figure className="avg-assembly-media-preview"><figcaption>{caption??asset.name} · {AVG_MEDIA_KIND_LABELS[asset.kind]}</figcaption>
     {error && <p role="alert">{error}</p>}
     {asset.mimeType.startsWith('audio/') ? <audio ref={audio} controls src={url || undefined} preload="metadata" />
       : url ? <><img src={url} alt={asset.altText || asset.name} onLoad={onObserved} style={comparisonAspectRatio?{aspectRatio:comparisonAspectRatio}:undefined}/>
