@@ -2,7 +2,7 @@
   "schema": "storyforge.character-chat-engineering-evidence",
   "version": 1,
   "label": "V133 exact event-prefix replay and native IndexedDB history growth",
-  "recordedAt": "2026-10-16T07:59:54.442346+00:00",
+  "recordedAt": "2026-10-16T08:22:21.431923+00:00",
   "implementation": {
     "baseCommit": "7dbd3d8fceb5b3b37bb8bfefb42933ed2891d9d6",
     "sourceIdentity": "Implementation and evidence are committed together; clean full-suite snapshots record their exact HEAD separately.",
@@ -14,7 +14,7 @@
       "tests/helpers/chat-history-growth.ts": "16acd19c431134d91abd1d6a8ad275142655defdc7aa8e8929b41894acc4c497",
       "tests/regression/R-CHAT-04-runtime-replay.test.ts": "e076db2158f2e961065ffef904becd785f3cc3ed3091803b00419c3835edb3ac"
     },
-    "status": "implemented; final associated, focused browser and engineering checks passed; native1000 and complete suites pending"
+    "status": "implemented; associated tests, focused browser paths and native100 passed; native1000 timed out; complete suites still pending"
   },
   "boundary": {
     "product": "character-interaction",
@@ -92,12 +92,25 @@
       "artifactLimit": "Compressed backup and terminal log retained. The runner did not create an HTML report; the attempted report-directory copy failed after backup preservation. Later runs write result/refresh JSON files explicitly."
     },
     "native1000": {
-      "status": "running at record time; 300-action checkpoint was reached, but whole-run and final parentless recovery have no terminal result yet",
+      "status": "failed: original 1800000 ms Playwright deadline exceeded",
       "receipt": "/tmp/storyforge-chat-v133-native-1000-receipt.json",
       "log": "/tmp/storyforge-chat-v133-native-1000.log",
       "outputDirectory": "/tmp/storyforge-chat-v133-native-1000-results",
       "sourceHashes": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v133-history-growth/native1000-source-files.json",
-      "countsNotAcceptedUntilTerminal": true
+      "exitCode": 1,
+      "lastLoggedActions": 800,
+      "lastLoggedElapsedMs": 1653751,
+      "exactFinalActionCount": "unknown; only progress through 800 was persisted",
+      "finalBackupOrRecovery": "not reached; no native-growth result, backup or refresh files were created",
+      "artifactDirectory": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v133-history-growth/native-1000-results",
+      "artifactIndex": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v133-history-growth/native1000-terminal-artifacts.json",
+      "retainedArtifacts": [
+        "terminal log and receipt",
+        "screenshot",
+        "video",
+        "trace",
+        "error context"
+      ]
     }
   },
   "shimGrowth": {
@@ -160,7 +173,7 @@
     "diagnosticSetupFailure": "First private diagnostic preparation had a Python syntax error, so the initial Vitest invocation had no test file. Its failed receipt/log is retained; no model call occurred."
   },
   "limits": [
-    "Native 300/1000 load and its final portable checkpoints are still unaccepted until the live job terminates and evidence is read back. CHAT-04.06d remains open.",
+    "Native1000 failed its unchanged 30-minute deadline. The 100/300 actual-input and full-replay checkpoints were reached, but this failed run has no final backup/recovery evidence. CHAT-04.06d remains open.",
     "Storage/replay/load checks are not meaningful-story, semantic-recall, true-model latency, human-play or commercial acceptance. No real provider requests since V125; original failures and cohort denominators remain unchanged.",
     "No new Agnes configuration search or provider substitution. Current v3 remains experimental and hidden by default.",
     "Full CI/E2E are still required before completing the engineering milestones; unchanged older successes do not cover this implementation."

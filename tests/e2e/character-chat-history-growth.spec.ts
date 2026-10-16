@@ -14,6 +14,12 @@ test(`native IndexedDB retains ${target} consequential actions, actual historica
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
   })
   await page.route('https://history-growth.invalid/**', async route => {externalCalls++; await route.abort()})
+  await page.exposeFunction('persistNativeGrowthCheckpoint', (checkpoint: {actions: number; state: string; backup?: string; elapsedMs: number; calls: number}) => {
+    const {state, backup, ...progress} = checkpoint
+    writeFileSync(info.outputPath(`native-growth-${checkpoint.actions}-state.json.gz`), gzipSync(state))
+    if (backup !== undefined) writeFileSync(info.outputPath(`native-growth-${checkpoint.actions}-backup.json.gz`), gzipSync(backup))
+    writeFileSync(info.outputPath(`native-growth-${checkpoint.actions}-progress.json`), JSON.stringify({...progress, externalCalls, backupSaved: backup !== undefined}, null, 2))
+  })
   page.on('console', message => {if (message.text().startsWith('CHAT_GROWTH ')) console.info(message.text())})
   await page.goto('./chat/library')
   const outcome = await page.evaluate(async target => {
@@ -23,6 +29,7 @@ test(`native IndexedDB retains ${target} consequential actions, actual historica
     const core = await load('/storyforge/src/lib/product/runtime-core.ts')
     const {db} = await load('/storyforge/src/lib/db/schema.ts')
     const portable = await load('/storyforge/src/lib/export/json-export.ts')
+    const persist = (globalThis as unknown as {persistNativeGrowthCheckpoint: (row: {actions: number; state: string; backup?: string; elapsedMs: number; calls: number}) => Promise<void>}).persistNativeGrowthCheckpoint
     const f = await helper.seedChatHistoryGrowthFixture(), started = performance.now()
     const worlds = JSON.stringify(await db.worldReleases.toArray())
     const progress: {actions: number; elapsedMs: number; lastActionMs: number}[] = []
@@ -47,6 +54,11 @@ test(`native IndexedDB retains ${target} consequential actions, actual historica
           if (facts !== actions * 2 + 4) throw new Error('完整事实数量不一致')
           checkpoints.push({actions, sequence: state.lastSequence, facts, actorRead: inputRead.actor, reviewRead: inputRead.review})
         }
+        // A later browser deadline must not erase evidence already reached.
+        // Intermediate backups are original sessions, not recovery acceptance.
+        if (actions % 100 === 0) await persist({actions, state: JSON.stringify(await api.readProductRuntimeState(f.sessionId)),
+          ...([100, 300, 800].includes(actions) ? {backup: JSON.stringify(await portable.exportProjectJSON(f.scope.projectId))} : {}),
+          elapsedMs: Math.round(performance.now() - started), calls: f.calls()})
       }
     } catch (error) {failure = String(error)}
     const state = await api.readProductRuntimeState(f.sessionId)

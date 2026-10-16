@@ -9,7 +9,9 @@ export function createChatHistoryProjectionCacheV1<T>() {
   return {
     key(input: unknown): string | null {
       const key = JSON.stringify(input)
-      return key.length * 2 <= maximumBytes / 2 ? key : null
+      // The retained bound applies to key + value. A large complete input can
+      // still have a small projection; save() checks their actual combined size.
+      return key.length * 2 <= maximumBytes ? key : null
     },
     read(key: string | null): T | undefined {
       const found = key === null ? undefined : entries.get(key)

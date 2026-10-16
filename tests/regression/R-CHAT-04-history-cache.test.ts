@@ -6,6 +6,22 @@ import {chatHistorySelectionFixture} from '../helpers/chat-history-selection'
 
 afterEach(() => {vi.restoreAllMocks()})
 
+it('retains complete large inputs only while actual key and projection fit the unchanged total byte bound', () => {
+  const cache = createChatHistoryProjectionCacheV1<string>(), maximumBytes = 4 * 1024 * 1024
+  const key = cache.key('x'.repeat(1_100_000))!
+  expect(key).not.toBeNull(); expect(key.length * 2).toBeGreaterThan(maximumBytes / 2)
+  cache.save(key, 'small projection'); expect(cache.read(key)).toBe('small projection')
+  // JSON quotes count too. A value exactly at the combined bound is retained.
+  const fitting = 'y'.repeat(maximumBytes / 2 - key.length - 2)
+  cache.save(key, fitting); expect(cache.read(key)).toBe(fitting)
+  // A non-fitting replacement cannot discard the previous proven projection.
+  cache.save(key, fitting + 'y'); expect(cache.read(key)).toBe(fitting)
+  const second = cache.key('z'.repeat(1_100_000))!
+  cache.save(second, 'second'); expect(cache.read(key)).toBeUndefined()
+  expect(cache.read(second)).toBe('second')
+  expect(cache.key('z'.repeat(maximumBytes / 2))).toBeNull()
+})
+
 it('isolates stored projections from both caller mutations and changed complete inputs', () => {
   const cache = createChatHistoryProjectionCacheV1<{selected: string[]}>(), input = {state: {fact: 'one'}, reader: 'v9', actor: 'guard'}
   const key = cache.key(input), value = {selected: ['one']}
