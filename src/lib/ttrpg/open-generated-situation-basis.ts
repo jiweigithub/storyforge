@@ -21,7 +21,7 @@ export async function buildTtrpgOpenSituationBasisFromVerifiedReadV1(loaded: Awa
   if (authorization.seats.some(s => !s.consent.sessionLoggingAllowed)) throw new Error('本桌尚未同意保存生成局势所需的来源记录。')
   if (run.stage.status !== 'open' || runtime.product.safety.status !== 'active') throw new Error('局势预检需要阶段进行中且本桌未暂停。')
   await verifyTtrpgOpenOracleJournalV1({ receipts: run.oracleReceipts ?? [], rulePack: content.rulePack.content, sessionKey: runtime.sessionKey, seed: loaded.session.seed, ancestors })
-  await verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash, oracleReceipts: run.oracleReceipts ?? [], storyFacts: runtime.product.effectLedger.storyFacts })
+  await verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash, oracleReceipts: run.oracleReceipts ?? [], entityOperations: run.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
   const sessionFacts = ttrpgOpenSessionFactsV1(run.factLedger).filter(f => !f.retired)
   const selected = new Set(authorization.selectedActorKeys), personalizationSources: TtrpgOpenSituationPersonalizationSourceV1[] = []
   const personalizationValues: Array<{ sourceKey: string; value: unknown }> = []

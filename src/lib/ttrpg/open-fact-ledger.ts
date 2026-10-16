@@ -14,6 +14,9 @@ import { assertTtrpgOpenSemanticCallOriginV1 } from './open-model-calls'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import * as p from './open-contract-parse'
+import type { TtrpgOpenEntityOperationV1 } from './open-entity-contract'
+import { parseTtrpgOpenFactRuntimeReferencesV1, assertTtrpgOpenFactRuntimeReferencesV1, verifyTtrpgOpenFactRuntimeReferenceHashV1,
+  type TtrpgOpenFactRuntimeReferencesV1 } from './open-fact-runtime-references'
 
 export interface TtrpgOpenOracleFactProposalV1 {
   kind: TtrpgSessionFactV1['kind']; subjectRef: string; predicateKey: TtrpgSessionFactV1['predicateKey']; objectRef: string | null;
@@ -30,6 +33,8 @@ export interface TtrpgOpenFactEntryV1 {
   fact: TtrpgSessionFactV1; sourceRef: TtrpgOpenSourceRefV1; oracleSourceRef: TtrpgOpenSourceRefV1;
   authorizationEpochKey: string; viewerKey: string; candidateHash: string; confirmationStateHash: string;
   modelCandidate?: TtrpgOpenFactModelCandidateV1;
+  /** Present only for the explicit versioned runtime-entity fact path; old entries retain exact bytes. */
+  runtimeEntityReferences?: TtrpgOpenFactRuntimeReferencesV1;
 }
 export interface TtrpgOpenFactModelCandidateV1 {
   requestKey: string; runContractHash: string; candidateHash: string; inputManifestHash: string; rawResponseHash: string; proposalIndex: number;
@@ -123,14 +128,16 @@ function parseBasis(value: unknown): TtrpgOpenFactBasisV1 {
 }
 export function parseTtrpgOpenFactEntryV1(value: unknown): TtrpgOpenFactEntryV1 {
   const r = p.record(value, ['fact', 'sourceRef', 'oracleSourceRef', 'authorizationEpochKey', 'viewerKey', 'candidateHash', 'confirmationStateHash',
-    ...(Object.prototype.hasOwnProperty.call(value, 'modelCandidate') ? ['modelCandidate'] : [])], 'fact entry')
+    ...(Object.prototype.hasOwnProperty.call(value, 'modelCandidate') ? ['modelCandidate'] : []),
+    ...(Object.prototype.hasOwnProperty.call(value, 'runtimeEntityReferences') ? ['runtimeEntityReferences'] : [])], 'fact entry')
   const fact = parseTtrpgSessionFactV1(r.fact), sourceRef = parseTtrpgOpenSourceRefV1(r.sourceRef), oracleSourceRef = parseTtrpgOpenSourceRefV1(r.oracleSourceRef)
   if (fact.retired || fact.origin !== 'oracle' || fact.originEventSequence !== sourceRef.sequence || fact.originRef === null
     || fact.sourceEventRefs.length !== 1 || fact.sourceEventRefs[0] !== fact.originRef
     || (oracleSourceRef.sessionKey === sourceRef.sessionKey && oracleSourceRef.sequence >= sourceRef.sequence)) p.fail('新事实必须绑定真实前序 Oracle 和未退休起点')
   return { fact, sourceRef, oracleSourceRef, authorizationEpochKey: p.key(r.authorizationEpochKey, 'fact epoch'), viewerKey: p.key(r.viewerKey, 'fact viewer'),
     candidateHash: p.hash(r.candidateHash, 'fact candidate'), confirmationStateHash: p.hash(r.confirmationStateHash, 'fact confirmed state'),
-    ...(Object.prototype.hasOwnProperty.call(r, 'modelCandidate') ? { modelCandidate: parseTtrpgOpenFactModelCandidateV1(r.modelCandidate) } : {}) }
+    ...(Object.prototype.hasOwnProperty.call(r, 'modelCandidate') ? { modelCandidate: parseTtrpgOpenFactModelCandidateV1(r.modelCandidate) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(r, 'runtimeEntityReferences') ? { runtimeEntityReferences: parseTtrpgOpenFactRuntimeReferencesV1(r.runtimeEntityReferences) } : {}) }
 }
 export function parseTtrpgOpenFactRetirementV1(value: unknown): TtrpgOpenFactRetirementV1 {
   const r = p.record(value, ['factKey', 'sourceRef', 'authorizationEpochKey', 'viewerKey', 'reason', 'supersededByFactKey'], 'fact retirement')
@@ -172,21 +179,33 @@ export function projectTtrpgOpenSessionFactsForActorV1(ledger: TtrpgOpenFactLedg
     }))
 }
 const SECRET_RANK: Record<TtrpgOpenAudience, number> = { public: 0, party: 1, private: 2, 'gm-only': 3 }
+function entryEntityReferences(basis: TtrpgOpenFactBasisV1, entry: TtrpgOpenFactEntryV1, operations: readonly TtrpgOpenEntityOperationV1[]) {
+  if (!entry.runtimeEntityReferences) return basis.entityReferences
+  const references = assertTtrpgOpenFactRuntimeReferencesV1({ proof: entry.runtimeEntityReferences, ...basis, operations,
+    entityRefs: [entry.fact.subjectRef, entry.fact.objectRef].filter((key): key is string => key !== null),
+    frozenEntityRefs: basis.entityReferences.map(row => row.entityRef), factSourceRef: entry.sourceRef })
+  if (references.some(row => SECRET_RANK[entry.fact.audience] < SECRET_RANK[row.audience]
+    || entry.fact.audience !== 'gm-only' && row.audience !== 'public' && entry.fact.knownBy.some(key => !row.knownByActorKeys.includes(key)))) p.fail('运行事实不能扩大原实例的准确接收者')
+  return [...basis.entityReferences, ...references.map(row => ({ entityRef: row.entityRef, audience: row.audience,
+    knownByActorKeys: row.knownByActorKeys, playerControlled: false }))]
+}
 export function assertTtrpgOpenFactEntryGatesV1(input: {
   basis: TtrpgOpenFactBasisV1; entries: readonly TtrpgSessionFactV1[]; entry: TtrpgOpenFactEntryV1;
   oracle: TtrpgOpenOracleReceiptV1; authorization: TtrpgOpenAuthorizationV1; storyFacts: Readonly<Record<string, string | number | boolean | null>>;
+  entityOperations?: readonly TtrpgOpenEntityOperationV1[];
 }): void {
   const { basis, entry, oracle, authorization } = input, fact = entry.fact
+  const entityReferences = entryEntityReferences(basis, entry, input.entityOperations ?? [])
   const policy = basis.factPolicy.find(policy => policy.predicateKey === fact.predicateKey)
   if (policy?.authority.session !== 'semantic-fact') p.fail('事实不能取代机械 owner 或未授权语义字段')
   if (stable(entry.oracleSourceRef) !== stable(oracle.sourceRef)) p.fail('事实来源必须是实际 Oracle 结果')
   const refs = [fact.subjectRef, fact.objectRef].filter((ref): ref is string => ref !== null)
   for (const ref of refs) {
-    const binding = basis.entityReferences.find(binding => binding.entityRef === ref)
+    const binding = entityReferences.find(binding => binding.entityRef === ref)
     if (binding && (SECRET_RANK[fact.audience] < SECRET_RANK[binding.audience]
       || (fact.audience === 'private' && binding.audience === 'private' && fact.knownBy.some(actor => !binding.knownByActorKeys.includes(actor))))) p.fail('事实公开了无授权实体引用')
   }
-  if (basis.entityReferences.some(binding => binding.entityRef === fact.subjectRef && binding.playerControlled)
+  if (entityReferences.some(binding => binding.entityRef === fact.subjectRef && binding.playerControlled)
     && ['promised', 'knows'].includes(fact.predicateKey)) p.fail('Oracle 不能替玩家作决定或虚构玩家知识授予')
   if (fact.knownBy.some(actorKey => !authorization.selectedActorKeys.includes(actorKey))
     || (fact.audience === 'party' && stable([...fact.knownBy].sort()) !== stable([...authorization.selectedActorKeys].sort()))
@@ -196,7 +215,7 @@ export function assertTtrpgOpenFactEntryGatesV1(input: {
   if (fact.sourceFactRefs.some(ref => !knownFacts.has(ref))) p.fail('事实引用不可解析或已退休来源')
   assertTtrpgSessionFactGatesV1({ fact, frozenWorldPredicateIndex: basis.frozenWorldPredicateIndex,
     canonInvariantPredicates: basis.canonInvariantPredicates, existingFacts: input.entries, factPolicy: basis.factPolicy,
-    knownEntityRefs: basis.entityReferences.map(binding => binding.entityRef), effectLedgerStoryFacts: input.storyFacts,
+    knownEntityRefs: entityReferences.map(binding => binding.entityRef), effectLedgerStoryFacts: input.storyFacts,
     sourceEvents: [{ eventRef: fact.originRef!, facts: [], audience: oracle.audience, knownBy: [], kind: 'ordinary' }] })
   if (basis.frozenWorldPredicateIndex.entries.some(invariant => invariant.authority === 'invariant' && invariant.subjectRef === fact.subjectRef
     && invariant.predicateKey === fact.predicateKey && invariant.objectRef === fact.objectRef)) p.fail('会话事实不能占用冻结不变量槽位')
@@ -204,11 +223,17 @@ export function assertTtrpgOpenFactEntryGatesV1(input: {
 export async function verifyTtrpgOpenFactLedgerV1(input: {
   ledger?: TtrpgOpenFactLedgerV1; content: TtrpgRuntimeContentV2; runtimeSourceHash: string;
   oracleReceipts: readonly TtrpgOpenOracleReceiptV1[]; storyFacts: Readonly<Record<string, string | number | boolean | null>>;
+  entityOperations?: readonly TtrpgOpenEntityOperationV1[];
 }): Promise<void> {
   if (!input.ledger) return
   const ledger = parseTtrpgOpenFactLedgerV1(input.ledger)
   if (stable(ledger.basis) !== stable(await createTtrpgOpenFactBasisV1(input.content, input.runtimeSourceHash))) p.fail('事实账本与实际冻结世界/规则/实体来源不一致')
+  if (ledger.entries.some(entry => entry.runtimeEntityReferences)) await (await import('./open-entity-proof')).verifyTtrpgOpenEntityPlanHashesV1(input.entityOperations ?? [], input.content)
   for (const entry of ledger.entries) {
+    if (entry.runtimeEntityReferences) {
+      await verifyTtrpgOpenFactRuntimeReferenceHashV1(entry.runtimeEntityReferences)
+      entryEntityReferences(ledger.basis, entry, input.entityOperations ?? [])
+    }
     if (entry.fact.originRef !== await ttrpgOpenFactSourceEventRefV1(entry.oracleSourceRef)
       || entry.fact.factKey !== await ttrpgOpenFactIdentityV1(entry)
       || entry.candidateHash !== await hashTtrpgOpenOracleFactCandidateV1({ proposal: ttrpgOpenOracleFactProposalFromFactV1(entry.fact), oracleSourceRef: entry.oracleSourceRef,
@@ -223,7 +248,7 @@ export async function verifyTtrpgOpenFactLedgerV1(input: {
     assertTtrpgSessionFactGatesV1({ fact: { ...fact, supersedes: null, supersedeReason: null }, existingFacts: active.filter(other => other.factKey !== fact.factKey),
       sourceFacts: originalSources, frozenWorldPredicateIndex: ledger.basis.frozenWorldPredicateIndex,
       canonInvariantPredicates: ledger.basis.canonInvariantPredicates, factPolicy: ledger.basis.factPolicy,
-      knownEntityRefs: ledger.basis.entityReferences.map(binding => binding.entityRef), effectLedgerStoryFacts: input.storyFacts,
+      knownEntityRefs: entryEntityReferences(ledger.basis, entry, input.entityOperations ?? []).map(binding => binding.entityRef), effectLedgerStoryFacts: input.storyFacts,
       sourceEvents: [{ eventRef: fact.originRef!, facts: [], audience: oracle.audience, knownBy: [], kind: 'ordinary' }] })
   }
 }

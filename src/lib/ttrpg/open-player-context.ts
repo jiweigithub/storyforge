@@ -95,7 +95,7 @@ async function loadOpenPlayerProjectionV1(input: OpenPlayerReadV1, humanViewerKe
     sessionKey: runtime.sessionKey, seed: session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] })
   await verifyTtrpgOpenOracleReviewHashesV1(runtime.openRun.oracleReviews ?? [])
   await verifyTtrpgOpenFactLedgerV1({ ledger: runtime.openRun.factLedger, content, runtimeSourceHash: session.runtimeSourceHash,
-    oracleReceipts: runtime.openRun.oracleReceipts ?? [], storyFacts: runtime.product.effectLedger.storyFacts })
+    oracleReceipts: runtime.openRun.oracleReceipts ?? [], entityOperations: runtime.openRun.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
   for (const knowledge of runtime.openRun.knowledge) {
     const origin = ttrpgOpenKnowledgeDiscoveryOriginV1(runtime, knowledge)
     if (origin.contentHash !== await hashProductProductionValueV2(content)) throw new Error('[ttrpg-open-context] 知识发现来源与当前冻结内容不一致')

@@ -110,6 +110,7 @@ import { parseTtrpgOpenOracleReceiptV1, assertTtrpgOpenOracleCallerV1, verifyTtr
 import { createTtrpgOpenFactBasisV1, verifyTtrpgOpenFactLedgerV1, parseTtrpgOpenOracleFactProposalV1, hashTtrpgOpenOracleFactCandidateV1,
   parseTtrpgOpenFactEntryV1, parseTtrpgOpenFactRetirementV1, ttrpgOpenFactSourceEventRefV1, assertTtrpgOpenFactEntryGatesV1,
   ttrpgOpenSessionFactsV1, ttrpgOpenFactIdentityV1, assertTtrpgOpenModelFactApproverV1, type TtrpgOpenFactModelCandidateV1, type TtrpgOpenOracleFactProposalV1 } from './open-fact-ledger';
+import { createTtrpgOpenFactRuntimeReferencesV1 } from './open-fact-runtime-references';
 import { parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coordination';
 import { settleTtrpgOpenKnowledgeV1 } from './open-knowledge-settlement';
 import { hashTtrpgOpenEvidenceFieldsV1 } from './open-knowledge';
@@ -769,7 +770,7 @@ async function prepareTtrpgOpenFactAuthorityV1(context: TtrpgFormalBuildContextV
   await verifyTtrpgOpenOracleJournalV1({ receipts: run.oracleReceipts ?? [], rulePack: content.rulePack.content,
     sessionKey: runtime.sessionKey, seed: context.session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] });
   await verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content, runtimeSourceHash: context.session.runtimeSourceHash,
-    oracleReceipts: run.oracleReceipts ?? [], storyFacts: runtime.product.effectLedger.storyFacts });
+    oracleReceipts: run.oracleReceipts ?? [], entityOperations: run.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts });
   await verifyTtrpgOpenOracleReviewHashesV1(run.oracleReviews ?? []);
   const basis = await createTtrpgOpenFactBasisV1(content, context.session.runtimeSourceHash);
   return { content, runtime, run, authorization, seat, epoch, basis };
@@ -777,10 +778,12 @@ async function prepareTtrpgOpenFactAuthorityV1(context: TtrpgFormalBuildContextV
 
 async function buildTtrpgOpenFactAssertionV1(context: TtrpgFormalBuildContextV1, input: {
   viewerKey: string; proposal: TtrpgOpenOracleFactProposalV1; oracleSourceRef: TtrpgOpenSourceRefV1;
-  candidateHash: string; baseStateHash: string; modelCandidate?: TtrpgOpenFactModelCandidateV1;
+  candidateHash: string; baseStateHash: string; modelCandidate?: TtrpgOpenFactModelCandidateV1; referencePolicy?: 'committed-runtime-entities-v1';
 }, prepared?: Awaited<ReturnType<typeof prepareTtrpgOpenFactAuthorityV1>>) {
   const { viewerKey, proposal, oracleSourceRef, candidateHash, baseStateHash, modelCandidate } = input;
-  const { runtime, run, authorization, seat, epoch, basis } = prepared ?? await prepareTtrpgOpenFactAuthorityV1(context, viewerKey, modelCandidate !== undefined);
+  const { runtime, run, authorization, seat, epoch, basis, content } = prepared ?? await prepareTtrpgOpenFactAuthorityV1(context, viewerKey, modelCandidate !== undefined);
+  if (input.referencePolicy && modelCandidate) throw new Error('旧模型事实候选不取得运行实体引用权。');
+  if (input.referencePolicy) await (await import('./open-entity-proof')).verifyTtrpgOpenEntityStateV1(context.state, content);
   const oracle = run.oracleReceipts?.find(receipt => stableJson(receipt.sourceRef) === stableJson(oracleSourceRef));
   if (!oracle) throw new Error('[ttrpg-fact] 事实必须引用本团局或已冻结祖先的真实 Oracle 结果。');
   if (candidateHash !== await hashTtrpgOpenOracleFactCandidateV1({ proposal, oracleSourceRef,
@@ -790,13 +793,16 @@ async function buildTtrpgOpenFactAssertionV1(context: TtrpgFormalBuildContextV1,
   const sourceRef = { sessionKey: runtime.sessionKey, sequence: context.sequence };
   const originRef = await ttrpgOpenFactSourceEventRefV1(oracleSourceRef);
   const { knownByActorKeys, ...body } = proposal;
+  const runtimeEntityReferences = input.referencePolicy ? await createTtrpgOpenFactRuntimeReferencesV1({ ...basis,
+    operations: run.entityOperations ?? [], entityRefs: [proposal.subjectRef, proposal.objectRef].filter((key): key is string => key !== null),
+    frozenEntityRefs: basis.entityReferences.map(row => row.entityRef) }) : null;
   const entry = parseTtrpgOpenFactEntryV1({ sourceRef, oracleSourceRef, authorizationEpochKey: epoch.epochKey, viewerKey,
-    candidateHash, ...(modelCandidate ? { modelCandidate } : {}), confirmationStateHash: baseStateHash, fact: { ...body, knownBy: knownByActorKeys,
+    candidateHash, ...(modelCandidate ? { modelCandidate } : {}), ...(runtimeEntityReferences ? { runtimeEntityReferences } : {}), confirmationStateHash: baseStateHash, fact: { ...body, knownBy: knownByActorKeys,
       factKey: await ttrpgOpenFactIdentityV1({ sourceRef, fact: proposal, modelCandidate }),
       layer: 'session', origin: 'oracle', originEventSequence: context.sequence, originRef,
       sourceEventRefs: [originRef], retired: false, retiredAtSequence: null } });
   assertTtrpgOpenFactEntryGatesV1({ basis, entries: ttrpgOpenSessionFactsV1(run.factLedger), entry, oracle, authorization,
-    storyFacts: runtime.product.effectLedger.storyFacts });
+    entityOperations: run.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts });
   const retirement = proposal.supersedes === null ? null : parseTtrpgOpenFactRetirementV1({ factKey: proposal.supersedes,
     sourceRef, authorizationEpochKey: epoch.epochKey, viewerKey, reason: proposal.supersedeReason, supersededByFactKey: entry.fact.factKey });
   return { actorKey: seat.actorKey ?? 'gm', targetKey: proposal.subjectRef,
@@ -814,6 +820,21 @@ export async function commitTtrpgOpenOracleFactV1(input: FormalTtrpgCommandEnvel
     build: async context => {
       return buildTtrpgOpenFactAssertionV1(context, { viewerKey, proposal, oracleSourceRef, candidateHash, baseStateHash: input.baseStateHash });
     },
+  });
+}
+
+/** Explicit current human-GM path; original model requests and the release-only V1 API retain their permissions. */
+export async function commitTtrpgOpenOracleRuntimeEntityFactV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; oracleSourceRef: TtrpgOpenSourceRefV1; proposal: TtrpgOpenOracleFactProposalV1; candidateHash: string;
+  referencePolicy: 'committed-runtime-entities-v1';
+}): Promise<ProductRuntimeEvent> {
+  if (input.referencePolicy !== 'committed-runtime-entities-v1') throw new Error('请明确确认本次事实只引用已实际创建的运行实体。');
+  const viewerKey = openKey(input.viewerKey, 'runtime fact viewer'), proposal = parseTtrpgOpenOracleFactProposalV1(input.proposal);
+  const oracleSourceRef = parseTtrpgOpenSourceRefV1(input.oracleSourceRef), candidateHash = openHash(input.candidateHash, 'runtime fact candidate');
+  return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.fact.asserted',
+    intent: { viewerKey, oracleSourceRef, proposal, candidateHash, referencePolicy: input.referencePolicy },
+    build: context => buildTtrpgOpenFactAssertionV1(context, { viewerKey, proposal, oracleSourceRef, candidateHash,
+      baseStateHash: input.baseStateHash, referencePolicy: input.referencePolicy }),
   });
 }
 

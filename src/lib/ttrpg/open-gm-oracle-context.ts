@@ -30,7 +30,7 @@ export async function loadTtrpgOpenGmOracleContextV1(input: { scope: WorkspaceSc
     sessionKey: runtime.sessionKey, seed: session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] })
   await verifyTtrpgOpenOracleReviewHashesV1(runtime.openRun.oracleReviews ?? [])
   await verifyTtrpgOpenFactLedgerV1({ ledger: runtime.openRun.factLedger, content, runtimeSourceHash: session.runtimeSourceHash,
-    oracleReceipts: runtime.openRun.oracleReceipts ?? [], storyFacts: runtime.product.effectLedger.storyFacts })
+    oracleReceipts: runtime.openRun.oracleReceipts ?? [], entityOperations: runtime.openRun.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
   const facts = ttrpgOpenSessionFactsV1(runtime.openRun.factLedger).filter(fact => !fact.retired)
   const rank: Record<string, number> = { public: 0, party: 1, private: 2, 'gm-only': 3 }
   const resources = [{ suffix: 'gm-oracle-contract', title: '本桌 Oracle 解释边界', mandatory: true,

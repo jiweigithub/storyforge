@@ -34,7 +34,7 @@ async function loadReview(input: TtrpgWorldPatchDeskInputV1) {
     lineageHash: lineage.lineageHash, buildManifestHash: manifest.productionProvenance.buildManifestHash, productInstanceKey: lineage.productInstanceKey,
     frozenIndexHash: content.campaign.frozenWorldPredicateIndex.indexHash, rulePackContentHash: content.rulePack.contentHash, sourceBundleHash: content.campaign.sourceWorld.bundleHash })
   await verifyTtrpgOpenOracleJournalV1({ receipts: run.oracleReceipts ?? [], rulePack: content.rulePack.content, sessionKey: runtime.sessionKey, seed: loaded.session.seed, ancestors })
-  await verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash, oracleReceipts: run.oracleReceipts ?? [], storyFacts: runtime.product.effectLedger.storyFacts })
+  await verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash, oracleReceipts: run.oracleReceipts ?? [], entityOperations: run.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
   const visible = (audience: string, knownBy: readonly string[]) => audience === 'public' || audience === 'party'
     || audience === 'private' && Boolean(input.includePrivate) && (gmReader || Boolean(loaded.seat?.actorKey && knownBy.includes(loaded.seat.actorKey)))
     || audience === 'gm-only' && Boolean(input.includeGmOnly) && gmReader

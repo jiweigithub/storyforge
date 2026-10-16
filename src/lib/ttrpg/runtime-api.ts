@@ -40,6 +40,7 @@ export {
   startTtrpgOpenRunV1,
   consultTtrpgOracleV1,
   commitTtrpgOpenOracleFactV1,
+  commitTtrpgOpenOracleRuntimeEntityFactV1,
   commitTtrpgOpenOracleCandidateFactV1,
   reviewTtrpgOpenOracleCandidateV1,
   retireTtrpgOpenSessionFactV1,
