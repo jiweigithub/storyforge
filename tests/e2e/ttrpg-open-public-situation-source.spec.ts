@@ -29,7 +29,9 @@ test('native public source reads complete common JSON, survives reload, hides pr
   })
   expect(result.runs).toBe(0); expect(result.noStateWrite).toBe(true); expect(result.search.items).toEqual([])
   expect(JSON.stringify({ catalog: result.catalog, bodies: result.bodies })).not.toContain('NATIVE-PRIVATE')
-  expect(result.catalog.items.filter((row: any) => row.priority === 'must-read')).toHaveLength(4)
+  expect(result.catalog.items.filter((row: any) => row.priority === 'must-read').map((row: any) => row.resourceKey.split(':').at(-1)).sort()).toEqual([
+    'public-situation-contract', 'public-situation-frame', 'public-situation-identities', 'public-situation-predicates', 'public-situation-rules',
+  ])
   for (const body of result.bodies) expect(() => JSON.parse(body.content)).not.toThrow()
   await page.reload()
   const restored = await page.evaluate(async scope => {

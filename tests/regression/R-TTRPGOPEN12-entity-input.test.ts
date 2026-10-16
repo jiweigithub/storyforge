@@ -8,6 +8,7 @@ import { readInstanceAgentRunV1 } from '../../src/lib/agent/run/event-store'
 import { dispatchTtrpgOpenModelCallV1, changeTtrpgSafetyStatus } from '../../src/lib/ttrpg/runtime-commands'
 import { getAgentSkillV1 } from '../../src/lib/agent/skill-registry'
 import { createContextAccessPolicyForExecutionV1 } from '../../src/lib/context-gateway/skill-policy'
+import { readTtrpgOpenTableV1, readTtrpgOpenTableContextTraceV1 } from '../../src/lib/ttrpg/open-table-service'
 
 async function prepare(s: Awaited<ReturnType<typeof setupOpenEntityModelV1>>, commandId = 'entity.model.prepare') {
   return prepareTtrpgOpenEntityInputV1({ ...await openEnvelopeV1(s.f.sessionId, commandId), scope: s.f.scope, viewerKey: s.viewerKey,
@@ -60,5 +61,14 @@ describe('R-TTRPGOPEN12 exact model entity input and original window', { timeout
     await changeTtrpgSafetyStatus({ ...await openEnvelopeV1(s.f.sessionId, 'entity.model.pause'), viewerKey: s.viewerKey, changedBy: 'hero', status: 'paused', reason: '先暂停' })
     await expect(dispatchTtrpgOpenModelCallV1({ ...await openEnvelopeV1(s.f.sessionId, 'entity.model.send.paused'), viewerKey: s.viewerKey, requestKey: prepared.requestKey, runId: prepared.runId })).rejects.toThrow()
     expect((await readProductRuntimeState(s.f.sessionId)).ttrpg!.openRun!.coordination.calls[0].status).toBe('prepared')
+  })
+  it('keeps the existing action desk readable without relabeling a private entity request or using the old context inspector', async () => {
+    const s = await setupOpenEntityModelV1('private'), prepared = await prepare(s), before = await readProductRuntimeState(s.f.sessionId)
+    const input = { scope: s.f.scope, sessionId: s.f.sessionId, viewerKey: s.viewerKey }, view = await readTtrpgOpenTableV1(input)
+    expect(view.player!.candidates).toEqual([]);expect(view.player!.requests).toEqual([])
+    expect(JSON.stringify(view)).not.toContain('ENTITY-MODEL-PRIVATE-TEMPLATE-CANARY')
+    await expect(readTtrpgOpenTableContextTraceV1(input)).rejects.toThrow(/实体候选/)
+    expect(await readProductRuntimeState(s.f.sessionId)).toEqual(before)
+    expect(before.ttrpg!.openRun!.coordination.calls[0].requestKey).toBe(prepared.requestKey)
   })
 })

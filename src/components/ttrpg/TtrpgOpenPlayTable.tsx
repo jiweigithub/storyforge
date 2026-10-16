@@ -21,6 +21,7 @@ import './ttrpg-open-play.css'
 import TtrpgOpenConsequencePanel from './TtrpgOpenConsequencePanel'
 import TtrpgOpenHostTable from './TtrpgOpenHostTable'
 import { consentTtrpgOpenHostSeatV1 } from '../../lib/ttrpg/open-table-service'
+import { readTtrpgOpenSettledViewV1 } from '../../lib/ttrpg/open-read-conflict'
 export interface TtrpgPlayTablePropsV1 {
   session: ProductRuntimeSession; state: ProductRuntimeState; scope: WorkspaceScope
   onChanged: () => Promise<void>; onCheckpoint: (name: string) => Promise<void>; onBusyChange?: (busy: boolean) => void
@@ -42,8 +43,9 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
   const refresh = useCallback(async () => {
     const current = ++revision.current
     try {
-      const next = await readTtrpgOpenTableV1({ scope: { projectId, worldId, workId }, sessionId, ...(activeViewer.current ? { viewerKey: activeViewer.current } : {}) })
-      if (live.current && revision.current === current) { setView(next) }
+      const next = await readTtrpgOpenSettledViewV1(() => readTtrpgOpenTableV1({ scope: { projectId, worldId, workId }, sessionId,
+        ...(activeViewer.current ? { viewerKey: activeViewer.current } : {}) }), () => live.current && revision.current === current)
+      if (next && live.current && revision.current === current) { setView(next) }
     } catch (cause) { if (live.current && revision.current === current) { setView(null);setError(cause instanceof Error ? cause.message : String(cause)) } }
   }, [projectId, worldId, workId, sessionId])
   useEffect(() => { live.current = true;setView(null);void refresh();return () => { live.current = false;revision.current += 1;controller.current?.abort() } }, [refresh, viewerKey, props.state.lastSequence])

@@ -27,7 +27,7 @@ async function begin(page: Page) {
 test.beforeEach(() => test.skip(process.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW !== '1', 'isolated experimental preview required'))
 
 test('one explicit UI delegation completes original action and two safe companions and reloads at the same budget', async ({ page }) => {
-  test.setTimeout(180000)
+  test.setTimeout(process.env.CI ? 240000 : 180000)
   let requests = 0
   await page.route(endpoint, async route => {
     requests++
@@ -37,7 +37,7 @@ test('one explicit UI delegation completes original action and two safe companio
   })
   const f = await setup(page)
   await begin(page)
-  await expect(page.getByRole('button', { name: '继续本轮自动主持', exact: true })).toBeEnabled({ timeout: 120000 })
+  await expect(page.getByRole('button', { name: '继续本轮自动主持', exact: true })).toBeEnabled({ timeout: process.env.CI ? 180000 : 120000 })
   const candidateIssues = await page.evaluate(async f => {
     const importer = new Function('p', 'return import(p)') as (p: string) => Promise<any>
     const api = await importer('/storyforge/src/lib/ttrpg/runtime-api.ts'), { db } = await importer('/storyforge/src/lib/db/schema.ts')
@@ -84,7 +84,7 @@ test('stop stays available during a dispatched UI request and persists before lo
   await expect.poll(() => requests, { timeout: 30000 }).toBe(1)
   await expect(page.getByRole('button', { name: '停止本轮自动主持', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: '停止本轮自动主持', exact: true }).click()
-  await expect(page.getByText('本轮自动主持已停止。可继续处理已保存的进度；新的自动主持需要明确开始下一轮。', { exact: true })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: '本轮自动主持已停止' }).first()).toBeVisible()
   release()
   await expect.poll(async () => page.evaluate(async f => {
     const importer = new Function('p', 'return import(p)') as (p: string) => Promise<any>

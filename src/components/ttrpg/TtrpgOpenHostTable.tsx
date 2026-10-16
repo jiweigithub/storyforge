@@ -13,6 +13,7 @@ import { readTtrpgOpenHostTableV1,startTtrpgOpenTableV1,changeTtrpgOpenTableSafe
   confirmTtrpgOpenHostRiskV1,chooseTtrpgOpenTableConsequenceV1,recoverTtrpgOpenTableGatesV1,finishTtrpgOpenTableWindowV1,
   type TtrpgOpenHostTableViewV1 } from '../../lib/ttrpg/open-table-service'
 import TtrpgOpenConsequencePanel from './TtrpgOpenConsequencePanel'
+import { readTtrpgOpenSettledViewV1 } from '../../lib/ttrpg/open-read-conflict'
 
 const steps: Record<string,string> = { rule: '规则裁定',mechanics: '规则后果',effect: '行动后果',time: '世界时间',knowledge: '线索发现',pressure: '威胁推进',situations: '局势变化',terminal: '阶段检查',gates: '继续冒险的条件',narration: '主持叙述',handoff: '下一位行动者' }
 export default function TtrpgOpenHostTable(props: TtrpgPlayTablePropsV1 & { viewerKey: string; onExit: () => void }) {
@@ -23,7 +24,7 @@ export default function TtrpgOpenHostTable(props: TtrpgPlayTablePropsV1 & { view
   const input = useCallback(() => ({ scope: { projectId,worldId,workId },sessionId,viewerKey }),[projectId,worldId,workId,sessionId,viewerKey])
   const refresh = useCallback(async () => {
     const token = ++generation.current
-    try { const next = await readTtrpgOpenHostTableV1(input());if (live.current && token === generation.current) setView(next) }
+    try { const next = await readTtrpgOpenSettledViewV1(() => readTtrpgOpenHostTableV1(input()), () => live.current && token === generation.current);if (next && live.current && token === generation.current) setView(next) }
     catch (e) { if (live.current && token === generation.current) { setView(null);setError(e instanceof Error ? e.message : String(e)) } }
   },[input])
   useEffect(() => { live.current = true;setView(null);void refresh();return () => { live.current = false;generation.current += 1 } },[refresh,props.state.lastSequence])
