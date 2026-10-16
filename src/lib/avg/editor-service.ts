@@ -19,6 +19,8 @@ import { readAvgDraftV1 } from "./draft-service";
 import { parseAvgAuthorWorkspaceV1 } from './author-workspace-contract';
 import { canonicalProductProductionJsonV2 } from '../product-production/hash';
 import { parseAvgExecutableStageV1 } from './stage-contract';
+import { createAvgReferenceImageAdapterV1 } from './media-reference-adapter';
+import type { AvgImageRequestV1, AvgMediaReferenceV1 } from './media-reference-contract';
 
 /** Authors may retain unfinished graph edits; full package validation gates production. */
 export async function saveAvgEditorV1(
@@ -167,6 +169,26 @@ export async function readAvgDraftMediaV1(scope:WorkspaceScope,asset:FrozenRunti
  if(!row||!await assertRecordInScope(scope,'avgDraftMedia',row,{owner:'work'}))throw new Error('素材引用不属于当前 AVG')
  const {readMediaBlobObjectData}=await import('../product-production/media-blob-store')
  return readMediaBlobObjectData({scope,blobObjectId:row.blobObjectId,expected:{contentHash:asset.blobContentHash,byteSize:asset.byteSize,mimeType:asset.mimeType}})
+}
+
+/** Headless input boundary for the media production executor. No dispatch occurs
+ * here: the registered durable production task owns start, budget and receipt. */
+export async function createAvgDraftReferenceAdapterV1(input: { scope: WorkspaceScope; frozen: AvgImageRequestV1 }) {
+  const scope = await resolveScope({ scope: input.scope });
+  const work = await db.works.get(scope.workId);
+  if (!work || work.kind !== 'avg' || !await assertRecordInScope(scope, 'works', work, { owner: 'work' })) throw new Error('[avg-media] 参考必须属于当前 AVG 作品');
+  return createAvgReferenceImageAdapterV1({ frozen: input.frozen, readReference: async (reference: AvgMediaReferenceV1) => {
+    await resolveScope({ scope });
+    const rows = await db.avgDraftMedia.where('workId').equals(scope.workId).toArray();
+    const matches = rows.filter(row => {
+      const asset = JSON.parse(row.assetJson) as FrozenRuntimeMediaAssetV2;
+      return asset.assetKey === reference.assetKey && asset.version === reference.assetVersion && asset.contentHash === reference.contentHash;
+    });
+    if (matches.length !== 1 || !await assertRecordInScope(scope, 'avgDraftMedia', matches[0]!, { owner: 'work' })) throw new Error('[avg-media] 参考不存在、重复或跨作品');
+    const asset = parseAvgExecutableStageV1({ version: 1, cues: [], assets: [JSON.parse(matches[0]!.assetJson)] }).assets[0]!;
+    if (asset.mimeType !== reference.mimeType || asset.byteSize !== reference.byteSize || asset.license !== reference.license) throw new Error('[avg-media] 参考元数据或授权已 stale');
+    return readAvgDraftMediaV1(scope, asset);
+  } });
 }
 
 /** Bounded, Work-owned import history; lets refresh recover unassembled uploads. */

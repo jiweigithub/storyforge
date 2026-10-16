@@ -1,6 +1,6 @@
 # AVG 工作包开工卡
 
-> L2 · 版本：1.19.0 · 生效：2026-10-16 · 产品：AVG/Galgame · 上位条目：E-AVG-01。
+> L2 · 版本：1.20.0 · 生效：2026-10-16 · 产品：AVG/Galgame · 上位条目：E-AVG-01。
 > [产品契约](../products/AVG.md)裁决边界，[实施计划](AVG-IMPLEMENTATION-PLAN.md)裁决顺序。AVG-00 已设计交付，AVG-BASE-00A/00B 已分支验收，当前按作者指令先做系统/表现框架，本轮规则/舞台/阅读/物件/媒资编辑与存档框架已分支工程验收，专业剧情生产后置；终态见实施计划 §1.2/§2.16。
 
 ## 0 所有代码包的共同交付约束
@@ -56,13 +56,21 @@
 
 ## 3 AVG-BASE-01 · 实际参考与媒体传输
 
-- **状态/前置**：按需排队；00A/00B 已分支验收。原 BASE-01 基线准备复用于系统优先分支，真实参考/生成传输仍未实现；合法导入和播放器已由本轮框架包交付。S3 产品媒资输入/候选 owner 不变。
+- **状态/前置**：施工中，分为 A1 输入/适配器基础和 A2 正式生产/恢复/真实校准；00A/00B 已分支验收。合法导入和播放器复用前轮框架。A1 已有代码和 4 文件/40 项定向通过，完整工程验收待执行；A2 尚未接入，真实调用为 0。S3 产品媒资输入/候选 owner 不变。
 - **入口/闭包**：`product-media.ts/media-contracts.ts` → `media-adapters.ts/media-transport.ts` → Harness receipt → `media-blob-store.ts/artifact-store.ts` → adoption/binding。读取合法参考 Blob 和冻结媒体需求，不重读整个世界。
 - **交付**：请求 V2 的 ReferenceInput、purpose/mask/crop、能力快照/费用上界、真实参考字节 hash/处理版本、async 查询/结果未知策略与 bounded attempt。共享升级须证明 AVG + 至少另一真实调用方需求，否则 AVG adapter 扩展。
 - **注册表/采用**：参考/数据政策走登记 Context 投影；需求 metadata 与真实候选沿现行写口，权利/传输/hash 为系统证据；不新增第二素材库。
 - **兼容/生命周期**：V1 无参考请求仍合法；原始/加工候选和 lineage 分离，导出只带正式必要 Blob，不带第三方参考/凭据；拒绝跨 owner/未授权参考。
 - **正反例**：参考实际送入且 receipt 匹配；provider 不支持 purpose、错 MIME/hash/上限、丢参考、余额/4xx、刷新时未知 operation 不能二次收费。mock 只能验证技术路径；真实 smoke 必须另记实际路由/授权/成本。
 - **非范围/停止**：不保证家族艺术一致性、不自动批量生成立绘，不选择未经实测的默认供应商；若设置了现金硬上限却无法验证，或无法验证引用权利/operation 状态时，停止对应调用；本次首轮作者未设现金/工时总上限，仍按有限批次记录费用及 unknown。
+
+### 3.1 BASE-01A 输入与适配器增量
+
+`media-reference-contract.ts` 冻结 AVG 专用输入、顺序参考/授权/数据类别、1K/2K tier 和 capability hash；`media-reference-adapter.ts` 在原 Agnes adapter/transport 上发送实际 Data URI，不复制网络入口，也不修改其他产品 V1 请求。`editor-service.ts` 的 headless resolver 只从当前 AVG Work 的登记素材读取准确 version/hash/字节/授权。最多 4 份、每份 8 MiB、合计 24 MiB 参考；这些是本项目有限批次边界，非服务商最大能力。
+
+当前能力只声明同步图片响应；未取得图片查询协议，不创造 polling URL。operation-only/断网/发送后取消交给现行 Harness 的 `ProductProductionResultUnknownErrorV1`，保留安全 operation ID 和预算，不自动重发；native crop/mask 拒绝，alpha 不保证。A2 必须将它置于正式开始、预算与持久候选/回执之内，当前无 UI/直接正式调用入口。真实账号、实际模型质量、原始候选费用/恢复以及家族艺术/审听均未因此通过。
+
+定向回归 `R-AVG-BASE01-reference-{transport,ownership}` 加既有 `R-PRODUCTPROD1E-media-{adapters,transport}`：4 文件/40 测试通过，包含真实编码、顺序、多参考、unsupported、wrong hash/MIME/尺寸、跨 Work、授权变化、无隐藏重试、operation unknown、备份 remap 后读和删除隔离。mock 传输不签成真实 provider smoke。
 
 ## 4 AVG-BASE-02 · voice 候选与传输合同
 
