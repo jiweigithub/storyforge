@@ -38,7 +38,9 @@ export function buildAvgMediaAssemblyPlanV2(input: {
   briefHash: string; buildNumber: number; controlEpoch: number
 }): ProductProductionPlanV3 {
   const assembly = parseAvgAssemblyBriefV2(input.brief.avgAssembly)
-  const { mediaBatch, ...baseAssembly } = assembly
+  const { mediaBatch } = assembly
+  const baseAssembly = { schema: assembly.schema, title: assembly.title, sceneKeys: assembly.sceneKeys,
+    mediaAssetKeys: assembly.mediaAssetKeys, basePackageHash: assembly.basePackageHash }
   const base = buildAvgAssemblyPlanV1({ ...input, brief: { avgAssembly: { ...baseAssembly, version: 1 } } })
   const capability = input.brief.capabilityRequirements.filter(r => r.requirementKey === AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1)
   if (capability.length !== 1 || capability[0].mediaClass !== 'image' || !capability[0].required
@@ -56,7 +58,7 @@ export function buildAvgMediaAssemblyPlanV2(input: {
       concurrencyGroup: 'media-provider', subjectLockKeys: [requirement.family.familyKey],
       maxAttempts: 1, timeoutMs: 360_000, acceptanceGateIds: [`avg.media.raw.received.${requirement.requirementKey}`],
       budgetReservation: { modelCalls: 0, inputTokens: 20_000, outputTokens: 0, mediaCalls: 1,
-        maximumCostUsd: capability[0].maximumRequestCost, durationMs: 360_000, storageBytes: 32 * 1024 * 1024 },
+        maximumCostUsd: capability[0].maximumRequestCost, durationMs: 360_000, storageBytes: 96 * 1024 * 1024 },
     })
     mediaTasks.push({ ...structuredClone(template), taskKey: choiceTaskKey, kind: 'avg-author-media-choice', lane: 'visual',
       outputArtifactKeys: [choiceKey], inputArtifactKeys: [rawKey], dependsOn: [taskKey],

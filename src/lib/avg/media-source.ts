@@ -1,6 +1,7 @@
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import { parseAvgAuthorWorkspaceV1, type AvgAuthorWorkspaceV1 } from './author-workspace-contract'
 import { parseAvgVisualProductionBatchV1, type AvgVisualProductionBatchV1 } from './media-production-contract'
+import type { AvgSystemPlan } from './system-contract'
 
 export type AvgMediaSourceInputV1 = Pick<AvgAuthorWorkspaceV1, 'systemPlan' | 'scripts'> & {
   presentation: Pick<AvgAuthorWorkspaceV1['presentation'], 'aspectRatio'>
@@ -41,7 +42,9 @@ export async function validateAvgVisualProductionBatchSourceV1(value: unknown, i
     const c = r.consumer
     if (c.domain === 'stage') {
       const scene = plan.scenes.find(s => s.key === c.sceneKey), script = source.scripts.find(s => s.sceneKey === c.sceneKey)
-      if (!scene || !script?.lines.some(line => line.beatKey === r.triggerBeatKey)) throw new Error('[avg-media] 演出消费缺少准确场景和触发拍')
+      // The current script codec requires beatKey === lineKey, and the
+      // executable module uses that canonical line identity as its Cue clock.
+      if (!scene || !script?.lines.some(line => line.lineKey === r.triggerBeatKey)) throw new Error('[avg-media] 演出消费缺少准确场景和触发拍')
       if (c.slot === 'actor' ? !plan.characters.some(p => p.key === c.subjectKey) : c.subjectKey !== scene.key) {
         throw new Error('[avg-media] 演出消费主体与人物或场景不一致')
       }
@@ -58,6 +61,19 @@ export async function validateAvgVisualProductionBatchSourceV1(value: unknown, i
     } else throw new Error('[avg-media] 未实现的图像消费域')
   }
   return batch
+}
+
+/** Item slots must be declared before media dispatch freezes canonical rules.
+ * Draft preparation may propose these references; execution never adds them. */
+export function assertAvgMediaConsumerDeclarationsV1(batch: AvgVisualProductionBatchV1, plan: AvgSystemPlan) {
+  for (const r of batch.requirements) {
+    if (r.consumer.domain !== 'inventory' && r.consumer.domain !== 'evidence') continue
+    const item = plan.version === 2 ? plan.inventory.items.find(item => item.key === r.consumer.subjectKey) : undefined
+    const view = r.itemVariantKey === null ? item : item?.variants.find(view => view.key === r.itemVariantKey)
+    if (!view || (r.consumer.domain === 'inventory' ? view.iconAssetKey : view.detailAssetKey) !== r.assetKey) {
+      throw new Error('[avg-media] 请在生成前确认准确物件显示槽的图片声明，再冻结需求')
+    }
+  }
 }
 
 /** Caller must save and explicitly review/start this bounded input. This helper

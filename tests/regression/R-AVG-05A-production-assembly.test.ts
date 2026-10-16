@@ -2,7 +2,7 @@ import { beforeEach, afterEach, describe, it, expect } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { prepareNativeAvgAssembly, startNativeAvgAssembly, confirmNativeAvgInputs } from '../helpers/avg-production-assembly-fixture'
 import { runAvgAssemblyV1, prepareAvgAssemblyBriefV1, restartAvgAssemblyFromDraftV1, stageAvgWorkspaceInputV1, readAvgAssemblyWorkspaceV1 } from '../../src/lib/avg/assembly-service'
-import { readProductProductionDetailsV1, startProductProductionPreviewV1 } from '../../src/lib/product-production/service'
+import { readProductProductionDetailsV1, startProductProductionPreviewV1, runAuthorizedProductProductionV1 } from '../../src/lib/product-production/service'
 import { verifyStoredProductBuildPreview } from '../../src/lib/product-production/preview-manifest'
 import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
 import { saveAvgAuthorWorkspaceV1 } from '../../src/lib/avg/editor-service'
@@ -54,7 +54,7 @@ describe('AVG-05A real author assembly production', () => {
     expect(s.details.build).toMatchObject({status:'building',planRevision:1,previewHash:''})
     expect(JSON.parse(s.details.build!.planJson).tasks).toHaveLength(7)
     expect(JSON.parse(s.details.build!.budgetLedgerJson).tasks).toEqual({})
-    await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})
+    await runAuthorizedProductProductionV1({scope:s.scope,productionId:s.productionId})
     expect(await db.agentRuns.count()).toBe(1)
     await confirmNativeAvgInputs(s)
     const projected = await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})
@@ -125,8 +125,9 @@ describe('AVG-05A real author assembly production', () => {
     expect(()=>parseProductProductionBriefV3({...brief,productionBudget:{...brief.productionBudget,maximumModelCalls:1}})).toThrow(/零 Provider/)
     expect(()=>parseProductProductionBriefV3({...brief,qualityProfile:'commercial-candidate'})).toThrow(/质量边界/)
     const assetKey = 'avg.generated.pending-background', sceneKey = brief.avgAssembly!.sceneKeys[0]
-    // A private V2 codec/Plan is insufficient to open a paid production entry.
+    // A nominal V2 codec cannot borrow V1's capability/budget policy.
     expect(()=>parseProductProductionBriefV3({ ...brief, avgAssembly: { ...brief.avgAssembly, version: 2,
+      imageBinding: { requirementKey: 'avg.media.image', adapterId: 'agnes.image-2.1-flash.v1', bindingHash: 'd'.repeat(64), endpointRouteHash: 'e'.repeat(64) },
       mediaAssetKeys: [...brief.avgAssembly!.mediaAssetKeys, assetKey], mediaBatch: {
         schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: 'pending.batch', revision: 1, aspectRatio: '16:9', sourceInputHash: 'a'.repeat(64),
         requirements: [{ requirementKey: 'background', revision: 1, assetKey, name: '背景', altText: '原创背景',
@@ -134,7 +135,7 @@ describe('AVG-05A real author assembly production', () => {
           consumer: { consumerKey: 'room.background', domain: 'stage', slot: 'background', subjectKey: 'room', sceneKey, lineKey: null, required: true, fallback: 'none' },
           triggerBeatKey: 'opening', itemVariantKey: null, mediaKind: 'background', prompt: '原创房间，固定机位', negativePrompt: '', invariants: [], forbiddenDepictions: [],
           width: 1312, height: 736, resolutionTier: '1K', alpha: 'not-required', references: [] }],
-      } }, productionBudget: { ...brief.productionBudget, maximumMediaCalls: 1, maximumCostUsd: null } })).toThrow(/尚未完成执行与作者选择/)
+      } }, productionBudget: { ...brief.productionBudget, maximumMediaCalls: 1, maximumCostUsd: null } })).toThrow(/能力|预算/)
     const plan = JSON.parse(s.details.build!.planJson)
     plan.tasks[0].outputArtifactKeys=['avg.content.story-bible']
     plan.tasks[1].inputArtifactKeys=['avg.content.story-bible']

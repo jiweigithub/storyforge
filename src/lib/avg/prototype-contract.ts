@@ -1,14 +1,20 @@
 import type { AnyProductRuntimePackage, ProductBuildQualityReportV1, ProductProductionBriefV3 } from '../types';
 import { avgExecutableModule } from './executable-module';
-import type { AvgAssemblyBrief } from './assembly-contract';
-import { AVG_MEDIA_PRODUCTION_ADMISSION_V2 } from './assembly-contract';
+import { parseAvgAssemblyBriefV2, type AvgAssemblyBrief } from './assembly-contract';
+import { assertAvgVisualProductionPolicyV2 } from './media-production-policy';
 /** This identifies a closed author-owned engineering route. It cannot admit
  * commercial candidates, legacy AVG or arbitrary V2 modules. */
 export function isAvgAuthorPrototypeBriefV1(brief: ProductProductionBriefV3): brief is ProductProductionBriefV3 & {
     avgAssembly: AvgAssemblyBrief;
 } {
-    return brief.intent.productType === 'avg' && brief.qualityProfile === 'prototype' && brief.avgAssembly !== undefined
-        && (brief.avgAssembly.version === 1 || brief.avgAssembly.version === 2 && AVG_MEDIA_PRODUCTION_ADMISSION_V2);
+    if (brief.intent.productType !== 'avg' || brief.qualityProfile !== 'prototype' || !brief.avgAssembly) return false;
+    if (brief.avgAssembly.version === 1) return true;
+    if (brief.avgAssembly.version !== 2) return false;
+    try {
+        parseAvgAssemblyBriefV2(brief.avgAssembly);
+        assertAvgVisualProductionPolicyV2(brief);
+        return true;
+    } catch { return false; }
 }
 /** Frozen pre-preview QA is technical only. Real full-catalog decoding and an
  * explicit completed-route author receipt must still qualify it after preview;

@@ -1,6 +1,6 @@
 import Dexie from 'dexie'
 import { db } from '../db/schema'
-import type { ProductBuildArtifactRecordV1, WorkspaceScope } from '../types'
+import type { FrozenRuntimeMediaAssetV2, ProductBuildArtifactRecordV1, WorkspaceScope } from '../types'
 import { assertRecordInScope } from '../workspace/scope'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
@@ -17,7 +17,8 @@ export interface AvgAssemblyValidationV1 {
 
 /** Exact metadata and bytes must be backed by this Work's immutable upload.
  * Semantic asset keys survive backup remapping; local blob IDs never enter payloads. */
-export async function assertAvgOwnedStageMediaV1(scope: WorkspaceScope, payload: AvgAuthorStageV1) {
+export async function assertAvgOwnedStageMediaV1(scope: WorkspaceScope, payload: AvgAuthorStageV1,
+  generated: ReadonlyMap<string, { asset: FrozenRuntimeMediaAssetV2; blobObjectId: number }> = new Map()) {
   if (!payload.stage.assets.length) return
   const keys = new Set(payload.stage.assets.map(asset => asset.assetKey))
   const rows = await db.avgDraftMedia.where('workId').equals(scope.workId).filter(row => {
@@ -26,11 +27,14 @@ export async function assertAvgOwnedStageMediaV1(scope: WorkspaceScope, payload:
   const startedAt = Date.now()
   for (const asset of payload.stage.assets) {
     const matches = rows.filter(row => canonicalProductProductionJsonV2(JSON.parse(row.assetJson)) === canonicalProductProductionJsonV2(asset))
-    if (matches.length !== 1 || !await assertRecordInScope(scope, 'avgDraftMedia', matches[0]!, { owner: 'work' })) throw new Error(`[avg] 演出素材元数据未导入当前作品:${asset.assetKey}`)
+    const produced = generated.get(asset.assetKey)
+    if (produced) {
+      if (matches.length > 0 || canonicalProductProductionJsonV2(produced.asset) !== canonicalProductProductionJsonV2(asset)) throw new Error(`[avg-media] 演出生成素材没有唯一准确的采用来源:${asset.assetKey}`)
+    } else if (matches.length !== 1 || !await assertRecordInScope(scope, 'avgDraftMedia', matches[0]!, { owner: 'work' })) throw new Error(`[avg] 演出素材元数据未导入当前作品:${asset.assetKey}`)
     if (!asset.source.trim() || !asset.license.trim() || asset.byteSize < 1) throw new Error('[avg] 演出素材缺少来源、授权或真实字节')
     if (asset.mimeType.startsWith('image/') ? !Number.isSafeInteger(asset.width) || !Number.isSafeInteger(asset.height) || asset.width! < 1 || asset.height! < 1
       : !asset.mimeType.startsWith('audio/') || !Number.isFinite(asset.durationMs) || asset.durationMs! <= 0) throw new Error('[avg] 演出素材尚未经过实际解码导入')
-    const blob = await db.mediaBlobObjects.get(matches[0]!.blobObjectId)
+    const blob = await db.mediaBlobObjects.get(produced?.blobObjectId ?? matches[0]!.blobObjectId)
     if (!blob || !await assertRecordInScope(scope, 'mediaBlobObjects', blob, { owner: 'work' }) || blob.contentHash !== asset.blobContentHash
       || blob.byteSize !== asset.byteSize || blob.mimeType !== asset.mimeType) throw new Error('[avg] 演出素材字节引用已 stale')
     // Metadata in a restored draft is not decoder evidence. Reinspect the exact
@@ -64,6 +68,7 @@ export async function validateAvgAuthorAssemblyV1(input: {
   inputs: ProductBuildArtifactRecordV1[]
   productKey: string
   sourceWorld: Parameters<typeof compileAvgExecutablePackageV2>[0]['sourceWorld']
+  generated?: ReadonlyMap<string, { asset: FrozenRuntimeMediaAssetV2; blobObjectId: number }>
 }): Promise<AvgAssemblyValidationV1> {
   const rule = input.inputs.find(row => row.artifactKey === 'avg.system.plan')
   if (!rule) throw new Error('[avg] 演出缺少正式规则依赖')
@@ -73,6 +78,6 @@ export async function validateAvgAuthorAssemblyV1(input: {
     sourceWorld: input.sourceWorld, systemPlan: JSON.parse(rule.payloadJson), scripts: scripts.map(row => JSON.parse(row.payloadJson)),
     scriptRevisions: Object.fromEntries(scripts.map(row => [JSON.parse(row.payloadJson).sceneKey as string, row.version])),
     ...input.payload })
-  await assertAvgOwnedStageMediaV1(input.scope, input.payload)
+  await assertAvgOwnedStageMediaV1(input.scope, input.payload, input.generated)
   return { schema: 'storyforge.avg.assembly-validation', version: 1, moduleHash: await hashProductProductionValueV2(pkg.modules[0]) }
 }

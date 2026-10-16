@@ -1,6 +1,6 @@
 # AVG 媒资需求、真实生产与自动绑定
 
-> L2 · 版本：1.2.0 · 生效：2026-10-14 · 受 [AVG 产品契约](../AVG.md)约束。
+> L2 · 版本：1.3.0 · 生效：2026-10-16 · 受 [AVG 产品契约](../AVG.md)约束。
 > 目标合同覆盖从用途/参考到实际字节及消费者；当前只有 Prompt/文本锚点的路径不能宣称参考生图或配音已实现。
 
 ## 1 需求先于生成
@@ -69,6 +69,12 @@
 | 配音 | 公共 V1 媒体类别是 image/music/sfx | voice 的文本/演法/真实 clip 和能力/权利回执仍待 BASE-02，不借 BGM 冒充 |
 
 依据为 [`media-adapters.ts`](../../../src/lib/product-production/media-adapters.ts) 的请求/响应合同及 [`media-transport.ts`](../../../src/lib/product-production/media-transport.ts) 的连接检查；本轮未读取凭据或调用 provider。Agnes [官网](https://agnes-ai.com/)的公开功能宣传不构成所需参数、当前账号可用性、实际费用或 AVG 家族质量证据；具体端点/模型应在 BASE-01 的小批次前重新冻结，不静默替换作者路由。
+
+### 3.2 当前接入增量（2026-10-16）
+
+AVG 专用 adapter 已支持已授权 Work-owned 参考的真实 Data URI、用途/允许变化/顺序和 1K/2K 档位；crop/mask 仍拒绝，alpha 仍须实际检查。默认关闭的实验性 V2 共享服务已接明确开始、固定路由 hash、有界预算/Run、解析前原始响应、严格 producer 接收、独立作者选图与最终演出确认。原图已全部接收后可离线继续组装；备份 remap 与恢复会话已在受控浏览器验证。范围和未完成项以[实施计划 §1.3](../../roadmap/AVG-IMPLEMENTATION-PLAN.md#13-当前媒资自动生产目标2026-10-16)及[工作包 §3.3](../../roadmap/AVG-WORK-PACKAGE-CARDS.md#33-base-01b-的实验性共享服务链路)为准。
+
+工程验证使用原创 PNG 和拦截的 HTTP，不是实际 Agnes 调用或家族艺术验收；工作台入口、局部返修、加工 lineage、已选生成图作为后续参考、专业视觉岗位及真实 TTS 尚未完成。当前确定性 stage/item 槽配置不表示目标 `AvgMediaBindingV1` 的全部 provenance/版本/返修合同已落地。
 
 ## 4 候选、加工与采用
 

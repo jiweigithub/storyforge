@@ -1,4 +1,4 @@
-import { avgHash, avgKeys, avgProtocolBody, avgRecord, avgText } from './protocol-validation'
+import { avgHash, avgKey, avgKeys, avgProtocolBody, avgRecord, avgText } from './protocol-validation'
 import { parseAvgVisualProductionBatchV1, type AvgVisualProductionBatchV1 } from './media-production-contract'
 
 /** Frozen output domain for author assembly. Canonical rules/text remain adopted artifacts. */
@@ -15,10 +15,14 @@ export interface AvgAssemblyBriefV1 {
 export interface AvgAssemblyBriefV2 extends Omit<AvgAssemblyBriefV1, 'version'> {
   version: 2
   mediaBatch: AvgVisualProductionBatchV1
+  imageBinding: { requirementKey: string; adapterId: 'agnes.image-2.1-flash.v1'; bindingHash: string; endpointRouteHash: string }
 }
 export type AvgAssemblyBrief = AvgAssemblyBriefV1 | AvgAssemblyBriefV2
-/** Keep paid V2 closed while the complete executor/adoption path is assembled. */
-export const AVG_MEDIA_PRODUCTION_ADMISSION_V2 = false
+/** Experimental production is opt-in. Codecs still read existing records when
+ * disabled; command/dispatch boundaries enforce admission before new calls. */
+export function avgMediaProductionEnabledV2(): boolean {
+  return import.meta.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION === '1'
+}
 export const AVG_ASSEMBLY_GATE_IDS_V1 = [
   'avg.rules.confirmed','avg.scripts.confirmed','avg.stage.confirmed',
   'runtime.package.valid','avg.media.bytes.valid','avg.rights.declared',
@@ -43,9 +47,9 @@ export function parseAvgAssemblyBriefV1(value: unknown): AvgAssemblyBriefV1 {
 }
 
 export function parseAvgAssemblyBriefV2(value: unknown): AvgAssemblyBriefV2 {
-  const r = avgRecord(avgProtocolBody(value), ['schema', 'version', 'title', 'sceneKeys', 'mediaAssetKeys', 'basePackageHash', 'mediaBatch'], 'AVG media assembly Brief')
+  const r = avgRecord(avgProtocolBody(value), ['schema', 'version', 'title', 'sceneKeys', 'mediaAssetKeys', 'basePackageHash', 'mediaBatch', 'imageBinding'], 'AVG media assembly Brief')
   if (r.version !== 2) throw new Error('[avg-media] 媒资组装 Brief 版本无效')
-  const { mediaBatch: rawBatch, ...baseInput } = r
+  const { mediaBatch: rawBatch, imageBinding: rawBinding, ...baseInput } = r
   const base = parseAvgAssemblyBriefV1({ ...baseInput, version: 1 })
   const mediaBatch = parseAvgVisualProductionBatchV1(rawBatch)
   if (base.sceneKeys.length + 4 + 2 * mediaBatch.requirements.length > 100) throw new Error('[avg-media] 场景、原始候选、作者选择与终态 join 超过共享 100 任务上限')
@@ -54,5 +58,8 @@ export function parseAvgAssemblyBriefV2(value: unknown): AvgAssemblyBriefV2 {
     if (included === (requirement.consumer.domain === 'reference')) throw new Error('[avg-media] runtime 媒资目录必须包含消费图且排除 reference-only')
     if (requirement.consumer.sceneKey !== null && !base.sceneKeys.includes(requirement.consumer.sceneKey)) throw new Error('[avg-media] 图像 consumer 引用了未冻结的场景')
   }
-  return { ...base, version: 2, mediaBatch }
+  const b = avgRecord(rawBinding, ['requirementKey', 'adapterId', 'bindingHash', 'endpointRouteHash'], 'AVG image binding')
+  if (b.adapterId !== 'agnes.image-2.1-flash.v1') throw new Error('[avg-media] 图片路由必须使用准确的 Agnes adapter')
+  return { ...base, version: 2, mediaBatch, imageBinding: { requirementKey: avgKey(b.requirementKey, 'imageBinding.requirementKey'),
+    adapterId: b.adapterId, bindingHash: avgHash(b.bindingHash, 'imageBinding.bindingHash'), endpointRouteHash: avgHash(b.endpointRouteHash, 'endpointRouteHash') } }
 }

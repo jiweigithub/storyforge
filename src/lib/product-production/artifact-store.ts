@@ -2157,6 +2157,7 @@ export async function verifyProductBuildTerminalArtifactSetV1(input: {
     const author = await verifyFrozenAvgAuthorInputsV1({ scope, buildId:build.id, expectedBuildRevision:build.stateRevision, controlEpoch:build.controlEpoch })
     nativeAuthorReceipts.set(author.artifact.artifactKey, author.authorReceiptHash)
     for (const script of author.scripts) nativeAuthorReceipts.set(script.artifact.artifactKey, script.authorReceiptHash)
+    for (const choice of author.mediaChoices ?? []) nativeAuthorReceipts.set(choice.artifact.artifactKey, choice.authorReceiptHash)
     if (author.authorStage) nativeAuthorReceipts.set(author.authorStage.artifact.artifactKey, author.authorStage.authorReceiptHash)
   }
   const proofMembers: unknown[] = []
@@ -2403,8 +2404,9 @@ export async function verifyProductBuildTerminalArtifactSetV1(input: {
  * Build epoch and stores an immutable accepted version; formal tables remain
  * untouched until package adoption.
  */
-async function acceptTextOpenWorldProductBuildArtifact(
+async function acceptSealedProducerArtifactV1(
   input: ProductBuildArtifactAcceptanceInputV1,
+  avgMediaRawAdmission = false,
 ): Promise<ProductBuildArtifactRecordV1> {
   const scope = await resolveScope({ scope: input.scope })
   if (!isSha256Hash(input.inputHash)) throw new Error('[product-production-artifact] inputHash 无效')
@@ -2422,7 +2424,7 @@ async function acceptTextOpenWorldProductBuildArtifact(
     throw new Error('[product-production-artifact] Build 不存在或跨 Work')
   }
   if (preliminaryBuild.controlEpoch !== input.controlEpoch
-    || !['authorized', 'building'].includes(preliminaryBuild.status)) {
+    || !['authorized', 'building'].includes(preliminaryBuild.status) && !(avgMediaRawAdmission && preliminaryBuild.status === 'integrating')) {
     throw new Error('[product-production-artifact] Build epoch 已过期或不可写')
   }
   if (['text-open-world.source-pin', 'text-open-world.source-pin-unit'].includes(prepared.kind)) {
@@ -2444,17 +2446,19 @@ async function acceptTextOpenWorldProductBuildArtifact(
   } else {
     throw new Error('[product-production-artifact] 普通 Artifact 必须携带已验证 producer checkpoint')
   }
+  const avgAdmission = avgMediaRawAdmission ? await import('../avg/media-production-admission') : null
   const stored = await db.transaction('rw', scopeTransactionTables(
     db.productProductions, db.productProductionBriefs, db.productProductionCommands,
     db.productBuilds, db.productBuildArtifacts, db.mediaBlobObjects,
     db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints,
+    ...(avgMediaRawAdmission ? [db.avgDraftMedia, db.agentRunArtifacts] : []),
   ), async () => {
     const build = await db.productBuilds.get(input.buildId)
     if (!build || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })) {
       throw new Error('[product-production-artifact] Build 不存在或跨 Work')
     }
     if (build.controlEpoch !== input.controlEpoch
-      || !['authorized', 'building'].includes(build.status)) {
+      || !['authorized', 'building'].includes(build.status) && !(avgMediaRawAdmission && build.status === 'integrating')) {
       throw new Error('[product-production-artifact] Build epoch 已过期或不可写')
     }
     if (build.buildNumber !== preliminaryBuild.buildNumber
@@ -2465,6 +2469,11 @@ async function acceptTextOpenWorldProductBuildArtifact(
     }
     if (producerProof) {
       await assertVerifiedProducerCandidateFreshV1({ build: build as ProductBuildRecordV1 & { id: number }, proof: producerProof })
+    }
+    if (avgMediaRawAdmission) {
+      if (!producerProof || input.producerRunId == null) throw new Error('[avg-media] 原图必须携带严格 producer 证明')
+      await avgAdmission!.assertAvgMediaRawProducerAdmissionV2({ scope, build: build as ProductBuildRecordV1 & { id: number },
+        task: producerProof.task, producerRunId: input.producerRunId, artifact: prepared })
     }
     if (prepared.blobObjectId != null) {
       const blob = await db.mediaBlobObjects.get(prepared.blobObjectId)
@@ -2483,6 +2492,9 @@ async function acceptTextOpenWorldProductBuildArtifact(
       .toArray()
     const same = rows.find(row => row.artifactKey === prepared.artifactKey && row.contentHash === prepared.contentHash
       && row.status === 'accepted' && row.controlEpoch === input.controlEpoch)
+    // Scheduler recovery re-verifies completed image tasks during the final
+    // join. An integrating Build may only return its exact existing raw row.
+    if (avgMediaRawAdmission && build.status === 'integrating' && !same) throw new Error('[avg-media] 已进入组装，不能新增原图')
     if (same) {
       if (same.requirementKey !== prepared.requirementKey
         || same.kind !== prepared.kind || same.mediaKind !== prepared.mediaKind
@@ -3246,7 +3258,7 @@ async function productTypeForBuildV1(buildId: number): Promise<string> {
  * persistence semantics of unrelated products.
  */
 export const textOpenWorldProductArtifactStoreV1 = Object.freeze({
-  acceptProductBuildArtifact: acceptTextOpenWorldProductBuildArtifact,
+  acceptProductBuildArtifact: (input: ProductBuildArtifactAcceptanceInputV1) => acceptSealedProducerArtifactV1(input),
   carryForwardProductBuildArtifactsToEpochV1: carryForwardTextOpenWorldProductBuildArtifactsToEpochV1,
   carryForwardProductBuildArtifactsAcrossBuildsV1: carryForwardTextOpenWorldProductBuildArtifactsAcrossBuildsV1,
 })
@@ -3260,7 +3272,11 @@ export const textOpenWorldProductArtifactStoreV1 = Object.freeze({
 export async function acceptProductBuildArtifact(
   input: ProductBuildArtifactAcceptanceInputV1,
 ): Promise<ProductBuildArtifactRecordV1> {
-  return await productTypeForBuildV1(input.buildId) === 'text-open-world'
+  const productType = await productTypeForBuildV1(input.buildId)
+  // AVG V2 raw candidates gain sealed producer admission only. Human choices,
+  // V1 assembly and every other product keep their existing writer semantics.
+  if (productType === 'avg' && input.artifactKey.startsWith('avg.media.raw.')) return acceptSealedProducerArtifactV1(input, true)
+  return productType === 'text-open-world'
     ? textOpenWorldProductArtifactStoreV1.acceptProductBuildArtifact(input)
     : textAdventureArtifactStoreV1.acceptProductBuildArtifact(input)
 }

@@ -1016,7 +1016,7 @@ export const ADOPTION_EXTENSIONS: readonly AdoptionExtensionSpec[] = Object.free
       'src/lib/product-production/adoption.ts',
       'src/lib/product-production/scheduler.ts',
     ],
-    policyRegistry: 'PRODUCT_PRODUCTION_ARTIFACT_POLICY + AVG_PROFESSIONAL_OUTPUTS_V1 + PROJECT_TABLES',
+    policyRegistry: 'PRODUCT_PRODUCTION_ARTIFACT_POLICY + AVG_PROFESSIONAL_OUTPUTS_V1 + assertAvgMediaRawProducerAdmissionV2 + PROJECT_TABLES',
     reason: '候选、验收、沿用与 orphan 状态必须校验 Build epoch、receipt、hash、scope 和唯一版本；AVG 作者输入先经冻结 human-import 写域、源/输入版本和命令确认，专业 AI 岗位未就绪时禁止借用旧通用写口。',
     reviewAfter: '2027-08-21',
   },

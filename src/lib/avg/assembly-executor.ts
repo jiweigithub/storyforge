@@ -4,16 +4,22 @@ import type { ProductProductionTaskArtifactV1, ProductProductionTaskExecutorV1 }
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { assertRecordInScope } from '../workspace/scope'
 import { parseProductRuntimePackageV2 } from '../product-production/runtime-package'
-import { AVG_ASSEMBLY_GATE_IDS_V1 } from './assembly-contract'
+import { AVG_ASSEMBLY_GATE_IDS_V1, avgMediaAssemblyGateIdsV2 } from './assembly-contract'
 import { compileAdoptedAvgBuildV2 } from './executable-compiler'
+import { executeAvgMediaImageTaskV2 } from './media-production-executor'
+import type { ResolvedProductMediaCapabilityV1 } from '../product-production/media-transport'
 
-/** Zero-provider deterministic tasks. Human rows are confirmed through the
- * registered author command, then receive the shared scheduler's carry receipt. */
-export function createAvgAssemblyExecutorV1(options: { production: ProductProductionRecordV1; brief: ProductProductionBriefV3 }): ProductProductionTaskExecutorV1 {
+/** V1 remains zero-provider. Opt-in V2 image tasks use the media Harness;
+ * human choices/stage stay separate from deterministic package compilation. */
+export function createAvgAssemblyExecutorV1(options: { production: ProductProductionRecordV1; brief: ProductProductionBriefV3;
+  mediaCapabilities?: ReadonlyMap<string, ResolvedProductMediaCapabilityV1>; imageEndpointRouteHash?: string }): ProductProductionTaskExecutorV1 {
   const brief = structuredClone(options.brief), productionKey = options.production.productionKey
   return async request => {
     const startedAt = Date.now()
     if (request.signal.aborted) throw new DOMException('Aborted','AbortError')
+    if (brief.avgAssembly?.version === 2 && request.task.kind === 'avg-media-image-generate') return executeAvgMediaImageTaskV2(request, {
+      brief, mediaCapabilities: options.mediaCapabilities ?? new Map(), imageEndpointRouteHash: options.imageEndpointRouteHash,
+    })
     if (!brief.avgAssembly || request.task.executionMode !== 'deterministic'
       || !['avg.assembly.integrate','avg.assembly.verify'].includes(request.task.taskKey)) throw new Error('[avg] 作者输入尚未确认或执行任务超出冻结组装域')
     const build = await db.productBuilds.get(request.buildId)
@@ -31,6 +37,9 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
     const sourceProof = { rule:compiled.source.artifact,ruleReceipt:compiled.source.authorReceiptHash,
       scripts:compiled.source.scripts.map(row => ({ artifact:row.artifact,receiptHash:row.authorReceiptHash })),
       stage:compiled.source.authorStage!.artifact,stageReceipt:compiled.source.authorStage!.authorReceiptHash,
+      ...(brief.avgAssembly.version === 2 ? { mediaChoices: (compiled.source.mediaChoices ?? []).map(choice => ({
+        choice: choice.artifact, authorReceiptHash: choice.authorReceiptHash, raw: { artifactKey: choice.raw.artifactKey,
+          version: choice.raw.version, contentHash: choice.raw.contentHash }, rawReceiptHash: choice.raw.producerReceiptHash })) } : {}),
       sourceContextHash:await hashProductProductionValueV2(request.contextText) }
     let artifacts: ProductProductionTaskArtifactV1[]
     if (request.task.taskKey === 'avg.assembly.integrate') {
@@ -41,11 +50,15 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
         const asset = assets.find(asset => asset.assetKey === key)!
         const rows = await db.avgDraftMedia.where('workId').equals(request.scope.workId)
           .filter(row => canonicalProductProductionJsonV2(JSON.parse(row.assetJson)) === canonicalProductProductionJsonV2(asset)).limit(2).toArray()
-        if (rows.length !== 1 || !await assertRecordInScope(request.scope,'avgDraftMedia',rows[0]!,{owner:'work'})) throw new Error('[avg] 正式组装素材引用已变化')
+        const choice = compiled.source.mediaChoices?.find(choice => !choice.payload.referenceOnly && choice.payload.asset.assetKey === key)
+        if (choice ? rows.length > 0 || canonicalProductProductionJsonV2(choice.payload.asset) !== canonicalProductProductionJsonV2(asset)
+          : rows.length !== 1 || !await assertRecordInScope(request.scope,'avgDraftMedia',rows[0]!,{owner:'work'})) throw new Error('[avg] 正式组装素材引用已变化')
         artifacts.push({ artifactKey:`avg.media.${index}`,kind:asset.mimeType.startsWith('audio/')?'audio':'image',mediaKind:asset.kind,
           payload:{ assetKey:asset.assetKey },metadata:asset,quality:{ actualBytesAndDecoderVerified:true,stageReceipt:sourceProof.stageReceipt },
-          rights:{ origin:'author-import',license:asset.license,source:asset.source,authorStageReceipt:sourceProof.stageReceipt },
-          contentHash:asset.contentHash,blobObjectId:rows[0]!.blobObjectId,mimeType:asset.mimeType,byteSize:asset.byteSize })
+          rights:{ origin:choice?'author-selected-provider':'author-import',license:asset.license,source:asset.source,authorStageReceipt:sourceProof.stageReceipt,
+            ...(choice ? { authorChoiceReceipt: choice.authorReceiptHash, rawArtifactKey: choice.raw.artifactKey, rawVersion: choice.raw.version,
+              rawContentHash: choice.raw.contentHash, rawProducerReceiptHash: choice.raw.producerReceiptHash } : {}) },
+          contentHash:asset.contentHash,blobObjectId:choice?.raw.blobObjectId ?? rows[0]!.blobObjectId,mimeType:asset.mimeType,byteSize:asset.byteSize })
       }
     } else {
       const actual = request.inputArtifacts.find(row => row.artifactKey === 'runtime.package')
@@ -60,7 +73,8 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
         ...(module.systemPlan.version===2?module.systemPlan.inventory.items.flatMap(item=>[item,...item.variants].flatMap(view=>[view.iconAssetKey,view.detailAssetKey].filter((key):key is string=>key!==null))):[])])
       const unused=assets.filter(asset=>!usedAssets.has(asset.assetKey))
       const report: ProductBuildQualityReportV1 = { schema:'storyforge.product-build-quality-report',version:1,buildNumber:request.buildNumber,packageHash,
-        hardGateResults:AVG_ASSEMBLY_GATE_IDS_V1.map(gateId => ({ gateId,passed:true,evidence:[canonicalProductProductionJsonV2(sourceProof)] })),
+        hardGateResults:(brief.avgAssembly.version === 2 ? avgMediaAssemblyGateIdsV2(brief.avgAssembly.mediaBatch) : AVG_ASSEMBLY_GATE_IDS_V1)
+          .map(gateId => ({ gateId,passed:true,evidence:[canonicalProductProductionJsonV2(sourceProof)] })),
         softGateResults:[],mediaCoverage:assets.length?(assets.length-unused.length)/assets.length:1,playable:true,releaseReady:false,
         warnings:['仅通过作者组装技术门；艺术、专业配音、整部作品试玩与发布验收尚待执行。',...unused.map(asset=>`素材尚未绑定演出、配音或物件消费者：${asset.name}`)] }
       artifacts = [{ artifactKey:'quality.report',kind:'quality-report',payload:report,quality:{ scope:'author-assembly-technical' },rights:{ origin:'deterministic-verification' } }]

@@ -1,5 +1,6 @@
 import { parseChatAuthoringSettingsV1 } from '../character-interaction/authoring-contract'
-import { parseAvgAssemblyBrief, AVG_ASSEMBLY_GATE_IDS_V1, AVG_MEDIA_PRODUCTION_ADMISSION_V2 } from '../avg/assembly-contract'
+import { parseAvgAssemblyBrief, AVG_ASSEMBLY_GATE_IDS_V1 } from '../avg/assembly-contract'
+import { assertAvgVisualProductionPolicyV2 } from '../avg/media-production-policy'
 import { parseAvgSettingsForLegacyProduction } from '../avg/settings-v2'
 import type {
   TextAdventureContentRevisionV1,
@@ -365,7 +366,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
       ? { evolution: parseEvolutionImpact(row.evolution) }
       : {}),
   }
-  if (parsed.avgAssembly?.version === 2 && !AVG_MEDIA_PRODUCTION_ADMISSION_V2) fail('AVG 媒资生产尚未完成执行与作者选择接入，当前不能正式开始')
+  if (parsed.avgAssembly?.version === 2) assertAvgVisualProductionPolicyV2(parsed)
   if (parsed.avgAssembly?.version === 1 && (productType !== 'avg' || parsed.avgRevision || parsed.qualityProfile === 'commercial-candidate'
     || parsed.capabilityRequirements.length || parsed.productionBudget.maximumModelCalls !== 0 || parsed.productionBudget.maximumMediaCalls !== 0
     || parsed.productionBudget.maximumOutputTokens !== 0 || parsed.productionBudget.maximumCostUsd !== 0

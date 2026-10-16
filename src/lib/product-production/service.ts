@@ -1681,6 +1681,11 @@ export async function runAuthorizedProductProductionV1(input: {
   const brief = creatorContracts?.executionBrief
     ?? parseProductProductionBriefV3(details.brief.briefJson)
   if (brief.avgRevision) return (await import('../avg/revision-production')).runAvgRevisionV1({ ...input, scope, details, brief })
+  if (brief.avgAssembly) {
+    const projection = await (await import('../avg/assembly-service')).runAvgAssemblyV1({ scope, productionId: input.productionId, signal: input.signal })
+    if (input.onProgress) await input.onProgress(projection)
+    return projection
+  }
   const textRequirements = brief.capabilityRequirements.filter(requirement => requirement.mediaClass === 'text')
   if (textRequirements.length !== 1) throw new Error('[product-production-service] 正式制作需要唯一文本 capability requirement')
   const textCapability = await resolveConfiguredTextCapabilityV1({

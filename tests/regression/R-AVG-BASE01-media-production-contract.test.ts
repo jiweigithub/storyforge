@@ -21,6 +21,7 @@ function requirement(): AvgVisualProductionRequirementV1 {
 function batch(requirements = [requirement()]) {
   return { schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: 'visual.batch.1', revision: 1, aspectRatio: '16:9', sourceInputHash: 'a'.repeat(64), requirements }
 }
+const imageBinding = { requirementKey: 'avg.media.image', adapterId: 'agnes.image-2.1-flash.v1', bindingHash: 'd'.repeat(64), endpointRouteHash: 'e'.repeat(64) }
 
 describe('AVG media production inputs and explicit choices', () => {
   it('原始图与作者选择分别结算，终态必须等到明确选择；V1 继续为零调用', () => {
@@ -30,7 +31,7 @@ describe('AVG media production inputs and explicit choices', () => {
     const capability: ProviderCapabilityRequirementV1 = { requirementKey: 'avg.media.image', mediaClass: 'image', operation: 'generate',
       adapterFamily: 'agnes', minimumCapabilityVersion: '1', allowedDataClasses: ['avg-reference'], maximumRequestCost: null,
       maximumTotalCost: null, rightsPolicyVersion: 'avg-rights.v1', capabilityHash: 'b'.repeat(64), required: true }
-    const brief = { avgAssembly: parseAvgAssemblyBriefV2({ ...base, version: 2, mediaBatch: batch() }), capabilityRequirements: [capability] }
+    const brief = { avgAssembly: parseAvgAssemblyBriefV2({ ...base, version: 2, mediaBatch: batch(), imageBinding }), capabilityRequirements: [capability] }
     const plan = buildAvgMediaAssemblyPlanV2({ brief, briefHash: 'c'.repeat(64), buildNumber: 1, controlEpoch: 0 })
     const raw = plan.tasks.find(t => t.kind === 'avg-media-image-generate')!, choice = plan.tasks.find(t => t.kind === 'avg-author-media-choice')!
     expect(raw).toMatchObject({ executionMode: 'media-provider', maxAttempts: 1, budgetReservation: { mediaCalls: 1, modelCalls: 0, maximumCostUsd: null } })
@@ -43,7 +44,7 @@ describe('AVG media production inputs and explicit choices', () => {
   it('V2 明确区分真实消费/参考目录并预留全部任务；V1 不会默默启用生成', () => {
     const v1 = { schema: 'storyforge.avg.assembly-brief', version: 1, title: '固定文本', sceneKeys: ['desk'], mediaAssetKeys: [], basePackageHash: null }
     expect(parseAvgAssemblyBriefV1(v1)).toEqual(v1)
-    const v2 = { ...v1, version: 2, mediaAssetKeys: [requirement().assetKey], mediaBatch: batch() }
+    const v2 = { ...v1, version: 2, mediaAssetKeys: [requirement().assetKey], mediaBatch: batch(), imageBinding }
     expect(parseAvgAssemblyBriefV2(v2).version).toBe(2)
     expect(() => parseAvgAssemblyBriefV1(v2)).toThrow()
     expect(() => parseAvgAssemblyBriefV2({ ...v2, mediaAssetKeys: [] })).toThrow(/runtime/)
@@ -103,6 +104,9 @@ describe('AVG media production inputs and explicit choices', () => {
       schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: 'target.batch', revision: 1, requirements: [r] }, source)
     await expect(freeze(requirement())).rejects.toThrow(/触发拍/)
     const r = { ...requirement(), triggerBeatKey: 'line.desk' }
+    const grouped = structuredClone(workspace); grouped.scripts[0].lines[0].beatKey = 'group.opening'
+    expect((await freeze(r)).requirements[0].triggerBeatKey).toBe('line.desk')
+    await expect(freeze(r, grouped)).rejects.toThrow(/同一 key/)
     await expect(freeze({ ...r, family: { ...r.family, subjectKey: 'missing' }, consumer: { ...r.consumer, subjectKey: 'missing' } })).rejects.toThrow(/主体/)
     await expect(freeze({ ...r, consumer: { ...r.consumer, sceneKey: 'wait' } })).rejects.toThrow(/触发拍/)
     const reference: AvgVisualProductionRequirementV1 = { ...r, triggerBeatKey: null, consumer: { ...r.consumer, domain: 'reference', slot: 'identity', sceneKey: null, required: false } }

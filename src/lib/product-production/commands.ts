@@ -1,4 +1,5 @@
 import { deriveAvgAssemblyRecoveryBaseV1 } from '../avg/assembly-recovery'
+import { avgMediaProductionEnabledV2 } from '../avg/assembly-contract'
 import { canReviseTextContentBuildV1, createTextContentRevisionPlanV1 } from './text-content-revision'
 import Dexie from 'dexie'
 import { db } from '../db/schema'
@@ -1082,6 +1083,7 @@ async function applyCommand(input: {
 
   if (command.type === 'save-brief-revision') {
     const brief = command.brief
+    if (brief.avgAssembly?.version === 2 && !avgMediaProductionEnabledV2()) reject('brief-not-authorized', 'AVG 实验性媒资生产尚未启用，不能准备新任务')
     if (brief.intent.productType !== production.productType) {
       reject('production-state-conflict', 'Brief 产品身份与 Production 根记录不一致')
     }
@@ -1221,6 +1223,7 @@ async function applyCommand(input: {
       reject('brief-not-authorized', 'Creator Brief 尚未完成 G5-04 正式来源计划，不能创建 Build')
     }
     const brief = parseProductProductionBriefV3(briefRow.briefJson)
+    if (brief.avgAssembly?.version === 2 && !avgMediaProductionEnabledV2()) reject('brief-not-authorized', 'AVG 实验性媒资生产尚未启用，不能开始新任务')
     if (brief.unresolvedDecisionKeys.length > 0) reject('brief-unresolved', 'Brief 仍有未解决决策')
     const confirmedBrief = input.preparedConfirmedBrief
     if (!confirmedBrief || confirmedBrief.productInstanceKey !== production.productionKey

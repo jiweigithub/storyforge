@@ -10753,8 +10753,9 @@ export function createConfiguredProductProductionExecutorV1(input: {
   runText?: ProductionTextRunnerV1
   runVision?: ProductionVisionRunnerV1
   mediaCapabilities?: ReadonlyMap<string, ResolvedProductMediaCapabilityV1>
+  avgImageEndpointRouteHash?: string
 }): ProductProductionTaskExecutorV1 {
-  if (input.brief.avgAssembly) return createAvgAssemblyExecutorV1(input)
+  if (input.brief.avgAssembly) return createAvgAssemblyExecutorV1({ ...input, imageEndpointRouteHash: input.avgImageEndpointRouteHash })
   if (input.brief.intent.productType === 'text-open-world') {
     fail('文字开放世界已下线通用生产执行器；必须使用专属 Creator P0-P10 / V1-V3 执行器')
   }

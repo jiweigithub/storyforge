@@ -1,4 +1,5 @@
 import { parseProductRuntimePackage } from './runtime-package'
+import { avgMediaProductionEnabledV2 } from '../avg/assembly-contract'
 import { createProductBuildPreviewManifestV2 } from './preview-manifest'
 import { isTextRevisionRetainedVisualTaskV1, textRevisionRecoveryPreservesVisualContractV1, validateTextContentRevisionAuthorityV1, verifiedTextRevisionVisualCarryTaskKeysV1 } from './text-content-revision-authority'
 import { verifiedHumanImportCarryProofsV1 } from './text-adventure-artifact-store'
@@ -6256,13 +6257,18 @@ export async function runProductProductionSchedulerCycleV1(input: {
       })
     }
   }
+  const pendingAvgHumanTasks = new Set<string>()
   if (state.brief.avgAssembly) {
     const authorTasks = state.plan.tasks.filter(task => task.executionMode === 'human-import')
     const artifacts = await db.productBuildArtifacts.where('buildId').equals(state.build.id!).toArray()
-    const ready = authorTasks.every(task => task.outputArtifactKeys.every(key => artifacts.filter(row => row.artifactKey === key
-      && row.status === 'accepted' && row.controlEpoch === state.build.controlEpoch).length === 1))
-    if (!ready) return projectProductProductionSchedulerV1({ scope, productionId: input.productionId })
-    if (state.build.status !== 'integrating') {
+    const accepted = (task: ProductProductionPlanTaskV3) => task.outputArtifactKeys.every(key => artifacts.filter(row => row.artifactKey === key
+      && row.status === 'accepted' && row.controlEpoch === state.build.controlEpoch).length === 1)
+    const ready = authorTasks.every(accepted)
+    if (!ready && (state.brief.avgAssembly.version === 1 || authorTasks.filter(task => !['avg-author-media-choice', 'avg-author-stage'].includes(task.kind)).some(task => !accepted(task)))) {
+      return projectProductProductionSchedulerV1({ scope, productionId: input.productionId })
+    }
+    for (const task of authorTasks) if (!accepted(task)) pendingAvgHumanTasks.add(task.taskKey)
+    if (ready && state.build.status !== 'integrating') {
       await db.transaction('rw', scopeTransactionTables(db.productBuilds, db.productBuildArtifacts, db.productProductions), async () => {
         const current = await db.productBuilds.get(state.build.id!)
         const production = await db.productProductions.get(input.productionId)
@@ -6341,6 +6347,8 @@ export async function runProductProductionSchedulerCycleV1(input: {
   const locked = new Set(activeTasks.flatMap(task => task.subjectLockKeys))
   const ready = state.plan.tasks
     .filter(task => {
+      if (pendingAvgHumanTasks.has(task.taskKey)) return false
+      if (state.brief.avgAssembly?.version === 2 && task.kind === 'avg-media-image-generate' && !avgMediaProductionEnabledV2()) return false
       const child = children.get(task.taskKey)
       if (child && ['failed', 'cancelled', 'recovery_required', 'paused'].includes(child.projection.state)) return false
       const retryReady = child?.projection.steps[task.taskKey]?.status === 'failed'

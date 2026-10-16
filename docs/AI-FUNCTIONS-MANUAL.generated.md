@@ -351,7 +351,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `product-production-briefs` | `productProductionBriefs` | `PRODUCT_PRODUCTION_COMMAND_POLICY + PROJECT_TABLES` | `src/lib/product-production/commands.ts`<br/>`src/lib/product-production/adoption.ts` | 2027-08-21 |
 | `product-production-commands` | `productProductionCommands` | `PRODUCT_PRODUCTION_COMMAND_POLICY + PROJECT_TABLES` | `src/lib/product-production/commands.ts`<br/>`src/lib/product-production/adoption.ts` | 2027-08-21 |
 | `product-production-builds` | `productBuilds` | `PRODUCT_PRODUCTION_COMMAND_POLICY + PRODUCT_PRODUCTION_ARTIFACT_POLICY + PRODUCT_QUALITY_GATE_RECEIPT_V1 + PROJECT_TABLES` | `src/lib/product-production/commands.ts`<br/>`src/lib/product-production/artifact-store.ts`<br/>`src/lib/product-production/adoption.ts`<br/>`src/lib/product-production/scheduler.ts`<br/>`src/lib/product-production/quality-receipts.ts`<br/>`src/lib/avg/author-artifacts.ts` | 2027-08-21 |
-| `product-production-artifacts` | `productBuildArtifacts` | `PRODUCT_PRODUCTION_ARTIFACT_POLICY + AVG_PROFESSIONAL_OUTPUTS_V1 + PROJECT_TABLES` | `src/lib/product-production/commands.ts`<br/>`src/lib/product-production/artifact-store.ts`<br/>`src/lib/product-production/text-adventure-artifact-store.ts`<br/>`src/lib/avg/author-artifacts.ts`<br/>`src/lib/product-production/adoption.ts`<br/>`src/lib/product-production/scheduler.ts` | 2027-08-21 |
+| `product-production-artifacts` | `productBuildArtifacts` | `PRODUCT_PRODUCTION_ARTIFACT_POLICY + AVG_PROFESSIONAL_OUTPUTS_V1 + assertAvgMediaRawProducerAdmissionV2 + PROJECT_TABLES` | `src/lib/product-production/commands.ts`<br/>`src/lib/product-production/artifact-store.ts`<br/>`src/lib/product-production/text-adventure-artifact-store.ts`<br/>`src/lib/avg/author-artifacts.ts`<br/>`src/lib/product-production/adoption.ts`<br/>`src/lib/product-production/scheduler.ts` | 2027-08-21 |
 | `product-production-release-adoption` | `productReleases` | `PRODUCT_PRODUCTION_PACKAGE_ADOPTION_V1 + PRODUCT_DISTRIBUTION_BUNDLE_V2 + PROJECT_TABLES + product validators` | `src/lib/product/releases.ts`<br/>`src/lib/product-production/adoption.ts`<br/>`src/lib/product-platform/distribution-bundle.ts` | 2027-08-21 |
 | `ttrpg-rule-pack-library` | `ttrpgRulePacks` | `RULE_PACK_V1 parser + fixture verifier + immutable version identity + PROJECT_TABLES` | `src/lib/ttrpg/rule-pack-library.ts` | 2027-08-21 |
 
@@ -504,4 +504,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `36b3e55f`
+生成时间基准:commit `cd46f1cb`
