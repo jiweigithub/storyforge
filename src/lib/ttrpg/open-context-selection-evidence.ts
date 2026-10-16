@@ -21,7 +21,7 @@ export async function verifyTtrpgOpenContextSelectionEvidenceV1(input: {
   sourceKeys: readonly string[]; mode: 'reserve' | 'dispatch' | 'finish'; call?: TtrpgOpenModelCallV1
 }) {
   const e = input.evidence, receipt = e.contextSelection
-  const modern = input.sourceKeys.some(key => /Context$/.test(key) || key === 'ttrpgOpenBriefInput')
+  const modern = input.sourceKeys.some(key => /Context$/.test(key) || key === 'ttrpgOpenBriefInput' || key === 'ttrpgOpenSituationInput')
   const rendered = JSON.parse(input.bodies[e.preflight.promptHash]) as { contextSelection?: unknown; messages: Array<{ role: string; content: string }> }
   if (!modern) {
     if (receipt !== undefined || e.contextAssembly !== undefined || rendered.contextSelection !== undefined) throw new Error('[ttrpg-context] 历史协议不可伪装新情境回执')
@@ -66,7 +66,7 @@ export async function verifyTtrpgOpenContextSelectionEvidenceV1(input: {
     do { const page = await provider.listMetadata({ scope: { ...input.scope, productRuntimeSessionId: input.sessionId, runtimeActorKey: input.actorKey }, limit: 1000, cursor }); inventory.push(...page.items); cursor = page.nextCursor ?? undefined } while (cursor)
   }
   const oracleSourceRef = input.call?.oracleInterpretation?.oracleSourceRef ?? input.call?.supportSlot?.oracleSourceRef
-  if (definition.actorRole === 'gm' && definition.purpose !== 'kp-narration' && definition.purpose !== 'stage-brief') {
+  if (definition.actorRole === 'gm' && definition.purpose !== 'kp-narration' && definition.purpose !== 'stage-brief' && definition.purpose !== 'situation-proposal') {
     const oracleSuffix = `:oracle.${await hashProductProductionValueV2(oracleSourceRef)}`
     // The runtime owner already validates the exact Oracle/review hash and slot.
     const reviewSuffix = input.call?.supportSlot ? `:review.${await hashProductProductionValueV2(input.call.supportSlot.sourceRef)}` : null

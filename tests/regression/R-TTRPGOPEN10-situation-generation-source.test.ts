@@ -90,7 +90,8 @@ describe('R-TTRPGOPEN10 source and passive situation authority foundation', { ti
   it('returns complete scoped resources and real identity values, excluding whole owners, memory prose and private human authority', async () => {
     const f = await setup(); await start(f.f.sessionId)
     const before = await readProductRuntimeState(f.f.sessionId), context = await loadTtrpgOpenSituationContextV1(f.input), result = await readAll(f.scope)
-    expect(result.page.items.filter(d => d.priority === 'must-read')).toHaveLength(3)
+    const mandatory = result.page.items.filter(d => d.priority === 'must-read')
+    for (const suffix of ['situation-contract', 'situation-frame', 'situation-directory', 'situation-recent-history']) expect(mandatory.some(d => d.resourceKey.endsWith(':' + suffix))).toBe(true)
     expect(result.bodies.find(b => b.schema === 'storyforge.ttrpg-open-situation-input-contract')).toMatchObject({
       homogeneityThreshold: 0.8, historyComparisonLimit: 8, cooldownWorldTurns: 3 })
     const identities = result.bodies.filter(b => b.source?.kind === 'identity')

@@ -1,3 +1,4 @@
+import { planTtrpgOpenSituationReferenceNeedsV1 } from './open-generated-situation-delivery'
 /** GM-model-only drafting input. Never expose this projection through the human fallback desk. */
 import type { WorkspaceScope } from '../types'
 import type { ContextResourceDescriptorV1, FrozenResourceScopeV1 } from '../registry/types'
@@ -13,6 +14,7 @@ import { TTRPG_OPEN_SITUATION_INPUT_SOURCE_V1 } from './open-generated-situation
 import { createTtrpgOpenRuntimeResourceProviderV1, type TtrpgOpenResourceRowV1 } from './open-runtime-resource-provider'
 import { TTRPG_SITUATION_GENERATION_HOMOGENEITY_THRESHOLD_V1, TTRPG_SITUATION_GENERATION_HISTORY_LIMIT_V1, TTRPG_SITUATION_GENERATION_COOLDOWN_WORLD_TURNS_V1 } from './situation-generation'
 import { projectTtrpgOpenWorldFactsV1 } from './open-fact-authority'
+import { TTRPG_OPEN_SITUATION_OUTPUT_SCHEMA_V1 } from './open-generated-situation-output-schema'
 
 type ReadInput = { scope: WorkspaceScope; sessionId: number; actorKey: string }
 async function authorizedRead(input: ReadInput) {
@@ -39,18 +41,23 @@ async function authorizedRead(input: ReadInput) {
 export async function loadTtrpgOpenSituationContextV1(input: ReadInput) {
   return (await readModel(input)).context
 }
+/** Internal Run validation snapshot, never a model-delivered resource or a human fallback read. */
+export async function loadTtrpgOpenSituationKernelInputV1(input: ReadInput) { return readModel(input) }
 async function readModel(input: ReadInput) {
   const { loaded, epoch } = await authorizedRead(input)
   const { basis, personalizationValues } = await buildTtrpgOpenSituationBasisFromVerifiedReadV1(loaded, epoch.epochKey)
   const { campaign: c, rule, sessionFacts, personalizationSources } = basis
   const run = loaded.runtime.openRun!
   const currentFacts = projectTtrpgOpenWorldFactsV1({ state: loaded.state, content: loaded.content, sessionFacts })
+  // Ground an open-ended draft in the actual party and its present places, rather than depending on
+  // a prose search to happen to contain an opaque fact or identity key.
+  const currentPlaces = new Set(basis.selectedActorKeys.map(key => loaded.state.entities[key]?.locationKey).filter(Boolean))
   const resources: Array<{ suffix: string; title: string; mandatory: boolean; value: unknown }> = []
   const add = (suffix: string, title: string, value: unknown, mandatory = false) => resources.push({ suffix, title, mandatory, value })
   const contract = {
     schema: 'storyforge.ttrpg-open-situation-input-contract', version: 1, consumer: 'gm-situation-drafter',
     output: { schema: 'storyforge.ttrpg-open-situation-proposal', version: 1,
-      template: '完整局势正文，不含 templateKey；字段遵循 situation-definition 资源',
+      template: '完整局势正文，严格遵循 outputJsonSchema；禁止 templateKey',
       personalizationSourceKeys: '至少一个已完整读取的 personalization 来源键' },
     outputIsCandidate: true, grantsAcceptance: false, noActivation: true, noMechanicalAuthority: true, noWorldWrite: true,
     noPlayerDecisionOrCommitment: true, noNewEntityOrRuleDefinition: true, narrationIsNotConfirmedFact: true,
@@ -62,20 +69,32 @@ async function readModel(input: ReadInput) {
     historyComparisonLimit: TTRPG_SITUATION_GENERATION_HISTORY_LIMIT_V1,
     cooldownWorldTurns: TTRPG_SITUATION_GENERATION_COOLDOWN_WORLD_TURNS_V1,
     playerCommitmentSourcesAvailable: false,
+    outputJsonSchema: TTRPG_OPEN_SITUATION_OUTPUT_SCHEMA_V1,
+    semanticRequirements: ['S1: at least two obstacles with a dependency DAG', 'S2: one non-null belief factRef',
+      'S3: at least two intervention points', 'S4: required evidence and real discovery paths',
+      'S5: explicit no-intervention outcome', 'S6: frozen NPC/front/fact driver; no player commitment exists',
+      'S7: preserve audiences/recipients', 'S8: frozen effects/next-template references only',
+      'S9: at least two real whyNow references', 'S10: unique evidence in assigned namespace', 'predicate depth <= 8'],
   }
   const frame = { schema: 'storyforge.ttrpg-open-situation-frame', version: 1,
     sessionKey: basis.sessionKey, runtimeSourceHash: basis.runtimeSourceHash, worldReleaseHash: basis.worldReleaseHash,
     sourceLineageHash: basis.sourceLineageHash, assignedTemplateKey: basis.assignedTemplateKey,
-    worldTurn: basis.worldTurn, stage: { ...run.stage }, selectedActorKeys: basis.selectedActorKeys,
+    worldTurn: basis.worldTurn, chaos: run.chaos.value, stage: { ...run.stage }, selectedActorKeys: basis.selectedActorKeys,
     authorizationHash: basis.authorizationHash, mechanicalStateHash: basis.mechanicalStateHash,
     cooldownUntilWorldTurn: basis.cooldownUntilWorldTurn,
     activeSituationKeys: run.situations.active.map(s => s.situationKey), queuedSituationKeys: run.situations.queued.map(s => s.situationKey) }
+  const history = basis.history.slice(-TTRPG_SITUATION_GENERATION_HISTORY_LIMIT_V1).map(h => ({
+    templateKey: h.template.templateKey, motive: h.template.motive, sourceRef: h.sourceRef,
+    obstacleKinds: h.template.obstacles.map(o => o.kind), actionKeys: h.template.interventionPoints.flatMap(i => i.suggestedActionKeys) }))
   add('situation-contract', '新局势的生成与来源合同', contract, true)
   add('situation-frame', '当前阶段、来源与系统分配的候选身份', frame, true)
+  add('situation-recent-history', '内核同质化比较使用的真实最近历史', { history }, true)
   add('campaign-premise', '冻结战役背景与本桌安全边界', { title: c.title, pitch: c.pitch, bible: c.bible,
     sessionZero: c.sessionZero, contentWarnings: c.contentWarnings, canonInvariantPredicates: c.canonInvariantPredicates })
   add('rules-core', '冻结规则与事实策略', { ruleSystemId: rule.ruleSystemId, factPolicy: rule.factPolicy,
-    attributes: rule.attributes, resources: rule.resources, conditions: rule.conditions, checks: rule.checks })
+    attributes: rule.attributes, resources: rule.resources, conditions: rule.conditions, checks: rule.checks, socialTierMappings: rule.socialTierMappings })
+  add('current-ledgers', '当前规则所有者的局部事实与余额', { storyFacts: loaded.runtime.product.effectLedger.storyFacts,
+    socialBalances: loaded.runtime.product.effectLedger.socialBalances, advancementBalances: loaded.runtime.product.effectLedger.advancementBalances })
   for (const action of rule.actions) add('action.' + action.key, '可引用行动 · ' + action.key, action)
   for (const check of rule.genericChecks) add('check.' + check.checkKey, '可引用通用检定 · ' + check.checkKey, check)
   for (const interaction of rule.interactionBindings ?? []) add('interaction.' + interaction.interactionKey, '冻结互动 · ' + interaction.interactionKey, interaction)
@@ -96,7 +115,8 @@ async function readModel(input: ReadInput) {
   }
   for (const fact of c.frozenWorldPredicateIndex.entries) add('world-fact.' + fact.factKey, '冻结事实与当前权威取值 · ' + fact.factKey, {
     fact, temporalMeaning: fact.authority === 'invariant' ? 'immutable' : 'release-initial-state',
-    current: currentFacts.find(f => f.subjectRef === fact.subjectRef && f.predicateKey === fact.predicateKey && (f.objectRef ?? null) === fact.objectRef) ?? null })
+    current: currentFacts.find(f => f.subjectRef === fact.subjectRef && f.predicateKey === fact.predicateKey && (f.objectRef ?? null) === fact.objectRef) ?? null },
+    fact.predicateKey === 'exists' && currentPlaces.has(fact.subjectRef))
   for (const fact of sessionFacts) add('session-fact.' + fact.factKey, '实际已确认的团内事实 · ' + fact.factKey, fact)
   for (const clock of c.clocks) add('clock.' + clock.clockKey, '冻结时钟与当前值 · ' + clock.clockKey, { definition: clock, current: run.clocks.find(v => v.clockKey === clock.clockKey) })
   for (const front of c.fronts) add('front.' + front.frontKey, '冻结势力前线与当前状态 · ' + front.frontKey, { definition: front, current: run.fronts.find(v => v.frontKey === front.frontKey) })
@@ -105,8 +125,8 @@ async function readModel(input: ReadInput) {
   for (const entry of rule.compendium) add('compendium.' + entry.key, '冻结规则条目 · ' + entry.key, entry)
   for (const template of [...c.situationTemplates, ...basis.sessionTemplates]) add('situation-definition.' + template.templateKey, '既有完整局势定义 · ' + template.templateKey, template)
   for (const history of basis.history) add('situation-history.' + history.situationKey, '实际采用过的局势 · ' + history.situationKey, history)
-  for (const source of personalizationSources) add('personalization.' + source.sourceKey, '真实玩家来源 · ' + source.kind, {
-    source, value: personalizationValues.find(v => v.sourceKey === source.sourceKey)!.value, grantsPlayerCommitment: false })
+  for (const source of personalizationSources) add('personalization.' + source.sourceKey, '真实玩家来源 · ' + source.kind + ' · ' + source.sourceKey, {
+    source, value: personalizationValues.find(v => v.sourceKey === source.sourceKey)!.value, grantsPlayerCommitment: false }, source.kind === 'identity')
   const directory = { schema: 'storyforge.ttrpg-open-situation-reference-directory', version: 1,
     actionKeys: rule.actions.map(a => a.key), genericCheckKeys: rule.genericChecks.map(a => a.checkKey),
     effectPlanKeys: c.effectPlanTemplates.map(p => p.planKey), entityRefs: c.entityBindings.map(b => b.bindingKey),
@@ -123,9 +143,18 @@ async function readModel(input: ReadInput) {
     personalization: personalizationSources, resourceDirectory: resources.map(r => ({ suffix: r.suffix, title: r.title })),
     directoryDoesNotGrantFullRead: true }
   add('situation-directory', '合法引用目录；正文须另行完整读取', directory, true)
+  // The current authored setup supplies a coherent starting point, rather than unrelated high-scoring
+  // snippets. Its exact rule/fact/entity/effect dependencies share the candidate reference planner.
+  const activeKeys = new Set([...run.situations.active, ...run.situations.queued].map(s => s.templateKey))
+  const setupKeys = activeKeys.size ? activeKeys : new Set(c.openingSituationKeys)
+  const availableSuffixes = new Set(resources.map(r => r.suffix)), required = new Set<string>()
+  for (const template of [...c.situationTemplates, ...basis.sessionTemplates].filter(t => setupKeys.has(t.templateKey))) {
+    for (const row of planTtrpgOpenSituationReferenceNeedsV1({ template, basis, resources, availableSuffixes })) required.add(row.suffix)
+  }
+  for (const item of resources) if (required.has(item.suffix)) item.mandatory = true
   await loaded.assertCurrent()
   const visibilityHash = await hashCanonicalValue(resources)
-  return { loaded, context: { resources, frame, visibilityHash, admissionStateHash: await hashCanonicalValue(basis),
+  return { loaded, basis, context: { resources, frame, visibilityHash, admissionStateHash: await hashCanonicalValue(basis),
     readEvidence: { sequence: loaded.state.lastSequence, stateHash: loaded.stateHash, runtimeSourceHash: basis.runtimeSourceHash, sessionKey: basis.sessionKey } } }
 }
 

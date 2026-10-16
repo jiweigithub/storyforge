@@ -1,3 +1,4 @@
+import { finishTtrpgOpenSituationDraftV1, readTtrpgOpenSituationStopRepairsV1 } from './open-generated-situation-stop'
 import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { listTtrpgOpenHistoricalResponsesV1, readTtrpgOpenHistoricalResponseV1 } from './open-imported-response'
 import { readTtrpgOpenModelCallRunsV1 } from './open-model-call-evidence'
@@ -305,6 +306,7 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
   }
   const hosting = epoch?.viewerKey === input.viewerKey ? { epochKey: epoch.epochKey, canDelegate: canDelegateHosting,
     permission: epoch.hostingDelegation ?? null, canResume: Boolean(epoch.hostingDelegation && !epoch.hostingDelegation.stoppedRef) } : null
+  const situationStopRepairs = canHumanHost && run.coordination.epochs.some(e => e.triggerKind === 'request-situation' && e.status === 'closed' && e.viewerKey === current.seat.viewerKey) ? await readTtrpgOpenSituationStopRepairsV1({ ...input, viewerKey: current.seat.viewerKey }) : []
   const humanNarrationRepairs = await readTtrpgOpenHumanNarrationRepairKeysV1({ ...input, viewerKey: input.viewerKey! })
   let canRequestKp = false
   try { assertTtrpgOpenModelActorV1(auth, 'prose.ttrpg-open-kp', 'gm', input.viewerKey);canRequestKp = true } catch { /* The real GM has a separate identity. */ }
@@ -333,8 +335,9 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
     epochKey: epoch?.epochKey ?? null, isEpochStarter: epoch?.viewerKey === input.viewerKey,
     remainingCalls: gateRecovery?.status === 'stopped' ? 0 : epoch ? Math.max(0, epoch.budget.maximumCalls - budget!.countedRequests) : f.runtime.epochBudget.maximumCalls,
     consequence: consequence ? { owner: consequence.owner, cycleKey: consequence.cycle.cycleKey, workKey: consequence.work.workKey, operationKey: consequence.operation.operationKey } : null, consequenceApprovals,
+    situationStopRepairs, situationRequestStatus: run.coordination.calls.find(c => c.skillId === 'prose.ttrpg-open-situation-propose' && c.authorizationEpochKey === epoch?.epochKey)?.status ?? null,
     gateRecovery, stageStatus: run.stage.status, liveCharacter, hosting, canHumanHost, humanNarrationRepairs, modelNarrationRepairs, pendingCancellations, hasPendingModelRequest: Boolean(budget?.pending), hasUnknownModelResult: Boolean(budget?.blockedByUnknown), preauthorizationAvailable, blockedByModel: Boolean(budget?.pending || budget?.blockedByUnknown || budget?.blockedByDenial || candidateRecoveries.length), operation, candidates, candidateRecoveries, historicalResponses, pendingRejections, canRequestKp, hostingAllowed: f.content.campaign.runtimePolicy.enabled, handoff,
-    affordances, requests: epoch ? run.coordination.calls.filter(c => c.skillId !== 'prose.ttrpg-open-brief' && c.authorizationEpochKey === epoch.epochKey && (c.narrationBinding?.viewerKey ?? epoch.viewerKey) === input.viewerKey && c.status !== 'succeeded').map(c => ({ requestKey: c.requestKey, status: c.status, purpose: c.skillId === 'prose.ttrpg-open-kp' ? 'KP 叙述' : c.skillId === 'prose.ttrpg-open-companion' ? '队友行动' : '行动建议' })) : [],
+    affordances, requests: epoch ? run.coordination.calls.filter(c => !['prose.ttrpg-open-brief', 'prose.ttrpg-open-situation-propose'].includes(c.skillId) && c.authorizationEpochKey === epoch.epochKey && (c.narrationBinding?.viewerKey ?? epoch.viewerKey) === input.viewerKey && c.status !== 'succeeded').map(c => ({ requestKey: c.requestKey, status: c.status, purpose: c.skillId === 'prose.ttrpg-open-kp' ? 'KP 叙述' : c.skillId === 'prose.ttrpg-open-companion' ? '队友行动' : '行动建议' })) : [],
     narrations: (run.narrations ?? []).filter(r => r.recipientActorKeys.includes(current.seat.actorKey!)).map(r => ({ key: `${r.sourceRef.sessionKey}:${r.sourceRef.sequence}`, paragraphs: r.narration.paragraphs.map(p => p.text), sourceKind: isTtrpgOpenModelNarrationReceiptV1(r) ? 'model' : 'human', unresolvedModelResult: !isTtrpgOpenModelNarrationReceiptV1(r) && r.basis.previousRequests.some(c => c.status === 'unknown') })) } }
 }
 export type TtrpgOpenTableViewV1 = Awaited<ReturnType<typeof readTtrpgOpenTableV1>>
@@ -347,6 +350,7 @@ export async function readTtrpgOpenTableContextTraceV1(input: TtrpgOpenTableInpu
     ?? run.coordination.epochs.find(epoch => epoch.epochKey === call.authorizationEpochKey)?.viewerKey) === input.viewerKey)
   const call = calls[calls.length - 1]
   if (!call) return null
+  if (call.skillId === 'prose.ttrpg-open-situation-propose') throw new Error('本次为 GM 私域局势拟定；当前玩家入口只显示请求状态。')
   const rows = await readTtrpgOpenModelCallRunsV1({ ...input, calls: [call] }), owner = rows.find(row => row.contractHash === call.runContractHash)
   const historical = !owner?.id || owner.portableRuntimeOriginJson !== undefined ? await (await import('./open-run-portability')).readTtrpgOpenImportedCallOwnerV1({ ...input, requestKey: call.requestKey }) : null
   if (!owner?.id && !historical) throw new Error('本次请求的原始运行记录缺失，请先恢复进度。')
@@ -599,6 +603,7 @@ export async function recoverTtrpgOpenTableGatesV1(input: TtrpgOpenTableInputV1 
 export async function finishTtrpgOpenTableWindowV1(input: TtrpgOpenTableInputV1) {
   const f = await humanDesk(input), epochKey = f.runtime.openRun?.coordination.activeEpochKey
   if (!epochKey) return
+  if (f.runtime.openRun!.coordination.epochs.find(e => e.epochKey === epochKey)?.triggerKind === 'request-situation') return finishTtrpgOpenSituationDraftV1({ ...input, epochKey })
   return closeTtrpgOpenEpochV1({ ...await envelope(input.sessionId, 'finish'), viewerKey: input.viewerKey, epochKey, reason: f.runtime.openRun!.coordination.calls.some(c => c.authorizationEpochKey === epochKey && c.status === 'unknown') ? '结果未知，真人明确停止本轮授权；保留原调用及费用未知记录' : '真人明确结束本轮主持，准备下一次输入' })
 }
 

@@ -25,7 +25,7 @@ const TTRPG_REPLAY_CHUNK_MODULES = {
     'effect-runtime', 'frozen-facts', 'frozen-content-cache', 'item-ledger', 'media-contract',
     'open-authorization', 'open-chaos', 'open-content-authoring', 'open-content-common',
     'open-content-predicates', 'open-content-references', 'open-content-situations', 'open-content-templates',
-    'open-contract', 'open-contract-parse', 'context-trigger-contract', 'open-context-policy', 'open-model-purpose-contract', 'open-memory-contract', 'open-memory-event-digest', 'open-private-choice-contract', 'open-coordination', 'open-effect-binding',
+    'open-contract', 'open-contract-parse', 'context-trigger-contract', 'open-context-policy', 'open-model-purpose-contract', 'open-memory-contract', 'open-memory-receipt', 'open-model-memory-contract', 'open-brief-contract', 'open-memory-event-digest', 'open-memory-prefix-proof', 'open-private-choice-contract', 'open-coordination', 'open-effect-binding',
     'open-fact-authority', 'open-fact-ledger', 'open-gates', 'open-intent',
     'open-knowledge', 'open-knowledge-share', 'open-kp-binding', 'open-kp-narration',
     'open-kp-receipt', 'open-model-calls', 'open-model-purpose', 'open-oracle-contract',

@@ -20,6 +20,7 @@ function assertHistoricalReader(authorization: TtrpgOpenAuthorizationV1, call: T
   if (!requester || requester.controller === 'ai' || requester.assignmentState !== 'claimed') throw new Error('[ttrpg-imported-response] 需要当前本人已认领的真人席位')
   if (ttrpgOpenModelPurposeForSkillV1(call.skillId).actorRole === 'gm') {
     assertTtrpgOpenHumanHostV1(authorization, viewerKey)
+    if (call.skillId === 'prose.ttrpg-open-situation-propose' && requester.role !== 'gm') throw new Error('局势私域历史只允许当前真人 GM 读取')
     if (call.actorKey !== 'gm') throw new Error('[ttrpg-imported-response] 原回答的主持角色无效')
   } else {
     const actor = authorization.seats.find(seat => seat.actorKey === call.actorKey)
@@ -51,7 +52,7 @@ export async function listTtrpgOpenHistoricalResponsesV1(input: HistoricalInput)
         && event.payload.attempt === call.attempt && event.payload.bindingHash === call.requestHash))
     if (owners.length > 1) throw new Error('[ttrpg-imported-response] 原回答不能唯一定位')
     if (owners.length) result.push({ runId: owners[0].runId, requestKey: call.requestKey,
-      purpose: ({ intent: '行动建议', companion: '队友行动', 'kp-narration': 'KP 叙述', 'stage-brief': '阶段复盘', 'oracle-interpret': 'Oracle 解释', 'fact-normalize': '事实整理' })[ttrpgOpenModelPurposeForSkillV1(call.skillId).purpose] })
+      purpose: ({ intent: '行动建议', companion: '队友行动', 'kp-narration': 'KP 叙述', 'stage-brief': '阶段复盘', 'situation-proposal': '私域局势候选', 'oracle-interpret': 'Oracle 解释', 'fact-normalize': '事实整理' })[ttrpgOpenModelPurposeForSkillV1(call.skillId).purpose] })
   }
   return result
 }

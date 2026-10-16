@@ -18,7 +18,7 @@ export function assertTtrpgOpenModelActorV1(authorization: TtrpgOpenAuthorizatio
       || !authorization.approvalBindings.some(binding => binding.companionActorKey === actorKey && binding.approverSeatKeys.includes(requester.seatKey)))) throw new Error('[ttrpg-open-call] 不可读取或请求其他真人角色的私域候选')
   } else {
     assertTtrpgOpenModelFactApproverV1(authorization,viewerKey)
-    if (definition.purpose === 'stage-brief') {
+    if (definition.purpose === 'stage-brief' || definition.purpose === 'situation-proposal') {
       assertTtrpgOpenHumanHostV1(authorization, viewerKey)
       if (authorization.seats.some(seat => !seat.consent.sessionLoggingAllowed)) throw new Error('[ttrpg-brief] 复盘需要当前全桌记录同意')
     }
@@ -28,6 +28,7 @@ export function assertTtrpgOpenModelActorV1(authorization: TtrpgOpenAuthorizatio
 }
 export async function loadTtrpgOpenModelContextV1(input: { scope: WorkspaceScope; sessionId: number; actorKey: string; skillId: string }) {
   const purpose = ttrpgOpenModelPurposeForSkillV1(input.skillId)
+  if (purpose.purpose === 'situation-proposal') return (await import('./open-generated-situation-context')).loadTtrpgOpenSituationContextV1(input)
   if (purpose.purpose === 'stage-brief') return (await import('./open-brief-context')).loadTtrpgOpenBriefContextV1(input)
   if (purpose.purpose === 'kp-narration') return (await import('./open-kp-context')).loadTtrpgOpenKpContextV1(input)
   return purpose.actorRole === 'gm'

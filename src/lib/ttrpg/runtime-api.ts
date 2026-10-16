@@ -151,3 +151,8 @@ export { reconcileTtrpgOpenBriefMemoryRunV1, TtrpgOpenBriefMemoryReceiptPendingE
 export { readTtrpgWorldPatchDeskV1, buildTtrpgWorldPatchCandidateV1, exportTtrpgWorldPatchCandidateV1 } from './open-world-patch-service'
 export { parseTtrpgWorldPatchCandidateV1, verifyTtrpgWorldPatchCandidateV1 } from './open-world-patch-contract'
 export { loadTtrpgOpenSituationProposalBasisV1, preflightTtrpgOpenGeneratedSituationV1 } from './open-generated-situation-basis'
+
+export { TtrpgOpenSituationRequestError, generateTtrpgOpenSituationCandidateV1, executeTtrpgOpenSituationRequestV1, recoverTtrpgOpenSituationCandidateV1 } from './open-intent-harness'
+export { readTtrpgOpenSituationCandidateV1, readTtrpgOpenSituationCandidateSummaryV1 } from './open-generated-situation-candidate'
+
+export { finishTtrpgOpenSituationDraftV1, reconcileTtrpgOpenStoppedSituationV1 } from './open-generated-situation-stop'
