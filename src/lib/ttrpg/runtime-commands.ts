@@ -962,18 +962,31 @@ export async function reviewTtrpgOpenOracleCandidateV1(input: FormalTtrpgCommand
   return event;
 }
 
+async function buildTtrpgOpenFactRetirementV1(context: TtrpgFormalBuildContextV1, viewerKey: string, factKey: string, reason: string) {
+  const current = parseTtrpgRuntimeStateV2(context.state.ttrpg);
+  const modelEntry = current?.openRun?.factLedger?.entries.find(entry => entry.fact.factKey === factKey)?.modelCandidate;
+  const { runtime, run, seat, epoch } = await prepareTtrpgOpenFactAuthorityV1(context, viewerKey, modelEntry !== undefined);
+  if (!ttrpgOpenSessionFactsV1(run.factLedger).some(fact => fact.factKey === factKey && !fact.retired)) throw new Error('[ttrpg-fact] 只能退休活动会话事实；不能删除世界不变量、机械状态或已退休记录。');
+  const retirement = parseTtrpgOpenFactRetirementV1({ factKey, reason, sourceRef: { sessionKey: runtime.sessionKey, sequence: context.sequence },
+    authorizationEpochKey: epoch.epochKey, viewerKey, supersededByFactKey: null });
+  return { actorKey: seat.actorKey ?? 'gm', targetKey: factKey, payload: { viewerKey, authorizationEpochKey: epoch.epochKey, retirement } };
+}
+/** Internal human review only. The verified read is supplied by the desk; no event is appended. */
+export async function previewTtrpgOpenHumanFactCommandV1(context: TtrpgFormalBuildContextV1, input: {
+  viewerKey: string; action: { kind: 'assert'; proposal: TtrpgOpenOracleFactProposalV1; oracleSourceRef: TtrpgOpenSourceRefV1;
+    candidateHash: string; baseStateHash: string; referencePolicy?: 'committed-runtime-entities-v1' } | { kind: 'retire'; factKey: string; reason: string };
+}) {
+  const runtime = parseTtrpgRuntimeStateV2(context.state.ttrpg), epoch = runtime?.openRun?.coordination.epochs.find(row => row.epochKey === runtime.openRun!.coordination.activeEpochKey);
+  assertTtrpgOpenSituationWindowEventV1(runtime, input.action.kind === 'assert' ? 'ttrpg.fact.asserted' : 'ttrpg.fact.retired');
+  if (!epoch || isTtrpgOpenPassiveEpochV1(epoch)) throw new Error('[ttrpg-fact] 事实审阅需要本人普通咨询窗口，不能借用局势或复盘授权。');
+  if (runtime!.openRun!.coordination.calls.some(row => row.authorizationEpochKey === epoch.epochKey && ['prepared', 'dispatched', 'unknown'].includes(row.status))) throw new Error('[ttrpg-fact] 请先核对原模型请求、回答与未知费用。');
+  if (input.action.kind === 'retire') return buildTtrpgOpenFactRetirementV1(context, input.viewerKey, input.action.factKey, input.action.reason);
+  return buildTtrpgOpenFactAssertionV1(context, { ...input.action, viewerKey: input.viewerKey });
+}
 export async function retireTtrpgOpenSessionFactV1(input: FormalTtrpgCommandEnvelope & { viewerKey: string; factKey: string; reason: string }): Promise<ProductRuntimeEvent> {
   const viewerKey = openKey(input.viewerKey, 'fact retirement viewer'), factKey = openKey(input.factKey, 'retired fact key'), reason = openText(input.reason, 'fact retirement reason', 1000);
   return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.fact.retired', intent: { viewerKey, factKey, reason },
-    build: async context => {
-      const current = parseTtrpgRuntimeStateV2(context.state.ttrpg);
-      const modelEntry = current?.openRun?.factLedger?.entries.find(entry => entry.fact.factKey === factKey)?.modelCandidate;
-      const { runtime, run, seat, epoch } = await prepareTtrpgOpenFactAuthorityV1(context, viewerKey, modelEntry !== undefined);
-      if (!ttrpgOpenSessionFactsV1(run.factLedger).some(fact => fact.factKey === factKey && !fact.retired)) throw new Error('[ttrpg-fact] 只能退休活动会话事实；不能删除世界不变量、机械状态或已退休记录。');
-      const retirement = parseTtrpgOpenFactRetirementV1({ factKey, reason, sourceRef: { sessionKey: runtime.sessionKey, sequence: context.sequence },
-        authorizationEpochKey: epoch.epochKey, viewerKey, supersededByFactKey: null });
-      return { actorKey: seat.actorKey ?? 'gm', targetKey: factKey, payload: { viewerKey, authorizationEpochKey: epoch.epochKey, retirement } };
-    },
+    build: context => buildTtrpgOpenFactRetirementV1(context, viewerKey, factKey, reason),
   });
 }
 

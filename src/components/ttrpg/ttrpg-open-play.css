@@ -22,3 +22,5 @@
 @media(max-width:600px){.sf-open-table{padding:12px;font-size:15px}.sf-open-table h1{font-size:24px}.sf-open-table-card{padding:14px}.sf-open-table button{width:100%;margin:6px 0}.sf-open-table-toolbar{align-items:stretch;gap:8px}}
 
 .sf-open-table-actions{border:0;margin:0;padding:0;min-inline-size:0;display:grid;gap:16px}
+.sf-open-fact-desk{overflow-wrap:anywhere}
+.sf-open-fact-desk fieldset{min-inline-size:0}
