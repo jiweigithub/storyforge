@@ -1,3 +1,4 @@
+import {CHAT_DISCOVERY_EVIDENCE_REVIEWER_V1, chatDiscoveryEvidenceReviewRulesV1} from './discovery-evidence-context'
 import {chatObservationScopeReviewRulesV1} from './observation-scope-prompt'
 import {supportsChatReplanningReviewV1} from './narrative-replanning'
 import {supportsChatSceneTransitionV1, assertChatSceneTransitionReviewVersionV1} from './narrative-scene-transition'
@@ -103,7 +104,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
       await assertRuntimeHarnessFreshV1(freshness)
       const manifest = await createContextManifestFromAssemblyV1({runId: snapshot.run.id, stepId, attempt: 1,
         projectId: input.scope.projectId, worldGroupId: snapshot.contract.scope.worldGroupId, declaredSourceKeys: sourceKeys,
-        assembled, readerVersion: situation ? (['chat-situation-review-v7', 'chat-situation-review-v8', 'chat-situation-review-v9'].includes(reviewBinding.promptVersion) ? 'chat-situation-review-v8' : 'chat-situation-review-v7') : memoryReconciliation ? 'chat-action-review-v8' : 'chat-action-review-v7'})
+        assembled, readerVersion: situation ? (reviewBinding.promptVersion === CHAT_DISCOVERY_EVIDENCE_REVIEWER_V1 ? 'chat-situation-review-v9' : ['chat-situation-review-v7', 'chat-situation-review-v8', 'chat-situation-review-v9'].includes(reviewBinding.promptVersion) ? 'chat-situation-review-v8' : 'chat-situation-review-v7') : memoryReconciliation ? 'chat-action-review-v8' : 'chat-action-review-v7'})
       snapshot = await append(input.scope, snapshot, 'context.assembled', {stepId, attempt: 1, manifestHash: manifest.manifestHash})
       const compact = naturalDisclosure || ['chat-narrative-action-review-v17', 'chat-narrative-options-review-v11'].includes(reviewBinding.promptVersion)
       const roleContext = !situation && compact ? interactionRetrievalView((await readProductRuntimeState(input.productRuntimeSessionId)).interaction!, candidate.participantKey) : undefined
@@ -114,6 +115,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
         '若 constructionRequest.origin=player-followup，核对 pendingSituation 的已审查意向和 playerEventSequence/playerExcerpt 对应真实玩家消息：新目标与问题须承接这项请求及行动者动机，不复活、复制或否定旧结果，不替其他角色或玩家规划，不把新意向当作已发生。保持当前时地和原玩家对话的知情范围，不给对话外的人传播私下请求；普通细节仅可在冻结权限内补足未写定的局部条件，不假托真实引文、不改写已确认内容、不提前完成调查或泄露隐情。不能仅因输入没有答案就虚构永久阻碍，也不能凭空制造与请求无关的新矛盾。',
         '若 constructionRequest.origin=continued-thread，这是角色已审查的推进意向，不是已经发生的新事实或玩家许可。必须关联 pendingSituation 的自身目标、旧问题和可知依据；不能借新背景绕过玩家拒绝、等待或休息，不给其他角色设定目标和打算，不更换玩家所处时间地点。没有必要时不制造新事件。',
         ...chatObservationScopeReviewRulesV1(reviewBinding.promptVersion),
+        ...chatDiscoveryEvidenceReviewRulesV1(reviewBinding.promptVersion),
         '对照全部旧事实（含幕后事实）、逐角色知识、冻结创作权限和玩家实际请求，逐项给出有依据的判断。任何一项不通过时整个候选不得采用。',
         '若有 discoveries，逐项核对作者冻结的 discovery 条件、允许角色与场景、pendingSituation 的实际已完成调查及摘录。只有条件得到具体证据支持才能 discovered；意向、无关动作、玩家拒绝或证据不足必须拒绝发现，合法的 not-discovered/inconclusive 无须强造线索。只观察到物品不能推断谁放置或其动机，必须按事实粒度审查；若整条事实超出观察依据不得部分放行。',
         '发现只是调查角色新获知同一个既定事实，不是向玩家或他人披露。visibility 应允许满足条件后的这一项受限知情更新，拒绝标题、公开背景、其他人的目标与打算夹带答案或条件。不能放宽普通 disclosures 的先知要求，也不能重写真相或创建同义事实洗白秘密。',

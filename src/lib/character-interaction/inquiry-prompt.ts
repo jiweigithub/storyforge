@@ -9,7 +9,7 @@ export const CHAT_SPOKEN_INQUIRY_REVIEW_RULES_V1 = [
 ]
 
 export function chatInquiryGenerationRulesV1(version: string | undefined): string[] {
-  if (!['chat-situation-construction-v8', 'chat-situation-construction-v9', 'chat-situation-construction-v10'].includes(version ?? '')) return []
+  if (!['chat-situation-construction-v8', 'chat-situation-construction-v9', 'chat-situation-construction-v10', 'chat-situation-construction-v11'].includes(version ?? '')) return []
   return [
     '新合同可在上述 JSON 中另加 inquiryResult，但只有 permissions.allowInquiryResults=true 且 continued-thread 正在承接一条已实际提出的问题时使用。不要把提问当答案，不能靠 newFacts 绕过询问的知情检查。',
     'inquiryResult={actorKey,questionSequence,questionExcerpt,respondentFactKey,respondentExcerpt,respondentName,statementFactKey,answerKind,answerText,audienceKeys,evidenceFactKeys,discoveries:[{factKey,answerExcerpt,reason}]}。questionSequence 必须等于 pendingSituation.sourceEventSequence，questionExcerpt 精确摘录该角色已发生的消息；必须是真正向对象提出的问题，不能是准备问、想象或未来安排。',

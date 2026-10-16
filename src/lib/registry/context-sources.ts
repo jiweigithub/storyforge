@@ -759,14 +759,28 @@ async function readChatSituationRuntimeContext(input: AssembleContextInput): Pro
   const saved = await readChatActionCandidateValue(input)
   const {readChatCandidateRetrievalVersion} = await import('../character-interaction/context-reader-version')
   if (!saved) {
+    let discoveryEvidence = false
+    const {usesChatDiscoveryEvidenceContextV1} = await import('../character-interaction/discovery-evidence-context')
+    if (input.chatSituationConstructionRunId != null) {
+      const {readInstanceAgentRunV1} = await import('../agent/run/event-store')
+      const producer = await readInstanceAgentRunV1(input.scope, input.chatSituationConstructionRunId)
+      if (producer.run.productRuntimeSessionId !== session.id || producer.projection.state !== 'running'
+        || !producer.contract.executionBindings?.some(b => b.stepId === 'interaction:runtime-candidate' && b.skillId === 'character.chat-situation-construction')) {
+        throw new Error('情境证据读取缺少当前实例的生成合同')
+      }
+      const {assertRuntimeHarnessFreshV1} = await import('../agent/run/runtime-scope')
+      await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: producer.contract.scope, participantKey: 'player', view: 'chat-situation'})
+      discoveryEvidence = usesChatDiscoveryEvidenceContextV1(producer)
+    }
     let retrievalVersion: import('../character-interaction/context-selection').ChatRetrievalVersion = 'chat-relevance-v4'
     if (input.chatSituationCandidateRunId != null) {
       const {readLatestVerifiedAgentRunCheckpointV1} = await import('../agent/run/checkpoint')
       const producer = await readLatestVerifiedAgentRunCheckpointV1(input.scope, input.chatSituationCandidateRunId, {owner: 'instance'})
       if (!producer || producer.snapshot.run.productRuntimeSessionId !== input.productRuntimeSessionId) return ''
       retrievalVersion = await readChatCandidateRetrievalVersion(producer.snapshot, input.projectId, 'chatSituationRuntime')
+      discoveryEvidence = usesChatDiscoveryEvidenceContextV1(producer.snapshot)
     }
-    return selectChatCoordinatorContextV1(state.interaction, {text: await readChatSituationCandidateContext(input), retrievalVersion, ...(sourceUnits ? {sourceUnits} : {})})
+    return selectChatCoordinatorContextV1(state.interaction, {text: await readChatSituationCandidateContext(input), retrievalVersion, discoveryEvidence, ...(sourceUnits ? {sourceUnits} : {})})
   }
   const retrievalVersion = await readChatCandidateRetrievalVersion(saved.snapshot, input.projectId, 'interactionRuntime', saved.value.actorKey, state.interaction)
   return selectChatCoordinatorContextV1(state.interaction, {text: JSON.stringify(saved.value), actorKey: saved.value.actorKey, retrievalVersion, ...(sourceUnits ? {sourceUnits} : {})})

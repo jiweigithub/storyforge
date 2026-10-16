@@ -1,0 +1,139 @@
+{
+  "schema": "storyforge.character-chat-engineering-evidence",
+  "version": 1,
+  "label": "V120 committed investigation evidence context",
+  "recordedAt": "2026-10-16T01:07:02.888801+00:00",
+  "baselineCommit": "4cd747b4",
+  "boundary": {
+    "product": "character-interaction",
+    "phase": "S3 runtime",
+    "lifecycle": "product development",
+    "owner": "Chat Work / ProductRuntimeSession",
+    "reads": [
+      "chatSituationRuntime",
+      "chatSituationCandidate"
+    ],
+    "writes": "existing reviewed runtime candidate/adopt/productRuntimeEvents",
+    "world": "frozen read-only reference",
+    "newTables": 0,
+    "newWritableFields": 0,
+    "newModelSteps": 0,
+    "newPermissions": 0
+  },
+  "implementation": {
+    "context": "System-derived allowed known fact keys, same-event action evidence keys, eligible unknown target keys and frozen prerequisites. Versioned index is not a discovery decision.",
+    "binding": "construction-v11/review-v10; producer reader v10/review reader v9; registered source verifies exact owning producer and freshness.",
+    "guards": "No silent removal, repair, auto-discovery, threshold relaxation or extra retry. Existing deterministic/semantic validation remains final.",
+    "history": "Prior complete producer/review system prompts hash-equal; historical context excludes derived index; existing restore blocks changed current registry before requests."
+  },
+  "regression": {
+    "files": 96,
+    "tests": 1231,
+    "passed": true,
+    "newTests": 18,
+    "initialFailure": "one test wrongly expected resume under a changed global binding; fixed test to require zero-call refusal, then explicitly restore original binding. Guard was not weakened."
+  },
+  "browser": {
+    "cases": 9,
+    "passed": 9
+  },
+  "gates": {
+    "passed": 10,
+    "bundleSize": "passed",
+    "receipt": "/tmp/storyforge-chat-v120-final-gates-receipt.json"
+  },
+  "baseline": {
+    "snapshot": {
+      "gitHistory": "depth-1; exact HEAD and tracked tree verified",
+      "head": "73b9f23c2c6f034adebcf139e0e43e5c2b91cb38",
+      "root": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v118-real-ml7niqy6/storyforge",
+      "manifestPath": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v118-real-ml7niqy6/manifest.json",
+      "manifestSha256": "201785684ce0da1cd7ecf4d5dc71cb2b9fc4891f998f44df64b6566c840a79ae",
+      "files": 3469
+    },
+    "legacyHashes": {
+      "construction-v10": "bd0c1ec245046132e6dc94799ad46bde6fe43f3d85ba6849538099d576b6cc1e",
+      "review-v9": "99d8060bb46a307dd0f6d88e9e983c17f77005946e059bdd8a118009feb25a16"
+    },
+    "note": "Failed new baseline copy due ENOSPC removed; used already verified clean V118 real snapshot for unchanged baseline code, temporary test instrumentation restored, clean checked."
+  },
+  "infrastructure": {
+    "priorTerminalObservations": {
+      "observations": [
+        {
+          "version": "v115",
+          "kind": "e2e",
+          "handle": 82290,
+          "observedTerminalExit": 1,
+          "observedAt": "2026-10-16T01:03:01.386303+00:00",
+          "reason": "ENOSPC; browser run stopped after last logged case 323; wrapper could not write terminal receipt",
+          "log": "/tmp/storyforge-chat-v115-full-e2e.log",
+          "logSha256": "610bc117074b7a898275b2ee1e65f1b7f233356256849ec8428d90f05fdb81a4"
+        },
+        {
+          "version": "v118",
+          "kind": "ci",
+          "handle": 29673,
+          "observedTerminalExit": 1,
+          "observedAt": "2026-10-16T01:03:01.386554+00:00",
+          "reason": "ENOSPC; queue lock truncation failed before verification command; wrapper receipt retained",
+          "log": "/tmp/storyforge-chat-v118-full-ci.log",
+          "logSha256": "2a65a469406155a0ec8588c4264711fa160b3253cd467a6426bcb9326ffe0234"
+        },
+        {
+          "version": "v118",
+          "kind": "e2e",
+          "handle": 51535,
+          "observedTerminalExit": 1,
+          "observedAt": "2026-10-16T01:03:01.386596+00:00",
+          "reason": "ENOSPC; queue lock truncation failed before verification command; wrapper could not write terminal receipt",
+          "log": "/tmp/storyforge-chat-v118-full-e2e.log",
+          "logSha256": "8c373949535a10456207468c2643e15f4aa003915d6adbb9d6a823d82fcd36c0"
+        }
+      ],
+      "notOriginalReceipt": true
+    },
+    "cleanupAudit": "/tmp/storyforge-chat-v120-space-cleanup.json",
+    "cleanupScope": "only incomplete own snapshot, generated dist from terminated own CI, duplicate Git object packs of terminated own snapshots; tracked source trees, manifests, artifacts and logs retained; no user data changed"
+  },
+  "realValidation": "not yet run on this version; next independent fresh refusal episode",
+  "limits": [
+    "Engineer-injected semantics does not prove real generated behavior or narrative quality",
+    "V119 failure retained; no M1/Agnes/human/commercial gate closed",
+    "Full CI/E2E must be started on clean committed snapshot and reach terminal results"
+  ],
+  "logs": {
+    "storyforge-chat-v120-initial-regression.log": {
+      "path": "/tmp/storyforge-chat-v120-initial-regression.log",
+      "sha256": "16d0249b772ff63a21fbdc75db5b9f4728efd84e388538e012b19de708b74327"
+    },
+    "storyforge-chat-v120-context-rerun.log": {
+      "path": "/tmp/storyforge-chat-v120-context-rerun.log",
+      "sha256": "7ac28efffbf22b9fcd99016b6ab7fec31b8e86962697011b71436780cdb8ec8a"
+    },
+    "storyforge-chat-v120-final-regression.log": {
+      "path": "/tmp/storyforge-chat-v120-final-regression.log",
+      "sha256": "5930451a2df69a502690c6a0f7e692a98a9a79283a0b7b0c6de18f6b8a31b2cc"
+    },
+    "storyforge-chat-v120-targeted-e2e.log": {
+      "path": "/tmp/storyforge-chat-v120-targeted-e2e.log",
+      "sha256": "7754dd635d93b17a83b878f6d4f51702377a611f26da2bbb01d7ad5938f6133b"
+    },
+    "storyforge-chat-v120-baseline-hashes.log": {
+      "path": "/tmp/storyforge-chat-v120-baseline-hashes.log",
+      "sha256": "5113f2df3ce91ff1627a298673041633798147aaef2e17f3abba4c1d67ef511a"
+    },
+    "storyforge-chat-v120-final-gates.log": {
+      "path": "/tmp/storyforge-chat-v120-final-gates.log",
+      "sha256": "a95531aad8346450640a68d36c885949a64b07dbcba3f0717eca8a26515414b4"
+    },
+    "storyforge-chat-v120-final-bundle-size.log": {
+      "path": "/tmp/storyforge-chat-v120-final-bundle-size.log",
+      "sha256": "b496748a4c548a9e03ecb4d581c4132ddfe386413b71f8dd5ca0375b2a7810d7"
+    },
+    "storyforge-chat-v120-final-docs.log": {
+      "path": "/tmp/storyforge-chat-v120-final-docs.log",
+      "sha256": "3cf099bb4bf6f5229f2d0c642f9cf928143255cb6d18c0969505a40bc68ce9a7"
+    }
+  }
+}

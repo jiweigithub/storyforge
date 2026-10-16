@@ -268,7 +268,7 @@
   "limits": [
     "Injected engineering review is not evidence of semantic judgment quality",
     "Access-only versus actual content inspection is assessed semantically against committed action, not a keyword rule",
-    "Full CI/E2E on exact V118 code queued; running V115 E2E retained, verified-unstarted V115 CI superseded.",
+    "V115 E2E and V118 CI/E2E terminated with ENOSPC; logs and terminal observations preserved, no full pass.",
     "Agnes and independent human/commercial gates remain unverified"
   ],
   "logs": {
@@ -339,7 +339,7 @@
   },
   "fullValidation": {
     "ci": {
-      "status": "queued",
+      "status": "terminal exit1; ENOSPC while truncating queue lock, before verification command",
       "snapshot": {
         "gitHistory": "depth-1; exact HEAD and tracked tree verified",
         "head": "73b9f23c2c6f034adebcf139e0e43e5c2b91cb38",
@@ -348,10 +348,11 @@
         "manifestSha256": "201785684ce0da1cd7ecf4d5dc71cb2b9fc4891f998f44df64b6566c840a79ae",
         "files": 3469
       },
-      "receipt": "/tmp/storyforge-chat-v118-full-ci-receipt.json"
+      "receipt": "/tmp/storyforge-chat-v118-full-ci-receipt.json",
+      "terminalObservation": "/tmp/storyforge-chat-v120-enospc-terminals.json"
     },
     "e2e": {
-      "status": "queued",
+      "status": "terminal exit1; ENOSPC while truncating queue lock, before verification command",
       "snapshot": {
         "gitHistory": "depth-1; exact HEAD and tracked tree verified",
         "head": "73b9f23c2c6f034adebcf139e0e43e5c2b91cb38",
@@ -360,9 +361,10 @@
         "manifestSha256": "201785684ce0da1cd7ecf4d5dc71cb2b9fc4891f998f44df64b6566c840a79ae",
         "files": 3469
       },
-      "receipt": "/tmp/storyforge-chat-v118-full-e2e-receipt.json"
+      "receipt": "/tmp/storyforge-chat-v118-full-e2e-receipt.json",
+      "terminalObservation": "/tmp/storyforge-chat-v120-enospc-terminals.json"
     },
-    "priorV115E2E": "running and preserved",
+    "priorV115E2E": "terminal exit1; ENOSPC infrastructure failure after last logged case323",
     "priorV115CI": "verified unstarted then superseded; /tmp/storyforge-chat-v115-ci-superseded.json"
   }
 }

@@ -618,6 +618,8 @@ export interface AssembleContextInput {
   interactionParticipantKey?: string
   /** Exact durable situation candidate being reviewed within its owning instance. */
   chatSituationCandidateRunId?: number
+  /** Current situation producer; registered reader resolves its frozen contract. */
+  chatSituationConstructionRunId?: number
   chatActionCandidateRunId?: number
   chatMemoryCandidateRunId?: number
   /** Current explicit revision Run; used only to verify its source read. */

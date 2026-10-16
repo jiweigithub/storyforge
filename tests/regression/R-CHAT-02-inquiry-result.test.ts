@@ -34,7 +34,7 @@ it.each([false, true])('commits actual answer and one fact atomically, with hear
     reviewed++; expect(messages[0].content).toContain('actual-question'); expect(messages[0].content).toContain('对每个 discovery 单独复核')
     return JSON.stringify(chatInquiryReviewFixture(draft))
   }})
-  expect(reviewedResult.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v9')
+  expect(reviewedResult.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v10')
   await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId, onDurableBoundary: type => {if (type === 'runtime.candidate.adopted') throw new Error('host-after-commit')}})).rejects.toThrow('host-after-commit')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
   const version = await readProductRuntimeStateVersion(f.sessionId)
