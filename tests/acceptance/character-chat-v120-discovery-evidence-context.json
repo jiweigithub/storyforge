@@ -163,5 +163,51 @@
       },
       "receipt": "/tmp/storyforge-chat-v120-full-e2e-receipt.json"
     }
+  },
+  "fullCI": {
+    "implementationCommit": "2eed4cfdc7d09d473260885ab53998c88f8e1d0e",
+    "status": "failed",
+    "exitCode": 1,
+    "files": {
+      "passed": 875,
+      "failed": 3
+    },
+    "tests": {
+      "passed": 5542,
+      "failed": 13
+    },
+    "failures": "All thirteen failed assertions are timeout terminations in three suites. Cause not established; neither ignored nor converted to pass.",
+    "suites": [
+      {
+        "file": "tests/regression/R-OPEN-WORLD3-experience-design.test.ts",
+        "failures": 4,
+        "timeoutSeconds": [
+          360,
+          420,
+          600
+        ]
+      },
+      {
+        "file": "tests/regression/R-PRODUCTPROD1D-scheduler.test.ts",
+        "failures": 1,
+        "timeoutSeconds": [
+          30
+        ]
+      },
+      {
+        "file": "tests/regression/R-PRODUCTPROD1F-production-executor.test.ts",
+        "failures": 8,
+        "timeoutSeconds": [
+          30,
+          60
+        ]
+      }
+    ],
+    "log": "/tmp/storyforge-chat-v120-full-ci.log",
+    "logSha256": "f4356ccf769a5f07ffe640bba141b7eac905d87e045ae2729800718dfe1eb908",
+    "receipt": "/tmp/storyforge-chat-v120-full-ci-receipt.json",
+    "receiptSha256": "1c36ad53f7579823986ff849b14b89a986f595a46b5c00bf3dc97afc68c6439f",
+    "observedAt": "2026-10-16T03:13:44.076656+00:00",
+    "limits": "This V120 code is older than V123; current-code validation remains separate. No timeout limits changed."
   }
 }
