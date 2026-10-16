@@ -10,7 +10,7 @@ import { acceptTtrpgOpenSituationV1, activateTtrpgOpenSessionSituationV1, startT
 import { finishTtrpgOpenSituationDraftV1 } from '../../src/lib/ttrpg/open-generated-situation-stop'
 import { readProductRuntimeState, branchProductRuntimeSession, deleteProductRuntimeSession } from '../../src/lib/product/runtime-core'
 import { hashCanonicalValue } from '../../src/lib/agent/run/hash'
-import { parseTtrpgOpenSessionSituationReceiptV1 } from '../../src/lib/ttrpg/open-session-situation-contract'
+import { parseTtrpgOpenSessionSituationReceiptV1, type TtrpgOpenSessionSituationReceipt } from '../../src/lib/ttrpg/open-session-situation-contract'
 import { resumeTtrpgOpenOperationV1 } from '../../src/lib/ttrpg/open-operation-coordinator'
 import { resumeTtrpgOpenPressureV1 } from '../../src/lib/ttrpg/open-pressure-coordinator'
 import { resumeTtrpgOpenSituationsV1 } from '../../src/lib/ttrpg/open-situation-coordinator'
@@ -42,6 +42,32 @@ async function privateDraft() {
   if (candidate?.schema !== 'storyforge.ttrpg-open-situation-candidate' || !candidate.review?.evaluation.accepted) throw new Error('expected actual validated candidate')
   const command = { ...await openEnvelopeV1(id.sessionId, 'instance.situation.accept'), ...id, templateHash: await hashCanonicalValue(candidate.review.proposal.template), disclosure: 'player-and-discovery-text-reviewed' as const }
   return { ...s, id, candidate, command, send }
+}
+
+async function discover(s: Awaited<ReturnType<typeof setup>>, receipt: TtrpgOpenSessionSituationReceipt) {
+  const id = s.deskInput, active = (await readProductRuntimeState(id.sessionId)).ttrpg!.openRun!
+  await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(id.sessionId, 'instance.discovery.epoch'), viewerKey: OPEN_HUMAN_VIEWER, triggerKind: 'submit-action', rawInput: '检查新局势里的线索' })
+  const action = s.input.content.rulePack.content.actions[0], instance = active.situations.active.find(row => row.templateKey === receipt.template.templateKey)!
+  await startTtrpgOpenOperationV1({ ...await openEnvelopeV1(id.sessionId, 'instance.discovery.operation'), viewerKey: OPEN_HUMAN_VIEWER,
+    request: { route: 'existing-action', actorKey: 'hero', controllerMode: 'human', ruleKey: action.key,
+      targetKey: action.target === 'self' ? 'hero' : action.target === 'scene' ? null : s.npc, effectBindings: {},
+      discovery: { situationKey: instance.situationKey, evidenceRef: receipt.template.evidence[0].clueRef,
+        interventionPointKey: receipt.template.interventionPoints[0].pointKey, effectBindings: {} } } })
+  const operation = (await readProductRuntimeState(id.sessionId)).ttrpg!.openRun!.operations[0]
+  expect(operation.plan.discoveryPlan?.sessionSituation).toEqual(receipt)
+  for (const approval of operation.plan.requiredApprovals) await confirmTtrpgOpenOperationV1({
+    ...await openEnvelopeV1(id.sessionId, await ttrpgOpenOperationCommandIdV1(operation.startedRef.sessionKey, operation.operationKey, 'approval.' + approval.actorKey)),
+    viewerKey: OPEN_HUMAN_VIEWER, actorKey: approval.actorKey, riskHash: operation.riskHash, decision: 'approve', operationKey: operation.operationKey, frozenPlanHash: operation.planHash })
+  const command = { sessionId: id.sessionId, operationKey: operation.operationKey, frozenPlanHash: operation.planHash, viewerKey: OPEN_HUMAN_VIEWER }
+  for (let i = 0; i < 16; i++) {
+    const current = (await readProductRuntimeState(id.sessionId)).ttrpg!.openRun!, next = nextTtrpgOpenOperationStepV1(current.operations[0])
+    if (!next || ['terminal', 'gates', 'narration', 'handoff'].includes(next.kind)) break
+    if (next.kind === 'pressure') await resumeTtrpgOpenPressureV1(command)
+    else if (next.kind === 'situations') await resumeTtrpgOpenSituationsV1(command)
+    else await resumeTtrpgOpenOperationV1(command)
+  }
+  const after = (await readProductRuntimeState(id.sessionId)).ttrpg!.openRun!
+  return after
 }
 
 describe('R-TTRPGOPEN13 actual created instance → formal source → explicit situation adoption → runtime admission', { timeout: 60000 }, () => {
@@ -87,27 +113,7 @@ describe('R-TTRPGOPEN13 actual created instance → formal source → explicit s
     const active = (await readProductRuntimeState(id.sessionId)).ttrpg!.openRun!
     expect(active.situations.active).toContainEqual(expect.objectContaining({ templateKey: receipt.template.templateKey, activationReason: 'session-generation' }))
     expect(active.knowledge).toEqual([]); expect(active.worldTime.worldTurn).toBe(0)
-    await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(id.sessionId, 'instance.discovery.epoch'), viewerKey: OPEN_HUMAN_VIEWER, triggerKind: 'submit-action', rawInput: '检查新局势里的线索' })
-    const action = kernel.basis.rule.actions[0], instance = active.situations.active.find(row => row.templateKey === receipt.template.templateKey)!
-    await startTtrpgOpenOperationV1({ ...await openEnvelopeV1(id.sessionId, 'instance.discovery.operation'), viewerKey: OPEN_HUMAN_VIEWER,
-      request: { route: 'existing-action', actorKey: 'hero', controllerMode: 'human', ruleKey: action.key,
-        targetKey: action.target === 'self' ? 'hero' : action.target === 'scene' ? null : s.npc, effectBindings: {},
-        discovery: { situationKey: instance.situationKey, evidenceRef: receipt.template.evidence[0].clueRef,
-          interventionPointKey: receipt.template.interventionPoints[0].pointKey, effectBindings: {} } } })
-    const operation = (await readProductRuntimeState(id.sessionId)).ttrpg!.openRun!.operations[0]
-    expect(operation.plan.discoveryPlan?.sessionSituation).toEqual(receipt)
-    for (const approval of operation.plan.requiredApprovals) await confirmTtrpgOpenOperationV1({
-      ...await openEnvelopeV1(id.sessionId, await ttrpgOpenOperationCommandIdV1(operation.startedRef.sessionKey, operation.operationKey, 'approval.' + approval.actorKey)),
-      viewerKey: OPEN_HUMAN_VIEWER, actorKey: approval.actorKey, riskHash: operation.riskHash, decision: 'approve', operationKey: operation.operationKey, frozenPlanHash: operation.planHash })
-    const command = { sessionId: id.sessionId, operationKey: operation.operationKey, frozenPlanHash: operation.planHash, viewerKey: OPEN_HUMAN_VIEWER }
-    for (let i = 0; i < 16; i++) {
-      const current = (await readProductRuntimeState(id.sessionId)).ttrpg!.openRun!, next = nextTtrpgOpenOperationStepV1(current.operations[0])
-      if (!next || ['terminal', 'gates', 'narration', 'handoff'].includes(next.kind)) break
-      if (next.kind === 'pressure') await resumeTtrpgOpenPressureV1(command)
-      else if (next.kind === 'situations') await resumeTtrpgOpenSituationsV1(command)
-      else await resumeTtrpgOpenOperationV1(command)
-    }
-    const after = (await readProductRuntimeState(id.sessionId)).ttrpg!.openRun!
+    const after = await discover(s, receipt)
     expect(after.worldTime.worldTurn).toBe(2)
     expect(after.knowledge).toContainEqual(expect.objectContaining({ evidenceRef: receipt.template.evidence[0].clueRef, recipientActorKeys: ['hero'], reliability: 'observed' }))
     expect(after.situationCycles!.every(row => row.sessionSituationRefs?.some(ref => ref.receiptHash === receipt.receiptHash))).toBe(true)
@@ -144,6 +150,16 @@ describe('R-TTRPGOPEN13 actual created instance → formal source → explicit s
     const active = (await readProductRuntimeState(s.deskInput.sessionId)).ttrpg!.openRun!
     expect(active.situations.active).toContainEqual(expect.objectContaining({ templateKey: receipt!.template.templateKey }))
     expect(active.knowledge).toEqual([]); expect(active.worldTime.worldTurn).toBe(0)
+    const discovered = await discover(s, receipt!)
+    expect(discovered.worldTime.worldTurn).toBe(2)
+    expect(discovered.knowledge).toContainEqual(expect.objectContaining({ evidenceRef: receipt!.template.evidence[0].clueRef,
+      recipientActorKeys: ['companion.1', 'companion.2', 'hero'], reliability: 'observed' }))
+    expect(discovered.situationCycles!.every(row => row.sessionSituationRefs?.some(ref => ref.receiptHash === receipt!.receiptHash))).toBe(true)
+    for (const actorKey of ['hero', 'companion.1', 'companion.2']) {
+      const player = await loadTtrpgOpenPlayerContextV1({ ...s.deskInput, actorKey })
+      expect(player.view.knowledge).toContainEqual(expect.objectContaining({ evidenceRef: receipt!.template.evidence[0].clueRef }))
+      for (const hidden of [s.npc + '.equipment.0', 'INSTANCE-SITUATION-PRIVATE-NPC-PROFILE', ...(actorKey === 'hero' ? [] : [s.place])]) expect(JSON.stringify(player.view)).not.toContain(hidden)
+    }
   })
   it('does not widen the source or candidate grammar of an old private window merely because actual entities now exist', async () => {
     const s = await setup()
@@ -160,6 +176,33 @@ describe('R-TTRPGOPEN13 actual created instance → formal source → explicit s
     if (candidate?.schema !== 'storyforge.ttrpg-open-situation-candidate') throw new Error('expected actual candidate')
     expect(candidate.review).toBeNull(); expect(candidate.artifact.status).toBe('manual-repair')
     expect((await readProductRuntimeState(s.deskInput.sessionId)).ttrpg!.openRun!.situationReceipts ?? []).toEqual([])
+  })
+  it.each(['private-place', 'private-equipment', 'current-position'] as const)('retains the actual response but blocks %s without adoption, information leaks or mechanical changes', async attack => {
+    const s = await setup(false), send = vi.fn(async (request: unknown) => {
+      expect(JSON.stringify(request)).not.toContain(s.place)
+      const run = (await readProductRuntimeState(s.deskInput.sessionId)).ttrpg!.openRun!, epoch = run.coordination.epochs.find(row => row.epochKey === run.coordination.activeEpochKey)!
+      const kernel = await loadTtrpgOpenPublicSituationKernelV1({ ...s.deskInput, actorKey: 'gm' }, epoch.publicSituation!), value = publicSituationOutputV1(kernel)
+      // Deliberately hostile outputs. A known NPC identity grants neither its private
+      // equipment nor a current-position fact, and the private place was never read.
+      if (attack === 'current-position') value.template.preconditions = [{ op: 'actor-at', actorKey: s.npc, locationRef: 'harbor' }]
+      else value.template.obstacles[0].ref = attack === 'private-place' ? s.place : s.npc + '.equipment.0'
+      return JSON.stringify(value)
+    })
+    await requestTtrpgOpenPublicSituationDeskV1({ ...s.deskInput, submissionKey: 'common.instances.unread', includeRuntimeEntities: true,
+      rawInput: '结合大家已知的新守灯人和港口，为英雄拟定新局势。', maximumCostUsd: 0.1, runAI: send,
+      sharingDecision: 'share-this-request-with-current-party', delegationDecision: 'adopt-this-one-candidate' })
+    expect(send).toHaveBeenCalledTimes(1)
+    const after = await readProductRuntimeState(s.deskInput.sessionId), page = (await readTtrpgOpenPublicSituationDeskV1(s.deskInput))!
+    expect(page).toMatchObject({ adopted: false, currentWindow: true, canFinalize: false })
+    expect(page.summary!.status).toBe('blocked')
+    for (const hidden of [s.place, s.npc + '.equipment.0', 'INSTANCE-SITUATION-PRIVATE-NPC-PROFILE']) expect(JSON.stringify(page)).not.toContain(hidden)
+    const candidate = await readTtrpgOpenRuntimeCandidateForKernelV1(page.request!.read!, 'public-situation-proposal')
+    if (candidate?.schema !== 'storyforge.ttrpg-open-public-situation-candidate') throw new Error('expected retained original answer')
+    expect(candidate.review).toBeNull(); expect(candidate.artifact.originalText).toContain(attack === 'current-position' ? 'actor-at' : attack === 'private-place' ? s.place : s.npc + '.equipment.0')
+    expect(after.ttrpg!.openRun!.situationReceipts ?? []).toEqual([])
+    expect(after.entities).toEqual(s.before.entities); expect(after.ttrpg!.product).toEqual(s.before.ttrpg!.product)
+    expect(after.ttrpg!.openRun!.worldTime).toEqual(s.before.ttrpg!.openRun!.worldTime)
+    expect(after.ttrpg!.openRun!.knowledge).toEqual([])
   })
   it('rolls back a real adoption storage cut, retains the committed instance receipt through a terminal cut and repairs after explicit Stop without another send', async () => {
     const s = await privateDraft(), before = await readProductRuntimeState(s.id.sessionId)
