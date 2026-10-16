@@ -307,6 +307,15 @@ export type PortableDataSpec = {
 /**
  * 单张表的元信息。
  */
+export interface ExactArtifactRootSpecV1 {
+  /** Existing JSON string field on a project-scoped, exportable owner table. */
+  field: string
+  /** Own-property names and '*' for an array; the endpoint is an exact identity list. */
+  path: readonly string[]
+  /** Optional literal owner discriminator on this row (for shared product/event tables). */
+  when?: { field: string; equals: string }
+}
+
 export interface TableSpec<T = any> {
   /** Dexie 表对象(可直接操作) */
   table: Table<T, number>
@@ -373,6 +382,8 @@ export interface TableSpec<T = any> {
   exportRefRemap?: ExportRefRemap[]
   /** Embedded structured data / integrity rebind behavior during export/import. */
   portableData?: PortableDataSpec
+  /** Confirmed owners pin exact evidence through their own registered lifecycle, independently of source Runs. */
+  exactArtifactRoots?: readonly ExactArtifactRootSpecV1[]
   /** Product-neutral stable reference to a governed binary object table, used by shared GC. */
   mediaRef?: { blobTable: string; field: string }
   /**
