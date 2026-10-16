@@ -1,4 +1,5 @@
 import { applyTtrpgOpenSessionSituationEventV1 } from './open-session-situation-reducer'
+import { TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1, assertTtrpgOpenPublicSituationOriginalScopeV1 } from './open-public-situation-authorization-contract'
 import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1, assertTtrpgOpenSituationEpochAuthorityV1, assertTtrpgOpenSituationWindowEventV1 } from './open-coordination'
 import { applyTtrpgOpenTableMessageEventV1 } from './open-table-conversation-reducer'
 import { applyTtrpgOpenMemoryEventV1 } from './open-memory-reducer'
@@ -167,6 +168,16 @@ export function applyTtrpgRuntimeEventV1(
       }
       if (epoch.triggerKind === 'request-brief') assertTtrpgOpenBriefEpochAuthorityV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.viewerKey);
       if (epoch.triggerKind === 'request-situation') assertTtrpgOpenSituationEpochAuthorityV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.viewerKey);
+      if (epoch.publicSituation) {
+        const grant = epoch.publicSituation, b = grant.basis;
+        assertTtrpgOpenSituationEpochAuthorityV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.viewerKey);
+        assertTtrpgOpenPublicSituationOriginalScopeV1(grant, ttrpg.sessionKey);
+        if (epoch.triggerKind !== TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1 || stableJson(payload.intent.publicSituation) !== stableJson(grant)
+          || payload.intent.rawInput !== b.sharedRequest.text
+          || b.readEvidence.sequence !== event.baseSequence || b.readEvidence.stateHash !== event.baseStateHash
+          || grant.authorizationCommandId !== event.commandId || b.requester.seatRevision !== seat.revision
+          || stableJson(b.recipientActorKeys) !== stableJson([...authorization.selectedActorKeys].sort())) throw new Error('共同局势授权没有绑定原请求、共享输入及实际接收者');
+      } else if (Object.prototype.hasOwnProperty.call(payload.intent, 'publicSituation')) throw new Error('其他窗口不能携带共同局势授权');
       if (epoch.manualAction) {
         const request = parseTtrpgOpenManualRequestV1(epoch.manualAction);
         if (seat.role !== 'player' || request.actorKey !== seat.actorKey || !isObject(payload.intent)

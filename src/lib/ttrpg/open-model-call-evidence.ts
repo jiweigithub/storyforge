@@ -36,6 +36,20 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
   const snapshot = await readInstanceAgentRunV1(input.scope, input.runId)
   const { call } = input
   const definition = ttrpgOpenModelPurposeForSkillV1(call.skillId), expectedSources = [...assertTtrpgOpenFrozenContextSourcesV1(call.skillId, snapshot.contract.permissions.contextSourceKeys)].sort().join(',')
+  let publicAuthorizationEvidence: TtrpgOpenAgentEvidenceV1 | undefined
+  if (definition.purpose === 'public-situation-proposal') {
+    const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
+    const epoch = runtime?.openRun?.coordination.epochs.find(e => e.epochKey === call.authorizationEpochKey), grant = epoch?.publicSituation
+    if (!grant || input.runId !== grant.run.runId || call.requestKey !== grant.basis.requestKey || call.runContractHash !== grant.run.contractHash
+      || call.actorKey !== 'gm' || call.stepId !== 'ttrpg.open.public-situation-propose' || call.attempt !== 1
+      || call.runtimeSourceHash !== grant.basis.runtimeSourceHash || call.visibilityHash !== grant.basis.sourceVisibilityHash
+      || call.admissionStateHash !== grant.admissionStateHash || call.reservedInputTokens > grant.budget.maximumInputTokens
+      || call.reservedOutputTokens !== grant.budget.maximumOutputTokens || call.reservedCostUsd > grant.budget.maximumCostUsd) {
+      throw new Error('[ttrpg-public-situation] 模型调用只能使用本次原 Run、原请求身份与冻结预算')
+    }
+    if (input.mode !== 'finish') publicAuthorizationEvidence = (await (await import('./open-public-situation-authorization-proof')).verifyTtrpgOpenPublicSituationAuthorizationV1({
+      ...input, viewerKey: grant.basis.requester.viewerKey, authorization: grant, phase: input.mode === 'reserve' ? 'prepare' : 'dispatch' })).evidence
+  }
   const bound = snapshot.contract.scope.runtime
   const binding = snapshot.contract.executionBindings?.find(binding => binding.stepId === call.stepId)
   const step = snapshot.projection.steps[call.stepId]
@@ -81,7 +95,7 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
     && event.payload.attempt === call.attempt && event.payload.bindingHash === call.requestHash)) {
     throw new Error('[ttrpg-open-call] 缺少同一 attempt 的真实模型请求绑定')
   }
-  const artifacts: AgentRunArtifactRecordV1[] = []
+  const artifacts: AgentRunArtifactRecordV1[] = [...(publicAuthorizationEvidence?.artifacts ?? [])]
   const exact = async (kind: AgentRunArtifactRecordV1['artifactKind'], hash: string) => {
     if (!snapshot.events.some(event => event.type === 'evidence.artifact.recorded' && event.payload.artifactKind === kind
       && event.payload.contentHash === hash && event.payload.stepId === call.stepId && event.payload.attempt === call.attempt)) {
@@ -111,6 +125,16 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
       && manifest.schema === 'storyforge.ttrpg-open-input-evidence') {
       const evidence = manifest as TtrpgOpenInputEvidenceV1
       if (evidence.manifest?.manifestHash !== call.inputManifestHash) continue
+      if (definition.purpose === 'public-situation-proposal') {
+        const rendered = JSON.parse(renderedRequest) as { publicKernelHash?: string }
+        if (!evidence.publicKernelHash || rendered.publicKernelHash !== evidence.publicKernelHash) throw new Error('[ttrpg-public-situation] 原请求未绑定独立内核快照')
+        const kernel = JSON.parse(await exact('source-snapshot', evidence.publicKernelHash)) as import('./open-public-situation-kernel').TtrpgOpenPublicSituationKernelV1
+        const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)!
+        const epoch = runtime.openRun!.coordination.epochs.find(e => e.epochKey === call.authorizationEpochKey)!
+        await (await import('./open-public-situation-kernel')).verifyTtrpgOpenPublicSituationKernelV1({ snapshot: kernel,
+          expectedHash: evidence.publicKernelHash, grant: epoch.publicSituation!, sessionKey: call.createdRef.sessionKey,
+          epochKey: epoch.epochKey, authorizationHash: epoch.authorizationHash })
+      }
       await verifyTtrpgOpenInputEvidenceV1({ ...input, evidence, requestHash: call.requestHash,
         inputManifestHash: call.inputManifestHash, stepId: call.stepId, attempt: call.attempt,
         sessionKey: call.createdRef.sessionKey, actorKey: call.actorKey, skillId: call.skillId })
@@ -171,7 +195,8 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
     const context = await loadTtrpgOpenModelContextV1({ scope: input.scope, sessionId: input.sessionId, actorKey: call.actorKey, skillId: call.skillId })
     if (context.visibilityHash !== call.visibilityHash || context.admissionStateHash !== call.admissionStateHash
       || context.readEvidence.runtimeSourceHash !== call.runtimeSourceHash
-      || (input.mode === 'reserve' && (context.readEvidence.sequence !== bound.baseSequence || context.readEvidence.stateHash !== bound.stateHash))) {
+      || (input.mode === 'reserve' && definition.purpose !== 'public-situation-proposal'
+        && (context.readEvidence.sequence !== bound.baseSequence || context.readEvidence.stateHash !== bound.stateHash))) {
       throw new Error('[ttrpg-open-call] 模型派发输入已 stale，不能使用旧权限或机械状态')
     }
   }

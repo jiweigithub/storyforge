@@ -14,6 +14,7 @@ import { loadTtrpgOpenModelContextV1 } from './open-model-purpose'
 import { CONTEXT_SOURCE_BY_KEY } from '../registry/context-sources'
 import { projectFrozenAgentSkillDefinitionV1 } from '../agent/execution-binding'
 import { selectTtrpgOpenContextResourcesV1 } from './open-context-selection'
+import { ttrpgOpenPublicSituationMessagesV1 } from './open-public-situation-prompt'
 
 export async function verifyTtrpgOpenContextSelectionEvidenceV1(input: {
   scope: WorkspaceScope; sessionId: number; actorKey: string; skillId: string; stepId: string
@@ -21,7 +22,7 @@ export async function verifyTtrpgOpenContextSelectionEvidenceV1(input: {
   sourceKeys: readonly string[]; mode: 'reserve' | 'dispatch' | 'finish'; call?: TtrpgOpenModelCallV1
 }) {
   const e = input.evidence, receipt = e.contextSelection
-  const modern = input.sourceKeys.some(key => /Context$/.test(key) || key === 'ttrpgOpenBriefInput' || key === 'ttrpgOpenSituationInput')
+  const modern = input.sourceKeys.some(key => /Context$/.test(key) || key === 'ttrpgOpenBriefInput' || key === 'ttrpgOpenSituationInput' || key === 'ttrpgOpenPublicSituationInput')
   const rendered = JSON.parse(input.bodies[e.preflight.promptHash]) as { contextSelection?: unknown; messages: Array<{ role: string; content: string }> }
   if (!modern) {
     if (receipt !== undefined || e.contextAssembly !== undefined || rendered.contextSelection !== undefined) throw new Error('[ttrpg-context] 历史协议不可伪装新情境回执')
@@ -32,6 +33,10 @@ export async function verifyTtrpgOpenContextSelectionEvidenceV1(input: {
     eventType: 'ttrpg.context.assembled', receiptHash: receipt.receiptHash })) throw new Error('[ttrpg-context] E14 装配记录与原请求回执不一致')
   const { receiptHash, ...body } = receipt
   const definition = ttrpgOpenModelPurposeForSkillV1(input.skillId), binding = input.snapshot.contract.executionBindings?.find(binding => binding.stepId === input.stepId)
+  if (definition.purpose === 'public-situation-proposal'
+    && canonicalStringify(rendered.messages) !== canonicalStringify(ttrpgOpenPublicSituationMessagesV1(e.preflight.contextPacket.content))) {
+    throw new Error('[ttrpg-public-situation] 原始公开请求夹带登记资料之外的消息')
+  }
   const baseline = input.snapshot.contract.scope.runtime
   if (receipt.schema !== 'storyforge.ttrpg-open-context-selection' || receipt.version !== 1
     || receiptHash !== await hashCanonicalValue(body) || receipt.consumer !== ttrpgOpenContextConsumerForPurposeV1(definition.purpose)
@@ -56,8 +61,17 @@ export async function verifyTtrpgOpenContextSelectionEvidenceV1(input: {
   const context = await loadTtrpgOpenModelContextV1({ ...input, skillId: input.skillId })
   const user = rendered.messages.filter(message => message.role === 'user')
   const suffix = `\n\n【角色授权上下文】\n${e.preflight.contextPacket.content}`
-  if (user.length !== 1 || !user[0].content.startsWith('【真人输入】\n') || !user[0].content.endsWith(suffix)) throw new Error('[ttrpg-context] 原始模型消息与实际 Gateway 内容不一致')
-  const rawInput = user[0].content.slice('【真人输入】\n'.length, -suffix.length)
+  let rawInput: string
+  if (definition.purpose === 'public-situation-proposal') {
+    const grant = runtime.openRun.coordination.epochs.find(e => e.epochKey === runtime.openRun!.coordination.activeEpochKey)?.publicSituation
+    if (!grant || canonicalStringify(rendered.messages) !== canonicalStringify(ttrpgOpenPublicSituationMessagesV1(e.preflight.contextPacket.content))) {
+      throw new Error('[ttrpg-public-situation] 消息不得附加登记资料之外的私域输入')
+    }
+    rawInput = grant.basis.sharedRequest.text
+  } else {
+    if (user.length !== 1 || !user[0].content.startsWith('【真人输入】\n') || !user[0].content.endsWith(suffix)) throw new Error('[ttrpg-context] 原始模型消息与实际 Gateway 内容不一致')
+    rawInput = user[0].content.slice('【真人输入】\n'.length, -suffix.length)
+  }
   const inventory = []
   for (const sourceKey of input.sourceKeys) {
     const provider = CONTEXT_SOURCE_BY_KEY.get(sourceKey)?.resources
@@ -66,7 +80,7 @@ export async function verifyTtrpgOpenContextSelectionEvidenceV1(input: {
     do { const page = await provider.listMetadata({ scope: { ...input.scope, productRuntimeSessionId: input.sessionId, runtimeActorKey: input.actorKey }, limit: 1000, cursor }); inventory.push(...page.items); cursor = page.nextCursor ?? undefined } while (cursor)
   }
   const oracleSourceRef = input.call?.oracleInterpretation?.oracleSourceRef ?? input.call?.supportSlot?.oracleSourceRef
-  if (definition.actorRole === 'gm' && definition.purpose !== 'kp-narration' && definition.purpose !== 'stage-brief' && definition.purpose !== 'situation-proposal') {
+  if (definition.actorRole === 'gm' && definition.purpose !== 'kp-narration' && definition.purpose !== 'stage-brief' && definition.purpose !== 'situation-proposal' && definition.purpose !== 'public-situation-proposal') {
     const oracleSuffix = `:oracle.${await hashProductProductionValueV2(oracleSourceRef)}`
     // The runtime owner already validates the exact Oracle/review hash and slot.
     const reviewSuffix = input.call?.supportSlot ? `:review.${await hashProductProductionValueV2(input.call.supportSlot.sourceRef)}` : null

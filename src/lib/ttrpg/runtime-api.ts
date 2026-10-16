@@ -1,4 +1,7 @@
 /** Public deterministic runtime commands owned by the TTRPG product. */
+export { createTtrpgOpenPublicSituationAuthorizationV1 } from './open-public-situation-authorization'
+export type { TtrpgOpenPublicSituationAuthorizationInputV1 } from './open-public-situation-authorization'
+export { prepareTtrpgOpenPublicSituationInputV1 } from './open-intent-input'
 export {
   activateTtrpgCampaignSupplementV2,
   advanceTtrpgCharacterV1,
@@ -153,6 +156,10 @@ export { parseTtrpgWorldPatchCandidateV1, verifyTtrpgWorldPatchCandidateV1 } fro
 export { loadTtrpgOpenSituationProposalBasisV1, preflightTtrpgOpenGeneratedSituationV1 } from './open-generated-situation-basis'
 
 export { TtrpgOpenSituationRequestError, generateTtrpgOpenSituationCandidateV1, executeTtrpgOpenSituationRequestV1, recoverTtrpgOpenSituationCandidateV1 } from './open-intent-harness'
+export { generateTtrpgOpenPublicSituationCandidateV1, executeTtrpgOpenPublicSituationRequestV1, recoverTtrpgOpenPublicSituationCandidateV1 } from './open-intent-harness'
+export { readTtrpgOpenPublicSituationCandidateV1, readTtrpgOpenPublicSituationCandidateSummaryV1 } from './open-public-situation-candidate'
+export { finishTtrpgOpenPublicSituationDraftV1, reconcileTtrpgOpenStoppedPublicSituationV1, readTtrpgOpenPublicSituationStopRepairsV1 } from './open-public-situation-stop'
+export { repairTtrpgOpenPublicSituationResponseReceiptV1, abandonTtrpgOpenPublicSituationWaitV1 } from './open-situation-request-recovery'
 export { readTtrpgOpenSituationCandidateV1, readTtrpgOpenSituationCandidateSummaryV1 } from './open-generated-situation-candidate'
 
 export { finishTtrpgOpenSituationDraftV1, reconcileTtrpgOpenStoppedSituationV1 } from './open-generated-situation-stop'

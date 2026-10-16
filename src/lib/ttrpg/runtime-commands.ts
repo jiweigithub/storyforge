@@ -1,5 +1,7 @@
 import { settleTtrpgOpenSessionSituationAdmissionV1 } from './open-session-situation-reducer'
 import { verifyTtrpgOpenSessionSituationHashesV1 } from './open-session-situation-proof'
+import { parseTtrpgOpenPublicSituationAuthorizationV1, TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1 } from './open-public-situation-authorization-contract'
+import { verifyTtrpgOpenPublicSituationAuthorizationV1 } from './open-public-situation-authorization-proof'
 import { ttrpgOpenSituationCatalogV1, ttrpgOpenSituationCatalogSnapshotV1 } from './open-session-situation-catalog'
 import { prepareTtrpgOpenSituationAdoptionV1, reconcileTtrpgOpenSituationRunV1, TtrpgOpenSituationReceiptPendingError } from './open-session-situation-adoption'
 import { assertTtrpgOpenSituationHumanGmV1 } from './open-generated-situation-candidate'
@@ -988,6 +990,35 @@ export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
       return { actorKey: seat.actorKey, targetKey: null, payload: { epoch } };
     },
   });
+}
+
+/** The original local Run and explicit sharing must exist before this authority is committed. No model is sent here. */
+export async function authorizeTtrpgOpenPublicSituationV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; authorization: unknown;
+}): Promise<ProductRuntimeEvent> {
+  const viewerKey = openKey(input.viewerKey, 'public request viewer'), grant = parseTtrpgOpenPublicSituationAuthorizationV1(input.authorization)
+  return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.open.epoch.started',
+    intent: { viewerKey, triggerKind: TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1, rawInput: grant.basis.sharedRequest.text, publicSituation: grant },
+    build: async ({ state, session, sequence, ttrpgContent, participants }) => {
+      const content = requireTtrpgOpenContent(ttrpgContent), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
+      if (!runtime?.authorization || !runtime.openRun || !content.campaign.runtimePolicy.enabled
+        || runtime.openRun.coordination.activeEpochKey !== null) throw new Error('[ttrpg-public-situation] 需要当前已授权团局和独立空闲窗口')
+      if (grant.budget.maximumInputTokens > 16000 || grant.budget.maximumOutputTokens > content.campaign.runtimePolicy.maximumOutputTokens) throw new Error('[ttrpg-public-situation] 本次输入或输出预算超过冻结作品策略')
+      assertTtrpgOpenSituationEpochAuthorityV1(runtime, viewerKey)
+      const seat = assertTtrpgOpenAuthorizationCurrentV1({ authorization: runtime.authorization, participants, viewerKey })
+      const scope = await resolveScope({ scope: { projectId: session.projectId, worldId: session.worldId, workId: session.workId } })
+      const proof = await verifyTtrpgOpenPublicSituationAuthorizationV1({ scope, sessionId: input.sessionId, viewerKey, authorization: grant, phase: 'authorize' })
+      if (grant.authorizationCommandId !== input.commandId || grant.basis.readEvidence.sequence !== input.baseSequence
+        || grant.basis.readEvidence.stateHash !== input.baseStateHash || sequence !== input.baseSequence + 1) throw new Error('[ttrpg-public-situation] 不能改变原请求的授权命令或切点')
+      const epoch = parseTtrpgOpenEpochV1({ publicSituation: grant, epochKey: grant.basis.authorizationEpochKey,
+        startedRef: { sessionKey: runtime.sessionKey, sequence }, closedRef: null, status: 'active',
+        triggeredBySeatKey: seat.seatKey, viewerKey, triggerKind: TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1,
+        inputRevision: proof.inputRevision, sessionZeroRevision: runtime.authorization.revision,
+        authorizationHash: await hashProductProductionValueV2(runtime.authorization),
+        budget: ttrpgOpenEpochBudgetForTriggerV1(frozenTtrpgOpenEpochBudgetV1(content.campaign), TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1),
+        successfulActorKeys: [], reservedCalls: 0, consumedTokens: 0, actualCostUsd: 0, stopReason: null })
+      return { actorKey: seat.actorKey, targetKey: null, payload: { epoch }, agentEvidence: proof.evidence }
+    } })
 }
 
 /** Cancellation closes authority, without claiming any unfinished business step succeeded. */

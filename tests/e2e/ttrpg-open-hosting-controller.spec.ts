@@ -160,6 +160,8 @@ test('author production and local release lead to a real player action and one b
   await page.reload()
   await page.getByLabel('我的角色', { exact: true }).selectOption('viewer.seat.hero')
   await page.getByRole('button', { name: '确认身份并进入', exact: true }).click()
-  await expect(page.getByRole('button', { name: '继续本轮自动主持', exact: true })).toBeVisible()
+  // Reload revalidates the retained three operations and six original model receipts.
+  // Wait for that read-only restore, retaining the exact control and no-extra-send check.
+  await expect(page.getByRole('button', { name: '继续本轮自动主持', exact: true })).toBeVisible({ timeout: 30000 })
   expect(requests).toBe(6)
 })

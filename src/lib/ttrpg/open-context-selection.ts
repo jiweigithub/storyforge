@@ -40,12 +40,14 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
   const content = source.runtimePackage.ttrpg, run = input.runtime.openRun!, authorization = input.runtime.authorization!
   if (!content || !isTtrpgRuntimeContentV2(content) || source.runtimeSourceHash !== input.context.readEvidence.runtimeSourceHash) throw new Error('[ttrpg-context] 情境计划需要准确冻结 open 来源')
   const policy = content.campaign.contextPolicy, consumer = ttrpgOpenContextConsumerForPurposeV1(input.purpose)
-  const brief = input.purpose === 'stage-brief', situation = input.purpose === 'situation-proposal', passive = brief || situation
+  const brief = input.purpose === 'stage-brief', situation = input.purpose === 'situation-proposal', publicSituation = input.purpose === 'public-situation-proposal', passive = brief || situation || publicSituation
+  const publicGrant = publicSituation ? run.coordination.epochs.find(e => e.epochKey === run.coordination.activeEpochKey)?.publicSituation : undefined
+  if (publicSituation && !publicGrant) throw new Error('[ttrpg-public-situation] 情境计划需要本次原 Run 授权')
   const guidanceKey = TTRPG_OPEN_GUIDANCE_SOURCE_KEYS_V1[consumer]
   const recipients = consumer === 'actor' ? [input.actorKey] : [...authorization.selectedActorKeys].sort()
   const oracle = input.oracleSourceRef ? run.oracleReceipts?.find(receipt => canonicalStringify(receipt.sourceRef) === canonicalStringify(input.oracleSourceRef)) : undefined
-  const consultationAudience = consumer === 'gm-assistant' && !situation ? oracle?.audience : undefined
-  if (consumer === 'gm-assistant' && !situation && !consultationAudience) throw new Error('[ttrpg-context] GM 情境需要明确真实咨询密级')
+  const consultationAudience = consumer === 'gm-assistant' && !situation && !publicSituation ? oracle?.audience : undefined
+  if (consumer === 'gm-assistant' && !situation && !publicSituation && !consultationAudience) throw new Error('[ttrpg-context] GM 情境需要明确真实咨询密级')
   const policyHash = await hashCanonicalValue(policy ?? null)
   const domainHash = await hashCanonicalValue({ consumer, actorKey: input.actorKey, recipients, consultationAudience: consultationAudience ?? null,
     policyHash, runtimeSourceHash: source.runtimeSourceHash, ...(passive ? { purpose: input.purpose } : {}) })
@@ -78,7 +80,7 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
   }
   const player = 'view' in input.context ? input.context.view : undefined
   const kp = consumer === 'party-narrator' && hasPartyPredicateFacts(input.context) ? input.context : undefined
-  const gm = consumer === 'gm-assistant' && !situation ? input.context as Awaited<ReturnType<typeof loadTtrpgOpenGmOracleContextV1>> : undefined
+  const gm = consumer === 'gm-assistant' && !situation && !publicSituation ? input.context as Awaited<ReturnType<typeof loadTtrpgOpenGmOracleContextV1>> : undefined
   const oraclePacket = gm?.resources.map(row => row.value).find(value => value && typeof value === 'object' && 'schema' in value
     && value.schema === 'storyforge.ttrpg-open-gm-oracle-input' && 'sourceRef' in value && canonicalStringify(value.sourceRef) === canonicalStringify(input.oracleSourceRef)) as Record<string, unknown> | undefined
   const projection: TtrpgOpenContextPredicateViewV1 = { worldTurn: run.worldTime.worldTurn, player,
@@ -111,7 +113,7 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
   const memoryRows = eligible.filter(row => ['ttrpgOpenMemory', 'ttrpgOpenPartyMemory'].includes(row.sourceKey) && row.priority !== 'must-read')
   const memoryKeys = await selectTtrpgOpenMemoryResourcesV1({ ...input, scope, rows: memoryRows,
     budgetTokens: Math.min(8000, Math.max(1, Math.floor(Math.min(input.budgetTokens, policy?.maximumContextTokens ?? 16000) / 4))) })
-  const briefRows = passive ? eligible.filter(row => row.sourceKey === (situation ? 'ttrpgOpenSituationInput' : 'ttrpgOpenBriefInput') && row.priority !== 'must-read') : []
+  const briefRows = passive ? eligible.filter(row => row.sourceKey === (publicSituation ? 'ttrpgOpenPublicSituationInput' : situation ? 'ttrpgOpenSituationInput' : 'ttrpgOpenBriefInput') && row.priority !== 'must-read') : []
   const briefKeys = await selectTtrpgOpenMemoryResourcesV1({ ...input, scope, rows: briefRows,
     budgetTokens: Math.max(1, Math.floor(Math.min(input.budgetTokens, policy?.maximumContextTokens ?? 16000) / 2)) })
   const candidates = eligible.filter(row => (!ruleRows.includes(row) || selectedRules.has(row.resourceKey))
@@ -140,7 +142,8 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
     && injection.sourceRefs.every(key => readSources.has(key))).map(([, injection]) => injection.triggerKey).sort()
   const finalResources = resources.filter(row => !row.resourceKey.includes(':trigger.') || deliveredTriggerKeys.includes(triggered.get(row.resourceKey.slice(row.resourceKey.lastIndexOf(':') + 1))!.triggerKey))
   const body = { schema: 'storyforge.ttrpg-open-context-selection' as const, version: 1 as const, consumer, domainHash, policyHash,
-    worldTurn: run.worldTime.worldTurn, baseSequence: input.context.readEvidence.sequence, baseStateHash: input.context.readEvidence.stateHash,
+    worldTurn: run.worldTime.worldTurn, baseSequence: publicGrant?.basis.readEvidence.sequence ?? input.context.readEvidence.sequence,
+    baseStateHash: publicGrant?.basis.readEvidence.stateHash ?? input.context.readEvidence.stateHash,
     budgetTokens, tokenBudget: tokens.receipt, resourceCountBudget: count.receipt, matchedTriggerKeys, deliveredTriggerKeys,
     deliveredTriggers: injections.filter(injection => deliveredTriggerKeys.includes(injection.triggerKey)).map(({ triggerKey, matchedBy }) => ({ triggerKey, matchedBy })),
     selected: finalResources.map(row => ({ resourceKey: row.resourceKey, sourceKey: row.sourceKey, contentHash: row.contentHash, tierKey: tierFor(row), tokens: row.tokenEstimate.full! })) }

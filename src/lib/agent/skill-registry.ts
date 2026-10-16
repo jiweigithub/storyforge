@@ -3623,15 +3623,19 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'prose.ttrpg-open-public-situation-propose', agentId: 'prose', defaultForAgent: false,
-    label: '开放跑团共同资料新局势候选', owner: 'ttrpg-product', promptVersion: 'ttrpg-open-public-situation-propose-v1',
+    label: '开放跑团共同资料新局势候选', owner: 'ttrpg-product', promptVersion: 'ttrpg-open-public-situation-propose-v2',
     executionMode: 'ttrpg-open-public-situation-propose', contextTaskKind: 'agent-prose', readToolNames: [],
     contextSourceKeys: ['ttrpgOpenPublicSituationInput'], optionalContextSourceKeys: [],
-    inputPolicy: { ...TTRPG_PLAYER_RUNTIME_INPUT_POLICY, sourceKeys: ['ttrpgOpenPublicSituationInput'] },
+    inputPolicy: { sourceKeys: ['ttrpgOpenPublicSituationInput'], states: {
+      empty: { handling: 'require-upstream', instruction: '缺少本次实际全队共同资料与明确共享输入时停止，不得借用 GM 私域或旧候选。' },
+      partial: { handling: 'require-upstream', instruction: '必须完整取得本次共享输入、共同资料、结构语法和合法引用；资料不全时停止，不推测隐藏状态。' },
+      complete: { handling: 'grounded-transform', instruction: '仅按实际交付共同资料与本次输入起草局势候选；保留可靠性，只用有共同证明的条件，不授予采用、启用、机械状态或玩家决定权限。' },
+    } },
     contextCompression: compressionPolicy(['ttrpgOpenPublicSituationInput']),
     contextGateway: { ...TEXT_OPEN_WORLD_RUNTIME_G6_GATEWAY_POLICY, providerSourceKeys: ['ttrpgOpenPublicSituationInput'],
       allowedResourceKinds: ['fact', 'reference'], allowedDepths: ['full'] },
     maxOutputTokens: 8000, writeTargets: [], lastVerifiedAt: '2026-10-16',
-    regressionTests: ['R-TTRPGOPEN9-public-situation-context', 'R-TTRPGOPEN9-public-situation-request'],
+    regressionTests: ['R-TTRPGOPEN9-public-situation-context', 'R-TTRPGOPEN9-public-situation-request', 'R-TTRPGOPEN10-public-situation-authorization', 'R-TTRPGOPEN10-public-situation-input', 'R-TTRPGOPEN10-public-situation-delivery', 'R-TTRPGOPEN10-public-situation-harness'],
   },
   {
     version: 1,

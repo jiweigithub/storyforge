@@ -12,6 +12,9 @@ import { createTtrpgOpenRuntimeResourceProviderV1, type TtrpgOpenResourceRowV1 }
 import { TTRPG_OPEN_PUBLIC_SITUATION_REQUEST_POLICY_V1 } from './open-public-situation-request'
 import { describeTtrpgOpenPublicPredicateScopeV1 } from './open-public-situation-predicates'
 import { TTRPG_OPEN_SITUATION_OUTPUT_SCHEMA_V1 } from './open-generated-situation-output-schema'
+import { ttrpgOpenMechanicalStateHashV1 } from './open-rule-plan'
+import { hashTtrpgOpenPublicSituationRequestBasisV1 } from './open-public-situation-request'
+import { TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1 } from './open-public-situation-authorization-contract'
 
 export const TTRPG_OPEN_PUBLIC_SITUATION_SOURCE_V1 = 'ttrpgOpenPublicSituationInput'
 
@@ -29,6 +32,14 @@ async function loadPublicSituationReadModel(input: { scope: WorkspaceScope; sess
     throw new TtrpgOpenReadConflictV1('共同局势资料读取期间来源或接收者已变化')
   }
   const recipients = common.recipientActorKeys, view = common.view
+  // Authorization already discloses the selected role keys. No authored biography, secret,
+  // location, mechanical owner or private player choice is promoted into this identity.
+  const personalization = await Promise.all(recipients.map(async actorKey => {
+    const value = { runtimeSourceHash: source.runtimeSourceHash, actorKey, identityKind: 'selected-player-character' as const }
+    const contentHash = await hashCanonicalValue(value)
+    return { source: { sourceKey: `identity.${contentHash.slice(0, 48)}`, kind: 'identity' as const,
+      actorKeys: [actorKey], knownByActorKeys: [...recipients], sourceRef: null, contentHash }, value }
+  }))
   const observations = new Set(view.initialObservations.map(canonicalStringify))
   const initial = content.campaign.frozenWorldPredicateIndex.entries.filter(fact => fact.audience === 'public' || fact.audience === 'party'
     || (fact.audience === 'private' && recipients.every(actor => fact.knownByActorKeys.includes(actor))))
@@ -63,7 +74,17 @@ async function loadPublicSituationReadModel(input: { scope: WorkspaceScope; sess
     outputJsonSchema: TTRPG_OPEN_SITUATION_OUTPUT_SCHEMA_V1,
     releaseObservationsAreNotCurrentState: true, hearsayAndBeliefAreNotObjectiveEvidence: true,
     ruleDefinitionsConferNoActorGrantOrAvailability: true, citationsOnlyFromDeliveredBodies: true,
-    predicateScopeIsAnAllowlistNotTheWholeRuntime: true, sourceReadConfersNoAdoptionAuthorization: true }
+    predicateScopeIsAnAllowlistNotTheWholeRuntime: true, sourceReadConfersNoAdoptionAuthorization: true,
+    semanticRequirements: ['S1: 至少两个障碍，依赖图无环', 'S2: 至少一条 belief 有本次真实可读 factRef',
+      'S3: 至少两个介入点，线索发现路径绑定真实介入点和共同规则 key',
+      'S4: 至少两条线索，required 线索保留真实发现路径及障碍覆盖',
+      'S5: 不介入后果须引用至少一个可见时钟；本次不交付效果计划，effectPlanRef 必须为 null',
+      'S6: 驱动只能是共同可见 NPC 身份或不变量/当前会话事实，不虚构玩家承诺',
+      'S7: 不降低来源密级或扩大原私密接收者，模型拟定的线索不等于已授予知识',
+      'S8: 所有效果引用为 null，consequences 为空；不引入未交付的效果、前线或后续模板',
+      'S9: 至少两个真实 whyNowRefs；仅 world:不变量主体:谓词、session:当前事实键、clock:可见时钟键',
+      'S10: clueRef 使用本次分配的模板键加点号作为前缀，不能声明 templateKey',
+      'A3: 至少一个实际完整交付的共同 identity 来源键；身份不是玩家选择或承诺'] }
   const requestPolicy = TTRPG_OPEN_PUBLIC_SITUATION_REQUEST_POLICY_V1
   const resources = [
     { suffix: 'public-situation-contract', title: '共同局势的来源与权威边界', mandatory: true, value: { ...contract, requestPolicy } },
@@ -71,12 +92,43 @@ async function loadPublicSituationReadModel(input: { scope: WorkspaceScope; sess
     { suffix: 'public-situation-predicates', title: '本次共同证据支持的条件', mandatory: true, value: predicateScope },
     { suffix: 'public-situation-rules', title: '共同可读规则定义（不授予角色行动权限）', mandatory: true,
       value: { schema: 'storyforge.ttrpg-open-public-situation-rules', version: 1, ...view.rules } },
+    { suffix: 'public-situation-identities', title: '实际选定的玩家身份（不含私密人物资料）', mandatory: true,
+      value: { schema: 'storyforge.ttrpg-open-public-situation-identities', version: 1, personalization,
+        npcDriverKeys: view.actorsHere.filter(actor => content.campaign.characterTemplates.some(t => t.characterKey === actor.actorKey && t.role === 'npc')).map(actor => actor.actorKey),
+        identityKeysAreNotPlayerCommitments: true, privateBiographiesAreNotDelivered: true } },
     ...attributed.map(entry => ({ suffix: `public-situation-entry.${entry.sourceKey}`, title: `共同局势来源 · ${entry.kind}`, mandatory: false,
       value: { schema: 'storyforge.ttrpg-open-public-situation-entry', version: 1, entry } })),
   ]
+  // The base visibility identity survives only the authorization/booking events. The epoch key
+  // separately freezes this exact shared input; actual full packet/Manifest include its body.
+  const visibilityHash = await hashCanonicalValue(resources)
+  const epoch = run.coordination.epochs.find(e => e.epochKey === run.coordination.activeEpochKey)
+  let sharedInput: { schema: string; version: number; requestKey: string; basisHash: string; text: string;
+    sharingDecision: string; delegationDecision: string; recipientActorKeys: string[] } | null = null
+  if (epoch?.triggerKind === TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1) {
+    const grant = epoch.publicSituation
+    if (!grant || epoch.sessionZeroRevision !== authorization.revision
+      || epoch.authorizationHash !== await hashCanonicalValue(authorization)
+      || grant.basis.sourceVisibilityHash !== visibilityHash
+      || canonicalStringify(grant.basis.recipientActorKeys) !== canonicalStringify(recipients)
+      || await hashTtrpgOpenPublicSituationRequestBasisV1(grant.basis) !== grant.basisHash) throw new Error('[ttrpg-public-situation] 本次共同输入授权已失效')
+    sharedInput = { schema: 'storyforge.ttrpg-open-public-situation-shared-input', version: 1, requestKey: grant.basis.requestKey,
+        basisHash: grant.basisHash, text: grant.basis.sharedRequest.text, sharingDecision: grant.basis.sharedRequest.decision,
+        delegationDecision: grant.basis.delegation.decision, recipientActorKeys: recipients }
+  }
+  const assignment = sharedInput && epoch ? { schema: 'storyforge.ttrpg-open-public-situation-assignment', version: 1,
+    assignedTemplateKey: `generated.${(await hashCanonicalValue({ sessionKey: runtime.sessionKey, proposalKey: epoch.epochKey })).slice(0, 40)}`,
+    requestKey: sharedInput.requestKey, basisHash: sharedInput.basisHash,
+    evidenceKeysMustUseAssignedTemplateKeyAsPrefix: true, playerCommitmentSourcesAvailable: false,
+    unsupportedReferences: ['effects', 'fronts', 'next-templates', 'private-actors', 'private-profiles', 'private-choices'],
+    ruleProjectionSupportsOnlyDefinitionReferences: true, clockProjectionSupportsOnlyVisibleClockReferences: true } : null
+  const allResources = sharedInput && assignment ? [...resources,
+    { suffix: 'public-situation-shared-input', title: '本人明确共享的本次局势要求', mandatory: true, value: sharedInput },
+    { suffix: 'public-situation-assignment', title: '本次系统分配的候选命名空间与引用边界', mandatory: true, value: assignment }] : resources
   await loaded.assertCurrent()
-  return { loaded, context: { resources, entries: attributed, frame, predicateScope, rules: view.rules,
-    visibilityHash: await hashCanonicalValue(resources), authorizationRevision: common.authorizationRevision, readEvidence: common.readEvidence } }
+  return { loaded, context: { resources: allResources, entries: attributed, frame, predicateScope, rules: view.rules,
+    personalization, visibilityHash, admissionStateHash: await ttrpgOpenMechanicalStateHashV1(state),
+    authorizationRevision: common.authorizationRevision, readEvidence: common.readEvidence } }
 }
 
 export function createTtrpgOpenPublicSituationContextProviderV1() {

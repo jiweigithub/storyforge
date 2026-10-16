@@ -40,7 +40,7 @@ describe('R-TTRPGOPEN9 independent common source and Skill foundation', { timeou
   it('keeps metadata, search, complete bodies, content hashes and source refs within the same common-only catalog', async () => {
     const { scope } = await setup(), session = await provider.openReadSession!(scope)
     const page = await session.provider.listMetadata({ scope, limit: 1000 })
-    expect(page.items.filter(row => row.priority === 'must-read')).toHaveLength(4)
+    expect(page.items.filter(row => row.priority === 'must-read')).toHaveLength(5)
     const bodies = await Promise.all(page.items.map(row => session.provider.read({ scope, resourceKey: row.resourceKey, depth: 'full', maxTokens: 16000 })))
     expect(bodies.every(body => body.contentHash === body.descriptor.contentHash && body.sourceRefs.length === 2)).toBe(true)
     const search = await session.provider.searchMetadata({ scope, query: 'PRIVATE-PROVIDER-CANARY', limit: 1000 })

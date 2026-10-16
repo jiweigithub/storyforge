@@ -40,8 +40,10 @@ test('explicit drafting authority survives native reload, keeps GM input private
   await page.getByRole('button', { name: '确认身份并进入', exact: true }).click()
   await expect(page.getByText('当前正在拟定新局势', { exact: true })).toBeVisible()
   await expect(page.locator('body')).not.toContainText('NATIVE-GM-SITUATION-PRIVATE')
-  await page.getByRole('button', { name: '取消本次局势拟定', exact: true }).click()
-  await expect(page.getByText('本次局势拟定已取消，原有局势保持原样。', { exact: true })).toBeVisible()
+  const desk = page.getByTestId('ttrpg-open-situation-desk')
+  if (!await desk.evaluate(element => (element as HTMLDetailsElement).open)) await desk.locator('summary').first().click()
+  await desk.getByRole('button', { name: '取消本次局势拟定', exact: true }).click()
+  await expect(desk.getByText('本次局势拟定已结束，已采用定义和原记录保留。', { exact: true })).toBeVisible()
   const end = await page.evaluate(async input => {
     const importer = new Function('p', 'return import(p)') as (p: string) => Promise<any>
     const { loadTtrpgOpenSituationContextV1 } = await importer('/storyforge/src/lib/ttrpg/open-generated-situation-context.ts')

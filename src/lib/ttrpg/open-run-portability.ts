@@ -17,13 +17,16 @@ import type { TtrpgOpenAgentEvidenceV1 } from './open-model-call-evidence'
 import { assertInstanceBinding } from '../product/runtime-instances'
 import { verifyContextManifestIntegrityV2 } from '../agent/run/context-manifest'
 import type { TtrpgOpenInputEvidenceV1 } from './open-input-evidence'
+import { TTRPG_OPEN_PUBLIC_SITUATION_SKILL_V1, readTtrpgOpenPublicSituationObjectiveV1 } from './open-public-situation-authorization-contract'
 
-export interface TtrpgOpenRunOriginV1 {
-  schema: 'storyforge.ttrpg-open-run-origin'; version: 1
+interface TtrpgOpenRunOriginBaseV1 {
+  schema: 'storyforge.ttrpg-open-run-origin'
   sourceRunId: number; sourceProjectId: number; sourceSessionId: number; sessionKey: string
   workspaceUid: string; worldCode: string; workCode: string
   contractJson: string; contractHash: string; events: AnyAgentRunEventV1[]; originHash: string
 }
+export type TtrpgOpenRunOriginV1 = TtrpgOpenRunOriginBaseV1 & (
+  { version: 1 } | { version: 2; phase: 'public-request-preparation' })
 function hash(value: unknown): Promise<string> {
   const pending = hashCanonicalValue(value)
   return Dexie.currentTransaction ? Dexie.waitFor(pending) : pending
@@ -64,8 +67,10 @@ async function assertHistoricalInputIdentity(content: string, origin: TtrpgOpenR
 
 export async function parseTtrpgOpenRunOriginV1(json: string): Promise<TtrpgOpenRunOriginV1> {
   if (typeof json !== 'string' || json.length > 8_000_000) fail('原始证据超过单记录预算')
-  const row = p.record(JSON.parse(json), ['schema','version','sourceRunId','sourceProjectId','sourceSessionId','sessionKey',
-    'workspaceUid','worldCode','workCode','contractJson','contractHash','events','originHash'], 'runtime origin')
+  const value = p.object(JSON.parse(json), 'runtime origin')
+  if (value.version !== 1 && value.version !== 2) fail('原始证据版本不受支持')
+  const row = p.record(value, ['schema','version','sourceRunId','sourceProjectId','sourceSessionId','sessionKey',
+    'workspaceUid','worldCode','workCode','contractJson','contractHash','events','originHash', ...(value.version === 2 ? ['phase'] : [])], 'runtime origin')
   const sourceRunId = p.integer(row.sourceRunId, 'origin run', 1, Number.MAX_SAFE_INTEGER)
   const sourceProjectId = p.integer(row.sourceProjectId, 'origin project', 1, Number.MAX_SAFE_INTEGER)
   const sourceSessionId = p.integer(row.sourceSessionId, 'origin session', 1, Number.MAX_SAFE_INTEGER)
@@ -77,9 +82,15 @@ export async function parseTtrpgOpenRunOriginV1(json: string): Promise<TtrpgOpen
     || contract.scope.runtime!.productRuntimeSessionId !== sourceSessionId
     || events.some(event => event.runId !== sourceRunId || event.projectId !== sourceProjectId || event.contractHash !== contractHash)) fail('原始契约、身份与事件不一致')
   const projection = replayAgentRunEventsV1(events)
-  if (projection.errors.length || projection.state === 'recovery_required' || !events.some(event => event.type === 'model.requested')) fail('原始事件不能严格重放为真实请求')
+  if (projection.errors.length || projection.state === 'recovery_required') fail('原始事件不能严格重放')
+  if (row.version === 1 && !events.some(event => event.type === 'model.requested')) fail('原始事件不能严格重放为真实请求')
+  if (row.version === 2 && (contract.executionBindings?.[0].skillId !== TTRPG_OPEN_PUBLIC_SITUATION_SKILL_V1
+    || !readTtrpgOpenPublicSituationObjectiveV1(contract.objective) || contract.budget.maxModelCalls !== 1
+    || contract.budget.maxToolCalls !== 0 || contract.budget.maxAttemptsPerStep !== 1)) fail('准备阶段封存只允许准确的共同局势原 Run，不能假冒已发生请求')
+  const generation = row.version === 1 ? { version: 1 as const } : { version: 2 as const,
+    phase: p.literal(row.phase, 'public-request-preparation', 'origin preparation phase') }
   const result: TtrpgOpenRunOriginV1 = { schema: p.literal(row.schema, 'storyforge.ttrpg-open-run-origin', 'origin schema'),
-    version: p.literal(row.version, 1, 'origin version'), sourceRunId, sourceProjectId, sourceSessionId,
+    ...generation, sourceRunId, sourceProjectId, sourceSessionId,
     sessionKey: p.key(row.sessionKey, 'origin session key'), workspaceUid: p.text(row.workspaceUid, 'origin workspace UID', 512),
     worldCode: p.text(row.worldCode, 'origin world code', 512), workCode: p.text(row.workCode, 'origin work code', 512),
     contractJson, contractHash, events, originHash: p.hash(row.originHash, 'origin hash') }
@@ -94,6 +105,7 @@ export async function readTtrpgOpenRunOriginV1(runId: number, mode: 'archive' | 
   if (!row?.portableRuntimeOriginJson) return null
   if (row.productRuntimeSessionId == null || row.workId != null) fail('运行来源不能借用其他 owner')
   const origin = await parseTtrpgOpenRunOriginV1(row.portableRuntimeOriginJson)
+  if (origin.version === 2 && mode !== 'archive') fail('导入的共同局势准备记录仅供审计，不是可恢复派发的模型请求')
   const session = await db.productRuntimeSessions.get(row.productRuntimeSessionId)
   if (!session || session.kind !== 'ttrpg' || session.worldId == null || session.workId == null) fail('实际跑团实例不存在')
   const scope = { projectId: row.projectId, worldId: session.worldId, workId: session.workId }
@@ -135,19 +147,26 @@ export async function freezeTtrpgOpenRunOriginForExportV1(runId: number, expecte
   const state = (await import('../product/runtime-core')).readProductRuntimeState
   const runtime = parseTtrpgRuntimeStateV2((await state(session.id!)).ttrpg)
   const calls = runtime?.openRun?.coordination.calls.filter(call => call.runContractHash === row.contractHash) ?? []
-  if (!calls.length) return undefined
+  // Preserve the old no-call export boundary for every unrelated/legacy runtime Run.
+  const declared = JSON.parse(row.contractJson) as AgentRunContract
+  const declaresPublicPreparation = row.contractVersion === 3 && declared.executionBindings?.length === 1
+    && declared.executionBindings[0].skillId === TTRPG_OPEN_PUBLIC_SITUATION_SKILL_V1
+  if (!calls.length && !declaresPublicPreparation) return undefined
   const scope = { projectId: row.projectId, worldId: session.worldId, workId: session.workId }
   const snapshot = await readInstanceAgentRunV1(scope, runId)
   if (expected && (snapshot.run.contractHash !== expected.contractHash || snapshot.run.lastSequence !== expected.lastSequence)) fail('导出期间 Run 已变化，请重新导出')
   // Valid older runtime ledgers remain exportable without receiving a newly invented origin.
   if (snapshot.contract.version !== 3 || snapshot.contract.executionBindings?.length !== 1
     || snapshot.contract.executionBindings[0].version !== 2 || !snapshot.contract.executionBindings[0].formalEntry) return undefined
+  const publicRun = snapshot.contract.executionBindings[0].skillId === TTRPG_OPEN_PUBLIC_SITUATION_SKILL_V1
+  if (!calls.length && !publicRun) return undefined
   // Same contracts can occur in failed/retried preparations: only exact recorded request/Manifest selects this Run.
   const verified = []
   const { verifyTtrpgOpenModelCallEvidenceV1, readTtrpgOpenModelCallRunsV1 } = await import('./open-model-call-evidence')
   const owners = await readTtrpgOpenModelCallRunsV1({ scope, sessionId: session.id!, calls })
-  if (!owners.some(owner => owner.id === runId)) return undefined
-  for (const call of calls) {
+  const ownsCall = owners.some(owner => owner.id === runId)
+  if (!ownsCall && !publicRun) return undefined
+  for (const call of ownsCall ? calls : []) {
     if (!snapshot.events.some(event => event.type === 'model.requested' && event.payload.bindingHash === call.requestHash)) continue
     try { await verifyTtrpgOpenModelCallEvidenceV1({ scope, sessionId: session.id!, runId, call, mode: 'finish' }) }
     catch (error) {
@@ -156,11 +175,12 @@ export async function freezeTtrpgOpenRunOriginForExportV1(runId: number, expecte
     }
     verified.push(call)
   }
-  if (!verified.length) return undefined
+  if (!verified.length && !publicRun) return undefined
   semanticContract(snapshot.contract)
   const [project, world, work] = await Promise.all([db.projects.get(scope.projectId), db.worlds.get(scope.worldId), db.works.get(scope.workId)])
   if (!project?.workspaceUid || !world?.code || !work?.code) fail('导出原始证据缺少稳定工作区身份')
-  const body = { schema: 'storyforge.ttrpg-open-run-origin' as const, version: 1 as const,
+  const generation = verified.length ? { version: 1 as const } : { version: 2 as const, phase: 'public-request-preparation' as const }
+  const body = { schema: 'storyforge.ttrpg-open-run-origin' as const, ...generation,
     sourceRunId: runId, sourceProjectId: row.projectId, sourceSessionId: session.id!, sessionKey: runtime!.sessionKey,
     workspaceUid: project.workspaceUid, worldCode: world.code, workCode: work.code,
     contractJson: snapshot.run.contractJson, contractHash: snapshot.run.contractHash, events: snapshot.events }
@@ -181,6 +201,7 @@ export async function readTtrpgOpenImportedCallOwnerV1(input: { scope: Workspace
   for (const row of rows) {
     if (row.id == null || !row.portableRuntimeOriginJson || input.runId !== undefined && row.id !== input.runId) continue
     const origin = await parseTtrpgOpenRunOriginV1(row.portableRuntimeOriginJson)
+    if (origin.version !== 1) continue // A pre-reservation Run never proves a model call, even with coincident IDs/hashes.
     if (origin.sessionKey !== call.createdRef.sessionKey || origin.contractHash !== call.runContractHash
       || !origin.events.some(event => event.type === 'model.requested' && event.payload.stepId === call.stepId
         && event.payload.attempt === call.attempt && event.payload.bindingHash === call.requestHash)) continue

@@ -464,7 +464,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ## 五、正式 AI 入口（FormalAIEntryBindingV1）
 
-共 55 个操作级绑定。运行时按 entryId 校验 category 和 Skill；采纳权限不由文字说明决定。
+共 56 个操作级绑定。运行时按 entryId 校验 category 和 Skill；采纳权限不由文字说明决定。
 
 | entryId | Skill | category | 边界 | 候选 | 采纳目标 | 调用方 |
 |---|---|---|---|---|---|---|
@@ -474,6 +474,7 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 | `ttrpg.open.companion` | `prose.ttrpg-open-companion` | `runtime.ttrpg-open.companion` | formal / product-runtime | `storyforge.ttrpg-open-intent-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
 | `ttrpg.open.kp` | `prose.ttrpg-open-kp` | `runtime.ttrpg-open.kp` | formal / product-runtime | `storyforge.ttrpg-open-kp-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
 | `ttrpg.open.situation-propose` | `prose.ttrpg-open-situation-propose` | `runtime.ttrpg-open.situation-propose` | formal / product-runtime | `storyforge.ttrpg-open-situation-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
+| `ttrpg.open.public-situation-propose` | `prose.ttrpg-open-public-situation-propose` | `runtime.ttrpg-open.public-situation-propose` | formal / product-runtime | `storyforge.ttrpg-open-public-situation-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
 | `ttrpg.open.brief` | `prose.ttrpg-open-brief` | `runtime.ttrpg-open.brief` | formal / product-runtime | `storyforge.ttrpg-open-brief-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
 | `extensions.generate` | `extensions.generate` | `extension.generate` | formal / durable-run | `extension-record-candidate` | `extensionRecords` | `src/lib/extensions/ai-run.ts` |
 | `ai-town.authoring.consult` | `ai-town.consult.v1` | `authoring.ai-town-consult` | auxiliary / durable-run | `ai-town-settings-preview` | 禁止 | `src/lib/ai-town/consultation.ts` |
@@ -526,4 +527,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `4d7aa15a`
+生成时间基准:commit `551f8ac4`

@@ -26,6 +26,8 @@ export interface TtrpgOpenInputEvidenceV1 {
   retrievalTrace: ContextGatewayExecutionV1['retrievalTrace']
   gatewayVersionHash: string
   policyHash: string
+  /** Internal validation only; never included in the Context Packet or model messages. */
+  publicKernelHash?: string
   contextSelection?: TtrpgOpenContextSelectionReceiptV1
   contextAssembly?: { schema: 'storyforge.ttrpg-context-assembly'; version: 1; eventType: 'ttrpg.context.assembled'; receiptHash: string }
 }

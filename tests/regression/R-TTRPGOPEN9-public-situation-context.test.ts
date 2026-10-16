@@ -50,7 +50,7 @@ describe('R-TTRPGOPEN9 common situation source basis', { timeout: 60000 }, () =>
     expect(context.frame.clocks).toEqual([{ clockKey: 'flood', title: '涨潮', value: 0, maximum: 6, completed: false }])
     expect(context.frame.actors.some(actor => actor.actorKey === 'keeper')).toBe(false)
     expect(context.predicateScope.invariantFacts[0]).toMatchObject({ factRef: 'fact.harbor', sourceResourceRefs: f.campaign.frozenWorldPredicateIndex.entries[0].sourceResourceRefs })
-    expect(context.resources.filter(resource => resource.mandatory)).toHaveLength(4)
+    expect(context.resources.filter(resource => resource.mandatory)).toHaveLength(5)
     const text = JSON.stringify(context)
     for (const hidden of ['PRIVATE-', 'private.clock', '曾经离开港口', '害怕洪水', 'viewerKey', 'onComplete', 'frozenContent', 'effectPlanByDegree', 'riskFactRefs', 'narration', 'memory']) expect(text).not.toContain(hidden)
     expect(await runtimeCore.readProductRuntimeState(f.sessionId)).toEqual(before)
