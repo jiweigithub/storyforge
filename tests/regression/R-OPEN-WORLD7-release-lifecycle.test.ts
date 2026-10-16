@@ -179,7 +179,7 @@ describe('TOW-G7-12 · 正式发布数据全生命周期', () => {
   beforeEach(async () => { await db.delete(); await db.open() })
   afterAll(() => db.close())
 
-  it('当前v15备份完整重映射Release、质量回执、媒资字节、事件、检查点和分支', async () => {
+  it('当前格式备份完整重映射Release、质量回执、媒资字节、事件、检查点和分支', async () => {
     const seeded = await seedPublishedCreatorWorkspace()
     const backup = await exportProjectJSON(seeded.fixture.scope.projectId)
     expect(backup.version).toBe(CURRENT_BACKUP_VERSION)

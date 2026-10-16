@@ -17,20 +17,24 @@ test('open child recovery survives reload, preserves parent result and completes
   const result = await page.evaluate(async input => {
     const importer = new Function('path', 'return import(path)') as (path: string) => Promise<any>
     const api = await importer('/storyforge/src/lib/ttrpg/runtime-api.ts')
+    const { settleOpenPaidTurnsV1 } = await importer('/storyforge/tests/helpers/open-ttrpg-paid-turns.ts')
     const { db } = await importer('/storyforge/src/lib/db/schema.ts')
     const resumed = await api.resumeTtrpgOpenOperationV1(input)
-    await api.resumeTtrpgOpenOperationV1({ ...input.parent, viewerKey: input.viewerKey })
+    const settled = await settleOpenPaidTurnsV1(input)
+    await settleOpenPaidTurnsV1({ ...input.parent, viewerKey: input.viewerKey })
     const parent = await api.readProductRuntimeState(input.parent.sessionId), child = await api.readProductRuntimeState(input.sessionId)
     const events = await db.productRuntimeEvents.where('sessionId').equals(input.sessionId).sortBy('sequence')
     const before = events.length
-    await api.resumeTtrpgOpenOperationV1(input)
-    return { resumed, child, parent, eventCount: before,
+    await settleOpenPaidTurnsV1(input)
+    return { resumed, settled, child, parent, eventCount: before,
       afterCount: await db.productRuntimeEvents.where('sessionId').equals(input.sessionId).count(),
       replay: api.replayProductRuntimeEvents(api.parseProductRuntimeState(input.initialStateJson), events),
       ticks: events.filter((event: any) => event.type === 'ttrpg.world-turn.advanced').map((event: any) => JSON.parse(event.payloadJson)),
       rolls: events.filter((event: any) => event.type === 'ttrpg.rule.action.resolved').length }
   }, fixture)
-  expect(result.resumed).toEqual({ status: 'awaiting-owner', nextStepKey: 'pressure' })
+  expect(result.resumed).toEqual({ status: 'awaiting-owner', nextStepKey: 'pressure.1' })
+  expect(result.settled).toEqual({ status: 'executing', nextStepKey: 'terminal' })
+  expect(result.child.ttrpg.openRun.operations[0].receipts.filter((r: any) => r.stepKey.startsWith('pressure.')).map((r: any) => r.stepKey)).toEqual(['pressure.1', 'pressure.2', 'pressure.3'])
   expect(result.child.entities).toEqual(result.parent.entities)
   expect(result.child.ttrpg.product.abilityStates).toEqual(result.parent.ttrpg.product.abilityStates)
   expect(result.child.ttrpg.openRun.worldTime.worldTurn).toBe(3)
