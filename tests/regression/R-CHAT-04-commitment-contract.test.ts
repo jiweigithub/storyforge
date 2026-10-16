@@ -150,10 +150,24 @@ describe('goal-owned commitment foundation, not model acceptance', () => {
     const state = promised()
     expect(() => applyChatCommitmentEffectsV1(state, input(state))).toThrow('原承诺未处理')
     let growing = persistFixture(state, resolution(state, 'withdraw'))
-    for (let i = 1; i < CHAT_GOAL_COMMITMENT_LIMIT_V1; i++) {
+    for (let i = 1; i < 17; i++) {
       growing = persistFixture(growing, input(growing))
       growing = persistFixture(growing, resolution(growing, 'withdraw'))
     }
+    expect(growing.chatNarrative!.situation.goals[0].commitments).toHaveLength(17)
+    // The former 16-record ceiling is crossed through the actual effects.
+    // Fill the remaining source-bound rows directly to test the hard bound
+    // without quadratically replaying 2048 fixture-only parse operations.
+    const goal = growing.chatNarrative!.situation.goals[0]
+    while (goal.commitments!.length < CHAT_GOAL_COMMITMENT_LIMIT_V1) {
+      const original = goal.commitments![0], sequence = growing.chatNarrative!.lastEventSequence + 1
+      const declared = {messageId: `capacity-declared-${sequence}`, sequence, excerpt: original.declared.excerpt}
+      const resolution = {...original.resolution!, messageId: `capacity-resolved-${sequence}`, sequence: sequence + 1}
+      goal.commitments!.push({...original, commitmentKey: `${declared.messageId}:promise`, declared, resolution})
+      for (const source of [declared, resolution]) growing.messages.push({messageId: source.messageId, eventSequence: source.sequence, role: 'character', speakerKey: 'guard', audienceKeys: ['guard', 'player'], text: source.excerpt, replyToSequence: null, supersededBySequence: null})
+      goal.updatedSequence = resolution.sequence; growing.chatNarrative!.lastEventSequence = resolution.sequence
+    }
+    growing = parseInteractionState(growing)!
     const before = JSON.stringify(growing)
     expect(() => applyChatCommitmentEffectsV1(growing, input(growing))).toThrow('容量')
     expect(JSON.stringify(growing)).toBe(before)

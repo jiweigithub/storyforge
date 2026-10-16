@@ -442,9 +442,9 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 - `src/lib/agent/story-core-copilot.ts:557 · chat`
 - `src/lib/agent/storyline-progress-copilot.ts:366 · chat`
 - `src/lib/agent/worldview-field-copilot.ts:903 · chat`
-- `src/lib/character-interaction/harness.ts:687 · chat`
+- `src/lib/character-interaction/harness.ts:690 · chat`
 - `src/lib/character-interaction/memory-review-harness.ts:72 · chat`
-- `src/lib/character-interaction/situation-harness.ts:148 · chat`
+- `src/lib/character-interaction/situation-harness.ts:159 · chat`
 - `src/lib/comic/durable-production.ts:270 · chat`
 - `src/lib/evals/agent-harness/story-arc-main-path-browser.ts:98 · chat`
 - `src/lib/evals/creative-reliability/browser.ts:89 · chat`
@@ -522,4 +522,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `5a7f0575`
+生成时间基准:commit `6a307187`

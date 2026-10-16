@@ -1117,9 +1117,10 @@ export function buildInteractionContextWindow(
   if (state.chatNarrative && options.retrievalVersion !== 'legacy') {
     const profile = state.profiles.find(p => p.participantKey === participantKey)
     if (!profile) throw new Error('缺少角色视角，无法选择来源资料')
-    if (supportsChatCorrectionContextV1(options.retrievalVersion ?? 'chat-relevance-v8')) visible.memoryCorrections = chatMemoryCorrectionContextV1(state, participantKey)
-    if ((options.retrievalVersion ?? 'chat-relevance-v8') === 'chat-relevance-v8') return selectChatHistoryActorContextV1(state, visible, profile, {maxCharacters, maxRecentMessages})
-    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v8',
+    if (supportsChatCorrectionContextV1(options.retrievalVersion ?? 'chat-relevance-v9')) visible.memoryCorrections = chatMemoryCorrectionContextV1(state, participantKey)
+    if ((options.retrievalVersion ?? 'chat-relevance-v9') === 'chat-relevance-v9') return selectChatHistoryActorContextV1(state, visible, profile, {maxCharacters, maxRecentMessages, optionalMaxCharacters: 18_000, optionalMaxTokens: 6000})
+    if (options.retrievalVersion === 'chat-relevance-v8') return selectChatHistoryActorContextV1(state, visible, profile, {maxCharacters, maxRecentMessages})
+    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v9',
       requiredCommitmentKeys: requiredChatCommitmentKeysV1(state.chatNarrative!.situation.goals)})
   }
   const allMessages = visible.messages

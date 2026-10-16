@@ -1,9 +1,10 @@
+import {CHAT_HISTORY_CAPACITY_V1} from './history-capacity'
 import {requireChatPromiseRequestV1} from './narrative-promise-request'
 import type {CharacterInteractionRuntimeState} from '../types'
 import type {ChatActorGoalV1, ChatCommitmentEffectV1, ChatGoalCommitmentV1, ChatNarrativeActionV1} from '../types/chat-narrative'
 import {interactionMessageVisibleTo} from './message-visibility'
 
-export const CHAT_GOAL_COMMITMENT_LIMIT_V1 = 16
+export const CHAT_GOAL_COMMITMENT_LIMIT_V1 = CHAT_HISTORY_CAPACITY_V1.commitmentsPerGoal
 function fail(message: string): never {throw new Error(`[chat-commitment] ${message}`)}
 function object(value: unknown, fields: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== fields.split(',').sort().join(',')) fail('承诺字段无效')

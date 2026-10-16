@@ -1,3 +1,4 @@
+import {CHAT_HISTORY_CAPACITY_V1} from '../../src/lib/character-interaction/history-capacity'
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import {createInitialInteractionState} from '../../src/lib/character-interaction/runtime'
@@ -65,7 +66,7 @@ it.each(['permission', 'expansion', 'unfinished', 'not-first', 'continue', 'wron
   if (kind === 'pause') candidate.kind = 'pause'
   if (kind === 'background-request') delete candidate.situationRequest!.purpose
   if (kind === 'thread-limit') story.permissions.maxActiveThreads = 1
-  if (kind === 'goal-limit') while (story.situation.goals.length < 32) story.situation.goals.push({...story.situation.goals[0], goalKey: `old-${story.situation.goals.length}`})
+  if (kind === 'goal-limit') while (story.situation.goals.length < CHAT_HISTORY_CAPACITY_V1.goals) story.situation.goals.push({...story.situation.goals[0], goalKey: `old-${story.situation.goals.length}`})
   const saved = structuredClone(state)
   expect(() => apply(state, candidate)).toThrow()
   expect(state).toEqual(saved)

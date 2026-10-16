@@ -744,17 +744,18 @@ async function readChatActionCandidateContext(input: AssembleContextInput): Prom
   return `${'options' in candidate ? '【本次持久化行动候选组，仅供逐项审查，彼此互斥且均未发生】' : '【本次持久化行动候选，仅供审查，尚未展示或提交】'}\n${JSON.stringify(candidate)}`
 }
 
-async function readChatSituationRuntimeContext(input: AssembleContextInput): Promise<string> {
-  if (input.productRuntimeSessionId == null || !input.scope) return ''
+async function readChatSituationRuntimeProjection(input: AssembleContextInput) {
+  if (input.productRuntimeSessionId == null || !input.scope) return {text: ''}
   const {assertInstanceBinding} = await import('../product/runtime-instances')
   const session = await assertInstanceBinding(input.productRuntimeSessionId, input.scope)
-  if (session.kind !== 'character-interaction' || session.projectId !== input.projectId) return ''
-  if (input.worldGroupId !== undefined && (session.worldGroupId ?? null) !== (input.worldGroupId ?? null)) return ''
+  if (session.kind !== 'character-interaction' || session.projectId !== input.projectId) return {text: ''}
+  if (input.worldGroupId !== undefined && (session.worldGroupId ?? null) !== (input.worldGroupId ?? null)) return {text: ''}
   const playable = await verifyPlayableRuntimeSession({scope: input.scope, session})
-  if (playable.runtimePackage.productType !== 'character-interaction' || !playable.runtimePackage.interaction?.chatNarrative) return ''
+  if (playable.runtimePackage.productType !== 'character-interaction' || !playable.runtimePackage.interaction?.chatNarrative) return {text: ''}
   const state = await readProductRuntimeStateForContext(session.id!)
-  if (!state.interaction) return ''
-  const {selectChatCoordinatorContextV1} = await import('../character-interaction/coordinator-selection')
+  if (!state.interaction) return {text: ''}
+  const {projectChatCoordinatorContextV1} = await import('../character-interaction/coordinator-selection')
+  const project = (candidate: Parameters<typeof projectChatCoordinatorContextV1>[1]) => projectChatCoordinatorContextV1(state.interaction!, candidate)
   const sourceUnits = playable.runtimePackage.interaction.chatSource?.version === 6 ? playable.runtimePackage.interaction.chatSource.sourceUnits : undefined
   const saved = await readChatActionCandidateValue(input)
   const {readChatCandidateRetrievalVersion} = await import('../character-interaction/context-reader-version')
@@ -772,18 +773,32 @@ async function readChatSituationRuntimeContext(input: AssembleContextInput): Pro
       await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: producer.contract.scope, participantKey: 'player', view: 'chat-situation'})
       discoveryEvidence = usesChatDiscoveryEvidenceContextV1(producer)
     }
-    let retrievalVersion: import('../character-interaction/context-selection').ChatRetrievalVersion = 'chat-relevance-v8'
+    let retrievalVersion: import('../character-interaction/context-selection').ChatRetrievalVersion = 'chat-relevance-v9'
     if (input.chatSituationCandidateRunId != null) {
       const {readLatestVerifiedAgentRunCheckpointV1} = await import('../agent/run/checkpoint')
       const producer = await readLatestVerifiedAgentRunCheckpointV1(input.scope, input.chatSituationCandidateRunId, {owner: 'instance'})
-      if (!producer || producer.snapshot.run.productRuntimeSessionId !== input.productRuntimeSessionId) return ''
+      if (!producer || producer.snapshot.run.productRuntimeSessionId !== input.productRuntimeSessionId) return {text: ''}
       retrievalVersion = await readChatCandidateRetrievalVersion(producer.snapshot, input.projectId, 'chatSituationRuntime')
       discoveryEvidence = usesChatDiscoveryEvidenceContextV1(producer.snapshot)
     }
-    return selectChatCoordinatorContextV1(state.interaction, {text: await readChatSituationCandidateContext(input), retrievalVersion, discoveryEvidence, ...(sourceUnits ? {sourceUnits} : {})})
+    return project({text: await readChatSituationCandidateContext(input), retrievalVersion, discoveryEvidence, ...(sourceUnits ? {sourceUnits} : {})})
   }
   const retrievalVersion = await readChatCandidateRetrievalVersion(saved.snapshot, input.projectId, 'interactionRuntime', saved.value.actorKey, state.interaction)
-  return selectChatCoordinatorContextV1(state.interaction, {text: JSON.stringify(saved.value), actorKey: saved.value.actorKey, retrievalVersion, ...(sourceUnits ? {sourceUnits} : {})})
+  return project({text: JSON.stringify(saved.value), actorKey: saved.value.actorKey, retrievalVersion, ...(sourceUnits ? {sourceUnits} : {})})
+}
+
+async function readChatSituationRuntimeContext(input: AssembleContextInput): Promise<string> {
+  return (await readChatSituationRuntimeProjection(input)).text
+}
+
+/** Replays the registered projection against the locked state. Audit identities
+ * stay in the durable packet, outside the model budget. A mismatched assembly
+ * is rejected rather than attaching evidence for a different request. */
+export async function readChatCoordinatorSelectionEvidenceV1(input: AssembleContextInput, assembledText: string) {
+  const projection = await readChatSituationRuntimeProjection(input)
+  if (!('selection' in projection) || !projection.selection) return undefined
+  if (!projection.text || !assembledText.includes(projection.text)) throw new Error('协调历史选择证据与实际输入不一致。')
+  return projection.selection
 }
 
 async function readInteractionRuntimeContext(input: AssembleContextInput): Promise<string> {

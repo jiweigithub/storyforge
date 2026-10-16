@@ -1,3 +1,4 @@
+import {CHAT_HISTORY_CAPACITY_V1} from '../../src/lib/character-interaction/history-capacity'
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import {createInitialInteractionState, interactionRetrievalView} from '../../src/lib/character-interaction/runtime'
@@ -61,7 +62,7 @@ it.each(['missing-permission', 'expansion-off', 'active-goal', 'paused-goal', 'p
   if (kind === 'other-owner') Object.assign(p.goal, {actorKey: 'artisan'})
   if (kind === 'forged-status') Object.assign(p.goal, {status: 'fulfilled'})
   if (kind === 'new-thread') Object.assign(p, {thread: {threadKey: 'new'}})
-  if (kind === 'goal-limit') while (n.situation.goals.length < 64) n.situation.goals.push({...n.situation.goals[0], goalKey: `old-${n.situation.goals.length}`})
+  if (kind === 'goal-limit') while (n.situation.goals.length < CHAT_HISTORY_CAPACITY_V1.goals) n.situation.goals.push({...n.situation.goals[0], goalKey: `old-${n.situation.goals.length}`})
   const before = structuredClone(s); expect(() => apply(s, a)).toThrow(); expect(s).toEqual(before)
 })
 it('offers manual and scheduled continuation only with the opt-in and permits declining without a fabricated goal', () => {

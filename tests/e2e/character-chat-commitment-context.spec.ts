@@ -1,6 +1,6 @@
 import {test, expect} from '@playwright/test'
 
-test('explains selected and omitted promise history, retains exact historical evidence and keeps promises when dialogue is excluded', async ({page}, info) => {
+test('explains 18 retained promises beyond the former storage limit, retains exact historical evidence and keeps promises when dialogue is excluded', async ({page}, info) => {
   test.setTimeout(120_000)
   let calls = 0
   await page.addInitScript(() => {
@@ -16,8 +16,8 @@ test('explains selected and omitted promise history, retains exact historical ev
     const promise = await load('/storyforge/tests/helpers/chat-commitment-fixture.ts')
     const harness = await load('/storyforge/src/lib/character-interaction/harness.ts')
     const api = await load('/storyforge/src/lib/character-interaction/runtime-api.ts')
-    const f = await fixture.seedChatCommitmentHistoryRuntimeFixture()
-    const action = {...promise.chatPromiseActionFixture(), text: '地图的约定已经撤回，巡视记录那项还在。', commitmentEffects: []}
+    const f = await fixture.seedChatCommitmentHistoryRuntimeFixture({count: 18})
+    const action = {...promise.chatPromiseActionFixture(), text: '地图的约定已经撤回，眼下这项整理约定还在。', commitmentEffects: []}
     const generated = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '核对历史输入',
       runAI: async (messages: Array<{content: string}>) => {
         if (!messages[1].content.includes('靛蓝地图') || !messages[1].content.includes('withdrawn')) throw new Error('角色未读到相关原约和处置')
@@ -65,6 +65,6 @@ test('explains selected and omitted promise history, retains exact historical ev
     return {rawSelected: view.messages.some((m: {messageId: string}) => m.messageId === f.openMessageId), historyCount: state.chatNarrative.situation.goals[0].commitments.length,
       open: view.chatNarrative.goals[0].commitments.find((c: {resolution: unknown}) => c.resolution === null)?.terms}
   }, f)
-  expect(result).toEqual({rawSelected: false, historyCount: 16, open: f.openTerms})
+  expect(result).toEqual({rawSelected: false, historyCount: 18, open: f.openTerms})
   expect(calls).toBe(0)
 })

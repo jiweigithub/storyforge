@@ -140,7 +140,7 @@ it.each(['corrupt', 'missing', 'evidence-pruned'])('rejects %s stored evidence w
 
 it.each(['actor', 'manifest', 'text', 'selection'])('rejects a consistently stored but mismatched %s packet', async mode => {
   vi.spyOn(artifacts, 'recordAgentRunArtifactV1').mockImplementation(async input => {
-    if (input.artifactKind !== 'context-packet') return record(input)
+    if (input.artifactKind !== 'context-packet' || input.stepId !== 'interaction:runtime-candidate') return record(input)
     const packet = JSON.parse(input.content)
     if (mode === 'actor') packet.participantKey = 'artisan'
     if (mode === 'manifest') packet.manifest.manifestHash = '0'.repeat(64)

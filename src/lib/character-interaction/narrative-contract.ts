@@ -1,3 +1,4 @@
+import {CHAT_HISTORY_CAPACITY_V1, assertChatHistoryCapacityV1} from './history-capacity'
 import {validateChatSceneTransitionRecordsV1} from './narrative-scene-transition'
 import {validateChatResolutionEvidenceV1} from './resolution-evidence'
 import {validateChatFactEvidenceV1} from './fact-evidence'
@@ -121,7 +122,7 @@ function validateSituation(value: unknown, boundary: ChatNarrativeBoundaryV1, in
   else if (seed.sourceThreadKey !== null) fail('种子剧情线来源与类型不符')
   if (seed.origin !== 'author-confirmed' && seed.sourceEventSequence === 0) fail('运行情景请求缺少真实事件')
   const viewers = ['player', ...boundary.participantKeys]
-  const facts = list(situation.facts, '情境事实', 200).map(item => row(item, 'factKey,text,audienceKeys,origin,sourceKnowledgeKey,sourceEventSequence' + (item != null && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'discovery') ? ',discovery' : ''), '情境事实'))
+  const facts = list(situation.facts, '情境事实', initial ? 200 : CHAT_HISTORY_CAPACITY_V1.facts).map(item => row(item, 'factKey,text,audienceKeys,origin,sourceKnowledgeKey,sourceEventSequence' + (item != null && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'discovery') ? ',discovery' : ''), '情境事实'))
   if (!facts.length) fail('情境缺少确定背景事实')
   unique(facts, 'factKey', '事实标识')
   for (const fact of facts) {
@@ -143,7 +144,7 @@ function validateSituation(value: unknown, boundary: ChatNarrativeBoundaryV1, in
     if (!boundary.participantKeys.includes(String(item.actorKey))) fail(`${label}不能替玩家或包外角色设定内心`)
     evidence(item, [String(item.actorKey)], label)
   }
-  const goals = list(situation.goals, '角色目标', 32).map(item => row(item, 'goalKey,actorKey,desire,concern,boundary,evidenceFactKeys,status,updatedSequence'
+  const goals = list(situation.goals, '角色目标', initial ? 32 : CHAT_HISTORY_CAPACITY_V1.goals).map(item => row(item, 'goalKey,actorKey,desire,concern,boundary,evidenceFactKeys,status,updatedSequence'
     + (item != null && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'commitments') ? ',commitments' : '')
     + (item != null && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'playerPause') ? ',playerPause' : ''), '角色目标'))
   if (!goals.length) fail('情境缺少角色自身目标')
@@ -159,7 +160,7 @@ function validateSituation(value: unknown, boundary: ChatNarrativeBoundaryV1, in
   const beliefs = list(situation.beliefs, '角色猜测', 64).map(item => row(item, 'beliefKey,actorKey,text,evidenceFactKeys,updatedSequence', '角色猜测'))
   unique(beliefs, 'beliefKey', '猜测标识')
   for (const belief of beliefs) { actor(belief, '角色猜测'); text(belief.text, '猜测'); sequence(belief.updatedSequence, initial, '猜测事件') }
-  const threads = list(situation.threads, '剧情线', 64).map(item => row(item, 'threadKey,title,question,audienceKeys,participantKeys,evidenceFactKeys,closureSignals,status,updatedSequence', '剧情线'))
+  const threads = list(situation.threads, '剧情线', initial ? 64 : CHAT_HISTORY_CAPACITY_V1.threads).map(item => row(item, 'threadKey,title,question,audienceKeys,participantKeys,evidenceFactKeys,closureSignals,status,updatedSequence', '剧情线'))
   unique(threads, 'threadKey', '剧情线标识')
   for (const thread of threads) {
     text(thread.title, '剧情线标题', 1000); text(thread.question, '未解决问题')
@@ -172,6 +173,7 @@ function validateSituation(value: unknown, boundary: ChatNarrativeBoundaryV1, in
     if (!(CHAT_THREAD_STATUSES_V1 as readonly string[]).includes(String(thread.status)) || initial && thread.status !== 'open') fail('剧情线状态无效')
     sequence(thread.updatedSequence, initial, '剧情线事件')
   }
+  if (!initial) assertChatHistoryCapacityV1(situation as unknown as ChatSituationV1)
   if (threads.filter(t => t.status === 'open' || t.status === 'blocked').length > maxActiveThreads) fail('活跃剧情线超出授权上限')
   if (seed.origin === 'continued-thread' && !threads.some(t => t.threadKey === seed.sourceThreadKey)) fail('种子引用了不存在的剧情线')
   for (const possibility of list(situation.possibilities, '发展可能', 32)) {

@@ -1,3 +1,4 @@
+import {readChatCoordinatorSelectionEvidenceV1} from '../registry/context-sources'
 import {chatObservationVisibilityGenerationRulesV1} from './observation-visibility-prompt'
 import {chatDiscoveryEvidenceGenerationRulesV1} from './discovery-evidence-context'
 import {chatObservationScopeGenerationRulesV1} from './observation-scope-prompt'
@@ -18,7 +19,7 @@ import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1, assertChatAc
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1} from './narrative-scheduling'
 import {buildInteractionContextWindow, type InteractionContextWindow} from './runtime'
-import {CHAT_CONTEXT_READER_VERSION_V8} from './context-selection'
+import {CHAT_CONTEXT_READER_VERSION_V9} from './context-selection'
 import { chat } from '../ai/client'
 import { createAgentSkillExecutionBindingV1, createAgentSkillExecutionBindingV2 } from '../agent/execution-binding'
 import { getAgentSkillV1, type AgentSkillId } from '../agent/skill-registry'
@@ -653,7 +654,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       declaredSourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       assembled,
-      readerVersion: situation ? 'chat-situation-runtime-view-v14' : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V8 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? 'chat-situation-runtime-view-v15' : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V9 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
@@ -662,11 +663,13 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
     })
     const roleContext = [CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)
       ? buildInteractionContextWindow(initialState.interaction!, participantKey) : undefined
+    const coordinatorSelection = situation ? await readChatCoordinatorSelectionEvidenceV1({projectId: input.scope.projectId, scope: input.scope,
+      worldGroupId: boundary.scope.worldGroupId, productRuntimeSessionId: input.productRuntimeSessionId, chatSituationConstructionRunId: snapshot.run.id}, assembled.text) : undefined
     if (roleContext || situation) {
       snapshot = (await recordAgentRunArtifactV1({
         scope: input.scope, runId: snapshot.run.id, productRuntimeSessionId: input.productRuntimeSessionId,
         artifactKind: 'context-packet', content: JSON.stringify({version: 1, participantKey, manifest, text: assembled.text,
-          ...(roleContext ? {selection: roleContext.selection} : {})}),
+          ...(roleContext ? {selection: roleContext.selection} : {}), ...(coordinatorSelection ? {coordinatorSelection} : {})}),
         stepId: INTERACTION_RUNTIME_STEP_ID_V1, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence,
       })).snapshot
     }
@@ -977,8 +980,8 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
     const situation = candidate.kind === 'chat-situation-candidate'
     const reader = await readChatCandidateRetrievalVersion(snapshot, input.scope.projectId,
       situation ? 'chatSituationRuntime' : 'interactionRuntime', situation ? undefined : candidate.participantKey, original.interaction ?? undefined)
-    if (reader === 'chat-relevance-v6' || reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8') evidenceVersions.factEvidenceVersion = 1
-    if (!situation && (reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8')) evidenceVersions.resolutionEvidenceVersion = 1
+    if (reader === 'chat-relevance-v6' || reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9') evidenceVersions.factEvidenceVersion = 1
+    if (!situation && (reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9')) evidenceVersions.resolutionEvidenceVersion = 1
   }
   const event = adopted
     ? priorCommand

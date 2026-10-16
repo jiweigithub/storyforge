@@ -7,7 +7,8 @@ import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
 /** Real durable events with injected producer/reviewer outputs, not model or
  * human acceptance. Scene changes keep unrelated raw dialogue out of review. */
-export async function seedChatCommitmentHistoryRuntimeFixture() {
+export async function seedChatCommitmentHistoryRuntimeFixture(options: {count?: number} = {}) {
+  const count = options.count ?? 16
   const f = await seedChatNarrativeRuntimeFixture()
   const command = async () => {const v = await readProductRuntimeStateVersion(f.sessionId); return {sessionId: f.sessionId, commandId: crypto.randomUUID(), baseSequence: v.sequence, baseStateHash: v.stateHash}}
   const perform = async (action: ChatNarrativeActionV1) => {
@@ -17,10 +18,10 @@ export async function seedChatCommitmentHistoryRuntimeFixture() {
     return generated.snapshot.run.id
   }
   let sceneId = 'inn.current', sceneSequence = f.sceneSequence
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < count; i++) {
     await requestChatNarrativeTrigger({...await command(), kind: 'scene-start', sourceEventSequence: sceneSequence})
     const runId = await perform(chatPromiseActionFixture(historyTerms(i)))
-    if (i < 15) {
+    if (i < count - 1) {
       await requestChatNarrativeTrigger({...await command(), kind: 'continue', sourceEventSequence: (await readProductRuntimeStateVersion(f.sessionId)).sequence})
       const text = historyResolution(i)
       await perform({...chatPromiseActionFixture(), text, commitmentEffects: [{kind: 'withdraw', commitmentKey: `message:harness:${runId}:promise`, evidenceExcerpt: text}]})

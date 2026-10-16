@@ -5,7 +5,7 @@ import type {WorkspaceScope, ChatComposerDraftV1} from '../types';
 import {ChatComposerConflictError, parseChatComposerDraftV1} from './composer-draft-contract';
 import {readChatComposerSessionV1} from './composer-draft-read';
 import type { ProductRuntimeCommandEnvelopeV1 } from "../product/runtime-command-id";
-import { JsonObject, applyProductRuntimeEvent, hashStateJson, normalizeCommandId, parseEventPayload, parseProductRuntimeState, readSessionEvents, replayProductRuntimeEvents, stableJson } from "../product/runtime-core";
+import { JsonObject, applyProductRuntimeEvent, hashStateJson, normalizeCommandId, parseEventPayload, parseProductRuntimeState, readSessionEvents, replayProductRuntimeEvents, stableJson, updateProductRuntimeSessionHeadV1 } from "../product/runtime-core";
 import type { ProductRuntimeEventType, ProductRuntimeEvent, InteractionMemoryKind } from "../types";
 import type { ChatNarrativeActionV1, ChatNarrativeActionReviewV1, ChatNarrativeTriggerV1, ChatSituationDraftV1, ChatSituationReviewV1 } from "../types/chat-narrative";
 
@@ -46,7 +46,25 @@ async function appendInteractionCommand(
     parseProductRuntimeState(previewSession.initialStateJson),
     previewEvents,
   );
-  const previewStateHash = await hashStateJson(JSON.stringify(previewState));
+  const previewStateJson = JSON.stringify(previewState);
+  const previewStateHash = await hashStateJson(previewStateJson);
+  // A chat head is recoverable derived data, but it must be committed with the
+  // exact event it describes. Prepare its hash before the IndexedDB transaction
+  // and still replay/check the authoritative prefix inside that transaction.
+  // Other products retain their existing command path.
+  const preparedAt = Date.now();
+  let preparedHead: {stateJson: string; stateHash: string} | undefined;
+  if (previewSession.kind === 'character-interaction' && previewState.lastSequence === input.baseSequence
+    && previewStateHash === baseStateHash && !previewEvents.some(event => event.commandId === commandId)) {
+    const next = applyProductRuntimeEvent(previewState, {
+      projectId: previewSession.projectId, worldGroupId: previewSession.worldGroupId ?? null, sessionId: input.sessionId,
+      sequence: previewState.lastSequence + 1, type: input.type, actorKey: input.actorKey ?? null, targetKey: input.targetKey ?? null,
+      commandId, baseSequence: input.baseSequence, baseStateHash,
+      payloadJson: JSON.stringify({...input.payload, commandId, baseSequence: input.baseSequence, baseStateHash}), createdAt: preparedAt,
+    });
+    const stateJson = JSON.stringify(next);
+    preparedHead = {stateJson, stateHash: await hashStateJson(stateJson)};
+  }
   return db.transaction(
     "rw",
     input.composerDraft ? scopeTransactionTables(db.productRuntimeSessions, db.productRuntimeEvents, db.agentRuns)
@@ -119,6 +137,9 @@ async function appendInteractionCommand(
       ) {
         throw new Error("互动状态哈希已变化，请刷新后重试。");
       }
+      if (preparedHead && (JSON.stringify(state) !== previewStateJson || session.kind !== previewSession.kind
+        || session.projectId !== previewSession.projectId || session.worldId !== previewSession.worldId || session.workId !== previewSession.workId
+        || session.runtimeSourceHash !== previewSession.runtimeSourceHash || session.initialStateJson !== previewSession.initialStateJson)) throw new Error('互动状态已变化，请刷新后重试。');
       const event: ProductRuntimeEvent = {
         projectId: session.projectId,
         worldGroupId: session.worldGroupId ?? null,
@@ -131,10 +152,13 @@ async function appendInteractionCommand(
         baseSequence: input.baseSequence,
         baseStateHash,
         payloadJson: JSON.stringify(commandPayload),
-        createdAt: Date.now(),
+        createdAt: preparedHead ? preparedAt : Date.now(),
       };
-      applyProductRuntimeEvent(state, event);
+      const committed = applyProductRuntimeEvent(state, event);
+      if (preparedHead && JSON.stringify(committed) !== preparedHead.stateJson) throw new Error('互动事件与预计算运行态不一致，未提交。');
       event.id = (await db.productRuntimeEvents.add(event)) as number;
+      if (preparedHead) await updateProductRuntimeSessionHeadV1({sessionId: input.sessionId, sequence: committed.lastSequence,
+        stateJson: preparedHead.stateJson, stateHash: preparedHead.stateHash, updatedAt: event.createdAt});
       await db.productRuntimeSessions.update(input.sessionId, {
         updatedAt: event.createdAt,
         ...(consumedDraft ? {chatComposerDraft: consumedDraft} : {}),
