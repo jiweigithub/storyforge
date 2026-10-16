@@ -26,7 +26,9 @@ export function applyTtrpgOpenFactEventV1(state: ProductRuntimeState, event: Pro
   const sourceRef = { sessionKey: runtime.sessionKey, sequence: event.sequence }
   let runtimeReferenceEntry = false
   if (event.type === 'ttrpg.fact.asserted') {
-    p.exact(payload, ['viewerKey', 'authorizationEpochKey', 'basis', 'basisHash', 'entry', 'retirement', 'intent'], 'fact asserted')
+    p.exact(payload, ['viewerKey', 'authorizationEpochKey', 'basis', 'basisHash', 'entry', 'retirement', 'intent',
+      ...(Object.prototype.hasOwnProperty.call(payload, 'stateLayoutVersion') ? ['stateLayoutVersion'] : [])], 'fact asserted')
+    if (Object.prototype.hasOwnProperty.call(payload, 'stateLayoutVersion')) p.literal(payload.stateLayoutVersion, 1, 'fact state layout version')
     const entry = parseTtrpgOpenFactEntryV1(payload.entry)
     runtimeReferenceEntry = Boolean(entry.runtimeEntityReferences)
     if (entry.modelCandidate && run.oracleReviews?.some(review => review.requestKey === entry.modelCandidate!.requestKey)) p.fail('已完整审阅的候选不能另行采用弃用事实')
@@ -61,8 +63,8 @@ export function applyTtrpgOpenFactEventV1(state: ProductRuntimeState, event: Pro
       || event.targetKey !== retirement.factKey || !ttrpgOpenSessionFactsV1(ledger).some(fact => fact.factKey === retirement.factKey && !fact.retired)) p.fail('事实退休没有合法活动记录或真实原因')
     run.factLedger = parseTtrpgOpenFactLedgerV1({ ...ledger, retirements: [...ledger.retirements, retirement] })
   }
-  // The versioned path can introduce factLedger after F13's optional fields. Persist its canonical
-  // parser order now; do not change the byte contract of historical release-only fact events.
-  state.ttrpg = runtimeReferenceEntry ? parseTtrpgRuntimeStateV2(runtime)! : runtime
+  // New events freeze the parser layout explicitly; absence retains historical release-only bytes.
+  // The first runtime-reference implementation already chose this layout through its own discriminator.
+  state.ttrpg = runtimeReferenceEntry || payload.stateLayoutVersion === 1 ? parseTtrpgRuntimeStateV2(runtime)! : runtime
   return true
 }

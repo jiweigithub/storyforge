@@ -3,7 +3,7 @@ import { db } from '../../src/lib/db/schema'
 import { setupOpenEntityPlanningV1 } from '../helpers/open-entity-runtime'
 import { openEnvelopeV1 } from '../helpers/open-ttrpg-session'
 import { readTtrpgOpenEntityDeskV1, proposeTtrpgOpenEntityDeskV1, confirmTtrpgOpenEntityDeskV1, materializeTtrpgOpenEntityDeskV1 } from '../../src/lib/ttrpg/open-entity-desk'
-import { commitTtrpgOpenOracleFactV1, commitTtrpgOpenOracleRuntimeEntityFactV1, completeTtrpgOpenSessionZeroV1 } from '../../src/lib/ttrpg/runtime-commands'
+import { commitTtrpgOpenOracleFactV1, commitTtrpgOpenOracleRuntimeEntityFactV1, completeTtrpgOpenSessionZeroV1, reviewTtrpgOpenOracleCandidateV1 } from '../../src/lib/ttrpg/runtime-commands'
 import { hashTtrpgOpenOracleFactCandidateV1, ttrpgOpenSessionFactsV1, verifyTtrpgOpenFactLedgerV1, type TtrpgOpenOracleFactProposalV1 } from '../../src/lib/ttrpg/open-fact-ledger'
 import { readProductRuntimeState, branchProductRuntimeSession, deleteProductRuntimeSession, applyProductRuntimeEvent } from '../../src/lib/product/runtime-core'
 import { loadTtrpgOpenPlayerContextV1 } from '../../src/lib/ttrpg/open-player-context'
@@ -13,10 +13,13 @@ import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-
 import { hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 import { createCompleteTtrpgCharacterSheetV2 } from '../../src/lib/ttrpg/character-sheet'
 import { ttrpgOpenEntityIdentityCatalogV1 } from '../../src/lib/ttrpg/open-entity-catalog'
+import { parseTtrpgRuntimeStateV2 } from '../../src/lib/ttrpg/open-runtime-contract'
+import { generateTtrpgOpenOracleCandidateV1 } from '../../src/lib/ttrpg/open-intent-harness'
 
-async function setup(privateNpc = false, gear = false) {
+async function setup(privateNpc = false, gear = false, ai = false) {
   const s = await setupOpenEntityPlanningV1(pkg => {
     pkg.ttrpg!.campaign.gmMode = 'human'
+    if (ai) pkg.ttrpg!.campaign.runtimePolicy.enabled = true
     if (privateNpc) { pkg.ttrpg!.campaign.dynamicEntityTemplates[0].audience = 'private'; pkg.ttrpg!.campaign.dynamicEntityTemplates[0].knownByActorKeys = ['hero'] }
     if (gear) {
       const c = pkg.ttrpg!.campaign, npc = c.characterTemplates.find(row => row.characterKey === 'keeper')!, definition = pkg.ttrpg!.rulePack.content.items[0]
@@ -119,6 +122,21 @@ describe('R-TTRPGOPEN13 semantic facts reference actual prior F13 instances thro
     await commitTtrpgOpenOracleRuntimeEntityFactV1(input); await commitTtrpgOpenOracleRuntimeEntityFactV1(input)
     expect(ttrpgOpenSessionFactsV1((await readProductRuntimeState(s.f.sessionId)).ttrpg!.openRun!.factLedger)).toHaveLength(1)
   })
+  it('also saves a first release-only fact canonically after F13, while replaying unversioned history with its original field order', async () => {
+    const s = await setup(); await create(s); const before = await readProductRuntimeState(s.f.sessionId)
+    const { referencePolicy: _policy, ...input } = await command(s, { subjectRef: 'keeper', objectRef: 'harbor' })
+    const event = await commitTtrpgOpenOracleFactV1(input), payload = JSON.parse(event.payloadJson), after = await readProductRuntimeState(s.f.sessionId)
+    expect(payload.stateLayoutVersion).toBe(1); expect(payload.entry.runtimeEntityReferences).toBeUndefined()
+    expect((await db.productRuntimeSessions.get(s.f.sessionId))!.runtimeHeadStateJson).toBe(JSON.stringify(after))
+    const view = await loadTtrpgOpenPlayerContextV1({ scope: s.f.scope, sessionId: s.f.sessionId, actorKey: 'hero' })
+    expect(view.view.sessionFacts[0].subjectRef).toBe('keeper')
+    delete payload.stateLayoutVersion
+    const historical = applyProductRuntimeEvent(before, { ...event, payloadJson: JSON.stringify(payload) })
+    const oldRun = historical.ttrpg!.openRun!, normalized = parseTtrpgRuntimeStateV2(historical.ttrpg)!.openRun!
+    expect(Object.keys(oldRun).indexOf('entityOperations')).toBeLessThan(Object.keys(oldRun).indexOf('factLedger'))
+    expect(Object.keys(normalized).indexOf('factLedger')).toBeLessThan(Object.keys(normalized).indexOf('entityOperations'))
+    expect(normalized.factLedger).toEqual(oldRun.factLedger)
+  })
   it('rejects rehashed reference widening or another operation during replay and fails closed without the original entity journal', async () => {
     const s = await setup(); await create(s); const before = await readProductRuntimeState(s.f.sessionId)
     const event = await commitTtrpgOpenOracleRuntimeEntityFactV1(await command(s))
@@ -131,6 +149,23 @@ describe('R-TTRPGOPEN13 semantic facts reference actual prior F13 instances thro
     const state = await readProductRuntimeState(s.f.sessionId), run = state.ttrpg!.openRun!
     await expect(verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content: s.input.content, runtimeSourceHash: s.f.session.runtimeSourceHash,
       oracleReceipts: run.oracleReceipts!, storyFacts: state.ttrpg!.product.effectLedger.storyFacts })).rejects.toThrow(/F13 来源/)
+  })
+  it('keeps a real release-only model interpretation batch readable after F13 without expanding its entity permissions', async () => {
+    const s = await setup(false, false, true); await create(s)
+    const before = await readProductRuntimeState(s.f.sessionId), { proposal } = await command(s, { subjectRef: 'keeper', objectRef: 'harbor' })
+    let sends = 0
+    const generated = await generateTtrpgOpenOracleCandidateV1({ ...await openEnvelopeV1(s.f.sessionId, 'runtime.fact.oracle.model'), ...s.deskInput,
+      rawInput: '明确咨询并审查可实例化对象', oracleSourceRef: s.input.oracleSourceRef, maximumOutputTokens: 1000, maximumCostUsd: 0.1,
+      runAI: async () => { sends++; return JSON.stringify({ interpretation: '守灯人了解港口情况。', facts: [proposal] }) } })
+    const event = await reviewTtrpgOpenOracleCandidateV1({ ...await openEnvelopeV1(s.f.sessionId, 'runtime.fact.oracle.review'), ...s.deskInput,
+      runId: generated.prepared.runId, requestKey: generated.prepared.requestKey, candidateHash: generated.candidate.candidateHash,
+      interpretationDecision: 'accept', interpretationReason: null, choices: [{ proposalIndex: 0, decision: 'adopt', reason: null }] })
+    const after = await readProductRuntimeState(s.f.sessionId), payload = JSON.parse(event.payloadJson)
+    expect(payload.stateLayoutVersion).toBe(1); expect(payload.entries[0].runtimeEntityReferences).toBeUndefined()
+    expect((await db.productRuntimeSessions.get(s.f.sessionId))!.runtimeHeadStateJson).toBe(JSON.stringify(after))
+    expect(after.entities).toEqual(before.entities); expect(sends).toBe(1)
+    const view = await loadTtrpgOpenPlayerContextV1({ scope: s.f.scope, sessionId: s.f.sessionId, actorKey: 'hero' })
+    expect(view.view.sessionFacts[0].subjectRef).toBe('keeper')
   })
   it('keeps stable identity through a created cut, parent deletion and two complete imports; the earlier cut never gains an instance', async () => {
     const s = await setup(), early = await branchProductRuntimeSession({ parentSessionId: s.f.sessionId, throughSequence: (await readProductRuntimeState(s.f.sessionId)).lastSequence, title: 'Before F13 fact' })

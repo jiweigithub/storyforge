@@ -11,7 +11,9 @@ import * as p from './open-contract-parse'
 
 export function applyTtrpgOpenOracleReviewEventV1(state: ProductRuntimeState, event: ProductRuntimeEvent, payload: ProductRuntimeJsonObjectV1): boolean {
   if (event.type !== 'ttrpg.open.oracle.reviewed') return false
-  p.exact(payload, ['review','entries','retirements','basis','basisHash','intent'], 'Oracle reviewed event')
+  p.exact(payload, ['review','entries','retirements','basis','basisHash','intent',
+    ...(Object.prototype.hasOwnProperty.call(payload, 'stateLayoutVersion') ? ['stateLayoutVersion'] : [])], 'Oracle reviewed event')
+  if (Object.prototype.hasOwnProperty.call(payload, 'stateLayoutVersion')) p.literal(payload.stateLayoutVersion, 1, 'Oracle review state layout version')
   const runtime = parseTtrpgRuntimeStateV2(state.ttrpg), run = runtime?.openRun, auth = runtime?.authorization
   if (!runtime || !run || !auth) p.fail('Oracle 审阅需要正式已授权团局')
   const review = parseTtrpgOpenOracleReviewV1(payload.review), entries = parseTtrpgOpenOracleReviewedEntriesV1(payload.entries), retirements = parseTtrpgOpenOracleReviewedRetirementsV1(payload.retirements)
@@ -62,6 +64,6 @@ export function applyTtrpgOpenOracleReviewEventV1(state: ProductRuntimeState, ev
     run.factLedger = ledger
   } else if (payload.basis !== null || payload.basisHash !== null || retirements.length) p.fail('无事实审阅不能伪造事实基础或退休事件')
   run.oracleReviews = [...(run.oracleReviews ?? []),review]
-  state.ttrpg = runtime
+  state.ttrpg = payload.stateLayoutVersion === 1 ? parseTtrpgRuntimeStateV2(runtime)! : runtime
   return true
 }

@@ -806,7 +806,8 @@ async function buildTtrpgOpenFactAssertionV1(context: TtrpgFormalBuildContextV1,
   const retirement = proposal.supersedes === null ? null : parseTtrpgOpenFactRetirementV1({ factKey: proposal.supersedes,
     sourceRef, authorizationEpochKey: epoch.epochKey, viewerKey, reason: proposal.supersedeReason, supersededByFactKey: entry.fact.factKey });
   return { actorKey: seat.actorKey ?? 'gm', targetKey: proposal.subjectRef,
-    payload: { viewerKey, authorizationEpochKey: epoch.epochKey, basis: run.factLedger ? null : basis, basisHash: basis.basisHash, entry, retirement } };
+    payload: { viewerKey, authorizationEpochKey: epoch.epochKey, basis: run.factLedger ? null : basis, basisHash: basis.basisHash,
+      entry, retirement, stateLayoutVersion: 1 } };
 }
 
 
@@ -951,7 +952,7 @@ export async function reviewTtrpgOpenOracleCandidateV1(input: FormalTtrpgCommand
       }
       return { actorKey: prepared.seat.actorKey ?? 'gm',targetKey: null,
         payload: { review,entries,retirements,basis: entries.length && !originalLedger ? prepared.basis : null,
-          basisHash: entries.length ? prepared.basis.basisHash : null },agentEvidence: proof.evidence };
+          basisHash: entries.length ? prepared.basis.basisHash : null,stateLayoutVersion: 1 },agentEvidence: proof.evidence };
     },
   });
   try { await reconcileTtrpgOpenOracleFactRunV1({ ...input,scope }); }
