@@ -265,7 +265,7 @@ function planKeys(context: TtrpgSituationTemplateContextV1): Set<string> {
 }
 
 function factKeys(context: TtrpgSituationTemplateContextV1): Set<string> {
-  return new Set(context.frozenWorldPredicateIndex?.entries.map(entry => entry.factKey) ?? [])
+  return new Set([...(context.frozenWorldPredicateIndex?.entries.map(entry => entry.factKey) ?? []), ...(context.sessionFactKeys ?? [])])
 }
 
 function factSlotKeys(context: TtrpgSituationTemplateContextV1): Set<string> {

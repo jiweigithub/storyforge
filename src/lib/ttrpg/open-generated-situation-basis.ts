@@ -1,0 +1,70 @@
+/** P9 deterministic human-GM preflight. This is not a registered model source, a Run or an acceptance command. */
+import type { WorkspaceScope } from '../types'
+import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
+import { verifyTtrpgOpenFactLedgerV1, ttrpgOpenSessionFactsV1 } from './open-fact-ledger'
+import { verifyTtrpgOpenOracleJournalV1 } from './open-oracle-contract'
+import { ttrpgOpenMechanicalStateHashV1 } from './open-rule-plan'
+import { hashProductProductionValueV2 as hash } from '../product-production/hash'
+import { reviewTtrpgOpenGeneratedSituationProposalV1, type TtrpgOpenSituationProposalBasisV1, type TtrpgOpenSituationPersonalizationSourceV1 } from './open-generated-situation-contract'
+import * as p from './open-contract-parse'
+
+export interface TtrpgOpenSituationPreflightInputV1 { scope: WorkspaceScope; sessionId: number; viewerKey: string; proposalKey: string }
+export async function loadTtrpgOpenSituationProposalBasisV1(input: TtrpgOpenSituationPreflightInputV1) {
+  const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'human', viewerKey: input.viewerKey } })
+  if (!loaded.humanHost || loaded.seat?.role !== 'gm' || loaded.seat.controller === 'ai') throw new Error('局势私域预检需要当前已认领的真人 GM；兼任主持不取得 GM 资料。')
+  const { content, runtime, authorization, source } = loaded, run = runtime.openRun!, ancestors = runtime.branchLineage?.ancestors ?? []
+  if (authorization.seats.some(s => !s.consent.sessionLoggingAllowed)) throw new Error('本桌尚未同意保存生成局势所需的来源记录。')
+  if (run.stage.status !== 'open' || runtime.product.safety.status !== 'active') throw new Error('局势预检需要阶段进行中且本桌未暂停。')
+  await verifyTtrpgOpenOracleJournalV1({ receipts: run.oracleReceipts ?? [], rulePack: content.rulePack.content, sessionKey: runtime.sessionKey, seed: loaded.session.seed, ancestors })
+  await verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash, oracleReceipts: run.oracleReceipts ?? [], storyFacts: runtime.product.effectLedger.storyFacts })
+  const sessionFacts = ttrpgOpenSessionFactsV1(run.factLedger).filter(f => !f.retired)
+  const selected = new Set(authorization.selectedActorKeys), personalizationSources: TtrpgOpenSituationPersonalizationSourceV1[] = []
+  for (const actorKey of authorization.selectedActorKeys) {
+    const actor = content.campaign.characterTemplates.find(a => a.characterKey === actorKey && a.role === 'player') ?? p.fail('个性化身份缺少冻结玩家模板')
+    // Public authored identity is not a new objective fact or a player commitment.
+    const contentHash = await hash({ runtimeSourceHash: source.runtimeSourceHash, actorKey, name: actor.name, description: actor.description })
+    personalizationSources.push({ sourceKey: `identity.${contentHash.slice(0, 48)}`, kind: 'identity', actorKeys: [actorKey], knownByActorKeys: [actorKey], sourceRef: null, contentHash })
+  }
+  const origins = [...ancestors.map(a => ({ sessionKey: a.sessionKey, run: a.snapshot.openRun })), { sessionKey: runtime.sessionKey, run }]
+  for (const origin of origins) for (const operation of origin.run?.operations ?? []) {
+    const actorKey = operation.plan.request.actorKey
+    if (!selected.has(actorKey) || operation.inheritance || operation.status !== 'completed' || operation.plan.request.controllerMode !== 'human') continue
+    const approved = operation.approvals.find(a => a.actorKey === actorKey && a.decision === 'approve')
+    if (!approved) continue
+    const contentHash = await hash({ sourceRef: approved.sourceRef, actorKey, planHash: operation.planHash, riskHash: operation.riskHash, decision: approved.decision })
+    const sourceKey = `choice.${contentHash.slice(0, 48)}`
+    if (!personalizationSources.some(s => s.sourceKey === sourceKey)) personalizationSources.push({ sourceKey, kind: 'choice', actorKeys: [actorKey], knownByActorKeys: [actorKey], sourceRef: approved.sourceRef, contentHash })
+  }
+  const rows = [...(run.situations.history ?? []).map(h => h.instance), ...run.situations.active, ...run.situations.queued]
+  const originByInstance = new Map<string, string>()
+  for (const origin of origins) for (const instance of [...(origin.run?.situations.history ?? []).map(h => h.instance), ...(origin.run?.situations.active ?? []), ...(origin.run?.situations.queued ?? [])]) {
+    if (!originByInstance.has(instance.situationKey)) originByInstance.set(instance.situationKey, origin.sessionKey)
+  }
+  const history: TtrpgOpenSituationProposalBasisV1['history'] = []
+  for (const instance of rows) {
+    if (history.some(h => h.situationKey === instance.situationKey)) continue
+    const originSessionKey = originByInstance.get(instance.situationKey) ?? p.fail('局势历史缺少实际来源分支')
+    const template = content.campaign.situationTemplates.find(t => t.templateKey === instance.templateKey) ?? p.fail('局势历史缺少原冻结模板')
+    history.push({ template: structuredClone(template), status: 'accepted', sourceRef: { sessionKey: originSessionKey, sequence: instance.activatedAtSequence }, situationKey: instance.situationKey })
+  }
+  const order = origins.map(o => o.sessionKey)
+  history.sort((a, b) => order.indexOf(a.sourceRef.sessionKey) - order.indexOf(b.sourceRef.sessionKey) || a.sourceRef.sequence - b.sourceRef.sequence || a.situationKey.localeCompare(b.situationKey))
+  const proposalKey = p.key(input.proposalKey, 'system proposal key')
+  const basis: TtrpgOpenSituationProposalBasisV1 = {
+    runtimeSourceHash: source.runtimeSourceHash, worldReleaseHash: content.campaign.sourceWorld.contentHash,
+    sourceLineageHash: await hash({ sessionKey: runtime.sessionKey, runtimeSourceHash: source.runtimeSourceHash, ancestors: ancestors.map(a => a.evidenceHash) }),
+    sessionKey: runtime.sessionKey, assignedTemplateKey: `generated.${(await hash({ sessionKey: runtime.sessionKey, proposalKey })).slice(0, 40)}`,
+    selectedActorKeys: [...authorization.selectedActorKeys], worldTurn: run.worldTime.worldTurn,
+    authorizationHash: await hash(authorization), mechanicalStateHash: await ttrpgOpenMechanicalStateHashV1(loaded.state),
+    campaign: structuredClone(content.campaign), rule: structuredClone(content.rulePack.content), sessionFacts, sessionTemplates: [], history,
+    cooldownUntilWorldTurn: { ...run.situations.cooldowns }, personalizationSources,
+  }
+  await loaded.assertCurrent()
+  return { basis, readEvidence: { sequence: loaded.state.lastSequence, stateHash: loaded.stateHash, runtimeSourceHash: source.runtimeSourceHash }, assertCurrent: loaded.assertCurrent }
+}
+export async function preflightTtrpgOpenGeneratedSituationV1(input: TtrpgOpenSituationPreflightInputV1 & { value: unknown }) {
+  const loaded = await loadTtrpgOpenSituationProposalBasisV1(input)
+  const review = await reviewTtrpgOpenGeneratedSituationProposalV1({ value: input.value, basis: loaded.basis })
+  await loaded.assertCurrent()
+  return review
+}

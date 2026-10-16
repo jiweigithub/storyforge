@@ -1,4 +1,5 @@
-import type { RulePackV2, TtrpgCampaignContentV2, TtrpgPredicateV1, TtrpgOpenScalar, TtrpgOpenEffectPrimitiveV1, TtrpgOpenEffectPlanTemplateV1, TtrpgOpenEntityKind } from './open-contract'
+import type { RulePackV2, TtrpgCampaignContentV2, TtrpgPredicateV1, TtrpgOpenScalar, TtrpgOpenEffectPrimitiveV1, TtrpgOpenEffectPlanTemplateV1, TtrpgOpenEntityKind, TtrpgSituationTemplateV1, TtrpgOpenAudience } from './open-contract'
+import { parseTtrpgSessionFactV1, type TtrpgSessionFactV1 } from './session-facts'
 import * as p from './open-contract-parse'
 import type { TtrpgOpenApprovalActorV1, TtrpgOpenCompanionPolicyV1 } from './open-contract'
 import { companionPolicy } from './open-content-templates'
@@ -38,6 +39,21 @@ export function validateTtrpgOpenApprovalBindingsV1(
 
 /** Cross-document references are checked only after every nested object was parsed. */
 export function validateOpenContentReferences(c: TtrpgCampaignContentV2, rule: RulePackV2): void {
+  validateReferences(c, rule)
+}
+
+/** A read-only reference view, never a new frozen campaign or a world-fact projection. */
+export function validateTtrpgOpenSessionSituationReferencesV1(input: {
+  campaign: TtrpgCampaignContentV2; rule: RulePackV2; sessionTemplates: readonly TtrpgSituationTemplateV1[]; sessionFacts: readonly TtrpgSessionFactV1[];
+}): void {
+  const facts = input.sessionFacts.map(parseTtrpgSessionFactV1)
+  if (facts.some(f => f.retired)) p.fail('session situation: 不得把退休事实作为当前来源')
+  p.unique(facts.map(f => f.factKey), 'session situation facts')
+  if (facts.some(f => input.campaign.frozenWorldPredicateIndex.entries.some(original => original.factKey === f.factKey))) p.fail('session situation: 不得遮蔽冻结事实身份')
+  validateReferences({ ...input.campaign, situationTemplates: [...input.campaign.situationTemplates, ...input.sessionTemplates] }, input.rule, facts)
+}
+
+function validateReferences(c: TtrpgCampaignContentV2, rule: RulePackV2, sessionFacts: readonly TtrpgSessionFactV1[] = []): void {
   const index = <T>(rows: T[], get: (r: T) => string, label: string) => {
     p.unique(rows.map(get), label)
     return new Map(rows.map(row => [get(row), row]))
@@ -52,6 +68,10 @@ export function validateOpenContentReferences(c: TtrpgCampaignContentV2, rule: R
   const clocks = index(c.clocks, a => a.clockKey, 'clocks')
   const fronts = index(c.fronts, a => a.frontKey, 'fronts')
   const facts = index(c.frozenWorldPredicateIndex.entries, a => a.factKey, 'frozenWorldPredicateIndex')
+  const sessionKeys = new Set(sessionFacts.map(f => f.factKey))
+  const referenceFacts = new Map<string, { audience: TtrpgOpenAudience; knownByActorKeys: readonly string[] }>([
+    ...facts, ...sessionFacts.map(f => [f.factKey, { audience: f.audience, knownByActorKeys: f.knownBy }] as const),
+  ])
   const slotKey = (subject: string, predicate: string, object: string | null) => JSON.stringify([subject, predicate, object])
   const factSlots = index(c.frozenWorldPredicateIndex.entries, f => slotKey(f.subjectRef, f.predicateKey, f.objectRef), 'fact slots')
   const evidence = index(c.situationTemplates.flatMap(s => s.evidence), a => a.clueRef, 'evidence')
@@ -66,7 +86,7 @@ export function validateOpenContentReferences(c: TtrpgCampaignContentV2, rule: R
   const resources = new Set(c.frozenWorldPredicateIndex.entries.flatMap(f => f.sourceResourceRefs))
   for (const b of c.entityBindings) if (b.sourceResourceRef !== null) resources.add(b.sourceResourceRef)
   const entityRefs = new Set([...bindings.keys(), ...actors.keys()])
-  const allRefs = new Set([c.campaignKey, ...entityRefs, ...resources, ...facts.keys(), ...fronts.keys(), ...clocks.keys(), ...situations.keys(), ...secrets.keys(), ...evidence.keys()])
+  const allRefs = new Set([c.campaignKey, ...entityRefs, ...resources, ...facts.keys(), ...sessionKeys, ...fronts.keys(), ...clocks.keys(), ...situations.keys(), ...secrets.keys(), ...evidence.keys()])
   const sourceRefs = new Set([...allRefs, rule.ruleSystemId, ...rule.compendium.map(r => r.key)])
   const abilityKeys = new Set(c.characterTemplates.flatMap(a => a.characterSheet.rules.abilityKeys))
   const allEffects = c.effectPlanTemplates.flatMap(t => [...t.effects, ...t.alternatives.flatMap(a => a.effects)])
@@ -289,7 +309,7 @@ export function validateOpenContentReferences(c: TtrpgCampaignContentV2, rule: R
     const driver = s.driverBinding
     if (driver.kind === 'npc' && actors.get(driver.characterKey)?.role !== 'npc') p.fail(`${s.templateKey}: driver 必须是 NPC`)
     if (driver.kind === 'front') p.known(driver.frontKey, fronts.keys(), s.templateKey)
-    if (driver.kind === 'world-event' || driver.kind === 'player-commitment') p.known(driver.factRef, facts.keys(), s.templateKey)
+    if (driver.kind === 'world-event' || driver.kind === 'player-commitment') p.known(driver.factRef, referenceFacts.keys(), s.templateKey)
     s.driverBeliefs.forEach(b => p.known(b.factRef, allRefs, s.templateKey))
     s.preconditions.forEach(t => predicate(t, s.templateKey))
     s.obstacles.forEach(o => { p.known(o.ref, allRefs, o.obstacleKey); predicate(o.predicate, o.obstacleKey) })
@@ -300,10 +320,10 @@ export function validateOpenContentReferences(c: TtrpgCampaignContentV2, rule: R
     }
     for (const e of s.evidence) {
       audience(e.audience, e.knownByActorKeys, e.clueRef)
-      refs(e.sourceFactRefs, facts.keys(), e.clueRef); refs(e.sourceResourceRefs, resources, e.clueRef)
+      refs(e.sourceFactRefs, referenceFacts.keys(), e.clueRef); refs(e.sourceResourceRefs, resources, e.clueRef)
       const visibility = { public: 0, party: 1, private: 2, 'gm-only': 3 }
       for (const sourceRef of e.sourceFactRefs) {
-        const source = facts.get(sourceRef)
+        const source = referenceFacts.get(sourceRef)
         if (source && (visibility[e.audience] < visibility[source.audience]
           || (source.audience === 'private' && e.audience === 'private' && e.knownByActorKeys.some(k => !source.knownByActorKeys.includes(k))))) {
           p.fail(`${e.clueRef}: 初始 evidence 受众不得降低来源密级或扩大 private 接收者`)
@@ -326,6 +346,7 @@ export function validateOpenContentReferences(c: TtrpgCampaignContentV2, rule: R
       }
       else if (prefix === 'clock') p.known(key, clocks.keys(), s.templateKey)
       else if (prefix === 'telegraph') p.known(key, telegraphs.keys(), s.templateKey)
+      else if (prefix === 'session' && sessionFacts.length) p.known(key, sessionKeys, s.templateKey)
       else p.fail(`${s.templateKey}: 冻结内容不能引用未提交 session 来源或未知 whyNow 前缀`)
     }
     planRef(s.noInterventionOutcome.effectPlanRef, s.templateKey)
