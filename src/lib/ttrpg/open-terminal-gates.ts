@@ -1,3 +1,4 @@
+import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
 /** Real terminal and per-player gate evidence. Diagnostics remain author-only. */
 import type { ProductRuntimeState } from '../types'
 import type { TtrpgRuntimeContentV2 } from './content-version'
@@ -68,7 +69,7 @@ export function parseTtrpgOpenGateReceiptV1(value: unknown): TtrpgOpenGateReceip
 export function ttrpgOpenGateBasisJsonV1(state: ProductRuntimeState): string {
   const runtime = parseTtrpgRuntimeStateV2(state.ttrpg)!, run = runtime.openRun!
   return stable({ entities: state.entities, product: runtime.product, authorization: runtime.authorization, worldTime: run.worldTime, stage: run.stage,
-    situations: run.situations, clocks: run.clocks, fronts: run.fronts, pressureSignals: run.pressureSignals ?? [], factLedger: run.factLedger ?? null, knowledge: run.knowledge })
+    situations: run.situations, ...(run.situationReceipts ? { sessionSituationRefs: run.situationReceipts.map(r => ({ templateKey: r.template.templateKey, receiptHash: r.receiptHash })) } : {}), clocks: run.clocks, fronts: run.fronts, pressureSignals: run.pressureSignals ?? [], factLedger: run.factLedger ?? null, knowledge: run.knowledge })
 }
 export function ttrpgOpenGateHumanActorsV1(runtime: TtrpgRuntimeStateV2): Array<{ actorKey: string; viewerKey: string }> {
   const auth = runtime.authorization ?? p.fail('门检查需要真实当前授权')
@@ -79,7 +80,7 @@ export function evaluateTtrpgOpenPlayerGatesV1(input: { state: ProductRuntimeSta
   if (!ttrpgOpenGateHumanActorsV1(runtime).some(s => s.actorKey === input.actorKey && s.viewerKey === input.viewerKey)) p.fail('四门只检查该窗口真实回应的真人角色')
   const seat = auth.seats.find(s => s.viewerKey === input.viewerKey)!, context = ttrpgOpenPredicateContextV1(input.state, content)
   const known = (ref: string) => ttrpgOpenActorKnowsEvidenceV1(run.knowledge, input.actorKey, ref)
-  const campaign = structuredClone(content.campaign)
+  const campaign = structuredClone(ttrpgOpenSituationCatalogV1(content.campaign, run).validationView)
   // G2 sees genuine observed grants. GM-only/private disclosures to someone else and hearsay never become objective proof.
   for (const template of campaign.situationTemplates) for (const evidence of template.evidence) {
     if (!known(evidence.clueRef)) { evidence.audience = 'gm-only'; evidence.knownByActorKeys = [] }

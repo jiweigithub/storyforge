@@ -84,7 +84,7 @@ async function readModel(input: ReadInput) {
     cooldownUntilWorldTurn: basis.cooldownUntilWorldTurn,
     activeSituationKeys: run.situations.active.map(s => s.situationKey), queuedSituationKeys: run.situations.queued.map(s => s.situationKey) }
   const history = basis.history.slice(-TTRPG_SITUATION_GENERATION_HISTORY_LIMIT_V1).map(h => ({
-    templateKey: h.template.templateKey, motive: h.template.motive, sourceRef: h.sourceRef,
+    templateKey: h.template.templateKey, motive: h.template.motive, sourceRef: h.sourceRef, ...(h.sourceKind ? { sourceKind: h.sourceKind } : {}),
     obstacleKinds: h.template.obstacles.map(o => o.kind), actionKeys: h.template.interventionPoints.flatMap(i => i.suggestedActionKeys) }))
   add('situation-contract', '新局势的生成与来源合同', contract, true)
   add('situation-frame', '当前阶段、来源与系统分配的候选身份', frame, true)
@@ -123,7 +123,7 @@ async function readModel(input: ReadInput) {
   for (const secret of c.secrets) add('secret.' + secret.secretKey, '冻结秘密；不可自动公开 · ' + secret.secretKey, secret)
   for (const quest of c.quests) add('quest.' + quest.questKey, '冻结任务定义 · ' + quest.questKey, quest)
   for (const entry of rule.compendium) add('compendium.' + entry.key, '冻结规则条目 · ' + entry.key, entry)
-  for (const template of [...c.situationTemplates, ...basis.sessionTemplates]) add('situation-definition.' + template.templateKey, '既有完整局势定义 · ' + template.templateKey, template)
+  for (const template of [...c.situationTemplates, ...basis.sessionTemplates]) add('situation-definition.' + template.templateKey, (basis.sessionTemplates.some(s => s.templateKey === template.templateKey) ? '已采用局势定义；历史引用不等于当前事实 · ' : '既有完整局势定义 · ') + template.templateKey, template)
   for (const history of basis.history) add('situation-history.' + history.situationKey, '实际采用过的局势 · ' + history.situationKey, history)
   for (const source of personalizationSources) add('personalization.' + source.sourceKey, '真实玩家来源 · ' + source.kind + ' · ' + source.sourceKey, {
     source, value: personalizationValues.find(v => v.sourceKey === source.sourceKey)!.value, grantsPlayerCommitment: false }, source.kind === 'identity')

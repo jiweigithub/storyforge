@@ -16,7 +16,7 @@ export interface TtrpgOpenSituationCandidateV1 extends Omit<TtrpgOpenIntentCandi
   schema: 'storyforge.ttrpg-open-situation-candidate';
   review: Review | null; references: TtrpgOpenSituationReferenceProofV1[];
 }
-export async function assertTtrpgOpenSituationHumanGmV1(input: TtrpgOpenCandidateReadV1) {
+export async function assertTtrpgOpenSituationHumanGmV1(input: Pick<TtrpgOpenCandidateReadV1, 'scope' | 'sessionId' | 'viewerKey'>) {
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'human', viewerKey: input.viewerKey } })
   if (!loaded.humanHost || loaded.seat?.role !== 'gm' || loaded.seat.controller === 'ai') throw new Error('局势候选原文仅允许当前真人 GM 读取；兼任主持只能查看请求状态。')
   await loaded.assertCurrent()
@@ -26,10 +26,10 @@ export async function readTtrpgOpenSituationCandidateV1(input: TtrpgOpenCandidat
   return value?.schema === 'storyforge.ttrpg-open-situation-candidate' ? value : null
 }
 /** Fixed schema: no private title, source keys, raw text, issues, messages or prepared input. */
-export function projectTtrpgOpenSituationCandidateSummaryV1(candidate: TtrpgOpenSituationCandidateV1, stopped = false) {
+export function projectTtrpgOpenSituationCandidateSummaryV1(candidate: TtrpgOpenSituationCandidateV1, stopped = false, adopted = false) {
   return { schema: 'storyforge.ttrpg-open-situation-candidate-summary' as const, version: 1 as const,
     runId: candidate.runId, requestKey: candidate.requestKey, candidateHash: candidate.candidateHash,
-    status: candidate.artifact.status, stopped, requiresExplicitAcceptance: !stopped, grantsGmRead: false as const }
+    status: candidate.artifact.status, stopped, ...(adopted ? { adopted: true as const } : {}), requiresExplicitAcceptance: !stopped && !adopted, grantsGmRead: false as const }
 }
 /** Current host status authority is separate from private GM-content read authority. */
 export async function assertTtrpgOpenSituationRequesterV1(input: Pick<TtrpgOpenCandidateReadV1, 'scope' | 'sessionId' | 'viewerKey'>) {
@@ -44,8 +44,9 @@ export async function readTtrpgOpenSituationCandidateSummaryV1(input: TtrpgOpenC
     const run = await readInstanceAgentRunV1(input.scope, input.runId)
     const epoch = loaded.runtime.openRun!.coordination.epochs.find(e => e.epochKey === value?.epochKey)
     const stopped = epoch?.status === 'closed' || ['cancelled', 'failed'].includes(run.projection.state)
+    const adopted = loaded.runtime.openRun!.situationReceipts?.some(r => r.model.requestKey === input.requestKey && r.model.candidateHash === value?.candidateHash) ?? false
     await loaded.assertCurrent()
-    return value?.schema === 'storyforge.ttrpg-open-situation-candidate' ? projectTtrpgOpenSituationCandidateSummaryV1(value, stopped) : null
+    return value?.schema === 'storyforge.ttrpg-open-situation-candidate' ? projectTtrpgOpenSituationCandidateSummaryV1(value, stopped, adopted) : null
   } catch { throw new Error('当前无法读取本人的局势候选状态；原始私域资料保持受限。') }
 }
 /** Internal only: bound immutable validation data is NOT model-delivered evidence. */

@@ -1,0 +1,23 @@
+/** Integrity of persisted definitions; original raw/delivered candidate proof is checked at adoption. */
+import { parseTtrpgOpenSituationArtifactRefsV1, type TtrpgOpenSessionSituationReceiptV1 } from './open-session-situation-contract'
+import { canonicalStringify, hashCanonicalValue } from '../agent/run/hash'
+export async function verifyTtrpgOpenSessionSituationHashesV1(receipts: readonly TtrpgOpenSessionSituationReceiptV1[]) {
+  for (const receipt of receipts) {
+    const { receiptHash, ...body } = receipt
+    if (await hashCanonicalValue(body) !== receiptHash || await hashCanonicalValue(receipt.template) !== receipt.templateHash
+      || await hashCanonicalValue({ schema: 'storyforge.ttrpg-open-situation-proposal', version: 1,
+        template: receipt.template, personalizationSourceKeys: receipt.personalizationSourceKeys }) !== receipt.model.proposalHash
+      || receipt.template.templateKey !== 'generated.' + (await hashCanonicalValue({ sessionKey: receipt.sourceRef.sessionKey, proposalKey: receipt.model.epochKey })).slice(0, 40)) {
+      throw new Error('已采用局势的原始身份、正文或采用回执已经损坏。')
+    }
+    const origin = await (await import('./open-run-portability')).parseTtrpgOpenRunOriginV1(receipt.runOriginJson)
+    const refs = parseTtrpgOpenSituationArtifactRefsV1(origin.events.flatMap(e => e.type === 'evidence.artifact.recorded'
+      ? [{ artifactKind: e.payload.artifactKind, contentHash: e.payload.contentHash }] : []))
+    if (origin.sessionKey !== receipt.sourceRef.sessionKey || origin.contractHash !== receipt.model.runContractHash
+      || canonicalStringify(refs) !== canonicalStringify(receipt.artifactRefs)
+      || !origin.events.some(e => e.type === 'candidate.persisted' && e.payload.candidateHash === receipt.model.candidateHash)
+      || !origin.events.some(e => e.type === 'evidence.artifact.recorded' && e.payload.artifactKind === 'raw-response' && e.payload.contentHash === receipt.model.rawResponseHash)) {
+      throw new Error('已采用局势缺少准确的原始 Run、候选或回答证据。')
+    }
+  }
+}

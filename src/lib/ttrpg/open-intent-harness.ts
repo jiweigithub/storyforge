@@ -180,7 +180,7 @@ export async function recoverTtrpgOpenSituationCandidateV1(input: TtrpgOpenCandi
     if (!call || ttrpgOpenModelPurposeForSkillV1(call.skillId).purpose !== 'situation-proposal') throw new Error('不是原局势生成请求')
     await readTtrpgOpenUnfinishedCandidateArtifactV1(input, 'situation-proposal')
     const epoch = current.runtime.openRun!.coordination.epochs.find(e => e.epochKey === call.authorizationEpochKey)
-    if (epoch?.status === 'closed') return readTtrpgOpenSituationCandidateSummaryV1(input)
+    if (epoch?.status === 'closed' || current.runtime.openRun!.situationReceipts?.some(r => r.model.requestKey === input.requestKey)) return readTtrpgOpenSituationCandidateSummaryV1(input)
     if (call.status !== 'succeeded') return null
     const candidate = await materializeSucceededCandidate(input, 'situation-proposal', null, false)
     if (candidate.schema !== 'storyforge.ttrpg-open-situation-candidate') throw new Error('局势恢复格式错误')

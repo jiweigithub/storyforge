@@ -1,3 +1,5 @@
+import { parseTtrpgOpenSessionSituationRefsV1, type TtrpgOpenSessionSituationRefV1 } from './open-session-situation-catalog'
+import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
 import { ttrpgOpenTurnCycleIdentityV1 } from './open-turn-settlement'
 import { parseTtrpgOpenPressureEffectReviewV1, type TtrpgOpenPressureEffectReviewV1, type TtrpgOpenConsequenceEffectWorkV1 } from './open-pressure-effect'
 /** Durable E11 maintenance. The journal owns causal work; no DB/provider/world writes. */
@@ -20,6 +22,7 @@ export interface TtrpgOpenSituationCycleWorkV1 {
 }
 export interface TtrpgOpenSituationCycleV1 {
   operationStepKey?: string
+  sessionSituationRefs?: TtrpgOpenSessionSituationRefV1[]
   cycleKey: string; ruleSourceRef: TtrpgOpenSourceRefV1; startedRef: TtrpgOpenSourceRefV1;
   frozenContent: TtrpgRuntimeContentV2; contentHash: string; runtimeSourceHash: string;
   situationKeys: string[]; maintenanceRefs: TtrpgOpenSourceRefV1[];
@@ -28,7 +31,9 @@ export interface TtrpgOpenSituationCycleV1 {
 }
 export function parseTtrpgOpenSituationCycleV1(value: unknown): TtrpgOpenSituationCycleV1 {
   const hasStep = Object.prototype.hasOwnProperty.call(p.object(value,'situation cycle'),'operationStepKey')
-  const r = p.record(value, [...(hasStep ? ['operationStepKey'] : []),'cycleKey', 'ruleSourceRef', 'startedRef', 'frozenContent', 'contentHash', 'runtimeSourceHash', 'situationKeys', 'maintenanceRefs', 'queueCredits', 'queueRefs', 'work', 'completedRef'], 'situation cycle')
+  const hasRefs = Object.prototype.hasOwnProperty.call(p.object(value, 'situation cycle'), 'sessionSituationRefs')
+  const r = p.record(value, [...(hasStep ? ['operationStepKey'] : []), ...(hasRefs ? ['sessionSituationRefs'] : []),'cycleKey', 'ruleSourceRef', 'startedRef', 'frozenContent', 'contentHash', 'runtimeSourceHash', 'situationKeys', 'maintenanceRefs', 'queueCredits', 'queueRefs', 'work', 'completedRef'], 'situation cycle')
+  const sessionSituationRefs = hasRefs ? parseTtrpgOpenSessionSituationRefsV1(r.sessionSituationRefs) : undefined
   const operationStepKey = hasStep ? p.key(r.operationStepKey,'situation owner step') : undefined
   if (operationStepKey && !/^situations\.(?:[1-9]|10)$/.test(operationStepKey)) p.fail('局势 owner 必须是实际逐轮步骤')
   const frozenContent = parseTtrpgOpenSituationFrozenContentV1(r.frozenContent), situationKeys = p.keys(r.situationKeys, 'situation cycle instances', 5)
@@ -38,7 +43,7 @@ export function parseTtrpgOpenSituationCycleV1(value: unknown): TtrpgOpenSituati
     const kind = p.oneOf(w.kind, ['effect', 'clock', 'activate'], 'situation work owner'), targetKey = p.key(w.targetKey, 'situation work target')
     if (kind === 'effect' ? !frozenContent.campaign.effectPlanTemplates.some(t => t.planKey === targetKey)
       : kind === 'clock' ? !frozenContent.campaign.clocks.some(t => t.clockKey === targetKey)
-      : !frozenContent.campaign.situationTemplates.some(t => t.templateKey === targetKey)) p.fail('局势后果目标不在冻结内容')
+      : !frozenContent.campaign.situationTemplates.some(t => t.templateKey === targetKey) && !sessionSituationRefs?.some(r => r.templateKey === targetKey)) p.fail('局势后果目标不在冻结内容')
     if (hasReviews && kind !== 'effect') p.fail('只有真实效果 owner 可以保存批准')
     const effectReviews = hasReviews ? p.list(w.effectReviews, 'situation effect revisions', parseTtrpgOpenPressureEffectReviewV1, 1000, 1) : undefined
     if (effectReviews?.some((review, i) => review.revision !== i + 1 || i < effectReviews.length - 1 && !['rejected', 'stale', 'unpayable'].includes(review.status))) p.fail('局势效果修订必须保留被拒绝或失效的真实记录')
@@ -48,7 +53,7 @@ export function parseTtrpgOpenSituationCycleV1(value: unknown): TtrpgOpenSituati
   const maintenanceRefs = p.list(r.maintenanceRefs, 'maintenance sources', parseTtrpgOpenSourceRefV1, situationKeys.length)
   const completedRef = p.nullable(r.completedRef, parseTtrpgOpenSourceRefV1, 'situation cycle completion'), queueCredits = p.integer(r.queueCredits, 'queue release credits', 0, 5)
   if (completedRef && (maintenanceRefs.length !== situationKeys.length || work.some(w => !w.completedRef) || queueCredits)) p.fail('局势维护仍有真实待办')
-  return { ...(operationStepKey ? { operationStepKey } : {}),cycleKey: p.key(r.cycleKey, 'situation cycle key'), ruleSourceRef: parseTtrpgOpenSourceRefV1(r.ruleSourceRef), startedRef: parseTtrpgOpenSourceRefV1(r.startedRef), frozenContent,
+  return { ...(sessionSituationRefs ? { sessionSituationRefs } : {}), ...(operationStepKey ? { operationStepKey } : {}),cycleKey: p.key(r.cycleKey, 'situation cycle key'), ruleSourceRef: parseTtrpgOpenSourceRefV1(r.ruleSourceRef), startedRef: parseTtrpgOpenSourceRefV1(r.startedRef), frozenContent,
     contentHash: p.hash(r.contentHash, 'situation content hash'), runtimeSourceHash: p.hash(r.runtimeSourceHash, 'situation source hash'), situationKeys, maintenanceRefs,
     queueCredits, queueRefs: p.list(r.queueRefs, 'queue attempts', parseTtrpgOpenSourceRefV1, 10000), work, completedRef }
 }
@@ -87,11 +92,11 @@ export function settleTtrpgOpenSituationCycleActionV1(input: { state: ProductRun
   let result: unknown
   if (action.kind === 'maintain') {
     const instance = run.situations.active.find(i => i.situationKey === action.situationKey) ?? p.fail('维护实例不在真实 active')
-    const template = content.campaign.situationTemplates.find(t => t.templateKey === instance.templateKey) ?? p.fail('维护模板不存在')
+    const template = ttrpgOpenSituationCatalogV1(content.campaign, run).templates.find(t => t.templateKey === instance.templateKey) ?? p.fail('维护模板不存在')
     const context = ttrpgOpenPredicateContextV1(state, content)
     const progress = evaluateTtrpgSituationProgressV1({ template, instance, predicateContext: context })
     const maintained = evaluateTtrpgSituationMaintenanceV1({ template, instance: { ...instance, satisfiedObstacleKeys: progress.satisfiedObstacleKeys }, predicateContext: context,
-      worldTurn: run.worldTime.worldTurn, resolvedAtSequence: input.sequence, activeInstances: run.situations.active, queuedTemplateKeys: [], templateContext: content.campaign })
+      worldTurn: run.worldTime.worldTurn, resolvedAtSequence: input.sequence, activeInstances: run.situations.active, queuedTemplateKeys: [], templateContext: ttrpgOpenSituationCatalogV1(content.campaign, run).validationView })
     const next = parseTtrpgOpenSituationRuntimeStateV1({ ...maintained.instance, queuePosition: null }, 'maintained actual situation')
     if (maintained.transition === 'unchanged') run.situations.active = run.situations.active.map(i => i.situationKey === instance.situationKey ? next : i)
     else {

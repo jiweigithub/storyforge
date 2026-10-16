@@ -42,15 +42,36 @@ export function validateOpenContentReferences(c: TtrpgCampaignContentV2, rule: R
   validateReferences(c, rule)
 }
 
-/** A read-only reference view, never a new frozen campaign or a world-fact projection. */
+/** A reference view includes retired identities for old accepted definitions, never current truth.
+ * Every new definition must separately pass assertTtrpgOpenSituationUsesCurrentFactsV1. */
 export function validateTtrpgOpenSessionSituationReferencesV1(input: {
   campaign: TtrpgCampaignContentV2; rule: RulePackV2; sessionTemplates: readonly TtrpgSituationTemplateV1[]; sessionFacts: readonly TtrpgSessionFactV1[];
 }): void {
   const facts = input.sessionFacts.map(parseTtrpgSessionFactV1)
-  if (facts.some(f => f.retired)) p.fail('session situation: 不得把退休事实作为当前来源')
   p.unique(facts.map(f => f.factKey), 'session situation facts')
   if (facts.some(f => input.campaign.frozenWorldPredicateIndex.entries.some(original => original.factKey === f.factKey))) p.fail('session situation: 不得遮蔽冻结事实身份')
   validateReferences({ ...input.campaign, situationTemplates: [...input.campaign.situationTemplates, ...input.sessionTemplates] }, input.rule, facts)
+}
+
+/** Historical reference resolution never lets a newly proposed definition revive a retired fact. */
+export function assertTtrpgOpenSituationUsesCurrentFactsV1(t: TtrpgSituationTemplateV1, facts: readonly TtrpgSessionFactV1[]) {
+  const retired = facts.filter(f => f.retired), active = facts.filter(f => !f.retired)
+  if (!retired.length) return
+  const keys = new Set(retired.map(f => f.factKey)), refs = [
+    ...(t.driverBinding.kind === 'world-event' || t.driverBinding.kind === 'player-commitment' ? [t.driverBinding.factRef] : []),
+    ...t.driverBeliefs.flatMap(b => b.factRef ? [b.factRef] : []), ...t.obstacles.flatMap(o => o.ref ? [o.ref] : []),
+    ...t.evidence.flatMap(e => e.sourceFactRefs), ...t.sourceRefs, ...t.consequences.map(c => c.ref),
+    ...t.whyNowRefs.filter(r => r.startsWith('session:')).map(r => r.slice('session:'.length)),
+  ]
+  if (refs.some(r => keys.has(r))) p.fail('新局势不能把已退休的会话事实作为当前依据')
+  const check = (v: TtrpgPredicateV1): void => {
+    if (v.op === 'all' || v.op === 'any') { v.of.forEach(check); return }
+    if (v.op === 'not') { check(v.of); return }
+    if (v.op === 'session-fact' && !active.some(f => f.subjectRef === v.subjectRef && f.predicateKey === v.predicateKey && f.objectRef === v.objectRef)
+      && retired.some(f => f.subjectRef === v.subjectRef && f.predicateKey === v.predicateKey && f.objectRef === v.objectRef)) p.fail('新局势谓词不能把退休会话事实当作当前事实')
+  }
+  ;[...t.preconditions, ...t.obstacles.map(o => o.predicate), ...t.interventionPoints.flatMap(i => i.requiresPredicate ? [i.requiresPredicate] : []),
+    ...t.evidence.flatMap(e => e.discoveryPolicy.preconditions)].forEach(check)
 }
 
 function validateReferences(c: TtrpgCampaignContentV2, rule: RulePackV2, sessionFacts: readonly TtrpgSessionFactV1[] = []): void {

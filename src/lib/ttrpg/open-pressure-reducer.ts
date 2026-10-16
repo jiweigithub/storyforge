@@ -1,3 +1,4 @@
+import { ttrpgOpenSituationCatalogV1, ttrpgOpenSituationCatalogSnapshotV1 } from './open-session-situation-catalog'
 import { ttrpgOpenTurnOwnerStepV1,ttrpgOpenTurnCycleMatchesV1,ttrpgOpenTurnCycleMetadataV1 } from './open-turn-settlement'
 /** E8/E9/E10/E12 are pure journal reducers; consequences remain explicit recoverable work. */
 import type { ProductRuntimeState, ProductRuntimeEvent } from '../types'
@@ -58,6 +59,7 @@ export function applyTtrpgOpenPressureEventV1(state: ProductRuntimeState, event:
     const expected = planTtrpgOpenPressureTicksV1({ state, operation, receipt, content: cycle.frozenContent })
     if (intent.actionKey !== `${ownerStep}.plan` || cycle.operationStepKey !== ttrpgOpenTurnCycleMetadataV1(operation,'pressure').operationStepKey || cycle.tickRefs.length || cycle.frontReceipts.length || cycle.work.length || cycle.completedRef
       || !sameTtrpgOpenPressureSourceV1(cycle.startedRef, eventRef) || !sameTtrpgOpenPressureSourceV1(cycle.ruleSourceRef, ttrpgOpenPressureRuleSourceV1(receipt))
+      || stable(cycle.sessionSituationRefs) !== stable(ttrpgOpenSituationCatalogSnapshotV1(cycle.frozenContent.campaign, run).sessionSituationRefs)
       || cycle.runtimeSourceHash !== operation.plan.runtimeSourceHash || cycle.frozenContent.rulePack.contentHash !== operation.plan.rulePackContentHash
       || stable(cycle.tickQueue) !== stable(expected.tickQueue) || stable(cycle.consumedOracleRefs) !== stable(expected.consumedOracleRefs)
       || run.pressureCycles?.some(c => c.cycleKey === cycle.cycleKey || ttrpgOpenTurnCycleMatchesV1(c,operation,cycle.ruleSourceRef,'pressure'))) p.fail('压力计划必须来自真实行动、全部轮次与未消费 Oracle')
@@ -122,7 +124,7 @@ export function applyTtrpgOpenPressureEventV1(state: ProductRuntimeState, event:
     cycle.frontReceipts.push({ kind: 'defeated', frontKey: front.frontKey, definitionKey: null, atWorldTurn: run.worldTime.worldTurn, audience: null, recipientActorKeys: [], sourceRef: eventRef })
     // Formal situation cleanup is owned by P6; it cannot be silently skipped here.
     for (const instance of [...run.situations.active, ...(recordSituationAction ? run.situations.queued : [])].filter(i => {
-      const driver = cycle.frozenContent.campaign.situationTemplates.find(t => t.templateKey === i.templateKey)?.driverBinding
+      const driver = ttrpgOpenSituationCatalogV1(cycle.frozenContent.campaign, run).templates.find(t => t.templateKey === i.templateKey)?.driverBinding
       return driver?.kind === 'front' && driver.frontKey === front.frontKey
     })) {
       cycle.work.push({ workKey: `front.${front.frontKey}.defeated.${instance.situationKey}`, templateKey: null, situationTemplateKey: instance.templateKey, causeRef: eventRef, completedRef: null, ...(recordSituationAction ? { situationAction: { kind: 'resolve-front-defeated', situationKey: instance.situationKey, frontKey: front.frontKey } as const } : {}) })

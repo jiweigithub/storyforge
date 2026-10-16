@@ -1,3 +1,5 @@
+import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
+import { verifyTtrpgOpenSessionSituationHashesV1 } from './open-session-situation-proof'
 import { verifyTtrpgOpenManualEpochsV1 } from './open-manual-action'
 import { verifyTtrpgOpenPrivateChoiceHashesV1 } from './open-private-choice'
 import { TtrpgOpenReadConflictV1 } from './open-read-conflict'
@@ -44,6 +46,7 @@ async function loadOpenPlayerProjectionV1(input: OpenPlayerReadV1, humanViewerKe
   if (!runtime?.authorization || !runtime.openRun || runtime.product.rulePackContentHash !== content.rulePack.contentHash
     || runtime.product.campaignKey !== content.campaign.campaignKey) throw new Error('[ttrpg-open-context] 团局没有有效冻结来源与授权')
   const participants = await readTtrpgSessionParticipantsV2(input.sessionId)
+  await verifyTtrpgOpenSessionSituationHashesV1(runtime.openRun.situationReceipts ?? [])
   await verifyTtrpgOpenPrivateChoiceHashesV1(runtime.openRun.operations)
   await verifyTtrpgOpenManualEpochsV1(runtime.openRun.coordination.epochs)
   await verifyTtrpgOpenOracleJournalV1({ receipts: runtime.openRun.oracleReceipts ?? [], rulePack: content.rulePack.content,
@@ -73,12 +76,12 @@ async function loadOpenPlayerProjectionV1(input: OpenPlayerReadV1, humanViewerKe
     return binding === undefined || visible(binding.audience, binding.knownByActorKeys)
   }
   const knowledge = projectTtrpgOpenKnowledgeForViewerV1({ entries: runtime.openRun.knowledge, authorization,
-    viewerKey: seat.viewerKey, campaign: content.campaign })
+    viewerKey: seat.viewerKey, campaign: ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).validationView })
   const fieldHashes = new Map<string, string>()
   for (const entry of runtime.openRun.knowledge.filter(entry => entry.audience !== 'gm-only'
     && (entry.audience === 'public' || entry.recipientActorKeys.includes(input.actorKey)))) {
     let hash = fieldHashes.get(entry.evidenceRef)
-    if (!hash) { hash = await hashTtrpgOpenEvidenceFieldsV1(content.campaign, entry.evidenceRef); fieldHashes.set(entry.evidenceRef, hash) }
+    if (!hash) { hash = await hashTtrpgOpenEvidenceFieldsV1(ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).validationView, entry.evidenceRef); fieldHashes.set(entry.evidenceRef, hash) }
     if (hash !== entry.publicFieldsHash) throw new Error('[ttrpg-open-context] 已知字段与冻结知识回执 hash 不一致')
   }
   const mechanicalRules = projectTtrpgRulePackMechanicalCoreV1(content.rulePack.content)

@@ -1,3 +1,4 @@
+import { ttrpgOpenDiscoveryEvidenceV1 } from './open-knowledge-discovery'
 import { currentTtrpgOpenPrivateChoiceV1 } from './open-private-choice'
 /** Human-only display of a frozen plan. Never exposes the frozen plan itself. */
 import type { ProductRuntimeState } from '../types'
@@ -97,7 +98,7 @@ export function projectTtrpgOpenTableRiskV1(input: { state: ProductRuntimeState;
     }
   }
   const templates = plan.effectTemplates.map(t => ({ ...templateView(t, plan.request.effectBindings[t.planKey]), when: plan.interaction ? '自动成功后' : `${Object.entries(plan.genericCheck?.effectPlanByDegree ?? {}).filter(([, key]) => key === t.planKey).map(([degree]) => degrees[degree]).join('、') || degrees[t.degree]}时` }))
-  const discoveryEvidence = plan.discoveryPlan?.frozenContent.campaign.situationTemplates.flatMap(s => s.evidence).find(e => e.clueRef === plan.discoveryPlan!.request.evidenceRef)
+  const discoveryEvidence = plan.discoveryPlan ? ttrpgOpenDiscoveryEvidenceV1(plan.discoveryPlan) : undefined
   const discovery = (plan.discoveryPlan?.effectTemplates ?? []).map(t => ({ ...templateView(t, plan.discoveryPlan!.request.effectBindings[t.planKey]), when: discoveryEvidence?.discoveryPolicy.costEffectPlanRef === t.planKey ? '尝试发现线索时' : '发现检定未成功后的继续推进' }))
   const canChoose = plan.requiredApprovals.some(a => a.actorKey === plan.request.actorKey && a.allowedSeatKeys.includes(seatKey))
   const receipt = parseTtrpgRuntimeStateV2(state.ttrpg)?.openRun?.ruleReceipts.find(r => r.operationKey === op.operationKey)

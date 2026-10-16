@@ -525,4 +525,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `ea71db1e`
+生成时间基准:commit `d05ece88`

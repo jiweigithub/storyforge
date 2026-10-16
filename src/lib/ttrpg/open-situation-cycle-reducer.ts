@@ -1,3 +1,4 @@
+import { ttrpgOpenSituationCatalogSnapshotV1 } from './open-session-situation-catalog'
 import { ttrpgOpenTurnOwnerStepV1,ttrpgOpenTurnCycleMatchesV1,ttrpgOpenTurnCycleMetadataV1 } from './open-turn-settlement'
 /** Actual owner-stage journal with exact deterministic replay. */
 import type { ProductRuntimeEvent, ProductRuntimeState } from '../types'
@@ -29,6 +30,7 @@ export function applyTtrpgOpenSituationCycleEventV1(state: ProductRuntimeState, 
     if (intent.actionKey !== `${ownerStep}.plan` || cycle.operationStepKey !== ttrpgOpenTurnCycleMetadataV1(operation,'situations').operationStepKey || !sameTtrpgOpenPressureSourceV1(cycle.startedRef, sourceRef)
       || !ttrpgOpenTurnCycleMatchesV1(cycle,operation,ttrpgOpenPressureRuleSourceV1(receipt),'situations') || cycle.runtimeSourceHash !== operation.plan.runtimeSourceHash
       || cycle.frozenContent.rulePack.contentHash !== operation.plan.rulePackContentHash || cycle.maintenanceRefs.length || cycle.queueRefs.length || cycle.work.length || cycle.completedRef || cycle.queueCredits !== ttrpgOpenSituationQueueCreditsV1(state)
+      || stable(cycle.sessionSituationRefs) !== stable(ttrpgOpenSituationCatalogSnapshotV1(cycle.frozenContent.campaign, run).sessionSituationRefs)
       || stable(cycle.situationKeys) !== stable(run.situations.active.map(i => i.situationKey))
       || run.situationCycles?.some(c => c.cycleKey === cycle.cycleKey || ttrpgOpenTurnCycleMatchesV1(c,operation,cycle.ruleSourceRef,'situations'))) p.fail('局势维护计划必须冻结真实 active 清单和原始裁定')
     run.situationCycles = [...(run.situationCycles ?? []), cycle]

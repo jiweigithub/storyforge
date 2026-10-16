@@ -1,3 +1,4 @@
+import { parseTtrpgOpenSessionSituationReceiptV1, type TtrpgOpenSessionSituationReceiptV1 } from './open-session-situation-contract'
 import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { ttrpgOpenEpochBudgetForTriggerV1 } from './open-coordination'
 import { parseTtrpgOpenTableMessageV1,assertTtrpgOpenTableMessageHistoryV1,type TtrpgOpenTableMessageV1 } from './open-table-conversation'
@@ -155,6 +156,7 @@ export interface TtrpgOpenRunStateV1 {
   pressureCycles?: TtrpgOpenPressureCycleV1[];
   pressureSignals?: TtrpgOpenPressureSignalV1[];
   memoryReceipts?: TtrpgOpenMemoryReceipt[];
+  situationReceipts?: TtrpgOpenSessionSituationReceiptV1[];
 }
 
 /**
@@ -447,7 +449,7 @@ export function parseTtrpgOpenSituationRuntimeStateV1(
   if (
     row.activationReason !== "opening" &&
     row.activationReason !== "front-escalation" &&
-    row.activationReason !== "consequence"
+    row.activationReason !== "consequence" && row.activationReason !== "session-generation"
   ) {
     fail(`${label}.activationReason 无效`);
   }
@@ -572,6 +574,7 @@ export function parseTtrpgOpenRunStateV1(
       ...(Object.prototype.hasOwnProperty.call(row, "tableMessages") ? ["tableMessages"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "narrations") ? ["narrations"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "memoryReceipts") ? ["memoryReceipts"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "situationReceipts") ? ["situationReceipts"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "stageClosures") ? ["stageClosures"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "terminalReceipts") ? ["terminalReceipts"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "gateReceipts") ? ["gateReceipts"] : []),
@@ -711,6 +714,7 @@ export function parseTtrpgOpenRunStateV1(
     } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "tableMessages") ? { tableMessages: Array.isArray(row.tableMessages) && row.tableMessages.length <= 100000 ? row.tableMessages.map(parseTtrpgOpenTableMessageV1) : fail("tableMessages 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "narrations") ? { narrations: Array.isArray(row.narrations) && row.narrations.length <= 100000 ? row.narrations.map(parseTtrpgOpenNarrationReceiptV1) : fail("narrations 必须有界") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "situationReceipts") ? { situationReceipts: Array.isArray(row.situationReceipts) && row.situationReceipts.length <= 1000 ? row.situationReceipts.map(parseTtrpgOpenSessionSituationReceiptV1) : fail("situationReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "memoryReceipts") ? { memoryReceipts: Array.isArray(row.memoryReceipts) && row.memoryReceipts.length <= 100000 ? row.memoryReceipts.map(parseTtrpgOpenMemoryReceipt) : fail("memoryReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "stageClosures") ? { stageClosures: Array.isArray(row.stageClosures) && row.stageClosures.length <= 100000 ? row.stageClosures.map(parseTtrpgOpenStageClosureV1) : fail("stageClosures 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "terminalReceipts") ? { terminalReceipts: Array.isArray(row.terminalReceipts) && row.terminalReceipts.length <= 100000 ? row.terminalReceipts.map(parseTtrpgOpenTerminalReceiptV1) : fail("terminalReceipts 必须有界") } : {}),
@@ -834,6 +838,37 @@ export function parseTtrpgRuntimeStateV2(
   }
   for (const receipt of openRun?.narrations ?? []) {
     if (receipt.sourceRef.sessionKey !== sessionKey && !branchLineage?.ancestors.some(a => a.sessionKey === receipt.sourceRef.sessionKey && a.throughSequence >= receipt.sourceRef.sequence && a.snapshot.openRun?.narrations?.some(r => stableProductRuntimeJsonV1(r) === stableProductRuntimeJsonV1(receipt)))) fail("已采用叙述缺少真实封存祖先回执");
+  }
+  const acceptedSituations = openRun?.situationReceipts ?? [];
+  if (new Set(acceptedSituations.map(r => r.template.templateKey)).size !== acceptedSituations.length
+    || new Set(acceptedSituations.map(r => `${r.sourceRef.sessionKey}:${r.model.requestKey}`)).size !== acceptedSituations.length) fail('会话局势模板或原请求只能采用一次');
+  for (const receipt of acceptedSituations) {
+    if (receipt.acceptedAtWorldTurn > openRun!.worldTime.worldTurn) fail('局势采用不能来自未来世界时间');
+    if (receipt.sourceRef.sessionKey !== sessionKey) {
+      if (!branchLineage?.ancestors.some(a => a.sessionKey === receipt.sourceRef.sessionKey && a.throughSequence >= receipt.sourceRef.sequence
+        && a.snapshot.openRun?.situationReceipts?.some(r => stableProductRuntimeJsonV1(r) === stableProductRuntimeJsonV1(receipt)))) fail('会话局势缺少切点前的真实祖先采用回执');
+      continue;
+    }
+    const call = openRun!.coordination.calls.find(c => c.requestKey === receipt.model.requestKey);
+    const epoch = openRun!.coordination.epochs.find(e => e.epochKey === receipt.model.epochKey);
+    if (!call || !epoch || epoch.triggerKind !== 'request-situation' || call.skillId !== 'prose.ttrpg-open-situation-propose'
+      || call.status !== 'succeeded' || !call.terminalRef || call.terminalRef.sequence >= receipt.sourceRef.sequence
+      || call.authorizationEpochKey !== epoch.epochKey || call.runContractHash !== receipt.model.runContractHash
+      || call.responseArtifactHash !== receipt.model.rawResponseHash || call.inputManifestHash !== receipt.model.inputManifestHash
+      || call.visibilityHash !== receipt.model.contextHash || call.admissionStateHash !== receipt.model.basisHash
+      || call.runtimeSourceHash !== receipt.runtimeSourceHash || receipt.authorizationRef.sessionKey !== epoch.startedRef.sessionKey
+      || receipt.authorizationRef.sequence !== epoch.startedRef.sequence || receipt.disclosure.authorizationHash !== epoch.authorizationHash
+      || receipt.disclosure.viewerKey !== epoch.viewerKey || receipt.disclosure.seatKey !== epoch.triggeredBySeatKey) fail('局势采用没有原生成调用、明确披露及实际授权来源');
+  }
+  for (const operation of openRun?.operations ?? []) {
+    const snapshot = operation.plan.discoveryPlan?.sessionSituation;
+    if (snapshot && !acceptedSituations.some(r => stableProductRuntimeJsonV1(r) === stableProductRuntimeJsonV1(snapshot))) fail('发现操作没有真实会话采用的原始局势快照');
+  }
+  for (const cycle of [...(openRun?.situationCycles ?? []), ...(openRun?.pressureCycles ?? [])]) {
+    for (const ref of cycle.sessionSituationRefs ?? []) {
+      const owner = acceptedSituations.find(r => r.template.templateKey === ref.templateKey && r.receiptHash === ref.receiptHash);
+      if (!owner || owner.sourceRef.sessionKey === cycle.startedRef.sessionKey && owner.sourceRef.sequence >= cycle.startedRef.sequence) fail('冻结周期缺少先前实际采用的局势定义');
+    }
   }
   const memoryRevisions = new Set<string>()
   for (const receipt of openRun?.memoryReceipts ?? []) {

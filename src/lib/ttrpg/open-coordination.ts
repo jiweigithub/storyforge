@@ -89,7 +89,7 @@ export function assertTtrpgOpenSituationWindowEventV1(runtime: Pick<TtrpgRuntime
   const run = runtime?.openRun, epoch = run?.coordination.epochs.find(e => e.epochKey === run.coordination.activeEpochKey)
   if (epoch?.triggerKind === 'request-situation' && ![
     'ttrpg.open.epoch.closed', 'ttrpg.open.call.reserved', 'ttrpg.open.call.dispatched', 'ttrpg.open.call.finished',
-    'ttrpg.safety.changed', 'ttrpg.session-zero.completed', 'ttrpg.open.table-message.posted', 'ttrpg.open.failure.logged',
+    'ttrpg.safety.changed', 'ttrpg.session-zero.completed', 'ttrpg.open.table-message.posted', 'ttrpg.open.failure.logged', 'ttrpg.open.situation.accepted',
   ].includes(type)) fail('局势生成窗口仅允许请求记账、安全控制、桌面交流和明确结束；不能改变团内机械或事实状态')
 }
 export function ttrpgOpenEpochBudgetForTriggerV1(budget: unknown, triggerKind: TtrpgOpenEpochV1['triggerKind']): TtrpgOpenEpochBudgetV1 {

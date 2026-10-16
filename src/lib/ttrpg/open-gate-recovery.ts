@@ -1,3 +1,4 @@
+import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
 /** Bounded real recovery. Receipts record admission/knowledge, never a replacement gate boolean. */
 import type { ProductRuntimeState } from '../types'
 import type { TtrpgOpenSourceRefV1 } from './open-coordination'
@@ -68,7 +69,7 @@ export function planTtrpgOpenGateRecoveryV1(state: ProductRuntimeState, operatio
   if (selected.gateKey === 'hypothesis-formable') {
     const content = b.terminal.frozenContent, context = ttrpgOpenSituationGateContextV1(state,content,actorKey)
     for (const instance of b.run.situations.active) {
-      const template = content.campaign.situationTemplates.find(t => t.templateKey === instance.templateKey)!
+      const template = ttrpgOpenSituationCatalogV1(content.campaign, b.run).byKey.get(instance.templateKey)!
       for (const evidence of template.evidence) if (!evidence.isRequired && evidence.discoveryPolicy.failForwardEffectPlanRef !== null
         && evidence.discoveryPolicy.allowedAudience !== 'gm-only' && (evidence.discoveryPolicy.allowedAudience === 'public' || evidence.discoveryPolicy.recipientActorKeys.includes(actorKey))
         && evidence.discoveryPolicy.preconditions.every(predicate => evaluateTtrpgPredicateV1(predicate,context))
@@ -93,13 +94,13 @@ export function settleTtrpgOpenGateRecoveryV1(input: { state: ProductRuntimeStat
     const settled = settleTtrpgOpenSituationQueueV1({ state,content: planned.terminal.frozenContent,actorKey: evaluation.actorKey,situationKey: targetRef!,sequence: input.sequence })
     state = settled.state;runtime = settled.runtime;result = settled.result.transition;reason = settled.result.reason
   } else if (action === 'evidence') {
-    const content = planned.terminal.frozenContent, evidence = content.campaign.situationTemplates.flatMap(t => t.evidence).find(e => e.clueRef === targetRef)!
+    const content = planned.terminal.frozenContent, evidence = ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).templates.flatMap(t => t.evidence).find(e => e.clueRef === targetRef)!
     const entry = parseTtrpgOpenKnowledgeEntryV1({ knowledgeKey: input.recoveryKey, evidenceRef: evidence.clueRef, sourceFactRefs: evidence.sourceFactRefs, sourceResourceRefs: evidence.sourceResourceRefs,
       acquisitionRef: sourceRef, audience: 'private', recipientActorKeys: [evaluation.actorKey], publicFieldsHash: p.hash(input.publicFieldsHash,'real recovery fields hash'), reliability: 'observed' })
     if (runtime.openRun!.knowledge.some(k => k.knowledgeKey === entry.knowledgeKey)) p.fail('恢复知识身份重复')
     runtime.openRun!.knowledge.push(entry)
-    for (const instance of runtime.openRun!.situations.active.filter(i => content.campaign.situationTemplates.find(t => t.templateKey === i.templateKey)?.evidence.some(e => e.clueRef === evidence.clueRef))) if (!instance.discoveredEvidenceRefs.includes(evidence.clueRef)) instance.discoveredEvidenceRefs.push(evidence.clueRef)
-    result = 'observed';reason = null;publicFieldsJson = stable(ttrpgOpenEvidenceFieldsV1(content.campaign,evidence.clueRef))
+    for (const instance of runtime.openRun!.situations.active.filter(i => ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).byKey.get(i.templateKey)?.evidence.some(e => e.clueRef === evidence.clueRef))) if (!instance.discoveredEvidenceRefs.includes(evidence.clueRef)) instance.discoveredEvidenceRefs.push(evidence.clueRef)
+    result = 'observed';reason = null;publicFieldsJson = stable(ttrpgOpenEvidenceFieldsV1(ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).validationView,evidence.clueRef))
   }
   const receipt = parseTtrpgOpenGateRecoveryV1({ recoveryKey: input.recoveryKey,sourceRef,operationKey: planned.operation.operationKey,frozenPlanHash: planned.operation.planHash,authorizationEpochKey: planned.epoch.epochKey,
     actorKey: evaluation.actorKey,viewerKey: input.viewerKey,gateKey,evaluationRef: evaluation.sourceRef,evaluationBasisHash: evaluation.result.evaluationBasisHash,

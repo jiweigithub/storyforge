@@ -1,3 +1,4 @@
+import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
 /** Actual situation admission/terminal owner, with frozen causes and persistent knowledge. */
 import type { ProductRuntimeState } from '../types'
 import { parseTtrpgFrozenRuntimeContentV1, isTtrpgRuntimeContentV2 } from './content-version'
@@ -66,7 +67,7 @@ export function settleTtrpgOpenSituationWorkV1(input: { state: ProductRuntimeSta
   actorKey: string; sequence: number; instanceKey: string; recordRejection?: boolean }) {
   const state = structuredClone(input.state), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)!, run = runtime.openRun!, content = input.cycle.frozenContent
   state.ttrpg = runtime
-  const template = content.campaign.situationTemplates.find(t => t.templateKey === input.work.situationTemplateKey) ?? p.fail('冻结局势模板不存在')
+  const template = ttrpgOpenSituationCatalogV1(content.campaign, run).templates.find(t => t.templateKey === input.work.situationTemplateKey) ?? p.fail('冻结局势模板不存在')
   const action = ttrpgOpenSituationWorkActionV1(runtime, input.cycle, input.work)
   let result: TtrpgOpenSituationWorkResultV1
   if (action.kind === 'activate') {
@@ -78,7 +79,7 @@ export function settleTtrpgOpenSituationWorkV1(input: { state: ProductRuntimeSta
       || !run.fronts.find(f => f.frontKey === action.frontKey)?.defeated) p.fail('击败不能清理其他驱动者或未击败威胁的局势')
     const activeView = { ...instance, status: 'active' as const }
     const maintained = evaluateTtrpgSituationMaintenanceV1({ template, instance: activeView, worldTurn: run.worldTime.worldTurn, resolvedAtSequence: input.sequence,
-      resolutionKind: 'front-defeated', predicateContext: ttrpgOpenPredicateContextV1(state, content), activeInstances: run.situations.active, queuedTemplateKeys: [], templateContext: content.campaign })
+      resolutionKind: 'front-defeated', predicateContext: ttrpgOpenPredicateContextV1(state, content), activeInstances: run.situations.active, queuedTemplateKeys: [], templateContext: ttrpgOpenSituationCatalogV1(content.campaign, run).validationView })
     const terminal = parseTtrpgOpenSituationRuntimeStateV1({ ...maintained.instance, queuePosition: null }, 'defeated front situation')
     run.situations.active = run.situations.active.filter(i => i.situationKey !== instance.situationKey)
     run.situations.queued = run.situations.queued.filter(i => i.situationKey !== instance.situationKey)
@@ -106,15 +107,15 @@ export function ttrpgOpenSituationProjectionActorV1(runtime: TtrpgRuntimeStateV2
 
 /** Shared pure I1-I7 admission; each caller must validate its actual causal owner first. */
 export function admitTtrpgOpenSituationV1(input: { state: ProductRuntimeState; content: TtrpgRuntimeContentV2; templateKey: string; actorKey: string;
-  sequence: number; instanceKey: string; activationReason: 'front-escalation' | 'consequence'; recordRejection?: boolean }): { state: ProductRuntimeState; runtime: TtrpgRuntimeStateV2; result: TtrpgOpenSituationWorkResultV1 } {
+  sequence: number; instanceKey: string; activationReason: 'front-escalation' | 'consequence' | 'session-generation'; recordRejection?: boolean }): { state: ProductRuntimeState; runtime: TtrpgRuntimeStateV2; result: TtrpgOpenSituationWorkResultV1 } {
   const state = structuredClone(input.state), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)!, run = runtime.openRun!, content = input.content
   state.ttrpg = runtime
-  const template = content.campaign.situationTemplates.find(t => t.templateKey === input.templateKey) ?? p.fail('冻结准入模板不存在')
+  const template = ttrpgOpenSituationCatalogV1(content.campaign, run).templates.find(t => t.templateKey === input.templateKey) ?? p.fail('冻结准入模板不存在')
     const existing = [...run.situations.active, ...run.situations.queued].find(i => i.templateKey === template.templateKey)
     if (existing) return { state, runtime, result: { transition: 'existing' as const, instance: existing } }
     let queued = false
     try { assertTtrpgSituationInstanceGatesV1({ template, predicateContext: ttrpgOpenSituationGateContextV1(state, content, input.actorKey), actorKey: input.actorKey,
-      activeInstances: run.situations.active, cooldownUntilWorldTurn: run.situations.cooldowns, worldTurn: run.worldTime.worldTurn, templateContext: content.campaign, rulePack: content.rulePack.content }) }
+      activeInstances: run.situations.active, cooldownUntilWorldTurn: run.situations.cooldowns, worldTurn: run.worldTime.worldTurn, templateContext: ttrpgOpenSituationCatalogV1(content.campaign, run).validationView, rulePack: content.rulePack.content }) }
     catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (/I[1-5]:/.test(message)) {
@@ -144,11 +145,11 @@ export function settleTtrpgOpenSituationQueueV1(input: { state: ProductRuntimeSt
   const first = [...run.situations.queued].sort((a, b) => a.queuePosition! - b.queuePosition!)[0]
   if (first?.situationKey !== input.situationKey) p.fail('只能处理实际 FIFO 首项')
     const instance = run.situations.queued.find(i => i.situationKey === input.situationKey) ?? p.fail('FIFO 项不存在')
-    const template = content.campaign.situationTemplates.find(t => t.templateKey === instance.templateKey) ?? p.fail('队列模板不存在')
+    const template = ttrpgOpenSituationCatalogV1(content.campaign, run).templates.find(t => t.templateKey === instance.templateKey) ?? p.fail('队列模板不存在')
     const actorKey = input.actorKey
     let transition: 'activated' | 'retained' | 'duplicate' | 'rejected' = 'activated', reason: string | null = null
     try { assertTtrpgSituationInstanceGatesV1({ template, predicateContext: ttrpgOpenSituationGateContextV1(state, content, actorKey), actorKey, worldTurn: run.worldTime.worldTurn,
-      activeInstances: run.situations.active, cooldownUntilWorldTurn: run.situations.cooldowns, templateContext: content.campaign, rulePack: content.rulePack.content }) }
+      activeInstances: run.situations.active, cooldownUntilWorldTurn: run.situations.cooldowns, templateContext: ttrpgOpenSituationCatalogV1(content.campaign, run).validationView, rulePack: content.rulePack.content }) }
     catch (error) {
       reason = error instanceof Error ? error.message : String(error)
       // Evaluate all failed gates: a capacity failure never hides a semantic rejection.

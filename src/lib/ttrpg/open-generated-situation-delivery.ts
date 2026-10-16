@@ -59,7 +59,12 @@ export function planTtrpgOpenSituationReferenceNeedsV1(input: {
   const need = (suffix: string, kind: string, ref: string) => {
     if (!references.some(r => r.kind === kind && r.ref === ref && r.suffix === suffix)) references.push({ kind, ref, suffix })
   }
-  const fact = (key: string) => need((basis.sessionFacts.some(f => f.factKey === key) ? 'session-fact.' : 'world-fact.') + key, 'fact', key)
+  const historicalOwner = basis.sessionTemplates.some(s => s.templateKey === t.templateKey && canonicalStringify(s) === canonicalStringify(t))
+  const historical = (key: string) => historicalOwner && basis.retiredSessionFacts?.some(f => f.factKey === key)
+  const fact = (key: string) => {
+    if (historical(key)) need('situation-definition.' + t.templateKey, 'adopted-historical-reference', key)
+    else need((basis.sessionFacts.some(f => f.factKey === key) ? 'session-fact.' : 'world-fact.') + key, 'fact', key)
+  }
   const entity = (key: string) => need('entity.' + key, 'entity', key)
   const action = (key: string, kind: 'action' | 'generic-check' = 'action') => need((kind === 'generic-check' ? 'check.' : 'action.') + key, kind, key)
   const effect = (key: string | null) => { if (key !== null) need('effect.' + key, 'effect', key) }
@@ -71,7 +76,8 @@ export function planTtrpgOpenSituationReferenceNeedsV1(input: {
     need(source.suffix, 'extracted-world-provenance', key)
   }
   const ref = (key: string) => {
-    if (c.frozenWorldPredicateIndex.entries.some(f => f.factKey === key) || basis.sessionFacts.some(f => f.factKey === key)) fact(key)
+    if (historical(key)) fact(key)
+    else if (c.frozenWorldPredicateIndex.entries.some(f => f.factKey === key) || basis.sessionFacts.some(f => f.factKey === key)) fact(key)
     else if (c.entityBindings.some(b => b.bindingKey === key)) entity(key)
     else if (key === c.campaignKey) need('campaign-premise', 'campaign', key)
     else if (key === rule.ruleSystemId) need('rules-core', 'rules', key)
@@ -93,6 +99,10 @@ export function planTtrpgOpenSituationReferenceNeedsV1(input: {
       case 'world-fact': case 'session-fact': {
         const facts = value.op === 'world-fact' ? c.frozenWorldPredicateIndex.entries : basis.sessionFacts
         const matches = facts.filter(f => f.subjectRef === value.subjectRef && f.predicateKey === value.predicateKey && f.objectRef === value.objectRef)
+        if (!matches.length && value.op === 'session-fact' && historicalOwner) {
+          const old = basis.retiredSessionFacts?.find(f => f.subjectRef === value.subjectRef && f.predicateKey === value.predicateKey && f.objectRef === value.objectRef)
+          if (old) { fact(old.factKey); return }
+        }
         if (!matches.length) p.fail('局势谓词缺少真实事实槽')
         matches.forEach(f => fact(f.factKey)); return
       }

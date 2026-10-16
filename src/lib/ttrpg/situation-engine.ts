@@ -17,6 +17,7 @@ export type TtrpgSituationActivationReasonV1 =
   | 'opening'
   | 'front-escalation'
   | 'consequence'
+  | 'session-generation'
 
 export type TtrpgSituationResolutionKindV1 =
   | 'intervened'
@@ -463,7 +464,7 @@ function instanceValue(value: unknown): TtrpgSituationInstanceV1 {
     return fail('instance.status不在闭集')
   }
   const activationReason = instance.activationReason
-  if (activationReason !== 'opening' && activationReason !== 'front-escalation' && activationReason !== 'consequence') {
+  if (activationReason !== 'opening' && activationReason !== 'front-escalation' && activationReason !== 'consequence' && activationReason !== 'session-generation') {
     return fail('instance.activationReason不在闭集')
   }
   const resolutionKind = instance.resolutionKind === null || instance.resolutionKind === undefined
@@ -529,7 +530,7 @@ function instantiationArguments(
     'activatedAtWorldTurn',
   )
   const reason = isObjectInput ? row.activationReason : activationReasonValue
-  if (reason !== 'opening' && reason !== 'front-escalation' && reason !== 'consequence') {
+  if (reason !== 'opening' && reason !== 'front-escalation' && reason !== 'consequence' && reason !== 'session-generation') {
     return fail('activationReason不在闭集')
   }
   return { template, activatedAtSequence, activatedAtWorldTurn, activationReason: reason }

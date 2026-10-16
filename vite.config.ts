@@ -32,7 +32,7 @@ const TTRPG_REPLAY_CHUNK_MODULES = {
     'open-interaction', 'oracle', 'participants', 'predicate', 'pressure-runtime',
     'private-guidance-model', 'resolution', 'rule-action-mechanical', 'rule-pack',
     'rule-pack-v2', 'run-format', 'runtime-state', 'session-facts',
-    'situation-engine', 'world-time',
+    'situation-engine', 'world-time', 'open-session-situation-contract', 'open-session-situation-catalog',
   ],
   open: [
     'open-branch-contract', 'open-branch-recovery', 'open-companion-preauthorization', 'open-handoff', 'open-hosting-delegation',
@@ -45,7 +45,7 @@ const TTRPG_REPLAY_CHUNK_MODULES = {
     'open-kp-reducer', 'open-private-choice-reducer', 'open-model-call-reducer', 'open-operation-reducer', 'open-oracle-reducer',
     'open-oracle-review-reducer', 'open-pressure-effect-reducer', 'open-pressure-reducer', 'open-situation-cycle-reducer',
     'open-situation-work-reducer', 'open-stage-close-reducer', 'open-terminal-gates-reducer', 'runtime',
-    'runtime-branch', 'runtime-event-reducer',
+    'runtime-branch', 'runtime-event-reducer', 'open-session-situation-reducer',
   ],
 } as const
 

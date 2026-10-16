@@ -1,3 +1,4 @@
+import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
 /** P9 deterministic human-GM preflight. This is not a registered model source, a Run or an acceptance command. */
 import type { WorkspaceScope } from '../types'
 import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
@@ -46,6 +47,7 @@ export async function buildTtrpgOpenSituationBasisFromVerifiedReadV1(loaded: Awa
         request: structuredClone(operation.plan.request), status: 'completed', grantsPlayerCommitment: false } })
     }
   }
+  const catalog = ttrpgOpenSituationCatalogV1(content.campaign, run)
   const rows = [...(run.situations.history ?? []).map(h => h.instance), ...run.situations.active, ...run.situations.queued]
   const originByInstance = new Map<string, string>()
   for (const origin of origins) for (const instance of [...(origin.run?.situations.history ?? []).map(h => h.instance), ...(origin.run?.situations.active ?? []), ...(origin.run?.situations.queued ?? [])]) {
@@ -55,8 +57,14 @@ export async function buildTtrpgOpenSituationBasisFromVerifiedReadV1(loaded: Awa
   for (const instance of rows) {
     if (history.some(h => h.situationKey === instance.situationKey)) continue
     const originSessionKey = originByInstance.get(instance.situationKey) ?? p.fail('局势历史缺少实际来源分支')
-    const template = content.campaign.situationTemplates.find(t => t.templateKey === instance.templateKey) ?? p.fail('局势历史缺少原冻结模板')
+    const template = catalog.byKey.get(instance.templateKey) ?? p.fail('局势历史缺少原冻结或已采用模板')
     history.push({ template: structuredClone(template), status: 'accepted', sourceRef: { sessionKey: originSessionKey, sequence: instance.activatedAtSequence }, situationKey: instance.situationKey })
+  }
+  // Until a definition has a real instance, its actual acceptance is still recent generation history.
+  // Once instantiated, retain the original activation history only, without double-counting the definition.
+  for (const receipt of run.situationReceipts ?? []) if (!rows.some(i => i.templateKey === receipt.template.templateKey)) {
+    history.push({ template: structuredClone(receipt.template), status: 'accepted', sourceRef: receipt.sourceRef,
+      situationKey: receipt.template.templateKey, sourceKind: 'adopted-definition' })
   }
   const order = origins.map(o => o.sessionKey)
   history.sort((a, b) => order.indexOf(a.sourceRef.sessionKey) - order.indexOf(b.sourceRef.sessionKey) || a.sourceRef.sequence - b.sourceRef.sequence || a.situationKey.localeCompare(b.situationKey))
@@ -67,7 +75,8 @@ export async function buildTtrpgOpenSituationBasisFromVerifiedReadV1(loaded: Awa
     sessionKey: runtime.sessionKey, assignedTemplateKey: `generated.${(await hash({ sessionKey: runtime.sessionKey, proposalKey })).slice(0, 40)}`,
     selectedActorKeys: [...authorization.selectedActorKeys], worldTurn: run.worldTime.worldTurn,
     authorizationHash: await hash(authorization), mechanicalStateHash: await ttrpgOpenMechanicalStateHashV1(loaded.state),
-    campaign: structuredClone(content.campaign), rule: structuredClone(content.rulePack.content), sessionFacts, sessionTemplates: [], history,
+    campaign: structuredClone(content.campaign), rule: structuredClone(content.rulePack.content), sessionFacts,
+    ...(catalog.sessionTemplates.length && ttrpgOpenSessionFactsV1(run.factLedger).some(f => f.retired) ? { retiredSessionFacts: ttrpgOpenSessionFactsV1(run.factLedger).filter(f => f.retired) } : {}), sessionTemplates: structuredClone(catalog.sessionTemplates), history,
     cooldownUntilWorldTurn: { ...run.situations.cooldowns }, personalizationSources,
   }
   await loaded.assertCurrent()

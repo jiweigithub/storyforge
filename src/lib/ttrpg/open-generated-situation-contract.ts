@@ -2,7 +2,7 @@
 import type { RulePackV2, TtrpgCampaignContentV2, TtrpgSituationTemplateV1 } from './open-contract'
 import type { TtrpgSessionFactV1 } from './session-facts'
 import { parseTtrpgSituationTemplateV1 } from './situation-engine'
-import { validateTtrpgOpenSessionSituationReferencesV1 } from './open-content-references'
+import { assertTtrpgOpenSituationUsesCurrentFactsV1, validateTtrpgOpenSessionSituationReferencesV1 } from './open-content-references'
 import { checkTtrpgSituationGenerationV1, type TtrpgSituationGenerationHistoryItemV1 } from './situation-generation'
 import { parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coordination'
 import { hashProductProductionValueV2 as hash } from '../product-production/hash'
@@ -21,7 +21,8 @@ export interface TtrpgOpenSituationProposalBasisV1 {
   runtimeSourceHash: string; worldReleaseHash: string; sourceLineageHash: string; sessionKey: string;
   assignedTemplateKey: string; selectedActorKeys: string[]; worldTurn: number; authorizationHash: string; mechanicalStateHash: string;
   campaign: TtrpgCampaignContentV2; rule: RulePackV2; sessionFacts: TtrpgSessionFactV1[];
-  sessionTemplates: TtrpgSituationTemplateV1[]; history: Array<TtrpgSituationGenerationHistoryItemV1 & { sourceRef: TtrpgOpenSourceRefV1; situationKey: string }>;
+  retiredSessionFacts?: TtrpgSessionFactV1[];
+  sessionTemplates: TtrpgSituationTemplateV1[]; history: Array<TtrpgSituationGenerationHistoryItemV1 & { sourceRef: TtrpgOpenSourceRefV1; situationKey: string; sourceKind?: 'adopted-definition' }>;
   cooldownUntilWorldTurn: Record<string, number>; personalizationSources: TtrpgOpenSituationPersonalizationSourceV1[];
 }
 /** The caller supplies the system-owned key; the model has no field for a template identity or proof. */
@@ -53,9 +54,10 @@ export async function reviewTtrpgOpenGeneratedSituationProposalV1(input: { value
   const driver = proposal.template.driverBinding
   if (driver.kind === 'player-commitment'
     && !selected.some(s => s.kind === 'commitment' && s.sourceKey === driver.factRef)) p.fail('玩家承诺驱动必须引用真实已确认承诺，不得由 Oracle 或模型代替玩家承诺')
+  assertTtrpgOpenSituationUsesCurrentFactsV1(proposal.template, [...basis.sessionFacts, ...(basis.retiredSessionFacts ?? [])])
   const catalog = [...basis.sessionTemplates, proposal.template]
   parseTtrpgSituationTemplateV1(proposal.template, { ...basis.campaign, situationTemplates: [...existing, proposal.template], sessionFactKeys: basis.sessionFacts.map(f => f.factKey) }, basis.rule)
-  validateTtrpgOpenSessionSituationReferencesV1({ campaign: basis.campaign, rule: basis.rule, sessionTemplates: catalog, sessionFacts: basis.sessionFacts })
+  validateTtrpgOpenSessionSituationReferencesV1({ campaign: basis.campaign, rule: basis.rule, sessionTemplates: catalog, sessionFacts: [...basis.sessionFacts, ...(basis.retiredSessionFacts ?? [])] })
   const evaluation = checkTtrpgSituationGenerationV1({ candidate: proposal.template, recentSituations: basis.history,
     worldTurn: basis.worldTurn, cooldownUntilWorldTurn: basis.cooldownUntilWorldTurn, playerFactKeys: sources.map(s => s.sourceKey), playerActorKeys: basis.selectedActorKeys,
     personalizationRefs: selected.map(s => ({ factKey: s.sourceKey, kind: s.kind, actorScope: s.actorKeys, knownByActorKeys: s.knownByActorKeys })) })

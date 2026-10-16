@@ -1,3 +1,4 @@
+import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
 /** Sharing grants attributed hearsay; it never masquerades as the listener's own discovery. */
 import type { TtrpgOpenAudience } from './open-contract'
 import type { TtrpgOpenAuthorizationV1 } from './open-authorization'
@@ -89,11 +90,11 @@ export function ttrpgOpenKnowledgeDiscoveryOriginV1(runtime: TtrpgRuntimeStateV2
     if (recovery) {
       const evaluation = run.gateReceipts?.find(r => stable(r.sourceRef) === stable(recovery.evaluationRef))
       const terminal = evaluation ? run.terminalReceipts?.find(t => stable(t.sourceRef) === stable(evaluation.terminalRef)) : undefined
-      const evidence = terminal?.frozenContent.campaign.situationTemplates.flatMap(t => t.evidence).find(e => e.clueRef === current.evidenceRef)
+      const evidence = terminal ? ttrpgOpenSituationCatalogV1(terminal.frozenContent.campaign, run).evidence.get(current.evidenceRef)?.evidence : undefined
       if (!terminal || !evidence || evidence.isRequired || !evidence.discoveryPolicy.failForwardEffectPlanRef || recovery.targetRef !== current.evidenceRef
         || recovery.publicFieldsHash !== current.publicFieldsHash || current.reliability !== 'observed' || current.audience !== 'private'
         || current.recipientActorKeys.length !== 1 || current.recipientActorKeys[0] !== recovery.actorKey
-        || stable(ttrpgOpenEvidenceFieldsV1(terminal.frozenContent.campaign,current.evidenceRef)) !== recovery.publicFieldsJson) p.fail('补充线索没有真实恢复和冻结字段来源')
+        || stable(ttrpgOpenEvidenceFieldsV1(ttrpgOpenSituationCatalogV1(terminal.frozenContent.campaign, run).validationView,current.evidenceRef)) !== recovery.publicFieldsJson) p.fail('补充线索没有真实恢复和冻结字段来源')
       return { kind: 'gate-recovery',frozenContent: terminal.frozenContent,contentHash: terminal.contentHash,receipt: recovery }
     }
     const operation = run.operations.find(operation => operation.businessRefs.some(ref => ref.stepKey === 'knowledge'

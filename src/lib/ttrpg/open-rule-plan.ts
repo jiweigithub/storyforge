@@ -1,3 +1,4 @@
+import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
 import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { parseTtrpgOpenInteractionBindingV1,assertTtrpgOpenInteractionActionV1 } from './open-interaction'
 import { projectTtrpgOpenWorldFactsV1 } from './open-fact-authority'
@@ -143,10 +144,10 @@ export function ttrpgOpenPredicateContextV1(state: ProductRuntimeState, content:
       resources: Object.fromEntries(content.rulePack.content.resources.map(resource => [resource.key,
         Number(state.entities[actor.characterKey]?.attributes[`resource.${resource.key}`])])),
     }])),
-    situations: { active: runtime.openRun.situations.active, templates: content.campaign.situationTemplates },
+    situations: { active: runtime.openRun.situations.active, templates: ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).templates },
     chaos: runtime.openRun.chaos.value, worldTurn: runtime.openRun.worldTime.worldTurn,
     // Existence and current availability are separate: an exhausted/condition-blocked frozen ability is a valid false predicate.
-    knownRefs: [...new Set([...content.campaign.entityBindings.map(binding => binding.bindingKey),
+    knownRefs: [...new Set([...ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).templates.map(t => t.templateKey), ...content.campaign.entityBindings.map(binding => binding.bindingKey),
       ...rulePack.actions.map(action => action.key), ...rulePack.items.map(item => item.key), ...rulePack.resources.map(resource => resource.key)])],
   }
 }

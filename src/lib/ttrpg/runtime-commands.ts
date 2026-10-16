@@ -1,3 +1,8 @@
+import { settleTtrpgOpenSessionSituationAdmissionV1 } from './open-session-situation-reducer'
+import { verifyTtrpgOpenSessionSituationHashesV1 } from './open-session-situation-proof'
+import { ttrpgOpenSituationCatalogV1, ttrpgOpenSituationCatalogSnapshotV1 } from './open-session-situation-catalog'
+import { prepareTtrpgOpenSituationAdoptionV1, reconcileTtrpgOpenSituationRunV1, TtrpgOpenSituationReceiptPendingError } from './open-session-situation-adoption'
+import { assertTtrpgOpenSituationHumanGmV1 } from './open-generated-situation-candidate'
 import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1, assertTtrpgOpenSituationEpochAuthorityV1, isTtrpgOpenPassiveEpochV1, assertTtrpgOpenSituationWindowEventV1 } from './open-coordination'
 import { verifyTtrpgOpenBriefCandidateProofV1 } from './open-brief-candidate'
 import { parseTtrpgOpenModelMemoryReceiptV2 } from './open-model-memory-contract'
@@ -180,6 +185,8 @@ type FormalTtrpgEventType = Extract<
   | "ttrpg.open.handoff.offered"
   | "ttrpg.open.narration.recorded"
   | "ttrpg.open.narration.accepted"
+  | "ttrpg.open.situation.accepted"
+  | "ttrpg.open.situation.activated"
   | "ttrpg.open.intent.rejected"
   | "ttrpg.open.companion.preauthorized"
   | "ttrpg.open.stage.closed"
@@ -219,7 +226,7 @@ const OPEN_FOUNDATION_COMMANDS: readonly FormalTtrpgEventType[] = [
   "ttrpg.front.telegraphed", "ttrpg.front.advanced", "ttrpg.front.defeated",
   "ttrpg.open.situations.planned", "ttrpg.open.situations.changed", "ttrpg.open.situations.settled",
   "ttrpg.open.situations.effect.confirmed", "ttrpg.open.situations.effect.applied",
-  "ttrpg.open.terminal.evaluated", "ttrpg.open.gates.evaluated", "ttrpg.open.gates.settled", "ttrpg.open.gates.recovered", "ttrpg.open.gates.recovery-stopped", "ttrpg.open.narration.accepted", "ttrpg.open.narration.recorded", "ttrpg.open.companion.preauthorized", "ttrpg.open.intent.rejected", "ttrpg.open.handoff.offered",
+  "ttrpg.open.terminal.evaluated", "ttrpg.open.gates.evaluated", "ttrpg.open.gates.settled", "ttrpg.open.gates.recovered", "ttrpg.open.gates.recovery-stopped", "ttrpg.open.narration.accepted", "ttrpg.open.situation.accepted", "ttrpg.open.situation.activated", "ttrpg.open.narration.recorded", "ttrpg.open.companion.preauthorized", "ttrpg.open.intent.rejected", "ttrpg.open.handoff.offered",
   "ttrpg.open.stage.closed", "ttrpg.open.stage.clock.advanced", "ttrpg.open.stage.settled", "ttrpg.open.stage.effect.confirmed", "ttrpg.open.stage.effect.applied",
 ];
 const SHARED_SETUP_COMMANDS: readonly FormalTtrpgEventType[] = [
@@ -1612,7 +1619,7 @@ export async function discoverTtrpgOpenKnowledgeV1(input: TtrpgOpenOperationComm
       const receipt = runtime.openRun!.ruleReceipts.find(receipt => receipt.operationKey === operation.operationKey);
       if (!plan || !receipt || nextTtrpgOpenOperationStepV1(operation)?.kind !== 'knowledge'
         || stableJson(plan.frozenContent) !== stableJson(content) || plan.contentHash !== await hashProductProductionValueV2(content)
-        || plan.publicFieldsHash !== await hashTtrpgOpenEvidenceFieldsV1(content.campaign, plan.request.evidenceRef)) {
+        || plan.publicFieldsHash !== await hashTtrpgOpenEvidenceFieldsV1(ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).validationView, plan.request.evidenceRef)) {
         throw new Error('[ttrpg-knowledge] 发现步骤、冻结内容或公开字段已变化。');
       }
       const knowledgeKey = `knowledge.${await hashProductProductionValueV2({ sessionKey: runtime.sessionKey, operationKey: operation.operationKey, evidenceRef: plan.request.evidenceRef })}`;
@@ -1802,7 +1809,7 @@ export async function advanceTtrpgOpenPressureV1(input: TtrpgOpenOperationComman
       const actualCycle = run.pressureCycles?.find(c => ttrpgOpenTurnCycleMatchesV1(c,operation,ttrpgOpenPressureRuleSourceV1(receipt),'pressure'));
       if (!actualCycle) {
         if (actionKey !== `${ownerStep}.plan`) throw new Error('[ttrpg-pressure] 压力计划已变化。');
-        const cycle = parseTtrpgOpenPressureCycleV1({ ...ttrpgOpenTurnCycleMetadataV1(operation,'pressure'),cycleKey: await ttrpgOpenScopedKeyV1(runtime.sessionKey, 'pressure', [receipt.sourceRef.sessionKey, String(receipt.sourceRef.sequence),...(operation.settlementOrder ? [ownerStep] : [])]),
+        const cycle = parseTtrpgOpenPressureCycleV1({ ...ttrpgOpenSituationCatalogSnapshotV1(content.campaign, run), ...ttrpgOpenTurnCycleMetadataV1(operation,'pressure'),cycleKey: await ttrpgOpenScopedKeyV1(runtime.sessionKey, 'pressure', [receipt.sourceRef.sessionKey, String(receipt.sourceRef.sequence),...(operation.settlementOrder ? [ownerStep] : [])]),
           ruleSourceRef: ttrpgOpenPressureRuleSourceV1(receipt), startedRef: { sessionKey: runtime.sessionKey, sequence: context.sequence }, frozenContent: content,
           contentHash: await hashProductProductionValueV2(content), runtimeSourceHash: context.session.runtimeSourceHash,
           ...planTtrpgOpenPressureTicksV1({ state: context.state, operation, receipt, content }), tickRefs: [], frontReceipts: [], work: [], completedRef: null });
@@ -1848,7 +1855,7 @@ export async function shareTtrpgOpenKnowledgeV1(input: FormalTtrpgCommandEnvelop
       if (!epoch || epoch.status !== 'active' || epoch.viewerKey !== viewerKey || epoch.authorizationHash !== await hashProductProductionValueV2(authorization)
         || runtime.product.safety.status !== 'active' || run.stage.status !== 'open') throw new Error('[ttrpg-knowledge] 分享需要当前真人窗口且团局未暂停。');
       const source = run.knowledge.find(entry => entry.knowledgeKey === request.sourceKnowledgeKey);
-      if (!source || source.publicFieldsHash !== await hashTtrpgOpenEvidenceFieldsV1(content.campaign, source.evidenceRef)
+      if (!source || source.publicFieldsHash !== await hashTtrpgOpenEvidenceFieldsV1(ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).validationView, source.evidenceRef)
         || confirmationHash !== await hashTtrpgOpenKnowledgeShareConfirmationV1({ request, viewerKey, baseStateHash: input.baseStateHash, runtimeSourceHash: context.session.runtimeSourceHash })) {
         throw new Error('[ttrpg-knowledge] 分享源、公开字段或确认内容已经 stale。');
       }
@@ -5730,7 +5737,7 @@ export async function advanceTtrpgOpenSituationsV1(input: TtrpgOpenOperationComm
       const actual = run.situationCycles?.find(c => ttrpgOpenTurnCycleMatchesV1(c,operation,ttrpgOpenPressureRuleSourceV1(receipt),'situations'));
       if (!actual) {
         if (actionKey !== `${ttrpgOpenTurnOwnerStepV1(operation,'situations')}.plan`) throw new Error('[ttrpg-situation] 维护计划已变化。');
-        const cycle = parseTtrpgOpenSituationCycleV1({ ...ttrpgOpenTurnCycleMetadataV1(operation,'situations'),cycleKey: await ttrpgOpenScopedKeyV1(runtime.sessionKey, 'situations', [receipt.sourceRef.sessionKey, String(receipt.sourceRef.sequence),...(operation.settlementOrder ? [ttrpgOpenTurnOwnerStepV1(operation,'situations')] : [])]),
+        const cycle = parseTtrpgOpenSituationCycleV1({ ...ttrpgOpenSituationCatalogSnapshotV1(content.campaign, run), ...ttrpgOpenTurnCycleMetadataV1(operation,'situations'),cycleKey: await ttrpgOpenScopedKeyV1(runtime.sessionKey, 'situations', [receipt.sourceRef.sessionKey, String(receipt.sourceRef.sequence),...(operation.settlementOrder ? [ttrpgOpenTurnOwnerStepV1(operation,'situations')] : [])]),
           ruleSourceRef: ttrpgOpenPressureRuleSourceV1(receipt), startedRef: { sessionKey: runtime.sessionKey, sequence: context.sequence }, frozenContent: content,
           contentHash: await hashProductProductionValueV2(content), runtimeSourceHash: context.session.runtimeSourceHash, situationKeys: run.situations.active.map(i => i.situationKey),
           maintenanceRefs: [], queueCredits: ttrpgOpenSituationQueueCreditsV1(context.state), queueRefs: [], work: [], completedRef: null });
@@ -5947,7 +5954,7 @@ export async function recoverTtrpgOpenOperationGatesV1(input: TtrpgOpenOperation
       const { runtime,operation,seat } = await openOperationCallerV1(context,input,false);
       const planned = planTtrpgOpenGateRecoveryV1(context.state,operation.operationKey);
       if (!sameTtrpgOpenPressureSourceV1(planned.evaluation.sourceRef,input.evaluationRef) || planned.evaluation.result.evaluationBasisHash !== input.evaluationBasisHash || planned.gateKey !== input.gateKey || planned.evaluation.actorKey !== input.actorKey) throw new Error('实际失败评估已改变，请重新读取');
-      const publicFieldsHash = planned.action === 'evidence' ? await hashTtrpgOpenEvidenceFieldsV1(planned.terminal.frozenContent.campaign,planned.targetRef!) : null;
+      const publicFieldsHash = planned.action === 'evidence' ? await hashTtrpgOpenEvidenceFieldsV1(ttrpgOpenSituationCatalogV1(planned.terminal.frozenContent.campaign, planned.run).validationView,planned.targetRef!) : null;
       const recoveryKey = await ttrpgOpenScopedKeyV1(runtime.sessionKey,'gate-recovery',[operation.operationKey,planned.epoch.epochKey]);
       const settled = settleTtrpgOpenGateRecoveryV1({ state: context.state,operationKey: operation.operationKey,viewerKey: input.viewerKey,recoveryKey,sequence: context.sequence,publicFieldsHash });
       return { actorKey: seat.actorKey,targetKey: settled.receipt.actorKey,payload: { operationKey: operation.operationKey,frozenPlanHash: operation.planHash,receipt: settled.receipt } };
@@ -6079,4 +6086,39 @@ export async function acceptTtrpgOpenBriefMemoryV1(input: FormalTtrpgCommandEnve
   try { await reconcileTtrpgOpenBriefMemoryRunV1({ ...input, scope }) }
   catch (error) { throw new TtrpgOpenBriefMemoryReceiptPendingError(input.sessionId, event.sequence, input.runId, error) }
   return event
+}
+
+/** Accept one private definition only after the actual human GM reviews its exact disclosure text. */
+export async function acceptTtrpgOpenSituationV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; runId: number; requestKey: string; candidateHash: string; templateHash: string; disclosure: 'player-and-discovery-text-reviewed'
+}): Promise<ProductRuntimeEvent> {
+  const session = await db.productRuntimeSessions.get(input.sessionId)
+  if (!session?.worldId || !session.workId) throw new Error('当前跑团实例不存在')
+  const scope = await resolveScope({ scope: { projectId: session.projectId, worldId: session.worldId, workId: session.workId } })
+  await assertTtrpgOpenSituationHumanGmV1({ ...input, scope })
+  const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
+  if (!runtime?.openRun) throw new Error('当前不是已开团的开放模式')
+  const commandId = await ttrpgOpenScopedKeyV1(runtime.sessionKey, 'session-situation', [input.requestKey, input.candidateHash])
+  const prior = await db.productRuntimeEvents.where('[sessionId+commandId]').equals([input.sessionId, commandId]).first()
+  const event = await appendFormalTtrpgCommand({ ...input, commandId, baseSequence: prior?.baseSequence ?? input.baseSequence,
+    baseStateHash: prior?.baseStateHash ?? input.baseStateHash, type: 'ttrpg.open.situation.accepted',
+    intent: { viewerKey: input.viewerKey, requestKey: input.requestKey, candidateHash: input.candidateHash, templateHash: input.templateHash, disclosure: input.disclosure },
+    build: async context => prepareTtrpgOpenSituationAdoptionV1({ ...input, scope }, { ...context, content: requireTtrpgOpenContent(context.ttrpgContent) }) })
+  try { await reconcileTtrpgOpenSituationRunV1({ ...input, scope }) }
+  catch { throw new TtrpgOpenSituationReceiptPendingError(input.sessionId, event.sequence, input.runId) }
+  return event
+}
+
+/** Explicit human-GM admission of an already accepted session definition, never part of drafting. */
+export async function activateTtrpgOpenSessionSituationV1(input: FormalTtrpgCommandEnvelope & { viewerKey: string; templateKey: string }): Promise<ProductRuntimeEvent> {
+  return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.open.situation.activated', intent: { viewerKey: input.viewerKey, templateKey: input.templateKey },
+    build: async context => {
+      const runtime = parseTtrpgRuntimeStateV2(context.state.ttrpg)
+      if (!runtime?.authorization || !runtime.openRun) throw new Error('局势准入需要当前真实授权')
+      assertTtrpgOpenAuthorizationRowsCurrentV1({ authorization: runtime.authorization, participants: context.participants })
+      const content = requireTtrpgOpenContent(context.ttrpgContent), instanceKey = await ttrpgOpenScopedKeyV1(runtime.sessionKey, 'situation', [input.templateKey, String(context.sequence)])
+      const settled = settleTtrpgOpenSessionSituationAdmissionV1({ ...input, state: context.state, content, instanceKey, sequence: context.sequence })
+      await verifyTtrpgOpenSessionSituationHashesV1([settled.receipt])
+      return { actorKey: 'gm', targetKey: input.templateKey, payload: { frozenContent: content, ownerReceiptHash: settled.receipt.receiptHash, instanceKey, result: settled.result } }
+    } })
 }

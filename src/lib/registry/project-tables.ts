@@ -1277,6 +1277,10 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
   { table: db.productRuntimeSessions, name: 'productRuntimeSessions', owner: 'project',
     domainOwner: { allowed: ['instance'], defaultOwner: 'instance', locator: { kind: 'field', owner: 'instance', field: 'id' } },
     worldScoped: true, exportable: true, exportIdField: true,
+    exactArtifactRoots: [
+      { field: 'initialStateJson', path: ['ttrpg', 'openRun', 'situationReceipts', '*', 'artifactRefs'], when: { field: 'kind', equals: 'ttrpg' } },
+      { field: 'runtimeHeadStateJson', path: ['ttrpg', 'openRun', 'situationReceipts', '*', 'artifactRefs'], when: { field: 'kind', equals: 'ttrpg' } },
+    ],
     tree: { parentField: 'parentSessionId' },
     refs: [
       { kind: 'simple', field: 'id', target: 'productRuntimeSessions[parentSessionId]', onDelete: 'setNull' },
@@ -1309,6 +1313,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
   { table: db.productRuntimeEvents, name: 'productRuntimeEvents', owner: 'project',
     domainOwner: { allowed: ['instance'], defaultOwner: 'instance', locator: { kind: 'parent', owner: 'instance', table: 'productRuntimeSessions', field: 'sessionId' } },
     worldScoped: true, exportable: true, exportIdField: true,
+    exactArtifactRoots: [{ field: 'payloadJson', path: ['receipt', 'artifactRefs'], when: { field: 'type', equals: 'ttrpg.open.situation.accepted' } }],
     exportRemap: [
       { field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' },
       { field: 'sessionId', remapVia: 'productRuntimeSessions',

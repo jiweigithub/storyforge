@@ -36,6 +36,7 @@ export async function reconcileTtrpgOpenStoppedSituationV1(input: Input & { epoc
   const f = await owned(input)
   if (f.epoch.status !== 'closed' || !f.epoch.closedRef) throw new Error('局势结束决定尚未保存。')
   for (const call of f.calls) {
+    if (f.run.situationReceipts?.some(r => r.model.requestKey === call.requestKey && r.model.runContractHash === call.runContractHash)) continue // domain commit wins even before Run confirmation
     const owner = f.rows.find(r => r.contractHash === call.runContractHash)
     if (!owner?.id || owner.portableRuntimeOriginJson) continue // imported original output remains historical
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -60,7 +61,8 @@ export async function readTtrpgOpenSituationStopRepairsV1(input: Omit<Input, 'ep
   if (!epochs.length) return []
   const epochKeys = new Set(epochs.map(e => e.epochKey)), calls = run.coordination.calls.filter(c => epochKeys.has(c.authorizationEpochKey))
   const rows = await readTtrpgOpenModelCallRunsV1({ ...input, calls })
-  const unfinished = new Set(rows.filter(r => !r.portableRuntimeOriginJson && !['completed', 'cancelled', 'failed'].includes(r.status)).map(r => r.contractHash))
+  const adopted = new Set(run.situationReceipts?.map(r => r.model.runContractHash) ?? [])
+  const unfinished = new Set(rows.filter(r => !adopted.has(r.contractHash) && !r.portableRuntimeOriginJson && !['completed', 'cancelled', 'failed'].includes(r.status)).map(r => r.contractHash))
   const pending = new Set(calls.filter(c => unfinished.has(c.runContractHash)).map(c => c.authorizationEpochKey))
   return epochs.filter(e => pending.has(e.epochKey)).map(e => e.epochKey)
 }

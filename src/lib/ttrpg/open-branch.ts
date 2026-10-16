@@ -25,6 +25,8 @@ export async function prepareTtrpgOpenBranchStateV1(input: {
   if (!parentRuntime || input.parent.kind !== 'ttrpg' || !input.parent.runtimeSourceHash) throw new Error('[ttrpg-open-branch] 父实例没有冻结 open 来源')
   const childSessionKey = key(input.childSessionKey, 'child session key')
   if (childSessionKey === parentRuntime.sessionKey) throw new Error('[ttrpg-open-branch] 子分支必须拥有新稳定身份')
+  const { verifyTtrpgOpenSessionSituationHashesV1 } = await import('./open-session-situation-proof')
+  await verifyTtrpgOpenSessionSituationHashesV1(parentRuntime.openRun?.situationReceipts ?? [])
   const { verifyTtrpgOpenMemoryReceiptsV1 } = await import('./open-memory-proof')
   await verifyTtrpgOpenMemoryReceiptsV1({ runtime: parentRuntime, runtimeSourceHash: input.parent.runtimeSourceHash, events: input.events })
   const ancestor = await captureTtrpgOpenAncestorV1({ sessionKey: parentRuntime.sessionKey, seed: input.parent.seed,

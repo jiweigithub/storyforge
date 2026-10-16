@@ -1,3 +1,4 @@
+import { parseTtrpgOpenSessionSituationRefsV1, type TtrpgOpenSessionSituationRefV1 } from './open-session-situation-catalog'
 import { ttrpgOpenTurnCycleIdentityV1 } from './open-turn-settlement'
 import { parseTtrpgOpenSituationWorkActionV1, type TtrpgOpenSituationWorkActionV1 } from './open-situation-runtime'
 import { parseTtrpgOpenPressureEffectReviewV1, type TtrpgOpenPressureEffectReviewV1 } from './open-pressure-effect'
@@ -32,6 +33,7 @@ export interface TtrpgOpenPressureFrontReceiptV1 {
 }
 export interface TtrpgOpenPressureCycleV1 {
   operationStepKey?: string
+  sessionSituationRefs?: TtrpgOpenSessionSituationRefV1[]
   cycleKey: string
   ruleSourceRef: TtrpgOpenSourceRefV1
   startedRef: TtrpgOpenSourceRefV1
@@ -47,7 +49,9 @@ export interface TtrpgOpenPressureCycleV1 {
 }
 export function parseTtrpgOpenPressureCycleV1(value: unknown): TtrpgOpenPressureCycleV1 {
   const hasStep = Object.prototype.hasOwnProperty.call(p.object(value,'pressure cycle'),'operationStepKey')
-  const r = p.record(value, [...(hasStep ? ['operationStepKey'] : []),'cycleKey', 'ruleSourceRef', 'startedRef', 'frozenContent', 'contentHash', 'runtimeSourceHash', 'tickQueue', 'tickRefs', 'consumedOracleRefs', 'frontReceipts', 'work', 'completedRef'], 'pressure cycle')
+  const hasRefs = Object.prototype.hasOwnProperty.call(p.object(value, 'pressure cycle'), 'sessionSituationRefs')
+  const r = p.record(value, [...(hasStep ? ['operationStepKey'] : []), ...(hasRefs ? ['sessionSituationRefs'] : []),'cycleKey', 'ruleSourceRef', 'startedRef', 'frozenContent', 'contentHash', 'runtimeSourceHash', 'tickQueue', 'tickRefs', 'consumedOracleRefs', 'frontReceipts', 'work', 'completedRef'], 'pressure cycle')
+  const sessionSituationRefs = hasRefs ? parseTtrpgOpenSessionSituationRefsV1(r.sessionSituationRefs) : undefined
   const operationStepKey = hasStep ? p.key(r.operationStepKey,'pressure owner step') : undefined
   if (operationStepKey && !/^pressure\.(?:[1-9]|10)$/.test(operationStepKey)) p.fail('压力 owner 必须是实际逐轮步骤')
   const raw = p.object(r.frozenContent, 'pressure content'), world = p.object(p.object(raw.campaign, 'pressure campaign').sourceWorld, 'pressure world')
@@ -76,7 +80,7 @@ export function parseTtrpgOpenPressureCycleV1(value: unknown): TtrpgOpenPressure
     const w = p.record(value, ['workKey', 'templateKey', 'situationTemplateKey', 'causeRef', 'completedRef', ...(hasReviews ? ['effectReviews'] : []), ...(Object.prototype.hasOwnProperty.call(p.object(value, 'pressure work'), 'situationAction') ? ['situationAction'] : []), ...(Object.prototype.hasOwnProperty.call(p.object(value, 'pressure work'), 'situationDisposition') ? ['situationDisposition'] : [])], 'pressure consequence')
     const templateKey = p.nullable(w.templateKey, p.key, 'pressure effect template'), situationTemplateKey = p.nullable(w.situationTemplateKey, p.key, 'pressure situation template')
     if (templateKey === null && situationTemplateKey === null || templateKey !== null && !content.campaign.effectPlanTemplates.some(t => t.planKey === templateKey)
-      || situationTemplateKey !== null && !content.campaign.situationTemplates.some(t => t.templateKey === situationTemplateKey)) p.fail('压力后果缺少冻结 owner 引用')
+      || situationTemplateKey !== null && !content.campaign.situationTemplates.some(t => t.templateKey === situationTemplateKey) && !sessionSituationRefs?.some(r => r.templateKey === situationTemplateKey)) p.fail('压力后果缺少冻结 owner 引用')
     const situationAction = Object.prototype.hasOwnProperty.call(w, 'situationAction') ? parseTtrpgOpenSituationWorkActionV1(w.situationAction) : undefined
     if (situationAction && !situationTemplateKey) p.fail('局势待办必须有真实模板')
     const situationDisposition = Object.prototype.hasOwnProperty.call(w, 'situationDisposition') ? p.oneOf(w.situationDisposition, ['activated', 'queued', 'existing', 'resolved', 'rejected'], 'situation disposition') : undefined
@@ -89,7 +93,7 @@ export function parseTtrpgOpenPressureCycleV1(value: unknown): TtrpgOpenPressure
   if (new Set(work.map(w => w.workKey)).size !== work.length) p.fail('压力后果身份重复')
   const completedRef = r.completedRef === null ? null : parseTtrpgOpenSourceRefV1(r.completedRef)
   if (completedRef && (tickRefs.length !== tickQueue.length || work.some(w => !w.completedRef))) p.fail('压力仍有待办，不得伪造完成')
-  return { ...(operationStepKey ? { operationStepKey } : {}),cycleKey: p.key(r.cycleKey, 'pressure cycle key'), ruleSourceRef: parseTtrpgOpenSourceRefV1(r.ruleSourceRef), startedRef: parseTtrpgOpenSourceRefV1(r.startedRef),
+  return { ...(sessionSituationRefs ? { sessionSituationRefs } : {}), ...(operationStepKey ? { operationStepKey } : {}),cycleKey: p.key(r.cycleKey, 'pressure cycle key'), ruleSourceRef: parseTtrpgOpenSourceRefV1(r.ruleSourceRef), startedRef: parseTtrpgOpenSourceRefV1(r.startedRef),
     frozenContent: content, contentHash: p.hash(r.contentHash, 'pressure content hash'), runtimeSourceHash: p.hash(r.runtimeSourceHash, 'pressure runtime hash'), tickQueue, tickRefs, frontReceipts,
     consumedOracleRefs: p.list(r.consumedOracleRefs, 'pressure oracle sources', parseTtrpgOpenSourceRefV1, 1000), work, completedRef }
 }

@@ -1256,6 +1256,8 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "ttrpg.open.handoff.offered",
   "ttrpg.open.narration.recorded",
   "ttrpg.open.narration.accepted",
+  "ttrpg.open.situation.accepted",
+  "ttrpg.open.situation.activated",
   "ttrpg.open.intent.rejected",
   "ttrpg.open.companion.preauthorized",
   "ttrpg.open.gates.settled",

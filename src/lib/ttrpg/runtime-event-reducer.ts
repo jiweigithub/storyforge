@@ -1,3 +1,4 @@
+import { applyTtrpgOpenSessionSituationEventV1 } from './open-session-situation-reducer'
 import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1, assertTtrpgOpenSituationEpochAuthorityV1, assertTtrpgOpenSituationWindowEventV1 } from './open-coordination'
 import { applyTtrpgOpenTableMessageEventV1 } from './open-table-conversation-reducer'
 import { applyTtrpgOpenMemoryEventV1 } from './open-memory-reducer'
@@ -82,7 +83,7 @@ export function applyTtrpgRuntimeEventV1(
   payload: ProductRuntimeJsonObjectV1,
 ): ProductRuntimeState {
   assertTtrpgOpenSituationWindowEventV1(state.ttrpg?.sessionKey ? parseTtrpgRuntimeStateV2(state.ttrpg) : null, event.type)
-  if (applyTtrpgOpenMemoryEventV1(state, event, payload)) {
+  if (applyTtrpgOpenSessionSituationEventV1(state, event, payload) || applyTtrpgOpenMemoryEventV1(state, event, payload)) {
     state.ttrpg = parseTtrpgRuntimeStateV2(state.ttrpg)!
     state.lastSequence = event.sequence
     return state
@@ -119,7 +120,7 @@ export function applyTtrpgRuntimeEventV1(
       const openRun = parseTtrpgOpenRunStateV1(payload.openRun);
       const seat = authorization.seats.find(item => item.seatKey === payload.startedBySeatKey && item.viewerKey === payload.viewerKey);
       if (
-        openRun.worldTime.worldTurn !== 0 ||
+        Object.prototype.hasOwnProperty.call(openRun, "situationReceipts") || openRun.worldTime.worldTurn !== 0 ||
         openRun.worldTime.lastAdvancedByEventSequence !== -1 ||
         openRun.chaos.value !== 5 ||
         openRun.stage.status !== "open" || openRun.stage.openedAtWorldTurn !== 0 ||

@@ -1,3 +1,4 @@
+import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
 import { finishTtrpgOpenSituationDraftV1, readTtrpgOpenSituationStopRepairsV1 } from './open-generated-situation-stop'
 import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { listTtrpgOpenHistoricalResponsesV1, readTtrpgOpenHistoricalResponseV1 } from './open-imported-response'
@@ -40,6 +41,7 @@ import { verifyProductRuntimeSessionSourceV1 } from '../product-production/previ
 import { readProductRuntimeState, readProductRuntimeStateVersion } from '../product/runtime-core'
 import { stableProductRuntimeJsonV1 } from '../product/runtime-values'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
+import { verifyTtrpgOpenSessionSituationHashesV1 } from './open-session-situation-proof'
 import { isTtrpgRuntimeContentV2 } from './content-version'
 import { readTtrpgSessionParticipantsV2, configureTtrpgSessionParticipantV2 } from './participants'
 import { assertTtrpgOpenAuthorizationCurrentV1 } from './open-authorization'
@@ -175,6 +177,7 @@ async function sourceForTable(input: Pick<TtrpgOpenTableInputV1, 'scope' | 'sess
   if (session.kind !== 'ttrpg' || source.runtimeSourceHash !== session.runtimeSourceHash || !source.runtimePackage.ttrpg || !isTtrpgRuntimeContentV2(source.runtimePackage.ttrpg)) throw new Error('当前冒险的冻结来源无效')
   const state = await readProductRuntimeState(input.sessionId), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
   if (!runtime || runtime.product.rulePackContentHash !== source.runtimePackage.ttrpg.rulePack.contentHash || runtime.product.campaignKey !== source.runtimePackage.ttrpg.campaign.campaignKey) throw new Error('当前冒险与冻结来源不一致')
+  await verifyTtrpgOpenSessionSituationHashesV1(runtime.openRun?.situationReceipts ?? [])
   await verifyTtrpgOpenPrivateChoiceHashesV1(runtime.openRun?.operations ?? [])
   await verifyTtrpgOpenManualEpochsV1(runtime.openRun?.coordination.epochs ?? [])
   return { session, content: source.runtimePackage.ttrpg, state, runtime, seats: await readTtrpgSessionParticipantsV2(input.sessionId) }
@@ -312,7 +315,7 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
   try { assertTtrpgOpenModelActorV1(auth, 'prose.ttrpg-open-kp', 'gm', input.viewerKey);canRequestKp = true } catch { /* The real GM has a separate identity. */ }
   const pointContext = ttrpgOpenSituationGateContextV1(f.state, f.content, current.seat.actorKey!), availableActions = new Set(own.view.rules.core.actionCatalog.filter(a => a.available).map(a => a.actionKey))
   const affordances = run.situations.active.flatMap(instance => {
-    const template = f.content.campaign.situationTemplates.find(t => t.templateKey === instance.templateKey)
+    const template = ttrpgOpenSituationCatalogV1(f.content.campaign, f.runtime.openRun).templates.find(t => t.templateKey === instance.templateKey)
     return (template?.interventionPoints ?? []).filter(point => (point.visibleTo === 'public' || point.visibleTo === 'party' || point.visibleTo === 'private' && point.knownByActorKeys.includes(current.seat.actorKey!))
       && (!point.requiresPredicate || evaluateTtrpgPredicateV1(point.requiresPredicate, pointContext))
       && point.targetsObstacleKeys.some(key => !instance.satisfiedObstacleKeys.includes(key))).map(point => ({ key: `${instance.situationKey}:${point.pointKey}`, hint: point.affordanceHint,
@@ -447,7 +450,7 @@ export async function readTtrpgOpenHostTableV1(input: TtrpgOpenTableInputV1) {
     epochKey: epoch?.epochKey ?? null, isEpochStarter: epoch?.viewerKey === input.viewerKey,
     consequence: consequence ? { owner: consequence.owner,cycleKey: consequence.cycle.cycleKey,workKey: consequence.work.workKey,operationKey: consequence.operation.operationKey } : null,
     consequenceApprovals: [], privateChoiceReviews: tablePrivateChoiceReviewsV1(f),gateRecovery: tableGateRecoveryV1(f),humanNarrationRepairs,
-    situations: run.situations.active.map(s => ({ key: s.situationKey,title: f.content.campaign.situationTemplates.find(t => t.templateKey === s.templateKey)?.title ?? '当前局势' })),
+    situations: run.situations.active.map(s => ({ key: s.situationKey,title: ttrpgOpenSituationCatalogV1(f.content.campaign, f.runtime.openRun).templates.find(t => t.templateKey === s.templateKey)?.title ?? '当前局势' })),
     operation: operation ? {
       operationKey: operation.operationKey,nextStepKey: nextTtrpgOpenOperationStepV1(operation)?.kind ?? null,
       status: operation.status,riskHash: operation.riskHash,actorName: f.state.entities[operation.plan.request.actorKey]?.name ?? '行动者',
