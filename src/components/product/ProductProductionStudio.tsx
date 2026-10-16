@@ -1122,7 +1122,7 @@ export default function ProductProductionStudio(props: {
     const productReleaseId = details?.production.currentProductReleaseId
     if (!productReleaseId) throw new Error('请先发布已验证的游戏版本。')
     const bundle = await exportProductDistributionBundleV2({ scope: props.scope, productReleaseId })
-    downloadTextFile(JSON.stringify(bundle), `${details.production.productionKey}.game.json`, 'application/json')
+    await downloadTextFile(JSON.stringify(bundle), `${details.production.productionKey}.game.json`, 'application/json')
     setMessage('已导出经过哈希验证的完整游戏包，包含正式内容和媒资，可用于社区分发。')
   }, '导出社区游戏包')
 

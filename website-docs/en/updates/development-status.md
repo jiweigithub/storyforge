@@ -1,5 +1,10 @@
 # Pending development and branch audit
 
+## October 16, 2026 · Client delivery update
+
+The 4.0.2 clients in [PR #153](https://github.com/yuanbw2025/storyforge/pull/153) provide Windows, Mac and Android installers, in-app updates, and a problems-and-suggestions entry. iOS is deferred. First launch directly displays one offline-readable User Agreement containing the personal-information and privacy terms; accepting it opens the application. The agreement remains available in settings, and manual feedback requires review and explicit submission.
+
+See [installation](/en/getting-started/install) for system limitations and use only files actually published on the [v4.0.2 release page](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2). The review below is a historical branch snapshot; this update and the release page supersede its pending-client status.
 
 ## October 16, 2026 review
 

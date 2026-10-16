@@ -6,6 +6,11 @@ export const RUNTIME_DIAGNOSTICS_KEY = 'storyforge-runtime-diagnostics-v1'
 let installed = false
 let loaded = false
 let memory: FailureEvent[] = []
+const listeners = new Set<(event: FailureEvent) => void>()
+export function subscribeRuntimeDiagnostics(listener: (event: FailureEvent) => void) {
+  listeners.add(listener)
+  return () => { listeners.delete(listener) }
+}
 
 export function readRuntimeDiagnosticErrors(): FailureEvent[] {
   if (!loaded) try {
@@ -25,19 +30,26 @@ export function readRuntimeDiagnosticErrors(): FailureEvent[] {
 }
 
 export function recordRuntimeDiagnosticError(value: unknown, source: FailureEvent['source']): void {
-  const current = readRuntimeDiagnosticErrors()
   let name: unknown
   let stack: unknown
   try { if (value instanceof Error) { name = value.name; stack = value.stack } }
   catch { /* A hostile/lazy Error property cannot cause recursive error capture. */ }
   const row: FailureEvent = { occurredAt: new Date().toISOString(), source,
     name: safeErrorName(name), frames: safeErrorFrames(stack), build: APP_BUILD_ID }
+  recordRuntimeDiagnosticEvent(row)
+}
+
+export function recordRuntimeDiagnosticEvent(value: FailureEvent): void {
+  const row = parseFailureEvent(value)
+  if (!row) return
+  const current = readRuntimeDiagnosticErrors()
   const previous = current[current.length - 1]
   if (previous && previous.source === row.source && previous.name === row.name
     && JSON.stringify(previous.frames) === JSON.stringify(row.frames)
     && Date.parse(row.occurredAt) - Date.parse(previous.occurredAt) < 1_000) return
   memory = [...current, row].slice(-20)
   try { localStorage.setItem(RUNTIME_DIAGNOSTICS_KEY, JSON.stringify(memory)) } catch { /* Keep the bounded in-memory copy. */ }
+  for (const listener of listeners) { try { listener(row) } catch { /* Diagnostics never interrupt the author. */ } }
 }
 
 export function installRuntimeDiagnostics(): void {

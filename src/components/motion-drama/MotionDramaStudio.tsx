@@ -188,7 +188,7 @@ export default function MotionDramaStudio({ scope, project, page }: Props) {
     if (!candidate||!snapshot) return
     if(!candidate.resuming&&['episode-outline','episode-script','shot-design'].includes(candidate.stage)&&(snapshot.shots.some(row=>row.episodeNumber===snapshot.production.currentEpisodeNumber)||(candidate.stage==='episode-outline'&&snapshot.scenes.some(row=>row.episodeNumber===snapshot.production.currentEpisodeNumber)))){
       if(!await dialog.confirm({title:'确认重建下游内容？',message:'本集已有下游内容。确认将重建受影响的场景、镜头、参考帧关联和工具包；将先下载完整备份，已冻结交付版本保留。',confirmText:'备份并确认'}))return
-      try{downloadJSON(await exportProjectJSON(scope.projectId),`${snapshot.work.title}-修改前备份.json`)}catch(c){setError(String(c));return}
+      try{await downloadJSON(await exportProjectJSON(scope.projectId),`${snapshot.work.title}-修改前备份.json`)}catch(c){setError(String(c));return}
     }
     await act(async () => {
       await flushPendingEditsV1()
@@ -212,7 +212,7 @@ export default function MotionDramaStudio({ scope, project, page }: Props) {
   }
   const syncSource=async()=>{
     if(!snapshot||!await dialog.confirm({title:'同步来源并重建素材草稿？',message:'这会清空尚未交付的系列设定、物料、单集内容和工具包。先下载完整备份；已有交付版本不变。',confirmText:'备份并同步'}))return
-    await act(async()=>{downloadJSON(await exportProjectJSON(scope.projectId),`${snapshot.work.title}-同步前备份.json`);await resyncMotionDramaSourceV1({scope,expectedAdaptationRevision:snapshot.adaptation.revision,expectedProductionRevision:snapshot.production.revision})},true)
+    await act(async()=>{await downloadJSON(await exportProjectJSON(scope.projectId),`${snapshot.work.title}-同步前备份.json`);await resyncMotionDramaSourceV1({scope,expectedAdaptationRevision:snapshot.adaptation.revision,expectedProductionRevision:snapshot.production.revision})},true)
   }
   const exportBundle=async(release:CreationReleaseV1)=>{
     try{const blob=await exportMotionMaterialBundle(scope,release.id!);const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`${safeName(snapshot?.work.title??'素材')}-v${release.version}.zip`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(c){setError(String(c))}

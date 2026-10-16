@@ -171,21 +171,10 @@ async function downloadProjectBackup(projectId: number, operation: string): Prom
   // 安全确认入口不得因此把所有游戏引擎静态回灌到首屏。
   const { exportProjectJSON } = await import('../export/json-export')
   const data = await exportProjectJSON(projectId)
-  const json = JSON.stringify(data, null, 2)
-  const blob = new Blob([json], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-
-  const a = document.createElement('a')
-  a.href = url
+  const { downloadJSON } = await import('../export/json-export')
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
   const safeOp = operation.replace(/[^\w一-龥-]/g, '_')
-  a.download = `storyforge-backup-before-${safeOp}-${timestamp}.json`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-
-  // 释放内存(下个 tick,确保下载已触发)
-  setTimeout(() => URL.revokeObjectURL(url), 100)
+  await downloadJSON(data, `storyforge-backup-before-${safeOp}-${timestamp}.json`)
 }
 
 /**

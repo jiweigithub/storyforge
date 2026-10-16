@@ -1,7 +1,7 @@
 {
   "name": "storyforge",
   "private": true,
-  "version": "4.0.1",
+  "version": "4.0.2",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -69,9 +69,17 @@
     "test:showcase": "playwright test --config playwright.showcase.config.ts",
     "build:adventure-player": "node scripts/build-adventure-player.mjs",
     "build:portable": "tsc -b && tsc -p ui-preview/tsconfig.json && npm run build:adventure-player && vite build --mode portable",
-    "test:distribution": "node --test scripts/distribution/*.test.mjs"
+    "test:distribution": "node --test scripts/distribution/*.test.mjs",
+    "build:windows": "npm run build:portable && node scripts/distribution/notices.mjs && electron-builder --config electron-builder.config.cjs --win --x64 --publish never",
+    "desktop:dev": "npm run build:portable && electron scripts/desktop/main.mjs",
+    "build:android:web": "tsc -b && npm run build:adventure-player && vite build --mode android && node scripts/distribution/prepare-android.mjs && cap sync android",
+    "build:android": "npm run build:android:web && node scripts/distribution/build-android.mjs",
+    "test:clients": "node --test scripts/desktop/*.test.mjs scripts/distribution/*.test.mjs && vitest run tests/regression/R-CLIENT-native-transport.test.ts tests/regression/R-CLIENT-updates.test.tsx tests/regression/R-CLIENT-save-file.test.ts tests/regression/R-CLIENT-SUPPORT1-feedback-telemetry.test.tsx tests/regression/R-CLIENT-LEGAL1-consent.test.tsx",
+    "build:macos": "npm run build:portable && node scripts/distribution/notices.mjs && electron-builder --config electron-builder.config.cjs --mac --publish never --config.directories.output=release/macos"
   },
   "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
     "@modelcontextprotocol/client": "2.3.1",
     "@modelcontextprotocol/ext-tasks": "0.2.2",
     "@tiptap/core": "3.31.0",
@@ -84,6 +92,7 @@
     "d3-hierarchy": "^3.1.2",
     "delaunator": "^5.1.0",
     "dexie": "^4.0.11",
+    "electron-updater": "6.8.9",
     "json5": "^2.2.3",
     "jsonrepair": "^3.15.0",
     "jszip": "^3.10.1",
@@ -102,6 +111,7 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.3",
     "@playwright/test": "^1.61.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -110,6 +120,8 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^2.1.9",
     "autoprefixer": "^10.4.20",
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3",
     "eslint": "^9.39.4",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-react-hooks": "^7.1.1",

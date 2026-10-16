@@ -159,12 +159,12 @@ export default function ScreenplayPipelinePanel({ scope, adaptation, sourceUnits
       const authorPayload = Array.isArray(parsed) ? parsed.filter(item => item && typeof item === 'object' && acceptedKeys.has((item as { stableKey: string }).stableKey)) : parsed
       if(candidate.stage==='source-analysis'&&(counts.edges||counts.decisions)){
         if(!await dialog.confirm({title:'更新原作事实',message:'采纳事实会清除依赖它的因果关系与删改决定，需要重新确认改编规划。已有剧本场景保留。',confirmText:'备份并采纳'}))return
-        downloadJSON(await exportProjectJSON(scope.projectId),'原作事实修改前备份.json')
+        await downloadJSON(await exportProjectJSON(scope.projectId),'原作事实修改前备份.json')
       }
       let allowReplaceDownstream = false
       if (['beat-sheet','scene-card'].includes(candidate.stage) && (counts.cards || scenes.length)) {
         if (!await dialog.confirm({title:'替换场次规划',message:'本次采纳会清除下游场次与审查，已发布版本保留。先下载作品备份，再继续替换。',confirmText:'备份并替换'}))return
-        downloadJSON(await exportProjectJSON(scope.projectId),'剧本重规划前备份.json');allowReplaceDownstream=true
+        await downloadJSON(await exportProjectJSON(scope.projectId),'剧本重规划前备份.json');allowReplaceDownstream=true
       }
       await adoptScreenplayProfessionalCandidateV1({ scope, runId: candidate.runId, allowReplaceDownstream, authorPayload: authorPayload as ScreenplayProfessionalPayloadV1 })
       setCandidate(null); setAcceptedKeys(new Set()); await reload(); await onChanged()

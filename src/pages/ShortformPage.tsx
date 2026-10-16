@@ -123,8 +123,8 @@ export default function ShortformPage() {
     try{
       await flushPendingEditsV1()
       const backup=await exportProjectJSON(row.project.id!)
+      await downloadJSON(backup,`${row.work.title}-短篇转换前备份.json`)
       await switchNovelProfile({projectId:row.project.id!,workId:row.work.id!,profile:'long',targetWordCount:Math.max(100000,row.work.targetWordCount)})
-      downloadJSON(backup,`${row.work.title}-短篇转换前备份.json`)
       await useProjectStore.getState().loadProjects()
       navigate(`/workspace/${row.project.id}?module=info`)
     }catch(cause){setError(String(cause))}finally{setBusy(false)}

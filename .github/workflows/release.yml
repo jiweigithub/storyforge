@@ -33,6 +33,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  clients:
+    permissions:
+      contents: write
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/clients.yml
+    with:
+      release: true
+    secrets: inherit
   build:
     runs-on: ubuntu-latest
     env:
@@ -112,7 +120,7 @@ jobs:
 
   publish:
     if: github.event_name != 'pull_request'
-    needs: package
+    needs: [package, clients]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -129,8 +137,16 @@ jobs:
           pattern: portable-*
           path: release-assets/
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: client-*
+          path: release-assets/
+          merge-multiple: true
       - name: Publish only after all target packages pass
         run: |
+          if gh release view "${RELEASE_TAG}" --json isDraft --jq '.isDraft' > existing-release-state.txt 2>/dev/null; then
+            test "$(cat existing-release-state.txt)" = true || { echo 'Published releases are immutable. Increment package.json and use a new tag.'; exit 1; }
+          fi
           if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
             test "$(git rev-list -n 1 "${RELEASE_TAG}")" = "$(git rev-parse HEAD)"
           else
@@ -138,15 +154,18 @@ jobs:
             git push origin "${RELEASE_TAG}"
           fi
           cd release-assets
-          cat *.sha256 > SHA256SUMS.txt
+          sha256sum *.zip *.exe *.dmg *.apk *.yml *.blockmap > SHA256SUMS.txt
           sha256sum --check SHA256SUMS.txt
           cd ..
           notes=".github/release-notes/${RELEASE_TAG}.md"
           test -f "$notes"
           if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            gh release create "${RELEASE_TAG}" --draft --verify-tag --title "StoryForge ${RELEASE_TAG} · 本地便携版" --notes-file "$notes"
+            gh release create "${RELEASE_TAG}" --draft --verify-tag --title "StoryForge ${RELEASE_TAG} · Windows / macOS / Android" --notes-file "$notes"
           fi
-          gh release upload "${RELEASE_TAG}" release-assets/*.zip release-assets/SHA256SUMS.txt --clobber
+          gh release upload "${RELEASE_TAG}" release-assets/*.zip release-assets/*.exe release-assets/*.dmg release-assets/*.apk release-assets/*.yml release-assets/*.blockmap release-assets/SHA256SUMS.txt --clobber
+          for asset in upgrade-test-old.apk upgrade-test-new.apk upgrade-test-runner.apk; do
+            gh release delete-asset "${RELEASE_TAG}" "$asset" --yes 2>/dev/null || true
+          done
           args=(--draft=false --notes-file "$notes")
           if [ "$PRERELEASE" = true ]; then args+=(--prerelease --latest=false); else args+=(--prerelease=false --latest); fi
           gh release edit "${RELEASE_TAG}" "${args[@]}"

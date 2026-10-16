@@ -1,9 +1,9 @@
 /** Small, content-free handoff shared by the application and the official form. */
 export const FAILURE_REPORT_FRAGMENT = '#storyforge-report='
 export const FAILURE_FEEDBACK_URL = 'https://docs.storyforge-lab.com/feedback/bug'
-export const FAILURE_SOURCES = ['react', 'window.error', 'unhandledrejection', 'bootstrap', 'launcher'] as const
+export const FAILURE_SOURCES = ['react', 'window.error', 'unhandledrejection', 'bootstrap', 'launcher', 'native'] as const
 export type FailureSource = typeof FAILURE_SOURCES[number]
-const ERROR_NAMES = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'URIError', 'EvalError', 'AggregateError', 'NetworkError', 'QuotaExceededError', 'SecurityError', 'AbortError', 'InvalidStateError', 'UnknownError', 'VersionError', 'DataCloneError', 'ConstraintError', 'DataError', 'NotFoundError', 'NotReadableError', 'TimeoutError', 'OperationError', 'NotAllowedError', 'OpenFailedError', 'UpgradeError', 'SchemaError', 'MissingAPIError', 'BulkError', 'ModifyError', 'TransactionInactiveError', 'ReadOnlyError', 'DatabaseClosedError'])
+const ERROR_NAMES = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'URIError', 'EvalError', 'AggregateError', 'NetworkError', 'QuotaExceededError', 'SecurityError', 'AbortError', 'InvalidStateError', 'UnknownError', 'VersionError', 'DataCloneError', 'ConstraintError', 'DataError', 'NotFoundError', 'NotReadableError', 'TimeoutError', 'OperationError', 'NotAllowedError', 'OpenFailedError', 'UpgradeError', 'SchemaError', 'MissingAPIError', 'BulkError', 'ModifyError', 'TransactionInactiveError', 'ReadOnlyError', 'DatabaseClosedError', 'NativeCrash', 'NativeOutOfMemory', 'NativeUnresponsive', 'NativeInterrupted'])
 const BUILD = /^v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]{1,40})?\+(?:[a-f0-9]{7,40}|local)$/
 export const safeFailureBuild = (value: unknown): string => typeof value === 'string' && BUILD.test(value) ? value : 'unknown'
 

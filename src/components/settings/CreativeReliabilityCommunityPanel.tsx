@@ -73,13 +73,15 @@ export default function CreativeReliabilityCommunityPanel() {
     }
   }
 
-  const handleExport = () => {
-    downloadTextFile(
-      serializeCreativeReliabilityFeedbackV1(),
-      `storyforge-creative-feedback-${new Date().toISOString().slice(0, 10)}.json`,
-      'application/json',
-    )
-    setMessage('反馈 JSON 已生成；只有你主动提交给社区后，维护者才会收到。')
+  const handleExport = async () => {
+    try {
+      await downloadTextFile(
+        serializeCreativeReliabilityFeedbackV1(),
+        `storyforge-creative-feedback-${new Date().toISOString().slice(0, 10)}.json`,
+        'application/json',
+      )
+      setMessage('反馈 JSON 已生成；只有你主动提交给社区后，维护者才会收到。')
+    } catch (cause) { setMessage(cause instanceof Error ? cause.message : '反馈导出失败') }
   }
 
   const handleClear = async () => {

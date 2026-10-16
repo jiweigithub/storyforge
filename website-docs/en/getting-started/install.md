@@ -2,6 +2,25 @@
 
 Get a local portable package from the [latest release page](https://github.com/yuanbw2025/storyforge/releases/latest). The latest portable version includes the main-branch features, interface and bundled media at release time; ordinary users no longer need a development setup. Older releases remain historical snapshots. A fixed release does not automatically receive later main-branch changes.
 
+## Windows / macOS / Android clients {#windows-android-clients-in-development}
+
+Version 4.0.2 adds desktop installers and an Android APK. Download only the assets listed in the [release](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2); a draft or development build is not a published release. iOS is deferred.
+
+| Device | File | Installation |
+|---|---|---|
+| Windows x64 | `StoryForge-4.0.2-windows-x64-setup.exe` | Run the installer |
+| Apple Silicon Mac | `StoryForge-4.0.2-macos-arm64.dmg` | Drag StoryForge into Applications |
+| Intel Mac | `StoryForge-4.0.2-macos-x64.dmg` | Drag StoryForge into Applications |
+| Android | `StoryForge-4.0.2-android.apk` | Allow installation from the download source and confirm |
+
+The Windows installer has no publisher certificate; macOS uses an ad-hoc signature without Apple notarization. The operating system may ask you to explicitly allow opening. Obtain the package from the official release and verify its checksum first; do not disable system-wide protections.
+
+Read and accept the unified User Agreement at first launch; it includes privacy and information-handling terms and remains accessible in settings. Submit a problem or suggestion from General settings → Problems and suggestions.
+
+The clients check for updates after startup. Settings also provides Check for updates, Download update, and Install update. Save edits and finish generation first. Windows runs its installer; Android requires system confirmation; macOS opens the downloaded, verified DMG so you can replace the app in Applications. Failed checks or downloads leave the existing app available.
+
+Export a complete JSON backup from your original browser before switching to a client, then import it explicitly. Browsers and clients have separate storage; devices do not automatically sync. Keep a backup and replace the app without uninstalling or clearing its data. Android requires HTTPS model services, cannot use a desktop's local Codex login or folder backups, and should remain in the foreground during long generation. Mobile layouts and specialized exports retain their current limitations.
+
 ## Portable packages: no Node.js installation
 
 | Computer | ZIP to download | Launcher after extraction |

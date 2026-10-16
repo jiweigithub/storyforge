@@ -138,7 +138,7 @@ function ExportTab({ project, onImported, onOpenStorageSettings }: Props) {
     try {
       show('loading', '正在导出 JSON...')
       const data = await exportProjectJSON(project.id!)
-      downloadJSON(data, `${project.name}_${new Date().toISOString().slice(0, 10)}.json`)
+      await downloadJSON(data, `${project.name}_${new Date().toISOString().slice(0, 10)}.json`)
       show('success', 'JSON 导出成功！')
     } catch (e) { show('error', `导出失败：${(e as Error).message}`) }
   }
@@ -163,7 +163,7 @@ function ExportTab({ project, onImported, onOpenStorageSettings }: Props) {
     try {
       show('loading', '正在导出 Markdown...')
       const md = await exportProjectMarkdown(project.id!)
-      downloadTextFile(md, `${activeWork?.title ?? '当前作品'}_${new Date().toISOString().slice(0, 10)}.md`, 'text/markdown')
+      await downloadTextFile(md, `${activeWork?.title ?? '当前作品'}_${new Date().toISOString().slice(0, 10)}.md`, 'text/markdown')
       show('success', 'Markdown 导出成功！')
     } catch (e) { show('error', `导出失败：${(e as Error).message}`) }
   }
@@ -172,7 +172,7 @@ function ExportTab({ project, onImported, onOpenStorageSettings }: Props) {
     try {
       show('loading', '正在导出 TXT...')
       const txt = await exportProjectTXT(project.id!)
-      downloadTextFile(txt, `${activeWork?.title ?? '当前作品'}_${new Date().toISOString().slice(0, 10)}.txt`)
+      await downloadTextFile(txt, `${activeWork?.title ?? '当前作品'}_${new Date().toISOString().slice(0, 10)}.txt`)
       show('success', 'TXT 导出成功！')
     } catch (e) { show('error', `导出失败：${(e as Error).message}`) }
   }
@@ -181,7 +181,7 @@ function ExportTab({ project, onImported, onOpenStorageSettings }: Props) {
     try {
       show('loading', '正在整理本地诊断信息...')
       const report = await buildLocalDiagnosticReport()
-      downloadTextFile(
+      await downloadTextFile(
         JSON.stringify(report, null, 2),
         `storyforge-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
         'application/json',
@@ -196,7 +196,7 @@ function ExportTab({ project, onImported, onOpenStorageSettings }: Props) {
     try {
       show('loading', '正在生成可校验的工作区包...')
       const pkg = await exportWorkspacePackageFromProjectV1(project.id!)
-      downloadTextFile(
+      await downloadTextFile(
         JSON.stringify(pkg, null, 2),
         `${project.name}_${new Date().toISOString().slice(0, 10)}.storyforge.json`,
         'application/json',
