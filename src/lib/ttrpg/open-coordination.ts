@@ -1,3 +1,4 @@
+import { assertTtrpgOpenEntityWindowEventV1 } from './open-entity-journal'
 import type { TtrpgOpenManualActionAuthorizationV1 } from './open-manual-action'
 import { parseTtrpgOpenModelCallV1, updateTtrpgOpenEpochCallTotalsV1, type TtrpgOpenModelCallV1 } from './open-model-calls'
 /** Durable authority windows are independent of game time and event ordering. */
@@ -89,6 +90,7 @@ export function isTtrpgOpenPassiveEpochV1(epoch: Pick<TtrpgOpenEpochV1, 'trigger
 }
 /** Closed event admission applies equally to the command preview and offline replay. */
 export function assertTtrpgOpenSituationWindowEventV1(runtime: Pick<TtrpgRuntimeStateV2, 'openRun'> | null, type: string): void {
+  assertTtrpgOpenEntityWindowEventV1(runtime, type)
   const run = runtime?.openRun, epoch = run?.coordination.epochs.find(e => e.epochKey === run.coordination.activeEpochKey)
   if ((epoch?.triggerKind === 'request-situation' || epoch?.triggerKind === TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1) && ![
     'ttrpg.open.epoch.closed', 'ttrpg.open.call.reserved', 'ttrpg.open.call.dispatched', 'ttrpg.open.call.finished',

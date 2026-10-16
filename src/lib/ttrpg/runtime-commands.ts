@@ -1,3 +1,7 @@
+import { verifyTtrpgOpenEntityStateV1 } from './open-entity-proof'
+import { createTtrpgOpenEntityPlanV1 } from './open-entity-plan'
+import { parseTtrpgOpenEntityProposalV1 } from './open-entity-contract'
+import { assertTtrpgOpenEntityLiveV1, recheckTtrpgOpenEntityMaterializationV1 } from './open-entity-operation'
 import { settleTtrpgOpenSessionSituationAdmissionV1 } from './open-session-situation-reducer'
 import { verifyTtrpgOpenSessionSituationHashesV1 } from './open-session-situation-proof'
 import { parseTtrpgOpenPublicSituationAuthorizationV1, TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1 } from './open-public-situation-authorization-contract'
@@ -189,6 +193,10 @@ type FormalTtrpgEventType = Extract<
   | "ttrpg.open.narration.recorded"
   | "ttrpg.open.narration.accepted"
   | "ttrpg.open.situation.accepted"
+  | "ttrpg.open.entity.proposed"
+  | "ttrpg.open.entity.confirmed"
+  | "ttrpg.open.entity.materialized"
+  | "ttrpg.open.entity.disposed"
   | "ttrpg.open.situation.activated"
   | "ttrpg.open.intent.rejected"
   | "ttrpg.open.companion.preauthorized"
@@ -229,7 +237,7 @@ const OPEN_FOUNDATION_COMMANDS: readonly FormalTtrpgEventType[] = [
   "ttrpg.front.telegraphed", "ttrpg.front.advanced", "ttrpg.front.defeated",
   "ttrpg.open.situations.planned", "ttrpg.open.situations.changed", "ttrpg.open.situations.settled",
   "ttrpg.open.situations.effect.confirmed", "ttrpg.open.situations.effect.applied",
-  "ttrpg.open.terminal.evaluated", "ttrpg.open.gates.evaluated", "ttrpg.open.gates.settled", "ttrpg.open.gates.recovered", "ttrpg.open.gates.recovery-stopped", "ttrpg.open.narration.accepted", "ttrpg.open.situation.accepted", "ttrpg.open.situation.activated", "ttrpg.open.narration.recorded", "ttrpg.open.companion.preauthorized", "ttrpg.open.intent.rejected", "ttrpg.open.handoff.offered",
+  "ttrpg.open.terminal.evaluated", "ttrpg.open.gates.evaluated", "ttrpg.open.gates.settled", "ttrpg.open.gates.recovered", "ttrpg.open.gates.recovery-stopped", "ttrpg.open.narration.accepted", "ttrpg.open.entity.proposed", "ttrpg.open.entity.confirmed", "ttrpg.open.entity.materialized", "ttrpg.open.entity.disposed", "ttrpg.open.situation.accepted", "ttrpg.open.situation.activated", "ttrpg.open.narration.recorded", "ttrpg.open.companion.preauthorized", "ttrpg.open.intent.rejected", "ttrpg.open.handoff.offered",
   "ttrpg.open.stage.closed", "ttrpg.open.stage.clock.advanced", "ttrpg.open.stage.settled", "ttrpg.open.stage.effect.confirmed", "ttrpg.open.stage.effect.applied",
 ];
 const SHARED_SETUP_COMMANDS: readonly FormalTtrpgEventType[] = [
@@ -406,6 +414,7 @@ async function appendFormalTtrpgCommand(
   }
   const previewHead = await readVerifiedProductRuntimeHeadV1(previewSession);
   const previewState = previewHead.state;
+  if (open) await verifyTtrpgOpenEntityStateV1(previewState, requireTtrpgOpenContent(frozen.ttrpgContent));
   assertTtrpgOpenSituationWindowEventV1(previewState.ttrpg?.sessionKey ? parseTtrpgRuntimeStateV2(previewState.ttrpg) : null, input.type);
   const previewParticipants = await db.ttrpgSessionParticipants
     .where("sessionId")
@@ -428,7 +437,7 @@ async function appendFormalTtrpgCommand(
   }
   if (
     previewState.ttrpg.product.safety.status === "paused" &&
-    !["ttrpg.open.hosting.stopped", "ttrpg.open.table-message.posted", "ttrpg.safety.changed", "ttrpg.session-zero.completed", "ttrpg.open.failure.logged", "ttrpg.open.epoch.closed", "ttrpg.open.intent.disposed", "ttrpg.open.call.finished"].includes(input.type)
+    !["ttrpg.open.entity.disposed", "ttrpg.open.hosting.stopped", "ttrpg.open.table-message.posted", "ttrpg.safety.changed", "ttrpg.session-zero.completed", "ttrpg.open.failure.logged", "ttrpg.open.epoch.closed", "ttrpg.open.intent.disposed", "ttrpg.open.call.finished"].includes(input.type)
   ) {
     throw new Error(
       "[ttrpg] 战役已由安全工具暂停；恢复后才能继续规则、场景或 AI 主持。",
@@ -1321,11 +1330,12 @@ export async function ttrpgOpenOperationCommandIdV1(sessionKey: string, operatio
 }
 
 /** Qualified step keys prove replay identity; the original baseline is retained on retries. */
-async function openOperationEnvelopeV1(input: TtrpgOpenOperationCommandV1, stepKey: string): Promise<FormalTtrpgCommandEnvelope> {
+async function openOperationEnvelopeV1(input: TtrpgOpenOperationCommandV1, stepKey: string, kind: "rule" | "entity" = "rule"): Promise<FormalTtrpgCommandEnvelope> {
   const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg);
-  const operation = runtime?.openRun?.operations.find(operation => operation.operationKey === input.operationKey);
-  if (!runtime || !operation || operation.planHash !== input.frozenPlanHash) throw new Error("[ttrpg] operation/plan 不存在或已变化。");
-  const commandId = await ttrpgOpenOperationCommandIdV1(runtime.sessionKey, operation.operationKey, stepKey);
+  const planHash = kind === "rule" ? runtime?.openRun?.operations.find(operation => operation.operationKey === input.operationKey)?.planHash
+    : runtime?.openRun?.entityOperations?.find(operation => operation.plan.operationKey === input.operationKey)?.plan.planHash;
+  if (!runtime || planHash !== input.frozenPlanHash) throw new Error("[ttrpg] operation/plan 不存在或已变化。");
+  const commandId = await ttrpgOpenOperationCommandIdV1(runtime.sessionKey, input.operationKey, stepKey);
   if (input.commandId !== commandId) throw new Error("[ttrpg] operation 命令必须使用内核生成的步骤 key。");
   const prior = await db.productRuntimeEvents.where("[sessionId+commandId]").equals([input.sessionId, commandId]).first();
   return prior ? { sessionId: input.sessionId, commandId, baseSequence: prior.baseSequence!, baseStateHash: prior.baseStateHash! } : input;
@@ -6178,5 +6188,68 @@ export async function activateTtrpgOpenSessionSituationV1(input: FormalTtrpgComm
       const settled = settleTtrpgOpenSessionSituationAdmissionV1({ ...input, state: context.state, content, instanceKey, sequence: context.sequence })
       await verifyTtrpgOpenSessionSituationHashesV1([settled.receipt])
       return { actorKey: 'gm', targetKey: input.templateKey, payload: { frozenContent: content, ownerReceiptHash: settled.receipt.receiptHash, instanceKey, result: settled.result } }
+    } })
+}
+
+/** Human-authored, template-bound Oracle proposal; no model call or mechanical write. */
+export async function proposeTtrpgOpenEntitiesV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; oracleSourceRef: import('./open-coordination').TtrpgOpenSourceRefV1;
+  proposals: import('./open-entity-contract').TtrpgOpenEntityProposalV1[];
+}): Promise<ProductRuntimeEvent> {
+  const viewerKey = openKey(input.viewerKey, 'entity proposal viewer'), oracleSourceRef = parseTtrpgOpenSourceRefV1(input.oracleSourceRef)
+  if (!Array.isArray(input.proposals) || input.proposals.length < 1 || input.proposals.length > 3) throw new Error('一次原咨询最多提出三个模板内实体')
+  const proposals = input.proposals.map(parseTtrpgOpenEntityProposalV1)
+  return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.open.entity.proposed', intent: { origin: 'human-oracle-proposal', viewerKey, oracleSourceRef, proposals },
+    build: async context => {
+      const content = requireTtrpgOpenContent(context.ttrpgContent), runtime = parseTtrpgRuntimeStateV2(context.state.ttrpg)
+      if (!runtime?.authorization || !runtime.openRun) throw new Error('实体提案需要已开团的实际授权')
+      const seat = assertTtrpgOpenAuthorizationCurrentV1({ authorization: runtime.authorization, participants: context.participants, viewerKey })
+      await verifyTtrpgOpenOracleJournalV1({ receipts: runtime.openRun.oracleReceipts ?? [], rulePack: content.rulePack.content,
+        sessionKey: runtime.sessionKey, seed: context.session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] })
+      const plan = await createTtrpgOpenEntityPlanV1({ state: context.state, content, runtimeSourceHash: context.session.runtimeSourceHash,
+        viewerKey, commandId: input.commandId, sequence: context.sequence, oracleSourceRef, proposals, previousOperations: runtime.openRun.entityOperations ?? [] })
+      return { actorKey: seat.actorKey ?? 'gm', targetKey: plan.operationKey, payload: { plan } }
+    } })
+}
+export async function confirmTtrpgOpenEntityOperationV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; operationKey: string; planHash: string; actorKey: string; decision: 'approve' | 'reject';
+}): Promise<ProductRuntimeEvent> {
+  const viewerKey = openKey(input.viewerKey, 'entity approval viewer'), operationKey = openKey(input.operationKey, 'entity operation')
+  const planHash = openHash(input.planHash, 'entity original plan'), actorKey = openKey(input.actorKey, 'entity affected actor')
+  if (input.decision !== 'approve' && input.decision !== 'reject') throw new Error('请明确同意或拒绝原实体计划')
+  const envelope = await openOperationEnvelopeV1({ ...input, viewerKey, operationKey, frozenPlanHash: planHash }, 'entity.approval.' + actorKey, "entity")
+  return appendFormalTtrpgCommand({ ...input, ...envelope, type: 'ttrpg.open.entity.confirmed', intent: { viewerKey, operationKey, planHash, actorKey, decision: input.decision },
+    build: async context => {
+      const basis = await assertTtrpgOpenEntityLiveV1({ state: context.state, participants: context.participants, viewerKey, operationKey, planHash })
+      if (!basis.plan.requiredApprovals.some(row => row.actorKey === actorKey && row.allowedSeatKeys.includes(basis.seat.seatKey))
+        || basis.operation.approvals.some(row => row.actorKey === actorKey)) throw new Error('当前真人不能替该受影响者确认，或原决定已经保存')
+      return { actorKey, targetKey: operationKey, payload: { operationKey, planHash } }
+    } })
+}
+/** F13 is the sole entity creation business event; inventory and identity commit atomically. */
+export async function materializeTtrpgOpenEntityV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; operationKey: string; planHash: string;
+}): Promise<ProductRuntimeEvent> {
+  const viewerKey = openKey(input.viewerKey, 'entity commit viewer'), operationKey = openKey(input.operationKey, 'entity operation'), planHash = openHash(input.planHash, 'entity original plan')
+  const envelope = await openOperationEnvelopeV1({ ...input, viewerKey, operationKey, frozenPlanHash: planHash }, 'entity.materialize', "entity")
+  return appendFormalTtrpgCommand({ ...input, ...envelope, type: 'ttrpg.open.entity.materialized', intent: { viewerKey, operationKey, planHash },
+    build: async context => {
+      const content = requireTtrpgOpenContent(context.ttrpgContent)
+      const basis = await recheckTtrpgOpenEntityMaterializationV1({ state: context.state, content, runtimeSourceHash: context.session.runtimeSourceHash,
+        participants: context.participants, viewerKey, operationKey, planHash })
+      return { actorKey: basis.seat.actorKey ?? 'gm', targetKey: operationKey, payload: { operationKey, planHash } }
+    } })
+}
+export async function disposeTtrpgOpenEntityOperationV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; operationKey: string; planHash: string; reason: string;
+}): Promise<ProductRuntimeEvent> {
+  const viewerKey = openKey(input.viewerKey, 'entity dispose viewer'), operationKey = openKey(input.operationKey, 'entity operation'), planHash = openHash(input.planHash, 'entity original plan')
+  const reason = openText(input.reason, 'entity disposal reason', 2000)
+  const envelope = await openOperationEnvelopeV1({ ...input, viewerKey, operationKey, frozenPlanHash: planHash }, 'entity.dispose', "entity")
+  return appendFormalTtrpgCommand({ ...input, ...envelope, type: 'ttrpg.open.entity.disposed', intent: { viewerKey, operationKey, planHash, reason },
+    build: async context => {
+      const basis = await assertTtrpgOpenEntityLiveV1({ state: context.state, participants: context.participants, viewerKey, operationKey, planHash, allowPausedDisposal: true })
+      if (viewerKey !== basis.plan.viewerKey && !basis.operation.approvals.some(row => row.viewerKey === viewerKey && row.decision === 'reject')) throw new Error('只有原主持或实际拒绝者可放弃未创建计划')
+      return { actorKey: basis.seat.actorKey ?? 'gm', targetKey: operationKey, payload: { operationKey, planHash } }
     } })
 }

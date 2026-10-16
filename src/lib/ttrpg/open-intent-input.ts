@@ -1,6 +1,7 @@
 import { loadTtrpgOpenSituationKernelInputV1 } from './open-generated-situation-context'
 import { recordAgentRunArtifactV1 } from '../memory/artifact-store'
 import { assertTtrpgOpenEpochPurposeV1 } from './open-coordination'
+import { assertTtrpgOpenEntityWindowEventV1 } from './open-entity-journal'
 import { ttrpgOpenDeliveredBriefAttributionsV1 } from './open-brief-output'
 import { recordTtrpgContextAssemblyV1 } from './open-context-assembly'
 import { selectTtrpgOpenContextResourcesV1 } from './open-context-selection'
@@ -114,6 +115,8 @@ async function prepareTtrpgOpenModelInputV1(input: TtrpgOpenRuntimeModelInputV1,
   }
   const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
   if (!runtime?.openRun) throw new Error('[ttrpg-open-input] open 团局尚未启动')
+  // Reject before creating a durable Run or writing its source artifacts, not just at the later domain reservation.
+  assertTtrpgOpenEntityWindowEventV1(runtime, 'ttrpg.open.model.prepared')
   const review = purpose === 'fact-normalize' ? runtime.openRun.oracleReviews?.find(review => review.interpretationDecision === 'accept'
     && !review.normalizationOf && review.sourceRef.sessionKey === reviewSourceRef?.sessionKey && review.sourceRef.sequence === reviewSourceRef?.sequence) : undefined
   if (purpose === 'fact-normalize' && !review) throw new Error('[ttrpg-open-input] 事实归一必须指定真实已接受的原始解释')

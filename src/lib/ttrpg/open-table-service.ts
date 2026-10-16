@@ -1,3 +1,5 @@
+import { ttrpgOpenEntityParameterAllowedV1 } from './open-entity-catalog'
+import { verifyTtrpgOpenEntityStateV1 } from './open-entity-proof'
 import { ttrpgOpenSituationCatalogV1, ttrpgOpenSessionSituationActorAccessV1 } from './open-session-situation-catalog'
 import { finishTtrpgOpenSituationDraftV1, readTtrpgOpenSituationStopRepairsV1 } from './open-generated-situation-stop'
 import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
@@ -125,7 +127,7 @@ export async function readTtrpgOpenTableHostConsequenceV1(input: TtrpgOpenTableC
   const epochKey = f.runtime.openRun!.coordination.activeEpochKey!
   return { ...input, title: template.reason, sequence: f.state.lastSequence,
     parameters: template.parameters.map((p, i) => ({ key: p.parameterKey, label: `后果对象 ${i + 1}`, required: p.required,
-      options: Object.values(f.state.entities).filter(e => e.lifecycleStatus === 'active' && p.entityKinds.includes(e.kind === 'location' ? 'location' : e.kind === 'item' ? 'item' : 'actor') && (e.kind !== 'player' || f.runtime.authorization!.selectedActorKeys.includes(e.entityKey)) && (p.allowedRefs.includes(e.entityKey) || p.allowDynamicFromTemplateKeys.includes(String(e.attributes.templateKey)))).map(e => ({ key: e.entityKey, name: e.name })) })),
+      options: Object.values(f.state.entities).filter(e => e.lifecycleStatus === 'active' && p.entityKinds.includes(e.kind === 'location' ? 'location' : e.kind === 'item' ? 'item' : 'actor') && (e.kind !== 'player' || f.runtime.authorization!.selectedActorKeys.includes(e.entityKey)) && (p.allowedRefs.includes(e.entityKey) || ttrpgOpenEntityParameterAllowedV1(f.runtime.openRun, e.entityKey, p.allowDynamicFromTemplateKeys))).map(e => ({ key: e.entityKey, name: e.name })) })),
     alternatives: template.alternatives.map(a => ({ key: a.alternativeKey, title: a.title })),
     history: (work.effectReviews ?? []).map(r => ({ revision: r.revision, status: r.status })),
     canPropose: f.runtime.product.safety.status === 'active' && (!review || ['rejected', 'stale', 'unpayable'].includes(review.status) || !ttrpgOpenPressureEffectReviewCurrentV1(f.state, f.runtime, epochKey, review)),
@@ -178,6 +180,7 @@ async function sourceForTable(input: Pick<TtrpgOpenTableInputV1, 'scope' | 'sess
   const state = await readProductRuntimeState(input.sessionId), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
   if (!runtime || runtime.product.rulePackContentHash !== source.runtimePackage.ttrpg.rulePack.contentHash || runtime.product.campaignKey !== source.runtimePackage.ttrpg.campaign.campaignKey) throw new Error('当前冒险与冻结来源不一致')
   await verifyTtrpgOpenSessionSituationHashesV1(runtime.openRun?.situationReceipts ?? [])
+  await verifyTtrpgOpenEntityStateV1(state, source.runtimePackage.ttrpg)
   await verifyTtrpgOpenPrivateChoiceHashesV1(runtime.openRun?.operations ?? [])
   await verifyTtrpgOpenManualEpochsV1(runtime.openRun?.coordination.epochs ?? [])
   return { session, content: source.runtimePackage.ttrpg, state, runtime, seats: await readTtrpgSessionParticipantsV2(input.sessionId) }
@@ -303,7 +306,7 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
   let canHumanHost = false
   try { assertTtrpgOpenHumanHostV1(auth, input.viewerKey);canHumanHost = true } catch { /* Other players can still read their own table. */ }
   let canDelegateHosting = false
-  if (epoch?.viewerKey === input.viewerKey && !epoch.hostingDelegation) {
+  if (epoch?.viewerKey === input.viewerKey && !epoch.hostingDelegation && !run.entityOperations?.some(o => !o.resolution)) {
     try { createTtrpgOpenHostingDelegationV1(f.state, { epochKey: epoch.epochKey, viewerKey: input.viewerKey,
       maximumCostUsdPerCall: 0, sequence: f.state.lastSequence + 1 }); canDelegateHosting = true } catch { /* Only the eligible original human host sees the grant. */ }
   }
@@ -336,7 +339,7 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
     aiAllowed: current.seat.consent.aiAdviceAllowed && f.content.campaign.runtimePolicy.enabled && gateRecovery?.status !== 'stopped',
     passivePurpose: epoch && ['request-situation', 'request-public-situation'].includes(epoch.triggerKind) ? 'situation-generation' : epoch?.triggerKind === 'request-brief' ? 'stage-brief' : null,
     passiveRecap: Boolean(epoch && isTtrpgOpenPassiveEpochV1(epoch)), manualEpoch: Boolean(epoch?.manualAction),manualActionPending: epoch?.manualAction && !run.operations.some(o => o.authorizationEpochKey === epoch.epochKey) && epoch.viewerKey === input.viewerKey ? { epochKey: epoch.epochKey,requestHash: epoch.manualAction.requestHash } : null,
-    epochKey: epoch?.epochKey ?? null, isEpochStarter: epoch?.viewerKey === input.viewerKey,
+    blockedByEntity: Boolean(run.entityOperations?.some(o => !o.resolution)), epochKey: epoch?.epochKey ?? null, isEpochStarter: epoch?.viewerKey === input.viewerKey,
     remainingCalls: gateRecovery?.status === 'stopped' ? 0 : epoch ? Math.max(0, epoch.budget.maximumCalls - budget!.countedRequests) : f.runtime.epochBudget.maximumCalls,
     consequence: consequence ? { owner: consequence.owner, cycleKey: consequence.cycle.cycleKey, workKey: consequence.work.workKey, operationKey: consequence.operation.operationKey } : null, consequenceApprovals,
     situationStopRepairs, situationRequestStatus: run.coordination.calls.find(c => c.skillId === 'prose.ttrpg-open-situation-propose' && c.authorizationEpochKey === epoch?.epochKey)?.status ?? null,
@@ -447,7 +450,7 @@ export async function readTtrpgOpenHostTableV1(input: TtrpgOpenTableInputV1) {
   assertTtrpgOpenAuthorizationCurrentV1({ authorization: f.runtime.authorization,participants: await readTtrpgSessionParticipantsV2(input.sessionId),viewerKey: input.viewerKey })
   return { ...publicView,host: {
     historicalResponses: await listTtrpgOpenHistoricalResponsesV1(input),
-    canHumanHost: true, worldTurn: run.worldTime.worldTurn, stageStatus: run.stage.status,
+    canHumanHost: true, blockedByEntity: Boolean(run.entityOperations?.some(o => !o.resolution)), worldTurn: run.worldTime.worldTurn, stageStatus: run.stage.status,
     epochKey: epoch?.epochKey ?? null, isEpochStarter: epoch?.viewerKey === input.viewerKey,
     consequence: consequence ? { owner: consequence.owner,cycleKey: consequence.cycle.cycleKey,workKey: consequence.work.workKey,operationKey: consequence.operation.operationKey } : null,
     consequenceApprovals: [], privateChoiceReviews: tablePrivateChoiceReviewsV1(f),gateRecovery: tableGateRecoveryV1(f),humanNarrationRepairs,

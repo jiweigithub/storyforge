@@ -1,3 +1,4 @@
+import { ttrpgOpenEntityIdentityCatalogV1, ttrpgOpenEntityReferenceVisibleV1, ttrpgOpenEntityParameterAllowedV1 } from './open-entity-catalog'
 import { ttrpgOpenSituationCatalogV1, ttrpgOpenSessionSituationActorAccessV1 } from './open-session-situation-catalog'
 /** Human projection of the existing frozen rules. No hidden clue text or GM templates. */
 import type { ProductRuntimeState } from '../types'
@@ -12,8 +13,9 @@ export function buildTtrpgOpenManualCatalogV1(input: {
   state: ProductRuntimeState; content: TtrpgRuntimeContentV2; runtime: TtrpgRuntimeStateV2; view: HumanView; actorKey: string;
 }) {
   const { state,content,runtime,view,actorKey } = input,location = state.entities[actorKey].locationKey
-  const known = (ref: string) => ref === actorKey || content.campaign.entityBindings.some(b => b.bindingKey === ref
-    && (b.audience === 'public' || b.audience === 'party' || b.audience === 'private' && b.knownByActorKeys.includes(actorKey)))
+  const entityCatalog = ttrpgOpenEntityIdentityCatalogV1(content, runtime.openRun?.entityOperations ?? [])
+  const known = (ref: string) => ref === actorKey || entityCatalog.some(b => b.entityKey === ref
+    && ttrpgOpenEntityReferenceVisibleV1(b.audience, b.recipientActorKeys, actorKey, false, b.dynamic))
   const entities = Object.values(state.entities).filter(e => known(e.entityKey) && e.lifecycleStatus === 'active')
   const targets = entities.filter(e => e.entityKey === actorKey || (e.kind === 'location' ? e.entityKey === location : e.locationKey === location))
     .map(e => ({ key: e.entityKey,name: e.name,kind: e.kind === 'location' ? 'location' as const : e.kind === 'item' ? 'item' as const : e.entityKey === actorKey ? 'self' as const : 'actor' as const }))
@@ -21,7 +23,7 @@ export function buildTtrpgOpenManualCatalogV1(input: {
     key: JSON.stringify([t.planKey,p.parameterKey]),templateKey: t.planKey,parameterKey: p.parameterKey,required: p.required,
     options: entities.filter(e => {
       const kind = e.kind === 'location' ? 'location' : e.kind === 'item' ? 'item' : 'actor'
-      return p.entityKinds.includes(kind) && (p.allowedRefs.includes(e.entityKey) || p.allowDynamicFromTemplateKeys.includes(String(e.attributes.templateKey)))
+      return p.entityKinds.includes(kind) && (p.allowedRefs.includes(e.entityKey) || ttrpgOpenEntityParameterAllowedV1(runtime.openRun, e.entityKey, p.allowDynamicFromTemplateKeys))
     }).map(e => ({ key: e.entityKey,name: e.name })),
   })))
   const rules = view.rules.actions.flatMap(action => {

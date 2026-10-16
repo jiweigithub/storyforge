@@ -50,6 +50,7 @@ export async function prepareTtrpgOpenBranchStateV1(input: {
   if (runtime.openRun) {
     runtime.openRun.coordination = { activeEpochKey: null, epochs: [], calls: [] }
     runtime.openRun.operations = []; runtime.openRun.ruleReceipts = []
+    if (runtime.openRun.entityOperations) runtime.openRun.entityOperations = runtime.openRun.entityOperations.filter(row => row.resolution?.kind === "materialized")
     // Keep the game turn; establish the new local event-order boundary. Parent time proof remains in the capsule.
     runtime.openRun.worldTime.lastAdvancedByEventSequence = -1
   }

@@ -1,3 +1,4 @@
+import { ttrpgOpenEntityIdentityCatalogV1, ttrpgOpenEntityReferenceVisibleV1 } from './open-entity-catalog'
 import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
 import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { parseTtrpgOpenInteractionBindingV1,assertTtrpgOpenInteractionActionV1 } from './open-interaction'
@@ -134,20 +135,23 @@ export function ttrpgOpenPredicateContextV1(state: ProductRuntimeState, content:
       fronts: Object.fromEntries(runtime.openRun.fronts.map(front => [front.frontKey, { currentStageKey: front.stageKey,
         escalationStages: content.campaign.fronts.find(definition => definition.frontKey === front.frontKey)?.escalationStages ?? [] }])),
     },
-    actors: Object.fromEntries(content.campaign.characterTemplates.map(actor => [actor.characterKey, {
-      locationRef: state.entities[actor.characterKey]?.locationKey ?? null,
-      itemKeys: Object.values(product.inventory.items).filter(item => item.ownerRef === actor.characterKey && item.quantity > 0 && !item.stateTags.includes('broken'))
+    actors: Object.fromEntries(ttrpgOpenEntityIdentityCatalogV1(content, runtime.openRun.entityOperations ?? []).filter(row => row.kind === 'actor').map(identity => {
+      const actor = content.campaign.characterTemplates.find(row => row.characterKey === identity.templateKey)!
+      return [identity.entityKey, {
+      locationRef: state.entities[identity.entityKey]?.locationKey ?? null,
+      itemKeys: Object.values(product.inventory.items).filter(item => item.ownerRef === identity.entityKey && item.quantity > 0 && !item.stateTags.includes('broken'))
         .flatMap(item => [item.itemInstanceId, item.definitionRef]),
-      abilityKeys: availableAbilityKeys(actor.characterKey, [...new Set([...actor.actionKeys,
-        ...Object.values(product.inventory.items).filter(item => item.ownerRef === actor.characterKey && item.quantity > 0 && !item.stateTags.includes('broken'))
+      abilityKeys: availableAbilityKeys(identity.entityKey, [...new Set([...actor.actionKeys,
+        ...Object.values(product.inventory.items).filter(item => item.ownerRef === identity.entityKey && item.quantity > 0 && !item.stateTags.includes('broken'))
           .flatMap(item => rulePack.items.find(definition => definition.key === item.definitionRef)?.grantedActionKeys ?? [])])]),
       resources: Object.fromEntries(content.rulePack.content.resources.map(resource => [resource.key,
-        Number(state.entities[actor.characterKey]?.attributes[`resource.${resource.key}`])])),
-    }])),
+        Number(state.entities[identity.entityKey]?.attributes[`resource.${resource.key}`])])),
+    }]
+    })),
     situations: { active: runtime.openRun.situations.active, templates: ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).templates },
     chaos: runtime.openRun.chaos.value, worldTurn: runtime.openRun.worldTime.worldTurn,
     // Existence and current availability are separate: an exhausted/condition-blocked frozen ability is a valid false predicate.
-    knownRefs: [...new Set([...ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).templates.map(t => t.templateKey), ...content.campaign.entityBindings.map(binding => binding.bindingKey),
+    knownRefs: [...new Set([...ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).templates.map(t => t.templateKey), ...ttrpgOpenEntityIdentityCatalogV1(content, runtime.openRun.entityOperations ?? []).map(binding => binding.entityKey),
       ...rulePack.actions.map(action => action.key), ...rulePack.items.map(item => item.key), ...rulePack.resources.map(resource => resource.key)])],
   }
 }
@@ -214,9 +218,8 @@ export async function createTtrpgOpenRulePlanV1(input: {
   if (!actor || actor.lifecycleStatus !== 'active' || !location || input.state.entities[location]?.kind !== 'location') fail('行动者缺少可解析地点或不可行动')
   const readableBinding = (entityKey: string) => {
     if (entityKey === request.actorKey) return true
-    const binding = input.content.campaign.entityBindings.find(binding => binding.bindingKey === entityKey)
-    return binding?.audience === 'public' || binding?.audience === 'party'
-      || (binding?.audience === 'private' && binding.knownByActorKeys.includes(request.actorKey))
+    const binding = ttrpgOpenEntityIdentityCatalogV1(input.content, run.entityOperations ?? []).find(binding => binding.entityKey === entityKey)
+    return Boolean(binding && ttrpgOpenEntityReferenceVisibleV1(binding.audience, binding.recipientActorKeys, request.actorKey, false, binding.dynamic))
   }
   const target = request.targetKey === null ? null : input.state.entities[request.targetKey]
   if (request.targetKey !== null && !readableBinding(request.targetKey)) fail('目标不在该行动者获授权的信息范围')

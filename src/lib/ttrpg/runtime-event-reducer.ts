@@ -1,3 +1,4 @@
+import { applyTtrpgOpenEntityEventV1 } from './open-entity-reducer'
 import { applyTtrpgOpenSessionSituationEventV1 } from './open-session-situation-reducer'
 import { TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1, assertTtrpgOpenPublicSituationOriginalScopeV1 } from './open-public-situation-authorization-contract'
 import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1, assertTtrpgOpenSituationEpochAuthorityV1, assertTtrpgOpenSituationWindowEventV1 } from './open-coordination'
@@ -84,7 +85,7 @@ export function applyTtrpgRuntimeEventV1(
   payload: ProductRuntimeJsonObjectV1,
 ): ProductRuntimeState {
   assertTtrpgOpenSituationWindowEventV1(state.ttrpg?.sessionKey ? parseTtrpgRuntimeStateV2(state.ttrpg) : null, event.type)
-  if (applyTtrpgOpenSessionSituationEventV1(state, event, payload) || applyTtrpgOpenMemoryEventV1(state, event, payload)) {
+  if (applyTtrpgOpenEntityEventV1(state, event, payload) || applyTtrpgOpenSessionSituationEventV1(state, event, payload) || applyTtrpgOpenMemoryEventV1(state, event, payload)) {
     state.ttrpg = parseTtrpgRuntimeStateV2(state.ttrpg)!
     state.lastSequence = event.sequence
     return state

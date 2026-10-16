@@ -1,4 +1,5 @@
 import TtrpgOpenBriefPanel from './TtrpgOpenBriefPanel'
+import TtrpgOpenEntityPanel from './TtrpgOpenEntityPanel'
 import TtrpgOpenSituationPanel from './TtrpgOpenSituationPanel'
 import TtrpgOpenWorldPatchPanel from './TtrpgOpenWorldPatchPanel'
 import TtrpgOpenHistoricalResponses from './TtrpgOpenHistoricalResponses'
@@ -56,6 +57,7 @@ export default function TtrpgOpenHostTable(props: TtrpgPlayTablePropsV1 & { view
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenMemoryPanel key={`memory:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenBriefPanel key={`brief:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenSituationPanel key={`situation:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
+    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenEntityPanel key={`entity:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenWorldPatchPanel key={`patch:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenTableConversation key={`${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => { await job() })} />}
     {host && <>
@@ -88,8 +90,8 @@ export default function TtrpgOpenHostTable(props: TtrpgPlayTablePropsV1 & { view
           <button disabled={!draft.trim()} onClick={() => void perform(async () => { await recordTtrpgOpenTableHumanNarrationV1({ ...input(),operationKey: op.operationKey,text: draft,reason: 'host-authored' });setDraft('');setNotice('主持叙述已保存。') })}>确认保存主持叙述</button>
         </fieldset>}
       </section>}
-      {!op && <p>当前没有等待处理的行动。玩家可在自己的桌面提出下一步行动。</p>}
-      {!op && host.epochKey && host.isEpochStarter && <button disabled={busy} onClick={() => void perform(async () => { await finishTtrpgOpenTableWindowV1(input()) })}>结束本轮主持授权</button>}
+      {!op && <p>{host.blockedByEntity ? '请先在本局对象面板确认或放弃当前计划。' : '当前没有等待处理的行动。玩家可在自己的桌面提出下一步行动。'}</p>}
+      {!op && !host.blockedByEntity && host.epochKey && host.isEpochStarter && <button disabled={busy} onClick={() => void perform(async () => { await finishTtrpgOpenTableWindowV1(input()) })}>结束本轮主持授权</button>}
     </>}
   </section>
 }

@@ -1,3 +1,5 @@
+import { ttrpgOpenEntityIdentityCatalogV1, ttrpgOpenEntityReferenceVisibleV1 } from './open-entity-catalog'
+import { verifyTtrpgOpenEntityStateV1 } from './open-entity-proof'
 import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
 import { verifyTtrpgOpenSessionSituationHashesV1 } from './open-session-situation-proof'
 import { verifyTtrpgOpenManualEpochsV1 } from './open-manual-action'
@@ -86,6 +88,7 @@ async function loadOpenPlayerProjectionV1(input: OpenPlayerReadV1, humanViewerKe
     || runtime.product.campaignKey !== content.campaign.campaignKey) throw new Error('[ttrpg-open-context] 团局没有有效冻结来源与授权')
   const participants = await readTtrpgSessionParticipantsV2(input.sessionId)
   await verifyTtrpgOpenSessionSituationHashesV1(runtime.openRun.situationReceipts ?? [])
+  await verifyTtrpgOpenEntityStateV1(state, content)
   await verifyTtrpgOpenPrivateChoiceHashesV1(runtime.openRun.operations)
   await verifyTtrpgOpenManualEpochsV1(runtime.openRun.coordination.epochs)
   await verifyTtrpgOpenOracleJournalV1({ receipts: runtime.openRun.oracleReceipts ?? [], rulePack: content.rulePack.content,
@@ -109,10 +112,11 @@ async function loadOpenPlayerProjectionV1(input: OpenPlayerReadV1, humanViewerKe
   } else if (!seat.consent.aiAdviceAllowed) throw new Error('[ttrpg-open-context] 该角色未授权 AI 读取与建议')
   const visible = (audience: string, knownBy: readonly string[]) => audience === 'public' || audience === 'party'
     || (audience === 'private' && knownBy.includes(input.actorKey))
+  const entityCatalog = ttrpgOpenEntityIdentityCatalogV1(content, runtime.openRun.entityOperations ?? [])
   const visibleRef = (ref: string | null) => {
     if (ref === null || ref === input.actorKey) return true
-    const binding = content.campaign.entityBindings.find(binding => binding.bindingKey === ref)
-    return binding === undefined || visible(binding.audience, binding.knownByActorKeys)
+    const binding = entityCatalog.find(binding => binding.entityKey === ref)
+    return binding === undefined || ttrpgOpenEntityReferenceVisibleV1(binding.audience, binding.recipientActorKeys, input.actorKey, false, binding.dynamic)
   }
   const knowledge = projectTtrpgOpenKnowledgeForViewerV1({ entries: runtime.openRun.knowledge, authorization,
     viewerKey: seat.viewerKey, campaign: ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).validationView })
@@ -156,10 +160,10 @@ async function loadOpenPlayerProjectionV1(input: OpenPlayerReadV1, humanViewerKe
       && (!['located-at', 'owns'].includes(fact.predicateKey) || typeof fact.canonicalValue !== 'string' || visibleRef(fact.canonicalValue))).map(fact => ({
       subjectRef: fact.subjectRef, predicateKey: fact.predicateKey, objectRef: fact.objectRef, canonicalValue: fact.canonicalValue,
       authority: fact.authority, asOf: 'release' })),
-    actorsHere: content.campaign.entityBindings.filter(binding => binding.kind === 'actor'
-      && (binding.bindingKey === input.actorKey || visible(binding.audience, binding.knownByActorKeys))
-      && state.entities[binding.bindingKey]?.locationKey === actor.locationKey).map(binding => ({
-        actorKey: binding.bindingKey, name: state.entities[binding.bindingKey].name, role: state.entities[binding.bindingKey].kind })),
+    actorsHere: entityCatalog.filter(binding => binding.kind === 'actor'
+      && (binding.entityKey === input.actorKey || ttrpgOpenEntityReferenceVisibleV1(binding.audience, binding.recipientActorKeys, input.actorKey, false, binding.dynamic))
+      && state.entities[binding.entityKey]?.locationKey === actor.locationKey).map(binding => ({
+        actorKey: binding.entityKey, name: state.entities[binding.entityKey].name, role: state.entities[binding.entityKey].kind })),
     pressureSignals: [
       ...(runtime.openRun.pressureSignals ?? []).filter(signal => signal.audience === 'public' || signal.recipientActorKeys.includes(input.actorKey)).map(signal => ({
         sourceRef: structuredClone(signal.sourceRef), signalText: signal.signalText, atWorldTurn: signal.worldTurn, audience: signal.audience })),
