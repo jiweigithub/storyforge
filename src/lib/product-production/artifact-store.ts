@@ -2874,7 +2874,12 @@ export async function verifyRetainedAvgRawImageArtifactV1(input: {
     || ledger.attempt !== proof.attempt || ledger.errorCode !== null || canonicalProductProductionJsonV2(ledger.usage) !== canonicalProductProductionJsonV2(proof.usage)
     || ledger.candidateHash !== proof.candidateHash || ledger.terminalReceiptHash !== row.producerReceiptHash) throw new Error('[product-production-artifact] 保留输入 producer ledger 尚未准确结算')
   if (!samePreparedProducerArtifactV1({ expected: await preparedStoredArtifactV1(row), actual: proof.artifacts.get(row.artifactKey), importedScopeRebound: proof.importedScopeRebound })) throw new Error('[product-production-artifact] 保留输入与真实 producer candidate 不一致')
-  const { assertAvgRawImageArtifactV1 } = await import('../avg/media-raw-contract')
+  // Reuse admission also calls this read inside its write transaction. Native
+  // module loading can otherwise let IndexedDB commit before the next read.
+  const rawContract = import('../avg/media-raw-contract')
+  const { assertAvgRawImageArtifactV1 } = Dexie.currentTransaction
+    ? await Dexie.waitFor(rawContract)
+    : await rawContract
   await assertAvgRawImageArtifactV1(brief, row)
   const blobs = await verifiedBlobProofsV1({ scope, artifacts: [row], label: 'retained input' })
   const currentBuild = await db.productBuilds.get(build.id), current = await db.productBuildArtifacts.get(row.id), currentBrief = await db.productProductionBriefs.get(briefRow.id)

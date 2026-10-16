@@ -1,6 +1,6 @@
 # AVG 实施计划与依赖顺序
 
-> L2 · 版本：1.27.0 · 生效：2026-10-16 · 上位条目：E-AVG-01。
+> L2 · 版本：1.28.0 · 生效：2026-10-16 · 上位条目：E-AVG-01。
 > 唯一产品施工入口：[AVG.md](../products/AVG.md)；逐包开工与验收：[工作包卡](AVG-WORK-PACKAGE-CARDS.md)。
 > 系统与表现框架已分支工程验收，最终源码 cf8415e9 的完整 CI/全仓浏览器均成功；真实生成、商业质量校准和作品首戏另验。产品仍为 partial，未合并上线。
 
@@ -41,12 +41,12 @@ AVG-BASE-00A/00B 已通过分支工程验收；本轮自 **AVG-02A1 确定性规
 | 阶段/单元 | 本轮输出与验收门 | 当前状态 |
 |---|---|---|
 | A1 / BASE-01A | AVG 专用冻结参考输入、真实 Data URI 传输、能力/hash/授权、Work-owned Blob、错误/未知结果边界；不升级其他产品 V1 请求 | `eab861ce` 已推送；定向 4 文件/40 测试、35 条 AVG 浏览器及提交前工程门通过；完整 CI 首跑 805/811 文件、4501/4516 项通过，15 项失败；原 timeout 隔离复查 4 项生产失败例及 5 文件/42 项开放世界通过，首跑仍记失败。全仓浏览器 287 通过/2 条件跳过/1 失败，旧科幻标题超时在单文件复跑重现；真实调用 0 |
-| A2 / BASE-01B | 正式明确开始、预算/Context/Run/候选检查点、准确回执、失败与刷新恢复；真实账号的参考输入 smoke | 施工中。默认关闭的实验性图片工作台已接需求/参考授权 → 明确开始共享 Harness → 解析前回执与严格原图接收 → 作者选图 → 配置演出草稿 → 独立采用并生成原生 Preview；含实际 Data URI、IndexedDB/OPFS、pending 刷新及备份 remap。保留原图支持停止/失败后的只读来源证明，并补齐导入失效后的历史完成证据，未授予当前采用或跨 Build 复用。最新 32 文件 / 269 项回归、完整 41/41 条 AVG 浏览器与提交前工程门通过（工作包 §3.1～§3.6）；受控 HTTP + 原创 PNG，实际 provider 调用 0，不代表艺术验收。局部返修/跨 Build 复用、真实账号校准及新提交完整 CI 未完成 |
+| A2 / BASE-01B | 正式明确开始、预算/Context/Run/候选检查点、准确回执、失败与刷新恢复；真实账号的参考输入 smoke | 施工中。默认关闭的实验性图片工作台已接需求/参考授权 → 明确开始共享 Harness → 解析前回执与严格原图接收 → 作者选图 → 配置演出草稿 → 独立采用并生成原生 Preview；含实际 Data URI、IndexedDB/OPFS、pending 刷新及备份 remap。前包 32 文件 / 269 项回归、41/41 条 AVG 浏览器通过；新增相同冻结批次的明确原图保留、子版本零调用复验与局部重做，连续返修/导入后返修、无密钥全部复用和未知结果拒绝已有定向证据，工作台路径已通过（工作包 §3.1～§3.7）。新增树最终 35 文件 / 340 项回归、完整 42/42 条 AVG Chromium 与提交前工程门通过，验证期间源码/测试 hash 不变；受控 HTTP + 原创 PNG，实际 provider 调用 0，不代表艺术验收。跨需求变更沿用、真实账号校准及新提交完整 CI 未完成 |
 | A3 / AVG-04A | 需求和合法参考、人物基准→立绘/差分、场景、同物件 icon/detail、质量与作者采用、typed 绑定和局部返修 | 待施工；固定/已采用文本即可，不等故事 Agent |
 | A4 / BASE-02 + AVG-04B | 已核实的 TTS 能力、音色权利、准确台词/演法版本、实际 clip/技术检查/审听、逐句绑定与连续播放 | 待施工；不从图片/视频能力推断 TTS 可用 |
 | A5 / 媒资联合验收 | 实际生成与参考家族、真实配音、舞台/库存/详情/台词消费、刷新/旧版本/备份；费用与拒绝样本保留 | 待前项完成；工程、provider、艺术/审听与商业作品分别结论 |
 
-最新基础代码在 `avg-media-harness-20261016` / `feat/avg-media-harness-20261016` 继续施工，并正常快进远程主审查分支；`avg-media-production-20261016` 的本地文件冻结在 `eab861ce`，保留首跑与复跑证据。共享主检出不参与施工。上一基础提交 `cd46f1cb` 的托管 CI [38850452054](https://github.com/yuanbw2025/storyforge/actions/runs/38850452054) 已失败：812 文件中 811 通过，4532 项中 4531 通过，新增 producer 读取证明用例 15 秒超时。新接缝复现写事务中并行 `Dexie.waitFor` 竞争，已改为顺序证明计算且保留同一校验；定向复验通过不替代完整重验。当前 [Draft PR #160](https://github.com/yuanbw2025/storyforge/pull/160) 保持审查态，未合并部署。
+最新代码在独立 `avg-media-recovery-20261016` / `feat/avg-media-recovery-20261016` 继续施工，正常快进远程主审查分支；旧 `avg-media-harness-20261016` 冻结配置页面，保留作者填写中的浏览器配置；`avg-media-production-20261016` 的本地文件冻结在 `eab861ce`，保留首跑与复跑证据。共享主检出不参与施工。上一基础提交 `cd46f1cb` 的托管 CI [38850452054](https://github.com/yuanbw2025/storyforge/actions/runs/38850452054) 已失败：812 文件中 811 通过，4532 项中 4531 通过，新增 producer 读取证明用例 15 秒超时。新接缝复现写事务中并行 `Dexie.waitFor` 竞争，已改为顺序证明计算且保留同一校验；定向复验通过不替代完整重验。当前 [Draft PR #160](https://github.com/yuanbw2025/storyforge/pull/160) 保持审查态，未合并部署。
 
 本轮输入为 AVG Work 的已确认事实/系统/文本和合法参考，输出为产品拥有的候选字节、采用回执、绑定与新 Build；世界只读。A1 不新增表/上下文/正式写域，复用 `avgDraftMedia`、`mediaBlobObjects` 的登记生命周期；A2/A3 如需新的正式读写，先登记 Skill/Context/Adoption，再启用入口。无本机配置时继续工程施工，不伪造真实 provider 成功。
 
@@ -60,7 +60,7 @@ A1 工作树保持冻结；A2 在 `avg-media-harness-20261016` / `feat/avg-media
 | AVG-CAL-00 | 准备中 | AVG-00 | 指定版本/语言/连续场景参照、rubric 锚点、首批功能/设备/投入矩阵与专业岗位启用条件 |
 | AVG-BASE-00A | 分支验收 | AVG-00 | 公共 Package/Preview/Release Manifest V2 分派、hash、嵌套导入/运行来源兼容；不实现新玩法 |
 | AVG-BASE-00B | 分支验收 | AVG-BASE-00A | AVG Settings/Module/Presentation/Binding、专业工件/消费者 typed schema 与作者输入采用接缝；未登记专业 AI 和新运行能力继续关闭 |
-| AVG-BASE-01 | 施工中：A1 定向通过，A2 待接入 | AVG-BASE-00B | AVG 专用真实参考/能力/费用/未知结果 receipt；未证明第二调用方需要前不扩公共 V1 请求 |
+| AVG-BASE-01 | 施工中：A1 定向通过，A2 已接实验工作台与局部重做，真实校准待验 | AVG-BASE-00B | AVG 专用真实参考/能力/费用/未知结果 receipt；未证明第二调用方需要前不扩公共 V1 请求 |
 | AVG-BASE-02 | QUEUED | AVG-BASE-01 | voice 传输/真实 clip/对齐/权利；不阻塞授权音频导入和播放器研发 |
 | AVG-01A | LATER | AVG-BASE-00B, AVG-CAL-00 | S2 会谈、制作/来源、故事/人物/路线意图；不要求最终系统或剧本 |
 | AVG-02A1 | 分支验收 | AVG-BASE-00B | 先交付确定性 system-plan/规则编译和只读模拟；专业设计 Agent 后置，不依赖故事 |

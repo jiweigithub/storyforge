@@ -4,7 +4,7 @@ import { useAIConfigStore } from '../../src/stores/ai-config'
 import { prepareNativeAvgAssembly } from '../helpers/avg-production-assembly-fixture'
 import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
 import { saveAvgVisualBatchDraftV1, prepareAvgAssemblyBriefV1, startAvgAssemblyV1, stageAvgWorkspaceInputV1,
-  confirmAvgWorkspaceInputV1, runAvgAssemblyV1, stageAvgMediaChoiceV2, configureAvgChosenMediaDraftV2 } from '../../src/lib/avg/assembly-service'
+  confirmAvgWorkspaceInputV1, runAvgAssemblyV1, stageAvgMediaChoiceV2, configureAvgChosenMediaDraftV2, prepareAvgImageRecoveryBriefV1 } from '../../src/lib/avg/assembly-service'
 import { deterministicRegionMapPngV1 } from '../../src/lib/product-production/production-executor'
 import { readProductProductionDetailsV1, stopProductProductionV1 } from '../../src/lib/product-production/service'
 import { verifyStoredProductBuildPreview } from '../../src/lib/product-production/preview-manifest'
@@ -17,6 +17,7 @@ import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '
 import { seedCurrentProductWorld } from '../helpers/current-product-world'
 import * as mediaBlobStore from '../../src/lib/product-production/media-blob-store'
 import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
+import { prepareAvgImageRecoveryV1 } from '../../src/lib/avg/media-recovery'
 
 const requirement = (): AvgVisualProductionRequirementV1 => ({ requirementKey: 'desk.background', revision: 1,
   assetKey: 'avg.generated.desk', name: '原创工程背景', altText: '仅用于管线验证的原创色块',
@@ -49,6 +50,14 @@ async function response() {
   const data = new Uint8Array(await deterministicRegionMapPngV1({ width: 576, height: 324, palette: ['#18213b', '#39506b', '#c8dce8'] }))
   let binary = ''; for (let i = 0; i < data.length; i += 16384) binary += String.fromCharCode(...data.subarray(i, i + 16384))
   return JSON.stringify({ data: [{ b64_json: btoa(binary) }] })
+}
+const secondaryRequirement=():AvgVisualProductionRequirementV1=>({...requirement(),requirementKey:'desk.reference',assetKey:'avg.generated.reference',
+  consumer:{consumerKey:'desk.reference',domain:'reference',slot:'style',subjectKey:'desk',sceneKey:null,lineKey:null,required:false,fallback:'omit'},triggerBeatKey:null})
+async function recover(s:Awaited<ReturnType<typeof start>>,keys=['desk.background']){
+  const build=(await db.productBuilds.get(s.buildId))!
+  const prepared=await prepareAvgImageRecoveryBriefV1({scope:s.scope,productionId:s.productionId,expectedDraftRevision:(await readAvgDraftV1(s.scope)).revision,
+    expectedBuildId:s.buildId,expectedBuildRevision:build.stateRevision,retainedRequirementKeys:keys,declaration:'明确保留准确原图，仅对未保留项授权新版本中的一次请求；工程校准非艺术验收'})
+  return start({...s,details:prepared})
 }
 
 describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/decoder', () => {
@@ -232,6 +241,109 @@ describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/deco
     expect(await db.productBuilds.get(s.buildId)).toEqual(build)
     expect(dispatch).toHaveBeenCalledTimes(2)
   })
+
+  it('a fresh child revalidates the good image with zero calls, regenerates only the failed item, and compiles after new author choices', async () => {
+    const body=await response(),dispatch=vi.fn().mockResolvedValueOnce(new Response(body,{status:200}))
+      .mockResolvedValueOnce(new Response('{"error":"controlled failure"}',{status:401})).mockResolvedValueOnce(new Response(body,{status:200}))
+    vi.stubGlobal('fetch',dispatch)
+    const parent=await start(await prepare([requirement(),secondaryRequirement()]));await confirmSources(parent)
+    expect((await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId})).buildStatus).toBe('recovery-required')
+    const old=(await db.productBuilds.get(parent.buildId))!,original=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([parent.buildId,'avg.media.raw.desk.background']).first())!
+    const child=await recover(parent);expect(child.buildId).not.toBe(parent.buildId)
+    expect(child.details.executionBrief!.productionBudget.maximumMediaCalls).toBe(1)
+    expect(JSON.parse(child.details.build!.planJson).tasks.find((t:any)=>t.taskKey==='avg.media.generate.desk.background')).toMatchObject({kind:'avg-media-image-reuse',executionMode:'deterministic',budgetReservation:{mediaCalls:0}})
+    await confirmSources(child)
+    expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('building')
+    expect(dispatch).toHaveBeenCalledTimes(3)
+    const first=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([child.buildId,original.artifactKey]).first())!
+    expect(first).toMatchObject({status:'accepted',payloadJson:original.payloadJson,metadataJson:original.metadataJson,contentHash:original.contentHash,blobObjectId:original.blobObjectId})
+    expect(first.producerRunId).not.toBe(original.producerRunId);expect(first.producerReceiptHash).not.toBe(original.producerReceiptHash)
+    expect(JSON.parse((await db.productBuilds.get(child.buildId))!.budgetLedgerJson).tasks['avg.media.generate.desk.background'].usage).toMatchObject({mediaCalls:0,costUsd:0})
+    expect((await db.agentRunEvents.where('runId').equals(first.producerRunId!).toArray()).some(e=>e.type==='evidence.artifact.recorded'&&JSON.parse(e.payloadJson).artifactKind==='raw-response')).toBe(false)
+    expect(await db.productBuildArtifacts.where('buildId').equals(child.buildId).filter(r=>r.artifactKey.startsWith('avg.media.choice.')).count()).toBe(0)
+    for(const r of child.details.executionBrief!.avgAssembly!.version===2?child.details.executionBrief!.avgAssembly!.mediaBatch.requirements:[]){
+      const raw=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([child.buildId,`avg.media.raw.${r.requirementKey}`]).first())!
+      const candidate=await stageAvgMediaChoiceV2({scope:child.scope,productionId:child.productionId,requirementKey:r.requirementKey,rawVersion:raw.version,rawContentHash:raw.contentHash,declaration:'重新查看并确认当前 Build 的准确原图；工程验证'})
+      await confirmAvgWorkspaceInputV1({scope:child.scope,productionId:child.productionId,artifactKey:candidate.artifactKey,candidateVersion:candidate.version,candidateHash:JSON.parse(candidate.metadataJson).candidateHash})
+    }
+    await configureAvgChosenMediaDraftV2({scope:child.scope,productionId:child.productionId,expectedDraftRevision:(await readAvgDraftV1(child.scope)).revision})
+    await confirm(child,'avg.author.stage')
+    expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('preview-ready')
+    expect(await db.productBuilds.get(parent.buildId)).toEqual(old)
+    const importedId=await importProjectJSON(await exportProjectJSON(child.scope.projectId))
+    const imported=(await db.productBuilds.where('projectId').equals(importedId).filter(b=>b.buildNumber===2).first())!
+    const preview=await verifyStoredProductBuildPreview(imported)
+    expect(preview!.runtimePackage.productType).toBe('avg')
+    expect(dispatch).toHaveBeenCalledTimes(3)
+  },15_000)
+
+  it('repeated child repair verifies retained provenance recursively, including a remapped stopped child', async () => {
+    const body=await response(),dispatch=vi.fn().mockResolvedValueOnce(new Response(body,{status:200}))
+      .mockResolvedValueOnce(new Response('{}',{status:401})).mockResolvedValueOnce(new Response('{}',{status:401})).mockResolvedValueOnce(new Response(body,{status:200}))
+    vi.stubGlobal('fetch',dispatch)
+    const parent=await start(await prepare([requirement(),secondaryRequirement()]));await confirmSources(parent)
+    await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId})
+    const child=await recover(parent);await confirmSources(child)
+    expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('recovery-required')
+    const importedId=await importProjectJSON(await exportProjectJSON(child.scope.projectId))
+    const imported=(await db.productBuilds.where('projectId').equals(importedId).filter(b=>b.buildNumber===2).first())!
+    const remapped={...child,scope:{projectId:importedId,worldId:imported.worldId,workId:imported.workId},productionId:imported.productionId,buildId:imported.id!}
+    const grandchild=await recover(remapped);await confirmSources(grandchild)
+    expect((await runAvgAssemblyV1({scope:grandchild.scope,productionId:grandchild.productionId})).buildStatus).toBe('building')
+    const good=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([grandchild.buildId,'avg.media.raw.desk.background']).first())!
+    expect(JSON.parse(good.qualityJson).retainedOrigin.buildNumber).toBe(2)
+    expect(JSON.parse((await db.productBuilds.get(grandchild.buildId))!.budgetLedgerJson).tasks['avg.media.generate.desk.background'].usage.mediaCalls).toBe(0)
+    expect(dispatch).toHaveBeenCalledTimes(4)
+  },15_000)
+
+  it('all-retained recovery works without a key and unknown-result regeneration is rejected before changing the Brief', async () => {
+    const body=await response(),dispatch=vi.fn(async()=>new Response(body,{status:200}));vi.stubGlobal('fetch',dispatch)
+    const parent=await start(await prepare());await confirmSources(parent);await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId})
+    await stopProductProductionV1({scope:parent.scope,production:(await readProductProductionDetailsV1(parent.scope,parent.productionId,['avg'])).production})
+    useAIConfigStore.getState().setConfig({apiKey:''})
+    const child=await recover(parent);await confirmSources(child)
+    expect(child.details.executionBrief!.productionBudget.maximumMediaCalls).toBe(0)
+    expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('building')
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    useAIConfigStore.getState().setConfig({apiKey:'test-only-agnes-no-network'})
+    const unknown=await start(await prepare([requirement(),secondaryRequirement()]));await confirmSources(unknown)
+    dispatch.mockImplementationOnce(async()=>new Response(body,{status:200})).mockImplementationOnce(async()=>new Response('{"task_id":"controlled-unknown"}',{status:202}))
+    await runAvgAssemblyV1({scope:unknown.scope,productionId:unknown.productionId})
+    const before={briefs:await db.productProductionBriefs.count(),builds:await db.productBuilds.count(),runs:await db.agentRuns.count()}
+    await expect(recover(unknown)).rejects.toThrow(/未知.*封账|未知的调用/)
+    expect({briefs:await db.productProductionBriefs.count(),builds:await db.productBuilds.count(),runs:await db.agentRuns.count()}).toEqual(before)
+    expect(dispatch).toHaveBeenCalledTimes(3)
+  },15_000)
+
+  it('stale recovery, changed routes, forged proofs and damaged source bytes reject without changing production authority', async () => {
+    const body = await response(), dispatch = vi.fn().mockResolvedValueOnce(new Response(body, { status: 200 }))
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }))
+    vi.stubGlobal('fetch', dispatch)
+    const parent = await start(await prepare([requirement(), secondaryRequirement()])); await confirmSources(parent)
+    await runAvgAssemblyV1({ scope: parent.scope, productionId: parent.productionId })
+    const build = (await db.productBuilds.get(parent.buildId))!
+    const input = { scope: parent.scope, productionId: parent.productionId, expectedDraftRevision: (await readAvgDraftV1(parent.scope)).revision,
+      expectedBuildId: parent.buildId, expectedBuildRevision: build.stateRevision, retainedRequirementKeys: ['desk.background'], declaration: '核对后保留原图' }
+    const snapshot = async () => ({ production: await db.productProductions.get(parent.productionId),
+      draft: await readAvgDraftV1(parent.scope), briefs: await db.productProductionBriefs.toArray(), builds: await db.productBuilds.toArray(), runs: await db.agentRuns.toArray() })
+    const before = await snapshot()
+    await expect(prepareAvgImageRecoveryBriefV1({ ...input, expectedBuildRevision: build.stateRevision + 1 })).rejects.toThrow(/停止|失败/)
+    useAIConfigStore.getState().setConfig({ baseUrl: 'https://apihub.agnes-ai.com/changed/v1' })
+    await expect(prepareAvgImageRecoveryBriefV1(input)).rejects.toThrow(/路由已改变/)
+    useAIConfigStore.getState().setConfig({ baseUrl: 'https://apihub.agnes-ai.com/v1' })
+    const prepared = await prepareAvgImageRecoveryV1(input), forged = structuredClone(prepared.recovery)
+    forged.retained[0].proof.contentHash = 'f'.repeat(64)
+    await expect(prepareAvgAssemblyBriefV1({ scope: parent.scope, expectedDraftRevision: input.expectedDraftRevision, imageRecovery: forged })).rejects.toThrow(/准确|证明/)
+    const raw = (await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([parent.buildId, 'avg.media.raw.desk.background']).first())!
+    const blob = (await db.mediaBlobObjects.get(raw.blobObjectId!))!
+    expect(blob.backend).toBe('indexeddb')
+    const damaged = new Uint8Array(blob.data!.slice(0)); damaged[0] ^= 1
+    await db.mediaBlobObjects.update(blob.id!, { data: damaged.buffer })
+    await expect(prepareAvgImageRecoveryBriefV1(input)).rejects.toThrow(/哈希不匹配/)
+    await db.mediaBlobObjects.put(blob)
+    expect(await snapshot()).toEqual(before)
+    expect(dispatch).toHaveBeenCalledTimes(2)
+  }, 15_000)
 
   it('route path drift and a disabled start reject before creating a Build or making HTTP requests', async () => {
     const dispatch = vi.fn(); vi.stubGlobal('fetch', dispatch)

@@ -1,4 +1,3 @@
-import { db } from '../db/schema'
 import type { FrozenRuntimeMediaAssetV2, ProductProductionBriefV3 } from '../types'
 import type { ResolvedProductMediaCapabilityV1 } from '../product-production/media-transport'
 import { detectProductImageDimensionsV1, type MediaProviderTransportV1, type MediaTransportResponseV1 } from '../product-production/media-adapters'
@@ -7,10 +6,8 @@ import { putMediaBlobObject, sha256MediaData } from '../product-production/media
 import { ProductProductionDraftRejectedErrorV1, ProductProductionResultUnknownErrorV1,
   type ProductProductionTaskExecutionInputV1, type ProductProductionTaskExecutionResultV1, type ProductProductionTaskUsageV1 } from '../product-production/scheduler'
 import { assertExactRunArtifactBodySafeV1 } from '../memory/evidence-policy'
-import { assertRecordInScope } from '../workspace/scope'
-import { readAvgSystemPlanForCompilationV1 } from './author-artifacts'
+import { readAvgImageTaskSourcesV2 } from './media-task-source'
 import { createAvgDraftReferenceAdapterV1 } from './editor-service'
-import { assertAvgMediaConsumerDeclarationsV1, validateAvgVisualProductionBatchSourceV1 } from './media-source'
 import { assertAvgVisualProductionPolicyV2 } from './media-production-policy'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V1 } from './media-reference-contract'
 import { avgRawMediaArtifactKeyV1 } from './media-production-contract'
@@ -79,22 +76,7 @@ export async function executeAvgMediaImageTaskV2(input: ProductProductionTaskExe
       || input.task.budgetReservation.mediaCalls !== 1 || input.task.budgetReservation.modelCalls !== 0 || !input.contextText.trim()) {
       throw new Error('[avg-media] 图片任务不属于准确的冻结 Harness/Skill/单次调用域')
     }
-    const source = async () => {
-      const build = await db.productBuilds.get(input.buildId)
-      if (!build || !await assertRecordInScope(input.scope, 'productBuilds', build, { owner: 'work' })
-        || build.status !== 'building' || build.controlEpoch !== input.controlEpoch || build.planHash !== input.planHash
-        || build.briefHash !== await hashProductProductionValueV2(brief)) throw new Error('[avg-media] 图片任务来源已 stale')
-      const accepted = await readAvgSystemPlanForCompilationV1({ scope: input.scope, buildId: input.buildId,
-        expectedBuildRevision: build.stateRevision, controlEpoch: input.controlEpoch, includeSceneScripts: true })
-      await validateAvgVisualProductionBatchSourceV1(batch, { systemPlan: accepted.plan, scripts: accepted.scripts.map(s => s.payload),
-        presentation: { aspectRatio: batch.aspectRatio } })
-      assertAvgMediaConsumerDeclarationsV1(batch, accepted.plan)
-      const refs = [accepted.artifact, ...accepted.scripts.map(s => s.artifact)]
-      const actual = input.inputArtifacts.map(row => ({ artifactKey: row.artifactKey, version: row.version, contentHash: row.contentHash }))
-      const sort = (rows: typeof refs) => [...rows].sort((a, b) => a.artifactKey < b.artifactKey ? -1 : a.artifactKey > b.artifactKey ? 1 : 0)
-      if (canonicalProductProductionJsonV2(sort(refs)) !== canonicalProductProductionJsonV2(sort(actual))) throw new Error('[avg-media] Harness 输入不是准确的已采用来源')
-      return accepted
-    }
+    const source = () => readAvgImageTaskSourcesV2(input,brief)
     const accepted = await source(), capability = brief.capabilityRequirements[0]!
     if (capability.capabilityHash !== await hashProductProductionValueV2(AVG_IMAGE_REFERENCE_CAPABILITY_V1)) throw new Error('[avg-media] 图片能力快照已变化，请重新准备批次')
     const resolved = options.mediaCapabilities.get(AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1)

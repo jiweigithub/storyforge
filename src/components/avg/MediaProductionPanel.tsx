@@ -8,6 +8,7 @@ import { parseAvgMediaReferencesV1, type AvgMediaReferenceV1 } from '../../lib/a
 import { importAvgMediaForAssemblyV1 } from '../../lib/avg/editor-service'
 import { configureAvgChosenMediaDraftV2, confirmAvgWorkspaceInputV1, stageAvgMediaChoiceV2, type readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
 import MediaAssetPreview from './MediaAssetPreview'
+import MediaRecoveryPanel from './MediaRecoveryPanel'
 import { inspectConfiguredAgnesImageCapabilityV1 } from '../../lib/product-production/media-transport'
 
 type View = Awaited<ReturnType<typeof readAvgAssemblyWorkspaceV1>>
@@ -94,9 +95,12 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const build = view.details?.build, productionId = view.details?.production.id
   const assembly = view.details?.executionBrief?.avgAssembly
   const currentBatch = assembly?.version === 2 ? assembly.mediaBatch : null
+  const recovery=assembly?.version===2?assembly.imageRecovery:undefined
+  const closed=!!build&&['cancelled','failed','recovery-required'].includes(build.status)
   const accepted = (key: string) => view.artifacts.find(row => row.artifactKey === key && row.status === 'accepted')
   const allChoices = !!currentBatch && currentBatch.requirements.every(r => accepted(avgMediaChoiceArtifactKeyV1(r.requirementKey)))
   const outstanding = currentBatch?.requirements.filter(r => !accepted(avgRawMediaArtifactKeyV1(r.requirementKey))).length ?? 0
+  const newRequests=currentBatch?.requirements.filter(r=>!accepted(avgRawMediaArtifactKeyV1(r.requirementKey))&&!recovery?.retained.some(row=>row.requirementKey===r.requirementKey)).length??0
   const expandedKey = previewKey ?? currentBatch?.requirements.find(r => accepted(avgRawMediaArtifactKeyV1(r.requirementKey)))?.requirementKey
   const enabled = avgMediaProductionEnabledV2()
   const readiness = inspectConfiguredAgnesImageCapabilityV1({ projectId: scope.projectId })
@@ -181,10 +185,13 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
       <button className="lf-action" disabled={disabled || !pending} onClick={() => { setRequirements(workspace.mediaBatch?.requirements ?? []); setPending(false); setName(''); setPrompt(''); setReferences([]); setReferenceKey(''); setAllowedChange(''); resetReferenceConsent(); setError('') }}>撤销未保存的图片需求</button>
       {workspace.mediaBatch && <button className="lf-action" disabled={disabled || !canEdit || !enabled || pending} onClick={() => void onAction(onClear)}>移除尚未使用的生成批次</button>}
       <span>{pending ? '图片需求尚未保存，请保存或撤销后切换分区。' : workspace.mediaBatch ? '图片需求已保存，尚需在制作页确认方案并开始。' : '保存图片需求不会开始调用。'}</span></div>
-    {currentBatch && productionId && build && <section aria-label="本次图片生成与选用"><h5>本次图片生成与选用 · Build #{build.buildNumber}</h5>
+    {currentBatch&&<MediaRecoveryPanel scope={scope} view={view} disabled={disabled||pending} visible={visible} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
+    {currentBatch&&closed&&<section aria-label="已停止的图片调用"><p>本次调用已停止。请先核对原始记录与未知费用，当前不会自动重发。</p><button className="lf-action" disabled>生成本批图片（最多 {outstanding} 次）</button></section>}
+    {currentBatch && productionId && build && !closed && <section aria-label="本次图片生成与选用"><h5>本次图片生成与选用 · Build #{build.buildNumber}</h5>
       <p>本批 {currentBatch.requirements.length} 项，尚待接收 {outstanding} 项。原图接收后逐项确认，再配置并确认演出。</p>
       {!sourcesReady && <p>请先在制作页确认系统规则和全部场景脚本。</p>}
-      <button className="lf-action lf-action-primary" disabled={disabled || pending || !enabled || !readiness.ready || !canAdopt || !sourcesReady || !outstanding} onClick={() => void onGenerate()}>生成本批图片（最多 {outstanding} 次）</button>
+      {recovery&&<p>本方案保留 {recovery.retained.length} 张原图，以零调用复验；其余 {recovery.rerunRequirementKeys.length} 项在本版本至多各请求一次。原图、旧账单和回执留在原版本。</p>}
+      <button className="lf-action lf-action-primary" disabled={disabled || pending || (newRequests>0&&(!enabled||!readiness.ready)) || !canAdopt || !sourcesReady || !outstanding} onClick={() => void onGenerate()}>{recovery?`复验并执行本批图片（最多 ${newRequests} 次新请求）`:`生成本批图片（最多 ${outstanding} 次）`}</button>
       {generating && <button className="lf-action" onClick={onCancel}>停止等待并保留调用记录</button>}
       {currentBatch.requirements.map(r => <RawChoiceCard key={`${build.id}:${r.requirementKey}`} scope={scope} productionId={productionId} requirement={r}
         expanded={visible && expandedKey === r.requirementKey} onExpand={() => setPreviewKey(expandedKey === r.requirementKey ? '' : r.requirementKey)}

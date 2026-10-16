@@ -49,16 +49,17 @@ export function buildAvgMediaAssemblyPlanV2(input: {
   const template = authorInputs[0]!
   const choices: string[] = [], choiceTaskKeys: string[] = [], mediaTasks: ProductProductionPlanTaskV3[] = []
   for (const requirement of mediaBatch.requirements) {
+    const retained = assembly.imageRecovery?.retained.some(r=>r.requirementKey===requirement.requirementKey)??false
     const rawKey = avgRawMediaArtifactKeyV1(requirement.requirementKey), choiceKey = avgMediaChoiceArtifactKeyV1(requirement.requirementKey)
     const taskKey = `avg.media.generate.${requirement.requirementKey}`, choiceTaskKey = `avg.author.media.${requirement.requirementKey}`
-    mediaTasks.push({ ...structuredClone(template), taskKey, kind: 'avg-media-image-generate', lane: 'visual',
+    mediaTasks.push({ ...structuredClone(template), taskKey, kind: retained?'avg-media-image-reuse':'avg-media-image-generate', lane: 'visual',
       outputArtifactKeys: [rawKey], inputArtifactKeys: authorInputs.flatMap(t => t.outputArtifactKeys),
       dependsOn: authorInputs.map(t => t.taskKey), requiredReceipts: authorInputs.map(t => ({ taskKey: t.taskKey, receiptHash: null })),
-      skillId: 'product-production.media-request.v1', executionMode: 'media-provider', capabilityRequirementKeys: [AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1],
+      skillId: retained?null:'product-production.media-request.v1', executionMode: retained?'deterministic':'media-provider', capabilityRequirementKeys: [AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1],
       concurrencyGroup: 'media-provider', subjectLockKeys: [requirement.family.familyKey],
-      maxAttempts: 1, timeoutMs: 360_000, acceptanceGateIds: [`avg.media.raw.received.${requirement.requirementKey}`],
-      budgetReservation: { modelCalls: 0, inputTokens: 20_000, outputTokens: 0, mediaCalls: 1,
-        maximumCostUsd: capability[0].maximumRequestCost, durationMs: 360_000, storageBytes: 96 * 1024 * 1024 },
+      maxAttempts: 1, timeoutMs: retained?90_000:360_000, acceptanceGateIds: [`avg.media.raw.received.${requirement.requirementKey}`],
+      budgetReservation: { modelCalls: 0, inputTokens: 20_000, outputTokens: 0, mediaCalls: retained?0:1,
+        maximumCostUsd: retained?0:capability[0].maximumRequestCost, durationMs: retained?60_000:360_000, storageBytes: (retained?4:96) * 1024 * 1024 },
     })
     mediaTasks.push({ ...structuredClone(template), taskKey: choiceTaskKey, kind: 'avg-author-media-choice', lane: 'visual',
       outputArtifactKeys: [choiceKey], inputArtifactKeys: [rawKey], dependsOn: [taskKey],

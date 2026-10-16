@@ -9,8 +9,8 @@ import { assertAvgRawImageArtifactV1 } from './media-raw-contract'
 import { assertAvgMediaConsumerDeclarationsV1, validateAvgVisualProductionBatchSourceV1 } from './media-source'
 import { assertAvgVisualProductionPolicyV2 } from './media-production-policy'
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
-import { sha256MediaData } from '../product-production/media-blob-store'
-import { avgHash } from './protocol-validation'
+import { assertAvgOriginalImageResponseV1 } from './media-response-proof'
+import { readAvgImageRecoverySourceV1 } from './media-recovery'
 
 /** Extra product admission inside the shared sealed-producer transaction.
  * The caller separately verifies exact checkpoint/result/Plan/Blob proof. */
@@ -28,8 +28,10 @@ export async function assertAvgMediaRawProducerAdmissionV2(input: {
   assertAvgVisualProductionPolicyV2(brief)
   if (await hashProductProductionValueV2(brief) !== input.build.briefHash) throw new Error('[avg-media] 原图 Brief 已 stale')
   const raw = await assertAvgRawImageArtifactV1(brief, input.artifact), r = raw.payload.requirement, task = input.task
-  if (task.taskKey !== `avg.media.generate.${r.requirementKey}` || task.kind !== 'avg-media-image-generate'
-    || task.executionMode !== 'media-provider' || task.skillId !== 'product-production.media-request.v1'
+  const retained=brief.avgAssembly.imageRecovery?.retained.some(ref=>ref.requirementKey===r.requirementKey)??false
+  if (task.taskKey !== `avg.media.generate.${r.requirementKey}` || task.kind !== (retained?'avg-media-image-reuse':'avg-media-image-generate')
+    || task.executionMode !== (retained?'deterministic':'media-provider') || task.skillId !== (retained?null:'product-production.media-request.v1')
+    || task.budgetReservation.mediaCalls !== (retained?0:1)
     || task.outputArtifactKeys.length !== 1 || task.outputArtifactKeys[0] !== input.artifact.artifactKey || task.maxAttempts !== 1) {
     throw new Error('[avg-media] 原图 producer 不在准确的已登记图片任务中')
   }
@@ -49,20 +51,19 @@ export async function assertAvgMediaRawProducerAdmissionV2(input: {
     scripts: source.scripts.map(row => row.payload), presentation: { aspectRatio: brief.avgAssembly.mediaBatch.aspectRatio } })
   assertAvgMediaConsumerDeclarationsV1(brief.avgAssembly.mediaBatch, source.plan)
   const quality = JSON.parse(input.artifact.qualityJson) as Record<string, unknown>
-  const evidenceHash = avgHash(quality.responseEvidenceHash, 'responseEvidenceHash')
-  if (quality.received !== true || quality.rawResponseRecorded !== true || quality.headerVerified !== true || quality.contentHashVerified !== true || quality.decoderVerified !== false
-    || canonicalProductProductionJsonV2(quality.sourceRule) !== canonicalProductProductionJsonV2(source.artifact)
+  if ( canonicalProductProductionJsonV2(quality.sourceRule) !== canonicalProductProductionJsonV2(source.artifact)
     || canonicalProductProductionJsonV2(quality.sourceScripts) !== canonicalProductProductionJsonV2(source.scripts.map(row => row.artifact))) {
     throw new Error('[avg-media] 原图接收证据不能冒充解码或替换来源')
   }
-  const events = await db.agentRunEvents.where('runId').equals(input.producerRunId).toArray()
-  if (!events.some(event => {
-    if (event.type !== 'evidence.artifact.recorded') return false
-    const p = JSON.parse(event.payloadJson) as { artifactKind?: string; contentHash?: string; stepId?: string; attempt?: number }
-    return p.artifactKind === 'raw-response' && p.contentHash === evidenceHash && p.stepId === task.taskKey && p.attempt === 1
-  })) throw new Error('[avg-media] 原图缺少准确图片任务的解析前回执事件')
-  const evidence = await db.agentRunArtifacts.where('[projectId+artifactKind+contentHash]').equals([input.scope.projectId, 'raw-response', evidenceHash]).first()
-  if (!evidence || evidence.retentionState !== 'available' || evidence.content === null
-    || await sha256MediaData(new TextEncoder().encode(evidence.content).buffer) !== evidenceHash
-    || new TextEncoder().encode(evidence.content).byteLength !== evidence.byteLength) throw new Error('[avg-media] 原始响应回执缺失或损坏')
+  if(retained){
+    if(input.build.parentBuildNumber!==brief.avgAssembly.imageRecovery!.sourceBuildNumber)throw new Error('[avg-media] 复用原图的父 Build 不一致')
+    const prior=await readAvgImageRecoverySourceV1({scope:input.scope,productionId:input.build.productionId,brief,requirementKey:r.requirementKey})
+    if(quality.schema!=='storyforge.avg.raw-image-revalidation'||quality.version!==1||quality.noProviderRequest!==true||quality.contentHashVerified!==true||quality.decoderVerified!==false
+      ||canonicalProductProductionJsonV2(quality.retainedOrigin)!==canonicalProductProductionJsonV2(prior.proof)
+      ||input.artifact.payloadJson!==prior.artifact.payloadJson||input.artifact.metadataJson!==prior.artifact.metadataJson||input.artifact.rightsJson!==prior.artifact.rightsJson
+      ||input.artifact.contentHash!==prior.artifact.contentHash)throw new Error('[avg-media] 复用原图不能替换旧字节、需求、权利或冒充新请求')
+  }else{
+    if(quality.received!==true||quality.rawResponseRecorded!==true||quality.headerVerified!==true||quality.contentHashVerified!==true||quality.decoderVerified!==false)throw new Error('[avg-media] 原图接收证据不能冒充解码')
+    await assertAvgOriginalImageResponseV1(input.scope,input.producerRunId,task.taskKey,quality)
+  }
 }

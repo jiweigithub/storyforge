@@ -7,15 +7,25 @@ import { AVG_VISUAL_BATCH_LIMIT_V1 } from './media-production-contract'
 export const AVG_IMAGE_PROMPT_DATA_CLASS_V1 = 'image-prompt'
 
 /** A bounded image-only execution budget. No story/model generation is implied. */
-export function avgVisualProductionBudgetV2(count: number, maximumCostUsd: number | null = null): ProductProductionBudgetV3 {
+export function avgVisualProductionBudgetV2(count: number, maximumCostUsd: number | null = null, retained = 0): ProductProductionBudgetV3 {
   if (!Number.isSafeInteger(count) || count < 1 || count > AVG_VISUAL_BATCH_LIMIT_V1) throw new Error('[avg-media] 图片批次数量无效')
+  if (!Number.isSafeInteger(retained)||retained<0||retained>count) throw new Error('[avg-media] 保留原图数量无效')
   return { maximumModelCalls: 0, maximumInputTokens: 100_000 + 20_000 * count, maximumOutputTokens: 0,
-    maximumMediaCalls: count, maximumCostUsd, maximumDurationMs: 120_000 + 360_000 * count,
-    maximumStorageBytes: (64 + 96 * count) * 1024 * 1024 }
+    maximumMediaCalls: count-retained, maximumCostUsd, maximumDurationMs: 120_000 + 360_000 * (count-retained)+60_000*retained,
+    maximumStorageBytes: (64 + 96 * (count-retained)+4*retained) * 1024 * 1024 }
 }
 
 export function avgVisualProductionDataClassesV2(assembly: Pick<AvgAssemblyBriefV2, 'mediaBatch'>): string[] {
   return [...new Set([AVG_IMAGE_PROMPT_DATA_CLASS_V1, ...assembly.mediaBatch.requirements.flatMap(r => r.references.map(ref => ref.dataClass))])].sort()
+}
+
+/** A parent's reuse authority cannot silently authorize its next child. A new
+ * reviewable evolution draft starts without it; the AVG recovery service may
+ * attach a freshly verified selection before any author start. */
+export function resetAvgImageRecoveryForEvolutionV1(brief:ProductProductionBriefV3){
+  if(brief.avgAssembly?.version!==2||!brief.avgAssembly.imageRecovery)return {}
+  const avgAssembly={...brief.avgAssembly};delete avgAssembly.imageRecovery
+  return {avgAssembly,productionBudget:avgVisualProductionBudgetV2(avgAssembly.mediaBatch.requirements.length,brief.productionBudget.maximumCostUsd)}
 }
 
 /** Pure policy validation also reads frozen/portable V2 records when dispatch
@@ -26,7 +36,12 @@ export function assertAvgVisualProductionPolicyV2(brief: ProductProductionBriefV
     throw new Error('[avg-media] 图片生产只接受独立 AVG prototype/internal 组装合同')
   }
   const same = (left: unknown, right: unknown) => canonicalProductProductionJsonV2(left) === canonicalProductProductionJsonV2(right)
-  const budget = avgVisualProductionBudgetV2(a.mediaBatch.requirements.length, brief.productionBudget.maximumCostUsd)
+  const budget = avgVisualProductionBudgetV2(a.mediaBatch.requirements.length, brief.productionBudget.maximumCostUsd, a.imageRecovery?.retained.length??0)
+  if (a.imageRecovery) {
+    const base=brief.evolution?.base
+    if (base?.kind!=='recovery-build'||base.buildNumber!==a.imageRecovery.sourceBuildNumber||base.briefHash!==a.imageRecovery.sourceBriefHash
+      ||base.planHash!==a.imageRecovery.sourcePlanHash||base.controlEpoch!==a.imageRecovery.sourceControlEpoch) throw new Error('[avg-media] 图片恢复必须绑定准确的新 Build 谱系')
+  }
   const c = brief.capabilityRequirements[0], allowed = avgVisualProductionDataClassesV2(a)
   if (brief.capabilityRequirements.length !== 1 || !c || c.requirementKey !== AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1
     || c.mediaClass !== 'image' || c.operation !== 'generate' || c.adapterFamily !== 'agnes' || c.minimumCapabilityVersion !== '1' || !c.required

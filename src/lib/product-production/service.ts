@@ -873,7 +873,8 @@ export function evaluateProductProductionAuthorizationReadinessV1(input: {
   const requiredMediaRequirementKeys = input.brief.capabilityRequirements
     .filter(requirement => requirement.required && ['image', 'music', 'sfx'].includes(requirement.mediaClass))
     .map(requirement => requirement.requirementKey)
-  const requiresImage = input.brief.capabilityRequirements
+  const retainedOnly = input.brief.avgAssembly?.version===2&&input.brief.avgAssembly.imageRecovery?.rerunRequirementKeys.length===0
+  const requiresImage = !retainedOnly&&input.brief.capabilityRequirements
     .some(requirement => requirement.required && requirement.mediaClass === 'image')
   const requiresAudio = input.brief.capabilityRequirements
     .some(requirement => requirement.required && ['music', 'sfx'].includes(requirement.mediaClass))

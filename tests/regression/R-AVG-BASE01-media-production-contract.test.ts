@@ -10,6 +10,7 @@ import {
   parseAvgAuthorMediaChoiceV1, parseAvgVisualProductionBatchV1, parseAvgVisualProductionRequirementV1,
   type AvgVisualProductionRequirementV1,
 } from '../../src/lib/avg/media-production-contract'
+import { parseAvgImageRecoveryV1 } from '../../src/lib/avg/media-recovery-contract'
 
 function requirement(): AvgVisualProductionRequirementV1 {
   return { requirementKey: 'keeper.neutral', revision: 1, assetKey: 'avg.generated.keeper.neutral', name: '值班员平静立绘', altText: '同一服装的值班员',
@@ -24,6 +25,23 @@ function batch(requirements = [requirement()]) {
 const imageBinding = { requirementKey: 'avg.media.image', adapterId: 'agnes.image-2.1-flash.v1', bindingHash: 'd'.repeat(64), endpointRouteHash: 'e'.repeat(64) }
 
 describe('AVG media production inputs and explicit choices', () => {
+  it('恢复合同完整覆盖冻结需求，拒绝重复、错来源、本机 ID 与缺失的保留图', () => {
+    const mediaBatch = parseAvgVisualProductionBatchV1(batch())
+    const proof = { schema: 'storyforge.avg.retained-raw-image-proof', version: 1, buildNumber: 1,
+      briefHash: 'a'.repeat(64), planHash: 'b'.repeat(64), controlEpoch: 0,
+      taskKey: 'avg.media.generate.keeper.neutral', artifactKey: 'avg.media.raw.keeper.neutral', artifactVersion: 1,
+      contentHash: 'c'.repeat(64), inputHash: 'd'.repeat(64), producerReceiptHash: 'e'.repeat(64), candidateHash: 'f'.repeat(64), proofHash: 'a'.repeat(64) }
+    const recovery = { schema: 'storyforge.avg.image-recovery', version: 1, sourceBuildNumber: 1, sourceBuildRevision: 5,
+      sourceBriefHash: proof.briefHash, sourcePlanHash: proof.planHash, sourceControlEpoch: 0, sourceBatchHash: 'b'.repeat(64),
+      retained: [{ requirementKey: 'keeper.neutral', proof }], rerunRequirementKeys: [], declaration: '明确保留并重新验证原图' }
+    expect(parseAvgImageRecoveryV1(recovery, mediaBatch)).toEqual(recovery)
+    for (const invalid of [
+      { ...recovery, retained: [] }, { ...recovery, rerunRequirementKeys: ['keeper.neutral'] },
+      { ...recovery, retained: [...recovery.retained, ...recovery.retained] },
+      { ...recovery, sourceBuildNumber: 2 }, { ...recovery, sourcePlanHash: 'c'.repeat(64) },
+      { ...recovery, retained: [{ requirementKey: 'keeper.neutral', proof: { ...proof, blobObjectId: 42 } }] },
+    ]) expect(() => parseAvgImageRecoveryV1(invalid, mediaBatch)).toThrow()
+  })
   it('原始图与作者选择分别结算，终态必须等到明确选择；V1 继续为零调用', () => {
     const base = { schema: 'storyforge.avg.assembly-brief' as const, version: 1 as const, title: '固定文本', sceneKeys: ['desk'], mediaAssetKeys: [requirement().assetKey], basePackageHash: null }
     const old = buildAvgAssemblyPlanV1({ brief: { avgAssembly: base }, briefHash: 'a'.repeat(64), buildNumber: 1, controlEpoch: 0 })

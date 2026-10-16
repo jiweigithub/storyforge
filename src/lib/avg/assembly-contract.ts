@@ -1,5 +1,6 @@
 import { avgHash, avgKey, avgKeys, avgProtocolBody, avgRecord, avgText } from './protocol-validation'
 import { parseAvgVisualProductionBatchV1, type AvgVisualProductionBatchV1 } from './media-production-contract'
+import { parseAvgImageRecoveryV1, type AvgImageRecoveryV1 } from './media-recovery-contract'
 
 /** Frozen output domain for author assembly. Canonical rules/text remain adopted artifacts. */
 export interface AvgAssemblyBriefV1 {
@@ -16,6 +17,7 @@ export interface AvgAssemblyBriefV2 extends Omit<AvgAssemblyBriefV1, 'version'> 
   version: 2
   mediaBatch: AvgVisualProductionBatchV1
   imageBinding: { requirementKey: string; adapterId: 'agnes.image-2.1-flash.v1'; bindingHash: string; endpointRouteHash: string }
+  imageRecovery?: AvgImageRecoveryV1
 }
 export type AvgAssemblyBrief = AvgAssemblyBriefV1 | AvgAssemblyBriefV2
 /** Experimental production is opt-in. Codecs still read existing records when
@@ -47,9 +49,11 @@ export function parseAvgAssemblyBriefV1(value: unknown): AvgAssemblyBriefV1 {
 }
 
 export function parseAvgAssemblyBriefV2(value: unknown): AvgAssemblyBriefV2 {
-  const r = avgRecord(avgProtocolBody(value), ['schema', 'version', 'title', 'sceneKeys', 'mediaAssetKeys', 'basePackageHash', 'mediaBatch', 'imageBinding'], 'AVG media assembly Brief')
+  const body = avgProtocolBody(value)
+  const hasRecovery = !!body && Object.prototype.hasOwnProperty.call(body, 'imageRecovery')
+  const r = avgRecord(body, ['schema', 'version', 'title', 'sceneKeys', 'mediaAssetKeys', 'basePackageHash', 'mediaBatch', 'imageBinding', ...(hasRecovery?['imageRecovery']:[])], 'AVG media assembly Brief')
   if (r.version !== 2) throw new Error('[avg-media] 媒资组装 Brief 版本无效')
-  const { mediaBatch: rawBatch, imageBinding: rawBinding, ...baseInput } = r
+  const { mediaBatch: rawBatch, imageBinding: rawBinding, imageRecovery, ...baseInput } = r
   const base = parseAvgAssemblyBriefV1({ ...baseInput, version: 1 })
   const mediaBatch = parseAvgVisualProductionBatchV1(rawBatch)
   if (base.sceneKeys.length + 4 + 2 * mediaBatch.requirements.length > 100) throw new Error('[avg-media] 场景、原始候选、作者选择与终态 join 超过共享 100 任务上限')
@@ -61,5 +65,6 @@ export function parseAvgAssemblyBriefV2(value: unknown): AvgAssemblyBriefV2 {
   const b = avgRecord(rawBinding, ['requirementKey', 'adapterId', 'bindingHash', 'endpointRouteHash'], 'AVG image binding')
   if (b.adapterId !== 'agnes.image-2.1-flash.v1') throw new Error('[avg-media] 图片路由必须使用准确的 Agnes adapter')
   return { ...base, version: 2, mediaBatch, imageBinding: { requirementKey: avgKey(b.requirementKey, 'imageBinding.requirementKey'),
-    adapterId: b.adapterId, bindingHash: avgHash(b.bindingHash, 'imageBinding.bindingHash'), endpointRouteHash: avgHash(b.endpointRouteHash, 'endpointRouteHash') } }
+    adapterId: b.adapterId, bindingHash: avgHash(b.bindingHash, 'imageBinding.bindingHash'), endpointRouteHash: avgHash(b.endpointRouteHash, 'endpointRouteHash') },
+    ...(hasRecovery?{imageRecovery:parseAvgImageRecoveryV1(imageRecovery,mediaBatch)}:{}) }
 }

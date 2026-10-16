@@ -7,6 +7,7 @@ import { parseProductRuntimePackageV2 } from '../product-production/runtime-pack
 import { AVG_ASSEMBLY_GATE_IDS_V1, avgMediaAssemblyGateIdsV2 } from './assembly-contract'
 import { compileAdoptedAvgBuildV2 } from './executable-compiler'
 import { executeAvgMediaImageTaskV2 } from './media-production-executor'
+import { executeAvgImageRecoveryTaskV1 } from './media-recovery-executor'
 import type { ResolvedProductMediaCapabilityV1 } from '../product-production/media-transport'
 
 /** V1 remains zero-provider. Opt-in V2 image tasks use the media Harness;
@@ -17,6 +18,7 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
   return async request => {
     const startedAt = Date.now()
     if (request.signal.aborted) throw new DOMException('Aborted','AbortError')
+    if(brief.avgAssembly?.version===2&&request.task.kind==='avg-media-image-reuse')return executeAvgImageRecoveryTaskV1(request,brief)
     if (brief.avgAssembly?.version === 2 && request.task.kind === 'avg-media-image-generate') return executeAvgMediaImageTaskV2(request, {
       brief, mediaCapabilities: options.mediaCapabilities ?? new Map(), imageEndpointRouteHash: options.imageEndpointRouteHash,
     })

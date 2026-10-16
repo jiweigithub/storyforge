@@ -153,3 +153,72 @@ test('author stops an in-flight image request and refresh cannot silently repeat
   expect(evidence.attempt).toMatchObject({ usageKnown: false, usage: { mediaCalls: 1 } })
   expect(requests).toBe(1)
 })
+
+test('author retains the good image and explicitly starts a child that requests only the failed image', async ({page},info)=>{
+  test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION!=='1','Experimental image production is disabled by default')
+  await page.addInitScript(()=>localStorage.setItem('storyforge_guide_completed','e2e'))
+  await page.goto('./avg/library')
+  let png='',requests=0
+  await page.route('https://apihub.agnes-ai.com/v1/images/generations',async route=>{
+    requests++
+    await route.fulfill(requests===2?{status:401,contentType:'application/json',body:'{"error":"controlled second-image failure"}'}
+      :{status:200,contentType:'application/json',body:JSON.stringify({data:[{b64_json:png}]})})
+  })
+  const seeded=await page.evaluate(async()=>{
+    const load=new Function('p','return import(p)') as(p:string)=>Promise<any>
+    const [fixture,service,draft,config]=await Promise.all([load('/storyforge/tests/helpers/avg-production-assembly-fixture.ts'),load('/storyforge/src/lib/avg/assembly-service.ts'),load('/storyforge/src/lib/avg/draft-service.ts'),load('/storyforge/src/stores/ai-config.ts')])
+    config.useAIConfigStore.getState().setConfig({provider:'agnes',apiKey:'test-only-intercepted',model:'agnes-2.5-flash',baseUrl:'https://apihub.agnes-ai.com/v1'})
+    const s=await fixture.prepareNativeAvgAssembly(),canvas=document.createElement('canvas');canvas.width=576;canvas.height=324
+    const context=canvas.getContext('2d')!;context.fillStyle='#26384c';context.fillRect(0,0,576,324)
+    const first={requirementKey:'desk.background',revision:1,assetKey:'avg.generated.desk',name:'保留的工程背景',altText:'原始工程背景',family:{subjectKey:'desk',familyKey:'desk.original',variantKey:'day',revision:1},
+      consumer:{consumerKey:'desk.background',domain:'stage',slot:'background',subjectKey:'desk',sceneKey:'desk',lineKey:null,required:true,fallback:'none'},triggerBeatKey:'line.desk',itemVariantKey:null,
+      mediaKind:'background',prompt:'原创工程房间',negativePrompt:'',invariants:[],forbiddenDepictions:[],width:576,height:324,resolutionTier:'1K',alpha:'not-required',references:[]}
+    const second={...first,requirementKey:'desk.reference',assetKey:'avg.generated.reference',name:'待重做的工程参考',consumer:{consumerKey:'desk.reference',domain:'reference',slot:'style',subjectKey:'desk',sceneKey:null,lineKey:null,required:false,fallback:'omit'},triggerBeatKey:null}
+    const saved=await service.saveAvgVisualBatchDraftV1({scope:s.scope,expectedDraftRevision:(await draft.readAvgDraftV1(s.scope)).revision,batchKey:'repair.browser',revision:1,requirements:[first,second]})
+    const prepared=await service.prepareAvgAssemblyBriefV1({scope:s.scope,expectedDraftRevision:saved.revision})
+    const started=await service.startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:prepared.brief.briefHash})
+    for(const artifactKey of ['avg.system.plan',...started.executionBrief.avgAssembly.sceneKeys.map((key:string)=>`avg.content.scene-script.${key}`)]){
+      const candidate=await service.stageAvgWorkspaceInputV1({scope:s.scope,productionId:s.productionId,expectedDraftRevision:(await draft.readAvgDraftV1(s.scope)).revision,artifactKey,declaration:'原创工程输入，仅校准恢复路径'})
+      await service.confirmAvgWorkspaceInputV1({scope:s.scope,productionId:s.productionId,artifactKey,candidateVersion:candidate.version,candidateHash:JSON.parse(candidate.metadataJson).candidateHash})
+    }
+    return {scope:s.scope,productionId:s.productionId,parentId:started.build.id,png:canvas.toDataURL('image/png').split(',')[1],titles:JSON.parse((await draft.readAvgDraftV1(s.scope)).editorJson).systemPlan.scenes.map((scene:{title:string})=>scene.title) as string[]}
+  })
+  png=seeded.png
+  await page.evaluate(async s=>{
+    const service=await(new Function('p','return import(p)') as(p:string)=>Promise<any>)('/storyforge/src/lib/avg/assembly-service.ts')
+    await service.runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})
+  },seeded)
+  expect(requests).toBe(2)
+  await page.goto(`./avg/production?project=${seeded.scope.projectId}&work=${seeded.scope.workId}&assembly=1`)
+  await page.getByRole('button',{name:'素材',exact:true}).click()
+  const repair=page.getByRole('region',{name:'图片恢复方案',exact:true})
+  await expect(repair.getByRole('button',{name:'准备图片恢复方案',exact:true})).toBeDisabled()
+  await repair.getByRole('button',{name:'查看保留原图：保留的工程背景',exact:true}).click()
+  await expect.poll(()=>repair.locator('img').evaluate((img:HTMLImageElement)=>img.complete?img.naturalWidth:0)).toBe(576)
+  await repair.getByRole('checkbox',{name:'保留原图：保留的工程背景',exact:true}).check()
+  await repair.getByRole('checkbox',{name:'我已查看保留原图，并核对重做项目、原调用记录和费用边界',exact:true}).check()
+  await page.screenshot({path:info.outputPath('avg-image-recovery-review.png')})
+  await repair.getByRole('button',{name:'准备图片恢复方案',exact:true}).click()
+  await expect(page.getByRole('status').filter({hasText:'图片恢复方案已保存'})).toBeVisible()
+  expect(requests).toBe(2)
+  await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
+  await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
+  await adopt(page,'系统规则')
+  for(const title of seeded.titles)await adopt(page,`场景：${title}`)
+  await page.getByRole('button',{name:'素材',exact:true}).click()
+  await page.getByRole('button',{name:'复验并执行本批图片（最多 1 次新请求）',exact:true}).click()
+  const card=page.getByRole('article',{name:'图片候选：保留的工程背景',exact:true})
+  await expect(card.getByRole('button',{name:'保存选图候选：保留的工程背景',exact:true})).toBeEnabled()
+  expect(requests).toBe(3)
+  await page.reload();await page.getByRole('button',{name:'素材',exact:true}).click()
+  await expect(page.getByRole('button',{name:'复验并执行本批图片（最多 0 次新请求）',exact:true})).toBeDisabled()
+  const evidence=await page.evaluate(async s=>{
+    const {db}=await(new Function('p','return import(p)') as(p:string)=>Promise<any>)('/storyforge/src/lib/db/schema.ts')
+    const builds=await db.productBuilds.where('productionId').equals(s.productionId).toArray(),child=builds.find((b:any)=>b.buildNumber===2)
+    const old=await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.parentId,'avg.media.raw.desk.background']).first()
+    const raw=await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([child.id,'avg.media.raw.desk.background']).first()
+    return {parent:child.parentBuildNumber,sameBytes:old.contentHash===raw.contentHash&&old.blobObjectId===raw.blobObjectId,newReceipt:old.producerReceiptHash!==raw.producerReceiptHash,usage:JSON.parse(child.budgetLedgerJson).tasks['avg.media.generate.desk.background'].usage}
+  },seeded)
+  expect(evidence).toMatchObject({parent:1,sameBytes:true,newReceipt:true,usage:{mediaCalls:0,costUsd:0}})
+  expect(requests).toBe(3)
+})

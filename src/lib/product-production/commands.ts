@@ -1,4 +1,5 @@
 import { deriveAvgAssemblyRecoveryBaseV1 } from '../avg/assembly-recovery'
+import { resetAvgImageRecoveryForEvolutionV1 } from '../avg/media-production-policy'
 import { avgMediaProductionEnabledV2 } from '../avg/assembly-contract'
 import { canReviseTextContentBuildV1, createTextContentRevisionPlanV1 } from './text-content-revision'
 import Dexie from 'dexie'
@@ -2817,6 +2818,7 @@ async function applyCommand(input: {
     } : generationPolicy.productionBudget,
     capabilityRequirements: generationPolicy.capabilityRequirements,
     completionContract: generationPolicy.completionContract,
+    ...resetAvgImageRecoveryForEvolutionV1(priorBrief),
     unresolvedDecisionKeys: [],
     evolution: {
       schema: 'storyforge.product-evolution-impact', version: 1,
