@@ -11,7 +11,7 @@ import {assertChatConversationEvidenceReviewVersionV1, supportsChatConversationE
 import {normalizeChatReviewResponseV1, supportsChatKnownFactReviewNormalizationV1} from './review-normalization'
 import {supportsChatPlayerPauseV1, supportsChatExistingGoalPauseV1} from './narrative-player-pause'
 import {assertChatThreadFollowupReviewVersionV1, supportsChatThreadFollowupV1} from './narrative-thread-followup'
-import {assertChatSceneTransitionInputV1, assertChatMemoryCorrectionInputV1} from './context-reader-version'
+import {assertChatSceneTransitionInputV1, assertChatMemoryCorrectionInputV1, readChatCandidateRetrievalVersion} from './context-reader-version'
 import {assertChatMemoryReconciliationReviewsV1, supportsChatMemoryReconciliationV1, assertChatMemoryReconciliationReviewVersionV1, isChatActionReviewOutputV1} from './memory-reconciliation'
 import {chatActionReviewPromptRulesV1} from './narrative-action-prompt'
 import {interactionRetrievalView} from './runtime'
@@ -96,6 +96,9 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
       if (!status) snapshot = await append(input.scope, snapshot, 'step.scheduled', {stepId})
       if (snapshot.projection.steps[stepId]?.status === 'scheduled') snapshot = await append(input.scope, snapshot, 'step.started', {stepId, attempt: 1})
       if (snapshot.projection.steps[stepId]?.status !== 'running') fail('审查步骤无法继续')
+      const retrievalVersion = await readChatCandidateRetrievalVersion(snapshot, input.scope.projectId,
+        situation ? 'chatSituationRuntime' : 'interactionRuntime', situation ? undefined : candidate.participantKey,
+        situation ? undefined : (await readProductRuntimeState(input.productRuntimeSessionId)).interaction!)
       const sourceKeys = ['chatSituationRuntime', situation ? 'chatSituationCandidate' : 'chatActionCandidate']
       const assembled = await assembleContext({projectId: input.scope.projectId, scope: input.scope,
         worldGroupId: snapshot.contract.scope.worldGroupId, productRuntimeSessionId: input.productRuntimeSessionId,
@@ -105,7 +108,8 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
       await assertRuntimeHarnessFreshV1(freshness)
       const manifest = await createContextManifestFromAssemblyV1({runId: snapshot.run.id, stepId, attempt: 1,
         projectId: input.scope.projectId, worldGroupId: snapshot.contract.scope.worldGroupId, declaredSourceKeys: sourceKeys,
-        assembled, readerVersion: situation ? (supportsChatDiscoveryEvidenceReviewerV1(reviewBinding.promptVersion) ? 'chat-situation-review-v9' : ['chat-situation-review-v7', 'chat-situation-review-v8', 'chat-situation-review-v9'].includes(reviewBinding.promptVersion) ? 'chat-situation-review-v8' : 'chat-situation-review-v7') : memoryReconciliation ? 'chat-action-review-v8' : 'chat-action-review-v7'})
+        assembled, readerVersion: retrievalVersion === 'chat-relevance-v5' ? situation ? 'chat-situation-review-v10' : 'chat-action-review-v9'
+          : situation ? (supportsChatDiscoveryEvidenceReviewerV1(reviewBinding.promptVersion) ? 'chat-situation-review-v9' : ['chat-situation-review-v7', 'chat-situation-review-v8', 'chat-situation-review-v9'].includes(reviewBinding.promptVersion) ? 'chat-situation-review-v8' : 'chat-situation-review-v7') : memoryReconciliation ? 'chat-action-review-v8' : 'chat-action-review-v7'})
       snapshot = await append(input.scope, snapshot, 'context.assembled', {stepId, attempt: 1, manifestHash: manifest.manifestHash})
       const compact = naturalDisclosure || ['chat-narrative-action-review-v17', 'chat-narrative-options-review-v11'].includes(reviewBinding.promptVersion)
       const roleContext = !situation && compact ? interactionRetrievalView((await readProductRuntimeState(input.productRuntimeSessionId)).interaction!, candidate.participantKey) : undefined

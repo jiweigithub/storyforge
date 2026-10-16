@@ -9,12 +9,19 @@ export const CHAT_CONTEXT_READER_VERSION_V1 = 'chat-narrative-runtime-view-v5'
 export const CHAT_CONTEXT_READER_VERSION_V2 = 'chat-narrative-runtime-view-v6'
 export const CHAT_CONTEXT_READER_VERSION_V3 = 'chat-narrative-runtime-view-v7'
 export const CHAT_CONTEXT_READER_VERSION_V4 = 'chat-narrative-runtime-view-v8'
-export type ChatRetrievalVersion = 'legacy' | 'chat-relevance-v1' | 'chat-relevance-v2' | 'chat-relevance-v3' | 'chat-relevance-v4'
+// v9 retains v8's actor projection and binds the subsequent review to the
+// protected coordinator dialogue policy. Old producer packets keep v8.
+export const CHAT_CONTEXT_READER_VERSION_V5 = 'chat-narrative-runtime-view-v9'
+export type ChatRetrievalVersion = 'legacy' | 'chat-relevance-v1' | 'chat-relevance-v2' | 'chat-relevance-v3' | 'chat-relevance-v4' | 'chat-relevance-v5'
+export function supportsChatCorrectionContextV1(version: ChatRetrievalVersion): boolean {
+  return version === 'chat-relevance-v4' || version === 'chat-relevance-v5'
+}
 export function chatRetrievalVersionForReader(reader: string | undefined): ChatRetrievalVersion | null {
   if (reader === 'chat-narrative-runtime-view-v3') return 'legacy'
   if (reader === 'chat-narrative-runtime-view-v4' || reader === CHAT_CONTEXT_READER_VERSION_V1) return 'chat-relevance-v1'
   if (reader === CHAT_CONTEXT_READER_VERSION_V2) return 'chat-relevance-v2'
   if (reader === CHAT_CONTEXT_READER_VERSION_V4) return 'chat-relevance-v4'
+  if (reader === CHAT_CONTEXT_READER_VERSION_V5) return 'chat-relevance-v5'
   return reader === CHAT_CONTEXT_READER_VERSION_V3 ? 'chat-relevance-v3' : null
 }
 export const CHAT_CONTEXT_SOURCE_TOKENS_V1 = 8000
@@ -34,7 +41,7 @@ export function selectChatContextWindowV1(
   profile: InteractionRuntimeProfile,
   limits: {maxCharacters: number; maxRecentMessages: number; retrievalVersion?: ChatRetrievalVersion; requiredCommitmentKeys?: ReadonlySet<string>},
 ): InteractionContextWindow {
-  const corrections = limits.retrievalVersion === 'chat-relevance-v4'
+  const corrections = supportsChatCorrectionContextV1(limits.retrievalVersion ?? 'chat-relevance-v1')
   const pending = new Set(corrections ? view.memoryCorrections?.map(m => m.memoryId) : [])
   const promises = corrections || limits.retrievalVersion === 'chat-relevance-v3'
   const modern = promises || limits.retrievalVersion === 'chat-relevance-v2'

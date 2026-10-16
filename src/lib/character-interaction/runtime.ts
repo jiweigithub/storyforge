@@ -32,7 +32,7 @@ import { chatNarrativeViewV1, createChatNarrativeStateV1, parseChatNarrativeStat
 import { applyChatNarrativeActionV1, applyReviewedChatNarrativeActionV1, interruptChatNarrativeTriggerV1, requestChatNarrativeTriggerV1 } from './narrative-actions'
 import { applyChatSituationV1 } from './narrative-situations'
 import {chatRelationshipEvidenceV1} from './narrative-relationships'
-import {selectChatContextWindowV1, type ChatContextSelectionV1} from './context-selection'
+import {selectChatContextWindowV1, supportsChatCorrectionContextV1, type ChatContextSelectionV1} from './context-selection'
 import {interactionMessageVisibleTo as visibleTo} from './message-visibility'
 import {hasChatMemoryContentReviewV1, interactionMemoryForContextV1, parseChatMemoryReceiptV1} from './memory-review-contract'
 import {requiredChatCommitmentKeysV1} from './commitment-context'
@@ -1112,8 +1112,8 @@ export function buildInteractionContextWindow(
   if (state.chatNarrative && options.retrievalVersion !== 'legacy') {
     const profile = state.profiles.find(p => p.participantKey === participantKey)
     if (!profile) throw new Error('缺少角色视角，无法选择来源资料')
-    if ((options.retrievalVersion ?? 'chat-relevance-v4') === 'chat-relevance-v4') visible.memoryCorrections = chatMemoryCorrectionContextV1(state, participantKey)
-    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v4',
+    if (supportsChatCorrectionContextV1(options.retrievalVersion ?? 'chat-relevance-v5')) visible.memoryCorrections = chatMemoryCorrectionContextV1(state, participantKey)
+    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v5',
       requiredCommitmentKeys: requiredChatCommitmentKeysV1(state.chatNarrative!.situation.goals)})
   }
   const allMessages = visible.messages

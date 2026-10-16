@@ -2,7 +2,7 @@ import type {AgentRunSnapshotV1} from '../agent/run/event-store'
 import {parseContextManifestV1, verifyContextManifestIntegrityV1} from '../agent/run/context-manifest'
 import {readAgentRunArtifactExactV1} from '../memory/artifact-store'
 import {sha256Text} from '../ai/chapter-memory/text-normalization'
-import {chatRetrievalVersionForReader, type ChatRetrievalVersion} from './context-selection'
+import {chatRetrievalVersionForReader, supportsChatCorrectionContextV1, type ChatRetrievalVersion} from './context-selection'
 import type {ChatNarrativeActionV1} from '../types/chat-narrative'
 import {supportsChatSceneTransitionPromptV1} from './narrative-scene-transition'
 import type {CharacterInteractionRuntimeState} from '../types'
@@ -13,7 +13,7 @@ import {pendingChatMemoryCorrectionsV1} from './memory-reconciliation'
 export async function assertChatMemoryCorrectionInputV1(snapshot: AgentRunSnapshotV1, projectId: number,
   state: CharacterInteractionRuntimeState, actorKey: string): Promise<void> {
   if (pendingChatMemoryCorrectionsV1(state, actorKey).length
-    && await readChatCandidateRetrievalVersion(snapshot, projectId, 'interactionRuntime', actorKey, state) !== 'chat-relevance-v4') {
+    && !supportsChatCorrectionContextV1(await readChatCandidateRetrievalVersion(snapshot, projectId, 'interactionRuntime', actorKey, state))) {
     throw new Error('原行动没有读取完整记忆修正依据，请取消后明确发起新行动；不会自动替换旧输入或重发。')
   }
 }
@@ -32,7 +32,7 @@ export async function readChatCandidateRetrievalVersion(snapshot: AgentRunSnapsh
     || source.status !== 'included' || assembled?.type !== 'context.assembled' || assembled.payload.manifestHash !== manifest.manifestHash
     || participantKey != null && body.participantKey !== participantKey) throw new Error('行动来源读取版本无法核验，已停止审查。')
   const version = sourceKey === 'interactionRuntime' ? chatRetrievalVersionForReader(source.readerVersion)
-    : ['chat-situation-runtime-view-v8', 'chat-situation-runtime-view-v9', 'chat-situation-runtime-view-v10'].includes(source.readerVersion ?? '') ? 'chat-relevance-v4' : source.readerVersion === 'chat-situation-runtime-view-v7' ? 'chat-relevance-v3' : source.readerVersion === 'chat-situation-runtime-view-v6' ? 'chat-relevance-v2' : source.readerVersion === 'chat-situation-runtime-view-v5' ? 'chat-relevance-v1' : null
+    : source.readerVersion === 'chat-situation-runtime-view-v11' ? 'chat-relevance-v5' : ['chat-situation-runtime-view-v8', 'chat-situation-runtime-view-v9', 'chat-situation-runtime-view-v10'].includes(source.readerVersion ?? '') ? 'chat-relevance-v4' : source.readerVersion === 'chat-situation-runtime-view-v7' ? 'chat-relevance-v3' : source.readerVersion === 'chat-situation-runtime-view-v6' ? 'chat-relevance-v2' : source.readerVersion === 'chat-situation-runtime-view-v5' ? 'chat-relevance-v1' : null
   if (!version) throw new Error('行动来源读取版本无法核验，已停止审查。')
   if (sourceKey === 'interactionRuntime') {
     const profile = state?.profiles.find(p => p.participantKey === participantKey)
@@ -51,7 +51,7 @@ export async function assertChatSceneTransitionInputV1(snapshot: AgentRunSnapsho
   const producer = snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:runtime-candidate')
   if (!supportsChatSceneTransitionPromptV1(producer?.promptVersion)) throw new Error('旧生成合同不支持转场；保留候选，不自动换约或重发。')
   const version = await readChatCandidateRetrievalVersion(snapshot, projectId, 'interactionRuntime', actorKey, state)
-  if (version !== 'chat-relevance-v4') throw new Error('转场缺少可核验的原角色输入。')
+  if (!supportsChatCorrectionContextV1(version)) throw new Error('转场缺少可核验的原角色输入。')
   const view = buildInteractionContextWindow(state, actorKey, {retrievalVersion: version})
   for (const t of transitions) {
     const source = view.messages.find(m => m.role === 'player' && m.eventSequence === t.playerEventSequence)

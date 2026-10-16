@@ -1,5 +1,5 @@
 import {chatObservationVisibilityGenerationRulesV1} from './observation-visibility-prompt'
-import {supportsChatDiscoveryEvidenceProducerV1, chatDiscoveryEvidenceGenerationRulesV1} from './discovery-evidence-context'
+import {chatDiscoveryEvidenceGenerationRulesV1} from './discovery-evidence-context'
 import {chatObservationScopeGenerationRulesV1} from './observation-scope-prompt'
 import {supportsChatReplanningPromptV1} from './narrative-replanning'
 import {supportsChatSceneTransitionPromptV1, assertChatSceneTransitionReviewVersionV1} from './narrative-scene-transition'
@@ -18,7 +18,7 @@ import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1, assertChatAc
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1} from './narrative-scheduling'
 import {buildInteractionContextWindow, type InteractionContextWindow} from './runtime'
-import {CHAT_CONTEXT_READER_VERSION_V4} from './context-selection'
+import {CHAT_CONTEXT_READER_VERSION_V5} from './context-selection'
 import { chat } from '../ai/client'
 import { createAgentSkillExecutionBindingV1, createAgentSkillExecutionBindingV2 } from '../agent/execution-binding'
 import { getAgentSkillV1, type AgentSkillId } from '../agent/skill-registry'
@@ -653,7 +653,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       declaredSourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       assembled,
-      readerVersion: situation ? (supportsChatDiscoveryEvidenceProducerV1(executionBinding.promptVersion) ? 'chat-situation-runtime-view-v10' : ['chat-situation-construction-v8', 'chat-situation-construction-v9', 'chat-situation-construction-v10'].includes(executionBinding.promptVersion) ? 'chat-situation-runtime-view-v9' : 'chat-situation-runtime-view-v8') : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V4 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? 'chat-situation-runtime-view-v11' : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V5 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
