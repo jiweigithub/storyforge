@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { readTtrpgOpenFactDeskV1, prepareTtrpgOpenFactDeskAssertionV1, prepareTtrpgOpenFactDeskRetirementV1, confirmTtrpgOpenFactDeskV1,
   startTtrpgOpenFactDeskConsultationV1, consultTtrpgOpenFactDeskV1, closeTtrpgOpenFactDeskV1, type TtrpgOpenFactDeskInputV1 } from '../../lib/ttrpg/open-fact-desk'
-import { TTRPG_FACT_AUDIENCE_LABELS_V1 as audiences, TTRPG_FACT_KIND_LABELS_V1 as kinds, TTRPG_FACT_PREDICATE_LABELS_V1 as predicates,
+import { ttrpgOpenFactScalarLabelV1, TTRPG_FACT_AUDIENCE_LABELS_V1 as audiences, TTRPG_FACT_KIND_LABELS_V1 as kinds, TTRPG_FACT_PREDICATE_LABELS_V1 as predicates,
   type TtrpgOpenFactDeskReviewV1 } from '../../lib/ttrpg/open-fact-desk-contract'
 import type { TtrpgOpenAudience, TtrpgOpenFactKind } from '../../lib/ttrpg/open-contract'
 
@@ -114,7 +114,7 @@ export default function TtrpgOpenFactPanel(props: { input: TtrpgOpenFactDeskInpu
         <button disabled={props.busy} onClick={() => { setReviewed(null); setAccepted(false); setRetry(false) }}>放弃本次未确认审阅</button>
       </section>}
       <section aria-label="本局事实记录"><h3>本局事实记录</h3>{page.facts.map(row => <article key={row.fact.factKey}><p>{row.fact.detail}</p>
-        <p>{row.subjectName} · {predicates[row.fact.predicateKey]}{row.objectName ? ' · ' + row.objectName : ''}：{String(row.fact.canonicalValue)}；{row.fact.retired ? '已退休' : '活动'}；{audiences[row.fact.audience]}；{row.origin === 'human' ? '真人手写确认' : '原模型候选确认'}。</p>
+        <p>{row.subjectName} · {predicates[row.fact.predicateKey]}{row.objectName ? ' · ' + row.objectName : ''}：{ttrpgOpenFactScalarLabelV1(row.fact.canonicalValue)}；{row.fact.retired ? '已退休' : '活动'}；{audiences[row.fact.audience]}；{row.origin === 'human' ? '真人手写确认' : '原模型候选确认'}。</p>
         <details><summary>原事实依据</summary><p>{row.question}</p>{row.retirementReason && <p>退休或替代理由：{row.retirementReason}</p>}</details>
         {!row.fact.retired && <button disabled={props.busy || !page.canPrepare} onClick={() => { setRetireKey(row.fact.factKey); setRetireReason(''); setReviewed(null); setAccepted(false); setRetry(false) }}>准备退休这条事实</button>}
       </article>)}{!page.facts.length && <p>尚无已确认的会话事实。</p>}</section>

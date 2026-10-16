@@ -13,7 +13,7 @@ import { startTtrpgOpenEpochV1, consultTtrpgOracleV1, closeTtrpgOpenEpochV1, pre
   commitTtrpgOpenOracleFactV1, commitTtrpgOpenOracleRuntimeEntityFactV1, retireTtrpgOpenSessionFactV1 } from './runtime-commands'
 import { hashProductProductionValueV2 as hash } from '../product-production/hash'
 import { canonicalStringify as stable } from '../agent/run/hash'
-import { parseTtrpgOpenFactDeskReviewV1, TTRPG_FACT_PREDICATE_LABELS_V1 as predicates, TTRPG_FACT_AUDIENCE_LABELS_V1 as audiences,
+import { parseTtrpgOpenFactDeskReviewV1, ttrpgOpenFactScalarLabelV1, TTRPG_FACT_PREDICATE_LABELS_V1 as predicates, TTRPG_FACT_AUDIENCE_LABELS_V1 as audiences,
   type TtrpgOpenFactDeskChangeV1, type TtrpgOpenFactDeskReviewV1 } from './open-fact-desk-contract'
 import * as p from './open-contract-parse'
 
@@ -39,7 +39,7 @@ function sourceLabel(loaded: Loaded, key: string) {
   const current = loaded.runtime.openRun!.factLedger?.entries.find(row => row.fact.factKey === key)
   if (current) return current.fact.detail
   const original = loaded.content.campaign.frozenWorldPredicateIndex.entries.find(row => row.factKey === key)
-  return original ? name(loaded, original.subjectRef) + ' · ' + predicates[original.predicateKey] + '：' + String(original.canonicalValue) : key
+  return original ? name(loaded, original.subjectRef) + ' · ' + predicates[original.predicateKey] + '：' + ttrpgOpenFactScalarLabelV1(original.canonicalValue) : key
 }
 function oracleLabel(loaded: Loaded, oracle: TtrpgOpenOracleReceiptV1) {
   const result = oracle.resolution.outcome.rawResult, table = loaded.content.rulePack.content.oracles.find(row => row.oracleKey === oracle.resolution.outcome.oracleKey)!
@@ -77,7 +77,7 @@ export async function readTtrpgOpenFactDeskV1(input: TtrpgOpenFactDeskInputV1) {
       kind: row.kind, dynamic: row.dynamic, audience: row.audience, recipientActorKeys: row.recipientActorKeys })),
     predicates: content.rulePack.content.factPolicy.filter(row => row.authority.session === 'semantic-fact').map(row => ({ ...row, label: predicates[row.predicateKey] })),
     recipients: runtime.authorization!.selectedActorKeys.map(key => ({ key, name: name(loaded, key) })), facts,
-    sources: [...content.campaign.frozenWorldPredicateIndex.entries.map(row => ({ key: row.factKey, label: name(loaded, row.subjectRef) + ' · ' + predicates[row.predicateKey] + '：' + String(row.canonicalValue) })),
+    sources: [...content.campaign.frozenWorldPredicateIndex.entries.map(row => ({ key: row.factKey, label: name(loaded, row.subjectRef) + ' · ' + predicates[row.predicateKey] + '：' + ttrpgOpenFactScalarLabelV1(row.canonicalValue) })),
       ...facts.filter(row => !row.fact.retired).map(row => ({ key: row.fact.factKey, label: row.fact.detail }))],
     oracles: [...(run.oracleReceipts ?? [])].reverse().map(row => ({ sourceRef: row.sourceRef, question: row.resolution.outcome.question,
       result: oracleLabel(loaded, row), audience: row.audience, worldTurn: row.worldTurn })),
@@ -98,7 +98,7 @@ async function prepare(loaded: Loaded, input: TtrpgOpenFactDeskInputV1, commandI
     add('本次操作', fact.supersedes ? '以新记录替代旧事实，保留原历史' : '确认一条新的本局语义事实')
     add('咨询依据', oracle.resolution.outcome.question + '；原结果：' + oracleLabel(loaded, oracle))
     add('主体与含义', name(loaded, fact.subjectRef) + ' · ' + predicates[fact.predicateKey] + (fact.objectRef ? ' · ' + name(loaded, fact.objectRef) : ''))
-    add('准确取值', loaded.content.rulePack.content.factPolicy.find(row => row.predicateKey === fact.predicateKey)?.valueType === 'entity-ref' ? name(loaded, String(fact.canonicalValue)) : String(fact.canonicalValue)); add('事实全文', fact.detail)
+    add('准确取值', loaded.content.rulePack.content.factPolicy.find(row => row.predicateKey === fact.predicateKey)?.valueType === 'entity-ref' ? name(loaded, String(fact.canonicalValue)) : ttrpgOpenFactScalarLabelV1(fact.canonicalValue)); add('事实全文', fact.detail)
     add('来源', fact.sourceFactRefs.map(key => sourceLabel(loaded, key)).join('；') || '仅原咨询依据')
     add('受众', audiences[fact.audience]); add('实际接收者', fact.knownByActorKeys.map(key => name(loaded, key)).join('、') || (fact.audience === 'public' ? '公开' : '仅主持'))
     add('对象引用', change.referencePolicy === 'release-only-v1' ? '仅原冻结对象' : '包含已实际创建的本局对象；保留原创建和接收者证据')
@@ -121,8 +121,10 @@ export async function prepareTtrpgOpenFactDeskAssertionV1(input: TtrpgOpenFactDe
   if (typeof input.includeRuntimeEntities !== 'boolean') p.fail('请明确选择本次对象引用范围')
   const candidateHash = await hashTtrpgOpenOracleFactCandidateV1({ proposal, oracleSourceRef, runtimeSourceHash: loaded.source.runtimeSourceHash,
     viewerKey: input.viewerKey, baseStateHash: loaded.stateHash })
+  const needsRuntimeReferences = [proposal.subjectRef, proposal.objectRef].some(ref => ref !== null
+    && !loaded.content.campaign.entityBindings.some(binding => binding.bindingKey === ref))
   return prepare(loaded, input, 'fact.desk.assert.' + submission(input.submissionKey), { kind: 'assert', proposal, oracleSourceRef, candidateHash,
-    referencePolicy: input.includeRuntimeEntities ? 'committed-runtime-entities-v1' : 'release-only-v1' })
+    referencePolicy: input.includeRuntimeEntities && needsRuntimeReferences ? 'committed-runtime-entities-v1' : 'release-only-v1' })
 }
 export async function prepareTtrpgOpenFactDeskRetirementV1(input: TtrpgOpenFactDeskInputV1 & { submissionKey: string; factKey: string; reason: string }) {
   return prepare(await human(input), input, 'fact.desk.retire.' + submission(input.submissionKey), { kind: 'retire', factKey: p.key(input.factKey, 'retired fact'), reason: p.text(input.reason, 'retirement reason', 1000) })

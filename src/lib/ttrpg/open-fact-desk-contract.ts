@@ -9,6 +9,7 @@ export const TTRPG_FACT_PREDICATE_LABELS_V1 = { exists: '存在', 'located-at': 
   'allied-with': '结盟', 'hostile-to': '敌对', owes: '欠有债务', promised: '有承诺', damaged: '受损', destroyed: '已毁坏', blocked: '受阻', open: '开放' }
 export const TTRPG_FACT_KIND_LABELS_V1 = { entity: '对象', relation: '关系', state: '状态', 'event-truth': '事件真相', location: '地点', item: '物品' }
 export const TTRPG_FACT_AUDIENCE_LABELS_V1 = { 'gm-only': '仅主持', private: '指定角色', party: '本次队伍', public: '公开' }
+export const ttrpgOpenFactScalarLabelV1 = (value: string | number | boolean) => typeof value === 'boolean' ? value ? '成立' : '不成立' : String(value)
 export type TtrpgOpenFactDeskChangeV1 = { kind: 'assert'; oracleSourceRef: TtrpgOpenSourceRefV1; proposal: TtrpgOpenOracleFactProposalV1;
   referencePolicy: 'release-only-v1' | 'committed-runtime-entities-v1'; candidateHash: string } | { kind: 'retire'; factKey: string; reason: string }
 export interface TtrpgOpenFactDeskReviewV1 {
