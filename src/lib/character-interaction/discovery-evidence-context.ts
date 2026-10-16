@@ -1,8 +1,12 @@
 import type {CharacterInteractionRuntimeState} from '../types'
 import type {AgentRunSnapshotV1} from '../agent/run/event-store'
 
-export const CHAT_DISCOVERY_EVIDENCE_PRODUCER_V1 = 'chat-situation-construction-v11'
-export const CHAT_DISCOVERY_EVIDENCE_REVIEWER_V1 = 'chat-situation-review-v10'
+export function supportsChatDiscoveryEvidenceProducerV1(version: string | undefined): boolean {
+  return ['chat-situation-construction-v11', 'chat-situation-construction-v12'].includes(version ?? '')
+}
+export function supportsChatDiscoveryEvidenceReviewerV1(version: string | undefined): boolean {
+  return ['chat-situation-review-v10', 'chat-situation-review-v11'].includes(version ?? '')
+}
 
 /** This is an index into already committed facts, not a finding or permission.
  * The runtime still validates every submitted reference and discovery rule. */
@@ -29,11 +33,11 @@ export function chatDiscoveryEvidenceContextV1(state: CharacterInteractionRuntim
 
 export function usesChatDiscoveryEvidenceContextV1(snapshot: AgentRunSnapshotV1): boolean {
   return snapshot.contract.executionBindings?.some(b => b.stepId === 'interaction:runtime-candidate'
-    && b.skillId === 'character.chat-situation-construction' && b.promptVersion === CHAT_DISCOVERY_EVIDENCE_PRODUCER_V1) ?? false
+    && b.skillId === 'character.chat-situation-construction' && supportsChatDiscoveryEvidenceProducerV1(b.promptVersion)) ?? false
 }
 
 export function chatDiscoveryEvidenceGenerationRulesV1(version: string | undefined): string[] {
-  if (version !== CHAT_DISCOVERY_EVIDENCE_PRODUCER_V1) return []
+  if (!supportsChatDiscoveryEvidenceProducerV1(version)) return []
   return [
     'discoveryEvidence 是系统从本次已提交状态计算的引用清单，不是观察结果或发现结论。discoveries 中的 evidenceFactKeys 只能取自 allowedEvidenceFactKeys，必须包含目标的 requiredEvidenceFactKeys，并至少包含一项 actionEvidenceFactKeys；actionSequence/actorKey 使用清单中的当前调查身份，摘录仍须对应真实已完成动作。',
     '本次 newFacts 尚未审查和采纳，不能作为本次 discoveries 的证据；也不能引用待发现事实本身、其它未知材料或只在候选中出现的编号。不要通过复制真相为新事实、改编号或删除必要前提绕过。新观察结果可与发现判定同时作为候选接受审查，但其新编号不是已有证据。',
@@ -42,6 +46,6 @@ export function chatDiscoveryEvidenceGenerationRulesV1(version: string | undefin
 }
 
 export function chatDiscoveryEvidenceReviewRulesV1(version: string | undefined): string[] {
-  if (version !== CHAT_DISCOVERY_EVIDENCE_REVIEWER_V1) return []
+  if (!supportsChatDiscoveryEvidenceReviewerV1(version)) return []
   return ['discoveryEvidence 只核对已提交证据的结构可用性，不证明发现条件满足。候选 newFacts 及本次其它发现不能反过来证明自身；逐项按原条件与真实动作审查，不把出现在 targets 当作应当 discovered，也不替生成器补造依据、静默删引用或放宽条件。']
 }

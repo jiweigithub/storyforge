@@ -150,5 +150,6 @@ export function assertChatInquiryBindingV1(result: ChatInquiryResultV1 | undefin
     || (producerVersion === 'chat-situation-construction-v9' && reviewerVersion === 'chat-situation-review-v8')
     || (producerVersion === 'chat-situation-construction-v10' && reviewerVersion === 'chat-situation-review-v9')
     || (producerVersion === 'chat-situation-construction-v11' && reviewerVersion === 'chat-situation-review-v10')
+    || (producerVersion === 'chat-situation-construction-v12' && reviewerVersion === 'chat-situation-review-v11')
   if (result && !supportedPair) fail('旧情境合同不能取得询问结果权限，请保留原记录并明确发起新请求')
 }

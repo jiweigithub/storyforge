@@ -45,15 +45,16 @@ function input(f: Awaited<ReturnType<typeof prepared>>) {
   return {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'player', skillId, objective: '结算实际敲门后的有限观察'}
 }
 
-it.each([8, 9, 10, 11])('uses saved instructions without rewriting historical generation/review bytes (producer v%s)', async version => {
+it.each([8, 9, 10, 11, 12])('uses saved instructions without rewriting historical generation/review bytes (producer v%s)', async version => {
   const legacy = version === 8
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId), original = skills.getAgentSkillV1
-  if (version < 11) vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === skillId ? {...original(id), promptVersion: `chat-situation-construction-v${version}`}
+  if (version < 12) vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === skillId ? {...original(id), promptVersion: `chat-situation-construction-v${version}`}
     : id === reviewSkill ? {...original(id), promptVersion: `chat-situation-review-v${version - 1}`} : original(id))
   let calls = 0
   const result = await generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: () => {vi.restoreAllMocks()}, runAI: async messages => {
     calls++
     if (legacy) expect(digest(messages[0].content)).toBe('057a52f39ea9067d6607e5526e5bd0760118d109b53f86377090e5d353a9c2f2')
+    if (version === 11) expect(digest(messages[0].content)).toBe('935f11738a6d643f6fd9120be118145b9d4255901d9f590a98a4faeeb044060b')
     if (version === 10) expect(digest(messages[0].content)).toBe('bd0c1ec245046132e6dc94799ad46bde6fe43f3d85ba6849538099d576b6cc1e')
     if (version === 9) expect(digest(messages[0].content)).toBe('d48c8a09ca633b20aca8100306893128ce03efb66c7217af377fe22c3eb7218d')
     expect(messages[0].content.includes(chatSituationCharacterRulesV1('chat-situation-construction-v9')[0])).toBe(!legacy)
@@ -62,6 +63,7 @@ it.each([8, 9, 10, 11])('uses saved instructions without rewriting historical ge
   }, runReviewAI: async messages => {
     calls++
     if (legacy) expect(digest(messages[0].content)).toBe('2be4898f1ab2469e7ca5d1f3d238bc1dc399e32a1db18b532b2e3cc223bf3065')
+    if (version === 11) expect(digest(messages[0].content)).toBe('b336e22b145ef3e56b12471527b452dbec6d970d23e0bd860bb1053a80d84bb8')
     if (version === 10) expect(digest(messages[0].content)).toBe('99d8060bb46a307dd0f6d88e9e983c17f77005946e059bdd8a118009feb25a16')
     if (version === 9) expect(digest(messages[0].content)).toBe('8933d2385dfab00bdd8aa2049b95b8d8508e415b09eea7d8e9f09cc3c65daf17')
     expect(messages[0].content.includes(chatSituationCharacterReviewRulesV1('chat-situation-review-v8')[0])).toBe(!legacy)
@@ -124,8 +126,8 @@ it('rejects hidden-source evidence before independent review, retaining the comp
 
 it('accepts only exact released inquiry binding pairs, never cross-version or future identities', () => {
   const result = {} as ChatInquiryResultV1 // This guard checks capability only; full payload tests use actual inquiry fixtures.
-  for (const [producer, reviewer] of [[8, 7], [9, 8], [10, 9], [11, 10]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).not.toThrow()
-  for (const [producer, reviewer] of [[8, 8], [9, 7], [7, 8], [9, 9], [10, 8], [11, 9], [10, 10], [12, 11], [999, 8], [9, 999]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).toThrow()
+  for (const [producer, reviewer] of [[8, 7], [9, 8], [10, 9], [11, 10], [12, 11]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).not.toThrow()
+  for (const [producer, reviewer] of [[8, 8], [9, 7], [7, 8], [9, 9], [10, 8], [11, 9], [10, 10], [11, 11], [12, 10], [13, 12], [999, 8], [9, 999]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).toThrow()
   for (const version of [undefined, 'chat-situation-construction-v8', 'chat-situation-construction-v999', 'chat-situation-review-v8']) expect(chatSituationCharacterRulesV1(version)).toEqual([])
   for (const version of [undefined, 'chat-situation-review-v7', 'chat-situation-review-v999', 'chat-situation-construction-v9']) expect(chatSituationCharacterReviewRulesV1(version)).toEqual([])
 })
