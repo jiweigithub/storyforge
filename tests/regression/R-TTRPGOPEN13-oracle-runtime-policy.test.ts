@@ -1,47 +1,11 @@
+import { setupOracleRuntimePolicyV1 as setup } from '../helpers/open-oracle-runtime-model'
 import { beforeEach, afterEach, describe, it, expect } from 'vitest'
 import { db } from '../../src/lib/db/schema'
-import { setupOpenEntityPlanningV1 } from '../helpers/open-entity-runtime'
-import { openEnvelopeV1 } from '../helpers/open-ttrpg-session'
-import { createCompleteTtrpgCharacterSheetV2 } from '../../src/lib/ttrpg/character-sheet'
-import { readTtrpgOpenEntityDeskV1, proposeTtrpgOpenEntityDeskV1, confirmTtrpgOpenEntityDeskV1, materializeTtrpgOpenEntityDeskV1 } from '../../src/lib/ttrpg/open-entity-desk'
-import { consultTtrpgOracleV1 } from '../../src/lib/ttrpg/runtime-commands'
 import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
 import { createTtrpgOpenOracleRuntimeReferencePolicyV1, assertTtrpgOpenOracleRuntimeReferenceJournalV1,
   parseTtrpgOpenOracleRuntimeReferencePolicyV1, verifyTtrpgOpenOracleRuntimeReferencePolicyHashV1, createTtrpgOpenRuntimeEntityReferencesV1 } from '../../src/lib/ttrpg/open-runtime-entity-references'
 import { hashProductProductionValueV2 as hash } from '../../src/lib/product-production/hash'
 
-async function setup(audience: 'public' | 'party' | 'gm-only', pending = false) {
-  const s = await setupOpenEntityPlanningV1(pkg => {
-    const c = pkg.ttrpg!.campaign, rule = pkg.ttrpg!.rulePack.content, npc = c.characterTemplates.find(row => row.characterKey === 'keeper')!, item = rule.items[0]
-    c.gmMode = 'human'; rule.oracles[0].audience = 'public'
-    rule.oracles.push({ ...structuredClone(rule.oracles[0]), oracleKey: 'oracle.reference.scope', audience })
-    c.dynamicEntityTemplates[0].audience = audience === 'public' ? 'public' : 'party'
-    c.dynamicEntityTemplates[1].audience = 'private'; c.dynamicEntityTemplates[1].knownByActorKeys = ['hero']
-    npc.gmProfile!.secret = 'ORACLE-POLICY-PRIVATE-PROFILE'; npc.itemKeys = [item.key]
-    npc.characterSheet = createCompleteTtrpgCharacterSheetV2({ template: npc, rulePack: rule })
-    c.entityBindings.find(row => row.bindingKey === 'keeper')!.initialInventoryRefs = ['keeper.initial.gear']
-    c.entityBindings.push({ bindingKey: 'keeper.initial.gear', templateKey: item.key, kind: 'item', initialLocationRef: null,
-      initialInventoryRefs: [], sourceResourceRef: null, sourceFieldRefs: [], audience: 'party', knownByActorKeys: [] })
-  }, 'viewer.gm')
-  const desk = { scope: s.f.scope, sessionId: s.f.sessionId, viewerKey: 'viewer.gm' }
-  const create = async (oracleSourceRef = s.input.oracleSourceRef, again = false) => {
-    await proposeTtrpgOpenEntityDeskV1({ ...desk, submissionKey: again ? 'oracle.policy.second' : 'oracle.policy.first', oracleSourceRef,
-      proposals: again ? [{ ...s.proposals[0], name: '稍后才出现的角色' }] : s.proposals.slice(0, 2) })
-    if (pending) return
-    const plan = (await readTtrpgOpenEntityDeskV1(desk))!.pending!
-    for (const row of plan.approvals) await confirmTtrpgOpenEntityDeskV1({ ...desk, operationKey: plan.operationKey, planHash: plan.planHash,
-      actorKey: row.actorKey, decision: 'approve', review: 'reviewed-this-plan' })
-    await materializeTtrpgOpenEntityDeskV1({ ...desk, operationKey: plan.operationKey, planHash: plan.planHash, decision: 'create-this-confirmed-plan' })
-  }
-  await create()
-  if (!pending) await consultTtrpgOracleV1({ ...await openEnvelopeV1(s.f.sessionId, 'oracle.policy.original.consultation'), viewerKey: 'viewer.gm', askedBy: 'gm',
-    oracleKey: 'oracle.reference.scope', question: '依据现有对象解释本次关系，但不改变规则状态。' })
-  const state = await readProductRuntimeState(s.f.sessionId), run = state.ttrpg!.openRun!
-  const input = { content: s.input.content, operations: run.entityOperations ?? [], runtimeSourceHash: s.f.session.runtimeSourceHash,
-    oracle: run.oracleReceipts!.at(-1)!, recipientActorKeys: state.ttrpg!.authorization!.selectedActorKeys,
-    consumerRef: { sessionKey: state.ttrpg!.sessionKey, sequence: state.lastSequence + 1 } }
-  return { ...s, state, create, input, assertion: { ...input, rulePackContentHash: s.input.content.rulePack.contentHash } }
-}
 describe('R-TTRPGOPEN13 versioned Oracle runtime scope foundation, not a model execution grant', () => {
   beforeEach(async () => { await db.delete(); await db.open() }); afterEach(() => db.close())
   it.each(['public', 'party', 'gm-only'] as const)('freezes only real %s Oracle identities without model calls, private prose or mutable mechanics', async audience => {

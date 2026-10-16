@@ -1,8 +1,8 @@
 import { applyTtrpgOpenEntityEventV1 } from './open-entity-reducer'
-import { assertTtrpgOpenSituationRuntimeReferenceJournalV1 } from './open-runtime-entity-references'
+import { assertTtrpgOpenSituationRuntimeReferenceJournalV1, assertTtrpgOpenOracleRuntimeReferenceJournalV1 } from './open-runtime-entity-references'
 import { applyTtrpgOpenSessionSituationEventV1 } from './open-session-situation-reducer'
 import { TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1, assertTtrpgOpenPublicSituationOriginalScopeV1 } from './open-public-situation-authorization-contract'
-import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1, assertTtrpgOpenSituationEpochAuthorityV1, assertTtrpgOpenSituationWindowEventV1 } from './open-coordination'
+import { TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1, assertTtrpgOpenOracleRuntimeEpochAuthorityV1, ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1, assertTtrpgOpenSituationEpochAuthorityV1, assertTtrpgOpenSituationWindowEventV1 } from './open-coordination'
 import { applyTtrpgOpenTableMessageEventV1 } from './open-table-conversation-reducer'
 import { applyTtrpgOpenMemoryEventV1 } from './open-memory-reducer'
 import { applyTtrpgOpenHostingDelegationEventV1 } from './open-hosting-delegation'
@@ -163,13 +163,23 @@ export function applyTtrpgRuntimeEventV1(
         || epoch.sessionZeroRevision !== authorization.revision || epoch.status !== "active"
         || epoch.closedRef !== null || epoch.stopReason !== null || epoch.hostingDelegation || epoch.successfulActorKeys.length !== 0
         || epoch.reservedCalls !== 0 || epoch.consumedTokens !== 0 || epoch.actualCostUsd !== 0
-        || stableJson(epoch.budget) !== stableJson(ttrpgOpenEpochBudgetForTriggerV1(ttrpg.epochBudget, epoch.triggerKind))
+        || stableJson(epoch.budget) !== stableJson(ttrpgOpenEpochBudgetForTriggerV1(ttrpg.epochBudget, epoch.triggerKind, Boolean(epoch.oracleRuntimeReferencePolicy)))
         || openRun.stage.status !== "open" && epoch.triggerKind !== "request-brief" && !ttrpgOpenClosedStageRecoveryAllowedV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.triggerKind) || openRun.coordination.activeEpochKey !== null
         || openRun.coordination.epochs.some(item => item.epochKey === epoch.epochKey)) {
         throw new Error("epoch.started 的真人授权、初始额度或活动窗口无效。");
       }
       if (epoch.triggerKind === 'request-brief') assertTtrpgOpenBriefEpochAuthorityV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.viewerKey);
       if (epoch.triggerKind === 'request-situation') assertTtrpgOpenSituationEpochAuthorityV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.viewerKey);
+      if (epoch.oracleRuntimeReferencePolicy) {
+        const runtime = parseTtrpgRuntimeStateV2(state.ttrpg)!;
+        assertTtrpgOpenOracleRuntimeEpochAuthorityV1(runtime, epoch.viewerKey);
+        if (payload.intent.rawInput !== TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1 || stableJson(payload.intent.oracleRuntimeReferencePolicy) !== stableJson(epoch.oracleRuntimeReferencePolicy)) throw new Error('实例事实不是本次明确冻结的原策略');
+        const oracle = openRun.oracleReceipts?.find(row => stableJson(row.sourceRef) === stableJson(epoch.oracleRuntimeReferencePolicy!.oracleSourceRef));
+        if (!oracle) throw new Error('实例事实窗口缺少原 Oracle');
+        assertTtrpgOpenOracleRuntimeReferenceJournalV1({ policy: epoch.oracleRuntimeReferencePolicy, operations: openRun.entityOperations ?? [], oracle,
+          recipientActorKeys: authorization.selectedActorKeys, runtimeSourceHash: epoch.oracleRuntimeReferencePolicy.references.runtimeSourceHash,
+          rulePackContentHash: ttrpg.product.rulePackContentHash, consumerRef: epoch.startedRef });
+      } else if (Object.prototype.hasOwnProperty.call(payload.intent, 'oracleRuntimeReferencePolicy')) throw new Error('旧窗口不能伪装新的实例事实策略');
       if (epoch.runtimeEntityReferencePolicy) {
         if (stableJson(payload.intent.runtimeEntityReferencePolicy) !== stableJson(epoch.runtimeEntityReferencePolicy)) throw new Error('局势实例引用不是本次明确冻结的原策略');
         assertTtrpgOpenSituationRuntimeReferenceJournalV1({ policy: epoch.runtimeEntityReferencePolicy, operations: openRun.entityOperations ?? [],

@@ -25,13 +25,13 @@ import { hashCanonicalValue } from '../agent/run/hash'
 import { finalizeContextGatewayAttemptEvidenceV1, readContextGatewayManifestV3ForAttemptV1 } from '../context-gateway/attempt-evidence'
 import { recordAgentRunArtifactV1, readAgentRunArtifactExactV1 } from '../memory/artifact-store'
 import { readProductRuntimeState, readProductRuntimeStateVersion } from '../product/runtime-core'
-import { prepareTtrpgOpenIntentInputV1, prepareTtrpgOpenOracleInputV1, prepareTtrpgOpenFactNormalizationInputV1, prepareTtrpgOpenCompanionInputV1, prepareTtrpgOpenKpInputV1, prepareTtrpgOpenBriefInputV1, prepareTtrpgOpenSituationInputV1, prepareTtrpgOpenPublicSituationInputV1 } from './open-intent-input'
+import { prepareTtrpgOpenIntentInputV1, prepareTtrpgOpenOracleInputV1, prepareTtrpgOpenOracleInputV2, prepareTtrpgOpenFactNormalizationInputV1, prepareTtrpgOpenCompanionInputV1, prepareTtrpgOpenKpInputV1, prepareTtrpgOpenBriefInputV1, prepareTtrpgOpenSituationInputV1, prepareTtrpgOpenPublicSituationInputV1 } from './open-intent-input'
 import { dispatchTtrpgOpenModelCallV1, finishTtrpgOpenModelCallV1 } from './runtime-commands'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { loadTtrpgOpenModelContextV1, ttrpgOpenModelPurposeForSkillV1, type TtrpgOpenModelPurposeV1 } from './open-model-purpose'
 import { parseTtrpgOpenOracleSemanticCandidateV1, parseTtrpgOpenFactNormalizationCandidateV1, type TtrpgOpenOracleCandidateV1 } from './open-oracle-candidate'
 import { parseTtrpgOpenIntentV1, type TtrpgOpenIntentV1 } from './open-intent'
-import { ttrpgOpenScopedKeyV1 } from './open-coordination'
+import { ttrpgOpenScopedKeyV1, TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1 } from './open-coordination'
 import { assertTtrpgOpenHostingDelegationV1 } from './open-hosting-delegation'
 import { verifyTtrpgOpenModelCallEvidenceV1 } from './open-model-call-evidence'
 import type { TtrpgOpenInputEvidenceV1 } from './open-input-evidence'
@@ -110,9 +110,15 @@ export async function generateTtrpgOpenIntentCandidateV1(input: Omit<Parameters<
   return { status: 'candidate', prepared, candidate: result.candidate }
 }
 
-export async function generateTtrpgOpenOracleCandidateV1(input: Omit<Parameters<typeof prepareTtrpgOpenOracleInputV1>[0], 'modelIdentity'> & {
-  aiConfig?: AIConfig; runAI?: TestTransport
-}) {
+type OracleGenerationInputV1 = Omit<Parameters<typeof prepareTtrpgOpenOracleInputV1>[0], 'modelIdentity'> & { aiConfig?: AIConfig; runAI?: TestTransport }
+export async function generateTtrpgOpenOracleCandidateV1(input: OracleGenerationInputV1) {
+  return generateTtrpgOpenOracleCandidate(input, false)
+}
+export async function generateTtrpgOpenOracleCandidateV2(input: Omit<OracleGenerationInputV1, 'rawInput'> & { referencePolicy: 'recorded-oracle-instances-v1' }) {
+  if (input.referencePolicy !== 'recorded-oracle-instances-v1') throw new Error('请明确使用原 Oracle 的已创建对象引用策略')
+  return generateTtrpgOpenOracleCandidate({ ...input, rawInput: TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1 }, true)
+}
+async function generateTtrpgOpenOracleCandidate(input: OracleGenerationInputV1, runtimeReferences: boolean) {
   if (!input.aiConfig && !input.runAI) throw new Error('[ttrpg-open-oracle] 缺少明确模型配置')
   const meta = { category: 'runtime.ttrpg-open.oracle-interpret', projectId: input.scope.projectId,
     configOverrides: { maxTokens: input.maximumOutputTokens }, contextOverflowPolicy: 'reject' as const }
@@ -120,7 +126,8 @@ export async function generateTtrpgOpenOracleCandidateV1(input: Omit<Parameters<
   const modelIdentity = input.runAI ? { provider: 'test-adapter', model: 'injected' }
     : { provider: resolved!.config.provider, model: resolved!.config.model }
   if (!input.runAI && modelIdentity.provider === 'poe') throw new Error('[ttrpg-open-oracle] 当前 provider 不支持本次要求的输出上限')
-  const prepared = await prepareTtrpgOpenOracleInputV1({ ...input, modelIdentity })
+  const prepared = runtimeReferences ? await prepareTtrpgOpenOracleInputV2({ ...input, modelIdentity, referencePolicy: 'recorded-oracle-instances-v1' })
+    : await prepareTtrpgOpenOracleInputV1({ ...input, modelIdentity })
   const result = await executeTtrpgOpenOracleRequestV1({ ...input, runId: prepared.runId, requestKey: prepared.requestKey })
   if (result.status !== 'candidate') throw new Error('[ttrpg-open-oracle] 请求已被其他执行器接管，未重复发送')
   return { prepared, ...result }

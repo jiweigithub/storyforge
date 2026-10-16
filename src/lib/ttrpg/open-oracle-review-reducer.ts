@@ -54,7 +54,8 @@ export function applyTtrpgOpenOracleReviewEventV1(state: ProductRuntimeState, ev
         || stable(ttrpgOpenOracleFactProposalFromFactV1(entry.fact)) !== stable(review.proposals[choice.proposalIndex])
         || ledger.entries.some(previous => previous.fact.factKey === entry.fact.factKey)) p.fail('Oracle 批次事实不是被选中的真实提案')
       assertTtrpgOpenFactModelCallV1(entry, run.coordination.calls)
-      assertTtrpgOpenFactEntryGatesV1({ basis: ledger.basis, entries: ttrpgOpenSessionFactsV1(ledger), entry, oracle, authorization: auth, storyFacts: runtime.product.effectLedger.storyFacts })
+      assertTtrpgOpenFactEntryGatesV1({ basis: ledger.basis, entries: ttrpgOpenSessionFactsV1(ledger), entry, oracle, authorization: auth,
+        entityOperations: run.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
       const retirement = entry.fact.supersedes === null ? null : retirements.find(retirement => retirement.factKey === entry.fact.supersedes)
       if ((entry.fact.supersedes !== null && !retirement) || (retirement && (retirement.supersededByFactKey !== entry.fact.factKey
         || retirement.reason !== entry.fact.supersedeReason || stable(retirement.sourceRef) !== stable(review.sourceRef)

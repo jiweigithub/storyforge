@@ -41,7 +41,8 @@ export function applyTtrpgOpenFactEventV1(state: ProductRuntimeState, event: Pro
     const oracle = run.oracleReceipts?.find(receipt => stable(receipt.sourceRef) === stable(entry.oracleSourceRef)) ?? p.fail('事实没有真实 Oracle 来源')
     const intent = p.record(payload.intent, ['viewerKey', 'oracleSourceRef', 'proposal', 'candidateHash',
       ...(entry.modelCandidate ? ['modelCandidate'] : []), ...(entry.runtimeEntityReferences ? ['referencePolicy'] : [])], 'fact assertion intent')
-    if (entry.runtimeEntityReferences && (entry.modelCandidate || intent.referencePolicy !== 'committed-runtime-entities-v1')) p.fail('运行实体事实需要独立明确引用决定，不能扩展旧模型候选权限')
+    if (entry.runtimeEntityReferences && intent.referencePolicy !== 'committed-runtime-entities-v1') p.fail('运行实体事实需要独立明确引用决定，不能扩展旧模型候选权限')
+    if (epoch.oracleRuntimeReferencePolicy && !entry.modelCandidate) p.fail('实例事实模型窗口不能借作人类原创确认')
     if (entry.modelCandidate && stable(intent.modelCandidate) !== stable(entry.modelCandidate)) p.fail('模型候选不是本次明确确认的版本')
     assertTtrpgOpenFactModelCallV1(entry, run.coordination.calls)
     if (intent.viewerKey !== viewerKey || stable(intent.oracleSourceRef) !== stable(entry.oracleSourceRef) || intent.candidateHash !== entry.candidateHash

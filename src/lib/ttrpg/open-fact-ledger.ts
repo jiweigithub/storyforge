@@ -68,6 +68,14 @@ export function assertTtrpgOpenFactModelCallV1(entry: TtrpgOpenFactEntryV1, call
     || call.terminalRef.sessionKey !== entry.sourceRef.sessionKey || call.terminalRef.sequence >= entry.sourceRef.sequence
     ) p.fail('事实没有同一已完成语义模型请求的真实输入和原始响应回执')
   assertTtrpgOpenSemanticCallOriginV1(call,entry.oracleSourceRef,marker.normalizationOf)
+  if (entry.runtimeEntityReferences) {
+    const policy = call.oracleInterpretation?.runtimeReferencePolicy
+    if (!policy || entry.runtimeEntityReferences.runtimeSourceHash !== policy.references.runtimeSourceHash
+      || entry.runtimeEntityReferences.rulePackContentHash !== policy.references.rulePackContentHash
+      || entry.runtimeEntityReferences.references.some(row => !policy.references.references.some(original => stable(row) === stable({
+        entityRef: original.entityRef, audience: original.audience, knownByActorKeys: original.recipientActorKeys,
+        sourceRef: original.sourceRef, operationKey: original.operationKey, planHash: original.planHash })))) p.fail('模型运行事实没有原新版调用实际读取的准确创建来源')
+  }
 }
 export interface TtrpgOpenFactRetirementV1 {
   factKey: string; sourceRef: TtrpgOpenSourceRefV1; authorizationEpochKey: string; viewerKey: string;

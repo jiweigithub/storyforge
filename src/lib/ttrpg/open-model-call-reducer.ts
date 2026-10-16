@@ -1,4 +1,4 @@
-import { assertTtrpgOpenEntityModelCallOriginV1 } from './open-model-calls'
+import { assertTtrpgOpenEntityModelCallOriginV1, assertTtrpgOpenOracleRuntimeCallOriginV1 } from './open-model-calls'
 import { assertTtrpgOpenEpochPurposeV1 } from './open-coordination'
 /** Pure external-request journal: replay never dispatches a provider or reads evidence storage. */
 import type { ProductRuntimeEvent, ProductRuntimeState } from '../types'
@@ -37,6 +37,7 @@ export function applyTtrpgOpenModelCallEventV1(state: ProductRuntimeState, event
     || call.createdRef.sessionKey !== runtime.sessionKey || !seat || seat.controller === 'ai' || seat.assignmentState !== 'claimed'
     || (call.narrationBinding?.viewerKey ?? epoch.viewerKey) !== seat.viewerKey || event.actorKey !== call.actorKey) p.fail('模型调用不属于当前真人授权窗口')
   assertTtrpgOpenEpochPurposeV1(epoch, call.skillId);
+  assertTtrpgOpenOracleRuntimeCallOriginV1(runtime, call)
   assertTtrpgOpenModelActorV1(runtime.authorization, call.skillId, call.actorKey,seat.viewerKey)
   const ref = { sessionKey: runtime.sessionKey, sequence: event.sequence }
   const previousIndex = coordination.calls.findIndex(previous => previous.requestKey === call.requestKey)

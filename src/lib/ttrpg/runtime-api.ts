@@ -117,9 +117,9 @@ export {
 export {
   type TtrpgTabletopOperationV1,
 } from './runtime-state'
-export { prepareTtrpgOpenIntentInputV1, prepareTtrpgOpenOracleInputV1, prepareTtrpgOpenFactNormalizationInputV1 } from './open-intent-input'
+export { prepareTtrpgOpenIntentInputV1, prepareTtrpgOpenOracleInputV1, prepareTtrpgOpenOracleInputV2, prepareTtrpgOpenFactNormalizationInputV1 } from './open-intent-input'
 export { recoverTtrpgOpenRuntimeCandidateV1, generateTtrpgOpenIntentCandidateV1, executeTtrpgOpenIntentRequestV1, readTtrpgOpenIntentCandidateV1,
-  generateTtrpgOpenOracleCandidateV1, executeTtrpgOpenOracleRequestV1, readTtrpgOpenOracleCandidateV1, generateTtrpgOpenFactNormalizationCandidateV1, executeTtrpgOpenFactNormalizationRequestV1, readTtrpgOpenFactNormalizationCandidateV1 } from './open-intent-harness'
+  generateTtrpgOpenOracleCandidateV1, generateTtrpgOpenOracleCandidateV2, executeTtrpgOpenOracleRequestV1, readTtrpgOpenOracleCandidateV1, generateTtrpgOpenFactNormalizationCandidateV1, executeTtrpgOpenFactNormalizationRequestV1, readTtrpgOpenFactNormalizationCandidateV1 } from './open-intent-harness'
 export { reconcileTtrpgOpenOracleFactRunV1, TtrpgOpenOracleReceiptPendingError } from './open-oracle-adoption'
 
 export { resumeTtrpgOpenPressureV1 } from './open-pressure-coordinator'
@@ -179,5 +179,7 @@ export { readTtrpgOpenEntityCandidateV1 } from './open-entity-candidate'
 export type { TtrpgOpenEntityCandidateV1 } from './open-entity-candidate'
 export { finishTtrpgOpenEntityDraftV1, reconcileTtrpgOpenStoppedEntityV1 } from './open-entity-stop'
 export { repairTtrpgOpenEntityResponseReceiptV1, abandonTtrpgOpenEntityWaitV1 } from './open-situation-request-recovery'
+export { finishTtrpgOpenOracleInstanceDraftV1, reconcileTtrpgOpenStoppedOracleInstanceV1 } from './open-runtime-draft-stop'
+export { repairTtrpgOpenOracleInstanceResponseReceiptV1, abandonTtrpgOpenOracleInstanceWaitV1 } from './open-situation-request-recovery'
 export { acceptTtrpgOpenEntityCandidateV1 } from './runtime-commands'
 export { reconcileTtrpgOpenEntityRunV1, TtrpgOpenEntityReceiptPendingError } from './open-entity-adoption'

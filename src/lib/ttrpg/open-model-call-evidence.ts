@@ -1,3 +1,4 @@
+import { reviewTtrpgOpenOracleRuntimeDeliveryV1 } from './open-oracle-runtime-delivery'
 import { assertTtrpgOpenFrozenContextSourcesV1 } from './open-model-purpose-contract'
 import { assertInstanceBinding } from '../product/runtime-instances'
 /** Exact governed Run/evidence proof checked again by the runtime command transaction. */
@@ -53,6 +54,10 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
   const bound = snapshot.contract.scope.runtime
   const binding = snapshot.contract.executionBindings?.find(binding => binding.stepId === call.stepId)
   const step = snapshot.projection.steps[call.stepId]
+  if (call.oracleInterpretation?.runtimeReferencePolicy && (binding?.version !== 2
+    || projectFrozenAgentSkillDefinitionV1(binding).promptVersion !== 'ttrpg-open-oracle-interpret-v3')) {
+    throw new Error('实例事实读取必须绑定明确支持本协议的原 V3 Skill，旧冻结 Skill 不取得新权限')
+  }
   if (snapshot.run.productRuntimeSessionId !== input.sessionId || snapshot.run.contractHash !== call.runContractHash
     || !bound || bound.productRuntimeSessionId !== input.sessionId || bound.visibilityHash !== call.visibilityHash
     || bound.releaseHash !== call.runtimeSourceHash || binding?.skillId !== call.skillId
@@ -141,10 +146,12 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
         sessionKey: call.createdRef.sessionKey, actorKey: call.actorKey, skillId: call.skillId })
       const oracleRef = call.oracleInterpretation?.oracleSourceRef ?? call.supportSlot?.oracleSourceRef
       let oracleInputMatched = !oracleRef, acceptedReviewMatched = !call.supportSlot
+      const oracleDelivery: Array<{ sourceKey: string; content: string }> = []
       for (const ref of evidence.preflight.artifacts) {
         const bytes = await exact(ref.artifactKind, ref.contentHash)
         if (ref.role === 'source-snapshot' && oracleRef) {
           const source = JSON.parse(bytes) as { content: string }
+          oracleDelivery.push({ sourceKey: ref.sourceKey!, content: source.content })
           const packet = JSON.parse(source.content) as { schema: string; sourceRef: unknown;reviewHash?: string;oracleSourceRef?: unknown }
           if (packet.schema === 'storyforge.ttrpg-open-gm-oracle-input') {
             if (await hashProductProductionValueV2(packet.sourceRef) !== await hashProductProductionValueV2(oracleRef)) throw new Error('[ttrpg-open-call] Oracle 槽位与实际读取不一致')
@@ -157,6 +164,8 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
           }
         }
       }
+      if (call.oracleInterpretation?.runtimeReferencePolicy) reviewTtrpgOpenOracleRuntimeDeliveryV1(call.oracleInterpretation.runtimeReferencePolicy, oracleDelivery)
+      else if (oracleDelivery.some(row => { const value = JSON.parse(row.content); return value.schema === 'storyforge.ttrpg-open-gm-oracle-input' && value.version === 2 })) throw new Error('旧模型调用不能使用新实例 Oracle 正文')
       if (!oracleInputMatched) throw new Error('[ttrpg-open-call] 缺少指定 Oracle 的真实输入字节')
       if (!acceptedReviewMatched) throw new Error('[ttrpg-open-call] 缺少已接受解释的真实完整输入字节')
       verifiedPreflight = true

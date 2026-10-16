@@ -18,6 +18,7 @@ import { estimateTokens } from '../ai/context-budget'
 import { createTtrpgOpenRuntimeResourceProviderV1, type TtrpgOpenResourceRowV1 } from './open-runtime-resource-provider'
 import type { TtrpgOpenContextConsumerV1 } from './open-context-policy'
 import { TtrpgOpenReadConflictV1 } from './open-read-conflict'
+import { isTtrpgOpenOracleRuntimeGuidanceVisibleV1 } from './open-oracle-runtime-delivery'
 
 export { TTRPG_OPEN_GUIDANCE_SOURCE_KEYS_V1 as TTRPG_OPEN_GUIDANCE_SOURCES_V1 } from './open-model-purpose-contract'
 export function createTtrpgOpenGuidanceProviderV1(consumer: TtrpgOpenContextConsumerV1) {
@@ -44,14 +45,18 @@ async function catalog(scope: FrozenResourceScopeV1, consumer: TtrpgOpenContextC
   const state = await readProductRuntimeState(input.sessionId), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
   if (!runtime?.authorization || !runtime.openRun || state.lastSequence !== context.readEvidence.sequence) throw new TtrpgOpenReadConflictV1('读取情境来源期间进度已变化')
   const recipients = consumer === 'actor' ? [input.actorKey] : [...runtime.authorization.selectedActorKeys]
+  const oracleScope = consumer === 'gm-assistant' && 'oracleRuntimeReferencePolicy' in context ? context.oracleRuntimeReferencePolicy : undefined
+  const oracleGuidanceScope = oracleScope ? { oracleSourceRef: oracleScope.oracleSourceRef, audience: oracleScope.audience,
+    recipientActorKeys: oracleScope.recipientActorKeys, snapshotHash: oracleScope.references.snapshotHash } : undefined
   const policy = content.campaign.contextPolicy
   const sourceKey = TTRPG_OPEN_GUIDANCE_SOURCES_V1[consumer]
-  const visible = (audience: string, knownBy: readonly string[]) => audience === 'public' || audience === 'party'
+  const visible = (audience: string, knownBy: readonly string[]) => oracleScope ? isTtrpgOpenOracleRuntimeGuidanceVisibleV1(oracleScope, audience, knownBy) : audience === 'public' || audience === 'party'
     || consumer === 'gm-assistant' && audience === 'gm-only'
     || audience === 'private' && (consumer === 'gm-assistant' ? knownBy.includes('gm') : recipients.every(key => knownBy.includes(key)))
   const rows: Array<{ suffix: string; title: string; value: unknown; mandatory: boolean; kind: 'fact' | 'reference'; authority: ContextResourceDescriptorV1['authority'] }> = [{
     suffix: `context-contract.${consumer}`, title: '情境指引与历史叙述的权限边界', mandatory: true, kind: 'fact', authority: 'confirmed-evidence',
-    value: { schema: 'storyforge.ttrpg-open-context-guidance-contract', version: 1, consumer, maximumContextTokens: policy?.maximumContextTokens ?? 16000,
+    value: { schema: 'storyforge.ttrpg-open-context-guidance-contract', version: oracleScope ? 2 : 1, consumer, maximumContextTokens: policy?.maximumContextTokens ?? 16000,
+      ...(oracleScope ? { oracleGuidanceScope } : {}),
       noRuleAuthority: true, noKnowledgeGrant: true, narrationIsNotMechanicalEvidence: true, readSourceDependenciesRequired: true },
   }]
   for (const { consumers, trigger } of policy?.triggers ?? []) {
@@ -64,17 +69,19 @@ async function catalog(scope: FrozenResourceScopeV1, consumer: TtrpgOpenContextC
     const mayRead = consumer === 'gm-assistant'
       ? narration.binding.viewerKey === runtime.authorization.seats.find(s => s.role === 'gm')?.viewerKey
       : recipients.every(key => narration.recipientActorKeys.includes(key))
-    if (!mayRead) continue
+    if (!mayRead || oracleScope && (oracleScope.audience === 'public' || oracleScope.audience === 'party'
+      && !oracleScope.recipientActorKeys.every(key => narration.recipientActorKeys.includes(key)))) continue
     rows.push({ suffix: `recent.${await hashCanonicalValue(narration.sourceRef)}`, title: `已保存叙述 · ${(await hashCanonicalValue(narration.sourceRef)).slice(0, 12)}`, mandatory: false, kind: 'reference', authority: 'confirmed-evidence',
       value: { schema: 'storyforge.ttrpg-open-narration-recall', version: 1, paragraphs: narration.narration.paragraphs.map(p => p.text),
         noRuleAuthority: true, noKnowledgeGrant: true, reliability: 'narrated' } })
   }
-  const policyHash = await hashCanonicalValue({ sourceKey, consumer, fullIsAtomic: true, originalRead: false })
+  const policyHash = await hashCanonicalValue({ sourceKey, consumer, fullIsAtomic: true, originalRead: false,
+    ...(oracleScope ? { oracleGuidanceScope } : {}) })
   const resources: TtrpgOpenResourceRowV1[] = await Promise.all(rows.map(async row => {
     const text = canonicalStringify(row.value), contentHash = await sha256Text(text), tokenCount = estimateTokens(text)
     const descriptor: ContextResourceDescriptorV1 = { version: 1, resourceKey: `fact:ttrpg-open:${context.readEvidence.sessionKey}:${input.actorKey}:${row.suffix}`,
       sourceKey, kind: row.kind, title: row.title, shortSummary: row.title, authority: row.authority,
-      contentRevision: context.readEvidence.sequence, contentHash, policyRevision: 1, policyHash,
+      contentRevision: context.readEvidence.sequence, contentHash, policyRevision: oracleScope ? 2 : 1, policyHash,
       scope: { projectId: workspace.projectId, worldId: workspace.worldId, workId: workspace.workId, productRuntimeSessionId: input.sessionId, runtimeActorKey: input.actorKey },
       relations: [], sourceRefs: [frozenSourceRef, { table: 'productRuntimeSessions', recordId: input.sessionId, field: 'runtimeHeadStateJson',
         revision: context.readEvidence.sequence, contentHash: context.readEvidence.stateHash }], tokenEstimate: { full: tokenCount }, availableDepths: ['full'], priority: row.mandatory ? 'must-read' : 'normal' }

@@ -1,5 +1,8 @@
 import { parseTtrpgOpenNarrationBindingV1, type TtrpgOpenNarrationBindingV1 } from './open-kp-binding'
 import { parseTtrpgOpenEntityModelSelectionV1, type TtrpgOpenEntityModelSelectionV1 } from './open-entity-model-contract'
+import { parseTtrpgOpenOracleRuntimeReferencePolicyV1, assertTtrpgOpenOracleRuntimeReferenceJournalV1,
+  type TtrpgOpenOracleRuntimeReferencePolicyV1 } from './open-runtime-entity-references'
+import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 /** Persisted request lifecycle. Only a dispatched call may have an unknown external result. */
 import type { TtrpgOpenEpochV1, TtrpgOpenSourceRefV1 } from './open-coordination'
 import { parseTtrpgOpenSourceRefV1 } from './open-coordination'
@@ -20,7 +23,7 @@ export interface TtrpgOpenModelCallV1 {
   terminalReason: string | null
   intentRejection?: { sourceRef: TtrpgOpenSourceRefV1; candidateHash: string }
   narrationBinding?: TtrpgOpenNarrationBindingV1
-  oracleInterpretation?: { worldTurn: number; oracleSourceRef: TtrpgOpenSourceRefV1 }
+  oracleInterpretation?: { worldTurn: number; oracleSourceRef: TtrpgOpenSourceRefV1; runtimeReferencePolicy?: TtrpgOpenOracleRuntimeReferencePolicyV1 }
   supportSlot?: { worldTurn: number; purpose: 'fact-normalize'; sourceRef: TtrpgOpenSourceRefV1; sourceHash: string; oracleSourceRef: TtrpgOpenSourceRefV1 }
 }
 export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 {
@@ -46,9 +49,11 @@ export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 
   })() : undefined
   if ((r.skillId === 'prose.ttrpg-open-fact-normalize') !== (supportSlot !== undefined)) p.fail('事实归一必须绑定唯一辅助槽和已确认来源，其他调用不能占用')
   const oracleInterpretation = Object.prototype.hasOwnProperty.call(r, 'oracleInterpretation') ? (() => {
-    const marker = p.record(r.oracleInterpretation, ['worldTurn', 'oracleSourceRef'], 'Oracle interpretation slot')
+    const hasPolicy = Object.prototype.hasOwnProperty.call(r.oracleInterpretation, 'runtimeReferencePolicy')
+    const marker = p.record(r.oracleInterpretation, ['worldTurn', 'oracleSourceRef', ...(hasPolicy ? ['runtimeReferencePolicy'] : [])], 'Oracle interpretation slot')
     return { worldTurn: p.integer(marker.worldTurn, 'Oracle interpretation worldTurn', 0, Number.MAX_SAFE_INTEGER),
-      oracleSourceRef: parseTtrpgOpenSourceRefV1(marker.oracleSourceRef) }
+      oracleSourceRef: parseTtrpgOpenSourceRefV1(marker.oracleSourceRef),
+      ...(hasPolicy ? { runtimeReferencePolicy: parseTtrpgOpenOracleRuntimeReferencePolicyV1(marker.runtimeReferencePolicy) } : {}) }
   })() : undefined
   if ((r.skillId === 'prose.ttrpg-open-oracle-interpret') !== (oracleInterpretation !== undefined)) p.fail('Oracle 解释必须绑定唯一世界轮槽位，其他调用不能占用')
   const createdRef = parseTtrpgOpenSourceRefV1(r.createdRef)
@@ -93,6 +98,18 @@ export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 
     reservedOutputTokens: p.integer(r.reservedOutputTokens, 'reserved output',1,100_000), reservedCostUsd: p.number(r.reservedCostUsd, 'reserved cost',0,1000),
     providerRequestId: p.nullable(r.providerRequestId, (v,l) => p.text(v,l,500), 'provider request ID'), responseArtifactHash, usage, terminalReason,
     ...(entityProposal ? { entityProposal } : {}), ...(hostingDelegationRef ? { hostingDelegationRef } : {}),...(oracleInterpretation ? { oracleInterpretation } : {}),...(supportSlot ? { supportSlot } : {}), ...(narrationBinding ? { narrationBinding } : {}), ...(intentRejection ? { intentRejection } : {}) }
+}
+/** The new call scope must be the exact original epoch policy; historical V1 never acquires it. */
+export function assertTtrpgOpenOracleRuntimeCallOriginV1(runtime: Pick<TtrpgRuntimeStateV2, 'openRun' | 'product'>, call: TtrpgOpenModelCallV1) {
+  const epoch = runtime.openRun?.coordination.epochs.find(row => row.epochKey === call.authorizationEpochKey)
+  const policy = call.oracleInterpretation?.runtimeReferencePolicy
+  if (!policy && !epoch?.oracleRuntimeReferencePolicy) return
+  const oracle = runtime.openRun?.oracleReceipts?.find(row => stable(row.sourceRef) === stable(call.oracleInterpretation?.oracleSourceRef))
+  if (!epoch || !policy || !oracle || call.skillId !== 'prose.ttrpg-open-oracle-interpret'
+    || stable(policy) !== stable(epoch.oracleRuntimeReferencePolicy) || stable(policy.oracleSourceRef) !== stable(oracle.sourceRef)) p.fail('实例事实调用没有原窗口、原 Oracle 和准确读取策略')
+  assertTtrpgOpenOracleRuntimeReferenceJournalV1({ policy, operations: runtime.openRun!.entityOperations ?? [], oracle,
+    recipientActorKeys: policy.recipientActorKeys, runtimeSourceHash: call.runtimeSourceHash, rulePackContentHash: runtime.product.rulePackContentHash,
+    consumerRef: epoch.startedRef })
 }
 export function assertTtrpgOpenSupportSlotV1(runtime: Pick<TtrpgRuntimeStateV2,'openRun'|'branchLineage'>,worldTurn: number): void {
   const calls = [...(runtime.openRun?.coordination.calls ?? []),

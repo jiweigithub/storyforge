@@ -110,6 +110,10 @@ import { parseTtrpgOpenOracleReceiptV1, assertTtrpgOpenOracleCallerV1, verifyTtr
 import { createTtrpgOpenFactBasisV1, verifyTtrpgOpenFactLedgerV1, parseTtrpgOpenOracleFactProposalV1, hashTtrpgOpenOracleFactCandidateV1,
   parseTtrpgOpenFactEntryV1, parseTtrpgOpenFactRetirementV1, ttrpgOpenFactSourceEventRefV1, assertTtrpgOpenFactEntryGatesV1,
   ttrpgOpenSessionFactsV1, ttrpgOpenFactIdentityV1, assertTtrpgOpenModelFactApproverV1, type TtrpgOpenFactModelCandidateV1, type TtrpgOpenOracleFactProposalV1 } from './open-fact-ledger';
+import { assertTtrpgOpenOracleRuntimeEpochAuthorityV1, TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1 } from './open-coordination';
+import { assertTtrpgOpenOracleRuntimeCallOriginV1 } from './open-model-calls';
+import { parseTtrpgOpenOracleRuntimeReferencePolicyV1, assertTtrpgOpenOracleRuntimeReferenceJournalV1,
+  verifyTtrpgOpenOracleRuntimeReferencePolicyHashV1, type TtrpgOpenOracleRuntimeReferencePolicyV1 } from './open-runtime-entity-references';
 import { createTtrpgOpenFactRuntimeReferencesV1 } from './open-fact-runtime-references';
 import { parseTtrpgOpenSituationRuntimeReferencePolicyV1, assertTtrpgOpenRuntimeEntityReferencesMatchV1,
   assertTtrpgOpenSituationRuntimeReferenceJournalV1, type TtrpgOpenSituationRuntimeReferencePolicyV1 } from './open-runtime-entity-references';
@@ -764,6 +768,7 @@ async function prepareTtrpgOpenFactAuthorityV1(context: TtrpgFormalBuildContextV
   const seat = assertTtrpgOpenAuthorizationCurrentV1({ authorization, participants: context.participants, viewerKey });
   const epoch = run.coordination.epochs.find(epoch => epoch.epochKey === run.coordination.activeEpochKey);
   if (modelCandidate) assertTtrpgOpenModelFactApproverV1(authorization, viewerKey);
+  if (!modelCandidate && epoch?.oracleRuntimeReferencePolicy) throw new Error('实例事实模型窗口只允许审阅原模型候选，不能作为人类原创确认。');
   if ((!modelCandidate && seat.role !== 'gm') || seat.controller === 'ai' || !epoch || epoch.status !== 'active' || epoch.viewerKey !== viewerKey
     || epoch.authorizationHash !== await hashProductProductionValueV2(authorization)
     || runtime.product.safety.status !== 'active' || run.stage.status !== 'open') throw new Error('[ttrpg-fact] 手动事实确认需要本人当前真人 GM 窗口。');
@@ -784,7 +789,11 @@ async function buildTtrpgOpenFactAssertionV1(context: TtrpgFormalBuildContextV1,
 }, prepared?: Awaited<ReturnType<typeof prepareTtrpgOpenFactAuthorityV1>>) {
   const { viewerKey, proposal, oracleSourceRef, candidateHash, baseStateHash, modelCandidate } = input;
   const { runtime, run, authorization, seat, epoch, basis, content } = prepared ?? await prepareTtrpgOpenFactAuthorityV1(context, viewerKey, modelCandidate !== undefined);
-  if (input.referencePolicy && modelCandidate) throw new Error('旧模型事实候选不取得运行实体引用权。');
+  if (input.referencePolicy && modelCandidate) {
+    const call = run.coordination.calls.find(row => row.requestKey === modelCandidate.requestKey);
+    if (!call?.oracleInterpretation?.runtimeReferencePolicy) throw new Error('旧模型事实候选不取得运行实体引用权。');
+    assertTtrpgOpenOracleRuntimeCallOriginV1(runtime, call);
+  }
   if (input.referencePolicy) await (await import('./open-entity-proof')).verifyTtrpgOpenEntityStateV1(context.state, content);
   const oracle = run.oracleReceipts?.find(receipt => stableJson(receipt.sourceRef) === stableJson(oracleSourceRef));
   if (!oracle) throw new Error('[ttrpg-fact] 事实必须引用本团局或已冻结祖先的真实 Oracle 结果。');
@@ -841,6 +850,11 @@ export async function commitTtrpgOpenOracleRuntimeEntityFactV1(input: FormalTtrp
   });
 }
 
+function modelFactRuntimeReferencePolicyV1(call: TtrpgOpenModelCallV1, proposal: TtrpgOpenOracleFactProposalV1) {
+  return call.oracleInterpretation?.runtimeReferencePolicy?.references.references.some(row => row.entityRef === proposal.subjectRef || row.entityRef === proposal.objectRef)
+    ? 'committed-runtime-entities-v1' as const : undefined;
+}
+
 /** The human selects one exact proposed fact; proof and state are rechecked in the formal event CAS. */
 export async function commitTtrpgOpenOracleCandidateFactV1(input: FormalTtrpgCommandEnvelope & {
   viewerKey: string; runId: number; requestKey: string; candidateHash: string; proposalIndex: number; decision: 'assert';
@@ -866,9 +880,10 @@ export async function commitTtrpgOpenOracleCandidateFactV1(input: FormalTtrpgCom
   const proposal = candidate.facts[input.proposalIndex], oracleSourceRef = candidate.oracleSourceRef;
   const candidateHash = await hashTtrpgOpenOracleFactCandidateV1({ proposal, oracleSourceRef, runtimeSourceHash: candidate.runtimeSourceHash,
     viewerKey, baseStateHash: envelope.baseStateHash });
+  const referencePolicy = modelFactRuntimeReferencePolicyV1(call, proposal);
   const modelCandidate: TtrpgOpenFactModelCandidateV1 = { requestKey, candidateHash: modelHash, runContractHash: call.runContractHash,
     inputManifestHash: candidate.inputManifestHash, rawResponseHash: candidate.rawResponseHash, proposalIndex: input.proposalIndex, ...(candidate.normalizationOf ? { normalizationOf: candidate.normalizationOf } : {}) };
-  const event = await appendFormalTtrpgCommand({ ...envelope, type: 'ttrpg.fact.asserted', intent: { viewerKey, oracleSourceRef, proposal, candidateHash, modelCandidate },
+  const event = await appendFormalTtrpgCommand({ ...envelope, type: 'ttrpg.fact.asserted', intent: { viewerKey, oracleSourceRef, proposal, candidateHash, modelCandidate, ...(referencePolicy ? { referencePolicy } : {}) },
     build: async context => {
       const proof = await verifyTtrpgOpenOracleCandidateProofV1({ ...input, scope });
       const { runtime: current, epoch } = await openModelCallCallerV1(context, viewerKey, true);
@@ -881,7 +896,7 @@ export async function commitTtrpgOpenOracleCandidateFactV1(input: FormalTtrpgCom
         throw new Error('[ttrpg-open-oracle] 候选权限、来源、事实或机械基线已经 stale');
       }
       return { ...await buildTtrpgOpenFactAssertionV1(context, { viewerKey, proposal, oracleSourceRef, candidateHash,
-        baseStateHash: envelope.baseStateHash, modelCandidate }), agentEvidence: proof.evidence };
+        baseStateHash: envelope.baseStateHash, modelCandidate, ...(referencePolicy ? { referencePolicy } : {}) }), agentEvidence: proof.evidence };
     },
   });
   try { await reconcileTtrpgOpenOracleFactRunV1({ ...input, scope }); }
@@ -946,7 +961,8 @@ export async function reviewTtrpgOpenOracleCandidateV1(input: FormalTtrpgCommand
           ...(candidate.normalizationOf ? { normalizationOf: candidate.normalizationOf } : {}) };
         const built = await buildTtrpgOpenFactAssertionV1(context,{ viewerKey,proposal,oracleSourceRef: candidate.oracleSourceRef,
           candidateHash: await hashTtrpgOpenOracleFactCandidateV1({ proposal,oracleSourceRef: candidate.oracleSourceRef,
-            runtimeSourceHash: candidate.runtimeSourceHash,viewerKey,baseStateHash: envelope.baseStateHash }),baseStateHash: envelope.baseStateHash,modelCandidate },prepared);
+            runtimeSourceHash: candidate.runtimeSourceHash,viewerKey,baseStateHash: envelope.baseStateHash }),baseStateHash: envelope.baseStateHash,modelCandidate,
+          ...(modelFactRuntimeReferencePolicyV1(call, proposal) ? { referencePolicy: modelFactRuntimeReferencePolicyV1(call, proposal) } : {}) },prepared);
         const entry = built.payload.entry,retirement = built.payload.retirement;
         entries.push(entry); if (retirement) retirements.push(retirement);
         run.factLedger = { schema: 'storyforge.ttrpg-open-fact-ledger',version: 1,basis: prepared.basis,
@@ -993,15 +1009,18 @@ export async function retireTtrpgOpenSessionFactV1(input: FormalTtrpgCommandEnve
 export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & {
   viewerKey: string; triggerKind: "submit-action" | "continue-host" | "request-brief" | "request-situation"; rawInput: string; manualAction?: TtrpgOpenManualActionAuthorizationV1;
   runtimeEntityReferencePolicy?: TtrpgOpenSituationRuntimeReferencePolicyV1;
+  oracleRuntimeReferencePolicy?: TtrpgOpenOracleRuntimeReferencePolicyV1;
 }): Promise<ProductRuntimeEvent> {
   const viewerKey = openKey(input.viewerKey, "viewerKey");
   const rawInput = openText(input.rawInput, "rawInput", 10_000);
+  const oracleRuntimeReferencePolicy = input.oracleRuntimeReferencePolicy === undefined ? undefined : parseTtrpgOpenOracleRuntimeReferencePolicyV1(input.oracleRuntimeReferencePolicy);
+  if (oracleRuntimeReferencePolicy && (input.triggerKind !== 'continue-host' || input.manualAction || input.runtimeEntityReferencePolicy || rawInput !== TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1)) throw new Error('实例事实策略需要独立的明确咨询窗口。');
   const runtimeEntityReferencePolicy = input.runtimeEntityReferencePolicy === undefined ? undefined : parseTtrpgOpenSituationRuntimeReferencePolicyV1(input.runtimeEntityReferencePolicy);
   if (runtimeEntityReferencePolicy && (input.triggerKind !== 'request-situation' || runtimeEntityReferencePolicy.consumer !== 'private-gm')) throw new Error('[ttrpg-situation] 实例引用必须使用原用途的独立局势窗口。');
   if (input.triggerKind !== "submit-action" && input.triggerKind !== "continue-host" && input.triggerKind !== "request-brief" && input.triggerKind !== "request-situation") throw new Error("[ttrpg] epoch 触发种类无效。");
   return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.epoch.started",
     intent: { viewerKey, rawInput, triggerKind: input.triggerKind, ...(input.manualAction ? { manualAction: input.manualAction } : {}),
-      ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}) },
+      ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}), ...(oracleRuntimeReferencePolicy ? { oracleRuntimeReferencePolicy } : {}) },
     build: async ({ state, session, sequence, ttrpgContent, participants }) => {
       const content = requireTtrpgOpenContent(ttrpgContent);
       const runtime = parseTtrpgRuntimeStateV2(state.ttrpg);
@@ -1020,6 +1039,19 @@ export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
         if (!content.campaign.runtimePolicy.enabled) throw new Error('[ttrpg-situation] 冻结作品未允许模型生成局势');
         assertTtrpgOpenSituationEpochAuthorityV1(runtime, viewerKey);
       }
+      if (oracleRuntimeReferencePolicy) {
+        if (!content.campaign.runtimePolicy.enabled) throw new Error('冻结作品未启用模型咨询');
+        assertTtrpgOpenOracleRuntimeEpochAuthorityV1(runtime, viewerKey);
+        assertTtrpgOpenOracleInterpretationSlotV1(runtime, runtime.openRun.worldTime.worldTurn);
+        await (await import('./open-entity-proof')).verifyTtrpgOpenEntityStateV1(state, content);
+        await verifyTtrpgOpenOracleRuntimeReferencePolicyHashV1(oracleRuntimeReferencePolicy);
+        const oracle = runtime.openRun.oracleReceipts?.find(row => stableJson(row.sourceRef) === stableJson(oracleRuntimeReferencePolicy.oracleSourceRef));
+        if (!oracle) throw new Error('实例事实需要已保存的原 Oracle');
+        await verifyTtrpgOpenOracleJournalV1({ receipts: [oracle], rulePack: content.rulePack.content, sessionKey: runtime.sessionKey, seed: session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] });
+        assertTtrpgOpenOracleRuntimeReferenceJournalV1({ policy: oracleRuntimeReferencePolicy, operations: runtime.openRun.entityOperations ?? [], oracle,
+          recipientActorKeys: runtime.authorization.selectedActorKeys, runtimeSourceHash: session.runtimeSourceHash, rulePackContentHash: content.rulePack.contentHash,
+          consumerRef: { sessionKey: runtime.sessionKey, sequence } });
+      }
       if (runtimeEntityReferencePolicy) {
         await (await import('./open-entity-proof')).verifyTtrpgOpenEntityStateV1(state, content);
         assertTtrpgOpenSituationRuntimeReferenceJournalV1({ policy: runtimeEntityReferencePolicy, operations: runtime.openRun.entityOperations ?? [],
@@ -1030,15 +1062,16 @@ export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
       }
       const inputRevision = await hashProductProductionValueV2({ sessionKey: runtime.sessionKey,
         triggerKind: input.triggerKind, rawInput, viewerKey, authorizationHash, ...(input.manualAction ? { manualAction: input.manualAction } : {}),
-        ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}) });
+        ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}), ...(oracleRuntimeReferencePolicy ? { oracleRuntimeReferencePolicy } : {}) });
       const epoch = parseTtrpgOpenEpochV1({
+        ...(oracleRuntimeReferencePolicy ? { oracleRuntimeReferencePolicy } : {}),
         ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}),
         ...(input.manualAction ? { manualAction: input.manualAction } : {}),
         epochKey: await ttrpgOpenScopedKeyV1(runtime.sessionKey, "epoch", [String(sequence), inputRevision]),
         startedRef: { sessionKey: runtime.sessionKey, sequence }, closedRef: null, status: "active",
         triggeredBySeatKey: seat.seatKey, viewerKey, triggerKind: input.triggerKind, inputRevision,
         sessionZeroRevision: runtime.authorization.revision, authorizationHash,
-        budget: ttrpgOpenEpochBudgetForTriggerV1(frozenTtrpgOpenEpochBudgetV1(content.campaign), input.triggerKind), successfulActorKeys: [],
+        budget: ttrpgOpenEpochBudgetForTriggerV1(frozenTtrpgOpenEpochBudgetV1(content.campaign), input.triggerKind, Boolean(oracleRuntimeReferencePolicy)), successfulActorKeys: [],
         reservedCalls: 0, consumedTokens: 0, actualCostUsd: 0, stopReason: null,
       });
       if (epoch.manualAction) {
@@ -1299,6 +1332,7 @@ export async function reserveTtrpgOpenModelCallV1(input: FormalTtrpgCommandEnvel
         createdRef: { sessionKey: runtime.sessionKey, sequence: context.sequence }, dispatchRef: null, terminalRef: null,
         status: 'prepared', providerRequestId: null, responseArtifactHash: null, usage: null, terminalReason: null });
       assertTtrpgOpenEntityModelCallOriginV1(runtime, call);
+      assertTtrpgOpenOracleRuntimeCallOriginV1(runtime, call);
       assertTtrpgOpenNormalizationSourceV1(runtime,call);
       assertTtrpgOpenCallReservationV1({ epoch, calls: runtime.openRun!.coordination.calls, requestKey: call.requestKey,
         inputTokens: call.reservedInputTokens, outputTokens: call.reservedOutputTokens, maximumCostUsd: call.reservedCostUsd });

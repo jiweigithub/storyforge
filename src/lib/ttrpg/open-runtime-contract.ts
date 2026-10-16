@@ -12,7 +12,7 @@ import { parseTtrpgOpenTerminalReceiptV1, parseTtrpgOpenGateReceiptV1, type Ttrp
 import { parseTtrpgOpenSituationCycleV1, assertTtrpgOpenSituationCycleHistoryV1, type TtrpgOpenSituationCycleV1 } from './open-situation-cycle'
 import { parseTtrpgOpenSituationHistoryV1, type TtrpgOpenSituationHistoryV1 } from './open-situation-runtime'
 import { parseTtrpgOpenPressureCycleV1, assertTtrpgOpenPressureHistoryV1, parseTtrpgOpenPressureSignalV1, type TtrpgOpenPressureSignalV1, type TtrpgOpenPressureCycleV1 } from './open-pressure-cycle'
-import { assertTtrpgOpenNormalizationSourceV1 } from './open-model-calls';
+import { assertTtrpgOpenNormalizationSourceV1, assertTtrpgOpenOracleRuntimeCallOriginV1 } from './open-model-calls';
 import { parseTtrpgOpenOracleReviewV1, assertTtrpgOpenOracleReviewJournalV1, type TtrpgOpenOracleReviewV1 } from './open-oracle-review';
 import { parseTtrpgOpenKnowledgeV1, type TtrpgOpenKnowledgeEntryV1 } from './open-knowledge';
 import { parseTtrpgOpenOracleReceiptV1, type TtrpgOpenOracleReceiptV1 } from './open-oracle-contract';
@@ -923,6 +923,7 @@ export function parseTtrpgRuntimeStateV2(
     const interpretedTurns = new Set<number>(branchLineage?.ancestors.flatMap(ancestor =>
       ancestor.snapshot.openRun?.coordination.calls.flatMap(call => call.oracleInterpretation ? [call.oracleInterpretation.worldTurn] : []) ?? []) ?? []);
     for (const call of openRun.coordination.calls) {
+      assertTtrpgOpenOracleRuntimeCallOriginV1({ openRun, product: parsed.product }, call);
       if (!call.oracleInterpretation) continue;
       const marker = call.oracleInterpretation;
       if (marker.worldTurn > openRun.worldTime.worldTurn || interpretedTurns.has(marker.worldTurn)
@@ -1008,7 +1009,7 @@ export function parseTtrpgRuntimeStateV2(
       if (epoch.hostingDelegation && stableProductRuntimeJsonV1(epoch.hostingDelegation.authorizationRef) !== stableProductRuntimeJsonV1(authorization.sourceRef)) fail('有限主持委托未绑定本桌真实 Session Zero')
       if (!seat || seat.controller === "ai" || seat.assignmentState !== "claimed"
         || epoch.sessionZeroRevision !== authorization.revision
-        || stableProductRuntimeJsonV1(epoch.budget) !== stableProductRuntimeJsonV1(ttrpgOpenEpochBudgetForTriggerV1(epochBudget, epoch.triggerKind))
+        || stableProductRuntimeJsonV1(epoch.budget) !== stableProductRuntimeJsonV1(ttrpgOpenEpochBudgetForTriggerV1(epochBudget, epoch.triggerKind, Boolean(epoch.oracleRuntimeReferencePolicy)))
         || epoch.successfulActorKeys.length > epoch.budget.maximumAiActions
         || epoch.successfulActorKeys.some(actorKey => !authorization.seats.some(item => item.actorKey === actorKey && item.role === "player" && item.controller !== "human"))) {
         fail("epoch 与冻结预算、Session Zero 或队友控制权不一致");

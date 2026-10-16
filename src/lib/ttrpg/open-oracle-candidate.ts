@@ -11,6 +11,8 @@ import { parseStructuredOutputV1 } from '../agent/structured-output-pipeline'
 import { readTtrpgOpenRuntimeCandidateV1, verifyTtrpgOpenRuntimeCandidateEvidenceV1, type TtrpgOpenCandidateReadV1 } from './open-runtime-candidate'
 import { readProductRuntimeState } from '../product/runtime-core'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
+import { ttrpgOpenOracleRuntimeDeliveryPolicyV1 } from './open-oracle-runtime-delivery'
+import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 
 export interface TtrpgOpenOracleCandidateV1 {
   schema: 'storyforge.ttrpg-open-oracle-candidate'; version: 1; portable: false;
@@ -29,6 +31,7 @@ export function parseTtrpgOpenOracleSemanticCandidateV1(output: string, input: {
   const contract = p.object(input.contract, 'Oracle contract'), packet = p.object(input.oracle, 'Oracle input')
   p.literal(packet.schema, 'storyforge.ttrpg-open-gm-oracle-input', 'Oracle input schema')
   const sourceRef = parseTtrpgOpenSourceRefV1(packet.sourceRef)
+  const runtimePolicy = ttrpgOpenOracleRuntimeDeliveryPolicyV1(contract, packet)
   const audience = p.oneOf(packet.audience, ['public', 'party', 'gm-only'], 'Oracle input audience')
   const policies: TtrpgOpenFactPolicyV1[] = p.list(contract.factPolicy, 'Oracle fact policy', parseTtrpgOpenFactPolicyV1, 12, 12)
   const selectedActors = p.keys(contract.selectedActorKeys, 'Oracle selected actors', 1000)
@@ -37,9 +40,15 @@ export function parseTtrpgOpenOracleSemanticCandidateV1(output: string, input: {
     ...p.list(packet.permittedSessionFacts, 'Oracle session facts', value => p.object(value, 'Oracle session fact'), 100000)]
   const sourceKeys = new Set(sourceFacts.map(fact => p.key(fact.factKey, 'Oracle source fact')))
   const entityKeys = new Set([...entities.map(entity => p.key(entity.entityRef, 'Oracle entity')),
-    ...sourceFacts.flatMap(fact => [fact.subjectRef, fact.objectRef].filter((ref): ref is string => typeof ref === 'string'))])
+    ...(runtimePolicy ? [] : sourceFacts.flatMap(fact => [fact.subjectRef, fact.objectRef].filter((ref): ref is string => typeof ref === 'string')))])
   const facts = p.list(root.facts, 'Oracle proposed facts', parseTtrpgOpenOracleFactProposalV1, 3)
   for (const fact of facts) {
+    for (const key of [fact.subjectRef, fact.objectRef]) {
+      const origin = runtimePolicy?.references.find(row => row.entityRef === key)
+      if (origin && (!entities.some(row => row.entityRef === key && stable(row.runtimeOrigin) === stable(origin))
+        || rank[fact.audience] < rank[origin.audience] || fact.audience !== 'gm-only' && origin.audience !== 'public'
+          && fact.knownByActorKeys.some(actor => !origin.knownByActorKeys.includes(actor)))) p.fail('Oracle 实例事实超出实际读取的创建证据或准确接收者')
+    }
     const policy = policies.find(policy => policy.predicateKey === fact.predicateKey)
     if (policy?.authority.session !== 'semantic-fact' || !entityKeys.has(fact.subjectRef) || (fact.objectRef !== null && !entityKeys.has(fact.objectRef))
       || fact.sourceFactRefs.some(ref => !sourceKeys.has(ref)) || rank[fact.audience] < rank[audience]

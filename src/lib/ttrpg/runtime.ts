@@ -606,7 +606,7 @@ export function assertInitialTtrpgOpenProductStateV1(input: {
     if (!runtime?.branchLineage || runtime.product.rulePackContentHash !== input.content.rulePack.contentHash
       || runtime.product.campaignKey !== input.content.campaign.campaignKey
       || runtime.branchLineage.ancestors.some(ancestor => ancestor.snapshot.openRun?.coordination.epochs.some(epoch =>
-        JSON.stringify(epoch.budget) !== JSON.stringify(ttrpgOpenEpochBudgetForTriggerV1(runtime.epochBudget, epoch.triggerKind))))) {
+        JSON.stringify(epoch.budget) !== JSON.stringify(ttrpgOpenEpochBudgetForTriggerV1(runtime.epochBudget, epoch.triggerKind, Boolean(epoch.oracleRuntimeReferencePolicy)))))) {
       throw new Error("[ttrpg] open 分支必须绑定真实祖先、冻结规则与原运行预算");
     }
     return;

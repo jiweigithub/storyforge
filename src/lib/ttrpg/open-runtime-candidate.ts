@@ -20,9 +20,17 @@ export interface TtrpgOpenCandidateReadV1 {
   scope: WorkspaceScope; sessionId: number; runId: number; requestKey: string; viewerKey: string
 }
 export type TtrpgOpenRuntimeCandidateV1 = TtrpgOpenIntentCandidateV1 | TtrpgOpenOracleCandidateV1 | TtrpgOpenKpCandidateV1 | TtrpgOpenBriefCandidateV1 | TtrpgOpenSituationCandidateV1 | TtrpgOpenPublicSituationCandidateV1 | TtrpgOpenEntityCandidateV1
+async function assertOracleRuntimeReader(input: TtrpgOpenCandidateReadV1, purpose: TtrpgOpenModelPurposeV1) {
+  if (purpose !== 'oracle-interpret') return
+  const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
+  if (runtime?.openRun?.coordination.calls.find(row => row.requestKey === input.requestKey)?.oracleInterpretation?.runtimeReferencePolicy) {
+    await (await import('./open-generated-situation-candidate')).assertTtrpgOpenSituationHumanGmV1(input)
+  }
+}
 /** Exact candidate bytes are recoverable even when the final checkpoint write was interrupted. */
 export async function readTtrpgOpenRuntimeCandidateV1(input: TtrpgOpenCandidateReadV1, purpose: TtrpgOpenModelPurposeV1): Promise<TtrpgOpenRuntimeCandidateV1 | null> {
   if (purpose === 'entity-proposal') await (await import('./open-entity-candidate')).assertTtrpgOpenEntityCandidateReaderV1(input)
+  await assertOracleRuntimeReader(input, purpose)
   if (purpose === 'situation-proposal' || purpose === 'public-situation-proposal') await (await import('./open-generated-situation-candidate')).assertTtrpgOpenSituationHumanGmV1(input)
   return readCandidateArtifact(input, purpose, false)
 }
@@ -30,6 +38,7 @@ export async function readTtrpgOpenRuntimeCandidateV1(input: TtrpgOpenCandidateR
 /** Retained bytes only: unfinished evidence must never be treated as an adoptable candidate. */
 export async function readTtrpgOpenUnfinishedCandidateArtifactV1(input: TtrpgOpenCandidateReadV1, purpose: TtrpgOpenModelPurposeV1) {
   if (purpose === 'entity-proposal') await (await import('./open-entity-candidate')).assertTtrpgOpenEntityCandidateReaderV1(input)
+  await assertOracleRuntimeReader(input, purpose)
   if (purpose === 'situation-proposal' || purpose === 'public-situation-proposal') await (await import('./open-generated-situation-candidate')).assertTtrpgOpenSituationHumanGmV1(input)
   return readCandidateArtifact(input, purpose, true)
 }

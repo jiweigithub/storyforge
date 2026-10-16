@@ -3678,15 +3678,15 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'prose.ttrpg-open-oracle-interpret', agentId: 'prose', defaultForAgent: false,
-    label: '开放跑团受限 Oracle 解释候选', owner: 'ttrpg-product', promptVersion: 'ttrpg-open-oracle-interpret-v2',
+    label: '开放跑团受限 Oracle 解释候选', owner: 'ttrpg-product', promptVersion: 'ttrpg-open-oracle-interpret-v3',
     executionMode: 'ttrpg-open-oracle-interpret', contextTaskKind: 'agent-prose', readToolNames: [],
     contextSourceKeys: ['ttrpgOpenGmOracleInput', 'ttrpgOpenGmContext'], optionalContextSourceKeys: [],
     inputPolicy: { ...TTRPG_PLAYER_RUNTIME_INPUT_POLICY, sourceKeys: ['ttrpgOpenGmOracleInput', 'ttrpgOpenGmContext'] },
     contextCompression: compressionPolicy(['ttrpgOpenGmOracleInput', 'ttrpgOpenGmContext']),
     contextGateway: { ...TEXT_OPEN_WORLD_RUNTIME_G6_GATEWAY_POLICY, providerSourceKeys: ['ttrpgOpenGmOracleInput', 'ttrpgOpenGmContext'],
       allowedResourceKinds: ['fact', 'reference'], allowedDepths: ['full'] },
-    maxOutputTokens: 4000, writeTargets: [], lastVerifiedAt: '2026-10-14',
-    regressionTests: ['R-TTRPGOPEN4-oracle-input', 'R-TTRPGOPEN4-oracle-interpret'],
+    maxOutputTokens: 4000, writeTargets: [], lastVerifiedAt: '2026-10-17',
+    regressionTests: ['R-TTRPGOPEN4-oracle-input', 'R-TTRPGOPEN4-oracle-interpret', 'R-TTRPGOPEN13-oracle-runtime-model'],
   },
   {
     version: 1, id: 'prose.ttrpg-open-fact-normalize', agentId: 'prose', defaultForAgent: false,
