@@ -2,6 +2,9 @@ import { readTtrpgOpenSituationKernelSnapshotV1, projectTtrpgOpenSituationCandid
 import { reviewTtrpgOpenDeliveredSituationV1 } from './open-generated-situation-delivery'
 import { reviewTtrpgOpenDeliveredPublicSituationV1 } from './open-public-situation-delivery'
 import { readTtrpgOpenPublicSituationKernelSnapshotV1, projectTtrpgOpenPublicSituationCandidateSummaryV1, readTtrpgOpenPublicSituationCandidateSummaryV1 } from './open-public-situation-candidate'
+import { prepareTtrpgOpenEntityInputV1 } from './open-intent-input'
+import { assertTtrpgOpenEntityCandidateReaderV1, type TtrpgOpenEntityCandidateV1 } from './open-entity-candidate'
+import { reviewTtrpgOpenEntityModelDeliveryV1 } from './open-entity-model-contract'
 import { parseTtrpgOpenBriefV1, ttrpgOpenDeliveredBriefAttributionsV1, type TtrpgOpenBriefV1, type TtrpgOpenBriefAttributionV1 } from './open-brief-output'
 import type { ContextGatewaySourceSnapshotInputV1 } from '../context-gateway/attempt-evidence'
 import { ttrpgOpenDeliveredKpSourceKeysV1 } from './open-kp-delivered-sources'
@@ -43,6 +46,23 @@ export { readTtrpgOpenOracleCandidateV1, readTtrpgOpenFactNormalizationCandidate
 
 type Prepared = Awaited<ReturnType<typeof prepareTtrpgOpenIntentInputV1>>
 type TestTransport = (messages: ChatMessage[], signal: AbortSignal, result: ChatResult) => Promise<string>
+
+/** Explicit request only; no UI read, reload or recovery calls this preparation. */
+export async function generateTtrpgOpenEntityCandidateV1(input: Omit<Parameters<typeof prepareTtrpgOpenEntityInputV1>[0], 'modelIdentity'> & {
+  aiConfig?: AIConfig; runAI?: TestTransport
+}) {
+  if (!input.aiConfig && !input.runAI) throw new Error('[ttrpg-entity] 缺少明确模型配置')
+  const meta = { category: 'runtime.ttrpg-open.entity-propose', projectId: input.scope.projectId,
+    configOverrides: { maxTokens: input.maximumOutputTokens }, contextOverflowPolicy: 'reject' as const }
+  const resolved = input.aiConfig ? resolveRequestConfig(input.aiConfig, meta) : null
+  const modelIdentity = input.runAI ? { provider: 'test-adapter', model: 'injected' }
+    : { provider: resolved!.config.provider, model: resolved!.config.model }
+  if (!input.runAI && modelIdentity.provider === 'poe') throw new Error('[ttrpg-entity] 当前 provider 不支持冻结输出上限')
+  const prepared = await prepareTtrpgOpenEntityInputV1({ ...input, modelIdentity })
+  const result = await executeTtrpgOpenEntityRequestV1({ ...input, runId: prepared.runId, requestKey: prepared.requestKey })
+  if (result.status !== 'candidate') throw new Error('[ttrpg-entity] 原请求已有执行器接管，未重复发送')
+  return { prepared, ...result }
+}
 
 async function currentEnvelope(sessionId: number, commandId: string) {
   const state = await readProductRuntimeStateVersion(sessionId)
@@ -283,6 +303,14 @@ export async function executeTtrpgOpenBriefRequestV1(input: RuntimeRequest) {
   if (result.candidate.schema !== 'storyforge.ttrpg-open-brief-candidate') throw new Error('[ttrpg-brief] 候选类型错误')
   return { status: 'candidate' as const, candidate: result.candidate }
 }
+export async function executeTtrpgOpenEntityRequestV1(input: RuntimeRequest) {
+  await assertTtrpgOpenEntityCandidateReaderV1(input)
+  const result = await executeTtrpgOpenRuntimeRequestV1(input, 'entity-proposal')
+  await assertTtrpgOpenEntityCandidateReaderV1(input)
+  if (result.status === 'not-sent') return result
+  if (result.candidate.schema !== 'storyforge.ttrpg-open-entity-candidate') throw new Error('[ttrpg-entity] 候选类型不匹配')
+  return { status: 'candidate' as const, candidate: result.candidate }
+}
 export async function executeTtrpgOpenOracleRequestV1(input: RuntimeRequest): Promise<{ status: 'not-sent' } | { status: 'candidate'; candidate: TtrpgOpenOracleCandidateV1 }> {
   const result = await executeTtrpgOpenRuntimeRequestV1(input, 'oracle-interpret')
   if (result.status === 'not-sent') return result
@@ -297,6 +325,7 @@ export async function executeTtrpgOpenFactNormalizationRequestV1(input: RuntimeR
 }
 async function executeTtrpgOpenRuntimeRequestV1(input: RuntimeRequest, purpose: TtrpgOpenModelPurposeV1): Promise<{ status: 'not-sent' } | { status: 'candidate'; candidate: TtrpgOpenRuntimeCandidateV1 }> {
   let snapshot = await readInstanceAgentRunV1(input.scope, input.runId)
+  if (snapshot.run.portableRuntimeOriginJson !== undefined) throw new Error('[ttrpg-open-call] 导入的原请求只保留历史证据，不授予新的发送权限')
   const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
   const call = runtime?.openRun?.coordination.calls.find(call => call.requestKey === input.requestKey)
   if (!call || snapshot.run.productRuntimeSessionId !== input.sessionId || call.runContractHash !== snapshot.run.contractHash) {
@@ -324,7 +353,7 @@ async function executeTtrpgOpenRuntimeRequestV1(input: RuntimeRequest, purpose: 
   if (!binding || binding.version !== 2 || !binding.formalEntry || call.stepId !== definition.stepId) {
     throw new Error('[ttrpg-open-intent] 请求缺少冻结正式入口/Skill')
   }
-  const meta = { category: purpose === 'public-situation-proposal' ? 'runtime.ttrpg-open.public-situation-propose' : purpose === 'situation-proposal' ? 'runtime.ttrpg-open.situation-propose' : purpose === 'stage-brief' ? 'runtime.ttrpg-open.brief' : purpose === 'companion' ? 'runtime.ttrpg-open.companion' : purpose === 'kp-narration' ? 'runtime.ttrpg-open.kp' : purpose === 'intent' ? 'runtime.ttrpg-open.intent' : purpose === 'oracle-interpret' ? 'runtime.ttrpg-open.oracle-interpret' : 'runtime.ttrpg-open.fact-normalize', projectId: input.scope.projectId,
+  const meta = { category: purpose === 'entity-proposal' ? 'runtime.ttrpg-open.entity-propose' : purpose === 'public-situation-proposal' ? 'runtime.ttrpg-open.public-situation-propose' : purpose === 'situation-proposal' ? 'runtime.ttrpg-open.situation-propose' : purpose === 'stage-brief' ? 'runtime.ttrpg-open.brief' : purpose === 'companion' ? 'runtime.ttrpg-open.companion' : purpose === 'kp-narration' ? 'runtime.ttrpg-open.kp' : purpose === 'intent' ? 'runtime.ttrpg-open.intent' : purpose === 'oracle-interpret' ? 'runtime.ttrpg-open.oracle-interpret' : 'runtime.ttrpg-open.fact-normalize', projectId: input.scope.projectId,
     configOverrides: { maxTokens: call.reservedOutputTokens }, contextOverflowPolicy: 'reject' as const }
   const resolved = input.aiConfig ? resolveRequestConfig(input.aiConfig, meta) : null
   const identity = input.runAI ? { provider: 'test-adapter', model: 'injected' }
@@ -364,6 +393,7 @@ async function executeTtrpgOpenRuntimeRequestV1(input: RuntimeRequest, purpose: 
         return text
       }
       const frozenSkill = projectFrozenAgentSkillDefinitionV1(binding)
+      if (purpose === 'entity-proposal') return executeFrozenFormalAIEntryV1('ttrpg.open.entity-propose', binding.formalEntry!, frozenSkill, 'src/lib/ttrpg/open-intent-harness.ts', rendered.messages, input.aiConfig!, { ...meta, category: 'runtime.ttrpg-open.entity-propose' }, controller.signal, result, undefined, resolved!)
       if (purpose === 'public-situation-proposal') return executeFrozenFormalAIEntryV1('ttrpg.open.public-situation-propose', binding.formalEntry!, frozenSkill, 'src/lib/ttrpg/open-intent-harness.ts', rendered.messages, input.aiConfig!, { ...meta, category: 'runtime.ttrpg-open.public-situation-propose' }, controller.signal, result, undefined, resolved!)
       if (purpose === 'companion') return executeFrozenFormalAIEntryV1('ttrpg.open.companion', binding.formalEntry!, frozenSkill, 'src/lib/ttrpg/open-intent-harness.ts', rendered.messages, input.aiConfig!, { ...meta, category: 'runtime.ttrpg-open.companion' }, controller.signal, result, undefined, resolved!)
       if (purpose === 'situation-proposal') return executeFrozenFormalAIEntryV1('ttrpg.open.situation-propose', binding.formalEntry!, frozenSkill, 'src/lib/ttrpg/open-intent-harness.ts', rendered.messages, input.aiConfig!, { ...meta, category: 'runtime.ttrpg-open.situation-propose' }, controller.signal, result, undefined, resolved!)
@@ -421,6 +451,7 @@ export async function recoverTtrpgOpenRuntimeCandidateV1(input: TtrpgOpenCandida
   if (!call) throw new Error('[ttrpg-open-recovery] 请求不存在')
   // Read validates the original viewer, Run and purpose even when no candidate is present.
   const purpose = ttrpgOpenModelPurposeForSkillV1(call.skillId).purpose
+  if (purpose === 'entity-proposal') await assertTtrpgOpenEntityCandidateReaderV1(input)
   if (purpose === 'situation-proposal' || purpose === 'public-situation-proposal') await assertTtrpgOpenSituationHumanGmV1(input)
   await readTtrpgOpenUnfinishedCandidateArtifactV1(input, purpose)
   if (call.status !== 'succeeded') return null
@@ -518,6 +549,7 @@ async function buildSucceededCandidate(args: {
   let references: TtrpgOpenSituationCandidateV1['references'] = []
   let publicReferences: import('./open-public-situation-candidate').TtrpgOpenPublicSituationCandidateV1['references'] = []
   let brief: TtrpgOpenBriefV1 | null = null
+  let entityProposals: TtrpgOpenEntityCandidateV1['proposals'] = null
   let attributions: TtrpgOpenBriefAttributionV1[] = []
   const deliveredReads: ContextGatewaySourceSnapshotInputV1[] = []
   let narration: TtrpgOpenKpNarrationV1 | null = null
@@ -549,7 +581,8 @@ async function buildSucceededCandidate(args: {
     }
   }
   try {
-    if (purpose === 'public-situation-proposal') {
+    if (purpose === 'entity-proposal') entityProposals = reviewTtrpgOpenEntityModelDeliveryV1(call.entityProposal, deliveredReads, JSON.parse(output)).proposals
+    else if (purpose === 'public-situation-proposal') {
       const kernel = await readTtrpgOpenPublicSituationKernelSnapshotV1(input, call, epoch, frozen)
       const result = await reviewTtrpgOpenDeliveredPublicSituationV1({ value: JSON.parse(output), snapshot: kernel, reads: deliveredReads })
       situation = result.review; publicReferences = result.references
@@ -571,7 +604,9 @@ async function buildSucceededCandidate(args: {
     else intent = parseSemanticIntent(output, { actorKey: call.actorKey, source, inputRevision: epoch.inputRevision,
       intentKey: await ttrpgOpenScopedKeyV1(runtime!.sessionKey, 'intent', [call.requestKey]), visibleRefs, visibleResources })
   } catch (error) {
-    if (purpose === 'public-situation-proposal') issues.push(createCreativeIssueV1({ code: 'ttrpg-public-situation-protocol', path: 'situation',
+    if (purpose === 'entity-proposal') issues.push(createCreativeIssueV1({ code: 'ttrpg-entity-protocol', path: 'proposals',
+      message: '实体提案格式、参数、位置、数量或原范围未通过检查；原始回答已保存。', disposition: 'blocking', action: 'edit' }))
+    else if (purpose === 'public-situation-proposal') issues.push(createCreativeIssueV1({ code: 'ttrpg-public-situation-protocol', path: 'situation',
       message: '共同局势格式或完整交付引用未通过验证；原始回答已保存。', disposition: 'blocking', action: 'edit' }))
     else
     issues.push(createCreativeIssueV1({ code: purpose === 'situation-proposal' ? 'ttrpg-situation-protocol' : purpose === 'stage-brief' ? 'ttrpg-open-brief-protocol' : 'ttrpg-open-intent-protocol', path: purpose === 'situation-proposal' ? 'situation' : purpose === 'stage-brief' ? 'brief' : 'intent',
@@ -597,8 +632,8 @@ async function buildSucceededCandidate(args: {
     message: '已保留 token 回执；provider 未提供实际账单金额，按本次预留额度继续记账。',
     severity: 'warning', disposition: 'advisory', action: 'none' }))
   const artifact = parseCreativeArtifactV1({ version: 1, policyVersion: 'creative-reliability-v1',
-    status: issues.some(issue => issue.disposition === 'blocking') ? 'blocked' : (intent || oracleCandidate || narration || brief || situation) ? 'usable-with-warnings' : 'manual-repair',
-    qualityMode: 'economy', originalText: output.slice(0, 120_000), editableText: output.slice(0, 120_000), validFragments: situation ? [{ version: 1, id: 'situation', path: 'situation', text: JSON.stringify(situation.proposal), status: 'valid', issueCodes: [] }] : intent ? [{ version: 1,
+    status: issues.some(issue => issue.disposition === 'blocking') ? 'blocked' : (entityProposals || intent || oracleCandidate || narration || brief || situation) ? 'usable-with-warnings' : 'manual-repair',
+    qualityMode: 'economy', originalText: output.slice(0, 120_000), editableText: output.slice(0, 120_000), validFragments: entityProposals ? [{ version: 1, id: 'entities', path: 'proposals', text: JSON.stringify(entityProposals), status: 'valid', issueCodes: [] }] : situation ? [{ version: 1, id: 'situation', path: 'situation', text: JSON.stringify(situation.proposal), status: 'valid', issueCodes: [] }] : intent ? [{ version: 1,
       id: 'intent', path: 'intent', text: JSON.stringify(intent), status: 'valid', issueCodes: [] }] : oracleCandidate ? [{ version: 1, id: 'oracle', path: 'oracle', text: JSON.stringify(oracleCandidate), status: 'valid', issueCodes: [] }] : narration ? [{ version: 1, id: 'narration', path: 'narration', text: JSON.stringify(narration), status: 'valid', issueCodes: [] }] : brief ? [{ version: 1, id: 'brief', path: 'brief', text: JSON.stringify(brief), status: 'valid', issueCodes: [] }] : [], rejectedFragments: [], issues,
     assumptions: intent?.declaredAssumptions.map((text, index) => ({ id: `assumption.${index}`, text, status: 'provisional' })) ?? [],
     canonEvidenceRefs: [], repair: null, callEvidence: [{ version: 1, callIndex: 1, purpose: 'generate', status: 'succeeded',
@@ -609,7 +644,7 @@ async function buildSucceededCandidate(args: {
     runId: input.runId, productRuntimeSessionId: input.sessionId, requestKey: call.requestKey, epochKey: epoch.epochKey,
     actorKey: call.actorKey, viewerKey: input.viewerKey, admissionStateHash: call.admissionStateHash, visibilityHash: call.visibilityHash,
     runtimeSourceHash: call.runtimeSourceHash, inputManifestHash: call.inputManifestHash, rawResponseHash: call.responseArtifactHash!, artifact }
-  const body = purpose === 'public-situation-proposal' ? { schema: 'storyforge.ttrpg-open-public-situation-candidate' as const, ...common, review: situation, references: publicReferences } : purpose === 'situation-proposal' ? { schema: 'storyforge.ttrpg-open-situation-candidate' as const, ...common, review: situation, references } : purpose === 'stage-brief' ? { schema: 'storyforge.ttrpg-open-brief-candidate' as const, ...common, brief, attributions } : purpose === 'kp-narration' ? { schema: 'storyforge.ttrpg-open-kp-candidate' as const, ...common, binding: call.narrationBinding!, narration } : purpose === 'intent' || purpose === 'companion' ? { schema: 'storyforge.ttrpg-open-intent-candidate' as const, ...common, intent }
+  const body = purpose === 'entity-proposal' ? { schema: 'storyforge.ttrpg-open-entity-candidate' as const, ...common, selection: call.entityProposal!, proposals: entityProposals } : purpose === 'public-situation-proposal' ? { schema: 'storyforge.ttrpg-open-public-situation-candidate' as const, ...common, review: situation, references: publicReferences } : purpose === 'situation-proposal' ? { schema: 'storyforge.ttrpg-open-situation-candidate' as const, ...common, review: situation, references } : purpose === 'stage-brief' ? { schema: 'storyforge.ttrpg-open-brief-candidate' as const, ...common, brief, attributions } : purpose === 'kp-narration' ? { schema: 'storyforge.ttrpg-open-kp-candidate' as const, ...common, binding: call.narrationBinding!, narration } : purpose === 'intent' || purpose === 'companion' ? { schema: 'storyforge.ttrpg-open-intent-candidate' as const, ...common, intent }
     : { schema: 'storyforge.ttrpg-open-oracle-candidate' as const, ...common,
       oracleSourceRef: (oraclePacket as { sourceRef: TtrpgOpenOracleCandidateV1['oracleSourceRef'] }).sourceRef,
       interpretation: oracleCandidate?.interpretation ?? null, facts: oracleCandidate?.facts ?? null,

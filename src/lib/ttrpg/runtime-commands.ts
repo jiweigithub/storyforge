@@ -1,3 +1,4 @@
+import { assertTtrpgOpenEntityModelCallOriginV1 } from './open-model-calls'
 import { verifyTtrpgOpenEntityStateV1 } from './open-entity-proof'
 import { createTtrpgOpenEntityPlanV1 } from './open-entity-plan'
 import { parseTtrpgOpenEntityProposalV1 } from './open-entity-contract'
@@ -1200,6 +1201,7 @@ export async function reserveTtrpgOpenModelCallV1(input: FormalTtrpgCommandEnvel
   runContractHash: string; inputManifestHash: string; requestHash: string;
   admissionStateHash: string; visibilityHash: string; runtimeSourceHash: string;
   reservedInputTokens: number; reservedOutputTokens: number; reservedCostUsd: number;
+  entityProposal?: TtrpgOpenModelCallV1['entityProposal'];
   hostingDelegationRef?: TtrpgOpenModelCallV1['hostingDelegationRef'];
   oracleInterpretation?: TtrpgOpenModelCallV1['oracleInterpretation'];
   supportSlot?: TtrpgOpenModelCallV1['supportSlot'];
@@ -1210,6 +1212,7 @@ export async function reserveTtrpgOpenModelCallV1(input: FormalTtrpgCommandEnvel
     runContractHash: input.runContractHash, inputManifestHash: input.inputManifestHash, requestHash: input.requestHash,
     admissionStateHash: input.admissionStateHash, visibilityHash: input.visibilityHash, runtimeSourceHash: input.runtimeSourceHash,
     reservedInputTokens: input.reservedInputTokens, reservedOutputTokens: input.reservedOutputTokens, reservedCostUsd: input.reservedCostUsd,
+    ...(input.entityProposal ? { entityProposal: input.entityProposal } : {}),
     ...(input.hostingDelegationRef ? { hostingDelegationRef: input.hostingDelegationRef } : {}),
     ...(input.oracleInterpretation ? { oracleInterpretation: input.oracleInterpretation } : {}),...(input.supportSlot ? { supportSlot: input.supportSlot } : {}), ...(input.narrationBinding ? { narrationBinding: input.narrationBinding } : {}) };
   return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.open.call.reserved', intent: { viewerKey, ...metadata },
@@ -1239,6 +1242,7 @@ export async function reserveTtrpgOpenModelCallV1(input: FormalTtrpgCommandEnvel
         requestKey: await ttrpgOpenScopedKeyV1(runtime.sessionKey, 'request', [epoch.epochKey, input.commandId]), authorizationEpochKey: epoch.epochKey,
         createdRef: { sessionKey: runtime.sessionKey, sequence: context.sequence }, dispatchRef: null, terminalRef: null,
         status: 'prepared', providerRequestId: null, responseArtifactHash: null, usage: null, terminalReason: null });
+      assertTtrpgOpenEntityModelCallOriginV1(runtime, call);
       assertTtrpgOpenNormalizationSourceV1(runtime,call);
       assertTtrpgOpenCallReservationV1({ epoch, calls: runtime.openRun!.coordination.calls, requestKey: call.requestKey,
         inputTokens: call.reservedInputTokens, outputTokens: call.reservedOutputTokens, maximumCostUsd: call.reservedCostUsd });

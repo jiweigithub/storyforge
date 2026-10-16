@@ -15,6 +15,7 @@ import { TtrpgOpenReadConflictV1 } from './open-read-conflict'
 import { assertInstanceBinding } from '../product/runtime-instances'
 import { readProductRuntimeState } from '../product/runtime-core'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
+import { parseTtrpgOpenEntityModelSelectionV1, type TtrpgOpenEntityModelSelectionV1 } from './open-entity-model-contract'
 
 export const TTRPG_OPEN_ENTITY_SOURCE_V1 = 'ttrpgOpenEntityInput'
 export interface TtrpgOpenEntityProposalScopeV1 {
@@ -24,6 +25,21 @@ type Resource = { suffix: string; title: string; mandatory: boolean; value: unkn
 
 export async function loadTtrpgOpenEntityContextV1(input: { scope: WorkspaceScope; sessionId: number; actorKey: string }) {
   return (await entityRead(input)).context
+}
+/** Exact selection, with no silent truncation or reads from adjacent privacy partitions. */
+export function selectTtrpgOpenEntityModelResourcesV1(context: Awaited<ReturnType<typeof loadTtrpgOpenEntityContextV1>>,
+  inventory: readonly ContextResourceDescriptorV1[], selectionValue: TtrpgOpenEntityModelSelectionV1) {
+  const selection = parseTtrpgOpenEntityModelSelectionV1(selectionValue)
+  const partition = context.directory.find(d => canonicalStringify(d.sourceRef) === canonicalStringify(selection.oracleSourceRef)
+    && canonicalStringify(d.scope) === canonicalStringify(selection.scope))
+  if (!partition || selection.epochInputRevision !== context.epochInputRevision) throw new Error('实体提案须选择本窗口实际原咨询及可读范围。')
+  const suffixes = ['entity-contract', partition.oracleSuffix,
+    ...selection.templateKeys.map(key => partition.templates.find(t => t.templateKey === key)?.suffix),
+    ...selection.placementRefs.map(key => partition.placements.find(p => p.entityKey === key)?.suffix)]
+  if (suffixes.some(s => !s)) throw new Error('实体模板或地点/持有人未获本次范围授权。')
+  const rows = inventory.filter(row => row.sourceKey === TTRPG_OPEN_ENTITY_SOURCE_V1 && suffixes.some(suffix => row.resourceKey.endsWith(`:${suffix}`)))
+  if (rows.length !== suffixes.length) throw new Error('实体提案资料缺少准确完整资源。')
+  return rows.map(row => ({ ...row, priority: 'must-read' as const }))
 }
 async function entityRead(input: { scope: WorkspaceScope; sessionId: number; actorKey: string }) {
   if (input.actorKey !== 'gm') throw new Error('实体提案资料需要明确的受限主持视图。')
@@ -127,7 +143,7 @@ async function entityRead(input: { scope: WorkspaceScope; sessionId: number; act
     }
   }
   await loaded.assertCurrent()
-  return { loaded, context: { resources, directory, visibilityHash: await hash(resources),
+  return { loaded, context: { resources, directory, epochInputRevision: epoch.inputRevision, visibilityHash: await hash(resources),
     admissionStateHash: await ttrpgOpenMechanicalStateHashV1(state),
     readEvidence: { sequence: state.lastSequence, stateHash: loaded.stateHash, runtimeSourceHash: loaded.source.runtimeSourceHash } } }
 }

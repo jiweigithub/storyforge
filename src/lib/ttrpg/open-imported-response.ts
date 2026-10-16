@@ -16,7 +16,7 @@ import { assertTtrpgOpenAgentEvidenceUnchangedV1 } from './open-model-call-evide
 
 /** Current human read authority is independent of permission to send another model request. */
 function assertHistoricalReader(authorization: TtrpgOpenAuthorizationV1, call: TtrpgOpenModelCallV1, viewerKey: string) {
-  if (call.skillId === 'prose.ttrpg-open-public-situation-propose') throw new Error('[ttrpg-imported-response] 共同局势历史需要独立定义审计，不能经旧回答入口转换或执行')
+  if (call.skillId === 'prose.ttrpg-open-public-situation-propose' || call.skillId === 'prose.ttrpg-open-entity-propose') throw new Error('[ttrpg-imported-response] 共同局势历史需要独立定义审计，不能经旧回答入口转换或执行')
   const requester = authorization.seats.find(seat => seat.viewerKey === viewerKey)
   if (!requester || requester.controller === 'ai' || requester.assignmentState !== 'claimed') throw new Error('[ttrpg-imported-response] 需要当前本人已认领的真人席位')
   if (ttrpgOpenModelPurposeForSkillV1(call.skillId).actorRole === 'gm') {
@@ -46,7 +46,7 @@ export async function listTtrpgOpenHistoricalResponsesV1(input: HistoricalInput)
   const result: Array<{ runId: number; requestKey: string; purpose: string }> = []
   for (const call of runtime.openRun.coordination.calls) {
     const purpose = ttrpgOpenModelPurposeForSkillV1(call.skillId).purpose
-    if (purpose === 'public-situation-proposal') continue // Independent public-definition audit does not inherit the old raw-response desk.
+    if (purpose === 'public-situation-proposal' || purpose === 'entity-proposal') continue // Independent public-definition audit does not inherit the old raw-response desk.
     const epoch = runtime.openRun.coordination.epochs.find(row => row.epochKey === call.authorizationEpochKey)
     if (call.status !== 'succeeded' || !call.responseArtifactHash || (call.narrationBinding?.viewerKey ?? epoch?.viewerKey) !== input.viewerKey) continue
     try { assertHistoricalReader(runtime.authorization, call, input.viewerKey) } catch { continue }

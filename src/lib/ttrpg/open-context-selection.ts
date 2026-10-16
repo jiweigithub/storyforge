@@ -40,14 +40,15 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
   const content = source.runtimePackage.ttrpg, run = input.runtime.openRun!, authorization = input.runtime.authorization!
   if (!content || !isTtrpgRuntimeContentV2(content) || source.runtimeSourceHash !== input.context.readEvidence.runtimeSourceHash) throw new Error('[ttrpg-context] 情境计划需要准确冻结 open 来源')
   const policy = content.campaign.contextPolicy, consumer = ttrpgOpenContextConsumerForPurposeV1(input.purpose)
-  const brief = input.purpose === 'stage-brief', situation = input.purpose === 'situation-proposal', publicSituation = input.purpose === 'public-situation-proposal', passive = brief || situation || publicSituation
+  const entity = input.purpose === 'entity-proposal'
+  const brief = input.purpose === 'stage-brief', situation = input.purpose === 'situation-proposal', publicSituation = input.purpose === 'public-situation-proposal', passive = brief || situation || publicSituation || entity
   const publicGrant = publicSituation ? run.coordination.epochs.find(e => e.epochKey === run.coordination.activeEpochKey)?.publicSituation : undefined
   if (publicSituation && !publicGrant) throw new Error('[ttrpg-public-situation] 情境计划需要本次原 Run 授权')
   const guidanceKey = TTRPG_OPEN_GUIDANCE_SOURCE_KEYS_V1[consumer]
   const recipients = consumer === 'actor' ? [input.actorKey] : [...authorization.selectedActorKeys].sort()
   const oracle = input.oracleSourceRef ? run.oracleReceipts?.find(receipt => canonicalStringify(receipt.sourceRef) === canonicalStringify(input.oracleSourceRef)) : undefined
-  const consultationAudience = consumer === 'gm-assistant' && !situation && !publicSituation ? oracle?.audience : undefined
-  if (consumer === 'gm-assistant' && !situation && !publicSituation && !consultationAudience) throw new Error('[ttrpg-context] GM 情境需要明确真实咨询密级')
+  const consultationAudience = consumer === 'gm-assistant' && !situation && !publicSituation && !entity ? oracle?.audience : undefined
+  if (consumer === 'gm-assistant' && !situation && !publicSituation && !entity && !consultationAudience) throw new Error('[ttrpg-context] GM 情境需要明确真实咨询密级')
   const policyHash = await hashCanonicalValue(policy ?? null)
   const domainHash = await hashCanonicalValue({ consumer, actorKey: input.actorKey, recipients, consultationAudience: consultationAudience ?? null,
     policyHash, runtimeSourceHash: source.runtimeSourceHash, ...(passive ? { purpose: input.purpose } : {}) })
@@ -80,7 +81,7 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
   }
   const player = 'view' in input.context ? input.context.view : undefined
   const kp = consumer === 'party-narrator' && hasPartyPredicateFacts(input.context) ? input.context : undefined
-  const gm = consumer === 'gm-assistant' && !situation && !publicSituation ? input.context as Awaited<ReturnType<typeof loadTtrpgOpenGmOracleContextV1>> : undefined
+  const gm = consumer === 'gm-assistant' && !situation && !publicSituation && !entity ? input.context as Awaited<ReturnType<typeof loadTtrpgOpenGmOracleContextV1>> : undefined
   const oraclePacket = gm?.resources.map(row => row.value).find(value => value && typeof value === 'object' && 'schema' in value
     && value.schema === 'storyforge.ttrpg-open-gm-oracle-input' && 'sourceRef' in value && canonicalStringify(value.sourceRef) === canonicalStringify(input.oracleSourceRef)) as Record<string, unknown> | undefined
   const projection: TtrpgOpenContextPredicateViewV1 = { worldTurn: run.worldTime.worldTurn, player,

@@ -16,6 +16,8 @@ export const TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1 = {
   'gm-assistant': TTRPG_OPEN_P7_CONTEXT_SOURCES_V1['gm-assistant'],
 } as const
 export const TTRPG_OPEN_MODEL_PURPOSES_V1 = {
+  'entity-proposal': { skillId: 'prose.ttrpg-open-entity-propose', entryId: 'ttrpg.open.entity-propose', stepId: 'ttrpg.open.entity-propose',
+    sourceKeys: ['ttrpgOpenEntityInput'], actorRole: 'gm' },
   intent: { skillId: 'prose.ttrpg-open-intent', entryId: 'ttrpg.open.intent', stepId: 'ttrpg.open.intent',
     sourceKeys: TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1.actor, actorRole: 'player' },
   companion: { skillId: 'prose.ttrpg-open-companion', entryId: 'ttrpg.open.companion', stepId: 'ttrpg.open.companion',
@@ -45,7 +47,7 @@ export function assertTtrpgOpenFrozenContextSourcesV1(skillId: string, actual: r
   const modern = TTRPG_OPEN_P7_CONTEXT_SOURCES_V1[consumer]
   const current = TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1[consumer]
   const key = [...actual].sort().join(',')
-  const supported = ['stage-brief', 'situation-proposal', 'public-situation-proposal'].includes(definition.purpose) ? [definition.sourceKeys] : [legacy, modern, current]
+  const supported = ['entity-proposal', 'stage-brief', 'situation-proposal', 'public-situation-proposal'].includes(definition.purpose) ? [definition.sourceKeys] : [legacy, modern, current]
   if (new Set(actual).size !== actual.length || !supported.some(keys => [...keys].sort().join(',') === key)) {
     throw new Error('[ttrpg-open-call] 冻结来源不是此目的登记的准确协议权限')
   }

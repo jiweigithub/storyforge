@@ -8,17 +8,22 @@ import { estimateTokens } from '../ai/context-budget'
 import { readProductRuntimeStateVersion, readProductRuntimeState } from '../product/runtime-core'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { finishTtrpgOpenModelCallV1 } from './runtime-commands'
-import { recoverTtrpgOpenSituationCandidateV1, recoverTtrpgOpenPublicSituationCandidateV1 } from './open-intent-harness'
+import { recoverTtrpgOpenSituationCandidateV1, recoverTtrpgOpenPublicSituationCandidateV1, recoverTtrpgOpenRuntimeCandidateV1 } from './open-intent-harness'
 import { finishTtrpgOpenSituationDraftV1 } from './open-generated-situation-stop'
 import { finishTtrpgOpenPublicSituationDraftV1 } from './open-public-situation-stop'
+import { finishTtrpgOpenEntityDraftV1 } from './open-entity-stop'
+import { assertTtrpgOpenEntityCandidateReaderV1 } from './open-entity-candidate'
+import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 
-async function owned(input: TtrpgOpenCandidateReadV1, publicSituation = false) {
+type RecoveryPurpose = boolean | 'entity'
+async function owned(input: TtrpgOpenCandidateReadV1, publicSituation: RecoveryPurpose = false) {
+  if (publicSituation === 'entity') await assertTtrpgOpenEntityCandidateReaderV1(input)
   const loaded = await assertTtrpgOpenSituationRequesterV1(input), run = loaded.runtime.openRun!
   const call = run.coordination.calls.find(c => c.requestKey === input.requestKey)
   const epoch = call && run.coordination.epochs.find(e => e.epochKey === call.authorizationEpochKey)
   const snapshot = await readInstanceAgentRunV1(input.scope, input.runId)
-  if (!call || call.skillId !== (publicSituation ? 'prose.ttrpg-open-public-situation-propose' : 'prose.ttrpg-open-situation-propose')
-    || !epoch || epoch.triggerKind !== (publicSituation ? 'request-public-situation' : 'request-situation') || epoch.viewerKey !== input.viewerKey
+  if (!call || call.skillId !== (publicSituation === 'entity' ? 'prose.ttrpg-open-entity-propose' : publicSituation ? 'prose.ttrpg-open-public-situation-propose' : 'prose.ttrpg-open-situation-propose')
+    || !epoch || (publicSituation === 'entity' ? isTtrpgOpenPassiveEpochV1(epoch) : epoch.triggerKind !== (publicSituation ? 'request-public-situation' : 'request-situation')) || epoch.viewerKey !== input.viewerKey
     || snapshot.run.portableRuntimeOriginJson !== undefined || snapshot.run.contractHash !== call.runContractHash
     || snapshot.run.productRuntimeSessionId !== input.sessionId
     || call.status === 'dispatched' && (epoch.status !== 'active' || run.coordination.activeEpochKey !== epoch.epochKey)) {
@@ -39,8 +44,13 @@ export async function repairTtrpgOpenSituationResponseReceiptV1(input: TtrpgOpen
 export async function repairTtrpgOpenPublicSituationResponseReceiptV1(input: TtrpgOpenCandidateReadV1) {
   return repairOriginalResponse(input, true)
 }
-async function repairOriginalResponse(input: TtrpgOpenCandidateReadV1, publicSituation: boolean) {
-  const recover = publicSituation ? recoverTtrpgOpenPublicSituationCandidateV1 : recoverTtrpgOpenSituationCandidateV1
+export async function repairTtrpgOpenEntityResponseReceiptV1(input: TtrpgOpenCandidateReadV1) {
+  return repairOriginalResponse(input, 'entity')
+}
+function repairOriginalResponse(input: TtrpgOpenCandidateReadV1, publicSituation: 'entity'): ReturnType<typeof recoverTtrpgOpenRuntimeCandidateV1>
+function repairOriginalResponse(input: TtrpgOpenCandidateReadV1, publicSituation: boolean): ReturnType<typeof recoverTtrpgOpenSituationCandidateV1>
+async function repairOriginalResponse(input: TtrpgOpenCandidateReadV1, publicSituation: RecoveryPurpose) {
+  const recover = publicSituation === 'entity' ? recoverTtrpgOpenRuntimeCandidateV1 : publicSituation ? recoverTtrpgOpenPublicSituationCandidateV1 : recoverTtrpgOpenSituationCandidateV1
   try {
     for (let attempt = 0; attempt < 6; attempt++) {
       let actualHash: string | null = null
@@ -75,7 +85,7 @@ async function repairOriginalResponse(input: TtrpgOpenCandidateReadV1, publicSit
       }
     }
     throw new Error('原运行持续推进，请重新读取')
-  } catch { throw new Error('原局势回答回执尚未恢复，请保留原记录；没有再次发送或公开私域正文。') }
+  } catch { throw new Error('原回答回执尚未恢复，请保留原记录；没有再次发送或公开私域正文。') }
 }
 
 /** Human decision ends waiting, not the external provider request or its possible charge. */
@@ -85,13 +95,17 @@ export async function abandonTtrpgOpenSituationWaitV1(input: TtrpgOpenCandidateR
 export async function abandonTtrpgOpenPublicSituationWaitV1(input: TtrpgOpenCandidateReadV1 & { decision: 'abandon-wait-as-unknown' }) {
   return abandonOriginalWait(input, true)
 }
-async function abandonOriginalWait(input: TtrpgOpenCandidateReadV1 & { decision: 'abandon-wait-as-unknown' }, publicSituation: boolean) {
+export async function abandonTtrpgOpenEntityWaitV1(input: TtrpgOpenCandidateReadV1 & { decision: 'abandon-wait-as-unknown' }) {
+  return abandonOriginalWait(input, 'entity')
+}
+async function abandonOriginalWait(input: TtrpgOpenCandidateReadV1 & { decision: 'abandon-wait-as-unknown' }, publicSituation: RecoveryPurpose) {
   if (input.decision !== 'abandon-wait-as-unknown') throw new Error('需要本人明确结束等待并保留未知结果与费用。')
   try {
     const f = await owned(input, publicSituation)
     if (f.call.status === 'dispatched') await finishTtrpgOpenModelCallV1({ ...await command(input), status: 'unknown', responseArtifactHash: null,
       usage: { source: 'unknown', inputTokens: null, outputTokens: null, actualCostUsd: null }, terminalReason: 'human-abandoned-unobserved-request' })
     else if (f.call.status !== 'unknown') throw new Error('已有明确终态，不能改记为结果未知')
+    if (publicSituation === 'entity') return await finishTtrpgOpenEntityDraftV1({ ...input, decision: 'discard-this-entity-request-and-close-window' })
     return await (publicSituation ? finishTtrpgOpenPublicSituationDraftV1 : finishTtrpgOpenSituationDraftV1)({ ...input, epochKey: f.epoch.epochKey })
   } catch { throw new Error('原请求尚未结束。已有回答时请恢复原回答回执；原请求不会重发，费用保持实际记录。') }
 }

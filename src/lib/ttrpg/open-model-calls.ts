@@ -1,10 +1,12 @@
 import { parseTtrpgOpenNarrationBindingV1, type TtrpgOpenNarrationBindingV1 } from './open-kp-binding'
+import { parseTtrpgOpenEntityModelSelectionV1, type TtrpgOpenEntityModelSelectionV1 } from './open-entity-model-contract'
 /** Persisted request lifecycle. Only a dispatched call may have an unknown external result. */
 import type { TtrpgOpenEpochV1, TtrpgOpenSourceRefV1 } from './open-coordination'
 import { parseTtrpgOpenSourceRefV1 } from './open-coordination'
 import * as p from './open-contract-parse'
 import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
 export interface TtrpgOpenModelCallV1 {
+  entityProposal?: TtrpgOpenEntityModelSelectionV1
   hostingDelegationRef?: TtrpgOpenSourceRefV1
   requestKey: string; authorizationEpochKey: string
   actorKey: string; admissionStateHash: string; visibilityHash: string; runtimeSourceHash: string
@@ -26,12 +28,15 @@ export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 
     'skillId','runContractHash','inputManifestHash','requestHash','stepId','attempt',
     'createdRef','dispatchRef','terminalRef','status','reservedInputTokens','reservedOutputTokens','reservedCostUsd',
     'providerRequestId','responseArtifactHash','usage','terminalReason',
+    ...(Object.prototype.hasOwnProperty.call(value, 'entityProposal') ? ['entityProposal'] : []),
     ...(Object.prototype.hasOwnProperty.call(value,'hostingDelegationRef') ? ['hostingDelegationRef'] : []),
     ...(Object.prototype.hasOwnProperty.call(value, 'oracleInterpretation') ? ['oracleInterpretation'] : []),
     ...(Object.prototype.hasOwnProperty.call(value, 'supportSlot') ? ['supportSlot'] : []),
     ...(Object.prototype.hasOwnProperty.call(value, 'narrationBinding') ? ['narrationBinding'] : []),
     ...(Object.prototype.hasOwnProperty.call(value, 'intentRejection') ? ['intentRejection'] : [])], 'model call')
   const narrationBinding = Object.prototype.hasOwnProperty.call(r, 'narrationBinding') ? parseTtrpgOpenNarrationBindingV1(r.narrationBinding) : undefined
+  const entityProposal = Object.prototype.hasOwnProperty.call(r, 'entityProposal') ? parseTtrpgOpenEntityModelSelectionV1(r.entityProposal) : undefined
+  if ((r.skillId === 'prose.ttrpg-open-entity-propose') !== Boolean(entityProposal)) p.fail('实体模型请求必须冻结原咨询和单一范围，其他用途不能借用')
   if ((r.skillId === 'prose.ttrpg-open-kp') !== Boolean(narrationBinding)) p.fail('KP 必须绑定实际叙述步骤，其他目的不能占用')
   const supportSlot = Object.prototype.hasOwnProperty.call(r,'supportSlot') ? (() => {
     const slot = p.record(r.supportSlot,['worldTurn','purpose','sourceRef','sourceHash','oracleSourceRef'],'semantic assistance slot')
@@ -87,12 +92,24 @@ export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 
     createdRef, dispatchRef, terminalRef, status, reservedInputTokens: p.integer(r.reservedInputTokens, 'reserved input',0,1_000_000),
     reservedOutputTokens: p.integer(r.reservedOutputTokens, 'reserved output',1,100_000), reservedCostUsd: p.number(r.reservedCostUsd, 'reserved cost',0,1000),
     providerRequestId: p.nullable(r.providerRequestId, (v,l) => p.text(v,l,500), 'provider request ID'), responseArtifactHash, usage, terminalReason,
-    ...(hostingDelegationRef ? { hostingDelegationRef } : {}),...(oracleInterpretation ? { oracleInterpretation } : {}),...(supportSlot ? { supportSlot } : {}), ...(narrationBinding ? { narrationBinding } : {}), ...(intentRejection ? { intentRejection } : {}) }
+    ...(entityProposal ? { entityProposal } : {}), ...(hostingDelegationRef ? { hostingDelegationRef } : {}),...(oracleInterpretation ? { oracleInterpretation } : {}),...(supportSlot ? { supportSlot } : {}), ...(narrationBinding ? { narrationBinding } : {}), ...(intentRejection ? { intentRejection } : {}) }
 }
 export function assertTtrpgOpenSupportSlotV1(runtime: Pick<TtrpgRuntimeStateV2,'openRun'|'branchLineage'>,worldTurn: number): void {
   const calls = [...(runtime.openRun?.coordination.calls ?? []),
     ...(runtime.branchLineage?.ancestors.flatMap(ancestor => ancestor.snapshot.openRun?.coordination.calls ?? []) ?? [])]
   if (calls.some(call => call.supportSlot?.worldTurn === worldTurn)) p.fail('每个 worldTurn 最多占用一次征兆/事实归一辅助槽，请复用已有候选')
+}
+export function assertTtrpgOpenEntityModelCallOriginV1(runtime: TtrpgRuntimeStateV2, call: TtrpgOpenModelCallV1): void {
+  if (!call.entityProposal) return
+  const selection = call.entityProposal, run = runtime.openRun
+  const epoch = run?.coordination.epochs.find(e => e.epochKey === call.authorizationEpochKey)
+  const oracle = run?.oracleReceipts?.find(o => o.sourceRef.sessionKey === selection.oracleSourceRef.sessionKey && o.sourceRef.sequence === selection.oracleSourceRef.sequence)
+  if (!epoch || epoch.status !== 'active' || run?.coordination.activeEpochKey !== epoch.epochKey || epoch.manualAction
+    || epoch.hostingDelegation && !epoch.hostingDelegation.stoppedRef || epoch.inputRevision !== selection.epochInputRevision
+    || call.actorKey !== 'gm' || !oracle || oracle.viewerKey !== epoch.viewerKey || oracle.authorizationEpochKey !== epoch.epochKey
+    || oracle.sourceRef.sessionKey !== runtime.sessionKey || oracle.sourceRef.sequence >= call.createdRef.sequence
+    || oracle.audience === 'gm-only' && selection.scope.audience !== 'gm-only'
+    || oracle.audience !== 'public' && selection.scope.audience === 'public') p.fail('模型实体提案缺少同一原咨询、窗口及单一披露范围')
 }
 export function assertTtrpgOpenNormalizationSourceV1(runtime: Pick<TtrpgRuntimeStateV2,'openRun'>,call: TtrpgOpenModelCallV1): void {
   if (!call.supportSlot) return

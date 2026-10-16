@@ -15,6 +15,7 @@ import { CONTEXT_SOURCE_BY_KEY } from '../registry/context-sources'
 import { projectFrozenAgentSkillDefinitionV1 } from '../agent/execution-binding'
 import { selectTtrpgOpenContextResourcesV1 } from './open-context-selection'
 import { ttrpgOpenPublicSituationMessagesV1 } from './open-public-situation-prompt'
+import { ttrpgOpenEntityModelMessagesV1, reviewTtrpgOpenEntityModelDeliveryV1, TTRPG_OPEN_ENTITY_MODEL_INPUT_V1 } from './open-entity-model-contract'
 
 export async function verifyTtrpgOpenContextSelectionEvidenceV1(input: {
   scope: WorkspaceScope; sessionId: number; actorKey: string; skillId: string; stepId: string
@@ -22,7 +23,7 @@ export async function verifyTtrpgOpenContextSelectionEvidenceV1(input: {
   sourceKeys: readonly string[]; mode: 'reserve' | 'dispatch' | 'finish'; call?: TtrpgOpenModelCallV1
 }) {
   const e = input.evidence, receipt = e.contextSelection
-  const modern = input.sourceKeys.some(key => /Context$/.test(key) || key === 'ttrpgOpenBriefInput' || key === 'ttrpgOpenSituationInput' || key === 'ttrpgOpenPublicSituationInput')
+  const modern = input.sourceKeys.some(key => /Context$/.test(key) || key === 'ttrpgOpenEntityInput' || key === 'ttrpgOpenBriefInput' || key === 'ttrpgOpenSituationInput' || key === 'ttrpgOpenPublicSituationInput')
   const rendered = JSON.parse(input.bodies[e.preflight.promptHash]) as { contextSelection?: unknown; messages: Array<{ role: string; content: string }> }
   if (!modern) {
     if (receipt !== undefined || e.contextAssembly !== undefined || rendered.contextSelection !== undefined) throw new Error('[ttrpg-context] 历史协议不可伪装新情境回执')
@@ -33,6 +34,13 @@ export async function verifyTtrpgOpenContextSelectionEvidenceV1(input: {
     eventType: 'ttrpg.context.assembled', receiptHash: receipt.receiptHash })) throw new Error('[ttrpg-context] E14 装配记录与原请求回执不一致')
   const { receiptHash, ...body } = receipt
   const definition = ttrpgOpenModelPurposeForSkillV1(input.skillId), binding = input.snapshot.contract.executionBindings?.find(binding => binding.stepId === input.stepId)
+  if (definition.purpose === 'entity-proposal') {
+    if (!input.call?.entityProposal || canonicalStringify(rendered.messages) !== canonicalStringify(ttrpgOpenEntityModelMessagesV1(e.preflight.contextPacket.content))) throw new Error('[ttrpg-entity] 原实体请求夹带登记资料之外的消息')
+    reviewTtrpgOpenEntityModelDeliveryV1(input.call.entityProposal, e.preflight.artifacts.filter(ref => ref.role === 'source-snapshot').map(ref => {
+      const wrapper = JSON.parse(input.bodies[ref.contentHash]) as { content: string }
+      return { sourceKey: ref.sourceKey, resourceKey: ref.resourceKey, content: wrapper.content }
+    }))
+  }
   if (definition.purpose === 'public-situation-proposal'
     && canonicalStringify(rendered.messages) !== canonicalStringify(ttrpgOpenPublicSituationMessagesV1(e.preflight.contextPacket.content))) {
     throw new Error('[ttrpg-public-situation] 原始公开请求夹带登记资料之外的消息')
@@ -62,7 +70,8 @@ export async function verifyTtrpgOpenContextSelectionEvidenceV1(input: {
   const user = rendered.messages.filter(message => message.role === 'user')
   const suffix = `\n\n【角色授权上下文】\n${e.preflight.contextPacket.content}`
   let rawInput: string
-  if (definition.purpose === 'public-situation-proposal') {
+  if (definition.purpose === 'entity-proposal') rawInput = TTRPG_OPEN_ENTITY_MODEL_INPUT_V1
+  else if (definition.purpose === 'public-situation-proposal') {
     const grant = runtime.openRun.coordination.epochs.find(e => e.epochKey === runtime.openRun!.coordination.activeEpochKey)?.publicSituation
     if (!grant || canonicalStringify(rendered.messages) !== canonicalStringify(ttrpgOpenPublicSituationMessagesV1(e.preflight.contextPacket.content))) {
       throw new Error('[ttrpg-public-situation] 消息不得附加登记资料之外的私域输入')
@@ -80,7 +89,12 @@ export async function verifyTtrpgOpenContextSelectionEvidenceV1(input: {
     do { const page = await provider.listMetadata({ scope: { ...input.scope, productRuntimeSessionId: input.sessionId, runtimeActorKey: input.actorKey }, limit: 1000, cursor }); inventory.push(...page.items); cursor = page.nextCursor ?? undefined } while (cursor)
   }
   const oracleSourceRef = input.call?.oracleInterpretation?.oracleSourceRef ?? input.call?.supportSlot?.oracleSourceRef
-  if (definition.actorRole === 'gm' && definition.purpose !== 'kp-narration' && definition.purpose !== 'stage-brief' && definition.purpose !== 'situation-proposal' && definition.purpose !== 'public-situation-proposal') {
+  if (definition.purpose === 'entity-proposal') {
+    if (!('directory' in context) || !input.call?.entityProposal) throw new Error('[ttrpg-entity] 缺少原实体来源选择')
+    const selected = (await import('./open-entity-context')).selectTtrpgOpenEntityModelResourcesV1(context, inventory, input.call.entityProposal)
+    inventory.splice(0, inventory.length, ...selected)
+  }
+  if (definition.actorRole === 'gm' && definition.purpose !== 'entity-proposal' && definition.purpose !== 'kp-narration' && definition.purpose !== 'stage-brief' && definition.purpose !== 'situation-proposal' && definition.purpose !== 'public-situation-proposal') {
     const oracleSuffix = `:oracle.${await hashProductProductionValueV2(oracleSourceRef)}`
     // The runtime owner already validates the exact Oracle/review hash and slot.
     const reviewSuffix = input.call?.supportSlot ? `:review.${await hashProductProductionValueV2(input.call.supportSlot.sourceRef)}` : null

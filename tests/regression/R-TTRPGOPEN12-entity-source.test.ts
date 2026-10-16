@@ -43,7 +43,7 @@ describe('R-TTRPGOPEN12 read-only entity source, original consultation and recip
     for (const skill of ['prose.ttrpg-open-intent', 'prose.ttrpg-open-oracle-interpret', 'prose.ttrpg-open-public-situation-propose', 'prose.ttrpg-open-kp']) {
       expect(createContextAccessPolicyForExecutionV1(getAgentSkillV1(skill)).allowedSourceKeys).not.toContain(sourceKey)
     }
-    for (const skill of AGENT_SKILLS) {
+    for (const skill of AGENT_SKILLS.filter(skill => skill.id !== 'prose.ttrpg-open-entity-propose')) {
       expect(resolveAgentSkillContextSourceKeysV1(skill, { includeOptional: true, includeGatewayProviders: true }), skill.id).not.toContain(sourceKey)
     }
   })

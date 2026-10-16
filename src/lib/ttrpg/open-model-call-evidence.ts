@@ -25,7 +25,7 @@ export interface TtrpgOpenAgentEvidenceV1 {
   artifacts: AgentRunArtifactRecordV1[]
 }
 export async function ttrpgOpenCallBindingHashV1(input: Pick<TtrpgOpenModelCallV1,
-  'actorKey' | 'authorizationEpochKey' | 'admissionStateHash' | 'visibilityHash' | 'runtimeSourceHash' | 'oracleInterpretation' | 'supportSlot' | 'narrationBinding' | 'hostingDelegationRef'> & { sessionKey: string }) {
+  'actorKey' | 'authorizationEpochKey' | 'admissionStateHash' | 'visibilityHash' | 'runtimeSourceHash' | 'entityProposal' | 'oracleInterpretation' | 'supportSlot' | 'narrationBinding' | 'hostingDelegationRef'> & { sessionKey: string }) {
   return hashProductProductionValueV2({ schema: 'storyforge.ttrpg-open-call-binding', version: 1, ...input })
 }
 
@@ -62,6 +62,7 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
     || snapshot.contract.runtimeBindingHash !== await ttrpgOpenCallBindingHashV1({ sessionKey: call.createdRef.sessionKey,
       actorKey: call.actorKey, authorizationEpochKey: call.authorizationEpochKey, admissionStateHash: call.admissionStateHash,
       visibilityHash: call.visibilityHash, runtimeSourceHash: call.runtimeSourceHash,
+      ...(call.entityProposal ? { entityProposal: call.entityProposal } : {}),
       ...(call.hostingDelegationRef ? { hostingDelegationRef: call.hostingDelegationRef } : {}),
       ...(call.oracleInterpretation ? { oracleInterpretation: call.oracleInterpretation } : {}),...(call.supportSlot ? { supportSlot: call.supportSlot } : {}), ...(call.narrationBinding ? { narrationBinding: call.narrationBinding } : {}) })) {
     throw new Error('[ttrpg-open-call] 模型请求没有同一实例/角色/Skill 的真实运行契约')

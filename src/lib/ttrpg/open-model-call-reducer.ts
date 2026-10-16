@@ -1,3 +1,4 @@
+import { assertTtrpgOpenEntityModelCallOriginV1 } from './open-model-calls'
 import { assertTtrpgOpenEpochPurposeV1 } from './open-coordination'
 /** Pure external-request journal: replay never dispatches a provider or reads evidence storage. */
 import type { ProductRuntimeEvent, ProductRuntimeState } from '../types'
@@ -45,6 +46,7 @@ export function applyTtrpgOpenModelCallEventV1(state: ProductRuntimeState, event
     if (previousIndex !== -1 || call.status !== 'prepared' || stable(call.createdRef) !== stable(ref)) p.fail('请求预留身份或初始回执无效')
     if (call.hostingDelegationRef) assertTtrpgOpenHostingRequestV1(state,{ epochKey: epoch.epochKey,viewerKey: seat.viewerKey,delegationRef: call.hostingDelegationRef,
       purpose: call.skillId === 'prose.ttrpg-open-companion' ? 'companion' : 'kp-narration',actorKey: call.actorKey,maximumCostUsd: call.reservedCostUsd })
+    assertTtrpgOpenEntityModelCallOriginV1(runtime, call)
     if (call.supportSlot) {
       assertTtrpgOpenSupportSlotV1(runtime,call.supportSlot.worldTurn)
       assertTtrpgOpenNormalizationSourceV1(runtime,call)
