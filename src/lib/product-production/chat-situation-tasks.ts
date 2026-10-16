@@ -1,3 +1,4 @@
+import {CHAT_OPENING_AGENCY_GATE_V2} from '../character-interaction/opening-agency'
 import {CHAT_OPENING_REVIEW_KEY, assertChatOpeningReviewedV1} from '../character-interaction/situation-production-review'
 import type { ProductProductionBriefV3, ProductProductionRecordV1 } from '../types'
 import type { ProductProductionTaskExecutionInputV1, ProductProductionTaskExecutionResultV1 } from './scheduler'
@@ -24,8 +25,9 @@ export function chatProductionSourceV1(input: Pick<ProductProductionTaskExecutio
 }
 async function reviewedSelection(input: Pick<ProductProductionTaskExecutionInputV1, 'inputArtifacts' | 'task'>, selection: ChatSituationSelectionV1) {
   const source = chatProductionSourceV1(input), candidates = chatProductionArtifactPayloadV1(input, 'content.chat-candidates')
+  if (input.task.acceptanceGateIds.includes(CHAT_OPENING_AGENCY_GATE_V2) && !input.task.inputArtifactKeys.includes(CHAT_OPENING_REVIEW_KEY)) fail('行动机会验收缺少开场审查依赖')
   if (input.task.inputArtifactKeys.includes(CHAT_OPENING_REVIEW_KEY)) await assertChatOpeningReviewedV1(
-    chatProductionArtifactPayloadV1(input, CHAT_OPENING_REVIEW_KEY), source, parseChatSituationCandidatesV1(candidates, source), selection.selectedOptionKey)
+    chatProductionArtifactPayloadV1(input, CHAT_OPENING_REVIEW_KEY), source, parseChatSituationCandidatesV1(candidates, source), selection.selectedOptionKey, input.task.acceptanceGateIds.includes(CHAT_OPENING_AGENCY_GATE_V2) ? 2 : 1)
   return selectChatNarrativeCandidateV1({source, candidates, selection})
 }
 export async function selectedChatProductionNarrativeV1(input: Pick<ProductProductionTaskExecutionInputV1, 'inputArtifacts' | 'task'>) {

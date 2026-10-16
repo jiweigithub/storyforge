@@ -1,0 +1,135 @@
+{
+  "schema": "storyforge.character-chat-engineering-evidence",
+  "version": 1,
+  "label": "V115 grounded opening opportunities with explicit review evidence",
+  "recordedAt": "2026-10-16T00:11:26.813177+00:00",
+  "baselineCommit": "632bdc3b8ef6ca94dda9dff020b4aff26849fda3",
+  "scope": {
+    "product": "character-chat experimental v3; default hidden",
+    "lifecycle": "product development, S3 production and author choice",
+    "reads": [
+      "product-production.artifact-inputs"
+    ],
+    "writes": "Existing CreativeArtifact/adopt extension into productBuildArtifacts.payloadJson; report schema version 2; no new table, runtime facts, world writes or media changes",
+    "handoff": "Frozen source and opening candidates -> independently reviewed opportunity claims -> explicit author selection -> original assembly/Release lifecycle",
+    "newPromptVersions": [
+      "chat-situation-production-v6",
+      "chat-opening-review-v2"
+    ],
+    "oldPromptVersionsPreserved": [
+      "chat-situation-production-v5",
+      "chat-opening-review-v1"
+    ],
+    "unsupportedEarlierPromptBindings": "Fail closed on execution; historical artifacts remain readable. Do not silently apply current prompts.",
+    "newModelSteps": 0
+  },
+  "contract": {
+    "agency": [
+      "actorKey",
+      "goalKey",
+      "possibilityIndex",
+      "basisFactKeys",
+      "mode",
+      "expectedChange",
+      "unresolved"
+    ],
+    "deterministic": "Known role and owned goal; actual direction owned by role; 1-3 unique referenced facts known to role; exact pointers and literal quotes; bounded closed shape; source/candidate hashes; new-plan v2 gate",
+    "semantic": "Concrete current opportunity supports useful change; preparation alone or assumed available respondent is insufficient; justified wait and companionship allowed; no guarantee of success, forced plot or invented permission",
+    "limitation": "The agency object is a model review claim, not a new fact or deterministic proof of narrative quality"
+  },
+  "regression": {
+    "files": 94,
+    "passed": 1207,
+    "failed": 0,
+    "newTests": 27,
+    "finalBindingRerun": {
+      "passed": 27,
+      "failed": 0
+    },
+    "firstRun": {
+      "files": 3,
+      "passed": 20,
+      "failed": 7,
+      "cause": "New plan acceptance-gate array order differed from existing portable ledger sorting, causing carry task/ledger verification to fail",
+      "repair": "Order new opening gates canonically; retain immutable historical plan/evidence and strict verifier",
+      "rerun": {
+        "files": 3,
+        "passed": 27,
+        "failed": 0
+      }
+    },
+    "covered": [
+      "legacy independent prompt hashes",
+      "role/goal/direction/knowledge/quote negative cases",
+      "semantic rejection kept; failed option cannot be selected",
+      "v1 report cannot satisfy new-plan gate; legacy plans remain readable",
+      "saved binding selection and foreign/missing/unknown binding refusal",
+      "formal scheduler, no extra model steps, author choice, build carry, release, portable report restore and unchanged frozen world"
+    ]
+  },
+  "browser": {
+    "passed": 5,
+    "failed": 0,
+    "scope": "isolated IndexedDB; author production and rejected option; opportunity card; 390px layout; refresh, transfer, release and hidden-fact discovery/rejection"
+  },
+  "gates": {
+    "passed": 10,
+    "bundleSizePassed": true,
+    "projectMetricsRefreshedAfterLastEdit": true
+  },
+  "independentBaseline": {
+    "gitHistory": "depth-1; exact HEAD and tracked tree verified",
+    "head": "632bdc3b8ef6ca94dda9dff020b4aff26849fda3",
+    "root": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v115-baseline-xz_afgfi/storyforge",
+    "manifestPath": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v115-baseline-xz_afgfi/manifest.json",
+    "manifestSha256": "204a11ddcc5c5e987da1fce65cd33a9f9e14b2cfb2dbbb5b6f28ac75296a3e6f",
+    "files": 3460
+  },
+  "fullValidation": {
+    "status": "to launch on committed clean snapshot; no current-code full CI/E2E pass claimed",
+    "priorV113": "running CI, queued E2E at last readback"
+  },
+  "realValidation": {
+    "status": "not started",
+    "model": "codex/gpt-6.1-sol",
+    "Agnes": "branch search complete; no usable configuration found",
+    "M1Complete": false,
+    "humanAcceptance": false,
+    "commercialAcceptance": false,
+    "holdoutsInspected": false
+  },
+  "logs": {
+    "initial-regression": {
+      "path": "/tmp/storyforge-chat-v115-initial-regression.log",
+      "sha256": "6a4d6ea7bc053046b1cce90113746888cde1ff83000020c0e62fd7325f278a4c"
+    },
+    "carry-rerun": {
+      "path": "/tmp/storyforge-chat-v115-carry-rerun.log",
+      "sha256": "912f4707cf255d172a19a36fd1fe053f6807013b869fb7845991af976faf3449"
+    },
+    "agency-regression": {
+      "path": "/tmp/storyforge-chat-v115-agency-regression.log",
+      "sha256": "2fa9496a1cffd404c0ef87def86ee5cfdf6e538b30e55af1c52177092044893b"
+    },
+    "binding-rerun": {
+      "path": "/tmp/storyforge-chat-v115-binding-rerun.log",
+      "sha256": "222f29944a714039737c46e3c995352be08b7333c0e121a2634ffcebc5e6a16a"
+    },
+    "final-regression": {
+      "path": "/tmp/storyforge-chat-v115-final-regression.log",
+      "sha256": "69d5762465ae731f29ba172e2a7499bbfec5437c627f2ce3ba0a1d49840c09a6"
+    },
+    "targeted-e2e": {
+      "path": "/tmp/storyforge-chat-v115-targeted-e2e.log",
+      "sha256": "6bbf79544c5b9781b5f00efca6fc0c49b2980a91cb3cdc1e7602eb0e1e3f477f"
+    },
+    "final-gates": {
+      "path": "/tmp/storyforge-chat-v115-final-gates.log",
+      "sha256": "54ee97a66d789b747b7580bbc17df99fcf84d6863fd6ec56088f733bedb349f3"
+    },
+    "final-bundle-size": {
+      "path": "/tmp/storyforge-chat-v115-final-bundle-size.log",
+      "sha256": "5948d632702238dbf860990dd62c00092772c8eaa764b9346c4ba3be8f102065"
+    }
+  }
+}

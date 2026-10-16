@@ -5,7 +5,7 @@ import {seedChatSourceUnitConfirmationFixture, sourceUnitAuthorizationReportFixt
 import {saveChatDraftV1, readChatDraftV1} from '../../src/lib/character-interaction/draft-service'
 import {reviewChatSourceUnitConfirmationV1, adoptChatSourceUnitConfirmationV1} from '../../src/lib/character-interaction/source-unit-confirmation-harness'
 import {chatRoleProfileCompilerInput} from '../helpers/chat-role-profile'
-import {chatSituationCandidatesFixture, chatOpeningReviewFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatSituationCandidatesFixture, chatOpeningAgencyReviewFixture} from '../helpers/chat-narrative-production-fixture'
 import type {ChatNarrativeProductionSourceV1} from '../../src/lib/character-interaction/narrative-production'
 import {executeProductProductionCommand} from '../../src/lib/product-production/commands'
 import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
@@ -52,9 +52,13 @@ it('carries author-confirmed units through real production commands, source mani
     expect(source.source.version).toBe(6)
     expect(source.settings.narrative.permissions.allowInquiryResults).toBe(true)
     expect(source.source.sourceUnits!.bundles[0].source.fragments[0].valueJson).toBe(JSON.stringify(SOURCE_UNITS_FIXTURE_TEXT))
-    if (isGeneration) expect(input.system).toContain('每一条都必须在每个候选中作为唯一 reviewed-world 事实完整保留')
+    if (isGeneration) {
+      expect(input.system).toContain('每一条都必须在每个候选中作为唯一 reviewed-world 事实完整保留')
+      expect(input.system).toContain('人物存在不等于在场')
+    }
+    if (isReview) expect(input.system).toContain('系统校验身份、引用和知情范围')
     const candidates = chatSituationCandidatesFixture(source)
-    const output = isGeneration ? candidates : isReview ? chatOpeningReviewFixture(candidates) : {schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: []}
+    const output = isGeneration ? candidates : isReview ? chatOpeningAgencyReviewFixture(candidates) : {schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: []}
     return {output: JSON.stringify(output), usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {
       schema: 'storyforge.provider-binding-receipt', version: 1, requirementKey, adapterId: 'configured-text.v1', adapterVersion: 1,
       provider: 'fixture', model: 'fixture-model', endpointOrigin: 'https://fixture.invalid', executionLocation: 'browser-direct',
@@ -74,6 +78,8 @@ it('carries author-confirmed units through real production commands, source mani
   await execute(); details = await readProductProductionDetailsV1(f.scope, productionId)
   expect(details.build!.status, details.build!.failureJson).toBe('release-ready')
   const completed = await listProductProductionReviewArtifactsV1({scope: f.scope, buildId: details.build!.id!}), runtime = parseProductRuntimePackageV1(completed.find(a => a.artifactKey === 'runtime.package')!.payload)
+  const reviewPayload = completed.find(a => a.artifactKey === 'quality.chat-openings')!.payload
+  expect(reviewPayload).toMatchObject({version: 2, options: expect.arrayContaining([expect.objectContaining({agency: expect.objectContaining({mode: 'act'})})])})
   const source = runtime.interaction!.chatSource!, story = runtime.interaction!.chatNarrative!
   expect(source.version).toBe(6); expect(story.permissions.allowInquiryResults).toBe(true)
   expect(source.sourceUnits).toEqual(brief.characterChatSourceUnits)
@@ -105,6 +111,8 @@ it('carries author-confirmed units through real production commands, source mani
   const importedId = await importProjectJSON(await exportProjectJSON(f.scope.projectId)), restored = (await db.productRuntimeSessions.where('projectId').equals(importedId).toArray()).find(s => s.title === session.title)!
   db.close(); await db.open()
   expect((await readProductRuntimeState(restored.id!)).interaction).toEqual(state.interaction)
+  const importedReports = await db.productBuildArtifacts.where('projectId').equals(importedId).filter(a => a.artifactKey === 'quality.chat-openings').toArray()
+  expect(importedReports.some(a => JSON.stringify(JSON.parse(a.payloadJson)) === JSON.stringify(reviewPayload))).toBe(true)
   expect(calls).toEqual(['generation', 'review', 'media'])
   for (const world of worlds) expect(await db.worldReleases.get(world.id!)).toEqual(world)
 })

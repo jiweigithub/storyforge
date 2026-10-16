@@ -103,3 +103,19 @@ export function chatOpeningReviewFixture(candidates: ChatSituationCandidatesV1, 
     evidence: [{target: 'option' as const, pointer: '/title', quote: option.title}],
   }))}))}
 }
+
+/** Structural fixture only; the injected verdict is not evidence of story quality. */
+export function chatOpeningAgencyReviewFixture(candidates: ChatSituationCandidatesV1, rejectedOptionKey?: string): ChatOpeningReviewDraftV1 {
+  const draft = chatOpeningReviewFixture(candidates, rejectedOptionKey)
+  for (const row of draft.options) {
+    const option = candidates.options.find(o => o.optionKey === row.optionKey)!, direction = option.situation.possibilities[0]
+    const check = row.checks.find(c => c.check === 'viable-agency')!
+    row.agency = check.passed ? {actorKey: direction.actorKey, goalKey: option.situation.goals.find(g => g.actorKey === direction.actorKey)!.goalKey,
+      possibilityIndex: 0, basisFactKeys: direction.evidenceFactKeys.slice(0, 3), mode: 'act', expectedChange: '核实当前物件的状态，再决定处理方式。', unresolved: '具体状态及是否能处理尚未确认。'} : null
+    if (row.agency) check.evidence = [{target: 'option', pointer: '/situation/possibilities/0/text', quote: direction.text}, ...row.agency.basisFactKeys.map(key => {
+      const i = option.situation.facts.findIndex(f => f.factKey === key)
+      return {target: 'option' as const, pointer: `/situation/facts/${i}/text`, quote: option.situation.facts[i].text}
+    })]
+  }
+  return draft
+}

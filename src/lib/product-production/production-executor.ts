@@ -1,3 +1,4 @@
+import {readChatOpeningProductionVersionV1} from '../character-interaction/opening-production-binding'
 import {chatOpeningReviewPromptV1, createChatOpeningReviewV1} from '../character-interaction/situation-production-review'
 import { parseTextAdventureQuestScriptArtifact, textAdventureQuestRecipientsV3 } from '../adventure/quest-settlement'
 import { hasFrozenAuthorUploadRightsV1 } from './media-rights'
@@ -6957,9 +6958,11 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
         }
       })()
     : undefined
+  const chatOpeningVersion = options.brief.characterChat?.version === 3 && ['content.product-module', 'content.chat-opening-review'].includes(input.task.taskKey)
+    ? await readChatOpeningProductionVersionV1(input) : null
   const system = options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.product-module'
-    ? chatSituationProductionPromptV1(!!options.brief.characterChatSourceUnits?.bundles.length) : options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.chat-opening-review'
-      ? chatOpeningReviewPromptV1() : textSystem(
+    ? chatSituationProductionPromptV1(!!options.brief.characterChatSourceUnits?.bundles.length, chatOpeningVersion?.groundedAgency) : options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.chat-opening-review'
+      ? chatOpeningReviewPromptV1(chatOpeningVersion?.groundedAgency ? 2 : 1) : textSystem(
     input.task.taskKey,
     options.brief,
     input.attempt,
@@ -7409,7 +7412,7 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
     }
   } else if (input.task.taskKey === 'content.chat-opening-review') {
     const source = chatProductionSourceV1(input)
-    const report = await createChatOpeningReviewV1(raw, source, parseChatSituationCandidatesV1(chatProductionArtifactPayloadV1(input, 'content.chat-candidates'), source))
+    const report = await createChatOpeningReviewV1(raw, source, parseChatSituationCandidatesV1(chatProductionArtifactPayloadV1(input, 'content.chat-candidates'), source), chatOpeningVersion?.groundedAgency ? 2 : 1)
     payload = report; kind = 'quality-report'
     quality = {reviewedOptions: report.options.length, eligibleOptions: report.options.filter(option => option.checks.every(check => check.passed)).length}
   } else if (input.task.taskKey === 'media.requirements') {

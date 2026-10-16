@@ -1,3 +1,4 @@
+import {CHAT_OPENING_AGENCY_GATE_V2} from '../character-interaction/opening-agency'
 import type {
   ProductProductionBriefV3,
   ProductProductionPlanTaskV3,
@@ -951,7 +952,7 @@ export async function createProductProductionPlanV3(input: {
       capabilityRequirementKeys: textCapabilities, concurrencyGroup: 'text-provider',
       subjectLockKeys: ['content.chat-candidates'], priority: 90, budgetReservation: modelBudget('content.product-module'),
       maxAttempts: 2, timeoutMs: 240_000, failurePolicy: 'pause', fallbackTaskKey: null,
-      acceptanceGateIds: ['artifact.protocol', 'chat.situation-candidates'],
+      acceptanceGateIds: ['artifact.protocol', CHAT_OPENING_AGENCY_GATE_V2, 'chat.situation-candidates'],
     }),
     productionTask({
       taskKey: 'content.chat-opening-review', lane: 'content', kind: 'product-module',
@@ -960,7 +961,7 @@ export async function createProductProductionPlanV3(input: {
       capabilityRequirementKeys: textCapabilities, concurrencyGroup: 'text-provider',
       subjectLockKeys: ['quality.chat-openings'], priority: 89, budgetReservation: modelBudget('content.product-module'),
       maxAttempts: 1, timeoutMs: 240_000, failurePolicy: 'pause', fallbackTaskKey: null,
-      acceptanceGateIds: ['artifact.protocol', 'chat.opening-review'],
+      acceptanceGateIds: ['artifact.protocol', CHAT_OPENING_AGENCY_GATE_V2, 'chat.opening-review'],
     }),
     productionTask({
       taskKey: 'content.chat-author-gate', lane: 'content', kind: 'product-module',
@@ -970,7 +971,7 @@ export async function createProductProductionPlanV3(input: {
       subjectLockKeys: ['content.chat-selection', 'content.product-module'], priority: 89,
       budgetReservation: reservation({durationMs: perDuration}),
       maxAttempts: 1, timeoutMs: 30_000, failurePolicy: 'pause', fallbackTaskKey: null,
-      acceptanceGateIds: ['artifact.protocol', 'chat.situation-author-selected'],
+      acceptanceGateIds: ['artifact.protocol', CHAT_OPENING_AGENCY_GATE_V2, 'chat.situation-author-selected'],
     }),
     productionTask({
       taskKey: 'content.narrative', lane: 'content', kind: 'narrative',
@@ -980,7 +981,7 @@ export async function createProductProductionPlanV3(input: {
       subjectLockKeys: ['content.narrative'], priority: 85,
       budgetReservation: reservation({inputTokens: perInput, durationMs: perDuration}),
       maxAttempts: 1, timeoutMs: 30_000, failurePolicy: 'pause', fallbackTaskKey: null,
-      acceptanceGateIds: ['artifact.protocol', 'chat.situation-navigation'],
+      acceptanceGateIds: ['artifact.protocol', CHAT_OPENING_AGENCY_GATE_V2, 'chat.situation-navigation'],
     }),
   )
   if (!textAdventure && !narrativeChat) tasks.push(
@@ -1415,7 +1416,7 @@ export async function createProductProductionPlanV3(input: {
     subjectLockKeys: integrationArtifactKeys, priority: 50,
     budgetReservation: reservation({ inputTokens: perInput, durationMs: perDuration }), maxAttempts: 1,
     timeoutMs: 120_000, failurePolicy: 'pause', fallbackTaskKey: null,
-    acceptanceGateIds: ['package.protocol', 'package.graph', 'package.media-bindings'],
+    acceptanceGateIds: ['package.protocol', 'package.graph', 'package.media-bindings', ...(narrativeChat ? [CHAT_OPENING_AGENCY_GATE_V2] : [])],
   }))
   if (textAdventure) tasks.push(productionTask({
     taskKey: 'qa.autoplay', lane: 'qa', kind: 'text-adventure-autoplay', skillId: null,

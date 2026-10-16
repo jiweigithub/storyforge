@@ -35,7 +35,7 @@ test('author explicitly enables hidden-fact discovery and reviews conditions in 
       runText: async (request: {system: string}) => {
         const source = JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'design.game').last()).payloadJson)
         const helper = await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts'), candidates = helper.chatSituationCandidatesFixture(source)
-        const output = request.system.includes('开场的语义审查者') ? helper.chatOpeningReviewFixture(candidates) : candidates
+        const output = request.system.includes('开场的语义审查者') ? helper.chatOpeningAgencyReviewFixture(candidates) : candidates
         return {output: JSON.stringify(output), usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {schema: 'storyforge.provider-binding-receipt', version: 1, requirementKey, adapterId: 'configured-text.v1', adapterVersion: 1, provider: 'fixture', model: 'fixture-model', endpointOrigin: 'https://fixture.invalid', executionLocation: 'browser-direct', credentialSource: 'existing-ai-config', credentialPresent: true, capabilityHash: bindingHash, boundAt: 1, receiptHash: 'b'.repeat(64)}}
       }})
     await (await load('/storyforge/src/lib/product-production/scheduler.ts')).runProductProductionUntilBlockedV1({scope: f.scope, productionId, capabilityBindings: [{requirementKey, adapterId: 'configured-text.v1', bindingHash}], executor})

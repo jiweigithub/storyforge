@@ -19,7 +19,7 @@ import {runProductProductionUntilBlockedV1, recoverImportedChatProductionPrefixV
 import {readProductProductionBuildWorldScopeV1} from '../../src/lib/product-production/world-binding'
 import {aggregateProductSourceManifestFromExactRunsV1} from '../../src/lib/product/source-contracts'
 import {readProductProductionDetailsV1, confirmChatSituationDecisionV1, listProductProductionReviewArtifactsV1, retryProductProductionBlockerV1, publishProductProductionV1} from '../../src/lib/product-production/service'
-import {chatSituationCandidatesFixture, chatOpeningReviewFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatSituationCandidatesFixture, chatOpeningAgencyReviewFixture} from '../helpers/chat-narrative-production-fixture'
 import type {ChatNarrativeProductionSourceV1} from '../../src/lib/character-interaction/narrative-production'
 import {verifyProductBuildTerminalArtifactSetV1} from '../../src/lib/product-production/artifact-store'
 import {createCharacterInteractionInstance} from '../../src/lib/product/runtime-instances'
@@ -142,7 +142,7 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false, priv
     calls.push(isSituation ? 'situations' : isReview ? 'opening-review' : 'media')
     const sourceRow = await db.productBuildArtifacts.filter(row => row.artifactKey === 'design.game').last()
     const source = JSON.parse(sourceRow!.payloadJson) as ChatNarrativeProductionSourceV1
-    const output = isSituation ? chatSituationCandidatesFixture(source) : isReview ? chatOpeningReviewFixture(chatSituationCandidatesFixture(source), 'option-1') : rejectMedia ? {invalid: 'bounded failure after author selection'} : {
+    const output = isSituation ? chatSituationCandidatesFixture(source) : isReview ? chatOpeningAgencyReviewFixture(chatSituationCandidatesFixture(source), 'option-1') : rejectMedia ? {invalid: 'bounded failure after author selection'} : {
       schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: [],
     }
     return {output: JSON.stringify(output), usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {

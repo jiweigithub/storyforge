@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, expect, it} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import {assertChatOpeningReviewedV1, createChatOpeningReviewV1, parseChatOpeningReviewDraftV1, readChatOpeningReviewV1} from '../../src/lib/character-interaction/situation-production-review'
-import {chatOpeningReviewFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatOpeningAgencyReviewFixture, chatOpeningReviewFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
 import {createProductProductionPlanV3} from '../../src/lib/product-production/plan'
 import {hashProductProductionValueV2} from '../../src/lib/product-production/hash'
 import {draftProductProductionBriefV3, suggestProductStartingPoints} from '../../src/lib/product-production/consultation'
@@ -56,7 +56,7 @@ it('registers the review between creation and author choice, and requires the sa
   const artifacts = [{artifactKey: 'design.game', payloadJson: JSON.stringify(f.source)}, {artifactKey: 'content.chat-candidates', payloadJson: JSON.stringify(f.candidates)}, {artifactKey: 'content.chat-selection', payloadJson: JSON.stringify(selection)}]
   const input = {task: plan.tasks.find(t => t.taskKey === 'integration.package')!, inputArtifacts: artifacts} as unknown as ProductProductionTaskExecutionInputV1
   await expect(verifyChatNarrativeShellV1(input)).rejects.toThrow('缺少唯一情境生产依赖:quality.chat-openings')
-  const report = await createChatOpeningReviewV1(chatOpeningReviewFixture(f.candidates), f.source, f.candidates)
+  const report = await createChatOpeningReviewV1(chatOpeningAgencyReviewFixture(f.candidates), f.source, f.candidates, 2)
   const content = await selectChatNarrativeCandidateV1({source: f.source, candidates: f.candidates, selection: {...selection, schema: 'storyforge.chat-situation-selection', version: 1}})
   artifacts.push({artifactKey: 'content.narrative', payloadJson: JSON.stringify(chatNarrativeShellV1(content))})
   artifacts.push({artifactKey: 'quality.chat-openings', payloadJson: JSON.stringify(report)})
@@ -65,7 +65,7 @@ it('registers the review between creation and author choice, and requires the sa
   artifacts[artifacts.length - 1].payloadJson = JSON.stringify(report)
   await expect(verifyChatNarrativeShellV1(input)).rejects.toThrow('未通过')
   // Read a genuinely older topology without claiming it had this new review.
-  const legacy = {...input, task: {...input.task, inputArtifactKeys: input.task.inputArtifactKeys.filter(key => key !== 'quality.chat-openings')}, inputArtifacts: input.inputArtifacts.filter(a => a.artifactKey !== 'quality.chat-openings')}
+  const legacy = {...input, task: {...input.task, acceptanceGateIds: input.task.acceptanceGateIds.filter(g => g !== 'chat.opening-grounded-agency.v2'), inputArtifactKeys: input.task.inputArtifactKeys.filter(key => key !== 'quality.chat-openings')}, inputArtifacts: input.inputArtifacts.filter(a => a.artifactKey !== 'quality.chat-openings')}
   await expect(verifyChatNarrativeShellV1(legacy)).resolves.toMatchObject({content})
 })
 

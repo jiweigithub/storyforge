@@ -1,3 +1,4 @@
+import {CHAT_OPENING_AGENCY_CREATION_RULE_V2} from './opening-agency'
 import { canonicalStringify } from '../agent/run/hash'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import type { ChatAuthoringSettingsV3 } from './authoring-contract'
@@ -140,8 +141,8 @@ export function isChatNarrativeShellV1(narrative: ProductRuntimePackageV1['narra
   return canonicalProductProductionJsonV2(narrative) === canonicalProductProductionJsonV2(expected)
 }
 
-export function chatSituationProductionPromptV1(atomicSources = false): string {
-  return (atomicSources ? '本次使用来源 v6：sourceUnits 保留完整原文与限制，仅供幕后一致性检查，不是任何角色的可知内容。knowledge 中 source.unit 标记作者逐项审定的事实正文；每一条都必须在每个候选中作为唯一 reviewed-world 事实完整保留，包括初始无人知晓且没有 discovery 的事实，audienceKeys 必须精确相同。不要把整段原文、相邻事实或限制另写为公开事实；不能从一项证据开放其他单位。\n' : '') + `你是角色聊天的初始情境编辑。只使用输入中经过作者确认的聊天来源。输出严格 JSON，不加 Markdown。
+export function chatSituationProductionPromptV1(atomicSources = false, groundedAgency = false): string {
+  return (groundedAgency ? CHAT_OPENING_AGENCY_CREATION_RULE_V2 + '\n' : '') + (atomicSources ? '本次使用来源 v6：sourceUnits 保留完整原文与限制，仅供幕后一致性检查，不是任何角色的可知内容。knowledge 中 source.unit 标记作者逐项审定的事实正文；每一条都必须在每个候选中作为唯一 reviewed-world 事实完整保留，包括初始无人知晓且没有 discovery 的事实，audienceKeys 必须精确相同。不要把整段原文、相邻事实或限制另写为公开事实；不能从一项证据开放其他单位。\n' : '') + `你是角色聊天的初始情境编辑。只使用输入中经过作者确认的聊天来源。输出严格 JSON，不加 Markdown。
 生成 settings.narrative.openingCount 个不同且符合 openingSituation 的初始局面；不是完整故事，不写未来分支、结局或玩家承诺。
 保留种子真正要处理的事情。可把眼前的准备或工具检查作为第一步，但不要用它替换原目标；其受阻时仍能选择其他有依据的办法或明确暂停原任务，不能把准备结束当作原任务完成。目标和事项可以保持精简，不要求每个开场都增加主支线。给角色可自行尝试的当前条件，不把所有可能都交还玩家安排。谨慎等人物特征影响方法，不扩成无依据的全面退缩。
 每个局面包含：已发生的背景事实、每位角色自身的欲望/顾虑/边界、角色当前所信、未完成事项及可收束信号、若干可能方向。可能方向不是事实或必须发生的剧情。
