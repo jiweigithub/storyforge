@@ -2,7 +2,7 @@
   "schema": "storyforge.character-chat-engineering-evidence",
   "version": 1,
   "label": "V134 combined projection cache bound and incremental native-load evidence",
-  "recordedAt": "2026-10-16T08:28:54.895833+00:00",
+  "recordedAt": "2026-10-16T08:46:55.603745+00:00",
   "baseCommit": "f8e164630d9b30b819707c43c7fecd3f61e96c87",
   "sourceSha256": {
     "src/lib/character-interaction/history-context-cache.ts": "8abfad180b08155591ed1dbaac065b990737a8488e49cf58c857087d3619b725",
@@ -65,7 +65,14 @@
       "durationSeconds": 257.62,
       "mode": "existing two-fork mode; original time limits"
     },
-    "fullSuites": "No V134 complete-suite pass claimed.",
+    "fullSuites": {
+      "status": "V134 exact-commit CI and E2E serial-queued; no complete-suite pass",
+      "head": "ef7f7fcad68a415fdd921982fd2e283fd240d999",
+      "manifestSha256": "16aa007152bb1346ec7fa9b8d0376c2ab704b0aa94c1983957bd44fd44dd8b6b",
+      "ciReceipt": "/tmp/storyforge-chat-v134-full-ci-receipt.json",
+      "e2eReceipt": "/tmp/storyforge-chat-v134-full-e2e-receipt.json",
+      "supersededV133": "Both queues verified unstarted and childless, then exited143; results preserved, not passes."
+    },
     "gates": {
       "count": 11,
       "exitCode": 0,
@@ -83,5 +90,80 @@
     "Engineering injections do not establish meaningful autonomous story, actual-model recall, latency, human experience or commercial acceptance.",
     "No new real model calls, Agnes rescan, provider substitution or cohort replacement. V3 remains experimental and hidden by default."
   ],
-  "privateEvidenceDirectory": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v134-cache-budget"
+  "privateEvidenceDirectory": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v134-cache-budget",
+  "implementationCommit": "ef7f7fcad68a415fdd921982fd2e283fd240d999",
+  "projectionMeasurement": {
+    "kind": "Read-only current reader projection of persisted native post-action states; does not claim these are the actor request-time state or a controlled latency benchmark",
+    "rows": [
+      {
+        "actions": 100,
+        "keyBytes": 324438,
+        "outputBytes": 65390,
+        "totalBytes": 389828,
+        "oldKeyAdmissible": true,
+        "combinedAdmissible": true
+      },
+      {
+        "actions": 200,
+        "keyBytes": 634424,
+        "outputBytes": 92782,
+        "totalBytes": 727206,
+        "oldKeyAdmissible": true,
+        "combinedAdmissible": true
+      },
+      {
+        "actions": 300,
+        "keyBytes": 946364,
+        "outputBytes": 120828,
+        "totalBytes": 1067192,
+        "oldKeyAdmissible": true,
+        "combinedAdmissible": true
+      },
+      {
+        "actions": 400,
+        "keyBytes": 1256350,
+        "outputBytes": 148620,
+        "totalBytes": 1404970,
+        "oldKeyAdmissible": true,
+        "combinedAdmissible": true
+      },
+      {
+        "actions": 500,
+        "keyBytes": 1566448,
+        "outputBytes": 176232,
+        "totalBytes": 1742680,
+        "oldKeyAdmissible": true,
+        "combinedAdmissible": true
+      },
+      {
+        "actions": 600,
+        "keyBytes": 1881048,
+        "outputBytes": 204246,
+        "totalBytes": 2085294,
+        "oldKeyAdmissible": true,
+        "combinedAdmissible": true
+      },
+      {
+        "actions": 700,
+        "keyBytes": 2195648,
+        "outputBytes": 232246,
+        "totalBytes": 2427894,
+        "oldKeyAdmissible": false,
+        "combinedAdmissible": true
+      }
+    ],
+    "artifact": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v134-cache-budget/storyforge-chat-v134-projection-measure.json",
+    "interpretation": "At persisted native700 state, the exact actor input key is 2195648 UTF-16 bytes and key plus projection 2427894 bytes. The former half-budget gate rejects this complete key despite fitting the unchanged total bound. This is post-action reader evidence, not a controlled request-time performance measurement."
+  },
+  "priorV132E2E": {
+    "head": "7dbd3d8fceb5b3b37bb8bfefb42933ed2891d9d6",
+    "exitCode": 1,
+    "passed": 371,
+    "skipped": 2,
+    "failed": 1,
+    "failure": "ENOSPC while writing screenshot /tmp/motion-materials-delivery.png at motion-drama-preproduction.spec.ts:113; trace/archive/directory writes also failed",
+    "missingEvidence": "Failing test screenshot/trace could not be fully written; no such artifact is claimed",
+    "slot": "Released normally; no lock file removed; next owner belongs to another task",
+    "receipt": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v134-cache-budget/v132-e2e-terminal/storyforge-chat-v132-full-e2e-receipt.json"
+  }
 }

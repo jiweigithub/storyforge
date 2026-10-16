@@ -208,7 +208,7 @@
     ]
   },
   "fullValidation": {
-    "status": "pending clean committed snapshot; no full-suite pass claimed",
+    "status": "V132 E2E failed: 371 passed, 2 skipped, 1 ENOSPC screenshot failure. V132 CI was superseded before start; no whole-suite pass claimed.",
     "ciReceipt": "/tmp/storyforge-chat-v132-full-ci-receipt.json",
     "e2eReceipt": "/tmp/storyforge-chat-v132-full-e2e-receipt.json",
     "supersededV131": {
@@ -216,6 +216,17 @@
       "e2eExitCode": 143,
       "reason": "Both own queues verified unstarted and childless before stopping; not passed.",
       "receipt": "/tmp/storyforge-chat-v132-superseded-v131-queues.json"
+    },
+    "e2eTerminal": {
+      "head": "7dbd3d8fceb5b3b37bb8bfefb42933ed2891d9d6",
+      "exitCode": 1,
+      "passed": 371,
+      "skipped": 2,
+      "failed": 1,
+      "failure": "ENOSPC while writing screenshot /tmp/motion-materials-delivery.png at motion-drama-preproduction.spec.ts:113; trace/archive/directory writes also failed",
+      "missingEvidence": "Failing test screenshot/trace could not be fully written; no such artifact is claimed",
+      "slot": "Released normally; no lock file removed; next owner belongs to another task",
+      "receipt": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v134-cache-budget/v132-e2e-terminal/storyforge-chat-v132-full-e2e-receipt.json"
     }
   },
   "evidence": {

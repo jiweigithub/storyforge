@@ -161,11 +161,12 @@
     "inspector": "Attached only to identity-verified own test worker; loopback port was unused and closed after profiling."
   },
   "fullValidation": {
-    "status": "no complete-suite pass claimed for this implementation",
+    "status": "V133 full CI and E2E were verified unstarted and childless, then superseded by fixed V134 snapshots; both exited 143, neither is a pass.",
     "ciReceipt": "/tmp/storyforge-chat-v133-full-ci-receipt.json",
     "e2eReceipt": "/tmp/storyforge-chat-v133-full-e2e-receipt.json",
-    "priorV132E2E": "Confirmed live and progressing. Queue lifetime was approximately 40 minutes while actual test lifetime was approximately 7 minutes; not terminated.",
-    "queueAudit": "/tmp/storyforge-chat-v133-queue-audit.json"
+    "priorV132E2E": "Terminal exit 1: 371 passed, 2 skipped, 1 ENOSPC screenshot failure in motion-drama-preproduction. Failing artifacts could not be fully written; terminal logs and receipt preserved.",
+    "queueAudit": "/tmp/storyforge-chat-v133-queue-audit.json",
+    "supersessionEvidence": "/tmp/storyforge-chat-v134-superseded-queues.json"
   },
   "evidence": {
     "directory": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v133-history-growth",
