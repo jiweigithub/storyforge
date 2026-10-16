@@ -49,8 +49,18 @@ test('native formal entry preserves a private original candidate across reload a
   await expect(page.getByText('当前正在拟定新局势', { exact: true })).toBeVisible()
   await expect(page.locator('body')).not.toContainText('PRIVATE-GM-SITUATION-SOURCE')
   await expect(page.locator('body')).not.toContainText('PRIVATE-GENERATED-SITUATION-GOAL')
-  await page.getByRole('button', { name: '取消本次局势拟定', exact: true }).click()
-  await expect(page.getByText('本次局势拟定已取消，原有局势保持原样。', { exact: true })).toBeVisible()
+  const desk = page.getByTestId('ttrpg-open-situation-desk')
+  await desk.locator('summary').first().click()
+  await expect(desk).not.toContainText('PRIVATE-GENERATED-SITUATION-GOAL')
+  await page.evaluate(async () => {
+    const importer = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    const { db } = await importer('/storyforge/src/lib/db/schema.ts'), add = db.agentRunEvents.add.bind(db.agentRunEvents)
+    db.agentRunEvents.add = async () => { db.agentRunEvents.add = add; throw new Error('fixture situation stop cleanup interruption') }
+  })
+  await desk.getByRole('button', { name: '取消本次局势拟定', exact: true }).click()
+  await expect(desk.getByRole('button', { name: '补齐局势拟定结束记录', exact: true })).toBeVisible()
+  await desk.getByRole('button', { name: '补齐局势拟定结束记录', exact: true }).click()
+  await expect(desk.getByText('局势拟定的结束记录已补齐。', { exact: true })).toBeVisible()
   const stopped = await page.evaluate(async ({ input, summary }) => {
     const importer = new Function('p', 'return import(p)') as (p: string) => Promise<any>
     const { readTtrpgOpenSituationCandidateSummaryV1 } = await importer('/storyforge/src/lib/ttrpg/open-generated-situation-candidate.ts')

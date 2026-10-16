@@ -1267,6 +1267,12 @@ export async function finishTtrpgOpenModelCallV1(input: TtrpgOpenModelCallComman
         if (!historical) throw new Error('[ttrpg-open-call] 导入的未发送请求缺少准确原始证明，不能取消记账');
         agentEvidence = historical.evidence;
       } else agentEvidence = await verifyTtrpgOpenModelCallEvidenceV1({ scope, sessionId: input.sessionId, runId: input.runId, call, mode: 'finish' });
+      if (call.status === 'unknown' && agentEvidence.events.some(event => {
+        if (event.type !== 'model.responded' && event.type !== 'evidence.artifact.recorded') return false;
+        const payload = JSON.parse(event.payloadJson) as { stepId?: string; attempt?: number; artifactKind?: string };
+        return payload.stepId === call.stepId && payload.attempt === call.attempt
+          && (event.type === 'model.responded' || payload.artifactKind === 'raw-response');
+      })) throw new Error('[ttrpg-open-call] 原请求已有实际回答证据，不能降格为结果未知；请恢复原回答回执');
       return { actorKey: call.actorKey, targetKey: null, payload: { call, viewerKey }, agentEvidence };
     },
   });

@@ -1,4 +1,5 @@
 import TtrpgOpenBriefPanel from './TtrpgOpenBriefPanel'
+import TtrpgOpenSituationPanel from './TtrpgOpenSituationPanel'
 import TtrpgOpenWorldPatchPanel from './TtrpgOpenWorldPatchPanel'
 import TtrpgOpenHistoricalResponses from './TtrpgOpenHistoricalResponses'
 import TtrpgOpenMemoryPanel from './TtrpgOpenMemoryPanel'
@@ -54,6 +55,7 @@ export default function TtrpgOpenHostTable(props: TtrpgPlayTablePropsV1 & { view
     {host && <TtrpgOpenHistoricalResponses key={`history:${sessionId}:${viewerKey}:${props.state.lastSequence}`} input={input()} entries={host.historicalResponses ?? []} busy={busy} perform={perform} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenMemoryPanel key={`memory:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenBriefPanel key={`brief:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
+    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenSituationPanel key={`situation:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenWorldPatchPanel key={`patch:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenTableConversation key={`${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => { await job() })} />}
     {host && <>
