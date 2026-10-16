@@ -1270,6 +1270,8 @@ async function createVerifiedProducerCandidateV1(input: {
   inputHash: string
   cacheKey: string
   buildFingerprint: ProducerBuildFingerprintV1
+  /** Read-only recovery proof only; never used by accepted/carry writers. */
+  retainedRoot?: true
 }): Promise<VerifiedProducerCandidateV1> {
   const plan = parseProductProductionPlanV3(input.build.planJson, undefined, input.build.briefHash)
   if (canonicalProductProductionJsonV2(plan) !== input.build.planJson
@@ -1306,7 +1308,9 @@ async function createVerifiedProducerCandidateV1(input: {
   const rootBoundary = rootSnapshot.contract.scope.productProduction
   if (!rootBoundary || rootBoundary.taskKey !== '$root'
     || rootSnapshot.run.parentRunId != null || rootSnapshot.run.parentRelation != null
-    || !['running', 'verifying', 'completed'].includes(rootSnapshot.run.status)
+    || !(input.retainedRoot
+      ? ['running', 'verifying', 'completed', 'paused', 'failed', 'cancelled', 'recovery_required']
+      : ['running', 'verifying', 'completed']).includes(rootSnapshot.run.status)
     || rootSnapshot.run.projectId !== input.scope.projectId
     || rootSnapshot.run.workId !== input.scope.workId
     || rootSnapshot.run.productBuildId !== input.build.id
@@ -2811,6 +2815,75 @@ export async function verifyAcceptedProductBuildArtifactV1(input: {
     || currentBuild.budgetLedgerJson !== build.budgetLedgerJson) throw new Error('[product-production-artifact] 已采用输入在读取期间已变化')
   await assertVerifiedProducerCandidateFreshV1({ build: currentBuild as ProductBuildRecordV1 & { id: number }, proof })
   return structuredClone(row)
+}
+
+/** Narrow AVG V2 read: verify a raw image retained by a stopped/failed Build. The
+ * source Plan must still be the exact executed epoch. This read grants no
+ * adoption, carry, retry or current-epoch authority; a child needs its own
+ * explicit authorization and deterministic revalidation receipt. */
+export async function verifyRetainedAvgRawImageArtifactV1(input: {
+  scope: WorkspaceScope; buildId: number; expectedBuildRevision: number
+  expectedBriefHash: string; expectedPlanHash: string; sourceControlEpoch: number
+  artifactKey: string; version: number; contentHash: string
+}) {
+  const scope = await resolveScope({ scope: input.scope })
+  stableKey(input.artifactKey, 'artifactKey')
+  const build = await db.productBuilds.get(input.buildId)
+  if (!build?.id || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })) throw new Error('[product-production-artifact] 保留输入 Build 不存在或跨 Work')
+  if (!['cancelled', 'failed', 'recovery-required', 'paused'].includes(build.status)
+    || build.stateRevision !== input.expectedBuildRevision || build.briefHash !== input.expectedBriefHash
+    || build.planHash !== input.expectedPlanHash || !Number.isSafeInteger(input.sourceControlEpoch)
+    || input.sourceControlEpoch < 0 || input.sourceControlEpoch > build.controlEpoch) throw new Error('[product-production-artifact] 保留输入 Build 状态或冻结版本已变化')
+  const production = await db.productProductions.get(build.productionId)
+  if (!production || production.productType !== 'avg' || !input.artifactKey.startsWith('avg.media.raw.')
+    || !await assertRecordInScope(scope, 'productProductions', production, { owner: 'work' })) throw new Error('[product-production-artifact] 保留原图核验仅用于 AVG 原图，不授予其他产品入口')
+  const briefRow = await db.productProductionBriefs.where('[productionId+revision]').equals([build.productionId, build.briefRevision]).first()
+  if (!briefRow?.id || !await assertRecordInScope(scope, 'productProductionBriefs', briefRow, { owner: 'work' })
+    || !['authorized', 'superseded'].includes(briefRow.status) || briefRow.briefHash !== build.briefHash
+    || briefRow.authorizedAt !== build.authorizedAt) throw new Error('[product-production-artifact] 保留输入缺少准确授权 Brief')
+  const brief = parseProductProductionBriefV3(briefRow.briefJson)
+  if (brief.avgAssembly?.version !== 2 || await hashProductProductionValueV2(brief) !== build.briefHash) throw new Error('[product-production-artifact] 保留原图缺少准确 AVG V2 Brief/hash')
+  const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash)
+  if (plan.controlEpoch !== input.sourceControlEpoch) throw new Error('[product-production-artifact] 保留输入不属于冻结 Plan epoch')
+  const rows = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id, input.artifactKey]).toArray()
+  const matches = rows.filter(row => row.version === input.version && row.controlEpoch === input.sourceControlEpoch)
+  const row = matches[0]
+  if (matches.length !== 1 || !row?.id || !await assertRecordInScope(scope, 'productBuildArtifacts', row, { owner: 'work' })
+    || row.status !== 'accepted' || row.kind !== 'image' || row.blobObjectId == null || !row.mimeType?.startsWith('image/')
+    || row.contentHash !== input.contentHash || row.producerRunId == null || row.producerReceiptHash == null
+    || row.carriedFrom !== null || row.parentArtifactHash !== null) throw new Error('[product-production-artifact] 保留输入不是准确的直接 producer revision')
+  // Stop/pause advances the control fence without rewriting the last Plan.
+  // This local view verifies only that frozen Plan; the actual row is re-read
+  // unchanged below, and never passed to a writer or the active-proof cache.
+  const sourceBuild = { ...build, id: build.id, controlEpoch: input.sourceControlEpoch }
+  const buildFingerprint = await producerBuildFingerprintV1(sourceBuild)
+  const proof = await createVerifiedProducerCandidateV1({ scope, build: sourceBuild,
+    producerRunId: row.producerRunId, producerReceiptHash: row.producerReceiptHash, inputHash: row.inputHash,
+    buildFingerprint, cacheKey: `retained:${build.id}:${row.id}`, retainedRoot: true })
+  const ledger = terminalRawLedgerTaskV1(build.budgetLedgerJson, proof.task.taskKey)
+  if (ledger.status !== 'settled' || ledger.runId !== row.producerRunId
+    || ledger.attempt !== proof.attempt || ledger.errorCode !== null || canonicalProductProductionJsonV2(ledger.usage) !== canonicalProductProductionJsonV2(proof.usage)
+    || ledger.candidateHash !== proof.candidateHash || ledger.terminalReceiptHash !== row.producerReceiptHash) throw new Error('[product-production-artifact] 保留输入 producer ledger 尚未准确结算')
+  if (!samePreparedProducerArtifactV1({ expected: await preparedStoredArtifactV1(row), actual: proof.artifacts.get(row.artifactKey), importedScopeRebound: proof.importedScopeRebound })) throw new Error('[product-production-artifact] 保留输入与真实 producer candidate 不一致')
+  const { assertAvgRawImageArtifactV1 } = await import('../avg/media-raw-contract')
+  await assertAvgRawImageArtifactV1(brief, row)
+  const blobs = await verifiedBlobProofsV1({ scope, artifacts: [row], label: 'retained input' })
+  const currentBuild = await db.productBuilds.get(build.id), current = await db.productBuildArtifacts.get(row.id), currentBrief = await db.productProductionBriefs.get(briefRow.id)
+  const currentProduction = await db.productProductions.get(build.productionId)
+  const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
+  if (!currentBuild?.id || !current || !currentBrief || !currentProduction || !same(currentProduction, production)
+    || !same(currentBuild, build) || !same(current, row) || !same(currentBrief, briefRow)) throw new Error('[product-production-artifact] 保留输入在读取期间已变化')
+  for (const [id, prior] of blobs) {
+    const currentBlob = await db.mediaBlobObjects.get(id)
+    if (!currentBlob?.id || !sameBlobProofMetadataV1(prior, currentBlob as MediaBlobObjectRecordV1 & { id: number })
+      || prior.backend === 'indexeddb' && !sameArrayBufferV1(prior.data, currentBlob.data)) throw new Error('[product-production-artifact] 保留输入字节证明在读取期间已变化')
+  }
+  await assertVerifiedProducerCandidateFreshV1({ build: { ...currentBuild, id: currentBuild.id, controlEpoch: input.sourceControlEpoch }, proof })
+  const provenance = { schema: 'storyforge.avg.retained-raw-image-proof', version: 1, buildNumber: build.buildNumber,
+    briefHash: build.briefHash, planHash: build.planHash, controlEpoch: input.sourceControlEpoch, taskKey: proof.task.taskKey,
+    artifactKey: row.artifactKey, artifactVersion: row.version, contentHash: row.contentHash, inputHash: row.inputHash,
+    producerReceiptHash: row.producerReceiptHash, candidateHash: proof.candidateHash }
+  return { artifact: structuredClone(row), provenance: { ...provenance, proofHash: await hashProductProductionValueV2(provenance) } }
 }
 
 export async function readAcceptedBuildArtifacts(input: {
