@@ -1,6 +1,7 @@
 import type { ProductProductionBriefV3, ProductProductionPlanTaskV3, ProductProductionPlanV3 } from '../types'
 import { AVG_ASSEMBLY_GATE_IDS_V1, avgMediaAssemblyGateIdsV2, parseAvgAssemblyBriefV1, parseAvgAssemblyBriefV2, type AvgAssemblyBriefV2 } from './assembly-contract'
 import { avgMediaChoiceArtifactKeyV1, avgRawMediaArtifactKeyV1, avgVisualReviewArtifactKeyV1 } from './media-production-contract'
+import { avgProcessedImageArtifactKeyV1 } from './image-processing-contract'
 
 export const AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1 = 'avg.media.image'
 
@@ -61,12 +62,19 @@ export function buildAvgMediaAssemblyPlanV2(input: {
       budgetReservation: { modelCalls: 0, inputTokens: 20_000, outputTokens: 0, mediaCalls: retained?0:1,
         maximumCostUsd: retained?0:capability[0].maximumRequestCost, durationMs: retained?60_000:360_000, storageBytes: (retained?4:96) * 1024 * 1024 },
     })
+    const processing = assembly.imageProcessing?.entries.find(e=>e.requirementKey===requirement.requirementKey)
+    const processedKey=avgProcessedImageArtifactKeyV1(requirement.requirementKey),processTaskKey=`avg.media.process.${requirement.requirementKey}`
+    if(processing)mediaTasks.push({...structuredClone(template),taskKey:processTaskKey,kind:'avg-media-image-process',executionMode:'deterministic',lane:'visual',
+      outputArtifactKeys:[processedKey],inputArtifactKeys:[rawKey],dependsOn:[taskKey],requiredReceipts:[{taskKey,receiptHash:null}],
+      subjectLockKeys:[requirement.family.familyKey],timeoutMs:90_000,acceptanceGateIds:[`avg.media.processed.received.${requirement.requirementKey}`],
+      budgetReservation:{modelCalls:0,inputTokens:0,outputTokens:0,mediaCalls:0,maximumCostUsd:0,durationMs:60_000,storageBytes:36*1024*1024}})
+    const imageInputs=[rawKey,...(processing?[processedKey]:[])],imageTasks=[taskKey,...(processing?[processTaskKey]:[])]
     const reviewKey=avgVisualReviewArtifactKeyV1(requirement.requirementKey),reviewTaskKey=`avg.author.visual-review.${requirement.requirementKey}`
     if(mediaBatch.visualReviewPolicy)mediaTasks.push({...structuredClone(template),taskKey:reviewTaskKey,kind:'avg-author-visual-review',lane:'qa',
-      outputArtifactKeys:[reviewKey],inputArtifactKeys:[rawKey],dependsOn:[taskKey],requiredReceipts:[{taskKey,receiptHash:null}],subjectLockKeys:[reviewKey],acceptanceGateIds:[`avg.media.review.recorded.${requirement.requirementKey}`]})
-    const choiceDependencies=[taskKey,...(mediaBatch.visualReviewPolicy?[reviewTaskKey]:[])]
+      outputArtifactKeys:[reviewKey],inputArtifactKeys:imageInputs,dependsOn:imageTasks,requiredReceipts:imageTasks.map(taskKey=>({taskKey,receiptHash:null})),subjectLockKeys:[reviewKey],acceptanceGateIds:[`avg.media.review.recorded.${requirement.requirementKey}`]})
+    const choiceDependencies=[...imageTasks,...(mediaBatch.visualReviewPolicy?[reviewTaskKey]:[])]
     mediaTasks.push({ ...structuredClone(template), taskKey: choiceTaskKey, kind: 'avg-author-media-choice', lane: 'visual',
-      outputArtifactKeys: [choiceKey], inputArtifactKeys: [rawKey,...(mediaBatch.visualReviewPolicy?[reviewKey]:[])], dependsOn: choiceDependencies,
+      outputArtifactKeys: [choiceKey], inputArtifactKeys: [...imageInputs,...(mediaBatch.visualReviewPolicy?[reviewKey]:[])], dependsOn: choiceDependencies,
       requiredReceipts: choiceDependencies.map(taskKey=>({taskKey,receiptHash:null})), subjectLockKeys: [choiceKey], acceptanceGateIds: [`avg.media.choice.confirmed.${requirement.requirementKey}`],
     })
     choices.push(choiceKey); choiceTaskKeys.push(choiceTaskKey)
@@ -74,7 +82,7 @@ export function buildAvgMediaAssemblyPlanV2(input: {
   const joins = base.tasks.filter(t => !authorInputs.some(author => author.taskKey === t.taskKey)).map(t => {
     if (t.taskKey === 'avg.author.stage') return { ...t, inputArtifactKeys: [...t.inputArtifactKeys, ...choices],
       dependsOn: [...t.dependsOn, ...choiceTaskKeys], requiredReceipts: [...t.requiredReceipts, ...choiceTaskKeys.map(taskKey => ({ taskKey, receiptHash: null }))] }
-    if (t.taskKey === 'avg.assembly.verify') return { ...t, acceptanceGateIds: avgMediaAssemblyGateIdsV2(mediaBatch) }
+    if (t.taskKey === 'avg.assembly.verify') return { ...t, acceptanceGateIds: avgMediaAssemblyGateIdsV2(mediaBatch,assembly.imageProcessing) }
     return t
   })
   return { ...base, tasks: [...authorInputs, ...mediaTasks, ...joins] }

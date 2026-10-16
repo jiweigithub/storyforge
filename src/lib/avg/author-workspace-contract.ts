@@ -5,6 +5,7 @@ import { parseAvgExecutableStageV1, type AvgExecutableStageV1 } from './stage-co
 import { avgEnum, avgHash, avgList, avgProtocolBody, avgRecord, avgUnique } from './protocol-validation'
 import { parseAvgVisualProductionBatchV1, type AvgVisualProductionBatchV1 } from './media-production-contract'
 import { parseAvgInheritedStageImagesV1, type AvgInheritedStageImageV1 } from './stage-image-source-contract'
+import { parseAvgImageProcessingPlanV1, type AvgImageProcessingPlanV1 } from './image-processing-contract'
 
 /** Human-authored assembly, not a professional director Skill result. No local IDs. */
 export interface AvgAuthorStageV1 {
@@ -38,18 +39,22 @@ export interface AvgAuthorWorkspaceV1 {
   scripts: AvgSceneScriptV1[]
   presentation: AvgAuthorStageV1
   mediaBatch?: AvgVisualProductionBatchV1
+  imageProcessing?: AvgImageProcessingPlanV1
 }
 export function parseAvgAuthorWorkspaceV1(value: unknown): AvgAuthorWorkspaceV1 {
   const body = avgProtocolBody(value)
   const hasBatch = !!body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'mediaBatch')
-  const row = avgRecord(body, ['schema','version','basePreviewHash','systemPlan','scripts','presentation', ...(hasBatch ? ['mediaBatch'] : [])], 'author workspace')
+  const hasProcessing=!!body&&Object.prototype.hasOwnProperty.call(body,'imageProcessing')
+  const row = avgRecord(body, ['schema','version','basePreviewHash','systemPlan','scripts','presentation', ...(hasBatch ? ['mediaBatch'] : []),...(hasProcessing?['imageProcessing']:[])], 'author workspace')
   if (row.schema !== 'storyforge.avg.author-workspace' || row.version !== 1) throw new Error('[avg] 作者工作区版本无效')
   const scripts = avgUnique(avgList(row.scripts, 'scripts', value => {
     const script = parseAvgProfessionalArtifactV1(value)
     if (script.schema !== 'storyforge.avg.scene-script') throw new Error('[avg] 工作区需要场景脚本')
     return script
   }), script => script.sceneKey, 'workspace scripts')
+  const mediaBatch=hasBatch?parseAvgVisualProductionBatchV1(row.mediaBatch):undefined,imageProcessing=hasProcessing?parseAvgImageProcessingPlanV1(row.imageProcessing):undefined
+  if(imageProcessing&&(!mediaBatch?.visualReviewPolicy||imageProcessing.entries.some(e=>!mediaBatch.requirements.some(r=>r.requirementKey===e.requirementKey))))throw new Error('[avg-process] 加工草稿缺少准确需求与独立视觉评审')
   return { schema: row.schema, version: 1, basePreviewHash: row.basePreviewHash === null ? null : avgHash(row.basePreviewHash, 'basePreviewHash'),
     systemPlan: parseAvgSystemPlan(row.systemPlan), scripts, presentation: parseAvgAuthorStageV1(row.presentation),
-    ...(hasBatch ? { mediaBatch: parseAvgVisualProductionBatchV1(row.mediaBatch) } : {}) }
+    ...(mediaBatch?{mediaBatch}:{}),...(imageProcessing?{imageProcessing}:{}) }
 }

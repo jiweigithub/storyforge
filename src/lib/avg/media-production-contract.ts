@@ -54,6 +54,13 @@ export interface AvgAuthorMediaChoiceV1 {
   referenceOnly: boolean
   declaration: string
 }
+/** V1 remains raw-only. V2 selects a separately proved local derivative while
+ * retaining the exact original provider revision. */
+export interface AvgAuthorMediaChoiceV2 extends Omit<AvgAuthorMediaChoiceV1,'version'> {
+  version:2
+  processed:{artifactKey:string;version:number;contentHash:string}
+}
+export type AvgAuthorMediaChoice=AvgAuthorMediaChoiceV1|AvgAuthorMediaChoiceV2
 
 export const AVG_VISUAL_BATCH_LIMIT_V1 = 8
 export function avgRawMediaArtifactKeyV1(requirementKey: string): string { return `avg.media.raw.${requirementKey}` }
@@ -124,17 +131,30 @@ export function parseAvgVisualProductionBatchV1(value: unknown): AvgVisualProduc
 export function parseAvgAuthorMediaChoiceV1(value: unknown): AvgAuthorMediaChoiceV1 {
   const r = avgRecord(avgProtocolBody(value), ['schema', 'version', 'requirementKey', 'requirementRevision', 'raw', 'asset', 'referenceOnly', 'declaration'], 'author media choice')
   if (r.schema !== 'storyforge.avg.media-choice' || r.version !== 1) throw new Error('[avg-media] 未登记的媒资选择版本')
+  return {...parseAuthorMediaChoiceFields(r,true),version:1}
+}
+function parseAuthorMediaChoiceFields(r:Record<string,unknown>,rawOnly:boolean):Omit<AvgAuthorMediaChoiceV1,'version'>{
   const raw = avgRecord(r.raw, ['artifactKey', 'version', 'contentHash'], 'raw media artifact')
   const key = requirementKey(r.requirementKey)
   if (avgKey(raw.artifactKey, 'raw.artifactKey') !== avgRawMediaArtifactKeyV1(key)) throw new Error('[avg-media] 原始候选与需求 key 不一致')
   const asset = parseAvgExecutableStageV1({ version: 1, cues: [], assets: [r.asset] }).assets[0]!
   if (!asset.mimeType.startsWith('image/') || !['background', 'character-pose', 'character-expression', 'cg', 'ui'].includes(asset.kind)
-    || asset.contentHash !== raw.contentHash) throw new Error('[avg-media] V1 媒资选择只接受原始图片；加工产物须独立 lineage 合同')
-  return { schema: 'storyforge.avg.media-choice', version: 1, requirementKey: key,
+    || rawOnly&&asset.contentHash !== raw.contentHash) throw new Error('[avg-media] V1 媒资选择只接受原始图片；加工产物须独立 lineage 合同')
+  return { schema: 'storyforge.avg.media-choice', requirementKey: key,
     requirementRevision: avgNumber(r.requirementRevision, 'requirementRevision', 1, 1_000_000),
     raw: { artifactKey: raw.artifactKey as string, version: avgNumber(raw.version, 'raw.version', 1, 1_000_000), contentHash: avgHash(raw.contentHash, 'raw.contentHash') },
     asset,
     referenceOnly: avgBoolean(r.referenceOnly, 'referenceOnly'), declaration: avgText(r.declaration, 'media choice declaration', 2000) }
+}
+
+export function parseAvgAuthorMediaChoice(value:unknown):AvgAuthorMediaChoice{
+  const body=avgProtocolBody(value)
+  if((body as {version?:unknown}|null)?.version!==2)return parseAvgAuthorMediaChoiceV1(body)
+  const r=avgRecord(body,['schema','version','requirementKey','requirementRevision','raw','processed','asset','referenceOnly','declaration'],'processed media choice')
+  if(r.schema!=='storyforge.avg.media-choice')throw new Error('[avg-process] 未登记的加工图选择版本')
+  const p=avgRecord(r.processed,['artifactKey','version','contentHash'],'processed choice'),parsed=parseAuthorMediaChoiceFields(r,false),asset=parsed.asset
+  if(p.artifactKey!==`avg.media.processed.${parsed.requirementKey}`||p.contentHash!==asset.contentHash)throw new Error('[avg-process] 作者选择与准确加工图不一致')
+  return {...parsed,version:2,asset,processed:{artifactKey:p.artifactKey,version:avgNumber(p.version,'processed.version',1,1e9),contentHash:avgHash(p.contentHash,'processed.contentHash')}}
 }
 
 /** Frozen Plan outputs include each raw candidate and its explicit author choice. */

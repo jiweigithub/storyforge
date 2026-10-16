@@ -1,7 +1,7 @@
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { parseAvgAuthorWorkspaceV1, type AvgAuthorWorkspaceV1 } from './author-workspace-contract'
-import { parseAvgVisualProductionRequirementV1, parseAvgAuthorMediaChoiceV1,
-  type AvgVisualProductionRequirementV1, type AvgVisualProductionBatchV1, type AvgAuthorMediaChoiceV1 } from './media-production-contract'
+import { parseAvgVisualProductionRequirementV1, parseAvgAuthorMediaChoice,
+  type AvgVisualProductionRequirementV1, type AvgVisualProductionBatchV1, type AvgAuthorMediaChoice } from './media-production-contract'
 import { validateAvgVisualProductionBatchSourceV1 } from './media-source'
 
 /** Undo only the unconsumed image-slot proposals made by a previous batch.
@@ -38,10 +38,10 @@ export function prepareAvgMediaConsumerDeclarationsV1(value: AvgAuthorWorkspaceV
 
 /** Pure candidate configuration. Callers must obtain adopted choices through
  * the authority service; final stage adoption independently rechecks them. */
-export async function applyAvgMediaChoicesToDraftV1(input: { workspace: AvgAuthorWorkspaceV1; batch: AvgVisualProductionBatchV1; choices: AvgAuthorMediaChoiceV1[] }) {
+export async function applyAvgMediaChoicesToDraftV1(input: { workspace: AvgAuthorWorkspaceV1; batch: AvgVisualProductionBatchV1; choices: AvgAuthorMediaChoice[];replaceablePlaceholders?:Array<{assetKey:string;contentHash:string}> }) {
   const next = parseAvgAuthorWorkspaceV1(input.workspace)
   const batch = await validateAvgVisualProductionBatchSourceV1(input.batch, next)
-  const choices = input.choices.map(parseAvgAuthorMediaChoiceV1)
+  const choices = input.choices.map(parseAvgAuthorMediaChoice)
   if (choices.length !== batch.requirements.length || new Set(choices.map(choice => choice.requirementKey)).size !== choices.length) throw new Error('[avg-media] 自动配置需要全部准确且唯一的作者选择')
   for (const r of batch.requirements) {
     const choice = choices.find(choice => choice.requirementKey === r.requirementKey)
@@ -55,7 +55,8 @@ export async function applyAvgMediaChoicesToDraftV1(input: { workspace: AvgAutho
     }
     const inherited=next.presentation.inheritedImages?.find(entry=>entry.assetKey===r.assetKey)
     if (existing && canonicalProductProductionJsonV2(existing) !== canonicalProductProductionJsonV2(choice.asset)) {
-      if(!inherited||inherited.source.raw.contentHash!==existing.contentHash)throw new Error('[avg-media] 同 key 已有其他图像版本，请先明确修订')
+      const inheritedHash=inherited?.source.processing?.contentHash??inherited?.source.raw.contentHash
+      if(inheritedHash!==existing.contentHash&&!input.replaceablePlaceholders?.some(p=>p.assetKey===existing.assetKey&&p.contentHash===existing.contentHash))throw new Error('[avg-media] 同 key 已有其他图像版本，请先明确修订')
       next.presentation.stage.assets[next.presentation.stage.assets.indexOf(existing)]=choice.asset
     }
     if (!existing) next.presentation.stage.assets.push(choice.asset)

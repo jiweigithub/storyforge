@@ -10,6 +10,7 @@ import type { AvgVisualProductionRequirementV1 } from './media-production-contra
 import { readAvgDraftReferenceBytesV1 } from './editor-service'
 import { inspectAvgImageBytesV1 } from './image-decoder'
 import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
+import { inspectAvgProcessedImageSourceV1, readAvgProcessedImageSourceV1 } from './image-processing-source'
 
 const same=(a:unknown,b:unknown)=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(b)
 export function parseAvgAuthorVisualReviewV1(value:unknown){
@@ -48,14 +49,18 @@ export function assertAvgVisualReviewRevisionV1(previous:unknown|null,next:AvgRe
 
 /** Records author assessment, including rejection/unknown. It never creates
  * an artistic pass, human-identity claim or independently scored model review. */
-export async function validateAvgAuthorVisualReviewV1(input:{scope:WorkspaceScope;brief:ProductProductionBriefV3;raw:ProductBuildArtifactRecordV1;payload:unknown}){
+export async function validateAvgAuthorVisualReviewV1(input:{scope:WorkspaceScope;brief:ProductProductionBriefV3;raw:ProductBuildArtifactRecordV1;payload:unknown;processed?:ProductBuildArtifactRecordV1}){
   if(input.brief.avgAssembly?.version!==2||!input.brief.avgAssembly.mediaBatch.visualReviewPolicy)throw new Error('[avg-review] 当前冻结批次没有视觉评审合同')
   const report=parseAvgAuthorVisualReviewV1(input.payload),raw=await assertAvgRawImageArtifactV1(input.brief,input.raw),r=raw.payload.requirement
-  assertAvgVisualReviewScopeV1(report,r,input.raw.contentHash)
+  const needsProcessing=input.brief.avgAssembly.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)
+  const processed=needsProcessing?(input.processed?await inspectAvgProcessedImageSourceV1({...input,processed:input.processed}):await readAvgProcessedImageSourceV1({...input,buildId:input.raw.buildId})):undefined
+  if(!needsProcessing&&input.processed)throw new Error('[avg-process] 评审不能夹带未冻结加工')
+  const image=processed?.row??input.raw,asset=processed?.asset??raw.asset
+  assertAvgVisualReviewScopeV1(report,r,image.contentHash)
   if(report.visualEvidence!.imageHash){
-    const blob=input.raw.blobObjectId===null?null:await db.mediaBlobObjects.get(input.raw.blobObjectId)
-    if(!blob||!await assertRecordInScope(input.scope,'mediaBlobObjects',blob,{owner:'work'})||blob.contentHash!==raw.asset.contentHash||blob.mimeType!==raw.asset.mimeType||blob.byteSize!==raw.asset.byteSize)throw new Error('[avg-review] 原图字节不存在或跨作品')
-    const inspect=async()=>inspectAvgImageBytesV1({data:await readVerifiedMediaBlobObjectData(blob),...raw.asset})
+    const blob=image.blobObjectId===null?null:await db.mediaBlobObjects.get(image.blobObjectId)
+    if(!blob||!await assertRecordInScope(input.scope,'mediaBlobObjects',blob,{owner:'work'})||blob.contentHash!==asset.contentHash||blob.mimeType!==asset.mimeType||blob.byteSize!==asset.byteSize)throw new Error('[avg-review] 评审图片字节不存在或跨作品')
+    const inspect=async()=>inspectAvgImageBytesV1({data:await readVerifiedMediaBlobObjectData(blob),...asset})
     const measured=Dexie.currentTransaction?await Dexie.waitFor(Dexie.ignoreTransaction(inspect),20_000):await inspect()
     const technicalFailure=measured.width<r.width||measured.height<r.height||Math.abs(measured.width/measured.height/(r.width/r.height)-1)>0.02||r.alpha==='required'&&!measured.hasAlpha
     if(technicalFailure&&!report.unobserved.length&&!report.issues.some(issue=>issue.severity==='blocking'))throw new Error('[avg-review] 尺寸、画幅或透明要求未满足，请记录 blocking 返修问题')

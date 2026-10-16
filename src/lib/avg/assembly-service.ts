@@ -10,7 +10,7 @@ import { executeProductProductionCommand } from '../product-production/commands'
 import { parseProductProductionBriefV3 } from '../product-production/contracts'
 import { beginProductProductionEvolutionV1, readProductProductionDetailsV1, authorizeProductProductionStartV1, stopProductProductionV1, type ProductProductionDetailsV1 } from '../product-production/service'
 import { verifyStoredProductBuildPreview } from '../product-production/preview-manifest'
-import { runProductProductionSchedulerCycleV1, runProductProductionUntilBlockedV1, selectProductBuildCompatibilityBaselineV1 } from '../product-production/scheduler'
+import { runProductProductionSchedulerCycleV1, runProductProductionUntilBlockedV1, selectProductBuildCompatibilityBaselineV1,projectProductProductionSchedulerV1 } from '../product-production/scheduler'
 import { createConfiguredProductProductionExecutorV1 } from '../product-production/production-executor'
 import { readAvgMediaChoicesForConfigurationV2, stageAvgAuthorArtifactV1 } from './author-artifacts'
 import { listAvgDraftMediaV1, saveAvgAuthorWorkspaceV1 } from './editor-service'
@@ -19,22 +19,46 @@ import { assertAvgMediaConsumerDeclarationsV1, validateAvgVisualProductionBatchS
 import { avgVisualProductionBudgetV2, avgVisualProductionDataClassesV2 } from './media-production-policy'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V1 } from './media-reference-contract'
 import { resolveAvgImageExecutionCapabilityV2 } from './media-capability'
-import { avgMediaChoiceArtifactKeyV1, avgRawMediaArtifactKeyV1, avgVisualReviewArtifactKeyV1, type AvgAuthorMediaChoiceV1, type AvgVisualProductionRequirementV1 } from './media-production-contract'
+import { avgMediaChoiceArtifactKeyV1, avgRawMediaArtifactKeyV1, avgVisualReviewArtifactKeyV1, type AvgAuthorMediaChoice, type AvgVisualProductionRequirementV1 } from './media-production-contract'
 import type { AvgReviewIssuesV1 } from './artifact-contract'
 import type { ProductProductionBriefV3, ProviderCapabilityRequirementV1 } from '../types'
-import { verifyAcceptedProductBuildArtifactV1, verifyRetainedAvgRawImageArtifactV1 } from '../product-production/artifact-store'
+import { verifyAcceptedProductBuildArtifactV1, verifyRetainedAvgRawImageArtifactV1, verifyAvgReferenceRawImageArtifactV1, verifyAvgProcessedImageArtifactV1 } from '../product-production/artifact-store'
 import type { ResolvedProductMediaCapabilityV1 } from '../product-production/media-transport'
 import { assertAvgRawImageArtifactV1 } from './media-raw-contract'
 import { freezeAvgVisualProductionBatchV1 } from './media-source'
 import { applyAvgMediaChoicesToDraftV1, prepareAvgMediaConsumerDeclarationsV1, resetAvgUnconsumedMediaDeclarationsV1 } from './media-configuration'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
-import { assertAvgKnownImageRetriesV1, prepareAvgImageRecoveryV1, readAvgImageRecoverySourceV1, validateAvgImageRecoveryV1 } from './media-recovery'
+import { assertAvgKnownImageRetriesV1, prepareAvgImageRecoveryV1, readAvgImageRecoverySourceV1, validateAvgImageRecoveryV1,assertAvgRawImageOriginV1 } from './media-recovery'
 import { parseAvgImageRecoveryV1, type AvgImageRecoveryV1 } from './media-recovery-contract'
 import { listWorldReferenceCatalogV1 } from '../product/source'
 import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 import { prepareAvgInheritedStageDraftV1, readAvgInheritedStageImagesV1 } from './stage-image-sources'
+import { parseAvgImageProcessingPlanV1, assertAvgProcessedImageArtifactV1, avgProcessedImageArtifactKeyV1, type AvgImageProcessingPlanV1 } from './image-processing-contract'
+import { inspectAvgProcessedImageSourceV1, readAvgProcessedImageSourceV1,verifyAvgRecoveryPlaceholderV1 } from './image-processing-source'
 
 const commandId = (label: string) => `avg.assembly.${label}.${crypto.randomUUID()}`
+
+/** A new Build freezes this separately from the original provider request.
+ * Saving does not execute processing, adopt an image or change an old Build. */
+export async function saveAvgImageProcessingDraftV1(input:{scope:WorkspaceScope;expectedDraftRevision:number;plan:AvgImageProcessingPlanV1|null}){
+  return db.transaction('rw',scopeTransactionTables(db.avgAuthoringDrafts,db.productProductions,db.productBuilds),async()=>{
+  const draft=await readAvgDraftV1(input.scope)
+  if(draft.revision!==input.expectedDraftRevision)throw new Error('[avg-process] 加工草稿已变化')
+  if(draft.productionId){
+    const production=await db.productProductions.get(draft.productionId)
+    if(!production||production.productType!=='avg'||!await assertRecordInScope(input.scope,'productProductions',production,{owner:'work'}))throw new Error('[avg-process] 加工制作指针不存在或跨作品')
+    if(production.currentBuildNumber!==null){
+      const build=await db.productBuilds.where('[productionId+buildNumber]').equals([production.id!,production.currentBuildNumber]).first()
+      if(!build||!await assertRecordInScope(input.scope,'productBuilds',build,{owner:'work'}))throw new Error('[avg-process] 加工制作版本不存在或跨作品')
+      if(!build.previewHash&&production.status!=='brief-ready'&&!['cancelled','failed','recovery-required'].includes(build.status))throw new Error('[avg-process] 当前加工方案已开始；请先明确停止并保留记录后准备新版本')
+    }
+  }
+  const workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
+  if(input.plan===null)delete workspace.imageProcessing
+  else workspace.imageProcessing=parseAvgImageProcessingPlanV1(input.plan)
+  return saveAvgAuthorWorkspaceV1(input.scope,draft.revision,workspace)
+  })
+}
 
 /** Saves a proposed batch and prospective item image references only. The
  * author still reviews a Brief, starts production and confirms each choice. */
@@ -72,6 +96,7 @@ export async function clearAvgVisualBatchDraftV1(input: { scope: WorkspaceScope;
     }
     const next = resetAvgUnconsumedMediaDeclarationsV1(workspace)
     delete next.mediaBatch
+    delete next.imageProcessing
     return saveAvgAuthorWorkspaceV1(input.scope, draft.revision, next)
   })
 }
@@ -88,11 +113,12 @@ export async function keepAvgGeneratedStageDraftV1(input:{scope:WorkspaceScope;p
     targetBuildNumber:Math.max(...details.buildHistory.map(row=>row.buildNumber))+1,worldContentHash:details.executionBrief.source.worldContentHash}))
   if(!next.presentation.inheritedImages?.length)throw new Error('[avg-media] 没有可保留的已采用演出图片')
   delete next.mediaBatch
+  delete next.imageProcessing
   return saveAvgAuthorWorkspaceV1(input.scope,draft.revision,next)
 }
 
 export async function stageAvgMediaChoiceV2(input: { scope: WorkspaceScope; productionId: number; requirementKey: string;
-  rawVersion: number; rawContentHash: string; declaration: string }) {
+  rawVersion: number; rawContentHash: string; declaration: string;processed?:{version:number;contentHash:string} }) {
   const details = await readProductProductionDetailsV1(input.scope, input.productionId, ['avg'])
   const build = details.build, brief = details.executionBrief
   if (!build?.id || brief?.avgAssembly?.version !== 2) throw new Error('[avg-media] 当前版本不是已开始的图片批次')
@@ -101,9 +127,13 @@ export async function stageAvgMediaChoiceV2(input: { scope: WorkspaceScope; prod
   const raw = await verifyAcceptedProductBuildArtifactV1({ scope: input.scope, buildId: build.id, artifactKey: avgRawMediaArtifactKeyV1(r.requirementKey),
     version: input.rawVersion, contentHash: input.rawContentHash })
   const candidate = await assertAvgRawImageArtifactV1(brief, raw)
-  const payload: AvgAuthorMediaChoiceV1 = { schema: 'storyforge.avg.media-choice', version: 1, requirementKey: r.requirementKey,
-    requirementRevision: r.revision, raw: { artifactKey: raw.artifactKey, version: raw.version, contentHash: raw.contentHash }, asset: candidate.asset,
+  const needsProcessing=brief.avgAssembly.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)
+  if(!!needsProcessing!==!!input.processed)throw new Error('[avg-process] 请明确核对本次冻结加工图；不能跳过或夹带加工版本')
+  const processed=input.processed?await readAvgProcessedImageSourceV1({scope:input.scope,buildId:build.id,brief,raw,...input.processed}):undefined
+  const base = { schema: 'storyforge.avg.media-choice' as const, requirementKey: r.requirementKey,
+    requirementRevision: r.revision, raw: { artifactKey: raw.artifactKey, version: raw.version, contentHash: raw.contentHash }, asset: processed?.asset??candidate.asset,
     referenceOnly: r.consumer.domain === 'reference', declaration: input.declaration }
+  const payload:AvgAuthorMediaChoice=processed?{...base,version:2,processed:{artifactKey:processed.row.artifactKey,version:processed.row.version,contentHash:processed.row.contentHash}}:{...base,version:1}
   return stageAvgAuthorArtifactV1({ scope: input.scope, buildId: build.id, expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch,
     taskKey: `avg.author.media.${r.requirementKey}`, artifactKey: avgMediaChoiceArtifactKeyV1(r.requirementKey), kind: 'presentation', payload, declaration: input.declaration })
 }
@@ -126,6 +156,24 @@ export async function readAvgRawImageCandidateBytesV2(input: { scope: WorkspaceS
   if (!blob || !await assertRecordInScope(input.scope, 'mediaBlobObjects', blob, { owner: 'work' }) || blob.contentHash !== candidate.asset.contentHash
     || blob.byteSize !== candidate.asset.byteSize || blob.mimeType !== candidate.asset.mimeType) throw new Error('[avg-media] 原始图片对象不存在或已变化')
   return { asset: candidate.asset, data: await readVerifiedMediaBlobObjectData(blob) }
+}
+
+/** Exact read-only processed preview, including stopped/imported history. */
+export async function readAvgProcessedImageCandidateBytesV1(input:{scope:WorkspaceScope;productionId:number;requirementKey:string;version:number;contentHash:string}){
+  const details=await readProductProductionDetailsV1(input.scope,input.productionId,['avg']),build=details.build
+  const briefRow=build?details.briefHistory.find(r=>r.revision===build.briefRevision&&r.briefHash===build.briefHash):null
+  const brief=briefRow?parseProductProductionBriefV3(briefRow.briefJson):null
+  if(!build?.id||brief?.avgAssembly?.version!==2)throw new Error('[avg-process] 当前版本没有准确加工来源')
+  const plan=parseProductProductionPlanV3(build.planJson,brief,build.briefHash)
+  const boundary={scope:input.scope,buildId:build.id,expectedBuildRevision:build.stateRevision,expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,sourceControlEpoch:plan.controlEpoch}
+  const proved=await verifyAvgProcessedImageArtifactV1({...boundary,artifactKey:avgProcessedImageArtifactKeyV1(input.requirementKey),version:input.version,contentHash:input.contentHash})
+  const p=(await assertAvgProcessedImageArtifactV1(brief,proved.artifact)).payload
+  const raw=await verifyAvgReferenceRawImageArtifactV1({...boundary,...p.raw})
+  await assertAvgRawImageOriginV1({scope:input.scope,productionId:input.productionId,brief,build,artifact:raw.artifact,requirementKey:input.requirementKey,taskKey:raw.provenance.taskKey},[build.buildNumber])
+  const image=await inspectAvgProcessedImageSourceV1({scope:input.scope,brief,raw:raw.artifact,processed:proved.artifact})
+  const blob=await db.mediaBlobObjects.get(proved.artifact.blobObjectId!)
+  if(!blob||!await assertRecordInScope(input.scope,'mediaBlobObjects',blob,{owner:'work'}))throw new Error('[avg-process] 加工图字节不存在或跨作品')
+  return {asset:image.asset,data:await readVerifiedMediaBlobObjectData(blob)}
 }
 
 async function reviewRetainedImage(input:{scope:WorkspaceScope;productionId:number;requirementKey:string;version?:number;contentHash?:string}){
@@ -178,10 +226,17 @@ export async function configureAvgChosenMediaDraftV2(input: { scope: WorkspaceSc
   const build = details.build, brief = details.executionBrief
   if (!build?.id || brief?.avgAssembly?.version !== 2 || build.previewHash) throw new Error('[avg-media] 当前版本不能配置生成媒资')
   if (canonicalProductProductionJsonV2(workspace.mediaBatch ?? null) !== canonicalProductProductionJsonV2(brief.avgAssembly.mediaBatch)) throw new Error('[avg-media] 草稿需求与冻结批次已不一致')
+  if(canonicalProductProductionJsonV2(workspace.imageProcessing??null)!==canonicalProductProductionJsonV2(brief.avgAssembly.imageProcessing??null))throw new Error('[avg-process] 加工草稿与本次冻结配方不一致，请明确准备新版本')
   const source = await readAvgMediaChoicesForConfigurationV2({ scope: input.scope, buildId: build.id, expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch })
   await readAvgInheritedStageImagesV1({scope:input.scope,payload:workspace.presentation,productionKey:details.production.productionKey,
     targetBuildNumber:build.buildNumber,worldContentHash:brief.source.worldContentHash})
-  const next = await applyAvgMediaChoicesToDraftV1({ workspace, batch: brief.avgAssembly.mediaBatch, choices: (source.mediaChoices ?? []).map(choice => choice.payload) })
+  const replaceablePlaceholders:Array<{assetKey:string;contentHash:string}>=[]
+  for(const choice of source.mediaChoices??[]){
+    const existing=workspace.presentation.stage.assets.find(asset=>asset.assetKey===choice.payload.asset.assetKey)
+    if(existing&&canonicalProductProductionJsonV2(existing)!==canonicalProductProductionJsonV2(choice.payload.asset)&&!workspace.presentation.inheritedImages?.some(e=>e.assetKey===existing.assetKey)
+      &&await verifyAvgRecoveryPlaceholderV1({scope:input.scope,productionId:input.productionId,brief,requirementKey:choice.payload.requirementKey,asset:existing}))replaceablePlaceholders.push({assetKey:existing.assetKey,contentHash:existing.contentHash})
+  }
+  const next = await applyAvgMediaChoicesToDraftV1({ workspace, batch: brief.avgAssembly.mediaBatch, choices: (source.mediaChoices ?? []).map(choice => choice.payload),replaceablePlaceholders })
   return saveAvgAuthorWorkspaceV1(input.scope, draft.revision, next)
 }
 
@@ -227,7 +282,7 @@ export async function readAvgAssemblyWorkspaceV1(scope: WorkspaceScope, selected
     const frozenBrief = details.briefHistory.find(row=>row.revision===details.build!.briefRevision&&row.briefHash===details.build!.briefHash)
     if(!frozenBrief||frozenBrief.status!=='authorized')throw new Error('[avg] 当前 Build 缺少准确的已授权方案')
     const plan = parseProductProductionPlanV3(details.build.planJson,parseProductProductionBriefV3(frozenBrief.briefJson),details.build.briefHash)
-    const keys = [...plan.tasks.filter(task=>task.executionMode==='human-import'||['avg-media-image-generate','avg-media-image-reuse'].includes(task.kind)).flatMap(task=>task.outputArtifactKeys),'runtime.package','quality.report']
+    const keys = [...plan.tasks.filter(task=>task.executionMode==='human-import'||['avg-media-image-generate','avg-media-image-reuse','avg-media-image-process'].includes(task.kind)).flatMap(task=>task.outputArtifactKeys),'runtime.package','quality.report']
     for (const key of keys) {
       const accepted = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([details.build.id!,key])
         .filter(row=>row.status==='accepted'&&row.controlEpoch===details.build!.controlEpoch).limit(2).toArray()
@@ -237,7 +292,9 @@ export async function readAvgAssemblyWorkspaceV1(scope: WorkspaceScope, selected
       artifacts.push(...accepted,...pending)
     }
   }
-  return { draft,details,artifacts,media:await listAvgDraftMediaV1(scope) }
+  const processingTasks=details?.build?.planRevision&&details.executionBrief?.avgAssembly?.version===2&&details.executionBrief.avgAssembly.imageProcessing
+    ?(await projectProductProductionSchedulerV1({scope,productionId:details.production.id!})).tasks.filter(task=>task.taskKey.startsWith('avg.media.process.')):[]
+  return { draft,details,artifacts,media:await listAvgDraftMediaV1(scope),processingTasks }
 }
 
 export async function confirmAvgWorkspaceInputV1(input: { scope: WorkspaceScope; productionId: number; artifactKey: string; candidateVersion: number; candidateHash: string }) {
@@ -354,15 +411,15 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
     ...(priorBrief?.evolution ? { evolution:priorBrief.evolution } : {}),
     avgAssembly:{ schema:'storyforge.avg.assembly-brief',version:workspace.mediaBatch?2:1,title:work.title,sceneKeys:workspace.systemPlan.scenes.map(scene=>scene.key),
       mediaAssetKeys:runtimeMediaKeys(workspace),basePackageHash, ...(workspace.mediaBatch ? { mediaBatch: workspace.mediaBatch,
-        imageBinding:imageBinding!,...(recovery?{imageRecovery:recovery}:{}) } : {}) },
+        imageBinding:imageBinding!,...(recovery?{imageRecovery:recovery}:{}),...(workspace.imageProcessing?{imageProcessing:workspace.imageProcessing}:{}) } : {}) },
     qualityProfile:'prototype',capabilityRequirements:mediaCapability?[mediaCapability]:[],
     consultationBudget:{maximumModelCalls:0,maximumInputTokens:0,maximumOutputTokens:0,maximumCostUsd:0},
-    productionBudget:workspace.mediaBatch ? avgVisualProductionBudgetV2(workspace.mediaBatch.requirements.length,null,recovery?.retained.length??0) : { ...sourceBrief.productionBudget,maximumModelCalls:0,maximumInputTokens:100_000,maximumOutputTokens:0,maximumMediaCalls:0,
+    productionBudget:workspace.mediaBatch ? avgVisualProductionBudgetV2(workspace.mediaBatch.requirements.length,null,recovery?.retained.length??0,workspace.imageProcessing?.entries.length??0) : { ...sourceBrief.productionBudget,maximumModelCalls:0,maximumInputTokens:100_000,maximumOutputTokens:0,maximumMediaCalls:0,
       maximumCostUsd:0,maximumDurationMs:180_000,maximumStorageBytes:64*1024*1024 },
     ...(workspace.mediaBatch ? { externalDataPolicy: { ...sourceBrief.externalDataPolicy, allowedDataClasses: [...new Set([...sourceBrief.externalDataPolicy.allowedDataClasses, ...mediaCapability!.allowedDataClasses])],
       allowReferenceImages: workspace.mediaBatch.requirements.some(r => r.references.length > 0), allowVoiceScripts: false },
       fallbackPolicy: { allowTextOnly: false, allowExistingProjectMedia: true, allowProceduralAudio: false, onRequiredCapabilityMissing: 'pause' } } : {}),
-    completionContract:{ requiresPlayablePreview:true,requiredGateIds:workspace.mediaBatch ? avgMediaAssemblyGateIdsV2(workspace.mediaBatch) : [...AVG_ASSEMBLY_GATE_IDS_V1],minimumMediaCoverage:1,allowSoftWaivers:false },
+    completionContract:{ requiresPlayablePreview:true,requiredGateIds:workspace.mediaBatch ? avgMediaAssemblyGateIdsV2(workspace.mediaBatch,workspace.imageProcessing) : [...AVG_ASSEMBLY_GATE_IDS_V1],minimumMediaCoverage:1,allowSoftWaivers:false },
     unresolvedDecisionKeys:[] })
   const saved = await executeProductProductionCommand({ scope:input.scope,productionId,command:{ type:'save-brief-revision',commandId:commandId('brief'),
     expectedStateRevision:details.production.stateRevision,parentRevision:details.brief?.revision ?? null,brief } })

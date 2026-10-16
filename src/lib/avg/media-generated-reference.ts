@@ -5,7 +5,7 @@ import { assertRecordInScope, resolveScope } from '../workspace/scope'
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
 import { readAvgAdoptedGeneratedReferenceChoiceV1 } from './author-artifacts'
-import { parseAvgAuthorMediaChoiceV1 } from './media-production-contract'
+import { parseAvgAuthorMediaChoice } from './media-production-contract'
 import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
 import { parseAvgGeneratedReferenceSourceV1, type AvgGeneratedReferenceSourceV1 } from './media-generated-reference-contract'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V1, type AvgMediaReferenceV1 } from './media-reference-contract'
@@ -13,6 +13,7 @@ import { AVG_IMAGE_REFERENCE_CAPABILITY_V1, type AvgMediaReferenceV1 } from './m
 type Evidence = Awaited<ReturnType<typeof readAvgAdoptedGeneratedReferenceChoiceV1>>
 const sourceOf = (e: Evidence) => parseAvgGeneratedReferenceSourceV1({ schema:'storyforge.avg.generated-reference-source',version:1,
   productionKey:e.productionKey,requirementKey:e.choice.requirementKey,raw:e.rawProof,
+  ...(e.processingProof?{processing:e.processingProof}:{}),
   choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash} })
 const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
 
@@ -42,14 +43,14 @@ export async function readAvgAdoptedGeneratedImageV1(input: { scope: WorkspaceSc
     || !await assertRecordInScope(scope,'productBuilds',build,{owner:'work'})) throw new Error('[avg-media] 生成参考的冻结版本已变化')
   const evidence = await readAvgAdoptedGeneratedReferenceChoiceV1({scope,buildId:build.id,controlEpoch:source.raw.controlEpoch,...source.choice})
   if (!same(sourceOf(evidence),source)) throw new Error('[avg-media] 生成参考的作者或 producer 证明已变化')
-  const blob = evidence.raw.blobObjectId===null ? null : await db.mediaBlobObjects.get(evidence.raw.blobObjectId)
+  const blob = evidence.image.blobObjectId===null ? null : await db.mediaBlobObjects.get(evidence.image.blobObjectId)
   if (!blob || !await assertRecordInScope(scope,'mediaBlobObjects',blob,{owner:'work'})
     || blob.contentHash!==evidence.choice.asset.contentHash || blob.mimeType!==evidence.choice.asset.mimeType
     || blob.byteSize!==evidence.choice.asset.byteSize) throw new Error('[avg-media] 生成参考缺少当前作品的准确原图字节')
   const readData=()=>readVerifiedMediaBlobObjectData(blob)
   const data=Dexie.currentTransaction?await Dexie.waitFor(Dexie.ignoreTransaction(readData),20_000):await readData()
   return {asset:evidence.choice.asset,source,family:evidence.requirement.family,referenceOnly:evidence.choice.referenceOnly,
-    sourceWorldContentHash:evidence.sourceWorldContentHash,blobObjectId:evidence.raw.blobObjectId!,data}
+    sourceWorldContentHash:evidence.sourceWorldContentHash,blobObjectId:evidence.image.blobObjectId!,data}
 }
 
 /** Provider reference limits do not restrict a local stage preview. */
@@ -102,7 +103,7 @@ export async function listAvgGeneratedReferenceImagesV1(scopeInput: WorkspaceSco
   const items=[]
   for (const row of rows.slice(0,32)) {
     if (!row.id || !await assertRecordInScope(scope,'productBuildArtifacts',row,{owner:'work'})) throw new Error('[avg-media] 生成参考目录跨作品')
-    const choice = parseAvgAuthorMediaChoiceV1(row.payloadJson)
+    const choice = parseAvgAuthorMediaChoice(row.payloadJson)
     items.push({choiceId:row.id,name:choice.asset.name,contentHash:choice.asset.contentHash,tooLarge:choice.asset.byteSize>AVG_IMAGE_REFERENCE_CAPABILITY_V1.maximumReferenceBytes})
   }
   return {items,nextCursor:rows.length>32?rows[31].id!:null}

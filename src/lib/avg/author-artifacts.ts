@@ -14,9 +14,9 @@ import { validateAvgAuthorAssemblyV1, type AvgAssemblyValidationV1 } from './aut
 import { avgKey, avgText } from './protocol-validation'
 import { validateAvgSystemPlanForAuthorV1, type AvgSystemValidationV1 } from './system-compiler'
 import { buildAvgNativeAssemblyPlan } from './assembly-plan'
-import { parseAvgAuthorMediaChoiceV1, avgMediaChoiceArtifactKeyV1, avgVisualReviewArtifactKeyV1, type AvgAuthorMediaChoiceV1 } from './media-production-contract'
-import { inspectAvgChosenImageV1, readAvgChosenMediaSourceV2, validateAvgMediaChoiceV1, type AvgMediaChoiceValidationV1 } from './media-choice-validation'
-import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1 } from '../product-production/artifact-store'
+import { parseAvgAuthorMediaChoice, avgMediaChoiceArtifactKeyV1, avgVisualReviewArtifactKeyV1, type AvgAuthorMediaChoice } from './media-production-contract'
+import { inspectAvgChosenImageV1, readAvgChosenMediaSourceV2, validateAvgMediaChoiceV1, type AvgMediaChoiceValidation } from './media-choice-validation'
+import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1, verifyAvgProcessedImageArtifactV1 } from '../product-production/artifact-store'
 import { assertAvgRawImageOriginV1 } from './media-recovery'
 import { readAvgInheritedStageImagesV1 } from './stage-image-sources'
 import { assertAvgVisualReviewSelectableV1, assertAvgVisualReviewRevisionV1, validateAvgAuthorVisualReviewV1 } from './visual-review'
@@ -30,7 +30,7 @@ interface AuthorCandidateBase {
   payloadHash: string; base: Ref | null; inputs: Ref[]; declaration: string
 }
 type AuthorCandidateBody = AuthorCandidateBase & ({ version: 1 } | { version: 2; systemValidation: AvgSystemValidationV1 } | { version: 3; assemblyValidation: AvgAssemblyValidationV1 }
-  | { version: 4; mediaChoiceValidation: AvgMediaChoiceValidationV1 })
+  | { version: 4; mediaChoiceValidation: AvgMediaChoiceValidation })
 type AuthorCandidate = AuthorCandidateBody & { candidateHash: string }
 type AdoptCommand = Extract<ProductProductionCommandV1, { type: 'adopt-avg-artifact' }>
 
@@ -56,10 +56,10 @@ function validateSystem(value: unknown) {
     : validateAvgSystemPlanForAuthorV1(value)
 }
 
-type AuthorPayload = AvgProfessionalArtifactV1 | AvgAuthorStageV1 | AvgAuthorMediaChoiceV1
+type AuthorPayload = AvgProfessionalArtifactV1 | AvgAuthorStageV1 | AvgAuthorMediaChoice
 function prepareAuthorInput(input: Parameters<typeof prepareAvgProfessionalArtifactV1>[0]): { payload: AuthorPayload; payloadJson: string } {
   if (input.artifactKey.startsWith('avg.media.choice.')) {
-    const payload = parseAvgAuthorMediaChoiceV1(input.payload)
+    const payload = parseAvgAuthorMediaChoice(input.payload)
     if (input.kind !== 'presentation' || input.artifactKey !== avgMediaChoiceArtifactKeyV1(payload.requirementKey)
       || !input.allowedOutputKeys.includes(input.artifactKey)) throw new Error('[avg-media] 作者选择超出冻结输出域')
     return { payload, payloadJson: canonicalProductProductionJsonV2(payload) }
@@ -71,7 +71,7 @@ function prepareAuthorInput(input: Parameters<typeof prepareAvgProfessionalArtif
 }
 async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, scope: WorkspaceScope, payload: AuthorPayload, inputs: ProductBuildArtifactRecordV1[]) {
   if (payload.schema !== 'storyforge.avg.author-stage') return undefined
-  const generated = new Map<string, { asset: AvgAuthorMediaChoiceV1['asset']; blobObjectId: number }>()
+  const generated = new Map<string, { asset: AvgAuthorMediaChoice['asset']; blobObjectId: number }>()
   const a = context.brief.avgAssembly
   if (a?.version === 2) {
     if (payload.aspectRatio !== a.mediaBatch.aspectRatio) throw new Error('[avg-media] 最终演出画幅与冻结批次不一致')
@@ -80,10 +80,10 @@ async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, 
     for (const r of a.mediaBatch.requirements) {
       const row = choices.find(row => row.artifactKey === avgMediaChoiceArtifactKeyV1(r.requirementKey))
       if (!row) throw new Error('[avg-media] 缺少准确需求的作者选择')
-      const choice = parseAvgAuthorMediaChoiceV1(row.payloadJson)
+      const choice = parseAvgAuthorMediaChoice(row.payloadJson)
       const selected = await readAvgChosenMediaSourceV2({ scope, buildId: context.build.id!, brief: context.brief, choice })
-      const review=await readChoiceVisualReview(context,scope,choice,selected.raw)
-      await assertFrozenAuthorCandidateV1(context,row,context.plan.tasks.find(task=>task.taskKey===`avg.author.media.${r.requirementKey}`)!,[selected.raw,...(review?[review.row]:[])],context.build.controlEpoch)
+      const review=await readChoiceVisualReview(context,scope,choice,selected.raw,context.build.controlEpoch,selected.processed?.row)
+      await assertFrozenAuthorCandidateV1(context,row,context.plan.tasks.find(task=>task.taskKey===`avg.author.media.${r.requirementKey}`)!,[selected.raw,...(selected.processed?[selected.processed.row]:[]),...(review?[review.row]:[])],context.build.controlEpoch)
       const receipt = JSON.parse(row.metadataJson) as { candidate: AuthorCandidate }
       if (receipt.candidate.version !== 4 || canonicalProductProductionJsonV2(receipt.candidate.mediaChoiceValidation) !== canonicalProductProductionJsonV2(selected.validation)) throw new Error('[avg-media] 选择缺少准确的真实解码采用回执')
       if (choice.referenceOnly) {
@@ -102,7 +102,7 @@ async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, 
         const view = r.itemVariantKey === null ? item : item?.variants.find(v => v.key === r.itemVariantKey)
         if (!view || (r.consumer.domain === 'inventory' ? view.iconAssetKey : view.detailAssetKey) !== r.assetKey) throw new Error('[avg-media] 物件图未绑定冻结的准确显示变体')
       }
-      generated.set(choice.asset.assetKey, { asset: choice.asset, blobObjectId: selected.raw.blobObjectId! })
+      generated.set(choice.asset.assetKey, { asset: choice.asset, blobObjectId: selected.image.blobObjectId! })
     }
   }
   const inherited=await readAvgInheritedStageImagesV1({scope,payload,productionKey:context.production.productionKey,
@@ -168,7 +168,7 @@ async function acceptedInputs(scope: WorkspaceScope, buildId: number, epoch: num
   const result: ProductBuildArtifactRecordV1[] = []
   for (const key of keys) {
     const matches = rows.filter(row => row.artifactKey === key && row.status === 'accepted' && row.controlEpoch === epoch)
-    if (key.startsWith('avg.media.raw.')) {
+    if (key.startsWith('avg.media.raw.')||key.startsWith('avg.media.processed.')) {
       const row = matches[0]
       if (matches.length !== 1 || !row) throw new Error('[avg-media] 原图未准确接收')
       result.push(await verifyAcceptedProductBuildArtifactV1({ scope, buildId, artifactKey: key, version: row.version, contentHash: row.contentHash }))
@@ -224,30 +224,31 @@ function assertSourceReferences(context: Awaited<ReturnType<typeof authority>>, 
 
 async function validateVisualReviewInput(context:Awaited<ReturnType<typeof authority>>,scope:WorkspaceScope,payload:AuthorPayload,inputs:ProductBuildArtifactRecordV1[]){
   if(payload.schema!=='storyforge.avg.review-issues'||!context.brief.avgAssembly)return
-  if(inputs.length!==1||inputs[0].artifactKey!==`avg.media.raw.${payload.targetKey}`)throw new Error('[avg-review] 评审缺少准确原图依赖')
-  await validateAvgAuthorVisualReviewV1({scope,brief:context.brief,raw:inputs[0],payload})
+  const processed=context.brief.avgAssembly.version===2&&context.brief.avgAssembly.imageProcessing?.entries.some(e=>e.requirementKey===payload.targetKey)
+  if(inputs.length!==(processed?2:1)||inputs[0].artifactKey!==`avg.media.raw.${payload.targetKey}`)throw new Error('[avg-review] 评审缺少准确原图依赖')
+  await validateAvgAuthorVisualReviewV1({scope,brief:context.brief,raw:inputs[0],payload,...(processed?{processed:inputs[1]}:{})})
 }
 
 /** Reused by current staging/adoption/compiler and the read-only old-image
  * verifier. The caller supplies a proved raw row for its exact epoch. */
-async function readChoiceVisualReview(context:Awaited<ReturnType<typeof authority>>,scope:WorkspaceScope,choice:AvgAuthorMediaChoiceV1,raw:ProductBuildArtifactRecordV1,epoch=context.build.controlEpoch){
+async function readChoiceVisualReview(context:Awaited<ReturnType<typeof authority>>,scope:WorkspaceScope,choice:AvgAuthorMediaChoice,raw:ProductBuildArtifactRecordV1,epoch=context.build.controlEpoch,processed?:ProductBuildArtifactRecordV1){
   const a=context.brief.avgAssembly
   if(a?.version!==2||!a.mediaBatch.visualReviewPolicy)return undefined
   const key=avgVisualReviewArtifactKeyV1(choice.requirementKey),[row]=await acceptedInputs(scope,context.build.id!,epoch,[key])
   const task=context.plan.tasks.find(task=>task.taskKey===`avg.author.visual-review.${choice.requirementKey}`)
   if(!task||task.kind!=='avg-author-visual-review'||task.executionMode!=='human-import'||task.skillId!==null||row.kind!=='quality-report'
     ||canonicalProductProductionJsonV2(task.outputArtifactKeys)!==canonicalProductProductionJsonV2([key])
-    ||canonicalProductProductionJsonV2(task.inputArtifactKeys)!==canonicalProductProductionJsonV2([raw.artifactKey]))throw new Error('[avg-review] 评审任务与原图不在准确冻结输入域')
-  await assertFrozenAuthorCandidateV1(context,row,task,[raw],epoch)
-  const report=await validateAvgAuthorVisualReviewV1({scope,brief:context.brief,raw,payload:row.payloadJson})
+    ||canonicalProductProductionJsonV2(task.inputArtifactKeys)!==canonicalProductProductionJsonV2([raw.artifactKey,...(processed?[processed.artifactKey]:[])]))throw new Error('[avg-review] 评审任务与原图不在准确冻结输入域')
+  await assertFrozenAuthorCandidateV1(context,row,task,[raw,...(processed?[processed]:[])],epoch)
+  const report=await validateAvgAuthorVisualReviewV1({scope,brief:context.brief,raw,payload:row.payloadJson,processed})
   const r=a.mediaBatch.requirements.find(r=>r.requirementKey===choice.requirementKey)!
-  assertAvgVisualReviewSelectableV1(report,r,raw.contentHash)
+  assertAvgVisualReviewSelectableV1(report,r,(processed??raw).contentHash)
   return {row,payload:report,artifact:ref(row),authorReceiptHash:String(JSON.parse(row.metadataJson).receiptHash)}
 }
 
 function candidateBody(context: Awaited<ReturnType<typeof authority>>, input: {
   taskKey: string; artifactKey: string; kind: ProductBuildArtifactRecordV1['kind']; payloadHash: string
-  base: Ref | null; inputs: Ref[]; declaration: string; systemValidation?: AvgSystemValidationV1; assemblyValidation?: AvgAssemblyValidationV1; mediaChoiceValidation?: AvgMediaChoiceValidationV1
+  base: Ref | null; inputs: Ref[]; declaration: string; systemValidation?: AvgSystemValidationV1; assemblyValidation?: AvgAssemblyValidationV1; mediaChoiceValidation?: AvgMediaChoiceValidation
 }): AuthorCandidateBody {
   const { systemValidation, assemblyValidation, mediaChoiceValidation, ...payload } = input
   const base: AuthorCandidateBase = { schema: 'storyforge.avg.author-candidate', origin: 'author-import',
@@ -280,7 +281,7 @@ export async function stageAvgAuthorArtifactV1(input: {
     assertSourceReferences(context, prepared.payload)
     const inputs = await acceptedInputs(scope, input.buildId, input.controlEpoch, task.inputArtifactKeys)
     await validateVisualReviewInput(context,scope,prepared.payload,inputs)
-    if(prepared.payload.schema==='storyforge.avg.media-choice')await readChoiceVisualReview(context,scope,prepared.payload,inputs[0])
+    if(prepared.payload.schema==='storyforge.avg.media-choice')await readChoiceVisualReview(context,scope,prepared.payload,inputs[0],context.build.controlEpoch,prepared.payload.version===2?inputs[1]:undefined)
     const rows = await db.productBuildArtifacts.where('buildId').equals(input.buildId).toArray()
     const bases = rows.filter(row => row.artifactKey === artifactKey && row.status === 'accepted')
     if (bases.length > 1) throw new Error('[avg] 正式 revision 不唯一')
@@ -342,7 +343,7 @@ async function prepareAdoption(scope: WorkspaceScope, production: ProductProduct
   assertSourceReferences(context, prepared.payload)
   const inputs = await acceptedInputs(scope, build.id, command.controlEpoch, task.inputArtifactKeys)
   await validateVisualReviewInput(context,scope,prepared.payload,inputs)
-  if(prepared.payload.schema==='storyforge.avg.media-choice')await readChoiceVisualReview(context,scope,prepared.payload,inputs[0])
+  if(prepared.payload.schema==='storyforge.avg.media-choice')await readChoiceVisualReview(context,scope,prepared.payload,inputs[0],context.build.controlEpoch,prepared.payload.version===2?inputs[1]:undefined)
   const bases = rows.filter(row => row.artifactKey === candidate.artifactKey && row.status === 'accepted')
   if (bases.length > 1) throw new Error('[avg] 正式 revision 不唯一')
   if(prepared.payload.schema==='storyforge.avg.review-issues'&&context.brief.avgAssembly)assertAvgVisualReviewRevisionV1(bases[0]?.payloadJson??null,prepared.payload)
@@ -445,19 +446,19 @@ async function readAuthorInputs(input: {
       if (parsed.schema !== 'storyforge.avg.scene-script' || !scriptReceipt.candidate.inputs.some(source => source.artifactKey === artifact.artifactKey && source.version === artifact.version && source.contentHash === artifact.contentHash)) throw new Error('[avg] 脚本缺少当前正式规则依赖')
       return { payload: parsed, artifact: ref(row), authorReceiptHash: scriptReceipt.receiptHash }
     })
-    const mediaChoices: Array<{ payload: AvgAuthorMediaChoiceV1; artifact: Ref; authorReceiptHash: string; raw: ProductBuildArtifactRecordV1;review?:NonNullable<Awaited<ReturnType<typeof readChoiceVisualReview>>> }> = []
+    const mediaChoices: Array<{ payload: AvgAuthorMediaChoice; artifact: Ref; authorReceiptHash: string; raw: ProductBuildArtifactRecordV1;image:ProductBuildArtifactRecordV1;processed?:NonNullable<Awaited<ReturnType<typeof readAvgChosenMediaSourceV2>>>['processed'];review?:NonNullable<Awaited<ReturnType<typeof readChoiceVisualReview>>> }> = []
     if ((input.includeAuthorStage || input.includeMediaChoices) && context.brief.avgAssembly?.version === 2) {
       const keys = context.brief.avgAssembly.mediaBatch.requirements.map(r => avgMediaChoiceArtifactKeyV1(r.requirementKey))
       const rows = await acceptedInputs(scope, input.buildId, input.controlEpoch, keys)
       for (const row of rows) {
-        const payload = parseAvgAuthorMediaChoiceV1(row.payloadJson)
+        const payload = parseAvgAuthorMediaChoice(row.payloadJson)
         const selected = await readAvgChosenMediaSourceV2({ scope, buildId: input.buildId, brief: context.brief, choice: payload })
-        const review=await readChoiceVisualReview(context,scope,payload,selected.raw)
+        const review=await readChoiceVisualReview(context,scope,payload,selected.raw,input.controlEpoch,selected.processed?.row)
         const receipt = JSON.parse(row.metadataJson) as { candidate: AuthorCandidate; receiptHash: string }
         if (receipt.candidate.version !== 4 || canonicalProductProductionJsonV2(receipt.candidate.mediaChoiceValidation) !== canonicalProductProductionJsonV2(selected.validation)) throw new Error('[avg-media] 作者选择解码证据已 stale')
         const task=context.plan.tasks.find(task=>task.taskKey===`avg.author.media.${payload.requirementKey}`)!
-        await assertFrozenAuthorCandidateV1(context,row,task,[selected.raw,...(review?[review.row]:[])],input.controlEpoch)
-        mediaChoices.push({ payload, artifact: ref(row), authorReceiptHash: receipt.receiptHash, raw: selected.raw,...(review?{review}:{}) })
+        await assertFrozenAuthorCandidateV1(context,row,task,[selected.raw,...(selected.processed?[selected.processed.row]:[]),...(review?[review.row]:[])],input.controlEpoch)
+        mediaChoices.push({ payload, artifact: ref(row), authorReceiptHash: receipt.receiptHash, raw: selected.raw,image:selected.image,processed:selected.processed,...(review?{review}:{}) })
       }
     }
     let authorStage: { payload: AvgAuthorStageV1; artifact: Ref; authorReceiptHash: string; validation: AvgAssemblyValidationV1 } | null = null
@@ -499,22 +500,25 @@ export async function readAvgAdoptedGeneratedReferenceChoiceV1(input: { scope: W
     const context = await authority(scope, input.buildId, true, false, input.controlEpoch)
     const [row] = await acceptedInputs(scope, input.buildId, input.controlEpoch, [input.artifactKey])
     if (row.version !== input.version || row.contentHash !== input.contentHash) throw new Error('[avg-media] 生成参考不是准确的作者已采用版本')
-    const choice = parseAvgAuthorMediaChoiceV1(row.payloadJson)
+    const choice = parseAvgAuthorMediaChoice(row.payloadJson)
     const task = context.plan.tasks.find(task => task.taskKey === `avg.author.media.${choice.requirementKey}`)
     if (!task || task.kind !== 'avg-author-media-choice' || task.executionMode !== 'human-import' || task.skillId !== null
       || canonicalProductProductionJsonV2(task.outputArtifactKeys) !== canonicalProductProductionJsonV2([row.artifactKey])
-      || canonicalProductProductionJsonV2(task.inputArtifactKeys) !== canonicalProductProductionJsonV2([choice.raw.artifactKey,...(context.brief.avgAssembly?.version===2&&context.brief.avgAssembly.mediaBatch.visualReviewPolicy?[avgVisualReviewArtifactKeyV1(choice.requirementKey)]:[])])) throw new Error('[avg-media] 生成参考不属于原冻结作者选图任务')
+      || canonicalProductProductionJsonV2(task.inputArtifactKeys) !== canonicalProductProductionJsonV2([choice.raw.artifactKey,...(choice.version===2?[choice.processed.artifactKey]:[]),...(context.brief.avgAssembly?.version===2&&context.brief.avgAssembly.mediaBatch.visualReviewPolicy?[avgVisualReviewArtifactKeyV1(choice.requirementKey)]:[])])) throw new Error('[avg-media] 生成参考不属于原冻结作者选图任务')
     const proved = await verifyAvgReferenceRawImageArtifactV1({ scope, buildId: input.buildId, expectedBuildRevision: context.build.stateRevision,
       expectedBriefHash: context.build.briefHash, expectedPlanHash: context.build.planHash, sourceControlEpoch: input.controlEpoch,
       artifactKey: choice.raw.artifactKey, version: choice.raw.version, contentHash: choice.raw.contentHash })
     await assertAvgRawImageOriginV1({ scope, productionId: context.production.id, brief: context.brief, build: context.build,
       artifact: proved.artifact, requirementKey: choice.requirementKey, taskKey: proved.provenance.taskKey }, [context.build.buildNumber])
-    const review=await readChoiceVisualReview(context,scope,choice,proved.artifact,input.controlEpoch)
-    const candidate = await assertFrozenAuthorCandidateV1(context, row, task, [proved.artifact,...(review?[review.row]:[])], input.controlEpoch)
-    const selected = await inspectAvgChosenImageV1({ scope, brief: context.brief, choice, row: proved.artifact })
+    const processed=choice.version===2?await verifyAvgProcessedImageArtifactV1({scope,buildId:input.buildId,expectedBuildRevision:context.build.stateRevision,
+      expectedBriefHash:context.build.briefHash,expectedPlanHash:context.build.planHash,sourceControlEpoch:input.controlEpoch,...choice.processed}):undefined
+    const selected = await inspectAvgChosenImageV1({ scope, brief: context.brief, choice, row: proved.artifact,processed:processed?.artifact })
+    const review=await readChoiceVisualReview(context,scope,choice,proved.artifact,input.controlEpoch,processed?.artifact)
+    const candidate = await assertFrozenAuthorCandidateV1(context, row, task, [proved.artifact,...(processed?[processed.artifact]:[]),...(review?[review.row]:[])], input.controlEpoch)
     if (candidate.version !== 4 || canonicalProductProductionJsonV2(candidate.mediaChoiceValidation) !== canonicalProductProductionJsonV2(selected.validation)) throw new Error('[avg-media] 生成参考缺少准确的作者解码采用证据')
     const envelope = JSON.parse(row.metadataJson) as { receiptHash: string }
-    return { choice, artifact: ref(row), authorReceiptHash: envelope.receiptHash, raw: proved.artifact, rawProof: proved.provenance,
+    return { choice, artifact: ref(row), authorReceiptHash: envelope.receiptHash, raw: proved.artifact, rawProof: proved.provenance,image:selected.image,
+      ...(processed?{processingProof:processed.provenance}:{}),
       productionKey: context.production.productionKey, buildNumber: context.build.buildNumber, requirement: selected.requirement,
       sourceWorldContentHash:context.brief.source.worldContentHash }
   })

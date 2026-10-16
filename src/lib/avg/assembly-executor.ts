@@ -10,6 +10,7 @@ import { executeAvgMediaImageTaskV2 } from './media-production-executor'
 import { executeAvgImageRecoveryTaskV1 } from './media-recovery-executor'
 import type { ResolvedProductMediaCapabilityV1 } from '../product-production/media-transport'
 import { readAvgInheritedStageImagesV1 } from './stage-image-sources'
+import { executeAvgImageProcessingTaskV1 } from './image-processing-executor'
 
 /** V1 remains zero-provider. Opt-in V2 image tasks use the media Harness;
  * human choices/stage stay separate from deterministic package compilation. */
@@ -19,6 +20,7 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
   return async request => {
     const startedAt = Date.now()
     if (request.signal.aborted) throw new DOMException('Aborted','AbortError')
+    if(brief.avgAssembly?.version===2&&request.task.kind==='avg-media-image-process')return executeAvgImageProcessingTaskV1(request,brief)
     if(brief.avgAssembly?.version===2&&request.task.kind==='avg-media-image-reuse')return executeAvgImageRecoveryTaskV1(request,brief)
     if (brief.avgAssembly?.version === 2 && request.task.kind === 'avg-media-image-generate') return executeAvgMediaImageTaskV2(request, {
       brief, mediaCapabilities: options.mediaCapabilities ?? new Map(), imageEndpointRouteHash: options.imageEndpointRouteHash,
@@ -45,6 +47,7 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
       ...(brief.avgAssembly.version === 2 ? { mediaChoices: (compiled.source.mediaChoices ?? []).map(choice => ({
         choice: choice.artifact, authorReceiptHash: choice.authorReceiptHash, raw: { artifactKey: choice.raw.artifactKey,
           version: choice.raw.version, contentHash: choice.raw.contentHash }, rawReceiptHash: choice.raw.producerReceiptHash,
+        ...(choice.processed?{processing:{artifact:{artifactKey:choice.processed.row.artifactKey,version:choice.processed.row.version,contentHash:choice.processed.row.contentHash},producerReceiptHash:choice.processed.row.producerReceiptHash,processingReceiptHash:choice.processed.payload.receipt.receiptHash}}:{}),
         ...(choice.review?{visualReview:{artifact:choice.review.artifact,authorReceiptHash:choice.review.authorReceiptHash}}:{}) })) } : {}),
       sourceContextHash:await hashProductProductionValueV2(request.contextText) }
     let artifacts: ProductProductionTaskArtifactV1[]
@@ -66,8 +69,9 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
           rights:{ origin:choice?'author-selected-provider':retained?'author-inherited-provider':'author-import',license:asset.license,source:asset.source,authorStageReceipt:sourceProof.stageReceipt,
             ...(retainedSource?{inheritedStageSource:retainedSource}:{}),
             ...(choice ? { authorChoiceReceipt: choice.authorReceiptHash, rawArtifactKey: choice.raw.artifactKey, rawVersion: choice.raw.version,
-              rawContentHash: choice.raw.contentHash, rawProducerReceiptHash: choice.raw.producerReceiptHash } : {}) },
-          contentHash:asset.contentHash,blobObjectId:choice?.raw.blobObjectId ?? retained?.blobObjectId ?? rows[0]!.blobObjectId,mimeType:asset.mimeType,byteSize:asset.byteSize })
+              rawContentHash: choice.raw.contentHash, rawProducerReceiptHash: choice.raw.producerReceiptHash,
+              ...(choice.processed?{processedProducerReceiptHash:choice.processed.row.producerReceiptHash,processingReceiptHash:choice.processed.payload.receipt.receiptHash}:{}) } : {}) },
+          contentHash:asset.contentHash,blobObjectId:choice?.image.blobObjectId ?? retained?.blobObjectId ?? rows[0]!.blobObjectId,mimeType:asset.mimeType,byteSize:asset.byteSize })
       }
     } else {
       const actual = request.inputArtifacts.find(row => row.artifactKey === 'runtime.package')
@@ -82,7 +86,7 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
         ...(module.systemPlan.version===2?module.systemPlan.inventory.items.flatMap(item=>[item,...item.variants].flatMap(view=>[view.iconAssetKey,view.detailAssetKey].filter((key):key is string=>key!==null))):[])])
       const unused=assets.filter(asset=>!usedAssets.has(asset.assetKey))
       const report: ProductBuildQualityReportV1 = { schema:'storyforge.product-build-quality-report',version:1,buildNumber:request.buildNumber,packageHash,
-        hardGateResults:(brief.avgAssembly.version === 2 ? avgMediaAssemblyGateIdsV2(brief.avgAssembly.mediaBatch) : AVG_ASSEMBLY_GATE_IDS_V1)
+        hardGateResults:(brief.avgAssembly.version === 2 ? avgMediaAssemblyGateIdsV2(brief.avgAssembly.mediaBatch,brief.avgAssembly.imageProcessing) : AVG_ASSEMBLY_GATE_IDS_V1)
           .map(gateId => ({ gateId,passed:true,evidence:[canonicalProductProductionJsonV2(sourceProof)] })),
         softGateResults:[],mediaCoverage:assets.length?(assets.length-unused.length)/assets.length:1,playable:true,releaseReady:false,
         warnings:['仅通过作者组装技术门；艺术、专业配音、整部作品试玩与发布验收尚待执行。',...(compiled.source.mediaChoices??[]).flatMap(choice=>choice.review?.payload.issues.map(issue=>`作者视觉问题 ${issue.severity} · ${choice.payload.requirementKey}：${issue.evidence}`)??[]),...unused.map(asset=>`素材尚未绑定演出、配音或物件消费者：${asset.name}`)] }

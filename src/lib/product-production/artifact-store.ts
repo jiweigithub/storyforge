@@ -2846,7 +2846,14 @@ export function verifyAvgReferenceRawImageArtifactV1(input: AvgRawImageEvidenceI
   return verifyAvgRawImageEvidenceV1(input, true)
 }
 
-async function verifyAvgRawImageEvidenceV1(input: AvgRawImageEvidenceInputV1, referenceSource: boolean) {
+/** AVG-only read of a derived image, with the same historical producer/Blob
+ * fences. The caller must additionally prove the exact raw input and author
+ * selection; this grants no carry, retry or active writer authority. */
+export function verifyAvgProcessedImageArtifactV1(input: AvgRawImageEvidenceInputV1) {
+  return verifyAvgRawImageEvidenceV1(input, true, true)
+}
+
+async function verifyAvgRawImageEvidenceV1(input: AvgRawImageEvidenceInputV1, referenceSource: boolean, processed = false) {
   const scope = await resolveScope({ scope: input.scope })
   stableKey(input.artifactKey, 'artifactKey')
   const build = await db.productBuilds.get(input.buildId)
@@ -2859,8 +2866,8 @@ async function verifyAvgRawImageEvidenceV1(input: AvgRawImageEvidenceInputV1, re
     || build.planHash !== input.expectedPlanHash || !Number.isSafeInteger(input.sourceControlEpoch)
     || input.sourceControlEpoch < 0 || input.sourceControlEpoch > build.controlEpoch) throw new Error('[product-production-artifact] 保留输入 Build 状态或冻结版本已变化')
   const production = await db.productProductions.get(build.productionId)
-  if (!production || production.productType !== 'avg' || !input.artifactKey.startsWith('avg.media.raw.')
-    || !await assertRecordInScope(scope, 'productProductions', production, { owner: 'work' })) throw new Error('[product-production-artifact] 保留原图核验仅用于 AVG 原图，不授予其他产品入口')
+  if (!production || production.productType !== 'avg' || !input.artifactKey.startsWith(processed?'avg.media.processed.':'avg.media.raw.')
+    || !await assertRecordInScope(scope, 'productProductions', production, { owner: 'work' })) throw new Error(processed?'[product-production-artifact] 加工图核验仅用于 AVG 加工图，不授予其他产品入口':'[product-production-artifact] 保留原图核验仅用于 AVG 原图，不授予其他产品入口')
   const briefRow = await db.productProductionBriefs.where('[productionId+revision]').equals([build.productionId, build.briefRevision]).first()
   if (!briefRow?.id || !await assertRecordInScope(scope, 'productProductionBriefs', briefRow, { owner: 'work' })
     || !['authorized', 'superseded'].includes(briefRow.status) || briefRow.briefHash !== build.briefHash
@@ -2891,11 +2898,15 @@ async function verifyAvgRawImageEvidenceV1(input: AvgRawImageEvidenceInputV1, re
   if (!samePreparedProducerArtifactV1({ expected: await preparedStoredArtifactV1(row), actual: proof.artifacts.get(row.artifactKey), importedScopeRebound: proof.importedScopeRebound })) throw new Error('[product-production-artifact] 保留输入与真实 producer candidate 不一致')
   // Reuse admission also calls this read inside its write transaction. Native
   // module loading can otherwise let IndexedDB commit before the next read.
-  const rawContract = import('../avg/media-raw-contract')
-  const { assertAvgRawImageArtifactV1 } = Dexie.currentTransaction
-    ? await Dexie.waitFor(rawContract)
-    : await rawContract
-  await assertAvgRawImageArtifactV1(brief, row)
+  if (processed) {
+    const contract = import('../avg/image-processing-contract')
+    const { assertAvgProcessedImageArtifactV1 } = Dexie.currentTransaction ? await Dexie.waitFor(contract) : await contract
+    await assertAvgProcessedImageArtifactV1(brief, row)
+  } else {
+    const rawContract = import('../avg/media-raw-contract')
+    const { assertAvgRawImageArtifactV1 } = Dexie.currentTransaction ? await Dexie.waitFor(rawContract) : await rawContract
+    await assertAvgRawImageArtifactV1(brief, row)
+  }
   const blobs = await verifiedBlobProofsV1({ scope, artifacts: [row], label: 'retained input' })
   const currentBuild = await db.productBuilds.get(build.id), current = await db.productBuildArtifacts.get(row.id), currentBrief = await db.productProductionBriefs.get(briefRow.id)
   const currentProduction = await db.productProductions.get(build.productionId)
@@ -2908,7 +2919,7 @@ async function verifyAvgRawImageEvidenceV1(input: AvgRawImageEvidenceInputV1, re
       || prior.backend === 'indexeddb' && !sameArrayBufferV1(prior.data, currentBlob.data)) throw new Error('[product-production-artifact] 保留输入字节证明在读取期间已变化')
   }
   await assertVerifiedProducerCandidateFreshV1({ build: { ...currentBuild, id: currentBuild.id, controlEpoch: input.sourceControlEpoch }, proof })
-  const provenance = { schema: 'storyforge.avg.retained-raw-image-proof', version: 1, buildNumber: build.buildNumber,
+  const provenance = { schema: processed?'storyforge.avg.processed-image-proof':'storyforge.avg.retained-raw-image-proof', version: 1, buildNumber: build.buildNumber,
     briefHash: build.briefHash, planHash: build.planHash, controlEpoch: input.sourceControlEpoch, taskKey: proof.task.taskKey,
     artifactKey: row.artifactKey, artifactVersion: row.version, contentHash: row.contentHash, inputHash: row.inputHash,
     producerReceiptHash: row.producerReceiptHash, candidateHash: proof.candidateHash }
@@ -3375,9 +3386,9 @@ export async function acceptProductBuildArtifact(
   input: ProductBuildArtifactAcceptanceInputV1,
 ): Promise<ProductBuildArtifactRecordV1> {
   const productType = await productTypeForBuildV1(input.buildId)
-  // AVG V2 raw candidates gain sealed producer admission only. Human choices,
+  // AVG V2 raw/processed candidates gain sealed producer admission only. Human choices,
   // V1 assembly and every other product keep their existing writer semantics.
-  if (productType === 'avg' && input.artifactKey.startsWith('avg.media.raw.')) return acceptSealedProducerArtifactV1(input, true)
+  if (productType === 'avg' && (input.artifactKey.startsWith('avg.media.raw.')||input.artifactKey.startsWith('avg.media.processed.'))) return acceptSealedProducerArtifactV1(input, true)
   return productType === 'text-open-world'
     ? textOpenWorldProductArtifactStoreV1.acceptProductBuildArtifact(input)
     : textAdventureArtifactStoreV1.acceptProductBuildArtifact(input)

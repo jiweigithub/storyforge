@@ -4,7 +4,7 @@ import { useAIConfigStore } from '../../src/stores/ai-config'
 import { prepareNativeAvgAssembly } from '../helpers/avg-production-assembly-fixture'
 import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
 import { saveAvgVisualBatchDraftV1, prepareAvgAssemblyBriefV1, startAvgAssemblyV1, stageAvgWorkspaceInputV1,
-  confirmAvgWorkspaceInputV1, runAvgAssemblyV1, stageAvgMediaChoiceV2, configureAvgChosenMediaDraftV2, prepareAvgImageRecoveryBriefV1, keepAvgGeneratedStageDraftV1,stageAvgVisualReviewV1 } from '../../src/lib/avg/assembly-service'
+  confirmAvgWorkspaceInputV1, runAvgAssemblyV1, stageAvgMediaChoiceV2, configureAvgChosenMediaDraftV2, prepareAvgImageRecoveryBriefV1, keepAvgGeneratedStageDraftV1,stageAvgVisualReviewV1,saveAvgImageProcessingDraftV1,readAvgProcessedImageCandidateBytesV1,readAvgAssemblyWorkspaceV1 } from '../../src/lib/avg/assembly-service'
 import { deterministicRegionMapPngV1 } from '../../src/lib/product-production/production-executor'
 import { readProductProductionDetailsV1, stopProductProductionV1 } from '../../src/lib/product-production/service'
 import { verifyStoredProductBuildPreview } from '../../src/lib/product-production/preview-manifest'
@@ -29,6 +29,10 @@ import { validateAvgVisualProductionBatchSourceV1 } from '../../src/lib/avg/medi
 import { verifyFrozenAvgAuthorInputsV1 } from '../../src/lib/avg/author-artifacts'
 import { avgVisualReviewFixture } from '../helpers/avg-visual-review-fixture'
 import { prepareAvgRawImageRequestV1 } from '../../src/lib/avg/media-raw-contract'
+import * as imageProcessing from '../../src/lib/avg/image-processing'
+import { avgImageProcessingRecipeFixture,avgImageProcessingReceiptFixture } from '../helpers/avg-image-processing-fixture'
+import type { AvgImageProcessingPlanV1 } from '../../src/lib/avg/image-processing-contract'
+import { deleteWork } from '../../src/lib/workspace/lifecycle'
 
 const requirement = (): AvgVisualProductionRequirementV1 => ({ requirementKey: 'desk.background', revision: 1,
   assetKey: 'avg.generated.desk', name: '原创工程背景', altText: '仅用于管线验证的原创色块',
@@ -37,9 +41,10 @@ const requirement = (): AvgVisualProductionRequirementV1 => ({ requirementKey: '
   triggerBeatKey: 'line.desk', itemVariantKey: null, mediaKind: 'background', prompt: '原创房间的工程图', negativePrompt: '', invariants: [], forbiddenDepictions: [],
   width: 576, height: 324, resolutionTier: '1K', alpha: 'not-required', references: [] })
 
-async function prepare(requirements = [requirement()],review=false) {
+async function prepare(requirements = [requirement()],review=false,processing?:AvgImageProcessingPlanV1) {
   const s = await prepareNativeAvgAssembly(), draft = await readAvgDraftV1(s.scope)
-  const saved = await saveAvgVisualBatchDraftV1({ scope: s.scope, expectedDraftRevision: draft.revision, batchKey: 'engineering.batch', revision: 1, requirements,...(review?{visualReviewPolicy:'author-visual-v1' as const}:{}) })
+  let saved = await saveAvgVisualBatchDraftV1({ scope: s.scope, expectedDraftRevision: draft.revision, batchKey: 'engineering.batch', revision: 1, requirements,...(review?{visualReviewPolicy:'author-visual-v1' as const}:{}) })
+  if(processing)saved=await saveAvgImageProcessingDraftV1({scope:s.scope,expectedDraftRevision:saved.revision,plan:processing})
   const details = await prepareAvgAssemblyBriefV1({ scope: s.scope, expectedDraftRevision: saved.revision })
   return { ...s, details }
 }
@@ -72,13 +77,14 @@ async function recover(s:Awaited<ReturnType<typeof start>>,keys=['desk.backgroun
 }
 async function chooseImage(s: Awaited<ReturnType<typeof start>>, requirementKey: string) {
   const raw = (await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,`avg.media.raw.${requirementKey}`]).first())!
+  const processed=await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,`avg.media.processed.${requirementKey}`]).filter(r=>r.status==='accepted').first()
   if(!raw)throw new Error((await db.productBuilds.get(s.buildId))!.failureJson)
   if(s.details.executionBrief!.avgAssembly!.version===2&&s.details.executionBrief!.avgAssembly!.mediaBatch.visualReviewPolicy){
     const current=await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,`avg.review.visual.${requirementKey}`]).filter(row=>row.status==='accepted').first()
-    if(!current)await reviewImage(s,avgVisualReviewFixture(s.details.executionBrief!.avgAssembly!.mediaBatch.requirements.find(r=>r.requirementKey===requirementKey)!,raw.contentHash))
+    if(!current)await reviewImage(s,avgVisualReviewFixture(s.details.executionBrief!.avgAssembly!.mediaBatch.requirements.find(r=>r.requirementKey===requirementKey)!,(processed??raw).contentHash))
   }
   const candidate = await stageAvgMediaChoiceV2({scope:s.scope,productionId:s.productionId,requirementKey,
-    rawVersion:raw.version,rawContentHash:raw.contentHash,declaration:'查看准确工程图并明确采用；后续外发和衍生仍须另行授权'})
+    rawVersion:raw.version,rawContentHash:raw.contentHash,declaration:'查看准确工程图并明确采用；后续外发和衍生仍须另行授权',...(processed?{processed:{version:processed.version,contentHash:processed.contentHash}}:{})})
   await confirmAvgWorkspaceInputV1({scope:s.scope,productionId:s.productionId,artifactKey:candidate.artifactKey,
     candidateVersion:candidate.version,candidateHash:JSON.parse(candidate.metadataJson).candidateHash})
   return (await db.productBuildArtifacts.get(candidate.id!))!
@@ -630,6 +636,130 @@ describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/deco
     expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('preview-ready')
     expect(dispatch).toHaveBeenCalledTimes(1)
   },15_000)
+
+  it('freezes a separate local recipe, uses a zero-provider processing Run and adopts only its reviewed exact derivative through preview and portable source',async()=>{
+    const body=await response(),dispatch=vi.fn(async()=>new Response(body,{status:200}));vi.stubGlobal('fetch',dispatch)
+    const output=await deterministicRegionMapPngV1({width:576,height:324,palette:['#230024','#714576','#f0caff']})
+    const process=vi.spyOn(imageProcessing,'processAvgImageBytesV1').mockImplementation(async input=>({data:output,
+      receipt:await avgImageProcessingReceiptFixture({recipe:input.recipe,source:{...input.source,byteSize:input.data.byteLength},data:output})}))
+    const plan:AvgImageProcessingPlanV1={schema:'storyforge.avg.image-processing-plan',version:1,entries:[{requirementKey:'desk.background',recipe:avgImageProcessingRecipeFixture()}]}
+    const s=await start(await prepare([requirement()],true,plan));await confirmSources(s)
+    await expect(saveAvgImageProcessingDraftV1({scope:s.scope,expectedDraftRevision:(await readAvgDraftV1(s.scope)).revision,plan:null})).rejects.toThrow(/已开始/)
+    const result=await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})
+    const raw=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,'avg.media.raw.desk.background']).first())!
+    const image=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,'avg.media.processed.desk.background']).first())!
+    expect(image,(await db.productBuilds.get(s.buildId))!.failureJson).toBeDefined();expect(result.buildStatus).toBe('building')
+    expect(image.contentHash).not.toBe(raw.contentHash);expect(image.blobObjectId).not.toBe(raw.blobObjectId)
+    expect(image.producerReceiptHash).not.toBe(raw.producerReceiptHash)
+    expect((await readAvgAssemblyWorkspaceV1(s.scope)).artifacts.some(row=>row.artifactKey===image.artifactKey)).toBe(true)
+    expect(JSON.parse(image.payloadJson)).toMatchObject({raw:{artifactKey:raw.artifactKey,version:raw.version,contentHash:raw.contentHash,producerReceiptHash:raw.producerReceiptHash},recipe:plan.entries[0].recipe})
+    const ledger=JSON.parse((await db.productBuilds.get(s.buildId))!.budgetLedgerJson).tasks['avg.media.process.desk.background']
+    expect(ledger).toMatchObject({status:'settled',usage:{mediaCalls:0,modelCalls:0,costUsd:0}})
+    await expect(stageAvgMediaChoiceV2({scope:s.scope,productionId:s.productionId,requirementKey:'desk.background',rawVersion:raw.version,rawContentHash:raw.contentHash,declaration:'不能跳过已冻结加工'})).rejects.toThrow(/加工图/)
+    await expect(reviewImage(s,avgVisualReviewFixture(requirement(),raw.contentHash))).rejects.toThrow(/准确原图/)
+    const bytes=await readAvgProcessedImageCandidateBytesV1({scope:s.scope,productionId:s.productionId,requirementKey:'desk.background',version:image.version,contentHash:image.contentHash})
+    expect(bytes.data).toEqual(output)
+    const choice=await chooseImage(s,'desk.background'),payload=JSON.parse(choice.payloadJson)
+    expect(payload).toMatchObject({version:2,raw:{contentHash:raw.contentHash},processed:{artifactKey:image.artifactKey,contentHash:image.contentHash},asset:{source:'storyforge.avg.local-canvas.v1',version:2,contentHash:image.contentHash}})
+    expect(JSON.parse(choice.metadataJson).candidate.inputs.map((r:{artifactKey:string})=>r.artifactKey)).toEqual([raw.artifactKey,image.artifactKey,'avg.review.visual.desk.background'])
+    await configureAvgChosenMediaDraftV2({scope:s.scope,productionId:s.productionId,expectedDraftRevision:(await readAvgDraftV1(s.scope)).revision});await confirm(s,'avg.author.stage')
+    expect((await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})).buildStatus).toBe('preview-ready')
+    const source=await prepareAvgGeneratedReferenceImageV1({scope:s.scope,choiceId:choice.id!})
+    expect(source.source).toMatchObject({raw:{contentHash:raw.contentHash},processing:{contentHash:image.contentHash,producerReceiptHash:image.producerReceiptHash}})
+    const oldBuild=(await db.productBuilds.get(s.buildId))!,draft=await readAvgDraftV1(s.scope),workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
+    workspace.basePreviewHash=oldBuild.previewHash
+    const saved=await saveAvgAuthorWorkspaceV1(s.scope,draft.revision,workspace)
+    const kept=await keepAvgGeneratedStageDraftV1({scope:s.scope,productionId:s.productionId,expectedDraftRevision:saved.revision,expectedBuildId:s.buildId})
+    expect(parseAvgAuthorWorkspaceV1(kept.editorJson).imageProcessing).toBeUndefined()
+    expect(parseAvgAuthorWorkspaceV1(kept.editorJson).presentation.inheritedImages![0].source.processing!.contentHash).toBe(image.contentHash)
+    useAIConfigStore.getState().setConfig({apiKey:''})
+    const details=await prepareAvgAssemblyBriefV1({scope:s.scope,expectedDraftRevision:kept.revision}),child=await start({...s,details})
+    await confirmSources(child);await confirm(child,'avg.author.stage')
+    expect((await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})).buildStatus).toBe('preview-ready')
+    expect(await db.productBuilds.get(s.buildId)).toEqual(oldBuild)
+    const importedId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),build=(await db.productBuilds.where('projectId').equals(importedId).first())!
+    const scope={projectId:importedId,worldId:build.worldId,workId:build.workId}
+    expect((await readAvgGeneratedReferenceImageV1({scope,source:source.source})).data).toEqual(output)
+    const damaged=structuredClone(source.source);damaged.processing!.producerReceiptHash='f'.repeat(64)
+    await expect(readAvgGeneratedReferenceImageV1({scope,source:damaged})).rejects.toThrow(/证明/)
+    const importedImage=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id!,'avg.media.processed.desk.background']).first())!
+    const stored=(await db.mediaBlobObjects.get(importedImage.blobObjectId!))!,corrupt=new Uint8Array(stored.data!.slice(0));corrupt[0]^=1
+    await db.mediaBlobObjects.update(stored.id!,{data:corrupt.buffer})
+    await expect(readAvgGeneratedReferenceImageV1({scope,source:source.source})).rejects.toThrow(/哈希/)
+    await db.mediaBlobObjects.put(stored)
+    const sweep=await mediaBlobStore.collectUnreferencedMediaBlobObjects({scope})
+    expect(sweep.retained).toContain(importedImage.blobObjectId)
+    const importedRaw=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id!,'avg.media.raw.desk.background']).first())!
+    expect(sweep.retained).toContain(importedRaw.blobObjectId)
+    await deleteWork(scope.workId)
+    expect(await db.productBuildArtifacts.where('workId').equals(scope.workId).count()).toBe(0)
+    expect(await db.mediaBlobObjects.where('workId').equals(scope.workId).count()).toBe(0)
+    expect((await readAvgGeneratedReferenceImageV1({scope:s.scope,source:source.source})).data).toEqual(output)
+    expect(dispatch).toHaveBeenCalledTimes(1);expect(process).toHaveBeenCalledTimes(1);expect(await db.avgDraftMedia.count()).toBe(0)
+  },20_000)
+
+  it('a rejected derivative can be reprocessed in an explicit child without changing the original request, recharging it or inheriting rejected use',async()=>{
+    const body=await response(),dispatch=vi.fn(async()=>new Response(body,{status:200}));vi.stubGlobal('fetch',dispatch)
+    const outputA=await deterministicRegionMapPngV1({width:576,height:324,palette:['#230024','#714576','#f0caff']}),outputB=await deterministicRegionMapPngV1({width:576,height:324,palette:['#002430','#457671','#caf0ff']})
+    const process=vi.spyOn(imageProcessing,'processAvgImageBytesV1').mockImplementation(async input=>{
+      const data=input.recipe.fit==='cover'?outputB:outputA
+      return {data,receipt:await avgImageProcessingReceiptFixture({recipe:input.recipe,source:{...input.source,byteSize:input.data.byteLength},data})}
+    })
+    const plan:AvgImageProcessingPlanV1={schema:'storyforge.avg.image-processing-plan',version:1,entries:[{requirementKey:'desk.background',recipe:avgImageProcessingRecipeFixture()}]}
+    const parent=await start(await prepare([requirement()],true,plan));await confirmSources(parent);await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId})
+    const choice=await chooseImage(parent,'desk.background'),oldChoice=JSON.parse(choice.payloadJson)
+    await configureAvgChosenMediaDraftV2({scope:parent.scope,productionId:parent.productionId,expectedDraftRevision:(await readAvgDraftV1(parent.scope)).revision});await confirm(parent,'avg.author.stage')
+    const unknown=avgVisualReviewFixture(requirement(),oldChoice.asset.contentHash);unknown.unobserved=['构图需要重新核对'];unknown.visualEvidence!.checks.find(c=>c.criterion==='composition')!.result='unknown'
+    await reviewImage(parent,unknown);await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId})
+    await stopProductProductionV1({scope:parent.scope,production:(await readProductProductionDetailsV1(parent.scope,parent.productionId,['avg'])).production})
+    const before=await readAvgDraftV1(parent.scope)
+    await expect(keepAvgGeneratedStageDraftV1({scope:parent.scope,productionId:parent.productionId,expectedDraftRevision:before.revision,expectedBuildId:parent.buildId})).rejects.toThrow(/没有可保留/)
+    const updated=structuredClone(plan);updated.entries[0].recipe.fit='cover';updated.entries[0].recipe.declaration='明确保留原图并在新版本调整适配；旧意见和加工图均保留'
+    await saveAvgImageProcessingDraftV1({scope:parent.scope,expectedDraftRevision:before.revision,plan:updated})
+    const oldRaw=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([parent.buildId,'avg.media.raw.desk.background']).first())!
+    useAIConfigStore.getState().setConfig({apiKey:''})
+    const child=await recover(parent);await confirmSources(child)
+    expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('building')
+    const newRaw=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([child.buildId,'avg.media.raw.desk.background']).first())!
+    expect(newRaw.payloadJson).toBe(oldRaw.payloadJson);expect(newRaw.blobObjectId).toBe(oldRaw.blobObjectId)
+    const image=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([child.buildId,'avg.media.processed.desk.background']).first())!
+    expect(image.contentHash).not.toBe(oldChoice.asset.contentHash)
+    await expect(reviewImage(child,avgVisualReviewFixture(requirement(),oldChoice.asset.contentHash))).rejects.toThrow(/准确原图/)
+    await chooseImage(child,'desk.background')
+    const draft=await readAvgDraftV1(child.scope),forged=parseAvgAuthorWorkspaceV1(draft.editorJson);forged.presentation.stage.assets[0].license='不同的未授权编辑图片'
+    await saveAvgAuthorWorkspaceV1(child.scope,draft.revision,forged)
+    await expect(configureAvgChosenMediaDraftV2({scope:child.scope,productionId:child.productionId,expectedDraftRevision:(await readAvgDraftV1(child.scope)).revision})).rejects.toThrow(/同 key/)
+    await saveAvgAuthorWorkspaceV1(child.scope,(await readAvgDraftV1(child.scope)).revision,parseAvgAuthorWorkspaceV1(draft.editorJson))
+    await configureAvgChosenMediaDraftV2({scope:child.scope,productionId:child.productionId,expectedDraftRevision:(await readAvgDraftV1(child.scope)).revision});await confirm(child,'avg.author.stage')
+    expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('preview-ready')
+    expect(dispatch).toHaveBeenCalledTimes(1);expect(process).toHaveBeenCalledTimes(2)
+    expect((await db.productBuildArtifacts.get(choice.id!))!.status).toBe('invalid');expect(await db.avgDraftMedia.count()).toBe(0)
+  },20_000)
+
+  it('a local processing failure retains its original, exposes a blocked zero-call task and never silently reruns it',async()=>{
+    const body=await response(),dispatch=vi.fn(async()=>new Response(body,{status:200}));vi.stubGlobal('fetch',dispatch)
+    const process=vi.spyOn(imageProcessing,'processAvgImageBytesV1').mockRejectedValue(new Error('controlled local processing failure; original retained'))
+    const plan:AvgImageProcessingPlanV1={schema:'storyforge.avg.image-processing-plan',version:1,entries:[{requirementKey:'desk.background',recipe:avgImageProcessingRecipeFixture()}]}
+    const s=await start(await prepare([requirement()],true,plan));await confirmSources(s)
+    const result=await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})
+    expect(result.tasks.find(t=>t.taskKey==='avg.media.process.desk.background')?.status).toBe('blocked')
+    const view=await readAvgAssemblyWorkspaceV1(s.scope)
+    expect(view.processingTasks).toHaveLength(1);expect(view.processingTasks[0].status).toBe('blocked')
+    expect(view.artifacts.some(row=>row.artifactKey==='avg.media.raw.desk.background')).toBe(true)
+    expect(view.artifacts.some(row=>row.artifactKey==='avg.media.processed.desk.background')).toBe(false)
+    const ledger=JSON.parse((await db.productBuilds.get(s.buildId))!.budgetLedgerJson).tasks['avg.media.process.desk.background']
+    expect(ledger.usage).toMatchObject({mediaCalls:0,modelCalls:0,costUsd:0})
+    await expect(runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})).rejects.toThrow(/不可组装/)
+    expect(dispatch).toHaveBeenCalledTimes(1);expect(process).toHaveBeenCalledTimes(1)
+  })
+
+  it('known unusable output dimensions and an opaque fill for required alpha reject before any paid start',async()=>{
+    const dispatch=vi.fn();vi.stubGlobal('fetch',dispatch)
+    const recipe=avgImageProcessingRecipeFixture()
+    await expect(prepare([requirement()],true,{schema:'storyforge.avg.image-processing-plan',version:1,entries:[{requirementKey:'desk.background',recipe:{...recipe,width:32,height:32}}]})).rejects.toThrow(/尺寸或画幅/)
+    await expect(prepare([{...requirement(),alpha:'required'}],true,{schema:'storyforge.avg.image-processing-plan',version:1,entries:[{requirementKey:'desk.background',recipe:{...recipe,background:{red:0,green:0,blue:0,alpha:255}}}]})).rejects.toThrow(/不透明/)
+    expect(await db.productBuilds.count()).toBe(0);expect(dispatch).not.toHaveBeenCalled()
+  })
 
   it('route path drift and a disabled start reject before creating a Build or making HTTP requests', async () => {
     const dispatch = vi.fn(); vi.stubGlobal('fetch', dispatch)
