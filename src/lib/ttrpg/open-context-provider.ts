@@ -60,13 +60,14 @@ async function catalog(scope: FrozenResourceScopeV1, sourceKey: SourceKey) {
   const cached = catalogCache.get(cacheKey)
   if (cached) return cached
   const oraclePolicy = 'oracleRuntimeReferencePolicy' in context ? context.oracleRuntimeReferencePolicy : undefined
+  const normalizationPolicy = 'normalizationRuntimeReferencePolicy' in context ? context.normalizationRuntimeReferencePolicy : undefined
   const policyHash = await hashCanonicalValue({ sourceKey, actorKey: scope.runtimeActorKey, originalRead: false, fullIsAtomic: true,
-    ...(oraclePolicy ? { oracleRuntimeReferencePolicy: oraclePolicy } : {}) })
+    ...(oraclePolicy ? { oracleRuntimeReferencePolicy: oraclePolicy } : {}), ...(normalizationPolicy ? { normalizationRuntimeReferencePolicy: normalizationPolicy } : {}) })
   const materialize = (inputRows: typeof rows) => Promise.all(inputRows.map(async row => {
     const content = canonicalStringify(row.value), contentHash = await sha256Text(content), tokenCount = estimateTokens(content)
     const descriptor: ContextResourceDescriptorV1 = { version: 1, resourceKey: `${prefix}:${row.suffix}`, sourceKey,
       kind: 'fact', title: row.title, shortSummary: row.title, authority: 'confirmed-evidence',
-      contentRevision: context.readEvidence.sequence, contentHash, policyRevision: oraclePolicy ? 2 : 1, policyHash,
+      contentRevision: context.readEvidence.sequence, contentHash, policyRevision: oraclePolicy || normalizationPolicy ? 2 : 1, policyHash,
       scope: { projectId: scope.projectId, worldId: scope.worldId, workId: scope.workId,
         productRuntimeSessionId: scope.productRuntimeSessionId, runtimeActorKey: scope.runtimeActorKey }, relations: [],
       sourceRefs: [{ table: 'productRuntimeSessions', recordId: scope.productRuntimeSessionId!, field: 'runtimeHeadStateJson',

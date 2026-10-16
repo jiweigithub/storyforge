@@ -4,7 +4,7 @@ import { startTtrpgOpenEpochV1, consultTtrpgOracleV1 } from '../../src/lib/ttrpg
 import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
 import type { TtrpgOpenEntityProposalV1 } from '../../src/lib/ttrpg/open-entity-contract'
 
-export async function setupOpenEntityPlanningV1(configure?: Parameters<typeof readyOpenTtrpgSessionV1>[1], viewerKey = OPEN_HUMAN_VIEWER) {
+export async function setupOpenEntityPlanningV1(configure?: Parameters<typeof readyOpenTtrpgSessionV1>[1], viewerKey = OPEN_HUMAN_VIEWER, selectedCharacterKeys?: string[]) {
   const f = await readyOpenTtrpgSessionV1('F13 original Oracle planning', pkg => {
     const c = pkg.ttrpg!.campaign, rule = pkg.ttrpg!.rulePack.content
     rule.oracles[0].interpretation.maxNewEntities = 3
@@ -17,7 +17,7 @@ export async function setupOpenEntityPlanningV1(configure?: Parameters<typeof re
       { ...common, templateKey: 'dynamic.item', kind: 'item', characterTemplateKey: null, itemDefinitionKey: rule.items[0].key, parameters: [] },
     ]
     configure?.(pkg)
-  })
+  }, selectedCharacterKeys)
   await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(f.sessionId, 'entity.start'), viewerKey, triggerKind: viewerKey === 'viewer.gm' ? 'continue-host' : 'submit-action', rawInput: '明确咨询并审查可实例化对象' })
   const event = await consultTtrpgOracleV1({ ...await openEnvelopeV1(f.sessionId, 'entity.oracle'), viewerKey,
     askedBy: viewerKey === 'viewer.gm' ? 'gm' : 'player:hero', oracleKey: f.runtimePackage.ttrpg!.rulePack.content.oracles[0].oracleKey, question: '当前可以引入哪些模板内的新对象？' })

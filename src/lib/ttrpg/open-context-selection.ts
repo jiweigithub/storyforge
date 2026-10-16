@@ -49,12 +49,16 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
   const recipients = consumer === 'actor' ? [input.actorKey] : [...authorization.selectedActorKeys].sort()
   const oracle = input.oracleSourceRef ? run.oracleReceipts?.find(receipt => canonicalStringify(receipt.sourceRef) === canonicalStringify(input.oracleSourceRef)) : undefined
   const oracleRuntimeScope = consumer === 'gm-assistant' && 'oracleRuntimeReferencePolicy' in input.context ? input.context.oracleRuntimeReferencePolicy : undefined
-  const consultationAudience = consumer === 'gm-assistant' && !situation && !publicSituation && !entity ? oracle?.audience : undefined
+  const normalizationScope = consumer === 'gm-assistant' && 'normalizationRuntimeReferencePolicy' in input.context ? input.context.normalizationRuntimeReferencePolicy : undefined
+  const runtimeScope = normalizationScope ? { audience: normalizationScope.oraclePolicy.audience, recipientActorKeys: normalizationScope.recipientActorKeys } : oracleRuntimeScope
+  const consultationAudience = consumer === 'gm-assistant' && !situation && !publicSituation && !entity ? normalizationScope?.oraclePolicy.audience ?? oracle?.audience : undefined
   if (consumer === 'gm-assistant' && !situation && !publicSituation && !entity && !consultationAudience) throw new Error('[ttrpg-context] GM 情境需要明确真实咨询密级')
   const policyHash = await hashCanonicalValue(policy ?? null)
   const domainHash = await hashCanonicalValue({ consumer, actorKey: input.actorKey, recipients, consultationAudience: consultationAudience ?? null,
     policyHash, runtimeSourceHash: source.runtimeSourceHash, ...(passive ? { purpose: input.purpose } : {}),
-    ...(oracleRuntimeScope ? { oracleRuntimeScope: { oracleSourceRef: oracleRuntimeScope.oracleSourceRef, snapshotHash: oracleRuntimeScope.references.snapshotHash } } : {}) })
+    ...(oracleRuntimeScope ? { oracleRuntimeScope: { oracleSourceRef: oracleRuntimeScope.oracleSourceRef, snapshotHash: oracleRuntimeScope.references.snapshotHash } } : {}),
+    ...(normalizationScope ? { normalizationRuntimeScope: { oracleSourceRef: normalizationScope.oraclePolicy.oracleSourceRef, snapshotHash: normalizationScope.oraclePolicy.references.snapshotHash,
+      recipientActorKeys: normalizationScope.recipientActorKeys, reviewSourceRef: normalizationScope.reviewSourceRef, reviewHash: normalizationScope.reviewHash } } : {}) })
   const states = new Map<string, TtrpgContextTriggerStateV1>()
   // Prepared/cancelled-unsent calls do not consume timing; dispatched unknown calls do.
   const calls = passive ? [] : [...(input.runtime.branchLineage?.ancestors.flatMap(ancestor => ancestor.snapshot.openRun?.coordination.calls ?? []) ?? []), ...run.coordination.calls]
@@ -96,7 +100,7 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
   }
   const rank = { public: 0, party: 1, private: 2, 'gm-only': 3 }
   const triggers = (passive ? [] : policy?.triggers ?? []).filter(row => row.consumers.includes(consumer)).map(row => row.trigger).filter(trigger => {
-    const audienceAllowed = oracleRuntimeScope ? isTtrpgOpenOracleRuntimeGuidanceVisibleV1(oracleRuntimeScope, trigger.audience, trigger.knownByActorKeys) : trigger.audience === 'public' || trigger.audience === 'party'
+    const audienceAllowed = runtimeScope ? isTtrpgOpenOracleRuntimeGuidanceVisibleV1(runtimeScope, trigger.audience, trigger.knownByActorKeys) : trigger.audience === 'public' || trigger.audience === 'party'
       || consumer === 'gm-assistant' && trigger.audience === 'gm-only'
       || trigger.audience === 'private' && (consumer === 'gm-assistant' ? trigger.knownByActorKeys.includes('gm') : recipients.every(key => trigger.knownByActorKeys.includes(key)))
     return audienceAllowed && (!consultationAudience || rank[trigger.audience] <= rank[consultationAudience])

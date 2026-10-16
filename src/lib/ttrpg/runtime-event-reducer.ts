@@ -1,8 +1,9 @@
 import { applyTtrpgOpenEntityEventV1 } from './open-entity-reducer'
-import { assertTtrpgOpenSituationRuntimeReferenceJournalV1, assertTtrpgOpenOracleRuntimeReferenceJournalV1 } from './open-runtime-entity-references'
+import { assertTtrpgOpenSupportSlotV1 } from './open-model-calls'
+import { assertTtrpgOpenSituationRuntimeReferenceJournalV1, assertTtrpgOpenOracleRuntimeReferenceJournalV1, assertTtrpgOpenNormalizationRuntimeReferenceOriginV1 } from './open-runtime-entity-references'
 import { applyTtrpgOpenSessionSituationEventV1 } from './open-session-situation-reducer'
 import { TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1, assertTtrpgOpenPublicSituationOriginalScopeV1 } from './open-public-situation-authorization-contract'
-import { TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1, assertTtrpgOpenOracleRuntimeEpochAuthorityV1, ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1, assertTtrpgOpenSituationEpochAuthorityV1, assertTtrpgOpenSituationWindowEventV1 } from './open-coordination'
+import { TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1, TTRPG_OPEN_NORMALIZATION_INSTANCE_INPUT_V1, assertTtrpgOpenOracleRuntimeEpochAuthorityV1, ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1, assertTtrpgOpenSituationEpochAuthorityV1, assertTtrpgOpenSituationWindowEventV1 } from './open-coordination'
 import { applyTtrpgOpenTableMessageEventV1 } from './open-table-conversation-reducer'
 import { applyTtrpgOpenMemoryEventV1 } from './open-memory-reducer'
 import { applyTtrpgOpenHostingDelegationEventV1 } from './open-hosting-delegation'
@@ -163,13 +164,21 @@ export function applyTtrpgRuntimeEventV1(
         || epoch.sessionZeroRevision !== authorization.revision || epoch.status !== "active"
         || epoch.closedRef !== null || epoch.stopReason !== null || epoch.hostingDelegation || epoch.successfulActorKeys.length !== 0
         || epoch.reservedCalls !== 0 || epoch.consumedTokens !== 0 || epoch.actualCostUsd !== 0
-        || stableJson(epoch.budget) !== stableJson(ttrpgOpenEpochBudgetForTriggerV1(ttrpg.epochBudget, epoch.triggerKind, Boolean(epoch.oracleRuntimeReferencePolicy)))
+        || stableJson(epoch.budget) !== stableJson(ttrpgOpenEpochBudgetForTriggerV1(ttrpg.epochBudget, epoch.triggerKind, Boolean(epoch.oracleRuntimeReferencePolicy || epoch.normalizationRuntimeReferencePolicy)))
         || openRun.stage.status !== "open" && epoch.triggerKind !== "request-brief" && !ttrpgOpenClosedStageRecoveryAllowedV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.triggerKind) || openRun.coordination.activeEpochKey !== null
         || openRun.coordination.epochs.some(item => item.epochKey === epoch.epochKey)) {
         throw new Error("epoch.started 的真人授权、初始额度或活动窗口无效。");
       }
       if (epoch.triggerKind === 'request-brief') assertTtrpgOpenBriefEpochAuthorityV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.viewerKey);
       if (epoch.triggerKind === 'request-situation') assertTtrpgOpenSituationEpochAuthorityV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.viewerKey);
+      if (epoch.normalizationRuntimeReferencePolicy) {
+        const runtime = parseTtrpgRuntimeStateV2(state.ttrpg)!, policy = epoch.normalizationRuntimeReferencePolicy;
+        assertTtrpgOpenOracleRuntimeEpochAuthorityV1(runtime, epoch.viewerKey);
+        assertTtrpgOpenSupportSlotV1(runtime, openRun.worldTime.worldTurn);
+        if (payload.intent.rawInput !== TTRPG_OPEN_NORMALIZATION_INSTANCE_INPUT_V1 || stableJson(payload.intent.normalizationRuntimeReferencePolicy) !== stableJson(policy)) throw new Error('实例归一不是本次原已接受解释的明确策略');
+        assertTtrpgOpenNormalizationRuntimeReferenceOriginV1({ runtime, policy, reviewSourceRef: policy.reviewSourceRef, recipientActorKeys: authorization.selectedActorKeys,
+          runtimeSourceHash: policy.oraclePolicy.references.runtimeSourceHash, rulePackContentHash: ttrpg.product.rulePackContentHash, consumerRef: epoch.startedRef });
+      } else if (Object.prototype.hasOwnProperty.call(payload.intent, 'normalizationRuntimeReferencePolicy')) throw new Error('旧窗口不能夹带新的实例归一策略');
       if (epoch.oracleRuntimeReferencePolicy) {
         const runtime = parseTtrpgRuntimeStateV2(state.ttrpg)!;
         assertTtrpgOpenOracleRuntimeEpochAuthorityV1(runtime, epoch.viewerKey);

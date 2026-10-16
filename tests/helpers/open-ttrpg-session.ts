@@ -43,13 +43,13 @@ export async function configureOpenSeatsV1(sessionId: number) {
   }
 }
 
-export async function readyOpenTtrpgSessionV1(title = 'ready open foundation', configure?: Parameters<typeof seedOpenTtrpgSessionV1>[1]) {
+export async function readyOpenTtrpgSessionV1(title = 'ready open foundation', configure?: Parameters<typeof seedOpenTtrpgSessionV1>[1], selectedCharacterKeys = ['hero', 'companion.1', 'companion.2']) {
   const fixture = await seedOpenTtrpgSessionV1(title, configure)
   await configureOpenSeatsV1(fixture.sessionId)
   const state = await readProductRuntimeState(fixture.sessionId)
   const zero = await completeTtrpgOpenSessionZeroV1({ ...await openEnvelopeV1(fixture.sessionId, 'open.zero'),
     acceptedItemKeys: state.ttrpg!.product.sessionZero.requiredItemKeys,
-    selectedCharacterKeys: ['hero', 'companion.1', 'companion.2'], viewerKey: OPEN_HUMAN_VIEWER })
+    selectedCharacterKeys, viewerKey: OPEN_HUMAN_VIEWER })
   const started = await startTtrpgOpenRunV1({ ...await openEnvelopeV1(fixture.sessionId, 'open.start'), viewerKey: OPEN_HUMAN_VIEWER })
   return { ...fixture, zero, started }
 }

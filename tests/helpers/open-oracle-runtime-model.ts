@@ -8,7 +8,7 @@ import { closeTtrpgOpenEntityDeskV1, readTtrpgOpenEntityDeskV1, proposeTtrpgOpen
 import { startTtrpgOpenEpochV1, consultTtrpgOracleV1 } from '../../src/lib/ttrpg/runtime-commands'
 import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
 
-export async function setupOracleRuntimePolicyV1(audience: 'public' | 'party' | 'gm-only', pending = false, options: { aiEnabled?: boolean; configure?: Parameters<typeof setupOpenEntityPlanningV1>[0] } = {}) {
+export async function setupOracleRuntimePolicyV1(audience: 'public' | 'party' | 'gm-only', pending = false, options: { aiEnabled?: boolean; configure?: Parameters<typeof setupOpenEntityPlanningV1>[0]; selectedCharacterKeys?: string[] } = {}) {
   const s = await setupOpenEntityPlanningV1(pkg => {
     const c = pkg.ttrpg!.campaign, rule = pkg.ttrpg!.rulePack.content, npc = c.characterTemplates.find(row => row.characterKey === 'keeper')!, item = rule.items[0]
     c.gmMode = 'human'; rule.oracles[0].audience = 'public'
@@ -22,7 +22,7 @@ export async function setupOracleRuntimePolicyV1(audience: 'public' | 'party' | 
     c.entityBindings.push({ bindingKey: 'keeper.initial.gear', templateKey: item.key, kind: 'item', initialLocationRef: null,
       initialInventoryRefs: [], sourceResourceRef: null, sourceFieldRefs: [], audience: 'party', knownByActorKeys: [] })
     options.configure?.(pkg)
-  }, 'viewer.gm')
+  }, 'viewer.gm', options.selectedCharacterKeys)
   const desk = { scope: s.f.scope, sessionId: s.f.sessionId, viewerKey: 'viewer.gm' }
   const create = async (oracleSourceRef = s.input.oracleSourceRef, again = false) => {
     await proposeTtrpgOpenEntityDeskV1({ ...desk, submissionKey: again ? 'oracle.policy.second' : 'oracle.policy.first', oracleSourceRef,
@@ -43,8 +43,8 @@ export async function setupOracleRuntimePolicyV1(audience: 'public' | 'party' | 
   return { ...s, state, create, input, assertion: { ...input, rulePackContentHash: s.input.content.rulePack.contentHash } }
 }
 
-export async function setupOracleRuntimeDeskV1(audience: 'public' | 'party' | 'gm-only' = 'gm-only', configure?: Parameters<typeof setupOpenEntityPlanningV1>[0]) {
-  const s = await setupOracleRuntimePolicyV1(audience, false, { aiEnabled: true, configure })
+export async function setupOracleRuntimeDeskV1(audience: 'public' | 'party' | 'gm-only' = 'gm-only', configure?: Parameters<typeof setupOpenEntityPlanningV1>[0], options: { selectedCharacterKeys?: string[] } = {}) {
+  const s = await setupOracleRuntimePolicyV1(audience, false, { aiEnabled: true, configure, ...options })
   const owner = { scope: s.f.scope, sessionId: s.f.sessionId, viewerKey: 'viewer.gm' }
   await closeTtrpgOpenEntityDeskV1({ ...owner, submissionKey: 'oracle.model.end.original.consultation' })
   const npc = s.state.ttrpg!.openRun!.entityOperations![0].plan.items.find(row => row.kind === 'actor')!.entityKey
@@ -55,8 +55,8 @@ export async function setupOracleRuntimeDeskV1(audience: 'public' | 'party' | 'g
   return { ...s, owner, npc, place, fact }
 }
 export async function setupOracleRuntimeModelV1(audience: 'public' | 'party' | 'gm-only' = 'gm-only', configure?: Parameters<typeof setupOpenEntityPlanningV1>[0],
-  beforeWindow?: (s: Awaited<ReturnType<typeof setupOracleRuntimePolicyV1>>) => Promise<void>) {
-  const rawInput = TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1, s = await setupOracleRuntimeDeskV1(audience, configure)
+  beforeWindow?: (s: Awaited<ReturnType<typeof setupOracleRuntimePolicyV1>>) => Promise<void>, options: { selectedCharacterKeys?: string[] } = {}) {
+  const rawInput = TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1, s = await setupOracleRuntimeDeskV1(audience, configure, options)
   await beforeWindow?.(s)
   const before = await readProductRuntimeState(s.f.sessionId)
   const policy = await createTtrpgOpenOracleRuntimeReferencePolicyV1({ ...s.input, consumerRef: { sessionKey: before.ttrpg!.sessionKey, sequence: before.lastSequence + 1 } })

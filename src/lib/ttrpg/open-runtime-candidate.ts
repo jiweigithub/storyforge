@@ -21,9 +21,10 @@ export interface TtrpgOpenCandidateReadV1 {
 }
 export type TtrpgOpenRuntimeCandidateV1 = TtrpgOpenIntentCandidateV1 | TtrpgOpenOracleCandidateV1 | TtrpgOpenKpCandidateV1 | TtrpgOpenBriefCandidateV1 | TtrpgOpenSituationCandidateV1 | TtrpgOpenPublicSituationCandidateV1 | TtrpgOpenEntityCandidateV1
 async function assertOracleRuntimeReader(input: TtrpgOpenCandidateReadV1, purpose: TtrpgOpenModelPurposeV1) {
-  if (purpose !== 'oracle-interpret') return
+  if (purpose !== 'oracle-interpret' && purpose !== 'fact-normalize') return
   const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
-  if (runtime?.openRun?.coordination.calls.find(row => row.requestKey === input.requestKey)?.oracleInterpretation?.runtimeReferencePolicy) {
+  const call = runtime?.openRun?.coordination.calls.find(row => row.requestKey === input.requestKey)
+  if (call?.oracleInterpretation?.runtimeReferencePolicy || call?.supportSlot?.runtimeReferencePolicy) {
     await (await import('./open-generated-situation-candidate')).assertTtrpgOpenSituationHumanGmV1(input)
   }
 }

@@ -3690,7 +3690,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'prose.ttrpg-open-fact-normalize', agentId: 'prose', defaultForAgent: false,
-    label: '开放跑团已确认解释的事实归一候选', owner: 'ttrpg-product', promptVersion: 'ttrpg-open-fact-normalize-v2',
+    label: '开放跑团已确认解释的事实归一候选', owner: 'ttrpg-product', promptVersion: 'ttrpg-open-fact-normalize-v3',
     executionMode: 'ttrpg-open-fact-normalize', contextTaskKind: 'agent-prose', readToolNames: [],
     contextSourceKeys: ['ttrpgOpenGmOracleInput', 'ttrpgOpenGmContext'], optionalContextSourceKeys: [],
     inputPolicy: { ...TTRPG_PLAYER_RUNTIME_INPUT_POLICY, sourceKeys: ['ttrpgOpenGmOracleInput', 'ttrpgOpenGmContext'] },

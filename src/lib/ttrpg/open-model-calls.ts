@@ -1,7 +1,8 @@
 import { parseTtrpgOpenNarrationBindingV1, type TtrpgOpenNarrationBindingV1 } from './open-kp-binding'
 import { parseTtrpgOpenEntityModelSelectionV1, type TtrpgOpenEntityModelSelectionV1 } from './open-entity-model-contract'
 import { parseTtrpgOpenOracleRuntimeReferencePolicyV1, assertTtrpgOpenOracleRuntimeReferenceJournalV1,
-  type TtrpgOpenOracleRuntimeReferencePolicyV1 } from './open-runtime-entity-references'
+  type TtrpgOpenOracleRuntimeReferencePolicyV1, parseTtrpgOpenNormalizationRuntimeReferencePolicyV1,
+  assertTtrpgOpenNormalizationRuntimeReferenceOriginV1, type TtrpgOpenNormalizationRuntimeReferencePolicyV1 } from './open-runtime-entity-references'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 /** Persisted request lifecycle. Only a dispatched call may have an unknown external result. */
 import type { TtrpgOpenEpochV1, TtrpgOpenSourceRefV1 } from './open-coordination'
@@ -24,7 +25,8 @@ export interface TtrpgOpenModelCallV1 {
   intentRejection?: { sourceRef: TtrpgOpenSourceRefV1; candidateHash: string }
   narrationBinding?: TtrpgOpenNarrationBindingV1
   oracleInterpretation?: { worldTurn: number; oracleSourceRef: TtrpgOpenSourceRefV1; runtimeReferencePolicy?: TtrpgOpenOracleRuntimeReferencePolicyV1 }
-  supportSlot?: { worldTurn: number; purpose: 'fact-normalize'; sourceRef: TtrpgOpenSourceRefV1; sourceHash: string; oracleSourceRef: TtrpgOpenSourceRefV1 }
+  supportSlot?: { worldTurn: number; purpose: 'fact-normalize'; sourceRef: TtrpgOpenSourceRefV1; sourceHash: string; oracleSourceRef: TtrpgOpenSourceRefV1;
+    runtimeReferencePolicy?: TtrpgOpenNormalizationRuntimeReferencePolicyV1 }
 }
 export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 {
   const r = p.record(value, ['requestKey','authorizationEpochKey','actorKey','admissionStateHash','visibilityHash','runtimeSourceHash',
@@ -42,10 +44,12 @@ export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 
   if ((r.skillId === 'prose.ttrpg-open-entity-propose') !== Boolean(entityProposal)) p.fail('实体模型请求必须冻结原咨询和单一范围，其他用途不能借用')
   if ((r.skillId === 'prose.ttrpg-open-kp') !== Boolean(narrationBinding)) p.fail('KP 必须绑定实际叙述步骤，其他目的不能占用')
   const supportSlot = Object.prototype.hasOwnProperty.call(r,'supportSlot') ? (() => {
-    const slot = p.record(r.supportSlot,['worldTurn','purpose','sourceRef','sourceHash','oracleSourceRef'],'semantic assistance slot')
+    const hasPolicy = Object.prototype.hasOwnProperty.call(r.supportSlot, 'runtimeReferencePolicy')
+    const slot = p.record(r.supportSlot,['worldTurn','purpose','sourceRef','sourceHash','oracleSourceRef', ...(hasPolicy ? ['runtimeReferencePolicy'] : [])],'semantic assistance slot')
     return { worldTurn: p.integer(slot.worldTurn,'assistance worldTurn',0,Number.MAX_SAFE_INTEGER),
       purpose: p.literal(slot.purpose,'fact-normalize','assistance purpose'),sourceRef: parseTtrpgOpenSourceRefV1(slot.sourceRef),
-      sourceHash: p.hash(slot.sourceHash,'assistance accepted review hash'),oracleSourceRef: parseTtrpgOpenSourceRefV1(slot.oracleSourceRef) }
+      sourceHash: p.hash(slot.sourceHash,'assistance accepted review hash'),oracleSourceRef: parseTtrpgOpenSourceRefV1(slot.oracleSourceRef),
+      ...(hasPolicy ? { runtimeReferencePolicy: parseTtrpgOpenNormalizationRuntimeReferencePolicyV1(slot.runtimeReferencePolicy) } : {}) }
   })() : undefined
   if ((r.skillId === 'prose.ttrpg-open-fact-normalize') !== (supportSlot !== undefined)) p.fail('事实归一必须绑定唯一辅助槽和已确认来源，其他调用不能占用')
   const oracleInterpretation = Object.prototype.hasOwnProperty.call(r, 'oracleInterpretation') ? (() => {
@@ -128,13 +132,29 @@ export function assertTtrpgOpenEntityModelCallOriginV1(runtime: TtrpgRuntimeStat
     || oracle.audience === 'gm-only' && selection.scope.audience !== 'gm-only'
     || oracle.audience !== 'public' && selection.scope.audience === 'public') p.fail('模型实体提案缺少同一原咨询、窗口及单一披露范围')
 }
-export function assertTtrpgOpenNormalizationSourceV1(runtime: Pick<TtrpgRuntimeStateV2,'openRun'>,call: TtrpgOpenModelCallV1): void {
+export function assertTtrpgOpenNormalizationSourceV1(runtime: Pick<TtrpgRuntimeStateV2,'openRun' | 'branchLineage' | 'sessionKey' | 'product'>,call: TtrpgOpenModelCallV1): void {
+  const epoch = runtime.openRun?.coordination.epochs.find(row => row.epochKey === call.authorizationEpochKey)
+  const policy = call.supportSlot?.runtimeReferencePolicy
+  if (policy || epoch?.normalizationRuntimeReferencePolicy) {
+    if (!epoch || !policy || call.actorKey !== 'gm' || call.skillId !== 'prose.ttrpg-open-fact-normalize'
+      || stable(policy) !== stable(epoch.normalizationRuntimeReferencePolicy)
+      || stable(policy.reviewSourceRef) !== stable(call.supportSlot!.sourceRef) || policy.reviewHash !== call.supportSlot!.sourceHash
+      || stable(policy.oraclePolicy.oracleSourceRef) !== stable(call.supportSlot!.oracleSourceRef)) p.fail('实例归一没有原窗口及原已接受解释的准确来源')
+    assertTtrpgOpenNormalizationRuntimeReferenceOriginV1({ runtime, policy, runtimeSourceHash: call.runtimeSourceHash,
+      rulePackContentHash: runtime.product.rulePackContentHash, reviewSourceRef: policy.reviewSourceRef,
+      consumerRef: epoch.startedRef, recipientActorKeys: policy.recipientActorKeys })
+    return
+  }
   if (!call.supportSlot) return
   const slot = call.supportSlot
   const review = runtime.openRun?.oracleReviews?.find(review => review.sourceRef.sessionKey === slot.sourceRef.sessionKey && review.sourceRef.sequence === slot.sourceRef.sequence)
   if (!review || review.interpretationDecision !== 'accept' || review.normalizationOf || review.reviewHash !== slot.sourceHash
     || (slot.sourceRef.sessionKey === call.createdRef.sessionKey && slot.sourceRef.sequence >= call.createdRef.sequence)
     || review.oracleSourceRef.sessionKey !== slot.oracleSourceRef.sessionKey || review.oracleSourceRef.sequence !== slot.oracleSourceRef.sequence) p.fail('事实归一没有明确已接受的真实解释来源')
+}
+/** A semantic leaf can only use the instance proof actually delivered to its own versioned call. */
+export function ttrpgOpenSemanticRuntimeReferencePolicyV1(call: TtrpgOpenModelCallV1) {
+  return call.oracleInterpretation?.runtimeReferencePolicy ?? call.supportSlot?.runtimeReferencePolicy?.oraclePolicy
 }
 export function assertTtrpgOpenSemanticCallOriginV1(call: TtrpgOpenModelCallV1,oracleSourceRef: TtrpgOpenSourceRefV1,
   normalizationOf?: { sourceRef: TtrpgOpenSourceRefV1;reviewHash: string }): void {

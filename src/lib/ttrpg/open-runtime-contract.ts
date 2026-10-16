@@ -916,7 +916,7 @@ export function parseTtrpgRuntimeStateV2(
       ancestor.snapshot.openRun?.coordination.calls.flatMap(call => call.supportSlot ? [call.supportSlot.worldTurn] : []) ?? []) ?? []);
     for (const call of openRun.coordination.calls) {
       if (!call.supportSlot) continue;
-      assertTtrpgOpenNormalizationSourceV1({ openRun },call);
+      assertTtrpgOpenNormalizationSourceV1({ openRun, sessionKey, branchLineage, product: parsed.product },call);
       if (call.supportSlot.worldTurn > openRun.worldTime.worldTurn || assistedTurns.has(call.supportSlot.worldTurn)) fail("每世界轮辅助槽最多一次，且不得来自未来");
       assistedTurns.add(call.supportSlot.worldTurn);
     }
@@ -1009,7 +1009,7 @@ export function parseTtrpgRuntimeStateV2(
       if (epoch.hostingDelegation && stableProductRuntimeJsonV1(epoch.hostingDelegation.authorizationRef) !== stableProductRuntimeJsonV1(authorization.sourceRef)) fail('有限主持委托未绑定本桌真实 Session Zero')
       if (!seat || seat.controller === "ai" || seat.assignmentState !== "claimed"
         || epoch.sessionZeroRevision !== authorization.revision
-        || stableProductRuntimeJsonV1(epoch.budget) !== stableProductRuntimeJsonV1(ttrpgOpenEpochBudgetForTriggerV1(epochBudget, epoch.triggerKind, Boolean(epoch.oracleRuntimeReferencePolicy)))
+        || stableProductRuntimeJsonV1(epoch.budget) !== stableProductRuntimeJsonV1(ttrpgOpenEpochBudgetForTriggerV1(epochBudget, epoch.triggerKind, Boolean(epoch.oracleRuntimeReferencePolicy || epoch.normalizationRuntimeReferencePolicy)))
         || epoch.successfulActorKeys.length > epoch.budget.maximumAiActions
         || epoch.successfulActorKeys.some(actorKey => !authorization.seats.some(item => item.actorKey === actorKey && item.role === "player" && item.controller !== "human"))) {
         fail("epoch 与冻结预算、Session Zero 或队友控制权不一致");

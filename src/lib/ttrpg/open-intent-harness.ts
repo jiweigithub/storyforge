@@ -25,13 +25,13 @@ import { hashCanonicalValue } from '../agent/run/hash'
 import { finalizeContextGatewayAttemptEvidenceV1, readContextGatewayManifestV3ForAttemptV1 } from '../context-gateway/attempt-evidence'
 import { recordAgentRunArtifactV1, readAgentRunArtifactExactV1 } from '../memory/artifact-store'
 import { readProductRuntimeState, readProductRuntimeStateVersion } from '../product/runtime-core'
-import { prepareTtrpgOpenIntentInputV1, prepareTtrpgOpenOracleInputV1, prepareTtrpgOpenOracleInputV2, prepareTtrpgOpenFactNormalizationInputV1, prepareTtrpgOpenCompanionInputV1, prepareTtrpgOpenKpInputV1, prepareTtrpgOpenBriefInputV1, prepareTtrpgOpenSituationInputV1, prepareTtrpgOpenPublicSituationInputV1 } from './open-intent-input'
+import { prepareTtrpgOpenIntentInputV1, prepareTtrpgOpenOracleInputV1, prepareTtrpgOpenOracleInputV2, prepareTtrpgOpenFactNormalizationInputV1, prepareTtrpgOpenFactNormalizationInputV2, prepareTtrpgOpenCompanionInputV1, prepareTtrpgOpenKpInputV1, prepareTtrpgOpenBriefInputV1, prepareTtrpgOpenSituationInputV1, prepareTtrpgOpenPublicSituationInputV1 } from './open-intent-input'
 import { dispatchTtrpgOpenModelCallV1, finishTtrpgOpenModelCallV1 } from './runtime-commands'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { loadTtrpgOpenModelContextV1, ttrpgOpenModelPurposeForSkillV1, type TtrpgOpenModelPurposeV1 } from './open-model-purpose'
 import { parseTtrpgOpenOracleSemanticCandidateV1, parseTtrpgOpenFactNormalizationCandidateV1, type TtrpgOpenOracleCandidateV1 } from './open-oracle-candidate'
 import { parseTtrpgOpenIntentV1, type TtrpgOpenIntentV1 } from './open-intent'
-import { ttrpgOpenScopedKeyV1, TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1 } from './open-coordination'
+import { ttrpgOpenScopedKeyV1, TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1, TTRPG_OPEN_NORMALIZATION_INSTANCE_INPUT_V1 } from './open-coordination'
 import { assertTtrpgOpenHostingDelegationV1 } from './open-hosting-delegation'
 import { verifyTtrpgOpenModelCallEvidenceV1 } from './open-model-call-evidence'
 import type { TtrpgOpenInputEvidenceV1 } from './open-input-evidence'
@@ -270,9 +270,18 @@ export async function generateTtrpgOpenBriefCandidateV1(input: Omit<Parameters<t
   return { prepared, ...result }
 }
 
-export async function generateTtrpgOpenFactNormalizationCandidateV1(input: Omit<Parameters<typeof prepareTtrpgOpenFactNormalizationInputV1>[0], 'modelIdentity'> & {
-  aiConfig?: AIConfig; runAI?: TestTransport
+type NormalizationGenerationInputV1 = Omit<Parameters<typeof prepareTtrpgOpenFactNormalizationInputV1>[0], 'modelIdentity'> & { aiConfig?: AIConfig; runAI?: TestTransport }
+export async function generateTtrpgOpenFactNormalizationCandidateV1(input: NormalizationGenerationInputV1) {
+  return generateTtrpgOpenFactNormalizationCandidate(input, false)
+}
+export async function generateTtrpgOpenFactNormalizationCandidateV2(input: Omit<NormalizationGenerationInputV1, 'rawInput' | 'hostingDelegationRef'> & {
+  referencePolicy: 'accepted-interpretation-instances-v1'; onPrepared?: (prepared: Awaited<ReturnType<typeof prepareTtrpgOpenFactNormalizationInputV2>>) => void | Promise<void>;
 }) {
+  if (input.referencePolicy !== 'accepted-interpretation-instances-v1') throw new Error('请明确使用原已接受解释的实例事实归一策略')
+  return generateTtrpgOpenFactNormalizationCandidate({ ...input, rawInput: TTRPG_OPEN_NORMALIZATION_INSTANCE_INPUT_V1 }, true, input.onPrepared)
+}
+async function generateTtrpgOpenFactNormalizationCandidate(input: NormalizationGenerationInputV1, runtimeReferences: boolean,
+  onPrepared?: (prepared: Awaited<ReturnType<typeof prepareTtrpgOpenFactNormalizationInputV2>>) => void | Promise<void>) {
   if (!input.aiConfig && !input.runAI) throw new Error('[ttrpg-open-fact-normalize] 缺少明确模型配置')
   const meta = { category: 'runtime.ttrpg-open.fact-normalize', projectId: input.scope.projectId,
     configOverrides: { maxTokens: input.maximumOutputTokens }, contextOverflowPolicy: 'reject' as const }
@@ -280,7 +289,9 @@ export async function generateTtrpgOpenFactNormalizationCandidateV1(input: Omit<
   const modelIdentity = input.runAI ? { provider: 'test-adapter', model: 'injected' }
     : { provider: resolved!.config.provider, model: resolved!.config.model }
   if (!input.runAI && modelIdentity.provider === 'poe') throw new Error('[ttrpg-open-fact-normalize] 当前 provider 不支持本次要求的输出上限')
-  const prepared = await prepareTtrpgOpenFactNormalizationInputV1({ ...input, modelIdentity })
+  const prepared = runtimeReferences ? await prepareTtrpgOpenFactNormalizationInputV2({ ...input, modelIdentity, referencePolicy: 'accepted-interpretation-instances-v1' })
+    : await prepareTtrpgOpenFactNormalizationInputV1({ ...input, modelIdentity })
+  await onPrepared?.(prepared)
   const result = await executeTtrpgOpenFactNormalizationRequestV1({ ...input, runId: prepared.runId, requestKey: prepared.requestKey })
   if (result.status !== 'candidate') throw new Error('[ttrpg-open-fact-normalize] 请求已被其他执行器接管，未重复发送')
   return { prepared, ...result }

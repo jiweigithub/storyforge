@@ -1,18 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { gunzipSync } from 'node:zlib'
 import { db } from '../../src/lib/db/schema'
 import { setupOracleRuntimeModelV1, setupOracleRuntimeDeskV1 } from '../helpers/open-oracle-runtime-model'
 import { openEnvelopeV1 } from '../helpers/open-ttrpg-session'
-import { generateTtrpgOpenOracleCandidateV2, generateTtrpgOpenOracleCandidateV1 } from '../../src/lib/ttrpg/open-intent-harness'
+import { generateTtrpgOpenOracleCandidateV2, generateTtrpgOpenOracleCandidateV1, executeTtrpgOpenFactNormalizationRequestV1 } from '../../src/lib/ttrpg/open-intent-harness'
 import { startTtrpgOpenEpochV1, closeTtrpgOpenEpochV1, reviewTtrpgOpenOracleCandidateV1, completeTtrpgOpenSessionZeroV1 } from '../../src/lib/ttrpg/runtime-commands'
 import { readProductRuntimeState, branchProductRuntimeSession, deleteProductRuntimeSession } from '../../src/lib/product/runtime-core'
 import { createTtrpgOpenNormalizationRuntimeReferencePolicyV1, assertTtrpgOpenNormalizationRuntimeReferenceJournalV1,
-  parseTtrpgOpenNormalizationRuntimeReferencePolicyV1 } from '../../src/lib/ttrpg/open-runtime-entity-references'
+  assertTtrpgOpenNormalizationRuntimeReferenceOriginV1, parseTtrpgOpenNormalizationRuntimeReferencePolicyV1 } from '../../src/lib/ttrpg/open-runtime-entity-references'
 import { hashProductProductionValueV2 as hash } from '../../src/lib/product-production/hash'
 import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
 import { resolveScope } from '../../src/lib/workspace/scope'
 import { verifyProductRuntimeSessionSourceV1 } from '../../src/lib/product-production/preview-source'
 import { readTtrpgOpenOracleModelDeskV1 } from '../../src/lib/ttrpg/open-oracle-model-desk'
 import { readAgentRunArtifactExactV1 } from '../../src/lib/memory/artifact-store'
+import { readInstanceAgentRunV1 } from '../../src/lib/agent/run/event-store'
+import { projectFrozenAgentSkillDefinitionV1 } from '../../src/lib/agent/execution-binding'
+import { getAgentSkillV1 } from '../../src/lib/agent/skill-registry'
 
 async function setup(audience: 'public' | 'party' | 'gm-only' = 'party', reject = false) {
   const s = await setupOracleRuntimeModelV1(audience)
@@ -46,6 +51,9 @@ describe('R-TTRPGOPEN13 normalization instance source foundation without executi
     expect(narrowed.recipientActorKeys).toHaveLength(2); expect(narrowed.oraclePolicy.recipientActorKeys).toHaveLength(3)
     input.runtime.authorization!.selectedActorKeys.push('unshared.later.actor')
     await expect(createTtrpgOpenNormalizationRuntimeReferencePolicyV1(input)).rejects.toThrow(/接收者|新加入/)
+    // Replaying a previously validated epoch uses its frozen roster, not today's new Session Zero.
+    expect(assertTtrpgOpenNormalizationRuntimeReferenceOriginV1({ ...input, policy: narrowed,
+      rulePackContentHash: input.content.rulePack.contentHash, recipientActorKeys: narrowed.recipientActorKeys })).toEqual(narrowed)
     expect(await readProductRuntimeState(s.f.sessionId)).toEqual(s.state)
   })
   it('rejects a genuinely rejected interpretation and forged/nested/orphan/future sources instead of granting another purpose', async () => {
@@ -116,5 +124,29 @@ describe('R-TTRPGOPEN13 normalization instance source foundation without executi
     expect(await readAgentRunArtifactExactV1({ projectId, artifactKind: 'raw-response', contentHash: s.generated.candidate.rawResponseHash })).toBe(raw)
     const page = await readTtrpgOpenOracleModelDeskV1({ scope, sessionId: session.id!, viewerKey: s.owner.viewerKey })
     expect(page!.request?.local ?? false).toBe(false); expect(page!.request?.canResume ?? false).toBe(false)
+  })
+  it.each([
+    { name: 'pre-instance explanation', file: 'ttrpg-open-pre-instance-normalization-prepared-v2.json.gz', head: '4d30382c97f293ec6c4817ab3a859302a674a4a6' },
+    { name: 'existing instance explanation', file: 'ttrpg-open-instance-legacy-normalization-prepared-v2.json.gz', head: '21430dd7733be939469b3eda4a4373705435dd6e' },
+  ])('executes the actually captured $name normalization v2 exactly once with unchanged original contract, sources and request bytes', async ({ file, head }) => {
+    const legacy = JSON.parse(gunzipSync(readFileSync('tests/fixtures/' + file)).toString())
+    expect(legacy.sourceCommit).toBe(head)
+    expect(getAgentSkillV1('prose.ttrpg-open-fact-normalize').promptVersion).toBe('ttrpg-open-fact-normalize-v3')
+    await db.transaction('rw', db.tables, async () => { for (const [name, rows] of Object.entries(legacy.tables)) if ((rows as unknown[]).length) await db.table(name).bulkAdd(rows as any[]) })
+    const original = await readInstanceAgentRunV1(legacy.scope, legacy.runId), state = await readProductRuntimeState(legacy.sessionId)
+    expect(original.contract).toEqual(legacy.contract)
+    expect(projectFrozenAgentSkillDefinitionV1(original.contract.executionBindings![0]).promptVersion).toBe('ttrpg-open-fact-normalize-v2')
+    const call = state.ttrpg!.openRun!.coordination.calls.find(row => row.requestKey === legacy.requestKey)!, request = await readAgentRunArtifactExactV1({
+      projectId: legacy.scope.projectId, artifactKind: 'rendered-request', contentHash: call.requestHash })
+    expect(JSON.parse(request).messages).toEqual(legacy.messages)
+    let sends = 0
+    const result = await executeTtrpgOpenFactNormalizationRequestV1({ scope: legacy.scope, sessionId: legacy.sessionId, viewerKey: legacy.viewerKey,
+      runId: legacy.runId, requestKey: legacy.requestKey, runAI: async () => { sends++; return JSON.stringify({ facts: [] }) } })
+    expect(result.status).toBe('candidate'); expect(sends).toBe(1)
+    if (result.status === 'candidate') { expect(result.candidate.interpretation).toBe(legacy.review.interpretation); expect(result.candidate.normalizationOf!.reviewHash).toBe(legacy.review.reviewHash) }
+    expect((await readInstanceAgentRunV1(legacy.scope, legacy.runId)).contract).toEqual(original.contract)
+    expect(await readAgentRunArtifactExactV1({ projectId: legacy.scope.projectId, artifactKind: 'rendered-request', contentHash: call.requestHash })).toBe(request)
+    expect((await readProductRuntimeState(legacy.sessionId)).ttrpg!.openRun!.coordination.calls.at(-1)!.supportSlot!.runtimeReferencePolicy).toBeUndefined()
+    expect(await db.agentRuns.count()).toBe(2)
   })
 })

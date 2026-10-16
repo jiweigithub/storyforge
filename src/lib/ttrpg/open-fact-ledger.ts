@@ -10,7 +10,7 @@ import { parseTtrpgOpenSourceRefV1, ttrpgOpenScopedKeyV1, type TtrpgOpenSourceRe
 import type { TtrpgOpenOracleReceiptV1 } from './open-oracle-contract'
 import type { TtrpgOpenAuthorizationV1 } from './open-authorization'
 import type { TtrpgOpenModelCallV1 } from './open-model-calls'
-import { assertTtrpgOpenSemanticCallOriginV1 } from './open-model-calls'
+import { assertTtrpgOpenSemanticCallOriginV1, ttrpgOpenSemanticRuntimeReferencePolicyV1 } from './open-model-calls'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import * as p from './open-contract-parse'
@@ -69,7 +69,7 @@ export function assertTtrpgOpenFactModelCallV1(entry: TtrpgOpenFactEntryV1, call
     ) p.fail('事实没有同一已完成语义模型请求的真实输入和原始响应回执')
   assertTtrpgOpenSemanticCallOriginV1(call,entry.oracleSourceRef,marker.normalizationOf)
   if (entry.runtimeEntityReferences) {
-    const policy = call.oracleInterpretation?.runtimeReferencePolicy
+    const policy = ttrpgOpenSemanticRuntimeReferencePolicyV1(call)
     if (!policy || entry.runtimeEntityReferences.runtimeSourceHash !== policy.references.runtimeSourceHash
       || entry.runtimeEntityReferences.rulePackContentHash !== policy.references.rulePackContentHash
       || entry.runtimeEntityReferences.references.some(row => !policy.references.references.some(original => stable(row) === stable({

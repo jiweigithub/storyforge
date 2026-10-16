@@ -134,7 +134,7 @@ export function parseTtrpgOpenOracleRuntimeReferencePolicyV1(value: unknown): Tt
     references: parseTtrpgOpenRuntimeEntityReferencesV1(r.references) }
 }
 /** A party scope is the actual current intersection, including late seats; knowing an NPC never includes its equipment. */
-function eligible(row: TtrpgOpenRuntimeEntityReferenceV1, audience: TtrpgOpenOracleRuntimeReferencePolicyV1['audience'], recipients: readonly string[]) {
+function eligible(row: Pick<TtrpgOpenRuntimeEntityReferenceV1, 'audience' | 'recipientActorKeys'>, audience: TtrpgOpenOracleRuntimeReferencePolicyV1['audience'], recipients: readonly string[]) {
   if (audience === 'gm-only') return true
   if (row.audience === 'public') return true
   return audience === 'party' && row.audience === 'party' && recipients.length > 0
@@ -200,7 +200,14 @@ export function parseTtrpgOpenNormalizationRuntimeReferencePolicyV1(value: unkno
 }
 type NormalizationSource = Pick<Journal, 'content' | 'runtimeSourceHash'> & { runtime: Pick<TtrpgRuntimeStateV2, 'sessionKey' | 'authorization' | 'openRun' | 'branchLineage'>;
   reviewSourceRef: TtrpgOpenSourceRefV1; consumerRef: TtrpgOpenSourceRefV1 }
-function normalizationSource(input: NormalizationSource) {
+type NormalizationOrigin = Omit<NormalizationSource, 'content' | 'runtime'> & {
+  runtime: Pick<TtrpgRuntimeStateV2, 'sessionKey' | 'openRun' | 'branchLineage'>; rulePackContentHash: string; recipientActorKeys: readonly string[] }
+function currentNormalizationOrigin(input: NormalizationSource): NormalizationOrigin {
+  const recipients = input.runtime.authorization?.selectedActorKeys
+  if (!recipients?.length) p.fail('实例归一需要当前本局已完成的 Session Zero')
+  return { ...input, rulePackContentHash: input.content.rulePack.contentHash, recipientActorKeys: recipients }
+}
+function normalizationSource(input: NormalizationOrigin) {
   const reviewSourceRef = parseTtrpgOpenSourceRefV1(input.reviewSourceRef), consumerRef = parseTtrpgOpenSourceRefV1(input.consumerRef)
   const runtime = input.runtime, current = reviewSourceRef.sessionKey === runtime.sessionKey
   const source = current ? runtime
@@ -212,7 +219,7 @@ function normalizationSource(input: NormalizationSource) {
   const epoch = call && run?.coordination.epochs.find(row => row.epochKey === call.authorizationEpochKey)
   const oracle = original && run?.oracleReceipts?.find(row => stable(row.sourceRef) === stable(original.oracleSourceRef))
   const policy = call?.oracleInterpretation?.runtimeReferencePolicy
-  const recipients = runtime.authorization?.selectedActorKeys
+  const recipients = [...input.recipientActorKeys]
   if (!review || !original || stable(review) !== stable(original) || review.normalizationOf || review.interpretationDecision !== 'accept'
     || !current && !ttrpgOpenAncestorSourceAllowedV1(runtime.branchLineage, reviewSourceRef, ['ttrpg.open.oracle.reviewed'])
     || !call || !epoch || !oracle || !policy || !recipients?.length || call.skillId !== 'prose.ttrpg-open-oracle-interpret' || call.actorKey !== 'gm'
@@ -225,13 +232,21 @@ function normalizationSource(input: NormalizationSource) {
     || consumerRef.sessionKey !== runtime.sessionKey
     || review.sourceRef.sessionKey === consumerRef.sessionKey && review.sourceRef.sequence >= consumerRef.sequence
     || policy.audience === 'party' && recipients.some(key => !policy.recipientActorKeys.includes(key))) p.fail('实例归一需要原已接受解释、成功的新 Oracle 实例来源及本次准确接收者；旧归一或新加入角色不能借用')
+  if (review.choices.some(choice => choice.decision === 'discard' && !eligible({ audience: review.proposals[choice.proposalIndex].audience,
+    recipientActorKeys: review.proposals[choice.proposalIndex].knownByActorKeys }, policy.audience, recipients))) p.fail('原弃用提案含本次范围不能读取的私域内容，不能删减原决定或扩大密级来归一')
   assertTtrpgOpenOracleRuntimeReferenceJournalV1({ policy, operations: run!.entityOperations ?? [], oracle,
     recipientActorKeys: policy.recipientActorKeys, runtimeSourceHash: input.runtimeSourceHash,
-    rulePackContentHash: input.content.rulePack.contentHash, consumerRef: epoch.startedRef })
-  return { review, policy, recipients }
+    rulePackContentHash: input.rulePackContentHash, consumerRef: epoch.startedRef })
+  return { review, policy, recipients, oracle }
 }
-/** Pure replay matching; the caller must supply the actual verified source/runtime, not a model's claim. */
+/** A new read always uses the current actual roster; historical scope checks use their recorded window instead. */
+export function resolveTtrpgOpenNormalizationRuntimeSourceV1(input: NormalizationSource) { return normalizationSource(currentNormalizationOrigin(input)) }
+export function resolveTtrpgOpenNormalizationRuntimeOriginV1(input: NormalizationOrigin) { return normalizationSource(input) }
 export function assertTtrpgOpenNormalizationRuntimeReferenceJournalV1(input: NormalizationSource & { policy: TtrpgOpenNormalizationRuntimeReferencePolicyV1 }) {
+  return assertTtrpgOpenNormalizationRuntimeReferenceOriginV1({ ...currentNormalizationOrigin(input), policy: input.policy })
+}
+/** Only matching evidence: the caller derives recipients from the real current or recorded epoch, never a model's claim. */
+export function assertTtrpgOpenNormalizationRuntimeReferenceOriginV1(input: NormalizationOrigin & { policy: TtrpgOpenNormalizationRuntimeReferencePolicyV1 }) {
   const policy = parseTtrpgOpenNormalizationRuntimeReferencePolicyV1(input.policy), source = normalizationSource(input)
   if (stable(policy.reviewSourceRef) !== stable(source.review.sourceRef) || policy.reviewHash !== source.review.reviewHash
     || stable(policy.oraclePolicy) !== stable(source.policy) || stable(policy.recipientActorKeys) !== stable(source.recipients)) p.fail('实例归一策略更换了原解释、创建范围或当前接收者')
@@ -239,7 +254,7 @@ export function assertTtrpgOpenNormalizationRuntimeReferenceJournalV1(input: Nor
 }
 /** Source-contract foundation only: no window, model read, request, write or execution permission. */
 export async function createTtrpgOpenNormalizationRuntimeReferencePolicyV1(input: NormalizationSource): Promise<TtrpgOpenNormalizationRuntimeReferencePolicyV1> {
-  const source = normalizationSource(input), { reviewHash, ...body } = source.review
+  const source = resolveTtrpgOpenNormalizationRuntimeSourceV1(input), { reviewHash, ...body } = source.review
   if (await hash(body) !== reviewHash) p.fail('实例归一的原已接受解释 hash 与完整正文不一致')
   await verifyTtrpgOpenOracleRuntimeReferencePolicyHashV1(source.policy)
   return assertTtrpgOpenNormalizationRuntimeReferenceJournalV1({ ...input, policy: {

@@ -74,6 +74,13 @@ export function parseTtrpgOpenFactNormalizationCandidateV1(output: string,input:
     root: 'object',maxChars: 120000,allowedRootFields: ['facts'],requiredRootFields: ['facts'] },parse: value => p.record(value,['facts'],'fact normalization output') })
   const review = p.object(input.review,'accepted interpretation')
   p.literal(review.schema,'storyforge.ttrpg-open-gm-fact-normalization-input','normalization input schema')
+  const oracle = p.object(input.oracle, 'normalization original Oracle input')
+  if (oracle.version === 2 || review.version === 2) {
+    p.exact(review, ['schema', 'version', 'runtimeIdentityScope', 'sourceRef', 'reviewHash', 'oracleSourceRef', 'interpretation', 'audience', 'discardedProposals',
+      'adoptedFactKeys', 'worldWriteBackForbidden', 'outputIsCandidate'], 'versioned normalization full source')
+    if (review.version !== 2 || oracle.version !== 2 || stable(review.runtimeIdentityScope) !== stable(oracle.runtimeIdentityScope)
+      || review.audience !== oracle.audience || review.worldWriteBackForbidden !== true || review.outputIsCandidate !== true) p.fail('实例归一缺少同一原解释与实际读取范围')
+  }
   const candidate = parseTtrpgOpenOracleSemanticCandidateV1(JSON.stringify({ interpretation: review.interpretation,facts: fields.facts }),input)
   if (JSON.stringify(candidate.oracleSourceRef) !== JSON.stringify(parseTtrpgOpenSourceRefV1(review.oracleSourceRef))) p.fail('归一输入没有同一 Oracle 来源')
   const discarded = p.list(review.discardedProposals,'discarded source proposals',parseTtrpgOpenOracleFactProposalV1,3)

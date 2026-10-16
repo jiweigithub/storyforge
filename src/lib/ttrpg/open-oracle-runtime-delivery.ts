@@ -1,5 +1,7 @@
 /** Exact complete Oracle identity delivery; no model or storage authority is inferred here. */
-import { parseTtrpgOpenOracleRuntimeReferencePolicyV1, type TtrpgOpenOracleRuntimeReferencePolicyV1 } from './open-runtime-entity-references'
+import { parseTtrpgOpenOracleRuntimeReferencePolicyV1, parseTtrpgOpenNormalizationRuntimeReferencePolicyV1,
+  type TtrpgOpenOracleRuntimeReferencePolicyV1, type TtrpgOpenNormalizationRuntimeReferencePolicyV1 } from './open-runtime-entity-references'
+import type { TtrpgOpenOracleReviewV1 } from './open-oracle-review'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import { parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coordination'
 import * as p from './open-contract-parse'
@@ -11,7 +13,7 @@ interface OracleIdentityScope {
   references: Array<{ entityRef: string; kind: 'actor' | 'location' | 'item'; audience: 'public' | 'party' | 'private' | 'gm-only'; knownByActorKeys: string[]; sourceRef: TtrpgOpenSourceRefV1 }>;
 }
 /** Guidance is still constrained by its original consumer grants; an Oracle cannot make party prose public. */
-export function isTtrpgOpenOracleRuntimeGuidanceVisibleV1(policy: TtrpgOpenOracleRuntimeReferencePolicyV1, audience: string, knownBy: readonly string[]): boolean {
+export function isTtrpgOpenOracleRuntimeGuidanceVisibleV1(policy: Pick<TtrpgOpenOracleRuntimeReferencePolicyV1, 'audience' | 'recipientActorKeys'>, audience: string, knownBy: readonly string[]): boolean {
   if (audience === 'public') return true
   if (policy.audience === 'public') return false
   if (audience === 'party') return !knownBy.length || policy.recipientActorKeys.every(key => knownBy.includes(key))
@@ -25,6 +27,20 @@ export function projectTtrpgOpenOracleRuntimeIdentityScopeV1(value: TtrpgOpenOra
     rulePackContentHash: policy.references.rulePackContentHash, snapshotHash: policy.references.snapshotHash,
     references: policy.references.references.map(row => ({ entityRef: row.entityRef, kind: row.kind, audience: row.audience,
       knownByActorKeys: row.recipientActorKeys, sourceRef: row.sourceRef })) }
+}
+/** The current read projection is separate from the immutable original creation policy. */
+export function projectTtrpgOpenNormalizationRuntimeIdentityScopeV1(value: TtrpgOpenNormalizationRuntimeReferencePolicyV1): OracleIdentityScope {
+  const policy = parseTtrpgOpenNormalizationRuntimeReferencePolicyV1(value)
+  return { ...projectTtrpgOpenOracleRuntimeIdentityScopeV1(policy.oraclePolicy), recipientActorKeys: policy.recipientActorKeys }
+}
+export function projectTtrpgOpenNormalizationRuntimeReviewInputV1(policy: TtrpgOpenNormalizationRuntimeReferencePolicyV1, review: TtrpgOpenOracleReviewV1) {
+  if (stable(policy.reviewSourceRef) !== stable(review.sourceRef) || policy.reviewHash !== review.reviewHash || review.normalizationOf
+    || review.interpretationDecision !== 'accept' || stable(review.oracleSourceRef) !== stable(policy.oraclePolicy.oracleSourceRef)
+    || review.audience !== policy.oraclePolicy.audience) p.fail('实例归一交付需要准确原已接受解释，不能替换来源')
+  return { schema: 'storyforge.ttrpg-open-gm-fact-normalization-input', version: 2, runtimeIdentityScope: projectTtrpgOpenNormalizationRuntimeIdentityScopeV1(policy),
+    sourceRef: review.sourceRef, reviewHash: review.reviewHash, oracleSourceRef: review.oracleSourceRef, interpretation: review.interpretation, audience: review.audience,
+    discardedProposals: review.choices.filter(choice => choice.decision === 'discard').map(choice => review.proposals[choice.proposalIndex]),
+    adoptedFactKeys: review.adoptedFactKeys, worldWriteBackForbidden: true, outputIsCandidate: true }
 }
 function parseIdentityScope(value: unknown): OracleIdentityScope {
   const r = p.record(value, ['schema', 'version', 'oracleSourceRef', 'audience', 'recipientActorKeys', 'runtimeSourceHash', 'rulePackContentHash', 'snapshotHash', 'references'], 'Oracle identity scope')
@@ -72,10 +88,22 @@ export function ttrpgOpenOracleRuntimeDeliveryPolicyV1(contractValue: unknown, p
 }
 export function reviewTtrpgOpenOracleRuntimeDeliveryV1(policy: TtrpgOpenOracleRuntimeReferencePolicyV1,
   snapshots: ReadonlyArray<{ sourceKey?: string; content: unknown }>) {
+  reviewIdentityDelivery(projectTtrpgOpenOracleRuntimeIdentityScopeV1(policy), snapshots)
+}
+function reviewIdentityDelivery(expected: OracleIdentityScope, snapshots: ReadonlyArray<{ sourceKey?: string; content: unknown }>) {
   const rows = snapshots.filter(row => row.sourceKey === 'ttrpgOpenGmOracleInput').map(row => {
     if (typeof row.content !== 'string') p.fail('Oracle 来源需要实际完整 JSON 正文')
     return p.object(p.json(row.content), 'Oracle full source')
   })
   const contracts = rows.filter(row => row.schema === 'storyforge.ttrpg-open-gm-oracle-contract'), packets = rows.filter(row => row.schema === 'storyforge.ttrpg-open-gm-oracle-input')
-  if (contracts.length !== 1 || packets.length !== 1 || stable(ttrpgOpenOracleRuntimeDeliveryPolicyV1(contracts[0], packets[0])) !== stable(projectTtrpgOpenOracleRuntimeIdentityScopeV1(policy))) p.fail('原 Oracle 实例策略没有通过登记来源实际完整交付')
+  if (contracts.length !== 1 || packets.length !== 1 || stable(ttrpgOpenOracleRuntimeDeliveryPolicyV1(contracts[0], packets[0])) !== stable(expected)) p.fail('原 Oracle 实例策略没有通过登记来源实际完整交付')
+  return rows
+}
+export function reviewTtrpgOpenNormalizationRuntimeDeliveryV1(policy: TtrpgOpenNormalizationRuntimeReferencePolicyV1,
+  snapshots: ReadonlyArray<{ sourceKey?: string; content: unknown }>, review: TtrpgOpenOracleReviewV1) {
+  const rows = reviewIdentityDelivery(projectTtrpgOpenNormalizationRuntimeIdentityScopeV1(policy), snapshots)
+  const reviews = rows.filter(row => row.schema === 'storyforge.ttrpg-open-gm-fact-normalization-input')
+  if (rows.length !== 3 || reviews.length !== 1 || stable(reviews[0]) !== stable(projectTtrpgOpenNormalizationRuntimeReviewInputV1(policy, review))) {
+    p.fail('实例归一必须实际完整交付同一原已接受解释、创建范围和真实弃用决定，目录或摘要不能代替')
+  }
 }

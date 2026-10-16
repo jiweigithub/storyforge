@@ -83,7 +83,10 @@ export function assertTtrpgOpenOracleReviewJournalV1(runtime: Pick<TtrpgRuntimeS
         || !sourceRun.oracleReviews?.some(original => stable(original) === stable(review))))) p.fail('Oracle 审阅的调用、咨询、窗口或祖先证明不闭合')
     assertTtrpgOpenSemanticCallOriginV1(call,review.oracleSourceRef,review.normalizationOf)
     if (review.normalizationOf) {
-      const original = sourceRun.oracleReviews?.find(original => stable(original.sourceRef) === stable(review.normalizationOf!.sourceRef))
+      const ref = review.normalizationOf.sourceRef
+      const original = sourceRun.oracleReviews?.find(original => stable(original.sourceRef) === stable(ref))
+        ?? (call.supportSlot?.runtimeReferencePolicy && ttrpgOpenAncestorSourceAllowedV1(runtime.branchLineage, ref, ['ttrpg.open.oracle.reviewed'])
+          ? runtime.branchLineage?.ancestors.find(row => row.sessionKey === ref.sessionKey)?.snapshot.openRun?.oracleReviews?.find(row => stable(row.sourceRef) === stable(ref)) : undefined)
       const semanticTuple = (fact: TtrpgOpenOracleFactProposalV1) => stable([fact.subjectRef,fact.predicateKey,fact.objectRef,fact.canonicalValue])
       const discarded = original?.choices.filter(choice => choice.decision === 'discard').map(choice => original.proposals[choice.proposalIndex]) ?? []
       if (!original || original.normalizationOf || original.interpretationDecision !== 'accept' || original.reviewHash !== review.normalizationOf.reviewHash

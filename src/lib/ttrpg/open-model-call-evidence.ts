@@ -1,4 +1,6 @@
-import { reviewTtrpgOpenOracleRuntimeDeliveryV1 } from './open-oracle-runtime-delivery'
+import { reviewTtrpgOpenOracleRuntimeDeliveryV1, reviewTtrpgOpenNormalizationRuntimeDeliveryV1 } from './open-oracle-runtime-delivery'
+import { resolveTtrpgOpenNormalizationRuntimeOriginV1 } from './open-runtime-entity-references'
+import { assertTtrpgOpenNormalizationSourceV1 } from './open-model-calls'
 import { assertTtrpgOpenFrozenContextSourcesV1 } from './open-model-purpose-contract'
 import { assertInstanceBinding } from '../product/runtime-instances'
 /** Exact governed Run/evidence proof checked again by the runtime command transaction. */
@@ -58,6 +60,8 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
     || projectFrozenAgentSkillDefinitionV1(binding).promptVersion !== 'ttrpg-open-oracle-interpret-v3')) {
     throw new Error('实例事实读取必须绑定明确支持本协议的原 V3 Skill，旧冻结 Skill 不取得新权限')
   }
+  if (call.supportSlot?.runtimeReferencePolicy && (binding?.version !== 2
+    || projectFrozenAgentSkillDefinitionV1(binding).promptVersion !== 'ttrpg-open-fact-normalize-v3')) throw new Error('实例归一必须使用支持本协议的原 V3 Skill，旧冻结归一不能扩权')
   if (snapshot.run.productRuntimeSessionId !== input.sessionId || snapshot.run.contractHash !== call.runContractHash
     || !bound || bound.productRuntimeSessionId !== input.sessionId || bound.visibilityHash !== call.visibilityHash
     || bound.releaseHash !== call.runtimeSourceHash || binding?.skillId !== call.skillId
@@ -165,6 +169,14 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
         }
       }
       if (call.oracleInterpretation?.runtimeReferencePolicy) reviewTtrpgOpenOracleRuntimeDeliveryV1(call.oracleInterpretation.runtimeReferencePolicy, oracleDelivery)
+      else if (call.supportSlot?.runtimeReferencePolicy) {
+        const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)!, policy = call.supportSlot.runtimeReferencePolicy
+        assertTtrpgOpenNormalizationSourceV1(runtime, call)
+        const epoch = runtime.openRun!.coordination.epochs.find(row => row.epochKey === call.authorizationEpochKey)!
+        const original = resolveTtrpgOpenNormalizationRuntimeOriginV1({ runtime, runtimeSourceHash: call.runtimeSourceHash, rulePackContentHash: runtime.product.rulePackContentHash,
+          reviewSourceRef: policy.reviewSourceRef, recipientActorKeys: policy.recipientActorKeys, consumerRef: epoch.startedRef })
+        reviewTtrpgOpenNormalizationRuntimeDeliveryV1(policy, oracleDelivery, original.review)
+      }
       else if (oracleDelivery.some(row => { const value = JSON.parse(row.content); return value.schema === 'storyforge.ttrpg-open-gm-oracle-input' && value.version === 2 })) throw new Error('旧模型调用不能使用新实例 Oracle 正文')
       if (!oracleInputMatched) throw new Error('[ttrpg-open-call] 缺少指定 Oracle 的真实输入字节')
       if (!acceptedReviewMatched) throw new Error('[ttrpg-open-call] 缺少已接受解释的真实完整输入字节')

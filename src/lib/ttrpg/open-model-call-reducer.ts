@@ -38,6 +38,7 @@ export function applyTtrpgOpenModelCallEventV1(state: ProductRuntimeState, event
     || (call.narrationBinding?.viewerKey ?? epoch.viewerKey) !== seat.viewerKey || event.actorKey !== call.actorKey) p.fail('模型调用不属于当前真人授权窗口')
   assertTtrpgOpenEpochPurposeV1(epoch, call.skillId);
   assertTtrpgOpenOracleRuntimeCallOriginV1(runtime, call)
+  assertTtrpgOpenNormalizationSourceV1(runtime, call)
   assertTtrpgOpenModelActorV1(runtime.authorization, call.skillId, call.actorKey,seat.viewerKey)
   const ref = { sessionKey: runtime.sessionKey, sequence: event.sequence }
   const previousIndex = coordination.calls.findIndex(previous => previous.requestKey === call.requestKey)
@@ -50,7 +51,6 @@ export function applyTtrpgOpenModelCallEventV1(state: ProductRuntimeState, event
     assertTtrpgOpenEntityModelCallOriginV1(runtime, call)
     if (call.supportSlot) {
       assertTtrpgOpenSupportSlotV1(runtime,call.supportSlot.worldTurn)
-      assertTtrpgOpenNormalizationSourceV1(runtime,call)
       if (call.supportSlot.worldTurn !== runtime.openRun.worldTime.worldTurn) p.fail('辅助槽不是当前世界轮')
     }
     if (call.oracleInterpretation) {
