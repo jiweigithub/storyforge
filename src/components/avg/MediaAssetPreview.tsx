@@ -3,6 +3,8 @@ import type { FrozenRuntimeMediaAssetV2, ProductMediaKind, WorkspaceScope } from
 import { readAvgDraftMediaV1 } from '../../lib/avg/editor-service'
 import { readAvgRawImageCandidateBytesV2, readAvgRetainedImageCandidateBytesV1 } from '../../lib/avg/assembly-service'
 import { canonicalProductProductionJsonV2 } from '../../lib/product-production/hash'
+import { readAvgGeneratedReferenceImageV1 } from '../../lib/avg/media-generated-reference'
+import type { AvgGeneratedReferenceSourceV1 } from '../../lib/avg/media-generated-reference-contract'
 
 export const AVG_MEDIA_KIND_LABELS: Record<ProductMediaKind, string> = { background: '背景', 'character-pose': '角色姿势', 'character-expression': '角色表情',
   cg: 'CG', ui: '图标与界面', bgm: '音乐', ambience: '环境声', sfx: '音效', voice: '配音' }
@@ -10,13 +12,14 @@ export interface AvgRawPreviewReference { requirementKey: string; version: numbe
 
 /** Local URLs are created only after the existing owner/hash proof reader.
  * Provider URL strings and arbitrary Blob IDs are never displayed directly. */
-export default function MediaAssetPreview({ scope, asset, productionId, raw, onObserved }: {
-  scope: WorkspaceScope; asset: FrozenRuntimeMediaAssetV2; productionId?: number | null; raw?: AvgRawPreviewReference; onObserved?: () => void
+export default function MediaAssetPreview({ scope, asset, productionId, raw, generatedSource, onObserved }: {
+  scope: WorkspaceScope; asset: FrozenRuntimeMediaAssetV2; productionId?: number | null; raw?: AvgRawPreviewReference; generatedSource?: AvgGeneratedReferenceSourceV1; onObserved?: () => void
 }) {
   const [url, setUrl] = useState(''), [error, setError] = useState('')
   const audio = useRef<HTMLAudioElement>(null)
   const requirementKey = raw?.requirementKey, version = raw?.version, contentHash = raw?.contentHash
   const retained=raw?.retained??false
+  const generatedSourceJson=generatedSource?JSON.stringify(generatedSource):''
   const assetJson = JSON.stringify(asset)
   useEffect(() => {
     let alive = true, created = ''
@@ -24,6 +27,12 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, onO
     setUrl(''); setError('')
     const current = JSON.parse(assetJson) as FrozenRuntimeMediaAssetV2
     const read = async () => {
+      if(generatedSourceJson){
+        if(requirementKey)throw new Error('图片预览不能同时声明两种来源')
+        const candidate=await readAvgGeneratedReferenceImageV1({scope,source:JSON.parse(generatedSourceJson) as AvgGeneratedReferenceSourceV1})
+        if(canonicalProductProductionJsonV2(candidate.asset)!==canonicalProductProductionJsonV2(current))throw new Error('显示图片与准确生成参考不一致')
+        return candidate.data
+      }
       if (!requirementKey) return readAvgDraftMediaV1(scope, current)
       if (!productionId || version === undefined || !contentHash) throw new Error('原图缺少准确制作来源')
       const reader=retained?readAvgRetainedImageCandidateBytesV1:readAvgRawImageCandidateBytesV2
@@ -36,7 +45,7 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, onO
       created = URL.createObjectURL(new Blob([bytes], { type: current.mimeType })); setUrl(created)
     }).catch(cause => { if (alive) setError(String(cause)) })
     return () => { alive = false; element?.pause(); if (created) URL.revokeObjectURL(created) }
-  }, [scope, assetJson, productionId, requirementKey, version, contentHash, retained])
+  }, [scope, assetJson, productionId, requirementKey, version, contentHash, retained, generatedSourceJson])
   return <figure className="avg-assembly-media-preview"><figcaption>{asset.name} · {AVG_MEDIA_KIND_LABELS[asset.kind]}</figcaption>
     {error && <p role="alert">{error}</p>}
     {asset.mimeType.startsWith('audio/') ? <audio ref={audio} controls src={url || undefined} preload="metadata" />

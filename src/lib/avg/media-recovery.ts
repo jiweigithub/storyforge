@@ -1,5 +1,5 @@
 import { db } from '../db/schema'
-import type { ProductBuildRecordV1, ProductProductionBriefV3, WorkspaceScope } from '../types'
+import type { ProductBuildArtifactRecordV1, ProductBuildRecordV1, ProductProductionBriefV3, WorkspaceScope } from '../types'
 import { assertRecordInScope } from '../workspace/scope'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { parseProductProductionBriefV3 } from '../product-production/contracts'
@@ -28,18 +28,26 @@ export async function readAvgImageRecoverySourceV1(input:{scope:WorkspaceScope;p
     expectedBriefHash:recovery.sourceBriefHash,expectedPlanHash:recovery.sourcePlanHash,sourceControlEpoch:recovery.sourceControlEpoch,
     artifactKey:ref.proof.artifactKey,version:ref.proof.artifactVersion,contentHash:ref.proof.contentHash})
   if(!same(parseAvgRetainedRawProofV1(proved.provenance),ref.proof))throw new Error('[avg-media] 原图复用证明已变化')
-  const quality=JSON.parse(proved.artifact.qualityJson) as Record<string,unknown>
-  if(source.imageRecovery?.retained.some(r=>r.requirementKey===input.requirementKey)){
-    if(build.parentBuildNumber!==source.imageRecovery.sourceBuildNumber||source.imageRecovery.sourceBuildNumber>=build.buildNumber)throw new Error('[avg-media] 原图复用谱系不可验证')
-    const prior=await readAvgImageRecoverySourceV1({...input,brief:sourceBrief},[...visited,build.buildNumber])
-    if(quality.schema!=='storyforge.avg.raw-image-revalidation'||!same(quality.retainedOrigin,prior.proof)
-      ||proved.artifact.contentHash!==prior.artifact.contentHash||proved.artifact.payloadJson!==prior.artifact.payloadJson
-      ||proved.artifact.metadataJson!==prior.artifact.metadataJson||proved.artifact.rightsJson!==prior.artifact.rightsJson)throw new Error('[avg-media] 原图复用链不能替换旧像素、需求或权利')
+  await assertAvgRawImageOriginV1({scope:input.scope,productionId:input.productionId,brief:sourceBrief,build,artifact:proved.artifact,
+    requirementKey:input.requirementKey,taskKey:ref.proof.taskKey},[...visited,build.buildNumber])
+  return {artifact:proved.artifact,proof:parseAvgRetainedRawProofV1(proved.provenance),...(await assertAvgRawImageArtifactV1(sourceBrief,proved.artifact))}
+}
+
+/** Shared read-only origin check for recovery and later generated references. */
+export async function assertAvgRawImageOriginV1(input:{scope:WorkspaceScope;productionId:number;brief:ProductProductionBriefV3;
+  build:ProductBuildRecordV1;artifact:ProductBuildArtifactRecordV1;requirementKey:string;taskKey:string},visited:number[]=[]){
+  const a=input.brief.avgAssembly,quality=JSON.parse(input.artifact.qualityJson) as Record<string,unknown>
+  if(a?.version!==2)throw new Error('[avg-media] 原图缺少原生生产来源')
+  if(a.imageRecovery?.retained.some(r=>r.requirementKey===input.requirementKey)){
+    if(input.build.parentBuildNumber!==a.imageRecovery.sourceBuildNumber||a.imageRecovery.sourceBuildNumber>=input.build.buildNumber)throw new Error('[avg-media] 原图复用谱系不可验证')
+    const prior=await readAvgImageRecoverySourceV1(input,visited)
+    if(quality.schema!=='storyforge.avg.raw-image-revalidation'||quality.version!==1||quality.noProviderRequest!==true||!same(quality.retainedOrigin,prior.proof)
+      ||input.artifact.contentHash!==prior.artifact.contentHash||input.artifact.payloadJson!==prior.artifact.payloadJson
+      ||input.artifact.metadataJson!==prior.artifact.metadataJson||input.artifact.rightsJson!==prior.artifact.rightsJson)throw new Error('[avg-media] 原图复用链不能替换旧像素、需求或权利')
   }else{
     if(quality.received!==true||quality.rawResponseRecorded!==true)throw new Error('[avg-media] 原图缺少原始接收证据')
-    await assertAvgOriginalImageResponseV1(input.scope,proved.artifact.producerRunId!,ref.proof.taskKey,quality)
+    await assertAvgOriginalImageResponseV1(input.scope,input.artifact.producerRunId!,input.taskKey,quality)
   }
-  return {artifact:proved.artifact,proof:parseAvgRetainedRawProofV1(proved.provenance),...(await assertAvgRawImageArtifactV1(sourceBrief,proved.artifact))}
 }
 
 /** Unknown results stay held, including earlier ancestors; no resend authority

@@ -2830,16 +2830,31 @@ export async function verifyAcceptedProductBuildArtifactV1(input: {
  * source Plan must still be the exact executed epoch. This read grants no
  * adoption, carry, retry or current-epoch authority; a child needs its own
  * explicit authorization and deterministic revalidation receipt. */
-export async function verifyRetainedAvgRawImageArtifactV1(input: {
+type AvgRawImageEvidenceInputV1 = {
   scope: WorkspaceScope; buildId: number; expectedBuildRevision: number
   expectedBriefHash: string; expectedPlanHash: string; sourceControlEpoch: number
   artifactKey: string; version: number; contentHash: string
-}) {
+}
+export function verifyRetainedAvgRawImageArtifactV1(input: AvgRawImageEvidenceInputV1) {
+  return verifyAvgRawImageEvidenceV1(input, false)
+}
+
+/** Read-only producer proof for an explicitly adopted generated reference.
+ * The AVG caller must separately verify the author choice and outbound rights.
+ * This never grants active acceptance, carry or retry authority. */
+export function verifyAvgReferenceRawImageArtifactV1(input: AvgRawImageEvidenceInputV1) {
+  return verifyAvgRawImageEvidenceV1(input, true)
+}
+
+async function verifyAvgRawImageEvidenceV1(input: AvgRawImageEvidenceInputV1, referenceSource: boolean) {
   const scope = await resolveScope({ scope: input.scope })
   stableKey(input.artifactKey, 'artifactKey')
   const build = await db.productBuilds.get(input.buildId)
   if (!build?.id || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })) throw new Error('[product-production-artifact] 保留输入 Build 不存在或跨 Work')
-  if (!['cancelled', 'failed', 'recovery-required', 'paused'].includes(build.status)
+  const readableStates = referenceSource
+    ? ['authorized', 'building', 'integrating', 'validating', 'preview-ready', 'release-ready', 'released', 'cancelled', 'failed', 'recovery-required', 'paused']
+    : ['cancelled', 'failed', 'recovery-required', 'paused']
+  if (!readableStates.includes(build.status)
     || build.stateRevision !== input.expectedBuildRevision || build.briefHash !== input.expectedBriefHash
     || build.planHash !== input.expectedPlanHash || !Number.isSafeInteger(input.sourceControlEpoch)
     || input.sourceControlEpoch < 0 || input.sourceControlEpoch > build.controlEpoch) throw new Error('[product-production-artifact] 保留输入 Build 状态或冻结版本已变化')

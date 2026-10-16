@@ -7,6 +7,7 @@ import { ProductProductionDraftRejectedErrorV1, ProductProductionResultUnknownEr
   type ProductProductionTaskExecutionInputV1, type ProductProductionTaskExecutionResultV1, type ProductProductionTaskUsageV1 } from '../product-production/scheduler'
 import { assertExactRunArtifactBodySafeV1 } from '../memory/evidence-policy'
 import { readAvgImageTaskSourcesV2 } from './media-task-source'
+import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 import { createAvgDraftReferenceAdapterV1 } from './editor-service'
 import { assertAvgVisualProductionPolicyV2 } from './media-production-policy'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V1 } from './media-reference-contract'
@@ -131,6 +132,7 @@ export async function executeAvgMediaImageTaskV2(input: ProductProductionTaskExe
     if (!dimensions) throw new Error('[avg-media] 原图尺寸头无效；原始回执已保留')
     if (input.signal.aborted) throw new ProductProductionResultUnknownErrorV1()
     await source()
+    await validateAvgGeneratedReferencesV1(input.scope, r.references, r.family)
     const blob = await putMediaBlobObject({ scope: input.scope, data: candidate.data, mimeType: candidate.mimeType, expectedContentHash: candidate.contentHash })
     const asset: FrozenRuntimeMediaAssetV2 = { assetKey: r.assetKey, version: 1, kind: r.mediaKind, name: r.name, altText: r.altText,
       mimeType: blob.mimeType, byteSize: blob.byteSize, contentHash: blob.contentHash, blobContentHash: blob.contentHash,

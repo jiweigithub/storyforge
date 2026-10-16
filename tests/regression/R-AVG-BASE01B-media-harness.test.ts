@@ -18,6 +18,9 @@ import { seedCurrentProductWorld } from '../helpers/current-product-world'
 import * as mediaBlobStore from '../../src/lib/product-production/media-blob-store'
 import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
 import { prepareAvgImageRecoveryV1 } from '../../src/lib/avg/media-recovery'
+import { prepareAvgGeneratedReferenceImageV1, readAvgGeneratedReferenceBytesV1, readAvgGeneratedReferenceImageV1 } from '../../src/lib/avg/media-generated-reference'
+import { createAvgDraftReferenceAdapterV1 } from '../../src/lib/avg/editor-service'
+import { prepareAvgRawImageRequestV1 } from '../../src/lib/avg/media-raw-contract'
 
 const requirement = (): AvgVisualProductionRequirementV1 => ({ requirementKey: 'desk.background', revision: 1,
   assetKey: 'avg.generated.desk', name: '原创工程背景', altText: '仅用于管线验证的原创色块',
@@ -58,6 +61,14 @@ async function recover(s:Awaited<ReturnType<typeof start>>,keys=['desk.backgroun
   const prepared=await prepareAvgImageRecoveryBriefV1({scope:s.scope,productionId:s.productionId,expectedDraftRevision:(await readAvgDraftV1(s.scope)).revision,
     expectedBuildId:s.buildId,expectedBuildRevision:build.stateRevision,retainedRequirementKeys:keys,declaration:'明确保留准确原图，仅对未保留项授权新版本中的一次请求；工程校准非艺术验收'})
   return start({...s,details:prepared})
+}
+async function chooseImage(s: Awaited<ReturnType<typeof start>>, requirementKey: string) {
+  const raw = (await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,`avg.media.raw.${requirementKey}`]).first())!
+  const candidate = await stageAvgMediaChoiceV2({scope:s.scope,productionId:s.productionId,requirementKey,
+    rawVersion:raw.version,rawContentHash:raw.contentHash,declaration:'查看准确工程图并明确采用；后续外发和衍生仍须另行授权'})
+  await confirmAvgWorkspaceInputV1({scope:s.scope,productionId:s.productionId,artifactKey:candidate.artifactKey,
+    candidateVersion:candidate.version,candidateHash:JSON.parse(candidate.metadataJson).candidateHash})
+  return (await db.productBuildArtifacts.get(candidate.id!))!
 }
 
 describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/decoder', () => {
@@ -344,6 +355,78 @@ describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/deco
     expect(await snapshot()).toEqual(before)
     expect(dispatch).toHaveBeenCalledTimes(2)
   }, 15_000)
+
+  it('an author-adopted generated image remains an exact reference after stopped backup import and produces a new native Preview', async () => {
+    const body = await response(), dispatch = vi.fn(async () => new Response(body,{status:200,headers:{'content-type':'application/json'}}))
+    vi.stubGlobal('fetch',dispatch)
+    const parent = await start(await prepare([secondaryRequirement()])); await confirmSources(parent)
+    await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId})
+    const choice = await chooseImage(parent,'desk.reference')
+    const selected = await prepareAvgGeneratedReferenceImageV1({scope:parent.scope,choiceId:choice.id!})
+    expect(await db.avgDraftMedia.count()).toBe(0)
+    await stopProductProductionV1({scope:parent.scope,production:(await readProductProductionDetailsV1(parent.scope,parent.productionId,['avg'])).production})
+    const importedId = await importProjectJSON(await exportProjectJSON(parent.scope.projectId))
+    const imported = (await db.productBuilds.where('projectId').equals(importedId).first())!
+    const importedScope = {projectId:imported.projectId,worldId:imported.worldId,workId:imported.workId}
+    const restored = await readAvgGeneratedReferenceImageV1({scope:importedScope,source:selected.source})
+    expect(restored.source).toEqual(selected.source)
+    expect(await mediaBlobStore.sha256MediaData(restored.data)).toBe(selected.asset.contentHash)
+    const ref = {assetKey:selected.asset.assetKey,assetVersion:selected.asset.version,contentHash:selected.asset.contentHash,
+      mimeType:selected.asset.mimeType as 'image/png',byteSize:selected.asset.byteSize,purpose:'composition' as const,allowedChange:'保持房间结构，改为白天光线',
+      dataClass:'avg-authorized-reference',license:selected.asset.license,providerInputAllowed:true as const,derivativeUseAllowed:true as const,crop:null,mask:null,generatedSource:selected.source}
+    const draft = await readAvgDraftV1(importedScope)
+    const saved = await saveAvgVisualBatchDraftV1({scope:importedScope,expectedDraftRevision:draft.revision,batchKey:'derived.reference.batch',revision:1,
+      requirements:[{...requirement(),references:[ref]}]})
+    const details = await prepareAvgAssemblyBriefV1({scope:importedScope,expectedDraftRevision:saved.revision})
+    const child = await start({...parent,scope:importedScope,productionId:imported.productionId,details}); await confirmSources(child)
+    expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('building')
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    const requestBody = JSON.parse(String(dispatch.mock.calls[1][1]!.body))
+    expect(requestBody.extra_body.image).toEqual([`data:image/png;base64,${JSON.parse(body).data[0].b64_json}`])
+    const raw = (await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([child.buildId,'avg.media.raw.desk.background']).first())!
+    expect(JSON.parse(raw.payloadJson).request.references[0].generatedSource).toEqual(selected.source)
+    expect(JSON.parse(raw.qualityJson).referenceTransmission.references[0].generatedSource).toEqual(selected.source)
+    await chooseImage(child,'desk.background')
+    await configureAvgChosenMediaDraftV2({scope:child.scope,productionId:child.productionId,expectedDraftRevision:(await readAvgDraftV1(child.scope)).revision})
+    await confirm(child,'avg.author.stage')
+    expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('preview-ready')
+    expect(await db.avgDraftMedia.count()).toBe(0)
+    expect(dispatch).toHaveBeenCalledTimes(2)
+  },15_000)
+
+  it('pending, forged, foreign and damaged generated references never fall back to an imported alias or dispatch', async () => {
+    const body = await response(), dispatch = vi.fn(async () => new Response(body,{status:200})); vi.stubGlobal('fetch',dispatch)
+    const s = await start(await prepare([secondaryRequirement()])); await confirmSources(s); await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})
+    const raw = (await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,'avg.media.raw.desk.reference']).first())!
+    const pending = await stageAvgMediaChoiceV2({scope:s.scope,productionId:s.productionId,requirementKey:'desk.reference',rawVersion:raw.version,rawContentHash:raw.contentHash,declaration:'尚未确认的工程候选'})
+    await expect(prepareAvgGeneratedReferenceImageV1({scope:s.scope,choiceId:pending.id!})).rejects.toThrow(/先明确采用/)
+    await confirmAvgWorkspaceInputV1({scope:s.scope,productionId:s.productionId,artifactKey:pending.artifactKey,candidateVersion:pending.version,candidateHash:JSON.parse(pending.metadataJson).candidateHash})
+    const selected = await prepareAvgGeneratedReferenceImageV1({scope:s.scope,choiceId:pending.id!})
+    const forged = structuredClone(selected.source); forged.choice.authorReceiptHash='f'.repeat(64)
+    await expect(readAvgGeneratedReferenceImageV1({scope:s.scope,source:forged})).rejects.toThrow(/证明已变化/)
+    const foreign = await seedCurrentProductWorld('foreign-generated-reference')
+    await expect(readAvgGeneratedReferenceImageV1({scope:foreign.scope,source:selected.source})).rejects.toThrow(/跨作品|不存在/)
+    // Even an exact imported-looking alias cannot bypass an explicit generated origin.
+    await db.avgDraftMedia.add({...s.scope,blobObjectId:raw.blobObjectId!,assetJson:JSON.stringify(selected.asset),createdAt:Date.now()})
+    const ref = {assetKey:selected.asset.assetKey,assetVersion:1,contentHash:selected.asset.contentHash,mimeType:'image/png' as const,byteSize:selected.asset.byteSize,
+      purpose:'composition' as const,allowedChange:'仅调整照明',dataClass:'avg-authorized-reference',license:selected.asset.license,
+      providerInputAllowed:true as const,derivativeUseAllowed:true as const,crop:null,mask:null,generatedSource:forged}
+    await expect(readAvgGeneratedReferenceBytesV1(s.scope,{...ref,purpose:'identity',generatedSource:selected.source},
+      {...secondaryRequirement().family,subjectKey:'keeper'})).rejects.toThrow(/身份参考.*另一个主体/)
+    await expect(readAvgGeneratedReferenceBytesV1(s.scope,{...ref,purpose:'identity',generatedSource:selected.source},
+      {...secondaryRequirement().family,revision:2})).rejects.toThrow(/身份基准版本已变化/)
+    const frozen = await prepareAvgRawImageRequestV1({brief:s.details.executionBrief!,requirementKey:'desk.reference',idempotencyKey:'a'.repeat(64)})
+    const {freezeAvgImageRequestV1}=await import('../../src/lib/avg/media-reference-contract')
+    const withReference = await freezeAvgImageRequestV1({request:{...frozen.request,allowedDataClasses:[ref.dataClass]},resolutionTier:'1K',references:[ref]})
+    const adapter = await createAvgDraftReferenceAdapterV1({scope:s.scope,frozen:withReference})
+    const transport = {request:vi.fn()}
+    await expect(adapter.generate({...withReference.request,inputHash:withReference.inputHash},transport,new AbortController().signal)).rejects.toThrow(/证明已变化/)
+    expect(transport.request).not.toHaveBeenCalled()
+    const blob = (await db.mediaBlobObjects.get(raw.blobObjectId!))!, bytes = new Uint8Array(blob.data!.slice(0));bytes[0]^=1
+    await db.mediaBlobObjects.update(blob.id!,{data:bytes.buffer})
+    await expect(readAvgGeneratedReferenceBytesV1(s.scope,{...ref,generatedSource:selected.source})).rejects.toThrow(/哈希不匹配/)
+    expect(dispatch).toHaveBeenCalledTimes(1)
+  },15_000)
 
   it('route path drift and a disabled start reject before creating a Build or making HTTP requests', async () => {
     const dispatch = vi.fn(); vi.stubGlobal('fetch', dispatch)

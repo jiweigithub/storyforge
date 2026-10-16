@@ -30,6 +30,7 @@ import { readVerifiedMediaBlobObjectData } from '../product-production/media-blo
 import { assertAvgKnownImageRetriesV1, prepareAvgImageRecoveryV1, readAvgImageRecoverySourceV1, validateAvgImageRecoveryV1 } from './media-recovery'
 import { parseAvgImageRecoveryV1, type AvgImageRecoveryV1 } from './media-recovery-contract'
 import { listWorldReferenceCatalogV1 } from '../product/source'
+import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 
 const commandId = (label: string) => `avg.assembly.${label}.${crypto.randomUUID()}`
 
@@ -241,6 +242,7 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
     await validateAvgVisualProductionBatchSourceV1(workspace.mediaBatch, workspace)
     if (!avgMediaProductionEnabledV2()) throw new Error('[avg-media] 媒资生产流程尚未开放；不能把待生成批次按零调用组装执行')
     assertAvgMediaConsumerDeclarationsV1(workspace.mediaBatch, workspace.systemPlan)
+    for(const r of workspace.mediaBatch.requirements)await validateAvgGeneratedReferencesV1(input.scope,r.references,r.family)
   }
   if (!draft.worldReleaseId) throw new Error('[avg] 请先在产品定向选择冻结世界版本')
   const work = await db.works.get(input.scope.workId)
@@ -347,6 +349,7 @@ export async function startAvgAssemblyV1(input: { scope: WorkspaceScope; product
     await validateAvgVisualProductionBatchSourceV1(brief.avgAssembly.mediaBatch, workspace)
     assertAvgMediaConsumerDeclarationsV1(brief.avgAssembly.mediaBatch, workspace.systemPlan)
     await validateAvgImageRecoveryV1({scope:input.scope,productionId:input.productionId,brief})
+    for(const r of brief.avgAssembly.mediaBatch.requirements)await validateAvgGeneratedReferencesV1(input.scope,r.references,r.family)
   }
   const same=(a:string[],b:string[])=>canonicalProductProductionJsonV2([...a].sort())===canonicalProductProductionJsonV2([...b].sort())
   if(draft.productionId!==input.productionId||draft.worldReleaseId!==brief.source.worldReleaseId

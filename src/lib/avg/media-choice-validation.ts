@@ -1,6 +1,6 @@
 import Dexie from 'dexie'
 import { db } from '../db/schema'
-import type { ProductProductionBriefV3, WorkspaceScope } from '../types'
+import type { ProductBuildArtifactRecordV1, ProductProductionBriefV3, WorkspaceScope } from '../types'
 import { assertRecordInScope } from '../workspace/scope'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/artifact-store'
@@ -24,6 +24,14 @@ export interface AvgMediaChoiceValidationV1 {
 export async function readAvgChosenMediaSourceV2(input: { scope: WorkspaceScope; buildId: number; brief: ProductProductionBriefV3; choice: AvgAuthorMediaChoiceV1 }) {
   const choice = parseAvgAuthorMediaChoiceV1(input.choice)
   const row = await verifyAcceptedProductBuildArtifactV1({ scope: input.scope, buildId: input.buildId, ...choice.raw })
+  return inspectAvgChosenImageV1({ ...input, choice, row })
+}
+
+/** Byte/choice validation only. Callers separately supply a verified current
+ * or read-only historical producer proof; this grants no adoption authority. */
+export async function inspectAvgChosenImageV1(input: { scope: WorkspaceScope; brief: ProductProductionBriefV3;
+  choice: AvgAuthorMediaChoiceV1; row: ProductBuildArtifactRecordV1 }) {
+  const choice = parseAvgAuthorMediaChoiceV1(input.choice), row = input.row
   const raw = await assertAvgRawImageArtifactV1(input.brief, row), r = raw.payload.requirement
   if (choice.requirementKey !== r.requirementKey || choice.requirementRevision !== r.revision
     || choice.referenceOnly !== (r.consumer.domain === 'reference') || canonicalProductProductionJsonV2(choice.asset) !== canonicalProductProductionJsonV2(raw.asset)) {
@@ -43,7 +51,7 @@ export async function readAvgChosenMediaSourceV2(input: { scope: WorkspaceScope;
   const measured = Dexie.currentTransaction ? await Dexie.waitFor(Dexie.ignoreTransaction(inspect), 20_000) : await inspect()
   const validation: AvgMediaChoiceValidationV1 = { schema: 'storyforge.avg.media-choice-validation', version: 1, choiceHash: await hashProductProductionValueV2(choice),
     rawReceiptHash: row.producerReceiptHash!, ...measured }
-  return { validation, raw: row, asset: raw.asset }
+  return { validation, raw: row, asset: raw.asset, requirement: r }
 }
 
 export async function validateAvgMediaChoiceV1(input: Parameters<typeof readAvgChosenMediaSourceV2>[0]): Promise<AvgMediaChoiceValidationV1> {

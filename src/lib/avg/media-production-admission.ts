@@ -11,6 +11,7 @@ import { assertAvgVisualProductionPolicyV2 } from './media-production-policy'
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { assertAvgOriginalImageResponseV1 } from './media-response-proof'
 import { readAvgImageRecoverySourceV1 } from './media-recovery'
+import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 
 /** Extra product admission inside the shared sealed-producer transaction.
  * The caller separately verifies exact checkpoint/result/Plan/Blob proof. */
@@ -28,6 +29,7 @@ export async function assertAvgMediaRawProducerAdmissionV2(input: {
   assertAvgVisualProductionPolicyV2(brief)
   if (await hashProductProductionValueV2(brief) !== input.build.briefHash) throw new Error('[avg-media] 原图 Brief 已 stale')
   const raw = await assertAvgRawImageArtifactV1(brief, input.artifact), r = raw.payload.requirement, task = input.task
+  await validateAvgGeneratedReferencesV1(input.scope, r.references, r.family)
   const retained=brief.avgAssembly.imageRecovery?.retained.some(ref=>ref.requirementKey===r.requirementKey)??false
   if (task.taskKey !== `avg.media.generate.${r.requirementKey}` || task.kind !== (retained?'avg-media-image-reuse':'avg-media-image-generate')
     || task.executionMode !== (retained?'deterministic':'media-provider') || task.skillId !== (retained?null:'product-production.media-request.v1')

@@ -18,7 +18,11 @@ export default function MediaRecoveryPanel({scope,view,disabled,visible,onAction
     return()=>{active=false}
   },[scope,productionId,build?.id,build?.stateRevision,eligible])
   if(!eligible||!productionId||!build)return null
-  if(pendingBrief)return <section aria-label="图片恢复方案"><h5>图片恢复方案已保存</h5><p>请到制作页核对保留图片、新请求上限和原费用记录，再明确开始新版本。旧版本仍保留。</p></section>
+  if(pendingBrief){
+    const assembly=view.details?.executionBrief?.avgAssembly
+    if(assembly?.version!==2||!assembly.imageRecovery)return null
+    return <section aria-label="图片恢复方案"><h5>图片恢复方案已保存</h5><p>请到制作页核对保留图片、新请求上限和原费用记录，再明确开始新版本。旧版本仍保留。</p></section>
+  }
   const rerun=options?.items.filter(r=>!selected.includes(r.requirementKey))??[]
   return <section aria-label="图片恢复方案"><h5>保留原图并准备恢复</h5><p>查看要保留的图片并明确勾选。新版本会重新复验这些原图，未保留项至多各发送一次新请求；仍须重新确认规则、脚本、选图和演出。</p>
     {error&&<p role="alert">{error}</p>}{!options&&!error&&<p>核验成功原图及原调用记录…</p>}

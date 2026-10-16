@@ -3,6 +3,7 @@ import { detectProductImageDimensionsV1, detectProductMediaMimeTypeV1 } from '..
 import type { ProductMediaRequestV1 } from '../product-production/media-adapters'
 import { sha256MediaData } from '../product-production/media-blob-store'
 import { avgBoolean, avgEnum, avgHash, avgKey, avgKeys, avgList, avgNumber, avgRecord, avgText, avgUnique } from './protocol-validation'
+import { parseAvgGeneratedReferenceSourceV1, type AvgGeneratedReferenceSourceV1 } from './media-generated-reference-contract'
 
 /** AVG-only extension. V1 callers and the other products' request bytes stay unchanged. */
 export const AVG_IMAGE_REFERENCE_CAPABILITY_V1 = {
@@ -32,6 +33,7 @@ export interface AvgMediaReferenceV1 {
   /** Unsupported operations must be explicit; never silently discard a mask/crop. */
   crop: null
   mask: null
+  generatedSource?: AvgGeneratedReferenceSourceV1
 }
 
 export interface AvgImageRequestV1 {
@@ -47,12 +49,16 @@ export interface AvgImageRequestV1 {
 export function parseAvgMediaReferencesV1(value: unknown): AvgMediaReferenceV1[] {
   const capability = AVG_IMAGE_REFERENCE_CAPABILITY_V1
   const references = avgUnique(avgList(value, 'references', value => {
+    const hasGeneratedSource = !!value && Object.prototype.hasOwnProperty.call(value, 'generatedSource')
     const r = avgRecord(value, ['assetKey', 'assetVersion', 'contentHash', 'mimeType', 'byteSize', 'purpose',
-      'allowedChange', 'dataClass', 'license', 'providerInputAllowed', 'derivativeUseAllowed', 'crop', 'mask'], 'reference')
+      'allowedChange', 'dataClass', 'license', 'providerInputAllowed', 'derivativeUseAllowed', 'crop', 'mask',
+      ...(hasGeneratedSource ? ['generatedSource'] : [])], 'reference')
     if (!avgBoolean(r.providerInputAllowed, 'providerInputAllowed') || !avgBoolean(r.derivativeUseAllowed, 'derivativeUseAllowed')) {
       throw new Error('[avg-media] 参考缺少向 provider 发送及衍生使用的授权')
     }
     if (r.crop !== null || r.mask !== null) throw new Error('[avg-media] 当前能力不支持原生 crop/mask；请先生成有 lineage 的加工候选')
+    const generatedSource = hasGeneratedSource ? parseAvgGeneratedReferenceSourceV1(r.generatedSource) : null
+    if (generatedSource && generatedSource.raw.contentHash !== r.contentHash) throw new Error('[avg-media] 生成参考必须使用原图准确字节')
     return {
       assetKey: avgKey(r.assetKey, 'reference.assetKey'), assetVersion: avgNumber(r.assetVersion, 'reference.assetVersion', 1, 1_000_000),
       contentHash: avgHash(r.contentHash, 'reference.contentHash'), mimeType: avgEnum(r.mimeType, capability.mimeTypes, 'reference.mimeType'),
@@ -60,6 +66,7 @@ export function parseAvgMediaReferencesV1(value: unknown): AvgMediaReferenceV1[]
       purpose: avgEnum(r.purpose, capability.purposes, 'reference.purpose'), allowedChange: avgText(r.allowedChange, 'reference.allowedChange', 2000),
       dataClass: avgKey(r.dataClass, 'reference.dataClass'), license: avgText(r.license, 'reference.license', 2000),
       providerInputAllowed: true as const, derivativeUseAllowed: true as const, crop: null, mask: null,
+      ...(generatedSource ? { generatedSource } : {}),
     }
   }, capability.maximumReferences), r => r.assetKey, 'references')
   if (references.reduce((sum, r) => sum + r.byteSize, 0) > capability.maximumTotalReferenceBytes) throw new Error('[avg-media] 参考总字节超过本批上限')

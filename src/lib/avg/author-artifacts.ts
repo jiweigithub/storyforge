@@ -15,8 +15,9 @@ import { avgKey, avgText } from './protocol-validation'
 import { validateAvgSystemPlanForAuthorV1, type AvgSystemValidationV1 } from './system-compiler'
 import { buildAvgNativeAssemblyPlan } from './assembly-plan'
 import { parseAvgAuthorMediaChoiceV1, avgMediaChoiceArtifactKeyV1, type AvgAuthorMediaChoiceV1 } from './media-production-contract'
-import { readAvgChosenMediaSourceV2, validateAvgMediaChoiceV1, type AvgMediaChoiceValidationV1 } from './media-choice-validation'
-import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/artifact-store'
+import { inspectAvgChosenImageV1, readAvgChosenMediaSourceV2, validateAvgMediaChoiceV1, type AvgMediaChoiceValidationV1 } from './media-choice-validation'
+import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1 } from '../product-production/artifact-store'
+import { assertAvgRawImageOriginV1 } from './media-recovery'
 
 type Ref = { artifactKey: string; version: number; contentHash: string }
 interface AuthorCandidateBase {
@@ -105,25 +106,29 @@ async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, 
     sourceWorld: { contentHash: context.brief.source.worldContentHash, selection: context.brief.source.selection } })
 }
 
-async function authority(scope: WorkspaceScope, buildId: number, forCompilation = false, frozenVerification = false) {
+async function authority(scope: WorkspaceScope, buildId: number, forCompilation = false, frozenVerification = false, referenceEpoch?: number) {
+  const referenceRead = referenceEpoch !== undefined
   const build = await db.productBuilds.get(buildId)
   if (!build || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })) throw new Error('[avg] Build 不存在或跨 Work')
   const production = await db.productProductions.get(build.productionId)
   const work = await db.works.get(scope.workId)
   if (!production?.id || !await assertRecordInScope(scope, 'productProductions', production, { owner: 'work' })
     || production.productType !== 'avg' || work?.kind !== 'avg') throw new Error('[avg] 必须属于当前 AVG Work/Production')
-  if (!frozenVerification && (production.status !== 'producing' || production.currentBuildNumber !== build.buildNumber
+  if (!frozenVerification && !referenceRead && (production.status !== 'producing' || production.currentBuildNumber !== build.buildNumber
     || production.controlEpoch !== build.controlEpoch || !(forCompilation ? ['authorized','building','integrating'] : ['authorized','building']).includes(build.status)
     || build.packageHash || build.previewHash || build.releasedProductReleaseId != null)) throw new Error('[avg] 当前 Build 不可采用；已冻结版本须建立新 Build')
   if (frozenVerification && (!['building','validating','preview-ready','release-ready','released'].includes(build.status)
     || !build.packageHash || !build.previewHash || !build.rootTerminalReceiptHash)) throw new Error('[avg] 只读作者验证要求已封存的原生 Build')
+  if (referenceRead && (!Number.isSafeInteger(referenceEpoch) || referenceEpoch < 0 || referenceEpoch > build.controlEpoch
+    || !['building','integrating','validating','preview-ready','release-ready','released','paused','cancelled','failed','recovery-required'].includes(build.status))) throw new Error('[avg-media] 生成参考来源不属于可验证的已执行版本')
   const briefRow = await db.productProductionBriefs.where('[productionId+revision]').equals([production.id, build.briefRevision]).first()
   if (!briefRow || !await assertRecordInScope(scope, 'productProductionBriefs', briefRow, { owner: 'work' })
-    || briefRow.status !== 'authorized' || briefRow.authorizedAt !== build.authorizedAt
-    || briefRow.briefHash !== build.briefHash || !frozenVerification && production.currentBriefRevision !== build.briefRevision) throw new Error('[avg] Brief 授权已 stale')
+    || !(referenceRead ? ['authorized','superseded'] : ['authorized']).includes(briefRow.status) || briefRow.authorizedAt !== build.authorizedAt
+    || briefRow.briefHash !== build.briefHash || !frozenVerification && !referenceRead && production.currentBriefRevision !== build.briefRevision) throw new Error('[avg] Brief 授权已 stale')
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
   if (brief.intent.productType !== 'avg' || await hash(brief) !== build.briefHash) throw new Error('[avg] Brief 内容/hash 不一致')
   if (frozenVerification && !brief.avgAssembly) throw new Error('[avg] 只读作者验证只接受原生组装合同')
+  if (referenceRead && brief.avgAssembly?.version !== 2) throw new Error('[avg-media] 生成参考只接受原生 V2 图片来源')
   if (!forCompilation && brief.avgAssembly?.version === 1 && Object.keys((JSON.parse(build.budgetLedgerJson) as { tasks?: object }).tasks ?? {}).length) throw new Error('[avg] 组装已开始执行；请保留旧版本并创建新 Build 修订')
   const sourcePlan = await Dexie.waitFor(parseProductProductionSourcePlanV1(briefRow))
   const confirmed = await Dexie.waitFor(parseConfirmedProductBriefV1({ row: briefRow, sourcePlan }))
@@ -139,11 +144,12 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
   })
   if (!started) throw new Error('[avg] 缺少实际作者开始命令回执')
   const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash)
-  if (plan.productType !== 'avg' || plan.buildNumber !== build.buildNumber || plan.controlEpoch !== build.controlEpoch
+  const sourceEpoch = referenceEpoch ?? build.controlEpoch
+  if (plan.productType !== 'avg' || plan.buildNumber !== build.buildNumber || plan.controlEpoch !== sourceEpoch
     || build.planRevision < 1 || await hash(plan) !== build.planHash
     || canonicalProductProductionJsonV2(plan) !== build.planJson) throw new Error('[avg] 冻结 Plan/hash 已 stale')
-  if (frozenVerification && canonicalProductProductionJsonV2(buildAvgNativeAssemblyPlan({ brief, briefHash:build.briefHash,
-    buildNumber:build.buildNumber, controlEpoch:build.controlEpoch })) !== build.planJson) throw new Error('[avg] 原生作者 Plan 不是冻结的固定组装拓扑')
+  if ((frozenVerification || referenceRead) && canonicalProductProductionJsonV2(buildAvgNativeAssemblyPlan({ brief, briefHash:build.briefHash,
+    buildNumber:build.buildNumber, controlEpoch:sourceEpoch })) !== build.planJson) throw new Error('[avg] 原生作者 Plan 不是冻结的固定组装拓扑')
   return { build, production: production as ProductProductionRecordV1 & { id: number }, briefRow, brief, plan, sourcePlan }
 }
 
@@ -349,6 +355,24 @@ async function prepareAdoption(scope: WorkspaceScope, production: ProductProduct
   return { context, candidate, body: { ...body, candidateHash } as AuthorCandidate, derived, invalidated: [...invalidated] }
 }
 
+async function assertFrozenAuthorCandidateV1(context: Awaited<ReturnType<typeof authority>>, row: ProductBuildArtifactRecordV1,
+  task: typeof context.plan.tasks[number], upstream: ProductBuildArtifactRecordV1[], epoch: number) {
+  const envelope = JSON.parse(row.metadataJson) as { candidate: AuthorCandidate }
+  const { candidateHash, ...body } = envelope.candidate
+  if (row.producerRunId !== null || row.producerReceiptHash !== null || row.carriedFrom !== null
+    || body.schema !== 'storyforge.avg.author-candidate' || body.origin !== 'author-import'
+    || body.productionKey !== context.production.productionKey || body.buildNumber !== context.build.buildNumber
+    || body.briefRevision !== context.build.briefRevision || body.briefHash !== context.build.briefHash
+    || body.confirmedBriefHash !== context.briefRow.confirmedBriefHash || body.sourcePlanHash !== context.briefRow.sourcePlanHash
+    || body.planRevision !== context.build.planRevision || body.planHash !== context.build.planHash || body.controlEpoch !== epoch
+    || body.taskKey !== task.taskKey || body.artifactKey !== row.artifactKey || body.kind !== row.kind
+    || body.payloadHash !== row.contentHash || candidateHash !== await hash(body)
+    || row.inputHash !== await hash({ ...body, payloadHash: null })
+    || row.parentArtifactHash !== (body.base?.contentHash ?? null)
+    || canonicalProductProductionJsonV2(body.inputs) !== canonicalProductProductionJsonV2(upstream.map(ref))) throw new Error(`[avg] 冻结作者输入来源/候选不闭合:${task.taskKey}`)
+  return envelope.candidate
+}
+
 /** Only a current, confirmed rule revision can enter formal Build compilation.
  * Pure engineering previews remain available without this persistence receipt. */
 async function readAuthorInputs(input: {
@@ -363,20 +387,8 @@ async function readAuthorInputs(input: {
     if (frozenVerification) {
       for (const task of context.plan.tasks.filter(task => task.executionMode === 'human-import')) {
         const [row] = await acceptedInputs(scope, input.buildId, input.controlEpoch, task.outputArtifactKeys)
-        const envelope = JSON.parse(row.metadataJson) as { candidate: AuthorCandidate }
-        const { candidateHash, ...body } = envelope.candidate
         const upstream = await acceptedInputs(scope, input.buildId, input.controlEpoch, task.inputArtifactKeys)
-        if (row.producerRunId !== null || row.producerReceiptHash !== null || row.carriedFrom !== null
-          || body.schema !== 'storyforge.avg.author-candidate' || body.origin !== 'author-import'
-          || body.productionKey !== context.production.productionKey || body.buildNumber !== context.build.buildNumber
-          || body.briefRevision !== context.build.briefRevision || body.briefHash !== context.build.briefHash
-          || body.confirmedBriefHash !== context.briefRow.confirmedBriefHash || body.sourcePlanHash !== context.briefRow.sourcePlanHash
-          || body.planRevision !== context.build.planRevision || body.planHash !== context.build.planHash || body.controlEpoch !== input.controlEpoch
-          || body.taskKey !== task.taskKey || body.artifactKey !== row.artifactKey || body.kind !== row.kind
-          || body.payloadHash !== row.contentHash || candidateHash !== await hash(body)
-          || row.inputHash !== await hash({ ...body, payloadHash: null })
-          || row.parentArtifactHash !== (body.base?.contentHash ?? null)
-          || canonicalProductProductionJsonV2(body.inputs) !== canonicalProductProductionJsonV2(upstream.map(ref))) throw new Error(`[avg] 冻结作者输入来源/候选不闭合:${task.taskKey}`)
+        await assertFrozenAuthorCandidateV1(context, row, task, upstream, input.controlEpoch)
       }
     }
     const [artifact] = await acceptedInputs(scope, input.buildId, input.controlEpoch, ['avg.system.plan'])
@@ -431,6 +443,36 @@ export function readAvgSystemPlanForCompilationV1(input: Parameters<typeof readA
 
 export function readAvgMediaChoicesForConfigurationV2(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope' | 'buildId' | 'expectedBuildRevision' | 'controlEpoch'>) {
   return readAuthorInputs({ ...input, includeSceneScripts: true, includeMediaChoices: true })
+}
+
+/** Historical image use is an explicit read, not adoption into the old Build.
+ * Preserve the exact original start, author command, producer and pixel proof
+ * even after stop, supersession or portable import. */
+export async function readAvgAdoptedGeneratedReferenceChoiceV1(input: { scope: WorkspaceScope; buildId: number; controlEpoch: number;
+  artifactKey: string; version: number; contentHash: string }) {
+  const scope = await resolveScope({ scope: input.scope }), proofTables = await mediaProofTables(input.buildId)
+  return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands,
+    db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects, ...proofTables), async () => {
+    const context = await authority(scope, input.buildId, true, false, input.controlEpoch)
+    const [row] = await acceptedInputs(scope, input.buildId, input.controlEpoch, [input.artifactKey])
+    if (row.version !== input.version || row.contentHash !== input.contentHash) throw new Error('[avg-media] 生成参考不是准确的作者已采用版本')
+    const choice = parseAvgAuthorMediaChoiceV1(row.payloadJson)
+    const task = context.plan.tasks.find(task => task.taskKey === `avg.author.media.${choice.requirementKey}`)
+    if (!task || task.kind !== 'avg-author-media-choice' || task.executionMode !== 'human-import' || task.skillId !== null
+      || canonicalProductProductionJsonV2(task.outputArtifactKeys) !== canonicalProductProductionJsonV2([row.artifactKey])
+      || canonicalProductProductionJsonV2(task.inputArtifactKeys) !== canonicalProductProductionJsonV2([choice.raw.artifactKey])) throw new Error('[avg-media] 生成参考不属于原冻结作者选图任务')
+    const proved = await verifyAvgReferenceRawImageArtifactV1({ scope, buildId: input.buildId, expectedBuildRevision: context.build.stateRevision,
+      expectedBriefHash: context.build.briefHash, expectedPlanHash: context.build.planHash, sourceControlEpoch: input.controlEpoch,
+      artifactKey: choice.raw.artifactKey, version: choice.raw.version, contentHash: choice.raw.contentHash })
+    await assertAvgRawImageOriginV1({ scope, productionId: context.production.id, brief: context.brief, build: context.build,
+      artifact: proved.artifact, requirementKey: choice.requirementKey, taskKey: proved.provenance.taskKey }, [context.build.buildNumber])
+    const candidate = await assertFrozenAuthorCandidateV1(context, row, task, [proved.artifact], input.controlEpoch)
+    const selected = await inspectAvgChosenImageV1({ scope, brief: context.brief, choice, row: proved.artifact })
+    if (candidate.version !== 4 || canonicalProductProductionJsonV2(candidate.mediaChoiceValidation) !== canonicalProductProductionJsonV2(selected.validation)) throw new Error('[avg-media] 生成参考缺少准确的作者解码采用证据')
+    const envelope = JSON.parse(row.metadataJson) as { receiptHash: string }
+    return { choice, artifact: ref(row), authorReceiptHash: envelope.receiptHash, raw: proved.artifact, rawProof: proved.provenance,
+      productionKey: context.production.productionKey, buildNumber: context.build.buildNumber, requirement: selected.requirement }
+  })
 }
 
 /** Read-only proof of the original author receipts on an immutable Build.

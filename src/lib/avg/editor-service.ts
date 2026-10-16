@@ -21,6 +21,7 @@ import { canonicalProductProductionJsonV2 } from '../product-production/hash';
 import { parseAvgExecutableStageV1 } from './stage-contract';
 import { createAvgReferenceImageAdapterV1 } from './media-reference-adapter';
 import type { AvgImageRequestV1, AvgMediaReferenceV1 } from './media-reference-contract';
+import { readAvgGeneratedReferenceBytesV1 } from './media-generated-reference';
 
 /** Authors may retain unfinished graph edits; full package validation gates production. */
 export async function saveAvgEditorV1(
@@ -180,6 +181,11 @@ export async function createAvgDraftReferenceAdapterV1(input: { scope: Workspace
   if (!work || work.kind !== 'avg' || !await assertRecordInScope(scope, 'works', work, { owner: 'work' })) throw new Error('[avg-media] 参考必须属于当前 AVG 作品');
   return createAvgReferenceImageAdapterV1({ frozen: input.frozen, readReference: async (reference: AvgMediaReferenceV1) => {
     await resolveScope({ scope });
+    if (reference.generatedSource) {
+      const bytes = await readAvgGeneratedReferenceBytesV1(scope, reference);
+      await input.inspectReference?.(reference, bytes);
+      return bytes;
+    }
     const rows = await db.avgDraftMedia.where('workId').equals(scope.workId).toArray();
     const matches = rows.filter(row => {
       const asset = JSON.parse(row.assetJson) as FrozenRuntimeMediaAssetV2;
