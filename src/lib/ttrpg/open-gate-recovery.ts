@@ -1,4 +1,4 @@
-import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
+import { ttrpgOpenSituationCatalogV1, ttrpgOpenSessionSituationActorAccessV1, ttrpgOpenSessionSituationDiscoveryPolicyV1 } from './open-session-situation-catalog'
 /** Bounded real recovery. Receipts record admission/knowledge, never a replacement gate boolean. */
 import type { ProductRuntimeState } from '../types'
 import type { TtrpgOpenSourceRefV1 } from './open-coordination'
@@ -69,9 +69,12 @@ export function planTtrpgOpenGateRecoveryV1(state: ProductRuntimeState, operatio
   if (selected.gateKey === 'hypothesis-formable') {
     const content = b.terminal.frozenContent, context = ttrpgOpenSituationGateContextV1(state,content,actorKey)
     for (const instance of b.run.situations.active) {
+      if (!ttrpgOpenSessionSituationActorAccessV1(b.run, instance.templateKey, actorKey)) continue
       const template = ttrpgOpenSituationCatalogV1(content.campaign, b.run).byKey.get(instance.templateKey)!
+      const owner = b.run.situationReceipts?.find(row => row.template.templateKey === instance.templateKey)
       for (const evidence of template.evidence) if (!evidence.isRequired && evidence.discoveryPolicy.failForwardEffectPlanRef !== null
-        && evidence.discoveryPolicy.allowedAudience !== 'gm-only' && (evidence.discoveryPolicy.allowedAudience === 'public' || evidence.discoveryPolicy.recipientActorKeys.includes(actorKey))
+        && ttrpgOpenSessionSituationDiscoveryPolicyV1(owner, evidence.discoveryPolicy).allowedAudience !== 'gm-only'
+        && (evidence.discoveryPolicy.allowedAudience === 'public' || ttrpgOpenSessionSituationDiscoveryPolicyV1(owner, evidence.discoveryPolicy).recipientActorKeys.includes(actorKey))
         && evidence.discoveryPolicy.preconditions.every(predicate => evaluateTtrpgPredicateV1(predicate,context))
         && evidence.coversObstacleKeys.some(key => !instance.satisfiedObstacleKeys.includes(key)) && !ttrpgOpenActorKnowsEvidenceV1(b.run.knowledge,actorKey,evidence.clueRef)) {
         return { ...b, ...selected, action: 'evidence' as const, targetRef: evidence.clueRef }

@@ -1,4 +1,4 @@
-import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
+import { ttrpgOpenSituationCatalogV1, ttrpgOpenSessionSituationActorAccessV1 } from './open-session-situation-catalog'
 import { finishTtrpgOpenSituationDraftV1, readTtrpgOpenSituationStopRepairsV1 } from './open-generated-situation-stop'
 import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { listTtrpgOpenHistoricalResponsesV1, readTtrpgOpenHistoricalResponseV1 } from './open-imported-response'
@@ -315,6 +315,7 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
   try { assertTtrpgOpenModelActorV1(auth, 'prose.ttrpg-open-kp', 'gm', input.viewerKey);canRequestKp = true } catch { /* The real GM has a separate identity. */ }
   const pointContext = ttrpgOpenSituationGateContextV1(f.state, f.content, current.seat.actorKey!), availableActions = new Set(own.view.rules.core.actionCatalog.filter(a => a.available).map(a => a.actionKey))
   const affordances = run.situations.active.flatMap(instance => {
+    if (!ttrpgOpenSessionSituationActorAccessV1(run, instance.templateKey, current.seat.actorKey!)) return []
     const template = ttrpgOpenSituationCatalogV1(f.content.campaign, f.runtime.openRun).templates.find(t => t.templateKey === instance.templateKey)
     return (template?.interventionPoints ?? []).filter(point => (point.visibleTo === 'public' || point.visibleTo === 'party' || point.visibleTo === 'private' && point.knownByActorKeys.includes(current.seat.actorKey!))
       && (!point.requiresPredicate || evaluateTtrpgPredicateV1(point.requiresPredicate, pointContext))
@@ -333,14 +334,14 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
   if (head.sequence !== f.state.lastSequence || head.sequence !== own.readEvidence.sequence || head.stateHash !== own.readEvidence.stateHash) throw new TtrpgOpenReadConflictV1('读取期间进度已改变，请重新读取冒险')
   return { ...bootstrap, player: { actorKey: current.seat.actorKey!, viewerKey: input.viewerKey, view: own.view,
     aiAllowed: current.seat.consent.aiAdviceAllowed && f.content.campaign.runtimePolicy.enabled && gateRecovery?.status !== 'stopped',
-    passivePurpose: epoch?.triggerKind === 'request-situation' ? 'situation-generation' : epoch?.triggerKind === 'request-brief' ? 'stage-brief' : null,
+    passivePurpose: epoch && ['request-situation', 'request-public-situation'].includes(epoch.triggerKind) ? 'situation-generation' : epoch?.triggerKind === 'request-brief' ? 'stage-brief' : null,
     passiveRecap: Boolean(epoch && isTtrpgOpenPassiveEpochV1(epoch)), manualEpoch: Boolean(epoch?.manualAction),manualActionPending: epoch?.manualAction && !run.operations.some(o => o.authorizationEpochKey === epoch.epochKey) && epoch.viewerKey === input.viewerKey ? { epochKey: epoch.epochKey,requestHash: epoch.manualAction.requestHash } : null,
     epochKey: epoch?.epochKey ?? null, isEpochStarter: epoch?.viewerKey === input.viewerKey,
     remainingCalls: gateRecovery?.status === 'stopped' ? 0 : epoch ? Math.max(0, epoch.budget.maximumCalls - budget!.countedRequests) : f.runtime.epochBudget.maximumCalls,
     consequence: consequence ? { owner: consequence.owner, cycleKey: consequence.cycle.cycleKey, workKey: consequence.work.workKey, operationKey: consequence.operation.operationKey } : null, consequenceApprovals,
     situationStopRepairs, situationRequestStatus: run.coordination.calls.find(c => c.skillId === 'prose.ttrpg-open-situation-propose' && c.authorizationEpochKey === epoch?.epochKey)?.status ?? null,
     gateRecovery, stageStatus: run.stage.status, liveCharacter, hosting, canHumanHost, humanNarrationRepairs, modelNarrationRepairs, pendingCancellations, hasPendingModelRequest: Boolean(budget?.pending), hasUnknownModelResult: Boolean(budget?.blockedByUnknown), preauthorizationAvailable, blockedByModel: Boolean(budget?.pending || budget?.blockedByUnknown || budget?.blockedByDenial || candidateRecoveries.length), operation, candidates, candidateRecoveries, historicalResponses, pendingRejections, canRequestKp, hostingAllowed: f.content.campaign.runtimePolicy.enabled, handoff,
-    affordances, requests: epoch ? run.coordination.calls.filter(c => !['prose.ttrpg-open-brief', 'prose.ttrpg-open-situation-propose'].includes(c.skillId) && c.authorizationEpochKey === epoch.epochKey && (c.narrationBinding?.viewerKey ?? epoch.viewerKey) === input.viewerKey && c.status !== 'succeeded').map(c => ({ requestKey: c.requestKey, status: c.status, purpose: c.skillId === 'prose.ttrpg-open-kp' ? 'KP 叙述' : c.skillId === 'prose.ttrpg-open-companion' ? '队友行动' : '行动建议' })) : [],
+    affordances, requests: epoch ? run.coordination.calls.filter(c => !['prose.ttrpg-open-brief', 'prose.ttrpg-open-situation-propose', 'prose.ttrpg-open-public-situation-propose'].includes(c.skillId) && c.authorizationEpochKey === epoch.epochKey && (c.narrationBinding?.viewerKey ?? epoch.viewerKey) === input.viewerKey && c.status !== 'succeeded').map(c => ({ requestKey: c.requestKey, status: c.status, purpose: c.skillId === 'prose.ttrpg-open-kp' ? 'KP 叙述' : c.skillId === 'prose.ttrpg-open-companion' ? '队友行动' : '行动建议' })) : [],
     narrations: (run.narrations ?? []).filter(r => r.recipientActorKeys.includes(current.seat.actorKey!)).map(r => ({ key: `${r.sourceRef.sessionKey}:${r.sourceRef.sequence}`, paragraphs: r.narration.paragraphs.map(p => p.text), sourceKind: isTtrpgOpenModelNarrationReceiptV1(r) ? 'model' : 'human', unresolvedModelResult: !isTtrpgOpenModelNarrationReceiptV1(r) && r.basis.previousRequests.some(c => c.status === 'unknown') })) } }
 }
 export type TtrpgOpenTableViewV1 = Awaited<ReturnType<typeof readTtrpgOpenTableV1>>
@@ -353,7 +354,7 @@ export async function readTtrpgOpenTableContextTraceV1(input: TtrpgOpenTableInpu
     ?? run.coordination.epochs.find(epoch => epoch.epochKey === call.authorizationEpochKey)?.viewerKey) === input.viewerKey)
   const call = calls[calls.length - 1]
   if (!call) return null
-  if (call.skillId === 'prose.ttrpg-open-situation-propose') throw new Error('本次为 GM 私域局势拟定；当前玩家入口只显示请求状态。')
+  if (['prose.ttrpg-open-situation-propose', 'prose.ttrpg-open-public-situation-propose'].includes(call.skillId)) throw new Error('局势候选与上下文包含尚未公开的内容；请在局势面板查看本人请求状态。')
   const rows = await readTtrpgOpenModelCallRunsV1({ ...input, calls: [call] }), owner = rows.find(row => row.contractHash === call.runContractHash)
   const historical = !owner?.id || owner.portableRuntimeOriginJson !== undefined ? await (await import('./open-run-portability')).readTtrpgOpenImportedCallOwnerV1({ ...input, requestKey: call.requestKey }) : null
   if (!owner?.id && !historical) throw new Error('本次请求的原始运行记录缺失，请先恢复进度。')

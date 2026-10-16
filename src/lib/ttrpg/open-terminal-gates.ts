@@ -1,4 +1,4 @@
-import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
+import { ttrpgOpenSituationCatalogV1, ttrpgOpenSessionSituationActorAccessV1 } from './open-session-situation-catalog'
 /** Real terminal and per-player gate evidence. Diagnostics remain author-only. */
 import type { ProductRuntimeState } from '../types'
 import type { TtrpgRuntimeContentV2 } from './content-version'
@@ -89,7 +89,8 @@ export function evaluateTtrpgOpenPlayerGatesV1(input: { state: ProductRuntimeSta
   // A visible point with no currently usable suggested method is not a playable exit.
   const available = new Set(context.actors?.[input.actorKey]?.abilityKeys ?? [])
   for (const template of campaign.situationTemplates) for (const point of template.interventionPoints) {
-    if (!point.suggestedActionKeys.some(key => available.has(key))) point.requiresPredicate = { op: 'not', of: { op: 'world-turn-at-least', value: 0 } }
+    if (!ttrpgOpenSessionSituationActorAccessV1(run, template.templateKey, input.actorKey)
+      || !point.suggestedActionKeys.some(key => available.has(key))) point.requiresPredicate = { op: 'not', of: { op: 'world-turn-at-least', value: 0 } }
   }
   const active = run.situations.active.map(i => ({ ...i, discoveredEvidenceRefs: i.discoveredEvidenceRefs.filter(known) }))
   const previous = [...(run.gateReceipts ?? [])].reverse().find(r => r.actorKey === input.actorKey)

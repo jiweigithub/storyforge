@@ -1,10 +1,23 @@
 /** One read-only resolver. Its combined view is never a frozen Campaign/RuntimePackage. */
-import type { TtrpgCampaignContentV2 } from './open-contract'
-import type { TtrpgOpenSessionSituationReceiptV1 } from './open-session-situation-contract'
+import type { TtrpgCampaignContentV2, TtrpgSituationTemplateV1 } from './open-contract'
+import type { TtrpgOpenSessionSituationReceipt } from './open-session-situation-contract'
 import { ttrpgOpenSessionFactsV1, type TtrpgOpenFactLedgerV1 } from './open-fact-ledger'
 import * as p from './open-contract-parse'
 
 export interface TtrpgOpenSessionSituationRefV1 { templateKey: string; receiptHash: string }
+/** A generated party/public label cannot widen the original once request to future seats. */
+export function ttrpgOpenSessionSituationActorAccessV1(run: { situationReceipts?: readonly TtrpgOpenSessionSituationReceipt[] } | null | undefined, templateKey: string, actorKey: string) {
+  const owner = run?.situationReceipts?.find(row => row.template.templateKey === templateKey)
+  return owner?.version !== 2 || owner.disclosure.authorization.basis.recipientActorKeys.includes(actorKey)
+}
+export function ttrpgOpenSessionSituationDiscoveryPolicyV1(owner: TtrpgOpenSessionSituationReceipt | undefined,
+  policy: TtrpgSituationTemplateV1['evidence'][number]['discoveryPolicy']): TtrpgSituationTemplateV1['evidence'][number]['discoveryPolicy'] {
+  if (owner?.version !== 2 || policy.allowedAudience === 'gm-only') return policy
+  const allowed = owner.disclosure.authorization.basis.recipientActorKeys
+  const requested = policy.recipientActorKeys.length ? policy.recipientActorKeys : policy.allowedAudience === 'private' ? [] : allowed
+  return { ...policy, allowedAudience: policy.allowedAudience === 'private' ? 'private' : 'party',
+    recipientActorKeys: requested.filter(actor => allowed.includes(actor)) }
+}
 export function parseTtrpgOpenSessionSituationRefsV1(value: unknown) {
   const refs = p.list(value, 'cycle accepted situation refs', (value) => {
     const r = p.record(value, ['templateKey', 'receiptHash'], 'accepted situation ref')
@@ -15,7 +28,7 @@ export function parseTtrpgOpenSessionSituationRefsV1(value: unknown) {
 }
 /** Include actual active/queued owners and their next-definition dependencies, not the whole catalog. */
 export function ttrpgOpenSituationCatalogSnapshotV1(campaign: TtrpgCampaignContentV2, run: {
-  situationReceipts?: readonly TtrpgOpenSessionSituationReceiptV1[];
+  situationReceipts?: readonly TtrpgOpenSessionSituationReceipt[];
   situations: { active: readonly { templateKey: string }[]; queued: readonly { templateKey: string }[] };
 }): { sessionSituationRefs?: TtrpgOpenSessionSituationRefV1[] } {
   const catalog = ttrpgOpenSituationCatalogV1(campaign, run), keys = new Set([...run.situations.active, ...run.situations.queued].map(i => i.templateKey))
@@ -26,7 +39,7 @@ export function ttrpgOpenSituationCatalogSnapshotV1(campaign: TtrpgCampaignConte
   return refs.length ? { sessionSituationRefs: refs } : {}
 }
 
-export function ttrpgOpenSituationCatalogV1(campaign: TtrpgCampaignContentV2, run?: { situationReceipts?: readonly TtrpgOpenSessionSituationReceiptV1[]; factLedger?: TtrpgOpenFactLedgerV1 } | null) {
+export function ttrpgOpenSituationCatalogV1(campaign: TtrpgCampaignContentV2, run?: { situationReceipts?: readonly TtrpgOpenSessionSituationReceipt[]; factLedger?: TtrpgOpenFactLedgerV1 } | null) {
   const sessionTemplates = (run?.situationReceipts ?? []).map(r => r.template)
   const templates = [...campaign.situationTemplates, ...sessionTemplates]
   p.unique(templates.map(t => t.templateKey), 'frozen/session situation identity')

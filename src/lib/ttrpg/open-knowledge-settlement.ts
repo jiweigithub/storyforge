@@ -1,4 +1,5 @@
 import { ttrpgOpenDiscoveryEffectTemplatesV1 } from './open-discovery-effect-templates'
+import { ttrpgOpenSessionSituationDiscoveryPolicyV1 } from './open-session-situation-catalog'
 export { ttrpgOpenDiscoveryEffectTemplatesV1 } from './open-discovery-effect-templates'
 /** One causal discovery settlement: frozen costs, unchanged dice outcome and an explicit recipient grant. */
 import type { ProductRuntimeState, TtrpgEffectPrimitiveV2, TtrpgEffectPlanV2 } from '../types'
@@ -52,7 +53,7 @@ export function settleTtrpgOpenKnowledgeV1(input: {
   }
   const knowledge = discovered ? parseTtrpgOpenKnowledgeEntryV1({ knowledgeKey: input.knowledgeKey,
     evidenceRef: evidence.clueRef, sourceFactRefs: evidence.sourceFactRefs, sourceResourceRefs: evidence.sourceResourceRefs,
-    acquisitionRef: { sessionKey: runtime.sessionKey, sequence: input.sequence }, audience: evidence.discoveryPolicy.allowedAudience,
+    acquisitionRef: { sessionKey: runtime.sessionKey, sequence: input.sequence }, audience: ttrpgOpenSessionSituationDiscoveryPolicyV1(plan.sessionSituation, evidence.discoveryPolicy).allowedAudience,
     recipientActorKeys: plan.recipientActorKeys, publicFieldsHash: plan.publicFieldsHash, reliability: 'observed' }) : null
   if (knowledge) {
     const run = state.ttrpg!.openRun as typeof runtime.openRun

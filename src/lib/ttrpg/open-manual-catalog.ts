@@ -1,4 +1,4 @@
-import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
+import { ttrpgOpenSituationCatalogV1, ttrpgOpenSessionSituationActorAccessV1 } from './open-session-situation-catalog'
 /** Human projection of the existing frozen rules. No hidden clue text or GM templates. */
 import type { ProductRuntimeState } from '../types'
 import type { TtrpgRuntimeContentV2 } from './content-version'
@@ -45,6 +45,7 @@ export function buildTtrpgOpenManualCatalogV1(input: {
   }
   const context = ttrpgOpenPredicateContextV1(state,content)
   const discoveries = runtime.openRun!.situations.active.flatMap(instance => {
+    if (!ttrpgOpenSessionSituationActorAccessV1(runtime.openRun, instance.templateKey, actorKey)) return []
     const template = ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).templates.find(t => t.templateKey === instance.templateKey)!
     return template.interventionPoints.filter(point => (point.visibleTo === 'public' || point.visibleTo === 'party' || point.visibleTo === 'private' && point.knownByActorKeys.includes(actorKey))
       && (!point.requiresPredicate || evaluateTtrpgPredicateV1(point.requiresPredicate,context)) && point.targetsObstacleKeys.some(key => !instance.satisfiedObstacleKeys.includes(key)))

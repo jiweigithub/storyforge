@@ -5,6 +5,7 @@ import { parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coo
 import * as p from './open-contract-parse'
 import { extractExactArtifactOwnerRootsV1 } from '../memory/artifact-roots'
 import type { ExactRunArtifactIdentityV1 } from '../types'
+import { parseTtrpgOpenPublicSituationAuthorizationV1, type TtrpgOpenPublicSituationAuthorizationV1 } from './open-public-situation-authorization-contract'
 
 export interface TtrpgOpenSessionSituationReceiptV1 {
   schema: 'storyforge.ttrpg-open-session-situation'; version: 1;
@@ -18,29 +19,71 @@ export interface TtrpgOpenSessionSituationReceiptV1 {
   disclosure: { kind: 'human-gm-reviewed'; viewerKey: string; seatKey: string; authorizationHash: string;
     templateHash: string; scope: 'player-and-discovery-text-reviewed' };
 }
-export function parseTtrpgOpenSessionSituationReceiptV1(value: unknown): TtrpgOpenSessionSituationReceiptV1 {
+export interface TtrpgOpenSessionSituationReceiptV2 extends Omit<TtrpgOpenSessionSituationReceiptV1, 'version' | 'disclosure'> {
+  version: 2;
+  disclosure: Omit<TtrpgOpenSessionSituationReceiptV1['disclosure'], 'kind' | 'scope'> & {
+    kind: 'ai-host-once-authorized'; scope: 'this-one-common-candidate';
+    gmSeatKey: string; gmSeatRevision: number; authorization: TtrpgOpenPublicSituationAuthorizationV1;
+  };
+}
+export type TtrpgOpenSessionSituationReceipt = TtrpgOpenSessionSituationReceiptV1 | TtrpgOpenSessionSituationReceiptV2
+
+function parseCommon(value: unknown) {
   const r = p.record(value, ['schema', 'version', 'sourceRef', 'authorizationRef', 'runtimeSourceHash', 'acceptedAtWorldTurn',
     'template', 'templateHash', 'receiptHash', 'personalizationSourceKeys', 'runOriginJson', 'artifactRefs', 'model', 'disclosure'], 'session situation receipt')
   const model = p.record(r.model, ['requestKey', 'epochKey', 'runContractHash', 'candidateHash', 'rawResponseHash',
     'inputManifestHash', 'contextHash', 'basisHash', 'proposalHash', 'referencesHash'], 'original situation model proof')
-  const disclosure = p.record(r.disclosure, ['kind', 'viewerKey', 'seatKey', 'authorizationHash', 'templateHash', 'scope'], 'human situation disclosure')
   const template = parseTtrpgSituationTemplateV1(r.template), templateHash = p.hash(r.templateHash, 'accepted template hash')
   const sourceRef = parseTtrpgOpenSourceRefV1(r.sourceRef), authorizationRef = parseTtrpgOpenSourceRefV1(r.authorizationRef)
   if (!/^generated\.[a-f0-9]{40}$/.test(template.templateKey) || template.evidence.some(e => !e.clueRef.startsWith(template.templateKey + '.'))
-    || disclosure.templateHash !== templateHash || sourceRef.sessionKey !== authorizationRef.sessionKey || sourceRef.sequence <= authorizationRef.sequence) p.fail('采用身份、披露版本或原始授权不一致')
-  return { schema: p.literal(r.schema, 'storyforge.ttrpg-open-session-situation', 'session situation schema'), version: p.literal(r.version, 1, 'session situation version'),
+    || sourceRef.sessionKey !== authorizationRef.sessionKey || sourceRef.sequence <= authorizationRef.sequence) p.fail('采用身份、披露版本或原始授权不一致')
+  let runOriginJson: string
+  if (r.version === 2) {
+    if (typeof r.runOriginJson !== 'string' || !r.runOriginJson.trim() || r.runOriginJson.length > 8000000) p.fail('immutable historical Run archive: 字节为空或过长')
+    runOriginJson = r.runOriginJson
+  } else runOriginJson = p.text(r.runOriginJson, 'immutable historical Run archive', 8000000)
+  const body = { schema: p.literal(r.schema, 'storyforge.ttrpg-open-session-situation', 'session situation schema'),
     sourceRef, authorizationRef, runtimeSourceHash: p.hash(r.runtimeSourceHash, 'accepted runtime source'),
     acceptedAtWorldTurn: p.integer(r.acceptedAtWorldTurn, 'situation acceptance turn', 0, Number.MAX_SAFE_INTEGER), template, templateHash,
     receiptHash: p.hash(r.receiptHash, 'session situation receipt hash'), personalizationSourceKeys: p.keys(r.personalizationSourceKeys, 'accepted personalization sources', 100, 1),
-    runOriginJson: p.text(r.runOriginJson, 'immutable historical Run archive', 8000000), artifactRefs: parseTtrpgOpenSituationArtifactRefsV1(r.artifactRefs), model: {
+    runOriginJson, artifactRefs: parseTtrpgOpenSituationArtifactRefsV1(r.artifactRefs), model: {
       requestKey: p.key(model.requestKey, 'original situation request'), epochKey: p.key(model.epochKey, 'original situation epoch'),
       runContractHash: p.hash(model.runContractHash, 'original situation run'), candidateHash: p.hash(model.candidateHash, 'original situation candidate'),
       rawResponseHash: p.hash(model.rawResponseHash, 'original situation response'), inputManifestHash: p.hash(model.inputManifestHash, 'original situation manifest'),
       contextHash: p.hash(model.contextHash, 'original situation context'), basisHash: p.hash(model.basisHash, 'original situation basis'),
       proposalHash: p.hash(model.proposalHash, 'original situation proposal'), referencesHash: p.hash(model.referencesHash, 'actual delivered references'),
-    }, disclosure: { kind: p.literal(disclosure.kind, 'human-gm-reviewed', 'human disclosure kind'), viewerKey: p.key(disclosure.viewerKey, 'actual human GM'),
-      seatKey: p.key(disclosure.seatKey, 'actual human GM seat'), authorizationHash: p.hash(disclosure.authorizationHash, 'current human GM authorization'), templateHash,
-      scope: p.literal(disclosure.scope, 'player-and-discovery-text-reviewed', 'explicit player/discovery text disclosure') } }
+    } }
+  return { row: r, body }
+}
+function disclosureIdentity(value: Record<string, unknown>, templateHash: string) {
+  if (value.templateHash !== templateHash) p.fail('采用身份、披露版本或原始授权不一致')
+  return { viewerKey: p.key(value.viewerKey, 'actual human requester'), seatKey: p.key(value.seatKey, 'actual requester seat'),
+    authorizationHash: p.hash(value.authorizationHash, 'actual acceptance authorization'), templateHash }
+}
+export function parseTtrpgOpenSessionSituationReceiptV1(value: unknown): TtrpgOpenSessionSituationReceiptV1 {
+  const { row, body } = parseCommon(value)
+  const disclosure = p.record(row.disclosure, ['kind', 'viewerKey', 'seatKey', 'authorizationHash', 'templateHash', 'scope'], 'human situation disclosure')
+  return { ...body, version: p.literal(row.version, 1, 'session situation version'), disclosure: {
+    kind: p.literal(disclosure.kind, 'human-gm-reviewed', 'human disclosure kind'), ...disclosureIdentity(disclosure, body.templateHash),
+    scope: p.literal(disclosure.scope, 'player-and-discovery-text-reviewed', 'explicit player/discovery text disclosure') } }
+}
+/** Versioned reader preserves V1 exactly; V2 cannot claim human review or omit its original once grant. */
+export function parseTtrpgOpenSessionSituationReceiptV2(value: unknown): TtrpgOpenSessionSituationReceipt {
+  const r = p.object(value, 'versioned session situation receipt')
+  if (r.version === 1) return parseTtrpgOpenSessionSituationReceiptV1(value)
+  const { row, body } = parseCommon(value)
+  const disclosure = p.record(row.disclosure, ['kind', 'viewerKey', 'seatKey', 'authorizationHash', 'templateHash', 'scope',
+    'gmSeatKey', 'gmSeatRevision', 'authorization'], 'AI host once disclosure')
+  const authorization = parseTtrpgOpenPublicSituationAuthorizationV1(disclosure.authorization), basis = authorization.basis
+  if (basis.delegation.decision !== 'adopt-this-one-candidate' || basis.sessionKey !== body.sourceRef.sessionKey
+    || basis.authorizationEpochKey !== body.model.epochKey || basis.requestKey !== body.model.requestKey
+    || basis.requester.viewerKey !== disclosure.viewerKey || basis.requester.seatKey !== disclosure.seatKey
+    || basis.runtimeSourceHash !== body.runtimeSourceHash || authorization.run.contractHash !== body.model.runContractHash
+    || basis.sourceVisibilityHash !== body.model.contextHash || body.authorizationRef.sequence !== basis.readEvidence.sequence + 1) p.fail('AI 主持采用缺少本次原请求的准确一次委托')
+  return { ...body, version: p.literal(row.version, 2, 'AI host situation version'), disclosure: {
+    kind: p.literal(disclosure.kind, 'ai-host-once-authorized', 'AI host once disclosure kind'), ...disclosureIdentity(disclosure, body.templateHash),
+    scope: p.literal(disclosure.scope, 'this-one-common-candidate', 'AI host once scope'),
+    gmSeatKey: p.key(disclosure.gmSeatKey, 'actual AI GM seat'), gmSeatRevision: p.integer(disclosure.gmSeatRevision, 'actual AI GM revision', 1, Number.MAX_SAFE_INTEGER), authorization } }
 }
 
 /** The shared registered-root parser owns the exact identity grammar and canonical set order. */

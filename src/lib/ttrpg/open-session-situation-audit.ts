@@ -16,6 +16,7 @@ export async function readTtrpgOpenSessionSituationAuditV1(input: { scope: Works
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'human', viewerKey: input.viewerKey } })
   const receipt = loaded.runtime.openRun!.situationReceipts?.find(r => r.template.templateKey === input.templateKey)
   if (!receipt) throw new Error('本团局没有该已采用局势')
+  if (receipt.version !== 1) throw new Error('AI 主持本次采用使用专用共同局势审计，不转换为真人私域审阅')
   const origin = await parseTtrpgOpenRunOriginV1(receipt.runOriginJson)
   const refs = origin.events.flatMap(e => e.type === 'evidence.artifact.recorded' ? [e.payload] : [])
   const bodies = new Map<string, string>()

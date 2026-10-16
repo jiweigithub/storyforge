@@ -1,4 +1,5 @@
 import TtrpgOpenSituationPanel from './TtrpgOpenSituationPanel'
+import TtrpgOpenPublicSituationPanel from './TtrpgOpenPublicSituationPanel'
 import TtrpgOpenBriefPanel from './TtrpgOpenBriefPanel'
 import TtrpgOpenWorldPatchPanel from './TtrpgOpenWorldPatchPanel'
 import TtrpgOpenHistoricalResponses from './TtrpgOpenHistoricalResponses'
@@ -132,6 +133,7 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
     {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenMemoryPanel key={`memory:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(() => job())} />}
     {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenBriefPanel key={`brief:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(signal => job(signal))} />}
     {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenSituationPanel key={`situation:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => job())} />}
+    {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenPublicSituationPanel key={`public-situation:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => job())} />}
     {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenWorldPatchPanel key={`patch:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => job())} />}
     {p && <>
       {!p.passiveRecap && (p.hosting?.canDelegate || p.hosting?.permission) && <section className="sf-open-table-card" aria-label="本轮自动主持">

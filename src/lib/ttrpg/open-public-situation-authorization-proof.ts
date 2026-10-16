@@ -87,7 +87,8 @@ export async function verifyTtrpgOpenPublicSituationAuthorizationV1(input: {
     || grant.budget.maximumOutputTokens > binding.maxOutputTokens
     || snapshot.contract.runtimeBindingHash !== await ttrpgOpenCallBindingHashV1({ sessionKey: b.sessionKey, actorKey: 'gm', authorizationEpochKey: epochKey,
       admissionStateHash: grant.admissionStateHash, visibilityHash: b.sourceVisibilityHash, runtimeSourceHash: b.runtimeSourceHash })
-    || snapshot.projection.steps[TTRPG_OPEN_PUBLIC_SITUATION_STEP_V1]?.status !== 'running' || snapshot.projection.steps[TTRPG_OPEN_PUBLIC_SITUATION_STEP_V1]?.attempt !== 1
+    || snapshot.projection.steps[TTRPG_OPEN_PUBLIC_SITUATION_STEP_V1]?.status !== (input.phase === 'adopt' ? 'awaiting_confirmation' : 'running')
+    || snapshot.projection.steps[TTRPG_OPEN_PUBLIC_SITUATION_STEP_V1]?.attempt !== 1
     || ['completed', 'failed', 'cancelled'].includes(snapshot.projection.state)
     || input.phase === 'authorize' && snapshot.events.some(event => event.type === 'model.requested')) {
     throw new Error('[ttrpg-public-situation] 授权必须绑定尚有效的原本地 Run，导入历史不能执行')

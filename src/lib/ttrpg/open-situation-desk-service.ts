@@ -35,6 +35,7 @@ export async function readTtrpgOpenSituationDeskV1(input: TtrpgOpenSituationDesk
   const active = run.coordination.epochs.find(e => e.epochKey === run.coordination.activeEpochKey)
   const own = run.coordination.epochs.filter(e => e.triggerKind === 'request-situation' && e.viewerKey === input.viewerKey)
   const epoch = active?.triggerKind === 'request-situation' && active.viewerKey === input.viewerKey ? active : own[own.length - 1]
+  if (!privateGm && !epoch) return null // AI-host fresh requests use the explicit common-input desk.
   const call = epoch && run.coordination.calls.find(c => c.authorizationEpochKey === epoch.epochKey)
   const owners = call ? (await readTtrpgOpenModelCallRunsV1({ ...input, calls: [call] })).filter(r => r.contractHash === call.runContractHash && !r.portableRuntimeOriginJson) : []
   if (owners.length > 1) throw new Error('原局势请求不能唯一定位，请核对原记录。')
@@ -48,6 +49,7 @@ export async function readTtrpgOpenSituationDeskV1(input: TtrpgOpenSituationDesk
   const templateHash = candidate?.review ? await hashCanonicalValue(candidate.review.proposal.template) : null
   let canRequest = false, unavailable = '', canConfirm = false, confirmationUnavailable = ''
   try {
+    if (!privateGm) throw new Error('此处仅保留原私域请求；新局势请使用共同资料拟定入口。')
     if (!content.campaign.runtimePolicy.enabled) throw new Error('本桌尚未允许 AI 局势拟定。')
     assertTtrpgOpenModelActorV1(runtime.authorization!, 'prose.ttrpg-open-situation-propose', 'gm', input.viewerKey)
     assertTtrpgOpenSituationEpochAuthorityV1(runtime, input.viewerKey)
@@ -66,7 +68,7 @@ export async function readTtrpgOpenSituationDeskV1(input: TtrpgOpenSituationDesk
     && !run.operations.some(o => ['awaiting-approval', 'executing'].includes(o.status))
     && !run.coordination.calls.some(c => ['prepared', 'dispatched'].includes(c.status))
     && !runtime.branchLineage?.recoveryTasks.some(t => !['completed', 'withdrawn'].includes(t.status))
-  const accepted = privateGm ? (run.situationReceipts ?? []).map(r => ({ templateKey: r.template.templateKey, title: r.template.title,
+  const accepted = privateGm ? (run.situationReceipts ?? []).filter(r => r.version === 1).map(r => ({ templateKey: r.template.templateKey, title: r.template.title,
     receiptHash: r.receiptHash, status: run.situations.active.some(i => i.templateKey === r.template.templateKey) ? 'active' as const
       : run.situations.queued.some(i => i.templateKey === r.template.templateKey) ? 'queued' as const : 'saved' as const })) : []
   const stopRepairs = await readTtrpgOpenSituationStopRepairsV1(input)

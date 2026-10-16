@@ -4,6 +4,7 @@ import { setupSituationGenerationV1, situationGenerationOutputV1, SITUATION_GENE
 import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
 import { readInstanceAgentRunV1 } from '../../src/lib/agent/run/event-store'
 import { prepareTtrpgOpenSituationInputV1 } from '../../src/lib/ttrpg/open-intent-input'
+import { generateTtrpgOpenSituationCandidateV1 } from '../../src/lib/ttrpg/open-intent-harness'
 import { loadTtrpgOpenSituationKernelInputV1 } from '../../src/lib/ttrpg/open-generated-situation-context'
 import { finishTtrpgOpenSituationDraftV1 } from '../../src/lib/ttrpg/open-generated-situation-stop'
 import { TtrpgOpenSituationReceiptPendingError } from '../../src/lib/ttrpg/open-session-situation-adoption'
@@ -17,8 +18,9 @@ async function fresh(human = true) {
   return f
 }
 async function drafted(human = true) {
-  const f = await fresh(human), send = vi.fn(async () => JSON.stringify(situationGenerationOutputV1((await loadTtrpgOpenSituationKernelInputV1({ ...f.input, actorKey: 'gm' })).basis)))
-  await requestTtrpgOpenSituationDeskV1({ ...f.input, submissionKey: 'explicit.request', rawInput: SITUATION_GENERATION_INPUT_V1, maximumCostUsd: 0.1, runAI: send })
+  const f = human ? await fresh(true) : await setupSituationGenerationV1(false), send = vi.fn(async () => JSON.stringify(situationGenerationOutputV1((await loadTtrpgOpenSituationKernelInputV1({ ...f.input, actorKey: 'gm' })).basis)))
+  if (human) await requestTtrpgOpenSituationDeskV1({ ...f.input, submissionKey: 'explicit.request', rawInput: SITUATION_GENERATION_INPUT_V1, maximumCostUsd: 0.1, runAI: send })
+  else await generateTtrpgOpenSituationCandidateV1({ ...f.request, runAI: send }) // Existing private history remains recoverable; fresh fallback UI is closed.
   const page = (await readTtrpgOpenSituationDeskV1(f.input))!
   return { f, page, send }
 }

@@ -1,4 +1,4 @@
-import { parseTtrpgOpenSessionSituationReceiptV1, type TtrpgOpenSessionSituationReceiptV1 } from './open-session-situation-contract'
+import { parseTtrpgOpenSessionSituationReceiptV2, type TtrpgOpenSessionSituationReceipt } from './open-session-situation-contract'
 import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { ttrpgOpenEpochBudgetForTriggerV1 } from './open-coordination'
 import { parseTtrpgOpenTableMessageV1,assertTtrpgOpenTableMessageHistoryV1,type TtrpgOpenTableMessageV1 } from './open-table-conversation'
@@ -156,7 +156,7 @@ export interface TtrpgOpenRunStateV1 {
   pressureCycles?: TtrpgOpenPressureCycleV1[];
   pressureSignals?: TtrpgOpenPressureSignalV1[];
   memoryReceipts?: TtrpgOpenMemoryReceipt[];
-  situationReceipts?: TtrpgOpenSessionSituationReceiptV1[];
+  situationReceipts?: TtrpgOpenSessionSituationReceipt[];
 }
 
 /**
@@ -714,7 +714,7 @@ export function parseTtrpgOpenRunStateV1(
     } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "tableMessages") ? { tableMessages: Array.isArray(row.tableMessages) && row.tableMessages.length <= 100000 ? row.tableMessages.map(parseTtrpgOpenTableMessageV1) : fail("tableMessages 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "narrations") ? { narrations: Array.isArray(row.narrations) && row.narrations.length <= 100000 ? row.narrations.map(parseTtrpgOpenNarrationReceiptV1) : fail("narrations 必须有界") } : {}),
-    ...(Object.prototype.hasOwnProperty.call(row, "situationReceipts") ? { situationReceipts: Array.isArray(row.situationReceipts) && row.situationReceipts.length <= 1000 ? row.situationReceipts.map(parseTtrpgOpenSessionSituationReceiptV1) : fail("situationReceipts 必须有界") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "situationReceipts") ? { situationReceipts: Array.isArray(row.situationReceipts) && row.situationReceipts.length <= 1000 ? row.situationReceipts.map(parseTtrpgOpenSessionSituationReceiptV2) : fail("situationReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "memoryReceipts") ? { memoryReceipts: Array.isArray(row.memoryReceipts) && row.memoryReceipts.length <= 100000 ? row.memoryReceipts.map(parseTtrpgOpenMemoryReceipt) : fail("memoryReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "stageClosures") ? { stageClosures: Array.isArray(row.stageClosures) && row.stageClosures.length <= 100000 ? row.stageClosures.map(parseTtrpgOpenStageClosureV1) : fail("stageClosures 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "terminalReceipts") ? { terminalReceipts: Array.isArray(row.terminalReceipts) && row.terminalReceipts.length <= 100000 ? row.terminalReceipts.map(parseTtrpgOpenTerminalReceiptV1) : fail("terminalReceipts 必须有界") } : {}),
@@ -851,14 +851,17 @@ export function parseTtrpgRuntimeStateV2(
     }
     const call = openRun!.coordination.calls.find(c => c.requestKey === receipt.model.requestKey);
     const epoch = openRun!.coordination.epochs.find(e => e.epochKey === receipt.model.epochKey);
-    if (!call || !epoch || epoch.triggerKind !== 'request-situation' || call.skillId !== 'prose.ttrpg-open-situation-propose'
+    const publicAdoption = receipt.version === 2;
+    if (!call || !epoch || epoch.triggerKind !== (publicAdoption ? 'request-public-situation' : 'request-situation')
+      || call.skillId !== (publicAdoption ? 'prose.ttrpg-open-public-situation-propose' : 'prose.ttrpg-open-situation-propose')
       || call.status !== 'succeeded' || !call.terminalRef || call.terminalRef.sequence >= receipt.sourceRef.sequence
       || call.authorizationEpochKey !== epoch.epochKey || call.runContractHash !== receipt.model.runContractHash
       || call.responseArtifactHash !== receipt.model.rawResponseHash || call.inputManifestHash !== receipt.model.inputManifestHash
-      || call.visibilityHash !== receipt.model.contextHash || call.admissionStateHash !== receipt.model.basisHash
+      || call.visibilityHash !== receipt.model.contextHash || call.admissionStateHash !== (receipt.version === 2 ? receipt.disclosure.authorization.admissionStateHash : receipt.model.basisHash)
       || call.runtimeSourceHash !== receipt.runtimeSourceHash || receipt.authorizationRef.sessionKey !== epoch.startedRef.sessionKey
       || receipt.authorizationRef.sequence !== epoch.startedRef.sequence || receipt.disclosure.authorizationHash !== epoch.authorizationHash
       || receipt.disclosure.viewerKey !== epoch.viewerKey || receipt.disclosure.seatKey !== epoch.triggeredBySeatKey) fail('局势采用没有原生成调用、明确披露及实际授权来源');
+    if (receipt.version === 2 && stableProductRuntimeJsonV1(epoch.publicSituation) !== stableProductRuntimeJsonV1(receipt.disclosure.authorization)) fail('AI 主持采用不属于原本次共同请求委托');
   }
   for (const operation of openRun?.operations ?? []) {
     const snapshot = operation.plan.discoveryPlan?.sessionSituation;

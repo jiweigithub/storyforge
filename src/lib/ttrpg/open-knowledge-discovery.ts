@@ -1,5 +1,5 @@
-import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
-import { parseTtrpgOpenSessionSituationReceiptV1, type TtrpgOpenSessionSituationReceiptV1 } from './open-session-situation-contract'
+import { ttrpgOpenSituationCatalogV1, ttrpgOpenSessionSituationActorAccessV1, ttrpgOpenSessionSituationDiscoveryPolicyV1 } from './open-session-situation-catalog'
+import { parseTtrpgOpenSessionSituationReceiptV2, type TtrpgOpenSessionSituationReceipt } from './open-session-situation-contract'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 /** Frozen discovery path; action names alone never grant knowledge. */
 import type { ProductRuntimeState } from '../types'
@@ -19,7 +19,7 @@ export interface TtrpgOpenDiscoveryRequestV1 {
   effectBindings: Record<string, Record<string, string | null>>
 }
 export interface TtrpgOpenDiscoveryPlanV1 {
-  sessionSituation?: TtrpgOpenSessionSituationReceiptV1
+  sessionSituation?: TtrpgOpenSessionSituationReceipt
   request: TtrpgOpenDiscoveryRequestV1
   frozenContent: TtrpgRuntimeContentV2
   contentHash: string
@@ -46,7 +46,7 @@ export function parseTtrpgOpenDiscoveryPlanV1(value: unknown): TtrpgOpenDiscover
   const sourceWorld = p.object(campaign.sourceWorld, 'discovery world')
   const frozenContent = parseTtrpgRuntimeContentVersionedV1(raw, p.hash(sourceWorld.contentHash, 'discovery world hash'), 2)
   if (!isTtrpgRuntimeContentV2(frozenContent)) p.fail('发现只能使用冻结 open 内容')
-  const sessionSituation = hasSession ? parseTtrpgOpenSessionSituationReceiptV1(r.sessionSituation) : undefined
+  const sessionSituation = hasSession ? parseTtrpgOpenSessionSituationReceiptV2(r.sessionSituation) : undefined
   const result = { ...(sessionSituation ? { sessionSituation } : {}), request: parseTtrpgOpenDiscoveryRequestV1(r.request), frozenContent,
     contentHash: p.hash(r.contentHash, 'discovery content hash'), publicFieldsHash: p.hash(r.publicFieldsHash, 'discovery public fields'),
     recipientActorKeys: p.keys(r.recipientActorKeys, 'discovery recipients', 1000), actorKey: p.key(r.actorKey, 'discovery actor'),
@@ -55,6 +55,8 @@ export function parseTtrpgOpenDiscoveryPlanV1(value: unknown): TtrpgOpenDiscover
   const evidence = ttrpgOpenSituationCatalogV1(frozenContent.campaign, { situationReceipts: sessionSituation ? [sessionSituation] : [] }).evidence.get(result.request.evidenceRef)?.evidence
   if (sessionSituation && !sessionSituation.template.evidence.some(e => e.clueRef === result.request.evidenceRef)) p.fail('发现快照不是本线索实际已采用的定义')
   if (!evidence || result.recipientActorKeys.some(actor => !frozenContent.campaign.characterTemplates.some(character => character.role === 'player' && character.characterKey === actor))) p.fail('发现引用或接收者不在冻结内容中')
+  if (sessionSituation?.version === 2 && (!sessionSituation.disclosure.authorization.basis.recipientActorKeys.includes(result.actorKey)
+    || result.recipientActorKeys.some(actor => !sessionSituation.disclosure.authorization.basis.recipientActorKeys.includes(actor)))) p.fail('共同局势发现不能扩大本次原接收者范围')
   const planKeys = [...new Set([evidence.discoveryPolicy.costEffectPlanRef, evidence.discoveryPolicy.failForwardEffectPlanRef].filter((ref): ref is string => ref !== null))]
   if (result.effectTemplates.map(template => template.planKey).sort().join(',') !== planKeys.sort().join(',')
     || result.effectTemplates.some(template => JSON.stringify(template) !== JSON.stringify(frozenContent.campaign.effectPlanTemplates.find(original => original.planKey === template.planKey)))
@@ -77,6 +79,7 @@ export function assertTtrpgOpenDiscoveryPathV1(state: ProductRuntimeState, plan:
   const evidence = template?.evidence.find(evidence => evidence.clueRef === plan.request.evidenceRef)
   const point = template?.interventionPoints.find(point => point.pointKey === plan.request.interventionPointKey)
   if (!runtime?.authorization || !run || !instance || !template || !evidence || !point
+    || !ttrpgOpenSessionSituationActorAccessV1(run, template.templateKey, plan.actorKey)
     || (point.visibleTo === 'private' && !point.knownByActorKeys.includes(plan.actorKey))
     || (plan.route === 'existing-action' && !point.suggestedActionKeys.includes(plan.ruleKey))
     || !evidence.discoveryPolicy.paths.some(path => path.interventionPointKey === point.pointKey && path.key === plan.ruleKey
@@ -84,7 +87,7 @@ export function assertTtrpgOpenDiscoveryPathV1(state: ProductRuntimeState, plan:
   const context = ttrpgOpenPredicateContextV1(state, plan.frozenContent)
   if ((point.requiresPredicate !== null && !evaluateTtrpgPredicateV1(point.requiresPredicate, context))
     || evidence.discoveryPolicy.preconditions.some(predicate => !evaluateTtrpgPredicateV1(predicate, context))) p.fail('知识发现前置条件未满足')
-  const recipients = resolveTtrpgOpenDiscoveryRecipientsV1(evidence.discoveryPolicy,runtime.authorization!.selectedActorKeys)
+  const recipients = resolveTtrpgOpenDiscoveryRecipientsV1(ttrpgOpenSessionSituationDiscoveryPolicyV1(owner, evidence.discoveryPolicy),runtime.authorization!.selectedActorKeys)
   if (evidence.discoveryPolicy.allowedAudience !== 'gm-only' && !recipients.length
     || JSON.stringify([...recipients].sort()) !== JSON.stringify([...plan.recipientActorKeys].sort())) p.fail('知识发现接收者或授权已经 stale')
   return { runtime, instance, template, evidence, point }
@@ -101,7 +104,7 @@ export async function createTtrpgOpenDiscoveryPlanV1(input: {
   if (!evidence) p.fail('没有该冻结 evidence')
   const plan = parseTtrpgOpenDiscoveryPlanV1({ ...(owner ? { sessionSituation: owner } : {}), request: input.request, frozenContent: input.content,
     contentHash: await hashProductProductionValueV2(input.content), publicFieldsHash: await hashTtrpgOpenEvidenceFieldsV1(catalog.validationView, evidence.clueRef),
-    recipientActorKeys: resolveTtrpgOpenDiscoveryRecipientsV1(evidence.discoveryPolicy,runtime.authorization!.selectedActorKeys),
+    recipientActorKeys: resolveTtrpgOpenDiscoveryRecipientsV1(ttrpgOpenSessionSituationDiscoveryPolicyV1(owner, evidence.discoveryPolicy),runtime.authorization!.selectedActorKeys),
     actorKey: input.actorKey, route: input.route, ruleKey: input.ruleKey,
     effectTemplates: [...new Set([evidence.discoveryPolicy.costEffectPlanRef, evidence.discoveryPolicy.failForwardEffectPlanRef].filter((ref): ref is string => ref !== null))]
       .map(ref => input.content.campaign.effectPlanTemplates.find(template => template.planKey === ref) ?? p.fail('发现后果模板不存在')) })

@@ -4,7 +4,8 @@ import { parseTtrpgOpenPublicSituationAuthorizationV1, TTRPG_OPEN_PUBLIC_SITUATI
 import { verifyTtrpgOpenPublicSituationAuthorizationV1 } from './open-public-situation-authorization-proof'
 import { ttrpgOpenSituationCatalogV1, ttrpgOpenSituationCatalogSnapshotV1 } from './open-session-situation-catalog'
 import { prepareTtrpgOpenSituationAdoptionV1, reconcileTtrpgOpenSituationRunV1, TtrpgOpenSituationReceiptPendingError } from './open-session-situation-adoption'
-import { assertTtrpgOpenSituationHumanGmV1 } from './open-generated-situation-candidate'
+import { prepareTtrpgOpenPublicSituationAdoptionV1, reconcileTtrpgOpenPublicSituationRunV1 } from './open-public-situation-adoption'
+import { assertTtrpgOpenSituationHumanGmV1, assertTtrpgOpenSituationRequesterV1 } from './open-generated-situation-candidate'
 import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1, assertTtrpgOpenSituationEpochAuthorityV1, isTtrpgOpenPassiveEpochV1, assertTtrpgOpenSituationWindowEventV1 } from './open-coordination'
 import { verifyTtrpgOpenBriefCandidateProofV1 } from './open-brief-candidate'
 import { parseTtrpgOpenModelMemoryReceiptV2 } from './open-model-memory-contract'
@@ -6146,7 +6147,27 @@ export async function acceptTtrpgOpenSituationV1(input: FormalTtrpgCommandEnvelo
   return event
 }
 
-/** Explicit human-GM admission of an already accepted session definition, never part of drafting. */
+/** Exactly one public candidate under the original explicit human delegation; no model call or human-review claim. */
+export async function acceptTtrpgOpenPublicSituationV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; runId: number; requestKey: string; candidateHash: string; templateHash: string; authorizationBasisHash: string;
+}): Promise<ProductRuntimeEvent> {
+  const session = await db.productRuntimeSessions.get(input.sessionId)
+  if (!session?.worldId || !session.workId) throw new Error('当前共同局势实例不存在')
+  const scope = await resolveScope({ scope: { projectId: session.projectId, worldId: session.worldId, workId: session.workId } })
+  const loaded = await assertTtrpgOpenSituationRequesterV1({ ...input, scope })
+  const commandId = await ttrpgOpenScopedKeyV1(loaded.runtime.sessionKey, 'public-session-situation', [input.requestKey, input.candidateHash])
+  const prior = await db.productRuntimeEvents.where('[sessionId+commandId]').equals([input.sessionId, commandId]).first()
+  const event = await appendFormalTtrpgCommand({ ...input, commandId, baseSequence: prior?.baseSequence ?? input.baseSequence,
+    baseStateHash: prior?.baseStateHash ?? input.baseStateHash, type: 'ttrpg.open.situation.accepted',
+    intent: { mode: 'ai-host-once', viewerKey: input.viewerKey, runId: input.runId, requestKey: input.requestKey,
+      candidateHash: input.candidateHash, templateHash: input.templateHash, authorizationBasisHash: input.authorizationBasisHash },
+    build: async context => prepareTtrpgOpenPublicSituationAdoptionV1({ ...input, scope }, { ...context, content: requireTtrpgOpenContent(context.ttrpgContent) }) })
+  try { await reconcileTtrpgOpenPublicSituationRunV1({ ...input, scope }) }
+  catch { throw new TtrpgOpenSituationReceiptPendingError(input.sessionId, event.sequence, input.runId) }
+  return event
+}
+
+/** Independent current human-host admission of an accepted definition, never part of drafting. */
 export async function activateTtrpgOpenSessionSituationV1(input: FormalTtrpgCommandEnvelope & { viewerKey: string; templateKey: string }): Promise<ProductRuntimeEvent> {
   return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.open.situation.activated', intent: { viewerKey: input.viewerKey, templateKey: input.templateKey },
     build: async context => {
