@@ -349,10 +349,17 @@
       "receipt": "/tmp/storyforge-chat-v111-full-ci-receipt.json"
     },
     "v113": {
-      "status": "running",
+      "status": "passed",
       "handle": 83944,
       "snapshotHead": "691619a3748e47438150553b546965f5a1159af1",
-      "log": "/tmp/storyforge-chat-v113-full-ci.log"
+      "log": "/tmp/storyforge-chat-v113-full-ci.log",
+      "exitCode": 0,
+      "files": 875,
+      "tests": 5504,
+      "testDurationSeconds": 1986.2,
+      "receipt": "/tmp/storyforge-chat-v113-full-ci-receipt.json",
+      "receiptSha256": "9ac6825036041019d13ec7f9998681a9cbe6e2ea1942a169284a71d8685e9040",
+      "logSha256": "dfdde410e8a2a5f1c4fe262c0b0650fa8f3f13a6ed28e427960fee553eda9e4d"
     }
   },
   "fullE2E": {
@@ -361,10 +368,12 @@
       "proof": "/tmp/storyforge-chat-v111-e2e-superseded.json"
     },
     "v113": {
-      "status": "queued",
+      "status": "verified unstarted queue superseded after V115 commit",
       "handle": 20638,
       "snapshotHead": "691619a3748e47438150553b546965f5a1159af1",
-      "log": "/tmp/storyforge-chat-v113-full-e2e.log"
+      "log": "/tmp/storyforge-chat-v113-full-e2e.log",
+      "exitCode": 143,
+      "proof": "/tmp/storyforge-chat-v113-e2e-superseded.json"
     }
   },
   "limitations": [

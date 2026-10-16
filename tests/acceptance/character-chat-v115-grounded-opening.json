@@ -88,9 +88,9 @@
   "fullValidation": {
     "currentCode": "8dcb1788",
     "CI": "queued",
-    "E2E": "queued",
+    "E2E": "running",
     "manifestSha256": "ef97145364b836c636d56e12355d69789aef834070d2e93811dc2559ee3d9544",
-    "priorV113CI": "still running; retained",
+    "priorV113CI": "passed on691619a3:875 files/5504tests; does not cover V115",
     "priorV113E2E": "verified unstarted, then superseded; exit143 proof retained"
   },
   "realValidation": {
