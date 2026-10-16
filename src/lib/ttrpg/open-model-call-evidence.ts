@@ -266,3 +266,15 @@ export async function readTtrpgOpenModelCallRunsV1(input: {
   }
   return rows.filter(row => !selected.has(row.contractHash) || selected.get(row.contractHash) === row.id)
 }
+/** One original local owner, never a replacement execution authority from imported history. */
+export async function readTtrpgOpenOriginalLocalCallRunV1(input: { scope: WorkspaceScope; sessionId: number; call: TtrpgOpenModelCallV1;
+  runs?: Awaited<ReturnType<typeof readTtrpgOpenModelCallRunsV1>> }) {
+  const rows = input.runs ?? await readTtrpgOpenModelCallRunsV1({ ...input, calls: [input.call] }), matches = []
+  for (const row of rows.filter(row => row.id && !row.portableRuntimeOriginJson && row.contractHash === input.call.runContractHash)) {
+    const snapshot = await readInstanceAgentRunV1(input.scope, row.id!)
+    if (snapshot.run.productRuntimeSessionId === input.sessionId && snapshot.events.some(event => event.type === 'model.requested'
+      && event.payload.stepId === input.call.stepId && event.payload.attempt === input.call.attempt && event.payload.bindingHash === input.call.requestHash)) matches.push(snapshot)
+  }
+  if (matches.length > 1) throw new Error('原模型请求的本地运行身份不唯一，请保留原记录。')
+  return matches[0] ?? null
+}

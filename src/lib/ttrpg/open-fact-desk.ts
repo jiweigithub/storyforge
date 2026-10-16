@@ -20,7 +20,7 @@ import * as p from './open-contract-parse'
 export interface TtrpgOpenFactDeskInputV1 { scope: WorkspaceScope; sessionId: number; viewerKey: string }
 type Loaded = Awaited<ReturnType<typeof loadTtrpgOpenMemoryReadStateV1>>
 const submission = (value: string) => { if (!/^[A-Za-z0-9._-]{1,96}$/.test(value)) p.fail('事实操作标识无效'); return value }
-async function load(input: TtrpgOpenFactDeskInputV1) {
+export async function loadTtrpgOpenFactDeskOwnerV1(input: TtrpgOpenFactDeskInputV1) {
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'human', viewerKey: input.viewerKey } })
   if (!loaded.humanHost || loaded.seat?.role !== 'gm' || loaded.seat.controller === 'ai') return null
   const { runtime, content, source } = loaded, run = runtime.openRun!
@@ -32,7 +32,7 @@ async function load(input: TtrpgOpenFactDeskInputV1) {
   await loaded.assertCurrent()
   return loaded
 }
-async function human(input: TtrpgOpenFactDeskInputV1) { return await load(input) ?? p.fail('事实确认面板仅允许当前本人真人 GM；兼任主持不取得私域资料') }
+async function human(input: TtrpgOpenFactDeskInputV1) { return await loadTtrpgOpenFactDeskOwnerV1(input) ?? p.fail('事实确认面板仅允许当前本人真人 GM；兼任主持不取得私域资料') }
 function envelope(loaded: Loaded, commandId: string) { return { sessionId: loaded.session.id!, commandId, baseSequence: loaded.state.lastSequence, baseStateHash: loaded.stateHash } }
 function name(loaded: Loaded, ref: string) { return loaded.state.entities[ref]?.name ?? ref }
 function sourceLabel(loaded: Loaded, key: string) {
@@ -60,7 +60,7 @@ function available(loaded: Loaded, input: TtrpgOpenFactDeskInputV1) {
       : !own ? '请先明确开始本人的普通咨询；局势或复盘窗口不能确认事实。' : '' }
 }
 export async function readTtrpgOpenFactDeskV1(input: TtrpgOpenFactDeskInputV1) {
-  const loaded = await load(input)
+  const loaded = await loadTtrpgOpenFactDeskOwnerV1(input)
   if (!loaded) return null
   const { runtime, content } = loaded, run = runtime.openRun!, flags = available(loaded, input)
   const entriesByKey = new Map(run.factLedger?.entries.map(row => [row.fact.factKey, row])), oraclesByRef = new Map(run.oracleReceipts?.map(row => [stable(row.sourceRef), row]))

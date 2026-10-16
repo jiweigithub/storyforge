@@ -114,11 +114,13 @@ type OracleGenerationInputV1 = Omit<Parameters<typeof prepareTtrpgOpenOracleInpu
 export async function generateTtrpgOpenOracleCandidateV1(input: OracleGenerationInputV1) {
   return generateTtrpgOpenOracleCandidate(input, false)
 }
-export async function generateTtrpgOpenOracleCandidateV2(input: Omit<OracleGenerationInputV1, 'rawInput'> & { referencePolicy: 'recorded-oracle-instances-v1' }) {
+export async function generateTtrpgOpenOracleCandidateV2(input: Omit<OracleGenerationInputV1, 'rawInput'> & { referencePolicy: 'recorded-oracle-instances-v1';
+  onPrepared?: (prepared: Awaited<ReturnType<typeof prepareTtrpgOpenOracleInputV2>>) => void | Promise<void> }) {
   if (input.referencePolicy !== 'recorded-oracle-instances-v1') throw new Error('请明确使用原 Oracle 的已创建对象引用策略')
-  return generateTtrpgOpenOracleCandidate({ ...input, rawInput: TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1 }, true)
+  return generateTtrpgOpenOracleCandidate({ ...input, rawInput: TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1 }, true, input.onPrepared)
 }
-async function generateTtrpgOpenOracleCandidate(input: OracleGenerationInputV1, runtimeReferences: boolean) {
+async function generateTtrpgOpenOracleCandidate(input: OracleGenerationInputV1, runtimeReferences: boolean,
+  onPrepared?: (prepared: Awaited<ReturnType<typeof prepareTtrpgOpenOracleInputV2>>) => void | Promise<void>) {
   if (!input.aiConfig && !input.runAI) throw new Error('[ttrpg-open-oracle] 缺少明确模型配置')
   const meta = { category: 'runtime.ttrpg-open.oracle-interpret', projectId: input.scope.projectId,
     configOverrides: { maxTokens: input.maximumOutputTokens }, contextOverflowPolicy: 'reject' as const }
@@ -128,6 +130,7 @@ async function generateTtrpgOpenOracleCandidate(input: OracleGenerationInputV1, 
   if (!input.runAI && modelIdentity.provider === 'poe') throw new Error('[ttrpg-open-oracle] 当前 provider 不支持本次要求的输出上限')
   const prepared = runtimeReferences ? await prepareTtrpgOpenOracleInputV2({ ...input, modelIdentity, referencePolicy: 'recorded-oracle-instances-v1' })
     : await prepareTtrpgOpenOracleInputV1({ ...input, modelIdentity })
+  await onPrepared?.(prepared)
   const result = await executeTtrpgOpenOracleRequestV1({ ...input, runId: prepared.runId, requestKey: prepared.requestKey })
   if (result.status !== 'candidate') throw new Error('[ttrpg-open-oracle] 请求已被其他执行器接管，未重复发送')
   return { prepared, ...result }

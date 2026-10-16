@@ -162,13 +162,19 @@ export function assertTtrpgOpenOracleRuntimeReferenceJournalV1(input: {
   return policy
 }
 /** Build from already verified sources only. This function neither opens a window nor invokes a model. */
+export function ttrpgOpenOracleRuntimeReferenceKeysV1(input: {
+  operations: readonly TtrpgOpenEntityOperationV1[]; runtimeSourceHash: string; oracle: Oracle;
+  recipientActorKeys: readonly string[]; consumerRef: TtrpgOpenSourceRefV1;
+}): string[] {
+  return ttrpgOpenRuntimeEntityReferenceJournalRowsV1(input.operations, input.runtimeSourceHash)
+    .filter(row => eligible(row, input.oracle.audience, input.recipientActorKeys)
+      && (row.sourceRef.sessionKey !== input.consumerRef.sessionKey || row.sourceRef.sequence < input.consumerRef.sequence)).map(row => row.entityRef)
+}
 export async function createTtrpgOpenOracleRuntimeReferencePolicyV1(input: {
   content: TtrpgRuntimeContentV2; operations: readonly TtrpgOpenEntityOperationV1[]; runtimeSourceHash: string;
   oracle: Oracle; recipientActorKeys: readonly string[]; consumerRef: TtrpgOpenSourceRefV1;
 }): Promise<TtrpgOpenOracleRuntimeReferencePolicyV1> {
-  const rows = ttrpgOpenRuntimeEntityReferenceJournalRowsV1(input.operations, input.runtimeSourceHash)
-  const entityRefs = rows.filter(row => eligible(row, input.oracle.audience, input.recipientActorKeys)
-    && (row.sourceRef.sessionKey !== input.consumerRef.sessionKey || row.sourceRef.sequence < input.consumerRef.sequence)).map(row => row.entityRef)
+  const entityRefs = ttrpgOpenOracleRuntimeReferenceKeysV1(input)
   const references = await createTtrpgOpenRuntimeEntityReferencesV1({ ...input, entityRefs })
   const policy = parseTtrpgOpenOracleRuntimeReferencePolicyV1({ schema: 'storyforge.ttrpg-open-oracle-runtime-reference-policy', version: 1,
     oracleSourceRef: input.oracle.sourceRef, audience: input.oracle.audience, recipientActorKeys: [...input.recipientActorKeys], references })

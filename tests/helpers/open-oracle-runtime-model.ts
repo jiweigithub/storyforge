@@ -43,23 +43,26 @@ export async function setupOracleRuntimePolicyV1(audience: 'public' | 'party' | 
   return { ...s, state, create, input, assertion: { ...input, rulePackContentHash: s.input.content.rulePack.contentHash } }
 }
 
-export async function setupOracleRuntimeModelV1(audience: 'public' | 'party' | 'gm-only' = 'gm-only', configure?: Parameters<typeof setupOpenEntityPlanningV1>[0],
-  beforeWindow?: (s: Awaited<ReturnType<typeof setupOracleRuntimePolicyV1>>) => Promise<void>) {
-  const rawInput = TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1
+export async function setupOracleRuntimeDeskV1(audience: 'public' | 'party' | 'gm-only' = 'gm-only', configure?: Parameters<typeof setupOpenEntityPlanningV1>[0]) {
   const s = await setupOracleRuntimePolicyV1(audience, false, { aiEnabled: true, configure })
   const owner = { scope: s.f.scope, sessionId: s.f.sessionId, viewerKey: 'viewer.gm' }
   await closeTtrpgOpenEntityDeskV1({ ...owner, submissionKey: 'oracle.model.end.original.consultation' })
-  await beforeWindow?.(s)
-  const before = await readProductRuntimeState(s.f.sessionId)
-  const policy = await createTtrpgOpenOracleRuntimeReferencePolicyV1({ ...s.input, consumerRef: { sessionKey: before.ttrpg!.sessionKey, sequence: before.lastSequence + 1 } })
-  await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(s.f.sessionId, 'oracle.model.start'), viewerKey: owner.viewerKey,
-    triggerKind: 'continue-host', rawInput, oracleRuntimeReferencePolicy: policy })
-  const input = { ...await openEnvelopeV1(s.f.sessionId, 'oracle.model.reserve'), ...owner, rawInput, oracleSourceRef: s.input.oracle.sourceRef,
-    referencePolicy: 'recorded-oracle-instances-v1' as const, maximumOutputTokens: 1000, maximumCostUsd: 0.2 }
   const npc = s.state.ttrpg!.openRun!.entityOperations![0].plan.items.find(row => row.kind === 'actor')!.entityKey
   const place = s.state.ttrpg!.openRun!.entityOperations![0].plan.items.find(row => row.kind === 'location')!.entityKey
   const fact = { kind: 'relation' as const, subjectRef: npc, predicateKey: 'knows' as const, objectRef: audience === 'gm-only' ? place : 'harbor', canonicalValue: true,
     detail: '原模型候选提出该 NPC 了解对应地点，尚须真人确认。', sourceFactRefs: ['fact.harbor'], audience,
     knownByActorKeys: audience === 'party' ? s.input.recipientActorKeys : [], supersedes: null, supersedeReason: null }
-  return { ...s, owner, before, policy, input, npc, place, fact, resume: (p: { runId: number; requestKey: string }) => ({ ...owner, ...p }) }
+  return { ...s, owner, npc, place, fact }
+}
+export async function setupOracleRuntimeModelV1(audience: 'public' | 'party' | 'gm-only' = 'gm-only', configure?: Parameters<typeof setupOpenEntityPlanningV1>[0],
+  beforeWindow?: (s: Awaited<ReturnType<typeof setupOracleRuntimePolicyV1>>) => Promise<void>) {
+  const rawInput = TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1, s = await setupOracleRuntimeDeskV1(audience, configure)
+  await beforeWindow?.(s)
+  const before = await readProductRuntimeState(s.f.sessionId)
+  const policy = await createTtrpgOpenOracleRuntimeReferencePolicyV1({ ...s.input, consumerRef: { sessionKey: before.ttrpg!.sessionKey, sequence: before.lastSequence + 1 } })
+  await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(s.f.sessionId, 'oracle.model.start'), viewerKey: s.owner.viewerKey,
+    triggerKind: 'continue-host', rawInput, oracleRuntimeReferencePolicy: policy })
+  const input = { ...await openEnvelopeV1(s.f.sessionId, 'oracle.model.reserve'), ...s.owner, rawInput, oracleSourceRef: s.input.oracle.sourceRef,
+    referencePolicy: 'recorded-oracle-instances-v1' as const, maximumOutputTokens: 1000, maximumCostUsd: 0.2 }
+  return { ...s, before, policy, input, resume: (p: { runId: number; requestKey: string }) => ({ ...s.owner, ...p }) }
 }

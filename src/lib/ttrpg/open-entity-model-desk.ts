@@ -5,8 +5,7 @@ import { parseTtrpgOpenEntityModelSelectionV1 } from './open-entity-model-contra
 import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
 import { loadTtrpgOpenEntityContextV1 } from './open-entity-context'
 import { assertTtrpgOpenEntityHumanReaderV1, readTtrpgOpenEntityCandidateV1 } from './open-entity-candidate'
-import { readTtrpgOpenModelCallRunsV1 } from './open-model-call-evidence'
-import { readInstanceAgentRunV1 } from '../agent/run/event-store'
+import { readTtrpgOpenModelCallRunsV1, readTtrpgOpenOriginalLocalCallRunV1 } from './open-model-call-evidence'
 import { assertTtrpgOpenModelActorV1 } from './open-model-purpose'
 import { generateTtrpgOpenEntityCandidateV1, executeTtrpgOpenEntityRequestV1 } from './open-intent-harness'
 import { acceptTtrpgOpenEntityCandidateV1 } from './runtime-commands'
@@ -26,14 +25,7 @@ type Input = TtrpgOpenEntityDeskInputV1
 type Transport = Pick<Parameters<typeof generateTtrpgOpenEntityCandidateV1>[0], 'aiConfig' | 'runAI' | 'signal'>
 const activeRun = (status: string) => !['cancelled', 'failed', 'completed'].includes(status)
 async function exactOwner(input: Input, call: TtrpgOpenModelCallV1, rows: Awaited<ReturnType<typeof readTtrpgOpenModelCallRunsV1>>) {
-  const matches = []
-  for (const row of rows.filter(r => r.id && !r.portableRuntimeOriginJson && r.contractHash === call.runContractHash)) {
-    const snapshot = await readInstanceAgentRunV1(input.scope, row.id!)
-    if (snapshot.run.productRuntimeSessionId === input.sessionId && snapshot.events.some(e => e.type === 'model.requested'
-      && e.payload.stepId === call.stepId && e.payload.attempt === call.attempt && e.payload.bindingHash === call.requestHash)) matches.push(snapshot)
-  }
-  if (matches.length > 1) throw new Error('原实体请求的运行身份不唯一，请保留原记录。')
-  return matches[0] ?? null
+  return readTtrpgOpenOriginalLocalCallRunV1({ ...input, call, runs: rows })
 }
 async function envelope(sessionId: number, commandId: string) {
   const v = await readProductRuntimeStateVersion(sessionId)
