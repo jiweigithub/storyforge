@@ -96,7 +96,7 @@
     "cleanupAudit": "/tmp/storyforge-chat-v120-space-cleanup.json",
     "cleanupScope": "only incomplete own snapshot, generated dist from terminated own CI, duplicate Git object packs of terminated own snapshots; tracked source trees, manifests, artifacts and logs retained; no user data changed"
   },
-  "realValidation": "not yet run on this version; next independent fresh refusal episode",
+  "realValidation": "V121 stopped on wall budget before new situation generation; V122 independent fresh automatic-first-refusal episode started. Neither counts as acceptance yet.",
   "limits": [
     "Engineer-injected semantics does not prove real generated behavior or narrative quality",
     "V119 failure retained; no M1/Agnes/human/commercial gate closed",
@@ -134,6 +134,34 @@
     "storyforge-chat-v120-final-docs.log": {
       "path": "/tmp/storyforge-chat-v120-final-docs.log",
       "sha256": "3cf099bb4bf6f5229f2d0c642f9cf928143255cb6d18c0969505a40bc68ce9a7"
+    }
+  },
+  "implementationCommit": "2eed4cfdc7d09d473260885ab53998c88f8e1d0e",
+  "manifestSha256": "1db39043d724b3073c2332c940a54612b8ed4aad9814b1afe3aca57fda597074",
+  "fullValidation": {
+    "ci": {
+      "status": "running",
+      "snapshot": {
+        "gitHistory": "shared local Git object store; exact HEAD and independent tracked tree verified",
+        "head": "2eed4cfdc7d09d473260885ab53998c88f8e1d0e",
+        "root": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v120-ci-tgp4smeu/storyforge",
+        "manifestPath": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v120-ci-tgp4smeu/manifest.json",
+        "manifestSha256": "1db39043d724b3073c2332c940a54612b8ed4aad9814b1afe3aca57fda597074",
+        "files": 3473
+      },
+      "receipt": "/tmp/storyforge-chat-v120-full-ci-receipt.json"
+    },
+    "e2e": {
+      "status": "queued",
+      "snapshot": {
+        "gitHistory": "shared local Git object store; exact HEAD and independent tracked tree verified",
+        "head": "2eed4cfdc7d09d473260885ab53998c88f8e1d0e",
+        "root": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v120-e2e-f2g7scto/storyforge",
+        "manifestPath": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v120-e2e-f2g7scto/manifest.json",
+        "manifestSha256": "1db39043d724b3073c2332c940a54612b8ed4aad9814b1afe3aca57fda597074",
+        "files": 3473
+      },
+      "receipt": "/tmp/storyforge-chat-v120-full-e2e-receipt.json"
     }
   }
 }
