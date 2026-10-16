@@ -5,6 +5,11 @@ import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { parseAvgAuthorWorkspaceV1, type AvgAuthorStageV1, type AvgAuthorWorkspaceV1 } from './author-workspace-contract'
 import { readAvgDraftMediaV1 } from './editor-service'
 import { parseAvgAuthorMediaChoiceV1 } from './media-production-contract'
+import { avgRawMediaArtifactKeyV1 } from './media-production-contract'
+import { parseProductProductionBriefV3 } from '../product-production/contracts'
+import { parseProductProductionPlanV3 } from '../product-production/plan'
+import { verifyRetainedAvgRawImageArtifactV1 } from '../product-production/artifact-store'
+import { assertAvgRawImageArtifactV1 } from './media-raw-contract'
 import { prepareAvgAdoptedGeneratedImageV1, readAvgAdoptedGeneratedImageV1 } from './media-generated-reference'
 import type { AvgInheritedStageImageV1 } from './stage-image-source-contract'
 
@@ -37,7 +42,28 @@ export async function prepareAvgInheritedStageDraftV1(input:{scope:WorkspaceScop
       const image=await prepareAvgAdoptedGeneratedImageV1({scope:input.scope,choiceId:matches[0].id!})
       if(image.referenceOnly||image.sourceWorldContentHash!==input.worldContentHash)throw new Error('[avg-media] 不能把参考图或其他世界来源自动提升为演出图')
       entries.push({assetKey:asset.assetKey,source:image.source,declaration:'在此编辑草稿中保留准确旧图；待本版本作者核对演出、用途与来源后确认采用'})
-    }else await readAvgDraftMediaV1(input.scope,asset)
+    }else{
+      // A rejected/revised author review invalidates its old choice while the
+      // editable layout remains. Retain an exact producer-proved placeholder
+      // only for a slot this new batch must freshly choose; it gains no old
+      // image adoption and is never added to the inherited-image authority map.
+      const incoming=next.mediaBatch?.requirements.find(r=>r.assetKey===asset.assetKey&&r.consumer.domain!=='reference')
+      if(incoming&&['cancelled','failed','recovery-required'].includes(input.build.status)){
+        const raw=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([input.build.id!,avgRawMediaArtifactKeyV1(incoming.requirementKey)])
+          .filter(row=>row.status==='accepted').limit(2).toArray())
+        if(raw.length===1&&same(JSON.parse(raw[0].metadataJson),asset)){
+          const row=await db.productProductionBriefs.where('[productionId+revision]').equals([input.build.productionId,input.build.briefRevision]).first()
+          if(!row||row.briefHash!==input.build.briefHash||!await assertRecordInScope(input.scope,'productProductionBriefs',row,{owner:'work'}))throw new Error('[avg-media] 待重选图片缺少准确原始 Brief')
+          const brief=parseProductProductionBriefV3(row.briefJson),plan=parseProductProductionPlanV3(input.build.planJson,brief,input.build.briefHash)
+          if(brief.source.worldContentHash!==input.worldContentHash)throw new Error('[avg-media] 待重选图片不能跨冻结世界')
+          const proved=await verifyRetainedAvgRawImageArtifactV1({scope:input.scope,buildId:input.build.id!,expectedBuildRevision:input.build.stateRevision,
+            expectedBriefHash:input.build.briefHash,expectedPlanHash:input.build.planHash,sourceControlEpoch:plan.controlEpoch,artifactKey:raw[0].artifactKey,version:raw[0].version,contentHash:raw[0].contentHash})
+          if(!same((await assertAvgRawImageArtifactV1(brief,proved.artifact)).asset,asset))throw new Error('[avg-media] 待重选图片元数据已变化')
+          continue
+        }
+      }
+      await readAvgDraftMediaV1(input.scope,asset)
+    }
   }
   if(entries.length)next.presentation.inheritedImages=entries
   await readAvgInheritedStageImagesV1({...input,payload:next.presentation})

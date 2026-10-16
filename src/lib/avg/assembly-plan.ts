@@ -1,6 +1,6 @@
 import type { ProductProductionBriefV3, ProductProductionPlanTaskV3, ProductProductionPlanV3 } from '../types'
 import { AVG_ASSEMBLY_GATE_IDS_V1, avgMediaAssemblyGateIdsV2, parseAvgAssemblyBriefV1, parseAvgAssemblyBriefV2, type AvgAssemblyBriefV2 } from './assembly-contract'
-import { avgMediaChoiceArtifactKeyV1, avgRawMediaArtifactKeyV1 } from './media-production-contract'
+import { avgMediaChoiceArtifactKeyV1, avgRawMediaArtifactKeyV1, avgVisualReviewArtifactKeyV1 } from './media-production-contract'
 
 export const AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1 = 'avg.media.image'
 
@@ -61,9 +61,13 @@ export function buildAvgMediaAssemblyPlanV2(input: {
       budgetReservation: { modelCalls: 0, inputTokens: 20_000, outputTokens: 0, mediaCalls: retained?0:1,
         maximumCostUsd: retained?0:capability[0].maximumRequestCost, durationMs: retained?60_000:360_000, storageBytes: (retained?4:96) * 1024 * 1024 },
     })
+    const reviewKey=avgVisualReviewArtifactKeyV1(requirement.requirementKey),reviewTaskKey=`avg.author.visual-review.${requirement.requirementKey}`
+    if(mediaBatch.visualReviewPolicy)mediaTasks.push({...structuredClone(template),taskKey:reviewTaskKey,kind:'avg-author-visual-review',lane:'qa',
+      outputArtifactKeys:[reviewKey],inputArtifactKeys:[rawKey],dependsOn:[taskKey],requiredReceipts:[{taskKey,receiptHash:null}],subjectLockKeys:[reviewKey],acceptanceGateIds:[`avg.media.review.recorded.${requirement.requirementKey}`]})
+    const choiceDependencies=[taskKey,...(mediaBatch.visualReviewPolicy?[reviewTaskKey]:[])]
     mediaTasks.push({ ...structuredClone(template), taskKey: choiceTaskKey, kind: 'avg-author-media-choice', lane: 'visual',
-      outputArtifactKeys: [choiceKey], inputArtifactKeys: [rawKey], dependsOn: [taskKey],
-      requiredReceipts: [{ taskKey, receiptHash: null }], subjectLockKeys: [choiceKey], acceptanceGateIds: [`avg.media.choice.confirmed.${requirement.requirementKey}`],
+      outputArtifactKeys: [choiceKey], inputArtifactKeys: [rawKey,...(mediaBatch.visualReviewPolicy?[reviewKey]:[])], dependsOn: choiceDependencies,
+      requiredReceipts: choiceDependencies.map(taskKey=>({taskKey,receiptHash:null})), subjectLockKeys: [choiceKey], acceptanceGateIds: [`avg.media.choice.confirmed.${requirement.requirementKey}`],
     })
     choices.push(choiceKey); choiceTaskKeys.push(choiceTaskKey)
   }

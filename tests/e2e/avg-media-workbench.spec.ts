@@ -1,3 +1,4 @@
+import { confirmEngineeringVisualReview } from '../helpers/avg-visual-review-playwright'
 import { expect, test, type Page } from '@playwright/test'
 
 async function adopt(page: Page, label: string) {
@@ -80,6 +81,7 @@ test('author creates authorized image requirements, refreshes pending choice and
   panel = page.getByRole('region', { name: '图片生产（实验）', exact: true })
   await panel.getByRole('button', { name: '生成本批图片（最多 1 次）', exact: true }).click()
   let card = panel.getByRole('article', { name: '图片候选：原创工作台背景', exact: true })
+  await confirmEngineeringVisualReview(card,'原创工作台背景')
   await expect(card.getByRole('button', { name: '保存选图候选：原创工作台背景', exact: true })).toBeEnabled()
   await card.getByRole('button', { name: '保存选图候选：原创工作台背景', exact: true }).click()
   await expect(card.getByText('查看选图版本、用途与声明', { exact: true })).toBeVisible()

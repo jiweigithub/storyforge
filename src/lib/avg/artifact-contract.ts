@@ -2,6 +2,7 @@ import type { ProductBuildArtifactKindV1 } from '../types/product-production'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { avgEnum, avgHash, avgKey, avgKeys, avgList, avgProtocolBody, avgRecord, avgText, avgUnique } from './protocol-validation'
 import { parseAvgSystemPlan, type AvgSystemPlan } from './system-contract'
+import { parseAvgAuthorVisualEvidenceV1,type AvgAuthorVisualEvidenceV1 } from './visual-review-contract'
 
 /** Reserved role contracts do not register an AI call or assert professional competence. */
 export const AVG_PROFESSIONAL_OUTPUTS_V1 = [
@@ -56,6 +57,9 @@ export type AvgDialoguePatchV1 = Schema<'dialogue-patch'> & {
 export type AvgReviewIssuesV1 = Schema<'review-issues'> & {
   targetKey: string; observations: Array<'text' | 'visual' | 'audio' | 'interaction'>; unobserved: string[]
   issues: Array<{ issueKey: string; locationKey: string; evidence: string; severity: 'blocking' | 'major' | 'minor'; owner: 'content' | 'system' | 'media'; allowedChange: string; impact: string; recheck: string }>
+  /** Author-declared observation scope, verified against frozen image inputs.
+   * It is not a model score, independent review or commercial acceptance. */
+  visualEvidence?: AvgAuthorVisualEvidenceV1
 }
 export type AvgProfessionalArtifactV1 = AvgProductionPlanV1 | AvgSourceAuditV1 | AvgStoryBibleV1 | AvgCastBibleV1 | AvgRoutePlanV1 | AvgSceneScriptV1 | AvgDialoguePatchV1 | AvgReviewIssuesV1 | AvgSystemPlan
 
@@ -166,7 +170,8 @@ export function parseAvgProfessionalArtifactV1(value: unknown): AvgProfessionalA
       return { schema: header.schema, version: 1, sceneKey: avgKey(row.sceneKey, 'sceneKey'), baseScriptHash: avgHash(row.baseScriptHash, 'baseScriptHash'), changes }
     }
     case 'storyforge.avg.review-issues': {
-      const row = payloadRow(raw, header.schema, ['targetKey','observations','unobserved','issues'])
+      const hasVisual=Object.prototype.hasOwnProperty.call(raw,'visualEvidence')
+      const row = payloadRow(raw, header.schema, ['targetKey','observations','unobserved','issues',...(hasVisual?['visualEvidence']:[])])
       const observations = avgUnique(avgList(row.observations, 'observations', value => avgEnum(value, ['text','visual','audio','interaction'] as const, 'observation'), 4), value => value, 'observations')
       const issues = avgUnique(avgList(row.issues, 'issues', value => {
         const issue = avgRecord(value, ['issueKey','locationKey','evidence','severity','owner','allowedChange','impact','recheck'], 'issue')
@@ -174,7 +179,9 @@ export function parseAvgProfessionalArtifactV1(value: unknown): AvgProfessionalA
           severity: avgEnum(issue.severity, ['blocking','major','minor'] as const, 'severity'), owner: avgEnum(issue.owner, ['content','system','media'] as const, 'owner'),
           allowedChange: avgText(issue.allowedChange, 'allowedChange'), impact: avgText(issue.impact, 'impact'), recheck: avgText(issue.recheck, 'recheck') }
       }), issue => issue.issueKey, 'issues')
-      return { schema: header.schema, version: 1, targetKey: avgKey(row.targetKey, 'targetKey'), observations, unobserved: texts(row.unobserved, 'unobserved'), issues }
+      let visualEvidence:AvgReviewIssuesV1['visualEvidence']
+      if(hasVisual)visualEvidence=parseAvgAuthorVisualEvidenceV1(row.visualEvidence)
+      return { schema: header.schema, version: 1, targetKey: avgKey(row.targetKey, 'targetKey'), observations, unobserved: texts(row.unobserved, 'unobserved'), issues,...(hasVisual?{visualEvidence}:{}) }
     }
     default: throw new Error('[avg] 未登记或尚未就绪的专业 artifact schema')
   }

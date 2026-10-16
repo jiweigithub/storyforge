@@ -39,6 +39,7 @@ export interface AvgVisualProductionBatchV1 {
   sourceInputHash: string
   requirements: AvgVisualProductionRequirementV1[]
   characterFamily?: AvgCharacterFamilyBatchV1
+  visualReviewPolicy?: 'author-visual-v1'
 }
 
 /** A separate author selection over an immutable provider Artifact. Raw output
@@ -57,6 +58,7 @@ export interface AvgAuthorMediaChoiceV1 {
 export const AVG_VISUAL_BATCH_LIMIT_V1 = 8
 export function avgRawMediaArtifactKeyV1(requirementKey: string): string { return `avg.media.raw.${requirementKey}` }
 export function avgMediaChoiceArtifactKeyV1(requirementKey: string): string { return `avg.media.choice.${requirementKey}` }
+export function avgVisualReviewArtifactKeyV1(requirementKey:string):string{return `avg.review.visual.${requirementKey}`}
 
 function texts(value: unknown, label: string): string[] {
   return avgList(value, label, (value, path) => avgText(value, path, 2000), 100)
@@ -104,8 +106,8 @@ export function parseAvgVisualProductionRequirementV1(value: unknown): AvgVisual
 }
 
 export function parseAvgVisualProductionBatchV1(value: unknown): AvgVisualProductionBatchV1 {
-  const body=avgProtocolBody(value),hasFamily=!!body&&Object.prototype.hasOwnProperty.call(body,'characterFamily')
-  const r = avgRecord(body, ['schema', 'version', 'batchKey', 'revision', 'aspectRatio', 'sourceInputHash', 'requirements',...(hasFamily?['characterFamily']:[])], 'visual batch')
+  const body=avgProtocolBody(value),hasFamily=!!body&&Object.prototype.hasOwnProperty.call(body,'characterFamily'),hasReview=!!body&&Object.prototype.hasOwnProperty.call(body,'visualReviewPolicy')
+  const r = avgRecord(body, ['schema', 'version', 'batchKey', 'revision', 'aspectRatio', 'sourceInputHash', 'requirements',...(hasFamily?['characterFamily']:[]),...(hasReview?['visualReviewPolicy']:[])], 'visual batch')
   if (r.schema !== 'storyforge.avg.visual-production-batch' || r.version !== 1) throw new Error('[avg-media] 未登记的视觉批次版本')
   const requirements = avgUnique(avgList(r.requirements, 'requirements', parseAvgVisualProductionRequirementV1, AVG_VISUAL_BATCH_LIMIT_V1), r => r.requirementKey, 'requirements')
   if (!requirements.length) throw new Error('[avg-media] 视觉批次必须有明确需求')
@@ -116,7 +118,7 @@ export function parseAvgVisualProductionBatchV1(value: unknown): AvgVisualProduc
   return { schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: avgKey(r.batchKey, 'batchKey'),
     revision: avgNumber(r.revision, 'batch.revision', 1, 1_000_000), aspectRatio: avgEnum(r.aspectRatio, ['16:9', '4:3'] as const, 'batch.aspectRatio'),
     sourceInputHash: avgHash(r.sourceInputHash, 'sourceInputHash'), requirements,
-    ...(hasFamily?{characterFamily:parseAvgCharacterFamilyBatchV1(r.characterFamily)}:{}) }
+    ...(hasFamily?{characterFamily:parseAvgCharacterFamilyBatchV1(r.characterFamily)}:{}),...(hasReview?{visualReviewPolicy:avgEnum(r.visualReviewPolicy,['author-visual-v1'] as const,'visualReviewPolicy')}:{}) }
 }
 
 export function parseAvgAuthorMediaChoiceV1(value: unknown): AvgAuthorMediaChoiceV1 {
@@ -137,5 +139,5 @@ export function parseAvgAuthorMediaChoiceV1(value: unknown): AvgAuthorMediaChoic
 
 /** Frozen Plan outputs include each raw candidate and its explicit author choice. */
 export function avgVisualBatchArtifactKeysV1(batch: AvgVisualProductionBatchV1): string[] {
-  return avgKeys(batch.requirements.flatMap(r => [avgRawMediaArtifactKeyV1(r.requirementKey), avgMediaChoiceArtifactKeyV1(r.requirementKey)]), 'media outputs')
+  return avgKeys(batch.requirements.flatMap(r => [avgRawMediaArtifactKeyV1(r.requirementKey),...(batch.visualReviewPolicy?[avgVisualReviewArtifactKeyV1(r.requirementKey)]:[]), avgMediaChoiceArtifactKeyV1(r.requirementKey)]), 'media outputs')
 }

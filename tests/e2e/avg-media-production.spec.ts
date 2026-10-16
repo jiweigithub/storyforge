@@ -44,7 +44,7 @@ for (const {large,retained} of [{large:false,retained:false},{large:true,retaine
         contentHash: reference.contentHash, mimeType: reference.mimeType, byteSize: reference.byteSize, purpose: 'style', allowedChange: '仅保留配色',
         dataClass: 'avg-authorized-reference', license: reference.license, providerInputAllowed: true, derivativeUseAllowed: true, crop: null, mask: null }] }
     const saved = await service.saveAvgVisualBatchDraftV1({ scope: s.scope, expectedDraftRevision: (await draft.readAvgDraftV1(s.scope)).revision,
-      batchKey: 'browser.original', revision: 1, requirements: [requirement] })
+      batchKey: 'browser.original', revision: 1, requirements: [requirement],...(large?{visualReviewPolicy:'author-visual-v1'}:{}) })
     const prepared = await service.prepareAvgAssemblyBriefV1({ scope: s.scope, expectedDraftRevision: saved.revision })
     const started = await service.startAvgAssemblyV1({ scope: s.scope, productionId: s.productionId, expectedBriefHash: prepared.brief.briefHash })
     for (const artifactKey of ['avg.system.plan', ...started.executionBrief.avgAssembly.sceneKeys.map((key: string) => `avg.content.scene-script.${key}`)]) {
@@ -53,7 +53,7 @@ for (const {large,retained} of [{large:false,retained:false},{large:true,retaine
       await service.confirmAvgWorkspaceInputV1({ scope: s.scope, productionId: s.productionId, artifactKey, candidateVersion: candidate.version,
         candidateHash: JSON.parse(candidate.metadataJson).candidateHash })
     }
-    return { scope: s.scope, productionId: s.productionId, buildId: started.build.id, imageBase64, referenceBase64 }
+    return { scope: s.scope, productionId: s.productionId, buildId: started.build.id, imageBase64, referenceBase64,requirement,review:large }
   }, large)
   imageBase64 = seeded.imageBase64
   referenceBase64 = seeded.referenceBase64
@@ -63,6 +63,12 @@ for (const {large,retained} of [{large:false,retained:false},{large:true,retaine
     const result = await service.runAvgAssemblyV1({ scope: s.scope, productionId: s.productionId })
     const raw = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId, 'avg.media.raw.desk.background']).filter((row: any) => row.status === 'accepted').first()
     if (!raw) throw new Error((await db.productBuilds.get(s.buildId)).failureJson)
+    if(s.review){
+      const fixture=await load('/storyforge/tests/helpers/avg-visual-review-fixture.ts')
+      const report=await service.stageAvgVisualReviewV1({scope:s.scope,productionId:s.productionId,requirementKey:'desk.background',rawVersion:raw.version,rawContentHash:raw.contentHash,
+        report:fixture.avgVisualReviewFixture(s.requirement,raw.contentHash),declaration:'控制工程图的视觉观察，实际字节与原生解码复验，不签商业艺术验收'})
+      await service.confirmAvgWorkspaceInputV1({scope:s.scope,productionId:s.productionId,artifactKey:report.artifactKey,candidateVersion:report.version,candidateHash:JSON.parse(report.metadataJson).candidateHash})
+    }
     const choice = await service.stageAvgMediaChoiceV2({ scope: s.scope, productionId: s.productionId, requirementKey: 'desk.background',
       rawVersion: raw.version, rawContentHash: raw.contentHash, declaration: '作者选择原图用于准确背景；工程验证非艺术验收' })
     return { status: result.buildStatus, choiceId: choice.id, hash: raw.contentHash, blobId: raw.blobObjectId, backend: (await db.mediaBlobObjects.get(raw.blobObjectId)).backend }

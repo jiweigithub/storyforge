@@ -1,3 +1,4 @@
+import { confirmEngineeringVisualReview } from '../helpers/avg-visual-review-playwright'
 import { expect, test, type Page } from '@playwright/test'
 
 async function adopt(page:Page,label:string){
@@ -93,6 +94,29 @@ test('reviewed character family keeps the previous background and can later comp
   for(const name of ['保管员工程家族 · 平静','保管员工程家族 · 微笑']){
     const card=panel.getByRole('article',{name:`图片候选：${name}`,exact:true})
     const show=card.getByRole('button',{name:`查看原图：${name}`,exact:true});if(await show.isVisible())await show.click()
+    if(name.endsWith('平静')){
+      const review=card.getByRole('region',{name:`视觉评审：${name}`,exact:true})
+      await review.getByRole('textbox',{name:'本次评审依据与修订说明',exact:true}).fill('工程校准尚未完成视觉观察，先保留未知记录。')
+      await review.getByRole('button',{name:`保存视觉评审候选：${name}`,exact:true}).click()
+      await review.getByRole('checkbox',{name:'我已核对这份准确评审及未观察项',exact:true}).check()
+      await review.getByRole('button',{name:`确认评审记录：${name}`,exact:true}).click()
+      await expect(review.getByText('已确认的评审 v1',{exact:true})).toBeVisible()
+      await expect(card.getByRole('button',{name:`保存选图候选：${name}`,exact:true})).toBeDisabled()
+      await page.reload();await page.getByRole('button',{name:'素材',exact:true}).click()
+      await expect(review.getByText('已确认的评审 v1',{exact:true})).toBeVisible()
+      await review.getByRole('combobox',{name:'观察结果：构图与完整性',exact:true}).selectOption('fail')
+      await review.getByRole('textbox',{name:'问题证据：构图与完整性',exact:true}).fill('记录构图 blocking 的控制探针，不认定实际艺术缺陷。')
+      await review.getByRole('textbox',{name:'允许的返修与加工范围',exact:true}).fill('按冻结构图检查完整主体，不擅改人物身份。')
+      await review.getByRole('textbox',{name:'本次评审依据与修订说明',exact:true}).fill('保存 blocking 控制记录，图像和账单保持原样。')
+      await review.getByRole('button',{name:`保存视觉评审候选：${name}`,exact:true}).click()
+      await review.getByRole('checkbox',{name:'我已核对这份准确评审及未观察项',exact:true}).check()
+      await review.getByRole('button',{name:`确认评审记录：${name}`,exact:true}).click()
+      await expect(review.getByText('已确认的评审 v2',{exact:true})).toBeVisible()
+      await expect(card.getByRole('button',{name:`保存选图候选：${name}`,exact:true})).toBeDisabled()
+      expect(calls).toHaveLength(3)
+    }
+    await confirmEngineeringVisualReview(card,name)
+    if(name.endsWith('平静')){await card.locator('.avg-visual-review-grid').scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath('avg-visual-review-comparison.png')})}
     await expect(card.getByRole('button',{name:`保存选图候选：${name}`,exact:true})).toBeEnabled()
     await card.getByRole('button',{name:`保存选图候选：${name}`,exact:true}).click()
     await card.getByRole('checkbox',{name:'我已查看这张图片并核对用途、来源与使用权',exact:true}).check()

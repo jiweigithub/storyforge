@@ -19,7 +19,8 @@ import { assertAvgMediaConsumerDeclarationsV1, validateAvgVisualProductionBatchS
 import { avgVisualProductionBudgetV2, avgVisualProductionDataClassesV2 } from './media-production-policy'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V1 } from './media-reference-contract'
 import { resolveAvgImageExecutionCapabilityV2 } from './media-capability'
-import { avgMediaChoiceArtifactKeyV1, avgRawMediaArtifactKeyV1, type AvgAuthorMediaChoiceV1, type AvgVisualProductionRequirementV1 } from './media-production-contract'
+import { avgMediaChoiceArtifactKeyV1, avgRawMediaArtifactKeyV1, avgVisualReviewArtifactKeyV1, type AvgAuthorMediaChoiceV1, type AvgVisualProductionRequirementV1 } from './media-production-contract'
+import type { AvgReviewIssuesV1 } from './artifact-contract'
 import type { ProductProductionBriefV3, ProviderCapabilityRequirementV1 } from '../types'
 import { verifyAcceptedProductBuildArtifactV1, verifyRetainedAvgRawImageArtifactV1 } from '../product-production/artifact-store'
 import type { ResolvedProductMediaCapabilityV1 } from '../product-production/media-transport'
@@ -38,13 +39,13 @@ const commandId = (label: string) => `avg.assembly.${label}.${crypto.randomUUID(
 /** Saves a proposed batch and prospective item image references only. The
  * author still reviews a Brief, starts production and confirms each choice. */
 export async function saveAvgVisualBatchDraftV1(input: { scope: WorkspaceScope; expectedDraftRevision: number;
-  batchKey: string; revision: number; requirements: AvgVisualProductionRequirementV1[] }) {
+  batchKey: string; revision: number; requirements: AvgVisualProductionRequirementV1[];visualReviewPolicy?:'author-visual-v1' }) {
   const draft = await readAvgDraftV1(input.scope)
   if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg-media] 编辑草稿已变化')
   if(parseAvgAuthorWorkspaceV1(draft.editorJson).mediaBatch?.characterFamily)throw new Error('[avg-family] 请通过人物家族编辑保留身份方案，或明确结束当前家族批次后再新建普通需求')
   const workspace = prepareAvgMediaConsumerDeclarationsV1(resetAvgUnconsumedMediaDeclarationsV1(parseAvgAuthorWorkspaceV1(draft.editorJson)), input.requirements)
   workspace.mediaBatch = await freezeAvgVisualProductionBatchV1({ schema: 'storyforge.avg.visual-production-batch', version: 1,
-    batchKey: input.batchKey, revision: input.revision, requirements: input.requirements }, workspace)
+    batchKey: input.batchKey, revision: input.revision, requirements: input.requirements,...(input.visualReviewPolicy||workspace.mediaBatch?.visualReviewPolicy?{visualReviewPolicy:input.visualReviewPolicy??workspace.mediaBatch!.visualReviewPolicy!}:{}) }, workspace)
   return saveAvgAuthorWorkspaceV1(input.scope, draft.revision, workspace)
 }
 
@@ -105,6 +106,14 @@ export async function stageAvgMediaChoiceV2(input: { scope: WorkspaceScope; prod
     referenceOnly: r.consumer.domain === 'reference', declaration: input.declaration }
   return stageAvgAuthorArtifactV1({ scope: input.scope, buildId: build.id, expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch,
     taskKey: `avg.author.media.${r.requirementKey}`, artifactKey: avgMediaChoiceArtifactKeyV1(r.requirementKey), kind: 'presentation', payload, declaration: input.declaration })
+}
+
+export async function stageAvgVisualReviewV1(input:{scope:WorkspaceScope;productionId:number;requirementKey:string;rawVersion:number;rawContentHash:string;report:AvgReviewIssuesV1;declaration:string}){
+  const details=await readProductProductionDetailsV1(input.scope,input.productionId,['avg']),build=details.build,brief=details.executionBrief
+  if(!build?.id||brief?.avgAssembly?.version!==2||!brief.avgAssembly.mediaBatch.visualReviewPolicy||input.report.targetKey!==input.requirementKey)throw new Error('[avg-review] 评审不属于当前批次或准确图片')
+  await verifyAcceptedProductBuildArtifactV1({scope:input.scope,buildId:build.id,artifactKey:avgRawMediaArtifactKeyV1(input.requirementKey),version:input.rawVersion,contentHash:input.rawContentHash})
+  return stageAvgAuthorArtifactV1({scope:input.scope,buildId:build.id,expectedBuildRevision:build.stateRevision,controlEpoch:build.controlEpoch,
+    taskKey:`avg.author.visual-review.${input.requirementKey}`,artifactKey:avgVisualReviewArtifactKeyV1(input.requirementKey),kind:'quality-report',payload:input.report,declaration:input.declaration})
 }
 
 export async function readAvgRawImageCandidateBytesV2(input: { scope: WorkspaceScope; productionId: number; requirementKey: string; version: number; contentHash: string }) {

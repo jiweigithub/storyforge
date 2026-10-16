@@ -21,6 +21,13 @@
 .avg-image-production details > label { margin: 12px 0; }
 .avg-image-production > ol > li { padding: 12px 0; border-bottom: 1px solid var(--skin-border, #cfddc9); }
 .avg-image-production .avg-assembly-media-preview img { max-height: 360px; }
+.avg-visual-review-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,260px),1fr)); gap: 16px; align-items: start; }
+.avg-visual-review-grid figure { min-width: 0; margin: 0; }
+.avg-visual-review-grid img { display: block; width: 100%; max-height: 360px; object-fit: contain; background: repeating-conic-gradient(#e3e3e3 0 25%,#fff 0 50%) 0 / 20px 20px; }
+.avg-review-icon-sizes { display: flex; align-items: center; gap: 12px; }
+.avg-review-icon-sizes img { width: auto; max-width: 48px; }
+.avg-visual-review > fieldset { align-items: start; margin: 16px 0; }
+.avg-visual-review h6 { font-size: 16px; margin: 12px 0; }
 .avg-app .lf-paper {
   padding: 30px;
   margin-bottom: 24px;

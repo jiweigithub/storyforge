@@ -1,3 +1,4 @@
+import Dexie from 'dexie';
 import { db } from "../db/schema";
 import {
   assertRecordInScope,
@@ -12,7 +13,7 @@ import type {
   ProductMediaKind,
 } from "../types";
 import { parseProductRuntimePackageV1 } from "../product-production/runtime-package";
-import { putMediaBlobObject, sha256MediaData } from "../product-production/media-blob-store";
+import { putMediaBlobObject, sha256MediaData, readVerifiedMediaBlobObjectData } from "../product-production/media-blob-store";
 import { PRODUCT_MEDIA_KINDS } from '../types';
 import { assertAvgMediaBytesV1 } from './media-import-contract';
 import { readAvgDraftV1 } from "./draft-service";
@@ -21,7 +22,7 @@ import { canonicalProductProductionJsonV2 } from '../product-production/hash';
 import { parseAvgExecutableStageV1 } from './stage-contract';
 import { createAvgReferenceImageAdapterV1 } from './media-reference-adapter';
 import type { AvgImageRequestV1, AvgMediaReferenceV1 } from './media-reference-contract';
-import { readAvgGeneratedReferenceBytesV1 } from './media-generated-reference';
+import { readAvgGeneratedReferenceImageV1 } from './media-generated-reference';
 
 /** Authors may retain unfinished graph edits; full package validation gates production. */
 export async function saveAvgEditorV1(
@@ -174,17 +175,27 @@ export async function readAvgDraftMediaV1(scope:WorkspaceScope,asset:FrozenRunti
 
 /** Headless input boundary for the media production executor. No dispatch occurs
  * here: the registered durable production task owns start, budget and receipt. */
-export async function readAvgDraftReferenceBytesV1(scopeInput:WorkspaceScope,reference:AvgMediaReferenceV1){
+export async function readAvgDraftReferenceImageV1(scopeInput:WorkspaceScope,reference:AvgMediaReferenceV1){
   const scope=await resolveScope({scope:scopeInput})
-  if(reference.generatedSource)return readAvgGeneratedReferenceBytesV1(scope,reference)
+  if(reference.generatedSource){
+    const image=await readAvgGeneratedReferenceImageV1({scope,source:reference.generatedSource}),asset=image.asset
+    if(asset.assetKey!==reference.assetKey||asset.version!==reference.assetVersion||asset.contentHash!==reference.contentHash
+      ||asset.mimeType!==reference.mimeType||asset.byteSize!==reference.byteSize||asset.license!==reference.license)throw new Error('[avg-media] 生成参考的字节、版本或授权元数据不一致')
+    return {asset,data:image.data}
+  }
   const rows=await db.avgDraftMedia.where('workId').equals(scope.workId).toArray()
   const matches=rows.filter(row=>{const asset=JSON.parse(row.assetJson) as FrozenRuntimeMediaAssetV2
     return asset.assetKey===reference.assetKey&&asset.version===reference.assetVersion&&asset.contentHash===reference.contentHash})
   if(matches.length!==1||!await assertRecordInScope(scope,'avgDraftMedia',matches[0]!,{owner:'work'}))throw new Error('[avg-media] 参考不存在、重复或跨作品')
   const asset=parseAvgExecutableStageV1({version:1,cues:[],assets:[JSON.parse(matches[0]!.assetJson)]}).assets[0]!
   if(asset.mimeType!==reference.mimeType||asset.byteSize!==reference.byteSize||asset.license!==reference.license)throw new Error('[avg-media] 参考元数据或授权已 stale')
-  return readAvgDraftMediaV1(scope,asset)
+  const blob=await db.mediaBlobObjects.get(matches[0]!.blobObjectId)
+  if(!blob||!await assertRecordInScope(scope,'mediaBlobObjects',blob,{owner:'work'})||blob.contentHash!==asset.contentHash||blob.byteSize!==asset.byteSize||blob.mimeType!==asset.mimeType)throw new Error('[avg-media] 参考缺少同作品准确字节')
+  const read=()=>readVerifiedMediaBlobObjectData(blob)
+  const data=Dexie.currentTransaction?await Dexie.waitFor(Dexie.ignoreTransaction(read),20_000):await read()
+  return {asset,data}
 }
+export async function readAvgDraftReferenceBytesV1(scope:WorkspaceScope,reference:AvgMediaReferenceV1){return (await readAvgDraftReferenceImageV1(scope,reference)).data}
 
 export async function createAvgDraftReferenceAdapterV1(input: { scope: WorkspaceScope; frozen: AvgImageRequestV1;
   inspectReference?: (reference: AvgMediaReferenceV1, bytes: ArrayBuffer) => Promise<void> }) {

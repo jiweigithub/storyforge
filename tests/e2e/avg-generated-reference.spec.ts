@@ -1,3 +1,4 @@
+import { confirmEngineeringVisualReview } from '../helpers/avg-visual-review-playwright'
 import { expect, test, type Page } from '@playwright/test'
 
 async function adopt(page: Page, label: string) {
@@ -81,6 +82,7 @@ test('an author previews an adopted generated reference, authorizes it for a new
   await page.getByRole('button',{name:'素材',exact:true}).click()
   await panel.getByRole('button',{name:'生成本批图片（最多 1 次）',exact:true}).click()
   const card=panel.getByRole('article',{name:'图片候选：沿用生成参考的工程背景',exact:true})
+  await confirmEngineeringVisualReview(card,'沿用生成参考的工程背景')
   await expect(card.getByRole('button',{name:'保存选图候选：沿用生成参考的工程背景',exact:true})).toBeEnabled()
   expect(bodies).toHaveLength(2);expect(bodies[1].extra_body?.image).toEqual([`data:image/png;base64,${original}`])
   await card.getByRole('button',{name:'保存选图候选：沿用生成参考的工程背景',exact:true}).click()

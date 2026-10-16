@@ -12,8 +12,9 @@ export interface AvgRawPreviewReference { requirementKey: string; version: numbe
 
 /** Local URLs are created only after the existing owner/hash proof reader.
  * Provider URL strings and arbitrary Blob IDs are never displayed directly. */
-export default function MediaAssetPreview({ scope, asset, productionId, raw, generatedSource, onObserved }: {
+export default function MediaAssetPreview({ scope, asset, productionId, raw, generatedSource, onObserved,comparisonAspectRatio,smallImageSizes }: {
   scope: WorkspaceScope; asset: FrozenRuntimeMediaAssetV2; productionId?: number | null; raw?: AvgRawPreviewReference; generatedSource?: AvgGeneratedReferenceSourceV1; onObserved?: () => void
+  comparisonAspectRatio?:number;smallImageSizes?:readonly number[]
 }) {
   const [url, setUrl] = useState(''), [error, setError] = useState('')
   const audio = useRef<HTMLAudioElement>(null)
@@ -49,7 +50,8 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
   return <figure className="avg-assembly-media-preview"><figcaption>{asset.name} · {AVG_MEDIA_KIND_LABELS[asset.kind]}</figcaption>
     {error && <p role="alert">{error}</p>}
     {asset.mimeType.startsWith('audio/') ? <audio ref={audio} controls src={url || undefined} preload="metadata" />
-      : url ? <img src={url} alt={asset.altText || asset.name} onLoad={onObserved} /> : <p>读取图片…</p>}
+      : url ? <><img src={url} alt={asset.altText || asset.name} onLoad={onObserved} style={comparisonAspectRatio?{aspectRatio:comparisonAspectRatio}:undefined}/>
+        {smallImageSizes&&<div className="avg-review-icon-sizes">{smallImageSizes.map(size=><img key={size} src={url} alt={`${asset.name} · ${size} 像素观察`} style={{width:size,height:size,objectFit:'contain'}}/>)}</div>}</> : <p>读取图片…</p>}
     <p>{asset.width && asset.height ? `${asset.width} × ${asset.height}` : `${((asset.durationMs ?? 0) / 1000).toFixed(2)} 秒`} · {Math.ceil(asset.byteSize / 1024)} KiB</p>
     <p>来源：{asset.source} · 授权：{asset.license}</p>
   </figure>

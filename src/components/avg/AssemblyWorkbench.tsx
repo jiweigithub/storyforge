@@ -244,7 +244,7 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
         onPending={setMediaPending} onAction={run} onReload={reload} onClear={async()=>{await clearAvgVisualBatchDraftV1({scope,expectedDraftRevision:view.draft.revision});await reload();setNotice('未使用的生成批次已移除，参考图与制作记录仍保留。')}} onNotice={setNotice} onCancel={()=>mediaAbort.current?.abort()}
         onSave={async requirements=>{
           await saveAvgVisualBatchDraftV1({scope,expectedDraftRevision:view.draft.revision,batchKey:model.mediaBatch?.batchKey??`batch.${crypto.randomUUID()}`,
-            revision:(model.mediaBatch?.revision??0)+1,requirements})
+            revision:(model.mediaBatch?.revision??0)+1,requirements,visualReviewPolicy:'author-visual-v1'})
           await reload();setNotice('图片需求和准确来源已保存，请到制作页核对方案后明确开始。')
         }} onGenerate={()=>run(async()=>{
           if(!details?.production.id)throw new Error('请先核对方案并明确开始')

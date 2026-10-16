@@ -31,6 +31,7 @@ export const AVG_ASSEMBLY_GATE_IDS_V1 = [
 ] as const
 export function avgMediaAssemblyGateIdsV2(batch: AvgVisualProductionBatchV1): string[] {
   return [...AVG_ASSEMBLY_GATE_IDS_V1, ...batch.requirements.flatMap(r => [
+    ...(batch.visualReviewPolicy?[`avg.media.review.recorded.${r.requirementKey}`]:[]),
     `avg.media.raw.received.${r.requirementKey}`, `avg.media.choice.confirmed.${r.requirementKey}`,
   ])]
 }
@@ -56,7 +57,7 @@ export function parseAvgAssemblyBriefV2(value: unknown): AvgAssemblyBriefV2 {
   const { mediaBatch: rawBatch, imageBinding: rawBinding, imageRecovery, ...baseInput } = r
   const base = parseAvgAssemblyBriefV1({ ...baseInput, version: 1 })
   const mediaBatch = parseAvgVisualProductionBatchV1(rawBatch)
-  if (base.sceneKeys.length + 4 + 2 * mediaBatch.requirements.length > 100) throw new Error('[avg-media] 场景、原始候选、作者选择与终态 join 超过共享 100 任务上限')
+  if (base.sceneKeys.length + 4 + (mediaBatch.visualReviewPolicy?3:2) * mediaBatch.requirements.length > 100) throw new Error('[avg-media] 场景、原始候选、视觉评审、作者选择与终态 join 超过共享 100 任务上限')
   for (const requirement of mediaBatch.requirements) {
     const included = base.mediaAssetKeys.includes(requirement.assetKey)
     if (included === (requirement.consumer.domain === 'reference')) throw new Error('[avg-media] runtime 媒资目录必须包含消费图且排除 reference-only')

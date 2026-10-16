@@ -33,7 +33,7 @@ export async function prepareAvgCharacterFamilyProposalV1(input:{scope:Workspace
   if(draft.revision!==input.expectedDraftRevision)throw new Error('[avg-family] 编辑草稿已变化')
   const workspace=parseAvgAuthorWorkspaceV1(draft.editorJson),plan=parseAvgCharacterFamilyPlanV1(input.plan),next=familyDraft(workspace,plan)
   const batch=await freezeAvgVisualProductionBatchV1({schema:'storyforge.avg.visual-production-batch',version:1,batchKey:`family.${plan.familyKey}`,
-    revision:(workspace.mediaBatch?.revision??0)+1,requirements:composeAvgCharacterFamilyRequirementsV1(plan)},next)
+    revision:(workspace.mediaBatch?.revision??0)+1,requirements:composeAvgCharacterFamilyRequirementsV1(plan),visualReviewPolicy:'author-visual-v1'},next)
   await validateAvgGeneratedReferencesV1(input.scope,batch.requirements[0].references,batch.requirements[0].family)
   const baseline=batch.requirements[0].references[0]
   await verifyAvgReferenceBytesV1(baseline,await readAvgDraftReferenceBytesV1(input.scope,baseline))
@@ -54,6 +54,6 @@ export async function saveAvgCharacterFamilyBatchDraftV1(input:{scope:WorkspaceS
   const workspace=parseAvgAuthorWorkspaceV1(draft.editorJson),next=familyDraft(workspace,family.proposal.plan)
   if(await hashAvgMediaSourceInputV1(next)!==family.proposal.sourceInputHash)throw new Error('[avg-family] 来源已变化')
   next.mediaBatch=await freezeAvgVisualProductionBatchV1({schema:'storyforge.avg.visual-production-batch',version:1,batchKey:`family.${family.proposal.plan.familyKey}`,
-    revision:(workspace.mediaBatch?.revision??0)+1,requirements:composeAvgCharacterFamilyRequirementsV1(family.proposal.plan),characterFamily:family},next)
+    revision:(workspace.mediaBatch?.revision??0)+1,requirements:composeAvgCharacterFamilyRequirementsV1(family.proposal.plan),characterFamily:family,visualReviewPolicy:'author-visual-v1'},next)
   return saveAvgAuthorWorkspaceV1(input.scope,draft.revision,next)
 }

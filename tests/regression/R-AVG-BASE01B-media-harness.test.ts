@@ -4,7 +4,7 @@ import { useAIConfigStore } from '../../src/stores/ai-config'
 import { prepareNativeAvgAssembly } from '../helpers/avg-production-assembly-fixture'
 import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
 import { saveAvgVisualBatchDraftV1, prepareAvgAssemblyBriefV1, startAvgAssemblyV1, stageAvgWorkspaceInputV1,
-  confirmAvgWorkspaceInputV1, runAvgAssemblyV1, stageAvgMediaChoiceV2, configureAvgChosenMediaDraftV2, prepareAvgImageRecoveryBriefV1, keepAvgGeneratedStageDraftV1 } from '../../src/lib/avg/assembly-service'
+  confirmAvgWorkspaceInputV1, runAvgAssemblyV1, stageAvgMediaChoiceV2, configureAvgChosenMediaDraftV2, prepareAvgImageRecoveryBriefV1, keepAvgGeneratedStageDraftV1,stageAvgVisualReviewV1 } from '../../src/lib/avg/assembly-service'
 import { deterministicRegionMapPngV1 } from '../../src/lib/product-production/production-executor'
 import { readProductProductionDetailsV1, stopProductProductionV1 } from '../../src/lib/product-production/service'
 import { verifyStoredProductBuildPreview } from '../../src/lib/product-production/preview-manifest'
@@ -27,6 +27,7 @@ import { prepareAvgCharacterFamilyProposalV1, saveAvgCharacterFamilyBatchDraftV1
 import type { AvgCharacterFamilyPlanV1 } from '../../src/lib/avg/character-family-contract'
 import { validateAvgVisualProductionBatchSourceV1 } from '../../src/lib/avg/media-source'
 import { verifyFrozenAvgAuthorInputsV1 } from '../../src/lib/avg/author-artifacts'
+import { avgVisualReviewFixture } from '../helpers/avg-visual-review-fixture'
 import { prepareAvgRawImageRequestV1 } from '../../src/lib/avg/media-raw-contract'
 
 const requirement = (): AvgVisualProductionRequirementV1 => ({ requirementKey: 'desk.background', revision: 1,
@@ -36,9 +37,9 @@ const requirement = (): AvgVisualProductionRequirementV1 => ({ requirementKey: '
   triggerBeatKey: 'line.desk', itemVariantKey: null, mediaKind: 'background', prompt: '原创房间的工程图', negativePrompt: '', invariants: [], forbiddenDepictions: [],
   width: 576, height: 324, resolutionTier: '1K', alpha: 'not-required', references: [] })
 
-async function prepare(requirements = [requirement()]) {
+async function prepare(requirements = [requirement()],review=false) {
   const s = await prepareNativeAvgAssembly(), draft = await readAvgDraftV1(s.scope)
-  const saved = await saveAvgVisualBatchDraftV1({ scope: s.scope, expectedDraftRevision: draft.revision, batchKey: 'engineering.batch', revision: 1, requirements })
+  const saved = await saveAvgVisualBatchDraftV1({ scope: s.scope, expectedDraftRevision: draft.revision, batchKey: 'engineering.batch', revision: 1, requirements,...(review?{visualReviewPolicy:'author-visual-v1' as const}:{}) })
   const details = await prepareAvgAssemblyBriefV1({ scope: s.scope, expectedDraftRevision: saved.revision })
   return { ...s, details }
 }
@@ -71,10 +72,22 @@ async function recover(s:Awaited<ReturnType<typeof start>>,keys=['desk.backgroun
 }
 async function chooseImage(s: Awaited<ReturnType<typeof start>>, requirementKey: string) {
   const raw = (await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,`avg.media.raw.${requirementKey}`]).first())!
+  if(!raw)throw new Error((await db.productBuilds.get(s.buildId))!.failureJson)
+  if(s.details.executionBrief!.avgAssembly!.version===2&&s.details.executionBrief!.avgAssembly!.mediaBatch.visualReviewPolicy){
+    const current=await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,`avg.review.visual.${requirementKey}`]).filter(row=>row.status==='accepted').first()
+    if(!current)await reviewImage(s,avgVisualReviewFixture(s.details.executionBrief!.avgAssembly!.mediaBatch.requirements.find(r=>r.requirementKey===requirementKey)!,raw.contentHash))
+  }
   const candidate = await stageAvgMediaChoiceV2({scope:s.scope,productionId:s.productionId,requirementKey,
     rawVersion:raw.version,rawContentHash:raw.contentHash,declaration:'查看准确工程图并明确采用；后续外发和衍生仍须另行授权'})
   await confirmAvgWorkspaceInputV1({scope:s.scope,productionId:s.productionId,artifactKey:candidate.artifactKey,
     candidateVersion:candidate.version,candidateHash:JSON.parse(candidate.metadataJson).candidateHash})
+  return (await db.productBuildArtifacts.get(candidate.id!))!
+}
+async function reviewImage(s:Awaited<ReturnType<typeof start>>,report:ReturnType<typeof avgVisualReviewFixture>){
+  const raw=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,`avg.media.raw.${report.targetKey}`]).first())!
+  const candidate=await stageAvgVisualReviewV1({scope:s.scope,productionId:s.productionId,requirementKey:report.targetKey,rawVersion:raw.version,rawContentHash:raw.contentHash,report,
+    declaration:'保存原创工程材料的准确作者问题记录；未知和 blocking 不签选用或商业验收'})
+  await confirmAvgWorkspaceInputV1({scope:s.scope,productionId:s.productionId,artifactKey:candidate.artifactKey,candidateVersion:candidate.version,candidateHash:JSON.parse(candidate.metadataJson).candidateHash})
   return (await db.productBuildArtifacts.get(candidate.id!))!
 }
 
@@ -561,6 +574,61 @@ describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/deco
     const current=await readAvgDraftV1(child.scope);await saveAvgAuthorWorkspaceV1(child.scope,current.revision,next)
     await expect(saveAvgCharacterFamilyBatchDraftV1({scope:child.scope,expectedDraftRevision:current.revision,proposal:replacement,approval:{...approval,proposalHash:replacement.proposalHash}})).rejects.toThrow(/草稿已变化/)
     expect(dispatch).toHaveBeenCalledTimes(4)
+  },15_000)
+
+  it('unknown and blocking reviews persist without selecting; a revised exact review enables author choice and survives backup lineage',async()=>{
+    const body=await response(),dispatch=vi.fn(async()=>new Response(body,{status:200}));vi.stubGlobal('fetch',dispatch)
+    const s=await start(await prepare([requirement()],true));await confirmSources(s);await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})
+    const raw=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,'avg.media.raw.desk.background']).first())!
+    const select=()=>stageAvgMediaChoiceV2({scope:s.scope,productionId:s.productionId,requirementKey:'desk.background',rawVersion:raw.version,rawContentHash:raw.contentHash,declaration:'准确选图探针'})
+    await expect(select()).rejects.toThrow(/未采用/)
+    const unknown=avgVisualReviewFixture(requirement(),raw.contentHash);unknown.visualEvidence!.note='尚未观察构图';unknown.unobserved=['未观察构图'];unknown.visualEvidence!.checks.find(c=>c.criterion==='composition')!.result='unknown'
+    const recorded=await reviewImage(s,unknown);expect(recorded.status).toBe('accepted')
+    await expect(select()).rejects.toThrow(/未观察|blocking/)
+    const blocked=avgVisualReviewFixture(requirement(),raw.contentHash);blocked.visualEvidence!.note='记录工程构图控制问题';blocked.visualEvidence!.checks.find(c=>c.criterion==='composition')!.result='fail';blocked.visualEvidence!.checks.find(c=>c.criterion==='composition')!.note='主体被裁断'
+    blocked.issues=[{issueKey:'visual.composition',locationKey:requirement().assetKey,evidence:'主体被裁断',severity:'blocking',owner:'media',allowedChange:'保留身份并修订构图',impact:'不可选用',recheck:'重新检查完整主体'}]
+    await reviewImage(s,blocked);await expect(select()).rejects.toThrow(/blocking/)
+    await reviewImage(s,avgVisualReviewFixture(requirement(),raw.contentHash))
+    const forged=avgVisualReviewFixture(requirement(),'f'.repeat(64))
+    await expect(reviewImage(s,forged)).rejects.toThrow(/准确原图/)
+    const blob=(await db.mediaBlobObjects.get(raw.blobObjectId!))!,damaged=new Uint8Array(blob.data!.slice(0));damaged[0]^=1
+    await db.mediaBlobObjects.update(blob.id!,{data:damaged.buffer})
+    await expect(select()).rejects.toThrow(/哈希不匹配/)
+    await db.mediaBlobObjects.put(blob)
+    const choice=await chooseImage(s,'desk.background')
+    expect(JSON.parse(choice.metadataJson).candidate.inputs.map((r:{artifactKey:string})=>r.artifactKey)).toEqual(['avg.media.raw.desk.background','avg.review.visual.desk.background'])
+    await configureAvgChosenMediaDraftV2({scope:s.scope,productionId:s.productionId,expectedDraftRevision:(await readAvgDraftV1(s.scope)).revision});await confirm(s,'avg.author.stage')
+    const result=await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})
+    expect(result.buildStatus,(await db.productBuilds.get(s.buildId))!.failureJson).toBe('preview-ready')
+    const source=await prepareAvgGeneratedReferenceImageV1({scope:s.scope,choiceId:choice.id!})
+    const projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),build=(await db.productBuilds.where('projectId').equals(projectId).first())!
+    const scope={projectId,worldId:build.worldId,workId:build.workId}
+    expect((await readAvgGeneratedReferenceImageV1({scope,source:source.source})).asset).toEqual(source.asset)
+    expect(await db.productBuildArtifacts.where('buildId').equals(s.buildId).filter(row=>row.artifactKey==='avg.review.visual.desk.background').count()).toBe(3)
+    expect(dispatch).toHaveBeenCalledTimes(1)
+  },15_000)
+
+  it('a new blocking review invalidates a selected image and stage, then cannot change a consumed review without a new Build',async()=>{
+    const body=await response(),dispatch=vi.fn(async()=>new Response(body,{status:200}));vi.stubGlobal('fetch',dispatch)
+    const s=await start(await prepare([requirement()],true));await confirmSources(s);await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})
+    const choice=await chooseImage(s,'desk.background')
+    await configureAvgChosenMediaDraftV2({scope:s.scope,productionId:s.productionId,expectedDraftRevision:(await readAvgDraftV1(s.scope)).revision});await confirm(s,'avg.author.stage')
+    const report=avgVisualReviewFixture(requirement(),JSON.parse(choice.payloadJson).raw.contentHash);report.unobserved=['需要再次检查文字安全区'];report.visualEvidence!.checks.find(c=>c.criterion==='composition')!.result='unknown'
+    await reviewImage(s,report)
+    expect((await db.productBuildArtifacts.get(choice.id!))!.status).toBe('invalid')
+    expect(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,'avg.author.stage']).filter(row=>row.status==='accepted').count()).toBe(0)
+    expect((await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})).buildStatus).toBe('building')
+    await expect(reviewImage(s,avgVisualReviewFixture(requirement(),JSON.parse(choice.payloadJson).raw.contentHash))).rejects.toThrow(/执行消费/)
+    await stopProductProductionV1({scope:s.scope,production:(await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])).production})
+    const beforeRecovery=await readAvgDraftV1(s.scope)
+    await expect(keepAvgGeneratedStageDraftV1({scope:s.scope,productionId:s.productionId,expectedDraftRevision:beforeRecovery.revision,expectedBuildId:s.buildId})).rejects.toThrow(/没有可保留/)
+    expect(await readAvgDraftV1(s.scope)).toEqual(beforeRecovery)
+    const child=await recover(s);await confirmSources(child)
+    expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('building')
+    await chooseImage(child,'desk.background')
+    await configureAvgChosenMediaDraftV2({scope:child.scope,productionId:child.productionId,expectedDraftRevision:(await readAvgDraftV1(child.scope)).revision});await confirm(child,'avg.author.stage')
+    expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('preview-ready')
+    expect(dispatch).toHaveBeenCalledTimes(1)
   },15_000)
 
   it('route path drift and a disabled start reject before creating a Build or making HTTP requests', async () => {

@@ -1,6 +1,6 @@
 # AVG 专业岗位、工件与生产图
 
-> L2 · 版本：1.2.0 · 生效：2026-10-14 · 受 [AVG 产品契约](../AVG.md)约束。
+> L2 · 版本：1.3.0 · 生效：2026-10-16 · 受 [AVG 产品契约](../AVG.md)约束。
 > 22 岗位/Skill 是目标合同；BASE-00B 已登记首批八种 schema、输出 key、关闭的专业 AI 写口和作者输入采用接缝，实际验证状态见实施计划。未登记的专业 Skill 尚不可调用，schema 或作者输入采用不等于岗位实现。
 
 ## 1 主助手、岗位与确定性职责
@@ -67,6 +67,8 @@ BASE-00B 的确定性作者输入先绑定已冻结 human-import 任务，只写
 | visual-bible / media-brief | 主体/用途/消费者、基准与参考、允许变化、画布/锚点、必要/降级、制作方式 | 有正式主体/槽、参考 owner/version、能力/预算和公开信息 |
 | sound-plan / voice-plan | 消费拍/事件、文本/演法版本、人物/音色/语言、读音/上下句、循环/混音/片段用途 | 精确文本、合法 speaker、支持的参数、片段/事件覆盖 |
 | review-issues | 输入版本、位置/证据、severity/owner、允许修改、影响与重验条件、未观察项 | 位置有效、review Run 分离、blocking 不能平均掉，不能伪造观察/人类身份 |
+
+当前实验图片批次可显式冻结 `visualReviewPolicy=author-visual-v1`，复用 `avg.review.visual.<requirementKey>` / `review-issues` 保存作者观察。其可选严格 `visualEvidence` 绑定原图 hash、按顺序的参考 hash、五个固定观察项及本次依据；缺省时旧 review JSON/hash 保持。未知和 blocking 记录可以单独确认，但不能授权选图；缺少图像基准不能声明身份/连续性通过。问题位置和返修范围限定在本项输入，修改经原作者候选/命令确认并级联失效选择和演出；执行已消费后须新 Build。这是作者输入，不开放保留的专业 AI reviewer 写口或创建独立模型/商业艺术回执，详见[媒资规格 §4.1](03-MEDIA-PRODUCTION-AND-BINDING.md#41-当前作者视觉观察与问题交接)。
 
 实际图片/音频是 provider/import 的不可变候选，拥有字节、技术元数据、权利、成本/传输与处理 lineage；它们不是上述 LLM payload 的替代品。物理 schema、Artifact kind 和 key pattern 由 AVG-BASE-00 登记，不能因此表出现名称便绕过 L3。
 

@@ -6264,7 +6264,7 @@ export async function runProductProductionSchedulerCycleV1(input: {
     const accepted = (task: ProductProductionPlanTaskV3) => task.outputArtifactKeys.every(key => artifacts.filter(row => row.artifactKey === key
       && row.status === 'accepted' && row.controlEpoch === state.build.controlEpoch).length === 1)
     const ready = authorTasks.every(accepted)
-    if (!ready && (state.brief.avgAssembly.version === 1 || authorTasks.filter(task => !['avg-author-media-choice', 'avg-author-stage'].includes(task.kind)).some(task => !accepted(task)))) {
+    if (!ready && (state.brief.avgAssembly.version === 1 || authorTasks.filter(task => !['avg-author-media-choice', 'avg-author-stage','avg-author-visual-review'].includes(task.kind)).some(task => !accepted(task)))) {
       return projectProductProductionSchedulerV1({ scope, productionId: input.productionId })
     }
     for (const task of authorTasks) if (!accepted(task)) pendingAvgHumanTasks.add(task.taskKey)

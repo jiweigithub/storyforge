@@ -44,7 +44,8 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
       stage:compiled.source.authorStage!.artifact,stageReceipt:compiled.source.authorStage!.authorReceiptHash,
       ...(brief.avgAssembly.version === 2 ? { mediaChoices: (compiled.source.mediaChoices ?? []).map(choice => ({
         choice: choice.artifact, authorReceiptHash: choice.authorReceiptHash, raw: { artifactKey: choice.raw.artifactKey,
-          version: choice.raw.version, contentHash: choice.raw.contentHash }, rawReceiptHash: choice.raw.producerReceiptHash })) } : {}),
+          version: choice.raw.version, contentHash: choice.raw.contentHash }, rawReceiptHash: choice.raw.producerReceiptHash,
+        ...(choice.review?{visualReview:{artifact:choice.review.artifact,authorReceiptHash:choice.review.authorReceiptHash}}:{}) })) } : {}),
       sourceContextHash:await hashProductProductionValueV2(request.contextText) }
     let artifacts: ProductProductionTaskArtifactV1[]
     if (request.task.taskKey === 'avg.assembly.integrate') {
@@ -84,7 +85,7 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
         hardGateResults:(brief.avgAssembly.version === 2 ? avgMediaAssemblyGateIdsV2(brief.avgAssembly.mediaBatch) : AVG_ASSEMBLY_GATE_IDS_V1)
           .map(gateId => ({ gateId,passed:true,evidence:[canonicalProductProductionJsonV2(sourceProof)] })),
         softGateResults:[],mediaCoverage:assets.length?(assets.length-unused.length)/assets.length:1,playable:true,releaseReady:false,
-        warnings:['仅通过作者组装技术门；艺术、专业配音、整部作品试玩与发布验收尚待执行。',...unused.map(asset=>`素材尚未绑定演出、配音或物件消费者：${asset.name}`)] }
+        warnings:['仅通过作者组装技术门；艺术、专业配音、整部作品试玩与发布验收尚待执行。',...(compiled.source.mediaChoices??[]).flatMap(choice=>choice.review?.payload.issues.map(issue=>`作者视觉问题 ${issue.severity} · ${choice.payload.requirementKey}：${issue.evidence}`)??[]),...unused.map(asset=>`素材尚未绑定演出、配音或物件消费者：${asset.name}`)] }
       artifacts = [{ artifactKey:'quality.report',kind:'quality-report',payload:report,quality:{ scope:'author-assembly-technical' },rights:{ origin:'deterministic-verification' } }]
     }
     if (request.signal.aborted) throw new DOMException('Aborted','AbortError')
