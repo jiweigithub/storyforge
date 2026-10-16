@@ -137,6 +137,7 @@ export type AgentSkillExecutionModeV1 =
   | 'ttrpg-open-kp'
   | 'ttrpg-open-brief'
   | 'ttrpg-open-situation-propose'
+  | 'ttrpg-open-public-situation-propose'
   | 'product-production'
   | 'adaptation-source-analysis'
   | 'adaptation-causal-graph'
@@ -3621,6 +3622,18 @@ export const AGENT_SKILLS = [
     regressionTests: ['R-TTRPGOPEN10-situation-generation-harness'],
   },
   {
+    version: 1, id: 'prose.ttrpg-open-public-situation-propose', agentId: 'prose', defaultForAgent: false,
+    label: '开放跑团共同资料新局势候选', owner: 'ttrpg-product', promptVersion: 'ttrpg-open-public-situation-propose-v1',
+    executionMode: 'ttrpg-open-public-situation-propose', contextTaskKind: 'agent-prose', readToolNames: [],
+    contextSourceKeys: ['ttrpgOpenPublicSituationInput'], optionalContextSourceKeys: [],
+    inputPolicy: { ...TTRPG_PLAYER_RUNTIME_INPUT_POLICY, sourceKeys: ['ttrpgOpenPublicSituationInput'] },
+    contextCompression: compressionPolicy(['ttrpgOpenPublicSituationInput']),
+    contextGateway: { ...TEXT_OPEN_WORLD_RUNTIME_G6_GATEWAY_POLICY, providerSourceKeys: ['ttrpgOpenPublicSituationInput'],
+      allowedResourceKinds: ['fact', 'reference'], allowedDepths: ['full'] },
+    maxOutputTokens: 8000, writeTargets: [], lastVerifiedAt: '2026-10-16',
+    regressionTests: ['R-TTRPGOPEN9-public-situation-context', 'R-TTRPGOPEN9-public-situation-request'],
+  },
+  {
     version: 1,
     id: 'prose.ttrpg-open-brief',
     agentId: 'prose',
@@ -5460,7 +5473,7 @@ export function validateAgentSkillDefinitionsV1(
     character: new Set(['create', 'supplement', 'lifecycle', 'relationships', 'character-reply', 'memory-curator']),
     inspiration: new Set(['reference-summary', 'reference-characters', 'reverse', 'review']),
     outline: new Set(['auto', 'story-arcs', 'foreshadow-suggestions', 'storyline-progress', 'character-driven', 'character-revision', 'impact-summary-regenerate', 'volumes', 'chapters', 'details', 'adaptation-source-analysis', 'adaptation-causal-graph', 'screenplay-adaptation-brief', 'screenplay-decision-pass', 'screenplay-beat-sheet', 'screenplay-scene-card', 'screenplay-grounding-review', 'screenplay-dramaturgy-review', 'comic-adaptation-brief', 'comic-decision-pass', 'comic-script-adaptation', 'comic-page-rhythm', 'comic-panel-plan', 'comic-visual-bible', 'comic-image-request', 'comic-visual-continuity-review', 'comic-targeted-repair', 'comic-page-review', 'motion-drama-series-bible', 'motion-drama-asset-bible', 'motion-drama-episode-outline', 'motion-drama-shot-design', 'motion-drama-image-prompts', 'motion-drama-video-prompts', 'motion-drama-quality-review', 'short-intent-brief', 'short-story-design', 'short-scene-plan', 'short-continuity-review', 'character-interaction-production', 'product-production']),
-    prose: new Set(['extension-generate', 'auto', 'generate', 'continue', 'emotion-beats', 'inventory-extraction', 'story-timeline-extraction', 'cultivation-progress-extraction', 'style-learn', 'selection-edit', 'selection-check', 'review', 'revise', 'organize', 'memory', 'consistency', 'scene-director', 'ai-town-director', 'adventure-intent', 'adventure-narrator', 'open-world-briefing', 'open-world-advisor', 'open-world-outcome-narrator', 'open-world-actor-suggestion', 'open-world-expression', 'open-world-narration', 'text-open-world-runtime-intent', 'text-open-world-runtime-dialogue', 'text-open-world-runtime-expression', 'text-open-world-runtime-quest-packaging', 'text-open-world-runtime-direction', 'text-open-world-runtime-memory', 'screenplay-scene-draft', 'screenplay-targeted-rewrite', 'motion-drama-episode-script', 'short-chapter-draft', 'short-targeted-rewrite', 'ttrpg-gm-narrator', 'ttrpg-gm-actor-intent', 'ttrpg-director', 'ttrpg-private-guidance', 'ttrpg-player-intent', 'ttrpg-open-intent', 'ttrpg-open-oracle-interpret', 'ttrpg-open-fact-normalize', 'ttrpg-open-companion', 'ttrpg-open-kp', 'ttrpg-open-brief', 'ttrpg-open-situation-propose']),
+    prose: new Set(['extension-generate', 'auto', 'generate', 'continue', 'emotion-beats', 'inventory-extraction', 'story-timeline-extraction', 'cultivation-progress-extraction', 'style-learn', 'selection-edit', 'selection-check', 'review', 'revise', 'organize', 'memory', 'consistency', 'scene-director', 'ai-town-director', 'adventure-intent', 'adventure-narrator', 'open-world-briefing', 'open-world-advisor', 'open-world-outcome-narrator', 'open-world-actor-suggestion', 'open-world-expression', 'open-world-narration', 'text-open-world-runtime-intent', 'text-open-world-runtime-dialogue', 'text-open-world-runtime-expression', 'text-open-world-runtime-quest-packaging', 'text-open-world-runtime-direction', 'text-open-world-runtime-memory', 'screenplay-scene-draft', 'screenplay-targeted-rewrite', 'motion-drama-episode-script', 'short-chapter-draft', 'short-targeted-rewrite', 'ttrpg-gm-narrator', 'ttrpg-gm-actor-intent', 'ttrpg-director', 'ttrpg-private-guidance', 'ttrpg-player-intent', 'ttrpg-open-intent', 'ttrpg-open-oracle-interpret', 'ttrpg-open-fact-normalize', 'ttrpg-open-companion', 'ttrpg-open-kp', 'ttrpg-open-brief', 'ttrpg-open-situation-propose', 'ttrpg-open-public-situation-propose']),
     'text-adventure-showrunner': productProductionModes,
     'text-adventure-creative-director': productProductionModes,
     'text-adventure-source-editor': productProductionModes,

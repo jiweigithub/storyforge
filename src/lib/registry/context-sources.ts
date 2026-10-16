@@ -219,6 +219,15 @@ function ttrpgOpenSituationProvider(): ContextResourceProviderV1 {
     fingerprint: async scope => (await load()).fingerprint(scope),
     openReadSession: async scope => (await load()).openReadSession!(scope) }
 }
+function ttrpgOpenPublicSituationProvider(): ContextResourceProviderV1 {
+  const load = async () => (await import('../ttrpg/open-public-situation-context')).createTtrpgOpenPublicSituationContextProviderV1()
+  return { version: 'context-resource-provider-v1', providerId: 'storyforge.ttrpgOpenPublicSituationInput',
+    providerVersion: 'ttrpg-open-public-situation-provider-v1', normalizationVersion: 'ttrpg-open-public-situation-json-v1', kinds: ['fact', 'reference'],
+    listMetadata: async input => (await load()).listMetadata(input), searchMetadata: async input => (await load()).searchMetadata(input),
+    read: async input => (await load()).read(input), readOriginal: async input => (await load()).readOriginal(input),
+    fingerprint: async scope => (await load()).fingerprint(scope),
+    openReadSession: async scope => (await load()).openReadSession!(scope) }
+}
 
 // Upper-product readers are lazy for the same reason as adaptation readers:
 // their production Harnesses import the Skill registry, so eager imports here
@@ -2012,6 +2021,13 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
     requiresResourceKeyAllowList: true, resources: ttrpgOpenSituationProvider(),
     read: async () => { throw new Error('[ttrpg-situation] 局势资料只经本桌独立生成窗口、模型 GM 权限与完整 JSON 资源读取') },
+  },
+  {
+    key: 'ttrpgOpenPublicSituationInput', label: 'open 跑团共同局势的全体玩家资料交集',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 16000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenPublicSituationProvider(),
+    read: async () => { throw new Error('[ttrpg-public-situation] 共同局势只经真实全体交集、冻结 allow-list 与完整来源读取') },
   },
   {
     key: 'ttrpgPrivateGuidance', label: '正式 TTRPG 单角色私密指引', scope: 'runtime', layer: 'L0', ownerFrom: 'work',

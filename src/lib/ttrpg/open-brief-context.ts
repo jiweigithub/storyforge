@@ -6,7 +6,7 @@ import { canonicalStringify, hashCanonicalValue } from '../agent/run/hash'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import { estimateTokens } from '../ai/context-budget'
 import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
-import { loadTtrpgOpenPartyProjectionV1 } from './open-player-context'
+import { loadTtrpgOpenCommonProjectionV1 } from './open-player-context'
 import { ttrpgOpenRecallReadStampV1 } from './open-recall-read-stamp'
 import { TtrpgOpenReadConflictV1 } from './open-read-conflict'
 import { createTtrpgOpenRuntimeResourceProviderV1, type TtrpgOpenResourceRowV1 } from './open-runtime-resource-provider'
@@ -28,20 +28,12 @@ async function loadBriefReadModel(input: BriefReadInput) {
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'party' } })
   const { state, stateHash, runtime, authorization, source } = loaded, run = runtime.openRun!
   const recipients = [...authorization.selectedActorKeys].sort()
-  const views = await Promise.all(recipients.map(actorKey => loadTtrpgOpenPartyProjectionV1({ ...input, actorKey })))
-  if (views.some(view => view.readEvidence.sequence !== state.lastSequence || view.readEvidence.stateHash !== stateHash
-    || view.readEvidence.runtimeSourceHash !== source.runtimeSourceHash)) throw new TtrpgOpenReadConflictV1('读取复盘资料期间团局或接收者已经变化')
-  const first = views[0]?.view
-  if (!first) throw new Error('[ttrpg-brief] 复盘没有实际共同接收者')
-  const common = <T>(values: readonly T[], pick: (view: typeof first) => readonly T[]) => {
-    const sets = views.map(view => new Set(pick(view.view).map(canonicalStringify)))
-    return values.filter(value => sets.every(set => set.has(canonicalStringify(value))))
+  const common = await loadTtrpgOpenCommonProjectionV1(input)
+  if (common.readEvidence.sequence !== state.lastSequence || common.readEvidence.stateHash !== stateHash
+    || common.readEvidence.runtimeSourceHash !== source.runtimeSourceHash || canonicalStringify(common.recipientActorKeys) !== canonicalStringify(recipients)) {
+    throw new TtrpgOpenReadConflictV1('读取复盘资料期间团局或接收者已经变化')
   }
-  const initial = common(first.initialObservations, v => v.initialObservations)
-  const knowledge = common(first.knowledge, v => v.knowledge)
-  const facts = common(first.sessionFacts, v => v.sessionFacts)
-  const signals = common(first.pressureSignals, v => v.pressureSignals)
-  const actors = common(first.actorsHere, v => v.actorsHere)
+  const { initialObservations: initial, knowledge, sessionFacts: facts, pressureSignals: signals, actorsHere: actors } = common.view
   const values: Array<Omit<TtrpgOpenBriefInputEntryV1, 'sourceKey'> & { prefix: string }> = [
     ...initial.map(value => ({ prefix: 'initial', kind: 'release-observation' as const, reliability: 'release-time' as const, observerKey: null, value })),
     ...knowledge.map(value => ({ prefix: 'knowledge', kind: 'known-evidence' as const, reliability: value.reliability, observerKey: null, value })),
