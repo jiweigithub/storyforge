@@ -148,3 +148,5 @@ export { generateTtrpgOpenBriefCandidateV1, executeTtrpgOpenBriefRequestV1 } fro
 export { readTtrpgOpenBriefCandidateV1 } from './open-brief-candidate'
 export { acceptTtrpgOpenBriefMemoryV1 } from './runtime-commands'
 export { reconcileTtrpgOpenBriefMemoryRunV1, TtrpgOpenBriefMemoryReceiptPendingError } from './open-brief-adoption'
+export { readTtrpgWorldPatchDeskV1, buildTtrpgWorldPatchCandidateV1, exportTtrpgWorldPatchCandidateV1 } from './open-world-patch-service'
+export { parseTtrpgWorldPatchCandidateV1, verifyTtrpgWorldPatchCandidateV1 } from './open-world-patch-contract'

@@ -245,7 +245,7 @@ function pairEqual(left: TtrpgSessionFactV1, right: TtrpgSessionFactV1): boolean
   return left.subjectRef === right.subjectRef && left.objectRef === right.objectRef
 }
 
-function conflicts(left: TtrpgSessionFactV1, right: TtrpgSessionFactV1): boolean {
+export function ttrpgSessionFactsConflictV1(left: TtrpgSessionFactV1, right: TtrpgSessionFactV1): boolean {
   if (left.retired || right.retired) return false
   if (left.predicateKey === 'owns' && right.predicateKey === 'owns') {
     return left.objectRef !== null && left.objectRef === right.objectRef && left.subjectRef !== right.subjectRef
@@ -342,7 +342,7 @@ function assertF1(input: TtrpgSessionFactGateInputV1): void {
     canonicalValue: entry.canonicalValue,
   }))
   for (const existing of frozenFacts) {
-    if (conflicts(fact, existing)) fail(`F1: ${existing.factKey}:${input.frozenWorldPredicateIndex.worldReleaseHash}`)
+    if (ttrpgSessionFactsConflictV1(fact, existing)) fail(`F1: ${existing.factKey}:${input.frozenWorldPredicateIndex.worldReleaseHash}`)
   }
 }
 
@@ -364,7 +364,7 @@ function assertF2(input: TtrpgSessionFactGateInputV1): void {
         objectRef: leaf.objectRef,
         canonicalValue: leaf.value ?? true,
       }
-      if (conflicts(input.fact, invariant)) fail(`F2:${leaf.op}:${leaf.subjectRef}:${leaf.predicateKey}`)
+      if (ttrpgSessionFactsConflictV1(input.fact, invariant)) fail(`F2:${leaf.op}:${leaf.subjectRef}:${leaf.predicateKey}`)
     }
   }
 }
@@ -377,7 +377,7 @@ function assertF3(input: TtrpgSessionFactGateInputV1): void {
     if (!slotEqual(input.fact, target) && !(input.fact.predicateKey === 'owns' && target.predicateKey === 'owns'
       && input.fact.objectRef === target.objectRef)) fail('F3:supersedes-slot-mismatch')
   }
-  const conflict = existing.find(existingFact => existingFact.factKey !== input.fact.supersedes && conflicts(input.fact, existingFact))
+  const conflict = existing.find(existingFact => existingFact.factKey !== input.fact.supersedes && ttrpgSessionFactsConflictV1(input.fact, existingFact))
   if (conflict) fail(`F3:${conflict.factKey}:需要supersedes`)
 }
 
