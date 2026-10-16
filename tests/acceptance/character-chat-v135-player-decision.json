@@ -158,5 +158,69 @@
     "costUsd": null,
     "formalMatrixAdded": 0,
     "humanScoresAdded": 0
+  },
+  "native100Readback": {
+    "sourceHead": "857664bb97a83d88a44a2f02344f35fdb1d60894",
+    "exitCode": 0,
+    "result": {
+      "target": 100,
+      "actions": 100,
+      "failure": null,
+      "calls": 202,
+      "progress": [
+        {
+          "actions": 25,
+          "elapsedMs": 6035,
+          "lastActionMs": 246
+        },
+        {
+          "actions": 50,
+          "elapsedMs": 13163,
+          "lastActionMs": 315
+        },
+        {
+          "actions": 75,
+          "elapsedMs": 21759,
+          "lastActionMs": 431
+        },
+        {
+          "actions": 100,
+          "elapsedMs": 32096,
+          "lastActionMs": 428
+        }
+      ],
+      "checkpoints": [
+        {
+          "actions": 100,
+          "sequence": 206,
+          "facts": 204,
+          "actorRead": true,
+          "reviewRead": true
+        }
+      ],
+      "facts": 204,
+      "database": "native IndexedDB",
+      "elapsedMs": 39199,
+      "externalCalls": 0,
+      "worldUnchanged": true
+    },
+    "backupVerification": {
+      "at": 1792174664.9272141,
+      "verified": [
+        {
+          "archive": "/tmp/storyforge-chat-v135-native-100-final-results/character-chat-history-gro-a53e2-ut-and-portable-checkpoints-chromium/native-growth-backup.json.gz",
+          "rawBytes": 19668401,
+          "sha256": "b082c119a9fbbbde9033965d950090c70fd372818c949ebdc9fe713a3b351ebb"
+        },
+        {
+          "archive": "/tmp/storyforge-chat-v135-native-100-final-results/character-chat-history-gro-a53e2-ut-and-portable-checkpoints-chromium/native-growth-100-backup.json.gz",
+          "rawBytes": 23710227,
+          "sha256": "7a04d6b551c0d815ddce882cccd531c893a8c523cd63204858d8160e605ab131"
+        }
+      ]
+    },
+    "terminalReceipt": "/tmp/storyforge-chat-v135-native-100-final-receipt.json",
+    "native1000": "running; no terminal outcome yet",
+    "priorCrashRootCauseProven": false
   }
 }
