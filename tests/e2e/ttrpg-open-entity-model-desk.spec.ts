@@ -33,7 +33,7 @@ async function form(page: Page, audience: 'party' | 'private') {
   const card = page.getByTestId('ttrpg-open-entity-desk'), ai = card.getByTestId('ttrpg-open-entity-model-desk')
   await card.getByLabel('本次创建依据', { exact: true }).selectOption({ index: 1 })
   const scope = ai.getByLabel('AI 实体提案范围', { exact: true })
-  await expect(scope.locator('option')).not.toHaveCount(1, { timeout: 30000 })
+  await expect(scope.locator('option').filter({ hasText: audience === 'party' ? /^本次队伍/ : /^指定接收者/ })).toHaveCount(1, { timeout: 30000 })
   const scopeKey = await scope.locator('option').evaluateAll((rows, prefix) => rows.find(e => e.textContent?.startsWith(prefix))?.getAttribute('value'), audience === 'party' ? '本次队伍' : '指定接收者')
   expect(scopeKey).toBeTruthy(); await scope.selectOption(scopeKey!)
   await ai.getByTestId('entity-ai-template-dynamic.npc').check(); await ai.getByTestId('entity-ai-placement-harbor').check()
@@ -97,7 +97,7 @@ for (const audience of ['party', 'private'] as const) test(`${audience}: actual 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
   await page.screenshot({ path: test.info().outputPath('entity-model-' + audience + '-mobile-v1.png'), fullPage: true })
   if (audience === 'private') {
-    await page.getByRole('button', { name: '返回身份选择', exact: true }).click()
+    await page.getByRole('button', { name: '交接给另一位玩家', exact: true }).click()
     await page.getByLabel('我的角色', { exact: true }).selectOption('viewer.seat.companion.1')
     await page.getByRole('button', { name: '确认身份并进入', exact: true }).click()
     await expect(page.getByTestId('ttrpg-open-player-table')).toBeVisible()
