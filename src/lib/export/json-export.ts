@@ -1,3 +1,4 @@
+import { saveFile } from '../platform/save-file'
 import type { ExtensionProfile, ExtensionRecord, ExtensionContract, ExtensionOperation } from '../extensions/types'
 import type { AvgAuthoringDraftV1, AvgDraftMediaV1 } from '../avg/authoring-contract'
 /**
@@ -631,14 +632,8 @@ export async function exportProjectJSON(projectId: number): Promise<ProjectExpor
 }
 
 /** 下载 JSON 文件 */
-export function downloadJSON(data: ProjectExportData, filename: string) {
-  const blob = createProjectJSONBlob(data)
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
+export async function downloadJSON(data: ProjectExportData, filename: string): Promise<void> {
+  await saveFile(createProjectJSONBlob(data), filename)
 }
 
 /** 导入当前格式项目 JSON，返回新项目 ID。 */

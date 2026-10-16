@@ -114,7 +114,7 @@ export default defineConfig(({ mode }) => {
     { name: 'storyforge-base-redirect', configureServer: installBaseRedirect, configurePreviewServer: installBaseRedirect },
     react(),
     VitePWA({
-      disable: showcase,
+      disable: showcase || mode === 'android',
       injectRegister: null,
       registerType: 'autoUpdate',
       base: '/storyforge/',
@@ -180,7 +180,7 @@ export default defineConfig(({ mode }) => {
     proxy: showcase ? {} : providerProxies,
   },
   build: {
-    outDir: showcase ? 'dist-showcase' : 'dist',
+    outDir: showcase ? 'dist-showcase' : mode === 'android' ? 'dist-android/storyforge' : 'dist',
     chunkSizeWarningLimit: 1200,
     rollupOptions: {
       input: showcase ? { main: 'index.html' } : { main: 'index.html', 'ui-preview': 'ui-preview/index.html' },

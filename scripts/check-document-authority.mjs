@@ -46,6 +46,7 @@ const activeDocs = [
   'docs/assets/readme/ttrpg-current.png',
   'docs/assets/readme/data-current.png',
   'docs/guides/I18N.md',
+  'docs/guides/CLIENT-DISTRIBUTION.md',
   'docs/products/README.md',
   'docs/products/LONGFORM-AND-NODE.md',
   'docs/products/INDEPENDENT-CREATION.md',

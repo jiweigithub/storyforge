@@ -45,13 +45,13 @@ export default function ScreenplayPlanning({scope,root,units,stage,onChanged}:{s
  const analysis=await listAdaptationAnalysisV1({scope,adaptationProjectId:root.id!})
  if(analysis.edges.length||analysis.decisions.length){
  if(!await dialog.confirm({title:'重新确认原作事实',message:'修改事实会清除依赖它的因果关系与删改决定，需要重新确认改编规划。已有剧本场景保留。',confirmText:'备份并确认'}))return
- downloadJSON(await exportProjectJSON(scope.projectId),'原作事实修改前备份.json')
+ await downloadJSON(await exportProjectJSON(scope.projectId),'原作事实修改前备份.json')
  }
  }
  if(['beats','cards'].includes(stage)){
  const p=await listScreenplayProductionV1(scope)
  // This confirmation backs up the complete project before the existing governed replacement transaction.
- if(p.sceneCards.length){if(!await dialog.confirm({title:'重新确认场次规划',message:'重新规划会替换相关场次与审查。先下载整个作品备份，再确认替换；已发布版本保留。',confirmText:'备份并替换'}))return;downloadJSON(await exportProjectJSON(scope.projectId),'剧本重新规划前备份.json');allowReplaceDownstream=true}
+ if(p.sceneCards.length){if(!await dialog.confirm({title:'重新确认场次规划',message:'重新规划会替换相关场次与审查。先下载整个作品备份，再确认替换；已发布版本保留。',confirmText:'备份并替换'}))return;await downloadJSON(await exportProjectJSON(scope.projectId),'剧本重新规划前备份.json');allowReplaceDownstream=true}
  }
  const common={scope,adaptationProjectId:root.id!,expectedAdaptationRevision:root.revision,sourceManifestVersion:root.activeSourceManifestVersion}
  const items=Array.isArray(value)?value.map(candidate=>({candidate,authorStatus:'confirmed' as const})):[]

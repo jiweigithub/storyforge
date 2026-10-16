@@ -48,3 +48,9 @@ Work-information and story-core editors preserve the current draft; use the disp
 Read streaming output progressively. Edit prose candidates before adoption while retaining revision evidence. Generation, adoption, and persistence are separate states; check the save acknowledgment before leaving or refreshing.
 
 The October 4 mainline fix corrects cases where existing material was incorrectly reported as a missing mandatory resource, and reduces false conflicts between events that can coexist. Actual missing information and conflicting states still require attention; do not delete facts to bypass a block.
+
+## Adopting outline Agent candidates and stale notices
+
+Give the main Agent an outline goal, choose “Discuss and plan” (讨论与规划), review the proposed plan, then choose “Confirm plan and start” (确认计划并开始). Review candidate titles and content; only “Adopt” (采纳) writes them into the work. Refreshing should restore a still-pending candidate without automatically generating or adopting it again.
+
+[PR #158](https://github.com/yuanbw2025/storyforge/pull/158), merged on October 16, 2026 in China, fixes a mismatch between the generation and adoption policy identities during automatic volume/chapter outline composition that incorrectly marked valid candidates as stale. Actual changes to sources, permissions, or content still invalidate candidates. Preserve useful text and inspect the reason; do not clear the work or disable freshness checks to bypass a notice.

@@ -926,7 +926,7 @@ export default function TtrpgPage() {
                           className="lf-action"
                           onClick={() =>
                             void run(async () =>
-                              downloadJSON(
+                              await downloadJSON(
                                 await exportProjectJSON(scope.projectId),
                                 `${row?.work.title ?? "跑团"}.json`,
                               ),

@@ -18,7 +18,7 @@ The delivery contains **12 reference packages**, covering calendar services, not
 
 ## How to try it
 
-These steps apply only to a development build containing the stated commit. If the online application or an older release has no Workshop, check its version first. Publishing this documentation does not publish the plugin implementation.
+These steps apply to a development build containing the stated commit.
 
 1. Open `/workshop/discover` after your development application's base path; for an application hosted under `/storyforge/`, use `/storyforge/workshop/discover`. The entry is hidden by default. Select “开启工坊开发预览” (Enable Workshop developer preview) to show the home entry.
 2. Select “创建体验作品” (Create trial work) or “创建体验世界” (Create trial world). Confirmation creates separate test content and enables reference plugins. This creation action does not call AI or consume model credits.

@@ -1,12 +1,26 @@
 # 更新日志
 
-本页按用户可感知的变化整理。**main 的功能更新不等于已经发布新版本**：当前 package 版本为 4.0.1，正式 Release 保持其发布时内容，后续 main 变化不会自动进入已下载的压缩包。在线部署可能有时差，见[版本与兼容说明](/updates/compatibility)。
+本页按用户可感知的变化整理功能更新、修复和操作改进。版本信息见[版本与兼容说明](/updates/compatibility)。
+
+## v4.0.2 · 桌面与 Android 客户端
+
+本次发行准备 Windows、Mac Apple Silicon/Intel 安装包与 Android APK，加入统一的首次启动用户协议，以及私有的应用内问题与建议。iOS 暂缓。可下载状态以[发行页](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2)公开附件为准。见[安装说明](/getting-started/install)与[隐私说明](/guides/privacy)。实现依据：[PR #153](https://github.com/yuanbw2025/storyforge/pull/153)。
+
+## 2026-10-16 · 大纲 Agent 候选采纳修复
+
+修复自动编排卷章大纲时，有效候选因生成与采纳的策略身份不一致而被误判为过期、无法采纳的问题。保留来源、权限与内容变化的真实过期检查，不自动采纳。操作见[大纲、细纲与正文](/features/longform/writing)。
+
+依据：[修复 5f59e4a4](https://github.com/yuanbw2025/storyforge/commit/5f59e4a4) · [PR #158](https://github.com/yuanbw2025/storyforge/pull/158)，已合入 main `ce49309b`（北京时间 10 月 16 日）。
 
 ## 2026-10-15 · v4.0.1 故障反馈构建
 
-通用设置、渲染报错页和启动失败页增加摘要预览与官方反馈入口。浏览器错误刷新后保留，便携启动器记录有限启动故障与待核对中断。用户检查后才带入官网表单，表单不自动提交；作品、提示词和密钥不自动上传。操作与限制见[故障排查](/guides/troubleshooting#下载版的问题与故障反馈)。适用于 v4.0.1 及之后的便携构建；正式附件以[最新发行页](https://github.com/yuanbw2025/storyforge/releases/latest)为准；固定 v4.0.0 下载保持原样，也不等于上线启动/活跃/留存统计。
+通用设置、渲染报错页和启动失败页增加摘要预览与官方反馈入口。浏览器错误刷新后保留，便携启动器记录有限启动故障与待核对中断。用户检查后才带入官网表单，表单不自动提交；作品、提示词和密钥不自动上传。操作与限制见[故障排查](/guides/troubleshooting#下载版的问题与故障反馈)。适用于 v4.0.1 及之后的便携构建；正式附件以[最新发行页](https://github.com/yuanbw2025/storyforge/releases/latest)为准；固定 v4.0.0 下载保持原样。
 
 依据：[故障反馈实现 80e48bc9](https://github.com/yuanbw2025/storyforge/commit/80e48bc9) · [PR #144](https://github.com/yuanbw2025/storyforge/pull/144)。
+
+## 2026-10-15 · 客户端候选实现（未发布）
+
+新增 Windows 独立窗口和 Android APK 的开发构建，以及应用内检查、下载和确认安装更新的链路。Android 完整 JSON 备份接系统保存窗口，取消或保存失败时不继续依赖该备份的操作。该增量仍在开发分支，尚未正式发行或完成两平台真机覆盖升级验收；现有 v4.0.0 下载包不含这些能力。见[安装与启动](/getting-started/install#开发中的-windows-android-客户端)。
 
 ## 2026-10-14 · 知识库滚动阅读
 

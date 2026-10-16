@@ -12,7 +12,7 @@ export interface CodexReceipt {
   text: string; dispatched: boolean; error?: string; usage?: TokenUsage
 }
 export function isLocalCodexHost(): boolean {
-  return typeof location !== 'undefined' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
+  return import.meta.env.MODE !== 'android' && typeof location !== 'undefined' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
 }
 export async function codexRequest<T>(path: string, body?: unknown): Promise<T> {
   assertGenerationAvailable()

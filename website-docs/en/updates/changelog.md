@@ -1,12 +1,26 @@
 # Changelog
 
-Changes are organized by user impact. **Main-branch updates do not mean a new version has been released.** The package version is 4.0.1; tagged releases retain their original content, and later main-branch changes do not automatically enter downloaded archives. Live deployments may lag; see [compatibility](/en/updates/compatibility).
+Feature updates, fixes, and workflow improvements are organized by user impact. See [compatibility](/en/updates/compatibility) for version information.
+
+## Version 4.0.2 · Desktop and Android clients
+
+This release prepares Windows, Apple Silicon/Intel macOS installers and an Android APK, plus a unified first-launch User Agreement and private in-app problems and suggestions. iOS is deferred. Published attachments on the [release page](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2) determine availability. See [installation](/en/getting-started/install) and [privacy](/en/guides/privacy). Implementation: [PR #153](https://github.com/yuanbw2025/storyforge/pull/153).
+
+## October 16, 2026 · Outline Agent candidate adoption fix
+
+Automatic volume/chapter outline composition no longer incorrectly rejects valid candidates as stale because generation and adoption used different policy identities. Real source, permission, and content freshness checks remain in place; candidates are not adopted automatically. See [outlines, scene beats, and prose](/en/features/longform/writing).
+
+Evidence: [fix 5f59e4a4](https://github.com/yuanbw2025/storyforge/commit/5f59e4a4) · [PR #158](https://github.com/yuanbw2025/storyforge/pull/158), merged into main as `ce49309b` on October 16 in China.
 
 ## October 15, 2026 · v4.0.1 failure-feedback builds
 
-General settings, rendering fallbacks, and blocked startup offer a summary preview and official feedback entry. Browser errors survive refresh; the portable launcher retains bounded startup failures and uncertain interruption records. Users inspect the summary before taking it to the official form, which never submits automatically. Works, Prompts, and credentials are not automatically uploaded. See [troubleshooting and capture limits](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds). This applies to v4.0.1 and later portable builds; check the [latest release](https://github.com/yuanbw2025/storyforge/releases/latest) for published archives. Fixed v4.0.0 downloads remain unchanged. This does not add launch/activity/retention statistics.
+General settings, rendering fallbacks, and blocked startup offer a summary preview and official feedback entry. Browser errors survive refresh; the portable launcher retains bounded startup failures and uncertain interruption records. Users inspect the summary before taking it to the official form, which never submits automatically. Works, Prompts, and credentials are not automatically uploaded. See [troubleshooting and capture limits](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds). This applies to v4.0.1 and later portable builds; check the [latest release](https://github.com/yuanbw2025/storyforge/releases/latest) for published archives. Fixed v4.0.0 downloads remain unchanged.
 
 Source: [failure-feedback implementation 80e48bc9](https://github.com/yuanbw2025/storyforge/commit/80e48bc9) · [PR #144](https://github.com/yuanbw2025/storyforge/pull/144).
+
+## 2026-10-15 · Client candidate implementation (unreleased)
+
+Development builds now cover a standalone Windows window and an Android APK, with in-app update checks, downloads and confirmed installation. Complete JSON backups on Android use the system file-saving dialog; cancellation or a failed save blocks operations that depend on that backup. This increment remains on a development branch, with no official release or real-device upgrade acceptance on either platform yet. Existing v4.0.0 downloads do not include these capabilities. See [Installation and startup](/en/getting-started/install#windows-android-clients-in-development).
 
 ## October 14, 2026 · Knowledge-base scrolling
 

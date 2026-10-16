@@ -77,7 +77,14 @@ export function createPortableServer({ webRoot = resolve(dirname(fileURLToPath(i
   return server
 }
 
-if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Packaged Electron puts launch/update flags in argv[1], not a script filename.
+// Importing this server must never try to resolve such flags as real files.
+function isDirectEntrypoint() {
+  if (!process.argv[1]) return false
+  try { return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url) }
+  catch { return false }
+}
+if (isDirectEntrypoint()) {
   monitorLauncherFailures()
   const server = createPortableServer()
   server.on('error', error => { recordLauncherFailure(error); console.error(error.code === 'EADDRINUSE' ? 'Port 1111 is already in use. Close the previous StoryForge window/service and try again. The port will not change, preserving browser storage.' : 'Unable to start the local service.'); process.exitCode = 1 })

@@ -6,6 +6,16 @@ import { join } from 'node:path'
 import { request, createServer } from 'node:http'
 import { createPortableServer } from './server.mjs'
 import { providerProxies } from './proxies.mjs'
+import { spawnSync } from 'node:child_process'
+
+test('embedding the server tolerates packaged-app debug and post-update arguments', () => {
+  for (const flag of ['--inspect=0', '--updated', '--force-run']) {
+    const script = `process.argv[1] = ${JSON.stringify(flag)}; await import(${JSON.stringify(new URL('./server.mjs', import.meta.url).href)})`
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 10000 })
+    assert.equal(child.status, 0, child.stderr)
+    assert.equal(child.stdout, '')
+  }
+})
 
 function get(port, path, headers = {}, method = 'GET') {
   return new Promise((resolve, reject) => {

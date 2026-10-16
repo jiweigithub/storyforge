@@ -306,7 +306,7 @@ export default function TextOpenWorldCreatorQualityStudio(props: {
       expected: issueExpected, actual: issueActual, affectedStableKeys: lines(issueStableKeys),
       sessionId: issueSessionId, sourceTextExcluded: issueSourceExcluded as true,
     })
-    downloadTextFile(
+    await downloadTextFile(
       portableTextOpenWorldCreatorIssueJsonV1(created),
       `text-open-world-${created.receipt.evidence.issueKey}.json`,
       'application/json',
@@ -462,7 +462,7 @@ export default function TextOpenWorldCreatorQualityStudio(props: {
         <div className="mt-3 grid gap-2 md:grid-cols-2">{workspace.issues.map(issue => <article key={issue.receipt.receiptHash} className={`rounded border p-3 text-[10px] ${issue.blocksRelease ? 'border-error/30 bg-error/5' : 'border-success/30 bg-success/5'}`}>
           <span className="flex flex-wrap items-center justify-between gap-2"><strong>{issue.receipt.evidence.severity === 'blocking' ? '阻断' : '非阻断'} · {CATEGORY_LABELS[issue.receipt.evidence.category]}</strong><code>{compactHash(issue.receipt.receiptHash)}</code></span>
           <p className="mt-2">{issue.receipt.evidence.summary}</p>
-          <div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => downloadTextFile(portableTextOpenWorldCreatorIssueJsonV1(issue), `text-open-world-${issue.receipt.evidence.issueKey}.json`, 'application/json')} className="flex items-center gap-1 text-accent underline"><Download className="h-3 w-3" />导出复现回执</button></div>
+          <div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => void run(() => downloadTextFile(portableTextOpenWorldCreatorIssueJsonV1(issue), `text-open-world-${issue.receipt.evidence.issueKey}.json`, 'application/json'), '复现回执已导出。')} className="flex items-center gap-1 text-accent underline"><Download className="h-3 w-3" />导出复现回执</button></div>
           {issue.receipt.evidence.severity === 'blocking' && <p className="mt-2 text-error">必须根据回执创建新Build修复；当前Build不能发布。</p>}
           {issue.receipt.evidence.severity === 'advisory' && !issue.waiver && <><textarea aria-label={`问题软豁免理由 ${issue.receipt.evidence.issueKey}`} value={issueWaivers[issue.receipt.receiptHash] ?? ''} onChange={event => setIssueWaivers(current => ({ ...current, [issue.receipt.receiptHash]: event.target.value }))} maxLength={2000} className="mt-2 min-h-16 w-full rounded border border-border bg-bg-elevated p-2" placeholder="至少20字说明为什么本版可以接受该风险。" /><button type="button" disabled={disabled || (issueWaivers[issue.receipt.receiptHash] ?? '').trim().length < 20} onClick={() => void waiveIssue(issue.receipt.receiptHash)} className="mt-2 rounded border border-accent/40 px-3 py-1.5 text-accent disabled:opacity-40">确认软豁免</button></>}
           {issue.waiver && <p className="mt-2 text-success">已绑定软豁免：{issue.waiver.evidence.reason}</p>}

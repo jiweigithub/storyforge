@@ -27,9 +27,9 @@ export default function LongformCompletion({ project }: { project: Project }) {
       if (fresh.contentHash !== report.contentHash || !fresh.ready) throw new Error('作品或运行状态已变化，请重新检查并确认。')
       // Registered export validates the complete lifecycle before the author marks the work complete.
       const backup = await exportProjectJSON(project.id!)
+      await downloadJSON(backup, `${fresh.work.title}-完稿备份.json`)
       await commitLongformCompletionV1(scope, report.contentHash)
       await useProjectStore.getState().loadProjects()
-      downloadJSON(backup, `${fresh.work.title}-完稿备份.json`)
       setMessage('已记录作品完成，并生成完稿前的完整备份。下方仍可导出正文及最新状态。')
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)) }
     finally { setBusy(false) }
