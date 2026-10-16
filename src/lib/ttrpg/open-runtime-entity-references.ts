@@ -1,4 +1,5 @@
 /** Immutable instance identities for versioned consumers. A snapshot grants no read, action or adoption permission. */
+import type { TtrpgOpenOracleReceiptV1 } from './open-oracle-contract'
 import type { TtrpgRuntimeContentV2 } from './content-version'
 import type { TtrpgOpenAudience, TtrpgOpenEntityKind } from './open-contract'
 import type { TtrpgOpenEntityOperationV1 } from './open-entity-contract'
@@ -76,17 +77,22 @@ export async function createTtrpgOpenRuntimeEntityReferencesV1(input: Journal & 
   const body = referenceBody(input)
   return parseTtrpgOpenRuntimeEntityReferencesV1({ ...body, snapshotHash: await hash(body) })
 }
+/** Exact immutable rows from original F13 journals; no permission is granted by this projection. */
+export function ttrpgOpenRuntimeEntityReferenceJournalRowsV1(operations: readonly TtrpgOpenEntityOperationV1[], runtimeSourceHash: string) {
+  const rows = operations.map(parseTtrpgOpenEntityOperationV1).filter(row => row.resolution?.kind === 'materialized').flatMap(operation => {
+    const content = p.json(operation.plan.frozenContentJson) as TtrpgRuntimeContentV2
+    return referenceBody({ content, operations: [operation], runtimeSourceHash }).references
+  })
+  p.unique(rows.map(row => row.entityRef), 'actual runtime entity references')
+  return rows
+}
 /** Synchronous replay checks the actual prior F13 records; live source loading separately verifies hashes and frozen content. */
 export function assertTtrpgOpenSituationRuntimeReferenceJournalV1(input: {
   policy: TtrpgOpenSituationRuntimeReferencePolicyV1; operations: readonly TtrpgOpenEntityOperationV1[];
   recipientActorKeys: readonly string[]; rulePackContentHash: string; consumerRef: TtrpgOpenSourceRefV1;
 }) {
   const policy = parseTtrpgOpenSituationRuntimeReferencePolicyV1(input.policy), snapshot = policy.references
-  const rows = input.operations.map(parseTtrpgOpenEntityOperationV1).filter(row => row.resolution?.kind === 'materialized').flatMap(operation => {
-    const content = p.json(operation.plan.frozenContentJson) as TtrpgRuntimeContentV2
-    return referenceBody({ content, operations: [operation], runtimeSourceHash: snapshot.runtimeSourceHash }).references
-  })
-  p.unique(rows.map(row => row.entityRef), 'actual runtime entity references')
+  const rows = ttrpgOpenRuntimeEntityReferenceJournalRowsV1(input.operations, snapshot.runtimeSourceHash)
   const eligible = rows.filter(row => policy.consumer === 'private-gm' || input.recipientActorKeys.length > 0
     && input.recipientActorKeys.every(actor => ttrpgOpenEntityReferenceVisibleV1(row.audience, row.recipientActorKeys, actor, false, true)))
     .sort((a, b) => a.entityRef < b.entityRef ? -1 : a.entityRef > b.entityRef ? 1 : 0)
@@ -109,4 +115,65 @@ export async function assertTtrpgOpenRuntimeEntityReferencesMatchV1(input: Journ
     if (stable(snapshot) !== stable(actual)) p.fail('运行实例引用与当前完整选择不一致')
   } else if (snapshot.references.some(row => !actual.references.some(original => stable(original) === stable(row))
     || row.sourceRef.sessionKey === input.consumerRef.sessionKey && row.sourceRef.sequence >= input.consumerRef.sequence)) p.fail('历史运行实例引用没有准确的先前实际创建来源')
+}
+
+/** Versioned Oracle identity scope. Integrity alone never grants viewer, model or adoption authority. */
+export interface TtrpgOpenOracleRuntimeReferencePolicyV1 {
+  schema: 'storyforge.ttrpg-open-oracle-runtime-reference-policy'; version: 1;
+  oracleSourceRef: TtrpgOpenSourceRefV1; audience: 'public' | 'party' | 'gm-only';
+  recipientActorKeys: string[];
+  references: TtrpgOpenRuntimeEntityReferencesV1;
+}
+export function parseTtrpgOpenOracleRuntimeReferencePolicyV1(value: unknown): TtrpgOpenOracleRuntimeReferencePolicyV1 {
+  const r = p.record(value, ['schema', 'version', 'oracleSourceRef', 'audience', 'recipientActorKeys', 'references'], 'Oracle runtime reference policy')
+  return { schema: p.literal(r.schema, 'storyforge.ttrpg-open-oracle-runtime-reference-policy', 'Oracle reference schema'),
+    version: p.literal(r.version, 1, 'Oracle reference version'), oracleSourceRef: parseTtrpgOpenSourceRefV1(r.oracleSourceRef),
+    audience: p.oneOf(r.audience, ['public', 'party', 'gm-only'], 'Oracle reference audience'),
+    recipientActorKeys: p.keys(r.recipientActorKeys, 'Oracle reference original recipients', 1000),
+    references: parseTtrpgOpenRuntimeEntityReferencesV1(r.references) }
+}
+/** A party scope is the actual current intersection, including late seats; knowing an NPC never includes its equipment. */
+function eligible(row: TtrpgOpenRuntimeEntityReferenceV1, audience: TtrpgOpenOracleRuntimeReferencePolicyV1['audience'], recipients: readonly string[]) {
+  if (audience === 'gm-only') return true
+  if (row.audience === 'public') return true
+  return audience === 'party' && row.audience === 'party' && recipients.length > 0
+    && recipients.every(actor => ttrpgOpenEntityReferenceVisibleV1(row.audience, row.recipientActorKeys, actor, false, true))
+}
+type Oracle = Pick<TtrpgOpenOracleReceiptV1, 'sourceRef' | 'audience'>
+/** Pure source matching for event replay. The caller supplies the real prior journal and real recorded consultation. */
+export function assertTtrpgOpenOracleRuntimeReferenceJournalV1(input: {
+  policy: TtrpgOpenOracleRuntimeReferencePolicyV1; operations: readonly TtrpgOpenEntityOperationV1[];
+  oracle: Oracle; recipientActorKeys: readonly string[]; runtimeSourceHash: string; rulePackContentHash: string;
+  consumerRef: TtrpgOpenSourceRefV1;
+}) {
+  const policy = parseTtrpgOpenOracleRuntimeReferencePolicyV1(input.policy), snapshot = policy.references
+  const rows = ttrpgOpenRuntimeEntityReferenceJournalRowsV1(input.operations, input.runtimeSourceHash)
+  // Later F13 events cannot retroactively change a frozen window's exact original scope.
+  const earlier = rows.filter(row => row.sourceRef.sessionKey !== input.consumerRef.sessionKey || row.sourceRef.sequence < input.consumerRef.sequence)
+  const expected = earlier.filter(row => eligible(row, input.oracle.audience, input.recipientActorKeys))
+    .sort((a, b) => a.entityRef < b.entityRef ? -1 : a.entityRef > b.entityRef ? 1 : 0)
+  if (!expected.length || !input.recipientActorKeys.length || policy.audience !== input.oracle.audience || stable(policy.oracleSourceRef) !== stable(input.oracle.sourceRef)
+    || stable(policy.recipientActorKeys) !== stable(input.recipientActorKeys)
+    || snapshot.runtimeSourceHash !== input.runtimeSourceHash || snapshot.rulePackContentHash !== input.rulePackContentHash
+    || stable(snapshot.references) !== stable(expected)
+    || input.oracle.sourceRef.sessionKey === input.consumerRef.sessionKey && input.oracle.sourceRef.sequence >= input.consumerRef.sequence) {
+    p.fail('Oracle 实例策略缺少准确原咨询、先前创建切点或本次全部接收者权限')
+  }
+  return policy
+}
+/** Build from already verified sources only. This function neither opens a window nor invokes a model. */
+export async function createTtrpgOpenOracleRuntimeReferencePolicyV1(input: {
+  content: TtrpgRuntimeContentV2; operations: readonly TtrpgOpenEntityOperationV1[]; runtimeSourceHash: string;
+  oracle: Oracle; recipientActorKeys: readonly string[]; consumerRef: TtrpgOpenSourceRefV1;
+}): Promise<TtrpgOpenOracleRuntimeReferencePolicyV1> {
+  const rows = ttrpgOpenRuntimeEntityReferenceJournalRowsV1(input.operations, input.runtimeSourceHash)
+  const entityRefs = rows.filter(row => eligible(row, input.oracle.audience, input.recipientActorKeys)
+    && (row.sourceRef.sessionKey !== input.consumerRef.sessionKey || row.sourceRef.sequence < input.consumerRef.sequence)).map(row => row.entityRef)
+  const references = await createTtrpgOpenRuntimeEntityReferencesV1({ ...input, entityRefs })
+  const policy = parseTtrpgOpenOracleRuntimeReferencePolicyV1({ schema: 'storyforge.ttrpg-open-oracle-runtime-reference-policy', version: 1,
+    oracleSourceRef: input.oracle.sourceRef, audience: input.oracle.audience, recipientActorKeys: [...input.recipientActorKeys], references })
+  return assertTtrpgOpenOracleRuntimeReferenceJournalV1({ ...input, policy, rulePackContentHash: input.content.rulePack.contentHash })
+}
+export async function verifyTtrpgOpenOracleRuntimeReferencePolicyHashV1(policy: TtrpgOpenOracleRuntimeReferencePolicyV1) {
+  await verifyTtrpgOpenRuntimeEntityReferencesHashV1(parseTtrpgOpenOracleRuntimeReferencePolicyV1(policy).references)
 }
