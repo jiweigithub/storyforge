@@ -1,3 +1,4 @@
+import {validateImportedChatFactEvidenceStateV1, validateImportedChatFactEvidenceEventV1} from '../character-interaction/fact-evidence-import'
 import { validateExtensionBackup } from '../extensions/portable'
 import {parseChatComposerDraftV1} from '../character-interaction/composer-draft-contract'
 /**
@@ -478,6 +479,8 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
     }
   }
   for (const session of runtimeSessions) {
+    validateImportedChatFactEvidenceStateV1(session.initialStateJson, session.kind)
+    validateImportedChatFactEvidenceStateV1(session.runtimeHeadStateJson, session.kind)
     if (session.chatComposerDraft !== undefined) {
       if (session.kind !== 'character-interaction') throw new Error('[deriveImport] 聊天输入草稿不能归入其他产品存档')
       parseChatComposerDraftV1(session.chatComposerDraft)
@@ -512,6 +515,7 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
     const ownedEvents = runtimeEventsBySession.get(session._exportId) ?? []
     const replaySessionId = session._exportId + 1
     const portablePayload = event._portablePayloadJson ?? event.payloadJson
+    validateImportedChatFactEvidenceEventV1(portablePayload, session.kind, event.type)
     let replayPayload = portablePayload
     try {
       const parsed = JSON.parse(portablePayload)
@@ -646,6 +650,7 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
     } catch {
       throw new Error('[deriveImport] v10 ProductRuntimeCheckpoint stateJson 无效')
     }
+    validateImportedChatFactEvidenceStateV1(checkpoint.stateJson, session.kind)
     if (state.lastSequence !== throughSequence) {
       throw new Error('[deriveImport] v10 ProductRuntimeCheckpoint 状态序号不一致')
     }

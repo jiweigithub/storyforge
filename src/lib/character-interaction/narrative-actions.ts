@@ -1,5 +1,6 @@
 import {validateChatSceneTransitionV1, requireChatSceneTransitionV1, applyChatSceneTransitionV1, validateChatSceneTransitionCheckV1} from './narrative-scene-transition'
 import {requireChatPromiseRequestV1} from './narrative-promise-request'
+import {recordChatFactEvidenceV1} from './fact-evidence'
 import {chatConversationEvidenceV1} from './narrative-conversation-evidence'
 import {applyChatPlayerGoalResumeV1, requireChatExistingGoalPauseV1, validateChatPlayerRequestEvidenceV1} from './narrative-player-pause'
 import {applyChatThreadFollowupGoalV1, chatCanFollowThreadV1} from './narrative-thread-followup'
@@ -188,7 +189,7 @@ export function requestChatNarrativeTriggerV1(stateValue: CharacterInteractionRu
 
 /** One event applies the expression and all consequences, or none of them. */
 function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
-  sequence: number; triggerSequence: unknown; actorKey: unknown; messageId: unknown; action: unknown
+  sequence: number; triggerSequence: unknown; actorKey: unknown; messageId: unknown; action: unknown; factEvidenceVersion?: unknown
 }): CharacterInteractionRuntimeState {
   const state = structuredClone(stateValue)
   const story = narrative(state)
@@ -257,6 +258,8 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
     if (!item.evidenceExcerpt.includes(item.text)) fail('新增事实必须有实际表达的逐字证据')
     story.situation.facts.push({factKey: item.factKey, text: item.text, audienceKeys: [...action.audienceKeys], origin: 'runtime-consequence', sourceKnowledgeKey: null, sourceEventSequence: input.sequence})
   }
+  recordChatFactEvidenceV1(story, input.factEvidenceVersion, action.newFacts.map(item => ({factKey: item.factKey,
+    kind: item.kind, evidenceFactKeys: item.evidenceFactKeys, actorKey, goalKey: action.goalKey, source: 'action'})))
   const disclosed = new Set<string>()
   for (const item of action.disclosures) {
     const known = fact(item.factKey)
@@ -336,6 +339,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
 
 /** Preserve the historical unreviewed event format without granting it new writes. */
 export function applyChatNarrativeActionV1(state: CharacterInteractionRuntimeState, input: Parameters<typeof applyActionBase>[1]) {
+  if (input.factEvidenceVersion !== undefined) fail('旧行动事件不能写入事实来源索引')
   if (state.chatNarrative?.pendingEdit) fail('历史改写必须通过行动及后果审查')
   const action = parseChatNarrativeActionV1(input.action)
   if (!action.evidenceFactKeys.length) fail('无事实引用的对话回应必须通过独立审查，旧行动事件不可采用')

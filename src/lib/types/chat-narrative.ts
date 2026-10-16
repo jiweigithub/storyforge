@@ -46,6 +46,17 @@ export interface ChatSituationFactV1 {
   discovery?: ChatFactDiscoveryRuleV1
 }
 
+/** Deterministic provenance of an adopted runtime fact, not another fact body
+ * and never an AI-authored field. Legacy facts may have no such evidence. */
+export interface ChatFactEvidenceRecordV1 {
+  factKey: string
+  kind: ChatNarrativePermissionsV1['allowedNewFactKinds'][number]
+  evidenceFactKeys: string[]
+  actorKey: string | null
+  goalKey: string | null
+  source: 'action' | 'situation' | 'inquiry'
+}
+
 export interface ChatFactDiscoveryRuleV1 {
   sceneKey: string
   actorKeys: string[]
@@ -195,6 +206,9 @@ export interface ChatNarrativeStateV1 {
   lastEventSequence: number
   /** Durable authorizations; only the latest ready trigger may execute. */
   triggers: ChatNarrativeTriggerStateV1[]
+  /** Versioned commit-derived evidence survives parentless branches. Event
+   * sequence remains owned by the canonical fact, so it is rebased only once. */
+  factEvidence?: {version: 1; records: ChatFactEvidenceRecordV1[]}
   /** Reviewed intention, or a bounded result of an already completed observation.
    * Player input cancels intentions, but keeps explicitly marked observation results pending. */
   pendingSituation?: ChatActorSituationRequestV1 & {actorKey: string; goalKey: string | null; sourceEventSequence: number}

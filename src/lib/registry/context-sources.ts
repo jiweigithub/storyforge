@@ -772,7 +772,7 @@ async function readChatSituationRuntimeContext(input: AssembleContextInput): Pro
       await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: producer.contract.scope, participantKey: 'player', view: 'chat-situation'})
       discoveryEvidence = usesChatDiscoveryEvidenceContextV1(producer)
     }
-    let retrievalVersion: import('../character-interaction/context-selection').ChatRetrievalVersion = 'chat-relevance-v5'
+    let retrievalVersion: import('../character-interaction/context-selection').ChatRetrievalVersion = 'chat-relevance-v6'
     if (input.chatSituationCandidateRunId != null) {
       const {readLatestVerifiedAgentRunCheckpointV1} = await import('../agent/run/checkpoint')
       const producer = await readLatestVerifiedAgentRunCheckpointV1(input.scope, input.chatSituationCandidateRunId, {owner: 'instance'})

@@ -12,15 +12,18 @@ export const CHAT_CONTEXT_READER_VERSION_V4 = 'chat-narrative-runtime-view-v8'
 // v9 retains v8's actor projection and binds the subsequent review to the
 // protected coordinator dialogue policy. Old producer packets keep v8.
 export const CHAT_CONTEXT_READER_VERSION_V5 = 'chat-narrative-runtime-view-v9'
-export type ChatRetrievalVersion = 'legacy' | 'chat-relevance-v1' | 'chat-relevance-v2' | 'chat-relevance-v3' | 'chat-relevance-v4' | 'chat-relevance-v5'
+// v10 keeps the actor projection and freezes commit-time fact provenance.
+export const CHAT_CONTEXT_READER_VERSION_V6 = 'chat-narrative-runtime-view-v10'
+export type ChatRetrievalVersion = 'legacy' | 'chat-relevance-v1' | 'chat-relevance-v2' | 'chat-relevance-v3' | 'chat-relevance-v4' | 'chat-relevance-v5' | 'chat-relevance-v6'
 export function supportsChatCorrectionContextV1(version: ChatRetrievalVersion): boolean {
-  return version === 'chat-relevance-v4' || version === 'chat-relevance-v5'
+  return version === 'chat-relevance-v4' || version === 'chat-relevance-v5' || version === 'chat-relevance-v6'
 }
 export function chatRetrievalVersionForReader(reader: string | undefined): ChatRetrievalVersion | null {
   if (reader === 'chat-narrative-runtime-view-v3') return 'legacy'
   if (reader === 'chat-narrative-runtime-view-v4' || reader === CHAT_CONTEXT_READER_VERSION_V1) return 'chat-relevance-v1'
   if (reader === CHAT_CONTEXT_READER_VERSION_V2) return 'chat-relevance-v2'
   if (reader === CHAT_CONTEXT_READER_VERSION_V4) return 'chat-relevance-v4'
+  if (reader === CHAT_CONTEXT_READER_VERSION_V6) return 'chat-relevance-v6'
   if (reader === CHAT_CONTEXT_READER_VERSION_V5) return 'chat-relevance-v5'
   return reader === CHAT_CONTEXT_READER_VERSION_V3 ? 'chat-relevance-v3' : null
 }

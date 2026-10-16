@@ -27,7 +27,7 @@ for (const privateAnswer of [false, true]) test(`actual NPC reply is displayed o
           discoveries: [{factKey: 'secret', answerExcerpt: '铜印仍在柜台下的木箱里', reason: '工程条件授权保管人确认此位置，不解锁用途'}]}}
       output = proposal
     } else {
-      actions++; expect(prompt).not.toContain(inquiryPurpose)
+      actions++; expect(prompt).not.toContain(inquiryPurpose); expect(prompt).not.toContain('factEvidence')
       if (actions === 1) expect(prompt).not.toContain(inquiryTruth)
       else {expect(prompt).toContain(inquiryAnswer); expect(prompt).toContain(inquiryTruth); expect(prompt).not.toContain('他是保管者')}
       output = {kind: 'speak', text: actions === 1 ? inquiryQuestion : followup, goalKey: 'find-seal', audienceKeys: ['guard', 'player'],
@@ -57,6 +57,8 @@ for (const privateAnswer of [false, true]) test(`actual NPC reply is displayed o
   expect(calls).toEqual(['action', 'action-review', 'construction', 'situation-review', 'action', 'action-review'])
   const before = await read()
   expect(before.chatNarrative.inquiryHistory).toHaveLength(1)
+  expect(before.chatNarrative.factEvidence).toEqual({version: 1, records: [{factKey: 'clerk-statement', kind: 'observation',
+    evidenceFactKeys: ['lost', 'clerk-present', 'box'], actorKey: 'guard', goalKey: 'find-seal', source: 'inquiry'}]})
   expect(before.chatNarrative.situation.facts.find((f: {factKey: string}) => f.factKey === 'secret').audienceKeys).toEqual(privateAnswer ? ['guard'] : ['guard', 'player'])
   expect(before.chatNarrative.situation.facts.find((f: {factKey: string}) => f.factKey === 'purpose').audienceKeys).toEqual([])
   await page.reload(); await expect(page.getByTestId('chat-narrative-controls')).toBeVisible()

@@ -777,11 +777,11 @@ export function applyInteractionEvent(
     case 'interaction.narrative.trigger.requested':
       return requestChatNarrativeTriggerV1(state, {sequence: event.sequence, kind: body.kind, sourceEventSequence: body.sourceEventSequence, seed: body.seed, direction: body.direction})
     case 'interaction.narrative.situation.committed':
-      return applyChatSituationV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, draft: body.draft, review: body.review})
+      return applyChatSituationV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, draft: body.draft, review: body.review, factEvidenceVersion: body.factEvidenceVersion})
     case 'interaction.narrative.action-reviewed.committed':
-      return applyReviewedChatNarrativeActionV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, actorKey: body.actorKey, messageId: body.messageId, action: body.action, review: body.review})
+      return applyReviewedChatNarrativeActionV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, actorKey: body.actorKey, messageId: body.messageId, action: body.action, review: body.review, factEvidenceVersion: body.factEvidenceVersion})
     case 'interaction.narrative.action.committed':
-      return applyChatNarrativeActionV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, actorKey: body.actorKey, messageId: body.messageId, action: body.action})
+      return applyChatNarrativeActionV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, actorKey: body.actorKey, messageId: body.messageId, action: body.action, factEvidenceVersion: body.factEvidenceVersion})
     case 'interaction.character.reply.committed': {
       if (state.chatNarrative) throw new Error('叙事情境中的角色表达必须与后果通过行动候选一起提交。')
       const active = requireScene(state)
@@ -1112,8 +1112,8 @@ export function buildInteractionContextWindow(
   if (state.chatNarrative && options.retrievalVersion !== 'legacy') {
     const profile = state.profiles.find(p => p.participantKey === participantKey)
     if (!profile) throw new Error('缺少角色视角，无法选择来源资料')
-    if (supportsChatCorrectionContextV1(options.retrievalVersion ?? 'chat-relevance-v5')) visible.memoryCorrections = chatMemoryCorrectionContextV1(state, participantKey)
-    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v5',
+    if (supportsChatCorrectionContextV1(options.retrievalVersion ?? 'chat-relevance-v6')) visible.memoryCorrections = chatMemoryCorrectionContextV1(state, participantKey)
+    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v6',
       requiredCommitmentKeys: requiredChatCommitmentKeysV1(state.chatNarrative!.situation.goals)})
   }
   const allMessages = visible.messages

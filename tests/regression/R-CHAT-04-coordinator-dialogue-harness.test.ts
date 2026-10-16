@@ -15,11 +15,11 @@ it.each(['current', 'saved-v8'] as const)('uses the original producer reader acr
   await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: crypto.randomUUID(), baseSequence: v.sequence, baseStateHash: v.stateHash,
     kind: 'scene-start', sourceEventSequence: f.sceneSequence})
   const before = await readProductRuntimeState(f.sessionId), worlds = await db.worldReleases.toArray()
-  // v9's role bytes equal v8. Only the new review's dialogue policy changes.
+  // The current role bytes still equal v8; recovery keeps its older review policy.
   if (version === 'saved-v8') {
     const create = manifests.createContextManifestFromAssemblyV1
     vi.spyOn(manifests, 'createContextManifestFromAssemblyV1').mockImplementation(input => create({...input,
-      readerVersion: input.readerVersion === 'chat-narrative-runtime-view-v9' ? 'chat-narrative-runtime-view-v8' : input.readerVersion}))
+      readerVersion: input.readerVersion === 'chat-narrative-runtime-view-v10' ? 'chat-narrative-runtime-view-v8' : input.readerVersion}))
   }
   let runId = 0, generated = 0, reviewed = 0
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action',
@@ -34,7 +34,7 @@ it.each(['current', 'saved-v8'] as const)('uses the original producer reader acr
     return JSON.stringify(chatActionReviewOutputFixture())
   }})
   expect(await readChatCandidateRetrievalVersion(resumed.snapshot, f.scope.projectId, 'interactionRuntime', 'guard', before.interaction!))
-    .toBe(version === 'current' ? 'chat-relevance-v5' : 'chat-relevance-v4')
+    .toBe(version === 'current' ? 'chat-relevance-v6' : 'chat-relevance-v4')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
   const after = await readProductRuntimeState(f.sessionId)
   expect(after.interaction!.messages).toHaveLength(before.interaction!.messages.length + 1)

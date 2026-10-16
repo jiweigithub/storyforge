@@ -161,18 +161,22 @@ export async function requestChatNarrativeTrigger(input: ProductRuntimeCommandEn
 
 export async function commitChatNarrativeAction(input: ProductRuntimeCommandEnvelopeV1 & {
   actorKey: string; triggerSequence: number; messageId: string; action: ChatNarrativeActionV1; review: ChatNarrativeActionReviewV1;
+  factEvidenceVersion?: 1;
   harnessRun?: {id: number; lastSequence: number};
 }): Promise<ProductRuntimeEvent> {
   return appendInteractionCommand({...input, type: 'interaction.narrative.action-reviewed.committed',
-    payload: {actorKey: input.actorKey, triggerSequence: input.triggerSequence, messageId: input.messageId, action: input.action, review: input.review}});
+    payload: {actorKey: input.actorKey, triggerSequence: input.triggerSequence, messageId: input.messageId, action: input.action, review: input.review,
+      ...(input.factEvidenceVersion === undefined ? {} : {factEvidenceVersion: input.factEvidenceVersion})}});
 }
 
 export async function commitChatSituation(input: ProductRuntimeCommandEnvelopeV1 & {
   triggerSequence: number; draft: ChatSituationDraftV1; review: ChatSituationReviewV1;
+  factEvidenceVersion?: 1;
   harnessRun?: {id: number; lastSequence: number};
 }): Promise<ProductRuntimeEvent> {
   return appendInteractionCommand({...input, type: 'interaction.narrative.situation.committed', actorKey: 'player',
-    payload: {triggerSequence: input.triggerSequence, draft: input.draft, review: input.review}});
+    payload: {triggerSequence: input.triggerSequence, draft: input.draft, review: input.review,
+      ...(input.factEvidenceVersion === undefined ? {} : {factEvidenceVersion: input.factEvidenceVersion})}});
 }
 
 export async function startInteractionScene(

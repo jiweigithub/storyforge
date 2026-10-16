@@ -1,6 +1,7 @@
 import type {CharacterInteractionRuntimeState} from '../types'
 import {CHAT_INQUIRY_REVIEW_CHECKS_V1, type ChatInquiryResultV1, type ChatInquiryReviewV1, type ChatNarrativeStateV1} from '../types/chat-narrative'
 import {isChatMessageRetrievableV1} from './narrative-retrieval'
+import {recordChatFactEvidenceV1} from './fact-evidence'
 
 function fail(message: string): never {throw new Error(`[chat-inquiry] ${message}`)}
 function object(value: unknown, fields: string): asserts value is Record<string, unknown> {
@@ -58,7 +59,7 @@ export function chatInquiryStatementTextV1(result: ChatInquiryResultV1) {
 }
 
 /** This mutates only the situation reducer's clone, after an exact independent review. */
-export function applyChatInquiryResultV1(state: CharacterInteractionRuntimeState, result: ChatInquiryResultV1, resultSequence: number) {
+export function applyChatInquiryResultV1(state: CharacterInteractionRuntimeState, result: ChatInquiryResultV1, resultSequence: number, factEvidenceVersion?: unknown) {
   const story = state.chatNarrative!, scene = state.activeScene!, pending = story.pendingSituation
   if (story.permissions.allowInquiryResults !== true || story.permissions.allowActorSituationExpansion !== true
     || !story.permissions.allowedNewFactKinds.includes('observation') || story.permissions.maxNewFactsPerAction < 1) fail('作品未授权询问结果')
@@ -87,6 +88,8 @@ export function applyChatInquiryResultV1(state: CharacterInteractionRuntimeState
   }
   story.situation.facts.push({factKey: result.statementFactKey, text: chatInquiryStatementTextV1(result), audienceKeys: [...result.audienceKeys],
     origin: 'runtime-situation', sourceKnowledgeKey: null, sourceEventSequence: resultSequence})
+  recordChatFactEvidenceV1(story, factEvidenceVersion, [{factKey: result.statementFactKey, kind: 'observation',
+    evidenceFactKeys: result.evidenceFactKeys, actorKey: result.actorKey, goalKey: pending?.goalKey ?? null, source: 'inquiry'}])
   for (const discovery of result.discoveries) {
     const fact = story.situation.facts.find(row => row.factKey === discovery.factKey)!
     fact.audienceKeys = [...new Set([...fact.audienceKeys, ...result.audienceKeys])]
