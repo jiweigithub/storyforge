@@ -1,6 +1,6 @@
 import {test, expect} from '@playwright/test'
 
-test('historical relationship causes reach actor, review and player inspection after portable restore', async ({page}) => {
+test('historical relationship causes reach actor, review and player inspection after portable restore', async ({page}, info) => {
   let externalCalls = 0
   await page.addInitScript(() => localStorage.setItem('storyforge_guide_completed', 'e2e'))
   await page.route('**/chat/completions', async route => {externalCalls++; await route.abort()})
@@ -48,6 +48,7 @@ test('historical relationship causes reach actor, review and player inspection a
   await page.goto(`./chat/play?project=${result.projectId}&work=${result.workId}&session=${result.sessionId}`)
   for (const width of [1440, 390]) {
     await page.setViewportSize({width, height: 844})
+    await page.getByRole('button', {name: '开始对话', exact: true}).click()
     await page.getByRole('button', {name: '查看本次上下文', exact: true}).click()
     const inspector = page.getByTestId('chat-context-inspector')
     const causes = inspector.locator('details').filter({has: page.locator('summary', {hasText: '关系变化原因的选入与省略'})})
@@ -57,6 +58,19 @@ test('historical relationship causes reach actor, review and player inspection a
     await expect(causes).toContainText('已选入')
     for (const secret of ['柜台下', '无辜旅人', '担心再次错怪人']) await expect(inspector).not.toContainText(secret)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.getByRole('button', {name: '收起本次上下文', exact: true}).click()
+    await page.getByRole('button', {name: '关系与记忆', exact: true}).click()
+    const relationships = page.getByTestId('chat-relationship-panel')
+    await relationships.getByText('共同经历（2）', {exact: true}).click()
+    const history = relationships.getByTestId('chat-relationship-cause')
+    await expect(history).toHaveCount(2)
+    await expect(history.nth(0)).toContainText(result.latestReason)
+    await expect(history.nth(1)).toContainText(result.oldReason)
+    await history.nth(1).getByText('查看双方原话', {exact: true}).click()
+    await expect(history.nth(1).locator('blockquote')).toHaveText(['别只凭旅人着急就认定有罪，先核对证据吧。', result.oldReason])
+    for (const secret of ['柜台下', '无辜旅人', '担心再次错怪人']) await expect(relationships).not.toContainText(secret)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await relationships.screenshot({path: info.outputPath(`relationship-history-${width}.png`)})
     await page.reload()
   }
   const after = await page.evaluate(async id => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(id)}, result.sessionId)
