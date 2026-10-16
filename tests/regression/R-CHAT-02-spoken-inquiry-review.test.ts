@@ -30,8 +30,10 @@ function input(f: Awaited<ReturnType<typeof prepared>>) {
 
 it.each([[false, true], [true, true], [false, false], [true, false]])('keeps producer and legacy reviewer bytes; pure questions persist as messages, not facts (options=%s, legacy=%s)', async (options, legacy) => {
   const f = await prepared(), original = skills.getAgentSkillV1
-  if (legacy) vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v29'}
-    : id === 'character.chat-narrative-options-review' ? {...original(id), promptVersion: 'chat-narrative-options-review-v23'} : original(id))
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action' ? {...original(id), promptVersion: 'chat-narrative-action-v36'}
+    : id === 'character.chat-narrative-options' ? {...original(id), promptVersion: 'chat-narrative-options-v26'}
+    : legacy && id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v29'}
+    : legacy && id === 'character.chat-narrative-options-review' ? {...original(id), promptVersion: 'chat-narrative-options-review-v23'} : original(id))
   const a = inquiry(), b = {...a, text: '我问道：“有人愿意说说见过的情况吗？”', situationRequest: null}
   const before = await readProductRuntimeState(f.sessionId), world = await db.worldReleases.toArray()
   let calls = 0
@@ -49,7 +51,7 @@ it.each([[false, true], [true, true], [false, false], [true, false]])('keeps pro
     return JSON.stringify(options ? {options: ['option-1', 'option-2'].map(optionKey => ({optionKey, ...chatActionReviewOutputFixture()}))} : chatActionReviewOutputFixture())
   }})
   const binding = generated.snapshot.contract.executionBindings!.find(b => b.skillId === (options ? 'character.chat-narrative-options-review' : 'character.chat-narrative-action-review'))!
-  expect(binding.promptVersion).toBe(options ? `chat-narrative-options-review-v${legacy ? 23 : 24}` : `chat-narrative-action-review-v${legacy ? 29 : 30}`)
+  expect(binding.promptVersion).toBe(options ? `chat-narrative-options-review-v${legacy ? 23 : 25}` : `chat-narrative-action-review-v${legacy ? 29 : 31}`)
   expect(calls).toBe(2); expect(generated.snapshot.contract.budget.maxModelCalls).toBe(2)
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id, ...(options ? {optionKey: 'option-1'} : {})})

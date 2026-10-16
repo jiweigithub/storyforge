@@ -3,7 +3,7 @@ import type {ChatNarrativeActionV1} from '../types/chat-narrative'
 import type {CharacterInteractionRuntimeState} from '../types'
 
 export function supportsChatKnownFactReviewNormalizationV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v26', 'chat-narrative-options-review-v20', 'chat-narrative-action-review-v27', 'chat-narrative-options-review-v21', 'chat-narrative-action-review-v28', 'chat-narrative-options-review-v22', 'chat-narrative-action-review-v29', 'chat-narrative-options-review-v23', 'chat-narrative-action-review-v30', 'chat-narrative-options-review-v24'].includes(version ?? '')
+  return ['chat-narrative-action-review-v26', 'chat-narrative-options-review-v20', 'chat-narrative-action-review-v27', 'chat-narrative-options-review-v21', 'chat-narrative-action-review-v28', 'chat-narrative-options-review-v22', 'chat-narrative-action-review-v29', 'chat-narrative-options-review-v23', 'chat-narrative-action-review-v30', 'chat-narrative-action-review-v31', 'chat-narrative-options-review-v24', 'chat-narrative-options-review-v25'].includes(version ?? '')
 }
 
 export function supportsChatReviewNormalizationV1(version: string | undefined): boolean {

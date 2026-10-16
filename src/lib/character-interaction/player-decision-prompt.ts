@@ -1,0 +1,14 @@
+/** Keep optional invitations separate from the current action's real dependency.
+ * Semantic review decides that dependency; the existing reducer still enforces
+ * waiting, permissions, player pause, and atomic consequences. */
+export function supportsChatPlayerDecisionPromptV1(version: string | undefined): boolean {
+  return ['chat-narrative-action-v37', 'chat-narrative-options-v27'].includes(version ?? '')
+}
+
+export function supportsChatPlayerDecisionReviewV1(version: string | undefined): boolean {
+  return ['chat-narrative-action-review-v31', 'chat-narrative-options-review-v25'].includes(version ?? '')
+}
+
+export const CHAT_PLAYER_DECISION_ACTION_RULE_V1 = '等待只绑定当前行动真正缺少的玩家决定：先确定玩家还需决定什么，以及哪个具体步骤必须等这个决定。旧邀请尚未答复、希望玩家陪同、欢迎稍后加入，不等于角色当前另一个独立办法也必须等待。若当前已选择无需玩家参与的办法，不能用 attempt 或 waitingForPlayer=true 把它挂回旧邀请；保留旧邀请未获同意，按实际发生程度选择 speak/complete，并登记真实后果。不要只说“我去做”就算完成；已有条件足够时做一次有依据的小行动，尚缺局部条件时沿现有情境请求确认，不能编造结果。确实需要玩家的许可、物品或参与时继续等待；玩家要求停止、隐私权限及既有阻碍不得因换办法被绕过。'
+
+export const CHAT_PLAYER_DECISION_REVIEW_RULE_V1 = 'player-agency 还须核对等待的实际依赖：对 waitingForPlayer=true 或 kind=attempt，理由应指出当前尚未回答的具体玩家决定，以及本候选哪个下一步确实依赖该决定。仅“等你回复”“随时加入”或旧邀请尚未答复，不足以阻塞角色已选择的独立办法；若 permissions/正文已认定这一步无需玩家参与，却仍据旧邀请标记等待，应拒绝 player-agency，不能同时给出相互矛盾的通过理由。反过来，确需玩家许可、物品、参与或恢复授权的行动不能擅自改为不等待。meaningful-direction 区分提出新办法与落实办法：一次有依据的说明可以有意义，反复说将去调查却未行动、未请求必要条件或说明真实新阻碍，不能当作持续推进。玩家明确要求解释或休息时允许自然回应，不强行行动；不要求越权、凭空发现或把计划补写成事实。'

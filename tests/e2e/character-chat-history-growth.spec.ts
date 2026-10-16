@@ -1,6 +1,8 @@
 import {test, expect} from '@playwright/test'
-import {writeFileSync} from 'node:fs'
-import {gzipSync} from 'node:zlib'
+import {createWriteStream, renameSync, writeFileSync} from 'node:fs'
+import {createHash} from 'node:crypto'
+import {pipeline} from 'node:stream/promises'
+import {createGzip, gzipSync} from 'node:zlib'
 
 const target = Number(process.env.CHAT_HISTORY_GROWTH_ACTIONS ?? 100)
 if (![100, 300, 1000].includes(target)) throw new Error('CHAT_HISTORY_GROWTH_ACTIONS must be 100, 300 or 1000')
@@ -14,11 +16,38 @@ test(`native IndexedDB retains ${target} consequential actions, actual historica
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
   })
   await page.route('https://history-growth.invalid/**', async route => {externalCalls++; await route.abort()})
-  await page.exposeFunction('persistNativeGrowthCheckpoint', (checkpoint: {actions: number; state: string; backup?: string; elapsedMs: number; calls: number}) => {
-    const {state, backup, ...progress} = checkpoint
+  await page.exposeFunction('persistNativeGrowthCheckpoint', (checkpoint: {actions: number; state: string; elapsedMs: number; calls: number}) => {
+    const {state, ...progress} = checkpoint
     writeFileSync(info.outputPath(`native-growth-${checkpoint.actions}-state.json.gz`), gzipSync(state))
-    if (backup !== undefined) writeFileSync(info.outputPath(`native-growth-${checkpoint.actions}-backup.json.gz`), gzipSync(backup))
-    writeFileSync(info.outputPath(`native-growth-${checkpoint.actions}-progress.json`), JSON.stringify({...progress, externalCalls, backupSaved: backup !== undefined}, null, 2))
+    writeFileSync(info.outputPath(`native-growth-${checkpoint.actions}-progress.json`), JSON.stringify({...progress, externalCalls}, null, 2))
+  })
+  // Browser backups use the same bounded JSON Blob as the download UI. Do not
+  // turn the complete backup into a CDP argument/result or retain it in a trace.
+  const transfers = new Map<string, {gzip: ReturnType<typeof createGzip>; done: Promise<void>; hash: ReturnType<typeof createHash>; bytes: number}>()
+  await page.exposeFunction('persistNativeGrowthBackup', async (part: {name: string; kind: 'start' | 'chunk' | 'end'; base64?: string; bytes?: number}) => {
+    if (!/^native-growth-(?:[0-9]+-)?backup$/.test(part.name)) throw new Error('Invalid backup evidence name')
+    const path = info.outputPath(`${part.name}.json.gz`)
+    if (part.kind === 'start') {
+      if (transfers.has(part.name)) throw new Error('Backup transfer already started')
+      const gzip = createGzip(), done = pipeline(gzip, createWriteStream(`${path}.partial`, {flags: 'wx'}))
+      void done.catch(() => {}) // The awaited terminal transfer reports the original failure.
+      transfers.set(part.name, {gzip, done, hash: createHash('sha256'), bytes: 0})
+      return
+    }
+    const transfer = transfers.get(part.name)
+    if (!transfer) throw new Error('Backup transfer was not started')
+    if (part.kind === 'chunk') {
+      const chunk = Buffer.from(part.base64 ?? '', 'base64')
+      if (!chunk.length || chunk.length > 65536) throw new Error('Backup chunk exceeds transport bound')
+      transfer.hash.update(chunk); transfer.bytes += chunk.length
+      await new Promise<void>((resolve, reject) => transfer.gzip.write(chunk, error => error ? reject(error) : resolve()))
+      return
+    }
+    if (transfer.bytes !== part.bytes) throw new Error('Backup transfer length mismatch')
+    transfer.gzip.end(); await transfer.done
+    renameSync(`${path}.partial`, path)
+    writeFileSync(info.outputPath(`${part.name}-receipt.json`), JSON.stringify({bytes: transfer.bytes, sha256: transfer.hash.digest('hex'), transport: 'bounded binary chunks', externalCalls}, null, 2))
+    transfers.delete(part.name)
   })
   page.on('console', message => {if (message.text().startsWith('CHAT_GROWTH ')) console.info(message.text())})
   await page.goto('./chat/library')
@@ -29,7 +58,29 @@ test(`native IndexedDB retains ${target} consequential actions, actual historica
     const core = await load('/storyforge/src/lib/product/runtime-core.ts')
     const {db} = await load('/storyforge/src/lib/db/schema.ts')
     const portable = await load('/storyforge/src/lib/export/json-export.ts')
-    const persist = (globalThis as unknown as {persistNativeGrowthCheckpoint: (row: {actions: number; state: string; backup?: string; elapsedMs: number; calls: number}) => Promise<void>}).persistNativeGrowthCheckpoint
+    const jsonFile = await load('/storyforge/src/lib/export/json-file.ts')
+    const sendBackup = (globalThis as unknown as {persistNativeGrowthBackup: (part: {name: string; kind: string; base64?: string; bytes?: number}) => Promise<void>}).persistNativeGrowthBackup
+    const saveBackup = async (name: string): Promise<Blob> => {
+      console.info('CHAT_GROWTH ' + JSON.stringify({phase: 'backup-capture-start', name}))
+      const blob: Blob = jsonFile.createProjectJSONBlob(await portable.exportProjectJSON(f.scope.projectId))
+      console.info('CHAT_GROWTH ' + JSON.stringify({phase: 'backup-captured', name, bytes: blob.size}))
+      await sendBackup({name, kind: 'start'})
+      const reader = blob.stream().getReader()
+      try {
+        for (;;) {
+          const {done, value} = await reader.read()
+          if (done) break
+          for (let offset = 0; offset < value.length; offset += 65536) {
+            const bytes = value.subarray(offset, offset + 65536)
+            await sendBackup({name, kind: 'chunk', base64: btoa(String.fromCharCode(...bytes))})
+          }
+        }
+        await sendBackup({name, kind: 'end', bytes: blob.size})
+      } finally { reader.releaseLock() }
+      console.info('CHAT_GROWTH ' + JSON.stringify({phase: 'backup-persisted', name, bytes: blob.size}))
+      return blob
+    }
+    const persist = (globalThis as unknown as {persistNativeGrowthCheckpoint: (row: {actions: number; state: string; elapsedMs: number; calls: number}) => Promise<void>}).persistNativeGrowthCheckpoint
     const f = await helper.seedChatHistoryGrowthFixture(), started = performance.now()
     const worlds = JSON.stringify(await db.worldReleases.toArray())
     const progress: {actions: number; elapsedMs: number; lastActionMs: number}[] = []
@@ -56,15 +107,20 @@ test(`native IndexedDB retains ${target} consequential actions, actual historica
         }
         // A later browser deadline must not erase evidence already reached.
         // Intermediate backups are original sessions, not recovery acceptance.
-        if (actions % 100 === 0) await persist({actions, state: JSON.stringify(await api.readProductRuntimeState(f.sessionId)),
-          ...([100, 300, 800].includes(actions) ? {backup: JSON.stringify(await portable.exportProjectJSON(f.scope.projectId))} : {}),
-          elapsedMs: Math.round(performance.now() - started), calls: f.calls()})
+        if (actions % 100 === 0) {
+          // Preserve reached state before starting the separate backup phase.
+          const memory = (performance as Performance & {memory?: {usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number}}).memory
+          console.info('CHAT_GROWTH ' + JSON.stringify({phase: 'state-checkpoint', actions, memory, storage: await navigator.storage.estimate()}))
+          await persist({actions, state: JSON.stringify(await api.readProductRuntimeState(f.sessionId)),
+            elapsedMs: Math.round(performance.now() - started), calls: f.calls()})
+          if ([100, 300, 800].includes(actions)) await saveBackup(`native-growth-${actions}-backup`)
+        }
       }
     } catch (error) {failure = String(error)}
     const state = await api.readProductRuntimeState(f.sessionId)
     const result = {target, actions, failure, calls: f.calls(), progress, checkpoints, facts: state.interaction.chatNarrative.situation.facts.length,
       database: 'native IndexedDB', elapsedMs: Math.round(performance.now() - started)}
-    if (failure) return {result, backup: JSON.stringify(await portable.exportProjectJSON(f.scope.projectId)), branches: [], worldUnchanged: JSON.stringify(await db.worldReleases.toArray()) === worlds}
+    if (failure) return {result, branches: [], worldUnchanged: JSON.stringify(await db.worldReleases.toArray()) === worlds}
     const branches: {title: string; stateHash: string; sessionId: number}[] = []
     for (const checkpoint of checkpoints) {
       const title = `native-growth-${checkpoint.actions}`
@@ -72,17 +128,20 @@ test(`native IndexedDB retains ${target} consequential actions, actual historica
       branches.push({title, stateHash: await core.hashStateJson(JSON.stringify((await api.readProductRuntimeState(branch.id)).interaction)), sessionId: branch.id})
     }
     await api.deleteProductRuntimeSession(f.sessionId)
-    const backup = await portable.exportProjectJSON(f.scope.projectId)
-    const imported = await portable.importProjectJSON(backup)
+    const backup = await saveBackup('native-growth-backup')
+    const imported = await portable.importProjectJSON(await jsonFile.readProjectJSONFile(backup))
     const sessions = await db.productRuntimeSessions.where('projectId').equals(imported).toArray()
     for (const branch of branches) {
       branch.sessionId = sessions.find((s: {title: string}) => s.title === branch.title).id
       if (await core.hashStateJson(JSON.stringify((await api.readProductRuntimeState(branch.sessionId)).interaction)) !== branch.stateHash) throw new Error('删除父档后的导入恢复不一致')
     }
-    return {result: {...result, elapsedMs: Math.round(performance.now() - started)}, backup: JSON.stringify(backup), branches,
+    return {result: {...result, elapsedMs: Math.round(performance.now() - started)}, branches,
       worldUnchanged: JSON.stringify(await db.worldReleases.where('projectId').equals(f.scope.projectId).toArray()) === worlds}
-  }, target)
-  writeFileSync(info.outputPath('native-growth-backup.json.gz'), gzipSync(outcome.backup))
+  }, target).finally(async () => {
+    // A browser crash leaves clearly incomplete evidence and closes its streams.
+    for (const transfer of transfers.values()) transfer.gzip.destroy()
+    await Promise.allSettled([...transfers.values()].map(transfer => transfer.done))
+  })
   writeFileSync(info.outputPath('native-growth-result.json'), JSON.stringify({...outcome.result, externalCalls, worldUnchanged: outcome.worldUnchanged}, null, 2))
   await info.attach('native-growth-result', {body: JSON.stringify({...outcome.result, externalCalls, worldUnchanged: outcome.worldUnchanged}, null, 2), contentType: 'application/json'})
   expect(outcome.result.failure).toBeNull(); expect(outcome.result.actions).toBe(target); expect(outcome.result.facts).toBe(target * 2 + 4)

@@ -1,3 +1,4 @@
+import {supportsChatPlayerDecisionReviewV1} from './player-decision-prompt'
 import {readChatCoordinatorSelectionEvidenceV1} from '../registry/context-sources'
 import {chatObservationVisibilityReviewRulesV1} from './observation-visibility-prompt'
 import {supportsChatDiscoveryEvidenceReviewerV1, chatDiscoveryEvidenceReviewRulesV1} from './discovery-evidence-context'
@@ -146,7 +147,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
         'meaningful-direction：是否承接当前局面、提供有动机且可改变的行动方向，而非机械制造危机、重复问题或预写结局。',
         ...(candidate.kind === 'chat-situation-candidate' && candidate.draft.inquiryResult ? [] : ['仅输出 JSON {"checks":[{"check":"continuity|permissions|player-agency|visibility|meaningful-direction","passed":true,"reason":"引用实际内容解释判断"}]}，必须分别包含上述五项，不得有其他字段。']),
         ...(candidate.kind === 'chat-situation-candidate' && candidate.draft.inquiryResult ? chatInquiryReviewRulesV1() : []),
-      ] : chatActionReviewPromptRulesV1({view: roleContext, actions, options, compact, naturalDisclosure, commitments, memoryReconciliation, threadFollowup, playerPause, conversationEvidence, promiseRequest, knownFactReview: supportsChatKnownFactReviewNormalizationV1(reviewBinding.promptVersion), existingGoalPause: supportsChatExistingGoalPauseV1(reviewBinding.promptVersion), sceneTransition: supportsChatSceneTransitionV1(reviewBinding.promptVersion), replanning: supportsChatReplanningReviewV1(reviewBinding.promptVersion), spokenInquiry: supportsChatSpokenInquiryReviewV1(reviewBinding.promptVersion)})).join('\n')}, {role: 'user', content: assembled.text}]
+      ] : chatActionReviewPromptRulesV1({view: roleContext, actions, options, compact, naturalDisclosure, commitments, memoryReconciliation, threadFollowup, playerPause, conversationEvidence, promiseRequest, knownFactReview: supportsChatKnownFactReviewNormalizationV1(reviewBinding.promptVersion), existingGoalPause: supportsChatExistingGoalPauseV1(reviewBinding.promptVersion), sceneTransition: supportsChatSceneTransitionV1(reviewBinding.promptVersion), replanning: supportsChatReplanningReviewV1(reviewBinding.promptVersion), playerDecision: supportsChatPlayerDecisionReviewV1(reviewBinding.promptVersion), spokenInquiry: supportsChatSpokenInquiryReviewV1(reviewBinding.promptVersion)})).join('\n')}, {role: 'user', content: assembled.text}]
       snapshot = (await recordAgentRunArtifactV1({scope: input.scope, runId: snapshot.run.id,
         productRuntimeSessionId: input.productRuntimeSessionId, artifactKind: 'rendered-request', content: JSON.stringify(messages),
         stepId, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence})).snapshot

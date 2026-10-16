@@ -3156,7 +3156,7 @@ export const AGENT_SKILLS = [
     defaultForAgent: false,
     label: '角色聊天情境行动候选',
     owner: 'character-chat-product',
-    promptVersion: 'chat-narrative-action-v36',
+    promptVersion: 'chat-narrative-action-v37',
     executionMode: 'character-reply',
     contextTaskKind: 'agent-character',
     readToolNames: [],
@@ -3180,7 +3180,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'character.chat-narrative-action-review', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天行动及后果审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-action-review-v30',
+    label: '角色聊天行动及后果审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-action-review-v31',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['chatSituationRuntime', 'chatActionCandidate'], optionalContextSourceKeys: [],
     inputPolicy: CHAT_ACTION_REVIEW_INPUT_POLICY,
@@ -3189,7 +3189,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'character.chat-narrative-options', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天两种行动候选', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-v26',
+    label: '角色聊天两种行动候选', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-v27',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['interactionRuntime'], optionalContextSourceKeys: [], inputPolicy: INTERACTION_RUNTIME_INPUT_POLICY,
     contextCompression: INTERACTION_RUNTIME_COMPRESSION_POLICY, maxOutputTokens: 8000, writeTargets: [],
@@ -3197,7 +3197,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'character.chat-narrative-options-review', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天行动候选组审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-review-v24',
+    label: '角色聊天行动候选组审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-review-v25',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['chatSituationRuntime', 'chatActionCandidate'], optionalContextSourceKeys: [], inputPolicy: CHAT_ACTION_REVIEW_INPUT_POLICY,
     contextCompression: compressionPolicy(['chatSituationRuntime', 'chatActionCandidate']), maxOutputTokens: 4800, writeTargets: [],

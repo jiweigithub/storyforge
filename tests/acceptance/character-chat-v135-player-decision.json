@@ -1,0 +1,119 @@
+{
+  "schema": "storyforge.character-chat-engineering-evidence",
+  "version": 1,
+  "label": "V135 player dependency and bounded native backup transport",
+  "recordedAt": "2026-10-16T17:04:21.292065+00:00",
+  "baseCommit": "8987a9698dbedf6163d0d669e806d6965246443b",
+  "boundary": {
+    "product": "character-interaction",
+    "lifecycle": "product development / S3 private runtime",
+    "owner": "existing Chat Work / ProductRuntimeSession",
+    "world": "frozen reference; no world writes",
+    "tablesOrWritableFieldsAdded": false,
+    "providerCredentials": "existing local Edge configuration; no secret copied into evidence or repository"
+  },
+  "implementation": [
+    "Versioned action v37/options v27 and review v31/options review v25 distinguish optional invitations from necessary current player decisions. Existing permissions, player pause, state transitions, candidate adoption and original producer bytes retained.",
+    "Native history-load E2E uses production JSON Blob creation/readback; backup transfer uses at most 64 KiB binary chunks with gzip backpressure, byte count and SHA-256 receipts. State checkpoints persist before backups. No full-project JSON string across browser protocol; no reduced load or enlarged timeout."
+  ],
+  "verification": {
+    "targeted": {
+      "files": 5,
+      "tests": 44,
+      "exitCode": 0
+    },
+    "associated": {
+      "files": 120,
+      "tests": 1386,
+      "exitCode": 0,
+      "receipt": "/tmp/storyforge-chat-v135-regression-receipt.json"
+    },
+    "checks": "architecture, required tables, AI manual/entry registry, documentation, roadmap, metrics, types, lint, build and bundle passed; initial metrics drift repaired with official generator",
+    "native100": "queued behind existing full E2E; no result claimed",
+    "native1000": "not rerun yet; V133 timeout and V134 target crash retained",
+    "fullCI": "not run on new source yet",
+    "fullE2E": "not run on new source yet"
+  },
+  "realModel": {
+    "provider": "agnes",
+    "model": "agnes-2.5-flash",
+    "episodes": [
+      {
+        "name": "v135-agnes-runtime-preflight",
+        "requests": 8,
+        "responses": 8,
+        "tokens": 77866,
+        "error": null,
+        "opportunities": 3,
+        "ending": "budget",
+        "sha256": "740ca88a6ff2531aea6f9172abec41eb266ff9839c529a6051e7c1f1f92d06f0",
+        "restoration": {
+          "exitCode": 0,
+          "externalCalls": 0,
+          "stateWorldAndOriginalEvidencePreserved": true
+        }
+      },
+      {
+        "name": "v135-agnes-player-decision-episode",
+        "requests": 1,
+        "responses": 1,
+        "tokens": 8714,
+        "error": "Error: runtime stopped; no automatic retry",
+        "opportunities": 0,
+        "ending": null,
+        "sha256": "fabd8412dc52a6b491642c6267340d71f766006b1b945bf74b07f2279d916015",
+        "restoration": {
+          "exitCode": 0,
+          "externalCalls": 0,
+          "stateWorldAndOriginalEvidencePreserved": true
+        }
+      },
+      {
+        "name": "v135-player-decision-review-real",
+        "requests": 3,
+        "responses": 3,
+        "tokens": 31577,
+        "waitingDecisionsMatched": 3,
+        "overallReviewPasses": 0,
+        "additionalRejections": [
+          "Repeated invitation lacks meaningful direction",
+          "Calling into room incorrectly treated as revealing an established respondent; retained false-positive concern"
+        ],
+        "adopted": 0,
+        "generation": "injected exact/controlled candidates; real Agnes review; not full generation",
+        "sha256": "fff2ba8dff2be0518511b9f969ebd8695b814372d1d7381aa02e3230f27cae30"
+      }
+    ],
+    "externalRequests": 12,
+    "knownTokens": 118157,
+    "costUsd": null,
+    "firstFinding": "Role chose an independent alternate path but marked attempt/waitingForPlayer; original reviewer passed. New reviewer rejects that same dependency mistake.",
+    "newGenerationFailure": "New opening referenced nonexistent fact-11 and did not reach review or adoption. No automatic retry.",
+    "formalMatrixAdded": 0,
+    "humanScoresAdded": 0
+  },
+  "retainedSetupFailure": "First review-only diagnostic omitted explicit runReviewAI, so its injected generator also handled review. All three failed shape checks, zero network requests. Preserved separately; corrected runner preregistered in a new directory.",
+  "cleanup": {
+    "removedPayloads": 1,
+    "allocatedBytesRemoved": 437755904,
+    "freeSpaceNetChangeBytes": -958464,
+    "meaning": "Do not claim allocated bytes as physical disk freed; APFS sharing and concurrent writes apply.",
+    "preserved": [
+      "Git history",
+      "manifest",
+      "test results",
+      "backups",
+      "dependency links"
+    ],
+    "schedule": "existing two-hour cleanup automation reused; no duplicate created"
+  },
+  "userDirection": {
+    "humanReview": "deferred until development and model verification complete; does not block engineering; not waived for experience or commercial acceptance",
+    "cleanup": "ongoing own-task redundant rebuildable artifacts authorized"
+  },
+  "limits": [
+    "Prompt clarification is not a deterministic proof of semantic accuracy.",
+    "New complete generation has not demonstrated improved meaningful progress.",
+    "Short model probes are neither the formal 72/48 matrix nor human or commercial acceptance."
+  ]
+}
