@@ -1,0 +1,122 @@
+{
+  "schema": "storyforge.character-chat-engineering-evidence",
+  "version": 1,
+  "label": "V118 actual observation scope in frozen construction/review prompts",
+  "recordedAt": "2026-10-16T00:44:54.500243+00:00",
+  "baseCommit": "8fc13e09",
+  "boundary": {
+    "product": "character-interaction",
+    "lifecycle": "product development",
+    "phase": "S3 runtime observation candidate/review",
+    "owner": "Chat Work / ProductRuntimeSession",
+    "readSources": [
+      "chatSituationRuntime",
+      "chatSituationCandidate"
+    ],
+    "writePath": "existing runtime CreativeArtifact candidate, adopt and productRuntimeEvents",
+    "world": "frozen read-only reference",
+    "media": "unchanged product-owned assets",
+    "newTables": 0,
+    "newFields": 0,
+    "newModelSteps": 0,
+    "newPermissions": 0
+  },
+  "promptBindings": {
+    "new": [
+      "chat-situation-construction-v10",
+      "chat-situation-review-v9"
+    ],
+    "history": "saved bindings retain exact previous instructions; changing global registry after freeze cannot alter the run"
+  },
+  "legacyBaseline": {
+    "snapshot": {
+      "gitHistory": "depth-1; exact HEAD and tracked tree verified",
+      "head": "d0dce8b4103c835f9b138a477dbddf4f9fe94375",
+      "root": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v118-baseline-lu2qnj0k/storyforge",
+      "manifestPath": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v118-baseline-lu2qnj0k/manifest.json",
+      "manifestSha256": "e5da34d5b1ed7817a24960eb998df9c0158ba94b18e509c4bc41987c793e3627",
+      "files": 3465
+    },
+    "hashLog": "/tmp/storyforge-chat-v118-baseline-hashes.log",
+    "fullSystemPromptSha256": {
+      "construction-v8": "057a52f39ea9067d6607e5526e5bd0760118d109b53f86377090e5d353a9c2f2",
+      "review-v7": "2be4898f1ab2469e7ca5d1f3d238bc1dc399e32a1db18b532b2e3cc223bf3065",
+      "construction-v9": "d48c8a09ca633b20aca8100306893128ce03efb66c7217af377fe22c3eb7218d",
+      "review-v8": "8933d2385dfab00bdd8aa2049b95b8d8508e415b09eea7d8e9f09cc3c65daf17"
+    }
+  },
+  "verification": {
+    "targetedFiles": 5,
+    "targetedTests": 54,
+    "relatedFiles": 95,
+    "relatedTests": 1213,
+    "relatedFirstPass": {
+      "passed": 1212,
+      "failed": 1,
+      "failure": "source-unit-production 5000 ms timeout; original log preserved"
+    },
+    "rerun": {
+      "files": 1,
+      "tests": 1,
+      "passed": true,
+      "durationMs": 2505,
+      "changesOrTimeoutRelaxation": false
+    },
+    "browserCases": 8,
+    "browserPassed": 8,
+    "newTests": 6,
+    "gates": {
+      "passed": 10,
+      "receipt": "/tmp/storyforge-chat-v118-final-gates-receipt.json",
+      "bundleSize": "passed"
+    },
+    "documentationInvocation": "An attempted direct script path did not exist; authoritative npm run check:docs passed before and after documentation edits. No checks skipped."
+  },
+  "realModel": {
+    "status": "not run on V118 yet",
+    "planned": "three preregistered isolated review controls, no candidate adoption",
+    "originalV117FailureRetained": true,
+    "countsInM1": false,
+    "holdoutsInspected": false
+  },
+  "limits": [
+    "Injected engineering review is not evidence of semantic judgment quality",
+    "Access-only versus actual content inspection is assessed semantically against committed action, not a keyword rule",
+    "Full CI/E2E on this exact code still required; previous V115 E2E running and CI queued",
+    "Agnes and independent human/commercial gates remain unverified"
+  ],
+  "logs": {
+    "storyforge-chat-v118-initial-regression.log": {
+      "path": "/tmp/storyforge-chat-v118-initial-regression.log",
+      "sha256": "129f0d50e2312a2fd9e49de63bb17d88d13b57047964c028bb357da68438abfa"
+    },
+    "storyforge-chat-v118-final-regression.log": {
+      "path": "/tmp/storyforge-chat-v118-final-regression.log",
+      "sha256": "04cbc64c7a27fa1e85cfd9715da1d65594baf00f057b9bd8997c26b81e0a0f8f"
+    },
+    "storyforge-chat-v118-production-rerun.log": {
+      "path": "/tmp/storyforge-chat-v118-production-rerun.log",
+      "sha256": "08904c9fcd303d9b0499892526868f18fcf0147471e9713845b75c818d23d9a6"
+    },
+    "storyforge-chat-v118-targeted-e2e.log": {
+      "path": "/tmp/storyforge-chat-v118-targeted-e2e.log",
+      "sha256": "cad5cc0bcf664634a8781d7b63f6eabe74cdc5da9b10d5ae998ec3fac76ab2c9"
+    },
+    "storyforge-chat-v118-final-gates.log": {
+      "path": "/tmp/storyforge-chat-v118-final-gates.log",
+      "sha256": "4ce1d6921c756cd00c50fad6a834069c4a2dbe0b9abdad0ebe32cf3a3b733b4f"
+    },
+    "storyforge-chat-v118-final-bundle-size.log": {
+      "path": "/tmp/storyforge-chat-v118-final-bundle-size.log",
+      "sha256": "e7e82e617e0642eff824e78a17aaeaa430c93aeba215fcaa07921c379c939cad"
+    },
+    "storyforge-chat-v118-final-docs.log": {
+      "path": "/tmp/storyforge-chat-v118-final-docs.log",
+      "sha256": "1f340d7fcdb071c787267e28b084fcf8075eeed29f8a4fcaf54bacff9e5f7bfb"
+    },
+    "storyforge-chat-v118-final-docs-rerun.log": {
+      "path": "/tmp/storyforge-chat-v118-final-docs-rerun.log",
+      "sha256": "f67ea9a939e1466b166c82f705fd7f928ad290b7380f6d8cf9c0e35a797a6c77"
+    }
+  }
+}

@@ -148,5 +148,6 @@ export function chatInquiryRepliesV1(story: ChatNarrativeStateV1, viewerKey: str
 export function assertChatInquiryBindingV1(result: ChatInquiryResultV1 | undefined, producerVersion: string | undefined, reviewerVersion: string | undefined) {
   const supportedPair = (producerVersion === 'chat-situation-construction-v8' && reviewerVersion === 'chat-situation-review-v7')
     || (producerVersion === 'chat-situation-construction-v9' && reviewerVersion === 'chat-situation-review-v8')
+    || (producerVersion === 'chat-situation-construction-v10' && reviewerVersion === 'chat-situation-review-v9')
   if (result && !supportedPair) fail('旧情境合同不能取得询问结果权限，请保留原记录并明确发起新请求')
 }
