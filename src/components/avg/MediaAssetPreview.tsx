@@ -1,0 +1,45 @@
+import { useEffect, useRef, useState } from 'react'
+import type { FrozenRuntimeMediaAssetV2, ProductMediaKind, WorkspaceScope } from '../../lib/types'
+import { readAvgDraftMediaV1 } from '../../lib/avg/editor-service'
+import { readAvgRawImageCandidateBytesV2 } from '../../lib/avg/assembly-service'
+import { canonicalProductProductionJsonV2 } from '../../lib/product-production/hash'
+
+export const AVG_MEDIA_KIND_LABELS: Record<ProductMediaKind, string> = { background: '背景', 'character-pose': '角色姿势', 'character-expression': '角色表情',
+  cg: 'CG', ui: '图标与界面', bgm: '音乐', ambience: '环境声', sfx: '音效', voice: '配音' }
+export interface AvgRawPreviewReference { requirementKey: string; version: number; contentHash: string }
+
+/** Local URLs are created only after the existing owner/hash proof reader.
+ * Provider URL strings and arbitrary Blob IDs are never displayed directly. */
+export default function MediaAssetPreview({ scope, asset, productionId, raw, onObserved }: {
+  scope: WorkspaceScope; asset: FrozenRuntimeMediaAssetV2; productionId?: number | null; raw?: AvgRawPreviewReference; onObserved?: () => void
+}) {
+  const [url, setUrl] = useState(''), [error, setError] = useState('')
+  const audio = useRef<HTMLAudioElement>(null)
+  const requirementKey = raw?.requirementKey, version = raw?.version, contentHash = raw?.contentHash
+  const assetJson = JSON.stringify(asset)
+  useEffect(() => {
+    let alive = true, created = ''
+    const element = audio.current
+    setUrl(''); setError('')
+    const current = JSON.parse(assetJson) as FrozenRuntimeMediaAssetV2
+    const read = async () => {
+      if (!requirementKey) return readAvgDraftMediaV1(scope, current)
+      if (!productionId || version === undefined || !contentHash) throw new Error('原图缺少准确制作来源')
+      const candidate = await readAvgRawImageCandidateBytesV2({ scope, productionId, requirementKey, version, contentHash })
+      if (canonicalProductProductionJsonV2(candidate.asset) !== canonicalProductProductionJsonV2(current)) throw new Error('显示图片与准确原图不一致')
+      return candidate.data
+    }
+    void read().then(bytes => {
+      if (!alive) return
+      created = URL.createObjectURL(new Blob([bytes], { type: current.mimeType })); setUrl(created)
+    }).catch(cause => { if (alive) setError(String(cause)) })
+    return () => { alive = false; element?.pause(); if (created) URL.revokeObjectURL(created) }
+  }, [scope, assetJson, productionId, requirementKey, version, contentHash])
+  return <figure className="avg-assembly-media-preview"><figcaption>{asset.name} · {AVG_MEDIA_KIND_LABELS[asset.kind]}</figcaption>
+    {error && <p role="alert">{error}</p>}
+    {asset.mimeType.startsWith('audio/') ? <audio ref={audio} controls src={url || undefined} preload="metadata" />
+      : url ? <img src={url} alt={asset.altText || asset.name} onLoad={onObserved} /> : <p>读取图片…</p>}
+    <p>{asset.width && asset.height ? `${asset.width} × ${asset.height}` : `${((asset.durationMs ?? 0) / 1000).toFixed(2)} 秒`} · {Math.ceil(asset.byteSize / 1024)} KiB</p>
+    <p>来源：{asset.source} · 授权：{asset.license}</p>
+  </figure>
+}

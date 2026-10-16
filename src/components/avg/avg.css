@@ -16,6 +16,11 @@
 .avg-assembly-error { color: var(--skin-danger, #a32432) !important; }
 .avg-assembly input[type="checkbox"] { margin-right: 8px; }
 .avg-assembly [aria-current="page"] { outline: 2px solid var(--skin-ink, #294f46); }
+.avg-image-production h5 { font-size: 16px; margin: 18px 0 10px; }
+.avg-image-production fieldset > details { grid-column: 1 / -1; }
+.avg-image-production details > label { margin: 12px 0; }
+.avg-image-production > ol > li { padding: 12px 0; border-bottom: 1px solid var(--skin-border, #cfddc9); }
+.avg-image-production .avg-assembly-media-preview img { max-height: 360px; }
 .avg-app .lf-paper {
   padding: 30px;
   margin-bottom: 24px;

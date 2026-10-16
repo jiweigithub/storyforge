@@ -1,6 +1,6 @@
 import { db } from '../db/schema'
 import type { WorkspaceScope } from '../types'
-import { assertRecordInScope } from '../workspace/scope'
+import { assertRecordInScope, scopeTransactionTables } from '../workspace/scope'
 import { readAvgDraftV1, bindAvgDraftProductionV1 } from './draft-service'
 import { parseAvgAuthorWorkspaceV1 } from './author-workspace-contract'
 import { AVG_ASSEMBLY_GATE_IDS_V1, avgMediaProductionEnabledV2, avgMediaAssemblyGateIdsV2 } from './assembly-contract'
@@ -25,7 +25,7 @@ import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/arti
 import type { ResolvedProductMediaCapabilityV1 } from '../product-production/media-transport'
 import { assertAvgRawImageArtifactV1 } from './media-raw-contract'
 import { freezeAvgVisualProductionBatchV1 } from './media-source'
-import { applyAvgMediaChoicesToDraftV1, prepareAvgMediaConsumerDeclarationsV1 } from './media-configuration'
+import { applyAvgMediaChoicesToDraftV1, prepareAvgMediaConsumerDeclarationsV1, resetAvgUnconsumedMediaDeclarationsV1 } from './media-configuration'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
 
 const commandId = (label: string) => `avg.assembly.${label}.${crypto.randomUUID()}`
@@ -36,10 +36,37 @@ export async function saveAvgVisualBatchDraftV1(input: { scope: WorkspaceScope; 
   batchKey: string; revision: number; requirements: AvgVisualProductionRequirementV1[] }) {
   const draft = await readAvgDraftV1(input.scope)
   if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg-media] 编辑草稿已变化')
-  const workspace = prepareAvgMediaConsumerDeclarationsV1(parseAvgAuthorWorkspaceV1(draft.editorJson), input.requirements)
+  const workspace = prepareAvgMediaConsumerDeclarationsV1(resetAvgUnconsumedMediaDeclarationsV1(parseAvgAuthorWorkspaceV1(draft.editorJson)), input.requirements)
   workspace.mediaBatch = await freezeAvgVisualProductionBatchV1({ schema: 'storyforge.avg.visual-production-batch', version: 1,
     batchKey: input.batchKey, revision: input.revision, requirements: input.requirements }, workspace)
   return saveAvgAuthorWorkspaceV1(input.scope, draft.revision, workspace)
+}
+
+/** Explicitly remove an unused batch, retaining imported references/Blobs and
+ * every production receipt. A live or already consumed batch is not erased. */
+export async function clearAvgVisualBatchDraftV1(input: { scope: WorkspaceScope; expectedDraftRevision: number }) {
+  return db.transaction('rw', scopeTransactionTables(db.avgAuthoringDrafts, db.productProductions, db.productBuilds), async () => {
+    const draft = await readAvgDraftV1(input.scope)
+    if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg-media] 编辑草稿已变化')
+    const workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
+    if (draft.productionId) {
+      const production = await db.productProductions.get(draft.productionId)
+      if (!production || production.productType !== 'avg' || !await assertRecordInScope(input.scope, 'productProductions', production, { owner: 'work' })) throw new Error('[avg-media] 制作记录不存在或跨作品')
+      if (production.currentBuildNumber !== null) {
+        const build = await db.productBuilds.where('[productionId+buildNumber]').equals([draft.productionId, production.currentBuildNumber]).first()
+        if (!build || !await assertRecordInScope(input.scope, 'productBuilds', build, { owner: 'work' })) throw new Error('[avg-media] 当前制作版本不存在或跨作品')
+        if (!build.previewHash && production.status !== 'brief-ready' && !['cancelled', 'failed', 'recovery-required'].includes(build.status)) {
+          throw new Error('[avg-media] 已开始的图片批次须保留；请先明确停止或修订制作')
+        }
+      }
+    }
+    if (workspace.mediaBatch?.requirements.some(r => workspace.presentation.stage.assets.some(a => a.assetKey === r.assetKey))) {
+      throw new Error('[avg-media] 图片已进入演出草稿，不能丢弃其生产来源；请保留批次并显式修订')
+    }
+    const next = resetAvgUnconsumedMediaDeclarationsV1(workspace)
+    delete next.mediaBatch
+    return saveAvgAuthorWorkspaceV1(input.scope, draft.revision, next)
+  })
 }
 
 export async function stageAvgMediaChoiceV2(input: { scope: WorkspaceScope; productionId: number; requirementKey: string;

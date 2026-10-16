@@ -4,6 +4,21 @@ import { parseAvgVisualProductionRequirementV1, parseAvgAuthorMediaChoiceV1,
   type AvgVisualProductionRequirementV1, type AvgVisualProductionBatchV1, type AvgAuthorMediaChoiceV1 } from './media-production-contract'
 import { validateAvgVisualProductionBatchSourceV1 } from './media-source'
 
+/** Undo only the unconsumed image-slot proposals made by a previous batch.
+ * Authored predicates, unrelated bindings and actually selected assets stay
+ * owned by their existing draft; this is not a delete/adoption operation. */
+export function resetAvgUnconsumedMediaDeclarationsV1(value: AvgAuthorWorkspaceV1) {
+  const next = parseAvgAuthorWorkspaceV1(value)
+  for (const r of next.mediaBatch?.requirements ?? []) {
+    if (!['inventory', 'evidence'].includes(r.consumer.domain) || next.presentation.stage.assets.some(a => a.assetKey === r.assetKey)) continue
+    const item = next.systemPlan.version === 2 ? next.systemPlan.inventory.items.find(i => i.key === r.consumer.subjectKey) : undefined
+    const view = r.itemVariantKey === null ? item : item?.variants.find(v => v.key === r.itemVariantKey)
+    const key = r.consumer.domain === 'inventory' ? 'iconAssetKey' : 'detailAssetKey'
+    if (view?.[key] === r.assetKey) view[key] = null
+  }
+  return next
+}
+
 /** A reviewable draft proposal before source freeze. It only declares existing
  * item display slots; predicates, gameplay states and actions remain authored. */
 export function prepareAvgMediaConsumerDeclarationsV1(value: AvgAuthorWorkspaceV1, requirements: AvgVisualProductionRequirementV1[]) {
