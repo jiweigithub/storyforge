@@ -1,4 +1,5 @@
 import {readChatCoordinatorSelectionEvidenceV1} from '../registry/context-sources'
+import {readChatRuntimeStateAtSequenceV1} from './runtime-replay'
 import {chatObservationVisibilityGenerationRulesV1} from './observation-visibility-prompt'
 import {chatDiscoveryEvidenceGenerationRulesV1} from './discovery-evidence-context'
 import {chatObservationScopeGenerationRulesV1} from './observation-scope-prompt'
@@ -976,7 +977,7 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
   if (!adopted && ['chat-situation-candidate', 'chat-narrative-action-candidate', 'chat-narrative-options-candidate'].includes(candidate.kind)) {
     // Recovery may already have committed the command. Verify its producer
     // against the original state, never the current default reader or new head.
-    const original = await readProductRuntimeState(candidate.productRuntimeSessionId, candidate.baseSequence)
+    const original = await readChatRuntimeStateAtSequenceV1(candidate.productRuntimeSessionId, candidate.baseSequence)
     const situation = candidate.kind === 'chat-situation-candidate'
     const reader = await readChatCandidateRetrievalVersion(snapshot, input.scope.projectId,
       situation ? 'chatSituationRuntime' : 'interactionRuntime', situation ? undefined : candidate.participantKey, original.interaction ?? undefined)

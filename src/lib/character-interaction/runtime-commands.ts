@@ -4,6 +4,7 @@ import {scopeTransactionTables} from '../workspace/scope';
 import type {WorkspaceScope, ChatComposerDraftV1} from '../types';
 import {ChatComposerConflictError, parseChatComposerDraftV1} from './composer-draft-contract';
 import {readChatComposerSessionV1} from './composer-draft-read';
+import {replayChatRuntimeEventsV1} from './runtime-replay';
 import type { ProductRuntimeCommandEnvelopeV1 } from "../product/runtime-command-id";
 import { JsonObject, applyProductRuntimeEvent, hashStateJson, normalizeCommandId, parseEventPayload, parseProductRuntimeState, readSessionEvents, replayProductRuntimeEvents, stableJson, updateProductRuntimeSessionHeadV1 } from "../product/runtime-core";
 import type { ProductRuntimeEventType, ProductRuntimeEvent, InteractionMemoryKind } from "../types";
@@ -42,10 +43,9 @@ async function appendInteractionCommand(
   const previewSession = await db.productRuntimeSessions.get(input.sessionId);
   if (!previewSession) throw new Error("角色互动会话不存在。");
   const previewEvents = await readSessionEvents(previewSession);
-  const previewState = replayProductRuntimeEvents(
-    parseProductRuntimeState(previewSession.initialStateJson),
-    previewEvents,
-  );
+  const previewState = previewSession.kind === 'character-interaction'
+    ? replayChatRuntimeEventsV1(previewSession.initialStateJson, previewEvents)
+    : replayProductRuntimeEvents(parseProductRuntimeState(previewSession.initialStateJson), previewEvents);
   const previewStateJson = JSON.stringify(previewState);
   const previewStateHash = await hashStateJson(previewStateJson);
   // A chat head is recoverable derived data, but it must be committed with the
@@ -119,10 +119,9 @@ async function appendInteractionCommand(
           throw new Error('角色行动运行已取消、暂停或变化，未提交后果。');
         }
       }
-      const state = replayProductRuntimeEvents(
-        parseProductRuntimeState(session.initialStateJson),
-        events,
-      );
+      const state = session.kind === 'character-interaction'
+        ? replayChatRuntimeEventsV1(session.initialStateJson, events)
+        : replayProductRuntimeEvents(parseProductRuntimeState(session.initialStateJson), events);
       if (!state.interaction)
         throw new Error("当前会话不是角色互动存档。");
       if (state.interaction.chatNarrative && input.type === 'interaction.relationship.changed')
