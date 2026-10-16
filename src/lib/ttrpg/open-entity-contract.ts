@@ -3,6 +3,7 @@ import type { TtrpgOpenAudience, TtrpgOpenEntityKind } from './open-contract'
 import { parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coordination'
 import * as p from './open-contract-parse'
 import type { TtrpgOpenOperationApprovalV1 } from './open-operation'
+import { parseTtrpgOpenEntityModelOriginV1, type TtrpgOpenEntityModelOriginV1 } from './open-entity-model-origin-contract'
 
 export interface TtrpgOpenEntityProposalV1 {
   templateKey: string; name: string; description: string; parameters: Record<string, string>;
@@ -22,11 +23,15 @@ export interface TtrpgOpenEntityPlanV1 {
   items: TtrpgOpenEntityPlanItemV1[]; requiredApprovals: Array<{ actorKey: string; allowedSeatKeys: string[] }>; planHash: string;
 }
 export interface TtrpgOpenEntityOperationV1 {
-  plan: TtrpgOpenEntityPlanV1;
+  plan: TtrpgOpenEntityPlan;
   approvals: TtrpgOpenOperationApprovalV1[];
   resolution: { kind: 'materialized'; sourceRef: TtrpgOpenSourceRefV1 }
     | { kind: 'declined'; sourceRef: TtrpgOpenSourceRefV1; reason: string } | null;
 }
+export interface TtrpgOpenEntityPlanV2 extends Omit<TtrpgOpenEntityPlanV1, 'version'> {
+  version: 2; modelOrigin: TtrpgOpenEntityModelOriginV1;
+}
+export type TtrpgOpenEntityPlan = TtrpgOpenEntityPlanV1 | TtrpgOpenEntityPlanV2
 export function parseTtrpgOpenEntityProposalV1(value: unknown): TtrpgOpenEntityProposalV1 {
   const r = p.record(value, ['templateKey', 'name', 'description', 'parameters', 'locationRef', 'ownerRef'], 'entity proposal')
   const parameters = p.object(r.parameters, 'entity parameters')
@@ -36,8 +41,20 @@ export function parseTtrpgOpenEntityProposalV1(value: unknown): TtrpgOpenEntityP
     locationRef: p.nullable(r.locationRef, p.key, 'entity location'), ownerRef: p.nullable(r.ownerRef, p.key, 'entity owner') }
 }
 export function parseTtrpgOpenEntityPlanV1(value: unknown): TtrpgOpenEntityPlanV1 {
+  const plan = parseEntityPlan(value, 1)
+  return plan.version === 1 ? plan : p.fail('人工实体计划必须保留 V1 合同')
+}
+export function parseTtrpgOpenEntityPlanV2(value: unknown): TtrpgOpenEntityPlanV2 {
+  const plan = parseEntityPlan(value, 2)
+  return plan.version === 2 ? plan : p.fail('模型实体计划必须使用 V2 来源合同')
+}
+export function parseTtrpgOpenEntityPlan(value: unknown): TtrpgOpenEntityPlan {
+  return p.object(value, 'versioned entity plan').version === 2 ? parseTtrpgOpenEntityPlanV2(value) : parseTtrpgOpenEntityPlanV1(value)
+}
+function parseEntityPlan(value: unknown, version: 1 | 2): TtrpgOpenEntityPlan {
   const r = p.record(value, ['schema', 'version', 'operationKey', 'rootCommandId', 'proposedRef', 'oracleSourceRef', 'authorizationEpochKey', 'authorizationHash',
-    'viewerKey', 'seatKey', 'runtimeSourceHash', 'rulePackContentHash', 'mechanicalStateHash', 'frozenContentJson', 'items', 'requiredApprovals', 'planHash'], 'entity plan')
+    'viewerKey', 'seatKey', 'runtimeSourceHash', 'rulePackContentHash', 'mechanicalStateHash', 'frozenContentJson', 'items', 'requiredApprovals', 'planHash', ...(version === 2 ? ['modelOrigin'] : [])], 'entity plan')
+  p.literal(r.version, version, 'entity plan version')
   if (typeof r.frozenContentJson !== 'string' || !r.frozenContentJson.trim() || r.frozenContentJson.length > 8000000) p.fail('实体计划缺少完整原冻结定义证据')
   const proposedRef = parseTtrpgOpenSourceRefV1(r.proposedRef), oracleSourceRef = parseTtrpgOpenSourceRefV1(r.oracleSourceRef)
   if (proposedRef.sessionKey !== oracleSourceRef.sessionKey || oracleSourceRef.sequence >= proposedRef.sequence) p.fail('实体计划必须来自同一团局的已提交 Oracle')
@@ -60,15 +77,19 @@ export function parseTtrpgOpenEntityPlanV1(value: unknown): TtrpgOpenEntityPlanV
     return { actorKey: p.key(row.actorKey, 'entity affected actor'), allowedSeatKeys: p.keys(row.allowedSeatKeys, 'entity approver seats', 1000, 1) }
   }, 4, 1)
   p.unique(requiredApprovals.map(row => row.actorKey), 'entity affected actors')
-  return { schema: p.literal(r.schema, 'storyforge.ttrpg-open-entity-plan', 'entity plan schema'), version: p.literal(r.version, 1, 'entity plan version'),
+  const body = { schema: p.literal(r.schema, 'storyforge.ttrpg-open-entity-plan', 'entity plan schema'),
     operationKey: p.key(r.operationKey, 'entity operation'), rootCommandId: p.key(r.rootCommandId, 'entity root command'), proposedRef, oracleSourceRef,
     authorizationEpochKey: p.key(r.authorizationEpochKey, 'entity epoch'), authorizationHash: p.hash(r.authorizationHash, 'entity authorization'),
     viewerKey: p.key(r.viewerKey, 'entity viewer'), seatKey: p.key(r.seatKey, 'entity approver'),
     runtimeSourceHash: p.hash(r.runtimeSourceHash, 'entity runtime source'), rulePackContentHash: p.hash(r.rulePackContentHash, 'entity rules'),
     mechanicalStateHash: p.hash(r.mechanicalStateHash, 'entity mechanical state'), frozenContentJson: r.frozenContentJson, items, requiredApprovals, planHash: p.hash(r.planHash, 'entity plan hash') }
+  // Keep the original V1 property order as well as its closed grammar for old event/head bytes.
+  const { schema, ...fields } = body
+  return version === 1 ? { schema, version: 1, ...fields }
+    : { schema, version: 2, ...fields, modelOrigin: parseTtrpgOpenEntityModelOriginV1(r.modelOrigin) }
 }
 export function parseTtrpgOpenEntityOperationV1(value: unknown): TtrpgOpenEntityOperationV1 {
-  const r = p.record(value, ['plan', 'approvals', 'resolution'], 'entity operation'), plan = parseTtrpgOpenEntityPlanV1(r.plan)
+  const r = p.record(value, ['plan', 'approvals', 'resolution'], 'entity operation'), plan = parseTtrpgOpenEntityPlan(r.plan)
   const approvals = p.list(r.approvals, 'entity approvals', value => {
     const row = p.record(value, ['actorKey', 'approverSeatKey', 'viewerKey', 'decision', 'sourceRef'], 'entity approval')
     const sourceRef = parseTtrpgOpenSourceRefV1(row.sourceRef), actorKey = p.key(row.actorKey, 'entity approved actor'), approverSeatKey = p.key(row.approverSeatKey, 'entity actual approver')

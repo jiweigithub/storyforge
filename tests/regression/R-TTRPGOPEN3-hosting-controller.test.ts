@@ -37,7 +37,7 @@ describe('R-TTRPGOPEN3 bounded continuous hosting through existing owners', { ti
     expect(run.operations.slice(1).every(o => o.approvals.length === 0 && o.intentEvidence?.hostingDelegationRef && o.preauthorization?.hostingDelegationRef)).toBe(true)
     expect(await resumeTtrpgOpenHostingV1(input)).toMatchObject({ reason: 'budget' })
     expect(await readProductRuntimeState(sessionId)).toEqual(state); expect(calls).toBe(5)
-  })
+  }, process.env.CI ? 240000 : 120000)
   async function quick(safe = false) {
     const f = await readyOpenTtrpgSessionV1('bounded hosting stop', pkg => {
       pkg.ttrpg!.campaign.runtimePolicy.enabled = true

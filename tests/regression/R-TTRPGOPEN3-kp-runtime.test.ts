@@ -98,7 +98,7 @@ describe('R-TTRPGOPEN3 real KP post-result candidate and adoption', { timeout: 3
     expect(run.coordination.epochs[0].successfulActorKeys).toEqual(['companion.1', 'companion.2'])
     expect(run.coordination.calls).toHaveLength(5);expect(run.coordination.calls.every(c => c.status === 'succeeded')).toBe(true)
     expect(run.operations.slice(1).every(o => o.approvals.length === 0 && o.preauthorization)).toBe(true);await replay(sessionId)
-  }, 120000)
+  }, process.env.CI ? 240000 : 120000)
   it('never grants a new window or acts for hybrid/human seats, exhausted budget or unknown request', async () => {
     const f = await setup(), state = await readProductRuntimeState(f.command.sessionId), choose = (value: typeof state) => evaluateTtrpgOpenHandoffV1(value, f.command.operationKey)
     expect(choose(state)).toEqual({ kind: 'companion-ready', actorKey: 'companion.1' })

@@ -6,7 +6,8 @@ import type { TtrpgRuntimeContentV2 } from './content-version'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { assertTtrpgOpenHumanHostV1 } from './open-authorization'
 import { isTtrpgOpenPassiveEpochV1, ttrpgOpenScopedKeyV1, type TtrpgOpenSourceRefV1 } from './open-coordination'
-import { parseTtrpgOpenEntityOperationV1, parseTtrpgOpenEntityPlanV1, parseTtrpgOpenEntityProposalV1, type TtrpgOpenEntityOperationV1 } from './open-entity-contract'
+import { parseTtrpgOpenEntityOperationV1, parseTtrpgOpenEntityPlanV1, parseTtrpgOpenEntityPlanV2, parseTtrpgOpenEntityProposalV1, type TtrpgOpenEntityOperationV1 } from './open-entity-contract'
+import { parseTtrpgOpenEntityModelOriginV1, ttrpgOpenModelEntityDisclosureV1, type TtrpgOpenEntityModelOriginV1 } from './open-entity-model-origin-contract'
 import { ttrpgOpenMechanicalStateHashV1 } from './open-rule-plan'
 import { hashProductProductionValueV2 as hash } from '../product-production/hash'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
@@ -14,11 +15,19 @@ import * as p from './open-contract-parse'
 import { countTtrpgOpenEntityInstancesV1, compileTtrpgOpenEntityMechanicsV1 } from './open-entity-mechanics'
 
 
-export async function createTtrpgOpenEntityPlanV1(input: {
+export interface TtrpgOpenEntityPlanInputV1 {
   state: ProductRuntimeState; content: TtrpgRuntimeContentV2; runtimeSourceHash: string; viewerKey: string;
   commandId: string; sequence: number; oracleSourceRef: TtrpgOpenSourceRefV1; proposals: unknown[];
   previousOperations: readonly TtrpgOpenEntityOperationV1[];
-}) {
+}
+export async function createTtrpgOpenEntityPlanV1(input: TtrpgOpenEntityPlanInputV1) {
+  return parseTtrpgOpenEntityPlanV1(await createEntityPlan(input))
+}
+/** Uses shared mechanical planning, never the human-origin command or admission contract. */
+export async function createTtrpgOpenEntityPlanV2(input: TtrpgOpenEntityPlanInputV1, modelOrigin: TtrpgOpenEntityModelOriginV1) {
+  return parseTtrpgOpenEntityPlanV2(await createEntityPlan(input, parseTtrpgOpenEntityModelOriginV1(modelOrigin)))
+}
+async function createEntityPlan(input: TtrpgOpenEntityPlanInputV1, modelOrigin?: TtrpgOpenEntityModelOriginV1) {
   const runtime = parseTtrpgRuntimeStateV2(input.state.ttrpg), auth = runtime?.authorization, run = runtime?.openRun
   if (!runtime || !auth || !run || runtime.product.safety.status !== 'active' || run.stage.status !== 'open') p.fail('实体计划需要当前有效且未暂停的团局')
   const seat = assertTtrpgOpenHumanHostV1(auth, input.viewerKey), humanGm = seat.role === 'gm'
@@ -71,7 +80,8 @@ export async function createTtrpgOpenEntityPlanV1(input: {
         requiredApprovals.push({ actorKey: affected.actorKey!, allowedSeatKeys: [...allowedSeatKeys] })
       }
     }
-    const disclosure = ttrpgOpenEntityDisclosureV1(template, oracle.audience, auth.selectedActorKeys)
+    const disclosure = modelOrigin ? ttrpgOpenModelEntityDisclosureV1(modelOrigin, template, oracle.audience, auth.selectedActorKeys, humanGm)
+      : ttrpgOpenEntityDisclosureV1(template, oracle.audience, auth.selectedActorKeys)
     if (proposal.ownerRef && auth.selectedActorKeys.includes(proposal.ownerRef) && disclosure.audience !== 'public'
       && !disclosure.recipientActorKeys.some(key => key === proposal.ownerRef)) p.fail('新增库存物品必须向实际受影响角色披露，不能暗中加入玩家库存')
     const entityKey = 'entity.' + (await hash({ sessionKey: runtime.sessionKey, operationKey, index })).slice(0, 48)
@@ -81,10 +91,11 @@ export async function createTtrpgOpenEntityPlanV1(input: {
   requiredApprovals.sort((a, b) => a.actorKey.localeCompare(b.actorKey))
   const compiled = compileTtrpgOpenEntityMechanicsV1({ content: input.content, items, eventSequence: input.sequence })
   if (compiled.entities.some(row => input.state.entities[row.entityKey] || catalog.some(prior => prior.entityKey === row.entityKey))) p.fail('实体或初始装备身份已经存在，不能覆盖')
-  const body = { schema: 'storyforge.ttrpg-open-entity-plan' as const, version: 1 as const, operationKey, rootCommandId: input.commandId,
+  const body = { schema: 'storyforge.ttrpg-open-entity-plan' as const, version: modelOrigin ? 2 : 1, operationKey, rootCommandId: input.commandId,
     proposedRef: { sessionKey: runtime.sessionKey, sequence: input.sequence }, oracleSourceRef: oracle.sourceRef,
     authorizationEpochKey: epoch.epochKey, authorizationHash: await hash(auth), viewerKey: input.viewerKey, seatKey: seat.seatKey,
     runtimeSourceHash: p.hash(input.runtimeSourceHash, 'entity runtime source'), rulePackContentHash: input.content.rulePack.contentHash,
-    mechanicalStateHash: await ttrpgOpenMechanicalStateHashV1(input.state), frozenContentJson: stable(input.content), items, requiredApprovals }
-  return parseTtrpgOpenEntityPlanV1({ ...body, planHash: await hash(body) })
+    mechanicalStateHash: await ttrpgOpenMechanicalStateHashV1(input.state), frozenContentJson: stable(input.content), items, requiredApprovals,
+    ...(modelOrigin ? { modelOrigin } : {}) }
+  return { ...body, planHash: await hash(body) }
 }

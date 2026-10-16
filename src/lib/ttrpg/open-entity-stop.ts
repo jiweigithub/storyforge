@@ -13,6 +13,7 @@ async function owned(input: TtrpgOpenCandidateReadV1) {
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'human', viewerKey: input.viewerKey } })
   const call = loaded.runtime.openRun!.coordination.calls.find(c => c.requestKey === input.requestKey)!
   const epoch = loaded.runtime.openRun!.coordination.epochs.find(e => e.epochKey === call.authorizationEpochKey)!
+  if (loaded.runtime.openRun!.entityOperations?.some(o => o.plan.version === 2 && o.plan.modelOrigin.call.requestKey === input.requestKey)) throw new Error('本候选已经保存为待确认计划；请修复原采用回执或明确处置计划，不得改记为放弃请求。')
   const snapshot = await readInstanceAgentRunV1(input.scope, input.runId)
   if (snapshot.run.portableRuntimeOriginJson || snapshot.run.productRuntimeSessionId !== input.sessionId || snapshot.run.contractHash !== call.runContractHash) throw new Error('实体请求收尾需要准确原本地 Run，不能续用导入授权。')
   await verifyTtrpgOpenModelCallEvidenceV1({ ...input, call, mode: 'finish' })

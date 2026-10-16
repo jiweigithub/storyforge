@@ -1,4 +1,4 @@
-import { assertTtrpgOpenEntityWindowEventV1 } from './open-entity-journal'
+import { assertTtrpgOpenEntityWindowEventV1 } from './open-entity-window'
 import type { TtrpgOpenManualActionAuthorizationV1 } from './open-manual-action'
 import { parseTtrpgOpenModelCallV1, updateTtrpgOpenEpochCallTotalsV1, type TtrpgOpenModelCallV1 } from './open-model-calls'
 /** Durable authority windows are independent of game time and event ordering. */

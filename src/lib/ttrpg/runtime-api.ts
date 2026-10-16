@@ -173,7 +173,10 @@ export { reconcileTtrpgOpenSituationRunV1, TtrpgOpenSituationReceiptPendingError
 export { readTtrpgOpenSessionSituationAuditV1 } from './open-session-situation-audit'
 
 export { generateTtrpgOpenEntityCandidateV1, executeTtrpgOpenEntityRequestV1 } from './open-intent-harness'
+export { prepareTtrpgOpenEntityInputV1 } from './open-intent-input'
 export { readTtrpgOpenEntityCandidateV1 } from './open-entity-candidate'
 export type { TtrpgOpenEntityCandidateV1 } from './open-entity-candidate'
 export { finishTtrpgOpenEntityDraftV1, reconcileTtrpgOpenStoppedEntityV1 } from './open-entity-stop'
 export { repairTtrpgOpenEntityResponseReceiptV1, abandonTtrpgOpenEntityWaitV1 } from './open-situation-request-recovery'
+export { acceptTtrpgOpenEntityCandidateV1 } from './runtime-commands'
+export { reconcileTtrpgOpenEntityRunV1, TtrpgOpenEntityReceiptPendingError } from './open-entity-adoption'

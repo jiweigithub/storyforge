@@ -5,6 +5,7 @@ import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { ttrpgOpenAncestorSourceAllowedV1 } from './open-branch-contract'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import * as p from './open-contract-parse'
+import { assertTtrpgOpenEntityModelPlanCallV1 } from './open-entity-model-origin-contract'
 
 export function assertTtrpgOpenEntityJournalV1(runtime: TtrpgRuntimeStateV2) {
   const run = runtime.openRun
@@ -24,6 +25,7 @@ export function assertTtrpgOpenEntityJournalV1(runtime: TtrpgRuntimeStateV2) {
       || plan.proposedRef.sequence <= oracle.sourceRef.sequence || plan.proposedRef.sequence <= epoch.startedRef.sequence
       || epoch.closedRef && (plan.proposedRef.sequence >= epoch.closedRef.sequence || resolution && resolution.sourceRef.sequence >= epoch.closedRef.sequence)) p.fail('实体计划没有原始 Oracle 和活动窗口来源')
     const host = assertTtrpgOpenHumanHostV1(auth, plan.viewerKey)
+    if (plan.version === 2) assertTtrpgOpenEntityModelPlanCallV1(plan, origin)
     if (host.seatKey !== plan.seatKey || !plan.requiredApprovals.some(row => row.actorKey === (host.actorKey ?? 'gm') && row.allowedSeatKeys.includes(host.seatKey))) p.fail('实体计划缺少原真人主持的明确确认要求')
     for (const approval of operation.approvals) {
       const seat = auth.seats.find(row => row.viewerKey === approval.viewerKey)
@@ -35,10 +37,4 @@ export function assertTtrpgOpenEntityJournalV1(runtime: TtrpgRuntimeStateV2) {
       || !ttrpgOpenAncestorSourceAllowedV1(runtime.branchLineage, resolution.sourceRef, ['ttrpg.open.entity.materialized'])
       || !origin.entityOperations?.some(row => stable(row) === stable(operation)))) p.fail('分支只能继承切点前实际创建的实体，不继承待确认权限')
   }
-}
-/** Exclusive pending operation guard is shared by formal commands and pure replay. */
-export function assertTtrpgOpenEntityWindowEventV1(runtime: Pick<TtrpgRuntimeStateV2, 'openRun'> | null, type: string) {
-  if (!runtime?.openRun?.entityOperations?.some(row => !row.resolution)) return
-  if (!['ttrpg.open.entity.confirmed', 'ttrpg.open.entity.materialized', 'ttrpg.open.entity.disposed',
-    'ttrpg.safety.changed', 'ttrpg.open.table-message.posted', 'ttrpg.open.failure.logged'].includes(type)) p.fail('请先确认或放弃当前实体计划；不能并行改变原机械状态或离开授权窗口')
 }

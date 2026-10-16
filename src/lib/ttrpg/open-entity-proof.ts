@@ -16,6 +16,7 @@ export async function verifyTtrpgOpenEntityPlanHashesV1(operations: readonly Ttr
         if (!template || await hash(template) !== item.templateHash || plan.rulePackContentHash !== content.rulePack.contentHash) throw new Error('实体原模板或规则证据已经变化')
       }
     }
+    if (plan.version === 2) await (await import('./open-entity-model-proof')).verifyTtrpgOpenEntityModelOriginV1(plan)
   }
 }
 

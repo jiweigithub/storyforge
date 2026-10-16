@@ -58,6 +58,7 @@ function projection(loaded: Awaited<ReturnType<typeof load>>, input: TtrpgOpenEn
   }
   const pendingView = pending && plan && mayReadPending ? {
     operationKey: plan.operationKey, planHash: plan.planHash, originalHost: plan.viewerKey === input.viewerKey,
+    origin: plan.version === 2 ? 'model' as const : 'human' as const,
     items: plan.items.filter(i => plan.viewerKey === input.viewerKey || ownApproval.some(a => a.actorKey === i.proposal.ownerRef)).map(i => ({
       kind: i.kind, name: i.proposal.name, description: i.proposal.description,
       placement: i.proposal.ownerRef ? '加入' + (placements.find(p => p.key === i.proposal.ownerRef)?.name ?? '本人') + '的库存'

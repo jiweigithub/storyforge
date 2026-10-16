@@ -1258,6 +1258,7 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "ttrpg.open.narration.accepted",
   "ttrpg.open.situation.accepted",
   "ttrpg.open.entity.proposed",
+  "ttrpg.open.entity.model-proposed",
   "ttrpg.open.entity.confirmed",
   "ttrpg.open.entity.materialized",
   "ttrpg.open.entity.disposed",

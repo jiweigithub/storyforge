@@ -81,6 +81,7 @@ export default function TtrpgOpenEntityPanel(props: { input: TtrpgOpenEntityDesk
       {page.canClose && <button disabled={disabled} onClick={() => void act(() => closeTtrpgOpenEntityDeskV1({ ...input(), submissionKey: crypto.randomUUID() }), '本次咨询窗口已结束，原结果与已创建对象保留。')}>结束本次实体咨询</button>}
     </>}
     {pending && <section aria-label="待确认实体计划"><h3>{pending.originalHost ? '本次创建计划' : '与我有关的库存变化'}</h3>
+      <p>{pending.origin === 'model' ? '本计划来自 AI 候选，已由原主持审阅；创建仍须相关角色分别确认。' : '本计划由真人提出；创建仍须相关角色分别确认。'}</p>
       {pending.items.map((item, i) => <article key={i}><h4>{kinds[item.kind]}：{item.name}</h4><p>{item.description}</p><p>{item.placement}；含初始装备共 {item.instanceCost} 个对象。</p>{item.parameters.map(p => <p key={p.name}>参数：{p.value}</p>)}{item.impact.map((s, n) => <p key={n}>{s}</p>)}</article>)}
       <p>已同意 {pending.approved} / {pending.required}。{pending.rejected ? '已有拒绝决定，请放弃本计划。' : '确认后仍须由原主持明确创建。'}</p>
       <label><input type="checkbox" checked={reviewed} disabled={disabled || !pending.canConfirm} onChange={e => setReviewed(e.target.checked)} />我已审阅本版本对相关角色的影响。</label>

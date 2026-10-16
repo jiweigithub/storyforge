@@ -1,4 +1,6 @@
 import { assertTtrpgOpenEntityModelCallOriginV1 } from './open-model-calls'
+import { prepareTtrpgOpenEntityAdoptionV1, reconcileTtrpgOpenEntityRunV1, TtrpgOpenEntityReceiptPendingError } from './open-entity-adoption'
+import { assertTtrpgOpenEntityCandidateReaderV1 } from './open-entity-candidate'
 import { verifyTtrpgOpenEntityStateV1 } from './open-entity-proof'
 import { createTtrpgOpenEntityPlanV1 } from './open-entity-plan'
 import { parseTtrpgOpenEntityProposalV1 } from './open-entity-contract'
@@ -195,6 +197,7 @@ type FormalTtrpgEventType = Extract<
   | "ttrpg.open.narration.accepted"
   | "ttrpg.open.situation.accepted"
   | "ttrpg.open.entity.proposed"
+  | "ttrpg.open.entity.model-proposed"
   | "ttrpg.open.entity.confirmed"
   | "ttrpg.open.entity.materialized"
   | "ttrpg.open.entity.disposed"
@@ -238,7 +241,7 @@ const OPEN_FOUNDATION_COMMANDS: readonly FormalTtrpgEventType[] = [
   "ttrpg.front.telegraphed", "ttrpg.front.advanced", "ttrpg.front.defeated",
   "ttrpg.open.situations.planned", "ttrpg.open.situations.changed", "ttrpg.open.situations.settled",
   "ttrpg.open.situations.effect.confirmed", "ttrpg.open.situations.effect.applied",
-  "ttrpg.open.terminal.evaluated", "ttrpg.open.gates.evaluated", "ttrpg.open.gates.settled", "ttrpg.open.gates.recovered", "ttrpg.open.gates.recovery-stopped", "ttrpg.open.narration.accepted", "ttrpg.open.entity.proposed", "ttrpg.open.entity.confirmed", "ttrpg.open.entity.materialized", "ttrpg.open.entity.disposed", "ttrpg.open.situation.accepted", "ttrpg.open.situation.activated", "ttrpg.open.narration.recorded", "ttrpg.open.companion.preauthorized", "ttrpg.open.intent.rejected", "ttrpg.open.handoff.offered",
+  "ttrpg.open.terminal.evaluated", "ttrpg.open.gates.evaluated", "ttrpg.open.gates.settled", "ttrpg.open.gates.recovered", "ttrpg.open.gates.recovery-stopped", "ttrpg.open.narration.accepted", "ttrpg.open.entity.proposed", "ttrpg.open.entity.model-proposed", "ttrpg.open.entity.confirmed", "ttrpg.open.entity.materialized", "ttrpg.open.entity.disposed", "ttrpg.open.situation.accepted", "ttrpg.open.situation.activated", "ttrpg.open.narration.recorded", "ttrpg.open.companion.preauthorized", "ttrpg.open.intent.rejected", "ttrpg.open.handoff.offered",
   "ttrpg.open.stage.closed", "ttrpg.open.stage.clock.advanced", "ttrpg.open.stage.settled", "ttrpg.open.stage.effect.confirmed", "ttrpg.open.stage.effect.applied",
 ];
 const SHARED_SETUP_COMMANDS: readonly FormalTtrpgEventType[] = [
@@ -6193,6 +6196,30 @@ export async function activateTtrpgOpenSessionSituationV1(input: FormalTtrpgComm
       await verifyTtrpgOpenSessionSituationHashesV1([settled.receipt])
       return { actorKey: 'gm', targetKey: input.templateKey, payload: { frozenContent: content, ownerReceiptHash: settled.receipt.receiptHash, instanceKey, result: settled.result } }
     } })
+}
+
+/** Exact model candidate becomes only a pending plan, with a separate event and source contract. */
+export async function acceptTtrpgOpenEntityCandidateV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; runId: number; requestKey: string; candidateHash: string; decision: 'reviewed-this-model-entity-candidate';
+}): Promise<ProductRuntimeEvent> {
+  if (input.decision !== 'reviewed-this-model-entity-candidate') throw new Error('请明确审阅本次原模型实体候选。')
+  const session = await db.productRuntimeSessions.get(input.sessionId)
+  if (!session?.worldId || !session.workId) throw new Error('当前跑团实例不存在')
+  const scope = await resolveScope({ scope: { projectId: session.projectId, worldId: session.worldId, workId: session.workId } })
+  await assertTtrpgOpenEntityCandidateReaderV1({ ...input, scope })
+  const owner = await (await import('../agent/run/event-store')).readInstanceAgentRunV1(scope, input.runId)
+  if (owner.run.portableRuntimeOriginJson || owner.run.productRuntimeSessionId !== input.sessionId) throw new Error('实体候选采用只允许准确原本地 Run；导入证据不授予新采用权限。')
+  const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)!
+  const requestKey = openKey(input.requestKey, 'entity original request'), candidateHash = openHash(input.candidateHash, 'entity original candidate')
+  const commandId = await ttrpgOpenScopedKeyV1(runtime.sessionKey, 'model-entity-plan', [requestKey, candidateHash])
+  const prior = await db.productRuntimeEvents.where('[sessionId+commandId]').equals([input.sessionId, commandId]).first()
+  const event = await appendFormalTtrpgCommand({ ...input, commandId, baseSequence: prior?.baseSequence ?? input.baseSequence,
+    baseStateHash: prior?.baseStateHash ?? input.baseStateHash, type: 'ttrpg.open.entity.model-proposed',
+    intent: { origin: 'model-entity-candidate', viewerKey: input.viewerKey, requestKey, candidateHash, decision: input.decision },
+    build: async context => prepareTtrpgOpenEntityAdoptionV1({ ...input, scope }, { ...context, commandId, content: requireTtrpgOpenContent(context.ttrpgContent) }) })
+  try { await reconcileTtrpgOpenEntityRunV1({ ...input, scope }) }
+  catch { throw new TtrpgOpenEntityReceiptPendingError(input.sessionId, event.sequence, input.runId) }
+  return event
 }
 
 /** Human-authored, template-bound Oracle proposal; no model call or mechanical write. */

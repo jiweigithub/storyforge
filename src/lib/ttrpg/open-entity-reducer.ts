@@ -4,9 +4,9 @@ import type { ProductRuntimeJsonObjectV1 } from '../product/runtime-values'
 import type { TtrpgRuntimeContentV2 } from './content-version'
 import { parseTtrpgRuntimeContentVersionedV1, isTtrpgRuntimeContentV2 } from './content-version'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
-import { parseTtrpgOpenEntityPlanV1, parseTtrpgOpenEntityProposalV1 } from './open-entity-contract'
+import { parseTtrpgOpenEntityPlan, parseTtrpgOpenEntityProposalV1 } from './open-entity-contract'
 import { assertTtrpgOpenEntityPlanAdmissionV1 } from './open-entity-admission'
-import { assertTtrpgOpenEntityPlanEnvelopeV1, ttrpgOpenEntityOperationBasisV1 } from './open-entity-operation'
+import { assertTtrpgOpenEntityPlanEnvelopeV1, ttrpgOpenEntityOperationBasisV1 } from './open-entity-operation-basis'
 import { assertTtrpgOpenHumanHostV1 } from './open-authorization'
 import { compileTtrpgOpenEntityMechanicsV1 } from './open-entity-mechanics'
 import { applyTtrpgItemCommandV2, ttrpgItemDefinitionFromRuleV1 } from './item-ledger'
@@ -18,16 +18,25 @@ function frozen(value: unknown): TtrpgRuntimeContentV2 {
   return isTtrpgRuntimeContentV2(content) ? content : p.fail('实体创建只允许冻结 open 内容')
 }
 export function applyTtrpgOpenEntityEventV1(state: ProductRuntimeState, event: ProductRuntimeEvent, payload: ProductRuntimeJsonObjectV1): boolean {
-  if (!['ttrpg.open.entity.proposed', 'ttrpg.open.entity.confirmed', 'ttrpg.open.entity.materialized', 'ttrpg.open.entity.disposed'].includes(event.type)) return false
+  if (!['ttrpg.open.entity.proposed', 'ttrpg.open.entity.model-proposed', 'ttrpg.open.entity.confirmed', 'ttrpg.open.entity.materialized', 'ttrpg.open.entity.disposed'].includes(event.type)) return false
   const sourceRef = { sessionKey: state.ttrpg?.sessionKey ?? '', sequence: event.sequence }
-  if (event.type === 'ttrpg.open.entity.proposed') {
+  if (event.type === 'ttrpg.open.entity.proposed' || event.type === 'ttrpg.open.entity.model-proposed') {
     p.exact(payload, ['plan', 'intent'], 'entity proposed payload')
-    const plan = parseTtrpgOpenEntityPlanV1(payload.plan), content = frozen(JSON.parse(plan.frozenContentJson))
-    const intent = p.record(payload.intent, ['origin', 'viewerKey', 'oracleSourceRef', 'proposals'], 'human entity proposal intent')
-    p.literal(intent.origin, 'human-oracle-proposal', 'entity proposal author')
-    if (stable(p.list(intent.proposals, 'entity original proposals', parseTtrpgOpenEntityProposalV1, 3, 1)) !== stable(plan.items.map(row => row.proposal))
-      || stable(intent.oracleSourceRef) !== stable(plan.oracleSourceRef)) p.fail('实体计划不是原明确提出的候选')
-    assertTtrpgOpenEntityPlanEnvelopeV1(plan, { sequence: event.sequence, sessionKey: sourceRef.sessionKey, viewerKey: p.key(intent.viewerKey, 'entity author'), commandId: event.commandId ?? '' })
+    const plan = parseTtrpgOpenEntityPlan(payload.plan), content = frozen(JSON.parse(plan.frozenContentJson))
+    let viewerKey: string
+    if (event.type === 'ttrpg.open.entity.model-proposed') {
+      const intent = p.record(payload.intent, ['origin', 'viewerKey', 'requestKey', 'candidateHash', 'decision'], 'model entity adoption intent')
+      if (plan.version !== 2 || intent.origin !== 'model-entity-candidate' || intent.decision !== 'reviewed-this-model-entity-candidate'
+        || intent.requestKey !== plan.modelOrigin.call.requestKey || intent.candidateHash !== plan.modelOrigin.candidateHash) p.fail('模型实体计划必须保留原模型来源与精确审阅决定')
+      viewerKey = p.key(intent.viewerKey, 'entity reviewer')
+    } else {
+      const intent = p.record(payload.intent, ['origin', 'viewerKey', 'oracleSourceRef', 'proposals'], 'human entity proposal intent')
+      p.literal(intent.origin, 'human-oracle-proposal', 'entity proposal author')
+      if (plan.version !== 1 || stable(p.list(intent.proposals, 'entity original proposals', parseTtrpgOpenEntityProposalV1, 3, 1)) !== stable(plan.items.map(row => row.proposal))
+        || stable(intent.oracleSourceRef) !== stable(plan.oracleSourceRef)) p.fail('人工实体计划不是原明确提出的 V1 候选')
+      viewerKey = p.key(intent.viewerKey, 'entity author')
+    }
+    assertTtrpgOpenEntityPlanEnvelopeV1(plan, { sequence: event.sequence, sessionKey: sourceRef.sessionKey, viewerKey, commandId: event.commandId ?? '' })
     const current = parseTtrpgRuntimeStateV2(state.ttrpg)!, previous = current.openRun?.entityOperations ?? []
     const basis = assertTtrpgOpenEntityPlanAdmissionV1({ state, content, plan, previous })
     if (event.actorKey !== (basis.host.actorKey ?? 'gm') || event.targetKey !== plan.operationKey || previous.some(row => row.plan.operationKey === plan.operationKey)) p.fail('实体候选事件身份不一致或已存在')

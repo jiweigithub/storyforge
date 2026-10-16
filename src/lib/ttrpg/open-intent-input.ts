@@ -1,7 +1,7 @@
 import { loadTtrpgOpenSituationKernelInputV1 } from './open-generated-situation-context'
 import { recordAgentRunArtifactV1 } from '../memory/artifact-store'
 import { assertTtrpgOpenEpochPurposeV1 } from './open-coordination'
-import { assertTtrpgOpenEntityWindowEventV1 } from './open-entity-journal'
+import { assertTtrpgOpenEntityWindowEventV1 } from './open-entity-window'
 import { ttrpgOpenDeliveredBriefAttributionsV1 } from './open-brief-output'
 import { recordTtrpgContextAssemblyV1 } from './open-context-assembly'
 import { selectTtrpgOpenContextResourcesV1 } from './open-context-selection'
