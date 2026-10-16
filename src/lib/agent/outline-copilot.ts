@@ -457,6 +457,7 @@ export async function prepareOutlineCopilot(input: {
   ).config
   const contextProfile = input.contextProfile ?? 'full'
   const assembled = await prepareOutlineGatewayAssemblyV1({
+    skillId: skill.id,
     projectId: input.projectId,
     scope,
     worldGroupId,
