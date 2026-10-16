@@ -3,6 +3,7 @@ import { parseTtrpgSessionFactV1, type TtrpgSessionFactV1 } from './session-fact
 import * as p from './open-contract-parse'
 import type { TtrpgOpenApprovalActorV1, TtrpgOpenCompanionPolicyV1 } from './open-contract'
 import { companionPolicy } from './open-content-templates'
+import type { TtrpgOpenRuntimeEntityReferenceV1 } from './open-runtime-entity-references'
 
 /** Static relationship only. Session Zero must still verify human control, claims and consent. */
 export function validateTtrpgOpenApprovalBindingsV1(
@@ -46,11 +47,19 @@ export function validateOpenContentReferences(c: TtrpgCampaignContentV2, rule: R
  * Every new definition must separately pass assertTtrpgOpenSituationUsesCurrentFactsV1. */
 export function validateTtrpgOpenSessionSituationReferencesV1(input: {
   campaign: TtrpgCampaignContentV2; rule: RulePackV2; sessionTemplates: readonly TtrpgSituationTemplateV1[]; sessionFacts: readonly TtrpgSessionFactV1[];
+  runtimeEntityReferences?: readonly TtrpgOpenRuntimeEntityReferenceV1[];
+  /** Validate this new definition with only its current source identities, while keeping the
+   * complete accepted-template directory for explicit next-template/evidence references. */
+  onlySessionTemplateKey?: string;
 }): void {
   const facts = input.sessionFacts.map(parseTtrpgSessionFactV1)
   p.unique(facts.map(f => f.factKey), 'session situation facts')
   if (facts.some(f => input.campaign.frozenWorldPredicateIndex.entries.some(original => original.factKey === f.factKey))) p.fail('session situation: 不得遮蔽冻结事实身份')
-  validateReferences({ ...input.campaign, situationTemplates: [...input.campaign.situationTemplates, ...input.sessionTemplates] }, input.rule, facts)
+  // The original author content must remain valid without session instances. The additional map
+  // only resolves session-owned definitions and never expands the frozen Campaign's bindings.
+  if (input.runtimeEntityReferences?.length) validateReferences(input.campaign, input.rule)
+  if (input.onlySessionTemplateKey && !input.sessionTemplates.some(row => row.templateKey === input.onlySessionTemplateKey)) p.fail('局势引用检查缺少实际新候选')
+  validateReferences({ ...input.campaign, situationTemplates: [...input.campaign.situationTemplates, ...input.sessionTemplates] }, input.rule, facts, input.runtimeEntityReferences, input.onlySessionTemplateKey)
 }
 
 /** Historical reference resolution never lets a newly proposed definition revive a retired fact. */
@@ -74,15 +83,23 @@ export function assertTtrpgOpenSituationUsesCurrentFactsV1(t: TtrpgSituationTemp
     ...t.evidence.flatMap(e => e.discoveryPolicy.preconditions)].forEach(check)
 }
 
-function validateReferences(c: TtrpgCampaignContentV2, rule: RulePackV2, sessionFacts: readonly TtrpgSessionFactV1[] = []): void {
+function validateReferences(c: TtrpgCampaignContentV2, rule: RulePackV2, sessionFacts: readonly TtrpgSessionFactV1[] = [], runtimeReferences: readonly TtrpgOpenRuntimeEntityReferenceV1[] = [], onlySessionTemplateKey?: string): void {
   const index = <T>(rows: T[], get: (r: T) => string, label: string) => {
     p.unique(rows.map(get), label)
     return new Map(rows.map(row => [get(row), row]))
   }
   const actors = index(c.characterTemplates, a => a.characterKey, 'characters')
   const bindings = index(c.entityBindings, a => a.bindingKey, 'entityBindings')
-  const locations = c.entityBindings.filter(b => b.kind === 'location').map(b => b.bindingKey)
-  const items = c.entityBindings.filter(b => b.kind === 'item').map(b => b.bindingKey)
+  p.unique(runtimeReferences.map(row => row.entityRef), 'session runtime reference identities')
+  if (runtimeReferences.some(row => bindings.has(row.entityRef) || actors.has(row.entityRef))) p.fail('运行实例不得遮蔽冻结实体身份')
+  const runtimeActors = new Map(runtimeReferences.filter(row => row.kind === 'actor').map(row => {
+    const definition = actors.get(row.templateKey)
+    if (!definition || definition.role !== 'npc') p.fail('运行角色引用缺少原冻结 NPC 定义')
+    return [row.entityRef, definition] as const
+  }))
+  const actorKeys = new Set([...actors.keys(), ...runtimeActors.keys()])
+  const locations = [...c.entityBindings.filter(b => b.kind === 'location').map(b => b.bindingKey), ...runtimeReferences.filter(row => row.kind === 'location').map(row => row.entityRef)]
+  const items = [...c.entityBindings.filter(b => b.kind === 'item').map(b => b.bindingKey), ...runtimeReferences.filter(row => row.kind === 'item').map(row => row.entityRef)]
   const templates = index(c.dynamicEntityTemplates, a => a.templateKey, 'dynamicEntityTemplates')
   const plans = index(c.effectPlanTemplates, a => a.planKey, 'effectPlanTemplates')
   const situations = index(c.situationTemplates, a => a.templateKey, 'situationTemplates')
@@ -106,7 +123,7 @@ function validateReferences(c: TtrpgCampaignContentV2, rule: RulePackV2, session
   const actionKeys = rule.actions.map(a => a.key), checkKeys = rule.genericChecks.map(a => a.checkKey)
   const resources = new Set(c.frozenWorldPredicateIndex.entries.flatMap(f => f.sourceResourceRefs))
   for (const b of c.entityBindings) if (b.sourceResourceRef !== null) resources.add(b.sourceResourceRef)
-  const entityRefs = new Set([...bindings.keys(), ...actors.keys()])
+  const entityRefs = new Set([...bindings.keys(), ...actors.keys(), ...runtimeReferences.map(row => row.entityRef)])
   const allRefs = new Set([c.campaignKey, ...entityRefs, ...resources, ...facts.keys(), ...sessionKeys, ...fronts.keys(), ...clocks.keys(), ...situations.keys(), ...secrets.keys(), ...evidence.keys()])
   const sourceRefs = new Set([...allRefs, rule.ruleSystemId, ...rule.compendium.map(r => r.key)])
   const abilityKeys = new Set(c.characterTemplates.flatMap(a => a.characterSheet.rules.abilityKeys))
@@ -155,17 +172,17 @@ function validateReferences(c: TtrpgCampaignContentV2, rule: RulePackV2, session
         } else if (policy?.authority.session === null) p.fail(`${label}: 未授权 session 谓词`)
         return
       }
-      case 'evidence-known-by': p.known(t.clueRef, evidence.keys(), label); p.known(t.actorKey, actors.keys(), label); return
+      case 'evidence-known-by': p.known(t.clueRef, evidence.keys(), label); p.known(t.actorKey, actorKeys, label); return
       case 'clock-at-least': {
         const clock = clocks.get(t.clockKey)
         if (!clock || t.value > clock.maximum) p.fail(`${label}: 时钟引用/阈值不可满足`)
         return
       }
       case 'story-fact': p.known(t.factKey, storyKeys, label); return
-      case 'actor-at': p.known(t.actorKey, actors.keys(), label); p.known(t.locationRef, locations, label); return
-      case 'item-held': p.known(t.actorKey, actors.keys(), label); p.known(t.itemKey, items, label); return
-      case 'ability-available': p.known(t.actorKey, actors.keys(), label); p.known(t.abilityKey, actors.get(t.actorKey)?.characterSheet.rules.abilityKeys ?? [], label); return
-      case 'resource-at-least': p.known(t.actorKey, actors.keys(), label); p.known(t.resourceKey, rule.resources.map(r => r.key), label); return
+      case 'actor-at': p.known(t.actorKey, actorKeys, label); p.known(t.locationRef, locations, label); return
+      case 'item-held': p.known(t.actorKey, actorKeys, label); p.known(t.itemKey, items, label); return
+      case 'ability-available': p.known(t.actorKey, actorKeys, label); p.known(t.abilityKey, (actors.get(t.actorKey) ?? runtimeActors.get(t.actorKey))?.characterSheet.rules.abilityKeys ?? [], label); return
+      case 'resource-at-least': p.known(t.actorKey, actorKeys, label); p.known(t.resourceKey, rule.resources.map(r => r.key), label); return
       case 'social-balance-at-least': p.known(t.balanceKey, socialKeys, label); return
       case 'situation-active': p.known(t.templateKey, situations.keys(), label); return
       case 'front-stage-at-least': p.known(t.frontKey, fronts.keys(), label); p.known(t.stageKey, fronts.get(t.frontKey)?.escalationStages.map(s => s.stageKey) ?? [], label); return
@@ -326,9 +343,10 @@ function validateReferences(c: TtrpgCampaignContentV2, rule: RulePackV2, session
     front.defeatPredicates.forEach(t => predicate(t, front.frontKey))
   }
   for (const s of c.situationTemplates) {
+    if (onlySessionTemplateKey && s.templateKey !== onlySessionTemplateKey) continue
     sources(s.sourceRefs, s.templateKey)
     const driver = s.driverBinding
-    if (driver.kind === 'npc' && actors.get(driver.characterKey)?.role !== 'npc') p.fail(`${s.templateKey}: driver 必须是 NPC`)
+    if (driver.kind === 'npc' && (actors.get(driver.characterKey) ?? runtimeActors.get(driver.characterKey))?.role !== 'npc') p.fail(`${s.templateKey}: driver 必须是 NPC`)
     if (driver.kind === 'front') p.known(driver.frontKey, fronts.keys(), s.templateKey)
     if (driver.kind === 'world-event' || driver.kind === 'player-commitment') p.known(driver.factRef, referenceFacts.keys(), s.templateKey)
     s.driverBeliefs.forEach(b => p.known(b.factRef, allRefs, s.templateKey))

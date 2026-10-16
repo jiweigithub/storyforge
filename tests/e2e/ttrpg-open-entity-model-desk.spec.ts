@@ -91,7 +91,7 @@ for (const audience of ['party', 'private'] as const) test(`${audience}: actual 
   await expect(create).toBeEnabled({ timeout: 30000 }); await create.click()
   await expect(card.getByRole('region', { name: '已创建的本局对象' })).toContainText(f.proposal.name, { timeout: 30000 })
   await card.getByRole('button', { name: '结束本次实体咨询', exact: true }).click()
-  expect(await inspect(page, f.sessionId)).toMatchObject({ entityCount: 1, pending: 0, calls: 1, epoch: null, runStates: ['completed'], worldTurn: 0 })
+  await expect.poll(() => inspect(page, f.sessionId), { timeout: 30000 }).toMatchObject({ entityCount: 1, pending: 0, calls: 1, epoch: null, runStates: ['completed'], worldTurn: 0 })
   expect(sends).toBe(1)
   await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)

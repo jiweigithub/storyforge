@@ -3,6 +3,7 @@
 import * as p from './open-contract-parse'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import { hashCanonicalValue } from '../agent/run/hash'
+import { parseTtrpgOpenSituationRuntimeReferencePolicyV1 } from './open-runtime-entity-references'
 
 export const TTRPG_OPEN_PUBLIC_SITUATION_REQUEST_POLICY_V1 = Object.freeze({
   purpose: 'public-situation-generation' as const,
@@ -14,7 +15,8 @@ export const TTRPG_OPEN_PUBLIC_SITUATION_REQUEST_POLICY_V1 = Object.freeze({
 
 export function parseTtrpgOpenPublicSituationRequestBasisV1(value: unknown) {
   const r = p.record(value, ['schema', 'version', 'purpose', 'scope', 'sessionKey', 'runtimeSourceHash', 'authorizationRevision',
-    'requester', 'authorizationEpochKey', 'requestKey', 'readEvidence', 'recipientActorKeys', 'sourceVisibilityHash', 'sharedRequest', 'delegation'], 'public situation request basis')
+    'requester', 'authorizationEpochKey', 'requestKey', 'readEvidence', 'recipientActorKeys', 'sourceVisibilityHash', 'sharedRequest', 'delegation',
+    ...(value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'runtimeEntityReferencePolicy') ? ['runtimeEntityReferencePolicy'] : [])], 'public situation request basis')
   const scope = p.record(r.scope, ['projectId', 'worldId', 'workId', 'sessionId'], 'public request scope')
   const requester = p.record(r.requester, ['viewerKey', 'seatKey', 'seatRevision'], 'public requester')
   const read = p.record(r.readEvidence, ['sequence', 'stateHash'], 'public request read')
@@ -24,6 +26,8 @@ export function parseTtrpgOpenPublicSituationRequestBasisV1(value: unknown) {
   if (recipientActorKeys.join('\n') !== [...recipientActorKeys].sort().join('\n')) p.fail('public recipients: 必须按实际角色排序')
   // Preserve the actual wire input, including whitespace; normalization must not bless different bytes.
   if (typeof shared.text !== 'string' || !shared.text.trim() || shared.text.length > 20_000) p.fail('shared request: 输入为空或过长')
+  const runtimeEntityReferencePolicy = Object.prototype.hasOwnProperty.call(r, 'runtimeEntityReferencePolicy') ? parseTtrpgOpenSituationRuntimeReferencePolicyV1(r.runtimeEntityReferencePolicy) : undefined
+  if (runtimeEntityReferencePolicy && (runtimeEntityReferencePolicy.consumer !== 'common-party' || runtimeEntityReferencePolicy.references.runtimeSourceHash !== r.runtimeSourceHash)) p.fail('共同局势实例策略不属于本次共同用途或冻结来源')
   return { schema: p.literal(r.schema, 'storyforge.ttrpg-open-public-situation-request-basis', 'public request schema'),
     version: p.literal(r.version, 1, 'public request version'),
     purpose: p.literal(r.purpose, TTRPG_OPEN_PUBLIC_SITUATION_REQUEST_POLICY_V1.purpose, 'public request purpose'),
@@ -41,7 +45,8 @@ export function parseTtrpgOpenPublicSituationRequestBasisV1(value: unknown) {
     delegation: { decision: p.oneOf(delegation.decision, TTRPG_OPEN_PUBLIC_SITUATION_REQUEST_POLICY_V1.delegationDecisions, 'public delegation decision'),
       maximumCandidates: p.literal(delegation.maximumCandidates, TTRPG_OPEN_PUBLIC_SITUATION_REQUEST_POLICY_V1.maximumCandidates, 'public candidate limit'),
       maximumCalls: p.literal(delegation.maximumCalls, TTRPG_OPEN_PUBLIC_SITUATION_REQUEST_POLICY_V1.maximumCalls, 'public call limit'),
-      maximumAiActions: p.literal(delegation.maximumAiActions, TTRPG_OPEN_PUBLIC_SITUATION_REQUEST_POLICY_V1.maximumAiActions, 'public action limit') } }
+      maximumAiActions: p.literal(delegation.maximumAiActions, TTRPG_OPEN_PUBLIC_SITUATION_REQUEST_POLICY_V1.maximumAiActions, 'public action limit') },
+    ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}) }
 }
 export type TtrpgOpenPublicSituationRequestBasisV1 = ReturnType<typeof parseTtrpgOpenPublicSituationRequestBasisV1>
 export async function hashTtrpgOpenPublicSituationRequestBasisV1(value: unknown): Promise<string> {

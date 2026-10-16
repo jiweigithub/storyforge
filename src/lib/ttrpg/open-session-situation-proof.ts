@@ -3,8 +3,10 @@ import { parseTtrpgOpenSituationArtifactRefsV1, type TtrpgOpenSessionSituationRe
 import { canonicalStringify, hashCanonicalValue } from '../agent/run/hash'
 import { hashTtrpgOpenPublicSituationRequestBasisV1 } from './open-public-situation-request'
 import { ttrpgOpenPublicSituationAuthorizationInputV1, assertTtrpgOpenPublicSituationOriginalScopeV1 } from './open-public-situation-authorization-contract'
+import { verifyTtrpgOpenRuntimeEntityReferencesHashV1 } from './open-runtime-entity-references'
 export async function verifyTtrpgOpenSessionSituationHashesV1(receipts: readonly TtrpgOpenSessionSituationReceipt[]) {
   for (const receipt of receipts) {
+    if (receipt.runtimeEntityReferences) await verifyTtrpgOpenRuntimeEntityReferencesHashV1(receipt.runtimeEntityReferences)
     const { receiptHash, ...body } = receipt
     if (await hashCanonicalValue(body) !== receiptHash || await hashCanonicalValue(receipt.template) !== receipt.templateHash
       || await hashCanonicalValue({ schema: 'storyforge.ttrpg-open-situation-proposal', version: 1,

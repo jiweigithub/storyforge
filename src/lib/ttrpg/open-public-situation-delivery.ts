@@ -12,7 +12,7 @@ import * as p from './open-contract-parse'
 
 export interface TtrpgOpenPublicSituationReferenceV1 {
   kind: string; ref: string; projection: 'common-frame' | 'selected-identity' | 'release-observation' | 'confirmed-session-fact'
-    | 'observed-evidence' | 'rule-definition' | 'visible-clock' | 'frozen-extraction-provenance';
+    | 'observed-evidence' | 'rule-definition' | 'visible-clock' | 'frozen-extraction-provenance' | 'committed-common-instance-identity';
   resourceKey: string; contentHash: string;
 }
 type Context = Awaited<ReturnType<typeof loadTtrpgOpenPublicSituationContextV1>>
@@ -52,6 +52,8 @@ export async function reviewTtrpgOpenDeliveredPublicSituationV1(input: {
   const scope = body('public-situation-predicates') as TtrpgOpenPublicPredicateScopeV1
   const rules = body('public-situation-rules') as Context['rules']
   const identities = body('public-situation-identities') as { personalization: Context['personalization']; npcDriverKeys: string[] }
+  const instanceResource = snapshot.resources.find(row => row.suffix === 'public-situation-instances')
+  const instances = instanceResource ? (p.object(instanceResource.value, 'common instances').identities as Array<{ entityRef: string; kind: string }>) : []
   const assignment = body('public-situation-assignment') as { assignedTemplateKey: string; requestKey: string; basisHash: string }
   if (assignment.assignedTemplateKey !== snapshot.basis.assignedTemplateKey || assignment.requestKey !== snapshot.requestKey
     || assignment.basisHash !== snapshot.authorizationBasisHash
@@ -78,8 +80,11 @@ export async function reviewTtrpgOpenDeliveredPublicSituationV1(input: {
     need('public-situation-frame', 'clock', key, 'visible-clock')
   }
   const actor = (key: string) => {
-    if (!frame.actors.some(row => row.actorKey === key) && !frame.recipientActorKeys.includes(key)) reject()
-    need('public-situation-frame', 'visible-actor-or-recipient', key, 'common-frame')
+    if (instances.some(row => row.entityRef === key && row.kind === 'actor')) need('public-situation-instances', 'visible-instance-actor', key, 'committed-common-instance-identity')
+    else {
+      if (!frame.actors.some(row => row.actorKey === key) && !frame.recipientActorKeys.includes(key)) reject()
+      need('public-situation-frame', 'visible-actor-or-recipient', key, 'common-frame')
+    }
   }
   const recipient = (key: string) => {
     if (!frame.recipientActorKeys.includes(key)) reject()
@@ -94,6 +99,7 @@ export async function reviewTtrpgOpenDeliveredPublicSituationV1(input: {
     need(found.suffix, 'extracted-world-provenance', key, 'frozen-extraction-provenance')
   }
   const ref = (key: string) => {
+    if (instances.some(row => row.entityRef === key)) { need('public-situation-instances', 'visible-instance-identity', key, 'committed-common-instance-identity'); return }
     if (entries.some(row => (row.entry.kind === 'release-observation' && row.entry.value.factRef === key)
       || (row.entry.kind === 'confirmed-session-fact' && row.entry.value.factKey === key))) { fact(key); return }
     if (frame.actors.some(row => row.actorKey === key) || frame.recipientActorKeys.includes(key)) { actor(key); return }

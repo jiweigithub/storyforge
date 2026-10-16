@@ -41,6 +41,7 @@ export interface TtrpgSituationInstanceV1 {
 }
 
 export interface TtrpgSituationTemplateContextV1 {
+  runtimeEntityReferences?: readonly { entityRef: string; kind: 'actor' | 'location' | 'item' }[]
   campaignKey?: string
   characterTemplates?: readonly { characterKey: string; role: 'player' | 'npc' }[]
   clocks?: readonly TtrpgOpenCampaignClockV1[]
@@ -215,6 +216,11 @@ function normalizeContext(
     : undefined
 
   return {
+    ...(Array.isArray(source.runtimeEntityReferences) ? { runtimeEntityReferences: source.runtimeEntityReferences.map(value => {
+      const row = record(value), kind = row.kind
+      if (kind !== 'actor' && kind !== 'location' && kind !== 'item') return fail('runtime entity reference kind不在闭集')
+      return { entityRef: text(row.entityRef, 'runtime entity reference'), kind }
+    }) } : {}),
     campaignKey: typeof source.campaignKey === 'string' ? source.campaignKey : undefined,
     characterTemplates: Array.isArray(characters) ? characters as TtrpgSituationTemplateContextV1['characterTemplates'] : undefined,
     clocks: parsedClocks,
@@ -360,8 +366,8 @@ function assertTemplateCrossReferences(
     }
   }
   if (template.driverBinding.kind === 'npc' && contextHas(context, 'characterTemplates')) {
-    const character = characters.get(template.driverBinding.characterKey)
-    if (!character || character.role === 'player') fail('S6:npc driver必须引用NPC')
+    const driverKey = template.driverBinding.characterKey, character = characters.get(driverKey)
+    if (character ? character.role === 'player' : !context.runtimeEntityReferences?.some(row => row.kind === 'actor' && row.entityRef === driverKey)) fail('S6:npc driver必须引用NPC')
   }
   if (template.driverBinding.kind === 'front' && contextHas(context, 'fronts')) {
     assertKnown(template.driverBinding.frontKey, frontKeys(context), 'S6:front driver')
@@ -852,7 +858,8 @@ export function assertTtrpgSituationInstanceGatesV1(
     const context = parts.templateContext
     const driver = template.driverBinding
     if (driver.kind === 'npc' && contextHas(context, 'characterTemplates')) {
-      assertKnown(driver.characterKey, new Set(characterRows(context).map(character => character.characterKey)), 'I3.driverRef')
+      assertKnown(driver.characterKey, new Set([...characterRows(context).map(character => character.characterKey),
+        ...(context.runtimeEntityReferences?.filter(row => row.kind === 'actor').map(row => row.entityRef) ?? [])]), 'I3.driverRef')
     }
     if (driver.kind === 'front' && contextHas(context, 'fronts')) assertKnown(driver.frontKey, frontKeys(context), 'I3.driverRef')
     if ((driver.kind === 'world-event' || driver.kind === 'player-commitment')

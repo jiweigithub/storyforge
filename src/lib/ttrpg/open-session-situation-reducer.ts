@@ -3,7 +3,7 @@ import type { ProductRuntimeEvent, ProductRuntimeState } from '../types'
 import type { ProductRuntimeJsonObjectV1 } from '../product/runtime-values'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { parseTtrpgOpenSessionSituationReceiptV2 } from './open-session-situation-contract'
-import { ttrpgOpenSituationCatalogV1, ttrpgOpenSessionSituationActorAccessV1 } from './open-session-situation-catalog'
+import { ttrpgOpenSituationCatalogV1, ttrpgOpenSessionSituationActorAccessV1, ttrpgOpenSituationRuntimeReferenceCatalogV1 } from './open-session-situation-catalog'
 import { parseTtrpgOpenSituationFrozenContentV1, admitTtrpgOpenSituationV1, ttrpgOpenSituationProjectionActorV1 } from './open-situation-runtime'
 import type { TtrpgRuntimeContentV2 } from './content-version'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
@@ -55,10 +55,12 @@ export function applyTtrpgOpenSessionSituationEventV1(state: ProductRuntimeState
       || grant.basis.delegation.decision !== 'adopt-this-one-candidate'
       || stable(grant.basis.recipientActorKeys) !== stable([...auth.selectedActorKeys].sort())) p.fail('AI 主持采用没有当前原请求的一次明确委托')
   }
+  if (stable(receipt.runtimeEntityReferences ?? null) !== stable(epoch.runtimeEntityReferencePolicy?.references ?? null)) p.fail('局势实例引用未冻结在本次原请求策略中')
   const receipts = [...(run.situationReceipts ?? []), receipt], catalog = ttrpgOpenSituationCatalogV1(content.campaign, { situationReceipts: receipts })
   assertTtrpgOpenSituationUsesCurrentFactsV1(receipt.template, ttrpgOpenSessionFactsV1(run.factLedger))
   validateTtrpgOpenSessionSituationReferencesV1({ campaign: content.campaign, rule: content.rulePack.content,
-    sessionTemplates: catalog.sessionTemplates, sessionFacts: ttrpgOpenSessionFactsV1(run.factLedger) })
+    sessionTemplates: catalog.sessionTemplates, sessionFacts: ttrpgOpenSessionFactsV1(run.factLedger),
+    runtimeEntityReferences: ttrpgOpenSituationRuntimeReferenceCatalogV1(receipts) })
   run.situationReceipts = receipts
   state.ttrpg = parseTtrpgRuntimeStateV2(runtime)!
   return true

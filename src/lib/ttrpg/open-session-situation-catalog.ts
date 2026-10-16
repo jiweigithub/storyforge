@@ -3,6 +3,18 @@ import type { TtrpgCampaignContentV2, TtrpgSituationTemplateV1 } from './open-co
 import type { TtrpgOpenSessionSituationReceipt } from './open-session-situation-contract'
 import { ttrpgOpenSessionFactsV1, type TtrpgOpenFactLedgerV1 } from './open-fact-ledger'
 import * as p from './open-contract-parse'
+import type { TtrpgOpenRuntimeEntityReferenceV1 } from './open-runtime-entity-references'
+
+/** Historical identity resolution only. This union is never delivered as the current consumer's model directory. */
+export function ttrpgOpenSituationRuntimeReferenceCatalogV1(receipts: readonly TtrpgOpenSessionSituationReceipt[]) {
+  const identities = new Map<string, TtrpgOpenRuntimeEntityReferenceV1>()
+  for (const receipt of receipts) for (const row of receipt.runtimeEntityReferences?.references ?? []) {
+    const prior = identities.get(row.entityRef)
+    if (prior && JSON.stringify(prior) !== JSON.stringify(row)) p.fail('不同局势不得重定义同一原实例身份或接收者')
+    identities.set(row.entityRef, row)
+  }
+  return [...identities.values()]
+}
 
 export interface TtrpgOpenSessionSituationRefV1 { templateKey: string; receiptHash: string }
 /** A generated party/public label cannot widen the original once request to future seats. */
@@ -46,8 +58,10 @@ export function ttrpgOpenSituationCatalogV1(campaign: TtrpgCampaignContentV2, ru
   p.unique(templates.flatMap(t => t.evidence.map(e => e.clueRef)), 'frozen/session evidence identity')
   const byKey = new Map(templates.map(t => [t.templateKey, t]))
   const evidence = new Map(templates.flatMap(template => template.evidence.map(item => [item.clueRef, { template, evidence: item }] as const)))
+  const runtimeEntityReferences = ttrpgOpenSituationRuntimeReferenceCatalogV1(run?.situationReceipts ?? [])
   return { templates, sessionTemplates, byKey, evidence,
     /** Ephemeral validation view only; keep campaign/source hashes bound to the original campaign. */
     validationView: { ...campaign, situationTemplates: templates,
+      ...(runtimeEntityReferences.length ? { runtimeEntityReferences } : {}),
       ...(run?.factLedger ? { sessionFactKeys: ttrpgOpenSessionFactsV1(run.factLedger).map(f => f.factKey) } : {}) } }
 }

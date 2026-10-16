@@ -111,6 +111,8 @@ import { createTtrpgOpenFactBasisV1, verifyTtrpgOpenFactLedgerV1, parseTtrpgOpen
   parseTtrpgOpenFactEntryV1, parseTtrpgOpenFactRetirementV1, ttrpgOpenFactSourceEventRefV1, assertTtrpgOpenFactEntryGatesV1,
   ttrpgOpenSessionFactsV1, ttrpgOpenFactIdentityV1, assertTtrpgOpenModelFactApproverV1, type TtrpgOpenFactModelCandidateV1, type TtrpgOpenOracleFactProposalV1 } from './open-fact-ledger';
 import { createTtrpgOpenFactRuntimeReferencesV1 } from './open-fact-runtime-references';
+import { parseTtrpgOpenSituationRuntimeReferencePolicyV1, assertTtrpgOpenRuntimeEntityReferencesMatchV1,
+  assertTtrpgOpenSituationRuntimeReferenceJournalV1, type TtrpgOpenSituationRuntimeReferencePolicyV1 } from './open-runtime-entity-references';
 import { parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coordination';
 import { settleTtrpgOpenKnowledgeV1 } from './open-knowledge-settlement';
 import { hashTtrpgOpenEvidenceFieldsV1 } from './open-knowledge';
@@ -977,12 +979,16 @@ export async function retireTtrpgOpenSessionFactV1(input: FormalTtrpgCommandEnve
 
 export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & {
   viewerKey: string; triggerKind: "submit-action" | "continue-host" | "request-brief" | "request-situation"; rawInput: string; manualAction?: TtrpgOpenManualActionAuthorizationV1;
+  runtimeEntityReferencePolicy?: TtrpgOpenSituationRuntimeReferencePolicyV1;
 }): Promise<ProductRuntimeEvent> {
   const viewerKey = openKey(input.viewerKey, "viewerKey");
   const rawInput = openText(input.rawInput, "rawInput", 10_000);
+  const runtimeEntityReferencePolicy = input.runtimeEntityReferencePolicy === undefined ? undefined : parseTtrpgOpenSituationRuntimeReferencePolicyV1(input.runtimeEntityReferencePolicy);
+  if (runtimeEntityReferencePolicy && (input.triggerKind !== 'request-situation' || runtimeEntityReferencePolicy.consumer !== 'private-gm')) throw new Error('[ttrpg-situation] 实例引用必须使用原用途的独立局势窗口。');
   if (input.triggerKind !== "submit-action" && input.triggerKind !== "continue-host" && input.triggerKind !== "request-brief" && input.triggerKind !== "request-situation") throw new Error("[ttrpg] epoch 触发种类无效。");
   return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.epoch.started",
-    intent: { viewerKey, rawInput, triggerKind: input.triggerKind, ...(input.manualAction ? { manualAction: input.manualAction } : {}) },
+    intent: { viewerKey, rawInput, triggerKind: input.triggerKind, ...(input.manualAction ? { manualAction: input.manualAction } : {}),
+      ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}) },
     build: async ({ state, session, sequence, ttrpgContent, participants }) => {
       const content = requireTtrpgOpenContent(ttrpgContent);
       const runtime = parseTtrpgRuntimeStateV2(state.ttrpg);
@@ -1001,9 +1007,19 @@ export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
         if (!content.campaign.runtimePolicy.enabled) throw new Error('[ttrpg-situation] 冻结作品未允许模型生成局势');
         assertTtrpgOpenSituationEpochAuthorityV1(runtime, viewerKey);
       }
+      if (runtimeEntityReferencePolicy) {
+        await (await import('./open-entity-proof')).verifyTtrpgOpenEntityStateV1(state, content);
+        assertTtrpgOpenSituationRuntimeReferenceJournalV1({ policy: runtimeEntityReferencePolicy, operations: runtime.openRun.entityOperations ?? [],
+          recipientActorKeys: runtime.authorization.selectedActorKeys, rulePackContentHash: runtime.product.rulePackContentHash,
+          consumerRef: { sessionKey: runtime.sessionKey, sequence } });
+        await assertTtrpgOpenRuntimeEntityReferencesMatchV1({ content, operations: runtime.openRun.entityOperations ?? [], runtimeSourceHash: session.runtimeSourceHash,
+          snapshot: runtimeEntityReferencePolicy.references, mode: 'current' });
+      }
       const inputRevision = await hashProductProductionValueV2({ sessionKey: runtime.sessionKey,
-        triggerKind: input.triggerKind, rawInput, viewerKey, authorizationHash, ...(input.manualAction ? { manualAction: input.manualAction } : {}) });
+        triggerKind: input.triggerKind, rawInput, viewerKey, authorizationHash, ...(input.manualAction ? { manualAction: input.manualAction } : {}),
+        ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}) });
       const epoch = parseTtrpgOpenEpochV1({
+        ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}),
         ...(input.manualAction ? { manualAction: input.manualAction } : {}),
         epochKey: await ttrpgOpenScopedKeyV1(runtime.sessionKey, "epoch", [String(sequence), inputRevision]),
         startedRef: { sessionKey: runtime.sessionKey, sequence }, closedRef: null, status: "active",
@@ -1034,7 +1050,8 @@ export async function authorizeTtrpgOpenPublicSituationV1(input: FormalTtrpgComm
 }): Promise<ProductRuntimeEvent> {
   const viewerKey = openKey(input.viewerKey, 'public request viewer'), grant = parseTtrpgOpenPublicSituationAuthorizationV1(input.authorization)
   return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.open.epoch.started',
-    intent: { viewerKey, triggerKind: TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1, rawInput: grant.basis.sharedRequest.text, publicSituation: grant },
+    intent: { viewerKey, triggerKind: TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1, rawInput: grant.basis.sharedRequest.text, publicSituation: grant,
+      ...(grant.basis.runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy: grant.basis.runtimeEntityReferencePolicy } : {}) },
     build: async ({ state, session, sequence, ttrpgContent, participants }) => {
       const content = requireTtrpgOpenContent(ttrpgContent), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
       if (!runtime?.authorization || !runtime.openRun || !content.campaign.runtimePolicy.enabled
@@ -1046,7 +1063,8 @@ export async function authorizeTtrpgOpenPublicSituationV1(input: FormalTtrpgComm
       const proof = await verifyTtrpgOpenPublicSituationAuthorizationV1({ scope, sessionId: input.sessionId, viewerKey, authorization: grant, phase: 'authorize' })
       if (grant.authorizationCommandId !== input.commandId || grant.basis.readEvidence.sequence !== input.baseSequence
         || grant.basis.readEvidence.stateHash !== input.baseStateHash || sequence !== input.baseSequence + 1) throw new Error('[ttrpg-public-situation] 不能改变原请求的授权命令或切点')
-      const epoch = parseTtrpgOpenEpochV1({ publicSituation: grant, epochKey: grant.basis.authorizationEpochKey,
+      const epoch = parseTtrpgOpenEpochV1({ publicSituation: grant,
+        ...(grant.basis.runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy: grant.basis.runtimeEntityReferencePolicy } : {}), epochKey: grant.basis.authorizationEpochKey,
         startedRef: { sessionKey: runtime.sessionKey, sequence }, closedRef: null, status: 'active',
         triggeredBySeatKey: seat.seatKey, viewerKey, triggerKind: TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1,
         inputRevision: proof.inputRevision, sessionZeroRevision: runtime.authorization.revision,

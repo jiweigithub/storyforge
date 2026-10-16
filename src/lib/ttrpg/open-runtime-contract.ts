@@ -867,6 +867,7 @@ export function parseTtrpgRuntimeStateV2(
       || receipt.authorizationRef.sequence !== epoch.startedRef.sequence || receipt.disclosure.authorizationHash !== epoch.authorizationHash
       || receipt.disclosure.viewerKey !== epoch.viewerKey || receipt.disclosure.seatKey !== epoch.triggeredBySeatKey) fail('局势采用没有原生成调用、明确披露及实际授权来源');
     if (receipt.version === 2 && stableProductRuntimeJsonV1(epoch.publicSituation) !== stableProductRuntimeJsonV1(receipt.disclosure.authorization)) fail('AI 主持采用不属于原本次共同请求委托');
+    if (stableProductRuntimeJsonV1(receipt.runtimeEntityReferences ?? null) !== stableProductRuntimeJsonV1(epoch.runtimeEntityReferencePolicy?.references ?? null)) fail('已采用局势的实例引用不属于原请求冻结策略');
   }
   for (const operation of openRun?.operations ?? []) {
     const snapshot = operation.plan.discoveryPlan?.sessionSituation;

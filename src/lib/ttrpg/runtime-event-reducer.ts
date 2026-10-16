@@ -1,4 +1,5 @@
 import { applyTtrpgOpenEntityEventV1 } from './open-entity-reducer'
+import { assertTtrpgOpenSituationRuntimeReferenceJournalV1 } from './open-runtime-entity-references'
 import { applyTtrpgOpenSessionSituationEventV1 } from './open-session-situation-reducer'
 import { TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1, assertTtrpgOpenPublicSituationOriginalScopeV1 } from './open-public-situation-authorization-contract'
 import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1, assertTtrpgOpenSituationEpochAuthorityV1, assertTtrpgOpenSituationWindowEventV1 } from './open-coordination'
@@ -169,6 +170,12 @@ export function applyTtrpgRuntimeEventV1(
       }
       if (epoch.triggerKind === 'request-brief') assertTtrpgOpenBriefEpochAuthorityV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.viewerKey);
       if (epoch.triggerKind === 'request-situation') assertTtrpgOpenSituationEpochAuthorityV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.viewerKey);
+      if (epoch.runtimeEntityReferencePolicy) {
+        if (stableJson(payload.intent.runtimeEntityReferencePolicy) !== stableJson(epoch.runtimeEntityReferencePolicy)) throw new Error('局势实例引用不是本次明确冻结的原策略');
+        assertTtrpgOpenSituationRuntimeReferenceJournalV1({ policy: epoch.runtimeEntityReferencePolicy, operations: openRun.entityOperations ?? [],
+          recipientActorKeys: authorization.selectedActorKeys, rulePackContentHash: ttrpg.product.rulePackContentHash,
+          consumerRef: epoch.startedRef });
+      } else if (Object.prototype.hasOwnProperty.call(payload.intent, 'runtimeEntityReferencePolicy')) throw new Error('旧窗口不能借元数据扩大实例读取策略');
       if (epoch.publicSituation) {
         const grant = epoch.publicSituation, b = grant.basis;
         assertTtrpgOpenSituationEpochAuthorityV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.viewerKey);

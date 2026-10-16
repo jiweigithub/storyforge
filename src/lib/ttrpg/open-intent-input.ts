@@ -141,7 +141,8 @@ async function prepareTtrpgOpenModelInputV1(input: TtrpgOpenRuntimeModelInputV1,
   const epoch = runtime.openRun!.coordination.epochs.find(epoch => epoch.epochKey === runtime.openRun!.coordination.activeEpochKey)
   if (!epoch || epoch.status !== 'active' || purpose !== 'kp-narration' && epoch.viewerKey !== input.viewerKey
     || (!publicSituation && !entity && purpose !== 'kp-narration' && purpose !== 'companion' && epoch.inputRevision !== await hashProductProductionValueV2({ sessionKey: runtime.sessionKey,
-      triggerKind: epoch.triggerKind, rawInput, viewerKey: epoch.viewerKey, authorizationHash: epoch.authorizationHash }))) {
+      triggerKind: epoch.triggerKind, rawInput, viewerKey: epoch.viewerKey, authorizationHash: epoch.authorizationHash,
+      ...(epoch.runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy: epoch.runtimeEntityReferencePolicy } : {}) }))) {
     throw new Error('[ttrpg-open-input] 需要同一真人输入的活动授权窗口')
   }
   assertTtrpgOpenEpochPurposeV1(epoch, definition.skillId)
@@ -311,7 +312,7 @@ async function prepareTtrpgOpenModelInputV1(input: TtrpgOpenRuntimeModelInputV1,
     }
     const manifestV1 = await createContextManifestFromAssemblyV1({ runId: snapshot.run.id, stepId,
       attempt: 1, projectId: input.scope.projectId, worldGroupId: null, declaredSourceKeys: sourceKeys,
-      assembled, readerVersion: entity ? 'ttrpg-open-entity-gateway-v1' : publicSituation ? 'ttrpg-open-public-situation-gateway-v1' : purpose === 'situation-proposal' ? 'ttrpg-open-situation-gateway-v1' : purpose === 'stage-brief' ? 'ttrpg-open-brief-gateway-v1' : intentPurpose ? 'ttrpg-open-actor-gateway-v1' : purpose === 'kp-narration' ? 'ttrpg-open-kp-gateway-v1' : 'ttrpg-open-gm-oracle-gateway-v1' })
+      assembled, readerVersion: entity ? 'ttrpg-open-entity-gateway-v1' : publicSituation ? (publicKernel?.basis.runtimeEntityReferences ? 'ttrpg-open-public-situation-gateway-v2' : 'ttrpg-open-public-situation-gateway-v1') : purpose === 'situation-proposal' ? (kernel?.basis.runtimeEntityReferences ? 'ttrpg-open-situation-gateway-v2' : 'ttrpg-open-situation-gateway-v1') : purpose === 'stage-brief' ? 'ttrpg-open-brief-gateway-v1' : intentPurpose ? 'ttrpg-open-actor-gateway-v1' : purpose === 'kp-narration' ? 'ttrpg-open-kp-gateway-v1' : 'ttrpg-open-gm-oracle-gateway-v1' })
     const manifest = await createContextManifestV2FromV1({ manifest: manifestV1, scope: input.scope })
     const recorded = await recordContextGatewayPreflightEvidenceV1({ scope: input.scope, runId: snapshot.run.id,
       stepId, attempt: 1, contextPacket: gateway.contextPacket, selector: gateway.selector,

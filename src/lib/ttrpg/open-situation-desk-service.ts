@@ -16,6 +16,8 @@ import { reconcileTtrpgOpenSituationRunV1 } from './open-session-situation-adopt
 import { cancelTtrpgOpenPreparedRequestV1 } from './open-request-cancellation'
 import { repairTtrpgOpenSituationResponseReceiptV1, abandonTtrpgOpenSituationWaitV1 } from './open-situation-request-recovery'
 import { acceptTtrpgOpenSituationV1, activateTtrpgOpenSessionSituationV1, startTtrpgOpenEpochV1, closeTtrpgOpenEpochV1 } from './runtime-commands'
+import { createTtrpgOpenRuntimeEntityReferencesV1, type TtrpgOpenSituationRuntimeReferencePolicyV1 } from './open-runtime-entity-references'
+import { ttrpgOpenEntityIdentityCatalogV1 } from './open-entity-catalog'
 
 export interface TtrpgOpenSituationDeskInputV1 { scope: WorkspaceScope; sessionId: number; viewerKey: string }
 type Transport = Pick<Parameters<typeof generateTtrpgOpenSituationCandidateV1>[0], 'aiConfig' | 'runAI' | 'signal'>
@@ -86,13 +88,15 @@ export async function readTtrpgOpenSituationDeskV1(input: TtrpgOpenSituationDesk
   ] : []
   await loaded.assertCurrent()
   return { sequence: loaded.state.lastSequence, privateGm, canRequest, unavailable, currentWindow, epochKey: epoch?.epochKey ?? null,
+    runtimeInstanceCount: privateGm ? ttrpgOpenEntityIdentityCatalogV1(content, run.entityOperations ?? []).filter(row => row.dynamic).length : 0,
     request: call ? { status: call.status, local: Boolean(read), read,
       responseRecovery: read && currentWindow && call.status === 'dispatched' ? observedResponse ? 'saved-response' as const : 'unobserved' as const : null } : null, summary, candidate, templateHash,
     adopted: Boolean(adopted), declined, stopped: epoch?.status === 'closed', canConfirm, confirmationUnavailable,
     receiptPending: Boolean(adopted && read && snapshot?.projection.state !== 'completed'),
     accepted, canEnable: Boolean(canEnable), stopRepairs, labels }
 }
-export async function requestTtrpgOpenSituationDeskV1(input: TtrpgOpenSituationDeskInputV1 & Transport & { submissionKey: string; rawInput: string; maximumCostUsd: number }) {
+export async function requestTtrpgOpenSituationDeskV1(input: TtrpgOpenSituationDeskInputV1 & Transport & { submissionKey: string; rawInput: string; maximumCostUsd: number; includeRuntimeEntities?: boolean }) {
+  if (input.includeRuntimeEntities !== undefined && typeof input.includeRuntimeEntities !== 'boolean') throw new Error('请明确选择是否使用本局已创建实例。')
   if (input.signal?.aborted) throw input.signal.reason ?? new Error('局势请求已停止。')
   const page = await readTtrpgOpenSituationDeskV1(input)
   if (!page?.canRequest) throw new Error(page?.unavailable ?? '只有当前真人主持可以请求局势。')
@@ -100,8 +104,15 @@ export async function requestTtrpgOpenSituationDeskV1(input: TtrpgOpenSituationD
   if (!Number.isFinite(input.maximumCostUsd) || input.maximumCostUsd < 0 || input.maximumCostUsd > 1000) throw new Error('请填写有效的调用预留上限。')
   if (!input.aiConfig && !input.runAI) throw new Error('请先配置明确的模型。')
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'human', viewerKey: input.viewerKey } })
+  let runtimeEntityReferencePolicy: TtrpgOpenSituationRuntimeReferencePolicyV1 | undefined
+  if (input.includeRuntimeEntities) {
+    const references = await createTtrpgOpenRuntimeEntityReferencesV1({ content: loaded.content, operations: loaded.runtime.openRun!.entityOperations ?? [], runtimeSourceHash: loaded.source.runtimeSourceHash })
+    if (!references.references.length) throw new Error('本局尚无实际创建实例；可以按原冻结资料请求局势。')
+    runtimeEntityReferencePolicy = { schema: 'storyforge.ttrpg-open-situation-runtime-reference-policy', version: 1, consumer: 'private-gm', references }
+  }
   const maximumOutputTokens = Math.min(getAgentSkillV1('prose.ttrpg-open-situation-propose').maxOutputTokens, loaded.content.campaign.runtimePolicy.maximumOutputTokens)
-  await startTtrpgOpenEpochV1({ ...await envelope(input.sessionId, 'situation.desk.' + key), viewerKey: input.viewerKey, triggerKind: 'request-situation', rawInput: input.rawInput })
+  await startTtrpgOpenEpochV1({ ...await envelope(input.sessionId, 'situation.desk.' + key), viewerKey: input.viewerKey, triggerKind: 'request-situation', rawInput: input.rawInput,
+    ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}) })
   return generateTtrpgOpenSituationCandidateV1({ ...input, ...await envelope(input.sessionId, 'situation.prepare.' + key), maximumOutputTokens })
 }
 async function original(input: TtrpgOpenSituationDeskInputV1) {

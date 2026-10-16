@@ -17,6 +17,7 @@ import { reconcileTtrpgOpenPublicSituationRunV1 } from './open-public-situation-
 import { finishTtrpgOpenPublicSituationDraftV1, readTtrpgOpenPublicSituationStopRepairsV1 } from './open-public-situation-stop'
 import { ttrpgOpenSessionSituationActorAccessV1 } from './open-session-situation-catalog'
 import { repairTtrpgOpenPublicSituationResponseReceiptV1, abandonTtrpgOpenPublicSituationWaitV1 } from './open-situation-request-recovery'
+import { ttrpgOpenEntityIdentityCatalogV1, ttrpgOpenEntityReferenceVisibleV1 } from './open-entity-catalog'
 
 type Input = TtrpgOpenSituationDeskInputV1
 type Transport = Pick<Parameters<typeof generateTtrpgOpenPublicSituationCandidateV1>[0], 'aiConfig' | 'runAI' | 'signal'>
@@ -59,6 +60,8 @@ export async function readTtrpgOpenPublicSituationDeskV1(input: Input) {
   const stopRepairs = own.length ? await readTtrpgOpenPublicSituationStopRepairsV1(input) : []
   await loaded.assertCurrent()
   return { sequence: loaded.state.lastSequence, canRequest, unavailable, currentWindow, epochKey: epoch?.epochKey ?? null,
+    runtimeInstanceCount: ttrpgOpenEntityIdentityCatalogV1(content, run.entityOperations ?? []).filter(row => row.dynamic && runtime.authorization!.selectedActorKeys.every(actor =>
+      ttrpgOpenEntityReferenceVisibleV1(row.audience, row.recipientActorKeys, actor, false, true))).length,
     request: grant ? { read, local: Boolean(read), status: call?.status ?? 'authorized',
       responseRecovery: read && currentWindow && call?.status === 'dispatched' ? observed ? 'saved-response' as const : 'unobserved' as const : null } : null,
     summary, adopted: Boolean(adopted), receiptPending: Boolean(adopted && read && snapshot?.projection.state !== 'completed'),
@@ -90,7 +93,8 @@ export async function finalizeTtrpgOpenPublicSituationDeskV1(input: Input) {
   if (page.currentWindow) await finishTtrpgOpenPublicSituationDraftV1({ ...input, epochKey: page.epochKey! })
 }
 export async function requestTtrpgOpenPublicSituationDeskV1(input: Input & Transport & { submissionKey: string; rawInput: string; maximumCostUsd: number;
-  sharingDecision: 'share-this-request-with-current-party'; delegationDecision: 'adopt-this-one-candidate' }) {
+  sharingDecision: 'share-this-request-with-current-party'; delegationDecision: 'adopt-this-one-candidate'; includeRuntimeEntities?: boolean }) {
+  if (input.includeRuntimeEntities !== undefined && typeof input.includeRuntimeEntities !== 'boolean') throw new Error('请明确选择是否使用共同可知的已创建实例。')
   if (input.signal?.aborted) throw input.signal.reason ?? new Error('本次请求已停止。')
   // Validate both decisions before preparing a Run or touching an epoch.
   if (input.sharingDecision !== 'share-this-request-with-current-party' || input.delegationDecision !== 'adopt-this-one-candidate') throw new Error('请明确共享本次输入，并委托 AI 主持采用本次这一个候选。')

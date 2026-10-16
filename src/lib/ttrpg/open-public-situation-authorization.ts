@@ -28,9 +28,11 @@ export interface TtrpgOpenPublicSituationAuthorizationInputV1 extends FormalTtrp
   scope: WorkspaceScope; viewerKey: string; rawInput: string;
   sharingDecision: 'share-this-request-with-current-party'; delegationDecision: 'draft-only' | 'adopt-this-one-candidate';
   modelIdentity: { provider: string; model: string }; maximumOutputTokens: number; maximumCostUsd: number;
+  includeRuntimeEntities?: boolean;
 }
 export async function createTtrpgOpenPublicSituationAuthorizationV1(input: TtrpgOpenPublicSituationAuthorizationInputV1) {
   input = { ...input, scope: { ...input.scope } }
+  if (input.includeRuntimeEntities !== undefined && typeof input.includeRuntimeEntities !== 'boolean') p.fail('请明确选择是否使用本局共同可知的已创建实例')
   const policy = TTRPG_OPEN_PUBLIC_SITUATION_REQUEST_POLICY_V1
   p.literal(input.sharingDecision, policy.sharingDecision, '明确共享本次输入')
   const delegationDecision = p.oneOf(input.delegationDecision, policy.delegationDecisions, '本次采用选择')
@@ -54,6 +56,7 @@ export async function createTtrpgOpenPublicSituationAuthorizationV1(input: Ttrpg
       || b.scope.projectId !== input.scope.projectId || b.scope.worldId !== input.scope.worldId || b.scope.workId !== input.scope.workId
       || b.scope.sessionId !== input.sessionId || b.requester.viewerKey !== viewerKey || b.sharedRequest.text !== rawInput
       || b.sharedRequest.decision !== input.sharingDecision || b.delegation.decision !== delegationDecision
+      || Boolean(b.runtimeEntityReferencePolicy) !== Boolean(input.includeRuntimeEntities)
       || current.authorization.revision !== b.authorizationRevision
       || canonicalStringify(grant.modelIdentity) !== canonicalStringify(modelIdentity) || grant.budget.maximumOutputTokens !== maximumOutputTokens
       || grant.budget.maximumCostUsd !== maximumCostUsd || !owner || owner.portableRuntimeOriginJson !== undefined || owner.contractHash !== grant.run.contractHash) {
@@ -61,7 +64,7 @@ export async function createTtrpgOpenPublicSituationAuthorizationV1(input: Ttrpg
     }
     return { runId: grant.run.runId, requestKey: b.requestKey, epochKey: b.authorizationEpochKey, grant, event: prior }
   }
-  const context = await loadTtrpgOpenPublicSituationContextV1({ ...input, actorKey: 'gm' })
+  const context = await loadTtrpgOpenPublicSituationContextV1({ ...input, actorKey: 'gm' }, input.includeRuntimeEntities ? 'current-common-entities' : undefined)
   if (context.readEvidence.sequence !== input.baseSequence || context.readEvidence.stateHash !== input.baseStateHash) throw new Error('[ttrpg-public-situation] 本次请求入口已变化')
   const state = await readProductRuntimeState(input.sessionId), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
   if (!runtime?.authorization || !runtime.openRun || runtime.openRun.coordination.activeEpochKey !== null) throw new Error('[ttrpg-public-situation] 需要独立空闲窗口')
@@ -85,7 +88,8 @@ export async function createTtrpgOpenPublicSituationAuthorizationV1(input: Ttrpg
     requester: { viewerKey, seatKey: seat.seatKey, seatRevision: seat.revision }, authorizationEpochKey: epochKey, requestKey,
     readEvidence: { sequence: input.baseSequence, stateHash: input.baseStateHash }, recipientActorKeys: context.frame.recipientActorKeys,
     sourceVisibilityHash: context.visibilityHash, sharedRequest: { text: rawInput, inputHash: await sha256Text(rawInput), decision: input.sharingDecision },
-    delegation: { decision: delegationDecision, maximumCandidates: 1, maximumCalls: 1, maximumAiActions: 0 } })
+    delegation: { decision: delegationDecision, maximumCandidates: 1, maximumCalls: 1, maximumAiActions: 0 },
+    ...(context.runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy: context.runtimeEntityReferencePolicy } : {}) })
   const basisHash = await hashTtrpgOpenPublicSituationRequestBasisV1(basis)
   const request = { basis, basisHash, admissionStateHash: context.admissionStateHash, modelIdentity, budget, authorizationCommandId, reservationCommandId }
   const content = canonicalStringify(ttrpgOpenPublicSituationAuthorizationInputV1(request)), inputArtifactHash = await sha256Text(content)

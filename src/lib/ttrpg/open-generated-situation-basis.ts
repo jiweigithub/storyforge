@@ -1,4 +1,4 @@
-import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
+import { ttrpgOpenSituationCatalogV1, ttrpgOpenSituationRuntimeReferenceCatalogV1 } from './open-session-situation-catalog'
 /** P9 deterministic human-GM preflight. This is not a registered model source, a Run or an acceptance command. */
 import type { WorkspaceScope } from '../types'
 import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
@@ -8,6 +8,8 @@ import { ttrpgOpenMechanicalStateHashV1 } from './open-rule-plan'
 import { hashProductProductionValueV2 as hash } from '../product-production/hash'
 import { reviewTtrpgOpenGeneratedSituationProposalV1, type TtrpgOpenSituationProposalBasisV1, type TtrpgOpenSituationPersonalizationSourceV1 } from './open-generated-situation-contract'
 import * as p from './open-contract-parse'
+import { assertTtrpgOpenRuntimeEntityReferencesMatchV1, assertTtrpgOpenSituationRuntimeReferenceJournalV1,
+  type TtrpgOpenSituationRuntimeReferencePolicyV1 } from './open-runtime-entity-references'
 
 export interface TtrpgOpenSituationPreflightInputV1 { scope: WorkspaceScope; sessionId: number; viewerKey: string; proposalKey: string }
 export async function loadTtrpgOpenSituationProposalBasisV1(input: TtrpgOpenSituationPreflightInputV1) {
@@ -16,13 +18,22 @@ export async function loadTtrpgOpenSituationProposalBasisV1(input: TtrpgOpenSitu
   return buildTtrpgOpenSituationBasisFromVerifiedReadV1(loaded, input.proposalKey)
 }
 /** Internal builder: the caller must first enforce its exact human or model consumer authority. */
-export async function buildTtrpgOpenSituationBasisFromVerifiedReadV1(loaded: Awaited<ReturnType<typeof loadTtrpgOpenMemoryReadStateV1>>, inputProposalKey: string) {
+export async function buildTtrpgOpenSituationBasisFromVerifiedReadV1(loaded: Awaited<ReturnType<typeof loadTtrpgOpenMemoryReadStateV1>>, inputProposalKey: string,
+  explicitReferencePolicy?: TtrpgOpenSituationRuntimeReferencePolicyV1) {
   const { content, runtime, authorization, source } = loaded, run = runtime.openRun!, ancestors = runtime.branchLineage?.ancestors ?? []
   if (authorization.seats.some(s => !s.consent.sessionLoggingAllowed)) throw new Error('本桌尚未同意保存生成局势所需的来源记录。')
   if (run.stage.status !== 'open' || runtime.product.safety.status !== 'active') throw new Error('局势预检需要阶段进行中且本桌未暂停。')
   await verifyTtrpgOpenOracleJournalV1({ receipts: run.oracleReceipts ?? [], rulePack: content.rulePack.content, sessionKey: runtime.sessionKey, seed: loaded.session.seed, ancestors })
   await verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash, oracleReceipts: run.oracleReceipts ?? [], entityOperations: run.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
   const sessionFacts = ttrpgOpenSessionFactsV1(run.factLedger).filter(f => !f.retired)
+  const referencePolicy = explicitReferencePolicy ?? run.coordination.epochs.find(e => e.epochKey === inputProposalKey)?.runtimeEntityReferencePolicy
+  if (referencePolicy) {
+    assertTtrpgOpenSituationRuntimeReferenceJournalV1({ policy: referencePolicy, operations: run.entityOperations ?? [],
+      recipientActorKeys: authorization.selectedActorKeys, rulePackContentHash: runtime.product.rulePackContentHash,
+      consumerRef: { sessionKey: runtime.sessionKey, sequence: loaded.state.lastSequence + 1 } })
+    await assertTtrpgOpenRuntimeEntityReferencesMatchV1({ content, operations: run.entityOperations ?? [], runtimeSourceHash: source.runtimeSourceHash,
+      snapshot: referencePolicy.references, mode: 'current', ...(referencePolicy.consumer === 'common-party' ? { entityRefs: referencePolicy.references.references.map(row => row.entityRef) } : {}) })
+  }
   const selected = new Set(authorization.selectedActorKeys), personalizationSources: TtrpgOpenSituationPersonalizationSourceV1[] = []
   const personalizationValues: Array<{ sourceKey: string; value: unknown }> = []
   for (const actorKey of authorization.selectedActorKeys) {
@@ -48,6 +59,7 @@ export async function buildTtrpgOpenSituationBasisFromVerifiedReadV1(loaded: Awa
     }
   }
   const catalog = ttrpgOpenSituationCatalogV1(content.campaign, run)
+  const historicalRuntimeEntityReferences = ttrpgOpenSituationRuntimeReferenceCatalogV1(run.situationReceipts ?? [])
   const rows = [...(run.situations.history ?? []).map(h => h.instance), ...run.situations.active, ...run.situations.queued]
   const originByInstance = new Map<string, string>()
   for (const origin of origins) for (const instance of [...(origin.run?.situations.history ?? []).map(h => h.instance), ...(origin.run?.situations.active ?? []), ...(origin.run?.situations.queued ?? [])]) {
@@ -76,6 +88,8 @@ export async function buildTtrpgOpenSituationBasisFromVerifiedReadV1(loaded: Awa
     selectedActorKeys: [...authorization.selectedActorKeys], worldTurn: run.worldTime.worldTurn,
     authorizationHash: await hash(authorization), mechanicalStateHash: await ttrpgOpenMechanicalStateHashV1(loaded.state),
     campaign: structuredClone(content.campaign), rule: structuredClone(content.rulePack.content), sessionFacts,
+    ...(referencePolicy ? { runtimeEntityReferences: structuredClone(referencePolicy.references) } : {}),
+    ...(historicalRuntimeEntityReferences.length ? { historicalRuntimeEntityReferences: structuredClone(historicalRuntimeEntityReferences) } : {}),
     ...(catalog.sessionTemplates.length && ttrpgOpenSessionFactsV1(run.factLedger).some(f => f.retired) ? { retiredSessionFacts: ttrpgOpenSessionFactsV1(run.factLedger).filter(f => f.retired) } : {}), sessionTemplates: structuredClone(catalog.sessionTemplates), history,
     cooldownUntilWorldTurn: { ...run.situations.cooldowns }, personalizationSources,
   }

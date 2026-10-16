@@ -60,25 +60,38 @@ export function planTtrpgOpenSituationReferenceNeedsV1(input: {
     if (!references.some(r => r.kind === kind && r.ref === ref && r.suffix === suffix)) references.push({ kind, ref, suffix })
   }
   const historicalOwner = basis.sessionTemplates.some(s => s.templateKey === t.templateKey && canonicalStringify(s) === canonicalStringify(t))
+  const historicalInstance = (key: string) => historicalOwner && !basis.runtimeEntityReferences?.references.some(row => row.entityRef === key)
+    && basis.historicalRuntimeEntityReferences?.some(row => row.entityRef === key)
   const historical = (key: string) => historicalOwner && basis.retiredSessionFacts?.some(f => f.factKey === key)
   const fact = (key: string) => {
     if (historical(key)) need('situation-definition.' + t.templateKey, 'adopted-historical-reference', key)
     else need((basis.sessionFacts.some(f => f.factKey === key) ? 'session-fact.' : 'world-fact.') + key, 'fact', key)
   }
-  const entity = (key: string) => need('entity.' + key, 'entity', key)
+  const entity = (key: string) => {
+    if (historicalInstance(key)) { need('situation-definition.' + t.templateKey, 'adopted-historical-reference', key); return }
+    need('entity.' + key, 'entity', key)
+    const instance = basis.runtimeEntityReferences?.references.find(row => row.entityRef === key)
+    if (instance) {
+      need('runtime-entity-references', 'runtime-identity', key)
+      if (instance.dynamicTemplateKey) need('dynamic-template.' + instance.dynamicTemplateKey, 'original-instance-template', instance.dynamicTemplateKey)
+      if (instance.kind === 'actor') need('actor.' + instance.templateKey, 'original-npc-definition', instance.templateKey)
+      if (instance.kind === 'item') need('item-definition.' + instance.templateKey, 'original-item-definition', instance.templateKey)
+    }
+  }
   const action = (key: string, kind: 'action' | 'generic-check' = 'action') => need((kind === 'generic-check' ? 'check.' : 'action.') + key, kind, key)
   const effect = (key: string | null) => { if (key !== null) need('effect.' + key, 'effect', key) }
   const provenance = (key: string) => {
     const source = resources.find(r => availableSuffixes.has(r.suffix) && (
       c.frozenWorldPredicateIndex.entries.some(f => r.suffix === 'world-fact.' + f.factKey && f.sourceResourceRefs.includes(key))
-      || c.entityBindings.some(b => r.suffix === 'entity.' + b.bindingKey && b.sourceResourceRef === key)))
+      || c.entityBindings.some(b => r.suffix === 'entity.' + b.bindingKey && b.sourceResourceRef === key)
+      || basis.runtimeEntityReferences && c.dynamicEntityTemplates.some(t => r.suffix === 'dynamic-template.' + t.templateKey && t.sourceRefs.includes(key))))
     if (!source) p.fail('世界溯源引用没有本次完整读取的冻结抽取资料')
     need(source.suffix, 'extracted-world-provenance', key)
   }
   const ref = (key: string) => {
     if (historical(key)) fact(key)
     else if (c.frozenWorldPredicateIndex.entries.some(f => f.factKey === key) || basis.sessionFacts.some(f => f.factKey === key)) fact(key)
-    else if (c.entityBindings.some(b => b.bindingKey === key)) entity(key)
+    else if (c.entityBindings.some(b => b.bindingKey === key) || basis.runtimeEntityReferences?.references.some(row => row.entityRef === key) || historicalInstance(key)) entity(key)
     else if (key === c.campaignKey) need('campaign-premise', 'campaign', key)
     else if (key === rule.ruleSystemId) need('rules-core', 'rules', key)
     else if (c.fronts.some(f => f.frontKey === key)) need('front.' + key, 'front', key)
@@ -131,7 +144,11 @@ export function planTtrpgOpenSituationReferenceNeedsV1(input: {
       case 'chaos-at-least': case 'world-turn-at-least': need('situation-frame', 'current-frame', value.op); return
     }
   }
-  if (t.driverBinding.kind === 'npc') need('actor.' + t.driverBinding.characterKey, 'npc-driver', t.driverBinding.characterKey)
+  if (t.driverBinding.kind === 'npc') {
+    const driverKey = t.driverBinding.characterKey
+    if (basis.runtimeEntityReferences?.references.some(row => row.entityRef === driverKey) || historicalInstance(driverKey)) entity(driverKey)
+    else need('actor.' + driverKey, 'npc-driver', driverKey)
+  }
   else if (t.driverBinding.kind === 'front') need('front.' + t.driverBinding.frontKey, 'front-driver', t.driverBinding.frontKey)
   else fact(t.driverBinding.factRef)
   t.driverBeliefs.forEach(b => { if (b.factRef !== null) ref(b.factRef) })

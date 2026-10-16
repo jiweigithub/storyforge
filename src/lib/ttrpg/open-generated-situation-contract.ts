@@ -7,6 +7,7 @@ import { checkTtrpgSituationGenerationV1, type TtrpgSituationGenerationHistoryIt
 import { parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coordination'
 import { hashProductProductionValueV2 as hash } from '../product-production/hash'
 import * as p from './open-contract-parse'
+import type { TtrpgOpenRuntimeEntityReferencesV1, TtrpgOpenRuntimeEntityReferenceV1 } from './open-runtime-entity-references'
 
 export const TTRPG_OPEN_SITUATION_INPUT_SOURCE_V1 = 'ttrpgOpenSituationInput'
 export interface TtrpgOpenSituationPersonalizationSourceV1 {
@@ -22,6 +23,9 @@ export interface TtrpgOpenSituationProposalBasisV1 {
   assignedTemplateKey: string; selectedActorKeys: string[]; worldTurn: number; authorizationHash: string; mechanicalStateHash: string;
   campaign: TtrpgCampaignContentV2; rule: RulePackV2; sessionFacts: TtrpgSessionFactV1[];
   retiredSessionFacts?: TtrpgSessionFactV1[];
+  runtimeEntityReferences?: TtrpgOpenRuntimeEntityReferencesV1;
+  /** Internal validation only; prior adoption never widens this new model request. */
+  historicalRuntimeEntityReferences?: TtrpgOpenRuntimeEntityReferenceV1[];
   sessionTemplates: TtrpgSituationTemplateV1[]; history: Array<TtrpgSituationGenerationHistoryItemV1 & { sourceRef: TtrpgOpenSourceRefV1; situationKey: string; sourceKind?: 'adopted-definition' }>;
   cooldownUntilWorldTurn: Record<string, number>; personalizationSources: TtrpgOpenSituationPersonalizationSourceV1[];
 }
@@ -56,8 +60,19 @@ export async function reviewTtrpgOpenGeneratedSituationProposalV1(input: { value
     && !selected.some(s => s.kind === 'commitment' && s.sourceKey === driver.factRef)) p.fail('玩家承诺驱动必须引用真实已确认承诺，不得由 Oracle 或模型代替玩家承诺')
   assertTtrpgOpenSituationUsesCurrentFactsV1(proposal.template, [...basis.sessionFacts, ...(basis.retiredSessionFacts ?? [])])
   const catalog = [...basis.sessionTemplates, proposal.template]
-  parseTtrpgSituationTemplateV1(proposal.template, { ...basis.campaign, situationTemplates: [...existing, proposal.template], sessionFactKeys: basis.sessionFacts.map(f => f.factKey) }, basis.rule)
-  validateTtrpgOpenSessionSituationReferencesV1({ campaign: basis.campaign, rule: basis.rule, sessionTemplates: catalog, sessionFacts: [...basis.sessionFacts, ...(basis.retiredSessionFacts ?? [])] })
+  parseTtrpgSituationTemplateV1(proposal.template, { ...basis.campaign, situationTemplates: [...existing, proposal.template], sessionFactKeys: basis.sessionFacts.map(f => f.factKey),
+    ...(basis.runtimeEntityReferences ? { runtimeEntityReferences: basis.runtimeEntityReferences.references } : {}) }, basis.rule)
+  const currentReferences = basis.runtimeEntityReferences?.references ?? []
+  validateTtrpgOpenSessionSituationReferencesV1({ campaign: basis.campaign, rule: basis.rule, sessionTemplates: catalog, sessionFacts: basis.sessionFacts,
+    runtimeEntityReferences: currentReferences, onlySessionTemplateKey: proposal.template.templateKey })
+  const historicalReferences = new Map((basis.historicalRuntimeEntityReferences ?? []).map(row => [row.entityRef, row]))
+  for (const row of currentReferences) {
+    const prior = historicalReferences.get(row.entityRef)
+    if (prior && JSON.stringify(prior) !== JSON.stringify(row)) p.fail('局势实例当前与历史身份冲突')
+    historicalReferences.set(row.entityRef, row)
+  }
+  validateTtrpgOpenSessionSituationReferencesV1({ campaign: basis.campaign, rule: basis.rule, sessionTemplates: catalog, sessionFacts: [...basis.sessionFacts, ...(basis.retiredSessionFacts ?? [])],
+    runtimeEntityReferences: [...historicalReferences.values()] })
   const evaluation = checkTtrpgSituationGenerationV1({ candidate: proposal.template, recentSituations: basis.history,
     worldTurn: basis.worldTurn, cooldownUntilWorldTurn: basis.cooldownUntilWorldTurn, playerFactKeys: sources.map(s => s.sourceKey), playerActorKeys: basis.selectedActorKeys,
     personalizationRefs: selected.map(s => ({ factKey: s.sourceKey, kind: s.kind, actorScope: s.actorKeys, knownByActorKeys: s.knownByActorKeys })) })

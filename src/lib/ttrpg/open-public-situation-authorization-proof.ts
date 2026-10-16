@@ -69,7 +69,7 @@ export async function verifyTtrpgOpenPublicSituationAuthorizationV1(input: {
     || runtime.openRun.coordination.activeEpochKey !== epoch.epochKey || canonicalStringify(epoch.publicSituation) !== canonicalStringify(grant)) {
     throw new Error('[ttrpg-public-situation] 原共同局势窗口已结束或不属于此请求')
   }
-  const common = await loadTtrpgOpenPublicSituationContextV1({ ...input, actorKey: 'gm' })
+  const common = await loadTtrpgOpenPublicSituationContextV1({ ...input, actorKey: 'gm' }, b.runtimeEntityReferencePolicy)
   if (common.visibilityHash !== b.sourceVisibilityHash || common.admissionStateHash !== grant.admissionStateHash) throw new Error('[ttrpg-public-situation] 本次共同资料或实际局面已变化')
   const snapshot = await readInstanceAgentRunV1(input.scope, grant.run.runId), run = snapshot.run
   const bound = snapshot.contract.scope.runtime, binding = snapshot.contract.executionBindings?.find(row => row.stepId === TTRPG_OPEN_PUBLIC_SITUATION_STEP_V1)

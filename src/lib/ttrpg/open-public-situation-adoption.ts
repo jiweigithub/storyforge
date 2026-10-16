@@ -47,6 +47,7 @@ export async function prepareTtrpgOpenPublicSituationAdoptionV1(input: TtrpgOpen
     sourceRef: { sessionKey: runtime.sessionKey, sequence: context.sequence }, authorizationRef: epoch.startedRef,
     runtimeSourceHash: context.session.runtimeSourceHash, acceptedAtWorldTurn: run.worldTime.worldTurn,
     template: review.proposal.template, templateHash, personalizationSourceKeys: review.proposal.personalizationSourceKeys, runOriginJson, artifactRefs,
+    ...(current.basis.runtimeEntityReferences ? { runtimeEntityReferences: current.basis.runtimeEntityReferences } : {}),
     model: { requestKey: input.requestKey, epochKey: epoch.epochKey, runContractHash: proof.run.run.contractHash,
       candidateHash: candidate.candidateHash, rawResponseHash: candidate.rawResponseHash, inputManifestHash: candidate.inputManifestHash,
       contextHash: candidate.visibilityHash, basisHash: review.basisHash, proposalHash: review.proposalHash, referencesHash: await hash(candidate.references) },

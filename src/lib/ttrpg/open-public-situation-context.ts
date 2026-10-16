@@ -15,13 +15,18 @@ import { TTRPG_OPEN_SITUATION_OUTPUT_SCHEMA_V1 } from './open-generated-situatio
 import { ttrpgOpenMechanicalStateHashV1 } from './open-rule-plan'
 import { hashTtrpgOpenPublicSituationRequestBasisV1 } from './open-public-situation-request'
 import { TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1 } from './open-public-situation-authorization-contract'
+import { createTtrpgOpenRuntimeEntityReferencesV1, assertTtrpgOpenRuntimeEntityReferencesMatchV1, assertTtrpgOpenSituationRuntimeReferenceJournalV1,
+  type TtrpgOpenSituationRuntimeReferencePolicyV1 } from './open-runtime-entity-references'
+import { ttrpgOpenEntityIdentityCatalogV1, ttrpgOpenEntityReferenceVisibleV1 } from './open-entity-catalog'
 
 export const TTRPG_OPEN_PUBLIC_SITUATION_SOURCE_V1 = 'ttrpgOpenPublicSituationInput'
 
-export async function loadTtrpgOpenPublicSituationContextV1(input: { scope: WorkspaceScope; sessionId: number; actorKey: string }) {
-  return (await loadPublicSituationReadModel(input)).context
+export async function loadTtrpgOpenPublicSituationContextV1(input: { scope: WorkspaceScope; sessionId: number; actorKey: string },
+  explicitReferencePolicy?: TtrpgOpenSituationRuntimeReferencePolicyV1 | 'current-common-entities') {
+  return (await loadPublicSituationReadModel(input, explicitReferencePolicy)).context
 }
-async function loadPublicSituationReadModel(input: { scope: WorkspaceScope; sessionId: number; actorKey: string }) {
+async function loadPublicSituationReadModel(input: { scope: WorkspaceScope; sessionId: number; actorKey: string },
+  explicitReferencePolicy?: TtrpgOpenSituationRuntimeReferencePolicyV1 | 'current-common-entities') {
   if (input.actorKey !== 'gm') throw new Error('[ttrpg-public-situation] 共同局势来源需要明确的共同视图')
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'party' } })
   const common = await loadTtrpgOpenCommonProjectionV1(input)
@@ -32,6 +37,28 @@ async function loadPublicSituationReadModel(input: { scope: WorkspaceScope; sess
     throw new TtrpgOpenReadConflictV1('共同局势资料读取期间来源或接收者已变化')
   }
   const recipients = common.recipientActorKeys, view = common.view
+  const epoch = run.coordination.epochs.find(e => e.epochKey === run.coordination.activeEpochKey)
+  let runtimeEntityReferencePolicy = explicitReferencePolicy === 'current-common-entities' ? undefined
+    : explicitReferencePolicy ?? (epoch?.publicSituation ? epoch.runtimeEntityReferencePolicy : undefined)
+  if (explicitReferencePolicy === 'current-common-entities') {
+    if (epoch) throw new Error('[ttrpg-public-situation] 实例读取须在明确开始前选择')
+    const entityRefs = ttrpgOpenEntityIdentityCatalogV1(content, run.entityOperations ?? []).filter(row => row.dynamic && recipients.every(actor =>
+      ttrpgOpenEntityReferenceVisibleV1(row.audience, row.recipientActorKeys, actor, false, true))).map(row => row.entityKey)
+    const references = await createTtrpgOpenRuntimeEntityReferencesV1({ content, operations: run.entityOperations ?? [], runtimeSourceHash: source.runtimeSourceHash, entityRefs })
+    runtimeEntityReferencePolicy = { schema: 'storyforge.ttrpg-open-situation-runtime-reference-policy', version: 1, consumer: 'common-party', references }
+  }
+  if (runtimeEntityReferencePolicy) {
+    if (runtimeEntityReferencePolicy.consumer !== 'common-party' || epoch && canonicalStringify(epoch.runtimeEntityReferencePolicy) !== canonicalStringify(runtimeEntityReferencePolicy)) throw new Error('[ttrpg-public-situation] 实例读取不能借用其他请求策略')
+    assertTtrpgOpenSituationRuntimeReferenceJournalV1({ policy: runtimeEntityReferencePolicy, operations: run.entityOperations ?? [], recipientActorKeys: recipients,
+      rulePackContentHash: content.rulePack.contentHash, consumerRef: epoch?.startedRef ?? { sessionKey: runtime.sessionKey, sequence: state.lastSequence + 1 } })
+    await assertTtrpgOpenRuntimeEntityReferencesMatchV1({ content, operations: run.entityOperations ?? [], runtimeSourceHash: source.runtimeSourceHash,
+      snapshot: runtimeEntityReferencePolicy.references, mode: 'current', entityRefs: runtimeEntityReferencePolicy.references.references.map(row => row.entityRef) })
+  }
+  const instanceIdentities = runtimeEntityReferencePolicy?.references.references.map(row => {
+    const entity = state.entities[row.entityRef]
+    if (!entity) throw new Error('[ttrpg-public-situation] 原实例身份缺少本桌对象')
+    return { entityRef: row.entityRef, kind: row.kind, name: entity.name, sourceRef: row.sourceRef, audience: row.audience, recipientActorKeys: row.recipientActorKeys }
+  })
   // Authorization already discloses the selected role keys. No authored biography, secret,
   // location, mechanical owner or private player choice is promoted into this identity.
   const personalization = await Promise.all(recipients.map(async actorKey => {
@@ -68,7 +95,8 @@ async function loadPublicSituationReadModel(input: { scope: WorkspaceScope; sess
     sessionFacts: view.sessionFacts,
     clocks,
     observedEvidenceRefs: [...new Set(view.knowledge.filter(entry => entry.reliability === 'observed').map(entry => entry.evidenceRef))] })
-  const contract = { schema: 'storyforge.ttrpg-open-public-situation-source-contract', version: 1,
+  const contract = { schema: 'storyforge.ttrpg-open-public-situation-source-contract', version: runtimeEntityReferencePolicy ? 2 : 1,
+    ...(runtimeEntityReferencePolicy ? { runtimeInstanceIdentityOnly: true, instanceIdentityGrantsNoPositionInventoryOrAction: true } : {}),
     sourceKey: TTRPG_OPEN_PUBLIC_SITUATION_SOURCE_V1, consumer: 'public-situation-generator',
     noMechanicalMutation: true, noWorldWrite: true, noPlayerDecision: true, noImplicitSharing: true,
     outputJsonSchema: TTRPG_OPEN_SITUATION_OUTPUT_SCHEMA_V1,
@@ -94,15 +122,18 @@ async function loadPublicSituationReadModel(input: { scope: WorkspaceScope; sess
       value: { schema: 'storyforge.ttrpg-open-public-situation-rules', version: 1, ...view.rules } },
     { suffix: 'public-situation-identities', title: '实际选定的玩家身份（不含私密人物资料）', mandatory: true,
       value: { schema: 'storyforge.ttrpg-open-public-situation-identities', version: 1, personalization,
-        npcDriverKeys: view.actorsHere.filter(actor => content.campaign.characterTemplates.some(t => t.characterKey === actor.actorKey && t.role === 'npc')).map(actor => actor.actorKey),
+        npcDriverKeys: [...view.actorsHere.filter(actor => content.campaign.characterTemplates.some(t => t.characterKey === actor.actorKey && t.role === 'npc')).map(actor => actor.actorKey),
+          ...(instanceIdentities?.filter(row => row.kind === 'actor').map(row => row.entityRef) ?? [])],
         identityKeysAreNotPlayerCommitments: true, privateBiographiesAreNotDelivered: true } },
+    ...(instanceIdentities ? [{ suffix: 'public-situation-instances', title: '本次共同可知的已创建实例身份', mandatory: true,
+      value: { schema: 'storyforge.ttrpg-open-public-situation-instances', version: 1, identities: instanceIdentities,
+        snapshotHash: runtimeEntityReferencePolicy!.references.snapshotHash, identitiesAreNotCurrentMechanicalState: true } }] : []),
     ...attributed.map(entry => ({ suffix: `public-situation-entry.${entry.sourceKey}`, title: `共同局势来源 · ${entry.kind}`, mandatory: false,
       value: { schema: 'storyforge.ttrpg-open-public-situation-entry', version: 1, entry } })),
   ]
   // The base visibility identity survives only the authorization/booking events. The epoch key
   // separately freezes this exact shared input; actual full packet/Manifest include its body.
   const visibilityHash = await hashCanonicalValue(resources)
-  const epoch = run.coordination.epochs.find(e => e.epochKey === run.coordination.activeEpochKey)
   let sharedInput: { schema: string; version: number; requestKey: string; basisHash: string; text: string;
     sharingDecision: string; delegationDecision: string; recipientActorKeys: string[] } | null = null
   if (epoch?.triggerKind === TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1) {
@@ -127,7 +158,7 @@ async function loadPublicSituationReadModel(input: { scope: WorkspaceScope; sess
     { suffix: 'public-situation-assignment', title: '本次系统分配的候选命名空间与引用边界', mandatory: true, value: assignment }] : resources
   await loaded.assertCurrent()
   return { loaded, context: { resources: allResources, entries: attributed, frame, predicateScope, rules: view.rules,
-    personalization, visibilityHash, admissionStateHash: await ttrpgOpenMechanicalStateHashV1(state),
+    personalization, ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}), visibilityHash, admissionStateHash: await ttrpgOpenMechanicalStateHashV1(state),
     authorizationRevision: common.authorizationRevision, readEvidence: common.readEvidence } }
 }
 
@@ -148,7 +179,8 @@ async function publicCatalog(scope: FrozenResourceScopeV1) {
     const fingerprint = await hashCanonicalValue({ scope, readEvidence: context.readEvidence,
       authorizationRevision: context.authorizationRevision, visibilityHash: context.visibilityHash })
     const policyHash = await hashCanonicalValue({ sourceKey: TTRPG_OPEN_PUBLIC_SITUATION_SOURCE_V1,
-      consumer: 'public-situation-generator', fullIsAtomic: true, originalRead: false, exactWholePartyIntersection: true })
+      consumer: 'public-situation-generator', fullIsAtomic: true, originalRead: false, exactWholePartyIntersection: true,
+      ...(context.runtimeEntityReferencePolicy ? { runtimeEntityReferencesHash: context.runtimeEntityReferencePolicy.references.snapshotHash } : {}) })
     const refs: ContextResourceDescriptorV1['sourceRefs'] = [
       { table: immutable.table, recordId: immutable.recordId, field: immutable.field, revision: source.packageHash, contentHash: await sha256Text(immutable.raw!) },
       { table: 'productRuntimeSessions', recordId: scope.productRuntimeSessionId, field: 'runtimeHeadStateJson', revision: state.lastSequence, contentHash: stateHash }]
@@ -161,7 +193,7 @@ async function publicCatalog(scope: FrozenResourceScopeV1) {
       return { content, tokenCount, searchText, descriptor: { version: 1, resourceKey: `fact:ttrpg-open:${runtime.sessionKey}:gm:${item.suffix}`,
         sourceKey: TTRPG_OPEN_PUBLIC_SITUATION_SOURCE_V1, kind: item.mandatory ? 'fact' : 'reference', title: item.title,
         shortSummary: searchText.slice(0, 240), authority, contentRevision: state.lastSequence, contentHash: await sha256Text(content),
-        policyRevision: 1, policyHash, scope: { projectId: workspace.projectId, worldId: workspace.worldId, workId: workspace.workId,
+        policyRevision: context.runtimeEntityReferencePolicy ? 2 : 1, policyHash, scope: { projectId: workspace.projectId, worldId: workspace.worldId, workId: workspace.workId,
           productRuntimeSessionId: scope.productRuntimeSessionId, runtimeActorKey: 'gm' }, relations: [], sourceRefs: refs,
         tokenEstimate: { full: tokenCount }, availableDepths: ['full'], priority: item.mandatory ? 'must-read' : 'normal' } }
     }))

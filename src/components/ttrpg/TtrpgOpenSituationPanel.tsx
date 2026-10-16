@@ -41,6 +41,7 @@ export default function TtrpgOpenSituationPanel(props: { input: TtrpgOpenSituati
   const [error, setError] = useState(''), [readError, setReadError] = useState(''), [notice, setNotice] = useState(''), [expanded, setExpanded] = useState(false)
   const [draft, setDraft] = useState('结合当前地点、角色身份和已经发生的变化，拟定一个有不同选择的新局势。'), [cost, setCost] = useState('0.10')
   const [disclosedHash, setDisclosedHash] = useState(''), [sending, setSending] = useState(false)
+  const [includeRuntimeEntities, setIncludeRuntimeEntities] = useState(false)
   const live = useRef(true), revision = useRef(0), controller = useRef<AbortController | null>(null), stopRequested = useRef(false)
   const { sessionId, viewerKey, scope: { projectId, worldId, workId } } = props.input
   const input = useCallback(() => ({ scope: { projectId, worldId, workId }, sessionId, viewerKey }), [projectId, worldId, workId, sessionId, viewerKey])
@@ -52,6 +53,7 @@ export default function TtrpgOpenSituationPanel(props: { input: TtrpgOpenSituati
   useEffect(() => { live.current = true; return () => { live.current = false; revision.current += 1; controller.current?.abort() } }, [input])
   useEffect(() => { void load(); return () => { revision.current += 1 } }, [load, props.sequence])
   useEffect(() => { setDisclosedHash('') }, [page?.candidate?.candidateHash, page?.templateHash, input])
+  useEffect(() => { setIncludeRuntimeEntities(false) }, [input])
   const act = (job: () => Promise<string | void>, success?: string) => props.perform(async () => {
     setError(''); setNotice('')
     try { const result = await job(); if (live.current) setNotice(result ?? success ?? '进度已更新。') }
@@ -62,7 +64,8 @@ export default function TtrpgOpenSituationPanel(props: { input: TtrpgOpenSituati
     const abort = new AbortController(); controller.current = abort; stopRequested.current = false; setSending(true)
     try {
       if (resume) await resumeTtrpgOpenSituationDeskV1({ ...input(), aiConfig: config, signal: abort.signal })
-      else await requestTtrpgOpenSituationDeskV1({ ...input(), submissionKey: crypto.randomUUID(), rawInput: draft, maximumCostUsd: Number(cost), aiConfig: config, signal: abort.signal })
+      else await requestTtrpgOpenSituationDeskV1({ ...input(), submissionKey: crypto.randomUUID(), rawInput: draft, maximumCostUsd: Number(cost), aiConfig: config, signal: abort.signal,
+        ...(includeRuntimeEntities ? { includeRuntimeEntities: true } : {}) })
     } catch (cause) { if (!stopRequested.current) throw cause }
     finally {
       try { if (stopRequested.current) await finishTtrpgOpenSituationDeskV1(input()) }
@@ -83,6 +86,8 @@ export default function TtrpgOpenSituationPanel(props: { input: TtrpgOpenSituati
     {page?.canRequest && <fieldset disabled={props.busy}><legend>请求一个新局势</legend>
       <label>局势拟定要求<textarea aria-label="局势拟定要求" value={draft} maxLength={10000} onChange={e => setDraft(e.target.value)} /></label>
       <label>本次调用预留上限（美元）<input aria-label="局势调用预留上限" type="number" min="0" max="1000" step="0.01" value={cost} onChange={e => setCost(e.target.value)} /></label>
+      <label><input type="checkbox" checked={includeRuntimeEntities} disabled={!page.runtimeInstanceCount} onChange={e => setIncludeRuntimeEntities(e.target.checked)} />本次允许引用本局已创建的对象（{page.runtimeInstanceCount} 个）。</label>
+      <p>勾选后模型可读取这些对象的主持资料和当前状态，用于拟定候选。采用局势仍须单独审阅。</p>
       <button disabled={!draft.trim() || !cost.trim()} onClick={() => void send()}>请求 AI 拟定局势</button>
     </fieldset>}
     {page && !page.canRequest && <p>{page.unavailable}</p>}

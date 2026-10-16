@@ -6,8 +6,10 @@ import * as p from './open-contract-parse'
 import { extractExactArtifactOwnerRootsV1 } from '../memory/artifact-roots'
 import type { ExactRunArtifactIdentityV1 } from '../types'
 import { parseTtrpgOpenPublicSituationAuthorizationV1, type TtrpgOpenPublicSituationAuthorizationV1 } from './open-public-situation-authorization-contract'
+import { parseTtrpgOpenRuntimeEntityReferencesV1, type TtrpgOpenRuntimeEntityReferencesV1 } from './open-runtime-entity-references'
 
 export interface TtrpgOpenSessionSituationReceiptV1 {
+  runtimeEntityReferences?: TtrpgOpenRuntimeEntityReferencesV1;
   schema: 'storyforge.ttrpg-open-session-situation'; version: 1;
   sourceRef: TtrpgOpenSourceRefV1; authorizationRef: TtrpgOpenSourceRefV1; runtimeSourceHash: string;
   acceptedAtWorldTurn: number; template: TtrpgSituationTemplateV1; templateHash: string; receiptHash: string; personalizationSourceKeys: string[];
@@ -30,7 +32,8 @@ export type TtrpgOpenSessionSituationReceipt = TtrpgOpenSessionSituationReceiptV
 
 function parseCommon(value: unknown) {
   const r = p.record(value, ['schema', 'version', 'sourceRef', 'authorizationRef', 'runtimeSourceHash', 'acceptedAtWorldTurn',
-    'template', 'templateHash', 'receiptHash', 'personalizationSourceKeys', 'runOriginJson', 'artifactRefs', 'model', 'disclosure'], 'session situation receipt')
+    'template', 'templateHash', 'receiptHash', 'personalizationSourceKeys', 'runOriginJson', 'artifactRefs', 'model', 'disclosure',
+    ...(Object.prototype.hasOwnProperty.call(value, 'runtimeEntityReferences') ? ['runtimeEntityReferences'] : [])], 'session situation receipt')
   const model = p.record(r.model, ['requestKey', 'epochKey', 'runContractHash', 'candidateHash', 'rawResponseHash',
     'inputManifestHash', 'contextHash', 'basisHash', 'proposalHash', 'referencesHash'], 'original situation model proof')
   const template = parseTtrpgSituationTemplateV1(r.template), templateHash = p.hash(r.templateHash, 'accepted template hash')
@@ -52,7 +55,8 @@ function parseCommon(value: unknown) {
       rawResponseHash: p.hash(model.rawResponseHash, 'original situation response'), inputManifestHash: p.hash(model.inputManifestHash, 'original situation manifest'),
       contextHash: p.hash(model.contextHash, 'original situation context'), basisHash: p.hash(model.basisHash, 'original situation basis'),
       proposalHash: p.hash(model.proposalHash, 'original situation proposal'), referencesHash: p.hash(model.referencesHash, 'actual delivered references'),
-    } }
+    }, ...(Object.prototype.hasOwnProperty.call(r, 'runtimeEntityReferences') ? { runtimeEntityReferences: parseTtrpgOpenRuntimeEntityReferencesV1(r.runtimeEntityReferences) } : {}) }
+  if (body.runtimeEntityReferences && body.runtimeEntityReferences.runtimeSourceHash !== body.runtimeSourceHash) p.fail('局势实例引用不属于原冻结来源')
   return { row: r, body }
 }
 function disclosureIdentity(value: Record<string, unknown>, templateHash: string) {

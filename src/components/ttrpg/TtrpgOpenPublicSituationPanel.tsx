@@ -13,6 +13,7 @@ export default function TtrpgOpenPublicSituationPanel(props: { input: TtrpgOpenS
   const [error, setError] = useState(''), [readError, setReadError] = useState(''), [notice, setNotice] = useState(''), [expanded, setExpanded] = useState(false)
   const [draft, setDraft] = useState('结合大家已知的信息，拟定一个可以调查并有不同选择的新局势。'), [cost, setCost] = useState('0.10')
   const [shared, setShared] = useState(false), [delegated, setDelegated] = useState(false), [sending, setSending] = useState(false)
+  const [includeRuntimeEntities, setIncludeRuntimeEntities] = useState(false)
   const live = useRef(true), revision = useRef(0), controller = useRef<AbortController | null>(null), stopRequested = useRef(false)
   const { sessionId, viewerKey, scope: { projectId, worldId, workId } } = props.input
   const input = useCallback(() => ({ scope: { projectId, worldId, workId }, sessionId, viewerKey }), [projectId, worldId, workId, sessionId, viewerKey])
@@ -23,7 +24,8 @@ export default function TtrpgOpenPublicSituationPanel(props: { input: TtrpgOpenS
   }, [input])
   useEffect(() => { live.current = true; return () => { live.current = false; revision.current += 1; controller.current?.abort() } }, [input])
   useEffect(() => { void load(); return () => { revision.current += 1 } }, [load, props.sequence])
-  useEffect(() => { setShared(false); setDelegated(false) }, [input, draft, cost, config])
+  useEffect(() => { setShared(false); setDelegated(false) }, [input, draft, cost, config, includeRuntimeEntities])
+  useEffect(() => { setIncludeRuntimeEntities(false) }, [input])
   const act = (job: () => Promise<string | void>, success?: string) => props.perform(async () => {
     setError(''); setNotice('')
     try { const result = await job(); if (live.current) setNotice(result ?? success ?? '进度已更新。') }
@@ -37,7 +39,8 @@ export default function TtrpgOpenPublicSituationPanel(props: { input: TtrpgOpenS
       else {
         if (!shared || !delegated) throw new Error('请先确认本次共享与一次委托。')
         await requestTtrpgOpenPublicSituationDeskV1({ ...input(), aiConfig: config, signal: abort.signal, submissionKey: crypto.randomUUID(), rawInput: draft,
-          maximumCostUsd: Number(cost), sharingDecision: 'share-this-request-with-current-party', delegationDecision: 'adopt-this-one-candidate' })
+          maximumCostUsd: Number(cost), sharingDecision: 'share-this-request-with-current-party', delegationDecision: 'adopt-this-one-candidate',
+          ...(includeRuntimeEntities ? { includeRuntimeEntities: true } : {}) })
       }
     } catch (cause) { if (!stopRequested.current) throw cause }
     finally {
@@ -55,6 +58,8 @@ export default function TtrpgOpenPublicSituationPanel(props: { input: TtrpgOpenS
     {page?.canRequest && <fieldset disabled={props.busy}><legend>请求一个新局势</legend>
       <label>本次共同局势要求<textarea aria-label="本次共同局势要求" maxLength={20000} value={draft} onChange={e => setDraft(e.target.value)} /></label>
       <label>本次调用预留上限（美元）<input aria-label="共同局势调用预留上限" type="number" min="0" max="1000" step="0.01" value={cost} onChange={e => setCost(e.target.value)} /></label>
+      <label><input type="checkbox" checked={includeRuntimeEntities} disabled={!page.runtimeInstanceCount} onChange={e => setIncludeRuntimeEntities(e.target.checked)} />本次允许引用全队共同可知的已创建对象（{page.runtimeInstanceCount} 个）。</label>
+      <p>仅提供这些对象的身份和名称；私密对象、装备和主持档案保持各自的知情范围。</p>
       <label><input type="checkbox" checked={shared} onChange={e => setShared(e.target.checked)} />我同意把以上本次输入共享给当前队伍。</label>
       <label><input type="checkbox" checked={delegated} onChange={e => setDelegated(e.target.checked)} />我委托 AI 主持在检查通过后采用本次这一个候选，保存局势定义。</label>
       <button disabled={!shared || !delegated || !draft.trim() || !cost.trim()} onClick={() => void send()}>请求并保存一个共同局势</button>

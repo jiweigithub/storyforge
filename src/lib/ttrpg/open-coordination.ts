@@ -9,6 +9,7 @@ import { hashProductProductionValueV2 } from '../product-production/hash'
 import { hash, integer, key, list, number, record, text } from './open-contract-parse'
 import { parseTtrpgOpenPublicSituationAuthorizationV1, type TtrpgOpenPublicSituationAuthorizationV1,
   TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1, TTRPG_OPEN_PUBLIC_SITUATION_SKILL_V1 } from './open-public-situation-authorization-contract'
+import { parseTtrpgOpenSituationRuntimeReferencePolicyV1, type TtrpgOpenSituationRuntimeReferencePolicyV1 } from './open-runtime-entity-references'
 
 export interface TtrpgOpenSourceRefV1 { sessionKey: string; sequence: number }
 export const TTRPG_OPEN_HOSTING_CAPABILITIES_V1 = ['companion-proposal','safe-companion-action','kp-narration'] as const
@@ -25,6 +26,7 @@ export interface TtrpgOpenEpochBudgetV1 {
   maximumAiActions: number
 }
 export interface TtrpgOpenEpochV1 {
+  runtimeEntityReferencePolicy?: TtrpgOpenSituationRuntimeReferencePolicyV1
   publicSituation?: TtrpgOpenPublicSituationAuthorizationV1
   manualAction?: TtrpgOpenManualActionAuthorizationV1
   hostingDelegation?: TtrpgOpenHostingDelegationV1
@@ -126,9 +128,11 @@ export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
   const hasManual = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value,'manualAction')
   const hasHosting = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value,'hostingDelegation')
   const hasPublic = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value,'publicSituation')
+  const hasRuntimeReferences = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'runtimeEntityReferencePolicy')
   const row = record(value, ['epochKey', 'startedRef', 'closedRef', 'status', 'triggeredBySeatKey',
     'viewerKey', 'triggerKind', 'inputRevision', 'sessionZeroRevision', 'authorizationHash', 'budget',
-    'successfulActorKeys', 'reservedCalls', 'consumedTokens', 'actualCostUsd', 'stopReason', ...(hasManual ? ['manualAction'] : []),...(hasHosting ? ['hostingDelegation'] : []), ...(hasPublic ? ['publicSituation'] : [])], 'epoch')
+    'successfulActorKeys', 'reservedCalls', 'consumedTokens', 'actualCostUsd', 'stopReason', ...(hasManual ? ['manualAction'] : []),...(hasHosting ? ['hostingDelegation'] : []), ...(hasPublic ? ['publicSituation'] : []),
+    ...(hasRuntimeReferences ? ['runtimeEntityReferencePolicy'] : [])], 'epoch')
   const manual = hasManual ? record(row.manualAction,['requestJson','requestHash'],'manual action authorization') : null
   const manualAction = manual ? { requestJson: text(manual.requestJson,'manual request',100_000),requestHash: hash(manual.requestHash,'manual request hash') } : undefined
   if (manualAction && row.triggerKind !== 'submit-action') fail('人工行动只能使用明确的新行动授权')
@@ -148,6 +152,11 @@ export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
       || hostingDelegation.stoppedRef && hostingDelegation.stoppedRef.sequence >= closedRef.sequence))) fail('有限主持委托不属于原窗口或超出原预算')
   const successfulActorKeys = list(row.successfulActorKeys, 'successfulActorKeys', v => key(v, 'successful actor'), 1000, 0)
   const publicSituation = hasPublic ? parseTtrpgOpenPublicSituationAuthorizationV1(row.publicSituation) : undefined
+  const runtimeEntityReferencePolicy = hasRuntimeReferences ? parseTtrpgOpenSituationRuntimeReferencePolicyV1(row.runtimeEntityReferencePolicy) : undefined
+  if (runtimeEntityReferencePolicy && (runtimeEntityReferencePolicy.consumer === 'private-gm' ? row.triggerKind !== 'request-situation'
+    : row.triggerKind !== TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1 || !publicSituation
+      || JSON.stringify(publicSituation.basis.runtimeEntityReferencePolicy) !== JSON.stringify(runtimeEntityReferencePolicy))) fail('实例引用策略不能借用其他用途或原请求授权')
+  if (publicSituation?.basis.runtimeEntityReferencePolicy && !runtimeEntityReferencePolicy) fail('共同局势原请求实例策略未冻结在窗口中')
   if (Boolean(publicSituation) !== (row.triggerKind === TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1)) fail('共同局势必须绑定本次原 Run 授权，其他窗口不能携带该授权')
   if (publicSituation && (manualAction || hostingDelegation || budget.maximumCalls !== 1 || budget.maximumAiActions !== 0 || successfulActorKeys.length
     || publicSituation.basis.authorizationEpochKey !== row.epochKey || publicSituation.basis.sessionKey !== startedRef.sessionKey
@@ -161,7 +170,7 @@ export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
   const reservedCalls = integer(row.reservedCalls, 'reservedCalls', 0, budget.maximumCalls)
   const consumedTokens = integer(row.consumedTokens, 'consumedTokens', 0, Number.MAX_SAFE_INTEGER)
   const actualCostUsd = row.actualCostUsd === null ? null : number(row.actualCostUsd, 'actualCostUsd', 0, 1_000_000)
-  return { ...(publicSituation ? { publicSituation } : {}), ...(hostingDelegation ? { hostingDelegation } : {}),...(manualAction ? { manualAction } : {}), epochKey: key(row.epochKey, 'epochKey'), startedRef, closedRef, status: row.status,
+  return { ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}), ...(publicSituation ? { publicSituation } : {}), ...(hostingDelegation ? { hostingDelegation } : {}),...(manualAction ? { manualAction } : {}), epochKey: key(row.epochKey, 'epochKey'), startedRef, closedRef, status: row.status,
     triggeredBySeatKey: key(row.triggeredBySeatKey, 'triggeredBySeatKey'), viewerKey: key(row.viewerKey, 'viewerKey'),
     triggerKind: row.triggerKind, inputRevision: hash(row.inputRevision, 'inputRevision'),
     sessionZeroRevision: integer(row.sessionZeroRevision, 'sessionZeroRevision', 1, Number.MAX_SAFE_INTEGER),
