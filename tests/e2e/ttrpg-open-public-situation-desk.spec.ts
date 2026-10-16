@@ -78,7 +78,7 @@ test('player-host explicitly shares and delegates once, saves without admission,
   await expect(page.locator('body')).not.toContainText('NATIVE-COMMON-DESK-HIDDEN-')
   await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
-  await page.screenshot({ path: '/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/public-situation-desk-mobile-v2.png', fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('public-situation-desk-mobile-v2.png'), fullPage: true })
 })
 test('Stop durably closes one actual in-flight request and preserves unknown cost without adoption or a replacement send', async ({ page }) => {
   test.setTimeout(180000)

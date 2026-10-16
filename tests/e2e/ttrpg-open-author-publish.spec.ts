@@ -32,7 +32,7 @@ test('normal author UI publishes the actual open Build, then opens a release-bou
   },f)
   expect(saved.session.productBuildId).toBeNull();expect(saved.session.runtimeSourceHash).toBe(f.build.packageHash)
   expect(saved.state.ttrpg.openRun).not.toBeNull()
-  await page.screenshot({ path: '/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/p2-author-published-play-browser.png',fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('p2-author-published-play-browser.png'),fullPage: true })
   await page.reload()
   await page.getByLabel('我的角色',{ exact: true }).selectOption('viewer.seat.hero')
   await page.getByRole('button',{ name: '确认身份并进入',exact: true }).click()
@@ -81,6 +81,6 @@ test('a separate clean browser restores the complete author backup and explicitl
       const importer = new Function('p','return import(p)') as (p: string) => Promise<any>
       return (await importer('/storyforge/src/lib/db/schema.ts')).db.productReleases.count()
     })).toBe(0)
-    await other.screenshot({ path: '/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/p2-author-backup-browser.png',fullPage: true })
+    await other.screenshot({ path: test.info().outputPath('p2-author-backup-browser.png'),fullPage: true })
   } finally { await isolated.close() }
 })

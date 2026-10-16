@@ -66,7 +66,7 @@ test(`${revisionPage}: restored published backup creates a new revision and pres
     },f)
     expect(after.oldBuild).toEqual(f.build);expect(after.oldRelease).toEqual(f.release);expect(after.state).toEqual(f.state)
     expect(after.versions).toEqual([1,2])
-    await other.screenshot({ path: `/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/p2-restored-evolution-${revisionPage}-browser.png`,fullPage: true })
+    await other.screenshot({ path: test.info().outputPath(`p2-restored-evolution-${revisionPage}-browser.png`),fullPage: true })
   } finally { await isolated.close() }
 })
 }

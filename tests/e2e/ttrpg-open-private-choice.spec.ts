@@ -42,7 +42,7 @@ for (const humanGm of [true,false]) test(`private cost disclosure, personal choi
   await expect(page.getByTestId('ttrpg-open-host-table')).toHaveCount(0)
   await expect(page.getByLabel('主持查看已保存裁定',{ exact: true })).toHaveCount(0)
   await expect(page.getByText('OTHER-PRIVATE-PROFILE',{ exact: true })).toHaveCount(0)
-  await page.screenshot({ path: `/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/p4-private-choice-${humanGm ? 'human' : 'fallback'}-player.png`,fullPage: true })
+  await page.screenshot({ path: test.info().outputPath(`p4-private-choice-${humanGm ? 'human' : 'fallback'}-player.png`),fullPage: true })
   await page.getByRole('button',{ name: '选择「选项 2」',exact: true }).click()
   await expect(page.getByRole('button',{ name: '选择「选项 2」',exact: true })).toHaveCount(0)
   await page.getByRole('button',{ name: '继续结算已确认的行动',exact: true }).click()

@@ -83,7 +83,7 @@ test('normal author production and publication supports a real human GM action w
   await expect(page.getByTestId('ttrpg-open-manual-action')).toBeVisible()
   await expect(page.getByRole('button',{ name: '提出行动，查看风险',exact: true })).toBeVisible()
   await page.getByTestId('ttrpg-open-manual-action').scrollIntoViewIfNeeded()
-  await page.screenshot({ path: '/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/p3-manual-action-normal-author.png',fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('p3-manual-action-normal-author.png'),fullPage: true })
 })
 test('a saved manual authorization recovers after an operation write failure and reload without another epoch', async ({ page }) => {
   await page.goto('./')

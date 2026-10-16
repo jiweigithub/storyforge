@@ -68,7 +68,7 @@ test('actual human UI consults, saves, reviews and creates one frozen NPC, then 
   expect(after.world).toEqual(fixture.world); expect(after.releases).toEqual(fixture.releases); expect(after.worldTurn).toBe(0); expect(after.runs).toBe(0); expect(sends).toBe(0)
   await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
-  await page.screenshot({ path: '/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/entity-desk-mobile-v1.png', fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('entity-desk-mobile-v1.png'), fullPage: true })
 })
 test('another human sees only their inventory effect, can refuse it, and explicitly disposes while paused without creating any object', async ({ page }) => {
   test.setTimeout(180000)

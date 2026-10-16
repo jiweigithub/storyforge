@@ -36,7 +36,7 @@ test('author exports source-bound playtest diagnosis and explicitly creates a re
   await request.fill('保留作者已有要求：调整灯塔开场。')
   await panel.getByRole('button',{ name: '加入修订要求',exact: true }).click()
   await expect(request).toHaveValue(/保留作者已有要求：调整灯塔开场。\n\n试玩诊断修订依据/)
-  await panel.screenshot({ path: '/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/p6-author-diagnostics-browser.png' })
+  await panel.screenshot({ path: test.info().outputPath('p6-author-diagnostics-browser.png') })
   const before = await page.evaluate(async f => {
     const importer = new Function('p','return import(p)') as (p: string) => Promise<any>
     const { db } = await importer('/storyforge/src/lib/db/schema.ts')

@@ -68,7 +68,7 @@ test('real GM UI requests, reviews exact disclosure, repairs one commit, ends th
   await expect(page.getByRole('button', { name: '返回身份选择', exact: true })).toBeEnabled()
   expect(sends).toHaveLength(1)
   await page.setViewportSize({ width: 390, height: 844 }); await card.locator('summary').first().scrollIntoViewIfNeeded()
-  await page.screenshot({ path: '/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/situation-desk-mobile-v3.png' })
+  await page.screenshot({ path: test.info().outputPath('situation-desk-mobile-v3.png') })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   const final = await page.evaluate(async sessionId => {
     const importer = new Function('p', 'return import(p)') as (p: string) => Promise<any>

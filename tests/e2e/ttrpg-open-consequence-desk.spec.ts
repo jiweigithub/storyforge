@@ -23,7 +23,7 @@ test('a host explicitly reviews pressure parameters and returns to personal cons
   await page.getByRole('button', { name: '检查具体后果', exact: true }).click()
   await expect(page.getByRole('region', { name: '主持后果预览', exact: true })).toContainText('消耗 2')
   await expect(page.getByRole('region', { name: '我的当前状态', exact: true })).toContainText(`${f.resourceName}：${f.before}`)
-  await page.screenshot({ path: '/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/p3-consequence-host-browser.png', fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('p3-consequence-host-browser.png'), fullPage: true })
   await page.getByRole('button', { name: '确认主持裁定并提交相关玩家', exact: true }).click()
   await expect(page.locator('body')).not.toContainText('HOST-ONLY-PRESSURE-REASON')
   await expect(page.getByRole('button', { name: '接受该角色的后果', exact: true })).toBeVisible()

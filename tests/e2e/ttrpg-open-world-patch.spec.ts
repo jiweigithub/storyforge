@@ -41,7 +41,7 @@ test('real release host desk exports selected facts, checks bytes, keeps private
   await card.getByLabel('交付事实：GM-PATCH-REQUIRES-CHOICE', { exact: true }).scrollIntoViewIfNeeded()
   await expect(card.getByLabel('交付事实：GM-PATCH-REQUIRES-CHOICE', { exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: '导出待作者审阅的世界补丁', exact: true })).toBeVisible()
-  await page.screenshot({ path: '/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/p8-world-patch-mobile.png' })
+  await page.screenshot({ path: test.info().outputPath('p8-world-patch-mobile.png') })
   await page.reload(); await enter(); card = page.getByTestId('ttrpg-world-patch'); await card.locator('summary').first().click()
   await expect(card.getByLabel('明确包含主持秘密，作为私密审阅材料', { exact: true })).not.toBeChecked()
   await expect(card).not.toContainText('GM-PATCH')

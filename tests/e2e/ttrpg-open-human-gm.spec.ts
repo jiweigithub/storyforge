@@ -55,7 +55,7 @@ test('a human GM narrates another player’s real operation then hands the desk 
   await expect(page.getByRole('region',{ name: '主持冒险记录',exact: true })).toContainText('安全的落脚点')
   await page.reload();await enterHost(page)
   await expect(page.getByRole('region',{ name: '主持冒险记录',exact: true })).toContainText('安全的落脚点')
-  await page.screenshot({ path: '/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/p3-human-gm-browser.png',fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('p3-human-gm-browser.png'),fullPage: true })
   await page.getByRole('button',{ name: '返回身份选择',exact: true }).click()
   await expect(page.getByTestId('ttrpg-open-host-table')).toHaveCount(0)
   await expect(page.getByText('安全的落脚点',{ exact: false })).toHaveCount(0)

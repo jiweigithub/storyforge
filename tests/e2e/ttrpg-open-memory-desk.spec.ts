@@ -58,7 +58,7 @@ test('player writes a private memory, retries the original failed save and expli
   await expect(entries).toContainText('只明确分享给主角')
   await expect(entries).not.toContainText('尚未保存')
   await card.scrollIntoViewIfNeeded()
-  await card.screenshot({ path: '/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/p8-memory-desk-player.png' })
+  await card.screenshot({ path: test.info().outputPath('p8-memory-desk-player.png') })
   const state = await page.evaluate(async fixture => {
     const importer = new Function('p', 'return import(p)') as (p: string) => Promise<any>
     const { db } = await importer('/storyforge/src/lib/db/schema.ts')

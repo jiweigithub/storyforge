@@ -40,7 +40,7 @@ for (const humanGm of [true,false]) test(`private table question and human answe
   await expect(card.getByRole('status')).toHaveText('讨论已保存。')
   await card.scrollIntoViewIfNeeded()
   if (humanGm) await expect(page.getByText('正在读取主持进度…',{ exact: true })).toHaveCount(0)
-  if (humanGm) await page.screenshot({ path: '/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/p3-table-talk-human-host.png',fullPage: true })
+  if (humanGm) await page.screenshot({ path: test.info().outputPath('p3-table-talk-human-host.png'),fullPage: true })
   await page.reload();await player(page);card = await discussion(page)
   await expect(card.getByRole('region',{ name: '当前身份可见的本桌讨论' })).toContainText('确认冻结规则展示的实际代价')
   const final = await page.evaluate(async f => {

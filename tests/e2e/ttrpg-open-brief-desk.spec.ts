@@ -76,7 +76,7 @@ test('actual host UI requests once, reviews source reliability, repairs an inter
   await page.getByRole('button', { name: '交接给另一位玩家', exact: true }).click(); await player(page)
   card = await panel(page); await expect(card.getByLabel('复盘要求', { exact: true })).not.toHaveValue('UNSAVED-HOST-BRIEF-DRAFT')
   await page.setViewportSize({ width: 390, height: 844 }); await card.scrollIntoViewIfNeeded()
-  await card.screenshot({ path: '/Users/qinyingying/Documents/Codex/2026-10-13/ttrpg-handoff-review/p8-model-recap-desk-mobile.png' })
+  await card.screenshot({ path: test.info().outputPath('p8-model-recap-desk-mobile.png') })
   const result = await page.evaluate(async sessionId => {
     const importer = new Function('p', 'return import(p)') as (p: string) => Promise<any>
     const state = await (await importer('/storyforge/src/lib/product/runtime-core.ts')).readProductRuntimeState(sessionId)
