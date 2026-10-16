@@ -117,4 +117,30 @@ describe('R-TTRPGOPEN13 real human Oracle model desk and original request recove
     await expect(repairTtrpgOpenOracleModelDeskV1(read)).rejects.toThrow(/历史|本地/)
     expect(await readProductRuntimeState(read.sessionId)).toEqual(before); expect(sends).not.toHaveBeenCalled()
   })
+  it.each(['model.responded', 'candidate.persisted', 'confirmation.recorded', 'run.cancelled'] as const)('repairs the actual original %s cut through the desk without another request or changed fact decision', async cut => {
+    const s = await setup(), add = db.agentRunEvents.add.bind(db.agentRunEvents), sends = vi.fn(async () => s.output)
+    let key = ''
+    const spy = vi.spyOn(db.agentRunEvents, 'add').mockImplementation(async (...args) => {
+      if (args[0].type === cut) throw new Error('ORACLE-DESK-RECEIPT-CUT:' + cut)
+      return add(...args)
+    })
+    const work = requestTtrpgOpenOracleModelDeskV1({ ...s.command, runAI: sends, onPrepared: value => { key = value } })
+    if (cut === 'model.responded' || cut === 'candidate.persisted') await expect(work).rejects.toThrow()
+    else {
+      await work
+      const read = { ...s.owner, requestKey: key }, candidate = (await readTtrpgOpenOracleModelDeskV1(read))!.request!.candidate!
+      if (cut === 'confirmation.recorded') await expect(reviewTtrpgOpenOracleModelDeskV1({ ...read, candidateHash: candidate.candidateHash,
+        interpretationDecision: 'accept', interpretationReason: null, choices: [{ proposalIndex: 0, decision: 'adopt', reason: null }], decision: 'reviewed-this-original-oracle-candidate' })).rejects.toThrow(/确认已提交/)
+      else await expect(finishTtrpgOpenOracleModelDeskV1({ ...read, decision: 'discard-this-oracle-instance-request-and-close-window' })).rejects.toThrow('ORACLE-DESK-RECEIPT-CUT:run.cancelled')
+    }
+    spy.mockRestore()
+    const read = { ...s.owner, requestKey: key }, page = await readTtrpgOpenOracleModelDeskV1(read)
+    expect(page!.request!.canRepairResponse || page!.request!.canRepairReview || page!.request!.canRepairStop).toBe(true)
+    const before = await readProductRuntimeState(s.f.sessionId)
+    await repairTtrpgOpenOracleModelDeskV1(read)
+    const after = await readProductRuntimeState(s.f.sessionId), repaired = (await readTtrpgOpenOracleModelDeskV1(read))!.request!
+    expect(repaired.canRepairResponse || repaired.canRepairReview || repaired.canRepairStop).toBe(false)
+    expect(after.entities).toEqual(before.entities); expect(after.ttrpg!.openRun!.factLedger).toEqual(before.ttrpg!.openRun!.factLedger)
+    expect(after.ttrpg!.openRun!.coordination.calls).toHaveLength(1); expect(await db.agentRuns.count()).toBe(1); expect(sends).toHaveBeenCalledOnce()
+  })
 })
