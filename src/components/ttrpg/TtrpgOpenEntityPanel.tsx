@@ -3,6 +3,7 @@ import type { TtrpgOpenEntityProposalV1 } from '../../lib/ttrpg/open-entity-cont
 import { readTtrpgOpenEntityDeskV1, startTtrpgOpenEntityDeskV1, consultTtrpgOpenEntityDeskV1, proposeTtrpgOpenEntityDeskV1,
   confirmTtrpgOpenEntityDeskV1, materializeTtrpgOpenEntityDeskV1, disposeTtrpgOpenEntityDeskV1, closeTtrpgOpenEntityDeskV1,
   type TtrpgOpenEntityDeskInputV1 } from '../../lib/ttrpg/open-entity-desk'
+import TtrpgOpenEntityModelPanel from './TtrpgOpenEntityModelPanel'
 type Desk = Awaited<ReturnType<typeof readTtrpgOpenEntityDeskV1>>
 const kinds = { actor: 'NPC', location: '地点', item: '物品' }
 
@@ -52,8 +53,11 @@ export default function TtrpgOpenEntityPanel(props: { input: TtrpgOpenEntityDesk
         <button disabled={!table || !question.trim() || Boolean(table.tiers.length) && !tier} onClick={() => void act(() => consultTtrpgOpenEntityDeskV1({ ...input(), submissionKey: crypto.randomUUID(), oracleKey: tableKey, question, likelihoodTierKey: tier || null }), '原咨询结果已保存；刷新不会重新咨询。')}>明确咨询一次</button>
       </fieldset>}
       {page.oracles.map(o => <article key={o.sourceRef.sequence}><p>问题：{o.question}</p><p>原结果：{o.result}；本次还可创建 {o.remaining} 个对象（含初始装备）。</p>{o.constraints.map((s, i) => <p key={i}>{s}</p>)}</article>)}
-      {!pending && page.ownWindow && <fieldset disabled={disabled || !page.canPropose}><legend>提出本局对象</legend>
+      {!pending && page.ownWindow && <fieldset disabled={disabled || !page.canPropose}><legend>选择本次创建依据</legend>
         <label>本次创建依据<select aria-label="本次创建依据" value={oracleSequence} onChange={e => { setOracleSequence(e.target.value); setBasket([]); changed() }}><option value="">选择已保存的原结果</option>{page.oracles.filter(o => o.remaining > 0).map(o => <option key={o.sourceRef.sequence} value={o.sourceRef.sequence}>{o.question}（余 {o.remaining}）</option>)}</select></label>
+      </fieldset>}
+      <TtrpgOpenEntityModelPanel input={input()} oracleSourceRef={oracle?.sourceRef} sequence={props.sequence} busy={props.busy} perform={props.perform} />
+      {!pending && page.ownWindow && <fieldset disabled={disabled || !page.canPropose}><legend>人工提出本局对象</legend>
         <label>新对象模板<select aria-label="新对象模板" value={templateKey} onChange={e => { resetDraft(); setTemplateKey(e.target.value); changed() }}><option value="">选择允许的模板</option>{page.templates.map(t => <option key={t.key} value={t.key} disabled={t.remaining <= basket.filter(p => p.templateKey === t.key).length}>{kinds[t.kind]}：{t.description}</option>)}</select></label>
         {template && <>
           <p>模板可用名额：{template.remaining}；本对象连同初始装备占用 {template.instanceCost} 个名额。</p>
@@ -78,7 +82,8 @@ export default function TtrpgOpenEntityPanel(props: { input: TtrpgOpenEntityDesk
           if (live.current) { setBasket([]); changed() }
         }, '提案已保存，请审阅本版本并分别确认。尚未创建对象。')}>保存待确认提案</button>
       </fieldset>}
-      {page.canClose && <button disabled={disabled} onClick={() => void act(() => closeTtrpgOpenEntityDeskV1({ ...input(), submissionKey: crypto.randomUUID() }), '本次咨询窗口已结束，原结果与已创建对象保留。')}>结束本次实体咨询</button>}
+      {page.canClose && !page.hasUnadoptedEntityModelRequest && <button disabled={disabled} onClick={() => void act(() => closeTtrpgOpenEntityDeskV1({ ...input(), submissionKey: crypto.randomUUID() }), '本次咨询窗口已结束，原结果与已创建对象保留。')}>结束本次实体咨询</button>}
+      {page.canClose && page.hasUnadoptedEntityModelRequest && <p>请在 AI 起草中明确放弃未采用候选并结束本次咨询。</p>}
     </>}
     {pending && <section aria-label="待确认实体计划"><h3>{pending.originalHost ? '本次创建计划' : '与我有关的库存变化'}</h3>
       <p>{pending.origin === 'model' ? '本计划来自 AI 候选，已由原主持审阅；创建仍须相关角色分别确认。' : '本计划由真人提出；创建仍须相关角色分别确认。'}</p>

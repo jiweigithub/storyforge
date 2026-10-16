@@ -3,7 +3,7 @@ import { loadTtrpgOpenEntityContextV1 } from '../../src/lib/ttrpg/open-entity-co
 import type { TtrpgOpenEntityModelSelectionV1 } from '../../src/lib/ttrpg/open-entity-model-contract'
 import { OPEN_HUMAN_VIEWER } from './open-ttrpg-session'
 
-export async function setupOpenEntityModelV1(audience: 'party' | 'private' | 'gm-only' = 'party') {
+export async function setupOpenEntityModelV1(audience: 'party' | 'private' | 'gm-only' = 'party', configure?: Parameters<typeof setupOpenEntityPlanningV1>[0]) {
   const viewerKey = audience === 'gm-only' ? 'viewer.gm' : OPEN_HUMAN_VIEWER
   const s = await setupOpenEntityPlanningV1(pkg => {
     const c = pkg.ttrpg!.campaign; c.runtimePolicy.enabled = true
@@ -12,6 +12,7 @@ export async function setupOpenEntityModelV1(audience: 'party' | 'private' | 'gm
     c.fronts[0].goal = 'ENTITY-MODEL-FRONT-SECRET-CANARY'
     c.dynamicEntityTemplates.push({ ...c.dynamicEntityTemplates[0], templateKey: 'private.hero.template', audience: 'private', knownByActorKeys: ['hero'], description: 'ENTITY-MODEL-PRIVATE-TEMPLATE-CANARY' },
       { ...c.dynamicEntityTemplates[0], templateKey: 'gm.template', audience: 'gm-only', description: 'ENTITY-MODEL-GM-TEMPLATE-CANARY' })
+    configure?.(pkg)
   }, viewerKey)
   const context = await loadTtrpgOpenEntityContextV1({ scope: s.f.scope, sessionId: s.f.sessionId, actorKey: 'gm' })
   const partition = context.directory.find(d => d.scope.audience === audience)!

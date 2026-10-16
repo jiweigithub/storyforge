@@ -8,6 +8,7 @@ import { readInstanceAgentRunV1 } from '../agent/run/event-store'
 import { canonicalStringify as stable } from '../agent/run/hash'
 import type { TtrpgOpenInputEvidenceV1 } from './open-input-evidence'
 import { reviewTtrpgOpenEntityModelDeliveryV1 } from './open-entity-model-contract'
+import type { TtrpgOpenModelCallV1 } from './open-model-calls'
 
 export interface TtrpgOpenEntityCandidateV1 extends Omit<TtrpgOpenIntentCandidateV1, 'schema' | 'intent'> {
   schema: 'storyforge.ttrpg-open-entity-candidate';
@@ -16,12 +17,17 @@ export interface TtrpgOpenEntityCandidateV1 extends Omit<TtrpgOpenIntentCandidat
 export async function assertTtrpgOpenEntityCandidateReaderV1(input: TtrpgOpenCandidateReadV1) {
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'human', viewerKey: input.viewerKey } })
   const call = loaded.runtime.openRun!.coordination.calls.find(c => c.requestKey === input.requestKey)
+  assertTtrpgOpenEntityHumanReaderV1(loaded, call, input.viewerKey)
+  await loaded.assertCurrent()
+}
+/** Shared current human permission, before a desk resolves or reads original private Run evidence. */
+export function assertTtrpgOpenEntityHumanReaderV1(loaded: Awaited<ReturnType<typeof loadTtrpgOpenMemoryReadStateV1>>,
+  call: TtrpgOpenModelCallV1 | undefined, viewerKey: string) {
   const epoch = loaded.runtime.openRun!.coordination.epochs.find(e => e.epochKey === call?.authorizationEpochKey)
-  if (!loaded.humanHost || !call?.entityProposal || epoch?.viewerKey !== input.viewerKey
+  if (!loaded.humanHost || !call?.entityProposal || epoch?.viewerKey !== viewerKey
     || call.entityProposal.scope.audience === 'gm-only' && loaded.seat?.role !== 'gm'
     || call.entityProposal.scope.audience === 'private' && loaded.seat?.role !== 'gm'
       && !call.entityProposal.scope.recipientActorKeys.includes(loaded.seat?.actorKey ?? '')) throw new Error('当前无法读取本人的实体候选；原资料保持受限。')
-  await loaded.assertCurrent()
 }
 export async function readTtrpgOpenEntityCandidateV1(input: TtrpgOpenCandidateReadV1) {
   const candidate = await readTtrpgOpenRuntimeCandidateV1(input, 'entity-proposal')

@@ -50,6 +50,7 @@ type TestTransport = (messages: ChatMessage[], signal: AbortSignal, result: Chat
 /** Explicit request only; no UI read, reload or recovery calls this preparation. */
 export async function generateTtrpgOpenEntityCandidateV1(input: Omit<Parameters<typeof prepareTtrpgOpenEntityInputV1>[0], 'modelIdentity'> & {
   aiConfig?: AIConfig; runAI?: TestTransport
+  onPrepared?: (request: TtrpgOpenCandidateReadV1) => void | Promise<void>
 }) {
   if (!input.aiConfig && !input.runAI) throw new Error('[ttrpg-entity] 缺少明确模型配置')
   const meta = { category: 'runtime.ttrpg-open.entity-propose', projectId: input.scope.projectId,
@@ -59,6 +60,7 @@ export async function generateTtrpgOpenEntityCandidateV1(input: Omit<Parameters<
     : { provider: resolved!.config.provider, model: resolved!.config.model }
   if (!input.runAI && modelIdentity.provider === 'poe') throw new Error('[ttrpg-entity] 当前 provider 不支持冻结输出上限')
   const prepared = await prepareTtrpgOpenEntityInputV1({ ...input, modelIdentity })
+  await input.onPrepared?.({ scope: input.scope, sessionId: input.sessionId, viewerKey: input.viewerKey, runId: prepared.runId, requestKey: prepared.requestKey })
   const result = await executeTtrpgOpenEntityRequestV1({ ...input, runId: prepared.runId, requestKey: prepared.requestKey })
   if (result.status !== 'candidate') throw new Error('[ttrpg-entity] 原请求已有执行器接管，未重复发送')
   return { prepared, ...result }

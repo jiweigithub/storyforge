@@ -44,6 +44,8 @@ function projection(loaded: Awaited<ReturnType<typeof load>>, input: TtrpgOpenEn
     && !run.coordination.calls.some(c => c.authorizationEpochKey === epoch?.epochKey && ['prepared', 'dispatched', 'unknown'].includes(c.status))
     && !runtime.branchLineage?.recoveryTasks.some(t => !['completed', 'withdrawn'].includes(t.status))
   const pending = run.entityOperations?.find(o => !o.resolution)
+  const hasUnadoptedEntityModelRequest = Boolean(ownWindow && run.coordination.calls.some(c => c.entityProposal
+    && c.authorizationEpochKey === epoch?.epochKey && !run.entityOperations?.some(o => o.plan.version === 2 && o.plan.modelOrigin.call.requestKey === c.requestKey)))
   const ownApproval = pending?.plan.requiredApprovals.filter(a => a.allowedSeatKeys.includes(seat!.seatKey)) ?? []
   const mayReadPending = Boolean(pending && (pending.plan.viewerKey === input.viewerKey || ownApproval.length))
   const plan = pending?.plan
@@ -84,7 +86,7 @@ function projection(loaded: Awaited<ReturnType<typeof load>>, input: TtrpgOpenEn
       result: typeof result === 'string' ? ({ yes: '是', 'yes-but': '是，但是…', 'no-but': '否，但是…', no: '否' }[result]) : table.entries?.find(e => e.entryKey === result.entryKey)?.text ?? '原结果已保存',
       remaining: Math.max(0, table.interpretation.maxNewEntities - used), constraints: [...table.interpretation.mustRespect] }
   }) : []
-  return { sequence: state.lastSequence, host: humanHost, paused: !active, ownWindow,
+  return { sequence: state.lastSequence, host: humanHost, paused: !active, ownWindow, hasUnadoptedEntityModelRequest,
     canStart: humanHost && templates.some(t => t.remaining > 0) && active && idle && !epoch && !pending,
     canConsult: humanHost && templates.some(t => t.remaining > 0) && active && idle && ownWindow && !pending && run.consultedThisWorldTurn < 2,
     canPropose: humanHost && active && idle && ownWindow && !pending && oracles.some(o => o.remaining > 0) && templates.some(t => t.remaining > 0),
@@ -152,7 +154,7 @@ export async function disposeTtrpgOpenEntityDeskV1(input: TtrpgOpenEntityDeskInp
 }
 export async function closeTtrpgOpenEntityDeskV1(input: TtrpgOpenEntityDeskInputV1 & { submissionKey: string }) {
   const { loaded, page } = await host(input)
-  if (!page.canClose) throw new Error('请先处置待确认计划与当前行动。')
+  if (!page.canClose || page.hasUnadoptedEntityModelRequest) throw new Error('请先处置待确认计划、原 AI 请求与当前行动。')
   await loaded.assertCurrent()
   return closeTtrpgOpenEpochV1({ ...envelope(input, loaded, 'entity.desk.close.' + submission(input.submissionKey)), epochKey: loaded.runtime.openRun!.coordination.activeEpochKey!, reason: '真人明确结束本次咨询与实体提案' }).then(saved)
 }
