@@ -14,7 +14,7 @@ export interface AvgVisualProductionRequirementV1 {
   family: { subjectKey: string; familyKey: string; variantKey: string; revision: number }
   consumer: AvgConsumerV1
   triggerBeatKey: string | null
-  itemStateKey: string | null
+  itemVariantKey: string | null
   mediaKind: Extract<ProductMediaKind, 'background' | 'character-pose' | 'character-expression' | 'cg' | 'ui'>
   prompt: string
   negativePrompt: string
@@ -32,7 +32,10 @@ export interface AvgVisualProductionBatchV1 {
   version: 1
   batchKey: string
   revision: number
-  baseWorkspaceHash: string
+  /** Required before the final author-stage exists, so dispatch can validate
+   * exact accepted rules/scripts without consulting a mutable editor draft. */
+  aspectRatio: '16:9' | '4:3'
+  sourceInputHash: string
   requirements: AvgVisualProductionRequirementV1[]
 }
 
@@ -63,7 +66,7 @@ function requirementKey(value: unknown): string {
 
 export function parseAvgVisualProductionRequirementV1(value: unknown): AvgVisualProductionRequirementV1 {
   const r = avgRecord(value, ['requirementKey', 'revision', 'assetKey', 'name', 'altText', 'family', 'consumer', 'mediaKind',
-    'triggerBeatKey', 'itemStateKey', 'prompt', 'negativePrompt', 'invariants', 'forbiddenDepictions', 'width', 'height', 'resolutionTier', 'alpha', 'references'], 'visual requirement')
+    'triggerBeatKey', 'itemVariantKey', 'prompt', 'negativePrompt', 'invariants', 'forbiddenDepictions', 'width', 'height', 'resolutionTier', 'alpha', 'references'], 'visual requirement')
   const f = avgRecord(r.family, ['subjectKey', 'familyKey', 'variantKey', 'revision'], 'media family')
   const consumer = parseAvgConsumerV1(r.consumer)
   const mediaKind = avgEnum(r.mediaKind, ['background', 'character-pose', 'character-expression', 'cg', 'ui'] as const, 'mediaKind')
@@ -78,9 +81,10 @@ export function parseAvgVisualProductionRequirementV1(value: unknown): AvgVisual
     || consumer.domain === 'reference' && ['identity', 'style'].includes(consumer.slot)
   if (!supported) throw new Error('[avg-media] 媒资用途与已实现的图像消费者不闭合')
   const triggerBeatKey = r.triggerBeatKey === null ? null : avgKey(r.triggerBeatKey, 'triggerBeatKey')
-  const itemStateKey = r.itemStateKey === null ? null : avgKey(r.itemStateKey, 'itemStateKey')
+  const itemVariantKey = r.itemVariantKey === null ? null : avgKey(r.itemVariantKey, 'itemVariantKey')
   if ((consumer.domain === 'stage') !== (triggerBeatKey !== null)
-    || itemStateKey !== null && !['inventory', 'evidence'].includes(consumer.domain)) throw new Error('[avg-media] 消费触发拍或物件状态与用途不符')
+    || consumer.domain !== 'stage' && consumer.sceneKey !== null
+    || itemVariantKey !== null && !['inventory', 'evidence'].includes(consumer.domain)) throw new Error('[avg-media] 消费触发拍或物件显示变体与用途不符')
   const invariants = texts(r.invariants, 'invariants'), forbiddenDepictions = texts(r.forbiddenDepictions, 'forbiddenDepictions')
   const prompt = avgText(r.prompt, 'prompt', 12_000), negativePrompt = avgText(r.negativePrompt, 'negativePrompt', 4000, true)
   if (prompt.length + invariants.join('\n').length > 18_000 || negativePrompt.length + forbiddenDepictions.join('\n').length > 7000) {
@@ -90,7 +94,7 @@ export function parseAvgVisualProductionRequirementV1(value: unknown): AvgVisual
     requirementKey: requirementKey(r.requirementKey), revision: avgNumber(r.revision, 'requirement.revision', 1, 1_000_000),
     assetKey: avgKey(r.assetKey, 'assetKey'), name: avgText(r.name, 'name', 200), altText: avgText(r.altText, 'altText', 1000),
     family: { subjectKey, familyKey: avgKey(f.familyKey, 'familyKey'), variantKey: avgKey(f.variantKey, 'variantKey'), revision: avgNumber(f.revision, 'family.revision', 1, 1_000_000) },
-    consumer, triggerBeatKey, itemStateKey, mediaKind, prompt, negativePrompt, invariants, forbiddenDepictions,
+    consumer, triggerBeatKey, itemVariantKey, mediaKind, prompt, negativePrompt, invariants, forbiddenDepictions,
     width: avgNumber(r.width, 'width', 320, 8192), height: avgNumber(r.height, 'height', 320, 8192),
     resolutionTier: avgEnum(r.resolutionTier, ['1K', '2K'] as const, 'resolutionTier'), alpha: avgEnum(r.alpha, ['required', 'not-required'] as const, 'alpha'),
     references: parseAvgMediaReferencesV1(r.references),
@@ -98,16 +102,17 @@ export function parseAvgVisualProductionRequirementV1(value: unknown): AvgVisual
 }
 
 export function parseAvgVisualProductionBatchV1(value: unknown): AvgVisualProductionBatchV1 {
-  const r = avgRecord(avgProtocolBody(value), ['schema', 'version', 'batchKey', 'revision', 'baseWorkspaceHash', 'requirements'], 'visual batch')
+  const r = avgRecord(avgProtocolBody(value), ['schema', 'version', 'batchKey', 'revision', 'aspectRatio', 'sourceInputHash', 'requirements'], 'visual batch')
   if (r.schema !== 'storyforge.avg.visual-production-batch' || r.version !== 1) throw new Error('[avg-media] 未登记的视觉批次版本')
   const requirements = avgUnique(avgList(r.requirements, 'requirements', parseAvgVisualProductionRequirementV1, AVG_VISUAL_BATCH_LIMIT_V1), r => r.requirementKey, 'requirements')
   if (!requirements.length) throw new Error('[avg-media] 视觉批次必须有明确需求')
   avgUnique(requirements, r => r.assetKey, 'generated asset keys')
   // Same target twice is a visible choice/conflict, never last-write-wins binding.
   avgUnique(requirements.filter(r => r.consumer.domain !== 'reference'), r => [r.consumer.domain, r.consumer.slot, r.consumer.subjectKey,
-    r.consumer.sceneKey, r.consumer.lineKey, r.triggerBeatKey, r.itemStateKey].join('\u0000'), 'media consumer targets')
+    r.consumer.sceneKey, r.consumer.lineKey, r.triggerBeatKey, r.itemVariantKey].join('\u0000'), 'media consumer targets')
   return { schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: avgKey(r.batchKey, 'batchKey'),
-    revision: avgNumber(r.revision, 'batch.revision', 1, 1_000_000), baseWorkspaceHash: avgHash(r.baseWorkspaceHash, 'baseWorkspaceHash'), requirements }
+    revision: avgNumber(r.revision, 'batch.revision', 1, 1_000_000), aspectRatio: avgEnum(r.aspectRatio, ['16:9', '4:3'] as const, 'batch.aspectRatio'),
+    sourceInputHash: avgHash(r.sourceInputHash, 'sourceInputHash'), requirements }
 }
 
 export function parseAvgAuthorMediaChoiceV1(value: unknown): AvgAuthorMediaChoiceV1 {

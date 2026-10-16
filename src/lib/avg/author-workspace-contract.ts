@@ -3,6 +3,7 @@ import { parseAvgSystemPlan, type AvgSystemPlan } from './system-contract'
 import { parseAvgReadingPlanV1, type AvgReadingPlanV1 } from './reading-contract'
 import { parseAvgExecutableStageV1, type AvgExecutableStageV1 } from './stage-contract'
 import { avgEnum, avgHash, avgList, avgProtocolBody, avgRecord, avgUnique } from './protocol-validation'
+import { parseAvgVisualProductionBatchV1, type AvgVisualProductionBatchV1 } from './media-production-contract'
 
 /** Human-authored assembly, not a professional director Skill result. No local IDs. */
 export interface AvgAuthorStageV1 {
@@ -32,9 +33,12 @@ export interface AvgAuthorWorkspaceV1 {
   systemPlan: AvgSystemPlan
   scripts: AvgSceneScriptV1[]
   presentation: AvgAuthorStageV1
+  mediaBatch?: AvgVisualProductionBatchV1
 }
 export function parseAvgAuthorWorkspaceV1(value: unknown): AvgAuthorWorkspaceV1 {
-  const row = avgRecord(avgProtocolBody(value), ['schema','version','basePreviewHash','systemPlan','scripts','presentation'], 'author workspace')
+  const body = avgProtocolBody(value)
+  const hasBatch = !!body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'mediaBatch')
+  const row = avgRecord(body, ['schema','version','basePreviewHash','systemPlan','scripts','presentation', ...(hasBatch ? ['mediaBatch'] : [])], 'author workspace')
   if (row.schema !== 'storyforge.avg.author-workspace' || row.version !== 1) throw new Error('[avg] 作者工作区版本无效')
   const scripts = avgUnique(avgList(row.scripts, 'scripts', value => {
     const script = parseAvgProfessionalArtifactV1(value)
@@ -42,5 +46,6 @@ export function parseAvgAuthorWorkspaceV1(value: unknown): AvgAuthorWorkspaceV1 
     return script
   }), script => script.sceneKey, 'workspace scripts')
   return { schema: row.schema, version: 1, basePreviewHash: row.basePreviewHash === null ? null : avgHash(row.basePreviewHash, 'basePreviewHash'),
-    systemPlan: parseAvgSystemPlan(row.systemPlan), scripts, presentation: parseAvgAuthorStageV1(row.presentation) }
+    systemPlan: parseAvgSystemPlan(row.systemPlan), scripts, presentation: parseAvgAuthorStageV1(row.presentation),
+    ...(hasBatch ? { mediaBatch: parseAvgVisualProductionBatchV1(row.mediaBatch) } : {}) }
 }

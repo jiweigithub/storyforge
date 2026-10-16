@@ -1,6 +1,6 @@
 # AVG 工作包开工卡
 
-> L2 · 版本：1.21.0 · 生效：2026-10-16 · 产品：AVG/Galgame · 上位条目：E-AVG-01。
+> L2 · 版本：1.22.0 · 生效：2026-10-16 · 产品：AVG/Galgame · 上位条目：E-AVG-01。
 > [产品契约](../products/AVG.md)裁决边界，[实施计划](AVG-IMPLEMENTATION-PLAN.md)裁决顺序。AVG-00 已设计交付，AVG-BASE-00A/00B 已分支验收，当前按作者指令先做系统/表现框架，本轮规则/舞台/阅读/物件/媒资编辑与存档框架已分支工程验收，专业剧情生产后置；终态见实施计划 §1.2/§2.16。
 
 ## 0 所有代码包的共同交付约束
@@ -56,7 +56,7 @@
 
 ## 3 AVG-BASE-01 · 实际参考与媒体传输
 
-- **状态/前置**：施工中，分为 A1 输入/适配器基础和 A2 正式生产/恢复/真实校准；00A/00B 已分支验收。合法导入和播放器复用前轮框架。A1 已有代码和 4 文件/40 项定向通过，完整工程验收待执行；A2 尚未接入，真实调用为 0。S3 产品媒资输入/候选 owner 不变。
+- **状态/前置**：施工中，分为 A1 输入/适配器基础和 A2 正式生产/恢复/真实校准；00A/00B 已分支验收。合法导入和播放器复用前轮框架。A1 已有代码和 4 文件/40 项定向及 35 条 AVG 浏览器通过，完整工程门仍有失败记录；A2 基础施工中、正式准入关闭，真实调用为 0。S3 产品媒资输入/候选 owner 不变。
 - **入口/闭包**：`product-media.ts/media-contracts.ts` → `media-adapters.ts/media-transport.ts` → Harness receipt → `media-blob-store.ts/artifact-store.ts` → adoption/binding。读取合法参考 Blob 和冻结媒体需求，不重读整个世界。
 - **交付**：请求 V2 的 ReferenceInput、purpose/mask/crop、能力快照/费用上界、真实参考字节 hash/处理版本、async 查询/结果未知策略与 bounded attempt。共享升级须证明 AVG + 至少另一真实调用方需求，否则 AVG adapter 扩展。
 - **注册表/采用**：参考/数据政策走登记 Context 投影；需求 metadata 与真实候选沿现行写口，权利/传输/hash 为系统证据；不新增第二素材库。
@@ -75,9 +75,11 @@
 ### 3.2 BASE-01B 的输入、选择与 producer 证明基础
 
 - **当前边界**：`media-production-contract.ts` 与 nominal `AvgAssemblyBriefV2` 是待接入合同；`AVG_MEDIA_PRODUCTION_ADMISSION_V2=false`，公共 Brief parser 拒绝正式开始该版本。现有 V1 零调用 Brief、Plan 和读取保持原义，不因出现新类型而获得付费能力。
-- **有限批次与消费**：每批最多 8 项、每项一笔原始图片调用和一个独立 human-import 选择任务；生成和选择均进入终态依赖闭包，场景加固定 join/这些任务合计不得超过共享 100 任务。冻结主体/家族、准确消费 domain/slot/拍/物件状态及输入 hash；允许不同触发拍或状态，拒绝同槽冲突和 reference-only 进入 runtime 必需目录。此 Plan 尚未接正式执行器，不能宣称已经自动生成。
+- **有限批次与消费**：每批最多 8 项、每项一笔原始图片调用和一个独立 human-import 选择任务；生成和选择均进入终态依赖闭包，场景加固定 join/这些任务合计不得超过共享 100 任务。冻结主体/家族、准确消费 domain/slot/拍/物件显示变体及输入 hash；允许不同触发拍或显示变体，拒绝同槽冲突和 reference-only 进入 runtime 必需目录。此 Plan 尚未接正式执行器，不能宣称已经自动生成。
 - **采用与真实证据**：raw image 只证明 provider 返回；`avg.media.choice.<key>` 才表达作者对准确 raw revision/hash 和用途的选择，随后仍需演出采用。V1 选择合同只接受未加工的准确原图；抠图/裁切等需另补加工 lineage，不能偷偷换 hash。实际候选、作者命令、共享 Blob 与 typed stage 继续复用原表，不新建素材库。
 - **共享证明 API**：`verifyAcceptedProductBuildArtifactV1()` 是只读证明，不授予采纳。它复用已有 producer checkpoint/完整候选、Run/root/Plan、settled ledger 和实际物理 Blob 校验，再检查读取期间的变化；不能只信 `status=accepted`。接受写口的原 fingerprint 检查提成同一 helper；不降低旧检查。当前 API 只接受本 epoch 的直接 producer 版本，未开放 carried-forward 或人类工件的泛化旁路。
+- **来源与草稿增量**：`media-source.ts` 用规范规则、按场景 key 排序的准确脚本及画幅计算 `sourceInputHash`；画幅同时作为批次显式字段冻结，供最终演出尚未采用时的正式工件复算。hash 排除图片选择/演出/阅读偏好/批次本身，避免生成中采用图片造成循环 stale。改文本、规则或画幅必须重新冻结。确定性校验真实人物、场景/拍以及物件默认显示或准确 `itemVariantKey`；玩法 state 不代替显示变体，不推测或创建条件。reference-only 可在脚本未完成时准备，不以故事生成作为前置。此 hash 不是世界 SourcePlan、上下文授权或作者采用凭证。
+- **保存与关闭边界**：既有 author-workspace V1 增加可选 `mediaBatch`，缺省时不写属性，旧字节/hash 不变；保存不开始或采用。当前组装准备/开始在创建、修订或授权前拒绝待生成批次，禁止静默按零调用 V1 丢掉需求。沿用原草稿 CAS、导入/导出/remap/delete；不增加表或正式读写权限。新来源/关闭门与现有组装 3 文件/28 项通过，覆盖源变化、选择不 stale、错误物件/变体、无故事参考、无副作用拒绝和待生成草稿备份往返。最新 35 条 AVG 浏览器与 build/治理门通过；浏览器首跑 34/35 中 CSS 暂停快照抢在 pending pause 完成前读取，随后复用检查又错误要求已有部分结束的动画仍全部暂停，均保留失败证据。最终检查要求当前动画无 running/pending、至少有实际暂停，并连续观察 500 毫秒完整计算样式不变；初始菜单/历史仍核验至少 5 个暂停效果，没有延长 timeout 或修改动画实现。
 - **已验/未验**：当前 4 文件/40 项输入、选择、参考与旧原生组装兼容回归通过；共享接受套件 20 项通过，新增错 Work/版本/hash、伪 metadata/receipt、未结算 ledger、坏字节及写事务中复验。最初并行的旧组装两例 5 秒超时，保持原 timeout 后单 worker 原命令 8/8、随后完整定向 40/40 通过。正式执行、作者选择采用、消费绑定和刷新恢复还须接入与浏览器验收；真实 provider/艺术/审听仍未验。
 
 ## 4 AVG-BASE-02 · voice 候选与传输合同

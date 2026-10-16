@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { parseAvgAssemblyBriefV1, parseAvgAssemblyBriefV2 } from '../../src/lib/avg/assembly-contract'
 import { buildAvgAssemblyPlanV1, buildAvgMediaAssemblyPlanV2 } from '../../src/lib/avg/assembly-plan'
 import type { ProviderCapabilityRequirementV1 } from '../../src/lib/types'
+import { createAvgAuthoringPresetV1 } from '../../src/lib/avg/authoring-presets'
+import { parseAvgAuthorWorkspaceV1 } from '../../src/lib/avg/author-workspace-contract'
+import { freezeAvgVisualProductionBatchV1, hashAvgMediaSourceInputV1, validateAvgVisualProductionBatchSourceV1 } from '../../src/lib/avg/media-source'
 import {
   avgMediaChoiceArtifactKeyV1, avgRawMediaArtifactKeyV1, avgVisualBatchArtifactKeysV1,
   parseAvgAuthorMediaChoiceV1, parseAvgVisualProductionBatchV1, parseAvgVisualProductionRequirementV1,
@@ -12,11 +15,11 @@ function requirement(): AvgVisualProductionRequirementV1 {
   return { requirementKey: 'keeper.neutral', revision: 1, assetKey: 'avg.generated.keeper.neutral', name: '值班员平静立绘', altText: '同一服装的值班员',
     family: { subjectKey: 'keeper', familyKey: 'keeper.uniform', variantKey: 'neutral', revision: 1 },
     consumer: { consumerKey: 'desk.keeper.neutral', domain: 'stage', slot: 'actor', subjectKey: 'keeper', sceneKey: 'desk', lineKey: null, required: true, fallback: 'none' },
-    triggerBeatKey: 'opening', itemStateKey: null, mediaKind: 'character-expression', prompt: '原创角色。', negativePrompt: '文字、水印',
+    triggerBeatKey: 'opening', itemVariantKey: null, mediaKind: 'character-expression', prompt: '原创角色。', negativePrompt: '文字、水印',
     invariants: ['身份、服装、比例不变'], forbiddenDepictions: ['不可见的私密事实'], width: 864, height: 1152, resolutionTier: '1K', alpha: 'required', references: [] }
 }
 function batch(requirements = [requirement()]) {
-  return { schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: 'visual.batch.1', revision: 1, baseWorkspaceHash: 'a'.repeat(64), requirements }
+  return { schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: 'visual.batch.1', revision: 1, aspectRatio: '16:9', sourceInputHash: 'a'.repeat(64), requirements }
 }
 
 describe('AVG media production inputs and explicit choices', () => {
@@ -52,16 +55,71 @@ describe('AVG media production inputs and explicit choices', () => {
     expect(parsed.requirements[0]).not.toHaveProperty('data')
     expect(parsed.requirements[0]).not.toHaveProperty('blobObjectId')
   })
+  it('冻结规则、准确脚本与画幅；选择图片、演出和脚本目录顺序不使后续需求过期', async () => {
+    const workspace = createAvgAuthoringPresetV1(), r = { ...requirement(), triggerBeatKey: 'line.desk' }
+    const frozen = await freezeAvgVisualProductionBatchV1({ schema: 'storyforge.avg.visual-production-batch', version: 1,
+      batchKey: 'source.batch', revision: 1, requirements: [r] }, workspace)
+    const edited = structuredClone(workspace)
+    edited.scripts.reverse()
+    edited.presentation.stage.cues = []
+    edited.presentation.stage.assets = [{ assetKey: r.assetKey, version: 1, kind: r.mediaKind, name: r.name, mimeType: 'image/png',
+      byteSize: 100, width: 864, height: 1152, durationMs: null, contentHash: 'b'.repeat(64), blobContentHash: 'b'.repeat(64),
+      source: 'test-only-metadata', license: 'test-only', altText: r.altText, characterTag: 'keeper', sceneTag: 'desk' }]
+    edited.basePreviewHash = 'b'.repeat(64)
+    edited.mediaBatch = frozen
+    expect(await hashAvgMediaSourceInputV1(edited)).toBe(frozen.sourceInputHash)
+    expect(await validateAvgVisualProductionBatchSourceV1(frozen, edited)).toEqual(frozen)
+    await expect(validateAvgVisualProductionBatchSourceV1({ ...frozen, aspectRatio: '4:3' }, edited)).rejects.toThrow(/重新冻结/)
+    for (const change of ['text', 'rule', 'aspect'] as const) {
+      const stale = structuredClone(workspace)
+      if (change === 'text') stale.scripts[0].lines[0].text += '新的内容'
+      if (change === 'rule') stale.systemPlan.actions[0].label += '修订'
+      if (change === 'aspect') stale.presentation.aspectRatio = '4:3'
+      await expect(validateAvgVisualProductionBatchSourceV1(frozen, stale)).rejects.toThrow(/重新冻结/)
+    }
+    expect(workspace).not.toHaveProperty('mediaBatch')
+    expect(parseAvgAuthorWorkspaceV1(workspace)).toEqual(workspace)
+    expect(() => parseAvgAuthorWorkspaceV1({ ...workspace, mediaBatch: undefined })).toThrow()
+    expect(() => parseAvgVisualProductionBatchV1({ ...frozen, baseWorkspaceHash: frozen.sourceInputHash })).toThrow(/字段/)
+  })
+  it('物件 icon/detail 精确绑定已声明的默认显示或变体，不能从玩法 state 猜条件', async () => {
+    const workspace = createAvgAuthoringPresetV1()
+    const icon: AvgVisualProductionRequirementV1 = { ...requirement(), family: { ...requirement().family, subjectKey: 'letter' },
+      consumer: { ...requirement().consumer, domain: 'inventory', slot: 'icon', subjectKey: 'letter', sceneKey: null },
+      mediaKind: 'ui', triggerBeatKey: null, itemVariantKey: 'known', alpha: 'not-required' }
+    const freeze = (requirements: AvgVisualProductionRequirementV1[], source = workspace) => freezeAvgVisualProductionBatchV1({
+      schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: 'item.batch', revision: 1, requirements }, source)
+    const before = structuredClone(workspace)
+    expect((await freeze([icon])).requirements[0].itemVariantKey).toBe('known')
+    expect((await freeze([{ ...icon, itemVariantKey: null }])).requirements[0].itemVariantKey).toBeNull()
+    expect((await freeze([{ ...icon, consumer: { ...icon.consumer, domain: 'evidence', slot: 'detail' }, mediaKind: 'cg' }])).requirements[0].consumer.slot).toBe('detail')
+    await expect(freeze([{ ...icon, itemVariantKey: 'sealed' }])).rejects.toThrow(/显示变体/)
+    await expect(freeze([{ ...icon, consumer: { ...icon.consumer, subjectKey: 'envelope' }, family: { ...icon.family, subjectKey: 'envelope' } }])).rejects.toThrow(/准确物件/)
+    expect(workspace).toEqual(before)
+  })
+  it('调用前验证舞台的真实人物/场景/拍；reference-only 不强迫先写完整故事', async () => {
+    const workspace = createAvgAuthoringPresetV1()
+    const freeze = (r: AvgVisualProductionRequirementV1, source = workspace) => freezeAvgVisualProductionBatchV1({
+      schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: 'target.batch', revision: 1, requirements: [r] }, source)
+    await expect(freeze(requirement())).rejects.toThrow(/触发拍/)
+    const r = { ...requirement(), triggerBeatKey: 'line.desk' }
+    await expect(freeze({ ...r, family: { ...r.family, subjectKey: 'missing' }, consumer: { ...r.consumer, subjectKey: 'missing' } })).rejects.toThrow(/主体/)
+    await expect(freeze({ ...r, consumer: { ...r.consumer, sceneKey: 'wait' } })).rejects.toThrow(/触发拍/)
+    const reference: AvgVisualProductionRequirementV1 = { ...r, triggerBeatKey: null, consumer: { ...r.consumer, domain: 'reference', slot: 'identity', sceneKey: null, required: false } }
+    expect((await freeze(reference, { ...workspace, scripts: [] })).requirements[0].consumer.domain).toBe('reference')
+    const wrongSource = structuredClone(workspace); wrongSource.scripts[0].lines[0].speakerKey = 'missing'
+    await expect(hashAvgMediaSourceInputV1(wrongSource)).rejects.toThrow(/未知场景或人物/)
+  })
   it('同角色不同触发拍允许差分，同一触发槽的冲突不采用后写覆盖', () => {
     const first = requirement(), second = { ...requirement(), requirementKey: 'keeper.smile', assetKey: 'avg.generated.keeper.smile', triggerBeatKey: 'answer' }
     expect(parseAvgVisualProductionBatchV1(batch([first, second])).requirements).toHaveLength(2)
     expect(() => parseAvgVisualProductionBatchV1(batch([first, { ...second, triggerBeatKey: first.triggerBeatKey }]))).toThrow(/consumer targets/)
   })
-  it('同物件不同状态可有图标，详情不能按 ui 图标进入全屏舞台', () => {
-    const icon: AvgVisualProductionRequirementV1 = { ...requirement(), mediaKind: 'ui', triggerBeatKey: null, itemStateKey: 'sealed',
+  it('同物件不同显示变体可有图标，详情不能按 ui 图标进入全屏舞台', () => {
+    const icon: AvgVisualProductionRequirementV1 = { ...requirement(), mediaKind: 'ui', triggerBeatKey: null, itemVariantKey: 'sealed',
       consumer: { ...requirement().consumer, domain: 'inventory', slot: 'icon', sceneKey: null }, alpha: 'not-required' }
     expect(parseAvgVisualProductionRequirementV1(icon).consumer.domain).toBe('inventory')
-    expect(parseAvgVisualProductionBatchV1(batch([icon, { ...icon, requirementKey: 'keeper.open', assetKey: 'avg.generated.open', itemStateKey: 'open' }])).requirements).toHaveLength(2)
+    expect(parseAvgVisualProductionBatchV1(batch([icon, { ...icon, requirementKey: 'keeper.open', assetKey: 'avg.generated.open', itemVariantKey: 'open' }])).requirements).toHaveLength(2)
     expect(() => parseAvgVisualProductionRequirementV1({ ...icon, consumer: { ...icon.consumer, domain: 'stage', slot: 'cg', sceneKey: 'desk' }, triggerBeatKey: 'opening' })).toThrow(/不闭合/)
   })
   it('reference-only 可作为合法生产输入但不得变成 runtime 必需项', () => {
@@ -70,12 +128,12 @@ describe('AVG media production inputs and explicit choices', () => {
     expect(parseAvgVisualProductionRequirementV1(ref).consumer.domain).toBe('reference')
     expect(() => parseAvgVisualProductionRequirementV1({ ...ref, consumer: { ...ref.consumer, required: true } })).toThrow(/runtime/)
   })
-  it('拒绝错主体、未实现消费者、错触发/状态、未知字段及超长合成输入', () => {
+  it('拒绝错主体、未实现消费者、错触发/显示变体、未知字段及超长合成输入', () => {
     const r = requirement()
     for (const value of [
       { ...r, family: { ...r.family, subjectKey: 'another-person' } },
       { ...r, consumer: { ...r.consumer, domain: 'gallery', slot: 'entry', sceneKey: null }, triggerBeatKey: null },
-      { ...r, triggerBeatKey: null }, { ...r, itemStateKey: 'sealed' }, { ...r, providerOverride: 'hidden' },
+      { ...r, triggerBeatKey: null }, { ...r, itemVariantKey: 'sealed' }, { ...r, providerOverride: 'hidden' },
       { ...r, invariants: Array.from({ length: 10 }, () => '长'.repeat(2000)) },
     ]) expect(() => parseAvgVisualProductionRequirementV1(value)).toThrow()
   })

@@ -13,10 +13,37 @@ import { parseProductProductionPlanV3 } from '../../src/lib/product-production/p
 import { runProductProductionUntilBlockedV1, runProductProductionSchedulerCycleV1 } from '../../src/lib/product-production/scheduler'
 import { createConfiguredProductProductionExecutorV1 } from '../../src/lib/product-production/production-executor'
 import { createAvgAuthoringPresetV1 } from '../../src/lib/avg/authoring-presets'
+import { freezeAvgVisualProductionBatchV1 } from '../../src/lib/avg/media-source'
+import { startAvgAssemblyV1 } from '../../src/lib/avg/assembly-service'
 
 describe('AVG-05A real author assembly production', () => {
   beforeEach(async () => { await db.delete(); await db.open() })
   afterEach(()=>db.close())
+
+  it('保存中的生成批次不能被零调用流程丢弃，过期输入和关闭准入在任何开始或修订写入前拒绝', async () => {
+    const s = await prepareNativeAvgAssembly(), workspace = avgAuthorWorkspaceFixture()
+    workspace.mediaBatch = await freezeAvgVisualProductionBatchV1({ schema: 'storyforge.avg.visual-production-batch', version: 1,
+      batchKey: 'pending.identity', revision: 1, requirements: [{
+        requirementKey: 'keeper.identity', revision: 1, assetKey: 'avg.reference.keeper', name: '保管员身份参考', altText: '原创身份参考',
+        family: { subjectKey: 'keeper', familyKey: 'keeper.identity', variantKey: 'front', revision: 1 },
+        consumer: { consumerKey: 'keeper.identity', domain: 'reference', slot: 'identity', subjectKey: 'keeper', sceneKey: null, lineKey: null, required: false, fallback: 'omit' },
+        triggerBeatKey: null, itemVariantKey: null, mediaKind: 'character-pose', prompt: '原创保管员身份参考', negativePrompt: '',
+        invariants: [], forbiddenDepictions: [], width: 864, height: 1152, resolutionTier: '1K', alpha: 'not-required', references: [],
+      }] }, workspace)
+    const draft = await readAvgDraftV1(s.scope)
+    const saved = await saveAvgAuthorWorkspaceV1(s.scope, draft.revision, workspace)
+    const before = await db.productProductions.get(s.productionId), briefBefore = await db.productProductionBriefs.toArray()
+    await expect(prepareAvgAssemblyBriefV1({ scope: s.scope, expectedDraftRevision: saved.revision })).rejects.toThrow(/尚未开放/)
+    await expect(startAvgAssemblyV1({ scope: s.scope, productionId: s.productionId, expectedBriefHash: s.details.brief!.briefHash })).rejects.toThrow(/待生成媒资批次/)
+    workspace.scripts[0].lines[0].text += '新内容'
+    const stale = await saveAvgAuthorWorkspaceV1(s.scope, saved.revision, workspace)
+    await expect(prepareAvgAssemblyBriefV1({ scope: s.scope, expectedDraftRevision: stale.revision })).rejects.toThrow(/重新冻结/)
+    expect(await db.productProductions.get(s.productionId)).toEqual(before)
+    expect(await db.productProductionBriefs.toArray()).toEqual(briefBefore)
+    expect(await db.productBuilds.count()).toBe(0)
+    expect(await db.agentRuns.count()).toBe(0)
+    expect(await db.productBuildArtifacts.count()).toBe(0)
+  })
 
   it('prepares an explicit zero-provider Brief, waits for author inputs and freezes a real V2 Preview/root receipt', async () => {
     const prepared = await prepareNativeAvgAssembly()
@@ -101,11 +128,11 @@ describe('AVG-05A real author assembly production', () => {
     // A private V2 codec/Plan is insufficient to open a paid production entry.
     expect(()=>parseProductProductionBriefV3({ ...brief, avgAssembly: { ...brief.avgAssembly, version: 2,
       mediaAssetKeys: [...brief.avgAssembly!.mediaAssetKeys, assetKey], mediaBatch: {
-        schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: 'pending.batch', revision: 1, baseWorkspaceHash: 'a'.repeat(64),
+        schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: 'pending.batch', revision: 1, aspectRatio: '16:9', sourceInputHash: 'a'.repeat(64),
         requirements: [{ requirementKey: 'background', revision: 1, assetKey, name: '背景', altText: '原创背景',
           family: { subjectKey: 'room', familyKey: 'room.view', variantKey: 'day', revision: 1 },
           consumer: { consumerKey: 'room.background', domain: 'stage', slot: 'background', subjectKey: 'room', sceneKey, lineKey: null, required: true, fallback: 'none' },
-          triggerBeatKey: 'opening', itemStateKey: null, mediaKind: 'background', prompt: '原创房间，固定机位', negativePrompt: '', invariants: [], forbiddenDepictions: [],
+          triggerBeatKey: 'opening', itemVariantKey: null, mediaKind: 'background', prompt: '原创房间，固定机位', negativePrompt: '', invariants: [], forbiddenDepictions: [],
           width: 1312, height: 736, resolutionTier: '1K', alpha: 'not-required', references: [] }],
       } }, productionBudget: { ...brief.productionBudget, maximumMediaCalls: 1, maximumCostUsd: null } })).toThrow(/尚未完成执行与作者选择/)
     const plan = JSON.parse(s.details.build!.planJson)

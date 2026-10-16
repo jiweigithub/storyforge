@@ -15,6 +15,7 @@ import { createConfiguredProductProductionExecutorV1 } from '../product-producti
 import { stageAvgAuthorArtifactV1 } from './author-artifacts'
 import { listAvgDraftMediaV1 } from './editor-service'
 import { parseProductProductionPlanV3 } from '../product-production/plan'
+import { validateAvgVisualProductionBatchSourceV1 } from './media-source'
 
 const commandId = (label: string) => `avg.assembly.${label}.${crypto.randomUUID()}`
 
@@ -70,6 +71,10 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
   const draft = await readAvgDraftV1(input.scope)
   if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg] 编辑草稿已变化，请刷新后再准备方案')
   const workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
+  if (workspace.mediaBatch) {
+    await validateAvgVisualProductionBatchSourceV1(workspace.mediaBatch, workspace)
+    throw new Error('[avg-media] 媒资生产流程尚未开放；不能把待生成批次按零调用组装执行')
+  }
   if (!draft.worldReleaseId) throw new Error('[avg] 请先在产品定向选择冻结世界版本')
   const work = await db.works.get(input.scope.workId)
   if (!work || work.kind !== 'avg' || !await assertRecordInScope(input.scope,'works',work,{owner:'work'})) throw new Error('[avg] 当前作品不是 AVG')
@@ -137,6 +142,7 @@ export async function startAvgAssemblyV1(input: { scope: WorkspaceScope; product
   const brief = details.brief ? parseProductProductionBriefV3(details.brief.briefJson) : null
   if (!brief?.avgAssembly || details.brief!.briefHash !== input.expectedBriefHash) throw new Error('[avg] 制作方案已变化，请重新核对')
   const draft=await readAvgDraftV1(input.scope),workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
+  if (workspace.mediaBatch) throw new Error('[avg-media] 草稿已包含待生成媒资批次，请重新准备匹配的制作方案')
   const same=(a:string[],b:string[])=>canonicalProductProductionJsonV2([...a].sort())===canonicalProductProductionJsonV2([...b].sort())
   if(draft.productionId!==input.productionId||draft.worldReleaseId!==brief.source.worldReleaseId
     ||!same(brief.avgAssembly.sceneKeys,workspace.systemPlan.scenes.map(scene=>scene.key))

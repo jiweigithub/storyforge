@@ -39,13 +39,15 @@ async function cssMotion(page: Page) {
     const animations = element.getAnimations({ subtree: true }).filter(animation => animation instanceof CSSAnimation || animation instanceof CSSTransition)
     return { frame: { camera: sceneStyle.transform, tone: sceneStyle.filter, actor: actorStyle.transform, entrance: actorStyle.translate, left: actorStyle.left, opacity: actorStyle.opacity },
       active: animations.filter(animation => animation.playState === 'running').length,
+      pending: animations.filter(animation => animation.pending).length,
       paused: animations.filter(animation => animation.playState === 'paused' && !animation.pending).length }
   })
 }
 
-async function expectFrozen(page: Page) {
+async function expectFrozen(page: Page, minimumPaused = 5) {
   await expect.poll(async () => (await cssMotion(page)).active).toBe(0)
-  await expect.poll(async () => (await cssMotion(page)).paused).toBeGreaterThanOrEqual(5)
+  await expect.poll(async () => (await cssMotion(page)).pending).toBe(0)
+  await expect.poll(async () => (await cssMotion(page)).paused).toBeGreaterThanOrEqual(minimumPaused)
   const frame = (await cssMotion(page)).frame
   // Observe actual computed frames for longer than a normal entrance animation.
   await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)))
@@ -88,10 +90,9 @@ test('without reading, settings and background pause CSS motion including new im
   await expect.poll(async () => (await cssMotion(page)).active).toBeGreaterThan(0)
   // Exercise the real visibility handler; this does not certify OS tab behavior.
   await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: true }); document.dispatchEvent(new Event('visibilitychange')) })
-  await expect.poll(async () => (await cssMotion(page)).active).toBe(0)
-  const hidden = (await cssMotion(page)).frame
-  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)))
-  expect((await cssMotion(page)).frame).toEqual(hidden)
+  // pause() changes playState before the browser settles its pending pause.
+  // Earlier image entrances may already have finished by this visibility event.
+  const hidden = await expectFrozen(page, 1)
   await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: false }); document.dispatchEvent(new Event('visibilitychange')) })
   await expect.poll(async () => (await cssMotion(page)).frame.camera).not.toBe(hidden.camera)
 })

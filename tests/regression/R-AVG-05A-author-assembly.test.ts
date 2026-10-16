@@ -16,6 +16,7 @@ import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-
 import { deleteWork } from '../../src/lib/workspace/lifecycle'
 import { assertAvgProfessionalArtifactAdmissionV1 } from '../../src/lib/avg/artifact-admission'
 import { avgReadingAudioFixture } from '../helpers/avg-reading-fixture'
+import { freezeAvgVisualProductionBatchV1 } from '../../src/lib/avg/media-source'
 
 describe('AVG-05A explicit author assembly and portable workspace', () => {
   beforeEach(async () => { await db.delete(); await db.open() })
@@ -29,6 +30,7 @@ describe('AVG-05A explicit author assembly and portable workspace', () => {
     await expect(saveAvgEditorV1(s.scope, saved.revision, 'a'.repeat(64), legacyPackage())).rejects.toThrow(/原生系统/)
     expect(() => parseAvgAuthorWorkspaceV1({ ...workspace, version: 2 })).toThrow(/版本/)
     expect(() => parseAvgAuthorWorkspaceV1({ ...workspace, blobObjectId: 42 })).toThrow(/字段/)
+    expect(() => parseAvgAuthorWorkspaceV1({ ...workspace, mediaBatch: undefined })).toThrow()
     expect(() => parseAvgAuthorStageV1({ ...workspace.presentation, reading: undefined })).toThrow()
     expect(() => parseAvgAuthorStageV1({ ...workspace.presentation, stage: { ...workspace.presentation.stage, blobObjectId: 1 } })).toThrow(/字段/)
     expect(() => parseAvgAuthorWorkspaceV1({ ...workspace, scripts: [...workspace.scripts, workspace.scripts[0]] })).toThrow(/重复/)
@@ -129,7 +131,16 @@ describe('AVG-05A explicit author assembly and portable workspace', () => {
     const s = await seedAvgAuthorStageInputs(), candidate = await stageAuthorStageFixture(s)
     expect((await confirmAuthorStageFixture(s, candidate)).ok).toBe(true)
     const draft = await readAvgDraftV1(s.scope)
-    await saveAvgAuthorWorkspaceV1(s.scope, draft.revision, avgAuthorWorkspaceFixture())
+    const workspace = avgAuthorWorkspaceFixture()
+    workspace.mediaBatch = await freezeAvgVisualProductionBatchV1({ schema: 'storyforge.avg.visual-production-batch', version: 1,
+      batchKey: 'portable.pending', revision: 1, requirements: [{
+        requirementKey: 'desk.background', revision: 1, assetKey: 'avg.generated.desk', name: '桌前背景', altText: '原创背景需求',
+        family: { subjectKey: 'desk', familyKey: 'desk.view', variantKey: 'day', revision: 1 },
+        consumer: { consumerKey: 'desk.background', domain: 'stage', slot: 'background', subjectKey: 'desk', sceneKey: 'desk', lineKey: null, required: true, fallback: 'none' },
+        triggerBeatKey: 'line.desk', itemVariantKey: null, mediaKind: 'background', prompt: '原创桌前场景', negativePrompt: '', invariants: [], forbiddenDepictions: [],
+        width: 1536, height: 864, resolutionTier: '1K', alpha: 'not-required', references: [],
+      }] }, workspace)
+    await saveAvgAuthorWorkspaceV1(s.scope, draft.revision, workspace)
     const projectId = await importProjectJSON(await exportProjectJSON(s.scope.projectId))
     const build = (await db.productBuilds.where('projectId').equals(projectId).first())!
     const scope = { projectId, worldId: build.worldId, workId: build.workId }
@@ -137,6 +148,7 @@ describe('AVG-05A explicit author assembly and portable workspace', () => {
       product: { key: 'avg.author.fixture', title: '恢复后的组装', description: '' } })
     expect(compiled.source.authorStage!.artifact.contentHash).toBe(candidate.contentHash)
     expect((await readAvgDraftV1(scope)).editorJson).toBe((await readAvgDraftV1(s.scope)).editorJson)
+    expect(parseAvgAuthorWorkspaceV1((await readAvgDraftV1(scope)).editorJson).mediaBatch).toEqual(workspace.mediaBatch)
     expect(build.id).not.toBe(s.buildId)
     await deleteWork(projectId, scope.workId)
     expect(await db.avgAuthoringDrafts.where('projectId').equals(projectId).count()).toBe(0)
