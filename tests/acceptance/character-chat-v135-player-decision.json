@@ -29,10 +29,10 @@
       "receipt": "/tmp/storyforge-chat-v135-regression-receipt.json"
     },
     "checks": "architecture, required tables, AI manual/entry registry, documentation, roadmap, metrics, types, lint, build and bundle passed; initial metrics drift repaired with official generator",
-    "native100": "queued behind existing full E2E; no result claimed",
-    "native1000": "not rerun yet; V133 timeout and V134 target crash retained",
-    "fullCI": "not run on new source yet",
-    "fullE2E": "not run on new source yet"
+    "native100": "passed on frozen V135 source; 100 actions, 204 facts and portable recovery; separate native100Readback records independent backup hashes",
+    "native1000": "terminal exit 1 at original 30-minute timeout; last logged 950 actions, state through 900, backups through 800; no browser crash in this run; final 1000 recovery not reached",
+    "fullCI": "V135 full suite superseded before start by frozen V139 latest integration suite",
+    "fullE2E": "V135 full suite superseded before start by frozen V139 latest integration suite"
   },
   "realModel": {
     "provider": "agnes",
@@ -220,7 +220,44 @@
       ]
     },
     "terminalReceipt": "/tmp/storyforge-chat-v135-native-100-final-receipt.json",
-    "native1000": "running; no terminal outcome yet",
+    "native1000": "terminal timeout; see native1000Readback",
     "priorCrashRootCauseProven": false
+  },
+  "native1000Readback": {
+    "sourceHead": "857664bb97a83d88a44a2f02344f35fdb1d60894",
+    "terminalReceipt": "/tmp/storyforge-chat-v135-native1000-receipt.json",
+    "readback": {
+      "at": 1792177848.187735,
+      "exitCode": 1,
+      "termination": "original 1800000ms test timeout",
+      "lastLoggedActions": 950,
+      "lastStateCheckpointActions": 900,
+      "backups": [
+        {
+          "archive": "/tmp/storyforge-chat-v135-native-1000-results/character-chat-history-gro-d2ce5-ut-and-portable-checkpoints-chromium/native-growth-100-backup.json.gz",
+          "rawBytes": 23710227,
+          "sha256": "18165662948a1d07b55385bda9602a4c99f434b3c8eec43ee3578391b0e7c069",
+          "verified": true
+        },
+        {
+          "archive": "/tmp/storyforge-chat-v135-native-1000-results/character-chat-history-gro-d2ce5-ut-and-portable-checkpoints-chromium/native-growth-300-backup.json.gz",
+          "rawBytes": 87551558,
+          "sha256": "e0eecb83edffb1c9ba676b1f7525f51a8295ff0ae4cab1e652f2a17a6a6b1cff",
+          "verified": true
+        },
+        {
+          "archive": "/tmp/storyforge-chat-v135-native-1000-results/character-chat-history-gro-d2ce5-ut-and-portable-checkpoints-chromium/native-growth-800-backup.json.gz",
+          "rawBytes": 319293604,
+          "sha256": "60f669fb3408f4ca3668ff16f4887443bb92eade486aa4ff9d893eec330e3399",
+          "verified": true
+        }
+      ],
+      "final1000RestoreExecuted": false,
+      "browserCrashObservedInThisRun": false,
+      "previousCrashRootCauseProven": false,
+      "noAutomaticRetry": true
+    },
+    "performanceObservation": "Per-action duration grew from about 0.35 seconds at 100 to 4.36 seconds at 950. This suggests a growing-state cost; no production cause has yet been isolated.",
+    "nextInvestigation": "Profile existing read/replay/context/adoption work before changing limits; preserve original target, timeout and failure."
   }
 }
