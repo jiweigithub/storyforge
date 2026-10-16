@@ -1,3 +1,4 @@
+import {chatRelationshipHistoryRowsV1, addChatRelationshipHistoryV1} from './relationship-history-context'
 import {createChatHistoryProjectionCacheV1} from './history-context-cache'
 import type {CharacterInteractionRuntimeState, InteractionRuntimeProfile} from '../types'
 import type {InteractionContextWindow, InteractionVisibilityView} from './runtime'
@@ -14,7 +15,7 @@ const projectionCache = createChatHistoryProjectionCacheV1<InteractionContextWin
  * with its dependency closure; rejection rolls back the whole trial. */
 export function selectChatHistoryActorContextV1(state: CharacterInteractionRuntimeState,
   view: InteractionVisibilityView & {excludedMessageCount?: number}, profile: InteractionRuntimeProfile,
-  limits: {maxCharacters: number; maxRecentMessages: number; optionalMaxCharacters?: number; optionalMaxTokens?: number}): InteractionContextWindow {
+  limits: {maxCharacters: number; maxRecentMessages: number; optionalMaxCharacters?: number; optionalMaxTokens?: number; relationshipHistory?: boolean}): InteractionContextWindow {
   const cacheKey = projectionCache.key([state, view, profile, limits])
   const cached = projectionCache.read(cacheKey)
   if (cached) return cached
@@ -28,14 +29,17 @@ export function selectChatHistoryActorContextV1(state: CharacterInteractionRunti
     plan.add('memories', m.memoryId, m.content, pending.has(m.memoryId) ? ['pending-correction'] : m.playerPinned ? ['player-pin'] : [], m.importance)
     plan.linkMemory(m)
   }
+  const relationships = limits.relationshipHistory ? chatRelationshipHistoryRowsV1(state, profile.participantKey, view.messages) : []
+  const relationshipMessages = new Set(relationships.flatMap(r => r.messages.map(m => m.messageId)))
   const current = view.messages.filter(m => m.eventSequence > (view.activeScene?.startedAtSequence ?? -Infinity))
   const recent = view.messages.slice(-limits.maxRecentMessages)
-  const eligible = view.messages.filter(m => recent.includes(m) || current.includes(m) && m.role === 'player')
+  const eligible = view.messages.filter(m => relationshipMessages.has(m.messageId) || recent.includes(m) || current.includes(m) && m.role === 'player')
   const latest = view.messages.slice(-1)[0]
   for (const m of eligible) {
     const required = m === latest ? ['latest-dialogue'] : m.role === 'player' && current.includes(m) ? ['current-player'] : []
     plan.add('messages', m.messageId, m.text, required); plan.linkMessage(m)
   }
+  addChatRelationshipHistoryV1(plan, relationships)
   for (const r of view.relationshipEvidence ?? []) {plan.protectSequence(r.eventSequence, 'relationship-evidence'); plan.protectSequence(r.sourceEventSequence, 'relationship-source')}
   const lastPlayer = [...view.messages].reverse().find(m => m.role === 'player')
   const scorers = [
@@ -58,6 +62,7 @@ export function selectChatHistoryActorContextV1(state: CharacterInteractionRunti
     const goalKeys = new Set(commitments.filter(c => has('commitments', c.commitmentKey)).map(c => c.commitmentKey))
     const decisions = audit ? plan.evidence(selected) : []
     return {...view,
+      ...(limits.relationshipHistory ? {relationshipEvidence: relationships.filter(r => has('relationships', r.key)).map(r => r.change)} : {}),
       knowledge: view.knowledge.filter(k => has('knowledge', k.knowledgeKey)), memories: view.memories.filter(m => has('memories', m.memoryId)),
       messages: eligible.filter(m => has('messages', m.messageId)),
       chatNarrative: {...narrative, facts: narrative.facts.filter(f => has('facts', f.factKey)),
@@ -67,7 +72,7 @@ export function selectChatHistoryActorContextV1(state: CharacterInteractionRunti
       historyContext: {version: 1, policy: CHAT_HISTORY_POLICY_V1, resolutions: plan.resolutions(selected),
         omitted: {facts: narrative.facts.filter(f => !has('facts', f.factKey)).length,
           goals: narrative.goals.filter(g => !has('goals', g.goalKey)).length, threads: narrative.threads.filter(t => !has('threads', t.threadKey)).length}},
-      selection: {version: 5,
+      selection: {version: limits.relationshipHistory ? 6 : 5,
         knowledge: view.knowledge.map(k => ({key: k.knowledgeKey, included: has('knowledge', k.knowledgeKey), reason: reasonFor('knowledge', k.knowledgeKey)})),
         memories: view.memories.map(m => ({key: m.memoryId, included: has('memories', m.memoryId), reason: pending.has(m.memoryId) ? 'pending-correction' : m.playerPinned ? 'player-pin' : reasonFor('memories', m.memoryId)})),
         commitments: decisions.filter(d => d.kind === 'commitments').map(d => ({key: d.key, included: d.included, reason: commitments.find(c => c.commitmentKey === d.key)?.resolution === null ? 'open-commitment' : latestCommitments.has(d.key) ? 'latest-resolution' : reasonFor('commitments', d.key)})),

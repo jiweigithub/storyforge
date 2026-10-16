@@ -20,15 +20,18 @@ export const CHAT_CONTEXT_READER_VERSION_V8 = 'chat-narrative-runtime-view-v12'
 // v13 reserves review space and moves complete coordinator selection evidence
 // into durable packets; v12 inputs remain reproducible.
 export const CHAT_CONTEXT_READER_VERSION_V9 = 'chat-narrative-runtime-view-v13'
-export type ChatRetrievalVersion = 'legacy' | 'chat-relevance-v1' | 'chat-relevance-v2' | 'chat-relevance-v3' | 'chat-relevance-v4' | 'chat-relevance-v5' | 'chat-relevance-v6' | 'chat-relevance-v7' | 'chat-relevance-v8' | 'chat-relevance-v9'
+// v14 retrieves witnessed historical relationship causes with their original dialogue.
+export const CHAT_CONTEXT_READER_VERSION_V10 = 'chat-narrative-runtime-view-v14'
+export type ChatRetrievalVersion = 'legacy' | 'chat-relevance-v1' | 'chat-relevance-v2' | 'chat-relevance-v3' | 'chat-relevance-v4' | 'chat-relevance-v5' | 'chat-relevance-v6' | 'chat-relevance-v7' | 'chat-relevance-v8' | 'chat-relevance-v9' | 'chat-relevance-v10'
 export function supportsChatCorrectionContextV1(version: ChatRetrievalVersion): boolean {
-  return version === 'chat-relevance-v9' || version === 'chat-relevance-v8' || version === 'chat-relevance-v4' || version === 'chat-relevance-v5' || version === 'chat-relevance-v6' || version === 'chat-relevance-v7'
+  return version === 'chat-relevance-v10' || version === 'chat-relevance-v9' || version === 'chat-relevance-v8' || version === 'chat-relevance-v4' || version === 'chat-relevance-v5' || version === 'chat-relevance-v6' || version === 'chat-relevance-v7'
 }
 export function chatRetrievalVersionForReader(reader: string | undefined): ChatRetrievalVersion | null {
   if (reader === 'chat-narrative-runtime-view-v3') return 'legacy'
   if (reader === 'chat-narrative-runtime-view-v4' || reader === CHAT_CONTEXT_READER_VERSION_V1) return 'chat-relevance-v1'
   if (reader === CHAT_CONTEXT_READER_VERSION_V2) return 'chat-relevance-v2'
   if (reader === CHAT_CONTEXT_READER_VERSION_V4) return 'chat-relevance-v4'
+  if (reader === CHAT_CONTEXT_READER_VERSION_V10) return 'chat-relevance-v10'
   if (reader === CHAT_CONTEXT_READER_VERSION_V9) return 'chat-relevance-v9'
   if (reader === CHAT_CONTEXT_READER_VERSION_V8) return 'chat-relevance-v8'
   if (reader === CHAT_CONTEXT_READER_VERSION_V7) return 'chat-relevance-v7'
@@ -40,7 +43,7 @@ export const CHAT_CONTEXT_SOURCE_TOKENS_V1 = 8000
 
 export type ChatContextSelectionReasonV1 = 'current-fact' | 'protected-memory' | 'player-pin' | 'dialogue' | 'goal' | 'thread' | 'scene' | 'importance' | 'open-commitment' | 'latest-resolution' | 'pending-correction' | 'historical-relevance'
 export interface ChatContextSelectionV1 {
-  version: 1 | 2 | 3 | 4 | 5
+  version: 1 | 2 | 3 | 4 | 5 | 6
   history?: ReturnType<import('./history-selection').ChatHistoryPlanV1['evidence']>
   knowledge: Array<{key: string; included: boolean; reason: ChatContextSelectionReasonV1}>
   memories: Array<{key: string; included: boolean; reason: ChatContextSelectionReasonV1}>

@@ -21,7 +21,7 @@ import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1, assertChatAc
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1} from './narrative-scheduling'
 import {buildInteractionContextWindow, type InteractionContextWindow} from './runtime'
-import {CHAT_CONTEXT_READER_VERSION_V9} from './context-selection'
+import {CHAT_CONTEXT_READER_VERSION_V10} from './context-selection'
 import { chat } from '../ai/client'
 import { createAgentSkillExecutionBindingV1, createAgentSkillExecutionBindingV2 } from '../agent/execution-binding'
 import { getAgentSkillV1, type AgentSkillId } from '../agent/skill-registry'
@@ -656,7 +656,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       declaredSourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       assembled,
-      readerVersion: situation ? 'chat-situation-runtime-view-v15' : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V9 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? 'chat-situation-runtime-view-v15' : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V10 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
@@ -982,8 +982,8 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
     const situation = candidate.kind === 'chat-situation-candidate'
     const reader = await readChatCandidateRetrievalVersion(snapshot, input.scope.projectId,
       situation ? 'chatSituationRuntime' : 'interactionRuntime', situation ? undefined : candidate.participantKey, original.interaction ?? undefined)
-    if (reader === 'chat-relevance-v6' || reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9') evidenceVersions.factEvidenceVersion = 1
-    if (!situation && (reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9')) evidenceVersions.resolutionEvidenceVersion = 1
+    if (reader === 'chat-relevance-v6' || reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10') evidenceVersions.factEvidenceVersion = 1
+    if (!situation && (reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10')) evidenceVersions.resolutionEvidenceVersion = 1
   }
   const event = adopted
     ? priorCommand

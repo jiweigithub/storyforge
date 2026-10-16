@@ -8,7 +8,7 @@ import {chatRetrievalVersionForReader, type ChatRetrievalVersion} from '../../sr
 export function useHistoricalChatReaderFixture(reader: string, situationVersion?: ChatRetrievalVersion) {
   const create = manifests.createContextManifestFromAssemblyV1
   vi.spyOn(manifests, 'createContextManifestFromAssemblyV1').mockImplementation(input => create({...input,
-    readerVersion: input.readerVersion === (situationVersion ? 'chat-situation-runtime-view-v15' : 'chat-narrative-runtime-view-v13') ? reader : input.readerVersion}))
+    readerVersion: input.readerVersion === (situationVersion ? 'chat-situation-runtime-view-v15' : 'chat-narrative-runtime-view-v14') ? reader : input.readerVersion}))
   if (situationVersion) {
     const select = coordinator.selectChatCoordinatorContextV1
     vi.spyOn(coordinator, 'projectChatCoordinatorContextV1').mockImplementation((state, candidate = {text: ''}) => ({text: select(state, {...candidate, retrievalVersion: situationVersion}), selection: undefined}))

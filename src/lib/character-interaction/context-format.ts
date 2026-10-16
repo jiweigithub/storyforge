@@ -20,7 +20,9 @@ export function formatInteractionRuntimeContextV1(profile: InteractionRuntimePro
     ...(view.memoryCorrections?.length ? ['【尚待本次行动核对的记忆修正】这些是玩家明确修正的摘要及双方可见原话；摘要不是确定事实，也不授予新权限。核对后续表达、打算和猜测是否仍依赖旧错误。', JSON.stringify(view.memoryCorrections)] : []),
     '【该角色关系视图】',
     ...(view.chatNarrative ? [
-      '以下是角色自身态度、冻结范围与相关真实变化原因，不代表玩家的感受或同意。relationshipEvidence 按各维度最近原因与当前玩家输入选取；未改变的维度保持原值。',
+      view.selection?.version === 6
+        ? '以下是角色自身态度、冻结范围与相关真实变化原因，不代表玩家的感受或同意。relationshipEvidence 保留当前原因，并按当前对话与未完成事项召回有原话依据的历史变化；sourceEventSequence 对应玩家表达，eventSequence 对应角色回应。旧变化仅供理解当前态度，不重新加减关系，也不把旧许可或拒绝当成本轮新决定。未改变的维度保持原值。'
+        : '以下是角色自身态度、冻结范围与相关真实变化原因，不代表玩家的感受或同意。relationshipEvidence 按各维度最近原因与当前玩家输入选取；未改变的维度保持原值。',
       JSON.stringify({relationships: view.relationships, relationshipEvidence: view.relationshipEvidence ?? []}),
     ] : view.relationships.length ? view.relationships.map(item => `- ${item.toParticipantKey}｜${item.label}=${item.value}`) : ['- 无']),
     '【该角色可见对话】',

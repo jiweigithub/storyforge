@@ -12,6 +12,7 @@ import {readProductRuntimeState} from './runtime-api'
 import {isImportedCompletedInteractionRunV1} from './runtime-run-recovery'
 import {chatRetrievalVersionForReader} from './context-selection'
 import {chatMemoryPlayerViewV1} from './memory-management'
+import {chatRelationshipHistoryRowsV1} from './relationship-history-context'
 
 const STEP = 'interaction:runtime-candidate'
 const SKILLS = ['character.chat-narrative-action', 'character.chat-narrative-options']
@@ -82,6 +83,10 @@ export async function readChatContextInspectionV1(scope: WorkspaceScope, session
   const shared = interactionVisibilityView(state, packet.participantKey)
   const selection = view.selection ? {
     ...(view.selection.history ? {
+      ...(view.selection.version === 6 ? {relationships: chatRelationshipHistoryRowsV1(state, packet.participantKey,
+        interactionRetrievalView(state, packet.participantKey).messages).filter(row => row.messages.length === 2
+        && row.messages.every(message => playerMessages.has(message.messageId))).map(row => ({content: row.change.reason,
+        included: view.selection!.history!.some(d => d.kind === 'relationships' && d.key === row.key && d.included), reason: 'historical-relevance' as const}))} : {}),
       facts: shared.chatNarrative!.facts.filter(f => visible.chatNarrative!.facts.some(p => p.factKey === f.factKey)).map(f => ({content: f.text,
         included: view.selection!.history!.some(d => d.kind === 'facts' && d.key === f.factKey && d.included), reason: 'historical-relevance' as const})),
       threads: shared.chatNarrative!.threads.filter(t => visible.chatNarrative!.threads.some(p => p.threadKey === t.threadKey)).map(t => ({content: `${t.title}：${t.question}`,

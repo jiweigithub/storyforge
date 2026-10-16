@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, describe, expect, it} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import {canonicalStringify} from '../../src/lib/agent/run/hash'
-import {createInitialInteractionState, interactionVisibilityView, parseInteractionState, rebaseInteractionStateForBranch} from '../../src/lib/character-interaction/runtime'
+import {buildInteractionContextWindow, createInitialInteractionState, interactionVisibilityView, parseInteractionState, rebaseInteractionStateForBranch} from '../../src/lib/character-interaction/runtime'
 import {applyChatNarrativeActionV1, applyReviewedChatNarrativeActionV1, parseChatNarrativeActionV1, previewChatNarrativeActionV1, requestChatNarrativeTriggerV1} from '../../src/lib/character-interaction/narrative-actions'
 import {chatSituationCoordinatorViewV1} from '../../src/lib/character-interaction/narrative-situations'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
@@ -126,6 +126,11 @@ describe('durable relationship consequences', () => {
     const restored = (await db.productRuntimeSessions.where('projectId').equals(imported).toArray()).find(s => s.title === '关系二次分支')!
     const actual = (await readProductRuntimeState(restored.id!)).interaction!
     expect(actual.relationshipHistory).toEqual(expected.relationshipHistory); expect(actual.relationships).toEqual(expected.relationships)
+    const restoredView = buildInteractionContextWindow(actual, 'guard')
+    expect(restoredView.relationshipEvidence).toEqual(actual.relationshipHistory)
+    for (const sequence of [actual.relationshipHistory[0].eventSequence, actual.relationshipHistory[0].sourceEventSequence]) {
+      expect(restoredView.messages).toContainEqual(actual.messages.find(m => m.eventSequence === sequence))
+    }
     const next = await f.envelope('continue')
     await requestChatNarrativeTrigger({...next, kind: 'continue', sourceEventSequence: next.baseSequence})
     await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '承接上次关系和未完成问题',

@@ -1,3 +1,4 @@
+import {chatRelationshipHistoryKeyV1} from './relationship-history-context'
 import {createChatHistoryProjectionCacheV1} from './history-context-cache'
 import type {CharacterInteractionRuntimeState} from '../types'
 import {chatSituationCoordinatorViewV1} from './narrative-situations'
@@ -19,7 +20,7 @@ const projectionCache = createChatHistoryProjectionCacheV1<CoordinatorProjection
 /** Current review must retain the actor's exact selected rows and every
  * existing candidate reference, then expand their original evidence closure. */
 export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteractionRuntimeState, candidate: {
-  text: string; actorKey?: string; retrievalVersion?: 'chat-relevance-v8' | 'chat-relevance-v9'; sourceUnits?: ChatSourceUnitSetV1; discoveryEvidence?: boolean
+  text: string; actorKey?: string; retrievalVersion?: 'chat-relevance-v8' | 'chat-relevance-v9' | 'chat-relevance-v10'; sourceUnits?: ChatSourceUnitSetV1; discoveryEvidence?: boolean
 }) {
   const cacheKey = projectionCache.key([state, candidate])
   const cached = projectionCache.read(cacheKey)
@@ -45,10 +46,24 @@ export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteract
   }
   for (const m of memories) {plan.add('memories', m.memoryId, m.content, pending.has(m.memoryId) ? ['pending-correction'] : m.playerPinned ? ['player-pin'] : [], m.importance); plan.linkMemory(m)}
   const delivered = candidate.actorKey ? buildInteractionContextWindow(state, candidate.actorKey, {retrievalVersion: candidate.retrievalVersion ?? 'chat-relevance-v8'}) : null
+  if (candidate.retrievalVersion === 'chat-relevance-v10' && delivered) {
+    const known = new Set([...full.relationshipEvidence, ...(delivered.relationshipEvidence ?? [])].map(chatRelationshipHistoryKeyV1))
+    full.relationshipEvidence = state.relationshipHistory.filter(r => known.has(chatRelationshipHistoryKeyV1(r)))
+  }
   const dialogue = planChatCoordinatorDialogueV1(state, {text: candidate.text, deliveredMessageIds: delivered?.messages.map(m => m.messageId) ?? []})
   for (const m of dialogue.eligible) {
     const reasons = dialogue.evidence.requiredMessages.find(r => r.messageId === m.messageId)?.reasons ?? []
     plan.add('messages', m.messageId, m.text, reasons); plan.linkMessage(m)
+  }
+  if (candidate.retrievalVersion === 'chat-relevance-v10') {
+    const actorCauses = new Set(delivered?.relationshipEvidence?.map(chatRelationshipHistoryKeyV1))
+    for (const change of full.relationshipEvidence) {
+      const key = chatRelationshipHistoryKeyV1(change)
+      plan.add('relationships', key, change.reason, [actorCauses.has(key) ? 'actor-delivered' : 'current-relationship-cause'])
+      for (const message of dialogue.eligible) if (message.eventSequence === change.sourceEventSequence || message.eventSequence === change.eventSequence) {
+        plan.link('relationships', key, 'messages', message.messageId)
+      }
+    }
   }
   if (delivered) {
     for (const f of delivered.chatNarrative!.facts) plan.require('facts', f.factKey, 'actor-delivered')
@@ -80,11 +95,11 @@ export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteract
       ...(candidate.discoveryEvidence ? {discoveryEvidence: chatDiscoveryEvidenceContextV1(state)} : {}),
       ...(candidate.sourceUnits ? {sourceInterpretationConstraints: chatSourceUnitConstraintsV1(candidate.sourceUnits)} : {}),
       historyContext: {version: 1, policy: CHAT_HISTORY_POLICY_V1, resolutions: plan.resolutions(selected)},
-      selection: {version: candidate.retrievalVersion === 'chat-relevance-v9' ? 6 : 5, totalKnowledgeEntries: knowledge.length, omittedKnowledgeEntries: knowledge.filter(k => !has('knowledge', k.knowledgeKey)).length,
+      selection: {version: (candidate.retrievalVersion === 'chat-relevance-v9' || candidate.retrievalVersion === 'chat-relevance-v10') ? 6 : 5, totalKnowledgeEntries: knowledge.length, omittedKnowledgeEntries: knowledge.filter(k => !has('knowledge', k.knowledgeKey)).length,
         totalMemoryEntries: memories.length, omittedMemoryEntries: memories.filter(m => !has('memories', m.memoryId)).length,
         totalCommitmentEntries: commitments.length, omittedCommitmentEntries: commitments.filter(c => !has('commitments', c.commitmentKey)).length, history: Object.fromEntries(historyKinds.map(kind => {
         const rows = evidence.filter(e => e.kind === kind)
-        if (candidate.retrievalVersion === 'chat-relevance-v9') return [kind, {included: rows.filter(e => e.included).length, omitted: rows.filter(e => !e.included).length, required: rows.filter(e => e.required.length).length}]
+        if (candidate.retrievalVersion === 'chat-relevance-v9' || candidate.retrievalVersion === 'chat-relevance-v10') return [kind, {included: rows.filter(e => e.included).length, omitted: rows.filter(e => !e.included).length, required: rows.filter(e => e.required.length).length}]
         return [kind, {included: rows.filter(e => e.included).map(e => e.key), omitted: rows.filter(e => !e.included).map(e => e.key),
           required: Object.fromEntries(rows.filter(e => e.required.length).map(e => [e.key, e.required]))}]
       }))},

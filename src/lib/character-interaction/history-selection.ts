@@ -1,7 +1,7 @@
 import type {CharacterInteractionRuntimeState, InteractionRuntimeMemory, InteractionRuntimeMessage} from '../types'
 import type {ChatSituationV1, ChatGoalCommitmentV1} from '../types/chat-narrative'
 
-export type ChatHistoryKindV1 = 'facts' | 'goals' | 'threads' | 'commitments' | 'knowledge' | 'memories' | 'messages'
+export type ChatHistoryKindV1 = 'facts' | 'goals' | 'threads' | 'commitments' | 'knowledge' | 'memories' | 'messages' | 'relationships'
 export type ChatHistoryScopeV1 = Pick<ChatSituationV1, 'facts' | 'goals' | 'threads' | 'beliefs' | 'possibilities'> & {commitments: ChatGoalCommitmentV1[]}
 export const chatHistoryIdV1 = (kind: ChatHistoryKindV1, key: string) => `${kind}:${key}`
 export const CHAT_HISTORY_POLICY_V1 = '仅对有来源的历次观察、已结束事项和已处理约定按相关性选择；原事实、状态、权限和存档不变。未选入不表示不存在、已失效或可重复完成。选入条目的已知事实依据和处置原文一起读取；必要依据不足时停止。'

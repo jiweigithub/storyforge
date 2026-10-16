@@ -41,7 +41,7 @@ it('persists the actual review audit with its manifest and rejects a different a
   const recorded = packets.find(e => e.type === 'evidence.artifact.recorded' && e.payload.stepId === 'interaction:action-review')!
   if (recorded.type !== 'evidence.artifact.recorded') throw Error('missing review packet')
   const packet = JSON.parse(await readAgentRunArtifactExactV1({projectId: f.scope.projectId, artifactKind: 'context-packet', contentHash: recorded.payload.contentHash}))
-  expect(packet.manifest.sources[0].readerVersion).toBe('chat-action-review-v13')
+  expect(packet.manifest.sources[0].readerVersion).toBe('chat-action-review-v14')
   expect(packet.coordinatorSelection.history.find((d: {key: string}) => d.key === 'secret')).toMatchObject({included: true})
   const input = {projectId: f.scope.projectId, scope: f.scope, productRuntimeSessionId: f.sessionId, chatActionCandidateRunId: generated.snapshot.run.id}
   db.close(); await db.open()
