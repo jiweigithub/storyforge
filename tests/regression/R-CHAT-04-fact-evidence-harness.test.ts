@@ -21,7 +21,7 @@ it.each(['current', 'saved-v9'] as const)('freezes provenance policy across revi
   if (reader === 'saved-v9') {
     const create = manifests.createContextManifestFromAssemblyV1
     vi.spyOn(manifests, 'createContextManifestFromAssemblyV1').mockImplementation(input => create({...input,
-      readerVersion: input.readerVersion === 'chat-narrative-runtime-view-v10' ? 'chat-narrative-runtime-view-v9' : input.readerVersion}))
+      readerVersion: input.readerVersion === 'chat-narrative-runtime-view-v11' ? 'chat-narrative-runtime-view-v9' : input.readerVersion}))
   }
   let runId = 0, calls = 0
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action',
@@ -97,7 +97,7 @@ it.each(['current', 'saved-v11'] as const)('records player situation facts only 
   if (reader === 'saved-v11') {
     const create = manifests.createContextManifestFromAssemblyV1
     vi.spyOn(manifests, 'createContextManifestFromAssemblyV1').mockImplementation(input => create({...input,
-      readerVersion: input.readerVersion === 'chat-situation-runtime-view-v12' ? 'chat-situation-runtime-view-v11' : input.readerVersion}))
+      readerVersion: input.readerVersion === 'chat-situation-runtime-view-v13' ? 'chat-situation-runtime-view-v11' : input.readerVersion}))
   }
   const result = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'player', skillId: 'character.chat-situation-construction',
     objective: '情境事实来源工程检查', runAI: async () => JSON.stringify(draft), runReviewAI: async () => JSON.stringify({checks: CHAT_SITUATION_REVIEW_CHECKS_V1.map(check => ({check, passed: true, reason: '工程夹具'}))})})

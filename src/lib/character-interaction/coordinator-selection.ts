@@ -54,7 +54,7 @@ export function selectChatCoordinatorContextV1(state: CharacterInteractionRuntim
     deliveredMessageIds.push(...delivered.messages.map(m => m.messageId))
     if (promises) for (const item of [...(delivered.chatNarrative?.goals.flatMap(g => g.commitments ?? []) ?? []), ...(delivered.sharedCommitments ?? [])]) requiredCommitments.add(item.commitmentKey)
   }
-  const dialogue = (candidate.retrievalVersion === 'chat-relevance-v5' || candidate.retrievalVersion === 'chat-relevance-v6')
+  const dialogue = (candidate.retrievalVersion === 'chat-relevance-v5' || candidate.retrievalVersion === 'chat-relevance-v6' || candidate.retrievalVersion === 'chat-relevance-v7')
     ? planChatCoordinatorDialogueV1(state, {text: candidate.text, deliveredMessageIds}) : null
   const scoreCandidate = createContextTextScorerV1(candidate.text)
   const scoreSituation = createContextTextScorerV1(JSON.stringify({

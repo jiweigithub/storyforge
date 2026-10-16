@@ -1,4 +1,5 @@
 import {validateChatSceneTransitionRecordsV1} from './narrative-scene-transition'
+import {validateChatResolutionEvidenceV1} from './resolution-evidence'
 import {validateChatFactEvidenceV1} from './fact-evidence'
 import {validateChatInquiryHistoryV1, chatInquiryRepliesV1} from './narrative-inquiry'
 import {chatPlayerPauseSequencesV1, rebaseChatPlayerPausesV1, validateChatGoalPlayerPauseV1} from './narrative-player-pause'
@@ -217,7 +218,7 @@ export function createChatNarrativeStateV1(content: FrozenChatNarrativeV1): Chat
 }
 
 export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativeBoundaryV1): ChatNarrativeStateV1 {
-  const extra = ['pendingSituation', 'pendingEdit', 'excludedMessageIds', 'discoveryHistory', 'inquiryHistory', 'memoryReconciliations', 'sceneTransitions', 'factEvidence'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
+  const extra = ['pendingSituation', 'pendingEdit', 'excludedMessageIds', 'discoveryHistory', 'inquiryHistory', 'memoryReconciliations', 'sceneTransitions', 'factEvidence', 'resolutionEvidence'].filter(key => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key)).map(key => ',' + key).join('')
   const parsed = row(value, 'schema,version,worldReleaseHash,persona,permissions,situation,revision,lastEventSequence,triggers' + extra, '叙事状态')
   if (parsed.schema !== 'storyforge.chat-narrative-state') fail('叙事状态类型无效')
   const permissions = validateCommon(parsed, boundary)
@@ -295,6 +296,7 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
   validateChatDiscoveryHistoryV1(state)
   validateChatInquiryHistoryV1(state, boundary)
   validateChatFactEvidenceV1(state, boundary.participantKeys)
+  validateChatResolutionEvidenceV1(state, boundary.participantKeys)
   return state
 }
 

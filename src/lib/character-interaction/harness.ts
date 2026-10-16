@@ -18,7 +18,7 @@ import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1, assertChatAc
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1} from './narrative-scheduling'
 import {buildInteractionContextWindow, type InteractionContextWindow} from './runtime'
-import {CHAT_CONTEXT_READER_VERSION_V6} from './context-selection'
+import {CHAT_CONTEXT_READER_VERSION_V7} from './context-selection'
 import { chat } from '../ai/client'
 import { createAgentSkillExecutionBindingV1, createAgentSkillExecutionBindingV2 } from '../agent/execution-binding'
 import { getAgentSkillV1, type AgentSkillId } from '../agent/skill-registry'
@@ -653,7 +653,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       declaredSourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       assembled,
-      readerVersion: situation ? 'chat-situation-runtime-view-v12' : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V6 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? 'chat-situation-runtime-view-v13' : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V7 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
@@ -828,7 +828,7 @@ export async function readInteractionRuntimeCandidateV1(scope: WorkspaceScope, r
   return { snapshot: saved.snapshot, candidate }
 }
 
-async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSequence: number, optionKey?: string, factEvidenceVersion?: 1): Promise<ProductRuntimeEvent | null> {
+async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSequence: number, optionKey?: string, evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1} = {}): Promise<ProductRuntimeEvent | null> {
   if (candidate.kind === 'scene-director-candidate') return null
   const envelope = {
     sessionId: candidate.productRuntimeSessionId,
@@ -838,17 +838,17 @@ async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSeque
   }
   if (candidate.kind === 'chat-situation-candidate') {
     if (!candidate.review) fail('情境尚未审查，不能采用')
-    return commitChatSituation({...envelope, triggerSequence: candidate.triggerSequence, draft: candidate.draft, review: candidate.review, factEvidenceVersion, harnessRun: {id: candidate.runId, lastSequence: runSequence}})
+    return commitChatSituation({...envelope, triggerSequence: candidate.triggerSequence, draft: candidate.draft, review: candidate.review, ...evidenceVersions, harnessRun: {id: candidate.runId, lastSequence: runSequence}})
   }
   if (candidate.kind === 'chat-narrative-action-candidate') {
     if (!candidate.review) fail('行动尚未审查，不能采用')
     return commitChatNarrativeAction({...envelope, actorKey: candidate.participantKey, triggerSequence: candidate.triggerSequence,
-      messageId: `message:harness:${candidate.runId}`, action: candidate.action, review: candidate.review, factEvidenceVersion, harnessRun: {id: candidate.runId, lastSequence: runSequence}})
+      messageId: `message:harness:${candidate.runId}`, action: candidate.action, review: candidate.review, ...evidenceVersions, harnessRun: {id: candidate.runId, lastSequence: runSequence}})
   }
   if (candidate.kind === 'chat-narrative-options-candidate') {
     const selected = selectedChatNarrativeOptionV1(candidate.options, candidate.review, optionKey)
     return commitChatNarrativeAction({...envelope, actorKey: candidate.participantKey, triggerSequence: candidate.triggerSequence,
-      messageId: `message:harness:${candidate.runId}`, ...selected, factEvidenceVersion, harnessRun: {id: candidate.runId, lastSequence: runSequence}})
+      messageId: `message:harness:${candidate.runId}`, ...selected, ...evidenceVersions, harnessRun: {id: candidate.runId, lastSequence: runSequence}})
   }
   if (candidate.kind === 'character-reply-candidate') {
     return commitInteractionCharacterReply({
@@ -969,7 +969,7 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
       candidateHash: candidate.candidateHash, decision: 'adopt', reviewItemId: optionKey!, reviewDecision: 'acknowledged', note: `玩家选定行动候选 ${optionKey}`})
     await input.onDurableBoundary?.('confirmation.recorded', snapshot)
   }
-  let factEvidenceVersion: 1 | undefined
+  const evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1} = {}
   if (!adopted && ['chat-situation-candidate', 'chat-narrative-action-candidate', 'chat-narrative-options-candidate'].includes(candidate.kind)) {
     // Recovery may already have committed the command. Verify its producer
     // against the original state, never the current default reader or new head.
@@ -977,11 +977,12 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
     const situation = candidate.kind === 'chat-situation-candidate'
     const reader = await readChatCandidateRetrievalVersion(snapshot, input.scope.projectId,
       situation ? 'chatSituationRuntime' : 'interactionRuntime', situation ? undefined : candidate.participantKey, original.interaction ?? undefined)
-    if (reader === 'chat-relevance-v6') factEvidenceVersion = 1
+    if (reader === 'chat-relevance-v6' || reader === 'chat-relevance-v7') evidenceVersions.factEvidenceVersion = 1
+    if (!situation && reader === 'chat-relevance-v7') evidenceVersions.resolutionEvidenceVersion = 1
   }
   const event = adopted
     ? priorCommand
-    : await applyCandidate(candidate, snapshot.projection.lastSequence, optionKey, factEvidenceVersion)
+    : await applyCandidate(candidate, snapshot.projection.lastSequence, optionKey, evidenceVersions)
   let version = await readProductRuntimeStateVersion(candidate.productRuntimeSessionId)
   if (adopted?.type === 'runtime.candidate.adopted') {
     if (

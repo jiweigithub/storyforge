@@ -48,7 +48,7 @@ for (const [continuous, ownGoal] of [[false, false], [true, false], [false, true
           newGoals: [], newThreads: [], possibilities: []}
       }
     } else {
-      actions++; expect(prompt).not.toContain('柜台下')
+      actions++; expect(prompt).not.toContain('柜台下'); expect(prompt).not.toContain('resolutionEvidence')
       output = await page.evaluate(async ({f, actions, ownGoal}) => {
         const load = new Function('p', 'return import(p)'), helper = await load('/storyforge/tests/helpers/chat-player-followup.ts')
         const state = (await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(f.sessionId)).interaction
@@ -99,6 +99,11 @@ for (const [continuous, ownGoal] of [[false, false], [true, false], [false, true
   expect(calls).toHaveLength(ownGoal ? 6 : 10)
   const final = await read()
   expect(final.chatNarrative.situation.goals.find((g: {goalKey: string}) => g.goalKey === 'check-entry').status).toBe('fulfilled')
+  const evidence = final.chatNarrative.resolutionEvidence.goals.find((g: {targetKey: string}) => g.targetKey === 'check-entry')
+  expect(evidence.evidenceFactKeys).toContain('entry-result')
+  const expression = final.messages.find((m: {messageId: string}) => m.messageId === evidence.source.messageId)
+  expect(expression.text.slice(evidence.source.start, evidence.source.end)).toContain('门口的观察完成了')
+  expect(expression.eventSequence).toBe(final.chatNarrative.situation.goals.find((g: {goalKey: string}) => g.goalKey === 'check-entry').updatedSequence)
   expect(final.chatNarrative.situation.goals[0].status).toBe('abandoned')
   expect(final.chatNarrative.pendingSituation).toBeUndefined()
   await page.reload(); await expect(page.getByTestId('chat-narrative-controls')).toBeVisible()

@@ -70,7 +70,7 @@ it('resumes a saved v6 promise context with its original full-history policy aft
   })
   const create = manifests.createContextManifestFromAssemblyV1
   vi.spyOn(manifests, 'createContextManifestFromAssemblyV1').mockImplementation(input => create({...input,
-    readerVersion: input.readerVersion === 'chat-narrative-runtime-view-v10' ? 'chat-narrative-runtime-view-v6' : input.readerVersion}))
+    readerVersion: input.readerVersion === 'chat-narrative-runtime-view-v11' ? 'chat-narrative-runtime-view-v6' : input.readerVersion}))
   const record = artifacts.recordAgentRunArtifactV1
   vi.spyOn(artifacts, 'recordAgentRunArtifactV1').mockImplementation(input => record(input.artifactKind === 'context-packet'
     ? {...input, content: JSON.stringify({...JSON.parse(input.content), selection: oldSelection})} : input))

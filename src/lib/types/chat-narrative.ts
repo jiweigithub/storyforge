@@ -57,6 +57,15 @@ export interface ChatFactEvidenceRecordV1 {
   source: 'action' | 'situation' | 'inquiry'
 }
 
+/** Commit-derived references for a terminal goal/thread. The original message
+ * owns the expression; canonical target.updatedSequence owns the event number. */
+export interface ChatResolutionEvidenceRecordV1 {
+  targetKey: string
+  actorKey: string
+  evidenceFactKeys: string[]
+  source: {messageId: string; start: number; end: number}
+}
+
 export interface ChatFactDiscoveryRuleV1 {
   sceneKey: string
   actorKeys: string[]
@@ -209,6 +218,7 @@ export interface ChatNarrativeStateV1 {
   /** Versioned commit-derived evidence survives parentless branches. Event
    * sequence remains owned by the canonical fact, so it is rebased only once. */
   factEvidence?: {version: 1; records: ChatFactEvidenceRecordV1[]}
+  resolutionEvidence?: {version: 1; goals: ChatResolutionEvidenceRecordV1[]; threads: ChatResolutionEvidenceRecordV1[]}
   /** Reviewed intention, or a bounded result of an already completed observation.
    * Player input cancels intentions, but keeps explicitly marked observation results pending. */
   pendingSituation?: ChatActorSituationRequestV1 & {actorKey: string; goalKey: string | null; sourceEventSequence: number}
