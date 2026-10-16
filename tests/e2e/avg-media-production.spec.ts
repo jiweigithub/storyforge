@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test'
 
 // This opt-in feature is exercised only in an isolated technical test server.
 // The provider response is original Canvas PNG, never a real paid generation.
-for (const large of [false, true]) test(`generated image ${large ? 'OPFS' : 'IndexedDB'} uses real decoding, explicit choice, refreshed Harness join and portable backup`, async ({ page }) => {
+for (const {large,retained} of [{large:false,retained:false},{large:true,retained:false},{large:false,retained:true},{large:true,retained:true}]) test(retained
+  ? `stopped image ${large ? 'OPFS' : 'IndexedDB'} retains read-only provenance and actual decoded pixels after backup remapping`
+  : `generated image ${large ? 'OPFS' : 'IndexedDB'} uses real decoding, explicit choice, refreshed Harness join and portable backup`, async ({ page }) => {
   test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION !== '1', 'Experimental media dispatch is off by default')
   await page.addInitScript(() => localStorage.setItem('storyforge_guide_completed', 'e2e'))
   await page.goto('./avg/library')
@@ -68,6 +70,45 @@ for (const large of [false, true]) test(`generated image ${large ? 'OPFS' : 'Ind
   expect(received.status).toBe('building'); expect(requests).toBe(1)
   expect(received.backend).toBe(large ? 'opfs' : 'indexeddb')
   await page.reload()
+  if (retained) {
+    const result = await page.evaluate(async s => {
+      const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+      const [{ db }, proofs, backups, service, bytes] = await Promise.all([load('/storyforge/src/lib/db/schema.ts'),
+        load('/storyforge/src/lib/product-production/artifact-store.ts'), load('/storyforge/src/lib/export/json-export.ts'),
+        load('/storyforge/src/lib/product-production/service.ts'), load('/storyforge/src/lib/product-production/media-blob-store.ts')])
+      const details = await service.readProductProductionDetailsV1(s.scope, s.productionId, ['avg'])
+      await service.stopProductProductionV1({ scope: s.scope, production: details.production })
+      const before = await db.productBuilds.get(s.buildId)
+      const read = async (scope: any, build: any) => {
+        const raw = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id, 'avg.media.raw.desk.background']).filter((r: any) => r.status === 'accepted').first()
+        const proof = await proofs.verifyRetainedAvgRawImageArtifactV1({ scope, buildId: build.id, expectedBuildRevision: build.stateRevision,
+          expectedBriefHash: build.briefHash, expectedPlanHash: build.planHash, sourceControlEpoch: raw.controlEpoch,
+          artifactKey: raw.artifactKey, version: raw.version, contentHash: raw.contentHash })
+        return { raw, proof }
+      }
+      const source = await read(s.scope, before)
+      const projectId = await backups.importProjectJSON(await backups.exportProjectJSON(s.scope.projectId))
+      const restored = await db.productBuilds.where('projectId').equals(projectId).first()
+      const scope = { projectId, worldId: restored.worldId, workId: restored.workId }
+      const imported = await read(scope, restored)
+      const blob = await db.mediaBlobObjects.get(imported.raw.blobObjectId)
+      const bitmap = await createImageBitmap(new Blob([await bytes.readVerifiedMediaBlobObjectData(blob)], { type: blob.mimeType }))
+      const decoded = { width: bitmap.width, height: bitmap.height }; bitmap.close()
+      let activeRejected = false
+      try { await proofs.verifyAcceptedProductBuildArtifactV1({ scope, buildId: restored.id, artifactKey: imported.raw.artifactKey,
+        version: imported.raw.version, contentHash: imported.raw.contentHash }) } catch { activeRejected = true }
+      return { sameProof: JSON.stringify(source.proof.provenance) === JSON.stringify(imported.proof.provenance),
+        remapped: imported.raw.blobObjectId !== source.raw.blobObjectId, activeRejected, decoded, backend: blob.backend,
+        runState: (await db.agentRuns.get(imported.raw.producerRunId)).status,
+        oldUnchanged: JSON.stringify(await db.productBuilds.get(s.buildId)) === JSON.stringify(before) }
+    }, seeded)
+    // Portable binary import deliberately restores bytes into IndexedDB; the
+    // original large-image OPFS backend was verified before export above.
+    expect(result).toMatchObject({ sameProof:true,remapped:true,activeRejected:true,oldUnchanged:true,runState:'running',backend:'indexeddb',
+      decoded:{width:large?2048:576,height:large?1152:324} })
+    expect(requests).toBe(1)
+    return
+  }
   const result = await page.evaluate(async ({ s, received }) => {
     const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
     const [service, draft, { db }, previews, backups, runtime] = await Promise.all([load('/storyforge/src/lib/avg/assembly-service.ts'), load('/storyforge/src/lib/avg/draft-service.ts'),

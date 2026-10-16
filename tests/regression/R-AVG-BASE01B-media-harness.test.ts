@@ -16,6 +16,7 @@ import { scopeTransactionTables } from '../../src/lib/workspace/scope'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 import { seedCurrentProductWorld } from '../helpers/current-product-world'
 import * as mediaBlobStore from '../../src/lib/product-production/media-blob-store'
+import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
 
 const requirement = (): AvgVisualProductionRequirementV1 => ({ requirementKey: 'desk.background', revision: 1,
   assetKey: 'avg.generated.desk', name: '原创工程背景', altText: '仅用于管线验证的原创色块',
@@ -175,6 +176,36 @@ describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/deco
     })
     expect(await db.productBuildArtifacts.toArray()).toEqual(before)
     expect(await db.productBuilds.get(build.id!)).toEqual(build)
+    expect(dispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('a stopped original image retains exact provenance across a real project backup/remap without another POST', async () => {
+    const body = await response(), dispatch = vi.fn(async () => new Response(body, { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', dispatch)
+    const s = await start(await prepare()); await confirmSources(s)
+    await runAvgAssemblyV1({ scope: s.scope, productionId: s.productionId })
+    const details = await readProductProductionDetailsV1(s.scope, s.productionId, ['avg'])
+    await stopProductProductionV1({ scope: s.scope, production: details.production })
+    const before = (await db.productBuilds.get(s.buildId))!
+    const original = (await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId, 'avg.media.raw.desk.background']).filter(row => row.status === 'accepted').first())!
+    const sourceProof = await verifyRetainedAvgRawImageArtifactV1({ scope: s.scope, buildId: s.buildId, expectedBuildRevision: before.stateRevision,
+      expectedBriefHash: before.briefHash, expectedPlanHash: before.planHash, sourceControlEpoch: original.controlEpoch,
+      artifactKey: original.artifactKey, version: original.version, contentHash: original.contentHash })
+    const projectId = await importProjectJSON(await exportProjectJSON(s.scope.projectId))
+    const build = (await db.productBuilds.where('projectId').equals(projectId).first())!
+    const scope = { projectId, worldId: build.worldId, workId: build.workId }
+    const raw = (await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id!, 'avg.media.raw.desk.background']).filter(row => row.status === 'accepted').first())!
+    const proof = await verifyRetainedAvgRawImageArtifactV1({ scope, buildId: build.id!, expectedBuildRevision: build.stateRevision,
+      expectedBriefHash: build.briefHash, expectedPlanHash: build.planHash, sourceControlEpoch: raw.controlEpoch,
+      artifactKey: raw.artifactKey, version: raw.version, contentHash: raw.contentHash })
+    expect(proof.artifact.blobObjectId).toBe(raw.blobObjectId)
+    expect(raw.blobObjectId).not.toBe(original.blobObjectId)
+    expect(proof.provenance).toEqual(sourceProof.provenance)
+    expect(proof.provenance).toMatchObject({ planHash: before.planHash, buildNumber: before.buildNumber })
+    expect((await db.agentRuns.get(raw.producerRunId!))!.status).toBe('running')
+    await expect(verifyAcceptedProductBuildArtifactV1({ scope, buildId: build.id!, artifactKey: raw.artifactKey, version: raw.version,
+      contentHash: raw.contentHash })).rejects.toThrow()
+    expect(await db.productBuilds.get(s.buildId)).toEqual(before)
     expect(dispatch).toHaveBeenCalledTimes(1)
   })
 

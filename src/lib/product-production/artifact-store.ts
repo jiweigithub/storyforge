@@ -3,6 +3,7 @@ import { db } from '../db/schema'
 import { readLatestVerifiedAgentRunCheckpointV1 } from '../agent/run/checkpoint'
 import { readAgentRunV1, type AgentRunSnapshotV1 } from '../agent/run/event-store'
 import { canonicalStringify as canonicalAgentRunJsonV1 } from '../agent/run/hash'
+import { completedAgentRunEvidencePrefixV1 } from '../agent/run/projection'
 import type {
   AgentRunCheckpointRecord,
   AgentRunEventRecord,
@@ -1285,9 +1286,17 @@ async function createVerifiedProducerCandidateV1(input: {
     throw new Error('[product-production-artifact] producer Run 缺少已验证 candidate checkpoint')
   }
   const snapshot = verified.snapshot
+  // An import deliberately stales completed Runs. Retained AVG reads may
+  // verify only the exact historical completed prefix, without mutating the
+  // imported Run or sharing this authority with active producer admission.
+  const lastEvent = snapshot.events[snapshot.events.length - 1]
+  const importedPrefix = input.retainedRoot && snapshot.run.status === 'running'
+    && lastEvent?.type === 'verification.staled' && lastEvent.payload.reason === 'project-import-scope-rebound'
+    ? completedAgentRunEvidencePrefixV1(snapshot.events) : null
+  const producerProjection = importedPrefix ?? snapshot.projection
   const boundary = snapshot.contract.scope.productProduction
   const task = boundary == null ? null : plan.tasks.find(row => row.taskKey === boundary.taskKey)
-  if (!boundary || !task || snapshot.run.status !== 'completed' || snapshot.projection.state !== 'completed'
+  if (!boundary || !task || (!importedPrefix && snapshot.run.status !== 'completed') || producerProjection.state !== 'completed'
     || snapshot.run.productBuildId !== input.build.id
     || snapshot.run.projectId !== input.scope.projectId || snapshot.run.workId !== input.scope.workId
     || boundary.productBuildId !== input.build.id
@@ -1296,8 +1305,8 @@ async function createVerifiedProducerCandidateV1(input: {
     || boundary.planHash !== input.build.planHash
     || snapshot.run.parentRunId == null
     || snapshot.run.parentRelation !== `task:${task.taskKey}`
-    || snapshot.projection.terminalReceiptHash !== input.producerReceiptHash
-    || snapshot.run.terminalReceiptHash !== input.producerReceiptHash) {
+    || producerProjection.terminalReceiptHash !== input.producerReceiptHash
+    || (!importedPrefix && snapshot.run.terminalReceiptHash !== input.producerReceiptHash)) {
     throw new Error('[product-production-artifact] producer Run 与 Build/Plan/receipt 不闭合')
   }
   const rootRunId = ledgerRootRunIdV1(input.build.budgetLedgerJson)
@@ -1364,7 +1373,7 @@ async function createVerifiedProducerCandidateV1(input: {
     controlEpoch: input.build.controlEpoch,
   })
   const checkpointStep = verified.projection.steps[task.taskKey]
-  const terminalStep = snapshot.projection.steps[task.taskKey]
+  const terminalStep = producerProjection.steps[task.taskKey]
   if (receiptHash !== input.producerReceiptHash
     || checkpointStep?.attempt !== Number(candidate.attempt)
     || checkpointStep.candidateHash !== candidateHash
@@ -1433,7 +1442,7 @@ async function createVerifiedProducerCandidateV1(input: {
     receiptHash,
     passedGateIds: normalizedGateIds,
     usage: result.usage,
-    importedScopeRebound: hasImportedScopeRevalidationV1(snapshot),
+    importedScopeRebound: importedPrefix !== null || hasImportedScopeRevalidationV1(snapshot),
     artifacts,
     remainingArtifactKeys: new Set(actualKeys),
   }
