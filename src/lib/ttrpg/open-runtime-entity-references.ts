@@ -3,10 +3,11 @@ import type { TtrpgOpenOracleReceiptV1 } from './open-oracle-contract'
 import type { TtrpgRuntimeContentV2 } from './content-version'
 import type { TtrpgOpenAudience, TtrpgOpenEntityKind } from './open-contract'
 import type { TtrpgOpenEntityOperationV1 } from './open-entity-contract'
+import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { parseTtrpgOpenEntityOperationV1 } from './open-entity-contract'
 import { ttrpgOpenEntityIdentityCatalogV1, ttrpgOpenEntityReferenceVisibleV1 } from './open-entity-catalog'
 import type { TtrpgOpenSourceRefV1 } from './open-coordination'
-import { parseTtrpgOpenSourceRefV1 } from './open-coordination'
+import { parseTtrpgOpenSourceRefV1, ttrpgOpenAncestorSourceAllowedV1 } from './open-coordination'
 import { hashProductProductionValueV2 as hash } from '../product-production/hash'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import * as p from './open-contract-parse'
@@ -182,4 +183,66 @@ export async function createTtrpgOpenOracleRuntimeReferencePolicyV1(input: {
 }
 export async function verifyTtrpgOpenOracleRuntimeReferencePolicyHashV1(policy: TtrpgOpenOracleRuntimeReferencePolicyV1) {
   await verifyTtrpgOpenRuntimeEntityReferencesHashV1(parseTtrpgOpenOracleRuntimeReferencePolicyV1(policy).references)
+}
+
+/** An accepted interpretation is a new source, never a renewal of its original model execution. */
+export interface TtrpgOpenNormalizationRuntimeReferencePolicyV1 {
+  schema: 'storyforge.ttrpg-open-normalization-runtime-reference-policy'; version: 1;
+  reviewSourceRef: TtrpgOpenSourceRefV1; reviewHash: string; recipientActorKeys: string[];
+  oraclePolicy: TtrpgOpenOracleRuntimeReferencePolicyV1;
+}
+export function parseTtrpgOpenNormalizationRuntimeReferencePolicyV1(value: unknown): TtrpgOpenNormalizationRuntimeReferencePolicyV1 {
+  const row = p.record(value, ['schema', 'version', 'reviewSourceRef', 'reviewHash', 'recipientActorKeys', 'oraclePolicy'], 'normalization runtime reference policy')
+  return { schema: p.literal(row.schema, 'storyforge.ttrpg-open-normalization-runtime-reference-policy', 'normalization reference schema'),
+    version: p.literal(row.version, 1, 'normalization reference version'), reviewSourceRef: parseTtrpgOpenSourceRefV1(row.reviewSourceRef),
+    reviewHash: p.hash(row.reviewHash, 'accepted interpretation hash'), recipientActorKeys: p.keys(row.recipientActorKeys, 'current normalization recipients', 1000, 1),
+    oraclePolicy: parseTtrpgOpenOracleRuntimeReferencePolicyV1(row.oraclePolicy) }
+}
+type NormalizationSource = Pick<Journal, 'content' | 'runtimeSourceHash'> & { runtime: Pick<TtrpgRuntimeStateV2, 'sessionKey' | 'authorization' | 'openRun' | 'branchLineage'>;
+  reviewSourceRef: TtrpgOpenSourceRefV1; consumerRef: TtrpgOpenSourceRefV1 }
+function normalizationSource(input: NormalizationSource) {
+  const reviewSourceRef = parseTtrpgOpenSourceRefV1(input.reviewSourceRef), consumerRef = parseTtrpgOpenSourceRefV1(input.consumerRef)
+  const runtime = input.runtime, current = reviewSourceRef.sessionKey === runtime.sessionKey
+  const source = current ? runtime
+    : runtime.branchLineage?.ancestors.find(row => row.sessionKey === reviewSourceRef.sessionKey)?.snapshot
+  const run = source?.openRun, original = run?.oracleReviews?.find(row => stable(row.sourceRef) === stable(reviewSourceRef))
+  const projected = runtime.openRun?.oracleReviews?.find(row => stable(row.sourceRef) === stable(reviewSourceRef))
+  const review = projected ?? (!current ? original : undefined)
+  const call = original && run?.coordination.calls.find(row => row.requestKey === original.requestKey)
+  const epoch = call && run?.coordination.epochs.find(row => row.epochKey === call.authorizationEpochKey)
+  const oracle = original && run?.oracleReceipts?.find(row => stable(row.sourceRef) === stable(original.oracleSourceRef))
+  const policy = call?.oracleInterpretation?.runtimeReferencePolicy
+  const recipients = runtime.authorization?.selectedActorKeys
+  if (!review || !original || stable(review) !== stable(original) || review.normalizationOf || review.interpretationDecision !== 'accept'
+    || !current && !ttrpgOpenAncestorSourceAllowedV1(runtime.branchLineage, reviewSourceRef, ['ttrpg.open.oracle.reviewed'])
+    || !call || !epoch || !oracle || !policy || !recipients?.length || call.skillId !== 'prose.ttrpg-open-oracle-interpret' || call.actorKey !== 'gm'
+    || call.status !== 'succeeded' || !call.terminalRef || call.terminalRef.sessionKey !== review.sourceRef.sessionKey || call.terminalRef.sequence >= review.sourceRef.sequence
+    || review.authorizationEpochKey !== epoch.epochKey || epoch.viewerKey !== review.viewerKey
+    || stable(epoch.oracleRuntimeReferencePolicy) !== stable(policy) || stable(call.oracleInterpretation!.oracleSourceRef) !== stable(policy.oracleSourceRef)
+    || review.runContractHash !== call.runContractHash || review.inputManifestHash !== call.inputManifestHash || review.rawResponseHash !== call.responseArtifactHash
+    || review.runtimeSourceHash !== call.runtimeSourceHash || call.runtimeSourceHash !== input.runtimeSourceHash
+    || stable(review.oracleSourceRef) !== stable(policy.oracleSourceRef) || review.audience !== policy.audience
+    || consumerRef.sessionKey !== runtime.sessionKey
+    || review.sourceRef.sessionKey === consumerRef.sessionKey && review.sourceRef.sequence >= consumerRef.sequence
+    || policy.audience === 'party' && recipients.some(key => !policy.recipientActorKeys.includes(key))) p.fail('实例归一需要原已接受解释、成功的新 Oracle 实例来源及本次准确接收者；旧归一或新加入角色不能借用')
+  assertTtrpgOpenOracleRuntimeReferenceJournalV1({ policy, operations: run!.entityOperations ?? [], oracle,
+    recipientActorKeys: policy.recipientActorKeys, runtimeSourceHash: input.runtimeSourceHash,
+    rulePackContentHash: input.content.rulePack.contentHash, consumerRef: epoch.startedRef })
+  return { review, policy, recipients }
+}
+/** Pure replay matching; the caller must supply the actual verified source/runtime, not a model's claim. */
+export function assertTtrpgOpenNormalizationRuntimeReferenceJournalV1(input: NormalizationSource & { policy: TtrpgOpenNormalizationRuntimeReferencePolicyV1 }) {
+  const policy = parseTtrpgOpenNormalizationRuntimeReferencePolicyV1(input.policy), source = normalizationSource(input)
+  if (stable(policy.reviewSourceRef) !== stable(source.review.sourceRef) || policy.reviewHash !== source.review.reviewHash
+    || stable(policy.oraclePolicy) !== stable(source.policy) || stable(policy.recipientActorKeys) !== stable(source.recipients)) p.fail('实例归一策略更换了原解释、创建范围或当前接收者')
+  return policy
+}
+/** Source-contract foundation only: no window, model read, request, write or execution permission. */
+export async function createTtrpgOpenNormalizationRuntimeReferencePolicyV1(input: NormalizationSource): Promise<TtrpgOpenNormalizationRuntimeReferencePolicyV1> {
+  const source = normalizationSource(input), { reviewHash, ...body } = source.review
+  if (await hash(body) !== reviewHash) p.fail('实例归一的原已接受解释 hash 与完整正文不一致')
+  await verifyTtrpgOpenOracleRuntimeReferencePolicyHashV1(source.policy)
+  return assertTtrpgOpenNormalizationRuntimeReferenceJournalV1({ ...input, policy: {
+    schema: 'storyforge.ttrpg-open-normalization-runtime-reference-policy', version: 1,
+    reviewSourceRef: source.review.sourceRef, reviewHash, recipientActorKeys: [...source.recipients], oraclePolicy: source.policy } })
 }

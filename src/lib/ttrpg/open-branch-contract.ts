@@ -9,6 +9,7 @@ import { hashProductProductionValueV2 } from '../product-production/hash'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import { ttrpgOpenMemoryEventDigestV1 } from './open-memory-event-digest'
 import * as p from './open-contract-parse'
+export { ttrpgOpenAncestorSourceAllowedV1 } from './open-coordination'
 
 export interface TtrpgOpenAncestorEvidenceV1 {
   sessionKey: string
@@ -98,12 +99,6 @@ export async function verifyTtrpgOpenBranchLineageV1(lineage: TtrpgOpenBranchLin
     if (await hashProductProductionValueV2(body) !== evidenceHash
       || await sha256Text(ancestor.randomSource.seed) !== ancestor.randomSource.seedCommitment) fail('祖先证据或随机种子封存 hash 不一致')
   }
-}
-export function ttrpgOpenAncestorSourceAllowedV1(lineage: TtrpgOpenBranchLineageV1 | undefined,
-  sourceRef: TtrpgOpenSourceRefV1, allowedTypes?: readonly ProductRuntimeEvent['type'][]): boolean {
-  const ancestor = lineage?.ancestors.find(a => a.sessionKey === sourceRef.sessionKey)
-  const event = ancestor?.events[sourceRef.sequence - 1]
-  return !!event && event.sourceRef.sequence === sourceRef.sequence && (!allowedTypes || allowedTypes.includes(event.type))
 }
 
 /** Called with the real replayed cutpoint and immutable event rows, before creating a child. */

@@ -5,6 +5,8 @@ import { parseTtrpgOpenModelCallV1, updateTtrpgOpenEpochCallTotalsV1, type Ttrpg
 import type { TtrpgCampaignContentV2 } from './open-contract'
 import { assertTtrpgOpenHumanHostV1, type TtrpgOpenAuthorizationV1 } from './open-authorization'
 import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
+import type { TtrpgOpenBranchLineageV1 } from './open-branch-contract'
+import type { ProductRuntimeEvent } from '../types'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import { hash, integer, key, list, number, record, text } from './open-contract-parse'
 import { parseTtrpgOpenPublicSituationAuthorizationV1, type TtrpgOpenPublicSituationAuthorizationV1,
@@ -13,6 +15,13 @@ import { parseTtrpgOpenSituationRuntimeReferencePolicyV1, type TtrpgOpenSituatio
   parseTtrpgOpenOracleRuntimeReferencePolicyV1, type TtrpgOpenOracleRuntimeReferencePolicyV1 } from './open-runtime-entity-references'
 
 export interface TtrpgOpenSourceRefV1 { sessionKey: string; sequence: number }
+/** Pure source-ref matching; hashing/capturing lineage stays outside the state chunk. */
+export function ttrpgOpenAncestorSourceAllowedV1(lineage: TtrpgOpenBranchLineageV1 | undefined,
+  sourceRef: TtrpgOpenSourceRefV1, allowedTypes?: readonly ProductRuntimeEvent['type'][]): boolean {
+  const ancestor = lineage?.ancestors.find(a => a.sessionKey === sourceRef.sessionKey)
+  const event = ancestor?.events[sourceRef.sequence - 1]
+  return !!event && event.sourceRef.sequence === sourceRef.sequence && (!allowedTypes || allowedTypes.includes(event.type))
+}
 export const TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1 = '明确解释已选的原 Oracle；仅用本次冻结并实际交付的对象身份拟定语义事实。'
 export const TTRPG_OPEN_HOSTING_CAPABILITIES_V1 = ['companion-proposal','safe-companion-action','kp-narration'] as const
 export interface TtrpgOpenHostingDelegationV1 {
