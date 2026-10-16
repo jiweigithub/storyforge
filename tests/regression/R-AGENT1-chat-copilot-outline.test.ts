@@ -1,3 +1,8 @@
+import { normalizeContextAccessPolicyV1 } from '../../src/lib/context-gateway/contracts'
+import { CONTEXT_SOURCES } from '../../src/lib/registry/context-sources'
+import { hashCanonicalValue } from '../../src/lib/agent/run/hash'
+import { resolveAgentSkillV1 } from '../../src/lib/agent/skill-registry'
+import { createContextAccessPolicyForExecutionV1 } from '../../src/lib/context-gateway/skill-policy'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   OUTLINE_COPILOT_SOURCE_KEYS,
@@ -423,5 +428,28 @@ describe('AGENT-1 27.1-d · ChatCopilot 大纲闭环', () => {
 
     expect(message).toBe('卷级大纲已写入项目。')
     expect(await db.outlineNodes.count()).toBe(1)
+  })
+})
+
+
+describe('R-FEEDBACK136 outline candidate Gateway policy identity', () => {
+  beforeEach(async () => { await db.delete(); await db.open() })
+  afterEach(() => db.close())
+  it.each([
+    ['outline.compose', false],
+    ['outline.compose', true],
+    ['outline.volumes', false],
+    ['outline.chapters', true],
+  ] as const)('%s preserves its exact policy for chapters=%s', async (skillId, chapters) => {
+    const project = await addProject()
+    if (chapters) await addVolume(project.id!)
+    const prepared = await prepareOutlineCopilot({
+      projectId: project.id!, worldGroupId: null, skillId,
+      authorRequest: chapters ? '展开第一卷章节大纲' : '规划三卷主线大纲',
+    })
+    const expected = normalizeContextAccessPolicyV1(createContextAccessPolicyForExecutionV1(resolveAgentSkillV1('outline', skillId)), CONTEXT_SOURCES)
+    expect(prepared.contextGatewayExecution.session.policy).toEqual(expected)
+    expect(prepared.contextGatewayExecution.contextPacket.policyHash).toBe(await hashCanonicalValue(expected))
+    expect(prepared.mode).toBe(chapters ? 'chapters' : 'volumes')
   })
 })

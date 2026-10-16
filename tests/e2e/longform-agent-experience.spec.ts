@@ -388,3 +388,32 @@ test('a silent planner times out visibly without retrying or losing the author r
   await expect(page.getByText('模型在 90 秒内没有完成回复', { exact: false })).toBeVisible()
   expect(calls).toBe(1)
 })
+
+test('outline.compose candidate survives refresh and author adoption (feedback 136)', async ({ page }) => {
+  await setup(page, '大纲策略身份隔离回归')
+  let calls = 0
+  await page.route(endpoint, async route => {
+    calls++
+    const text = route.request().postDataJSON().messages.map((m: { content: string }) => m.content).join('\n')
+    const content = text.includes('你只把用户目标拆成幕后领域任务')
+      ? JSON.stringify({ summary: '规划卷级大纲', tasks: [{ id: 'outline', agentId: 'outline', skillId: 'outline.compose', instruction: '规划两个卷的大纲', dependsOn: [] }] })
+      : JSON.stringify([{ title: '潮门初开', summary: '守灯人追查失踪的船。' }, { title: '潮门归航', summary: '守灯人找回船员并封闭裂隙。' }])
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }], usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200 } }) })
+  })
+  await agent(page)
+  await page.getByRole('textbox', { name: '告诉主 Agent 你的目标' }).fill('规划两个卷的大纲')
+  await page.getByRole('button', { name: '讨论与规划', exact: true }).click()
+  await expect(page.getByRole('region', { name: '待确认创作计划' })).toBeVisible()
+  await page.getByRole('button', { name: '确认计划并开始', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: '标题 · 候选 1', exact: true })).toHaveValue('潮门初开')
+  expect((await storedCounts(page)).outlines).toHaveLength(0)
+  await page.reload()
+  await expect(page.getByRole('textbox', { name: '标题 · 候选 1', exact: true })).toHaveValue('潮门初开')
+  await page.getByRole('button', { name: '采纳', exact: true }).click()
+  await expect(page.getByText(/本轮所有步骤均已通过终态校验/)).toBeVisible()
+  expect((await storedCounts(page)).outlines.map((row: { title: string }) => row.title)).toEqual(['潮门初开', '潮门归航'])
+  expect(calls).toBe(2)
+  await page.reload()
+  expect((await storedCounts(page)).outlines).toHaveLength(2)
+  expect(calls).toBe(2)
+})

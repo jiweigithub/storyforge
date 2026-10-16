@@ -638,11 +638,17 @@ describe.sequential('R-HARNESS1-master-durable-orchestrator · 主 Agent durable
       })
       const draft = JSON.stringify(items)
       options.budget.settleCall(reservation, draft)
-      const gateway = await prepareRequiredMasterGatewayFixtureV1({
-        scope: options.scope,
-        worldGroupId: options.worldGroupId,
-        executionTrace: options.executionTrace,
-      }, task, draft)
+      // Exercise the real outline preparation policy, not a test-only Gateway
+      // rebuilt from task.skillId (which hid the compose/volumes mismatch).
+      const renderedRequest = [{ role: 'user' as const, content: task.instruction }]
+      const execution = prepared.contextGatewayExecution
+      const assembled = prepared.input.assembled
+      await options.executionTrace.contextGatewayPrepared(task, { execution, assembled, renderedRequest })
+      const gateway = {
+        contextSources: prepared.contextSources,
+        contextEvidence: prepared.contextEvidence,
+        contextGatewayRuntime: { execution, assembled, renderedRequest, rawResponse: draft },
+      }
       await options.executionTrace.candidateReady(task, {
         payload: {
           version: 1,
