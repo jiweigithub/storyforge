@@ -1,7 +1,8 @@
-import { hashProductProductionValueV2 } from '../product-production/hash'
+import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { parseAvgAuthorWorkspaceV1, type AvgAuthorWorkspaceV1 } from './author-workspace-contract'
 import { parseAvgVisualProductionBatchV1, type AvgVisualProductionBatchV1 } from './media-production-contract'
 import type { AvgSystemPlan } from './system-contract'
+import { composeAvgCharacterFamilyRequirementsV1, hashAvgCharacterFamilyProposalV1 } from './character-family-contract'
 
 export type AvgMediaSourceInputV1 = Pick<AvgAuthorWorkspaceV1, 'systemPlan' | 'scripts'> & {
   presentation: Pick<AvgAuthorWorkspaceV1['presentation'], 'aspectRatio'>
@@ -38,6 +39,12 @@ export async function validateAvgVisualProductionBatchSourceV1(value: unknown, i
     throw new Error('[avg-media] 系统、文本或画幅已变化，请重新冻结媒资需求')
   }
   const plan = source.systemPlan
+  if(batch.characterFamily){
+    const {proposal}=batch.characterFamily,{proposalHash,...body}=proposal
+    if(proposalHash!==await hashAvgCharacterFamilyProposalV1(body)||proposal.sourceInputHash!==batch.sourceInputHash
+      ||!plan.characters.some(character=>character.key===proposal.plan.subjectKey)
+      ||canonicalProductProductionJsonV2(composeAvgCharacterFamilyRequirementsV1(proposal.plan))!==canonicalProductProductionJsonV2(batch.requirements))throw new Error('[avg-family] 家族提案、授权或准确变体需求已变化，请重新核对')
+  }
   for (const r of batch.requirements) {
     const c = r.consumer
     if (c.domain === 'stage') {

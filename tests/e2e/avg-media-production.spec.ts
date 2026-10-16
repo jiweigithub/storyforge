@@ -125,21 +125,40 @@ for (const {large,retained} of [{large:false,retained:false},{large:true,retaine
       candidateVersion: stage.version, candidateHash: JSON.parse(stage.metadataJson).candidateHash })
     const finished = await service.runAvgAssemblyV1({ scope: s.scope, productionId: s.productionId })
     const build = await db.productBuilds.get(s.buildId), preview = await previews.verifyStoredProductBuildPreview(build)
+    let offlineCarry:null|{status:string;sourceBytes:number;referenceRejected:boolean}=null
+    if(received.backend==='opfs'){
+      const [editor,references]=await Promise.all([load('/storyforge/src/lib/avg/editor-service.ts'),load('/storyforge/src/lib/avg/media-generated-reference.ts')])
+      const current=await draft.readAvgDraftV1(s.scope),workspace=JSON.parse(current.editorJson);workspace.basePreviewHash=build.previewHash
+      const saved=await editor.saveAvgAuthorWorkspaceV1(s.scope,current.revision,workspace)
+      const kept=await service.keepAvgGeneratedStageDraftV1({scope:s.scope,productionId:s.productionId,expectedDraftRevision:saved.revision,expectedBuildId:s.buildId})
+      let referenceRejected=false
+      try{await references.prepareAvgGeneratedReferenceImageV1({scope:s.scope,choiceId:received.choiceId})}catch(error){referenceRejected=String(error).includes('8 MiB')}
+      const prepared=await service.prepareAvgAssemblyBriefV1({scope:s.scope,expectedDraftRevision:kept.revision})
+      const started=await service.startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:prepared.brief.briefHash})
+      for(const artifactKey of ['avg.system.plan',...started.executionBrief.avgAssembly.sceneKeys.map((key:string)=>`avg.content.scene-script.${key}`),'avg.author.stage']){
+        const candidate=await service.stageAvgWorkspaceInputV1({scope:s.scope,productionId:s.productionId,expectedDraftRevision:(await draft.readAvgDraftV1(s.scope)).revision,artifactKey,declaration:'明确保留大于参考输入上限的舞台原图，零调用重新确认'})
+        await service.confirmAvgWorkspaceInputV1({scope:s.scope,productionId:s.productionId,artifactKey,candidateVersion:candidate.version,candidateHash:JSON.parse(candidate.metadataJson).candidateHash})
+      }
+      const carried=await service.runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})
+      offlineCarry={status:carried.buildStatus,sourceBytes:JSON.parse(kept.editorJson).presentation.stage.assets[0].byteSize,referenceRejected}
+    }
     const projectId = await backups.importProjectJSON(await backups.exportProjectJSON(s.scope.projectId))
     const restored = await db.productBuilds.where('projectId').equals(projectId).first()
     const scope = { projectId, worldId: restored.worldId, workId: restored.workId }
     const restoredPreview = await previews.verifyStoredProductBuildPreview(restored)
-    const session = await runtime.startProductProductionPreviewV1({ scope, productionId: restored.productionId, expectedBuildId: restored.id, expectedPreviewHash: restored.previewHash })
+    const active=offlineCarry?await db.productBuilds.where('projectId').equals(projectId).filter((row:any)=>row.buildNumber===2).first():restored
+    const session = await runtime.startProductProductionPreviewV1({ scope, productionId: active.productionId, expectedBuildId: active.id, expectedPreviewHash: active.previewHash })
     const aliases = await db.productBuildArtifacts.where('buildId').equals(restored.id).toArray()
     const asset = preview.runtimePackage.modules[0].stage.assets[0]
     return { pending, finished: finished.buildStatus, failure: build.failureJson, asset, sameManifest: restored.previewManifestJson === build.previewManifestJson,
       samePackage: JSON.stringify(restoredPreview.runtimePackage) === JSON.stringify(preview.runtimePackage),
       remapped: aliases.find((row: any) => row.artifactKey === 'avg.media.raw.desk.background').blobObjectId !== received.blobId,
-      session: Boolean(session.sessionId), rawResponses: (await db.agentRunArtifacts.toArray()).filter((row: any) => row.artifactKind === 'raw-response').length }
+      session: Boolean(session.sessionId), offlineCarry,rawResponses: (await db.agentRunArtifacts.toArray()).filter((row: any) => row.artifactKind === 'raw-response').length }
   }, { s: seeded, received })
   expect(result.finished, result.failure).toBe('preview-ready')
   expect(result).toMatchObject({ pending: 'pending', sameManifest: true, samePackage: true, remapped: true, session: true })
   expect(result.asset).toMatchObject({ contentHash: received.hash, width: large ? 2048 : 576, height: large ? 1152 : 324 })
   expect(result.rawResponses).toBeGreaterThanOrEqual(1)
+  if(large){expect(result.offlineCarry).toMatchObject({status:'preview-ready',referenceRejected:true});expect(result.offlineCarry!.sourceBytes).toBeGreaterThan(8*1024*1024)}
   expect(requests).toBe(1)
 })

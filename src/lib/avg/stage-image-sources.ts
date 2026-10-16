@@ -1,0 +1,45 @@
+import { db } from '../db/schema'
+import type { FrozenRuntimeMediaAssetV2, ProductBuildRecordV1, WorkspaceScope } from '../types'
+import { assertRecordInScope } from '../workspace/scope'
+import { canonicalProductProductionJsonV2 } from '../product-production/hash'
+import { parseAvgAuthorWorkspaceV1, type AvgAuthorStageV1, type AvgAuthorWorkspaceV1 } from './author-workspace-contract'
+import { readAvgDraftMediaV1 } from './editor-service'
+import { parseAvgAuthorMediaChoiceV1 } from './media-production-contract'
+import { prepareAvgAdoptedGeneratedImageV1, readAvgAdoptedGeneratedImageV1 } from './media-generated-reference'
+import type { AvgInheritedStageImageV1 } from './stage-image-source-contract'
+
+const same=(a:unknown,b:unknown)=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(b)
+export async function readAvgInheritedStageImagesV1(input:{scope:WorkspaceScope;payload:AvgAuthorStageV1;productionKey:string;targetBuildNumber:number;worldContentHash:string}){
+  const generated=new Map<string,{asset:FrozenRuntimeMediaAssetV2;blobObjectId:number}>()
+  for(const entry of input.payload.inheritedImages??[]){
+    const asset=input.payload.stage.assets.find(asset=>asset.assetKey===entry.assetKey)
+    const image=await readAvgAdoptedGeneratedImageV1({scope:input.scope,source:entry.source})
+    if(!asset||!same(asset,image.asset)||image.referenceOnly||image.sourceWorldContentHash!==input.worldContentHash
+      ||image.source.productionKey===input.productionKey&&image.source.raw.buildNumber>=input.targetBuildNumber)throw new Error('[avg-media] 演出继承缺少准确的旧版公开图像来源，不能借用参考或当前版本')
+    generated.set(entry.assetKey,{asset:image.asset,blobObjectId:image.blobObjectId})
+  }
+  return generated
+}
+
+/** Adds reviewable source declarations to the editable stage only. No old
+ * image or author choice becomes accepted in the new Build until stage adopt. */
+export async function prepareAvgInheritedStageDraftV1(input:{scope:WorkspaceScope;workspace:AvgAuthorWorkspaceV1;build:ProductBuildRecordV1;
+  productionKey:string;targetBuildNumber:number;worldContentHash:string}){
+  const next=parseAvgAuthorWorkspaceV1(input.workspace),entries:AvgInheritedStageImageV1[]=[...(next.presentation.inheritedImages??[])]
+  const oldChoices=await db.productBuildArtifacts.where('buildId').equals(input.build.id!).filter(row=>row.status==='accepted'&&row.artifactKey.startsWith('avg.media.choice.')).limit(9).toArray()
+  if(oldChoices.length>8)throw new Error('[avg-media] 旧图片选择超出冻结批次范围')
+  for(const asset of next.presentation.stage.assets){
+    if(entries.some(entry=>entry.assetKey===asset.assetKey))continue
+    const matches=oldChoices.filter(row=>same(parseAvgAuthorMediaChoiceV1(row.payloadJson).asset,asset))
+    if(matches.length>1)throw new Error('[avg-media] 旧演出图像来源不唯一')
+    if(matches[0]){
+      if(!await assertRecordInScope(input.scope,'productBuildArtifacts',matches[0],{owner:'work'}))throw new Error('[avg-media] 旧演出来源跨作品')
+      const image=await prepareAvgAdoptedGeneratedImageV1({scope:input.scope,choiceId:matches[0].id!})
+      if(image.referenceOnly||image.sourceWorldContentHash!==input.worldContentHash)throw new Error('[avg-media] 不能把参考图或其他世界来源自动提升为演出图')
+      entries.push({assetKey:asset.assetKey,source:image.source,declaration:'在此编辑草稿中保留准确旧图；待本版本作者核对演出、用途与来源后确认采用'})
+    }else await readAvgDraftMediaV1(input.scope,asset)
+  }
+  if(entries.length)next.presentation.inheritedImages=entries
+  await readAvgInheritedStageImagesV1({...input,payload:next.presentation})
+  return next
+}

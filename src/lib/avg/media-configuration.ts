@@ -53,8 +53,16 @@ export async function applyAvgMediaChoicesToDraftV1(input: { workspace: AvgAutho
       if (existing) throw new Error('[avg-media] 参考图已出现在运行目录，请先明确移除')
       continue
     }
-    if (existing && canonicalProductProductionJsonV2(existing) !== canonicalProductProductionJsonV2(choice.asset)) throw new Error('[avg-media] 同 key 已有其他图像版本，请先明确修订')
+    const inherited=next.presentation.inheritedImages?.find(entry=>entry.assetKey===r.assetKey)
+    if (existing && canonicalProductProductionJsonV2(existing) !== canonicalProductProductionJsonV2(choice.asset)) {
+      if(!inherited||inherited.source.raw.contentHash!==existing.contentHash)throw new Error('[avg-media] 同 key 已有其他图像版本，请先明确修订')
+      next.presentation.stage.assets[next.presentation.stage.assets.indexOf(existing)]=choice.asset
+    }
     if (!existing) next.presentation.stage.assets.push(choice.asset)
+    if(inherited){
+      next.presentation.inheritedImages=next.presentation.inheritedImages!.filter(entry=>entry.assetKey!==r.assetKey)
+      if(!next.presentation.inheritedImages.length)delete next.presentation.inheritedImages
+    }
     if (r.consumer.domain === 'stage') {
       const type = r.consumer.slot === 'actor' ? 'show-actor' : r.consumer.slot === 'background' ? 'set-background' : 'show-cg'
       const cue = next.presentation.stage.cues.find(cue => cue.type === type && cue.beatKey === r.triggerBeatKey

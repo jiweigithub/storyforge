@@ -3,7 +3,7 @@ import type { FrozenRuntimeMediaAssetV2, ProductMediaKind, WorkspaceScope } from
 import { readAvgDraftMediaV1 } from '../../lib/avg/editor-service'
 import { readAvgRawImageCandidateBytesV2, readAvgRetainedImageCandidateBytesV1 } from '../../lib/avg/assembly-service'
 import { canonicalProductProductionJsonV2 } from '../../lib/product-production/hash'
-import { readAvgGeneratedReferenceImageV1 } from '../../lib/avg/media-generated-reference'
+import { readAvgAdoptedGeneratedImageV1 } from '../../lib/avg/media-generated-reference'
 import type { AvgGeneratedReferenceSourceV1 } from '../../lib/avg/media-generated-reference-contract'
 
 export const AVG_MEDIA_KIND_LABELS: Record<ProductMediaKind, string> = { background: '背景', 'character-pose': '角色姿势', 'character-expression': '角色表情',
@@ -29,7 +29,7 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
     const read = async () => {
       if(generatedSourceJson){
         if(requirementKey)throw new Error('图片预览不能同时声明两种来源')
-        const candidate=await readAvgGeneratedReferenceImageV1({scope,source:JSON.parse(generatedSourceJson) as AvgGeneratedReferenceSourceV1})
+        const candidate=await readAvgAdoptedGeneratedImageV1({scope,source:JSON.parse(generatedSourceJson) as AvgGeneratedReferenceSourceV1})
         if(canonicalProductProductionJsonV2(candidate.asset)!==canonicalProductProductionJsonV2(current))throw new Error('显示图片与准确生成参考不一致')
         return candidate.data
       }

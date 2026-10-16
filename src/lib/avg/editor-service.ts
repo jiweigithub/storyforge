@@ -174,6 +174,18 @@ export async function readAvgDraftMediaV1(scope:WorkspaceScope,asset:FrozenRunti
 
 /** Headless input boundary for the media production executor. No dispatch occurs
  * here: the registered durable production task owns start, budget and receipt. */
+export async function readAvgDraftReferenceBytesV1(scopeInput:WorkspaceScope,reference:AvgMediaReferenceV1){
+  const scope=await resolveScope({scope:scopeInput})
+  if(reference.generatedSource)return readAvgGeneratedReferenceBytesV1(scope,reference)
+  const rows=await db.avgDraftMedia.where('workId').equals(scope.workId).toArray()
+  const matches=rows.filter(row=>{const asset=JSON.parse(row.assetJson) as FrozenRuntimeMediaAssetV2
+    return asset.assetKey===reference.assetKey&&asset.version===reference.assetVersion&&asset.contentHash===reference.contentHash})
+  if(matches.length!==1||!await assertRecordInScope(scope,'avgDraftMedia',matches[0]!,{owner:'work'}))throw new Error('[avg-media] 参考不存在、重复或跨作品')
+  const asset=parseAvgExecutableStageV1({version:1,cues:[],assets:[JSON.parse(matches[0]!.assetJson)]}).assets[0]!
+  if(asset.mimeType!==reference.mimeType||asset.byteSize!==reference.byteSize||asset.license!==reference.license)throw new Error('[avg-media] 参考元数据或授权已 stale')
+  return readAvgDraftMediaV1(scope,asset)
+}
+
 export async function createAvgDraftReferenceAdapterV1(input: { scope: WorkspaceScope; frozen: AvgImageRequestV1;
   inspectReference?: (reference: AvgMediaReferenceV1, bytes: ArrayBuffer) => Promise<void> }) {
   const scope = await resolveScope({ scope: input.scope });
@@ -181,20 +193,7 @@ export async function createAvgDraftReferenceAdapterV1(input: { scope: Workspace
   if (!work || work.kind !== 'avg' || !await assertRecordInScope(scope, 'works', work, { owner: 'work' })) throw new Error('[avg-media] 参考必须属于当前 AVG 作品');
   return createAvgReferenceImageAdapterV1({ frozen: input.frozen, readReference: async (reference: AvgMediaReferenceV1) => {
     await resolveScope({ scope });
-    if (reference.generatedSource) {
-      const bytes = await readAvgGeneratedReferenceBytesV1(scope, reference);
-      await input.inspectReference?.(reference, bytes);
-      return bytes;
-    }
-    const rows = await db.avgDraftMedia.where('workId').equals(scope.workId).toArray();
-    const matches = rows.filter(row => {
-      const asset = JSON.parse(row.assetJson) as FrozenRuntimeMediaAssetV2;
-      return asset.assetKey === reference.assetKey && asset.version === reference.assetVersion && asset.contentHash === reference.contentHash;
-    });
-    if (matches.length !== 1 || !await assertRecordInScope(scope, 'avgDraftMedia', matches[0]!, { owner: 'work' })) throw new Error('[avg-media] 参考不存在、重复或跨作品');
-    const asset = parseAvgExecutableStageV1({ version: 1, cues: [], assets: [JSON.parse(matches[0]!.assetJson)] }).assets[0]!;
-    if (asset.mimeType !== reference.mimeType || asset.byteSize !== reference.byteSize || asset.license !== reference.license) throw new Error('[avg-media] 参考元数据或授权已 stale');
-    const bytes = await readAvgDraftMediaV1(scope, asset);
+    const bytes = await readAvgDraftReferenceBytesV1(scope,reference);
     await input.inspectReference?.(reference, bytes);
     return bytes;
   } });

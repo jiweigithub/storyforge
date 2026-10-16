@@ -6,12 +6,13 @@ import { avgMediaChoiceArtifactKeyV1, avgRawMediaArtifactKeyV1, parseAvgVisualPr
   type AvgVisualProductionRequirementV1 } from '../../lib/avg/media-production-contract'
 import { parseAvgMediaReferencesV1, type AvgMediaReferenceV1 } from '../../lib/avg/media-reference-contract'
 import { importAvgMediaForAssemblyV1 } from '../../lib/avg/editor-service'
-import { configureAvgChosenMediaDraftV2, confirmAvgWorkspaceInputV1, stageAvgMediaChoiceV2, type readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
+import { configureAvgChosenMediaDraftV2, confirmAvgWorkspaceInputV1, stageAvgMediaChoiceV2, keepAvgGeneratedStageDraftV1, type readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
 import MediaAssetPreview from './MediaAssetPreview'
 import MediaRecoveryPanel from './MediaRecoveryPanel'
 import GeneratedReferencePicker, { type GeneratedReferenceSelection } from './GeneratedReferencePicker'
 import { readAvgGeneratedReferenceImageV1 } from '../../lib/avg/media-generated-reference'
 import { inspectConfiguredAgnesImageCapabilityV1 } from '../../lib/product-production/media-transport'
+import CharacterFamilyPanel from './CharacterFamilyPanel'
 
 type View = Awaited<ReturnType<typeof readAvgAssemblyWorkspaceV1>>
 type Kind = 'background' | 'character-pose' | 'character-expression' | 'cg' | 'icon' | 'detail' | 'reference'
@@ -69,6 +70,8 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const batchJson = JSON.stringify(workspace.mediaBatch ?? null)
   const [requirements, setRequirements] = useState(workspace.mediaBatch?.requirements ?? [])
   const [pending, setPending] = useState(false), [error, setError] = useState('')
+  const [familyPending,setFamilyPending]=useState(false)
+  const [familyOpen,setFamilyOpen]=useState(false)
   const [kind, setKind] = useState<Kind>('background'), [sceneKey, setSceneKey] = useState(''), [subject, setSubject] = useState(''), [variant, setVariant] = useState('')
   const [lineKey, setLineKey] = useState(''), [name, setName] = useState(''), [prompt, setPrompt] = useState(''), [negative, setNegative] = useState('')
   const [invariants, setInvariants] = useState(''), [forbidden, setForbidden] = useState(''), [size, setSize] = useState(0), [tier, setTier] = useState<'1K' | '2K'>('1K')
@@ -81,7 +84,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const [previewKey, setPreviewKey] = useState<string | null>(null)
   const [formOpen, setFormOpen] = useState(!workspace.mediaBatch?.requirements.length)
   useEffect(() => { const saved = JSON.parse(batchJson) as AvgAuthorWorkspaceV1['mediaBatch'] | null; setRequirements(saved?.requirements ?? []); setPending(false); setFormOpen(!saved?.requirements.length) }, [batchJson])
-  useEffect(() => { onPending(pending) }, [pending, onPending])
+  useEffect(() => { onPending(pending||familyPending) }, [pending, familyPending, onPending])
   useEffect(()=>{setGeneratedReference(null);setReferenceKey('');setReferences([]);setReferenceNames({});setExternalAllowed(false);setDerivativeAllowed(false)},[scope.projectId,scope.worldId,scope.workId])
   const changed = () => setPending(true)
   const scene = workspace.systemPlan.scenes.find(scene => scene.key === sceneKey) ?? workspace.systemPlan.scenes[0]
@@ -144,6 +147,8 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
     {!enabled && <p>当前仅可查看已有需求和候选，新增图片调用未开放。</p>}
     {enabled && <p>{readiness.ready ? '本机 Agnes 图片配置已就绪，账户可用性与费用以实际回执为准。' : `${readiness.issue ?? '图片配置尚未就绪'} 请在通用设置中核对 Agnes 配置。`}</p>}
     {error && <p role="alert">{error}</p>}
+    {enabled&&<details open={familyOpen} onToggle={event=>setFamilyOpen(event.currentTarget.open)}><summary>批量制作人物家族</summary><CharacterFamilyPanel scope={scope} view={view} workspace={workspace} visible={visible&&familyOpen} disabled={disabled||pending||!canEdit} onPending={setFamilyPending} onAction={onAction} onReload={onReload} onNotice={onNotice}/></details>}
+    {workspace.mediaBatch?.characterFamily&&<p>当前批次保存了人物家族方案。请在家族面板中修订；如需普通需求，先明确结束或移除当前批次。</p>}
     {enabled && canEdit && <><details><summary>导入仅供生成使用的参考图</summary><fieldset className="avg-form" disabled={disabled || !canEdit || !enabled}>
       <label>参考图文件<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event => setReferenceFile(event.target.files?.[0] ?? null)} /></label>
       <label>参考图来源与授权<input value={referenceLicense} onChange={event => setReferenceLicense(event.target.value)} /></label>
@@ -155,7 +160,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
         await onReload(); setReferenceFile(null); onNotice('参考图已解码并保留在当前作品，尚未加入演出。请逐项授权本次外发与衍生使用。')
       })}>导入为参考，不加入演出</button>
     </fieldset></details>
-    <details open={formOpen} onToggle={event => setFormOpen(event.currentTarget.open)}><summary>新增图片需求</summary><fieldset className="avg-form" disabled={disabled || !canEdit || !enabled}>
+    <details open={formOpen} onToggle={event => setFormOpen(event.currentTarget.open)}><summary>新增图片需求</summary><fieldset className="avg-form" disabled={disabled || !canEdit || !enabled || familyPending || !!workspace.mediaBatch?.characterFamily}>
       <legend>新增图片需求</legend>
       <label>图片用途<select value={kind} onChange={e => { setKind(e.target.value as Kind); setSubject(''); setVariant(''); changed() }}>{KINDS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
       {!itemKind && kind !== 'reference' && <label>图片出现的场景<select value={scene?.key ?? ''} onChange={e => { setSceneKey(e.target.value); setSubject(''); setLineKey(''); changed() }}>{workspace.systemPlan.scenes.map(s => <option key={s.key} value={s.key}>{s.title}</option>)}</select></label>}
@@ -187,28 +192,33 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
     <h5>需求清单（{requirements.length}/8）</h5>
     <ol>{requirements.map((r, i) => <li key={r.requirementKey}><strong>{r.name}</strong> · {KINDS.find(([key]) => key === (r.consumer.domain === 'reference' ? 'reference' : r.consumer.slot === 'icon' ? 'icon' : r.consumer.slot === 'detail' ? 'detail' : r.mediaKind))?.[1]} · {r.references.length} 张参考
       <details><summary>查看画面要求、用途与参考授权</summary><p>{r.prompt}</p><p>必须保持：{r.invariants.join('；') || '未另设'}</p><p>排除：{[r.negativePrompt, ...r.forbiddenDepictions].filter(Boolean).join('；') || '未另设'}</p><p>{r.width} × {r.height} · {r.resolutionTier} · {r.alpha === 'required' ? '要求透明像素' : '未要求透明'}</p><ul>{r.references.map(ref => <li key={ref.assetKey}>{ref.purpose} · {ref.allowedChange} · {ref.license}</li>)}</ul></details>
-      <button className="lf-action" disabled={disabled || !canEdit || !enabled} onClick={() => { setRequirements(requirements.filter((_, j) => j !== i)); changed() }}>移除此需求</button></li>)}</ol>
-    <div className="avg-actions"><button className="lf-action" disabled={disabled || !canEdit || !enabled || !pending || !requirements.length} onClick={() => {
+      <button className="lf-action" disabled={disabled || !canEdit || !enabled || familyPending || !!workspace.mediaBatch?.characterFamily} onClick={() => { setRequirements(requirements.filter((_, j) => j !== i)); changed() }}>移除此需求</button></li>)}</ol>
+    <div className="avg-actions"><button className="lf-action" disabled={disabled || !canEdit || !enabled || familyPending || !!workspace.mediaBatch?.characterFamily || !pending || !requirements.length} onClick={() => {
       if (name.trim() || prompt.trim() || references.length) { setError('请先将正在填写的图片加入需求清单，再保存整批需求'); return }
       void onAction(() => onSave(requirements))
     }}>保存并冻结图片需求</button>
       <button className="lf-action" disabled={disabled || !pending} onClick={() => { setRequirements(workspace.mediaBatch?.requirements ?? []); setPending(false); setName(''); setPrompt(''); setReferences([]); setReferenceKey(''); setAllowedChange(''); resetReferenceConsent(); setError('') }}>撤销未保存的图片需求</button>
-      {workspace.mediaBatch && <button className="lf-action" disabled={disabled || !canEdit || !enabled || pending} onClick={() => void onAction(onClear)}>移除尚未使用的生成批次</button>}
+      {workspace.mediaBatch && <button className="lf-action" disabled={disabled || !canEdit || !enabled || pending || familyPending} onClick={() => void onAction(onClear)}>移除尚未使用的生成批次</button>}
+      {workspace.mediaBatch&&build&&productionId&&(build.previewHash||closed)&&workspace.presentation.stage.assets.length>0&&<button className="lf-action" disabled={disabled||pending||familyPending||!canEdit} onClick={()=>void onAction(async()=>{
+        await keepAvgGeneratedStageDraftV1({scope,productionId,expectedDraftRevision:view.draft.revision,expectedBuildId:build.id!})
+        await onReload();onNotice('已在编辑草稿中保留准确旧图并结束本批需求；新版本仍需核对方案与确认演出，旧图和调用账单保留。')
+      })}>保留已选演出图片，结束本批需求</button>}
       <span>{pending ? '图片需求尚未保存，请保存或撤销后切换分区。' : workspace.mediaBatch ? '图片需求已保存，尚需在制作页确认方案并开始。' : '保存图片需求不会开始调用。'}</span></div>
-    {currentBatch&&<MediaRecoveryPanel scope={scope} view={view} disabled={disabled||pending} visible={visible} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
+    {currentBatch&&<MediaRecoveryPanel scope={scope} view={view} disabled={disabled||pending||familyPending} visible={visible} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
+    {!!workspace.presentation.inheritedImages?.length&&<details><summary>新版本待确认的旧图来源（{workspace.presentation.inheritedImages.length} 张）</summary><ul>{workspace.presentation.inheritedImages.map(entry=><li key={entry.assetKey}>{workspace.presentation.stage.assets.find(asset=>asset.assetKey===entry.assetKey)?.name} · 原 Build #{entry.source.raw.buildNumber} · {entry.source.raw.contentHash.slice(0,12)}<p>{entry.declaration}</p></li>)}</ul><p>保留原始字节不会重新调用图片服务；新版本的用途和演出须再次确认采用。</p></details>}
     {currentBatch&&closed&&<section aria-label="已停止的图片调用"><p>本次调用已停止。请先核对原始记录与未知费用，当前不会自动重发。</p><p>如需更改需求或制作下一批，请先到制作页准备新版本，再回此处编辑。</p><button className="lf-action" disabled>生成本批图片（最多 {outstanding} 次）</button></section>}
     {currentBatch && productionId && build && !closed && <section aria-label="本次图片生成与选用"><h5>本次图片生成与选用 · Build #{build.buildNumber}</h5>
       <p>本批 {currentBatch.requirements.length} 项，尚待接收 {outstanding} 项。原图接收后逐项确认，再配置并确认演出。</p>
       {!sourcesReady && <p>请先在制作页确认系统规则和全部场景脚本。</p>}
       {recovery&&<p>本方案保留 {recovery.retained.length} 张原图，以零调用复验；其余 {recovery.rerunRequirementKeys.length} 项在本版本至多各请求一次。原图、旧账单和回执留在原版本。</p>}
-      <button className="lf-action lf-action-primary" disabled={disabled || pending || (newRequests>0&&(!enabled||!readiness.ready)) || !canAdopt || !sourcesReady || !outstanding} onClick={() => void onGenerate()}>{recovery?`复验并执行本批图片（最多 ${newRequests} 次新请求）`:`生成本批图片（最多 ${outstanding} 次）`}</button>
+      <button className="lf-action lf-action-primary" disabled={disabled || pending || familyPending || (newRequests>0&&(!enabled||!readiness.ready)) || !canAdopt || !sourcesReady || !outstanding} onClick={() => void onGenerate()}>{recovery?`复验并执行本批图片（最多 ${newRequests} 次新请求）`:`生成本批图片（最多 ${outstanding} 次）`}</button>
       {generating && <button className="lf-action" onClick={onCancel}>停止等待并保留调用记录</button>}
       {currentBatch.requirements.map(r => <RawChoiceCard key={`${build.id}:${r.requirementKey}`} scope={scope} productionId={productionId} requirement={r}
         expanded={visible && expandedKey === r.requirementKey} onExpand={() => setPreviewKey(expandedKey === r.requirementKey ? '' : r.requirementKey)}
         raw={accepted(avgRawMediaArtifactKeyV1(r.requirementKey))} selected={accepted(avgMediaChoiceArtifactKeyV1(r.requirementKey))}
         pending={view.artifacts.find(row => row.artifactKey === avgMediaChoiceArtifactKeyV1(r.requirementKey) && row.status === 'pending')}
-        disabled={disabled || pending} canAdopt={canAdopt} declaration={declaration} onAction={onAction} onReload={onReload} />)}
-      <button className="lf-action" disabled={disabled || pending || !canAdopt || !allChoices} onClick={() => void onAction(async () => {
+        disabled={disabled || pending || familyPending} canAdopt={canAdopt} declaration={declaration} onAction={onAction} onReload={onReload} />)}
+      <button className="lf-action" disabled={disabled || pending || familyPending || !canAdopt || !allChoices} onClick={() => void onAction(async () => {
         await configureAvgChosenMediaDraftV2({ scope, productionId, expectedDraftRevision: view.draft.revision }); await onReload(); onNotice('已选图片已配置到演出草稿，请到制作页查看并确认演出候选。')
       })}>将已选图片配置到演出草稿</button>
       {['recovery-required', 'failed', 'cancelled'].includes(build.status) && <p>本次调用已停止。请先核对原始记录与未知费用，当前不会自动重发。</p>}

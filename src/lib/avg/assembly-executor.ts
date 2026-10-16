@@ -9,6 +9,7 @@ import { compileAdoptedAvgBuildV2 } from './executable-compiler'
 import { executeAvgMediaImageTaskV2 } from './media-production-executor'
 import { executeAvgImageRecoveryTaskV1 } from './media-recovery-executor'
 import type { ResolvedProductMediaCapabilityV1 } from '../product-production/media-transport'
+import { readAvgInheritedStageImagesV1 } from './stage-image-sources'
 
 /** V1 remains zero-provider. Opt-in V2 image tasks use the media Harness;
  * human choices/stage stay separate from deterministic package compilation. */
@@ -33,6 +34,8 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
     const pkg = compiled.runtimePackage, module = pkg.modules.find(row => row.version === 2)!
     if (module.version !== 2) throw new Error('[avg] 组装缺少原生模块')
     const assets = module.stage.assets
+    const inherited=await readAvgInheritedStageImagesV1({scope:request.scope,payload:compiled.source.authorStage!.payload,productionKey,
+      targetBuildNumber:build.buildNumber,worldContentHash:brief.source.worldContentHash})
     const expectedKeys = brief.avgAssembly.mediaAssetKeys
     if (assets.length !== expectedKeys.length || expectedKeys.some(key => !assets.some(asset => asset.assetKey === key))) throw new Error('[avg] 组装媒体目录超出冻结 Brief')
     const packageHash = await hashProductProductionValueV2(pkg)
@@ -53,14 +56,17 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
         const rows = await db.avgDraftMedia.where('workId').equals(request.scope.workId)
           .filter(row => canonicalProductProductionJsonV2(JSON.parse(row.assetJson)) === canonicalProductProductionJsonV2(asset)).limit(2).toArray()
         const choice = compiled.source.mediaChoices?.find(choice => !choice.payload.referenceOnly && choice.payload.asset.assetKey === key)
-        if (choice ? rows.length > 0 || canonicalProductProductionJsonV2(choice.payload.asset) !== canonicalProductProductionJsonV2(asset)
+        const retained=inherited.get(key),retainedSource=compiled.source.authorStage!.payload.inheritedImages?.find(entry=>entry.assetKey===key)
+        if (choice&&retained)throw new Error('[avg-media] 本批生成图与旧图来源冲突')
+        if (choice||retained ? rows.length > 0 || canonicalProductProductionJsonV2(choice?.payload.asset??retained!.asset) !== canonicalProductProductionJsonV2(asset)
           : rows.length !== 1 || !await assertRecordInScope(request.scope,'avgDraftMedia',rows[0]!,{owner:'work'})) throw new Error('[avg] 正式组装素材引用已变化')
         artifacts.push({ artifactKey:`avg.media.${index}`,kind:asset.mimeType.startsWith('audio/')?'audio':'image',mediaKind:asset.kind,
           payload:{ assetKey:asset.assetKey },metadata:asset,quality:{ actualBytesAndDecoderVerified:true,stageReceipt:sourceProof.stageReceipt },
-          rights:{ origin:choice?'author-selected-provider':'author-import',license:asset.license,source:asset.source,authorStageReceipt:sourceProof.stageReceipt,
+          rights:{ origin:choice?'author-selected-provider':retained?'author-inherited-provider':'author-import',license:asset.license,source:asset.source,authorStageReceipt:sourceProof.stageReceipt,
+            ...(retainedSource?{inheritedStageSource:retainedSource}:{}),
             ...(choice ? { authorChoiceReceipt: choice.authorReceiptHash, rawArtifactKey: choice.raw.artifactKey, rawVersion: choice.raw.version,
               rawContentHash: choice.raw.contentHash, rawProducerReceiptHash: choice.raw.producerReceiptHash } : {}) },
-          contentHash:asset.contentHash,blobObjectId:choice?.raw.blobObjectId ?? rows[0]!.blobObjectId,mimeType:asset.mimeType,byteSize:asset.byteSize })
+          contentHash:asset.contentHash,blobObjectId:choice?.raw.blobObjectId ?? retained?.blobObjectId ?? rows[0]!.blobObjectId,mimeType:asset.mimeType,byteSize:asset.byteSize })
       }
     } else {
       const actual = request.inputArtifacts.find(row => row.artifactKey === 'runtime.package')

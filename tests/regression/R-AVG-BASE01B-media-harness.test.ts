@@ -4,7 +4,7 @@ import { useAIConfigStore } from '../../src/stores/ai-config'
 import { prepareNativeAvgAssembly } from '../helpers/avg-production-assembly-fixture'
 import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
 import { saveAvgVisualBatchDraftV1, prepareAvgAssemblyBriefV1, startAvgAssemblyV1, stageAvgWorkspaceInputV1,
-  confirmAvgWorkspaceInputV1, runAvgAssemblyV1, stageAvgMediaChoiceV2, configureAvgChosenMediaDraftV2, prepareAvgImageRecoveryBriefV1 } from '../../src/lib/avg/assembly-service'
+  confirmAvgWorkspaceInputV1, runAvgAssemblyV1, stageAvgMediaChoiceV2, configureAvgChosenMediaDraftV2, prepareAvgImageRecoveryBriefV1, keepAvgGeneratedStageDraftV1 } from '../../src/lib/avg/assembly-service'
 import { deterministicRegionMapPngV1 } from '../../src/lib/product-production/production-executor'
 import { readProductProductionDetailsV1, stopProductProductionV1 } from '../../src/lib/product-production/service'
 import { verifyStoredProductBuildPreview } from '../../src/lib/product-production/preview-manifest'
@@ -20,6 +20,13 @@ import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-
 import { prepareAvgImageRecoveryV1 } from '../../src/lib/avg/media-recovery'
 import { prepareAvgGeneratedReferenceImageV1, readAvgGeneratedReferenceBytesV1, readAvgGeneratedReferenceImageV1 } from '../../src/lib/avg/media-generated-reference'
 import { createAvgDraftReferenceAdapterV1 } from '../../src/lib/avg/editor-service'
+import { saveAvgAuthorWorkspaceV1 } from '../../src/lib/avg/editor-service'
+import { parseAvgAuthorWorkspaceV1 } from '../../src/lib/avg/author-workspace-contract'
+import { readAvgInheritedStageImagesV1 } from '../../src/lib/avg/stage-image-sources'
+import { prepareAvgCharacterFamilyProposalV1, saveAvgCharacterFamilyBatchDraftV1 } from '../../src/lib/avg/character-family-service'
+import type { AvgCharacterFamilyPlanV1 } from '../../src/lib/avg/character-family-contract'
+import { validateAvgVisualProductionBatchSourceV1 } from '../../src/lib/avg/media-source'
+import { verifyFrozenAvgAuthorInputsV1 } from '../../src/lib/avg/author-artifacts'
 import { prepareAvgRawImageRequestV1 } from '../../src/lib/avg/media-raw-contract'
 
 const requirement = (): AvgVisualProductionRequirementV1 => ({ requirementKey: 'desk.background', revision: 1,
@@ -426,6 +433,134 @@ describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/deco
     await db.mediaBlobObjects.update(blob.id!,{data:bytes.buffer})
     await expect(readAvgGeneratedReferenceBytesV1(s.scope,{...ref,generatedSource:selected.source})).rejects.toThrow(/哈希不匹配/)
     expect(dispatch).toHaveBeenCalledTimes(1)
+  },15_000)
+
+  it('adopted stage images survive a new V1 Build and backup remap without a provider key or new media calls', async () => {
+    const body=await response(),dispatch=vi.fn(async()=>new Response(body,{status:200}));vi.stubGlobal('fetch',dispatch)
+    const parent=await start(await prepare());await confirmSources(parent)
+    await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId});await chooseImage(parent,'desk.background')
+    await configureAvgChosenMediaDraftV2({scope:parent.scope,productionId:parent.productionId,expectedDraftRevision:(await readAvgDraftV1(parent.scope)).revision})
+    await confirm(parent,'avg.author.stage');await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId})
+    const old=(await db.productBuilds.get(parent.buildId))!,before=await db.productBuildArtifacts.where('buildId').equals(parent.buildId).toArray()
+    const draft=await readAvgDraftV1(parent.scope),workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
+    workspace.basePreviewHash=old.previewHash
+    const saved=await saveAvgAuthorWorkspaceV1(parent.scope,draft.revision,workspace)
+    const kept=await keepAvgGeneratedStageDraftV1({scope:parent.scope,productionId:parent.productionId,expectedDraftRevision:saved.revision,expectedBuildId:parent.buildId})
+    const next=parseAvgAuthorWorkspaceV1(kept.editorJson)
+    expect(next.mediaBatch).toBeUndefined();expect(next.presentation.inheritedImages).toHaveLength(1)
+    expect(next.presentation.stage.assets).toEqual(workspace.presentation.stage.assets)
+    useAIConfigStore.getState().setConfig({apiKey:''})
+    const details=await prepareAvgAssemblyBriefV1({scope:parent.scope,expectedDraftRevision:kept.revision})
+    const child=await start({...parent,details});await confirmSources(child);await confirm(child,'avg.author.stage')
+    const result=await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})
+    expect(result.buildStatus,(await db.productBuilds.get(child.buildId))!.failureJson).toBe('preview-ready')
+    expect(child.details.executionBrief!.avgAssembly!.version).toBe(1);expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(await db.productBuilds.get(parent.buildId)).toEqual(old)
+    expect(await db.productBuildArtifacts.where('buildId').equals(parent.buildId).toArray()).toEqual(before)
+    const importedId=await importProjectJSON(await exportProjectJSON(parent.scope.projectId))
+    const imported=(await db.productBuilds.where('projectId').equals(importedId).filter(b=>b.buildNumber===2).first())!
+    const scope={projectId:importedId,worldId:imported.worldId,workId:imported.workId}
+    const restored=parseAvgAuthorWorkspaceV1((await readAvgDraftV1(scope)).editorJson)
+    expect(restored.presentation.inheritedImages).toEqual(next.presentation.inheritedImages)
+    expect((await readAvgInheritedStageImagesV1({scope,payload:restored.presentation,productionKey:details.production.productionKey,targetBuildNumber:2,
+      worldContentHash:details.executionBrief!.source.worldContentHash})).size).toBe(1)
+    expect((await verifyFrozenAvgAuthorInputsV1({scope,buildId:imported.id!,expectedBuildRevision:imported.stateRevision,controlEpoch:imported.controlEpoch})).authorStage!.payload.inheritedImages).toEqual(next.presentation.inheritedImages)
+    expect(await db.avgDraftMedia.count()).toBe(0);expect(dispatch).toHaveBeenCalledTimes(1)
+  },15_000)
+
+  it('a different image batch retains old stage pixels, rejects forged inheritance, and re-adopts the combined stage', async () => {
+    const body=await response(),dispatch=vi.fn(async()=>new Response(body,{status:200}));vi.stubGlobal('fetch',dispatch)
+    const parent=await start(await prepare());await confirmSources(parent);await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId})
+    await chooseImage(parent,'desk.background')
+    await configureAvgChosenMediaDraftV2({scope:parent.scope,productionId:parent.productionId,expectedDraftRevision:(await readAvgDraftV1(parent.scope)).revision})
+    await confirm(parent,'avg.author.stage');await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId})
+    const old=(await db.productBuilds.get(parent.buildId))!,draft=await readAvgDraftV1(parent.scope),workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
+    workspace.basePreviewHash=old.previewHash;await saveAvgAuthorWorkspaceV1(parent.scope,draft.revision,workspace)
+    const saved=await saveAvgVisualBatchDraftV1({scope:parent.scope,expectedDraftRevision:(await readAvgDraftV1(parent.scope)).revision,batchKey:'second.batch',revision:1,requirements:[secondaryRequirement()]})
+    const details=await prepareAvgAssemblyBriefV1({scope:parent.scope,expectedDraftRevision:saved.revision})
+    const inherited=parseAvgAuthorWorkspaceV1((await readAvgDraftV1(parent.scope)).editorJson).presentation
+    const read={scope:parent.scope,payload:inherited,productionKey:details.production.productionKey,targetBuildNumber:2,worldContentHash:details.executionBrief!.source.worldContentHash}
+    await expect(readAvgInheritedStageImagesV1({...read,targetBuildNumber:1})).rejects.toThrow(/旧版/)
+    await expect(readAvgInheritedStageImagesV1({...read,worldContentHash:'f'.repeat(64)})).rejects.toThrow(/旧版/)
+    const forged=structuredClone(inherited);forged.inheritedImages![0].source.choice.authorReceiptHash='f'.repeat(64)
+    await expect(readAvgInheritedStageImagesV1({...read,payload:forged})).rejects.toThrow(/证明已变化/)
+    const wrongAsset=structuredClone(inherited);wrongAsset.stage.assets[0].license='伪造授权'
+    await expect(readAvgInheritedStageImagesV1({...read,payload:wrongAsset})).rejects.toThrow(/旧版/)
+    const child=await start({...parent,details});await confirmSources(child);await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})
+    await chooseImage(child,'desk.reference')
+    await configureAvgChosenMediaDraftV2({scope:child.scope,productionId:child.productionId,expectedDraftRevision:(await readAvgDraftV1(child.scope)).revision})
+    await confirm(child,'avg.author.stage')
+    expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('preview-ready')
+    expect(await db.productBuilds.get(parent.buildId)).toEqual(old);expect(dispatch).toHaveBeenCalledTimes(2)
+    expect(parseAvgAuthorWorkspaceV1((await readAvgDraftV1(child.scope)).editorJson).presentation.stage.assets).toEqual(workspace.presentation.stage.assets)
+  },15_000)
+
+  it('an explicitly revised same-key image replaces only the inherited draft version and keeps the old Build immutable',async()=>{
+    const body=await response(),dispatch=vi.fn(async()=>new Response(body,{status:200}));vi.stubGlobal('fetch',dispatch)
+    const parent=await start(await prepare());await confirmSources(parent);await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId});await chooseImage(parent,'desk.background')
+    await configureAvgChosenMediaDraftV2({scope:parent.scope,productionId:parent.productionId,expectedDraftRevision:(await readAvgDraftV1(parent.scope)).revision})
+    await confirm(parent,'avg.author.stage');await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId})
+    const old=(await db.productBuilds.get(parent.buildId))!,draft=await readAvgDraftV1(parent.scope),workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
+    workspace.basePreviewHash=old.previewHash;const edited=await saveAvgAuthorWorkspaceV1(parent.scope,draft.revision,workspace)
+    const saved=await saveAvgVisualBatchDraftV1({scope:parent.scope,expectedDraftRevision:edited.revision,batchKey:'revised.desk',revision:2,
+      requirements:[{...requirement(),revision:2,name:'修订后的准确背景',prompt:'同一主体的明确新版本'}]})
+    const details=await prepareAvgAssemblyBriefV1({scope:parent.scope,expectedDraftRevision:saved.revision}),child=await start({...parent,details})
+    await confirmSources(child);await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId});await chooseImage(child,'desk.background')
+    await configureAvgChosenMediaDraftV2({scope:child.scope,productionId:child.productionId,expectedDraftRevision:(await readAvgDraftV1(child.scope)).revision})
+    const next=parseAvgAuthorWorkspaceV1((await readAvgDraftV1(child.scope)).editorJson)
+    expect(next.presentation.stage.assets).toHaveLength(1);expect(next.presentation.stage.assets[0].name).toBe('修订后的准确背景')
+    expect(next.presentation.inheritedImages).toBeUndefined()
+    await confirm(child,'avg.author.stage')
+    expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('preview-ready')
+    expect(await db.productBuilds.get(parent.buildId)).toEqual(old);expect(dispatch).toHaveBeenCalledTimes(2)
+  },15_000)
+
+  it('one reviewed identity plan creates two exact family requests, retains the prior background and reaches native Preview',async()=>{
+    const body=await response(),dispatch=vi.fn(async()=>new Response(body,{status:200}));vi.stubGlobal('fetch',dispatch)
+    const baseline:AvgVisualProductionRequirementV1={...secondaryRequirement(),requirementKey:'keeper.base',assetKey:'avg.keeper.base',mediaKind:'character-pose',
+      family:{subjectKey:'keeper',familyKey:'keeper.identity',variantKey:'base',revision:1},consumer:{...secondaryRequirement().consumer,consumerKey:'keeper.base',subjectKey:'keeper',slot:'identity'}}
+    const parent=await start(await prepare([requirement(),baseline]));await confirmSources(parent);await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId})
+    await chooseImage(parent,'desk.background');const source=await chooseImage(parent,'keeper.base')
+    const selected=await prepareAvgGeneratedReferenceImageV1({scope:parent.scope,choiceId:source.id!})
+    await configureAvgChosenMediaDraftV2({scope:parent.scope,productionId:parent.productionId,expectedDraftRevision:(await readAvgDraftV1(parent.scope)).revision})
+    await confirm(parent,'avg.author.stage');await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId})
+    const old=(await db.productBuilds.get(parent.buildId))!,draft=await readAvgDraftV1(parent.scope),workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
+    workspace.basePreviewHash=old.previewHash;const saved=await saveAvgAuthorWorkspaceV1(parent.scope,draft.revision,workspace)
+    const plan:AvgCharacterFamilyPlanV1={schema:'storyforge.avg.character-family-plan',version:1,familyKey:'keeper.identity',revision:1,subjectKey:'keeper',name:'保管员',
+      baseline:{assetKey:selected.asset.assetKey,assetVersion:selected.asset.version,contentHash:selected.asset.contentHash,mimeType:selected.asset.mimeType,byteSize:selected.asset.byteSize,license:selected.asset.license,generatedSource:selected.source},
+      stylePrompt:'原创工程人物，同一画布与机位',identityInvariants:['面部与服装不变'],negativePrompt:'',forbiddenDepictions:[],allowedChange:'仅改变表情',width:576,height:324,resolutionTier:'1K',alpha:'not-required',
+      variants:[{variantKey:'neutral',name:'平静',mediaKind:'character-expression',changeDescription:'平静表情',sceneKey:'desk',lineKey:'line.desk'},
+        {variantKey:'smile',name:'微笑',mediaKind:'character-expression',changeDescription:'轻微微笑',sceneKey:'wait',lineKey:'line.wait'}]}
+    const proposal=await prepareAvgCharacterFamilyProposalV1({scope:parent.scope,expectedDraftRevision:saved.revision,plan})
+    const approval={proposalHash:proposal.proposalHash,providerInputAllowed:true,derivativeUseAllowed:true,declaration:'本批全部参考外发与衍生授权，仅验证工程链路'}
+    await expect(saveAvgCharacterFamilyBatchDraftV1({scope:parent.scope,expectedDraftRevision:saved.revision,proposal,approval:{...approval,derivativeUseAllowed:false}})).rejects.toThrow(/授权/)
+    const altered=structuredClone(proposal);altered.plan.variants[0].changeDescription='擅自修改'
+    await expect(saveAvgCharacterFamilyBatchDraftV1({scope:parent.scope,expectedDraftRevision:saved.revision,proposal:altered,approval})).rejects.toThrow(/变化/)
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    const family=await saveAvgCharacterFamilyBatchDraftV1({scope:parent.scope,expectedDraftRevision:saved.revision,proposal,approval})
+    const stored=parseAvgAuthorWorkspaceV1(family.editorJson)
+    expect(stored.mediaBatch!.characterFamily!.proposal).toEqual(proposal)
+    const forged=structuredClone(stored.mediaBatch!);forged.requirements[0].invariants=[]
+    await expect(validateAvgVisualProductionBatchSourceV1(forged,stored)).rejects.toThrow(/家族提案/)
+    await expect(saveAvgVisualBatchDraftV1({scope:parent.scope,expectedDraftRevision:family.revision,batchKey:'discard.family',revision:1,requirements:[requirement()]})).rejects.toThrow(/家族编辑/)
+    const details=await prepareAvgAssemblyBriefV1({scope:parent.scope,expectedDraftRevision:family.revision})
+    const child=await start({...parent,details});await confirmSources(child);await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})
+    for(const r of stored.mediaBatch!.requirements)await chooseImage(child,r.requirementKey)
+    expect(dispatch).toHaveBeenCalledTimes(4)
+    for(const call of dispatch.mock.calls.slice(2))expect(JSON.parse(String(call[1]!.body)).extra_body.image).toEqual([`data:image/png;base64,${JSON.parse(body).data[0].b64_json}`])
+    await configureAvgChosenMediaDraftV2({scope:child.scope,productionId:child.productionId,expectedDraftRevision:(await readAvgDraftV1(child.scope)).revision})
+    await confirm(child,'avg.author.stage')
+    const result=await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})
+    expect(result.buildStatus,(await db.productBuilds.get(child.buildId))!.failureJson).toBe('preview-ready')
+    const next=parseAvgAuthorWorkspaceV1((await readAvgDraftV1(child.scope)).editorJson)
+    expect(next.presentation.stage.assets).toHaveLength(3);expect(next.presentation.inheritedImages).toHaveLength(1)
+    expect(await db.productBuilds.get(parent.buildId)).toEqual(old);expect(await db.avgDraftMedia.count()).toBe(0)
+    // Reviewing another revision does not clear the old family on its own, and
+    // changing the saved draft invalidates that exact replacement proposal.
+    const replacement=await prepareAvgCharacterFamilyProposalV1({scope:child.scope,expectedDraftRevision:(await readAvgDraftV1(child.scope)).revision,plan})
+    const current=await readAvgDraftV1(child.scope);await saveAvgAuthorWorkspaceV1(child.scope,current.revision,next)
+    await expect(saveAvgCharacterFamilyBatchDraftV1({scope:child.scope,expectedDraftRevision:current.revision,proposal:replacement,approval:{...approval,proposalHash:replacement.proposalHash}})).rejects.toThrow(/草稿已变化/)
+    expect(dispatch).toHaveBeenCalledTimes(4)
   },15_000)
 
   it('route path drift and a disabled start reject before creating a Build or making HTTP requests', async () => {

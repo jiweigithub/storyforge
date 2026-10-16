@@ -18,6 +18,7 @@ import { parseAvgAuthorMediaChoiceV1, avgMediaChoiceArtifactKeyV1, type AvgAutho
 import { inspectAvgChosenImageV1, readAvgChosenMediaSourceV2, validateAvgMediaChoiceV1, type AvgMediaChoiceValidationV1 } from './media-choice-validation'
 import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1 } from '../product-production/artifact-store'
 import { assertAvgRawImageOriginV1 } from './media-recovery'
+import { readAvgInheritedStageImagesV1 } from './stage-image-sources'
 
 type Ref = { artifactKey: string; version: number; contentHash: string }
 interface AuthorCandidateBase {
@@ -36,12 +37,12 @@ export class AvgAuthorArtifactErrorV1 extends Error {}
 const hash = hashProductProductionValueV2
 const ref = (row: ProductBuildArtifactRecordV1): Ref => ({ artifactKey: row.artifactKey, version: row.version, contentHash: row.contentHash })
 
-async function mediaProofTables(buildId: number) {
+async function mediaProofTables(buildId: number, withStageSources = false) {
   const build = await db.productBuilds.get(buildId)
   const row = build ? await db.productProductionBriefs.where('[productionId+revision]').equals([build.productionId, build.briefRevision]).first() : null
   // Only chooses transaction tables; authority() rechecks the actual frozen
   // scope/Brief/hash inside the transaction before any read or write grant.
-  const media = row && (JSON.parse(row.briefJson) as { avgAssembly?: { version?: number } }).avgAssembly?.version === 2
+  const media = withStageSources || row && (JSON.parse(row.briefJson) as { avgAssembly?: { version?: number } }).avgAssembly?.version === 2
   return media ? [db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts] : []
 }
 
@@ -101,8 +102,14 @@ async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, 
       generated.set(choice.asset.assetKey, { asset: choice.asset, blobObjectId: selected.raw.blobObjectId! })
     }
   }
+  const inherited=await readAvgInheritedStageImagesV1({scope,payload,productionKey:context.production.productionKey,
+    targetBuildNumber:context.build.buildNumber,worldContentHash:context.brief.source.worldContentHash})
+  for(const [key,image] of inherited){
+    if(generated.has(key))throw new Error('[avg-media] 本批生成图片不能借旧图来源替代')
+    generated.set(key,image)
+  }
   return validateAvgAuthorAssemblyV1({ scope, payload, inputs: a?.version === 2 ? inputs.filter(row => !row.artifactKey.startsWith('avg.media.choice.')) : inputs,
-    ...(a?.version === 2 ? { generated } : {}), productKey: context.production.productionKey,
+    generated, productKey: context.production.productionKey,
     sourceWorld: { contentHash: context.brief.source.worldContentHash, selection: context.brief.source.selection } })
 }
 
@@ -237,7 +244,7 @@ export async function stageAvgAuthorArtifactV1(input: {
   const prepared = prepareAuthorInput({ ...input, artifactKey, allowedOutputKeys: [artifactKey] })
   const systemValidation = prepared.payload.schema === 'storyforge.avg.system-plan'
     ? await validateSystem(prepared.payload) : undefined
-  const proofTables = await mediaProofTables(input.buildId)
+  const proofTables = await mediaProofTables(input.buildId,prepared.payload.schema==='storyforge.avg.author-stage'&&!!prepared.payload.inheritedImages?.length)
   return db.transaction('rw', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands, db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects,
     ...proofTables), async () => {
     const context = await authority(scope, input.buildId)
@@ -379,7 +386,7 @@ async function readAuthorInputs(input: {
   scope: WorkspaceScope; buildId: number; expectedBuildRevision: number; controlEpoch: number; includeSceneScripts?: boolean; includeAuthorStage?: boolean; includeMediaChoices?: boolean
 }, frozenVerification = false) {
   const scope = await resolveScope({ scope: input.scope })
-  const proofTables = await mediaProofTables(input.buildId)
+  const proofTables = await mediaProofTables(input.buildId,!!input.includeAuthorStage)
   return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands, db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects,
     ...proofTables), async () => {
     const context = await authority(scope, input.buildId, true, frozenVerification)
@@ -471,7 +478,8 @@ export async function readAvgAdoptedGeneratedReferenceChoiceV1(input: { scope: W
     if (candidate.version !== 4 || canonicalProductProductionJsonV2(candidate.mediaChoiceValidation) !== canonicalProductProductionJsonV2(selected.validation)) throw new Error('[avg-media] 生成参考缺少准确的作者解码采用证据')
     const envelope = JSON.parse(row.metadataJson) as { receiptHash: string }
     return { choice, artifact: ref(row), authorReceiptHash: envelope.receiptHash, raw: proved.artifact, rawProof: proved.provenance,
-      productionKey: context.production.productionKey, buildNumber: context.build.buildNumber, requirement: selected.requirement }
+      productionKey: context.production.productionKey, buildNumber: context.build.buildNumber, requirement: selected.requirement,
+      sourceWorldContentHash:context.brief.source.worldContentHash }
   })
 }
 

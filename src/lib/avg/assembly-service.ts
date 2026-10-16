@@ -31,6 +31,7 @@ import { assertAvgKnownImageRetriesV1, prepareAvgImageRecoveryV1, readAvgImageRe
 import { parseAvgImageRecoveryV1, type AvgImageRecoveryV1 } from './media-recovery-contract'
 import { listWorldReferenceCatalogV1 } from '../product/source'
 import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
+import { prepareAvgInheritedStageDraftV1, readAvgInheritedStageImagesV1 } from './stage-image-sources'
 
 const commandId = (label: string) => `avg.assembly.${label}.${crypto.randomUUID()}`
 
@@ -40,6 +41,7 @@ export async function saveAvgVisualBatchDraftV1(input: { scope: WorkspaceScope; 
   batchKey: string; revision: number; requirements: AvgVisualProductionRequirementV1[] }) {
   const draft = await readAvgDraftV1(input.scope)
   if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg-media] 编辑草稿已变化')
+  if(parseAvgAuthorWorkspaceV1(draft.editorJson).mediaBatch?.characterFamily)throw new Error('[avg-family] 请通过人物家族编辑保留身份方案，或明确结束当前家族批次后再新建普通需求')
   const workspace = prepareAvgMediaConsumerDeclarationsV1(resetAvgUnconsumedMediaDeclarationsV1(parseAvgAuthorWorkspaceV1(draft.editorJson)), input.requirements)
   workspace.mediaBatch = await freezeAvgVisualProductionBatchV1({ schema: 'storyforge.avg.visual-production-batch', version: 1,
     batchKey: input.batchKey, revision: input.revision, requirements: input.requirements }, workspace)
@@ -71,6 +73,21 @@ export async function clearAvgVisualBatchDraftV1(input: { scope: WorkspaceScope;
     delete next.mediaBatch
     return saveAvgAuthorWorkspaceV1(input.scope, draft.revision, next)
   })
+}
+
+/** An explicit new-scope proposal: keep adopted stage images, retire only the
+ * editable generation batch, retain all old Runs, pending bills and Blobs. */
+export async function keepAvgGeneratedStageDraftV1(input:{scope:WorkspaceScope;productionId:number;expectedDraftRevision:number;expectedBuildId:number}){
+  const draft=await readAvgDraftV1(input.scope),details=await readProductProductionDetailsV1(input.scope,input.productionId,['avg'])
+  if(draft.revision!==input.expectedDraftRevision||draft.productionId!==input.productionId||details.build?.id!==input.expectedBuildId
+    ||!details.executionBrief?.avgAssembly||!details.build.previewHash&&!['cancelled','failed','recovery-required'].includes(details.build.status))throw new Error('[avg-media] 请先明确停止或完成当前批次，再保留演出图')
+  const workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
+  if(!workspace.mediaBatch)throw new Error('[avg-media] 当前草稿没有待结束的图片批次')
+  const next=resetAvgUnconsumedMediaDeclarationsV1(await prepareAvgInheritedStageDraftV1({scope:input.scope,workspace,build:details.build,productionKey:details.production.productionKey,
+    targetBuildNumber:Math.max(...details.buildHistory.map(row=>row.buildNumber))+1,worldContentHash:details.executionBrief.source.worldContentHash}))
+  if(!next.presentation.inheritedImages?.length)throw new Error('[avg-media] 没有可保留的已采用演出图片')
+  delete next.mediaBatch
+  return saveAvgAuthorWorkspaceV1(input.scope,draft.revision,next)
 }
 
 export async function stageAvgMediaChoiceV2(input: { scope: WorkspaceScope; productionId: number; requirementKey: string;
@@ -153,6 +170,8 @@ export async function configureAvgChosenMediaDraftV2(input: { scope: WorkspaceSc
   if (!build?.id || brief?.avgAssembly?.version !== 2 || build.previewHash) throw new Error('[avg-media] 当前版本不能配置生成媒资')
   if (canonicalProductProductionJsonV2(workspace.mediaBatch ?? null) !== canonicalProductProductionJsonV2(brief.avgAssembly.mediaBatch)) throw new Error('[avg-media] 草稿需求与冻结批次已不一致')
   const source = await readAvgMediaChoicesForConfigurationV2({ scope: input.scope, buildId: build.id, expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch })
+  await readAvgInheritedStageImagesV1({scope:input.scope,payload:workspace.presentation,productionKey:details.production.productionKey,
+    targetBuildNumber:build.buildNumber,worldContentHash:brief.source.worldContentHash})
   const next = await applyAvgMediaChoicesToDraftV1({ workspace, batch: brief.avgAssembly.mediaBatch, choices: (source.mediaChoices ?? []).map(choice => choice.payload) })
   return saveAvgAuthorWorkspaceV1(input.scope, draft.revision, next)
 }
@@ -235,9 +254,9 @@ async function expectedBaselinePackageHash(details: ProductProductionDetailsV1) 
 
 /** Prepare a reviewable Brief only. User start and per-artifact adoption remain explicit. */
 export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; expectedDraftRevision: number; imageRecovery?:AvgImageRecoveryV1 }) {
-  const draft = await readAvgDraftV1(input.scope)
+  let draft = await readAvgDraftV1(input.scope)
   if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg] 编辑草稿已变化，请刷新后再准备方案')
-  const workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
+  let workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
   if (workspace.mediaBatch) {
     await validateAvgVisualProductionBatchSourceV1(workspace.mediaBatch, workspace)
     if (!avgMediaProductionEnabledV2()) throw new Error('[avg-media] 媒资生产流程尚未开放；不能把待生成批次按零调用组装执行')
@@ -288,8 +307,13 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
         if(workspace.mediaBatch&&!recovery)await assertAvgKnownImageRetriesV1(input.scope,details.build,workspace.mediaBatch.requirements.map(r=>r.requirementKey))
         basePackageHash = await expectedBaselinePackageHash(details)
       }
+      const inherited=await prepareAvgInheritedStageDraftV1({scope:input.scope,workspace,build:details.build,
+        productionKey:details.production.productionKey,targetBuildNumber:Math.max(...details.buildHistory.map(row=>row.buildNumber))+1,worldContentHash:old.source.worldContentHash})
       if (!pending) await beginProductProductionEvolutionV1({ scope:input.scope,productionId,expectedStateRevision:details.production.stateRevision,
         userText:'作者修订 AVG 系统、对白、演出和媒资，生成新预览并保留旧版本及存档',affectedLanes:['content','product','visual','audio'] })
+      if(canonicalProductProductionJsonV2(inherited)!==canonicalProductProductionJsonV2(workspace)){
+        draft=await saveAvgAuthorWorkspaceV1(input.scope,draft.revision,inherited);workspace=inherited
+      }
     }
   } else {
     const created = await executeProductProductionCommand({ scope:input.scope,command:{ type:'create-intent',commandId:commandId('intent'),

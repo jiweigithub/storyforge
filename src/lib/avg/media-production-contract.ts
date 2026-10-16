@@ -3,6 +3,7 @@ import { parseAvgConsumerV1, type AvgConsumerV1 } from './runtime-contract-v2'
 import { parseAvgExecutableStageV1 } from './stage-contract'
 import { parseAvgMediaReferencesV1, type AvgMediaReferenceV1 } from './media-reference-contract'
 import { avgBoolean, avgEnum, avgHash, avgKey, avgKeys, avgList, avgNumber, avgProtocolBody, avgRecord, avgText, avgUnique } from './protocol-validation'
+import { parseAvgCharacterFamilyBatchV1, type AvgCharacterFamilyBatchV1 } from './character-family-contract'
 
 /** An image request is production input, never a selected image or a binding. */
 export interface AvgVisualProductionRequirementV1 {
@@ -37,6 +38,7 @@ export interface AvgVisualProductionBatchV1 {
   aspectRatio: '16:9' | '4:3'
   sourceInputHash: string
   requirements: AvgVisualProductionRequirementV1[]
+  characterFamily?: AvgCharacterFamilyBatchV1
 }
 
 /** A separate author selection over an immutable provider Artifact. Raw output
@@ -102,7 +104,8 @@ export function parseAvgVisualProductionRequirementV1(value: unknown): AvgVisual
 }
 
 export function parseAvgVisualProductionBatchV1(value: unknown): AvgVisualProductionBatchV1 {
-  const r = avgRecord(avgProtocolBody(value), ['schema', 'version', 'batchKey', 'revision', 'aspectRatio', 'sourceInputHash', 'requirements'], 'visual batch')
+  const body=avgProtocolBody(value),hasFamily=!!body&&Object.prototype.hasOwnProperty.call(body,'characterFamily')
+  const r = avgRecord(body, ['schema', 'version', 'batchKey', 'revision', 'aspectRatio', 'sourceInputHash', 'requirements',...(hasFamily?['characterFamily']:[])], 'visual batch')
   if (r.schema !== 'storyforge.avg.visual-production-batch' || r.version !== 1) throw new Error('[avg-media] 未登记的视觉批次版本')
   const requirements = avgUnique(avgList(r.requirements, 'requirements', parseAvgVisualProductionRequirementV1, AVG_VISUAL_BATCH_LIMIT_V1), r => r.requirementKey, 'requirements')
   if (!requirements.length) throw new Error('[avg-media] 视觉批次必须有明确需求')
@@ -112,7 +115,8 @@ export function parseAvgVisualProductionBatchV1(value: unknown): AvgVisualProduc
     r.consumer.sceneKey, r.consumer.lineKey, r.triggerBeatKey, r.itemVariantKey].join('\u0000'), 'media consumer targets')
   return { schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: avgKey(r.batchKey, 'batchKey'),
     revision: avgNumber(r.revision, 'batch.revision', 1, 1_000_000), aspectRatio: avgEnum(r.aspectRatio, ['16:9', '4:3'] as const, 'batch.aspectRatio'),
-    sourceInputHash: avgHash(r.sourceInputHash, 'sourceInputHash'), requirements }
+    sourceInputHash: avgHash(r.sourceInputHash, 'sourceInputHash'), requirements,
+    ...(hasFamily?{characterFamily:parseAvgCharacterFamilyBatchV1(r.characterFamily)}:{}) }
 }
 
 export function parseAvgAuthorMediaChoiceV1(value: unknown): AvgAuthorMediaChoiceV1 {
