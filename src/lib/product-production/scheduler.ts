@@ -266,6 +266,9 @@ export interface ProductProductionTaskExecutionInputV1 {
   signal: AbortSignal
   /** Persist the received model text before parsing, including rejected drafts. */
   onModelOutput?: (output: string) => Promise<void | 'discarded-stale'>
+  /** Exact bounded provider response evidence, before media parsing. It uses
+   * the registered raw-response store, never prompt/context or a second call. */
+  onMediaOutput?: (output: string) => Promise<void | 'discarded-stale'>
   /** Re-fence a bounded protocol before every paid call after the first. */
   beforeAdditionalModelRequest?: () => Promise<void | 'discarded-stale'>
   authorDraftJson?: string
@@ -4945,6 +4948,15 @@ async function runClaimedTaskCore(input: {
   if (input.signal.aborted) abortFromParent()
   else input.signal.addEventListener('abort', abortFromParent, { once: true })
   let timeoutHandle: ReturnType<typeof globalThis.setTimeout> | null = null
+  const recordRawOutput = async (output: string): Promise<void | 'discarded-stale'> => {
+    if (!await refreshExecutionAttemptAuthority()) return 'discarded-stale'
+    const recorded = await recordAgentRunArtifactV1({
+      scope: input.scope, runId: snapshot.run.id, stepId: input.task.taskKey, attempt,
+      artifactKind: 'raw-response', content: output,
+      expectedLastSequence: snapshot.projection.lastSequence,
+    })
+    snapshot = recorded.snapshot
+  }
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
     timeoutHandle = globalThis.setTimeout(() => {
       timedOut = true
@@ -4973,15 +4985,8 @@ async function runClaimedTaskCore(input: {
         beforeAdditionalModelRequest: async () => {
           if (!await refreshExecutionAttemptAuthority()) return 'discarded-stale'
         },
-        onModelOutput: async output => {
-          if (!await refreshExecutionAttemptAuthority()) return 'discarded-stale'
-          const recorded = await recordAgentRunArtifactV1({
-            scope: input.scope, runId: snapshot.run.id, stepId: input.task.taskKey, attempt,
-            artifactKind: 'raw-response', content: output,
-            expectedLastSequence: snapshot.projection.lastSequence,
-          })
-          snapshot = recorded.snapshot
-        },
+        onModelOutput: recordRawOutput,
+        ...(input.task.executionMode === 'media-provider' ? { onMediaOutput: recordRawOutput } : {}),
       }),
       timeoutPromise,
     ])

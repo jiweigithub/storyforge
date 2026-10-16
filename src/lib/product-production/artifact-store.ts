@@ -726,7 +726,11 @@ async function verifiedBlobProofsV1(input: {
       || blob.mimeType !== artifact.mimeType || blob.byteSize !== artifact.byteSize) {
       throw new Error(`[product-production-artifact] ${input.label} 媒资对象损坏:${artifact.artifactKey}`)
     }
-    await readVerifiedMediaBlobObjectData(blob)
+    // OPFS reads use native filesystem promises. Keep the caller's transaction
+    // alive while verifying only this already scope-checked physical object.
+    const read = () => readVerifiedMediaBlobObjectData(blob)
+    if (Dexie.currentTransaction) await Dexie.waitFor(Dexie.ignoreTransaction(read))
+    else await read()
     proofs.set(blob.id, cloneBlobProofRowV1(
       blob as MediaBlobObjectRecordV1 & { id: number },
     ))
@@ -1312,10 +1316,11 @@ async function createVerifiedProducerCandidateV1(input: {
     || rootBoundary.planHash !== input.build.planHash) {
     throw new Error('[product-production-artifact] ledger root Run 与 Build/Plan 不闭合')
   }
-  const [producerEventStreamHash, rootEventStreamHash] = await Promise.all([
-    eventStreamHashV1(snapshot.run.id, snapshot),
-    eventStreamHashV1(rootSnapshot.run.id, rootSnapshot),
-  ])
+  // A downstream author decision can call this inside its write transaction.
+  // Each hash keeps that transaction alive with Dexie.waitFor; overlapping
+  // leases can wait behind one another. Preserve the same proof sequentially.
+  const producerEventStreamHash = await eventStreamHashV1(snapshot.run.id, snapshot)
+  const rootEventStreamHash = await eventStreamHashV1(rootSnapshot.run.id, rootSnapshot)
   const candidate = exactRecord(verified.resumePayload, [
     'schema', 'version', 'taskKey', 'attempt', 'controlEpoch',
     'inputHash', 'candidateHash', 'result',
