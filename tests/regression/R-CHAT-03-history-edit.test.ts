@@ -42,11 +42,11 @@ it('saves a player edit draft atomically with the branch and drops the entire la
   expect(state.messages).toEqual([])
   expect(state.memories).toEqual([])
   expect(state.chatNarrative!.situation.facts.some(f => f.factKey === 'lit-door')).toBe(false)
-  expect(state.chatNarrative!.pendingEdit).toMatchObject({role: 'player', audienceKeys: ['guard'], text: '不用看门边，我们先休息。'})
+  expect(state.chatNarrative!.pendingEdit).toMatchObject({role: 'player', audienceKeys: ['player', 'guard'], text: '不用看门边，我们先休息。'})
   db.close(); await db.open()
   await applyChatMessageEditV1({scope: f.scope, sessionId: child.id!, expectedSequence: (await readProductRuntimeStateVersion(child.id!)).sequence, text: '不用看门边，我们先休息。'})
   state = (await readProductRuntimeState(child.id!)).interaction!
-  expect(state.messages.map(m => [m.text, m.audienceKeys])).toEqual([['不用看门边，我们先休息。', ['guard']]])
+  expect(state.messages.map(m => [m.text, m.audienceKeys])).toEqual([['不用看门边，我们先休息。', ['player', 'guard']]])
   expect(state.chatNarrative!.pendingEdit).toBeUndefined()
   expect(state.totalPlayerTurns).toBe(1)
   expect(await readProductRuntimeState(f.sessionId)).toEqual(parent)

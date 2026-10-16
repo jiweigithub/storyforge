@@ -108,7 +108,7 @@ test('a player edit preserves private recipients and can be saved without a mode
   await expect(page.locator('body')).toHaveAttribute('data-branch-reloads', '0')
   const result = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); const s = (await load('/storyforge/src/stores/character-interaction-player.ts')).useCharacterInteractionPlayerStore.getState(); return {id: s.selectedSessionId, state: s.runtimeState.interaction}})
   expect(result.id).not.toBe(f.sessionId)
-  expect(result.state.messages[0].audienceKeys).toEqual(['guard'])
+  expect(result.state.messages[0].audienceKeys).toEqual(['player', 'guard'])
   expect(result.state.messages).toHaveLength(1)
   // A real address/history change must still load the other session, even
   // though an echo of the already-selected branch no longer reloads it.

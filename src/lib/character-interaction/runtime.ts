@@ -631,6 +631,18 @@ function parseAudience(value: unknown, state: CharacterInteractionRuntimeState):
   return audience
 }
 
+/** New narrative player messages freeze their actual audience at the event
+ * boundary. Old events retain their original null/public semantics; replay
+ * must never reinterpret already saved model inputs or checkpoint hashes. */
+function playerMessageAudience(body: Record<string, unknown>, state: CharacterInteractionRuntimeState): string[] | null {
+  if (body.playerAudienceVersion !== undefined && body.playerAudienceVersion !== 1) throw new Error('玩家消息听众版本不受支持。')
+  const audience = parseAudience(body.audienceKeys, state)
+  if (!state.chatNarrative || body.playerAudienceVersion !== 1) return audience
+  const active = requireScene(state).activeParticipantKeys
+  if (audience?.some(key => key !== state.playerKey && !active.includes(key))) throw new Error('玩家消息只能发送给当前在场角色；离场角色不会自动听见。')
+  return [...new Set([state.playerKey, ...(audience ?? active)])]
+}
+
 function applyKnowledgeDisclosure(input: {
   state: CharacterInteractionRuntimeState
   knowledgeKey: string
@@ -762,7 +774,7 @@ export function applyInteractionEvent(
         eventSequence: event.sequence,
         role: 'player',
         speakerKey: state.playerKey,
-        audienceKeys: parseAudience(body.audienceKeys, state),
+        audienceKeys: playerMessageAudience(body, state),
         text: text(body.text, '玩家互动消息', 12_000),
         replyToSequence: null,
         supersededBySequence: null,

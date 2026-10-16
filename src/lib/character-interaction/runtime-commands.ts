@@ -46,6 +46,14 @@ async function appendInteractionCommand(
   const previewState = previewSession.kind === 'character-interaction'
     ? replayChatRuntimeEventsV1(previewSession.initialStateJson, previewEvents)
     : replayProductRuntimeEvents(parseProductRuntimeState(previewSession.initialStateJson), previewEvents);
+  if (previewSession.kind === 'character-interaction' && input.type === 'interaction.player.message.committed' && previewState.interaction?.chatNarrative) {
+    const prior = previewEvents.find(event => event.commandId === commandId);
+    // New narrative messages freeze their listeners in the reducer. An exact
+    // retry of an old command keeps its original version and payload binding.
+    if (!prior || parseEventPayload(prior).playerAudienceVersion === 1) {
+      input = {...input, payload: {...input.payload, playerAudienceVersion: 1}};
+    }
+  }
   const previewStateJson = JSON.stringify(previewState);
   const previewStateHash = await hashStateJson(previewStateJson);
   // A chat head is recoverable derived data, but it must be committed with the
