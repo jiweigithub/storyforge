@@ -167,7 +167,17 @@
       }
     ],
     "fullCI": "queued after original native1000, using the final committed snapshot",
-    "fullE2E": "queued after fullCI, using the same committed snapshot"
+    "fullE2E": "queued after fullCI, using the same committed snapshot",
+    "relationshipE2EReadback": {
+      "sourceCodeCommit": "6f1e31d415e51ff6e7028c831800f5607414460a",
+      "passed": 1,
+      "widths": [
+        390,
+        1440
+      ],
+      "log": "/tmp/storyforge-chat-v139-relationship-e2e.log",
+      "note": "Rechecked original causes, exact dialogue, portable restore, actor/review input and no extra requests after the player-audience change."
+    }
   },
   "retainedFailure": {
     "log": "/tmp/storyforge-chat-v139-regression.log",
