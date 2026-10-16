@@ -2,13 +2,15 @@
 
 ## Which version these docs describe
 
-This incremental review covers **main baseline cfc5ed3f on October 14, 2026**, checking user-visible changes since the last successful maintenance baseline `ce1cfd6c`. Each product retains its own guide status; the maintenance date does not raise maturity.
+This incremental review covers **October 16, 2026, main baseline 451ac153**, checking user-visible changes since the last successful maintenance baseline `1c6bb315`. Each product retains its own maturity status; the review date does not raise it.
 
 The source package version is **4.0.1**; the [latest release page](https://github.com/yuanbw2025/storyforge/releases/latest) lists the fixed archives actually available for download. Builds of v4.0.1 include explicit failure feedback and the text-adventure recovery, image-preserving revisions, and standalone web export from [PR #119](https://github.com/yuanbw2025/storyforge/pull/119). See [troubleshooting and capture limits](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds).
 
 The historical [formal v4.0.0 release](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.0) was published on October 13, 2026 at fixed commit `78416965`; it does not include those later changes. Knowledge-base updates do not alter old downloaded archives or replace the separately deployed hosted experience. Include the version, build commit, address, and date when reporting issues.
 
 Live sites may lag deployment. [Tagged releases](https://github.com/yuanbw2025/storyforge/releases) do not automatically gain later main-branch features.
+
+The outline candidate adoption fix in [PR #158](https://github.com/yuanbw2025/storyforge/pull/158) came after fixed v4.0.1 source `e8ce0a0d` and is only in later main. This maintenance run does not release a new product version. See [development status](/en/updates/development-status) for pending clients, anonymous usage analytics, and other work; a development branch version does not establish a published release.
 
 ## Before upgrading
 

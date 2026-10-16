@@ -2,6 +2,12 @@
 
 Changes are organized by user impact. **Main-branch updates do not mean a new version has been released.** The package version is 4.0.1; tagged releases retain their original content, and later main-branch changes do not automatically enter downloaded archives. Live deployments may lag; see [compatibility](/en/updates/compatibility).
 
+## October 16, 2026 · Outline Agent candidate adoption fix
+
+Automatic volume/chapter outline composition no longer incorrectly rejects valid candidates as stale because generation and adoption used different policy identities. Real source, permission, and content freshness checks remain in place; candidates are not adopted automatically. See [outlines, scene beats, and prose](/en/features/longform/writing).
+
+Evidence: [fix 5f59e4a4](https://github.com/yuanbw2025/storyforge/commit/5f59e4a4) · [PR #158](https://github.com/yuanbw2025/storyforge/pull/158), merged into main as `ce49309b` on October 16 in China, after the fixed v4.0.1 release. Publishing the knowledge base does not update old packages or the hosted application experience.
+
 ## October 15, 2026 · v4.0.1 failure-feedback builds
 
 General settings, rendering fallbacks, and blocked startup offer a summary preview and official feedback entry. Browser errors survive refresh; the portable launcher retains bounded startup failures and uncertain interruption records. Users inspect the summary before taking it to the official form, which never submits automatically. Works, Prompts, and credentials are not automatically uploaded. See [troubleshooting and capture limits](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds). This applies to v4.0.1 and later portable builds; check the [latest release](https://github.com/yuanbw2025/storyforge/releases/latest) for published archives. Fixed v4.0.0 downloads remain unchanged. This does not add launch/activity/retention statistics.
