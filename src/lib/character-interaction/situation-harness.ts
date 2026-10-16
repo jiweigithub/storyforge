@@ -108,7 +108,8 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
       await assertRuntimeHarnessFreshV1(freshness)
       const manifest = await createContextManifestFromAssemblyV1({runId: snapshot.run.id, stepId, attempt: 1,
         projectId: input.scope.projectId, worldGroupId: snapshot.contract.scope.worldGroupId, declaredSourceKeys: sourceKeys,
-        assembled, readerVersion: retrievalVersion === 'chat-relevance-v7' ? situation ? 'chat-situation-review-v12' : 'chat-action-review-v11'
+        assembled, readerVersion: retrievalVersion === 'chat-relevance-v8' ? situation ? 'chat-situation-review-v13' : 'chat-action-review-v12'
+          : retrievalVersion === 'chat-relevance-v7' ? situation ? 'chat-situation-review-v12' : 'chat-action-review-v11'
           : retrievalVersion === 'chat-relevance-v6' ? situation ? 'chat-situation-review-v11' : 'chat-action-review-v10'
           : retrievalVersion === 'chat-relevance-v5' ? situation ? 'chat-situation-review-v10' : 'chat-action-review-v9'
           : situation ? (supportsChatDiscoveryEvidenceReviewerV1(reviewBinding.promptVersion) ? 'chat-situation-review-v9' : ['chat-situation-review-v7', 'chat-situation-review-v8', 'chat-situation-review-v9'].includes(reviewBinding.promptVersion) ? 'chat-situation-review-v8' : 'chat-situation-review-v7') : memoryReconciliation ? 'chat-action-review-v8' : 'chat-action-review-v7'})

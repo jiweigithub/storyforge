@@ -1,3 +1,4 @@
+import {selectChatHistoryActorContextV1} from './history-actor-context'
 import {validateFrozenChatSourceUnitsV1} from './source-unit-runtime'
 import {assertChatResolutionEvidenceSourcesV1} from './resolution-evidence'
 import {assertChatInquirySourcesV1} from './narrative-inquiry'
@@ -1094,6 +1095,7 @@ export function interactionRetrievalView(state: CharacterInteractionRuntimeState
 }
 
 export interface InteractionContextWindow extends InteractionVisibilityView {
+  historyContext?: {version: 1; policy: string; resolutions: ReturnType<import('./history-selection').ChatHistoryPlanV1['resolutions']>; omitted: {facts: number; goals: number; threads: number}}
   selection?: ChatContextSelectionV1
   excludedMessageCount?: number
   omittedMessageCount: number
@@ -1115,8 +1117,9 @@ export function buildInteractionContextWindow(
   if (state.chatNarrative && options.retrievalVersion !== 'legacy') {
     const profile = state.profiles.find(p => p.participantKey === participantKey)
     if (!profile) throw new Error('缺少角色视角，无法选择来源资料')
-    if (supportsChatCorrectionContextV1(options.retrievalVersion ?? 'chat-relevance-v7')) visible.memoryCorrections = chatMemoryCorrectionContextV1(state, participantKey)
-    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v7',
+    if (supportsChatCorrectionContextV1(options.retrievalVersion ?? 'chat-relevance-v8')) visible.memoryCorrections = chatMemoryCorrectionContextV1(state, participantKey)
+    if ((options.retrievalVersion ?? 'chat-relevance-v8') === 'chat-relevance-v8') return selectChatHistoryActorContextV1(state, visible, profile, {maxCharacters, maxRecentMessages})
+    return selectChatContextWindowV1(visible, profile, {maxCharacters, maxRecentMessages, retrievalVersion: options.retrievalVersion ?? 'chat-relevance-v8',
       requiredCommitmentKeys: requiredChatCommitmentKeysV1(state.chatNarrative!.situation.goals)})
   }
   const allMessages = visible.messages

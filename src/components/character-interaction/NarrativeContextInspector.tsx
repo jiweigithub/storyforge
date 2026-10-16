@@ -82,6 +82,8 @@ export default function NarrativeContextInspector(props: {scope: WorkspaceScope;
           <p className="text-text-muted">以下只列双方当时共同已知的资料。省略仅表示本轮没有选入，不代表遗忘或删除；私有目标的选择依据不在这里展开。</p>
           <SelectionDetails key={`${inspection.runId}:knowledge`} title="来源知识的选入与省略" items={inspection.selection.knowledge} />
           {inspection.selection.commitments && <SelectionDetails key={`${inspection.runId}:commitments`} title="约定历史的选入与省略" items={inspection.selection.commitments} />}
+          {inspection.selection.facts && <SelectionDetails title="已知事实的选入与省略" items={inspection.selection.facts} />}
+          {inspection.selection.threads && <SelectionDetails title="共同事项的选入与省略" items={inspection.selection.threads} />}
           <SelectionDetails key={`${inspection.runId}:memories`} title="已确认记忆的选入与省略" items={inspection.selection.memories} />
         </div>}
         <div><h3 className="mb-1 font-semibold">实际选入的共同对话</h3>{list(inspection.messages.map(m => `${m.speaker}：${m.text}`))}</div>

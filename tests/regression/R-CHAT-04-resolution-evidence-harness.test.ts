@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import * as api from '../../src/lib/character-interaction/runtime-api'
-import * as manifests from '../../src/lib/agent/run/context-manifest'
+import {useHistoricalChatReaderFixture} from '../helpers/chat-historical-reader'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1, resumeChatNarrativeReviewV1} from '../../src/lib/character-interaction/harness'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {sha256Text} from '../../src/lib/ai/chapter-memory/text-normalization'
@@ -28,9 +28,7 @@ it.each(['current', 'saved-v10', 'options'] as const)('preserves exact terminal 
   const f = await prepared(), before = await runtime(f.sessionId), worlds = await db.worldReleases.toArray(), action = chatResolutionActionFixture()
   const alternate = structuredClone(action); alternate.text = '铜印仍然失踪。' + action.text; alternate.goalUpdates![0].evidenceFactKeys = ['lost']; alternate.goalUpdates![0].evidenceExcerpt = '寻找先到这里，不再继续。'
   if (mode === 'saved-v10') {
-    const create = manifests.createContextManifestFromAssemblyV1
-    vi.spyOn(manifests, 'createContextManifestFromAssemblyV1').mockImplementation(input => create({...input,
-      readerVersion: input.readerVersion === 'chat-narrative-runtime-view-v11' ? 'chat-narrative-runtime-view-v10' : input.readerVersion}))
+    useHistoricalChatReaderFixture('chat-narrative-runtime-view-v10')
   }
   let runId = 0, calls = 0
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard',

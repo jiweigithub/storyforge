@@ -81,6 +81,12 @@ export async function readChatContextInspectionV1(scope: WorkspaceScope, session
   const memories = new Set(state.memories.filter(m => chatMemoryPlayerViewV1(state, m)?.content === m.content).map(m => m.memoryId))
   const shared = interactionVisibilityView(state, packet.participantKey)
   const selection = view.selection ? {
+    ...(view.selection.history ? {
+      facts: shared.chatNarrative!.facts.filter(f => visible.chatNarrative!.facts.some(p => p.factKey === f.factKey)).map(f => ({content: f.text,
+        included: view.selection!.history!.some(d => d.kind === 'facts' && d.key === f.factKey && d.included), reason: 'historical-relevance' as const})),
+      threads: shared.chatNarrative!.threads.filter(t => visible.chatNarrative!.threads.some(p => p.threadKey === t.threadKey)).map(t => ({content: `${t.title}：${t.question}`,
+        included: view.selection!.history!.some(d => d.kind === 'threads' && d.key === t.threadKey && d.included), reason: 'historical-relevance' as const})),
+    } : {}),
     knowledge: shared.knowledge.filter(k => known.has(`${k.knowledgeKey}\0${k.content}`)).map(k => {
       const decision = view.selection!.knowledge.find(d => d.key === k.knowledgeKey)!
       return {content: k.content, included: decision.included, reason: decision.reason}

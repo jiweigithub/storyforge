@@ -2,7 +2,7 @@ import {sha256Text} from '../../src/lib/ai/chapter-memory/text-normalization'
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import * as api from '../../src/lib/character-interaction/runtime-api'
-import * as manifests from '../../src/lib/agent/run/context-manifest'
+import {useHistoricalChatReaderFixture} from '../helpers/chat-historical-reader'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1, resumeChatNarrativeReviewV1} from '../../src/lib/character-interaction/harness'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {chatFactEvidenceAction as action} from '../helpers/chat-fact-evidence'
@@ -19,9 +19,7 @@ it.each(['current', 'saved-v9'] as const)('freezes provenance policy across revi
   await api.requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'start', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'scene-start', sourceEventSequence: f.sceneSequence})
   const before = await runtime(f.sessionId), worlds = await db.worldReleases.toArray()
   if (reader === 'saved-v9') {
-    const create = manifests.createContextManifestFromAssemblyV1
-    vi.spyOn(manifests, 'createContextManifestFromAssemblyV1').mockImplementation(input => create({...input,
-      readerVersion: input.readerVersion === 'chat-narrative-runtime-view-v11' ? 'chat-narrative-runtime-view-v9' : input.readerVersion}))
+    useHistoricalChatReaderFixture('chat-narrative-runtime-view-v9')
   }
   let runId = 0, calls = 0
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action',
@@ -95,9 +93,7 @@ it.each(['current', 'saved-v11'] as const)('records player situation facts only 
     newFacts: [{factKey: 'knocking', kind: 'observation', text: '门外传来敲门声。', audienceKeys: ['player', 'guard', 'artisan'], evidenceFactKeys: ['road'], seedExcerpt: '门外传来敲门声'}],
     newGoals: [], newThreads: [], possibilities: []}
   if (reader === 'saved-v11') {
-    const create = manifests.createContextManifestFromAssemblyV1
-    vi.spyOn(manifests, 'createContextManifestFromAssemblyV1').mockImplementation(input => create({...input,
-      readerVersion: input.readerVersion === 'chat-situation-runtime-view-v13' ? 'chat-situation-runtime-view-v11' : input.readerVersion}))
+    useHistoricalChatReaderFixture('chat-situation-runtime-view-v11', 'chat-relevance-v5')
   }
   const result = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'player', skillId: 'character.chat-situation-construction',
     objective: '情境事实来源工程检查', runAI: async () => JSON.stringify(draft), runReviewAI: async () => JSON.stringify({checks: CHAT_SITUATION_REVIEW_CHECKS_V1.map(check => ({check, passed: true, reason: '工程夹具'}))})})

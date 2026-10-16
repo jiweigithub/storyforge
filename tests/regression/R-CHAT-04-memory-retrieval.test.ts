@@ -50,12 +50,12 @@ it('retrieves from a current goal and unfinished thread without a fresh player q
   expect(view.selection?.memories.some(m => m.key === 'disabled' || m.key === 'other')).toBe(false)
 })
 
-it.each([100, 300, 1000])('retrieves a retained old commitment beyond %i messages without depending on the recent-message window', length => {
+it.each([100, 300, 1000])('retains v7 retrieval of old commitments beyond %i messages without depending on the recent-message window', length => {
   const s = crowded(), template = s.messages[0]
   s.messages = Array.from({length}, (_, i) => ({...template, messageId: `past-${i}`, eventSequence: i + 1,
     text: i === 0 ? '约好把靛蓝地图交还北侧石墙旁的主人。' : '聊了几句沿途的风景。'}))
   s.messages.push({...template, messageId: 'now', eventSequence: length + 1})
-  const view = buildInteractionContextWindow(s, 'guard', {maxCharacters: 8500})
+  const view = buildInteractionContextWindow(s, 'guard', {maxCharacters: 8500, retrievalVersion: 'chat-relevance-v7'})
   expect(view.messages.some(m => m.messageId === 'past-0')).toBe(false)
   expect(view.memories.map(m => m.memoryId)).toContain('relevant')
   expect(view.omittedMessageCount).toBeGreaterThan(0)

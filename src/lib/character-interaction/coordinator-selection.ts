@@ -1,3 +1,4 @@
+import {selectChatHistoryCoordinatorContextV1} from './history-coordinator-context'
 import {chatMemoryCorrectionContextV1} from './memory-correction-context'
 import {estimateTokens} from '../ai/context-budget'
 import {createContextTextScorerV1} from '../context-gateway/lexical-query'
@@ -19,6 +20,7 @@ const HEADER = '【角色聊天情境协调视角，仅供情境构建和审查�
  * hashes. v1 keeps every accepted memory; v2 ranks unpinned summaries. Neither
  * may omit established facts, permissions or material delivered to the actor. */
 export function selectChatCoordinatorContextV1(state: CharacterInteractionRuntimeState, candidate: {text: string; actorKey?: string; retrievalVersion?: ChatRetrievalVersion; sourceUnits?: ChatSourceUnitSetV1; discoveryEvidence?: boolean} = {text: ''}) {
+  if (candidate.retrievalVersion === 'chat-relevance-v8') return selectChatHistoryCoordinatorContextV1(state, candidate)
   const corrections = supportsChatCorrectionContextV1(candidate.retrievalVersion ?? 'chat-relevance-v4')
   const memoryCorrections = corrections ? (candidate.actorKey ? [candidate.actorKey] : state.profiles.map(p => p.participantKey)).flatMap(key => chatMemoryCorrectionContextV1(state, key)) : []
   const promises = corrections || candidate.retrievalVersion == null || candidate.retrievalVersion === 'chat-relevance-v3'

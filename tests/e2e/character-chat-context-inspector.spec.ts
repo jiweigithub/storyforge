@@ -43,6 +43,8 @@ test('inspects the exact historical player-visible context after refresh without
   await expect(inspector).toContainText('请先留意门口。')
   await expect(inspector).toContainText('用户排除 1 条，长度预算省略 0 条')
   const selection = page.getByTestId('chat-context-selection')
+  await expect(selection).toContainText('已知事实的选入与省略')
+  await expect(selection).toContainText('共同事项的选入与省略')
   await selection.locator('summary').filter({hasText: '来源知识的选入与省略'}).click()
   await expect(selection).toContainText('本轮省略 · 按相关性排序和长度预算选择')
   while (await selection.getByRole('button', {name: '再显示 12 条资料'}).count()) await selection.getByRole('button', {name: '再显示 12 条资料'}).click()

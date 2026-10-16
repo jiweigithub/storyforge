@@ -69,15 +69,17 @@ it('does not resurrect optional excluded messages and does not trim mandatory di
   expect(before.messages).toHaveLength(s.messages.length)
 })
 
-it('preserves the old reader and actor bytes while binding new reviews to the new selection policy', () => {
+it('preserves v4 through v7 actor bytes and identifies v8 history selection separately', () => {
   const s = crowded(4), old = buildInteractionContextWindow(s, 'guard', {retrievalVersion: 'chat-relevance-v4'})
-  const current = buildInteractionContextWindow(s, 'guard')
+  const current = buildInteractionContextWindow(s, 'guard', {retrievalVersion: 'chat-relevance-v7'})
   expect(formatInteractionRuntimeContextV1(s.profiles[0], current)).toBe(formatInteractionRuntimeContextV1(s.profiles[0], old))
   expect(chatRetrievalVersionForReader('chat-narrative-runtime-view-v8')).toBe('chat-relevance-v4')
   expect(chatRetrievalVersionForReader('chat-narrative-runtime-view-v9')).toBe('chat-relevance-v5')
   expect(chatRetrievalVersionForReader('chat-narrative-runtime-view-v10')).toBe('chat-relevance-v6')
   expect(chatRetrievalVersionForReader('chat-narrative-runtime-view-v11')).toBe('chat-relevance-v7')
-  expect(chatRetrievalVersionForReader('chat-narrative-runtime-view-v12')).toBeNull()
+  expect(chatRetrievalVersionForReader('chat-narrative-runtime-view-v12')).toBe('chat-relevance-v8')
+  expect(chatRetrievalVersionForReader('chat-narrative-runtime-view-v13')).toBeNull()
+  expect(buildInteractionContextWindow(s, 'guard').historyContext?.version).toBe(1)
   const legacy = selectChatCoordinatorContextV1(s, {text: '', retrievalVersion: 'chat-relevance-v4'})
   expect(legacy).toBe(selectChatCoordinatorContextV1(s))
   expect(legacy).not.toContain('dialogueSelection')

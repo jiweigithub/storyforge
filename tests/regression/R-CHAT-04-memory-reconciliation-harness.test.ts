@@ -216,7 +216,7 @@ it('does not replace an old producer input with new correction evidence during r
   })
   const create = manifests.createContextManifestFromAssemblyV1
   vi.spyOn(manifests, 'createContextManifestFromAssemblyV1').mockImplementation(input => create({...input,
-    readerVersion: input.readerVersion === 'chat-narrative-runtime-view-v11' ? 'chat-narrative-runtime-view-v7' : input.readerVersion}))
+    readerVersion: input.readerVersion === 'chat-narrative-runtime-view-v12' ? 'chat-narrative-runtime-view-v7' : input.readerVersion}))
   let reviews = 0
   await expect(generateInteractionRuntimeCandidateV1({...input(f), runReviewAI: async () => {reviews++; return JSON.stringify(output(f))}})).rejects.toThrow('原行动没有读取完整记忆修正依据')
   expect(reviews).toBe(0)

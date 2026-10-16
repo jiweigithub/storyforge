@@ -63,8 +63,8 @@ it('explains explicit exclusions separately from the historical message budget',
   const result = await generate(f), inspection = await readChatContextInspectionV1(f.scope, f.sessionId, result.snapshot.run.id)
   expect(inspection.available).toBe(true)
   if (!inspection.available) throw new Error('missing inspection')
-  expect(inspection.omissions).toEqual({excludedMessages: 1, budgetMessages: 2})
-  expect(inspection.messages.map(m => m.messageId)).toEqual(Array.from({length: 32}, (_, i) => `input-${i + 4}`))
+  expect(inspection.omissions).toEqual({excludedMessages: 1, budgetMessages: 0})
+  expect(inspection.messages.map(m => m.messageId)).toEqual(Array.from({length: 34}, (_, i) => `input-${i + 2}`))
 })
 
 it('retains completed exact evidence after export/import while keeping branch histories distinct', async () => {

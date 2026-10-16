@@ -9,7 +9,7 @@ import {chatCommitmentHistoryStateFixture, historyTerms} from '../helpers/chat-c
 it('recalls a relevant resolved promise with both source excerpts while preserving open and latest dispositions', () => {
   const s = chatCommitmentHistoryStateFixture(), before = structuredClone(s)
   expect(() => buildInteractionContextWindow(s, 'guard', {retrievalVersion: 'chat-relevance-v2'})).toThrow('超过预算')
-  const view = buildInteractionContextWindow(s, 'guard', {maxCharacters: 10_000})
+  const view = buildInteractionContextWindow(s, 'guard', {maxCharacters: 10_000, retrievalVersion: 'chat-relevance-v7'})
   const retained = view.chatNarrative!.goals[0].commitments!
   for (const i of [7, 14, 15]) expect(retained).toContainEqual(s.chatNarrative!.situation.goals[0].commitments![i])
   expect(view.selection?.commitments).toContainEqual({key: 'promise-7:promise', included: true, reason: 'dialogue'})
@@ -34,7 +34,7 @@ it('does not expose a promise to an uninformed role or use private goals in shar
   expect(JSON.stringify(unknown)).not.toContain(historyTerms(15))
   for (const c of s.chatNarrative!.situation.goals[0].commitments!) c.audienceKeys.push('artisan')
   for (const m of s.messages.filter(m => m.role === 'character')) m.audienceKeys!.push('artisan')
-  const shared = buildInteractionContextWindow(s, 'artisan', {maxCharacters: 10_000})
+  const shared = buildInteractionContextWindow(s, 'artisan', {maxCharacters: 10_000, retrievalVersion: 'chat-relevance-v7'})
   expect(shared.sharedCommitments?.some(c => c.commitmentKey === 'promise-15:promise')).toBe(true)
   expect(shared.sharedCommitments?.some(c => c.commitmentKey === 'promise-14:promise')).toBe(true)
   expect(JSON.stringify(shared)).not.toMatch(/担心再次错怪人|无辜旅人|柜台下/)
@@ -56,13 +56,13 @@ it('keeps every actor-delivered promise and exact candidate reference in the coo
   expect(() => selectChatCoordinatorContextV1(s, {text: '', retrievalVersion: 'chat-relevance-v2'})).toThrow('超过本轮预算')
 })
 
-it.each([100, 300, 1000])('recalls an old resolved promise beyond %i messages and nested branch rebases', length => {
+it.each([100, 300, 1000])('retains the v7 historical policy beyond %i messages and nested branch rebases', length => {
   const s = chatCommitmentHistoryStateFixture(), query = s.messages.pop()!
   for (let i = 0; i < length; i++) s.messages.push({...query, messageId: `past-${i}`, eventSequence: 42 + i, text: '谈过沿途的风景。'})
   s.messages.push({...query, eventSequence: 42 + length})
   s.chatNarrative!.lastEventSequence = 42 + length
   const branch = rebaseInteractionStateForBranch(rebaseInteractionStateForBranch(s, 42 + length), 0)
-  const view = buildInteractionContextWindow(branch, 'guard', {maxCharacters: 10_000})
+  const view = buildInteractionContextWindow(branch, 'guard', {maxCharacters: 10_000, retrievalVersion: 'chat-relevance-v7'})
   expect(view.chatNarrative!.goals[0].commitments!.find(c => c.commitmentKey === 'promise-7:promise')?.resolution?.sequence).toBeLessThan(0)
   expect(view.messages.some(m => m.messageId === 'promise-7')).toBe(false)
   expect(view.selection?.commitments?.find(c => c.key === 'promise-7:promise')?.included).toBe(true)
