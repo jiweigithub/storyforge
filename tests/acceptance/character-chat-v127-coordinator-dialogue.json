@@ -17,7 +17,8 @@
       "manifestPath": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v127-growth-s8wgaucd/manifest.json",
       "manifestSha256": "21dca6db4d6781ac42ca237d04251434770bfff7579fedc2101b7e5c2db2d3fd",
       "files": 3484
-    }
+    },
+    "commit": "38ba906b3efffd0069c605e70ff37b9c201695ce"
   },
   "boundary": {
     "product": "character-interaction",
@@ -201,5 +202,36 @@
   "olderValidation": {
     "V123": "Both queued jobs verified unstarted/no children, superseded with exit143; not a test pass or executed test failure.",
     "proof": "/tmp/storyforge-chat-v123-queued-superseded.json"
+  },
+  "fullValidation": {
+    "ci": {
+      "handle": 28475,
+      "snapshot": {
+        "gitHistory": "shared local Git object store; exact HEAD and independent tracked tree verified",
+        "head": "38ba906b3efffd0069c605e70ff37b9c201695ce",
+        "root": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v127-ci-z7s5l6zr/storyforge",
+        "manifestPath": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v127-ci-z7s5l6zr/manifest.json",
+        "manifestSha256": "0cb034c8fce904ed0c8a6be6970bb112917620b3ae55a80e04c4c4ece944e2c6",
+        "files": 3485
+      },
+      "log": "/tmp/storyforge-chat-v127-full-ci.log",
+      "receipt": "/tmp/storyforge-chat-v127-full-ci-receipt.json",
+      "status": "queued; not started at recording"
+    },
+    "e2e": {
+      "handle": 98973,
+      "snapshot": {
+        "gitHistory": "shared local Git object store; exact HEAD and independent tracked tree verified",
+        "head": "38ba906b3efffd0069c605e70ff37b9c201695ce",
+        "root": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v127-e2e-txlkwgxk/storyforge",
+        "manifestPath": "/var/folders/mn/tmz6c3px6zn7gzpgrt1rjch80000gn/T/storyforge-chat-v127-e2e-txlkwgxk/manifest.json",
+        "manifestSha256": "0cb034c8fce904ed0c8a6be6970bb112917620b3ae55a80e04c4c4ece944e2c6",
+        "files": 3485
+      },
+      "log": "/tmp/storyforge-chat-v127-full-e2e.log",
+      "receipt": "/tmp/storyforge-chat-v127-full-e2e-receipt.json",
+      "status": "queued; not started at recording",
+      "port": 51158
+    }
   }
 }
