@@ -1,4 +1,4 @@
-import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1 } from './open-coordination'
+import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1, assertTtrpgOpenSituationEpochAuthorityV1, isTtrpgOpenPassiveEpochV1, assertTtrpgOpenSituationWindowEventV1 } from './open-coordination'
 import { verifyTtrpgOpenBriefCandidateProofV1 } from './open-brief-candidate'
 import { parseTtrpgOpenModelMemoryReceiptV2 } from './open-model-memory-contract'
 import { ttrpgOpenMemoryPrefixRootsV2, ttrpgOpenModelMemoryWindowBodyV2 } from './open-memory-prefix-proof'
@@ -396,6 +396,7 @@ async function appendFormalTtrpgCommand(
   }
   const previewHead = await readVerifiedProductRuntimeHeadV1(previewSession);
   const previewState = previewHead.state;
+  assertTtrpgOpenSituationWindowEventV1(previewState.ttrpg?.sessionKey ? parseTtrpgRuntimeStateV2(previewState.ttrpg) : null, input.type);
   const previewParticipants = await db.ttrpgSessionParticipants
     .where("sessionId")
     .equals(input.sessionId)
@@ -672,7 +673,7 @@ export async function consultTtrpgOracleV1(input: FormalTtrpgCommandEnvelope & {
       await verifyTtrpgOpenOracleJournalV1({ receipts: run.oracleReceipts ?? [], rulePack: content.rulePack.content,
         sessionKey: runtime.sessionKey, seed: session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] });
       const epoch = run.coordination.epochs.find(epoch => epoch.epochKey === run.coordination.activeEpochKey);
-      if (!epoch || epoch.status !== 'active' || epoch.viewerKey !== viewerKey || epoch.triggerKind === 'request-brief'
+      if (!epoch || epoch.status !== 'active' || epoch.viewerKey !== viewerKey || isTtrpgOpenPassiveEpochV1(epoch)
         || epoch.authorizationHash !== await hashProductProductionValueV2(authorization)
         || run.stage.status !== 'open' || runtime.product.safety.status !== 'active') throw new Error('[ttrpg-oracle] Oracle 需要本人当前活动窗口且团局未暂停。');
       if (run.consultedThisWorldTurn >= 2) throw new Error('[ttrpg-oracle] 每个 worldTurn 最多咨询两次，不能以新 commandId 重置额度。');
@@ -930,11 +931,11 @@ export async function retireTtrpgOpenSessionFactV1(input: FormalTtrpgCommandEnve
 }
 
 export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & {
-  viewerKey: string; triggerKind: "submit-action" | "continue-host" | "request-brief"; rawInput: string; manualAction?: TtrpgOpenManualActionAuthorizationV1;
+  viewerKey: string; triggerKind: "submit-action" | "continue-host" | "request-brief" | "request-situation"; rawInput: string; manualAction?: TtrpgOpenManualActionAuthorizationV1;
 }): Promise<ProductRuntimeEvent> {
   const viewerKey = openKey(input.viewerKey, "viewerKey");
   const rawInput = openText(input.rawInput, "rawInput", 10_000);
-  if (input.triggerKind !== "submit-action" && input.triggerKind !== "continue-host" && input.triggerKind !== "request-brief") throw new Error("[ttrpg] epoch 触发种类无效。");
+  if (input.triggerKind !== "submit-action" && input.triggerKind !== "continue-host" && input.triggerKind !== "request-brief" && input.triggerKind !== "request-situation") throw new Error("[ttrpg] epoch 触发种类无效。");
   return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.epoch.started",
     intent: { viewerKey, rawInput, triggerKind: input.triggerKind, ...(input.manualAction ? { manualAction: input.manualAction } : {}) },
     build: async ({ state, session, sequence, ttrpgContent, participants }) => {
@@ -950,6 +951,10 @@ export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
       if (input.triggerKind === 'request-brief') {
         if (!content.campaign.runtimePolicy.enabled) throw new Error('[ttrpg-brief] 冻结作品未允许模型复盘');
         assertTtrpgOpenBriefEpochAuthorityV1(runtime, viewerKey);
+      }
+      if (input.triggerKind === 'request-situation') {
+        if (!content.campaign.runtimePolicy.enabled) throw new Error('[ttrpg-situation] 冻结作品未允许模型生成局势');
+        assertTtrpgOpenSituationEpochAuthorityV1(runtime, viewerKey);
       }
       const inputRevision = await hashProductProductionValueV2({ sessionKey: runtime.sessionKey,
         triggerKind: input.triggerKind, rawInput, viewerKey, authorizationHash, ...(input.manualAction ? { manualAction: input.manualAction } : {}) });

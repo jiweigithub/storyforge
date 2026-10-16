@@ -1,4 +1,4 @@
-import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1 } from './open-coordination'
+import { ttrpgOpenEpochBudgetForTriggerV1, assertTtrpgOpenBriefEpochAuthorityV1, assertTtrpgOpenSituationEpochAuthorityV1, assertTtrpgOpenSituationWindowEventV1 } from './open-coordination'
 import { applyTtrpgOpenTableMessageEventV1 } from './open-table-conversation-reducer'
 import { applyTtrpgOpenMemoryEventV1 } from './open-memory-reducer'
 import { applyTtrpgOpenHostingDelegationEventV1 } from './open-hosting-delegation'
@@ -81,6 +81,7 @@ export function applyTtrpgRuntimeEventV1(
   event: ProductRuntimeEvent,
   payload: ProductRuntimeJsonObjectV1,
 ): ProductRuntimeState {
+  assertTtrpgOpenSituationWindowEventV1(state.ttrpg?.sessionKey ? parseTtrpgRuntimeStateV2(state.ttrpg) : null, event.type)
   if (applyTtrpgOpenMemoryEventV1(state, event, payload)) {
     state.ttrpg = parseTtrpgRuntimeStateV2(state.ttrpg)!
     state.lastSequence = event.sequence
@@ -164,6 +165,7 @@ export function applyTtrpgRuntimeEventV1(
         throw new Error("epoch.started 的真人授权、初始额度或活动窗口无效。");
       }
       if (epoch.triggerKind === 'request-brief') assertTtrpgOpenBriefEpochAuthorityV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.viewerKey);
+      if (epoch.triggerKind === 'request-situation') assertTtrpgOpenSituationEpochAuthorityV1(parseTtrpgRuntimeStateV2(state.ttrpg)!, epoch.viewerKey);
       if (epoch.manualAction) {
         const request = parseTtrpgOpenManualRequestV1(epoch.manualAction);
         if (seat.role !== 'player' || request.actorKey !== seat.actorKey || !isObject(payload.intent)

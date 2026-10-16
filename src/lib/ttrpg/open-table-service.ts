@@ -1,3 +1,4 @@
+import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { listTtrpgOpenHistoricalResponsesV1, readTtrpgOpenHistoricalResponseV1 } from './open-imported-response'
 import { readTtrpgOpenModelCallRunsV1 } from './open-model-call-evidence'
 import { projectTtrpgOpenContextInspectionV1 } from './open-context-inspection'
@@ -327,7 +328,8 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
   if (head.sequence !== f.state.lastSequence || head.sequence !== own.readEvidence.sequence || head.stateHash !== own.readEvidence.stateHash) throw new TtrpgOpenReadConflictV1('读取期间进度已改变，请重新读取冒险')
   return { ...bootstrap, player: { actorKey: current.seat.actorKey!, viewerKey: input.viewerKey, view: own.view,
     aiAllowed: current.seat.consent.aiAdviceAllowed && f.content.campaign.runtimePolicy.enabled && gateRecovery?.status !== 'stopped',
-    passiveRecap: epoch?.triggerKind === 'request-brief', manualEpoch: Boolean(epoch?.manualAction),manualActionPending: epoch?.manualAction && !run.operations.some(o => o.authorizationEpochKey === epoch.epochKey) && epoch.viewerKey === input.viewerKey ? { epochKey: epoch.epochKey,requestHash: epoch.manualAction.requestHash } : null,
+    passivePurpose: epoch?.triggerKind === 'request-situation' ? 'situation-generation' : epoch?.triggerKind === 'request-brief' ? 'stage-brief' : null,
+    passiveRecap: Boolean(epoch && isTtrpgOpenPassiveEpochV1(epoch)), manualEpoch: Boolean(epoch?.manualAction),manualActionPending: epoch?.manualAction && !run.operations.some(o => o.authorizationEpochKey === epoch.epochKey) && epoch.viewerKey === input.viewerKey ? { epochKey: epoch.epochKey,requestHash: epoch.manualAction.requestHash } : null,
     epochKey: epoch?.epochKey ?? null, isEpochStarter: epoch?.viewerKey === input.viewerKey,
     remainingCalls: gateRecovery?.status === 'stopped' ? 0 : epoch ? Math.max(0, epoch.budget.maximumCalls - budget!.countedRequests) : f.runtime.epochBudget.maximumCalls,
     consequence: consequence ? { owner: consequence.owner, cycleKey: consequence.cycle.cycleKey, workKey: consequence.work.workKey, operationKey: consequence.operation.operationKey } : null, consequenceApprovals,

@@ -12,6 +12,10 @@ export interface TtrpgOpenSituationPreflightInputV1 { scope: WorkspaceScope; ses
 export async function loadTtrpgOpenSituationProposalBasisV1(input: TtrpgOpenSituationPreflightInputV1) {
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'human', viewerKey: input.viewerKey } })
   if (!loaded.humanHost || loaded.seat?.role !== 'gm' || loaded.seat.controller === 'ai') throw new Error('局势私域预检需要当前已认领的真人 GM；兼任主持不取得 GM 资料。')
+  return buildTtrpgOpenSituationBasisFromVerifiedReadV1(loaded, input.proposalKey)
+}
+/** Internal builder: the caller must first enforce its exact human or model consumer authority. */
+export async function buildTtrpgOpenSituationBasisFromVerifiedReadV1(loaded: Awaited<ReturnType<typeof loadTtrpgOpenMemoryReadStateV1>>, inputProposalKey: string) {
   const { content, runtime, authorization, source } = loaded, run = runtime.openRun!, ancestors = runtime.branchLineage?.ancestors ?? []
   if (authorization.seats.some(s => !s.consent.sessionLoggingAllowed)) throw new Error('本桌尚未同意保存生成局势所需的来源记录。')
   if (run.stage.status !== 'open' || runtime.product.safety.status !== 'active') throw new Error('局势预检需要阶段进行中且本桌未暂停。')
@@ -19,11 +23,14 @@ export async function loadTtrpgOpenSituationProposalBasisV1(input: TtrpgOpenSitu
   await verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash, oracleReceipts: run.oracleReceipts ?? [], storyFacts: runtime.product.effectLedger.storyFacts })
   const sessionFacts = ttrpgOpenSessionFactsV1(run.factLedger).filter(f => !f.retired)
   const selected = new Set(authorization.selectedActorKeys), personalizationSources: TtrpgOpenSituationPersonalizationSourceV1[] = []
+  const personalizationValues: Array<{ sourceKey: string; value: unknown }> = []
   for (const actorKey of authorization.selectedActorKeys) {
     const actor = content.campaign.characterTemplates.find(a => a.characterKey === actorKey && a.role === 'player') ?? p.fail('个性化身份缺少冻结玩家模板')
     // Public authored identity is not a new objective fact or a player commitment.
-    const contentHash = await hash({ runtimeSourceHash: source.runtimeSourceHash, actorKey, name: actor.name, description: actor.description })
-    personalizationSources.push({ sourceKey: `identity.${contentHash.slice(0, 48)}`, kind: 'identity', actorKeys: [actorKey], knownByActorKeys: [actorKey], sourceRef: null, contentHash })
+    const value = { runtimeSourceHash: source.runtimeSourceHash, actorKey, name: actor.name, description: actor.description }
+    const contentHash = await hash(value), sourceKey = `identity.${contentHash.slice(0, 48)}`
+    personalizationSources.push({ sourceKey, kind: 'identity', actorKeys: [actorKey], knownByActorKeys: [actorKey], sourceRef: null, contentHash })
+    personalizationValues.push({ sourceKey, value })
   }
   const origins = [...ancestors.map(a => ({ sessionKey: a.sessionKey, run: a.snapshot.openRun })), { sessionKey: runtime.sessionKey, run }]
   for (const origin of origins) for (const operation of origin.run?.operations ?? []) {
@@ -33,7 +40,11 @@ export async function loadTtrpgOpenSituationProposalBasisV1(input: TtrpgOpenSitu
     if (!approved) continue
     const contentHash = await hash({ sourceRef: approved.sourceRef, actorKey, planHash: operation.planHash, riskHash: operation.riskHash, decision: approved.decision })
     const sourceKey = `choice.${contentHash.slice(0, 48)}`
-    if (!personalizationSources.some(s => s.sourceKey === sourceKey)) personalizationSources.push({ sourceKey, kind: 'choice', actorKeys: [actorKey], knownByActorKeys: [actorKey], sourceRef: approved.sourceRef, contentHash })
+    if (!personalizationSources.some(s => s.sourceKey === sourceKey)) {
+      personalizationSources.push({ sourceKey, kind: 'choice', actorKeys: [actorKey], knownByActorKeys: [actorKey], sourceRef: approved.sourceRef, contentHash })
+      personalizationValues.push({ sourceKey, value: { approval: { sourceRef: approved.sourceRef, actorKey, planHash: operation.planHash, riskHash: operation.riskHash, decision: approved.decision },
+        request: structuredClone(operation.plan.request), status: 'completed', grantsPlayerCommitment: false } })
+    }
   }
   const rows = [...(run.situations.history ?? []).map(h => h.instance), ...run.situations.active, ...run.situations.queued]
   const originByInstance = new Map<string, string>()
@@ -49,7 +60,7 @@ export async function loadTtrpgOpenSituationProposalBasisV1(input: TtrpgOpenSitu
   }
   const order = origins.map(o => o.sessionKey)
   history.sort((a, b) => order.indexOf(a.sourceRef.sessionKey) - order.indexOf(b.sourceRef.sessionKey) || a.sourceRef.sequence - b.sourceRef.sequence || a.situationKey.localeCompare(b.situationKey))
-  const proposalKey = p.key(input.proposalKey, 'system proposal key')
+  const proposalKey = p.key(inputProposalKey, 'system proposal key')
   const basis: TtrpgOpenSituationProposalBasisV1 = {
     runtimeSourceHash: source.runtimeSourceHash, worldReleaseHash: content.campaign.sourceWorld.contentHash,
     sourceLineageHash: await hash({ sessionKey: runtime.sessionKey, runtimeSourceHash: source.runtimeSourceHash, ancestors: ancestors.map(a => a.evidenceHash) }),
@@ -60,7 +71,7 @@ export async function loadTtrpgOpenSituationProposalBasisV1(input: TtrpgOpenSitu
     cooldownUntilWorldTurn: { ...run.situations.cooldowns }, personalizationSources,
   }
   await loaded.assertCurrent()
-  return { basis, readEvidence: { sequence: loaded.state.lastSequence, stateHash: loaded.stateHash, runtimeSourceHash: source.runtimeSourceHash }, assertCurrent: loaded.assertCurrent }
+  return { basis, personalizationValues, readEvidence: { sequence: loaded.state.lastSequence, stateHash: loaded.stateHash, runtimeSourceHash: source.runtimeSourceHash }, assertCurrent: loaded.assertCurrent }
 }
 export async function preflightTtrpgOpenGeneratedSituationV1(input: TtrpgOpenSituationPreflightInputV1 & { value: unknown }) {
   const loaded = await loadTtrpgOpenSituationProposalBasisV1(input)

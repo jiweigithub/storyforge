@@ -7,6 +7,8 @@ export interface TtrpgOpenResourceCatalogV1 { fingerprint: string; resources: Tt
 export function createTtrpgOpenRuntimeResourceProviderV1(input: {
   sourceKey: string; providerVersion: string; normalizationVersion: string; kinds: ContextResourceKind[]
   catalog: (scope: FrozenResourceScopeV1) => Promise<TtrpgOpenResourceCatalogV1>
+  /** Some private consumers also recheck live authority before returning pinned metadata or bytes. */
+  assertAccess?: (scope: FrozenResourceScopeV1) => Promise<void>
 }): ContextResourceProviderV1 {
   const catalog = input.catalog
   const page = async (request: ResourceListInputV1, query?: string) => {
@@ -44,6 +46,7 @@ export function createTtrpgOpenRuntimeResourceProviderV1(input: {
       const original = evidence(data)
       const provider = createTtrpgOpenRuntimeResourceProviderV1({ ...input, catalog: async actual => {
         if (canonicalStringify(actual) !== frozenScope) throw new Error('[ttrpg-open-provider] 只读会话不能更换作用域或角色')
+        await input.assertAccess?.(actual)
         return data
       } })
       delete provider.openReadSession

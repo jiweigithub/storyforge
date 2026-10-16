@@ -1,3 +1,4 @@
+import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { ttrpgOpenOperationEffectTemplateKeyV1,ttrpgOpenOperationEffectDegreeV1,assertTtrpgOpenInteractionChoiceCostV1 } from './open-interaction'
 import { assertTtrpgOpenManualRequestV1 } from './open-manual-action'
 import { assertTtrpgOpenDelegatedCompanionProposalV1 } from './open-hosting-delegation'
@@ -33,7 +34,7 @@ export function applyTtrpgOpenOperationEventV1(state: ProductRuntimeState, event
     const operation = parseTtrpgOpenOperationV1(payload.operation, runtime.sessionKey)
     const body = p.record(payload, ['operation', 'intent', ...(operation.inheritance ? ['inheritedRuleReceipt'] : [])], 'operation.started')
     const epoch = run.coordination.epochs.find(epoch => epoch.epochKey === operation.authorizationEpochKey)
-    if (!epoch || epoch.triggerKind === 'request-brief' || epoch.status !== 'active' || run.coordination.activeEpochKey !== epoch.epochKey
+    if (!epoch || isTtrpgOpenPassiveEpochV1(epoch) || epoch.status !== 'active' || run.coordination.activeEpochKey !== epoch.epochKey
       || operation.plan.authorizationHash !== epoch.authorizationHash || operation.plan.rulePackContentHash !== runtime.product.rulePackContentHash
       || operation.startedRef.sequence !== event.sequence || operation.status !== 'awaiting-approval'
       || Boolean(operation.privateChoiceDisclosures?.length) || operation.handoff || operation.preauthorization || operation.approvals.length || operation.businessRefs.length || operation.receipts.length || operation.completedRef !== null || operation.pendingChoice !== null || operation.discoveryChoices

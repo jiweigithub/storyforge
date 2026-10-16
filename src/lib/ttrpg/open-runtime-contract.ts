@@ -1,3 +1,4 @@
+import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { ttrpgOpenEpochBudgetForTriggerV1 } from './open-coordination'
 import { parseTtrpgOpenTableMessageV1,assertTtrpgOpenTableMessageHistoryV1,type TtrpgOpenTableMessageV1 } from './open-table-conversation'
 import { parseTtrpgOpenMemoryReceipt, type TtrpgOpenMemoryReceipt } from './open-memory-receipt'
@@ -952,7 +953,7 @@ export function parseTtrpgRuntimeStateV2(
       || new Set(openRun.ruleReceipts.map(receipt => receipt.operationKey)).size !== openRun.ruleReceipts.length
       || openRun.operations.filter(operation => ["awaiting-approval", "executing"].includes(operation.status)).length > 1
       || openRun.operations.some(operation => operation.plan.epochKey !== operation.authorizationEpochKey
-        || !openRun.coordination.epochs.some(epoch => epoch.epochKey === operation.authorizationEpochKey && epoch.triggerKind !== 'request-brief'))
+        || !openRun.coordination.epochs.some(epoch => epoch.epochKey === operation.authorizationEpochKey && !isTtrpgOpenPassiveEpochV1(epoch)))
       || openRun.ruleReceipts.some(receipt => receipt.sourceRef.sessionKey !== sessionKey
         || !openRun.operations.some(operation => operation.operationKey === receipt.operationKey && operation.planHash === receipt.frozenPlanHash))) {
       fail("operation 身份/epoch/规则回执不一致");

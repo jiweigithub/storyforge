@@ -8,6 +8,7 @@ import { parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coo
 import { hashProductProductionValueV2 as hash } from '../product-production/hash'
 import * as p from './open-contract-parse'
 
+export const TTRPG_OPEN_SITUATION_INPUT_SOURCE_V1 = 'ttrpgOpenSituationInput'
 export interface TtrpgOpenSituationPersonalizationSourceV1 {
   sourceKey: string; kind: 'identity' | 'choice' | 'commitment'; actorKeys: string[]; knownByActorKeys: string[];
   sourceRef: TtrpgOpenSourceRefV1 | null; contentHash: string;

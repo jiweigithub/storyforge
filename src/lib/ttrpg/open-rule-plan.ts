@@ -1,3 +1,4 @@
+import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { parseTtrpgOpenInteractionBindingV1,assertTtrpgOpenInteractionActionV1 } from './open-interaction'
 import { projectTtrpgOpenWorldFactsV1 } from './open-fact-authority'
 import { ttrpgOpenSessionFactsV1 } from './open-fact-ledger'
@@ -200,7 +201,7 @@ export async function createTtrpgOpenRulePlanV1(input: {
   if (run.worldTime.worldTurn >= input.content.campaign.stageClosurePolicy.maximumWorldTurns) fail('该阶段已达最大世界轮次；请明确收束/存档，不能继续耗时行动')
   const epoch = run.coordination.epochs.find(epoch => epoch.epochKey === run.coordination.activeEpochKey)
   if (!epoch || epoch.status !== 'active') fail('需要真人启动的 active epoch')
-  if (epoch.triggerKind === 'request-brief') fail('复盘授权不能结算角色或队友行动')
+  if (isTtrpgOpenPassiveEpochV1(epoch)) fail('复盘授权不能结算角色或队友行动')
   const seat = auth.seats.find(seat => seat.actorKey === request.actorKey && seat.role === 'player')
   if (!seat || !auth.selectedActorKeys.includes(request.actorKey)) fail('行动者不在已确认活动席位')
   if ((request.controllerMode === 'human' && (seat.controller === 'ai' || seat.assignmentState !== 'claimed'))

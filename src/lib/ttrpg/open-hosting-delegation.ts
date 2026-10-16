@@ -1,3 +1,4 @@
+import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 /** A human grants one bounded window; this never grants player decisions or renews budgets. */
 import type { ProductRuntimeEvent,ProductRuntimeState } from '../types'
 import type { ProductRuntimeJsonObjectV1 } from '../product/runtime-values'
@@ -24,7 +25,7 @@ export function createTtrpgOpenHostingDelegationV1(state: ProductRuntimeState,in
   const f = owner(state,input.epochKey,input.viewerKey)
   if (input.sequence !== state.lastSequence + 1) p.fail('有限主持委托必须来自下一真实事件')
   assertTtrpgOpenModelActorV1(f.auth,'prose.ttrpg-open-kp','gm',input.viewerKey)
-  if (f.epoch.hostingDelegation || f.epoch.manualAction || f.runtime.product.safety.status !== 'active' || f.run.stage.status !== 'open'
+  if (isTtrpgOpenPassiveEpochV1(f.epoch) || f.epoch.hostingDelegation || f.epoch.manualAction || f.runtime.product.safety.status !== 'active' || f.run.stage.status !== 'open'
     || f.runtime.branchLineage?.recoveryTasks.some(t => !['completed','withdrawn'].includes(t.status))) p.fail('当前窗口不能新授予有限主持委托')
   return parseTtrpgOpenHostingDelegationV1({ schema: 'storyforge.ttrpg-open-hosting-delegation',version: 1,
     epochKey: f.epoch.epochKey,viewerKey: input.viewerKey,sourceRef: { sessionKey: f.runtime.sessionKey,sequence: input.sequence },authorizationRef: f.auth.sourceRef,
