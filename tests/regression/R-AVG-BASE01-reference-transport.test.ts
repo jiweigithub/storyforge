@@ -137,6 +137,27 @@ describe('R-AVG-BASE01 · actual reference image transport', () => {
     expect(dispatch).toHaveBeenCalledTimes(1)
   })
 
+  it('operation 附空 data 仍是未知结果，不能把空数组当作同步完成', async () => {
+    const { adapter, executable } = await prepare(), { transport, dispatch } = provider({ json: { task_id: 'operation.empty.1', data: [] } })
+    const error = await adapter.generate(executable, transport, signal()).catch(error => error)
+    expect(error).toBeInstanceOf(AvgImageOperationUnknownErrorV1)
+    expect(error.operationId).toBe('operation.empty.1'); expect(dispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('恢复时拒绝被改写的用途、权利、费用、执行位置和输出档位', async () => {
+    const { adapter, executable } = await prepare(), { transport } = provider()
+    const [candidate] = await adapter.generate(executable, transport, signal())
+    const variants = [
+      { ...candidate, mediaClass: 'sfx' },
+      { ...candidate, rights: { ...candidate.rights, rightsPolicyVersion: 'unfrozen-policy' } },
+      { ...candidate, rights: { ...candidate.rights, requiresProviderTermsReview: false } },
+      { ...candidate, providerReceipt: { ...candidate.providerReceipt, costUsd: Number.NaN } },
+      { ...candidate, providerReceipt: { ...candidate.providerReceipt, executionLocation: 'trusted-relay' } },
+      { ...candidate, metadata: { ...candidate.metadata, providerSize: '4K' } },
+    ]
+    for (const variant of variants) await expect(adapter.parseAndVerify(variant)).rejects.toThrow(/回执/)
+  })
+
   it('已 dispatch 网络中断保守保留，绝不重发；非法 operation ID 不入证据', async () => {
     const { adapter, executable } = await prepare(), { transport, dispatch } = provider({ json: { operation_id: 'Bearer unsafe-private-id' } })
     const error = await adapter.generate(executable, transport, signal()).catch(error => error)

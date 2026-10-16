@@ -1462,6 +1462,31 @@ async function latestCheckpointForFingerprintV1(
   return row == null ? null : row as AgentRunCheckpointRecord & { id: number }
 }
 
+async function assertVerifiedProducerCandidateFreshV1(input: {
+  build: ProductBuildRecordV1 & { id: number }
+  proof: VerifiedProducerCandidateV1
+}): Promise<void> {
+  const { build, proof } = input
+  const currentRootRunId = ledgerRootRunIdV1(build.budgetLedgerJson)
+  const run = await db.agentRuns.get(proof.fingerprint.runId)
+  const rootRun = await db.agentRuns.get(proof.rootFingerprint.runId)
+  const checkpoint = await latestCheckpointForFingerprintV1(proof.fingerprint.runId)
+  const producerEventStreamHash = await eventStreamHashV1(proof.fingerprint.runId)
+  const rootEventStreamHash = await eventStreamHashV1(proof.rootFingerprint.runId)
+  if (!run || run.id == null || !rootRun || rootRun.id == null || !checkpoint
+    || currentRootRunId !== proof.rootFingerprint.runId
+    || !sameBuildFingerprintV1(proof.buildFingerprint, await producerBuildFingerprintV1(build))
+    || !sameProducerFingerprintV1(proof.fingerprint, await checkpointFingerprintV1({
+      run: run as AgentRunRecord & { id: number }, checkpoint, eventStreamHash: producerEventStreamHash,
+    }))
+    || !sameRootFingerprintV1(proof.rootFingerprint, await rootFingerprintV1({
+      run: rootRun as AgentRunRecord & { id: number }, eventStreamHash: rootEventStreamHash,
+    }))) {
+    producerProofCache.delete(proof.cacheKey)
+    throw new Error('[product-production-artifact] producer proof 在验收期间已变化')
+  }
+}
+
 function parseCanonicalArtifactJsonV1(json: string, label: string): unknown {
   let value: unknown
   try { value = JSON.parse(json) } catch {
@@ -2434,33 +2459,7 @@ async function acceptTextOpenWorldProductBuildArtifact(
       throw new Error('[product-production-artifact] Build/Plan 在验收期间发生变化')
     }
     if (producerProof) {
-      const currentRootRunId = ledgerRootRunIdV1(build.budgetLedgerJson)
-      const run = await db.agentRuns.get(producerProof.fingerprint.runId)
-      const rootRun = await db.agentRuns.get(producerProof.rootFingerprint.runId)
-      const checkpoint = await latestCheckpointForFingerprintV1(producerProof.fingerprint.runId)
-      const producerEventStreamHash = await eventStreamHashV1(producerProof.fingerprint.runId)
-      const rootEventStreamHash = await eventStreamHashV1(producerProof.rootFingerprint.runId)
-      if (!run || run.id == null || !rootRun || rootRun.id == null || !checkpoint
-        || currentRootRunId !== producerProof.rootFingerprint.runId
-        || !sameBuildFingerprintV1(
-          producerProof.buildFingerprint,
-          await producerBuildFingerprintV1(build as ProductBuildRecordV1 & { id: number }),
-        )
-        || !sameProducerFingerprintV1(
-          producerProof.fingerprint,
-          await checkpointFingerprintV1({
-            run: run as AgentRunRecord & { id: number }, checkpoint, eventStreamHash: producerEventStreamHash,
-          }),
-        )
-        || !sameRootFingerprintV1(
-          producerProof.rootFingerprint,
-          await rootFingerprintV1({
-            run: rootRun as AgentRunRecord & { id: number }, eventStreamHash: rootEventStreamHash,
-          }),
-        )) {
-        producerProofCache.delete(producerProof.cacheKey)
-        throw new Error('[product-production-artifact] producer proof 在验收期间已变化')
-      }
+      await assertVerifiedProducerCandidateFreshV1({ build: build as ProductBuildRecordV1 & { id: number }, proof: producerProof })
     }
     if (prepared.blobObjectId != null) {
       const blob = await db.mediaBlobObjects.get(prepared.blobObjectId)
@@ -2760,6 +2759,41 @@ export async function acceptTextOpenWorldSourcePinBundleArtifactsV1(input: {
     producerProofCache.delete(producerProof.cacheKey)
   }
   return stored
+}
+
+/** Read exact producer evidence before a downstream author decision. This does
+ * not adopt anything, bypass author receipts or treat accepted status as proof.
+ * Call again inside the decision's scoped transaction to fence a later write. */
+export async function verifyAcceptedProductBuildArtifactV1(input: {
+  scope: WorkspaceScope; buildId: number; artifactKey: string; version: number; contentHash: string
+}): Promise<ProductBuildArtifactRecordV1> {
+  const scope = await resolveScope({ scope: input.scope })
+  stableKey(input.artifactKey, 'artifactKey')
+  const build = await db.productBuilds.get(input.buildId)
+  if (!build?.id || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })) throw new Error('[product-production-artifact] 已采用输入 Build 跨 Work 或不存在')
+  const rows = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id, input.artifactKey]).toArray()
+  const matches = rows.filter(row => row.status === 'accepted' && row.controlEpoch === build.controlEpoch)
+  const row = matches[0]
+  if (matches.length !== 1 || !row?.id || !await assertRecordInScope(scope, 'productBuildArtifacts', row, { owner: 'work' })
+    || row.version !== input.version || row.contentHash !== input.contentHash || row.producerRunId == null || row.producerReceiptHash == null
+    || row.carriedFrom !== null || row.parentArtifactHash !== null) throw new Error('[product-production-artifact] 输入不是准确的已采用 producer revision')
+  const proof = await verifiedProducerCandidateV1({ scope, build: build as ProductBuildRecordV1 & { id: number },
+    producerRunId: row.producerRunId, producerReceiptHash: row.producerReceiptHash, inputHash: row.inputHash, fresh: true })
+  const ledger = terminalRawLedgerTaskV1(build.budgetLedgerJson, proof.task.taskKey)
+  if (ledger.status !== 'settled' || ledger.runId !== row.producerRunId
+    || ledger.candidateHash !== proof.candidateHash || ledger.terminalReceiptHash !== row.producerReceiptHash) {
+    throw new Error('[product-production-artifact] 输入 producer ledger 尚未准确结算')
+  }
+  const prepared = await preparedStoredArtifactV1(row)
+  if (!samePreparedProducerArtifactV1({ expected: prepared, actual: proof.artifacts.get(row.artifactKey), importedScopeRebound: proof.importedScopeRebound })) {
+    throw new Error('[product-production-artifact] 已采用输入与真实 producer candidate 不一致')
+  }
+  await verifiedBlobProofsV1({ scope, artifacts: [row], label: 'accepted input' })
+  const currentBuild = await db.productBuilds.get(build.id), current = await db.productBuildArtifacts.get(row.id!)
+  if (!currentBuild?.id || !current || canonicalProductProductionJsonV2(current) !== canonicalProductProductionJsonV2(row)
+    || currentBuild.budgetLedgerJson !== build.budgetLedgerJson) throw new Error('[product-production-artifact] 已采用输入在读取期间已变化')
+  await assertVerifiedProducerCandidateFreshV1({ build: currentBuild as ProductBuildRecordV1 & { id: number }, proof })
+  return structuredClone(row)
 }
 
 export async function readAcceptedBuildArtifacts(input: {

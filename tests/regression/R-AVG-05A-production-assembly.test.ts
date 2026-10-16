@@ -97,6 +97,17 @@ describe('AVG-05A real author assembly production', () => {
     const brief = parseProductProductionBriefV3(s.details.brief!.briefJson)
     expect(()=>parseProductProductionBriefV3({...brief,productionBudget:{...brief.productionBudget,maximumModelCalls:1}})).toThrow(/零 Provider/)
     expect(()=>parseProductProductionBriefV3({...brief,qualityProfile:'commercial-candidate'})).toThrow(/质量边界/)
+    const assetKey = 'avg.generated.pending-background', sceneKey = brief.avgAssembly!.sceneKeys[0]
+    // A private V2 codec/Plan is insufficient to open a paid production entry.
+    expect(()=>parseProductProductionBriefV3({ ...brief, avgAssembly: { ...brief.avgAssembly, version: 2,
+      mediaAssetKeys: [...brief.avgAssembly!.mediaAssetKeys, assetKey], mediaBatch: {
+        schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: 'pending.batch', revision: 1, baseWorkspaceHash: 'a'.repeat(64),
+        requirements: [{ requirementKey: 'background', revision: 1, assetKey, name: '背景', altText: '原创背景',
+          family: { subjectKey: 'room', familyKey: 'room.view', variantKey: 'day', revision: 1 },
+          consumer: { consumerKey: 'room.background', domain: 'stage', slot: 'background', subjectKey: 'room', sceneKey, lineKey: null, required: true, fallback: 'none' },
+          triggerBeatKey: 'opening', itemStateKey: null, mediaKind: 'background', prompt: '原创房间，固定机位', negativePrompt: '', invariants: [], forbiddenDepictions: [],
+          width: 1312, height: 736, resolutionTier: '1K', alpha: 'not-required', references: [] }],
+      } }, productionBudget: { ...brief.productionBudget, maximumMediaCalls: 1, maximumCostUsd: null } })).toThrow(/尚未完成执行与作者选择/)
     const plan = JSON.parse(s.details.build!.planJson)
     plan.tasks[0].outputArtifactKeys=['avg.content.story-bible']
     plan.tasks[1].inputArtifactKeys=['avg.content.story-bible']

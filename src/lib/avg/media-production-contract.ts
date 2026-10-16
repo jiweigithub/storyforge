@@ -1,0 +1,132 @@
+import type { FrozenRuntimeMediaAssetV2, ProductMediaKind } from '../types'
+import { parseAvgConsumerV1, type AvgConsumerV1 } from './runtime-contract-v2'
+import { parseAvgExecutableStageV1 } from './stage-contract'
+import { parseAvgMediaReferencesV1, type AvgMediaReferenceV1 } from './media-reference-contract'
+import { avgBoolean, avgEnum, avgHash, avgKey, avgKeys, avgList, avgNumber, avgProtocolBody, avgRecord, avgText, avgUnique } from './protocol-validation'
+
+/** An image request is production input, never a selected image or a binding. */
+export interface AvgVisualProductionRequirementV1 {
+  requirementKey: string
+  revision: number
+  assetKey: string
+  name: string
+  altText: string
+  family: { subjectKey: string; familyKey: string; variantKey: string; revision: number }
+  consumer: AvgConsumerV1
+  triggerBeatKey: string | null
+  itemStateKey: string | null
+  mediaKind: Extract<ProductMediaKind, 'background' | 'character-pose' | 'character-expression' | 'cg' | 'ui'>
+  prompt: string
+  negativePrompt: string
+  invariants: string[]
+  forbiddenDepictions: string[]
+  width: number
+  height: number
+  resolutionTier: '1K' | '2K'
+  alpha: 'required' | 'not-required'
+  references: AvgMediaReferenceV1[]
+}
+
+export interface AvgVisualProductionBatchV1 {
+  schema: 'storyforge.avg.visual-production-batch'
+  version: 1
+  batchKey: string
+  revision: number
+  baseWorkspaceHash: string
+  requirements: AvgVisualProductionRequirementV1[]
+}
+
+/** A separate author selection over an immutable provider Artifact. Raw output
+ * may be accepted as production evidence; this selection grants its exact use. */
+export interface AvgAuthorMediaChoiceV1 {
+  schema: 'storyforge.avg.media-choice'
+  version: 1
+  requirementKey: string
+  requirementRevision: number
+  raw: { artifactKey: string; version: number; contentHash: string }
+  asset: FrozenRuntimeMediaAssetV2
+  referenceOnly: boolean
+  declaration: string
+}
+
+export const AVG_VISUAL_BATCH_LIMIT_V1 = 8
+export function avgRawMediaArtifactKeyV1(requirementKey: string): string { return `avg.media.raw.${requirementKey}` }
+export function avgMediaChoiceArtifactKeyV1(requirementKey: string): string { return `avg.media.choice.${requirementKey}` }
+
+function texts(value: unknown, label: string): string[] {
+  return avgList(value, label, (value, path) => avgText(value, path, 2000), 100)
+}
+function requirementKey(value: unknown): string {
+  avgText(value, 'requirementKey', 80)
+  return avgKey(value, 'requirementKey')
+}
+
+export function parseAvgVisualProductionRequirementV1(value: unknown): AvgVisualProductionRequirementV1 {
+  const r = avgRecord(value, ['requirementKey', 'revision', 'assetKey', 'name', 'altText', 'family', 'consumer', 'mediaKind',
+    'triggerBeatKey', 'itemStateKey', 'prompt', 'negativePrompt', 'invariants', 'forbiddenDepictions', 'width', 'height', 'resolutionTier', 'alpha', 'references'], 'visual requirement')
+  const f = avgRecord(r.family, ['subjectKey', 'familyKey', 'variantKey', 'revision'], 'media family')
+  const consumer = parseAvgConsumerV1(r.consumer)
+  const mediaKind = avgEnum(r.mediaKind, ['background', 'character-pose', 'character-expression', 'cg', 'ui'] as const, 'mediaKind')
+  const subjectKey = avgKey(f.subjectKey, 'family.subjectKey')
+  if (subjectKey !== consumer.subjectKey) throw new Error('[avg-media] 家族与 consumer 主体不一致')
+  const supported = consumer.domain === 'stage' && (
+    consumer.slot === 'background' && mediaKind === 'background'
+    || consumer.slot === 'actor' && ['character-pose', 'character-expression'].includes(mediaKind)
+    || consumer.slot === 'cg' && mediaKind === 'cg'
+  ) || consumer.domain === 'inventory' && consumer.slot === 'icon' && mediaKind === 'ui'
+    || consumer.domain === 'evidence' && consumer.slot === 'detail' && mediaKind === 'cg'
+    || consumer.domain === 'reference' && ['identity', 'style'].includes(consumer.slot)
+  if (!supported) throw new Error('[avg-media] 媒资用途与已实现的图像消费者不闭合')
+  const triggerBeatKey = r.triggerBeatKey === null ? null : avgKey(r.triggerBeatKey, 'triggerBeatKey')
+  const itemStateKey = r.itemStateKey === null ? null : avgKey(r.itemStateKey, 'itemStateKey')
+  if ((consumer.domain === 'stage') !== (triggerBeatKey !== null)
+    || itemStateKey !== null && !['inventory', 'evidence'].includes(consumer.domain)) throw new Error('[avg-media] 消费触发拍或物件状态与用途不符')
+  const invariants = texts(r.invariants, 'invariants'), forbiddenDepictions = texts(r.forbiddenDepictions, 'forbiddenDepictions')
+  const prompt = avgText(r.prompt, 'prompt', 12_000), negativePrompt = avgText(r.negativePrompt, 'negativePrompt', 4000, true)
+  if (prompt.length + invariants.join('\n').length > 18_000 || negativePrompt.length + forbiddenDepictions.join('\n').length > 7000) {
+    throw new Error('[avg-media] 合成后的图像需求超过单请求文本上限')
+  }
+  return {
+    requirementKey: requirementKey(r.requirementKey), revision: avgNumber(r.revision, 'requirement.revision', 1, 1_000_000),
+    assetKey: avgKey(r.assetKey, 'assetKey'), name: avgText(r.name, 'name', 200), altText: avgText(r.altText, 'altText', 1000),
+    family: { subjectKey, familyKey: avgKey(f.familyKey, 'familyKey'), variantKey: avgKey(f.variantKey, 'variantKey'), revision: avgNumber(f.revision, 'family.revision', 1, 1_000_000) },
+    consumer, triggerBeatKey, itemStateKey, mediaKind, prompt, negativePrompt, invariants, forbiddenDepictions,
+    width: avgNumber(r.width, 'width', 320, 8192), height: avgNumber(r.height, 'height', 320, 8192),
+    resolutionTier: avgEnum(r.resolutionTier, ['1K', '2K'] as const, 'resolutionTier'), alpha: avgEnum(r.alpha, ['required', 'not-required'] as const, 'alpha'),
+    references: parseAvgMediaReferencesV1(r.references),
+  }
+}
+
+export function parseAvgVisualProductionBatchV1(value: unknown): AvgVisualProductionBatchV1 {
+  const r = avgRecord(avgProtocolBody(value), ['schema', 'version', 'batchKey', 'revision', 'baseWorkspaceHash', 'requirements'], 'visual batch')
+  if (r.schema !== 'storyforge.avg.visual-production-batch' || r.version !== 1) throw new Error('[avg-media] 未登记的视觉批次版本')
+  const requirements = avgUnique(avgList(r.requirements, 'requirements', parseAvgVisualProductionRequirementV1, AVG_VISUAL_BATCH_LIMIT_V1), r => r.requirementKey, 'requirements')
+  if (!requirements.length) throw new Error('[avg-media] 视觉批次必须有明确需求')
+  avgUnique(requirements, r => r.assetKey, 'generated asset keys')
+  // Same target twice is a visible choice/conflict, never last-write-wins binding.
+  avgUnique(requirements.filter(r => r.consumer.domain !== 'reference'), r => [r.consumer.domain, r.consumer.slot, r.consumer.subjectKey,
+    r.consumer.sceneKey, r.consumer.lineKey, r.triggerBeatKey, r.itemStateKey].join('\u0000'), 'media consumer targets')
+  return { schema: 'storyforge.avg.visual-production-batch', version: 1, batchKey: avgKey(r.batchKey, 'batchKey'),
+    revision: avgNumber(r.revision, 'batch.revision', 1, 1_000_000), baseWorkspaceHash: avgHash(r.baseWorkspaceHash, 'baseWorkspaceHash'), requirements }
+}
+
+export function parseAvgAuthorMediaChoiceV1(value: unknown): AvgAuthorMediaChoiceV1 {
+  const r = avgRecord(avgProtocolBody(value), ['schema', 'version', 'requirementKey', 'requirementRevision', 'raw', 'asset', 'referenceOnly', 'declaration'], 'author media choice')
+  if (r.schema !== 'storyforge.avg.media-choice' || r.version !== 1) throw new Error('[avg-media] 未登记的媒资选择版本')
+  const raw = avgRecord(r.raw, ['artifactKey', 'version', 'contentHash'], 'raw media artifact')
+  const key = requirementKey(r.requirementKey)
+  if (avgKey(raw.artifactKey, 'raw.artifactKey') !== avgRawMediaArtifactKeyV1(key)) throw new Error('[avg-media] 原始候选与需求 key 不一致')
+  const asset = parseAvgExecutableStageV1({ version: 1, cues: [], assets: [r.asset] }).assets[0]!
+  if (!asset.mimeType.startsWith('image/') || !['background', 'character-pose', 'character-expression', 'cg', 'ui'].includes(asset.kind)
+    || asset.contentHash !== raw.contentHash) throw new Error('[avg-media] V1 媒资选择只接受原始图片；加工产物须独立 lineage 合同')
+  return { schema: 'storyforge.avg.media-choice', version: 1, requirementKey: key,
+    requirementRevision: avgNumber(r.requirementRevision, 'requirementRevision', 1, 1_000_000),
+    raw: { artifactKey: raw.artifactKey as string, version: avgNumber(raw.version, 'raw.version', 1, 1_000_000), contentHash: avgHash(raw.contentHash, 'raw.contentHash') },
+    asset,
+    referenceOnly: avgBoolean(r.referenceOnly, 'referenceOnly'), declaration: avgText(r.declaration, 'media choice declaration', 2000) }
+}
+
+/** Frozen Plan outputs include each raw candidate and its explicit author choice. */
+export function avgVisualBatchArtifactKeysV1(batch: AvgVisualProductionBatchV1): string[] {
+  return avgKeys(batch.requirements.flatMap(r => [avgRawMediaArtifactKeyV1(r.requirementKey), avgMediaChoiceArtifactKeyV1(r.requirementKey)]), 'media outputs')
+}

@@ -1,5 +1,5 @@
 import { parseChatAuthoringSettingsV1 } from '../character-interaction/authoring-contract'
-import { parseAvgAssemblyBriefV1, AVG_ASSEMBLY_GATE_IDS_V1 } from '../avg/assembly-contract'
+import { parseAvgAssemblyBrief, AVG_ASSEMBLY_GATE_IDS_V1, AVG_MEDIA_PRODUCTION_ADMISSION_V2 } from '../avg/assembly-contract'
 import { parseAvgSettingsForLegacyProduction } from '../avg/settings-v2'
 import type {
   TextAdventureContentRevisionV1,
@@ -311,7 +311,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
   }
   const parsed: ProductProductionBriefV3 = {
     ...(avgRevision ? { avgRevision } : {}),
-    ...(Object.prototype.hasOwnProperty.call(row, 'avgAssembly') ? { avgAssembly: parseAvgAssemblyBriefV1(row.avgAssembly) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, 'avgAssembly') ? { avgAssembly: parseAvgAssemblyBrief(row.avgAssembly) } : {}),
     ...(row.characterChat ? { characterChat: parseChatAuthoringSettingsV1(row.characterChat) } : {}),
     ...(row.avg ? { avg: parseAvgSettingsForLegacyProduction(row.avg) } : {}),
     schema: 'storyforge.product-production-brief', version: 3,
@@ -365,7 +365,8 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
       ? { evolution: parseEvolutionImpact(row.evolution) }
       : {}),
   }
-  if (parsed.avgAssembly && (productType !== 'avg' || parsed.avgRevision || parsed.qualityProfile === 'commercial-candidate'
+  if (parsed.avgAssembly?.version === 2 && !AVG_MEDIA_PRODUCTION_ADMISSION_V2) fail('AVG 媒资生产尚未完成执行与作者选择接入，当前不能正式开始')
+  if (parsed.avgAssembly?.version === 1 && (productType !== 'avg' || parsed.avgRevision || parsed.qualityProfile === 'commercial-candidate'
     || parsed.capabilityRequirements.length || parsed.productionBudget.maximumModelCalls !== 0 || parsed.productionBudget.maximumMediaCalls !== 0
     || parsed.productionBudget.maximumOutputTokens !== 0 || parsed.productionBudget.maximumCostUsd !== 0
     || canonicalProductProductionJsonV2([...parsed.completionContract.requiredGateIds].sort()) !== canonicalProductProductionJsonV2([...AVG_ASSEMBLY_GATE_IDS_V1].sort()))) {

@@ -13,7 +13,7 @@ import { parseAvgAuthorStageV1, type AvgAuthorStageV1 } from './author-workspace
 import { validateAvgAuthorAssemblyV1, type AvgAssemblyValidationV1 } from './author-stage-validation'
 import { avgKey, avgText } from './protocol-validation'
 import { validateAvgSystemPlanForAuthorV1, type AvgSystemValidationV1 } from './system-compiler'
-import { buildAvgAssemblyPlanV1 } from './assembly-plan'
+import { buildAvgNativeAssemblyPlan } from './assembly-plan'
 
 type Ref = { artifactKey: string; version: number; contentHash: string }
 interface AuthorCandidateBase {
@@ -90,7 +90,7 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
   if (plan.productType !== 'avg' || plan.buildNumber !== build.buildNumber || plan.controlEpoch !== build.controlEpoch
     || build.planRevision < 1 || await hash(plan) !== build.planHash
     || canonicalProductProductionJsonV2(plan) !== build.planJson) throw new Error('[avg] 冻结 Plan/hash 已 stale')
-  if (frozenVerification && canonicalProductProductionJsonV2(buildAvgAssemblyPlanV1({ brief, briefHash:build.briefHash,
+  if (frozenVerification && canonicalProductProductionJsonV2(buildAvgNativeAssemblyPlan({ brief, briefHash:build.briefHash,
     buildNumber:build.buildNumber, controlEpoch:build.controlEpoch })) !== build.planJson) throw new Error('[avg] 原生作者 Plan 不是冻结的固定组装拓扑')
   return { build, production: production as ProductProductionRecordV1 & { id: number }, briefRow, brief, plan, sourcePlan }
 }

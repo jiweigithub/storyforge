@@ -538,7 +538,7 @@ export interface ProductProductionBriefV3 {
   characterChat?: import('../character-interaction/authoring-contract').ChatAuthoringSettingsV1;
   avg?: import('../avg/authoring-contract').AvgAuthoringSettingsV1;
   avgRevision?: { version: 1; basePackageHash: string; runtimePackage: import('./product-release').ProductRuntimePackageV1 };
-  avgAssembly?: import('../avg/assembly-contract').AvgAssemblyBriefV1;
+  avgAssembly?: import('../avg/assembly-contract').AvgAssemblyBrief;
   ttrpg?: TtrpgProductionBriefV2;
   /** Closed AI Town construction contract; required exactly when productType=ai-town. */
   aiTown?: AiTownProductionBriefV1;

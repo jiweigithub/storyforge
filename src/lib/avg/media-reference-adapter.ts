@@ -89,7 +89,8 @@ export async function createAvgReferenceImageAdapterV1(input: {
           }
           const root = response.json && typeof response.json === 'object' && !Array.isArray(response.json)
             ? response.json as Record<string, unknown> : null
-          if (response.status >= 200 && response.status < 300 && !Array.isArray(root?.data)) {
+          if (response.status >= 200 && response.status < 300
+            && (response.status === 202 || !Array.isArray(root?.data) || root.data.length === 0)) {
             const rawId = root?.task_id ?? root?.operation_id ?? response.providerRequestId
             const id = typeof rawId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(rawId) ? rawId : null
             throw new AvgImageOperationUnknownErrorV1(id)
@@ -104,6 +105,14 @@ export async function createAvgReferenceImageAdapterV1(input: {
     async parseAndVerify(value) {
       const candidate = await agnesImage21FlashAdapterV1.parseAndVerify(value)
       if (candidate.requestId !== expectedRequest.requestId || candidate.mediaKind !== expectedRequest.mediaKind
+        || candidate.mediaClass !== 'image' || candidate.candidateIndex !== 0
+        || candidate.rights?.adapterId !== expectedRequest.adapterId || candidate.rights.origin !== 'generated'
+        || candidate.rights.rightsPolicyVersion !== expectedRequest.rightsPolicyVersion
+        || candidate.rights.requiresProviderTermsReview !== true || typeof candidate.rights.commercialUse !== 'boolean'
+        || expectedRequest.qualityProfile === 'commercial-candidate' && !candidate.rights.commercialUse
+        || candidate.providerReceipt?.executionLocation !== 'browser-direct'
+        || candidate.providerReceipt.costUsd !== null && (!Number.isFinite(candidate.providerReceipt.costUsd) || candidate.providerReceipt.costUsd < 0)
+        || candidate.metadata.providerSize !== frozen.resolutionTier
         || canonicalProductProductionJsonV2(candidate.metadata.avgReferenceTransmission) !== canonicalProductProductionJsonV2(lineage)) {
         throw new Error('[avg-media] 候选与实际参考传输回执不一致')
       }

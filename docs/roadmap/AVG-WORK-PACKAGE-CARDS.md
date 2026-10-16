@@ -1,6 +1,6 @@
 # AVG 工作包开工卡
 
-> L2 · 版本：1.20.0 · 生效：2026-10-16 · 产品：AVG/Galgame · 上位条目：E-AVG-01。
+> L2 · 版本：1.21.0 · 生效：2026-10-16 · 产品：AVG/Galgame · 上位条目：E-AVG-01。
 > [产品契约](../products/AVG.md)裁决边界，[实施计划](AVG-IMPLEMENTATION-PLAN.md)裁决顺序。AVG-00 已设计交付，AVG-BASE-00A/00B 已分支验收，当前按作者指令先做系统/表现框架，本轮规则/舞台/阅读/物件/媒资编辑与存档框架已分支工程验收，专业剧情生产后置；终态见实施计划 §1.2/§2.16。
 
 ## 0 所有代码包的共同交付约束
@@ -71,6 +71,14 @@
 当前能力只声明同步图片响应；未取得图片查询协议，不创造 polling URL。operation-only/断网/发送后取消交给现行 Harness 的 `ProductProductionResultUnknownErrorV1`，保留安全 operation ID 和预算，不自动重发；native crop/mask 拒绝，alpha 不保证。A2 必须将它置于正式开始、预算与持久候选/回执之内，当前无 UI/直接正式调用入口。真实账号、实际模型质量、原始候选费用/恢复以及家族艺术/审听均未因此通过。
 
 定向回归 `R-AVG-BASE01-reference-{transport,ownership}` 加既有 `R-PRODUCTPROD1E-media-{adapters,transport}`：4 文件/40 测试通过，包含真实编码、顺序、多参考、unsupported、wrong hash/MIME/尺寸、跨 Work、授权变化、无隐藏重试、operation unknown、备份 remap 后读和删除隔离。mock 传输不签成真实 provider smoke。
+
+### 3.2 BASE-01B 的输入、选择与 producer 证明基础
+
+- **当前边界**：`media-production-contract.ts` 与 nominal `AvgAssemblyBriefV2` 是待接入合同；`AVG_MEDIA_PRODUCTION_ADMISSION_V2=false`，公共 Brief parser 拒绝正式开始该版本。现有 V1 零调用 Brief、Plan 和读取保持原义，不因出现新类型而获得付费能力。
+- **有限批次与消费**：每批最多 8 项、每项一笔原始图片调用和一个独立 human-import 选择任务；生成和选择均进入终态依赖闭包，场景加固定 join/这些任务合计不得超过共享 100 任务。冻结主体/家族、准确消费 domain/slot/拍/物件状态及输入 hash；允许不同触发拍或状态，拒绝同槽冲突和 reference-only 进入 runtime 必需目录。此 Plan 尚未接正式执行器，不能宣称已经自动生成。
+- **采用与真实证据**：raw image 只证明 provider 返回；`avg.media.choice.<key>` 才表达作者对准确 raw revision/hash 和用途的选择，随后仍需演出采用。V1 选择合同只接受未加工的准确原图；抠图/裁切等需另补加工 lineage，不能偷偷换 hash。实际候选、作者命令、共享 Blob 与 typed stage 继续复用原表，不新建素材库。
+- **共享证明 API**：`verifyAcceptedProductBuildArtifactV1()` 是只读证明，不授予采纳。它复用已有 producer checkpoint/完整候选、Run/root/Plan、settled ledger 和实际物理 Blob 校验，再检查读取期间的变化；不能只信 `status=accepted`。接受写口的原 fingerprint 检查提成同一 helper；不降低旧检查。当前 API 只接受本 epoch 的直接 producer 版本，未开放 carried-forward 或人类工件的泛化旁路。
+- **已验/未验**：当前 4 文件/40 项输入、选择、参考与旧原生组装兼容回归通过；共享接受套件 20 项通过，新增错 Work/版本/hash、伪 metadata/receipt、未结算 ledger、坏字节及写事务中复验。最初并行的旧组装两例 5 秒超时，保持原 timeout 后单 worker 原命令 8/8、随后完整定向 40/40 通过。正式执行、作者选择采用、消费绑定和刷新恢复还须接入与浏览器验收；真实 provider/艺术/审听仍未验。
 
 ## 4 AVG-BASE-02 · voice 候选与传输合同
 

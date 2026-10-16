@@ -4,7 +4,7 @@ import type {
   ProductProductionPlanV3,
   ProductTaskBudgetReservationV1,
 } from '../types'
-import { buildAvgAssemblyPlanV1 } from '../avg/assembly-plan'
+import { buildAvgNativeAssemblyPlan } from '../avg/assembly-plan'
 import { PRODUCTION_PRODUCT_KINDS_V1 } from '../types'
 import { parseTextAdventureContentRevisionV1, parseProductProductionBriefV3 } from './contracts'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2, isSha256Hash } from './hash'
@@ -418,7 +418,7 @@ export function parseProductProductionPlanV3(
     briefHash: row.briefHash, controlEpoch: integer(row.controlEpoch, 'controlEpoch'),
     concurrency: parsedConcurrency, tasks, terminalTaskKey,
   }
-  if (brief?.avgAssembly && canonicalProductProductionJsonV2(parsed) !== canonicalProductProductionJsonV2(buildAvgAssemblyPlanV1({
+  if (brief?.avgAssembly && canonicalProductProductionJsonV2(parsed) !== canonicalProductProductionJsonV2(buildAvgNativeAssemblyPlan({
     brief, briefHash: parsed.briefHash, buildNumber: parsed.buildNumber, controlEpoch: parsed.controlEpoch,
   }))) fail('AVG 组装 Plan 不得替换冻结的作者输入、任务或写域')
   return parsed
@@ -459,7 +459,7 @@ export async function createProductProductionPlanV3(input: {
   const controlEpoch = input.controlEpoch ?? 0
   if (!Number.isInteger(controlEpoch) || controlEpoch < 0) fail('controlEpoch 无效')
 
-  if (brief.avgAssembly) return parseProductProductionPlanV3(buildAvgAssemblyPlanV1({ ...input, brief, controlEpoch }), brief, input.briefHash)
+  if (brief.avgAssembly) return parseProductProductionPlanV3(buildAvgNativeAssemblyPlan({ ...input, brief, controlEpoch }), brief, input.briefHash)
 
   const capabilityKeys = (classes: Array<ProductProductionBriefV3['capabilityRequirements'][number]['mediaClass']>) => (
     brief.capabilityRequirements
