@@ -52,4 +52,38 @@ describe('R-TTRPGOPEN10 fixed offline voice evaluation boundary', () => {
     `
     expect(JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' }))).toEqual([true, true, true, true, true])
   })
+  it('validates actual PCM bytes and original text; fabricated silent/corrupt/mislabeled audio never becomes a successful result', () => {
+    const script = `
+      import { verifyEvaluationResult, selectEvaluationCase } from './${caller}';
+      import { createHash } from 'node:crypto';
+      const {selected,contract}=selectEvaluationCase('narration-zh'), hash='0'.repeat(64);
+      const samples=22050,sr=44100,wav=Buffer.alloc(44+samples*2);
+      wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);
+      wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(sr,24);wav.writeUInt32LE(sr*2,28);
+      wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(samples*2,40);
+      for(let i=0;i<samples;i++)wav.writeInt16LE(i%2?8192:-8192,44+i*2);
+      const digest=b=>createHash('sha256').update(b).digest('hex');
+      const result={schema:'storyforge.ttrpg-local-tts-eval-result',version:1,caseId:selected.id,status:'generated',modelCalled:true,
+        evaluationOnly:true,adoptAllowed:false,text:selected.text,normalizedText:selected.text,profileHash:hash,fixtureSha256:contract.fixtureSha256,
+        network:'disabled',threads:2,humanListeningAcceptance:'unproven',samples,sampleRate:sr,durationMs:500,
+        rms:8192/32767,peakBeforeGain:8192/32767,appliedGain:1,wallSeconds:1,cpuSeconds:1,maxRssBytes:1024,audioSha256:digest(wav)};
+      verifyEvaluationResult(result,selected,contract,hash,wav);
+      const bad=[];
+      for(const patch of [{text:'another author text'},{adoptAllowed:true},{caseId:'numbers-zh'},{profileHash:'wrong'},
+        {modelCalled:false},{humanListeningAcceptance:'passed'},{audioSha256:'wrong'},{rms:0},{durationMs:999},{adoptionTargets:['work']}]){
+        try{verifyEvaluationResult({...result,...patch},selected,contract,hash,wav);bad.push(false)}catch{bad.push(true)}
+      }
+      const silent=Buffer.from(wav);silent.fill(0,44);
+      try{verifyEvaluationResult({...result,audioSha256:digest(silent)},selected,contract,hash,silent);bad.push(false)}catch{bad.push(true)}
+      const altered=Buffer.from(wav);altered.writeUInt32LE(22050,24);
+      try{verifyEvaluationResult({...result,audioSha256:digest(altered)},selected,contract,hash,altered);bad.push(false)}catch{bad.push(true)}
+      const mixed=selectEvaluationCase('mixed-script-rejection').selected;
+      const rejection={schema:result.schema,version:1,caseId:mixed.id,status:'expected-rejection',reasonCode:'unsupported-script',modelCalled:false,evaluationOnly:true,adoptAllowed:false};
+      verifyEvaluationResult(rejection,mixed,contract,hash,null);
+      try{verifyEvaluationResult(rejection,mixed,contract,hash,wav);bad.push(false)}catch{bad.push(true)}
+      console.log(JSON.stringify({positive:true,bad}));
+    `
+    const result = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' }))
+    expect(result).toEqual({ positive: true, bad: Array(13).fill(true) })
+  })
 })

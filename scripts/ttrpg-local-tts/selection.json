@@ -1,7 +1,7 @@
 {
   "schema": "storyforge.ttrpg-local-tts-selection",
   "version": 1,
-  "status": "research-baseline-not-installed",
+  "status": "pinned-research-baseline",
   "checkedOn": "2026-10-17",
   "purpose": "Free offline Chinese voice evaluation before governed TTRPG candidate generation. No model calls, downloads or product writes in the audit.",
   "code": {
