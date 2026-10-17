@@ -486,6 +486,9 @@ export interface VerificationReceiptV1 {
     model: string
     promptVersion: string
   }
+  /** Deterministic zero-model commit only. The full canonical contract proves
+   * that an empty Context Manifest list cannot waive a model Run's evidence. */
+  zeroModelCommit?: { contractJson: string; inputArtifactHashes: string[] }
   criteria: VerificationCriterionReceiptV1[]
   acceptedAt: number
   receiptHash: string

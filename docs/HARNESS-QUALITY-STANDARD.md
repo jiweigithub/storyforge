@@ -43,6 +43,8 @@ Harness 的目标是让一次 AI 工作可授权、可恢复、可停止、可�
 
 运行中不能由模型扩大权限、创造未登记工具或把辅助结果升级为正式写入。
 
+零模型的确定性提交可在 V1 终验回执中使用显式 `zeroModelCommit` 扩展：保留原 canonical RunContract、非空准确输入工件引用与实际 post-state/验收依据。仅合同的模型与输入/输出 token 预算全为零、Context/Skill/写回权限为空，且无候选、采用或语义评审时，才允许空 `contextManifestHashes`；合同正文 hash 必须匹配回执合同 hash。不得伪造一份模型 Context Manifest 来完成人工记账。普通模型回执仍保持原非空来源约束，旧回执/hash 不补字段。零模型记录完成只证明确定性提交，后续模型 lineage 必须另冻目的、来源、profile/transport、预算与用户授权。
+
 ## 4. 渐进式上下文披露
 
 上下文分层保存与读取：
