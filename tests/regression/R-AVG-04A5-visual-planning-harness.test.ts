@@ -14,6 +14,11 @@ import { runProductProductionSchedulerCycleV1, runProductProductionUntilBlockedV
 import { stageAvgAuthorArtifactV1, readAvgConfirmedVisualArtifactsV4 } from '../../src/lib/avg/author-artifacts'
 import { verifyAcceptedProductBuildArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4 } from '../../src/lib/product-production/artifact-store'
 import { readAvgVisualProposalEvidenceV4 } from '../../src/lib/avg/visual-planning-evidence'
+import { readAvgCompiledImageDefinitionV4, prepareAvgCompiledImageRequestV4 } from '../../src/lib/avg/visual-planning-image-definition'
+import { readAvgVisualPlanningContextV4 } from '../../src/lib/avg/visual-planning-context'
+import * as imageDecoder from '../../src/lib/avg/image-decoder'
+import { sha256MediaData } from '../../src/lib/product-production/media-blob-store'
+import { hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 import { importAvgMediaV1 } from '../../src/lib/avg/editor-service'
 import { deterministicRegionMapPngV1 } from '../../src/lib/product-production/production-executor'
 import { freezeAvgVisualPlanningScopeV1 } from '../../src/lib/avg/media-source'
@@ -32,9 +37,20 @@ beforeEach(async () => {
   // are replaced. Build/start/SourcePlan/Harness/producer/adoption stay real.
   vi.spyOn(readiness, 'avgVisualPlanningExecutionReadyV4').mockReturnValue(true)
 })
-afterEach(() => { vi.restoreAllMocks(); db.close() })
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); db.close() })
 
-async function setup(options: { malformed?: boolean; wrongBinding?: boolean; unknown?: boolean; reference?: 'valid' | 'missing' | 'tampered' } = {}) {
+async function setup(options: { malformed?: boolean; wrongBinding?: boolean; unknown?: boolean; reference?: 'valid' | 'missing' | 'tampered'; image?: 'valid' | 'unknown' | 'malformed' | 'corrupt-json' } = {}) {
+  vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION', '1')
+  const imageBytes = await deterministicRegionMapPngV1({ width: 576, height: 324, palette: ['#18213b', '#39506b', '#c8dce8'] })
+  const view = new Uint8Array(imageBytes); let binary = ''
+  for (let i = 0; i < view.length; i += 16384) binary += String.fromCharCode(...view.subarray(i, i + 16384))
+  const imageFetcher = vi.fn(async (target: RequestInfo | URL, _init?: RequestInit) => {
+    if (!String(target).endsWith('/images/generations')) throw new Error('Unexpected controlled HTTP route')
+    if (options.image === 'unknown') throw new TypeError('Failed to fetch')
+    return new Response(options.image === 'corrupt-json' ? '{broken image response' : JSON.stringify({ data: [{ b64_json: options.image === 'malformed' ? '%%%%' : btoa(binary) }] }),
+      { headers: { 'content-type': 'application/json', 'x-request-id': 'controlled-v4-image' } })
+  })
+  vi.stubGlobal('fetch', imageFetcher)
   const fixture = await avgVisualPlanningFixtureV4(), { owner, source } = fixture
   const brief = structuredClone(fixture.brief)
   if (options.reference) {
@@ -88,13 +104,14 @@ async function setup(options: { malformed?: boolean; wrongBinding?: boolean; unk
     return { output: options.malformed ? '{broken response' : JSON.stringify(input.system.includes('storyforge.avg.visual-bible') ? bible : media),
       bindingReceipt: { ...text.receipt, ...(options.wrongBinding ? { capabilityHash: 'f'.repeat(64) } : {}) }, usage: { inputTokens: 300, outputTokens: 300 } }
   })
-  const executor = createConfiguredProductProductionExecutorV1({ production: details.production, brief: parsed, runText })
+  const executor = createConfiguredProductProductionExecutorV1({ production: details.production, brief: parsed, runText,
+    mediaCapabilities: new Map([['avg.media.image', image.resolved]]), avgImageEndpointRouteHash: image.endpointRouteHash })
   const capabilityBindings = [{ requirementKey: text.receipt.requirementKey, adapterId: text.receipt.adapterId,
     bindingHash: text.receipt.capabilityHash, provider: text.receipt.provider, model: text.receipt.model }, image.binding]
   await runProductProductionUntilBlockedV1({ scope: owner.scope, productionId: owner.productionId, executor, capabilityBindings })
   const initialized = (await db.productBuilds.get(buildId))!
   const plan = parseProductProductionPlanV3(initialized.planJson, parsed, initialized.briefHash)
-  const s = { ...owner, buildId, source, brief: parsed, plan, bible, media, runText, executor, capabilityBindings }
+  const s = { ...owner, buildId, source, brief: parsed, plan, bible, media, runText, executor, capabilityBindings, imageFetcher, imageBytes }
   return s
 }
 type Setup = Awaited<ReturnType<typeof setup>>
@@ -159,6 +176,21 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       artifactKey: compiled!.artifactKey, version: compiled!.version, contentHash: compiled!.contentHash })
     expect(proved.producerRunId).not.toBeNull()
     expect(proved.payloadJson).toContain('作者修订：墙面保持灰色')
+    const build = await current(s)
+    const authority = { scope: s.scope, buildId: s.buildId, expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch, expectedBrief: s.brief }
+    const image = await prepareAvgCompiledImageRequestV4({ ...authority, requirementKey: revised.outputs[0].requirementKey, idempotencyKey: 'a'.repeat(64) })
+    expect(image.resolved.brief).toEqual(s.brief)
+    expect(image.resolved.brief.avgAssembly).toBeUndefined()
+    expect(image.resolved.definition.compilation.contentHash).toBe(compiled!.contentHash)
+    expect(image.frozen.request.prompt).toContain('作者修订：墙面保持灰色')
+    const imageTask = s.plan.tasks.find(t => t.kind === 'avg-media-image-generate')!
+    const packet = JSON.parse(await readAvgVisualPlanningContextV4({ projectId: s.scope.projectId, scope: s.scope,
+      productProductionId: s.productionId, productBuildId: s.buildId, productProductionTaskKey: imageTask.taskKey,
+      productArtifactKeys: imageTask.inputArtifactKeys }))
+    expect(packet.operation).toBe('produce-compiled-image')
+    expect(packet.compilation.contentHash).toBe(compiled!.contentHash)
+    expect(packet.requirement.prompt).toContain('作者修订：墙面保持灰色')
+    await expect(readAvgCompiledImageDefinitionV4({ ...authority, expectedBuildRevision: build.stateRevision - 1 })).rejects.toThrow(/stale/)
     expect(s.runText).toHaveBeenCalledTimes(2)
     expect((await db.mediaBlobObjects.toArray())).toHaveLength(0)
     await expect(stage(s, 'avg.media.visual-bible', s.bible)).rejects.toThrow(/下游执行消费/)
@@ -258,5 +290,98 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       capabilityBindings: input.capabilityBindings.map(b => ({ ...b, bindingHash: 'f'.repeat(64) })) }) })
     expect(s.runText).not.toHaveBeenCalled()
     expect((await current(s)).failureJson).toContain('Harness claim')
+  })
+
+  it('sends the author-adopted compiled prompt once through the real image adapter and seals original PNG bytes', async () => {
+    const s = await setup({ image: 'valid' }); await sources(s); await run(s)
+    expect(s.imageFetcher).not.toHaveBeenCalled()
+    await adopt(s, await stage(s, 'avg.media.visual-bible', s.bible)); await run(s)
+    const revised = structuredClone(s.media); revised.outputs[0].prompt += '，由作者确认的灰色墙面'
+    await adopt(s, await stage(s, `avg.media.environment-brief.${s.media.subjectKey}`, revised))
+    await cycle(s); expect(s.imageFetcher).not.toHaveBeenCalled()
+    await cycle(s)
+    expect(s.imageFetcher, (await current(s)).failureJson).toHaveBeenCalledTimes(1)
+    const request = JSON.parse(String(s.imageFetcher.mock.calls[0][1]!.body))
+    expect(request.prompt).toContain('由作者确认的灰色墙面')
+    const raw = await accepted(s, `avg.media.raw.${s.media.outputs[0].requirementKey}`)
+    expect(raw, (await current(s)).failureJson).toBeDefined()
+    await verifyAcceptedProductBuildArtifactV1({ scope: s.scope, buildId: s.buildId, artifactKey: raw!.artifactKey,
+      version: raw!.version, contentHash: raw!.contentHash })
+    expect(JSON.parse(raw!.qualityJson)).toMatchObject({ sourceCompilation: { artifactKey: 'avg.media.compiled-visual-requirements' }, decoderVerified: false })
+    const blob = (await db.mediaBlobObjects.get(raw!.blobObjectId!))!
+    expect(blob.data).toEqual(s.imageBytes)
+    await run(s); expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    expect(s.runText).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['unknown', 'malformed', 'corrupt-json'] as const)('preserves %s image outcome and never records a dispatched image as zero calls or silently resends', async image => {
+    const s = await setup({ image }); await sources(s); await run(s)
+    await adopt(s, await stage(s, 'avg.media.visual-bible', s.bible)); await run(s)
+    await adopt(s, await stage(s, `avg.media.environment-brief.${s.media.subjectKey}`, s.media)); await cycle(s); await cycle(s)
+    expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    expect(await accepted(s, `avg.media.raw.${s.media.outputs[0].requirementKey}`)).toBeUndefined()
+    const build = await current(s), ledger = JSON.parse(build.budgetLedgerJson)
+    const attempt = ledger.attempts.find((a: { taskKey: string }) => a.taskKey === `avg.media.generate.${s.media.outputs[0].requirementKey}`)
+    expect(attempt).toBeDefined()
+    if (image === 'unknown' || image === 'corrupt-json') {
+      expect(build.failureJson).toContain('task-result-unknown'); expect(attempt.usageKnown).toBe(false)
+      // This is the conservative reservation, never measured free usage.
+      expect(attempt.usage).toMatchObject({ mediaCalls: 1, costUsd: null })
+    }
+    else { expect(attempt.usageKnown).toBe(true); expect(attempt.usage.mediaCalls).toBe(1); expect(attempt.usage.costUsd).toBeNull() }
+    db.close(); await db.open(); await run(s); expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends the exact authorized Work reference bytes with the adopted compiled prompt', async () => {
+    // jsdom has no native decoder; owner, actual PNG bytes/header/hash,
+    // provider serialization and full producer/Harness remain real.
+    const decoder = vi.spyOn(imageDecoder, 'inspectAvgImageBytesV1').mockResolvedValue({ width: 32, height: 32, hasAlpha: false })
+    const s = await setup({ reference: 'valid', image: 'valid' }); await sources(s); await run(s)
+    await adopt(s, await stage(s, 'avg.media.visual-bible', s.bible)); await run(s)
+    await adopt(s, await stage(s, `avg.media.environment-brief.${s.media.subjectKey}`, s.media)); await cycle(s); await cycle(s)
+    expect(s.imageFetcher, (await current(s)).failureJson).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(String(s.imageFetcher.mock.calls[0][1]!.body)), uri = body.extra_body.image[0] as string
+    expect(uri).toMatch(/^data:image\/png;base64,/)
+    const binary = atob(uri.split(',')[1]), bytes = Uint8Array.from(binary, c => c.charCodeAt(0)).buffer
+    const ref = s.brief.avgVisualPlanning!.scope.referenceCatalog[0].reference
+    expect(await sha256MediaData(bytes)).toBe(ref.contentHash)
+    expect(decoder).toHaveBeenCalledWith(expect.objectContaining({ contentHash: ref.contentHash, data: bytes }))
+    const raw = await accepted(s, `avg.media.raw.${s.media.outputs[0].requirementKey}`)
+    expect(raw, (await current(s)).failureJson).toBeDefined()
+    expect(JSON.parse(raw!.payloadJson).request.references[0]).toEqual(ref)
+  })
+
+  it('rejects a self-rehashed direct read and lets shared recovery use only the original approved producer evidence', async () => {
+    const s = await setup({ image: 'valid' }); await sources(s); await run(s)
+    await adopt(s, await stage(s, 'avg.media.visual-bible', s.bible)); await run(s)
+    await adopt(s, await stage(s, `avg.media.environment-brief.${s.media.subjectKey}`, s.media)); await cycle(s)
+    const compiled = (await accepted(s, 'avg.media.compiled-visual-requirements'))!, payload = JSON.parse(compiled.payloadJson)
+    payload.batch.requirements[0].prompt += '未经作者采用的替换提示词'
+    await db.productBuildArtifacts.update(compiled.id!, { payloadJson: JSON.stringify(payload), contentHash: await hashProductProductionValueV2(payload) })
+    const build = await current(s)
+    await expect(readAvgCompiledImageDefinitionV4({ scope: s.scope, buildId: s.buildId, expectedBuildRevision: build.stateRevision,
+      controlEpoch: build.controlEpoch, expectedBrief: s.brief })).rejects.toThrow(/producer|不一致/)
+    expect(s.imageFetcher.mock.calls.length).toBe(0)
+    // Existing shared checkpoint recovery can restore the exact approved
+    // compiler output before the authorized image task; it must not consume
+    // the rehashed edit or request replacement text-model output.
+    await cycle(s)
+    expect(s.imageFetcher.mock.calls.length).toBe(1)
+    const request = JSON.parse(String(s.imageFetcher.mock.calls[0][1]!.body))
+    expect(request.prompt).not.toContain('未经作者采用的替换提示词')
+    expect((await accepted(s, compiled.artifactKey))!.contentHash).toBe(compiled.contentHash)
+    expect(s.runText).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects a reference changed after compilation before image dispatch', async () => {
+    const s = await setup({ reference: 'valid', image: 'valid' }); await sources(s); await run(s)
+    await adopt(s, await stage(s, 'avg.media.visual-bible', s.bible)); await run(s)
+    await adopt(s, await stage(s, `avg.media.environment-brief.${s.media.subjectKey}`, s.media)); await cycle(s)
+    const upload = (await db.avgDraftMedia.where('workId').equals(s.scope.workId).first())!, blob = (await db.mediaBlobObjects.get(upload.blobObjectId))!
+    const corrupted = new Uint8Array(blob.data!.slice(0)); corrupted[corrupted.length - 1] ^= 1
+    await db.mediaBlobObjects.update(blob.id!, { data: corrupted.buffer })
+    await expect(cycle(s)).rejects.toThrow(/哈希/)
+    expect(s.imageFetcher.mock.calls.length).toBe(0)
+    expect(await accepted(s, `avg.media.raw.${s.media.outputs[0].requirementKey}`)).toBeUndefined()
   })
 })

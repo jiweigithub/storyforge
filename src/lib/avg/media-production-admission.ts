@@ -16,6 +16,13 @@ import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 import { assertAvgProcessedImageArtifactV1 } from './image-processing-contract'
 import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/artifact-store'
 import { assertAvgRawImageOriginV1 } from './media-recovery'
+import { readAvgCompiledImageDefinitionV4 } from './visual-planning-image-definition'
+import { assertAvgRawImageArtifactFromDefinitionV1 } from './media-raw-contract'
+import { AVG_COMPILED_IMAGE_SKILL_V4, AVG_VISUAL_PLANNING_CONTEXT_V1 } from './visual-planning-roles'
+import { hashAvgTaskRuntimeBindingV1 } from './task-claim'
+import { avgRecord } from './protocol-validation'
+import { assembleContext } from '../registry/assemble-context'
+import { preserveProductProductionContextV1 } from '../product-production/context'
 
 /** Extra product admission inside the shared sealed-producer transaction.
  * The caller separately verifies exact checkpoint/result/Plan/Blob proof. */
@@ -30,6 +37,7 @@ export async function assertAvgMediaRawProducerAdmissionV2(input: {
   if (!row || !await assertRecordInScope(input.scope, 'productProductionBriefs', row, { owner: 'work' }) || row.status !== 'authorized'
     || row.briefHash !== input.build.briefHash) throw new Error('[avg-media] 原图接收缺少准确的已授权 Brief')
   const brief = parseProductProductionBriefV3(row.briefJson)
+  if (brief.avgVisualPlanning) return assertAvgCompiledImageProducerAdmissionV4(input, brief)
   const {assembly,capability}=await assertAvgImageProductionDefinitionV3(brief)
   await validateAvgVoiceRecoveryV1({ scope: input.scope, productionId: input.build.productionId, brief,
     targetBuild: input.build, checkProspectiveRequests: false })
@@ -91,4 +99,34 @@ export async function assertAvgMediaRawProducerAdmissionV2(input: {
     if(quality.received!==true||quality.rawResponseRecorded!==true||quality.headerVerified!==true||quality.contentHashVerified!==true||quality.decoderVerified!==false)throw new Error('[avg-media] 原图接收证据不能冒充解码')
     await assertAvgOriginalImageResponseV1(input.scope,input.producerRunId,task.taskKey,quality)
   }
+}
+
+async function assertAvgCompiledImageProducerAdmissionV4(input: Parameters<typeof assertAvgMediaRawProducerAdmissionV2>[0], brief: import('../types').ProductProductionBriefV3): Promise<void> {
+  const d = await readAvgCompiledImageDefinitionV4({ scope: input.scope, buildId: input.build.id,
+    expectedBuildRevision: input.build.stateRevision, controlEpoch: input.build.controlEpoch, expectedBrief: brief })
+  const task = input.task, a = input.artifact
+  if (task.kind !== 'avg-media-image-generate' || task.executionMode !== 'media-provider' || task.skillId !== AVG_COMPILED_IMAGE_SKILL_V4
+    || task.maxAttempts !== 1 || task.budgetReservation.mediaCalls !== 1 || task.budgetReservation.modelCalls !== 0
+    || task.outputArtifactKeys.length !== 1 || task.outputArtifactKeys[0] !== a.artifactKey
+    || !task.inputArtifactKeys.includes(d.definition.compilation.artifactKey)) throw new Error('[avg-visual-image] 原图不是准确 V4 编译需求的单次图片任务')
+  const raw = await assertAvgRawImageArtifactFromDefinitionV1({ ...d.definition, capability: d.capability, qualityProfile: brief.qualityProfile }, a)
+  if (task.taskKey !== `avg.media.generate.${raw.payload.requirement.requirementKey}`) throw new Error('[avg-visual-image] 原图的准确需求写域不一致')
+  const binding = { requirementKey: d.capability.requirementKey, adapterId: raw.payload.request.request.adapterId, bindingHash: raw.payload.capabilityBindingHash }
+  const run = await db.agentRuns.get(input.producerRunId)
+  if (!run || (JSON.parse(run.contractJson) as { runtimeBindingHash?: string }).runtimeBindingHash !== await hashAvgTaskRuntimeBindingV1({
+    planHash: input.build.planHash, task, capabilityBindings: [binding] })) throw new Error('[avg-visual-image] 原图路由与实际冻结 Harness 不一致')
+  const q = avgRecord(JSON.parse(a.qualityJson), ['received', 'rawResponseRecorded', 'responseEvidenceHash', 'headerVerified', 'contentHashVerified',
+    'decoderVerified', 'referenceTransmission', 'sourceRule', 'sourceScripts', 'sourceCompilation', 'sourceContextHash'], 'compiled image evidence')
+  const same = (l: unknown, r: unknown) => canonicalProductProductionJsonV2(l) === canonicalProductProductionJsonV2(r)
+  if (q.received !== true || q.rawResponseRecorded !== true || q.headerVerified !== true || q.contentHashVerified !== true || q.decoderVerified !== false
+    || !same(q.sourceRule, d.source.artifact) || !same(q.sourceScripts, d.source.scripts.map(s => s.artifact))
+    || !same(q.sourceCompilation, d.definition.compilation)) throw new Error('[avg-visual-image] 原图接收不能替换编译来源或冒充解码/艺术验收')
+  await assertAvgOriginalImageResponseV1(input.scope, input.producerRunId, task.taskKey, q)
+  const assembled = await assembleContext({ projectId: input.scope.projectId, scope: input.scope,
+    productProductionId: input.build.productionId, productBuildId: input.build.id, productProductionTaskKey: task.taskKey,
+    productArtifactKeys: task.inputArtifactKeys, sourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V1],
+    inputBudgetTokens: task.budgetReservation.inputTokens, sourceTransformer: preserveProductProductionContextV1 })
+  if (assembled.overBudgetAfterTrim || assembled.segments.length !== 1 || !assembled.sourceEvidence?.length
+    || assembled.sourceEvidence.some(s => s.status !== 'included' || s.delivery !== 'full')
+    || q.sourceContextHash !== await hashProductProductionValueV2(assembled.text)) throw new Error('[avg-visual-image] 原图的实际登记输入与编译来源不一致')
 }

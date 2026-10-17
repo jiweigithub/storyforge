@@ -3,7 +3,7 @@ import { buildAvgMediaAssemblyPlanV2 } from './assembly-plan'
 import { parseAvgVisualPlanningBriefV4, type AvgVisualPlanningBriefV4 } from './visual-planning-brief'
 import { avgMediaBriefArtifactKeyV1, type AvgVisualDesignKindV1 } from './visual-planning-contract'
 import { avgKey } from './protocol-validation'
-import { AVG_VISUAL_TEXT_CAPABILITY_V4, avgVisualPlanningRoleV1 } from './visual-planning-roles'
+import { AVG_VISUAL_TEXT_CAPABILITY_V4, AVG_COMPILED_IMAGE_SKILL_V4, avgVisualPlanningRoleV1 } from './visual-planning-roles'
 
 export const AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4 = 'avg.media.compiled-visual-requirements'
 export function avgVisualProposalArtifactKeyV4(kind: AvgVisualDesignKindV1 | null, subjectKey?: string): string {
@@ -67,6 +67,7 @@ export function buildAvgVisualPlanningPlanV4(input: {
   const tasks = base.tasks.map(task => task.taskKey === base.terminalTaskKey ? { ...task,
     acceptanceGateIds: [...task.acceptanceGateIds, 'avg.visual.requirements.compiled', ...adopted.map(a => `${a.canonical}.confirmed`)] }
     : task.kind === 'avg-media-image-generate' ? { ...task,
+    skillId: AVG_COMPILED_IMAGE_SKILL_V4,
     inputArtifactKeys: [...task.inputArtifactKeys, AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4],
     dependsOn: [...task.dependsOn, compileTask], requiredReceipts: [...task.requiredReceipts, { taskKey: compileTask, receiptHash: null }] } : task)
   const firstImage = tasks.findIndex(t => t.kind === 'avg-media-image-generate')

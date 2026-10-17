@@ -13,11 +13,13 @@ import { avgVisualRoleTargetV4, prepareAvgVisualRoleProposalV4 } from './visual-
 import { hashAvgVisualExactTextV1 } from './visual-planning-evidence'
 import { compileAvgVisualPlanningProposalV1 } from './media-source'
 import { AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4 } from './visual-planning-plan'
+import type { ResolvedProductMediaCapabilityV1 } from '../product-production/media-transport'
 
 /** Same shared Harness, raw-response store and configured model runner as the
  * existing product executor. This factory never silently calls the old AVG
  * generator or treats a received semantic proposal as author adoption. */
-export function createAvgVisualPlanningExecutorV4(options: { brief: ProductProductionBriefV3; runText: ProductionTextRunnerV1 }): ProductProductionTaskExecutorV1 {
+export function createAvgVisualPlanningExecutorV4(options: { brief: ProductProductionBriefV3; runText: ProductionTextRunnerV1;
+  mediaCapabilities?: ReadonlyMap<string, ResolvedProductMediaCapabilityV1>; imageEndpointRouteHash?: string }): ProductProductionTaskExecutorV1 {
   const brief = structuredClone(options.brief)
   return async input => {
     const started = Date.now(), zero = (): ProductProductionTaskUsageV1 => ({ modelCalls: 0, inputTokens: 0, outputTokens: 0,
@@ -26,6 +28,10 @@ export function createAvgVisualPlanningExecutorV4(options: { brief: ProductProdu
     try {
       if (!avgVisualPlanningExecutionReadyV4()) throw new Error('[avg-visual-plan] 专业视觉执行尚未开放')
       if (input.signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      if (input.task.kind === 'avg-media-image-generate') {
+        const { executeAvgMediaImageTaskV2 } = await import('./media-production-executor')
+        return executeAvgMediaImageTaskV2(input, { brief, mediaCapabilities: options.mediaCapabilities ?? new Map(), imageEndpointRouteHash: options.imageEndpointRouteHash })
+      }
       if (input.task.executionMode !== 'model' && input.task.kind !== 'avg-v4-visual-requirements-compile') throw new Error('[avg-visual-plan] 当前增量尚未接通图片消费；未发送请求')
       source = await readAvgVisualPlanningExecutionSourcesV4(input, brief)
     } catch (error) { throw new ProductProductionDraftRejectedErrorV1(error instanceof Error ? error.message : '专业视觉来源无效', zero()) }

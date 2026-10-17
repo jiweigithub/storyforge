@@ -61,6 +61,12 @@ describe('AVG explicit next private contract and registered professional plannin
     const image = plan.tasks.find(t => t.kind === 'avg-media-image-generate')!
     expect(image.dependsOn).toContain(compile.taskKey)
     expect(image.inputArtifactKeys).toContain('avg.media.compiled-visual-requirements')
+    expect(image.skillId).toBe('avg.compiled-image-request.v1')
+    const operator = getAgentSkillV1(image.skillId!)
+    expect(getDefaultAgentSkillV1('avg-image-operator')).toBe(operator)
+    expect(DOMAIN_AGENT_IDS as readonly string[]).not.toContain(operator.agentId)
+    expect(operator.contextSourceKeys).toEqual([AVG_VISUAL_PLANNING_CONTEXT_V1])
+    expect(operator.writeTargets).toEqual([{ table: 'productBuildArtifacts', fields: [], adoptionExtension: 'product-production-artifacts' }])
     expect(brief.productionBudget).toEqual(avgVisualPlanningBudgetV4(brief))
     expect(brief.completionContract.requiredGateIds).toEqual(avgVisualPlanningGateIdsV4(brief))
     expect(brief.productionBudget.maximumModelCalls).toBe(2)

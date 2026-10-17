@@ -6,6 +6,9 @@ export const AVG_VISUAL_PLANNING_AGENT_IDS_V1 = [
 ] as const
 export const AVG_VISUAL_PLANNING_CONTEXT_V1 = 'product-production.avg-visual-planning-inputs'
 export const AVG_VISUAL_TEXT_CAPABILITY_V4 = 'avg.visual.planning.text'
+/** Technical image dispatch is separate from semantic art direction. */
+export const AVG_COMPILED_IMAGE_AGENT_V4 = 'avg-image-operator'
+export const AVG_COMPILED_IMAGE_SKILL_V4 = 'avg.compiled-image-request.v1'
 export const AVG_VISUAL_PLANNING_ROLES_V1 = [
   { agentId: 'avg-art-director', skillId: 'avg.visual-bible.v1', label: 'AVG 美术方向', subjectKind: null, outputTokens: 16_000 },
   { agentId: 'avg-character-designer', skillId: 'avg.character-assets.v1', label: 'AVG 人物视觉方案', subjectKind: 'character', outputTokens: 12_000 },

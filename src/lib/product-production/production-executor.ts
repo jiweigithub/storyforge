@@ -10695,7 +10695,8 @@ export function createConfiguredProductProductionExecutorV1(input: {
 }): ProductProductionTaskExecutorV1 {
   if (input.brief.avgVisualPlanning) {
     if (!avgVisualPlanningExecutionReadyV4()) throw new Error('[avg-visual-plan] 专业视觉候选采用和需求消费尚未接通，不能调用旧通用执行器')
-    const options = { brief: structuredClone(input.brief), runText: input.runText ?? defaultTextRunner }
+    const options = { brief: structuredClone(input.brief), runText: input.runText ?? defaultTextRunner,
+      mediaCapabilities: input.mediaCapabilities, imageEndpointRouteHash: input.avgImageEndpointRouteHash }
     let executor: Promise<ProductProductionTaskExecutorV1> | undefined
     return async request => {
       executor ??= import('../avg/visual-planning-executor').then(module => module.createAvgVisualPlanningExecutorV4(options))

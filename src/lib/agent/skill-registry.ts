@@ -26,7 +26,7 @@ import {
 } from '../registry/types'
 import { AGENT_TOOL_BY_NAME } from './tool-registry'
 import { WORLD_RELEASE_RESOURCE_KINDS_V1 } from '../context-gateway/world-release-provider-contract'
-import { AVG_VISUAL_PLANNING_AGENT_IDS_V1, AVG_VISUAL_PLANNING_CONTEXT_V1 } from '../avg/visual-planning-roles'
+import { AVG_VISUAL_PLANNING_AGENT_IDS_V1, AVG_VISUAL_PLANNING_CONTEXT_V1, AVG_COMPILED_IMAGE_AGENT_V4 } from '../avg/visual-planning-roles'
 
 export const DOMAIN_AGENT_IDS = ['world-origin', 'character', 'inspiration', 'outline', 'prose'] as const
 export type DomainAgentId = typeof DOMAIN_AGENT_IDS[number]
@@ -59,7 +59,7 @@ export const TEXT_ADVENTURE_PRODUCTION_AGENT_IDS = [
   'text-adventure-playtest-director',
 ] as const
 export type TextAdventureProductionAgentId = typeof TEXT_ADVENTURE_PRODUCTION_AGENT_IDS[number]
-export const REGISTERED_AGENT_IDS = [...DOMAIN_AGENT_IDS, ...TEXT_ADVENTURE_PRODUCTION_AGENT_IDS, ...AVG_VISUAL_PLANNING_AGENT_IDS_V1] as const
+export const REGISTERED_AGENT_IDS = [...DOMAIN_AGENT_IDS, ...TEXT_ADVENTURE_PRODUCTION_AGENT_IDS, ...AVG_VISUAL_PLANNING_AGENT_IDS_V1, AVG_COMPILED_IMAGE_AGENT_V4] as const
 export type RegisteredAgentId = typeof REGISTERED_AGENT_IDS[number]
 
 export type AgentSkillExecutionModeV1 =
@@ -4992,6 +4992,16 @@ export const AGENT_SKILLS = [
     lastVerifiedAt: '2026-10-17', regressionTests: ['R-AVG-BASE02-task-context', 'R-AVG-BASE02-voice-harness'],
   },
   {
+    version: 1, id: 'avg.compiled-image-request.v1', agentId: 'avg-image-operator', defaultForAgent: true,
+    label: 'AVG 已编译图片请求', owner: 'avg-image-operator', promptVersion: 'avg-compiled-image-request-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V1], optionalContextSourceKeys: [],
+    inputPolicy: productProductionInputPolicy([AVG_VISUAL_PLANNING_CONTEXT_V1]),
+    contextCompression: compressionPolicy([AVG_VISUAL_PLANNING_CONTEXT_V1]), maxOutputTokens: 4_000,
+    writeTargets: [{ table: 'productBuildArtifacts', fields: [], adoptionExtension: 'product-production-artifacts' }],
+    lastVerifiedAt: '2026-10-17', regressionTests: ['R-AVG-04A5-professional-roles', 'R-AVG-04A5-visual-planning-harness'],
+  },
+  {
     version: 1, id: 'avg.visual-bible.v1', agentId: 'avg-art-director', defaultForAgent: true,
     label: 'AVG 美术方向', owner: 'avg-art-director', promptVersion: 'avg.visual-bible.v1-method-v1',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
@@ -5345,6 +5355,7 @@ export function validateAgentSkillDefinitionsV1(
     'avg-character-designer': productProductionModes,
     'avg-environment-designer': productProductionModes,
     'avg-prop-designer': productProductionModes,
+    'avg-image-operator': productProductionModes,
   }
   const ids = new Set<string>()
   const defaultAgents = new Set<RegisteredAgentId>()

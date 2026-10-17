@@ -13,11 +13,15 @@ import { assertAvgImageProductionDefinitionV3 } from './media-production-definit
 import { avgVoiceProductionEnabledV3 } from './assembly-contract'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V1 } from './media-reference-contract'
 import { avgRawMediaArtifactKeyV1 } from './media-production-contract'
-import { prepareAvgRawImageRequestV1, type AvgRawImagePayloadV1 } from './media-raw-contract'
+import { prepareAvgRawImageRequestV1, prepareAvgRawImageRequestFromBatchV1, type AvgRawImagePayloadV1 } from './media-raw-contract'
 import { AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1 } from './assembly-plan'
 import { avgImageRouteBindingHashV2 } from './media-capability'
 import { inspectAvgImageBytesV1 } from './image-decoder'
 import { avgMediaProductionEnabledV2 } from './assembly-contract'
+import { readAvgCompiledImageDefinitionV4 } from './visual-planning-image-definition'
+import { readAvgVisualPlanningExecutionSourcesV4 } from './visual-planning-task-source'
+import { avgVisualPlanningExecutionReadyV4 } from './visual-planning-brief'
+import { AVG_COMPILED_IMAGE_SKILL_V4 } from './visual-planning-roles'
 
 const MAXIMUM_RESPONSE_EVIDENCE_BYTES = 48 * 1024 * 1024
 function base64(bytes: ArrayBuffer): string {
@@ -69,16 +73,28 @@ export async function executeAvgMediaImageTaskV2(input: ProductProductionTaskExe
     durationMs: Date.now() - started, storageBytes })
   try {
     if (!avgMediaProductionEnabledV2()) throw new Error('[avg-media] 实验性图片生产未启用，未发送请求')
+    if (options.brief.avgVisualPlanning && !avgVisualPlanningExecutionReadyV4()) throw new Error('[avg-visual-image] V4 图片消费尚未开放，未发送请求')
     if (options.brief.avgAssembly?.version === 3 && !avgVoiceProductionEnabledV3()) throw new Error('[avg-media] 联合图音生产尚未开放，未发送请求')
-    const brief = options.brief, { assembly, capability } = await assertAvgImageProductionDefinitionV3(brief), batch = assembly.mediaBatch
+    const brief = options.brief
+    const executionSource = brief.avgVisualPlanning ? await readAvgVisualPlanningExecutionSourcesV4(input, brief) : null
+    const compiled = executionSource ? await readAvgCompiledImageDefinitionV4({ scope: input.scope, buildId: input.buildId,
+      expectedBuildRevision: executionSource.build.stateRevision, controlEpoch: input.controlEpoch, expectedBrief: brief }) : null
+    const legacy = compiled ? null : await assertAvgImageProductionDefinitionV3(brief)
+    const assembly = compiled?.definition ?? legacy!.assembly, capability = compiled?.capability ?? legacy!.capability, batch = assembly.mediaBatch
     const r = batch.requirements.find(r => input.task.taskKey === `avg.media.generate.${r.requirementKey}`)
     if (!r || !input.taskRunId || !input.onMediaOutput || input.task.executionMode !== 'media-provider' || input.task.kind !== 'avg-media-image-generate'
-      || input.task.skillId !== (brief.avgAssembly?.version === 3 ? 'avg.media-request.v1' : 'product-production.media-request.v1') || input.attempt !== 1 || input.task.maxAttempts !== 1
+      || input.task.skillId !== (compiled ? AVG_COMPILED_IMAGE_SKILL_V4 : brief.avgAssembly?.version === 3 ? 'avg.media-request.v1' : 'product-production.media-request.v1') || input.attempt !== 1 || input.task.maxAttempts !== 1
       || input.task.outputArtifactKeys.length !== 1 || input.task.outputArtifactKeys[0] !== avgRawMediaArtifactKeyV1(r.requirementKey)
       || input.task.budgetReservation.mediaCalls !== 1 || input.task.budgetReservation.modelCalls !== 0 || !input.contextText.trim()) {
       throw new Error('[avg-media] 图片任务不属于准确的冻结 Harness/Skill/单次调用域')
     }
-    const source = () => readAvgImageTaskSourcesV2(input,brief)
+    const source = compiled ? async () => {
+      const current = await readAvgVisualPlanningExecutionSourcesV4(input, brief)
+      const fresh = await readAvgCompiledImageDefinitionV4({ scope: input.scope, buildId: input.buildId,
+        expectedBuildRevision: current.build.stateRevision, controlEpoch: input.controlEpoch, expectedBrief: brief })
+      if (canonicalProductProductionJsonV2(fresh.definition.compilation) !== canonicalProductProductionJsonV2(compiled.definition.compilation)) throw new Error('[avg-visual-image] 当前编译需求已变化')
+      return fresh.source
+    } : () => readAvgImageTaskSourcesV2(input,brief)
     const accepted = await source()
     if (capability.capabilityHash !== await hashProductProductionValueV2(AVG_IMAGE_REFERENCE_CAPABILITY_V1)) throw new Error('[avg-media] 图片能力快照已变化，请重新准备批次')
     const resolved = options.mediaCapabilities.get(AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1)
@@ -95,7 +111,9 @@ export async function executeAvgMediaImageTaskV2(input: ProductProductionTaskExe
         requirementKey: binding.requirementKey, adapterId: binding.adapterId, baseCapabilityHash: resolved.binding.bindingHash, endpointRouteHash: options.imageEndpointRouteHash })) {
       throw new Error('[avg-media] 图片配置路由已变化，请重新准备并确认制作方案')
     }
-    const frozen = await prepareAvgRawImageRequestV1({ brief, requirementKey: r.requirementKey, idempotencyKey: input.idempotencyKey })
+    const frozen = compiled ? await prepareAvgRawImageRequestFromBatchV1({ batch, capability, qualityProfile: brief.qualityProfile,
+      requirementKey: r.requirementKey, idempotencyKey: input.idempotencyKey })
+      : await prepareAvgRawImageRequestV1({ brief, requirementKey: r.requirementKey, idempotencyKey: input.idempotencyKey })
     const request = { ...frozen.request, inputHash: frozen.inputHash }
     const adapter = await createAvgDraftReferenceAdapterV1({ scope: input.scope, frozen, inspectReference: async (reference, bytes) => {
       await inspectAvgImageBytesV1({ data: bytes, assetKey: reference.assetKey, contentHash: reference.contentHash, mimeType: reference.mimeType })
@@ -146,6 +164,7 @@ export async function executeAvgMediaImageTaskV2(input: ProductProductionTaskExe
       payload, metadata: asset, rights: candidate.rights, contentHash: blob.contentHash, blobObjectId: blob.id!, mimeType: blob.mimeType, byteSize: blob.byteSize,
       quality: { received: true, rawResponseRecorded: responseRecorded, responseEvidenceHash, headerVerified: true, contentHashVerified: true, decoderVerified: false,
         referenceTransmission: candidate.metadata.avgReferenceTransmission, sourceRule: accepted.artifact, sourceScripts: accepted.scripts.map(s => s.artifact),
+        ...(compiled ? { sourceCompilation: compiled.definition.compilation } : {}),
         sourceContextHash: await hashProductProductionValueV2(input.contextText) } }
     return { artifacts: [artifact], passedGateIds: [...input.task.acceptanceGateIds],
       usage: usage(1, evidenceBytes + blob.byteSize + new TextEncoder().encode(canonicalProductProductionJsonV2(payload)).byteLength) }
