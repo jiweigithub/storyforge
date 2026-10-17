@@ -9,6 +9,7 @@ import { cloneTtrpgSessionParticipantsV2 } from './participants'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { projectTtrpgOpenMemoryRowV1, assertTtrpgOpenMemoryLocatorV1 } from './open-memory-proof'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
+import { cloneTtrpgOpenAudioMediaV1 } from './open-audio-media'
 
 /**
  * Clone the TTRPG-owned side tables represented by a replayed branch state.
@@ -33,6 +34,7 @@ export async function cloneTtrpgRuntimeBranchExtensionsV1(input: {
 
   const childRuntime = input.state.ttrpg && 'runFormat' in input.state.ttrpg && input.state.ttrpg.runFormat === 'open'
     ? parseTtrpgRuntimeStateV2(input.state.ttrpg) : null
+  if (childRuntime) await cloneTtrpgOpenAudioMediaV1({ parent: input.parent, child: input.child, runtime: childRuntime })
   if (childRuntime?.openRun?.memoryReceipts?.length) {
     const parentRows = await db.ttrpgNarrativeMemories.where('sessionId').equals(input.parent.id).toArray()
     const parentKey = childRuntime.branchLineage!.parentSessionKey

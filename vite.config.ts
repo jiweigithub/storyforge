@@ -26,6 +26,7 @@ const TTRPG_REPLAY_CHUNK_MODULES = {
     'open-authorization', 'open-chaos', 'open-content-authoring', 'open-content-common',
     'open-content-predicates', 'open-content-references', 'open-content-situations', 'open-content-templates',
     'open-contract', 'open-contract-parse', 'context-trigger-contract', 'open-context-policy', 'open-model-purpose-contract', 'open-memory-contract', 'open-memory-receipt', 'open-model-memory-contract', 'open-brief-contract', 'open-memory-event-digest', 'open-memory-prefix-proof', 'open-private-choice-contract', 'open-coordination',
+    'open-audio-runtime', 'open-audio-scope',
     'open-fact-authority', 'open-fact-ledger', 'open-fact-runtime-references', 'open-gates', 'open-intent',
     'open-knowledge', 'open-knowledge-share', 'open-kp-binding', 'open-kp-narration',
     'open-kp-receipt', 'open-model-calls', 'open-model-purpose', 'open-oracle-contract',
@@ -37,6 +38,7 @@ const TTRPG_REPLAY_CHUNK_MODULES = {
     'open-entity-contract', 'open-entity-model-contract', 'open-entity-model-origin-contract', 'open-entity-mechanics', 'open-entity-catalog', 'open-entity-window', 'open-runtime-entity-references', 'open-common-oracle-request', 'open-common-oracle-archive-contract', 'open-oracle-runtime-delivery',
   ],
   open: [
+    'open-audio-contract',
     'open-branch-contract', 'open-branch-recovery', 'open-companion-preauthorization', 'open-handoff', 'open-hosting-delegation',
     'open-gate-recovery', 'open-knowledge-discovery', 'open-discovery-effect-templates', 'open-operation', 'open-oracle-review', 'open-pressure-cycle',
     'open-pressure-effect', 'open-table-conversation', 'open-table-conversation-reducer', 'open-turn-settlement', 'open-manual-action', 'open-manual-catalog', 'open-private-choice', 'open-table-risk', 'open-rule-plan', 'open-runtime-contract', 'open-situation-cycle',
@@ -50,6 +52,7 @@ const TTRPG_REPLAY_CHUNK_MODULES = {
     'open-situation-work-reducer', 'open-stage-close-reducer', 'open-terminal-gates-reducer', 'runtime',
     'runtime-branch', 'runtime-event-reducer', 'open-session-situation-reducer',
     'open-entity-reducer',
+    'open-audio-reducer', 'open-audio-media',
   ],
 } as const
 

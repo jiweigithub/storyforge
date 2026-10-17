@@ -6,6 +6,7 @@ import { captureTtrpgOpenAncestorV1, createTtrpgOpenBranchRecoveryTasksV1,
 import { ttrpgOpenScopedKeyV1 } from './open-coordination'
 import { key } from './open-contract-parse'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
+import { verifyTtrpgOpenAudioReceiptsV1 } from './open-audio-proof'
 
 const preparedBranches = new WeakMap<ProductRuntimeState, { hash: string; runtimeSourceHash: string }>()
 export async function consumePreparedTtrpgOpenBranchStateV1(state: ProductRuntimeState, runtimeSourceHash: string): Promise<void> {
@@ -29,6 +30,7 @@ export async function prepareTtrpgOpenBranchStateV1(input: {
   await verifyTtrpgOpenSessionSituationHashesV1(parentRuntime.openRun?.situationReceipts ?? [])
   const { verifyTtrpgOpenMemoryReceiptsV1 } = await import('./open-memory-proof')
   await verifyTtrpgOpenMemoryReceiptsV1({ runtime: parentRuntime, runtimeSourceHash: input.parent.runtimeSourceHash, events: input.events })
+  await verifyTtrpgOpenAudioReceiptsV1({ runtime: parentRuntime, runtimeSourceHash: input.parent.runtimeSourceHash, events: input.events })
   const ancestor = await captureTtrpgOpenAncestorV1({ sessionKey: parentRuntime.sessionKey, seed: input.parent.seed,
     runtimeSourceHash: input.parent.runtimeSourceHash, throughSequence: input.throughSequence, state: input.state,
     authorization: parentRuntime.authorization, openRun: parentRuntime.openRun, events: input.events })

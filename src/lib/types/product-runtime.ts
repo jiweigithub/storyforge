@@ -1207,6 +1207,7 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "ttrpg.media.available",
   "ttrpg.media.failed",
   "ttrpg.media.cancelled",
+  "ttrpg.audio.cue.applied",
   "ttrpg.open.run.started",
   "ttrpg.open.epoch.started",
   "ttrpg.open.epoch.closed",

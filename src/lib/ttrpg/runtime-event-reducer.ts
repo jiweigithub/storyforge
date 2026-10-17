@@ -1,3 +1,4 @@
+import { applyTtrpgOpenAudioEventV1 } from './open-audio-reducer'
 import { applyTtrpgOpenCommonOracleArchiveV1 } from './open-common-oracle-archive-contract'
 import { TTRPG_OPEN_COMMON_ORACLE_INPUT_V1, parseTtrpgOpenCommonOracleRequestCloseV1 } from './open-common-oracle-request'
 import { assertTtrpgOpenCommonOracleCallOriginV1 } from './open-model-calls'
@@ -91,7 +92,7 @@ export function applyTtrpgRuntimeEventV1(
   payload: ProductRuntimeJsonObjectV1,
 ): ProductRuntimeState {
   assertTtrpgOpenSituationWindowEventV1(state.ttrpg?.sessionKey ? parseTtrpgRuntimeStateV2(state.ttrpg) : null, event.type)
-  if (applyTtrpgOpenEntityEventV1(state, event, payload) || applyTtrpgOpenSessionSituationEventV1(state, event, payload) || applyTtrpgOpenMemoryEventV1(state, event, payload)) {
+  if (applyTtrpgOpenAudioEventV1(state, event, payload) || applyTtrpgOpenEntityEventV1(state, event, payload) || applyTtrpgOpenSessionSituationEventV1(state, event, payload) || applyTtrpgOpenMemoryEventV1(state, event, payload)) {
     state.ttrpg = parseTtrpgRuntimeStateV2(state.ttrpg)!
     state.lastSequence = event.sequence
     return state

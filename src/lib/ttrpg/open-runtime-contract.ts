@@ -1,3 +1,4 @@
+import { assertTtrpgOpenAudioJournalV1, parseTtrpgOpenAudioReceiptV1, type TtrpgOpenAudioReceiptV1 } from './open-audio-contract'
 import { assertTtrpgOpenEntityJournalV1 } from './open-entity-journal'
 import { parseTtrpgOpenEntityOperationV1, type TtrpgOpenEntityOperationV1 } from './open-entity-contract'
 import { parseTtrpgOpenSessionSituationReceiptV2, type TtrpgOpenSessionSituationReceipt } from './open-session-situation-contract'
@@ -149,6 +150,7 @@ export interface TtrpgOpenRunStateV1 {
   knowledgeShares?: TtrpgOpenKnowledgeShareReceiptV1[];
   oracleReviews?: TtrpgOpenOracleReviewV1[];
   tableMessages?: TtrpgOpenTableMessageV1[];
+  audioReceipts?: TtrpgOpenAudioReceiptV1[];
   narrations?: TtrpgOpenNarrationReceiptV1[];
   stageClosures?: TtrpgOpenStageClosureV1[];
   terminalReceipts?: TtrpgOpenTerminalReceiptV1[];
@@ -575,6 +577,7 @@ export function parseTtrpgOpenRunStateV1(
       ...(Object.prototype.hasOwnProperty.call(row, "knowledgeShares") ? ["knowledgeShares"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "oracleReviews") ? ["oracleReviews"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "tableMessages") ? ["tableMessages"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "audioReceipts") ? ["audioReceipts"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "narrations") ? ["narrations"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "memoryReceipts") ? ["memoryReceipts"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "situationReceipts") ? ["situationReceipts"] : []),
@@ -717,6 +720,7 @@ export function parseTtrpgOpenRunStateV1(
         ? row.knowledgeShares.map(parseTtrpgOpenKnowledgeShareReceiptV1) : fail("knowledgeShares 必须是有限数组"),
     } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "tableMessages") ? { tableMessages: Array.isArray(row.tableMessages) && row.tableMessages.length <= 100000 ? row.tableMessages.map(parseTtrpgOpenTableMessageV1) : fail("tableMessages 必须有界") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "audioReceipts") ? { audioReceipts: Array.isArray(row.audioReceipts) && row.audioReceipts.length <= 100000 ? row.audioReceipts.map(parseTtrpgOpenAudioReceiptV1) : fail("audioReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "narrations") ? { narrations: Array.isArray(row.narrations) && row.narrations.length <= 100000 ? row.narrations.map(parseTtrpgOpenNarrationReceiptV1) : fail("narrations 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "entityOperations") ? { entityOperations: Array.isArray(row.entityOperations) && row.entityOperations.length <= 1000 ? row.entityOperations.map(parseTtrpgOpenEntityOperationV1) : fail("entityOperations 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "situationReceipts") ? { situationReceipts: Array.isArray(row.situationReceipts) && row.situationReceipts.length <= 1000 ? row.situationReceipts.map(parseTtrpgOpenSessionSituationReceiptV2) : fail("situationReceipts 必须有界") } : {}),
@@ -799,6 +803,7 @@ export function parseTtrpgRuntimeStateV2(
   if (openRun && authorization === null && (openRun.coordination.epochs.length || openRun.coordination.calls.length
     || openRun.operations.length || openRun.ruleReceipts.length
     || openRun.tableMessages?.some(message => message.sourceRef.sessionKey === sessionKey)
+    || openRun.audioReceipts?.some(receipt => receipt.envelope.sourceRef.sessionKey === sessionKey)
     || openRun.knowledge.some(entry => entry.acquisitionRef.sessionKey === sessionKey)
     || branchLineage?.recoveryTasks.some(task => task.status !== "awaiting-authorization" && task.status !== "withdrawn"))) {
     fail("未重新确认的分支不得拥有活动授权或恢复执行");
@@ -1034,6 +1039,7 @@ export function parseTtrpgRuntimeStateV2(
     ...(branchLineage ? { branchLineage } : {}),
   };
   assertTtrpgOpenTableMessageHistoryV1(result);
+  assertTtrpgOpenAudioJournalV1(result);
   assertTtrpgOpenPressureHistoryV1(result);
   assertTtrpgOpenSituationCycleHistoryV1(result);
   return result;

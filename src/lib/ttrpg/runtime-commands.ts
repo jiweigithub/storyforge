@@ -1,3 +1,6 @@
+import { createTtrpgOpenAudioReceiptV1, parseTtrpgOpenAudioRequestV1, ttrpgOpenAudioSourceEqualV1, type TtrpgOpenAudioRequestV1 } from './open-audio-contract'
+import { readTtrpgOpenAudioUploadTicketV1, readTtrpgOpenAudioMediaWitnessV1, assertTtrpgOpenAudioMediaWitnessV1, type TtrpgOpenAudioMediaWitnessV1, type TtrpgOpenAudioUploadTicketV1 } from './open-audio-media'
+import { verifyTtrpgOpenAudioReceiptsV1 } from './open-audio-proof'
 import { parseTtrpgOpenCommonOracleAuthorizationV1, hashTtrpgOpenCommonOracleRequestBasisV1, assertTtrpgOpenCommonOracleRequestSourceV1, TTRPG_OPEN_COMMON_ORACLE_INPUT_V1, type TtrpgOpenCommonOracleAuthorizationV1 } from './open-common-oracle-request'
 import { assertTtrpgOpenCommonOracleEpochAuthorityV1, assertTtrpgOpenCommonOracleEpochOriginV1 } from './open-coordination'
 import { assertTtrpgOpenEntityModelCallOriginV1 } from './open-model-calls'
@@ -182,6 +185,7 @@ type FormalTtrpgEventType = Extract<
   | "ttrpg.open.intent.confirmed"
   | "ttrpg.open.choice.disclosed"
   | "ttrpg.open.table-message.posted"
+  | "ttrpg.audio.cue.applied"
   | "ttrpg.open.intent.disposed"
   | "ttrpg.world-turn.advanced"
   | "ttrpg.situation.changed"
@@ -239,6 +243,7 @@ function assertScriptedTtrpgCampaign(
 }
 
 const OPEN_FOUNDATION_COMMANDS: readonly FormalTtrpgEventType[] = [
+  "ttrpg.audio.cue.applied",
   "ttrpg.memory.recorded",
   "ttrpg.open.run.started", "ttrpg.world-turn.advanced",
   "ttrpg.open.epoch.started", "ttrpg.open.epoch.closed", "ttrpg.open.hosting.delegated", "ttrpg.open.hosting.stopped",
@@ -384,6 +389,7 @@ async function appendFormalTtrpgCommand(
       payload: Record<string, unknown>;
       agentEvidence?: TtrpgOpenAgentEvidenceV1;
       commonOracleArchiveWitness?: TtrpgOpenCommonOracleArchiveWitnessV1;
+      audioMediaWitness?: TtrpgOpenAudioMediaWitnessV1;
       eventEvidence?: readonly ProductRuntimeEvent[];
     }>;
     afterCommit?: (context: {
@@ -455,7 +461,7 @@ async function appendFormalTtrpgCommand(
   }
   if (
     previewState.ttrpg.product.safety.status === "paused" &&
-    !["ttrpg.open.entity.disposed", "ttrpg.open.hosting.stopped", "ttrpg.open.table-message.posted", "ttrpg.safety.changed", "ttrpg.session-zero.completed", "ttrpg.open.failure.logged", "ttrpg.open.epoch.closed", "ttrpg.open.intent.disposed", "ttrpg.open.call.finished"].includes(input.type)
+    !["ttrpg.audio.cue.applied", "ttrpg.open.entity.disposed", "ttrpg.open.hosting.stopped", "ttrpg.open.table-message.posted", "ttrpg.safety.changed", "ttrpg.session-zero.completed", "ttrpg.open.failure.logged", "ttrpg.open.epoch.closed", "ttrpg.open.intent.disposed", "ttrpg.open.call.finished"].includes(input.type)
   ) {
     throw new Error(
       "[ttrpg] 战役已由安全工具暂停；恢复后才能继续规则、场景或 AI 主持。",
@@ -504,6 +510,7 @@ async function appendFormalTtrpgCommand(
       db.productBuilds,
       ...(previewBuilt.agentEvidence ? [db.agentRuns, db.agentRunEvents, db.agentRunArtifacts] : previewBuilt.commonOracleArchiveWitness ? [db.agentRuns] : []),
       ...(input.type === 'ttrpg.memory.recorded' ? runtimeInstanceTablesV1() : []),
+      ...(previewBuilt.audioMediaWitness ? [db.productMediaAssets, db.productMediaBlobs, db.mediaBlobObjects] : []),
     ],
     async () => {
       const session = await db.productRuntimeSessions.get(input.sessionId);
@@ -602,6 +609,7 @@ async function appendFormalTtrpgCommand(
       // Reusing it also keeps WebCrypto outside Dexie's active transaction.
       if (previewBuilt.agentEvidence) await assertTtrpgOpenAgentEvidenceUnchangedV1(previewBuilt.agentEvidence);
       if (previewBuilt.commonOracleArchiveWitness) await assertTtrpgOpenCommonOracleArchiveWitnessV1(previewBuilt.commonOracleArchiveWitness);
+      if (previewBuilt.audioMediaWitness) await assertTtrpgOpenAudioMediaWitnessV1(previewBuilt.audioMediaWitness);
       if (previewBuilt.eventEvidence) {
         const expected = previewBuilt.eventEvidence
         if (expected.some(event => event.id == null || event.sessionId !== session.id)) throw new Error('[ttrpg] 来源事件没有确切实例定位')
@@ -6212,6 +6220,43 @@ export async function stopTtrpgOpenOperationGateRecoveryV1(input: TtrpgOpenOpera
     } });
 }
 
+
+/** Explicit, post-settlement presentation. The public result contains no hidden media metadata. */
+export async function applyTtrpgOpenAudioCueV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; submissionKey: string; request: TtrpgOpenAudioRequestV1
+  uploadTicket?: TtrpgOpenAudioUploadTicketV1; decision: 'confirm-this-audio-and-audience'
+}): Promise<{ sequence: number }> {
+  pressureParse.literal(input.decision, 'confirm-this-audio-and-audience', 'audio explicit confirmation')
+  const viewerKey = openKey(input.viewerKey, 'audio viewer'), submissionKey = openKey(input.submissionKey, 'audio submission'), request = parseTtrpgOpenAudioRequestV1(input.request)
+  const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
+  if (!runtime?.openRun) throw new Error('[ttrpg-audio] 需要有效开放跑团')
+  const grant = request.media.kind === 'upload' ? readTtrpgOpenAudioUploadTicketV1(input.uploadTicket, { sessionId: input.sessionId, sessionKey: runtime.sessionKey, viewerKey, request }) : null
+  const retainedRef = request.media.kind === 'upload' ? null : request.media.sourceRef
+  const asset = grant?.asset ?? (request.action === 'stop' ? null : runtime.openRun.audioReceipts?.find(row => retainedRef && ttrpgOpenAudioSourceEqualV1(row.envelope.sourceRef, retainedRef))?.asset ?? null)
+  const commandId = await ttrpgOpenScopedKeyV1(runtime.sessionKey, 'audio-control', [viewerKey, submissionKey])
+  const prior = await db.productRuntimeEvents.where('[sessionId+commandId]').equals([input.sessionId, commandId]).first()
+  const result = await appendFormalTtrpgCommand({ ...input, commandId, baseSequence: prior?.baseSequence ?? input.baseSequence, baseStateHash: prior?.baseStateHash ?? input.baseStateHash,
+    type: 'ttrpg.audio.cue.applied', intent: { viewerKey, submissionKey, request, asset, decision: input.decision },
+    build: async context => {
+      requireTtrpgOpenContent(context.ttrpgContent)
+      const current = parseTtrpgRuntimeStateV2(context.state.ttrpg)
+      if (!current?.openRun || !current.authorization || !context.session.runtimeSourceHash || context.session.worldId == null || context.session.workId == null) throw new Error('[ttrpg-audio] 缺少当前正式团局来源')
+      const seat = assertTtrpgOpenAuthorizationCurrentV1({ authorization: current.authorization, participants: context.participants, viewerKey })
+      if (grant && (grant.runtimeSourceHash !== context.session.runtimeSourceHash || grant.sequence !== input.baseSequence || grant.stateHash !== input.baseStateHash
+        || grant.scope.projectId !== context.session.projectId || grant.scope.worldId !== context.session.worldId || grant.scope.workId !== context.session.workId)) throw new Error('[ttrpg-audio] 上传核对后进度或授权已变化，请重新核对原文件')
+      const events = await readSessionEvents(context.session)
+      const canonical = replayProductRuntimeEvents(parseProductRuntimeState(context.session.initialStateJson), events)
+      if (stableJson(canonical) !== stableJson(context.state)) throw new Error('[ttrpg-audio] 当前缓存与原事件不一致，须先核对原进度')
+      await verifyTtrpgOpenAudioReceiptsV1({ runtime: current, runtimeSourceHash: context.session.runtimeSourceHash, events })
+      const receipt = createTtrpgOpenAudioReceiptV1({ runtime: current, runtimeSourceHash: context.session.runtimeSourceHash, viewerKey, request, asset,
+        sequence: context.sequence, commandId, submissionKey })
+      const media = asset ? await readTtrpgOpenAudioMediaWitnessV1({ scope: { projectId: context.session.projectId, worldId: context.session.worldId, workId: context.session.workId }, session: context.session, expected: asset }) : null
+      if (grant && media?.witness.asset.id !== grant.assetId) throw new Error('[ttrpg-audio] 原上传定位已变化，请重新核对文件')
+      return { actorKey: seat.actorKey, targetKey: request.privateActorKey, payload: { receipt }, eventEvidence: events,
+        ...(media ? { audioMediaWitness: media.witness } : {}) }
+    } })
+  return { sequence: result.sequence }
+}
 
 /** Human-only, zero-world-time discussion; the source policy never allows mechanical effects. */
 export async function postTtrpgOpenTableMessageV1(input: FormalTtrpgCommandEnvelope & {

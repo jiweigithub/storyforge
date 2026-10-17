@@ -1,4 +1,6 @@
-/** P10 pure audience/replay foundation only; no formal E16 append, provider, or playback. */
+/** Explicit human audio review/E16 plus pure scope helpers; no provider dispatch. */
+export { readTtrpgOpenAudioDeskV1, prepareTtrpgOpenAudioUploadV1, prepareTtrpgOpenRetainedAudioV1, confirmTtrpgOpenAudioReviewV1, readTtrpgOpenAudioClipV1 } from './open-audio-service'
+export type { TtrpgOpenAudioDeskInputV1, TtrpgOpenAudioDeskV1, TtrpgOpenAudioReviewV1 } from './open-audio-service'
 export { createTtrpgOpenAudioScopeV1, assertTtrpgOpenAudioScopeAuthorityV1, parseTtrpgOpenAudioScopeV1,
   parseTtrpgOpenScopedAudioEventV1, projectTtrpgOpenScopedAudioV1 } from './open-audio-scope'
 export type { TtrpgOpenAudioScopeV1, TtrpgOpenScopedAudioEventV1 } from './open-audio-scope'
