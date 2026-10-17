@@ -70,7 +70,6 @@ export default function TtrpgOpenAudioPanel(props: {
     if (owner.identity !== identity) return
     const token = ++revision.current
     const current = () => live.current && revision.current === token && currentIdentity.current === owner
-    transitions.cancel()
     const deadline = performance.now() + 3000
     const guard = localChoice.current.enabled && [...elements.current.values()].some(handle => handle.isPlaying()) ? setTimeout(() => {
       if (!current()) return
@@ -80,6 +79,9 @@ export default function TtrpgOpenAudioPanel(props: {
       const value = await readTtrpgOpenAudioDeskV1(input())
       if (!current()) return
       const before = lastView.current?.visit === owner ? lastView.current.value : null
+      // Duplicate same-head reads are not new playback controls. Only a newly
+      // observed head invalidates an earlier tail; safety/read failures stop below.
+      if (!before || before.sequence !== value.sequence) transitions.cancel()
       if (before && before.authorizationRevision !== value.authorizationRevision) {
         localChoice.current.enabled = false; stopLocal(); setEnabled(false)
       } else if (before && localChoice.current.enabled && !value.paused && before.tracks.map(row => row.clipKey).join('|') !== value.tracks.map(row => row.clipKey).join('|')) {

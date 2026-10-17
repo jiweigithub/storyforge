@@ -96,6 +96,12 @@ test('native opted-in background crossfade overlaps actual decoded nodes, releas
   const old = await watchTransition(card); await replay(card)
   await expect.poll(() => page.evaluate(() => (window as any).audioTransition.samples.some((r: any) => !r.oldPaused && r.old > 0 && r.old < 1 && !r.incomingPaused && r.incoming > 0 && r.incoming < 1)), { timeout: 15000 }).toBe(true)
   expect(await old.evaluate(el => el.isConnected && !!el.closest('article')?.hidden)).toBe(true)
+  expect(await page.evaluate(() => {
+    const old = (window as any).audioTransition.old as HTMLAudioElement
+    if (old.paused) return false
+    const button = [...document.querySelectorAll('[data-testid="ttrpg-open-audio-panel"] button')].find(node => node.textContent === '重新读取音轨') as HTMLButtonElement
+    button.click(); return !old.paused && !!old.getAttribute('src')
+  })).toBe(true)
   await expect.poll(() => old.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
   expect(await old.evaluate(el => el.getAttribute('src'))).toBeNull()
   expect(await page.evaluate(() => (window as any).audioTransition.revoked.includes((window as any).audioTransition.url))).toBe(true)

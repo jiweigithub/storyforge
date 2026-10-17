@@ -58,6 +58,8 @@ describe('R-TTRPGOPEN10 actual audio component confirmation, local listening and
     await click('确认本次音轨控制'); await until(() => !host.querySelector('[data-testid="ttrpg-open-audio-review"]'))
   }
   it('hands the actual playing node across StrictMode replacement, follows once, samples both gains, and releases every node on local mute', async () => {
+    let reads = 0; const actual = audio.readTtrpgOpenAudioDeskV1
+    vi.spyOn(audio, 'readTtrpgOpenAudioDeskV1').mockImplementation(async input => { const value = await actual(input); reads++; return value })
     const play = transport(), s = await setup('party', false, 3000), state = await readProductRuntimeState(s.owner.sessionId)
     await click('开启本机音频'); await until(() => !!currentAudio())
     const follow = host.querySelector('[aria-label="跟随背景与环境音轨"]') as HTMLInputElement
@@ -69,6 +71,8 @@ describe('R-TTRPGOPEN10 actual audio component confirmation, local listening and
     expect(old.isConnected).toBe(true); expect(old.closest('article')!.hidden).toBe(true); expect(old.paused).toBe(false); expect(old.getAttribute('src')).not.toBeNull()
     await until(() => old.volume > 0 && old.volume < 1 && incoming.volume > 0 && incoming.volume < 1)
     expect(play).toHaveBeenCalledTimes(2)
+    const beforeRead = reads; await click('重新读取音轨'); expect(old.paused).toBe(false)
+    await until(() => reads > beforeRead); expect(old.paused).toBe(false); expect(play).toHaveBeenCalledTimes(2)
     await act(async () => { incoming.volume = .2; incoming.dispatchEvent(new Event('volumechange')) })
     expect(old.paused).toBe(true)
     await act(async () => { await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))) })
