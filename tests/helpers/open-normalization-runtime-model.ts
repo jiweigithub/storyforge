@@ -7,10 +7,10 @@ import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
 import { createTtrpgOpenNormalizationRuntimeReferencePolicyV1 } from '../../src/lib/ttrpg/open-runtime-entity-references'
 import { TTRPG_OPEN_NORMALIZATION_INSTANCE_INPUT_V1 } from '../../src/lib/ttrpg/open-coordination'
 
-export async function setupNormalizationRuntimeSourceV1(audience: 'public' | 'party' | 'gm-only' = 'party', configure?: Parameters<typeof setupOracleRuntimeModelV1>[1], options: { selectedCharacterKeys?: string[] } = {}) {
-  const s = await setupOracleRuntimeModelV1(audience, configure, undefined, options)
+export async function setupNormalizationRuntimeSourceV1(audience: 'public' | 'party' | 'gm-only' = 'party', configure?: Parameters<typeof setupOracleRuntimeModelV1>[1], options: { selectedCharacterKeys?: string[]; interpretation?: string } = {}) {
+  const s = await setupOracleRuntimeModelV1(audience, configure, undefined, { selectedCharacterKeys: options.selectedCharacterKeys })
   const original = await generateTtrpgOpenOracleCandidateV2({ ...s.input,
-    runAI: async () => JSON.stringify({ interpretation: '保留这条已接受原解释：该 NPC 对此地点仍不熟悉，事实另行审阅。', facts: [s.fact] }) })
+    runAI: async () => JSON.stringify({ interpretation: options.interpretation ?? '保留这条已接受原解释：该 NPC 对此地点仍不熟悉，事实另行审阅。', facts: [s.fact] }) })
   await reviewTtrpgOpenOracleCandidateV1({ ...await openEnvelopeV1(s.f.sessionId, 'normalization.original.accept'), ...s.resume(original.prepared),
     candidateHash: original.candidate.candidateHash, interpretationDecision: 'accept', interpretationReason: null,
     choices: [{ proposalIndex: 0, decision: 'discard', reason: '原解释已接受，这条正向关系提案不采用' }] })

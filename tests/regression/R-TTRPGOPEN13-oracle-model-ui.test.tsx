@@ -36,7 +36,7 @@ describe('R-TTRPGOPEN13 actual model fact component consent, exact review and id
     vi.spyOn(harness, 'generateTtrpgOpenOracleCandidateV2').mockImplementation(input => original({ ...input, aiConfig: undefined, runAI: sends }))
     props = { input: s.owner, sequence: (await readProductRuntimeState(s.f.sessionId)).lastSequence, busy: false, perform: async job => {
       const work = (async () => { try { await job() } finally {
-        props = { ...props, sequence: (await readProductRuntimeState(props.input.sessionId)).lastSequence }; root.render(createElement(TtrpgOpenOracleModelPanel, props))
+        props = { ...props, sequence: (await readProductRuntimeState(props.input.sessionId)).lastSequence }; act(() => root.render(createElement(TtrpgOpenOracleModelPanel, props)))
       } })()
       pending.add(work)
       try { await work } finally { pending.delete(work) }
