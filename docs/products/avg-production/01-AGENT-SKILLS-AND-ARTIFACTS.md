@@ -1,6 +1,6 @@
 # AVG 专业岗位、工件与生产图
 
-> L2 · 版本：1.5.0 · 生效：2026-10-17 · 受 [AVG 产品契约](../AVG.md)约束。
+> L2 · 版本：1.6.0 · 生效：2026-10-17 · 受 [AVG 产品契约](../AVG.md)约束。
 > 22 岗位/Skill 是目标合同；BASE-00B 已登记首批八种 schema、输出 key、关闭的专业 AI 写口和作者输入采用接缝，实际验证状态见实施计划。未登记的专业 Skill 尚不可调用，schema 或作者输入采用不等于岗位实现。
 
 ## 1 主助手、岗位与确定性职责
@@ -86,7 +86,7 @@ BASE-00B 的确定性作者输入先绑定已冻结 human-import 任务，只写
 
 下一私有合同 `storyforge.avg.visual-planning-brief/version=4` 放在通用 V3 Brief 的 AVG 专属 `avgVisualPlanning` 字段，与旧 avgAssembly/avgRevision 互斥；通用 Brief 仍为 V3，旧 AVG V1/V2/V3 不改写。固定 Plan 区分原始方案接收、作者正式方向/主体方案采用、确定性需求编译、图片及原有评审/组装；模型任务不能直接产出正式视觉方向 key。预算按同一有限拓扑派生，最多一次尝试，费用未知保持 null。
 
-新登记 reader 通过当前 Work/Build、完整 Brief/固定 Plan、实际作者开始/来源计划和规则/脚本采用证据校验准确来源；模型只收到本次主体的公开名称、作者明确用途/造型约束和本项逻辑参考元数据。完整脚本、物件真相、规则状态及原图不默认外发；主体设计只取得对应已采用方向投影，metadata-only 不得声称看过参考图。该 reader 的真实新版本正向 Run、原始方案 producer、候选/作者采用、编译消费及 UI 尚待纵切面接线。保存/开始命令与旧通用执行器明确拒绝新合同；原 generic 专业 admission gate 继续关闭，当前没有新增模型调用。详见[工作包 §9.5](../../roadmap/AVG-WORK-PACKAGE-CARDS.md#95-avg-04a5-专业视觉方案与需求编译施工中)。
+新登记 reader 通过当前 Work/Build、完整 Brief/固定 Plan、实际作者开始/来源计划和规则/脚本采用证据校验准确来源；模型只收到本次主体的公开名称、作者明确用途/造型约束和本项逻辑参考元数据。完整脚本、物件真相、规则状态及原图不默认外发；主体设计只取得对应已采用方向投影，metadata-only 不得声称看过参考图。当前后端增量已通过实际 S2/开始、共享 Harness 子 Run、解析前原响应、严格原始方案 producer、作者候选/采用和确定性需求工件的受控正向路径。作者候选 V6 保留 model-proposal 来源、准确原方案和是否修订；收到原始方案不能直接得到正式方向。参考在交付 metadata 前核验同 Work、实际字节/hash 与许可声明。图片消费与工作台仍待接，保存/开始和通用 dispatch 的生产就绪门继续为 false，不能启动新 V4 生产；历史只读核验不恢复采用或调用权，原 generic 专业写口仍关闭。实际 provider 调用为 0。详见[工作包 §9.5](../../roadmap/AVG-WORK-PACKAGE-CARDS.md#95-avg-04a5-专业视觉方案与需求编译施工中)。
 
 ## 3 三线依赖 DAG
 

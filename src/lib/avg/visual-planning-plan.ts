@@ -59,7 +59,7 @@ export function buildAvgVisualPlanningPlanV4(input: {
   for (const [subject, kind] of subjects) adopted.push(addDirection(kind, subject))
   const compileTask = 'avg.visual.compile.requirements', compileInputs = [...sourceKeys, ...adopted.map(a => a.canonical)]
   const compileParents = [...sourceTaskKeys, ...adopted.map(a => a.authorTask)]
-  additions.push({ ...structuredClone(template), taskKey: compileTask, kind: 'avg-v4-visual-requirements-compile', lane: 'visual', executionMode: 'deterministic',
+  additions.push({ ...structuredClone(template), taskKey: compileTask, kind: 'avg-v4-visual-requirements-compile', lane: 'visual', executionMode: 'deterministic', contextProfile: 'avg-visual-planning-v4',
     inputArtifactKeys: compileInputs, outputArtifactKeys: [AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4], dependsOn: compileParents,
     requiredReceipts: compileParents.map(taskKey => ({ taskKey, receiptHash: null })), subjectLockKeys: [AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4],
     acceptanceGateIds: ['avg.visual.requirements.compiled'], budgetReservation: { modelCalls: 0, inputTokens: 24_000, outputTokens: 0, mediaCalls: 0,

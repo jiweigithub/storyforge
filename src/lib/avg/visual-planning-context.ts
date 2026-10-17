@@ -5,12 +5,15 @@ import { assertRecordInScope } from '../workspace/scope'
 import { parseProductProductionBriefV3 } from '../product-production/contracts'
 import { parseProductProductionPlanV3 } from '../product-production/plan'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
-import { readAvgConfirmedVisualBibleV4, readAvgSystemPlanForCompilationV1 } from './author-artifacts'
+import { readAvgConfirmedVisualArtifactsV4, readAvgSystemPlanForCompilationV1 } from './author-artifacts'
 import { freezeAvgVisualPlanningScopeV1, type AvgMediaSourceInputV1 } from './media-source'
 import { parseAvgVisualPlanningBriefV4, type AvgVisualPlanningBriefV4 } from './visual-planning-brief'
 import { parseAvgVisualBibleV1, type AvgVisualBibleV1 } from './visual-planning-contract'
 import { AVG_VISUAL_PLANNING_ROLES_V1 } from './visual-planning-roles'
 import { avgVisualProposalArtifactKeyV4 } from './visual-planning-plan'
+import { readAvgDraftReferenceBytesV1 } from './editor-service'
+import { verifyAvgReferenceBytesV1 } from './media-reference-contract'
+import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 
 /** Only author-declared visible details are delivered. Full rules, secrets,
  * item descriptions, script text and reference-image bytes are not a default
@@ -70,10 +73,21 @@ export async function readAvgVisualPlanningContextV4(input: AssembleContextInput
   const { sourceInputHash: _hash, aspectRatio: _ratio, ...unhashed } = brief.avgVisualPlanning.scope
   const checked = await freezeAvgVisualPlanningScopeV1(unhashed, canonicalSource)
   if (canonicalProductProductionJsonV2(checked) !== canonicalProductProductionJsonV2(brief.avgVisualPlanning.scope)) throw new Error('[avg-visual-plan] 规则、文本或策划输入已 stale')
-  const bible = task.inputArtifactKeys.includes('avg.media.visual-bible') ? await readAvgConfirmedVisualBibleV4({ scope, buildId: build.id!,
-    expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch }) : null
-  const packet = projectAvgVisualPlanningTaskV4({ planning: brief.avgVisualPlanning, task, source: canonicalSource, visualBible: bible?.payload })
-  const availableRefs = [source.artifact, ...source.scripts.map(s => s.artifact), ...(bible ? [bible.artifact] : [])]
+  const keys = task.inputArtifactKeys.filter(k => k === 'avg.media.visual-bible' || /^avg\.media\.(character|environment|prop)-brief\./.test(k))
+  const adopted = keys.length ? await readAvgConfirmedVisualArtifactsV4({ scope, buildId: build.id!, expectedBuildRevision: build.stateRevision,
+    controlEpoch: build.controlEpoch, artifactKeys: keys }) : []
+  const bible = adopted.find(row => row.payload.schema === 'storyforge.avg.visual-bible')?.payload
+  const compilation = task.kind === 'avg-v4-visual-requirements-compile' && task.executionMode === 'deterministic' && task.contextProfile === 'avg-visual-planning-v4'
+  const packet = compilation ? { schema: 'storyforge.avg.visual-planning-inputs', version: 4, sourceInputHash: checked.sourceInputHash,
+    aspectRatio: checked.aspectRatio, operation: 'compile-adopted-visual-requirements' }
+    : projectAvgVisualPlanningTaskV4({ planning: brief.avgVisualPlanning, task, source: canonicalSource,
+      visualBible: bible?.schema === 'storyforge.avg.visual-bible' ? bible : undefined })
+  const references = compilation ? checked.referenceCatalog : checked.referenceCatalog.filter(ref => 'references' in packet
+    && packet.references.some(selected => selected.referenceKey === ref.referenceKey))
+  for (const { reference } of references) await verifyAvgReferenceBytesV1(reference, await readAvgDraftReferenceBytesV1(scope, reference))
+  for (const template of checked.templates) await validateAvgGeneratedReferencesV1(scope,
+    references.filter(ref => template.allowedReferenceKeys.includes(ref.referenceKey)).map(ref => ref.reference), template.parameters.family)
+  const availableRefs = [source.artifact, ...source.scripts.map(s => s.artifact), ...adopted.map(row => row.artifact)]
   if (availableRefs.length !== task.inputArtifactKeys.length || availableRefs.some(r => !task.inputArtifactKeys.includes(r.artifactKey))) throw new Error('[avg-visual-plan] 准确作者依赖不闭合')
   const refs = task.inputArtifactKeys.map(key => availableRefs.find(r => r.artifactKey === key)!)
   const current = await db.productBuilds.get(build.id!), owner = await db.productProductions.get(production.id!)

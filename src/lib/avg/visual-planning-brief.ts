@@ -29,6 +29,4 @@ export function parseAvgVisualPlanningBriefV4(value: unknown): AvgVisualPlanning
 
 /** No UI/start/dispatch admission until the complete author-adoption and
  * compiled-request consumer slice is installed. Readability grants no call. */
-export function assertAvgVisualPlanningStartReadyV4(): never {
-  throw new Error('[avg-visual-plan] 专业视觉候选采用和需求消费尚未接通，不能开始新调用')
-}
+export function avgVisualPlanningExecutionReadyV4(): boolean { return false }

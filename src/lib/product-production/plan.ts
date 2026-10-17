@@ -282,7 +282,7 @@ function parseTask(value: unknown, index: number): ProductProductionPlanTaskV3 {
     reuse,
     ...(authorRevision ? { authorRevision } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'contextProfile')
-      ? { contextProfile: enumValue(row.contextProfile, ['avg-task-v1'] as const, `${label}.contextProfile`) } : {}),
+      ? { contextProfile: enumValue(row.contextProfile, ['avg-task-v1', 'avg-visual-planning-v4'] as const, `${label}.contextProfile`) } : {}),
   }
 }
 
@@ -343,10 +343,12 @@ export function parseProductProductionPlanV3(
     if (task.failurePolicy !== 'fallback' && task.fallbackTaskKey !== null) fail(`${task.taskKey} 非 fallback 任务声明 fallbackTaskKey`)
     if (task.executionMode === 'model' && task.skillId === null) fail(`${task.taskKey} 模型任务缺少 skillId`)
     if (task.executionMode === 'deterministic' && task.skillId !== null) fail(`${task.taskKey} 确定性任务不应绑定 skillId`)
-    if (task.contextProfile && (productType !== 'avg' || task.executionMode !== 'deterministic'
+    if (task.contextProfile === 'avg-task-v1' && (productType !== 'avg' || task.executionMode !== 'deterministic'
       || !['avg-assembly-integrate', 'avg-assembly-verify', 'avg-media-image-process', 'avg-media-image-reuse', 'avg-media-voice-reuse'].includes(task.kind))) {
       fail(`${task.taskKey} 上下文投影只用于准确 AVG 确定性任务`)
     }
+    if (task.contextProfile === 'avg-visual-planning-v4' && (productType !== 'avg' || task.executionMode !== 'deterministic'
+      || task.kind !== 'avg-v4-visual-requirements-compile')) fail(`${task.taskKey} V4 投影只用于准确需求编译任务`)
   }
   const visiting = new Set<string>(); const visited = new Set<string>()
   const visit = (taskKey: string) => {

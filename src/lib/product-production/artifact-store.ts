@@ -2427,6 +2427,7 @@ export async function verifyProductBuildTerminalArtifactSetV1(input: {
 async function acceptSealedProducerArtifactV1(
   input: ProductBuildArtifactAcceptanceInputV1,
   avgMediaRawAdmission = false,
+  avgVisualPlanningAdmission = false,
 ): Promise<ProductBuildArtifactRecordV1> {
   const scope = await resolveScope({ scope: input.scope })
   if (!isSha256Hash(input.inputHash)) throw new Error('[product-production-artifact] inputHash 无效')
@@ -2469,11 +2470,12 @@ async function acceptSealedProducerArtifactV1(
   const voiceAdmission = avgMediaRawAdmission && input.artifactKey.startsWith('avg.voice.raw.')
     ? await import('../avg/voice-production-admission') : null
   const avgAdmission = avgMediaRawAdmission && !voiceAdmission ? await import('../avg/media-production-admission') : null
+  const planningAdmission = avgVisualPlanningAdmission ? await import('../avg/visual-planning-admission') : null
   const stored = await db.transaction('rw', scopeTransactionTables(
     db.productProductions, db.productProductionBriefs, db.productProductionCommands,
     db.productBuilds, db.productBuildArtifacts, db.mediaBlobObjects,
     db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints,
-    ...(avgMediaRawAdmission ? [db.avgDraftMedia, db.agentRunArtifacts] : []),
+    ...(avgMediaRawAdmission || avgVisualPlanningAdmission ? [db.avgDraftMedia, db.agentRunArtifacts] : []),
   ), async () => {
     const build = await db.productBuilds.get(input.buildId)
     if (!build || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })) {
@@ -2498,6 +2500,11 @@ async function acceptSealedProducerArtifactV1(
         task: producerProof.task, producerRunId: input.producerRunId, artifact: prepared }
       if (voiceAdmission) await voiceAdmission.assertAvgVoiceRawProducerAdmissionV3(admission)
       else await avgAdmission!.assertAvgMediaRawProducerAdmissionV2(admission)
+    }
+    if (planningAdmission) {
+      if (!producerProof || input.producerRunId == null) throw new Error('[avg-visual-plan] 原始方案必须携带严格 producer 证明')
+      await planningAdmission.assertAvgVisualPlanningProducerAdmissionV4({ scope, build: build as ProductBuildRecordV1 & { id: number },
+        task: producerProof.task, producerRunId: input.producerRunId, artifact: prepared })
     }
     if (prepared.blobObjectId != null) {
       const blob = await db.mediaBlobObjects.get(prepared.blobObjectId)
@@ -2846,6 +2853,51 @@ type AvgHistoricalMediaEvidenceInputV1 = {
   expectedBriefHash: string; expectedPlanHash: string; sourceControlEpoch: number
   artifactKey: string; version: number; contentHash: string
 }
+
+/** Read-only V4 semantic history, including an imported completed prefix.
+ * Kept separate from active producer admission: restoring a project cannot
+ * grant author adoption, retry, carry or any new model/media dispatch. */
+export async function verifyHistoricalAvgVisualPlanningArtifactV4(input: AvgHistoricalMediaEvidenceInputV1) {
+  const scope = await resolveScope({ scope: input.scope }), build = await db.productBuilds.get(input.buildId)
+  if (!build?.id || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })
+    || build.stateRevision !== input.expectedBuildRevision || build.briefHash !== input.expectedBriefHash || build.planHash !== input.expectedPlanHash
+    || !Number.isSafeInteger(input.sourceControlEpoch) || input.sourceControlEpoch < 0 || input.sourceControlEpoch > build.controlEpoch) throw new Error('[avg-visual-plan] 历史方案 Build 不准确或跨 Work')
+  const production = await db.productProductions.get(build.productionId)
+  const briefRow = await db.productProductionBriefs.where('[productionId+revision]').equals([build.productionId, build.briefRevision]).first()
+  if (!production || production.productType !== 'avg' || !await assertRecordInScope(scope, 'productProductions', production, { owner: 'work' })
+    || !briefRow || !await assertRecordInScope(scope, 'productProductionBriefs', briefRow, { owner: 'work' })
+    || !['authorized', 'superseded'].includes(briefRow.status) || briefRow.briefHash !== build.briefHash || briefRow.authorizedAt !== build.authorizedAt) throw new Error('[avg-visual-plan] 历史方案没有准确授权 Brief')
+  const brief = parseProductProductionBriefV3(briefRow.briefJson)
+  if (!brief.avgVisualPlanning || await hashProductProductionValueV2(brief) !== build.briefHash
+    || !(input.artifactKey.startsWith('avg.proposal.') || input.artifactKey === 'avg.media.compiled-visual-requirements')) throw new Error('[avg-visual-plan] 历史读取仅限 V4 语义方案与需求编译')
+  const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash)
+  if (plan.controlEpoch !== input.sourceControlEpoch) throw new Error('[avg-visual-plan] 历史方案 epoch 不一致')
+  const matches = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id, input.artifactKey])
+    .filter(r => r.controlEpoch === input.sourceControlEpoch && r.version === input.version).toArray()
+  const row = matches[0]
+  if (matches.length !== 1 || !row?.id || !await assertRecordInScope(scope, 'productBuildArtifacts', row, { owner: 'work' })
+    || row.status !== 'accepted' || row.contentHash !== input.contentHash || row.producerRunId == null || row.producerReceiptHash == null
+    || row.blobObjectId !== null || row.mediaKind !== null || row.mimeType !== null
+    || row.kind !== (input.artifactKey.startsWith('avg.proposal.') ? 'narrative' : 'asset-manifest')
+    || row.carriedFrom !== null || row.parentArtifactHash !== null) throw new Error('[avg-visual-plan] 历史方案不是准确的直接 producer 工件')
+  const sourceBuild = { ...build, id: build.id, controlEpoch: input.sourceControlEpoch }
+  const proof = await createVerifiedProducerCandidateV1({ scope, build: sourceBuild, producerRunId: row.producerRunId,
+    producerReceiptHash: row.producerReceiptHash, inputHash: row.inputHash, buildFingerprint: await producerBuildFingerprintV1(sourceBuild),
+    cacheKey: `avg-visual-history:${build.id}:${row.id}`, retainedRoot: true })
+  const ledger = terminalRawLedgerTaskV1(build.budgetLedgerJson, proof.task.taskKey)
+  if (ledger.status !== 'settled' || ledger.runId !== row.producerRunId || ledger.attempt !== proof.attempt || ledger.errorCode !== null
+    || canonicalProductProductionJsonV2(ledger.usage) !== canonicalProductProductionJsonV2(proof.usage)
+    || ledger.candidateHash !== proof.candidateHash || ledger.terminalReceiptHash !== row.producerReceiptHash
+    || !samePreparedProducerArtifactV1({ expected: await preparedStoredArtifactV1(row), actual: proof.artifacts.get(row.artifactKey), importedScopeRebound: proof.importedScopeRebound })) throw new Error('[avg-visual-plan] 历史方案 checkpoint/ledger 不闭合')
+  const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
+  const current = await db.productBuilds.get(build.id)
+  if (!current?.id || !same(current, build) || !same(await db.productBuildArtifacts.get(row.id), row)
+    || !same(await db.productProductionBriefs.get(briefRow.id!), briefRow)
+    || !same(await db.productProductions.get(production.id!), production)) throw new Error('[avg-visual-plan] 历史方案在读取期间变化')
+  await assertVerifiedProducerCandidateFreshV1({ build: { ...current, id: current.id, controlEpoch: input.sourceControlEpoch }, proof })
+  return structuredClone(row)
+}
+
 export function verifyRetainedAvgRawImageArtifactV1(input: AvgHistoricalMediaEvidenceInputV1) {
   return verifyAvgMediaEvidenceV1(input, false, 'raw-image')
 }
@@ -3428,6 +3480,7 @@ export async function acceptProductBuildArtifact(
   // AVG raw/processed image and raw voice candidates use sealed admission. Human choices,
   // V1 assembly and every other product keep their existing writer semantics.
   if (productType === 'avg' && (input.artifactKey.startsWith('avg.media.raw.')||input.artifactKey.startsWith('avg.media.processed.')||input.artifactKey.startsWith('avg.voice.raw.'))) return acceptSealedProducerArtifactV1(input, true)
+  if (productType === 'avg' && (input.artifactKey.startsWith('avg.proposal.') || input.artifactKey === 'avg.media.compiled-visual-requirements')) return acceptSealedProducerArtifactV1(input, false, true)
   return productType === 'text-open-world'
     ? textOpenWorldProductArtifactStoreV1.acceptProductBuildArtifact(input)
     : textAdventureArtifactStoreV1.acceptProductBuildArtifact(input)

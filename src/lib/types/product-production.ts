@@ -603,7 +603,7 @@ export interface ProductProductionPlanTaskV3 {
   /** Exact author draft, authorized by a durable child-Build command. */
   authorRevision?: TextAdventureContentRevisionV1 & { commandId: string; sourceBuildNumber: number };
   /** Exact registered input projection for deterministic AVG V3 tasks. */
-  contextProfile?: "avg-task-v1";
+  contextProfile?: "avg-task-v1" | "avg-visual-planning-v4";
 }
 
 export interface ProductProductionPlanV3 {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { AGENT_SKILLS, DOMAIN_AGENT_IDS, getAgentSkillV1, getDefaultAgentSkillV1, validateAgentSkillDefinitionsV1 } from '../../src/lib/agent/skill-registry'
 import { CONTEXT_SOURCE_BY_KEY } from '../../src/lib/registry/context-sources'
 import { buildAvgVisualPlanningPlanV4 } from '../../src/lib/avg/visual-planning-plan'
-import { assertAvgVisualPlanningStartReadyV4, parseAvgVisualPlanningBriefV4 } from '../../src/lib/avg/visual-planning-brief'
+import { parseAvgVisualPlanningBriefV4 } from '../../src/lib/avg/visual-planning-brief'
 import { avgVisualPlanningBudgetV4, avgVisualPlanningGateIdsV4 } from '../../src/lib/avg/visual-planning-policy'
 import { AVG_VISUAL_PLANNING_AGENT_IDS_V1, AVG_VISUAL_PLANNING_CONTEXT_V1, AVG_VISUAL_PLANNING_ROLES_V1, avgVisualPlanningMethodV1 } from '../../src/lib/avg/visual-planning-roles'
 import { projectAvgVisualPlanningTaskV4, readAvgVisualPlanningContextV4 } from '../../src/lib/avg/visual-planning-context'
@@ -178,7 +178,6 @@ describe('AVG explicit next private contract and registered professional plannin
         parentRevision: s.owner.details.brief!.revision, brief: s.brief } })
     expect(result.ok).toBe(false)
     expect(JSON.stringify(result)).toContain('尚未接通')
-    expect(() => assertAvgVisualPlanningStartReadyV4()).toThrow(/尚未接通/)
     expect(() => createConfiguredProductProductionExecutorV1({ production: s.owner.details.production, brief: s.brief })).toThrow(/旧通用执行器/)
     expect(() => assertAvgProfessionalArtifactAdmissionV1({ productType: 'avg', artifactKey: 'avg.media.visual-bible', kind: 'narrative', payload: bible('desk'), metadata: {} })).toThrow(/尚未就绪/)
   })

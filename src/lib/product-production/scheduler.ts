@@ -1075,6 +1075,7 @@ function taskContextSourceKeys(
   excludeRepairFeedback = false,
 ): string[] {
   if (task.contextProfile === 'avg-task-v1') return ['product-production.avg-task-inputs']
+  if (task.contextProfile === 'avg-visual-planning-v4') return ['product-production.avg-visual-planning-inputs']
   // The deterministic runtime compiler receives immutable artifact rows via
   // inputArtifacts and binds their hashes in structuralInput. Re-serializing
   // the same full payload into a model-style context duplicates tens of
@@ -1097,6 +1098,7 @@ function taskContextSourceKeys(
 
 function taskRequiredContextSourceKeys(task: ProductProductionPlanTaskV3): string[] {
   if (task.contextProfile === 'avg-task-v1') return ['product-production.avg-task-inputs']
+  if (task.contextProfile === 'avg-visual-planning-v4') return ['product-production.avg-visual-planning-inputs']
   if (task.executionMode === 'deterministic' && task.kind === 'runtime-package') {
     return ['product-production.brief']
   }
@@ -4676,7 +4678,7 @@ async function runClaimedTaskCore(input: {
   const executorOwnsWorldGateway = productProductionTaskOwnsWorldGatewayV1(input.task)
   const worldGatewayRequired = worldGatewayUsed && !executorOwnsWorldGateway
   const requiresExactContext = worldGatewayUsed || input.task.executionMode === 'model'
-    || normalSourceKeys.includes('product-production.avg-task-inputs')
+    || normalSourceKeys.includes('product-production.avg-task-inputs') || normalSourceKeys.includes('product-production.avg-visual-planning-inputs')
   // The gateway below receives the declared budget minus the context actually
   // assembled here. A fixed percentage cap would reject a valid, exact Brief
   // and artifact set before the remaining world budget can even be measured.
@@ -6263,13 +6265,14 @@ export async function runProductProductionSchedulerCycleV1(input: {
     }
   }
   const pendingAvgHumanTasks = new Set<string>()
-  if (state.brief.avgAssembly) {
+  if (state.brief.avgAssembly || state.brief.avgVisualPlanning) {
     const authorTasks = state.plan.tasks.filter(task => task.executionMode === 'human-import')
     const artifacts = await db.productBuildArtifacts.where('buildId').equals(state.build.id!).toArray()
     const accepted = (task: ProductProductionPlanTaskV3) => task.outputArtifactKeys.every(key => artifacts.filter(row => row.artifactKey === key
       && row.status === 'accepted' && row.controlEpoch === state.build.controlEpoch).length === 1)
     const ready = authorTasks.every(accepted)
-    if (!ready && (state.brief.avgAssembly.version === 1 || authorTasks.filter(task => !['avg-author-media-choice', 'avg-author-stage','avg-author-visual-review','avg-author-voice-review','avg-author-voice-choice'].includes(task.kind)).some(task => !accepted(task)))) {
+    if (!ready && (state.brief.avgAssembly?.version === 1 || authorTasks.filter(task => !['avg-author-media-choice', 'avg-author-stage','avg-author-visual-review','avg-author-voice-review','avg-author-voice-choice',
+      ...(state.brief.avgVisualPlanning ? ['avg-author-visual-bible', 'avg-author-media-brief'] : [])].includes(task.kind)).some(task => !accepted(task)))) {
       return projectProductProductionSchedulerV1({ scope, productionId: input.productionId })
     }
     for (const task of authorTasks) if (!accepted(task)) pendingAvgHumanTasks.add(task.taskKey)
