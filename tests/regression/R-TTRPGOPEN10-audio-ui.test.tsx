@@ -49,6 +49,7 @@ describe('R-TTRPGOPEN10 actual audio component confirmation, local listening and
     vi.spyOn(audio, 'readTtrpgOpenAudioDeskV1').mockImplementation(async input => { const result = await actualRead(input); settledReads++; return result })
     const s = await setup(), before = await db.productRuntimeEvents.count(), assets = await db.productMediaAssets.count(), models = await db.agentRuns.count()
     expect(URL.createObjectURL).not.toHaveBeenCalled(); expect(host.querySelector('audio')).toBeNull()
+    expect(host.textContent).not.toContain('背景音乐暂不可用。')
     await click('核对重播'); await until(() => !!host.querySelector('[data-testid="ttrpg-open-audio-review"]'))
     expect(button('确认本次音轨控制').disabled).toBe(true)
     const check = host.querySelector('[data-testid="ttrpg-open-audio-review"] input[type="checkbox"]') as HTMLInputElement
@@ -59,6 +60,7 @@ describe('R-TTRPGOPEN10 actual audio component confirmation, local listening and
     await click('确认本次音轨控制'); await until(() => !host.querySelector('[data-testid="ttrpg-open-audio-review"]'))
     expect(await db.productRuntimeEvents.count()).toBe(before + 1); expect(await db.productMediaAssets.count()).toBe(assets); expect(await db.agentRuns.count()).toBe(models)
     await click('开启本机音频'); await until(() => !!host.querySelector('audio'))
+    expect(host.textContent).not.toContain('背景音乐暂不可用。')
     const element = host.querySelector('audio')!, pause = vi.mocked(HTMLMediaElement.prototype.pause), calls = pause.mock.calls.length
     const readCount = settledReads
     props = { ...props, sequence: props.sequence + 1 }; await act(async () => render())
@@ -86,6 +88,7 @@ describe('R-TTRPGOPEN10 actual audio component confirmation, local listening and
     const s = await setup(), before = await readProductRuntimeState(s.owner.sessionId), object = (await db.mediaBlobObjects.toArray())[0]
     await db.mediaBlobObjects.update(object.id!, { data: new Uint8Array([0]).buffer })
     await click('开启本机音频'); await until(() => host.textContent?.includes('音频不可用，已保留文字说明。') ?? false)
+    expect(host.textContent).toContain('背景音乐暂不可用。')
     expect(host.querySelector('audio')).toBeNull(); expect(await readProductRuntimeState(s.owner.sessionId)).toEqual(before)
     await act(async () => root.unmount()); host.remove(); await db.delete(); await db.open(); host = document.createElement('div'); document.body.append(host); root = createRoot(host)
     await setup('party', true); await click('开启本机音频'); await until(() => !!host.querySelector('audio'))

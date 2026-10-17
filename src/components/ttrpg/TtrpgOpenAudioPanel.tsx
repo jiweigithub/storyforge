@@ -130,7 +130,7 @@ export default function TtrpgOpenAudioPanel(props: {
     {view?.tracks.length === 0 && <p>尚未保存音轨，可继续文字游玩。</p>}
     {view?.tracks.map(track => <article key={track.clipKey} className="sf-open-audio-track">
       <h3>{channels[track.channel]} · {audiences[track.audience]}</h3>
-      <p className="sf-open-audio-caption">{track.fallbackText}</p>
+      <p className="sf-open-audio-caption">{track.channel === 'voice' || clipFailures[track.clipKey] ? track.fallbackText : '音轨仅供辅助，可继续使用文字游玩。'}</p>
       {enabled && !silenced && urls[track.clipKey] && !clipFailures[track.clipKey] && <NativeAudio track={track} url={urls[track.clipKey]} register={register}
         onFailure={() => setClipFailures(old => ({ ...old, [track.clipKey]: true }))} />}
       {clipFailures[track.clipKey] && <><p role="status">音频不可用，已保留文字说明。</p><button onClick={() => { const url = clips.current.get(track.clipKey); if (url) URL.revokeObjectURL(url); clips.current.delete(track.clipKey); setReload(value => value + 1) }}>重新加载此音轨</button></>}
@@ -161,7 +161,7 @@ export default function TtrpgOpenAudioPanel(props: {
         <h3>核对{pending.request.action === 'stop' ? '停止' : '播放'}{channels[pending.request.channel]}</h3>
         <p>范围：{audiences[pending.request.audience]}；本次接收者：{pending.recipients.join('、')}{pending.request.audience === 'public' ? '及公开听众' : ''}</p>
         {pending.asset && <><p>文件：{pending.asset.name}；版本 {pending.asset.version}</p><p>来源：{pending.asset.source}</p><p>许可：{pending.asset.license}</p></>}
-        <p className="sf-open-audio-caption">{pending.fallbackText}</p>
+        <p className="sf-open-audio-caption">{pending.request.channel === 'voice' ? pending.fallbackText : '音轨用于辅助展示，不改变本次已确认行动。'}</p>
         <label><input type="checkbox" disabled={working} checked={agreed} onChange={event => setAgreed(event.target.checked)} />我已核对文件、文字与接收范围，并确认拥有本次使用许可。</label>
         <button disabled={!agreed || working || props.busy} onClick={() => void perform(async () => {
           const owner = currentIdentity.current; await confirmTtrpgOpenAudioReviewV1({ ...input(), review: pending, decision: 'confirm-this-audio-and-audience' })
