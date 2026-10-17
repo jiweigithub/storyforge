@@ -53,7 +53,7 @@ beforeEach(async () => {
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); db.close() })
 
-async function setup(options: { malformed?: boolean; wrongBinding?: boolean; visualShape?: 'combined-schema-key' | 'string-palette'; unknown?: boolean; reference?: 'valid' | 'missing' | 'tampered'; image?: 'valid' | 'unknown' | 'malformed' | 'corrupt-json' } = {}) {
+async function setup(options: { malformed?: boolean; wrongBinding?: boolean; visualShape?: 'combined-schema-key' | 'string-palette' | 'extra-root-fields'; unknown?: boolean; reference?: 'valid' | 'missing' | 'tampered'; image?: 'valid' | 'unknown' | 'malformed' | 'corrupt-json' } = {}) {
   vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION', '1')
   const imageBytes = await deterministicRegionMapPngV1({ width: 576, height: 324, palette: ['#18213b', '#39506b', '#c8dce8'] })
   const view = new Uint8Array(imageBytes); let binary = ''
@@ -120,6 +120,7 @@ async function setup(options: { malformed?: boolean; wrongBinding?: boolean; vis
     // response. Do not turn these into an implicitly repaired candidate.
     const invalid = options.visualShape === 'combined-schema-key'
       ? { 'storyforge.avg.visual-bible/version': 1, ...body, style: { ...bible.style, palette: '灰绿 / 暖木 / 米白' } }
+      : options.visualShape === 'extra-root-fields' ? { ...bible, outputs: [], identityInvariants: [], allowedChanges: [], forbiddenDepictions: [], invariants: [], referenceKeys: ['reference.from-input'] }
       : { ...bible, style: { ...bible.style, palette: '灰绿 / 暖木 / 米白' } }
     return { output: options.malformed ? '{broken response' : JSON.stringify(options.visualShape ? invalid : input.system.includes('storyforge.avg.visual-bible') ? bible : media),
       bindingReceipt: { ...text.receipt, ...(options.wrongBinding ? { capabilityHash: 'f'.repeat(64) } : {}) }, usage: { inputTokens: 300, outputTokens: 300 } }
@@ -540,7 +541,7 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
     await expect(stage(s, 'avg.media.visual-bible', s.bible)).rejects.toThrow()
   })
 
-  it.each(['combined-schema-key', 'string-palette'] as const)('retains a real-provider-shaped %s failure, exact bytes and one charged failed call after reopen without silently fixing or resending', async visualShape => {
+  it.each(['combined-schema-key', 'string-palette', 'extra-root-fields'] as const)('retains a real-provider-shaped %s failure, exact bytes and one charged failed call after reopen without silently fixing or resending', async visualShape => {
     const s = await setup({ visualShape }); await sources(s); await run(s)
     expect(s.runText).toHaveBeenCalledTimes(1); expect(s.imageFetcher).not.toHaveBeenCalled()
     const original = (await s.runText.mock.results[0].value).output

@@ -3,12 +3,15 @@ import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { confirmEngineeringVisualReview } from '../helpers/avg-visual-review-playwright'
 
-async function adoptSource(page:Page,label:string){
+async function adoptSource(page:Page,label:string,waitForCompletion=false){
   const card=page.getByRole('article',{name:`作者确认：${label}`,exact:true})
   await card.getByRole('button',{name:`保存候选：${label}`,exact:true}).click()
   await card.getByRole('checkbox',{name:'我已核对该候选内容及素材来源授权',exact:true}).check()
+  const started=Date.now()
   await card.getByRole('button',{name:`确认采用：${label}`,exact:true}).click()
+  if(waitForCompletion)await expect(page.getByRole('status').filter({hasText:'该准确版本已确认采用。'})).toBeVisible({timeout:30_000})
   await expect(card.getByText('已采用 v1',{exact:true})).toBeVisible()
+  return Date.now()-started
 }
 
 async function prepare(page:Page){
@@ -343,7 +346,14 @@ test('professional family images use exact references, alpha and five consumers 
   expect(configured.assets).toHaveLength(5);expect(configured.usage).toMatchObject({modelCalls:4,mediaCalls:5,costUsd:null})
   for(const t of fixture.templates){const p=t.parameters;expect(configured.assets.some((a:any)=>a.assetKey===p.assetKey)).toBe(true);if(p.consumer.domain==='stage')expect(configured.cues).toContainEqual(expect.objectContaining({assetKey:p.assetKey,beatKey:p.triggerBeatKey,...(t.subjectKind==='character'?{actorKey:p.family.subjectKey}:{})}));else expect(configured.item[p.consumer.slot==='icon'?'iconAssetKey':'detailAssetKey']).toBe(p.assetKey)}
   await page.evaluate(async()=>{const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;const {useAIConfigStore}=await load('/storyforge/src/stores/ai-config.ts');useAIConfigStore.getState().setConfig({apiKey:''})})
-  await page.getByRole('button',{name:'制作与试玩',exact:true}).click();await adoptSource(page,'演出与媒资')
+  await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
+  // The five-image stage adoption rechecks physical bytes and role lineages.
+  // Bound that operation by its real completion notice, then keep the normal
+  // five-second adopted-version assertion used by all existing cases.
+  const stageAdoptionMs=await adoptSource(page,'演出与媒资',true)
+  const adoptionDurationPath=info.outputPath('five-image-stage-adoption-duration.json')
+  await writeFile(adoptionDurationPath,JSON.stringify({elapsedMs:stageAdoptionMs,maximumWaitMs:30_000}))
+  await info.attach('five-image-stage-adoption-duration',{path:adoptionDurationPath,contentType:'application/json'})
   await page.getByRole('button',{name:'执行组装并生成新预览',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'新预览已冻结'})).toBeVisible({timeout:60_000})
   await page.getByRole('button',{name:'试玩此预览',exact:true}).click()

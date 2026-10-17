@@ -60,8 +60,11 @@ describe('AVG explicit next private contract and registered professional plannin
       expect(example).toHaveProperty('schema', role.subjectKind === null ? 'storyforge.avg.visual-bible' : 'storyforge.avg.media-brief')
       expect(example).toHaveProperty('version', 1)
       expect(prompt).toContain('不能用逗号分隔字符串替代')
+      expect(prompt).toContain(`根对象字段闭集为 ${Object.keys(example).join('、')}`)
+      if (role.subjectKind === null) { expect(prompt).not.toContain('outputs'); expect(prompt).not.toContain('referenceKeys'); expect(prompt).toContain('subjects[].identityInvariants') }
+      else { expect(prompt).not.toContain('style.palette'); expect(prompt).toContain('outputs[].referenceKeys') }
       expect(prompt).toContain('必须从本次 subjects 复制')
-      expect(getAgentSkillV1(role.skillId).promptVersion).toBe(`${role.skillId}-method-v2`)
+      expect(getAgentSkillV1(role.skillId).promptVersion).toBe(`${role.skillId}-method-v3`)
     }
   })
 
