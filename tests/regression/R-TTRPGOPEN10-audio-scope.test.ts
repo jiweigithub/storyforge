@@ -6,7 +6,7 @@ import { configureTtrpgSessionParticipantV2, readTtrpgSessionParticipantsV2 } fr
 import { completeTtrpgOpenSessionZeroV1, startTtrpgOpenRunV1 } from '../../src/lib/ttrpg/runtime-commands'
 import { parseTtrpgOpenAuthorizationV1, type TtrpgOpenAuthorizationV1 } from '../../src/lib/ttrpg/open-authorization'
 import { createTtrpgOpenAudioScopeV1, assertTtrpgOpenAudioScopeAuthorityV1, parseTtrpgOpenAudioScopeV1,
-  parseTtrpgOpenScopedAudioEventV1, projectTtrpgOpenScopedAudioV1, type TtrpgOpenScopedAudioEventV1 } from '../../src/lib/ttrpg/open-audio-scope'
+  parseTtrpgOpenScopedAudioEventV1, projectTtrpgOpenScopedAudioV1, projectTtrpgOpenAudioTransitionsV1, type TtrpgOpenScopedAudioEventV1 } from '../../src/lib/ttrpg/open-audio-scope'
 import type { TtrpgAudioAudienceV1 } from '../../src/lib/ttrpg/open-audio-runtime'
 
 async function setup(humanGm = true, publicAllowed = true) {
@@ -133,4 +133,18 @@ describe('R-TTRPGOPEN10 scoped audio recipient and replay foundation (no formal 
     expect(result.channels.music?.assetKey).toBe('asset.child'); expect(JSON.stringify([first, child])).toBe(before)
     expect(result).not.toHaveProperty('lastEventSequence'); expect(result).not.toHaveProperty('lastWorldTurn')
   })
+  it('derives only the actual listener audible change and keeps obsolete stops and hidden layers out of transition evidence', async () => {
+    const s = await setup(), publicCue = s.frame(1, 'public', { slotKey: 'public.one', fade: 1000 })
+    const hidden = s.frame(2, 'gm-only', { channel: 'sfx', slotKey: 'hidden.effect', fallbackText: 'HIDDEN-TRANSITION-TEXT' })
+    const privateCue = s.frame(3, 'private', { slotKey: 'private.one', fade: 2000 })
+    const oldStop = s.frame(4, 'public', { action: 'stop', slotKey: 'public.obsolete', assetKey: null, fade: 3000 })
+    const stop = s.frame(5, 'private', { action: 'stop', slotKey: 'private.one', assetKey: null, fade: 3000 })
+    const events = [publicCue, hidden, privateCue, oldStop, stop]
+    const view = (viewerKey: string) => projectTtrpgOpenAudioTransitionsV1({ events, authorization: s.authorization, reader: human(viewerKey) })
+    expect(view(OPEN_HUMAN_VIEWER)).toEqual([{ controlRef: stop.sourceRef, channel: 'music', action: 'stop', fade: 3000, fromSlotKey: 'private.one', toSlotKey: 'public.one' }])
+    expect(projectTtrpgOpenAudioTransitionsV1({ events, authorization: s.authorization, reader: { kind: 'public' } })).toEqual([{ controlRef: publicCue.sourceRef, channel: 'music', action: 'play', fade: 1000, fromSlotKey: null, toSlotKey: 'public.one' }])
+    expect(JSON.stringify(view(OPEN_HUMAN_VIEWER))).not.toContain('HIDDEN-TRANSITION-TEXT')
+    expect(projectTtrpgOpenScopedAudioV1({ events, authorization: s.authorization, reader: human() }).channels.music?.slotKey).toBe('public.one')
+  })
+
 })

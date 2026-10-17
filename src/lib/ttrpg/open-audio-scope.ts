@@ -6,7 +6,7 @@ import { assertTtrpgOpenHumanHostV1, parseTtrpgOpenAuthorizationV1, type TtrpgOp
 import { parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coordination'
 import { applyTtrpgAudioCueAppliedEventV1, createTtrpgAudioStateV1, parseTtrpgAudioCueAppliedEventV1,
   TTRPG_AUDIO_AUDIENCES_V1, TTRPG_AUDIO_CHANNELS_V1,
-  type TtrpgAudioAudienceV1, type TtrpgAudioCueAppliedEventV1, type TtrpgAudioProjectionV1 } from './open-audio-runtime'
+  type TtrpgAudioAudienceV1, type TtrpgAudioChannelV1, type TtrpgAudioCueAppliedEventV1, type TtrpgAudioProjectionV1 } from './open-audio-runtime'
 import * as p from './open-contract-parse'
 
 type Recipient = { seatKey: string; viewerKey: string; actorKey: string | null; role: 'gm' | 'player'; controller: 'human' | 'hybrid' | 'ai' }
@@ -108,16 +108,32 @@ export function assertTtrpgOpenAudioScopeAuthorityV1(scope: TtrpgOpenAudioScopeV
  * still-playing common track; stopping an old slot cannot stop its replacement.
  * Input order is verified lineage order; local sequence numbers may restart in
  * a child session. No hidden counts, sequence numbers, or rejected rows escape. */
-export function projectTtrpgOpenScopedAudioV1(input: {
+export interface TtrpgOpenAudioTransitionV1 {
+  controlRef: TtrpgOpenSourceRefV1; channel: TtrpgAudioChannelV1; action: 'play' | 'stop'; fade: number
+  fromSlotKey: string | null; toSlotKey: string | null
+}
+type ProjectionInput = {
   events: readonly TtrpgOpenScopedAudioEventV1[]; authorization: TtrpgOpenAuthorizationV1
   reader: { kind: 'human'; viewerKey: string } | { kind: 'public' }
-}): TtrpgAudioProjectionV1 {
+}
+export function projectTtrpgOpenScopedAudioV1(input: ProjectionInput): TtrpgAudioProjectionV1 { return replayScopedAudio(input).projection }
+/** Latest actually audible changes only. A pure projection is not a media or playback grant. */
+export function projectTtrpgOpenAudioTransitionsV1(input: ProjectionInput): TtrpgOpenAudioTransitionV1[] { return replayScopedAudio(input).transitions }
+function replayScopedAudio(input: ProjectionInput) {
   const authorization = parseTtrpgOpenAuthorizationV1(input.authorization), reader = input.reader
   if (!Array.isArray(input.events) || input.events.length > 100000) p.fail('音频回放事件必须是有界列表')
   const seat = reader.kind === 'human' ? authorization.seats.find(row => row.viewerKey === reader.viewerKey
     && row.controller !== 'ai' && row.assignmentState === 'claimed') : undefined
   if (reader.kind === 'human' && !seat) p.fail('音频读取需要当前实际真人席位')
   const layers = new Map<string, { state: ReturnType<typeof createTtrpgAudioStateV1>; order: Map<string, number> }>()
+  const transitions = new Map<TtrpgAudioChannelV1, TtrpgOpenAudioTransitionV1>()
+  const selected = (channel: TtrpgAudioChannelV1) => {
+    let cue: TtrpgAudioProjectionV1['channels'][TtrpgAudioChannelV1] = null, order = -1
+    for (const layer of layers.values()) if (layer.state.channels[channel] && (layer.order.get(channel) ?? -1) > order) {
+      cue = layer.state.channels[channel]; order = layer.order.get(channel) ?? -1
+    }
+    return cue
+  }
   const seen = new Map<string, number>()
   for (const [index, raw] of input.events.entries()) {
     const row = parseTtrpgOpenScopedAudioEventV1(raw), { scope, event, sourceRef } = row
@@ -129,14 +145,17 @@ export function projectTtrpgOpenScopedAudioV1(input: {
     const layerKey = scope.audience === 'private' ? `private:${scope.privateActorKey}` : scope.audience
     const layer = layers.get(layerKey) ?? { state: createTtrpgAudioStateV1(), order: new Map<string, number>() }
     if (event.action === 'stop' && layer.state.channels[event.channel]?.slotKey !== event.slotKey) continue
+    const beforeSlotKey = selected(event.channel)?.slotKey ?? null
     layer.state = applyTtrpgAudioCueAppliedEventV1(layer.state, { ...event, eventSequence: index + 1 })
     layer.order.set(event.channel, index); layers.set(layerKey, layer)
+    const after = selected(event.channel)
+    if (beforeSlotKey !== (after?.slotKey ?? null)) transitions.set(event.channel, {
+      controlRef: sourceRef, channel: event.channel, action: event.action, fade: event.fade,
+      fromSlotKey: beforeSlotKey, toSlotKey: after?.slotKey ?? null,
+    })
   }
   const channels = createTtrpgAudioStateV1().channels
-  for (const channel of TTRPG_AUDIO_CHANNELS_V1) {
-    const candidates = [...layers.values()].filter(layer => layer.state.channels[channel] !== null)
-      .sort((a, b) => (b.order.get(channel) ?? -1) - (a.order.get(channel) ?? -1))
-    channels[channel] = candidates[0]?.state.channels[channel] ?? null
-  }
-  return { channels, visibleChannelCount: Object.values(channels).filter(Boolean).length }
+  for (const channel of TTRPG_AUDIO_CHANNELS_V1) channels[channel] = selected(channel)
+  return { projection: { channels, visibleChannelCount: Object.values(channels).filter(Boolean).length },
+    transitions: TTRPG_AUDIO_CHANNELS_V1.flatMap(channel => transitions.has(channel) ? [transitions.get(channel)!] : []) }
 }
