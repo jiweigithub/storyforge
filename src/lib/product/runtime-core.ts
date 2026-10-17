@@ -2130,7 +2130,11 @@ async function branchProductRuntimeSessionInternal(
       : (() => { throw new Error('open 分支冻结运行源不存在'); })();
     prepared.parentSessionId = parent.id!; prepared.parentThroughSequence = input.throughSequence;
     const cutEvents = events.filter(event => event.sequence <= input.throughSequence).sort((a, b) => a.sequence - b.sequence);
-    return db.transaction('rw', [db.productReleases, db.productBuilds, ...runtimeInstanceTablesV1()], async () => {
+    // The product hook can clone cutpoint-owned media bindings. Include both
+    // instance descendants and shared content-addressed parents from the registry.
+    const branchTables = [...new Set([db.productReleases, db.productBuilds, ...runtimeInstanceTablesV1(),
+      ...transactionTablesForReferenceCascade('productRuntimeSessions'), ...transactionTablesForReferenceCascade('mediaBlobObjects')])];
+    return db.transaction('rw', branchTables, async () => {
       const currentParent = await db.productRuntimeSessions.get(parent.id!);
       const currentSource = release ? await db.productReleases.get(release.id!) : await db.productBuilds.get(build!.id!);
       const currentEvents = (await db.productRuntimeEvents.where('sessionId').equals(parent.id!).toArray())
