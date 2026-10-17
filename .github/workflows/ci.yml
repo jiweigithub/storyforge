@@ -48,6 +48,7 @@ jobs:
     env:
       VITE_STORYFORGE_AVG_MEDIA_PRODUCTION: '1'
       VITE_STORYFORGE_AVG_VOICE_PRODUCTION: '1'
+      VITE_STORYFORGE_AVG_VISUAL_PLANNING: '1'
     steps:
       - uses: actions/checkout@v7
         with:

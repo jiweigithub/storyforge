@@ -1,6 +1,7 @@
 import { avgKey, avgHash, avgProtocolBody, avgRecord } from './protocol-validation'
 import { parseAvgAssemblyBriefV1, type AvgAssemblyBriefV1, type AvgAssemblyBriefV2 } from './assembly-contract'
 import { parseAvgVisualPlanningScopeV1, type AvgVisualPlanningScopeV1 } from './visual-planning-contract'
+import { avgMediaProductionEnabledV2 } from './assembly-contract'
 
 /** Explicit next private contract. Existing assembly V1/V2/V3 bytes retain
  * their original meaning; no placeholder request is stored in this Brief. */
@@ -27,6 +28,8 @@ export function parseAvgVisualPlanningBriefV4(value: unknown): AvgVisualPlanning
     adapterId: b.adapterId, bindingHash: avgHash(b.bindingHash, 'bindingHash'), endpointRouteHash: avgHash(b.endpointRouteHash, 'endpointRouteHash') } }
 }
 
-/** No UI/start/dispatch admission until the complete author-adoption and
- * compiled-request consumer slice is installed. Readability grants no call. */
-export function avgVisualPlanningExecutionReadyV4(): boolean { return false }
+/** Separate default-off professional workbench experiment. Both switches,
+ * explicit start and the existing per-task authority remain required. */
+export function avgVisualPlanningExecutionReadyV4(): boolean {
+  return avgMediaProductionEnabledV2() && import.meta.env.VITE_STORYFORGE_AVG_VISUAL_PLANNING === '1'
+}

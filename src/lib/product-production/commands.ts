@@ -1958,7 +1958,8 @@ async function applyCommand(input: {
     const controlEpoch = production.controlEpoch + 1
     const stateRevision = production.stateRevision + 1
     const stoppedBrief = production.productType === 'avg' ? await db.productProductionBriefs.where('[productionId+revision]').equals([production.id,build.briefRevision]).first() : null
-    const nativeFailure = stoppedBrief && parseProductProductionBriefV3(stoppedBrief.briefJson).avgAssembly && build.failureJson !== '{}'
+    const stoppedAvg = stoppedBrief ? parseProductProductionBriefV3(stoppedBrief.briefJson) : null
+    const nativeFailure = stoppedAvg && (stoppedAvg.avgAssembly || stoppedAvg.avgVisualPlanning) && build.failureJson !== '{}'
       ? { priorFailureJson: build.failureJson } : {}
     await db.productBuilds.update(build.id, {
       status: 'cancelled', resumeState: null, controlEpoch, stateRevision: build.stateRevision + 1,

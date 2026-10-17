@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AGENT_SKILLS, DOMAIN_AGENT_IDS, getAgentSkillV1, getDefaultAgentSkillV1, validateAgentSkillDefinitionsV1 } from '../../src/lib/agent/skill-registry'
 import { CONTEXT_SOURCE_BY_KEY } from '../../src/lib/registry/context-sources'
 import { buildAvgVisualPlanningPlanV4 } from '../../src/lib/avg/visual-planning-plan'
-import { parseAvgVisualPlanningBriefV4 } from '../../src/lib/avg/visual-planning-brief'
+import { parseAvgVisualPlanningBriefV4, avgVisualPlanningExecutionReadyV4 } from '../../src/lib/avg/visual-planning-brief'
 import { avgVisualPlanningBudgetV4, avgVisualPlanningGateIdsV4 } from '../../src/lib/avg/visual-planning-policy'
 import { AVG_VISUAL_PLANNING_AGENT_IDS_V1, AVG_VISUAL_PLANNING_CONTEXT_V1, AVG_VISUAL_PLANNING_ROLES_V1, avgVisualPlanningMethodV1 } from '../../src/lib/avg/visual-planning-roles'
 import { projectAvgVisualPlanningTaskV4, readAvgVisualPlanningContextV4 } from '../../src/lib/avg/visual-planning-context'
@@ -28,6 +28,14 @@ function bible(subjectKey: string): AvgVisualBibleV1 {
 }
 
 describe('AVG explicit next private contract and registered professional planning roles', () => {
+  afterEach(()=>vi.unstubAllEnvs())
+  it('keeps professional dispatch default off and requires both independent experimental switches',()=>{
+    vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION','');vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING','')
+    expect(avgVisualPlanningExecutionReadyV4()).toBe(false)
+    vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION','1');expect(avgVisualPlanningExecutionReadyV4()).toBe(false)
+    vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING','1');expect(avgVisualPlanningExecutionReadyV4()).toBe(true)
+    vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION','');expect(avgVisualPlanningExecutionReadyV4()).toBe(false)
+  })
   it('registers four independent default Skills with one protected Work-owned input and candidate-only writes', () => {
     expect(() => validateAgentSkillDefinitionsV1(AGENT_SKILLS)).not.toThrow()
     for (const role of AVG_VISUAL_PLANNING_ROLES_V1) {

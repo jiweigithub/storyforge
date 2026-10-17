@@ -126,7 +126,8 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const importImages = view.media.items.map(row => row.asset).filter(asset => asset.mimeType.startsWith('image/'))
   const build = view.details?.build, productionId = view.details?.production.id
   const assembly = view.details?.executionBrief?.avgAssembly
-  const definition=view.details?.executionBrief?readAvgOptionalImageDefinitionV3(view.details.executionBrief):null
+  const visualPlanning=!!view.details?.executionBrief?.avgVisualPlanning
+  const definition=view.imageDefinition??(view.details?.executionBrief&&!visualPlanning?readAvgOptionalImageDefinitionV3(view.details.executionBrief):null)
   const currentBatch = definition?.mediaBatch??null
   const recovery=definition?.imageRecovery
   const closed=!!build&&['cancelled','failed','recovery-required'].includes(build.status)
@@ -175,7 +176,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
     {!enabled && <p>当前仅可查看已有需求和候选，新增图片调用未开放。</p>}
     {enabled && <p>{readiness.ready ? '本机 Agnes 图片配置已就绪，账户可用性与费用以实际回执为准。' : `${readiness.issue ?? '图片配置尚未就绪'} 请在通用设置中核对 Agnes 配置。`}</p>}
     {error && <p role="alert">{error}</p>}
-    {enabled&&<details open={familyOpen} onToggle={event=>setFamilyOpen(event.currentTarget.open)}><summary>批量制作人物家族</summary><CharacterFamilyPanel scope={scope} view={view} workspace={workspace} visible={visible&&familyOpen} disabled={editDisabled||pending||anyReviewPending||!canEdit} onPending={setFamilyPending} onAction={onAction} onReload={onReload} onNotice={onNotice}/></details>}
+    {enabled&&!visualPlanning&&<details open={familyOpen} onToggle={event=>setFamilyOpen(event.currentTarget.open)}><summary>批量制作人物家族</summary><CharacterFamilyPanel scope={scope} view={view} workspace={workspace} visible={visible&&familyOpen} disabled={editDisabled||pending||anyReviewPending||!canEdit} onPending={setFamilyPending} onAction={onAction} onReload={onReload} onNotice={onNotice}/></details>}
     {workspace.mediaBatch?.characterFamily&&<p>当前批次保存了人物家族方案。请在家族面板中修订；如需普通需求，先明确结束或移除当前批次。</p>}
     {enabled && canEdit && <><details><summary>导入仅供生成使用的参考图</summary><fieldset className="avg-form" disabled={editDisabled || !canEdit || !enabled}>
       <label>参考图文件<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event => setReferenceFile(event.target.files?.[0] ?? null)} /></label>
@@ -217,7 +218,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
       </details>
       <button className="lf-action" disabled={!name.trim() || !prompt.trim()} onClick={addRequirement}>加入本批需求</button>
     </fieldset></details></>}
-    <h5>需求清单（{requirements.length}/8）</h5>
+    {!visualPlanning&&<><h5>需求清单（{requirements.length}/8）</h5>
     <ol>{requirements.map((r, i) => <li key={r.requirementKey}><strong>{r.name}</strong> · {KINDS.find(([key]) => key === (r.consumer.domain === 'reference' ? 'reference' : r.consumer.slot === 'icon' ? 'icon' : r.consumer.slot === 'detail' ? 'detail' : r.mediaKind))?.[1]} · {r.references.length} 张参考
       <details><summary>查看画面要求、用途与参考授权</summary><p>{r.prompt}</p><p>必须保持：{r.invariants.join('；') || '未另设'}</p><p>排除：{[r.negativePrompt, ...r.forbiddenDepictions].filter(Boolean).join('；') || '未另设'}</p><p>{r.width} × {r.height} · {r.resolutionTier} · {r.alpha === 'required' ? '要求透明像素' : '未要求透明'}</p><ul>{r.references.map(ref => <li key={ref.assetKey}>{ref.purpose} · {ref.allowedChange} · {ref.license}</li>)}</ul></details>
       <button className="lf-action" disabled={editDisabled || !canEdit || !enabled || familyPending || !!workspace.mediaBatch?.characterFamily} onClick={() => { setRequirements(requirements.filter((_, j) => j !== i)); changed() }}>移除此需求</button></li>)}</ol>
@@ -231,10 +232,10 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
         await keepAvgGeneratedStageDraftV1({scope,productionId,expectedDraftRevision:view.draft.revision,expectedBuildId:build.id!})
         await onReload();onNotice('已在编辑草稿中保留准确旧图并结束本批需求；新版本仍需核对方案与确认演出，旧图和调用账单保留。')
       })}>保留已选演出图片，结束本批需求</button>}
-      <span>{pending ? '图片需求尚未保存，请保存或撤销后切换分区。' : workspace.mediaBatch ? '图片需求已保存，尚需在制作页确认方案并开始。' : '保存图片需求不会开始调用。'}</span></div>
+      <span>{pending ? '图片需求尚未保存，请保存或撤销后切换分区。' : workspace.mediaBatch ? '图片需求已保存，尚需在制作页确认方案并开始。' : '保存图片需求不会开始调用。'}</span></div></>}
     {workspace.mediaBatch?.visualReviewPolicy&&<ImageProcessingPlanPanel scope={scope} workspace={workspace} draftRevision={view.draft.revision} canEdit={canEdit&&enabled}
       disabled={disabled||pending||familyPending||anyReviewPending} onPending={setProcessingPending} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
-    {currentBatch&&assembly?.version!==3&&<MediaRecoveryPanel scope={scope} view={view} disabled={editDisabled||pending||familyPending||anyReviewPending} visible={visible} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
+    {currentBatch&&!visualPlanning&&assembly?.version!==3&&<MediaRecoveryPanel scope={scope} view={view} disabled={editDisabled||pending||familyPending||anyReviewPending} visible={visible} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
     {!!workspace.presentation.inheritedImages?.length&&<details><summary>新版本待确认的旧图来源（{workspace.presentation.inheritedImages.length} 张）</summary><ul>{workspace.presentation.inheritedImages.map(entry=><li key={entry.assetKey}>{workspace.presentation.stage.assets.find(asset=>asset.assetKey===entry.assetKey)?.name} · 原 Build #{entry.source.raw.buildNumber} · {entry.source.raw.contentHash.slice(0,12)}<p>{entry.declaration}</p></li>)}</ul><p>保留原始字节不会重新调用图片服务；新版本的用途和演出须再次确认采用。</p></details>}
     {currentBatch&&closed&&<section aria-label="已停止的图片调用"><p>本次调用已停止。请先核对原始记录与未知费用，当前不会自动重发。</p><p>如需更改需求或制作下一批，请先到制作页准备新版本，再回此处编辑。</p><button className="lf-action" disabled>生成本批图片（最多 {outstanding} 次）</button></section>}
     {currentBatch?.visualReviewPolicy&&closed&&<details><summary>已停止批次的作者视觉记录</summary><p>保留原记录和未观察项；新版需要重新核对，不能继承旧选用授权。</p>{view.artifacts.filter(row=>row.artifactKey.startsWith('avg.review.visual.')).map(row=><article key={row.id}><p>{row.artifactKey} · v{row.version} · {row.status}</p><pre>{row.payloadJson}</pre></article>)}</details>}

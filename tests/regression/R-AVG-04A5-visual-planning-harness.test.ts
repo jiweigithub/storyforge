@@ -20,13 +20,15 @@ import { readAvgVisualPlanningContextV4 } from '../../src/lib/avg/visual-plannin
 import * as imageDecoder from '../../src/lib/avg/image-decoder'
 import * as mediaVerifier from '../../src/lib/product-production/media-runtime-verifier'
 import { readAvgRawImageCandidateBytesV2, stageAvgVisualReviewV1, stageAvgMediaChoiceV2,
-  confirmAvgWorkspaceInputV1, configureAvgChosenMediaDraftV2, stageAvgWorkspaceInputV1 } from '../../src/lib/avg/assembly-service'
+  confirmAvgWorkspaceInputV1, configureAvgChosenMediaDraftV2, stageAvgWorkspaceInputV1, readAvgAssemblyWorkspaceV1,
+  prepareAvgAssemblyBriefV1, startAvgAssemblyV1, runAvgAssemblyV1 } from '../../src/lib/avg/assembly-service'
+import { refuseAvgVisualPlanningBatchV4 } from '../../src/lib/avg/visual-planning-workspace'
 import { avgVisualReviewFixture } from '../helpers/avg-visual-review-fixture'
 import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
 import { parseAvgAuthorWorkspaceV1 } from '../../src/lib/avg/author-workspace-contract'
 import { sha256MediaData } from '../../src/lib/product-production/media-blob-store'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
-import { importAvgMediaV1 } from '../../src/lib/avg/editor-service'
+import { importAvgMediaV1, saveAvgAuthorWorkspaceV1 } from '../../src/lib/avg/editor-service'
 import { deterministicRegionMapPngV1 } from '../../src/lib/product-production/production-executor'
 import { freezeAvgVisualPlanningScopeV1 } from '../../src/lib/avg/media-source'
 import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
@@ -187,6 +189,68 @@ async function adoptedImageStage(generated: Awaited<ReturnType<typeof generatedI
 }
 
 describe('AVG V4 actual visual planning Harness and explicit author boundary', () => {
+  it('prepares and starts the actual V4 workbench through public services without a provider call or synthetic stored Brief', async () => {
+    const {owner,planning}=await avgVisualPlanningFixtureV4('linear'),draft=await readAvgDraftV1(owner.scope)
+    const {sourceInputHash:_hash,aspectRatio:_ratio,...visualPlanning}=planning.scope
+    const prepared=await prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:draft.revision,visualPlanning})
+    const brief=parseProductProductionBriefV3(prepared.brief!.briefJson)
+    expect(brief.avgAssembly).toBeUndefined();expect(brief.avgVisualPlanning!.scope).toEqual(planning.scope)
+    expect(prepared.production.currentBuildNumber).toBeNull()
+    expect((await readAvgAssemblyWorkspaceV1(owner.scope)).imageDefinition).toBeNull()
+    const revisedScope=structuredClone(visualPlanning);revisedScope.revision+=1;revisedScope.templates[0].requiredDetails.push('作者重新核对了尚未开始的背景布局')
+    const latestDraft=await readAvgDraftV1(owner.scope)
+    const revised=await prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:latestDraft.revision,visualPlanning:revisedScope})
+    expect(parseProductProductionBriefV3(revised.brief!.briefJson).avgVisualPlanning!.scope.templates[0].requiredDetails).toContain('作者重新核对了尚未开始的背景布局')
+    expect(revised.brief!.briefHash).not.toBe(prepared.brief!.briefHash)
+    await expect(startAvgAssemblyV1({scope:owner.scope,productionId:owner.productionId,expectedBriefHash:prepared.brief!.briefHash})).rejects.toThrow(/已变化/)
+    await startAvgAssemblyV1({scope:owner.scope,productionId:owner.productionId,expectedBriefHash:revised.brief!.briefHash})
+    const view=await readAvgAssemblyWorkspaceV1(owner.scope)
+    expect(view.details!.build!.planRevision).toBe(1);expect(view.details!.production.status).toBe('producing')
+    expect(view.visualProgress!.budget.usage).toMatchObject({modelCalls:0,mediaCalls:0})
+    expect(await db.agentRunArtifacts.count()).toBe(0);expect(await db.mediaBlobObjects.count()).toBe(0)
+    const revisions=await db.productProductionBriefs.where('productionId').equals(owner.productionId).toArray()
+    expect(revisions.filter(r=>JSON.parse(r.briefJson).avgVisualPlanning)).toHaveLength(2)
+    expect(revisions.filter(r=>r.revision>owner.details.brief!.revision).every(r=>!JSON.parse(r.briefJson).avgAssembly)).toBe(true)
+  },30_000)
+
+  it('rejects changed saved source before public V4 start and retains the prepared Brief without creating a Build', async () => {
+    const {owner,planning}=await avgVisualPlanningFixtureV4('linear'),draft=await readAvgDraftV1(owner.scope)
+    const {sourceInputHash:_hash,aspectRatio:_ratio,...visualPlanning}=planning.scope
+    const prepared=await prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:draft.revision,visualPlanning})
+    const latest=await readAvgDraftV1(owner.scope),workspace=parseAvgAuthorWorkspaceV1(latest.editorJson)
+    workspace.scripts[0].lines[0].text+='作者已经改稿'
+    await saveAvgAuthorWorkspaceV1(owner.scope,latest.revision,workspace)
+    await expect(startAvgAssemblyV1({scope:owner.scope,productionId:owner.productionId,expectedBriefHash:prepared.brief!.briefHash})).rejects.toThrow(/已变化/)
+    expect((await readProductProductionDetailsV1(owner.scope,owner.productionId,['avg'])).brief!.briefHash).toBe(prepared.brief!.briefHash)
+    expect(await db.productBuilds.count()).toBe(0);expect(await db.agentRuns.count()).toBe(0)
+  },30_000)
+
+  it('records an exact author refusal and stops the visual batch while retaining original model evidence and making no retry', async () => {
+    const s=await setup();await sources(s);await run(s)
+    const build=await current(s),proposal=(await accepted(s,'avg.proposal.visual-bible'))!
+    const input={scope:s.scope,productionId:s.productionId,expectedBuildId:s.buildId,expectedBuildRevision:build.stateRevision,
+      artifactKey:'avg.media.visual-bible',proposal:{artifactKey:proposal.artifactKey,version:proposal.version,contentHash:proposal.contentHash},reason:'作者退回：当前构图不符合已确认方向，停止本批并保留原始证据'}
+    const count=await db.agentRunArtifacts.count()
+    await expect(refuseAvgVisualPlanningBatchV4({...input,proposal:{...input.proposal,contentHash:'f'.repeat(64)}})).rejects.toThrow()
+    expect((await db.productProductions.get(s.productionId))!.status).toBe('producing')
+    await refuseAvgVisualPlanningBatchV4(input)
+    expect((await current(s)).status).toBe('cancelled')
+    const receipts=await db.productProductionCommands.where('productionId').equals(s.productionId).toArray()
+    expect(receipts.some(r=>r.type==='pause'&&r.status==='succeeded')).toBe(true)
+    const stoppedFailure=(await current(s)).failureJson
+    expect(stoppedFailure).toContain('author-refused-visual-batch');expect(stoppedFailure).toContain(proposal.contentHash);expect(stoppedFailure).toContain(input.reason)
+    expect(await db.agentRunArtifacts.count()).toBe(count)
+    expect((await readAvgAssemblyWorkspaceV1(s.scope)).artifacts.some(r=>r.contentHash===proposal.contentHash)).toBe(true)
+    expect(s.runText).toHaveBeenCalledTimes(1);expect(s.imageFetcher).not.toHaveBeenCalled()
+  },30_000)
+
+  it('does not reuse a received role binding to dispatch a pending role after the configured route changes', async () => {
+    const s=await setup();await sources(s);await run(s);await adopt(s,await stage(s,'avg.media.visual-bible',s.bible))
+    useAIConfigStore.getState().setConfig({...config,provider:'deepseek',model:'deepseek-chat',baseUrl:'https://different.fixture.invalid/v1'})
+    await expect(runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})).rejects.toThrow(/capability|binding/)
+    expect(s.runText).toHaveBeenCalledTimes(1);expect(s.imageFetcher).not.toHaveBeenCalled()
+  },30_000)
+
   it('runs registered roles only after actual source adoption and compiles only author-adopted direction', async () => {
     const s = await setup()
     await run(s); expect(s.runText).not.toHaveBeenCalled()
@@ -579,6 +643,19 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       await expect(prepareAvgCompiledImageRequestV4({...boundary,purpose:'frozen-verification',requirementKey:requirement.requirementKey,idempotencyKey:'d'.repeat(64)})).rejects.toThrow(/不能授予/)
       await expect(choose()).rejects.toThrow()
       await expect(review()).rejects.toThrow()
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it('projects the compiled V4 workbench and finishes public deterministic assembly without current credentials', async () => {
+      const {s}=generated
+      const view=await readAvgAssemblyWorkspaceV1(s.scope)
+      expect(view.imageDefinition!.mediaBatch.requirements).toHaveLength(1)
+      expect(view.artifacts.filter(r=>r.artifactKey.startsWith('avg.proposal.'))).toHaveLength(2)
+      await adoptedImageStage(generated);useAIConfigStore.getState().setConfig({apiKey:''})
+      expect((await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})).buildStatus).toBe('preview-ready')
+      const frozen=await readAvgAssemblyWorkspaceV1(s.scope)
+      expect(frozen.imageDefinition!.mediaBatch.requirements[0].assetKey).toBe(view.imageDefinition!.mediaBatch.requirements[0].assetKey)
+      expect(frozen.visualProgress!.budget.usage).toMatchObject({modelCalls:2,mediaCalls:1,costUsd:null})
       expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
     },30_000)
 
