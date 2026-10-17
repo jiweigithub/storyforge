@@ -64,12 +64,12 @@ describe('R-TTRPGOPEN10 fixed offline voice evaluation boundary', () => {
       for(let i=0;i<samples;i++)wav.writeInt16LE(i%2?8192:-8192,44+i*2);
       const digest=b=>createHash('sha256').update(b).digest('hex');
       const result={schema:'storyforge.ttrpg-local-tts-eval-result',version:1,caseId:selected.id,status:'generated',modelCalled:true,
-        evaluationOnly:true,adoptAllowed:false,text:selected.text,normalizedText:selected.text,profileHash:hash,fixtureSha256:contract.fixtureSha256,
+        evaluationOnly:true,adoptAllowed:false,text:selected.text,normalizedText:selected.expectedNormalizedText,profileHash:hash,fixtureSha256:contract.fixtureSha256,
         network:'disabled',threads:2,humanListeningAcceptance:'unproven',samples,sampleRate:sr,durationMs:500,
         rms:8192/32767,peakBeforeGain:8192/32767,appliedGain:1,wallSeconds:1,cpuSeconds:1,maxRssBytes:1024,audioSha256:digest(wav)};
       verifyEvaluationResult(result,selected,contract,hash,wav);
       const bad=[];
-      for(const patch of [{text:'another author text'},{adoptAllowed:true},{caseId:'numbers-zh'},{profileHash:'wrong'},
+      for(const patch of [{text:'another author text'},{normalizedText:'港口的钟声.'},{adoptAllowed:true},{caseId:'numbers-zh'},{profileHash:'wrong'},
         {modelCalled:false},{humanListeningAcceptance:'passed'},{audioSha256:'wrong'},{rms:0},{durationMs:999},{adoptionTargets:['work']}]){
         try{verifyEvaluationResult({...result,...patch},selected,contract,hash,wav);bad.push(false)}catch{bad.push(true)}
       }
@@ -84,6 +84,21 @@ describe('R-TTRPGOPEN10 fixed offline voice evaluation boundary', () => {
       console.log(JSON.stringify({positive:true,bad}));
     `
     const result = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' }))
-    expect(result).toEqual({ positive: true, bad: Array(13).fill(true) })
+    expect(result).toEqual({ positive: true, bad: Array(14).fill(true) })
+  })
+  it('keeps actual digits and paragraph separators in the frozen source and requires their exact declared spoken normalization', () => {
+    const script = `
+      import { selectEvaluationCase } from './${caller}';
+      const n=selectEvaluationCase('numbers-arabic'), z=selectEvaluationCase('numbers-zh'),
+        p=selectEvaluationCase('paragraphs-zh'), a=selectEvaluationCase('narration-zh');
+      console.log(JSON.stringify({version:n.contract.version, digits:n.selected.text,
+        sameSpokenNumbers:n.selected.expectedNormalizedText===z.selected.expectedNormalizedText,
+        paragraphs:p.selected.text,paragraphNormalization:p.selected.expectedNormalizedText,
+        sameParagraphChars:p.selected.expectedNormalizedText.replace('...','.')===a.selected.expectedNormalizedText}));
+    `
+    const result = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' }))
+    expect(result.version).toBe(2); expect(result.digits).toContain('8点20分'); expect(result.digits).toContain('12枚')
+    expect(result.paragraphs).toContain('。\n\n你'); expect(result.sameSpokenNumbers).toBe(true); expect(result.sameParagraphChars).toBe(true)
+    expect(result.paragraphNormalization).toContain('雾...你')
   })
 })

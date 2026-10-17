@@ -26,7 +26,7 @@ def sha_file(path):
 def load_case(base, case_id):
     contract = json.loads((base / 'eval-contract.json').read_text())
     raw = (base / 'eval-cases.json').read_bytes()
-    if (contract['schema'] != 'storyforge.ttrpg-local-tts-eval-contract' or contract['version'] != 1
+    if (contract['schema'] != 'storyforge.ttrpg-local-tts-eval-contract' or contract['version'] != 2
         or contract['entryId'] != 'ttrpg.local-voice.eval' or contract['maxChars'] != 300
         or contract['maxAudioSeconds'] != 60 or contract['timeoutMs'] != 120000
         or hashlib.sha256(raw).hexdigest() != contract['fixtureSha256']): raise ValueError('Fixed fixture contract mismatch')
@@ -106,7 +106,7 @@ def main():
     if output.parent != root / 'evaluations' or not re.fullmatch(r'run-[a-f0-9-]{36}', output.name): raise ValueError('Invalid evaluation output directory')
     if not output.is_dir() or {p.name for p in output.iterdir()} != {'attempt.json'}: raise ValueError('Evaluation output must be a new attempt')
     # Reject rather than silently deleting Latin, emojis or unsupported glyphs.
-    if not re.fullmatch(r'[\u4e00-\u9fa5\d。！？；：，、（）《》“”‘’…,.!?\-]+', selected['text']):
+    if not re.fullmatch(r'[\u4e00-\u9fa5\d。！？；：，、（）《》“”‘’…,.!?\- \r\n]+', selected['text']):
         result = {'schema': 'storyforge.ttrpg-local-tts-eval-result', 'version': 1, 'caseId': selected['id'],
                   'status': 'expected-rejection', 'reasonCode': 'unsupported-script', 'modelCalled': False,
                   'evaluationOnly': True, 'adoptAllowed': False}
@@ -129,6 +129,8 @@ def main():
     from melo import commons
     torch.set_num_threads(2); torch.set_num_interop_threads(1); torch.manual_seed(0)
     normalized = chinese_mix.text_normalize(selected['text'])
+    if normalized != selected['expectedNormalizedText']:
+        raise ValueError('Fixed normalization changed or omitted source content')
     phones, tones, word2ph = chinese_mix.g2p(normalized)
     config = json.loads((root / 'models/speech/config.json').read_text())
     phone, tone, language = cleaned_text_to_sequence(phones, tones, 'ZH_MIX_EN', {s: i for i, s in enumerate(config['symbols'])})

@@ -29,16 +29,18 @@ export function assertVoiceTransport(entryId, actualCaller, registry = json(regi
 
 export function selectEvaluationCase(caseId, fixturesBytes = readFileSync(fixturesPath), contract = json(contractPath)) {
   if (!exact(contract, ['schema', 'version', 'entryId', 'fixtureSha256', 'maxChars', 'maxAudioSeconds', 'timeoutMs'])
-    || contract.schema !== 'storyforge.ttrpg-local-tts-eval-contract' || contract.version !== 1
+    || contract.schema !== 'storyforge.ttrpg-local-tts-eval-contract' || contract.version !== 2
     || contract.entryId !== 'ttrpg.local-voice.eval' || contract.maxChars !== 300
     || contract.maxAudioSeconds !== 60 || contract.timeoutMs !== 120000
     || digest(fixturesBytes) !== contract.fixtureSha256) throw new Error('离线语音评测合同或固定台词校验失败')
   const fixtures = JSON.parse(fixturesBytes)
   if (!exact(fixtures, ['schema', 'version', 'cases']) || fixtures.schema !== 'storyforge.ttrpg-local-tts-eval-cases'
-    || fixtures.version !== 1 || !Array.isArray(fixtures.cases) || fixtures.cases.length !== 4
-    || new Set(fixtures.cases.map(row => row.id)).size !== 4
-    || fixtures.cases.some(row => !exact(row, ['id', 'text', 'expectation']) || typeof row.id !== 'string'
+    || fixtures.version !== 2 || !Array.isArray(fixtures.cases) || fixtures.cases.length !== 6
+    || new Set(fixtures.cases.map(row => row.id)).size !== 6
+    || fixtures.cases.some(row => !exact(row, ['id', 'text', 'expectation', 'expectedNormalizedText']) || typeof row.id !== 'string'
       || typeof row.text !== 'string' || !row.text.trim() || [...row.text].length > contract.maxChars
+      || (row.expectation === 'audio' ? typeof row.expectedNormalizedText !== 'string' || !row.expectedNormalizedText
+        || row.expectedNormalizedText.length > 600 : row.expectedNormalizedText !== null)
       || !['audio', 'unsupported-script'].includes(row.expectation))) throw new Error('固定评测台词格式无效')
   const selected = fixtures.cases.find(row => row.id === caseId)
   if (!selected) throw new Error('仅允许登记的固定台词，不接受作者文本')
@@ -77,7 +79,7 @@ export function verifyEvaluationResult(result, selected, contract, profileHash, 
     'peakBeforeGain', 'appliedGain', 'rms', 'audioSha256', 'wallSeconds', 'cpuSeconds', 'maxRssBytes',
     'threads', 'network', 'humanListeningAcceptance'])
     || result.status !== 'generated' || result.modelCalled !== true || result.text !== selected.text
-    || typeof result.normalizedText !== 'string' || !result.normalizedText || result.normalizedText.length > 600
+    || result.normalizedText !== selected.expectedNormalizedText
     || result.profileHash !== profileHash || result.fixtureSha256 !== contract.fixtureSha256
     || result.network !== 'disabled' || result.threads !== 2 || result.humanListeningAcceptance !== 'unproven'
     || !Number.isSafeInteger(result.samples) || result.samples < 1 || !Number.isSafeInteger(result.sampleRate)
