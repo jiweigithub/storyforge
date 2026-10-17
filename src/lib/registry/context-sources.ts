@@ -228,6 +228,15 @@ function ttrpgOpenPublicSituationProvider(): ContextResourceProviderV1 {
     fingerprint: async scope => (await load()).fingerprint(scope),
     openReadSession: async scope => (await load()).openReadSession!(scope) }
 }
+function ttrpgOpenCommonOracleProvider(): ContextResourceProviderV1 {
+  const load = async () => (await import('../ttrpg/open-common-oracle-context')).createTtrpgOpenCommonOracleContextProviderV1()
+  return { version: 'context-resource-provider-v1', providerId: 'storyforge.ttrpgOpenCommonOracleInput',
+    providerVersion: 'ttrpg-open-common-oracle-provider-v1', normalizationVersion: 'ttrpg-open-common-oracle-json-v1', kinds: ['fact', 'reference'],
+    listMetadata: async input => (await load()).listMetadata(input), searchMetadata: async input => (await load()).searchMetadata(input),
+    read: async input => (await load()).read(input), readOriginal: async input => (await load()).readOriginal(input),
+    fingerprint: async scope => (await load()).fingerprint(scope),
+    openReadSession: async scope => (await load()).openReadSession!(scope) }
+}
 function ttrpgOpenEntityProvider(): ContextResourceProviderV1 {
   const load = async () => (await import('../ttrpg/open-entity-context')).createTtrpgOpenEntityContextProviderV1()
   return { version: 'context-resource-provider-v1', providerId: 'storyforge.ttrpgOpenEntityInput',
@@ -2044,6 +2053,13 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
     requiresResourceKeyAllowList: true, resources: ttrpgOpenEntityProvider(),
     read: async () => { throw new Error('[ttrpg-entity] 实体提案只经原咨询、单一接收者范围和完整模板/地点资源读取') },
+  },
+  {
+    key: 'ttrpgOpenCommonOracleInput', label: 'open 跑团共同 Oracle 事实的全体玩家资料交集',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 16000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgOpenCommonOracleProvider(),
+    read: async () => { throw new Error('[ttrpg-common-oracle] 共同事实只经真实全体交集、冻结单个 Oracle allow-list 与完整来源读取') },
   },
   {
     key: 'ttrpgPrivateGuidance', label: '正式 TTRPG 单角色私密指引', scope: 'runtime', layer: 'L0', ownerFrom: 'work',

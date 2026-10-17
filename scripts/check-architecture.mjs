@@ -1052,8 +1052,8 @@ if (!gatewayToolsSource.includes('sourceRefCount: descriptor.sourceRefs.length')
 if (/\bdb\./.test(gatewayToolsSource)) {
   violations.push('[㉕工具只读] Context Gateway tool adapter 不得直接访问或写数据库')
 }
-if (!agentExecutionBindingSource.includes("AGENT_TOOL_SCHEMA_VERSION_V1 = 'agent-read-tools-v17'")
-  || !agentExecutionBindingSource.includes("AGENT_TOOL_SCHEMA_HASH_V1 = '395aea3eac0451609700481e3f0297ffbbf22fdca92afef0813d88d1d28d62ed'")
+if (!agentExecutionBindingSource.includes("AGENT_TOOL_SCHEMA_VERSION_V1 = 'agent-read-tools-v18'")
+  || !agentExecutionBindingSource.includes("AGENT_TOOL_SCHEMA_HASH_V1 = '633a1385e92901aa1bba03f99abe413a68161577954917bd4073394fad9fdc18'")
   || !agentExecutionBindingSource.includes('verifyAgentToolSchemaBindingV1')) {
   violations.push('[㉕工具版本] 当前 Gateway 工具必须冻结并校验 Agent tool schema version/hash')
 }

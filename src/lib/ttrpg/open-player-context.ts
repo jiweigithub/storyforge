@@ -40,6 +40,14 @@ export async function loadTtrpgOpenPartyProjectionV1(input: OpenPlayerReadV1) {
 /** No caller-selected subset: common means every currently authorized player, including AI seats.
  * Private per-actor views never escape this function. Shared rule definitions confer no grants. */
 export async function loadTtrpgOpenCommonProjectionV1(input: { scope: WorkspaceScope; sessionId: number }) {
+  const { oracleHistory: _oracleHistory, ...common } = await loadCommonProjection(input)
+  return common
+}
+/** Separate Oracle consumer; existing common situation and recap bytes stay unchanged. */
+export async function loadTtrpgOpenCommonOracleProjectionV1(input: { scope: WorkspaceScope; sessionId: number }) {
+  return loadCommonProjection(input)
+}
+async function loadCommonProjection(input: { scope: WorkspaceScope; sessionId: number }) {
   const session = await assertInstanceBinding(input.sessionId, input.scope)
   if (session.kind !== 'ttrpg') throw new Error('[ttrpg-common-context] 当前实例不是跑团')
   const state = await readProductRuntimeState(input.sessionId), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
@@ -73,7 +81,7 @@ export async function loadTtrpgOpenCommonProjectionV1(input: { scope: WorkspaceS
   const after = await readProductRuntimeStateVersion(input.sessionId)
   if (after.sequence !== readEvidence.sequence || after.stateHash !== readEvidence.stateHash) throw new TtrpgOpenReadConflictV1('读取共同资料期间运行状态已变化')
   assertTtrpgOpenAuthorizationRowsCurrentV1({ authorization, participants: await readTtrpgSessionParticipantsV2(input.sessionId) })
-  return { view, recipientActorKeys, authorizationRevision: authorization.revision, readEvidence }
+  return { view, oracleHistory: common(first.oracleHistory, v => v.oracleHistory), recipientActorKeys, authorizationRevision: authorization.revision, readEvidence }
 }
 async function loadOpenPlayerProjectionV1(input: OpenPlayerReadV1, humanViewerKey?: string, partyNarration = false) {
   const session = await assertInstanceBinding(input.sessionId, input.scope)
