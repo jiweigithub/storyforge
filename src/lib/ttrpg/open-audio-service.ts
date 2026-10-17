@@ -1,8 +1,9 @@
 /** Human audio desk. Reads never generate, import, confirm or play; file import is explicit. */
-import type { WorkspaceScope } from '../types'
-import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
-import { readSessionEvents } from '../product/runtime-core'
-import { verifyTtrpgOpenAudioReceiptsV1 } from './open-audio-proof'
+// The existing audio service remains the public domain boundary for both
+// licensed files and human-only script review. Source review grants no dispatch.
+export { prepareTtrpgOpenVoiceScriptV1, readTtrpgOpenReviewedVoiceScriptV1 } from './open-voice-script-service'
+export type { TtrpgOpenVoiceScriptReviewV1 } from './open-voice-script-service'
+import { loadTtrpgOpenAudioReadStateV1 as owner, type TtrpgOpenAudioReadInputV1 } from './open-audio-read-state'
 import { assertTtrpgOpenAudioWriteAllowedV1, createTtrpgOpenAudioReceiptV1, parseTtrpgOpenAudioRequestV1, ttrpgOpenAudioKindV1,
   ttrpgOpenAudioNarrationV1, ttrpgOpenAudioReceiptVisibleV1, ttrpgOpenAudioSourceEqualV1,
   type TtrpgOpenAudioRequestV1, type TtrpgOpenAudioAssetV1, type TtrpgOpenAudioReceiptV1 } from './open-audio-contract'
@@ -17,7 +18,7 @@ import { applyTtrpgOpenAudioCueV1 } from './runtime-commands'
 import { ttrpgOpenScopedKeyV1, type TtrpgOpenSourceRefV1 } from './open-coordination'
 import * as p from './open-contract-parse'
 
-export interface TtrpgOpenAudioDeskInputV1 { scope: WorkspaceScope; sessionId: number; viewerKey: string }
+export type TtrpgOpenAudioDeskInputV1 = TtrpgOpenAudioReadInputV1
 export interface TtrpgOpenAudioReviewV1 {
   schema: 'storyforge.ttrpg-open-audio-review'; version: 1; reviewKey: string
   sessionId: number; viewerKey: string; sequence: number; request: TtrpgOpenAudioRequestV1
@@ -35,12 +36,6 @@ const readViews = new WeakMap<object, ReadViewOwner>()
 const readClips = new WeakMap<Blob, { inputKey: string; sessionKey: string; runtimeSourceHash: string; authorizationRevision: number; clipKey: string }>()
 const inputKey = (input: TtrpgOpenAudioDeskInputV1) => stable({ scope: input.scope, sessionId: input.sessionId, viewerKey: input.viewerKey })
 const snapshotInput = (input: TtrpgOpenAudioDeskInputV1): TtrpgOpenAudioDeskInputV1 => ({ scope: structuredClone(input.scope), sessionId: input.sessionId, viewerKey: input.viewerKey })
-async function owner(input: TtrpgOpenAudioDeskInputV1) {
-  const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'human', viewerKey: input.viewerKey } })
-  const events = await readSessionEvents(loaded.session)
-  await verifyTtrpgOpenAudioReceiptsV1({ runtime: loaded.runtime, runtimeSourceHash: loaded.session.runtimeSourceHash, events })
-  await loaded.assertCurrent(); return loaded
-}
 type Loaded = Awaited<ReturnType<typeof owner>>
 function visible(loaded: Loaded, viewerKey: string) { return (loaded.runtime.openRun!.audioReceipts ?? []).filter(row => ttrpgOpenAudioReceiptVisibleV1(row, loaded.runtime, viewerKey)) }
 function active(loaded: Loaded, viewerKey: string) {

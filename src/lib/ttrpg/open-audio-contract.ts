@@ -10,6 +10,7 @@ import type { TtrpgOpenAuthorizationV1 } from './open-authorization'
 import { TTRPG_AUDIO_CHANNELS_V1, TTRPG_AUDIO_AUDIENCES_V1, validateTtrpgVoiceTimelineV1,
   type TtrpgAudioChannelV1, type TtrpgAudioAudienceV1, type TtrpgVoiceTimelineV1 } from './open-audio-runtime'
 import * as p from './open-contract-parse'
+import { parseTtrpgOpenVoiceScriptV1, type TtrpgOpenVoiceScriptV1 } from './open-voice-script-contract'
 
 export interface TtrpgOpenAudioAssetV1 {
   originSessionKey: string; assetKey: string; version: number; kind: 'bgm' | 'ambience' | 'sfx' | 'voice'
@@ -92,6 +93,22 @@ export function ttrpgOpenAudioNarrationV1(runtime: TtrpgRuntimeStateV2, ref: Ttr
     || !operation.businessRefs.some(row => row.stepKey === 'narration' && ttrpgOpenAudioSourceEqualV1(row.sourceRef, ref))) p.fail('音频必须引用已完成结算的原已确认叙述')
   return narration
 }
+/** Single source/audience policy for existing voice files and future synthesis.
+ * A generated script is data; it does not authorize a model or an E16 write. */
+export function createTtrpgOpenVoiceScriptV1(input: {
+  runtime: TtrpgRuntimeStateV2; runtimeSourceHash: string; viewerKey: string
+  narrationSourceRef: TtrpgOpenSourceRefV1; audience: TtrpgAudioAudienceV1; privateActorKey: string | null
+}): TtrpgOpenVoiceScriptV1 {
+  assertTtrpgOpenAudioWriteAllowedV1(input.runtime, input.viewerKey, 'play')
+  const narration = ttrpgOpenAudioNarrationV1(input.runtime, parseTtrpgOpenSourceRefV1(input.narrationSourceRef))
+  const scope = createTtrpgOpenAudioScopeV1({ authorization: input.runtime.authorization!, viewerKey: input.viewerKey,
+    audience: input.audience, privateActorKey: input.privateActorKey })
+  if (scope.audience === 'public' || scope.recipients.some(row => row.role === 'player' && !narration.recipientActorKeys.includes(row.actorKey!))) p.fail('配音不能扩大原全队叙述的准确接收者')
+  return parseTtrpgOpenVoiceScriptV1({ schema: 'storyforge.ttrpg-open-voice-script', version: 1,
+    sessionKey: input.runtime.sessionKey, runtimeSourceHash: input.runtimeSourceHash,
+    narrationSourceRef: structuredClone(narration.sourceRef), narrationBinding: structuredClone(narration.binding), scope,
+    text: narration.narration.paragraphs.map(row => row.text).join('\n\n') })
+}
 export function ttrpgOpenAudioReceiptVisibleV1(receipt: TtrpgOpenAudioReceiptV1, runtime: Pick<TtrpgRuntimeStateV2, 'authorization'>, viewerKey: string): boolean {
   const seat = runtime.authorization?.seats.find(row => row.viewerKey === viewerKey && row.controller !== 'ai' && row.assignmentState === 'claimed')
   return !!seat && (receipt.envelope.scope.audience === 'public' || receipt.envelope.scope.recipients.some(row => row.seatKey === seat.seatKey
@@ -121,7 +138,7 @@ export function createTtrpgOpenAudioReceiptV1(input: {
 }): TtrpgOpenAudioReceiptV1 {
   const { runtime, viewerKey } = input, request = parseTtrpgOpenAudioRequestV1(input.request)
   assertTtrpgOpenAudioWriteAllowedV1(runtime, viewerKey, request.action)
-  const narration = ttrpgOpenAudioNarrationV1(runtime, request.narrationSourceRef)
+  ttrpgOpenAudioNarrationV1(runtime, request.narrationSourceRef)
   if (request.narrationSourceRef.sessionKey === runtime.sessionKey && request.narrationSourceRef.sequence >= input.sequence) p.fail('音频不得先于原结算叙述')
   const retainedRef = request.media.kind === 'upload' ? null : request.media.sourceRef
   const prior = retainedRef ? runtime.openRun!.audioReceipts?.find(row => ttrpgOpenAudioSourceEqualV1(row.envelope.sourceRef, retainedRef)) : undefined
@@ -140,8 +157,10 @@ export function createTtrpgOpenAudioReceiptV1(input: {
   }
   let fallbackText = request.channel === 'music' ? '背景音乐暂不可用。' : request.channel === 'ambience' ? '环境声暂不可用。' : request.channel === 'sfx' ? '音效暂不可用。' : '语音暂不可用。'
   if (request.action === 'play' && request.channel === 'voice') {
-    if (request.audience === 'public' || scope.recipients.some(row => row.role === 'player' && !narration.recipientActorKeys.includes(row.actorKey!))) p.fail('配音不能扩大原全队叙述的准确接收者')
-    fallbackText = narration.narration.paragraphs.map(row => row.text).join('\n\n')
+    const script = createTtrpgOpenVoiceScriptV1({ runtime, runtimeSourceHash: input.runtimeSourceHash, viewerKey,
+      narrationSourceRef: request.narrationSourceRef, audience: request.audience, privateActorKey: request.privateActorKey })
+    if (stable(scope) !== stable(script.scope)) p.fail('配音与音轨的接收范围不一致')
+    fallbackText = script.text
     const timeline = validateTtrpgVoiceTimelineV1(request.voiceTimeline, fallbackText)
     if (!asset?.durationMs || timeline.marks.some(mark => mark.startMs + mark.durationMs > asset.durationMs!)) p.fail('语音时间轴超出素材声明时长')
   }
