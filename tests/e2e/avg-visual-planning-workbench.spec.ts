@@ -14,7 +14,7 @@ async function adoptSource(page:Page,label:string,waitForCompletion=false){
   return Date.now()-started
 }
 
-async function prepare(page:Page){
+async function prepare(page:Page,firstImageBusy=false){
   await page.addInitScript(()=>localStorage.setItem('storyforge_guide_completed','e2e'))
   await page.goto('./avg/library')
   const origin=new URL(page.url()).origin
@@ -51,6 +51,7 @@ async function prepare(page:Page){
     const body=route.request().postDataJSON();images.push(body)
     expect(body.extra_body.image).toEqual([`data:image/png;base64,${source.png}`])
     expect(body.prompt).toContain('作者修订：保留下方完整对白区')
+    if(firstImageBusy&&images.length===1){await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{message:'生图队列已满，请稍后重试'}})});return}
     await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({data:[{b64_json:source.png}]})})
   })
   await page.goto(`./avg/production?project=${source.scope.projectId}&work=${source.scope.workId}`)
@@ -93,7 +94,7 @@ async function historicalDesignEvidence(page:Page,scope:{projectId:number;worldI
   return page.evaluate(async scope=>{
     const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
     const [{db},author,backup]=await Promise.all([load('/storyforge/src/lib/db/schema.ts'),load('/storyforge/src/lib/avg/author-artifacts.ts'),load('/storyforge/src/lib/export/json-export.ts')])
-    const build=await db.productBuilds.where('workId').equals(scope.workId).first()
+    const builds=await db.productBuilds.where('workId').equals(scope.workId).toArray(),build=builds.sort((a:any,b:any)=>b.buildNumber-a.buildNumber)[0]
     const {exportedAt:_before,...before}=await backup.exportProjectJSON(scope.projectId)
     const rows=await db.productBuildArtifacts.where('buildId').equals(build.id).filter((r:any)=>r.status==='accepted'
       &&(r.artifactKey==='avg.media.visual-bible'||r.artifactKey.startsWith('avg.media.environment-brief.'))).toArray()
@@ -109,10 +110,10 @@ async function historicalDesignEvidence(page:Page,scope:{projectId:number;worldI
   },scope)
 }
 
-test('professional visual workbench preserves author edits, transmits approved reference bytes and restores a real frozen native Preview',async({page},info)=>{
+test('professional visual workbench reuses historical author edits after HTTP503 without new text calls and restores a real frozen native Preview',async({page},info)=>{
   test.setTimeout(240_000)
   test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION!=='1'||process.env.VITE_STORYFORGE_AVG_VISUAL_PLANNING!=='1','Both default-off visual experiments must be explicit')
-  const {source,models,images,panel}=await prepare(page)
+  const {source,models,images,panel}=await prepare(page,true)
   let direction=panel.getByRole('article',{name:'专业方案：视觉基准',exact:true})
   await direction.getByLabel('构图与留白',{exact:true}).fill('作者修订：保留下方完整对白区')
   await direction.getByRole('button',{name:'保存待确认：视觉基准',exact:true}).click()
@@ -131,8 +132,42 @@ test('professional visual workbench preserves author edits, transmits approved r
   await subject.getByRole('checkbox',{name:'我已核对本方案内容及允许参考',exact:true}).check()
   await subject.getByRole('button',{name:`确认采用：场景方案：${source.titles[0]}`,exact:true}).click()
   await panel.getByRole('button',{name:'执行已确认的专业方案与图片任务',exact:true}).click()
+  await expect(panel.getByRole('button',{name:'保留记录并准备新版本方案',exact:true})).toBeVisible({timeout:60_000})
+  expect(models).toHaveLength(2);expect(images).toHaveLength(1)
+  await panel.getByRole('button',{name:'保留记录并准备新版本方案',exact:true}).click()
+  const reuse=panel.getByRole('region',{name:'历史专业方案复用',exact:true})
+  await reuse.getByRole('button',{name:'读取此版本已确认方案',exact:true}).click()
+  const choices=reuse.getByRole('checkbox')
+  await expect(choices).toHaveCount(2)
+  await expect(reuse.getByRole('checkbox',{name:'复用已确认方案：视觉基准',exact:true})).toBeVisible()
+  await expect(reuse.getByRole('checkbox',{name:`复用已确认方案：场景方案：${source.titles[0]}`,exact:true})).toBeVisible()
+  await choices.nth(0).check();await choices.nth(1).check()
+  await reuse.getByRole('button',{name:'保存复用方案',exact:true}).click()
+  await expect(panel.getByText(/新方案上限：0 次方案调用、1 次图片请求/)).toBeVisible()
+  await panel.getByText(/新方案上限：0 次方案调用、1 次图片请求/).scrollIntoViewIfNeeded()
+  await page.screenshot({path:info.outputPath('avg-v4-reuse-zero-call-budget.png')})
+  await page.reload();await page.getByRole('button',{name:'素材',exact:true}).click()
+  await expect(panel.getByText(/新方案上限：0 次方案调用、1 次图片请求/)).toBeVisible()
+  expect(models).toHaveLength(2);expect(images).toHaveLength(1)
+  await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
+  await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
+  await adoptSource(page,'系统规则');for(const title of source.titles)await adoptSource(page,`场景：${title}`)
+  await page.getByRole('button',{name:'素材',exact:true}).click()
+  await panel.getByRole('button',{name:'执行已确认的专业方案与图片任务',exact:true}).click()
+  await expect(direction.getByLabel('构图与留白',{exact:true})).toHaveValue('作者修订：保留下方完整对白区')
+  await expect(direction.getByText(/本岗位没有新的模型调用/)).toBeVisible()
+  await direction.getByRole('button',{name:'保存待确认：视觉基准',exact:true}).click()
+  await direction.getByRole('checkbox',{name:'我已核对本方案内容及允许参考',exact:true}).check()
+  await direction.getByRole('button',{name:'确认采用：视觉基准',exact:true}).click()
+  await panel.getByRole('button',{name:'执行已确认的专业方案与图片任务',exact:true}).click()
+  await expect(subject.getByLabel('生成画面要求',{exact:true})).toHaveValue('作者修订：保留下方完整对白区；保持已批准的门窗布局')
+  expect(models).toHaveLength(2);expect(images).toHaveLength(1)
+  await subject.getByRole('button',{name:`保存待确认：场景方案：${source.titles[0]}`,exact:true}).click()
+  await subject.getByRole('checkbox',{name:'我已核对本方案内容及允许参考',exact:true}).check()
+  await subject.getByRole('button',{name:`确认采用：场景方案：${source.titles[0]}`,exact:true}).click()
+  await panel.getByRole('button',{name:'执行已确认的专业方案与图片任务',exact:true}).click()
   const card=page.getByRole('article',{name:`图片候选：${source.titles[0]}背景`,exact:true})
-  await expect(card).toBeVisible({timeout:60_000});expect(models).toHaveLength(2);expect(images).toHaveLength(1)
+  await expect(card).toBeVisible({timeout:60_000});expect(models).toHaveLength(2);expect(images).toHaveLength(2)
   await confirmEngineeringVisualReview(card,`${source.titles[0]}背景`)
   await card.getByRole('button',{name:`保存选图候选：${source.titles[0]}背景`,exact:true}).click()
   await card.getByRole('checkbox',{name:'我已查看这张图片并核对用途、来源与使用权',exact:true}).check()
@@ -154,7 +189,7 @@ test('professional visual workbench preserves author edits, transmits approved r
   const restored=await page.evaluate(async scope=>{
     const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
     const [schema,backup,service,proof]=await Promise.all([load('/storyforge/src/lib/db/schema.ts'),load('/storyforge/src/lib/export/json-export.ts'),load('/storyforge/src/lib/product-production/service.ts'),load('/storyforge/src/lib/product-production/artifact-store.ts')])
-    const projectId=await backup.importProjectJSON(await backup.exportProjectJSON(scope.projectId)),build=await schema.db.productBuilds.where('projectId').equals(projectId).first()
+    const projectId=await backup.importProjectJSON(await backup.exportProjectJSON(scope.projectId)),builds=await schema.db.productBuilds.where('projectId').equals(projectId).toArray(),build=builds.sort((a:any,b:any)=>b.buildNumber-a.buildNumber)[0]
     const importedScope={projectId,worldId:build.worldId,workId:build.workId}
     await service.recoverImportedProductProductionProofsV1({scope:importedScope,productionId:build.productionId})
     await proof.verifyProductBuildTerminalArtifactSetV1({scope:importedScope,productionId:build.productionId,buildId:build.id,expectedControlEpoch:build.controlEpoch,expectedPlanHash:build.planHash})
@@ -168,7 +203,7 @@ test('professional visual workbench preserves author edits, transmits approved r
   await page.screenshot({path:info.outputPath('avg-v4-professional-restored-preview.png')})
   await page.evaluate(async workId=>{const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;await(await load('/storyforge/src/lib/workspace/lifecycle.ts')).deleteWork(workId)},restored.scope.workId)
   await page.goto(originalUrl);await expect.poll(()=>page.locator('.avg-stage img').evaluateAll((imgs:HTMLImageElement[])=>imgs.some(i=>i.complete&&i.naturalWidth===576))).toBe(true)
-  expect(models).toHaveLength(2);expect(images).toHaveLength(1)
+  expect(models).toHaveLength(2);expect(images).toHaveLength(2)
 })
 
 test('author refuses an exact professional proposal and refresh retains its reason and original evidence without another request',async({page})=>{

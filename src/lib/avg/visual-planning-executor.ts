@@ -9,7 +9,9 @@ import { estimateTokens } from '../ai/context-budget'
 import { avgVisualPlanningExecutionReadyV4 } from './visual-planning-brief'
 import { avgVisualPlanningMethodV1, AVG_VISUAL_PLANNING_ROLES_V1, AVG_VISUAL_TEXT_CAPABILITY_V4 } from './visual-planning-roles'
 import { readAvgVisualPlanningExecutionSourcesV4 } from './visual-planning-task-source'
-import { avgVisualRoleTargetV4, prepareAvgVisualRoleProposalV4 } from './visual-role-proposal'
+import { avgVisualRoleTargetV4, prepareAvgVisualRoleProposalV4, validateAvgVisualSemanticV4, isAvgVisualReuseTaskV4 } from './visual-role-proposal'
+import { readAvgVisualReuseHistoryV4, assertAvgVisualReuseSemanticInputV4 } from './visual-planning-reuse'
+import { parseProductionModelJsonObjectV1 } from '../product-production/model-json-object'
 import { hashAvgVisualExactTextV1 } from './visual-planning-evidence'
 import { compileAvgVisualPlanningProposalV1 } from './media-source'
 import { AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4 } from './visual-planning-plan'
@@ -38,10 +40,13 @@ export function createAvgVisualPlanningExecutorV4(options: { brief: ProductProdu
         if(!production||build!.productionId!==input.productionId)throw new Error('[avg-visual-plan] 组装缺少准确 Production')
         return createAvgAssemblyExecutorV1({brief,production})(input)
       }
-      if (input.task.executionMode !== 'model' && input.task.kind !== 'avg-v4-visual-requirements-compile') throw new Error('[avg-visual-plan] 执行任务超出冻结视觉/组装域；未发送请求')
+      if (input.task.executionMode !== 'model' && input.task.kind !== 'avg-v4-visual-requirements-compile'&&!isAvgVisualReuseTaskV4(input.task)) throw new Error('[avg-visual-plan] 执行任务超出冻结视觉/组装域；未发送请求')
       source = await readAvgVisualPlanningExecutionSourcesV4(input, brief)
     } catch (error) { throw new ProductProductionDraftRejectedErrorV1(error instanceof Error ? error.message : '专业视觉来源无效', zero()) }
     if (input.task.kind === 'avg-v4-visual-requirements-compile') return compileTask(input, source, started)
+    if(isAvgVisualReuseTaskV4(input.task)){
+      try{return await reuseTask(input,source,brief,started)}catch(error){throw new ProductProductionDraftRejectedErrorV1(error instanceof Error?error.message:'历史方案不闭合',zero())}
+    }
     const role = AVG_VISUAL_PLANNING_ROLES_V1.find(r => r.skillId === input.task.skillId)!
     const binding = input.capabilityBindings[0], targetArtifactKey = avgVisualRoleTargetV4(input.task, source.planning.scope)
     const system = avgVisualPlanningMethodV1(role.subjectKind), skill = getAgentSkillV1(input.task.skillId!)
@@ -90,6 +95,31 @@ export function createAvgVisualPlanningExecutorV4(options: { brief: ProductProdu
       return { artifacts: [artifact], passedGateIds: [...input.task.acceptanceGateIds], usage }
     } catch (error) { throw new ProductProductionDraftRejectedErrorV1(error instanceof Error ? error.message : '模型方案无效', usage) }
   }
+}
+
+async function reuseTask(input:ProductProductionTaskExecutionInputV1,source:Awaited<ReturnType<typeof readAvgVisualPlanningExecutionSourcesV4>>,brief:ProductProductionBriefV3,started:number){
+  const targetArtifactKey=avgVisualRoleTargetV4(input.task,source.planning.scope)
+  const selected=source.planning.proposalReuse?.find(r=>r.artifact.artifactKey===targetArtifactKey)
+  if(!selected||input.capabilityBindings.length||input.attempt!==1||input.authorDraftJson)throw new Error('[avg-visual-reuse] 本次确定性领取或冻结选择不准确')
+  const history=await readAvgVisualReuseHistoryV4({scope:input.scope,build:source.build,brief,task:input.task,source:selected})
+  assertAvgVisualReuseSemanticInputV4(input.contextText,history,selected)
+  const scopeHash=await hashProductProductionValueV2(source.planning.scope)
+  const snapshot=canonicalProductProductionJsonV2({schema:'storyforge.avg.visual-reuse-input',version:1,taskKey:input.task.taskKey,
+    targetArtifactKey,scopeHash,sourceInputHash:source.planning.scope.sourceInputHash,contextText:input.contextText,source:selected,
+    originalRequestHash:await hashAvgVisualExactTextV1(history.original.modelRequestText),rawResponseHash:selected.rawResponseHash})
+  const current=await readAgentRunV1(input.scope,input.taskRunId!)
+  await recordAgentRunArtifactV1({scope:input.scope,runId:input.taskRunId!,stepId:input.task.taskKey,attempt:1,
+    artifactKind:'source-snapshot',content:snapshot,expectedLastSequence:current.projection.lastSequence})
+  await readAvgVisualPlanningExecutionSourcesV4(input,brief)
+  await readAvgVisualReuseHistoryV4({scope:input.scope,build:source.build,brief,task:input.task,source:selected})
+  const payload={schema:'storyforge.avg.visual-role-proposal',version:2,targetArtifactKey,scopeHash,payload:history.payload,
+    modelPayload:validateAvgVisualSemanticV4(parseProductionModelJsonObjectV1(history.original.rawText,input.task.taskKey),source.planning.scope,targetArtifactKey)}
+  const artifact={artifactKey:input.task.outputArtifactKeys[0],kind:'narrative' as const,payload,metadata:{},
+    quality:{schema:'storyforge.avg.visual-proposal-reuse-evidence',version:1,requestSnapshotHash:await hashAvgVisualExactTextV1(snapshot),
+      rawResponseHash:selected.rawResponseHash,scopeHash,capabilityBindingHash:history.original.binding.bindingHash,source:selected},
+    rights:{origin:'history-reuse',commercialUse:null}}
+  return {artifacts:[artifact],passedGateIds:[...input.task.acceptanceGateIds],usage:{modelCalls:0,inputTokens:0,outputTokens:0,mediaCalls:0,costUsd:0,
+    durationMs:Date.now()-started,storageBytes:new TextEncoder().encode(snapshot+canonicalProductProductionJsonV2(artifact)).byteLength}}
 }
 
 async function compileTask(input: ProductProductionTaskExecutionInputV1, source: Awaited<ReturnType<typeof readAvgVisualPlanningExecutionSourcesV4>>, started: number) {

@@ -6,7 +6,7 @@ import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '
 import { assembleContext } from '../registry/assemble-context'
 import { preserveProductProductionContextV1 } from '../product-production/context'
 import { readAvgVisualProposalEvidenceV4 } from './visual-planning-evidence'
-import { assertAvgVisualRoleProposalV4 } from './visual-role-proposal'
+import { assertAvgVisualRoleProposalV4, isAvgVisualReuseTaskV4 } from './visual-role-proposal'
 import { AVG_VISUAL_PLANNING_CONTEXT_V1, AVG_VISUAL_PLANNING_ROLES_V1, avgVisualPlanningMethodV1 } from './visual-planning-roles'
 import { assertAvgVisualPlanningProposalV1 } from './media-source'
 import { parseAvgProfessionalArtifactV1 } from './artifact-contract'
@@ -33,6 +33,12 @@ export async function assertAvgVisualPlanningProducerAdmissionV4(input: {
   if (assembled.overBudgetAfterTrim || assembled.segments.length !== 1 || !assembled.sourceEvidence?.length
     || assembled.sourceEvidence.some(s => s.status !== 'included' || s.delivery !== 'full')) throw new Error('[avg-visual-plan] 方案接收来源不完整')
   if (a.artifactKey.startsWith('avg.proposal.')) {
+    if(isAvgVisualReuseTaskV4(task)){
+      if(a.kind!=='narrative'||!same(JSON.parse(a.rightsJson),{origin:'history-reuse',commercialUse:null}))throw new Error('[avg-visual-reuse] 复用必须保留历史来源及未知商业权利')
+      const evidence=await readAvgVisualProposalEvidenceV4(input.scope,{...a,producerRunId:input.producerRunId})
+      if(!evidence.reused||evidence.request.contextText!==assembled.text)throw new Error('[avg-visual-reuse] 本次确定性输入不属于实际登记 Gateway')
+      return
+    }
     if (a.kind !== 'narrative' || task.executionMode !== 'model' || task.budgetReservation.modelCalls !== 1 || task.budgetReservation.mediaCalls !== 0
       || !same(JSON.parse(a.rightsJson), { origin: 'model-proposal', commercialUse: null })) throw new Error('[avg-visual-plan] 原始方案不是登记的单次模型候选')
     const proposal = await assertAvgVisualRoleProposalV4(a.payloadJson, task, planning.scope)

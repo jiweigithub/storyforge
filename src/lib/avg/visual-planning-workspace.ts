@@ -81,7 +81,7 @@ export async function assertAvgVisualPlanningDraftMatchesV4(scope: WorkspaceScop
 export async function resolveAvgVisualPlanningExecutionV4(scope: WorkspaceScope, brief: ProductProductionBriefV3, buildId?: number) {
   const v = brief.avgVisualPlanning
   if (!v || !avgVisualPlanningExecutionReadyV4()) throw new Error('[avg-visual-plan] 专业视觉制作尚未启用')
-  const plan = buildAvgVisualPlanningPlanV4({ brief: { ...brief, avgVisualPlanning: v }, briefHash: '0'.repeat(64), buildNumber: 1, controlEpoch: 0 })
+  const plan = buildAvgVisualPlanningPlanV4({ brief: { ...brief, avgVisualPlanning: v }, briefHash: '0'.repeat(64), buildNumber: 1+Math.max(0,...(v.proposalReuse??[]).map(r=>r.buildNumber)), controlEpoch: 0 })
   const bindings: ProductProductionCapabilityBindingV1[] = []
   const modelTasks = plan.tasks.filter(t => t.executionMode === 'model')
   for (const task of modelTasks) {
@@ -98,8 +98,8 @@ export async function resolveAvgVisualPlanningExecutionV4(scope: WorkspaceScope,
     textBinding = { requirementKey: text.receipt.requirementKey, adapterId: text.receipt.adapterId, bindingHash: text.receipt.capabilityHash,
       provider: text.receipt.provider, model: text.receipt.model }
   }
-  if (!textBinding || textBinding.bindingHash !== brief.capabilityRequirements.find(c => c.requirementKey === AVG_VISUAL_TEXT_CAPABILITY_V4)!.capabilityHash
-    || bindings.some(b => canonicalProductProductionJsonV2(b) !== canonicalProductProductionJsonV2(textBinding))) throw new Error('[avg-visual-plan] 已接收专业方案与冻结文本路由不一致')
+  if (modelTasks.length && (!textBinding || textBinding.bindingHash !== brief.capabilityRequirements.find(c => c.requirementKey === AVG_VISUAL_TEXT_CAPABILITY_V4)!.capabilityHash
+    || bindings.some(b => canonicalProductProductionJsonV2(b) !== canonicalProductProductionJsonV2(textBinding)))) throw new Error('[avg-visual-plan] 已接收专业方案与冻结文本路由不一致')
   let imagesReceived = buildId !== undefined
   for (const template of v.scope.templates) {
     const rows = buildId === undefined ? [] : await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([buildId, `avg.media.raw.${template.parameters.requirementKey}`])
@@ -110,7 +110,7 @@ export async function resolveAvgVisualPlanningExecutionV4(scope: WorkspaceScope,
   const capability = brief.capabilityRequirements.find(c => c.requirementKey === 'avg.media.image')!
   const configured = imagesReceived ? null : await resolveAvgImageExecutionCapabilityV2({ projectId: scope.projectId, requirement: capability })
   if (configured && (configured.binding.bindingHash !== v.imageBinding.bindingHash || configured.endpointRouteHash !== v.imageBinding.endpointRouteHash)) throw new Error('[avg-visual-plan] 图片路由已变化，请重新核对方案')
-  return { capabilityBindings: [textBinding, { requirementKey: v.imageBinding.requirementKey, adapterId: v.imageBinding.adapterId, bindingHash: v.imageBinding.bindingHash }],
+  return { capabilityBindings: [...(textBinding?[textBinding]:[]), { requirementKey: v.imageBinding.requirementKey, adapterId: v.imageBinding.adapterId, bindingHash: v.imageBinding.bindingHash }],
     mediaCapabilities: new Map(configured ? [['avg.media.image', configured.resolved]] : []), avgImageEndpointRouteHash: configured?.endpointRouteHash }
 }
 

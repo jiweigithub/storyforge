@@ -4,6 +4,7 @@ import { parseAvgVisualPlanningBriefV4, type AvgVisualPlanningBriefV4 } from './
 import { avgMediaBriefArtifactKeyV1, avgVisualPlanningTemplateRequirementsV1, type AvgVisualDesignKindV1 } from './visual-planning-contract'
 import { avgKey } from './protocol-validation'
 import { AVG_VISUAL_TEXT_CAPABILITY_V4, AVG_COMPILED_IMAGE_SKILL_V4, avgVisualPlanningRoleV1 } from './visual-planning-roles'
+import { avgVisualPlanningTargetKeysV4 } from './visual-planning-reuse-contract'
 
 export const AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4 = 'avg.media.compiled-visual-requirements'
 export function avgVisualProposalArtifactKeyV4(kind: AvgVisualDesignKindV1 | null, subjectKey?: string): string {
@@ -19,7 +20,8 @@ export function buildAvgVisualPlanningPlanV4(input: {
   const v = parseAvgVisualPlanningBriefV4(input.brief.avgVisualPlanning), image = input.brief.capabilityRequirements.filter(c => c.requirementKey === 'avg.media.image')
   const text = input.brief.capabilityRequirements.filter(c => c.requirementKey === AVG_VISUAL_TEXT_CAPABILITY_V4)
   if (image.length !== 1 || text.length !== 1 || input.brief.capabilityRequirements.length !== 2
-    || text[0].mediaClass !== 'text' || !text[0].required) throw new Error('[avg-visual-plan] 必须冻结准确图片和专业文本能力')
+    || text[0].mediaClass !== 'text' || text[0].required !== (avgVisualPlanningTargetKeysV4(v.scope).length>(v.proposalReuse?.length??0))) throw new Error('[avg-visual-plan] 必须冻结准确图片和实际仍需调用的专业文本能力')
+  if(v.proposalReuse?.some(r=>r.buildNumber>=input.buildNumber))throw new Error('[avg-visual-reuse] 来源必须早于当前版本')
   // Reuse the existing consumer/review/stage topology only. These inert words
   // are never serialized as V4 requests or sent to a provider. The V4 executor
   // must read the adopted, receipt-bound compilation artifact instead.
@@ -39,13 +41,17 @@ export function buildAvgVisualPlanningPlanV4(input: {
     const authorTask = kind === null ? 'avg.author.visual-bible' : avgKey(`avg.author.${kind}-brief.${subjectKey}`, 'author task')
     const parents = [...sourceTaskKeys, ...(kind === null ? [] : ['avg.author.visual-bible'])]
     const inputs = [...sourceKeys, ...(kind === null ? [] : ['avg.media.visual-bible'])]
-    additions.push({ ...structuredClone(template), taskKey: modelTask, kind: kind === null ? 'avg-v4-visual-direction-proposal' : 'avg-v4-subject-visual-proposal',
+    const reused=v.proposalReuse?.some(r=>r.artifact.artifactKey===canonical)??false
+    additions.push({ ...structuredClone(template), taskKey: modelTask, kind: reused?'avg-v4-visual-proposal-reuse':kind === null ? 'avg-v4-visual-direction-proposal' : 'avg-v4-subject-visual-proposal',
       lane: 'visual', executionMode: 'model', skillId: role.skillId, outputArtifactKeys: [proposal], inputArtifactKeys: inputs,
       dependsOn: parents, requiredReceipts: parents.map(taskKey => ({ taskKey, receiptHash: null })),
       capabilityRequirementKeys: [AVG_VISUAL_TEXT_CAPABILITY_V4], concurrencyGroup: 'avg-visual-planning', subjectLockKeys: [canonical],
       maxAttempts: 1, timeoutMs: 360_000, acceptanceGateIds: [`${proposal}.received`],
       budgetReservation: { modelCalls: 1, inputTokens: 24_000, outputTokens: role.outputTokens, mediaCalls: 0,
-        maximumCostUsd: text[0].maximumRequestCost, durationMs: 360_000, storageBytes: 4 * 1024 * 1024 } })
+        maximumCostUsd: text[0].maximumRequestCost, durationMs: 360_000, storageBytes: 4 * 1024 * 1024 },
+      ...(reused?{executionMode:'deterministic' as const,skillId:null,contextProfile:'avg-visual-planning-v4' as const,
+        capabilityRequirementKeys:[],timeoutMs:60_000,budgetReservation:{modelCalls:0,inputTokens:24_000,outputTokens:0,mediaCalls:0,
+          maximumCostUsd:0,durationMs:60_000,storageBytes:4*1024*1024}}:{}) })
     const authorParents = [...parents, modelTask]
     additions.push({ ...structuredClone(template), taskKey: authorTask, kind: kind === null ? 'avg-author-visual-bible' : 'avg-author-media-brief',
       lane: 'visual', outputArtifactKeys: [canonical], inputArtifactKeys: [...inputs, proposal], dependsOn: authorParents,

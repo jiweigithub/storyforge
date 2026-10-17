@@ -745,6 +745,8 @@ export async function startAvgAssemblyV1(input: { scope: WorkspaceScope; product
     const {sourceInputHash:_hash,aspectRatio:_ratio,...planning}=brief.avgVisualPlanning.scope
     workspace=(await(await import('./visual-planning-scope-draft')).prepareAvgVisualPlanningSourceDraftV4({workspace,planning,previous:unstartedAvgVisualPlanningScopes(details)})).workspace
     await (await import('./visual-planning-workspace')).assertAvgVisualPlanningDraftMatchesV4(input.scope,workspace,brief)
+    await (await import('./visual-planning-reuse-workspace')).assertAvgVisualProposalReuseSourcesV4(input.scope,input.productionId,brief,
+      1+Math.max(0,...details.buildHistory.map(b=>b.buildNumber)))
   }
   if (workspace.voiceProduction && assembly.version !== 3) throw new Error('[avg-voice] 草稿已包含配音批次，请重新准备匹配的制作方案')
   if (assembly.version === 3) {

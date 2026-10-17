@@ -6,13 +6,23 @@ import { sha256MediaData } from '../product-production/media-blob-store'
 import { avgHash, avgKey, avgProtocolBody, avgRecord, avgText } from './protocol-validation'
 import { parseProductionModelJsonObjectV1 } from '../product-production/model-json-object'
 import { prepareAvgProfessionalArtifactV1 } from './artifact-contract'
+import { readAvgVisualReuseEvidenceV4 } from './visual-planning-reuse'
+import type { AvgVisualProposalReuseSourceV4, AvgVisualReusePathV4 } from './visual-planning-reuse-contract'
+
+export type AvgVisualProposalEvidenceV4 = {
+  rawText:string;requestText:string;request:Record<string,unknown>;quality:Record<string,unknown>
+  snapshot:Awaited<ReturnType<typeof readAgentRunV1>>;modelRun:Awaited<ReturnType<typeof readAgentRunV1>>
+  modelRequest:Record<string,unknown>;modelRequestText:string
+  binding:{requirementKey:string;adapterId:string;bindingHash:string;provider?:string;model?:string}
+} & ({reused:false}|{reused:true;source:AvgVisualProposalReuseSourceV4})
 
 export const hashAvgVisualExactTextV1 = (text: string) => sha256MediaData(new TextEncoder().encode(text).buffer)
 
 /** Original model input/output are exact Run artifacts, never a payload
  * supplied by the author or a second prose copy with invented provenance. */
-export async function readAvgVisualProposalEvidenceV4(scope: WorkspaceScope, row: Pick<ProductBuildArtifactRecordV1, 'producerRunId' | 'qualityJson' | 'payloadJson'>) {
+export async function readAvgVisualProposalEvidenceV4(scope: WorkspaceScope, row: Pick<ProductBuildArtifactRecordV1, 'producerRunId' | 'qualityJson' | 'payloadJson'>,path:AvgVisualReusePathV4=[]):Promise<AvgVisualProposalEvidenceV4> {
   if (row.producerRunId === null) throw new Error('[avg-visual-plan] 原始方案没有实际 producer')
+  if(JSON.parse(row.qualityJson)?.schema==='storyforge.avg.visual-proposal-reuse-evidence')return readAvgVisualReuseEvidenceV4(scope,{...row,producerRunId:row.producerRunId},path)
   const q = avgRecord(avgProtocolBody(row.qualityJson), ['schema', 'version', 'requestSnapshotHash', 'rawResponseHash', 'scopeHash', 'capabilityBindingHash'], 'visual proposal evidence')
   if (q.schema !== 'storyforge.avg.visual-proposal-evidence' || q.version !== 1) throw new Error('[avg-visual-plan] 原始方案证据版本无效')
   const snapshot = await readAgentRunV1(scope, row.producerRunId), taskKey = snapshot.contract.scope.productProduction?.taskKey
@@ -43,5 +53,5 @@ export async function readAvgVisualProposalEvidenceV4(scope: WorkspaceScope, row
     || typeof request.systemPrompt !== 'string' || !request.systemPrompt.trim() || typeof request.contextText !== 'string' || !request.contextText.trim()
     || canonicalProductProductionJsonV2(prepareAvgProfessionalArtifactV1({ artifactKey: String(proposal.targetArtifactKey), kind: 'narrative',
       payload: parseProductionModelJsonObjectV1(rawText, taskKey), allowedOutputKeys: [String(proposal.targetArtifactKey)] }).payload) !== canonicalProductProductionJsonV2(proposal.payload)) throw new Error('[avg-visual-plan] 原始响应、真实输入或方案内容不闭合')
-  return { rawText, requestText, request, quality: q, snapshot, binding: actualBinding }
+  return { reused:false,rawText, requestText, request, quality: q, snapshot,modelRun:snapshot,modelRequest:request,modelRequestText:requestText, binding: actualBinding }
 }

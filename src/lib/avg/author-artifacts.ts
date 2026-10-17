@@ -34,10 +34,11 @@ import { assertAvgVisualRoleProposalV4, validateAvgVisualSemanticV4 } from './vi
 import { readAvgVisualProposalEvidenceV4 } from './visual-planning-evidence'
 import { AVG_VISUAL_TEXT_CAPABILITY_V4 } from './visual-planning-roles'
 import { readAvgImageConsumptionDefinitionV4 } from './image-consumption'
+import type { AvgVisualReusePathV4 } from './visual-planning-reuse-contract'
 
 type Ref = { artifactKey: string; version: number; contentHash: string }
 interface AuthorCandidateBase {
-  schema: 'storyforge.avg.author-candidate'; origin: 'author-import' | 'model-proposal'
+  schema: 'storyforge.avg.author-candidate'; origin: 'author-import' | 'model-proposal' | 'history-reuse'
   productionKey: string; buildNumber: number; briefRevision: number; briefHash: string
   confirmedBriefHash: string; sourcePlanHash: string; planRevision: number; planHash: string
   controlEpoch: number; taskKey: string; artifactKey: string; kind: ProductBuildArtifactRecordV1['kind']
@@ -45,8 +46,8 @@ interface AuthorCandidateBase {
 }
 type AuthorCandidateBody = AuthorCandidateBase & ({ version: 1 } | { version: 2; systemValidation: AvgSystemValidationV1 } | { version: 3; assemblyValidation: AvgAssemblyValidationV1 }
   | { version: 4; mediaChoiceValidation: AvgMediaChoiceValidation } | { version: 5; voiceChoiceValidation: AvgVoiceChoiceValidationV1 }
-  | { version: 6; visualProposalValidation: AvgVisualProposalValidationV4 })
-interface AvgVisualProposalValidationV4 { proposal: Ref; scopeHash: string; originalPayloadHash: string; authorEdited: boolean }
+  | { version: 6 | 7; visualProposalValidation: AvgVisualProposalValidationV4 })
+interface AvgVisualProposalValidationV4 { proposal: Ref; scopeHash: string; originalPayloadHash: string; authorEdited: boolean; reuseSourceHash?:string }
 type AuthorCandidate = AuthorCandidateBody & { candidateHash: string }
 type AdoptCommand = Extract<ProductProductionCommandV1, { type: 'adopt-avg-artifact' }>
 
@@ -231,7 +232,7 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
     const expected=brief.avgVisualPlanning?buildAvgVisualPlanningPlanV4({...input,brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning}}):buildAvgNativeAssemblyPlan(input)
     if(canonicalProductProductionJsonV2(expected)!==build.planJson)throw new Error('[avg] 原生作者 Plan 不是冻结的固定组装拓扑')
   }
-  return { build, production: production as ProductProductionRecordV1 & { id: number }, briefRow, brief, plan, sourcePlan }
+  return { scope,build, production: production as ProductProductionRecordV1 & { id: number }, briefRow, brief, plan, sourcePlan,reusePath:[] as AvgVisualReusePathV4 }
 }
 
 async function acceptedInputs(scope: WorkspaceScope, buildId: number, epoch: number, keys: string[]) {
@@ -379,13 +380,13 @@ function candidateBody(context: Awaited<ReturnType<typeof authority>>, input: {
   base: Ref | null; inputs: Ref[]; declaration: string; systemValidation?: AvgSystemValidationV1; assemblyValidation?: AvgAssemblyValidationV1; mediaChoiceValidation?: AvgMediaChoiceValidation; voiceChoiceValidation?: AvgVoiceChoiceValidationV1; visualProposalValidation?: AvgVisualProposalValidationV4
 }): AuthorCandidateBody {
   const { systemValidation, assemblyValidation, mediaChoiceValidation, voiceChoiceValidation, visualProposalValidation, ...payload } = input
-  const base: AuthorCandidateBase = { schema: 'storyforge.avg.author-candidate', origin: visualProposalValidation ? 'model-proposal' : 'author-import',
+  const base: AuthorCandidateBase = { schema: 'storyforge.avg.author-candidate', origin: visualProposalValidation?.reuseSourceHash?'history-reuse':visualProposalValidation ? 'model-proposal' : 'author-import',
     productionKey: context.production.productionKey, buildNumber: context.build.buildNumber,
     briefRevision: context.build.briefRevision, briefHash: context.build.briefHash,
     confirmedBriefHash: context.briefRow.confirmedBriefHash, sourcePlanHash: context.briefRow.sourcePlanHash,
     planRevision: context.build.planRevision, planHash: context.build.planHash, controlEpoch: context.build.controlEpoch,
     ...payload }
-  return visualProposalValidation ? { ...base, version: 6, visualProposalValidation } : voiceChoiceValidation ? { ...base, version: 5, voiceChoiceValidation } : mediaChoiceValidation ? { ...base, version: 4, mediaChoiceValidation } : assemblyValidation ? { ...base, version: 3, assemblyValidation } : systemValidation ? { ...base, version: 2, systemValidation } : { ...base, version: 1 }
+  return visualProposalValidation ? { ...base, version: visualProposalValidation.reuseSourceHash?7:6, visualProposalValidation } : voiceChoiceValidation ? { ...base, version: 5, voiceChoiceValidation } : mediaChoiceValidation ? { ...base, version: 4, mediaChoiceValidation } : assemblyValidation ? { ...base, version: 3, assemblyValidation } : systemValidation ? { ...base, version: 2, systemValidation } : { ...base, version: 1 }
 }
 
 async function validateVisualProposal(context: Awaited<ReturnType<typeof authority>>, payload: AuthorPayload, artifactKey: string, inputs: ProductBuildArtifactRecordV1[]) {
@@ -397,8 +398,12 @@ async function validateVisualProposal(context: Awaited<ReturnType<typeof authori
   const proposal = await assertAvgVisualRoleProposalV4(original.payloadJson, task, scope)
   if (proposal.targetArtifactKey !== artifactKey) throw new Error('[avg-visual-plan] 作者候选不能借用其他岗位或主体方案')
   validateAvgVisualSemanticV4(payload, scope, artifactKey)
-  return { proposal: ref(original), scopeHash: proposal.scopeHash, originalPayloadHash: await hash(proposal.payload),
-    authorEdited: canonicalProductProductionJsonV2(payload) !== canonicalProductProductionJsonV2(proposal.payload) }
+  const modelPayload=proposal.version===2?proposal.modelPayload:proposal.payload
+  const evidence=proposal.version===2?await readAvgVisualProposalEvidenceV4(context.scope,original,context.reusePath):null
+  if(proposal.version===2&&!evidence?.reused)throw new Error('[avg-visual-reuse] 当前作者候选缺少准确复用证据')
+  return { proposal: ref(original), scopeHash: proposal.scopeHash, originalPayloadHash: await hash(modelPayload),
+    authorEdited: canonicalProductProductionJsonV2(payload) !== canonicalProductProductionJsonV2(modelPayload),
+    ...(evidence?.reused?{reuseSourceHash:await hash(evidence.source)}:{}) }
 }
 
 /** Stores only a pending candidate, never an author receipt or accepted content.
@@ -547,7 +552,7 @@ async function assertFrozenAuthorCandidateV1(context: Awaited<ReturnType<typeof 
   const envelope = JSON.parse(row.metadataJson) as { candidate: AuthorCandidate }
   const { candidateHash, ...body } = envelope.candidate
   if (row.producerRunId !== null || row.producerReceiptHash !== null || row.carriedFrom !== null
-    || body.schema !== 'storyforge.avg.author-candidate' || body.origin !== (body.version === 6 ? 'model-proposal' : 'author-import')
+    || body.schema !== 'storyforge.avg.author-candidate' || body.origin !== (body.version === 7?'history-reuse':body.version === 6 ? 'model-proposal' : 'author-import')
     || body.productionKey !== context.production.productionKey || body.buildNumber !== context.build.buildNumber
     || body.briefRevision !== context.build.briefRevision || body.briefHash !== context.build.briefHash
     || body.confirmedBriefHash !== context.briefRow.confirmedBriefHash || body.sourcePlanHash !== context.briefRow.sourcePlanHash
@@ -559,7 +564,8 @@ async function assertFrozenAuthorCandidateV1(context: Awaited<ReturnType<typeof 
     || canonicalProductProductionJsonV2(body.inputs) !== canonicalProductProductionJsonV2(upstream.map(ref))) throw new Error(`[avg] 冻结作者输入来源/候选不闭合:${task.taskKey}`)
   const validation = context.brief.avgVisualPlanning && ['avg-author-visual-bible', 'avg-author-media-brief'].includes(task.kind)
     ? await validateVisualProposal(context, parseAvgProfessionalArtifactV1(row.payloadJson), row.artifactKey, upstream) : undefined
-  if ((body.version === 6) !== !!validation || validation && (body.version !== 6 || canonicalProductProductionJsonV2(body.visualProposalValidation) !== canonicalProductProductionJsonV2(validation))) throw new Error('[avg-visual-plan] 模型来源或作者修订证据不一致')
+  if ([6,7].includes(body.version) !== !!validation || validation && (!('visualProposalValidation' in body)
+    ||body.version!==(validation.reuseSourceHash?7:6)||canonicalProductProductionJsonV2(body.visualProposalValidation) !== canonicalProductProductionJsonV2(validation))) throw new Error('[avg-visual-plan] 模型来源或作者修订证据不一致')
   return envelope.candidate
 }
 
@@ -699,12 +705,14 @@ export async function readAvgConfirmedVisualArtifactsV4(input: Pick<Parameters<t
 export async function readAvgHistoricalVisualArtifactV4(input: {
   scope: WorkspaceScope; buildId: number; expectedBuildRevision: number; controlEpoch: number
   expectedBriefHash: string; expectedPlanHash: string; artifact: Ref
-}) {
+},reusePath:AvgVisualReusePathV4=[]) {
   const scope = await resolveScope({ scope: input.scope })
   return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands,
     db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects,
     db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts), async () => {
     const context = await authority(scope, input.buildId, true, false, input.controlEpoch, 'visual')
+    if(!Array.isArray(reusePath)||reusePath.length>32)throw new Error('[avg-visual-history] 历史复用谱系超界')
+    context.reusePath=reusePath
     if (!context.brief.avgVisualPlanning || context.build.stateRevision !== input.expectedBuildRevision
       || context.build.briefHash !== input.expectedBriefHash || context.build.planHash !== input.expectedPlanHash
       || !['paused','cancelled','failed','recovery-required','preview-ready','release-ready','released'].includes(context.build.status)) throw new Error('[avg-visual-history] 历史版本不准确或仍在执行')
@@ -727,7 +735,7 @@ export async function readAvgHistoricalVisualArtifactV4(input: {
         row = await verifyHistoricalAvgVisualPlanningArtifactV4({ scope, buildId: input.buildId,
           expectedBuildRevision: input.expectedBuildRevision, expectedBriefHash: input.expectedBriefHash, expectedPlanHash: input.expectedPlanHash,
           sourceControlEpoch: input.controlEpoch, ...ref(matches[0]) })
-        const proof = await readAvgVisualProposalEvidenceV4(scope,row), planning = context.brief.avgVisualPlanning!
+        const proof = await readAvgVisualProposalEvidenceV4(scope,row,reusePath), planning = context.brief.avgVisualPlanning!
         if (proof.quality.scopeHash !== await hash(planning.scope) || proof.request.sourceInputHash !== planning.scope.sourceInputHash
           || proof.binding.bindingHash !== context.brief.capabilityRequirements.find(c => c.requirementKey === AVG_VISUAL_TEXT_CAPABILITY_V4)?.capabilityHash) throw new Error('[avg-visual-history] 历史模型实际输入不属于原冻结范围或路由')
         evidence.set(key,proof)
@@ -749,7 +757,7 @@ export async function readAvgHistoricalVisualArtifactV4(input: {
     const row = await read(input.artifact.artifactKey)
     if (row.version !== input.artifact.version || row.contentHash !== input.artifact.contentHash) throw new Error('[avg-visual-history] 历史作者方案不是指定版本')
     const candidate = candidates.get(row.artifactKey)!
-    if (candidate.version !== 6) throw new Error('[avg-visual-history] 历史方案缺少模型与人工修订的准确区分')
+    if (candidate.version !== 6&&candidate.version!==7) throw new Error('[avg-visual-history] 历史方案缺少模型与人工修订的准确区分')
     const original = cache.get(candidate.visualProposalValidation.proposal.artifactKey)!, originalEvidence = evidence.get(original.artifactKey)!
     const same = (a:unknown,b:unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
     if (!same(JSON.parse(row.rightsJson),{origin:candidate.origin,declaration:candidate.declaration})) throw new Error('[avg-visual-history] 历史权利声明与作者原候选不一致')
@@ -760,7 +768,9 @@ export async function readAvgHistoricalVisualArtifactV4(input: {
       authorReceiptHash: String(JSON.parse(row.metadataJson).receiptHash),
       original: { artifact: ref(original), payload: JSON.parse(original.payloadJson), producerRunId: original.producerRunId!,
         producerReceiptHash: original.producerReceiptHash!, rawText: originalEvidence.rawText, requestText: originalEvidence.requestText,
-        request: originalEvidence.request, binding: originalEvidence.binding, quality: originalEvidence.quality, rights: JSON.parse(original.rightsJson) },
+        request: originalEvidence.request,modelRequest:originalEvidence.modelRequest,modelRequestText:originalEvidence.modelRequestText,
+        modelRun:originalEvidence.modelRun,reused:originalEvidence.reused,
+        binding: originalEvidence.binding, quality: originalEvidence.quality, rights: JSON.parse(original.rightsJson) },
       source: { productionKey: context.production.productionKey, buildNumber: context.build.buildNumber,
         buildRevision: context.build.stateRevision, controlEpoch: input.controlEpoch, briefHash: context.build.briefHash,
         planHash: context.build.planHash, sourceWorldContentHash: context.brief.source.worldContentHash,

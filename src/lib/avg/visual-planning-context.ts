@@ -16,15 +16,18 @@ import { verifyAvgReferenceBytesV1 } from './media-reference-contract'
 import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 import { readAvgCompiledImageDefinitionV4 } from './visual-planning-image-definition'
 import { AVG_COMPILED_IMAGE_SKILL_V4 } from './visual-planning-roles'
+import { avgVisualRoleTargetV4, isAvgVisualReuseTaskV4 } from './visual-role-proposal'
 
 /** Only author-declared visible details are delivered. Full rules, secrets,
  * item descriptions, script text and reference-image bytes are not a default
  * visual-model input. The full source still participates in stale checking. */
 export function projectAvgVisualPlanningTaskV4(input: { planning: AvgVisualPlanningBriefV4; task: ProductProductionPlanTaskV3;
   source: AvgMediaSourceInputV1; visualBible?: AvgVisualBibleV1 }) {
-  const planning = parseAvgVisualPlanningBriefV4(input.planning), role = AVG_VISUAL_PLANNING_ROLES_V1.find(r => r.skillId === input.task.skillId)
-  if (!role || input.task.executionMode !== 'model' || input.task.outputArtifactKeys.length !== 1
-    || input.task.kind !== (role.subjectKind === null ? 'avg-v4-visual-direction-proposal' : 'avg-v4-subject-visual-proposal')) throw new Error('[avg-visual-plan] 只接受登记的专业方案任务')
+  const planning = parseAvgVisualPlanningBriefV4(input.planning), target=avgVisualRoleTargetV4(input.task,planning.scope)
+  const reuse=isAvgVisualReuseTaskV4(input.task), selectedKind=target==='avg.media.visual-bible'?null:planning.scope.templates.find(t=>
+    target===`avg.media.${t.subjectKind}-brief.${t.parameters.family.subjectKey}`)?.subjectKind
+  const role = AVG_VISUAL_PLANNING_ROLES_V1.find(r => reuse?r.subjectKind===selectedKind:r.skillId===input.task.skillId)
+  if(!role)throw new Error('[avg-visual-plan] 只接受登记的专业方案任务')
   const scope = planning.scope, isDirection = role.subjectKind === null
   const subjects = [...new Map(scope.templates.map(t => [t.parameters.family.subjectKey, t.subjectKind])).entries()]
   const selected = isDirection ? subjects : subjects.filter(([key, kind]) => kind === role.subjectKind
@@ -37,7 +40,10 @@ export function projectAvgVisualPlanningTaskV4(input: { planning: AvgVisualPlann
   const bible = input.visualBible === undefined ? null : parseAvgVisualBibleV1(input.visualBible)
   if (!isDirection && !bible) throw new Error('[avg-visual-plan] 主体设计缺少已确认视觉基准')
   if (!isDirection && selected.some(([key, kind]) => !bible!.subjects.some(s => s.subjectKey === key && s.subjectKind === kind))) throw new Error('[avg-visual-plan] 视觉基准未覆盖准确主体')
+  const reuseSource=reuse?planning.proposalReuse?.find(r=>r.artifact.artifactKey===target):undefined
+  if(reuse&&!reuseSource)throw new Error('[avg-visual-reuse] 准确岗位没有冻结来源')
   return { schema: 'storyforge.avg.visual-planning-inputs' as const, version: 4 as const,
+    ...(reuse?{operation:'reuse-confirmed-visual-proposal',reuseSource}:{}),
     sourceInputHash: scope.sourceInputHash, aspectRatio: scope.aspectRatio,
     subjects: selected.map(([subjectKey, subjectKind]) => ({ subjectKey, subjectKind,
       name: subjectKind === 'character' ? input.source.systemPlan.characters.find(c => c.key === subjectKey)?.displayName

@@ -8,6 +8,7 @@ import { avgVisualPlanningExecutionReadyV4 } from '../../lib/avg/visual-planning
 import { stageAvgVisualPlanningAuthorInputV4, refuseAvgVisualPlanningBatchV4, type AvgVisualPlanningDraftV4 } from '../../lib/avg/visual-planning-workspace'
 import type { AvgVisualBibleV1, AvgMediaBriefV1 } from '../../lib/avg/visual-planning-contract'
 import VisualPlanningScopeForm from './VisualPlanningScopeForm'
+import VisualProposalReusePanel from './VisualProposalReusePanel'
 
 type View = Awaited<ReturnType<typeof readAvgAssemblyWorkspaceV1>>
 type Semantic = AvgVisualBibleV1 | AvgMediaBriefV1
@@ -17,7 +18,8 @@ function ProposalCard({scope,view,proposal,workspace,disabled,declaration,onActi
   scope:WorkspaceScope;view:View;proposal:ProductBuildArtifactRecordV1;workspace:AvgAuthorWorkspaceV1;disabled:boolean;declaration:string;
   onAction:(task:()=>Promise<void>)=>Promise<void>;onReload:()=>Promise<void>;onNotice:(text:string)=>void;onPending:(key:string,value:boolean)=>void
 }) {
-  const original = JSON.parse(proposal.payloadJson) as {targetArtifactKey:string;payload:Semantic}
+  const original = JSON.parse(proposal.payloadJson) as {targetArtifactKey:string;payload:Semantic;modelPayload?:Semantic}
+  const modelPayload=original.modelPayload??original.payload
   const [value,setValue]=useState<Semantic>(()=>{
     const saved=view.artifacts.filter(a=>a.artifactKey===original.targetArtifactKey&&['accepted','pending'].includes(a.status)).sort((a,b)=>b.version-a.version)[0]
     return saved?JSON.parse(saved.payloadJson):structuredClone(original.payload)
@@ -36,8 +38,9 @@ function ProposalCard({scope,view,proposal,workspace,disabled,declaration,onActi
   const selection={scope,productionId,expectedBuildId:build.id!,expectedBuildRevision:build.stateRevision,artifactKey:key,
     proposal:{artifactKey:proposal.artifactKey,version:proposal.version,contentHash:proposal.contentHash}}
   return <article className="avg-input-card" aria-label={`专业方案：${label}`}><h5>{label}</h5>
-    <p>{accepted?'此方案已明确采用。':pending?'已有待确认版本，请核对后采用。':'原始方案已接收，尚未采用。'} 原始内容与作者修订分别保留。</p>
-    <details><summary>查看原始方案内容</summary>{original.payload.schema==='storyforge.avg.visual-bible'?<><p>{Object.values(original.payload.style).map(v=>Array.isArray(v)?v.join('、'):v).join('；')}</p>{original.payload.subjects.map(s=><p key={s.subjectKey}>保持：{s.identityInvariants.join('；')}。允许变化：{s.allowedChanges.join('；')}。不表现：{s.forbiddenDepictions.join('；')}</p>)}</>:<><p>{original.payload.designIntent}</p>{original.payload.outputs.map(o=><p key={o.requirementKey}>{o.prompt}；保持：{o.invariants.join('；')}；排除：{[o.negativePrompt,...o.forbiddenDepictions].filter(Boolean).join('；')}</p>)}</>}</details>
+    <p>{accepted?'此方案已明确采用。':pending?'已有待确认版本，请核对后采用。':original.modelPayload?'历史方案已复验，尚未采用。':'原始方案已接收，尚未采用。'} 原始内容与作者修订分别保留。</p>
+    {original.modelPayload&&<p>初稿来自所选历史改稿，本岗位没有新的模型调用；{accepted?'已在此版本确认采用。':'当前版本尚需保存并确认采用。'}</p>}
+    <details><summary>查看原始方案内容</summary>{modelPayload.schema==='storyforge.avg.visual-bible'?<><p>{Object.values(modelPayload.style).map(v=>Array.isArray(v)?v.join('、'):v).join('；')}</p>{modelPayload.subjects.map(s=><p key={s.subjectKey}>保持：{s.identityInvariants.join('；')}。允许变化：{s.allowedChanges.join('；')}。不表现：{s.forbiddenDepictions.join('；')}</p>)}</>:<><p>{modelPayload.designIntent}</p>{modelPayload.outputs.map(o=><p key={o.requirementKey}>{o.prompt}；保持：{o.invariants.join('；')}；排除：{[o.negativePrompt,...o.forbiddenDepictions].filter(Boolean).join('；')}</p>)}</>}</details>
     <fieldset className="avg-form" disabled={disabled||!canEdit}>
       {value.schema==='storyforge.avg.visual-bible'?<>
         {(['medium','rendering','lighting','composition'] as const).map((field,i)=><label key={field}>{['画面媒介','绘制方式','光照方向','构图与留白'][i]}<textarea aria-label={['画面媒介','绘制方式','光照方向','构图与留白'][i]} value={value.style[field]} onChange={e=>change(p=>{if(p.schema==='storyforge.avg.visual-bible')p.style[field]=e.target.value})}/></label>)}
@@ -70,7 +73,7 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
 }) {
   const brief=view.details?.brief?parseProductProductionBriefV3(view.details.brief.briefJson):null
   const planning=brief?.avgVisualPlanning,prepared=planning?.scope
-  const [edited,setEdited]=useState(false),[cardsPending,setCardsPending]=useState<Record<string,boolean>>({}),[editPrepared,setEditPrepared]=useState(false)
+  const [edited,setEdited]=useState(false),[cardsPending,setCardsPending]=useState<Record<string,boolean>>({}),[editPrepared,setEditPrepared]=useState(false),[reusePending,setReusePending]=useState(false)
   const pendingCards=Object.values(cardsPending).some(Boolean)
   const enabled=avgVisualPlanningExecutionReadyV4()
   const build=view.details?.build,closed=!!build&&!['authorized','building','integrating'].includes(build.status)
@@ -79,7 +82,7 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
   const pendingVersion=!!build&&!!view.details?.brief&&view.details.brief.revision!==build.briefRevision&&view.details.production.status==='brief-ready'
   const proposals=view.artifacts.filter(a=>a.artifactKey.startsWith('avg.proposal.')&&a.status==='accepted')
   const available=!workspace.mediaBatch&&!workspace.voiceProduction&&!workspace.imageProcessing&&!workspace.presentation.stage.assets.some(a=>!a.mimeType.startsWith('image/'))
-  useEffect(()=>{onPending(edited||pendingCards);return()=>onPending(false)},[edited,pendingCards,onPending])
+  useEffect(()=>{onPending(edited||pendingCards||reusePending);return()=>onPending(false)},[edited,pendingCards,reusePending,onPending])
   const cardPending=useCallback((key:string,value:boolean)=>setCardsPending(old=>old[key]===value?old:{...old,[key]:value}),[])
   if(!enabled&&!planning)return null
   return <section className="lf-paper" aria-label="专业视觉策划（实验）"><h4>专业视觉策划 <small>实验</small></h4>
@@ -92,6 +95,7 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
     {prepared&&<><p>已保存专业用途：{prepared.templates.map(t=>t.parameters.name).join('、')}；{prepared.referenceCatalog.length} 张授权参考。准备方案不会调用模型，须到制作页核对并明确开始。</p>
       <p>{pendingVersion?'新方案':'本批'}上限：{brief!.productionBudget.maximumModelCalls} 次方案调用、{brief!.productionBudget.maximumMediaCalls} 次图片请求。{recordedUsage?`${pendingVersion?'上一版已记录':'已记录'} ${recordedUsage.modelCalls} 次方案、${recordedUsage.mediaCalls} 次图片调用；费用${recordedUsage.costUsd===null?'未知':` $${recordedUsage.costUsd}`}。`:'费用以实际回执为准。'}</p>
       {pendingVersion&&<p role="status">新版本方案 v{view.details!.brief!.revision} 已准备，尚未开始。上一版及原始调用记录只读保留；请到制作页核对后明确开始。</p>}
+      {pendingVersion&&<VisualProposalReusePanel {...{scope,view,workspace,onAction,onReload,onNotice}} disabled={disabled||edited} onPending={setReusePending}/>}
       {!activeBuild&&(!build||pendingVersion)&&!edited&&<button className="lf-action" disabled={disabled} onClick={()=>setEditPrepared(true)}>修改尚未开始的专业用途</button>}
       {build&&<><p>模型方案与原始响应、用量和未知费用保存在本次制作记录中。刷新只读取记录；继续执行需要明确点击。</p>
         {!sourcesReady&&!closed&&<p>请先到制作页明确采用系统规则和全部场景脚本。</p>}
