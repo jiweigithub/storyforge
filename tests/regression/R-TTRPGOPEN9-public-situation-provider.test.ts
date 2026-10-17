@@ -27,7 +27,7 @@ describe('R-TTRPGOPEN9 independent common source and Skill foundation', { timeou
   it('adds only the new source to the tool declaration and freezes an independently closed read-only Skill', async () => {
     const snapshot = getAgentToolSchemaSnapshotV1()
     // Preserve the actual v15 → v16 source delta independently of later protocol additions.
-    const withoutNewSource = JSON.parse(JSON.stringify(snapshot), (_key, value) => Array.isArray(value) ? value.filter(item => item !== sourceKey && item !== 'ttrpgOpenEntityInput' && item !== 'ttrpgOpenCommonOracleInput') : value)
+    const withoutNewSource = JSON.parse(JSON.stringify(snapshot), (_key, value) => Array.isArray(value) ? value.filter(item => item !== sourceKey && item !== 'ttrpgOpenEntityInput' && item !== 'ttrpgOpenCommonOracleInput' && item !== 'ttrpgOpenLearnedIdentities' && item !== 'ttrpgOpenCommonIdentities') : value)
     expect(await hashCanonicalValue(withoutNewSource)).toBe('332627dddbd61caf7a873933d8a8428a99884d7260b9995da8698e674bb16cf1')
     expect(await hashCanonicalValue(snapshot)).toBe(AGENT_TOOL_SCHEMA_HASH_V1)
     expect(CONTEXT_SOURCE_BY_KEY.get(sourceKey)!.resources!.providerId).toBe(`storyforge.${sourceKey}`)
