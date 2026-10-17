@@ -83,7 +83,7 @@ test('an author freezes a local crop in the native workbench, reviews its exact 
   await page.getByRole('button',{name:'准备制作方案',exact:true}).click();await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
   await adopt(page,'系统规则');for(const title of s.titles)await adopt(page,`场景：${title}`)
   await page.getByRole('button',{name:'素材',exact:true}).click();await panel.getByRole('button',{name:'生成本批图片（最多 1 次）',exact:true}).click()
-  await expect(page.getByRole('status').filter({hasText:'本批图片调用已结束'})).toBeVisible()
+  await expect(page.getByRole('status').filter({hasText:'本批媒资步骤已执行'})).toBeVisible()
   const diagnostic=await page.evaluate(async scope=>{
     const {db}=await(new Function('p','return import(p)') as(p:string)=>Promise<any>)('/storyforge/src/lib/db/schema.ts')
     const build=await db.productBuilds.where('workId').equals(scope.workId).first(),artifacts=await db.productBuildArtifacts.where('buildId').equals(build.id).toArray()

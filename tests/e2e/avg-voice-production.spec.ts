@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { confirmEngineeringVisualReview } from '../helpers/avg-visual-review-playwright'
 
 async function adopt(page: Page, label: string) {
@@ -7,6 +7,21 @@ async function adopt(page: Page, label: string) {
   await card.getByRole('checkbox', { name: '我已核对该候选内容及素材来源授权', exact: true }).check()
   await card.getByRole('button', { name: `确认采用：${label}`, exact: true }).click()
   await expect(card.getByText('已采用 v1', { exact: true })).toBeVisible()
+}
+
+async function fillVoicePresets(editor: Locator, count: number, declaration: string, reference: string) {
+  await expect(editor.getByRole('group', { name: /^第 \d+ 项配音$/ })).toHaveCount(count)
+  for (let index = 0; index < count; index++) {
+    const row = editor.getByRole('group', { name: `第 ${index + 1} 项配音`, exact: true })
+    // A wrapped textarea's DOM label text includes its controlled value after
+    // editing. Use the stable accessible textbox name inside the exact row;
+    // enumerating matching labels once would skip rows as that set shrinks.
+    for (const [name, value] of [['音色 ID', 'voice-a'], ['音色使用权说明', declaration], ['音色条款或授权依据', reference]]) {
+      const field = row.getByRole('textbox', { name, exact: true })
+      await field.fill(value)
+      await expect(field).toHaveValue(value)
+    }
+  }
 }
 
 async function seedVoice(page: Page, unknown = false, withImage = false, batchSize = 1) {
@@ -77,9 +92,7 @@ async function seedVoice(page: Page, unknown = false, withImage = false, batchSi
   const editor = page.getByRole('region', { name: '逐句配音需求草稿', exact: true })
   await editor.getByLabel('Agnes 配音模型 ID', { exact: true }).fill('speech-fixture')
   for (let index = 0; index < batchSize; index++) await editor.getByRole('checkbox', { name: /第 \d+ 句/ }).nth(index).check()
-  for (const field of await editor.getByLabel('音色 ID', { exact: true }).all()) await field.fill('voice-a')
-  for (const field of await editor.getByLabel('音色使用权说明', { exact: true }).all()) await field.fill('原创工程校准音；不签 TTS、人声、专业听感或商用许可')
-  for (const field of await editor.getByLabel('音色条款或授权依据', { exact: true }).all()) await field.fill('本测试原创 PCM 控制值；实际供应商音色条款另验')
+  await fillVoicePresets(editor, batchSize, '原创工程校准音；不签 TTS、人声、专业听感或商用许可', '本测试原创 PCM 控制值；实际供应商音色条款另验')
   await editor.getByRole('button', { name: '保存配音需求草稿', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: '准确配音需求已保存' })).toBeVisible()
   await page.getByRole('button', { name: '制作与试玩', exact: true }).click()
@@ -581,9 +594,7 @@ test('two explicitly started five-line batches keep old clips, publish ten nativ
   const editor = page.getByRole('region', { name: '逐句配音需求草稿', exact: true })
   await editor.getByLabel('Agnes 配音模型 ID', { exact: true }).fill('speech-fixture')
   for (let index = 5; index < 10; index++) await editor.getByRole('checkbox', { name: /第 \d+ 句/ }).nth(index).check()
-  for (const field of await editor.getByLabel('音色 ID', { exact: true }).all()) await field.fill('voice-a')
-  for (const field of await editor.getByLabel('音色使用权说明', { exact: true }).all()) await field.fill('原创 PCM 工程控制值，未签人声、艺术或商用验收')
-  for (const field of await editor.getByLabel('音色条款或授权依据', { exact: true }).all()) await field.fill('本测试原创音频；供应商音色能力和条款须另验')
+  await fillVoicePresets(editor, 5, '原创 PCM 工程控制值，未签人声、艺术或商用验收', '本测试原创音频；供应商音色能力和条款须另验')
   await editor.getByRole('button', { name: '保存配音需求草稿', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: '准确配音需求已保存' })).toBeVisible()
   expect(s.bodies).toHaveLength(5)
