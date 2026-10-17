@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test'
 import { confirmEngineeringVisualReview } from '../helpers/avg-visual-review-playwright'
 
 async function adopt(page: Page, label: string) {
@@ -7,6 +7,33 @@ async function adopt(page: Page, label: string) {
   await card.getByRole('checkbox', { name: '我已核对该候选内容及素材来源授权', exact: true }).check()
   await card.getByRole('button', { name: `确认采用：${label}`, exact: true }).click()
   await expect(card.getByText('已采用 v1', { exact: true })).toBeVisible()
+}
+
+/** Preserve the original five-second failure. Diagnostic observation never
+ * retries production or turns a late Preview into a passing test. */
+async function expectFiveLinePreviewReady(page: Page, info: TestInfo, scope: { workId: number }) {
+  try { await expect(page.getByRole('button', { name: '试玩此预览', exact: true })).toBeEnabled() }
+  catch (error) {
+    const started = Date.now(), observations: unknown[] = []
+    try {
+      await expect.poll(async () => {
+        const state = await page.evaluate(async workId => {
+          const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+          const { db } = await load('/storyforge/src/lib/db/schema.ts')
+          const build = await db.productBuilds.where('workId').equals(workId).first()
+          if (!build) return { status: 'missing' }
+          const ledger = JSON.parse(build.budgetLedgerJson)
+          return { status: build.status, stateRevision: build.stateRevision, controlEpoch: build.controlEpoch,
+            hasPreview: !!build.previewHash, failureJson: build.failureJson,
+            tasks: ledger.tasks, rootRunId: ledger.rootRunId }
+        }, scope.workId)
+        observations.push({ afterFailureMs: Date.now() - started, ...state })
+        return state.status
+      }, { timeout: 10_000, intervals: [1000] }).not.toBe('building')
+    } catch (diagnosticError) { observations.push({ diagnosticError: String(diagnosticError) }) }
+    await info.attach('first-five-line-preview-failure-state', { body: JSON.stringify(observations, null, 2), contentType: 'application/json' })
+    throw error
+  }
 }
 
 async function fillVoicePresets(editor: Locator, count: number, declaration: string, reference: string) {
@@ -439,7 +466,7 @@ test('an adopted voice explicitly leaves its consumed batch, stays audible in an
   const s = await seedVoice(page); await reviewAndChoose(page)
   await page.getByRole('button', { name: '制作与试玩', exact: true }).click(); await adopt(page, '演出与媒资')
   await page.getByRole('button', { name: '执行组装并生成新预览', exact: true }).click()
-  await expect(page.getByRole('button', { name: '试玩此预览', exact: true })).toBeEnabled()
+  await expectFiveLinePreviewReady(page, info, s.seed.scope)
   const old = await page.evaluate(async scope => {
     const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, { db } = await load('/storyforge/src/lib/db/schema.ts')
     const build = await db.productBuilds.where('workId').equals(scope.workId).first()
