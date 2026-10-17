@@ -1,7 +1,7 @@
 import type { ProductProductionBriefV3, ProductProductionPlanTaskV3, ProductProductionPlanV3 } from '../types'
 import { buildAvgMediaAssemblyPlanV2 } from './assembly-plan'
 import { parseAvgVisualPlanningBriefV4, type AvgVisualPlanningBriefV4 } from './visual-planning-brief'
-import { avgMediaBriefArtifactKeyV1, type AvgVisualDesignKindV1 } from './visual-planning-contract'
+import { avgMediaBriefArtifactKeyV1, avgVisualPlanningTemplateRequirementsV1, type AvgVisualDesignKindV1 } from './visual-planning-contract'
 import { avgKey } from './protocol-validation'
 import { AVG_VISUAL_TEXT_CAPABILITY_V4, AVG_COMPILED_IMAGE_SKILL_V4, avgVisualPlanningRoleV1 } from './visual-planning-roles'
 
@@ -26,9 +26,7 @@ export function buildAvgVisualPlanningPlanV4(input: {
   const mediaBatch = { schema: 'storyforge.avg.visual-production-batch' as const, version: 1 as const,
     batchKey: v.scope.batchKey, revision: v.scope.revision, aspectRatio: v.scope.aspectRatio, sourceInputHash: v.scope.sourceInputHash,
     visualReviewPolicy: 'author-visual-v1' as const,
-    requirements: v.scope.templates.map(t => ({ ...t.parameters, prompt: 'Topology validation only', negativePrompt: '',
-      invariants: [...new Set(t.requiredDetails)], forbiddenDepictions: [...new Set(t.forbiddenDepictions)],
-      references: t.requiredReferenceKeys.map(key => v.scope.referenceCatalog.find(r => r.referenceKey === key)!.reference) })) }
+    requirements: avgVisualPlanningTemplateRequirementsV1(v.scope) }
   const base = buildAvgMediaAssemblyPlanV2({ ...input, brief: { capabilityRequirements: image,
     avgAssembly: { ...v.assembly, version: 2, mediaBatch, imageBinding: v.imageBinding } } })
   const sourceTasks = base.tasks.filter(t => ['avg-author-rules', 'avg-author-script'].includes(t.kind))

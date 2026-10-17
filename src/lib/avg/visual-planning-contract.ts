@@ -25,6 +25,14 @@ export interface AvgVisualPlanningScopeV1 {
   referenceCatalog: Array<{ referenceKey: string; reference: AvgMediaReferenceV1 }>
 }
 
+/** Inert parameters for source/Plan validation only. Real requests must use
+ * the adopted compiler artifact; these words are never stored or dispatched. */
+export function avgVisualPlanningTemplateRequirementsV1(scope: AvgVisualPlanningScopeV1): AvgVisualProductionRequirementV1[] {
+  return scope.templates.map(t=>({...t.parameters,prompt:'Topology validation only',negativePrompt:'',
+    invariants:[...new Set(t.requiredDetails)],forbiddenDepictions:[...new Set(t.forbiddenDepictions)],
+    references:t.requiredReferenceKeys.map(key=>scope.referenceCatalog.find(r=>r.referenceKey===key)!.reference)}))
+}
+
 /** Semantic candidates only. No model-supplied hashes, grants or receipts. */
 export interface AvgVisualBibleV1 {
   schema: 'storyforge.avg.visual-bible'; version: 1

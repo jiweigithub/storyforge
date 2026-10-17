@@ -10,10 +10,13 @@ async function adopt(page: Page, label: string) {
   await expect(card.getByText('已采用 v1', { exact: true })).toBeVisible()
 }
 
-/** Preserve the original five-second failure. Diagnostic observation never
- * retries production or turns a late Preview into a passing test. */
+/** Await the visible completion receipt for the bounded assembly operation,
+ * then retain the five-second control assertion. Diagnostics never rerun it. */
 async function expectFiveLinePreviewReady(page: Page, info: TestInfo, scope: { workId: number }) {
-  try { await expect(page.getByRole('button', { name: '试玩此预览', exact: true })).toBeEnabled() }
+  try {
+    await expect(page.getByRole('status').filter({hasText:'新预览已冻结，可以开始试玩。'})).toBeVisible({timeout:30_000})
+    await expect(page.getByRole('button', { name: '试玩此预览', exact: true })).toBeEnabled()
+  }
   catch (error) {
     const started = Date.now(), observations: unknown[] = []
     try {

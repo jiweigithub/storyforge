@@ -3,6 +3,7 @@ import { db } from '../../src/lib/db/schema'
 import { useAIConfigStore } from '../../src/stores/ai-config'
 import * as readiness from '../../src/lib/avg/visual-planning-brief'
 import { avgVisualPlanningFixtureV4 } from '../helpers/avg-visual-planning-fixture'
+import { avgProfessionalFamilyScopeFixtureV4 } from '../helpers/avg-professional-family-scope-fixture'
 import { resolveConfiguredTextCapabilityV1 } from '../../src/lib/product-production/capabilities'
 import { resolveAvgImageExecutionCapabilityV2 } from '../../src/lib/avg/media-capability'
 import { parseProductProductionBriefV3 } from '../../src/lib/product-production/contracts'
@@ -22,9 +23,10 @@ import * as mediaVerifier from '../../src/lib/product-production/media-runtime-v
 import { readAvgRawImageCandidateBytesV2, stageAvgVisualReviewV1, stageAvgMediaChoiceV2,
   confirmAvgWorkspaceInputV1, configureAvgChosenMediaDraftV2, stageAvgWorkspaceInputV1, readAvgAssemblyWorkspaceV1,
   prepareAvgAssemblyBriefV1, startAvgAssemblyV1, runAvgAssemblyV1 } from '../../src/lib/avg/assembly-service'
-import { refuseAvgVisualPlanningBatchV4 } from '../../src/lib/avg/visual-planning-workspace'
+import { refuseAvgVisualPlanningBatchV4, stageAvgVisualPlanningAuthorInputV4 } from '../../src/lib/avg/visual-planning-workspace'
 import { avgVisualReviewFixture } from '../helpers/avg-visual-review-fixture'
-import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
+import { readAvgDraftV1, createAvgDraftV1, selectAvgWorldV1 } from '../../src/lib/avg/draft-service'
+import { createMistHarborWorld } from '../../src/lib/world-engine/mist-harbor-preset'
 import { parseAvgAuthorWorkspaceV1 } from '../../src/lib/avg/author-workspace-contract'
 import { sha256MediaData } from '../../src/lib/product-production/media-blob-store'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
@@ -188,7 +190,179 @@ async function adoptedImageStage(generated: Awaited<ReturnType<typeof generatedI
     declaration:'确认准确工程图片消费与演出；不签艺术或商业质量'}))
 }
 
+async function newFamilyDraft(stem:string){
+  const owner=await createAvgDraftV1('专业准备失败恢复工程验证'),world=await createMistHarborWorld(),input=avgProfessionalFamilyScopeFixtureV4(stem)
+  const selected=await selectAvgWorldV1(owner.scope,0,world.worldReleaseId),draft=await saveAvgAuthorWorkspaceV1(owner.scope,selected.revision,input.workspace)
+  return {owner,input,draft}
+}
+function failNextConsumerDraftWrite(stem:string){
+  const put=db.avgAuthoringDrafts.put.bind(db.avgAuthoringDrafts);let failed=false
+  return vi.spyOn(db.avgAuthoringDrafts,'put').mockImplementation((row,...args)=>{
+    if(!failed&&row.editorJson.includes(`planned.${stem}.letter.icon`)){failed=true;throw new Error('controlled consumer draft persistence failure')}
+    return put(row,...args)
+  })
+}
+
 describe('AVG V4 actual visual planning Harness and explicit author boundary', () => {
+  it('does not strand prospective item fields when the reviewable Brief write fails and a fresh scope is prepared',async()=>{
+    const {owner,input,draft}=await newFamilyDraft('failed-brief')
+    vi.spyOn(db.productProductionBriefs,'add').mockRejectedValueOnce(new Error('controlled Brief persistence failure'))
+    await expect(prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:draft.revision,visualPlanning:input.planning})).rejects.toThrow()
+    const current=await readAvgDraftV1(owner.scope)
+    expect(current.editorJson).toBe(draft.editorJson)
+    const retried=await prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:current.revision,visualPlanning:avgProfessionalFamilyScopeFixtureV4('retry-brief').planning})
+    expect(parseProductProductionBriefV3(retried.brief!.briefJson).avgVisualPlanning).toBeDefined()
+    expect(await db.agentRuns.count()).toBe(0)
+  },30_000)
+
+  it('retains a reviewable scope when consumer draft persistence fails and completes only that exact proposal on explicit start',async()=>{
+    const {owner,input,draft}=await newFamilyDraft('deferred')
+    failNextConsumerDraftWrite('deferred')
+    await expect(prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:draft.revision,visualPlanning:input.planning})).rejects.toThrow()
+    const current=await readAvgDraftV1(owner.scope),details=await readProductProductionDetailsV1(owner.scope,current.productionId!,['avg'])
+    expect(current.editorJson).toBe(draft.editorJson);expect(details.brief).not.toBeNull()
+    await startAvgAssemblyV1({scope:owner.scope,productionId:details.production.id!,expectedBriefHash:details.brief!.briefHash})
+    const saved=parseAvgAuthorWorkspaceV1((await readAvgDraftV1(owner.scope)).editorJson)
+    if(saved.systemPlan.version!==2)throw new Error('Expected actual inventory source')
+    expect(saved.systemPlan.inventory.items[0].iconAssetKey).toBe('planned.deferred.letter.icon')
+    expect((await readAvgAssemblyWorkspaceV1(owner.scope)).visualProgress!.budget.usage).toMatchObject({modelCalls:0,mediaCalls:0})
+  },30_000)
+
+  it('does not overwrite changed author source while completing a deferred consumer proposal',async()=>{
+    const {owner,input,draft}=await newFamilyDraft('stale-deferred')
+    failNextConsumerDraftWrite('stale-deferred')
+    await expect(prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:draft.revision,visualPlanning:input.planning})).rejects.toThrow()
+    const current=await readAvgDraftV1(owner.scope),details=await readProductProductionDetailsV1(owner.scope,current.productionId!,['avg'])
+    expect(details.brief).not.toBeNull()
+    const changed=parseAvgAuthorWorkspaceV1(current.editorJson);changed.scripts[0].lines[0].text+='作者此时已另行改稿'
+    const saved=await saveAvgAuthorWorkspaceV1(owner.scope,current.revision,changed)
+    await expect(startAvgAssemblyV1({scope:owner.scope,productionId:details.production.id!,expectedBriefHash:details.brief!.briefHash})).rejects.toThrow(/已变化|重新/)
+    expect((await readAvgDraftV1(owner.scope)).editorJson).toBe(saved.editorJson)
+    expect(await db.agentRuns.count()).toBe(0)
+  },30_000)
+
+  it('can replace a deferred revision without stranding slots from an earlier saved intent',async()=>{
+    const {owner,input,draft}=await newFamilyDraft('first-history')
+    await prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:draft.revision,visualPlanning:input.planning})
+    const first=await readAvgDraftV1(owner.scope)
+    failNextConsumerDraftWrite('second-history')
+    await expect(prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:first.revision,visualPlanning:avgProfessionalFamilyScopeFixtureV4('second-history').planning})).rejects.toThrow(/方案已保存/)
+    const deferred=await readAvgDraftV1(owner.scope)
+    expect(deferred.editorJson).toBe(first.editorJson)
+    const latest=await prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:deferred.revision,visualPlanning:avgProfessionalFamilyScopeFixtureV4('third-history').planning})
+    expect(latest.briefHistory).toHaveLength(3)
+    const saved=parseAvgAuthorWorkspaceV1((await readAvgDraftV1(owner.scope)).editorJson)
+    if(saved.systemPlan.version!==2)throw new Error('Expected actual inventory source')
+    expect(saved.systemPlan.inventory.items[0].iconAssetKey).toBe('planned.third-history.letter.icon')
+    expect(saved.systemPlan.inventory.items[0].detailAssetKey).toBe('planned.third-history.letter.detail')
+    await startAvgAssemblyV1({scope:owner.scope,productionId:latest.production.id!,expectedBriefHash:latest.brief!.briefHash})
+    expect((await readAvgAssemblyWorkspaceV1(owner.scope)).visualProgress!.budget.usage).toMatchObject({modelCalls:0,mediaCalls:0})
+  },30_000)
+
+  it('does not save deferred consumer fields or authorize a Run when the frozen provider is unavailable',async()=>{
+    const {owner,input,draft}=await newFamilyDraft('missing-deferred-route')
+    failNextConsumerDraftWrite('missing-deferred-route')
+    await expect(prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:draft.revision,visualPlanning:input.planning})).rejects.toThrow(/方案已保存/)
+    const current=await readAvgDraftV1(owner.scope),details=await readProductProductionDetailsV1(owner.scope,current.productionId!,['avg'])
+    useAIConfigStore.getState().setConfig({...config,apiKey:''})
+    await expect(startAvgAssemblyV1({scope:owner.scope,productionId:details.production.id!,expectedBriefHash:details.brief!.briefHash})).rejects.toThrow()
+    expect((await readAvgDraftV1(owner.scope)).editorJson).toBe(current.editorJson)
+    expect(await db.agentRuns.count()).toBe(0)
+  },30_000)
+
+  it('saves reviewable professional family intent and prospective item icon/detail slots before actual start',async()=>{
+    const owner=await createAvgDraftV1('专业家族来源工程验证'),world=await createMistHarborWorld(),input=avgProfessionalFamilyScopeFixtureV4()
+    const selected=await selectAvgWorldV1(owner.scope,0,world.worldReleaseId)
+    const draft=await saveAvgAuthorWorkspaceV1(owner.scope,selected.revision,input.workspace)
+    const prepared=await prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:draft.revision,visualPlanning:input.planning})
+    const saved=parseAvgAuthorWorkspaceV1((await readAvgDraftV1(owner.scope)).editorJson)
+    if(saved.systemPlan.version!==2)throw new Error('Expected actual inventory source')
+    expect(saved.systemPlan.inventory.items[0].iconAssetKey).toBe('planned.family.letter.icon')
+    expect(saved.systemPlan.inventory.items[0].detailAssetKey).toBe('planned.family.letter.detail')
+    expect(saved.systemPlan.inventory.items[0].variants).toEqual(input.workspace.systemPlan.version===2?input.workspace.systemPlan.inventory.items[0].variants:[])
+    const latest=await readAvgDraftV1(owner.scope),revision=avgProfessionalFamilyScopeFixtureV4('revised').planning
+    const revised=await prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:latest.revision,visualPlanning:revision})
+    const currentDraft=parseAvgAuthorWorkspaceV1((await readAvgDraftV1(owner.scope)).editorJson)
+    if(currentDraft.systemPlan.version!==2)throw new Error('Expected actual inventory source')
+    expect(currentDraft.systemPlan.inventory.items[0].iconAssetKey).toBe('planned.revised.letter.icon')
+    expect(currentDraft.systemPlan.inventory.items[0].detailAssetKey).toBe('planned.revised.letter.detail')
+    const productionId=revised.production.id!,brief=parseProductProductionBriefV3(revised.brief!.briefJson)
+    await expect(startAvgAssemblyV1({scope:owner.scope,productionId,expectedBriefHash:prepared.brief!.briefHash})).rejects.toThrow(/已变化/)
+    await startAvgAssemblyV1({scope:owner.scope,productionId,expectedBriefHash:revised.brief!.briefHash})
+    const view=await readAvgAssemblyWorkspaceV1(owner.scope),plan=parseProductProductionPlanV3(view.details!.build!.planJson,brief,view.details!.build!.briefHash)
+    expect(plan.tasks.filter(t=>t.executionMode==='model').map(t=>t.skillId)).toEqual(['avg.visual-bible.v1','avg.environment-assets.v1','avg.character-assets.v1','avg.prop-assets.v1'])
+    expect(plan.tasks.filter(t=>t.kind==='avg-media-image-generate')).toHaveLength(5)
+    expect(view.visualProgress!.budget.usage).toMatchObject({modelCalls:0,mediaCalls:0})
+    expect(await db.mediaBlobObjects.count()).toBe(0)
+  },30_000)
+
+  it('does not persist prospective family item fields or create a Production when configuration preflight fails',async()=>{
+    const owner=await createAvgDraftV1('专业家族配置失败工程验证'),world=await createMistHarborWorld(),input=avgProfessionalFamilyScopeFixtureV4()
+    const selected=await selectAvgWorldV1(owner.scope,0,world.worldReleaseId),draft=await saveAvgAuthorWorkspaceV1(owner.scope,selected.revision,input.workspace)
+    useAIConfigStore.getState().setConfig({apiKey:''})
+    await expect(prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:draft.revision,visualPlanning:input.planning})).rejects.toThrow(/API|配置/)
+    expect((await readAvgDraftV1(owner.scope)).editorJson).toBe(draft.editorJson)
+    expect(await db.productProductions.count()).toBe(0);expect(await db.agentRuns.count()).toBe(0)
+  },30_000)
+
+  it('runs all four registered professional roles and five exact image tasks through the public family flow only after explicit author decisions',async()=>{
+    vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION','1')
+    const owner=await createAvgDraftV1('专业家族真实 Harness 工程验证'),world=await createMistHarborWorld(),input=avgProfessionalFamilyScopeFixtureV4()
+    const selected=await selectAvgWorldV1(owner.scope,0,world.worldReleaseId),draft=await saveAvgAuthorWorkspaceV1(owner.scope,selected.revision,input.workspace)
+    const prepared=await prepareAvgAssemblyBriefV1({scope:owner.scope,expectedDraftRevision:draft.revision,visualPlanning:input.planning}),productionId=prepared.production.id!
+    const images=await Promise.all(input.planning.templates.map(t=>deterministicRegionMapPngV1({width:t.parameters.width,height:t.parameters.height,palette:['#102030','#526374','#d4e5f6']})))
+    let modelCalls=0,imageCalls=0
+    const fetcher=vi.fn(async(target:RequestInfo|URL,init?:RequestInit)=>{
+      const body=JSON.parse(String(init?.body))
+      if(String(target).endsWith('/chat/completions')){
+        modelCalls+=1
+        const context=String(body.messages.find((m:{role:string})=>m.role==='user').content)
+        const packet=JSON.parse(context.slice(context.indexOf('{'),context.lastIndexOf('}')+1))
+        expect(packet.schema).toBe('storyforge.avg.visual-planning-inputs')
+        expect(context).not.toContain(input.workspace.scripts[0].lines[0].text)
+        const direction=String(body.messages.find((m:{role:string})=>m.role==='system').content).includes('storyforge.avg.visual-bible')
+        const payload=direction?{schema:'storyforge.avg.visual-bible',version:1,style:{medium:'二维插画',rendering:'统一轮廓',palette:['灰蓝'],lighting:'左上主光',composition:'下方留白'},
+          subjects:packet.subjects.map((s:{subjectKey:string;subjectKind:string})=>({subjectKey:s.subjectKey,subjectKind:s.subjectKind,identityInvariants:['保持公开主体身份与比例'],allowedChanges:['仅改变已确认姿态与显示尺度'],forbiddenDepictions:['新增剧情秘密']}))}
+          :{schema:'storyforge.avg.media-brief',version:1,subjectKey:packet.subjects[0].subjectKey,subjectKind:packet.subjects[0].subjectKind,designIntent:'保持同主体家族一致性；工程替身不签艺术',
+            outputs:packet.requirements.map((r:{requirementKey:string;requiredReferenceKeys:string[]})=>({requirementKey:r.requirementKey,prompt:'准确主体、共同配色与已确认变化',negativePrompt:'水印',invariants:['主体身份与比例不变'],forbiddenDepictions:['新增秘密'],referenceKeys:r.requiredReferenceKeys}))}
+        return new Response(JSON.stringify({choices:[{message:{role:'assistant',content:JSON.stringify(payload)}}],usage:{prompt_tokens:200,completion_tokens:200}}),{headers:{'content-type':'application/json'}})
+      }
+      if(!String(target).endsWith('/images/generations'))throw new Error('Unexpected controlled family route')
+      const bytes=new Uint8Array(images[imageCalls++]);let binary='';for(let i=0;i<bytes.length;i+=16384)binary+=String.fromCharCode(...bytes.subarray(i,i+16384))
+      return new Response(JSON.stringify({data:[{b64_json:btoa(binary)}]}),{headers:{'content-type':'application/json'}})
+    })
+    vi.stubGlobal('fetch',fetcher)
+    await startAvgAssemblyV1({scope:owner.scope,productionId,expectedBriefHash:prepared.brief!.briefHash})
+    const confirm=async(candidate:ProductBuildArtifactRecordV1)=>confirmAvgWorkspaceInputV1({scope:owner.scope,productionId,artifactKey:candidate.artifactKey,candidateVersion:candidate.version,candidateHash:JSON.parse(candidate.metadataJson).candidateHash})
+    for(const key of ['avg.system.plan',...input.workspace.scripts.map(s=>`avg.content.scene-script.${s.sceneKey}`)]){
+      const current=await readAvgDraftV1(owner.scope)
+      await confirm(await stageAvgWorkspaceInputV1({scope:owner.scope,productionId,expectedDraftRevision:current.revision,artifactKey:key,declaration:'确认固定工程来源与准确消费槽；不代表艺术或商业验收'}))
+    }
+    expect(modelCalls).toBe(0);expect(imageCalls).toBe(0)
+    await runAvgAssemblyV1({scope:owner.scope,productionId})
+    let view=await readAvgAssemblyWorkspaceV1(owner.scope)
+    expect(modelCalls).toBe(1);expect(imageCalls).toBe(0)
+    expect(view.artifacts.find(r=>r.artifactKey==='avg.proposal.visual-bible'),view.details!.build!.failureJson).toBeDefined()
+    const adoptProposal=async(row:ProductBuildArtifactRecordV1)=>{
+      const latest=await readAvgAssemblyWorkspaceV1(owner.scope),payload=JSON.parse(row.payloadJson)
+      const candidate=await stageAvgVisualPlanningAuthorInputV4({scope:owner.scope,productionId,expectedBuildId:latest.details!.build!.id!,expectedBuildRevision:latest.details!.build!.stateRevision,
+        artifactKey:payload.targetArtifactKey,proposal:{artifactKey:row.artifactKey,version:row.version,contentHash:row.contentHash},payload:payload.payload,declaration:'确认该准确工程方案，原响应保留，不代签美术/人类接受'})
+      await confirm(candidate)
+    }
+    await adoptProposal(view.artifacts.find(r=>r.artifactKey==='avg.proposal.visual-bible')!)
+    await runAvgAssemblyV1({scope:owner.scope,productionId});view=await readAvgAssemblyWorkspaceV1(owner.scope)
+    expect(modelCalls).toBe(4);expect(imageCalls).toBe(0)
+    for(const row of view.artifacts.filter(r=>r.artifactKey.startsWith('avg.proposal.')&&r.artifactKey!=='avg.proposal.visual-bible'))await adoptProposal(row)
+    await runAvgAssemblyV1({scope:owner.scope,productionId});view=await readAvgAssemblyWorkspaceV1(owner.scope)
+    expect(view.artifacts.filter(r=>r.artifactKey.startsWith('avg.media.raw.'))).toHaveLength(5)
+    expect(view.imageDefinition!.mediaBatch.requirements).toHaveLength(5)
+    expect(view.visualProgress!.budget.usage).toMatchObject({modelCalls:4,mediaCalls:5,costUsd:null})
+    expect(modelCalls).toBe(4);expect(imageCalls).toBe(5)
+    expect(view.details!.build!.previewHash).toBe('')
+    // Opaque engineering pixels prove receipt flow only; actor alpha, review,
+    // choices/stage, real references, native playback and art remain separate.
+    expect(view.artifacts.some(r=>r.artifactKey==='avg.author.stage'&&r.status==='accepted')).toBe(false)
+  },60_000)
   it('prepares and starts the actual V4 workbench through public services without a provider call or synthetic stored Brief', async () => {
     const {owner,planning}=await avgVisualPlanningFixtureV4('linear'),draft=await readAvgDraftV1(owner.scope)
     const {sourceInputHash:_hash,aspectRatio:_ratio,...visualPlanning}=planning.scope
@@ -401,13 +575,17 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
     expect((await current(s)).failureJson).toContain('Harness claim')
   })
 
-  it('sends the author-adopted compiled prompt once through the real image adapter and seals original PNG bytes', async () => {
-    const s = await setup({ image: 'valid' }); await sources(s); await run(s)
-    expect(s.imageFetcher).not.toHaveBeenCalled()
-    await adopt(s, await stage(s, 'avg.media.visual-bible', s.bible)); await run(s)
-    const revised = structuredClone(s.media); revised.outputs[0].prompt += '，由作者确认的灰色墙面'
-    await adopt(s, await stage(s, `avg.media.environment-brief.${s.media.subjectKey}`, revised))
-    await cycle(s); expect(s.imageFetcher).not.toHaveBeenCalled()
+  describe('actual compiled image dispatch after explicit source and design preparation',()=>{
+    let s:Awaited<ReturnType<typeof setup>>
+    beforeEach(async()=>{
+      s=await setup({ image: 'valid' }); await sources(s); await run(s)
+      expect(s.imageFetcher).not.toHaveBeenCalled()
+      await adopt(s, await stage(s, 'avg.media.visual-bible', s.bible)); await run(s)
+      const revised = structuredClone(s.media); revised.outputs[0].prompt += '，由作者确认的灰色墙面'
+      await adopt(s, await stage(s, `avg.media.environment-brief.${s.media.subjectKey}`, revised))
+      await cycle(s); expect(s.imageFetcher).not.toHaveBeenCalled()
+    },30_000)
+    it('sends the author-adopted compiled prompt once through the real image adapter and seals original PNG bytes', async () => {
     await cycle(s)
     expect(s.imageFetcher, (await current(s)).failureJson).toHaveBeenCalledTimes(1)
     const request = JSON.parse(String(s.imageFetcher.mock.calls[0][1]!.body))
@@ -421,6 +599,7 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
     expect(blob.data).toEqual(s.imageBytes)
     await run(s); expect(s.imageFetcher).toHaveBeenCalledTimes(1)
     expect(s.runText).toHaveBeenCalledTimes(2)
+    })
   })
 
   it.each(['unknown', 'malformed', 'corrupt-json'] as const)('preserves %s image outcome and never records a dispatched image as zero calls or silently resends', async image => {

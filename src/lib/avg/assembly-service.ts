@@ -53,6 +53,14 @@ import type { AvgVisualPlanningDraftV4 } from './visual-planning-workspace'
 
 const commandId = (label: string) => `avg.assembly.${label}.${crypto.randomUUID()}`
 
+/** Only saved, never-started intents can release prospective item slots. */
+function unstartedAvgVisualPlanningScopes(details: Awaited<ReturnType<typeof readProductProductionDetailsV1>>) {
+  return details.build ? [] : details.briefHistory.flatMap(row => {
+    const scope = parseProductProductionBriefV3(row.briefJson).avgVisualPlanning?.scope
+    return scope ? [scope] : []
+  })
+}
+
 /** A new Build freezes this separately from the original provider request.
  * Saving does not execute processing, adopt an image or change an old Build. */
 export async function saveAvgImageProcessingDraftV1(input:{scope:WorkspaceScope;expectedDraftRevision:number;plan:AvgImageProcessingPlanV1|null}){
@@ -561,6 +569,11 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
   if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg] 编辑草稿已变化，请刷新后再准备方案')
   let workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
   if (input.visualPlanning && (input.imageRecovery || input.voiceRecovery)) throw new Error('[avg-visual-plan] 专业视觉不能借用旧批次恢复合同')
+  if(input.visualPlanning){
+    const existing=draft.productionId?await readProductProductionDetailsV1(input.scope,draft.productionId,['avg']):null
+    const previous=existing?unstartedAvgVisualPlanningScopes(existing):[]
+    workspace=(await(await import('./visual-planning-scope-draft')).prepareAvgVisualPlanningSourceDraftV4({workspace,planning:input.visualPlanning,previous})).workspace
+  }
   const visual = input.visualPlanning ? await (await import('./visual-planning-workspace')).prepareAvgVisualPlanningConfigurationV4(input.scope,workspace,input.visualPlanning) : null
   const voice = workspace.voiceProduction ? await validateAvgVoiceDraftSourcesV1(workspace.voiceProduction, workspace) : null
   if (voice && (!avgVoiceProductionEnabledV3() || !avgMediaProductionEnabledV2())) throw new Error('[avg-voice] 配音生产尚未开放；已保存批次不能按零调用流程开始')
@@ -655,7 +668,7 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
       productionKey:`avg.assembly.${crypto.randomUUID()}`,productType:'avg',worldReleaseId:draft.worldReleaseId,userText:'作者组装 AVG 系统与表现' } })
     if (!created.ok) throw new Error(String(created.result.message ?? created.errorCode))
     productionId = created.productionId
-    await bindAvgDraftProductionV1(input.scope,draft.revision,productionId)
+    draft=await bindAvgDraftProductionV1(input.scope,draft.revision,productionId)
   }
   const details = await readProductProductionDetailsV1(input.scope,productionId,['avg'])
   const priorBrief = details.brief ? parseProductProductionBriefV3(details.brief.briefJson) : null
@@ -704,6 +717,12 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
   const saved = await executeProductProductionCommand({ scope:input.scope,productionId,command:{ type:'save-brief-revision',commandId:commandId('brief'),
     expectedStateRevision:details.production.stateRevision,parentRevision:details.brief?.revision ?? null,brief } })
   if (!saved.ok) throw new Error(String(saved.result.message ?? saved.errorCode))
+  // Persist the reviewable intent first. If the independent draft CAS fails,
+  // explicit start can finish this exact saved proposal after revalidation.
+  if(visual&&canonicalProductProductionJsonV2(workspace)!==canonicalProductProductionJsonV2(parseAvgAuthorWorkspaceV1(draft.editorJson))){
+    try { await saveAvgAuthorWorkspaceV1(input.scope,draft.revision,workspace) }
+    catch(cause) { throw Object.assign(new Error('[avg-visual-plan] 制作方案已保存，但消费槽草稿未保存；请刷新后重新核对方案再明确开始'), {cause}) }
+  }
   return readProductProductionDetailsV1(input.scope,productionId,['avg'])
 }
 
@@ -712,8 +731,13 @@ export async function startAvgAssemblyV1(input: { scope: WorkspaceScope; product
   const brief = details.brief ? parseProductProductionBriefV3(details.brief.briefJson) : null
   const assembly = brief?.avgAssembly ?? brief?.avgVisualPlanning?.assembly
   if (!brief || !assembly || details.brief!.briefHash !== input.expectedBriefHash) throw new Error('[avg] 制作方案已变化，请重新核对')
-  const draft=await readAvgDraftV1(input.scope),workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
-  if (brief.avgVisualPlanning) await (await import('./visual-planning-workspace')).assertAvgVisualPlanningDraftMatchesV4(input.scope,workspace,brief)
+  const draft=await readAvgDraftV1(input.scope)
+  let workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
+  if (brief.avgVisualPlanning) {
+    const {sourceInputHash:_hash,aspectRatio:_ratio,...planning}=brief.avgVisualPlanning.scope
+    workspace=(await(await import('./visual-planning-scope-draft')).prepareAvgVisualPlanningSourceDraftV4({workspace,planning,previous:unstartedAvgVisualPlanningScopes(details)})).workspace
+    await (await import('./visual-planning-workspace')).assertAvgVisualPlanningDraftMatchesV4(input.scope,workspace,brief)
+  }
   if (workspace.voiceProduction && assembly.version !== 3) throw new Error('[avg-voice] 草稿已包含配音批次，请重新准备匹配的制作方案')
   if (assembly.version === 3) {
     if (!avgVoiceProductionEnabledV3() || !avgMediaProductionEnabledV2()) throw new Error('[avg-voice] 配音生产尚未开放')
@@ -740,6 +764,9 @@ export async function startAvgAssemblyV1(input: { scope: WorkspaceScope; product
     ||!same(assembly.mediaAssetKeys,[...new Set([...runtimeMediaKeys(workspace),...(brief.avgVisualPlanning?.scope.templates.filter(t=>t.parameters.consumer.domain!=='reference').map(t=>t.parameters.assetKey)??[])])])) throw new Error('[avg] 场景、媒资或来源清单已变化，请重新准备制作方案')
   if (assembly.basePackageHash !== await expectedBaselinePackageHash(details)) throw new Error('[avg] 组装修订基线与实际 Build 谱系不一致，请重新准备方案')
   const execution = await assemblyExecutionOptions(input.scope, brief, input.productionId)
+  if(brief.avgVisualPlanning&&canonicalProductProductionJsonV2(workspace)!==canonicalProductProductionJsonV2(parseAvgAuthorWorkspaceV1(draft.editorJson))){
+    await saveAvgAuthorWorkspaceV1(input.scope,draft.revision,workspace)
+  }
   await authorizeProductProductionStartV1({ scope:input.scope,details })
   details = await readProductProductionDetailsV1(input.scope,input.productionId,['avg'])
   // Freezes the real shared Plan/root and waits for manual inputs; never runs a provider.

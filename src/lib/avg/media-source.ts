@@ -4,7 +4,7 @@ import { parseAvgVisualProductionBatchV1, type AvgVisualProductionBatchV1 } from
 import type { AvgSystemPlan } from './system-contract'
 import { composeAvgCharacterFamilyRequirementsV1, hashAvgCharacterFamilyProposalV1 } from './character-family-contract'
 import { avgList, avgProtocolBody, avgRecord, avgUnique } from './protocol-validation'
-import { avgMediaBriefArtifactKeyV1, parseAvgMediaBriefV1, parseAvgVisualBibleV1, parseAvgVisualPlanningScopeV1, type AvgVisualDesignKindV1, type AvgVisualPlanningScopeV1 } from './visual-planning-contract'
+import { avgMediaBriefArtifactKeyV1, avgVisualPlanningTemplateRequirementsV1, parseAvgMediaBriefV1, parseAvgVisualBibleV1, parseAvgVisualPlanningScopeV1, type AvgVisualDesignKindV1, type AvgVisualPlanningScopeV1 } from './visual-planning-contract'
 
 export type AvgMediaSourceInputV1 = Pick<AvgAuthorWorkspaceV1, 'systemPlan' | 'scripts'> & {
   presentation: Pick<AvgAuthorWorkspaceV1['presentation'], 'aspectRatio'>
@@ -104,9 +104,7 @@ function hasPlanningSubject(plan: AvgSystemPlan, kind: AvgVisualDesignKindV1, ke
 async function validatePlanningScopeSource(scope: AvgVisualPlanningScopeV1, source: AvgMediaSourceInputV1) {
   const skeleton = await validateAvgVisualProductionBatchSourceV1({ schema: 'storyforge.avg.visual-production-batch', version: 1,
     batchKey: scope.batchKey, revision: scope.revision, aspectRatio: scope.aspectRatio, sourceInputHash: scope.sourceInputHash,
-    requirements: scope.templates.map(t => ({ ...t.parameters, prompt: 'Planning input only', negativePrompt: '',
-      invariants: [...new Set(t.requiredDetails)], forbiddenDepictions: [...new Set(t.forbiddenDepictions)],
-      references: t.requiredReferenceKeys.map(key => scope.referenceCatalog.find(entry => entry.referenceKey === key)!.reference) })) }, source)
+    requirements: avgVisualPlanningTemplateRequirementsV1(scope) }, source)
   assertAvgMediaConsumerDeclarationsV1(skeleton, source.systemPlan)
   for (const t of scope.templates) {
     if (!hasPlanningSubject(source.systemPlan, t.subjectKind, t.parameters.family.subjectKey)) {
