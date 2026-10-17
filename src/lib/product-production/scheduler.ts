@@ -693,6 +693,13 @@ export function assertProductProductionBudgetLedgerV1(value: string): void {
   parseLedger(value)
 }
 
+/** Recorded Build-lifetime usage, independent of the active Brief pointer.
+ * This pure read grants no execution, retry, adoption or billing settlement.
+ * Failed and held attempts keep the scheduler's existing accounting meaning. */
+export function projectProductProductionRecordedUsageV1(value:string):ProductProductionTaskUsageV1{
+  return sumTaskUsage(parseLedger(value).attempts.flatMap(entry=>entry.usage?[entry.usage]:[]))
+}
+
 /**
  * Close one conservatively held result-unknown attempt without changing the
  * mainline append-only attempt ledger. The unknown attempt already stores its
@@ -5777,18 +5784,7 @@ export async function projectProductProductionSchedulerV1(input: {
   // Build-lifetime accounting includes every terminal attempt, including
   // failed retries and previous recovery epochs. Current task projection is
   // intentionally not a source of budget truth.
-  const settledUsage = ledger.attempts.flatMap(entry => entry.usage ? [entry.usage] : [])
-  const knownCosts = settledUsage.map(usage => usage.costUsd)
-  const usage: ProductProductionTaskUsageV1 = {
-    modelCalls: settledUsage.reduce((sum, item) => sum + item.modelCalls, 0),
-    inputTokens: settledUsage.reduce((sum, item) => sum + item.inputTokens, 0),
-    outputTokens: settledUsage.reduce((sum, item) => sum + item.outputTokens, 0),
-    mediaCalls: settledUsage.reduce((sum, item) => sum + item.mediaCalls, 0),
-    costUsd: knownCosts.some(value => value == null)
-      ? null : knownCosts.reduce<number>((sum, value) => sum + (value ?? 0), 0),
-    durationMs: settledUsage.reduce((sum, item) => sum + item.durationMs, 0),
-    storageBytes: settledUsage.reduce((sum, item) => sum + item.storageBytes, 0),
-  }
+  const usage = projectProductProductionRecordedUsageV1(build.budgetLedgerJson)
   return {
     productionId: input.productionId, buildId: build.id!, buildNumber: build.buildNumber,
     buildStatus: build.status, controlEpoch: build.controlEpoch, planHash: build.planHash,
