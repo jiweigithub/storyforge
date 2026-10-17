@@ -37,3 +37,4 @@
 .sf-open-audio input:not([type="checkbox"]), .sf-open-audio select, .sf-open-audio textarea { box-sizing: border-box; max-width: 100%; min-width: 0; }
 .sf-open-audio-review p { overflow-wrap: anywhere; white-space: pre-wrap; }
 .sf-open-audio p { overflow-wrap: anywhere; }
+.sf-open-audio-caption mark { color: inherit; background: rgb(245 158 11 / 25%); outline: 1px solid currentColor; border-radius: 0.15rem; }

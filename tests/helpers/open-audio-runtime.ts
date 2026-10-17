@@ -16,7 +16,7 @@ export function audioWavFixtureV1(durationMs = 250): Blob {
   v.setUint16(32, 2, true); v.setUint16(34, 16, true); ascii(36, 'data'); v.setUint32(40, frames * 2, true)
   return new Blob([bytes], { type: 'audio/wav' })
 }
-export async function setupAudioRuntimeV1(humanGm = true) {
+export async function setupAudioRuntimeV1(humanGm = true, narrationText = '你们确认了门口留下的线索。') {
   const f = await seedOpenTtrpgSessionV1('real P10 audio runtime', pkg => {
     const c = pkg.ttrpg!.campaign
     c.gmMode = humanGm ? 'human' : 'ai'; c.runtimePolicy.enabled = !humanGm
@@ -48,7 +48,7 @@ export async function setupAudioRuntimeV1(humanGm = true) {
   const command = { sessionId: f.sessionId, operationKey: operation.operationKey, frozenPlanHash: operation.planHash, viewerKey: OPEN_HUMAN_VIEWER }
   const before = await resumeTtrpgOpenPlayV1(command)
   if (before.status !== 'awaiting-narration') throw new Error('Expected actual narration boundary: ' + JSON.stringify(before))
-  const text = '你们确认了门口留下的线索。'
+  const text = narrationText
   await recordTtrpgOpenHumanNarrationV1({ ...await operationInput(f.sessionId, operation.operationKey, 'narration'), viewerKey, text, reason: 'host-authored' })
   if ((await resumeTtrpgOpenPlayV1(command)).status !== 'completed') throw new Error('Expected completed owner chain')
   const runtime = rt(await readProductRuntimeState(f.sessionId)), narrationSourceRef = runtime.openRun!.narrations![0].sourceRef

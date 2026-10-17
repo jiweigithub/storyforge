@@ -22,9 +22,10 @@ async function enter(page: Page, sessionId: number, humanGm = true) {
   const card = page.getByTestId('ttrpg-open-audio-panel'); await expect(card).toBeVisible({ timeout: 30000 })
   return card
 }
-async function fill(card: Locator, f: Awaited<ReturnType<typeof seed>>, channel = 'music', audience = 'party') {
+async function fill(card: Locator, f: Awaited<ReturnType<typeof seed>>, channel = 'music', audience = 'party', fade = 0) {
   await card.getByText('主持音轨管理', { exact: true }).click()
   await card.getByLabel('音轨类型', { exact: true }).selectOption(channel)
+  if (channel !== 'voice') await card.getByLabel('音轨播放渐入', { exact: true }).selectOption(String(fade))
   await card.getByLabel('音频接收范围', { exact: true }).selectOption(audience)
   await card.getByLabel('音频依据', { exact: true }).selectOption(JSON.stringify(f.narrationSourceRef))
   await card.getByLabel('音频文件', { exact: true }).setInputFiles({ name: '本机音轨.wav', mimeType: 'audio/wav', buffer: Buffer.from(f.fileBytes as number[]) })
@@ -49,7 +50,8 @@ test('native manual file review retries storage once, really decodes/plays, relo
   test.setTimeout(240000); let sends = 0; page.on('request', req => { if (req.url().includes('/chat/completions')) sends++ })
   const f = await seed(page); let card = await enter(page, f.owner.sessionId)
   await expect(card.locator('audio')).toHaveCount(0)
-  const review = await fill(card, f, 'music', 'gm-only'); expect((await inspect(page, f.owner.sessionId)).audio).toBe(0)
+  const review = await fill(card, f, 'music', 'gm-only', 1000); expect((await inspect(page, f.owner.sessionId)).audio).toBe(0)
+  await expect(review).toContainText('播放时渐入：1 秒')
   await page.evaluate(async () => {
     const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, { db } = await load('/storyforge/src/lib/db/schema.ts'), add = db.productRuntimeEvents.add.bind(db.productRuntimeEvents)
     db.productRuntimeEvents.add = async (row: any, ...args: any[]) => { if (row.type === 'ttrpg.audio.cue.applied') { db.productRuntimeEvents.add = add; throw new Error('NATIVE-AUDIO-STORAGE-CUT') } return add(row, ...args) }
@@ -60,9 +62,18 @@ test('native manual file review retries storage once, really decodes/plays, relo
   await card.getByRole('button', { name: '开启本机音频', exact: true }).click()
   const audio = card.locator('audio'); await expect(audio).toHaveCount(1, { timeout: 30000 })
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.duration)).toBeGreaterThan(0)
-  const node = await audio.elementHandle(); await audio.focus(); await audio.press('Space')
+  const node = await audio.elementHandle()
+  await audio.evaluate((el: HTMLAudioElement) => { (window as any).audioFadeSamples = []; el.addEventListener('volumechange', () => (window as any).audioFadeSamples.push(el.volume)) })
+  await audio.focus(); await audio.press('Space')
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
+  await expect.poll(() => page.evaluate(() => (window as any).audioFadeSamples.some((v: number) => v > 0 && v < 1))).toBe(true)
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.volume)).toBe(1)
+  await audio.press('Space'); await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
+  await audio.evaluate((el: HTMLAudioElement) => { el.currentTime = 0.125 })
   await card.getByRole('button', { name: '本机静音', exact: true }).click(); await expect(audio).toHaveCount(0); expect(await node!.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
+  await card.getByRole('button', { name: '开启本机音频', exact: true }).click(); await expect(card.locator('audio')).toHaveCount(1, { timeout: 30000 })
+  await expect.poll(() => card.locator('audio').evaluate((el: HTMLAudioElement) => el.currentTime)).toBeCloseTo(0.125, 2)
+  expect(await card.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
   await page.reload(); card = await enter(page, f.owner.sessionId); await expect(card.locator('audio')).toHaveCount(0)
   await card.getByRole('button', { name: '开启本机音频', exact: true }).click(); await expect(card.locator('audio')).toHaveCount(1, { timeout: 30000 })
   const privateNode = await card.locator('audio').elementHandle(); await card.locator('audio').focus(); await card.locator('audio').press('Space')
@@ -108,4 +119,29 @@ test('native AI-host common voice binds the accepted script, hides private contr
   await card.getByRole('button', { name: '开启本机音频', exact: true }).click()
   await expect(card).toContainText('音频不可用，已保留文字说明。', { timeout: 30000 }); await expect(card.locator('audio')).toHaveCount(0); await expect(card).toContainText(f.text)
   expect(await inspect(page, f.owner.sessionId)).toMatchObject({ audio: 1, calls: 0, entities: f.beforeEntities, product: f.beforeProduct, time: f.beforeTime }); expect(sends).toBe(0)
+})
+test('native caption seeks and follows the exact original timeline inside its own box without playing or changing the game', async ({ page }) => {
+  test.setTimeout(240000); await page.goto('./')
+  const seeded = await page.evaluate(async () => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, helper = await load('/storyforge/tests/helpers/open-audio-runtime.ts'), api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    const prefix = '门口留有明确的巡逻痕迹。'.repeat(160), ending = '最后一段：你们已经确认线索。', text = prefix + ending
+    const s = await helper.setupAudioRuntimeV1(true, text), request = s.request('native.caption.timeline', 'voice', 'party')
+    request.voiceTimeline.marks = [{ textOffset: 0, textLength: prefix.length, startMs: 0, durationMs: 4000 }, { textOffset: prefix.length, textLength: ending.length, startMs: 4000, durationMs: 4000 }]
+    const review = await api.prepareTtrpgOpenAudioUploadV1({ ...s.owner, request, file: helper.audioWavFixtureV1(8000), name: '工程字幕样本.wav', source: 'deterministic silent file, explicit test timeline', license: 'engineering fixture only', durationMs: 8000, decision: 'prepare-this-file-for-reviewed-audio' })
+    await api.confirmTtrpgOpenAudioReviewV1({ ...s.owner, review, decision: 'confirm-this-audio-and-audience' })
+    return { sessionId: s.owner.sessionId, text, ending }
+  })
+  const before = await inspect(page, seeded.sessionId), card = await enter(page, seeded.sessionId)
+  await card.getByRole('button', { name: '开启本机音频', exact: true }).click()
+  const audio = card.locator('audio'); await expect(audio).toHaveCount(1, { timeout: 30000 }); await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.duration)).toBe(8)
+  const pageY = await page.evaluate(() => scrollY)
+  await audio.evaluate((el: HTMLAudioElement) => { el.currentTime = 5 })
+  await expect(card.getByTestId('ttrpg-audio-caption-active')).toHaveText(seeded.ending)
+  const caption = card.getByLabel('配音字幕', { exact: true }); await expect(caption).toHaveText(seeded.text)
+  await expect.poll(() => caption.evaluate(el => el.scrollTop)).toBeGreaterThan(0); expect(await page.evaluate(() => scrollY)).toBe(pageY)
+  await card.getByRole('button', { name: '回到本段开头', exact: true }).click(); await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.currentTime)).toBe(4)
+  await card.getByRole('button', { name: '上一段字幕', exact: true }).click(); await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.currentTime)).toBe(0)
+  expect(await audio.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
+  await card.getByRole('button', { name: '本机静音', exact: true }).click(); await expect(audio).toHaveCount(0); await expect(caption).toHaveText(seeded.text)
+  expect(await inspect(page, seeded.sessionId)).toEqual(before)
 })
