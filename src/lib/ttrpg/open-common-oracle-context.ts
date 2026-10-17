@@ -1,4 +1,5 @@
 /** Common-only source foundation. Catalog/read/hash is never permission to send or adopt a fact. */
+import { TTRPG_OPEN_COMMON_ORACLE_REQUEST_POLICY_V1 } from './open-common-oracle-request'
 import type { WorkspaceScope } from '../types'
 import type { ContextResourceDescriptorV1, FrozenResourceScopeV1 } from '../registry/types'
 import { canonicalStringify as stable, hashCanonicalValue } from '../agent/run/hash'
@@ -41,7 +42,7 @@ async function readModel(input: Input) {
     suffix: 'common-oracle-contract', title: '共同 Oracle 解释与事实的来源边界', mandatory: true,
     value: { schema: 'storyforge.ttrpg-open-common-oracle-contract', version: 1, sourceKey: TTRPG_OPEN_COMMON_ORACLE_SOURCE_V1,
       recipientActorKeys: recipients, rulePackContentHash: content.rulePack.contentHash, worldReleaseHash: content.campaign.sourceWorld.contentHash,
-      factPolicy: content.rulePack.content.factPolicy, rawOutcomeIsFinal: true, outputIsCandidate: true,
+      requestPolicy: TTRPG_OPEN_COMMON_ORACLE_REQUEST_POLICY_V1, factPolicy: content.rulePack.content.factPolicy, rawOutcomeIsFinal: true, outputIsCandidate: true,
       completeSingleOracleDeliveryRequired: true, initialObservationsAreReleaseTime: true,
       currentFactsRequireOriginalConfirmedSource: true, instanceIdentityGrantsNoMechanics: true,
       modelReadConfersNoSendOrAdoptionAuthority: true, gmPrivateAndOtherActorSecretsExcluded: true,

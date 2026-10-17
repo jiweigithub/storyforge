@@ -1,9 +1,8 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
-import { setupOpenEntityPlanningV1 } from '../helpers/open-entity-runtime'
+import { setupCommonOracleSourceV1 as setup } from '../helpers/open-common-oracle-source'
 import { readyOpenTtrpgSessionV1, OPEN_HUMAN_VIEWER, openEnvelopeV1 } from '../helpers/open-ttrpg-session'
-import { createCompleteTtrpgCharacterSheetV2 } from '../../src/lib/ttrpg/character-sheet'
-import { proposeTtrpgOpenEntityDeskV1, readTtrpgOpenEntityDeskV1, confirmTtrpgOpenEntityDeskV1, materializeTtrpgOpenEntityDeskV1, closeTtrpgOpenEntityDeskV1 } from '../../src/lib/ttrpg/open-entity-desk'
+import { closeTtrpgOpenEntityDeskV1 } from '../../src/lib/ttrpg/open-entity-desk'
 import { loadTtrpgOpenCommonOracleContextV1, createTtrpgOpenCommonOracleContextProviderV1, TTRPG_OPEN_COMMON_ORACLE_SOURCE_V1 } from '../../src/lib/ttrpg/open-common-oracle-context'
 import { loadTtrpgOpenCommonProjectionV1 } from '../../src/lib/ttrpg/open-player-context'
 import * as core from '../../src/lib/product/runtime-core'
@@ -21,40 +20,6 @@ import { resolveScope } from '../../src/lib/workspace/scope'
 import { readTtrpgSessionParticipantsV2 } from '../../src/lib/ttrpg/participants'
 
 const sourceKey = TTRPG_OPEN_COMMON_ORACLE_SOURCE_V1, provider = createTtrpgOpenCommonOracleContextProviderV1()
-async function setup(audience: 'party' | 'public' = 'party', late = false) {
-  const s = await setupOpenEntityPlanningV1(pkg => {
-    const c = pkg.ttrpg!.campaign, rule = pkg.ttrpg!.rulePack.content
-    c.runtimePolicy.enabled = true; rule.oracles[0].audience = audience
-    const npc = c.characterTemplates.find(row => row.characterKey === 'keeper')!, item = rule.items[0]
-    npc.gmProfile!.secret = 'COMMON-ORACLE-GM-PROFILE-CANARY'; npc.itemKeys = [item.key]
-    npc.characterSheet = createCompleteTtrpgCharacterSheetV2({ template: npc, rulePack: rule })
-    c.entityBindings.find(row => row.bindingKey === 'keeper')!.initialInventoryRefs = ['common.keeper.gear']
-    c.entityBindings.push({ bindingKey: 'common.keeper.gear', templateKey: item.key, kind: 'item', initialLocationRef: null, initialInventoryRefs: [], sourceResourceRef: null, sourceFieldRefs: [], audience: 'gm-only', knownByActorKeys: [] })
-    c.fronts[0].goal = 'COMMON-ORACLE-PRIVATE-FRONT-CANARY'
-    c.dynamicEntityTemplates[0].description = 'COMMON-ORACLE-FULL-TEMPLATE-CANARY'
-    c.dynamicEntityTemplates[1].audience = 'private'; c.dynamicEntityTemplates[1].knownByActorKeys = ['hero']
-    const initial = structuredClone(c.frozenWorldPredicateIndex.entries[0])
-    c.frozenWorldPredicateIndex.entries.push({ ...initial, factKey: 'fact.keeper.release', subjectRef: 'keeper', predicateKey: 'located-at', canonicalValue: 'harbor', authority: 'initial-state', owner: 'entity' })
-    c.frozenWorldPredicateIndex.entries.push({ ...initial, factKey: 'fact.private.common.oracle', subjectRef: 'keeper', audience: 'private', knownByActorKeys: ['hero'] })
-    rule.oracles.push({ ...structuredClone(rule.oracles[0]), oracleKey: 'oracle.shared.public', audience: 'public' })
-    if (late) {
-      const actor = structuredClone(c.characterTemplates.find(row => row.characterKey === 'companion.2')!)
-      actor.characterKey = 'late'; actor.seatKey = 'seat.late'; actor.name = '后来者'
-      actor.characterSheet = createCompleteTtrpgCharacterSheetV2({ template: actor, rulePack: rule })
-      c.characterTemplates.push(actor)
-      c.companionPolicy.approvalBindings.push({ companionActorKey: 'late', approverSeatKeys: ['seat.hero'], partyResourceApprovalAllowed: false })
-      c.entityBindings.push({ ...structuredClone(c.entityBindings.find(row => row.bindingKey === 'companion.2')!), bindingKey: 'late', templateKey: 'late' })
-    }
-  })
-  const owner = { scope: s.f.scope, sessionId: s.f.sessionId, viewerKey: OPEN_HUMAN_VIEWER }
-  await proposeTtrpgOpenEntityDeskV1({ ...owner, submissionKey: 'common.oracle.original.plan', oracleSourceRef: s.input.oracleSourceRef, proposals: s.proposals.slice(0, 2) })
-  const plan = (await readTtrpgOpenEntityDeskV1(owner))!.pending!
-  for (const approval of plan.approvals) await confirmTtrpgOpenEntityDeskV1({ ...owner, operationKey: plan.operationKey, planHash: plan.planHash, actorKey: approval.actorKey, decision: 'approve', review: 'reviewed-this-plan' })
-  await materializeTtrpgOpenEntityDeskV1({ ...owner, operationKey: plan.operationKey, planHash: plan.planHash, decision: 'create-this-confirmed-plan' })
-  const actualPlan = (await core.readProductRuntimeState(s.f.sessionId)).ttrpg!.openRun!.entityOperations![0].plan
-  const npc = actualPlan.items.find(row => row.kind === 'actor')!.entityKey, privatePlace = actualPlan.items.find(row => row.kind === 'location')!.entityKey
-  return { ...s, owner, npc, privatePlace, contextInput: { ...owner, actorKey: 'gm' }, scope: { ...s.f.scope, productRuntimeSessionId: s.f.sessionId, runtimeActorKey: 'gm' } }
-}
 describe('R-TTRPGOPEN14 common Oracle source without model or fact authority', { timeout: 120000 }, () => {
   beforeEach(async () => { await db.delete(); await db.open() }); afterEach(() => { vi.restoreAllMocks(); db.close() })
   it('adds exactly one versioned source while all existing Skills retain their original source permissions', async () => {
