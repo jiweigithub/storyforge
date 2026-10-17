@@ -320,16 +320,32 @@ test('professional family images use exact references, alpha and five consumers 
     return result
   },source.scope)
   expect(measured.filter((r:any)=>r.hasAlpha)).toHaveLength(2)
+  const readMeasurements:Array<{name:string;elapsedMs:number;explicitRereads:number}>=[]
   for(const t of fixture.templates){
     const name=t.parameters.name,card=page.getByRole('article',{name:`图片候选：${name}`,exact:true})
+    const readStarted=Date.now()
     const expand=card.getByRole('button',{name:`查看原图：${name}`,exact:true});if(await expand.isVisible())await expand.click()
+    const staleMessage='[avg-visual-image] 编译来源在读取期间变化'
+    const ready=()=>card.getByRole('img').evaluateAll((imgs:HTMLImageElement[],count:number)=>imgs.length>=count&&imgs.every(i=>i.complete&&i.naturalWidth>0),t.requiredReferenceKeys.length+1)
+    // Other image tasks can advance the Build during the first automatic read.
+    // Preserve that rejection; use the actual zero-generation reread control
+    // at most once, after every image request has completed above.
+    await expect.poll(async()=>await ready()||(await card.getByRole('alert').allTextContents()).some(text=>text.includes(staleMessage)),{timeout:30_000}).toBe(true)
+    const stale=(await card.getByRole('alert').allTextContents()).some(text=>text.includes(staleMessage))
+    if(stale)await card.getByRole('button',{name:`重新读取媒资：${name}`,exact:true}).click()
+    const referenceCount=new Set(t.requiredReferenceKeys.map((key:string)=>fixture.catalog.find((ref:any)=>ref.referenceKey===key).reference.contentHash)).size
+    await expect(card.getByRole('region',{name:`视觉评审：${name}`,exact:true}).getByText(`准确原图已显示 · 参考 ${referenceCount}/${referenceCount}。`,{exact:true})).toBeVisible({timeout:30_000})
     await expect.poll(()=>card.getByRole('img').evaluateAll((imgs:HTMLImageElement[],count:number)=>imgs.length>=count&&imgs.every(i=>i.complete&&i.naturalWidth>0),t.requiredReferenceKeys.length+1)).toBe(true)
+    readMeasurements.push({name,elapsedMs:Date.now()-readStarted,explicitRereads:Number(stale)})
     await confirmEngineeringVisualReview(card,name)
     await card.getByRole('button',{name:`保存选图候选：${name}`,exact:true}).click()
     await card.getByRole('checkbox',{name:'我已查看这张图片并核对用途、来源与使用权',exact:true}).check()
     await card.getByRole('button',{name:`确认选用：${name}`,exact:true}).click()
     await expect(card.getByText('已确认选用',{exact:false})).toBeVisible()
   }
+  const readDurationPath=info.outputPath('five-image-read-recovery-duration.json')
+  await writeFile(readDurationPath,JSON.stringify({maximumWaitPerPhaseMs:30_000,measurements:readMeasurements}))
+  await info.attach('five-image-read-recovery-duration',{path:readDurationPath,contentType:'application/json'})
   const configurationStarted=Date.now()
   await page.getByRole('button',{name:'将已选图片配置到演出草稿',exact:true}).click()
   // This five-image operation revalidates four role lineages and all byte

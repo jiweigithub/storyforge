@@ -20,6 +20,7 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
   generatedVoiceSource?: AvgGeneratedVoiceSourceV1
 }) {
   const [url, setUrl] = useState(''), [error, setError] = useState('')
+  const [readAttempt, setReadAttempt] = useState(0)
   const [voiceOrigin, setVoiceOrigin] = useState<{ buildNumber: number; text: string; speaker: string; voiceId: string;
     declaration: string; reference: string } | null>(null)
   const audio = useRef<HTMLAudioElement>(null)
@@ -61,9 +62,9 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
       created = URL.createObjectURL(new Blob([bytes], { type: current.mimeType })); setUrl(created)
     }).catch(cause => { if (alive) setError(String(cause)) })
     return () => { alive = false; element?.pause(); if (created) URL.revokeObjectURL(created) }
-  }, [scope, assetJson, productionId, requirementKey, version, contentHash, retained, processed, generatedSourceJson, generatedVoiceSourceJson])
+  }, [scope, assetJson, productionId, requirementKey, version, contentHash, retained, processed, generatedSourceJson, generatedVoiceSourceJson, readAttempt])
   return <figure className="avg-assembly-media-preview"><figcaption>{caption??asset.name} · {AVG_MEDIA_KIND_LABELS[asset.kind]}</figcaption>
-    {error && <p role="alert">{error}</p>}
+    {error && <><p role="alert">{error}</p><button className="lf-action" aria-label={`重新读取媒资：${asset.name}`} onClick={()=>setReadAttempt(value=>value+1)}>重新读取媒资</button><p>重新核验已保存文件与准确来源，不会新增生成请求。</p></>}
     {asset.mimeType.startsWith('audio/') ? <audio ref={audio} controls src={url || undefined} preload="metadata" />
       : url ? <><img src={url} alt={asset.altText || asset.name} onLoad={onObserved} style={comparisonAspectRatio?{aspectRatio:comparisonAspectRatio}:undefined}/>
         {smallImageSizes&&<div className="avg-review-icon-sizes">{smallImageSizes.map(size=><img key={size} src={url} alt={`${asset.name} · ${size} 像素观察`} style={{width:size,height:size,objectFit:'contain'}}/>)}</div>}</> : <p>读取图片…</p>}
