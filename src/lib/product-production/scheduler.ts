@@ -1,5 +1,5 @@
 import { parseProductRuntimePackage } from './runtime-package'
-import { avgMediaProductionEnabledV2 } from '../avg/assembly-contract'
+import { avgMediaProductionEnabledV2, avgVoiceProductionEnabledV3 } from '../avg/assembly-contract'
 import { createProductBuildPreviewManifestV2 } from './preview-manifest'
 import { isTextRevisionRetainedVisualTaskV1, textRevisionRecoveryPreservesVisualContractV1, validateTextContentRevisionAuthorityV1, verifiedTextRevisionVisualCarryTaskKeysV1 } from './text-content-revision-authority'
 import { verifiedHumanImportCarryProofsV1 } from './text-adventure-artifact-store'
@@ -1074,6 +1074,7 @@ function taskContextSourceKeys(
   task: ProductProductionPlanTaskV3,
   excludeRepairFeedback = false,
 ): string[] {
+  if (task.contextProfile === 'avg-task-v1') return ['product-production.avg-task-inputs']
   // The deterministic runtime compiler receives immutable artifact rows via
   // inputArtifacts and binds their hashes in structuralInput. Re-serializing
   // the same full payload into a model-style context duplicates tens of
@@ -1095,6 +1096,7 @@ function taskContextSourceKeys(
 }
 
 function taskRequiredContextSourceKeys(task: ProductProductionPlanTaskV3): string[] {
+  if (task.contextProfile === 'avg-task-v1') return ['product-production.avg-task-inputs']
   if (task.executionMode === 'deterministic' && task.kind === 'runtime-package') {
     return ['product-production.brief']
   }
@@ -1102,7 +1104,8 @@ function taskRequiredContextSourceKeys(task: ProductProductionPlanTaskV3): strin
     const skill = getAgentSkillV1(task.skillId)
     return [...new Set([
       ...skill.contextSourceKeys,
-      ...(task.inputArtifactKeys.length > 0 ? ['product-production.artifact-inputs'] : []),
+      ...(task.inputArtifactKeys.length > 0 && !skill.contextSourceKeys.includes('product-production.avg-task-inputs')
+        ? ['product-production.artifact-inputs'] : []),
     ])]
   }
   return ['product-production.brief', ...(task.inputArtifactKeys.length > 0 ? ['product-production.artifact-inputs'] : [])]
@@ -1292,6 +1295,7 @@ function productProductionTaskExecutionIdentityPayloadV1(
     taskKind: task.kind,
     executionMode: task.executionMode,
     executionBindings,
+    ...(task.contextProfile ? { contextProfile: task.contextProfile } : {}),
   }
 }
 
@@ -4672,6 +4676,7 @@ async function runClaimedTaskCore(input: {
   const executorOwnsWorldGateway = productProductionTaskOwnsWorldGatewayV1(input.task)
   const worldGatewayRequired = worldGatewayUsed && !executorOwnsWorldGateway
   const requiresExactContext = worldGatewayUsed || input.task.executionMode === 'model'
+    || normalSourceKeys.includes('product-production.avg-task-inputs')
   // The gateway below receives the declared budget minus the context actually
   // assembled here. A fixed percentage cap would reject a valid, exact Brief
   // and artifact set before the remaining world budget can even be measured.
@@ -6264,7 +6269,7 @@ export async function runProductProductionSchedulerCycleV1(input: {
     const accepted = (task: ProductProductionPlanTaskV3) => task.outputArtifactKeys.every(key => artifacts.filter(row => row.artifactKey === key
       && row.status === 'accepted' && row.controlEpoch === state.build.controlEpoch).length === 1)
     const ready = authorTasks.every(accepted)
-    if (!ready && (state.brief.avgAssembly.version === 1 || authorTasks.filter(task => !['avg-author-media-choice', 'avg-author-stage','avg-author-visual-review'].includes(task.kind)).some(task => !accepted(task)))) {
+    if (!ready && (state.brief.avgAssembly.version === 1 || authorTasks.filter(task => !['avg-author-media-choice', 'avg-author-stage','avg-author-visual-review','avg-author-voice-review','avg-author-voice-choice'].includes(task.kind)).some(task => !accepted(task)))) {
       return projectProductProductionSchedulerV1({ scope, productionId: input.productionId })
     }
     for (const task of authorTasks) if (!accepted(task)) pendingAvgHumanTasks.add(task.taskKey)
@@ -6348,6 +6353,8 @@ export async function runProductProductionSchedulerCycleV1(input: {
   const ready = state.plan.tasks
     .filter(task => {
       if (pendingAvgHumanTasks.has(task.taskKey)) return false
+      if (state.brief.avgAssembly?.version === 3 && task.kind === 'avg-media-voice-generate'
+        && (!avgMediaProductionEnabledV2() || !avgVoiceProductionEnabledV3())) return false
       if (state.brief.avgAssembly?.version === 2 && task.kind === 'avg-media-image-generate' && !avgMediaProductionEnabledV2()) return false
       const child = children.get(task.taskKey)
       if (child && ['failed', 'cancelled', 'recovery_required', 'paused'].includes(child.projection.state)) return false

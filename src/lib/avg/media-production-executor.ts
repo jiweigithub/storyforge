@@ -9,7 +9,8 @@ import { assertExactRunArtifactBodySafeV1 } from '../memory/evidence-policy'
 import { readAvgImageTaskSourcesV2 } from './media-task-source'
 import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 import { createAvgDraftReferenceAdapterV1 } from './editor-service'
-import { assertAvgVisualProductionPolicyV2 } from './media-production-policy'
+import { assertAvgImageProductionDefinitionV3 } from './media-production-definition'
+import { avgVoiceProductionEnabledV3 } from './assembly-contract'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V1 } from './media-reference-contract'
 import { avgRawMediaArtifactKeyV1 } from './media-production-contract'
 import { prepareAvgRawImageRequestV1, type AvgRawImagePayloadV1 } from './media-raw-contract'
@@ -68,17 +69,17 @@ export async function executeAvgMediaImageTaskV2(input: ProductProductionTaskExe
     durationMs: Date.now() - started, storageBytes })
   try {
     if (!avgMediaProductionEnabledV2()) throw new Error('[avg-media] 实验性图片生产未启用，未发送请求')
-    assertAvgVisualProductionPolicyV2(options.brief)
-    const brief = options.brief, batch = brief.avgAssembly.mediaBatch
+    if (options.brief.avgAssembly?.version === 3 && !avgVoiceProductionEnabledV3()) throw new Error('[avg-media] 联合图音生产尚未开放，未发送请求')
+    const brief = options.brief, { assembly, capability } = await assertAvgImageProductionDefinitionV3(brief), batch = assembly.mediaBatch
     const r = batch.requirements.find(r => input.task.taskKey === `avg.media.generate.${r.requirementKey}`)
     if (!r || !input.taskRunId || !input.onMediaOutput || input.task.executionMode !== 'media-provider' || input.task.kind !== 'avg-media-image-generate'
-      || input.task.skillId !== 'product-production.media-request.v1' || input.attempt !== 1 || input.task.maxAttempts !== 1
+      || input.task.skillId !== (brief.avgAssembly?.version === 3 ? 'avg.media-request.v1' : 'product-production.media-request.v1') || input.attempt !== 1 || input.task.maxAttempts !== 1
       || input.task.outputArtifactKeys.length !== 1 || input.task.outputArtifactKeys[0] !== avgRawMediaArtifactKeyV1(r.requirementKey)
       || input.task.budgetReservation.mediaCalls !== 1 || input.task.budgetReservation.modelCalls !== 0 || !input.contextText.trim()) {
       throw new Error('[avg-media] 图片任务不属于准确的冻结 Harness/Skill/单次调用域')
     }
     const source = () => readAvgImageTaskSourcesV2(input,brief)
-    const accepted = await source(), capability = brief.capabilityRequirements[0]!
+    const accepted = await source()
     if (capability.capabilityHash !== await hashProductProductionValueV2(AVG_IMAGE_REFERENCE_CAPABILITY_V1)) throw new Error('[avg-media] 图片能力快照已变化，请重新准备批次')
     const resolved = options.mediaCapabilities.get(AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1)
     const binding = input.capabilityBindings.find(b => b.requirementKey === capability.requirementKey)
@@ -89,8 +90,8 @@ export async function executeAvgMediaImageTaskV2(input: ProductProductionTaskExe
       || resolved.transport.rawResponseEvidence !== 'utf8-text-v1') {
       throw new Error('[avg-media] 图片执行能力与冻结绑定不一致')
     }
-    if (!options.imageEndpointRouteHash || options.imageEndpointRouteHash !== brief.avgAssembly.imageBinding.endpointRouteHash
-      || binding.bindingHash !== brief.avgAssembly.imageBinding.bindingHash || binding.bindingHash !== await avgImageRouteBindingHashV2({
+    if (!options.imageEndpointRouteHash || options.imageEndpointRouteHash !== assembly.imageBinding.endpointRouteHash
+      || binding.bindingHash !== assembly.imageBinding.bindingHash || binding.bindingHash !== await avgImageRouteBindingHashV2({
         requirementKey: binding.requirementKey, adapterId: binding.adapterId, baseCapabilityHash: resolved.binding.bindingHash, endpointRouteHash: options.imageEndpointRouteHash })) {
       throw new Error('[avg-media] 图片配置路由已变化，请重新准备并确认制作方案')
     }

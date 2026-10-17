@@ -1,6 +1,9 @@
 import { deriveAvgAssemblyRecoveryBaseV1 } from '../avg/assembly-recovery'
 import { resetAvgImageRecoveryForEvolutionV1 } from '../avg/media-production-policy'
-import { avgMediaProductionEnabledV2 } from '../avg/assembly-contract'
+import { avgMediaProductionEnabledV2, avgVoiceProductionEnabledV3 } from '../avg/assembly-contract'
+import { assertAvgStoredAssemblyBriefV3 } from '../avg/voice-assembly-storage'
+import { assertAvgNoUnresolvedVoiceRequestsV1 } from '../avg/voice-request-safety'
+import { avgPendingVoiceRequestsV1, resetAvgVoiceRecoveryForEvolutionV1, validateAvgVoiceRecoveryV1 } from '../avg/voice-recovery'
 import { canReviseTextContentBuildV1, createTextContentRevisionPlanV1 } from './text-content-revision'
 import Dexie from 'dexie'
 import { db } from '../db/schema'
@@ -10,6 +13,7 @@ import type {
   ProductBuildArtifactRecordV1,
   ProductBuildRecordV1,
   ProductProductionPlanV3,
+  ProductProductionBriefV3,
   ProductProductionBriefRecordV1,
   ProductProductionCommandRecordV1,
   ProductProductionCommandV1,
@@ -133,6 +137,24 @@ class ExpectedCommandFailure extends Error {
 
 function reject(code: ProductProductionErrorCodeV1, message: string): never {
   throw new ExpectedCommandFailure(code, message)
+}
+
+async function assertVoicePacketForCommand(brief: ProductProductionBriefV3, scope: WorkspaceScope,
+  productionId: number, expectedParentBuildNumber: number | null) {
+  let resolved: Awaited<ReturnType<typeof assertAvgStoredAssemblyBriefV3>>
+  try {
+    const check = () => assertAvgStoredAssemblyBriefV3(brief.avgAssembly)
+    resolved = Dexie.currentTransaction ? await Dexie.waitFor(Dexie.ignoreTransaction(check), 20_000) : await check()
+  } catch { reject('brief-not-authorized', '配音合同的精确字符、请求或能力绑定无效，请重新准备') }
+  try {
+    if (resolved.assembly.voice.recovery) {
+      if (resolved.assembly.voice.recovery.sourceBuildNumber !== expectedParentBuildNumber) throw new Error('[avg-voice] 配音恢复必须绑定当前准确父版本')
+      await validateAvgVoiceRecoveryV1({ scope, productionId, brief })
+    }
+    const pending = avgPendingVoiceRequestsV1(resolved.assembly, resolved.requests)
+    if (pending.length) await assertAvgNoUnresolvedVoiceRequestsV1({ scope, requests: pending })
+  }
+  catch (error) { reject('brief-not-authorized', error instanceof Error ? error.message : '历史配音调用状态不可验证，不能重发') }
 }
 
 // authorDraftJson is contractually capped at 120k characters. Keep enough
@@ -1084,6 +1106,8 @@ async function applyCommand(input: {
 
   if (command.type === 'save-brief-revision') {
     const brief = command.brief
+    if (brief.avgAssembly?.version === 3 && !avgVoiceProductionEnabledV3()) reject('brief-not-authorized', 'AVG 配音生产的采用、编译与恢复闭环尚未开放，不能准备新任务')
+    if (brief.avgAssembly?.version === 3) await assertVoicePacketForCommand(brief, scope, production.id, production.currentBuildNumber)
     if (brief.avgAssembly?.version === 2 && !avgMediaProductionEnabledV2()) reject('brief-not-authorized', 'AVG 实验性媒资生产尚未启用，不能准备新任务')
     if (brief.intent.productType !== production.productType) {
       reject('production-state-conflict', 'Brief 产品身份与 Production 根记录不一致')
@@ -1224,6 +1248,8 @@ async function applyCommand(input: {
       reject('brief-not-authorized', 'Creator Brief 尚未完成 G5-04 正式来源计划，不能创建 Build')
     }
     const brief = parseProductProductionBriefV3(briefRow.briefJson)
+    if (brief.avgAssembly?.version === 3 && !avgVoiceProductionEnabledV3()) reject('brief-not-authorized', 'AVG 配音生产的采用、编译与恢复闭环尚未开放，不能开始新任务')
+    if (brief.avgAssembly?.version === 3) await assertVoicePacketForCommand(brief, scope, production.id, production.currentBuildNumber)
     if (brief.avgAssembly?.version === 2 && !avgMediaProductionEnabledV2()) reject('brief-not-authorized', 'AVG 实验性媒资生产尚未启用，不能开始新任务')
     if (brief.unresolvedDecisionKeys.length > 0) reject('brief-unresolved', 'Brief 仍有未解决决策')
     const confirmedBrief = input.preparedConfirmedBrief
@@ -2819,6 +2845,7 @@ async function applyCommand(input: {
     capabilityRequirements: generationPolicy.capabilityRequirements,
     completionContract: generationPolicy.completionContract,
     ...resetAvgImageRecoveryForEvolutionV1(priorBrief),
+    ...await resetAvgVoiceRecoveryForEvolutionV1(priorBrief),
     unresolvedDecisionKeys: [],
     evolution: {
       schema: 'storyforge.product-evolution-impact', version: 1,

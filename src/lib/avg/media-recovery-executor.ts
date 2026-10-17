@@ -2,7 +2,7 @@ import { db } from '../db/schema'
 import type { ProductProductionBriefV3 } from '../types'
 import { ProductProductionDraftRejectedErrorV1, type ProductProductionTaskExecutionInputV1, type ProductProductionTaskExecutionResultV1 } from '../product-production/scheduler'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
-import { assertAvgVisualProductionPolicyV2 } from './media-production-policy'
+import { assertAvgImageProductionDefinitionV3 } from './media-production-definition'
 import { readAvgImageRecoverySourceV1 } from './media-recovery'
 import { readAvgImageTaskSourcesV2 } from './media-task-source'
 
@@ -10,8 +10,8 @@ export async function executeAvgImageRecoveryTaskV1(input:ProductProductionTaskE
   const started=Date.now()
   const usage=(storageBytes=0)=>({modelCalls:0,inputTokens:0,outputTokens:0,mediaCalls:0,costUsd:0,durationMs:Date.now()-started,storageBytes})
   try{
-    assertAvgVisualProductionPolicyV2(brief)
-    const recovery=brief.avgAssembly.imageRecovery,r=recovery?.retained.find(r=>input.task.taskKey===`avg.media.generate.${r.requirementKey}`)
+    const {assembly}=await assertAvgImageProductionDefinitionV3(brief)
+    const recovery=assembly.imageRecovery,r=recovery?.retained.find(r=>input.task.taskKey===`avg.media.generate.${r.requirementKey}`)
     const build=await db.productBuilds.get(input.buildId)
     if(!recovery||!r||!build||build.parentBuildNumber!==recovery.sourceBuildNumber||input.task.kind!=='avg-media-image-reuse'
       ||input.task.executionMode!=='deterministic'||input.task.skillId!==null||input.task.budgetReservation.mediaCalls!==0

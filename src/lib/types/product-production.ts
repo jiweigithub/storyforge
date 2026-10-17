@@ -600,6 +600,8 @@ export interface ProductProductionPlanTaskV3 {
   reuse: ProductArtifactReuseDecisionV1 | null;
   /** Exact author draft, authorized by a durable child-Build command. */
   authorRevision?: TextAdventureContentRevisionV1 & { commandId: string; sourceBuildNumber: number };
+  /** Exact registered input projection for deterministic AVG V3 tasks. */
+  contextProfile?: "avg-task-v1";
 }
 
 export interface ProductProductionPlanV3 {

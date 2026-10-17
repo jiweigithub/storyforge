@@ -2,6 +2,7 @@ import { avgHash, avgKey, avgKeys, avgProtocolBody, avgRecord, avgText } from '.
 import { parseAvgVisualProductionBatchV1, type AvgVisualProductionBatchV1 } from './media-production-contract'
 import { parseAvgImageRecoveryV1, type AvgImageRecoveryV1 } from './media-recovery-contract'
 import { parseAvgImageProcessingPlanV1, type AvgImageProcessingPlanV1 } from './image-processing-contract'
+import { parseAvgStoredAssemblyBriefV3, type AvgStoredAssemblyBriefV3 } from './voice-assembly-storage'
 
 /** Frozen output domain for author assembly. Canonical rules/text remain adopted artifacts. */
 export interface AvgAssemblyBriefV1 {
@@ -21,11 +22,17 @@ export interface AvgAssemblyBriefV2 extends Omit<AvgAssemblyBriefV1, 'version'> 
   imageRecovery?: AvgImageRecoveryV1
   imageProcessing?: AvgImageProcessingPlanV1
 }
-export type AvgAssemblyBrief = AvgAssemblyBriefV1 | AvgAssemblyBriefV2
+export type AvgAssemblyBrief = AvgAssemblyBriefV1 | AvgAssemblyBriefV2 | AvgStoredAssemblyBriefV3
 /** Experimental production is opt-in. Codecs still read existing records when
  * disabled; command/dispatch boundaries enforce admission before new calls. */
 export function avgMediaProductionEnabledV2(): boolean {
   return import.meta.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION === '1'
+}
+/** Separate, default-off experiment over the complete registered V3 path.
+ * Both flags are required; neither a saved draft nor the image switch alone
+ * grants speech dispatch. Start, source, route and budget guards still apply. */
+export function avgVoiceProductionEnabledV3(): boolean {
+  return avgMediaProductionEnabledV2() && import.meta.env.VITE_STORYFORGE_AVG_VOICE_PRODUCTION === '1'
 }
 export const AVG_ASSEMBLY_GATE_IDS_V1 = [
   'avg.rules.confirmed','avg.scripts.confirmed','avg.stage.confirmed',
@@ -40,6 +47,9 @@ export function avgMediaAssemblyGateIdsV2(batch: AvgVisualProductionBatchV1, pro
 }
 export function parseAvgAssemblyBrief(value: unknown): AvgAssemblyBrief {
   const body = avgProtocolBody(value)
+  // Read compatibility never implies that the separate V3 experiment or a
+  // particular account, source, start authorization and budget is available.
+  if ((body as { version?: unknown } | null)?.version === 3) return parseAvgStoredAssemblyBriefV3(body).stored
   return (body as { version?: unknown } | null)?.version === 2 ? parseAvgAssemblyBriefV2(body) : parseAvgAssemblyBriefV1(body)
 }
 export function parseAvgAssemblyBriefV1(value: unknown): AvgAssemblyBriefV1 {

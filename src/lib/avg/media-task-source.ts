@@ -5,13 +5,16 @@ import { assertRecordInScope } from '../workspace/scope'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { readAvgSystemPlanForCompilationV1 } from './author-artifacts'
 import { assertAvgMediaConsumerDeclarationsV1, validateAvgVisualProductionBatchSourceV1 } from './media-source'
+import { assertAvgImageProductionDefinitionV3 } from './media-production-definition'
+import { validateAvgVoiceRecoveryV1 } from './voice-recovery'
 
 /** Same actual adopted source proof for a new request and zero-call reuse. */
 export async function readAvgImageTaskSourcesV2(input:ProductProductionTaskExecutionInputV1,brief:ProductProductionBriefV3){
-  if(brief.avgAssembly?.version!==2)throw new Error('[avg-media] 图片任务缺少准确批次')
-  const batch=brief.avgAssembly.mediaBatch,build=await db.productBuilds.get(input.buildId)
+  const {assembly}=await assertAvgImageProductionDefinitionV3(brief)
+  const batch=assembly.mediaBatch,build=await db.productBuilds.get(input.buildId)
   if(!build||!await assertRecordInScope(input.scope,'productBuilds',build,{owner:'work'})||build.status!=='building'
     ||build.controlEpoch!==input.controlEpoch||build.planHash!==input.planHash||build.briefHash!==await hashProductProductionValueV2(brief))throw new Error('[avg-media] 图片任务来源已 stale')
+  await validateAvgVoiceRecoveryV1({ scope: input.scope, productionId: input.productionId, brief, targetBuild: build, checkProspectiveRequests: false })
   const accepted=await readAvgSystemPlanForCompilationV1({scope:input.scope,buildId:input.buildId,expectedBuildRevision:build.stateRevision,controlEpoch:input.controlEpoch,includeSceneScripts:true})
   await validateAvgVisualProductionBatchSourceV1(batch,{systemPlan:accepted.plan,scripts:accepted.scripts.map(s=>s.payload),presentation:{aspectRatio:batch.aspectRatio}})
   assertAvgMediaConsumerDeclarationsV1(batch,accepted.plan)

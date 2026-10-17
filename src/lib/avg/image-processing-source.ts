@@ -10,6 +10,7 @@ import { assertAvgProcessedImageArtifactV1, avgProcessedImageArtifactKeyV1 } fro
 import { inspectAvgImageBytesV1 } from './image-decoder'
 import { readAvgImageRecoverySourceV1 } from './media-recovery'
 import { parseProductProductionBriefV3 } from '../product-production/contracts'
+import { readAvgImageDefinitionV3 } from './media-production-definition'
 
 /** Current or caller-proved historical producer. No adopt/carry authority. */
 export async function inspectAvgProcessedImageSourceV1(input:{scope:WorkspaceScope;brief:ProductProductionBriefV3;raw:ProductBuildArtifactRecordV1;processed:ProductBuildArtifactRecordV1}){
@@ -30,7 +31,7 @@ export async function inspectAvgProcessedImageSourceV1(input:{scope:WorkspaceSco
   return {...image,row:input.processed,measured}
 }
 export async function readAvgProcessedImageSourceV1(input:{scope:WorkspaceScope;buildId:number;brief:ProductProductionBriefV3;raw:ProductBuildArtifactRecordV1;version?:number;contentHash?:string}){
-  if(input.brief.avgAssembly?.version!==2)throw new Error('[avg-process] 当前版本不是图片生产')
+  readAvgImageDefinitionV3(input.brief)
   const requirementKey=(await assertAvgRawImageArtifactV1(input.brief,input.raw)).payload.requirement.requirementKey
   const rows=await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([input.buildId,avgProcessedImageArtifactKeyV1(requirementKey)])
     .filter(r=>r.status==='accepted'&&r.controlEpoch===input.raw.controlEpoch).limit(2).toArray()
@@ -43,8 +44,9 @@ export async function readAvgProcessedImageSourceV1(input:{scope:WorkspaceScope;
 /** A stale draft pixel slot gains no use authority. Only an exact retained
  * parent raw/derived source may be replaced by a newly adopted current choice. */
 export async function verifyAvgRecoveryPlaceholderV1(input:{scope:WorkspaceScope;productionId:number;brief:ProductProductionBriefV3;requirementKey:string;asset:FrozenRuntimeMediaAssetV2}){
-  const a=input.brief.avgAssembly
-  if(a?.version!==2||!a.imageRecovery?.retained.some(e=>e.requirementKey===input.requirementKey))return false
+  if(!input.brief.avgAssembly||input.brief.avgAssembly.version===1||input.brief.avgAssembly.version===3&&!input.brief.avgAssembly.image)return false
+  const a=readAvgImageDefinitionV3(input.brief)
+  if(!a.imageRecovery?.retained.some(e=>e.requirementKey===input.requirementKey))return false
   const prior=await readAvgImageRecoverySourceV1({...input}),same=(x:unknown,y:unknown)=>canonicalProductProductionJsonV2(x)===canonicalProductProductionJsonV2(y)
   if(same(prior.asset,input.asset))return true
   const parent=await db.productBuilds.get(prior.artifact.buildId)

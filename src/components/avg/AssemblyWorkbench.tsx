@@ -12,7 +12,11 @@ import { useBeforeUnload } from '../../hooks/useBeforeUnload'
 import PrototypeReleasePanel from './PrototypeReleasePanel'
 import MediaPreview, { AVG_MEDIA_KIND_LABELS as MEDIA_NAMES } from './MediaAssetPreview'
 import MediaProductionPanel from './MediaProductionPanel'
-import { avgMediaProductionEnabledV2 } from '../../lib/avg/assembly-contract'
+import VoiceProductionPanel from './VoiceProductionPanel'
+import { avgMediaProductionEnabledV2, avgVoiceProductionEnabledV3 } from '../../lib/avg/assembly-contract'
+import { readAvgOptionalImageDefinitionV3 } from '../../lib/avg/media-production-definition'
+import { parseAvgStoredAssemblyBriefV3 } from '../../lib/avg/voice-assembly-storage'
+import { avgVoiceChoiceArtifactKeyV1 } from '../../lib/avg/voice-assembly-contract'
 import { avgMediaChoiceArtifactKeyV1, avgRawMediaArtifactKeyV1 } from '../../lib/avg/media-production-contract'
 import { AVG_MODULE_CONTRACTS_V1, avgNativeModuleSwitchesV1 } from '../../lib/avg/module-capabilities'
 
@@ -36,7 +40,8 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
   const [mediaName,setMediaName]=useState(''),[license,setLicense]=useState(''),[alt,setAlt]=useState(''),[character,setCharacter]=useState('')
   const [autoConfigure,setAutoConfigure]=useState(true),[itemTarget,setItemTarget]=useState('')
   const [replaceAssetKey,setReplaceAssetKey]=useState('')
-  const [mediaPending,setMediaPending]=useState(false),[mediaRunning,setMediaRunning]=useState(false)
+  const [imagePending,setImagePending]=useState(false),[voicePending,setVoicePending]=useState(false),[mediaRunning,setMediaRunning]=useState(false)
+  const mediaPending=imagePending||voicePending
   const mediaAbort=useRef<AbortController|null>(null)
   const alive=useRef(false),busyRef=useRef(false),loadSequence=useRef(0)
   useBeforeUnload(dirty||jsonPending||mediaPending||mediaRunning)
@@ -77,7 +82,7 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
   },[jsonPending,view,model,scope])
   const flush=useCallback(async()=>{
     if(busyRef.current)throw new Error('当前操作正在完成，请稍后切换页面')
-    if(mediaPending)throw new Error('请先保存或撤销图片需求，再切换页面')
+    if(mediaPending)throw new Error('请先保存或撤销媒资需求及审听观察，再切换页面')
     if(!dirty&&!jsonPending)return
     busyRef.current=true;setBusy(true)
     try{await persist()}catch(cause){if(alive.current)setError(String(cause));throw cause}
@@ -96,13 +101,17 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
   const assets=model.presentation.stage.assets
   const moduleSwitches=avgNativeModuleSwitchesV1({systemPlan:model.systemPlan,reading:model.presentation.reading})
   const accepted=(key:string)=>view?.artifacts.find(row=>row.artifactKey===key&&row.status==='accepted')
-  const mediaBatch=details?.executionBrief?.avgAssembly?.version===2?details.executionBrief.avgAssembly.mediaBatch:null
-  const choiceKeys=mediaBatch?.requirements.map(r=>avgMediaChoiceArtifactKeyV1(r.requirementKey))??[]
-  const sourceLocked=!!mediaBatch&&Object.keys((JSON.parse(build?.budgetLedgerJson??'{}') as {tasks?:object}).tasks??{}).length>0
+  const imageDefinition=details?.executionBrief?readAvgOptionalImageDefinitionV3(details.executionBrief):null
+  const mediaBatch=imageDefinition?.mediaBatch??null
+  const storedAssembly=details?.executionBrief?.avgAssembly
+  const voiceBatch=storedAssembly?.version===3?parseAvgStoredAssemblyBriefV3(storedAssembly).assembly.voice.batch:null
+  const choiceKeys=[...(mediaBatch?.requirements.map(r=>avgMediaChoiceArtifactKeyV1(r.requirementKey))??[]),
+    ...(voiceBatch?.requirements.map(r=>avgVoiceChoiceArtifactKeyV1(r.requirementKey))??[])]
+  const sourceLocked=!!(mediaBatch||voiceBatch)&&Object.keys((JSON.parse(build?.budgetLedgerJson??'{}') as {tasks?:object}).tasks??{}).length>0
   const humanKeys=details?.executionBrief?.avgAssembly?['avg.system.plan',...details.executionBrief.avgAssembly.sceneKeys.map(key=>`avg.content.scene-script.${key}`),'avg.author.stage']:[]
   const sourcesReady=humanKeys.length>0&&humanKeys.filter(key=>key!=='avg.author.stage').every(key=>!!accepted(key))
   const allAccepted=humanKeys.length>0&&[...humanKeys,...choiceKeys].every(key=>!!accepted(key))
-  const mediaConfigured=!mediaBatch||mediaBatch.requirements.every(r=>{
+  const imagesConfigured=!mediaBatch||mediaBatch.requirements.every(r=>{
     const choice=accepted(avgMediaChoiceArtifactKeyV1(r.requirementKey));if(!choice)return false
     if(r.consumer.domain==='reference')return !assets.some(a=>a.assetKey===r.assetKey)
     try{if(!assets.some(a=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(JSON.parse(choice.payloadJson).asset)))return false}catch{return false}
@@ -110,9 +119,19 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
     const type=r.consumer.slot==='actor'?'show-actor':r.consumer.slot==='background'?'set-background':'show-cg'
     return model.presentation.stage.cues.some(cue=>cue.type===type&&cue.assetKey===r.assetKey&&cue.beatKey===r.triggerBeatKey&&(type!=='show-actor'||cue.actorKey===r.consumer.subjectKey))
   })
+  const voicesConfigured=!voiceBatch||voiceBatch.requirements.every(r=>{
+    const choice=accepted(avgVoiceChoiceArtifactKeyV1(r.requirementKey));if(!choice)return false
+    try{
+      const asset=JSON.parse(choice.payloadJson).asset
+      if(!assets.some(a=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(asset)))return false
+      return model.presentation.reading?.voices.some(v=>v.assetKey===r.assetKey&&v.lineKey===r.lineKey&&v.text===r.text&&v.textRevision===r.textRevision&&v.speakerKey===r.speakerKey&&v.locale===r.locale)??false
+    }catch{return false}
+  })
+  const mediaConfigured=imagesConfigured&&voicesConfigured
   const selectedRequirement=mediaBatch?.requirements.find(r=>r.assetKey===selectedAsset?.assetKey)
   const selectedRaw=selectedRequirement?accepted(avgRawMediaArtifactKeyV1(selectedRequirement.requirementKey)):undefined
   const selectedInherited=model.presentation.inheritedImages?.find(entry=>entry.assetKey===selectedAsset?.assetKey)
+  const selectedInheritedVoice = model.presentation.inheritedVoices?.find(entry => entry.assetKey === selectedAsset?.assetKey)
   const updateCue=(index:number,patch:Partial<AvgPresentationCue>)=>edit(next=>Object.assign(next.presentation.stage.cues[index],patch))
   const addCue=(type:'set-background'|'show-actor'|'show-cg'|'play-audio'|'wait')=>{
     const beatKey=script?.lines[0]?.lineKey??lines[0]?.lineKey
@@ -125,7 +144,7 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
       ...(type==='play-audio'?{volume:0.8,loop:asset?.kind==='bgm'||asset?.kind==='ambience'}:{})})
     })
   }
-  const readyForStage=!!view&&!dirty&&!jsonPending&&!busy
+  const readyForStage=!!view&&!dirty&&!jsonPending&&!busy&&!mediaPending
   const bindVoice=(lineKey:string,assetKey:string)=>{
     if(!script) return
     const source=accepted(`avg.content.scene-script.${script.sceneKey}`)
@@ -240,8 +259,8 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
         {script?.lines.map(line=>{const voice=model.presentation.reading?.voices.find(voice=>voice.lineKey===line.lineKey);return <div className="avg-assembly-row" key={line.lineKey}><span>{line.text}</span><label>配音片段<select value={voice?.assetKey??''} disabled={!accepted(`avg.content.scene-script.${script.sceneKey}`)} onChange={event=>{try{bindVoice(line.lineKey,event.target.value)}catch(cause){setError(String(cause))}}}><option value="">无配音</option>{assets.filter(asset=>asset.kind==='voice').map(asset=><option key={asset.assetKey} value={asset.assetKey}>{asset.name}</option>)}</select></label>{voice&&<button className="lf-action" onClick={()=>{try{bindVoice(line.lineKey,voice.assetKey)}catch(cause){setError(String(cause))}}}>按当前台词重新绑定</button>}</div>})}
       </fieldset></section>}
       {(avgMediaProductionEnabledV2()||model.mediaBatch||mediaBatch)&&<div hidden={section!=='media'}><MediaProductionPanel scope={scope} view={view} workspace={model}
-        disabled={busy||dirty||jsonPending} canEdit={canEditMediaDomain} canAdopt={canAdopt} sourcesReady={sourcesReady} declaration={declaration} generating={mediaRunning} visible={section==='media'}
-        onPending={setMediaPending} onAction={run} onReload={reload} onClear={async()=>{await clearAvgVisualBatchDraftV1({scope,expectedDraftRevision:view.draft.revision});await reload();setNotice('未使用的生成批次已移除，参考图与制作记录仍保留。')}} onNotice={setNotice} onCancel={()=>mediaAbort.current?.abort()}
+        disabled={busy||dirty||jsonPending||voicePending} canEdit={canEditMediaDomain} canAdopt={canAdopt} sourcesReady={sourcesReady} declaration={declaration} generating={mediaRunning} visible={section==='media'}
+        onPending={setImagePending} onAction={run} onReload={reload} onClear={async()=>{await clearAvgVisualBatchDraftV1({scope,expectedDraftRevision:view.draft.revision});await reload();setNotice('未使用的生成批次已移除，参考图与制作记录仍保留。')}} onNotice={setNotice} onCancel={()=>mediaAbort.current?.abort()}
         onSave={async requirements=>{
           await saveAvgVisualBatchDraftV1({scope,expectedDraftRevision:view.draft.revision,batchKey:model.mediaBatch?.batchKey??`batch.${crypto.randomUUID()}`,
             revision:(model.mediaBatch?.revision??0)+1,requirements,visualReviewPolicy:'author-visual-v1'})
@@ -249,7 +268,16 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
         }} onGenerate={()=>run(async()=>{
           if(!details?.production.id)throw new Error('请先核对方案并明确开始')
           const controller=new AbortController();mediaAbort.current=controller;setMediaRunning(true)
-          try{const result=await runAvgAssemblyV1({scope,productionId:details.production.id,signal:controller.signal});await reload();setNotice(result.buildStatus==='building'?'本批图片调用已结束，请查看原图并逐项确认选图。':`当前图片生产状态：${result.buildStatus}`)}
+          try{const result=await runAvgAssemblyV1({scope,productionId:details.production.id,signal:controller.signal});await reload();setNotice(result.buildStatus==='building'?'本批媒资步骤已执行，请逐项查看图片或审听配音并确认。':`当前媒资生产状态：${result.buildStatus}`)}
+          finally{mediaAbort.current=null;if(alive.current)setMediaRunning(false)}
+        })}/></div>}
+      {avgMediaProductionEnabledV2()&&<div hidden={section!=='media'}><VoiceProductionPanel scope={scope} view={view} workspace={model}
+        visible={section==='media'} disabled={busy||dirty||jsonPending||imagePending} canEdit={canEditMediaDomain} canAdopt={canAdopt}
+        sourcesReady={sourcesReady} declaration={declaration} generating={mediaRunning} onPending={setVoicePending} onAction={run} onReload={reload}
+        onNotice={setNotice} onCancel={()=>mediaAbort.current?.abort()} onGenerate={()=>run(async()=>{
+          if(!details?.production.id)throw new Error('请先核对方案并明确开始')
+          const controller=new AbortController();mediaAbort.current=controller;setMediaRunning(true)
+          try{const result=await runAvgAssemblyV1({scope,productionId:details.production.id,signal:controller.signal});await reload();setNotice(`当前媒资生产状态：${result.buildStatus}`)}
           finally{mediaAbort.current=null;if(alive.current)setMediaRunning(false)}
         })}/></div>}
       {section==='media'&&<section className="lf-paper"><h4>导入与配置媒资</h4><p>单文件最多 32 MiB，当前联合预览最多 128 项/64 MiB。开始后素材目录固定，新增媒资在下一 Build 采用。</p>
@@ -264,16 +292,24 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
           <button className="lf-action" disabled={!file||!license.trim()} onClick={()=>void run(importFile)}>实际解码并导入</button>
         </fieldset>
         <h4>已选媒资</h4>{assets.length===0&&<p>尚未选用媒资，仍可验证文字与规则。</p>}
-        {assets.map(asset=><div className="avg-assembly-media-row" key={asset.assetKey}><button className="lf-action" onClick={()=>setSelectedAsset(asset)}>{asset.name} · {MEDIA_NAMES[asset.kind]}</button><span>{asset.license}</span><button className="lf-action" disabled={busy||mediaPending||!canEditMediaDomain||jsonPending} onClick={()=>edit(next=>{next.presentation.stage.assets=next.presentation.stage.assets.filter(row=>row.assetKey!==asset.assetKey);if(next.presentation.inheritedImages)next.presentation.inheritedImages=next.presentation.inheritedImages.filter(row=>row.assetKey!==asset.assetKey)})}>移出本次组装</button></div>)}
-        {selectedAsset&&<MediaPreview key={`${scope.workId}:${selectedAsset.assetKey}:${selectedAsset.blobContentHash}`} scope={scope} asset={selectedAsset} productionId={details?.production.id} generatedSource={selectedRaw?undefined:selectedInherited?.source} raw={selectedRequirement&&selectedRaw?{requirementKey:selectedRequirement.requirementKey,version:selectedRaw.version,contentHash:selectedRaw.contentHash}:undefined}/>}
+        {assets.map(asset=><div className="avg-assembly-media-row" key={asset.assetKey}><button className="lf-action" onClick={()=>setSelectedAsset(asset)}>{asset.name} · {MEDIA_NAMES[asset.kind]}</button><span>{asset.license}</span><button className="lf-action" disabled={busy||mediaPending||!canEditMediaDomain||jsonPending} onClick={()=>{
+          edit(next=>{
+            next.presentation.stage.assets=next.presentation.stage.assets.filter(row=>row.assetKey!==asset.assetKey)
+            if(next.presentation.inheritedImages)next.presentation.inheritedImages=next.presentation.inheritedImages.filter(row=>row.assetKey!==asset.assetKey)
+            if(next.presentation.inheritedVoices)next.presentation.inheritedVoices=next.presentation.inheritedVoices.filter(row=>row.assetKey!==asset.assetKey)
+            if(asset.kind==='voice'&&next.presentation.reading)next.presentation.reading.voices=next.presentation.reading.voices.filter(row=>row.assetKey!==asset.assetKey)
+          })
+          if(selectedAsset?.assetKey===asset.assetKey)setSelectedAsset(null)
+        }}>移出本次组装</button></div>)}
+        {selectedAsset&&<MediaPreview key={`${scope.workId}:${selectedAsset.assetKey}:${selectedAsset.blobContentHash}`} scope={scope} asset={selectedAsset} productionId={details?.production.id} generatedSource={selectedRaw?undefined:selectedInherited?.source} generatedVoiceSource={selectedInheritedVoice?.source} raw={selectedRequirement&&selectedRaw?{requirementKey:selectedRequirement.requirementKey,version:selectedRaw.version,contentHash:selectedRaw.contentHash}:undefined}/>}
         {model.systemPlan.version===2&&<><h4>物件图标与详情图</h4><fieldset disabled={busy||jsonPending||mediaPending}>{model.systemPlan.inventory.items.flatMap((item,itemIndex)=>[item,...item.variants].map((variant,variantIndex)=><div className="avg-assembly-row" key={`${item.key}:${variantIndex}`}><strong>{variant.name}</strong>{(['iconAssetKey','detailAssetKey'] as const).map(field=><label key={field}>{field==='iconAssetKey'?'图标':'详情图'}<select value={variant[field]??''} onChange={event=>edit(next=>{if(next.systemPlan.version!==2)return;const target=variantIndex===0?next.systemPlan.inventory.items[itemIndex]:next.systemPlan.inventory.items[itemIndex].variants[variantIndex-1];target[field]=event.target.value||null})}><option value="">无</option>{assets.filter(asset=>field==='iconAssetKey'?asset.kind==='ui':['ui','cg'].includes(asset.kind)).map(asset=><option key={asset.assetKey} value={asset.assetKey}>{asset.name}</option>)}</select></label>)}</div>))}</fieldset></>}
         <details><summary>导入历史与刷新恢复</summary><p>导入成功的文件留在作品中，可恢复到尚未开始的组装草稿。</p>{view.media.items.map(({asset})=><div className="avg-assembly-media-row" key={asset.assetKey}><button className="lf-action" onClick={()=>setSelectedAsset(asset)}>{asset.name}</button><button className="lf-action" disabled={busy||mediaPending||!canEditMediaDomain||jsonPending||assets.some(row=>row.assetKey===asset.assetKey)} onClick={()=>edit(next=>next.presentation.stage.assets.push(asset))}>加入本次组装</button></div>)}{view.media.nextCursor&&<button className="lf-action" disabled={busy} onClick={()=>void run(async()=>{const media=await listAvgDraftMediaV1(scope,view.media.nextCursor!);if(alive.current)setView({...view,media})})}>读取更早导入</button>}</details>
       </section>}
       {section==='production'&&<section className="lf-paper"><h4>制作与联合预览</h4>
         <ol><li>保存编辑草稿，核对冻结世界与场景/媒资清单。</li><li>准备制作方案并明确开始，逐项查看、确认候选。</li><li>执行组装，检查实际舞台；修订生成新 Build，旧预览和存档保留。</li></ol>
-        <p>场景 {model.systemPlan.scenes.length} 个 · 媒资 {assets.length} 项 · {model.mediaBatch?`已配置 ${model.mediaBatch.requirements.length} 项图片需求，生成须另行明确开始；专业故事调用为 0。`:'本流程模型/媒资生成调用为 0。'}</p>
-        <div className="avg-actions"><button className="lf-action" disabled={!readyForStage||!view.draft.editorJson||!view.draft.worldReleaseId||activeBuild||mediaPending} onClick={()=>void run(async()=>{await prepareAvgAssemblyBriefV1({scope,expectedDraftRevision:view.draft.revision});await reload();setNotice('制作方案已准备，请核对后明确开始。')})}>{frozen?'准备新版本方案':'准备制作方案'}</button>
-          <button className="lf-action lf-action-primary" disabled={!readyForStage||details?.production.status!=='brief-ready'} onClick={()=>void run(async()=>{await startAvgAssemblyV1({scope,productionId:details!.production.id!,expectedBriefHash:details!.brief!.briefHash});await reload();setNotice('已明确开始，等待逐项作者确认。')})}>确认方案并开始组装</button>
+        <p>场景 {model.systemPlan.scenes.length} 个 · 媒资 {assets.length} 项 · {model.mediaBatch||model.voiceProduction?`已配置 ${model.mediaBatch?.requirements.length??0} 项图片需求${model.voiceProduction?'及逐句配音需求':''}，生成须另行明确开始；专业故事调用为 0。`:'本流程模型/媒资生成调用为 0。'}</p>
+        <div className="avg-actions"><button className="lf-action" disabled={!readyForStage||!view.draft.editorJson||!view.draft.worldReleaseId||activeBuild||mediaPending||!!model.voiceProduction&&!avgVoiceProductionEnabledV3()} onClick={()=>void run(async()=>{await prepareAvgAssemblyBriefV1({scope,expectedDraftRevision:view.draft.revision});await reload();setNotice('制作方案已准备，请核对后明确开始。')})}>{frozen?'准备新版本方案':'准备制作方案'}</button>
+          <button className="lf-action lf-action-primary" disabled={!readyForStage||details?.production.status!=='brief-ready'||!!model.voiceProduction&&!avgVoiceProductionEnabledV3()} onClick={()=>void run(async()=>{await startAvgAssemblyV1({scope,productionId:details!.production.id!,expectedBriefHash:details!.brief!.briefHash});await reload();setNotice('已明确开始，等待逐项作者确认。')})}>确认方案并开始组装</button>
           {frozen&&<button className="lf-action" disabled={busy||jsonPending} onClick={()=>edit(next=>{next.basePreviewHash=build!.previewHash})}>以此预览开始修订</button>}
         </div>
         {mediaBatch&&<p>确认系统与全部脚本后，到素材分区生成本批图片、确认选图并配置演出；返回此页确认演出后再生成预览。</p>}{details?.brief&&<details><summary>当前制作方案与投入边界</summary><pre>{JSON.stringify(JSON.parse(details.brief.briefJson),null,2)}</pre></details>}

@@ -1,5 +1,7 @@
 import type { ProductProductionBriefV3, ProductProductionPlanTaskV3, ProductProductionPlanV3 } from '../types'
 import { AVG_ASSEMBLY_GATE_IDS_V1, avgMediaAssemblyGateIdsV2, parseAvgAssemblyBriefV1, parseAvgAssemblyBriefV2, type AvgAssemblyBriefV2 } from './assembly-contract'
+import { parseAvgStoredAssemblyBriefV3 } from './voice-assembly-storage'
+import { buildAvgVoiceAssemblyPlanV3 } from './voice-assembly-plan'
 import { avgMediaChoiceArtifactKeyV1, avgRawMediaArtifactKeyV1, avgVisualReviewArtifactKeyV1 } from './media-production-contract'
 import { avgProcessedImageArtifactKeyV1 } from './image-processing-contract'
 
@@ -93,6 +95,10 @@ export function buildAvgNativeAssemblyPlan(input: {
 }): ProductProductionPlanV3 {
   const assembly = input.brief.avgAssembly
   if (!assembly) throw new Error('[avg] 缺少原生制作 Brief')
+  if (assembly.version === 3) {
+    const resolved = parseAvgStoredAssemblyBriefV3(assembly)
+    return buildAvgVoiceAssemblyPlanV3({ ...input, brief: { ...input.brief, avgAssembly: resolved.assembly } })
+  }
   return assembly.version === 1 ? buildAvgAssemblyPlanV1(input)
     : buildAvgMediaAssemblyPlanV2({ ...input, brief: { ...input.brief, avgAssembly: assembly } })
 }

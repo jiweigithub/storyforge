@@ -14,6 +14,11 @@ import { avgProcessedImageArtifactKeyV1 } from './image-processing-contract'
 import { inspectAvgProcessedImageSourceV1 } from './image-processing-source'
 import { prepareAvgAdoptedGeneratedImageV1, readAvgAdoptedGeneratedImageV1 } from './media-generated-reference'
 import type { AvgInheritedStageImageV1 } from './stage-image-source-contract'
+import type { AvgVoiceRecoveryV1 } from './voice-recovery-contract'
+import { assertAvgVoiceDraftV1 } from './voice-draft-contract'
+import { assertAvgStoredAssemblyBriefV3 } from './voice-assembly-storage'
+import { readAvgVoiceRecoveryReplacementV1, readAvgVoiceRecoverySourceV1 } from './voice-recovery'
+import { readAvgInheritedStageVoicesV1 } from './stage-voice-sources'
 
 const same=(a:unknown,b:unknown)=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(b)
 export async function readAvgInheritedStageImagesV1(input:{scope:WorkspaceScope;payload:AvgAuthorStageV1;productionKey:string;targetBuildNumber:number;worldContentHash:string}){
@@ -31,12 +36,32 @@ export async function readAvgInheritedStageImagesV1(input:{scope:WorkspaceScope;
 /** Adds reviewable source declarations to the editable stage only. No old
  * image or author choice becomes accepted in the new Build until stage adopt. */
 export async function prepareAvgInheritedStageDraftV1(input:{scope:WorkspaceScope;workspace:AvgAuthorWorkspaceV1;build:ProductBuildRecordV1;
-  productionKey:string;targetBuildNumber:number;worldContentHash:string}){
+  productionKey:string;targetBuildNumber:number;worldContentHash:string;voiceRecovery?:AvgVoiceRecoveryV1}){
   const next=parseAvgAuthorWorkspaceV1(input.workspace),entries:AvgInheritedStageImageV1[]=[...(next.presentation.inheritedImages??[])]
   const oldChoices=await db.productBuildArtifacts.where('buildId').equals(input.build.id!).filter(row=>row.status==='accepted'&&row.artifactKey.startsWith('avg.media.choice.')).limit(9).toArray()
   if(oldChoices.length>8)throw new Error('[avg-media] 旧图片选择超出冻结批次范围')
   for(const asset of next.presentation.stage.assets){
     if(entries.some(entry=>entry.assetKey===asset.assetKey))continue
+    if (asset.kind === 'voice' && next.presentation.inheritedVoices?.some(entry => entry.assetKey === asset.assetKey)) continue
+    if (asset.kind === 'voice' && input.voiceRecovery && next.voiceProduction) {
+      const { voice } = await assertAvgVoiceDraftV1(next.voiceProduction)
+      const incoming = voice.batch.requirements.find(r => r.assetKey === asset.assetKey)
+      if (incoming) {
+        const row = await db.productProductionBriefs.where('[productionId+revision]').equals([input.build.productionId, input.build.briefRevision]).first()
+        if (!row || row.briefHash !== input.build.briefHash || !await assertRecordInScope(input.scope, 'productProductionBriefs', row, { owner: 'work' })) throw new Error('[avg-voice] 待重选配音缺少准确原始 Brief')
+        const brief = parseProductProductionBriefV3(row.briefJson)
+        if (brief.avgAssembly?.version !== 3 || brief.source.worldContentHash !== input.worldContentHash) throw new Error('[avg-voice] 待重选配音不能跨作品或冻结世界')
+        const { assembly: source } = await assertAvgStoredAssemblyBriefV3(brief.avgAssembly)
+        const assembly = { ...source, voice: { ...voice, recovery: input.voiceRecovery } }
+        const read = input.voiceRecovery.retained.some(r => r.requirementKey === incoming.requirementKey)
+          ? readAvgVoiceRecoverySourceV1 : readAvgVoiceRecoveryReplacementV1
+        const proved = await read({ scope: input.scope, productionId: input.build.productionId, assembly, requirementKey: incoming.requirementKey })
+        if (!same(proved.asset, asset)) throw new Error('[avg-voice] 待重选配音与准确原音频元数据不一致')
+        // An editable placeholder only. Current review/choice and stage adopt
+        // are still mandatory; no import alias or inherited adoption is made.
+        continue
+      }
+    }
     const matches=oldChoices.filter(row=>same(parseAvgAuthorMediaChoice(row.payloadJson).asset,asset))
     if(matches.length>1)throw new Error('[avg-media] 旧演出图像来源不唯一')
     if(matches[0]){
@@ -77,5 +102,6 @@ export async function prepareAvgInheritedStageDraftV1(input:{scope:WorkspaceScop
   }
   if(entries.length)next.presentation.inheritedImages=entries
   await readAvgInheritedStageImagesV1({...input,payload:next.presentation})
+  await readAvgInheritedStageVoicesV1({ ...input, payload: next.presentation, scripts: next.scripts })
   return next
 }

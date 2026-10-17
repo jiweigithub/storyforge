@@ -9,11 +9,12 @@ import { assertAvgRawImageArtifactV1 } from './media-raw-contract'
 import { assertAvgRawImageOriginV1 } from './media-recovery'
 import { processAvgImageBytesV1 } from './image-processing'
 import { AVG_IMAGE_PROCESSOR_V1, avgProcessedImageArtifactKeyV1, type AvgProcessedImagePayloadV1 } from './image-processing-contract'
+import { assertAvgImageProductionDefinitionV3 } from './media-production-definition'
 
 export async function executeAvgImageProcessingTaskV1(input:ProductProductionTaskExecutionInputV1,brief:ProductProductionBriefV3):Promise<ProductProductionTaskExecutionResultV1>{
   const started=Date.now(),usage=(storageBytes=0)=>({modelCalls:0,inputTokens:0,outputTokens:0,mediaCalls:0,costUsd:0,durationMs:Date.now()-started,storageBytes})
   try{
-    const a=brief.avgAssembly,entry=a?.version===2?a.imageProcessing?.entries.find(e=>input.task.taskKey===`avg.media.process.${e.requirementKey}`):undefined
+    const {assembly:a}=await assertAvgImageProductionDefinitionV3(brief),entry=a.imageProcessing?.entries.find(e=>input.task.taskKey===`avg.media.process.${e.requirementKey}`)
     const build=await db.productBuilds.get(input.buildId),source=input.inputArtifacts[0],task=input.task
     if(!entry||!build||!await assertRecordInScope(input.scope,'productBuilds',build,{owner:'work'})||build.controlEpoch!==input.controlEpoch
       ||build.planHash!==input.planHash||build.briefHash!==await hashProductProductionValueV2(brief)||!['building','integrating'].includes(build.status)

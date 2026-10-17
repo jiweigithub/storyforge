@@ -1,6 +1,8 @@
 import { parseChatAuthoringSettingsV1 } from '../character-interaction/authoring-contract'
 import { parseAvgAssemblyBrief, AVG_ASSEMBLY_GATE_IDS_V1 } from '../avg/assembly-contract'
 import { assertAvgVisualProductionPolicyV2 } from '../avg/media-production-policy'
+import { parseAvgStoredAssemblyBriefV3 } from '../avg/voice-assembly-storage'
+import { assertAvgVoiceProductionPolicyV3 } from '../avg/voice-production-policy'
 import { parseAvgSettingsForLegacyProduction } from '../avg/settings-v2'
 import type {
   TextAdventureContentRevisionV1,
@@ -367,6 +369,10 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
       : {}),
   }
   if (parsed.avgAssembly?.version === 2) assertAvgVisualProductionPolicyV2(parsed)
+  if (parsed.avgAssembly?.version === 3) {
+    const { assembly } = parseAvgStoredAssemblyBriefV3(parsed.avgAssembly)
+    assertAvgVoiceProductionPolicyV3({ ...parsed, avgAssembly: assembly })
+  }
   if (parsed.avgAssembly?.version === 1 && (productType !== 'avg' || parsed.avgRevision || parsed.qualityProfile === 'commercial-candidate'
     || parsed.capabilityRequirements.length || parsed.productionBudget.maximumModelCalls !== 0 || parsed.productionBudget.maximumMediaCalls !== 0
     || parsed.productionBudget.maximumOutputTokens !== 0 || parsed.productionBudget.maximumCostUsd !== 0

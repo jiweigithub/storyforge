@@ -3,6 +3,7 @@ import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '
 import { avgEnum, avgHash, avgKey, avgKeys, avgList, avgProtocolBody, avgRecord, avgText, avgUnique } from './protocol-validation'
 import { parseAvgSystemPlan, type AvgSystemPlan } from './system-contract'
 import { parseAvgAuthorVisualEvidenceV1,type AvgAuthorVisualEvidenceV1 } from './visual-review-contract'
+import { parseAvgAuthorVoiceEvidenceV1, type AvgAuthorVoiceEvidenceV1 } from './voice-review-contract'
 
 /** Reserved role contracts do not register an AI call or assert professional competence. */
 export const AVG_PROFESSIONAL_OUTPUTS_V1 = [
@@ -60,6 +61,7 @@ export type AvgReviewIssuesV1 = Schema<'review-issues'> & {
   /** Author-declared observation scope, verified against frozen image inputs.
    * It is not a model score, independent review or commercial acceptance. */
   visualEvidence?: AvgAuthorVisualEvidenceV1
+  audioEvidence?: AvgAuthorVoiceEvidenceV1
 }
 export type AvgProfessionalArtifactV1 = AvgProductionPlanV1 | AvgSourceAuditV1 | AvgStoryBibleV1 | AvgCastBibleV1 | AvgRoutePlanV1 | AvgSceneScriptV1 | AvgDialoguePatchV1 | AvgReviewIssuesV1 | AvgSystemPlan
 
@@ -171,7 +173,8 @@ export function parseAvgProfessionalArtifactV1(value: unknown): AvgProfessionalA
     }
     case 'storyforge.avg.review-issues': {
       const hasVisual=Object.prototype.hasOwnProperty.call(raw,'visualEvidence')
-      const row = payloadRow(raw, header.schema, ['targetKey','observations','unobserved','issues',...(hasVisual?['visualEvidence']:[])])
+      const hasAudio=Object.prototype.hasOwnProperty.call(raw,'audioEvidence')
+      const row = payloadRow(raw, header.schema, ['targetKey','observations','unobserved','issues',...(hasVisual?['visualEvidence']:[]),...(hasAudio?['audioEvidence']:[])])
       const observations = avgUnique(avgList(row.observations, 'observations', value => avgEnum(value, ['text','visual','audio','interaction'] as const, 'observation'), 4), value => value, 'observations')
       const issues = avgUnique(avgList(row.issues, 'issues', value => {
         const issue = avgRecord(value, ['issueKey','locationKey','evidence','severity','owner','allowedChange','impact','recheck'], 'issue')
@@ -181,7 +184,8 @@ export function parseAvgProfessionalArtifactV1(value: unknown): AvgProfessionalA
       }), issue => issue.issueKey, 'issues')
       let visualEvidence:AvgReviewIssuesV1['visualEvidence']
       if(hasVisual)visualEvidence=parseAvgAuthorVisualEvidenceV1(row.visualEvidence)
-      return { schema: header.schema, version: 1, targetKey: avgKey(row.targetKey, 'targetKey'), observations, unobserved: texts(row.unobserved, 'unobserved'), issues,...(hasVisual?{visualEvidence}:{}) }
+      const audioEvidence=hasAudio?parseAvgAuthorVoiceEvidenceV1(row.audioEvidence):undefined
+      return { schema: header.schema, version: 1, targetKey: avgKey(row.targetKey, 'targetKey'), observations, unobserved: texts(row.unobserved, 'unobserved'), issues,...(hasVisual?{visualEvidence}:{}),...(audioEvidence?{audioEvidence}:{}) }
     }
     default: throw new Error('[avg] 未登记或尚未就绪的专业 artifact schema')
   }

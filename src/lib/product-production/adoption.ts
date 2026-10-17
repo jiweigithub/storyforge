@@ -660,6 +660,10 @@ async function inspectAdoption(scope: WorkspaceScope, productionId: number): Pro
 
   const mediaArtifacts = new Map<string, ProductBuildArtifactRecordV1>()
   const runtimeAssets = avgRuntimeStage(preview.runtimePackage)?.assets ?? []
+  const avgMediaRights = nativePrototype
+    ? await (await import('../avg/assembly-media-rights')).readAvgPrototypeMediaRightsV1({ scope, buildId: build.id!,
+      expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch })
+    : null
   if (preview.mediaBindings.length !== runtimeAssets.length) fail('Release-ready Preview 必须绑定全部 RuntimePackage 媒资')
   for (const asset of runtimeAssets) {
     const binding = preview.mediaBindings.find(row => row.assetKey === asset.assetKey)
@@ -668,10 +672,7 @@ async function inspectAdoption(scope: WorkspaceScope, productionId: number): Pro
       || artifact.mimeType !== asset.mimeType || artifact.byteSize !== asset.byteSize) fail(`媒资 Artifact 绑定无效:${asset.assetKey}`)
     const rights = object(JSON.parse(artifact.rightsJson), `rights:${artifact.artifactKey}`)
     if(nativePrototype){
-      const stage=artifacts.find(row=>row.artifactKey==='avg.author.stage')
-      const authorReceipt=stage?object(JSON.parse(stage.metadataJson),'AVG 演出作者回执').receiptHash:null
-      if(rights.origin!=='author-import'||!isSha256Hash(authorReceipt)||rights.authorStageReceipt!==authorReceipt
-        ||rights.license!==asset.license||rights.source!==asset.source
+      if(avgMediaRights?.get(asset.assetKey)!==canonicalProductProductionJsonV2(rights)
         ||canonicalProductProductionJsonV2(JSON.parse(artifact.metadataJson))!==canonicalProductProductionJsonV2(asset))fail(`AVG 本地原型媒资缺少准确作者采用及授权声明:${artifact.artifactKey}`)
     }else if (rights.commercialUse !== true || typeof rights.license !== 'string' || !rights.license.trim()) {
       fail(`媒资商业权利不完整:${artifact.artifactKey}`)

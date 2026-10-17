@@ -8,21 +8,22 @@ import { verifyRetainedAvgRawImageArtifactV1 } from '../product-production/artif
 import { assertAvgRawImageArtifactV1 } from './media-raw-contract'
 import { parseAvgImageRecoveryV1, parseAvgRetainedRawProofV1 } from './media-recovery-contract'
 import { assertAvgOriginalImageResponseV1 } from './media-response-proof'
+import { readAvgImageDefinitionV3 } from './media-production-definition'
 
 const same=(a:unknown,b:unknown)=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(b)
 const MAXIMUM_RECOVERY_LINEAGE=64
 
 export async function readAvgImageRecoverySourceV1(input:{scope:WorkspaceScope;productionId:number;brief:Pick<ProductProductionBriefV3,'avgAssembly'>;requirementKey:string}, visited:number[]=[]){
-  const a=input.brief.avgAssembly
-  if(a?.version!==2||!a.imageRecovery)throw new Error('[avg-media] 缺少冻结原图复用方案')
+  const a=readAvgImageDefinitionV3(input.brief)
+  if(!a.imageRecovery)throw new Error('[avg-media] 缺少冻结原图复用方案')
   const recovery=parseAvgImageRecoveryV1(a.imageRecovery,a.mediaBatch),ref=recovery.retained.find(r=>r.requirementKey===input.requirementKey)
   if(!ref||visited.length>=MAXIMUM_RECOVERY_LINEAGE||visited.includes(recovery.sourceBuildNumber))throw new Error('[avg-media] 原图复用链缺失、成环或超限')
   const build=await db.productBuilds.where('[productionId+buildNumber]').equals([input.productionId,recovery.sourceBuildNumber]).first()
   if(!build?.id||!await assertRecordInScope(input.scope,'productBuilds',build,{owner:'work'})||build.stateRevision!==recovery.sourceBuildRevision)throw new Error('[avg-media] 原图复用来源 Build 已变化')
   const briefRow=await db.productProductionBriefs.where('[productionId+revision]').equals([input.productionId,build.briefRevision]).first()
   if(!briefRow||!await assertRecordInScope(input.scope,'productProductionBriefs',briefRow,{owner:'work'})||briefRow.briefHash!==recovery.sourceBriefHash)throw new Error('[avg-media] 原图复用缺少准确来源 Brief')
-  const sourceBrief=parseProductProductionBriefV3(briefRow.briefJson),source=sourceBrief.avgAssembly
-  if(source?.version!==2||!same(source.mediaBatch,a.mediaBatch)||!same(source.imageBinding,a.imageBinding)
+  const sourceBrief=parseProductProductionBriefV3(briefRow.briefJson),source=readAvgImageDefinitionV3(sourceBrief)
+  if(!same(source.mediaBatch,a.mediaBatch)||!same(source.imageBinding,a.imageBinding)
     ||recovery.sourceBatchHash!==await hashProductProductionValueV2(a.mediaBatch))throw new Error('[avg-media] 图片需求、来源或路由已改变，不能复用旧原图')
   const proved=await verifyRetainedAvgRawImageArtifactV1({scope:input.scope,buildId:build.id,expectedBuildRevision:recovery.sourceBuildRevision,
     expectedBriefHash:recovery.sourceBriefHash,expectedPlanHash:recovery.sourcePlanHash,sourceControlEpoch:recovery.sourceControlEpoch,
@@ -36,8 +37,7 @@ export async function readAvgImageRecoverySourceV1(input:{scope:WorkspaceScope;p
 /** Shared read-only origin check for recovery and later generated references. */
 export async function assertAvgRawImageOriginV1(input:{scope:WorkspaceScope;productionId:number;brief:ProductProductionBriefV3;
   build:ProductBuildRecordV1;artifact:ProductBuildArtifactRecordV1;requirementKey:string;taskKey:string},visited:number[]=[]){
-  const a=input.brief.avgAssembly,quality=JSON.parse(input.artifact.qualityJson) as Record<string,unknown>
-  if(a?.version!==2)throw new Error('[avg-media] 原图缺少原生生产来源')
+  const a=readAvgImageDefinitionV3(input.brief),quality=JSON.parse(input.artifact.qualityJson) as Record<string,unknown>
   if(a.imageRecovery?.retained.some(r=>r.requirementKey===input.requirementKey)){
     if(input.build.parentBuildNumber!==a.imageRecovery.sourceBuildNumber||a.imageRecovery.sourceBuildNumber>=input.build.buildNumber)throw new Error('[avg-media] 原图复用谱系不可验证')
     const prior=await readAvgImageRecoverySourceV1(input,visited)
@@ -74,8 +74,7 @@ export async function prepareAvgImageRecoveryV1(input:{scope:WorkspaceScope;prod
     ||!['cancelled','failed','recovery-required'].includes(build.status)||!await assertRecordInScope(input.scope,'productBuilds',build,{owner:'work'}))throw new Error('[avg-media] 请先明确停止或处理失败，再准备未封存图片恢复方案')
   const briefRow=await db.productProductionBriefs.where('[productionId+revision]').equals([input.productionId,build.briefRevision]).first()
   if(!briefRow||!await assertRecordInScope(input.scope,'productProductionBriefs',briefRow,{owner:'work'}))throw new Error('[avg-media] 图片恢复来源不存在')
-  const brief=parseProductProductionBriefV3(briefRow.briefJson),a=brief.avgAssembly
-  if(a?.version!==2)throw new Error('[avg-media] 只有图片生产版本可以恢复原图')
+  const brief=parseProductProductionBriefV3(briefRow.briefJson),a=readAvgImageDefinitionV3(brief)
   const plan=parseProductProductionPlanV3(build.planJson,brief,build.briefHash)
   const retained=[]
   for(const requirementKey of input.retainedRequirementKeys){
@@ -94,8 +93,10 @@ export async function prepareAvgImageRecoveryV1(input:{scope:WorkspaceScope;prod
 }
 
 export async function validateAvgImageRecoveryV1(input:{scope:WorkspaceScope;productionId:number;brief:ProductProductionBriefV3;targetBuild?:ProductBuildRecordV1}){
-  const a=input.brief.avgAssembly
-  if(a?.version!==2||!a.imageRecovery)return
+  const stored=input.brief.avgAssembly
+  if(!stored||stored.version===1||stored.version===3&&!stored.image)return
+  const a=readAvgImageDefinitionV3(input.brief)
+  if(!a.imageRecovery)return
   if(input.targetBuild&&input.targetBuild.parentBuildNumber!==a.imageRecovery.sourceBuildNumber)throw new Error('[avg-media] 当前 Build 与图片恢复父版本不一致')
   const source=await db.productBuilds.where('[productionId+buildNumber]').equals([input.productionId,a.imageRecovery.sourceBuildNumber]).first()
   if(!source)throw new Error('[avg-media] 图片恢复父版本不存在')

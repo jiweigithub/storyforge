@@ -2,6 +2,7 @@ import type { FrozenRuntimeMediaAssetV2, ProductBuildArtifactRecordV1, ProductPr
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { avgBoolean, avgEnum, avgHash, avgKey, avgList, avgNumber, avgProtocolBody, avgRecord, avgText, avgUnique } from './protocol-validation'
 import { parseAvgExecutableStageV1 } from './stage-contract'
+import { readAvgImageDefinitionV3 } from './media-production-definition'
 
 export const AVG_IMAGE_PROCESSOR_V1 = 'storyforge.avg.local-canvas.v1' as const
 export const AVG_IMAGE_PROCESSING_PIXEL_LIMIT_V1 = 16 * 1024 * 1024
@@ -135,9 +136,9 @@ export async function parseAvgProcessedImagePayloadV1(value: unknown): Promise<A
 /** Producer authority and physical bytes are verified by the caller. */
 export async function assertAvgProcessedImageArtifactV1(brief: ProductProductionBriefV3, row: Pick<ProductBuildArtifactRecordV1,
   'artifactKey'|'kind'|'mediaKind'|'payloadJson'|'metadataJson'|'rightsJson'|'contentHash'|'mimeType'|'byteSize'|'blobObjectId'>) {
-  const payload = await parseAvgProcessedImagePayloadV1(row.payloadJson), a = brief.avgAssembly
-  const entry = a?.version === 2 ? a.imageProcessing?.entries.find(e => e.requirementKey === payload.requirementKey) : undefined
-  const requirement = a?.version === 2 ? a.mediaBatch.requirements.find(r => r.requirementKey === payload.requirementKey) : undefined
+  const payload = await parseAvgProcessedImagePayloadV1(row.payloadJson), a = readAvgImageDefinitionV3(brief)
+  const entry = a.imageProcessing?.entries.find(e => e.requirementKey === payload.requirementKey)
+  const requirement = a.mediaBatch.requirements.find(r => r.requirementKey === payload.requirementKey)
   if (!entry || !requirement || !same(entry.recipe, payload.recipe) || payload.sourceAsset.assetKey !== requirement.assetKey || payload.sourceAsset.kind !== requirement.mediaKind
     || row.artifactKey !== avgProcessedImageArtifactKeyV1(payload.requirementKey) || row.kind !== 'image' || row.mediaKind !== requirement.mediaKind) throw new Error('[avg-process] 加工图不属于冻结需求和配方')
   const asset = parseAvgExecutableStageV1({ version: 1, cues: [], assets: [JSON.parse(row.metadataJson)] }).assets[0]!

@@ -6,6 +6,14 @@ import { AVG_VISUAL_BATCH_LIMIT_V1 } from './media-production-contract'
 
 export const AVG_IMAGE_PROMPT_DATA_CLASS_V1 = 'image-prompt'
 
+/** The pure policy reads these fields only. No fabricated World/Work/source
+ * object is needed to validate the image part of a later combined AVG Brief. */
+export type AvgVisualProductionPolicyInputV2 = Pick<ProductProductionBriefV3,
+  'avgAssembly' | 'avgRevision' | 'qualityProfile' | 'capabilityRequirements' | 'productionBudget'
+  | 'consultationBudget' | 'externalDataPolicy' | 'fallbackPolicy' | 'completionContract' | 'evolution'> & {
+    intent: Pick<ProductProductionBriefV3['intent'], 'productType'>
+  }
+
 /** A bounded image-only execution budget. No story/model generation is implied. */
 export function avgVisualProductionBudgetV2(count: number, maximumCostUsd: number | null = null, retained = 0, processed = 0): ProductProductionBudgetV3 {
   if (!Number.isSafeInteger(count) || count < 1 || count > AVG_VISUAL_BATCH_LIMIT_V1) throw new Error('[avg-media] 图片批次数量无效')
@@ -31,7 +39,7 @@ export function resetAvgImageRecoveryForEvolutionV1(brief:ProductProductionBrief
 
 /** Pure policy validation also reads frozen/portable V2 records when dispatch
  * is disabled. Commands and the scheduler separately fence new paid starts. */
-export function assertAvgVisualProductionPolicyV2(brief: ProductProductionBriefV3): asserts brief is ProductProductionBriefV3 & { avgAssembly: AvgAssemblyBriefV2 } {
+export function assertAvgVisualProductionPolicyV2<T extends AvgVisualProductionPolicyInputV2>(brief: T): asserts brief is T & { avgAssembly: AvgAssemblyBriefV2 } {
   const a = brief.avgAssembly
   if (!a || a.version !== 2 || brief.intent.productType !== 'avg' || brief.avgRevision || brief.qualityProfile === 'commercial-candidate') {
     throw new Error('[avg-media] 图片生产只接受独立 AVG prototype/internal 组装合同')

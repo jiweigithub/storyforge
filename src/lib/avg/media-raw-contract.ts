@@ -5,7 +5,7 @@ import { assertAvgImageRequestV1, freezeAvgImageRequestV1, type AvgImageRequestV
 import { avgRawMediaArtifactKeyV1, parseAvgVisualProductionRequirementV1, type AvgVisualProductionRequirementV1 } from './media-production-contract'
 import { parseAvgExecutableStageV1 } from './stage-contract'
 import { avgHash, avgKey, avgNumber, avgProtocolBody, avgRecord } from './protocol-validation'
-import { assertAvgVisualProductionPolicyV2 } from './media-production-policy'
+import { assertAvgImageProductionDefinitionV3 } from './media-production-definition'
 import { AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1 } from './assembly-plan'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V1 } from './media-reference-contract'
 
@@ -28,10 +28,9 @@ export function avgVisualRequestTextV1(r: AvgVisualProductionRequirementV1) {
 }
 
 export async function prepareAvgRawImageRequestV1(input: { brief: ProductProductionBriefV3; requirementKey: string; idempotencyKey: string }) {
-  assertAvgVisualProductionPolicyV2(input.brief)
-  const batch = input.brief.avgAssembly.mediaBatch, r = batch.requirements.find(r => r.requirementKey === input.requirementKey)
+  const { assembly, capability } = await assertAvgImageProductionDefinitionV3(input.brief)
+  const batch = assembly.mediaBatch, r = batch.requirements.find(r => r.requirementKey === input.requirementKey)
   if (!r) throw new Error('[avg-media] 请求不在冻结图片批次中')
-  const capability = input.brief.capabilityRequirements[0]!
   const request: ProductMediaRequestV1 = { schema: 'storyforge.product-media-request', version: 1,
     requestId: `avg.media.${input.idempotencyKey.slice(0, 64)}`, adapterId: 'agnes.image-2.1-flash.v1', mediaClass: 'image', mediaKind: r.mediaKind,
     requirementKey: AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1, artifactKey: avgRawMediaArtifactKeyV1(r.requirementKey),
@@ -64,14 +63,14 @@ export async function parseAvgRawImagePayloadV1(value: unknown): Promise<AvgRawI
 
 export async function assertAvgRawImageArtifactV1(brief: ProductProductionBriefV3, row: Pick<ProductBuildArtifactRecordV1,
   'artifactKey' | 'kind' | 'mediaKind' | 'payloadJson' | 'metadataJson' | 'rightsJson' | 'contentHash' | 'mimeType' | 'byteSize'>): Promise<{ payload: AvgRawImagePayloadV1; asset: FrozenRuntimeMediaAssetV2 }> {
-  assertAvgVisualProductionPolicyV2(brief)
-  const payload = await parseAvgRawImagePayloadV1(row.payloadJson), batch = brief.avgAssembly.mediaBatch
+  const { assembly, capability } = await assertAvgImageProductionDefinitionV3(brief)
+  const payload = await parseAvgRawImagePayloadV1(row.payloadJson), batch = assembly.mediaBatch
   const r = batch.requirements.find(r => row.artifactKey === avgRawMediaArtifactKeyV1(r.requirementKey))
-  const request = payload.request.request, capability = brief.capabilityRequirements[0]!, text = r && avgVisualRequestTextV1(r)
+  const request = payload.request.request, text = r && avgVisualRequestTextV1(r)
   if (capability.capabilityHash !== await hashProductProductionValueV2(AVG_IMAGE_REFERENCE_CAPABILITY_V1)) throw new Error('[avg-media] 原图能力快照与当前登记的图片输入协议不一致')
   const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
   if (!r || !same(payload.requirement, r) || payload.batchKey !== batch.batchKey || payload.batchRevision !== batch.revision || payload.sourceInputHash !== batch.sourceInputHash
-    || payload.capabilityBindingHash !== brief.avgAssembly.imageBinding.bindingHash
+    || payload.capabilityBindingHash !== assembly.imageBinding.bindingHash
     || row.kind !== 'image' || row.mediaKind !== r.mediaKind || request.artifactKey !== row.artifactKey || request.requirementKey !== capability.requirementKey
     || request.mediaKind !== r.mediaKind || request.prompt !== text!.prompt || request.negativePrompt !== text!.negativePrompt
     || request.width !== r.width || request.height !== r.height || request.qualityProfile !== brief.qualityProfile

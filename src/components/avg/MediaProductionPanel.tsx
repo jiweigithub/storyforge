@@ -1,7 +1,8 @@
 import { useCallback,useEffect, useMemo, useState } from 'react'
 import type { FrozenRuntimeMediaAssetV2, ProductBuildArtifactRecordV1, WorkspaceScope } from '../../lib/types'
 import type { AvgAuthorWorkspaceV1 } from '../../lib/avg/author-workspace-contract'
-import { avgMediaProductionEnabledV2 } from '../../lib/avg/assembly-contract'
+import { avgMediaProductionEnabledV2, avgVoiceProductionEnabledV3 } from '../../lib/avg/assembly-contract'
+import { readAvgOptionalImageDefinitionV3 } from '../../lib/avg/media-production-definition'
 import { avgMediaChoiceArtifactKeyV1, avgRawMediaArtifactKeyV1, avgVisualReviewArtifactKeyV1, parseAvgVisualProductionRequirementV1,
   type AvgVisualProductionRequirementV1 } from '../../lib/avg/media-production-contract'
 import { parseAvgMediaReferencesV1, type AvgMediaReferenceV1 } from '../../lib/avg/media-reference-contract'
@@ -125,13 +126,14 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const importImages = view.media.items.map(row => row.asset).filter(asset => asset.mimeType.startsWith('image/'))
   const build = view.details?.build, productionId = view.details?.production.id
   const assembly = view.details?.executionBrief?.avgAssembly
-  const currentBatch = assembly?.version === 2 ? assembly.mediaBatch : null
-  const recovery=assembly?.version===2?assembly.imageRecovery:undefined
+  const definition=view.details?.executionBrief?readAvgOptionalImageDefinitionV3(view.details.executionBrief):null
+  const currentBatch = definition?.mediaBatch??null
+  const recovery=definition?.imageRecovery
   const closed=!!build&&['cancelled','failed','recovery-required'].includes(build.status)
   const accepted = (key: string) => view.artifacts.find(row => row.artifactKey === key && row.status === 'accepted')
   const allChoices = !!currentBatch && currentBatch.requirements.every(r => accepted(avgMediaChoiceArtifactKeyV1(r.requirementKey)))
   const outstanding = currentBatch?.requirements.filter(r => !accepted(avgRawMediaArtifactKeyV1(r.requirementKey))).length ?? 0
-  const pendingProcessing=currentBatch?.requirements.filter(r=>assembly?.version===2&&assembly.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)&&!accepted(avgProcessedImageArtifactKeyV1(r.requirementKey))).length??0
+  const pendingProcessing=currentBatch?.requirements.filter(r=>definition?.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)&&!accepted(avgProcessedImageArtifactKeyV1(r.requirementKey))).length??0
   const unfinished=outstanding+pendingProcessing
   const blockedProcessing=view.processingTasks.filter(task=>['blocked','stale'].includes(task.status))
   const newRequests=currentBatch?.requirements.filter(r=>!accepted(avgRawMediaArtifactKeyV1(r.requirementKey))&&!recovery?.retained.some(row=>row.requirementKey===r.requirementKey)).length??0
@@ -232,7 +234,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
       <span>{pending ? '图片需求尚未保存，请保存或撤销后切换分区。' : workspace.mediaBatch ? '图片需求已保存，尚需在制作页确认方案并开始。' : '保存图片需求不会开始调用。'}</span></div>
     {workspace.mediaBatch?.visualReviewPolicy&&<ImageProcessingPlanPanel scope={scope} workspace={workspace} draftRevision={view.draft.revision} canEdit={canEdit&&enabled}
       disabled={disabled||pending||familyPending||anyReviewPending} onPending={setProcessingPending} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
-    {currentBatch&&<MediaRecoveryPanel scope={scope} view={view} disabled={editDisabled||pending||familyPending||anyReviewPending} visible={visible} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
+    {currentBatch&&assembly?.version!==3&&<MediaRecoveryPanel scope={scope} view={view} disabled={editDisabled||pending||familyPending||anyReviewPending} visible={visible} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
     {!!workspace.presentation.inheritedImages?.length&&<details><summary>新版本待确认的旧图来源（{workspace.presentation.inheritedImages.length} 张）</summary><ul>{workspace.presentation.inheritedImages.map(entry=><li key={entry.assetKey}>{workspace.presentation.stage.assets.find(asset=>asset.assetKey===entry.assetKey)?.name} · 原 Build #{entry.source.raw.buildNumber} · {entry.source.raw.contentHash.slice(0,12)}<p>{entry.declaration}</p></li>)}</ul><p>保留原始字节不会重新调用图片服务；新版本的用途和演出须再次确认采用。</p></details>}
     {currentBatch&&closed&&<section aria-label="已停止的图片调用"><p>本次调用已停止。请先核对原始记录与未知费用，当前不会自动重发。</p><p>如需更改需求或制作下一批，请先到制作页准备新版本，再回此处编辑。</p><button className="lf-action" disabled>生成本批图片（最多 {outstanding} 次）</button></section>}
     {currentBatch?.visualReviewPolicy&&closed&&<details><summary>已停止批次的作者视觉记录</summary><p>保留原记录和未观察项；新版需要重新核对，不能继承旧选用授权。</p>{view.artifacts.filter(row=>row.artifactKey.startsWith('avg.review.visual.')).map(row=><article key={row.id}><p>{row.artifactKey} · v{row.version} · {row.status}</p><pre>{row.payloadJson}</pre></article>)}</details>}
@@ -241,11 +243,11 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
       {!sourcesReady && <p>请先在制作页确认系统规则和全部场景脚本。</p>}
       {blockedProcessing.map(task=><p role="alert" key={task.taskKey}>本地加工已暂停：{task.taskKey} · {task.blocker??'请检查制作记录'}。原图保留，本版本不会重试；请明确保留并准备新版本后复验。</p>)}
       {recovery&&<p>本方案保留 {recovery.retained.length} 张原图，以零调用复验；其余 {recovery.rerunRequirementKeys.length} 项在本版本至多各请求一次。原图、旧账单和回执留在原版本。</p>}
-      <button className="lf-action lf-action-primary" disabled={editDisabled || pending || familyPending || anyReviewPending || blockedProcessing.length>0 || (newRequests>0&&(!enabled||!readiness.ready)) || !canAdopt || !sourcesReady || !unfinished} onClick={() => void onGenerate()}>{outstanding===0&&pendingProcessing>0?`执行本地加工（0 次新请求）`:recovery?`复验并执行本批图片（最多 ${newRequests} 次新请求）`:`生成本批图片（最多 ${outstanding} 次）`}</button>
+      <button className="lf-action lf-action-primary" disabled={editDisabled || pending || familyPending || anyReviewPending || blockedProcessing.length>0 || assembly?.version===3&&!avgVoiceProductionEnabledV3() || (newRequests>0&&(!enabled||!readiness.ready)) || !canAdopt || !sourcesReady || !unfinished} onClick={() => void onGenerate()}>{assembly?.version===3?'执行已确认的图片及联合配音任务':outstanding===0&&pendingProcessing>0?`执行本地加工（0 次新请求）`:recovery?`复验并执行本批图片（最多 ${newRequests} 次新请求）`:`生成本批图片（最多 ${outstanding} 次）`}</button>
       {generating && <button className="lf-action" onClick={onCancel}>停止等待并保留调用记录</button>}
       {currentBatch.requirements.map(r => <RawChoiceCard key={`${build.id}:${r.requirementKey}`} scope={scope} productionId={productionId} requirement={r}
         expanded={visible && expandedKey === r.requirementKey} onExpand={() => setPreviewKey(expandedKey === r.requirementKey ? '' : r.requirementKey)}
-        raw={accepted(avgRawMediaArtifactKeyV1(r.requirementKey))} processed={accepted(avgProcessedImageArtifactKeyV1(r.requirementKey))} needsProcessing={assembly?.version===2&&!!assembly.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)} selected={accepted(avgMediaChoiceArtifactKeyV1(r.requirementKey))}
+        raw={accepted(avgRawMediaArtifactKeyV1(r.requirementKey))} processed={accepted(avgProcessedImageArtifactKeyV1(r.requirementKey))} needsProcessing={!!definition?.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)} selected={accepted(avgMediaChoiceArtifactKeyV1(r.requirementKey))}
         pending={view.artifacts.find(row => row.artifactKey === avgMediaChoiceArtifactKeyV1(r.requirementKey) && row.status === 'pending')}
         disabled={editDisabled || pending || familyPending} canAdopt={canAdopt} declaration={declaration} onAction={onAction} onReload={onReload}
         reviewPolicy={!!currentBatch.visualReviewPolicy} review={accepted(avgVisualReviewArtifactKeyV1(r.requirementKey))}

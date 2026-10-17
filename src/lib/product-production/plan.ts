@@ -214,6 +214,7 @@ function parseTask(value: unknown, index: number): ProductProductionPlanTaskV3 {
     'concurrencyGroup', 'subjectLockKeys', 'priority', 'budgetReservation', 'maxAttempts',
     'timeoutMs', 'failurePolicy', 'fallbackTaskKey', 'acceptanceGateIds', 'reuse',
     ...(Object.prototype.hasOwnProperty.call(row, 'authorRevision') ? ['authorRevision'] : []),
+    ...(Object.prototype.hasOwnProperty.call(row, 'contextProfile') ? ['contextProfile'] : []),
   ], label)
   if (!Array.isArray(row.requiredReceipts) || row.requiredReceipts.length > 1_000) fail(`${label}.requiredReceipts 无效`)
   const requiredReceipts = row.requiredReceipts.map((value, receiptIndex) => {
@@ -279,6 +280,8 @@ function parseTask(value: unknown, index: number): ProductProductionPlanTaskV3 {
     acceptanceGateIds: keys(row.acceptanceGateIds, `${label}.acceptanceGateIds`),
     reuse,
     ...(authorRevision ? { authorRevision } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, 'contextProfile')
+      ? { contextProfile: enumValue(row.contextProfile, ['avg-task-v1'] as const, `${label}.contextProfile`) } : {}),
   }
 }
 
@@ -339,6 +342,10 @@ export function parseProductProductionPlanV3(
     if (task.failurePolicy !== 'fallback' && task.fallbackTaskKey !== null) fail(`${task.taskKey} 非 fallback 任务声明 fallbackTaskKey`)
     if (task.executionMode === 'model' && task.skillId === null) fail(`${task.taskKey} 模型任务缺少 skillId`)
     if (task.executionMode === 'deterministic' && task.skillId !== null) fail(`${task.taskKey} 确定性任务不应绑定 skillId`)
+    if (task.contextProfile && (productType !== 'avg' || task.executionMode !== 'deterministic'
+      || !['avg-assembly-integrate', 'avg-assembly-verify', 'avg-media-image-process', 'avg-media-image-reuse', 'avg-media-voice-reuse'].includes(task.kind))) {
+      fail(`${task.taskKey} 上下文投影只用于准确 AVG 确定性任务`)
+    }
   }
   const visiting = new Set<string>(); const visited = new Set<string>()
   const visit = (taskKey: string) => {

@@ -1955,6 +1955,14 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     read: readProductProductionBriefContext,
   },
   {
+    key: 'product-production.avg-task-inputs',
+    label: 'AVG 准确任务需求与依赖凭证',
+    scope: 'project', layer: 'L0', ownerFrom: 'work',
+    budgetTokens: 20_000, protectedFromTrim: true,
+    enabled: input => Number.isInteger(input.productBuildId) && !!input.productProductionTaskKey,
+    read: async input => (await import('../avg/task-context')).readAvgTaskExecutionContextV1(input),
+  },
+  {
     key: 'product-production.artifact-inputs',
     label: '上层产品生产任务依赖',
     scope: 'project',
