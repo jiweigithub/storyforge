@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
+import { scopeTransactionTables } from '../../src/lib/workspace/scope'
 import { useAIConfigStore } from '../../src/stores/ai-config'
 import * as readiness from '../../src/lib/avg/visual-planning-brief'
 import { avgVisualPlanningFixtureV4 } from '../helpers/avg-visual-planning-fixture'
@@ -17,6 +18,7 @@ import { stageAvgAuthorArtifactV1, readAvgConfirmedVisualArtifactsV4 } from '../
 import { acceptProductBuildArtifact, verifyAcceptedProductBuildArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4, verifyProductBuildTerminalArtifactSetV1 } from '../../src/lib/product-production/artifact-store'
 import { readAvgVisualProposalEvidenceV4 } from '../../src/lib/avg/visual-planning-evidence'
 import { readAvgCompiledImageDefinitionV4, prepareAvgCompiledImageRequestV4 } from '../../src/lib/avg/visual-planning-image-definition'
+import { readAvgImageConsumptionDefinitionV4 } from '../../src/lib/avg/image-consumption'
 import { readAvgVisualPlanningContextV4 } from '../../src/lib/avg/visual-planning-context'
 import * as imageDecoder from '../../src/lib/avg/image-decoder'
 import * as mediaVerifier from '../../src/lib/product-production/media-runtime-verifier'
@@ -204,6 +206,49 @@ function failNextConsumerDraftWrite(stem:string){
 }
 
 describe('AVG V4 actual visual planning Harness and explicit author boundary', () => {
+  it('keeps lazy registered reader loading inside sealed admission without replaying the model',async()=>{
+    const s=await setup({reference:'valid'});await sources(s)
+    const NativePromise=Promise,runner=s.runText.getMockImplementation()!
+    s.runText.mockImplementationOnce(async input=>{
+      const result=await runner(input)
+      // The browser import can yield even for an already evaluated module.
+      // Delay the next registered import only after the actual model response.
+      vi.doMock('../../src/lib/avg/visual-planning-context',async()=>{
+        await new NativePromise<void>(resolve=>setTimeout(resolve,10))
+        return vi.importActual('../../src/lib/avg/visual-planning-context')
+      })
+      return result
+    })
+    try{
+      await run(s)
+      expect(s.runText).toHaveBeenCalledTimes(1)
+      const proposal=await accepted(s,'avg.proposal.visual-bible')
+      expect(proposal,(await current(s)).failureJson).toBeDefined()
+      db.close();await db.open()
+      const evidence=await readAvgVisualProposalEvidenceV4(s.scope,proposal!)
+      expect(evidence.rawText).toBe((await s.runText.mock.results[0].value).output)
+      expect(JSON.parse((await current(s)).budgetLedgerJson).tasks['avg.visual.propose.direction']).toMatchObject({status:'settled',usage:{modelCalls:1,mediaCalls:0,costUsd:null}})
+      expect(s.runText).toHaveBeenCalledTimes(1)
+    }finally{vi.doUnmock('../../src/lib/avg/visual-planning-context');await vi.dynamicImportSettled()}
+  },60_000)
+
+  it('keeps sealed professional proposal admission alive across delayed WebCrypto without replaying the model',async()=>{
+    const s=await setup({reference:'valid'});await sources(s)
+    const digest=crypto.subtle.digest.bind(crypto.subtle)
+    const NativePromise=Promise
+    vi.spyOn(crypto.subtle,'digest').mockImplementation((algorithm,data)=>{
+      if(!s.runText.mock.calls.length)return digest(algorithm,data)
+      return new NativePromise<void>(resolve=>setTimeout(resolve,10)).then(()=>digest(algorithm,data))
+    })
+    await run(s)
+    expect(s.runText).toHaveBeenCalledTimes(1)
+    const proposal=await accepted(s,'avg.proposal.visual-bible')
+    expect(proposal,(await current(s)).failureJson).toBeDefined()
+    await readAvgVisualProposalEvidenceV4(s.scope,proposal!)
+    const ledger=JSON.parse((await current(s)).budgetLedgerJson)
+    expect(ledger.tasks['avg.visual.propose.direction']).toMatchObject({status:'settled',usage:{modelCalls:1,mediaCalls:0,costUsd:null}})
+  },60_000)
+
   it('does not strand prospective item fields when the reviewable Brief write fails and a fresh scope is prepared',async()=>{
     const {owner,input,draft}=await newFamilyDraft('failed-brief')
     vi.spyOn(db.productProductionBriefs,'add').mockRejectedValueOnce(new Error('controlled Brief persistence failure'))
@@ -678,6 +723,31 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
     // Keep real production preparation in the bounded setup hook. Each test
     // retains the default five-second author-action limit and all assertions.
     beforeEach(async () => { generated = await generatedImage() })
+
+    it('keeps lazy compiled image reads in an atomic snapshot and rolls back mutations without replay',async()=>{
+      const {s,raw,requirement}=generated,NativePromise=(async()=>{})().constructor as PromiseConstructor
+      const actual=await vi.importActual('../../src/lib/avg/visual-planning-image-definition')
+      vi.doMock('../../src/lib/avg/visual-planning-image-definition',async()=>{
+        await new NativePromise<void>(resolve=>setTimeout(resolve,10))
+        return actual
+      })
+      const admit=(abort:boolean)=>db.transaction('rw',scopeTransactionTables(db.productProductions,db.productProductionBriefs,
+        db.productProductionCommands,db.productBuilds,db.productBuildArtifacts,db.avgDraftMedia,db.mediaBlobObjects,
+        db.agentRuns,db.agentRunEvents,db.agentRunCheckpoints,db.agentRunArtifacts),async()=>{
+        const definition=await readAvgImageConsumptionDefinitionV4({scope:s.scope,buildId:s.buildId,brief:s.brief})
+        await db.productBuildArtifacts.update(raw.id!,{updatedAt:raw.updatedAt+1})
+        if(abort)throw new Error('controlled author transaction rollback')
+        return definition
+      })
+      try{
+        await expect(admit(true)).rejects.toThrow('controlled author transaction rollback')
+        expect((await db.productBuildArtifacts.get(raw.id!))!.updatedAt).toBe(raw.updatedAt)
+        const definition=await admit(false)
+        expect(definition.mediaBatch.requirements.map(r=>r.requirementKey)).toEqual([requirement.requirementKey])
+        expect((await db.productBuildArtifacts.get(raw.id!))!.updatedAt).toBe(raw.updatedAt+1)
+        expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+      }finally{vi.doUnmock('../../src/lib/avg/visual-planning-image-definition');await vi.dynamicImportSettled()}
+    })
 
     it('reads original V4 bytes, requires adopted review/choice and configures only the frozen stage consumer', async () => {
       const { s, raw, requirement, image, choose, review, confirm } = generated

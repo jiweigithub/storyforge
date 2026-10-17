@@ -1967,7 +1967,13 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     label: 'AVG 专业视觉用途与已确认方向',
     scope: 'project', layer: 'L0', ownerFrom: 'work', budgetTokens: 24_000, protectedFromTrim: true,
     enabled: input => Number.isInteger(input.productBuildId) && !!input.productProductionTaskKey,
-    read: async input => (await import('../avg/visual-planning-context')).readAvgVisualPlanningContextV4(input),
+    read: async input => {
+      // A cached browser import can still yield beyond the current IDB turn.
+      // Keep only module loading alive; the reader must use the same snapshot.
+      const load = () => import('../avg/visual-planning-context')
+      const reader = await (Dexie.currentTransaction ? Dexie.waitFor(Dexie.ignoreTransaction(load)) : load())
+      return reader.readAvgVisualPlanningContextV4(input)
+    },
   },
   {
     key: 'product-production.artifact-inputs',

@@ -91,6 +91,7 @@ test('professional visual workbench preserves author edits, transmits approved r
   let direction=panel.getByRole('article',{name:'专业方案：视觉基准',exact:true})
   await direction.getByLabel('构图与留白',{exact:true}).fill('作者修订：保留下方完整对白区')
   await direction.getByRole('button',{name:'保存待确认：视觉基准',exact:true}).click()
+  await expect(page.getByRole('status').filter({hasText:'方案已保存为待确认版本；尚未采用或发送图片请求。'})).toBeVisible()
   await page.reload();await page.getByRole('button',{name:'素材',exact:true}).click()
   direction=panel.getByRole('article',{name:'专业方案：视觉基准',exact:true})
   await expect(direction.getByLabel('构图与留白',{exact:true})).toHaveValue('作者修订：保留下方完整对白区')
@@ -117,8 +118,8 @@ test('professional visual workbench preserves author edits, transmits approved r
   await page.getByRole('button',{name:'执行组装并生成新预览',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'新预览已冻结'})).toBeVisible({timeout:60_000})
   await page.getByRole('button',{name:'试玩此预览',exact:true}).click()
-  const originalUrl=page.url()
   await expect.poll(()=>page.locator('.avg-stage img').evaluateAll((imgs:HTMLImageElement[])=>imgs.some(i=>i.complete&&i.naturalWidth===576))).toBe(true)
+  const originalUrl=page.url()
   await page.reload();await expect(page.locator('.avg-dialogue p')).toContainText(source.text)
   const restored=await page.evaluate(async scope=>{
     const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
@@ -204,6 +205,7 @@ test('professional family form preserves five exact targets and reference permis
   await panel.getByRole('button',{name:'撤销未保存的专业用途',exact:true}).click()
   await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
   await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
+  await expect(page.getByRole('status').filter({hasText:'已明确开始，等待逐项作者确认。'})).toBeVisible()
   const state=await page.evaluate(async scope=>{
     const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
     const [service,contracts]=await Promise.all([load('/storyforge/src/lib/avg/assembly-service.ts'),load('/storyforge/src/lib/product-production/contracts.ts')])

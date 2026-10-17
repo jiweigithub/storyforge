@@ -1,3 +1,4 @@
+import Dexie from 'dexie'
 import { db } from '../db/schema'
 import type { ProductBuildArtifactRecordV1, ProductProductionBriefV3, WorkspaceScope } from '../types'
 import type { AvgAssemblyBriefV2 } from './assembly-contract'
@@ -13,7 +14,10 @@ export async function readAvgImageConsumptionDefinitionV4(input: {
   if (!input.brief.avgVisualPlanning) return readAvgImageDefinitionV3(input.brief)
   const build = await db.productBuilds.get(input.buildId)
   if (!build) throw new Error('[avg-visual-image] 图片消费缺少准确 Build')
-  const { readAvgCompiledImageDefinitionV4 } = await import('./visual-planning-image-definition')
+  // Loading is the only non-DB boundary here. Keep the caller's author/source
+  // transaction alive without moving compiled-proof reads outside its snapshot.
+  const load = () => import('./visual-planning-image-definition')
+  const { readAvgCompiledImageDefinitionV4 } = await (Dexie.currentTransaction ? Dexie.waitFor(Dexie.ignoreTransaction(load)) : load())
   const resolved = await readAvgCompiledImageDefinitionV4({ ...input, expectedBrief: input.brief,
     expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch,
     purpose:build.packageHash||build.previewHash?'frozen-verification':'assembly' })
