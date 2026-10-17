@@ -1,6 +1,6 @@
 # AVG 专业岗位、工件与生产图
 
-> L2 · 版本：1.4.0 · 生效：2026-10-17 · 受 [AVG 产品契约](../AVG.md)约束。
+> L2 · 版本：1.5.0 · 生效：2026-10-17 · 受 [AVG 产品契约](../AVG.md)约束。
 > 22 岗位/Skill 是目标合同；BASE-00B 已登记首批八种 schema、输出 key、关闭的专业 AI 写口和作者输入采用接缝，实际验证状态见实施计划。未登记的专业 Skill 尚不可调用，schema 或作者输入采用不等于岗位实现。
 
 ## 1 主助手、岗位与确定性职责
@@ -82,7 +82,11 @@ BASE-00B 的确定性作者输入先绑定已冻结 human-import 任务，只写
 
 同一较完整视觉基准可在更小后续批次中只读复用；基准最多描述 128 个当前系统已声明的主体，编译只消费本批已选主体，媒资 Brief 仍严格覆盖本批需求，未选方向不增发图片或扩展参考授权。128 是 codec 存储上界，不承诺单次模型处理规模；实际调用仍须遵守 Gateway、token/输出和任务预算。
 
-本增量没有登记或启用新专业 Skill/上下文源，没有开放原 generic adoption gate、创建 Build/Run、写表或调用 provider；不改现行 V2/V3 冻结请求。正式接入仍须新私有版本、真实 Harness 来源与模型响应、CreativeArtifact/作者采用、执行器/下游和工作台，见[工作包 §9.5](../../roadmap/AVG-WORK-PACKAGE-CARDS.md#95-avg-04a5-专业视觉方案与需求编译施工中)。仅有 codec/编译正例不能签岗位、自动生产或艺术验收。
+后继基础增量登记四个独立 AVG 美术/人物/场景/物件 Agent 的唯一核心 Skill，不进入长篇主助手的 DOMAIN_AGENT_IDS；均只读 `product-production.avg-visual-planning-inputs`，只允许既有 payload 候选写域。核心方法包含具体步骤、原创正反例和语义输出合同，尚未通过实际模型证明专业效果。登记不等于调用就绪。
+
+下一私有合同 `storyforge.avg.visual-planning-brief/version=4` 放在通用 V3 Brief 的 AVG 专属 `avgVisualPlanning` 字段，与旧 avgAssembly/avgRevision 互斥；通用 Brief 仍为 V3，旧 AVG V1/V2/V3 不改写。固定 Plan 区分原始方案接收、作者正式方向/主体方案采用、确定性需求编译、图片及原有评审/组装；模型任务不能直接产出正式视觉方向 key。预算按同一有限拓扑派生，最多一次尝试，费用未知保持 null。
+
+新登记 reader 通过当前 Work/Build、完整 Brief/固定 Plan、实际作者开始/来源计划和规则/脚本采用证据校验准确来源；模型只收到本次主体的公开名称、作者明确用途/造型约束和本项逻辑参考元数据。完整脚本、物件真相、规则状态及原图不默认外发；主体设计只取得对应已采用方向投影，metadata-only 不得声称看过参考图。该 reader 的真实新版本正向 Run、原始方案 producer、候选/作者采用、编译消费及 UI 尚待纵切面接线。保存/开始命令与旧通用执行器明确拒绝新合同；原 generic 专业 admission gate 继续关闭，当前没有新增模型调用。详见[工作包 §9.5](../../roadmap/AVG-WORK-PACKAGE-CARDS.md#95-avg-04a5-专业视觉方案与需求编译施工中)。
 
 ## 3 三线依赖 DAG
 

@@ -1104,7 +1104,7 @@ function taskRequiredContextSourceKeys(task: ProductProductionPlanTaskV3): strin
     const skill = getAgentSkillV1(task.skillId)
     return [...new Set([
       ...skill.contextSourceKeys,
-      ...(task.inputArtifactKeys.length > 0 && !skill.contextSourceKeys.includes('product-production.avg-task-inputs')
+      ...(task.inputArtifactKeys.length > 0 && !skill.contextSourceKeys.some(key => ['product-production.avg-task-inputs', 'product-production.avg-visual-planning-inputs'].includes(key))
         ? ['product-production.artifact-inputs'] : []),
     ])]
   }

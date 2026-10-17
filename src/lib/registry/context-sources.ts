@@ -1963,6 +1963,13 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     read: async input => (await import('../avg/task-context')).readAvgTaskExecutionContextV1(input),
   },
   {
+    key: 'product-production.avg-visual-planning-inputs',
+    label: 'AVG 专业视觉用途与已确认方向',
+    scope: 'project', layer: 'L0', ownerFrom: 'work', budgetTokens: 24_000, protectedFromTrim: true,
+    enabled: input => Number.isInteger(input.productBuildId) && !!input.productProductionTaskKey,
+    read: async input => (await import('../avg/visual-planning-context')).readAvgVisualPlanningContextV4(input),
+  },
+  {
     key: 'product-production.artifact-inputs',
     label: '上层产品生产任务依赖',
     scope: 'project',

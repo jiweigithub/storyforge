@@ -10756,6 +10756,7 @@ export function createConfiguredProductProductionExecutorV1(input: {
   avgImageEndpointRouteHash?: string
   avgVoiceTransport?: Parameters<typeof createAvgAssemblyExecutorV1>[0]['voiceTransport']
 }): ProductProductionTaskExecutorV1 {
+  if (input.brief.avgVisualPlanning) throw new Error('[avg-visual-plan] 专业视觉候选采用和需求消费尚未接通，不能调用旧通用执行器')
   if (input.brief.avgAssembly) return createAvgAssemblyExecutorV1({ ...input, imageEndpointRouteHash: input.avgImageEndpointRouteHash, voiceTransport: input.avgVoiceTransport })
   if (input.brief.intent.productType === 'text-open-world') {
     fail('文字开放世界已下线通用生产执行器；必须使用专属 Creator P0-P10 / V1-V3 执行器')

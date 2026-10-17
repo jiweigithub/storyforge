@@ -4,6 +4,8 @@ import { assertAvgVisualProductionPolicyV2 } from '../avg/media-production-polic
 import { parseAvgStoredAssemblyBriefV3 } from '../avg/voice-assembly-storage'
 import { assertAvgVoiceProductionPolicyV3 } from '../avg/voice-production-policy'
 import { parseAvgSettingsForLegacyProduction } from '../avg/settings-v2'
+import { parseAvgVisualPlanningBriefV4 } from '../avg/visual-planning-brief'
+import { assertAvgVisualPlanningPolicyV4 } from '../avg/visual-planning-policy'
 import type {
   TextAdventureContentRevisionV1,
   ProductConsultationBudgetV1,
@@ -278,6 +280,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
     ...(Object.prototype.hasOwnProperty.call(row, 'avg') ? ['avg'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgRevision') ? ['avgRevision'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgAssembly') ? ['avgAssembly'] : []),
+    ...(Object.prototype.hasOwnProperty.call(row, 'avgVisualPlanning') ? ['avgVisualPlanning'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'ttrpg') ? ['ttrpg'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'aiTown') ? ['aiTown'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'textAdventure') ? ['textAdventure'] : []),
@@ -315,6 +318,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
   const parsed: ProductProductionBriefV3 = {
     ...(avgRevision ? { avgRevision } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgAssembly') ? { avgAssembly: parseAvgAssemblyBrief(row.avgAssembly) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, 'avgVisualPlanning') ? { avgVisualPlanning: parseAvgVisualPlanningBriefV4(row.avgVisualPlanning) } : {}),
     ...(row.characterChat ? { characterChat: parseChatAuthoringSettingsV1(row.characterChat) } : {}),
     ...(row.avg ? { avg: parseAvgSettingsForLegacyProduction(row.avg) } : {}),
     schema: 'storyforge.product-production-brief', version: 3,
@@ -368,6 +372,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
       ? { evolution: parseEvolutionImpact(row.evolution) }
       : {}),
   }
+  if (parsed.avgVisualPlanning) assertAvgVisualPlanningPolicyV4(parsed)
   if (parsed.avgAssembly?.version === 2) assertAvgVisualProductionPolicyV2(parsed)
   if (parsed.avgAssembly?.version === 3) {
     const { assembly } = parseAvgStoredAssemblyBriefV3(parsed.avgAssembly)

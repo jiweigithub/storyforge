@@ -539,6 +539,8 @@ export interface ProductProductionBriefV3 {
   avg?: import('../avg/authoring-contract').AvgAuthoringSettingsV1;
   avgRevision?: { version: 1; basePackageHash: string; runtimePackage: import('./product-release').ProductRuntimePackageV1 };
   avgAssembly?: import('../avg/assembly-contract').AvgAssemblyBrief;
+  /** Explicit next AVG contract; mutually exclusive with legacy assembly. */
+  avgVisualPlanning?: import('../avg/visual-planning-brief').AvgVisualPlanningBriefV4;
   ttrpg?: TtrpgProductionBriefV2;
   /** Closed AI Town construction contract; required exactly when productType=ai-town. */
   aiTown?: AiTownProductionBriefV1;

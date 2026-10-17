@@ -5,6 +5,7 @@ import type {
   ProductTaskBudgetReservationV1,
 } from '../types'
 import { buildAvgNativeAssemblyPlan } from '../avg/assembly-plan'
+import { buildAvgVisualPlanningPlanV4 } from '../avg/visual-planning-plan'
 import { PRODUCTION_PRODUCT_KINDS_V1 } from '../types'
 import { parseTextAdventureContentRevisionV1, parseProductProductionBriefV3 } from './contracts'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2, isSha256Hash } from './hash'
@@ -425,6 +426,9 @@ export function parseProductProductionPlanV3(
     briefHash: row.briefHash, controlEpoch: integer(row.controlEpoch, 'controlEpoch'),
     concurrency: parsedConcurrency, tasks, terminalTaskKey,
   }
+  if (brief?.avgVisualPlanning && canonicalProductProductionJsonV2(parsed) !== canonicalProductProductionJsonV2(buildAvgVisualPlanningPlanV4({
+    brief: { ...brief, avgVisualPlanning: brief.avgVisualPlanning }, briefHash: parsed.briefHash, buildNumber: parsed.buildNumber, controlEpoch: parsed.controlEpoch,
+  }))) fail('AVG 专业视觉 Plan 必须等于冻结的候选/作者采用/需求消费拓扑')
   if (brief?.avgAssembly && canonicalProductProductionJsonV2(parsed) !== canonicalProductProductionJsonV2(buildAvgNativeAssemblyPlan({
     brief, briefHash: parsed.briefHash, buildNumber: parsed.buildNumber, controlEpoch: parsed.controlEpoch,
   }))) fail('AVG 组装 Plan 不得替换冻结的作者输入、任务或写域')
@@ -466,6 +470,7 @@ export async function createProductProductionPlanV3(input: {
   const controlEpoch = input.controlEpoch ?? 0
   if (!Number.isInteger(controlEpoch) || controlEpoch < 0) fail('controlEpoch 无效')
 
+  if (brief.avgVisualPlanning) return parseProductProductionPlanV3(buildAvgVisualPlanningPlanV4({ ...input, brief: { ...brief, avgVisualPlanning: brief.avgVisualPlanning }, controlEpoch }), brief, input.briefHash)
   if (brief.avgAssembly) return parseProductProductionPlanV3(buildAvgNativeAssemblyPlan({ ...input, brief, controlEpoch }), brief, input.briefHash)
 
   const capabilityKeys = (classes: Array<ProductProductionBriefV3['capabilityRequirements'][number]['mediaClass']>) => (

@@ -616,6 +616,32 @@ export function readAvgSystemPlanForCompilationV1(input: Parameters<typeof readA
   return readAuthorInputs(input)
 }
 
+/** Planning reads canonical direction only after the existing author command,
+ * frozen candidate and exact raw-proposal producer have all been verified. */
+export async function readAvgConfirmedVisualBibleV4(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope' | 'buildId' | 'expectedBuildRevision' | 'controlEpoch'>) {
+  const scope = await resolveScope({ scope: input.scope })
+  return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands,
+    db.productBuilds, db.productBuildArtifacts, db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts), async () => {
+    const context = await authority(scope, input.buildId, true)
+    if (!context.brief.avgVisualPlanning || context.build.stateRevision !== input.expectedBuildRevision || context.build.controlEpoch !== input.controlEpoch) throw new Error('[avg-visual-plan] 视觉方向来源或 Build 已 stale')
+    const task = authorTask(context, 'avg.author.visual-bible', 'avg.media.visual-bible')
+    const [row] = await acceptedInputs(scope, input.buildId, input.controlEpoch, task.outputArtifactKeys)
+    const authorKeys = task.inputArtifactKeys.filter(key => !key.startsWith('avg.proposal.'))
+    const upstream = await acceptedInputs(scope, input.buildId, input.controlEpoch, authorKeys)
+    for (const key of task.inputArtifactKeys.filter(key => key.startsWith('avg.proposal.'))) {
+      const rows = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([input.buildId, key]).toArray()
+      const matches = rows.filter(r => r.status === 'accepted' && r.controlEpoch === input.controlEpoch)
+      if (matches.length !== 1) throw new Error('[avg-visual-plan] 方向缺少准确原始方案')
+      upstream.push(await verifyAcceptedProductBuildArtifactV1({ scope, buildId: input.buildId, artifactKey: key, version: matches[0].version, contentHash: matches[0].contentHash }))
+    }
+    const ordered = task.inputArtifactKeys.map(key => upstream.find(r => r.artifactKey === key)!)
+    await assertFrozenAuthorCandidateV1(context, row, task, ordered, input.controlEpoch)
+    const payload = parseAvgProfessionalArtifactV1(row.payloadJson)
+    if (payload.schema !== 'storyforge.avg.visual-bible') throw new Error('[avg-visual-plan] 采用的方向 schema 无效')
+    return { payload, artifact: ref(row), authorReceiptHash: String(JSON.parse(row.metadataJson).receiptHash) }
+  })
+}
+
 export function readAvgMediaChoicesForConfigurationV2(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope' | 'buildId' | 'expectedBuildRevision' | 'controlEpoch'>) {
   return readAuthorInputs({ ...input, includeSceneScripts: true, includeMediaChoices: true })
 }
