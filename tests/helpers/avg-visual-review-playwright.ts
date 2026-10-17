@@ -5,6 +5,10 @@ export async function confirmEngineeringVisualReview(card:Locator,name:string){
   const review=card.getByRole('region',{name:`视觉评审：${name}`,exact:true})
   await expect(review).toBeVisible()
   await expect(review.getByRole('img').first()).toBeVisible()
+  // Wait for actual decoding and the reference callbacks before recording
+  // observations. A visible img element alone can still be loading.
+  await expect.poll(()=>review.getByRole('img').evaluateAll((imgs:HTMLImageElement[])=>imgs.length>0&&imgs.every(i=>i.complete&&i.naturalWidth>0))).toBe(true)
+  await expect.poll(async()=> (await review.locator('p').allTextContents()).some(text=>{const m=text.match(/^准确原图已显示 · 参考 (\d+)\/(\d+)。/);return !!m&&m[1]===m[2]})).toBe(true)
   for(const label of ['身份与造型','参考连续性','构图与完整性','可辨认性','透明边缘']){
     const control=review.getByRole('combobox',{name:`观察结果：${label}`,exact:true})
     if(await control.inputValue()!=='not-applicable')await control.selectOption('pass')
