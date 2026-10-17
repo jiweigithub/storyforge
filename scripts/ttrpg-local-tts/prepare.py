@@ -69,7 +69,7 @@ def main():
         raise RuntimeError('An evaluation already owns this runtime; inspect its receipt first')
     stamp = str(time.time_ns())
     receipt = {**identity, 'status': 'running', 'pid': os.getpid(), 'startedAt': time.time(),
-               'modelCalled': False, 'steps': [], 'modelFiles': [], 'sourceFiles': []}
+               'modelCalled': False, 'steps': [], 'modelFiles': [], 'sourceFiles': [], 'downloads': []}
     def save():
         (root / 'setup-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
     def command(name, argv):
@@ -93,9 +93,18 @@ def main():
             if target.exists(): raise RuntimeError('Existing file does not match the pinned profile: ' + target.name)
             temporary = target.with_suffix(target.suffix + '.part')
             if not valid(temporary):
+                before_bytes = temporary.stat().st_size if temporary.exists() else 0
                 resume = ['--continue-at', '-'] if temporary.exists() and temporary.stat().st_size else []
-                value = subprocess.run(['/usr/bin/curl', '-fsSL', '--connect-timeout', '20', '--max-time', '600',
+                value = subprocess.run(['/usr/bin/curl', '--http1.1', '-fsSL', '--connect-timeout', '20', '--max-time', '600',
                                         *resume, '--output', str(temporary), url], capture_output=True)
+                # Preserve the transport evidence locally; these diagnostics can
+                # include machine-specific proxy details and are not exported.
+                log_name = f'{stamp}-download-{hashlib.sha256(str(target.relative_to(root)).encode()).hexdigest()[:12]}.log'
+                (root / log_name).write_bytes(value.stderr[:65536])
+                receipt['downloads'].append({'path': str(target.relative_to(root)), 'httpVersion': '1.1',
+                    'resumedFromBytes': before_bytes, 'partialBytesAfter': temporary.stat().st_size if temporary.exists() else 0,
+                    'exitCode': value.returncode, 'stderrLog': log_name, 'stderrTruncated': len(value.stderr) > 65536})
+                save()
                 if value.returncode: raise RuntimeError(f'Pinned download failed ({value.returncode}); partial bytes retained: {target.name}')
                 if not valid(temporary): raise RuntimeError('Pinned file integrity failed: ' + target.name)
             temporary.replace(target)
