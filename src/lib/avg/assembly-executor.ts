@@ -20,6 +20,10 @@ import { avgVoiceAssemblyGateIdsV3 } from './voice-assembly-contract'
 import { readAvgOptionalImageDefinitionV3 } from './media-production-definition'
 import { executeAvgVoiceRecoveryTaskV1 } from './voice-recovery-executor'
 import { avgAssemblyMediaRightsV1 } from './assembly-media-rights'
+import { readAvgImageConsumptionDefinitionV4 } from './image-consumption'
+import { readAvgCompiledImageDefinitionV4 } from './visual-planning-image-definition'
+import { assertAvgTaskHarnessClaimV1, hashAvgTaskRuntimeBindingV1 } from './task-claim'
+import { parseProductProductionPlanV3 } from '../product-production/plan'
 
 /** V1 remains zero-provider. Opt-in V2 image tasks use the media Harness;
  * human choices/stage stay separate from deterministic package compilation. */
@@ -27,10 +31,12 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
   mediaCapabilities?: ReadonlyMap<string, ResolvedProductMediaCapabilityV1>; imageEndpointRouteHash?: string;
   voiceTransport?: Awaited<ReturnType<typeof createConfiguredAvgVoiceTransportV1>> }): ProductProductionTaskExecutorV1 {
   const brief = structuredClone(options.brief), productionKey = options.production.productionKey
-  const image = readAvgOptionalImageDefinitionV3(brief)
+  const legacyImage = readAvgOptionalImageDefinitionV3(brief)
+  const assembly=brief.avgAssembly??brief.avgVisualPlanning?.assembly
   return async request => {
     const startedAt = Date.now()
     if (request.signal.aborted) throw new DOMException('Aborted','AbortError')
+    const image=brief.avgVisualPlanning?await readAvgImageConsumptionDefinitionV4({scope:request.scope,buildId:request.buildId,brief}):legacyImage
     if (brief.avgAssembly?.version === 3 && request.task.kind === 'avg-media-voice-reuse') {
       return executeAvgVoiceRecoveryTaskV1(request, { ...brief, avgAssembly: brief.avgAssembly })
     }
@@ -44,14 +50,20 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
     if (image && request.task.kind === 'avg-media-image-generate') return executeAvgMediaImageTaskV2(request, {
       brief, mediaCapabilities: options.mediaCapabilities ?? new Map(), imageEndpointRouteHash: options.imageEndpointRouteHash,
     })
-    if (!brief.avgAssembly || request.task.executionMode !== 'deterministic'
+    if (!assembly || request.task.executionMode !== 'deterministic'
       || !['avg.assembly.integrate','avg.assembly.verify'].includes(request.task.taskKey)) throw new Error('[avg] 作者输入尚未确认或执行任务超出冻结组装域')
     const build = await db.productBuilds.get(request.buildId)
     if (!build || !await assertRecordInScope(request.scope,'productBuilds',build,{ owner:'work' })
       || build.controlEpoch !== request.controlEpoch || build.planHash !== request.planHash
       || build.briefHash !== await hashProductProductionValueV2(brief)) throw new Error('[avg] 组装执行来源已 stale')
+    if(brief.avgVisualPlanning){
+      const plan=parseProductProductionPlanV3(build.planJson,brief,build.briefHash),task=plan.tasks.find(t=>t.taskKey===request.task.taskKey)
+      const claim=await assertAvgTaskHarnessClaimV1(request,build.budgetLedgerJson)
+      if(canonicalProductProductionJsonV2(task)!==canonicalProductProductionJsonV2(request.task)
+        ||claim.child.contract.runtimeBindingHash!==await hashAvgTaskRuntimeBindingV1(request))throw new Error('[avg-visual-image] 组装不属于准确冻结任务与实际 Harness claim')
+    }
     const compiled = await compileAdoptedAvgBuildV2({ scope:request.scope,buildId:request.buildId,controlEpoch:request.controlEpoch,
-      expectedBuildRevision:build.stateRevision,product:{ key:productionKey,title:brief.avgAssembly.title,description:brief.intent.openingSituation } })
+      expectedBuildRevision:build.stateRevision,product:{ key:productionKey,title:assembly.title,description:brief.intent.openingSituation } })
     const pkg = compiled.runtimePackage, module = pkg.modules.find(row => row.version === 2)!
     if (module.version !== 2) throw new Error('[avg] 组装缺少原生模块')
     const assets = module.stage.assets
@@ -64,10 +76,14 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
       if (inherited.has(key)) throw new Error('[avg-voice] 图片与配音不能声明同一沿用身份')
       inherited.set(key, voice)
     }
-    const expectedKeys = brief.avgAssembly.mediaAssetKeys
+    const expectedKeys = assembly.mediaAssetKeys
     if (assets.length !== expectedKeys.length || expectedKeys.some(key => !assets.some(asset => asset.assetKey === key))) throw new Error('[avg] 组装媒体目录超出冻结 Brief')
     const packageHash = await hashProductProductionValueV2(pkg)
+    const visual=brief.avgVisualPlanning?await readAvgCompiledImageDefinitionV4({scope:request.scope,buildId:request.buildId,
+      expectedBuildRevision:build.stateRevision,controlEpoch:request.controlEpoch,expectedBrief:brief,purpose:'assembly'}):null
     const sourceProof = { rule:compiled.source.artifact,ruleReceipt:compiled.source.authorReceiptHash,
+      ...(visual?{visualPlanning:{compilation:visual.definition.compilation,scopeHash:await hashProductProductionValueV2(visual.planning.scope),
+        adopted:visual.visual.map(row=>({artifact:row.artifact,authorReceiptHash:row.authorReceiptHash}))}}:{}),
       scripts:compiled.source.scripts.map(row => ({ artifact:row.artifact,receiptHash:row.authorReceiptHash })),
       stage:compiled.source.authorStage!.artifact,stageReceipt:compiled.source.authorStage!.authorReceiptHash,
       ...(image ? { mediaChoices: (compiled.source.mediaChoices ?? []).map(choice => ({
@@ -75,7 +91,7 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
           version: choice.raw.version, contentHash: choice.raw.contentHash }, rawReceiptHash: choice.raw.producerReceiptHash,
         ...(choice.processed?{processing:{artifact:{artifactKey:choice.processed.row.artifactKey,version:choice.processed.row.version,contentHash:choice.processed.row.contentHash},producerReceiptHash:choice.processed.row.producerReceiptHash,processingReceiptHash:choice.processed.payload.receipt.receiptHash}}:{}),
         ...(choice.review?{visualReview:{artifact:choice.review.artifact,authorReceiptHash:choice.review.authorReceiptHash}}:{}) })) } : {}),
-      ...(brief.avgAssembly.version === 3 ? { voiceChoices: (compiled.source.voiceChoices ?? []).map(choice => ({
+      ...(assembly.version === 3 ? { voiceChoices: (compiled.source.voiceChoices ?? []).map(choice => ({
         choice: choice.artifact, authorReceiptHash: choice.authorReceiptHash,
         raw: { artifactKey: choice.raw.artifactKey, version: choice.raw.version, contentHash: choice.raw.contentHash },
         rawProducerReceiptHash: choice.raw.producerReceiptHash, responseEvidenceHash: choice.validation.responseEvidenceHash,
@@ -115,8 +131,8 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
         ...(module.systemPlan.version===2?module.systemPlan.inventory.items.flatMap(item=>[item,...item.variants].flatMap(view=>[view.iconAssetKey,view.detailAssetKey].filter((key):key is string=>key!==null))):[])])
       const unused=assets.filter(asset=>!usedAssets.has(asset.assetKey))
       const report: ProductBuildQualityReportV1 = { schema:'storyforge.product-build-quality-report',version:1,buildNumber:request.buildNumber,packageHash,
-        hardGateResults:(brief.avgAssembly.version === 3 ? avgVoiceAssemblyGateIdsV3(parseAvgStoredAssemblyBriefV3(brief.avgAssembly).assembly)
-          : brief.avgAssembly.version === 2 ? avgMediaAssemblyGateIdsV2(brief.avgAssembly.mediaBatch,brief.avgAssembly.imageProcessing) : AVG_ASSEMBLY_GATE_IDS_V1)
+        hardGateResults:(brief.avgVisualPlanning?request.task.acceptanceGateIds:assembly.version === 3 ? avgVoiceAssemblyGateIdsV3(parseAvgStoredAssemblyBriefV3(assembly).assembly)
+          : assembly.version === 2 ? avgMediaAssemblyGateIdsV2(assembly.mediaBatch,assembly.imageProcessing) : AVG_ASSEMBLY_GATE_IDS_V1)
           .map(gateId => ({ gateId,passed:true,evidence:[canonicalProductProductionJsonV2(sourceProof)] })),
         softGateResults:[],mediaCoverage:assets.length?(assets.length-unused.length)/assets.length:1,playable:true,releaseReady:false,
         warnings:['仅通过作者组装技术门；艺术、专业配音、整部作品试玩与发布验收尚待执行。',...(compiled.source.mediaChoices??[]).flatMap(choice=>choice.review?.payload.issues.map(issue=>`作者视觉问题 ${issue.severity} · ${choice.payload.requirementKey}：${issue.evidence}`)??[]),

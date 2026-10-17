@@ -32,7 +32,13 @@ export function createAvgVisualPlanningExecutorV4(options: { brief: ProductProdu
         const { executeAvgMediaImageTaskV2 } = await import('./media-production-executor')
         return executeAvgMediaImageTaskV2(input, { brief, mediaCapabilities: options.mediaCapabilities ?? new Map(), imageEndpointRouteHash: options.imageEndpointRouteHash })
       }
-      if (input.task.executionMode !== 'model' && input.task.kind !== 'avg-v4-visual-requirements-compile') throw new Error('[avg-visual-plan] 当前增量尚未接通图片消费；未发送请求')
+      if(['avg-assembly-integrate','avg-assembly-verify'].includes(input.task.kind)){
+        const {db}=await import('../db/schema'),{createAvgAssemblyExecutorV1}=await import('./assembly-executor')
+        const build=await db.productBuilds.get(input.buildId),production=build?await db.productProductions.get(build.productionId):null
+        if(!production||build!.productionId!==input.productionId)throw new Error('[avg-visual-plan] 组装缺少准确 Production')
+        return createAvgAssemblyExecutorV1({brief,production})(input)
+      }
+      if (input.task.executionMode !== 'model' && input.task.kind !== 'avg-v4-visual-requirements-compile') throw new Error('[avg-visual-plan] 执行任务超出冻结视觉/组装域；未发送请求')
       source = await readAvgVisualPlanningExecutionSourcesV4(input, brief)
     } catch (error) { throw new ProductProductionDraftRejectedErrorV1(error instanceof Error ? error.message : '专业视觉来源无效', zero()) }
     if (input.task.kind === 'avg-v4-visual-requirements-compile') return compileTask(input, source, started)

@@ -5535,7 +5535,7 @@ async function compileTerminalBuild(input: {
   const qualityArtifact = artifacts.find(row => row.artifactKey === terminalArtifactKeys.qualityReport)
   if (!packageArtifact || !qualityArtifact) throw new Error('[product-production-scheduler] terminal package/quality Artifact 缺失')
   const runtimePackage = parseProductRuntimePackage(packageArtifact.payloadJson)
-  if (runtimePackage.version === 2 && !input.brief.avgAssembly) throw new Error('[avg] 原生终态必须来自冻结的 AVG 组装计划')
+  if (runtimePackage.version === 2 && !input.brief.avgAssembly&&!input.brief.avgVisualPlanning) throw new Error('[avg] 原生终态必须来自冻结的 AVG 组装计划')
   const packageHash = await hashProductProductionValueV2(runtimePackage)
   if (packageArtifact.contentHash !== packageHash) throw new Error('[product-production-scheduler] package Artifact hash 不一致')
   let previousPackage: Parameters<typeof createProductBuildCompatibilityReportV1>[0]['previous'] = null
@@ -5587,7 +5587,8 @@ async function compileTerminalBuild(input: {
       }
     }
   }
-  if (input.brief.avgAssembly && input.brief.avgAssembly.basePackageHash !== (previousPackage?.packageHash ?? null)) throw new Error('[avg] 组装修订基线与实际 Build 谱系不一致')
+  const avgAssembly=input.brief.avgAssembly??input.brief.avgVisualPlanning?.assembly
+  if (avgAssembly && avgAssembly.basePackageHash !== (previousPackage?.packageHash ?? null)) throw new Error('[avg] 组装修订基线与实际 Build 谱系不一致')
   const compatibility = await createProductBuildCompatibilityReportV1({
     previous: previousPackage,
     current: { buildNumber: build.buildNumber, packageHash, runtimePackage },
@@ -5932,7 +5933,8 @@ export async function recoverImportedProductProductionProofsV1(input: {
 }): Promise<ProductProductionSchedulerProjectionV1> {
   const scope = await resolveScope({ scope: input.scope })
   const current = await currentProductionBuild(scope, input.productionId)
-  if (!['text-adventure', 'text-open-world'].includes(current.brief.intent.productType)) {
+  const avgVisual=current.brief.intent.productType==='avg'&&!!current.brief.avgVisualPlanning
+  if (!['text-adventure', 'text-open-world'].includes(current.brief.intent.productType)&&!avgVisual) {
     throw new Error('[product-production-scheduler] 当前产品不支持导入生产证明复验')
   }
   if (!['preview-ready', 'release-ready', 'released'].includes(current.build.status)) {
@@ -5973,6 +5975,10 @@ export async function recoverImportedProductProductionProofsV1(input: {
       })
     } else {
       await assertProductBuildArtifactContentHashV1(row)
+    }
+    if(avgVisual&&row.artifactKey.startsWith('avg.proposal.')){
+      const {readAvgVisualProposalEvidenceV4}=await import('../avg/visual-planning-evidence')
+      await readAvgVisualProposalEvidenceV4(scope,row)
     }
   }
   let progressed = true
@@ -6049,6 +6055,14 @@ export async function recoverImportedProductProductionProofsV1(input: {
   if ([...children.values()].some(child => child.projection.state !== 'completed'
     || !child.projection.terminalReceiptHash)) {
     throw new Error('[product-production-scheduler] 导入 task 依赖闭包无法完成本地复验')
+  }
+  // Only completed imported prefixes were revalidated above. Check the full
+  // V4 author/compiler/original-byte closure before re-sealing its root; no
+  // executor, current provider capability or author adoption is invoked.
+  if(avgVisual){
+    const {verifyProductBuildTerminalArtifactSetV1}=await import('./artifact-store')
+    await verifyProductBuildTerminalArtifactSetV1({scope,productionId:input.productionId,buildId:current.build.id!,
+      expectedControlEpoch:current.build.controlEpoch,expectedPlanHash:current.build.planHash})
   }
   root = await readAgentRunV1(scope, root.run.id)
   await compileTerminalBuild({

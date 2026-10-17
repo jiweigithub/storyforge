@@ -15,7 +15,8 @@ export async function readAvgImageConsumptionDefinitionV4(input: {
   if (!build) throw new Error('[avg-visual-image] 图片消费缺少准确 Build')
   const { readAvgCompiledImageDefinitionV4 } = await import('./visual-planning-image-definition')
   const resolved = await readAvgCompiledImageDefinitionV4({ ...input, expectedBrief: input.brief,
-    expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch })
+    expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch,
+    purpose:build.packageHash||build.previewHash?'frozen-verification':'assembly' })
   return { ...resolved.definition, imageProcessing: undefined }
 }
 

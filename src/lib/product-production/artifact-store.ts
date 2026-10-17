@@ -2163,7 +2163,8 @@ export async function verifyProductBuildTerminalArtifactSetV1(input: {
   const physicalBlobProofRows = await verifiedBlobProofsV1({ scope, artifacts, label: 'terminal' })
   const briefRow = casReadSet.briefRows.find(row => row.revision === build.briefRevision && row.briefHash === build.briefHash)
   const nativeAuthorReceipts = new Map<string, string>()
-  if (production.productType === 'avg' && briefRow && parseProductProductionBriefV3(briefRow.briefJson).avgAssembly) {
+  const avgNativeBrief=production.productType==='avg'&&briefRow?parseProductProductionBriefV3(briefRow.briefJson):null
+  if (avgNativeBrief&&(avgNativeBrief.avgAssembly||avgNativeBrief.avgVisualPlanning)) {
     casReadSet.authorCommandRows = (await db.productProductionCommands.where('productionId').equals(production.id).toArray())
       .sort((left,right) => (left.id ?? 0) - (right.id ?? 0))
     const { verifyFrozenAvgAuthorInputsV1 } = await import('../avg/author-artifacts')
@@ -2179,6 +2180,12 @@ export async function verifyProductBuildTerminalArtifactSetV1(input: {
       nativeAuthorReceipts.set(choice.review.artifact.artifactKey, choice.review.authorReceiptHash)
     }
     if (author.authorStage) nativeAuthorReceipts.set(author.authorStage.artifact.artifactKey, author.authorStage.authorReceiptHash)
+    if(avgNativeBrief.avgVisualPlanning){
+      const {readAvgConfirmedVisualArtifactsV4}=await import('../avg/author-artifacts')
+      const visual=await readAvgConfirmedVisualArtifactsV4({scope,buildId:build.id,expectedBuildRevision:build.stateRevision,
+        controlEpoch:build.controlEpoch,artifactKeys:plan.tasks.filter(t=>['avg-author-visual-bible','avg-author-media-brief'].includes(t.kind)).flatMap(t=>t.outputArtifactKeys)},true)
+      for(const row of visual)nativeAuthorReceipts.set(row.artifact.artifactKey,row.authorReceiptHash)
+    }
   }
   const proofMembers: unknown[] = []
   for (const task of plan.tasks) {
@@ -2443,6 +2450,30 @@ async function acceptSealedProducerArtifactV1(
   if (!preliminaryBuild || preliminaryBuild.id == null
     || !await assertRecordInScope(scope, 'productBuilds', preliminaryBuild, { owner: 'work' })) {
     throw new Error('[product-production-artifact] Build 不存在或跨 Work')
+  }
+  // After V4 author inputs are complete the shared scheduler revisits already
+  // settled semantic/image checkpoints while integrating. This is an exact read,
+  // never permission to admit a new proposal/compilation in that phase.
+  let v4CheckpointRead=avgVisualPlanningAdmission
+  if(avgMediaRawAdmission&&preliminaryBuild.status==='integrating'&&input.artifactKey.startsWith('avg.media.raw.')){
+    const briefRow=await db.productProductionBriefs.where('[productionId+revision]')
+      .equals([preliminaryBuild.productionId,preliminaryBuild.briefRevision]).first()
+    const stored=briefRow?JSON.parse(briefRow.briefJson) as {avgVisualPlanning?:unknown}:null
+    if(stored?.avgVisualPlanning){
+      if(!briefRow||!await assertRecordInScope(scope,'productProductionBriefs',briefRow,{owner:'work'})
+        ||briefRow.briefHash!==preliminaryBuild.briefHash||briefRow.status!=='authorized'
+        ||briefRow.authorizedAt!==preliminaryBuild.authorizedAt
+        ||await hashProductProductionValueV2(parseProductProductionBriefV3(briefRow.briefJson))!==preliminaryBuild.briefHash)throw new Error('[avg-visual-plan] 组装复核缺少准确冻结 V4 Brief')
+      v4CheckpointRead=true
+    }
+  }
+  if(v4CheckpointRead&&preliminaryBuild.status==='integrating'&&preliminaryBuild.controlEpoch===input.controlEpoch){
+    const rows=await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([input.buildId,input.artifactKey])
+      .filter(row=>row.status==='accepted'&&row.controlEpoch===input.controlEpoch).toArray()
+    const row=rows[0]
+    if(rows.length!==1||!row||row.producerRunId!==input.producerRunId||row.producerReceiptHash!==input.producerReceiptHash
+      ||row.inputHash!==input.inputHash||canonicalProductProductionJsonV2(await preparedStoredArtifactV1(row))!==canonicalProductProductionJsonV2(prepared))throw new Error('[avg-visual-plan] 组装阶段只能复核原已接收的准确语义工件')
+    return verifyAcceptedProductBuildArtifactV1({scope,buildId:input.buildId,artifactKey:row.artifactKey,version:row.version,contentHash:row.contentHash})
   }
   if (preliminaryBuild.controlEpoch !== input.controlEpoch
     || !['authorized', 'building'].includes(preliminaryBuild.status) && !(avgMediaRawAdmission && preliminaryBuild.status === 'integrating')) {

@@ -8,11 +8,12 @@ import { resolveAvgImageExecutionCapabilityV2 } from '../../src/lib/avg/media-ca
 import { parseProductProductionBriefV3 } from '../../src/lib/product-production/contracts'
 import { parseProductProductionPlanV3 } from '../../src/lib/product-production/plan'
 import { executeProductProductionCommand } from '../../src/lib/product-production/commands'
-import { readProductProductionDetailsV1 } from '../../src/lib/product-production/service'
+import { readProductProductionDetailsV1, startProductProductionPreviewV1, recoverImportedProductProductionProofsV1 } from '../../src/lib/product-production/service'
+import { verifyStoredProductBuildPreview } from '../../src/lib/product-production/preview-manifest'
 import { createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1 } from '../../src/lib/product-production/production-executor'
 import { runProductProductionSchedulerCycleV1, runProductProductionUntilBlockedV1 } from '../../src/lib/product-production/scheduler'
 import { stageAvgAuthorArtifactV1, readAvgConfirmedVisualArtifactsV4 } from '../../src/lib/avg/author-artifacts'
-import { verifyAcceptedProductBuildArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4 } from '../../src/lib/product-production/artifact-store'
+import { acceptProductBuildArtifact, verifyAcceptedProductBuildArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4, verifyProductBuildTerminalArtifactSetV1 } from '../../src/lib/product-production/artifact-store'
 import { readAvgVisualProposalEvidenceV4 } from '../../src/lib/avg/visual-planning-evidence'
 import { readAvgCompiledImageDefinitionV4, prepareAvgCompiledImageRequestV4 } from '../../src/lib/avg/visual-planning-image-definition'
 import { readAvgVisualPlanningContextV4 } from '../../src/lib/avg/visual-planning-context'
@@ -166,6 +167,23 @@ async function generatedImage() {
   const confirm = (candidate: ProductBuildArtifactRecordV1) => confirmAvgWorkspaceInputV1({ ...s,
     artifactKey: candidate.artifactKey, candidateVersion: candidate.version, candidateHash: JSON.parse(candidate.metadataJson).candidateHash })
   return { s, raw, requirement, image, choose, review, confirm }
+}
+
+function mockStageImageObservation() {
+  vi.spyOn(mediaVerifier, 'verifyProductMediaRuntimeUrlsV1').mockImplementation(async input => ({ environment: input.environment,
+    measuredAt: Date.now(), assets: input.assets.map(asset => ({ assetKey: asset.assetKey, contentHash: asset.contentHash,
+      mimeType: asset.mimeType, mediaClass: 'image', status: 'decoded', decodedWidth: 576, decodedHeight: 324,
+      decodedDurationMs: null, decodedHasAlpha: false, decodedChannelCount: null, decodedSampleRateHz: null,
+      integratedLufs: null, truePeakDbtp: null, loopSeamDbfs: null, policyFailures: [], failureCode: null })) }))
+}
+
+async function adoptedImageStage(generated: Awaited<ReturnType<typeof generatedImage>>) {
+  const {s,review,choose,confirm}=generated
+  await confirm(await review());await confirm(await choose())
+  const saved=await configureAvgChosenMediaDraftV2({...s,expectedDraftRevision:(await readAvgDraftV1(s.scope)).revision})
+  mockStageImageObservation()
+  await confirm(await stageAvgWorkspaceInputV1({...s,expectedDraftRevision:saved.revision,artifactKey:'avg.author.stage',
+    declaration:'确认准确工程图片消费与演出；不签艺术或商业质量'}))
 }
 
 describe('AVG V4 actual visual planning Harness and explicit author boundary', () => {
@@ -438,11 +456,7 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
         assetKey: requirement.assetKey, beatKey: requirement.triggerBeatKey }))
       // Stage byte decoding is a separate browser observation, not the provider's
       // raw receipt. Keep it controlled here and require native evidence later.
-      vi.spyOn(mediaVerifier, 'verifyProductMediaRuntimeUrlsV1').mockImplementation(async input => ({ environment: input.environment,
-        measuredAt: Date.now(), assets: input.assets.map(asset => ({ assetKey: asset.assetKey, contentHash: asset.contentHash,
-          mimeType: asset.mimeType, mediaClass: 'image', status: 'decoded', decodedWidth: 576, decodedHeight: 324,
-          decodedDurationMs: null, decodedHasAlpha: false, decodedChannelCount: null, decodedSampleRateHz: null,
-          integratedLufs: null, truePeakDbtp: null, loopSeamDbfs: null, policyFailures: [], failureCode: null })) }))
+      mockStageImageObservation()
       const stageCandidate = await stageAvgWorkspaceInputV1({ ...s, expectedDraftRevision: saved.revision,
         artifactKey: 'avg.author.stage', declaration: '确认工程图及准确演出消费者；未签 Preview 或商业通过' })
       await confirm(stageCandidate)
@@ -538,5 +552,132 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       expect(await accepted(s, choice.artifactKey)).toBeDefined()
       expect(s.imageFetcher).toHaveBeenCalledTimes(1)
     })
+
+    it('joins adopted V4 images through the shared integrator into an immutable actual Preview without another provider call', async () => {
+      const {s,raw,requirement,choose,review}=generated
+      await adoptedImageStage(generated)
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      const finished=await run(s),build=await current(s)
+      expect(finished.buildStatus,build.failureJson).toBe('preview-ready')
+      const preview=await verifyStoredProductBuildPreview(build)
+      await verifyProductBuildTerminalArtifactSetV1({...s,expectedControlEpoch:build.controlEpoch,expectedPlanHash:build.planHash})
+      expect(preview.runtimePackage.version).toBe(2)
+      const module=preview.runtimePackage.modules[0]
+      if(module.version!==2)throw new Error('Expected actual native module')
+      expect(module.stage.assets[0].contentHash).toBe(raw.contentHash)
+      expect(module.stage.cues).toContainEqual(expect.objectContaining({type:'set-background',assetKey:requirement.assetKey,beatKey:requirement.triggerBeatKey}))
+      const quality=JSON.parse(build.qualityReportJson)
+      expect(quality.hardGateResults).toContainEqual(expect.objectContaining({gateId:'avg.visual.requirements.compiled',passed:true}))
+      expect(quality.releaseReady).toBe(false)
+      const session=await startProductProductionPreviewV1({...s,expectedBuildId:build.id!,expectedPreviewHash:build.previewHash})
+      expect((await db.productRuntimeSessions.get(session.sessionId))!.productBuildId).toBe(s.buildId)
+      const boundary={scope:s.scope,buildId:s.buildId,expectedBuildRevision:build.stateRevision,controlEpoch:build.controlEpoch,expectedBrief:s.brief}
+      const frozen=await readAvgCompiledImageDefinitionV4({...boundary,purpose:'frozen-verification'})
+      expect(frozen.brief.avgAssembly).toBeUndefined()
+      await expect(readAvgCompiledImageDefinitionV4(boundary)).rejects.toThrow()
+      await expect(readAvgCompiledImageDefinitionV4({...boundary,purpose:'assembly'})).rejects.toThrow()
+      await expect(prepareAvgCompiledImageRequestV4({...boundary,purpose:'frozen-verification',requirementKey:requirement.requirementKey,idempotencyKey:'d'.repeat(64)})).rejects.toThrow(/不能授予/)
+      await expect(choose()).rejects.toThrow()
+      await expect(review()).rejects.toThrow()
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it('revisits only exact already accepted V4 checkpoints during integration and cannot use the read branch for new writes', async () => {
+      const {s,raw}=generated;await adoptedImageStage(generated);await cycle(s)
+      const build=await current(s);expect(build.status,build.failureJson).toBe('integrating')
+      const compiled=(await accepted(s,'avg.media.compiled-visual-requirements'))!
+      const input=(row:ProductBuildArtifactRecordV1)=>({scope:s.scope,buildId:s.buildId,controlEpoch:build.controlEpoch,
+        artifactKey:row.artifactKey,requirementKey:row.requirementKey,kind:row.kind,mediaKind:row.mediaKind,payload:JSON.parse(row.payloadJson),metadata:JSON.parse(row.metadataJson),
+        quality:JSON.parse(row.qualityJson),rights:JSON.parse(row.rightsJson),contentHash:row.contentHash,blobObjectId:row.blobObjectId,
+        mimeType:row.mimeType,byteSize:row.byteSize,producerRunId:row.producerRunId,producerReceiptHash:row.producerReceiptHash,inputHash:row.inputHash})
+      const count=await db.productBuildArtifacts.where('buildId').equals(s.buildId).count()
+      expect(await acceptProductBuildArtifact(input(compiled))).toEqual(compiled)
+      expect(await acceptProductBuildArtifact(input(raw))).toEqual(raw)
+      const changed=input(compiled);changed.payload.batch.requirements[0].prompt+='未经采用的替换'
+      changed.contentHash=await hashProductProductionValueV2(changed.payload)
+      await expect(acceptProductBuildArtifact(changed)).rejects.toThrow(/只能复核/)
+      await expect(acceptProductBuildArtifact({...input(raw),quality:{...JSON.parse(raw.qualityJson),decoderVerified:true}})).rejects.toThrow(/只能复核/)
+      await expect(acceptProductBuildArtifact({...input(compiled),artifactKey:'avg.proposal.unapproved'})).rejects.toThrow(/只能复核/)
+      await expect(acceptProductBuildArtifact({...input(compiled),producerRunId:raw.producerRunId})).rejects.toThrow(/只能复核/)
+      expect(await db.productBuildArtifacts.where('buildId').equals(s.buildId).count()).toBe(count)
+      expect(await db.productBuildArtifacts.get(compiled.id!)).toEqual(compiled)
+      await run(s);expect((await current(s)).status).toBe('preview-ready')
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it.each(['compiled-bytes','raw-bytes','original-response'] as const)('rejects changed %s in the full frozen V4 terminal proof', async failure => {
+      const {s,raw}=generated;await adoptedImageStage(generated);await run(s)
+      const build=await current(s);expect(build.previewHash,build.failureJson).not.toBe('')
+      if(failure==='compiled-bytes'){
+        const row=(await accepted(s,'avg.media.compiled-visual-requirements'))!,payload=JSON.parse(row.payloadJson)
+        payload.batch.requirements[0].prompt+='冻结后伪造并重算 hash'
+        await db.productBuildArtifacts.update(row.id!,{payloadJson:canonicalProductProductionJsonV2(payload),contentHash:await hashProductProductionValueV2(payload)})
+      }else if(failure==='raw-bytes'){
+        const row=(await db.mediaBlobObjects.get(raw.blobObjectId!))!,bytes=new Uint8Array(row.data!.slice(0));bytes[bytes.length-1]^=1
+        await db.mediaBlobObjects.update(row.id!,{data:bytes.buffer})
+      }else{
+        const proposal=(await accepted(s,'avg.proposal.visual-bible'))!,hash=JSON.parse(proposal.qualityJson).rawResponseHash
+        const row=(await db.agentRunArtifacts.filter(r=>r.projectId===s.scope.projectId&&r.artifactKind==='raw-response'&&r.contentHash===hash).first())!
+        await db.agentRunArtifacts.delete(row.id!)
+      }
+      await expect(verifyProductBuildTerminalArtifactSetV1({...s,expectedControlEpoch:build.controlEpoch,expectedPlanHash:build.planHash})).rejects.toThrow()
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it('restores the V4 frozen Preview and original image evidence through real backup/remap and deletes only the imported Work', async () => {
+      const {s,raw}=generated;await adoptedImageStage(generated);await run(s)
+      const original=await current(s);expect(original.previewHash,original.failureJson).not.toBe('')
+      const importedProject=await importProjectJSON(await exportProjectJSON(s.scope.projectId))
+      const imported=(await db.productBuilds.where('projectId').equals(importedProject).first())!
+      const scope={projectId:importedProject,worldId:imported.worldId,workId:imported.workId}
+      const preview=await verifyStoredProductBuildPreview(imported)
+      expect(preview.previewHash).toBe(original.previewHash)
+      // Import deliberately stales Run verification. Explicit zero-provider
+      // revalidation preserves the original package, receipts and authority.
+      await expect(verifyProductBuildTerminalArtifactSetV1({scope,productionId:imported.productionId,buildId:imported.id!,
+        expectedControlEpoch:imported.controlEpoch,expectedPlanHash:imported.planHash})).rejects.toThrow()
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      await recoverImportedProductProductionProofsV1({scope,productionId:imported.productionId})
+      await verifyProductBuildTerminalArtifactSetV1({scope,productionId:imported.productionId,buildId:imported.id!,
+        expectedControlEpoch:imported.controlEpoch,expectedPlanHash:imported.planHash})
+      await expect(stageAvgMediaChoiceV2({scope,productionId:imported.productionId,requirementKey:s.media.outputs[0].requirementKey,
+        rawVersion:raw.version,rawContentHash:raw.contentHash,declaration:'复验不授权采用或重发'})).rejects.toThrow()
+      await expect(runProductProductionUntilBlockedV1({...s,scope,productionId:imported.productionId})).rejects.toThrow()
+      const image=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([imported.id!,raw.artifactKey]).first())!
+      expect((await db.mediaBlobObjects.get(image.blobObjectId!))!.data).toEqual(s.imageBytes)
+      const session=await startProductProductionPreviewV1({scope,productionId:imported.productionId,expectedBuildId:imported.id!,expectedPreviewHash:imported.previewHash})
+      expect((await db.productRuntimeSessions.get(session.sessionId))!.workId).toBe(scope.workId)
+      await deleteWork(scope.workId)
+      expect(await db.productBuilds.get(imported.id!)).toBeUndefined()
+      expect((await db.mediaBlobObjects.get(raw.blobObjectId!))!.data).toEqual(s.imageBytes)
+      expect((await current(s)).previewHash).toBe(original.previewHash)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it.each(['raw-bytes','original-response','unapproved-compilation'] as const)('cannot re-seal an imported V4 root with changed %s or create another provider attempt', async failure => {
+      const {s,raw}=generated;await adoptedImageStage(generated);await run(s)
+      const projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId))
+      const imported=(await db.productBuilds.where('projectId').equals(projectId).first())!,scope={projectId,worldId:imported.worldId,workId:imported.workId}
+      const ledger=JSON.parse(imported.budgetLedgerJson),rootBefore=await db.agentRuns.get(ledger.rootRunId)
+      if(failure==='raw-bytes'){
+        const image=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([imported.id!,raw.artifactKey]).first())!
+        const blob=(await db.mediaBlobObjects.get(image.blobObjectId!))!,bytes=new Uint8Array(blob.data!.slice(0));bytes[bytes.length-1]^=1
+        await db.mediaBlobObjects.update(blob.id!,{data:bytes.buffer})
+      }else if(failure==='original-response'){
+        const proposal=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([imported.id!,'avg.proposal.visual-bible']).first())!
+        const hash=JSON.parse(proposal.qualityJson).rawResponseHash,row=(await db.agentRunArtifacts.filter(r=>r.projectId===projectId&&r.artifactKind==='raw-response'&&r.contentHash===hash).first())!
+        await db.agentRunArtifacts.delete(row.id!)
+      }else{
+        const row=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([imported.id!,'avg.media.compiled-visual-requirements']).first())!,payload=JSON.parse(row.payloadJson)
+        payload.batch.requirements[0].prompt+='导入后未采用替换'
+        await db.productBuildArtifacts.update(row.id!,{payloadJson:canonicalProductProductionJsonV2(payload),contentHash:await hashProductProductionValueV2(payload)})
+      }
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      await expect(recoverImportedProductProductionProofsV1({scope,productionId:imported.productionId})).rejects.toThrow()
+      expect(await db.agentRuns.get(ledger.rootRunId)).toEqual(rootBefore)
+      expect((await db.productBuilds.get(imported.id!))!.budgetLedgerJson).toBe(imported.budgetLedgerJson)
+      expect((await db.mediaBlobObjects.get(raw.blobObjectId!))!.data).toEqual(s.imageBytes)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
   })
 })

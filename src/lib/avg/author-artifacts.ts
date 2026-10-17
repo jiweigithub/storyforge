@@ -15,6 +15,7 @@ import { validateAvgAuthorAssemblyV1, type AvgAssemblyValidationV1 } from './aut
 import { avgKey, avgText } from './protocol-validation'
 import { validateAvgSystemPlanForAuthorV1, type AvgSystemValidationV1 } from './system-compiler'
 import { buildAvgNativeAssemblyPlan } from './assembly-plan'
+import { buildAvgVisualPlanningPlanV4 } from './visual-planning-plan'
 import { parseAvgAuthorMediaChoice, avgMediaChoiceArtifactKeyV1, avgVisualReviewArtifactKeyV1, type AvgAuthorMediaChoice } from './media-production-contract'
 import { inspectAvgChosenImageV1, readAvgChosenMediaSourceV2, validateAvgMediaChoiceV1, type AvgMediaChoiceValidation } from './media-choice-validation'
 import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1, verifyAvgProcessedImageArtifactV1, verifyAvgHistoricalRawVoiceArtifactV1 } from '../product-production/artifact-store'
@@ -201,7 +202,7 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
     || briefRow.briefHash !== build.briefHash || !frozenVerification && !referenceRead && production.currentBriefRevision !== build.briefRevision) throw new Error('[avg] Brief 授权已 stale')
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
   if (brief.intent.productType !== 'avg' || await hash(brief) !== build.briefHash) throw new Error('[avg] Brief 内容/hash 不一致')
-  if (frozenVerification && !brief.avgAssembly) throw new Error('[avg] 只读作者验证只接受原生组装合同')
+  if (frozenVerification && !brief.avgAssembly&&!brief.avgVisualPlanning) throw new Error('[avg] 只读作者验证只接受原生组装合同')
   if (referenceRead && referenceKind === 'image' && !readAvgOptionalImageDefinitionV3(brief)) throw new Error('[avg-media] 生成参考只接受原生图片生产来源')
   if (referenceRead && referenceKind === 'voice' && brief.avgAssembly?.version !== 3) throw new Error('[avg-voice] 沿用配音只接受原生配音生产来源')
   if (!forCompilation && brief.avgAssembly?.version === 1 && Object.keys((JSON.parse(build.budgetLedgerJson) as { tasks?: object }).tasks ?? {}).length) throw new Error('[avg] 组装已开始执行；请保留旧版本并创建新 Build 修订')
@@ -223,8 +224,11 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
   if (plan.productType !== 'avg' || plan.buildNumber !== build.buildNumber || plan.controlEpoch !== sourceEpoch
     || build.planRevision < 1 || await hash(plan) !== build.planHash
     || canonicalProductProductionJsonV2(plan) !== build.planJson) throw new Error('[avg] 冻结 Plan/hash 已 stale')
-  if ((frozenVerification || referenceRead) && canonicalProductProductionJsonV2(buildAvgNativeAssemblyPlan({ brief, briefHash:build.briefHash,
-    buildNumber:build.buildNumber, controlEpoch:sourceEpoch })) !== build.planJson) throw new Error('[avg] 原生作者 Plan 不是冻结的固定组装拓扑')
+  if (frozenVerification || referenceRead) {
+    const input={brief,briefHash:build.briefHash,buildNumber:build.buildNumber,controlEpoch:sourceEpoch}
+    const expected=brief.avgVisualPlanning?buildAvgVisualPlanningPlanV4({...input,brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning}}):buildAvgNativeAssemblyPlan(input)
+    if(canonicalProductProductionJsonV2(expected)!==build.planJson)throw new Error('[avg] 原生作者 Plan 不是冻结的固定组装拓扑')
+  }
   return { build, production: production as ProductProductionRecordV1 & { id: number }, briefRow, brief, plan, sourcePlan }
 }
 
@@ -655,13 +659,19 @@ export function readAvgSystemPlanForCompilationV1(input: Parameters<typeof readA
   return readAuthorInputs(input)
 }
 
+/** Frozen source verification only; author mutation retains authority(false).
+ * No stage/choice recursion while proving the compiled visual definition. */
+export function readAvgFrozenVisualSourceInputsV4(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope'|'buildId'|'expectedBuildRevision'|'controlEpoch'>) {
+  return readAuthorInputs({...input,includeSceneScripts:true},true)
+}
+
 /** Planning reads canonical direction only after the existing author command,
  * frozen candidate and exact raw-proposal producer have all been verified. */
-export async function readAvgConfirmedVisualArtifactsV4(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope' | 'buildId' | 'expectedBuildRevision' | 'controlEpoch'> & { artifactKeys: string[] }) {
+export async function readAvgConfirmedVisualArtifactsV4(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope' | 'buildId' | 'expectedBuildRevision' | 'controlEpoch'> & { artifactKeys: string[] }, frozenVerification = false) {
   const scope = await resolveScope({ scope: input.scope })
   return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands,
     db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects, db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts), async () => {
-    const context = await authority(scope, input.buildId, true)
+    const context = await authority(scope, input.buildId, true, frozenVerification)
     if (!context.brief.avgVisualPlanning || context.build.stateRevision !== input.expectedBuildRevision || context.build.controlEpoch !== input.controlEpoch
       || new Set(input.artifactKeys).size !== input.artifactKeys.length) throw new Error('[avg-visual-plan] 视觉方案来源或 Build 已 stale')
     const result = []
