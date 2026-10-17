@@ -618,7 +618,7 @@ export function createTtrpgAudioStateV1(): TtrpgAudioStateV1 {
   }
 }
 
-function assertEvent(event: TtrpgAudioCueAppliedEventV1): TtrpgAudioCueAppliedEventV1 {
+export function parseTtrpgAudioCueAppliedEventV1(event: unknown): TtrpgAudioCueAppliedEventV1 {
   const row = record(event, 'audio.event')
   if (row.type !== 'ttrpg.audio.cue.applied') return fail('audio.event.type无效')
   const eventSequence = positiveInteger(row.eventSequence, 'audio.event.eventSequence')
@@ -656,7 +656,7 @@ export function applyTtrpgAudioCueAppliedEventV1(
   state: TtrpgAudioStateV1,
   event: TtrpgAudioCueAppliedEventV1,
 ): TtrpgAudioStateV1 {
-  const checked = assertEvent(event)
+  const checked = parseTtrpgAudioCueAppliedEventV1(event)
   if (checked.eventSequence <= state.lastEventSequence) {
     return fail('audio.event.eventSequence必须递增')
   }

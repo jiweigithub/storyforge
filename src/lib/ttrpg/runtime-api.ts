@@ -1,3 +1,7 @@
+/** P10 pure audience/replay foundation only; no formal E16 append, provider, or playback. */
+export { createTtrpgOpenAudioScopeV1, assertTtrpgOpenAudioScopeAuthorityV1, parseTtrpgOpenAudioScopeV1,
+  parseTtrpgOpenScopedAudioEventV1, projectTtrpgOpenScopedAudioV1 } from './open-audio-scope'
+export type { TtrpgOpenAudioScopeV1, TtrpgOpenScopedAudioEventV1 } from './open-audio-scope'
 export { archiveTtrpgOpenUnresumableCommonOracleWindowV1 } from './open-common-oracle-archive'
 export { startTtrpgOpenCommonOracleWindowV1, finishTtrpgOpenEmptyCommonOracleWindowV1 } from './open-common-oracle-window'
 export { prepareTtrpgOpenCommonOracleInputV1 } from './open-intent-input'
