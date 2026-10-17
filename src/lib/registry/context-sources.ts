@@ -163,6 +163,14 @@ const TEXT_OPEN_WORLD_RUNTIME_CONTEXT_PROVIDER_PROXY_V1: ContextResourceProvider
     .TEXT_OPEN_WORLD_RUNTIME_CONTEXT_PROVIDER_V1.fingerprint(scope),
 }
 
+function ttrpgCommonIdentityProvider(): ContextResourceProviderV1 {
+  const load = async () => (await import('../ttrpg/open-common-identity-context')).createTtrpgOpenCommonIdentityProviderV1()
+  return { version: 'context-resource-provider-v1', providerId: 'storyforge.ttrpgOpenCommonIdentities',
+    providerVersion: 'ttrpg-open-common-identities-provider-v1', normalizationVersion: 'ttrpg-open-common-identities-json-v1', kinds: ['fact'],
+    listMetadata: async input => (await load()).listMetadata(input), searchMetadata: async input => (await load()).searchMetadata(input),
+    read: async input => (await load()).read(input), readOriginal: async input => (await load()).readOriginal(input),
+    fingerprint: async scope => (await load()).fingerprint(scope), openReadSession: async scope => (await load()).openReadSession!(scope) }
+}
 function ttrpgLearnedIdentityProvider(): ContextResourceProviderV1 {
   const load = async () => (await import('../ttrpg/open-identity-knowledge-context')).createTtrpgOpenLearnedIdentityProviderV1()
   return { version: 'context-resource-provider-v1', providerId: 'storyforge.ttrpgOpenLearnedIdentities',
@@ -1972,6 +1980,13 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
     requiresResourceKeyAllowList: true, resources: ttrpgOpenProvider('ttrpgOpenKnowledge'),
     read: async () => { throw new Error('[ttrpg-open-context] 角色来源只经有明确 POV/allow-list 的 Context Gateway 渐进读取') },
+  },
+  {
+    key: 'ttrpgOpenCommonIdentities', label: 'open 跑团全体当前队员共同身份与原可靠性',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 6000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    requiresResourceKeyAllowList: true, resources: ttrpgCommonIdentityProvider(),
+    read: async () => { throw new Error('[ttrpg-common-identities] 共同身份只经全体现队员交集与完整资源 allow-list 读取') },
   },
   {
     key: 'ttrpgOpenLearnedIdentities', label: 'open 跑团角色已识别身份与原可靠性',

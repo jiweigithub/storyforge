@@ -17,7 +17,8 @@ import { assembleTtrpgContextWithBudgetV1, type TtrpgContextTierKeyV1 } from './
 import { selectTtrpgContextInjectionsV1, matchesTtrpgContextTriggerV1, type TtrpgContextTriggerStateV1 } from './context-trigger'
 import { evaluateTtrpgOpenContextPredicateV1, type TtrpgOpenContextPredicateViewV1 } from './open-context-predicate-view'
 import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
-import { ttrpgOpenContextConsumerForPurposeV1, TTRPG_OPEN_GUIDANCE_SOURCE_KEYS_V1, TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1, type TtrpgOpenModelPurposeV1 } from './open-model-purpose-contract'
+import { ttrpgOpenContextConsumerForPurposeV1, TTRPG_OPEN_GUIDANCE_SOURCE_KEYS_V1, TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1, TTRPG_OPEN_COMMON_IDENTITY_SOURCE_V1, type TtrpgOpenModelPurposeV1 } from './open-model-purpose-contract'
+import type { loadTtrpgOpenPlayerContextV1 } from './open-player-context'
 import type { loadTtrpgOpenModelContextV1 } from './open-model-purpose'
 import { selectTtrpgOpenMemoryResourcesV1 } from './open-memory-selection'
 import type { TtrpgOpenSourceRefV1 } from './open-coordination'
@@ -27,6 +28,9 @@ interface TriggerHistoryReceiptV1 { schema: string; version: number; domainHash:
 function hasPartyPredicateFacts(context: Awaited<ReturnType<typeof loadTtrpgOpenModelContextV1>>): context is
   Awaited<ReturnType<typeof loadTtrpgOpenKpContextV1>> | Awaited<ReturnType<typeof loadTtrpgOpenBriefContextV1>> {
   return 'predicateFacts' in context
+}
+function hasActorKnowledge(context: Awaited<ReturnType<typeof loadTtrpgOpenModelContextV1>>): context is Awaited<ReturnType<typeof loadTtrpgOpenPlayerContextV1>> {
+  return 'view' in context && 'self' in context.view && 'knowledge' in context.view
 }
 export type TtrpgOpenContextSelectionReceiptV1 = Awaited<ReturnType<typeof selectTtrpgOpenContextResourcesV1>>['receipt']
 export async function selectTtrpgOpenContextResourcesV1(input: {
@@ -113,7 +117,22 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
   const matchedTriggerKeys = triggers.filter(trigger => matchesTtrpgContextTriggerV1(trigger, selectionInput)).map(trigger => trigger.triggerKey).sort()
   const injections = selectTtrpgContextInjectionsV1({ ...selectionInput, triggers })
   const triggered = new Map<string, typeof injections[number]>(await Promise.all(injections.map(async injection => [`trigger.${await hashCanonicalValue(injection.triggerKey)}`, injection] as const)))
-  const eligible = input.inventory.filter(row => row.sourceKey !== guidanceKey || !row.resourceKey.includes(':trigger.') || triggered.has(row.resourceKey.slice(row.resourceKey.lastIndexOf(':') + 1)))
+  // A clue can be seen firsthand and later reported again. New actor reads keep one original best grade;
+  // different evidence identities with the same title remain subject to the Gateway conflict guard.
+  const known = new Map<string, { index: number; rank: number }>()
+  const identityGeneration = consumer === 'actor' && input.skill.contextSourceKeys.some(key => key === TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1)
+  if (identityGeneration) {
+    if (!hasActorKnowledge(input.context)) throw new Error('[ttrpg-context] 身份代际需要准确本人知识投影')
+    const rank = { observed: 3, hearsay: 2, belief: 1 }
+    input.context.view.knowledge.forEach((row, index) => {
+      const previous = known.get(row.evidenceRef)
+      if (!previous || rank[row.reliability] > previous.rank) known.set(row.evidenceRef, { index, rank: rank[row.reliability] })
+    })
+  }
+  const selectedKnowledge = new Set([...known.values()].map(row => row.index))
+  const eligible = input.inventory.filter(row => (!identityGeneration || row.sourceKey !== 'ttrpgOpenKnowledge' || !/:knowledge\.(0|[1-9]\d*)$/.test(row.resourceKey)
+    || selectedKnowledge.has(Number(row.resourceKey.slice(row.resourceKey.lastIndexOf('.') + 1)))))
+    .filter(row => row.sourceKey !== guidanceKey || !row.resourceKey.includes(':trigger.') || triggered.has(row.resourceKey.slice(row.resourceKey.lastIndexOf(':') + 1)))
   const ruleRows = eligible.filter(row => row.sourceKey === 'ttrpgOpenAuthority' && /:(action|check)\./.test(row.resourceKey))
   const scope = { ...input.scope, productRuntimeSessionId: input.sessionId, runtimeActorKey: input.actorKey }
   const rules = ruleRows.length ? await selectContextResourcesV1({ taskKind: input.skill.contextTaskKind,
@@ -126,8 +145,8 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
   const briefRows = passive ? eligible.filter(row => row.sourceKey === (publicSituation ? 'ttrpgOpenPublicSituationInput' : situation ? 'ttrpgOpenSituationInput' : 'ttrpgOpenBriefInput') && row.priority !== 'must-read') : []
   const briefKeys = await selectTtrpgOpenMemoryResourcesV1({ ...input, scope, rows: briefRows,
     budgetTokens: Math.max(1, Math.floor(Math.min(input.budgetTokens, policy?.maximumContextTokens ?? 16000) / 2)) })
-  const namedIdentity = (row: ContextResourceDescriptorV1) => row.sourceKey === TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1
-    && row.resourceKey.includes(':learned-identity.') && input.rawInput.includes(row.title.normalize('NFC'))
+  const namedIdentity = (row: ContextResourceDescriptorV1) => [TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1, TTRPG_OPEN_COMMON_IDENTITY_SOURCE_V1].some(key => row.sourceKey === key)
+    && /:(learned-identity|common-identity)\./.test(row.resourceKey) && input.rawInput.includes(row.title.normalize('NFC'))
   const candidates = eligible.filter(row => (!ruleRows.includes(row) || selectedRules.has(row.resourceKey))
     && (!memoryRows.includes(row) || memoryKeys.has(row.resourceKey))
     && (!briefRows.includes(row) || briefKeys.has(row.resourceKey))).sort((a, b) => Number(namedIdentity(b)) - Number(namedIdentity(a)) || (a.resourceKey < b.resourceKey ? -1 : a.resourceKey > b.resourceKey ? 1 : 0))

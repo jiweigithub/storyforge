@@ -65,6 +65,19 @@ describe('R-TTRPGOPEN9 exact registered model identity knowledge without mechani
     const known = await loadTtrpgOpenLearnedIdentityContextV1({ scope: s.f.scope, sessionId: s.f.sessionId, actorKey: 'hero' })
     expect(known.view.identities).toMatchObject([{ name: '新守灯人', reliability: 'hearsay' }])
     expect(ttrpgOpenActorKnowsEvidenceV1((await readProductRuntimeState(s.f.sessionId)).ttrpg!.openRun!.knowledge, 'hero', s.root.evidenceRef)).toBe(true)
+    const rawInput = '亲眼看见的线索与后来听到的名字应分别核对。'
+    await identityKnowledgeWindowV1(s.f.sessionId, OPEN_HUMAN_VIEWER, rawInput)
+    const generated = await generateTtrpgOpenIntentCandidateV1({ ...await openEnvelopeV1(s.f.sessionId, 'identity.observed-and-heard'), scope: s.f.scope, sessionId: s.f.sessionId,
+      actorKey: 'hero', viewerKey: OPEN_HUMAN_VIEWER, rawInput, maximumOutputTokens: 800, maximumCostUsd: .1,
+      runAI: async () => JSON.stringify({ goal: '谨慎核实转述的名字', method: null, targetRefs: [], declaredResources: [], declaredAssumptions: [], requestedOutcome: null }) })
+    expect(generated.candidate.intent).not.toBeNull()
+    const reads = generated.prepared.evidence.selector.selected
+    expect(reads.filter(row => row.sourceKey === 'ttrpgOpenKnowledge' && /:knowledge\./.test(row.resourceKey))).toHaveLength(1)
+    const messages = generated.prepared.messages.map(row => row.content).join('\n')
+    expect(messages).toContain('"reliability":"observed"'); expect(messages).toContain('"reliability":"hearsay"')
+    const scope = { ...s.f.scope, productRuntimeSessionId: s.f.sessionId, runtimeActorKey: 'hero' }, provider = CONTEXT_SOURCE_BY_KEY.get('ttrpgOpenKnowledge')!.resources!
+    expect((await provider.listMetadata({ scope, limit: 1000 })).items.filter(row => /:knowledge\./.test(row.resourceKey))).toHaveLength(2)
+
   })
   it('requires complete registered resources and rejects participant storage drift on every pinned read', async () => {
     const s = await setup(), scope = { ...s.f.scope, productRuntimeSessionId: s.f.sessionId, runtimeActorKey: 'hero' }, provider = source()

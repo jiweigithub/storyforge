@@ -16,9 +16,12 @@ export const TTRPG_OPEN_MEMORY_CONTEXT_SOURCES_V1 = {
   'gm-assistant': TTRPG_OPEN_P7_CONTEXT_SOURCES_V1['gm-assistant'],
 } as const
 export const TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1 = 'ttrpgOpenLearnedIdentities'
+export const TTRPG_OPEN_COMMON_IDENTITY_SOURCE_V1 = 'ttrpgOpenCommonIdentities'
+export const TTRPG_OPEN_LEGACY_BRIEF_SOURCES_V1 = ['ttrpgOpenBriefInput', 'ttrpgOpenPartyMemory'] as const
 export const TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1 = {
   ...TTRPG_OPEN_MEMORY_CONTEXT_SOURCES_V1,
   actor: [...TTRPG_OPEN_MEMORY_CONTEXT_SOURCES_V1.actor, TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1],
+  'party-narrator': [...TTRPG_OPEN_MEMORY_CONTEXT_SOURCES_V1['party-narrator'], TTRPG_OPEN_COMMON_IDENTITY_SOURCE_V1],
 } as const
 export const TTRPG_OPEN_MODEL_PURPOSES_V1 = {
   'entity-proposal': { skillId: 'prose.ttrpg-open-entity-propose', entryId: 'ttrpg.open.entity-propose', stepId: 'ttrpg.open.entity-propose',
@@ -34,7 +37,7 @@ export const TTRPG_OPEN_MODEL_PURPOSES_V1 = {
   'public-situation-proposal': { skillId: 'prose.ttrpg-open-public-situation-propose', entryId: 'ttrpg.open.public-situation-propose', stepId: 'ttrpg.open.public-situation-propose',
     sourceKeys: ['ttrpgOpenPublicSituationInput'], actorRole: 'gm' },
   'stage-brief': { skillId: 'prose.ttrpg-open-brief', entryId: 'ttrpg.open.brief', stepId: 'ttrpg.open.brief',
-    sourceKeys: ['ttrpgOpenBriefInput', 'ttrpgOpenPartyMemory'], actorRole: 'gm' },
+    sourceKeys: [...TTRPG_OPEN_LEGACY_BRIEF_SOURCES_V1, TTRPG_OPEN_COMMON_IDENTITY_SOURCE_V1], actorRole: 'gm' },
   'common-oracle-interpret': { skillId: 'prose.ttrpg-open-common-oracle-interpret', entryId: 'ttrpg.open.common-oracle-interpret', stepId: 'ttrpg.open.common-oracle-interpret',
     sourceKeys: ['ttrpgOpenCommonOracleInput'], actorRole: 'gm' },
   'oracle-interpret': { skillId: 'prose.ttrpg-open-oracle-interpret', entryId: 'ttrpg.open.oracle-interpret', stepId: 'ttrpg.open.oracle-interpret',
@@ -55,7 +58,7 @@ export function assertTtrpgOpenFrozenContextSourcesV1(skillId: string, actual: r
   const current = TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1[consumer]
   const memory = TTRPG_OPEN_MEMORY_CONTEXT_SOURCES_V1[consumer]
   const key = [...actual].sort().join(',')
-  const supported = ['entity-proposal', 'stage-brief', 'situation-proposal', 'public-situation-proposal', 'common-oracle-interpret'].includes(definition.purpose) ? [definition.sourceKeys] : [legacy, modern, memory, current]
+  const supported = ['entity-proposal', 'situation-proposal', 'public-situation-proposal', 'common-oracle-interpret'].includes(definition.purpose) ? [definition.sourceKeys] : definition.purpose === 'stage-brief' ? [TTRPG_OPEN_LEGACY_BRIEF_SOURCES_V1, definition.sourceKeys] : [legacy, modern, memory, current]
   if (new Set(actual).size !== actual.length || !supported.some(keys => [...keys].sort().join(',') === key)) {
     throw new Error('[ttrpg-open-call] 冻结来源不是此目的登记的准确协议权限')
   }

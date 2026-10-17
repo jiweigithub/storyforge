@@ -8,7 +8,7 @@ import type { TtrpgOpenBriefAttributionV1 } from '../../lib/ttrpg/open-brief-con
 type Desk = Awaited<ReturnType<typeof readTtrpgOpenBriefDeskV1>>
 const labels = { 'release-time': '发行时资料', confirmed: '已确认记录', observed: '亲历或已见记录', hearsay: '转述', belief: '个人推测', narrated: '主持叙述' }
 function sourceLabel(source: TtrpgOpenBriefAttributionV1, actors: Array<{ key: string; name: string }>) {
-  const observer = source.observerKey === null ? '本桌资料' : source.observerKey === 'gm' ? '主持' : actors.find(actor => actor.key === source.observerKey)?.name ?? '原观察者'
+  const observer = source.kind === 'known-identity' ? '全队共同身份' : source.observerKey === null ? '本桌资料' : source.observerKey === 'gm' ? '主持' : actors.find(actor => actor.key === source.observerKey)?.name ?? '原观察者'
   return `${observer} · ${labels[source.reliability]}${source.origin === 'model-reviewed' ? ' · AI复盘经确认' : ''}`
 }
 

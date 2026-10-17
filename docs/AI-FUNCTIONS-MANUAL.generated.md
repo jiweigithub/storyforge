@@ -80,7 +80,7 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 151 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 152 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
@@ -91,6 +91,7 @@
 | `ttrpgRuntime` | 正式 TTRPG 主持人运行视角 | runtime | L0 | 10000 |
 | `ttrpgOpenAuthority` | open 跑团角色权限与机械状态 | runtime | L0 | 10000 |
 | `ttrpgOpenKnowledge` | open 跑团当前角色知识 | runtime | L0 | 10000 |
+| `ttrpgOpenCommonIdentities` | open 跑团全体当前队员共同身份与原可靠性 | runtime | L0 | 6000 |
 | `ttrpgOpenLearnedIdentities` | open 跑团角色已识别身份与原可靠性 | runtime | L0 | 6000 |
 | `ttrpgOpenOracleHistory` | open 跑团角色可读 Oracle 历史 | runtime | L0 | 6000 |
 | `ttrpgOpenFacts` | open 跑团角色可读会话叙事事实 | runtime | L0 | 10000 |
@@ -532,4 +533,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `fd9bb117`
+生成时间基准:commit `fc97628a`

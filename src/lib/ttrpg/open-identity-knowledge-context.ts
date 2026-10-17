@@ -3,10 +3,8 @@ import type { WorkspaceScope } from '../types'
 import type { ContextResourceDescriptorV1, FrozenResourceScopeV1 } from '../registry/types'
 import { resolveScope } from '../workspace/scope'
 import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
-import { ttrpgOpenIdentitySourceBeforeV1 } from './open-identity-knowledge'
-import { ttrpgOpenKnowledgeDiscoveryOriginV1 } from './open-knowledge-share'
-import { ttrpgOpenEvidenceFieldsV1, hashTtrpgOpenEvidenceFieldsV1 } from './open-knowledge'
-import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
+import { selectTtrpgOpenKnownIdentitiesV1 } from './open-identity-model-projection'
+import { ttrpgOpenEvidenceFieldsV1 } from './open-knowledge'
 import { TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1 } from './open-model-purpose-contract'
 import { createTtrpgOpenRuntimeResourceProviderV1 } from './open-runtime-resource-provider'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
@@ -19,22 +17,8 @@ import { ttrpgOpenRecallReadStampV1 } from './open-recall-read-stamp'
 type Input = { scope: WorkspaceScope; sessionId: number; actorKey: string }
 async function readModel(input: Input) {
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'actor', actorKey: input.actorKey } })
-  const { runtime, state, stateHash, content, session } = loaded, run = runtime.openRun!
-  const eligible = run.knowledge.filter(row => row.identityGrant && row.audience !== 'gm-only' && (row.audience === 'public' || row.recipientActorKeys.includes(input.actorKey)))
-  const chosen = new Map<string, { identity: NonNullable<(typeof eligible)[number]['identityGrant']>['identities'][number]; knowledge: (typeof eligible)[number] }>()
-  const rank = { observed: 3, hearsay: 2, belief: 1 }, contentHash = eligible.length ? await hash(content) : ''
-  const evidence = ttrpgOpenSituationCatalogV1(content.campaign, run).validationView, fields = new Map<string, string>()
-  for (const knowledge of eligible) {
-    const origin = ttrpgOpenKnowledgeDiscoveryOriginV1(runtime, knowledge)
-    let fieldsHash = fields.get(knowledge.evidenceRef)
-    if (!fieldsHash) { fieldsHash = await hashTtrpgOpenEvidenceFieldsV1(evidence, knowledge.evidenceRef); fields.set(knowledge.evidenceRef, fieldsHash) }
-    if (origin.contentHash !== contentHash || stable(origin.frozenContent) !== stable(content) || fieldsHash !== knowledge.publicFieldsHash) throw new Error('[ttrpg-identities] 原观察没有同一冻结内容与准确字段')
-    for (const identity of knowledge.identityGrant!.identities) {
-      const previous = chosen.get(identity.entityRef)
-      if (!previous || rank[knowledge.reliability] > rank[previous.knowledge.reliability] || rank[knowledge.reliability] === rank[previous.knowledge.reliability]
-        && ttrpgOpenIdentitySourceBeforeV1(runtime, previous.knowledge.acquisitionRef, knowledge.acquisitionRef)) chosen.set(identity.entityRef, { identity, knowledge })
-    }
-  }
+  const { runtime, state, stateHash, session } = loaded
+  const { chosen, evidence } = await selectTtrpgOpenKnownIdentitiesV1(loaded, input.actorKey)
   const identities = [...chosen.values()].map(({ identity, knowledge }) => ({
     entityRef: identity.entityRef, kind: identity.kind, name: identity.name,
     knowledgeKey: knowledge.knowledgeKey, acquisitionRef: knowledge.acquisitionRef, reliability: knowledge.reliability,

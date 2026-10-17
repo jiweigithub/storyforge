@@ -35,9 +35,9 @@ describe('R-TTRPGOPEN12 read-only entity source, original consultation and recip
   beforeEach(async () => { await db.delete(); await db.open() }); afterEach(() => db.close())
   it('adds exactly one source to tools while existing Skills and formal purposes gain no new source permission', async () => {
     const snapshot = getAgentToolSchemaSnapshotV1()
-    const old = JSON.parse(JSON.stringify(snapshot), (_key, value) => Array.isArray(value) ? value.filter(item => item !== sourceKey && item !== 'ttrpgOpenCommonOracleInput') : value)
+    const old = JSON.parse(JSON.stringify(snapshot), (_key, value) => Array.isArray(value) ? value.filter(item => item !== 'ttrpgOpenLearnedIdentities' && item !== 'ttrpgOpenCommonIdentities' && item !== sourceKey && item !== 'ttrpgOpenCommonOracleInput') : value)
     expect(await hashCanonicalValue(old)).toBe('8cf80c48035160cdfdd3fccce3f24e005041a89efaf26f40f30cf8aa8b58417e')
-    expect(await hashCanonicalValue(snapshot)).toBe(AGENT_TOOL_SCHEMA_HASH_V1); expect(AGENT_TOOL_SCHEMA_VERSION_V1).toBe('agent-read-tools-v18')
+    expect(await hashCanonicalValue(snapshot)).toBe(AGENT_TOOL_SCHEMA_HASH_V1); expect(AGENT_TOOL_SCHEMA_VERSION_V1).toBe('agent-read-tools-v19')
     expect(CONTEXT_SOURCE_BY_KEY.size).toBe(CONTEXT_SOURCES.length)
     expect(CONTEXT_SOURCE_BY_KEY.get(sourceKey)!.resources!.providerId).toBe(`storyforge.${sourceKey}`)
     for (const skill of ['prose.ttrpg-open-intent', 'prose.ttrpg-open-oracle-interpret', 'prose.ttrpg-open-public-situation-propose', 'prose.ttrpg-open-kp']) {

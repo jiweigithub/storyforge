@@ -24,9 +24,9 @@ describe('R-TTRPGOPEN14 common Oracle source without model or fact authority', {
   beforeEach(async () => { await db.delete(); await db.open() }); afterEach(() => { vi.restoreAllMocks(); db.close() })
   it('adds exactly one versioned source while all existing Skills retain their original source permissions', async () => {
     const snapshot = getAgentToolSchemaSnapshotV1()
-    const predecessor = JSON.parse(JSON.stringify(snapshot), (_key, value) => Array.isArray(value) ? value.filter(item => item !== sourceKey) : value)
+    const predecessor = JSON.parse(JSON.stringify(snapshot), (_key, value) => Array.isArray(value) ? value.filter(item => item !== 'ttrpgOpenLearnedIdentities' && item !== 'ttrpgOpenCommonIdentities' && item !== sourceKey) : value)
     expect(await hashCanonicalValue(predecessor)).toBe('395aea3eac0451609700481e3f0297ffbbf22fdca92afef0813d88d1d28d62ed')
-    expect(await hashCanonicalValue(snapshot)).toBe(AGENT_TOOL_SCHEMA_HASH_V1); expect(AGENT_TOOL_SCHEMA_VERSION_V1).toBe('agent-read-tools-v18')
+    expect(await hashCanonicalValue(snapshot)).toBe(AGENT_TOOL_SCHEMA_HASH_V1); expect(AGENT_TOOL_SCHEMA_VERSION_V1).toBe('agent-read-tools-v19')
     expect(CONTEXT_SOURCE_BY_KEY.size).toBe(CONTEXT_SOURCES.length)
     expect(CONTEXT_SOURCE_BY_KEY.get(sourceKey)!.resources!.providerId).toBe(`storyforge.${sourceKey}`)
     for (const skill of AGENT_SKILLS.filter(skill => skill.id !== 'prose.ttrpg-open-common-oracle-interpret')) expect(resolveAgentSkillContextSourceKeysV1(skill, { includeOptional: true, includeGatewayProviders: true }), skill.id).not.toContain(sourceKey)

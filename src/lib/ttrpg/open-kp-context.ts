@@ -7,7 +7,7 @@ import { verifyProductRuntimeSessionSourceV1 } from '../product-production/previ
 import { readProductRuntimeState, readProductRuntimeStateVersion, hashProductRuntimeStateV1 } from '../product/runtime-core'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { isTtrpgRuntimeContentV2 } from './content-version'
-import { loadTtrpgOpenPartyProjectionV1 } from './open-player-context'
+import { loadTtrpgOpenKpPartyProjectionV1 } from './open-player-context'
 import { readTtrpgSessionParticipantsV2 } from './participants'
 import { assertTtrpgOpenAuthorizationRowsCurrentV1 } from './open-authorization'
 import { nextTtrpgOpenOperationStepV1 } from './open-operation'
@@ -30,13 +30,9 @@ export async function loadTtrpgOpenKpContextV1(input: { scope: WorkspaceScope; s
   const rule = run.ruleReceipts.find(r => r.operationKey === operation.operationKey)
   if (!rule) throw new Error('[ttrpg-kp] 叙述缺少真实规则裁定')
   const recipients = [...auth.selectedActorKeys].sort()
-  const views = await Promise.all(recipients.map(actorKey => loadTtrpgOpenPartyProjectionV1({ ...input, actorKey })))
-  const first = views[0]?.view
-  if (!first) throw new Error('[ttrpg-kp] 叙述没有实际接收者')
-  const common = <T>(values: readonly T[], project: (view: typeof first) => readonly T[]) => { const sets = views.map(v => new Set(project(v.view).map(stable))); return values.filter(value => { const key = stable(value); return sets.every(set => set.has(key)) }) }
-  const actors = common(first.actorsHere, v => v.actorsHere), visibleActorKeys = new Set(actors.map(a => a.actorKey))
-  const initial = common(first.initialObservations, v => v.initialObservations), knowledge = common(first.knowledge, v => v.knowledge)
-  const sessionFacts = common(first.sessionFacts, v => v.sessionFacts), signals = common(first.pressureSignals, v => v.pressureSignals)
+  const common = await loadTtrpgOpenKpPartyProjectionV1(input)
+  const { actorsHere: actors, initialObservations: initial, knowledge, sessionFacts, pressureSignals: signals } = common.view
+  const visibleActorKeys = new Set(actors.map(actor => actor.actorKey))
   const entries = [
     { sourceKey: 'action.receipt', kind: 'rule-receipt', value: { actorKey: visibleActorKeys.has(operation.plan.request.actorKey) ? operation.plan.request.actorKey : null,
       result: operation.plan.rollVisibility === 'public' ? rule.result.outcome : 'not-public', paidWorldTurns: operation.plan.timeCostWorldTurns } },
@@ -65,7 +61,8 @@ export async function loadTtrpgOpenKpContextV1(input: { scope: WorkspaceScope; s
   ]
   const visibilityHash = await hashProductProductionValueV2({ contract, packet }), admissionStateHash = await hashProductProductionValueV2({ binding, visibilityHash })
   const stateHash = await hashProductRuntimeStateV1(state), head = await readProductRuntimeStateVersion(input.sessionId)
-  if (head.sequence !== state.lastSequence || head.stateHash !== stateHash || views.some(v => v.readEvidence.sequence !== state.lastSequence)) throw new TtrpgOpenReadConflictV1('[ttrpg-kp] 读取期间结算或接收者视图发生变化')
+  if (head.sequence !== state.lastSequence || head.stateHash !== stateHash || common.readEvidence.sequence !== state.lastSequence || common.readEvidence.stateHash !== stateHash
+    || common.readEvidence.runtimeSourceHash !== session.runtimeSourceHash || stable(common.recipientActorKeys) !== stable(recipients)) throw new TtrpgOpenReadConflictV1('[ttrpg-kp] 读取期间结算或接收者视图发生变化')
   assertTtrpgOpenAuthorizationRowsCurrentV1({ authorization: auth, participants: await readTtrpgSessionParticipantsV2(input.sessionId) })
   return { resources, modernResources, predicateFacts: { worldFacts: initial, sessionFacts }, binding, visibilityHash, admissionStateHash, readEvidence: { sequence: state.lastSequence, stateHash, runtimeSourceHash: session.runtimeSourceHash, sessionKey: runtime.sessionKey } }
 }

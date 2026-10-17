@@ -6,7 +6,8 @@ import { verifyTtrpgOpenSessionSituationHashesV1 } from './open-session-situatio
 import { db } from '../db/schema'
 import type { WorkspaceScope } from '../types'
 import { assertInstanceBinding } from '../product/runtime-instances'
-import { hashProductRuntimeStateV1, parseProductRuntimeState, readProductRuntimeStateVersion, readSessionEvents, replayProductRuntimeEvents } from '../product/runtime-core'
+import { hashProductRuntimeStateV1, readProductRuntimeStateVersion, readSessionEvents } from '../product/runtime-core'
+import { replayTtrpgOpenReadEventsV1 } from './open-read-replay'
 import { verifyProductRuntimeSessionSourceV1 } from '../product-production/preview-source'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
@@ -27,7 +28,7 @@ export async function loadTtrpgOpenMemoryReadStateV1(input: { scope: WorkspaceSc
   if (!content || !isTtrpgRuntimeContentV2(content) || source.runtimeSourceHash !== session.runtimeSourceHash) throw new Error('[ttrpg-memory] 当前来源不是有效冻结开放跑团')
   // Memory authority comes from actual events, including inherited evidence, never a self-hashed head alone.
   const events = await readSessionEvents(session)
-  const state = replayProductRuntimeEvents(parseProductRuntimeState(session.initialStateJson), events)
+  const state = replayTtrpgOpenReadEventsV1(session.initialStateJson, events)
   const runtime = parseTtrpgRuntimeStateV2(state.ttrpg), stateHash = await hashProductRuntimeStateV1(state)
   if (!runtime?.authorization || !runtime.openRun || runtime.product.rulePackContentHash !== content.rulePack.contentHash
     || runtime.product.campaignKey !== content.campaign.campaignKey) throw new Error('[ttrpg-memory] 请先完成当前分支的有效开团授权')

@@ -56,7 +56,7 @@ describe('R-TTRPGOPEN8 formal passive recap Harness', { timeout: 60000 }, () => 
     expect(after.ttrpg!.openRun!.knowledge).toEqual(before.ttrpg!.openRun!.knowledge)
     expect(await db.ttrpgNarrativeMemories.toArray()).toEqual(memory)
     const snapshot = await readInstanceAgentRunV1(f.scope, p.runId)
-    expect(snapshot.contract.permissions).toEqual({ contextSourceKeys: ['ttrpgOpenBriefInput', 'ttrpgOpenPartyMemory'], writeTargets: [] })
+    expect(snapshot.contract.permissions).toEqual({ contextSourceKeys: ['ttrpgOpenBriefInput', 'ttrpgOpenPartyMemory', 'ttrpgOpenCommonIdentities'], writeTargets: [] })
     expect(snapshot.contract.executionBindings![0].formalEntry!.entryId).toBe('ttrpg.open.brief')
     expect(await executeTtrpgOpenBriefRequestV1({ ...id, runAI: async () => { sends++; return output } })).toEqual({ status: 'not-sent' })
     expect(sends).toBe(1)

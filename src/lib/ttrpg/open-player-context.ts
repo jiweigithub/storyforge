@@ -35,9 +35,15 @@ export async function loadTtrpgOpenHumanViewV1(input: OpenPlayerReadV1 & { viewe
 }
 /** Common-view narration sees no self profile, sheet, inventory or private goals. */
 export async function loadTtrpgOpenPartyProjectionV1(input: OpenPlayerReadV1) {
-  const loaded = await loadOpenPlayerProjectionV1(input, undefined, true)
+  return partyProjection(await loadOpenPlayerProjectionV1(input, undefined, true))
+}
+function partyProjection(loaded: Awaited<ReturnType<typeof loadOpenPlayerProjectionV1>>) {
   const { actorsHere, initialObservations, knowledge, sessionFacts, pressureSignals } = loaded.view
   return { view: { actorsHere, initialObservations, knowledge, sessionFacts, pressureSignals }, readEvidence: loaded.readEvidence }
+}
+async function loadPartyProjectionBatchV1(input: { scope: WorkspaceScope; sessionId: number }) {
+  const basis = await loadOpenPlayerProjectionBasisV1(input)
+  return Promise.all([...basis.authorization.selectedActorKeys].sort().map(actorKey => projectOpenPlayerProjectionV1({ ...input, actorKey }, basis, undefined, true)))
 }
 /** No caller-selected subset: common means every currently authorized player, including AI seats.
  * Private per-actor views never escape this function. Shared rule definitions confer no grants. */
@@ -45,21 +51,26 @@ export async function loadTtrpgOpenCommonProjectionV1(input: { scope: WorkspaceS
   const { oracleHistory: _oracleHistory, ...common } = await loadCommonProjection(input)
   return common
 }
+/** Legacy KP narration keeps its original per-seat AI consent; memory/identity consumers enforce logging separately. */
+export async function loadTtrpgOpenKpPartyProjectionV1(input: { scope: WorkspaceScope; sessionId: number }) {
+  const { oracleHistory: _oracleHistory, ...common } = await loadCommonProjection(input, false)
+  return common
+}
 /** Separate Oracle consumer; existing common situation and recap bytes stay unchanged. */
 export async function loadTtrpgOpenCommonOracleProjectionV1(input: { scope: WorkspaceScope; sessionId: number }) {
   return loadCommonProjection(input)
 }
-async function loadCommonProjection(input: { scope: WorkspaceScope; sessionId: number }) {
+async function loadCommonProjection(input: { scope: WorkspaceScope; sessionId: number }, requireLogging = true) {
   const session = await assertInstanceBinding(input.sessionId, input.scope)
   if (session.kind !== 'ttrpg') throw new Error('[ttrpg-common-context] 当前实例不是跑团')
   const state = await readProductRuntimeState(input.sessionId), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
   if (!runtime?.authorization || !runtime.openRun || runtime.product.safety.status !== 'active') throw new Error('[ttrpg-common-context] 缺少当前有效的共同读取授权')
   const participants = await readTtrpgSessionParticipantsV2(input.sessionId)
   const authorization = assertTtrpgOpenAuthorizationRowsCurrentV1({ authorization: runtime.authorization, participants })
-  if (authorization.seats.some(seat => !seat.consent.sessionLoggingAllowed)) throw new Error('[ttrpg-common-context] 共同读取缺少本桌记录同意')
+  if (requireLogging && authorization.seats.some(seat => !seat.consent.sessionLoggingAllowed)) throw new Error('[ttrpg-common-context] 共同读取缺少本桌记录同意')
   const recipientActorKeys = [...authorization.selectedActorKeys].sort()
   if (!recipientActorKeys.length) throw new Error('[ttrpg-common-context] 没有实际共同接收者')
-  const views = await Promise.all(recipientActorKeys.map(actorKey => loadOpenPlayerProjectionV1({ ...input, actorKey }, undefined, true)))
+  const views = await loadPartyProjectionBatchV1(input)
   const stateHash = await hashProductRuntimeStateV1(state), readEvidence = views[0].readEvidence
   if (views.some(view => view.readEvidence.sequence !== state.lastSequence || view.readEvidence.stateHash !== stateHash
     || view.readEvidence.runtimeSourceHash !== session.runtimeSourceHash || view.readEvidence.sessionKey !== runtime.sessionKey)) {
@@ -86,6 +97,9 @@ async function loadCommonProjection(input: { scope: WorkspaceScope; sessionId: n
   return { view, oracleHistory: common(first.oracleHistory, v => v.oracleHistory), recipientActorKeys, authorizationRevision: authorization.revision, readEvidence }
 }
 async function loadOpenPlayerProjectionV1(input: OpenPlayerReadV1, humanViewerKey?: string, partyNarration = false) {
+  return projectOpenPlayerProjectionV1(input, await loadOpenPlayerProjectionBasisV1(input), humanViewerKey, partyNarration)
+}
+async function loadOpenPlayerProjectionBasisV1(input: { scope: WorkspaceScope; sessionId: number }) {
   const session = await assertInstanceBinding(input.sessionId, input.scope)
   if (session.kind !== 'ttrpg') throw new Error('[ttrpg-open-context] Instance 不是跑团')
   const source = await verifyProductRuntimeSessionSourceV1({ scope: input.scope, session, ttrpgProtocol: 2 })
@@ -108,11 +122,18 @@ async function loadOpenPlayerProjectionV1(input: OpenPlayerReadV1, humanViewerKe
   await verifyTtrpgOpenOracleReviewHashesV1(runtime.openRun.oracleReviews ?? [])
   await verifyTtrpgOpenFactLedgerV1({ ledger: runtime.openRun.factLedger, content, runtimeSourceHash: session.runtimeSourceHash,
     oracleReceipts: runtime.openRun.oracleReceipts ?? [], entityOperations: runtime.openRun.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
+  const frozenContentHash = runtime.openRun.knowledge.length ? await hashProductProductionValueV2(content) : null
   for (const knowledge of runtime.openRun.knowledge) {
     const origin = ttrpgOpenKnowledgeDiscoveryOriginV1(runtime, knowledge)
-    if (origin.contentHash !== await hashProductProductionValueV2(content)) throw new Error('[ttrpg-open-context] 知识发现来源与当前冻结内容不一致')
+    if (origin.contentHash !== frozenContentHash) throw new Error('[ttrpg-open-context] 知识发现来源与当前冻结内容不一致')
   }
   const authorization = assertTtrpgOpenAuthorizationRowsCurrentV1({ authorization: runtime.authorization, participants })
+  const admissionStateHash = await ttrpgOpenMechanicalStateHashV1(state), stateHash = await hashProductRuntimeStateV1(state)
+  return { session, source, content, state, runtime, authorization, admissionStateHash, stateHash }
+}
+async function projectOpenPlayerProjectionV1(input: OpenPlayerReadV1, basis: Awaited<ReturnType<typeof loadOpenPlayerProjectionBasisV1>>, humanViewerKey?: string, partyNarration = false) {
+  const { session, content, state, runtime, authorization, admissionStateHash, stateHash } = basis
+  if (!runtime.openRun) throw new Error('[ttrpg-open-context] 读取基础缺少有效运行态')
   const seat = authorization.seats.find(seat => seat.role === 'player' && seat.actorKey === input.actorKey)
   const actor = state.entities[input.actorKey]
   const template = content.campaign.characterTemplates.find(template => template.characterKey === input.actorKey)
@@ -213,8 +234,6 @@ async function loadOpenPlayerProjectionV1(input: OpenPlayerReadV1, humanViewerKe
     },
   }
   const visibilityHash = await hashProductProductionValueV2(view)
-  const admissionStateHash = await ttrpgOpenMechanicalStateHashV1(state)
-  const stateHash = await hashProductRuntimeStateV1(state)
   const after = await readProductRuntimeStateVersion(input.sessionId)
   if (after.sequence !== state.lastSequence || after.stateHash !== stateHash) throw new TtrpgOpenReadConflictV1('[ttrpg-open-context] 读取期间运行状态已变化')
   assertTtrpgOpenAuthorizationRowsCurrentV1({ authorization, participants: await readTtrpgSessionParticipantsV2(input.sessionId) })
