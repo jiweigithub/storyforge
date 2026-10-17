@@ -1,3 +1,4 @@
+import { parseTtrpgOpenCommonOracleAuthorizationV1, TTRPG_OPEN_COMMON_ORACLE_SKILL_V1, type TtrpgOpenCommonOracleAuthorizationV1 } from './open-common-oracle-request'
 import { assertTtrpgOpenEntityWindowEventV1 } from './open-entity-window'
 import type { TtrpgOpenManualActionAuthorizationV1 } from './open-manual-action'
 import { parseTtrpgOpenModelCallV1, updateTtrpgOpenEpochCallTotalsV1, type TtrpgOpenModelCallV1 } from './open-model-calls'
@@ -39,6 +40,7 @@ export interface TtrpgOpenEpochBudgetV1 {
   maximumAiActions: number
 }
 export interface TtrpgOpenEpochV1 {
+  commonOracle?: TtrpgOpenCommonOracleAuthorizationV1
   normalizationRuntimeReferencePolicy?: TtrpgOpenNormalizationRuntimeReferencePolicyV1
   oracleRuntimeReferencePolicy?: TtrpgOpenOracleRuntimeReferencePolicyV1
   runtimeEntityReferencePolicy?: TtrpgOpenSituationRuntimeReferencePolicyV1
@@ -102,14 +104,14 @@ export function frozenTtrpgOpenEpochBudgetV1(campaign: TtrpgCampaignContentV2): 
     maximumAiActions: policy.maxAiActions })
 }
 /** Passive drafting windows never grant game actions, Oracle or delegated hosting. */
-export function isTtrpgOpenPassiveEpochV1(epoch: Pick<TtrpgOpenEpochV1, 'triggerKind' | 'oracleRuntimeReferencePolicy' | 'normalizationRuntimeReferencePolicy'>): boolean {
-  return Boolean(epoch.oracleRuntimeReferencePolicy || epoch.normalizationRuntimeReferencePolicy) || epoch.triggerKind === 'request-brief' || epoch.triggerKind === 'request-situation' || epoch.triggerKind === TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1
+export function isTtrpgOpenPassiveEpochV1(epoch: Pick<TtrpgOpenEpochV1, 'triggerKind' | 'oracleRuntimeReferencePolicy' | 'normalizationRuntimeReferencePolicy' | 'commonOracle'>): boolean {
+  return Boolean(epoch.commonOracle || epoch.oracleRuntimeReferencePolicy || epoch.normalizationRuntimeReferencePolicy) || epoch.triggerKind === 'request-brief' || epoch.triggerKind === 'request-situation' || epoch.triggerKind === TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1
 }
 /** Closed event admission applies equally to the command preview and offline replay. */
 export function assertTtrpgOpenSituationWindowEventV1(runtime: Pick<TtrpgRuntimeStateV2, 'openRun'> | null, type: string): void {
   assertTtrpgOpenEntityWindowEventV1(runtime, type)
   const run = runtime?.openRun, epoch = run?.coordination.epochs.find(e => e.epochKey === run.coordination.activeEpochKey)
-  if ((epoch?.oracleRuntimeReferencePolicy || epoch?.normalizationRuntimeReferencePolicy) && !['ttrpg.open.epoch.closed', 'ttrpg.open.call.reserved', 'ttrpg.open.call.dispatched', 'ttrpg.open.call.finished',
+  if ((epoch?.commonOracle || epoch?.oracleRuntimeReferencePolicy || epoch?.normalizationRuntimeReferencePolicy) && !['ttrpg.open.epoch.closed', 'ttrpg.open.call.reserved', 'ttrpg.open.call.dispatched', 'ttrpg.open.call.finished',
     'ttrpg.open.oracle.reviewed', 'ttrpg.fact.asserted', 'ttrpg.safety.changed', 'ttrpg.session-zero.completed',
     'ttrpg.open.table-message.posted', 'ttrpg.open.failure.logged'].includes(type)) fail('实例事实咨询只允许原模型请求、明确审阅、安全控制和结束，不能执行行动或另作咨询')
   if ((epoch?.triggerKind === 'request-situation' || epoch?.triggerKind === TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1) && ![
@@ -121,7 +123,8 @@ export function ttrpgOpenEpochBudgetForTriggerV1(budget: unknown, triggerKind: T
   const base = parseTtrpgOpenEpochBudgetV1(budget)
   return boundedSemanticDraft || isTtrpgOpenPassiveEpochV1({ triggerKind }) ? { ...base, maximumCalls: Math.min(1, base.maximumCalls), maximumAiActions: 0 } : base
 }
-export function assertTtrpgOpenEpochPurposeV1(epoch: Pick<TtrpgOpenEpochV1, 'triggerKind' | 'oracleRuntimeReferencePolicy' | 'normalizationRuntimeReferencePolicy'>, skillId: string): void {
+export function assertTtrpgOpenEpochPurposeV1(epoch: Pick<TtrpgOpenEpochV1, 'triggerKind' | 'oracleRuntimeReferencePolicy' | 'normalizationRuntimeReferencePolicy' | 'commonOracle'>, skillId: string): void {
+  if (Boolean(epoch.commonOracle) !== (skillId === TTRPG_OPEN_COMMON_ORACLE_SKILL_V1)) fail('共同事实窗口与本次共同解释用途不一致，不能借用私域或其他授权')
   if (epoch.oracleRuntimeReferencePolicy && skillId !== 'prose.ttrpg-open-oracle-interpret') fail('实例事实窗口不能借用于其他模型目的')
   if (epoch.normalizationRuntimeReferencePolicy && skillId !== 'prose.ttrpg-open-fact-normalize') fail('实例归一窗口只允许整理原已接受解释，不能重新解释或执行行动')
   if ((epoch.triggerKind === 'request-brief') !== (skillId === 'prose.ttrpg-open-brief')) fail('复盘窗口与模型用途不一致，不得借用普通行动授权')
@@ -151,7 +154,32 @@ export function assertTtrpgOpenOracleRuntimeEpochAuthorityV1(runtime: TtrpgRunti
     || runtime.openRun!.stage.status !== 'open' || runtime.product.safety.status !== 'active'
     || runtime.openRun!.entityOperations?.some(row => !row.resolution)) fail('实例事实模型请求需要本人真人 GM、当前 AI 读取同意与空闲未暂停的进行中阶段')
 }
+/** Current real human host; source hashes and player ownership alone confer no GM-private right. */
+export function assertTtrpgOpenCommonOracleEpochAuthorityV1(runtime: TtrpgRuntimeStateV2, viewerKey: string): void {
+  assertTtrpgOpenBriefEpochAuthorityV1(runtime, viewerKey)
+  const seat = assertTtrpgOpenHumanHostV1(runtime.authorization!, viewerKey), gm = runtime.authorization!.seats.find(row => row.role === 'gm')
+  if (gm?.controller !== 'ai' || !gm.consent.aiAdviceAllowed || !gm.consent.aiIdentityDisclosed || !seat.consent.aiAdviceAllowed
+    || runtime.product.safety.status !== 'active' || runtime.openRun!.stage.status !== 'open'
+    || runtime.openRun!.entityOperations?.some(row => !row.resolution)) fail('共同事实请求需要当前 AI 主持、本人真人主持同意与空闲未暂停的进行中阶段')
+}
+/** Replay checks real source identities and the recorded cut; async readers also verify the actual basis/source hashes. */
+export function assertTtrpgOpenCommonOracleEpochOriginV1(runtime: TtrpgRuntimeStateV2, epoch: TtrpgOpenEpochV1): void {
+  const grant = epoch.commonOracle
+  if (!grant) fail('共同事实缺少本次原窗口证据')
+  const basis = grant.basis, authorization = runtime.authorization!, seat = assertTtrpgOpenHumanHostV1(authorization, epoch.viewerKey)
+  const oracle = runtime.openRun!.oracleReceipts?.find(row => JSON.stringify(row.sourceRef) === JSON.stringify(basis.oracleSourceRef))
+  const original = oracle?.sourceRef.sessionKey === runtime.sessionKey ? authorization
+    : runtime.branchLineage?.ancestors.find(row => row.sessionKey === oracle?.sourceRef.sessionKey)?.snapshot.authorization
+  if (grant.worldTurn !== runtime.openRun!.worldTime.worldTurn || grant.epochKey !== epoch.epochKey || basis.sessionKey !== runtime.sessionKey || basis.sessionKey !== epoch.startedRef.sessionKey || basis.readEvidence.sequence + 1 !== epoch.startedRef.sequence
+    || basis.requester.viewerKey !== epoch.viewerKey || basis.requester.seatKey !== seat.seatKey || basis.requester.seatRevision !== seat.revision
+    || basis.authorizationRevision !== authorization.revision || epoch.sessionZeroRevision !== authorization.revision
+    || JSON.stringify(basis.recipientActorKeys) !== JSON.stringify([...authorization.selectedActorKeys].sort())
+    || basis.rulePackContentHash !== runtime.product.rulePackContentHash || !oracle || oracle.audience !== basis.audience
+    || oracle.audience === 'party' && (!original || basis.recipientActorKeys.some(actor => !original.selectedActorKeys.includes(actor)))) fail('共同事实窗口没有准确本人、原切点、全体接收者或原咨询来源')
+  if (basis.budget.maximumInputTokens + basis.budget.maximumOutputTokens > epoch.budget.maximumTokens || basis.budget.maximumCostUsd > epoch.budget.maximumCostUsd) fail('共同事实请求超过本次冻结窗口预算')
+}
 export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
+  const hasCommon = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'commonOracle')
   const hasManual = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value,'manualAction')
   const hasHosting = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value,'hostingDelegation')
   const hasPublic = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value,'publicSituation')
@@ -160,7 +188,7 @@ export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
   const hasRuntimeReferences = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'runtimeEntityReferencePolicy')
   const row = record(value, ['epochKey', 'startedRef', 'closedRef', 'status', 'triggeredBySeatKey',
     'viewerKey', 'triggerKind', 'inputRevision', 'sessionZeroRevision', 'authorizationHash', 'budget',
-    'successfulActorKeys', 'reservedCalls', 'consumedTokens', 'actualCostUsd', 'stopReason', ...(hasManual ? ['manualAction'] : []),...(hasHosting ? ['hostingDelegation'] : []), ...(hasPublic ? ['publicSituation'] : []),
+    'successfulActorKeys', 'reservedCalls', 'consumedTokens', 'actualCostUsd', 'stopReason', ...(hasCommon ? ['commonOracle'] : []), ...(hasManual ? ['manualAction'] : []),...(hasHosting ? ['hostingDelegation'] : []), ...(hasPublic ? ['publicSituation'] : []),
     ...(hasRuntimeReferences ? ['runtimeEntityReferencePolicy'] : []), ...(hasOracleReferences ? ['oracleRuntimeReferencePolicy'] : []),
     ...(hasNormalizationReferences ? ['normalizationRuntimeReferencePolicy'] : [])], 'epoch')
   const manual = hasManual ? record(row.manualAction,['requestJson','requestHash'],'manual action authorization') : null
@@ -184,7 +212,10 @@ export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
   const publicSituation = hasPublic ? parseTtrpgOpenPublicSituationAuthorizationV1(row.publicSituation) : undefined
   const runtimeEntityReferencePolicy = hasRuntimeReferences ? parseTtrpgOpenSituationRuntimeReferencePolicyV1(row.runtimeEntityReferencePolicy) : undefined
   const oracleRuntimeReferencePolicy = hasOracleReferences ? parseTtrpgOpenOracleRuntimeReferencePolicyV1(row.oracleRuntimeReferencePolicy) : undefined
+  const commonOracle = hasCommon ? parseTtrpgOpenCommonOracleAuthorizationV1(row.commonOracle) : undefined
   const normalizationRuntimeReferencePolicy = hasNormalizationReferences ? parseTtrpgOpenNormalizationRuntimeReferencePolicyV1(row.normalizationRuntimeReferencePolicy) : undefined
+  if (commonOracle && (row.triggerKind !== 'continue-host' || manualAction || hostingDelegation || publicSituation || runtimeEntityReferencePolicy || oracleRuntimeReferencePolicy || normalizationRuntimeReferencePolicy
+    || budget.maximumCalls !== 1 || budget.maximumAiActions !== 0 || successfulActorKeys.length)) fail('共同事实必须单独冻结一次调用、零行动和本次准确来源')
   if (normalizationRuntimeReferencePolicy && (row.triggerKind !== 'continue-host' || manualAction || hostingDelegation || publicSituation || runtimeEntityReferencePolicy || oracleRuntimeReferencePolicy
     || budget.maximumCalls !== 1 || budget.maximumAiActions !== 0 || successfulActorKeys.length)) fail('实例归一必须单独冻结一次调用、零行动和原已接受解释')
   if (oracleRuntimeReferencePolicy && (row.triggerKind !== 'continue-host' || manualAction || hostingDelegation || publicSituation || runtimeEntityReferencePolicy
@@ -206,7 +237,7 @@ export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
   const reservedCalls = integer(row.reservedCalls, 'reservedCalls', 0, budget.maximumCalls)
   const consumedTokens = integer(row.consumedTokens, 'consumedTokens', 0, Number.MAX_SAFE_INTEGER)
   const actualCostUsd = row.actualCostUsd === null ? null : number(row.actualCostUsd, 'actualCostUsd', 0, 1_000_000)
-  return { ...(normalizationRuntimeReferencePolicy ? { normalizationRuntimeReferencePolicy } : {}), ...(oracleRuntimeReferencePolicy ? { oracleRuntimeReferencePolicy } : {}), ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}), ...(publicSituation ? { publicSituation } : {}), ...(hostingDelegation ? { hostingDelegation } : {}),...(manualAction ? { manualAction } : {}), epochKey: key(row.epochKey, 'epochKey'), startedRef, closedRef, status: row.status,
+  return { ...(commonOracle ? { commonOracle } : {}), ...(normalizationRuntimeReferencePolicy ? { normalizationRuntimeReferencePolicy } : {}), ...(oracleRuntimeReferencePolicy ? { oracleRuntimeReferencePolicy } : {}), ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}), ...(publicSituation ? { publicSituation } : {}), ...(hostingDelegation ? { hostingDelegation } : {}),...(manualAction ? { manualAction } : {}), epochKey: key(row.epochKey, 'epochKey'), startedRef, closedRef, status: row.status,
     triggeredBySeatKey: key(row.triggeredBySeatKey, 'triggeredBySeatKey'), viewerKey: key(row.viewerKey, 'viewerKey'),
     triggerKind: row.triggerKind, inputRevision: hash(row.inputRevision, 'inputRevision'),
     sessionZeroRevision: integer(row.sessionZeroRevision, 'sessionZeroRevision', 1, Number.MAX_SAFE_INTEGER),

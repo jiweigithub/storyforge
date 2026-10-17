@@ -133,6 +133,7 @@ async function prepareTtrpgOpenModelInputV1(input: TtrpgOpenRuntimeModelInputV1,
   assertTtrpgOpenModelActorV1(authority,definition.skillId,input.actorKey,input.viewerKey)
   const entryRuntime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg), entryRun = entryRuntime?.openRun
   const entryEpoch = entryRun?.coordination.epochs.find(row => row.epochKey === entryRun.coordination.activeEpochKey)
+  if (entryEpoch?.commonOracle) assertTtrpgOpenEpochPurposeV1(entryEpoch, definition.skillId)
   const entryPolicy = entryEpoch?.oracleRuntimeReferencePolicy, normalizationPolicy = entryEpoch?.normalizationRuntimeReferencePolicy
   if (Boolean(entryPolicy) !== oracleRuntimeReferences || oracleRuntimeReferences && (purpose !== 'oracle-interpret'
     || canonicalStringify(entryPolicy!.oracleSourceRef) !== canonicalStringify(oracleSourceRef))) throw new Error('实例事实必须走原 Oracle 的明确 V2 准备；旧入口和事实归一不能借用新范围')
@@ -226,7 +227,7 @@ async function prepareTtrpgOpenModelInputV1(input: TtrpgOpenRuntimeModelInputV1,
     } while (cursor)
   }
   if (entityProposal) {
-    if (!('directory' in context)) throw new Error('[ttrpg-entity] 缺少已登记的实体来源')
+    if (!('epochInputRevision' in context)) throw new Error('[ttrpg-entity] 缺少已登记的实体来源')
     const selected = (await import('./open-entity-context')).selectTtrpgOpenEntityModelResourcesV1(context, inventory, entityProposal)
     inventory.splice(0, inventory.length, ...selected)
   }

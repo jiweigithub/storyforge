@@ -34,7 +34,7 @@ const TTRPG_REPLAY_CHUNK_MODULES = {
     'rule-pack-v2', 'run-format', 'runtime-state', 'session-facts',
     'situation-engine', 'world-time', 'open-session-situation-contract', 'open-session-situation-catalog',
     'character-mechanical-initialization', 'open-public-situation-authorization-contract', 'open-public-situation-request',
-    'open-entity-contract', 'open-entity-model-contract', 'open-entity-model-origin-contract', 'open-entity-mechanics', 'open-entity-catalog', 'open-entity-window', 'open-runtime-entity-references',
+    'open-entity-contract', 'open-entity-model-contract', 'open-entity-model-origin-contract', 'open-entity-mechanics', 'open-entity-catalog', 'open-entity-window', 'open-runtime-entity-references', 'open-common-oracle-request', 'open-oracle-runtime-delivery',
   ],
   open: [
     'open-branch-contract', 'open-branch-recovery', 'open-companion-preauthorization', 'open-handoff', 'open-hosting-delegation',

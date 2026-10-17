@@ -1,3 +1,5 @@
+import { parseTtrpgOpenCommonOracleAuthorizationV1, hashTtrpgOpenCommonOracleRequestBasisV1, assertTtrpgOpenCommonOracleRequestSourceV1, TTRPG_OPEN_COMMON_ORACLE_INPUT_V1, type TtrpgOpenCommonOracleAuthorizationV1 } from './open-common-oracle-request'
+import { assertTtrpgOpenCommonOracleEpochAuthorityV1, assertTtrpgOpenCommonOracleEpochOriginV1 } from './open-coordination'
 import { assertTtrpgOpenEntityModelCallOriginV1 } from './open-model-calls'
 import { prepareTtrpgOpenEntityAdoptionV1, reconcileTtrpgOpenEntityRunV1, TtrpgOpenEntityReceiptPendingError } from './open-entity-adoption'
 import { assertTtrpgOpenEntityCandidateReaderV1 } from './open-entity-candidate'
@@ -1014,11 +1016,15 @@ export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
   runtimeEntityReferencePolicy?: TtrpgOpenSituationRuntimeReferencePolicyV1;
   oracleRuntimeReferencePolicy?: TtrpgOpenOracleRuntimeReferencePolicyV1;
   normalizationRuntimeReferencePolicy?: TtrpgOpenNormalizationRuntimeReferencePolicyV1;
+  commonOracle?: TtrpgOpenCommonOracleAuthorizationV1;
 }): Promise<ProductRuntimeEvent> {
+  const commonOracle = input.commonOracle === undefined ? undefined : parseTtrpgOpenCommonOracleAuthorizationV1(input.commonOracle);
   const viewerKey = openKey(input.viewerKey, "viewerKey");
   const rawInput = openText(input.rawInput, "rawInput", 10_000);
   const oracleRuntimeReferencePolicy = input.oracleRuntimeReferencePolicy === undefined ? undefined : parseTtrpgOpenOracleRuntimeReferencePolicyV1(input.oracleRuntimeReferencePolicy);
   const normalizationRuntimeReferencePolicy = input.normalizationRuntimeReferencePolicy === undefined ? undefined : parseTtrpgOpenNormalizationRuntimeReferencePolicyV1(input.normalizationRuntimeReferencePolicy);
+  if (commonOracle && (input.triggerKind !== 'continue-host' || input.manualAction || input.runtimeEntityReferencePolicy || oracleRuntimeReferencePolicy || normalizationRuntimeReferencePolicy
+    || rawInput !== TTRPG_OPEN_COMMON_ORACLE_INPUT_V1)) throw new Error('共同事实必须使用本次准确来源的独立窗口。');
   if (normalizationRuntimeReferencePolicy && (input.triggerKind !== 'continue-host' || input.manualAction || input.runtimeEntityReferencePolicy || oracleRuntimeReferencePolicy
     || rawInput !== TTRPG_OPEN_NORMALIZATION_INSTANCE_INPUT_V1)) throw new Error('实例归一必须单独明确选择原已接受解释。');
   if (oracleRuntimeReferencePolicy && (input.triggerKind !== 'continue-host' || input.manualAction || input.runtimeEntityReferencePolicy || rawInput !== TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1)) throw new Error('实例事实策略需要独立的明确咨询窗口。');
@@ -1028,7 +1034,7 @@ export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
   return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.epoch.started",
     intent: { viewerKey, rawInput, triggerKind: input.triggerKind, ...(input.manualAction ? { manualAction: input.manualAction } : {}),
       ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}), ...(oracleRuntimeReferencePolicy ? { oracleRuntimeReferencePolicy } : {}),
-      ...(normalizationRuntimeReferencePolicy ? { normalizationRuntimeReferencePolicy } : {}) },
+      ...(normalizationRuntimeReferencePolicy ? { normalizationRuntimeReferencePolicy } : {}), ...(commonOracle ? { commonOracle } : {}) },
     build: async ({ state, session, sequence, ttrpgContent, participants }) => {
       const content = requireTtrpgOpenContent(ttrpgContent);
       const runtime = parseTtrpgRuntimeStateV2(state.ttrpg);
@@ -1046,6 +1052,21 @@ export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
       if (input.triggerKind === 'request-situation') {
         if (!content.campaign.runtimePolicy.enabled) throw new Error('[ttrpg-situation] 冻结作品未允许模型生成局势');
         assertTtrpgOpenSituationEpochAuthorityV1(runtime, viewerKey);
+      }
+      let commonEvidence: TtrpgOpenAgentEvidenceV1 | undefined, commonRevision: string | undefined;
+      if (commonOracle) {
+        if (!content.campaign.runtimePolicy.enabled) throw new Error('冻结作品未允许共同事实请求');
+        assertTtrpgOpenCommonOracleEpochAuthorityV1(runtime, viewerKey);
+        assertTtrpgOpenOracleInterpretationSlotV1(runtime, runtime.openRun.worldTime.worldTurn);
+        const basis = commonOracle.basis;
+        if (basis.requester.viewerKey !== viewerKey || basis.readEvidence.sequence !== sequence - 1 || basis.readEvidence.stateHash !== input.baseStateHash
+          || await hashTtrpgOpenCommonOracleRequestBasisV1(basis) !== commonOracle.basisHash) throw new Error('共同事实缺少本次准确本人、原读取切点或完整请求证据');
+        const scope = await resolveScope({ scope: { projectId: session.projectId, worldId: session.worldId!, workId: session.workId! } });
+        const actual = await (await import('./open-common-oracle-context')).loadTtrpgOpenCommonOracleContextV1({ scope, sessionId: input.sessionId, actorKey: 'gm' });
+        await assertTtrpgOpenCommonOracleRequestSourceV1(basis, actual);
+        const proof = await (await import('./open-common-oracle-authorization-proof')).verifyTtrpgOpenCommonOracleAuthorizationV1({ scope, sessionId: input.sessionId, viewerKey, authorization: commonOracle, phase: 'authorize' });
+        if (commonOracle.authorizationCommandId !== input.commandId) throw new Error('共同事实不能更换原授权命令');
+        commonEvidence = proof.evidence; commonRevision = proof.inputRevision;
       }
       if (normalizationRuntimeReferencePolicy) {
         if (!content.campaign.runtimePolicy.enabled) throw new Error('冻结作品未启用模型事实归一');
@@ -1079,12 +1100,12 @@ export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
         await assertTtrpgOpenRuntimeEntityReferencesMatchV1({ content, operations: runtime.openRun.entityOperations ?? [], runtimeSourceHash: session.runtimeSourceHash,
           snapshot: runtimeEntityReferencePolicy.references, mode: 'current' });
       }
-      const inputRevision = await hashProductProductionValueV2({ sessionKey: runtime.sessionKey,
+      const inputRevision = commonRevision ?? await hashProductProductionValueV2({ sessionKey: runtime.sessionKey,
         triggerKind: input.triggerKind, rawInput, viewerKey, authorizationHash, ...(input.manualAction ? { manualAction: input.manualAction } : {}),
         ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}), ...(oracleRuntimeReferencePolicy ? { oracleRuntimeReferencePolicy } : {}),
-        ...(normalizationRuntimeReferencePolicy ? { normalizationRuntimeReferencePolicy } : {}) });
+        ...(normalizationRuntimeReferencePolicy ? { normalizationRuntimeReferencePolicy } : {}), ...(commonOracle ? { commonOracle } : {}) });
       const epoch = parseTtrpgOpenEpochV1({
-        ...(normalizationRuntimeReferencePolicy ? { normalizationRuntimeReferencePolicy } : {}),
+        ...(normalizationRuntimeReferencePolicy ? { normalizationRuntimeReferencePolicy } : {}), ...(commonOracle ? { commonOracle } : {}),
         ...(oracleRuntimeReferencePolicy ? { oracleRuntimeReferencePolicy } : {}),
         ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}),
         ...(input.manualAction ? { manualAction: input.manualAction } : {}),
@@ -1092,9 +1113,10 @@ export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
         startedRef: { sessionKey: runtime.sessionKey, sequence }, closedRef: null, status: "active",
         triggeredBySeatKey: seat.seatKey, viewerKey, triggerKind: input.triggerKind, inputRevision,
         sessionZeroRevision: runtime.authorization.revision, authorizationHash,
-        budget: ttrpgOpenEpochBudgetForTriggerV1(frozenTtrpgOpenEpochBudgetV1(content.campaign), input.triggerKind, Boolean(oracleRuntimeReferencePolicy || normalizationRuntimeReferencePolicy)), successfulActorKeys: [],
+        budget: ttrpgOpenEpochBudgetForTriggerV1(frozenTtrpgOpenEpochBudgetV1(content.campaign), input.triggerKind, Boolean(commonOracle || oracleRuntimeReferencePolicy || normalizationRuntimeReferencePolicy)), successfulActorKeys: [],
         reservedCalls: 0, consumedTokens: 0, actualCostUsd: 0, stopReason: null,
       });
+      if (commonOracle) assertTtrpgOpenCommonOracleEpochOriginV1(runtime, epoch);
       if (epoch.manualAction) {
         if (runtime.branchLineage?.recoveryTasks.some(t => !['completed','withdrawn'].includes(t.status))) throw new Error('[ttrpg-manual] 请先完成继承结算，不能另开人工行动');
         const request = await verifyTtrpgOpenManualAuthorizationV1(epoch.manualAction);
@@ -1106,7 +1128,7 @@ export async function startTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
         const plan = await createTtrpgOpenRulePlanV1({ state: preview,content,runtimeSourceHash: session.runtimeSourceHash,request });
         await assertTtrpgOpenInteractionKnownCostsV1(preview,plan,previewRuntime.openRun!.worldTime.worldTurn);
       }
-      return { actorKey: seat.actorKey, targetKey: null, payload: { epoch } };
+      return { actorKey: seat.actorKey, targetKey: null, payload: { epoch }, ...(commonEvidence ? { agentEvidence: commonEvidence } : {}) };
     },
   });
 }
@@ -1144,13 +1166,13 @@ export async function authorizeTtrpgOpenPublicSituationV1(input: FormalTtrpgComm
 
 /** Cancellation closes authority, without claiming any unfinished business step succeeded. */
 export async function closeTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & {
-  epochKey: string; viewerKey: string; reason: string;
+  epochKey: string; viewerKey: string; reason: string; commonOracleEmpty?: true;
 }): Promise<ProductRuntimeEvent> {
   const epochKey = openKey(input.epochKey, "epochKey");
   const viewerKey = openKey(input.viewerKey, "viewerKey");
   const reason = openText(input.reason, "reason", 2000);
-  return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.epoch.closed", intent: { epochKey, viewerKey, reason },
-    build: async ({ state, participants }) => {
+  return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.epoch.closed", intent: { epochKey, viewerKey, reason, ...(input.commonOracleEmpty ? { commonOracleEmpty: true } : {}) },
+    build: async ({ state, session, participants }) => {
       const runtime = parseTtrpgRuntimeStateV2(state.ttrpg);
       const authorization = runtime?.authorization;
       const epoch = runtime?.openRun?.coordination.epochs.find(item => item.epochKey === epochKey);
@@ -1162,7 +1184,13 @@ export async function closeTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
         authorizationHash: await hashProductProductionValueV2(authorization) });
       if (epoch.reservedCalls > 0
         || runtime.openRun.operations.some(operation => operation.authorizationEpochKey === epochKey && ["awaiting-approval", "executing"].includes(operation.status))) throw new Error("[ttrpg] 已执行业务的 epoch 必须等待结算和调用回执闭合。");
-      return { actorKey: seat.actorKey, targetKey: null, payload: { epochKey, viewerKey, reason } };
+      let commonEvidence: TtrpgOpenAgentEvidenceV1 | undefined;
+      if (epoch.commonOracle) {
+        if (input.commonOracleEmpty !== true) throw new Error('共同事实窗口须按原本地 Run 明确结束，不能跳过其终验');
+        const scope = await resolveScope({ scope: { projectId: session.projectId, worldId: session.worldId!, workId: session.workId! } });
+        commonEvidence = (await (await import('./open-common-oracle-authorization-proof')).readTtrpgOpenEmptyCommonOracleOwnerV1({ scope, sessionId: input.sessionId, viewerKey, epochKey })).evidence;
+      } else if (input.commonOracleEmpty !== undefined) throw new Error('其他窗口不能借用共同事实空准备标记');
+      return { actorKey: seat.actorKey, targetKey: null, payload: { epochKey, viewerKey, reason }, ...(commonEvidence ? { agentEvidence: commonEvidence } : {}) };
     },
   });
 }

@@ -29,7 +29,7 @@ describe('R-TTRPGOPEN14 common Oracle source without model or fact authority', {
     expect(await hashCanonicalValue(snapshot)).toBe(AGENT_TOOL_SCHEMA_HASH_V1); expect(AGENT_TOOL_SCHEMA_VERSION_V1).toBe('agent-read-tools-v18')
     expect(CONTEXT_SOURCE_BY_KEY.size).toBe(CONTEXT_SOURCES.length)
     expect(CONTEXT_SOURCE_BY_KEY.get(sourceKey)!.resources!.providerId).toBe(`storyforge.${sourceKey}`)
-    for (const skill of AGENT_SKILLS) expect(resolveAgentSkillContextSourceKeysV1(skill, { includeOptional: true, includeGatewayProviders: true }), skill.id).not.toContain(sourceKey)
+    for (const skill of AGENT_SKILLS.filter(skill => skill.id !== 'prose.ttrpg-open-common-oracle-interpret')) expect(resolveAgentSkillContextSourceKeysV1(skill, { includeOptional: true, includeGatewayProviders: true }), skill.id).not.toContain(sourceKey)
   })
   it('uses an actual AI-host Oracle and F13 identity intersection with no model preparation or domain mutation', async () => {
     const s = await setup(), before = await core.readProductRuntimeState(s.f.sessionId), count = await db.productRuntimeEvents.count()

@@ -1,3 +1,4 @@
+export { startTtrpgOpenCommonOracleWindowV1, finishTtrpgOpenEmptyCommonOracleWindowV1 } from './open-common-oracle-window'
 export { proposeTtrpgOpenEntitiesV1, confirmTtrpgOpenEntityOperationV1, materializeTtrpgOpenEntityV1, disposeTtrpgOpenEntityOperationV1 } from './runtime-commands'
 /** Public deterministic runtime commands owned by the TTRPG product. */
 export { createTtrpgOpenPublicSituationAuthorizationV1 } from './open-public-situation-authorization'

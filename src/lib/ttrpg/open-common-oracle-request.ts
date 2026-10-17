@@ -7,6 +7,10 @@ import { canonicalStringify as stable, hashCanonicalValue } from '../agent/run/h
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import type { loadTtrpgOpenCommonOracleContextV1 } from './open-common-oracle-context'
 
+export const TTRPG_OPEN_COMMON_ORACLE_SKILL_V1 = 'prose.ttrpg-open-common-oracle-interpret'
+export const TTRPG_OPEN_COMMON_ORACLE_STEP_V1 = 'ttrpg.open.common-oracle-interpret'
+export const TTRPG_OPEN_COMMON_ORACLE_ENTRY_V1 = 'ttrpg.open.common-oracle-interpret'
+export const TTRPG_OPEN_COMMON_ORACLE_INPUT_V1 = '明确解释本次选定且全体接收者可读的原 Oracle；仅用实际交付的共同资料拟定事实，逐项由真人另行审阅。'
 export const TTRPG_OPEN_COMMON_ORACLE_REQUEST_POLICY_V1 = Object.freeze({
   purpose: 'common-oracle-fact-candidate' as const, decision: 'request-this-one-common-oracle-candidate' as const,
   maximumCalls: 1 as const, maximumAiActions: 0 as const, perFactHumanReviewRequired: true as const,
@@ -86,4 +90,43 @@ export async function createTtrpgOpenCommonOracleRequestBasisV1(input: {
     recipientActorKeys: source.recipientActorKeys, oracleInputHash: row.contentHash, sourceVisibilityHash: source.visibilityHash,
     runtimeReferencePolicy: input.runtimeReferencePolicy, decision: input.decision, modelIdentity: input.modelIdentity, budget: input.budget })
   return assertTtrpgOpenCommonOracleRequestSourceV1(basis, source)
+}
+
+/** Immutable original local Run proof. Historical physical ids are provenance, never remapped execution authority. */
+export function parseTtrpgOpenCommonOracleAuthorizationV1(value: unknown) {
+  const row = p.record(value, ['basis', 'basisHash', 'worldTurn', 'run', 'inputArtifactHash', 'admissionStateHash', 'authorizationCommandId', 'reservationCommandId', 'epochKey', 'requestKey'], 'common Oracle window evidence')
+  const run = p.record(row.run, ['runId', 'contractHash', 'contractJson'], 'common Oracle original Run')
+  if (typeof run.contractJson !== 'string' || !run.contractJson || run.contractJson.length > 1_000_000) p.fail('共同事实原 Run 合同字节为空或过长')
+  return { worldTurn: p.integer(row.worldTurn, 'common Oracle original world turn', 0), basis: parseTtrpgOpenCommonOracleRequestBasisV1(row.basis), basisHash: p.hash(row.basisHash, 'common Oracle original basis hash'),
+    run: { runId: p.integer(run.runId, 'common Oracle original Run id', 1), contractHash: p.hash(run.contractHash, 'common Oracle original contract hash'), contractJson: run.contractJson },
+    inputArtifactHash: p.hash(row.inputArtifactHash, 'common Oracle authorization artifact'), admissionStateHash: p.hash(row.admissionStateHash, 'common Oracle original mechanics'),
+    authorizationCommandId: p.key(row.authorizationCommandId, 'common Oracle authorize command'), reservationCommandId: p.key(row.reservationCommandId, 'common Oracle reserve command'),
+    epochKey: p.key(row.epochKey, 'common Oracle original epoch'), requestKey: p.key(row.requestKey, 'common Oracle original request') }
+}
+export type TtrpgOpenCommonOracleAuthorizationV1 = ReturnType<typeof parseTtrpgOpenCommonOracleAuthorizationV1>
+export function ttrpgOpenCommonOracleAuthorizationInputV1(grant: Omit<TtrpgOpenCommonOracleAuthorizationV1, 'run' | 'inputArtifactHash'>) {
+  return { schema: 'storyforge.ttrpg-open-common-oracle-authorization-input', version: 1, basis: grant.basis, basisHash: grant.basisHash, worldTurn: grant.worldTurn,
+    admissionStateHash: grant.admissionStateHash, authorizationCommandId: grant.authorizationCommandId, reservationCommandId: grant.reservationCommandId, epochKey: grant.epochKey, requestKey: grant.requestKey }
+}
+export function ttrpgOpenCommonOracleObjectiveV1(basisHash: string, commandId: string) {
+  return `共同事实原请求 ${p.hash(basisHash, 'common basis hash')} ${p.key(commandId, 'common authorize command')}`
+}
+export function readTtrpgOpenCommonOracleObjectiveV1(value: string) {
+  const match = /^共同事实原请求 ([a-f0-9]{64}) ([A-Za-z0-9][A-Za-z0-9._:-]{0,199})$/.exec(value)
+  return match ? { basisHash: match[1], authorizationCommandId: match[2] } : null
+}
+export async function ttrpgOpenCommonOracleInputRevisionV1(input: { basisHash: string; authorizationHash: string; viewerKey: string; authorizationCommandId: string }) {
+  return hashCanonicalValue({ schema: 'storyforge.ttrpg-open-common-oracle-input-revision', version: 1, ...input })
+}
+export async function verifyTtrpgOpenCommonOracleEpochsV1(epochs: readonly { commonOracle?: TtrpgOpenCommonOracleAuthorizationV1 }[]) {
+  for (const epoch of epochs) if (epoch.commonOracle) {
+    const grant = epoch.commonOracle
+    if (await hashTtrpgOpenCommonOracleRequestBasisV1(grant.basis) !== grant.basisHash
+      || await hashCanonicalValue(p.json(grant.run.contractJson)) !== grant.run.contractHash) p.fail('共同事实窗口的原请求或原 Run 证据 hash 已损坏')
+  }
+}
+
+export function ttrpgOpenCommonOracleCallMarkerV1(grant: Pick<TtrpgOpenCommonOracleAuthorizationV1, 'basis' | 'basisHash' | 'worldTurn'>) {
+  return { worldTurn: grant.worldTurn, oracleSourceRef: grant.basis.oracleSourceRef, basisHash: grant.basisHash,
+    ...(grant.basis.runtimeReferencePolicy ? { runtimeReferencePolicy: grant.basis.runtimeReferencePolicy } : {}) }
 }

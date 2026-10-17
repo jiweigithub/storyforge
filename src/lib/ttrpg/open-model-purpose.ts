@@ -29,6 +29,7 @@ export function assertTtrpgOpenModelActorV1(authorization: TtrpgOpenAuthorizatio
 }
 export async function loadTtrpgOpenModelContextV1(input: { scope: WorkspaceScope; sessionId: number; actorKey: string; skillId: string }) {
   const purpose = ttrpgOpenModelPurposeForSkillV1(input.skillId)
+  if (purpose.purpose === 'common-oracle-interpret') return (await import('./open-common-oracle-context')).loadTtrpgOpenCommonOracleContextV1(input)
   if (purpose.purpose === 'entity-proposal') return (await import('./open-entity-context')).loadTtrpgOpenEntityContextV1(input)
   if (purpose.purpose === 'public-situation-proposal') return (await import('./open-public-situation-context')).loadTtrpgOpenPublicSituationContextV1(input)
   if (purpose.purpose === 'situation-proposal') return (await import('./open-generated-situation-context')).loadTtrpgOpenSituationContextV1(input)

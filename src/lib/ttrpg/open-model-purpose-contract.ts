@@ -30,6 +30,8 @@ export const TTRPG_OPEN_MODEL_PURPOSES_V1 = {
     sourceKeys: ['ttrpgOpenPublicSituationInput'], actorRole: 'gm' },
   'stage-brief': { skillId: 'prose.ttrpg-open-brief', entryId: 'ttrpg.open.brief', stepId: 'ttrpg.open.brief',
     sourceKeys: ['ttrpgOpenBriefInput', 'ttrpgOpenPartyMemory'], actorRole: 'gm' },
+  'common-oracle-interpret': { skillId: 'prose.ttrpg-open-common-oracle-interpret', entryId: 'ttrpg.open.common-oracle-interpret', stepId: 'ttrpg.open.common-oracle-interpret',
+    sourceKeys: ['ttrpgOpenCommonOracleInput'], actorRole: 'gm' },
   'oracle-interpret': { skillId: 'prose.ttrpg-open-oracle-interpret', entryId: 'ttrpg.open.oracle-interpret', stepId: 'ttrpg.open.oracle-interpret',
     sourceKeys: TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1['gm-assistant'], actorRole: 'gm' },
   'fact-normalize': { skillId: 'prose.ttrpg-open-fact-normalize', entryId: 'ttrpg.open.fact-normalize', stepId: 'ttrpg.open.fact-normalize',
@@ -47,7 +49,7 @@ export function assertTtrpgOpenFrozenContextSourcesV1(skillId: string, actual: r
   const modern = TTRPG_OPEN_P7_CONTEXT_SOURCES_V1[consumer]
   const current = TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1[consumer]
   const key = [...actual].sort().join(',')
-  const supported = ['entity-proposal', 'stage-brief', 'situation-proposal', 'public-situation-proposal'].includes(definition.purpose) ? [definition.sourceKeys] : [legacy, modern, current]
+  const supported = ['entity-proposal', 'stage-brief', 'situation-proposal', 'public-situation-proposal', 'common-oracle-interpret'].includes(definition.purpose) ? [definition.sourceKeys] : [legacy, modern, current]
   if (new Set(actual).size !== actual.length || !supported.some(keys => [...keys].sort().join(',') === key)) {
     throw new Error('[ttrpg-open-call] 冻结来源不是此目的登记的准确协议权限')
   }

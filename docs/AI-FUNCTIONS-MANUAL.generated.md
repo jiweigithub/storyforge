@@ -466,10 +466,11 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ## 五、正式 AI 入口（FormalAIEntryBindingV1）
 
-共 57 个操作级绑定。运行时按 entryId 校验 category 和 Skill；采纳权限不由文字说明决定。
+共 58 个操作级绑定。运行时按 entryId 校验 category 和 Skill；采纳权限不由文字说明决定。
 
 | entryId | Skill | category | 边界 | 候选 | 采纳目标 | 调用方 |
 |---|---|---|---|---|---|---|
+| `ttrpg.open.common-oracle-interpret` | `prose.ttrpg-open-common-oracle-interpret` | `runtime.ttrpg-open.common-oracle-interpret` | formal / product-runtime | `storyforge.ttrpg-open-common-oracle-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
 | `ttrpg.open.oracle-interpret` | `prose.ttrpg-open-oracle-interpret` | `runtime.ttrpg-open.oracle-interpret` | formal / product-runtime | `storyforge.ttrpg-open-oracle-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
 | `ttrpg.open.fact-normalize` | `prose.ttrpg-open-fact-normalize` | `runtime.ttrpg-open.fact-normalize` | formal / product-runtime | `storyforge.ttrpg-open-oracle-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
 | `ttrpg.open.intent` | `prose.ttrpg-open-intent` | `runtime.ttrpg-open.intent` | formal / product-runtime | `storyforge.ttrpg-open-intent-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
@@ -530,4 +531,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `9c41c2ac`
+生成时间基准:commit `08340576`

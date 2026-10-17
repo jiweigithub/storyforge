@@ -46,7 +46,7 @@ export async function listTtrpgOpenHistoricalResponsesV1(input: HistoricalInput)
   const result: Array<{ runId: number; requestKey: string; purpose: string }> = []
   for (const call of runtime.openRun.coordination.calls) {
     const purpose = ttrpgOpenModelPurposeForSkillV1(call.skillId).purpose
-    if (purpose === 'public-situation-proposal' || purpose === 'entity-proposal') continue // Independent public-definition audit does not inherit the old raw-response desk.
+    if (purpose === 'public-situation-proposal' || purpose === 'entity-proposal' || purpose === 'common-oracle-interpret') continue // Independent public-definition audit does not inherit the old raw-response desk.
     const epoch = runtime.openRun.coordination.epochs.find(row => row.epochKey === call.authorizationEpochKey)
     if (call.status !== 'succeeded' || !call.responseArtifactHash || (call.narrationBinding?.viewerKey ?? epoch?.viewerKey) !== input.viewerKey) continue
     try { assertHistoricalReader(runtime.authorization, call, input.viewerKey) } catch { continue }

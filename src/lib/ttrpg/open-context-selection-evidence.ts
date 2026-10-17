@@ -90,7 +90,7 @@ export async function verifyTtrpgOpenContextSelectionEvidenceV1(input: {
   }
   const oracleSourceRef = input.call?.oracleInterpretation?.oracleSourceRef ?? input.call?.supportSlot?.oracleSourceRef
   if (definition.purpose === 'entity-proposal') {
-    if (!('directory' in context) || !input.call?.entityProposal) throw new Error('[ttrpg-entity] 缺少原实体来源选择')
+    if (!('epochInputRevision' in context) || !input.call?.entityProposal) throw new Error('[ttrpg-entity] 缺少原实体来源选择')
     const selected = (await import('./open-entity-context')).selectTtrpgOpenEntityModelResourcesV1(context, inventory, input.call.entityProposal)
     inventory.splice(0, inventory.length, ...selected)
   }

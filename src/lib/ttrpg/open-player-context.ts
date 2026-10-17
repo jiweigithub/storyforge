@@ -1,3 +1,4 @@
+import { verifyTtrpgOpenCommonOracleEpochsV1 } from './open-common-oracle-request'
 import { ttrpgOpenEntityIdentityCatalogV1, ttrpgOpenEntityReferenceVisibleV1 } from './open-entity-catalog'
 import { verifyTtrpgOpenEntityStateV1 } from './open-entity-proof'
 import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
@@ -99,6 +100,7 @@ async function loadOpenPlayerProjectionV1(input: OpenPlayerReadV1, humanViewerKe
   await verifyTtrpgOpenEntityStateV1(state, content)
   await verifyTtrpgOpenPrivateChoiceHashesV1(runtime.openRun.operations)
   await verifyTtrpgOpenManualEpochsV1(runtime.openRun.coordination.epochs)
+  await verifyTtrpgOpenCommonOracleEpochsV1(runtime.openRun.coordination.epochs)
   await verifyTtrpgOpenOracleJournalV1({ receipts: runtime.openRun.oracleReceipts ?? [], rulePack: content.rulePack.content,
     sessionKey: runtime.sessionKey, seed: session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] })
   await verifyTtrpgOpenOracleReviewHashesV1(runtime.openRun.oracleReviews ?? [])

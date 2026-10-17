@@ -10,6 +10,7 @@ import { parseTtrpgOpenSourceRefV1 } from './open-coordination'
 import * as p from './open-contract-parse'
 import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
 export interface TtrpgOpenModelCallV1 {
+  commonOracle?: { worldTurn: number; oracleSourceRef: TtrpgOpenSourceRefV1; basisHash: string; runtimeReferencePolicy?: TtrpgOpenOracleRuntimeReferencePolicyV1 }
   entityProposal?: TtrpgOpenEntityModelSelectionV1
   hostingDelegationRef?: TtrpgOpenSourceRefV1
   requestKey: string; authorizationEpochKey: string
@@ -33,12 +34,19 @@ export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 
     'skillId','runContractHash','inputManifestHash','requestHash','stepId','attempt',
     'createdRef','dispatchRef','terminalRef','status','reservedInputTokens','reservedOutputTokens','reservedCostUsd',
     'providerRequestId','responseArtifactHash','usage','terminalReason',
+    ...(Object.prototype.hasOwnProperty.call(value, 'commonOracle') ? ['commonOracle'] : []),
     ...(Object.prototype.hasOwnProperty.call(value, 'entityProposal') ? ['entityProposal'] : []),
     ...(Object.prototype.hasOwnProperty.call(value,'hostingDelegationRef') ? ['hostingDelegationRef'] : []),
     ...(Object.prototype.hasOwnProperty.call(value, 'oracleInterpretation') ? ['oracleInterpretation'] : []),
     ...(Object.prototype.hasOwnProperty.call(value, 'supportSlot') ? ['supportSlot'] : []),
     ...(Object.prototype.hasOwnProperty.call(value, 'narrationBinding') ? ['narrationBinding'] : []),
     ...(Object.prototype.hasOwnProperty.call(value, 'intentRejection') ? ['intentRejection'] : [])], 'model call')
+  const commonOracle = Object.prototype.hasOwnProperty.call(r, 'commonOracle') ? (() => {
+    const marker = p.record(r.commonOracle, ['worldTurn', 'oracleSourceRef', 'basisHash', ...(Object.prototype.hasOwnProperty.call(r.commonOracle, 'runtimeReferencePolicy') ? ['runtimeReferencePolicy'] : [])], 'common Oracle call source')
+    return { worldTurn: p.integer(marker.worldTurn, 'common Oracle turn', 0), oracleSourceRef: parseTtrpgOpenSourceRefV1(marker.oracleSourceRef), basisHash: p.hash(marker.basisHash, 'common Oracle original basis'),
+      ...(Object.prototype.hasOwnProperty.call(marker, 'runtimeReferencePolicy') ? { runtimeReferencePolicy: parseTtrpgOpenOracleRuntimeReferencePolicyV1(marker.runtimeReferencePolicy) } : {}) }
+  })() : undefined
+  if ((r.skillId === 'prose.ttrpg-open-common-oracle-interpret') !== Boolean(commonOracle)) p.fail('共同事实调用必须绑定本次原共同来源，其他用途不能借用')
   const narrationBinding = Object.prototype.hasOwnProperty.call(r, 'narrationBinding') ? parseTtrpgOpenNarrationBindingV1(r.narrationBinding) : undefined
   const entityProposal = Object.prototype.hasOwnProperty.call(r, 'entityProposal') ? parseTtrpgOpenEntityModelSelectionV1(r.entityProposal) : undefined
   if ((r.skillId === 'prose.ttrpg-open-entity-propose') !== Boolean(entityProposal)) p.fail('实体模型请求必须冻结原咨询和单一范围，其他用途不能借用')
@@ -93,7 +101,7 @@ export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 
     if (!['prose.ttrpg-open-intent', 'prose.ttrpg-open-companion'].includes(String(r.skillId)) || status !== 'succeeded' || sourceRef.sessionKey !== createdRef.sessionKey || !terminalRef || sourceRef.sequence <= terminalRef.sequence) p.fail('拒绝必须来自实际角色候选终态之后')
     return { sourceRef, candidateHash: p.hash(row.candidateHash, 'rejected intent candidate') }
   })()
-  return { requestKey: p.key(r.requestKey, 'requestKey'), authorizationEpochKey: p.key(r.authorizationEpochKey, 'call epoch'),
+  return { ...(commonOracle ? { commonOracle } : {}), requestKey: p.key(r.requestKey, 'requestKey'), authorizationEpochKey: p.key(r.authorizationEpochKey, 'call epoch'),
     actorKey: p.key(r.actorKey, 'call actor'), admissionStateHash: p.hash(r.admissionStateHash, 'call admission'),
     visibilityHash: p.hash(r.visibilityHash, 'call visibility'), runtimeSourceHash: p.hash(r.runtimeSourceHash, 'call source'),
     skillId: p.key(r.skillId, 'call Skill'), runContractHash: p.hash(r.runContractHash, 'run contract'), inputManifestHash: p.hash(r.inputManifestHash, 'input manifest'),
@@ -172,7 +180,7 @@ export function assertTtrpgOpenSemanticCallOriginV1(call: TtrpgOpenModelCallV1,o
 export function assertTtrpgOpenOracleInterpretationSlotV1(runtime: TtrpgRuntimeStateV2, worldTurn: number): void {
   const calls = [...(runtime.openRun?.coordination.calls ?? []),
     ...(runtime.branchLineage?.ancestors.flatMap(ancestor => ancestor.snapshot.openRun?.coordination.calls ?? []) ?? [])]
-  if (calls.some(call => call.oracleInterpretation?.worldTurn === worldTurn)) p.fail('每个 worldTurn 最多一次模型 Oracle 解释，请复用已有候选')
+  if (calls.some(call => call.oracleInterpretation?.worldTurn === worldTurn || call.commonOracle?.worldTurn === worldTurn)) p.fail('每个 worldTurn 最多一次模型 Oracle 解释，请复用已有候选')
 }
 
 /** Ledger summaries are derived from actual call receipts, never accepted from a model. */

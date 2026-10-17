@@ -1,5 +1,6 @@
+import { ttrpgOpenMechanicalStateHashV1 } from './open-rule-plan'
 /** Common-only source foundation. Catalog/read/hash is never permission to send or adopt a fact. */
-import { TTRPG_OPEN_COMMON_ORACLE_REQUEST_POLICY_V1 } from './open-common-oracle-request'
+import { TTRPG_OPEN_COMMON_ORACLE_REQUEST_POLICY_V1, assertTtrpgOpenCommonOracleRequestSourceV1 } from './open-common-oracle-request'
 import type { WorkspaceScope } from '../types'
 import type { ContextResourceDescriptorV1, FrozenResourceScopeV1 } from '../registry/types'
 import { canonicalStringify as stable, hashCanonicalValue } from '../agent/run/hash'
@@ -86,7 +87,9 @@ async function readModel(input: Input) {
       recipientActorKeys: recipients, contentHash: await sha256Text(stable(value)), snapshotHash: identityScope?.snapshotHash ?? null })
   }
   const context = { resources, directory, recipientActorKeys: recipients, authorizationRevision: authorization.revision,
-    visibilityHash: await hashCanonicalValue(resources), readEvidence: common.readEvidence }
+    visibilityHash: await hashCanonicalValue(resources), admissionStateHash: await ttrpgOpenMechanicalStateHashV1(state), readEvidence: common.readEvidence }
+  const epoch = run.coordination.epochs.find(row => row.epochKey === run.coordination.activeEpochKey)
+  if (epoch?.commonOracle) await assertTtrpgOpenCommonOracleRequestSourceV1(epoch.commonOracle.basis, context)
   await loaded.assertCurrent()
   return { context, loaded }
 }

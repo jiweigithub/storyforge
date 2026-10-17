@@ -28,7 +28,7 @@ export interface TtrpgOpenAgentEvidenceV1 {
   artifacts: AgentRunArtifactRecordV1[]
 }
 export async function ttrpgOpenCallBindingHashV1(input: Pick<TtrpgOpenModelCallV1,
-  'actorKey' | 'authorizationEpochKey' | 'admissionStateHash' | 'visibilityHash' | 'runtimeSourceHash' | 'entityProposal' | 'oracleInterpretation' | 'supportSlot' | 'narrationBinding' | 'hostingDelegationRef'> & { sessionKey: string }) {
+  'commonOracle' | 'actorKey' | 'authorizationEpochKey' | 'admissionStateHash' | 'visibilityHash' | 'runtimeSourceHash' | 'entityProposal' | 'oracleInterpretation' | 'supportSlot' | 'narrationBinding' | 'hostingDelegationRef'> & { sessionKey: string }) {
   return hashProductProductionValueV2({ schema: 'storyforge.ttrpg-open-call-binding', version: 1, ...input })
 }
 
@@ -39,7 +39,17 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
   const snapshot = await readInstanceAgentRunV1(input.scope, input.runId)
   const { call } = input
   const definition = ttrpgOpenModelPurposeForSkillV1(call.skillId), expectedSources = [...assertTtrpgOpenFrozenContextSourcesV1(call.skillId, snapshot.contract.permissions.contextSourceKeys)].sort().join(',')
-  let publicAuthorizationEvidence: TtrpgOpenAgentEvidenceV1 | undefined
+  let originalAuthorizationEvidence: TtrpgOpenAgentEvidenceV1 | undefined
+  if (definition.purpose === 'common-oracle-interpret') {
+    const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
+    const grant = runtime?.openRun?.coordination.epochs.find(row => row.epochKey === call.authorizationEpochKey)?.commonOracle
+    if (!grant || input.runId !== grant.run.runId || call.runContractHash !== grant.run.contractHash || call.requestKey !== grant.requestKey
+      || call.actorKey !== 'gm' || call.stepId !== 'ttrpg.open.common-oracle-interpret' || call.attempt !== 1
+      || stable(call.commonOracle) !== stable((await import('./open-common-oracle-request')).ttrpgOpenCommonOracleCallMarkerV1(grant))
+      || call.reservedInputTokens > grant.basis.budget.maximumInputTokens || call.reservedOutputTokens !== grant.basis.budget.maximumOutputTokens
+      || call.reservedCostUsd > grant.basis.budget.maximumCostUsd) throw new Error('共同事实调用必须绑定本次原本地 Run、原请求、范围和预算')
+    if (input.mode !== 'finish') originalAuthorizationEvidence = (await (await import('./open-common-oracle-authorization-proof')).verifyTtrpgOpenCommonOracleAuthorizationV1({ ...input, viewerKey: grant.basis.requester.viewerKey, authorization: grant, phase: input.mode === 'reserve' ? 'prepare' : 'dispatch' })).evidence
+  }
   if (definition.purpose === 'public-situation-proposal') {
     const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
     const epoch = runtime?.openRun?.coordination.epochs.find(e => e.epochKey === call.authorizationEpochKey), grant = epoch?.publicSituation
@@ -50,7 +60,7 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
       || call.reservedOutputTokens !== grant.budget.maximumOutputTokens || call.reservedCostUsd > grant.budget.maximumCostUsd) {
       throw new Error('[ttrpg-public-situation] 模型调用只能使用本次原 Run、原请求身份与冻结预算')
     }
-    if (input.mode !== 'finish') publicAuthorizationEvidence = (await (await import('./open-public-situation-authorization-proof')).verifyTtrpgOpenPublicSituationAuthorizationV1({
+    if (input.mode !== 'finish') originalAuthorizationEvidence = (await (await import('./open-public-situation-authorization-proof')).verifyTtrpgOpenPublicSituationAuthorizationV1({
       ...input, viewerKey: grant.basis.requester.viewerKey, authorization: grant, phase: input.mode === 'reserve' ? 'prepare' : 'dispatch' })).evidence
   }
   const bound = snapshot.contract.scope.runtime
@@ -71,6 +81,7 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
     || snapshot.contract.runtimeBindingHash !== await ttrpgOpenCallBindingHashV1({ sessionKey: call.createdRef.sessionKey,
       actorKey: call.actorKey, authorizationEpochKey: call.authorizationEpochKey, admissionStateHash: call.admissionStateHash,
       visibilityHash: call.visibilityHash, runtimeSourceHash: call.runtimeSourceHash,
+      ...(call.commonOracle ? { commonOracle: call.commonOracle } : {}),
       ...(call.entityProposal ? { entityProposal: call.entityProposal } : {}),
       ...(call.hostingDelegationRef ? { hostingDelegationRef: call.hostingDelegationRef } : {}),
       ...(call.oracleInterpretation ? { oracleInterpretation: call.oracleInterpretation } : {}),...(call.supportSlot ? { supportSlot: call.supportSlot } : {}), ...(call.narrationBinding ? { narrationBinding: call.narrationBinding } : {}) })) {
@@ -105,7 +116,7 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
     && event.payload.attempt === call.attempt && event.payload.bindingHash === call.requestHash)) {
     throw new Error('[ttrpg-open-call] 缺少同一 attempt 的真实模型请求绑定')
   }
-  const artifacts: AgentRunArtifactRecordV1[] = [...(publicAuthorizationEvidence?.artifacts ?? [])]
+  const artifacts: AgentRunArtifactRecordV1[] = [...(originalAuthorizationEvidence?.artifacts ?? [])]
   const exact = async (kind: AgentRunArtifactRecordV1['artifactKind'], hash: string) => {
     if (!snapshot.events.some(event => event.type === 'evidence.artifact.recorded' && event.payload.artifactKind === kind
       && event.payload.contentHash === hash && event.payload.stepId === call.stepId && event.payload.attempt === call.attempt)) {

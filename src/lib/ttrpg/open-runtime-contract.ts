@@ -1009,7 +1009,7 @@ export function parseTtrpgRuntimeStateV2(
       if (epoch.hostingDelegation && stableProductRuntimeJsonV1(epoch.hostingDelegation.authorizationRef) !== stableProductRuntimeJsonV1(authorization.sourceRef)) fail('有限主持委托未绑定本桌真实 Session Zero')
       if (!seat || seat.controller === "ai" || seat.assignmentState !== "claimed"
         || epoch.sessionZeroRevision !== authorization.revision
-        || stableProductRuntimeJsonV1(epoch.budget) !== stableProductRuntimeJsonV1(ttrpgOpenEpochBudgetForTriggerV1(epochBudget, epoch.triggerKind, Boolean(epoch.oracleRuntimeReferencePolicy || epoch.normalizationRuntimeReferencePolicy)))
+        || stableProductRuntimeJsonV1(epoch.budget) !== stableProductRuntimeJsonV1(ttrpgOpenEpochBudgetForTriggerV1(epochBudget, epoch.triggerKind, Boolean(epoch.commonOracle || epoch.oracleRuntimeReferencePolicy || epoch.normalizationRuntimeReferencePolicy)))
         || epoch.successfulActorKeys.length > epoch.budget.maximumAiActions
         || epoch.successfulActorKeys.some(actorKey => !authorization.seats.some(item => item.actorKey === actorKey && item.role === "player" && item.controller !== "human"))) {
         fail("epoch 与冻结预算、Session Zero 或队友控制权不一致");
