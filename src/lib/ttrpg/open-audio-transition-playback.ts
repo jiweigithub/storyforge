@@ -120,6 +120,7 @@ export function createTtrpgAudioTransitionPlaybackV1() {
       const row = [...channels.values()].find(value => value.plan.toClipKey === clipKey)
       if (row) finish(row, !row.incoming?.isPlaying())
     },
+    retains(clipKey: string) { return [...channels.values()].some(row => !row.released && row.plan.fromClipKey === clipKey) },
     cancel() { for (const row of [...channels.values()]) finish(row, !row.started) },
   }
 }

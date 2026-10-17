@@ -1,5 +1,16 @@
 import { expect, test, type Page, type Locator } from '@playwright/test'
 test.beforeEach(() => test.skip(process.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW !== '1', 'isolated open preview only'))
+test.afterEach(async ({ page }, info) => {
+  if (info.status === info.expectedStatus) return
+  const value = await page.evaluate(() => {
+    const state = (window as any).audioTransition
+    const node = (el: HTMLAudioElement) => ({ connected: el.isConnected, paused: el.paused, volume: el.volume, muted: el.muted, sourcePresent: !!el.getAttribute('src'), readyState: el.readyState })
+    return { old: state ? node(state.old) : null, samples: state?.samples ?? [], revoked: state ? state.revoked.includes(state.url) : null,
+      current: [...document.querySelectorAll('[data-testid="ttrpg-open-audio-panel"] article:not([hidden]) audio')].map(el => node(el as HTMLAudioElement)),
+      status: [...document.querySelectorAll('[data-testid="ttrpg-open-audio-panel"] [role="status"]')].map(el => el.textContent) }
+  }).catch(() => null)
+  if (value) await info.attach('audio-transition-native-state', { body: JSON.stringify(value, null, 2), contentType: 'application/json' })
+})
 async function seed(page: Page, humanGm = true) {
   await page.goto('./')
   return page.evaluate(async humanGm => {
@@ -23,7 +34,8 @@ async function enter(page: Page, sessionId: number, humanGm = true) {
   return card
 }
 async function fill(card: Locator, f: Awaited<ReturnType<typeof seed>>, channel = 'music', audience = 'party', fade = 0) {
-  await card.getByText('主持音轨管理', { exact: true }).click()
+  const summary = card.getByText('主持音轨管理', { exact: true })
+  if (!await summary.evaluate(el => (el.parentElement as HTMLDetailsElement).open)) await summary.click()
   await card.getByLabel('音轨类型', { exact: true }).selectOption(channel)
   if (channel !== 'voice') await card.getByLabel('音轨播放渐入', { exact: true }).selectOption(String(fade))
   await card.getByLabel('音频接收范围', { exact: true }).selectOption(audience)
@@ -46,6 +58,7 @@ async function inspect(page: Page, id: number) {
       time: JSON.stringify(state.ttrpg.openRun.worldTime), assets: await db.productMediaAssets.where('productRuntimeSessionId').equals(id).count(), calls: state.ttrpg.openRun.coordination.calls.length }
   }, id)
 }
+const currentAudio = (card: Locator) => card.locator('article:not([hidden]) audio')
 async function replay(card: Locator) {
   const summary = card.getByText('本桌可读的已保存音轨', { exact: true })
   if (!await summary.evaluate(el => (el.parentElement as HTMLDetailsElement).open)) await summary.click()
@@ -53,14 +66,14 @@ async function replay(card: Locator) {
   const review = card.getByTestId('ttrpg-open-audio-review'); await expect(review).toBeVisible({ timeout: 30000 })
   await approve(review); await expect(review).toHaveCount(0)
 }
-async function watchTransition(card: Locator) {
-  const old = await card.locator('audio').elementHandle()
+async function watchTransition(card: Locator, label = '背景音乐播放') {
+  const old = await card.locator('article:not([hidden]) audio').and(card.getByLabel(label, { exact: true })).elementHandle()
   await old!.evaluate((el: HTMLAudioElement) => {
     const state = (window as any).audioTransition = { old: el, url: el.src, samples: [] as any[], revoked: [] as string[] }
     const revoke = URL.revokeObjectURL.bind(URL)
     URL.revokeObjectURL = value => { state.revoked.push(value); revoke(value) }
     el.addEventListener('volumechange', () => {
-      const incoming = document.querySelector('[data-testid="ttrpg-open-audio-panel"] audio') as HTMLAudioElement | null
+      const incoming = [...document.querySelectorAll('[data-testid="ttrpg-open-audio-panel"] article:not([hidden]) audio')].find(node => node.getAttribute('aria-label') === el.getAttribute('aria-label')) as HTMLAudioElement | undefined
       if (state.samples.length < 400) state.samples.push({ old: el.volume, oldPaused: el.paused, incoming: incoming !== el ? incoming?.volume : null, incomingPaused: incoming?.paused })
     })
   })
@@ -70,7 +83,7 @@ async function playingFixture(page: Page, fade = 3000) {
   const f = await seed(page), card = await enter(page, f.owner.sessionId), review = await fill(card, f, 'music', 'party', fade)
   await approve(review); await expect(review).toHaveCount(0)
   await card.getByRole('button', { name: '开启本机音频', exact: true }).click()
-  const audio = card.locator('audio'); await expect(audio).toHaveCount(1, { timeout: 30000 })
+  const audio = currentAudio(card); await expect(audio).toHaveCount(1, { timeout: 30000 })
   await audio.focus(); await audio.press('Space'); await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.volume), { timeout: 6000 }).toBe(1)
   return { f, card }
@@ -82,58 +95,81 @@ test('native opted-in background crossfade overlaps actual decoded nodes, releas
   await card.getByLabel('跟随背景与环境音轨', { exact: true }).check()
   const old = await watchTransition(card); await replay(card)
   await expect.poll(() => page.evaluate(() => (window as any).audioTransition.samples.some((r: any) => !r.oldPaused && r.old > 0 && r.old < 1 && !r.incomingPaused && r.incoming > 0 && r.incoming < 1)), { timeout: 15000 }).toBe(true)
-  expect(await old.evaluate(el => el.isConnected)).toBe(false)
+  expect(await old.evaluate(el => el.isConnected && !!el.closest('article')?.hidden)).toBe(true)
   await expect.poll(() => old.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
   expect(await old.evaluate(el => el.getAttribute('src'))).toBeNull()
   expect(await page.evaluate(() => (window as any).audioTransition.revoked.includes((window as any).audioTransition.url))).toBe(true)
-  await expect.poll(() => card.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
+  await expect.poll(() => currentAudio(card).evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
   await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.reload(); const refreshed = await enter(page, f.owner.sessionId)
-  await expect(refreshed.locator('audio')).toHaveCount(0); await expect(refreshed.getByLabel('跟随背景与环境音轨', { exact: true })).not.toBeChecked()
+  await expect(currentAudio(refreshed)).toHaveCount(0); await expect(refreshed.getByLabel('跟随背景与环境音轨', { exact: true })).not.toBeChecked()
   expect(await inspect(page, f.owner.sessionId)).toMatchObject({ audio: 2, assets: 1, calls: 0, entities: f.beforeEntities, product: f.beforeProduct, time: f.beforeTime }); expect(sends).toBe(0)
 })
-test('native reviewed stop fades the detached playing node without follow and local mute stops it immediately', async ({ page }) => {
+test('native reviewed stop fades the retained playing node without follow and local mute stops it immediately', async ({ page }) => {
   test.setTimeout(240000); const { f, card } = await playingFixture(page), old = await watchTransition(card)
   await card.getByLabel('停止音轨渐出', { exact: true }).selectOption('3000')
   await card.getByRole('button', { name: '核对停止背景音乐', exact: true }).click()
   const review = card.getByTestId('ttrpg-open-audio-review'); await expect(review).toContainText('停止时渐出：最多 3 秒')
-  await approve(review); await expect(card.locator('audio')).toHaveCount(0, { timeout: 30000 })
+  await approve(review); await expect(currentAudio(card)).toHaveCount(0, { timeout: 30000 })
   await expect.poll(() => page.evaluate(() => (window as any).audioTransition.samples.some((r: any) => !r.oldPaused && r.old > 0 && r.old < 1))).toBe(true)
+  expect(await old.evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
   await card.getByRole('button', { name: '本机静音', exact: true }).click()
   expect(await old.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true); expect(await old.evaluate(el => el.getAttribute('src'))).toBeNull()
   expect(await inspect(page, f.owner.sessionId)).toMatchObject({ audio: 2, assets: 1, calls: 0, entities: f.beforeEntities, product: f.beforeProduct, time: f.beforeTime })
 })
 test('native replacement remains manual by default and blocked follow preserves current manual controls without retry', async ({ page }) => {
-  test.setTimeout(240000); const { card } = await playingFixture(page, 0), old = await card.locator('audio').elementHandle()
+  test.setTimeout(240000); const { card } = await playingFixture(page, 0), old = await currentAudio(card).elementHandle()
   await replay(card); await expect.poll(() => old!.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
-  await expect(card.locator('audio')).toHaveCount(1, { timeout: 30000 }); expect(await card.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
+  await expect(currentAudio(card)).toHaveCount(1, { timeout: 30000 }); expect(await currentAudio(card).evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
   await card.getByLabel('跟随背景与环境音轨', { exact: true }).check()
-  await card.locator('audio').focus(); await card.locator('audio').press('Space')
-  await expect.poll(() => card.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
+  await currentAudio(card).focus(); await currentAudio(card).press('Space')
+  await expect.poll(() => currentAudio(card).evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
   await page.evaluate(() => {
     const play = HTMLMediaElement.prototype.play; (window as any).blockedAudioFollow = 0
     HTMLMediaElement.prototype.play = function () { (window as any).blockedAudioFollow++; if ((window as any).blockedAudioFollow === 1) return Promise.reject(new DOMException('ENGINEERING-BLOCKED-FOLLOW', 'NotAllowedError')); return play.call(this) }
   })
   await replay(card); await expect(card).toContainText('旧音轨已停止，新音轨请按播放继续。', { timeout: 30000 })
-  await expect(card.locator('audio')).toHaveCount(1); expect(await card.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
-  expect(await card.locator('audio').getAttribute('src')).toMatch(/^blob:/)
+  await expect(currentAudio(card)).toHaveCount(1); expect(await currentAudio(card).evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
+  expect(await currentAudio(card).getAttribute('src')).toMatch(/^blob:/)
   await card.getByRole('button', { name: '重新读取音轨', exact: true }).click()
   expect(await page.evaluate(() => (window as any).blockedAudioFollow)).toBe(1)
-  await card.locator('audio').focus(); await card.locator('audio').press('Space')
-  await expect.poll(() => card.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
+  await currentAudio(card).focus(); await currentAudio(card).press('Space')
+  await expect.poll(() => currentAudio(card).evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
 })
 test('native identity handoff immediately releases both sides of an active background crossfade', async ({ page }) => {
   test.setTimeout(240000); const { f, card } = await playingFixture(page)
   await card.getByLabel('跟随背景与环境音轨', { exact: true }).check()
   const old = await watchTransition(card); await replay(card)
   await expect.poll(() => page.evaluate(() => (window as any).audioTransition.samples.some((r: any) => !r.oldPaused && r.old > 0 && r.old < 1 && !r.incomingPaused && r.incoming > 0 && r.incoming < 1)), { timeout: 15000 }).toBe(true)
-  const incoming = await card.locator('audio').elementHandle()
+  const incoming = await currentAudio(card).elementHandle()
+  expect(await old.evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
   await page.getByRole('button', { name: '返回身份选择', exact: true }).click()
   for (const node of [old, incoming!]) { expect(await node.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true); expect(await node.evaluate(el => el.getAttribute('src'))).toBeNull() }
   const player = await enter(page, f.owner.sessionId, false)
-  await expect(player.locator('audio')).toHaveCount(0); await expect(player.getByLabel('跟随背景与环境音轨', { exact: true })).not.toBeChecked()
+  await expect(currentAudio(player)).toHaveCount(0); await expect(player.getByLabel('跟随背景与环境音轨', { exact: true })).not.toBeChecked()
   await expect(player).not.toContainText('NATIVE-AUDIO-LICENSE-CANARY')
+})
+test('native ambience crossfade preserves the connected playing music node without a pause or restart', async ({ page }) => {
+  test.setTimeout(240000); const { f, card } = await playingFixture(page)
+  const music = await card.getByLabel('背景音乐播放', { exact: true }).elementHandle()
+  await music!.evaluate((el: HTMLAudioElement) => {
+    const state = (window as any).unchangedMusic = { pauses: 0, plays: 0 }
+    el.addEventListener('pause', () => state.pauses++); el.addEventListener('play', () => state.plays++)
+  })
+  const review = await fill(card, f, 'ambience', 'party', 3000); await approve(review); await expect(review).toHaveCount(0)
+  const ambience = card.getByLabel('环境声播放', { exact: true }); await expect(ambience).toHaveCount(1, { timeout: 30000 })
+  await ambience.focus(); await ambience.press('Space'); await expect.poll(() => ambience.evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
+  await expect.poll(() => ambience.evaluate((el: HTMLAudioElement) => el.volume), { timeout: 6000 }).toBe(1)
+  await card.getByLabel('跟随背景与环境音轨', { exact: true }).check(); const old = await watchTransition(card, '环境声播放')
+  const library = card.getByText('本桌可读的已保存音轨', { exact: true }); if (!await library.evaluate(el => (el.parentElement as HTMLDetailsElement).open)) await library.click()
+  await card.getByRole('button', { name: '核对重播', exact: true }).nth(1).click()
+  await approve(card.getByTestId('ttrpg-open-audio-review'))
+  await expect.poll(() => page.evaluate(() => (window as any).audioTransition.samples.some((r: any) => !r.oldPaused && r.old > 0 && r.old < 1 && !r.incomingPaused && r.incoming > 0 && r.incoming < 1)), { timeout: 15000 }).toBe(true)
+  await expect.poll(() => old.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
+  expect(await music!.evaluate((el: HTMLAudioElement) => el.isConnected && !el.paused && el.volume === 1)).toBe(true)
+  expect(await page.evaluate(() => (window as any).unchangedMusic)).toEqual({ pauses: 0, plays: 0 })
+  expect(await inspect(page, f.owner.sessionId)).toMatchObject({ audio: 3, assets: 2, calls: 0, entities: f.beforeEntities, product: f.beforeProduct, time: f.beforeTime })
 })
 test('native manual file review retries storage once, really decodes/plays, reloads silently and stops private playback on identity handoff', async ({ page }) => {
   test.setTimeout(240000); let sends = 0; page.on('request', req => { if (req.url().includes('/chat/completions')) sends++ })

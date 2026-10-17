@@ -35,6 +35,8 @@ export default function TtrpgOpenAudioPanel(props: {
   const [source, setSource] = useState(''), [license, setLicense] = useState(''), [voiceChecked, setVoiceChecked] = useState(false), [fadeMs, setFadeMs] = useState(0)
   const [follow, setFollow] = useState(false), [stopFadeMs, setStopFadeMs] = useState(0)
   const [urls, setUrls] = useState<Record<string, string>>({}), [clipFailures, setClipFailures] = useState<Record<string, boolean>>({}), [reload, setReload] = useState(0)
+  const [retained, setRetained] = useState<Array<{ visit: typeof currentIdentity.current; track: TtrpgOpenAudioDeskV1['tracks'][number]; url: string }>>([])
+  const playbackOrder = useRef<string[]>([])
   const revision = useRef(0), live = useRef(false), operationLocked = useRef(false), clips = useRef(new Map<string, { url: string; blob: Blob }>()), elements = useRef(new Map<string, TtrpgLocalAudioStopV1>()), bookmarks = useRef(new Map<string, number>()), fileRead = useRef<AbortController | null>(null)
   const lastView = useRef<{ visit: typeof currentIdentity.current; value: TtrpgOpenAudioDeskV1 } | null>(null)
   const localChoice = useRef({ visit: currentIdentity.current, enabled: false, follow: false })
@@ -51,7 +53,7 @@ export default function TtrpgOpenAudioPanel(props: {
     for (const clip of clips.current.values()) URL.revokeObjectURL(clip.url)
     clips.current.clear()
   }, [transitions])
-  const stopLocal = useCallback(() => { releaseLocal(); setUrls({}) }, [releaseLocal])
+  const stopLocal = useCallback(() => { releaseLocal(); setRetained([]); setUrls({}) }, [releaseLocal])
   const register = useCallback((key: string, stop: TtrpgLocalAudioStopV1 | null) => {
     if (!stop) { elements.current.delete(key); return }
     elements.current.set(key, stop)
@@ -91,10 +93,15 @@ export default function TtrpgOpenAudioPanel(props: {
             if (!current()) return
             if (localChoice.current.enabled) for (const plan of evidence.transitions) {
               const clip = clips.current.get(plan.fromClipKey), handle = elements.current.get(plan.fromClipKey)
-              if (!clip || !handle || handle.element.getAttribute('src') !== clip.url) continue
+              const track = before.tracks.find(row => row.clipKey === plan.fromClipKey)
+              if (!clip || !handle || !track || handle.element.getAttribute('src') !== clip.url) continue
               const accepted = transitions.begin(plan, handle, { follow: localChoice.current.follow, deadline,
-                release: () => URL.revokeObjectURL(clip.url), fallback: () => { if (live.current && currentIdentity.current === owner) setNotice('旧音轨已停止，新音轨请按播放继续。') } })
-              if (accepted) clips.current.delete(plan.fromClipKey)
+                release: () => { URL.revokeObjectURL(clip.url); if (live.current && currentIdentity.current === owner) setRetained(rows => rows.filter(row => row.visit !== owner || row.track.clipKey !== plan.fromClipKey)) },
+                fallback: () => { if (live.current && currentIdentity.current === owner) setNotice('旧音轨已停止，新音轨请按播放继续。') } })
+              if (accepted) {
+                clips.current.delete(plan.fromClipKey)
+                if (transitions.retains(plan.fromClipKey)) setRetained(rows => [...rows.filter(row => row.track.clipKey !== plan.fromClipKey), { visit: owner, track, url: clip.url }])
+              }
             }
           } catch { /* Failed/stale evidence means immediate old-node disposal at the view change. */ }
         }
@@ -104,7 +111,7 @@ export default function TtrpgOpenAudioPanel(props: {
       if (current()) { localChoice.current.enabled = false; lastView.current = null; setPage(null); setEnabled(false); stopLocal(); setError('音频资料暂不可读取，请重新读取或核对原存档。') }
     } finally { if (guard !== null) clearTimeout(guard) }
   }, [identity, input, stopLocal, transitions])
-  useLayoutEffect(() => () => { localChoice.current.enabled = false; releaseLocal() }, [identity, releaseLocal])
+  useLayoutEffect(() => { live.current = true; return () => { live.current = false; localChoice.current.enabled = false; releaseLocal() } }, [identity, releaseLocal])
   useEffect(() => {
     live.current = true; operationLocked.current = false
     setPage(null); setEnabled(false); setReview(null); setAgreed(false); setWorking(false); setError(''); setNotice('')
@@ -162,6 +169,14 @@ export default function TtrpgOpenAudioPanel(props: {
       ...(action === 'stop' ? { fade: view?.tracks.find(row => JSON.stringify(row.sourceRef) === JSON.stringify(sourceRef))?.channel === 'voice' ? 0 : stopFadeMs } : {}), submissionKey: `audio.${action}.${crypto.randomUUID()}` })
     if (live.current && currentIdentity.current === owner) { setReview({ identity, value }); setAgreed(false) }
   })
+  const displayed = new Map<string, { track: TtrpgOpenAudioDeskV1['tracks'][number]; url: string | undefined; retiring: boolean }>()
+  if (enabled && !silenced) for (const row of retained) if (row.visit === visit) displayed.set(row.track.clipKey, { track: row.track, url: row.url, retiring: true })
+  for (const track of view?.tracks ?? []) displayed.set(track.clipKey, { track, url: urls[track.clipKey], retiring: false })
+  // Preserve relative DOM order of every existing media node. Reordering a
+  // connected audio node can interrupt native playback just like removing it.
+  const order = enabled && !silenced ? playbackOrder.current.filter(key => displayed.has(key)) : []
+  for (const key of displayed.keys()) if (!order.includes(key)) order.push(key)
+  playbackOrder.current = order
   return <section className="sf-open-audio" data-testid="ttrpg-open-audio-panel">
     <h2>本机音频</h2>
     <p>音频可随时静音。刷新或交接身份后默认关闭，本局的文字与规则进度会保留。</p>
@@ -175,15 +190,15 @@ export default function TtrpgOpenAudioPanel(props: {
     <p>跟随需先手动播放一轨；切换与停止最多衔接 3 秒。配音和音效仍手动播放；本机静音立即停止。</p>
     {view?.humanHost && <label>停止非配音音轨时<select aria-label="停止音轨渐出" value={stopFadeMs} onChange={event => { resetReview(); setStopFadeMs(Number(event.target.value)) }}><option value={0}>立即停止</option><option value={1000}>最多 1 秒渐出</option><option value={3000}>最多 3 秒渐出</option></select></label>}
     {view?.tracks.length === 0 && <p>尚未保存音轨，可继续文字游玩。</p>}
-    {view?.tracks.map(track => <article key={track.clipKey} className="sf-open-audio-track">
+    {order.map(key => { const { track, url, retiring } = displayed.get(key)!; return <article key={track.clipKey} className="sf-open-audio-track" hidden={retiring} style={retiring ? { display: 'none' } : undefined}>
       <h3>{channels[track.channel]} · {audiences[track.audience]}</h3>
-      <TtrpgOpenAudioPlayer key={`${identity}:${track.clipKey}`} track={track} url={enabled && !silenced ? urls[track.clipKey] : undefined}
+      <TtrpgOpenAudioPlayer key={`${identity}:${track.clipKey}`} track={track} url={enabled && !silenced ? url : undefined}
         failed={!!clipFailures[track.clipKey]} resumeSeconds={bookmarks.current.get(track.clipKey) ?? 0} register={register} remember={remember}
         onVolumeTakeover={() => transitions.yieldToListener(track.clipKey)}
         onFailure={() => setClipFailures(old => ({ ...old, [track.clipKey]: true }))} />
       {clipFailures[track.clipKey] && <><p role="status">音频不可用，已保留文字说明。</p><button onClick={() => { const clip = clips.current.get(track.clipKey); if (clip) URL.revokeObjectURL(clip.url); clips.current.delete(track.clipKey); setReload(value => value + 1) }}>重新加载此音轨</button></>}
-      {view.humanHost && <button disabled={working || props.busy || !view.canStop} onClick={() => void prepareSaved(track.sourceRef, 'stop')}>核对停止{channels[track.channel]}</button>}
-    </article>)}
+      {!retiring && view?.humanHost && <button disabled={working || props.busy || !view.canStop} onClick={() => void prepareSaved(track.sourceRef, 'stop')}>核对停止{channels[track.channel]}</button>}
+    </article> })}
     {view?.humanHost && <details><summary>主持音轨管理</summary>
       {view.unavailable && <p>{view.unavailable}</p>}
       {!pending && <fieldset disabled={working || props.busy || !view.canPlay}>

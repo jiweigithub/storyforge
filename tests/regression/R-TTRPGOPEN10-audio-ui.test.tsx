@@ -44,6 +44,7 @@ describe('R-TTRPGOPEN10 actual audio component confirmation, local listening and
     await until(() => host.textContent?.includes('本桌可读的已保存音轨') ?? false)
     return s
   }
+  const currentAudio = () => host.querySelector('article:not([hidden]) audio') as HTMLAudioElement | null
   function transport() {
     const playing = new WeakSet<HTMLMediaElement>()
     vi.spyOn(HTMLMediaElement.prototype, 'paused', 'get').mockImplementation(function () { return !playing.has(this) })
@@ -58,14 +59,14 @@ describe('R-TTRPGOPEN10 actual audio component confirmation, local listening and
   }
   it('hands the actual playing node across StrictMode replacement, follows once, samples both gains, and releases every node on local mute', async () => {
     const play = transport(), s = await setup('party', false, 3000), state = await readProductRuntimeState(s.owner.sessionId)
-    await click('开启本机音频'); await until(() => !!host.querySelector('audio'))
+    await click('开启本机音频'); await until(() => !!currentAudio())
     const follow = host.querySelector('[aria-label="跟随背景与环境音轨"]') as HTMLInputElement
     expect(follow.checked).toBe(false); await act(async () => follow.click())
-    const old = host.querySelector('audio')!; await act(async () => { await old.play() }); await until(() => old.volume === 1)
+    const old = currentAudio()!; await act(async () => { await old.play() }); await until(() => old.volume === 1)
     await click('核对重播'); await confirm()
-    await until(() => host.querySelector('audio') !== old && !!host.querySelector('audio') && !host.querySelector('audio')!.paused)
-    const incoming = host.querySelector('audio')!
-    expect(old.isConnected).toBe(false); expect(old.paused).toBe(false); expect(old.getAttribute('src')).not.toBeNull()
+    await until(() => currentAudio() !== old && !!currentAudio() && !currentAudio()!.paused)
+    const incoming = currentAudio()!
+    expect(old.isConnected).toBe(true); expect(old.closest('article')!.hidden).toBe(true); expect(old.paused).toBe(false); expect(old.getAttribute('src')).not.toBeNull()
     await until(() => old.volume > 0 && old.volume < 1 && incoming.volume > 0 && incoming.volume < 1)
     expect(play).toHaveBeenCalledTimes(2)
     await act(async () => { incoming.volume = .2; incoming.dispatchEvent(new Event('volumechange')) })
@@ -76,48 +77,48 @@ describe('R-TTRPGOPEN10 actual audio component confirmation, local listening and
     const after = await readProductRuntimeState(s.owner.sessionId)
     expect(after.entities).toEqual(state.entities); expect(after.ttrpg!.openRun!.worldTime).toEqual(state.ttrpg!.openRun!.worldTime)
     expect(after.ttrpg!.openRun!.audioReceipts).toHaveLength(2); expect(await db.productMediaAssets.count()).toBe(1); expect(await db.agentRuns.count()).toBe(0)
-    await click('本机静音'); expect(incoming.paused).toBe(true); expect(incoming.getAttribute('src')).toBeNull(); expect(host.querySelector('audio')).toBeNull()
-    await click('开启本机音频'); await until(() => !!host.querySelector('audio')); expect(host.querySelector('audio')!.paused).toBe(true); expect(play).toHaveBeenCalledTimes(2)
+    await click('本机静音'); expect(incoming.paused).toBe(true); expect(incoming.getAttribute('src')).toBeNull(); expect(currentAudio()).toBeNull()
+    await click('开启本机音频'); await until(() => !!currentAudio()); expect(currentAudio()!.paused).toBe(true); expect(play).toHaveBeenCalledTimes(2)
     props = { ...props, input: { ...s.owner, viewerKey: OPEN_HUMAN_VIEWER } }; await act(async () => render())
     expect((host.querySelector('[aria-label="跟随背景与环境音轨"]') as HTMLInputElement).checked).toBe(false)
   })
-  it('keeps a reviewed formal stop fading without follow, but a safety pause cuts the detached original node immediately', async () => {
+  it('keeps a reviewed formal stop fading without follow, but a safety pause cuts the retained original node immediately', async () => {
     const play = transport(); await setup('party', false, 3000)
-    await click('开启本机音频'); await until(() => !!host.querySelector('audio'))
-    const old = host.querySelector('audio')!; await act(async () => { await old.play() }); await until(() => old.volume === 1)
+    await click('开启本机音频'); await until(() => !!currentAudio())
+    const old = currentAudio()!; await act(async () => { await old.play() }); await until(() => old.volume === 1)
     const select = host.querySelector('[aria-label="停止音轨渐出"]') as HTMLSelectElement
     await act(async () => { select.value = '3000'; select.dispatchEvent(new Event('change', { bubbles: true })) })
     await click('核对停止背景音乐'); await until(() => !!host.querySelector('[data-testid="ttrpg-open-audio-review"]'))
     expect(host.querySelector('[data-testid="ttrpg-open-audio-review"]')!.textContent).toContain('停止时渐出：最多 3 秒')
-    await confirm(); await until(() => !host.querySelector('audio'))
+    await confirm(); await until(() => !currentAudio())
     expect(old.paused).toBe(false); await until(() => old.volume > 0 && old.volume < 1)
     props = { ...props, paused: true }; await act(async () => render())
     expect(old.paused).toBe(true); expect(old.getAttribute('src')).toBeNull(); expect(play).toHaveBeenCalledTimes(1)
   })
   it('leaves replacement manual by default and degrades a rejected follow to manual controls without retry or losing the current file', async () => {
-    const play = transport(); await setup(); await click('开启本机音频'); await until(() => !!host.querySelector('audio'))
-    const old = host.querySelector('audio')!; await act(async () => { await old.play() })
-    await click('核对重播'); await confirm(); await until(() => !!host.querySelector('audio') && host.querySelector('audio') !== old)
-    const manual = host.querySelector('audio')!; expect(old.paused).toBe(true); expect(manual.paused).toBe(true); expect(play).toHaveBeenCalledTimes(1)
+    const play = transport(); await setup(); await click('开启本机音频'); await until(() => !!currentAudio())
+    const old = currentAudio()!; await act(async () => { await old.play() })
+    await click('核对重播'); await confirm(); await until(() => !!currentAudio() && currentAudio() !== old)
+    const manual = currentAudio()!; expect(old.paused).toBe(true); expect(manual.paused).toBe(true); expect(play).toHaveBeenCalledTimes(1)
     await act(async () => (host.querySelector('[aria-label="跟随背景与环境音轨"]') as HTMLInputElement).click())
     await act(async () => { await manual.play() })
     play.mockRejectedValueOnce(new DOMException('browser blocked follow', 'NotAllowedError'))
-    await click('核对重播'); await confirm(); await until(() => !!host.querySelector('audio') && host.querySelector('audio') !== manual && !!host.textContent?.includes('旧音轨已停止'))
-    const fallback = host.querySelector('audio')!; expect(manual.paused).toBe(true); expect(fallback.paused).toBe(true)
+    await click('核对重播'); await confirm(); await until(() => !!currentAudio() && currentAudio() !== manual && !!host.textContent?.includes('旧音轨已停止'))
+    const fallback = currentAudio()!; expect(manual.paused).toBe(true); expect(fallback.paused).toBe(true)
     expect(fallback.getAttribute('src')).not.toBeNull(); expect(play).toHaveBeenCalledTimes(3)
     await act(async () => { await fallback.play() }); expect(fallback.paused).toBe(false); expect(play).toHaveBeenCalledTimes(4)
   })
   it('cancels an unresolved native follow on identity handoff and cannot resume or change the next visit when it fulfills late', async () => {
-    const play = transport(), s = await setup(); await click('开启本机音频'); await until(() => !!host.querySelector('audio'))
+    const play = transport(), s = await setup(); await click('开启本机音频'); await until(() => !!currentAudio())
     await act(async () => (host.querySelector('[aria-label="跟随背景与环境音轨"]') as HTMLInputElement).click())
-    const old = host.querySelector('audio')!; await act(async () => { await old.play() })
+    const old = currentAudio()!; await act(async () => { await old.play() })
     play.mockImplementationOnce(() => new Promise<void>(done => { release = done }))
-    await click('核对重播'); await confirm(); await until(() => play.mock.calls.length === 2 && !!host.querySelector('audio') && host.querySelector('audio') !== old)
-    const pending = host.querySelector('audio')!
+    await click('核对重播'); await confirm(); await until(() => play.mock.calls.length === 2 && !!currentAudio() && currentAudio() !== old)
+    const pending = currentAudio()!
     props = { ...props, input: { ...s.owner, viewerKey: OPEN_HUMAN_VIEWER } }; await act(async () => render())
     expect(old.paused).toBe(true); expect(pending.paused).toBe(true); expect(pending.getAttribute('src')).toBeNull()
     await act(async () => { release?.(); release = null }); await until(() => !button('开启本机音频').disabled)
-    expect(play).toHaveBeenCalledTimes(2); expect(host.querySelector('audio')).toBeNull()
+    expect(play).toHaveBeenCalledTimes(2); expect(currentAudio()).toBeNull()
     expect((host.querySelector('[aria-label="跟随背景与环境音轨"]') as HTMLInputElement).checked).toBe(false)
   })
   it('keeps reads silent, requires exact review and retries a failed original confirmation without importing or sending again', async () => {
