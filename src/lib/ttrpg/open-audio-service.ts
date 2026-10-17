@@ -93,6 +93,15 @@ export async function readTtrpgOpenAudioDeskV1(request: TtrpgOpenAudioDeskInputV
 }
 export type TtrpgOpenAudioDeskV1 = Awaited<ReturnType<typeof readTtrpgOpenAudioDeskV1>>
 
+/** A fresh current-file read cannot borrow an earlier view's different grant.
+ * Synchronous local identity check only; not a new read or playback authority. */
+export function ttrpgOpenAudioClipMatchesViewV1(view: TtrpgOpenAudioDeskV1, clipKey: string, blob: Blob): boolean {
+  const page = readViews.get(view), file = readClips.get(blob)
+  return !!page && !!file && page.body === stable(view) && page.clipKeys.includes(clipKey) && file.clipKey === clipKey
+    && page.inputKey === file.inputKey && page.sessionKey === file.sessionKey && page.runtimeSourceHash === file.runtimeSourceHash
+    && page.authorizationRevision === file.authorizationRevision
+}
+
 /** Only evidence for an already loaded local node; never reads an old Blob to the caller or starts playback.
  * Two exact issued views fence the observed change. Refresh/import/copies cannot recreate these witnesses. */
 export async function readTtrpgOpenAudioTransitionsV1(input: TtrpgOpenAudioDeskInputV1 & {
@@ -123,7 +132,7 @@ export async function readTtrpgOpenAudioTransitionsV1(input: TtrpgOpenAudioDeskI
   const transitions: Array<{ controlRef: TtrpgOpenSourceRefV1; channel: TtrpgOpenAudioRequestV1['channel']; action: 'play' | 'stop';
     fromClipKey: string; toClipKey: string | null; requestedFadeMs: number; fadeMs: number }> = []
   for (const change of changes) {
-    if (!change.fromSlotKey || change.fade <= 0 || change.controlRef.sessionKey !== runtime.sessionKey || change.controlRef.sequence <= before.sequence) continue
+    if (!change.fromSlotKey || change.controlRef.sessionKey !== runtime.sessionKey || change.controlRef.sequence <= before.sequence) continue
     const from = receipts.find(row => row.request.action === 'play' && row.envelope.event.slotKey === change.fromSlotKey)
     const to = change.toSlotKey ? receipts.find(row => row.request.action === 'play' && row.envelope.event.slotKey === change.toSlotKey) : undefined
     if (!from?.asset || change.toSlotKey && !to?.asset) p.fail('音频过渡缺少原真实可读音轨')

@@ -1,8 +1,9 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { TtrpgOpenAudioDeskV1 } from '../../lib/ttrpg/open-audio-service'
 import { startTtrpgAudioFadeInV1, ttrpgVoiceCaptionNavigationV1, ttrpgVoiceCaptionMarksV1 } from '../../lib/ttrpg/open-audio-playback'
+import type { TtrpgLocalAudioHandleV1 } from '../../lib/ttrpg/open-audio-transition-playback'
 
-export type TtrpgLocalAudioStopV1 = () => void
+export type TtrpgLocalAudioStopV1 = TtrpgLocalAudioHandleV1
 type Track = TtrpgOpenAudioDeskV1['tracks'][number]
 const labels = { music: '背景音乐', ambience: '环境声', sfx: '音效', voice: '配音' }
 
@@ -10,11 +11,12 @@ const labels = { music: '背景音乐', ambience: '环境声', sfx: '音效', vo
 export default function TtrpgOpenAudioPlayer(props: {
   track: Track; url?: string; failed: boolean; resumeSeconds: number
   register: (key: string, stop: TtrpgLocalAudioStopV1 | null) => void
-  remember: (key: string, seconds: number) => void; onFailure: () => void
+  remember: (key: string, seconds: number) => void; onFailure: () => void; onVolumeTakeover?: () => void
 }) {
   const { track, url, register, remember } = props, element = useRef<HTMLAudioElement | null>(null)
   const [caption, setCaption] = useState({ active: -1, previous: -1, next: -1 }), [resumed, setResumed] = useState(false)
   const frame = useRef(0), stopFade = useRef<() => void>(() => undefined), latest = useRef(props)
+  const nextFade = useRef<number | null>(null), followEpoch = useRef(0)
   const captionBox = useRef<HTMLParagraphElement | null>(null), captionMark = useRef<HTMLElement | null>(null)
   latest.current = props
   const marks = useMemo(() => ttrpgVoiceCaptionMarksV1(track.fallbackText, track.voiceMarks), [track.fallbackText, track.voiceMarks])
@@ -23,19 +25,39 @@ export default function TtrpgOpenAudioPlayer(props: {
     const next = ttrpgVoiceCaptionNavigationV1(currentMarks.current, node.currentTime)
     setCaption(old => old.active === next.active && old.previous === next.previous && old.next === next.next ? old : next)
   }
-  const cancelFrame = () => { cancelAnimationFrame(frame.current); frame.current = 0 }
+  const cancelFrame = useCallback(() => { cancelAnimationFrame(frame.current); frame.current = 0 }, [])
   useLayoutEffect(() => {
     const node = element.current
     if (!node || !url) return
+    let transferred = false
     if (node.getAttribute('src') !== url) node.src = url
     const silence = () => {
       if (node.getAttribute('src')) remember(track.clipKey, node.ended ? 0 : node.currentTime)
+      followEpoch.current++; nextFade.current = null
       node.pause(); cancelAnimationFrame(frame.current); frame.current = 0; stopFade.current()
       node.removeAttribute('src'); node.load()
     }
-    register(track.clipKey, silence)
-    return () => { silence(); register(track.clipKey, null) }
-  }, [track.clipKey, url, props.failed, register, remember])
+    const isPlaying = () => !node.paused && !node.ended && node.getAttribute('src') === url
+    const cancelFollow = () => { followEpoch.current++; nextFade.current = null; node.pause(); stopFade.current(); cancelFrame() }
+    const handle: TtrpgLocalAudioStopV1 = Object.assign(silence, {
+      clipKey: track.clipKey, element: node, isPlaying, cancelFollow,
+      take: () => {
+        if (transferred || !isPlaying() || node.muted || node.volume <= 0) return null
+        transferred = true
+        const volume = node.volume; stopFade.current(); stopFade.current = () => undefined; node.volume = volume; cancelFrame()
+        return { element: node, dispose: silence }
+      },
+      follow: async (fadeMs: number, volume: number) => {
+        if (transferred || node.getAttribute('src') !== url || node.muted || !node.paused || node.volume !== 1) throw new Error('local audio follow is no longer available')
+        const epoch = ++followEpoch.current
+        nextFade.current = fadeMs; node.volume = volume
+        try { await node.play() } catch (error) { nextFade.current = null; throw error }
+        if (followEpoch.current !== epoch || !isPlaying()) throw new Error('local audio follow was cancelled')
+      },
+    })
+    register(track.clipKey, handle)
+    return () => { if (!transferred) silence(); register(track.clipKey, null) }
+  }, [track.clipKey, url, props.failed, register, remember, cancelFrame])
   useLayoutEffect(() => {
     const box = captionBox.current, current = captionMark.current
     if (!url || props.failed || !box?.clientHeight || !current) return
@@ -74,7 +96,8 @@ export default function TtrpgOpenAudioPlayer(props: {
         const node = event.currentTarget
         if (node !== element.current || node.paused || node.ended || !node.getAttribute('src')) return
         setResumed(false)
-        stopFade.current(); stopFade.current = startTtrpgAudioFadeInV1(node, track.fade)
+        const fadeMs = nextFade.current ?? track.fade; nextFade.current = null
+        stopFade.current(); stopFade.current = startTtrpgAudioFadeInV1(node, fadeMs, () => latest.current.onVolumeTakeover?.())
         if (track.channel !== 'voice') return
         cancelFrame()
         const tick = () => {
@@ -82,7 +105,7 @@ export default function TtrpgOpenAudioPlayer(props: {
           sample(node); frame.current = requestAnimationFrame(tick)
         }
         sample(node); frame.current = requestAnimationFrame(tick)
-      }} onTimeUpdate={event => {
+      }} onVolumeChange={event => { if (event.currentTarget === element.current && event.currentTarget.muted) latest.current.onVolumeTakeover?.() }} onTimeUpdate={event => {
         if (event.currentTarget !== element.current) return
         remember(track.clipKey, event.currentTarget.ended ? 0 : event.currentTarget.currentTime)
         if (track.channel === 'voice') sample(event.currentTarget)

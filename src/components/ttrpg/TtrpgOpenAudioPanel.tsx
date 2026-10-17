@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { readTtrpgOpenAudioDeskV1, prepareTtrpgOpenAudioUploadV1, prepareTtrpgOpenRetainedAudioV1, confirmTtrpgOpenAudioReviewV1,
-  readTtrpgOpenAudioClipV1, type TtrpgOpenAudioDeskInputV1, type TtrpgOpenAudioDeskV1, type TtrpgOpenAudioReviewV1 } from '../../lib/ttrpg/open-audio-service'
+  readTtrpgOpenAudioClipV1, readTtrpgOpenAudioTransitionsV1, ttrpgOpenAudioClipMatchesViewV1, type TtrpgOpenAudioDeskInputV1, type TtrpgOpenAudioDeskV1, type TtrpgOpenAudioReviewV1 } from '../../lib/ttrpg/open-audio-service'
 import type { TtrpgAudioAudienceV1, TtrpgAudioChannelV1 } from '../../lib/ttrpg/open-audio-runtime'
 import type { TtrpgOpenAudioRequestV1 } from '../../lib/ttrpg/open-audio-contract'
 import TtrpgOpenAudioPlayer, { type TtrpgLocalAudioStopV1 } from './TtrpgOpenAudioPlayer'
 import { rememberTtrpgAudioPositionV1 } from '../../lib/ttrpg/open-audio-playback'
+import { createTtrpgAudioTransitionPlaybackV1 } from '../../lib/ttrpg/open-audio-transition-playback'
 
 const channels: Record<TtrpgAudioChannelV1, string> = { music: '背景音乐', ambience: '环境声', sfx: '音效', voice: '配音' }
 const audiences: Record<TtrpgAudioAudienceV1, string> = { public: '公开', party: '本次全队', private: '指定角色', 'gm-only': '仅主持' }
@@ -32,33 +33,83 @@ export default function TtrpgOpenAudioPanel(props: {
   const [channel, setChannel] = useState<TtrpgAudioChannelV1>('music'), [audience, setAudience] = useState<TtrpgAudioAudienceV1>('party'), [actor, setActor] = useState('')
   const [cause, setCause] = useState(''), [file, setFile] = useState<File | null>(null), [durationMs, setDurationMs] = useState<number | null>(null)
   const [source, setSource] = useState(''), [license, setLicense] = useState(''), [voiceChecked, setVoiceChecked] = useState(false), [fadeMs, setFadeMs] = useState(0)
+  const [follow, setFollow] = useState(false), [stopFadeMs, setStopFadeMs] = useState(0)
   const [urls, setUrls] = useState<Record<string, string>>({}), [clipFailures, setClipFailures] = useState<Record<string, boolean>>({}), [reload, setReload] = useState(0)
-  const revision = useRef(0), live = useRef(false), operationLocked = useRef(false), clips = useRef(new Map<string, string>()), elements = useRef(new Map<string, TtrpgLocalAudioStopV1>()), bookmarks = useRef(new Map<string, number>()), fileRead = useRef<AbortController | null>(null)
+  const revision = useRef(0), live = useRef(false), operationLocked = useRef(false), clips = useRef(new Map<string, { url: string; blob: Blob }>()), elements = useRef(new Map<string, TtrpgLocalAudioStopV1>()), bookmarks = useRef(new Map<string, number>()), fileRead = useRef<AbortController | null>(null)
+  const lastView = useRef<{ visit: typeof currentIdentity.current; value: TtrpgOpenAudioDeskV1 } | null>(null)
+  const localChoice = useRef({ visit: currentIdentity.current, enabled: false, follow: false })
+  if (localChoice.current.visit !== currentIdentity.current) localChoice.current = { visit: currentIdentity.current, enabled: false, follow: false }
+  const transitionRef = useRef<ReturnType<typeof createTtrpgAudioTransitionPlaybackV1> | null>(null)
+  if (!transitionRef.current) transitionRef.current = createTtrpgAudioTransitionPlaybackV1()
+  const transitions = transitionRef.current
   const input = useCallback(() => ({ scope: { projectId, worldId, workId }, sessionId, viewerKey }), [projectId, worldId, workId, sessionId, viewerKey])
   const visit = currentIdentity.current
   const remember = useCallback((key: string, seconds: number) => { if (currentIdentity.current === visit) rememberTtrpgAudioPositionV1(bookmarks.current, key, seconds) }, [visit])
   const releaseLocal = useCallback(() => {
+    transitions.cancel()
     for (const stop of elements.current.values()) stop()
-    for (const url of clips.current.values()) URL.revokeObjectURL(url)
+    for (const clip of clips.current.values()) URL.revokeObjectURL(clip.url)
     clips.current.clear()
-  }, [])
+  }, [transitions])
   const stopLocal = useCallback(() => { releaseLocal(); setUrls({}) }, [releaseLocal])
-  const register = useCallback((key: string, stop: TtrpgLocalAudioStopV1 | null) => { if (stop) elements.current.set(key, stop); else elements.current.delete(key) }, [])
+  const register = useCallback((key: string, stop: TtrpgLocalAudioStopV1 | null) => {
+    if (!stop) { elements.current.delete(key); return }
+    elements.current.set(key, stop)
+    // StrictMode's transient first mount must not start a play attempt.
+    queueMicrotask(() => {
+      if (!live.current || elements.current.get(key) !== stop || !localChoice.current.enabled || !localChoice.current.follow) return
+      const page = lastView.current, clip = clips.current.get(key)
+      if (page?.visit === currentIdentity.current && clip && stop.element.getAttribute('src') === clip.url && ttrpgOpenAudioClipMatchesViewV1(page.value, key, clip.blob)) transitions.attach(key, stop)
+      else transitions.cancel()
+    })
+  }, [transitions])
   const refresh = useCallback(async () => {
     const owner = currentIdentity.current
     if (owner.identity !== identity) return
     const token = ++revision.current
+    const current = () => live.current && revision.current === token && currentIdentity.current === owner
+    transitions.cancel()
+    const deadline = performance.now() + 3000
+    const guard = localChoice.current.enabled && [...elements.current.values()].some(handle => handle.isPlaying()) ? setTimeout(() => {
+      if (!current()) return
+      localChoice.current.enabled = false; stopLocal(); setEnabled(false); setNotice('音轨读取较慢，本机音频已停止；可重新开启。')
+    }, 3000) : null
     try {
       const value = await readTtrpgOpenAudioDeskV1(input())
-      if (live.current && revision.current === token && currentIdentity.current === owner) { setPage({ identity, value }); setError('') }
+      if (!current()) return
+      const before = lastView.current?.visit === owner ? lastView.current.value : null
+      if (before && before.authorizationRevision !== value.authorizationRevision) {
+        localChoice.current.enabled = false; stopLocal(); setEnabled(false)
+      } else if (before && localChoice.current.enabled && !value.paused && before.tracks.map(row => row.clipKey).join('|') !== value.tracks.map(row => row.clipKey).join('|')) {
+        const playingClips = before.tracks.flatMap(track => {
+          const clip = clips.current.get(track.clipKey), handle = elements.current.get(track.clipKey)
+          return clip && handle?.isPlaying() && handle.element.getAttribute('src') === clip.url ? [{ clipKey: track.clipKey, blob: clip.blob }] : []
+        })
+        if (playingClips.length) {
+          try {
+            const evidence = await readTtrpgOpenAudioTransitionsV1({ ...input(), before, after: value, playingClips })
+            if (!current()) return
+            if (localChoice.current.enabled) for (const plan of evidence.transitions) {
+              const clip = clips.current.get(plan.fromClipKey), handle = elements.current.get(plan.fromClipKey)
+              if (!clip || !handle || handle.element.getAttribute('src') !== clip.url) continue
+              const accepted = transitions.begin(plan, handle, { follow: localChoice.current.follow, deadline,
+                release: () => URL.revokeObjectURL(clip.url), fallback: () => { if (live.current && currentIdentity.current === owner) setNotice('旧音轨已停止，新音轨请按播放继续。') } })
+              if (accepted) clips.current.delete(plan.fromClipKey)
+            }
+          } catch { /* Failed/stale evidence means immediate old-node disposal at the view change. */ }
+        }
+      }
+      if (current()) { lastView.current = { visit: owner, value }; setPage({ identity, value }); setError('') }
     } catch {
-      if (live.current && revision.current === token && currentIdentity.current === owner) { setPage(null); setEnabled(false); stopLocal(); setError('音频资料暂不可读取，请重新读取或核对原存档。') }
-    }
-  }, [identity, input, stopLocal])
+      if (current()) { localChoice.current.enabled = false; lastView.current = null; setPage(null); setEnabled(false); stopLocal(); setError('音频资料暂不可读取，请重新读取或核对原存档。') }
+    } finally { if (guard !== null) clearTimeout(guard) }
+  }, [identity, input, stopLocal, transitions])
+  useLayoutEffect(() => () => { localChoice.current.enabled = false; releaseLocal() }, [identity, releaseLocal])
   useEffect(() => {
     live.current = true; operationLocked.current = false
     setPage(null); setEnabled(false); setReview(null); setAgreed(false); setWorking(false); setError(''); setNotice('')
-    setFile(null); setDurationMs(null); setSource(''); setLicense(''); setCause(''); setActor(''); setChannel('music'); setAudience('party'); setVoiceChecked(false); setFadeMs(0); bookmarks.current.clear()
+    setFile(null); setDurationMs(null); setSource(''); setLicense(''); setCause(''); setActor(''); setChannel('music'); setAudience('party'); setVoiceChecked(false); setFadeMs(0); setStopFadeMs(0); setFollow(false); bookmarks.current.clear(); lastView.current = null
+    localChoice.current.enabled = false; localChoice.current.follow = false
     fileRead.current?.abort(); stopLocal()
     return () => { live.current = false; fileRead.current?.abort(); releaseLocal() }
   }, [identity, releaseLocal, stopLocal])
@@ -67,19 +118,21 @@ export default function TtrpgOpenAudioPanel(props: {
   const currentTracks = useRef<TtrpgOpenAudioDeskV1['tracks']>([])
   currentTracks.current = view?.tracks ?? []
   const silenced = props.paused || view?.paused !== false, trackKey = view?.tracks.map(track => track.clipKey).join('|') ?? ''
+  useLayoutEffect(() => { if (silenced) { localChoice.current.enabled = false; stopLocal(); setEnabled(false) } }, [silenced, stopLocal])
   useEffect(() => {
     let cancelled = false
     const owner = currentIdentity.current
     const tracks = currentTracks.current
     if (!enabled || silenced) { stopLocal(); return }
     const active = new Set(tracks.map(track => track.clipKey))
-    for (const [key, url] of clips.current) if (!active.has(key)) { URL.revokeObjectURL(url); clips.current.delete(key) }
-    setUrls(Object.fromEntries(clips.current)); setClipFailures({})
+    for (const [key, clip] of clips.current) if (!active.has(key)) { elements.current.get(key)?.(); URL.revokeObjectURL(clip.url); clips.current.delete(key) }
+    const cachedUrls = () => Object.fromEntries([...clips.current].map(([key, clip]) => [key, clip.url]))
+    setUrls(cachedUrls()); setClipFailures({})
     for (const track of tracks) if (!clips.current.has(track.clipKey)) {
       void readTtrpgOpenAudioClipV1({ ...input(), sourceRef: track.sourceRef, expectedClipKey: track.clipKey }).then(result => {
-        if (cancelled || currentIdentity.current !== owner) return
-        const url = URL.createObjectURL(result.blob); clips.current.set(track.clipKey, url); setUrls(Object.fromEntries(clips.current))
-      }).catch(() => { if (!cancelled && currentIdentity.current === owner) setClipFailures(old => ({ ...old, [track.clipKey]: true })) })
+        if (cancelled || !live.current || !localChoice.current.enabled || currentIdentity.current !== owner) return
+        const url = URL.createObjectURL(result.blob); clips.current.set(track.clipKey, { url, blob: result.blob }); setUrls(cachedUrls())
+      }).catch(() => { if (!cancelled && live.current && localChoice.current.enabled && currentIdentity.current === owner) setClipFailures(old => ({ ...old, [track.clipKey]: true })) })
     }
     return () => { cancelled = true }
     // Sequence-only game updates keep unchanged authorized tracks playing.
@@ -105,23 +158,30 @@ export default function TtrpgOpenAudioPanel(props: {
     if (live.current && currentIdentity.current === owner) { setReview({ identity, value }); setAgreed(false) }
   })
   const prepareSaved = (sourceRef: TtrpgOpenAudioDeskV1['tracks'][number]['sourceRef'], action: 'play' | 'stop') => perform(async () => {
-    const owner = currentIdentity.current, value = await prepareTtrpgOpenRetainedAudioV1({ ...input(), sourceRef, action, submissionKey: `audio.${action}.${crypto.randomUUID()}` })
+    const owner = currentIdentity.current, value = await prepareTtrpgOpenRetainedAudioV1({ ...input(), sourceRef, action,
+      ...(action === 'stop' ? { fade: view?.tracks.find(row => JSON.stringify(row.sourceRef) === JSON.stringify(sourceRef))?.channel === 'voice' ? 0 : stopFadeMs } : {}), submissionKey: `audio.${action}.${crypto.randomUUID()}` })
     if (live.current && currentIdentity.current === owner) { setReview({ identity, value }); setAgreed(false) }
   })
   return <section className="sf-open-audio" data-testid="ttrpg-open-audio-panel">
     <h2>本机音频</h2>
     <p>音频可随时静音。刷新或交接身份后默认关闭，本局的文字与规则进度会保留。</p>
     {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
-    <div className="sf-open-audio-actions"><button onClick={() => { stopLocal(); setEnabled(false); setNotice('本机音频已关闭。') }}>本机静音</button>
-      <button disabled={!view || silenced || enabled} onClick={() => { setClipFailures({}); setEnabled(true) }}>开启本机音频</button>
+    <div className="sf-open-audio-actions"><button onClick={() => { localChoice.current.enabled = false; transitions.cancel(); stopLocal(); setEnabled(false); setNotice('本机音频已关闭。') }}>本机静音</button>
+      <button disabled={!view || silenced || enabled} onClick={() => { localChoice.current.enabled = true; setClipFailures({}); setEnabled(true) }}>开启本机音频</button>
       <button disabled={working} onClick={() => void refresh()}>重新读取音轨</button></div>
+    <label><input type="checkbox" aria-label="跟随背景与环境音轨" disabled={!enabled || silenced} checked={follow && localChoice.current.follow} onChange={event => {
+      localChoice.current.follow = event.target.checked; setFollow(event.target.checked); if (!event.target.checked) transitions.cancel()
+    }} />跟随正在播放的背景音乐与环境声切换（仅本机本次身份）</label>
+    <p>跟随需先手动播放一轨；切换与停止最多衔接 3 秒。配音和音效仍手动播放；本机静音立即停止。</p>
+    {view?.humanHost && <label>停止非配音音轨时<select aria-label="停止音轨渐出" value={stopFadeMs} onChange={event => { resetReview(); setStopFadeMs(Number(event.target.value)) }}><option value={0}>立即停止</option><option value={1000}>最多 1 秒渐出</option><option value={3000}>最多 3 秒渐出</option></select></label>}
     {view?.tracks.length === 0 && <p>尚未保存音轨，可继续文字游玩。</p>}
     {view?.tracks.map(track => <article key={track.clipKey} className="sf-open-audio-track">
       <h3>{channels[track.channel]} · {audiences[track.audience]}</h3>
       <TtrpgOpenAudioPlayer key={`${identity}:${track.clipKey}`} track={track} url={enabled && !silenced ? urls[track.clipKey] : undefined}
         failed={!!clipFailures[track.clipKey]} resumeSeconds={bookmarks.current.get(track.clipKey) ?? 0} register={register} remember={remember}
+        onVolumeTakeover={() => transitions.yieldToListener(track.clipKey)}
         onFailure={() => setClipFailures(old => ({ ...old, [track.clipKey]: true }))} />
-      {clipFailures[track.clipKey] && <><p role="status">音频不可用，已保留文字说明。</p><button onClick={() => { const url = clips.current.get(track.clipKey); if (url) URL.revokeObjectURL(url); clips.current.delete(track.clipKey); setReload(value => value + 1) }}>重新加载此音轨</button></>}
+      {clipFailures[track.clipKey] && <><p role="status">音频不可用，已保留文字说明。</p><button onClick={() => { const clip = clips.current.get(track.clipKey); if (clip) URL.revokeObjectURL(clip.url); clips.current.delete(track.clipKey); setReload(value => value + 1) }}>重新加载此音轨</button></>}
       {view.humanHost && <button disabled={working || props.busy || !view.canStop} onClick={() => void prepareSaved(track.sourceRef, 'stop')}>核对停止{channels[track.channel]}</button>}
     </article>)}
     {view?.humanHost && <details><summary>主持音轨管理</summary>
@@ -150,6 +210,7 @@ export default function TtrpgOpenAudioPanel(props: {
         <h3>核对{pending.request.action === 'stop' ? '停止' : '播放'}{channels[pending.request.channel]}</h3>
         <p>范围：{audiences[pending.request.audience]}；本次接收者：{pending.recipients.join('、')}{pending.request.audience === 'public' ? '及公开听众' : ''}</p>
         {pending.request.action === 'play' && pending.request.channel !== 'voice' && <p>播放时渐入：{pending.request.fade ? `${pending.request.fade / 1000} 秒` : '无'}；开始播放仍由听众选择。</p>}
+        {pending.request.action === 'stop' && <p>停止时渐出：{pending.request.fade ? `最多 ${Math.min(3000, pending.request.fade) / 1000} 秒` : '立即停止'}；本机静音和安全暂停始终立即停止。</p>}
         {pending.asset && <><p>文件：{pending.asset.name}；版本 {pending.asset.version}</p><p>来源：{pending.asset.source}</p><p>许可：{pending.asset.license}</p></>}
         <p className="sf-open-audio-caption">{pending.request.channel === 'voice' ? pending.fallbackText : '音轨用于辅助展示，不改变本次已确认行动。'}</p>
         <label><input type="checkbox" disabled={working} checked={agreed} onChange={event => setAgreed(event.target.checked)} />我已核对文件、文字与接收范围，并确认拥有本次使用许可。</label>

@@ -46,16 +46,16 @@ export function rememberTtrpgAudioPositionV1(bookmarks: Map<string, number>, cli
 }
 
 /** Preserve an explicit native volume change instead of fighting its slider. */
-export function startTtrpgAudioFadeInV1(element: HTMLAudioElement, fadeMs: number): () => void {
+export function startTtrpgAudioFadeInV1(element: HTMLAudioElement, fadeMs: number, onUserVolume?: () => void): () => void {
   if (!Number.isSafeInteger(fadeMs) || fadeMs <= 0 || fadeMs > 60000 || element.paused || element.ended) return () => undefined
   const target = element.volume, started = performance.now()
   let frame = 0, stopped = false, written = 0
   element.volume = 0
   const cancel = () => { stopped = true; cancelAnimationFrame(frame); element.removeEventListener('volumechange', changed) }
-  const changed = () => { if (Math.abs(element.volume - written) > 0.00001) cancel() }
+  const changed = () => { if (Math.abs(element.volume - written) > 0.00001) { cancel(); onUserVolume?.() } }
   const tick = (now: number) => {
     if (stopped) return
-    if (Math.abs(element.volume - written) > 0.00001) { cancel(); return }
+    if (Math.abs(element.volume - written) > 0.00001) { cancel(); onUserVolume?.(); return }
     if (element.paused || element.ended) { cancel(); element.volume = target; return }
     written = target * Math.min(1, Math.max(0, (now - started) / fadeMs)); element.volume = written
     if (now - started >= fadeMs) cancel(); else frame = requestAnimationFrame(tick)

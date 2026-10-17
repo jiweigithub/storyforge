@@ -28,11 +28,14 @@ describe('R-TTRPGOPEN1 governed one-send intent transport and recoverable candid
   it('stores raw text and CreativeArtifact before human review, restores the same candidate without another send', async () => {
     const { fixture, input, resume } = await setup()
     const before = await readProductRuntimeState(fixture.sessionId)
-    const runAI = vi.fn(async () => `\`\`\`json\n${output}\n\`\`\``)
+    const declared = '这是角色提出的猜测，尚未验证'
+    const runAI = vi.fn(async () => `\`\`\`json\n${JSON.stringify({ ...JSON.parse(output), declaredAssumptions: [declared] })}\n\`\`\``)
     const generated = await generateTtrpgOpenIntentCandidateV1({ ...input, runAI })
     expect(runAI).toHaveBeenCalledTimes(1)
     expect(generated.candidate.artifact.status).toBe('usable-with-warnings')
     expect(generated.candidate.intent).toMatchObject({ actorKey: 'hero', goal: '调查河港', source: 'player' })
+    expect(generated.candidate.artifact.assumptions).toEqual([{ version: 1, id: 'assumption.0', text: declared,
+      derivedFrom: [`raw-response:${generated.candidate.rawResponseHash}:declaredAssumptions[0]`], confidence: 'low', conflictsWith: [], status: 'provisional' }])
     expect(generated.candidate.artifact.originalText).toBe(await readAgentRunArtifactExactV1({ projectId: fixture.scope.projectId,
       artifactKind: 'raw-response', contentHash: generated.candidate.rawResponseHash }))
     const after = await readProductRuntimeState(fixture.sessionId)
@@ -46,6 +49,19 @@ describe('R-TTRPGOPEN1 governed one-send intent transport and recoverable candid
     expect(runAI).toHaveBeenCalledTimes(1)
     const snapshot = await readInstanceAgentRunV1(fixture.scope, generated.prepared.runId)
     expect(snapshot.events.some(event => event.type === 'confirmation.recorded' || event.type === 'runtime.candidate.adopted')).toBe(false)
+  })
+  it('keeps an overlong declared assumption in raw evidence and a repair candidate without throwing or sending again', async () => {
+    const { fixture, input, resume } = await setup(), raw = JSON.stringify({ ...JSON.parse(output), declaredAssumptions: ['a'.repeat(2001)] })
+    const runAI = vi.fn(async () => raw), before = await readProductRuntimeState(fixture.sessionId)
+    const generated = await generateTtrpgOpenIntentCandidateV1({ ...input, runAI })
+    expect(generated.candidate.intent).toBeNull(); expect(generated.candidate.artifact.assumptions).toEqual([])
+    expect(generated.candidate.artifact.originalText).toBe(raw)
+    expect(generated.candidate.artifact.issues.some(row => row.code === 'ttrpg-open-intent-protocol')).toBe(true)
+    expect(await readTtrpgOpenIntentCandidateV1(resume(generated.prepared))).toEqual(generated.candidate)
+    expect(await executeTtrpgOpenIntentRequestV1({ ...resume(generated.prepared), runAI })).toEqual({ status: 'not-sent' })
+    expect(runAI).toHaveBeenCalledTimes(1)
+    const after = await readProductRuntimeState(fixture.sessionId)
+    expect(after.entities).toEqual(before.entities); expect(after.ttrpg!.openRun!.worldTime).toEqual(before.ttrpg!.openRun!.worldTime)
   })
   it.each(['not-json', JSON.stringify({ ...JSON.parse(output), actorKey: 'other-human' }),
     JSON.stringify({ ...JSON.parse(output), targetRefs: ['secret.hidden-owner'] })])('retains invalid raw output with no automatic repair (%s)', async raw => {

@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { setupAudioRuntimeV1, audioWavFixtureV1 } from '../helpers/open-audio-runtime'
-import { readTtrpgOpenAudioDeskV1, readTtrpgOpenAudioTransitionsV1, prepareTtrpgOpenAudioUploadV1, prepareTtrpgOpenRetainedAudioV1, confirmTtrpgOpenAudioReviewV1, readTtrpgOpenAudioClipV1 } from '../../src/lib/ttrpg/open-audio-service'
+import { readTtrpgOpenAudioDeskV1, readTtrpgOpenAudioTransitionsV1, ttrpgOpenAudioClipMatchesViewV1, prepareTtrpgOpenAudioUploadV1, prepareTtrpgOpenRetainedAudioV1, confirmTtrpgOpenAudioReviewV1, readTtrpgOpenAudioClipV1 } from '../../src/lib/ttrpg/open-audio-service'
 import { readProductRuntimeState, branchProductRuntimeSession, deleteProductRuntimeSession } from '../../src/lib/product/runtime-core'
 import { completeTtrpgOpenSessionZeroV1, changeTtrpgSafetyStatus } from '../../src/lib/ttrpg/runtime-commands'
 import { OPEN_HUMAN_VIEWER, openEnvelopeV1 } from '../helpers/open-ttrpg-session'
@@ -37,6 +37,9 @@ describe('R-TTRPGOPEN10 actual visible audio transition read evidence', { timeou
     clips.set(before, [{ clipKey: track.clipKey, blob: (await pendingClip).blob }])
     await upload(s, 'new', 60000)
     const after = await readView(s.owner), state = await readProductRuntimeState(s.owner.sessionId), events = await db.productRuntimeEvents.count(), assets = await db.productMediaAssets.count(), models = await db.agentRuns.count()
+    expect(ttrpgOpenAudioClipMatchesViewV1(after, after.tracks[0].clipKey, clips.get(after)![0].blob)).toBe(true)
+    expect(ttrpgOpenAudioClipMatchesViewV1(structuredClone(after), after.tracks[0].clipKey, clips.get(after)![0].blob)).toBe(false)
+    expect(ttrpgOpenAudioClipMatchesViewV1(after, track.clipKey, clips.get(before)![0].blob)).toBe(false)
     const transitionInput = { ...request(s, before, after), scope: structuredClone(s.owner.scope) }
     const pendingTransition = readTtrpgOpenAudioTransitionsV1(transitionInput)
     transitionInput.viewerKey = OPEN_HUMAN_VIEWER; transitionInput.scope.projectId = -1
@@ -50,6 +53,7 @@ describe('R-TTRPGOPEN10 actual visible audio transition read evidence', { timeou
     const s = await setupAudioRuntimeV1(); await upload(s, 'stop.original')
     const before = await readView(s.owner), track = before.tracks[0]
     const otherViewer = await readView({ ...s.owner, viewerKey: OPEN_HUMAN_VIEWER })
+    expect(ttrpgOpenAudioClipMatchesViewV1(before, track.clipKey, clips.get(otherViewer)![0].blob)).toBe(false)
     const review = await prepareTtrpgOpenRetainedAudioV1({ ...s.owner, sourceRef: track.sourceRef, action: 'stop', fade: 1000, submissionKey: 'stop.exact.fade' })
     expect(review.request.fade).toBe(1000)
     await confirmTtrpgOpenAudioReviewV1({ ...s.owner, review, decision: 'confirm-this-audio-and-audience' })
@@ -63,6 +67,15 @@ describe('R-TTRPGOPEN10 actual visible audio transition read evidence', { timeou
     await expect(readTtrpgOpenAudioTransitionsV1({ ...input, playingClips: [{ clipKey: 'invented.clip', blob: clips.get(before)![0].blob }] })).rejects.toThrow(/原视图外/)
     before.tracks[0].fade = 999
     await expect(readTtrpgOpenAudioTransitionsV1(input)).rejects.toThrow(/准确本机读取/)
+  })
+  it('retains a real zero-fade change as immediate-cut evidence without giving the old file a tail', async () => {
+    const s = await setupAudioRuntimeV1(); await upload(s, 'zero.old')
+    const before = await readView(s.owner)
+    await upload(s, 'zero.new')
+    const after = await readView(s.owner)
+    expect((await readTtrpgOpenAudioTransitionsV1(request(s, before, after))).transitions).toMatchObject([
+      { action: 'play', fromClipKey: before.tracks[0].clipKey, toClipKey: after.tracks[0].clipKey, requestedFadeMs: 0, fadeMs: 0 },
+    ])
   })
   it('does not let an obsolete stop or a hidden cue claim a change in a different listener current music', async () => {
     const s = await setupAudioRuntimeV1(); await upload(s, 'public', 0, 'public')

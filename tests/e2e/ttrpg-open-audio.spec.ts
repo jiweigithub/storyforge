@@ -46,6 +46,95 @@ async function inspect(page: Page, id: number) {
       time: JSON.stringify(state.ttrpg.openRun.worldTime), assets: await db.productMediaAssets.where('productRuntimeSessionId').equals(id).count(), calls: state.ttrpg.openRun.coordination.calls.length }
   }, id)
 }
+async function replay(card: Locator) {
+  const summary = card.getByText('本桌可读的已保存音轨', { exact: true })
+  if (!await summary.evaluate(el => (el.parentElement as HTMLDetailsElement).open)) await summary.click()
+  await card.getByRole('button', { name: '核对重播', exact: true }).first().click()
+  const review = card.getByTestId('ttrpg-open-audio-review'); await expect(review).toBeVisible({ timeout: 30000 })
+  await approve(review); await expect(review).toHaveCount(0)
+}
+async function watchTransition(card: Locator) {
+  const old = await card.locator('audio').elementHandle()
+  await old!.evaluate((el: HTMLAudioElement) => {
+    const state = (window as any).audioTransition = { old: el, url: el.src, samples: [] as any[], revoked: [] as string[] }
+    const revoke = URL.revokeObjectURL.bind(URL)
+    URL.revokeObjectURL = value => { state.revoked.push(value); revoke(value) }
+    el.addEventListener('volumechange', () => {
+      const incoming = document.querySelector('[data-testid="ttrpg-open-audio-panel"] audio') as HTMLAudioElement | null
+      if (state.samples.length < 400) state.samples.push({ old: el.volume, oldPaused: el.paused, incoming: incoming !== el ? incoming?.volume : null, incomingPaused: incoming?.paused })
+    })
+  })
+  return old!
+}
+async function playingFixture(page: Page, fade = 3000) {
+  const f = await seed(page), card = await enter(page, f.owner.sessionId), review = await fill(card, f, 'music', 'party', fade)
+  await approve(review); await expect(review).toHaveCount(0)
+  await card.getByRole('button', { name: '开启本机音频', exact: true }).click()
+  const audio = card.locator('audio'); await expect(audio).toHaveCount(1, { timeout: 30000 })
+  await audio.focus(); await audio.press('Space'); await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.volume), { timeout: 6000 }).toBe(1)
+  return { f, card }
+}
+test('native opted-in background crossfade overlaps actual decoded nodes, releases the old URL and refreshes with follow disabled', async ({ page }) => {
+  test.setTimeout(240000); let sends = 0; page.on('request', req => { if (req.url().includes('/chat/completions')) sends++ })
+  const { f, card } = await playingFixture(page)
+  await expect(card.getByLabel('跟随背景与环境音轨', { exact: true })).not.toBeChecked()
+  await card.getByLabel('跟随背景与环境音轨', { exact: true }).check()
+  const old = await watchTransition(card); await replay(card)
+  await expect.poll(() => page.evaluate(() => (window as any).audioTransition.samples.some((r: any) => !r.oldPaused && r.old > 0 && r.old < 1 && !r.incomingPaused && r.incoming > 0 && r.incoming < 1)), { timeout: 15000 }).toBe(true)
+  expect(await old.evaluate(el => el.isConnected)).toBe(false)
+  await expect.poll(() => old.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
+  expect(await old.evaluate(el => el.getAttribute('src'))).toBeNull()
+  expect(await page.evaluate(() => (window as any).audioTransition.revoked.includes((window as any).audioTransition.url))).toBe(true)
+  await expect.poll(() => card.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.reload(); const refreshed = await enter(page, f.owner.sessionId)
+  await expect(refreshed.locator('audio')).toHaveCount(0); await expect(refreshed.getByLabel('跟随背景与环境音轨', { exact: true })).not.toBeChecked()
+  expect(await inspect(page, f.owner.sessionId)).toMatchObject({ audio: 2, assets: 1, calls: 0, entities: f.beforeEntities, product: f.beforeProduct, time: f.beforeTime }); expect(sends).toBe(0)
+})
+test('native reviewed stop fades the detached playing node without follow and local mute stops it immediately', async ({ page }) => {
+  test.setTimeout(240000); const { f, card } = await playingFixture(page), old = await watchTransition(card)
+  await card.getByLabel('停止音轨渐出', { exact: true }).selectOption('3000')
+  await card.getByRole('button', { name: '核对停止背景音乐', exact: true }).click()
+  const review = card.getByTestId('ttrpg-open-audio-review'); await expect(review).toContainText('停止时渐出：最多 3 秒')
+  await approve(review); await expect(card.locator('audio')).toHaveCount(0, { timeout: 30000 })
+  await expect.poll(() => page.evaluate(() => (window as any).audioTransition.samples.some((r: any) => !r.oldPaused && r.old > 0 && r.old < 1))).toBe(true)
+  await card.getByRole('button', { name: '本机静音', exact: true }).click()
+  expect(await old.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true); expect(await old.evaluate(el => el.getAttribute('src'))).toBeNull()
+  expect(await inspect(page, f.owner.sessionId)).toMatchObject({ audio: 2, assets: 1, calls: 0, entities: f.beforeEntities, product: f.beforeProduct, time: f.beforeTime })
+})
+test('native replacement remains manual by default and blocked follow preserves current manual controls without retry', async ({ page }) => {
+  test.setTimeout(240000); const { card } = await playingFixture(page, 0), old = await card.locator('audio').elementHandle()
+  await replay(card); await expect.poll(() => old!.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
+  await expect(card.locator('audio')).toHaveCount(1, { timeout: 30000 }); expect(await card.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
+  await card.getByLabel('跟随背景与环境音轨', { exact: true }).check()
+  await card.locator('audio').focus(); await card.locator('audio').press('Space')
+  await expect.poll(() => card.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
+  await page.evaluate(() => {
+    const play = HTMLMediaElement.prototype.play; (window as any).blockedAudioFollow = 0
+    HTMLMediaElement.prototype.play = function () { (window as any).blockedAudioFollow++; if ((window as any).blockedAudioFollow === 1) return Promise.reject(new DOMException('ENGINEERING-BLOCKED-FOLLOW', 'NotAllowedError')); return play.call(this) }
+  })
+  await replay(card); await expect(card).toContainText('旧音轨已停止，新音轨请按播放继续。', { timeout: 30000 })
+  await expect(card.locator('audio')).toHaveCount(1); expect(await card.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(true)
+  expect(await card.locator('audio').getAttribute('src')).toMatch(/^blob:/)
+  await card.getByRole('button', { name: '重新读取音轨', exact: true }).click()
+  expect(await page.evaluate(() => (window as any).blockedAudioFollow)).toBe(1)
+  await card.locator('audio').focus(); await card.locator('audio').press('Space')
+  await expect.poll(() => card.locator('audio').evaluate((el: HTMLAudioElement) => el.paused)).toBe(false)
+})
+test('native identity handoff immediately releases both sides of an active background crossfade', async ({ page }) => {
+  test.setTimeout(240000); const { f, card } = await playingFixture(page)
+  await card.getByLabel('跟随背景与环境音轨', { exact: true }).check()
+  const old = await watchTransition(card); await replay(card)
+  await expect.poll(() => page.evaluate(() => (window as any).audioTransition.samples.some((r: any) => !r.oldPaused && r.old > 0 && r.old < 1 && !r.incomingPaused && r.incoming > 0 && r.incoming < 1)), { timeout: 15000 }).toBe(true)
+  const incoming = await card.locator('audio').elementHandle()
+  await page.getByRole('button', { name: '返回身份选择', exact: true }).click()
+  for (const node of [old, incoming!]) { expect(await node.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true); expect(await node.evaluate(el => el.getAttribute('src'))).toBeNull() }
+  const player = await enter(page, f.owner.sessionId, false)
+  await expect(player.locator('audio')).toHaveCount(0); await expect(player.getByLabel('跟随背景与环境音轨', { exact: true })).not.toBeChecked()
+  await expect(player).not.toContainText('NATIVE-AUDIO-LICENSE-CANARY')
+})
 test('native manual file review retries storage once, really decodes/plays, reloads silently and stops private playback on identity handoff', async ({ page }) => {
   test.setTimeout(240000); let sends = 0; page.on('request', req => { if (req.url().includes('/chat/completions')) sends++ })
   const f = await seed(page); let card = await enter(page, f.owner.sessionId)

@@ -17,7 +17,7 @@ import { computeKnownCostUsd } from '../ai/usage-log'
 import { executeFrozenFormalAIEntryV1 } from '../agent/formal-ai-entry'
 import { projectFrozenAgentSkillDefinitionV1 } from '../agent/execution-binding'
 import { parseStructuredOutputV1 } from '../agent/structured-output-pipeline'
-import { parseCreativeArtifactV1, type CreativeArtifactIssueV1 } from '../agent/creative-reliability'
+import { parseCreativeArtifactV1, parseCreativeAssumptionV1, type CreativeArtifactIssueV1, type CreativeAssumptionV1 } from '../agent/creative-reliability'
 import { createCreativeIssueV1 } from '../agent/creative-execution'
 import { readInstanceAgentRunV1, appendAgentRunEventV1 } from '../agent/run/event-store'
 import { createAgentRunCheckpointV1 } from '../agent/run/checkpoint'
@@ -607,6 +607,7 @@ async function buildSucceededCandidate(args: {
   let narration: TtrpgOpenKpNarrationV1 | null = null
   const deliveredValues: unknown[] = []
   let intent: TtrpgOpenIntentV1 | null = null
+  let assumptions: CreativeAssumptionV1[] = []
   let oracleCandidate: ReturnType<typeof parseTtrpgOpenOracleSemanticCandidateV1> | null = null
   let oracleContract: unknown, oraclePacket: unknown, normalizationPacket: unknown
   const visibleRefs = new Set([call.actorKey]), visibleResources = new Set<string>()
@@ -660,8 +661,16 @@ async function buildSucceededCandidate(args: {
     else if (purpose === 'kp-narration') { narration = parseTtrpgOpenKpNarrationV1(JSON.parse(output), ttrpgOpenDeliveredKpSourceKeysV1(deliveredValues)) }
     else if (purpose === 'fact-normalize') oracleCandidate = parseTtrpgOpenFactNormalizationCandidateV1(output,{ contract: oracleContract,oracle: oraclePacket,review: normalizationPacket })
     else if (purpose === 'oracle-interpret') oracleCandidate = parseTtrpgOpenOracleSemanticCandidateV1(output, { contract: oracleContract, oracle: oraclePacket })
-    else intent = parseSemanticIntent(output, { actorKey: call.actorKey, source, inputRevision: epoch.inputRevision,
-      intentKey: await ttrpgOpenScopedKeyV1(runtime!.sessionKey, 'intent', [call.requestKey]), visibleRefs, visibleResources })
+    else {
+      const proposed = parseSemanticIntent(output, { actorKey: call.actorKey, source, inputRevision: epoch.inputRevision,
+        intentKey: await ttrpgOpenScopedKeyV1(runtime!.sessionKey, 'intent', [call.requestKey]), visibleRefs, visibleResources })
+      // Declared guesses remain provisional raw-response claims. Validate their
+      // canonical artifact shape before accepting the intent, inside repair handling.
+      assumptions = proposed.declaredAssumptions.map((text, index) => parseCreativeAssumptionV1({ version: 1,
+        id: `assumption.${index}`, text, derivedFrom: [`raw-response:${call.responseArtifactHash}:declaredAssumptions[${index}]`],
+        confidence: 'low', conflictsWith: [], status: 'provisional' }, index))
+      intent = proposed
+    }
   } catch (error) {
     if (purpose === 'common-oracle-interpret') issues.push(createCreativeIssueV1({ code: 'ttrpg-common-oracle-protocol', path: 'facts',
       message: '共同解释、事实格式、主体、来源或准确范围未通过检查；原始回答已保存。', disposition: 'blocking', action: 'edit' }))
@@ -696,7 +705,7 @@ async function buildSucceededCandidate(args: {
     status: issues.some(issue => issue.disposition === 'blocking') ? 'blocked' : (entityProposals || intent || oracleCandidate || narration || brief || situation) ? 'usable-with-warnings' : 'manual-repair',
     qualityMode: 'economy', originalText: output.slice(0, 120_000), editableText: output.slice(0, 120_000), validFragments: entityProposals ? [{ version: 1, id: 'entities', path: 'proposals', text: JSON.stringify(entityProposals), status: 'valid', issueCodes: [] }] : situation ? [{ version: 1, id: 'situation', path: 'situation', text: JSON.stringify(situation.proposal), status: 'valid', issueCodes: [] }] : intent ? [{ version: 1,
       id: 'intent', path: 'intent', text: JSON.stringify(intent), status: 'valid', issueCodes: [] }] : oracleCandidate ? [{ version: 1, id: 'oracle', path: 'oracle', text: JSON.stringify(oracleCandidate), status: 'valid', issueCodes: [] }] : narration ? [{ version: 1, id: 'narration', path: 'narration', text: JSON.stringify(narration), status: 'valid', issueCodes: [] }] : brief ? [{ version: 1, id: 'brief', path: 'brief', text: JSON.stringify(brief), status: 'valid', issueCodes: [] }] : [], rejectedFragments: [], issues,
-    assumptions: intent?.declaredAssumptions.map((text, index) => ({ id: `assumption.${index}`, text, status: 'provisional' })) ?? [],
+    assumptions,
     canonEvidenceRefs: [], repair: null, callEvidence: [{ version: 1, callIndex: 1, purpose: 'generate', status: 'succeeded',
       provider: identity.provider, model: identity.model, usageSource: call.usage!.source, inputTokens,
       outputTokens, totalTokens: inputTokens + outputTokens, latencyMs,

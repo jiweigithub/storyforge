@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { readyOpenTtrpgSessionV1, openEnvelopeV1, OPEN_HUMAN_VIEWER } from '../helpers/open-ttrpg-session'
 import { loadTtrpgOpenPlayerContextV1 } from '../../src/lib/ttrpg/open-player-context'
-import { generateTtrpgOpenIntentCandidateV1 } from '../../src/lib/ttrpg/open-intent-harness'
+import { generateTtrpgOpenIntentCandidateV1, readTtrpgOpenIntentCandidateV1 } from '../../src/lib/ttrpg/open-intent-harness'
 import { startTtrpgOpenEpochV1, startTtrpgOpenIntentCandidateOperationV1, changeTtrpgSafetyStatus } from '../../src/lib/ttrpg/runtime-commands'
 import { parseProductRuntimeState, readProductRuntimeState, replayProductRuntimeEvents } from '../../src/lib/product/runtime-core'
 import { approve, forkAndStart, rt } from '../helpers/open-ttrpg-branch-recovery'
@@ -11,7 +11,7 @@ import { resumeTtrpgOpenOperationV1 } from '../../src/lib/ttrpg/open-operation-c
 describe('R-TTRPGOPEN1 human-confirmed semantic candidates enter frozen rule admission', () => {
   beforeEach(async () => { await db.delete(); await db.open() })
   afterEach(() => db.close())
-  async function setup(badOutput = false) {
+  async function setup(badOutput = false, declaredAssumptions: string[] = []) {
     const fixture = await readyOpenTtrpgSessionV1('open candidate admission', pkg => { pkg.ttrpg!.campaign.runtimePolicy.enabled = true })
     const view = await loadTtrpgOpenPlayerContextV1({ scope: fixture.scope, sessionId: fixture.sessionId, actorKey: 'hero' })
     const action = view.view.rules.actions.find(action => action.target === 'scene'
@@ -23,14 +23,14 @@ describe('R-TTRPGOPEN1 human-confirmed semantic candidates enter frozen rule adm
     const generated = await generateTtrpgOpenIntentCandidateV1({ ...await openEnvelopeV1(fixture.sessionId, 'admit.generate'),
       scope: fixture.scope, actorKey: 'hero', viewerKey: OPEN_HUMAN_VIEWER, rawInput, maximumOutputTokens: 800, maximumCostUsd: 0.1,
       runAI: async () => badOutput ? 'invalid raw response' : JSON.stringify({ goal: rawInput, method: action.name,
-        targetRefs: [], declaredResources: [], declaredAssumptions: [], requestedOutcome: null }) })
+        targetRefs: [], declaredResources: [], declaredAssumptions, requestedOutcome: null }) })
     const input = async () => ({ ...await openEnvelopeV1(fixture.sessionId, 'admit.start'), viewerKey: OPEN_HUMAN_VIEWER,
       runId: generated.prepared.runId, requestKey: generated.prepared.requestKey,
       candidateHash: generated.candidate.candidateHash, decision: 'start' as const })
     return { fixture, generated, action, input }
   }
   it('starts exactly one operation, retaining genuine response provenance and waiting for separate risk approval', async () => {
-    const { fixture, action, input } = await setup()
+    const { fixture, generated, action, input } = await setup(false, ['这是角色的未核实猜测'])
     const before = await readProductRuntimeState(fixture.sessionId)
     const event = await startTtrpgOpenIntentCandidateOperationV1(await input())
     expect((await startTtrpgOpenIntentCandidateOperationV1(await input())).sequence).toBe(event.sequence)
@@ -43,6 +43,9 @@ describe('R-TTRPGOPEN1 human-confirmed semantic candidates enter frozen rule adm
     expect(state.ttrpg!.openRun!.ruleReceipts).toEqual([])
     expect(state.entities).toEqual(before.entities)
     expect(state.ttrpg!.openRun!.worldTime).toEqual(before.ttrpg!.openRun!.worldTime)
+    const retained = await readTtrpgOpenIntentCandidateV1({ scope: fixture.scope, sessionId: fixture.sessionId, viewerKey: OPEN_HUMAN_VIEWER,
+      runId: generated.prepared.runId, requestKey: generated.prepared.requestKey })
+    expect(retained.artifact.assumptions).toMatchObject([{ text: '这是角色的未核实猜测', confidence: 'low', status: 'provisional' }])
     const session = await db.productRuntimeSessions.get(fixture.sessionId)
     expect(replayProductRuntimeEvents(parseProductRuntimeState(session!.initialStateJson),
       await db.productRuntimeEvents.where('sessionId').equals(fixture.sessionId).sortBy('sequence'))).toEqual(state)
