@@ -4,6 +4,7 @@ import { avgEnum, avgHash, avgKey, avgKeys, avgList, avgProtocolBody, avgRecord,
 import { parseAvgSystemPlan, type AvgSystemPlan } from './system-contract'
 import { parseAvgAuthorVisualEvidenceV1,type AvgAuthorVisualEvidenceV1 } from './visual-review-contract'
 import { parseAvgAuthorVoiceEvidenceV1, type AvgAuthorVoiceEvidenceV1 } from './voice-review-contract'
+import { avgMediaBriefArtifactKeyV1, parseAvgMediaBriefV1, parseAvgVisualBibleV1, type AvgMediaBriefV1, type AvgVisualBibleV1 } from './visual-planning-contract'
 
 /** Reserved role contracts do not register an AI call or assert professional competence. */
 export const AVG_PROFESSIONAL_OUTPUTS_V1 = [
@@ -63,7 +64,7 @@ export type AvgReviewIssuesV1 = Schema<'review-issues'> & {
   visualEvidence?: AvgAuthorVisualEvidenceV1
   audioEvidence?: AvgAuthorVoiceEvidenceV1
 }
-export type AvgProfessionalArtifactV1 = AvgProductionPlanV1 | AvgSourceAuditV1 | AvgStoryBibleV1 | AvgCastBibleV1 | AvgRoutePlanV1 | AvgSceneScriptV1 | AvgDialoguePatchV1 | AvgReviewIssuesV1 | AvgSystemPlan
+export type AvgProfessionalArtifactV1 = AvgProductionPlanV1 | AvgSourceAuditV1 | AvgStoryBibleV1 | AvgCastBibleV1 | AvgRoutePlanV1 | AvgSceneScriptV1 | AvgDialoguePatchV1 | AvgReviewIssuesV1 | AvgSystemPlan | AvgVisualBibleV1 | AvgMediaBriefV1
 
 function texts(value: unknown, label: string): string[] { return avgList(value, label, avgText, 1000) }
 function nullableKey(value: unknown, label: string): string | null { return value === null ? null : avgKey(value, label) }
@@ -77,6 +78,8 @@ export function parseAvgProfessionalArtifactV1(value: unknown): AvgProfessionalA
   if (header.schema === 'storyforge.avg.system-plan') return parseAvgSystemPlan(raw)
   if (header.version !== 1 || typeof header.schema !== 'string') throw new Error('[avg] artifact schema/version 无效')
   switch (header.schema) {
+    case 'storyforge.avg.visual-bible': return parseAvgVisualBibleV1(raw)
+    case 'storyforge.avg.media-brief': return parseAvgMediaBriefV1(raw)
     case 'storyforge.avg.production-plan': {
       const row = payloadRow(raw, header.schema, ['goal','requiredOutputKeys','dependencySuggestions','stopReasons'])
       const requiredOutputKeys = avgKeys(row.requiredOutputKeys, 'requiredOutputKeys')
@@ -209,6 +212,9 @@ export function prepareAvgProfessionalArtifactV1(input: {
   if (payload.schema !== `storyforge.avg.${role[3]}`) throw new Error('[avg] schema 不属于输出 key/岗位')
   const expectedKind = role[3] === 'review-issues' ? 'quality-report' : role[3] === 'system-plan' ? 'product-module' : 'narrative'
   if (input.kind !== expectedKind) throw new Error('[avg] artifact kind 与 schema 不符')
+  if (payload.schema === 'storyforge.avg.media-brief' && input.artifactKey !== avgMediaBriefArtifactKeyV1(payload.subjectKind, payload.subjectKey)) {
+    throw new Error('[avg] 主体媒资方案与专业岗位/输出 key 不一致')
+  }
   if ('sceneKey' in payload && role[2].endsWith('.') && input.artifactKey !== role[2] + payload.sceneKey) throw new Error('[avg] 场景与输出 key 不一致')
   if ('targetKey' in payload && role[2].endsWith('.') && input.artifactKey !== role[2] + payload.targetKey) throw new Error('[avg] review target 与输出 key 不一致')
   return { payload, payloadJson: canonicalProductProductionJsonV2(payload), agentId: role[0], skillId: role[1] }
