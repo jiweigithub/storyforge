@@ -1,4 +1,4 @@
-import { assertTtrpgOpenEntityModelCallOriginV1, assertTtrpgOpenOracleRuntimeCallOriginV1 } from './open-model-calls'
+import { assertTtrpgOpenEntityModelCallOriginV1, assertTtrpgOpenOracleRuntimeCallOriginV1, assertTtrpgOpenCommonOracleCallOriginV1 } from './open-model-calls'
 import { assertTtrpgOpenEpochPurposeV1 } from './open-coordination'
 /** Pure external-request journal: replay never dispatches a provider or reads evidence storage. */
 import type { ProductRuntimeEvent, ProductRuntimeState } from '../types'
@@ -37,6 +37,7 @@ export function applyTtrpgOpenModelCallEventV1(state: ProductRuntimeState, event
     || call.createdRef.sessionKey !== runtime.sessionKey || !seat || seat.controller === 'ai' || seat.assignmentState !== 'claimed'
     || (call.narrationBinding?.viewerKey ?? epoch.viewerKey) !== seat.viewerKey || event.actorKey !== call.actorKey) p.fail('模型调用不属于当前真人授权窗口')
   assertTtrpgOpenEpochPurposeV1(epoch, call.skillId);
+  assertTtrpgOpenCommonOracleCallOriginV1(runtime, call)
   assertTtrpgOpenOracleRuntimeCallOriginV1(runtime, call)
   assertTtrpgOpenNormalizationSourceV1(runtime, call)
   assertTtrpgOpenModelActorV1(runtime.authorization, call.skillId, call.actorKey,seat.viewerKey)
@@ -49,6 +50,7 @@ export function applyTtrpgOpenModelCallEventV1(state: ProductRuntimeState, event
     if (call.hostingDelegationRef) assertTtrpgOpenHostingRequestV1(state,{ epochKey: epoch.epochKey,viewerKey: seat.viewerKey,delegationRef: call.hostingDelegationRef,
       purpose: call.skillId === 'prose.ttrpg-open-companion' ? 'companion' : 'kp-narration',actorKey: call.actorKey,maximumCostUsd: call.reservedCostUsd })
     assertTtrpgOpenEntityModelCallOriginV1(runtime, call)
+    if (call.commonOracle) assertTtrpgOpenOracleInterpretationSlotV1(runtime, call.commonOracle.worldTurn)
     if (call.supportSlot) {
       assertTtrpgOpenSupportSlotV1(runtime,call.supportSlot.worldTurn)
       if (call.supportSlot.worldTurn !== runtime.openRun.worldTime.worldTurn) p.fail('辅助槽不是当前世界轮')

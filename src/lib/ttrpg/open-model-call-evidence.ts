@@ -3,6 +3,9 @@ import { resolveTtrpgOpenNormalizationRuntimeOriginV1 } from './open-runtime-ent
 import { assertTtrpgOpenNormalizationSourceV1 } from './open-model-calls'
 import { assertTtrpgOpenFrozenContextSourcesV1 } from './open-model-purpose-contract'
 import { assertInstanceBinding } from '../product/runtime-instances'
+import { verifyProductRuntimeSessionSourceV1 } from '../product-production/preview-source'
+import { isTtrpgRuntimeContentV2 } from './content-version'
+import { reviewTtrpgOpenCommonOracleDeliveryV1 } from './open-common-oracle-delivery'
 /** Exact governed Run/evidence proof checked again by the runtime command transaction. */
 import { db } from '../db/schema'
 import type { AgentRunRecord, AgentRunEventRecord, AgentRunArtifactRecordV1, WorkspaceScope } from '../types'
@@ -40,6 +43,7 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
   const { call } = input
   const definition = ttrpgOpenModelPurposeForSkillV1(call.skillId), expectedSources = [...assertTtrpgOpenFrozenContextSourcesV1(call.skillId, snapshot.contract.permissions.contextSourceKeys)].sort().join(',')
   let originalAuthorizationEvidence: TtrpgOpenAgentEvidenceV1 | undefined
+  let commonDelivery: Pick<Parameters<typeof reviewTtrpgOpenCommonOracleDeliveryV1>[0], 'basis' | 'content'> | undefined
   if (definition.purpose === 'common-oracle-interpret') {
     const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
     const grant = runtime?.openRun?.coordination.epochs.find(row => row.epochKey === call.authorizationEpochKey)?.commonOracle
@@ -48,6 +52,10 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
       || stable(call.commonOracle) !== stable((await import('./open-common-oracle-request')).ttrpgOpenCommonOracleCallMarkerV1(grant))
       || call.reservedInputTokens > grant.basis.budget.maximumInputTokens || call.reservedOutputTokens !== grant.basis.budget.maximumOutputTokens
       || call.reservedCostUsd > grant.basis.budget.maximumCostUsd) throw new Error('共同事实调用必须绑定本次原本地 Run、原请求、范围和预算')
+    const session = await assertInstanceBinding(input.sessionId, input.scope)
+    const source = await verifyProductRuntimeSessionSourceV1({ scope: input.scope, session, ttrpgProtocol: 2 })
+    if (!source.runtimePackage.ttrpg || !isTtrpgRuntimeContentV2(source.runtimePackage.ttrpg) || source.runtimeSourceHash !== call.runtimeSourceHash) throw new Error('共同事实缺少本次准确冻结来源')
+    commonDelivery = { basis: grant.basis, content: source.runtimePackage.ttrpg }
     if (input.mode !== 'finish') originalAuthorizationEvidence = (await (await import('./open-common-oracle-authorization-proof')).verifyTtrpgOpenCommonOracleAuthorizationV1({ ...input, viewerKey: grant.basis.requester.viewerKey, authorization: grant, phase: input.mode === 'reserve' ? 'prepare' : 'dispatch' })).evidence
   }
   if (definition.purpose === 'public-situation-proposal') {
@@ -159,7 +167,7 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
       await verifyTtrpgOpenInputEvidenceV1({ ...input, evidence, requestHash: call.requestHash,
         inputManifestHash: call.inputManifestHash, stepId: call.stepId, attempt: call.attempt,
         sessionKey: call.createdRef.sessionKey, actorKey: call.actorKey, skillId: call.skillId })
-      const oracleRef = call.oracleInterpretation?.oracleSourceRef ?? call.supportSlot?.oracleSourceRef
+      const oracleRef = call.commonOracle?.oracleSourceRef ?? call.oracleInterpretation?.oracleSourceRef ?? call.supportSlot?.oracleSourceRef
       let oracleInputMatched = !oracleRef, acceptedReviewMatched = !call.supportSlot
       const oracleDelivery: Array<{ sourceKey: string; content: string }> = []
       for (const ref of evidence.preflight.artifacts) {
@@ -179,7 +187,11 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
           }
         }
       }
-      if (call.oracleInterpretation?.runtimeReferencePolicy) reviewTtrpgOpenOracleRuntimeDeliveryV1(call.oracleInterpretation.runtimeReferencePolicy, oracleDelivery)
+      if (commonDelivery) {
+        await reviewTtrpgOpenCommonOracleDeliveryV1({ ...commonDelivery, snapshots: oracleDelivery })
+        oracleInputMatched = true
+      }
+      else if (call.oracleInterpretation?.runtimeReferencePolicy) reviewTtrpgOpenOracleRuntimeDeliveryV1(call.oracleInterpretation.runtimeReferencePolicy, oracleDelivery)
       else if (call.supportSlot?.runtimeReferencePolicy) {
         const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)!, policy = call.supportSlot.runtimeReferencePolicy
         assertTtrpgOpenNormalizationSourceV1(runtime, call)
@@ -228,7 +240,7 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
     const context = await loadTtrpgOpenModelContextV1({ scope: input.scope, sessionId: input.sessionId, actorKey: call.actorKey, skillId: call.skillId })
     if (context.visibilityHash !== call.visibilityHash || context.admissionStateHash !== call.admissionStateHash
       || context.readEvidence.runtimeSourceHash !== call.runtimeSourceHash
-      || (input.mode === 'reserve' && definition.purpose !== 'public-situation-proposal'
+      || (input.mode === 'reserve' && definition.purpose !== 'public-situation-proposal' && definition.purpose !== 'common-oracle-interpret'
         && (context.readEvidence.sequence !== bound.baseSequence || context.readEvidence.stateHash !== bound.stateHash))) {
       throw new Error('[ttrpg-open-call] 模型派发输入已 stale，不能使用旧权限或机械状态')
     }

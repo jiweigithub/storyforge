@@ -18,6 +18,7 @@ export function assertTtrpgOpenModelActorV1(authorization: TtrpgOpenAuthorizatio
       || !authorization.approvalBindings.some(binding => binding.companionActorKey === actorKey && binding.approverSeatKeys.includes(requester.seatKey)))) throw new Error('[ttrpg-open-call] 不可读取或请求其他真人角色的私域候选')
   } else {
     assertTtrpgOpenModelFactApproverV1(authorization,viewerKey)
+    if (definition.purpose === 'common-oracle-interpret') assertTtrpgOpenHumanHostV1(authorization, viewerKey)
     if (definition.purpose === 'entity-proposal') assertTtrpgOpenHumanHostV1(authorization, viewerKey)
     if (definition.purpose === 'stage-brief' || definition.purpose === 'situation-proposal' || definition.purpose === 'public-situation-proposal') {
       assertTtrpgOpenHumanHostV1(authorization, viewerKey)

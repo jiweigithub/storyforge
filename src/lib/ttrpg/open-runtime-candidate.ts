@@ -7,6 +7,7 @@ import type { TtrpgOpenBriefCandidateV1 } from './open-brief-candidate'
 import type { WorkspaceScope } from '../types'
 import type { TtrpgOpenIntentCandidateV1 } from './open-intent-candidate'
 import type { TtrpgOpenOracleCandidateV1 } from './open-oracle-candidate'
+import type { TtrpgOpenCommonOracleCandidateV1 } from './open-common-oracle-candidate'
 import { readInstanceAgentRunV1 } from '../agent/run/event-store'
 import { readProductRuntimeState } from '../product/runtime-core'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
@@ -19,7 +20,7 @@ import { db } from '../db/schema'
 export interface TtrpgOpenCandidateReadV1 {
   scope: WorkspaceScope; sessionId: number; runId: number; requestKey: string; viewerKey: string
 }
-export type TtrpgOpenRuntimeCandidateV1 = TtrpgOpenIntentCandidateV1 | TtrpgOpenOracleCandidateV1 | TtrpgOpenKpCandidateV1 | TtrpgOpenBriefCandidateV1 | TtrpgOpenSituationCandidateV1 | TtrpgOpenPublicSituationCandidateV1 | TtrpgOpenEntityCandidateV1
+export type TtrpgOpenRuntimeCandidateV1 = TtrpgOpenIntentCandidateV1 | TtrpgOpenOracleCandidateV1 | TtrpgOpenCommonOracleCandidateV1 | TtrpgOpenKpCandidateV1 | TtrpgOpenBriefCandidateV1 | TtrpgOpenSituationCandidateV1 | TtrpgOpenPublicSituationCandidateV1 | TtrpgOpenEntityCandidateV1
 async function assertOracleRuntimeReader(input: TtrpgOpenCandidateReadV1, purpose: TtrpgOpenModelPurposeV1) {
   if (purpose !== 'oracle-interpret' && purpose !== 'fact-normalize') return
   const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
@@ -30,6 +31,7 @@ async function assertOracleRuntimeReader(input: TtrpgOpenCandidateReadV1, purpos
 }
 /** Exact candidate bytes are recoverable even when the final checkpoint write was interrupted. */
 export async function readTtrpgOpenRuntimeCandidateV1(input: TtrpgOpenCandidateReadV1, purpose: TtrpgOpenModelPurposeV1): Promise<TtrpgOpenRuntimeCandidateV1 | null> {
+  if (purpose === 'common-oracle-interpret') await (await import('./open-common-oracle-candidate')).assertTtrpgOpenCommonOracleCandidateReaderV1(input)
   if (purpose === 'entity-proposal') await (await import('./open-entity-candidate')).assertTtrpgOpenEntityCandidateReaderV1(input)
   await assertOracleRuntimeReader(input, purpose)
   if (purpose === 'situation-proposal' || purpose === 'public-situation-proposal') await (await import('./open-generated-situation-candidate')).assertTtrpgOpenSituationHumanGmV1(input)
@@ -38,6 +40,7 @@ export async function readTtrpgOpenRuntimeCandidateV1(input: TtrpgOpenCandidateR
 
 /** Retained bytes only: unfinished evidence must never be treated as an adoptable candidate. */
 export async function readTtrpgOpenUnfinishedCandidateArtifactV1(input: TtrpgOpenCandidateReadV1, purpose: TtrpgOpenModelPurposeV1) {
+  if (purpose === 'common-oracle-interpret') await (await import('./open-common-oracle-candidate')).assertTtrpgOpenCommonOracleCandidateReaderV1(input)
   if (purpose === 'entity-proposal') await (await import('./open-entity-candidate')).assertTtrpgOpenEntityCandidateReaderV1(input)
   await assertOracleRuntimeReader(input, purpose)
   if (purpose === 'situation-proposal' || purpose === 'public-situation-proposal') await (await import('./open-generated-situation-candidate')).assertTtrpgOpenSituationHumanGmV1(input)
@@ -64,7 +67,7 @@ async function readCandidateArtifact(input: TtrpgOpenCandidateReadV1, purpose: T
       || event.payload.stepId !== call.stepId || event.payload.attempt !== call.attempt) continue
     const body = JSON.parse(await readAgentRunArtifactExactV1({ projectId: input.scope.projectId,
       artifactKind: 'source-snapshot', contentHash: event.payload.contentHash })) as TtrpgOpenRuntimeCandidateV1
-    if (body.schema !== (purpose === 'entity-proposal' ? 'storyforge.ttrpg-open-entity-candidate' : purpose === 'public-situation-proposal' ? 'storyforge.ttrpg-open-public-situation-candidate' : purpose === 'intent' || purpose === 'companion' ? 'storyforge.ttrpg-open-intent-candidate' : purpose === 'situation-proposal' ? 'storyforge.ttrpg-open-situation-candidate' : purpose === 'stage-brief' ? 'storyforge.ttrpg-open-brief-candidate' : purpose === 'kp-narration' ? 'storyforge.ttrpg-open-kp-candidate' : 'storyforge.ttrpg-open-oracle-candidate')) continue
+    if (body.schema !== (purpose === 'common-oracle-interpret' ? 'storyforge.ttrpg-open-common-oracle-candidate' : purpose === 'entity-proposal' ? 'storyforge.ttrpg-open-entity-candidate' : purpose === 'public-situation-proposal' ? 'storyforge.ttrpg-open-public-situation-candidate' : purpose === 'intent' || purpose === 'companion' ? 'storyforge.ttrpg-open-intent-candidate' : purpose === 'situation-proposal' ? 'storyforge.ttrpg-open-situation-candidate' : purpose === 'stage-brief' ? 'storyforge.ttrpg-open-brief-candidate' : purpose === 'kp-narration' ? 'storyforge.ttrpg-open-kp-candidate' : 'storyforge.ttrpg-open-oracle-candidate')) continue
     const { candidateHash, ...payload } = body
     if (body.version !== 1 || body.portable !== false || body.runId !== input.runId || body.productRuntimeSessionId !== input.sessionId
       || body.requestKey !== input.requestKey || body.viewerKey !== input.viewerKey || body.actorKey !== call.actorKey
@@ -74,6 +77,7 @@ async function readCandidateArtifact(input: TtrpgOpenCandidateReadV1, purpose: T
       || await hashCanonicalValue(payload) !== candidateHash) {
       throw new Error('[ttrpg-open-intent] 候选绑定或原始字节已变化')
     }
+    if (body.schema === 'storyforge.ttrpg-open-common-oracle-candidate' && (body.basisHash !== call.commonOracle?.basisHash || body.normalizationOf !== undefined)) throw new Error('共同事实候选不能替换原 basis 或冒充事实归一')
     if (!unfinished && !snapshot.events.some(event => event.type === 'candidate.persisted' && event.payload.stepId === call.stepId
       && event.payload.attempt === call.attempt && event.payload.candidateHash === candidateHash)) continue
     if (!unfinished) await verifyContextGatewayCandidateEvidenceV1({ scope: input.scope, runId: input.runId, stepId: call.stepId,

@@ -30,8 +30,15 @@ export function parseTtrpgOpenOracleSemanticCandidateV1(output: string, input: {
   const root = p.record(value, ['interpretation', 'facts'], 'Oracle interpretation')
   const contract = p.object(input.contract, 'Oracle contract'), packet = p.object(input.oracle, 'Oracle input')
   p.literal(packet.schema, 'storyforge.ttrpg-open-gm-oracle-input', 'Oracle input schema')
-  const sourceRef = parseTtrpgOpenSourceRefV1(packet.sourceRef)
   const runtimePolicy = ttrpgOpenOracleRuntimeDeliveryPolicyV1(contract, packet)
+  return parseTtrpgOpenOracleSemanticFieldsV1(root, { contract, packet, runtimePolicy })
+}
+/** Shared semantic validation only; each source protocol must validate its own complete delivery first. */
+export function parseTtrpgOpenOracleSemanticFieldsV1(root: Record<string, unknown>, input: {
+  contract: Record<string, unknown>; packet: Record<string, unknown>; runtimePolicy: ReturnType<typeof ttrpgOpenOracleRuntimeDeliveryPolicyV1>;
+}) {
+  const { contract, packet, runtimePolicy } = input
+  const sourceRef = parseTtrpgOpenSourceRefV1(packet.sourceRef)
   const audience = p.oneOf(packet.audience, ['public', 'party', 'gm-only'], 'Oracle input audience')
   const policies: TtrpgOpenFactPolicyV1[] = p.list(contract.factPolicy, 'Oracle fact policy', parseTtrpgOpenFactPolicyV1, 12, 12)
   const selectedActors = p.keys(contract.selectedActorKeys, 'Oracle selected actors', 1000)
@@ -100,7 +107,9 @@ export async function readTtrpgOpenFactNormalizationCandidateV1(input: TtrpgOpen
 export async function verifyTtrpgOpenOracleCandidateProofV1(input: TtrpgOpenCandidateReadV1 & { candidateHash: string }) {
   const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
   const call = runtime?.openRun?.coordination.calls.find(call => call.requestKey === input.requestKey)
-  const candidate = call?.skillId === 'prose.ttrpg-open-fact-normalize'
+  const candidate = call?.skillId === 'prose.ttrpg-open-common-oracle-interpret'
+    ? await (await import('./open-common-oracle-candidate')).readTtrpgOpenCommonOracleCandidateV1(input)
+    : call?.skillId === 'prose.ttrpg-open-fact-normalize'
     ? await readTtrpgOpenFactNormalizationCandidateV1(input) : await readTtrpgOpenOracleCandidateV1(input)
   if (!candidate || candidate.candidateHash !== input.candidateHash || !candidate.interpretation || candidate.facts === null
     || !['ready', 'usable-with-warnings'].includes(candidate.artifact.status)) {

@@ -6,16 +6,27 @@ import { readProductRuntimeState, readProductRuntimeStateVersion } from '../prod
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { finishTtrpgOpenModelCallV1 } from './runtime-commands'
 import { appendAgentRunEventV1, readInstanceAgentRunV1, AgentRunStoreError } from '../agent/run/event-store'
-export async function cancelTtrpgOpenPreparedRequestV1(input: { scope: WorkspaceScope; sessionId: number; viewerKey: string; runId: number; requestKey: string }) {
+type PreparedCancellationInputV1 = { scope: WorkspaceScope; sessionId: number; viewerKey: string; runId: number; requestKey: string }
+export async function cancelTtrpgOpenPreparedRequestV1(input: PreparedCancellationInputV1) {
+  return cancelPrepared(input, false)
+}
+/** Common requests save the call receipt, then the window close, then the local Run terminal receipt. */
+export async function cancelTtrpgOpenCommonOraclePreparedCallV1(input: PreparedCancellationInputV1) {
+  return cancelPrepared(input, true)
+}
+async function cancelPrepared(input: PreparedCancellationInputV1, common: boolean) {
   await assertInstanceBinding(input.sessionId, input.scope)
   const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg), call = runtime?.openRun?.coordination.calls.find(c => c.requestKey === input.requestKey)
   if (!call || call.status !== 'prepared' && !(call.status === 'failed' && call.terminalReason === 'cancelled-before-dispatch' && !call.dispatchRef)) throw new Error('只能取消确实尚未发送的请求；已发送或未知结果必须核对原请求')
+  if (Boolean(call.commonOracle) !== common) throw new Error('共同事实取消须按其原本地 Run 和窗口顺序结束，其他请求不能借用')
   const currentRun = await readInstanceAgentRunV1(input.scope, input.runId)
+  if (common && currentRun.run.portableRuntimeOriginJson !== undefined) throw new Error('导入的共同事实原请求不能恢复本地取消执行权')
   const imported = currentRun.run.portableRuntimeOriginJson !== undefined ? await readTtrpgOpenImportedCallOwnerV1(input) : null
   if (currentRun.run.contractHash !== call.runContractHash && !imported) throw new Error('取消需要原始请求的准确运行证明')
   const version = await readProductRuntimeStateVersion(input.sessionId)
   const event = await finishTtrpgOpenModelCallV1({ ...input, commandId: 'human-cancel-prepared', baseSequence: version.sequence, baseStateHash: version.stateHash,
     status: 'failed', responseArtifactHash: null, usage: { source: 'unknown', inputTokens: 0, outputTokens: 0, actualCostUsd: 0 }, terminalReason: 'cancelled-before-dispatch' })
+  if (common) return event
   for (let attempt = 0; attempt < 12; attempt++) {
     const snapshot = await readInstanceAgentRunV1(input.scope, input.runId)
     if (snapshot.run.productRuntimeSessionId !== input.sessionId || (snapshot.run.contractHash !== call.runContractHash && snapshot.run.contractHash !== imported?.evidence.run.contractHash)) throw new Error('取消回执不属于原运行实例')

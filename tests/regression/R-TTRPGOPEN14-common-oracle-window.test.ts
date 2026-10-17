@@ -103,6 +103,10 @@ describe('R-TTRPGOPEN14 actual original local Run authority for a common Oracle 
     await expect(verifyTtrpgOpenCommonOracleAuthorizationV1({ ...s.owner, authorization: grant, phase: 'prepare' })).rejects.toThrow()
     await db.agentRunArtifacts.update(artifact!.id!, { content: bytes })
     await expect(verifyTtrpgOpenCommonOracleAuthorizationV1({ ...s.owner, authorization: grant, phase: 'prepare' })).resolves.toBeDefined()
+    const checkpoint = (await db.agentRunCheckpoints.where('runId').equals(opened.runId).toArray())[0], resume = checkpoint.resumePayloadJson
+    await db.agentRunCheckpoints.update(checkpoint.id!, { resumePayloadJson: '{}' })
+    await expect(verifyTtrpgOpenCommonOracleAuthorizationV1({ ...s.owner, authorization: grant, phase: 'prepare' })).rejects.toThrow(/检查点/)
+    await db.agentRunCheckpoints.update(checkpoint.id!, { resumePayloadJson: resume })
     await db.agentRuns.delete(opened.runId)
     await expect(startTtrpgOpenCommonOracleWindowV1(s.input)).rejects.toThrow(/Run 已缺失/)
     const stopped = await finishTtrpgOpenEmptyCommonOracleWindowV1({ ...s.owner, epochKey: opened.epochKey, decision: 'close-this-empty-common-oracle-window' })
@@ -126,6 +130,23 @@ describe('R-TTRPGOPEN14 actual original local Run authority for a common Oracle 
     expect(local.run.portableRuntimeOriginJson).toBeUndefined(); expect(local.run.productRuntimeSessionId).toBe(copy.id)
     await finishTtrpgOpenEmptyCommonOracleWindowV1({ ...owner, epochKey: fresh.epochKey, decision: 'close-this-empty-common-oracle-window' })
     await finishTtrpgOpenEmptyCommonOracleWindowV1({ ...s.owner, epochKey: opened.epochKey, decision: 'close-this-empty-common-oracle-window' })
+  })
+  it('denies imported unprepared authority when a fresh database reuses the same project, session and Run ids', async () => {
+    const s = await setup(), opened = await startTtrpgOpenCommonOracleWindowV1(s.input)
+    const backup = await exportProjectJSON(s.f.scope.projectId)
+    await db.delete(); await db.open()
+    const projectId = await importProjectJSON(backup), copy = (await db.productRuntimeSessions.where('projectId').equals(projectId).toArray())[0]
+    const scope = await resolveScope({ scope: { projectId, worldId: copy.worldId!, workId: copy.workId! } })
+    expect(projectId).toBe(s.f.scope.projectId); expect(copy.id).toBe(s.f.sessionId)
+    const run = (await db.agentRuns.where('productRuntimeSessionId').equals(copy.id!).toArray())[0]
+    expect(run.id).toBe(opened.runId)
+    await expect(verifyTtrpgOpenCommonOracleAuthorizationV1({ scope, sessionId: copy.id!, viewerKey: s.owner.viewerKey,
+      authorization: (await readProductRuntimeState(copy.id!)).ttrpg!.openRun!.coordination.epochs.at(-1)!.commonOracle, phase: 'prepare' })).rejects.toThrow()
+    expect((await readInstanceAgentRunV1(scope, run.id!)).events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'run.cancelled', payload: { reason: 'project-import-nonportable-checkpoint' } })]))
+    const copiedOwner = { scope, sessionId: copy.id!, viewerKey: s.owner.viewerKey }
+    await expect(startTtrpgOpenCommonOracleWindowV1({ ...s.input, ...copiedOwner })).rejects.toThrow(/导入历史/)
+    const closed = await finishTtrpgOpenEmptyCommonOracleWindowV1({ ...copiedOwner, epochKey: opened.epochKey, decision: 'close-this-empty-common-oracle-window' })
+    expect(closed.originalRun).toBe('missing-or-imported')
   })
   it('preserves before/after cuts and derives a new child authorization after deleting the parent, without inheriting execution', async () => {
     const s = await setup(), opened = await startTtrpgOpenCommonOracleWindowV1(s.input), after = await readProductRuntimeState(s.f.sessionId)

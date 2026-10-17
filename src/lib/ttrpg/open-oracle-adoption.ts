@@ -27,7 +27,8 @@ export async function reconcileTtrpgOpenOracleFactRunV1(input: TtrpgOpenCandidat
   const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
   const reviews = runtime?.openRun?.oracleReviews?.filter(review => review.requestKey === input.requestKey && review.candidateHash === input.candidateHash) ?? []
   const review = reviews[0]
-  const VERIFIER = candidate.normalizationOf ? 'ttrpg-open-fact-normalize-v1' : ORACLE_VERIFIER
+  const common = candidate.schema === 'storyforge.ttrpg-open-common-oracle-candidate'
+  const VERIFIER = common ? 'ttrpg-open-common-oracle-interpret-v1' : candidate.normalizationOf ? 'ttrpg-open-fact-normalize-v1' : ORACLE_VERIFIER
   const entries = runtime?.openRun?.factLedger?.entries.filter(entry => entry.modelCandidate?.requestKey === input.requestKey
     && entry.modelCandidate.candidateHash === input.candidateHash) ?? []
   if (!session || reviews.length > 1 || (!review && entries.length !== 1)) throw new Error('[ttrpg-open-oracle] 终验需要唯一真实已确认事实或完整审阅，不能从候选直接宣布成功')
@@ -101,7 +102,7 @@ export async function reconcileTtrpgOpenOracleFactRunV1(input: TtrpgOpenCandidat
       const receipt = await createVerificationReceiptV1({ version: 1, runId: input.runId, generation: snapshot.projection.generation,
         contractHash: snapshot.run.contractHash, contextManifestHashes: snapshot.events.filter(event => event.type === 'context.assembled' && event.payload.stepId === call.stepId && event.payload.attempt === call.attempt).slice(-1).map(event => event.type === 'context.assembled' ? event.payload.manifestHash : candidate.inputManifestHash),
         candidateHashes: [input.candidateHash], adoptionEventIds: [], postStateHash, verifierSetVersion: VERIFIER,
-        criteria: [{ id: candidate.normalizationOf ? 'fact.protocol' : 'oracle.protocol', status: 'passed', evidenceRefs: [`candidate:${input.candidateHash}`, `raw:${candidate.rawResponseHash}`] },
+        criteria: [{ id: common ? 'common-oracle.protocol' : candidate.normalizationOf ? 'fact.protocol' : 'oracle.protocol', status: 'passed', evidenceRefs: [`candidate:${input.candidateHash}`, `raw:${candidate.rawResponseHash}`] },
           { id: review ? 'oracle.review.commit' : 'oracle.fact.commit', status: 'passed', evidenceRefs: [`${review ? 'review' : 'E5'}:${sourceRef.sessionKey}:${factEvent.sequence}`, `adoption:${adoptionHash}`] }],
         acceptedAt: factEvent.createdAt })
       let retained = false

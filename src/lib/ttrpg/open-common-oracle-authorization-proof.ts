@@ -15,6 +15,8 @@ import { parseTtrpgOpenCommonOracleAuthorizationV1, hashTtrpgOpenCommonOracleReq
   ttrpgOpenCommonOracleAuthorizationInputV1, ttrpgOpenCommonOracleInputRevisionV1, ttrpgOpenCommonOracleObjectiveV1,
   TTRPG_OPEN_COMMON_ORACLE_SKILL_V1, TTRPG_OPEN_COMMON_ORACLE_STEP_V1, TTRPG_OPEN_COMMON_ORACLE_ENTRY_V1, ttrpgOpenCommonOracleCallMarkerV1 } from './open-common-oracle-request'
 import { ttrpgOpenCallBindingHashV1 } from './open-model-call-evidence'
+import { readLatestVerifiedAgentRunCheckpointV1 } from '../agent/run/checkpoint'
+import { ttrpgOpenCommonOracleAuthorizationCheckpointV1 } from './open-common-oracle-request'
 
 export async function ttrpgOpenCommonOracleCommandIdentityV1(sessionKey: string, epochKey: string) {
   const reservationCommandId = await ttrpgOpenScopedKeyV1(sessionKey, 'common-oracle', [epochKey, 'prepare'])
@@ -58,6 +60,7 @@ export async function verifyTtrpgOpenCommonOracleAuthorizationV1(input: {
     || !bound || bound.productRuntimeSessionId !== input.sessionId || bound.baseSequence !== basis.readEvidence.sequence || bound.stateHash !== basis.readEvidence.stateHash
     || bound.releaseHash !== session.runtimeSourceHash || bound.visibilityHash !== basis.sourceVisibilityHash
     || contract.executionBindings?.length !== 1 || binding?.version !== 2 || binding.skillId !== TTRPG_OPEN_COMMON_ORACLE_SKILL_V1
+    || projectFrozenAgentSkillDefinitionV1(binding).promptVersion !== 'ttrpg-open-common-oracle-interpret-v1'
     || binding.formalEntry?.entryId !== TTRPG_OPEN_COMMON_ORACLE_ENTRY_V1 || binding.writeTargets.length
     || stable(binding.contextSourceKeys) !== stable([TTRPG_OPEN_COMMON_ORACLE_SOURCE_V1])
     || contract.budget.maxModelCalls !== 1 || contract.budget.maxToolCalls !== 0 || contract.budget.maxAttemptsPerStep !== 1
@@ -71,6 +74,17 @@ export async function verifyTtrpgOpenCommonOracleAuthorizationV1(input: {
   await assertAgentSkillExecutionBindingIntegrityV2(binding)
   const entry = await assertFormalAIEntrySnapshotIntegrityV1(binding.formalEntry!, new Map([[binding.skillId, projectFrozenAgentSkillDefinitionV1(binding)]]))
   if (entry.entryId !== TTRPG_OPEN_COMMON_ORACLE_ENTRY_V1 || entry.adoptAllowed || entry.executionBoundary !== 'product-runtime') throw new Error('共同事实的原入口不能代替真人确认')
+  const checkpointJson = stable(ttrpgOpenCommonOracleAuthorizationCheckpointV1(grant))
+  let checkpoint: Awaited<ReturnType<typeof readLatestVerifiedAgentRunCheckpointV1>>
+  try { checkpoint = await readLatestVerifiedAgentRunCheckpointV1(input.scope, run.id, { owner: 'instance' }) }
+  catch { throw new Error('共同事实原本地授权检查点已经损坏或不属于此实例') }
+  const resume = checkpoint?.resumePayload as Record<string, unknown> | null | undefined
+  const original = Boolean(checkpoint) && stable(resume) === checkpointJson
+  const candidate = input.phase === 'review' && resume?.schema === 'storyforge.ttrpg-open-common-oracle-candidate' && resume.version === 1 && resume.portable === false
+    && resume.basisHash === grant.basisHash && resume.runId === run.id && resume.requestKey === grant.requestKey && resume.epochKey === grant.epochKey
+    && resume.viewerKey === input.viewerKey && resume.productRuntimeSessionId === input.sessionId && resume.actorKey === 'gm'
+    && snapshot.events.some(row => row.type === 'candidate.persisted' && row.payload.stepId === TTRPG_OPEN_COMMON_ORACLE_STEP_V1 && row.payload.candidateHash === resume.candidateHash)
+  if (!checkpoint || !original && !candidate) throw new Error('共同事实缺少原本地且不可跨端恢复的准确授权检查点')
   const bytes = stable(ttrpgOpenCommonOracleAuthorizationInputV1(grant))
   const artifact = await db.agentRunArtifacts.where('[projectId+artifactKind+contentHash]').equals([input.scope.projectId, 'source-snapshot', grant.inputArtifactHash]).first()
   if (!artifact || artifact.retentionState !== 'available' || artifact.content !== bytes || await sha256Text(bytes) !== grant.inputArtifactHash
@@ -82,7 +96,7 @@ export async function verifyTtrpgOpenCommonOracleAuthorizationV1(input: {
   if (stable(await db.agentRuns.get(run.id)) !== stable(run) || events.length !== snapshot.events.length
     || events.some((event, index) => event.sequence !== snapshot.events[index].sequence || stable(JSON.parse(event.payloadJson)) !== stable(snapshot.events[index].payload))) throw new Error('共同事实的原 Run 读取期间已经变化')
   await loaded.assertCurrent()
-  return { grant, inputRevision, snapshot, context, evidence: { run, events, artifacts: [artifact] } }
+  return { grant, inputRevision, snapshot, context, content: loaded.content, evidence: { run, events, artifacts: [artifact] } }
 }
 
 /** Cancellation needs the original owner and local Run, never renewed AI read permission or a replacement Run. */
@@ -100,6 +114,10 @@ export async function readTtrpgOpenEmptyCommonOracleOwnerV1(input: { scope: Work
     return { local: false as const, loaded, epoch, grant, evidence: undefined }
   }
   const snapshot = await readInstanceAgentRunV1(input.scope, grant.run.runId), run = snapshot.run
+  if (snapshot.events.some(row => row.type === 'run.cancelled' && row.payload.reason === 'project-import-nonportable-checkpoint')) {
+    await loaded.assertCurrent()
+    return { local: false as const, loaded, epoch, grant, evidence: undefined }
+  }
   const events = await db.agentRunEvents.where('runId').equals(run.id).sortBy('sequence')
   if (stable(await db.agentRuns.get(run.id)) !== stable(run) || events.length !== snapshot.events.length) throw new Error('原空窗口 Run 读取期间已经变化')
   await loaded.assertCurrent()

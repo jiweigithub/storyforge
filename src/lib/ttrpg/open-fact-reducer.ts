@@ -7,6 +7,7 @@ import { parseTtrpgOpenFactLedgerV1, parseTtrpgOpenFactEntryV1, parseTtrpgOpenFa
   assertTtrpgOpenFactEntryGatesV1, assertTtrpgOpenModelFactApproverV1, assertTtrpgOpenFactModelCallV1,
   ttrpgOpenSessionFactsV1, parseTtrpgOpenOracleFactProposalV1, ttrpgOpenOracleFactProposalFromFactV1 } from './open-fact-ledger'
 import * as p from './open-contract-parse'
+import { assertTtrpgOpenCommonOracleFactAudienceV1 } from './open-common-oracle-request'
 
 export function applyTtrpgOpenFactEventV1(state: ProductRuntimeState, event: ProductRuntimeEvent, payload: ProductRuntimeJsonObjectV1): boolean {
   if (event.type !== 'ttrpg.fact.asserted' && event.type !== 'ttrpg.fact.retired') return false
@@ -42,7 +43,8 @@ export function applyTtrpgOpenFactEventV1(state: ProductRuntimeState, event: Pro
     const intent = p.record(payload.intent, ['viewerKey', 'oracleSourceRef', 'proposal', 'candidateHash',
       ...(entry.modelCandidate ? ['modelCandidate'] : []), ...(entry.runtimeEntityReferences ? ['referencePolicy'] : [])], 'fact assertion intent')
     if (entry.runtimeEntityReferences && intent.referencePolicy !== 'committed-runtime-entities-v1') p.fail('运行实体事实需要独立明确引用决定，不能扩展旧模型候选权限')
-    if ((epoch.oracleRuntimeReferencePolicy || epoch.normalizationRuntimeReferencePolicy) && !entry.modelCandidate) p.fail('实例事实模型窗口不能借作人类原创确认')
+    if ((epoch.commonOracle || epoch.oracleRuntimeReferencePolicy || epoch.normalizationRuntimeReferencePolicy) && !entry.modelCandidate) p.fail('实例事实模型窗口不能借作人类原创确认')
+    if (epoch.commonOracle) assertTtrpgOpenCommonOracleFactAudienceV1(epoch.commonOracle, entry.fact.audience, entry.fact.knownBy)
     if (entry.modelCandidate && stable(intent.modelCandidate) !== stable(entry.modelCandidate)) p.fail('模型候选不是本次明确确认的版本')
     assertTtrpgOpenFactModelCallV1(entry, run.coordination.calls)
     if (intent.viewerKey !== viewerKey || stable(intent.oracleSourceRef) !== stable(entry.oracleSourceRef) || intent.candidateHash !== entry.candidateHash

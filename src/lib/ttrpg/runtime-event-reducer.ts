@@ -1,4 +1,5 @@
-import { TTRPG_OPEN_COMMON_ORACLE_INPUT_V1 } from './open-common-oracle-request'
+import { TTRPG_OPEN_COMMON_ORACLE_INPUT_V1, parseTtrpgOpenCommonOracleRequestCloseV1 } from './open-common-oracle-request'
+import { assertTtrpgOpenCommonOracleCallOriginV1 } from './open-model-calls'
 import { assertTtrpgOpenCommonOracleEpochAuthorityV1, assertTtrpgOpenCommonOracleEpochOriginV1 } from './open-coordination'
 import { applyTtrpgOpenEntityEventV1 } from './open-entity-reducer'
 import { assertTtrpgOpenSupportSlotV1, assertTtrpgOpenOracleInterpretationSlotV1 } from './open-model-calls'
@@ -243,7 +244,18 @@ export function applyTtrpgRuntimeEventV1(
       if (openRun.operations.some(operation => operation.authorizationEpochKey === epoch.epochKey && ["awaiting-approval", "executing"].includes(operation.status))) {
         throw new Error("epoch 仍有未完成操作，不能跳过业务步骤关闭。");
       }
-      if (epoch.commonOracle && (payload.intent.commonOracleEmpty !== true || openRun.coordination.calls.some(call => call.authorizationEpochKey === epoch.epochKey))) throw new Error('共同事实关闭不能跳过原请求终验');
+      if (epoch.commonOracle) {
+        const calls = openRun.coordination.calls.filter(call => call.authorizationEpochKey === epoch.epochKey);
+        if (payload.intent.commonOracleEmpty === true) {
+          if (calls.length || payload.intent.commonOracleRequest !== undefined) throw new Error('共同事实空窗口结束不能跳过原请求终验');
+        } else {
+          const close = parseTtrpgOpenCommonOracleRequestCloseV1(payload.intent.commonOracleRequest), call = calls[0];
+          if (calls.length !== 1 || !call || call.requestKey !== close.requestKey || ['prepared', 'dispatched'].includes(call.status)) throw new Error('共同事实须先闭合原请求与费用记录');
+          assertTtrpgOpenCommonOracleCallOriginV1({ openRun }, call);
+          const reviewed = openRun.oracleReviews?.some(row => row.requestKey === close.requestKey) || openRun.factLedger?.entries.some(row => row.modelCandidate?.requestKey === close.requestKey);
+          if ((close.decision === 'close-this-reviewed-common-oracle-window') !== Boolean(reviewed)) throw new Error('共同事实结束不能改变原审阅、采用或弃用决定');
+        }
+      } else if (payload.intent.commonOracleEmpty !== undefined || payload.intent.commonOracleRequest !== undefined) throw new Error('其他窗口不能夹带共同事实结束授权');
       epoch.closedRef = { sessionKey: ttrpg.sessionKey!, sequence: event.sequence };
       epoch.status = "closed";
       epoch.stopReason = payload.reason;

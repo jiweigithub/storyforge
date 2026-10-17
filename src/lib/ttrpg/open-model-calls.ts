@@ -9,6 +9,7 @@ import type { TtrpgOpenEpochV1, TtrpgOpenSourceRefV1 } from './open-coordination
 import { parseTtrpgOpenSourceRefV1 } from './open-coordination'
 import * as p from './open-contract-parse'
 import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
+import { ttrpgOpenCommonOracleCallMarkerV1 } from './open-common-oracle-request'
 export interface TtrpgOpenModelCallV1 {
   commonOracle?: { worldTurn: number; oracleSourceRef: TtrpgOpenSourceRefV1; basisHash: string; runtimeReferencePolicy?: TtrpgOpenOracleRuntimeReferencePolicyV1 }
   entityProposal?: TtrpgOpenEntityModelSelectionV1
@@ -28,6 +29,17 @@ export interface TtrpgOpenModelCallV1 {
   oracleInterpretation?: { worldTurn: number; oracleSourceRef: TtrpgOpenSourceRefV1; runtimeReferencePolicy?: TtrpgOpenOracleRuntimeReferencePolicyV1 }
   supportSlot?: { worldTurn: number; purpose: 'fact-normalize'; sourceRef: TtrpgOpenSourceRefV1; sourceHash: string; oracleSourceRef: TtrpgOpenSourceRefV1;
     runtimeReferencePolicy?: TtrpgOpenNormalizationRuntimeReferencePolicyV1 }
+}
+/** Closed source identity also applies to offline replay; local storage proof is checked by the command. */
+export function assertTtrpgOpenCommonOracleCallOriginV1(runtime: Pick<TtrpgRuntimeStateV2, 'openRun'>, call: TtrpgOpenModelCallV1) {
+  const grant = runtime.openRun?.coordination.epochs.find(row => row.epochKey === call.authorizationEpochKey)?.commonOracle
+  if (!grant && !call.commonOracle) return
+  if (!grant || !call.commonOracle || call.skillId !== 'prose.ttrpg-open-common-oracle-interpret' || call.actorKey !== 'gm'
+    || call.requestKey !== grant.requestKey || call.runContractHash !== grant.run.contractHash || call.stepId !== 'ttrpg.open.common-oracle-interpret' || call.attempt !== 1
+    || call.admissionStateHash !== grant.admissionStateHash || call.visibilityHash !== grant.basis.sourceVisibilityHash || call.runtimeSourceHash !== grant.basis.runtimeSourceHash
+    || stable(call.commonOracle) !== stable(ttrpgOpenCommonOracleCallMarkerV1(grant))
+    || call.reservedInputTokens > grant.basis.budget.maximumInputTokens || call.reservedOutputTokens !== grant.basis.budget.maximumOutputTokens
+    || call.reservedCostUsd > grant.basis.budget.maximumCostUsd) p.fail('共同事实调用必须保留原本人窗口、原请求、准确来源与单次预算')
 }
 export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 {
   const r = p.record(value, ['requestKey','authorizationEpochKey','actorKey','admissionStateHash','visibilityHash','runtimeSourceHash',
@@ -162,13 +174,13 @@ export function assertTtrpgOpenNormalizationSourceV1(runtime: Pick<TtrpgRuntimeS
 }
 /** A semantic leaf can only use the instance proof actually delivered to its own versioned call. */
 export function ttrpgOpenSemanticRuntimeReferencePolicyV1(call: TtrpgOpenModelCallV1) {
-  return call.oracleInterpretation?.runtimeReferencePolicy ?? call.supportSlot?.runtimeReferencePolicy?.oraclePolicy
+  return call.commonOracle?.runtimeReferencePolicy ?? call.oracleInterpretation?.runtimeReferencePolicy ?? call.supportSlot?.runtimeReferencePolicy?.oraclePolicy
 }
 export function assertTtrpgOpenSemanticCallOriginV1(call: TtrpgOpenModelCallV1,oracleSourceRef: TtrpgOpenSourceRefV1,
   normalizationOf?: { sourceRef: TtrpgOpenSourceRefV1;reviewHash: string }): void {
-  const actual = call.oracleInterpretation?.oracleSourceRef ?? call.supportSlot?.oracleSourceRef
+  const actual = call.commonOracle?.oracleSourceRef ?? call.oracleInterpretation?.oracleSourceRef ?? call.supportSlot?.oracleSourceRef
   if (!actual || actual.sessionKey !== oracleSourceRef.sessionKey || actual.sequence !== oracleSourceRef.sequence) p.fail('语义候选没有同一真实 Oracle 输入')
-  if (call.skillId === 'prose.ttrpg-open-oracle-interpret') {
+  if (call.skillId === 'prose.ttrpg-open-oracle-interpret' || call.skillId === 'prose.ttrpg-open-common-oracle-interpret') {
     if (normalizationOf) p.fail('原始解释不能冒充事实归一')
   } else if (call.skillId === 'prose.ttrpg-open-fact-normalize') {
     if (!call.supportSlot || !normalizationOf || normalizationOf.reviewHash !== call.supportSlot.sourceHash

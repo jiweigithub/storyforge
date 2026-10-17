@@ -103,6 +103,8 @@ import { verifyTtrpgOpenModelCallEvidenceV1, assertTtrpgOpenAgentEvidenceUnchang
 import { resolveScope } from '../workspace/scope';
 import { verifyTtrpgOpenIntentCandidateProofV1 } from './open-intent-candidate';
 import { readTtrpgOpenOracleCandidateV1, readTtrpgOpenFactNormalizationCandidateV1, verifyTtrpgOpenOracleCandidateProofV1 } from './open-oracle-candidate';
+import type { WorkspaceScope } from '../types';
+import { parseTtrpgOpenCommonOracleRequestCloseV1, type TtrpgOpenCommonOracleRequestCloseV1 } from './open-common-oracle-request';
 import { loadTtrpgOpenGmOracleContextV1 } from './open-gm-oracle-context';
 import { parseTtrpgOpenOracleReviewV1, parseTtrpgOpenOracleReviewChoiceV1, verifyTtrpgOpenOracleReviewHashesV1, type TtrpgOpenOracleReviewChoiceV1 } from './open-oracle-review';
 import { reconcileTtrpgOpenOracleFactRunV1, TtrpgOpenOracleReceiptPendingError } from './open-oracle-adoption';
@@ -772,7 +774,7 @@ async function prepareTtrpgOpenFactAuthorityV1(context: TtrpgFormalBuildContextV
   const seat = assertTtrpgOpenAuthorizationCurrentV1({ authorization, participants: context.participants, viewerKey });
   const epoch = run.coordination.epochs.find(epoch => epoch.epochKey === run.coordination.activeEpochKey);
   if (modelCandidate) assertTtrpgOpenModelFactApproverV1(authorization, viewerKey);
-  if (!modelCandidate && (epoch?.oracleRuntimeReferencePolicy || epoch?.normalizationRuntimeReferencePolicy)) throw new Error('实例事实模型窗口只允许审阅原模型候选，不能作为人类原创确认。');
+  if (!modelCandidate && (epoch?.commonOracle || epoch?.oracleRuntimeReferencePolicy || epoch?.normalizationRuntimeReferencePolicy)) throw new Error('实例事实模型窗口只允许审阅原模型候选，不能作为人类原创确认。');
   if ((!modelCandidate && seat.role !== 'gm') || seat.controller === 'ai' || !epoch || epoch.status !== 'active' || epoch.viewerKey !== viewerKey
     || epoch.authorizationHash !== await hashProductProductionValueV2(authorization)
     || runtime.product.safety.status !== 'active' || run.stage.status !== 'open') throw new Error('[ttrpg-fact] 手动事实确认需要本人当前真人 GM 窗口。');
@@ -861,9 +863,16 @@ function modelFactRuntimeReferencePolicyV1(call: TtrpgOpenModelCallV1, proposal:
 }
 
 /** The human selects one exact proposed fact; proof and state are rechecked in the formal event CAS. */
-export async function commitTtrpgOpenOracleCandidateFactV1(input: FormalTtrpgCommandEnvelope & {
+export async function commitTtrpgOpenOracleCandidateFactV1(input: Parameters<typeof commitTtrpgOpenSemanticCandidateFactV1>[0]): Promise<ProductRuntimeEvent> {
+  return commitTtrpgOpenSemanticCandidateFactV1(input, false);
+}
+export async function commitTtrpgOpenCommonOracleCandidateFactV1(input: Parameters<typeof commitTtrpgOpenSemanticCandidateFactV1>[0]) {
+  try { const event = await commitTtrpgOpenSemanticCandidateFactV1(input, true); return { sequence: event.sequence }; }
+  catch (error) { throw commonOracleConfirmationError(input, error, 'fact'); }
+}
+async function commitTtrpgOpenSemanticCandidateFactV1(input: FormalTtrpgCommandEnvelope & {
   viewerKey: string; runId: number; requestKey: string; candidateHash: string; proposalIndex: number; decision: 'assert';
-}): Promise<ProductRuntimeEvent> {
+}, common: boolean): Promise<ProductRuntimeEvent> {
   if (input.decision !== 'assert' || !Number.isSafeInteger(input.proposalIndex) || input.proposalIndex < 0 || input.proposalIndex > 2) {
     throw new Error('[ttrpg-open-oracle] 必须明确选择并确认一个候选事实');
   }
@@ -873,7 +882,10 @@ export async function commitTtrpgOpenOracleCandidateFactV1(input: FormalTtrpgCom
   if (!session) throw new Error('[ttrpg-open-oracle] 团局不存在');
   const scope = await resolveScope({ scope: { projectId: session.projectId, worldId: session.worldId!, workId: session.workId! } });
   const sourceCall = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)?.openRun?.coordination.calls.find(call => call.requestKey === requestKey);
-  const candidate = sourceCall?.skillId === 'prose.ttrpg-open-fact-normalize'
+  if (Boolean(sourceCall?.commonOracle) !== common) throw new Error('共同事实须使用独立确认入口，不能借用原 GM 返回资料');
+  const candidate = sourceCall?.skillId === 'prose.ttrpg-open-common-oracle-interpret'
+    ? await (await import('./open-common-oracle-candidate')).readTtrpgOpenCommonOracleCandidateV1({ ...input, scope })
+    : sourceCall?.skillId === 'prose.ttrpg-open-fact-normalize'
     ? await readTtrpgOpenFactNormalizationCandidateV1({ ...input,scope }) : await readTtrpgOpenOracleCandidateV1({ ...input, scope });
   if (!candidate || candidate.candidateHash !== modelHash || !candidate.facts?.[input.proposalIndex]) throw new Error('[ttrpg-open-oracle] 不是本次明确选择的真实候选');
   const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)!;
@@ -894,7 +906,7 @@ export async function commitTtrpgOpenOracleCandidateFactV1(input: FormalTtrpgCom
       const { runtime: current, epoch } = await openModelCallCallerV1(context, viewerKey, true);
       if (current.openRun!.oracleReviews?.some(review => review.requestKey === requestKey)) throw new Error('[ttrpg-open-oracle] 此候选已完整审阅，不能另行采用被弃用事实');
       assertTtrpgOpenModelFactApproverV1(current.authorization!, viewerKey);
-      const view = await loadTtrpgOpenGmOracleContextV1({ scope, sessionId: input.sessionId, actorKey: 'gm' });
+      const view = await loadTtrpgOpenSemanticReviewContextV1({ scope, sessionId: input.sessionId, viewerKey }, call);
       if (proof.candidate.epochKey !== epoch.epochKey || proof.candidate.runtimeSourceHash !== context.session.runtimeSourceHash
         || proof.candidate.admissionStateHash !== await ttrpgOpenMechanicalStateHashV1(context.state)
         || proof.candidate.visibilityHash !== view.visibilityHash || stableJson(proof.candidate.facts![input.proposalIndex]) !== stableJson(proposal)) {
@@ -910,10 +922,31 @@ export async function commitTtrpgOpenOracleCandidateFactV1(input: FormalTtrpgCom
 }
 
 /** Complete human review, with one atomic event for selected facts and retained discard reasons. */
-export async function reviewTtrpgOpenOracleCandidateV1(input: FormalTtrpgCommandEnvelope & {
+/** A common candidate rechecks its own source and original local Run; it never reads GM-private material. */
+async function loadTtrpgOpenSemanticReviewContextV1(input: { scope: WorkspaceScope; sessionId: number; viewerKey: string }, call: TtrpgOpenModelCallV1) {
+  if (call.commonOracle) {
+    const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
+    const grant = runtime?.openRun?.coordination.epochs.find(row => row.epochKey === call.authorizationEpochKey)?.commonOracle
+    return (await (await import('./open-common-oracle-authorization-proof')).verifyTtrpgOpenCommonOracleAuthorizationV1({ ...input, authorization: grant, phase: 'review' })).context
+  }
+  return loadTtrpgOpenGmOracleContextV1({ ...input, actorKey: 'gm' })
+}
+
+export async function reviewTtrpgOpenOracleCandidateV1(input: Parameters<typeof reviewTtrpgOpenSemanticCandidateV1>[0]): Promise<ProductRuntimeEvent> {
+  return reviewTtrpgOpenSemanticCandidateV1(input, false);
+}
+export async function reviewTtrpgOpenCommonOracleCandidateV1(input: Parameters<typeof reviewTtrpgOpenSemanticCandidateV1>[0]) {
+  try { const event = await reviewTtrpgOpenSemanticCandidateV1(input, true); return { sequence: event.sequence }; }
+  catch (error) { throw commonOracleConfirmationError(input, error, 'review'); }
+}
+function commonOracleConfirmationError(input: { sessionId: number; runId: number }, error: unknown, kind: 'fact' | 'review') {
+  if (error instanceof TtrpgOpenOracleReceiptPendingError) return new TtrpgOpenOracleReceiptPendingError(input.sessionId, error.eventSequence, input.runId, new Error('请恢复本次原回执。'), kind);
+  return new Error('共同事实确认未通过；请核对原本人、来源、逐项决定和当前状态。原候选及已保存记录保留。');
+}
+async function reviewTtrpgOpenSemanticCandidateV1(input: FormalTtrpgCommandEnvelope & {
   viewerKey: string; runId: number; requestKey: string; candidateHash: string;
   interpretationDecision: 'accept' | 'reject'; interpretationReason: string | null; choices: TtrpgOpenOracleReviewChoiceV1[];
-}): Promise<ProductRuntimeEvent> {
+}, common: boolean): Promise<ProductRuntimeEvent> {
   const viewerKey = openKey(input.viewerKey, 'review viewer'), requestKey = openKey(input.requestKey, 'review request'), candidateHash = openHash(input.candidateHash, 'review candidate');
   const choices = openList(input.choices,'Oracle review choices',parseTtrpgOpenOracleReviewChoiceV1,3).sort((a,b) => a.proposalIndex - b.proposalIndex);
   const interpretationReason = input.interpretationReason === null ? null : openText(input.interpretationReason, 'interpretation reason', 2000);
@@ -922,6 +955,7 @@ export async function reviewTtrpgOpenOracleCandidateV1(input: FormalTtrpgCommand
   if (!session) throw new Error('[ttrpg-open-oracle] 团局不存在');
   const scope = await resolveScope({ scope: { projectId: session.projectId, worldId: session.worldId!, workId: session.workId! } });
   const before = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)!;
+  if (Boolean(before.openRun?.coordination.calls.find(row => row.requestKey === requestKey)?.commonOracle) !== common) throw new Error('共同事实须使用独立审阅入口，不能借用原 GM 返回资料');
   const commandId = await ttrpgOpenScopedKeyV1(before.sessionKey, 'oracle.review', [requestKey,candidateHash]);
   const prior = await db.productRuntimeEvents.where('[sessionId+commandId]').equals([input.sessionId,commandId]).first();
   const envelope = { sessionId: input.sessionId, commandId, baseSequence: prior?.baseSequence ?? input.baseSequence, baseStateHash: prior?.baseStateHash ?? input.baseStateHash };
@@ -938,7 +972,7 @@ export async function reviewTtrpgOpenOracleCandidateV1(input: FormalTtrpgCommand
         throw new Error('[ttrpg-open-oracle] 必须逐项明确审阅全部提案，不能遗漏或重复选择');
       }
       const call = run.coordination.calls.find(call => call.requestKey === requestKey)!;
-      const view = await loadTtrpgOpenGmOracleContextV1({ scope,sessionId: input.sessionId,actorKey: 'gm' });
+      const view = await loadTtrpgOpenSemanticReviewContextV1({ scope, sessionId: input.sessionId, viewerKey }, call);
       if (candidate.epochKey !== epoch.epochKey || candidate.runtimeSourceHash !== context.session.runtimeSourceHash
         || candidate.admissionStateHash !== await ttrpgOpenMechanicalStateHashV1(context.state) || candidate.visibilityHash !== view.visibilityHash) throw new Error('[ttrpg-open-oracle] 完整审阅基线已 stale');
       const oracle = run.oracleReceipts!.find(receipt => stableJson(receipt.sourceRef) === stableJson(candidate.oracleSourceRef))!;
@@ -1166,12 +1200,14 @@ export async function authorizeTtrpgOpenPublicSituationV1(input: FormalTtrpgComm
 
 /** Cancellation closes authority, without claiming any unfinished business step succeeded. */
 export async function closeTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & {
-  epochKey: string; viewerKey: string; reason: string; commonOracleEmpty?: true;
+  epochKey: string; viewerKey: string; reason: string; commonOracleEmpty?: true; commonOracleRequest?: TtrpgOpenCommonOracleRequestCloseV1;
 }): Promise<ProductRuntimeEvent> {
   const epochKey = openKey(input.epochKey, "epochKey");
   const viewerKey = openKey(input.viewerKey, "viewerKey");
   const reason = openText(input.reason, "reason", 2000);
-  return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.epoch.closed", intent: { epochKey, viewerKey, reason, ...(input.commonOracleEmpty ? { commonOracleEmpty: true } : {}) },
+  const commonOracleRequest = input.commonOracleRequest === undefined ? undefined : parseTtrpgOpenCommonOracleRequestCloseV1(input.commonOracleRequest);
+  if (input.commonOracleEmpty && commonOracleRequest) throw new Error('共同事实空窗口与已预留请求的结束决定不能混用');
+  return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.epoch.closed", intent: { epochKey, viewerKey, reason, ...(input.commonOracleEmpty ? { commonOracleEmpty: true } : {}), ...(commonOracleRequest ? { commonOracleRequest } : {}) },
     build: async ({ state, session, participants }) => {
       const runtime = parseTtrpgRuntimeStateV2(state.ttrpg);
       const authorization = runtime?.authorization;
@@ -1186,10 +1222,11 @@ export async function closeTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
         || runtime.openRun.operations.some(operation => operation.authorizationEpochKey === epochKey && ["awaiting-approval", "executing"].includes(operation.status))) throw new Error("[ttrpg] 已执行业务的 epoch 必须等待结算和调用回执闭合。");
       let commonEvidence: TtrpgOpenAgentEvidenceV1 | undefined;
       if (epoch.commonOracle) {
-        if (input.commonOracleEmpty !== true) throw new Error('共同事实窗口须按原本地 Run 明确结束，不能跳过其终验');
         const scope = await resolveScope({ scope: { projectId: session.projectId, worldId: session.worldId!, workId: session.workId! } });
-        commonEvidence = (await (await import('./open-common-oracle-authorization-proof')).readTtrpgOpenEmptyCommonOracleOwnerV1({ scope, sessionId: input.sessionId, viewerKey, epochKey })).evidence;
-      } else if (input.commonOracleEmpty !== undefined) throw new Error('其他窗口不能借用共同事实空准备标记');
+        if (commonOracleRequest) commonEvidence = (await (await import('./open-common-oracle-close')).readTtrpgOpenCommonOracleRequestCloseOwnerV1({ scope, sessionId: input.sessionId, viewerKey, epochKey, close: commonOracleRequest })).evidence;
+        else if (input.commonOracleEmpty === true) commonEvidence = (await (await import('./open-common-oracle-authorization-proof')).readTtrpgOpenEmptyCommonOracleOwnerV1({ scope, sessionId: input.sessionId, viewerKey, epochKey })).evidence;
+        else throw new Error('共同事实窗口须按原本地 Run 明确结束，不能跳过其终验');
+      } else if (input.commonOracleEmpty !== undefined || commonOracleRequest) throw new Error('其他窗口不能借用共同事实结束标记');
       return { actorKey: seat.actorKey, targetKey: null, payload: { epochKey, viewerKey, reason }, ...(commonEvidence ? { agentEvidence: commonEvidence } : {}) };
     },
   });
@@ -1342,6 +1379,7 @@ export async function reserveTtrpgOpenModelCallV1(input: FormalTtrpgCommandEnvel
   entityProposal?: TtrpgOpenModelCallV1['entityProposal'];
   hostingDelegationRef?: TtrpgOpenModelCallV1['hostingDelegationRef'];
   oracleInterpretation?: TtrpgOpenModelCallV1['oracleInterpretation'];
+  commonOracle?: TtrpgOpenModelCallV1['commonOracle'];
   supportSlot?: TtrpgOpenModelCallV1['supportSlot'];
   narrationBinding?: TtrpgOpenModelCallV1['narrationBinding'];
 }): Promise<ProductRuntimeEvent> {
@@ -1351,6 +1389,7 @@ export async function reserveTtrpgOpenModelCallV1(input: FormalTtrpgCommandEnvel
     admissionStateHash: input.admissionStateHash, visibilityHash: input.visibilityHash, runtimeSourceHash: input.runtimeSourceHash,
     reservedInputTokens: input.reservedInputTokens, reservedOutputTokens: input.reservedOutputTokens, reservedCostUsd: input.reservedCostUsd,
     ...(input.entityProposal ? { entityProposal: input.entityProposal } : {}),
+    ...(input.commonOracle ? { commonOracle: input.commonOracle } : {}),
     ...(input.hostingDelegationRef ? { hostingDelegationRef: input.hostingDelegationRef } : {}),
     ...(input.oracleInterpretation ? { oracleInterpretation: input.oracleInterpretation } : {}),...(input.supportSlot ? { supportSlot: input.supportSlot } : {}), ...(input.narrationBinding ? { narrationBinding: input.narrationBinding } : {}) };
   return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.open.call.reserved', intent: { viewerKey, ...metadata },
@@ -1381,6 +1420,8 @@ export async function reserveTtrpgOpenModelCallV1(input: FormalTtrpgCommandEnvel
         createdRef: { sessionKey: runtime.sessionKey, sequence: context.sequence }, dispatchRef: null, terminalRef: null,
         status: 'prepared', providerRequestId: null, responseArtifactHash: null, usage: null, terminalReason: null });
       assertTtrpgOpenEntityModelCallOriginV1(runtime, call);
+      (await import('./open-model-calls')).assertTtrpgOpenCommonOracleCallOriginV1(runtime, call);
+      if (call.commonOracle) assertTtrpgOpenOracleInterpretationSlotV1(runtime, call.commonOracle.worldTurn);
       assertTtrpgOpenOracleRuntimeCallOriginV1(runtime, call);
       assertTtrpgOpenNormalizationSourceV1(runtime,call);
       assertTtrpgOpenCallReservationV1({ epoch, calls: runtime.openRun!.coordination.calls, requestKey: call.requestKey,

@@ -5,7 +5,7 @@ import { createCompleteTtrpgCharacterSheetV2 } from '../../src/lib/ttrpg/charact
 import { proposeTtrpgOpenEntityDeskV1, readTtrpgOpenEntityDeskV1, confirmTtrpgOpenEntityDeskV1, materializeTtrpgOpenEntityDeskV1 } from '../../src/lib/ttrpg/open-entity-desk'
 import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
 
-export async function setupCommonOracleSourceV1(audience: 'party' | 'public' = 'party', late = false) {
+export async function setupCommonOracleSourceV1(audience: 'party' | 'public' = 'party', late = false, configure?: Parameters<typeof setupOpenEntityPlanningV1>[0]) {
   const s = await setupOpenEntityPlanningV1(pkg => {
     const c = pkg.ttrpg!.campaign, rule = pkg.ttrpg!.rulePack.content
     c.runtimePolicy.enabled = true; rule.oracles[0].audience = audience
@@ -29,6 +29,7 @@ export async function setupCommonOracleSourceV1(audience: 'party' | 'public' = '
       c.companionPolicy.approvalBindings.push({ companionActorKey: 'late', approverSeatKeys: ['seat.hero'], partyResourceApprovalAllowed: false })
       c.entityBindings.push({ ...structuredClone(c.entityBindings.find(row => row.bindingKey === 'companion.2')!), bindingKey: 'late', templateKey: 'late' })
     }
+    configure?.(pkg)
   })
   const owner = { scope: s.f.scope, sessionId: s.f.sessionId, viewerKey: OPEN_HUMAN_VIEWER }
   await proposeTtrpgOpenEntityDeskV1({ ...owner, submissionKey: 'common.oracle.original.plan', oracleSourceRef: s.input.oracleSourceRef, proposals: s.proposals.slice(0, 2) })

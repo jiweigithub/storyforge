@@ -8,6 +8,7 @@ import { assertTtrpgOpenModelFactApproverV1, assertTtrpgOpenFactModelCallV1, ass
   parseTtrpgOpenFactLedgerV1, ttrpgOpenSessionFactsV1, ttrpgOpenOracleFactProposalFromFactV1 } from './open-fact-ledger'
 import { assertTtrpgOpenSemanticCallOriginV1 } from './open-model-calls'
 import * as p from './open-contract-parse'
+import { assertTtrpgOpenCommonOracleFactAudienceV1 } from './open-common-oracle-request'
 
 export function applyTtrpgOpenOracleReviewEventV1(state: ProductRuntimeState, event: ProductRuntimeEvent, payload: ProductRuntimeJsonObjectV1): boolean {
   if (event.type !== 'ttrpg.open.oracle.reviewed') return false
@@ -33,6 +34,7 @@ export function applyTtrpgOpenOracleReviewEventV1(state: ProductRuntimeState, ev
     || run.operations.some(operation => ['awaiting-approval','executing'].includes(operation.status))
     || runtime.branchLineage?.recoveryTasks.some(task => !['completed','withdrawn'].includes(task.status))) p.fail('Oracle 审阅的真人窗口、原始调用、事件或状态不闭合')
   assertTtrpgOpenSemanticCallOriginV1(call,review.oracleSourceRef,review.normalizationOf)
+  if (epoch.commonOracle) for (const proposal of review.proposals) assertTtrpgOpenCommonOracleFactAudienceV1(epoch.commonOracle, proposal.audience, proposal.knownByActorKeys)
   if (intent.viewerKey !== review.viewerKey || intent.requestKey !== review.requestKey || intent.candidateHash !== review.candidateHash
     || intent.interpretationDecision !== review.interpretationDecision || intent.interpretationReason !== review.interpretationReason
     || stable(intent.choices) !== stable(review.choices)) p.fail('Oracle 审阅不是本次明确确认的完整选择')

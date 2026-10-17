@@ -22,6 +22,9 @@ import { startTtrpgOpenEpochV1, closeTtrpgOpenEpochV1, type FormalTtrpgCommandEn
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import { estimateTokens } from '../ai/context-budget'
 import * as p from './open-contract-parse'
+import { assertTtrpgOpenOracleInterpretationSlotV1 } from './open-model-calls'
+import { createAgentRunCheckpointV1 } from '../agent/run/checkpoint'
+import { ttrpgOpenCommonOracleAuthorizationCheckpointV1 } from './open-common-oracle-request'
 
 export async function startTtrpgOpenCommonOracleWindowV1(input: FormalTtrpgCommandEnvelope & {
   scope: WorkspaceScope; viewerKey: string; oracleSourceRef: TtrpgOpenSourceRefV1; oracleInputHash: string; snapshotHash: string | null;
@@ -46,10 +49,14 @@ export async function startTtrpgOpenCommonOracleWindowV1(input: FormalTtrpgComma
     const originalRun = await db.agentRuns.get(epoch!.commonOracle!.run.runId)
     if (!originalRun || originalRun.projectId !== input.scope.projectId || originalRun.portableRuntimeOriginJson !== undefined || originalRun.productRuntimeSessionId !== input.sessionId
       || originalRun.contractJson !== epoch!.commonOracle!.run.contractJson || originalRun.contractHash !== epoch!.commonOracle!.run.contractHash) throw new Error('原共同事实 Run 已缺失或仅为导入历史，请重新明确授权新请求')
+    const originalSnapshot = await readInstanceAgentRunV1(input.scope, originalRun.id!)
+    if (originalSnapshot.events.some(row => row.type === 'run.cancelled' && row.payload.reason === 'project-import-nonportable-checkpoint')) throw new Error('共同事实原授权仅为导入历史，请以新操作重新明确授权')
     await loaded.assertCurrent()
     return { sequence: prior.sequence, epochKey: epoch!.epochKey, basisHash: epoch!.commonOracle!.basisHash, runId: originalRun.id!, requestKey: epoch!.commonOracle!.requestKey }
   }
   assertTtrpgOpenCommonOracleEpochAuthorityV1(runtime, input.viewerKey)
+  assertTtrpgOpenOracleInterpretationSlotV1(runtime, run.worldTime.worldTurn)
+  if (!content.campaign.runtimePolicy.enabled) throw new Error('冻结作品未允许共同事实请求')
   if (run.coordination.activeEpochKey || state.lastSequence !== input.baseSequence || stateHash !== input.baseStateHash) throw new Error('共同事实的原窗口或本人已审阅进度已变化，请重新确认')
   const actual = await loadTtrpgOpenCommonOracleContextV1({ ...input, actorKey: 'gm' })
   const selected = actual.directory.find(row => stable(row.oracleSourceRef) === stable(input.oracleSourceRef))
@@ -97,6 +104,11 @@ export async function startTtrpgOpenCommonOracleWindowV1(input: FormalTtrpgComma
       productRuntimeSessionId: input.sessionId, runId: snapshot.run.id, type: 'step.started', payload: { stepId: TTRPG_OPEN_COMMON_ORACLE_STEP_V1, attempt: 1 }, expectedLastSequence: snapshot.projection.lastSequence })
     if (!snapshot.events.some(event => event.type === 'evidence.artifact.recorded' && event.payload.artifactKind === 'source-snapshot' && event.payload.contentHash === inputArtifactHash)) snapshot = (await recordAgentRunArtifactV1({ scope: input.scope,
       productRuntimeSessionId: input.sessionId, runId: snapshot.run.id, stepId: TTRPG_OPEN_COMMON_ORACLE_STEP_V1, attempt: 1, artifactKind: 'source-snapshot', content: contentBytes, expectedLastSequence: snapshot.projection.lastSequence })).snapshot
+    const checkpointJson = stable(ttrpgOpenCommonOracleAuthorizationCheckpointV1(request))
+    const checkpoints = (await db.agentRunCheckpoints.where('runId').equals(snapshot.run.id).toArray()).filter(row => row.resumePayloadJson === checkpointJson)
+    if (checkpoints.length > 1) throw new Error('共同事实原授权检查点不唯一，不能另造本地执行权')
+    if (!checkpoints.length) snapshot = (await createAgentRunCheckpointV1({ scope: input.scope, productRuntimeSessionId: input.sessionId,
+      runId: snapshot.run.id, resumePayload: JSON.parse(checkpointJson), expectedLastSequence: snapshot.projection.lastSequence })).snapshot
     const commonOracle = parseTtrpgOpenCommonOracleAuthorizationV1({ ...request, inputArtifactHash, run: { runId: snapshot.run.id, contractHash: snapshot.run.contractHash, contractJson: snapshot.run.contractJson } })
     await loaded.assertCurrent()
     const event = await startTtrpgOpenEpochV1({ ...input, rawInput: TTRPG_OPEN_COMMON_ORACLE_INPUT_V1, triggerKind: 'continue-host', commonOracle })

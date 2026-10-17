@@ -108,6 +108,11 @@ export function ttrpgOpenCommonOracleAuthorizationInputV1(grant: Omit<TtrpgOpenC
   return { schema: 'storyforge.ttrpg-open-common-oracle-authorization-input', version: 1, basis: grant.basis, basisHash: grant.basisHash, worldTurn: grant.worldTurn,
     admissionStateHash: grant.admissionStateHash, authorizationCommandId: grant.authorizationCommandId, reservationCommandId: grant.reservationCommandId, epochKey: grant.epochKey, requestKey: grant.requestKey }
 }
+/** Existing Harness portability policy cancels this local authority on import, even if every numeric id is reused. */
+export function ttrpgOpenCommonOracleAuthorizationCheckpointV1(grant: Pick<TtrpgOpenCommonOracleAuthorizationV1, 'basisHash' | 'authorizationCommandId' | 'epochKey' | 'requestKey'>) {
+  return { schema: 'storyforge.ttrpg-open-common-oracle-authorization-checkpoint', version: 1, portable: false,
+    basisHash: grant.basisHash, authorizationCommandId: grant.authorizationCommandId, epochKey: grant.epochKey, requestKey: grant.requestKey }
+}
 export function ttrpgOpenCommonOracleObjectiveV1(basisHash: string, commandId: string) {
   return `共同事实原请求 ${p.hash(basisHash, 'common basis hash')} ${p.key(commandId, 'common authorize command')}`
 }
@@ -130,3 +135,12 @@ export function ttrpgOpenCommonOracleCallMarkerV1(grant: Pick<TtrpgOpenCommonOra
   return { worldTurn: grant.worldTurn, oracleSourceRef: grant.basis.oracleSourceRef, basisHash: grant.basisHash,
     ...(grant.basis.runtimeReferencePolicy ? { runtimeReferencePolicy: grant.basis.runtimeReferencePolicy } : {}) }
 }
+export function assertTtrpgOpenCommonOracleFactAudienceV1(grant: TtrpgOpenCommonOracleAuthorizationV1, audience: string, recipients: readonly string[]) {
+  if (audience !== grant.basis.audience || stable([...recipients].sort()) !== stable(audience === 'party' ? grant.basis.recipientActorKeys : [])) p.fail('共同事实必须保持原咨询的准确共同范围，不能创造或扩大私域接收者')
+}
+export function parseTtrpgOpenCommonOracleRequestCloseV1(value: unknown) {
+  const row = p.record(value, ['requestKey', 'decision'], 'common Oracle original request close')
+  return { requestKey: p.key(row.requestKey, 'common Oracle close request'), decision: p.oneOf(row.decision,
+    ['discard-this-common-oracle-request-and-close-window', 'close-this-reviewed-common-oracle-window'], 'common Oracle close decision') }
+}
+export type TtrpgOpenCommonOracleRequestCloseV1 = ReturnType<typeof parseTtrpgOpenCommonOracleRequestCloseV1>

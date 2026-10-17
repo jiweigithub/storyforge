@@ -1,6 +1,7 @@
 import { ttrpgOpenMechanicalStateHashV1 } from './open-rule-plan'
 /** Common-only source foundation. Catalog/read/hash is never permission to send or adopt a fact. */
-import { TTRPG_OPEN_COMMON_ORACLE_REQUEST_POLICY_V1, assertTtrpgOpenCommonOracleRequestSourceV1 } from './open-common-oracle-request'
+import { assertTtrpgOpenCommonOracleRequestSourceV1 } from './open-common-oracle-request'
+import { ttrpgOpenCommonOracleSourceContractV1 } from './open-common-oracle-delivery'
 import type { WorkspaceScope } from '../types'
 import type { ContextResourceDescriptorV1, FrozenResourceScopeV1 } from '../registry/types'
 import { canonicalStringify as stable, hashCanonicalValue } from '../agent/run/hash'
@@ -41,13 +42,7 @@ async function readModel(input: Input) {
   const recipients = common.recipientActorKeys, catalog = ttrpgOpenEntityIdentityCatalogV1(content, run.entityOperations ?? [])
   const resources: Array<{ suffix: string; title: string; mandatory: boolean; value: unknown }> = [{
     suffix: 'common-oracle-contract', title: '共同 Oracle 解释与事实的来源边界', mandatory: true,
-    value: { schema: 'storyforge.ttrpg-open-common-oracle-contract', version: 1, sourceKey: TTRPG_OPEN_COMMON_ORACLE_SOURCE_V1,
-      recipientActorKeys: recipients, rulePackContentHash: content.rulePack.contentHash, worldReleaseHash: content.campaign.sourceWorld.contentHash,
-      requestPolicy: TTRPG_OPEN_COMMON_ORACLE_REQUEST_POLICY_V1, factPolicy: content.rulePack.content.factPolicy, rawOutcomeIsFinal: true, outputIsCandidate: true,
-      completeSingleOracleDeliveryRequired: true, initialObservationsAreReleaseTime: true,
-      currentFactsRequireOriginalConfirmedSource: true, instanceIdentityGrantsNoMechanics: true,
-      modelReadConfersNoSendOrAdoptionAuthority: true, gmPrivateAndOtherActorSecretsExcluded: true,
-      noMechanicalMutation: true, noPlayerDecision: true, noKnowledgeGrant: true, noWorldWrite: true } }]
+    value: ttrpgOpenCommonOracleSourceContractV1({ recipientActorKeys: recipients, content }) }]
   const directory = []
   for (const oracle of common.oracleHistory) {
     if (oracle.audience === 'gm-only') throw new Error('[ttrpg-common-oracle] 私域咨询不能成为共同事实输入')
