@@ -33,7 +33,10 @@ export function startTtrpgAudioFadeOutV1(element: HTMLAudioElement, ms: number, 
   const tick = (now: number) => {
     if (stopped) return
     if (element.paused || element.ended || Math.abs(element.volume - written) > 0.00001) { finish(); return }
-    written = initial * Math.max(0, 1 - (now - started) / ms); element.volume = written
+    // The first frame's timestamp can precede this callback's start clock.
+    // Clamp both ends so fade-out never raises volume or exceeds the DOM range.
+    const progress = Math.min(1, Math.max(0, (now - started) / ms))
+    written = initial * (1 - progress); element.volume = written
     if (now - started >= ms) finish(); else frame = requestAnimationFrame(tick)
   }
   const timer = setTimeout(finish, Math.min(3000, Math.max(0, ms)))

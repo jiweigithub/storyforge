@@ -30,9 +30,10 @@ describe('R-TTRPGOPEN10 bounded native-node transition presentation', () => {
       follow: vi.fn(async (ms: number, volume: number) => { playing = true; element.volume = volume; cancelFade = startTtrpgAudioFadeInV1(element, ms) }),
     }); nodes.push(handle); return handle
   }
-  function setup(fadeMs = 1000, follow = true, action: 'play' | 'stop' = 'play', toClipKey: string | null = 'new') {
+  function setup(fadeMs = 1000, follow = true, action: 'play' | 'stop' = 'play', toClipKey: string | null = 'new', volume = 1) {
     const controller = createTtrpgAudioTransitionPlaybackV1(); controllers.push(controller)
     const old = node('old'), release = vi.fn(), fallback = vi.fn()
+    old.element.volume = volume
     const accepted = controller.begin({ channel: 'music', action, fromClipKey: 'old', toClipKey, fadeMs }, old,
       { follow, deadline: now + 3000, release, fallback })
     return { controller, old, release, fallback, accepted }
@@ -60,6 +61,20 @@ describe('R-TTRPGOPEN10 bounded native-node transition presentation', () => {
     s.old.element.volume = .2; s.old.element.dispatchEvent(new Event('volumechange'))
     expect(s.old.element.paused).toBe(true); expect(s.release).toHaveBeenCalledTimes(1)
     tick(4000); expect(s.release).toHaveBeenCalledTimes(1); expect(s.fallback).not.toHaveBeenCalled()
+  })
+  it.each([1, .4])('keeps a stop monotone and bounded at volume %s when the first frame predates the fade start', volume => {
+    now = 100
+    const s = setup(1000, false, 'stop', null, volume)
+    expect(s.accepted).toBe(true)
+    const first = [...frames]; frames.clear()
+    // A native rAF timestamp belongs to the frame start, not this callback's
+    // later performance.now(). Cloud Chromium reported a 1.00257 volume here.
+    expect(() => first.forEach(([, fn]) => fn(92))).not.toThrow()
+    expect(s.old.element.volume).toBe(volume); expect(s.old.element.paused).toBe(false)
+    expect(s.release).not.toHaveBeenCalled()
+    tick(500); expect(s.old.element.volume).toBeCloseTo(volume / 2)
+    tick(500); expect(s.old.element.paused).toBe(true); expect(s.release).toHaveBeenCalledTimes(1)
+    expect(s.fallback).not.toHaveBeenCalled()
   })
   it('does not follow a revealed underlying clip when the listener only authorized a stop fade', () => {
     const s = setup(1000, false, 'stop'), incoming = node('new', false)
