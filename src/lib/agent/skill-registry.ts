@@ -3702,7 +3702,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(['ttrpgOpenCommonOracleInput']),
     contextGateway: { ...TEXT_OPEN_WORLD_RUNTIME_G6_GATEWAY_POLICY, providerSourceKeys: ['ttrpgOpenCommonOracleInput'], allowedResourceKinds: ['fact', 'reference'], allowedDepths: ['full'] },
     maxOutputTokens: 4000, writeTargets: [], lastVerifiedAt: '2026-10-17',
-    regressionTests: ['R-TTRPGOPEN14-common-oracle-source', 'R-TTRPGOPEN14-common-oracle-request', 'R-TTRPGOPEN14-common-oracle-window', 'R-TTRPGOPEN14-common-oracle-input', 'R-TTRPGOPEN14-common-oracle-model', 'R-TTRPGOPEN14-common-oracle-recovery', 'R-TTRPGOPEN14-common-oracle-lifecycle'],
+    regressionTests: ['R-TTRPGOPEN14-common-oracle-source', 'R-TTRPGOPEN14-common-oracle-request', 'R-TTRPGOPEN14-common-oracle-window', 'R-TTRPGOPEN14-common-oracle-input', 'R-TTRPGOPEN14-common-oracle-model', 'R-TTRPGOPEN14-common-oracle-recovery', 'R-TTRPGOPEN14-common-oracle-lifecycle', 'R-TTRPGOPEN14-common-oracle-archive'],
   },
   {
     version: 1, id: 'prose.ttrpg-open-fact-normalize', agentId: 'prose', defaultForAgent: false,

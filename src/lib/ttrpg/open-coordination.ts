@@ -1,3 +1,4 @@
+import { parseTtrpgOpenCommonOracleArchiveReceiptV1, assertTtrpgOpenCommonOracleArchiveStateV1, type TtrpgOpenCommonOracleArchiveReceiptV1 } from './open-common-oracle-archive-contract'
 import { parseTtrpgOpenCommonOracleAuthorizationV1, TTRPG_OPEN_COMMON_ORACLE_SKILL_V1, type TtrpgOpenCommonOracleAuthorizationV1 } from './open-common-oracle-request'
 import { assertTtrpgOpenEntityWindowEventV1 } from './open-entity-window'
 import type { TtrpgOpenManualActionAuthorizationV1 } from './open-manual-action'
@@ -41,6 +42,7 @@ export interface TtrpgOpenEpochBudgetV1 {
 }
 export interface TtrpgOpenEpochV1 {
   commonOracle?: TtrpgOpenCommonOracleAuthorizationV1
+  commonOracleArchive?: TtrpgOpenCommonOracleArchiveReceiptV1
   normalizationRuntimeReferencePolicy?: TtrpgOpenNormalizationRuntimeReferencePolicyV1
   oracleRuntimeReferencePolicy?: TtrpgOpenOracleRuntimeReferencePolicyV1
   runtimeEntityReferencePolicy?: TtrpgOpenSituationRuntimeReferencePolicyV1
@@ -179,6 +181,7 @@ export function assertTtrpgOpenCommonOracleEpochOriginV1(runtime: TtrpgRuntimeSt
   if (basis.budget.maximumInputTokens + basis.budget.maximumOutputTokens > epoch.budget.maximumTokens || basis.budget.maximumCostUsd > epoch.budget.maximumCostUsd) fail('共同事实请求超过本次冻结窗口预算')
 }
 export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
+  const hasArchive = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'commonOracleArchive')
   const hasCommon = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'commonOracle')
   const hasManual = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value,'manualAction')
   const hasHosting = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value,'hostingDelegation')
@@ -188,7 +191,7 @@ export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
   const hasRuntimeReferences = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'runtimeEntityReferencePolicy')
   const row = record(value, ['epochKey', 'startedRef', 'closedRef', 'status', 'triggeredBySeatKey',
     'viewerKey', 'triggerKind', 'inputRevision', 'sessionZeroRevision', 'authorizationHash', 'budget',
-    'successfulActorKeys', 'reservedCalls', 'consumedTokens', 'actualCostUsd', 'stopReason', ...(hasCommon ? ['commonOracle'] : []), ...(hasManual ? ['manualAction'] : []),...(hasHosting ? ['hostingDelegation'] : []), ...(hasPublic ? ['publicSituation'] : []),
+    'successfulActorKeys', 'reservedCalls', 'consumedTokens', 'actualCostUsd', 'stopReason', ...(hasCommon ? ['commonOracle'] : []), ...(hasArchive ? ['commonOracleArchive'] : []), ...(hasManual ? ['manualAction'] : []),...(hasHosting ? ['hostingDelegation'] : []), ...(hasPublic ? ['publicSituation'] : []),
     ...(hasRuntimeReferences ? ['runtimeEntityReferencePolicy'] : []), ...(hasOracleReferences ? ['oracleRuntimeReferencePolicy'] : []),
     ...(hasNormalizationReferences ? ['normalizationRuntimeReferencePolicy'] : [])], 'epoch')
   const manual = hasManual ? record(row.manualAction,['requestJson','requestHash'],'manual action authorization') : null
@@ -237,7 +240,9 @@ export function parseTtrpgOpenEpochV1(value: unknown): TtrpgOpenEpochV1 {
   const reservedCalls = integer(row.reservedCalls, 'reservedCalls', 0, budget.maximumCalls)
   const consumedTokens = integer(row.consumedTokens, 'consumedTokens', 0, Number.MAX_SAFE_INTEGER)
   const actualCostUsd = row.actualCostUsd === null ? null : number(row.actualCostUsd, 'actualCostUsd', 0, 1_000_000)
-  return { ...(commonOracle ? { commonOracle } : {}), ...(normalizationRuntimeReferencePolicy ? { normalizationRuntimeReferencePolicy } : {}), ...(oracleRuntimeReferencePolicy ? { oracleRuntimeReferencePolicy } : {}), ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}), ...(publicSituation ? { publicSituation } : {}), ...(hostingDelegation ? { hostingDelegation } : {}),...(manualAction ? { manualAction } : {}), epochKey: key(row.epochKey, 'epochKey'), startedRef, closedRef, status: row.status,
+  if (hasArchive && !commonOracle) fail('归档只能属于原共同事实窗口')
+  const commonOracleArchive = hasArchive ? parseTtrpgOpenCommonOracleArchiveReceiptV1(row.commonOracleArchive) : undefined
+  return { ...(commonOracleArchive ? { commonOracleArchive } : {}), ...(commonOracle ? { commonOracle } : {}), ...(normalizationRuntimeReferencePolicy ? { normalizationRuntimeReferencePolicy } : {}), ...(oracleRuntimeReferencePolicy ? { oracleRuntimeReferencePolicy } : {}), ...(runtimeEntityReferencePolicy ? { runtimeEntityReferencePolicy } : {}), ...(publicSituation ? { publicSituation } : {}), ...(hostingDelegation ? { hostingDelegation } : {}),...(manualAction ? { manualAction } : {}), epochKey: key(row.epochKey, 'epochKey'), startedRef, closedRef, status: row.status,
     triggeredBySeatKey: key(row.triggeredBySeatKey, 'triggeredBySeatKey'), viewerKey: key(row.viewerKey, 'viewerKey'),
     triggerKind: row.triggerKind, inputRevision: hash(row.inputRevision, 'inputRevision'),
     sessionZeroRevision: integer(row.sessionZeroRevision, 'sessionZeroRevision', 1, Number.MAX_SAFE_INTEGER),
@@ -264,6 +269,7 @@ export function parseTtrpgOpenCoordinationV1(value: unknown, sessionKey?: string
       || (epoch.status === 'closed' && (call.status === 'prepared' || call.status === 'dispatched'))
   })) fail('模型调用的 epoch/来源/终态不闭合')
   for (const epoch of epochs) {
+    assertTtrpgOpenCommonOracleArchiveStateV1(epoch, calls.find(call => call.requestKey === epoch.commonOracleArchive?.requestKey))
     const totals = { ...epoch }
     const owned = callsByEpoch.get(epoch.epochKey) ?? []
     if (owned.length > epoch.budget.maximumCalls) fail('模型请求数超过冻结 epoch 上限')

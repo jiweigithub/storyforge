@@ -86,3 +86,38 @@ test('native clean-database import reuses physical ids but retains only history 
   expect(result).toEqual({ sameProjectId: true, sameSessionId: true, sameRunId: true, rejected: true, importedStatus: 'cancelled',
     closedAs: 'missing-or-imported', freshRun: true, importedCancellation: true })
 })
+
+test('native human archive closes an imported formal request, retains its original slot and survives refresh and another backup without writing either Run', async ({ page }) => {
+  test.setTimeout(240000)
+  await page.goto('./')
+  const fixture = await page.evaluate(async () => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/runtime-api.ts')
+    const s = await (await load('/storyforge/tests/helpers/open-common-oracle-model.ts')).setupCommonOracleModelV1()
+    await api.prepareTtrpgOpenCommonOracleInputV1(s.read)
+    const backup = await load('/storyforge/src/lib/export/json-export.ts'), { db } = await load('/storyforge/src/lib/db/schema.ts')
+    const projectId = await backup.importProjectJSON(await backup.exportProjectJSON(s.f.scope.projectId)), copy = await db.productRuntimeSessions.where('projectId').equals(projectId).first()
+    const scope = await (await load('/storyforge/src/lib/workspace/scope.ts')).resolveScope({ scope: { projectId, worldId: copy.worldId, workId: copy.workId } })
+    return { owner: { scope, sessionId: copy.id, viewerKey: s.owner.viewerKey, epochKey: s.grant.epochKey, requestKey: s.read.requestKey },
+      originalRuns: JSON.stringify(await db.agentRuns.toArray()), originalRunEvents: JSON.stringify(await db.agentRunEvents.toArray()) }
+  })
+  await page.reload()
+  const result = await page.evaluate(async f => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/runtime-api.ts')
+    const input = { ...f.owner, decision: 'archive-this-unresumable-common-oracle-window' }, core = await load('/storyforge/src/lib/product/runtime-core.ts')
+    const first = await api.archiveTtrpgOpenUnresumableCommonOracleWindowV1(input), second = await api.archiveTtrpgOpenUnresumableCommonOracleWindowV1(input)
+    const state = await core.readProductRuntimeState(f.owner.sessionId), run = state.ttrpg.openRun
+    const { db } = await load('/storyforge/src/lib/db/schema.ts'), backup = await load('/storyforge/src/lib/export/json-export.ts')
+    const projectId = await backup.importProjectJSON(await backup.exportProjectJSON(f.owner.scope.projectId)), restored = await db.productRuntimeSessions.where('projectId').equals(projectId).first()
+    const restoredState = await core.readProductRuntimeState(restored.id)
+    // Compare only the two original project scopes; the additional backup import has its own copies.
+    const rows = (await db.agentRuns.toArray()).filter((row: any) => row.projectId !== projectId)
+    const ids = new Set(rows.map((row: any) => row.id)), events = (await db.agentRunEvents.toArray()).filter((row: any) => ids.has(row.runId))
+    return { sameReceipt: JSON.stringify(first) === JSON.stringify(second), active: run.coordination.activeEpochKey,
+      archived: run.coordination.epochs.at(-1).commonOracleArchive, call: run.coordination.calls.at(-1),
+      backupEqual: JSON.stringify(restoredState.ttrpg.openRun) === JSON.stringify(run),
+      runsUnchanged: JSON.stringify(rows) === f.originalRuns, runEventsUnchanged: JSON.stringify(events) === f.originalRunEvents }
+  }, fixture)
+  expect(result).toMatchObject({ sameReceipt: true, active: null, backupEqual: true, runsUnchanged: true, runEventsUnchanged: true,
+    archived: { producer: 'imported', observation: 'not-dispatched', priorStatus: 'prepared' }, call: { status: 'failed', terminalReason: 'cancelled-before-dispatch', usage: { actualCostUsd: 0 } } })
+  expect(result.call.commonOracle.basisHash).toBe(result.archived.basisHash)
+})

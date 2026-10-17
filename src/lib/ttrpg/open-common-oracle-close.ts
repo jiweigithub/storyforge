@@ -25,7 +25,9 @@ export async function readTtrpgOpenCommonOracleRequestCloseOwnerV1(input: { scop
     || snapshot.run.contractJson !== grant.run.contractJson || snapshot.run.contractHash !== grant.run.contractHash) throw new Error('共同事实只能结束准确原本地 Run，不能清理导入或外域记录')
   const reviewed = run.oracleReviews?.some(row => row.requestKey === close.requestKey) || run.factLedger?.entries.some(row => row.modelCandidate?.requestKey === close.requestKey)
   if (close.decision === 'close-this-reviewed-common-oracle-window') {
-    if (!reviewed || !['completed', 'failed'].includes(snapshot.projection.state)) throw new Error('请先恢复本次已审阅共同事实的原终验回执')
+    const rejected = run.oracleReviews?.some(row => row.requestKey === close.requestKey && row.interpretationDecision === 'reject')
+      && snapshot.events.some(event => event.type === 'run.failed' && event.payload.code === 'oracle-interpretation-rejected')
+    if (!reviewed || !(snapshot.projection.state === 'completed' || snapshot.projection.state === 'failed' && rejected)) throw new Error('请先恢复本次已审阅共同事实的原终验回执')
   } else if (reviewed || snapshot.projection.steps[call.stepId]?.confirmation === 'adopt' || snapshot.projection.state === 'completed') throw new Error('共同事实已审阅或确认，不能改记为放弃')
   const evidence = await verifyTtrpgOpenModelCallEvidenceV1({ ...reader, call, mode: 'finish' })
   if (stable(evidence.run) !== stable(snapshot.run)) throw new Error('共同事实原 Run 在结束核验期间已经变化')

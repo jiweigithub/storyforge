@@ -1,3 +1,4 @@
+import { applyTtrpgOpenCommonOracleArchiveV1 } from './open-common-oracle-archive-contract'
 import { TTRPG_OPEN_COMMON_ORACLE_INPUT_V1, parseTtrpgOpenCommonOracleRequestCloseV1 } from './open-common-oracle-request'
 import { assertTtrpgOpenCommonOracleCallOriginV1 } from './open-model-calls'
 import { assertTtrpgOpenCommonOracleEpochAuthorityV1, assertTtrpgOpenCommonOracleEpochOriginV1 } from './open-coordination'
@@ -229,7 +230,8 @@ export function applyTtrpgRuntimeEventV1(
     case "ttrpg.open.epoch.closed": {
       const ttrpg = requireTtrpgState(state);
       const openRun = parseTtrpgOpenRunStateV1(ttrpg.openRun, ttrpg.sessionKey);
-      if (Object.keys(payload).sort().join(",") !== "epochKey,intent,reason,viewerKey") throw new Error("epoch.closed 字段不精确。");
+      const hasArchive = Object.prototype.hasOwnProperty.call(payload, 'commonOracleArchive');
+      if (Object.keys(payload).sort().join(",") !== (hasArchive ? "commonOracleArchive,epochKey,intent,reason,viewerKey" : "epochKey,intent,reason,viewerKey")) throw new Error("epoch.closed 字段不精确。");
       const epoch = openRun.coordination.epochs.find(item => item.epochKey === payload.epochKey);
       const authorization = parseTtrpgOpenAuthorizationV1(ttrpg.authorization);
       const seat = authorization.seats.find(item => item.viewerKey === payload.viewerKey);
@@ -238,13 +240,20 @@ export function applyTtrpgRuntimeEventV1(
         || event.actorKey !== seat.actorKey || typeof payload.reason !== "string" || !payload.reason.trim()
         || payload.reason.length > 2000 || !isObject(payload.intent)
         || payload.intent.epochKey !== epoch.epochKey || payload.intent.viewerKey !== payload.viewerKey
-        || payload.intent.reason !== payload.reason || epoch.reservedCalls > 0) {
+        || payload.intent.reason !== payload.reason || !hasArchive && epoch.reservedCalls > 0) {
         throw new Error("epoch.closed 不能跳过业务回执、额度或真人授权。");
       }
       if (openRun.operations.some(operation => operation.authorizationEpochKey === epoch.epochKey && ["awaiting-approval", "executing"].includes(operation.status))) {
         throw new Error("epoch 仍有未完成操作，不能跳过业务步骤关闭。");
       }
-      if (epoch.commonOracle) {
+      if (hasArchive) {
+        if (!isObject(payload.intent) || payload.intent.commonOracleEmpty !== undefined || payload.intent.commonOracleRequest !== undefined
+          || payload.intent.commonOracleArchive !== 'archive-this-unresumable-common-oracle-window') throw new Error('归档不能混用本地原 Run 的结束许可');
+        const runtime = parseTtrpgRuntimeStateV2(ttrpg)!;
+        runtime.openRun = openRun;
+        applyTtrpgOpenCommonOracleArchiveV1(runtime, epoch, payload.commonOracleArchive, event.sequence, String(payload.viewerKey));
+      } else if (isObject(payload.intent) && payload.intent.commonOracleArchive !== undefined) throw new Error('缺少准确共同归档回执');
+      if (epoch.commonOracle && !hasArchive) {
         const calls = openRun.coordination.calls.filter(call => call.authorizationEpochKey === epoch.epochKey);
         if (payload.intent.commonOracleEmpty === true) {
           if (calls.length || payload.intent.commonOracleRequest !== undefined) throw new Error('共同事实空窗口结束不能跳过原请求终验');
@@ -255,10 +264,11 @@ export function applyTtrpgRuntimeEventV1(
           const reviewed = openRun.oracleReviews?.some(row => row.requestKey === close.requestKey) || openRun.factLedger?.entries.some(row => row.modelCandidate?.requestKey === close.requestKey);
           if ((close.decision === 'close-this-reviewed-common-oracle-window') !== Boolean(reviewed)) throw new Error('共同事实结束不能改变原审阅、采用或弃用决定');
         }
-      } else if (payload.intent.commonOracleEmpty !== undefined || payload.intent.commonOracleRequest !== undefined) throw new Error('其他窗口不能夹带共同事实结束授权');
-      epoch.closedRef = { sessionKey: ttrpg.sessionKey!, sequence: event.sequence };
-      epoch.status = "closed";
-      epoch.stopReason = payload.reason;
+      } else if (!hasArchive && (payload.intent.commonOracleEmpty !== undefined || payload.intent.commonOracleRequest !== undefined)) throw new Error('其他窗口不能夹带共同事实结束授权');
+      const closingEpoch = openRun.coordination.epochs.find(row => row.epochKey === epoch.epochKey)!;
+      closingEpoch.closedRef = { sessionKey: ttrpg.sessionKey!, sequence: event.sequence };
+      closingEpoch.status = "closed";
+      closingEpoch.stopReason = payload.reason;
       openRun.coordination.activeEpochKey = null;
       ttrpg.openRun = openRun;
       break;

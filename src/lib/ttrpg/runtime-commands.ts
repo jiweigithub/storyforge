@@ -99,7 +99,7 @@ import { parseTtrpgOpenRulePlanV1 } from './open-rule-plan';
 import { ttrpgOpenRecoveryApprovalsV1, ttrpgOpenAncestorRuleReceiptForTaskV1, ttrpgOpenCoveredBusinessKeysV1 } from './open-branch-recovery';
 import { resolveTtrpgOpenRuleMechanicalV1 } from './open-rule-resolution';
 import { parseTtrpgOpenModelCallV1, assertTtrpgOpenCallReservationV1, assertTtrpgOpenOracleInterpretationSlotV1, assertTtrpgOpenSupportSlotV1, assertTtrpgOpenNormalizationSourceV1, type TtrpgOpenModelCallV1 } from './open-model-calls';
-import { verifyTtrpgOpenModelCallEvidenceV1, assertTtrpgOpenAgentEvidenceUnchangedV1, type TtrpgOpenAgentEvidenceV1 } from './open-model-call-evidence';
+import { verifyTtrpgOpenModelCallEvidenceV1, assertTtrpgOpenAgentEvidenceUnchangedV1, assertTtrpgOpenCommonOracleArchiveWitnessV1, type TtrpgOpenCommonOracleArchiveWitnessV1, type TtrpgOpenAgentEvidenceV1 } from './open-model-call-evidence';
 import { resolveScope } from '../workspace/scope';
 import { verifyTtrpgOpenIntentCandidateProofV1 } from './open-intent-candidate';
 import { readTtrpgOpenOracleCandidateV1, readTtrpgOpenFactNormalizationCandidateV1, verifyTtrpgOpenOracleCandidateProofV1 } from './open-oracle-candidate';
@@ -383,6 +383,7 @@ async function appendFormalTtrpgCommand(
       targetKey: string | null;
       payload: Record<string, unknown>;
       agentEvidence?: TtrpgOpenAgentEvidenceV1;
+      commonOracleArchiveWitness?: TtrpgOpenCommonOracleArchiveWitnessV1;
       eventEvidence?: readonly ProductRuntimeEvent[];
     }>;
     afterCommit?: (context: {
@@ -501,7 +502,7 @@ async function appendFormalTtrpgCommand(
       db.ttrpgSessionParticipants,
       db.productReleases,
       db.productBuilds,
-      ...(previewBuilt.agentEvidence ? [db.agentRuns, db.agentRunEvents, db.agentRunArtifacts] : []),
+      ...(previewBuilt.agentEvidence ? [db.agentRuns, db.agentRunEvents, db.agentRunArtifacts] : previewBuilt.commonOracleArchiveWitness ? [db.agentRuns] : []),
       ...(input.type === 'ttrpg.memory.recorded' ? runtimeInstanceTablesV1() : []),
     ],
     async () => {
@@ -600,6 +601,7 @@ async function appendFormalTtrpgCommand(
       // above, so the preflight result is the exact deterministic command plan.
       // Reusing it also keeps WebCrypto outside Dexie's active transaction.
       if (previewBuilt.agentEvidence) await assertTtrpgOpenAgentEvidenceUnchangedV1(previewBuilt.agentEvidence);
+      if (previewBuilt.commonOracleArchiveWitness) await assertTtrpgOpenCommonOracleArchiveWitnessV1(previewBuilt.commonOracleArchiveWitness);
       if (previewBuilt.eventEvidence) {
         const expected = previewBuilt.eventEvidence
         if (expected.some(event => event.id == null || event.sessionId !== session.id)) throw new Error('[ttrpg] 来源事件没有确切实例定位')
@@ -1200,15 +1202,16 @@ export async function authorizeTtrpgOpenPublicSituationV1(input: FormalTtrpgComm
 
 /** Cancellation closes authority, without claiming any unfinished business step succeeded. */
 export async function closeTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & {
-  epochKey: string; viewerKey: string; reason: string; commonOracleEmpty?: true; commonOracleRequest?: TtrpgOpenCommonOracleRequestCloseV1;
+  epochKey: string; viewerKey: string; reason: string; commonOracleEmpty?: true; commonOracleRequest?: TtrpgOpenCommonOracleRequestCloseV1; commonOracleArchive?: 'archive-this-unresumable-common-oracle-window';
 }): Promise<ProductRuntimeEvent> {
   const epochKey = openKey(input.epochKey, "epochKey");
   const viewerKey = openKey(input.viewerKey, "viewerKey");
   const reason = openText(input.reason, "reason", 2000);
   const commonOracleRequest = input.commonOracleRequest === undefined ? undefined : parseTtrpgOpenCommonOracleRequestCloseV1(input.commonOracleRequest);
-  if (input.commonOracleEmpty && commonOracleRequest) throw new Error('共同事实空窗口与已预留请求的结束决定不能混用');
-  return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.epoch.closed", intent: { epochKey, viewerKey, reason, ...(input.commonOracleEmpty ? { commonOracleEmpty: true } : {}), ...(commonOracleRequest ? { commonOracleRequest } : {}) },
-    build: async ({ state, session, participants }) => {
+  if (input.commonOracleArchive !== undefined && input.commonOracleArchive !== 'archive-this-unresumable-common-oracle-window') throw new Error('共同归档需要明确本次人工决定');
+  if ([Boolean(input.commonOracleEmpty), Boolean(commonOracleRequest), Boolean(input.commonOracleArchive)].filter(Boolean).length > 1) throw new Error('共同事实空窗口与已预留请求的结束决定不能混用');
+  return appendFormalTtrpgCommand({ ...input, type: "ttrpg.open.epoch.closed", intent: { epochKey, viewerKey, reason, ...(input.commonOracleEmpty ? { commonOracleEmpty: true } : {}), ...(commonOracleRequest ? { commonOracleRequest } : {}), ...(input.commonOracleArchive ? { commonOracleArchive: input.commonOracleArchive } : {}) },
+    build: async ({ state, session, participants, sequence }) => {
       const runtime = parseTtrpgRuntimeStateV2(state.ttrpg);
       const authorization = runtime?.authorization;
       const epoch = runtime?.openRun?.coordination.epochs.find(item => item.epochKey === epochKey);
@@ -1218,8 +1221,15 @@ export async function closeTtrpgOpenEpochV1(input: FormalTtrpgCommandEnvelope & 
       const seat = assertTtrpgOpenAuthorizationCurrentV1({ authorization, participants, viewerKey });
       assertTtrpgOpenEpochAuthorityV1({ epoch, authorization, viewerKey,
         authorizationHash: await hashProductProductionValueV2(authorization) });
-      if (epoch.reservedCalls > 0
+      if (!input.commonOracleArchive && epoch.reservedCalls > 0
         || runtime.openRun.operations.some(operation => operation.authorizationEpochKey === epochKey && ["awaiting-approval", "executing"].includes(operation.status))) throw new Error("[ttrpg] 已执行业务的 epoch 必须等待结算和调用回执闭合。");
+      if (input.commonOracleArchive) {
+        if (!epoch.commonOracle) throw new Error('只有原共同请求可以归档');
+        const scope = await resolveScope({ scope: { projectId: session.projectId, worldId: session.worldId!, workId: session.workId! } });
+        const built = await (await import('./open-common-oracle-archive')).prepareTtrpgOpenCommonOracleArchiveForKernelV1({ scope, sessionId: input.sessionId, viewerKey, epochKey, requestKey: epoch.commonOracle.requestKey, sequence });
+        return { actorKey: seat.actorKey, targetKey: null, payload: { epochKey, viewerKey, reason, commonOracleArchive: built.archive },
+          commonOracleArchiveWitness: built.witness, ...(built.agentEvidence ? { agentEvidence: built.agentEvidence } : {}) };
+      }
       let commonEvidence: TtrpgOpenAgentEvidenceV1 | undefined;
       if (epoch.commonOracle) {
         const scope = await resolveScope({ scope: { projectId: session.projectId, worldId: session.worldId!, workId: session.workId! } });

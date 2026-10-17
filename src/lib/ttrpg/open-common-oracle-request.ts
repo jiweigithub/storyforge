@@ -1,3 +1,4 @@
+import type { TtrpgOpenCommonOracleArchiveReceiptV1 } from './open-common-oracle-archive-contract'
 /** Exact one-call request evidence. Parsing, hashing or source matching never grants live authority. */
 import * as p from './open-contract-parse'
 import { parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coordination'
@@ -123,9 +124,13 @@ export function readTtrpgOpenCommonOracleObjectiveV1(value: string) {
 export async function ttrpgOpenCommonOracleInputRevisionV1(input: { basisHash: string; authorizationHash: string; viewerKey: string; authorizationCommandId: string }) {
   return hashCanonicalValue({ schema: 'storyforge.ttrpg-open-common-oracle-input-revision', version: 1, ...input })
 }
-export async function verifyTtrpgOpenCommonOracleEpochsV1(epochs: readonly { commonOracle?: TtrpgOpenCommonOracleAuthorizationV1 }[]) {
+export async function verifyTtrpgOpenCommonOracleEpochsV1(epochs: readonly { commonOracle?: TtrpgOpenCommonOracleAuthorizationV1; commonOracleArchive?: TtrpgOpenCommonOracleArchiveReceiptV1 }[]) {
   for (const epoch of epochs) if (epoch.commonOracle) {
     const grant = epoch.commonOracle
+    if (epoch.commonOracleArchive) {
+      const { receiptHash, ...body } = epoch.commonOracleArchive
+      if (await hashCanonicalValue(body) !== receiptHash) p.fail('共同事实人工归档回执 hash 已损坏')
+    }
     if (await hashTtrpgOpenCommonOracleRequestBasisV1(grant.basis) !== grant.basisHash
       || await hashCanonicalValue(p.json(grant.run.contractJson)) !== grant.run.contractHash) p.fail('共同事实窗口的原请求或原 Run 证据 hash 已损坏')
   }

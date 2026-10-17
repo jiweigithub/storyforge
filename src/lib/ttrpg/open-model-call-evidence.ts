@@ -30,6 +30,16 @@ export interface TtrpgOpenAgentEvidenceV1 {
   events: AgentRunEventRecord[]
   artifacts: AgentRunArtifactRecordV1[]
 }
+/** Internal CAS evidence; never returned from the human API. */
+export interface TtrpgOpenCommonOracleArchiveWitnessV1 {
+  sessionId: number; originalRunId: number; originalRun: AgentRunRecord | undefined; sessionRuns: AgentRunRecord[];
+}
+export async function assertTtrpgOpenCommonOracleArchiveWitnessV1(w: TtrpgOpenCommonOracleArchiveWitnessV1) {
+  const original = await db.agentRuns.get(w.originalRunId)
+  const rows = await db.agentRuns.where('productRuntimeSessionId').equals(w.sessionId).sortBy('id')
+  if (stable(original ?? null) !== stable(w.originalRun ?? null) || stable(rows) !== stable(w.sessionRuns)) throw new Error('共同请求原记录在归档提交期间发生变化，请重新核对')
+}
+
 export async function ttrpgOpenCallBindingHashV1(input: Pick<TtrpgOpenModelCallV1,
   'commonOracle' | 'actorKey' | 'authorizationEpochKey' | 'admissionStateHash' | 'visibilityHash' | 'runtimeSourceHash' | 'entityProposal' | 'oracleInterpretation' | 'supportSlot' | 'narrationBinding' | 'hostingDelegationRef'> & { sessionKey: string }) {
   return hashProductProductionValueV2({ schema: 'storyforge.ttrpg-open-call-binding', version: 1, ...input })
