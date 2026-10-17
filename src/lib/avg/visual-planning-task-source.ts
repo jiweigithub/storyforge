@@ -9,6 +9,7 @@ import { assertAvgTaskHarnessClaimV1, hashAvgTaskRuntimeBindingV1 } from './task
 import { AVG_VISUAL_PLANNING_CONTEXT_V1 } from './visual-planning-roles'
 import { parseAvgSystemPlan } from './system-contract'
 import { parseAvgProfessionalArtifactV1 } from './artifact-contract'
+import { assertAvgVisualPlanningOtherRequestsKnownV4 } from './visual-planning-restart'
 
 /** Reassemble through the registered gateway before dispatch, then require the
  * exact delivered text and exact adopted payload witnesses. No caller-supplied
@@ -20,6 +21,7 @@ export async function readAvgVisualPlanningExecutionSourcesV4(input: ProductProd
     || build.controlEpoch !== input.controlEpoch || build.planHash !== input.planHash || build.briefHash !== await hashProductProductionValueV2(brief)) throw new Error('[avg-visual-plan] 执行来源或完整 Brief 已 stale')
   const claim = await assertAvgTaskHarnessClaimV1(input, build.budgetLedgerJson)
   if (claim.child.contract.runtimeBindingHash !== await hashAvgTaskRuntimeBindingV1(input)) throw new Error('[avg-visual-plan] 请求路由不属于当前实际 Harness claim')
+  await assertAvgVisualPlanningOtherRequestsKnownV4(input.scope,build)
   const assembled = await assembleContext({ projectId: input.scope.projectId, scope: input.scope,
     productProductionId: input.productionId, productBuildId: input.buildId, productProductionTaskKey: input.task.taskKey,
     productArtifactKeys: input.task.inputArtifactKeys, sourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V1],

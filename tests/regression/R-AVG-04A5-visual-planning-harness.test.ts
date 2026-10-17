@@ -25,7 +25,7 @@ import * as imageDecoder from '../../src/lib/avg/image-decoder'
 import * as mediaVerifier from '../../src/lib/product-production/media-runtime-verifier'
 import { readAvgRawImageCandidateBytesV2, stageAvgVisualReviewV1, stageAvgMediaChoiceV2,
   confirmAvgWorkspaceInputV1, configureAvgChosenMediaDraftV2, stageAvgWorkspaceInputV1, readAvgAssemblyWorkspaceV1,
-  prepareAvgAssemblyBriefV1, startAvgAssemblyV1, runAvgAssemblyV1 } from '../../src/lib/avg/assembly-service'
+  prepareAvgAssemblyBriefV1, startAvgAssemblyV1, runAvgAssemblyV1, restartAvgVisualPlanningFromDraftV4 } from '../../src/lib/avg/assembly-service'
 import { refuseAvgVisualPlanningBatchV4, stageAvgVisualPlanningAuthorInputV4 } from '../../src/lib/avg/visual-planning-workspace'
 import { avgVisualReviewFixture } from '../helpers/avg-visual-review-fixture'
 import { readAvgDraftV1, createAvgDraftV1, selectAvgWorldV1 } from '../../src/lib/avg/draft-service'
@@ -53,7 +53,7 @@ beforeEach(async () => {
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); db.close() })
 
-async function setup(options: { malformed?: boolean; wrongBinding?: boolean; visualShape?: 'combined-schema-key' | 'string-palette' | 'extra-root-fields'; unknown?: boolean; reference?: 'valid' | 'missing' | 'tampered'; image?: 'valid' | 'unknown' | 'malformed' | 'corrupt-json' } = {}) {
+async function setup(options: { malformed?: boolean; wrongBinding?: boolean; visualShape?: 'combined-schema-key' | 'string-palette' | 'extra-root-fields'; unknown?: boolean; reference?: 'valid' | 'missing' | 'tampered'; image?: 'valid' | 'unknown' | 'malformed' | 'corrupt-json' | 'busy' } = {}) {
   vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION', '1')
   const imageBytes = await deterministicRegionMapPngV1({ width: 576, height: 324, palette: ['#18213b', '#39506b', '#c8dce8'] })
   const view = new Uint8Array(imageBytes); let binary = ''
@@ -61,6 +61,7 @@ async function setup(options: { malformed?: boolean; wrongBinding?: boolean; vis
   const imageFetcher = vi.fn(async (target: RequestInfo | URL, _init?: RequestInit) => {
     if (!String(target).endsWith('/images/generations')) throw new Error('Unexpected controlled HTTP route')
     if (options.image === 'unknown') throw new TypeError('Failed to fetch')
+    if (options.image === 'busy') return new Response(JSON.stringify({error:{message:'生图队列已满，请稍后重试'}}),{status:503,headers:{'content-type':'application/json'}})
     return new Response(options.image === 'corrupt-json' ? '{broken image response' : JSON.stringify({ data: [{ b64_json: options.image === 'malformed' ? '%%%%' : btoa(binary) }] }),
       { headers: { 'content-type': 'application/json', 'x-request-id': 'controlled-v4-image' } })
   })
@@ -136,6 +137,8 @@ async function setup(options: { malformed?: boolean; wrongBinding?: boolean; vis
   return s
 }
 type Setup = Awaited<ReturnType<typeof setup>>
+async function restartInput(s:Setup){const build=await current(s),draft=await readAvgDraftV1(s.scope);return {scope:s.scope,productionId:s.productionId,expectedBuildId:build.id!,expectedBuildRevision:build.stateRevision,expectedDraftRevision:draft.revision}}
+
 async function current(s: Setup) { return (await db.productBuilds.get(s.buildId))! }
 async function cycle(s: Setup) { return runProductProductionSchedulerCycleV1(s) }
 async function run(s: Setup) { return runProductProductionUntilBlockedV1(s) }
@@ -1029,4 +1032,134 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
     },30_000)
   })
+  describe('same-Work explicit V4 replacement Brief',()=>{
+    it('prepares and starts a separate version after a received HTTP503 without changing the failed Build or dispatching another request',async()=>{
+      const s=await setup({image:'busy'});await sources(s);await run(s)
+      await adopt(s,await stage(s,'avg.media.visual-bible',s.bible));await run(s)
+      await adopt(s,await stage(s,`avg.media.environment-brief.${s.media.subjectKey}`,s.media));await run(s)
+      const parent=await current(s),runs=await db.agentRuns.count(),projects=await db.projects.count()
+      expect(parent.status).toBe('recovery-required');expect(parent.failureJson).toContain('503')
+      const prepared=await restartAvgVisualPlanningFromDraftV4(await restartInput(s))
+      expect(prepared.production.id).toBe(s.productionId);expect(prepared.production.status).toBe('brief-ready')
+      expect(prepared.brief!.revision).toBe(parent.briefRevision+1);expect(await current(s)).toEqual(parent)
+      expect(await db.productBuilds.count()).toBe(1);expect(await db.agentRuns.count()).toBe(runs)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+      db.close();await db.open()
+      const refreshed=await readAvgAssemblyWorkspaceV1(s.scope,s.productionId)
+      expect(refreshed.details!.build).toEqual(parent);expect(refreshed.details!.production.status).toBe('brief-ready')
+      const child=await startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:prepared.brief!.briefHash})
+      expect(child.build!.id).not.toBe(parent.id);expect(child.build!.parentBuildNumber).toBe(parent.buildNumber)
+      expect(await current(s)).toEqual(parent);expect(await db.projects.count()).toBe(projects)
+      expect(await db.productBuildArtifacts.where('buildId').equals(child.build!.id!).count()).toBe(0)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it.each(['text','image'] as const)('holds an unknown %s result before preparing or renaming a replacement request',async kind=>{
+      const s=await setup(kind==='text'?{unknown:true}:{image:'unknown'});await sources(s);await run(s)
+      if(kind==='image'){
+        await adopt(s,await stage(s,'avg.media.visual-bible',s.bible));await run(s)
+        await adopt(s,await stage(s,`avg.media.environment-brief.${s.media.subjectKey}`,s.media));await run(s)
+      }
+      const input=await restartInput(s),parent=await current(s),commands=await db.productProductionCommands.count(),briefs=await db.productProductionBriefs.count()
+      await expect(restartAvgVisualPlanningFromDraftV4(input)).rejects.toThrow(/未知结果|未完成领取/)
+      const {sourceInputHash:_hash,aspectRatio:_ratio,...planning}=s.brief.avgVisualPlanning!.scope
+      const renamed=structuredClone(planning);renamed.templates[0].parameters.requirementKey+='.renamed';renamed.templates[0].parameters.assetKey+='.renamed'
+      await expect(prepareAvgAssemblyBriefV1({scope:s.scope,expectedDraftRevision:input.expectedDraftRevision,visualPlanning:renamed})).rejects.toThrow(/未知结果|未完成领取/)
+      expect(await current(s)).toEqual(parent);expect(await db.productProductionCommands.count()).toBe(commands);expect(await db.productProductionBriefs.count()).toBe(briefs)
+      expect(s.runText).toHaveBeenCalledTimes(kind==='text'?1:2);expect(s.imageFetcher).toHaveBeenCalledTimes(kind==='text'?0:1)
+    },30_000)
+
+    it('does not infer a vanished paid request from an emptied but structurally valid cached ledger',async()=>{
+      const s=await setup({malformed:true});await sources(s);await run(s)
+      const build=await current(s),ledger=JSON.parse(build.budgetLedgerJson)
+      ledger.tasks={};ledger.attempts=[];ledger.rootRunId=null
+      await db.productBuilds.update(build.id!,{budgetLedgerJson:JSON.stringify(ledger)})
+      const briefs=await db.productProductionBriefs.count()
+      await expect(restartAvgVisualPlanningFromDraftV4(await restartInput(s))).rejects.toThrow(/已发送请求缺少准确终态记账/)
+      expect(await db.productProductionBriefs.count()).toBe(briefs);expect(s.runText).toHaveBeenCalledTimes(1)
+    })
+
+    it('preserves an immutable unknown Run even if its cached attempt is falsely marked settled',async()=>{
+      const s=await setup({unknown:true});await sources(s);await run(s)
+      const build=await current(s),ledger=JSON.parse(build.budgetLedgerJson)
+      for(const attempt of ledger.attempts){attempt.usageKnown=true;attempt.errorCode=null;delete attempt.resolution}
+      for(const task of Object.values(ledger.tasks) as Array<{errorCode:string|null}>){task.errorCode=null}
+      await db.productBuilds.update(build.id!,{budgetLedgerJson:JSON.stringify(ledger)})
+      const briefs=await db.productProductionBriefs.count(),runs=await db.agentRuns.count()
+      await expect(restartAvgVisualPlanningFromDraftV4(await restartInput(s))).rejects.toThrow(/Run 保留未知结果/)
+      expect(await db.productProductionBriefs.count()).toBe(briefs);expect(await db.agentRuns.count()).toBe(runs)
+      expect(s.runText).toHaveBeenCalledTimes(1);expect(s.imageFetcher).not.toHaveBeenCalled()
+    })
+
+    it.each(['same-production','new-production'] as const)('blocks %s shared-command bypass before a second provider dispatch in this Work',async mode=>{
+      const s=await setup({unknown:true});await sources(s);await run(s)
+      let productionId=s.productionId
+      if(mode==='new-production'){
+        const created=await executeProductProductionCommand({scope:s.scope,command:{type:'create-intent',commandId:'visual.bypass.intent',productionKey:'visual.bypass.production',productType:'avg',worldReleaseId:s.brief.source.worldReleaseId,userText:'独立治理绕过反例'}})
+        if(!created.ok)throw new Error(JSON.stringify(created));productionId=created.productionId
+      }
+      const previous=await readProductProductionDetailsV1(s.scope,productionId,['avg'])
+      const saved=await executeProductProductionCommand({scope:s.scope,productionId,command:{type:'save-brief-revision',commandId:'visual.bypass.brief',expectedStateRevision:previous.production.stateRevision,parentRevision:previous.brief?.revision??null,brief:s.brief}})
+      if(!saved.ok)throw new Error(JSON.stringify(saved))
+      const prepared=await readProductProductionDetailsV1(s.scope,productionId,['avg'])
+      const started=await executeProductProductionCommand({scope:s.scope,productionId,command:{type:'authorize-start',commandId:'visual.bypass.start',expectedStateRevision:prepared.production.stateRevision,briefRevision:prepared.brief!.revision,briefHash:prepared.brief!.briefHash,authorizationNonce:'explicit-bypass-test-start'}})
+      if(!started.ok)throw new Error(JSON.stringify(started))
+      const details=await readProductProductionDetailsV1(s.scope,productionId,['avg'])
+      const second={...s,productionId,buildId:details.build!.id!,executor:createConfiguredProductProductionExecutorV1({production:details.production,brief:s.brief,runText:s.runText,mediaCapabilities:new Map()})}
+      await run(second);second.plan=parseProductProductionPlanV3((await current(second)).planJson,s.brief,(await current(second)).briefHash)
+      await sources(second);await run(second)
+      expect((await current(second)).failureJson).toContain('未知结果');expect(s.runText).toHaveBeenCalledTimes(1);expect(s.imageFetcher).not.toHaveBeenCalled()
+    },30_000)
+
+    it('rechecks the old request boundary at explicit start after a reviewable replacement was prepared',async()=>{
+      const s=await setup({malformed:true});await sources(s);await run(s)
+      const prepared=await restartAvgVisualPlanningFromDraftV4(await restartInput(s)),parent=await current(s),ledger=JSON.parse(parent.budgetLedgerJson)
+      ledger.attempts.find((a:{taskKey:string})=>a.taskKey==='avg.visual.propose.direction').usageKnown=false
+      await db.productBuilds.update(parent.id!,{budgetLedgerJson:JSON.stringify(ledger)})
+      await expect(startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:prepared.brief!.briefHash})).rejects.toThrow(/未知结果|未完成领取/)
+      expect(await db.productBuilds.count()).toBe(1);expect(s.runText).toHaveBeenCalledTimes(1);expect(s.imageFetcher).not.toHaveBeenCalled()
+    })
+
+    it.each(['missing','cycle'] as const)('refuses a %s ancestor instead of ignoring its possible requests',async kind=>{
+      const s=await setup({malformed:true});await sources(s);await run(s)
+      const build=await current(s);await db.productBuilds.update(build.id!,{parentBuildNumber:kind==='cycle'?build.buildNumber:999})
+      const briefs=await db.productProductionBriefs.count()
+      await expect(restartAvgVisualPlanningFromDraftV4(await restartInput(s))).rejects.toThrow(/谱系|祖先/)
+      expect(await db.productProductionBriefs.count()).toBe(briefs);expect(s.runText).toHaveBeenCalledTimes(1)
+    })
+
+    it.each(['known','unknown'] as const)('keeps the %s request boundary after a complete backup remaps the stopped Work',async kind=>{
+      const s=await setup(kind==='known'?{malformed:true}:{unknown:true});await sources(s);await run(s)
+      const original=await current(s),projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId))
+      const build=(await db.productBuilds.where('projectId').equals(projectId).first())!
+      const restored={...s,scope:{projectId,worldId:build.worldId,workId:build.workId},productionId:build.productionId,buildId:build.id!}
+      const input=await restartInput(restored),runs=await db.agentRuns.count()
+      if(kind==='known'){
+        const prepared=await restartAvgVisualPlanningFromDraftV4(input)
+        expect(prepared.production.id).toBe(build.productionId);expect(prepared.production.status).toBe('brief-ready')
+        expect(prepared.brief!.revision).toBeGreaterThan(build.briefRevision)
+      }else{
+        const briefs=await db.productProductionBriefs.count()
+        await expect(restartAvgVisualPlanningFromDraftV4(input)).rejects.toThrow(/未知结果|未完成领取/)
+        expect(await db.productProductionBriefs.count()).toBe(briefs)
+      }
+      expect(await current(restored)).toEqual(build);expect(await current(s)).toEqual(original)
+      expect(await db.agentRuns.count()).toBe(runs);expect(s.runText).toHaveBeenCalledTimes(1);expect(s.imageFetcher).not.toHaveBeenCalled()
+    },30_000)
+
+    it('rejects stale Build/draft and live-source replacements without mutation',async()=>{
+      const s=await setup({malformed:true});await sources(s);await run(s)
+      const input=await restartInput(s),parent=await current(s),briefs=await db.productProductionBriefs.count()
+      await expect(restartAvgVisualPlanningFromDraftV4({...input,expectedBuildRevision:input.expectedBuildRevision+1})).rejects.toThrow(/已变化/)
+      await expect(restartAvgVisualPlanningFromDraftV4({...input,expectedDraftRevision:input.expectedDraftRevision+1})).rejects.toThrow(/已变化/)
+      expect(await current(s)).toEqual(parent);expect(await db.productProductionBriefs.count()).toBe(briefs)
+      const other=await createAvgDraftV1('隔离作品')
+      await expect(restartAvgVisualPlanningFromDraftV4({...input,scope:other.scope})).rejects.toThrow()
+      expect(await db.productProductionBriefs.count()).toBe(briefs)
+      const live=await setup(),liveBriefs=await db.productProductionBriefs.count()
+      await expect(restartAvgVisualPlanningFromDraftV4(await restartInput(live))).rejects.toThrow(/已变化/)
+      expect(await db.productProductionBriefs.count()).toBe(liveBriefs);expect(live.runText).not.toHaveBeenCalled()
+    })
+  })
+
 })

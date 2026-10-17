@@ -156,6 +156,23 @@ test('author refuses an exact professional proposal and refresh retains its reas
   const state=await page.evaluate(async scope=>{const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;const {db}=await load('/storyforge/src/lib/db/schema.ts');const build=await db.productBuilds.where('workId').equals(scope.workId).first();return {status:build.status,failure:build.failureJson,artifacts:await db.agentRunArtifacts.where('projectId').equals(scope.projectId).count()}},source.scope)
   expect(state.status).toBe('cancelled');expect(state.failure).toContain('作者拒绝');expect(state.artifacts).toBeGreaterThan(0)
   expect(models).toHaveLength(1);expect(images).toHaveLength(0)
+  await panel.getByRole('button',{name:'保留记录并准备新版本方案',exact:true}).click()
+  await expect(panel.getByRole('status').filter({hasText:'新版本方案'})).toBeVisible()
+  await expect(panel).toContainText('上一版已记录 1 次方案、0 次图片调用')
+  await page.reload();await page.getByRole('button',{name:'素材',exact:true}).click()
+  await expect(panel.getByRole('status').filter({hasText:'新版本方案'})).toBeVisible()
+  await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
+  await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
+  await expect(page.getByRole('article',{name:'作者确认：系统规则',exact:true}).getByText('等待作者输入',{exact:true})).toBeVisible()
+  const replacement=await page.evaluate(async scope=>{
+    const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;const {db}=await load('/storyforge/src/lib/db/schema.ts')
+    const builds=await db.productBuilds.where('workId').equals(scope.workId).sortBy('buildNumber')
+    return {builds:builds.map((b:any)=>({id:b.id,number:b.buildNumber,parent:b.parentBuildNumber,status:b.status,failure:b.failureJson})),childArtifacts:await db.productBuildArtifacts.where('buildId').equals(builds[1].id).count()}
+  },source.scope)
+  expect(replacement.builds).toHaveLength(2);expect(replacement.builds[0].failure).toBe(state.failure)
+  expect(replacement.builds[0].status).toBe('cancelled');expect(replacement.builds[1].parent).toBe(replacement.builds[0].number)
+  expect(replacement.childArtifacts).toBe(0);expect(models).toHaveLength(1);expect(images).toHaveLength(0)
+
 })
 
 async function prepareProfessionalFamily(page:Page,options:{propReference?:boolean}={}){

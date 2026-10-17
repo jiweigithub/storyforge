@@ -3,7 +3,7 @@ import type { ProductBuildArtifactRecordV1, WorkspaceScope } from '../../lib/typ
 import type { AvgAuthorWorkspaceV1 } from '../../lib/avg/author-workspace-contract'
 import { parseProductProductionBriefV3 } from '../../lib/product-production/contracts'
 import type { readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
-import { confirmAvgWorkspaceInputV1 } from '../../lib/avg/assembly-service'
+import { confirmAvgWorkspaceInputV1, restartAvgVisualPlanningFromDraftV4 } from '../../lib/avg/assembly-service'
 import { avgVisualPlanningExecutionReadyV4 } from '../../lib/avg/visual-planning-brief'
 import { stageAvgVisualPlanningAuthorInputV4, refuseAvgVisualPlanningBatchV4, type AvgVisualPlanningDraftV4 } from '../../lib/avg/visual-planning-workspace'
 import type { AvgVisualBibleV1, AvgMediaBriefV1 } from '../../lib/avg/visual-planning-contract'
@@ -75,6 +75,8 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
   const enabled=avgVisualPlanningExecutionReadyV4()
   const build=view.details?.build,closed=!!build&&!['authorized','building','integrating'].includes(build.status)
   const failed=!!build&&['failed','recovery-required'].includes(build.status)
+  const recordedUsage=view.visualRecordedUsage??view.visualProgress?.budget.usage
+  const pendingVersion=!!build&&!!view.details?.brief&&view.details.brief.revision!==build.briefRevision&&view.details.production.status==='brief-ready'
   const proposals=view.artifacts.filter(a=>a.artifactKey.startsWith('avg.proposal.')&&a.status==='accepted')
   const available=!workspace.mediaBatch&&!workspace.voiceProduction&&!workspace.imageProcessing&&!workspace.presentation.stage.assets.some(a=>!a.mimeType.startsWith('image/'))
   useEffect(()=>{onPending(edited||pendingCards);return()=>onPending(false)},[edited,pendingCards,onPending])
@@ -88,14 +90,22 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
       key={view.details?.brief?.briefHash??'new'} {...{scope,workspace,view,prepared,visible,onAction}} disabled={disabled||pendingCards}
       onPending={setEdited} onCancel={()=>setEditPrepared(false)} onPrepare={async value=>{await onPrepare(value);setEdited(false);setEditPrepared(false)}}/>}
     {prepared&&<><p>已保存专业用途：{prepared.templates.map(t=>t.parameters.name).join('、')}；{prepared.referenceCatalog.length} 张授权参考。准备方案不会调用模型，须到制作页核对并明确开始。</p>
-      <p>本批上限：{brief!.productionBudget.maximumModelCalls} 次方案调用、{brief!.productionBudget.maximumMediaCalls} 次图片请求。{view.visualProgress?`已记录 ${view.visualProgress.budget.usage.modelCalls} 次方案、${view.visualProgress.budget.usage.mediaCalls} 次图片调用；费用${view.visualProgress.budget.usage.costUsd===null?'未知':` $${view.visualProgress.budget.usage.costUsd}`}。`:'费用以实际回执为准。'}</p>
-      {!activeBuild&&!build&&!edited&&<button className="lf-action" disabled={disabled} onClick={()=>setEditPrepared(true)}>修改尚未开始的专业用途</button>}
+      <p>{pendingVersion?'新方案':'本批'}上限：{brief!.productionBudget.maximumModelCalls} 次方案调用、{brief!.productionBudget.maximumMediaCalls} 次图片请求。{recordedUsage?`${pendingVersion?'上一版已记录':'已记录'} ${recordedUsage.modelCalls} 次方案、${recordedUsage.mediaCalls} 次图片调用；费用${recordedUsage.costUsd===null?'未知':` $${recordedUsage.costUsd}`}。`:'费用以实际回执为准。'}</p>
+      {pendingVersion&&<p role="status">新版本方案 v{view.details!.brief!.revision} 已准备，尚未开始。上一版及原始调用记录只读保留；请到制作页核对后明确开始。</p>}
+      {!activeBuild&&(!build||pendingVersion)&&!edited&&<button className="lf-action" disabled={disabled} onClick={()=>setEditPrepared(true)}>修改尚未开始的专业用途</button>}
       {build&&<><p>模型方案与原始响应、用量和未知费用保存在本次制作记录中。刷新只读取记录；继续执行需要明确点击。</p>
         {!sourcesReady&&!closed&&<p>请先到制作页明确采用系统规则和全部场景脚本。</p>}
         {!closed&&<button className="lf-action lf-action-primary" disabled={!enabled||disabled||edited||pendingCards||!sourcesReady||!declaration.trim()} onClick={()=>void onGenerate()}>执行已确认的专业方案与图片任务</button>}
         {generating&&<button className="lf-action" onClick={onCancel}>停止等待并保留记录</button>}
         {proposals.map(proposal=><ProposalCard key={`${build.id}:${proposal.artifactKey}:${proposal.contentHash}`} {...{scope,view,proposal,workspace,declaration,onAction,onReload,onNotice}} disabled={!enabled||disabled||edited||closed} onPending={cardPending}/>)}
-        {closed&&<p role={failed?'alert':undefined}>{failed?'本批尚未完成，已停止自动调用。原始返回、已发生的调用与费用记录保留。请到制作页核对后准备新版本。':'本次制作已结束或暂停，方案与账单保留，当前不会自动调用。'}{build.previewHash&&'冻结预览可在制作页试玩。'}</p>}
+        {closed&&<p role={failed&&!pendingVersion?'alert':undefined}>{pendingVersion?'上一版已停止，旧方案与账单保留。新方案须另行明确开始，不会自动调用。':failed?'本批尚未完成，已停止自动调用。原始返回、已发生的调用与费用记录保留。可在此准备新版本，核对后另行开始。':'本次制作已结束或暂停，方案与账单保留，当前不会自动调用。'}{build.previewHash&&'冻结预览可在制作页试玩。'}</p>}
+        {enabled&&!pendingVersion&&!build.previewHash&&['cancelled','failed','recovery-required'].includes(build.status)&&<>
+          <p>准备新方案不发送请求。当前采用与评审不会复制到新版；开始后将按新方案的有限上限重新执行，旧结果未知时禁止重发。</p>
+          <button className="lf-action" disabled={disabled||edited||pendingCards||generating} onClick={()=>void onAction(async()=>{
+            await restartAvgVisualPlanningFromDraftV4({scope,productionId:view.details!.production.id!,expectedBuildId:build.id!,expectedBuildRevision:build.stateRevision,expectedDraftRevision:view.draft.revision})
+            await onReload();onNotice('新版本方案已准备，未发送请求；请到制作页核对并明确开始。')
+          })}>保留记录并准备新版本方案</button>
+        </>}
       </>}
     </>}
   </section>
