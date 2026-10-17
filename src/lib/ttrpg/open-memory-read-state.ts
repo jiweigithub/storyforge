@@ -1,5 +1,6 @@
 import { verifyTtrpgOpenCommonOracleEpochsV1 } from './open-common-oracle-request'
 import { verifyTtrpgOpenEntityStateV1 } from './open-entity-proof'
+import { verifyTtrpgOpenIdentityKnowledgeV1 } from './open-identity-knowledge-proof'
 import { verifyTtrpgOpenSessionSituationHashesV1 } from './open-session-situation-proof'
 /** Trusted read evidence shared by the human desk and distinct model consumers. No grants are inferred from host ownership. */
 import { db } from '../db/schema'
@@ -32,6 +33,7 @@ export async function loadTtrpgOpenMemoryReadStateV1(input: { scope: WorkspaceSc
     || runtime.product.campaignKey !== content.campaign.campaignKey) throw new Error('[ttrpg-memory] 请先完成当前分支的有效开团授权')
   await verifyTtrpgOpenSessionSituationHashesV1(runtime.openRun.situationReceipts ?? [])
   await verifyTtrpgOpenEntityStateV1(state, content)
+  await verifyTtrpgOpenIdentityKnowledgeV1({ runtime, runtimeSourceHash: source.runtimeSourceHash, events })
   await verifyTtrpgOpenCommonOracleEpochsV1(runtime.openRun.coordination.epochs)
   const authorization = runtime.authorization, participants = await readTtrpgSessionParticipantsV2(input.sessionId)
   assertTtrpgOpenAuthorizationRowsCurrentV1({ authorization, participants })

@@ -1231,6 +1231,8 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "ttrpg.fact.retired",
   "ttrpg.open.knowledge.discovered",
   "ttrpg.open.knowledge.shared",
+  "ttrpg.open.knowledge.identity-confirmed",
+  "ttrpg.open.knowledge.identity-shared",
   "ttrpg.world-turn.advanced",
   "ttrpg.open.pressure.planned",
   "ttrpg.open.pressure.settled",

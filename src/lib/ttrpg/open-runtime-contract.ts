@@ -19,6 +19,7 @@ import { parseTtrpgOpenKnowledgeV1, type TtrpgOpenKnowledgeEntryV1 } from './ope
 import { parseTtrpgOpenOracleReceiptV1, type TtrpgOpenOracleReceiptV1 } from './open-oracle-contract';
 import { parseTtrpgOpenFactLedgerV1, assertTtrpgOpenModelFactApproverV1, assertTtrpgOpenFactModelCallV1, type TtrpgOpenFactLedgerV1 } from './open-fact-ledger';
 import { parseTtrpgOpenKnowledgeShareReceiptV1, type TtrpgOpenKnowledgeShareReceiptV1 } from './open-knowledge-share';
+import { assertTtrpgOpenIdentityKnowledgeJournalV1 } from './open-identity-knowledge';
 import { parseTtrpgOpenBranchLineageV1, ttrpgOpenAncestorSourceAllowedV1, type TtrpgOpenBranchLineageV1 } from './open-branch-contract';
 import { assertTtrpgOpenRecoveredOperationV1 } from './open-branch-recovery';
 import type {
@@ -911,7 +912,7 @@ export function parseTtrpgRuntimeStateV2(
               ? !authorization || !openRun.coordination.epochs.some(epoch => epoch.epochKey === receipt.authorizationEpochKey && epoch.viewerKey === receipt.viewerKey
                 && receipt.knowledge.acquisitionRef.sequence > epoch.startedRef.sequence
                 && (epoch.closedRef === null || receipt.knowledge.acquisitionRef.sequence < epoch.closedRef.sequence))
-              : !ttrpgOpenAncestorSourceAllowedV1(branchLineage, receipt.knowledge.acquisitionRef, ['ttrpg.open.knowledge.shared'])
+              : !ttrpgOpenAncestorSourceAllowedV1(branchLineage, receipt.knowledge.acquisitionRef, [receipt.knowledge.identityGrant ? 'ttrpg.open.knowledge.identity-shared' : 'ttrpg.open.knowledge.shared'])
                 || !inheritedShares.has(stableProductRuntimeJsonV1(receipt)));
         })) fail("知识分享缺少真实获得记录、窗口或精确祖先事件");
     }
@@ -1040,6 +1041,7 @@ export function parseTtrpgRuntimeStateV2(
   };
   assertTtrpgOpenTableMessageHistoryV1(result);
   assertTtrpgOpenAudioJournalV1(result);
+  assertTtrpgOpenIdentityKnowledgeJournalV1(result);
   assertTtrpgOpenPressureHistoryV1(result);
   assertTtrpgOpenSituationCycleHistoryV1(result);
   return result;

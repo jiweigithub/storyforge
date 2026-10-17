@@ -8,6 +8,7 @@ import TtrpgOpenWorldPatchPanel from './TtrpgOpenWorldPatchPanel'
 import TtrpgOpenHistoricalResponses from './TtrpgOpenHistoricalResponses'
 import TtrpgOpenMemoryPanel from './TtrpgOpenMemoryPanel'
 import TtrpgOpenAudioPanel from './TtrpgOpenAudioPanel'
+import TtrpgOpenIdentityKnowledgePanel from './TtrpgOpenIdentityKnowledgePanel'
 import TtrpgOpenTableConversation from './TtrpgOpenTableConversation'
 import TtrpgOpenPrivateChoicePanel from './TtrpgOpenPrivateChoicePanel'
 import { useCallback,useEffect,useRef,useState } from 'react'
@@ -61,6 +62,7 @@ export default function TtrpgOpenHostTable(props: TtrpgPlayTablePropsV1 & { view
     {host && <TtrpgOpenHistoricalResponses key={`history:${sessionId}:${viewerKey}:${props.state.lastSequence}`} input={input()} entries={host.historicalResponses ?? []} busy={busy} perform={perform} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenMemoryPanel key={`memory:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenAudioPanel key={`audio:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} paused={props.state.ttrpg.product.safety.status !== 'active'} busy={busy} onChanged={async () => { await props.onChanged(); await refresh() }} />}
+    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenIdentityKnowledgePanel key={`identity:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} onChanged={async () => { await props.onChanged(); await refresh() }} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenBriefPanel key={`brief:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenSituationPanel key={`situation:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
     {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenEntityPanel key={`entity:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}

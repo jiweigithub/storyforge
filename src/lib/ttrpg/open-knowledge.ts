@@ -4,6 +4,7 @@ import type { TtrpgOpenAuthorizationV1 } from './open-authorization'
 import { parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coordination'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import * as p from './open-contract-parse'
+import { parseTtrpgOpenKnowledgeIdentityGrantV1, type TtrpgOpenKnowledgeIdentityGrantV1 } from './open-identity-knowledge-contract'
 
 export interface TtrpgOpenKnowledgeEntryV1 {
   knowledgeKey: string
@@ -15,6 +16,7 @@ export interface TtrpgOpenKnowledgeEntryV1 {
   recipientActorKeys: string[]
   publicFieldsHash: string
   reliability: 'observed' | 'hearsay' | 'belief'
+  identityGrant?: TtrpgOpenKnowledgeIdentityGrantV1
 }
 export interface TtrpgOpenKnowledgeDisplayV1 {
   evidenceRef: string; title: string; description: string
@@ -22,7 +24,7 @@ export interface TtrpgOpenKnowledgeDisplayV1 {
 }
 export function parseTtrpgOpenKnowledgeEntryV1(value: unknown): TtrpgOpenKnowledgeEntryV1 {
   const r = p.record(value, ['knowledgeKey', 'evidenceRef', 'sourceFactRefs', 'sourceResourceRefs', 'acquisitionRef',
-    'audience', 'recipientActorKeys', 'publicFieldsHash', 'reliability'], 'knowledge entry')
+    'audience', 'recipientActorKeys', 'publicFieldsHash', 'reliability', ...(Object.prototype.hasOwnProperty.call(value, 'identityGrant') ? ['identityGrant'] : [])], 'knowledge entry')
   const audience = p.oneOf(r.audience, p.AUDIENCES, 'knowledge audience')
   const recipientActorKeys = p.keys(r.recipientActorKeys, 'knowledge recipients', 1000)
   if ((audience === 'private' || audience === 'party') && !recipientActorKeys.length) p.fail('发现后的 private/party 知识必须有明确接收者')
@@ -30,7 +32,8 @@ export function parseTtrpgOpenKnowledgeEntryV1(value: unknown): TtrpgOpenKnowled
   return { knowledgeKey: p.key(r.knowledgeKey, 'knowledge key'), evidenceRef: p.key(r.evidenceRef, 'evidence ref'),
     sourceFactRefs: p.keys(r.sourceFactRefs, 'source facts', 100), sourceResourceRefs: p.keys(r.sourceResourceRefs, 'source resources', 100),
     acquisitionRef: parseTtrpgOpenSourceRefV1(r.acquisitionRef), audience, recipientActorKeys,
-    publicFieldsHash: p.hash(r.publicFieldsHash, 'public fields hash'), reliability: p.oneOf(r.reliability, ['observed', 'hearsay', 'belief'], 'reliability') }
+    publicFieldsHash: p.hash(r.publicFieldsHash, 'public fields hash'), reliability: p.oneOf(r.reliability, ['observed', 'hearsay', 'belief'], 'reliability'),
+    ...(Object.prototype.hasOwnProperty.call(r, 'identityGrant') ? { identityGrant: parseTtrpgOpenKnowledgeIdentityGrantV1(r.identityGrant) } : {}) }
 }
 export function parseTtrpgOpenKnowledgeV1(value: unknown): TtrpgOpenKnowledgeEntryV1[] {
   const entries = p.list(value, 'knowledge', parseTtrpgOpenKnowledgeEntryV1, 100_000)
@@ -46,7 +49,7 @@ export async function hashTtrpgOpenEvidenceFieldsV1(campaign: TtrpgCampaignConte
   return hashProductProductionValueV2(ttrpgOpenEvidenceFieldsV1(campaign, evidenceRef))
 }
 export function ttrpgOpenActorKnowsEvidenceV1(entries: readonly TtrpgOpenKnowledgeEntryV1[], actorKey: string, evidenceRef: string): boolean {
-  return entries.some(entry => entry.evidenceRef === evidenceRef && entry.reliability === 'observed'
+  return entries.some(entry => !entry.identityGrant && entry.evidenceRef === evidenceRef && entry.reliability === 'observed'
     && entry.audience !== 'gm-only' && (entry.audience === 'public' || entry.recipientActorKeys.includes(actorKey)))
 }
 /** Hearsay/belief remains visible as labeled observation but cannot satisfy objective evidence gates. */
@@ -57,12 +60,12 @@ export function projectTtrpgOpenKnowledgeForViewerV1(input: {
   const seat = input.authorization.seats.find(seat => seat.viewerKey === input.viewerKey)
   if (!seat || seat.role !== 'player' || seat.actorKey === null || !input.authorization.selectedActorKeys.includes(seat.actorKey)) p.fail('知识投影缺少已授权玩家身份')
   const actorKey = seat.actorKey
-  const entries = input.entries.filter(entry => entry.audience !== 'gm-only'
+  const entries = input.entries.filter(entry => entry.identityGrant?.mode !== 'observation' && entry.audience !== 'gm-only'
     && (entry.audience === 'public' || entry.recipientActorKeys.includes(actorKey)))
   return entries.map(entry => ({ evidenceRef: entry.evidenceRef, ...ttrpgOpenEvidenceFieldsV1(input.campaign, entry.evidenceRef), reliability: entry.reliability }))
 }
 export function projectTtrpgOpenPublicKnowledgeV1(entries: readonly TtrpgOpenKnowledgeEntryV1[], campaign: TtrpgCampaignContentV2): TtrpgOpenKnowledgeDisplayV1[] {
-  return entries.filter(entry => entry.audience === 'public').map(entry => ({ evidenceRef: entry.evidenceRef,
+  return entries.filter(entry => entry.identityGrant?.mode !== 'observation' && entry.audience === 'public').map(entry => ({ evidenceRef: entry.evidenceRef,
     ...ttrpgOpenEvidenceFieldsV1(campaign, entry.evidenceRef), reliability: entry.reliability }))
 }
 /** Scope is frozen at acquisition. Later roster changes do not expand an old party grant. */

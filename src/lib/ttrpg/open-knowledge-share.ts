@@ -61,7 +61,7 @@ export function createTtrpgOpenSharedKnowledgeV1(input: {
 export function parseTtrpgOpenKnowledgeShareReceiptV1(value: unknown): TtrpgOpenKnowledgeShareReceiptV1 {
   const r = p.record(value, ['sourceKnowledgeKey', 'sourceAcquisitionRef', 'sharedByActorKey', 'viewerKey', 'authorizationEpochKey', 'confirmationHash', 'knowledge'], 'knowledge share receipt')
   const knowledge = parseTtrpgOpenKnowledgeEntryV1(r.knowledge)
-  if (knowledge.reliability === 'observed') p.fail('分享不能充当接收者本人发现')
+  if (knowledge.reliability === 'observed' || knowledge.identityGrant && knowledge.identityGrant.mode !== 'share') p.fail('分享不能充当接收者本人发现')
   return { sourceKnowledgeKey: p.key(r.sourceKnowledgeKey, 'shared knowledge source'), sourceAcquisitionRef: parseTtrpgOpenSourceRefV1(r.sourceAcquisitionRef),
     sharedByActorKey: p.key(r.sharedByActorKey, 'share sender'), viewerKey: p.key(r.viewerKey, 'share viewer'),
     authorizationEpochKey: p.key(r.authorizationEpochKey, 'share epoch'), confirmationHash: p.hash(r.confirmationHash, 'share confirmation'), knowledge }
@@ -79,6 +79,12 @@ export function ttrpgOpenKnowledgeDiscoveryOriginV1(runtime: TtrpgRuntimeStateV2
     const run = current.acquisitionRef.sessionKey === runtime.sessionKey ? runtime.openRun
       : runtime.branchLineage?.ancestors.find(ancestor => ancestor.sessionKey === current.acquisitionRef.sessionKey)?.snapshot.openRun
     if (!run) p.fail('知识缺少实际团局或冻结祖先来源')
+    if (current.identityGrant?.mode === 'observation') {
+      const source = run.knowledge.find(source => source.knowledgeKey === current.identityGrant!.sourceKnowledgeKey)
+      if (!source || stable(source.acquisitionRef) !== stable(current.identityGrant.sourceAcquisitionRef)) p.fail('识别没有原实际观察回执')
+      current = source
+      continue
+    }
     const share = run.knowledgeShares?.find(receipt => receipt.knowledge.knowledgeKey === current.knowledgeKey)
     if (share) {
       const source = run.knowledge.find(source => source.knowledgeKey === share.sourceKnowledgeKey)

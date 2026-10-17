@@ -2,6 +2,7 @@ import TtrpgOpenSituationPanel from './TtrpgOpenSituationPanel'
 import TtrpgOpenPublicSituationPanel from './TtrpgOpenPublicSituationPanel'
 import TtrpgOpenCommonOraclePanel from './TtrpgOpenCommonOraclePanel'
 import TtrpgOpenAudioPanel from './TtrpgOpenAudioPanel'
+import TtrpgOpenIdentityKnowledgePanel from './TtrpgOpenIdentityKnowledgePanel'
 import TtrpgOpenEntityPanel from './TtrpgOpenEntityPanel'
 import TtrpgOpenBriefPanel from './TtrpgOpenBriefPanel'
 import TtrpgOpenWorldPatchPanel from './TtrpgOpenWorldPatchPanel'
@@ -141,6 +142,7 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
     {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenPublicSituationPanel key={`public-situation:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => job())} />}
     {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenCommonOraclePanel key={`common-oracle:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => job())} />}
     {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenAudioPanel key={`audio:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} paused={props.state.ttrpg.product.safety.status !== 'active'} busy={busy} onChanged={async () => { await props.onChanged(); await refresh() }} />}
+    {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenIdentityKnowledgePanel key={`identity:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} onChanged={async () => { await props.onChanged(); await refresh() }} />}
     {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenEntityPanel key={`entity:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => job())} />}
     {viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenWorldPatchPanel key={`patch:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => job())} />}
     {p && <>

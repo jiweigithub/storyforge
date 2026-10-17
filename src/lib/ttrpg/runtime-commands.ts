@@ -1,6 +1,9 @@
 import { createTtrpgOpenAudioReceiptV1, parseTtrpgOpenAudioRequestV1, ttrpgOpenAudioSourceEqualV1, type TtrpgOpenAudioRequestV1 } from './open-audio-contract'
 import { readTtrpgOpenAudioUploadTicketV1, readTtrpgOpenAudioMediaWitnessV1, assertTtrpgOpenAudioMediaWitnessV1, type TtrpgOpenAudioMediaWitnessV1, type TtrpgOpenAudioUploadTicketV1 } from './open-audio-media'
 import { verifyTtrpgOpenAudioReceiptsV1 } from './open-audio-proof'
+import { createTtrpgOpenIdentityKnowledgeV1, ttrpgOpenIdentityKnowledgeEventV1, ttrpgOpenIdentityKnowledgePayloadV1 } from './open-identity-knowledge'
+import { parseTtrpgOpenIdentityKnowledgeRequestV1, type TtrpgOpenIdentityKnowledgeRequestV1 } from './open-identity-knowledge-contract'
+import { hashTtrpgOpenIdentityKnowledgeConfirmationV1, verifyTtrpgOpenIdentityKnowledgeV1 } from './open-identity-knowledge-proof'
 import { parseTtrpgOpenCommonOracleAuthorizationV1, hashTtrpgOpenCommonOracleRequestBasisV1, assertTtrpgOpenCommonOracleRequestSourceV1, TTRPG_OPEN_COMMON_ORACLE_INPUT_V1, type TtrpgOpenCommonOracleAuthorizationV1 } from './open-common-oracle-request'
 import { assertTtrpgOpenCommonOracleEpochAuthorityV1, assertTtrpgOpenCommonOracleEpochOriginV1 } from './open-coordination'
 import { assertTtrpgOpenEntityModelCallOriginV1 } from './open-model-calls'
@@ -196,6 +199,8 @@ type FormalTtrpgEventType = Extract<
   | "ttrpg.fact.retired"
   | "ttrpg.open.knowledge.discovered"
   | "ttrpg.open.knowledge.shared"
+  | "ttrpg.open.knowledge.identity-confirmed"
+  | "ttrpg.open.knowledge.identity-shared"
   | "ttrpg.open.pressure.planned"
   | "ttrpg.open.pressure.settled"
   | "ttrpg.open.pressure.effect.confirmed"
@@ -255,6 +260,7 @@ const OPEN_FOUNDATION_COMMANDS: readonly FormalTtrpgEventType[] = [
   "ttrpg.oracle.consulted",
   "ttrpg.fact.asserted", "ttrpg.fact.retired", "ttrpg.open.oracle.reviewed",
   "ttrpg.open.knowledge.discovered", "ttrpg.open.knowledge.shared",
+  "ttrpg.open.knowledge.identity-confirmed", "ttrpg.open.knowledge.identity-shared",
   "ttrpg.open.pressure.planned", "ttrpg.open.pressure.settled", "ttrpg.open.pressure.effect.confirmed", "ttrpg.open.pressure.effect.applied", "ttrpg.open.pressure.situation.completed", "ttrpg.clock.ticked",
   "ttrpg.front.telegraphed", "ttrpg.front.advanced", "ttrpg.front.defeated",
   "ttrpg.open.situations.planned", "ttrpg.open.situations.changed", "ttrpg.open.situations.settled",
@@ -2121,6 +2127,40 @@ export async function shareTtrpgOpenKnowledgeV1(input: FormalTtrpgCommandEnvelop
       return { actorKey: request.actorKey, targetKey: null, payload: { receipt, privateChannelsAllowed: content.campaign.informationPolicy.interPlayerWhispers } };
     },
   });
+}
+
+/** Human review of semantic identities; no rule action, model call or world-time advancement. */
+export async function confirmTtrpgOpenIdentityKnowledgeV1(input: FormalTtrpgCommandEnvelope & {
+  viewerKey: string; submissionKey: string; request: TtrpgOpenIdentityKnowledgeRequestV1; confirmationHash: string
+}): Promise<{ sequence: number; knowledgeKey: string }> {
+  const viewerKey = openKey(input.viewerKey, 'identity viewer'), submissionKey = openKey(input.submissionKey, 'identity submission')
+  const request = parseTtrpgOpenIdentityKnowledgeRequestV1(input.request), confirmationHash = openHash(input.confirmationHash, 'identity confirmation')
+  request.entityRefs.sort(); request.recipientActorKeys.sort()
+  const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)
+  if (!runtime?.openRun) throw new Error('[ttrpg-knowledge] 身份确认需要有效 open 团局')
+  const commandId = await ttrpgOpenScopedKeyV1(runtime.sessionKey, 'identity-control', [viewerKey, submissionKey])
+  const knowledgeKey = await ttrpgOpenScopedKeyV1(runtime.sessionKey, 'identity-grant', [viewerKey, submissionKey])
+  const event = await appendFormalTtrpgCommand({ ...input, commandId, type: ttrpgOpenIdentityKnowledgeEventV1(request.mode),
+    intent: { viewerKey, request, submissionKey, confirmationHash }, build: async context => {
+      requireTtrpgOpenContent(context.ttrpgContent)
+      const current = parseTtrpgRuntimeStateV2(context.state.ttrpg)
+      if (!current?.authorization || !current.openRun) throw new Error('[ttrpg-knowledge] 缺少当前开团授权')
+      assertTtrpgOpenAuthorizationCurrentV1({ authorization: current.authorization, participants: context.participants, viewerKey })
+      const events = await readSessionEvents(context.session), canonical = replayProductRuntimeEvents(parseProductRuntimeState(context.session.initialStateJson), events)
+      if (stableJson(canonical) !== stableJson(context.state)) throw new Error('[ttrpg-knowledge] 原事件与缓存不一致，请核对原进度')
+      await verifyTtrpgOpenIdentityKnowledgeV1({ runtime: current, runtimeSourceHash: context.session.runtimeSourceHash, events })
+      const source = current.openRun.knowledge.find(row => row.knowledgeKey === request.sourceKnowledgeKey)
+      const epoch = current.openRun.coordination.epochs.find(row => row.epochKey === current.openRun!.coordination.activeEpochKey)
+      if (!source || epoch?.authorizationHash !== await hashProductProductionValueV2(current.authorization)) throw new Error('[ttrpg-knowledge] 原知识或本人窗口已变化')
+      const origin = ttrpgOpenKnowledgeDiscoveryOriginV1(current, source)
+      if (stableJson(origin.frozenContent) !== stableJson(context.ttrpgContent) || origin.contentHash !== await hashProductProductionValueV2(context.ttrpgContent)) throw new Error('[ttrpg-knowledge] 识别源没有同一冻结内容')
+      const knowledge = createTtrpgOpenIdentityKnowledgeV1({ runtime: current, runtimeSourceHash: context.session.runtimeSourceHash, viewerKey, request,
+        acquisitionRef: { sessionKey: current.sessionKey, sequence: context.sequence }, knowledgeKey, sourceKnowledgeHash: await hashProductProductionValueV2(source),
+        submissionKey, baseStateHash: input.baseStateHash, confirmationHash })
+      if (confirmationHash !== await hashTtrpgOpenIdentityKnowledgeConfirmationV1(knowledge)) throw new Error('[ttrpg-knowledge] 这次识别内容或接收范围已 stale，请重新核对')
+      return { actorKey: request.actorKey, targetKey: null, payload: ttrpgOpenIdentityKnowledgePayloadV1(knowledge), eventEvidence: events }
+    } })
+  return { sequence: event.sequence, knowledgeKey }
 }
 
 export async function completeTtrpgOpenOperationV1(input: TtrpgOpenOperationCommandV1): Promise<ProductRuntimeEvent> {

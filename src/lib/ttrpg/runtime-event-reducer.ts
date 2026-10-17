@@ -85,6 +85,7 @@ import { applyTtrpgOpenOracleEventV1 } from './open-oracle-reducer'
 import { applyTtrpgOpenFactEventV1 } from './open-fact-reducer'
 import { applyTtrpgOpenOracleReviewEventV1 } from './open-oracle-review-reducer'
 import { applyTtrpgOpenKnowledgeShareEventV1 } from './open-knowledge-share-reducer'
+import { applyTtrpgOpenIdentityKnowledgeEventV1 } from './open-identity-knowledge-reducer'
 
 export function applyTtrpgRuntimeEventV1(
   state: ProductRuntimeState,
@@ -104,7 +105,7 @@ export function applyTtrpgRuntimeEventV1(
   }
   if (state.ttrpg?.sessionKey && (applyTtrpgOpenOperationEventV1(state, event, payload) || applyTtrpgOpenModelCallEventV1(state, event, payload)
     || applyTtrpgOpenBranchEventV1(state, event, payload) || applyTtrpgOpenOracleEventV1(state, event, payload) || applyTtrpgOpenFactEventV1(state, event, payload)
-    || applyTtrpgOpenKnowledgeShareEventV1(state, event, payload) || applyTtrpgOpenOracleReviewEventV1(state, event, payload))) {
+    || applyTtrpgOpenKnowledgeShareEventV1(state, event, payload) || applyTtrpgOpenIdentityKnowledgeEventV1(state, event, payload) || applyTtrpgOpenOracleReviewEventV1(state, event, payload))) {
     const openState = parseTtrpgRuntimeStateV2(state.ttrpg)!;
     if (openState.openRun?.operations.some(o => o.pressureTurnConditions) || openState.openRun?.narrations || openState.openRun?.stageClosures || openState.openRun?.terminalReceipts || openState.openRun?.gateReceipts || openState.openRun?.situationCycles || openState.openRun?.pressureCycles || openState.openRun?.pressureSignals) state.ttrpg = openState;
     state.lastSequence = event.sequence;

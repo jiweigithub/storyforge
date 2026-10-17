@@ -12,6 +12,7 @@ export function applyTtrpgOpenKnowledgeShareEventV1(state: ProductRuntimeState, 
   const runtime = parseTtrpgRuntimeStateV2(state.ttrpg), run = runtime?.openRun, authorization = runtime?.authorization
   if (!runtime || !run || !authorization) p.fail('知识分享需要已授权团局')
   const receipt = parseTtrpgOpenKnowledgeShareReceiptV1(payload.receipt)
+  if (receipt.knowledge.identityGrant) p.fail('旧 V1 分享不能隐式授予新版身份知识')
   const intent = p.record(payload.intent, ['viewerKey', 'request', 'confirmationHash'], 'share intent')
   const request = parseTtrpgOpenKnowledgeShareRequestV1(intent.request)
   const epoch = run.coordination.epochs.find(epoch => epoch.epochKey === receipt.authorizationEpochKey)
