@@ -24,3 +24,5 @@
 .sf-open-table-actions{border:0;margin:0;padding:0;min-inline-size:0;display:grid;gap:16px}
 .sf-open-fact-desk{overflow-wrap:anywhere}
 .sf-open-fact-desk fieldset{min-inline-size:0}
+
+.sf-open-fact-desk pre{max-inline-size:100%;white-space:pre-wrap;overflow-wrap:anywhere}
