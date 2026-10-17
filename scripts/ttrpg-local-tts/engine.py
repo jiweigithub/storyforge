@@ -114,7 +114,7 @@ def main():
     profile, imports = verify_runtime(base, root)
     cache = root / 'cache'; cache.mkdir(exist_ok=True)
     os.environ.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', HF_HUB_DISABLE_TELEMETRY='1',
-                      TOKENIZERS_PARALLELISM='false', TMPDIR=str(cache),
+                      TOKENIZERS_PARALLELISM='false', TMPDIR=str(cache), HF_HOME=str(cache / 'huggingface'),
                       STORYFORGE_TTS_ENCODER_DIR=str(root / 'models/textEncoder'))
     def offline(event, args):
         if event in {'socket.connect', 'socket.getaddrinfo'}: raise RuntimeError('Network is disabled during speech evaluation')

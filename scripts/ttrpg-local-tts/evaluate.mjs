@@ -134,6 +134,7 @@ async function runEvaluation(options, selected, contract, caseHash) {
       cwd: runtime, stdio: ['pipe', 'pipe', 'pipe'], env: {
         PATH: process.env.PATH, LANG: 'en_US.UTF-8', OMP_NUM_THREADS: '2', MKL_NUM_THREADS: '2',
         HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', HF_HUB_DISABLE_TELEMETRY: '1',
+        HF_HOME: path.join(runtime, 'cache', 'huggingface'),
         TOKENIZERS_PARALLELISM: 'false', PYTHONNOUSERSITE: '1', TMPDIR: path.join(runtime, 'cache'),
       },
     })
