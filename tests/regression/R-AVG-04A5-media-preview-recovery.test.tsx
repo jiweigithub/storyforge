@@ -35,11 +35,11 @@ async function reread(host:HTMLElement){
 }
 
 describe('AVG explicit local preview reread after stale source proof',()=>{
-  it('revalidates the same exact raw source only after a click, without generating or claiming observation',async()=>{
-    readers.raw.mockRejectedValueOnce(new Error('[avg-visual-image] 编译来源在读取期间变化'))
+  it.each(['[avg-visual-image] 编译来源在读取期间变化','[product-production-artifact] 已采用输入在读取期间已变化'])('revalidates the same exact raw source only after a click for %s, without generating or claiming observation',async message=>{
+    readers.raw.mockRejectedValueOnce(new Error(message))
       .mockResolvedValueOnce({asset,data:new Uint8Array([1,2,3,4]).buffer})
     const {host,onObserved}=await mount()
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain('编译来源在读取期间变化')
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(message)
     expect(readers.raw).toHaveBeenCalledTimes(1);expect(host.querySelector('img')).toBeNull();expect(onObserved).not.toHaveBeenCalled()
     await reread(host)
     expect(readers.raw.mock.calls).toEqual(Array.from({length:2},()=>[{scope,productionId:8,requirementKey:'background',version:1,contentHash:hash}]))

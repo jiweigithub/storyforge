@@ -10,11 +10,11 @@ import { resolveAvgImageExecutionCapabilityV2 } from '../../src/lib/avg/media-ca
 import { parseProductProductionBriefV3 } from '../../src/lib/product-production/contracts'
 import { parseProductProductionPlanV3 } from '../../src/lib/product-production/plan'
 import { executeProductProductionCommand } from '../../src/lib/product-production/commands'
-import { readProductProductionDetailsV1, startProductProductionPreviewV1, recoverImportedProductProductionProofsV1 } from '../../src/lib/product-production/service'
+import { readProductProductionDetailsV1, startProductProductionPreviewV1, recoverImportedProductProductionProofsV1, stopProductProductionV1 } from '../../src/lib/product-production/service'
 import { verifyStoredProductBuildPreview } from '../../src/lib/product-production/preview-manifest'
 import { createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1 } from '../../src/lib/product-production/production-executor'
 import { runProductProductionSchedulerCycleV1, runProductProductionUntilBlockedV1 } from '../../src/lib/product-production/scheduler'
-import { stageAvgAuthorArtifactV1, readAvgConfirmedVisualArtifactsV4 } from '../../src/lib/avg/author-artifacts'
+import { stageAvgAuthorArtifactV1, readAvgConfirmedVisualArtifactsV4, readAvgHistoricalVisualArtifactV4 } from '../../src/lib/avg/author-artifacts'
 import { acceptProductBuildArtifact, verifyAcceptedProductBuildArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4, verifyProductBuildTerminalArtifactSetV1 } from '../../src/lib/product-production/artifact-store'
 import { readAvgVisualProposalEvidenceV4 } from '../../src/lib/avg/visual-planning-evidence'
 import { readAgentRunArtifactExactV1 } from '../../src/lib/memory/artifact-store'
@@ -1032,6 +1032,130 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
     },30_000)
   })
+  describe('historical canonical professional evidence',()=>{
+    async function fixture(mode:'busy'|'unknown'|'cancel'='busy'){
+      const s=await setup({image:mode==='unknown'?'unknown':'busy'});await sources(s);await run(s)
+      const bible=structuredClone(s.bible);bible.style.lighting+='；作者明确保留机械开关关闭且不发光'
+      await adopt(s,await stage(s,'avg.media.visual-bible',bible));await run(s)
+      const media=structuredClone(s.media);media.outputs[0].prompt+='；作者要求对白区域保持自然延续'
+      await adopt(s,await stage(s,`avg.media.environment-brief.${media.subjectKey}`,media))
+      if(mode==='cancel')await stopProductProductionV1({scope:s.scope,production:(await db.productProductions.get(s.productionId))!})
+      else await run(s)
+      return {s,bible,media}
+    }
+    async function selection(s:Setup,key='avg.media.visual-bible'){
+      const build=await current(s),row=(await accepted(s,key))!
+      return {scope:s.scope,buildId:s.buildId,expectedBuildRevision:build.stateRevision,controlEpoch:row.controlEpoch,
+        expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,
+        artifact:{artifactKey:key,version:row.version,contentHash:row.contentHash}}
+    }
+
+    it('reads both original model bytes and separately edited adopted designs after failure and a prepared successor without writes or credentials',async()=>{
+      const {s,bible,media}=await fixture();await restartAvgVisualPlanningFromDraftV4(await restartInput(s))
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      const {exportedAt:_before,...before}=await exportProjectJSON(s.scope.projectId)
+      for(const [key,payload] of [['avg.media.visual-bible',bible],[`avg.media.environment-brief.${media.subjectKey}`,media]] as const){
+        const result=await readAvgHistoricalVisualArtifactV4(await selection(s,key))
+        expect(result.payload).toEqual(payload);expect(result.candidate).toMatchObject({version:6,origin:'model-proposal',visualProposalValidation:{authorEdited:true}})
+        const original=JSON.parse(result.original.rawText)
+        expect(original).toEqual(key==='avg.media.visual-bible'?s.bible:s.media);expect(original).not.toEqual(payload)
+        expect(result.original.requestText).toContain('storyforge.avg.visual-model-input');expect(result.authorReceiptHash).toMatch(/^[a-f0-9]{64}$/)
+        expect(result.original.rights).toEqual({origin:'model-proposal',commercialUse:null});expect(result.rights.origin).toBe('model-proposal')
+        expect(result.source.buildNumber).toBe(1);expect(result.source.planning).toEqual(s.brief.avgVisualPlanning!.scope)
+        await expect(stage(s,key,payload)).rejects.toThrow(/不可采用/)
+      }
+      const {exportedAt:_after,...after}=await exportProjectJSON(s.scope.projectId)
+      expect(after).toEqual(before);expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it('uses the original author epoch after an explicit stop without granting current adoption',async()=>{
+      const {s,media}=await fixture('cancel'),input=await selection(s,`avg.media.environment-brief.${media.subjectKey}`),build=await current(s)
+      expect(build.controlEpoch).toBeGreaterThan(input.controlEpoch)
+      const result=await readAvgHistoricalVisualArtifactV4(input)
+      expect(result.payload).toEqual(media);expect(result.source.controlEpoch).toBe(input.controlEpoch)
+      await expect(stage(s,input.artifact.artifactKey,media)).rejects.toThrow(/不可采用/)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).not.toHaveBeenCalled()
+    },30_000)
+
+    it.each(['request-byte','response-byte','author-candidate','author-rights','raw-rights','author-command','upstream-author-command','producer-checkpoint'] as const)('refuses changed %s in a stopped canonical design without a provider fallback',async failure=>{
+      const {s,media}=await fixture(),input=await selection(s,`avg.media.environment-brief.${media.subjectKey}`)
+      const row=(await accepted(s,input.artifact.artifactKey))!,original=(await accepted(s,`avg.proposal.environment-brief.${media.subjectKey}`))!
+      if(failure==='request-byte'||failure==='response-byte'){
+        const proof=await readAvgVisualProposalEvidenceV4(s.scope,original)
+        const hash=String(failure==='request-byte'?proof.quality.requestSnapshotHash:proof.quality.rawResponseHash)
+        const artifact=(await db.agentRunArtifacts.where('contentHash').equals(hash).first())!
+        await db.agentRunArtifacts.delete(artifact.id!)
+      }else if(failure==='author-candidate'){
+        const metadata=JSON.parse(row.metadataJson);metadata.candidate.visualProposalValidation.authorEdited=false
+        await db.productBuildArtifacts.update(row.id!,{metadataJson:canonicalProductProductionJsonV2(metadata)})
+      }else if(failure==='producer-checkpoint'){
+        const checkpoint=(await db.agentRunCheckpoints.where('runId').equals(original.producerRunId!).first())!
+        await db.agentRunCheckpoints.delete(checkpoint.id!)
+      }else if(failure==='author-rights'||failure==='raw-rights'){
+        const source=failure==='author-rights'?row:original
+        await db.productBuildArtifacts.update(source.id!,{rightsJson:canonicalProductProductionJsonV2({...JSON.parse(source.rightsJson),commercialUse:true})})
+      }else{
+        const source=failure==='upstream-author-command'?(await accepted(s,'avg.media.visual-bible'))!:row
+        const commandId=JSON.parse(source.metadataJson).commandId
+        const command=(await db.productProductionCommands.where('[productionId+commandId]').equals([s.productionId,commandId]).first())!
+        await db.productProductionCommands.delete(command.id!)
+      }
+      await expect(readAvgHistoricalVisualArtifactV4(input)).rejects.toThrow()
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it('rejects stale identities, noncanonical targets and cross-Work reads',async()=>{
+      const {s}=await fixture(),input=await selection(s),other=await createAvgDraftV1('另一作者隔离作品')
+      for(const changed of [{expectedBuildRevision:input.expectedBuildRevision+1},{controlEpoch:input.controlEpoch+1},
+        {expectedBriefHash:'0'.repeat(64)},{expectedPlanHash:'0'.repeat(64)},{scope:other.scope},
+        {artifact:{...input.artifact,version:input.artifact.version+1}},{artifact:{...input.artifact,contentHash:'0'.repeat(64)}},
+        {artifact:{...input.artifact,artifactKey:'avg.proposal.visual-bible'}}]){
+        await expect(readAvgHistoricalVisualArtifactV4({...input,...changed})).rejects.toThrow()
+      }
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it('restores exact old model and author evidence through portable remapping and deletes only the restored owner',async()=>{
+      const {s,media}=await fixture(),key=`avg.media.environment-brief.${media.subjectKey}`
+      const original=await readAvgHistoricalVisualArtifactV4(await selection(s,key))
+      const projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),build=(await db.productBuilds.where('projectId').equals(projectId).first())!
+      const restored={...s,scope:{projectId,worldId:build.worldId,workId:build.workId},productionId:build.productionId,buildId:build.id!}
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      const input=await selection(restored,key),read=await readAvgHistoricalVisualArtifactV4(input)
+      expect(read.payload).toEqual(original.payload);expect(read.original.rawText).toBe(original.original.rawText);expect(read.original.requestText).toBe(original.original.requestText)
+      expect(read.original.producerRunId).not.toBe(original.original.producerRunId);expect(read.candidate.visualProposalValidation).toEqual(original.candidate.visualProposalValidation)
+      await expect(stage(restored,key,media)).rejects.toThrow(/不可采用/)
+      await deleteWork(restored.scope.workId);await expect(readAvgHistoricalVisualArtifactV4(input)).rejects.toThrow()
+      expect((await readAvgHistoricalVisualArtifactV4(await selection(s,key))).payload).toEqual(media)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it('permits reading a valid earlier design while an unknown image result still prohibits restart',async()=>{
+      const {s,bible}=await fixture('unknown')
+      expect((await readAvgHistoricalVisualArtifactV4(await selection(s))).payload).toEqual(bible)
+      await expect(restartAvgVisualPlanningFromDraftV4(await restartInput(s))).rejects.toThrow(/未知结果/)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it('does not turn a pending author candidate into historical adoption',async()=>{
+      const s=await setup();await sources(s);await run(s)
+      const candidate=await stage(s,'avg.media.visual-bible',s.bible)
+      await stopProductProductionV1({scope:s.scope,production:(await db.productProductions.get(s.productionId))!})
+      const build=await current(s)
+      await expect(readAvgHistoricalVisualArtifactV4({scope:s.scope,buildId:s.buildId,expectedBuildRevision:build.stateRevision,
+        controlEpoch:candidate.controlEpoch,expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,
+        artifact:{artifactKey:candidate.artifactKey,version:candidate.version,contentHash:candidate.contentHash}})).rejects.toThrow()
+      expect(s.runText).toHaveBeenCalledTimes(1);expect(s.imageFetcher).not.toHaveBeenCalled()
+    })
+
+    it('keeps the active reader separate while a Build is still executing',async()=>{
+      const s=await setup();await sources(s);await run(s);await adopt(s,await stage(s,'avg.media.visual-bible',s.bible))
+      await expect(readAvgHistoricalVisualArtifactV4(await selection(s))).rejects.toThrow(/仍在执行/)
+      expect((await readAvgConfirmedVisualArtifactsV4({...await selection(s),artifactKeys:['avg.media.visual-bible']}))[0].payload).toEqual(s.bible)
+      expect(s.runText).toHaveBeenCalledTimes(1);expect(s.imageFetcher).not.toHaveBeenCalled()
+    })
+  })
+
   describe('same-Work explicit V4 replacement Brief',()=>{
     it('prepares and starts a separate version after a received HTTP503 without changing the failed Build or dispatching another request',async()=>{
       const s=await setup({image:'busy'});await sources(s);await run(s)

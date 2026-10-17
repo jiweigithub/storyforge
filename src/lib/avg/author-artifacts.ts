@@ -18,7 +18,7 @@ import { buildAvgNativeAssemblyPlan } from './assembly-plan'
 import { buildAvgVisualPlanningPlanV4 } from './visual-planning-plan'
 import { parseAvgAuthorMediaChoice, avgMediaChoiceArtifactKeyV1, avgVisualReviewArtifactKeyV1, type AvgAuthorMediaChoice } from './media-production-contract'
 import { inspectAvgChosenImageV1, readAvgChosenMediaSourceV2, validateAvgMediaChoiceV1, type AvgMediaChoiceValidation } from './media-choice-validation'
-import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1, verifyAvgProcessedImageArtifactV1, verifyAvgHistoricalRawVoiceArtifactV1 } from '../product-production/artifact-store'
+import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1, verifyAvgProcessedImageArtifactV1, verifyAvgHistoricalRawVoiceArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4 } from '../product-production/artifact-store'
 import { assertAvgRawImageOriginV1 } from './media-recovery'
 import { readAvgInheritedStageImagesV1 } from './stage-image-sources'
 import { readAvgInheritedStageVoicesV1 } from './stage-voice-sources'
@@ -32,6 +32,7 @@ import { assertAvgVoiceReviewRevisionV1, assertAvgVoiceReviewScopeV1, assertAvgV
 import { readAvgOptionalImageDefinitionV3 } from './media-production-definition'
 import { assertAvgVisualRoleProposalV4, validateAvgVisualSemanticV4 } from './visual-role-proposal'
 import { readAvgVisualProposalEvidenceV4 } from './visual-planning-evidence'
+import { AVG_VISUAL_TEXT_CAPABILITY_V4 } from './visual-planning-roles'
 import { readAvgImageConsumptionDefinitionV4 } from './image-consumption'
 
 type Ref = { artifactKey: string; version: number; contentHash: string }
@@ -181,7 +182,7 @@ async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, 
 }
 
 async function authority(scope: WorkspaceScope, buildId: number, forCompilation = false, frozenVerification = false,
-  referenceEpoch?: number, referenceKind: 'image' | 'voice' = 'image') {
+  referenceEpoch?: number, referenceKind: 'image' | 'voice' | 'visual' = 'image') {
   const referenceRead = referenceEpoch !== undefined
   const build = await db.productBuilds.get(buildId)
   if (!build || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })) throw new Error('[avg] Build 不存在或跨 Work')
@@ -205,6 +206,7 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
   if (frozenVerification && !brief.avgAssembly&&!brief.avgVisualPlanning) throw new Error('[avg] 只读作者验证只接受原生组装合同')
   if (referenceRead && referenceKind === 'image' && !readAvgOptionalImageDefinitionV3(brief)) throw new Error('[avg-media] 生成参考只接受原生图片生产来源')
   if (referenceRead && referenceKind === 'voice' && brief.avgAssembly?.version !== 3) throw new Error('[avg-voice] 沿用配音只接受原生配音生产来源')
+  if (referenceRead && referenceKind === 'visual' && !brief.avgVisualPlanning) throw new Error('[avg-visual-history] 历史专业方案只接受准确 V4 来源')
   if (!forCompilation && brief.avgAssembly?.version === 1 && Object.keys((JSON.parse(build.budgetLedgerJson) as { tasks?: object }).tasks ?? {}).length) throw new Error('[avg] 组装已开始执行；请保留旧版本并创建新 Build 修订')
   const sourcePlan = await Dexie.waitFor(parseProductProductionSourcePlanV1(briefRow))
   const confirmed = await Dexie.waitFor(parseConfirmedProductBriefV1({ row: briefRow, sourcePlan }))
@@ -687,6 +689,82 @@ export async function readAvgConfirmedVisualArtifactsV4(input: Pick<Parameters<t
       result.push({ payload, artifact: ref(row), authorReceiptHash: String(JSON.parse(row.metadataJson).receiptHash) })
     }
     return result
+  })
+}
+
+/** Exact historical author/model evidence only. This read does not create a
+ * candidate, copy adoption, grant carry authority or authorize a new request.
+ * Every human ancestor uses its original candidate and command receipt; raw
+ * proposals retain their original Run, checkpoint and request/response bytes. */
+export async function readAvgHistoricalVisualArtifactV4(input: {
+  scope: WorkspaceScope; buildId: number; expectedBuildRevision: number; controlEpoch: number
+  expectedBriefHash: string; expectedPlanHash: string; artifact: Ref
+}) {
+  const scope = await resolveScope({ scope: input.scope })
+  return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands,
+    db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects,
+    db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts), async () => {
+    const context = await authority(scope, input.buildId, true, false, input.controlEpoch, 'visual')
+    if (!context.brief.avgVisualPlanning || context.build.stateRevision !== input.expectedBuildRevision
+      || context.build.briefHash !== input.expectedBriefHash || context.build.planHash !== input.expectedPlanHash
+      || !['paused','cancelled','failed','recovery-required','preview-ready','release-ready','released'].includes(context.build.status)) throw new Error('[avg-visual-history] 历史版本不准确或仍在执行')
+    const task = context.plan.tasks.find(t => ['avg-author-visual-bible','avg-author-media-brief'].includes(t.kind)
+      && t.outputArtifactKeys[0] === input.artifact.artifactKey)
+    if (!task) throw new Error('[avg-visual-history] 读取仅限准确已采用专业方案')
+    const cache = new Map<string, ProductBuildArtifactRecordV1>(), visiting = new Set<string>()
+    const candidates = new Map<string, AuthorCandidate>()
+    const evidence = new Map<string, Awaited<ReturnType<typeof readAvgVisualProposalEvidenceV4>>>()
+    const read = async (key: string): Promise<ProductBuildArtifactRecordV1> => {
+      const cached = cache.get(key)
+      if (cached) return cached
+      if (visiting.has(key) || visiting.size >= 100) throw new Error('[avg-visual-history] 历史作者依赖循环或超界')
+      visiting.add(key)
+      let row: ProductBuildArtifactRecordV1
+      if (key.startsWith('avg.proposal.')) {
+        const matches = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([input.buildId,key])
+          .filter(r => r.status === 'accepted' && r.controlEpoch === input.controlEpoch).toArray()
+        if (matches.length !== 1) throw new Error('[avg-visual-history] 历史原始方案不唯一或缺失')
+        row = await verifyHistoricalAvgVisualPlanningArtifactV4({ scope, buildId: input.buildId,
+          expectedBuildRevision: input.expectedBuildRevision, expectedBriefHash: input.expectedBriefHash, expectedPlanHash: input.expectedPlanHash,
+          sourceControlEpoch: input.controlEpoch, ...ref(matches[0]) })
+        const proof = await readAvgVisualProposalEvidenceV4(scope,row), planning = context.brief.avgVisualPlanning!
+        if (proof.quality.scopeHash !== await hash(planning.scope) || proof.request.sourceInputHash !== planning.scope.sourceInputHash
+          || proof.binding.bindingHash !== context.brief.capabilityRequirements.find(c => c.requirementKey === AVG_VISUAL_TEXT_CAPABILITY_V4)?.capabilityHash) throw new Error('[avg-visual-history] 历史模型实际输入不属于原冻结范围或路由')
+        evidence.set(key,proof)
+      } else {
+        const owner = context.plan.tasks.find(t => t.outputArtifactKeys.length === 1 && t.outputArtifactKeys[0] === key)
+        if (!owner || !['avg-author-rules','avg-author-script','avg-author-visual-bible','avg-author-media-brief'].includes(owner.kind)) throw new Error('[avg-visual-history] 历史读取超出准确作者来源域')
+        authorTask(context,owner.taskKey,key,true)
+        const [adopted] = await acceptedInputs(scope,input.buildId,input.controlEpoch,[key])
+        row = adopted
+        const upstream = []
+        for (const dependency of owner.inputArtifactKeys) upstream.push(await read(dependency))
+        const prepared = prepareAuthorInput({artifactKey:key,kind:row.kind,payload:row.payloadJson,allowedOutputKeys:owner.outputArtifactKeys})
+        if (prepared.payloadJson !== row.payloadJson) throw new Error('[avg-visual-history] 历史作者载荷不是准确规范字节')
+        candidates.set(key,await assertFrozenAuthorCandidateV1(context,row,owner,upstream,input.controlEpoch))
+      }
+      visiting.delete(key);cache.set(key,row)
+      return row
+    }
+    const row = await read(input.artifact.artifactKey)
+    if (row.version !== input.artifact.version || row.contentHash !== input.artifact.contentHash) throw new Error('[avg-visual-history] 历史作者方案不是指定版本')
+    const candidate = candidates.get(row.artifactKey)!
+    if (candidate.version !== 6) throw new Error('[avg-visual-history] 历史方案缺少模型与人工修订的准确区分')
+    const original = cache.get(candidate.visualProposalValidation.proposal.artifactKey)!, originalEvidence = evidence.get(original.artifactKey)!
+    const same = (a:unknown,b:unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
+    if (!same(JSON.parse(row.rightsJson),{origin:candidate.origin,declaration:candidate.declaration})) throw new Error('[avg-visual-history] 历史权利声明与作者原候选不一致')
+    if (!same(await db.productBuilds.get(input.buildId),context.build)
+      || !same(await db.productProductions.get(context.production.id),context.production)
+      || !same(await db.productProductionBriefs.get(context.briefRow.id!),context.briefRow)) throw new Error('[avg-visual-history] 历史来源在读取期间变化')
+    return structuredClone({ payload: parseAvgProfessionalArtifactV1(row.payloadJson), artifact: ref(row), candidate, rights: JSON.parse(row.rightsJson),
+      authorReceiptHash: String(JSON.parse(row.metadataJson).receiptHash),
+      original: { artifact: ref(original), payload: JSON.parse(original.payloadJson), producerRunId: original.producerRunId!,
+        producerReceiptHash: original.producerReceiptHash!, rawText: originalEvidence.rawText, requestText: originalEvidence.requestText,
+        request: originalEvidence.request, binding: originalEvidence.binding, quality: originalEvidence.quality, rights: JSON.parse(original.rightsJson) },
+      source: { productionKey: context.production.productionKey, buildNumber: context.build.buildNumber,
+        buildRevision: context.build.stateRevision, controlEpoch: input.controlEpoch, briefHash: context.build.briefHash,
+        planHash: context.build.planHash, sourceWorldContentHash: context.brief.source.worldContentHash,
+        planning: context.brief.avgVisualPlanning.scope }, inputs: task.inputArtifactKeys.map(key => ref(cache.get(key)!)) })
   })
 }
 
