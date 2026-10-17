@@ -115,10 +115,10 @@ export function assertTtrpgOpenSituationWindowEventV1(runtime: Pick<TtrpgRuntime
   const run = runtime?.openRun, epoch = run?.coordination.epochs.find(e => e.epochKey === run.coordination.activeEpochKey)
   if ((epoch?.commonOracle || epoch?.oracleRuntimeReferencePolicy || epoch?.normalizationRuntimeReferencePolicy) && !['ttrpg.open.epoch.closed', 'ttrpg.open.call.reserved', 'ttrpg.open.call.dispatched', 'ttrpg.open.call.finished',
     'ttrpg.open.oracle.reviewed', 'ttrpg.fact.asserted', 'ttrpg.safety.changed', 'ttrpg.session-zero.completed',
-    'ttrpg.open.table-message.posted', 'ttrpg.open.failure.logged'].includes(type)) fail('实例事实咨询只允许原模型请求、明确审阅、安全控制和结束，不能执行行动或另作咨询')
+    'ttrpg.audio.voice.cancelled', 'ttrpg.open.table-message.posted', 'ttrpg.open.failure.logged'].includes(type)) fail('实例事实咨询只允许原模型请求、明确审阅、安全控制和结束，不能执行行动或另作咨询')
   if ((epoch?.triggerKind === 'request-situation' || epoch?.triggerKind === TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1) && ![
     'ttrpg.open.epoch.closed', 'ttrpg.open.call.reserved', 'ttrpg.open.call.dispatched', 'ttrpg.open.call.finished',
-    'ttrpg.safety.changed', 'ttrpg.session-zero.completed', 'ttrpg.open.table-message.posted', 'ttrpg.open.failure.logged', 'ttrpg.open.situation.accepted',
+    'ttrpg.safety.changed', 'ttrpg.session-zero.completed', 'ttrpg.audio.voice.cancelled', 'ttrpg.open.table-message.posted', 'ttrpg.open.failure.logged', 'ttrpg.open.situation.accepted',
   ].includes(type)) fail('局势生成窗口仅允许请求记账、安全控制、桌面交流和明确结束；不能改变团内机械或事实状态')
 }
 export function ttrpgOpenEpochBudgetForTriggerV1(budget: unknown, triggerKind: TtrpgOpenEpochV1['triggerKind'], boundedSemanticDraft = false): TtrpgOpenEpochBudgetV1 {

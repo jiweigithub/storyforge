@@ -276,3 +276,38 @@ test('native caption seeks and follows the exact original timeline inside its ow
   await card.getByRole('button', { name: '本机静音', exact: true }).click(); await expect(audio).toHaveCount(0); await expect(caption).toHaveText(seeded.text)
   expect(await inspect(page, seeded.sessionId)).toEqual(before)
 })
+
+
+test('native voice intent survives a real IndexedDB reload and cancels without model, media or time effects', async ({ page }) => {
+  test.setTimeout(180000)
+  const f = await seed(page), card = await enter(page, f.owner.sessionId)
+  await expect(currentAudio(card)).toHaveCount(0)
+  const before = await inspect(page, f.owner.sessionId)
+  const key = await page.evaluate(async f => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    const audio = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    const review = await audio.prepareTtrpgOpenVoiceScriptV1({ ...f.owner, narrationSourceRef: f.narrationSourceRef,
+      audience: 'party', privateActorKey: null, decision: 'review-original-narration-for-voice' })
+    const result = await audio.reserveTtrpgOpenVoiceRequestV1({ ...f.owner, review, submissionKey: 'native.original.voice-intent',
+      part: { textOffset: 0, textLength: f.text.length }, decision: 'reserve-this-original-voice-part' })
+    return result.requestKey as string
+  }, f)
+  await page.reload()
+  const result = await page.evaluate(async ({ f, key }) => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    const audio = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts'), { db } = await load('/storyforge/src/lib/db/schema.ts')
+    const desk = await audio.readTtrpgOpenVoiceRequestDeskV1(f.owner)
+    const cancellation = await audio.cancelTtrpgOpenVoiceRequestV1({ ...f.owner, requestKey: key, decision: 'cancel-this-unsent-voice-request' })
+    const again = await audio.cancelTtrpgOpenVoiceRequestV1({ ...f.owner, requestKey: key, decision: 'cancel-this-unsent-voice-request' })
+    return { desk, cancellation, again, final: await audio.readTtrpgOpenVoiceRequestDeskV1(f.owner),
+      modelEvents: (await db.agentRunEvents.toArray()).filter((e: any) => ['model.requested', 'tool.called'].includes(e.type)).length }
+  }, { f, key })
+  expect(result.desk.requests[0].script.text).toBe(f.text)
+  expect(result.desk.budget).toMatchObject({ requests: 1, characters: f.text.length })
+  expect(result.final.requests[0].status).toBe('cancelled-before-send')
+  expect(result.final.budget).toEqual(result.desk.budget)
+  expect(result.again).toEqual(result.cancellation); expect(result.modelEvents).toBe(0)
+  const after = await inspect(page, f.owner.sessionId)
+  expect(after.sequence).toBe(before.sequence + 2)
+  expect({ ...after, sequence: 0 }).toEqual({ ...before, sequence: 0 })
+})

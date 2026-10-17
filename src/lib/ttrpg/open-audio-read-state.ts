@@ -1,3 +1,4 @@
+import { verifyTtrpgOpenVoiceRequestsV1 } from './open-voice-request-proof'
 /** Shared actual human read proof for audio and exact voice-script review. */
 import type { WorkspaceScope } from '../types'
 import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
@@ -10,5 +11,6 @@ export async function loadTtrpgOpenAudioReadStateV1(request: TtrpgOpenAudioReadI
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'human', viewerKey: input.viewerKey } })
   const events = await readSessionEvents(loaded.session)
   await verifyTtrpgOpenAudioReceiptsV1({ runtime: loaded.runtime, runtimeSourceHash: loaded.session.runtimeSourceHash, events })
-  await loaded.assertCurrent(); return loaded
+  await verifyTtrpgOpenVoiceRequestsV1({ runtime: loaded.runtime, runtimeSourceHash: loaded.session.runtimeSourceHash, events })
+  await loaded.assertCurrent(); return { ...loaded, events }
 }

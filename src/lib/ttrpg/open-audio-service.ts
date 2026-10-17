@@ -203,3 +203,5 @@ export async function readTtrpgOpenAudioClipV1(request: TtrpgOpenAudioDeskInputV
     authorizationRevision: loaded.authorization.revision, clipKey: `${track.cue.slotKey}:${track.receipt.asset.contentHash}` })
   return { blob, slotKey: track.cue.slotKey }
 }
+
+export { reserveTtrpgOpenVoiceRequestV1, cancelTtrpgOpenVoiceRequestV1, readTtrpgOpenVoiceRequestDeskV1 } from './open-voice-request-service'

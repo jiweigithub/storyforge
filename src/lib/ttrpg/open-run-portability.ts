@@ -26,15 +26,26 @@ interface TtrpgOpenRunOriginBaseV1 {
   contractJson: string; contractHash: string; events: AnyAgentRunEventV1[]; originHash: string
 }
 export type TtrpgOpenRunOriginV1 = TtrpgOpenRunOriginBaseV1 & (
-  { version: 1 } | { version: 2; phase: 'public-request-preparation' })
+  { version: 1 } | { version: 2; phase: 'public-request-preparation' } | { version: 3; phase: 'voice-intent-only' })
 function hash(value: unknown): Promise<string> {
   const pending = hashCanonicalValue(value)
   return Dexie.currentTransaction ? Dexie.waitFor(pending) : pending
 }
 function fail(message: string): never { throw new Error(`[ttrpg-run-portability] ${message}`) }
 
+/** Closed, zero-model human intent. This is not an executable voice profile. */
+function isVoiceIntentContract(contract: AgentRunContract): boolean {
+  return contract.version === 1 && contract.objective.startsWith('ttrpg.open.voice-intent:') && contract.objective.length > 'ttrpg.open.voice-intent:'.length
+    && !!contract.scope.runtime && contract.scope.worldGroupId == null && !contract.scope.chapterIds?.length && !contract.scope.outlineNodeIds?.length
+    && !contract.scope.productProduction && !contract.ownership && !contract.lineage && !contract.executionBindings
+    && !!contract.runtimeBindingHash && !contract.permissions.contextSourceKeys.length && !contract.permissions.writeTargets.length
+    && contract.budget.maxModelCalls === 0 && contract.budget.maxToolCalls === 1 && contract.budget.maxInputTokens === 0
+    && contract.budget.maxOutputTokens === 0 && contract.budget.maxAttemptsPerStep === 1
+}
+
 /** Only the two owner locators of a closed TTRPG runtime contract may change. */
 function semanticContract(contract: AgentRunContract) {
+  if (isVoiceIntentContract(contract)) return { ...contract, scope: { ...contract.scope, projectId: 1, runtime: { ...contract.scope.runtime!, productRuntimeSessionId: 1 } } }
   if (contract.version !== 3 || contract.executionBoundary !== 'product-runtime' || !contract.scope.runtime
     || contract.scope.worldGroupId != null || contract.scope.chapterIds?.length || contract.scope.outlineNodeIds?.length
     || contract.scope.productProduction || contract.ownership || contract.lineage || contract.executionBindings?.length !== 1
@@ -68,9 +79,9 @@ async function assertHistoricalInputIdentity(content: string, origin: TtrpgOpenR
 export async function parseTtrpgOpenRunOriginV1(json: string): Promise<TtrpgOpenRunOriginV1> {
   if (typeof json !== 'string' || json.length > 8_000_000) fail('原始证据超过单记录预算')
   const value = p.object(JSON.parse(json), 'runtime origin')
-  if (value.version !== 1 && value.version !== 2) fail('原始证据版本不受支持')
+  if (value.version !== 1 && value.version !== 2 && value.version !== 3) fail('原始证据版本不受支持')
   const row = p.record(value, ['schema','version','sourceRunId','sourceProjectId','sourceSessionId','sessionKey',
-    'workspaceUid','worldCode','workCode','contractJson','contractHash','events','originHash', ...(value.version === 2 ? ['phase'] : [])], 'runtime origin')
+    'workspaceUid','worldCode','workCode','contractJson','contractHash','events','originHash', ...(value.version !== 1 ? ['phase'] : [])], 'runtime origin')
   const sourceRunId = p.integer(row.sourceRunId, 'origin run', 1, Number.MAX_SAFE_INTEGER)
   const sourceProjectId = p.integer(row.sourceProjectId, 'origin project', 1, Number.MAX_SAFE_INTEGER)
   const sourceSessionId = p.integer(row.sourceSessionId, 'origin session', 1, Number.MAX_SAFE_INTEGER)
@@ -87,7 +98,10 @@ export async function parseTtrpgOpenRunOriginV1(json: string): Promise<TtrpgOpen
   if (row.version === 2 && (contract.executionBindings?.[0].skillId !== TTRPG_OPEN_PUBLIC_SITUATION_SKILL_V1
     || !readTtrpgOpenPublicSituationObjectiveV1(contract.objective) || contract.budget.maxModelCalls !== 1
     || contract.budget.maxToolCalls !== 0 || contract.budget.maxAttemptsPerStep !== 1)) fail('准备阶段封存只允许准确的共同局势原 Run，不能假冒已发生请求')
-  const generation = row.version === 1 ? { version: 1 as const } : { version: 2 as const,
+  if (row.version === 3 && (!isVoiceIntentContract(contract) || events.some(e => e.type === 'model.requested' || e.type === 'model.responded' || e.type === 'tool.called' || e.type === 'tool.returned'))) fail('配音意图封存不允许模型执行或伪造已发送状态')
+  if (row.version !== 3 && isVoiceIntentContract(contract)) fail('零模型配音意图必须保留独立的只读归档阶段')
+  const generation = row.version === 1 ? { version: 1 as const } : row.version === 3 ? { version: 3 as const,
+    phase: p.literal(row.phase, 'voice-intent-only', 'origin voice phase') } : { version: 2 as const,
     phase: p.literal(row.phase, 'public-request-preparation', 'origin preparation phase') }
   const result: TtrpgOpenRunOriginV1 = { schema: p.literal(row.schema, 'storyforge.ttrpg-open-run-origin', 'origin schema'),
     ...generation, sourceRunId, sourceProjectId, sourceSessionId,
@@ -105,7 +119,7 @@ export async function readTtrpgOpenRunOriginV1(runId: number, mode: 'archive' | 
   if (!row?.portableRuntimeOriginJson) return null
   if (row.productRuntimeSessionId == null || row.workId != null) fail('运行来源不能借用其他 owner')
   const origin = await parseTtrpgOpenRunOriginV1(row.portableRuntimeOriginJson)
-  if (origin.version === 2 && mode !== 'archive') fail('导入的共同局势准备记录仅供审计，不是可恢复派发的模型请求')
+  if (origin.version !== 1 && mode !== 'archive') fail('导入的准备记录仅供审计，不是可恢复派发的模型请求')
   const session = await db.productRuntimeSessions.get(row.productRuntimeSessionId)
   if (!session || session.kind !== 'ttrpg' || session.worldId == null || session.workId == null) fail('实际跑团实例不存在')
   const scope = { projectId: row.projectId, worldId: session.worldId, workId: session.workId }
@@ -151,6 +165,20 @@ export async function freezeTtrpgOpenRunOriginForExportV1(runId: number, expecte
   const declared = JSON.parse(row.contractJson) as AgentRunContract
   const declaresPublicPreparation = row.contractVersion === 3 && declared.executionBindings?.length === 1
     && declared.executionBindings[0].skillId === TTRPG_OPEN_PUBLIC_SITUATION_SKILL_V1
+  if (isVoiceIntentContract(declared)) {
+    const scope = { projectId: row.projectId, worldId: session.worldId, workId: session.workId }
+    const snapshot = await readInstanceAgentRunV1(scope, runId)
+    if (expected && (snapshot.run.contractHash !== expected.contractHash || snapshot.run.lastSequence !== expected.lastSequence)) fail('导出期间配音意图已变化')
+    const [project, world, work] = await Promise.all([db.projects.get(scope.projectId), db.worlds.get(scope.worldId), db.works.get(scope.workId)])
+    if (!runtime || !project?.workspaceUid || !world?.code || !work?.code) fail('配音意图缺少原稳定身份')
+    const body = { schema: 'storyforge.ttrpg-open-run-origin' as const, version: 3 as const, phase: 'voice-intent-only' as const,
+      sourceRunId: runId, sourceProjectId: row.projectId, sourceSessionId: session.id!, sessionKey: runtime.sessionKey,
+      workspaceUid: project.workspaceUid, worldCode: world.code, workCode: work.code,
+      contractJson: snapshot.run.contractJson, contractHash: snapshot.run.contractHash, events: snapshot.events }
+    const json = canonicalStringify({ ...body, originHash: await hash(body) })
+    await parseTtrpgOpenRunOriginV1(json)
+    return json
+  }
   if (!calls.length && !declaresPublicPreparation) return undefined
   const scope = { projectId: row.projectId, worldId: session.worldId, workId: session.workId }
   const snapshot = await readInstanceAgentRunV1(scope, runId)

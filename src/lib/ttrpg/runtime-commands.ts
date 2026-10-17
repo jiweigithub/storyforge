@@ -1,3 +1,4 @@
+import type { TtrpgOpenVoiceRunSetWitnessV1 } from './open-voice-request-run'
 import { createTtrpgOpenAudioReceiptV1, parseTtrpgOpenAudioRequestV1, ttrpgOpenAudioSourceEqualV1, type TtrpgOpenAudioRequestV1 } from './open-audio-contract'
 import { readTtrpgOpenAudioUploadTicketV1, readTtrpgOpenAudioMediaWitnessV1, assertTtrpgOpenAudioMediaWitnessV1, type TtrpgOpenAudioMediaWitnessV1, type TtrpgOpenAudioUploadTicketV1 } from './open-audio-media'
 import { verifyTtrpgOpenAudioReceiptsV1 } from './open-audio-proof'
@@ -188,6 +189,8 @@ type FormalTtrpgEventType = Extract<
   | "ttrpg.open.intent.confirmed"
   | "ttrpg.open.choice.disclosed"
   | "ttrpg.open.table-message.posted"
+  | "ttrpg.audio.voice.reserved"
+  | "ttrpg.audio.voice.cancelled"
   | "ttrpg.audio.cue.applied"
   | "ttrpg.open.intent.disposed"
   | "ttrpg.world-turn.advanced"
@@ -248,6 +251,8 @@ function assertScriptedTtrpgCampaign(
 }
 
 const OPEN_FOUNDATION_COMMANDS: readonly FormalTtrpgEventType[] = [
+  "ttrpg.audio.voice.reserved",
+  "ttrpg.audio.voice.cancelled",
   "ttrpg.audio.cue.applied",
   "ttrpg.memory.recorded",
   "ttrpg.open.run.started", "ttrpg.world-turn.advanced",
@@ -396,6 +401,7 @@ async function appendFormalTtrpgCommand(
       agentEvidence?: TtrpgOpenAgentEvidenceV1;
       commonOracleArchiveWitness?: TtrpgOpenCommonOracleArchiveWitnessV1;
       audioMediaWitness?: TtrpgOpenAudioMediaWitnessV1;
+      voiceRunSetWitness?: TtrpgOpenVoiceRunSetWitnessV1;
       eventEvidence?: readonly ProductRuntimeEvent[];
     }>;
     afterCommit?: (context: {
@@ -467,7 +473,7 @@ async function appendFormalTtrpgCommand(
   }
   if (
     previewState.ttrpg.product.safety.status === "paused" &&
-    !["ttrpg.audio.cue.applied", "ttrpg.open.entity.disposed", "ttrpg.open.hosting.stopped", "ttrpg.open.table-message.posted", "ttrpg.safety.changed", "ttrpg.session-zero.completed", "ttrpg.open.failure.logged", "ttrpg.open.epoch.closed", "ttrpg.open.intent.disposed", "ttrpg.open.call.finished"].includes(input.type)
+    !["ttrpg.audio.voice.cancelled", "ttrpg.audio.cue.applied", "ttrpg.open.entity.disposed", "ttrpg.open.hosting.stopped", "ttrpg.open.table-message.posted", "ttrpg.safety.changed", "ttrpg.session-zero.completed", "ttrpg.open.failure.logged", "ttrpg.open.epoch.closed", "ttrpg.open.intent.disposed", "ttrpg.open.call.finished"].includes(input.type)
   ) {
     throw new Error(
       "[ttrpg] 战役已由安全工具暂停；恢复后才能继续规则、场景或 AI 主持。",
@@ -616,6 +622,10 @@ async function appendFormalTtrpgCommand(
       if (previewBuilt.agentEvidence) await assertTtrpgOpenAgentEvidenceUnchangedV1(previewBuilt.agentEvidence);
       if (previewBuilt.commonOracleArchiveWitness) await assertTtrpgOpenCommonOracleArchiveWitnessV1(previewBuilt.commonOracleArchiveWitness);
       if (previewBuilt.audioMediaWitness) await assertTtrpgOpenAudioMediaWitnessV1(previewBuilt.audioMediaWitness);
+      if (previewBuilt.voiceRunSetWitness) {
+        const rows = await db.agentRuns.where("productRuntimeSessionId").equals(previewBuilt.voiceRunSetWitness.sessionId).sortBy("id");
+        if (stableJson(rows) !== stableJson(previewBuilt.voiceRunSetWitness.rows)) throw new Error("[ttrpg] 原配音 Run 或子任务已变化");
+      }
       if (previewBuilt.eventEvidence) {
         const expected = previewBuilt.eventEvidence
         if (expected.some(event => event.id == null || event.sessionId !== session.id)) throw new Error('[ttrpg] 来源事件没有确切实例定位')
@@ -6555,4 +6565,48 @@ export async function disposeTtrpgOpenEntityOperationV1(input: FormalTtrpgComman
       if (viewerKey !== basis.plan.viewerKey && !basis.operation.approvals.some(row => row.viewerKey === viewerKey && row.decision === 'reject')) throw new Error('只有原主持或实际拒绝者可放弃未创建计划')
       return { actorKey: basis.seat.actorKey ?? 'gm', targetKey: operationKey, payload: { operationKey, planHash } }
     } })
+}
+
+/** Internal formal kernel. Human service owns review; the kernel independently
+ * verifies actual source, original Run/artifact and the transaction witnesses. */
+export async function reserveTtrpgOpenVoiceRequestForKernelV1(request: FormalTtrpgCommandEnvelope & {
+  scope: import('../types').WorkspaceScope; viewerKey: string; request: import('./open-voice-request-contract').TtrpgOpenVoiceRequestV1
+}) {
+  const input = structuredClone(request)
+  const contract = await import('./open-voice-request-contract'), row = contract.parseTtrpgOpenVoiceRequestV1(structuredClone(input.request))
+  const intent = contract.ttrpgOpenVoiceReservationPayloadV1(row).intent
+  return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.audio.voice.reserved', intent, build: async ({ session, state, sequence }) => {
+    const { loadTtrpgOpenAudioReadStateV1 } = await import('./open-audio-read-state')
+    const { verifyTtrpgOpenVoiceIntentRunV1 } = await import('./open-voice-request-run')
+    const { verifyTtrpgOpenVoiceRequestHashesV1 } = await import('./open-voice-request-proof')
+    const loaded = await loadTtrpgOpenAudioReadStateV1(input)
+    if (session.id !== loaded.session.id || stableJson(state) !== stableJson(loaded.state) || sequence !== row.sourceRef.sequence
+      || input.viewerKey !== row.script.scope.issuerViewerKey || session.runtimeSourceHash !== row.script.runtimeSourceHash
+      || input.commandId !== await ttrpgOpenScopedKeyV1(loaded.runtime.sessionKey, 'voice-request', [input.viewerKey, row.submissionKey])) throw new Error('[ttrpg] 配音预留来源或身份已变化')
+    contract.assertTtrpgOpenVoiceReservationV1(loaded.runtime, row)
+    await verifyTtrpgOpenVoiceRequestHashesV1(row, session.runtimeSourceHash)
+    const proof = await verifyTtrpgOpenVoiceIntentRunV1({ ...input, row })
+    await loaded.assertCurrent()
+    return { actorKey: loaded.seat!.actorKey, targetKey: null, payload: contract.ttrpgOpenVoiceReservationPayloadV1(row), agentEvidence: proof.evidence,
+      voiceRunSetWitness: proof.witness, eventEvidence: loaded.events }
+  } })
+}
+export async function cancelTtrpgOpenVoiceRequestForKernelV1(request: FormalTtrpgCommandEnvelope & {
+  scope: import('../types').WorkspaceScope; viewerKey: string; requestKey: string
+}) {
+  const input = structuredClone(request)
+  const contract = await import('./open-voice-request-contract')
+  const intent = { viewerKey: input.viewerKey, requestKey: input.requestKey, decision: contract.TTRPG_OPEN_VOICE_CANCEL_DECISION_V1 }
+  return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.audio.voice.cancelled', intent, build: async ({ state, sequence }) => {
+    const { loadTtrpgOpenAudioReadStateV1 } = await import('./open-audio-read-state')
+    const { verifyTtrpgOpenVoiceIntentRunV1 } = await import('./open-voice-request-run')
+    const loaded = await loadTtrpgOpenAudioReadStateV1(input)
+    if (stableJson(state) !== stableJson(loaded.state) || input.commandId !== await ttrpgOpenScopedKeyV1(loaded.runtime.sessionKey, 'voice-cancel', [input.viewerKey, input.requestKey])) throw new Error('[ttrpg] 配音取消基线或身份已变化')
+    const row = contract.assertTtrpgOpenVoiceCancellationV1(loaded.runtime, input.requestKey, input.viewerKey)
+    const proof = await verifyTtrpgOpenVoiceIntentRunV1({ ...input, row })
+    await loaded.assertCurrent()
+    return { actorKey: loaded.seat!.actorKey, targetKey: null,
+      payload: contract.ttrpgOpenVoiceCancellationPayloadV1({ ...row, cancelledRef: { sessionKey: loaded.runtime.sessionKey, sequence } }, input.viewerKey),
+      agentEvidence: proof.evidence, voiceRunSetWitness: proof.witness, eventEvidence: loaded.events }
+  } })
 }
