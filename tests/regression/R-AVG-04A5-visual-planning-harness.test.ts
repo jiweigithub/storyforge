@@ -17,6 +17,7 @@ import { runProductProductionSchedulerCycleV1, runProductProductionUntilBlockedV
 import { stageAvgAuthorArtifactV1, readAvgConfirmedVisualArtifactsV4 } from '../../src/lib/avg/author-artifacts'
 import { acceptProductBuildArtifact, verifyAcceptedProductBuildArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4, verifyProductBuildTerminalArtifactSetV1 } from '../../src/lib/product-production/artifact-store'
 import { readAvgVisualProposalEvidenceV4 } from '../../src/lib/avg/visual-planning-evidence'
+import { readAgentRunArtifactExactV1 } from '../../src/lib/memory/artifact-store'
 import { readAvgCompiledImageDefinitionV4, prepareAvgCompiledImageRequestV4 } from '../../src/lib/avg/visual-planning-image-definition'
 import { readAvgImageConsumptionDefinitionV4 } from '../../src/lib/avg/image-consumption'
 import { readAvgVisualPlanningContextV4 } from '../../src/lib/avg/visual-planning-context'
@@ -52,7 +53,7 @@ beforeEach(async () => {
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); db.close() })
 
-async function setup(options: { malformed?: boolean; wrongBinding?: boolean; unknown?: boolean; reference?: 'valid' | 'missing' | 'tampered'; image?: 'valid' | 'unknown' | 'malformed' | 'corrupt-json' } = {}) {
+async function setup(options: { malformed?: boolean; wrongBinding?: boolean; visualShape?: 'combined-schema-key' | 'string-palette'; unknown?: boolean; reference?: 'valid' | 'missing' | 'tampered'; image?: 'valid' | 'unknown' | 'malformed' | 'corrupt-json' } = {}) {
   vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION', '1')
   const imageBytes = await deterministicRegionMapPngV1({ width: 576, height: 324, palette: ['#18213b', '#39506b', '#c8dce8'] })
   const view = new Uint8Array(imageBytes); let binary = ''
@@ -114,7 +115,13 @@ async function setup(options: { malformed?: boolean; wrongBinding?: boolean; unk
     expect(input.category).toBe('product-production')
     expect(input.expectedCapabilityHash).toBe(text.receipt.capabilityHash)
     if (options.unknown) throw new TypeError('Failed to fetch')
-    return { output: options.malformed ? '{broken response' : JSON.stringify(input.system.includes('storyforge.avg.visual-bible') ? bible : media),
+    const { schema: _schema, version: _version, ...body } = bible
+    // Reduced shapes actually observed in the first real Agnes direction
+    // response. Do not turn these into an implicitly repaired candidate.
+    const invalid = options.visualShape === 'combined-schema-key'
+      ? { 'storyforge.avg.visual-bible/version': 1, ...body, style: { ...bible.style, palette: '灰绿 / 暖木 / 米白' } }
+      : { ...bible, style: { ...bible.style, palette: '灰绿 / 暖木 / 米白' } }
+    return { output: options.malformed ? '{broken response' : JSON.stringify(options.visualShape ? invalid : input.system.includes('storyforge.avg.visual-bible') ? bible : media),
       bindingReceipt: { ...text.receipt, ...(options.wrongBinding ? { capabilityHash: 'f'.repeat(64) } : {}) }, usage: { inputTokens: 300, outputTokens: 300 } }
   })
   const executor = createConfiguredProductProductionExecutorV1({ production: details.production, brief: parsed, runText,
@@ -530,6 +537,21 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
     expect(await accepted(s, 'avg.proposal.visual-bible')).toBeUndefined()
     expect(await db.agentRunArtifacts.filter(r => r.artifactKind === 'raw-response').count()).toBe(1)
     await run(s); expect(s.runText).toHaveBeenCalledTimes(1)
+    await expect(stage(s, 'avg.media.visual-bible', s.bible)).rejects.toThrow()
+  })
+
+  it.each(['combined-schema-key', 'string-palette'] as const)('retains a real-provider-shaped %s failure, exact bytes and one charged failed call after reopen without silently fixing or resending', async visualShape => {
+    const s = await setup({ visualShape }); await sources(s); await run(s)
+    expect(s.runText).toHaveBeenCalledTimes(1); expect(s.imageFetcher).not.toHaveBeenCalled()
+    const original = (await s.runText.mock.results[0].value).output
+    const row = (await db.agentRunArtifacts.filter(r => r.artifactKind === 'raw-response').first())!
+    expect(await readAgentRunArtifactExactV1({ projectId: s.scope.projectId, artifactKind: 'raw-response', contentHash: row.contentHash })).toBe(original)
+    expect((await current(s)).status).toBe('recovery-required')
+    expect(JSON.parse((await current(s)).budgetLedgerJson).tasks['avg.visual.propose.direction']).toMatchObject({ status: 'failed', usage: { modelCalls: 1, mediaCalls: 0, costUsd: null } })
+    expect(await accepted(s, 'avg.proposal.visual-bible')).toBeUndefined()
+    db.close(); await db.open(); await run(s)
+    expect(s.runText).toHaveBeenCalledTimes(1); expect(s.imageFetcher).not.toHaveBeenCalled()
+    expect(await readAgentRunArtifactExactV1({ projectId: s.scope.projectId, artifactKind: 'raw-response', contentHash: row.contentHash })).toBe(original)
     await expect(stage(s, 'avg.media.visual-bible', s.bible)).rejects.toThrow()
   })
 

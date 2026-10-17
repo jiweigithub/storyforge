@@ -12,7 +12,7 @@ import { createConfiguredProductProductionExecutorV1 } from '../../src/lib/produ
 import { executeProductProductionCommand } from '../../src/lib/product-production/commands'
 import { assertAvgProfessionalArtifactAdmissionV1 } from '../../src/lib/avg/artifact-admission'
 import { avgVisualPlanningFixtureV4 } from '../helpers/avg-visual-planning-fixture'
-import type { AvgVisualBibleV1 } from '../../src/lib/avg/visual-planning-contract'
+import { parseAvgMediaBriefV1, parseAvgVisualBibleV1, type AvgVisualBibleV1 } from '../../src/lib/avg/visual-planning-contract'
 import { freezeAvgVisualPlanningScopeV1 } from '../../src/lib/avg/media-source'
 import { productProductionTaskUsesWorldGatewayV1 } from '../../src/lib/product-production/source-contracts'
 
@@ -50,6 +50,19 @@ describe('AVG explicit next private contract and registered professional plannin
     }
     expect(AVG_VISUAL_PLANNING_AGENT_IDS_V1).toHaveLength(4)
     expect(CONTEXT_SOURCE_BY_KEY.get(AVG_VISUAL_PLANNING_CONTEXT_V1)).toMatchObject({ ownerFrom: 'work', layer: 'L0', protectedFromTrim: true, budgetTokens: 24_000 })
+  })
+
+  it('gives every professional role a complete JSON example accepted by its actual strict output codec', () => {
+    for (const role of AVG_VISUAL_PLANNING_ROLES_V1) {
+      const prompt = avgVisualPlanningMethodV1(role.subjectKind)
+      const example = JSON.parse(prompt.slice(prompt.lastIndexOf('\n{') + 1))
+      expect(role.subjectKind === null ? parseAvgVisualBibleV1(example) : parseAvgMediaBriefV1(example)).toEqual(example)
+      expect(example).toHaveProperty('schema', role.subjectKind === null ? 'storyforge.avg.visual-bible' : 'storyforge.avg.media-brief')
+      expect(example).toHaveProperty('version', 1)
+      expect(prompt).toContain('不能用逗号分隔字符串替代')
+      expect(prompt).toContain('必须从本次 subjects 复制')
+      expect(getAgentSkillV1(role.skillId).promptVersion).toBe(`${role.skillId}-method-v2`)
+    }
   })
 
   it('freezes proposal receipt, explicit author adoption, compilation and image dispatch as distinct dependent tasks', async () => {

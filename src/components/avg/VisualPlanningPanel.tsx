@@ -74,6 +74,7 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
   const pendingCards=Object.values(cardsPending).some(Boolean)
   const enabled=avgVisualPlanningExecutionReadyV4()
   const build=view.details?.build,closed=!!build&&!['authorized','building','integrating'].includes(build.status)
+  const failed=!!build&&['failed','recovery-required'].includes(build.status)
   const proposals=view.artifacts.filter(a=>a.artifactKey.startsWith('avg.proposal.')&&a.status==='accepted')
   const available=!workspace.mediaBatch&&!workspace.voiceProduction&&!workspace.imageProcessing&&!workspace.presentation.stage.assets.some(a=>!a.mimeType.startsWith('image/'))
   useEffect(()=>{onPending(edited||pendingCards);return()=>onPending(false)},[edited,pendingCards,onPending])
@@ -94,7 +95,7 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
         {!closed&&<button className="lf-action lf-action-primary" disabled={!enabled||disabled||edited||pendingCards||!sourcesReady||!declaration.trim()} onClick={()=>void onGenerate()}>执行已确认的专业方案与图片任务</button>}
         {generating&&<button className="lf-action" onClick={onCancel}>停止等待并保留记录</button>}
         {proposals.map(proposal=><ProposalCard key={`${build.id}:${proposal.artifactKey}:${proposal.contentHash}`} {...{scope,view,proposal,workspace,declaration,onAction,onReload,onNotice}} disabled={!enabled||disabled||edited||closed} onPending={cardPending}/>)}
-        {closed&&<p>本次制作已结束或暂停，方案与账单保留，当前不会自动调用。冻结预览可在制作页试玩。</p>}
+        {closed&&<p role={failed?'alert':undefined}>{failed?'本批尚未完成，已停止自动调用。原始返回、已发生的调用与费用记录保留。请到制作页核对后准备新版本。':'本次制作已结束或暂停，方案与账单保留，当前不会自动调用。'}{build.previewHash&&'冻结预览可在制作页试玩。'}</p>}
       </>}
     </>}
   </section>

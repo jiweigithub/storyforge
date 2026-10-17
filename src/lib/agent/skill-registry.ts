@@ -5003,7 +5003,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'avg.visual-bible.v1', agentId: 'avg-art-director', defaultForAgent: true,
-    label: 'AVG 美术方向', owner: 'avg-art-director', promptVersion: 'avg.visual-bible.v1-method-v1',
+    label: 'AVG 美术方向', owner: 'avg-art-director', promptVersion: 'avg.visual-bible.v1-method-v2',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V1], optionalContextSourceKeys: [],
     inputPolicy: productProductionInputPolicy([AVG_VISUAL_PLANNING_CONTEXT_V1]),
@@ -5013,7 +5013,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'avg.character-assets.v1', agentId: 'avg-character-designer', defaultForAgent: true,
-    label: 'AVG 人物视觉方案', owner: 'avg-character-designer', promptVersion: 'avg.character-assets.v1-method-v1',
+    label: 'AVG 人物视觉方案', owner: 'avg-character-designer', promptVersion: 'avg.character-assets.v1-method-v2',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V1], optionalContextSourceKeys: [],
     inputPolicy: productProductionInputPolicy([AVG_VISUAL_PLANNING_CONTEXT_V1]),
@@ -5023,7 +5023,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'avg.environment-assets.v1', agentId: 'avg-environment-designer', defaultForAgent: true,
-    label: 'AVG 场景视觉方案', owner: 'avg-environment-designer', promptVersion: 'avg.environment-assets.v1-method-v1',
+    label: 'AVG 场景视觉方案', owner: 'avg-environment-designer', promptVersion: 'avg.environment-assets.v1-method-v2',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V1], optionalContextSourceKeys: [],
     inputPolicy: productProductionInputPolicy([AVG_VISUAL_PLANNING_CONTEXT_V1]),
@@ -5033,7 +5033,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'avg.prop-assets.v1', agentId: 'avg-prop-designer', defaultForAgent: true,
-    label: 'AVG 物件视觉方案', owner: 'avg-prop-designer', promptVersion: 'avg.prop-assets.v1-method-v1',
+    label: 'AVG 物件视觉方案', owner: 'avg-prop-designer', promptVersion: 'avg.prop-assets.v1-method-v2',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V1], optionalContextSourceKeys: [],
     inputPolicy: productProductionInputPolicy([AVG_VISUAL_PLANNING_CONTEXT_V1]),
