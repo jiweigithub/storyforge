@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test'
+import { writeFile } from 'node:fs/promises'
 import { confirmEngineeringVisualReview } from '../helpers/avg-visual-review-playwright'
 
 async function adopt(page: Page, label: string) {
@@ -28,10 +29,14 @@ async function expectFiveLinePreviewReady(page: Page, info: TestInfo, scope: { w
             tasks: ledger.tasks, rootRunId: ledger.rootRunId }
         }, scope.workId)
         observations.push({ afterFailureMs: Date.now() - started, ...state })
-        return state.status
-      }, { timeout: 10_000, intervals: [1000] }).not.toBe('building')
+        return !['building', 'integrating', 'validating'].includes(state.status)
+      }, { timeout: 10_000, intervals: [1000] }).toBe(true)
     } catch (diagnosticError) { observations.push({ diagnosticError: String(diagnosticError) }) }
-    await info.attach('first-five-line-preview-failure-state', { body: JSON.stringify(observations, null, 2), contentType: 'application/json' })
+    try {
+      const path = info.outputPath('first-five-line-preview-failure-state.json')
+      await writeFile(path, JSON.stringify(observations, null, 2))
+      await info.attach('first-five-line-preview-failure-state', { path, contentType: 'application/json' })
+    } catch (attachmentError) { console.error('AVG diagnostic attachment failed', String(attachmentError)) }
     throw error
   }
 }
@@ -466,7 +471,7 @@ test('an adopted voice explicitly leaves its consumed batch, stays audible in an
   const s = await seedVoice(page); await reviewAndChoose(page)
   await page.getByRole('button', { name: '制作与试玩', exact: true }).click(); await adopt(page, '演出与媒资')
   await page.getByRole('button', { name: '执行组装并生成新预览', exact: true }).click()
-  await expectFiveLinePreviewReady(page, info, s.seed.scope)
+  await expect(page.getByRole('button', { name: '试玩此预览', exact: true })).toBeEnabled()
   const old = await page.evaluate(async scope => {
     const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, { db } = await load('/storyforge/src/lib/db/schema.ts')
     const build = await db.productBuilds.where('workId').equals(scope.workId).first()
@@ -604,7 +609,7 @@ test('two explicitly started five-line batches keep old clips, publish ten nativ
   await expect(page.getByRole('status').filter({ hasText: '已采用配音已配置到准确句子' })).toBeVisible()
   await page.getByRole('button', { name: '制作与试玩', exact: true }).click(); await adopt(page, '演出与媒资')
   await page.getByRole('button', { name: '执行组装并生成新预览', exact: true }).click()
-  await expect(page.getByRole('button', { name: '试玩此预览', exact: true })).toBeEnabled()
+  await expectFiveLinePreviewReady(page, info, s.seed.scope)
   const old = await page.evaluate(async scope => {
     const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, { db } = await load('/storyforge/src/lib/db/schema.ts')
     const build = await db.productBuilds.where('workId').equals(scope.workId).first()
