@@ -5,11 +5,10 @@ import { assertRecordInScope } from '../workspace/scope'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/artifact-store'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
-import { assertAvgRawImageArtifactV1 } from './media-raw-contract'
 import { parseAvgAuthorMediaChoice, type AvgAuthorMediaChoice } from './media-production-contract'
 import { inspectAvgImageBytesV1 } from './image-decoder'
 import { inspectAvgProcessedImageSourceV1, readAvgProcessedImageSourceV1 } from './image-processing-source'
-import { readAvgImageDefinitionV3 } from './media-production-definition'
+import { assertAvgConsumedRawImageV4, readAvgImageConsumptionDefinitionV4 } from './image-consumption'
 
 export interface AvgMediaChoiceValidationV1 {
   schema: 'storyforge.avg.media-choice-validation'
@@ -37,8 +36,9 @@ export async function readAvgChosenMediaSourceV2(input: { scope: WorkspaceScope;
 export async function inspectAvgChosenImageV1(input: { scope: WorkspaceScope; brief: ProductProductionBriefV3;
   choice: AvgAuthorMediaChoice; row: ProductBuildArtifactRecordV1; processed?:ProductBuildArtifactRecordV1 }) {
   const choice = parseAvgAuthorMediaChoice(input.choice), row = input.row
-  const raw = await assertAvgRawImageArtifactV1(input.brief, row), r = raw.payload.requirement
-  const frozenProcessing=readAvgImageDefinitionV3(input.brief).imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)??false
+  const raw = await assertAvgConsumedRawImageV4(input), r = raw.payload.requirement
+  const definition=await readAvgImageConsumptionDefinitionV4({...input,buildId:row.buildId})
+  const frozenProcessing=definition.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)??false
   if(frozenProcessing!==(choice.version===2))throw new Error('[avg-process] 选择不能绕过冻结的加工步骤，也不能夹带未冻结加工')
   const processed=choice.version===2?(input.processed?await inspectAvgProcessedImageSourceV1({...input,raw:row,processed:input.processed})
     :await readAvgProcessedImageSourceV1({scope:input.scope,buildId:row.buildId,brief:input.brief,raw:row,version:choice.processed.version,contentHash:choice.processed.contentHash})):undefined

@@ -31,6 +31,7 @@ import { assertAvgVoiceReviewRevisionV1, assertAvgVoiceReviewScopeV1, assertAvgV
 import { readAvgOptionalImageDefinitionV3 } from './media-production-definition'
 import { assertAvgVisualRoleProposalV4, validateAvgVisualSemanticV4 } from './visual-role-proposal'
 import { readAvgVisualProposalEvidenceV4 } from './visual-planning-evidence'
+import { readAvgImageConsumptionDefinitionV4 } from './image-consumption'
 
 type Ref = { artifactKey: string; version: number; contentHash: string }
 interface AuthorCandidateBase {
@@ -94,7 +95,8 @@ async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, 
   if (payload.schema !== 'storyforge.avg.author-stage') return undefined
   const generated = new Map<string, { asset: AvgAuthorMediaChoice['asset']; blobObjectId: number }>()
   const a = context.brief.avgAssembly
-  const image = readAvgOptionalImageDefinitionV3(context.brief)
+  const image = context.brief.avgVisualPlanning || readAvgOptionalImageDefinitionV3(context.brief)
+    ? await readAvgImageConsumptionDefinitionV4({scope,buildId:context.build.id!,brief:context.brief}) : null
   if (image) {
     if (payload.aspectRatio !== image.mediaBatch.aspectRatio) throw new Error('[avg-media] 最终演出画幅与冻结批次不一致')
     const choices = inputs.filter(row => row.artifactKey.startsWith('avg.media.choice.'))
@@ -171,7 +173,7 @@ async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, 
       generated.set(key, voice)
     }
   }
-  return validateAvgAuthorAssemblyV1({ scope, payload, inputs: a && a.version !== 1
+  return validateAvgAuthorAssemblyV1({ scope, payload, inputs: context.brief.avgVisualPlanning || a && a.version !== 1
     ? inputs.filter(row => !row.artifactKey.startsWith('avg.media.choice.') && !row.artifactKey.startsWith('avg.voice.choice.')) : inputs,
     generated, productKey: context.production.productionKey,
     sourceWorld: { contentHash: context.brief.source.worldContentHash, selection: context.brief.source.selection } })
@@ -295,7 +297,7 @@ function assertSourceReferences(context: Awaited<ReturnType<typeof authority>>, 
 }
 
 async function validateVisualReviewInput(context:Awaited<ReturnType<typeof authority>>,scope:WorkspaceScope,payload:AuthorPayload,inputs:ProductBuildArtifactRecordV1[]){
-  if(payload.schema!=='storyforge.avg.review-issues'||!context.brief.avgAssembly)return
+  if(payload.schema!=='storyforge.avg.review-issues'||!context.brief.avgAssembly&&!context.brief.avgVisualPlanning)return
   if (payload.audioEvidence || inputs.some(row => row.artifactKey.startsWith('avg.voice.raw.'))) {
     if (inputs.length !== 1 || inputs[0]!.artifactKey !== `avg.voice.raw.${payload.targetKey}`) throw new Error('[avg-voice] 审听缺少准确的原始音频依赖')
     const voice = await readVoiceDefinition(context)
@@ -351,7 +353,8 @@ function assertReviewRevision(previous: string | null, payload: AuthorPayload) {
 /** Reused by current staging/adoption/compiler and the read-only old-image
  * verifier. The caller supplies a proved raw row for its exact epoch. */
 async function readChoiceVisualReview(context:Awaited<ReturnType<typeof authority>>,scope:WorkspaceScope,choice:AvgAuthorMediaChoice,raw:ProductBuildArtifactRecordV1,epoch=context.build.controlEpoch,processed?:ProductBuildArtifactRecordV1){
-  const a=readAvgOptionalImageDefinitionV3(context.brief)
+  const a=context.brief.avgVisualPlanning||readAvgOptionalImageDefinitionV3(context.brief)
+    ?await readAvgImageConsumptionDefinitionV4({scope,buildId:context.build.id!,brief:context.brief}):null
   if(!a?.mediaBatch.visualReviewPolicy)return undefined
   const key=avgVisualReviewArtifactKeyV1(choice.requirementKey),[row]=await acceptedInputs(scope,context.build.id!,epoch,[key])
   const task=context.plan.tasks.find(task=>task.taskKey===`avg.author.visual-review.${choice.requirementKey}`)
@@ -418,7 +421,7 @@ export async function stageAvgAuthorArtifactV1(input: {
     const rows = await db.productBuildArtifacts.where('buildId').equals(input.buildId).toArray()
     const bases = rows.filter(row => row.artifactKey === artifactKey && row.status === 'accepted')
     if (bases.length > 1) throw new Error('[avg] 正式 revision 不唯一')
-    if(context.brief.avgAssembly)assertReviewRevision(bases[0]?.payloadJson??null,prepared.payload)
+    if(context.brief.avgAssembly||context.brief.avgVisualPlanning)assertReviewRevision(bases[0]?.payloadJson??null,prepared.payload)
     const base = bases[0] ? ref(bases[0]) : null
     if (bases[0]) await acceptedInputs(scope, input.buildId, input.controlEpoch, [artifactKey])
     if (prepared.payload.schema === 'storyforge.avg.dialogue-patch') {
@@ -481,7 +484,7 @@ async function prepareAdoption(scope: WorkspaceScope, production: ProductProduct
   if(prepared.payload.schema==='storyforge.avg.media-choice')await readChoiceVisualReview(context,scope,prepared.payload,inputs[0],context.build.controlEpoch,prepared.payload.version===2?inputs[1]:undefined)
   const bases = rows.filter(row => row.artifactKey === candidate.artifactKey && row.status === 'accepted')
   if (bases.length > 1) throw new Error('[avg] 正式 revision 不唯一')
-  if(context.brief.avgAssembly)assertReviewRevision(bases[0]?.payloadJson??null,prepared.payload)
+  if(context.brief.avgAssembly||context.brief.avgVisualPlanning)assertReviewRevision(bases[0]?.payloadJson??null,prepared.payload)
   if (bases[0]) await acceptedInputs(scope, build.id, command.controlEpoch, [candidate.artifactKey])
   const assemblyValidation = await validateAssembly(context, scope, prepared.payload, inputs)
   const mediaChoiceValidation = prepared.payload.schema === 'storyforge.avg.media-choice'
@@ -587,7 +590,12 @@ async function readAuthorInputs(input: {
       return { payload: parsed, artifact: ref(row), authorReceiptHash: scriptReceipt.receiptHash }
     })
     const mediaChoices: Array<{ payload: AvgAuthorMediaChoice; artifact: Ref; authorReceiptHash: string; raw: ProductBuildArtifactRecordV1;image:ProductBuildArtifactRecordV1;processed?:NonNullable<Awaited<ReturnType<typeof readAvgChosenMediaSourceV2>>>['processed'];review?:NonNullable<Awaited<ReturnType<typeof readChoiceVisualReview>>> }> = []
-    const image = readAvgOptionalImageDefinitionV3(context.brief)
+    // Resolve V4 only for image consumption. Source/visual compilation reads
+    // must not recursively ask for the compilation artifact they are proving.
+    const image = context.brief.avgVisualPlanning
+      ? (input.includeAuthorStage||input.includeMediaChoices
+        ?await readAvgImageConsumptionDefinitionV4({scope,buildId:input.buildId,brief:context.brief}):null)
+      :readAvgOptionalImageDefinitionV3(context.brief)
     if ((input.includeAuthorStage || input.includeMediaChoices) && image) {
       const keys = image.mediaBatch.requirements.map(r => avgMediaChoiceArtifactKeyV1(r.requirementKey))
       const rows = await acceptedInputs(scope, input.buildId, input.controlEpoch, keys)

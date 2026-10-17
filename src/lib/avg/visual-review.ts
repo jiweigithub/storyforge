@@ -5,13 +5,12 @@ import { assertRecordInScope } from '../workspace/scope'
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
 import { parseAvgProfessionalArtifactV1, type AvgReviewIssuesV1 } from './artifact-contract'
-import { assertAvgRawImageArtifactV1 } from './media-raw-contract'
 import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
 import { readAvgDraftReferenceBytesV1 } from './editor-service'
 import { inspectAvgImageBytesV1 } from './image-decoder'
 import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 import { inspectAvgProcessedImageSourceV1, readAvgProcessedImageSourceV1 } from './image-processing-source'
-import { readAvgImageDefinitionV3 } from './media-production-definition'
+import { assertAvgConsumedRawImageV4, readAvgImageConsumptionDefinitionV4 } from './image-consumption'
 
 const same=(a:unknown,b:unknown)=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(b)
 export function parseAvgAuthorVisualReviewV1(value:unknown){
@@ -51,9 +50,9 @@ export function assertAvgVisualReviewRevisionV1(previous:unknown|null,next:AvgRe
 /** Records author assessment, including rejection/unknown. It never creates
  * an artistic pass, human-identity claim or independently scored model review. */
 export async function validateAvgAuthorVisualReviewV1(input:{scope:WorkspaceScope;brief:ProductProductionBriefV3;raw:ProductBuildArtifactRecordV1;payload:unknown;processed?:ProductBuildArtifactRecordV1}){
-  const a=readAvgImageDefinitionV3(input.brief)
+  const a=await readAvgImageConsumptionDefinitionV4({...input,buildId:input.raw.buildId})
   if(!a.mediaBatch.visualReviewPolicy)throw new Error('[avg-review] 当前冻结批次没有视觉评审合同')
-  const report=parseAvgAuthorVisualReviewV1(input.payload),raw=await assertAvgRawImageArtifactV1(input.brief,input.raw),r=raw.payload.requirement
+  const report=parseAvgAuthorVisualReviewV1(input.payload),raw=await assertAvgConsumedRawImageV4({...input,row:input.raw}),r=raw.payload.requirement
   const needsProcessing=a.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)
   const processed=needsProcessing?(input.processed?await inspectAvgProcessedImageSourceV1({...input,processed:input.processed}):await readAvgProcessedImageSourceV1({...input,buildId:input.raw.buildId})):undefined
   if(!needsProcessing&&input.processed)throw new Error('[avg-process] 评审不能夹带未冻结加工')

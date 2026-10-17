@@ -17,8 +17,14 @@ import { readAvgVisualProposalEvidenceV4 } from '../../src/lib/avg/visual-planni
 import { readAvgCompiledImageDefinitionV4, prepareAvgCompiledImageRequestV4 } from '../../src/lib/avg/visual-planning-image-definition'
 import { readAvgVisualPlanningContextV4 } from '../../src/lib/avg/visual-planning-context'
 import * as imageDecoder from '../../src/lib/avg/image-decoder'
+import * as mediaVerifier from '../../src/lib/product-production/media-runtime-verifier'
+import { readAvgRawImageCandidateBytesV2, stageAvgVisualReviewV1, stageAvgMediaChoiceV2,
+  confirmAvgWorkspaceInputV1, configureAvgChosenMediaDraftV2, stageAvgWorkspaceInputV1 } from '../../src/lib/avg/assembly-service'
+import { avgVisualReviewFixture } from '../helpers/avg-visual-review-fixture'
+import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
+import { parseAvgAuthorWorkspaceV1 } from '../../src/lib/avg/author-workspace-contract'
 import { sha256MediaData } from '../../src/lib/product-production/media-blob-store'
-import { hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
+import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 import { importAvgMediaV1 } from '../../src/lib/avg/editor-service'
 import { deterministicRegionMapPngV1 } from '../../src/lib/product-production/production-executor'
 import { freezeAvgVisualPlanningScopeV1 } from '../../src/lib/avg/media-source'
@@ -139,6 +145,27 @@ async function adopt(s: Setup, candidate: ProductBuildArtifactRecordV1) {
 async function sources(s: Setup) {
   await adopt(s, await stage(s, 'avg.system.plan', s.source.systemPlan))
   for (const script of s.source.scripts) await adopt(s, await stage(s, `avg.content.scene-script.${script.sceneKey}`, script))
+}
+
+/** Actual producer/adoption chain; only browser image decoding is unavailable
+ * in jsdom. Controlled observations below never stand for human art review. */
+async function generatedImage() {
+  vi.spyOn(imageDecoder, 'inspectAvgImageBytesV1').mockResolvedValue({ width: 576, height: 324, hasAlpha: false })
+  const s = await setup({ image: 'valid' }); await sources(s); await run(s)
+  await adopt(s, await stage(s, 'avg.media.visual-bible', s.bible)); await run(s)
+  await adopt(s, await stage(s, `avg.media.environment-brief.${s.media.subjectKey}`, s.media))
+  await cycle(s); await cycle(s)
+  const raw = (await accepted(s, `avg.media.raw.${s.media.outputs[0].requirementKey}`))!
+  expect(raw, (await current(s)).failureJson).toBeDefined()
+  const requirement = JSON.parse(raw.payloadJson).requirement
+  const image = { scope: s.scope, productionId: s.productionId, requirementKey: requirement.requirementKey,
+    rawVersion: raw.version, rawContentHash: raw.contentHash }
+  const choose = () => stageAvgMediaChoiceV2({ ...image, declaration: '明确选择准确工程图，不签艺术质量' })
+  const review = (report = avgVisualReviewFixture(requirement, raw.contentHash)) => stageAvgVisualReviewV1({ ...image, report,
+    declaration: '准确记录本次受控工程观察，不冒充专业或真人验收' })
+  const confirm = (candidate: ProductBuildArtifactRecordV1) => confirmAvgWorkspaceInputV1({ ...s,
+    artifactKey: candidate.artifactKey, candidateVersion: candidate.version, candidateHash: JSON.parse(candidate.metadataJson).candidateHash })
+  return { s, raw, requirement, image, choose, review, confirm }
 }
 
 describe('AVG V4 actual visual planning Harness and explicit author boundary', () => {
@@ -383,5 +410,133 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
     await expect(cycle(s)).rejects.toThrow(/哈希/)
     expect(s.imageFetcher.mock.calls.length).toBe(0)
     expect(await accepted(s, `avg.media.raw.${s.media.outputs[0].requirementKey}`)).toBeUndefined()
+  })
+
+  describe('current compiled image author consumption', () => {
+    let generated: Awaited<ReturnType<typeof generatedImage>>
+    // Keep real production preparation in the bounded setup hook. Each test
+    // retains the default five-second author-action limit and all assertions.
+    beforeEach(async () => { generated = await generatedImage() })
+
+    it('reads original V4 bytes, requires adopted review/choice and configures only the frozen stage consumer', async () => {
+      const { s, raw, requirement, image, choose, review, confirm } = generated
+      const bytes = await readAvgRawImageCandidateBytesV2({ ...image, version: raw.version, contentHash: raw.contentHash })
+      expect(bytes.data).toEqual(s.imageBytes)
+      const candidate = await review()
+      expect(candidate.status).toBe('pending')
+      await expect(choose()).rejects.toThrow(/上游未采用/)
+      await confirm(candidate)
+      const choice = await choose()
+      const configure = async () => configureAvgChosenMediaDraftV2({ ...s, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision })
+      await expect(configure()).rejects.toThrow(/上游未采用/)
+      await confirm(choice)
+      db.close(); await db.open()
+      const saved = await configure(), workspace = parseAvgAuthorWorkspaceV1(saved.editorJson)
+      expect(workspace.mediaBatch).toBeUndefined()
+      expect(workspace.presentation.stage.assets).toEqual([bytes.asset])
+      expect(workspace.presentation.stage.cues).toContainEqual(expect.objectContaining({ type: 'set-background',
+        assetKey: requirement.assetKey, beatKey: requirement.triggerBeatKey }))
+      // Stage byte decoding is a separate browser observation, not the provider's
+      // raw receipt. Keep it controlled here and require native evidence later.
+      vi.spyOn(mediaVerifier, 'verifyProductMediaRuntimeUrlsV1').mockImplementation(async input => ({ environment: input.environment,
+        measuredAt: Date.now(), assets: input.assets.map(asset => ({ assetKey: asset.assetKey, contentHash: asset.contentHash,
+          mimeType: asset.mimeType, mediaClass: 'image', status: 'decoded', decodedWidth: 576, decodedHeight: 324,
+          decodedDurationMs: null, decodedHasAlpha: false, decodedChannelCount: null, decodedSampleRateHz: null,
+          integratedLufs: null, truePeakDbtp: null, loopSeamDbfs: null, policyFailures: [], failureCode: null })) }))
+      const stageCandidate = await stageAvgWorkspaceInputV1({ ...s, expectedDraftRevision: saved.revision,
+        artifactKey: 'avg.author.stage', declaration: '确认工程图及准确演出消费者；未签 Preview 或商业通过' })
+      await confirm(stageCandidate)
+      expect(JSON.parse((await accepted(s, 'avg.author.stage'))!.metadataJson).candidate.version).toBe(3)
+      expect((await db.productProductionBriefs.where('[productionId+revision]').equals([s.productionId, (await current(s)).briefRevision]).first())!.briefJson)
+        .toBe(canonicalProductProductionJsonV2(s.brief))
+      expect((await readProductProductionDetailsV1(s.scope, s.productionId, ['avg'])).executionBrief).toEqual(s.brief)
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1); expect(s.runText).toHaveBeenCalledTimes(2)
+      expect((await current(s)).previewHash).toBe('')
+    })
+
+    it('retains unknown visual observations, blocks selection and requires a new observation note to clear them', async () => {
+      const { raw, requirement, choose, review, confirm } = generated
+      const unknown = avgVisualReviewFixture(requirement, raw.contentHash)
+      unknown.unobserved = ['尚未观察对白安全区']; unknown.visualEvidence!.note = '本次尚未观察对白安全区'
+      unknown.visualEvidence!.checks.find(c => c.criterion === 'composition')!.result = 'unknown'
+      await confirm(await review(unknown))
+      await expect(choose()).rejects.toThrow(/未观察|blocking/)
+      const next = avgVisualReviewFixture(requirement, raw.contentHash); next.visualEvidence!.note = unknown.visualEvidence!.note
+      await expect(review(next)).rejects.toThrow(/重新观察/)
+      next.visualEvidence!.note = '重新查看准确工程字节并核对安全区；仍不是艺术验收'
+      await confirm(await review(next))
+      expect((await choose()).status).toBe('pending')
+    })
+
+    it.each(['missing-review', 'wrong-image', 'wrong-target', 'changed-bytes', 'missing-compilation'] as const)('rejects %s in the actual V4 author consumption path', async failure => {
+      const { s, raw, requirement, choose, review, confirm, image } = generated
+      if (failure === 'missing-review') { await expect(choose()).rejects.toThrow(/上游未采用/); return }
+      if (failure === 'wrong-image' || failure === 'wrong-target') {
+        const report = avgVisualReviewFixture(requirement, failure === 'wrong-image' ? 'f'.repeat(64) : raw.contentHash)
+        if (failure === 'wrong-target') report.targetKey = 'another.background'
+        await expect(review(report)).rejects.toThrow(/准确|批次/); return
+      }
+      await confirm(await review())
+      if (failure === 'changed-bytes') {
+        const blob = (await db.mediaBlobObjects.get(raw.blobObjectId!))!, bytes = new Uint8Array(blob.data!.slice(0)); bytes[bytes.length - 1] ^= 1
+        await db.mediaBlobObjects.update(blob.id!, { data: bytes.buffer })
+        await expect(choose()).rejects.toThrow(/hash|哈希|producer/)
+        await expect(readAvgRawImageCandidateBytesV2({ ...image, version: raw.version, contentHash: raw.contentHash })).rejects.toThrow()
+      } else {
+        const compiler = (await accepted(s, 'avg.media.compiled-visual-requirements'))!
+        await db.productBuildArtifacts.update(compiler.id!, { status: 'rejected' })
+        await expect(choose()).rejects.toThrow(/编译|接收/)
+      }
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+
+    it.each(['decode-failure', 'wrong-dimensions'] as const)('does not turn %s into an author visual pass', async failure => {
+      const { s, review } = generated
+      const decoder = vi.mocked(imageDecoder.inspectAvgImageBytesV1)
+      if (failure === 'decode-failure') decoder.mockRejectedValueOnce(new Error('受控浏览器解码失败'))
+      else decoder.mockResolvedValueOnce({ width: 20, height: 20, hasAlpha: false })
+      await expect(review()).rejects.toThrow(/解码失败|尺寸/)
+      expect(await accepted(s, `avg.review.visual.${s.media.outputs[0].requirementKey}`)).toBeUndefined()
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+
+    it('rechecks real image bytes at author confirmation instead of accepting a previously staged choice', async () => {
+      const { s, raw, choose, review, confirm } = generated
+      await confirm(await review()); const pending = await choose()
+      const blob = (await db.mediaBlobObjects.get(raw.blobObjectId!))!, bytes = new Uint8Array(blob.data!.slice(0)); bytes[bytes.length - 1] ^= 1
+      await db.mediaBlobObjects.update(blob.id!, { data: bytes.buffer })
+      await expect(confirm(pending)).rejects.toThrow(/hash|哈希|producer/)
+      expect(await accepted(s, pending.artifactKey)).toBeUndefined()
+      expect((await db.productBuildArtifacts.get(pending.id!))!.status).toBe('pending')
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+
+    it('preserves V4 raw bytes and author review/choice through backup/remap without reauthorizing imported production', async () => {
+      const { s, raw, choose, review, confirm } = generated
+      await confirm(await review()); const pending = await choose(); await confirm(pending)
+      const choice = (await accepted(s, pending.artifactKey))!
+      const projectId = await importProjectJSON(await exportProjectJSON(s.scope.projectId))
+      const build = (await db.productBuilds.where('projectId').equals(projectId).first())!
+      const scope = { projectId, worldId: build.worldId, workId: build.workId }
+      const rows = await db.productBuildArtifacts.where('buildId').equals(build.id!).toArray()
+      const importedRaw = rows.find(r => r.artifactKey === raw.artifactKey && r.status === 'accepted')!
+      expect(importedRaw.blobObjectId).not.toBe(raw.blobObjectId)
+      const blob = (await db.mediaBlobObjects.get(importedRaw.blobObjectId!))!
+      expect(blob.workId).toBe(scope.workId); expect(blob.data).toEqual(s.imageBytes)
+      expect(await sha256MediaData(blob.data!)).toBe(raw.contentHash)
+      for (const original of [choice, (await accepted(s, `avg.review.visual.${s.media.outputs[0].requirementKey}`))!]) {
+        const imported = rows.find(r => r.artifactKey === original.artifactKey && r.status === 'accepted')!
+        expect(imported.payloadJson).toBe(original.payloadJson); expect(imported.contentHash).toBe(original.contentHash)
+      }
+      await expect(stageAvgMediaChoiceV2({ scope, productionId: build.productionId,
+        requirementKey: s.media.outputs[0].requirementKey, rawVersion: importedRaw.version,
+        rawContentHash: importedRaw.contentHash, declaration: '导入历史不能变成新采用授权' })).rejects.toThrow()
+      await deleteWork(scope.workId)
+      expect(await db.productBuildArtifacts.where('buildId').equals(build.id!).count()).toBe(0)
+      expect(await db.mediaBlobObjects.where('workId').equals(scope.workId).count()).toBe(0)
+      expect((await db.mediaBlobObjects.get(raw.blobObjectId!))!.data).toEqual(s.imageBytes)
+      expect(await accepted(s, choice.artifactKey)).toBeDefined()
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
   })
 })
