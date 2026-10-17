@@ -1,6 +1,7 @@
 import { verifyTtrpgOpenCommonOracleEpochsV1 } from './open-common-oracle-request'
 import { ttrpgOpenEntityIdentityCatalogV1, ttrpgOpenEntityReferenceVisibleV1 } from './open-entity-catalog'
 import { verifyTtrpgOpenEntityStateV1 } from './open-entity-proof'
+import { verifyTtrpgOpenIdentityKnowledgeV1 } from './open-identity-knowledge-proof'
 import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
 import { verifyTtrpgOpenSessionSituationHashesV1 } from './open-session-situation-proof'
 import { verifyTtrpgOpenManualEpochsV1 } from './open-manual-action'
@@ -11,7 +12,7 @@ import { verifyTtrpgOpenOracleReviewHashesV1 } from './open-oracle-review'
 import type { WorkspaceScope } from '../types'
 import { assertInstanceBinding } from '../product/runtime-instances'
 import { verifyProductRuntimeSessionSourceV1 } from '../product-production/preview-source'
-import { readProductRuntimeState, readProductRuntimeStateVersion, hashProductRuntimeStateV1 } from '../product/runtime-core'
+import { readProductRuntimeState, readProductRuntimeStateVersion, hashProductRuntimeStateV1, readSessionEvents } from '../product/runtime-core'
 import { isTtrpgRuntimeContentV2 } from './content-version'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { readTtrpgSessionParticipantsV2 } from './participants'
@@ -98,6 +99,7 @@ async function loadOpenPlayerProjectionV1(input: OpenPlayerReadV1, humanViewerKe
   const participants = await readTtrpgSessionParticipantsV2(input.sessionId)
   await verifyTtrpgOpenSessionSituationHashesV1(runtime.openRun.situationReceipts ?? [])
   await verifyTtrpgOpenEntityStateV1(state, content)
+  if (runtime.openRun.knowledge.some(row => row.identityGrant)) await verifyTtrpgOpenIdentityKnowledgeV1({ runtime, runtimeSourceHash: source.runtimeSourceHash, events: await readSessionEvents(session) })
   await verifyTtrpgOpenPrivateChoiceHashesV1(runtime.openRun.operations)
   await verifyTtrpgOpenManualEpochsV1(runtime.openRun.coordination.epochs)
   await verifyTtrpgOpenCommonOracleEpochsV1(runtime.openRun.coordination.epochs)

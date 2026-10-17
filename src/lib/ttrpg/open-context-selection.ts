@@ -17,7 +17,7 @@ import { assembleTtrpgContextWithBudgetV1, type TtrpgContextTierKeyV1 } from './
 import { selectTtrpgContextInjectionsV1, matchesTtrpgContextTriggerV1, type TtrpgContextTriggerStateV1 } from './context-trigger'
 import { evaluateTtrpgOpenContextPredicateV1, type TtrpgOpenContextPredicateViewV1 } from './open-context-predicate-view'
 import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
-import { ttrpgOpenContextConsumerForPurposeV1, TTRPG_OPEN_GUIDANCE_SOURCE_KEYS_V1, type TtrpgOpenModelPurposeV1 } from './open-model-purpose-contract'
+import { ttrpgOpenContextConsumerForPurposeV1, TTRPG_OPEN_GUIDANCE_SOURCE_KEYS_V1, TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1, type TtrpgOpenModelPurposeV1 } from './open-model-purpose-contract'
 import type { loadTtrpgOpenModelContextV1 } from './open-model-purpose'
 import { selectTtrpgOpenMemoryResourcesV1 } from './open-memory-selection'
 import type { TtrpgOpenSourceRefV1 } from './open-coordination'
@@ -126,9 +126,11 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
   const briefRows = passive ? eligible.filter(row => row.sourceKey === (publicSituation ? 'ttrpgOpenPublicSituationInput' : situation ? 'ttrpgOpenSituationInput' : 'ttrpgOpenBriefInput') && row.priority !== 'must-read') : []
   const briefKeys = await selectTtrpgOpenMemoryResourcesV1({ ...input, scope, rows: briefRows,
     budgetTokens: Math.max(1, Math.floor(Math.min(input.budgetTokens, policy?.maximumContextTokens ?? 16000) / 2)) })
+  const namedIdentity = (row: ContextResourceDescriptorV1) => row.sourceKey === TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1
+    && row.resourceKey.includes(':learned-identity.') && input.rawInput.includes(row.title.normalize('NFC'))
   const candidates = eligible.filter(row => (!ruleRows.includes(row) || selectedRules.has(row.resourceKey))
     && (!memoryRows.includes(row) || memoryKeys.has(row.resourceKey))
-    && (!briefRows.includes(row) || briefKeys.has(row.resourceKey))).sort((a, b) => a.resourceKey < b.resourceKey ? -1 : a.resourceKey > b.resourceKey ? 1 : 0)
+    && (!briefRows.includes(row) || briefKeys.has(row.resourceKey))).sort((a, b) => Number(namedIdentity(b)) - Number(namedIdentity(a)) || (a.resourceKey < b.resourceKey ? -1 : a.resourceKey > b.resourceKey ? 1 : 0))
   const tierFor = (row: ContextResourceDescriptorV1): TtrpgContextTierKeyV1 => {
     if (row.priority === 'must-read') return /:rules-core$/.test(row.resourceKey) ? 'rules' : 'authority-state'
     if (row.sourceKey === 'ttrpgOpenAuthority' && /:(action|check)\./.test(row.resourceKey)) return 'rules'
@@ -139,7 +141,7 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
     return 'known-facts'
   }
   const blocks = candidates.map(row => ({ tierKey: tierFor(row), sourceKey: row.sourceKey, blockKey: row.resourceKey, content: row.resourceKey,
-    tokens: row.tokenEstimate.full! + estimateTokens(`【${row.kind}｜${row.title}｜full】\n`) + 2, required: row.priority === 'must-read' }))
+    tokens: row.tokenEstimate.full! + estimateTokens(`【${row.kind}｜${row.title}｜full】\n`) + 2, required: row.priority === 'must-read' || namedIdentity(row) }))
   const budgetTokens = Math.min(input.budgetTokens, policy?.maximumContextTokens ?? 16000)
   const tokens = assembleTtrpgContextWithBudgetV1({ blocks, budgetTokens })
   const count = assembleTtrpgContextWithBudgetV1({ blocks: blocks.filter(block => tokens.segments.some(segment => segment.blockKey === block.blockKey)).map(block => ({ ...block, tokens: 1 })),

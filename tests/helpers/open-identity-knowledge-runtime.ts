@@ -3,25 +3,26 @@ import { setupOpenEntityPlanningV1 } from './open-entity-runtime'
 import { OPEN_HUMAN_VIEWER, openEnvelopeV1 } from './open-ttrpg-session'
 import { approve, operationInput, rt } from './open-ttrpg-branch-recovery'
 import { readTtrpgOpenEntityDeskV1, proposeTtrpgOpenEntityDeskV1, confirmTtrpgOpenEntityDeskV1, materializeTtrpgOpenEntityDeskV1 } from '../../src/lib/ttrpg/open-entity-desk'
-import { changeTtrpgSituationV1, startTtrpgOpenEpochV1, closeTtrpgOpenEpochV1, startTtrpgOpenOperationV1, recordTtrpgOpenHumanNarrationV1, consultTtrpgOracleV1 } from '../../src/lib/ttrpg/runtime-commands'
+import { changeTtrpgSituationV1, startTtrpgOpenEpochV1, closeTtrpgOpenEpochV1, startTtrpgOpenOperationV1, confirmTtrpgOpenOperationV1, recordTtrpgOpenHumanNarrationV1, consultTtrpgOracleV1 } from '../../src/lib/ttrpg/runtime-commands'
 import { resumeTtrpgOpenPlayV1 } from '../../src/lib/ttrpg/open-play-coordinator'
 import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
 
-export async function identityKnowledgeWindowV1(sessionId: number, viewerKey: string) {
+export async function identityKnowledgeWindowV1(sessionId: number, viewerKey: string, rawInput = '核对本人观察或明确转述') {
   const run = rt(await readProductRuntimeState(sessionId)).openRun!, active = run.coordination.epochs.find(row => row.epochKey === run.coordination.activeEpochKey)
   if (active) await closeTtrpgOpenEpochV1({ ...await openEnvelopeV1(sessionId, crypto.randomUUID()), viewerKey: active.viewerKey, epochKey: active.epochKey, reason: '显式结束本次窗口' })
-  await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(sessionId, crypto.randomUUID()), viewerKey, triggerKind: viewerKey === 'viewer.gm' ? 'continue-host' : 'submit-action', rawInput: '核对本人观察或明确转述' })
+  await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(sessionId, crypto.randomUUID()), viewerKey, triggerKind: viewerKey === 'viewer.gm' ? 'continue-host' : 'submit-action', rawInput })
 }
-export async function setupIdentityKnowledgeRuntimeV1(lateCreation = false) {
+export async function setupIdentityKnowledgeRuntimeV1(lateCreation = false, modelReadEnabled = false, discoveryAudience: 'private' | 'party' = 'private') {
   const s = await setupOpenEntityPlanningV1(pkg => {
     const c = pkg.ttrpg!.campaign, rule = pkg.ttrpg!.rulePack.content
     c.gmMode = 'human'; c.dynamicEntityTemplates[0].audience = 'gm-only'
+    if (modelReadEnabled) c.runtimePolicy.enabled = true
     c.characterTemplates.find(row => row.characterKey === 'companion.2')!.controller = 'hybrid'
     rule.actions[0].effects = []; rule.timePolicy.existingAction = 1; rule.timePolicy.actionOverrides = []
     for (const template of c.situationTemplates) {
       template.consequences = []; template.obstacles = template.obstacles.map(row => ({ ...row, predicate: { op: 'world-turn-at-least', value: 20 } }))
       template.noInterventionOutcome.afterWorldTurns = 20
-      for (const evidence of template.evidence) { evidence.discoveryPolicy.allowedAudience = 'private'; evidence.discoveryPolicy.recipientActorKeys = ['hero']; evidence.discoveryPolicy.requiresPlayerConfirmation = true }
+      for (const evidence of template.evidence) { evidence.discoveryPolicy.allowedAudience = discoveryAudience; evidence.discoveryPolicy.recipientActorKeys = discoveryAudience === 'private' ? ['hero'] : ['hero', 'companion.1', 'companion.2']; evidence.discoveryPolicy.requiresPlayerConfirmation = true }
     }
   }, 'viewer.gm')
   const owner = { scope: s.f.scope, sessionId: s.f.sessionId, viewerKey: 'viewer.gm' }
@@ -42,7 +43,13 @@ export async function setupIdentityKnowledgeRuntimeV1(lateCreation = false) {
       discovery: { situationKey: started.openRun!.situations.active[0].situationKey, evidenceRef: template.evidence[0].clueRef,
         interventionPointKey: template.interventionPoints[0].pointKey, effectBindings: {} } } })
   const operation = rt(await readProductRuntimeState(f.sessionId)).openRun!.operations[0]
-  await approve(f.sessionId, operation.operationKey)
+  if (discoveryAudience === 'private') await approve(f.sessionId, operation.operationKey)
+  else for (const approval of operation.plan.requiredApprovals) {
+    const seat = rt(await readProductRuntimeState(f.sessionId)).authorization!.seats.find(row => row.actorKey === approval.actorKey)
+    const viewerKey = seat && seat.controller !== 'ai' && seat.assignmentState === 'claimed' ? seat.viewerKey : OPEN_HUMAN_VIEWER
+    await confirmTtrpgOpenOperationV1({ ...await operationInput(f.sessionId, operation.operationKey, `approval.${approval.actorKey}`), viewerKey,
+      actorKey: approval.actorKey, riskHash: operation.riskHash, decision: 'approve' })
+  }
   const command = { sessionId: f.sessionId, operationKey: operation.operationKey, frozenPlanHash: operation.planHash, viewerKey: OPEN_HUMAN_VIEWER }
   if ((await resumeTtrpgOpenPlayV1(command)).status !== 'awaiting-narration') throw new Error('Expected actual narration boundary')
   await recordTtrpgOpenHumanNarrationV1({ ...await operationInput(f.sessionId, operation.operationKey, 'narration'), viewerKey: 'viewer.gm', text: '你实际观察了门口的线索。', reason: 'host-authored' })

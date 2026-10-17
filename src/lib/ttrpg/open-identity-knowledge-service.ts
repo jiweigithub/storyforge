@@ -1,7 +1,7 @@
 /** Human read/review surface. Pending confirmations are process-local and cannot be imported or copied. */
 import type { WorkspaceScope } from '../types'
 import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
-import { createTtrpgOpenIdentityKnowledgeV1, assertTtrpgOpenIdentityKnowledgeWindowV1 } from './open-identity-knowledge'
+import { createTtrpgOpenIdentityKnowledgeV1, assertTtrpgOpenIdentityKnowledgeWindowV1, ttrpgOpenIdentityNamesFromJournalV1 } from './open-identity-knowledge'
 import { parseTtrpgOpenIdentityKnowledgeRequestV1, type TtrpgOpenIdentityKnowledgeRequestV1 } from './open-identity-knowledge-contract'
 import { hashTtrpgOpenIdentityKnowledgeConfirmationV1 } from './open-identity-knowledge-proof'
 import { confirmTtrpgOpenIdentityKnowledgeV1 } from './runtime-commands'
@@ -9,9 +9,7 @@ import { ttrpgOpenScopedKeyV1 } from './open-coordination'
 import { ttrpgOpenEvidenceFieldsV1 } from './open-knowledge'
 import { ttrpgOpenKnowledgeDiscoveryOriginV1, assertTtrpgOpenKnowledgeShareActorV1 } from './open-knowledge-share'
 import { ttrpgOpenSituationCatalogV1 } from './open-session-situation-catalog'
-import { ttrpgOpenRuntimeEntityReferenceJournalRowsV1 } from './open-runtime-entity-references'
 import { ttrpgOpenEntityReferenceVisibleV1 } from './open-entity-catalog'
-import type { TtrpgRuntimeContentV2 } from './content-version'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import { hashProductProductionValueV2 as hash } from '../product-production/hash'
 import * as p from './open-contract-parse'
@@ -76,13 +74,9 @@ export async function readTtrpgOpenIdentityKnowledgeDeskV1(input: TtrpgOpenIdent
   const roots = run.knowledge.filter(row => !row.identityGrant && row.reliability === 'observed' && row.audience !== 'gm-only' && (seat!.role === 'gm' || readable(row, actorKey)))
     .map(row => ({ knowledgeKey: row.knowledgeKey, ...fields(row), observerActorKeys: seat!.role === 'gm'
       ? players.filter(player => readable(row, player.actorKey)).map(player => player.actorKey) : [actorKey!] }))
-  const instances = ttrpgOpenRuntimeEntityReferenceJournalRowsV1(run.entityOperations ?? [], loaded.session.runtimeSourceHash)
+  const instances = ttrpgOpenIdentityNamesFromJournalV1(run.entityOperations ?? [], loaded.session.runtimeSourceHash)
     .filter(row => ttrpgOpenEntityReferenceVisibleV1(row.audience, row.recipientActorKeys, actorKey, seat!.role === 'gm', true) || learned.some(identity => identity.entityRef === row.entityRef))
-    .map(row => {
-      const op = run.entityOperations!.find(op => op.plan.operationKey === row.operationKey)!, original = JSON.parse(op.plan.frozenContentJson) as TtrpgRuntimeContentV2
-      const name = op.plan.items.find(item => item.entityKey === row.entityRef)?.proposal.name ?? original.rulePack.content.items.find(item => item.key === row.templateKey)?.name ?? p.fail('原实例名称缺失')
-      return { entityRef: row.entityRef, kind: row.kind, name }
-    })
+    .map(({ entityRef, kind, name }) => ({ entityRef, kind, name }))
   const shareSources = players.flatMap(player => {
     try { assertTtrpgOpenKnowledgeShareActorV1(auth, input.viewerKey, player.actorKey) } catch { return [] }
     return run.knowledge.filter(row => row.identityGrant && readable(row, player.actorKey)).map(row => ({ knowledgeKey: row.knowledgeKey, actorKey: player.actorKey, actorName: player.name,

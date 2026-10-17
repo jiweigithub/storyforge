@@ -10,10 +10,15 @@ export const TTRPG_OPEN_P7_CONTEXT_SOURCES_V1 = {
   'gm-assistant': [...TTRPG_OPEN_BASE_CONTEXT_SOURCES_V1['gm-assistant'], TTRPG_OPEN_GUIDANCE_SOURCE_KEYS_V1['gm-assistant']],
 } as const
 export const TTRPG_OPEN_MEMORY_SOURCE_KEYS_V1 = { actor: 'ttrpgOpenMemory', 'party-narrator': 'ttrpgOpenPartyMemory' } as const
-export const TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1 = {
+export const TTRPG_OPEN_MEMORY_CONTEXT_SOURCES_V1 = {
   actor: [...TTRPG_OPEN_P7_CONTEXT_SOURCES_V1.actor, TTRPG_OPEN_MEMORY_SOURCE_KEYS_V1.actor],
   'party-narrator': [...TTRPG_OPEN_P7_CONTEXT_SOURCES_V1['party-narrator'], TTRPG_OPEN_MEMORY_SOURCE_KEYS_V1['party-narrator']],
   'gm-assistant': TTRPG_OPEN_P7_CONTEXT_SOURCES_V1['gm-assistant'],
+} as const
+export const TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1 = 'ttrpgOpenLearnedIdentities'
+export const TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1 = {
+  ...TTRPG_OPEN_MEMORY_CONTEXT_SOURCES_V1,
+  actor: [...TTRPG_OPEN_MEMORY_CONTEXT_SOURCES_V1.actor, TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1],
 } as const
 export const TTRPG_OPEN_MODEL_PURPOSES_V1 = {
   'entity-proposal': { skillId: 'prose.ttrpg-open-entity-propose', entryId: 'ttrpg.open.entity-propose', stepId: 'ttrpg.open.entity-propose',
@@ -48,8 +53,9 @@ export function assertTtrpgOpenFrozenContextSourcesV1(skillId: string, actual: r
   const legacy = TTRPG_OPEN_BASE_CONTEXT_SOURCES_V1[consumer]
   const modern = TTRPG_OPEN_P7_CONTEXT_SOURCES_V1[consumer]
   const current = TTRPG_OPEN_CURRENT_CONTEXT_SOURCES_V1[consumer]
+  const memory = TTRPG_OPEN_MEMORY_CONTEXT_SOURCES_V1[consumer]
   const key = [...actual].sort().join(',')
-  const supported = ['entity-proposal', 'stage-brief', 'situation-proposal', 'public-situation-proposal', 'common-oracle-interpret'].includes(definition.purpose) ? [definition.sourceKeys] : [legacy, modern, current]
+  const supported = ['entity-proposal', 'stage-brief', 'situation-proposal', 'public-situation-proposal', 'common-oracle-interpret'].includes(definition.purpose) ? [definition.sourceKeys] : [legacy, modern, memory, current]
   if (new Set(actual).size !== actual.length || !supported.some(keys => [...keys].sort().join(',') === key)) {
     throw new Error('[ttrpg-open-call] 冻结来源不是此目的登记的准确协议权限')
   }

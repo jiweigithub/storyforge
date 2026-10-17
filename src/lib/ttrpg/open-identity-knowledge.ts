@@ -1,6 +1,7 @@
 /** Explicit semantic identity grants. Original F13 scope and all mechanical owners remain immutable. */
 import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
 import type { TtrpgRuntimeContentV2 } from './content-version'
+import type { TtrpgOpenEntityOperationV1 } from './open-entity-contract'
 import type { TtrpgOpenKnowledgeEntryV1 } from './open-knowledge'
 import { parseTtrpgOpenKnowledgeEntryV1 } from './open-knowledge'
 import { parseTtrpgOpenIdentityKnowledgeRequestV1, type TtrpgOpenIdentityKnowledgeRequestV1, type TtrpgOpenLearnedIdentityV1 } from './open-identity-knowledge-contract'
@@ -23,6 +24,24 @@ export function ttrpgOpenIdentitySourceBeforeV1(runtime: TtrpgRuntimeStateV2, a:
     && (bi === ancestors.length || b.sequence <= ancestors[bi].throughSequence)
 }
 const readable = (row: TtrpgOpenKnowledgeEntryV1, actor: string) => row.audience !== 'gm-only' && (row.audience === 'public' || row.recipientActorKeys.includes(actor))
+
+/** Per-read index only. Mutable heads and lookalike imported records never share a cached authority. */
+export function ttrpgOpenIdentityNamesFromJournalV1(operations: readonly TtrpgOpenEntityOperationV1[], runtimeSourceHash: string) {
+  p.unique(operations.map(row => row.plan.operationKey), 'original identity operation keys')
+  const byOperation = new Map(operations.map(row => [row.plan.operationKey, row]))
+  const content = new Map<string, TtrpgRuntimeContentV2>()
+  return ttrpgOpenRuntimeEntityReferenceJournalRowsV1(operations, runtimeSourceHash).map(row => {
+    const op = byOperation.get(row.operationKey)!, item = op.plan.items.find(item => item.entityKey === row.entityRef)
+    let name = item?.proposal.name
+    if (!name) {
+      let frozen = content.get(row.operationKey)
+      if (!frozen) { frozen = JSON.parse(op.plan.frozenContentJson) as TtrpgRuntimeContentV2; content.set(row.operationKey, frozen) }
+      name = frozen.rulePack.content.items.find(item => item.key === row.templateKey)?.name
+    }
+    if (!name) p.fail('原实际创建的实例缺少准确名称')
+    return { ...row, name, rulePackContentHash: op.plan.rulePackContentHash }
+  })
+}
 
 export function assertTtrpgOpenIdentityKnowledgeWindowV1(runtime: TtrpgRuntimeStateV2, viewerKey: string, mode: TtrpgOpenIdentityKnowledgeRequestV1['mode']) {
   const run = runtime.openRun, auth = runtime.authorization, seat = auth?.seats.find(row => row.viewerKey === viewerKey)
@@ -47,14 +66,11 @@ export function ttrpgOpenIdentityKnowledgeSelectionV1(input: { runtime: TtrpgRun
     || request.audience === 'party' && stable([...request.recipientActorKeys].sort()) !== stable([...auth.selectedActorKeys].sort())
     || request.audience === 'private' && !content.campaign.informationPolicy.interPlayerWhispers
     || request.audience === 'public' && auth.seats.some(row => !row.consent.publicSharingAllowed)) p.fail('身份知识的来源、先后、私信或准确接收者未获授权')
-  const rows = ttrpgOpenRuntimeEntityReferenceJournalRowsV1(run.entityOperations ?? [], input.runtimeSourceHash)
+  const rows = ttrpgOpenIdentityNamesFromJournalV1(run.entityOperations ?? [], input.runtimeSourceHash)
   const identities: TtrpgOpenLearnedIdentityV1[] = [...request.entityRefs].sort().map(entityRef => {
     const row = rows.find(row => row.entityRef === entityRef) ?? p.fail('身份知识不能引用未创建对象或静态冻结别名')
-    const op = run.entityOperations!.find(op => op.plan.operationKey === row.operationKey)!
-    const original = JSON.parse(op.plan.frozenContentJson) as TtrpgRuntimeContentV2
-    const item = op.plan.items.find(item => item.entityKey === entityRef)
-    const name = item?.proposal.name ?? original.rulePack.content.items.find(item => item.key === row.templateKey)?.name
-    if (!name || op.plan.runtimeSourceHash !== input.runtimeSourceHash || op.plan.rulePackContentHash !== content.rulePack.contentHash
+    const name = row.name
+    if (row.rulePackContentHash !== content.rulePack.contentHash
       || !ttrpgOpenIdentitySourceBeforeV1(input.runtime, row.sourceRef, source.acquisitionRef)) p.fail('识别必须晚于原实际创建，名字来自原 F13 而非可变属性')
     if (request.mode === 'share') {
       if (!source.identityGrant?.identities.some(identity => identity.entityRef === entityRef && identity.name === name)) p.fail('只能明确传播原已识别的身份子集')
@@ -100,11 +116,13 @@ export function ttrpgOpenIdentityKnowledgePayloadV1(knowledge: TtrpgOpenKnowledg
 /** Exact source links are necessary even for records loaded from a backup or a branch snapshot. */
 export function assertTtrpgOpenIdentityKnowledgeJournalV1(runtime: TtrpgRuntimeStateV2): void {
   const run = runtime.openRun
-  if (!run) return
-  for (const knowledge of run.knowledge) {
-    const grant = knowledge.identityGrant
-    if (!grant) continue
-    const source = run.knowledge.find(row => row.knowledgeKey === grant.sourceKnowledgeKey)
+  const entries = run?.knowledge.filter(row => row.identityGrant) ?? []
+  if (!run || !entries.length) return
+  const byKnowledge = new Map(run.knowledge.map(row => [row.knowledgeKey, row]))
+  const journals = new Map<string, Map<string, ReturnType<typeof ttrpgOpenIdentityNamesFromJournalV1>[number]>>()
+  for (const knowledge of entries) {
+    const grant = knowledge.identityGrant!
+    const source = byKnowledge.get(grant.sourceKnowledgeKey)
     const originRun = knowledge.acquisitionRef.sessionKey === runtime.sessionKey ? run
       : runtime.branchLineage?.ancestors.find(row => row.sessionKey === knowledge.acquisitionRef.sessionKey)?.snapshot.openRun
     const epoch = originRun?.coordination.epochs.find(row => row.epochKey === grant.authorizationEpochKey)
@@ -124,14 +142,12 @@ export function assertTtrpgOpenIdentityKnowledgeJournalV1(runtime: TtrpgRuntimeS
     } else if (!source.identityGrant || knowledge.reliability !== (source.reliability === 'belief' ? 'belief' : 'hearsay')
       || grant.actorKey === null || !readable(source, grant.actorKey)
       || !run.knowledgeShares?.some(receipt => stable(receipt.knowledge) === stable(knowledge))) p.fail('身份传播缺少原识别或准确转述回执')
-    const rows = ttrpgOpenRuntimeEntityReferenceJournalRowsV1(originRun.entityOperations ?? [], grant.runtimeSourceHash)
+    const journalKey = `${knowledge.acquisitionRef.sessionKey}:${grant.runtimeSourceHash}`
+    let rows = journals.get(journalKey)
+    if (!rows) { rows = new Map(ttrpgOpenIdentityNamesFromJournalV1(originRun.entityOperations ?? [], grant.runtimeSourceHash).map(row => [row.entityRef, row])); journals.set(journalKey, rows) }
     for (const identity of grant.identities) {
-      const actual = rows.find(row => row.entityRef === identity.entityRef)
-      const op = originRun.entityOperations?.find(row => row.plan.operationKey === actual?.operationKey)
-      const original = op ? JSON.parse(op.plan.frozenContentJson) as TtrpgRuntimeContentV2 : null
-      const name = op?.plan.items.find(item => item.entityKey === identity.entityRef)?.proposal.name
-        ?? original?.rulePack.content.items.find(item => item.key === actual?.templateKey)?.name
-      if (!actual || actual.kind !== identity.kind || name !== identity.name || actual.operationKey !== identity.operationKey
+      const actual = rows.get(identity.entityRef)
+      if (!actual || actual.kind !== identity.kind || actual.name !== identity.name || actual.operationKey !== identity.operationKey
         || actual.planHash !== identity.planHash || stable(actual.sourceRef) !== stable(identity.sourceRef)
         || !ttrpgOpenIdentitySourceBeforeV1(runtime, identity.sourceRef, source.acquisitionRef)
         || grant.mode === 'share' && !source.identityGrant?.identities.some(row => stable(row) === stable(identity))) p.fail('身份记录没有原准确创建、名称或先前识别来源')

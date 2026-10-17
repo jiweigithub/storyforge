@@ -58,7 +58,7 @@ describe('R-TTRPGOPEN8 actual formal memory recall', { timeout: 60000 }, () => {
     expect(await db.ttrpgNarrativeMemories.toArray()).toEqual(originalRows)
     expect(await readAgentRunArtifactExactV1({ projectId: f.scope.projectId, artifactKind: 'raw-response', contentHash: result.status === 'candidate' ? result.candidate.rawResponseHash : '' })).toBe(output)
     const snapshot = await readInstanceAgentRunV1(f.scope, prepared.runId)
-    expect(snapshot.contract.permissions.contextSourceKeys).toEqual(['ttrpgOpenAuthority', 'ttrpgOpenKnowledge', 'ttrpgOpenActorContext', 'ttrpgOpenMemory'])
+    expect(snapshot.contract.permissions.contextSourceKeys).toEqual(['ttrpgOpenAuthority', 'ttrpgOpenKnowledge', 'ttrpgOpenActorContext', 'ttrpgOpenMemory', 'ttrpgOpenLearnedIdentities'])
   })
   it('gives the actual companion its explicitly shared belief and excludes the human owner private and GM notes', async () => {
     const f = await setup()

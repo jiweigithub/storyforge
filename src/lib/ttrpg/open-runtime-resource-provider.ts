@@ -3,7 +3,7 @@ import { canonicalStringify } from '../agent/run/hash'
 import type { ContextResourceProviderV1, ContextResourceDescriptorV1, FrozenResourceScopeV1, ResourceListInputV1, ContextResourceKind } from '../registry/types'
 import { hashCanonicalValue } from '../agent/run/hash'
 export interface TtrpgOpenResourceRowV1 { descriptor: ContextResourceDescriptorV1; content: string; tokenCount: number; /** Authorized search corpus, never raw unfiltered state. */ searchText?: string }
-export interface TtrpgOpenResourceCatalogV1 { fingerprint: string; resources: TtrpgOpenResourceRowV1[]; legacyResources?: TtrpgOpenResourceRowV1[] }
+export interface TtrpgOpenResourceCatalogV1 { fingerprint: string; resources: TtrpgOpenResourceRowV1[]; legacyResources?: TtrpgOpenResourceRowV1[]; /** Actual owner CAS for pinned reads; never reconstructed from imported JSON. */ assertCurrent?: () => Promise<void> }
 export function createTtrpgOpenRuntimeResourceProviderV1(input: {
   sourceKey: string; providerVersion: string; normalizationVersion: string; kinds: ContextResourceKind[]
   catalog: (scope: FrozenResourceScopeV1) => Promise<TtrpgOpenResourceCatalogV1>
@@ -46,6 +46,7 @@ export function createTtrpgOpenRuntimeResourceProviderV1(input: {
       const original = evidence(data)
       const provider = createTtrpgOpenRuntimeResourceProviderV1({ ...input, catalog: async actual => {
         if (canonicalStringify(actual) !== frozenScope) throw new Error('[ttrpg-open-provider] 只读会话不能更换作用域或角色')
+        await data.assertCurrent?.()
         await input.assertAccess?.(actual, data.fingerprint)
         return data
       } })
