@@ -1968,6 +1968,13 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     read: readTtrpgGmRuntimeContextV1,
   },
   {
+    key: 'ttrpgOpenVoiceText', label: 'open 跑团原预留配音的准确朗读片段',
+    scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 8000,
+    protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,
+    enabled: input => !!input.ttrpgVoiceRequest,
+    read: async input => (await import('../ttrpg/open-voice-context')).readTtrpgOpenVoiceTextSourceV1(input),
+  },
+  {
     key: 'ttrpgOpenAuthority', label: 'open 跑团角色权限与机械状态',
     scope: 'runtime', layer: 'L0', ownerFrom: 'instance', budgetTokens: 10_000,
     protectedFromTrim: true, atomic: true, requiresProductRuntimeSessionId: true,

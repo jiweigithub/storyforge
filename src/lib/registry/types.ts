@@ -611,6 +611,8 @@ export interface AssembleContextInput {
   productRuntimeSessionId?: number
   /** TTRPG R7: exact player character POV for the isolated AI-player reader. */
   ttrpgPlayerActorKey?: string
+  /** One original human-selected speech request; never an actor/Chapter alias. */
+  ttrpgVoiceRequest?: { viewerKey: string; requestKey: string; intentReceiptHash: string }
   /** PRODUCTPROD-1 registered production context anchors. */
   productProductionId?: number
   /** Exact task identity for registered, Build-bound repair feedback. */

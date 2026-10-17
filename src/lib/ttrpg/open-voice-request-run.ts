@@ -24,17 +24,18 @@ export function ttrpgOpenVoiceIntentContractV1(input: { scope: WorkspaceScope; s
     failurePolicy: { onProtocolError: 'fail' as const, onVerificationFailure: 'fail' as const, onStaleInput: 'pause-for-author' as const } }
 }
 export interface TtrpgOpenVoiceRunSetWitnessV1 { sessionId: number; rows: AgentRunRecord[] }
-export async function verifyTtrpgOpenVoiceIntentRunV1(input: { scope: WorkspaceScope; sessionId: number; row: TtrpgOpenVoiceRequestV1 }) {
+export async function verifyTtrpgOpenVoiceIntentRunV1(input: { scope: WorkspaceScope; sessionId: number; row: TtrpgOpenVoiceRequestV1; phase?: 'reserve' | 'cancel' | 'finalize' }) {
   const rows = await db.agentRuns.where('productRuntimeSessionId').equals(input.sessionId).sortBy('id')
   const matches = rows.filter(r => r.contractHash === input.row.runContractHash && JSON.parse(r.contractJson).objective === ttrpgOpenVoiceIntentObjectiveV1(input.row.requestKey))
   if (matches.length !== 1 || matches[0].portableRuntimeOriginJson !== undefined) p.fail('配音请求需要唯一原本地 Run；导入记录不能获得执行权')
   const snapshot = await readInstanceAgentRunV1(input.scope, matches[0].id!), run = snapshot.run
   const expected = await acceptAgentRunContract(ttrpgOpenVoiceIntentContractV1(input))
+  const phase = input.phase ?? 'reserve', step = snapshot.projection.steps[TTRPG_OPEN_VOICE_REQUEST_STEP_V1]
   if (run.contractHash !== input.row.runContractHash || run.contractHash !== expected.contractHash
     || run.contractJson !== canonicalStringify(expected.contract) || run.productRuntimeSessionId !== input.sessionId
-    || snapshot.projection.steps[TTRPG_OPEN_VOICE_REQUEST_STEP_V1]?.status !== 'running'
-    || ['completed', 'failed', 'cancelled'].includes(snapshot.projection.state)
-    || rows.some(r => r.parentRunId === run.id) || snapshot.events.some(e => e.type === 'model.requested' || e.type === 'model.responded' || e.type === 'tool.called' || e.type === 'tool.returned')) p.fail('原配音意图已结束、已发送或具有子任务，不能作为未发送请求处理')
+    || (phase === 'reserve' ? step?.status !== 'running' || snapshot.projection.state !== 'running'
+      : !['running', 'succeeded'].includes(step?.status ?? '') || !['running', 'verifying', 'completed'].includes(snapshot.projection.state))
+    || rows.some(r => r.parentRunId === run.id) && (phase !== 'finalize' || snapshot.projection.state !== 'completed') || snapshot.events.some(e => e.type === 'model.requested' || e.type === 'model.responded' || e.type === 'tool.called' || e.type === 'tool.returned')) p.fail('原配音意图已结束、已发送或具有子任务，不能作为未发送请求处理')
   const content = canonicalStringify(ttrpgOpenVoiceRequestInputV1(input.row))
   const artifact = await db.agentRunArtifacts.where('[projectId+artifactKind+contentHash]').equals([input.scope.projectId, 'source-snapshot', input.row.inputArtifactHash]).first()
   if (!artifact || artifact.retentionState !== 'available' || artifact.content !== content

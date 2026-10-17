@@ -86,7 +86,7 @@ describe('R-TTRPGOPEN10 durable original voice intent and cumulative reservation
     const before = await readProductRuntimeState(s.owner.sessionId), cancelled = await cancel(s, requested.requestKey)
     expect(await cancel(s, requested.requestKey)).toEqual(cancelled)
     expect(projectTtrpgOpenMechanicalBasisV1(await readProductRuntimeState(s.owner.sessionId))).toEqual(projectTtrpgOpenMechanicalBasisV1(before))
-    expect((await db.agentRuns.toArray())[0].status).toBe('cancelled'); await replay(s.owner.sessionId)
+    expect((await db.agentRuns.toArray())[0].status).toBe('completed'); await replay(s.owner.sessionId)
   })
   it('does not acquire narrative windows and can cancel original unsent intent during a later consultation', async () => {
     const s = await setupAudioRuntimeV1(false), requested = await reserve(s)
@@ -154,7 +154,8 @@ describe('R-TTRPGOPEN10 durable original voice intent and cumulative reservation
     const rows = rt(await readProductRuntimeState(s.owner.sessionId)).openRun!.voiceRequests ?? []
     expect(rows.length).toBeLessThanOrEqual(1); expect(result.some(r => r.status === 'rejected')).toBe(true)
     const active = (await db.agentRuns.toArray()).filter(r => !['failed', 'cancelled', 'completed'].includes(r.status))
-    expect(active.length).toBe(rows.length); if (rows.length) expect(active[0].contractHash).toBe(rows[0].runContractHash)
+    expect(active).toHaveLength(0)
+    if (rows.length) expect((await db.agentRuns.toArray()).filter(r => r.status === 'completed').map(r => r.contractHash)).toEqual([rows[0].runContractHash])
     await replay(s.owner.sessionId)
   })
   it('accepts actual adopted KP model prose as source only after its original operation completes', async () => {

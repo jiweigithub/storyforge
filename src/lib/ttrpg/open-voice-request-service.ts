@@ -51,7 +51,8 @@ export async function reserveTtrpgOpenVoiceRequestV1(request: TtrpgOpenAudioRead
     await loaded.assertCurrent()
     const event = await reserveTtrpgOpenVoiceRequestForKernelV1({ ...input, baseSequence: loaded.state.lastSequence, baseStateHash: loaded.stateHash,
       commandId: await ttrpgOpenScopedKeyV1(loaded.runtime.sessionKey, 'voice-request', [input.viewerKey, submissionKey]), request: row })
-    return { requestKey, sequence: event.sequence, generationAllowed: false as const, adoptionAllowed: false as const }
+    const verified = await (await import('./open-voice-intent-receipt')).finishTtrpgOpenVoiceIntentForKernelV1({ ...input, requestKey })
+    return { requestKey, sequence: event.sequence, intentReceiptHash: verified.receipt.receiptHash, generationAllowed: false as const, adoptionAllowed: false as const }
   } catch (error) {
     const committed = await db.productRuntimeEvents.where('[sessionId+commandId]').equals([input.sessionId,
       await ttrpgOpenScopedKeyV1(loaded.runtime.sessionKey, 'voice-request', [input.viewerKey, submissionKey])]).first()

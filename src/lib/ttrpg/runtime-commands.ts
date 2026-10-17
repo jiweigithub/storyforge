@@ -6603,7 +6603,7 @@ export async function cancelTtrpgOpenVoiceRequestForKernelV1(request: FormalTtrp
     const loaded = await loadTtrpgOpenAudioReadStateV1(input)
     if (stableJson(state) !== stableJson(loaded.state) || input.commandId !== await ttrpgOpenScopedKeyV1(loaded.runtime.sessionKey, 'voice-cancel', [input.viewerKey, input.requestKey])) throw new Error('[ttrpg] 配音取消基线或身份已变化')
     const row = contract.assertTtrpgOpenVoiceCancellationV1(loaded.runtime, input.requestKey, input.viewerKey)
-    const proof = await verifyTtrpgOpenVoiceIntentRunV1({ ...input, row })
+    const proof = await verifyTtrpgOpenVoiceIntentRunV1({ ...input, row, phase: 'cancel' })
     await loaded.assertCurrent()
     return { actorKey: loaded.seat!.actorKey, targetKey: null,
       payload: contract.ttrpgOpenVoiceCancellationPayloadV1({ ...row, cancelledRef: { sessionKey: loaded.runtime.sessionKey, sequence } }, input.viewerKey),
