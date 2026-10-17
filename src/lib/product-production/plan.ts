@@ -348,7 +348,11 @@ export function parseProductProductionPlanV3(
       fail(`${task.taskKey} 上下文投影只用于准确 AVG 确定性任务`)
     }
     if (task.contextProfile === 'avg-visual-planning-v4' && (productType !== 'avg' || task.executionMode !== 'deterministic'
-      || task.kind !== 'avg-v4-visual-requirements-compile')) fail(`${task.taskKey} V4 投影只用于准确需求编译任务`)
+      || !['avg-v4-visual-requirements-compile','avg-v4-visual-proposal-reuse'].includes(task.kind))) fail(`${task.taskKey} V4 投影只用于准确需求编译或方案复验任务`)
+    if (task.kind === 'avg-v4-visual-proposal-reuse' && (productType !== 'avg' || task.executionMode !== 'deterministic'
+      || task.contextProfile !== 'avg-visual-planning-v4' || task.skillId !== null || task.capabilityRequirementKeys.length !== 0
+      || task.budgetReservation.modelCalls !== 0 || task.budgetReservation.mediaCalls !== 0 || task.budgetReservation.maximumCostUsd !== 0
+      || task.maxAttempts !== 1 || task.reuse !== null)) fail(`${task.taskKey} 方案复验必须为单次零调用任务，不能借用供应商或通用沿用权限`)
   }
   const visiting = new Set<string>(); const visited = new Set<string>()
   const visit = (taskKey: string) => {
