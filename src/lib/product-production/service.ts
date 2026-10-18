@@ -1924,13 +1924,13 @@ export async function beginProductProductionEvolutionV1(input: {
     && affectedLanes.includes('content') && affectedLanes.includes('visual')
   const runtimeCopyRecovery = currentTextAdventureRecovery
     && affectedLanes.length === 1 && affectedLanes[0] === 'runtime'
-  const nativeRecovery = details.executionBrief?.avgAssembly && !details.build.previewHash
+  const nativeRecovery = (details.executionBrief?.avgAssembly || details.executionBrief?.avgVisualPlanning) && !details.build.previewHash
     && ['cancelled','failed','recovery-required'].includes(details.build.status)
     && canonicalProductProductionJsonV2([...affectedLanes].sort()) === canonicalProductProductionJsonV2(['audio','content','product','visual'])
   const recoveryEvolution = budgetRecovery || planUpgradeRecovery || visualContractRecovery
     || preMediaContentRecovery || runtimeCopyRecovery
   if (nativeRecovery) {
-    base = await deriveAvgAssemblyRecoveryBaseV1(details.build,details.executionBrief!)
+    base = await deriveAvgAssemblyRecoveryBaseV1(details.build,details.executionBrief!,scope)
   } else if (recoveryEvolution) {
     const rejectedAnchorRecovery = rejectedAnchorRecoveryCandidate
     if (details.production.productType !== 'text-adventure'

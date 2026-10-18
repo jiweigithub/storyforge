@@ -2722,8 +2722,8 @@ async function applyCommand(input: {
       || briefRow.status !== 'authorized' || briefRow.authorizedAt !== base.authorizedAt
       || !await assertRecordInScope(scope,'productBuilds',base,{owner:'work'}) || !await assertRecordInScope(scope,'productProductionBriefs',briefRow,{owner:'work'})) reject('source-stale','AVG 恢复基线已变化')
     try {
-      nativeRecovery = canonicalProductProductionJsonV2(await deriveAvgAssemblyRecoveryBaseV1(base,parseProductProductionBriefV3(briefRow.briefJson))) === canonicalProductProductionJsonV2(recoveryBase)
-    } catch { reject('source-stale','AVG 恢复基线缺少准确的零 Provider 来源证据') }
+      nativeRecovery = canonicalProductProductionJsonV2(await deriveAvgAssemblyRecoveryBaseV1(base,parseProductProductionBriefV3(briefRow.briefJson),scope)) === canonicalProductProductionJsonV2(recoveryBase)
+    } catch { reject('source-stale','AVG 恢复基线缺少准确的冻结来源证据') }
     if (!nativeRecovery) reject('source-stale','AVG 恢复请求与当前冻结基线不一致')
   }
   const recoveryEvolution = nativeRecovery || budgetRecovery || planUpgradeRecovery || visualContractRecovery
