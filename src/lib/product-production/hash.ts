@@ -2,6 +2,22 @@ import Dexie from 'dexie'
 
 const HASH_PATTERN = /^[0-9a-f]{64}$/
 
+type CanonicalObjectKey = Readonly<{ original: string; normalized: string; encoded: string }>
+const canonicalObjectKeyCache = new Map<string, CanonicalObjectKey>()
+
+function canonicalObjectKey(key: string): CanonicalObjectKey {
+  const cached = canonicalObjectKeyCache.get(key)
+  if (cached) return cached
+  const normalized = key.normalize('NFC')
+  const result = { original: key, normalized, encoded: JSON.stringify(normalized) }
+  // Only immutable key encodings are reusable. Never retain a caller object,
+  // member value or verification result; arbitrary keys cannot grow this map.
+  if (key.length <= 128 && canonicalObjectKeyCache.size < 512) {
+    canonicalObjectKeyCache.set(key, Object.freeze(result))
+  }
+  return result
+}
+
 function compareCodePoints(left: string, right: string): number {
   // Walk Unicode scalar/standalone-surrogate values exactly as string
   // iteration does, without allocating two whole arrays for every comparison.
@@ -49,15 +65,18 @@ function canonicalJson(value: unknown, ancestors: Set<object>): string {
       throw new Error('[product-production] canonical JSON 只接受普通对象')
     }
     const record = value as Record<string, unknown>
-    const normalizedEntries = Object.keys(record).map(key => ({ original: key, normalized: key.normalize('NFC') }))
-    if (new Set(normalizedEntries.map(entry => entry.normalized)).size !== normalizedEntries.length) {
+    const normalizedEntries = Object.keys(record).map(canonicalObjectKey)
+    // Object.keys is already unique. A collision is possible only when NFC
+    // changes at least one key; all changed-key inputs retain the full check.
+    if (normalizedEntries.some(entry => entry.original !== entry.normalized)
+      && new Set(normalizedEntries.map(entry => entry.normalized)).size !== normalizedEntries.length) {
       throw new Error('[product-production] NFC 规范化后出现重复对象 key')
     }
     return `{${normalizedEntries
       .sort((left, right) => compareCodePoints(left.normalized, right.normalized))
       .map(entry => {
         if (record[entry.original] === undefined) throw new Error('[product-production] canonical JSON 不接受 undefined 字段')
-        return `${JSON.stringify(entry.normalized)}:${canonicalJson(record[entry.original], ancestors)}`
+        return `${entry.encoded}:${canonicalJson(record[entry.original], ancestors)}`
       })
       .join(',')}}`
   } finally {

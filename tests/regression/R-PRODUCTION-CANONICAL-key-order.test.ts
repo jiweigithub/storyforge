@@ -33,4 +33,42 @@ describe('Production canonical JSON preserves its original Unicode byte contract
       expect(()=>canonicalProductProductionJsonV2(value)).toThrow()
     }
   })
+
+  it('revalidates every value after repeated key use instead of reusing object or value results',()=>{
+    const value:Record<string,unknown>={schema:'before',version:1}
+    expect(canonicalProductProductionJsonV2(value)).toBe('{"schema":"before","version":1}')
+    value.schema='after';value.version=2
+    expect(canonicalProductProductionJsonV2(value)).toBe('{"schema":"after","version":2}')
+    value.schema=undefined
+    expect(()=>canonicalProductProductionJsonV2(value)).toThrow(/undefined 字段/)
+    value.schema=value
+    expect(()=>canonicalProductProductionJsonV2(value)).toThrow(/循环引用/)
+    value.schema=Array(1)
+    expect(()=>canonicalProductProductionJsonV2(value)).toThrow(/稀疏数组/)
+  })
+
+  it('retains both member reads and live getter values after a key has already been encoded',()=>{
+    canonicalProductProductionJsonV2({'é':0})
+    let reads=0
+    const value=Object.defineProperty(Object.create(null),'é',{enumerable:true,get:()=>++reads})
+    expect(canonicalProductProductionJsonV2(value)).toBe('{"é":2}')
+    expect(reads).toBe(2)
+    expect(canonicalProductProductionJsonV2(value)).toBe('{"é":4}')
+    expect(reads).toBe(4)
+  })
+
+  it('preserves long normalized keys and collision rejection after many distinct key names',()=>{
+    for(let i=0;i<1024;i++)expect(canonicalProductProductionJsonV2({[`distinct.${i}`]:i})).toBe(`{"distinct.${i}":${i}}`)
+    const original='e\u0301'.repeat(160),normalized='é'.repeat(160)
+    expect(canonicalProductProductionJsonV2({[original]:'e\u0301'})).toBe(`{${JSON.stringify(normalized)}:"é"}`)
+    expect(()=>canonicalProductProductionJsonV2({[original]:1,[normalized]:2})).toThrow(/重复对象 key/)
+    expect(canonicalProductProductionJsonV2({['\ud800'.repeat(160)]:-0})).toBe(`{${JSON.stringify('\ud800'.repeat(160))}:0}`)
+  })
+
+  it('does not turn separately reusable child objects into circular references across repeated key paths',()=>{
+    const child={label:'e\u0301',version:1},value={left:child,right:child}
+    expect(canonicalProductProductionJsonV2(value)).toBe('{"left":{"label":"é","version":1},"right":{"label":"é","version":1}}')
+    child.label='changed'
+    expect(canonicalProductProductionJsonV2(value)).toBe('{"left":{"label":"changed","version":1},"right":{"label":"changed","version":1}}')
+  })
 })
