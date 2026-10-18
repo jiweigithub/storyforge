@@ -15,6 +15,7 @@ import { hashAvgVoiceSourceInputV1 } from '../../src/lib/avg/voice-production-so
 import { hashAvgVoiceTextV1 } from '../../src/lib/avg/voice-production-contract'
 import { hashAvgSpeechProtocolV1 } from '../../src/lib/avg/voice-request-contract'
 import { configuredAvgVoiceEndpointHashV1 } from '../../src/lib/avg/voice-transport'
+import { avgLocalVoiceProtocolV1, AVG_LOCAL_VOICE_REVISION_V1 } from '../../src/lib/avg/voice-local-profile'
 import { avgVoiceRouteBindingHashV1 } from '../../src/lib/avg/voice-assembly-contract'
 import { encodeAvgStoredAssemblyBriefV3 } from '../../src/lib/avg/voice-assembly-storage'
 import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
@@ -63,7 +64,7 @@ beforeEach(async () => {
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); db.close() })
 
-async function setupVoice(withImage = false, options: { unknownResponse?: boolean; deferProvider?: boolean; longVoiceBatch?: boolean } = {}) {
+async function setupVoice(withImage = false, options: { unknownResponse?: boolean; deferProvider?: boolean; longVoiceBatch?: boolean; local?: boolean } = {}) {
   const workspace = avgAuthorWorkspaceFixture()
   workspace.presentation.reading = { schema: 'storyforge.avg.reading-plan', version: 1, manualVoice: 'wait', voiceFailure: 'pause',
     maximumVoiceWaitMs: 30000, autoDelayMs: 800, voices: [] }
@@ -89,9 +90,11 @@ async function setupVoice(withImage = false, options: { unknownResponse?: boolea
     const imageCapability = base.capabilityRequirements.find(c => c.requirementKey === 'avg.media.image')!
     policy.capabilityRequirements = [policy.capabilityRequirements[0]!, imageCapability]
   }
-  p.provider = 'agnes'; p.endpointRouteHash = await configuredAvgVoiceEndpointHashV1({ baseUrl: config.baseUrl, model: p.model })
+  if (options.local) Object.assign(p, await avgLocalVoiceProtocolV1())
+  else { p.provider = 'agnes'; p.endpointRouteHash = await configuredAvgVoiceEndpointHashV1({ baseUrl: config.baseUrl, model: p.model }) }
   const capabilityHash = await hashAvgSpeechProtocolV1(p)
-  Object.assign(preset, { provider: 'agnes', endpointRouteHash: p.endpointRouteHash, capabilityHash })
+  Object.assign(preset, { provider: p.provider, model: p.model, voiceId: options.local ? 'Serena' : preset.voiceId,
+    endpointRouteHash: p.endpointRouteHash, capabilityHash })
   policy.capabilityRequirements[0]!.capabilityHash = capabilityHash
   a.voice.binding.endpointRouteHash = p.endpointRouteHash
   a.voice.binding.bindingHash = await avgVoiceRouteBindingHashV1({ requirementKey: 'avg.media.voice', adapterId: p.adapterId,
@@ -121,9 +124,15 @@ async function setupVoice(withImage = false, options: { unknownResponse?: boolea
   const audio = await avgReadingAudioFixture(500)
   const image = withImage ? new Uint8Array(await deterministicRegionMapPngV1({ width: 576, height: 324, palette: ['#18213b', '#39506b', '#c8dce8'] })) : null
   const fetcher = vi.fn(async (target: RequestInfo | URL, _init?: RequestInit) => {
+    if (options.local && String(target).endsWith('/capabilities')) return Response.json({
+      schema: 'storyforge.avg.local-speech-capability', version: 1, provider: p.provider, model: p.model,
+      modelRevision: AVG_LOCAL_VOICE_REVISION_V1, voices: p.voices.map(v => v.voiceId), locale: 'zh-CN', outputFormat: 'wav',
+      maximumInputCharacters: 256, supportsInstructions: true, maximumInstructionsCharacters: 2048,
+      speedRange: null, license: 'Apache-2.0', voiceMode: 'fixed-preset',
+    })
     if (String(target).endsWith('/audio/speech')) {
       if (options.unknownResponse) throw new TypeError('Controlled response lost after the exact request was dispatched')
-      return new Response(audio.data, { headers: { 'Content-Type': 'audio/wav', 'x-request-id': 'voice.harness.response.1' } })
+      return new Response(audio.data, { headers: { 'Content-Type': 'audio/wav', 'x-request-id': 'voice.harness.response.1', ...(options.local ? { 'x-storyforge-cost-usd': '0' } : {}) } })
     }
     if (!image || !String(target).endsWith('/images/generations')) throw new Error('Unexpected controlled HTTP route')
     let binary = ''; for (let i = 0; i < image.length; i += 16384) binary += String.fromCharCode(...image.subarray(i, i + 16384))
@@ -184,6 +193,27 @@ async function choose(s: Awaited<ReturnType<typeof start>>) {
 }
 
 describe('AVG voice actual command/Harness/producer/author/Preview path with controlled HTTP and decoder', () => {
+  it('delivers a local fixed-voice request through actual author start, child Harness, explicit review and choice without a global API key', async () => {
+    const setup = await setupVoice(false, { local: true, deferProvider: true })
+    useAIConfigStore.getState().setConfig({ provider: 'openai', apiKey: '', baseUrl: '', model: 'unused' })
+    await runAvgAssemblyV1(setup)
+    const raw = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([setup.buildId, 'avg.voice.raw.keeper.line']).filter(r => r.status === 'accepted').first()
+    if (!raw) throw new Error((await db.productBuilds.get(setup.buildId))!.failureJson)
+    const s = { ...setup, raw }
+    expect(s.fetcher).toHaveBeenCalledTimes(2)
+    expect(s.fetcher.mock.calls[1]![1]?.headers).not.toHaveProperty('Authorization')
+    const received = await readAvgRawVoiceCandidateV3({ ...s, requirementKey: 'keeper.line', version: raw.version, contentHash: raw.contentHash })
+    expect(received.payload.provider.costUsd).toBe(0)
+    expect(received.payload.request.provider).toBe('storyforge-local-qwen3')
+    await review(s); await choose(s)
+    const draft = await readAvgDraftV1(s.scope)
+    await configureAvgChosenVoiceDraftV3({ ...s, expectedDraftRevision: draft.revision })
+    const workspace = parseAvgAuthorWorkspaceV1(JSON.parse((await readAvgDraftV1(s.scope)).editorJson))
+    expect(workspace.presentation.reading!.voices).toMatchObject([{ lineKey: 'line.desk', assetKey: 'voice.desk' }])
+    expect(s.fetcher).toHaveBeenCalledTimes(2)
+    expect(useAIConfigStore.getState().config.apiKey).toBe('')
+  })
+
   it('delivers eight maximum-size lines through registered exact context and real durable child Runs with eight controlled requests', async () => {
     const s = await setupVoice(false, { deferProvider: true, longVoiceBatch: true })
     const assembled = vi.spyOn(contextAssembly, 'assembleContext')

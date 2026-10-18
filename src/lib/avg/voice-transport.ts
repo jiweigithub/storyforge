@@ -3,6 +3,8 @@ import type { ProductProductionCapabilityBindingV1 } from '../product-production
 import { canonicalStringify, hashCanonicalValue } from '../agent/run/hash'
 import { assertExactRunArtifactBodySafeV1 } from '../memory/evidence-policy'
 import { avgKey } from './protocol-validation'
+import { AVG_LOCAL_VOICE_BASE_URL_V1, avgLocalVoiceProtocolV1, assertAvgLocalVoiceServiceV1 } from './voice-local-profile'
+import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { assertAvgVoiceAssemblyRequestsV3, assertAvgVoiceCapabilityDeclarationV1, type AvgAssemblyBriefV3 } from './voice-assembly-contract'
 import { inspectAvgVoiceWaveV1 } from './voice-wave'
 import { AVG_VOICE_NETWORK_TIMEOUT_MS_V1 } from './voice-request-contract'
@@ -78,7 +80,7 @@ function untilAborted<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
 function safeBody(bytes: Uint8Array, privateKey: string): boolean {
   try {
     const text = new TextDecoder().decode(bytes)
-    if (text.includes(privateKey)) return false
+    if (privateKey && text.includes(privateKey)) return false
     assertExactRunArtifactBodySafeV1({ artifactKind: 'raw-response', body: text })
     if (text.trimStart().startsWith('{') || text.trimStart().startsWith('[')) {
       let value: unknown
@@ -92,7 +94,7 @@ function safeBody(bytes: Uint8Array, privateKey: string): boolean {
 function headersReceipt(response: Response, privateKey: string) {
   const omissions: string[] = []
   const requestId = response.headers.get('x-request-id') ?? response.headers.get('request-id')
-  let providerRequestId = requestId && SAFE_ID.test(requestId) && !requestId.includes(privateKey) ? requestId : null
+  let providerRequestId = requestId && SAFE_ID.test(requestId) && (!privateKey || !requestId.includes(privateKey)) ? requestId : null
   if (providerRequestId) {
     try { assertExactRunArtifactBodySafeV1({ artifactKind: 'raw-response', body: providerRequestId }) }
     catch { providerRequestId = null }
@@ -104,7 +106,7 @@ function headersReceipt(response: Response, privateKey: string) {
   const rawUsage = response.headers.get('x-storyforge-usage')
   if (rawUsage !== null) {
     try {
-      if (new TextEncoder().encode(rawUsage).byteLength > 8192 || rawUsage.includes(privateKey)) throw new Error('usage')
+      if (new TextEncoder().encode(rawUsage).byteLength > 8192 || (privateKey && rawUsage.includes(privateKey))) throw new Error('usage')
       usage = JSON.parse(rawUsage)
       assertExactRunArtifactBodySafeV1({ artifactKind: 'raw-response', body: usage })
     } catch { usage = null; omissions.push('usage-policy') }
@@ -145,6 +147,37 @@ export async function createConfiguredAvgVoiceTransportV1(input: {
   const binding: ProductProductionCapabilityBindingV1 = { requirementKey: capability.requirementKey,
     adapterId: assembly.voice.protocol.adapterId, bindingHash: assembly.voice.binding.bindingHash,
     provider: 'agnes', model: assembly.voice.protocol.model }
+  return createAvgVoiceWireTransportV1({ assembly, requests, endpoint, endpointRouteHash, binding,
+    privateKey: config.apiKey, fetcher: input.fetcher,
+    headers: { Authorization: `Bearer ${config.apiKey}` } })
+}
+
+/** Explicit local route; old Agnes factory/hash remain strict and unchanged.
+ * The service identity is checked before each single generation, never used
+ * as proof of voice quality, author authorization or commercial rights. */
+export async function createConfiguredAvgLocalVoiceTransportV1(input: {
+  assembly: AvgAssemblyBriefV3; capability: ProviderCapabilityRequirementV1; fetcher?: Fetcher
+}) {
+  const { assembly, requests } = await assertAvgVoiceAssemblyRequestsV3(input.assembly)
+  assertAvgVoiceCapabilityDeclarationV1(assembly, input.capability)
+  const protocol = await avgLocalVoiceProtocolV1()
+  if (canonicalProductProductionJsonV2(assembly.voice.protocol) !== canonicalProductProductionJsonV2(protocol)
+    || assembly.voice.binding.endpointRouteHash !== protocol.endpointRouteHash) throw new Error('[avg-voice] 本地配音必须使用准确冻结的固定音色能力')
+  if (input.capability.maximumRequestCost !== null || input.capability.maximumTotalCost !== null) {
+    throw new Error('[avg-voice] 当前配音合同仍要求保留未知费用边界，不可改写旧现金上限')
+  }
+  return createAvgVoiceWireTransportV1({ assembly, requests, endpoint: new URL(`${AVG_LOCAL_VOICE_BASE_URL_V1}/audio/speech`),
+    endpointRouteHash: protocol.endpointRouteHash, binding: { requirementKey: input.capability.requirementKey,
+      adapterId: protocol.adapterId, bindingHash: assembly.voice.binding.bindingHash, provider: protocol.provider, model: protocol.model },
+    privateKey: '', headers: {}, fetcher: input.fetcher, local: true })
+}
+
+function createAvgVoiceWireTransportV1(input: {
+  assembly: AvgAssemblyBriefV3; requests: Awaited<ReturnType<typeof assertAvgVoiceAssemblyRequestsV3>>['requests'];
+  endpoint: URL; endpointRouteHash: string; binding: ProductProductionCapabilityBindingV1; privateKey: string;
+  headers: Record<string, string>; fetcher?: Fetcher; local?: boolean
+}) {
+  const { requests, endpoint, endpointRouteHash, binding, privateKey } = input
   const fetcher: Fetcher = input.fetcher ?? ((target, init) => globalThis.fetch(target, init))
   return Object.freeze({ binding: Object.freeze(binding), endpointRouteHash, request: async (requestInput: {
     requirementKey: string
@@ -167,12 +200,37 @@ export async function createConfiguredAvgVoiceTransportV1(input: {
     let dispatched = false, recorded: AvgVoiceHttpResponseV1 | null = null
     try {
       if (signal.aborted) throw new AvgVoiceTransportErrorV1('not-dispatched', '调用前已取消，未发送')
+      if (input.local) {
+        const identityTimeout = setTimeout(abort, 5000)
+        try {
+          const identity = await untilAborted(fetcher(`${AVG_LOCAL_VOICE_BASE_URL_V1}/capabilities`, {
+            method: 'GET', credentials: 'omit', redirect: 'error', cache: 'no-store', referrerPolicy: 'no-referrer', signal: controller.signal,
+          }), controller.signal)
+          if (!identity.ok || !identity.headers.get('content-type')?.startsWith('application/json')) throw new Error('local identity unavailable')
+          const reader = identity.body?.getReader()
+          if (!reader) throw new Error('local identity missing')
+          const chunks: Uint8Array[] = []; let size = 0
+          try {
+            while (true) {
+              const next = await untilAborted(reader.read(), controller.signal)
+              if (next.done) break
+              size += next.value.byteLength
+              if (size > 8192) throw new Error('local identity too large')
+              chunks.push(next.value)
+            }
+          } finally { void reader.cancel().catch(() => {}); reader.releaseLock() }
+          const bytes = new Uint8Array(size); let offset = 0
+          for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+          assertAvgLocalVoiceServiceV1(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)))
+        } finally { clearTimeout(identityTimeout) }
+      }
+      if (signal.aborted || controller.signal.aborted) throw new AvgVoiceTransportErrorV1('not-dispatched', '本地服务核验期间已取消，未生成')
       dispatched = true
       const response = await untilAborted(fetcher(endpoint.href, { method: 'POST', credentials: 'omit', redirect: 'error', cache: 'no-store',
         referrerPolicy: 'no-referrer', signal: controller.signal,
-        headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json',
+        headers: { ...input.headers, 'Content-Type': 'application/json',
           'x-storyforge-idempotency-key': idempotencyKey }, body: frozen.requestBodyJson }), controller.signal)
-      const receipt = headersReceipt(response, config.apiKey), chunks: Uint8Array[] = []
+      const receipt = headersReceipt(response, privateKey), chunks: Uint8Array[] = []
       let length = 0, complete = false, observedBytes = 0, readIssue: string | null = null
       const reader = response.body?.getReader()
       try {
@@ -195,7 +253,7 @@ export async function createConfiguredAvgVoiceTransportV1(input: {
       const bytes = new Uint8Array(length)
       let offset = 0
       for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
-      const contentHash = await hashBytes(bytes), allowed = complete && safeBody(bytes, config.apiKey)
+      const contentHash = await hashBytes(bytes), allowed = complete && safeBody(bytes, privateKey)
       const evidence = canonicalStringify({ schema: 'storyforge.avg.voice-provider-response', version: 1,
         requestIdentityHash: frozen.identityHash, requestBodyHash: frozen.requestBodyHash, endpointRouteHash,
         ...receipt, bodyComplete: complete, observedBytes, bodyHash: contentHash, hashScope: complete ? 'full-body' : 'retained-prefix',

@@ -4,7 +4,8 @@ import { resolveRequestConfig } from '../ai/client'
 import { resolveConfiguredAgnesImageCapabilityV1, configuredAgnesImageEndpointHashV1,
   resolveConfiguredAgnesImageCapabilityV2,configuredAgnesImageEndpointHashV2 } from '../product-production/media-transport'
 import { hashProductProductionValueV2 } from '../product-production/hash'
-import { configuredAvgVoiceEndpointHashV1, createConfiguredAvgVoiceTransportV1 } from './voice-transport'
+import { configuredAvgVoiceEndpointHashV1, createConfiguredAvgVoiceTransportV1, createConfiguredAvgLocalVoiceTransportV1 } from './voice-transport'
+import { AVG_LOCAL_VOICE_PROVIDER_V1 } from './voice-local-profile'
 import type { AvgAssemblyBriefV3 } from './voice-assembly-contract'
 import type { AvgAssemblyBriefV2 } from './assembly-contract'
 import { avgImageReferenceCapabilityV2,type AvgImageAdapterIdV4 } from './media-reference-contract'
@@ -53,6 +54,9 @@ export async function resolveAvgImageExecutionCapabilityV4(input:{projectId:numb
 export async function resolveAvgVoiceExecutionCapabilityV3(input: {
   projectId: number; assembly: AvgAssemblyBriefV3; capability: ProviderCapabilityRequirementV1; config?: AIConfig
 }) {
+  if (input.assembly.voice.protocol.provider === AVG_LOCAL_VOICE_PROVIDER_V1) {
+    return createConfiguredAvgLocalVoiceTransportV1({ assembly: input.assembly, capability: input.capability })
+  }
   const config = structuredClone(input.config ?? resolveRequestConfig(useAIConfigStore.getState().config, {
     category: 'product-production', projectId: input.projectId,
   }).config)

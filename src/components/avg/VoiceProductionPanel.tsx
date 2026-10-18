@@ -7,6 +7,7 @@ import { parseAvgStoredAssemblyBriefV3 } from '../../lib/avg/voice-assembly-stor
 import { readAvgVoiceDraftV1, type AvgVoiceDraftLineV1 } from '../../lib/avg/voice-draft-contract'
 import { clearAvgVoiceProductionDraftV1, saveAvgVoiceProductionDraftV1 } from '../../lib/avg/voice-draft-service'
 import { hashAvgSpeechProtocolV1, parseAvgSpeechProtocolV1 } from '../../lib/avg/voice-request-contract'
+import { AVG_LOCAL_VOICE_PROVIDER_V1, AVG_LOCAL_VOICE_MODEL_V1, AVG_LOCAL_VOICE_IDS_V1, AVG_LOCAL_VOICE_RIGHTS_REFERENCE_V1, avgLocalVoiceProtocolV1 } from '../../lib/avg/voice-local-profile'
 import { readConfiguredAvgVoiceDraftRouteV1 } from '../../lib/avg/media-capability'
 import { configureAvgChosenVoiceDraftV3, keepAvgGeneratedVoiceStageDraftV1, type readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
 import VoiceReviewPanel from './VoiceReviewPanel'
@@ -26,7 +27,8 @@ type PanelProps = {
 function VoiceBatchEditor({ scope, view, workspace, disabled, canEdit, onPending, onAction, onReload, onNotice }: Pick<PanelProps,
   'scope' | 'view' | 'workspace' | 'disabled' | 'canEdit' | 'onPending' | 'onAction' | 'onReload' | 'onNotice'>) {
   const saved = workspace.voiceProduction ? readAvgVoiceDraftV1(workspace.voiceProduction).voice : null
-  const [model, setModel] = useState(saved?.protocol.model ?? '')
+  const [local, setLocal] = useState(!saved || saved.protocol.provider === AVG_LOCAL_VOICE_PROVIDER_V1)
+  const [model, setModel] = useState(saved?.protocol.model ?? AVG_LOCAL_VOICE_MODEL_V1)
   const [inputLimit, setInputLimit] = useState(saved?.protocol.maximumInputCharacters ?? 4096)
   const [instructions, setInstructions] = useState(saved?.protocol.supportsInstructions ?? false)
   const [instructionLimit, setInstructionLimit] = useState(saved?.protocol.maximumInstructionsCharacters || 2000)
@@ -55,8 +57,8 @@ function VoiceBatchEditor({ scope, view, workspace, disabled, canEdit, onPending
   const lineOptions = workspace.scripts.flatMap(script => script.lines.map((line, index) => ({ sceneKey: script.sceneKey, line,
     label: `${workspace.systemPlan.scenes.find(s => s.key === script.sceneKey)?.title ?? '场景'} · 第 ${index + 1} 句` })))
   const save = async () => {
-    const route = await readConfiguredAvgVoiceDraftRouteV1({ projectId: scope.projectId, model })
-    const protocol = parseAvgSpeechProtocolV1({ schema: 'storyforge.avg.speech-protocol', version: 1,
+    const route = local ? undefined : await readConfiguredAvgVoiceDraftRouteV1({ projectId: scope.projectId, model })
+    const protocol = local ? await avgLocalVoiceProtocolV1() : parseAvgSpeechProtocolV1({ schema: 'storyforge.avg.speech-protocol', version: 1,
       adapterId: 'storyforge.avg.compatible-speech.v1', provider: 'agnes', model, ...route,
       voices: [...new Set(rows.map(r => r.voiceId))].map(voiceId => ({ voiceId, locales: ['zh-CN'] })), outputFormat: 'wav',
       maximumInputCharacters: inputLimit, supportsInstructions: instructions,
@@ -73,17 +75,25 @@ function VoiceBatchEditor({ scope, view, workspace, disabled, canEdit, onPending
   }
   return <section aria-label="逐句配音需求草稿"><h4>逐句配音需求 <small>实验</small></h4>
     <p>从已保存对白选择 1～8 句。原句和说话人由脚本读取；请填写已核对的服务能力和合法音色，保存不会生成音频。</p>
-    <p>明确开始后，会将本批准确台词、演法及读音要求发送到确认的 Agnes 路由；实际费用和输出使用权须另外核对。</p>
+    <p>明确开始后，才会将准确台词和演法发送到本批冻结的服务。生成后仍需逐句审听并确认采用。</p>
     <fieldset className="avg-form" disabled={disabled || !canEdit}>
       <legend>本批服务能力声明</legend>
-      <label>Agnes 配音模型 ID<input value={model} maxLength={200} onChange={e => change(() => setModel(e.target.value))} /></label>
-      <p>使用现有模型设置中的 Agnes 地址；模型 ID、音色与参数须按该账号的实际目录填写。</p>
+      {local ? <p>本机免费配音 · Qwen3-TTS 1.7B 固定音色。支持中文和演法指令，每句至多 256 字符；请先按本机服务说明启动推理服务。生成不会使用 Agnes 密钥，也不会上传到远程语音服务。</p>
+        : <><p>这是旧版兼容服务方案；原始记录与路由保留。</p><button type="button" onClick={() => change(() => {
+          setLocal(true); setModel(AVG_LOCAL_VOICE_MODEL_V1)
+          setRows(old => old.map(r => ({ ...r, voiceId: 'Serena', presetRevision: r.presetRevision + 1,
+            rightsDeclaration: 'Qwen 官方固定音色模型，模型标注 Apache-2.0；实际输出仍需审听和权利复核。',
+            rightsReference: AVG_LOCAL_VOICE_RIGHTS_REFERENCE_V1, performance: { ...r.performance, speed: null } })))
+        })}>将未开始的需求改用本机固定音色</button></>}
+      {!local && <><label>兼容服务模型 ID<input value={model} maxLength={200} onChange={e => change(() => setModel(e.target.value))} /></label>
+      <p>旧方案使用原模型设置中的服务地址；历史记录不会因本机配音而改写。</p>
       <label>模型单次文字上限<input type="number" min={1} max={4096} value={inputLimit} onChange={e => change(() => setInputLimit(Number(e.target.value)))} /></label>
       <label><input type="checkbox" checked={instructions} onChange={e => change(() => setInstructions(e.target.checked))} />已核对该模型支持演法与读音指令</label>
       {instructions && <label>完整指令字符上限<input type="number" min={1} max={4096} value={instructionLimit} onChange={e => change(() => setInstructionLimit(Number(e.target.value)))} /></label>}
       <label><input type="checkbox" checked={speed} onChange={e => change(() => setSpeed(e.target.checked))} />已核对该模型支持明确语速</label>
       {speed && <><label>最低语速<input type="number" min={0.25} max={4} step={0.05} value={minimumSpeed} onChange={e => change(() => setMinimumSpeed(Number(e.target.value)))} /></label>
         <label>最高语速<input type="number" min={0.25} max={4} step={0.05} value={maximumSpeed} onChange={e => change(() => setMaximumSpeed(Number(e.target.value)))} /></label></>}
+      </>}
       <h5>选择准确台词</h5>
       {lineOptions.map(option => <label key={`${option.sceneKey}:${option.line.lineKey}`}><input type="checkbox"
         checked={rows.some(r => r.sceneKey === option.sceneKey && r.lineKey === option.line.lineKey)}
@@ -92,19 +102,23 @@ function VoiceBatchEditor({ scope, view, workspace, disabled, canEdit, onPending
           requirementKey: `voice.${crypto.randomUUID()}`, assetKey: `voice.asset.${crypto.randomUUID()}`,
           presetKey: `voice.preset.${crypto.randomUUID()}`, presetRevision: 1, sceneKey: option.sceneKey, lineKey: option.line.lineKey,
           maximumDurationMs: 10_000, performance: { revision: 1, intent: 'natural-reading', pronunciations: [], instructions: null, speed: null },
-          voiceId: '', rightsDeclaration: '', rightsReference: '',
+          voiceId: local ? 'Serena' : '',
+          rightsDeclaration: local ? 'Qwen 官方固定音色模型，模型标注 Apache-2.0；实际输出仍需审听和权利复核。' : '',
+          rightsReference: local ? AVG_LOCAL_VOICE_RIGHTS_REFERENCE_V1 : '',
         }] : old.filter(r => r.sceneKey !== option.sceneKey || r.lineKey !== option.line.lineKey)))} />
         {option.label}：{option.line.text}</label>)}
       {rows.map((row, index) => <fieldset key={row.requirementKey}><legend>第 {index + 1} 项配音</legend>
         <p>{lineOptions.find(o => o.sceneKey === row.sceneKey && o.line.lineKey === row.lineKey)?.line.text ?? '原句已不存在，请撤销此需求后重新选择'}</p>
-        <label>音色 ID<input value={row.voiceId} maxLength={200} onChange={e => update(index, r => { r.voiceId = e.target.value })} /></label>
+        <label>音色{local ? <select value={row.voiceId} onChange={e => update(index, r => { r.voiceId = e.target.value })}>
+          {AVG_LOCAL_VOICE_IDS_V1.map(id => <option key={id} value={id}>{({ Vivian: '明亮女声', Serena: '温柔女声', Uncle_Fu: '沉稳男声', Dylan: '北京男声', Eric: '四川男声' })[id]} · {id}</option>)}
+        </select> : <input value={row.voiceId} maxLength={200} onChange={e => update(index, r => { r.voiceId = e.target.value })} />}</label>
         <label>音色使用权说明<textarea value={row.rightsDeclaration} maxLength={4000} onChange={e => update(index, r => { r.rightsDeclaration = e.target.value })} /></label>
         <label>音色条款或授权依据<input value={row.rightsReference} maxLength={2000} onChange={e => update(index, r => { r.rightsReference = e.target.value })} /></label>
         <label>音频最长秒数<input type="number" min={1} max={120} value={row.maximumDurationMs / 1000} onChange={e => update(index, r => { r.maximumDurationMs = Number(e.target.value) * 1000 })} /></label>
         <label>演法类型<select value={row.performance.intent === 'natural-reading' ? 'natural-reading' : 'custom'} onChange={e => update(index, r => { r.performance.intent = e.target.value === 'natural-reading' ? 'natural-reading' : '' })}><option value="natural-reading">自然朗读</option><option value="custom">自定义演法</option></select></label>
         {row.performance.intent !== 'natural-reading' && <label>演法意图<input value={row.performance.intent} maxLength={2000} onChange={e => update(index, r => { r.performance.intent = e.target.value })} /></label>}
         <label>演法指令<textarea value={row.performance.instructions ?? ''} maxLength={4000} onChange={e => update(index, r => { r.performance.instructions = e.target.value || null })} /></label>
-        <label>明确语速（留空使用服务默认）<input type="number" min={0.5} max={2} step={0.05} value={row.performance.speed ?? ''} onChange={e => update(index, r => { r.performance.speed = e.target.value === '' ? null : Number(e.target.value) })} /></label>
+        <label>明确语速（留空使用服务默认）<input disabled={local} type="number" min={0.5} max={2} step={0.05} value={row.performance.speed ?? ''} onChange={e => update(index, r => { r.performance.speed = e.target.value === '' ? null : Number(e.target.value) })} /></label>
         {row.performance.pronunciations.map((entry, i) => <div className="avg-assembly-row" key={i}>
           <label>原句词语<input value={entry.phrase} maxLength={200} onChange={e => update(index, r => { r.performance.pronunciations[i].phrase = e.target.value })} /></label>
           <label>读法<input value={entry.reading} maxLength={500} onChange={e => update(index, r => { r.performance.pronunciations[i].reading = e.target.value })} /></label>
@@ -112,6 +126,7 @@ function VoiceBatchEditor({ scope, view, workspace, disabled, canEdit, onPending
         </div>)}
         <button type="button" disabled={row.performance.pronunciations.length >= 32} onClick={() => update(index, r => { r.performance.pronunciations.push({ phrase: '', reading: '' }) })}>增加读音要求</button>
       </fieldset>)}
+      {local && <p>本机方案不支持单独的语速参数；演法和发音要求会完整传给模型，能否达到要求须以实际音频审听为准。</p>}
       <p>阅读等待上限：{workspace.presentation.reading ? `${workspace.presentation.reading.maximumVoiceWaitMs / 1000} 秒` : '尚未设置，请先配置阅读及配音失败策略'}；每句音频上限须更短。费用未知会保留为未知。</p>
       <button className="lf-action" disabled={!pending || !rows.length || !model.trim()} onClick={() => void onAction(save)}>保存配音需求草稿</button>
       {workspace.voiceProduction && <button className="lf-action" disabled={pending} onClick={() => void onAction(async () => {
@@ -158,7 +173,7 @@ export default function VoiceProductionPanel(props: PanelProps) {
     <VoiceBatchEditor key={`${scope.workId}:${workspace.voiceProduction?.contentHash ?? 'new'}:${discard}`} {...props}
       disabled={disabled || reviewPending || recoveryPending || generating} canEdit={canEdit && !generating} onPending={setFormPending}
       onReload={async () => { await onReload(); setDiscard(n => n + 1) }} />
-    {!enabled && <p>配音收费生产尚未开放；可以保存需求草稿并查看已有记录。</p>}
+    {!enabled && <p>实验性配音生产尚未开放；可以保存需求草稿并查看已有记录。</p>}
     {canFinishBatch && productionId && view.details?.build?.id
       && (view.details.build.previewHash || ['cancelled', 'failed', 'recovery-required'].includes(view.details.build.status)) && <button className="lf-action"
         disabled={disabled || (!canEdit && !stoppedBatch) || formPending || reviewPending || recoveryPending || generating || pendingBrief}

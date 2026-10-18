@@ -1,3 +1,4 @@
+import { AVG_LOCAL_VOICE_MODEL_V1, AVG_LOCAL_VOICE_REVISION_V1, AVG_LOCAL_VOICE_IDS_V1 } from '../../src/lib/avg/voice-local-profile'
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { confirmEngineeringVisualReview } from '../helpers/avg-visual-review-playwright'
@@ -51,7 +52,8 @@ async function fillVoicePresets(editor: Locator, count: number, declaration: str
     // A wrapped textarea's DOM label text includes its controlled value after
     // editing. Use the stable accessible textbox name inside the exact row;
     // enumerating matching labels once would skip rows as that set shrinks.
-    for (const [name, value] of [['音色 ID', 'voice-a'], ['音色使用权说明', declaration], ['音色条款或授权依据', reference]]) {
+    await row.getByRole('combobox', { name: '音色', exact: true }).selectOption('Serena')
+    for (const [name, value] of [['音色使用权说明', declaration], ['音色条款或授权依据', reference]]) {
       const field = row.getByRole('textbox', { name, exact: true })
       await field.fill(value)
       await expect(field).toHaveValue(value)
@@ -101,13 +103,22 @@ async function seedVoice(page: Page, unknown = false, withImage = false, batchSi
       lineKeys: workspace.scripts[0].lines.map((line: { lineKey: string }) => line.lineKey) }
   }, { withImage, batchSize })
   const bodies: any[] = [], imageBodies: any[] = []
-  await page.route('https://speech.fixture.invalid/v1/audio/speech', async route => {
+  await page.route('http://127.0.0.1:5297/v1/capabilities', async route => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({
+      schema: 'storyforge.avg.local-speech-capability', version: 1, provider: 'storyforge-local-qwen3',
+      model: AVG_LOCAL_VOICE_MODEL_V1, modelRevision: AVG_LOCAL_VOICE_REVISION_V1, voices: [...AVG_LOCAL_VOICE_IDS_V1],
+      locale: 'zh-CN', outputFormat: 'wav', maximumInputCharacters: 256, supportsInstructions: true,
+      maximumInstructionsCharacters: 2048, speedRange: null, license: 'Apache-2.0', voiceMode: 'fixed-preset',
+    }),
+  }))
+  await page.route('http://127.0.0.1:5297/v1/audio/speech', async route => {
     const body = route.request().postDataJSON(); bodies.push(body)
     expect(seed.texts).toContain(body.input)
-    expect(body).toEqual({ input: body.input, model: 'speech-fixture', voice: 'voice-a', response_format: 'wav' })
+    expect(body).toEqual({ input: body.input, model: AVG_LOCAL_VOICE_MODEL_V1, voice: 'Serena', response_format: 'wav' })
+    expect(route.request().headers()).not.toHaveProperty('authorization')
     if (unknown) { await route.abort('failed'); return }
     const bytes = Buffer.from(seed.wave, 'base64'); bytes[100] ^= bodies.length
-    await route.fulfill({ status: 200, contentType: 'audio/wav', headers: { 'x-request-id': `voice.browser.fixture.${bodies.length}` }, body: bytes })
+    await route.fulfill({ status: 200, contentType: 'audio/wav', headers: { 'x-request-id': `voice.browser.fixture.${bodies.length}`, 'x-storyforge-cost-usd': '0', 'access-control-expose-headers': 'x-request-id,x-storyforge-cost-usd' }, body: bytes })
   })
   await page.route('https://speech.fixture.invalid/v1/images/generations', async route => {
     imageBodies.push(route.request().postDataJSON()); expect(seed.png).toBeTruthy()
@@ -125,7 +136,7 @@ async function seedVoice(page: Page, unknown = false, withImage = false, batchSi
     await expect(page.getByRole('status').filter({ hasText: '图片需求和准确来源已保存' })).toBeVisible()
   }
   const editor = page.getByRole('region', { name: '逐句配音需求草稿', exact: true })
-  await editor.getByLabel('Agnes 配音模型 ID', { exact: true }).fill('speech-fixture')
+  await expect(editor.getByText(/本机免费配音/)).toBeVisible()
   for (let index = 0; index < batchSize; index++) await editor.getByRole('checkbox', { name: /第 \d+ 句/ }).nth(index).check()
   await fillVoicePresets(editor, batchSize, '原创工程校准音；不签 TTS、人声、专业听感或商用许可', '本测试原创 PCM 控制值；实际供应商音色条款另验')
   await editor.getByRole('button', { name: '保存配音需求草稿', exact: true }).click()
@@ -205,7 +216,7 @@ test('native voice production reaches real decoded audio, native ended, separate
   expect(proof.status).toBe('preview-ready'); expect(proof.rootReceipt).toBeTruthy(); expect(proof.packageHash).toBeTruthy()
   expect(proof.workspace.presentation.reading.voices[0]).toMatchObject({ lineKey: s.seed.lineKey, text: s.seed.text })
   expect(proof.audioReview.audioEvidence.audition).toMatchObject({ outcome: 'ended', playedMs: 1000, muted: false, playbackRate: 1, seeked: false })
-  expect(proof.raw.provider.costUsd).toBeNull(); expect(s.bodies).toHaveLength(1)
+  expect(proof.raw.provider.costUsd).toBe(0); expect(s.bodies).toHaveLength(1)
   await page.getByRole('button', { name: '素材', exact: true }).click()
   await page.getByRole('button', { name: '查看并审听此句', exact: true }).click()
   await page.getByRole('region', { name: '配音审听与选择', exact: true }).screenshot({ path: info.outputPath('avg-voice-native-adopted-offline.png') })
@@ -627,7 +638,7 @@ test('two explicitly started five-line batches keep old clips, publish ten nativ
   await page.getByRole('button', { name: '保留已采用配音，结束本批需求', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: '已保留准确已采用配音并结束本批需求' })).toBeVisible()
   const editor = page.getByRole('region', { name: '逐句配音需求草稿', exact: true })
-  await editor.getByLabel('Agnes 配音模型 ID', { exact: true }).fill('speech-fixture')
+  await expect(editor.getByText(/本机免费配音/)).toBeVisible()
   for (let index = 5; index < 10; index++) await editor.getByRole('checkbox', { name: /第 \d+ 句/ }).nth(index).check()
   await fillVoicePresets(editor, 5, '原创 PCM 工程控制值，未签人声、艺术或商用验收', '本测试原创音频；供应商音色能力和条款须另验')
   await editor.getByRole('button', { name: '保存配音需求草稿', exact: true }).click()
