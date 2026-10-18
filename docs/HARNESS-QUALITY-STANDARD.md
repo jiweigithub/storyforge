@@ -96,6 +96,7 @@ Context Gateway 应先给 Agent “能读什么”的目录，再根据任务、
 - 每个外部调用前后保存 checkpoint/attempt identity。
 - 网络结果未知时不盲目重复可能产生费用或重复写入的调用。
 - 恢复时校验 contract、执行版本、来源/目标 revision 和既有回执。
+- Instance-owned 检查点核验及恢复开始/完成显式传入 `productRuntimeSessionId`，沿用创建时的实例事务与精确 owner 核对；缺失或不同实例拒绝，错误不留下半个恢复事件。省略参数的 Work 路径继续保留原事务表集合和原合同/检查点 hash，不把实例表偷偷加入作者的既有子事务。
 - 终态只有在完成判据和 post-state 证据满足后成立；UI 显示完成不能替代 durable receipt。
 
 ## 9. 多 Agent 与自主生产
