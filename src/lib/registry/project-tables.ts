@@ -1286,6 +1286,11 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
         { field, path: ['ttrpg', 'openRun', 'voiceRequests', '*', 'artifactRefs'], when: { field: 'kind', equals: 'ttrpg' } },
         { field, path: ['ttrpg', 'branchLineage', 'ancestors', '*', 'snapshot', 'openRun', 'voiceRequests', '*', 'artifactRefs'], when: { field: 'kind', equals: 'ttrpg' } },
       ]),
+      // Accepted generated audio is an independent evidence owner, including cutpoint snapshots.
+      ...['initialStateJson', 'runtimeHeadStateJson'].flatMap(field => [
+        { field, path: ['ttrpg', 'openRun', 'audioReceipts', '*', 'generated', 'artifactRefs'], when: { field: 'kind', equals: 'ttrpg' } },
+        { field, path: ['ttrpg', 'branchLineage', 'ancestors', '*', 'snapshot', 'openRun', 'audioReceipts', '*', 'generated', 'artifactRefs'], when: { field: 'kind', equals: 'ttrpg' } },
+      ]),
       // Versioned model-origin entity plans retain exact evidence independently of the source Run.
       ...['initialStateJson', 'runtimeHeadStateJson'].flatMap(field => [
         { field, path: ['ttrpg', 'openRun', 'entityOperations', '*', 'plan', 'modelOrigin', 'artifactRefs'], when: { field: 'kind', equals: 'ttrpg' } },
@@ -1326,6 +1331,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
     worldScoped: true, exportable: true, exportIdField: true,
     exactArtifactRoots: [
       { field: 'payloadJson', path: ['request', 'artifactRefs'], when: { field: 'type', equals: 'ttrpg.audio.voice.reserved' } },
+      { field: 'payloadJson', path: ['receipt', 'generated', 'artifactRefs'], when: { field: 'type', equals: 'ttrpg.audio.cue.applied' } },
       { field: 'payloadJson', path: ['receipt', 'artifactRefs'], when: { field: 'type', equals: 'ttrpg.open.situation.accepted' } },
       { field: 'payloadJson', path: ['plan', 'modelOrigin', 'artifactRefs'], when: { field: 'type', equals: 'ttrpg.open.entity.model-proposed' } },
     ],
@@ -1347,6 +1353,10 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
   { table: db.productRuntimeCheckpoints, name: 'productRuntimeCheckpoints', owner: 'project',
     domainOwner: { allowed: ['instance'], defaultOwner: 'instance', locator: { kind: 'parent', owner: 'instance', table: 'productRuntimeSessions', field: 'sessionId' } },
     worldScoped: true, exportable: true, exportIdField: true,
+    exactArtifactRoots: [
+      { field: 'stateJson', path: ['ttrpg', 'openRun', 'audioReceipts', '*', 'generated', 'artifactRefs'] },
+      { field: 'stateJson', path: ['ttrpg', 'branchLineage', 'ancestors', '*', 'snapshot', 'openRun', 'audioReceipts', '*', 'generated', 'artifactRefs'] },
+    ],
     exportRemap: [
       { field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' },
       { field: 'sessionId', remapVia: 'productRuntimeSessions',
