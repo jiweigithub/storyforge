@@ -221,17 +221,27 @@ export interface ProductProductionTaskExecutionResultV1 {
 
 /** A received draft failed validation; repeating the same request is not a repair. */
 export class ProductProductionDraftRejectedErrorV1 extends Error {
+  // The existing executor-error usage contract also survives module reloads
+  // or realm boundaries where instanceof cannot identify this constructor.
+  declare readonly productProductionUsage: ProductProductionTaskUsageV1
+
   constructor(message: string, readonly usage: ProductProductionTaskUsageV1) {
     super(message)
     this.name = 'ProductProductionDraftRejectedErrorV1'
+    Object.defineProperty(this, 'productProductionUsage', { value: usage, enumerable: false })
   }
 }
 
 /** A safely repeatable executor failure with fully observed paid usage. */
 export class ProductProductionRetryableExecutionErrorV1 extends Error {
+  // The existing executor-error usage contract also survives module reloads
+  // or realm boundaries where instanceof cannot identify this constructor.
+  declare readonly productProductionUsage: ProductProductionTaskUsageV1
+
   constructor(message: string, readonly usage: ProductProductionTaskUsageV1) {
     super(message)
     this.name = 'ProductProductionRetryableExecutionErrorV1'
+    Object.defineProperty(this, 'productProductionUsage', { value: usage, enumerable: false })
   }
 }
 
