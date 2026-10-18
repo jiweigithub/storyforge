@@ -1,5 +1,8 @@
 /** Human request lifecycle only. No transport or model implementation lives in
  * this module, and a stored reservation never restores an in-memory grant. */
+import { readTtrpgOpenReviewedVoiceReadingV1, type TtrpgOpenVoiceReadingReviewV1 } from './open-voice-reading-service'
+import readingProfile from '../../../scripts/ttrpg-local-tts/reading-profile.json'
+import { TTRPG_OPEN_VOICE_CONFIRM_READING_DECISION_V1, verifyTtrpgOpenConfirmedVoiceReadingV1, type TtrpgOpenConfirmedVoiceReadingV1 } from './open-voice-confirmed-reading-contract'
 import { db } from '../db/schema'
 import { loadTtrpgOpenAudioReadStateV1, type TtrpgOpenAudioReadInputV1 } from './open-audio-read-state'
 import { readTtrpgOpenReviewedVoiceScriptV1, type TtrpgOpenVoiceScriptReviewV1 } from './open-voice-script-service'
@@ -18,18 +21,31 @@ import * as p from './open-contract-parse'
 const snapshotInput = (input: TtrpgOpenAudioReadInputV1) => ({ scope: structuredClone(input.scope), sessionId: input.sessionId, viewerKey: input.viewerKey })
 export async function reserveTtrpgOpenVoiceRequestV1(request: TtrpgOpenAudioReadInputV1 & {
   review: TtrpgOpenVoiceScriptReviewV1; submissionKey: string; part: { textOffset: number; textLength: number }
+  readingConfirmation?: { review: TtrpgOpenVoiceReadingReviewV1; decision: typeof TTRPG_OPEN_VOICE_CONFIRM_READING_DECISION_V1 }
   decision: typeof TTRPG_OPEN_VOICE_RESERVE_DECISION_V1
 }) {
   p.literal(request.decision, TTRPG_OPEN_VOICE_RESERVE_DECISION_V1, 'voice explicit reservation')
   const input = snapshotInput(request), review = request.review, submissionKey = p.key(request.submissionKey, 'voice submission'), selection = structuredClone(request.part)
+  const confirmation = request.readingConfirmation === undefined ? undefined : { review: request.readingConfirmation.review, decision: request.readingConfirmation.decision }
   const reviewed = await readTtrpgOpenReviewedVoiceScriptV1({ ...input, review }), loaded = await loadTtrpgOpenAudioReadStateV1(input)
   const partText = reviewed.script.text.slice(selection.textOffset, selection.textOffset + selection.textLength)
   const part = parseTtrpgOpenVoicePartV1({ ...selection, textHash: await sha256Text(partText) }, reviewed.script.text)
+  let reading: TtrpgOpenConfirmedVoiceReadingV1 | undefined
+  if (confirmation !== undefined) {
+    p.literal(confirmation.decision, TTRPG_OPEN_VOICE_CONFIRM_READING_DECISION_V1, 'explicit original reading confirmation')
+    const checked = await readTtrpgOpenReviewedVoiceReadingV1({ ...input, review: confirmation.review })
+    if (checked.scriptHash !== reviewed.scriptHash || canonicalStringify(checked.part) !== canonicalStringify(part)
+      || checked.preview.status !== 'ready-for-reading-review' || checked.preview.normalizedText === null || checked.preview.normalizedTextSha256 === null) p.fail('请先解决读法问题，并明确确认同一原文片段的准确读法')
+    const preview = checked.preview
+    reading = (await verifyTtrpgOpenConfirmedVoiceReadingV1({ schema: 'storyforge.ttrpg-open-confirmed-voice-reading', version: 1,
+      decision: confirmation.decision, sourceTextHash: preview.sourceTextSha256, profile: structuredClone(readingProfile), profileHash: preview.profileHash, normalizerSha256: preview.normalizerSha256,
+      overrides: preview.overrides, normalizedText: preview.normalizedText, normalizedTextSha256: preview.normalizedTextSha256, previewHash: checked.previewHash }, partText, part.textHash)).reading
+  }
   const requestKey = await ttrpgOpenScopedKeyV1(loaded.runtime.sessionKey, 'voice-request-id', [input.viewerKey, submissionKey])
   const row = parseTtrpgOpenVoiceRequestV1({ schema: 'storyforge.ttrpg-open-voice-request', version: 1,
     sourceRef: { sessionKey: loaded.runtime.sessionKey, sequence: loaded.state.lastSequence + 1 }, requestKey, submissionKey, preparationKey: crypto.randomUUID(),
     worldTurn: loaded.runtime.openRun!.worldTime.worldTurn, readEvidence: { sequence: loaded.state.lastSequence, stateHash: loaded.stateHash },
-    script: reviewed.script, scriptHash: reviewed.scriptHash, textHash: reviewed.textHash, part, runContractHash: '0'.repeat(64), inputArtifactHash: '0'.repeat(64), artifactRefs: [{ artifactKind: 'source-snapshot', contentHash: '0'.repeat(64) }], cancelledRef: null })
+    script: reviewed.script, scriptHash: reviewed.scriptHash, textHash: reviewed.textHash, part, ...(reading === undefined ? {} : { reading }), runContractHash: '0'.repeat(64), inputArtifactHash: '0'.repeat(64), artifactRefs: [{ artifactKind: 'source-snapshot', contentHash: '0'.repeat(64) }], cancelledRef: null })
   assertTtrpgOpenVoiceReservationV1(loaded.runtime, row)
   row.inputArtifactHash = await sha256Text(canonicalStringify(ttrpgOpenVoiceRequestInputV1(row)))
   row.artifactRefs[0].contentHash = row.inputArtifactHash
@@ -84,7 +100,7 @@ export async function cancelTtrpgOpenVoiceRequestV1(request: TtrpgOpenAudioReadI
 export async function readTtrpgOpenVoiceRequestDeskV1(request: TtrpgOpenAudioReadInputV1) {
   const input = snapshotInput(request), loaded = await loadTtrpgOpenAudioReadStateV1(input)
   const requests = loaded.humanHost ? (loaded.runtime.openRun!.voiceRequests ?? []).filter(r => r.script.scope.issuerViewerKey === input.viewerKey && r.script.scope.recipients.some(recipient => recipient.viewerKey === loaded.seat?.viewerKey && recipient.seatKey === loaded.seat.seatKey && recipient.role === loaded.seat.role && recipient.actorKey === loaded.seat.actorKey && recipient.controller === loaded.seat.controller)).map(r => ({
-    requestKey: r.requestKey, sourceRef: r.sourceRef, worldTurn: r.worldTurn, script: structuredClone(r.script), part: structuredClone(r.part),
+    requestKey: r.requestKey, sourceRef: r.sourceRef, worldTurn: r.worldTurn, script: structuredClone(r.script), part: structuredClone(r.part), ...(r.reading === undefined ? {} : { reading: structuredClone(r.reading) }),
     status: r.cancelledRef ? 'cancelled-before-send' as const : 'reserved-without-dispatch' as const,
     generationAllowed: false as const, adoptionAllowed: false as const })) : []
   await loaded.assertCurrent()

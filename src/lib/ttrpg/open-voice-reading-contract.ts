@@ -5,6 +5,7 @@ import { hashCanonicalValue } from '../agent/run/hash'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import * as p from './open-contract-parse'
 
+export const TTRPG_OPEN_VOICE_READING_LIMITS_V1 = { maxSourceUtf16: 2000, maxReadingUtf16: 4000, maxOverrides: 64 } as const
 export interface TtrpgOpenVoicePronunciationV1 { textOffset: number; textLength: number; spokenText: string }
 export interface TtrpgOpenVoiceReadingPreviewV1 {
   schema: 'storyforge.ttrpg-local-tts-reading-preview'; version: 1
@@ -18,7 +19,7 @@ export interface TtrpgOpenVoiceReadingPreviewV1 {
 }
 
 export function ttrpgOpenVoiceReadingTextV1(text: string, raw: unknown): { overrides: TtrpgOpenVoicePronunciationV1[]; readingText: string } {
-  if (typeof text !== 'string' || !text.trim() || text.length > profile.maxSourceUtf16 || /[\uD800-\uDFFF]/u.test(text)) p.fail('朗读来源须是有限且完整的原文字符')
+  if (typeof text !== 'string' || !text.trim() || text.length > TTRPG_OPEN_VOICE_READING_LIMITS_V1.maxSourceUtf16 || /[\uD800-\uDFFF]/u.test(text)) p.fail('朗读来源须是有限且完整的原文字符')
   const boundary = (offset: number) => !(offset > 0 && offset < text.length && /[\uD800-\uDBFF]/.test(text[offset - 1]) && /[\uDC00-\uDFFF]/.test(text[offset]))
   let cursor = 0, readingText = ''
   const overrides = p.list(raw, 'explicit pronunciation choices', value => {
@@ -26,13 +27,13 @@ export function ttrpgOpenVoiceReadingTextV1(text: string, raw: unknown): { overr
     const textOffset = p.integer(row.textOffset, 'pronunciation offset', cursor, text.length)
     const textLength = p.integer(row.textLength, 'pronunciation range', 1, text.length)
     if (textOffset + textLength > text.length || !boundary(textOffset) || !boundary(textOffset + textLength)
-      || typeof row.spokenText !== 'string' || !row.spokenText.trim() || row.spokenText.length > profile.maxReadingUtf16
+      || typeof row.spokenText !== 'string' || !row.spokenText.trim() || row.spokenText.length > TTRPG_OPEN_VOICE_READING_LIMITS_V1.maxReadingUtf16
       || /[\uD800-\uDFFF]/u.test(row.spokenText)) p.fail('读法须指向有序、不重叠且完整的原文范围')
     readingText += text.slice(cursor, textOffset) + row.spokenText; cursor = textOffset + textLength
     return { textOffset, textLength, spokenText: row.spokenText }
-  }, profile.maxOverrides, 0)
+  }, TTRPG_OPEN_VOICE_READING_LIMITS_V1.maxOverrides, 0)
   readingText += text.slice(cursor)
-  if (readingText.length > profile.maxReadingUtf16) p.fail('展开读法超出独立文字预算')
+  if (readingText.length > TTRPG_OPEN_VOICE_READING_LIMITS_V1.maxReadingUtf16) p.fail('展开读法超出独立文字预算')
   return { overrides, readingText }
 }
 
@@ -40,7 +41,9 @@ export async function verifyTtrpgOpenVoiceReadingPreviewV1(value: unknown, text:
   const expected = ttrpgOpenVoiceReadingTextV1(text, rawOverrides)
   const r = p.record(structuredClone(value), ['schema', 'version', 'profileHash', 'normalizerSha256', 'status', 'sourceText', 'sourceTextSha256', 'overrides',
     'readingText', 'normalizedText', 'normalizedTextSha256', 'issues', 'issueCount', 'issueOffsetsReferTo', 'modelCalled', 'generationAllowed', 'adoptionAllowed', 'network'], 'local reading preview')
-  if (profile.modelInvocationAllowed !== false || profile.adoptionAllowed !== false || r.sourceText !== text || r.readingText !== expected.readingText
+  if (profile.version !== 1 || profile.maxSourceUtf16 !== TTRPG_OPEN_VOICE_READING_LIMITS_V1.maxSourceUtf16
+    || profile.maxReadingUtf16 !== TTRPG_OPEN_VOICE_READING_LIMITS_V1.maxReadingUtf16 || profile.maxOverrides !== TTRPG_OPEN_VOICE_READING_LIMITS_V1.maxOverrides
+    || profile.modelInvocationAllowed !== false || profile.adoptionAllowed !== false || r.sourceText !== text || r.readingText !== expected.readingText
     || r.sourceTextSha256 !== await sha256Text(text) || r.profileHash !== await hashCanonicalValue(profile) || r.normalizerSha256 !== profile.normalizerSha256
     || JSON.stringify(ttrpgOpenVoiceReadingTextV1(text, r.overrides).overrides) !== JSON.stringify(expected.overrides)) p.fail('朗读预览与原文、明确读法或固定前端版本不一致')
   const issueCount = p.integer(r.issueCount, 'reading issue count', 0, profile.maxReadingUtf16 * 3)

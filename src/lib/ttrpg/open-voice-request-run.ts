@@ -1,5 +1,6 @@
 /** Zero-model parent records the human intent. A future audio worker needs a
  * separately governed lineage Run after a terminal intent receipt; this Run has no AI context or write permission. */
+import { verifyTtrpgOpenConfirmedVoiceReadingV1 } from './open-voice-confirmed-reading-contract'
 import { db } from '../db/schema'
 import type { WorkspaceScope, AgentRunRecord } from '../types'
 import type { TtrpgOpenVoiceRequestV1 } from './open-voice-request-contract'
@@ -29,6 +30,10 @@ export async function verifyTtrpgOpenVoiceIntentRunV1(input: { scope: WorkspaceS
   const matches = rows.filter(r => r.contractHash === input.row.runContractHash && JSON.parse(r.contractJson).objective === ttrpgOpenVoiceIntentObjectiveV1(input.row.requestKey))
   if (matches.length !== 1 || matches[0].portableRuntimeOriginJson !== undefined) p.fail('配音请求需要唯一原本地 Run；导入记录不能获得执行权')
   const snapshot = await readInstanceAgentRunV1(input.scope, matches[0].id!), run = snapshot.run
+  if (input.row.reading !== undefined) {
+    const { row } = input
+    await verifyTtrpgOpenConfirmedVoiceReadingV1(row.reading, row.script.text.slice(row.part.textOffset, row.part.textOffset + row.part.textLength), row.part.textHash)
+  }
   const expected = await acceptAgentRunContract(ttrpgOpenVoiceIntentContractV1(input))
   const phase = input.phase ?? 'reserve', step = snapshot.projection.steps[TTRPG_OPEN_VOICE_REQUEST_STEP_V1]
   if (run.contractHash !== input.row.runContractHash || run.contractHash !== expected.contractHash

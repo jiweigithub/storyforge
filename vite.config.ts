@@ -37,7 +37,8 @@ const TTRPG_REPLAY_CHUNK_MODULES = {
     'open-entity-contract', 'open-entity-model-contract', 'open-entity-model-origin-contract', 'open-entity-mechanics', 'open-entity-catalog', 'open-entity-window', 'open-runtime-entity-references', 'open-common-oracle-request', 'open-common-oracle-archive-contract', 'open-oracle-runtime-delivery',
   ],
   open: [
-    'open-audio-runtime', 'open-audio-scope', 'open-audio-contract', 'open-voice-script-contract', 'open-voice-request-contract', 'open-identity-knowledge',
+    'open-audio-runtime', 'open-audio-scope', 'open-audio-contract', 'open-voice-script-contract', 'open-voice-request-contract',
+    'open-voice-confirmed-reading-contract', 'open-voice-reading-contract', 'open-identity-knowledge',
     'open-branch-contract', 'open-branch-recovery', 'open-companion-preauthorization', 'open-handoff', 'open-hosting-delegation',
     'open-gate-recovery', 'open-knowledge-discovery', 'open-discovery-effect-templates', 'open-operation', 'open-oracle-review', 'open-pressure-cycle',
     'open-pressure-effect', 'open-table-conversation', 'open-table-conversation-reducer', 'open-turn-settlement', 'open-manual-action', 'open-manual-catalog', 'open-private-choice', 'open-table-risk', 'open-rule-plan', 'open-runtime-contract', 'open-situation-cycle',

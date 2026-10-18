@@ -1,3 +1,4 @@
+import { parseTtrpgOpenConfirmedVoiceReadingV1, type TtrpgOpenConfirmedVoiceReadingV1 } from './open-voice-confirmed-reading-contract'
 import type { ExactRunArtifactIdentityV1 } from '../types'
 /** Persistent human intent and cumulative reservations. This journal grants no
  * model invocation, candidate adoption, playback, or mechanical game action. */
@@ -21,6 +22,8 @@ export interface TtrpgOpenVoiceRequestV1 {
   readEvidence: { sequence: number; stateHash: string }
   script: TtrpgOpenVoiceScriptV1; scriptHash: string; textHash: string
   part: { textOffset: number; textLength: number; textHash: string }
+  /** Optional historical extension; absence preserves every legacy input byte. */
+  reading?: TtrpgOpenConfirmedVoiceReadingV1
   runContractHash: string; inputArtifactHash: string; artifactRefs: ExactRunArtifactIdentityV1[]; cancelledRef: TtrpgOpenSourceRefV1 | null
 }
 export function parseTtrpgOpenVoicePartV1(value: unknown, text: string): TtrpgOpenVoiceRequestV1['part'] {
@@ -33,7 +36,8 @@ export function parseTtrpgOpenVoicePartV1(value: unknown, text: string): TtrpgOp
   return part
 }
 export function parseTtrpgOpenVoiceRequestV1(value: unknown): TtrpgOpenVoiceRequestV1 {
-  const r = p.record(value, ['schema', 'version', 'sourceRef', 'requestKey', 'submissionKey', 'preparationKey', 'worldTurn', 'readEvidence', 'script', 'scriptHash', 'textHash', 'part', 'runContractHash', 'inputArtifactHash', 'artifactRefs', 'cancelledRef'], 'voice request')
+  const original = p.object(value, 'voice request')
+  const r = p.record(value, ['schema', 'version', 'sourceRef', 'requestKey', 'submissionKey', 'preparationKey', 'worldTurn', 'readEvidence', 'script', 'scriptHash', 'textHash', 'part', 'runContractHash', 'inputArtifactHash', 'artifactRefs', 'cancelledRef', ...(Object.prototype.hasOwnProperty.call(original, 'reading') ? ['reading'] : [])], 'voice request')
   const script = parseTtrpgOpenVoiceScriptV1(r.script), sourceRef = parseTtrpgOpenSourceRefV1(r.sourceRef)
   const e = p.record(r.readEvidence, ['sequence', 'stateHash'], 'voice read evidence')
   const readEvidence = { sequence: p.integer(e.sequence, 'voice read sequence', 0), stateHash: p.hash(e.stateHash, 'voice read hash') }
@@ -45,15 +49,17 @@ export function parseTtrpgOpenVoiceRequestV1(value: unknown): TtrpgOpenVoiceRequ
   const cancelledRef = p.nullable(r.cancelledRef, parseTtrpgOpenSourceRefV1, 'voice cancellation ref')
   if (sourceRef.sessionKey !== script.sessionKey || sourceRef.sequence !== readEvidence.sequence + 1
     || cancelledRef && (cancelledRef.sessionKey !== sourceRef.sessionKey || cancelledRef.sequence <= sourceRef.sequence)) p.fail('配音请求或取消缺少原准确事件位置')
+  const part = parseTtrpgOpenVoicePartV1(r.part, script.text)
+  const reading = Object.prototype.hasOwnProperty.call(original, 'reading') ? parseTtrpgOpenConfirmedVoiceReadingV1(r.reading, script.text.slice(part.textOffset, part.textOffset + part.textLength), part.textHash) : undefined
   return { schema: p.literal(r.schema, 'storyforge.ttrpg-open-voice-request', 'voice request schema'), version: p.literal(r.version, 1, 'voice request version'),
     sourceRef, requestKey: p.key(r.requestKey, 'voice request key'), submissionKey: p.key(r.submissionKey, 'voice submission'), preparationKey: p.key(r.preparationKey, 'voice original preparation'),
     worldTurn: p.integer(r.worldTurn, 'voice request world turn', 0), readEvidence, script,
-    scriptHash: p.hash(r.scriptHash, 'voice script hash'), textHash: p.hash(r.textHash, 'voice text hash'), part: parseTtrpgOpenVoicePartV1(r.part, script.text),
+    scriptHash: p.hash(r.scriptHash, 'voice script hash'), textHash: p.hash(r.textHash, 'voice text hash'), part, ...(reading === undefined ? {} : { reading }),
     runContractHash: p.hash(r.runContractHash, 'voice original run hash'), inputArtifactHash: p.hash(r.inputArtifactHash, 'voice input artifact hash'), artifactRefs, cancelledRef }
 }
 export function ttrpgOpenVoiceRequestInputV1(row: TtrpgOpenVoiceRequestV1) {
   return { schema: 'storyforge.ttrpg-open-voice-intent', version: 1, requestKey: row.requestKey, submissionKey: row.submissionKey, preparationKey: row.preparationKey,
-    worldTurn: row.worldTurn, readEvidence: row.readEvidence, script: row.script, scriptHash: row.scriptHash, textHash: row.textHash, part: row.part }
+    worldTurn: row.worldTurn, readEvidence: row.readEvidence, script: row.script, scriptHash: row.scriptHash, textHash: row.textHash, part: row.part, ...(row.reading === undefined ? {} : { reading: row.reading }) }
 }
 export function ttrpgOpenVoiceReservationPayloadV1(raw: TtrpgOpenVoiceRequestV1) {
   const request = { ...raw, cancelledRef: null }

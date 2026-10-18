@@ -316,3 +316,52 @@ test('native voice intent survives a real IndexedDB reload and cancels without m
   expect(after.sequence).toBe(before.sequence + 2)
   expect({ ...after, sequence: 0 }).toEqual({ ...before, sequence: 0 })
 })
+
+test('native confirmed reading retains its exact profile and source after reload without reviving an ephemeral confirmation', async ({ page }) => {
+  test.setTimeout(180000); await page.goto('./')
+  const f = await page.evaluate(async () => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    const helper = await load('/storyforge/tests/helpers/open-audio-runtime.ts'), s = await helper.setupAudioRuntimeV1(true, '编号001。')
+    return { owner: s.owner, narrationSourceRef: s.narrationSourceRef, text: s.text }
+  })
+  const before = await inspect(page, f.owner.sessionId)
+  const reserved = await page.evaluate(async f => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    const api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts'), { hashCanonicalValue } = await load('/storyforge/src/lib/agent/run/hash.ts')
+    const { sha256Text } = await load('/storyforge/src/lib/ai/chapter-memory/text-normalization.ts'), { default: profile } = await load('/storyforge/scripts/ttrpg-local-tts/reading-profile.json')
+    const sourceReview = await api.prepareTtrpgOpenVoiceScriptV1({ ...f.owner, narrationSourceRef: f.narrationSourceRef, audience: 'party', privateActorKey: null, decision: 'review-original-narration-for-voice' })
+    const overrides = [{ textOffset: 2, textLength: 3, spokenText: '零零一' }], part = { textOffset: 0, textLength: f.text.length }
+    // Serialized frontend fixture: this verifies native persistence and owner
+    // authority, without claiming to run the local normalizer or speech model.
+    const preview = { schema: 'storyforge.ttrpg-local-tts-reading-preview', version: 1, profileHash: await hashCanonicalValue(profile), normalizerSha256: profile.normalizerSha256,
+      status: 'ready-for-reading-review', sourceText: f.text, sourceTextSha256: await sha256Text(f.text), overrides, readingText: '编号零零一。',
+      normalizedText: '编号零零一.', normalizedTextSha256: await sha256Text('编号零零一.'), issues: [], issueCount: 0, issueOffsetsReferTo: 'readingText-utf16',
+      modelCalled: false, generationAllowed: false, adoptionAllowed: false, network: 'disabled' }
+    const review = await api.prepareTtrpgOpenVoiceReadingReviewV1({ ...f.owner, sourceReview, part, overrides, preview, decision: 'review-this-local-voice-reading' })
+    const result = await api.reserveTtrpgOpenVoiceRequestV1({ ...f.owner, review: sourceReview, part, submissionKey: 'native.confirmed.reading',
+      readingConfirmation: { review, decision: 'confirm-this-exact-local-voice-reading' }, decision: 'reserve-this-original-voice-part' })
+    return { result, profile, sourceReview, review, part }
+  }, f)
+  await page.reload()
+  const afterReload = await page.evaluate(async ({ f, reserved }) => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    const { db } = await load('/storyforge/src/lib/db/schema.ts'), { assembleContext } = await load('/storyforge/src/lib/registry/assemble-context.ts')
+    const desk = await api.readTtrpgOpenVoiceRequestDeskV1(f.owner), result = reserved.result
+    const context = await assembleContext({ projectId: f.owner.scope.projectId, scope: f.owner.scope, productRuntimeSessionId: f.owner.sessionId,
+      sourceKeys: ['ttrpgOpenVoiceText'], ttrpgVoiceRequest: { viewerKey: f.owner.viewerKey, requestKey: result.requestKey, intentReceiptHash: result.intentReceiptHash }, inputBudgetTokens: 8000 })
+    let copiedReviewDenied = false
+    try { await api.reserveTtrpgOpenVoiceRequestV1({ ...f.owner, review: reserved.sourceReview, part: reserved.part, submissionKey: 'native.copied.reading',
+      readingConfirmation: { review: reserved.review, decision: 'confirm-this-exact-local-voice-reading' }, decision: 'reserve-this-original-voice-part' }) }
+    catch { copiedReviewDenied = true }
+    await api.cancelTtrpgOpenVoiceRequestV1({ ...f.owner, requestKey: result.requestKey, decision: 'cancel-this-unsent-voice-request' })
+    return { desk, copiedReviewDenied, source: context.text, final: await api.readTtrpgOpenVoiceRequestDeskV1(f.owner), runs: await db.agentRuns.count(),
+      modelEvents: (await db.agentRunEvents.toArray()).filter((e: any) => ['model.requested', 'tool.called'].includes(e.type)).length }
+  }, { f, reserved })
+  expect(afterReload.copiedReviewDenied).toBe(true); expect(afterReload.source).toBe('编号001。')
+  expect(afterReload.desk.requests[0].reading).toMatchObject({ profile: reserved.profile, previewHash: reserved.review.previewHash, normalizedText: '编号零零一.' })
+  expect(afterReload.final.requests[0].reading).toEqual(afterReload.desk.requests[0].reading)
+  expect(afterReload.final.requests[0].status).toBe('cancelled-before-send'); expect(afterReload.final.budget).toEqual(afterReload.desk.budget)
+  expect(afterReload.runs).toBe(1); expect(afterReload.modelEvents).toBe(0)
+  const after = await inspect(page, f.owner.sessionId)
+  expect(after.sequence).toBe(before.sequence + 2); expect({ ...after, sequence: 0 }).toEqual({ ...before, sequence: 0 })
+})

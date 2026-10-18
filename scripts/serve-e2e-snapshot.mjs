@@ -10,6 +10,8 @@ const configuredPort = Number(portFlagIndex >= 0 ? process.argv[portFlagIndex + 
 const port = Number.isInteger(configuredPort) && configuredPort > 0 ? configuredPort : 4178
 const snapshotEntries = [
   'scripts/local-codex',
+  // Local voice replay imports this pinned, model-free reading descriptor.
+  'scripts/ttrpg-local-tts/reading-profile.json',
   'scripts/distribution/proxies.mjs',
   'scripts/distribution/diagnostics.mjs',
   'data',

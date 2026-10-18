@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { dirname, relative, resolve } from 'node:path'
+import { runInNewContext } from 'node:vm'
 import { db } from '../../src/lib/db/schema'
 import { setupAudioRuntimeV1 } from '../helpers/open-audio-runtime'
 import { prepareTtrpgOpenVoiceScriptV1, prepareTtrpgOpenVoiceReadingReviewV1, readTtrpgOpenReviewedVoiceReadingV1 } from '../../src/lib/ttrpg/open-audio-service'
@@ -20,6 +22,22 @@ const fixture = async (text = '门口写着8点。') => ({ schema: 'storyforge.t
   issueOffsetsReferTo: 'readingText-utf16', modelCalled: false, generationAllowed: false, adoptionAllowed: false, network: 'disabled' })
 
 describe('R-TTRPGOPEN10 source-preserving local reading contract', () => {
+  it('carries every actual reading JSON dependency into the frozen browser workspace without copying voice executors', () => {
+    const runner = readFileSync('scripts/serve-e2e-snapshot.mjs', 'utf8')
+    const manifest = runner.match(/const snapshotEntries = (\[[\s\S]*?\n\])/)?.[1]
+    expect(manifest).toBeDefined()
+    const entries = runInNewContext(manifest!) as string[], included = (asset: string) => entries.some(entry => asset === entry || asset.startsWith(`${entry}/`))
+    const metadata = new Set<string>()
+    for (const file of ['src/lib/ttrpg/open-voice-reading-contract.ts', 'src/lib/ttrpg/open-voice-request-service.ts']) {
+      for (const imported of readFileSync(file, 'utf8').matchAll(/\bfrom\s+['"]([^'"]+\.json)['"]/g)) {
+        const absolute = resolve(dirname(resolve(file)), imported[1]), asset = relative(process.cwd(), absolute).replace(/\\/g, '/')
+        expect(existsSync(absolute), asset).toBe(true); metadata.add(asset)
+      }
+    }
+    expect(metadata.size).toBeGreaterThan(0)
+    for (const asset of metadata) expect(included(asset), asset).toBe(true)
+    for (const file of ['engine.py', 'evaluate.mjs', 'reading_frontend.py']) expect(included(`scripts/ttrpg-local-tts/${file}`)).toBe(false)
+  })
   it('retains original bytes and full UTF-16 ranges for explicit pronunciations, including a supplementary glyph', () => {
     const text = '𠮷野掷2d6+3。'
     expect(ttrpgOpenVoiceReadingTextV1(text, [{ textOffset: 0, textLength: 2, spokenText: '吉' },
