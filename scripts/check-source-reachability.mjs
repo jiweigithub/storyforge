@@ -68,6 +68,9 @@ const entrypoints = [
   // AVG deterministic Build assembly consumes confirmed author revisions;
   // the production planner/workbench connects this API in its own increment.
   'src/lib/avg/executable-compiler.ts',
+  // AVG R4b1 is the independently testable, headless versioned intent/compiler/request API.
+  // It has no dispatch/adoption authority; the future formal Brief/producer/UI must register first.
+  'src/lib/avg/media-production-v2.ts',
 ].map(file => path.resolve(root, file))
 
 const graph = new Map()

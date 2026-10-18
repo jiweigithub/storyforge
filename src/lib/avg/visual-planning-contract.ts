@@ -72,8 +72,13 @@ export function parseAvgVisualRequirementTemplateV1(value: unknown): AvgVisualRe
 }
 
 export function parseAvgVisualPlanningScopeV1(value: unknown): AvgVisualPlanningScopeV1 {
+  return parseAvgVisualPlanningScopeWithReferences(value,1,value=>parseAvgMediaReferencesV1([value])[0]!)
+}
+
+/** Shared frozen topology; reference codecs and enclosing version stay explicit. */
+export function parseAvgVisualPlanningScopeWithReferences<V extends 1|2,R>(value:unknown,expectedVersion:V,parseReference:(value:unknown)=>R) {
   const r = avgRecord(avgProtocolBody(value), ['schema', 'version', 'batchKey', 'revision', 'aspectRatio', 'sourceInputHash', 'templates', 'referenceCatalog'], 'visual planning scope')
-  if (r.schema !== 'storyforge.avg.visual-planning-scope' || r.version !== 1) throw new Error('[avg-visual-plan] 策划范围版本无效')
+  if (r.schema !== 'storyforge.avg.visual-planning-scope' || r.version !== expectedVersion) throw new Error('[avg-visual-plan] 策划范围版本无效')
   const templates = avgUnique(avgList(r.templates, 'templates', parseAvgVisualRequirementTemplateV1, AVG_VISUAL_BATCH_LIMIT_V1), t => t.parameters.requirementKey, 'templates')
   if (!templates.length) throw new Error('[avg-visual-plan] 必须先冻结具体图片用途')
   avgUnique(templates, t => t.parameters.assetKey, 'template asset keys')
@@ -86,13 +91,13 @@ export function parseAvgVisualPlanningScopeV1(value: unknown): AvgVisualPlanning
   }
   const referenceCatalog = avgUnique(avgList(r.referenceCatalog, 'referenceCatalog', value => {
     const entry = avgRecord(value, ['referenceKey', 'reference'], 'planning reference')
-    return { referenceKey: avgKey(entry.referenceKey, 'referenceKey'), reference: parseAvgMediaReferencesV1([entry.reference])[0]! }
+    return { referenceKey: avgKey(entry.referenceKey, 'referenceKey'), reference: parseReference(entry.reference) }
   }, AVG_VISUAL_BATCH_LIMIT_V1 * AVG_IMAGE_REFERENCE_CAPABILITY_V1.maximumReferences), e => e.referenceKey, 'reference catalog')
   const used = new Set(templates.flatMap(t => t.allowedReferenceKeys))
   if (referenceCatalog.some(e => !used.has(e.referenceKey)) || [...used].some(key => !referenceCatalog.some(e => e.referenceKey === key))) {
     throw new Error('[avg-visual-plan] 参考目录与本批明确允许范围不闭合')
   }
-  return { schema: r.schema, version: 1, batchKey: avgKey(r.batchKey, 'batchKey'), revision: avgNumber(r.revision, 'scope.revision', 1, 1_000_000),
+  return { schema: 'storyforge.avg.visual-planning-scope' as const, version: expectedVersion, batchKey: avgKey(r.batchKey, 'batchKey'), revision: avgNumber(r.revision, 'scope.revision', 1, 1_000_000),
     aspectRatio: avgEnum(r.aspectRatio, ['16:9', '4:3'] as const, 'scope.aspectRatio'), sourceInputHash: avgHash(r.sourceInputHash, 'scope.sourceInputHash'), templates, referenceCatalog }
 }
 

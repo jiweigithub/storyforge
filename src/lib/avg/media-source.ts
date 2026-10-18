@@ -1,10 +1,10 @@
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { parseAvgAuthorWorkspaceV1, type AvgAuthorWorkspaceV1 } from './author-workspace-contract'
-import { parseAvgVisualProductionBatchV1, type AvgVisualProductionBatchV1 } from './media-production-contract'
+import { parseAvgVisualProductionBatchV1, type AvgVisualProductionBatchV1, type AvgVisualProductionRequirementV1 } from './media-production-contract'
 import type { AvgSystemPlan } from './system-contract'
 import { composeAvgCharacterFamilyRequirementsV1, hashAvgCharacterFamilyProposalV1 } from './character-family-contract'
 import { avgList, avgProtocolBody, avgRecord, avgUnique } from './protocol-validation'
-import { avgMediaBriefArtifactKeyV1, avgVisualPlanningTemplateRequirementsV1, parseAvgMediaBriefV1, parseAvgVisualBibleV1, parseAvgVisualPlanningScopeV1, type AvgVisualDesignKindV1, type AvgVisualPlanningScopeV1 } from './visual-planning-contract'
+import { avgMediaBriefArtifactKeyV1, avgVisualPlanningTemplateRequirementsV1, parseAvgMediaBriefV1, parseAvgVisualBibleV1, parseAvgVisualPlanningScopeV1, type AvgVisualDesignKindV1, type AvgVisualPlanningScopeV1, type AvgVisualBibleV1, type AvgMediaBriefV1 } from './visual-planning-contract'
 
 export type AvgMediaSourceInputV1 = Pick<AvgAuthorWorkspaceV1, 'systemPlan' | 'scripts'> & {
   presentation: Pick<AvgAuthorWorkspaceV1['presentation'], 'aspectRatio'>
@@ -13,7 +13,7 @@ export type AvgMediaSourceInputV1 = Pick<AvgAuthorWorkspaceV1, 'systemPlan' | 's
 /** Selection, cues, reading preferences and the batch itself cannot recursively
  * invalidate a request. Canonical rules/text/aspect still fence its meaning.
  * This projection is not a SourcePlan, context grant or author adoption. */
-function sourceInput(value: AvgMediaSourceInputV1) {
+export function normalizeAvgMediaSourceInputV1(value: AvgMediaSourceInputV1) {
   const source = parseAvgAuthorWorkspaceV1({ schema: 'storyforge.avg.author-workspace', version: 1, basePreviewHash: null,
     systemPlan: value.systemPlan, scripts: value.scripts,
     presentation: { schema: 'storyforge.avg.author-stage', version: 1, aspectRatio: value.presentation.aspectRatio,
@@ -30,13 +30,13 @@ function sourceInput(value: AvgMediaSourceInputV1) {
 }
 
 export async function hashAvgMediaSourceInputV1(input: AvgMediaSourceInputV1): Promise<string> {
-  return hashProductProductionValueV2(sourceInput(input))
+  return hashProductProductionValueV2(normalizeAvgMediaSourceInputV1(input))
 }
 
 /** Verify exact existing consumer slots. A gameplay state is not a display
  * variant; never invent predicates or rewrite rules to make a target exist. */
 export async function validateAvgVisualProductionBatchSourceV1(value: unknown, input: AvgMediaSourceInputV1): Promise<AvgVisualProductionBatchV1> {
-  const batch = parseAvgVisualProductionBatchV1(value), source = sourceInput(input)
+  const batch = parseAvgVisualProductionBatchV1(value), source = normalizeAvgMediaSourceInputV1(input)
   if (batch.aspectRatio !== source.aspectRatio || batch.sourceInputHash !== await hashProductProductionValueV2(source)) {
     throw new Error('[avg-media] 系统、文本或画幅已变化，请重新冻结媒资需求')
   }
@@ -47,7 +47,14 @@ export async function validateAvgVisualProductionBatchSourceV1(value: unknown, i
       ||!plan.characters.some(character=>character.key===proposal.plan.subjectKey)
       ||canonicalProductProductionJsonV2(composeAvgCharacterFamilyRequirementsV1(proposal.plan))!==canonicalProductProductionJsonV2(batch.requirements))throw new Error('[avg-family] 家族提案、授权或准确变体需求已变化，请重新核对')
   }
-  for (const r of batch.requirements) {
+  assertAvgVisualRequirementSourceConsumersV1(batch.requirements,source)
+  return batch
+}
+
+/** Exact canonical consumer checks, shared by explicit batch versions. */
+export function assertAvgVisualRequirementSourceConsumersV1(requirements:Pick<AvgVisualProductionRequirementV1,'consumer'|'triggerBeatKey'|'itemVariantKey'>[],source:ReturnType<typeof normalizeAvgMediaSourceInputV1>){
+  const plan=source.systemPlan
+  for (const r of requirements) {
     const c = r.consumer
     if (c.domain === 'stage') {
       const scene = plan.scenes.find(s => s.key === c.sceneKey), script = source.scripts.find(s => s.sceneKey === c.sceneKey)
@@ -69,12 +76,11 @@ export async function validateAvgVisualProductionBatchSourceV1(value: unknown, i
       }
     } else throw new Error('[avg-media] 未实现的图像消费域')
   }
-  return batch
 }
 
 /** Item slots must be declared before media dispatch freezes canonical rules.
  * Draft preparation may propose these references; execution never adds them. */
-export function assertAvgMediaConsumerDeclarationsV1(batch: AvgVisualProductionBatchV1, plan: AvgSystemPlan) {
+export function assertAvgMediaConsumerDeclarationsV1(batch: {requirements:Pick<AvgVisualProductionRequirementV1,'consumer'|'itemVariantKey'|'assetKey'>[]}, plan: AvgSystemPlan) {
   for (const r of batch.requirements) {
     if (r.consumer.domain !== 'inventory' && r.consumer.domain !== 'evidence') continue
     const item = plan.version === 2 ? plan.inventory.items.find(item => item.key === r.consumer.subjectKey) : undefined
@@ -95,7 +101,7 @@ export async function freezeAvgVisualProductionBatchV1(value: Omit<AvgVisualProd
 /** Planning validates the same canonical facts and real consumer declarations
  * as image dispatch. Placeholder words are local validation input only: no
  * candidate, adopted plan, provider request or call is created here. */
-function hasPlanningSubject(plan: AvgSystemPlan, kind: AvgVisualDesignKindV1, key: string) {
+export function hasAvgVisualPlanningSubjectV1(plan: AvgSystemPlan, kind: AvgVisualDesignKindV1, key: string) {
   return kind === 'character' ? plan.characters.some(s => s.key === key)
     : kind === 'environment' ? plan.scenes.some(s => s.key === key)
       : plan.version === 2 && plan.inventory.items.some(s => s.key === key)
@@ -107,7 +113,7 @@ async function validatePlanningScopeSource(scope: AvgVisualPlanningScopeV1, sour
     requirements: avgVisualPlanningTemplateRequirementsV1(scope) }, source)
   assertAvgMediaConsumerDeclarationsV1(skeleton, source.systemPlan)
   for (const t of scope.templates) {
-    if (!hasPlanningSubject(source.systemPlan, t.subjectKind, t.parameters.family.subjectKey)) {
+    if (!hasAvgVisualPlanningSubjectV1(source.systemPlan, t.subjectKind, t.parameters.family.subjectKey)) {
       throw new Error('[avg-visual-plan] 策划主体种类与准确系统来源不一致')
     }
   }
@@ -124,19 +130,12 @@ export async function freezeAvgVisualPlanningScopeV1(value: Omit<AvgVisualPlanni
   return scope
 }
 
-/** Deterministic semantic proposal, never a producer or adoption receipt.
- * This does not amend any existing V2/V3 Brief or frozen image request. */
-export async function compileAvgVisualPlanningProposalV1(input: {
-  scope: unknown; visualBible: unknown; mediaBriefs: unknown; source: AvgMediaSourceInputV1
-}) {
-  const source = structuredClone(input.source), scope = parseAvgVisualPlanningScopeV1(input.scope)
-  const bible = parseAvgVisualBibleV1(input.visualBible)
-  const briefs = avgUnique(avgList(input.mediaBriefs, 'media briefs', parseAvgMediaBriefV1, 8), b => b.subjectKey, 'media briefs')
-  await validatePlanningScopeSource(scope, source)
+/** Same semantic composer for each exact reference contract; no grants or source facts are invented. */
+export function composeAvgVisualPlanningRequirementsV1<R>(scope:Pick<AvgVisualPlanningScopeV1,'templates'>&{referenceCatalog:Array<{referenceKey:string;reference:R}>},bible:AvgVisualBibleV1,briefs:AvgMediaBriefV1[],sourcePlan:AvgSystemPlan){
   const subjects = new Map(scope.templates.map(t => [t.parameters.family.subjectKey, t.subjectKind]))
   // Reuse an existing Work-wide direction in a smaller next batch. Other
   // declared subjects neither create image tasks nor acquire reference grants.
-  if (bible.subjects.some(s => !hasPlanningSubject(source.systemPlan, s.subjectKind, s.subjectKey))) {
+  if (bible.subjects.some(s => !hasAvgVisualPlanningSubjectV1(sourcePlan, s.subjectKind, s.subjectKey))) {
     throw new Error('[avg-visual-plan] 视觉基准含当前系统未声明的主体')
   }
   if ([...subjects].some(([key, kind]) => !bible.subjects.some(s => s.subjectKey === key && s.subjectKind === kind))
@@ -150,7 +149,7 @@ export async function compileAvgVisualPlanningProposalV1(input: {
       throw new Error('[avg-visual-plan] 主体方案遗漏、重复或扩大了冻结图片需求')
     }
   }
-  const requirements = scope.templates.map(t => {
+  return scope.templates.map(t => {
     const subject = bible.subjects.find(s => s.subjectKey === t.parameters.family.subjectKey)!
     const brief = briefs.find(b => b.subjectKey === subject.subjectKey)!
     const output = brief.outputs.find(o => o.requirementKey === t.parameters.requirementKey)!
@@ -166,6 +165,18 @@ export async function compileAvgVisualPlanningProposalV1(input: {
       invariants: [...new Set([...t.requiredDetails, ...subject.identityInvariants, ...output.invariants])],
       forbiddenDepictions: [...new Set([...t.forbiddenDepictions, ...subject.forbiddenDepictions, ...output.forbiddenDepictions])], references }
   })
+}
+
+/** Deterministic semantic proposal, never a producer or adoption receipt.
+ * This does not amend any existing V2/V3 Brief or frozen image request. */
+export async function compileAvgVisualPlanningProposalV1(input: {
+  scope: unknown; visualBible: unknown; mediaBriefs: unknown; source: AvgMediaSourceInputV1
+}) {
+  const source = structuredClone(input.source), scope = parseAvgVisualPlanningScopeV1(input.scope)
+  const bible = parseAvgVisualBibleV1(input.visualBible)
+  const briefs = avgUnique(avgList(input.mediaBriefs, 'media briefs', parseAvgMediaBriefV1, 8), b => b.subjectKey, 'media briefs')
+  await validatePlanningScopeSource(scope, source)
+  const requirements=composeAvgVisualPlanningRequirementsV1(scope,bible,briefs,source.systemPlan)
   // Existing batch checks own concrete byte limits, reference order/purpose,
   // duplicate consumers, supported dimensions and canonical source identity.
   const batch = await validateAvgVisualProductionBatchSourceV1({ schema: 'storyforge.avg.visual-production-batch', version: 1,

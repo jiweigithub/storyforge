@@ -22,7 +22,7 @@ export interface AvgRawImagePayloadV1 {
   capabilityBindingHash: string
 }
 
-export function avgVisualRequestTextV1(r: AvgVisualProductionRequirementV1) {
+export function avgVisualRequestTextV1(r: Pick<AvgVisualProductionRequirementV1,'prompt'|'invariants'|'negativePrompt'|'forbiddenDepictions'>) {
   return { prompt: [r.prompt, ...r.invariants.map(text => `必须保持：${text}`)].join('\n'),
     negativePrompt: [r.negativePrompt, ...r.forbiddenDepictions].filter(Boolean).join('\n') }
 }
@@ -40,6 +40,15 @@ export async function prepareAvgRawImageRequestFromBatchV1(input: {
   qualityProfile: ProductProductionBriefV3['qualityProfile']; requirementKey: string; idempotencyKey: string
   adapterId?:AvgImageAdapterIdV4
 }) {
+  const fields=await prepareAvgRawImageRequestFieldsV1(input)
+  return freezeAvgImageRequestV1({request:fields.request,resolutionTier:fields.resolutionTier,references:fields.requirement.references})
+}
+
+/** Pure shared request fields. The enclosing reference/request version is never rewritten. */
+export async function prepareAvgRawImageRequestFieldsV1<R extends Omit<AvgVisualProductionRequirementV1,'references'>>(input:{
+  batch:Pick<AvgVisualProductionBatchV1,'batchKey'|'revision'|'sourceInputHash'>&{requirements:R[]};capability:ProviderCapabilityRequirementV1
+  qualityProfile:ProductProductionBriefV3['qualityProfile'];requirementKey:string;idempotencyKey:string;adapterId?:AvgImageAdapterIdV4
+}){
   const { batch, capability } = input, r = batch.requirements.find(r => r.requirementKey === input.requirementKey)
   if (!r) throw new Error('[avg-media] 请求不在冻结图片批次中')
   const request: ProductMediaRequestV1 = { schema: 'storyforge.product-media-request', version: 1,
@@ -50,7 +59,7 @@ export async function prepareAvgRawImageRequestFromBatchV1(input: {
       batchRevision: batch.revision, sourceInputHash: batch.sourceInputHash, requirement: r }),
     qualityProfile: input.qualityProfile, environment: import.meta.env.MODE === 'test' ? 'test' : import.meta.env.PROD ? 'production' : 'development',
     allowedDataClasses: [...capability.allowedDataClasses], rightsPolicyVersion: capability.rightsPolicyVersion }
-  return freezeAvgImageRequestV1({ request, resolutionTier: r.resolutionTier, references: r.references })
+  return {request,requirement:r,resolutionTier:r.resolutionTier}
 }
 
 /** Only portable metadata lives in payload. The exact original bytes are owned

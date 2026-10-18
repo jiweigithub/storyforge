@@ -460,7 +460,7 @@ describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/deco
     expect(restored.source).toEqual(selected.source)
     expect(await mediaBlobStore.sha256MediaData(restored.data)).toBe(selected.asset.contentHash)
     const versioned=await avgVersionedReferenceTransportFixture({scope:importedScope,...selected})
-    expect(versioned.projectUnchanged).toBe(true);expect(versioned.dispatch).toHaveBeenCalledTimes(1)
+    expect(versioned.projectUnchanged).toBe(true);expect(versioned.dispatch).toHaveBeenCalledTimes(1);expect(versioned.compiled.batch.requirements).toHaveLength(5);expect(versioned.frozen.targetFamily).toEqual(versioned.compiled.batch.requirements[0].family)
     expect(versioned.reference.generatedSource?.version).toBe(1)
     const ref = {assetKey:selected.asset.assetKey,assetVersion:selected.asset.version,contentHash:selected.asset.contentHash,
       mimeType:selected.asset.mimeType as 'image/png',byteSize:selected.asset.byteSize,purpose:'composition' as const,allowedChange:'保持房间结构，改为白天光线',
@@ -805,7 +805,7 @@ describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/deco
     const scope={projectId:importedId,worldId:build.worldId,workId:build.workId}
     expect((await readAvgGeneratedReferenceImageV1({scope,source:source.source})).data).toEqual(output)
     const versioned=await avgVersionedReferenceTransportFixture({scope,...source})
-    expect(versioned.projectUnchanged).toBe(true);expect(versioned.dispatch).toHaveBeenCalledTimes(1)
+    expect(versioned.projectUnchanged).toBe(true);expect(versioned.dispatch).toHaveBeenCalledTimes(1);expect(versioned.compiled.batch.requirements).toHaveLength(5);expect(versioned.frozen.targetFamily).toEqual(versioned.compiled.batch.requirements[0].family)
     expect(versioned.reference.contentHash).toBe(image.contentHash)
     expect(versioned.reference.generatedSource?.processing?.contentHash).toBe(image.contentHash)
     const damaged=structuredClone(source.source);damaged.processing!.producerReceiptHash='f'.repeat(64)
