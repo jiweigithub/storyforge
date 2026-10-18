@@ -5,12 +5,13 @@ import type { TtrpgOpenSourceRefV1 } from './open-coordination'
 import { parseTtrpgOpenSourceRefV1, assertTtrpgOpenSituationWindowEventV1 } from './open-coordination'
 import { assertTtrpgOpenHumanHostV1 } from './open-authorization'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
-import { createTtrpgOpenAudioScopeV1, parseTtrpgOpenAudioScopeV1, parseTtrpgOpenScopedAudioEventV1, type TtrpgOpenScopedAudioEventV1 } from './open-audio-scope'
+import { createTtrpgOpenAudioScopeV1, parseTtrpgOpenAudioScopeV1, parseTtrpgOpenScopedAudioEventV1, type TtrpgOpenScopedAudioEventV1, type TtrpgOpenAudioScopeV1 } from './open-audio-scope'
 import type { TtrpgOpenAuthorizationV1 } from './open-authorization'
 import { TTRPG_AUDIO_CHANNELS_V1, TTRPG_AUDIO_AUDIENCES_V1, validateTtrpgVoiceTimelineV1,
   type TtrpgAudioChannelV1, type TtrpgAudioAudienceV1, type TtrpgVoiceTimelineV1 } from './open-audio-runtime'
 import * as p from './open-contract-parse'
 import { parseTtrpgOpenVoiceScriptV1, type TtrpgOpenVoiceScriptV1 } from './open-voice-script-contract'
+import type { TtrpgOpenAudioReceiptV2 } from './open-generated-audio-contract'
 
 export interface TtrpgOpenAudioAssetV1 {
   originSessionKey: string; assetKey: string; version: number; kind: 'bgm' | 'ambience' | 'sfx' | 'voice'
@@ -109,7 +110,8 @@ export function createTtrpgOpenVoiceScriptV1(input: {
     narrationSourceRef: structuredClone(narration.sourceRef), narrationBinding: structuredClone(narration.binding), scope,
     text: narration.narration.paragraphs.map(row => row.text).join('\n\n') })
 }
-export function ttrpgOpenAudioReceiptVisibleV1(receipt: TtrpgOpenAudioReceiptV1, runtime: Pick<TtrpgRuntimeStateV2, 'authorization'>, viewerKey: string): boolean {
+type AudioScopeOwner = {request: {action: 'play' | 'stop'}; envelope: {scope: TtrpgOpenAudioScopeV1}}
+export function ttrpgOpenAudioReceiptVisibleV1(receipt: AudioScopeOwner, runtime: Pick<TtrpgRuntimeStateV2, 'authorization'>, viewerKey: string): boolean {
   const seat = runtime.authorization?.seats.find(row => row.viewerKey === viewerKey && row.controller !== 'ai' && row.assignmentState === 'claimed')
   return !!seat && (receipt.envelope.scope.audience === 'public' || receipt.envelope.scope.recipients.some(row => row.seatKey === seat.seatKey
     && row.viewerKey === seat.viewerKey && row.actorKey === seat.actorKey && row.role === seat.role && row.controller !== 'ai'))
@@ -118,7 +120,7 @@ export function ttrpgOpenAudioReceiptVisibleV1(receipt: TtrpgOpenAudioReceiptV1,
 /** A stop grants no file or prose. Keep the original listener fence even when
  * roster/consent changes; current explicit host authority controls the receipt.
  * A public control may add its current issuer, who could already hear public audio. */
-export function createTtrpgOpenAudioStopScopeV1(authorization: TtrpgOpenAuthorizationV1, original: TtrpgOpenAudioReceiptV1, viewerKey: string) {
+export function createTtrpgOpenAudioStopScopeV1(authorization: TtrpgOpenAuthorizationV1, original: AudioScopeOwner, viewerKey: string) {
   const issuer = assertTtrpgOpenHumanHostV1(authorization, viewerKey)
   if (original.request.action !== 'play' || !ttrpgOpenAudioReceiptVisibleV1(original, { authorization }, viewerKey)) p.fail('停止必须由当前有原读取权限的真人主持确认')
   const recipients = structuredClone(original.envelope.scope.recipients)
@@ -142,6 +144,7 @@ export function createTtrpgOpenAudioReceiptV1(input: {
   if (request.narrationSourceRef.sessionKey === runtime.sessionKey && request.narrationSourceRef.sequence >= input.sequence) p.fail('音频不得先于原结算叙述')
   const retainedRef = request.media.kind === 'upload' ? null : request.media.sourceRef
   const prior = retainedRef ? runtime.openRun!.audioReceipts?.find(row => ttrpgOpenAudioSourceEqualV1(row.envelope.sourceRef, retainedRef)) : undefined
+  if (request.media.kind === 'retained' && prior?.version === 2) p.fail('生成配音重播须保留显式 V2 来源与真实样本时间轴')
   if (request.media.kind !== 'upload' && (!prior || prior.request.action !== 'play' || !ttrpgOpenAudioReceiptVisibleV1(prior, runtime, viewerKey)
     || prior.envelope.event.channel !== request.channel || !ttrpgOpenAudioSourceEqualV1(prior.request.narrationSourceRef, request.narrationSourceRef))) p.fail('音频重播或停止需要本人可读的原准确播放记录')
   const scope = request.action === 'stop' ? createTtrpgOpenAudioStopScopeV1(runtime.authorization!, prior!, viewerKey)
@@ -178,11 +181,12 @@ export function ttrpgOpenAudioPayloadV1(receipt: TtrpgOpenAudioReceiptV1) {
 }
 
 /** Shape/origin closure only; async evidence verification also checks original event bytes. */
-export function assertTtrpgOpenAudioJournalV1(runtime: TtrpgRuntimeStateV2): void {
+export function assertTtrpgOpenAudioJournalV1(runtime: TtrpgRuntimeStateV2,
+  parseReceipt: (value: unknown) => TtrpgOpenAudioReceiptV1 | TtrpgOpenAudioReceiptV2 = parseTtrpgOpenAudioReceiptV1): void {
   const receipts = runtime.openRun?.audioReceipts ?? [], seen = new Set<string>()
   for (const raw of receipts) {
-    const receipt = parseTtrpgOpenAudioReceiptV1(raw), ref = receipt.envelope.sourceRef, key = stable(ref)
-    if (seen.has(key) || receipt.request.media.kind !== 'upload' && !seen.has(stable(receipt.request.media.sourceRef))) p.fail('音频原事件来源重复或不是先前播放记录')
+    const receipt = parseReceipt(raw), ref = receipt.envelope.sourceRef, key = stable(ref), media = receipt.request.media
+    if (seen.has(key) || (media.kind === 'retained' || media.kind === 'stop') && !seen.has(stable(media.sourceRef))) p.fail('音频原事件来源重复或不是先前播放记录')
     seen.add(key)
     if (ref.sessionKey !== runtime.sessionKey && !runtime.branchLineage?.ancestors.some(a => a.sessionKey === ref.sessionKey && a.throughSequence >= ref.sequence
       && a.snapshot.openRun?.audioReceipts?.some(row => stable(row) === stable(receipt)))) p.fail('音频缺少准确祖先切点记录')

@@ -6,6 +6,7 @@ import type { TtrpgOpenVoicePronunciationV1 } from '../../lib/ttrpg/open-voice-r
 import type { TtrpgOpenVoiceCandidateV1 } from '../../lib/ttrpg/open-voice-candidate'
 import type { TtrpgOpenVoiceAuditionV1 } from '../../lib/ttrpg/open-voice-audition'
 import TtrpgOpenVoiceAuditionPlayer from './TtrpgOpenVoiceAuditionPlayer'
+import TtrpgOpenGeneratedVoiceAdoption from './TtrpgOpenGeneratedVoiceAdoption'
 
 type Desk=Awaited<ReturnType<typeof api.readTtrpgOpenVoiceRequestDeskV1>>
 type QualityReview=Awaited<ReturnType<typeof api.readTtrpgOpenVoiceCandidateReviewV1>>
@@ -125,6 +126,9 @@ export default function TtrpgOpenVoiceStudio(props:{input:api.TtrpgOpenAudioDesk
       {!quality&&candidate.artifact.status!=='blocked'&&<><label><input type="checkbox" aria-label="确认这条原音频的本人试听结果" disabled={busy||!audition} checked={listened} onChange={e=>setListened(e.target.checked)}/>我已亲自试听这条原音频，确认音质与读法适合本桌。</label><button disabled={busy||!audition||!listened} onClick={()=>void perform(confirmQuality)}>保存本人试听确认</button></>}
       {quality&&!quality.complete&&<button disabled={busy} onClick={()=>void perform(confirmQuality)}>补齐原审阅回执</button>}
     </section>}
+    {selected&&<TtrpgOpenGeneratedVoiceAdoption key={JSON.stringify([props.input.scope,props.input.sessionId,props.input.viewerKey,selected])}
+      input={props.input} requestKey={selected} candidateHash={candidate?.candidateHash} reviewed={!!quality?.complete} canPlay={props.view.canPlay}
+      busy={busy} sequence={props.sequence} stopAudition={stop} onChanged={props.onChanged}/>}
     {audition&&<TtrpgOpenVoiceAuditionPlayer audition={audition.value} url={audition.url} register={registerPlayer} onFailure={()=>{stop();setMessage('本次音频无法播放，原候选保留。')}}/>}
   </details>
 }

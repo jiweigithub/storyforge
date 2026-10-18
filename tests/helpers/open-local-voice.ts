@@ -8,8 +8,8 @@ import { sha256Text } from '../../src/lib/ai/chapter-memory/text-normalization'
 const readingProfile = JSON.parse(readFileSync('scripts/ttrpg-local-tts/reading-profile.json', 'utf8'))
 // A synthetic frontend DTO isolates browser governance. Actual normalization
 // and speech quality require the separate pinned CPU/real-audio evidence.
-export async function setupLocalVoiceExecutionV1(confirmed = true) {
-  const s = await setupAudioRuntimeV1(true, '编号001。')
+export async function setupLocalVoiceExecutionV1(confirmed = true, humanGm = true) {
+  const s = await setupAudioRuntimeV1(humanGm, '编号001。')
   const sourceReview = await prepareTtrpgOpenVoiceScriptV1({ ...s.owner, narrationSourceRef: s.narrationSourceRef,
     audience: 'party', privateActorKey: null, decision: 'review-original-narration-for-voice' })
   const overrides = [{ textOffset: 2, textLength: 3, spokenText: '零零一' }], part = { textOffset: 0, textLength: s.text.length }

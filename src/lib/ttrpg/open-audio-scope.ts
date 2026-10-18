@@ -8,6 +8,7 @@ import { applyTtrpgAudioCueAppliedEventV1, createTtrpgAudioStateV1, parseTtrpgAu
   TTRPG_AUDIO_AUDIENCES_V1, TTRPG_AUDIO_CHANNELS_V1,
   type TtrpgAudioAudienceV1, type TtrpgAudioChannelV1, type TtrpgAudioCueAppliedEventV1, type TtrpgAudioProjectionV1 } from './open-audio-runtime'
 import * as p from './open-contract-parse'
+import { parseTtrpgOpenGeneratedVoiceTimelineV1, type TtrpgOpenGeneratedVoiceTimelineV1 } from './open-voice-timeline-contract'
 
 type Recipient = { seatKey: string; viewerKey: string; actorKey: string | null; role: 'gm' | 'player'; controller: 'human' | 'hybrid' | 'ai' }
 export interface TtrpgOpenAudioScopeV1 {
@@ -21,6 +22,10 @@ export interface TtrpgOpenScopedAudioEventV1 {
   schema: 'storyforge.ttrpg-open-scoped-audio'; version: 1
   sourceRef: TtrpgOpenSourceRefV1; scope: TtrpgOpenAudioScopeV1; event: TtrpgAudioCueAppliedEventV1
 }
+export interface TtrpgOpenScopedAudioEventV2 extends Omit<TtrpgOpenScopedAudioEventV1, 'version'> {
+  version: 2; generatedTimeline: TtrpgOpenGeneratedVoiceTimelineV1
+}
+export type TtrpgOpenScopedAudioEvent = TtrpgOpenScopedAudioEventV1 | TtrpgOpenScopedAudioEventV2
 const EVENT_FIELDS = ['type', 'eventSequence', 'commandId', 'worldTurn', 'slotKey', 'channel', 'action',
   'fade', 'audience', 'targetRef', 'assetKey', 'fallbackText', 'voiceTimeline'] as const
 
@@ -96,6 +101,26 @@ export function parseTtrpgOpenScopedAudioEventV1(value: unknown): TtrpgOpenScope
     version: p.literal(r.version, 1, 'scoped audio version'), sourceRef, scope, event }
 }
 
+/** Generated speech has a sample clock, never invented char/word marks. The
+ * explicit outer version leaves the legacy event and parser bytes intact. */
+export function parseTtrpgOpenScopedAudioEventV2(value: unknown): TtrpgOpenScopedAudioEventV2 {
+  const r = p.record(value, ['schema','version','sourceRef','scope','event','generatedTimeline'], 'generated scoped audio')
+  const sourceRef = parseTtrpgOpenSourceRefV1(r.sourceRef), scope = parseTtrpgOpenAudioScopeV1(r.scope)
+  const raw = p.record(r.event, EVENT_FIELDS, 'generated audio event'), event = parseTtrpgAudioCueAppliedEventV1(raw)
+  const generatedTimeline = parseTtrpgOpenGeneratedVoiceTimelineV1(r.generatedTimeline)
+  if (event.channel !== 'voice' || event.action !== 'play' || raw.voiceTimeline !== null || event.assetKey === null
+    || sourceRef.sessionKey !== scope.authorizationRef.sessionKey || sourceRef.sequence <= scope.authorizationRef.sequence
+    || sourceRef.sequence !== event.eventSequence || scope.audience !== event.audience || scope.audience === 'public'
+    || (scope.audience === 'private' ? scope.privateActorKey !== event.targetRef : event.targetRef !== 'audio.bus')
+    || generatedTimeline.sourceTextLengthUtf16 !== event.fallbackText.length) p.fail('生成音频事件与真实来源、样本时间轴或受众不一致')
+  return { schema: p.literal(r.schema, 'storyforge.ttrpg-open-scoped-audio', 'generated audio schema'),
+    version: p.literal(r.version, 2, 'generated audio version'), sourceRef, scope, event, generatedTimeline }
+}
+export function parseTtrpgOpenScopedAudioEvent(value: unknown): TtrpgOpenScopedAudioEvent {
+  return value !== null && typeof value === 'object' && 'version' in value && value.version === 2
+    ? parseTtrpgOpenScopedAudioEventV2(value) : parseTtrpgOpenScopedAudioEventV1(value)
+}
+
 /** Re-derive at commit using the actual historical authorization, not caller-stated recipients. */
 export function assertTtrpgOpenAudioScopeAuthorityV1(scope: TtrpgOpenAudioScopeV1, authorization: TtrpgOpenAuthorizationV1): void {
   const checked = parseTtrpgOpenAudioScopeV1(scope), expected = createTtrpgOpenAudioScopeV1({ authorization,
@@ -113,10 +138,13 @@ export interface TtrpgOpenAudioTransitionV1 {
   fromSlotKey: string | null; toSlotKey: string | null
 }
 type ProjectionInput = {
-  events: readonly TtrpgOpenScopedAudioEventV1[]; authorization: TtrpgOpenAuthorizationV1
+  events: readonly TtrpgOpenScopedAudioEvent[]; authorization: TtrpgOpenAuthorizationV1
   reader: { kind: 'human'; viewerKey: string } | { kind: 'public' }
 }
-export function projectTtrpgOpenScopedAudioV1(input: ProjectionInput): TtrpgAudioProjectionV1 { return replayScopedAudio(input).projection }
+export interface TtrpgOpenScopedAudioProjection extends Omit<TtrpgAudioProjectionV1, 'channels'> {
+  channels: { [K in TtrpgAudioChannelV1]: (NonNullable<TtrpgAudioProjectionV1['channels'][K]> & {generatedTimeline?: TtrpgOpenGeneratedVoiceTimelineV1}) | null }
+}
+export function projectTtrpgOpenScopedAudioV1(input: ProjectionInput): TtrpgOpenScopedAudioProjection { return replayScopedAudio(input).projection }
 /** Latest actually audible changes only. A pure projection is not a media or playback grant. */
 export function projectTtrpgOpenAudioTransitionsV1(input: ProjectionInput): TtrpgOpenAudioTransitionV1[] { return replayScopedAudio(input).transitions }
 function replayScopedAudio(input: ProjectionInput) {
@@ -125,28 +153,31 @@ function replayScopedAudio(input: ProjectionInput) {
   const seat = reader.kind === 'human' ? authorization.seats.find(row => row.viewerKey === reader.viewerKey
     && row.controller !== 'ai' && row.assignmentState === 'claimed') : undefined
   if (reader.kind === 'human' && !seat) p.fail('音频读取需要当前实际真人席位')
-  const layers = new Map<string, { state: ReturnType<typeof createTtrpgAudioStateV1>; order: Map<string, number> }>()
+  const layers = new Map<string, { state: ReturnType<typeof createTtrpgAudioStateV1>; order: Map<string, number>; generated: Map<TtrpgAudioChannelV1, TtrpgOpenGeneratedVoiceTimelineV1> }>()
   const transitions = new Map<TtrpgAudioChannelV1, TtrpgOpenAudioTransitionV1>()
   const selected = (channel: TtrpgAudioChannelV1) => {
-    let cue: TtrpgAudioProjectionV1['channels'][TtrpgAudioChannelV1] = null, order = -1
+    let cue: TtrpgOpenScopedAudioProjection['channels'][TtrpgAudioChannelV1] = null, order = -1
     for (const layer of layers.values()) if (layer.state.channels[channel] && (layer.order.get(channel) ?? -1) > order) {
-      cue = layer.state.channels[channel]; order = layer.order.get(channel) ?? -1
+      const original = layer.state.channels[channel]!, generatedTimeline = layer.generated.get(channel)
+      cue = generatedTimeline ? {...original, generatedTimeline} : original; order = layer.order.get(channel) ?? -1
     }
     return cue
   }
   const seen = new Map<string, number>()
   for (const [index, raw] of input.events.entries()) {
-    const row = parseTtrpgOpenScopedAudioEventV1(raw), { scope, event, sourceRef } = row
+    const row = parseTtrpgOpenScopedAudioEvent(raw), { scope, event, sourceRef } = row
     if (sourceRef.sequence <= (seen.get(sourceRef.sessionKey) ?? 0)) p.fail('音频原事件来源重复或顺序倒退')
     seen.set(sourceRef.sessionKey, sourceRef.sequence)
     const visible = scope.audience === 'public' || seat && scope.recipients.some(recipient => recipient.seatKey === seat.seatKey
       && recipient.viewerKey === seat.viewerKey && recipient.actorKey === seat.actorKey && recipient.role === seat.role && recipient.controller !== 'ai')
     if (reader.kind === 'public' ? scope.audience !== 'public' : !visible) continue
     const layerKey = scope.audience === 'private' ? `private:${scope.privateActorKey}` : scope.audience
-    const layer = layers.get(layerKey) ?? { state: createTtrpgAudioStateV1(), order: new Map<string, number>() }
+    const layer = layers.get(layerKey) ?? { state: createTtrpgAudioStateV1(), order: new Map<string, number>(), generated: new Map<TtrpgAudioChannelV1, TtrpgOpenGeneratedVoiceTimelineV1>() }
     if (event.action === 'stop' && layer.state.channels[event.channel]?.slotKey !== event.slotKey) continue
     const beforeSlotKey = selected(event.channel)?.slotKey ?? null
     layer.state = applyTtrpgAudioCueAppliedEventV1(layer.state, { ...event, eventSequence: index + 1 })
+    if (row.version === 2) layer.generated.set(event.channel, row.generatedTimeline)
+    else layer.generated.delete(event.channel)
     layer.order.set(event.channel, index); layers.set(layerKey, layer)
     const after = selected(event.channel)
     if (beforeSlotKey !== (after?.slotKey ?? null)) transitions.set(event.channel, {
@@ -154,7 +185,7 @@ function replayScopedAudio(input: ProjectionInput) {
       fromSlotKey: beforeSlotKey, toSlotKey: after?.slotKey ?? null,
     })
   }
-  const channels = createTtrpgAudioStateV1().channels
+  const channels: TtrpgOpenScopedAudioProjection['channels'] = createTtrpgAudioStateV1().channels
   for (const channel of TTRPG_AUDIO_CHANNELS_V1) channels[channel] = selected(channel)
   return { projection: { channels, visibleChannelCount: Object.values(channels).filter(Boolean).length },
     transitions: TTRPG_AUDIO_CHANNELS_V1.flatMap(channel => transitions.has(channel) ? [transitions.get(channel)!] : []) }

@@ -10,7 +10,7 @@ export async function loadTtrpgOpenAudioReadStateV1(request: TtrpgOpenAudioReadI
   const input = { scope: structuredClone(request.scope), sessionId: request.sessionId, viewerKey: request.viewerKey }
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'human', viewerKey: input.viewerKey } })
   const events = await readSessionEvents(loaded.session)
-  await verifyTtrpgOpenAudioReceiptsV1({ runtime: loaded.runtime, runtimeSourceHash: loaded.session.runtimeSourceHash, events })
+  await verifyTtrpgOpenAudioReceiptsV1({ runtime: loaded.runtime, runtimeSourceHash: loaded.session.runtimeSourceHash, events, projectId: input.scope.projectId })
   await verifyTtrpgOpenVoiceRequestsV1({ runtime: loaded.runtime, runtimeSourceHash: loaded.session.runtimeSourceHash, events })
   await loaded.assertCurrent(); return { ...loaded, events }
 }

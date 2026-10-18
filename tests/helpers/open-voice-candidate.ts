@@ -6,8 +6,8 @@ import { setupLocalVoiceExecutionV1 } from './open-local-voice'
 import { prepareTtrpgOpenLocalVoiceExecutionV1 } from '../../src/lib/ttrpg/open-audio-service'
 import { dispatchTtrpgOpenLocalVoiceForKernelV1 } from '../../src/lib/ttrpg/open-voice-execution'
 
-export async function setupVoiceCandidateFixtureV1(valid = true) {
-  const f=await setupLocalVoiceExecutionV1(), prepared=await prepareTtrpgOpenLocalVoiceExecutionV1(f.input)
+export async function setupVoiceCandidateFixtureV1(valid = true, humanGm = true) {
+  const f=await setupLocalVoiceExecutionV1(true,humanGm), prepared=await prepareTtrpgOpenLocalVoiceExecutionV1(f.input)
   const execute=vi.fn(async (packet: unknown) => valid ? execFileSync(process.execPath,['--input-type=module','-e',`
 import {readFileSync} from 'node:fs';import {syntheticResult} from './tests/helpers/local-voice-product-fixture.mjs';
 const input=JSON.parse(readFileSync(0,'utf8')),{bytes,result}=syntheticResult(input);
