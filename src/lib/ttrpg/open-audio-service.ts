@@ -206,6 +206,7 @@ export async function readTtrpgOpenAudioClipV1(request: TtrpgOpenAudioDeskInputV
 }
 
 export { reserveTtrpgOpenVoiceRequestV1, cancelTtrpgOpenVoiceRequestV1, readTtrpgOpenVoiceRequestDeskV1 } from './open-voice-request-service'
+export { readTtrpgOpenLocalVoiceJobV1 } from './open-voice-job-service'
 
 export { recoverTtrpgOpenVoiceIntentV1 } from './open-voice-intent-receipt'
 export { prepareTtrpgOpenLocalVoiceExecutionV1, readTtrpgOpenLocalVoicePreparationV1, generateTtrpgOpenLocalVoiceV1 } from './open-voice-execution'

@@ -5,7 +5,7 @@ import { hashCanonicalValue } from '../agent/run/hash'
 import type { TtrpgOpenLocalVoiceTransportV1 } from './open-voice-execution'
 
 const PREFIX = '/storyforge/local-tts/v1'
-async function requestText(url: string, init: RequestInit, signal: AbortSignal | undefined, limit: number, timeoutMs: number) {
+export async function requestText(url: string, init: RequestInit, signal: AbortSignal | undefined, limit: number, timeoutMs: number) {
   const controller = new AbortController(), relay = () => controller.abort(signal?.reason)
   if (signal?.aborted) relay(); else signal?.addEventListener('abort', relay, { once: true })
   const timer = setTimeout(() => controller.abort(new Error('本机语音响应超过传输期限，请核查原任务，不自动重发')), timeoutMs)

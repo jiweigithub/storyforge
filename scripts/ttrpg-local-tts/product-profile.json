@@ -63,7 +63,7 @@
       },
       {
         "path": "src/lib/ttrpg/open-local-voice-transport.ts",
-        "sha256": "c59488dc427b5a6ff9664c7ecf11880fc2f62e7cf8f883cd229b9da0c4406001"
+        "sha256": "a2aa630590f6a9cfbadce8eade059f69e17d82b440311412a1ffff61f8e6f23c"
       },
       {
         "path": "src/lib/ttrpg/open-voice-execution.ts",

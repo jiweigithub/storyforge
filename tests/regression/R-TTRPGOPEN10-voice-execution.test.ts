@@ -2,11 +2,10 @@ import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { db } from '../../src/lib/db/schema'
-import { setupAudioRuntimeV1 } from '../helpers/open-audio-runtime'
+import { setupLocalVoiceExecutionV1 as fixture } from '../helpers/open-local-voice'
 import { rt } from '../helpers/open-ttrpg-branch-recovery'
 import { openEnvelopeV1 } from '../helpers/open-ttrpg-session'
-import { prepareTtrpgOpenVoiceScriptV1, prepareTtrpgOpenVoiceReadingReviewV1, reserveTtrpgOpenVoiceRequestV1,
-  prepareTtrpgOpenLocalVoiceExecutionV1, readTtrpgOpenLocalVoicePreparationV1, readTtrpgOpenVoiceRequestDeskV1, cancelTtrpgOpenVoiceRequestV1 } from '../../src/lib/ttrpg/open-audio-service'
+import { prepareTtrpgOpenLocalVoiceExecutionV1, readTtrpgOpenLocalVoicePreparationV1, readTtrpgOpenVoiceRequestDeskV1, cancelTtrpgOpenVoiceRequestV1 } from '../../src/lib/ttrpg/open-audio-service'
 import { TTRPG_OPEN_VOICE_EXECUTION_DECISION_V1 as decision, TTRPG_OPEN_VOICE_EXECUTION_RELATION_V1 as relation,
   TTRPG_OPEN_VOICE_EXECUTION_STEP_V1 as stepId, createTtrpgOpenVoiceExecutionInputForKernelV1 } from '../../src/lib/ttrpg/open-voice-execution-input'
 import { hashCanonicalValue, canonicalStringify } from '../../src/lib/agent/run/hash'
@@ -24,22 +23,6 @@ import * as formal from '../../src/lib/agent/formal-ai-entry'
 
 const readingProfile = JSON.parse(readFileSync('scripts/ttrpg-local-tts/reading-profile.json', 'utf8'))
 const productProfile = JSON.parse(readFileSync('scripts/ttrpg-local-tts/product-profile.json', 'utf8'))
-// A synthetic frontend DTO isolates browser governance. Actual normalization
-// and speech quality require the separate pinned CPU/real-audio evidence.
-async function fixture(confirmed = true) {
-  const s = await setupAudioRuntimeV1(true, '编号001。')
-  const sourceReview = await prepareTtrpgOpenVoiceScriptV1({ ...s.owner, narrationSourceRef: s.narrationSourceRef,
-    audience: 'party', privateActorKey: null, decision: 'review-original-narration-for-voice' })
-  const overrides = [{ textOffset: 2, textLength: 3, spokenText: '零零一' }], part = { textOffset: 0, textLength: s.text.length }
-  const preview = { schema: 'storyforge.ttrpg-local-tts-reading-preview', version: 1, profileHash: await hashCanonicalValue(readingProfile),
-    normalizerSha256: readingProfile.normalizerSha256, status: 'ready-for-reading-review', sourceText: s.text, sourceTextSha256: await sha256Text(s.text),
-    overrides, readingText: '编号零零一。', normalizedText: '编号零零一.', normalizedTextSha256: await sha256Text('编号零零一.'), issues: [], issueCount: 0,
-    issueOffsetsReferTo: 'readingText-utf16', modelCalled: false, generationAllowed: false, adoptionAllowed: false, network: 'disabled' }
-  const review = await prepareTtrpgOpenVoiceReadingReviewV1({ ...s.owner, sourceReview, part, overrides, preview, decision: 'review-this-local-voice-reading' })
-  const requested = await reserveTtrpgOpenVoiceRequestV1({ ...s.owner, review: sourceReview, part, submissionKey: 'execution.original', decision: 'reserve-this-original-voice-part',
-    ...(confirmed ? { readingConfirmation: { review, decision: 'confirm-this-exact-local-voice-reading' as const } } : {}) })
-  return { ...s, requested, input: { ...s.owner, requestKey: requested.requestKey, decision } }
-}
 
 describe('R-TTRPGOPEN10 unique governed local speech preparation', { timeout: 60000 }, () => {
   beforeEach(async () => { await db.delete(); await db.open() })
