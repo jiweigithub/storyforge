@@ -2889,6 +2889,20 @@ type AvgHistoricalMediaEvidenceInputV1 = {
  * Kept separate from active producer admission: restoring a project cannot
  * grant author adoption, retry, carry or any new model/media dispatch. */
 export async function verifyHistoricalAvgVisualPlanningArtifactV4(input: AvgHistoricalMediaEvidenceInputV1) {
+  return (await readHistoricalAvgVisualProducerV4(input,false)).artifact
+}
+
+/** Intrinsic original-image evidence only. The AVG consumer must separately
+ * prove its actual compiled definition, author choice and reference rights.
+ * Reading a historical producer grants no current adoption, carry or retry. */
+export async function verifyHistoricalAvgVisualImageProducerV4(input: AvgHistoricalMediaEvidenceInputV1) {
+  const result=await readHistoricalAvgVisualProducerV4(input,true)
+  const provenance={schema:'storyforge.avg.visual-image-producer-proof' as const,version:4 as const,
+    ...result.producer,responseEvidenceHash:result.responseEvidenceHash!}
+  return {artifact:result.artifact,provenance:{...provenance,proofHash:await hashProductProductionValueV2(provenance)}}
+}
+
+async function readHistoricalAvgVisualProducerV4(input:AvgHistoricalMediaEvidenceInputV1,rawImage:boolean) {
   const scope = await resolveScope({ scope: input.scope }), build = await db.productBuilds.get(input.buildId)
   if (!build?.id || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })
     || build.stateRevision !== input.expectedBuildRevision || build.briefHash !== input.expectedBriefHash || build.planHash !== input.expectedPlanHash
@@ -2900,7 +2914,9 @@ export async function verifyHistoricalAvgVisualPlanningArtifactV4(input: AvgHist
     || !['authorized', 'superseded'].includes(briefRow.status) || briefRow.briefHash !== build.briefHash || briefRow.authorizedAt !== build.authorizedAt) throw new Error('[avg-visual-plan] 历史方案没有准确授权 Brief')
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
   if (!brief.avgVisualPlanning || await hashProductProductionValueV2(brief) !== build.briefHash
-    || !(input.artifactKey.startsWith('avg.proposal.') || input.artifactKey === 'avg.media.compiled-visual-requirements')) throw new Error('[avg-visual-plan] 历史读取仅限 V4 语义方案与需求编译')
+    || !(rawImage?input.artifactKey.startsWith('avg.media.raw.'):
+      input.artifactKey.startsWith('avg.proposal.') || input.artifactKey === 'avg.media.compiled-visual-requirements')) throw new Error('[avg-visual-plan] 历史读取仅限准确 V4 直接 producer 工件')
+  if(rawImage&&!['building','integrating','validating','preview-ready','release-ready','released','paused','cancelled','failed','recovery-required'].includes(build.status))throw new Error('[avg-visual-image] 原图来源不属于已执行版本')
   const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash)
   if (plan.controlEpoch !== input.sourceControlEpoch) throw new Error('[avg-visual-plan] 历史方案 epoch 不一致')
   const matches = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id, input.artifactKey])
@@ -2908,8 +2924,9 @@ export async function verifyHistoricalAvgVisualPlanningArtifactV4(input: AvgHist
   const row = matches[0]
   if (matches.length !== 1 || !row?.id || !await assertRecordInScope(scope, 'productBuildArtifacts', row, { owner: 'work' })
     || row.status !== 'accepted' || row.contentHash !== input.contentHash || row.producerRunId == null || row.producerReceiptHash == null
-    || row.blobObjectId !== null || row.mediaKind !== null || row.mimeType !== null
-    || row.kind !== (input.artifactKey.startsWith('avg.proposal.') ? 'narrative' : 'asset-manifest')
+    || (rawImage?row.blobObjectId==null||!row.mediaKind||!row.mimeType?.startsWith('image/')||row.kind!=='image':
+      row.blobObjectId !== null || row.mediaKind !== null || row.mimeType !== null
+      || row.kind !== (input.artifactKey.startsWith('avg.proposal.') ? 'narrative' : 'asset-manifest'))
     || row.carriedFrom !== null || row.parentArtifactHash !== null) throw new Error('[avg-visual-plan] 历史方案不是准确的直接 producer 工件')
   const sourceBuild = { ...build, id: build.id, controlEpoch: input.sourceControlEpoch }
   const proof = await createVerifiedProducerCandidateV1({ scope, build: sourceBuild, producerRunId: row.producerRunId,
@@ -2920,13 +2937,33 @@ export async function verifyHistoricalAvgVisualPlanningArtifactV4(input: AvgHist
     || canonicalProductProductionJsonV2(ledger.usage) !== canonicalProductProductionJsonV2(proof.usage)
     || ledger.candidateHash !== proof.candidateHash || ledger.terminalReceiptHash !== row.producerReceiptHash
     || !samePreparedProducerArtifactV1({ expected: await preparedStoredArtifactV1(row), actual: proof.artifacts.get(row.artifactKey), importedScopeRebound: proof.importedScopeRebound })) throw new Error('[avg-visual-plan] 历史方案 checkpoint/ledger 不闭合')
+  const blobs=rawImage?await verifiedBlobProofsV1({scope,artifacts:[row],label:'historical V4 image'}):null
+  let responseEvidenceHash:string|null=null
+  if(rawImage){
+    if(proof.task.kind!=='avg-media-image-generate'||proof.task.executionMode!=='media-provider'
+      ||proof.attempt!==1||proof.task.maxAttempts!==1||proof.task.outputArtifactKeys.length!==1||proof.task.outputArtifactKeys[0]!==row.artifactKey)throw new Error('[avg-visual-image] 需要原始单次图片 producer，不能把复用或作者工件改称原图')
+    // Only module loading leaves the transaction. HTTP/Blob/producer reads
+    // stay in the caller's original snapshot; no external write lease.
+    const load=()=>import('../avg/media-response-proof')
+    const {assertAvgOriginalImageResponseV1}=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
+    const quality=JSON.parse(row.qualityJson) as Record<string,unknown>
+    await assertAvgOriginalImageResponseV1(scope,row.producerRunId,proof.task.taskKey,quality)
+    responseEvidenceHash=String(quality.responseEvidenceHash)
+  }
   const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
   const current = await db.productBuilds.get(build.id)
   if (!current?.id || !same(current, build) || !same(await db.productBuildArtifacts.get(row.id), row)
     || !same(await db.productProductionBriefs.get(briefRow.id!), briefRow)
     || !same(await db.productProductions.get(production.id!), production)) throw new Error('[avg-visual-plan] 历史方案在读取期间变化')
+  if(blobs)for(const [id,prior] of blobs){
+    const currentBlob=await db.mediaBlobObjects.get(id)
+    if(!currentBlob?.id||!sameBlobProofMetadataV1(prior,currentBlob as MediaBlobObjectRecordV1&{id:number})
+      ||prior.backend==='indexeddb'&&!sameArrayBufferV1(prior.data,currentBlob.data))throw new Error('[avg-visual-image] 历史原图字节证明在读取期间变化')
+  }
   await assertVerifiedProducerCandidateFreshV1({ build: { ...current, id: current.id, controlEpoch: input.sourceControlEpoch }, proof })
-  return structuredClone(row)
+  return {artifact:structuredClone(row),responseEvidenceHash,producer:{buildNumber:build.buildNumber,briefHash:build.briefHash,
+    planHash:build.planHash,controlEpoch:input.sourceControlEpoch,taskKey:proof.task.taskKey,artifactKey:row.artifactKey,
+    artifactVersion:row.version,contentHash:row.contentHash,inputHash:row.inputHash,producerReceiptHash:row.producerReceiptHash,candidateHash:proof.candidateHash}}
 }
 
 export function verifyRetainedAvgRawImageArtifactV1(input: AvgHistoricalMediaEvidenceInputV1) {
