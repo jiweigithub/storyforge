@@ -5,7 +5,7 @@ import type {
   ProductTaskBudgetReservationV1,
 } from '../types'
 import { buildAvgNativeAssemblyPlan } from '../avg/assembly-plan'
-import { buildAvgVisualPlanningPlanV4 } from '../avg/visual-planning-plan'
+import { AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4, buildAvgVisualPlanningPlanV4 } from '../avg/visual-planning-plan'
 import { PRODUCTION_PRODUCT_KINDS_V1 } from '../types'
 import { parseTextAdventureContentRevisionV1, parseProductProductionBriefV3 } from './contracts'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2, isSha256Hash } from './hash'
@@ -348,11 +348,23 @@ export function parseProductProductionPlanV3(
       fail(`${task.taskKey} 上下文投影只用于准确 AVG 确定性任务`)
     }
     if (task.contextProfile === 'avg-visual-planning-v4' && (productType !== 'avg' || task.executionMode !== 'deterministic'
-      || !['avg-v4-visual-requirements-compile','avg-v4-visual-proposal-reuse'].includes(task.kind))) fail(`${task.taskKey} V4 投影只用于准确需求编译或方案复验任务`)
+      || !['avg-v4-visual-requirements-compile','avg-v4-visual-proposal-reuse','avg-media-image-reuse'].includes(task.kind))) fail(`${task.taskKey} V4 投影只用于准确需求编译或复验任务`)
     if (task.kind === 'avg-v4-visual-proposal-reuse' && (productType !== 'avg' || task.executionMode !== 'deterministic'
       || task.contextProfile !== 'avg-visual-planning-v4' || task.skillId !== null || task.capabilityRequirementKeys.length !== 0
       || task.budgetReservation.modelCalls !== 0 || task.budgetReservation.mediaCalls !== 0 || task.budgetReservation.maximumCostUsd !== 0
       || task.maxAttempts !== 1 || task.reuse !== null)) fail(`${task.taskKey} 方案复验必须为单次零调用任务，不能借用供应商或通用沿用权限`)
+    if (task.kind === 'avg-media-image-reuse' && task.contextProfile === 'avg-visual-planning-v4') {
+      const requirementKey = task.taskKey.startsWith('avg.media.generate.') ? task.taskKey.slice('avg.media.generate.'.length) : ''
+      const compiler = tasks.find(owner => owner.outputArtifactKeys.includes(AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4))
+      if (!requirementKey || task.skillId !== null || task.capabilityRequirementKeys.length !== 0
+        || task.budgetReservation.modelCalls !== 0 || task.budgetReservation.mediaCalls !== 0 || task.budgetReservation.maximumCostUsd !== 0
+        || task.maxAttempts !== 1 || task.reuse !== null || task.outputArtifactKeys.length !== 1
+        || task.outputArtifactKeys[0] !== `avg.media.raw.${requirementKey}`
+        || !task.inputArtifactKeys.includes(AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4)
+        || compiler?.kind !== 'avg-v4-visual-requirements-compile' || !task.dependsOn.includes(compiler.taskKey)) {
+        fail(`${task.taskKey} 原图复验必须依赖准确需求编译，且为单次零调用任务`)
+      }
+    }
   }
   const visiting = new Set<string>(); const visited = new Set<string>()
   const visit = (taskKey: string) => {

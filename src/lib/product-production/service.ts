@@ -1,5 +1,6 @@
 import { canonicalProductProductionJsonV2 } from './hash'
 import { deriveAvgAssemblyRecoveryBaseV1 } from '../avg/assembly-recovery'
+import { AVG_VISUAL_TEXT_CAPABILITY_V4 } from '../avg/visual-planning-roles'
 import { db } from '../db/schema'
 import { readAgentRunV1 } from '../agent/run/event-store'
 import { readAgentRunArtifactExactV1 } from '../memory/artifact-store'
@@ -863,11 +864,16 @@ export function inspectProductProductionCapabilityReadinessV1(input: {
  * capability required by that frozen Brief is bound.
  */
 export function evaluateProductProductionAuthorizationReadinessV1(input: {
-  brief: Pick<ProductProductionBriefV3, 'capabilityRequirements' | 'avgRevision' | 'avgAssembly'>
+  brief: Pick<ProductProductionBriefV3, 'capabilityRequirements' | 'avgRevision' | 'avgAssembly' | 'avgVisualPlanning'>
   readiness: ProductProductionCapabilityReadinessV1
 }): ProductProductionAuthorizationReadinessV1 {
   const blockerMessages: string[] = []
-  if (!input.brief.avgRevision && !input.brief.avgAssembly && !input.readiness.text.ready) {
+  // The parsed V4 Brief derives this requirement from its unreused roles.
+  // A missing text configuration must not block an entirely local role plan.
+  const visualTextNotRequired = !!input.brief.avgVisualPlanning && input.brief.capabilityRequirements.some(requirement => (
+    requirement.requirementKey === AVG_VISUAL_TEXT_CAPABILITY_V4 && requirement.mediaClass === 'text' && !requirement.required
+  ))
+  if (!input.brief.avgRevision && !input.brief.avgAssembly && !visualTextNotRequired && !input.readiness.text.ready) {
     blockerMessages.push(input.readiness.text.issue || '设置中的文本生成能力尚未就绪。')
   }
   const requiredMediaRequirementKeys = input.brief.capabilityRequirements
