@@ -36,7 +36,7 @@ test('community entry downloads matching Skill references and copies complete AI
   await page.getByRole('button', { name: '复制 AI 开发指令', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: '已复制。' })).toBeVisible()
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await zip.file(root + 'developer-prompt.txt')!.async('string'))
-  await page.screenshot({ path: '/tmp/storyforge-plugin-authoring-desktop.png', fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('plugin-authoring-desktop.png'), fullPage: true })
 })
 
 test('manual instruction fallback and help remain usable on narrow screens without model setup', async ({ page }) => {
@@ -48,7 +48,7 @@ test('manual instruction fallback and help remain usable on narrow screens witho
   await page.getByText('查看并手动复制指令', { exact: true }).click()
   await expect(page.getByLabel('AI 插件开发指令')).toHaveValue(await readFile('tools/plugin-sdk/authoring/developer-prompt.txt', 'utf8'))
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(392)
-  await page.screenshot({ path: '/tmp/storyforge-plugin-authoring-mobile.png', fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('plugin-authoring-mobile.png'), fullPage: true })
   await page.getByRole('link', { name: '我想先了解怎么安装', exact: true }).click()
   expect(new URL(page.url()).searchParams.get('owner')).toBe('world')
   await expect(page.getByRole('heading', { name: '你的数据保存在哪里', exact: true })).toBeVisible()
