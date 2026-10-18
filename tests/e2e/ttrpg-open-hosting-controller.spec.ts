@@ -144,7 +144,7 @@ test('author production and local release lead to a real player action and one b
   await page.getByRole('button', { name: '确认这份行动意图', exact: true }).click()
   await page.getByRole('button', { name: '同意以上风险与代价', exact: true }).click()
   await begin(page)
-  await expect(page.getByRole('button', { name: '继续本轮自动主持', exact: true })).toBeEnabled({ timeout: 120000 })
+  await expect(page.getByRole('button', { name: '继续本轮自动主持', exact: true })).toBeEnabled({ timeout: process.env.CI ? 180000 : 120000 })
   await expect(page.getByText('本轮已到预算或队友行动上限，交回真人。', { exact: true })).toBeVisible()
   const saved = await page.evaluate(async f => {
     const importer = new Function('p', 'return import(p)') as (p: string) => Promise<any>

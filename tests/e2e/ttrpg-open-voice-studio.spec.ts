@@ -54,6 +54,22 @@ console.log(JSON.stringify({schema:'storyforge.ttrpg-local-tts-product-raw-respo
   await again.studio.getByRole('button',{name:'核对原音频候选',exact:true}).click();await expect(again.studio.getByTestId('ttrpg-voice-candidate')).toBeVisible()
   await again.panel.getByRole('button',{name:'开启本机音频',exact:true}).click();await again.studio.getByRole('button',{name:'准备这条候选试听',exact:true}).click()
   const retained=again.studio.getByLabel('候选配音试听',{exact:true});await expect(retained).toHaveCount(1);const retainedNode=await retained.elementHandle()
+  await expect(again.studio.getByRole('button',{name:'保存本人试听确认',exact:true})).toBeDisabled()
+  await retained.focus();await retained.press('Space');await expect.poll(()=>retained.evaluate((el:HTMLAudioElement)=>el.paused)).toBe(false)
+  await again.studio.getByLabel('确认这条原音频的本人试听结果',{exact:true}).check()
+  await again.studio.getByRole('button',{name:'保存本人试听确认',exact:true}).click()
+  await expect(again.studio.getByRole('heading',{name:'本人审阅已保存',exact:true})).toBeVisible({timeout:30000})
+  await expect(retained).toHaveCount(0)
+  const originalReview=await page.evaluate(async({owner})=>{
+    const load=new Function('p','return import(p)'),{db}=await load('/storyforge/src/lib/db/schema.ts'),api=await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    const state=await (await load('/storyforge/src/lib/product/runtime-core.ts')).readProductRuntimeState(owner.sessionId),requestKey=state.ttrpg.openRun.voiceRequests[0].requestKey
+    const candidate=(await api.readTtrpgOpenVoiceCandidateV1({...owner,requestKey})).candidate,review=await api.readTtrpgOpenVoiceCandidateReviewV1({...owner,requestKey,candidateHash:candidate.candidateHash})
+    const verification=await (await load('/storyforge/src/lib/memory/artifact-store.ts')).readAgentRunArtifactExactV1({projectId:owner.scope.projectId,artifactKind:'source-snapshot',contentHash:review.verificationArtifactHash})
+    return {review,verification,media:await db.productMediaAssets.count(),audio:state.ttrpg.openRun.audioReceipts?.length??0,adoptions:(await db.agentRunEvents.toArray()).filter((e:any)=>['adoption.committed','runtime.candidate.adopted'].includes(e.type)).length}
+  },f)
+  expect(originalReview.review).toMatchObject({complete:true,runState:'completed',generationAllowed:false,adoptionAllowed:false,independentListening:'unproven'})
+  expect({media:originalReview.media,audio:originalReview.audio,adoptions:originalReview.adoptions}).toEqual({media:0,audio:0,adoptions:0})
+  await test.info().attach('original-voice-generation-review',{body:Buffer.from(JSON.stringify(originalReview)),contentType:'application/json'})
   await page.getByRole('button',{name:'返回身份选择',exact:true}).click();expect(await retainedNode!.evaluate((el:HTMLAudioElement)=>el.paused)).toBe(true);expect(await retainedNode!.getAttribute('src')).toBeNull()
   const evidence=await page.evaluate(async({owner})=>{const load=new Function('p','return import(p)'),{db}=await load('/storyforge/src/lib/db/schema.ts'),state=await (await load('/storyforge/src/lib/product/runtime-core.ts')).readProductRuntimeState(owner.sessionId)
     const request=state.ttrpg.openRun.voiceRequests[0]
