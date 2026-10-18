@@ -30,7 +30,7 @@ export async function recoverTtrpgOpenLocalVoiceRawForKernelV1(request: Request,
     if (b.raw && (b.raw.hash !== rawHash || b.raw.content !== raw)) p.fail('已有原始返回与本次正文冲突，不覆盖或重发')
     const rawControls = b.controls.filter(c => c.payload.action === 'recover-original-raw-only')
     if (rawControls.some(c => c.payload.action === 'recover-original-raw-only' && c.payload.expectedRawResponseHash !== rawHash)) p.fail('原取回证据绑定了另一份准确正文，保留原状')
-    if ((state === 'running' || state === 'completed') && b.raw && b.responded) {
+    if (['running','awaiting_confirmation','completed'].includes(state) && b.raw && b.responded) {
       await b.original.owner.assertCurrent()
       return { status: 'raw-response-recorded' as const, runId: snapshot.run.id, jobKey: b.jobKey, inputArtifactHash: b.inputArtifactHash,
         responseArtifactHash: rawHash, manifestHash: b.manifestHash, runState: state, retrievedFromLocalJob: !first.raw,

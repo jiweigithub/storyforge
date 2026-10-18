@@ -468,7 +468,7 @@ test('native original voice stop survives reload and generic recovery without an
   expect(await inspect(page, f.owner.sessionId)).toEqual(before)
 })
 
-test('native unknown voice raw recovery survives reload with one original HTTP retrieval and no second inference or adopted media', async ({ page }) => {
+test('native unknown voice raw recovery and blocked review survive reload without a second inference or adopted media', async ({ page }) => {
   test.setTimeout(180000); await page.goto('./')
   const f = await page.evaluate(async () => {
     const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
@@ -506,14 +506,23 @@ test('native unknown voice raw recovery survives reload with one original HTTP r
     const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
     const { db } = await load('/storyforge/src/lib/db/schema.ts'), artifacts = await load('/storyforge/src/lib/memory/artifact-store.ts')
     const again = await api.recoverTtrpgOpenLocalVoiceRawV1({ ...f.owner, requestKey: f.requestKey, decision: 'recover-this-original-local-voice-raw-without-resending' })
+    const review = await api.prepareTtrpgOpenVoiceCandidateV1({ ...f.owner, requestKey: f.requestKey, decision: 'review-this-original-local-voice-result' })
     const events = await db.agentRunEvents.where('runId').equals(recovered.runId).toArray()
-    return { again, raw: await artifacts.readAgentRunArtifactExactV1({ projectId: f.owner.scope.projectId, artifactKind: 'raw-response', contentHash: recovered.responseArtifactHash }),
+    return { again, review, raw: await artifacts.readAgentRunArtifactExactV1({ projectId: f.owner.scope.projectId, artifactKind: 'raw-response', contentHash: recovered.responseArtifactHash }),
       requested: events.filter((e: any) => e.type === 'model.requested').length, responded: events.filter((e: any) => e.type === 'model.responded').length,
       checkpoints: await db.agentRunCheckpoints.count(), runs: await db.agentRuns.count(), media: await db.productMediaAssets.count(), desk: await api.readTtrpgOpenVoiceRequestDeskV1(f.owner) }
   }, { f, recovered })
   expect(retrievals).toBe(1); expect(repeated.raw).toBe(raw)
   expect(repeated.again).toMatchObject({ responseArtifactHash: recovered.responseArtifactHash, retrievedFromLocalJob: false })
-  expect(repeated.requested).toBe(1); expect(repeated.responded).toBe(1); expect(repeated.checkpoints).toBe(1)
+  expect(repeated.requested).toBe(1); expect(repeated.responded).toBe(1); expect(repeated.checkpoints).toBe(2)
+  expect(repeated.review.candidate.artifact).toMatchObject({ status: 'blocked', audio: null, humanListening: 'unproven', adoptionAllowed: false })
   expect(repeated.runs).toBe(2); expect(repeated.media).toBe(0); expect(repeated.desk.budget).toMatchObject({ requests: 1, characters: 6 })
+  await page.reload()
+  const retained = await page.evaluate(async f => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    return api.readTtrpgOpenVoiceCandidateV1({ ...f.owner, requestKey: f.requestKey })
+  }, f)
+  expect(retained).toMatchObject({ complete: true, candidate: repeated.review.candidate, adoptionAllowed: false })
+  expect(retrievals).toBe(1)
   expect(await inspect(page, f.owner.sessionId)).toEqual(before)
 })

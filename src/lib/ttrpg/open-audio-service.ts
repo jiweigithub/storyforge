@@ -209,6 +209,7 @@ export { reserveTtrpgOpenVoiceRequestV1, cancelTtrpgOpenVoiceRequestV1, readTtrp
 export { readTtrpgOpenLocalVoiceJobV1 } from './open-voice-job-service'
 export { stopTtrpgOpenLocalVoiceJobV1 } from './open-voice-job-stop'
 export { recoverTtrpgOpenLocalVoiceRawV1 } from './open-voice-raw-recovery'
+export { prepareTtrpgOpenVoiceCandidateV1, readTtrpgOpenVoiceCandidateV1 } from './open-voice-candidate'
 
 export { recoverTtrpgOpenVoiceIntentV1 } from './open-voice-intent-receipt'
 export { prepareTtrpgOpenLocalVoiceExecutionV1, readTtrpgOpenLocalVoicePreparationV1, generateTtrpgOpenLocalVoiceV1 } from './open-voice-execution'

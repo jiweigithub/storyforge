@@ -13,7 +13,7 @@ export async function loadTtrpgOpenVoiceRawBasisForKernelV1(input: TtrpgOpenVoic
   if (!b.identity) p.fail('缺少原准确输入的读取身份')
   const controlled = await readTtrpgOpenVoiceExecutionControlsForKernelV1({ scope: b.input.scope, sessionId: b.input.sessionId,
     runId: b.snapshot.run.id, inputArtifactHash: b.inputArtifactHash }), snapshot = controlled.snapshot
-  if (snapshot.run.contractHash !== b.snapshot.run.contractHash || !['running','paused','recovering','completed'].includes(snapshot.projection.state)) p.fail('原语音已知终态或合同变化不能借取回证据复活')
+  if (snapshot.run.contractHash !== b.snapshot.run.contractHash || !['running','paused','recovering','awaiting_confirmation','completed'].includes(snapshot.projection.state)) p.fail('原语音已知终态或合同变化不能借取回证据复活')
   const requested = snapshot.events.filter(e => e.type === 'model.requested')
   if (requested.length !== 1 || requested[0].type !== 'model.requested' || requested[0].payload.stepId !== stepId
     || requested[0].payload.attempt !== 1 || requested[0].payload.bindingHash !== b.inputArtifactHash) p.fail('只能核查已经明确记账派发的原语音，不创建新调用')
@@ -45,6 +45,7 @@ export async function loadTtrpgOpenVoiceRawBasisForKernelV1(input: TtrpgOpenVoic
   const responded = responses[0]
   if (responded && (responded.type !== 'model.responded' || responded.payload.stepId !== stepId || responded.payload.attempt !== 1
     || !raw || responded.payload.outputHash !== raw.hash)) p.fail('原模型返回事件缺少准确已保存正文，不能重新取回覆盖')
+  if (snapshot.projection.state === 'awaiting_confirmation' && (!raw || !responded)) p.fail('待确认候选缺少原已记账正文，不能借恢复补造')
   await b.original.owner.assertCurrent()
   return { ...b, identity: b.identity, snapshot, controls: controlled.controls, manifestHash: p.hash(m.manifestHash, 'original manifest hash'), raw, responded: !!responded }
 }
