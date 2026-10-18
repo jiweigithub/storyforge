@@ -4,12 +4,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import MediaAssetPreview from '../../src/components/avg/MediaAssetPreview'
 import type { FrozenRuntimeMediaAssetV2 } from '../../src/lib/types'
 
-const readers=vi.hoisted(()=>({raw:vi.fn(),processed:vi.fn(),retained:vi.fn()}))
+const readers=vi.hoisted(()=>({raw:vi.fn(),processed:vi.fn(),retained:vi.fn(),historical:vi.fn()}))
 vi.mock('../../src/lib/avg/assembly-service',()=>({readAvgRawImageCandidateBytesV2:readers.raw,
   readAvgProcessedImageCandidateBytesV1:readers.processed,readAvgRetainedImageCandidateBytesV1:readers.retained}))
 vi.mock('../../src/lib/avg/editor-service',()=>({readAvgDraftMediaV1:vi.fn()}))
 vi.mock('../../src/lib/avg/media-generated-reference',()=>({readAvgAdoptedGeneratedImageV1:vi.fn()}))
 vi.mock('../../src/lib/avg/generated-voice-source',()=>({readAvgAdoptedGeneratedVoiceV1:vi.fn()}))
+vi.mock('../../src/lib/avg/visual-image-history',()=>({readAvgHistoricalImageCandidateBytesV4:readers.historical}))
 
 Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true})
 const scope={projectId:1,worldId:1,workId:1},hash='a'.repeat(64),roots:Root[]=[]
@@ -22,11 +23,13 @@ beforeEach(()=>{
   vi.spyOn(URL,'revokeObjectURL').mockImplementation(()=>{})
 })
 afterEach(async()=>{for(const root of roots.splice(0))await act(async()=>root.unmount());vi.restoreAllMocks();vi.unstubAllGlobals();document.body.innerHTML=''})
-async function mount(){
+const historical={buildId:3,expectedBuildRevision:8,controlEpoch:0,expectedBriefHash:'b'.repeat(64),expectedPlanHash:'c'.repeat(64)}
+async function mount(history=false){
   const host=document.createElement('div');document.body.append(host);const root=createRoot(host);roots.push(root)
   const onObserved=vi.fn()
   await act(async()=>root.render(<MediaAssetPreview scope={scope} asset={asset} productionId={8}
-    raw={{requirementKey:'background',version:1,contentHash:hash}} onObserved={onObserved}/>))
+    raw={{requirementKey:'background',version:1,contentHash:hash,...(history?{historical}:{})}} onObserved={onObserved}/>))
+  await act(async()=>{await vi.dynamicImportSettled()})
   return {host,onObserved}
 }
 async function reread(host:HTMLElement){
@@ -35,6 +38,19 @@ async function reread(host:HTMLElement){
 }
 
 describe('AVG explicit local preview reread after stale source proof',()=>{
+  it('rechecks the exact historical owner/version after source and decode failures only on explicit reread',async()=>{
+    readers.historical.mockRejectedValueOnce(new Error('历史来源已变化'))
+      .mockResolvedValue({asset,data:new Uint8Array([1,2,3,4]).buffer})
+    const {host,onObserved}=await mount(true)
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('历史来源已变化')
+    await reread(host);expect(host.querySelector('img')?.getAttribute('src')).toBe('blob:exact-owned-image')
+    await act(async()=>host.querySelector('img')!.dispatchEvent(new Event('error')))
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('原图无法解码')
+    expect(readers.historical).toHaveBeenCalledTimes(2);expect(onObserved).not.toHaveBeenCalled()
+    await reread(host);expect(host.querySelector('[role="alert"]')).toBeNull()
+    expect(readers.historical.mock.calls).toEqual(Array.from({length:3},()=>[{...historical,scope,productionId:8,requirementKey:'background',version:1,contentHash:hash}]))
+    expect(readers.raw).not.toHaveBeenCalled();expect(readers.processed).not.toHaveBeenCalled();expect(readers.retained).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled()
+  })
   it.each(['[avg-visual-image] 编译来源在读取期间变化','[product-production-artifact] 已采用输入在读取期间已变化'])('revalidates the same exact raw source only after a click for %s, without generating or claiming observation',async message=>{
     readers.raw.mockRejectedValueOnce(new Error(message))
       .mockResolvedValueOnce({asset,data:new Uint8Array([1,2,3,4]).buffer})

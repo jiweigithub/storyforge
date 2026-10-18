@@ -14,7 +14,7 @@ async function adoptSource(page:Page,label:string,waitForCompletion=false){
   return Date.now()-started
 }
 
-async function prepare(page:Page,firstImageBusy=false){
+async function prepare(page:Page,firstImageBusy=false,imageModel='agnes.image-2.1-flash.v1'){
   await page.addInitScript(()=>localStorage.setItem('storyforge_guide_completed','e2e'))
   await page.goto('./avg/library')
   const origin=new URL(page.url()).origin
@@ -81,6 +81,11 @@ async function prepare(page:Page,firstImageBusy=false){
   await panel.getByRole('checkbox',{name:'我有权用该参考进行本次衍生创作',exact:true}).check()
   await panel.getByRole('button',{name:'准备专业视觉制作方案',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'专业视觉方案已准备'})).toBeVisible()
+  if(imageModel!=='agnes.image-2.1-flash.v1'){
+    await panel.getByRole('combobox',{name:'专业图片模型',exact:true}).selectOption(imageModel)
+    await panel.getByRole('button',{name:'核对并保存图片模型',exact:true}).click()
+    await expect(page.getByRole('status').filter({hasText:'图片模型与当前配置已核对并保存'})).toBeVisible()
+  }
   await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
   await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
   await adoptSource(page,'系统规则');for(const title of source.titles)await adoptSource(page,`场景：${title}`)
@@ -172,7 +177,9 @@ test('professional visual workbench reuses historical author edits after HTTP503
   await subject.getByRole('button',{name:`确认采用：场景方案：${source.titles[0]}`,exact:true}).click()
   await panel.getByRole('button',{name:'执行已确认的专业方案与图片任务',exact:true}).click()
   const card=page.getByRole('article',{name:`图片候选：${source.titles[0]}背景`,exact:true})
-  await expect(card).toBeVisible({timeout:60_000});expect(models).toHaveLength(2);expect(images).toHaveLength(2)
+  await expect.poll(()=>images.length,{timeout:60_000}).toBe(2)
+  await expect(card.getByText('原图已接收，等待作者选择',{exact:true})).toBeVisible({timeout:60_000})
+  expect(models).toHaveLength(2);expect(images).toHaveLength(2)
   expect(images[1].model).toBe('agnes-image-2.5-flash')
   await confirmEngineeringVisualReview(card,`${source.titles[0]}背景`)
   await card.getByRole('button',{name:`保存选图候选：${source.titles[0]}背景`,exact:true}).click()
@@ -210,6 +217,61 @@ test('professional visual workbench reuses historical author edits after HTTP503
   await page.evaluate(async workId=>{const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;await(await load('/storyforge/src/lib/workspace/lifecycle.ts')).deleteWork(workId)},restored.scope.workId)
   await page.goto(originalUrl);await expect.poll(()=>page.locator('.avg-stage img').evaluateAll((imgs:HTMLImageElement[])=>imgs.some(i=>i.complete&&i.naturalWidth===576))).toBe(true)
   expect(models).toHaveLength(2);expect(images).toHaveLength(2)
+})
+
+test('stopped Image 2.5 original pixels remain readable without a key after refresh and complete portable restore',async({page},info)=>{
+  test.setTimeout(240_000)
+  test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION!=='1'||process.env.VITE_STORYFORGE_AVG_VISUAL_PLANNING!=='1','Both visual experiments must be explicit')
+  const {source,models,images,panel}=await prepare(page,false,'agnes.image-2.5-flash.v1')
+  for(const label of ['视觉基准',`场景方案：${source.titles[0]}`]){
+    const card=panel.getByRole('article',{name:`专业方案：${label}`,exact:true})
+    await expect(card).toBeVisible({timeout:60_000})
+    if(label==='视觉基准')await card.getByLabel('构图与留白',{exact:true}).fill('作者修订：保留下方完整对白区')
+    else await card.getByLabel('生成画面要求',{exact:true}).fill('作者修订：保留下方完整对白区；保持已批准的门窗布局')
+    await card.getByRole('button',{name:`保存待确认：${label}`,exact:true}).click()
+    await card.getByRole('checkbox',{name:'我已核对本方案内容及允许参考',exact:true}).check()
+    await card.getByRole('button',{name:`确认采用：${label}`,exact:true}).click()
+    await panel.getByRole('button',{name:'执行已确认的专业方案与图片任务',exact:true}).click()
+  }
+  await expect(page.getByRole('article',{name:`图片候选：${source.titles[0]}背景`,exact:true})).toBeVisible({timeout:60_000})
+  expect(models).toHaveLength(2);expect(images).toHaveLength(1);expect(images[0].model).toBe('agnes-image-2.5-flash')
+  await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
+  await page.getByRole('button',{name:'停止专业视觉制作并保留记录',exact:true}).click()
+  await expect(page.getByRole('status').filter({hasText:'本次专业视觉制作已停止'})).toBeVisible()
+  await page.evaluate(async()=>{const load=new Function('p','return import(p)');const config=await load('/storyforge/src/stores/ai-config.ts');config.useAIConfigStore.getState().setConfig({apiKey:''})})
+  const originalUrl=page.url()
+  await page.reload();await page.getByRole('button',{name:'素材',exact:true}).click()
+  const history=page.getByRole('region',{name:'已停止版本的原图',exact:true})
+  const snapshot=()=>page.evaluate(async scope=>{
+    const load=new Function('p','return import(p)'),backup=await load('/storyforge/src/lib/export/json-export.ts')
+    const {exportedAt:_at,...data}=await backup.exportProjectJSON(scope.projectId)
+    return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(data))))).map(b=>b.toString(16).padStart(2,'0')).join('')
+  },source.scope)
+  const before=await snapshot()
+  await history.getByRole('button',{name:'读取原图与来源',exact:true}).click()
+  const card=history.getByRole('article',{name:`历史原图：${source.titles[0]}背景`,exact:true})
+  await expect(card.getByText(/Agnes Image 2.5 Flash/)).toBeVisible({timeout:60_000})
+  await expect(card.getByText(/原调用费用：未知/)).toBeVisible()
+  await card.getByRole('button',{name:'查看原图',exact:true}).click()
+  await expect.poll(()=>card.getByRole('img').evaluateAll((imgs:HTMLImageElement[])=>imgs.length===1&&imgs[0].complete&&imgs[0].naturalWidth===576)).toBe(true)
+  await expect(history.getByRole('button',{name:/生成|采用|选用/})).toHaveCount(0)
+  expect(await snapshot()).toBe(before);expect(models).toHaveLength(2);expect(images).toHaveLength(1)
+  await card.scrollIntoViewIfNeeded();await page.screenshot({path:info.outputPath('avg-v4-stopped-image25-source-preview.png')})
+  const restored=await page.evaluate(async scope=>{
+    const load=new Function('p','return import(p)'),[schema,backup]=await Promise.all([load('/storyforge/src/lib/db/schema.ts'),load('/storyforge/src/lib/export/json-export.ts')])
+    const projectId=await backup.importProjectJSON(await backup.exportProjectJSON(scope.projectId)),build=await schema.db.productBuilds.where('projectId').equals(projectId).first()
+    return {scope:{projectId,worldId:build.worldId,workId:build.workId},productionId:build.productionId}
+  },source.scope)
+  const importedUrl=new URL(originalUrl);importedUrl.searchParams.set('project',String(restored.scope.projectId));importedUrl.searchParams.set('work',String(restored.scope.workId));importedUrl.searchParams.set('assembly',String(restored.productionId))
+  await page.goto(importedUrl.toString());await page.getByRole('button',{name:'素材',exact:true}).click()
+  await history.getByRole('button',{name:'读取原图与来源',exact:true}).click()
+  await card.getByRole('button',{name:'查看原图',exact:true}).click()
+  await expect.poll(()=>card.getByRole('img').evaluateAll((imgs:HTMLImageElement[])=>imgs.length===1&&imgs[0].complete&&imgs[0].naturalWidth===576)).toBe(true)
+  await page.evaluate(async workId=>{const load=new Function('p','return import(p)'),lifecycle=await load('/storyforge/src/lib/workspace/lifecycle.ts');await lifecycle.deleteWork(workId)},restored.scope.workId)
+  await page.goto(originalUrl);await page.getByRole('button',{name:'素材',exact:true}).click()
+  await history.getByRole('button',{name:'读取原图与来源',exact:true}).click();await card.getByRole('button',{name:'查看原图',exact:true}).click()
+  await expect.poll(()=>card.getByRole('img').evaluateAll((imgs:HTMLImageElement[])=>imgs.length===1&&imgs[0].complete&&imgs[0].naturalWidth===576)).toBe(true)
+  expect(models).toHaveLength(2);expect(images).toHaveLength(1)
 })
 
 test('author refuses an exact professional proposal and refresh retains its reason and original evidence without another request',async({page})=>{
@@ -327,7 +389,10 @@ test('professional family form preserves five exact targets and reference permis
 
 
 test('professional family images use exact references, alpha and five consumers through native Preview and portable restore',async({page},info)=>{
-  test.setTimeout(300_000)
+  // Hosted trace: full portable proof alone took 132.7s, with all assertions
+  // still passing. Keep the existing 30s UI phase bounds and allow the whole
+  // five-image author/preview/restore/delete slice to finish on that runner.
+  test.setTimeout(420_000)
   test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION!=='1'||process.env.VITE_STORYFORGE_AVG_VISUAL_PLANNING!=='1','Both default-off visual experiments must be explicit')
   const {source,panel,calls}=await prepareProfessionalFamily(page,{propReference:true})
   const fixture=await page.evaluate(async scope=>{
@@ -480,6 +545,7 @@ test('professional family images use exact references, alpha and five consumers 
   await page.reload();await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',expression.altText)
   await expect(page.locator('.avg-dialogue p')).toHaveText(source.scenes[1].text)
   await page.screenshot({path:info.outputPath('avg-v4-family-expression.png'),fullPage:true})
+  const restoreStarted=Date.now()
   const restored=await page.evaluate(async scope=>{
     const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
     const [schema,backup,service,proof]=await Promise.all([load('/storyforge/src/lib/db/schema.ts'),load('/storyforge/src/lib/export/json-export.ts'),load('/storyforge/src/lib/product-production/service.ts'),load('/storyforge/src/lib/product-production/artifact-store.ts')])
@@ -489,6 +555,9 @@ test('professional family images use exact references, alpha and five consumers 
     const session=await service.startProductProductionPreviewV1({scope:importedScope,productionId:build.productionId,expectedBuildId:build.id,expectedPreviewHash:build.previewHash})
     return {scope:importedScope,sessionId:session.sessionId}
   },source.scope)
+  const restoreTiming=info.outputPath('five-image-portable-proof-duration.json')
+  await writeFile(restoreTiming,JSON.stringify({elapsedMs:Date.now()-restoreStarted,totalTestLimitMs:420_000}))
+  await info.attach('five-image-portable-proof-duration',{path:restoreTiming,contentType:'application/json'})
   const importedUrl=new URL(originalUrl);importedUrl.searchParams.set('project',String(restored.scope.projectId));importedUrl.searchParams.set('work',String(restored.scope.workId));importedUrl.searchParams.set('session',String(restored.sessionId))
   await page.goto(importedUrl.toString());await expect.poll(()=>page.locator('.avg-actor img').evaluate((i:HTMLImageElement)=>i.complete?i.naturalWidth:0)).toBe(pose.width)
   await page.getByRole('button',{name:'物品与证据',exact:true}).click();await expect.poll(()=>page.getByRole('dialog',{name:'物品与证据',exact:true}).locator('.avg-inventory-detail-image').evaluate((i:HTMLImageElement)=>i.complete?i.naturalWidth:0)).toBe(detail.width)

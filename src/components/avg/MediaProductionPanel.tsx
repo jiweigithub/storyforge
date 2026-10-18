@@ -17,6 +17,7 @@ import CharacterFamilyPanel from './CharacterFamilyPanel'
 import VisualReviewPanel from './VisualReviewPanel'
 import { assertAvgVisualReviewSelectableV1 } from '../../lib/avg/visual-review'
 import ImageProcessingPlanPanel from './ImageProcessingPlanPanel'
+import HistoricalImagePanel from './HistoricalImagePanel'
 import { avgProcessedImageArtifactKeyV1 } from '../../lib/avg/image-processing-contract'
 
 type View = Awaited<ReturnType<typeof readAvgAssemblyWorkspaceV1>>
@@ -239,6 +240,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
     {!!workspace.presentation.inheritedImages?.length&&<details><summary>新版本待确认的旧图来源（{workspace.presentation.inheritedImages.length} 张）</summary><ul>{workspace.presentation.inheritedImages.map(entry=><li key={entry.assetKey}>{workspace.presentation.stage.assets.find(asset=>asset.assetKey===entry.assetKey)?.name} · 原 Build #{entry.source.raw.buildNumber} · {entry.source.raw.contentHash.slice(0,12)}<p>{entry.declaration}</p></li>)}</ul><p>保留原始字节不会重新调用图片服务；新版本的用途和演出须再次确认采用。</p></details>}
     {currentBatch&&closed&&<section aria-label="已停止的图片调用"><p>本次调用已停止。请先核对原始记录与未知费用，当前不会自动重发。</p><p>如需更改需求或制作下一批，请先到制作页准备新版本，再回此处编辑。</p><button className="lf-action" disabled>生成本批图片（最多 {outstanding} 次）</button></section>}
     {currentBatch?.visualReviewPolicy&&closed&&<details><summary>已停止批次的作者视觉记录</summary><p>保留原记录和未观察项；新版需要重新核对，不能继承旧选用授权。</p>{view.artifacts.filter(row=>row.artifactKey.startsWith('avg.review.visual.')).map(row=><article key={row.id}><p>{row.artifactKey} · v{row.version} · {row.status}</p><pre>{row.payloadJson}</pre></article>)}</details>}
+    {visualPlanning&&build&&['paused','cancelled','failed','recovery-required'].includes(build.status)&&view.artifacts.some(row=>row.artifactKey==='avg.media.compiled-visual-requirements'&&row.status==='accepted')&&<HistoricalImagePanel scope={scope} view={view}/>}
     {currentBatch && productionId && build && !closed && <section aria-label="本次图片生成与选用"><h5>本次图片生成与选用 · Build #{build.buildNumber}</h5>
       <p>本批 {currentBatch.requirements.length} 项，尚待接收 {outstanding} 项。原图接收后逐项确认，再配置并确认演出。</p>
       {!sourcesReady && <p>请先在制作页确认系统规则和全部场景脚本。</p>}

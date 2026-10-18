@@ -28,6 +28,8 @@ import { readAvgRawImageCandidateBytesV2, stageAvgVisualReviewV1, stageAvgMediaC
   prepareAvgAssemblyBriefV1, startAvgAssemblyV1, runAvgAssemblyV1, restartAvgVisualPlanningFromDraftV4 } from '../../src/lib/avg/assembly-service'
 import { prepareAvgVisualProposalReuseV4, readAvgVisualReuseOptionsV4 } from '../../src/lib/avg/visual-planning-reuse-workspace'
 import { resolveAvgVisualPlanningExecutionV4 } from '../../src/lib/avg/visual-planning-workspace'
+import { readAvgHistoricalRawImageV4,readAvgHistoricalImageCandidatesV4,readAvgHistoricalImageCandidateBytesV4 } from '../../src/lib/avg/visual-image-history'
+import * as imageProducerProof from '../../src/lib/product-production/artifact-store'
 import { prepareAvgVisualImageRouteV4 } from '../../src/lib/avg/visual-image-route-workspace'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V2 } from '../../src/lib/avg/media-reference-contract'
 import * as textCapabilities from '../../src/lib/product-production/capabilities'
@@ -173,9 +175,9 @@ async function sources(s: Setup) {
 
 /** Actual producer/adoption chain; only browser image decoding is unavailable
  * in jsdom. Controlled observations below never stand for human art review. */
-async function generatedImage() {
+async function generatedImage(reference?:'valid') {
   vi.spyOn(imageDecoder, 'inspectAvgImageBytesV1').mockResolvedValue({ width: 576, height: 324, hasAlpha: false })
-  const s = await setup({ image: 'valid' }); await sources(s); await run(s)
+  const s = await setup({ image: 'valid',reference }); await sources(s); await run(s)
   await adopt(s, await stage(s, 'avg.media.visual-bible', s.bible)); await run(s)
   await adopt(s, await stage(s, `avg.media.environment-brief.${s.media.subjectKey}`, s.media))
   await cycle(s); await cycle(s)
@@ -837,6 +839,91 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
     },30_000)
   })
 
+  describe('full historical V4 compiled image definition',()=>{
+    let generated:Awaited<ReturnType<typeof generatedImage>>
+    beforeEach(async()=>{generated=await generatedImage('valid')})
+    async function boundary(stop=true){
+      const {s}=generated
+      if(stop)await stopProductProductionV1({scope:s.scope,production:(await db.productProductions.get(s.productionId))!})
+      const build=await current(s)
+      return {scope:s.scope,buildId:s.buildId,expectedBuildRevision:build.stateRevision,controlEpoch:s.plan.controlEpoch,
+        expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash}
+    }
+    it('proves original author/model/compiler/reference inputs after stop without a Stage, credentials, writes or new adoption',async()=>{
+      const {s,raw}=generated,input=await boundary()
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      const before=await exportProjectJSON(s.scope.projectId)
+      const history=await readAvgHistoricalRawImageV4({...input,artifact:{artifactKey:raw.artifactKey,version:raw.version,contentHash:raw.contentHash}})
+      expect(history.brief).toEqual(s.brief);expect(history.brief.avgAssembly).toBeUndefined()
+      expect(history.definition.version).toBe(4);expect(history.source.plan).toEqual(s.source.systemPlan)
+      expect(history.raw).toEqual(raw);expect(history.asset.source).toBe('agnes.image-2.1-flash.v1')
+      expect(history.payload.provider.costUsd).toBeNull();expect(history.definition.mediaBatch.requirements[0].references).toHaveLength(1)
+      const snapshot=await readAvgHistoricalImageCandidatesV4({...input,productionId:s.productionId})
+      expect(snapshot.candidates).toHaveLength(1);expect(snapshot.candidates[0]).toMatchObject({available:true,asset:history.asset,costUsd:null})
+      const bytes=await readAvgHistoricalImageCandidateBytesV4({...input,productionId:s.productionId,requirementKey:s.media.outputs[0].requirementKey,version:raw.version,contentHash:raw.contentHash})
+      expect(bytes.asset).toEqual(history.asset);expect(bytes.data).toEqual(s.imageBytes)
+      await expect(readAvgHistoricalImageCandidateBytesV4({...input,productionId:s.productionId+1,requirementKey:s.media.outputs[0].requirementKey,version:raw.version,contentHash:raw.contentHash})).rejects.toThrow(/制作记录/)
+      expect(await accepted(s,'avg.author.stage')).toBeUndefined()
+      await expect(readAvgCompiledImageDefinitionV4(input)).rejects.toThrow()
+      await expect(generated.choose()).rejects.toThrow()
+      expect({...await exportProjectJSON(s.scope.projectId),exportedAt:0}).toEqual({...before,exportedAt:0})
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it.each(['compilation','visual-author','rule-author','script-author','reference','compilation-witness','plan','epoch','active'] as const)('rejects damaged or inappropriate %s history before any current use',async mode=>{
+      const {s,raw}=generated,input=await boundary(mode!=='active')
+      const compiled=(await accepted(s,'avg.media.compiled-visual-requirements'))!
+      if(mode==='compilation'){const payload=JSON.parse(compiled.payloadJson);payload.batch.requirements[0].prompt+='未经原作者确认';await db.productBuildArtifacts.update(compiled.id!,{payloadJson:canonicalProductProductionJsonV2(payload),contentHash:await hashProductProductionValueV2(payload)})}
+      if(mode==='visual-author'){const row=(await accepted(s,'avg.media.visual-bible'))!,meta=JSON.parse(row.metadataJson);meta.receiptHash='f'.repeat(64);await db.productBuildArtifacts.update(row.id!,{metadataJson:JSON.stringify(meta)})}
+      if(mode==='rule-author'){const row=(await accepted(s,'avg.system.plan'))!,payload=JSON.parse(row.payloadJson);payload.scenes[0].title+='未采用';await db.productBuildArtifacts.update(row.id!,{payloadJson:canonicalProductProductionJsonV2(payload),contentHash:await hashProductProductionValueV2(payload)})}
+      if(mode==='script-author'){const row=(await accepted(s,`avg.content.scene-script.${s.source.scripts[0].sceneKey}`))!;await db.productBuildArtifacts.update(row.id!,{metadataJson:'{}'})}
+      if(mode==='reference'){const row=(await db.avgDraftMedia.where('workId').equals(s.scope.workId).first())!,blob=(await db.mediaBlobObjects.get(row.blobObjectId))!,data=new Uint8Array(blob.data!.slice(0));data[data.length-1]^=1;await db.mediaBlobObjects.update(blob.id!,{data:data.buffer})}
+      if(mode==='compilation-witness'){const quality=JSON.parse(compiled.qualityJson);quality.inputs[0].contentHash='f'.repeat(64);await db.productBuildArtifacts.update(compiled.id!,{qualityJson:JSON.stringify(quality)})}
+      if(mode==='plan')input.expectedPlanHash='f'.repeat(64)
+      if(mode==='epoch')input.controlEpoch++
+      const before=await Promise.all(db.tables.map(table=>table.toArray()))
+      await expect(readAvgHistoricalRawImageV4({...input,artifact:{artifactKey:raw.artifactKey,version:raw.version,contentHash:raw.contentHash}})).rejects.toThrow()
+      expect(await Promise.all(db.tables.map(table=>table.toArray()))).toEqual(before)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it('restores original compiled image history through complete backup/remap without author or dispatch authority',async()=>{
+      const {s,raw}=generated,input=await boundary(),original=await readAvgHistoricalRawImageV4({...input,artifact:{artifactKey:raw.artifactKey,version:raw.version,contentHash:raw.contentHash}})
+      const projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),build=(await db.productBuilds.where('projectId').equals(projectId).first())!
+      const scope={projectId,worldId:build.worldId,workId:build.workId}
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      const before=await exportProjectJSON(projectId),imported=await readAvgHistoricalRawImageV4({...input,scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,
+        artifact:{artifactKey:raw.artifactKey,version:raw.version,contentHash:raw.contentHash}})
+      expect(imported.provenance).toEqual(original.provenance);expect(imported.definition).toEqual(original.definition)
+      expect(imported.raw.blobObjectId).not.toBe(raw.blobObjectId)
+      expect({...await exportProjectJSON(projectId),exportedAt:0}).toEqual({...before,exportedAt:0})
+      await expect(stageAvgMediaChoiceV2({...generated.image,scope,productionId:build.productionId,declaration:'只读恢复不授予采用'})).rejects.toThrow()
+      await deleteWork(scope.workId);expect((await db.mediaBlobObjects.get(raw.blobObjectId!))!.data).toEqual(s.imageBytes)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },60_000)
+
+    it('keeps a damaged raw slot visible as unavailable and rejects its pixel preview without dispatch',async()=>{
+      const {s,raw}=generated,input=await boundary(),data=new Uint8Array(s.imageBytes.slice(0));data[data.length-1]^=1
+      await db.mediaBlobObjects.update(raw.blobObjectId!,{data:data.buffer})
+      const snapshot=await readAvgHistoricalImageCandidatesV4({...input,productionId:s.productionId})
+      expect(snapshot.candidates).toHaveLength(1);expect(snapshot.candidates[0]).toMatchObject({available:false,requirement:{requirementKey:s.media.outputs[0].requirementKey}})
+      await expect(readAvgHistoricalImageCandidateBytesV4({...input,productionId:s.productionId,requirementKey:s.media.outputs[0].requirementKey,version:raw.version,contentHash:raw.contentHash})).rejects.toThrow()
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it('rechecks the original author inputs after the intrinsic image proof finishes',async()=>{
+      const {s,raw}=generated,input=await boundary(),rule=(await accepted(s,'avg.system.plan'))!
+      const actual=imageProducerProof.verifyHistoricalAvgVisualImageProducerV4
+      vi.spyOn(imageProducerProof,'verifyHistoricalAvgVisualImageProducerV4').mockImplementationOnce(async request=>{
+        const proof=await actual(request)
+        await db.productBuildArtifacts.update(rule.id!,{updatedAt:rule.updatedAt+1})
+        return proof
+      })
+      await expect(readAvgHistoricalRawImageV4({...input,artifact:{artifactKey:raw.artifactKey,version:raw.version,contentHash:raw.contentHash}})).rejects.toThrow(/作者或编译输入.*变化/)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+  })
+
   describe('current compiled image author consumption', () => {
     let generated: Awaited<ReturnType<typeof generatedImage>>
     // Keep real production preparation in the bounded setup hook. Each test
@@ -1454,6 +1541,10 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       await adoptedImageStage(generated);await run(child)
       expect((await current(child)).status,(await current(child)).failureJson).toBe('preview-ready');expect((await current(child)).previewHash).toBeTruthy()
       await verifyStoredProductBuildPreview(await current(child))
+      const currentBuild=await current(child),imageHistory=await readAvgHistoricalRawImageV4({scope:child.scope,buildId:child.buildId,
+        expectedBuildRevision:currentBuild.stateRevision,controlEpoch:child.plan.controlEpoch,expectedBriefHash:currentBuild.briefHash,
+        expectedPlanHash:currentBuild.planHash,artifact:{artifactKey:raw.artifactKey,version:raw.version,contentHash:raw.contentHash}})
+      expect(imageHistory.asset.source).toBe('agnes.image-2.5-flash.v1');expect(imageHistory.brief).toEqual(child.brief)
       expect(await current(s)).toEqual(parent);expect(await db.productBuildArtifacts.where('buildId').equals(s.buildId).toArray()).toEqual(oldArtifacts)
       const importedProject=await importProjectJSON(await exportProjectJSON(child.scope.projectId))
       const imported=(await db.productBuilds.where('projectId').equals(importedProject).filter(b=>b.buildNumber===(parent.buildNumber+1)).first())!
