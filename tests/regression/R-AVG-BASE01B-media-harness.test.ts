@@ -11,12 +11,13 @@ import { verifyStoredProductBuildPreview } from '../../src/lib/product-productio
 import * as mediaVerifier from '../../src/lib/product-production/media-runtime-verifier'
 import type { AvgVisualProductionRequirementV1 } from '../../src/lib/avg/media-production-contract'
 import { avgExecutableModule } from '../../src/lib/avg/executable-module'
-import { verifyAcceptedProductBuildArtifactV1, verifyRetainedAvgRawImageArtifactV1 } from '../../src/lib/product-production/artifact-store'
+import { verifyAcceptedProductBuildArtifactV1, verifyRetainedAvgRawImageArtifactV1, verifyHistoricalAvgImageRevalidationProducerV1 } from '../../src/lib/product-production/artifact-store'
 import { scopeTransactionTables } from '../../src/lib/workspace/scope'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 import { seedCurrentProductWorld } from '../helpers/current-product-world'
 import * as mediaBlobStore from '../../src/lib/product-production/media-blob-store'
 import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
+import { deleteWork } from '../../src/lib/workspace/lifecycle'
 import { prepareAvgImageRecoveryV1 } from '../../src/lib/avg/media-recovery'
 import { prepareAvgGeneratedReferenceImageV1, readAvgGeneratedReferenceBytesV1, readAvgGeneratedReferenceImageV1 } from '../../src/lib/avg/media-generated-reference'
 import { createAvgDraftReferenceAdapterV1 } from '../../src/lib/avg/editor-service'
@@ -351,6 +352,67 @@ describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/deco
     expect({briefs:await db.productProductionBriefs.count(),builds:await db.productBuilds.count(),runs:await db.agentRuns.count()}).toEqual(before)
     expect(dispatch).toHaveBeenCalledTimes(3)
   },15_000)
+
+  describe('read-only zero-provider image revalidation producer proof',()=>{
+    async function revalidated(){
+      const body=await response(),dispatch=vi.fn(async()=>new Response(body,{status:200}));vi.stubGlobal('fetch',dispatch)
+      const parent=await start(await prepare());await confirmSources(parent);await runAvgAssemblyV1({scope:parent.scope,productionId:parent.productionId})
+      await stopProductProductionV1({scope:parent.scope,production:(await readProductProductionDetailsV1(parent.scope,parent.productionId,['avg'])).production})
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      const child=await recover(parent);await confirmSources(child);await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})
+      await stopProductProductionV1({scope:child.scope,production:(await readProductProductionDetailsV1(child.scope,child.productionId,['avg'])).production})
+      const build=(await db.productBuilds.get(child.buildId))!,raw=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([child.buildId,'avg.media.raw.desk.background']).first())!
+      const input={scope:child.scope,buildId:child.buildId,expectedBuildRevision:build.stateRevision,expectedBriefHash:build.briefHash,
+        expectedPlanHash:build.planHash,sourceControlEpoch:JSON.parse(build.planJson).controlEpoch,artifactKey:raw.artifactKey,version:raw.version,contentHash:raw.contentHash}
+      return {parent,child,build,raw,input,dispatch}
+    }
+    it('keeps its own zero-call receipt distinct from original HTTP and remains portable/read-only across remap and copied Work deletion',async()=>{
+      const {child,raw,input,dispatch}=await revalidated()
+      const before={...await exportProjectJSON(child.scope.projectId),exportedAt:0}
+      const result=await verifyHistoricalAvgImageRevalidationProducerV1(input)
+      expect(result.artifact).toEqual(raw)
+      expect(result.provenance).toMatchObject({schema:'storyforge.avg.image-revalidation-producer-proof',version:1,noProviderRequest:true,
+        buildNumber:2,artifactKey:raw.artifactKey,contentHash:raw.contentHash,producerReceiptHash:raw.producerReceiptHash})
+      expect(result.provenance).not.toHaveProperty('responseEvidenceHash');expect(result.provenance).not.toHaveProperty('blobObjectId')
+      const {proofHash,...body}=result.provenance;expect(proofHash).toBe(await hashProductProductionValueV2(body))
+      expect(result.provenance.revalidationEvidenceHash).toBe(await hashProductProductionValueV2(JSON.parse(raw.qualityJson)))
+      expect({...await exportProjectJSON(child.scope.projectId),exportedAt:0}).toEqual(before)
+      const projectId=await importProjectJSON(await exportProjectJSON(child.scope.projectId)),copy=(await db.productBuilds.where('projectId').equals(projectId).filter(row=>row.buildNumber===2).first())!
+      const copiedInput={...input,scope:{projectId,worldId:copy.worldId!,workId:copy.workId!},buildId:copy.id!,expectedBuildRevision:copy.stateRevision}
+      expect((await verifyHistoricalAvgImageRevalidationProducerV1(copiedInput)).provenance).toEqual(result.provenance)
+      await deleteWork(copy.workId!)
+      await expect(verifyHistoricalAvgImageRevalidationProducerV1(copiedInput)).rejects.toThrow()
+      expect((await verifyHistoricalAvgImageRevalidationProducerV1(input)).provenance).toEqual(result.provenance)
+      expect(dispatch).toHaveBeenCalledTimes(1)
+    },15_000)
+    it('stays inside the author transaction and does not commit its draft write when the caller rolls back',async()=>{
+      const {child,input,dispatch}=await revalidated(),before=await readAvgDraftV1(child.scope)
+      await expect(db.transaction('rw',db.tables,async()=>{
+        expect((await verifyHistoricalAvgImageRevalidationProducerV1(input)).provenance.noProviderRequest).toBe(true)
+        await db.avgAuthoringDrafts.update(before.id!,{updatedAt:before.updatedAt+1})
+        throw new Error('deliberate-image-revalidation-caller-rollback')
+      })).rejects.toThrow('deliberate-image-revalidation-caller-rollback')
+      expect(await readAvgDraftV1(child.scope)).toEqual(before);expect(dispatch).toHaveBeenCalledTimes(1)
+    },15_000)
+    it.each(['original-provider','stale-build','foreign-work','changed-quality','changed-ledger','corrupt-bytes','missing-run'] as const)('rejects %s without new calls or producer authority',async failure=>{
+      const {parent,build,raw,input,dispatch}=await revalidated()
+      if(failure==='original-provider'){
+        const original=(await db.productBuilds.get(parent.buildId))!,image=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([parent.buildId,raw.artifactKey]).first())!
+        Object.assign(input,{buildId:original.id!,expectedBuildRevision:original.stateRevision,expectedBriefHash:original.briefHash,expectedPlanHash:original.planHash,
+          sourceControlEpoch:JSON.parse(original.planJson).controlEpoch,version:image.version,contentHash:image.contentHash})
+      }
+      if(failure==='stale-build')input.expectedBuildRevision++
+      if(failure==='foreign-work')input.scope={...input.scope,workId:input.scope.workId+99999}
+      if(failure==='changed-quality')await db.productBuildArtifacts.update(raw.id!,{qualityJson:JSON.stringify({...JSON.parse(raw.qualityJson),noProviderRequest:false})})
+      if(failure==='changed-ledger'){const ledger=JSON.parse(build.budgetLedgerJson);ledger.tasks[`avg.media.generate.desk.background`].usage.mediaCalls=1;await db.productBuilds.update(build.id!,{budgetLedgerJson:JSON.stringify(ledger)})}
+      if(failure==='corrupt-bytes'){const blob=(await db.mediaBlobObjects.get(raw.blobObjectId!))!;await db.mediaBlobObjects.update(blob.id!,{data:new Uint8Array([1,2,3,4]).buffer})}
+      if(failure==='missing-run')await db.agentRuns.delete(raw.producerRunId!)
+      const before={runs:await db.agentRuns.count(),events:await db.agentRunEvents.count(),commands:await db.productProductionCommands.count()}
+      await expect(verifyHistoricalAvgImageRevalidationProducerV1(input)).rejects.toThrow()
+      expect({runs:await db.agentRuns.count(),events:await db.agentRunEvents.count(),commands:await db.productProductionCommands.count()}).toEqual(before)
+      expect(dispatch).toHaveBeenCalledTimes(1)
+    },15_000)
+  })
 
   it('stale recovery, changed routes, forged proofs and damaged source bytes reject without changing production authority', async () => {
     const body = await response(), dispatch = vi.fn().mockResolvedValueOnce(new Response(body, { status: 200 }))

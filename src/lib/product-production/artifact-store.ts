@@ -2889,20 +2889,34 @@ type AvgHistoricalMediaEvidenceInputV1 = {
  * Kept separate from active producer admission: restoring a project cannot
  * grant author adoption, retry, carry or any new model/media dispatch. */
 export async function verifyHistoricalAvgVisualPlanningArtifactV4(input: AvgHistoricalMediaEvidenceInputV1) {
-  return (await readHistoricalAvgVisualProducerV4(input,false)).artifact
+  return (await readHistoricalAvgProducerEvidenceV1(input,'visual')).artifact
 }
 
 /** Intrinsic original-image evidence only. The AVG consumer must separately
  * prove its actual compiled definition, author choice and reference rights.
  * Reading a historical producer grants no current adoption, carry or retry. */
 export async function verifyHistoricalAvgVisualImageProducerV4(input: AvgHistoricalMediaEvidenceInputV1) {
-  const result=await readHistoricalAvgVisualProducerV4(input,true)
+  const result=await readHistoricalAvgProducerEvidenceV1(input,'raw-image')
   const provenance={schema:'storyforge.avg.visual-image-producer-proof' as const,version:4 as const,
     ...result.producer,responseEvidenceHash:result.responseEvidenceHash!}
   return {artifact:result.artifact,provenance:{...provenance,proofHash:await hashProductProductionValueV2(provenance)}}
 }
 
-async function readHistoricalAvgVisualProducerV4(input:AvgHistoricalMediaEvidenceInputV1,rawImage:boolean) {
+/** Intrinsic evidence of an actual zero-provider image revalidation producer.
+ * Kept distinct from original HTTP evidence. Its AVG consumer must separately
+ * prove the original image, compiled definition and current author decisions.
+ * Legacy and V4 readers share the same checkpoint/ledger/Blob proof, never
+ * current acceptance or permission to reopen an imported completed prefix. */
+export async function verifyHistoricalAvgImageRevalidationProducerV1(input:AvgHistoricalMediaEvidenceInputV1){
+  const result=await readHistoricalAvgProducerEvidenceV1(input,'image-revalidation')
+  const provenance={schema:'storyforge.avg.image-revalidation-producer-proof' as const,version:1 as const,
+    ...result.producer,noProviderRequest:true as const,
+    revalidationEvidenceHash:await hashProductProductionValueV2(JSON.parse(result.artifact.qualityJson))}
+  return {artifact:result.artifact,provenance:{...provenance,proofHash:await hashProductProductionValueV2(provenance)}}
+}
+
+async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvidenceInputV1,mode:'visual'|'raw-image'|'image-revalidation') {
+  const rawImage=mode!=='visual',revalidation=mode==='image-revalidation'
   const scope = await resolveScope({ scope: input.scope }), build = await db.productBuilds.get(input.buildId)
   if (!build?.id || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })
     || build.stateRevision !== input.expectedBuildRevision || build.briefHash !== input.expectedBriefHash || build.planHash !== input.expectedPlanHash
@@ -2913,7 +2927,8 @@ async function readHistoricalAvgVisualProducerV4(input:AvgHistoricalMediaEvidenc
     || !briefRow || !await assertRecordInScope(scope, 'productProductionBriefs', briefRow, { owner: 'work' })
     || !['authorized', 'superseded'].includes(briefRow.status) || briefRow.briefHash !== build.briefHash || briefRow.authorizedAt !== build.authorizedAt) throw new Error('[avg-visual-plan] 历史方案没有准确授权 Brief')
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
-  if (!brief.avgVisualPlanning || await hashProductProductionValueV2(brief) !== build.briefHash
+  const legacyRevalidation=revalidation&&(brief.avgAssembly?.version===2||brief.avgAssembly?.version===3&&!!brief.avgAssembly.image)
+  if ((!brief.avgVisualPlanning&&!legacyRevalidation) || await hashProductProductionValueV2(brief) !== build.briefHash
     || !(rawImage?input.artifactKey.startsWith('avg.media.raw.'):
       input.artifactKey.startsWith('avg.proposal.') || input.artifactKey === 'avg.media.compiled-visual-requirements')) throw new Error('[avg-visual-plan] 历史读取仅限准确 V4 直接 producer 工件')
   if(rawImage&&!['building','integrating','validating','preview-ready','release-ready','released','paused','cancelled','failed','recovery-required'].includes(build.status))throw new Error('[avg-visual-image] 原图来源不属于已执行版本')
@@ -2939,7 +2954,16 @@ async function readHistoricalAvgVisualProducerV4(input:AvgHistoricalMediaEvidenc
     || !samePreparedProducerArtifactV1({ expected: await preparedStoredArtifactV1(row), actual: proof.artifacts.get(row.artifactKey), importedScopeRebound: proof.importedScopeRebound })) throw new Error('[avg-visual-plan] 历史方案 checkpoint/ledger 不闭合')
   const blobs=rawImage?await verifiedBlobProofsV1({scope,artifacts:[row],label:'historical V4 image'}):null
   let responseEvidenceHash:string|null=null
-  if(rawImage){
+  if(revalidation){
+    const usage=proof.usage as {modelCalls?:number;mediaCalls?:number;costUsd?:number|null}
+    if(proof.task.kind!=='avg-media-image-reuse'||proof.task.executionMode!=='deterministic'||proof.task.skillId!==null
+      ||proof.attempt!==1||proof.task.maxAttempts!==1||proof.task.outputArtifactKeys.length!==1||proof.task.outputArtifactKeys[0]!==row.artifactKey
+      ||proof.task.budgetReservation.modelCalls!==0||proof.task.budgetReservation.mediaCalls!==0||proof.task.budgetReservation.maximumCostUsd!==0
+      ||usage.modelCalls!==0||usage.mediaCalls!==0||usage.costUsd!==0)throw new Error('[avg-image-reuse] 需要实际单次零调用图片复验 producer，不能替代原始供应商证据')
+    const run=await readAgentRunV1(scope,row.producerRunId)
+    if(run.events.some(event=>event.type==='model.requested'||event.type==='tool.called'
+      ||event.type==='evidence.artifact.recorded'&&event.payload.artifactKind==='raw-response'))throw new Error('[avg-image-reuse] 本地复验 Run 不能保留供应商派发或新原始响应')
+  }else if(rawImage){
     if(proof.task.kind!=='avg-media-image-generate'||proof.task.executionMode!=='media-provider'
       ||proof.attempt!==1||proof.task.maxAttempts!==1||proof.task.outputArtifactKeys.length!==1||proof.task.outputArtifactKeys[0]!==row.artifactKey)throw new Error('[avg-visual-image] 需要原始单次图片 producer，不能把复用或作者工件改称原图')
     // Only module loading leaves the transaction. HTTP/Blob/producer reads

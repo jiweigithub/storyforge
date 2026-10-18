@@ -782,6 +782,7 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       expect(stoppedProof).toEqual(proof)
       await expect(verifyHistoricalAvgVisualPlanningArtifactV4(await input())).rejects.toThrow()
       await expect(verifyRetainedAvgRawImageArtifactV1(await input())).rejects.toThrow()
+      await expect(imageProducerProof.verifyHistoricalAvgImageRevalidationProducerV1(await input())).rejects.toThrow(/零调用图片复验/)
       await expect(generated.choose()).rejects.toThrow()
       expect({...await exportProjectJSON(s.scope.projectId),exportedAt:0}).toEqual({...stopped,exportedAt:0})
       expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
