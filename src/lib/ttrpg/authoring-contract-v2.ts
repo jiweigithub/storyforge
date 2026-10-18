@@ -29,6 +29,8 @@ export function defaultTtrpgSettingsV2(
   if (runFormat === "scripted") return { ...common, runFormat, openAuthoring: null };
   return {
     ...common,
+    wizard: { ...common.wizard, ruleOrigin: 'saved-rule-pack', targetSceneCount: 0, targetEndingCount: 0, structure: 'sandbox', freeRoam: true,
+      seats: [...common.wizard.seats, { ...common.wizard.seats[1], seatKey: 'player.3', label: '玩家 3' }] },
     runFormat,
     openAuthoring: {
       factPolicy: [],

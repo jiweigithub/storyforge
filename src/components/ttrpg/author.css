@@ -15,3 +15,9 @@
 .ttrpg-author-app [hidden]{display:none!important}
 .ttrpg-runtime{--color-bg-base:#f9f8f1;--color-bg-surface:#f5f6ec;min-width:0}
 @media(max-width:700px){.ttrpg-author-app .lf-paper{padding:20px}.ttrpg-author-app .ttrpg-wizard>section{padding:14px}}
+
+/* Full author design remains readable without widening a small screen. */
+.ttrpg-open-authoring-editor { min-width: 0; }
+.ttrpg-open-authoring-editor fieldset { min-width: 0; }
+.ttrpg-open-authoring-editor pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ttrpg-open-authoring-editor textarea { width: 100%; min-width: 0; box-sizing: border-box; }

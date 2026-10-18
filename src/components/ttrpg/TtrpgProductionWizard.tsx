@@ -109,7 +109,7 @@ export default function TtrpgProductionWizard(props: {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <small className="font-mono text-[9px] text-accent">
-            TTRPG BRIEF V2 · 9 STEPS
+            跑团制作配置 · 9 步
           </small>
           <h3 className="mt-1 text-sm font-semibold">
             {step + 1}. {STEPS[step]}
@@ -303,6 +303,7 @@ export default function TtrpgProductionWizard(props: {
                 setRulePacks(prior => [...prior.filter(row => row.id !== record.id),record]);
                 patch({ ruleOrigin: 'saved-rule-pack',savedRulePackId: record.id! });
               }} />}
+            {props.runFormat === 'open' && <p>开放模式使用本作品已保存的开放规则。请先保存作品，再导入并核对规则文件。</p>}
             {(value.ruleOrigin === "builtin-storyforge" ||
               value.ruleOrigin === "builtin-rank-lite") && (
               <label className={labelClass}>
@@ -721,7 +722,7 @@ export default function TtrpgProductionWizard(props: {
                 <input
                   aria-label="目标场景数"
                   type="number"
-                  min={1}
+                  min={props.runFormat === 'open' ? 0 : 1}
                   max={1000}
                   className={inputClass}
                   value={value.targetSceneCount}
@@ -743,7 +744,7 @@ export default function TtrpgProductionWizard(props: {
                 <input
                   aria-label="目标结局数"
                   type="number"
-                  min={1}
+                  min={props.runFormat === 'open' ? 0 : 1}
                   max={100}
                   className={inputClass}
                   value={value.targetEndingCount}
@@ -902,8 +903,7 @@ export default function TtrpgProductionWizard(props: {
                 桌型：{value.gmMode} KP · {value.seats.length} 席
               </span>
               <span>
-                剧情：{value.structure} · {value.targetSceneCount} 场景 ·{" "}
-                {value.targetEndingCount} 结局
+                {props.runFormat === 'open' ? '开放局势与阶段续团' : <>剧情：{value.structure} · {value.targetSceneCount} 场景 · {value.targetEndingCount} 结局</>}
               </span>
               <span>
                 媒资：{mediaCount} 类 · 上限 {value.maximumGeneratedAssets}

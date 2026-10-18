@@ -15,6 +15,7 @@ import {
   settingsFromTtrpgDraft,
   type TtrpgAuthoringDraftV1,
 } from "../lib/ttrpg/authoring-contract";
+import { defaultTtrpgSettingsV2 } from '../lib/ttrpg/authoring-contract-v2';
 import {
   createTtrpgDraft,
   saveTtrpgDraft,
@@ -48,6 +49,7 @@ const Session = lazy(() => import("./TtrpgSessionPage").then(module => ({ defaul
 const Player = lazy(() => import("../components/ttrpg/AuthorPlayer"));
 const Community = lazy(() => import("./TtrpgCommunityPage"));
 const Proposal = lazy(() => import("../components/ttrpg/AuthorProposal"));
+const OpenAuthoringEditor = lazy(() => import('../components/ttrpg/TtrpgOpenAuthoringEditor'));
 const Inspector = lazy(() => import("../components/ttrpg/AuthorInspector"));
 const Outlet = lazy(
   () => import("../components/world-engine/WorldResourceBrowser"),
@@ -68,6 +70,8 @@ export default function TtrpgPage() {
     primary = ttrpgPrimary(page[0]);
   const projectId = Number(params.get("project")) || null,
     workId = Number(params.get("work")) || null;
+  const openPreview = import.meta.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW === '1';
+  const newOpen = openPreview && !projectId && !workId && params.get('format') === 'open';
   const [rows, setRows] = useState<Row[]>([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -75,7 +79,7 @@ export default function TtrpgPage() {
     [busy, setBusy] = useState(false),
     [menu, setMenu] = useState(false),
     [innerMenu, setInnerMenu] = useState(false);
-  const [settings, setSettings] = useState(defaultTtrpgSettings),
+  const [settings, setSettings] = useState(() => newOpen ? defaultTtrpgSettingsV2('open') : defaultTtrpgSettings()),
     [title, setTitle] = useState(""),
     [dirty, setDirty] = useState(false),
     [search, setSearch] = useState("");
@@ -156,11 +160,11 @@ export default function TtrpgPage() {
   useEffect(() => {
     if (!dirty) {
       setSettings(
-        row?.draft ? settingsFromTtrpgDraft(row.draft) : defaultTtrpgSettings(),
+        row?.draft ? settingsFromTtrpgDraft(row.draft) : newOpen ? defaultTtrpgSettingsV2('open') : defaultTtrpgSettings(),
       );
       setTitle(row?.work.title ?? "");
     }
-  }, [row?.work.id, row?.draft?.revision, dirty]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [row?.work.id, row?.draft?.revision, dirty, newOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     void listLocalWorldReferenceChoicesV1()
       .then(setWorlds)
@@ -215,7 +219,7 @@ export default function TtrpgPage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
   const path = (id: string, target = row, extra = "") =>
-    `/ttrpg/${id}${target ? `?project=${target.project.id}&work=${target.work.id}${target === row && productionId && !extra.includes("production=") ? `&production=${productionId}` : ""}${extra}` : ""}`;
+    `/ttrpg/${id}${target ? `?project=${target.project.id}&work=${target.work.id}${target === row && productionId && !extra.includes("production=") ? `&production=${productionId}` : ""}${extra}` : newOpen ? '?format=open' : ''}`;
   const run = async (action: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);
@@ -230,6 +234,7 @@ export default function TtrpgPage() {
     }
   };
   const save = async () => {
+    await flushPendingEditsV1();
     if (loading || (projectId && !row)) throw new Error("作品正在加载或已不存在，请从作品库重新选择");
     if (row && scope && row.draft) {
       await saveTtrpgDraft(
@@ -286,6 +291,7 @@ export default function TtrpgPage() {
   );
   const compile = () =>
     void run(async () => {
+      await flushPendingEditsV1();
       const target = dirty || !row ? await save() : row;
       const targetScope = {
         projectId: target.project.id!,
@@ -299,7 +305,7 @@ export default function TtrpgPage() {
       }
       const id = await prepareTtrpgBrief(targetScope, latest.revision);
       navigate(path("agent", target, `&production=${id}`));
-      setNotice("审查方案已保存，请比较提案并确认。尚未开始制作。");
+      setNotice(settings.runFormat === 'open' ? '开放审查方案已保存，请核对并到制作页明确开始。' : '审查方案已保存，请比较提案并确认。尚未开始制作。');
     });
   let handoffId: number | null = null,
     handoffError = "";
@@ -481,6 +487,9 @@ export default function TtrpgPage() {
                         >
                           新建战役
                         </button>
+                        {openPreview && <button className="lf-action" onClick={() => {
+                          setDirty(false); setSettings(defaultTtrpgSettingsV2('open')); setTitle(''); navigate('/ttrpg/vision?format=open');
+                        }}>新建开放跑团（预览）</button>}
                         <input
                           aria-label="搜索战役"
                           placeholder="搜索战役名称"
@@ -597,6 +606,9 @@ export default function TtrpgPage() {
                             }}
                           />
                         </div>
+                        {openPreview && settings.runFormat === 'open' && step === 1 && <OpenAuthoringEditor
+                          key={scope ? `${scope.projectId}:${scope.worldId}:${scope.workId}` : 'new-open'} value={settings.openAuthoring}
+                          onChange={openAuthoring => { setSettings(current => current.runFormat === 'open' ? { ...current, openAuthoring } : current); setDirty(true) }}/>}
                         {step === 7 && (
                           <label>
                             制作质量
