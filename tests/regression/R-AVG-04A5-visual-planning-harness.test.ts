@@ -16,7 +16,7 @@ import { verifyStoredProductBuildPreview } from '../../src/lib/product-productio
 import { createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1 } from '../../src/lib/product-production/production-executor'
 import { runProductProductionSchedulerCycleV1, runProductProductionUntilBlockedV1 } from '../../src/lib/product-production/scheduler'
 import { stageAvgAuthorArtifactV1, readAvgConfirmedVisualArtifactsV4, readAvgHistoricalVisualArtifactV4, readAvgHistoricalVisualArtifactsV4 } from '../../src/lib/avg/author-artifacts'
-import { acceptProductBuildArtifact, verifyAcceptedProductBuildArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4, verifyHistoricalAvgVisualImageProducerV4, verifyRetainedAvgRawImageArtifactV1, verifyProductBuildTerminalArtifactSetV1 } from '../../src/lib/product-production/artifact-store'
+import { acceptProductBuildArtifact, verifyAcceptedProductBuildArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4, verifyHistoricalAvgVisualImageProducerV4, verifyHistoricalAvgVisualImageProducerV5, verifyHistoricalAvgVisualPlanningArtifactV5, verifyRetainedAvgRawImageArtifactV1, verifyProductBuildTerminalArtifactSetV1 } from '../../src/lib/product-production/artifact-store'
 import { readAvgVisualProposalEvidenceV4 } from '../../src/lib/avg/visual-planning-evidence'
 import * as visualProposalEvidence from '../../src/lib/avg/visual-planning-evidence'
 import { readAgentRunArtifactExactV1 } from '../../src/lib/memory/artifact-store'
@@ -803,6 +803,9 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       useAIConfigStore.getState().setConfig({apiKey:''})
       const before=await exportProjectJSON(s.scope.projectId),proof=await verifyHistoricalAvgVisualImageProducerV4(await input())
       expect(proof.artifact).toEqual(raw)
+      await expect(verifyHistoricalAvgVisualImageProducerV5(await input())).rejects.toThrow(/原始视觉版本/)
+      const compilation=(await accepted(s,'avg.media.compiled-visual-requirements'))!
+      await expect(verifyHistoricalAvgVisualPlanningArtifactV5({...await input(),artifactKey:compilation.artifactKey,version:compilation.version,contentHash:compilation.contentHash})).rejects.toThrow(/原始视觉版本/)
       const {proofHash,...body}=proof.provenance
       expect(proofHash).toBe(await hashProductProductionValueV2(body))
       expect(body).toMatchObject({schema:'storyforge.avg.visual-image-producer-proof',version:4,buildNumber:1,

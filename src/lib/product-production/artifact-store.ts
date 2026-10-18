@@ -2891,15 +2891,30 @@ type AvgHistoricalMediaEvidenceInputV1 = {
  * Kept separate from active producer admission: restoring a project cannot
  * grant author adoption, retry, carry or any new model/media dispatch. */
 export async function verifyHistoricalAvgVisualPlanningArtifactV4(input: AvgHistoricalMediaEvidenceInputV1) {
-  return (await readHistoricalAvgProducerEvidenceV1(input,'visual')).artifact
+  return (await readHistoricalAvgProducerEvidenceV1(input,'visual',4)).artifact
+}
+
+/** Explicit V5 history: same intrinsic Harness proof, original new Brief and
+ * role/compiler identity. This grants no current author or dispatch authority. */
+export async function verifyHistoricalAvgVisualPlanningArtifactV5(input: AvgHistoricalMediaEvidenceInputV1) {
+  return (await readHistoricalAvgProducerEvidenceV1(input,'visual',5)).artifact
 }
 
 /** Intrinsic original-image evidence only. The AVG consumer must separately
  * prove its actual compiled definition, author choice and reference rights.
  * Reading a historical producer grants no current adoption, carry or retry. */
 export async function verifyHistoricalAvgVisualImageProducerV4(input: AvgHistoricalMediaEvidenceInputV1) {
-  const result=await readHistoricalAvgProducerEvidenceV1(input,'raw-image')
+  const result=await readHistoricalAvgProducerEvidenceV1(input,'raw-image',4)
   const provenance={schema:'storyforge.avg.visual-image-producer-proof' as const,version:4 as const,
+    ...result.producer,responseEvidenceHash:result.responseEvidenceHash!}
+  return {artifact:result.artifact,provenance:{...provenance,proofHash:await hashProductProductionValueV2(provenance)}}
+}
+
+/** The portable version records the actual V5 origin. Raw/request2 semantics
+ * still require the product's original compiled-definition and author proof. */
+export async function verifyHistoricalAvgVisualImageProducerV5(input: AvgHistoricalMediaEvidenceInputV1) {
+  const result=await readHistoricalAvgProducerEvidenceV1(input,'raw-image',5)
+  const provenance={schema:'storyforge.avg.visual-image-producer-proof' as const,version:5 as const,
     ...result.producer,responseEvidenceHash:result.responseEvidenceHash!}
   return {artifact:result.artifact,provenance:{...provenance,proofHash:await hashProductProductionValueV2(provenance)}}
 }
@@ -2928,7 +2943,7 @@ export async function verifyHistoricalAvgImageProcessingProducerV1(input:AvgHist
   return {artifact:result.artifact,provenance:{...provenance,proofHash:await hashProductProductionValueV2(provenance)}}
 }
 
-async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvidenceInputV1,mode:'visual'|'raw-image'|'image-revalidation'|'image-processing') {
+async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvidenceInputV1,mode:'visual'|'raw-image'|'image-revalidation'|'image-processing',visualVersion?:4|5) {
   const rawImage=mode!=='visual',revalidation=mode==='image-revalidation',processing=mode==='image-processing'
   const scope = await resolveScope({ scope: input.scope }), build = await db.productBuilds.get(input.buildId)
   if (!build?.id || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })
@@ -2940,6 +2955,7 @@ async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvide
     || !briefRow || !await assertRecordInScope(scope, 'productProductionBriefs', briefRow, { owner: 'work' })
     || !['authorized', 'superseded'].includes(briefRow.status) || briefRow.briefHash !== build.briefHash || briefRow.authorizedAt !== build.authorizedAt) throw new Error('[avg-visual-plan] 历史方案没有准确授权 Brief')
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
+  if(visualVersion!==undefined&&brief.avgVisualPlanning?.version!==visualVersion)throw new Error('[avg-visual-history] 历史 producer 必须保留准确原始视觉版本')
   const legacyLocal=(revalidation||processing)&&(brief.avgAssembly?.version===2||brief.avgAssembly?.version===3&&!!brief.avgAssembly.image)
   if ((!brief.avgVisualPlanning&&!legacyLocal) || await hashProductProductionValueV2(brief) !== build.briefHash
     || !(rawImage?input.artifactKey.startsWith(processing?'avg.media.processed.':'avg.media.raw.'):
