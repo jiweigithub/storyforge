@@ -45,6 +45,8 @@ Harness 的目标是让一次 AI 工作可授权、可恢复、可停止、可�
 
 零模型的确定性提交可在 V1 终验回执中使用显式 `zeroModelCommit` 扩展：保留原 canonical RunContract、非空准确输入工件引用与实际 post-state/验收依据。仅合同的模型与输入/输出 token 预算全为零、Context/Skill/写回权限为空，且无候选、采用或语义评审时，才允许空 `contextManifestHashes`；合同正文 hash 必须匹配回执合同 hash。不得伪造一份模型 Context Manifest 来完成人工记账。普通模型回执仍保持原非空来源约束，旧回执/hash 不补字段。零模型记录完成只证明确定性提交，后续模型 lineage 必须另冻目的、来源、profile/transport、预算与用户授权。
 
+音频候选的正式入口显式冻结 `outputModality:'audio'`；省略该字段的历史文本入口保持原字节与 hash。音频绑定只允许无只读工具、无正式写目标、无自动采用的产品运行候选，经独立冻结执行器核对 Skill、category、实际 caller 和取消后调用产品传输，不能借用 Chat/流式文本执行器。产品仍负责原请求谱系、发送前持久 attempt、离线/预算约束和原始响应；音频时长、字节、字符与实际模型调用分别计量，不能把文本窗口估算当成实际语音 token 用量或捏造费用。原始返回留存也不等于音频候选通过验证。
+
 ## 4. 渐进式上下文披露
 
 上下文分层保存与读取：
