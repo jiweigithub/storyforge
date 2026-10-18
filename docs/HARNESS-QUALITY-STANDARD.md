@@ -49,6 +49,8 @@ Instance-owned 运行创建可携带 `expectedRuntimeSessionHash` 前置条件�
 
 音频候选的正式入口显式冻结 `outputModality:'audio'`；省略该字段的历史文本入口保持原字节与 hash。音频绑定只允许无只读工具、无正式写目标、无自动采用的产品运行候选，经独立冻结执行器核对 Skill、category、实际 caller 和取消后调用产品传输，不能借用 Chat/流式文本执行器。产品仍负责原请求谱系、发送前持久 attempt、离线/预算约束和原始响应；音频时长、字节、字符与实际模型调用分别计量，不能把文本窗口估算当成实际语音 token 用量或捏造费用。原始返回留存也不等于音频候选通过验证。
 
+音频使用显式 `CreativeAudioArtifactV1` 引用合同：原输入、真实 Context Manifest 和原始响应的准确 hash，加上实际音频描述、检查问题与原请求证据。一次 durable 音频请求可能包含多段实际编码/合成，`requestEvidence` 不冒充一次物理模型调用；真实次数与音频用量由产品原输出证据核验，不填造文本 token。大音频留在原 exact artifact/产品 Blob 生命周期中，不复制进文本 V1 的 `originalText/editableText`，不裁剪原始响应。纯合同解析不证明 PCM 正确、owner/权限或真人听感，产品须另核验真实原证据与字节。候选固定 `humanListening:'unproven'`、`adoptionAllowed:false` 与禁止自动重试；试听与正式采用由产品沿原 owner 独立确认。旧文本 V1 解析/字节不变，文本采用判断不接受音频合同，不能把音频 `ready` 当作授权。
+
 ## 4. 渐进式上下文披露
 
 上下文分层保存与读取：
