@@ -96,6 +96,19 @@ export default function TtrpgPage() {
   // This is the version actually loaded into the form. A liveQuery update must
   // never lend its newer revision to older, unsaved settings.
   const [editBasis, setEditBasis] = useState<{ scope: WorkspaceScope; revision: number } | null>(null);
+  // The domain save finishes before BrowserRouter's transition necessarily
+  // reaches this component. Bridge only that known creation's navigation;
+  // this is neither a selected scope nor permission to save/generate again.
+  const createdRouteHandoff = useRef<Pick<Row, 'project' | 'work'> | null>(null);
+  const readCreatedRouteHandoff = () => {
+    const saved = createdRouteHandoff.current;
+    if (!saved) return null;
+    const address = new URL(window.location.href);
+    return address.pathname.includes('/ttrpg/') &&
+      Number(address.searchParams.get('project')) === saved.project.id &&
+      Number(address.searchParams.get('work')) === saved.work.id ? saved : null;
+  };
+  const activeMutation = useRef(false);
   const seatApprovalDraft = useSyncExternalStore(subscribeSeatApprovalDraft, readSeatApprovalDraft);
   const [worlds, setWorlds] = useState<
     Awaited<ReturnType<typeof listLocalWorldReferenceChoicesV1>>
@@ -187,11 +200,13 @@ export default function TtrpgPage() {
   }, []);
   useEffect(() => {
     if (!dirty) {
+      if (!row && readCreatedRouteHandoff()) return;
       setSettings(
         row?.draft ? settingsFromTtrpgDraft(row.draft) : newOpen ? defaultTtrpgSettingsV2('open') : defaultTtrpgSettings(),
       );
       setTitle(row?.work.title ?? "");
       setEditBasis(scope && row?.draft ? { scope, revision: row.draft.revision } : null);
+      if (row && createdRouteHandoff.current?.work.id === row.work.id) createdRouteHandoff.current = null;
     }
   }, [row?.work.id, row?.work.title, row?.draft?.revision, dirty, newOpen, scope]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -250,13 +265,19 @@ export default function TtrpgPage() {
   const path = (id: string, target = row, extra = "") => {
     const production = productionId && !extra.includes('production=') ? `&production=${productionId}` : '';
     if (target) return `/ttrpg/${id}?project=${target.project.id}&work=${target.work.id}${target === row ? production : ''}${extra}`;
+    const created = readCreatedRouteHandoff();
+    if (created) {
+      const actualProduction = Number(new URL(window.location.href).searchParams.get('production')) || null;
+      return `/ttrpg/${id}?project=${created.project.id}&work=${created.work.id}${actualProduction && !extra.includes('production=') ? `&production=${actualProduction}` : ''}${extra}`;
+    }
     // Requested locators survive a late list projection. They grant no record
     // access; the original loaded scope and domain guards still decide that.
     if (projectId) return `/ttrpg/${id}?project=${projectId}${workId ? `&work=${workId}` : ''}${production}${extra}`;
     return `/ttrpg/${id}${newOpen ? '?format=open' : ''}`;
   };
   const run = async (action: () => Promise<void>) => {
-    if (busy) return;
+    if (busy || activeMutation.current) return;
+    activeMutation.current = true;
     setBusy(true);
     setError("");
     setNotice("");
@@ -265,11 +286,13 @@ export default function TtrpgPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      activeMutation.current = false;
       setBusy(false);
     }
   };
   const save = async (flush = true) => {
     if (flush) await flushPendingEditsV1();
+    if (!row && readCreatedRouteHandoff()) throw new Error('刚保存的作品正在载入，请稍后继续；已保留原作品');
     if (loading || (projectId && !row)) throw new Error("作品正在加载或已不存在，请从作品库重新选择");
     if (editBasis && (!sameScope(scope, editBasis.scope) || !row?.draft))
       throw new Error('正在编辑的方案与当前作品不一致，本窗口修改已保留，请先下载修改副本再载入最新方案');
@@ -301,6 +324,7 @@ export default function TtrpgPage() {
       );
     const made = await createTtrpgDraft(title || "未命名战役", settings);
     const target = { project: made.project, work: made.work };
+    createdRouteHandoff.current = target;
     setDirty(false);
     return target;
   };
@@ -604,6 +628,7 @@ export default function TtrpgPage() {
                           className="lf-action lf-action-primary"
                           disabled={busy || draftConflict}
                           onClick={() => {
+                            createdRouteHandoff.current = null;
                             setDirty(false);
                             setEditBasis(null);
                             setSettings(defaultTtrpgSettings());
@@ -614,6 +639,7 @@ export default function TtrpgPage() {
                           新建战役
                         </button>
                         {openPreview && <button className="lf-action" disabled={busy || draftConflict} onClick={() => {
+                          createdRouteHandoff.current = null;
                           setDirty(false); setEditBasis(null); setSettings(defaultTtrpgSettingsV2('open')); setTitle(''); navigate('/ttrpg/vision?format=open');
                         }}>新建开放跑团（预览）</button>}
                         <input
@@ -672,7 +698,7 @@ export default function TtrpgPage() {
                         保存配置不会调用模型或开始制作。未选择世界时也可以填写。
                       </p>
                       <fieldset
-                        disabled={busy || loading || Boolean(projectId && !row) || Boolean(row && !row.draft)}
+                        disabled={busy || loading || Boolean(projectId && !row) || Boolean(readCreatedRouteHandoff() && !row) || Boolean(row && !row.draft)}
                         className="avg-form"
                       >
                         <label>
