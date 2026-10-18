@@ -11,7 +11,7 @@ import { verifyStoredProductBuildPreview } from '../../src/lib/product-productio
 import * as mediaVerifier from '../../src/lib/product-production/media-runtime-verifier'
 import type { AvgVisualProductionRequirementV1 } from '../../src/lib/avg/media-production-contract'
 import { avgExecutableModule } from '../../src/lib/avg/executable-module'
-import { verifyAcceptedProductBuildArtifactV1, verifyRetainedAvgRawImageArtifactV1, verifyHistoricalAvgImageRevalidationProducerV1 } from '../../src/lib/product-production/artifact-store'
+import { verifyAcceptedProductBuildArtifactV1, verifyRetainedAvgRawImageArtifactV1, verifyHistoricalAvgImageRevalidationProducerV1, verifyHistoricalAvgImageProcessingProducerV1 } from '../../src/lib/product-production/artifact-store'
 import { scopeTransactionTables } from '../../src/lib/workspace/scope'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 import { seedCurrentProductWorld } from '../helpers/current-product-world'
@@ -33,7 +33,6 @@ import { prepareAvgRawImageRequestV1 } from '../../src/lib/avg/media-raw-contrac
 import * as imageProcessing from '../../src/lib/avg/image-processing'
 import { avgImageProcessingRecipeFixture,avgImageProcessingReceiptFixture } from '../helpers/avg-image-processing-fixture'
 import type { AvgImageProcessingPlanV1 } from '../../src/lib/avg/image-processing-contract'
-import { deleteWork } from '../../src/lib/workspace/lifecycle'
 
 const requirement = (): AvgVisualProductionRequirementV1 => ({ requirementKey: 'desk.background', revision: 1,
   assetKey: 'avg.generated.desk', name: '原创工程背景', altText: '仅用于管线验证的原创色块',
@@ -698,6 +697,65 @@ describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/deco
     expect((await runAvgAssemblyV1({scope:child.scope,productionId:child.productionId})).buildStatus).toBe('preview-ready')
     expect(dispatch).toHaveBeenCalledTimes(1)
   },15_000)
+
+  describe('intrinsic local processing producer evidence',()=>{
+    async function processed(){
+      const body=await response(),dispatch=vi.fn(async()=>new Response(body,{status:200}));vi.stubGlobal('fetch',dispatch)
+      const output=await deterministicRegionMapPngV1({width:576,height:324,palette:['#123456','#789abc','#def012']})
+      const process=vi.spyOn(imageProcessing,'processAvgImageBytesV1').mockImplementation(async input=>({data:output,
+        receipt:await avgImageProcessingReceiptFixture({recipe:input.recipe,source:{...input.source,byteSize:input.data.byteLength},data:output})}))
+      const plan:AvgImageProcessingPlanV1={schema:'storyforge.avg.image-processing-plan',version:1,entries:[{requirementKey:'desk.background',recipe:avgImageProcessingRecipeFixture()}]}
+      const s=await start(await prepare([requirement()],true,plan));await confirmSources(s);await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})
+      const build=(await db.productBuilds.get(s.buildId))!,image=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,'avg.media.processed.desk.background']).first())!
+      expect(image,build.failureJson).toBeDefined()
+      const input={scope:s.scope,buildId:s.buildId,expectedBuildRevision:build.stateRevision,expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,
+        sourceControlEpoch:image.controlEpoch,artifactKey:image.artifactKey,version:image.version,contentHash:image.contentHash}
+      return {s,build,image,input,dispatch,process}
+    }
+    it('reads actual zero-call processing evidence without author choice, preserves the export and proves a remapped completed prefix',async()=>{
+      const {s,image,input,dispatch,process}=await processed();useAIConfigStore.getState().setConfig({apiKey:''})
+      const {exportedAt:_before,...before}=await exportProjectJSON(s.scope.projectId)
+      const result=await verifyHistoricalAvgImageProcessingProducerV1(input)
+      const {exportedAt:_after,...after}=await exportProjectJSON(s.scope.projectId)
+      expect(after).toEqual(before);expect(result.artifact).toEqual(image)
+      expect(result.provenance).toMatchObject({schema:'storyforge.avg.image-processing-producer-proof',version:1,noProviderRequest:true,
+        artifactKey:image.artifactKey,producerReceiptHash:image.producerReceiptHash,processingEvidenceHash:await hashProductProductionValueV2(JSON.parse(image.qualityJson))})
+      expect(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,'avg.media.choice.desk.background']).count()).toBe(0)
+      const projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),build=(await db.productBuilds.where('projectId').equals(projectId).first())!
+      const scope={projectId,worldId:build.worldId,workId:build.workId},copied={...input,scope,buildId:build.id!,expectedBuildRevision:build.stateRevision}
+      expect((await verifyHistoricalAvgImageProcessingProducerV1(copied)).provenance).toEqual(result.provenance)
+      await deleteWork(scope.workId);await expect(verifyHistoricalAvgImageProcessingProducerV1(copied)).rejects.toThrow()
+      expect((await verifyHistoricalAvgImageProcessingProducerV1(input)).provenance).toEqual(result.provenance)
+      expect(dispatch).toHaveBeenCalledTimes(1);expect(process).toHaveBeenCalledTimes(1)
+    },20_000)
+    it('keeps proof reads inside the caller transaction so a later rejection rolls back author writes',async()=>{
+      const {s,input,dispatch,process}=await processed(),before=await readAvgDraftV1(s.scope)
+      await expect(db.transaction('rw',db.tables,async()=>{
+        expect((await verifyHistoricalAvgImageProcessingProducerV1(input)).provenance.noProviderRequest).toBe(true)
+        await db.avgAuthoringDrafts.update(before.id!,{updatedAt:before.updatedAt+1});throw new Error('deliberate-processing-proof-caller-rollback')
+      })).rejects.toThrow('deliberate-processing-proof-caller-rollback')
+      expect(await readAvgDraftV1(s.scope)).toEqual(before);expect(dispatch).toHaveBeenCalledTimes(1);expect(process).toHaveBeenCalledTimes(1)
+    },20_000)
+    it.each(['original-provider','stale-build','foreign-work','changed-quality','changed-ledger','corrupt-bytes','missing-run'] as const)('rejects %s without granting a processing receipt or making another call',async failure=>{
+      const {s,build,image,input,dispatch,process}=await processed()
+      if(failure==='original-provider'){
+        const raw=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,'avg.media.raw.desk.background']).first())!
+        Object.assign(input,{artifactKey:raw.artifactKey,version:raw.version,contentHash:raw.contentHash})
+      }else if(failure==='stale-build')input.expectedBuildRevision++
+      else if(failure==='foreign-work')input.scope=(await prepareNativeAvgAssembly()).scope
+      else if(failure==='changed-quality')await db.productBuildArtifacts.update(image.id!,{qualityJson:canonicalProductProductionJsonV2({...JSON.parse(image.qualityJson),noProviderRequest:false})})
+      else if(failure==='changed-ledger'){
+        const ledger=JSON.parse(build.budgetLedgerJson);ledger.tasks['avg.media.process.desk.background'].usage.costUsd=1
+        await db.productBuilds.update(build.id!,{budgetLedgerJson:canonicalProductProductionJsonV2(ledger)})
+      }else if(failure==='missing-run')await db.agentRuns.delete(image.producerRunId!)
+      else{
+        const blob=(await db.mediaBlobObjects.get(image.blobObjectId!))!,bytes=new Uint8Array(blob.data!.slice(0));bytes[bytes.length-1]^=1
+        await db.mediaBlobObjects.update(blob.id!,{data:bytes.buffer})
+      }
+      await expect(verifyHistoricalAvgImageProcessingProducerV1(input)).rejects.toThrow()
+      expect(dispatch).toHaveBeenCalledTimes(1);expect(process).toHaveBeenCalledTimes(1)
+    },20_000)
+  })
 
   it('freezes a separate local recipe, uses a zero-provider processing Run and adopts only its reviewed exact derivative through preview and portable source',async()=>{
     const body=await response(),dispatch=vi.fn(async()=>new Response(body,{status:200}));vi.stubGlobal('fetch',dispatch)

@@ -2915,8 +2915,19 @@ export async function verifyHistoricalAvgImageRevalidationProducerV1(input:AvgHi
   return {artifact:result.artifact,provenance:{...provenance,proofHash:await hashProductProductionValueV2(provenance)}}
 }
 
-async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvidenceInputV1,mode:'visual'|'raw-image'|'image-revalidation') {
-  const rawImage=mode!=='visual',revalidation=mode==='image-revalidation'
+/** Intrinsic bounded local processing evidence. The product must prove its
+ * actual definition, raw producer, recipe and author decisions separately.
+ * Legacy processed-image readers retain their complete original contract. */
+export async function verifyHistoricalAvgImageProcessingProducerV1(input:AvgHistoricalMediaEvidenceInputV1){
+  const result=await readHistoricalAvgProducerEvidenceV1(input,'image-processing')
+  const provenance={schema:'storyforge.avg.image-processing-producer-proof' as const,version:1 as const,
+    ...result.producer,noProviderRequest:true as const,
+    processingEvidenceHash:await hashProductProductionValueV2(JSON.parse(result.artifact.qualityJson))}
+  return {artifact:result.artifact,provenance:{...provenance,proofHash:await hashProductProductionValueV2(provenance)}}
+}
+
+async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvidenceInputV1,mode:'visual'|'raw-image'|'image-revalidation'|'image-processing') {
+  const rawImage=mode!=='visual',revalidation=mode==='image-revalidation',processing=mode==='image-processing'
   const scope = await resolveScope({ scope: input.scope }), build = await db.productBuilds.get(input.buildId)
   if (!build?.id || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })
     || build.stateRevision !== input.expectedBuildRevision || build.briefHash !== input.expectedBriefHash || build.planHash !== input.expectedPlanHash
@@ -2927,9 +2938,9 @@ async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvide
     || !briefRow || !await assertRecordInScope(scope, 'productProductionBriefs', briefRow, { owner: 'work' })
     || !['authorized', 'superseded'].includes(briefRow.status) || briefRow.briefHash !== build.briefHash || briefRow.authorizedAt !== build.authorizedAt) throw new Error('[avg-visual-plan] 历史方案没有准确授权 Brief')
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
-  const legacyRevalidation=revalidation&&(brief.avgAssembly?.version===2||brief.avgAssembly?.version===3&&!!brief.avgAssembly.image)
-  if ((!brief.avgVisualPlanning&&!legacyRevalidation) || await hashProductProductionValueV2(brief) !== build.briefHash
-    || !(rawImage?input.artifactKey.startsWith('avg.media.raw.'):
+  const legacyLocal=(revalidation||processing)&&(brief.avgAssembly?.version===2||brief.avgAssembly?.version===3&&!!brief.avgAssembly.image)
+  if ((!brief.avgVisualPlanning&&!legacyLocal) || await hashProductProductionValueV2(brief) !== build.briefHash
+    || !(rawImage?input.artifactKey.startsWith(processing?'avg.media.processed.':'avg.media.raw.'):
       input.artifactKey.startsWith('avg.proposal.') || input.artifactKey === 'avg.media.compiled-visual-requirements')) throw new Error('[avg-visual-plan] 历史读取仅限准确 V4 直接 producer 工件')
   if(rawImage&&!['building','integrating','validating','preview-ready','release-ready','released','paused','cancelled','failed','recovery-required'].includes(build.status))throw new Error('[avg-visual-image] 原图来源不属于已执行版本')
   const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash)
@@ -2954,12 +2965,15 @@ async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvide
     || !samePreparedProducerArtifactV1({ expected: await preparedStoredArtifactV1(row), actual: proof.artifacts.get(row.artifactKey), importedScopeRebound: proof.importedScopeRebound })) throw new Error('[avg-visual-plan] 历史方案 checkpoint/ledger 不闭合')
   const blobs=rawImage?await verifiedBlobProofsV1({scope,artifacts:[row],label:'historical V4 image'}):null
   let responseEvidenceHash:string|null=null
-  if(revalidation){
+  if(revalidation||processing){
     const usage=proof.usage as {modelCalls?:number;mediaCalls?:number;costUsd?:number|null}
-    if(proof.task.kind!=='avg-media-image-reuse'||proof.task.executionMode!=='deterministic'||proof.task.skillId!==null
+    if(proof.task.kind!==(processing?'avg-media-image-process':'avg-media-image-reuse')||proof.task.executionMode!=='deterministic'||proof.task.skillId!==null
       ||proof.attempt!==1||proof.task.maxAttempts!==1||proof.task.outputArtifactKeys.length!==1||proof.task.outputArtifactKeys[0]!==row.artifactKey
       ||proof.task.budgetReservation.modelCalls!==0||proof.task.budgetReservation.mediaCalls!==0||proof.task.budgetReservation.maximumCostUsd!==0
-      ||usage.modelCalls!==0||usage.mediaCalls!==0||usage.costUsd!==0)throw new Error('[avg-image-reuse] 需要实际单次零调用图片复验 producer，不能替代原始供应商证据')
+      ||processing&&proof.task.capabilityRequirementKeys.length!==0
+      ||usage.modelCalls!==0||usage.mediaCalls!==0||usage.costUsd!==0)throw new Error(processing
+        ?'[avg-image-process] 需要实际单次零调用本地加工 producer，不能替代原始供应商证据'
+        :'[avg-image-reuse] 需要实际单次零调用图片复验 producer，不能替代原始供应商证据')
     const run=await readAgentRunV1(scope,row.producerRunId)
     if(run.events.some(event=>event.type==='model.requested'||event.type==='tool.called'
       ||event.type==='evidence.artifact.recorded'&&event.payload.artifactKind==='raw-response'))throw new Error('[avg-image-reuse] 本地复验 Run 不能保留供应商派发或新原始响应')

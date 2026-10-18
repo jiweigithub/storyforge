@@ -348,7 +348,7 @@ export function parseProductProductionPlanV3(
       fail(`${task.taskKey} 上下文投影只用于准确 AVG 确定性任务`)
     }
     if (task.contextProfile === 'avg-visual-planning-v4' && (productType !== 'avg' || task.executionMode !== 'deterministic'
-      || !['avg-v4-visual-requirements-compile','avg-v4-visual-proposal-reuse','avg-media-image-reuse'].includes(task.kind))) fail(`${task.taskKey} V4 投影只用于准确需求编译或复验任务`)
+      || !['avg-v4-visual-requirements-compile','avg-v4-visual-proposal-reuse','avg-media-image-reuse','avg-media-image-process'].includes(task.kind))) fail(`${task.taskKey} V4 投影只用于准确需求编译、复验或加工任务`)
     if (task.kind === 'avg-v4-visual-proposal-reuse' && (productType !== 'avg' || task.executionMode !== 'deterministic'
       || task.contextProfile !== 'avg-visual-planning-v4' || task.skillId !== null || task.capabilityRequirementKeys.length !== 0
       || task.budgetReservation.modelCalls !== 0 || task.budgetReservation.mediaCalls !== 0 || task.budgetReservation.maximumCostUsd !== 0
@@ -363,6 +363,19 @@ export function parseProductProductionPlanV3(
         || !task.inputArtifactKeys.includes(AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4)
         || compiler?.kind !== 'avg-v4-visual-requirements-compile' || !task.dependsOn.includes(compiler.taskKey)) {
         fail(`${task.taskKey} 原图复验必须依赖准确需求编译，且为单次零调用任务`)
+      }
+    }
+    if(task.kind==='avg-media-image-process'&&task.contextProfile==='avg-visual-planning-v4'){
+      const requirementKey=task.taskKey.startsWith('avg.media.process.')?task.taskKey.slice('avg.media.process.'.length):''
+      const compiler=tasks.find(owner=>owner.outputArtifactKeys.includes(AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4))
+      const raw=tasks.find(owner=>owner.outputArtifactKeys.includes(`avg.media.raw.${requirementKey}`))
+      if(!requirementKey||task.skillId!==null||task.capabilityRequirementKeys.length!==0||task.reuse!==null||task.maxAttempts!==1
+        ||task.budgetReservation.modelCalls!==0||task.budgetReservation.mediaCalls!==0||task.budgetReservation.maximumCostUsd!==0
+        ||task.outputArtifactKeys.length!==1||task.outputArtifactKeys[0]!==`avg.media.processed.${requirementKey}`
+        ||!task.inputArtifactKeys.includes(AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4)||!task.inputArtifactKeys.includes(`avg.media.raw.${requirementKey}`)
+        ||compiler?.kind!=='avg-v4-visual-requirements-compile'||!task.dependsOn.includes(compiler.taskKey)
+        ||!raw||!['avg-media-image-generate','avg-media-image-reuse'].includes(raw.kind)||!task.dependsOn.includes(raw.taskKey)){
+        fail(`${task.taskKey} 本地加工必须依赖准确需求编译与原图，且为单次零调用任务`)
       }
     }
   }
