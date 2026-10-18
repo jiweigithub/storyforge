@@ -8,6 +8,13 @@ import {readFileSync,writeFileSync,existsSync} from 'node:fs';import path from '
 import {assertProductImplementation,validateProductJob,verifyProductResult,productProfile,productProfileHash,stable,digest} from './scripts/ttrpg-local-tts/product-contract.mjs';
 import {createProductVoiceJobs} from './scripts/ttrpg-local-tts/product-jobs.mjs';
 import {syntheticJob,syntheticRuntime,fakeChild,syntheticResult,writeSyntheticResult} from './tests/helpers/local-voice-product-fixture.mjs';
+function unknownComplete(jobs,runtime,input){
+ jobs.create(input);const dir=path.join(runtime,'product-jobs-v2',digest(input.jobKey)),nonce='12345678-1234-4234-8234-123456789abc';
+ const claim={kind:'start-authorized',jobKey:input.jobKey,inputArtifactHash:input.inputArtifactHash,nonce,owner:{pid:process.pid,start:'an earlier controller process epoch'}};
+ writeFileSync(path.join(dir,'start.json'),stable(claim));writeFileSync(path.join(dir,'worker-started.json'),stable({jobKey:input.jobKey,inputArtifactHash:input.inputArtifactHash,launchNonce:nonce,pid:process.pid,processStart:'an earlier worker process epoch'}));
+ const record=JSON.parse(readFileSync(path.join(dir,'job.json'),'utf8'));writeFileSync(path.join(dir,'job.json'),stable({...record,status:'running',launchNonce:nonce}));
+ writeSyntheticResult(dir,input);return {dir,claim};
+}
 ${script}`], { encoding: 'utf8', maxBuffer: 2 * 1024 * 1024 }))
 }
 describe('R-TTRPGOPEN10 actual offline worker protocol and physical raw audio boundary', () => {
@@ -65,6 +72,12 @@ mono[0]=136;assert not another.valid(value)
 print(json.dumps({'rollbackBounded':True,'expiredCannotRevive':True}))`
     expect(JSON.parse(execFileSync('python3', ['-B', '-c', script], { encoding: 'utf8' }))).toEqual({ rollbackBounded: true, expiredCannotRevive: true })
   })
+  it('an unknown control-directory symlink is preserved without writing a cancellation into its target', () => {
+    expect(node(`import {symlinkSync,readdirSync} from 'node:fs';const runtime=syntheticRuntime(),outside=syntheticRuntime(),input=syntheticJob();
+const jobs=createProductVoiceJobs(runtime,{spawnWorker(){throw Error('no inference')}}),before=readdirSync(outside);symlinkSync(outside,path.join(runtime,'product-jobs-v2','cancellations'),'dir');
+assert.throws(()=>jobs.cancel(input.jobKey));assert.deepEqual(readdirSync(outside),before);
+console.log(JSON.stringify({outsideUnchanged:true,runtime,outside}));`).outsideUnchanged).toBe(true)
+  })
   it('creating, polling, duplicate submission and a new service never launch a model; the one durable start is irreversible', () => {
     expect(node(`const runtime=syntheticRuntime(),input=syntheticJob();let calls=0,child,dir;
 const jobs=createProductVoiceJobs(runtime,{spawnWorker(d){calls++;dir=d;child=fakeChild();return child}});
@@ -83,6 +96,72 @@ const jobs=createProductVoiceJobs(runtime,{spawnWorker(){calls++;return fakeChil
 assert.equal(jobs.cancel(input.jobKey).cancellationConfirmed,true);assert.equal(jobs.get(input.jobKey).status,'cancelled-before-start');
 jobs.start(input.jobKey,input.inputArtifactHash);assert.equal(calls,0);assert.equal(jobs.cancel(input.jobKey).cancellationConfirmed,true);
 console.log(JSON.stringify({calls,runtime}));`).calls).toBe(0)
+  })
+  it('a stop received before the job exists persists a barrier, reports no confirmed stop, and prevents a later create/start', () => {
+    expect(node(`const runtime=syntheticRuntime(),input=syntheticJob();let calls=0;
+const jobs=createProductVoiceJobs(runtime,{spawnWorker(){calls++;return fakeChild()}});
+const stopped=jobs.cancel(input.jobKey);assert.equal(stopped.status,'stop-requested-without-job');assert.equal(stopped.futureStartBlocked,true);assert.equal(stopped.cancellationConfirmed,false);
+assert.equal(jobs.get(input.jobKey).futureStartBlocked,true);assert.equal(jobs.create(input).status,'cancelled-before-start');
+jobs.start(input.jobKey,input.inputArtifactHash);assert.equal(calls,0);
+console.log(JSON.stringify({calls,runtime}));`).calls).toBe(0)
+  })
+  it('a cross-controller stop after the permanent launch claim but before spawn prevents inference and retains the claim', () => {
+    expect(node(`import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';
+const runtime=fs.realpathSync(syntheticRuntime()),input=syntheticJob();let calls=0,intercepted=false;
+const jobs=createProductVoiceJobs(runtime,{spawnWorker(){calls++;return fakeChild()}}),other=createProductVoiceJobs(runtime,{spawnWorker(){throw Error('must not launch')}});jobs.create(input);
+const rename=fs.renameSync;fs.renameSync=(from,to)=>{rename(from,to);if(String(to).endsWith('/lease.json')&&!intercepted){intercepted=true;other.cancel(input.jobKey)}};syncBuiltinESMExports();
+try{assert.equal(jobs.start(input.jobKey,input.inputArtifactHash).status,'cancelled-before-spawn')}
+finally{fs.renameSync=rename;syncBuiltinESMExports()}
+assert.equal(intercepted,true);assert.equal(calls,0);assert.equal(jobs.get(input.jobKey).cancellationConfirmed,true);
+assert.equal(existsSync(path.join(runtime,'.eval.lock')),false);assert.equal(existsSync(path.join(runtime,'product-jobs-v2',digest(input.jobKey),'start.json')),true);
+console.log(JSON.stringify({calls,runtime}));`).calls).toBe(0)
+  })
+  it('complete unknown output is read-only on GET and requires explicit recovery plus actual original owner and worker absence; no exit zero is invented', () => {
+    expect(node(`const runtime=syntheticRuntime(),input=syntheticJob();let calls=0;const jobs=createProductVoiceJobs(runtime,{spawnWorker(){calls++;return fakeChild()}});
+const {dir}=unknownComplete(jobs,runtime,input);assert.equal(jobs.get(input.jobKey).status,'unknown');assert.throws(()=>jobs.raw(input.jobKey));
+assert.equal(JSON.parse(readFileSync(path.join(dir,'job.json'),'utf8')).terminal,undefined);
+const recovered=jobs.recoverRaw(input.jobKey,input.inputArtifactHash);assert.equal(recovered.completionEvidence,'verified-result-worker-absent');
+const terminal=JSON.parse(readFileSync(path.join(dir,'job.json'),'utf8')).terminal;assert.equal(terminal.code,undefined);
+assert.equal(recovered.candidateAccepted,false);assert.equal(recovered.adoptionAllowed,false);assert.equal(jobs.get(input.jobKey).cancellationConfirmed,false);
+assert.deepEqual(jobs.recoverRaw(input.jobKey,input.inputArtifactHash),recovered);jobs.start(input.jobKey,input.inputArtifactHash);assert.equal(calls,0);
+console.log(JSON.stringify({calls,runtime}));`).calls).toBe(0)
+  })
+  it('a stop persisted by another controller cannot be renewed away and is confirmed only after the actual owned child closes', () => {
+    expect(node(`for(const renew of [false,true]){const runtime=syntheticRuntime(),input=syntheticJob();let child;
+const jobs=createProductVoiceJobs(runtime,{spawnWorker(){child=fakeChild();return child}}),other=createProductVoiceJobs(runtime,{spawnWorker(){throw Error('no launch')}});
+jobs.create(input);jobs.start(input.jobKey,input.inputArtifactHash);assert.equal(other.cancel(input.jobKey).cancellationConfirmed,false);
+if(renew){assert.throws(()=>jobs.renew(input.jobKey,input.inputArtifactHash));assert.deepEqual(child.signals,['SIGTERM'])}
+assert.equal(jobs.get(input.jobKey).cancellationConfirmed,false);child.emit('close',2,null);
+assert.equal(jobs.get(input.jobKey).status,'cancelled-confirmed');assert.equal(jobs.get(input.jobKey).cancellationConfirmed,true);
+}console.log(JSON.stringify({crossControllerStopPreserved:true}));`)).toEqual({ crossControllerStopPreserved: true })
+  })
+  it('a live original controller or worker, corrupt complete file, or known failed terminal cannot be replaced by an unknown-result recovery', () => {
+    expect(node(`import {execFileSync} from 'node:child_process';const actualStart=execFileSync('ps',['-p',String(process.pid),'-o','lstart='],{encoding:'utf8',env:{...process.env,LC_ALL:'C'}}).trim();
+for(const scenario of ['controller-live','worker-live','corrupt-audio','known-failure']){
+const runtime=syntheticRuntime(),input=syntheticJob(),jobs=createProductVoiceJobs(runtime,{spawnWorker(){throw Error('no inference')}}),{dir,claim}=unknownComplete(jobs,runtime,input);
+if(scenario==='controller-live'){claim.owner.start=actualStart;writeFileSync(path.join(dir,'start.json'),stable(claim))}
+if(scenario==='worker-live'){const f=path.join(dir,'worker-started.json'),v=JSON.parse(readFileSync(f,'utf8'));v.processStart=actualStart;writeFileSync(f,stable(v))}
+if(scenario==='corrupt-audio'){const f=path.join(dir,'audio.wav'),v=readFileSync(f);v[100]^=1;writeFileSync(f,v)}
+if(scenario==='known-failure'){const f=path.join(dir,'job.json'),v=JSON.parse(readFileSync(f,'utf8'));v.status='failed';v.terminal={kind:'observed-child-close',code:2};writeFileSync(f,stable(v))}
+const before=readFileSync(path.join(dir,'job.json'),'utf8');assert.throws(()=>jobs.recoverRaw(input.jobKey,input.inputArtifactHash));assert.equal(readFileSync(path.join(dir,'job.json'),'utf8'),before);
+}console.log(JSON.stringify({rejected:4}));`)).toEqual({ rejected: 4 })
+  })
+  it('an actual process observation error with exit1 cannot be mistaken for an absent original process', () => {
+    expect(node(`import cp from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';for(const diagnostics of [true,false]){
+const runtime=syntheticRuntime(),input=syntheticJob(),jobs=createProductVoiceJobs(runtime,{spawnWorker(){throw Error('no inference')}}),{dir}=unknownComplete(jobs,runtime,input);
+const file=path.join(dir,'job.json'),before=readFileSync(file,'utf8'),observe=cp.execFileSync;
+cp.execFileSync=(command,args,...rest)=>{if(command==='ps'&&args[0]==='-p'){const error=Error('observation denied');error.status=1;if(diagnostics){error.stdout=Buffer.alloc(0);error.stderr=Buffer.from('ps: observation unavailable')}throw error}return observe(command,args,...rest)};syncBuiltinESMExports();
+try{assert.throws(()=>jobs.recoverRaw(input.jobKey,input.inputArtifactHash),/Cannot observe process identity/)}finally{cp.execFileSync=observe;syncBuiltinESMExports()}
+assert.equal(readFileSync(file,'utf8'),before);assert.equal(jobs.get(input.jobKey).status,'unknown');}
+console.log(JSON.stringify({inspectionFailurePreserved:true}));`).inspectionFailurePreserved).toBe(true)
+  })
+  it('old V2 implementation output stays readable with its original hashes, while old inputs cannot launch and altered physical budgets are rejected', () => {
+    expect(node(`const runtime=syntheticRuntime(),input=syntheticJob();input.execution.profile=JSON.parse(readFileSync('scripts/ttrpg-local-tts/product-profile-v2.json','utf8'));
+input.execution.profileHash=digest(stable(input.execution.profile));input.inputArtifactHash=digest(stable(input.execution));input.jobKey='ttrpg.voice.1.'+input.inputArtifactHash;
+assert.notEqual(input.execution.profileHash,productProfileHash);assert.throws(()=>validateProductJob(input));
+const {bytes,result}=syntheticResult(input);verifyProductResult(result,bytes,input);
+const changed=structuredClone(input);changed.execution.profile.maxAudioSeconds++;changed.execution.profileHash=digest(stable(changed.execution.profile));assert.throws(()=>verifyProductResult(result,bytes,changed));
+console.log(JSON.stringify({oldOutputReadable:true,oldExecutionDenied:true}));`)).toEqual({ oldOutputReadable: true, oldExecutionDenied: true })
   })
   it('losing the physical slot while its actual eval owner is still writing the lock preserves that owner and releases only the unlaunched product claim', () => {
     expect(node(`import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';
@@ -135,6 +214,15 @@ assert.equal(jobs.get(syntheticJob(2).jobKey).canStart,true);
 }finally{process.hrtime.bigint=actualNow}
 console.log(JSON.stringify({expiredStop:true,runtime}));`).expiredStop).toBe(true)
   })
+  it('stdout and stderr share one diagnostic byte budget and retain exact bounded prefixes before confirmed stop', () => {
+    expect(node(`const runtime=syntheticRuntime(),input=syntheticJob();let child,dir;
+const jobs=createProductVoiceJobs(runtime,{spawnWorker(d){dir=d;child=fakeChild();return child}});jobs.create(input);jobs.start(input.jobKey,input.inputArtifactHash);
+child.stdout.emit('data',Buffer.alloc(40000,65));child.stderr.emit('data',Buffer.alloc(40000,66));assert.deepEqual(child.signals,['SIGTERM']);
+const out=readFileSync(path.join(dir,'stdout.log')),err=readFileSync(path.join(dir,'stderr.log'));assert.equal(out.length+err.length,productProfile.maxDiagnosticBytes);
+assert.equal(out.equals(Buffer.alloc(out.length,65)),true);assert.equal(err.equals(Buffer.alloc(err.length,66)),true);
+assert.equal(jobs.get(input.jobKey).cancellationConfirmed,false);child.emit('close',null,'SIGTERM');assert.equal(jobs.get(input.jobKey).cancellationConfirmed,true);
+console.log(JSON.stringify({sharedBudget:out.length+err.length,runtime}));`).sharedBudget).toBe(65536)
+  })
   it('rejects forged physical PCM, word timing, partial reading coverage and fabricated usage before returning raw output', () => {
     expect(node(`const input=syntheticJob(),{bytes,result}=syntheticResult(input);verifyProductResult(result,bytes,input);
 const patches=[r=>r.audio.samples++,r=>r.audio.durationMs++,r=>r.alignment.wordAlignmentProvided=true,r=>r.alignment.segments[0].readingLengthUtf16--,
@@ -153,6 +241,24 @@ assert.equal((await fetch(origin+PREFIX+'/profile',{headers:{'X-StoryForge-Tts':
 const headers={'X-StoryForge-Tts':'1','Content-Type':'application/json'};
 assert.equal((await fetch(origin+PREFIX+'/jobs',{method:'POST',headers,body:JSON.stringify(input)})).status,200);
 const response=await fetch(origin+PREFIX+'/jobs/'+input.jobKey,{headers});assert.equal((await response.json()).status,'waiting-for-slot');assert.equal(calls,0);
+}finally{bridge.close();await new Promise(ok=>server.close(ok))}
+console.log(JSON.stringify({calls,runtime}));`).calls).toBe(0)
+  })
+  it('the HTTP stop-before-create and explicit raw-recovery routes preserve exact identities and never launch inference', () => {
+    expect(node(`import {createServer} from 'node:http';import {createProductVoiceBridge,PREFIX} from './scripts/ttrpg-local-tts/product-bridge.mjs';
+const runtime=syntheticRuntime(),input=syntheticJob();let calls=0;
+const manager=createProductVoiceJobs(runtime,{spawnWorker(){throw Error('must not launch')}});unknownComplete(manager,runtime,input);
+const bridge=createProductVoiceBridge(runtime,{spawnWorker(){calls++;return fakeChild()}}),server=createServer((req,res)=>bridge.middleware(req,res,()=>{res.writeHead(404);res.end()}));
+await new Promise(ok=>server.listen(0,'127.0.0.1',ok));
+try{const origin='http://127.0.0.1:'+server.address().port,headers={'X-StoryForge-Tts':'1','Content-Type':'application/json'},url=origin+PREFIX+'/jobs/'+input.jobKey;
+const bad=await fetch(url+'/recover-raw',{method:'POST',headers,body:JSON.stringify({decision:'guess-success',inputArtifactHash:input.inputArtifactHash})});assert.equal(bad.status,409);
+assert.equal((await(await fetch(url,{headers})).json()).status,'unknown');
+const recovered=await fetch(url+'/recover-raw',{method:'POST',headers,body:JSON.stringify({decision:'recover-original-complete-raw-without-resending',inputArtifactHash:input.inputArtifactHash})});assert.equal(recovered.status,200);
+assert.equal((await recovered.json()).completionEvidence,'verified-result-worker-absent');
+const later=syntheticJob(2),stop=await fetch(origin+PREFIX+'/jobs/'+later.jobKey+'/cancel',{method:'POST',headers,body:JSON.stringify({decision:'request-stop-original-local-voice-job'})});
+const status=await stop.json();assert.equal(status.futureStartBlocked,true);assert.equal(status.cancellationConfirmed,false);
+assert.equal((await(await fetch(origin+PREFIX+'/jobs',{method:'POST',headers,body:JSON.stringify(later)})).json()).status,'cancelled-before-start');
+assert.equal(calls,0);
 }finally{bridge.close();await new Promise(ok=>server.close(ok))}
 console.log(JSON.stringify({calls,runtime}));`).calls).toBe(0)
   })

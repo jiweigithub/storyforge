@@ -35,7 +35,7 @@
     "sources": [
       {
         "path": "scripts/ttrpg-local-tts/product-contract.mjs",
-        "sha256": "1650b8a56ef5b39fcef1c82f2aef9bf2000cf6cb733fd7b1b2c2a174eefb36c6"
+        "sha256": "39a723f0f8f5e41162f54382211de3e549e655ecf66df1457a0172831d1d397e"
       },
       {
         "path": "scripts/ttrpg-local-tts/product-worker.py",
@@ -43,11 +43,11 @@
       },
       {
         "path": "scripts/ttrpg-local-tts/product-jobs.mjs",
-        "sha256": "9d3d9b2340ccd45ff6f4cc80e8b618db78c5a6239827641af5ffe26bcbeba2b7"
+        "sha256": "0a2df8de031752220bc6c3f4c4f05073b0b85778816ee9557f430eae5cc9c9d9"
       },
       {
         "path": "scripts/ttrpg-local-tts/product-bridge.mjs",
-        "sha256": "3ed943805e85fd2140458cb28fc0f0a7aae6844e81b5c29d8af406ef565f957c"
+        "sha256": "6f2f32bf9d6f1d063de8560bd61acfaa06e71ebeafdc6898646dafbab80ce827"
       },
       {
         "path": "scripts/ttrpg-local-tts/engine.py",
@@ -63,7 +63,7 @@
       },
       {
         "path": "src/lib/ttrpg/open-local-voice-transport.ts",
-        "sha256": "bb49d138d96ba8416df33ec6b52e4896a4611ac62d44d39f26e733765c2b78f1"
+        "sha256": "c59488dc427b5a6ff9664c7ecf11880fc2f62e7cf8f883cd229b9da0c4406001"
       },
       {
         "path": "src/lib/ttrpg/open-voice-execution.ts",

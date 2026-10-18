@@ -103,10 +103,19 @@ export function ownedRuntime(value) {
 /** Recheck the actual canonical PCM and complete normalized-reading coverage.
  * Segment clocks are physical sample boundaries, never word/character timing. */
 export function verifyProductResult(result, bytes, input) {
-  const p = productProfile, a = result?.audio, alignment = result?.alignment
+  // Output retrieval is not permission to execute an old implementation.
+  // The wire/physical contract is unchanged; keep its original implementation
+  // hashes instead of requiring today's code hash for an already finished job.
+  const p = input.execution.profile, a = result?.audio, alignment = result?.alignment
+  const { implementation: currentImplementation, ...currentCore } = productProfile
+  const { implementation, ...originalCore } = p
+  if (stable(originalCore) !== stable(currentCore) || input.execution.profileHash !== digest(stable(p))
+    || !exact(implementation, ['version', 'sources']) || implementation.version !== currentImplementation.version
+    || !Array.isArray(implementation.sources) || stable(implementation.sources.map(row => row.path)) !== stable(IMPLEMENTATION_PATHS)
+    || implementation.sources.some(row => !exact(row, ['path', 'sha256']) || !hash(row.sha256))) throw new Error('Unsupported original output contract; preserve its files')
   if (!exact(result, ['schema', 'version', 'status', 'jobKey', 'inputArtifactHash', 'profileHash', 'implementationHash', 'sourceTextHash', 'normalizedTextSha256', 'previewHash', 'audio', 'alignment', 'usage', 'metrics', 'network', 'candidateAccepted', 'adoptionAllowed', 'humanListening'])
     || result.schema !== 'storyforge.ttrpg-local-tts-product-result' || result.version !== 1 || result.status !== 'generated'
-    || result.jobKey !== input.jobKey || result.inputArtifactHash !== input.inputArtifactHash || result.profileHash !== productProfileHash
+    || result.jobKey !== input.jobKey || result.inputArtifactHash !== input.inputArtifactHash || result.profileHash !== input.execution.profileHash
     || result.implementationHash !== digest(stable(p.implementation)) || result.sourceTextHash !== input.execution.source.textHash
     || result.normalizedTextSha256 !== input.execution.reading.normalizedTextSha256 || result.previewHash !== input.execution.reading.previewHash
     || result.candidateAccepted !== false || result.adoptionAllowed !== false || result.humanListening !== 'unproven' || result.network !== 'disabled'

@@ -28,11 +28,12 @@ export function createProductVoiceBridge(runtimeDir, options = {}) {
     try {
       if (req.method === 'GET' && url.pathname === PREFIX + '/profile') return send(res, 200, { kind: 'local-offline-speech-v1', profileHash: productProfileHash, profile: productProfile })
       if (req.method === 'POST' && url.pathname === PREFIX + '/jobs') return send(res, 200, jobs.create(await body(req)))
-      const match = url.pathname.slice(PREFIX.length).match(/^\/jobs\/([^/]+)(?:\/(start|cancel|raw|lease))?$/)
+      const match = url.pathname.slice(PREFIX.length).match(/^\/jobs\/([^/]+)(?:\/(start|cancel|raw|lease|recover-raw))?$/)
       if (!match) return send(res, 404, { error: 'not-found' })
       const jobKey = decodeURIComponent(match[1]), action = match[2]
       if (req.method === 'GET' && !action) return send(res, 200, jobs.get(jobKey))
       if (req.method === 'GET' && action === 'raw') return send(res, 200, jobs.raw(jobKey))
+      if (req.method === 'POST' && action === 'recover-raw') { const value = await body(req); if (Object.keys(value).sort().join(',') !== 'decision,inputArtifactHash' || value.decision !== 'recover-original-complete-raw-without-resending') throw new Error('Explicit original evidence recovery required'); return send(res, 200, jobs.recoverRaw(jobKey, value.inputArtifactHash)) }
       if (req.method === 'POST' && action === 'start') { const value = await body(req); if (Object.keys(value).join(',') !== 'inputArtifactHash') throw new Error('Exact start identity required'); return send(res, 200, jobs.start(jobKey, value.inputArtifactHash)) }
       if (req.method === 'POST' && action === 'lease') { const value = await body(req); if (Object.keys(value).join(',') !== 'inputArtifactHash') throw new Error('Exact lease identity required'); return send(res, 200, jobs.renew(jobKey, value.inputArtifactHash)) }
       if (req.method === 'POST' && action === 'cancel') { const value = await body(req); if (Object.keys(value).join(',') !== 'decision' || value.decision !== 'request-stop-original-local-voice-job') throw new Error('Explicit original stop required'); return send(res, 200, jobs.cancel(jobKey)) }

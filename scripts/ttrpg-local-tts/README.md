@@ -54,6 +54,14 @@ worker 在加载模型前复算原确认读法，完整分段且每段最多 60 
 
 原始结果复核真实 PCM、文件 hash、完整归一文字/段落样本覆盖及模型次数。段落样本边界不能冒充逐字对齐；原始返回不是 CreativeArtifact 候选、试听通过或采用证据。当前真实产品 worker 验收尚待执行，paused/unknown 证据恢复、桌面 UI、候选试听、独立 E16 采用与发行安装继续施工。显式隔离验收用例为 `tests/e2e/ttrpg-open-real-local-voice.spec.ts`，还须同时设置 `VITE_ENABLE_TTRPG_OPEN_PREVIEW=1`、`STORYFORGE_TTRPG_REAL_VOICE_ACCEPTANCE=1` 和上述运行库变量；默认 E2E 移除运行库变量且不会加载模型。旧固定评测和 CPU 预检保留各自权限，不能把合成 PCM 或注入进程当作真实语音或真人听感。
 
+## 原任务的服务端控制与恢复
+
+停止先保存准确 jobKey/input hash 的屏障，即使创建尚未到达也保留；缺失任务只报告 `stop-requested-without-job`，不声称实际停止。后到创建和 spawn 前竞争均检查原屏障，跨控制器续约不能绕过停止；只有实际子进程关闭或本控制器确定未发起 spawn 时才确认相应停止，完整迟到输出保留。
+
+`POST /jobs/:jobKey/recover-raw` 要求明确 `recover-original-complete-raw-without-resending` 和原 input hash。它不创建或启动任务；已知成功关闭沿原输出读取，未知完整输出须核实原控制器/worker 启动身份已结束、无实际 worker，并验证全部文件。恢复类别 `verified-result-worker-absent` 没有伪造退出码。普通 GET 不恢复，缺失证明、活跃/不明进程、损坏文件及已知失败均保留原状。V2 原描述独立归档，读取同一物理合同的旧结果保留原实现 hash，不给旧输入执行权。原始 UTF-8/BOM 与 stdout/stderr 合计 64 KiB 前缀保持明确边界。
+
+这些是服务端原始证据接口；本人正式 Run 查询/停止与检查点恢复、严格候选、试听和 E16 尚须继续接入，不能把本机文件或协议测试当作正式采用或独立听感验收。
+
 ## 来源与许可
 
 - MeloTTS：固定官方代码 `209145371cff8fc3bd60d7be902ea69cbdb7965a`，MIT。只取神经网络内核和中文前端，保留原源码、许可、导数哈希和补丁说明。

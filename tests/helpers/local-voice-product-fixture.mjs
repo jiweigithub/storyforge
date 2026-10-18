@@ -45,7 +45,7 @@ export function syntheticResult(input) {
   let sum = 0, peak = 0
   for (let i = 0; i < samples; i++) { const sample = Math.round(Math.sin(i * .1) * 6000); bytes.writeInt16LE(sample, 44 + i * 2); const value = sample / 32767; sum += value * value; peak = Math.max(peak, Math.abs(value)) }
   const result = { schema: 'storyforge.ttrpg-local-tts-product-result', version: 1, status: 'generated', jobKey: input.jobKey, inputArtifactHash: input.inputArtifactHash,
-    profileHash: productProfileHash, implementationHash: digest(stable(productProfile.implementation)), sourceTextHash: input.execution.source.textHash,
+    profileHash: input.execution.profileHash, implementationHash: digest(stable(input.execution.profile.implementation)), sourceTextHash: input.execution.source.textHash,
     normalizedTextSha256: input.execution.reading.normalizedTextSha256, previewHash: input.execution.reading.previewHash,
     audio: { mimeType: 'audio/wav', byteSize: bytes.length, sha256: digest(bytes), sampleRate: sr, channels: 1, sampleFormat: 's16le', samples, durationMs: Math.round(samples * 1000 / sr) },
     alignment: { kind: 'normalized-reading-segments', wordAlignmentProvided: false, originalPart: input.execution.source.part,

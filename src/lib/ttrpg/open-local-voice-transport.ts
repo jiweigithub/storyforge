@@ -21,7 +21,7 @@ async function boundedBody(response: Response, limit: number): Promise<string> {
   if (Number.isFinite(declared) && declared > limit) { await response.body?.cancel(); throw new Error('本机语音响应超过原传输预算') }
   const reader = response.body?.getReader()
   if (!reader) throw new Error('本机语音响应缺少可核验正文')
-  let bytes = 0; const chunks: string[] = [], decoder = new TextDecoder()
+  let bytes = 0; const chunks: string[] = [], decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
   try {
     while (true) {
       const value = await reader.read()
@@ -64,7 +64,7 @@ export async function createTtrpgOpenLocalVoiceTransportV1(probeSignal?: AbortSi
           return await requestText(url + '/raw', {}, input.signal, Math.ceil(profile.maxAudioBytes / 3) * 4 + 1048576,
             Math.max(1, Math.min(profile.rawResponseTimeoutMs, profile.timeoutMs - (Date.now() - started))))
         }
-        if (['unknown', 'running-observed', 'failed', 'cancelled-confirmed', 'cancelled-before-start'].includes(state.status ?? '')) throw new Error('原语音任务已停止或结果未知，请核查同一任务')
+        if (['unknown', 'running-observed', 'failed', 'cancelled-confirmed', 'cancelled-before-start', 'cancelled-before-spawn', 'stop-requested-without-job'].includes(state.status ?? '')) throw new Error('原语音任务已停止或结果未知，请核查同一任务')
         if (state.status === 'waiting-for-slot' && state.canStart && !startAttempted) {
           // No inference may be queued beyond the actual source/consent check.
           await input.assertCurrentBeforeStart(); input.signal?.throwIfAborted(); startAttempted = true

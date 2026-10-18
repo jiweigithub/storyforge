@@ -105,4 +105,12 @@ describe('R-TTRPGOPEN10 bounded original-job browser transport', () => {
     await expect(createTtrpgOpenLocalVoiceTransportV1()).rejects.toThrow(/预算/)
     expect(cancelled).toHaveBeenCalledTimes(1)
   })
+  it('rejects invalid UTF8 instead of silently replacing bytes, and preserves an original raw BOM without trimming it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([0xc3, 0x28]), { headers: { 'Content-Type': 'application/json' } })))
+    await expect(createTtrpgOpenLocalVoiceTransportV1()).rejects.toThrow()
+    let hash = ''; const key = 'ttrpg.voice.1.' + 'a'.repeat(64), raw = '\uFEFF{"original":"raw"}'
+    const f = await fixture(url => url.endsWith('/raw') ? new Response(raw, { headers: { 'Content-Type': 'application/json' } })
+      : response({ jobKey: key, inputArtifactHash: 'a'.repeat(64), profileHash: hash, status: 'generated', canStart: false })); hash = f.hash
+    expect(await f.transport.execute({ jobKey: key, inputArtifactHash: 'a'.repeat(64), execution: {} as never, assertCurrentBeforeStart: async () => {} })).toBe(raw)
+  })
 })

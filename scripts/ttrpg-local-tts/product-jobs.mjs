@@ -12,6 +12,11 @@ function writeNew(file, value) {
   const directory = openSync(path.dirname(file), 'r'); try { fsyncSync(directory) } finally { closeSync(directory) }
 }
 function atomic(file, value) { const temp = file + '.' + randomUUID() + '.tmp'; writeNew(temp, value); renameSync(temp, file); const dir = openSync(path.dirname(file), 'r'); try { fsyncSync(dir) } finally { closeSync(dir) } }
+function ownedDirectory(dir) {
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const st = lstatSync(dir)
+  if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== process.getuid()) throw new Error('Unsafe owned job directory; preserve it')
+}
 function read(file) {
   const st = lstatSync(file)
   if (!st.isFile() || st.isSymbolicLink() || st.uid !== process.getuid() || st.nlink !== 1 || st.size > 65536) throw new Error('Unsafe owned job record')
@@ -19,7 +24,12 @@ function read(file) {
 }
 function processStart(pid) {
   try { return execFileSync('ps', ['-p', String(pid), '-o', 'lstart='], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LC_ALL: 'C' } }).trim() || null }
-  catch (error) { if (error.status === 1) return null; throw new Error('Cannot observe process identity; preserve the job') }
+  catch (error) {
+    // ps uses exit 1 for an absent PID, but inspection errors can also return
+    // 1. Only an empty, diagnostic-free absence is usable negative evidence.
+    if (error.status === 1 && error.stdout != null && error.stderr != null && !error.stdout.toString().trim() && !error.stderr.toString().trim()) return null
+    throw new Error('Cannot observe process identity; preserve the job')
+  }
 }
 export function createProductVoiceJobs(runtimeDir, options = {}) {
   assertProductImplementation()
@@ -30,6 +40,15 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
   const worker = path.join(base, 'product-worker.py'), injected = typeof options.spawnWorker === 'function'
   let closed = false
   function directory(jobKey) { if (typeof jobKey !== 'string' || !/^ttrpg\.voice\.[1-9][0-9]*\.[a-f0-9]{64}$/.test(jobKey)) throw new Error('Invalid original job key'); return path.join(jobs, digest(jobKey)) }
+  function cancellationFile(jobKey) { directory(jobKey); return path.join(jobs, 'cancellations', digest(jobKey) + '.json') }
+  function persistCancellation(jobKey, reason) {
+    const file = cancellationFile(jobKey)
+    ownedDirectory(path.dirname(file))
+    try { writeNew(file, { jobKey, inputArtifactHash: jobKey.slice(-64), reason, at: Date.now() }) }
+    catch (error) { if (error.code !== 'EEXIST') throw error }
+    const stored = read(file)
+    if (stored.jobKey !== jobKey || stored.inputArtifactHash !== jobKey.slice(-64)) throw new Error('Original cancellation identity changed')
+  }
   function jobData(jobKey) {
     const dir = directory(jobKey)
     if (!existsSync(dir)) return null
@@ -48,13 +67,13 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
     const held = read(physicalSlot)
     if (held.kind !== 'product-voice-physical-slot') return // Never retire an evaluation's lock.
     if (held.jobKey !== claim.jobKey || held.inputArtifactHash !== claim.inputArtifactHash || held.nonce !== claim.nonce) throw new Error('Physical speech slot identity changed')
-    mkdirSync(path.join(jobs, 'lock-history'), { recursive: true, mode: 0o700 })
+    ownedDirectory(path.join(jobs, 'lock-history'))
     renameSync(physicalSlot, path.join(jobs, 'lock-history', 'physical-' + kind + '-' + claim.nonce + '.json'))
   }
   function archiveUnlaunchedLocks(claim, physicalAcquired = true) {
     if (read(lock).nonce !== claim.nonce) throw new Error('Worker lock owner changed')
     if (physicalAcquired) archiveOwnPhysicalSlot(claim, 'not-launched')
-    mkdirSync(path.join(jobs, 'lock-history'), { recursive: true, mode: 0o700 })
+    ownedDirectory(path.join(jobs, 'lock-history'))
     renameSync(lock, path.join(jobs, 'lock-history', 'not-launched-' + claim.nonce + '.json'))
   }
   function retireLockIfObservedAbsent() {
@@ -72,13 +91,14 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
     // or a pinned worker's startup identity observed gone, is required. This
     // releases capacity only; an unconfirmed old job still stays unknown.
     archiveOwnPhysicalSlot(old, 'observed-absent')
-    mkdirSync(path.join(jobs, 'lock-history'), { recursive: true, mode: 0o700 })
+    ownedDirectory(path.join(jobs, 'lock-history'))
     renameSync(lock, path.join(jobs, 'lock-history', 'unconfirmed-' + old.nonce + '.json'))
     return true
   }
   function projection(jobKey) {
     const job = jobData(jobKey)
-    if (!job) return { jobKey, status: 'not-found', canStart: false, cancellationConfirmed: false }
+    if (!job) return { jobKey, status: existsSync(cancellationFile(jobKey)) ? 'stop-requested-without-job' : 'not-found', canStart: false,
+      futureStartBlocked: existsSync(cancellationFile(jobKey)), cancellationConfirmed: false }
     const { dir, input, record } = job, claim = existsSync(path.join(dir, 'start.json')) ? read(path.join(dir, 'start.json')) : null, running = active.get(jobKey)
     let status = record.status, cancellationConfirmed = record.cancellationConfirmed === true
     if (claim?.kind === 'cancelled-before-start') { status = 'cancelled-before-start'; cancellationConfirmed = true }
@@ -101,9 +121,13 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
     writeNew(path.join(dir, 'input.json'), input)
     writeNew(path.join(dir, 'job.json'), { jobKey: input.jobKey, inputArtifactHash: input.inputArtifactHash, status: 'waiting-for-slot', createdAt: Date.now(),
       workerExecutionKind: injected ? 'injected-test-worker' : 'pinned-offline-worker', cancellationConfirmed: false })
+    if (existsSync(cancellationFile(input.jobKey))) return cancel(input.jobKey, 'persisted-original-cancel-before-create')
     return projection(input.jobKey)
   }
   function cancel(jobKey, reason = 'explicit-user-cancel') {
+    // Persist before looking for the job. A cancelled request may still be
+    // between browser dispatch and backend create; missing files prove no stop.
+    persistCancellation(jobKey, reason)
     const job = jobData(jobKey)
     if (!job) return projection(jobKey)
     const file = path.join(job.dir, 'cancel-request.json')
@@ -125,6 +149,7 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
     if (closed) throw new Error('Speech service closed')
     assertProductImplementation(); const job = jobData(jobKey)
     if (!job || job.input.inputArtifactHash !== inputArtifactHash) throw new Error('Original speech input not found')
+    if (existsSync(cancellationFile(jobKey))) return cancel(jobKey, 'original-stop-already-persisted')
     if (existsSync(path.join(job.dir, 'start.json')) || existsSync(path.join(job.dir, 'cancel-request.json'))) return projection(jobKey)
     validateProductJob(job.input)
     if (existsSync(path.join(runtime, '.setup.lock')) || !retireLockIfObservedAbsent() || existsSync(physicalSlot)) return projection(jobKey)
@@ -152,6 +177,12 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
     atomic(path.join(job.dir, 'job.json'), { ...job.record, status: 'launch-recorded', launchNonce: nonce })
     let leaseSequence = 1, leaseDue = process.hrtime.bigint() + BigInt(profile.authorizationLeaseMs) * 1000000n
     atomic(path.join(job.dir, 'lease.json'), { jobKey, inputArtifactHash, launchNonce: nonce, sequence: leaseSequence, expiresAt: Date.now() + profile.authorizationLeaseMs })
+    if (existsSync(cancellationFile(jobKey)) || existsSync(path.join(job.dir, 'cancel-request.json'))) {
+      atomic(path.join(job.dir, 'job.json'), { ...job.record, status: 'cancelled-before-spawn', launchNonce: nonce, cancellationConfirmed: true,
+        terminal: { kind: 'own-launch-prevented', at: Date.now() } })
+      archiveUnlaunchedLocks(claim)
+      return projection(jobKey)
+    }
     let child
     try {
       child = injected ? options.spawnWorker(job.dir, job.input) : spawn(path.join(runtime, 'venv/bin/python3'), ['-I', worker, '--runtime-dir', runtime, '--job-dir', job.dir], {
@@ -172,16 +203,17 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
     }
     active.set(jobKey, { child, stop, renew() {
       if (terminal || stopped) throw new Error('Original worker is not renewably active')
+      if (existsSync(cancellationFile(jobKey)) || existsSync(path.join(job.dir, 'cancel-request.json'))) { stop('persisted-original-cancel'); throw new Error('Original cancellation already persisted') }
       if (process.hrtime.bigint() >= leaseDue) { stop('original-authorization-lease-expired'); throw new Error('Original authorization lease already expired') }
       leaseSequence++
       atomic(path.join(job.dir, 'lease.json'), { jobKey, inputArtifactHash, launchNonce: nonce, sequence: leaseSequence, expiresAt: Date.now() + profile.authorizationLeaseMs })
       leaseDue = process.hrtime.bigint() + BigInt(profile.authorizationLeaseMs) * 1000000n
     } })
     for (const name of ['stdout', 'stderr']) child[name]?.on('data', data => {
-      const remaining = profile.maxDiagnosticBytes - counts[name]
+      const remaining = profile.maxDiagnosticBytes - counts.stdout - counts.stderr
       if (remaining > 0) appendFileSync(path.join(job.dir, name + '.log'), data.subarray(0, remaining), { mode: 0o600 })
       counts[name] += data.length
-      if (counts[name] > profile.maxDiagnosticBytes) { truncated[name] = true; stop('diagnostic-output-limit') }
+      if (counts.stdout + counts.stderr > profile.maxDiagnosticBytes) { truncated[name] = true; stop('diagnostic-output-limit') }
     })
     const deadline = setTimeout(() => stop('profile-deadline'), profile.timeoutMs); deadline.unref()
     const leaseTimer = setInterval(() => { if (process.hrtime.bigint() > leaseDue) stop('original-authorization-lease-expired') }, 500); leaseTimer.unref()
@@ -189,13 +221,14 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
     child.once('close', (code, signal) => {
       terminal = true; clearTimeout(deadline); clearTimeout(leaseTimer); clearTimeout(killTimer); active.delete(jobKey)
       const result = existsSync(path.join(job.dir, 'result.json'))
-      const status = code === 0 && result ? 'generated' : stopped ? 'cancelled-confirmed' : 'failed'
+      const cancelled = stopped || existsSync(cancellationFile(jobKey)) || existsSync(path.join(job.dir, 'cancel-request.json'))
+      const status = code === 0 && result ? 'generated' : cancelled ? 'cancelled-confirmed' : 'failed'
       try {
-        atomic(path.join(job.dir, 'job.json'), { ...job.record, status, launchNonce: nonce, cancellationConfirmed: stopped && status !== 'generated',
-          lateResult: stopped && status === 'generated', diagnostics: { counts, truncated }, terminal: { kind: 'observed-child-close', code, signal, at: Date.now() } })
+        atomic(path.join(job.dir, 'job.json'), { ...job.record, status, launchNonce: nonce, cancellationConfirmed: cancelled && status !== 'generated',
+          lateResult: cancelled && status === 'generated', diagnostics: { counts, truncated }, terminal: { kind: 'observed-child-close', code, signal, at: Date.now() } })
         if (existsSync(lock) && read(lock).nonce === nonce) {
           archiveOwnPhysicalSlot(claim, 'terminal')
-          mkdirSync(path.join(jobs, 'lock-history'), { recursive: true, mode: 0o700 })
+          ownedDirectory(path.join(jobs, 'lock-history'))
           renameSync(lock, path.join(jobs, 'lock-history', 'terminal-' + nonce + '.json'))
         }
       } catch { /* Keep the original files/claim. Reading projects unknown; no retry or false stop receipt. */ }
@@ -203,19 +236,41 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
     atomic(path.join(job.dir, 'job.json'), { ...job.record, status: 'running', launchNonce: nonce, childPid: child.pid ?? null })
     return projection(jobKey)
   }
-  function raw(jobKey) {
-    const job = jobData(jobKey), state = projection(jobKey)
-    if (!job || state.status !== 'generated' || job.record.terminal?.kind !== 'observed-child-close' || job.record.terminal.code !== 0) throw new Error('No observed complete raw speech result; inspect the original job')
+  function verifiedOutput(job) {
     const result = read(path.join(job.dir, 'result.json')), wavPath = path.join(job.dir, 'audio.wav'), st = lstatSync(wavPath)
     if (!st.isFile() || st.isSymbolicLink() || st.uid !== process.getuid() || st.nlink !== 1 || st.size > profile.maxAudioBytes || st.size < 46) throw new Error('Invalid owned audio output')
     const bytes = readFileSync(wavPath); verifyProductResult(result, bytes, job.input)
+    return { result, bytes }
+  }
+  function raw(jobKey) {
+    const job = jobData(jobKey), state = projection(jobKey), terminal = job?.record.terminal
+    if (!job || state.status !== 'generated' || !(terminal?.kind === 'observed-child-close' && terminal.code === 0
+      || terminal?.kind === 'verified-result-worker-absent')) throw new Error('No observed complete raw speech result; inspect the original job')
+    const { result, bytes } = verifiedOutput(job)
+    if (terminal.kind === 'verified-result-worker-absent' && (terminal.resultHash !== digest(stable(result)) || terminal.audioHash !== digest(bytes))) throw new Error('Recovered original output changed')
     return { schema: 'storyforge.ttrpg-local-tts-product-raw-response', version: 1, result, workerExecutionKind: state.workerExecutionKind,
-      cancellationRequested: state.cancellationRequested, audio: { encoding: 'base64', data: bytes.toString('base64') }, candidateAccepted: false, adoptionAllowed: false }
+      completionEvidence: terminal.kind, cancellationRequested: state.cancellationRequested, audio: { encoding: 'base64', data: bytes.toString('base64') }, candidateAccepted: false, adoptionAllowed: false }
+  }
+  function recoverRaw(jobKey, inputArtifactHash) {
+    const job = jobData(jobKey)
+    if (!job || job.input.inputArtifactHash !== inputArtifactHash) throw new Error('Original speech input not found')
+    if (job.record.status === 'generated') return raw(jobKey)
+    if (job.record.terminal) throw new Error('Original known terminal is retained; recovery cannot erase it')
+    const claim = read(path.join(job.dir, 'start.json')), started = read(path.join(job.dir, 'worker-started.json'))
+    if (active.has(jobKey) || claim.kind !== 'start-authorized' || claim.jobKey !== jobKey || claim.inputArtifactHash !== inputArtifactHash
+      || typeof claim.nonce !== 'string' || !/^[a-f0-9-]{36}$/.test(claim.nonce) || job.record.launchNonce !== claim.nonce
+      || !claim.owner?.start || !Number.isSafeInteger(claim.owner.pid) || claim.owner.pid < 1 || processStart(claim.owner.pid) === claim.owner.start
+      || started.jobKey !== jobKey || started.inputArtifactHash !== inputArtifactHash || started.launchNonce !== claim.nonce
+      || !started.processStart || !Number.isSafeInteger(started.pid) || started.pid < 1 || processStart(started.pid) === started.processStart || liveWorker(job.dir)) throw new Error('Original owner/worker is live or unconfirmed; preserve unknown')
+    const { result, bytes } = verifiedOutput(job)
+    atomic(path.join(job.dir, 'job.json'), { ...job.record, status: 'generated', cancellationConfirmed: false,
+      lateResult: existsSync(path.join(job.dir, 'cancel-request.json')), terminal: { kind: 'verified-result-worker-absent', at: Date.now(), resultHash: digest(stable(result)), audioHash: digest(bytes) } })
+    return raw(jobKey)
   }
   function renew(jobKey, inputArtifactHash) {
     const job = jobData(jobKey), run = active.get(jobKey)
     if (!job || job.input.inputArtifactHash !== inputArtifactHash || !run) throw new Error('Original live worker cannot be renewed from an unknown job')
     run.renew(); return projection(jobKey)
   }
-  return { create, get: projection, start, cancel, renew, raw, close() { closed = true; for (const [key] of active) cancel(key, 'owning-service-closed') } }
+  return { create, get: projection, start, cancel, renew, raw, recoverRaw, close() { closed = true; for (const [key] of active) cancel(key, 'owning-service-closed') } }
 }
