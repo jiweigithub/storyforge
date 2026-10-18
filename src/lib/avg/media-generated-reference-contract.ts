@@ -56,25 +56,36 @@ export interface AvgGeneratedReferenceSourceV3 extends Omit<AvgGeneratedReferenc
     schema:'storyforge.avg.image-revalidation-producer-proof';version:1;noProviderRequest:true;revalidationEvidenceHash:string}
   original:AvgVisualRawReuseSourceV4
 }
-export type AvgGeneratedImageSource=AvgGeneratedReferenceSourceV1|AvgGeneratedReferenceSourceV2|AvgGeneratedReferenceSourceV3|AvgGeneratedReferenceSourceV4
+/** V5/raw2 policy semantics keep an explicitly tagged original provenance.
+ * Parsing never proves actual producer, author observation or usage rights. */
+export interface AvgGeneratedReferenceSourceV5 extends Omit<AvgGeneratedReferenceSourceV2,'version'|'raw'>{
+  version:5
+  raw:Omit<AvgGeneratedReferenceSourceV2['raw'],'version'>&{version:5}
+}
+export type AvgGeneratedImageSource=AvgGeneratedReferenceSourceV1|AvgGeneratedReferenceSourceV2|AvgGeneratedReferenceSourceV3|AvgGeneratedReferenceSourceV4|AvgGeneratedReferenceSourceV5
 
 /** Structural original HTTP proof only. Every consumer must independently
  * verify the actual portable producer and bytes; parsing grants no use. */
 export function parseAvgVisualRawProducerProofV4(value:unknown,requirementKey:string):AvgGeneratedReferenceSourceV2['raw'] {
+  return parseAvgVisualRawProducerProof(value,requirementKey,4)
+}
+export function parseAvgVisualRawProducerProofV5(value:unknown,requirementKey:string):AvgGeneratedReferenceSourceV5['raw'] {
+  return parseAvgVisualRawProducerProof(value,requirementKey,5)
+}
+function parseAvgVisualRawProducerProof<V extends 4|5>(value:unknown,requirementKey:string,version:V) {
   const p=avgRecord(value,['schema','version','buildNumber','briefHash','planHash','controlEpoch','taskKey','artifactKey','artifactVersion','contentHash','inputHash','producerReceiptHash','candidateHash','responseEvidenceHash','proofHash'],'V4 image producer')
-  if(p.schema!=='storyforge.avg.visual-image-producer-proof'||p.version!==4||p.taskKey!==`avg.media.generate.${requirementKey}`||p.artifactKey!==`avg.media.raw.${requirementKey}`)throw new Error('[avg-visual-history] 来源不是准确 V4 图片 producer')
-  return {schema:p.schema,version:4,buildNumber:avgNumber(p.buildNumber,'source.buildNumber',1,1e9),
+  if(p.schema!=='storyforge.avg.visual-image-producer-proof'||p.version!==version||p.taskKey!==`avg.media.generate.${requirementKey}`||p.artifactKey!==`avg.media.raw.${requirementKey}`)throw new Error('[avg-visual-history] 来源不是准确 V4 图片 producer')
+  return {schema:'storyforge.avg.visual-image-producer-proof' as const,version,buildNumber:avgNumber(p.buildNumber,'source.buildNumber',1,1e9),
     briefHash:avgHash(p.briefHash,'source.briefHash'),planHash:avgHash(p.planHash,'source.planHash'),controlEpoch:avgNumber(p.controlEpoch,'source.controlEpoch',0,1e9),
     taskKey:p.taskKey,artifactKey:p.artifactKey,artifactVersion:avgNumber(p.artifactVersion,'source.artifactVersion',1,1e9),
     contentHash:avgHash(p.contentHash,'source.contentHash'),inputHash:avgHash(p.inputHash,'source.inputHash'),producerReceiptHash:avgHash(p.producerReceiptHash,'source.producerReceiptHash'),
     candidateHash:avgHash(p.candidateHash,'source.candidateHash'),responseEvidenceHash:avgHash(p.responseEvidenceHash,'source.responseEvidenceHash'),proofHash:avgHash(p.proofHash,'source.proofHash')}
 }
 
-export function parseAvgGeneratedReferenceSourceV2(value:unknown):AvgGeneratedReferenceSourceV2 {
+function parseOriginalImageSourceFields<V extends 2|5>(value:unknown,version:V) {
   const r=avgRecord(value,['schema','version','productionKey','requirementKey','raw','compilation','choice','review'],'V4 image source')
-  if(r.schema!=='storyforge.avg.generated-reference-source'||r.version!==2)throw new Error('[avg-visual-history] 图片来源版本无效')
+  if(r.schema!=='storyforge.avg.generated-reference-source'||r.version!==version)throw new Error('[avg-visual-history] 图片来源版本无效')
   const requirementKey=avgKey(r.requirementKey,'source.requirementKey')
-  const raw=parseAvgVisualRawProducerProofV4(r.raw,requirementKey)
   const c=avgRecord(r.compilation,['artifactKey','version','contentHash'],'V4 image compilation')
   if(c.artifactKey!=='avg.media.compiled-visual-requirements')throw new Error('[avg-visual-history] 原编译来源不匹配')
   const author=(value:unknown,key:string)=>{
@@ -82,9 +93,20 @@ export function parseAvgGeneratedReferenceSourceV2(value:unknown):AvgGeneratedRe
     if(a.artifactKey!==key)throw new Error('[avg-visual-history] 原作者来源不匹配')
     return {artifactKey:key,version:avgNumber(a.version,'source.authorVersion',1,1e9),contentHash:avgHash(a.contentHash,'source.authorContentHash'),authorReceiptHash:avgHash(a.authorReceiptHash,'source.authorReceiptHash')}
   }
-  return {schema:r.schema,version:2,productionKey:avgKey(r.productionKey,'source.productionKey'),requirementKey,raw,
-    compilation:{artifactKey:c.artifactKey,version:avgNumber(c.version,'source.compilationVersion',1,1e9),contentHash:avgHash(c.contentHash,'source.compilationHash')},
+  return {schema:'storyforge.avg.generated-reference-source' as const,version,rawValue:r.raw,productionKey:avgKey(r.productionKey,'source.productionKey'),requirementKey,
+    compilation:{artifactKey:'avg.media.compiled-visual-requirements' as const,version:avgNumber(c.version,'source.compilationVersion',1,1e9),contentHash:avgHash(c.contentHash,'source.compilationHash')},
     choice:author(r.choice,`avg.media.choice.${requirementKey}`),review:author(r.review,`avg.review.visual.${requirementKey}`)}
+}
+
+export function parseAvgGeneratedReferenceSourceV2(value:unknown):AvgGeneratedReferenceSourceV2 {
+  const source=parseOriginalImageSourceFields(value,2)
+  return {schema:source.schema,version:source.version,productionKey:source.productionKey,requirementKey:source.requirementKey,
+    raw:parseAvgVisualRawProducerProofV4(source.rawValue,source.requirementKey),compilation:source.compilation,choice:source.choice,review:source.review}
+}
+export function parseAvgGeneratedReferenceSourceV5(value:unknown):AvgGeneratedReferenceSourceV5 {
+  const source=parseOriginalImageSourceFields(value,5)
+  return {schema:source.schema,version:source.version,productionKey:source.productionKey,requirementKey:source.requirementKey,
+    raw:parseAvgVisualRawProducerProofV5(source.rawValue,source.requirementKey),compilation:source.compilation,choice:source.choice,review:source.review}
 }
 
 export function parseAvgImageRevalidationProducerProofV1(value:unknown,requirementKey:string):AvgGeneratedReferenceSourceV3['raw']{
@@ -125,6 +147,7 @@ export function parseAvgGeneratedReferenceSourceV3(value:unknown):AvgGeneratedRe
 }
 
 export function parseAvgGeneratedImageSource(value:unknown):AvgGeneratedImageSource {
+  if(value&&typeof value==='object'&&'version'in value&&value.version===5)return parseAvgGeneratedReferenceSourceV5(value)
   if(value&&typeof value==='object'&&'version'in value&&value.version===4)return parseAvgGeneratedReferenceSourceV4(value)
   if(value&&typeof value==='object'&&'version'in value&&value.version===3)return parseAvgGeneratedReferenceSourceV3(value)
   return value&&typeof value==='object'&&'version'in value&&value.version===2

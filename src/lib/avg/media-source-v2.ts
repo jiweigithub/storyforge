@@ -2,9 +2,9 @@ import { canonicalProductProductionJsonV2,hashProductProductionValueV2 } from '.
 import { parseAvgVisualProductionBatchV2,type AvgVisualProductionBatchV2 } from './media-production-contract-v2'
 import { composeAvgCharacterFamilyRequirementsV2,hashAvgCharacterFamilyProposalV2 } from './character-family-contract-v2'
 import { avgVisualPlanningTemplateRequirementsV2,parseAvgVisualPlanningScopeV2,type AvgVisualPlanningScopeV2 } from './visual-planning-contract-v2'
-import { avgMediaBriefArtifactKeyV1,parseAvgMediaBriefV1,parseAvgVisualBibleV1 } from './visual-planning-contract'
+import { parseAvgMediaBriefV1,parseAvgVisualBibleV1 } from './visual-planning-contract'
 import { assertAvgMediaConsumerDeclarationsV1,assertAvgVisualRequirementSourceConsumersV1,composeAvgVisualPlanningRequirementsV1,
-  hasAvgVisualPlanningSubjectV1,hashAvgMediaSourceInputV1,normalizeAvgMediaSourceInputV1,type AvgMediaSourceInputV1 } from './media-source'
+  hasAvgVisualPlanningSubjectV1,hashAvgMediaBriefInputsV1,hashAvgMediaSourceInputV1,normalizeAvgMediaSourceInputV1,type AvgMediaSourceInputV1 } from './media-source'
 import { avgList,avgProtocolBody,avgRecord,avgUnique } from './protocol-validation'
 
 /** The existing rules/text owner and consumers remain authoritative. New
@@ -57,8 +57,7 @@ export async function compileAvgVisualPlanningProposalV2(input:{scope:unknown;vi
     batchKey:scope.batchKey,revision:scope.revision,aspectRatio:scope.aspectRatio,sourceInputHash:scope.sourceInputHash,
     visualReviewPolicy:'author-visual-v1',requirements},source)
   assertAvgMediaConsumerDeclarationsV1(batch,source.systemPlan)
-  const mediaBriefs=await Promise.all([...briefs].sort((a,b)=>a.subjectKey<b.subjectKey?-1:a.subjectKey>b.subjectKey?1:0).map(async brief=>({
-    artifactKey:avgMediaBriefArtifactKeyV1(brief.subjectKind,brief.subjectKey),contentHash:await hashProductProductionValueV2(brief)})))
+  const mediaBriefs=await hashAvgMediaBriefInputsV1(briefs)
   return {schema:'storyforge.avg.visual-planning-proposal' as const,version:2 as const,batch,
     inputHashes:{scope:await hashProductProductionValueV2(scope),visualBible:await hashProductProductionValueV2(bible),mediaBriefs},
     batchHash:await hashProductProductionValueV2(batch)}

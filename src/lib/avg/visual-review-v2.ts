@@ -1,4 +1,4 @@
-import type { ProductBuildArtifactRecordV1,ProductProductionBriefV3,WorkspaceScope } from '../types'
+import type { FrozenRuntimeMediaAssetV2,ProductBuildArtifactRecordV1,ProductProductionBriefV3,WorkspaceScope } from '../types'
 import { readAvgDraftReferenceBytesV2 } from './editor-service'
 import { assertAvgConsumedRawImageV5 } from './image-consumption-v5'
 import { assertAvgVisualObservationScopeV1,assertAvgVisualObservationSelectableV1,validateAvgVisualObservedBytesV1 } from './visual-review'
@@ -11,10 +11,17 @@ export async function validateAvgAuthorVisualReviewV2(input:{scope:WorkspaceScop
   const raw=await assertAvgConsumedRawImageV5({...input,row:input.raw}),report=parseAvgAuthorVisualReviewV2(input.payload)
   if(!raw.compiled.definition.mediaBatch.visualReviewPolicy)throw new Error('[avg-review] 新版批次未声明作者评审合同')
   if(input.processed||raw.compiled.planning.imageProcessing?.entries.some(e=>e.requirementKey===raw.requirement.requirementKey))throw new Error('[avg-review] 新版加工评审接线尚未完成，不能改用原图绕过')
-  assertAvgVisualObservationScopeV1(report,raw.requirement,input.raw.contentHash)
-  await assertAvgReferencePolicyReviewV2(report,raw.requirement)
-  return validateAvgVisualObservedBytesV1({scope:input.scope,report,requirement:raw.requirement,image:input.raw,asset:raw.asset,
-    readReference:reference=>readAvgDraftReferenceBytesV2(input.scope,reference,raw.requirement.family)})
+  return validateAvgAuthorVisualReviewFromSourceV2({scope:input.scope,payload:report,requirement:raw.requirement,image:input.raw,asset:raw.asset})
+}
+/** Original source authority is proved by the versioned caller. Observation
+ * and exact Work bytes use the same checks for current and historical reads. */
+export async function validateAvgAuthorVisualReviewFromSourceV2(input:{scope:WorkspaceScope;payload:unknown;
+  requirement:AvgVisualProductionRequirementV2;image:ProductBuildArtifactRecordV1;asset:FrozenRuntimeMediaAssetV2}){
+  const report=parseAvgAuthorVisualReviewV2(input.payload),{requirement:r}=input
+  assertAvgVisualObservationScopeV1(report,r,input.image.contentHash)
+  await assertAvgReferencePolicyReviewV2(report,r)
+  return validateAvgVisualObservedBytesV1({scope:input.scope,report,requirement:r,image:input.image,asset:input.asset,
+    readReference:reference=>readAvgDraftReferenceBytesV2(input.scope,reference,r.family)})
 }
 export async function assertAvgVisualReviewSelectableV2(value:unknown,requirement:AvgVisualProductionRequirementV2,rawHash:string){
   const report=parseAvgAuthorVisualReviewV2(value)

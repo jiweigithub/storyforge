@@ -4,10 +4,10 @@ import type { WorkspaceScope } from '../types'
 import { assertRecordInScope, resolveScope } from '../workspace/scope'
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
-import { readAvgAdoptedGeneratedReferenceChoiceV1, readAvgAdoptedGeneratedReferenceChoiceV4,readAvgAdoptedRevalidatedImageChoiceV4,readAvgAdoptedProcessedVisualChoiceV4 } from './author-artifacts'
+import { readAvgAdoptedGeneratedReferenceChoiceV1, readAvgAdoptedGeneratedReferenceChoiceV4,readAvgAdoptedRevalidatedImageChoiceV4,readAvgAdoptedProcessedVisualChoiceV4,readAvgAdoptedGeneratedReferenceChoiceV5 } from './author-artifacts'
 import { parseAvgAuthorMediaChoice } from './media-production-contract'
 import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
-import { parseAvgGeneratedReferenceSourceV1, parseAvgGeneratedReferenceSourceV2, parseAvgGeneratedReferenceSourceV3, parseAvgGeneratedImageSource,
+import { parseAvgGeneratedReferenceSourceV1, parseAvgGeneratedReferenceSourceV2, parseAvgGeneratedReferenceSourceV3, parseAvgGeneratedReferenceSourceV5, parseAvgGeneratedImageSource,
   type AvgGeneratedReferenceSourceV1, type AvgGeneratedImageSource } from './media-generated-reference-contract'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V1, type AvgMediaReferenceV1 } from './media-reference-contract'
 import { parseAvgGeneratedReferenceSourceV4 } from './visual-processed-source-contract'
@@ -75,6 +75,10 @@ const sourceOfV4=(e:Awaited<ReturnType<typeof readAvgAdoptedGeneratedReferenceCh
   schema:'storyforge.avg.generated-reference-source',version:2,productionKey:e.productionKey,requirementKey:e.choice.requirementKey,
   raw:e.rawProof,compilation:e.compilation,choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})
 
+const sourceOfV5=(e:Awaited<ReturnType<typeof readAvgAdoptedGeneratedReferenceChoiceV5>>)=>parseAvgGeneratedReferenceSourceV5({
+  schema:'storyforge.avg.generated-reference-source',version:5,productionKey:e.productionKey,requirementKey:e.choice.requirementKey,
+  raw:e.rawProof,compilation:e.compilation,choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})
+
 const sourceOfRevalidatedV4=(e:Awaited<ReturnType<typeof readAvgAdoptedRevalidatedImageChoiceV4>>)=>parseAvgGeneratedReferenceSourceV3({
   schema:'storyforge.avg.generated-reference-source',version:3,productionKey:e.productionKey,requirementKey:e.choice.requirementKey,
   raw:e.rawProof,original:e.original,compilation:e.compilation,choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})
@@ -91,6 +95,11 @@ export async function prepareAvgAdoptedGeneratedImageV2(input:{scope:WorkspaceSc
   if(!row||row.status!=='accepted'||!row.artifactKey.startsWith('avg.media.choice.')||!await assertRecordInScope(scope,'productBuildArtifacts',row,{owner:'work'}))throw new Error('[avg-media] 需要当前作品准确的已采用生成图')
   const build=await db.productBuilds.get(row.buildId),brief=build?await db.productProductionBriefs.where('[productionId+revision]').equals([build.productionId,build.briefRevision]).first():null
   if(!brief||!JSON.parse(brief.briefJson).avgVisualPlanning)return prepareAvgAdoptedGeneratedImageV1(input)
+  if(JSON.parse(brief.briefJson).avgVisualPlanning.version===5){
+    const evidence=await readAvgAdoptedGeneratedReferenceChoiceV5({scope,buildId:row.buildId,controlEpoch:row.controlEpoch,
+      artifactKey:row.artifactKey,version:row.version,contentHash:row.contentHash})
+    return {asset:evidence.choice.asset,source:sourceOfV5(evidence),referenceOnly:evidence.choice.referenceOnly,sourceWorldContentHash:evidence.sourceWorldContentHash}
+  }
   if(JSON.parse(brief.briefJson).avgVisualPlanning.imageProcessing?.entries.some((e:{requirementKey:string})=>row.artifactKey===`avg.media.choice.${e.requirementKey}`)){
     const evidence=await readAvgAdoptedProcessedVisualChoiceV4({scope,buildId:row.buildId,controlEpoch:row.controlEpoch,
       artifactKey:row.artifactKey,version:row.version,contentHash:row.contentHash})
@@ -117,6 +126,7 @@ export async function readAvgAdoptedGeneratedImageV2(input:{scope:WorkspaceScope
   if(!build?.id||build.briefHash!==source.raw.briefHash||build.planHash!==source.raw.planHash||!await assertRecordInScope(scope,'productBuilds',build,{owner:'work'}))throw new Error('[avg-visual-history] 原图版本已变化')
   const boundary={scope,buildId:build.id,controlEpoch:source.raw.controlEpoch,...source.choice}
   const {evidence,proved}=await(async()=>{
+    if(source.version===5){const e=await readAvgAdoptedGeneratedReferenceChoiceV5(boundary);return {evidence:e,proved:sourceOfV5(e)}}
     if(source.version===4){const e=await readAvgAdoptedProcessedVisualChoiceV4(boundary);return {evidence:e,proved:sourceOfProcessedV4(e)}}
     if(source.version===3){const e=await readAvgAdoptedRevalidatedImageChoiceV4(boundary);return {evidence:e,proved:sourceOfRevalidatedV4(e)}}
     const e=await readAvgAdoptedGeneratedReferenceChoiceV4(boundary);return {evidence:e,proved:sourceOfV4(e)}

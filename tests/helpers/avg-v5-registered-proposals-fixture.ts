@@ -21,19 +21,24 @@ import type { ProductBuildArtifactRecordV1 } from '../../src/lib/types'
  * caller opens only the closed feature fence in isolated fake-indexeddb data;
  * original model bytes travel through the real configured runner and HTTP. */
 export async function avgV5RegisteredProposalsFixture(options:{malformed?:boolean;missingGeneratedProof?:boolean;onResponse?:()=>Promise<void>;
-  imageResponse?:(body:Record<string,unknown>,index:number)=>Promise<Response>;imageAdapterId?:AvgImageAdapterIdV4}={}){
+  imageResponse?:(body:Record<string,unknown>,index:number)=>Promise<Response>;imageAdapterId?:AvgImageAdapterIdV4;progress?:(phase:string)=>void}={}){
+  options.progress?.('owner:begin')
   const {owner,author,brief}=await avgV5FormalFixture(),calls:Array<{body:any;packet:any}>=[],imageCalls:Array<Record<string,unknown>>=[]
+  options.progress?.('owner:ready')
   if(options.imageResponse)for(const b of author.mediaBriefs)for(const output of b.outputs)output.prompt+=` 工程目标 ${output.requirementKey}`
   const data=await deterministicRegionMapPngV1({width:32,height:32,palette:['#253746','#9f8772','#d1cbb8']})
+  options.progress?.('reference-png:ready')
   const catalog=[]
   for(const entry of brief.avgVisualPlanning.scope.referenceCatalog){
     const asset=await importAvgMediaV1({scope:owner.scope,data,mimeType:'image/png',kind:'background',name:`原创工程参考 ${entry.referenceKey}`,
       license:'本测试原创色块；只证明字节和授权声明流，不证明人物身份或商用质量',altText:'原创色块',characterTag:''})
     catalog.push({...entry,reference:{...entry.reference,assetKey:asset.assetKey,assetVersion:asset.version,contentHash:asset.contentHash,byteSize:asset.byteSize,license:asset.license}})
   }
+  options.progress?.('reference-imports:ready')
   if(options.missingGeneratedProof)catalog[0].reference.generatedSource=absentAvgV5GeneratedProof(catalog[0].reference.contentHash)
   const {sourceInputHash:_hash,aspectRatio:_ratio,...unhashed}=brief.avgVisualPlanning.scope
   brief.avgVisualPlanning.scope=await freezeAvgVisualPlanningScopeV2({...unhashed,referenceCatalog:catalog},author.source)
+  options.progress?.('scope:ready')
   const text=await resolveConfiguredTextCapabilityV1({projectId:owner.scope.projectId,category:'product-production',requirementKey:'avg.visual.planning.text'})
   brief.capabilityRequirements.find(c=>c.mediaClass==='text')!.capabilityHash=text.receipt.capabilityHash
   const imageAdapterId=options.imageAdapterId??'agnes.image-2.1-flash.v1',imageRequirement=brief.capabilityRequirements.find(c=>c.mediaClass==='image')!
@@ -49,6 +54,7 @@ export async function avgV5RegisteredProposalsFixture(options:{malformed?:boolea
   const started=await executeProductProductionCommand({scope:owner.scope,productionId:owner.productionId,command:{type:'authorize-start',commandId:'v5.actual.start',
     expectedStateRevision:prepared.production.stateRevision,briefRevision:prepared.brief!.revision,briefHash:prepared.brief!.briefHash,authorizationNonce:'explicit-isolated-engineering-author-start'}})
   if(!started.ok)throw new Error(JSON.stringify(started))
+  options.progress?.('actual-start:ready')
   const details=await readProductProductionDetailsV1(owner.scope,owner.productionId,['avg']),buildId=details.build!.id!
   const fetcher=vi.fn(async(target:RequestInfo|URL,init?:RequestInit)=>{
     if(options.imageResponse&&String(target)==='https://v5-proposal.fixture.invalid/v1/images/generations'){
@@ -57,6 +63,7 @@ export async function avgV5RegisteredProposalsFixture(options:{malformed?:boolea
     if(String(target)!=='https://v5-proposal.fixture.invalid/v1/chat/completions')throw new Error('Unexpected network route; V5 proposal checks never generate images')
     const body=JSON.parse(String(init?.body)),context=String(body.messages.find((m:{role:string})=>m.role==='user').content)
     const packet=JSON.parse(context.slice(context.indexOf('{'),context.lastIndexOf('}')+1));calls.push({body,packet})
+    options.progress?.(`role-http:${calls.length}`)
     const payload=String(body.messages.find((m:{role:string})=>m.role==='system').content).includes('storyforge.avg.visual-bible')?author.visualBible
       :author.mediaBriefs.find(b=>b.subjectKey===packet.subjects[0].subjectKey)!
     await options.onResponse?.()
@@ -67,6 +74,7 @@ export async function avgV5RegisteredProposalsFixture(options:{malformed?:boolea
   const capabilityBindings=[{requirementKey:text.receipt.requirementKey,adapterId:text.receipt.adapterId,bindingHash:text.receipt.capabilityHash,provider:text.receipt.provider,model:text.receipt.model},image.binding]
   const s={...owner,author,brief:parsed,buildId,executor,capabilityBindings,calls,imageCalls,image,fetcher}
   await runProductProductionSchedulerCycleV1(s)
+  options.progress?.('initial-cycle:ready')
   const build=(await db.productBuilds.get(buildId))!,plan=parseProductProductionPlanV3(build.planJson,parsed,build.briefHash)
   return {...s,plan}
 }

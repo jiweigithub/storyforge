@@ -68,7 +68,8 @@ describe('AVG V5 explicit reference policy review and original author choice',()
     expect(()=>assertAvgVisualReviewRevisionV2(old,partial)).toThrow()
   })
   it('stages/adopts actual unknown and blocking reports, then requires explicit passing review and a separate exact choice',async()=>{
-    const s=await avgV5MediaReviewFixture(),raw=s.rows.find(r=>r.mediaKind==='background')!,r=s.compiled.definition.mediaBatch.requirements.find(r=>raw.artifactKey===`avg.media.raw.${r.requirementKey}`)!
+    const started=performance.now(),progress=(phase:string)=>console.info('[avg-v5-review-phase]',phase,Math.round(performance.now()-started))
+    const s=await avgV5MediaReviewFixture(progress),raw=s.rows.find(r=>r.mediaKind==='background')!,r=s.compiled.definition.mediaBatch.requirements.find(r=>raw.artifactKey===`avg.media.raw.${r.requirementKey}`)!
     useAIConfigStore.getState().setConfig({...useAIConfigStore.getState().config,apiKey:''})
     const base={scope:s.scope,productionId:s.productionId,requirementKey:r.requirementKey,rawVersion:raw.version,rawContentHash:raw.contentHash,
       declaration:'明确模拟作者工程审查；只证明候选/采用/选用边界，不签真实艺术或商业质量'}

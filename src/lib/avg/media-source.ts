@@ -167,6 +167,17 @@ export function composeAvgVisualPlanningRequirementsV1<R>(scope:Pick<AvgVisualPl
   })
 }
 
+/** Consumers can recompile under their existing read/write transaction.
+ * Each WebCrypto hash owns a Dexie keep-alive; overlapping leases can retain
+ * one another. Preserve the same subject order and bytes with one at a time. */
+export async function hashAvgMediaBriefInputsV1(briefs:AvgMediaBriefV1[]){
+  const mediaBriefs:Array<{artifactKey:string;contentHash:string}>=[]
+  for(const brief of [...briefs].sort((a,b)=>a.subjectKey<b.subjectKey?-1:a.subjectKey>b.subjectKey?1:0)){
+    mediaBriefs.push({artifactKey:avgMediaBriefArtifactKeyV1(brief.subjectKind,brief.subjectKey),contentHash:await hashProductProductionValueV2(brief)})
+  }
+  return mediaBriefs
+}
+
 /** Deterministic semantic proposal, never a producer or adoption receipt.
  * This does not amend any existing V2/V3 Brief or frozen image request. */
 export async function compileAvgVisualPlanningProposalV1(input: {
@@ -183,9 +194,7 @@ export async function compileAvgVisualPlanningProposalV1(input: {
     batchKey: scope.batchKey, revision: scope.revision, aspectRatio: scope.aspectRatio, sourceInputHash: scope.sourceInputHash,
     visualReviewPolicy: 'author-visual-v1', requirements }, source)
   assertAvgMediaConsumerDeclarationsV1(batch, source.systemPlan)
-  const mediaBriefs = await Promise.all([...briefs].sort((a, b) => a.subjectKey < b.subjectKey ? -1 : a.subjectKey > b.subjectKey ? 1 : 0).map(async brief => ({
-    artifactKey: avgMediaBriefArtifactKeyV1(brief.subjectKind, brief.subjectKey), contentHash: await hashProductProductionValueV2(brief),
-  })))
+  const mediaBriefs = await hashAvgMediaBriefInputsV1(briefs)
   return { schema: 'storyforge.avg.visual-planning-proposal' as const, version: 1 as const, batch,
     inputHashes: { scope: await hashProductProductionValueV2(scope), visualBible: await hashProductProductionValueV2(bible), mediaBriefs },
     batchHash: await hashProductProductionValueV2(batch) }

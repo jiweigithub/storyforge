@@ -20,7 +20,7 @@ import { buildAvgVisualPlanningPlanV5 } from './visual-planning-plan-v5'
 import { parseAvgAuthorMediaChoice, avgMediaChoiceArtifactKeyV1, avgVisualReviewArtifactKeyV1, type AvgAuthorMediaChoice, type AvgVisualProductionRequirementV1 } from './media-production-contract'
 import { inspectAvgChosenImageV1, inspectAvgChosenImageBytesV1, readAvgChosenMediaSourceV2, validateAvgMediaChoiceV1, type AvgMediaChoiceValidation } from './media-choice-validation'
 import type { AvgInspectedProcessedImageV1 } from './image-processing-source'
-import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1, verifyAvgProcessedImageArtifactV1, verifyAvgHistoricalRawVoiceArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4, verifyHistoricalAvgImageRevalidationProducerV1 } from '../product-production/artifact-store'
+import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1, verifyAvgProcessedImageArtifactV1, verifyAvgHistoricalRawVoiceArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4, verifyHistoricalAvgVisualPlanningArtifactV5, verifyHistoricalAvgImageRevalidationProducerV1 } from '../product-production/artifact-store'
 import { assertAvgRawImageOriginV1 } from './media-recovery'
 import { readAvgInheritedStageImagesV1 } from './stage-image-sources'
 import { readAvgInheritedStageVoicesV1 } from './stage-voice-sources'
@@ -34,12 +34,12 @@ import { assertAvgVoiceReviewRevisionV1, assertAvgVoiceReviewScopeV1, assertAvgV
 import { readAvgOptionalImageDefinitionV3 } from './media-production-definition'
 import { validateAvgVisualAuthorProposalV5 } from './visual-planning-author-v5'
 import { assertAvgVisualRoleProposalV4, validateAvgVisualSemanticV4 } from './visual-role-proposal'
-import { readAvgVisualProposalEvidenceV4,readAvgVisualProposalEvidence } from './visual-planning-evidence'
+import { readAvgVisualProposalEvidenceV4,readAvgVisualProposalEvidenceV5,readAvgVisualProposalEvidence } from './visual-planning-evidence'
 import { AVG_VISUAL_TEXT_CAPABILITY_V4 } from './visual-planning-roles'
 import { readAvgImageConsumptionDefinitionV4 } from './image-consumption'
 import type { AvgVisualReusePathV4 } from './visual-planning-reuse-contract'
 import { parseAvgAuthorVisualReviewV2,assertAvgVisualReviewRevisionV2,type AvgReviewIssuesV2 } from './visual-review-contract-v2'
-import { validateAvgAuthorVisualReviewV2,assertAvgVisualReviewSelectableV2 } from './visual-review-v2'
+import { validateAvgAuthorVisualReviewV2,validateAvgAuthorVisualReviewFromSourceV2,assertAvgVisualReviewSelectableV2 } from './visual-review-v2'
 import { readAvgImageConsumptionDefinitionV5 } from './image-consumption-v5'
 
 type Ref = { artifactKey: string; version: number; contentHash: string }
@@ -195,7 +195,7 @@ async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, 
 }
 
 async function authority(scope: WorkspaceScope, buildId: number, forCompilation = false, frozenVerification = false,
-  referenceEpoch?: number, referenceKind: 'image' | 'voice' | 'visual' = 'image') {
+  referenceEpoch?: number, referenceKind: 'image' | 'voice' | 'visual' | 'visual-v5' = 'image') {
   const referenceRead = referenceEpoch !== undefined
   const build = await db.productBuilds.get(buildId)
   if (!build || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })) throw new Error('[avg] Build 不存在或跨 Work')
@@ -220,6 +220,7 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
   if (referenceRead && referenceKind === 'image' && !readAvgOptionalImageDefinitionV3(brief)) throw new Error('[avg-media] 生成参考只接受原生图片生产来源')
   if (referenceRead && referenceKind === 'voice' && brief.avgAssembly?.version !== 3) throw new Error('[avg-voice] 沿用配音只接受原生配音生产来源')
   if (referenceRead && referenceKind === 'visual' && brief.avgVisualPlanning?.version!==4) throw new Error('[avg-visual-history] 历史专业方案只接受准确 V4 来源')
+  if (referenceRead && referenceKind === 'visual-v5' && brief.avgVisualPlanning?.version!==5) throw new Error('[avg-visual-history] 新历史专业方案只接受准确 V5 来源')
   if (!forCompilation && brief.avgAssembly?.version === 1 && Object.keys((JSON.parse(build.budgetLedgerJson) as { tasks?: object }).tasks ?? {}).length) throw new Error('[avg] 组装已开始执行；请保留旧版本并创建新 Build 修订')
   const sourcePlan = await Dexie.waitFor(parseProductProductionSourcePlanV1(briefRow))
   const confirmed = await Dexie.waitFor(parseConfirmedProductBriefV1({ row: briefRow, sourcePlan }))
@@ -754,7 +755,14 @@ export async function readAvgHistoricalVisualArtifactV4(input: AvgHistoricalVisu
 /** One bounded, read-only dependency graph, not an authority cache. Each
  * explicitly requested author Artifact is proved under the same snapshot;
  * no partial result escapes if any member, source or original proof fails. */
-export async function readAvgHistoricalVisualArtifactsV4(input: Omit<AvgHistoricalVisualArtifactInputV4,'artifact'>&{artifacts:Ref[]},reusePath:AvgVisualReusePathV4=[]){
+export function readAvgHistoricalVisualArtifactsV4(input: Omit<AvgHistoricalVisualArtifactInputV4,'artifact'>&{artifacts:Ref[]},reusePath:AvgVisualReusePathV4=[]){
+  return readHistoricalVisualArtifacts(input,reusePath,4)
+}
+/** Original V5 models and author decisions, never a converted V4 history. */
+export function readAvgHistoricalVisualArtifactsV5(input: Omit<AvgHistoricalVisualArtifactInputV4,'artifact'>&{artifacts:Ref[]}){
+  return readHistoricalVisualArtifacts(input,[],5)
+}
+async function readHistoricalVisualArtifacts(input: Omit<AvgHistoricalVisualArtifactInputV4,'artifact'>&{artifacts:Ref[]},reusePath:AvgVisualReusePathV4,version:4|5){
   if(!Array.isArray(input.artifacts)||!input.artifacts.length||input.artifacts.length>100
     ||new Set(input.artifacts.map(a=>a?.artifactKey)).size!==input.artifacts.length)throw new Error('[avg-visual-history] 历史专业工件批读为空、重复或超界')
   const requested=structuredClone(input.artifacts)
@@ -763,22 +771,22 @@ export async function readAvgHistoricalVisualArtifactsV4(input: Omit<AvgHistoric
   // may share dependencies across the batch. No independent write is opened.
   if(requested.length>1&&Dexie.currentTransaction?.idbtrans?.mode==='readwrite'){
     const results=[]
-    for(const artifact of requested)results.push(...await readHistoricalVisualArtifactsInSnapshotV4({...input,artifacts:[artifact]},reusePath))
+    for(const artifact of requested)results.push(...await readHistoricalVisualArtifactsInSnapshotV4({...input,artifacts:[artifact]},reusePath,version))
     return results
   }
-  return readHistoricalVisualArtifactsInSnapshotV4({...input,artifacts:requested},reusePath)
+  return readHistoricalVisualArtifactsInSnapshotV4({...input,artifacts:requested},reusePath,version)
 }
 
-async function readHistoricalVisualArtifactsInSnapshotV4(input: Omit<AvgHistoricalVisualArtifactInputV4,'artifact'>&{artifacts:Ref[]},reusePath:AvgVisualReusePathV4){
+async function readHistoricalVisualArtifactsInSnapshotV4(input: Omit<AvgHistoricalVisualArtifactInputV4,'artifact'>&{artifacts:Ref[]},reusePath:AvgVisualReusePathV4,version:4|5){
   const requested=input.artifacts
   const scope = await resolveScope({ scope: input.scope })
   return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands,
     db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects,
     db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts), async () => {
-    const context = await authority(scope, input.buildId, true, false, input.controlEpoch, 'visual')
+    const context = await authority(scope, input.buildId, true, false, input.controlEpoch, version===5?'visual-v5':'visual')
     if(!Array.isArray(reusePath)||reusePath.length>32)throw new Error('[avg-visual-history] 历史复用谱系超界')
     context.reusePath=reusePath
-    if (context.brief.avgVisualPlanning?.version!==4 || context.build.stateRevision !== input.expectedBuildRevision
+    if (context.brief.avgVisualPlanning?.version!==version || context.build.stateRevision !== input.expectedBuildRevision
       || context.build.briefHash !== input.expectedBriefHash || context.build.planHash !== input.expectedPlanHash
       || !['paused','cancelled','failed','recovery-required','preview-ready','release-ready','released'].includes(context.build.status)) throw new Error('[avg-visual-history] 历史版本不准确或仍在执行')
     const tasks=requested.map(artifact=>{
@@ -799,10 +807,10 @@ async function readHistoricalVisualArtifactsInSnapshotV4(input: Omit<AvgHistoric
         const matches = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([input.buildId,key])
           .filter(r => r.status === 'accepted' && r.controlEpoch === input.controlEpoch).toArray()
         if (matches.length !== 1) throw new Error('[avg-visual-history] 历史原始方案不唯一或缺失')
-        row = await verifyHistoricalAvgVisualPlanningArtifactV4({ scope, buildId: input.buildId,
+        row = await (version===5?verifyHistoricalAvgVisualPlanningArtifactV5:verifyHistoricalAvgVisualPlanningArtifactV4)({ scope, buildId: input.buildId,
           expectedBuildRevision: input.expectedBuildRevision, expectedBriefHash: input.expectedBriefHash, expectedPlanHash: input.expectedPlanHash,
           sourceControlEpoch: input.controlEpoch, ...ref(matches[0]) })
-        const proof = await readAvgVisualProposalEvidenceV4(scope,row,reusePath), planning = context.brief.avgVisualPlanning!
+        const proof = await (version===5?readAvgVisualProposalEvidenceV5(scope,row):readAvgVisualProposalEvidenceV4(scope,row,reusePath)), planning = context.brief.avgVisualPlanning!
         if (proof.quality.scopeHash !== await hash(planning.scope) || proof.request.sourceInputHash !== planning.scope.sourceInputHash
           || proof.binding.bindingHash !== context.brief.capabilityRequirements.find(c => c.requirementKey === AVG_VISUAL_TEXT_CAPABILITY_V4)?.capabilityHash) throw new Error('[avg-visual-history] 历史模型实际输入不属于原冻结范围或路由')
         evidence.set(key,proof)
@@ -919,10 +927,48 @@ export async function readAvgAdoptedGeneratedReferenceChoiceV4(input:{scope:Work
   })
 }
 
+/** Original V5/raw2 and review2 author witnesses. Stopped/imported history
+ * stays read-only; processing cannot fall back to an unprocessed selection. */
+export async function readAvgAdoptedGeneratedReferenceChoiceV5(input:Parameters<typeof readAvgAdoptedGeneratedReferenceChoiceV4>[0]){
+  const scope=await resolveScope({scope:input.scope}),proofTables=await mediaProofTables(input.buildId)
+  const load=()=>import('./visual-image-history-v5')
+  const {readAvgHistoricalRawImageV5}=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
+  return db.transaction('r',scopeTransactionTables(db.productProductions,db.productProductionBriefs,db.productProductionCommands,
+    db.productBuilds,db.productBuildArtifacts,db.avgDraftMedia,db.mediaBlobObjects,...proofTables),async()=>{
+    const context=await authority(scope,input.buildId,true,false,input.controlEpoch,'visual-v5')
+    const [row]=await acceptedInputs(scope,input.buildId,input.controlEpoch,[input.artifactKey])
+    if(row.version!==input.version||row.contentHash!==input.contentHash||row.kind!=='presentation')throw new Error('[avg-visual-history] 需要准确新版已采用选图版本')
+    const choice=parseAvgAuthorMediaChoice(row.payloadJson)
+    if(choice.version!==1)throw new Error('[avg-visual-history] 新版加工来源尚未接通，不能冒充原图')
+    const original=await readAvgHistoricalRawImageV5({scope,buildId:input.buildId,expectedBuildRevision:context.build.stateRevision,
+      controlEpoch:input.controlEpoch,expectedBriefHash:context.build.briefHash,expectedPlanHash:context.build.planHash,artifact:choice.raw})
+    const requirement=original.payload.requirement
+    if(original.planning.imageProcessing?.entries.some(e=>e.requirementKey===requirement.requirementKey))throw new Error('[avg-process] 新版历史选图不能跳过冻结加工配方')
+    const evidence=await readAdoptedVisualChoiceWitness(context,row,choice,{...input,scope},{...original,requirement},async(review,image)=>{
+      const report=await validateAvgAuthorVisualReviewFromSourceV2({scope,payload:review.payloadJson,requirement,image,asset:original.asset})
+      await assertAvgVisualReviewSelectableV2(report,requirement,image.contentHash)
+    })
+    return {...evidence,rawProof:original.provenance}
+  })
+}
+
 type VisualChoiceImageV4=Pick<Awaited<ReturnType<typeof import('./visual-image-history').readAvgHistoricalRawImageV4>>,
   'brief'|'definition'|'raw'|'asset'|'compilation'>&{requirement:AvgVisualProductionRequirementV1;processed?:AvgInspectedProcessedImageV1}
 async function readAdoptedVisualChoiceWitnessV4(context:Awaited<ReturnType<typeof authority>>,row:ProductBuildArtifactRecordV1,
   choice:AvgAuthorMediaChoice,input:Parameters<typeof readAvgAdoptedGeneratedReferenceChoiceV4>[0],original:VisualChoiceImageV4){
+  return readAdoptedVisualChoiceWitness(context,row,choice,input,original,async(reviewRow,image)=>{
+    const report=await validateAvgAuthorVisualReviewFromSourceV1({scope:input.scope,payload:reviewRow.payloadJson,requirement:original.requirement,image,asset:original.asset})
+    assertAvgVisualReviewSelectableV1(report,original.requirement,image.contentHash)
+  })
+}
+type VisualChoiceImage<R extends Omit<AvgVisualProductionRequirementV1,'references'>>=Omit<VisualChoiceImageV4,'requirement'|'definition'>&{
+  requirement:R;definition:{mediaBatch:{visualReviewPolicy?:unknown}}
+}
+/** One actual review/choice command and candidate witness path. Its caller
+ * supplies the exact version's semantic review checker, never a retag. */
+async function readAdoptedVisualChoiceWitness<R extends Omit<AvgVisualProductionRequirementV1,'references'>>(context:Awaited<ReturnType<typeof authority>>,row:ProductBuildArtifactRecordV1,
+  choice:AvgAuthorMediaChoice,input:Parameters<typeof readAvgAdoptedGeneratedReferenceChoiceV4>[0],original:VisualChoiceImage<R>,
+  validateReview:(review:ProductBuildArtifactRecordV1,image:ProductBuildArtifactRecordV1)=>Promise<void>){
   const scope=input.scope
     const image=original.processed?.row??original.raw,images=[original.raw,...(original.processed?[original.processed.row]:[])]
     if((choice.version===2)!==!!original.processed)throw new Error('[avg-process] 原图与加工图不能互相代签选用')
@@ -935,8 +981,8 @@ async function readAdoptedVisualChoiceWitnessV4(context:Awaited<ReturnType<typeo
       ||canonicalProductProductionJsonV2(reviewTask.inputArtifactKeys)!==canonicalProductProductionJsonV2(images.map(r=>r.artifactKey)))throw new Error('[avg-visual-history] 原视觉评审任务不匹配')
     const reviewCandidate=await assertFrozenAuthorCandidateV1(context,reviewRow,reviewTask,images,input.controlEpoch)
     if(reviewCandidate.version!==1)throw new Error('[avg-visual-history] 原视觉评审候选版本不受支持')
-    const report=await validateAvgAuthorVisualReviewFromSourceV1({scope,payload:reviewRow.payloadJson,requirement:original.requirement,image,asset:original.asset})
-    assertAvgVisualReviewSelectableV1(report,original.requirement,image.contentHash)
+    if(canonicalProductProductionJsonV2(JSON.parse(reviewRow.rightsJson))!==canonicalProductProductionJsonV2({origin:reviewCandidate.origin,declaration:reviewCandidate.declaration}))throw new Error('[avg-visual-history] 原评审权利声明与作者候选不一致')
+    await validateReview(reviewRow,image)
     const task=context.plan.tasks.find(t=>t.taskKey===`avg.author.media.${choice.requirementKey}`)
     if(!task||task.kind!=='avg-author-media-choice'||task.executionMode!=='human-import'||task.skillId!==null
       ||canonicalProductProductionJsonV2(task.outputArtifactKeys)!==canonicalProductProductionJsonV2([row.artifactKey])
@@ -944,6 +990,7 @@ async function readAdoptedVisualChoiceWitnessV4(context:Awaited<ReturnType<typeo
     const selected=await inspectAvgChosenImageBytesV1({scope,choice,row:original.raw,image,asset:original.asset,requirement:original.requirement,processed:original.processed})
     const candidate=await assertFrozenAuthorCandidateV1(context,row,task,[...images,reviewRow],input.controlEpoch)
     if(candidate.version!==4||canonicalProductProductionJsonV2(candidate.mediaChoiceValidation)!==canonicalProductProductionJsonV2(selected.validation))throw new Error('[avg-visual-history] 原作者选图缺少准确解码/采用证据')
+    if(canonicalProductProductionJsonV2(JSON.parse(row.rightsJson))!==canonicalProductProductionJsonV2({origin:candidate.origin,declaration:candidate.declaration}))throw new Error('[avg-visual-history] 原选图权利声明与作者候选不一致')
     return {choice,artifact:ref(row),authorReceiptHash:String(JSON.parse(row.metadataJson).receiptHash),raw:original.raw,
       compilation:ref(original.compilation),review:{...ref(reviewRow),authorReceiptHash:String(JSON.parse(reviewRow.metadataJson).receiptHash)},
       image:selected.image,productionKey:context.production.productionKey,buildNumber:context.build.buildNumber,
