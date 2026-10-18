@@ -1093,6 +1093,7 @@ function taskContextSourceKeys(
 ): string[] {
   if (task.contextProfile === 'avg-task-v1') return ['product-production.avg-task-inputs']
   if (task.contextProfile === 'avg-visual-planning-v4') return ['product-production.avg-visual-planning-inputs']
+  if (task.contextProfile === 'avg-visual-planning-v5') return ['product-production.avg-visual-planning-inputs-v5']
   // The deterministic runtime compiler receives immutable artifact rows via
   // inputArtifacts and binds their hashes in structuralInput. Re-serializing
   // the same full payload into a model-style context duplicates tens of
@@ -1116,6 +1117,7 @@ function taskContextSourceKeys(
 function taskRequiredContextSourceKeys(task: ProductProductionPlanTaskV3): string[] {
   if (task.contextProfile === 'avg-task-v1') return ['product-production.avg-task-inputs']
   if (task.contextProfile === 'avg-visual-planning-v4') return ['product-production.avg-visual-planning-inputs']
+  if (task.contextProfile === 'avg-visual-planning-v5') return ['product-production.avg-visual-planning-inputs-v5']
   if (task.executionMode === 'deterministic' && task.kind === 'runtime-package') {
     return ['product-production.brief']
   }
@@ -1123,7 +1125,7 @@ function taskRequiredContextSourceKeys(task: ProductProductionPlanTaskV3): strin
     const skill = getAgentSkillV1(task.skillId)
     return [...new Set([
       ...skill.contextSourceKeys,
-      ...(task.inputArtifactKeys.length > 0 && !skill.contextSourceKeys.some(key => ['product-production.avg-task-inputs', 'product-production.avg-visual-planning-inputs'].includes(key))
+      ...(task.inputArtifactKeys.length > 0 && !skill.contextSourceKeys.some(key => ['product-production.avg-task-inputs', 'product-production.avg-visual-planning-inputs', 'product-production.avg-visual-planning-inputs-v5'].includes(key))
         ? ['product-production.artifact-inputs'] : []),
     ])]
   }
@@ -5983,8 +5985,8 @@ export async function recoverImportedProductProductionProofsV1(input: {
       await assertProductBuildArtifactContentHashV1(row)
     }
     if(avgVisual&&row.artifactKey.startsWith('avg.proposal.')){
-      const {readAvgVisualProposalEvidenceV4}=await import('../avg/visual-planning-evidence')
-      await readAvgVisualProposalEvidenceV4(scope,row)
+      const {readAvgVisualProposalEvidence}=await import('../avg/visual-planning-evidence')
+      await readAvgVisualProposalEvidence(scope,row)
     }
   }
   let progressed = true

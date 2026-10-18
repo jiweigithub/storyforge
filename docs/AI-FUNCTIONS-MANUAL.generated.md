@@ -80,7 +80,7 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 136 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 137 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
@@ -100,6 +100,7 @@
 | `product-production.brief` | 已授权上层产品生产 Brief | project | L0 | 8000 |
 | `product-production.avg-task-inputs` | AVG 准确任务需求与依赖凭证 | project | L0 | 20000 |
 | `product-production.avg-visual-planning-inputs` | AVG 专业视觉用途与已确认方向 | project | L0 | 24000 |
+| `product-production.avg-visual-planning-inputs-v5` | AVG 新参考策略、公开用途与已确认方向 | project | L0 | 24000 |
 | `product-production.artifact-inputs` | 上层产品生产任务依赖 | project | L1 | 24000 |
 | `product-production.adventure-scene-script-inputs` | 文字冒险单幕分场写作投影 | project | L0 | 15100 |
 | `product-production.adventure-dialogue-inputs` | 文字冒险独立对白审校投影 | project | L0 | 12500 |
@@ -506,4 +507,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `21b8280f`
+生成时间基准:commit `3bc15fe5`

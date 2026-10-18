@@ -2535,7 +2535,8 @@ async function acceptSealedProducerArtifactV1(
     }
     if (planningAdmission) {
       if (!producerProof || input.producerRunId == null) throw new Error('[avg-visual-plan] 原始方案必须携带严格 producer 证明')
-      await planningAdmission.assertAvgVisualPlanningProducerAdmissionV4({ scope, build: build as ProductBuildRecordV1 & { id: number },
+      const admit=producerProof.task.kind.startsWith('avg-v5-')?planningAdmission.assertAvgVisualPlanningProducerAdmissionV5:planningAdmission.assertAvgVisualPlanningProducerAdmissionV4
+      await admit({ scope, build: build as ProductBuildRecordV1 & { id: number },
         task: producerProof.task, producerRunId: input.producerRunId, artifact: prepared })
     }
     if (prepared.blobObjectId != null) {

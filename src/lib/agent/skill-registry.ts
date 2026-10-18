@@ -26,6 +26,7 @@ import {
 } from '../registry/types'
 import { AGENT_TOOL_BY_NAME } from './tool-registry'
 import { WORLD_RELEASE_RESOURCE_KINDS_V1 } from '../context-gateway/world-release-provider-contract'
+import { AVG_VISUAL_PLANNING_CONTEXT_V5 } from '../avg/visual-planning-roles-v5'
 import { AVG_VISUAL_PLANNING_AGENT_IDS_V1, AVG_VISUAL_PLANNING_CONTEXT_V1, AVG_COMPILED_IMAGE_AGENT_V4 } from '../avg/visual-planning-roles'
 
 export const DOMAIN_AGENT_IDS = ['world-origin', 'character', 'inspiration', 'outline', 'prose'] as const
@@ -5040,6 +5041,56 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy([AVG_VISUAL_PLANNING_CONTEXT_V1]), maxOutputTokens: 12_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
     lastVerifiedAt: '2026-10-17', regressionTests: ['R-AVG-04A5-professional-roles'],
+  },
+  {
+    version: 1, id: 'avg.compiled-image-request.v2', agentId: 'avg-image-operator', defaultForAgent: false,
+    label: 'AVG 新参考策略图片请求', owner: 'avg-image-operator', promptVersion: 'avg.compiled-image-request.v2-method-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V5], optionalContextSourceKeys: [],
+    inputPolicy: productProductionInputPolicy([AVG_VISUAL_PLANNING_CONTEXT_V5]),
+    contextCompression: compressionPolicy([AVG_VISUAL_PLANNING_CONTEXT_V5]), maxOutputTokens: 4_000,
+    writeTargets: [{ table: 'productBuildArtifacts', fields: [], adoptionExtension: 'product-production-artifacts' }],
+    lastVerifiedAt: '2026-10-18', regressionTests: ['R-AVG-04A8-v5-registered-proposals'],
+  },
+  {
+    version: 1, id: 'avg.visual-bible.v2', agentId: 'avg-art-director', defaultForAgent: false,
+    label: 'AVG 新参考策略美术方向', owner: 'avg-art-director', promptVersion: 'avg.visual-bible.v2-method-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V5], optionalContextSourceKeys: [],
+    inputPolicy: productProductionInputPolicy([AVG_VISUAL_PLANNING_CONTEXT_V5]),
+    contextCompression: compressionPolicy([AVG_VISUAL_PLANNING_CONTEXT_V5]), maxOutputTokens: 16_000,
+    writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
+    lastVerifiedAt: '2026-10-18', regressionTests: ['R-AVG-04A8-v5-registered-proposals'],
+  },
+  {
+    version: 1, id: 'avg.character-assets.v2', agentId: 'avg-character-designer', defaultForAgent: false,
+    label: 'AVG 新参考策略人物方案', owner: 'avg-character-designer', promptVersion: 'avg.character-assets.v2-method-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V5], optionalContextSourceKeys: [],
+    inputPolicy: productProductionInputPolicy([AVG_VISUAL_PLANNING_CONTEXT_V5]),
+    contextCompression: compressionPolicy([AVG_VISUAL_PLANNING_CONTEXT_V5]), maxOutputTokens: 12_000,
+    writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
+    lastVerifiedAt: '2026-10-18', regressionTests: ['R-AVG-04A8-v5-registered-proposals'],
+  },
+  {
+    version: 1, id: 'avg.environment-assets.v2', agentId: 'avg-environment-designer', defaultForAgent: false,
+    label: 'AVG 新参考策略场景方案', owner: 'avg-environment-designer', promptVersion: 'avg.environment-assets.v2-method-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V5], optionalContextSourceKeys: [],
+    inputPolicy: productProductionInputPolicy([AVG_VISUAL_PLANNING_CONTEXT_V5]),
+    contextCompression: compressionPolicy([AVG_VISUAL_PLANNING_CONTEXT_V5]), maxOutputTokens: 12_000,
+    writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
+    lastVerifiedAt: '2026-10-18', regressionTests: ['R-AVG-04A8-v5-registered-proposals'],
+  },
+  {
+    version: 1, id: 'avg.prop-assets.v2', agentId: 'avg-prop-designer', defaultForAgent: false,
+    label: 'AVG 新参考策略物件方案', owner: 'avg-prop-designer', promptVersion: 'avg.prop-assets.v2-method-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V5], optionalContextSourceKeys: [],
+    inputPolicy: productProductionInputPolicy([AVG_VISUAL_PLANNING_CONTEXT_V5]),
+    contextCompression: compressionPolicy([AVG_VISUAL_PLANNING_CONTEXT_V5]), maxOutputTokens: 12_000,
+    writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
+    lastVerifiedAt: '2026-10-18', regressionTests: ['R-AVG-04A8-v5-registered-proposals'],
   },
   {
     version: 1,

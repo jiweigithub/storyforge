@@ -1,4 +1,5 @@
 import type { ProductBuildArtifactRecordV1, WorkspaceScope } from '../types'
+import { AVG_VISUAL_PLANNING_ROLES_V5 } from './visual-planning-roles-v5'
 import { readAgentRunV1 } from '../agent/run/event-store'
 import { readAgentRunArtifactExactV1 } from '../memory/artifact-store'
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
@@ -23,8 +24,14 @@ export const hashAvgVisualExactTextV1 = (text: string) => sha256MediaData(new Te
 export async function readAvgVisualProposalEvidenceV4(scope: WorkspaceScope, row: Pick<ProductBuildArtifactRecordV1, 'producerRunId' | 'qualityJson' | 'payloadJson'>,path:AvgVisualReusePathV4=[]):Promise<AvgVisualProposalEvidenceV4> {
   if (row.producerRunId === null) throw new Error('[avg-visual-plan] 原始方案没有实际 producer')
   if(JSON.parse(row.qualityJson)?.schema==='storyforge.avg.visual-proposal-reuse-evidence')return readAvgVisualReuseEvidenceV4(scope,{...row,producerRunId:row.producerRunId},path)
+  return readAvgVisualFreshProposalEvidence(scope,row,1)
+}
+
+/** Shared exact event/input/raw-response verification, without a version conversion. */
+async function readAvgVisualFreshProposalEvidence(scope:WorkspaceScope,row:Pick<ProductBuildArtifactRecordV1,'producerRunId'|'qualityJson'|'payloadJson'>,version:1|2):Promise<Extract<AvgVisualProposalEvidenceV4,{reused:false}>>{
+  if(row.producerRunId===null)throw new Error('[avg-visual-plan] 原始方案没有实际 producer')
   const q = avgRecord(avgProtocolBody(row.qualityJson), ['schema', 'version', 'requestSnapshotHash', 'rawResponseHash', 'scopeHash', 'capabilityBindingHash'], 'visual proposal evidence')
-  if (q.schema !== 'storyforge.avg.visual-proposal-evidence' || q.version !== 1) throw new Error('[avg-visual-plan] 原始方案证据版本无效')
+  if (q.schema !== 'storyforge.avg.visual-proposal-evidence' || q.version !== version) throw new Error('[avg-visual-plan] 原始方案证据版本无效')
   const snapshot = await readAgentRunV1(scope, row.producerRunId), taskKey = snapshot.contract.scope.productProduction?.taskKey
   if (!taskKey) throw new Error('[avg-visual-plan] 原始方案没有准确任务合同')
   const exact = async (kind: 'source-snapshot' | 'raw-response', value: unknown) => {
@@ -45,7 +52,7 @@ export async function readAvgVisualProposalEvidenceV4(scope: WorkspaceScope, row
   const actualBinding = { requirementKey: avgKey(binding.requirementKey, 'requirementKey'), adapterId: avgKey(binding.adapterId, 'adapterId'), bindingHash: avgHash(binding.bindingHash, 'bindingHash'),
     ...(binding.provider === undefined ? {} : { provider: avgText(binding.provider, 'provider', 200), model: avgText(binding.model, 'model', 200) }) }
   const proposal = JSON.parse(row.payloadJson) as { targetArtifactKey?: string; scopeHash?: string; payload?: unknown }
-  if (request.schema !== 'storyforge.avg.visual-model-input' || request.version !== 1 || request.taskKey !== taskKey
+  if (request.schema !== 'storyforge.avg.visual-model-input' || request.version !== version || request.taskKey !== taskKey
     || request.category !== 'product-production' || !Number.isSafeInteger(request.maximumOutputTokens) || Number(request.maximumOutputTokens) <= 0
     || request.targetArtifactKey !== proposal.targetArtifactKey || request.scopeHash !== proposal.scopeHash || q.scopeHash !== proposal.scopeHash
     || actualBinding.requirementKey !== 'avg.visual.planning.text' || actualBinding.bindingHash !== q.capabilityBindingHash
@@ -54,4 +61,18 @@ export async function readAvgVisualProposalEvidenceV4(scope: WorkspaceScope, row
     || canonicalProductProductionJsonV2(prepareAvgProfessionalArtifactV1({ artifactKey: String(proposal.targetArtifactKey), kind: 'narrative',
       payload: parseProductionModelJsonObjectV1(rawText, taskKey), allowedOutputKeys: [String(proposal.targetArtifactKey)] }).payload) !== canonicalProductProductionJsonV2(proposal.payload)) throw new Error('[avg-visual-plan] 原始响应、真实输入或方案内容不闭合')
   return { reused:false,rawText, requestText, request, quality: q, snapshot,modelRun:snapshot,modelRequest:request,modelRequestText:requestText, binding: actualBinding }
+}
+
+/** New evidence is explicit @2 and actual role proposal @3. Old V4 readers
+ * remain strict; only current version-aware consumers use this dispatcher. */
+export async function readAvgVisualProposalEvidenceV5(scope:WorkspaceScope,row:Pick<ProductBuildArtifactRecordV1,'producerRunId'|'qualityJson'|'payloadJson'>){
+  const proposal=avgRecord(avgProtocolBody(row.payloadJson),['schema','version','targetArtifactKey','scopeHash','payload'],'V5 original proposal')
+  if(proposal.schema!=='storyforge.avg.visual-role-proposal'||proposal.version!==3)throw new Error('[avg-visual-plan] 新证据必须来自明确新版原始方案')
+  const proof=await readAvgVisualFreshProposalEvidence(scope,row,2),binding=proof.snapshot.contract.executionBindings?.[0]
+  if(!binding||!AVG_VISUAL_PLANNING_ROLES_V5.some(r=>r.skillId===binding.skillId))throw new Error('[avg-visual-plan] 新原始方案没有实际新版 Skill 快照')
+  return proof
+}
+export function readAvgVisualProposalEvidence(scope:WorkspaceScope,row:Pick<ProductBuildArtifactRecordV1,'producerRunId'|'qualityJson'|'payloadJson'>){
+  const q=avgProtocolBody(row.qualityJson) as {schema?:unknown;version?:unknown}|null
+  return q?.schema==='storyforge.avg.visual-proposal-evidence'&&q.version===2?readAvgVisualProposalEvidenceV5(scope,row):readAvgVisualProposalEvidenceV4(scope,row)
 }

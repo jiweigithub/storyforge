@@ -1,11 +1,9 @@
 import { db } from '../db/schema'
+import { readAvgVisualContextAuthority,assertAvgVisualContextFresh } from './visual-planning-context-authority'
 import type { AssembleContextInput } from '../registry/types'
 import type { ProductProductionPlanTaskV3 } from '../types'
-import { assertRecordInScope } from '../workspace/scope'
-import { parseProductProductionBriefV3 } from '../product-production/contracts'
-import { parseProductProductionPlanV3 } from '../product-production/plan'
 import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/artifact-store'
-import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
+import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { readAvgConfirmedVisualArtifactsV4, readAvgSystemPlanForCompilationV1 } from './author-artifacts'
 import { freezeAvgVisualPlanningScopeV1, type AvgMediaSourceInputV1 } from './media-source'
 import { parseAvgVisualPlanningBriefV4, type AvgVisualPlanningBriefV4 } from './visual-planning-brief'
@@ -61,21 +59,8 @@ export function projectAvgVisualPlanningTaskV4(input: { planning: AvgVisualPlann
 
 /** Registered reader, never a caller-supplied packet or a new context engine. */
 export async function readAvgVisualPlanningContextV4(input: AssembleContextInput): Promise<string> {
-  const { scope } = input
-  if (!scope || input.projectId !== scope.projectId || !input.productBuildId || !input.productProductionId || !input.productProductionTaskKey) throw new Error('[avg-visual-plan] 缺少准确 Work/Build/任务')
-  const build = await db.productBuilds.get(input.productBuildId), production = await db.productProductions.get(input.productProductionId)
-  if (!build || !production || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })
-    || !await assertRecordInScope(scope, 'productProductions', production, { owner: 'work' }) || build.productionId !== production.id
-    || production.productType !== 'avg' || production.status !== 'producing' || production.currentBuildNumber !== build.buildNumber
-    || production.controlEpoch !== build.controlEpoch || production.currentBriefRevision !== build.briefRevision || build.status !== 'building') throw new Error('[avg-visual-plan] 制作来源已 stale 或跨 Work')
-  const row = await db.productProductionBriefs.where('[productionId+revision]').equals([production.id!, build.briefRevision]).first()
-  if (!row || !await assertRecordInScope(scope, 'productProductionBriefs', row, { owner: 'work' }) || row.status !== 'authorized'
-    || row.briefHash !== build.briefHash || row.authorizedAt !== build.authorizedAt) throw new Error('[avg-visual-plan] 缺少准确已授权 Brief')
-  const brief = parseProductProductionBriefV3(row.briefJson)
-  if (brief.avgVisualPlanning?.version!==4 || await hashProductProductionValueV2(brief) !== build.briefHash) throw new Error('[avg-visual-plan] 专业视觉 Brief 内容或版本不一致')
-  const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash), task = plan.tasks.find(t => t.taskKey === input.productProductionTaskKey)
-  if (!task || await hashProductProductionValueV2(plan) !== build.planHash || plan.buildNumber !== build.buildNumber || plan.controlEpoch !== build.controlEpoch
-    || canonicalProductProductionJsonV2(input.productArtifactKeys ?? []) !== canonicalProductProductionJsonV2(task.inputArtifactKeys)) throw new Error('[avg-visual-plan] Plan 或准确依赖选择不一致')
+  const authority=await readAvgVisualContextAuthority(input,4)
+  const {scope,build,production,row,brief,task,planning}=authority
   const rawReuse=task.kind==='avg-media-image-reuse'&&task.executionMode==='deterministic'&&task.contextProfile==='avg-visual-planning-v4'
   const processing=task.kind==='avg-media-image-process'&&task.executionMode==='deterministic'&&task.contextProfile==='avg-visual-planning-v4'
   const imageTask = task.kind === 'avg-media-image-generate' && task.executionMode === 'media-provider' && task.skillId === AVG_COMPILED_IMAGE_SKILL_V4
@@ -83,10 +68,10 @@ export async function readAvgVisualPlanningContextV4(input: AssembleContextInput
     controlEpoch: build.controlEpoch, expectedBrief: brief }) : null
   const source = image?.source ?? await readAvgSystemPlanForCompilationV1({ scope, buildId: build.id!, expectedBuildRevision: build.stateRevision,
     controlEpoch: build.controlEpoch, includeSceneScripts: true })
-  const canonicalSource = { systemPlan: source.plan, scripts: source.scripts.map(s => s.payload), presentation: { aspectRatio: brief.avgVisualPlanning.scope.aspectRatio } }
-  const { sourceInputHash: _hash, aspectRatio: _ratio, ...unhashed } = brief.avgVisualPlanning.scope
+  const canonicalSource = { systemPlan: source.plan, scripts: source.scripts.map(s => s.payload), presentation: { aspectRatio: planning.scope.aspectRatio } }
+  const { sourceInputHash: _hash, aspectRatio: _ratio, ...unhashed } = planning.scope
   const checked = await freezeAvgVisualPlanningScopeV1(unhashed, canonicalSource)
-  if (canonicalProductProductionJsonV2(checked) !== canonicalProductProductionJsonV2(brief.avgVisualPlanning.scope)) throw new Error('[avg-visual-plan] 规则、文本或策划输入已 stale')
+  if (canonicalProductProductionJsonV2(checked) !== canonicalProductProductionJsonV2(planning.scope)) throw new Error('[avg-visual-plan] 规则、文本或策划输入已 stale')
   const keys = task.inputArtifactKeys.filter(k => k === 'avg.media.visual-bible' || /^avg\.media\.(character|environment|prop)-brief\./.test(k))
   const adopted = keys.length ? await readAvgConfirmedVisualArtifactsV4({ scope, buildId: build.id!, expectedBuildRevision: build.stateRevision,
     controlEpoch: build.controlEpoch, artifactKeys: keys }) : []
@@ -94,7 +79,7 @@ export async function readAvgVisualPlanningContextV4(input: AssembleContextInput
   const compilation = task.kind === 'avg-v4-visual-requirements-compile' && task.executionMode === 'deterministic' && task.contextProfile === 'avg-visual-planning-v4'
   const requirement = image?.definition.mediaBatch.requirements.find(r => task.taskKey === `${processing?'avg.media.process':'avg.media.generate'}.${r.requirementKey}`)
   if (image && !requirement) throw new Error('[avg-visual-image] 当前图片任务不属于准确编译需求')
-  const processEntry=processing?brief.avgVisualPlanning.imageProcessing?.entries.find(e=>e.requirementKey===requirement!.requirementKey):undefined
+  const processEntry=processing?planning.imageProcessing?.entries.find(e=>e.requirementKey===requirement!.requirementKey):undefined
   const rawRows=processing?await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id!,`avg.media.raw.${requirement!.requirementKey}`])
     .filter(r=>r.status==='accepted'&&r.controlEpoch===build.controlEpoch).limit(2).toArray():[]
   if(processing&&rawRows.length!==1)throw new Error('[avg-process] 当前加工任务缺少唯一准确原图')
@@ -104,12 +89,12 @@ export async function readAvgVisualPlanningContextV4(input: AssembleContextInput
   const packet = image ? { schema: 'storyforge.avg.visual-planning-inputs', version: 4, sourceInputHash: checked.sourceInputHash,
     aspectRatio: checked.aspectRatio, operation: processing?'process-compiled-image':rawReuse?'revalidate-original-compiled-image':'produce-compiled-image',
     ...(processEntry?{processing:processEntry}:{}),
-    ...(rawReuse?{rawReuseSource:brief.avgVisualPlanning.rawReuse?.find(r=>r.requirementKey===requirement!.requirementKey)}:{}),
+    ...(rawReuse?{rawReuseSource:planning.rawReuse?.find(r=>r.requirementKey===requirement!.requirementKey)}:{}),
     requirement, imageBinding: image.definition.imageBinding,
     compilation: image.definition.compilation }
     : compilation ? { schema: 'storyforge.avg.visual-planning-inputs', version: 4, sourceInputHash: checked.sourceInputHash,
     aspectRatio: checked.aspectRatio, operation: 'compile-adopted-visual-requirements' }
-    : projectAvgVisualPlanningTaskV4({ planning: brief.avgVisualPlanning, task, source: canonicalSource,
+    : projectAvgVisualPlanningTaskV4({ planning: planning, task, source: canonicalSource,
       visualBible: bible?.schema === 'storyforge.avg.visual-bible' ? bible : undefined })
   const references = compilation ? checked.referenceCatalog : checked.referenceCatalog.filter(ref => 'references' in packet
     && packet.references.some(selected => selected.referenceKey === ref.referenceKey))
@@ -120,11 +105,7 @@ export async function readAvgVisualPlanningContextV4(input: AssembleContextInput
     ...(raw?[{artifactKey:raw.artifactKey,version:raw.version,contentHash:raw.contentHash}]:[])]
   if (availableRefs.length !== task.inputArtifactKeys.length || availableRefs.some(r => !task.inputArtifactKeys.includes(r.artifactKey))) throw new Error('[avg-visual-plan] 准确作者依赖不闭合')
   const refs = task.inputArtifactKeys.map(key => availableRefs.find(r => r.artifactKey === key)!)
-  const current = await db.productBuilds.get(build.id!), owner = await db.productProductions.get(production.id!)
-  if (!current || !owner || current.stateRevision !== build.stateRevision || current.controlEpoch !== build.controlEpoch
-    || current.briefHash !== build.briefHash || current.planHash !== build.planHash || current.status !== build.status
-    || owner.status !== production.status || owner.controlEpoch !== production.controlEpoch || owner.currentBriefRevision !== production.currentBriefRevision
-    || owner.currentBuildNumber !== production.currentBuildNumber) throw new Error('[avg-visual-plan] 读取期间制作状态已变化')
+  await assertAvgVisualContextFresh(authority)
   return canonicalProductProductionJsonV2({ ...packet, taskKey: task.taskKey, productionKey: production.productionKey,
     buildNumber: build.buildNumber, controlEpoch: build.controlEpoch, planHash: build.planHash, briefRevision: row.revision, briefHash: build.briefHash,
     sourcePlanHash: row.sourcePlanHash, confirmedBriefHash: row.confirmedBriefHash,

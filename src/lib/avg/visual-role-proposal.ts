@@ -27,7 +27,7 @@ export function isAvgVisualReuseTaskV4(task: ProductProductionPlanTaskV3) {
 }
 
 /** Semantic output never owns scope, route, authority, ids or acceptance. */
-export function validateAvgVisualSemanticV4(value: unknown, scope: AvgVisualPlanningScopeV1, targetArtifactKey: string) {
+export function validateAvgVisualSemanticV4(value: unknown, scope: Pick<AvgVisualPlanningScopeV1,'templates'>, targetArtifactKey: string) {
   const payload = prepareAvgProfessionalArtifactV1({ artifactKey: targetArtifactKey, kind: 'narrative', payload: value,
     allowedOutputKeys: [targetArtifactKey] }).payload
   const subjects = new Map(scope.templates.map(t => [t.parameters.family.subjectKey, t.subjectKind]))

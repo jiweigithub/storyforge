@@ -32,8 +32,9 @@ import { bindAvgVoiceChoiceToSourceV1, readAvgChosenVoiceSourceV1, readAvgRawVoi
 import { parseAvgRetainedVoiceProofV1 } from './voice-recovery-contract'
 import { assertAvgVoiceReviewRevisionV1, assertAvgVoiceReviewScopeV1, assertAvgVoiceReviewSelectableV1 } from './voice-review'
 import { readAvgOptionalImageDefinitionV3 } from './media-production-definition'
+import { validateAvgVisualAuthorProposalV5 } from './visual-planning-author-v5'
 import { assertAvgVisualRoleProposalV4, validateAvgVisualSemanticV4 } from './visual-role-proposal'
-import { readAvgVisualProposalEvidenceV4 } from './visual-planning-evidence'
+import { readAvgVisualProposalEvidenceV4,readAvgVisualProposalEvidence } from './visual-planning-evidence'
 import { AVG_VISUAL_TEXT_CAPABILITY_V4 } from './visual-planning-roles'
 import { readAvgImageConsumptionDefinitionV4 } from './image-consumption'
 import type { AvgVisualReusePathV4 } from './visual-planning-reuse-contract'
@@ -246,7 +247,7 @@ async function acceptedInputs(scope: WorkspaceScope, buildId: number, epoch: num
       const row = matches[0]
       if (matches.length !== 1 || !row) throw new Error('[avg-media] 原图未准确接收')
       const verified = await verifyAcceptedProductBuildArtifactV1({ scope, buildId, artifactKey: key, version: row.version, contentHash: row.contentHash })
-      if (key.startsWith('avg.proposal.')) await readAvgVisualProposalEvidenceV4(scope, verified)
+      if (key.startsWith('avg.proposal.')) await readAvgVisualProposalEvidence(scope, verified)
       result.push(verified)
       continue
     }
@@ -392,8 +393,8 @@ function candidateBody(context: Awaited<ReturnType<typeof authority>>, input: {
 }
 
 async function validateVisualProposal(context: Awaited<ReturnType<typeof authority>>, payload: AuthorPayload, artifactKey: string, inputs: ProductBuildArtifactRecordV1[]) {
-  if (!context.brief.avgVisualPlanning || !['storyforge.avg.visual-bible', 'storyforge.avg.media-brief'].includes(payload.schema)) return undefined
-  if(context.brief.avgVisualPlanning.version!==4)throw new Error('[avg-visual-plan] 新版岗位采用必须使用准确登记的新候选与来源')
+  if (!context.brief.avgVisualPlanning || (payload.schema!=='storyforge.avg.visual-bible'&&payload.schema!=='storyforge.avg.media-brief')) return undefined
+  if(context.brief.avgVisualPlanning.version===5)return validateAvgVisualAuthorProposalV5(context,payload,artifactKey,inputs)
   const scope = context.brief.avgVisualPlanning.scope, originals = inputs.filter(r => r.artifactKey.startsWith('avg.proposal.'))
   if (originals.length !== 1) throw new Error('[avg-visual-plan] 作者采用必须绑定唯一实际原始方案')
   const original = originals[0], task = context.plan.tasks.find(t => t.outputArtifactKeys.includes(original.artifactKey))
@@ -678,12 +679,12 @@ export function readAvgFrozenVisualSourceInputsV4(input: Pick<Parameters<typeof 
 
 /** Planning reads canonical direction only after the existing author command,
  * frozen candidate and exact raw-proposal producer have all been verified. */
-export async function readAvgConfirmedVisualArtifactsV4(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope' | 'buildId' | 'expectedBuildRevision' | 'controlEpoch'> & { artifactKeys: string[] }, frozenVerification = false) {
+async function readAvgConfirmedVisualArtifacts(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope' | 'buildId' | 'expectedBuildRevision' | 'controlEpoch'> & { artifactKeys: string[] }, frozenVerification = false,expectedVersion:4|5=4) {
   const scope = await resolveScope({ scope: input.scope })
   return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands,
     db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects, db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts), async () => {
     const context = await authority(scope, input.buildId, true, frozenVerification)
-    if (context.brief.avgVisualPlanning?.version!==4 || context.build.stateRevision !== input.expectedBuildRevision || context.build.controlEpoch !== input.controlEpoch
+    if (context.brief.avgVisualPlanning?.version!==expectedVersion || context.build.stateRevision !== input.expectedBuildRevision || context.build.controlEpoch !== input.controlEpoch
       || new Set(input.artifactKeys).size !== input.artifactKeys.length) throw new Error('[avg-visual-plan] 视觉方案来源或 Build 已 stale')
     const result = []
     for (const key of input.artifactKeys) {
@@ -700,6 +701,9 @@ export async function readAvgConfirmedVisualArtifactsV4(input: Pick<Parameters<t
     return result
   })
 }
+
+export function readAvgConfirmedVisualArtifactsV4(input:Parameters<typeof readAvgConfirmedVisualArtifacts>[0],frozenVerification=false){return readAvgConfirmedVisualArtifacts(input,frozenVerification,4)}
+export function readAvgConfirmedVisualArtifactsV5(input:Parameters<typeof readAvgConfirmedVisualArtifacts>[0],frozenVerification=false){return readAvgConfirmedVisualArtifacts(input,frozenVerification,5)}
 
 /** Exact historical author/model evidence only. This read does not create a
  * candidate, copy adoption, grant carry authority or authorize a new request.

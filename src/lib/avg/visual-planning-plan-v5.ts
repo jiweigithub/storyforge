@@ -2,17 +2,11 @@ import type { ProductProductionBriefV3,ProductProductionPlanV3 } from '../types'
 import { buildAvgVisualPlanningTopologyV1 } from './visual-planning-plan-kernel'
 import { parseAvgVisualPlanningBriefV5,type AvgVisualPlanningBriefV5 } from './visual-planning-brief-v5'
 import { avgVisualPlanningTemplateRequirementsV2 } from './visual-planning-contract-v2'
-import type { AvgVisualDesignKindV1 } from './visual-planning-contract'
 import { AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4,avgVisualProposalArtifactKeyV4 } from './visual-planning-plan'
-import { avgVisualPlanningRoleV1 } from './visual-planning-roles'
+import { avgVisualPlanningRoleV5 } from './visual-planning-roles-v5'
+export { avgVisualPlanningRoleV5 } from './visual-planning-roles-v5'
 
 export const AVG_COMPILED_IMAGE_SKILL_V5='avg.compiled-image-request.v2'
-/** New Skills have separate identities; an old sealed Run never changes its
- * registered input/proposal grammar just because a newer version exists. */
-export function avgVisualPlanningRoleV5(kind:AvgVisualDesignKindV1|null){
-  const role=avgVisualPlanningRoleV1(kind)
-  return {...role,skillId:role.skillId.replace(/\.v1$/,'.v2')}
-}
 export function buildAvgVisualPlanningPlanV5(input:{
   brief:Pick<ProductProductionBriefV3,'capabilityRequirements'>&{avgVisualPlanning:AvgVisualPlanningBriefV5}
   briefHash:string;buildNumber:number;controlEpoch:number

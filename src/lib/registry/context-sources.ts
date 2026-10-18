@@ -1976,6 +1976,17 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     },
   },
   {
+    key: 'product-production.avg-visual-planning-inputs-v5',
+    label: 'AVG 新参考策略、公开用途与已确认方向',
+    scope: 'project', layer: 'L0', ownerFrom: 'work', budgetTokens: 24_000, protectedFromTrim: true,
+    enabled: input => Number.isInteger(input.productBuildId) && !!input.productProductionTaskKey,
+    read: async input => {
+      const load = () => import('../avg/visual-planning-context-v5')
+      const reader = await (Dexie.currentTransaction ? Dexie.waitFor(Dexie.ignoreTransaction(load)) : load())
+      return reader.readAvgVisualPlanningContextV5(input)
+    },
+  },
+  {
     key: 'product-production.artifact-inputs',
     label: '上层产品生产任务依赖',
     scope: 'project',

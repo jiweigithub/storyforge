@@ -69,3 +69,5 @@ export async function assertAvgVisualPlanningProducerAdmissionV4(input: {
   if (!same(JSON.parse(a.qualityJson), { schema: 'storyforge.avg.visual-compilation-evidence', version: 1,
     scopeHash: await hashProductProductionValueV2(planning.scope), inputs: packet.artifacts })) throw new Error('[avg-visual-plan] 编译来源证据不能冒充艺术或其他输入')
 }
+
+export { assertAvgVisualPlanningProducerAdmissionV5 } from './visual-planning-admission-v5'
