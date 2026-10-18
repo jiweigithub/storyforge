@@ -280,7 +280,14 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
   }
   function renew(jobKey, inputArtifactHash) {
     const job = jobData(jobKey), run = active.get(jobKey)
-    if (!job || job.input.inputArtifactHash !== inputArtifactHash || !run) throw new Error('Original live worker cannot be renewed from an unknown job')
+    if (!job || job.input.inputArtifactHash !== inputArtifactHash) throw new Error('Original live worker cannot be renewed from an unknown job')
+    // The owned child can close between the caller's running GET and /lease.
+    // Return its proven success without writing a lease or touching the result.
+    // raw() still validates the complete original PCM before any candidate.
+    const terminal = job.record.terminal
+    if (!run && job.record.status === 'generated' && (terminal?.kind === 'observed-child-close' && terminal.code === 0
+      || terminal?.kind === 'verified-result-worker-absent')) return projection(jobKey)
+    if (!run) throw new Error('Original live worker cannot be renewed from an unknown job')
     run.renew(); return projection(jobKey)
   }
   return { create, get: projection, start, cancel, renew, raw, recoverRaw, close() { closed = true; for (const [key] of active) cancel(key, 'owning-service-closed') } }

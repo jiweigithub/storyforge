@@ -43,7 +43,7 @@
       },
       {
         "path": "scripts/ttrpg-local-tts/product-jobs.mjs",
-        "sha256": "931cd919d67079059b9b442259cd6dca975b19f0ed129a790cabb76026bad8cb"
+        "sha256": "0b5a5d73c092574c2173a689895f6e56d8fbf1035a033146589919c8ef3fdba7"
       },
       {
         "path": "scripts/ttrpg-local-tts/product-bridge.mjs",

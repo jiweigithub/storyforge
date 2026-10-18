@@ -16,6 +16,23 @@ async function fixture(handler?: (url: string, init?: RequestInit) => Response |
 }
 describe('R-TTRPGOPEN10 bounded original-job browser transport', () => {
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+  it('a just-completed lease response flows straight to the same raw result with one start and no cancel or resend', async () => {
+    let hash = '', now = 0
+    const key = 'ttrpg.voice.1.' + 'a'.repeat(64), inputArtifactHash = 'a'.repeat(64)
+    const raw = JSON.stringify({ testOnly: true, original: 'exact original bytes', candidateAccepted: false })
+    vi.spyOn(Date, 'now').mockImplementation(() => now += profile.authorizationRenewMs)
+    const f = await fixture(url => {
+      if (url.endsWith('/raw')) return new Response(raw, { headers: { 'Content-Type': 'application/json' } })
+      const status = url.endsWith('/jobs') ? 'waiting-for-slot' : url.endsWith('/lease') ? 'generated' : 'running'
+      return response({ jobKey: key, inputArtifactHash, profileHash: hash, status, canStart: true })
+    }); hash = f.hash
+    let checks = 0
+    const result = await f.transport.execute({ jobKey: key, inputArtifactHash, execution: {} as never,
+      assertCurrentBeforeStart: async () => { checks++ } })
+    expect(result).toBe(raw)
+    expect(f.calls.map(row => row.url.split(prefix)[1])).toEqual(['/profile', '/jobs', '/jobs/' + key + '/start', '/jobs/' + key + '/lease', '/jobs/' + key + '/raw'])
+    expect(checks).toBe(2)
+  })
   it('only probes on construction and sends one explicit start after current owner check, retaining the exact raw response', async () => {
     let ownerChecks = 0, profileHash = '', gets = 0
     const key = 'ttrpg.voice.1.' + 'a'.repeat(64), inputArtifactHash = 'a'.repeat(64)

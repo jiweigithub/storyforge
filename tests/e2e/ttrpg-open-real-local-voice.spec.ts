@@ -80,11 +80,20 @@ test('real normal host UI generates and manually decodes the original offline Ch
   await studio.getByLabel('配音原文',{exact:true}).selectOption(JSON.stringify(f.narrationSourceRef));await studio.getByRole('button',{name:'预览本机读法',exact:true}).click()
   await expect(studio.getByLabel('本机归一读法',{exact:true})).toHaveText('湖畔灯火.')
   await studio.getByLabel('确认原文读法与范围',{exact:true}).check();await studio.getByRole('button',{name:'确认并生成本机配音',exact:true}).click()
-  await expect(studio.getByTestId('ttrpg-voice-candidate')).toBeVisible({timeout:150000})
-  const proof=await page.evaluate(async({owner})=>{const load=new Function('p','return import(p)'),{db}=await load('/storyforge/src/lib/db/schema.ts'),core=await load('/storyforge/src/lib/product/runtime-core.ts'),ledger=await load('/storyforge/src/lib/agent/run/event-store.ts'),artifacts=await load('/storyforge/src/lib/memory/artifact-store.ts'),runs=await db.agentRuns.toArray(),child=runs.find((r:any)=>r.parentRunId!=null),snapshot=await ledger.readInstanceAgentRunV1(owner.scope,child.id),response=snapshot.events.find((e:any)=>e.type==='model.responded'),raw=response?await artifacts.readAgentRunArtifactExactV1({projectId:owner.scope.projectId,artifactKind:'raw-response',contentHash:response.payload.outputHash}):null,
+  const readProof=()=>page.evaluate(async({owner})=>{const load=new Function('p','return import(p)'),{db}=await load('/storyforge/src/lib/db/schema.ts'),core=await load('/storyforge/src/lib/product/runtime-core.ts'),ledger=await load('/storyforge/src/lib/agent/run/event-store.ts'),artifacts=await load('/storyforge/src/lib/memory/artifact-store.ts'),runs=await db.agentRuns.toArray(),child=runs.find((r:any)=>r.parentRunId!=null),snapshot=await ledger.readInstanceAgentRunV1(owner.scope,child.id),response=snapshot.events.find((e:any)=>e.type==='model.responded'),raw=response?await artifacts.readAgentRunArtifactExactV1({projectId:owner.scope.projectId,artifactKind:'raw-response',contentHash:response.payload.outputHash}):null,
     execution=JSON.parse(await artifacts.readAgentRunArtifactExactV1({projectId:owner.scope.projectId,artifactKind:'source-snapshot',contentHash:child.contractHash?JSON.parse(child.contractJson).runtimeBindingHash:''})),state=await core.readProductRuntimeState(owner.sessionId)
     return {raw,snapshot,packet:{jobKey:'ttrpg.voice.'+child.id+'.'+JSON.parse(child.contractJson).runtimeBindingHash,inputArtifactHash:JSON.parse(child.contractJson).runtimeBindingHash,execution},entities:JSON.stringify(state.entities),time:JSON.stringify(state.ttrpg.openRun.worldTime),media:await db.productMediaAssets.count()}
   },f)
+  try{await expect(studio.getByTestId('ttrpg-voice-candidate')).toBeVisible({timeout:150000})}
+  catch(error){
+    // Keep the original durable Run/attempt/raw even when no candidate renders.
+    // Reading evidence cannot resend or manufacture a successful UI result.
+    try{const failed=await readProof();await info.attach('failed-normal-ui-original-run',{body:JSON.stringify({...failed,raw:undefined}),contentType:'application/json'});
+      if(failed.raw)await info.attach('failed-normal-ui-original-raw',{body:failed.raw,contentType:'application/json'})}
+    catch(diagnosticError){await info.attach('failed-normal-ui-evidence-read-error',{body:String(diagnosticError),contentType:'text/plain'})}
+    throw error
+  }
+  const proof=await readProof()
   await info.attach('actual-normal-ui-voice-source-run',{body:JSON.stringify({...proof,raw:undefined}),contentType:'application/json'})
   if(proof.raw)await info.attach('actual-normal-ui-voice-raw-response',{body:proof.raw,contentType:'application/json'})
   expect(proof.raw).not.toBeNull();await expect(studio.getByRole('heading',{name:'原音频候选待试听',exact:true})).toBeVisible()

@@ -18,6 +18,74 @@ function unknownComplete(jobs,runtime,input){
 ${script}`], { encoding: 'utf8', maxBuffer: 2 * 1024 * 1024 }))
 }
 describe('R-TTRPGOPEN10 actual offline worker protocol and physical raw audio boundary', () => {
+  it('low disk preserves the waiting original input and prevents a worker, lease or physical slot from being created', () => {
+    expect(node(`import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';
+const runtime=syntheticRuntime(),input=syntheticJob();let calls=0;
+const jobs=createProductVoiceJobs(runtime,{spawnWorker(){calls++;return fakeChild()}});jobs.create(input);
+const dir=path.join(runtime,'product-jobs-v2',digest(input.jobKey)),before=readFileSync(path.join(dir,'input.json'),'utf8'),record=readFileSync(path.join(dir,'job.json'),'utf8');
+const observe=fs.statfsSync;fs.statfsSync=()=>({bavail:0,bsize:4096});syncBuiltinESMExports();
+try{assert.throws(()=>jobs.start(input.jobKey,input.inputArtifactHash),/Insufficient free space/)}finally{fs.statfsSync=observe;syncBuiltinESMExports()}
+assert.equal(calls,0);assert.equal(readFileSync(path.join(dir,'input.json'),'utf8'),before);assert.equal(readFileSync(path.join(dir,'job.json'),'utf8'),record);
+for(const file of ['start.json','lease.json','result.json','audio.wav'])assert.equal(existsSync(path.join(dir,file)),false);
+assert.equal(existsSync(path.join(runtime,'.eval.lock')),false);assert.equal(existsSync(path.join(runtime,'.product-voice-worker.lock')),false);
+assert.equal(productProfile.minimumFreeBytes,5*1024**3);console.log(JSON.stringify({calls,originalRetained:true,noClaimOrLease:true,runtime}));`)).toMatchObject({ calls: 0, originalRetained: true, noClaimOrLease: true })
+  })
+  it('a renewal arriving after the observed successful close reads the original terminal without extending its lease or cancelling the result', () => {
+    expect(node(`const runtime=syntheticRuntime(),input=syntheticJob();let calls=0,child,dir;
+const jobs=createProductVoiceJobs(runtime,{spawnWorker(d){calls++;dir=d;child=fakeChild();return child}});
+jobs.create(input);assert.equal(jobs.start(input.jobKey,input.inputArtifactHash).status,'running');
+const observed=jobs.get(input.jobKey),lease=readFileSync(path.join(dir,'lease.json'),'utf8');assert.equal(observed.status,'running');
+writeSyntheticResult(dir,input);child.emit('close',0,null);
+const record=readFileSync(path.join(dir,'job.json'),'utf8'),state=jobs.renew(input.jobKey,input.inputArtifactHash);
+assert.equal(state.status,'generated');assert.equal(state.canStart,false);assert.equal(state.cancellationRequested,false);
+assert.equal(readFileSync(path.join(dir,'lease.json'),'utf8'),lease);assert.equal(readFileSync(path.join(dir,'job.json'),'utf8'),record);
+const restarted=createProductVoiceJobs(runtime,{spawnWorker(){throw Error('must not restart')}});
+assert.deepEqual(restarted.renew(input.jobKey,input.inputArtifactHash),state);
+assert.throws(()=>jobs.renew(input.jobKey,'0'.repeat(64)));assert.throws(()=>jobs.renew(syntheticJob(2).jobKey,input.inputArtifactHash));
+assert.deepEqual(child.signals,[]);assert.equal(calls,1);assert.equal(existsSync(path.join(dir,'cancel-request.json')),false);
+const raw=jobs.raw(input.jobKey);assert.equal(raw.result.inputArtifactHash,input.inputArtifactHash);assert.equal(raw.candidateAccepted,false);assert.equal(raw.adoptionAllowed,false);
+const wav=readFileSync(path.join(dir,'audio.wav'));wav[100]^=1;writeFileSync(path.join(dir,'audio.wav'),wav);
+assert.equal(jobs.renew(input.jobKey,input.inputArtifactHash).status,'generated');assert.throws(()=>jobs.raw(input.jobKey));
+assert.equal(readFileSync(path.join(dir,'lease.json'),'utf8'),lease);
+console.log(JSON.stringify({calls,terminalReadOnly:true,originalRaw:true,runtime}));`)).toMatchObject({ calls: 1, terminalReadOnly: true, originalRaw: true })
+  })
+  it('the actual HTTP lease boundary returns the just-completed original metadata and raw without another start or a cancellation', () => {
+    expect(node(`import {createServer} from 'node:http';import {createProductVoiceBridge,PREFIX} from './scripts/ttrpg-local-tts/product-bridge.mjs';
+const runtime=syntheticRuntime(),input=syntheticJob();let calls=0,child,dir,finishOnLease=false,finished=false;
+const bridge=createProductVoiceBridge(runtime,{spawnWorker(d){calls++;dir=d;child=fakeChild();return child}});
+const server=createServer((req,res)=>{if(finishOnLease&&!finished&&req.url.endsWith('/lease')){finished=true;writeSyntheticResult(dir,input);child.emit('close',0,null)}return bridge.middleware(req,res,()=>{res.writeHead(404);res.end()})});
+await new Promise(ok=>server.listen(0,'127.0.0.1',ok));
+try{const origin='http://127.0.0.1:'+server.address().port,headers={'X-StoryForge-Tts':'1','Content-Type':'application/json'},url=origin+PREFIX+'/jobs/'+input.jobKey;
+await fetch(origin+PREFIX+'/jobs',{method:'POST',headers,body:JSON.stringify(input)});
+const post=(action,value)=>fetch(url+'/'+action,{method:'POST',headers,body:JSON.stringify(value)});
+assert.equal((await post('start',{inputArtifactHash:input.inputArtifactHash})).status,200);
+assert.equal((await(await fetch(url,{headers})).json()).status,'running');const lease=readFileSync(path.join(dir,'lease.json'),'utf8');
+finishOnLease=true;const result=await post('lease',{inputArtifactHash:input.inputArtifactHash});assert.equal(result.status,200);
+const state=await result.json();assert.equal(state.status,'generated');assert.equal(state.inputArtifactHash,input.inputArtifactHash);assert.equal(state.cancellationRequested,false);
+assert.equal((await post('lease',{inputArtifactHash:'0'.repeat(64)})).status,409);
+assert.equal((await post('lease',{inputArtifactHash:input.inputArtifactHash,extra:true})).status,409);
+assert.equal((await post('lease',{inputArtifactHash:input.inputArtifactHash})).status,200);
+assert.equal(readFileSync(path.join(dir,'lease.json'),'utf8'),lease);
+const rawResponse=await fetch(url+'/raw',{headers});assert.equal(rawResponse.status,200);const raw=await rawResponse.json();
+assert.equal(raw.result.jobKey,input.jobKey);assert.equal(raw.workerExecutionKind,'injected-test-worker');assert.equal(raw.cancellationRequested,false);
+assert.equal(raw.candidateAccepted,false);assert.equal(raw.adoptionAllowed,false);assert.equal(calls,1);assert.deepEqual(child.signals,[]);
+assert.equal(existsSync(path.join(dir,'cancel-request.json')),false);
+}finally{bridge.close();await new Promise(ok=>server.close(ok))}
+console.log(JSON.stringify({calls,completionRace:true,noLeaseExtension:true,runtime}));`)).toMatchObject({ calls: 1, completionRace: true, noLeaseExtension: true })
+  })
+  it('late lease reads cannot turn failed, cancelled, unknown or unproven output into a completed result or renew their lease', () => {
+    expect(node(`for(const scenario of ['failed','cancelled','unknown','unproven-generated','failed-proof-generated']){
+const runtime=syntheticRuntime(),input=syntheticJob();let child,dir;
+const jobs=createProductVoiceJobs(runtime,{spawnWorker(d){dir=d;child=fakeChild();return child}});jobs.create(input);jobs.start(input.jobKey,input.inputArtifactHash);
+if(scenario==='cancelled')jobs.cancel(input.jobKey);child.emit('close',scenario==='cancelled'?null:2,scenario==='cancelled'?'SIGTERM':null);
+const file=path.join(dir,'job.json'),record=JSON.parse(readFileSync(file,'utf8'));
+if(scenario==='unknown'){record.status='running';delete record.terminal}
+if(scenario==='unproven-generated'){record.status='generated';delete record.terminal}
+if(scenario==='failed-proof-generated'){record.status='generated';record.terminal={kind:'observed-child-close',code:2,signal:null}}
+writeFileSync(file,stable(record));const before=readFileSync(file,'utf8'),lease=readFileSync(path.join(dir,'lease.json'),'utf8');
+assert.throws(()=>jobs.renew(input.jobKey,input.inputArtifactHash));assert.equal(readFileSync(file,'utf8'),before);assert.equal(readFileSync(path.join(dir,'lease.json'),'utf8'),lease);
+}console.log(JSON.stringify({rejected:5,noLeaseOrTerminalMutation:true}));`)).toEqual({ rejected: 5, noLeaseOrTerminalMutation: true })
+  })
   it('keeps the first complete raw delivery byte-identical after a later stop while status still reports the new request', () => {
     expect(node(`const runtime=syntheticRuntime(),input=syntheticJob(),jobs=createProductVoiceJobs(runtime,{spawnWorker(){throw new Error('must-not-infer')}});
 unknownComplete(jobs,runtime,input);const first=jobs.recoverRaw(input.jobKey,input.inputArtifactHash),before=jobs.get(input.jobKey);
@@ -171,11 +239,19 @@ assert.equal(readFileSync(file,'utf8'),before);assert.equal(jobs.get(input.jobKe
 console.log(JSON.stringify({inspectionFailurePreserved:true}));`).inspectionFailurePreserved).toBe(true)
   })
   it('old V2 implementation output stays readable with its original hashes, while old inputs cannot launch and altered physical budgets are rejected', () => {
-    expect(node(`const runtime=syntheticRuntime(),input=syntheticJob();input.execution.profile=JSON.parse(readFileSync('scripts/ttrpg-local-tts/product-profile-v2.json','utf8'));
+    expect(node(`import {mkdirSync} from 'node:fs';const runtime=syntheticRuntime(),input=syntheticJob();input.execution.profile=JSON.parse(readFileSync('scripts/ttrpg-local-tts/product-profile-v2.json','utf8'));
 input.execution.profileHash=digest(stable(input.execution.profile));input.inputArtifactHash=digest(stable(input.execution));input.jobKey='ttrpg.voice.1.'+input.inputArtifactHash;
 assert.notEqual(input.execution.profileHash,productProfileHash);assert.throws(()=>validateProductJob(input));
 const {bytes,result}=syntheticResult(input);verifyProductResult(result,bytes,input);
 const changed=structuredClone(input);changed.execution.profile.maxAudioSeconds++;changed.execution.profileHash=digest(stable(changed.execution.profile));assert.throws(()=>verifyProductResult(result,bytes,changed));
+const dir=path.join(runtime,'product-jobs-v2',digest(input.jobKey));mkdirSync(dir,{recursive:true});
+writeFileSync(path.join(dir,'input.json'),stable(input));writeFileSync(path.join(dir,'start.json'),stable({kind:'start-authorized'}));
+writeFileSync(path.join(dir,'job.json'),stable({jobKey:input.jobKey,inputArtifactHash:input.inputArtifactHash,status:'generated',launchNonce:'original-nonce',workerExecutionKind:'injected-test-worker',terminal:{kind:'observed-child-close',code:0,signal:null}}));
+writeSyntheticResult(dir,input);const record=readFileSync(path.join(dir,'job.json'),'utf8');
+const jobs=createProductVoiceJobs(runtime,{spawnWorker(){throw Error('historical output must not execute')}}),state=jobs.renew(input.jobKey,input.inputArtifactHash);
+assert.equal(state.status,'generated');assert.equal(state.profileHash,input.execution.profileHash);assert.equal(state.canStart,false);
+assert.equal(existsSync(path.join(dir,'lease.json')),false);assert.equal(readFileSync(path.join(dir,'job.json'),'utf8'),record);
+assert.equal(jobs.raw(input.jobKey).result.profileHash,input.execution.profileHash);
 console.log(JSON.stringify({oldOutputReadable:true,oldExecutionDenied:true}));`)).toEqual({ oldOutputReadable: true, oldExecutionDenied: true })
   })
   it('losing the physical slot while its actual eval owner is still writing the lock preserves that owner and releases only the unlaunched product claim', () => {
