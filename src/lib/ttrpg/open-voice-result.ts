@@ -5,6 +5,7 @@ import { canonicalStringify, hashCanonicalValue } from '../agent/run/hash'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import { sha256MediaData } from '../product-production/media-blob-store'
 import type { TtrpgOpenVoiceRequestV1 } from './open-voice-request-contract'
+import { verifyTtrpgOpenVoiceSampleClockV1 } from './open-voice-timeline-contract'
 import * as p from './open-contract-parse'
 
 export interface TtrpgOpenVoiceResultIdentityV1 {
@@ -76,18 +77,10 @@ async function verify(raw: string, expected: TtrpgOpenVoiceResultIdentityV1) {
     || ascii(36,4) !== 'data' || view.getUint32(40,true) !== bytes.byteLength - 44) invalid()
   const alignment = p.record(r.alignment,['kind','wordAlignmentProvided','originalPart','segments'],'actual segment clock')
   if (alignment.kind !== 'normalized-reading-segments' || alignment.wordAlignmentProvided !== false || canonicalStringify(alignment.originalPart) !== canonicalStringify(expected.originalPart)) invalid()
-  let offset = 0, sample = 0
-  const segments = []
-  for (const value of p.list(alignment.segments,'actual segments',(v,l) => p.record(v,['index','readingOffsetUtf16','readingLengthUtf16','textSha256','sampleOffset','sampleCount','gain'],l),wireProfile.maxSegments,1)) {
-    const length = integer(value.readingLengthUtf16,'reading length',wireProfile.maxSegmentUtf16,1), count = integer(value.sampleCount,'segment samples',wireProfile.sampleRate * wireProfile.maxSegmentAudioSeconds,1)
-    const gain = p.number(value.gain,'segment gain',Number.MIN_VALUE,1)
-    if (value.index !== segments.length || value.readingOffsetUtf16 !== offset || value.sampleOffset !== sample
-      || await sha256Text(expected.normalizedText.slice(offset,offset + length)) !== value.textSha256) invalid()
-    segments.push({ index: segments.length, readingOffsetUtf16: offset, readingLengthUtf16: length, textSha256: p.hash(value.textSha256,'segment text hash'), sampleOffset: sample, sampleCount: count, gain })
-    offset += length; sample += count
-  }
+  const timeline = await verifyTtrpgOpenVoiceSampleClockV1({ ...alignment, sampleRate: wireProfile.sampleRate, samples }, expected.normalizedText)
+  const { segments } = timeline
   const u = p.record(r.usage,['textEncoderCallsStarted','textEncoderCallsCompleted','speechCallsStarted','speechCallsCompleted'],'actual physical model usage')
-  if (offset !== expected.normalizedText.length || sample !== samples || Object.values(u).some(v => v !== segments.length)
+  if (Object.values(u).some(v => v !== segments.length)
     || segments.length > wireProfile.maxSpeechInferenceCalls || segments.length > wireProfile.maxTextEncoderCalls) invalid()
   let energy = 0, peak = 0
   for (let i = 44; i < bytes.byteLength; i += 2) { const value = view.getInt16(i,true) / 32767; energy += value * value; peak = Math.max(peak,Math.abs(value)) }
@@ -96,8 +89,7 @@ async function verify(raw: string, expected: TtrpgOpenVoiceResultIdentityV1) {
   const reportedRms = p.number(m.rms,'actual RMS',0,2), reportedPeak = p.number(m.peak,'actual peak',0,2)
   if (Math.abs(reportedRms - rms) > 1e-7 || Math.abs(reportedPeak - peak) > 1e-7 || rms < .00001 || peak > .9901) invalid()
   return { bytes, resultHash: await hashCanonicalValue(r), audio: { mimeType: 'audio/wav' as const, contentHash: audioHash, byteLength: bytes.byteLength, durationMs },
-    timeline: { kind: 'normalized-reading-segments' as const, wordAlignmentProvided: false as const, originalPart: structuredClone(expected.originalPart),
-      sampleRate: wireProfile.sampleRate, samples, segments },
+    timeline,
     usage: { textEncoderCallsStarted: segments.length, textEncoderCallsCompleted: segments.length, speechCallsStarted: segments.length, speechCallsCompleted: segments.length },
     metrics: { wallMs,cpuMs,maxRssBytes,rms: reportedRms,peak: reportedPeak }, completionEvidence: p.oneOf(envelope.completionEvidence,['observed-child-close','verified-result-worker-absent'],'completion evidence'), cancellationRequested }
 }

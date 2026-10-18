@@ -21,6 +21,9 @@ describe('R-TTRPGOPEN10 exact original memory-only audition and revocation', {ti
     const counts=await Promise.all(db.tables.map(t=>t.count())),verify=vi.spyOn(physical,'verifyTtrpgOpenVoiceRawResultForKernelV1')
     const {value,revoke}=await watch(f)
     expect(value).toMatchObject({candidateHash:f.candidate.candidateHash,originalText:'编号001。',readingText:'编号零零一.',generationAllowed:false,adoptionAllowed:false,humanListening:'unproven',timeline:{kind:'normalized-reading-segments',wordAlignmentProvided:false,sampleRate:44100,samples:4410}})
+    expect(value.sourceText).toBe(f.text)
+    expect(value.generatedTimeline).toMatchObject({schema:'storyforge.ttrpg-open-generated-voice-timeline',version:1,sourceTextLengthUtf16:f.text.length,normalizedText:value.readingText,clock:value.timeline})
+    expect(value.generatedTimeline.sourceTextHash).toBe(f.candidate.validation!.timeline.originalPart.textHash)
     expect(value.blob.type).toBe('audio/wav');expect(value.blob.size).toBe(f.candidate.artifact.audio!.byteLength)
     const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await value.blob.arrayBuffer())),v=>v.toString(16).padStart(2,'0')).join('')
     expect(hash).toBe(f.candidate.artifact.audio!.contentHash)
@@ -40,6 +43,7 @@ describe('R-TTRPGOPEN10 exact original memory-only audition and revocation', {ti
     const f=await fixture(),value=await prepareTtrpgOpenVoiceAuditionV1(f.audition),revoke=vi.fn()
     expect(()=>observeTtrpgOpenVoiceAuditionV1({...value},revoke)).toThrow()
     const text=value.readingText;value.readingText='替换的私有文本';expect(()=>observeTtrpgOpenVoiceAuditionV1(value,revoke)).toThrow();value.readingText=text
+    const count=value.generatedTimeline.clock.samples;value.generatedTimeline.clock.samples++;expect(()=>observeTtrpgOpenVoiceAuditionV1(value,revoke)).toThrow();value.generatedTimeline.clock.samples=count
     const observer=observeTtrpgOpenVoiceAuditionV1(value,revoke);observers.push(observer);await observer.ready
     expect(()=>observeTtrpgOpenVoiceAuditionV1(value,revoke)).toThrow();observer.dispose();observer.dispose()
     expect(()=>observeTtrpgOpenVoiceAuditionV1(value,revoke)).toThrow();expect(revoke).not.toHaveBeenCalled()

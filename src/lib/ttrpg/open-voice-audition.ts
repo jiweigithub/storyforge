@@ -8,10 +8,12 @@ import { readTtrpgSessionParticipantsV2 } from './participants'
 import { readTtrpgOpenVoiceAuditionBasisForKernelV1 } from './open-voice-candidate'
 import type { TtrpgOpenVoiceJobLocatorV1 } from './open-voice-job-read-state'
 import * as p from './open-contract-parse'
+import { verifyTtrpgOpenGeneratedVoiceTimelineV1, type TtrpgOpenGeneratedVoiceTimelineV1 } from './open-voice-timeline-contract'
 
 type Prepared = Awaited<ReturnType<typeof readTtrpgOpenVoiceAuditionBasisForKernelV1>>
 export interface TtrpgOpenVoiceAuditionV1 {
   candidateHash: string; blob: Blob; originalText: string; readingText: string; timeline: Prepared['timeline']
+  sourceText: string; generatedTimeline: TtrpgOpenGeneratedVoiceTimelineV1
   generationAllowed: false; adoptionAllowed: false; humanListening: 'unproven'
 }
 interface Grant { blob: Blob; body: string; assertCurrent: () => Promise<void>; fingerprint: () => Promise<string>; expected: string
@@ -34,6 +36,11 @@ export async function prepareTtrpgOpenVoiceAuditionV1(request: TtrpgOpenVoiceJob
 }): Promise<TtrpgOpenVoiceAuditionV1> {
   const input = structuredClone(request);p.literal(input.decision,'prepare-audition-for-this-original-voice-candidate','explicit original audition')
   const { basis: b,candidate,data,timeline,assertCurrent } = await readTtrpgOpenVoiceAuditionBasisForKernelV1(input)
+  const sourceText = b.original.request.script.text, audio = candidate.artifact.audio!
+  const generatedTimeline = await verifyTtrpgOpenGeneratedVoiceTimelineV1({ schema: 'storyforge.ttrpg-open-generated-voice-timeline', version: 1,
+    sourceTextHash: b.original.request.textHash, sourceTextLengthUtf16: sourceText.length,
+    normalizedText: b.original.request.reading!.normalizedText, normalizedTextSha256: b.original.request.reading!.normalizedTextSha256, clock: timeline },
+  sourceText, { mimeType: audio.mimeType, byteSize: audio.byteLength, durationMs: audio.durationMs })
   const runIds = [b.snapshot.run.id!,b.original.snapshot.run.id!]
   const refs = [...b.snapshot.events,...b.original.snapshot.events].flatMap(e => e.type === 'evidence.artifact.recorded' ? [e.payload] : [])
   const keys = await Promise.all(refs.map(ref => db.agentRunArtifacts.where('[projectId+artifactKind+contentHash]').equals([input.scope.projectId,ref.artifactKind,ref.contentHash]).primaryKeys()))
@@ -52,7 +59,8 @@ export async function prepareTtrpgOpenVoiceAuditionV1(request: TtrpgOpenVoiceJob
   await assertCurrent()
   const value: TtrpgOpenVoiceAuditionV1 = { candidateHash: candidate.candidateHash,blob: new Blob([data],{type:'audio/wav'}),
     originalText: b.original.request.script.text.slice(b.original.request.part.textOffset,b.original.request.part.textOffset + b.original.request.part.textLength),
-    readingText: b.original.request.reading!.normalizedText,timeline: structuredClone(timeline),generationAllowed: false,adoptionAllowed: false,humanListening: 'unproven' }
+    readingText: b.original.request.reading!.normalizedText,timeline: structuredClone(timeline),sourceText,generatedTimeline,
+    generationAllowed: false,adoptionAllowed: false,humanListening: 'unproven' }
   issued.set(value,{ blob: value.blob,body: metadata(value),assertCurrent,fingerprint,expected,watched,revoked: false,observing: false })
   return value
 }
