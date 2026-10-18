@@ -152,8 +152,8 @@ export async function assertAvgProcessedImageArtifactV1(brief:ProductProductionB
 }
 /** Pure payload/recipe/metadata checks. The caller supplies a separately
  * proven definition and verifies producer authority and physical bytes. */
-export async function assertAvgProcessedImageArtifactFromDefinitionV1(a:{imageProcessing?:AvgImageProcessingPlanV1;mediaBatch:{requirements:AvgVisualProductionRequirementV1[]}},row:AvgProcessedImageArtifactFieldsV1):Promise<{
-  payload:AvgProcessedImagePayloadV1;asset:FrozenRuntimeMediaAssetV2;requirement:AvgVisualProductionRequirementV1
+export async function assertAvgProcessedImageArtifactFromDefinitionV1<R extends Omit<AvgVisualProductionRequirementV1,'references'>>(a:{imageProcessing?:AvgImageProcessingPlanV1;mediaBatch:{requirements:R[]}},row:AvgProcessedImageArtifactFieldsV1):Promise<{
+  payload:AvgProcessedImagePayloadV1;asset:FrozenRuntimeMediaAssetV2;requirement:R
 }>{
   const payload = await parseAvgProcessedImagePayloadV1(row.payloadJson)
   const entry = a.imageProcessing?.entries.find(e => e.requirementKey === payload.requirementKey)

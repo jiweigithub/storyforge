@@ -28,6 +28,10 @@ export function createAvgVisualPlanningExecutorV5(options:{brief:ProductProducti
     try{
       if(!avgVisualPlanningExecutionReadyV5())throw new Error('[avg-visual-plan] 新专业执行尚未开放')
       if(input.signal.aborted)throw new DOMException('Aborted','AbortError')
+      if(input.task.kind==='avg-media-image-process'){
+        const {executeAvgVisualImageProcessingTaskV5}=await import('./visual-image-processing-v5')
+        return executeAvgVisualImageProcessingTaskV5(input,brief)
+      }
       if(input.task.kind==='avg-media-image-generate'){
         const {executeAvgMediaImageTaskV2}=await import('./media-production-executor')
         return executeAvgMediaImageTaskV2(input,{brief,mediaCapabilities:options.mediaCapabilities??new Map(),imageEndpointRouteHash:options.imageEndpointRouteHash})

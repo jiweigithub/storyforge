@@ -2,9 +2,10 @@ import type { WorkspaceScope } from '../types'
 import { readProductProductionDetailsV1 } from '../product-production/service'
 import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/artifact-store'
 import { stageAvgAuthorArtifactV1 } from './author-artifacts'
-import { avgRawMediaArtifactKeyV1,avgVisualReviewArtifactKeyV1,avgMediaChoiceArtifactKeyV1,type AvgAuthorMediaChoiceV1 } from './media-production-contract'
+import { avgRawMediaArtifactKeyV1,avgVisualReviewArtifactKeyV1,avgMediaChoiceArtifactKeyV1,type AvgAuthorMediaChoice } from './media-production-contract'
 import { parseAvgAuthorVisualReviewV2,type AvgReviewIssuesV2 } from './visual-review-contract-v2'
 import { assertAvgConsumedRawImageV5 } from './image-consumption-v5'
+import { readAvgProcessedImageSourceV5 } from './image-processing-source-v5'
 
 /** Same pending author candidate and adoption command, with explicit policy
  * review grammar. Saving a rejection or unknown cannot choose an image. */
@@ -29,9 +30,12 @@ export async function stageAvgMediaChoiceV5(input:{scope:WorkspaceScope;producti
   const row=await verifyAcceptedProductBuildArtifactV1({scope:input.scope,buildId:build.id,artifactKey:avgRawMediaArtifactKeyV1(input.requirementKey),
     version:input.rawVersion,contentHash:input.rawContentHash})
   const raw=await assertAvgConsumedRawImageV5({scope:input.scope,brief,row}),r=raw.requirement
-  if(raw.compiled.planning.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey))throw new Error('[avg-process] 新版加工选用尚未接通，不能绕过配方')
-  const payload:AvgAuthorMediaChoiceV1={schema:'storyforge.avg.media-choice',version:1,requirementKey:r.requirementKey,requirementRevision:r.revision,
-    raw:{artifactKey:row.artifactKey,version:row.version,contentHash:row.contentHash},asset:raw.asset,referenceOnly:r.consumer.domain==='reference',declaration:input.declaration}
+  const processed=raw.compiled.planning.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)
+    ?await readAvgProcessedImageSourceV5({scope:input.scope,buildId:build.id,brief,raw:row}):undefined
+  const base={schema:'storyforge.avg.media-choice',version:1,requirementKey:r.requirementKey,requirementRevision:r.revision,
+    raw:{artifactKey:row.artifactKey,version:row.version,contentHash:row.contentHash},asset:processed?.asset??raw.asset,referenceOnly:r.consumer.domain==='reference',declaration:input.declaration}
+  const payload:AvgAuthorMediaChoice=processed?{...base,schema:'storyforge.avg.media-choice',version:2,processed:{artifactKey:processed.row.artifactKey,version:processed.row.version,contentHash:processed.row.contentHash}}
+    :{...base,schema:'storyforge.avg.media-choice',version:1}
   return stageAvgAuthorArtifactV1({scope:input.scope,buildId:build.id,expectedBuildRevision:build.stateRevision,controlEpoch:build.controlEpoch,
     taskKey:`avg.author.media.${r.requirementKey}`,artifactKey:avgMediaChoiceArtifactKeyV1(r.requirementKey),kind:'presentation',payload,declaration:input.declaration})
 }

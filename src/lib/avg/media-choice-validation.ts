@@ -7,7 +7,7 @@ import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/arti
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
 import { parseAvgAuthorMediaChoice, type AvgAuthorMediaChoice, type AvgVisualProductionRequirementV1 } from './media-production-contract'
 import { inspectAvgImageBytesV1 } from './image-decoder'
-import { inspectAvgProcessedImageSourceV1, readAvgProcessedImageSourceV1 } from './image-processing-source'
+import { inspectAvgProcessedImageSourceV1, readAvgProcessedImageSourceV1,type AvgInspectedProcessedImageV1 } from './image-processing-source'
 import { assertAvgConsumedRawImageV4, readAvgImageConsumptionDefinitionV4 } from './image-consumption'
 import { readAvgCurrentChosenMediaSource } from './current-image-consumption'
 
@@ -53,7 +53,7 @@ export async function inspectAvgChosenImageV1(input: { scope: WorkspaceScope; br
  * producer, processing and author authority before supplying these records. */
 export async function inspectAvgChosenImageBytesV1<R extends Omit<AvgVisualProductionRequirementV1,'references'>>(input:{scope:WorkspaceScope;choice:AvgAuthorMediaChoice;
   row:ProductBuildArtifactRecordV1;image:ProductBuildArtifactRecordV1;asset:FrozenRuntimeMediaAssetV2;
-  requirement:R;processed?:Awaited<ReturnType<typeof inspectAvgProcessedImageSourceV1>>}){
+  requirement:R;processed?:AvgInspectedProcessedImageV1<R>}){
   const {row,image,asset,processed,requirement:r}=input,choice=parseAvgAuthorMediaChoice(input.choice)
   if(choice.raw.artifactKey!==row.artifactKey||choice.raw.version!==row.version||choice.raw.contentHash!==row.contentHash)throw new Error('[avg-media] 选择未绑定准确原图版本')
   if (choice.requirementKey !== r.requirementKey || choice.requirementRevision !== r.revision

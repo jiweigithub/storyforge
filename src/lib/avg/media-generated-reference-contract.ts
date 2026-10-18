@@ -1,7 +1,7 @@
 import { parseAvgVisualRawReuseSourceV4, type AvgVisualRawReuseSourceV4 } from './visual-image-reuse-contract'
 import { avgHash, avgKey, avgNumber, avgRecord } from './protocol-validation'
 import { parseAvgRetainedRawProofV1, type AvgRetainedRawProofV1 } from './media-recovery-contract'
-import { parseAvgGeneratedReferenceSourceV4,type AvgGeneratedReferenceSourceV4 } from './visual-processed-source-contract'
+import { parseAvgGeneratedReferenceSourceV4,parseAvgLocalProcessingProducerProofV1,type AvgGeneratedReferenceSourceV4 } from './visual-processed-source-contract'
 
 /** Portable origin, never a host-local Build/Run/Blob locator. Outbound and
  * derivative consent still belong to each later reference request. */
@@ -62,7 +62,13 @@ export interface AvgGeneratedReferenceSourceV5 extends Omit<AvgGeneratedReferenc
   version:5
   raw:Omit<AvgGeneratedReferenceSourceV2['raw'],'version'>&{version:5}
 }
-export type AvgGeneratedImageSource=AvgGeneratedReferenceSourceV1|AvgGeneratedReferenceSourceV2|AvgGeneratedReferenceSourceV3|AvgGeneratedReferenceSourceV4|AvgGeneratedReferenceSourceV5
+/** Actual V5 original/raw2 with a separate bounded local derivative. Source5
+ * stays original-only; this packet cannot grant a legacy request authority. */
+export interface AvgGeneratedReferenceSourceV6 extends Omit<AvgGeneratedReferenceSourceV5,'version'|'processing'>{
+  version:6
+  processing:AvgGeneratedReferenceSourceV4['processing']
+}
+export type AvgGeneratedImageSource=AvgGeneratedReferenceSourceV1|AvgGeneratedReferenceSourceV2|AvgGeneratedReferenceSourceV3|AvgGeneratedReferenceSourceV4|AvgGeneratedReferenceSourceV5|AvgGeneratedReferenceSourceV6
 
 /** Structural original HTTP proof only. Every consumer must independently
  * verify the actual portable producer and bytes; parsing grants no use. */
@@ -82,8 +88,8 @@ function parseAvgVisualRawProducerProof<V extends 4|5>(value:unknown,requirement
     candidateHash:avgHash(p.candidateHash,'source.candidateHash'),responseEvidenceHash:avgHash(p.responseEvidenceHash,'source.responseEvidenceHash'),proofHash:avgHash(p.proofHash,'source.proofHash')}
 }
 
-function parseOriginalImageSourceFields<V extends 2|5>(value:unknown,version:V) {
-  const r=avgRecord(value,['schema','version','productionKey','requirementKey','raw','compilation','choice','review'],'V4 image source')
+function parseOriginalImageSourceFields<V extends 2|5|6>(value:unknown,version:V) {
+  const r=avgRecord(value,['schema','version','productionKey','requirementKey','raw','compilation','choice','review',...(version===6?['processing']:[])],'visual image source')
   if(r.schema!=='storyforge.avg.generated-reference-source'||r.version!==version)throw new Error('[avg-visual-history] 图片来源版本无效')
   const requirementKey=avgKey(r.requirementKey,'source.requirementKey')
   const c=avgRecord(r.compilation,['artifactKey','version','contentHash'],'V4 image compilation')
@@ -146,7 +152,15 @@ export function parseAvgGeneratedReferenceSourceV3(value:unknown):AvgGeneratedRe
     choice:author(r.choice,`avg.media.choice.${requirementKey}`),review:author(r.review,`avg.review.visual.${requirementKey}`)}
 }
 
+export function parseAvgGeneratedReferenceSourceV6(value:unknown):AvgGeneratedReferenceSourceV6 {
+  const s=parseOriginalImageSourceFields(value,6),raw=parseAvgVisualRawProducerProofV5(s.rawValue,s.requirementKey)
+  const processing=parseAvgLocalProcessingProducerProofV1((value as {processing?:unknown}).processing,s.requirementKey,raw)
+  return {schema:s.schema,version:6,productionKey:s.productionKey,requirementKey:s.requirementKey,raw,processing,
+    compilation:s.compilation,choice:s.choice,review:s.review}
+}
+
 export function parseAvgGeneratedImageSource(value:unknown):AvgGeneratedImageSource {
+  if(value&&typeof value==='object'&&'version'in value&&value.version===6)return parseAvgGeneratedReferenceSourceV6(value)
   if(value&&typeof value==='object'&&'version'in value&&value.version===5)return parseAvgGeneratedReferenceSourceV5(value)
   if(value&&typeof value==='object'&&'version'in value&&value.version===4)return parseAvgGeneratedReferenceSourceV4(value)
   if(value&&typeof value==='object'&&'version'in value&&value.version===3)return parseAvgGeneratedReferenceSourceV3(value)

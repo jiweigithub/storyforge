@@ -41,7 +41,11 @@ export async function readAvgVisualPlanningExecutionSourcesV5(input: ProductProd
     || packet.schema !== 'storyforge.avg.visual-planning-inputs' || packet.version !== 5
     || canonicalProductProductionJsonV2(packet.artifacts) !== canonicalProductProductionJsonV2(refs)) throw new Error('[avg-visual-plan] Harness 输入与准确作者采用凭证不一致')
   for(const row of input.inputArtifacts){
-    if(row.kind==='image'||await hashProductProductionValueV2(JSON.parse(row.payloadJson))!==row.contentHash)throw new Error('[avg-visual-plan] 新岗位输入只能来自准确已采用的语义工件')
+    if(row.kind==='image'){
+      if(input.task.kind!=='avg-media-image-process'||!row.artifactKey.startsWith('avg.media.raw.'))throw new Error('[avg-visual-plan] 只有本地加工可读取准确原图字节')
+      // Physical producer/Blob is verified by the registered reader and exact
+      // task; this content hash identifies pixels, not raw metadata JSON.
+    }else if(await hashProductProductionValueV2(JSON.parse(row.payloadJson))!==row.contentHash)throw new Error('[avg-visual-plan] 新岗位输入只能来自准确已采用的语义工件')
   }
   const rules = input.inputArtifacts.find(r => r.artifactKey === 'avg.system.plan')
   if (!rules) throw new Error('[avg-visual-plan] 缺少准确规则输入')

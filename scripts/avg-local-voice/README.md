@@ -11,7 +11,7 @@
 | Kokoro v1.1-zh | [官方模型卡](https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh)标注 Apache-2.0，披露获授权中文数据及众包合成英语数据；其合成数据条款论证仍由发布者陈述 | 本轮不引入，未把许可标签当作全部训练数据权利结论 |
 | MeloTTS | [官方仓库](https://github.com/myshell-ai/MeloTTS)标注 MIT，但[依赖](https://github.com/myshell-ai/MeloTTS/blob/main/requirements.txt)覆盖多语种 G2P、词典及其它不同许可项目 | 本轮不引入，避免仅凭仓库 MIT 就把全部模型与依赖当作 MIT |
 
-Qwen 的固定音色与权重按发布者的 Apache-2.0 声明使用；没有取得每位原始训练说话人的独立合同副本，不将其表述为零争议保证。需要保留发布者许可、版权和依赖通知，不使用第三方演员名称、克隆样本或未经核实的社区音色包。模型效果比较尚待本机真实语音测量和审听，不把发布者 benchmark 当作本产品效果。
+Qwen 的固定音色与权重按发布者的 Apache-2.0 声明使用；没有取得每位原始训练说话人的独立合同副本，不将其表述为零争议保证。需要保留发布者许可、版权和依赖通知，不使用第三方演员名称、克隆样本或未经核实的社区音色包。本机已完成两句真实模型的字节、音频测量与完整播放校准，发音/演法/自然度等听感仍未通过验收；不把发布者 benchmark 当作本产品效果。
 
 Python 推理运行时独立安装于用户本机，当前不随网页/桌面客户端打包。Qwen、Transformers、Accelerate 为 Apache-2.0，PyTorch/torchaudio、librosa、Python SoundFile、pysox 等须保留各自许可证；SoundFile 所带 **libsndfile** 及 librosa 的 **soxr** 存在 LGPL 条款，不能把整套依赖称为 MIT/Apache。动态库与其通知保留在独立环境中，未复制源码到闭源模块、未静态链接分发。后续如打包运行时，必须随包提供对应通知、可替换动态库及适用源代码获取方式；尚未完成这种发行验收。[SoundFile 许可](https://github.com/bastibe/python-soundfile/blob/master/LICENSE)、[libsndfile 条款](https://github.com/libsndfile/libsndfile/blob/master/COPYING)、[soxr 条款](https://github.com/dofuuz/python-soxr/blob/main/LICENSE.txt)。不安装 SoX 命令行、eSpeak、ffmpeg 或 Gradio 演示服务；Python pysox 的导入警告不表示本流程要调用 SoX 二进制。
 
@@ -27,9 +27,9 @@ python3 scripts/avg-local-voice/download_model.py /absolute/local/avg-voice/mode
 /absolute/local/avg-voice/runtime/bin/python scripts/avg-local-voice/server.py --model-dir /absolute/local/avg-voice/model --device cpu
 ```
 
-`requirements.txt`记录直接推理依赖，`runtime-pins.txt`固定首次可导入环境的完整 Python 包版本；Qwen 包单独 `--no-deps`，因为官方包还声明了本服务不使用的 Gradio 演示依赖。`license_inventory.py`导出实际安装版本、许可元数据与通知清单，发行不能只审查直接依赖列表。推理导入已验证；真实模型下载、推理速度、发音、情绪和连续对白仍须分别验收。
+`requirements.txt`记录直接推理依赖，`runtime-pins.txt`固定首次可导入环境的完整 Python 包版本；Qwen 包单独 `--no-deps`，因为官方包还声明了本服务不使用的 Gradio 演示依赖。`license_inventory.py`导出实际安装版本、许可元数据与通知清单，发行不能只审查直接依赖列表。固定权重下载、离线推理和两句真实工程文本已在本任务核验：Uncle_Fu/Serena 输出6.56/8.08秒的24kHz单声道PCM16 WAV，原响应、Blob和导出字节一致，原生播放器完整原速结束。MPS单句推理约68.4/62.4秒，供应商费为0，硬件/用电/人工另计；响度约-26 LUFS。逐字匹配、发音、演法、边界和噪声五项仍unknown，未据此采用成音或生成真实配音Preview，不签专业听感或商业质量。
 
-中国大陆可明确添加 `--weight-host modelscope`，只从 Qwen 官方 ModelScope 仓库续传大权重；仍须通过同一固定版本的完整 SHA-256 和大小校验，否则停止。下载无自动重试；失败保留 `.part`，人工或上层明确续传同一文件后才继续。推理启动完全离线，逐文件检查模型锁，禁止启动时自动拉取模型或远程代码。已支持 `--device mps` 和 `cuda:0` 的显式选择，但不声明设备已实测，不自动改为另一设备。
+中国大陆可明确添加 `--weight-host modelscope`，只从 Qwen 官方 ModelScope 仓库续传大权重；仍须通过同一固定版本的完整 SHA-256 和大小校验，否则停止。下载无自动重试；失败保留 `.part`，人工或上层明确续传同一文件后才继续。推理启动完全离线，逐文件检查模型锁，禁止启动时自动拉取模型或远程代码。已支持 `--device mps` 和 `cuda:0` 的显式选择，其中本任务MPS仅有上述两句实测；不据此推导其他设备性能，也不自动改为另一设备。
 
 默认地址 `http://127.0.0.1:5297/v1`，仅绑定 `127.0.0.1`，严格核对 Host；浏览器只允许明确的 StoryForge 本机 origin，默认 5196 与 1111。其他开发端口需在启动参数中显式重复 `--origin http://127.0.0.1:PORT`。服务不接收 Agnes/OpenAI Key，也不访问这些服务；浏览器外本机客户端可调用，故不要把它暴露到局域网或用反向代理公开。
 

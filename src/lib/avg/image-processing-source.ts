@@ -13,8 +13,8 @@ import { parseProductProductionBriefV3 } from '../product-production/contracts'
 import { readAvgImageDefinitionV3 } from './media-production-definition'
 import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
 
-export interface AvgInspectedProcessedImageV1 {
-  payload:AvgProcessedImagePayloadV1;asset:FrozenRuntimeMediaAssetV2;requirement:AvgVisualProductionRequirementV1
+export interface AvgInspectedProcessedImageV1<R extends Omit<AvgVisualProductionRequirementV1,'references'>=AvgVisualProductionRequirementV1> {
+  payload:AvgProcessedImagePayloadV1;asset:FrozenRuntimeMediaAssetV2;requirement:R
   row:ProductBuildArtifactRecordV1;measured:Awaited<ReturnType<typeof inspectAvgImageBytesV1>>
 }
 
@@ -37,8 +37,8 @@ export async function inspectAvgProcessedImageSourceV1(input:{scope:WorkspaceSco
 
 /** Byte/decoder inspection only. The caller proves the real definition,
  * recipe, raw source and producer authority before supplying this image. */
-export async function inspectAvgProcessedImageBytesV1(input:{scope:WorkspaceScope;raw:ProductBuildArtifactRecordV1;processed:ProductBuildArtifactRecordV1;
-  image:Pick<AvgInspectedProcessedImageV1,'payload'|'asset'|'requirement'>}):Promise<AvgInspectedProcessedImageV1>{
+export async function inspectAvgProcessedImageBytesV1<R extends Omit<AvgVisualProductionRequirementV1,'references'>>(input:{scope:WorkspaceScope;raw:ProductBuildArtifactRecordV1;processed:ProductBuildArtifactRecordV1;
+  image:Pick<AvgInspectedProcessedImageV1<R>,'payload'|'asset'|'requirement'>}):Promise<AvgInspectedProcessedImageV1<R>>{
   const {image}=input
   const ref={artifactKey:input.raw.artifactKey,version:input.raw.version,contentHash:input.raw.contentHash,producerReceiptHash:input.raw.producerReceiptHash}
   if(canonicalProductProductionJsonV2(image.payload.raw)!==canonicalProductProductionJsonV2(ref)

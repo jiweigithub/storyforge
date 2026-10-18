@@ -18,8 +18,9 @@ import { buildAvgNativeAssemblyPlan } from './assembly-plan'
 import { buildAvgVisualPlanningPlanV4 } from './visual-planning-plan'
 import { buildAvgVisualPlanningPlanV5 } from './visual-planning-plan-v5'
 import { parseAvgAuthorMediaChoice, avgMediaChoiceArtifactKeyV1, avgVisualReviewArtifactKeyV1, type AvgAuthorMediaChoice, type AvgVisualProductionRequirementV1 } from './media-production-contract'
-import { inspectAvgChosenImageV1, inspectAvgChosenImageBytesV1, readAvgChosenMediaSourceV2, validateAvgMediaChoiceV1, type AvgMediaChoiceValidation } from './media-choice-validation'
+import { inspectAvgChosenImageV1, inspectAvgChosenImageBytesV1, validateAvgMediaChoiceV1, type AvgMediaChoiceValidation } from './media-choice-validation'
 import type { AvgInspectedProcessedImageV1 } from './image-processing-source'
+import type { AvgVisualProductionRequirementV2 } from './media-production-contract-v2'
 import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1, verifyAvgProcessedImageArtifactV1, verifyAvgHistoricalRawVoiceArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4, verifyHistoricalAvgVisualPlanningArtifactV5, verifyHistoricalAvgImageRevalidationProducerV1 } from '../product-production/artifact-store'
 import { assertAvgRawImageOriginV1 } from './media-recovery'
 import { readAvgInheritedStageImagesV1 } from './stage-image-sources'
@@ -405,12 +406,11 @@ async function readCurrentChoiceVisualReview(context:Awaited<ReturnType<typeof a
   if(context.brief.avgVisualPlanning?.version!==5)return readChoiceVisualReview(context,scope,choice,raw,epoch,processed)
   const d=await readAvgImageConsumptionDefinitionV5({scope,buildId:context.build.id!,brief:context.brief})
   if(!d.definition.mediaBatch.visualReviewPolicy)return undefined
-  if(processed)throw new Error('[avg-review] 新版加工评审尚未接通，不能借用旧证明')
-  const row=await readChoiceVisualReviewRow(context,scope,choice,raw,epoch)
-  const report=await validateAvgAuthorVisualReviewV2({scope,brief:context.brief,raw,payload:row.payloadJson})
+  const row=await readChoiceVisualReviewRow(context,scope,choice,raw,epoch,processed)
+  const report=await validateAvgAuthorVisualReviewV2({scope,brief:context.brief,raw,payload:row.payloadJson,processed})
   const r=d.definition.mediaBatch.requirements.find(r=>r.requirementKey===choice.requirementKey)
   if(!r)throw new Error('[avg-review] 新版选用缺少准确需求')
-  await assertAvgVisualReviewSelectableV2(report,r,raw.contentHash)
+  await assertAvgVisualReviewSelectableV2(report,r,(processed??raw).contentHash)
   return {row,payload:report,artifact:ref(row),authorReceiptHash:String(JSON.parse(row.metadataJson).receiptHash)}
 }
 
@@ -641,7 +641,7 @@ async function readAuthorInputs(input: {
       if (parsed.schema !== 'storyforge.avg.scene-script' || !scriptReceipt.candidate.inputs.some(source => source.artifactKey === artifact.artifactKey && source.version === artifact.version && source.contentHash === artifact.contentHash)) throw new Error('[avg] 脚本缺少当前正式规则依赖')
       return { payload: parsed, artifact: ref(row), authorReceiptHash: scriptReceipt.receiptHash }
     })
-    const mediaChoices: Array<{ payload: AvgAuthorMediaChoice; artifact: Ref; authorReceiptHash: string; raw: ProductBuildArtifactRecordV1;image:ProductBuildArtifactRecordV1;processed?:NonNullable<Awaited<ReturnType<typeof readAvgChosenMediaSourceV2>>>['processed'];review?:NonNullable<Awaited<ReturnType<typeof readCurrentChoiceVisualReview>>> }> = []
+    const mediaChoices: Array<{ payload: AvgAuthorMediaChoice; artifact: Ref; authorReceiptHash: string; raw: ProductBuildArtifactRecordV1;image:ProductBuildArtifactRecordV1;processed?:AvgInspectedProcessedImageV1<AvgVisualProductionRequirementV1|AvgVisualProductionRequirementV2>;review?:NonNullable<Awaited<ReturnType<typeof readCurrentChoiceVisualReview>>> }> = []
     // Resolve actual image versions only for consumption. Source/visual compilation reads
     // must not recursively ask for the compilation artifact they are proving.
     const image = context.brief.avgVisualPlanning
@@ -941,7 +941,7 @@ export async function readAvgAdoptedGeneratedReferenceChoiceV5(input:Parameters<
     const [row]=await acceptedInputs(scope,input.buildId,input.controlEpoch,[input.artifactKey])
     if(row.version!==input.version||row.contentHash!==input.contentHash||row.kind!=='presentation')throw new Error('[avg-visual-history] 需要准确新版已采用选图版本')
     const choice=parseAvgAuthorMediaChoice(row.payloadJson)
-    if(choice.version!==1)throw new Error('[avg-visual-history] 新版加工来源尚未接通，不能冒充原图')
+    if(choice.version!==1)throw new Error('[avg-visual-history] 新版原图来源不能冒充加工选择')
     const original=await readAvgHistoricalRawImageV5({scope,buildId:input.buildId,expectedBuildRevision:context.build.stateRevision,
       controlEpoch:input.controlEpoch,expectedBriefHash:context.build.briefHash,expectedPlanHash:context.build.planHash,artifact:choice.raw})
     const requirement=original.payload.requirement
@@ -954,6 +954,33 @@ export async function readAvgAdoptedGeneratedReferenceChoiceV5(input:Parameters<
   })
 }
 
+/** Separate V5/raw2 derivative history. The actual compilation, HTTP,
+ * local processor, policy review2 and author choice2 all remain mandatory. */
+export async function readAvgAdoptedProcessedVisualChoiceV5(input:Parameters<typeof readAvgAdoptedGeneratedReferenceChoiceV4>[0]){
+  const scope=await resolveScope({scope:input.scope}),proofTables=await mediaProofTables(input.buildId)
+  const load=()=>Promise.all([import('./visual-image-history-v5'),import('./visual-image-processing-v5')])
+  const [{readAvgHistoricalCompiledImageDefinitionV5},{readAvgVisualProcessingEvidenceV5}]=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
+  return db.transaction('r',scopeTransactionTables(db.productProductions,db.productProductionBriefs,db.productProductionCommands,
+    db.productBuilds,db.productBuildArtifacts,db.avgDraftMedia,db.mediaBlobObjects,...proofTables),async()=>{
+    const context=await authority(scope,input.buildId,true,false,input.controlEpoch,'visual-v5')
+    const [row]=await acceptedInputs(scope,input.buildId,input.controlEpoch,[input.artifactKey])
+    if(row.version!==input.version||row.contentHash!==input.contentHash||row.kind!=='presentation')throw new Error('[avg-process] 需要准确新版已采用的加工图选择')
+    const choice=parseAvgAuthorMediaChoice(row.payloadJson)
+    if(choice.version!==2)throw new Error('[avg-process] 新版本地加工来源必须绑定加工选择版本')
+    const compiled=await readAvgHistoricalCompiledImageDefinitionV5({scope,buildId:input.buildId,expectedBuildRevision:context.build.stateRevision,
+      controlEpoch:input.controlEpoch,expectedBriefHash:context.build.briefHash,expectedPlanHash:context.build.planHash})
+    const source=await readAvgVisualProcessingEvidenceV5({scope,compiled,artifact:choice.processed})
+    if(canonicalProductProductionJsonV2(choice.processed)!==canonicalProductProductionJsonV2(ref(source.processing)))throw new Error('[avg-process] 新加工选择与准确 producer 不一致')
+    const requirement=source.image.requirement
+    const evidence=await readAdoptedVisualChoiceWitness(context,row,choice,{...input,scope},{...compiled,raw:source.raw,
+      asset:source.image.asset,requirement,processed:source.image},async(review,image)=>{
+        const report=await validateAvgAuthorVisualReviewFromSourceV2({scope,payload:review.payloadJson,requirement,image,asset:source.image.asset})
+        await assertAvgVisualReviewSelectableV2(report,requirement,image.contentHash)
+      })
+    return {...evidence,rawProof:source.rawProof,processingProof:source.processingProof}
+  })
+}
+
 type VisualChoiceImageV4=Pick<Awaited<ReturnType<typeof import('./visual-image-history').readAvgHistoricalRawImageV4>>,
   'brief'|'definition'|'raw'|'asset'|'compilation'>&{requirement:AvgVisualProductionRequirementV1;processed?:AvgInspectedProcessedImageV1}
 async function readAdoptedVisualChoiceWitnessV4(context:Awaited<ReturnType<typeof authority>>,row:ProductBuildArtifactRecordV1,
@@ -963,8 +990,8 @@ async function readAdoptedVisualChoiceWitnessV4(context:Awaited<ReturnType<typeo
     assertAvgVisualReviewSelectableV1(report,original.requirement,image.contentHash)
   })
 }
-type VisualChoiceImage<R extends Omit<AvgVisualProductionRequirementV1,'references'>>=Omit<VisualChoiceImageV4,'requirement'|'definition'>&{
-  requirement:R;definition:{mediaBatch:{visualReviewPolicy?:unknown}}
+type VisualChoiceImage<R extends Omit<AvgVisualProductionRequirementV1,'references'>>=Omit<VisualChoiceImageV4,'requirement'|'definition'|'processed'>&{
+  requirement:R;definition:{mediaBatch:{visualReviewPolicy?:unknown}};processed?:AvgInspectedProcessedImageV1<R>
 }
 /** One actual review/choice command and candidate witness path. Its caller
  * supplies the exact version's semantic review checker, never a retag. */

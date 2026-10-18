@@ -15,13 +15,14 @@ import { executeProductProductionCommand } from '../../src/lib/product-productio
 import { readProductProductionDetailsV1 } from '../../src/lib/product-production/service'
 import { runProductProductionSchedulerCycleV1 } from '../../src/lib/product-production/scheduler'
 import { stageAvgAuthorArtifactV1 } from '../../src/lib/avg/author-artifacts'
+import type { AvgImageProcessingPlanV1 } from '../../src/lib/avg/image-processing-contract'
 import type { ProductBuildArtifactRecordV1 } from '../../src/lib/types'
 
 /** All domain rows come from public author/production/Harness commands. The
  * caller opens only the closed feature fence in isolated fake-indexeddb data;
  * original model bytes travel through the real configured runner and HTTP. */
 export async function avgV5RegisteredProposalsFixture(options:{malformed?:boolean;missingGeneratedProof?:boolean;onResponse?:()=>Promise<void>;
-  imageResponse?:(body:Record<string,unknown>,index:number)=>Promise<Response>;imageAdapterId?:AvgImageAdapterIdV4;progress?:(phase:string)=>void}={}){
+  imageResponse?:(body:Record<string,unknown>,index:number)=>Promise<Response>;imageAdapterId?:AvgImageAdapterIdV4;imageProcessing?:AvgImageProcessingPlanV1;progress?:(phase:string)=>void}={}){
   options.progress?.('owner:begin')
   const {owner,author,brief}=await avgV5FormalFixture(),calls:Array<{body:any;packet:any}>=[],imageCalls:Array<Record<string,unknown>>=[]
   options.progress?.('owner:ready')
@@ -45,6 +46,7 @@ export async function avgV5RegisteredProposalsFixture(options:{malformed?:boolea
   imageRequirement.capabilityHash=await hashProductProductionValueV2(avgImageReferenceCapabilityV2(imageAdapterId))
   const image=await resolveAvgImageExecutionCapabilityV4({projectId:owner.scope.projectId,requirement:imageRequirement,adapterId:imageAdapterId})
   brief.avgVisualPlanning.imageBinding={...image.binding,endpointRouteHash:image.endpointRouteHash}
+  if(options.imageProcessing)brief.avgVisualPlanning.imageProcessing=structuredClone(options.imageProcessing)
   brief.productionBudget=avgVisualPlanningBudgetV5(brief);brief.completionContract.requiredGateIds=avgVisualPlanningGateIdsV5(brief)
   const parsed=parseProductProductionBriefV3(brief)
   const saved=await executeProductProductionCommand({scope:owner.scope,productionId:owner.productionId,command:{type:'save-brief-revision',commandId:'v5.actual.save',

@@ -10,19 +10,21 @@ import { avgV5RegisteredProposalsFixture,adoptAvgV5CompiledSources,type AvgV5Reg
 import { readAvgImageConsumptionDefinitionV5 } from '../../src/lib/avg/image-consumption-v5'
 import { AVG_VISUAL_REVIEW_CRITERIA_V1 } from '../../src/lib/avg/visual-review-contract'
 import type { AvgReviewIssuesV2 } from '../../src/lib/avg/visual-review-contract-v2'
+import type { AvgImageProcessingPlanV1 } from '../../src/lib/avg/image-processing-contract'
 import type { AvgVisualProductionRequirementV2 } from '../../src/lib/avg/media-production-contract-v2'
 
 /** All saved Work/Brief/Run/compiler/raw rows use the actual commands and
  * configured transport. Only unavailable Happy DOM decoder observations are
  * controlled; this is never actual art, alpha-edge or human acceptance. */
-export async function avgV5MediaReviewFixture(progress?:(phase:string)=>void){
+export async function avgV5MediaReviewFixture(progress?:(phase:string)=>void,options:{imageProcessing?:AvgImageProcessingPlanV1;
+  beforeImages?:(s:AvgV5RegisteredFixture)=>Promise<void>;executor?:(s:AvgV5RegisteredFixture)=>AvgV5RegisteredFixture['executor']}={}){
   vi.spyOn(readiness,'avgVisualPlanningExecutionReadyV5').mockReturnValue(true)
   vi.spyOn(decoder,'inspectAvgImageBytesV1').mockImplementation(async input=>{
     const d=detectProductImageDimensionsV1(input.data)
     if(!d)throw new Error('Controlled original PNG has no dimensions')
     return {...d,hasAlpha:input.assetKey.includes('.keeper.')}
   })
-  const s:AvgV5RegisteredFixture=await avgV5RegisteredProposalsFixture({progress,imageResponse:async(body,index)=>{
+  const s:AvgV5RegisteredFixture=await avgV5RegisteredProposalsFixture({progress,imageProcessing:options.imageProcessing,imageResponse:async(body,index)=>{
     const r=s.brief.avgVisualPlanning!.scope.templates.find(t=>String(body.prompt).includes(t.parameters.requirementKey))!.parameters
     progress?.(`image-png:${index}:begin`)
     const bytes=new Uint8Array(await deterministicRegionMapPngV1({width:r.width,height:r.height,palette:['#253746','#9f8772','#d1cbb8']}))
@@ -31,8 +33,10 @@ export async function avgV5MediaReviewFixture(progress?:(phase:string)=>void){
     return new Response(JSON.stringify({data:[{b64_json:btoa(binary)}]}),{headers:{'content-type':'application/json','x-request-id':`controlled-v5-review-${index}`}})
   }})
   await adoptAvgV5CompiledSources(s);progress?.('actual-compiler:ready')
+  await options.beforeImages?.(s)
+  if(options.executor)s.executor=options.executor(s)
   await runProductProductionUntilBlockedV1(s);progress?.('actual-five-images:ready')
-  const rows=await db.productBuildArtifacts.where('buildId').equals(s.buildId).filter(r=>r.status==='accepted'&&r.kind==='image').toArray()
+  const rows=await db.productBuildArtifacts.where('buildId').equals(s.buildId).filter(r=>r.status==='accepted'&&r.kind==='image'&&r.artifactKey.startsWith('avg.media.raw.')).toArray()
   if(rows.length!==5||s.imageCalls.length!==5)throw new Error('Actual V5 review fixture did not receive its exact five raw producers')
   const compiled=await readAvgImageConsumptionDefinitionV5({scope:s.scope,buildId:s.buildId,brief:s.brief})
   progress?.('actual-image-definition:ready')

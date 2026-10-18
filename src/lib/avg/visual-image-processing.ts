@@ -1,17 +1,14 @@
-import { db } from '../db/schema'
-import type { FrozenRuntimeMediaAssetV2,ProductBuildArtifactRecordV1,ProductProductionBriefV3,WorkspaceScope } from '../types'
-import { assertRecordInScope } from '../workspace/scope'
+import type { ProductBuildArtifactRecordV1,ProductProductionBriefV3,WorkspaceScope } from '../types'
 import { canonicalProductProductionJsonV2,hashProductProductionValueV2 } from '../product-production/hash'
 import { verifyAcceptedProductBuildArtifactV1,verifyHistoricalAvgImageProcessingProducerV1,verifyHistoricalAvgImageRevalidationProducerV1,
   verifyHistoricalAvgVisualImageProducerV4 } from '../product-production/artifact-store'
-import { putMediaBlobObject,readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
 import { ProductProductionDraftRejectedErrorV1,type ProductProductionTaskExecutionInputV1,type ProductProductionTaskExecutionResultV1 } from '../product-production/scheduler'
 import { readAvgCompiledImageDefinitionV4 } from './visual-planning-image-definition'
 import { readAvgVisualPlanningExecutionSourcesV4 } from './visual-planning-task-source'
 import { inspectAvgCompiledRawImageV4,type AvgVerifiedCompiledImageDefinitionV4 } from './visual-image-revalidation'
-import { processAvgImageBytesV1 } from './image-processing'
-import { assertAvgProcessedImageArtifactFromDefinitionV1,AVG_IMAGE_PROCESSOR_V1,type AvgProcessedImageArtifactFieldsV1,type AvgProcessedImagePayloadV1 } from './image-processing-contract'
-import { avgHash,avgRecord } from './protocol-validation'
+import { executeAvgBoundedImageProcessingV1 } from './image-processing-execution-kernel'
+import { assertAvgProcessedImageArtifactFromDefinitionV1,type AvgProcessedImageArtifactFieldsV1 } from './image-processing-contract'
+import { avgVisualProcessingQuality,inspectAvgVisualProcessingBinding } from './visual-processing-binding'
 import { inspectAvgProcessedImageBytesV1 } from './image-processing-source'
 
 type Compiled=AvgVerifiedCompiledImageDefinitionV4
@@ -19,26 +16,16 @@ type Processed=AvgProcessedImageArtifactFieldsV1&Pick<ProductBuildArtifactRecord
 const same=(a:unknown,b:unknown)=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(b)
 const ref=(r:ProductBuildArtifactRecordV1)=>({artifactKey:r.artifactKey,version:r.version,contentHash:r.contentHash,producerReceiptHash:r.producerReceiptHash})
 
+const binding=(compiled:Compiled)=>({compilation:compiled.definition.compilation,rule:compiled.source.artifact,scripts:compiled.source.scripts.map(s=>s.artifact)})
 function quality(compiled:Compiled,raw:ProductBuildArtifactRecordV1,receiptHash:string,sourceContextHash:string){
-  return {schema:'storyforge.avg.visual-image-processing-evidence',version:1,noProviderRequest:true,decoderVerified:true,
-    processingReceiptHash:receiptHash,rawProducerReceiptHash:raw.producerReceiptHash,
-    sourceCompilation:compiled.definition.compilation,sourceRule:compiled.source.artifact,sourceScripts:compiled.source.scripts.map(s=>s.artifact),sourceContextHash}
+  return avgVisualProcessingQuality(1,binding(compiled),raw,receiptHash,sourceContextHash)
 }
 
-/** Product semantics only. Each caller supplies its independently proven
- * compilation and exact raw/processed producer records, current or historic. */
+/** Product semantics only; exact compiler and original producer remain required. */
 export async function inspectAvgVisualProcessedImageV4(input:{scope:WorkspaceScope;compiled:Compiled;raw:ProductBuildArtifactRecordV1;artifact:Processed}){
-  const {compiled,raw,artifact:a}=input
-  const image=await assertAvgProcessedImageArtifactFromDefinitionV1(compiled.definition,a)
-  const original=await inspectAvgCompiledRawImageV4({scope:input.scope,compiled,artifact:raw}),task=compiled.plan.tasks.find(t=>t.outputArtifactKeys.includes(a.artifactKey))
-  const q=avgRecord(JSON.parse(a.qualityJson),['schema','version','noProviderRequest','decoderVerified','processingReceiptHash','rawProducerReceiptHash',
-    'sourceCompilation','sourceRule','sourceScripts','sourceContextHash'],'V4 processing evidence')
-  if(!task||task.kind!=='avg-media-image-process'||task.executionMode!=='deterministic'||task.contextProfile!=='avg-visual-planning-v4'
-    ||task.skillId!==null||task.capabilityRequirementKeys.length||task.maxAttempts!==1||task.reuse!==null
-    ||task.budgetReservation.modelCalls!==0||task.budgetReservation.mediaCalls!==0||task.budgetReservation.maximumCostUsd!==0
-    ||a.requirementKey!==null||!same(image.payload.raw,ref(raw))||!same(image.payload.sourceAsset,original.asset)
-    ||!same(q,quality(compiled,raw,image.payload.receipt.receiptHash,avgHash(q.sourceContextHash,'processing context hash'))))throw new Error('[avg-process] 加工图没有绑定准确原图、配方、当前编译与零调用任务')
-  return {...image,sourceContextHash:q.sourceContextHash as string}
+  const {compiled,raw,artifact}=input,original=await inspectAvgCompiledRawImageV4({scope:input.scope,compiled,artifact:raw})
+  return inspectAvgVisualProcessingBinding({version:1,definition:compiled.definition,binding:binding(compiled),raw,original:original.asset,artifact,
+    task:compiled.plan.tasks.find(t=>t.outputArtifactKeys.includes(artifact.artifactKey))})
 }
 
 /** Exact completed producers, original bytes, actual compilation/recipe and
@@ -75,22 +62,9 @@ export async function executeAvgVisualImageProcessingTaskV4(input:ProductProduct
       const row=await verifyAcceptedProductBuildArtifactV1({scope:input.scope,buildId:input.buildId,...ref(supplied[0])})
       return {row,...await inspectAvgCompiledRawImageV4({scope:input.scope,compiled,artifact:row})}
     }
-    const raw=await readRaw(),blob=raw.row.blobObjectId===null?null:await db.mediaBlobObjects.get(raw.row.blobObjectId)
-    if(!blob||!await assertRecordInScope(input.scope,'mediaBlobObjects',blob,{owner:'work'})||blob.contentHash!==raw.asset.contentHash
-      ||blob.mimeType!==raw.asset.mimeType||blob.byteSize!==raw.asset.byteSize)throw new Error('[avg-process] 加工原图缺少准确同作品字节')
-    const result=await processAvgImageBytesV1({data:await readVerifiedMediaBlobObjectData(blob),source:{contentHash:raw.asset.contentHash,mimeType:raw.asset.mimeType,
-      width:raw.asset.width!,height:raw.asset.height!},recipe:entry.recipe,signal:input.signal})
-    await readRaw();await readAvgVisualPlanningExecutionSourcesV4(input,brief)
-    if(input.signal.aborted)throw new Error('[avg-process] 加工已停止，原图与供应商记录保留')
-    const output=await putMediaBlobObject({scope:input.scope,data:result.data,mimeType:'image/png',expectedContentHash:result.receipt.output.contentHash})
-    const asset:FrozenRuntimeMediaAssetV2={...raw.asset,version:raw.asset.version+1,contentHash:output.contentHash,blobContentHash:output.contentHash,
-      mimeType:'image/png',byteSize:output.byteSize,width:entry.recipe.width,height:entry.recipe.height,source:AVG_IMAGE_PROCESSOR_V1}
-    const payload:AvgProcessedImagePayloadV1={schema:'storyforge.avg.processed-image',version:1,requirementKey:entry.requirementKey,
-      raw:{...ref(raw.row),producerReceiptHash:raw.row.producerReceiptHash!},sourceAsset:raw.asset,recipe:entry.recipe,receipt:result.receipt}
-    const artifact={artifactKey:task.outputArtifactKeys[0],requirementKey:null,kind:'image' as const,mediaKind:raw.asset.kind,payload,metadata:asset,
-      contentHash:output.contentHash,blobObjectId:output.id!,mimeType:'image/png',byteSize:output.byteSize,
-      quality:quality(compiled,raw.row,result.receipt.receiptHash,await hashProductProductionValueV2(input.contextText)),
-      rights:{origin:'local-processing',sourceContentHash:raw.row.contentHash,sourceLicense:raw.asset.license,declaration:entry.recipe.declaration}}
-    return {artifacts:[artifact],passedGateIds:[...task.acceptanceGateIds],usage:usage(output.byteSize+new TextEncoder().encode(canonicalProductProductionJsonV2(artifact)).byteLength)}
+    const raw=await readRaw(),sourceContextHash=await hashProductProductionValueV2(input.contextText)
+    return await executeAvgBoundedImageProcessingV1({request:input,started,raw,entry,task,
+      recheck:async()=>{await readRaw();await readAvgVisualPlanningExecutionSourcesV4(input,brief)},
+      quality:receiptHash=>quality(compiled,raw.row,receiptHash,sourceContextHash)})
   }catch(error){throw new ProductProductionDraftRejectedErrorV1(error instanceof Error?error.message:'[avg-process] 本地加工失败',usage())}
 }
