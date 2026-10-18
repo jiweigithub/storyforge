@@ -2225,7 +2225,16 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       expect(parent.status).toBe('recovery-required');expect(parent.failureJson).toContain('503')
       const prepared=await restartAvgVisualPlanningFromDraftV4(await restartInput(s))
       expect(prepared.production.id).toBe(s.productionId);expect(prepared.production.status).toBe('brief-ready')
-      expect(prepared.brief!.revision).toBe(parent.briefRevision+1);expect(await current(s)).toEqual(parent)
+      // The existing evolve command first records the exact parent impact;
+      // the next explicit save freezes the reviewable professional intent.
+      const evolution=prepared.briefHistory.find(row=>row.revision===parent.briefRevision+1)!
+      expect(evolution.parentRevision).toBe(parent.briefRevision)
+      const intermediate=parseProductProductionBriefV3(evolution.briefJson).evolution!
+      expect(intermediate.base).toEqual({kind:'recovery-build',buildNumber:parent.buildNumber,briefHash:parent.briefHash,
+        planHash:parent.planHash,controlEpoch:JSON.parse(parent.planJson).controlEpoch})
+      expect(prepared.brief!.revision).toBe(parent.briefRevision+2);expect(prepared.brief!.parentRevision).toBe(evolution.revision)
+      expect(parseProductProductionBriefV3(prepared.brief!.briefJson).evolution).toEqual(intermediate)
+      expect(await current(s)).toEqual(parent)
       expect(await db.productBuilds.count()).toBe(1);expect(await db.agentRuns.count()).toBe(runs)
       expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
       db.close();await db.open()
@@ -2233,6 +2242,7 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       expect(refreshed.details!.build).toEqual(parent);expect(refreshed.details!.production.status).toBe('brief-ready')
       const child=await startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:prepared.brief!.briefHash})
       expect(child.build!.id).not.toBe(parent.id);expect(child.build!.parentBuildNumber).toBe(parent.buildNumber)
+      expect(child.build).toMatchObject({status:'building',planRevision:1})
       expect(await current(s)).toEqual(parent);expect(await db.projects.count()).toBe(projects)
       expect(await db.productBuildArtifacts.where('buildId').equals(child.build!.id!).count()).toBe(0)
       expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)

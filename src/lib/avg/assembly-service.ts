@@ -742,7 +742,10 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
             ? saveAvgAuthorWorkspaceV1(input.scope,draft.revision,inherited) : draft
         });workspace=inherited
       }
-      if (!pending&&(!old.avgVisualPlanning||input.visualStageContinuation&&!!details.build.previewHash)) {
+      // Every new stopped/frozen parent owns a fresh evolution baseline. A
+      // professional parent may itself descend from a native recovery; copying
+      // its older impact would make the next Build name its grandparent.
+      if (!pending) {
         await beginProductProductionEvolutionV1({ scope:input.scope,productionId,expectedStateRevision:details.production.stateRevision,
         userText:'作者修订 AVG 系统、对白、演出和媒资，生成新预览并保留旧版本及存档',affectedLanes:['content','product','visual','audio'],...(continuationCommandId?{commandId:continuationCommandId}:{}) })
         if(continuationState)continuationState.productionRevision++

@@ -50,7 +50,7 @@ async function prepareLegacyProfessionalIntent(page:Page,scope:{projectId:number
   },scope)
 }
 
-async function prepare(page:Page,firstImageBusy=false,imageModel='agnes.image-2.1-flash.v1',processing=false){
+async function prepare(page:Page,firstImageBusy=false,imageModel='agnes.image-2.1-flash.v1',processing=false,nativeAncestor=false){
   await page.addInitScript(()=>localStorage.setItem('storyforge_guide_completed','e2e'))
   await page.goto('./avg/library')
   const origin=new URL(page.url()).origin
@@ -90,6 +90,18 @@ async function prepare(page:Page,firstImageBusy=false,imageModel='agnes.image-2.
     if(firstImageBusy&&images.length===1){await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{message:'生图队列已满，请稍后重试'}})});return}
     await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({data:[{b64_json:source.png}]})})
   })
+  if(nativeAncestor){
+    await page.evaluate(async scope=>{
+      const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
+      const [service,drafts]=await Promise.all([load('/storyforge/src/lib/avg/assembly-service.ts'),load('/storyforge/src/lib/avg/draft-service.ts')])
+      await service.prepareAvgAssemblyBriefV1({scope,expectedDraftRevision:(await drafts.readAvgDraftV1(scope)).revision})
+    },source.scope)
+    await page.goto(`./avg/production?project=${source.scope.projectId}&work=${source.scope.workId}`)
+    await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
+    await expect(page.getByRole('status').filter({hasText:'已明确开始，等待逐项作者确认。'})).toBeVisible()
+    await page.getByRole('button',{name:'停止并保留当前组装，准备新版本',exact:true}).click()
+    await expect(page.getByRole('status').filter({hasText:'旧组装与输入已保留，新方案等待明确开始和重新确认。'})).toBeVisible()
+  }
   await prepareLegacyProfessionalIntent(page,source.scope)
   await page.goto(`./avg/production?project=${source.scope.projectId}&work=${source.scope.workId}`)
   await page.getByRole('button',{name:'素材',exact:true}).click()
@@ -446,16 +458,16 @@ test('stopped Image 2.5 original pixels remain readable without a key after refr
   expect(models).toHaveLength(2);expect(images).toHaveLength(1)
 })
 
-test('author refuses an exact professional proposal and refresh retains its reason and original evidence without another request',async({page})=>{
+for(const nativeAncestor of [false,true])test(nativeAncestor?'author refusal after a native ancestor starts an exact professional child without new requests':'author refuses an exact professional proposal and refresh retains its reason and original evidence without another request',async({page},info)=>{
   test.setTimeout(120_000)
   test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION!=='1'||process.env.VITE_STORYFORGE_AVG_VISUAL_PLANNING!=='1','Both default-off visual experiments must be explicit')
-  const {source,models,images,panel}=await prepare(page),direction=panel.getByRole('article',{name:'专业方案：视觉基准',exact:true})
+  const {source,models,images,panel}=await prepare(page,false,'agnes.image-2.1-flash.v1',false,nativeAncestor),direction=panel.getByRole('article',{name:'专业方案：视觉基准',exact:true})
   await direction.getByLabel('退回依据',{exact:true}).fill('作者拒绝：构图方向不合适，停止本批，保留原始方案与未知费用')
   await direction.getByRole('button',{name:'退回此方案并停止本批',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'已记录退回依据并停止本批'})).toBeVisible()
   await page.reload();await page.getByRole('button',{name:'素材',exact:true}).click()
   await expect(panel.getByRole('article',{name:'专业方案：视觉基准',exact:true})).toBeVisible()
-  const state=await page.evaluate(async scope=>{const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;const {db}=await load('/storyforge/src/lib/db/schema.ts');const build=await db.productBuilds.where('workId').equals(scope.workId).first();return {status:build.status,failure:build.failureJson,artifacts:await db.agentRunArtifacts.where('projectId').equals(scope.projectId).count()}},source.scope)
+  const state=await page.evaluate(async scope=>{const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;const {db}=await load('/storyforge/src/lib/db/schema.ts');const builds=await db.productBuilds.where('workId').equals(scope.workId).sortBy('buildNumber'),build=builds[builds.length-1];return {id:build.id,number:build.buildNumber,status:build.status,failure:build.failureJson,artifacts:await db.agentRunArtifacts.where('projectId').equals(scope.projectId).count()}},source.scope)
   expect(state.status).toBe('cancelled');expect(state.failure).toContain('作者拒绝');expect(state.artifacts).toBeGreaterThan(0)
   expect(models).toHaveLength(1);expect(images).toHaveLength(0)
   await panel.getByRole('button',{name:'保留记录并准备新版本方案',exact:true}).click()
@@ -465,16 +477,25 @@ test('author refuses an exact professional proposal and refresh retains its reas
   await expect(panel.getByRole('status').filter({hasText:'新版本方案'})).toBeVisible()
   await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
   await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
+  await expect(page.getByRole('status').filter({hasText:'已明确开始，等待逐项作者确认。'})).toBeVisible()
   await expect(page.getByRole('article',{name:'作者确认：系统规则',exact:true}).getByText('等待作者输入',{exact:true})).toBeVisible()
   const replacement=await page.evaluate(async scope=>{
     const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;const {db}=await load('/storyforge/src/lib/db/schema.ts')
     const builds=await db.productBuilds.where('workId').equals(scope.workId).sortBy('buildNumber')
-    return {builds:builds.map((b:any)=>({id:b.id,number:b.buildNumber,parent:b.parentBuildNumber,status:b.status,failure:b.failureJson})),childArtifacts:await db.productBuildArtifacts.where('buildId').equals(builds[1].id).count()}
+    const child=builds[builds.length-1],brief=await db.productProductionBriefs.where('[productionId+revision]').equals([child.productionId,child.briefRevision]).first()
+    return {builds:builds.map((b:any)=>({id:b.id,number:b.buildNumber,parent:b.parentBuildNumber,status:b.status,failure:b.failureJson})),childArtifacts:await db.productBuildArtifacts.where('buildId').equals(child.id).count(),
+      childPlanRevision:child.planRevision,childRuns:await db.agentRuns.where('productBuildId').equals(child.id).count(),evolutionBase:JSON.parse(brief.briefJson).evolution.base}
   },source.scope)
-  expect(replacement.builds).toHaveLength(2);expect(replacement.builds[0].failure).toBe(state.failure)
-  expect(replacement.builds[0].status).toBe('cancelled');expect(replacement.builds[1].parent).toBe(replacement.builds[0].number)
+  expect(replacement.builds).toHaveLength(nativeAncestor?3:2)
+  const parent=replacement.builds.find(b=>b.id===state.id)!,child=replacement.builds[replacement.builds.length-1]
+  expect(parent.failure).toBe(state.failure);expect(parent.status).toBe('cancelled');expect(child.parent).toBe(parent.number)
+  expect(child.status).toBe('building');expect(replacement.childPlanRevision).toBe(1);expect(replacement.childRuns).toBeGreaterThan(0)
+  expect(replacement.evolutionBase).toMatchObject({kind:'recovery-build',buildNumber:parent.number})
   expect(replacement.childArtifacts).toBe(0);expect(models).toHaveLength(1);expect(images).toHaveLength(0)
-
+  await page.screenshot({path:info.outputPath('avg-professional-refusal-exact-parent.png'),fullPage:true})
+  const proof=info.outputPath('avg-professional-refusal-exact-parent.json')
+  await writeFile(proof,JSON.stringify({nativeAncestor,original:state,replacement,modelCalls:models.length,imageCalls:images.length,scope:'Controlled native preparation/start/refusal/refresh/restart. Exact actual parent, frozen Plan/root, old failure and zero new provider requests; no artwork or real provider acceptance.'}))
+  await info.attach('avg-professional-refusal-exact-parent',{path:proof,contentType:'application/json'})
 })
 
 async function prepareProfessionalFamily(page:Page,options:{propReference?:boolean;version?:4|5;processing?:boolean;processingTargetIndex?:number}={}){
