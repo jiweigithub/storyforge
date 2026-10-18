@@ -365,3 +365,46 @@ test('native confirmed reading retains its exact profile and source after reload
   const after = await inspect(page, f.owner.sessionId)
   expect(after.sequence).toBe(before.sequence + 2); expect({ ...after, sequence: 0 }).toEqual({ ...before, sequence: 0 })
 })
+
+
+test('native unique voice child survives reload and exposes injected unknown dispatch without resending or claiming audio success', async ({ page }) => {
+  test.setTimeout(180000); await page.goto('./')
+  const f = await page.evaluate(async () => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    return (await load('/storyforge/tests/helpers/open-voice-execution-runtime.ts')).setupConfirmedVoiceExecutionRuntimeV1()
+  })
+  const before = await inspect(page, f.owner.sessionId)
+  const prepared = await page.evaluate(async f => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    return api.prepareTtrpgOpenLocalVoiceExecutionV1({ ...f.owner, requestKey: f.requestKey, decision: 'prepare-this-confirmed-local-voice-execution' })
+  }, f)
+  await page.reload()
+  const dispatched = await page.evaluate(async ({ f, prepared }) => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    const execution = await load('/storyforge/src/lib/ttrpg/open-voice-execution.ts'), input = { ...f.owner, requestKey: f.requestKey }
+    const read = await api.readTtrpgOpenLocalVoicePreparationV1(input), repeated = await api.prepareTtrpgOpenLocalVoiceExecutionV1({ ...input, decision: 'prepare-this-confirmed-local-voice-execution' })
+    let calls = 0, failed = false
+    try { await execution.dispatchTtrpgOpenLocalVoiceForKernelV1({ ...input, decision: 'dispatch-this-original-local-voice-execution',
+      transport: { kind: 'local-offline-speech-v1', profileHash: prepared.profileHash, execute: async () => { calls++; throw new Error('synthetic-unknown-local-result') } } }) }
+    catch (error) { failed = (error as Error).message === 'synthetic-unknown-local-result' }
+    return { read, repeated, calls, failed }
+  }, { f, prepared })
+  expect(dispatched.read).toEqual(prepared); expect(dispatched.repeated).toEqual(prepared)
+  expect(dispatched.calls).toBe(1); expect(dispatched.failed).toBe(true)
+  await page.reload()
+  const afterReload = await page.evaluate(async ({ f, prepared }) => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    const execution = await load('/storyforge/src/lib/ttrpg/open-voice-execution.ts'), { db } = await load('/storyforge/src/lib/db/schema.ts')
+    let resent = 0
+    const result = await execution.dispatchTtrpgOpenLocalVoiceForKernelV1({ ...f.owner, requestKey: f.requestKey, decision: 'dispatch-this-original-local-voice-execution',
+      transport: { kind: 'local-offline-speech-v1', profileHash: prepared.profileHash, execute: async () => { resent++; return 'must-not-run' } } })
+    return { result, resent, desk: await api.readTtrpgOpenVoiceRequestDeskV1(f.owner), runs: await db.agentRuns.count(), media: await db.productMediaAssets.count(),
+      modelRequests: (await db.agentRunEvents.toArray()).filter((e: any) => e.type === 'model.requested').length }
+  }, { f, prepared })
+  expect(afterReload.resent).toBe(0); expect(afterReload.result.status).toBe('dispatch-already-recorded')
+  expect(afterReload.runs).toBe(2); expect(afterReload.media).toBe(0); expect(afterReload.modelRequests).toBe(1)
+  expect(afterReload.desk.requests[0]).toMatchObject({ status: 'execution-dispatch-recorded', generationAllowed: false,
+    execution: { runId: prepared.runId, runState: 'paused', cancellationConfirmed: false, rawResponseEvidenceRecorded: false, automaticRetryAllowed: false } })
+  expect(afterReload.desk.budget).toMatchObject({ requests: 1, characters: 6 })
+  expect(await inspect(page, f.owner.sessionId)).toEqual(before)
+})

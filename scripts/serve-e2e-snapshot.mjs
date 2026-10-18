@@ -12,6 +12,7 @@ const snapshotEntries = [
   'scripts/local-codex',
   // Local voice replay imports this pinned, model-free reading descriptor.
   'scripts/ttrpg-local-tts/reading-profile.json',
+  'scripts/ttrpg-local-tts/product-profile.json',
   'scripts/distribution/proxies.mjs',
   'scripts/distribution/diagnostics.mjs',
   'data',

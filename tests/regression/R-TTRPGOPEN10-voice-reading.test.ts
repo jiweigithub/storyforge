@@ -28,7 +28,7 @@ describe('R-TTRPGOPEN10 source-preserving local reading contract', () => {
     expect(manifest).toBeDefined()
     const entries = runInNewContext(manifest!) as string[], included = (asset: string) => entries.some(entry => asset === entry || asset.startsWith(`${entry}/`))
     const metadata = new Set<string>()
-    for (const file of ['src/lib/ttrpg/open-voice-reading-contract.ts', 'src/lib/ttrpg/open-voice-request-service.ts']) {
+    for (const file of ['src/lib/ttrpg/open-voice-reading-contract.ts', 'src/lib/ttrpg/open-voice-request-service.ts', 'src/lib/ttrpg/open-voice-execution-input.ts']) {
       for (const imported of readFileSync(file, 'utf8').matchAll(/\bfrom\s+['"]([^'"]+\.json)['"]/g)) {
         const absolute = resolve(dirname(resolve(file)), imported[1]), asset = relative(process.cwd(), absolute).replace(/\\/g, '/')
         expect(existsSync(absolute), asset).toBe(true); metadata.add(asset)

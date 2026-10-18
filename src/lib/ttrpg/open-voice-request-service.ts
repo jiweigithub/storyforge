@@ -17,6 +17,7 @@ import { canonicalStringify } from '../agent/run/hash'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import { reserveTtrpgOpenVoiceRequestForKernelV1, cancelTtrpgOpenVoiceRequestForKernelV1 } from './runtime-commands'
 import * as p from './open-contract-parse'
+import { TTRPG_OPEN_VOICE_EXECUTION_RELATION_V1 } from './open-voice-execution-input'
 
 const snapshotInput = (input: TtrpgOpenAudioReadInputV1) => ({ scope: structuredClone(input.scope), sessionId: input.sessionId, viewerKey: input.viewerKey })
 export async function reserveTtrpgOpenVoiceRequestV1(request: TtrpgOpenAudioReadInputV1 & {
@@ -99,10 +100,23 @@ export async function cancelTtrpgOpenVoiceRequestV1(request: TtrpgOpenAudioReadI
 
 export async function readTtrpgOpenVoiceRequestDeskV1(request: TtrpgOpenAudioReadInputV1) {
   const input = snapshotInput(request), loaded = await loadTtrpgOpenAudioReadStateV1(input)
-  const requests = loaded.humanHost ? (loaded.runtime.openRun!.voiceRequests ?? []).filter(r => r.script.scope.issuerViewerKey === input.viewerKey && r.script.scope.recipients.some(recipient => recipient.viewerKey === loaded.seat?.viewerKey && recipient.seatKey === loaded.seat.seatKey && recipient.role === loaded.seat.role && recipient.actorKey === loaded.seat.actorKey && recipient.controller === loaded.seat.controller)).map(r => ({
+  const requests = loaded.humanHost ? await Promise.all((loaded.runtime.openRun!.voiceRequests ?? []).filter(r => r.script.scope.issuerViewerKey === input.viewerKey && r.script.scope.recipients.some(recipient => recipient.viewerKey === loaded.seat?.viewerKey && recipient.seatKey === loaded.seat.seatKey && recipient.role === loaded.seat.role && recipient.actorKey === loaded.seat.actorKey && recipient.controller === loaded.seat.controller)).map(async r => {
+    const originals = (await db.agentRuns.where('productRuntimeSessionId').equals(input.sessionId).toArray()).filter(run => run.contractHash === r.runContractHash && JSON.parse(run.contractJson).objective === ttrpgOpenVoiceIntentObjectiveV1(r.requestKey))
+    const original = originals.length === 1 && originals[0].portableRuntimeOriginJson === undefined && r.sourceRef.sessionKey === loaded.runtime.sessionKey ? originals[0] : null
+    const children = original ? await db.agentRuns.where('[parentRunId+parentRelation]').equals([original.id!, TTRPG_OPEN_VOICE_EXECUTION_RELATION_V1]).toArray() : []
+    if (children.length > 1 || r.cancelledRef && children.length) p.fail('原配音意图的取消/唯一子任务证据冲突，请核查原记录')
+    const child = children.length ? await readInstanceAgentRunV1(input.scope, children[0].id!) : null
+    if (child && (child.run.portableRuntimeOriginJson !== undefined || child.run.parentReceiptHash !== original!.terminalReceiptHash
+      || child.run.productRuntimeSessionId !== input.sessionId || child.contract.objective !== 'ttrpg.open.local-voice:' + r.requestKey)) p.fail('配音子任务的本人、目的或原谱系不一致')
+    const execution = child ? { runId: child.run.id, runState: child.projection.state,
+      dispatchRecorded: child.events.some(e => e.type === 'model.requested'),
+      rawResponseEvidenceRecorded: child.events.some(e => e.type === 'evidence.artifact.recorded' && e.payload.artifactKind === 'raw-response'),
+      cancellationConfirmed: false as const, automaticRetryAllowed: false as const } : undefined
+    return {
     requestKey: r.requestKey, sourceRef: r.sourceRef, worldTurn: r.worldTurn, script: structuredClone(r.script), part: structuredClone(r.part), ...(r.reading === undefined ? {} : { reading: structuredClone(r.reading) }),
-    status: r.cancelledRef ? 'cancelled-before-send' as const : 'reserved-without-dispatch' as const,
-    generationAllowed: false as const, adoptionAllowed: false as const })) : []
+    status: r.cancelledRef ? 'cancelled-before-send' as const : execution ? execution.dispatchRecorded ? 'execution-dispatch-recorded' as const : 'execution-preparation-recorded' as const : original ? 'reserved-without-dispatch' as const : 'history-only' as const,
+    ...(execution ? { execution } : {}), generationAllowed: false as const, adoptionAllowed: false as const }
+  })) : []
   await loaded.assertCurrent()
   return { requests, budget: loaded.humanHost ? ttrpgOpenVoiceBudgetV1(loaded.runtime, loaded.runtime.openRun!.worldTime.worldTurn) : null, generationAllowed: false as const, adoptionAllowed: false as const }
 }

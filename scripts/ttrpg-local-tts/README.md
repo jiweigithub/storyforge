@@ -40,6 +40,14 @@ node scripts/ttrpg-local-tts/evaluate.mjs --runtime-dir "$HOME/.local/share/stor
 
 前端的 `ready-for-reading-review` 仍只表示可以核对读法。调用方须从本人真实叙述审阅取得原片段；序列化 JSON 自身不证明模型结果、身份或来源。产品审阅服务重新核验来源、受众及授权，读法仍无生成/采用权限。后续正式语音请求须冻结原文、选择、profile 与预览 hash，由实际 worker 再次复算；未完成这些条件的旧配音意图不能直接执行。本机桥接、生成确认和正式语音 worker 仍须按原方案接通。
 
+## 产品执行合同与当前边界
+
+`product-profile.json` 是独立的中文 CPU 产品执行描述；它只引用同一份已核验资产，不复制或安装运行库，不改变评测 profile 的 `productInvocationAllowed:false` 或读法 profile 的零模型权限。上限为原文 2000 / 展开读法 4000 个 UTF-16 单元、每段 200、最多 64 段、最多各 64 次语音推理/文本编码、900 秒 PCM、原有 100 MiB 文件上限及 30 分钟整次期限。它们是执行保护上限，尚不是完整长文本、时延或音质的验收结果。产品 worker 必须复算已确认读法，禁网络、自动重试和自动采用。
+
+产品内部 `prepareTtrpgOpenLocalVoiceExecutionV1` 仅沿原完成意图创建唯一子 Run，冻结准确原文 Context Manifest、明确读法、完整产品描述和 hash；未确认/不支持的旧读法、导入和祖先意图不能执行。准备不发送模型，原请求预算不重复预留。`dispatchTtrpgOpenLocalVoiceForKernelV1` 是桥接用的一次派发边界：显式动作、准确版本、冻结正式音频入口和真实身份校验后先持久记账，原始返回先保存；丢失返回或重复继续只能核查原 job，不能推断未发送再发。原始返回仍待协议与真实音频校验，不是已通过的候选。
+
+当前没有接通正式离线产品 worker、桌面桥接 UI、真实音频候选、片段/样本时序、试听或 E16 采用。现有固定台词评测和 CPU 读法预检继续使用各自明确入口，不能把产品描述或注入传输的工程测试当作正式音频已生成。
+
 ## 来源与许可
 
 - MeloTTS：固定官方代码 `209145371cff8fc3bd60d7be902ea69cbdb7965a`，MIT。只取神经网络内核和中文前端，保留原源码、许可、导数哈希和补丁说明。
