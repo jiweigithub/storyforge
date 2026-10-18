@@ -16,6 +16,7 @@ import { avgKey, avgText } from './protocol-validation'
 import { validateAvgSystemPlanForAuthorV1, type AvgSystemValidationV1 } from './system-compiler'
 import { buildAvgNativeAssemblyPlan } from './assembly-plan'
 import { buildAvgVisualPlanningPlanV4 } from './visual-planning-plan'
+import { buildAvgVisualPlanningPlanV5 } from './visual-planning-plan-v5'
 import { parseAvgAuthorMediaChoice, avgMediaChoiceArtifactKeyV1, avgVisualReviewArtifactKeyV1, type AvgAuthorMediaChoice, type AvgVisualProductionRequirementV1 } from './media-production-contract'
 import { inspectAvgChosenImageV1, inspectAvgChosenImageBytesV1, readAvgChosenMediaSourceV2, validateAvgMediaChoiceV1, type AvgMediaChoiceValidation } from './media-choice-validation'
 import type { AvgInspectedProcessedImageV1 } from './image-processing-source'
@@ -208,7 +209,7 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
   if (frozenVerification && !brief.avgAssembly&&!brief.avgVisualPlanning) throw new Error('[avg] 只读作者验证只接受原生组装合同')
   if (referenceRead && referenceKind === 'image' && !readAvgOptionalImageDefinitionV3(brief)) throw new Error('[avg-media] 生成参考只接受原生图片生产来源')
   if (referenceRead && referenceKind === 'voice' && brief.avgAssembly?.version !== 3) throw new Error('[avg-voice] 沿用配音只接受原生配音生产来源')
-  if (referenceRead && referenceKind === 'visual' && !brief.avgVisualPlanning) throw new Error('[avg-visual-history] 历史专业方案只接受准确 V4 来源')
+  if (referenceRead && referenceKind === 'visual' && brief.avgVisualPlanning?.version!==4) throw new Error('[avg-visual-history] 历史专业方案只接受准确 V4 来源')
   if (!forCompilation && brief.avgAssembly?.version === 1 && Object.keys((JSON.parse(build.budgetLedgerJson) as { tasks?: object }).tasks ?? {}).length) throw new Error('[avg] 组装已开始执行；请保留旧版本并创建新 Build 修订')
   const sourcePlan = await Dexie.waitFor(parseProductProductionSourcePlanV1(briefRow))
   const confirmed = await Dexie.waitFor(parseConfirmedProductBriefV1({ row: briefRow, sourcePlan }))
@@ -230,7 +231,7 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
     || canonicalProductProductionJsonV2(plan) !== build.planJson) throw new Error('[avg] 冻结 Plan/hash 已 stale')
   if (frozenVerification || referenceRead) {
     const input={brief,briefHash:build.briefHash,buildNumber:build.buildNumber,controlEpoch:sourceEpoch}
-    const expected=brief.avgVisualPlanning?buildAvgVisualPlanningPlanV4({...input,brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning}}):buildAvgNativeAssemblyPlan(input)
+    const expected=brief.avgVisualPlanning?.version===5?buildAvgVisualPlanningPlanV5({...input,brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning}}):brief.avgVisualPlanning?.version===4?buildAvgVisualPlanningPlanV4({...input,brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning}}):buildAvgNativeAssemblyPlan(input)
     if(canonicalProductProductionJsonV2(expected)!==build.planJson)throw new Error('[avg] 原生作者 Plan 不是冻结的固定组装拓扑')
   }
   return { scope,build, production: production as ProductProductionRecordV1 & { id: number }, briefRow, brief, plan, sourcePlan,reusePath:[] as AvgVisualReusePathV4 }
@@ -392,6 +393,7 @@ function candidateBody(context: Awaited<ReturnType<typeof authority>>, input: {
 
 async function validateVisualProposal(context: Awaited<ReturnType<typeof authority>>, payload: AuthorPayload, artifactKey: string, inputs: ProductBuildArtifactRecordV1[]) {
   if (!context.brief.avgVisualPlanning || !['storyforge.avg.visual-bible', 'storyforge.avg.media-brief'].includes(payload.schema)) return undefined
+  if(context.brief.avgVisualPlanning.version!==4)throw new Error('[avg-visual-plan] 新版岗位采用必须使用准确登记的新候选与来源')
   const scope = context.brief.avgVisualPlanning.scope, originals = inputs.filter(r => r.artifactKey.startsWith('avg.proposal.'))
   if (originals.length !== 1) throw new Error('[avg-visual-plan] 作者采用必须绑定唯一实际原始方案')
   const original = originals[0], task = context.plan.tasks.find(t => t.outputArtifactKeys.includes(original.artifactKey))
@@ -681,7 +683,7 @@ export async function readAvgConfirmedVisualArtifactsV4(input: Pick<Parameters<t
   return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands,
     db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects, db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts), async () => {
     const context = await authority(scope, input.buildId, true, frozenVerification)
-    if (!context.brief.avgVisualPlanning || context.build.stateRevision !== input.expectedBuildRevision || context.build.controlEpoch !== input.controlEpoch
+    if (context.brief.avgVisualPlanning?.version!==4 || context.build.stateRevision !== input.expectedBuildRevision || context.build.controlEpoch !== input.controlEpoch
       || new Set(input.artifactKeys).size !== input.artifactKeys.length) throw new Error('[avg-visual-plan] 视觉方案来源或 Build 已 stale')
     const result = []
     for (const key of input.artifactKeys) {
@@ -739,7 +741,7 @@ async function readHistoricalVisualArtifactsInSnapshotV4(input: Omit<AvgHistoric
     const context = await authority(scope, input.buildId, true, false, input.controlEpoch, 'visual')
     if(!Array.isArray(reusePath)||reusePath.length>32)throw new Error('[avg-visual-history] 历史复用谱系超界')
     context.reusePath=reusePath
-    if (!context.brief.avgVisualPlanning || context.build.stateRevision !== input.expectedBuildRevision
+    if (context.brief.avgVisualPlanning?.version!==4 || context.build.stateRevision !== input.expectedBuildRevision
       || context.build.briefHash !== input.expectedBriefHash || context.build.planHash !== input.expectedPlanHash
       || !['paused','cancelled','failed','recovery-required','preview-ready','release-ready','released'].includes(context.build.status)) throw new Error('[avg-visual-history] 历史版本不准确或仍在执行')
     const tasks=requested.map(artifact=>{

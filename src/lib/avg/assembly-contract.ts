@@ -38,7 +38,7 @@ export const AVG_ASSEMBLY_GATE_IDS_V1 = [
   'avg.rules.confirmed','avg.scripts.confirmed','avg.stage.confirmed',
   'runtime.package.valid','avg.media.bytes.valid','avg.rights.declared',
 ] as const
-export function avgMediaAssemblyGateIdsV2(batch: AvgVisualProductionBatchV1, processing?: AvgImageProcessingPlanV1): string[] {
+export function avgMediaAssemblyGateIdsV2(batch: {requirements:Array<{requirementKey:string}>;visualReviewPolicy?:AvgVisualProductionBatchV1['visualReviewPolicy']}, processing?: AvgImageProcessingPlanV1): string[] {
   return [...AVG_ASSEMBLY_GATE_IDS_V1, ...batch.requirements.flatMap(r => [
     ...(batch.visualReviewPolicy?[`avg.media.review.recorded.${r.requirementKey}`]:[]),
     ...(processing?.entries.some(e=>e.requirementKey===r.requirementKey)?[`avg.media.processed.received.${r.requirementKey}`]:[]),

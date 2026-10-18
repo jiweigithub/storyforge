@@ -73,7 +73,7 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
   onReload:()=>Promise<void>;onNotice:(text:string)=>void;onPending:(pending:boolean)=>void
 }) {
   const brief=view.details?.brief?parseProductProductionBriefV3(view.details.brief.briefJson):null
-  const planning=brief?.avgVisualPlanning,prepared=planning?.scope
+  const planning=brief?.avgVisualPlanning,prepared=planning?.version===4?planning.scope:undefined
   const [edited,setEdited]=useState(false),[cardsPending,setCardsPending]=useState<Record<string,boolean>>({}),[editPrepared,setEditPrepared]=useState(false),[reusePending,setReusePending]=useState(false),[routePending,setRoutePending]=useState(false)
   const pendingCards=Object.values(cardsPending).some(Boolean)
   const enabled=avgVisualPlanningExecutionReadyV4()
@@ -85,6 +85,7 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
   const available=!workspace.mediaBatch&&!workspace.voiceProduction&&!workspace.imageProcessing&&!workspace.presentation.stage.assets.some(a=>!a.mimeType.startsWith('image/'))
   useEffect(()=>{onPending(edited||pendingCards||reusePending||routePending);return()=>onPending(false)},[edited,pendingCards,reusePending,routePending,onPending])
   const cardPending=useCallback((key:string,value:boolean)=>setCardsPending(old=>old[key]===value?old:{...old,[key]:value}),[])
+  if(planning?.version===5)return <section className="lf-paper" aria-label="专业视觉策划（实验）"><p role="status">此制作方案需要新版媒资工作台。当前先保留记录，正式制作接通后继续。</p></section>
   if(!enabled&&!planning)return null
   return <section className="lf-paper" aria-label="专业视觉策划（实验）"><h4>专业视觉策划 <small>实验</small></h4>
     <p>先确认具体用途与合法参考，再由美术方向及对应的场景、人物、物件岗位提出方案。采用后编译图片需求，每项最多请求一次；费用可能未知，图片返回后仍须单独评审、选用和确认演出。</p>

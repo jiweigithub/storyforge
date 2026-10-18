@@ -23,6 +23,7 @@ import type { ResolvedProductMediaCapabilityV1 } from '../product-production/med
 export function createAvgVisualPlanningExecutorV4(options: { brief: ProductProductionBriefV3; runText: ProductionTextRunnerV1;
   mediaCapabilities?: ReadonlyMap<string, ResolvedProductMediaCapabilityV1>; imageEndpointRouteHash?: string }): ProductProductionTaskExecutorV1 {
   const brief = structuredClone(options.brief)
+  if(brief.avgVisualPlanning?.version!==4)throw new Error('[avg-visual-plan] 旧专业执行器不接受本方案版本，未创建执行任务')
   return async input => {
     const started = Date.now(), zero = (): ProductProductionTaskUsageV1 => ({ modelCalls: 0, inputTokens: 0, outputTokens: 0,
       mediaCalls: 0, costUsd: 0, durationMs: Date.now() - started, storageBytes: 0 })

@@ -49,7 +49,7 @@ export function buildAvgMediaAssemblyPlanV2(input: {
 export function buildAvgImageAssemblyTopologyV1(input:{
   briefHash:string;buildNumber:number;controlEpoch:number
   capabilityRequirements:ProductProductionBriefV3['capabilityRequirements']
-  declaration:Omit<AvgAssemblyBriefV2,'version'|'imageBinding'>
+  declaration:Omit<AvgAssemblyBriefV2,'version'|'imageBinding'|'mediaBatch'>&{mediaBatch:{requirements:Array<{requirementKey:string;family:{familyKey:string}}> ;visualReviewPolicy?:'author-visual-v1'}}
 }):ProductProductionPlanV3{
   const assembly=input.declaration
   const { mediaBatch } = assembly

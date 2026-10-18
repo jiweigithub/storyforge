@@ -47,7 +47,7 @@ export async function readAvgVisualReuseHistoryV4(input:{scope:WorkspaceScope;bu
   brief:ProductProductionBriefV3;task:ProductProductionPlanTaskV3;source:AvgVisualProposalReuseSourceV4;path?:AvgVisualReusePathV4}){
   const source=parseAvgVisualProposalReuseSourceV4(input.source),path=input.path??[]
   const identity=`${source.productionKey}:${source.buildNumber}:${source.artifact.artifactKey}`
-  if(path.length>=32||path.includes(identity)||source.buildNumber>=input.build.buildNumber||!input.brief.avgVisualPlanning
+  if(path.length>=32||path.includes(identity)||source.buildNumber>=input.build.buildNumber||input.brief.avgVisualPlanning?.version!==4
     ||avgVisualRoleTargetV4(input.task,input.brief.avgVisualPlanning.scope)!==source.artifact.artifactKey)throw new Error('[avg-visual-reuse] 来源循环、超界或不早于本版本')
   const production=await db.productProductions.get(input.build.productionId)
   const build=await db.productBuilds.where('[productionId+buildNumber]').equals([input.build.productionId,source.buildNumber]).first()
@@ -88,7 +88,7 @@ export async function readAvgVisualReuseEvidenceV4(scope:WorkspaceScope,row:{pro
     ||briefRow.authorizedAt!==build.authorizedAt||!['authorized','superseded'].includes(briefRow.status))throw new Error('[avg-visual-reuse] 当前 producer 缺少准确授权 Brief')
   const brief=parseProductProductionBriefV3(briefRow.briefJson),plan=parseProductProductionPlanV3(build.planJson,brief,build.briefHash)
   const task=plan.tasks.find(t=>t.taskKey===boundary!.taskKey)
-  if(!task||!isAvgVisualReuseTaskV4(task)||!brief.avgVisualPlanning||await hashProductProductionValueV2(brief)!==build.briefHash
+  if(!task||!isAvgVisualReuseTaskV4(task)||brief.avgVisualPlanning?.version!==4||await hashProductProductionValueV2(brief)!==build.briefHash
     ||await hashProductProductionValueV2(plan)!==build.planHash||boundary!.planHash!==build.planHash||boundary!.buildNumber!==build.buildNumber
     ||boundary!.controlEpoch!==plan.controlEpoch||snapshot.contract.executionBindings?.length
     ||snapshot.events.some(e=>e.type==='model.requested'||e.type==='tool.called')

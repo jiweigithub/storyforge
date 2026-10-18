@@ -36,7 +36,7 @@ export async function readAvgCompiledImageDefinitionV4(input: {
     || briefRow.status !== 'authorized' || briefRow.briefHash !== build.briefHash || briefRow.authorizedAt !== build.authorizedAt) throw new Error('[avg-visual-image] 缺少准确当前 V4 授权来源')
   const brief = parseProductProductionBriefV3(briefRow.briefJson), planning = brief.avgVisualPlanning
   const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
-  if (!planning || await hashProductProductionValueV2(brief) !== build.briefHash
+  if (planning?.version!==4 || await hashProductProductionValueV2(brief) !== build.briefHash
     || input.expectedBrief && !same(input.expectedBrief, brief)) throw new Error('[avg-visual-image] 实际完整 V4 Brief 不一致')
   const capability = brief.capabilityRequirements.find(c => c.requirementKey === 'avg.media.image')!
   if (capability.capabilityHash !== await hashProductProductionValueV2(avgImageReferenceCapabilityV2(planning.imageBinding.adapterId))) throw new Error('[avg-visual-image] 图片能力不是准确冻结模型的参考输入协议')

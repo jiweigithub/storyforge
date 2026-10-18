@@ -41,7 +41,7 @@ export async function readAvgHistoricalCompiledImageDefinitionV4(input:AvgHistor
     ||!briefRow||!await assertRecordInScope(scope,'productProductionBriefs',briefRow,{owner:'work'})
     ||!['authorized','superseded'].includes(briefRow.status)||briefRow.briefHash!==build.briefHash||briefRow.authorizedAt!==build.authorizedAt)throw new Error('[avg-visual-history] 原图片缺少准确授权来源')
   const brief=parseProductProductionBriefV3(briefRow.briefJson),planning=brief.avgVisualPlanning
-  if(!planning||await hashProductProductionValueV2(brief)!==build.briefHash)throw new Error('[avg-visual-history] 需要原始完整 V4 图片合同')
+  if(planning?.version!==4||await hashProductProductionValueV2(brief)!==build.briefHash)throw new Error('[avg-visual-history] 需要原始完整 V4 图片合同')
   const capability=brief.capabilityRequirements.find(c=>c.requirementKey==='avg.media.image')
   if(!capability||capability.capabilityHash!==await hashProductProductionValueV2(avgImageReferenceCapabilityV2(planning.imageBinding.adapterId)))throw new Error('[avg-visual-history] 原图片模型与能力不一致')
   const plan=parseProductProductionPlanV3(build.planJson,brief,build.briefHash)

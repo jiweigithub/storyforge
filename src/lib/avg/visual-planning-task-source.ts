@@ -17,7 +17,7 @@ import { avgImageReferenceCapabilityV2 } from './media-reference-contract'
  * context or Run id can substitute for the actual durable claim. */
 export async function readAvgVisualPlanningExecutionSourcesV4(input: ProductProductionTaskExecutionInputV1, brief: ProductProductionBriefV3) {
   const planning = brief.avgVisualPlanning, build = await db.productBuilds.get(input.buildId)
-  if (!planning || !build || !await assertRecordInScope(input.scope, 'productBuilds', build, { owner: 'work' })
+  if (planning?.version!==4 || !build || !await assertRecordInScope(input.scope, 'productBuilds', build, { owner: 'work' })
     || build.productionId !== input.productionId || build.buildNumber !== input.buildNumber || build.status !== 'building'
     || build.controlEpoch !== input.controlEpoch || build.planHash !== input.planHash || build.briefHash !== await hashProductProductionValueV2(brief)) throw new Error('[avg-visual-plan] 执行来源或完整 Brief 已 stale')
   const image=brief.capabilityRequirements.find(c=>c.requirementKey==='avg.media.image')

@@ -540,7 +540,7 @@ export interface ProductProductionBriefV3 {
   avgRevision?: { version: 1; basePackageHash: string; runtimePackage: import('./product-release').ProductRuntimePackageV1 };
   avgAssembly?: import('../avg/assembly-contract').AvgAssemblyBrief;
   /** Explicit next AVG contract; mutually exclusive with legacy assembly. */
-  avgVisualPlanning?: import('../avg/visual-planning-brief').AvgVisualPlanningBriefV4;
+  avgVisualPlanning?: import('../avg/visual-planning-brief-codec').AvgVisualPlanningBrief;
   ttrpg?: TtrpgProductionBriefV2;
   /** Closed AI Town construction contract; required exactly when productType=ai-town. */
   aiTown?: AiTownProductionBriefV1;
@@ -603,7 +603,7 @@ export interface ProductProductionPlanTaskV3 {
   /** Exact author draft, authorized by a durable child-Build command. */
   authorRevision?: TextAdventureContentRevisionV1 & { commandId: string; sourceBuildNumber: number };
   /** Exact registered input projection for deterministic AVG V3 tasks. */
-  contextProfile?: "avg-task-v1" | "avg-visual-planning-v4";
+  contextProfile?: "avg-task-v1" | "avg-visual-planning-v4" | "avg-visual-planning-v5";
 }
 
 export interface ProductProductionPlanV3 {

@@ -38,7 +38,7 @@ export async function prepareAvgVisualRawReuseV4(input:{scope:WorkspaceScope;pro
   expectedDraftRevision:number;expectedBuildId:number;expectedBuildRevision:number;sources:AvgVisualRawReuseSourceV4[]}){
   const details=await readProductProductionDetailsV1(input.scope,input.productionId,['avg']),build=details.build
   const brief=details.brief?parseProductProductionBriefV3(details.brief.briefJson):null,draft=await readAvgDraftV1(input.scope)
-  if(!avgVisualPlanningExecutionReadyV4()||!brief?.avgVisualPlanning||!build||build.id!==input.expectedBuildId||build.stateRevision!==input.expectedBuildRevision
+  if(!avgVisualPlanningExecutionReadyV4()||brief?.avgVisualPlanning?.version!==4||!build||build.id!==input.expectedBuildId||build.stateRevision!==input.expectedBuildRevision
     ||!['cancelled','failed','recovery-required'].includes(build.status)||build.previewHash||details.production.status!=='brief-ready'
     ||details.brief!.revision<=build.briefRevision||details.brief!.briefHash!==input.expectedBriefHash||draft.productionId!==input.productionId
     ||draft.revision!==input.expectedDraftRevision||!Array.isArray(input.sources))throw new Error('[avg-visual-raw-reuse] 尚未开始的新方案、父版本或草稿已变化')

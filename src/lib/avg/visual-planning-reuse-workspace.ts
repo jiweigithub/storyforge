@@ -35,7 +35,7 @@ export async function readAvgVisualReuseOptionsV4(input:{scope:WorkspaceScope;pr
   if(!build||build.stateRevision!==input.expectedBuildRevision)throw new Error('[avg-visual-reuse] 来源版本已变化')
   const row=details.briefHistory.find(r=>r.revision===build.briefRevision&&r.briefHash===build.briefHash)
   const brief=row?parseProductProductionBriefV3(row.briefJson):null
-  if(!brief?.avgVisualPlanning)throw new Error('[avg-visual-reuse] 来源不是专业视觉版本')
+  if(brief?.avgVisualPlanning?.version!==4)throw new Error('[avg-visual-reuse] 来源不是专业视觉版本')
   const options=[]
   for(const artifactKey of avgVisualPlanningTargetKeysV4(brief.avgVisualPlanning.scope)){
     const rows=await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id!,artifactKey]).filter(r=>r.status==='accepted').toArray()
@@ -71,7 +71,7 @@ export async function prepareAvgVisualProposalReuseV4(input:{scope:WorkspaceScop
   expectedDraftRevision:number;expectedBuildId:number;expectedBuildRevision:number;selections:AvgVisualReuseSelectionV4[]}){
   const details=await readProductProductionDetailsV1(input.scope,input.productionId,['avg']),build=details.build
   const brief=details.brief?parseProductProductionBriefV3(details.brief.briefJson):null,draft=await readAvgDraftV1(input.scope)
-  if(!avgVisualPlanningExecutionReadyV4()||!brief?.avgVisualPlanning||!build||build.id!==input.expectedBuildId||build.stateRevision!==input.expectedBuildRevision
+  if(!avgVisualPlanningExecutionReadyV4()||brief?.avgVisualPlanning?.version!==4||!build||build.id!==input.expectedBuildId||build.stateRevision!==input.expectedBuildRevision
     ||!['cancelled','failed','recovery-required'].includes(build.status)||build.previewHash||details.production.status!=='brief-ready'
     ||details.brief!.revision<=build.briefRevision||details.brief!.briefHash!==input.expectedBriefHash||draft.productionId!==input.productionId
     ||draft.revision!==input.expectedDraftRevision||!Array.isArray(input.selections)||input.selections.length>9

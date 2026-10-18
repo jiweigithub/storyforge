@@ -70,7 +70,7 @@ export function completeAvgVisualPlanningBriefV4(base: ProductProductionBriefV3,
 
 export async function assertAvgVisualPlanningDraftMatchesV4(scope: WorkspaceScope, workspace: AvgAuthorWorkspaceV1, brief: ProductProductionBriefV3) {
   const v = brief.avgVisualPlanning
-  if (!v || !avgVisualPlanningExecutionReadyV4() || workspace.mediaBatch || workspace.voiceProduction || workspace.imageProcessing) throw new Error('[avg-visual-plan] 专业视觉方案或实验状态已变化')
+  if (v?.version!==4 || !avgVisualPlanningExecutionReadyV4() || workspace.mediaBatch || workspace.voiceProduction || workspace.imageProcessing) throw new Error('[avg-visual-plan] 专业视觉方案或实验状态已变化')
   const { sourceInputHash: _hash, aspectRatio: _ratio, ...value } = v.scope
   const frozen = await freezeAvgVisualPlanningScopeV1(value, workspace)
   if (canonicalProductProductionJsonV2(frozen) !== canonicalProductProductionJsonV2(v.scope)) throw new Error('[avg-visual-plan] 规则、对白或图片用途已变化，请重新准备方案')
@@ -81,7 +81,7 @@ export async function assertAvgVisualPlanningDraftMatchesV4(scope: WorkspaceScop
  * bindings, allowing deterministic adoption/assembly without current secrets. */
 export async function resolveAvgVisualPlanningExecutionV4(scope: WorkspaceScope, brief: ProductProductionBriefV3, buildId?: number) {
   const v = brief.avgVisualPlanning
-  if (!v || !avgVisualPlanningExecutionReadyV4()) throw new Error('[avg-visual-plan] 专业视觉制作尚未启用')
+  if (v?.version!==4 || !avgVisualPlanningExecutionReadyV4()) throw new Error('[avg-visual-plan] 专业视觉制作尚未启用')
   const plan = buildAvgVisualPlanningPlanV4({ brief: { ...brief, avgVisualPlanning: v }, briefHash: '0'.repeat(64), buildNumber: 1+Math.max(0,...(v.proposalReuse??[]).map(r=>r.buildNumber),...(v.rawReuse??[]).map(r=>r.raw.buildNumber)), controlEpoch: 0 })
   const bindings: ProductProductionCapabilityBindingV1[] = []
   const modelTasks = plan.tasks.filter(t => t.executionMode === 'model')

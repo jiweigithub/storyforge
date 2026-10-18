@@ -33,7 +33,7 @@ export function parseAvgVisualProposalReuseSourceV4(value: unknown): AvgVisualPr
     producerReceiptHash:avgHash(r.producerReceiptHash,'source producerReceiptHash'),
     requestSnapshotHash:avgHash(r.requestSnapshotHash,'source requestSnapshotHash'),rawResponseHash:avgHash(r.rawResponseHash,'source rawResponseHash')}
 }
-export function avgVisualPlanningTargetKeysV4(scope:AvgVisualPlanningScopeV1){
+export function avgVisualPlanningTargetKeysV4(scope:Pick<AvgVisualPlanningScopeV1,'templates'>){
   return ['avg.media.visual-bible',...[...new Map(scope.templates.map(t=>[t.parameters.family.subjectKey,t.subjectKind])).entries()]
     .map(([subject,kind])=>avgMediaBriefArtifactKeyV1(kind,subject))]
 }

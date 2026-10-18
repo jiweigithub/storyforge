@@ -25,7 +25,7 @@ export async function assertAvgVisualPlanningProducerAdmissionV4(input: {
     || row.briefHash !== input.build.briefHash || row.authorizedAt !== input.build.authorizedAt) throw new Error('[avg-visual-plan] 原始方案缺少准确已授权 Brief')
   const brief = parseProductProductionBriefV3(row.briefJson), planning = brief.avgVisualPlanning, a = input.artifact, task = input.task
   const same = (l: unknown, r: unknown) => canonicalProductProductionJsonV2(l) === canonicalProductProductionJsonV2(r)
-  if (!planning || await hashProductProductionValueV2(brief) !== input.build.briefHash || task.outputArtifactKeys.length !== 1 || task.outputArtifactKeys[0] !== a.artifactKey
+  if (planning?.version!==4 || await hashProductProductionValueV2(brief) !== input.build.briefHash || task.outputArtifactKeys.length !== 1 || task.outputArtifactKeys[0] !== a.artifactKey
     || a.blobObjectId !== null || a.mimeType !== null || a.mediaKind !== null || a.metadataJson !== '{}' || task.maxAttempts !== 1) throw new Error('[avg-visual-plan] 技术方案不能借用媒资或其他输出写域')
   const assembled = await assembleContext({ projectId: input.scope.projectId, scope: input.scope, productProductionId: input.build.productionId,
     productBuildId: input.build.id, productProductionTaskKey: task.taskKey, productArtifactKeys: task.inputArtifactKeys,

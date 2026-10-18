@@ -10694,6 +10694,7 @@ export function createConfiguredProductProductionExecutorV1(input: {
   avgVoiceTransport?: Parameters<typeof createAvgAssemblyExecutorV1>[0]['voiceTransport']
 }): ProductProductionTaskExecutorV1 {
   if (input.brief.avgVisualPlanning) {
+    if(input.brief.avgVisualPlanning.version!==4)throw new Error('[avg-visual-plan] 本方案版本的专业视觉执行尚未接通，不能创建执行器')
     if (!avgVisualPlanningExecutionReadyV4()) throw new Error('[avg-visual-plan] 专业视觉候选采用和需求消费尚未接通，不能调用旧通用执行器')
     const options = { brief: structuredClone(input.brief), runText: input.runText ?? defaultTextRunner,
       mediaCapabilities: input.mediaCapabilities, imageEndpointRouteHash: input.avgImageEndpointRouteHash }

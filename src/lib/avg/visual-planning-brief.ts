@@ -33,19 +33,28 @@ export function parseAvgVisualPlanningBriefV4(value: unknown): AvgVisualPlanning
   const assembly = parseAvgAssemblyBriefV1(r.assembly), scope = parseAvgVisualPlanningScopeV1(r.scope)
   const imageProcessing=hasProcessing?parseAvgImageProcessingPlanV1(r.imageProcessing):undefined
   if(imageProcessing)assertAvgImageProcessingRequirementsV1(imageProcessing,scope.templates.map(t=>t.parameters))
-  const b = avgRecord(r.imageBinding, ['requirementKey', 'adapterId', 'bindingHash', 'endpointRouteHash'], 'planning image binding')
-  const selected=avgImageReferenceCapabilityV2(String(b.adapterId))
-  if (b.requirementKey !== 'avg.media.image') throw new Error('[avg-visual-plan] 图片能力与准确 Agnes 路由不一致')
-  for (const template of scope.templates) {
-    const p = template.parameters
-    if (p.consumer.sceneKey !== null && !assembly.sceneKeys.includes(p.consumer.sceneKey)) throw new Error('[avg-visual-plan] 消费槽不在冻结场景中')
-    if (assembly.mediaAssetKeys.includes(p.assetKey) === (p.consumer.domain === 'reference')) throw new Error('[avg-visual-plan] runtime 媒资目录与图片用途不一致')
-  }
-  return { schema: r.schema, version: 4, assembly, scope, imageBinding: { requirementKey: avgKey(b.requirementKey, 'requirementKey'),
-    adapterId: selected.adapterId, bindingHash: avgHash(b.bindingHash, 'bindingHash'), endpointRouteHash: avgHash(b.endpointRouteHash, 'endpointRouteHash') },
+  const imageBinding=parseAvgVisualImageBindingV4(r.imageBinding)
+  assertAvgVisualPlanningAssemblyTargetsV1(assembly,scope)
+  return { schema: r.schema, version: 4, assembly, scope, imageBinding,
     ...(hasReuse?{proposalReuse:parseAvgVisualProposalReuseSourcesV4(r.proposalReuse,scope)}:{}),
     ...(hasRawReuse?{rawReuse:parseAvgVisualRawReuseSourcesV4(r.rawReuse,scope.templates.map(t=>t.parameters.requirementKey))}:{}),
     ...(imageProcessing?{imageProcessing}:{}) }
+}
+
+/** Same frozen route/binding grammar for explicit private Brief versions. */
+export function parseAvgVisualImageBindingV4(value:unknown):AvgVisualImageBindingV4 {
+  const b=avgRecord(value,['requirementKey','adapterId','bindingHash','endpointRouteHash'],'planning image binding')
+  const selected=avgImageReferenceCapabilityV2(String(b.adapterId))
+  if(b.requirementKey!=='avg.media.image')throw new Error('[avg-visual-plan] 图片能力与准确 Agnes 路由不一致')
+  return {requirementKey:avgKey(b.requirementKey,'requirementKey'),adapterId:selected.adapterId,
+    bindingHash:avgHash(b.bindingHash,'bindingHash'),endpointRouteHash:avgHash(b.endpointRouteHash,'endpointRouteHash')}
+}
+export function assertAvgVisualPlanningAssemblyTargetsV1(assembly:AvgAssemblyBriefV1,scope:Pick<AvgVisualPlanningScopeV1,'templates'>){
+  for(const template of scope.templates){
+    const p=template.parameters
+    if(p.consumer.sceneKey!==null&&!assembly.sceneKeys.includes(p.consumer.sceneKey))throw new Error('[avg-visual-plan] 消费槽不在冻结场景中')
+    if(assembly.mediaAssetKeys.includes(p.assetKey)===(p.consumer.domain==='reference'))throw new Error('[avg-visual-plan] runtime 媒资目录与图片用途不一致')
+  }
 }
 
 /** Separate default-off professional workbench experiment. Both switches,

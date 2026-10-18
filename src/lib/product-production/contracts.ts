@@ -4,7 +4,8 @@ import { assertAvgVisualProductionPolicyV2 } from '../avg/media-production-polic
 import { parseAvgStoredAssemblyBriefV3 } from '../avg/voice-assembly-storage'
 import { assertAvgVoiceProductionPolicyV3 } from '../avg/voice-production-policy'
 import { parseAvgSettingsForLegacyProduction } from '../avg/settings-v2'
-import { parseAvgVisualPlanningBriefV4 } from '../avg/visual-planning-brief'
+import { parseAvgVisualPlanningBrief } from '../avg/visual-planning-brief-codec'
+import { assertAvgVisualPlanningPolicyV5 } from '../avg/visual-planning-policy-v5'
 import { assertAvgVisualPlanningPolicyV4 } from '../avg/visual-planning-policy'
 import type {
   TextAdventureContentRevisionV1,
@@ -318,7 +319,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
   const parsed: ProductProductionBriefV3 = {
     ...(avgRevision ? { avgRevision } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgAssembly') ? { avgAssembly: parseAvgAssemblyBrief(row.avgAssembly) } : {}),
-    ...(Object.prototype.hasOwnProperty.call(row, 'avgVisualPlanning') ? { avgVisualPlanning: parseAvgVisualPlanningBriefV4(row.avgVisualPlanning) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, 'avgVisualPlanning') ? { avgVisualPlanning: parseAvgVisualPlanningBrief(row.avgVisualPlanning) } : {}),
     ...(row.characterChat ? { characterChat: parseChatAuthoringSettingsV1(row.characterChat) } : {}),
     ...(row.avg ? { avg: parseAvgSettingsForLegacyProduction(row.avg) } : {}),
     schema: 'storyforge.product-production-brief', version: 3,
@@ -372,7 +373,10 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
       ? { evolution: parseEvolutionImpact(row.evolution) }
       : {}),
   }
-  if (parsed.avgVisualPlanning) assertAvgVisualPlanningPolicyV4(parsed)
+  if (parsed.avgVisualPlanning) {
+    if(parsed.avgVisualPlanning.version===5)assertAvgVisualPlanningPolicyV5(parsed)
+    else assertAvgVisualPlanningPolicyV4(parsed)
+  }
   if (parsed.avgAssembly?.version === 2) assertAvgVisualProductionPolicyV2(parsed)
   if (parsed.avgAssembly?.version === 3) {
     const { assembly } = parseAvgStoredAssemblyBriefV3(parsed.avgAssembly)

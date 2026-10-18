@@ -57,8 +57,8 @@ const commandId = (label: string) => `avg.assembly.${label}.${crypto.randomUUID(
 /** Only saved, never-started intents can release prospective item slots. */
 function unstartedAvgVisualPlanningScopes(details: Awaited<ReturnType<typeof readProductProductionDetailsV1>>) {
   return details.briefHistory.filter(row=>row.authorizedAt===null&&row.revision>(details.build?.briefRevision??0)).flatMap(row => {
-    const scope = parseProductProductionBriefV3(row.briefJson).avgVisualPlanning?.scope
-    return scope ? [scope] : []
+    const planning = parseProductProductionBriefV3(row.briefJson).avgVisualPlanning
+    return planning?.version===4 ? [planning.scope] : []
   })
 }
 
@@ -797,6 +797,7 @@ export async function startAvgAssemblyV1(input: { scope: WorkspaceScope; product
   const brief = details.brief ? parseProductProductionBriefV3(details.brief.briefJson) : null
   const assembly = brief?.avgAssembly ?? brief?.avgVisualPlanning?.assembly
   if (!brief || !assembly || details.brief!.briefHash !== input.expectedBriefHash) throw new Error('[avg] 制作方案已变化，请重新核对')
+  if(brief.avgVisualPlanning?.version===5)throw new Error('[avg] 新版参考媒资尚未完成正式执行接线，不能从旧工作台开始')
   const draft=await readAvgDraftV1(input.scope)
   let workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
   if (brief.avgVisualPlanning) {
@@ -917,7 +918,7 @@ export async function restartAvgAssemblyFromDraftV1(input: { scope: WorkspaceSco
 export async function restartAvgVisualPlanningFromDraftV4(input:{scope:WorkspaceScope;productionId:number;expectedBuildId:number;expectedBuildRevision:number;expectedDraftRevision:number}){
   const draft=await readAvgDraftV1(input.scope),details=await readProductProductionDetailsV1(input.scope,input.productionId,['avg'])
   const build=details.build,planning=details.executionBrief?.avgVisualPlanning
-  if(draft.revision!==input.expectedDraftRevision||draft.productionId!==input.productionId||!build?.id||!planning
+  if(draft.revision!==input.expectedDraftRevision||draft.productionId!==input.productionId||!build?.id||planning?.version!==4
     ||build.id!==input.expectedBuildId||build.stateRevision!==input.expectedBuildRevision||build.previewHash
     ||!['cancelled','failed','recovery-required'].includes(build.status)
     ||details.production.status==='brief-ready')throw new Error('[avg-visual-restart] 当前失败版本或草稿已变化，请重新核对')

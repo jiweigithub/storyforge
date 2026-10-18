@@ -72,7 +72,7 @@ export async function readAvgVisualPlanningContextV4(input: AssembleContextInput
   if (!row || !await assertRecordInScope(scope, 'productProductionBriefs', row, { owner: 'work' }) || row.status !== 'authorized'
     || row.briefHash !== build.briefHash || row.authorizedAt !== build.authorizedAt) throw new Error('[avg-visual-plan] 缺少准确已授权 Brief')
   const brief = parseProductProductionBriefV3(row.briefJson)
-  if (!brief.avgVisualPlanning || await hashProductProductionValueV2(brief) !== build.briefHash) throw new Error('[avg-visual-plan] 专业视觉 Brief 内容或版本不一致')
+  if (brief.avgVisualPlanning?.version!==4 || await hashProductProductionValueV2(brief) !== build.briefHash) throw new Error('[avg-visual-plan] 专业视觉 Brief 内容或版本不一致')
   const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash), task = plan.tasks.find(t => t.taskKey === input.productProductionTaskKey)
   if (!task || await hashProductProductionValueV2(plan) !== build.planHash || plan.buildNumber !== build.buildNumber || plan.controlEpoch !== build.controlEpoch
     || canonicalProductProductionJsonV2(input.productArtifactKeys ?? []) !== canonicalProductProductionJsonV2(task.inputArtifactKeys)) throw new Error('[avg-visual-plan] Plan 或准确依赖选择不一致')

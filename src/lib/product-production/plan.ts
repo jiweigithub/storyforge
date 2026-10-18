@@ -6,6 +6,7 @@ import type {
 } from '../types'
 import { buildAvgNativeAssemblyPlan } from '../avg/assembly-plan'
 import { AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4, buildAvgVisualPlanningPlanV4 } from '../avg/visual-planning-plan'
+import { buildAvgVisualPlanningPlanV5 } from '../avg/visual-planning-plan-v5'
 import { PRODUCTION_PRODUCT_KINDS_V1 } from '../types'
 import { parseTextAdventureContentRevisionV1, parseProductProductionBriefV3 } from './contracts'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2, isSha256Hash } from './hash'
@@ -282,7 +283,7 @@ function parseTask(value: unknown, index: number): ProductProductionPlanTaskV3 {
     reuse,
     ...(authorRevision ? { authorRevision } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'contextProfile')
-      ? { contextProfile: enumValue(row.contextProfile, ['avg-task-v1', 'avg-visual-planning-v4'] as const, `${label}.contextProfile`) } : {}),
+      ? { contextProfile: enumValue(row.contextProfile, ['avg-task-v1', 'avg-visual-planning-v4','avg-visual-planning-v5'] as const, `${label}.contextProfile`) } : {}),
   }
 }
 
@@ -347,6 +348,8 @@ export function parseProductProductionPlanV3(
       || !['avg-assembly-integrate', 'avg-assembly-verify', 'avg-media-image-process', 'avg-media-image-reuse', 'avg-media-voice-reuse'].includes(task.kind))) {
       fail(`${task.taskKey} 上下文投影只用于准确 AVG 确定性任务`)
     }
+    if(task.contextProfile==='avg-visual-planning-v5'&&(productType!=='avg'||task.executionMode!=='deterministic'
+      ||!['avg-v5-visual-requirements-compile','avg-media-image-process'].includes(task.kind)))fail(`${task.taskKey} V5 投影只用于准确新需求编译或加工`)
     if (task.contextProfile === 'avg-visual-planning-v4' && (productType !== 'avg' || task.executionMode !== 'deterministic'
       || !['avg-v4-visual-requirements-compile','avg-v4-visual-proposal-reuse','avg-media-image-reuse','avg-media-image-process'].includes(task.kind))) fail(`${task.taskKey} V4 投影只用于准确需求编译、复验或加工任务`)
     if (task.kind === 'avg-v4-visual-proposal-reuse' && (productType !== 'avg' || task.executionMode !== 'deterministic'
@@ -365,7 +368,7 @@ export function parseProductProductionPlanV3(
         fail(`${task.taskKey} 原图复验必须依赖准确需求编译，且为单次零调用任务`)
       }
     }
-    if(task.kind==='avg-media-image-process'&&task.contextProfile==='avg-visual-planning-v4'){
+    if(task.kind==='avg-media-image-process'&&['avg-visual-planning-v4','avg-visual-planning-v5'].includes(task.contextProfile??'')){
       const requirementKey=task.taskKey.startsWith('avg.media.process.')?task.taskKey.slice('avg.media.process.'.length):''
       const compiler=tasks.find(owner=>owner.outputArtifactKeys.includes(AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4))
       const raw=tasks.find(owner=>owner.outputArtifactKeys.includes(`avg.media.raw.${requirementKey}`))
@@ -373,7 +376,7 @@ export function parseProductProductionPlanV3(
         ||task.budgetReservation.modelCalls!==0||task.budgetReservation.mediaCalls!==0||task.budgetReservation.maximumCostUsd!==0
         ||task.outputArtifactKeys.length!==1||task.outputArtifactKeys[0]!==`avg.media.processed.${requirementKey}`
         ||!task.inputArtifactKeys.includes(AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4)||!task.inputArtifactKeys.includes(`avg.media.raw.${requirementKey}`)
-        ||compiler?.kind!=='avg-v4-visual-requirements-compile'||!task.dependsOn.includes(compiler.taskKey)
+        ||compiler?.kind!==(task.contextProfile==='avg-visual-planning-v5'?'avg-v5-visual-requirements-compile':'avg-v4-visual-requirements-compile')||!task.dependsOn.includes(compiler.taskKey)
         ||!raw||!['avg-media-image-generate','avg-media-image-reuse'].includes(raw.kind)||!task.dependsOn.includes(raw.taskKey)){
         fail(`${task.taskKey} 本地加工必须依赖准确需求编译与原图，且为单次零调用任务`)
       }
@@ -457,7 +460,10 @@ export function parseProductProductionPlanV3(
     briefHash: row.briefHash, controlEpoch: integer(row.controlEpoch, 'controlEpoch'),
     concurrency: parsedConcurrency, tasks, terminalTaskKey,
   }
-  if (brief?.avgVisualPlanning && canonicalProductProductionJsonV2(parsed) !== canonicalProductProductionJsonV2(buildAvgVisualPlanningPlanV4({
+  if (brief?.avgVisualPlanning?.version===5 && canonicalProductProductionJsonV2(parsed)!==canonicalProductProductionJsonV2(buildAvgVisualPlanningPlanV5({
+    brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning},briefHash:parsed.briefHash,buildNumber:parsed.buildNumber,controlEpoch:parsed.controlEpoch,
+  })))fail('AVG V5 专业视觉 Plan 必须等于本次冻结的新岗位与需求消费拓扑')
+  if (brief?.avgVisualPlanning?.version===4 && canonicalProductProductionJsonV2(parsed) !== canonicalProductProductionJsonV2(buildAvgVisualPlanningPlanV4({
     brief: { ...brief, avgVisualPlanning: brief.avgVisualPlanning }, briefHash: parsed.briefHash, buildNumber: parsed.buildNumber, controlEpoch: parsed.controlEpoch,
   }))) fail('AVG 专业视觉 Plan 必须等于冻结的候选/作者采用/需求消费拓扑')
   if (brief?.avgAssembly && canonicalProductProductionJsonV2(parsed) !== canonicalProductProductionJsonV2(buildAvgNativeAssemblyPlan({
@@ -501,7 +507,8 @@ export async function createProductProductionPlanV3(input: {
   const controlEpoch = input.controlEpoch ?? 0
   if (!Number.isInteger(controlEpoch) || controlEpoch < 0) fail('controlEpoch 无效')
 
-  if (brief.avgVisualPlanning) return parseProductProductionPlanV3(buildAvgVisualPlanningPlanV4({ ...input, brief: { ...brief, avgVisualPlanning: brief.avgVisualPlanning }, controlEpoch }), brief, input.briefHash)
+  if (brief.avgVisualPlanning?.version===5)return parseProductProductionPlanV3(buildAvgVisualPlanningPlanV5({...input,brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning},controlEpoch}),brief,input.briefHash)
+  if (brief.avgVisualPlanning?.version===4) return parseProductProductionPlanV3(buildAvgVisualPlanningPlanV4({ ...input, brief: { ...brief, avgVisualPlanning: brief.avgVisualPlanning }, controlEpoch }), brief, input.briefHash)
   if (brief.avgAssembly) return parseProductProductionPlanV3(buildAvgNativeAssemblyPlan({ ...input, brief, controlEpoch }), brief, input.briefHash)
 
   const capabilityKeys = (classes: Array<ProductProductionBriefV3['capabilityRequirements'][number]['mediaClass']>) => (
