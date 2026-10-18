@@ -13,16 +13,16 @@ import { completedAgentRunEvidencePrefixV1 } from '../agent/run/projection'
  * hide an unresolved ancestor request. Unknown price alone is not an unknown
  * result: a received queue-full response still has one known failed attempt. */
 export async function assertAvgVisualPlanningRestartKnownV4(scope:WorkspaceScope,source:ProductBuildRecordV1){
-  return assertAvgVisualPlanningRequestsKnownV4(scope,source,false)
+  return assertAvgVisualPlanningRequestsKnownV4(scope,source)
 }
 
-/** Local zero-provider stage retention may read an exact imported completed
- * prefix. This never resumes the stale Run or authorizes a new paid request. */
+/** Stage retention shares only the old-request knowledge check. A completed
+ * imported prefix never resumes its Run or supplies current adoption. */
 export async function assertAvgVisualStageRetentionKnownV4(scope:WorkspaceScope,source:ProductBuildRecordV1){
-  return assertAvgVisualPlanningRequestsKnownV4(scope,source,true)
+  return assertAvgVisualPlanningRequestsKnownV4(scope,source)
 }
 
-async function assertAvgVisualPlanningRequestsKnownV4(scope:WorkspaceScope,source:ProductBuildRecordV1,localRetention:boolean){
+async function assertAvgVisualPlanningRequestsKnownV4(scope:WorkspaceScope,source:ProductBuildRecordV1){
   const originals:ProductBuildRecordV1[]=[]
   let build:ProductBuildRecordV1|undefined=source
   const visited=new Set<number>()
@@ -58,7 +58,10 @@ async function assertAvgVisualPlanningRequestsKnownV4(scope:WorkspaceScope,sourc
         if(!key.startsWith('avg.visual.propose.')&&!key.startsWith('avg.media.generate.'))continue
         const snapshot=await readAgentRunV1(scope,run.id!)
         const binding=snapshot.contract.scope.productProduction
-        const projection=localRetention&&run.status==='running'
+        // Import invalidates execution/adoption authority, not a known old
+        // request outcome. This exact shared prefix is read-only evidence;
+        // the caller must still authorize a separate Build and adopt anew.
+        const projection=run.status==='running'
           ? completedAgentRunEvidencePrefixV1(snapshot.events)??snapshot.projection : snapshot.projection
         if(binding?.taskKey!==key||binding.productBuildId!==build.id||binding.buildNumber!==build.buildNumber
           ||binding.planHash!==build.planHash||binding.controlEpoch!==plan.controlEpoch

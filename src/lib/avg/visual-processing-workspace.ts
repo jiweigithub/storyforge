@@ -1,3 +1,4 @@
+import { avgPendingVisualWorldSourceV4 } from './visual-pending-source'
 import type { WorkspaceScope } from '../types'
 import { readProductProductionDetailsV1 } from '../product-production/service'
 import { executeProductProductionCommand } from '../product-production/commands'
@@ -26,7 +27,7 @@ export async function prepareAvgVisualImageProcessingV4(input:{scope:WorkspaceSc
   if(build)await assertAvgVisualPlanningRestartKnownV4(input.scope,build)
   await assertAvgVisualPlanningDraftMatchesV4(input.scope,parseAvgAuthorWorkspaceV1(draft.editorJson),brief)
   const {imageProcessing:_previous,...planning}=brief.avgVisualPlanning
-  const next={...brief,avgVisualPlanning:{...planning,...(input.plan===null?{}:{imageProcessing:parseAvgImageProcessingPlanV1(input.plan)})}}
+  const next={...brief,source:avgPendingVisualWorldSourceV4(brief,details.brief!,draft.worldReleaseId),avgVisualPlanning:{...planning,...(input.plan===null?{}:{imageProcessing:parseAvgImageProcessingPlanV1(input.plan)})}}
   next.productionBudget=avgVisualPlanningBudgetV4(next)
   next.capabilityRequirements=next.capabilityRequirements.map(c=>({...c,maximumTotalCost:next.productionBudget.maximumCostUsd}))
   next.completionContract={...next.completionContract,requiredGateIds:avgVisualPlanningGateIdsV4(next)}

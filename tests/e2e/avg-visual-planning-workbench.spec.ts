@@ -138,7 +138,7 @@ async function historicalDesignEvidence(page:Page,scope:{projectId:number;worldI
   },scope)
 }
 
-test('professional visual workbench reuses historical author edits after HTTP503 without new text calls and restores a real frozen native Preview',async({page},info)=>{
+for(const importBeforeRestart of [false,true])test(`professional visual workbench reuses historical author edits after HTTP503 and pending-import=${importBeforeRestart} without new text calls and restores a real frozen native Preview`,async({page},info)=>{
   test.setTimeout(240_000)
   test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION!=='1'||process.env.VITE_STORYFORGE_AVG_VISUAL_PLANNING!=='1','Both default-off visual experiments must be explicit')
   const {source,models,images,panel}=await prepare(page,true)
@@ -173,6 +173,25 @@ test('professional visual workbench reuses historical author edits after HTTP503
   await reuse.getByRole('button',{name:'保存复用方案',exact:true}).click()
   await expect(panel.getByText(/新方案上限：0 次方案调用、1 次图片请求/)).toBeVisible()
   expect(images[0].model).toBe('agnes-image-2.1-flash')
+  if(importBeforeRestart){
+    const restored=await page.evaluate(async scope=>{
+      const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
+      const [{db},backup,known]=await Promise.all([load('/storyforge/src/lib/db/schema.ts'),load('/storyforge/src/lib/export/json-export.ts'),load('/storyforge/src/lib/avg/visual-planning-restart.ts')])
+      const projectId=await backup.importProjectJSON(await backup.exportProjectJSON(scope.projectId)),build=await db.productBuilds.where('projectId').equals(projectId).first()
+      const importedScope={projectId,worldId:build.worldId,workId:build.workId}
+      const beforeRuns=await db.agentRuns.where('productBuildId').equals(build.id).toArray(),beforeEvents=await db.agentRunEvents.where('projectId').equals(projectId).toArray()
+      await known.assertAvgVisualPlanningRestartKnownV4(importedScope,build)
+      return {scope:importedScope,unchanged:JSON.stringify(beforeRuns)===JSON.stringify(await db.agentRuns.where('productBuildId').equals(build.id).toArray())
+        &&JSON.stringify(beforeEvents)===JSON.stringify(await db.agentRunEvents.where('projectId').equals(projectId).toArray()),
+        importedCompleted:beforeRuns.filter((r:any)=>r.parentRelation?.startsWith('task:avg.visual.propose.')).map((r:any)=>({status:r.status,terminalReceiptHash:r.terminalReceiptHash}))}
+    },source.scope)
+    expect(restored.unchanged).toBe(true)
+    expect(restored.importedCompleted).toEqual([{status:'running',terminalReceiptHash:null},{status:'running',terminalReceiptHash:null}])
+    Object.assign(source.scope,restored.scope)
+    const url=new URL(page.url());url.searchParams.set('project',String(source.scope.projectId));url.searchParams.set('work',String(source.scope.workId))
+    await page.goto(url.toString());await page.getByRole('button',{name:'素材',exact:true}).click()
+    await expect(panel.getByText(/新方案上限：0 次方案调用、1 次图片请求/)).toBeVisible()
+  }
   await panel.getByRole('combobox',{name:'专业图片模型',exact:true}).selectOption('agnes.image-2.5-flash.v1')
   await panel.getByRole('button',{name:'核对并保存图片模型',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'图片模型与当前配置已核对并保存'})).toBeVisible()

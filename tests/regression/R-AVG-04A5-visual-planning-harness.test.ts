@@ -1026,7 +1026,7 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
         const scope={projectId,worldId:build.worldId!,workId:build.workId!}
         const runs=await db.agentRuns.where('productBuildId').equals(build.id!).toArray()
         const events=await db.agentRunEvents.where('projectId').equals(projectId).toArray()
-        await expect(assertAvgVisualPlanningRestartKnownV4(scope,build)).rejects.toThrow(/旧请求 Run 尚未完成/)
+        await expect(assertAvgVisualPlanningRestartKnownV4(scope,build)).resolves.toBeUndefined()
         expect((await readAvgAssemblyWorkspaceV1(scope,build.productionId)).imageDefinition).toBeNull()
         const restored=await prepareAvgAssemblyBriefV1({scope,expectedDraftRevision:(await readAvgDraftV1(scope)).revision,
           visualStageContinuation:{expectedBuildId:build.id!,expectedBuildRevision:build.stateRevision}})
@@ -1034,7 +1034,7 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
         expect(await db.productProductionCommands.where('productionId').equals(build.productionId).filter(row=>row.type==='evolve'&&row.status==='succeeded').count()).toBe(1)
         expect(await db.agentRuns.where('productBuildId').equals(build.id!).toArray()).toEqual(runs)
         expect(await db.agentRunEvents.where('projectId').equals(projectId).toArray()).toEqual(events)
-        await expect(assertAvgVisualPlanningRestartKnownV4(scope,build)).rejects.toThrow(/旧请求 Run 尚未完成/)
+        await expect(assertAvgVisualPlanningRestartKnownV4(scope,build)).resolves.toBeUndefined()
         await deleteWork(scope.workId)
       }
       const next=await prepareAvgAssemblyBriefV1({...input,expectedDraftRevision:(await readAvgDraftV1(s.scope)).revision})
@@ -2122,13 +2122,19 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       expect(await db.productProductionBriefs.count()).toBe(briefs);expect(s.runText).toHaveBeenCalledTimes(1)
     })
 
-    it.each(['known','unknown'] as const)('keeps the %s request boundary after a complete backup remaps the stopped Work',async kind=>{
-      const s=await setup(kind==='known'?{malformed:true}:{unknown:true});await sources(s);await run(s)
+    it.each(['known','unknown','known-image','unknown-image'] as const)('keeps the %s request boundary after a complete backup remaps the stopped Work',async kind=>{
+      const s=await setup(kind==='known'?{malformed:true}:kind==='unknown'?{unknown:true}:{image:kind==='known-image'?'busy':'unknown'});await sources(s);await run(s)
+      if(kind.endsWith('-image')){
+        await adopt(s,await stage(s,'avg.media.visual-bible',s.bible));await run(s)
+        await adopt(s,await stage(s,`avg.media.environment-brief.${s.media.subjectKey}`,s.media));await run(s)
+      }
       const original=await current(s),projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId))
       const build=(await db.productBuilds.where('projectId').equals(projectId).first())!
       const restored={...s,scope:{projectId,worldId:build.worldId,workId:build.workId},productionId:build.productionId,buildId:build.id!}
       const input=await restartInput(restored),runs=await db.agentRuns.count()
-      if(kind==='known'){
+      const oldEvents=await db.agentRunEvents.where('projectId').equals(projectId).toArray()
+      const oldRuns=await db.agentRuns.where('productBuildId').equals(build.id!).toArray()
+      if(kind==='known'||kind==='known-image'){
         const prepared=await restartAvgVisualPlanningFromDraftV4(input)
         expect(prepared.production.id).toBe(build.productionId);expect(prepared.production.status).toBe('brief-ready')
         expect(prepared.brief!.revision).toBeGreaterThan(build.briefRevision)
@@ -2138,7 +2144,11 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
         expect(await db.productProductionBriefs.count()).toBe(briefs)
       }
       expect(await current(restored)).toEqual(build);expect(await current(s)).toEqual(original)
-      expect(await db.agentRuns.count()).toBe(runs);expect(s.runText).toHaveBeenCalledTimes(1);expect(s.imageFetcher).not.toHaveBeenCalled()
+      expect(await db.agentRuns.count()).toBe(runs)
+      expect(await db.agentRuns.where('productBuildId').equals(build.id!).toArray()).toEqual(oldRuns)
+      expect(await db.agentRunEvents.where('projectId').equals(projectId).toArray()).toEqual(oldEvents)
+      expect(s.runText).toHaveBeenCalledTimes(kind.endsWith('-image')?2:1)
+      expect(s.imageFetcher).toHaveBeenCalledTimes(kind.endsWith('-image')?1:0)
     },30_000)
 
     it('rejects stale Build/draft and live-source replacements without mutation',async()=>{
@@ -2191,16 +2201,30 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
         expectedBuild:{id:parent.id!,revision:parent.stateRevision},adapterId:AVG_IMAGE_REFERENCE_CAPABILITY_V2.adapterId}
     }
 
-    it('explicitly freezes Image 2.5 in a new Brief, reuses author edits without text calls and consumes the single new image in a frozen Preview',async()=>{
+    it.each(['none','stopped','pending'] as const)('explicitly freezes Image 2.5 after import=%s, reuses author edits without text calls and consumes the single new image in a frozen Preview',async importStage=>{
       vi.spyOn(imageDecoder,'inspectAvgImageBytesV1').mockResolvedValue({width:576,height:324,hasAlpha:false})
-      const {s,bible,media}=await failedWithEdits(),{prepared,parent}=await prepareReuse(s)
+      const failed=await failedWithEdits(),{bible,media}=failed
+      let s=failed.s
+      if(importStage==='stopped'){
+        const projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),build=(await db.productBuilds.where('projectId').equals(projectId).first())!
+        s={...s,scope:{projectId,worldId:build.worldId,workId:build.workId},productionId:build.productionId,buildId:build.id!}
+      }
+      let {prepared,parent}=await prepareReuse(s)
+      if(importStage==='pending'){
+        const projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),build=(await db.productBuilds.where('projectId').equals(projectId).first())!
+        s={...s,scope:{projectId,worldId:build.worldId,workId:build.workId},productionId:build.productionId,buildId:build.id!}
+        prepared=await readProductProductionDetailsV1(s.scope,s.productionId,['avg']);parent=await current(s)
+        expect(parseProductProductionBriefV3(prepared.brief!.briefJson).source.worldReleaseId).not.toBe(prepared.brief!.sourceWorldReleaseId)
+      }
       const oldArtifacts=await db.productBuildArtifacts.where('buildId').equals(s.buildId).toArray(),oldRuns=await db.agentRuns.toArray()
       const revised=await prepareAvgVisualImageRouteV4(await imageRouteInput(s,prepared)),brief=parseProductProductionBriefV3(revised.brief!.briefJson)
       expect(brief.avgVisualPlanning!.imageBinding.adapterId).toBe('agnes.image-2.5-flash.v1')
+      expect(brief.source.worldReleaseId).toBe(revised.brief!.sourceWorldReleaseId)
+      expect(brief.source.worldContentHash).toBe(prepared.brief!.sourceWorldContentHash)
       expect(brief.capabilityRequirements.find(c=>c.requirementKey==='avg.media.image')!.capabilityHash).toBe(await hashProductProductionValueV2(AVG_IMAGE_REFERENCE_CAPABILITY_V2))
       expect(brief.avgVisualPlanning!.proposalReuse).toEqual(parseProductProductionBriefV3(prepared.brief!.briefJson).avgVisualPlanning!.proposalReuse)
       expect(brief.productionBudget).toMatchObject({maximumModelCalls:0,maximumMediaCalls:1})
-      expect(await db.productBuilds.count()).toBe(1);expect(await db.agentRuns.toArray()).toEqual(oldRuns)
+      expect(await db.productBuilds.where('workId').equals(s.scope.workId).count()).toBe(1);expect(await db.agentRuns.toArray()).toEqual(oldRuns)
       const noChange=await exportProjectJSON(s.scope.projectId)
       await prepareAvgVisualImageRouteV4(await imageRouteInput(s,revised))
       expect({...await exportProjectJSON(s.scope.projectId),exportedAt:0}).toEqual({...noChange,exportedAt:0})
@@ -2247,6 +2271,32 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       expect((await db.mediaBlobObjects.get(raw.blobObjectId!))!.data).toEqual(s.imageBytes)
       expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(2)
     },90_000)
+
+    it.each(['reuse','raw','processing'] as const)('saves an explicit %s edit of a remapped pending Brief with its registered world locator and preserves all old Runs',async operation=>{
+      const {s:original}=await failedWithEdits(),pending=await prepareReuse(original)
+      const projectId=await importProjectJSON(await exportProjectJSON(original.scope.projectId)),build=(await db.productBuilds.where('projectId').equals(projectId).first())!
+      const scope={projectId,worldId:build.worldId,workId:build.workId},details=await readProductProductionDetailsV1(scope,build.productionId,['avg']),draft=await readAvgDraftV1(scope)
+      const before={builds:await db.productBuilds.toArray(),runs:await db.agentRuns.toArray(),events:await db.agentRunEvents.toArray(),brief:details.brief}
+      const common={scope,productionId:build.productionId,expectedBriefHash:details.brief!.briefHash,expectedDraftRevision:draft.revision}
+      const result=operation==='reuse'?await prepareAvgVisualProposalReuseV4({...common,expectedBuildId:build.id!,expectedBuildRevision:build.stateRevision,selections:pending.input.selections})
+        :operation==='raw'?await prepareAvgVisualRawReuseV4({...common,expectedBuildId:build.id!,expectedBuildRevision:build.stateRevision,sources:[]})
+        :await prepareAvgVisualImageProcessingV4({...common,expectedBuild:{id:build.id!,revision:build.stateRevision},plan:null})
+      expect(result.brief!.revision).toBe(details.brief!.revision+1)
+      expect(parseProductProductionBriefV3(result.brief!.briefJson).source.worldReleaseId).toBe(draft.worldReleaseId)
+      expect(result.brief!.sourceWorldContentHash).toBe(details.brief!.sourceWorldContentHash)
+      expect(await db.productProductionBriefs.get(before.brief!.id!)).toEqual(before.brief)
+      expect(await db.productBuilds.toArray()).toEqual(before.builds);expect(await db.agentRuns.toArray()).toEqual(before.runs);expect(await db.agentRunEvents.toArray()).toEqual(before.events)
+      expect(original.runText).toHaveBeenCalledTimes(2);expect(original.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+
+    it('rejects a pending registered world hash that contradicts its immutable Brief before saving or dispatching',async()=>{
+      const {s}=await failedWithEdits(),{prepared}=await prepareReuse(s),input=await imageRouteInput(s,prepared)
+      await db.productProductionBriefs.update(prepared.brief!.id!,{sourceWorldContentHash:'f'.repeat(64)})
+      const briefs=await db.productProductionBriefs.toArray(),commands=await db.productProductionCommands.toArray(),runs=await db.agentRuns.toArray()
+      await expect(prepareAvgVisualImageRouteV4(input)).rejects.toThrow(/世界|来源/)
+      expect(await db.productProductionBriefs.toArray()).toEqual(briefs);expect(await db.productProductionCommands.toArray()).toEqual(commands);expect(await db.agentRuns.toArray()).toEqual(runs)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
 
     it.each(['brief','draft','parent'] as const)('rejects a stale %s while selecting Image 2.5 before saving or dispatching',async mode=>{
       const {s}=await failedWithEdits(),{prepared}=await prepareReuse(s),input=await imageRouteInput(s,prepared)

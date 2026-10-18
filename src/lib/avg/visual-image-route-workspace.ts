@@ -1,3 +1,4 @@
+import { avgPendingVisualWorldSourceV4 } from './visual-pending-source'
 import type { WorkspaceScope } from '../types'
 import { readProductProductionDetailsV1 } from '../product-production/service'
 import { parseProductProductionBriefV3 } from '../product-production/contracts'
@@ -33,7 +34,7 @@ export async function prepareAvgVisualImageRouteV4(input:{
   const existing=brief.capabilityRequirements.find(c=>c.requirementKey==='avg.media.image')!
   const requirement={...existing,capabilityHash:await hashProductProductionValueV2(selected)}
   const configured=await resolveAvgImageExecutionCapabilityV4({projectId:input.scope.projectId,requirement,adapterId:selected.adapterId})
-  const next={...brief,avgVisualPlanning:{...brief.avgVisualPlanning,imageBinding:{...configured.binding,endpointRouteHash:configured.endpointRouteHash}},
+  const next={...brief,source:avgPendingVisualWorldSourceV4(brief,details.brief!,draft.worldReleaseId),avgVisualPlanning:{...brief.avgVisualPlanning,imageBinding:{...configured.binding,endpointRouteHash:configured.endpointRouteHash}},
     capabilityRequirements:brief.capabilityRequirements.map(c=>c.requirementKey===requirement.requirementKey?requirement:c)}
   next.productionBudget=avgVisualPlanningBudgetV4(next)
   next.capabilityRequirements=next.capabilityRequirements.map(c=>({...c,maximumTotalCost:next.productionBudget.maximumCostUsd}))

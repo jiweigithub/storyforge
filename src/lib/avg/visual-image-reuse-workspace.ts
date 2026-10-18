@@ -1,3 +1,4 @@
+import { avgPendingVisualWorldSourceV4 } from './visual-pending-source'
 import type { ProductProductionBriefV3,WorkspaceScope } from '../types'
 import { readProductProductionDetailsV1 } from '../product-production/service'
 import { executeProductProductionCommand } from '../product-production/commands'
@@ -45,7 +46,7 @@ export async function prepareAvgVisualRawReuseV4(input:{scope:WorkspaceScope;pro
   await assertAvgVisualPlanningDraftMatchesV4(input.scope,parseAvgAuthorWorkspaceV1(draft.editorJson),brief)
   const sources=input.sources.length?parseAvgVisualRawReuseSourcesV4(input.sources,brief.avgVisualPlanning.scope.templates.map(t=>t.parameters.requirementKey)):[]
   const {rawReuse:_previous,...planning}=brief.avgVisualPlanning
-  const next={...brief,avgVisualPlanning:{...planning,...(sources.length?{rawReuse:sources}:{})},
+  const next={...brief,source:avgPendingVisualWorldSourceV4(brief,details.brief!,draft.worldReleaseId),avgVisualPlanning:{...planning,...(sources.length?{rawReuse:sources}:{})},
     capabilityRequirements:brief.capabilityRequirements.map(c=>c.mediaClass==='image'?{...c,required:sources.length<planning.scope.templates.length}:c)}
   next.productionBudget=avgVisualPlanningBudgetV4(next)
   next.capabilityRequirements=next.capabilityRequirements.map(c=>({...c,maximumTotalCost:next.productionBudget.maximumCostUsd}))

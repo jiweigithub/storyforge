@@ -1,3 +1,4 @@
+import { avgPendingVisualWorldSourceV4 } from './visual-pending-source'
 import { db } from '../db/schema'
 import type { ProductBuildRecordV1, WorkspaceScope } from '../types'
 import { readProductProductionDetailsV1 } from '../product-production/service'
@@ -84,7 +85,7 @@ export async function prepareAvgVisualProposalReuseV4(input:{scope:WorkspaceScop
     sources.push(avgVisualReuseDescriptorV4(await sourceHistory(input.scope,old,selected.artifact)))
   }
   const {proposalReuse:_old,...planning}=brief.avgVisualPlanning
-  const next={...brief,avgVisualPlanning:{...planning,...(sources.length?{proposalReuse:sources}:{})},
+  const next={...brief,source:avgPendingVisualWorldSourceV4(brief,details.brief!,draft.worldReleaseId),avgVisualPlanning:{...planning,...(sources.length?{proposalReuse:sources}:{})},
     capabilityRequirements:brief.capabilityRequirements.map(c=>c.mediaClass==='text'?{...c,required:sources.length<avgVisualPlanningTargetKeysV4(planning.scope).length}:c)}
   next.productionBudget=avgVisualPlanningBudgetV4(next)
   next.capabilityRequirements=next.capabilityRequirements.map(c=>({...c,maximumTotalCost:next.productionBudget.maximumCostUsd}))
