@@ -41,6 +41,8 @@ import { parseAvgGeneratedReferenceSourceV4 } from '../../src/lib/avg/visual-pro
 import { readAgentRunV1 } from '../../src/lib/agent/run/event-store'
 import * as imageProducerProof from '../../src/lib/product-production/artifact-store'
 import * as stageImageSources from '../../src/lib/avg/stage-image-sources'
+import { readAvgHeldImageQueueFailureV4 } from '../../src/lib/avg/visual-held-image-failure'
+import { ProductProductionDraftRejectedErrorV1 } from '../../src/lib/product-production/scheduler'
 import { assertAvgVisualPlanningRestartKnownV4 } from '../../src/lib/avg/visual-planning-restart'
 import { prepareAvgVisualImageRouteV4 } from '../../src/lib/avg/visual-image-route-workspace'
 import { readAvgAdoptedGeneratedReferenceChoiceV4 } from '../../src/lib/avg/author-artifacts'
@@ -2024,6 +2026,84 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       expect((await readAvgConfirmedVisualArtifactsV4({...await selection(s),artifactKeys:['avg.media.visual-bible']}))[0].payload).toEqual(s.bible)
       expect(s.runText).toHaveBeenCalledTimes(1);expect(s.imageFetcher).not.toHaveBeenCalled()
     })
+  })
+
+  describe('held observed image failure read-only knowledge',()=>{
+    async function heldFailure(duplicateRaw=false){
+      vi.spyOn(imageDecoder,'inspectAvgImageBytesV1').mockResolvedValue({width:32,height:32,hasAlpha:false})
+      const s=await setup({image:'busy',reference:'valid'}),original=s.executor
+      s.executor=async input=>{
+        try{return await original(duplicateRaw&&input.task.kind==='avg-media-image-generate'?{...input,onMediaOutput:async text=>{
+          const result=await input.onMediaOutput!(text);await input.onMediaOutput!(text+' ');return result
+        }}:input)}catch(error){
+          if(input.task.kind==='avg-media-image-generate'&&error instanceof ProductProductionDraftRejectedErrorV1){
+            // Actual pre-attachment foreign error shape. The original executor
+            // already recorded its controlled HTTP/raw response on this Run.
+            throw Object.assign(new Error(error.message),{name:error.name,usage:error.usage})
+          }
+          throw error
+        }
+      }
+      await sources(s);await run(s);await adopt(s,await stage(s,'avg.media.visual-bible',s.bible));await run(s)
+      await adopt(s,await stage(s,`avg.media.environment-brief.${s.media.subjectKey}`,s.media));await run(s)
+      expect((await current(s)).status).toBe('recovery-required')
+      return s
+    }
+    async function proofInput(s:Setup){
+      const build=await current(s),plan=parseProductProductionPlanV3(build.planJson,s.brief,build.briefHash),task=plan.tasks.find(t=>t.kind==='avg-media-image-generate')!
+      const ledger=JSON.parse(build.budgetLedgerJson),attempt=ledger.attempts.find((a:{taskKey:string})=>a.taskKey===task.taskKey)
+      expect(attempt.usageKnown).toBe(false);expect(attempt.errorCode).toBe('task-executor-nonretryable')
+      return {scope:s.scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,controlEpoch:plan.controlEpoch,
+        expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,taskKey:task.taskKey,runId:attempt.runId,attempt:attempt.attempt}
+    }
+    it.each([false,true])('proves an observed old failure after import=%s without changing its hold and prepares only a fresh explicitly started version',async imported=>{
+      let s=await heldFailure()
+      const original=await current(s)
+      if(imported){
+        const projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),build=(await db.productBuilds.where('projectId').equals(projectId).first())!
+        s={...s,scope:{projectId,worldId:build.worldId,workId:build.workId},buildId:build.id!,productionId:build.productionId}
+      }
+      const input=await proofInput(s),before=await exportProjectJSON(s.scope.projectId),old=await current(s),runs=await db.agentRuns.where('productBuildId').equals(s.buildId).toArray()
+      const proof=await readAvgHeldImageQueueFailureV4(input)
+      expect(proof).toMatchObject({resultKnown:true,usageKnown:false,status:503,runId:input.runId,heldUsage:{mediaCalls:1,costUsd:null}})
+      await assertAvgVisualPlanningRestartKnownV4(s.scope,old)
+      expect({...await exportProjectJSON(s.scope.projectId),exportedAt:0}).toEqual({...before,exportedAt:0})
+      const pending=await restartAvgVisualPlanningFromDraftV4(await restartInput(s))
+      expect(await current(s)).toEqual(old);expect(await db.agentRuns.where('productBuildId').equals(s.buildId).toArray()).toEqual(runs)
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1);expect(s.runText).toHaveBeenCalledTimes(2)
+      const started=await startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:pending.brief!.briefHash})
+      expect(started.build!.id).not.toBe(old.id);expect(started.build!.parentBuildNumber).toBe(old.buildNumber)
+      expect(await current(s)).toEqual(old);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+      if(imported){await deleteWork(s.scope.workId);expect(await db.productBuilds.get(original.id!)).toEqual(original)}
+    },30_000)
+    it.each(['missing-raw','corrupt-raw','missing-compiler','missing-run','wrong-epoch','changed-reservation','unknown-code','claimed-task','wrong-root','duplicate-raw','terminal-unknown','cross-work'] as const)('rejects %s without a write, waived hold or new provider request',async mode=>{
+      const s=await heldFailure(mode==='duplicate-raw'),input=await proofInput(s),build=await current(s),ledger=JSON.parse(build.budgetLedgerJson)
+      const snapshot=await readAgentRunV1(s.scope,input.runId),event=snapshot.events.find(e=>e.type==='evidence.artifact.recorded'&&e.payload.artifactKind==='raw-response')!
+      if(event.type!=='evidence.artifact.recorded')throw new Error('Expected actual raw event')
+      const raw=(await db.agentRunArtifacts.where('projectId').equals(s.scope.projectId).filter(r=>r.contentHash===event.payload.contentHash&&r.artifactKind==='raw-response').first())!
+      if(mode==='missing-raw')await db.agentRunArtifacts.delete(raw.id!)
+      if(mode==='corrupt-raw')await db.agentRunArtifacts.update(raw.id!,{content:'tampered original response'})
+      if(mode==='missing-compiler')await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,'avg.media.compiled-visual-requirements']).delete()
+      if(mode==='missing-run')await db.agentRuns.delete(input.runId)
+      if(mode==='terminal-unknown'){
+        const terminal=snapshot.events.find(e=>e.type==='run.failed')!
+        const row=await db.agentRunEvents.where('runId').equals(input.runId).filter(e=>e.sequence===terminal.sequence).first()
+        await db.agentRunEvents.update(row!.id!,{payloadJson:JSON.stringify({...terminal.payload,code:'task-result-unknown'})})
+      }
+      const proofScope=mode==='cross-work'?(await createAvgDraftV1('隔离失败证据反例')).scope:s.scope
+      if(mode==='wrong-epoch')ledger.attempts.find((a:{runId:number})=>a.runId===input.runId).controlEpoch++
+      if(mode==='changed-reservation')ledger.attempts.find((a:{runId:number})=>a.runId===input.runId).usage.mediaCalls=0
+      if(mode==='unknown-code')ledger.attempts.find((a:{runId:number})=>a.runId===input.runId).errorCode='task-result-unknown'
+      if(mode==='claimed-task')ledger.tasks[input.taskKey].status='claimed'
+      if(mode==='wrong-root')ledger.rootRunId=input.runId
+      if(['wrong-epoch','changed-reservation','unknown-code','claimed-task','wrong-root'].includes(mode))await db.productBuilds.update(s.buildId,{budgetLedgerJson:JSON.stringify(ledger)})
+      const rows=await db.productBuilds.toArray(),briefs=await db.productProductionBriefs.toArray(),commands=await db.productProductionCommands.toArray(),events=await db.agentRunEvents.toArray()
+      await expect(readAvgHeldImageQueueFailureV4({...input,scope:proofScope})).rejects.toThrow()
+      await expect(assertAvgVisualPlanningRestartKnownV4(proofScope,(await current(s)))).rejects.toThrow()
+      expect(await db.productBuilds.toArray()).toEqual(rows);expect(await db.productProductionBriefs.toArray()).toEqual(briefs)
+      expect(await db.productProductionCommands.toArray()).toEqual(commands);expect(await db.agentRunEvents.toArray()).toEqual(events)
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1);expect(s.runText).toHaveBeenCalledTimes(2)
+    },30_000)
   })
 
   describe('same-Work explicit V4 replacement Brief',()=>{

@@ -138,7 +138,9 @@ async function historicalDesignEvidence(page:Page,scope:{projectId:number;worldI
   },scope)
 }
 
-for(const importBeforeRestart of [false,true])test(`professional visual workbench reuses historical author edits after HTTP503 and pending-import=${importBeforeRestart} without new text calls and restores a real frozen native Preview`,async({page},info)=>{
+for(const variant of [false,true,'held-pending'] as const)test(`professional visual workbench reuses historical author edits after HTTP503 and pending-import=${variant} without new text calls and restores a real frozen native Preview`,async({page},info)=>{
+  const importBeforeRestart=variant!==false
+  let legacyHold:{buildId:number;ledger:string}|null=null
   test.setTimeout(240_000)
   test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION!=='1'||process.env.VITE_STORYFORGE_AVG_VISUAL_PLANNING!=='1','Both default-off visual experiments must be explicit')
   const {source,models,images,panel}=await prepare(page,true)
@@ -159,7 +161,29 @@ for(const importBeforeRestart of [false,true])test(`professional visual workbenc
   await subject.getByRole('button',{name:`保存待确认：场景方案：${source.titles[0]}`,exact:true}).click()
   await subject.getByRole('checkbox',{name:'我已核对本方案内容及允许参考',exact:true}).check()
   await subject.getByRole('button',{name:`确认采用：场景方案：${source.titles[0]}`,exact:true}).click()
-  await panel.getByRole('button',{name:'执行已确认的专业方案与图片任务',exact:true}).click()
+  if(variant==='held-pending'){
+    await expect(subject.getByText(/此方案已明确采用/)).toBeVisible({timeout:30_000})
+    legacyHold=await page.evaluate(async scope=>{
+      const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
+      const [{db},service,configured,visual,scheduler]=await Promise.all([load('/storyforge/src/lib/db/schema.ts'),load('/storyforge/src/lib/product-production/service.ts'),
+        load('/storyforge/src/lib/product-production/production-executor.ts'),load('/storyforge/src/lib/avg/visual-planning-workspace.ts'),load('/storyforge/src/lib/product-production/scheduler.ts')])
+      const build=await db.productBuilds.where('workId').equals(scope.workId).first(),details=await service.readProductProductionDetailsV1(scope,build.productionId,['avg'])
+      const execution=await visual.resolveAvgVisualPlanningExecutionV4(scope,details.executionBrief,build.id)
+      const original=configured.createConfiguredProductProductionExecutorV1({production:details.production,brief:details.executionBrief,...execution})
+      // Recreate a legacy pre-attachment foreign error through the actual
+      // scheduler/executor/controlled HTTP. No table or old event is rewritten.
+      await scheduler.runProductProductionUntilBlockedV1({scope,productionId:build.productionId,...execution,executor:async(input:any)=>{
+        try{return await original(input)}catch(error){
+          if(input.task.kind==='avg-media-image-generate'&&error instanceof Error&&'usage' in error)throw Object.assign(new Error(error.message),{name:error.name,usage:error.usage})
+          throw error
+        }
+      }})
+      const failed=await db.productBuilds.get(build.id),ledger=JSON.parse(failed.budgetLedgerJson),held=ledger.attempts.find((a:any)=>a.taskKey.startsWith('avg.media.generate.'))
+      if(held.usageKnown!==false||held.usage.mediaCalls!==1||held.errorCode!=='task-executor-nonretryable')throw new Error('Expected actual legacy observed failure hold')
+      return {buildId:build.id,ledger:failed.budgetLedgerJson}
+    },source.scope)
+    await page.reload();await page.getByRole('button',{name:'素材',exact:true}).click()
+  }else await panel.getByRole('button',{name:'执行已确认的专业方案与图片任务',exact:true}).click()
   await expect(panel.getByRole('button',{name:'保留记录并准备新版本方案',exact:true})).toBeVisible({timeout:60_000})
   expect(models).toHaveLength(2);expect(images).toHaveLength(1)
   await panel.getByRole('button',{name:'保留记录并准备新版本方案',exact:true}).click()
@@ -259,6 +283,13 @@ for(const importBeforeRestart of [false,true])test(`professional visual workbenc
   await page.evaluate(async workId=>{const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;await(await load('/storyforge/src/lib/workspace/lifecycle.ts')).deleteWork(workId)},restored.scope.workId)
   await page.goto(originalUrl);await expect.poll(()=>page.locator('.avg-stage img').evaluateAll((imgs:HTMLImageElement[])=>imgs.some(i=>i.complete&&i.naturalWidth===576))).toBe(true)
   expect(models).toHaveLength(2);expect(images).toHaveLength(2)
+  if(legacyHold){
+    const preserved=await page.evaluate(async saved=>{
+      const load=new Function('p','return import(p)') as (p:string)=>Promise<any>,{db}=await load('/storyforge/src/lib/db/schema.ts')
+      return (await db.productBuilds.get(saved.buildId)).budgetLedgerJson===saved.ledger
+    },legacyHold)
+    expect(preserved).toBe(true)
+  }
 })
 
 test('chosen Image 2.5 continues into a new offline author stage with exact original pixels and portable source proof',async({page},info)=>{

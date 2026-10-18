@@ -1,3 +1,4 @@
+import { readAvgHeldImageQueueFailureV4 } from './visual-held-image-failure'
 import { db } from '../db/schema'
 import type { ProductBuildRecordV1, WorkspaceScope } from '../types'
 import { assertRecordInScope } from '../workspace/scope'
@@ -46,9 +47,21 @@ async function assertAvgVisualPlanningRequestsKnownV4(scope:WorkspaceScope,sourc
         tasks?:Record<string,{status:string;runId:number;attempt:number;errorCode:string|null}>}
       if(ledger.version!==2||!ledger.attempts||!ledger.tasks)throw new Error('[avg-visual-restart] 旧调用记账不完整')
       const unknown=(code:string|null)=>!!code&&(code.includes('result-unknown')||code.includes('unknown-result'))
-      if(ledger.rootClaim!=null||ledger.attempts.some(a=>!a.usageKnown||unknown(a.errorCode)||a.resolution?.startsWith('author-'))
+      if(ledger.rootClaim!=null||ledger.attempts.some(a=>unknown(a.errorCode)||a.resolution?.startsWith('author-'))
         ||Object.entries(ledger.tasks).some(([key,task])=>task.status==='claimed'||unknown(task.errorCode)
           ||!ledger.attempts!.some(a=>a.taskKey===key&&a.runId===task.runId&&a.attempt===task.attempt)))throw new Error('[avg-visual-restart] 旧调用仍有未知结果或未完成领取；不能改名或新建版本重发')
+      // A legacy module-identity failure may retain an unknown accounting
+      // hold despite a complete 503 response. Prove only its result, without
+      // changing the reservation, fees, Run or authority of this old Build.
+      const observedFailures=new Set<string>()
+      for(const attempt of ledger.attempts)if(!attempt.usageKnown){
+        try{
+          await readAvgHeldImageQueueFailureV4({scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,
+            expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,controlEpoch:plan.controlEpoch,
+            taskKey:attempt.taskKey,runId:attempt.runId,attempt:attempt.attempt})
+          observedFailures.add(`${attempt.runId}:${attempt.attempt}`)
+        }catch(error){throw new Error(`[avg-visual-restart] 旧调用仍有未知结果，原始失败不可核验；不能重发：${error instanceof Error?error.message:'缺少证据'}`)}
+      }
       // The attempt array alone is not evidence that a dispatched Run vanished.
       // Read its immutable events, so clearing a cached ledger cannot erase a
       // paid/unknown request or turn an unfinished child into a fresh attempt.
@@ -68,7 +81,7 @@ async function assertAvgVisualPlanningRequestsKnownV4(scope:WorkspaceScope,sourc
           ||!['completed','failed','cancelled'].includes(projection.state))throw new Error('[avg-visual-restart] 旧请求 Run 尚未完成或与任务不一致')
         if(Object.values(projection.steps).some(step=>unknown(step.failureCode??null)))throw new Error('[avg-visual-restart] 旧请求 Run 保留未知结果；缓存记账不能授权重发')
         for(const event of snapshot.events)if(event.type==='model.requested'||event.type==='tool.called'){
-          if(!ledger.attempts.some(a=>a.taskKey===key&&a.runId===run.id&&a.attempt===event.payload.attempt&&a.usageKnown))throw new Error('[avg-visual-restart] 已发送请求缺少准确终态记账；不能重发')
+          if(!ledger.attempts.some(a=>a.taskKey===key&&a.runId===run.id&&a.attempt===event.payload.attempt&&(a.usageKnown||observedFailures.has(`${a.runId}:${a.attempt}`))))throw new Error('[avg-visual-restart] 已发送请求缺少准确终态记账；不能重发')
         }
       }
     }
