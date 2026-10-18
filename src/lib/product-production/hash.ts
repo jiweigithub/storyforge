@@ -3,14 +3,16 @@ import Dexie from 'dexie'
 const HASH_PATTERN = /^[0-9a-f]{64}$/
 
 function compareCodePoints(left: string, right: string): number {
-  const leftPoints = Array.from(left)
-  const rightPoints = Array.from(right)
-  const length = Math.min(leftPoints.length, rightPoints.length)
-  for (let index = 0; index < length; index += 1) {
-    const delta = leftPoints[index].codePointAt(0)! - rightPoints[index].codePointAt(0)!
-    if (delta !== 0) return delta
+  // Walk Unicode scalar/standalone-surrogate values exactly as string
+  // iteration does, without allocating two whole arrays for every comparison.
+  let leftIndex=0,rightIndex=0
+  while(leftIndex<left.length&&rightIndex<right.length){
+    const a=left.codePointAt(leftIndex)!,b=right.codePointAt(rightIndex)!
+    if(a!==b)return a-b
+    leftIndex+=a>0xffff?2:1
+    rightIndex+=b>0xffff?2:1
   }
-  return leftPoints.length - rightPoints.length
+  return leftIndex===left.length?(rightIndex===right.length?0:-1):1
 }
 
 function canonicalNumber(value: number): string {
