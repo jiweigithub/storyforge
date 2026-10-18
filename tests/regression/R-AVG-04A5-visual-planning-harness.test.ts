@@ -15,9 +15,10 @@ import { readProductProductionDetailsV1, startProductProductionPreviewV1, recove
 import { verifyStoredProductBuildPreview } from '../../src/lib/product-production/preview-manifest'
 import { createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1 } from '../../src/lib/product-production/production-executor'
 import { runProductProductionSchedulerCycleV1, runProductProductionUntilBlockedV1 } from '../../src/lib/product-production/scheduler'
-import { stageAvgAuthorArtifactV1, readAvgConfirmedVisualArtifactsV4, readAvgHistoricalVisualArtifactV4 } from '../../src/lib/avg/author-artifacts'
+import { stageAvgAuthorArtifactV1, readAvgConfirmedVisualArtifactsV4, readAvgHistoricalVisualArtifactV4, readAvgHistoricalVisualArtifactsV4 } from '../../src/lib/avg/author-artifacts'
 import { acceptProductBuildArtifact, verifyAcceptedProductBuildArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4, verifyHistoricalAvgVisualImageProducerV4, verifyRetainedAvgRawImageArtifactV1, verifyProductBuildTerminalArtifactSetV1 } from '../../src/lib/product-production/artifact-store'
 import { readAvgVisualProposalEvidenceV4 } from '../../src/lib/avg/visual-planning-evidence'
+import * as visualProposalEvidence from '../../src/lib/avg/visual-planning-evidence'
 import { readAgentRunArtifactExactV1 } from '../../src/lib/memory/artifact-store'
 import { readAvgCompiledImageDefinitionV4, prepareAvgCompiledImageRequestV4 } from '../../src/lib/avg/visual-planning-image-definition'
 import { readAvgImageConsumptionDefinitionV4 } from '../../src/lib/avg/image-consumption'
@@ -1955,6 +1956,62 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
         expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,
         artifact:{artifactKey:key,version:row.version,contentHash:row.contentHash}}
     }
+
+    it('historical batch shares the exact dependency graph while matching independent proofs and keeping no cross-call cache',async()=>{
+      const {s,media}=await fixture('cancel'),selections=[await selection(s),await selection(s,`avg.media.environment-brief.${media.subjectKey}`)]
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      const before=await exportProjectJSON(s.scope.projectId),spy=vi.spyOn(visualProposalEvidence,'readAvgVisualProposalEvidenceV4')
+      const single=[];for(const input of selections)single.push(await readAvgHistoricalVisualArtifactV4(input))
+      expect(spy).toHaveBeenCalledTimes(3)
+      spy.mockClear()
+      const {artifact:_artifact,...boundary}=selections[0],input={...boundary,artifacts:selections.map(s=>s.artifact)}
+      const batch=await readAvgHistoricalVisualArtifactsV4(input)
+      expect(batch).toEqual(single);expect(spy).toHaveBeenCalledTimes(2)
+      expect(new Set(spy.mock.calls.map(([,row])=>row.artifactKey)).size).toBe(2)
+      batch[0].original.rawText='caller-local mutation'
+      expect(await readAvgHistoricalVisualArtifactsV4(input)).toEqual(single)
+      expect(spy).toHaveBeenCalledTimes(4)
+      expect(await readAvgHistoricalVisualArtifactsV4({...input,artifacts:[...input.artifacts].reverse()})).toEqual([...single].reverse())
+      expect(spy).toHaveBeenCalledTimes(6)
+      expect({...await exportProjectJSON(s.scope.projectId),exportedAt:0}).toEqual({...before,exportedAt:0})
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).not.toHaveBeenCalled()
+    },30_000)
+
+    it('historical batch preserves independent proofs and rollback in a caller write transaction',async()=>{
+      const {s,media}=await fixture('cancel'),selections=[await selection(s),await selection(s,`avg.media.environment-brief.${media.subjectKey}`)]
+      const {artifact:_artifact,...boundary}=selections[0],input={...boundary,artifacts:selections.map(s=>s.artifact)}
+      const single=[];for(const item of selections)single.push(await readAvgHistoricalVisualArtifactV4(item))
+      const before=await exportProjectJSON(s.scope.projectId),spy=vi.spyOn(visualProposalEvidence,'readAvgVisualProposalEvidenceV4')
+      await expect(db.transaction('rw',db.tables,async()=>{
+        expect(await readAvgHistoricalVisualArtifactsV4(input)).toEqual(single)
+        expect(spy).toHaveBeenCalledTimes(3)
+        const draft=await readAvgDraftV1(s.scope)
+        await db.avgAuthoringDrafts.update(draft.id!,{worldReleaseId:999999})
+        throw new Error('controlled historical batch caller rollback')
+      })).rejects.toThrow('controlled historical batch caller rollback')
+      expect({...await exportProjectJSON(s.scope.projectId),exportedAt:0}).toEqual({...before,exportedAt:0})
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).not.toHaveBeenCalled()
+    },30_000)
+
+    it.each(['empty','oversize','duplicate','wrong-version','wrong-hash','wrong-domain','cross-work','stale-build','missing-checkpoint'] as const)('historical batch refuses %s atomically without writes or a partial authority result',async mode=>{
+      const {s,media}=await fixture('cancel'),first=await selection(s),second=await selection(s,`avg.media.environment-brief.${media.subjectKey}`)
+      const {artifact:_artifact,...boundary}=first,input={...boundary,artifacts:[first.artifact,second.artifact]}
+      if(mode==='empty')input.artifacts=[]
+      if(mode==='oversize')input.artifacts=Array.from({length:101},(_,i)=>({...first.artifact,artifactKey:`avg.media.environment-brief.overflow-${i}`}))
+      if(mode==='duplicate')input.artifacts=[first.artifact,{...first.artifact,version:first.artifact.version+1}]
+      if(mode==='wrong-version')input.artifacts[1]={...second.artifact,version:second.artifact.version+1}
+      if(mode==='wrong-hash')input.artifacts[1]={...second.artifact,contentHash:'f'.repeat(64)}
+      if(mode==='wrong-domain')input.artifacts[1]={...second.artifact,artifactKey:'avg.system.plan'}
+      if(mode==='cross-work')input.scope={...s.scope,workId:s.scope.workId+900}
+      if(mode==='stale-build')input.expectedBuildRevision++
+      if(mode==='missing-checkpoint'){
+        const original=(await accepted(s,`avg.proposal.environment-brief.${media.subjectKey}`))!
+        await db.agentRunCheckpoints.where('runId').equals(original.producerRunId!).delete()
+      }
+      const snapshot=()=>Promise.all(db.tables.map(t=>t.toArray())),before=await snapshot()
+      await expect(readAvgHistoricalVisualArtifactsV4(input)).rejects.toThrow()
+      expect(await snapshot()).toEqual(before);expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).not.toHaveBeenCalled()
+    },30_000)
 
     it('reads both original model bytes and separately edited adopted designs after failure and a prepared successor without writes or credentials',async()=>{
       const {s,bible,media}=await fixture();await restartAvgVisualPlanningFromDraftV4(await restartInput(s))

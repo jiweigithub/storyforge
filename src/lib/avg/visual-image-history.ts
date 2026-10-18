@@ -7,7 +7,7 @@ import { parseProductProductionBriefV3 } from '../product-production/contracts'
 import { parseProductProductionPlanV3 } from '../product-production/plan'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { verifyHistoricalAvgVisualPlanningArtifactV4, verifyHistoricalAvgVisualImageProducerV4 } from '../product-production/artifact-store'
-import { readAvgHistoricalVisualArtifactV4 } from './author-artifacts'
+import { readAvgHistoricalVisualArtifactsV4 } from './author-artifacts'
 import { parseAvgProfessionalArtifactV1 } from './artifact-contract'
 import { assertAvgVisualPlanningProposalV1 } from './media-source'
 import { AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4 } from './visual-planning-plan'
@@ -58,17 +58,15 @@ export async function readAvgHistoricalCompiledImageDefinitionV4(input:AvgHistor
     expectedPlanHash:build.planHash,sourceControlEpoch:input.controlEpoch}
   const compilation=await verifyHistoricalAvgVisualPlanningArtifactV4({...proofInput,...ref(exact(AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4))})
   const visualKeys=compiler.inputArtifactKeys.filter(k=>k==='avg.media.visual-bible'||/^avg\.media\.(character|environment|prop)-brief\./.test(k))
-  const visual=[]
+  const visual=visualKeys.length?await readAvgHistoricalVisualArtifactsV4({scope,buildId:build.id,expectedBuildRevision:build.stateRevision,
+    controlEpoch:input.controlEpoch,expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,artifacts:visualKeys.map(key=>ref(exact(key)))}):[]
   const witnessed=new Map<string,Ref>()
-  for(const key of visualKeys){
-    const history=await readAvgHistoricalVisualArtifactV4({scope,buildId:build.id,expectedBuildRevision:build.stateRevision,
-      controlEpoch:input.controlEpoch,expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,artifact:ref(exact(key))})
+  for(const history of visual){
     for(const witness of [...history.inputs,history.artifact]){
       const old=witnessed.get(witness.artifactKey)
       if(old&&!same(old,witness))throw new Error('[avg-visual-history] 原作者来源见证相互冲突')
       witnessed.set(witness.artifactKey,witness)
     }
-    visual.push(history)
   }
   const inputs=compiler.inputArtifactKeys.map(key=>{
     const row=exact(key),witness=witnessed.get(key)

@@ -703,10 +703,35 @@ export async function readAvgConfirmedVisualArtifactsV4(input: Pick<Parameters<t
  * candidate, copy adoption, grant carry authority or authorize a new request.
  * Every human ancestor uses its original candidate and command receipt; raw
  * proposals retain their original Run, checkpoint and request/response bytes. */
-export async function readAvgHistoricalVisualArtifactV4(input: {
+type AvgHistoricalVisualArtifactInputV4 = {
   scope: WorkspaceScope; buildId: number; expectedBuildRevision: number; controlEpoch: number
   expectedBriefHash: string; expectedPlanHash: string; artifact: Ref
-},reusePath:AvgVisualReusePathV4=[]) {
+}
+export async function readAvgHistoricalVisualArtifactV4(input: AvgHistoricalVisualArtifactInputV4,reusePath:AvgVisualReusePathV4=[]) {
+  const [result]=await readAvgHistoricalVisualArtifactsV4({...input,artifacts:[input.artifact]},reusePath)
+  return result
+}
+
+/** One bounded, read-only dependency graph, not an authority cache. Each
+ * explicitly requested author Artifact is proved under the same snapshot;
+ * no partial result escapes if any member, source or original proof fails. */
+export async function readAvgHistoricalVisualArtifactsV4(input: Omit<AvgHistoricalVisualArtifactInputV4,'artifact'>&{artifacts:Ref[]},reusePath:AvgVisualReusePathV4=[]){
+  if(!Array.isArray(input.artifacts)||!input.artifacts.length||input.artifacts.length>100
+    ||new Set(input.artifacts.map(a=>a?.artifactKey)).size!==input.artifacts.length)throw new Error('[avg-visual-history] 历史专业工件批读为空、重复或超界')
+  const requested=structuredClone(input.artifacts)
+  // A read-only Dexie child can share its caller's native write transaction.
+  // Preserve independent member checks there: only a native read-only snapshot
+  // may share dependencies across the batch. No independent write is opened.
+  if(requested.length>1&&Dexie.currentTransaction?.idbtrans?.mode==='readwrite'){
+    const results=[]
+    for(const artifact of requested)results.push(...await readHistoricalVisualArtifactsInSnapshotV4({...input,artifacts:[artifact]},reusePath))
+    return results
+  }
+  return readHistoricalVisualArtifactsInSnapshotV4({...input,artifacts:requested},reusePath)
+}
+
+async function readHistoricalVisualArtifactsInSnapshotV4(input: Omit<AvgHistoricalVisualArtifactInputV4,'artifact'>&{artifacts:Ref[]},reusePath:AvgVisualReusePathV4){
+  const requested=input.artifacts
   const scope = await resolveScope({ scope: input.scope })
   return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands,
     db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects,
@@ -717,9 +742,11 @@ export async function readAvgHistoricalVisualArtifactV4(input: {
     if (!context.brief.avgVisualPlanning || context.build.stateRevision !== input.expectedBuildRevision
       || context.build.briefHash !== input.expectedBriefHash || context.build.planHash !== input.expectedPlanHash
       || !['paused','cancelled','failed','recovery-required','preview-ready','release-ready','released'].includes(context.build.status)) throw new Error('[avg-visual-history] 历史版本不准确或仍在执行')
-    const task = context.plan.tasks.find(t => ['avg-author-visual-bible','avg-author-media-brief'].includes(t.kind)
-      && t.outputArtifactKeys[0] === input.artifact.artifactKey)
-    if (!task) throw new Error('[avg-visual-history] 读取仅限准确已采用专业方案')
+    const tasks=requested.map(artifact=>{
+      const task=context.plan.tasks.find(t=>['avg-author-visual-bible','avg-author-media-brief'].includes(t.kind)&&t.outputArtifactKeys[0]===artifact.artifactKey)
+      if(!task)throw new Error('[avg-visual-history] 读取仅限准确已采用专业方案')
+      return task
+    })
     const cache = new Map<string, ProductBuildArtifactRecordV1>(), visiting = new Set<string>()
     const candidates = new Map<string, AuthorCandidate>()
     const evidence = new Map<string, Awaited<ReturnType<typeof readAvgVisualProposalEvidenceV4>>>()
@@ -755,27 +782,31 @@ export async function readAvgHistoricalVisualArtifactV4(input: {
       visiting.delete(key);cache.set(key,row)
       return row
     }
-    const row = await read(input.artifact.artifactKey)
-    if (row.version !== input.artifact.version || row.contentHash !== input.artifact.contentHash) throw new Error('[avg-visual-history] 历史作者方案不是指定版本')
-    const candidate = candidates.get(row.artifactKey)!
-    if (candidate.version !== 6&&candidate.version!==7) throw new Error('[avg-visual-history] 历史方案缺少模型与人工修订的准确区分')
-    const original = cache.get(candidate.visualProposalValidation.proposal.artifactKey)!, originalEvidence = evidence.get(original.artifactKey)!
     const same = (a:unknown,b:unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
-    if (!same(JSON.parse(row.rightsJson),{origin:candidate.origin,declaration:candidate.declaration})) throw new Error('[avg-visual-history] 历史权利声明与作者原候选不一致')
+    const results=[]
+    for(const [index,artifact]of requested.entries()){
+      const task=tasks[index],row = await read(artifact.artifactKey)
+      if (row.version !== artifact.version || row.contentHash !== artifact.contentHash) throw new Error('[avg-visual-history] 历史作者方案不是指定版本')
+      const candidate = candidates.get(row.artifactKey)!
+      if (candidate.version !== 6&&candidate.version!==7) throw new Error('[avg-visual-history] 历史方案缺少模型与人工修订的准确区分')
+      const original = cache.get(candidate.visualProposalValidation.proposal.artifactKey)!, originalEvidence = evidence.get(original.artifactKey)!
+      if (!same(JSON.parse(row.rightsJson),{origin:candidate.origin,declaration:candidate.declaration})) throw new Error('[avg-visual-history] 历史权利声明与作者原候选不一致')
+      results.push({ payload: parseAvgProfessionalArtifactV1(row.payloadJson), artifact: ref(row), candidate, rights: JSON.parse(row.rightsJson),
+        authorReceiptHash: String(JSON.parse(row.metadataJson).receiptHash),
+        original: { artifact: ref(original), payload: JSON.parse(original.payloadJson), producerRunId: original.producerRunId!,
+          producerReceiptHash: original.producerReceiptHash!, rawText: originalEvidence.rawText, requestText: originalEvidence.requestText,
+          request: originalEvidence.request,modelRequest:originalEvidence.modelRequest,modelRequestText:originalEvidence.modelRequestText,
+          modelRun:originalEvidence.modelRun,reused:originalEvidence.reused,
+          binding: originalEvidence.binding, quality: originalEvidence.quality, rights: JSON.parse(original.rightsJson) },
+        source: { productionKey: context.production.productionKey, buildNumber: context.build.buildNumber,
+          buildRevision: context.build.stateRevision, controlEpoch: input.controlEpoch, briefHash: context.build.briefHash,
+          planHash: context.build.planHash, sourceWorldContentHash: context.brief.source.worldContentHash,
+          planning: context.brief.avgVisualPlanning.scope }, inputs: task.inputArtifactKeys.map(key => ref(cache.get(key)!)) })
+    }
     if (!same(await db.productBuilds.get(input.buildId),context.build)
       || !same(await db.productProductions.get(context.production.id),context.production)
       || !same(await db.productProductionBriefs.get(context.briefRow.id!),context.briefRow)) throw new Error('[avg-visual-history] 历史来源在读取期间变化')
-    return structuredClone({ payload: parseAvgProfessionalArtifactV1(row.payloadJson), artifact: ref(row), candidate, rights: JSON.parse(row.rightsJson),
-      authorReceiptHash: String(JSON.parse(row.metadataJson).receiptHash),
-      original: { artifact: ref(original), payload: JSON.parse(original.payloadJson), producerRunId: original.producerRunId!,
-        producerReceiptHash: original.producerReceiptHash!, rawText: originalEvidence.rawText, requestText: originalEvidence.requestText,
-        request: originalEvidence.request,modelRequest:originalEvidence.modelRequest,modelRequestText:originalEvidence.modelRequestText,
-        modelRun:originalEvidence.modelRun,reused:originalEvidence.reused,
-        binding: originalEvidence.binding, quality: originalEvidence.quality, rights: JSON.parse(original.rightsJson) },
-      source: { productionKey: context.production.productionKey, buildNumber: context.build.buildNumber,
-        buildRevision: context.build.stateRevision, controlEpoch: input.controlEpoch, briefHash: context.build.briefHash,
-        planHash: context.build.planHash, sourceWorldContentHash: context.brief.source.worldContentHash,
-        planning: context.brief.avgVisualPlanning.scope }, inputs: task.inputArtifactKeys.map(key => ref(cache.get(key)!)) })
+    return structuredClone(results)
   })
 }
 
