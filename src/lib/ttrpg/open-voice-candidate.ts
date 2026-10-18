@@ -89,19 +89,30 @@ export async function readTtrpgOpenVoiceAuditionBasisForKernelV1(request: TtrpgO
     || !receipt.persisted || !receipt.checkpoint || !built.auditionData || !built.candidate.validation
     || !['ready','usable-with-warnings'].includes(built.candidate.artifact.status)) p.fail('本次原候选尚不能试听；核对原证据、本人权限和当前安全状态')
   await b.original.owner.assertCurrent()
-  const proof = { content: built.content, ledgerHash: await hashCanonicalValue([b.snapshot,b.original.snapshot]) }
+  const proof = { content: built.content, candidate: built.candidate, ledgerHash: await hashCanonicalValue([b.snapshot,b.original.snapshot]) }
   return { basis: b,candidate: built.candidate,data: built.auditionData,timeline: built.candidate.validation.timeline,
     assertCurrent: () => assertAuditionEvidence(input,proof) }
 }
 /** Close the prepare → observer gap using original evidence, without decoding
  * PCM again or retaining another raw/base64 copy for the preview lifetime. */
-async function assertAuditionEvidence(input: TtrpgOpenVoiceJobLocatorV1, proof: {content: string;ledgerHash: string}) {
-  const b = await loadTtrpgOpenVoiceRawBasisForKernelV1(input), content = await retained(b)
-  if (content !== proof.content || await hashCanonicalValue([b.snapshot,b.original.snapshot]) !== proof.ledgerHash
+async function assertAuditionEvidence(input: TtrpgOpenVoiceJobLocatorV1, proof: {content: string;candidate: TtrpgOpenVoiceCandidateV1;ledgerHash: string}) {
+  const b = await readTtrpgOpenVoiceCandidateRetentionForKernelV1(input,proof.candidate)
+  if (canonicalStringify(proof.candidate) !== proof.content || await hashCanonicalValue([b.snapshot,b.original.snapshot]) !== proof.ledgerHash
     || b.original.owner.runtime.product.safety.status !== 'active') p.fail('试听的原证据或安全状态已变化')
-  const receipt = await receipts(b,JSON.parse(proof.content) as TtrpgOpenVoiceCandidateV1)
-  if (!receipt.persisted || !receipt.checkpoint) p.fail('试听的原候选证明已不可用')
+}
+/** Retention/CAS proof only, never a physical validation or adoption grant.
+ * Callers first obtain a fully checked original candidate, then may recheck its
+ * immutable body/inputs/checkpoint while appending their own evidence events. */
+export async function readTtrpgOpenVoiceCandidateRetentionForKernelV1(input: TtrpgOpenVoiceJobLocatorV1,candidate: TtrpgOpenVoiceCandidateV1) {
+  const b = await loadTtrpgOpenVoiceRawBasisForKernelV1(input), content = await retained(b)
+  if (content !== canonicalStringify(candidate) || candidate.runId !== b.snapshot.run.id || candidate.runContractHash !== b.snapshot.run.contractHash
+    || candidate.requestKey !== b.input.requestKey || candidate.viewerKey !== b.input.viewerKey || candidate.productRuntimeSessionId !== b.input.sessionId
+    || candidate.profileHash !== b.identity.profileHash || candidate.artifact.evidence.inputArtifactHash !== b.inputArtifactHash
+    || candidate.artifact.evidence.contextManifestHash !== b.manifestHash || candidate.artifact.evidence.rawResponseArtifactHash !== b.raw?.hash || !b.responded) p.fail('原候选的准确正文、来源或运行已变化')
+  const receipt = await receipts(b,candidate)
+  if (!receipt.persisted || !receipt.checkpoint) p.fail('原候选的专属检查点或保存证明已不可用')
   await b.original.owner.assertCurrent()
+  return b
 }
 export async function prepareTtrpgOpenVoiceCandidateV1(request: TtrpgOpenVoiceJobLocatorV1 & { decision: 'review-this-original-local-voice-result' }) {
   const input = structuredClone(request); p.literal(input.decision,'review-this-original-local-voice-result','explicit original audio review')
