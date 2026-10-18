@@ -10,15 +10,10 @@ async function prepare(page: Page) {
   const f = await page.evaluate(async () => {
     const load = new Function('p', 'return import(p)')
     const f = await (await load('/storyforge/tests/helpers/ttrpg-open-design.ts')).createSavedOpenDesignFixtureV1()
-    const source = await (await load('/storyforge/src/lib/ttrpg/open-authoring-design.ts')).prepareTtrpgOpenAuthoringDesignSourceV1(f)
-    const boundary = await (await load('/storyforge/src/lib/product/source-contracts.ts')).resolveProductSourceReadBoundaryV1(source.source.sourcePlan)
-    const world = await load('/storyforge/src/lib/context-gateway/world-release-client.ts')
-    const descriptors = await world.listWorldSemanticResourceDescriptorsV1(boundary.sourceScope)
-    const resources = await world.readWorldSemanticResourcesV1({ scope: boundary.sourceScope, descriptors })
     const campaign = (await load('/storyforge/tests/helpers/ttrpg-open-content.ts')).openCampaignFixture()
     ;(await load('/storyforge/src/stores/ai-config.ts')).useAIConfigStore.getState().setConfig({ provider: 'custom', model: 'fixture-model',
       baseUrl: `${location.origin}/fixture-design-ui/v1`, apiKey: '', temperature: 0.7, maxTokens: 16000, contextWindow: 131072 })
-    return { scope: f.scope, revision: f.revision, campaign, resources }
+    return { scope: f.scope, revision: f.revision, campaign }
   })
   await page.goto(`./ttrpg/vision?project=${f.scope.projectId}&work=${f.scope.workId}`)
   const assistant = page.getByTestId('ttrpg-open-design-assistant')
@@ -29,14 +24,17 @@ async function prepare(page: Page) {
 type Setup = Awaited<ReturnType<typeof prepare>>
 function response(f: Setup, messages: { content: string }[], facts = false) {
   const keys = JSON.parse(messages[1].content.match(/【实际读取资源闭集】([^\n]+)/)![1])
-  const resource = f.resources.find((item: any) => item.descriptor.resourceKey === keys[0])!
-  const fieldPath = Object.keys(resource.value).find(key => /^[A-Za-z][A-Za-z0-9_-]*$/.test(key))!
+  const delivered = JSON.parse(messages[1].content.split('【冻结世界实际读取】\n')[1])
+  expect(delivered.schema).toBe('storyforge.ttrpg-open-design-world-reads')
+  expect(delivered.resources.map((item: any) => item.resourceKey).sort()).toEqual(keys)
+  const resource = delivered.resources.find((item: any) => item.depth === 'full' || item.depth === 'original')!
+  const fieldPath = Object.keys(JSON.parse(resource.readContent)).find(key => /^[A-Za-z][A-Za-z0-9_-]*$/.test(key))!
   return JSON.stringify({ schema: 'storyforge.ttrpg-open-authoring-design-proposals', version: 1,
     proposals: [0, 1, 2].map(index => ({ proposalKey: `design.${index}`, title: `方向${index + 1}：调查节奏`, pitch: `第${index + 1}种压力与事实候选，供作者核对。`, patch: {
       pressure: { clocks: f.campaign.clocks.map((clock: any) => ({ ...clock, maximum: 12 + index * 2, sourceRefs: [keys[0]] })),
         fronts: f.campaign.fronts.map((front: any) => ({ ...front, sourceRefs: [keys[0]] })) },
       ...(facts ? { factProposals: [0, 1].map(number => ({ ...f.campaign.frozenWorldPredicateIndex.entries[0], factKey: `fact.ui.${index}.${number}`,
-        sourceResourceRefs: [keys[0]], sourceFieldRefs: [{ resourceKey: keys[0], fieldPath, contentHash: resource.descriptor.contentHash }] })) } : {}),
+        sourceResourceRefs: [resource.resourceKey], sourceFieldRefs: [{ resourceKey: resource.resourceKey, fieldPath, contentHash: resource.contentHash }] })) } : {}),
     } })) })
 }
 async function pressureRequest(page: Page, facts = false) {

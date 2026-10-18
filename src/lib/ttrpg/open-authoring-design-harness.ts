@@ -25,7 +25,8 @@ import { assertTtrpgOpenAuthoringDesignSourceCurrentV1, type TtrpgOpenAuthoringD
 import { parseTtrpgOpenAuthoringDesignRequestV1, parseTtrpgOpenAuthoringDesignProposalsV1,
   ttrpgOpenDesignNeedsInitialFactsV1,
   type TtrpgOpenAuthoringDesignRequestV1, type TtrpgOpenAuthoringDesignProposalsV1 } from './open-authoring-design-contract'
-import { buildTtrpgOpenAuthoringDesignMessagesV1 } from './open-authoring-design-prompt'
+import { buildTtrpgOpenAuthoringDesignMessagesV1, renderTtrpgOpenDesignWorldReadsV1 } from './open-authoring-design-prompt'
+import { sha256Text } from '../ai/chapter-memory/text-normalization'
 
 export const TTRPG_OPEN_DESIGN_STEP_V1 = 'ttrpg:open-authoring-design' as const
 const SKILL = 'ttrpg.open.authoring-design.v1', ENTRY = 'ttrpg.open.authoring-design', CATEGORY = 'authoring.ttrpg-open-design'
@@ -127,8 +128,9 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
   const readResourceKeys = [...new Set(gateway.sourceSnapshots.filter(item => item.sourceKey === 'worldRelease')
     .map(item => item.resourceKey).filter((key): key is string => !!key))].sort()
   if (!readResourceKeys.length || readResourceKeys.some(key => !selected.has(key))) fail('世界实际读取未满足已选出口范围')
+  const worldText = await renderTtrpgOpenDesignWorldReadsV1(gateway), worldTokens = estimateTokens(worldText)
   const messages = buildTtrpgOpenAuthoringDesignMessagesV1({ request, authorContext: basisAssembly.text,
-    worldContext: gateway.contextPacket.content, readResourceKeys })
+    worldContext: worldText, readResourceKeys })
   const requestTokens = messages.reduce((sum, item) => sum + estimateTokens(item.content), 0)
   if (requestTokens > 64_000) fail('完整请求超过本次输入预算，请缩小设计分区或来源；未发起模型请求')
   const meta = { category: CATEGORY, projectId: input.scope.projectId, contextOverflowPolicy: 'reject' as const, configOverrides: { maxTokens: skill.maxOutputTokens } }
@@ -165,12 +167,11 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
     await assertFirstPending(input.scope, snapshot)
     snapshot = await append(input.scope, snapshot, 'step.scheduled', { stepId: STEP })
     snapshot = await append(input.scope, snapshot, 'step.started', { stepId: STEP, attempt: 1 })
-    const worldText = gateway.contextPacket.content
     const assembled: AssembleContextResult = { ...basisAssembly, text: `${basisAssembly.text}\n\n${worldText}`,
-      segments: [...basisAssembly.segments, { label: 'worldRelease', layer: 'L0', content: worldText, tokens: gateway.contextPacket.tokenCount, trimmable: false }],
-      included: [SOURCE, 'worldRelease'], totalInputTokens: basisAssembly.totalInputTokens + gateway.contextPacket.tokenCount, inputBudget: 64_000,
-      sourceEvidence: [...basisAssembly.sourceEvidence!, { key: 'worldRelease', status: 'included', delivery: 'full', sourceHash: gateway.contextPacket.contentHash,
-        originalCharacters: worldText.length, inputCharacters: worldText.length, originalTokens: gateway.contextPacket.tokenCount, inputTokens: gateway.contextPacket.tokenCount }] }
+      segments: [...basisAssembly.segments, { label: 'worldRelease', layer: 'L0', content: worldText, tokens: worldTokens, trimmable: false }],
+      included: [SOURCE, 'worldRelease'], totalInputTokens: basisAssembly.totalInputTokens + worldTokens, inputBudget: 64_000,
+      sourceEvidence: [...basisAssembly.sourceEvidence!, { key: 'worldRelease', status: 'included', delivery: 'full', sourceHash: await sha256Text(worldText),
+        originalCharacters: worldText.length, inputCharacters: worldText.length, originalTokens: worldTokens, inputTokens: worldTokens }] }
     const manifestV1 = await createContextManifestFromAssemblyV1({ runId: snapshot.run.id, stepId: STEP, attempt: 1,
       projectId: input.scope.projectId, worldGroupId: null, declaredSourceKeys: [...binding.contextSourceKeys], assembled, readerVersion: 'ttrpg-open-authoring-design-v1' })
     const manifest = await createContextManifestV2FromV1({ manifest: manifestV1, scope: input.scope })
