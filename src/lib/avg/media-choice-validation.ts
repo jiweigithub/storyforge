@@ -9,6 +9,7 @@ import { parseAvgAuthorMediaChoice, type AvgAuthorMediaChoice, type AvgVisualPro
 import { inspectAvgImageBytesV1 } from './image-decoder'
 import { inspectAvgProcessedImageSourceV1, readAvgProcessedImageSourceV1 } from './image-processing-source'
 import { assertAvgConsumedRawImageV4, readAvgImageConsumptionDefinitionV4 } from './image-consumption'
+import { readAvgCurrentChosenMediaSource } from './current-image-consumption'
 
 export interface AvgMediaChoiceValidationV1 {
   schema: 'storyforge.avg.media-choice-validation'
@@ -77,10 +78,5 @@ export async function inspectAvgChosenImageBytesV1<R extends Omit<AvgVisualProdu
 }
 
 export async function validateAvgMediaChoiceV1(input: Parameters<typeof readAvgChosenMediaSourceV2>[0]): Promise<AvgMediaChoiceValidation> {
-  if(input.brief.avgVisualPlanning?.version===5){
-    const load=()=>import('./media-choice-validation-v5')
-    const {readAvgChosenMediaSourceV5}=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
-    return (await readAvgChosenMediaSourceV5(input)).validation
-  }
-  return (await readAvgChosenMediaSourceV2(input)).validation
+  return (await readAvgCurrentChosenMediaSource(input)).validation
 }

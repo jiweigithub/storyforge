@@ -2181,8 +2181,9 @@ export async function verifyProductBuildTerminalArtifactSetV1(input: {
     }
     if (author.authorStage) nativeAuthorReceipts.set(author.authorStage.artifact.artifactKey, author.authorStage.authorReceiptHash)
     if(avgNativeBrief.avgVisualPlanning){
-      const {readAvgConfirmedVisualArtifactsV4}=await import('../avg/author-artifacts')
-      const visual=await readAvgConfirmedVisualArtifactsV4({scope,buildId:build.id,expectedBuildRevision:build.stateRevision,
+      const {readAvgConfirmedVisualArtifactsV4,readAvgConfirmedVisualArtifactsV5}=await import('../avg/author-artifacts')
+      const read=avgNativeBrief.avgVisualPlanning.version===5?readAvgConfirmedVisualArtifactsV5:readAvgConfirmedVisualArtifactsV4
+      const visual=await read({scope,buildId:build.id,expectedBuildRevision:build.stateRevision,
         controlEpoch:build.controlEpoch,artifactKeys:plan.tasks.filter(t=>['avg-author-visual-bible','avg-author-media-brief'].includes(t.kind)).flatMap(t=>t.outputArtifactKeys)},true)
       for(const row of visual)nativeAuthorReceipts.set(row.artifact.artifactKey,row.authorReceiptHash)
     }
