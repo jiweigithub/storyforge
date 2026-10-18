@@ -22,4 +22,3 @@ export async function setupLocalVoiceExecutionV1(confirmed = true) {
     ...(confirmed ? { readingConfirmation: { review, decision: 'confirm-this-exact-local-voice-reading' as const } } : {}) })
   return { ...s, requested, input: { ...s.owner, requestKey: requested.requestKey, decision } }
 }
-
