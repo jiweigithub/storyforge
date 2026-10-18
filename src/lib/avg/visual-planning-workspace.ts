@@ -14,7 +14,9 @@ import { AVG_VISUAL_TEXT_CAPABILITY_V4 } from './visual-planning-roles'
 import { avgVisualPlanningBudgetV4, avgVisualPlanningGateIdsV4, AVG_VISUAL_PLANNING_TEXT_DATA_CLASS_V4 } from './visual-planning-policy'
 import { buildAvgVisualPlanningPlanV4 } from './visual-planning-plan'
 import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/artifact-store'
-import { readAvgVisualProposalEvidenceV4 } from './visual-planning-evidence'
+import { readAvgVisualProposalEvidenceV4,readAvgVisualProposalEvidenceV5 } from './visual-planning-evidence'
+import { avgVisualPlanningExecutionReadyV5 } from './visual-planning-brief-v5'
+import { buildAvgVisualPlanningPlanV5 } from './visual-planning-plan-v5'
 import type { ProductProductionCapabilityBindingV1 } from '../product-production/scheduler'
 import { readProductProductionDetailsV1, stopProductProductionV1 } from '../product-production/service'
 import { parseProductProductionPlanV3 } from '../product-production/plan'
@@ -79,10 +81,22 @@ export async function assertAvgVisualPlanningDraftMatchesV4(scope: WorkspaceScop
 
 /** Resolve pending routes only. Completed requests use their verified original
  * bindings, allowing deterministic adoption/assembly without current secrets. */
-export async function resolveAvgVisualPlanningExecutionV4(scope: WorkspaceScope, brief: ProductProductionBriefV3, buildId?: number) {
-  const v = brief.avgVisualPlanning
-  if (v?.version!==4 || !avgVisualPlanningExecutionReadyV4()) throw new Error('[avg-visual-plan] 专业视觉制作尚未启用')
-  const plan = buildAvgVisualPlanningPlanV4({ brief: { ...brief, avgVisualPlanning: v }, briefHash: '0'.repeat(64), buildNumber: 1+Math.max(0,...(v.proposalReuse??[]).map(r=>r.buildNumber),...(v.rawReuse??[]).map(r=>r.raw.buildNumber)), controlEpoch: 0 })
+export function resolveAvgVisualPlanningExecutionV4(scope: WorkspaceScope, brief: ProductProductionBriefV3, buildId?: number) {
+  return resolveVisualExecution(scope,brief,buildId,4)
+}
+
+/** Resume only the actual version. Received roles/images retain their proven
+ * bindings without requiring a new secret or authorizing another request. */
+export function resolveAvgVisualPlanningExecutionV5(scope: WorkspaceScope, brief: ProductProductionBriefV3, buildId?: number) {
+  return resolveVisualExecution(scope,brief,buildId,5)
+}
+
+async function resolveVisualExecution(scope:WorkspaceScope,brief:ProductProductionBriefV3,buildId:number|undefined,version:4|5){
+  const v=brief.avgVisualPlanning
+  if(!v||v.version!==version||!(version===5?avgVisualPlanningExecutionReadyV5():avgVisualPlanningExecutionReadyV4()))throw new Error('[avg-visual-plan] 专业视觉制作尚未启用')
+  const identity={briefHash:'0'.repeat(64),buildNumber:1+Math.max(0,...(v.proposalReuse??[]).map(r=>r.buildNumber),...(v.rawReuse??[]).map(r=>r.raw.buildNumber)),controlEpoch:0}
+  const plan=v.version===5?buildAvgVisualPlanningPlanV5({...identity,brief:{...brief,avgVisualPlanning:v}})
+    :buildAvgVisualPlanningPlanV4({...identity,brief:{...brief,avgVisualPlanning:v}})
   const bindings: ProductProductionCapabilityBindingV1[] = []
   const modelTasks = plan.tasks.filter(t => t.executionMode === 'model')
   for (const task of modelTasks) {
@@ -90,7 +104,7 @@ export async function resolveAvgVisualPlanningExecutionV4(scope: WorkspaceScope,
       .filter(r => r.status === 'accepted').toArray()
     if (rows.length !== 1) break
     const row = await verifyAcceptedProductBuildArtifactV1({ scope, buildId: buildId!, artifactKey: rows[0].artifactKey, version: rows[0].version, contentHash: rows[0].contentHash })
-    bindings.push((await readAvgVisualProposalEvidenceV4(scope, row)).binding)
+    bindings.push((await (version===5?readAvgVisualProposalEvidenceV5(scope,row):readAvgVisualProposalEvidenceV4(scope,row))).binding)
   }
   let textBinding = bindings[0]
   if (bindings.length !== modelTasks.length) {

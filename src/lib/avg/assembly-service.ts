@@ -33,9 +33,10 @@ import type { ProductProductionBriefV3, ProviderCapabilityRequirementV1 } from '
 import { verifyAcceptedProductBuildArtifactV1, verifyRetainedAvgRawImageArtifactV1, verifyAvgReferenceRawImageArtifactV1, verifyAvgProcessedImageArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4 } from '../product-production/artifact-store'
 import type { ResolvedProductMediaCapabilityV1 } from '../product-production/media-transport'
 import { assertAvgConsumedRawImageV4, readAvgImageConsumptionDefinitionV4 } from './image-consumption'
+import { readAvgCurrentImageConsumptionDefinition } from './current-image-consumption'
 export { stageAvgVisualReviewV2,stageAvgMediaChoiceV5 } from './visual-review-service-v5'
 import { freezeAvgVisualProductionBatchV1 } from './media-source'
-import { applyAvgMediaChoicesToDraftV1, prepareAvgMediaConsumerDeclarationsV1, resetAvgUnconsumedMediaDeclarationsV1 } from './media-configuration'
+import { applyAvgMediaChoicesToDraftV2, applyAvgMediaChoicesToDraftV1, prepareAvgMediaConsumerDeclarationsV1, resetAvgUnconsumedMediaDeclarationsV1 } from './media-configuration'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
 import { assertAvgKnownImageRetriesV1, prepareAvgImageRecoveryV1, readAvgImageRecoverySourceV1, validateAvgImageRecoveryV1,assertAvgRawImageOriginV1 } from './media-recovery'
 import { parseAvgImageRecoveryV1, type AvgImageRecoveryV1 } from './media-recovery-contract'
@@ -341,7 +342,7 @@ export async function configureAvgChosenMediaDraftV2(input: { scope: WorkspaceSc
   const details = await readProductProductionDetailsV1(input.scope, input.productionId, ['avg'])
   const build = details.build, brief = details.executionBrief
   if (!build?.id || !brief || build.previewHash) throw new Error('[avg-media] 当前版本不能配置生成媒资')
-  const image = await readAvgImageConsumptionDefinitionV4({scope:input.scope,buildId:build.id,brief})
+  const image = await readAvgCurrentImageConsumptionDefinition({scope:input.scope,buildId:build.id,brief})
   if (brief.avgVisualPlanning ? !!workspace.mediaBatch
     : canonicalProductProductionJsonV2(workspace.mediaBatch ?? null) !== canonicalProductProductionJsonV2(image.mediaBatch)) throw new Error('[avg-media] 草稿需求与冻结批次已不一致')
   if(brief.avgVisualPlanning?!!workspace.imageProcessing:canonicalProductProductionJsonV2(workspace.imageProcessing??null)!==canonicalProductProductionJsonV2(image.imageProcessing??null))throw new Error('[avg-process] 加工草稿与本次冻结配方不一致，请明确准备新版本')
@@ -354,7 +355,10 @@ export async function configureAvgChosenMediaDraftV2(input: { scope: WorkspaceSc
     if(existing&&canonicalProductProductionJsonV2(existing)!==canonicalProductProductionJsonV2(choice.payload.asset)&&!workspace.presentation.inheritedImages?.some(e=>e.assetKey===existing.assetKey)
       &&await verifyAvgRecoveryPlaceholderV1({scope:input.scope,productionId:input.productionId,brief,requirementKey:choice.payload.requirementKey,asset:existing}))replaceablePlaceholders.push({assetKey:existing.assetKey,contentHash:existing.contentHash})
   }
-  const next = await applyAvgMediaChoicesToDraftV1({ workspace, batch: image.mediaBatch, choices: (source.mediaChoices ?? []).map(choice => choice.payload),replaceablePlaceholders })
+  const configuration={workspace,choices:(source.mediaChoices??[]).map(choice=>choice.payload),replaceablePlaceholders}
+  const next = await (image.mediaBatch.version===2
+    ?applyAvgMediaChoicesToDraftV2({...configuration,batch:image.mediaBatch})
+    :applyAvgMediaChoicesToDraftV1({...configuration,batch:image.mediaBatch}))
   return db.transaction('rw', scopeTransactionTables(db.avgAuthoringDrafts, db.productBuilds, db.productProductions), async () => {
     const current = await db.productBuilds.get(build.id!), production = await db.productProductions.get(input.productionId)
     if (!current || !production || current.stateRevision !== build.stateRevision || current.controlEpoch !== build.controlEpoch
@@ -458,7 +462,10 @@ function runtimeMediaKeys(workspace: ReturnType<typeof parseAvgAuthorWorkspaceV1
 }
 
 async function assemblyExecutionOptions(scope: WorkspaceScope, brief: ProductProductionBriefV3, productionId: number, buildId?: number) {
-  if (brief.avgVisualPlanning) return (await import('./visual-planning-workspace')).resolveAvgVisualPlanningExecutionV4(scope, brief, buildId)
+  if (brief.avgVisualPlanning) {
+    const readers=await import('./visual-planning-workspace')
+    return (brief.avgVisualPlanning.version===5?readers.resolveAvgVisualPlanningExecutionV5:readers.resolveAvgVisualPlanningExecutionV4)(scope,brief,buildId)
+  }
   const mediaCapabilities = new Map<string, ResolvedProductMediaCapabilityV1>()
   const capabilityBindings: ProductProductionCapabilityBindingV1[] = []
   let avgVoiceTransport: Awaited<ReturnType<typeof resolveAvgVoiceExecutionCapabilityV3>> | undefined

@@ -20,8 +20,7 @@ import { avgVoiceAssemblyGateIdsV3 } from './voice-assembly-contract'
 import { readAvgOptionalImageDefinitionV3 } from './media-production-definition'
 import { executeAvgVoiceRecoveryTaskV1 } from './voice-recovery-executor'
 import { avgAssemblyMediaRightsV1 } from './assembly-media-rights'
-import { readAvgImageConsumptionDefinitionV4 } from './image-consumption'
-import { readAvgCompiledImageDefinitionV4 } from './visual-planning-image-definition'
+import { readAvgCurrentImageConsumptionDefinition,readAvgCurrentCompiledImageDefinition } from './current-image-consumption'
 import { assertAvgTaskHarnessClaimV1, hashAvgTaskRuntimeBindingV1 } from './task-claim'
 import { parseProductProductionPlanV3 } from '../product-production/plan'
 
@@ -36,7 +35,7 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
   return async request => {
     const startedAt = Date.now()
     if (request.signal.aborted) throw new DOMException('Aborted','AbortError')
-    const image=brief.avgVisualPlanning?await readAvgImageConsumptionDefinitionV4({scope:request.scope,buildId:request.buildId,brief}):legacyImage
+    const image=brief.avgVisualPlanning?await readAvgCurrentImageConsumptionDefinition({scope:request.scope,buildId:request.buildId,brief}):legacyImage
     if (brief.avgAssembly?.version === 3 && request.task.kind === 'avg-media-voice-reuse') {
       return executeAvgVoiceRecoveryTaskV1(request, { ...brief, avgAssembly: brief.avgAssembly })
     }
@@ -45,6 +44,7 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
         { modelCalls: 0, inputTokens: 0, outputTokens: 0, mediaCalls: 0, costUsd: 0, durationMs: Date.now() - startedAt, storageBytes: 0 })
       return executeAvgVoiceTaskV3(request, { brief: { ...brief, avgAssembly: brief.avgAssembly }, transport: options.voiceTransport })
     }
+    if(brief.avgVisualPlanning?.version===5&&['avg-media-image-process','avg-media-image-reuse','avg-media-image-generate'].includes(request.task.kind))throw new Error('[avg-media] 新图片必须使用准确版本的原始执行器；加工与恢复尚未接通')
     if(image&&request.task.kind==='avg-media-image-process')return executeAvgImageProcessingTaskV1(request,brief)
     if(image&&request.task.kind==='avg-media-image-reuse')return executeAvgImageRecoveryTaskV1(request,brief)
     if (image && request.task.kind === 'avg-media-image-generate') return executeAvgMediaImageTaskV2(request, {
@@ -79,7 +79,7 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
     const expectedKeys = assembly.mediaAssetKeys
     if (assets.length !== expectedKeys.length || expectedKeys.some(key => !assets.some(asset => asset.assetKey === key))) throw new Error('[avg] 组装媒体目录超出冻结 Brief')
     const packageHash = await hashProductProductionValueV2(pkg)
-    const visual=brief.avgVisualPlanning?await readAvgCompiledImageDefinitionV4({scope:request.scope,buildId:request.buildId,
+    const visual=brief.avgVisualPlanning?await readAvgCurrentCompiledImageDefinition({scope:request.scope,buildId:request.buildId,
       expectedBuildRevision:build.stateRevision,controlEpoch:request.controlEpoch,expectedBrief:brief,purpose:'assembly'}):null
     const sourceProof = { rule:compiled.source.artifact,ruleReceipt:compiled.source.authorReceiptHash,
       ...(visual?{visualPlanning:{compilation:visual.definition.compilation,scopeHash:await hashProductProductionValueV2(visual.planning.scope),

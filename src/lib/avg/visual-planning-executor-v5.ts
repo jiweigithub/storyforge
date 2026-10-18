@@ -32,6 +32,12 @@ export function createAvgVisualPlanningExecutorV5(options:{brief:ProductProducti
         const {executeAvgMediaImageTaskV2}=await import('./media-production-executor')
         return executeAvgMediaImageTaskV2(input,{brief,mediaCapabilities:options.mediaCapabilities??new Map(),imageEndpointRouteHash:options.imageEndpointRouteHash})
       }
+      if(['avg-assembly-integrate','avg-assembly-verify'].includes(input.task.kind)){
+        const {db}=await import('../db/schema'),{createAvgAssemblyExecutorV1}=await import('./assembly-executor')
+        const build=await db.productBuilds.get(input.buildId),production=build?await db.productProductions.get(build.productionId):null
+        if(!production||build!.productionId!==input.productionId)throw new Error('[avg-visual-plan] 组装制作归属已变化')
+        return createAvgAssemblyExecutorV1({brief,production})(input)
+      }
       if(input.task.executionMode!=='model'&&input.task.kind!=='avg-v5-visual-requirements-compile')throw new Error('[avg-visual-plan] 新图片消费执行尚未接通，未发送请求')
       source=await readAvgVisualPlanningExecutionSourcesV5(input,brief)
     }catch(error){throw new ProductProductionDraftRejectedErrorV1(error instanceof Error?error.message:'新专业视觉来源无效',zero())}

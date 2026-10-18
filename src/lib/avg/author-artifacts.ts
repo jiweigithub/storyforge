@@ -37,6 +37,7 @@ import { assertAvgVisualRoleProposalV4, validateAvgVisualSemanticV4 } from './vi
 import { readAvgVisualProposalEvidenceV4,readAvgVisualProposalEvidenceV5,readAvgVisualProposalEvidence } from './visual-planning-evidence'
 import { AVG_VISUAL_TEXT_CAPABILITY_V4 } from './visual-planning-roles'
 import { readAvgImageConsumptionDefinitionV4 } from './image-consumption'
+import { readAvgCurrentImageConsumptionDefinition,readAvgCurrentChosenMediaSource } from './current-image-consumption'
 import type { AvgVisualReusePathV4 } from './visual-planning-reuse-contract'
 import { parseAvgAuthorVisualReviewV2,assertAvgVisualReviewRevisionV2,type AvgReviewIssuesV2 } from './visual-review-contract-v2'
 import { validateAvgAuthorVisualReviewV2,validateAvgAuthorVisualReviewFromSourceV2,assertAvgVisualReviewSelectableV2 } from './visual-review-v2'
@@ -111,7 +112,7 @@ async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, 
   const generated = new Map<string, { asset: AvgAuthorMediaChoice['asset']; blobObjectId: number }>()
   const a = context.brief.avgAssembly
   const image = context.brief.avgVisualPlanning || readAvgOptionalImageDefinitionV3(context.brief)
-    ? await readAvgImageConsumptionDefinitionV4({scope,buildId:context.build.id!,brief:context.brief}) : null
+    ? await readAvgCurrentImageConsumptionDefinition({scope,buildId:context.build.id!,brief:context.brief}) : null
   if (image) {
     if (payload.aspectRatio !== image.mediaBatch.aspectRatio) throw new Error('[avg-media] 最终演出画幅与冻结批次不一致')
     const choices = inputs.filter(row => row.artifactKey.startsWith('avg.media.choice.'))
@@ -120,8 +121,8 @@ async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, 
       const row = choices.find(row => row.artifactKey === avgMediaChoiceArtifactKeyV1(r.requirementKey))
       if (!row) throw new Error('[avg-media] 缺少准确需求的作者选择')
       const choice = parseAvgAuthorMediaChoice(row.payloadJson)
-      const selected = await readAvgChosenMediaSourceV2({ scope, buildId: context.build.id!, brief: context.brief, choice })
-      const review=await readChoiceVisualReview(context,scope,choice,selected.raw,context.build.controlEpoch,selected.processed?.row)
+      const selected = await readAvgCurrentChosenMediaSource({ scope, buildId: context.build.id!, brief: context.brief, choice })
+      const review=await readCurrentChoiceVisualReview(context,scope,choice,selected.raw,context.build.controlEpoch,selected.processed?.row)
       await assertFrozenAuthorCandidateV1(context,row,context.plan.tasks.find(task=>task.taskKey===`avg.author.media.${r.requirementKey}`)!,[selected.raw,...(selected.processed?[selected.processed.row]:[]),...(review?[review.row]:[])],context.build.controlEpoch)
       const receipt = JSON.parse(row.metadataJson) as { candidate: AuthorCandidate }
       if (receipt.candidate.version !== 4 || canonicalProductProductionJsonV2(receipt.candidate.mediaChoiceValidation) !== canonicalProductProductionJsonV2(selected.validation)) throw new Error('[avg-media] 选择缺少准确的真实解码采用回执')
@@ -399,7 +400,8 @@ async function readChoiceVisualReviewRow(context:Awaited<ReturnType<typeof autho
 /** Current version dispatch only. Historical V4 callers retain their exact
  * legacy review return type and cannot re-label a policy review as V1. */
 async function readCurrentChoiceVisualReview(context:Awaited<ReturnType<typeof authority>>,scope:WorkspaceScope,choice:AvgAuthorMediaChoice,
-  raw:ProductBuildArtifactRecordV1,epoch=context.build.controlEpoch,processed?:ProductBuildArtifactRecordV1){
+  raw:ProductBuildArtifactRecordV1,epoch=context.build.controlEpoch,processed?:ProductBuildArtifactRecordV1):Promise<Awaited<ReturnType<typeof readChoiceVisualReview>>
+    |{row:ProductBuildArtifactRecordV1;payload:AvgReviewIssuesV2;artifact:Ref;authorReceiptHash:string}>{
   if(context.brief.avgVisualPlanning?.version!==5)return readChoiceVisualReview(context,scope,choice,raw,epoch,processed)
   const d=await readAvgImageConsumptionDefinitionV5({scope,buildId:context.build.id!,brief:context.brief})
   if(!d.definition.mediaBatch.visualReviewPolicy)return undefined
@@ -639,20 +641,20 @@ async function readAuthorInputs(input: {
       if (parsed.schema !== 'storyforge.avg.scene-script' || !scriptReceipt.candidate.inputs.some(source => source.artifactKey === artifact.artifactKey && source.version === artifact.version && source.contentHash === artifact.contentHash)) throw new Error('[avg] 脚本缺少当前正式规则依赖')
       return { payload: parsed, artifact: ref(row), authorReceiptHash: scriptReceipt.receiptHash }
     })
-    const mediaChoices: Array<{ payload: AvgAuthorMediaChoice; artifact: Ref; authorReceiptHash: string; raw: ProductBuildArtifactRecordV1;image:ProductBuildArtifactRecordV1;processed?:NonNullable<Awaited<ReturnType<typeof readAvgChosenMediaSourceV2>>>['processed'];review?:NonNullable<Awaited<ReturnType<typeof readChoiceVisualReview>>> }> = []
-    // Resolve V4 only for image consumption. Source/visual compilation reads
+    const mediaChoices: Array<{ payload: AvgAuthorMediaChoice; artifact: Ref; authorReceiptHash: string; raw: ProductBuildArtifactRecordV1;image:ProductBuildArtifactRecordV1;processed?:NonNullable<Awaited<ReturnType<typeof readAvgChosenMediaSourceV2>>>['processed'];review?:NonNullable<Awaited<ReturnType<typeof readCurrentChoiceVisualReview>>> }> = []
+    // Resolve actual image versions only for consumption. Source/visual compilation reads
     // must not recursively ask for the compilation artifact they are proving.
     const image = context.brief.avgVisualPlanning
       ? (input.includeAuthorStage||input.includeMediaChoices
-        ?await readAvgImageConsumptionDefinitionV4({scope,buildId:input.buildId,brief:context.brief}):null)
+        ?await readAvgCurrentImageConsumptionDefinition({scope,buildId:input.buildId,brief:context.brief}):null)
       :readAvgOptionalImageDefinitionV3(context.brief)
     if ((input.includeAuthorStage || input.includeMediaChoices) && image) {
       const keys = image.mediaBatch.requirements.map(r => avgMediaChoiceArtifactKeyV1(r.requirementKey))
       const rows = await acceptedInputs(scope, input.buildId, input.controlEpoch, keys)
       for (const row of rows) {
         const payload = parseAvgAuthorMediaChoice(row.payloadJson)
-        const selected = await readAvgChosenMediaSourceV2({ scope, buildId: input.buildId, brief: context.brief, choice: payload })
-        const review=await readChoiceVisualReview(context,scope,payload,selected.raw,input.controlEpoch,selected.processed?.row)
+        const selected = await readAvgCurrentChosenMediaSource({ scope, buildId: input.buildId, brief: context.brief, choice: payload })
+        const review=await readCurrentChoiceVisualReview(context,scope,payload,selected.raw,input.controlEpoch,selected.processed?.row)
         const receipt = JSON.parse(row.metadataJson) as { candidate: AuthorCandidate; receiptHash: string }
         if (receipt.candidate.version !== 4 || canonicalProductProductionJsonV2(receipt.candidate.mediaChoiceValidation) !== canonicalProductProductionJsonV2(selected.validation)) throw new Error('[avg-media] 作者选择解码证据已 stale')
         const task=context.plan.tasks.find(task=>task.taskKey===`avg.author.media.${payload.requirementKey}`)!

@@ -3,6 +3,8 @@ import { parseAvgAuthorWorkspaceV1, type AvgAuthorWorkspaceV1 } from './author-w
 import { parseAvgVisualProductionRequirementV1, parseAvgAuthorMediaChoice,
   type AvgVisualProductionRequirementV1, type AvgVisualProductionBatchV1, type AvgAuthorMediaChoice } from './media-production-contract'
 import { validateAvgVisualProductionBatchSourceV1 } from './media-source'
+import { validateAvgVisualProductionBatchSourceV2 } from './media-source-v2'
+import type { AvgVisualProductionBatchV2 } from './media-production-contract-v2'
 
 /** Undo only the unconsumed image-slot proposals made by a previous batch.
  * Authored predicates, unrelated bindings and actually selected assets stay
@@ -41,6 +43,20 @@ export function prepareAvgMediaConsumerDeclarationsV1(value: AvgAuthorWorkspaceV
 export async function applyAvgMediaChoicesToDraftV1(input: { workspace: AvgAuthorWorkspaceV1; batch: AvgVisualProductionBatchV1; choices: AvgAuthorMediaChoice[];replaceablePlaceholders?:Array<{assetKey:string;contentHash:string}> }) {
   const next = parseAvgAuthorWorkspaceV1(input.workspace)
   const batch = await validateAvgVisualProductionBatchSourceV1(input.batch, next)
+  return configureSlots({...input,workspace:next,batch})
+}
+
+/** New references retain their exact request grammar. Only the already
+ * validated physical consumer-slot mutation is shared with the original path. */
+export async function applyAvgMediaChoicesToDraftV2(input: { workspace: AvgAuthorWorkspaceV1; batch: AvgVisualProductionBatchV2; choices: AvgAuthorMediaChoice[];replaceablePlaceholders?:Array<{assetKey:string;contentHash:string}> }) {
+  const next = parseAvgAuthorWorkspaceV1(input.workspace)
+  const batch = await validateAvgVisualProductionBatchSourceV2(input.batch, next)
+  return configureSlots({...input,workspace:next,batch})
+}
+
+function configureSlots(input:{workspace:AvgAuthorWorkspaceV1;batch:AvgVisualProductionBatchV1|AvgVisualProductionBatchV2;choices:AvgAuthorMediaChoice[];
+  replaceablePlaceholders?:Array<{assetKey:string;contentHash:string}>}){
+  const next=input.workspace,batch=input.batch
   const choices = input.choices.map(parseAvgAuthorMediaChoice)
   if (choices.length !== batch.requirements.length || new Set(choices.map(choice => choice.requirementKey)).size !== choices.length) throw new Error('[avg-media] 自动配置需要全部准确且唯一的作者选择')
   for (const r of batch.requirements) {
