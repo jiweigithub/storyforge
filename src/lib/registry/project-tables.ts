@@ -950,6 +950,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
   { table: db.productMediaAssets, name: 'productMediaAssets', owner: 'project',
     exportable: true, exportIdField: true,
     domainOwner: { allowed: ['work'], defaultOwner: 'work', locator: { kind: 'field', owner: 'work', field: 'workId' } },
+    exactArtifactRoots: [{ field: 'exactArtifactRefsJson', path: [] }],
     refs: [
       { kind: 'simple', field: 'id', target: 'productMediaBlobs[mediaAssetId]', onDelete: 'cascade' },
       { kind: 'simple', field: 'id', target: 'ttrpgRuntimeAssetRequests[mediaAssetId]', onDelete: 'setNull' },
