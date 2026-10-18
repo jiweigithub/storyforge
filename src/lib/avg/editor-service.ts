@@ -20,9 +20,11 @@ import { readAvgDraftV1 } from "./draft-service";
 import { parseAvgAuthorWorkspaceV1 } from './author-workspace-contract';
 import { canonicalProductProductionJsonV2 } from '../product-production/hash';
 import { parseAvgExecutableStageV1 } from './stage-contract';
-import { createAvgReferenceImageAdapterV1 } from './media-reference-adapter';
-import type { AvgImageRequestV1, AvgMediaReferenceV1 } from './media-reference-contract';
-import { readAvgGeneratedReferenceImageV1 } from './media-generated-reference';
+import { createAvgReferenceImageAdapterV1, createAvgReferenceImageAdapterV2 } from './media-reference-adapter';
+import { verifyAvgReferenceBytesV1, type AvgImageRequestV1, type AvgMediaReferenceV1 } from './media-reference-contract';
+import { assertAvgImageRequestV2, avgReferenceMetadataV2, parseAvgMediaReferencesV2, type AvgImageRequestV2, type AvgMediaReferenceV2 } from './media-reference-contract-v2';
+import { readAvgGeneratedReferenceImageV1, readAvgGeneratedReferenceBytesV2 } from './media-generated-reference';
+import type { AvgVisualProductionRequirementV1 } from './media-production-contract';
 
 /** Authors may retain unfinished graph edits; full package validation gates production. */
 export async function saveAvgEditorV1(
@@ -208,6 +210,28 @@ export async function createAvgDraftReferenceAdapterV1(input: { scope: Workspace
     await input.inspectReference?.(reference, bytes);
     return bytes;
   } });
+}
+
+/** Versioned headless input foundation. Existing V1 callers never dispatch
+ * V2 references; a later durable producer must freeze their explicit contract. */
+export async function readAvgDraftReferenceBytesV2(scope:WorkspaceScope,reference:AvgMediaReferenceV2,targetFamily?:AvgVisualProductionRequirementV1['family']){
+  const ref=parseAvgMediaReferencesV2([reference])[0]!
+  const data=ref.generatedSource?await readAvgGeneratedReferenceBytesV2(scope,ref,targetFamily)
+    :(await readAvgDraftReferenceImageV1(scope,avgReferenceMetadataV2(ref))).data
+  return verifyAvgReferenceBytesV1(ref,data)
+}
+
+export async function createAvgDraftReferenceAdapterV2(input:{scope:WorkspaceScope;frozen:AvgImageRequestV2;
+  inspectReference?:(reference:AvgMediaReferenceV2,bytes:ArrayBuffer)=>Promise<void>}){
+  const scope=await resolveScope({scope:input.scope}),work=await db.works.get(scope.workId)
+  if(!work||work.kind!=='avg'||!await assertRecordInScope(scope,'works',work,{owner:'work'}))throw new Error('[avg-reference] 参考必须属于当前AVG作品')
+  const frozen=await assertAvgImageRequestV2(input.frozen)
+  return createAvgReferenceImageAdapterV2({frozen,readReference:async reference=>{
+    await resolveScope({scope})
+    const bytes=await readAvgDraftReferenceBytesV2(scope,reference,frozen.targetFamily)
+    await input.inspectReference?.(reference,bytes)
+    return bytes
+  }})
 }
 
 /** Bounded, Work-owned import history; lets refresh recover unassembled uploads. */

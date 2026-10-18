@@ -8,6 +8,7 @@ import {
   assertAvgImageRequestV1, verifyAvgReferenceBytesV1,
   type AvgImageRequestV1, type AvgMediaReferenceV1,
 } from './media-reference-contract'
+import { assertAvgImageRequestV2, type AvgImageRequestV2, type AvgMediaReferenceV2 } from './media-reference-contract-v2'
 
 /** No published image operation lookup exists in this capability. Retain the
  * observed ID and reservation; the shared Harness must never repeat the POST. */
@@ -33,6 +34,22 @@ export async function createAvgReferenceImageAdapterV1(input: {
   readReference(reference: AvgMediaReferenceV1): Promise<ArrayBuffer>
 }): Promise<ProductMediaProviderAdapterV1> {
   const frozen = await assertAvgImageRequestV1(input.frozen)
+  return createReferenceAdapter(frozen, input.readReference)
+}
+
+/** V2 remains inert until a versioned durable producer explicitly selects it.
+ * It shares the same provider dispatch, unknown-result and receipt checks. */
+export async function createAvgReferenceImageAdapterV2(input: {
+  frozen: AvgImageRequestV2
+  readReference(reference: AvgMediaReferenceV2): Promise<ArrayBuffer>
+}): Promise<ProductMediaProviderAdapterV1> {
+  return createReferenceAdapter(await assertAvgImageRequestV2(input.frozen), input.readReference)
+}
+
+function createReferenceAdapter<R extends AvgMediaReferenceV1 | AvgMediaReferenceV2>(
+  frozen: Omit<AvgImageRequestV1, 'version' | 'references'> & { version: 1 | 2; references: R[]; targetFamily?:AvgImageRequestV2['targetFamily'] },
+  readReference: (reference: R) => Promise<ArrayBuffer>,
+): ProductMediaProviderAdapterV1 {
   const adapter=resolveProductMediaProviderAdapterV1(frozen.request.adapterId)
   const expectedRequest: ProductMediaRequestV1 = { ...frozen.request, inputHash: frozen.inputHash }
   const assertRequest = (request: ProductMediaRequestV1) => {
@@ -41,10 +58,11 @@ export async function createAvgReferenceImageAdapterV1(input: {
     }
   }
   const lineage = {
-    schema: 'storyforge.avg.reference-transmission', version: 1,
+    schema: 'storyforge.avg.reference-transmission', version: frozen.version,
     inputHash: frozen.inputHash, capabilityHash: frozen.capabilityHash, resolutionTier: frozen.resolutionTier,
     references: frozen.references.map((r, index) => ({ ...r, inputIndex: index + 1 })),
     encoding: 'data-uri', nativeCrop: false, nativeMask: false, alphaGuaranteed: false,
+    ...(frozen.version === 2 ? { referencePurposeGuaranteed: false, targetFamily:frozen.targetFamily } : {}),
   }
   return {
     capability: structuredClone(adapter.capability),
@@ -60,7 +78,7 @@ export async function createAvgReferenceImageAdapterV1(input: {
       // reference rejects the whole request, never a reduced text-only fallback.
       const images: string[] = []
       for (const reference of frozen.references) {
-        const bytes = await verifyAvgReferenceBytesV1(reference, await input.readReference(structuredClone(reference)))
+        const bytes = await verifyAvgReferenceBytesV1(reference, await readReference(structuredClone(reference)))
         images.push(dataUri(reference.mimeType, bytes))
       }
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
@@ -74,9 +92,11 @@ export async function createAvgReferenceImageAdapterV1(input: {
             throw new Error('[avg-media] 请求超出本次单次 dispatch 能力')
           }
           if (abort.aborted) throw new DOMException('Aborted', 'AbortError')
-          const prompt = images.length ? `${String(call.body.prompt)}\nReference inputs in exact order:\n${JSON.stringify(frozen.references.map((r, i) => ({
-            image: i + 1, purpose: r.purpose, preserveAndChange: r.allowedChange,
-          })))}` : call.body.prompt
+          const referenceUses = frozen.references.map((r, i) => ({ image: i + 1, purpose: r.purpose, preserveAndChange: r.allowedChange,
+            ...(frozen.version === 2 ? (r as AvgMediaReferenceV2).contentPolicy : {}) }))
+          const instruction = frozen.version === 2
+            ? '\nUse references only for their declared purpose and permittedFeatures. Do not copy excludedFeatures; other visible objects do not become story facts.' : ''
+          const prompt = images.length ? `${String(call.body.prompt)}\nReference inputs in exact order:\n${JSON.stringify(referenceUses)}${instruction}` : call.body.prompt
           dispatched = true
           let response
           try {

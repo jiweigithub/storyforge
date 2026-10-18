@@ -29,6 +29,7 @@ import type { AvgCharacterFamilyPlanV1 } from '../../src/lib/avg/character-famil
 import { validateAvgVisualProductionBatchSourceV1 } from '../../src/lib/avg/media-source'
 import { verifyFrozenAvgAuthorInputsV1 } from '../../src/lib/avg/author-artifacts'
 import { avgVisualReviewFixture } from '../helpers/avg-visual-review-fixture'
+import { avgVersionedReferenceTransportFixture } from '../helpers/avg-versioned-reference-fixture'
 import { prepareAvgRawImageRequestV1 } from '../../src/lib/avg/media-raw-contract'
 import * as imageProcessing from '../../src/lib/avg/image-processing'
 import { avgImageProcessingRecipeFixture,avgImageProcessingReceiptFixture } from '../helpers/avg-image-processing-fixture'
@@ -458,6 +459,9 @@ describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/deco
     const restored = await readAvgGeneratedReferenceImageV1({scope:importedScope,source:selected.source})
     expect(restored.source).toEqual(selected.source)
     expect(await mediaBlobStore.sha256MediaData(restored.data)).toBe(selected.asset.contentHash)
+    const versioned=await avgVersionedReferenceTransportFixture({scope:importedScope,...selected})
+    expect(versioned.projectUnchanged).toBe(true);expect(versioned.dispatch).toHaveBeenCalledTimes(1)
+    expect(versioned.reference.generatedSource?.version).toBe(1)
     const ref = {assetKey:selected.asset.assetKey,assetVersion:selected.asset.version,contentHash:selected.asset.contentHash,
       mimeType:selected.asset.mimeType as 'image/png',byteSize:selected.asset.byteSize,purpose:'composition' as const,allowedChange:'保持房间结构，改为白天光线',
       dataClass:'avg-authorized-reference',license:selected.asset.license,providerInputAllowed:true as const,derivativeUseAllowed:true as const,crop:null,mask:null,generatedSource:selected.source}
@@ -800,6 +804,10 @@ describe('R-AVG-BASE01B · actual public media Harness with controlled HTTP/deco
     const importedId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),build=(await db.productBuilds.where('projectId').equals(importedId).first())!
     const scope={projectId:importedId,worldId:build.worldId,workId:build.workId}
     expect((await readAvgGeneratedReferenceImageV1({scope,source:source.source})).data).toEqual(output)
+    const versioned=await avgVersionedReferenceTransportFixture({scope,...source})
+    expect(versioned.projectUnchanged).toBe(true);expect(versioned.dispatch).toHaveBeenCalledTimes(1)
+    expect(versioned.reference.contentHash).toBe(image.contentHash)
+    expect(versioned.reference.generatedSource?.processing?.contentHash).toBe(image.contentHash)
     const damaged=structuredClone(source.source);damaged.processing!.producerReceiptHash='f'.repeat(64)
     await expect(readAvgGeneratedReferenceImageV1({scope,source:damaged})).rejects.toThrow(/证明/)
     const importedImage=(await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id!,'avg.media.processed.desk.background']).first())!

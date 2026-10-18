@@ -127,7 +127,7 @@ export async function assertAvgImageRequestV1(value: AvgImageRequestV1): Promise
 }
 
 /** The owner-scoped resolver supplies bytes; this layer verifies the exact frozen delivery. */
-export async function verifyAvgReferenceBytesV1(reference: AvgMediaReferenceV1, data: ArrayBuffer): Promise<ArrayBuffer> {
+export async function verifyAvgReferenceBytesV1(reference: Pick<AvgMediaReferenceV1, 'byteSize' | 'contentHash' | 'mimeType'>, data: ArrayBuffer): Promise<ArrayBuffer> {
   const copy = data.slice(0)
   if (copy.byteLength !== reference.byteSize || await sha256MediaData(copy) !== reference.contentHash
     || detectProductMediaMimeTypeV1(copy) !== reference.mimeType || !detectProductImageDimensionsV1(copy)) {

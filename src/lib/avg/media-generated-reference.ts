@@ -11,6 +11,7 @@ import { parseAvgGeneratedReferenceSourceV1, parseAvgGeneratedReferenceSourceV2,
   type AvgGeneratedReferenceSourceV1, type AvgGeneratedImageSource } from './media-generated-reference-contract'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V1, type AvgMediaReferenceV1 } from './media-reference-contract'
 import { parseAvgGeneratedReferenceSourceV4 } from './visual-processed-source-contract'
+import { parseAvgMediaReferencesV2, type AvgMediaReferenceV2 } from './media-reference-contract-v2'
 
 type Evidence = Awaited<ReturnType<typeof readAvgAdoptedGeneratedReferenceChoiceV1>>
 const sourceOf = (e: Evidence) => parseAvgGeneratedReferenceSourceV1({ schema:'storyforge.avg.generated-reference-source',version:1,
@@ -128,6 +129,35 @@ export async function readAvgAdoptedGeneratedImageV2(input:{scope:WorkspaceScope
   const data=Dexie.currentTransaction?await Dexie.waitFor(Dexie.ignoreTransaction(read),20_000):await read()
   return {asset:evidence.choice.asset,source,family:evidence.requirement.family,referenceOnly:evidence.choice.referenceOnly,
     sourceWorldContentHash:evidence.sourceWorldContentHash,blobObjectId:evidence.image.blobObjectId!,data}
+}
+
+/** Prospective reference selection only. A later V2 request must separately
+ * declare purpose, permitted/excluded features and outbound/derivative consent. */
+export async function prepareAvgGeneratedReferenceImageV2(input:{scope:WorkspaceScope;choiceId:number}){
+  const selected=await prepareAvgAdoptedGeneratedImageV2(input)
+  if(selected.asset.byteSize>AVG_IMAGE_REFERENCE_CAPABILITY_V1.maximumReferenceBytes)throw new Error('[avg-reference] 已采用图超过8 MiB参考上限；不得隐式缩放')
+  return selected
+}
+
+export async function readAvgGeneratedReferenceImageV2(input:{scope:WorkspaceScope;source:AvgGeneratedImageSource}){
+  const image=await readAvgAdoptedGeneratedImageV2(input)
+  if(image.asset.byteSize>AVG_IMAGE_REFERENCE_CAPABILITY_V1.maximumReferenceBytes)throw new Error('[avg-reference] 已采用图超过8 MiB参考上限；不得隐式缩放')
+  return image
+}
+
+/** No same-key import fallback. Source parsing, original/current producer,
+ * compilation, review/choice and exact Work bytes all precede delivery. */
+export async function readAvgGeneratedReferenceBytesV2(scope:WorkspaceScope,reference:AvgMediaReferenceV2,targetFamily?:AvgVisualProductionRequirementV1['family']){
+  const ref=parseAvgMediaReferencesV2([reference])[0]!
+  if(!ref.generatedSource)throw new Error('[avg-reference] 缺少准确已采用生成来源')
+  const image=await readAvgGeneratedReferenceImageV2({scope,source:ref.generatedSource}),asset=image.asset
+  if(asset.assetKey!==ref.assetKey||asset.version!==ref.assetVersion||asset.contentHash!==ref.contentHash
+    ||asset.mimeType!==ref.mimeType||asset.byteSize!==ref.byteSize||asset.license!==ref.license)throw new Error('[avg-reference] 已采用参考版本、字节或授权元数据不一致')
+  if(ref.purpose==='identity'&&targetFamily){
+    if(image.family.subjectKey!==targetFamily.subjectKey)throw new Error('[avg-reference] 身份参考不能替换另一个主体')
+    if(image.family.familyKey===targetFamily.familyKey&&image.family.revision!==targetFamily.revision)throw new Error('[avg-reference] 身份家族基准修订已变化')
+  }
+  return image.data
 }
 
 /** Actual source is verified before delivery. Matching an imported asset key

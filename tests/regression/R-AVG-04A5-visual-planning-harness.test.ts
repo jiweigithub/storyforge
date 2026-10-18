@@ -47,6 +47,9 @@ import { assertAvgVisualPlanningRestartKnownV4 } from '../../src/lib/avg/visual-
 import { prepareAvgVisualImageRouteV4 } from '../../src/lib/avg/visual-image-route-workspace'
 import { readAvgAdoptedGeneratedReferenceChoiceV4 } from '../../src/lib/avg/author-artifacts'
 import { prepareAvgAdoptedGeneratedImageV2,readAvgAdoptedGeneratedImageV2 } from '../../src/lib/avg/media-generated-reference'
+import { prepareAvgGeneratedReferenceImageV2,readAvgGeneratedReferenceBytesV2 } from '../../src/lib/avg/media-generated-reference'
+import { parseAvgMediaReferencesV2 } from '../../src/lib/avg/media-reference-contract-v2'
+import { avgVersionedReferenceTransportFixture } from '../helpers/avg-versioned-reference-fixture'
 import { parseAvgGeneratedReferenceSourceV1,parseAvgGeneratedReferenceSourceV2,parseAvgGeneratedReferenceSourceV3 } from '../../src/lib/avg/media-generated-reference-contract'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V2,parseAvgMediaReferencesV1 } from '../../src/lib/avg/media-reference-contract'
 import * as textCapabilities from '../../src/lib/product-production/capabilities'
@@ -899,6 +902,28 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       expect(image.data).toEqual(s.imageBytes);expect(image.sourceWorldContentHash).toBe(s.brief.source.worldContentHash)
       expect(image.blobObjectId).toBe(raw.blobObjectId);expect(JSON.parse(raw.payloadJson).provider.costUsd).toBeNull()
       const {exportedAt:_afterAt,...after}=await exportProjectJSON(s.scope.projectId);expect(after).toEqual(before)
+      const outbound=await avgVersionedReferenceTransportFixture({scope:s.scope,...selected})
+      expect(outbound.projectUnchanged).toBe(true);expect(outbound.dispatch).toHaveBeenCalledTimes(1)
+      expect(outbound.candidate.metadata.avgReferenceTransmission).toMatchObject({version:2,references:[{generatedSource:selected.source}]})
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+    it.each(['source','bytes','license','identity','grant','work'] as const)('versioned outbound refuses %s without a same-key import fallback or any write',async mode=>{
+      const {s}=generated,selected=await prepareAvgGeneratedReferenceImageV2({scope:s.scope,choiceId:choice.id!}),a=selected.asset
+      const reference=parseAvgMediaReferencesV2([{schema:'storyforge.avg.media-reference',version:2,assetKey:a.assetKey,assetVersion:a.version,
+        contentHash:a.contentHash,mimeType:a.mimeType,byteSize:a.byteSize,purpose:mode==='identity'?'identity':'style',allowedChange:'只保留准确主体；不扩大权限。',
+        dataClass:'avg-authorized-reference',license:a.license,providerInputAllowed:true,derivativeUseAllowed:true,crop:null,mask:null,generatedSource:selected.source,
+        contentPolicy:{permittedFeatures:['配色'],excludedFeatures:['剧情信息']} }])[0]!
+      if(mode==='source')reference.generatedSource!.choice.authorReceiptHash='f'.repeat(64)
+      if(mode==='license')reference.license='replacement license'
+      if(mode==='grant')(reference as unknown as {providerInputAllowed:boolean}).providerInputAllowed=false
+      if(mode==='bytes'){
+        const blob=(await db.mediaBlobObjects.get(generated.raw.blobObjectId!))!,bad=new Uint8Array(blob.data.slice(0));bad[bad.length-1]^=1
+        await db.mediaBlobObjects.update(blob.id!,{data:bad.buffer})
+      }
+      const snapshot=()=>Promise.all(db.tables.map(table=>table.toArray())),before=await snapshot()
+      await expect(readAvgGeneratedReferenceBytesV2(mode==='work'?{...s.scope,workId:s.scope.workId+900}:s.scope,reference,
+        {...generated.requirement.family,...(mode==='identity'?{subjectKey:'other-subject'}:{})})).rejects.toThrow()
+      expect(await snapshot()).toEqual(before)
       expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
     })
     it.each(['pending-choice','missing-review','missing-choice-command','unknown-review-schema','changed-decoder','wrong-version','wrong-owner'] as const)('rejects %s before any stage-retention permission',async failure=>{
@@ -938,6 +963,8 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       const scope={projectId,workId:build.workId!,worldId:build.worldId!}
       const copy=await readAvgAdoptedGeneratedImageV2({scope,source:selected.source})
       expect(copy.data).toEqual(s.imageBytes);expect(copy.source).toEqual(selected.source)
+      const outbound=await avgVersionedReferenceTransportFixture({scope,...selected})
+      expect(outbound.projectUnchanged).toBe(true);expect(outbound.dispatch).toHaveBeenCalledTimes(1)
       await deleteWork(scope.workId)
       expect((await readAvgAdoptedGeneratedImageV2({scope:s.scope,source:selected.source})).data).toEqual(s.imageBytes)
       await expect(readAvgAdoptedGeneratedImageV2({scope,source:selected.source})).rejects.toThrow()
@@ -1197,6 +1224,9 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       const copyScope={projectId,worldId:copy.worldId,workId:copy.workId}
       expect((await verifyStoredProductBuildPreview(copy)).previewHash).toBe(frozen.previewHash)
       expect((await readAvgAdoptedGeneratedImageV2({scope:copyScope,source:selected.source})).data).toEqual(s.imageBytes)
+      const outbound=await avgVersionedReferenceTransportFixture({scope:copyScope,...selected})
+      expect(outbound.projectUnchanged).toBe(true);expect(outbound.dispatch).toHaveBeenCalledTimes(1)
+      expect(outbound.reference.generatedSource?.version).toBe(3)
       await recoverImportedProductProductionProofsV1({scope:copyScope,productionId:copy.productionId})
       await verifyProductBuildTerminalArtifactSetV1({scope:copyScope,productionId:copy.productionId,buildId:copy.id!,expectedControlEpoch:copy.controlEpoch,expectedPlanHash:copy.planHash})
       await deleteWork(copyScope.workId!,copyScope)
@@ -1405,6 +1435,10 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       const projectId=await importProjectJSON(await exportProjectJSON(child.scope.projectId)),copy=(await db.productBuilds.where('projectId').equals(projectId).filter(b=>b.buildNumber===frozen.buildNumber).first())!
       const scope={projectId,worldId:copy.worldId,workId:copy.workId}
       expect((await readAvgAdoptedGeneratedImageV2({scope,source:selected.source})).data).toEqual(output)
+      const outbound=await avgVersionedReferenceTransportFixture({scope,...selected})
+      expect(outbound.projectUnchanged).toBe(true);expect(outbound.dispatch).toHaveBeenCalledTimes(1)
+      expect(outbound.reference.contentHash).toBe(processed!.contentHash)
+      expect(outbound.reference.generatedSource?.version).toBe(4)
       await recoverImportedProductProductionProofsV1({scope,productionId:copy.productionId})
       await verifyProductBuildTerminalArtifactSetV1({scope,productionId:copy.productionId,buildId:copy.id!,expectedControlEpoch:copy.controlEpoch,expectedPlanHash:copy.planHash})
       await deleteWork(scope.workId);expect((await readAvgAdoptedGeneratedImageV2({scope:child.scope,source:selected.source})).data).toEqual(output)
