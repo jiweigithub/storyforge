@@ -16,7 +16,8 @@ export interface TtrpgOpenVoiceJobReaderV1 {
   kind: 'original-local-voice-job-reader-v1'
   read: (identity: TtrpgOpenVoiceJobIdentityV1, signal?: AbortSignal) => Promise<TtrpgOpenVoiceJobStatusV1>
 }
-function parseStatus(value: unknown, identity: TtrpgOpenVoiceJobIdentityV1): TtrpgOpenVoiceJobStatusV1 {
+export type TtrpgOpenVoiceJobControlIdentityV1 = Omit<TtrpgOpenVoiceJobIdentityV1, 'profileHash'> & { profileHash?: string }
+export function parseTtrpgOpenVoiceJobStatusForKernelV1(value: unknown, identity: TtrpgOpenVoiceJobControlIdentityV1): TtrpgOpenVoiceJobStatusV1 {
   const r = p.object(value, 'original local voice job status')
   const fields = ['jobKey','status','canStart','cancellationConfirmed','inputArtifactHash','profileHash','cancellationRequested','futureStartBlocked','hasResultFile','workerExecutionKind','automaticRetryAllowed']
   if (Object.keys(r).some(key => !fields.includes(key)) || r.jobKey !== identity.jobKey) p.fail('本机状态不属于原准确任务')
@@ -28,7 +29,8 @@ function parseStatus(value: unknown, identity: TtrpgOpenVoiceJobIdentityV1): Ttr
     if (futureStartBlocked !== (status === 'stop-requested-without-job')) p.fail('缺失任务的停止屏障不一致')
     return { jobKey: identity.jobKey, status, canStart: false, cancellationConfirmed: false, futureStartBlocked }
   }
-  if (r.inputArtifactHash !== identity.inputArtifactHash || r.profileHash !== identity.profileHash || r.automaticRetryAllowed !== false) p.fail('本机状态更换了原输入、版本或重试边界')
+  if (r.inputArtifactHash !== identity.inputArtifactHash || identity.profileHash !== undefined && r.profileHash !== identity.profileHash
+    || r.automaticRetryAllowed !== false) p.fail('本机状态更换了原输入、版本或重试边界')
   if (canStart && status !== 'waiting-for-slot' || cancellationConfirmed !== ['cancelled-before-start','cancelled-before-spawn','cancelled-confirmed'].includes(status)) p.fail('本机状态与启动或真实停止证明矛盾')
   return { jobKey: identity.jobKey, status, canStart, cancellationConfirmed,
     inputArtifactHash: p.hash(r.inputArtifactHash, 'original job input'), profileHash: p.hash(r.profileHash, 'original job profile'),
@@ -41,6 +43,6 @@ export function createTtrpgOpenVoiceJobReaderV1(): TtrpgOpenVoiceJobReaderV1 {
     // Capture the original identity before fetch yields to caller code.
     const frozen = { jobKey: identity.jobKey, inputArtifactHash: p.hash(identity.inputArtifactHash, 'original input'), profileHash: p.hash(identity.profileHash, 'original profile') }
     if (!/^ttrpg\.voice\.[1-9][0-9]*\.[a-f0-9]{64}$/.test(frozen.jobKey) || !frozen.jobKey.endsWith('.' + frozen.inputArtifactHash)) p.fail('原任务标识无效')
-    return parseStatus(JSON.parse(await requestText(PREFIX + encodeURIComponent(frozen.jobKey), {}, signal, 65536, profile.statusRequestTimeoutMs)), frozen)
+    return parseTtrpgOpenVoiceJobStatusForKernelV1(JSON.parse(await requestText(PREFIX + encodeURIComponent(frozen.jobKey), {}, signal, 65536, profile.statusRequestTimeoutMs)), frozen)
   } }
 }

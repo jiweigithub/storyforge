@@ -408,3 +408,62 @@ test('native unique voice child survives reload and exposes injected unknown dis
   expect(afterReload.desk.budget).toMatchObject({ requests: 1, characters: 6 })
   expect(await inspect(page, f.owner.sessionId)).toEqual(before)
 })
+
+// Real browser/IndexedDB/HTTP boundary, with a zero-worker protocol fixture.
+// This is not normal author UI, real speech quality or independent acceptance.
+test('native original voice stop survives reload and generic recovery without another inference or a guessed closed process', async ({ page }) => {
+  test.setTimeout(180000); await page.goto('./')
+  const f = await page.evaluate(async () => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    return (await load('/storyforge/tests/helpers/open-voice-execution-runtime.ts')).setupConfirmedVoiceExecutionRuntimeV1()
+  })
+  const before = await inspect(page, f.owner.sessionId)
+  const prepared = await page.evaluate(async f => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    return api.prepareTtrpgOpenLocalVoiceExecutionV1({ ...f.owner, requestKey: f.requestKey, decision: 'prepare-this-confirmed-local-voice-execution' })
+  }, f)
+  const jobKey = `ttrpg.voice.${prepared.runId}.${prepared.inputArtifactHash}`, calls: { method: string; path: string }[] = []
+  let stopped = false
+  await page.route('**/storyforge/local-tts/v1/jobs/**', async route => {
+    const req = route.request(), path = new URL(req.url()).pathname
+    calls.push({ method: req.method(), path })
+    expect(path).toBe('/storyforge/local-tts/v1/jobs/' + jobKey + (req.method() === 'POST' ? '/cancel' : ''))
+    if (req.method() === 'POST') { expect(req.postDataJSON()).toEqual({ decision: 'request-stop-original-local-voice-job' }); stopped = true }
+    else expect(req.method()).toBe('GET')
+    await route.fulfill({ json: { jobKey, status: stopped ? 'stop-requested-without-job' : 'not-found',
+      canStart: false, cancellationConfirmed: false, futureStartBlocked: stopped } })
+  })
+  const first = await page.evaluate(async f => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    const input = { ...f.owner, requestKey: f.requestKey }, queried = await api.readTtrpgOpenLocalVoiceJobV1(input)
+    const stop = await api.stopTtrpgOpenLocalVoiceJobV1({ ...input, decision: 'stop-this-original-local-voice-execution' })
+    return { queried, stop }
+  }, f)
+  expect(first.queried.backend.status).toBe('not-found')
+  expect(first.stop).toMatchObject({ runId: prepared.runId, runState: 'paused', runBarrierRecorded: true, futureInferenceBlocked: true, cancellationConfirmed: false })
+  await page.reload()
+  const result = await page.evaluate(async ({ f, prepared }) => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    const checkpoints = await load('/storyforge/src/lib/agent/run/checkpoint.ts'), execution = await load('/storyforge/src/lib/ttrpg/open-voice-execution.ts')
+    const { db } = await load('/storyforge/src/lib/db/schema.ts'), input = { ...f.owner, requestKey: f.requestKey }
+    const queried = await api.readTtrpgOpenLocalVoiceJobV1(input)
+    const recovery = await checkpoints.beginAgentRunRecoveryV1({ scope: f.owner.scope, productRuntimeSessionId: f.owner.sessionId, runId: prepared.runId })
+    const recovered = await checkpoints.completeAgentRunRecoveryV1({ scope: f.owner.scope, productRuntimeSessionId: f.owner.sessionId, runId: prepared.runId, checkpointHash: recovery.checkpointHash })
+    let models = 0, blocked = false
+    try { await execution.dispatchTtrpgOpenLocalVoiceForKernelV1({ ...input, decision: 'dispatch-this-original-local-voice-execution',
+      transport: { kind: 'local-offline-speech-v1', profileHash: prepared.profileHash, execute: async () => { models++; return 'must-not-infer' } } }) }
+    catch (error) { blocked = /屏障/.test((error as Error).message) }
+    const again = await api.stopTtrpgOpenLocalVoiceJobV1({ ...input, decision: 'stop-this-original-local-voice-execution' })
+    return { queried, recoveredState: recovered.projection.state, models, blocked, again, runs: await db.agentRuns.count(), media: await db.productMediaAssets.count(),
+      checkpoints: await db.agentRunCheckpoints.toArray(), modelRequests: (await db.agentRunEvents.toArray()).filter((e: any) => e.type === 'model.requested').length,
+      desk: await api.readTtrpgOpenVoiceRequestDeskV1(f.owner) }
+  }, { f, prepared })
+  expect(result.recoveredState).toBe('running'); expect(result.blocked).toBe(true); expect(result.models).toBe(0)
+  expect(result.queried).toMatchObject({ runId: prepared.runId, runState: 'paused', backend: { status: 'stop-requested-without-job', cancellationConfirmed: false }, generationAllowed: false })
+  expect(result.again).toMatchObject({ runBarrierRecorded: true, futureInferenceBlocked: true, cancellationConfirmed: false })
+  expect(result.runs).toBe(2); expect(result.media).toBe(0); expect(result.modelRequests).toBe(0); expect(result.checkpoints).toHaveLength(1)
+  expect(JSON.parse(result.checkpoints[0].resumePayloadJson)).toMatchObject({ jobKey, inputArtifactHash: prepared.inputArtifactHash, action: 'stop-original-job' })
+  expect(result.desk.budget).toMatchObject({ requests: 1, characters: 6 })
+  expect(calls).toHaveLength(4); expect(calls.filter(c => c.method === 'POST')).toHaveLength(2)
+  expect(await inspect(page, f.owner.sessionId)).toEqual(before)
+})

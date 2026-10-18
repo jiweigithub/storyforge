@@ -10,6 +10,7 @@ import { acceptAgentRunContract } from '../agent/run/contract'
 import { AgentRunStoreError, createAgentRunV1, readInstanceAgentRunV1, appendAgentRunEventV1, type AgentRunSnapshotV1 } from '../agent/run/event-store'
 import { canonicalStringify, hashCanonicalValue } from '../agent/run/hash'
 import { createContextManifestFromAssemblyV1, createContextManifestV2FromV1 } from '../agent/run/context-manifest'
+import { verifyAgentRunCheckpointV1 } from '../agent/run/checkpoint'
 import { AgentRunArtifactStoreError, recordAgentRunArtifactV1, readAgentRunArtifactExactV1 } from '../memory/artifact-store'
 import { finishTtrpgOpenVoiceIntentForKernelV1 } from './open-voice-intent-receipt'
 import { createTtrpgOpenVoiceExecutionInputForKernelV1, TTRPG_OPEN_VOICE_EXECUTION_STEP_V1 as stepId,
@@ -18,6 +19,50 @@ import { createTtrpgOpenVoiceExecutionInputForKernelV1, TTRPG_OPEN_VOICE_EXECUTI
 import * as p from './open-contract-parse'
 
 type Locator = { scope: WorkspaceScope; sessionId: number; viewerKey: string; requestKey: string }
+export const TTRPG_OPEN_VOICE_CONTROL_SCHEMA_V1 = 'storyforge.ttrpg-open-voice-control'
+export type TtrpgOpenVoiceControlV1 = { schema: typeof TTRPG_OPEN_VOICE_CONTROL_SCHEMA_V1; version: 1;
+  jobKey: string; inputArtifactHash: string } & ({ action: 'stop-original-job' } | { action: 'recover-original-raw-only'; expectedRawResponseHash: string })
+type ExecutionIdentity = { scope: WorkspaceScope; sessionId: number; runId: number; inputArtifactHash: string }
+
+/** The generation permission guard lives in this pinned source. Every checkpoint
+ * must retain its witnessed body, including controls hidden behind later generic
+ * checkpoints. A missing/corrupt control cannot be erased into a fresh permit. */
+export async function readTtrpgOpenVoiceExecutionControlsForKernelV1(request: ExecutionIdentity) {
+  const input = structuredClone(request)
+  const key = `ttrpg.voice.${input.runId}.${p.hash(input.inputArtifactHash, 'original execution input')}`
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const snapshot = await readInstanceAgentRunV1(input.scope, input.runId)
+    if (snapshot.run.productRuntimeSessionId !== input.sessionId || snapshot.run.portableRuntimeOriginJson !== undefined
+      || snapshot.contract.runtimeBindingHash !== input.inputArtifactHash) p.fail('停止屏障不属于本机原语音执行')
+    const rows = await db.agentRunCheckpoints.where('runId').equals(input.runId).toArray()
+    const events = snapshot.events.filter(e => e.type === 'checkpoint.created')
+    if (rows.length !== events.length || events.some(e => e.type !== 'checkpoint.created'
+      || rows.filter(r => r.checkpointHash === e.payload.checkpointHash && r.throughSequence === e.payload.throughSequence).length !== 1)) {
+      if ((await readInstanceAgentRunV1(input.scope, input.runId)).projection.lastSequence !== snapshot.projection.lastSequence) continue
+      p.fail('原语音检查点正文或事件缺失，不能推断没有停止屏障')
+    }
+    const controls: { checkpointId: number; checkpointHash: string; payload: TtrpgOpenVoiceControlV1 }[] = []
+    for (const row of rows) {
+      if (!await verifyAgentRunCheckpointV1(input.scope, row.id!, { productRuntimeSessionId: input.sessionId })) p.fail('原语音检查点验证失败，保留停止或恢复证据')
+      const value: unknown = row.resumePayloadJson === null ? null : p.json(row.resumePayloadJson)
+      if (!value || typeof value !== 'object' || Array.isArray(value) || !('schema' in value) || value.schema !== TTRPG_OPEN_VOICE_CONTROL_SCHEMA_V1) continue
+      const action = p.oneOf(p.object(value, 'voice control').action, ['stop-original-job', 'recover-original-raw-only'], 'voice control action')
+      const r = p.record(value, ['schema','version','action','jobKey','inputArtifactHash', ...(action === 'recover-original-raw-only' ? ['expectedRawResponseHash'] : [])], 'original voice control')
+      if (r.version !== 1 || r.jobKey !== key || r.inputArtifactHash !== input.inputArtifactHash) p.fail('原语音屏障的任务或输入身份不一致')
+      const common = { schema: TTRPG_OPEN_VOICE_CONTROL_SCHEMA_V1, version: 1, jobKey: key, inputArtifactHash: input.inputArtifactHash } as const
+      controls.push({ checkpointId: row.id!, checkpointHash: row.checkpointHash, payload: action === 'stop-original-job'
+        ? { ...common, action } : { ...common, action, expectedRawResponseHash: p.hash(r.expectedRawResponseHash, 'original expected raw digest') } })
+    }
+    const current = await readInstanceAgentRunV1(input.scope, input.runId)
+    if (current.projection.lastSequence !== snapshot.projection.lastSequence) continue
+    return { snapshot: current, controls }
+  }
+  p.fail('原语音控制证据持续变化，请核查同一任务，不启动模型')
+}
+async function assertMayInfer(input: ExecutionIdentity) {
+  const current = await readTtrpgOpenVoiceExecutionControlsForKernelV1(input)
+  if (current.controls.length || current.snapshot.projection.state !== 'running') p.fail('原语音已有停止/仅取回证据屏障或已暂停；不能重新推理')
+}
 async function basis(request: Locator) {
   const original = await finishTtrpgOpenVoiceIntentForKernelV1(request, true)
   const assembled = await assembleContext({ projectId: request.scope.projectId, scope: request.scope, productRuntimeSessionId: request.sessionId,
@@ -93,6 +138,7 @@ export async function prepareTtrpgOpenLocalVoiceExecutionV1(request: Locator & {
         snapshot = await createAgentRunV1({ scope: input.scope, productRuntimeSessionId: input.sessionId, worldGroupId: null,
           expectedRuntimeSessionHash: await hashCanonicalValue(b.original.owner.session), contract: b.expected.contract })
       }
+      if ((await readTtrpgOpenVoiceExecutionControlsForKernelV1({ ...input, runId: snapshot.run.id, inputArtifactHash: b.inputHash })).controls.length) p.fail('原语音已有停止/仅取回证据屏障，不能重新准备')
       if (!['planned', 'running'].includes(snapshot.projection.state) || snapshot.events.some(e => ['model.requested', 'model.responded', 'tool.called', 'tool.returned', 'candidate.persisted'].includes(e.type))) p.fail('原语音执行已派发或结束，请查看原任务，不会重新准备或发送')
       const append = (type: 'step.scheduled' | 'step.started' | 'context.assembled', payload: unknown) => appendAgentRunEventV1({
         scope: input.scope, productRuntimeSessionId: input.sessionId, runId: snapshot!.run.id, type, payload,
@@ -153,6 +199,8 @@ export async function dispatchTtrpgOpenLocalVoiceForKernelV1(request: Locator & 
   if (transport.kind !== 'local-offline-speech-v1' || transport.profileHash !== b.input.profileHash) p.fail('本机传输与原冻结语音版本不匹配')
   const jobKey = `ttrpg.voice.${snapshot.run.id}.${b.inputHash}`
   if (snapshot.events.some(e => e.type === 'model.requested')) return { status: 'dispatch-already-recorded' as const, runId: snapshot.run.id, jobKey, automaticRetryAllowed: false as const }
+  const executionIdentity = { scope: input.scope, sessionId: input.sessionId, runId: snapshot.run.id, inputArtifactHash: b.inputHash }
+  await assertMayInfer(executionIdentity)
   await assertMaterial(input, b, snapshot, await material(input, b, snapshot))
   const binding = snapshot.contract.executionBindings?.find(row => row.stepId === stepId)
   if (!binding || binding.version !== 2 || !binding.formalEntry || snapshot.projection.state !== 'running') p.fail('原语音任务缺少正式冻结绑定或已结束')
@@ -174,7 +222,7 @@ export async function dispatchTtrpgOpenLocalVoiceForKernelV1(request: Locator & 
       'src/lib/ttrpg/open-voice-execution.ts', async () => {
         // Frozen-entry verification is asynchronous. Consent/pause/identity
         // can change while it runs, so the last check belongs inside invoke.
-        await b.original.owner.assertCurrent(); signal?.throwIfAborted()
+        await b.original.owner.assertCurrent(); await assertMayInfer(executionIdentity); signal?.throwIfAborted()
         return transport.execute({ jobKey, inputArtifactHash: b.inputHash, execution: structuredClone(b.input), signal,
           assertCurrentBeforeStart: async () => {
             // Waiting/lease renewal may span harmless game progress. Re-read
@@ -182,6 +230,7 @@ export async function dispatchTtrpgOpenLocalVoiceForKernelV1(request: Locator & 
             // than granting new text or relying on an old state snapshot.
             const fresh = await basis(input)
             if (fresh.inputHash !== b.inputHash) p.fail('原文字、读法、受众或执行版本已经变化')
+            await assertMayInfer(executionIdentity)
             signal?.throwIfAborted()
           } })
       },
