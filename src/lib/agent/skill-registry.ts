@@ -1321,8 +1321,8 @@ export const AGENT_SKILLS = [
     contextSourceKeys: ['ttrpg.open.authoring-design'], optionalContextSourceKeys: [],
     inputPolicy: productProductionInputPolicy(['ttrpg.open.authoring-design', 'worldRelease']),
     contextCompression: compressionPolicy(['worldRelease']), contextGateway: PRODUCT_PRODUCTION_WORLD_GATEWAY_POLICY,
-    maxOutputTokens: 16_000, writeTargets: [], lastVerifiedAt: '2026-10-19',
-    regressionTests: ['R-TTRPGOPEN2-authoring-design-harness'],
+    maxOutputTokens: 16_000, writeTargets: [{ table: 'ttrpgAuthoringDrafts', fields: ['settingsJson'] }], lastVerifiedAt: '2026-10-19',
+    regressionTests: ['R-TTRPGOPEN2-authoring-design-harness', 'R-TTRPGOPEN2-authoring-design-adoption'],
   },
   {
     version: 1, id: 'extensions.generate', agentId: 'prose', defaultForAgent: false,

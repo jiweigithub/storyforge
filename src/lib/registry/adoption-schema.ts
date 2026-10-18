@@ -8,6 +8,8 @@ import type { AdoptionExtensionSpec, CollectionAdoptionSpec } from './types'
 import { REGISTRY_BY_NAME } from './project-tables'
 
 const ADOPTION_SCHEMAS_RAW: CollectionAdoptionSpec[] = [
+  { target: 'ttrpgAuthoringDrafts', identity: 'id', recordOnly: true, duplicatePolicy: 'error', required: ['settingsJson'],
+    autoStamps: [], ownerFrom: 'work', writePolicy: 'ttrpg-open-authoring-design-v1' },
   { target: 'extensionRecords', identity: 'id', recordOnly: true, duplicatePolicy: 'error', required: ['payload'], autoStamps: [], writePolicy: 'extension-record-v1' },
   {
     target: 'projects',
@@ -471,6 +473,9 @@ const ADOPTION_SCHEMAS_RAW: CollectionAdoptionSpec[] = [
 ]
 
 export const ADOPTION_EXTENSIONS: readonly AdoptionExtensionSpec[] = Object.freeze([
+  { id: 'ttrpg-authoring-draft-lifecycle', target: 'ttrpgAuthoringDrafts', entrypoints: ['src/lib/ttrpg/authoring-service.ts'],
+    policyRegistry: 'parseTtrpgSettings + revision CAS + PROJECT_TABLES + ttrpg-open-authoring-design-v1 adopt writePolicy',
+    reason: '原人工配置、出口选择和制作指针生命周期继续由领域服务处理；模型设计必须经原始回答/来源证明、作者确认和adopt事务委托同一保存服务。', reviewAfter: '2027-04-19' },
   {
     id: 'ttrpg-human-memory-lifecycle', target: 'ttrpgNarrativeMemories',
     entrypoints: ['src/lib/ttrpg/runtime-commands.ts', 'src/lib/ttrpg/runtime-branch.ts'],

@@ -133,16 +133,19 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
   const modelIdentity = input.runAI ? { provider: 'test-adapter', model: 'injected' }
     : { provider: resolved!.config.provider, model: resolved!.config.model }
   const requestBindingHash = await bindingHash({ source, request, messages, modelIdentity, readResourceKeys })
-  const binding = { stepId: STEP, ...await createAgentSkillExecutionBindingV2(skill), formalEntry: await freezeFormalAIEntryBindingV1(ENTRY) }
+  const binding = { stepId: STEP, ...await createAgentSkillExecutionBindingV2(skill, {
+    writeTargets: [{ table: 'ttrpgAuthoringDrafts', fields: ['settingsJson'], mode: 'author-confirmed' }],
+  }), formalEntry: await freezeFormalAIEntryBindingV1(ENTRY) }
   await assertTtrpgOpenAuthoringDesignSourceCurrentV1(source)
   let snapshot = await createAgentRunV1({ scope: input.scope, worldGroupId: null, contract: {
     version: 3, executionBoundary: 'formal', objective: request.instruction.slice(0, 4000), workflowKind: 'direct-generation',
     scope: { projectId: input.scope.projectId, worldGroupId: null }, executionBindings: [binding], runtimeBindingHash: requestBindingHash,
-    permissions: { contextSourceKeys: [...binding.contextSourceKeys], writeTargets: [] },
+    permissions: { contextSourceKeys: [...binding.contextSourceKeys], writeTargets: [...binding.writeTargets] },
     budget: { maxModelCalls: 1, maxToolCalls: 0, maxInputTokens: 64_000, maxOutputTokens: skill.maxOutputTokens, maxAttemptsPerStep: 1 },
     failurePolicy: { onProtocolError: 'fail', onVerificationFailure: 'fail', onStaleInput: 'pause-for-author' },
-    acceptance: [{ id: 'design.candidate-valid', kind: 'deterministic-check', required: true }],
-    verificationPlan: [{ id: 'design.terminal', kind: 'terminal', verifier: 'ttrpg-open-authoring-design-v1', criterionIds: ['design.candidate-valid'] }],
+    acceptance: ['design.candidate-valid', 'design.source-current', 'design.author-adopted'].map(id => ({ id, kind: 'deterministic-check' as const, required: true })),
+    verificationPlan: [{ id: 'design.terminal', kind: 'terminal', verifier: 'ttrpg-open-authoring-design-adoption-v1',
+      criterionIds: ['design.candidate-valid', 'design.source-current', 'design.author-adopted'] }],
   } })
   let transportResult: ChatResult | undefined
   try {
@@ -291,5 +294,8 @@ export async function readTtrpgOpenAuthoringDesignReviewV1(input: { scope: Works
   try { await assertTtrpgOpenAuthoringDesignSourceCurrentV1(evidence.source) }
   catch (error) { current = false; staleReason = error instanceof Error ? error.message : String(error) }
   return { candidate, source: evidence.source, request: evidence.request, readWorldResourceKeys: evidence.readResourceKeys,
-    runStatus: snapshot.run.status, current, staleReason }
+    runStatus: snapshot.run.status, current, staleReason,
+    adoptionAllowed: snapshot.contract.executionBindings?.some(binding => binding.stepId === STEP && binding.version === 2
+      && binding.writeTargets.some(target => target.table === 'ttrpgAuthoringDrafts' && target.mode === 'author-confirmed' && target.fields.includes('settingsJson'))
+      && binding.formalEntry && JSON.parse(binding.formalEntry.bindingJson).adoptAllowed === true) === true }
 }

@@ -445,7 +445,7 @@ export interface CollectionAdoptionSpec {
   identity: 'id' | 'name' | CompositeIdentity
   /** 只允许通过 recordId 定点更新，禁止 AI 新增集合行。 */
   recordOnly?: boolean
-  writePolicy?: 'extension-record-v1'
+  writePolicy?: 'extension-record-v1' | 'ttrpg-open-authoring-design-v1'
   duplicatePolicy: 'skip' | 'update' | 'merge' | 'error'
   /** 必填字段;缺失则跳过该条 */
   required: string[]

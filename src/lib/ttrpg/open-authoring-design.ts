@@ -3,3 +3,5 @@
 export * from './open-authoring-design-contract'
 export * from './open-authoring-design-source'
 export * from './open-authoring-design-harness'
+export { adoptTtrpgOpenAuthoringDesignV1, reconcileTtrpgOpenAuthoringDesignAdoptionV1,
+  readTtrpgOpenAuthoringDesignAdoptionV1, dismissTtrpgOpenAuthoringDesignRequestV1 } from './open-authoring-design-adoption'
