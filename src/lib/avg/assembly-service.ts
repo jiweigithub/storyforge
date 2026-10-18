@@ -50,7 +50,7 @@ import { avgPendingVoiceRequestsV1, hashAvgVoiceDeclarationForRecoveryV1, prepar
   readAvgVoiceRecoveryReplacementV1, validateAvgVoiceRecoveryV1 } from './voice-recovery'
 import { parseAvgVoiceRecoveryV1, type AvgVoiceRecoveryV1 } from './voice-recovery-contract'
 import type { AvgVisualPlanningDraftV4 } from './visual-planning-workspace'
-import { assertAvgVisualPlanningRestartKnownV4 } from './visual-planning-restart'
+import { assertAvgVisualPlanningRestartKnownV4, assertAvgVisualStageRetentionKnownV4 } from './visual-planning-restart'
 
 const commandId = (label: string) => `avg.assembly.${label}.${crypto.randomUUID()}`
 
@@ -535,7 +535,10 @@ export async function readAvgAssemblyWorkspaceV1(scope: WorkspaceScope, selected
   const visualRecordedUsage=details?.build?.planRevision&&details.executionBrief?.avgVisualPlanning?projectProductProductionRecordedUsageV1(details.build.budgetLedgerJson):null
   const visualProgress=details?.build?.planRevision&&details.executionBrief?.avgVisualPlanning&&details.brief?.revision===details.build.briefRevision
     ?await projectProductProductionSchedulerV1({scope,productionId:details.production.id!}):null
+  // A pending Brief owns no current image task. Original images are read via
+  // their exact historical source when explicitly preparing retention.
   const imageDefinition: (Pick<AvgAssemblyBriefV2,'mediaBatch'|'imageProcessing'|'imageRecovery'> & {imageBinding:import('./visual-planning-brief').AvgVisualImageBindingV4})|null = details?.build?.id && details.executionBrief?.avgVisualPlanning
+    && details.brief?.revision===details.build.briefRevision
     && ['building','integrating','validating','preview-ready','release-ready','released'].includes(details.build.status)
     ? artifacts.some(row => row.artifactKey === 'avg.media.compiled-visual-requirements' && row.status === 'accepted')
       ? await readAvgImageConsumptionDefinitionV4({scope,buildId:details.build.id,brief:details.executionBrief}) : null
@@ -566,10 +569,13 @@ async function expectedBaselinePackageHash(details: ProductProductionDetailsV1) 
 
 /** Prepare a reviewable Brief only. User start and per-artifact adoption remain explicit. */
 export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; expectedDraftRevision: number;
-  imageRecovery?:AvgImageRecoveryV1; voiceRecovery?: AvgVoiceRecoveryV1; visualPlanning?: AvgVisualPlanningDraftV4 }) {
+  imageRecovery?:AvgImageRecoveryV1; voiceRecovery?: AvgVoiceRecoveryV1; visualPlanning?: AvgVisualPlanningDraftV4;
+  visualStageContinuation?:{expectedBuildId:number;expectedBuildRevision:number} }) {
   let draft = await readAvgDraftV1(input.scope)
   if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg] 编辑草稿已变化，请刷新后再准备方案')
   let workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
+  if(input.visualStageContinuation&&!avgMediaProductionEnabledV2())throw new Error('[avg-visual-retain] 实验性图片沿用未启用')
+  if(input.visualStageContinuation&&(!draft.productionId||input.visualPlanning||input.imageRecovery||input.voiceRecovery||workspace.mediaBatch||workspace.voiceProduction))throw new Error('[avg-visual-retain] 请单独保留专业演出图并准备零调用组装方案')
   if (input.visualPlanning && (input.imageRecovery || input.voiceRecovery)) throw new Error('[avg-visual-plan] 专业视觉不能借用旧批次恢复合同')
   let visualAdapter:import('./media-reference-contract').AvgImageAdapterIdV4='agnes.image-2.1-flash.v1'
   if(input.visualPlanning){
@@ -641,19 +647,28 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
   if(recovery&&canonicalProductProductionJsonV2(imageBinding)!==canonicalProductProductionJsonV2(retainedBinding))throw new Error('[avg-media] 图片路由已改变，不能在同一恢复中复用旧原图')
   let productionId = draft.productionId
   let basePackageHash: string | null = null
+  let continuationState: {productionRevision:number;buildId:number;buildRevision:number}|null=null
   if (productionId != null) {
     const details = await readProductProductionDetailsV1(input.scope,productionId,['avg'])
+    if(input.visualStageContinuation&&!details.build)throw new Error('[avg-visual-retain] 原专业版本已变化或不存在')
     if (details.build) {
       const old = details.executionBrief
       const frozenSource=details.briefHistory.find(row=>row.revision===details.build!.briefRevision&&row.briefHash===details.build!.briefHash)
       const reference=(await listWorldReferenceCatalogV1(input.scope)).find(entry=>entry.reference.localReleaseRecordId===draft.worldReleaseId)?.reference
-      if ((!old?.avgAssembly&&!(old?.avgVisualPlanning&&visual)) || !frozenSource || frozenSource.sourceWorldReleaseId!==draft.worldReleaseId || !reference
+      if ((!old?.avgAssembly&&!(old?.avgVisualPlanning&&(visual||input.visualStageContinuation))) || !frozenSource || frozenSource.sourceWorldReleaseId!==draft.worldReleaseId || !reference
         ||reference.releaseHash!==old.source.worldContentHash||frozenSource.sourceWorldContentHash!==reference.releaseHash) throw new Error('[avg] 当前修订不能替换产品协议或世界来源')
       if(old.avgVisualPlanning){
-        if(details.build.previewHash||!['cancelled','failed','recovery-required'].includes(details.build.status))throw new Error('[avg-visual-restart] 请先处理未封存的失败或明确停止；已冻结版本须走媒资沿用合同')
-        await assertAvgVisualPlanningRestartKnownV4(input.scope,details.build)
-        if(old.avgVisualPlanning.scope.templates.some(t=>workspace.presentation.stage.assets.some(a=>a.assetKey===t.parameters.assetKey)))throw new Error('[avg-visual-restart] 已选图片仍在演出草稿；须通过准确媒资沿用合同保留，不能按全新请求覆盖')
+        const continuation=input.visualStageContinuation
+        if(continuation){
+          if(details.build.id!==continuation.expectedBuildId||details.build.stateRevision!==continuation.expectedBuildRevision
+            ||!details.build.previewHash&&!['cancelled','failed','recovery-required'].includes(details.build.status))throw new Error('[avg-visual-retain] 原专业版本或草稿已变化，请重新核对')
+          continuationState={productionRevision:details.production.stateRevision,buildId:details.build.id!,buildRevision:details.build.stateRevision}
+        }else if(details.build.previewHash||!['cancelled','failed','recovery-required'].includes(details.build.status))throw new Error('[avg-visual-restart] 请先处理未封存的失败或明确停止；已冻结版本须走媒资沿用合同')
+        if(continuation)await assertAvgVisualStageRetentionKnownV4(input.scope,details.build)
+        else await assertAvgVisualPlanningRestartKnownV4(input.scope,details.build)
+        if(!continuation&&old.avgVisualPlanning.scope.templates.some(t=>workspace.presentation.stage.assets.some(a=>a.assetKey===t.parameters.assetKey)))throw new Error('[avg-visual-restart] 已选图片仍在演出草稿；须通过准确媒资沿用合同保留，不能按全新请求覆盖')
       }
+      else if(input.visualStageContinuation)throw new Error('[avg-visual-retain] 此操作只接受原专业视觉版本')
       const pending = details.production.status === 'brief-ready' && details.brief?.revision !== details.build.briefRevision
         ? parseProductProductionBriefV3(details.brief!.briefJson) : null
       if (details.build.previewHash) {
@@ -666,11 +681,37 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
         if(workspace.mediaBatch&&!recovery)await assertAvgKnownImageRetriesV1(input.scope,details.build,workspace.mediaBatch.requirements.map(r=>r.requirementKey))
         basePackageHash = await expectedBaselinePackageHash(details)
       }
-      const inherited=old.avgVisualPlanning?workspace:await prepareAvgInheritedStageDraftV1({scope:input.scope,workspace,build:details.build,
+      const inherited=old.avgVisualPlanning&&!input.visualStageContinuation?workspace:await prepareAvgInheritedStageDraftV1({scope:input.scope,workspace,build:details.build,
         productionKey:details.production.productionKey,targetBuildNumber:Math.max(...details.buildHistory.map(row=>row.buildNumber))+1,
         worldContentHash:old.source.worldContentHash,...(voiceRecovery ? { voiceRecovery } : {})})
-      if (!pending&&!old.avgVisualPlanning) await beginProductProductionEvolutionV1({ scope:input.scope,productionId,expectedStateRevision:details.production.stateRevision,
-        userText:'作者修订 AVG 系统、对白、演出和媒资，生成新预览并保留旧版本及存档',affectedLanes:['content','product','visual','audio'] })
+      if(input.visualStageContinuation&&!inherited.presentation.inheritedImages?.some(entry=>entry.source.version===2
+        &&entry.source.productionKey===details.production.productionKey&&entry.source.raw.buildNumber===details.build!.buildNumber))throw new Error('[avg-visual-retain] 当前演出没有此专业版本准确已采用的旧图')
+      const continuationCommandId=input.visualStageContinuation?`avg.keep.${await hashProductProductionValueV2({schema:'storyforge.avg.visual-stage-continuation',version:1,
+        productionKey:details.production.productionKey,buildNumber:details.build.buildNumber,briefHash:details.build.briefHash,planHash:details.build.planHash,workspace:inherited})}`:undefined
+      if(input.visualStageContinuation&&pending){
+        const prior=await db.productProductionCommands.where('[productionId+commandId]').equals([productionId,continuationCommandId!]).first()
+        if(!prior||!await assertRecordInScope(input.scope,'productProductionCommands',prior,{owner:'work'})||prior.type!=='evolve'||prior.status!=='succeeded'
+          ||JSON.parse(prior.resultJson).briefRevision!==details.brief!.revision)throw new Error('[avg-visual-retain] 已有其他待开始方案，请先核对；不会覆盖现有方案')
+      }
+      // Persist the reviewable source draft before creating an evolution Brief.
+      // The deterministic existing command lets an explicit identical retry
+      // finish after a later Brief-save failure, including after full remap.
+      if(continuationState){
+        const expected=continuationState
+        draft=await db.transaction('rw',scopeTransactionTables(db.avgAuthoringDrafts,db.productProductions,db.productBuilds),async()=>{
+          const current=await db.productProductions.get(details.production.id!),build=await db.productBuilds.get(expected.buildId)
+          if(!current||!await assertRecordInScope(input.scope,'productProductions',current,{owner:'work'})
+            ||current.stateRevision!==expected.productionRevision||!build||build.stateRevision!==expected.buildRevision
+            ||current.currentBuildNumber!==build.buildNumber)throw new Error('[avg-visual-retain] 制作方案或原版本在核对期间变化，请刷新后重试')
+          return canonicalProductProductionJsonV2(inherited)!==canonicalProductProductionJsonV2(workspace)
+            ? saveAvgAuthorWorkspaceV1(input.scope,draft.revision,inherited) : draft
+        });workspace=inherited
+      }
+      if (!pending&&(!old.avgVisualPlanning||input.visualStageContinuation&&!!details.build.previewHash)) {
+        await beginProductProductionEvolutionV1({ scope:input.scope,productionId,expectedStateRevision:details.production.stateRevision,
+        userText:'作者修订 AVG 系统、对白、演出和媒资，生成新预览并保留旧版本及存档',affectedLanes:['content','product','visual','audio'],...(continuationCommandId?{commandId:continuationCommandId}:{}) })
+        if(continuationState)continuationState.productionRevision++
+      }
       if(canonicalProductProductionJsonV2(inherited)!==canonicalProductProductionJsonV2(workspace)){
         draft=await saveAvgAuthorWorkspaceV1(input.scope,draft.revision,inherited);workspace=inherited
       }
@@ -683,8 +724,10 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
     draft=await bindAvgDraftProductionV1(input.scope,draft.revision,productionId)
   }
   const details = await readProductProductionDetailsV1(input.scope,productionId,['avg'])
+  if(continuationState&&(details.production.stateRevision!==continuationState.productionRevision
+    ||details.build?.id!==continuationState.buildId||details.build.stateRevision!==continuationState.buildRevision))throw new Error('[avg-visual-retain] 制作方案或原版本在核对期间变化，请刷新后重试')
   const priorBrief = details.brief ? parseProductProductionBriefV3(details.brief.briefJson) : null
-  if (priorBrief?.avgVisualPlanning && !visual) throw new Error('[avg-visual-plan] 当前专业视觉方案不能按旧版组装重新解释')
+  if (priorBrief?.avgVisualPlanning && !visual&&!input.visualStageContinuation) throw new Error('[avg-visual-plan] 当前专业视觉方案不能按旧版组装重新解释')
   const sourceValue = priorBrief ?? await (async () => {
     const suggestions = await suggestProductStartingPoints({ scope:input.scope,worldReleaseId:draft.worldReleaseId! })
     if (!suggestions.suggestions[0]) throw new Error('[avg] 当前来源没有可用定向入口')
@@ -727,7 +770,7 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
     unresolvedDecisionKeys:[] })
   if (visual) brief = parseProductProductionBriefV3((await import('./visual-planning-workspace')).completeAvgVisualPlanningBriefV4(brief,visual))
   const saved = await executeProductProductionCommand({ scope:input.scope,productionId,command:{ type:'save-brief-revision',commandId:commandId('brief'),
-    expectedStateRevision:details.production.stateRevision,parentRevision:details.brief?.revision ?? null,brief } })
+    expectedStateRevision:continuationState?.productionRevision??details.production.stateRevision,parentRevision:details.brief?.revision ?? null,brief } })
   if (!saved.ok) throw new Error(String(saved.result.message ?? saved.errorCode))
   // Persist the reviewable intent first. If the independent draft CAS fails,
   // explicit start can finish this exact saved proposal after revalidation.

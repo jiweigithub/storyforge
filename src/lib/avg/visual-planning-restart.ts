@@ -6,12 +6,23 @@ import { parseProductProductionPlanV3 } from '../product-production/plan'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { assertProductProductionBudgetLedgerV1 } from '../product-production/scheduler'
 import { readAgentRunV1 } from '../agent/run/event-store'
+import { completedAgentRunEvidencePrefixV1 } from '../agent/run/projection'
 
 /** This is a fresh, explicitly authorized Build boundary, never permission
  * to replay an old Run or copy its adoption. Renaming an image/role cannot
  * hide an unresolved ancestor request. Unknown price alone is not an unknown
  * result: a received queue-full response still has one known failed attempt. */
 export async function assertAvgVisualPlanningRestartKnownV4(scope:WorkspaceScope,source:ProductBuildRecordV1){
+  return assertAvgVisualPlanningRequestsKnownV4(scope,source,false)
+}
+
+/** Local zero-provider stage retention may read an exact imported completed
+ * prefix. This never resumes the stale Run or authorizes a new paid request. */
+export async function assertAvgVisualStageRetentionKnownV4(scope:WorkspaceScope,source:ProductBuildRecordV1){
+  return assertAvgVisualPlanningRequestsKnownV4(scope,source,true)
+}
+
+async function assertAvgVisualPlanningRequestsKnownV4(scope:WorkspaceScope,source:ProductBuildRecordV1,localRetention:boolean){
   const originals:ProductBuildRecordV1[]=[]
   let build:ProductBuildRecordV1|undefined=source
   const visited=new Set<number>()
@@ -47,10 +58,12 @@ export async function assertAvgVisualPlanningRestartKnownV4(scope:WorkspaceScope
         if(!key.startsWith('avg.visual.propose.')&&!key.startsWith('avg.media.generate.'))continue
         const snapshot=await readAgentRunV1(scope,run.id!)
         const binding=snapshot.contract.scope.productProduction
+        const projection=localRetention&&run.status==='running'
+          ? completedAgentRunEvidencePrefixV1(snapshot.events)??snapshot.projection : snapshot.projection
         if(binding?.taskKey!==key||binding.productBuildId!==build.id||binding.buildNumber!==build.buildNumber
           ||binding.planHash!==build.planHash||binding.controlEpoch!==plan.controlEpoch
-          ||!['completed','failed','cancelled'].includes(snapshot.projection.state))throw new Error('[avg-visual-restart] 旧请求 Run 尚未完成或与任务不一致')
-        if(Object.values(snapshot.projection.steps).some(step=>unknown(step.failureCode??null)))throw new Error('[avg-visual-restart] 旧请求 Run 保留未知结果；缓存记账不能授权重发')
+          ||!['completed','failed','cancelled'].includes(projection.state))throw new Error('[avg-visual-restart] 旧请求 Run 尚未完成或与任务不一致')
+        if(Object.values(projection.steps).some(step=>unknown(step.failureCode??null)))throw new Error('[avg-visual-restart] 旧请求 Run 保留未知结果；缓存记账不能授权重发')
         for(const event of snapshot.events)if(event.type==='model.requested'||event.type==='tool.called'){
           if(!ledger.attempts.some(a=>a.taskKey===key&&a.runId===run.id&&a.attempt===event.payload.attempt&&a.usageKnown))throw new Error('[avg-visual-restart] 已发送请求缺少准确终态记账；不能重发')
         }

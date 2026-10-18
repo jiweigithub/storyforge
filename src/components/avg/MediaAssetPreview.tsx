@@ -3,8 +3,8 @@ import type { FrozenRuntimeMediaAssetV2, ProductMediaKind, WorkspaceScope } from
 import { readAvgDraftMediaV1 } from '../../lib/avg/editor-service'
 import { readAvgRawImageCandidateBytesV2, readAvgRetainedImageCandidateBytesV1,readAvgProcessedImageCandidateBytesV1 } from '../../lib/avg/assembly-service'
 import { canonicalProductProductionJsonV2 } from '../../lib/product-production/hash'
-import { readAvgAdoptedGeneratedImageV1 } from '../../lib/avg/media-generated-reference'
-import type { AvgGeneratedReferenceSourceV1 } from '../../lib/avg/media-generated-reference-contract'
+import { readAvgAdoptedGeneratedImageV2 } from '../../lib/avg/media-generated-reference'
+import type { AvgGeneratedImageSource } from '../../lib/avg/media-generated-reference-contract'
 import { readAvgAdoptedGeneratedVoiceV1 } from '../../lib/avg/generated-voice-source'
 import type { AvgGeneratedVoiceSourceV1 } from '../../lib/avg/stage-voice-source-contract'
 import type { AvgHistoricalVisualBoundaryV4 } from '../../lib/avg/visual-image-history'
@@ -16,7 +16,7 @@ export interface AvgRawPreviewReference { requirementKey: string; version: numbe
 /** Local URLs are created only after the existing owner/hash proof reader.
  * Provider URL strings and arbitrary Blob IDs are never displayed directly. */
 export default function MediaAssetPreview({ scope, asset, productionId, raw, generatedSource, generatedVoiceSource, onObserved,comparisonAspectRatio,smallImageSizes,caption }: {
-  scope: WorkspaceScope; asset: FrozenRuntimeMediaAssetV2; productionId?: number | null; raw?: AvgRawPreviewReference; generatedSource?: AvgGeneratedReferenceSourceV1; onObserved?: () => void
+  scope: WorkspaceScope; asset: FrozenRuntimeMediaAssetV2; productionId?: number | null; raw?: AvgRawPreviewReference; generatedSource?: AvgGeneratedImageSource; onObserved?: () => void
   comparisonAspectRatio?:number;smallImageSizes?:readonly number[];caption?:string
   generatedVoiceSource?: AvgGeneratedVoiceSourceV1
 }) {
@@ -49,7 +49,7 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
         return candidate.data
       }
       if(generatedSourceJson){
-        const candidate=await readAvgAdoptedGeneratedImageV1({scope,source:JSON.parse(generatedSourceJson) as AvgGeneratedReferenceSourceV1})
+        const candidate=await readAvgAdoptedGeneratedImageV2({scope,source:JSON.parse(generatedSourceJson) as AvgGeneratedImageSource})
         if(canonicalProductProductionJsonV2(candidate.asset)!==canonicalProductProductionJsonV2(current))throw new Error('显示图片与准确生成参考不一致')
         return candidate.data
       }
@@ -72,7 +72,7 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
   return <figure className="avg-assembly-media-preview"><figcaption>{caption??asset.name} · {AVG_MEDIA_KIND_LABELS[asset.kind]}</figcaption>
     {error && <><p role="alert">{error}</p><button className="lf-action" aria-label={`重新读取媒资：${asset.name}`} onClick={()=>setReadAttempt(value=>value+1)}>重新读取媒资</button><p>重新核验已保存文件与准确来源，不会新增生成请求。</p></>}
     {asset.mimeType.startsWith('audio/') ? <audio ref={audio} controls src={url || undefined} preload="metadata" />
-      : url ? <><img key={url} src={url} alt={asset.altText || asset.name} onLoad={onObserved} onError={historicalJson?()=>setError('原图无法解码，请重新读取并核对文件。'):undefined} style={comparisonAspectRatio?{aspectRatio:comparisonAspectRatio}:undefined}/>
+      : url ? <><img key={url} src={url} alt={asset.altText || asset.name} onLoad={onObserved} onError={historicalJson||generatedSourceJson?()=>setError('原图无法解码，请重新读取并核对文件。'):undefined} style={comparisonAspectRatio?{aspectRatio:comparisonAspectRatio}:undefined}/>
         {smallImageSizes&&<div className="avg-review-icon-sizes">{smallImageSizes.map(size=><img key={size} src={url} alt={`${asset.name} · ${size} 像素观察`} style={{width:size,height:size,objectFit:'contain'}}/>)}</div>}</> : <p>读取图片…</p>}
     <p>{asset.width && asset.height ? `${asset.width} × ${asset.height}` : `${((asset.durationMs ?? 0) / 1000).toFixed(2)} 秒`} · {Math.ceil(asset.byteSize / 1024)} KiB</p>
     <p>来源：{asset.source} · 授权：{asset.license}</p>

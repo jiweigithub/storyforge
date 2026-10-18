@@ -4,10 +4,11 @@ import type { WorkspaceScope } from '../types'
 import { assertRecordInScope, resolveScope } from '../workspace/scope'
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
-import { readAvgAdoptedGeneratedReferenceChoiceV1 } from './author-artifacts'
+import { readAvgAdoptedGeneratedReferenceChoiceV1, readAvgAdoptedGeneratedReferenceChoiceV4 } from './author-artifacts'
 import { parseAvgAuthorMediaChoice } from './media-production-contract'
 import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
-import { parseAvgGeneratedReferenceSourceV1, type AvgGeneratedReferenceSourceV1 } from './media-generated-reference-contract'
+import { parseAvgGeneratedReferenceSourceV1, parseAvgGeneratedReferenceSourceV2, parseAvgGeneratedImageSource,
+  type AvgGeneratedReferenceSourceV1, type AvgGeneratedImageSource } from './media-generated-reference-contract'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V1, type AvgMediaReferenceV1 } from './media-reference-contract'
 
 type Evidence = Awaited<ReturnType<typeof readAvgAdoptedGeneratedReferenceChoiceV1>>
@@ -66,6 +67,42 @@ export async function prepareAvgAdoptedGeneratedImageV1(input:{scope:WorkspaceSc
   const evidence=await readAvgAdoptedGeneratedReferenceChoiceV1({scope,buildId:row.buildId,controlEpoch:row.controlEpoch,
     artifactKey:row.artifactKey,version:row.version,contentHash:row.contentHash})
   return {asset:evidence.choice.asset,source:sourceOf(evidence),referenceOnly:evidence.choice.referenceOnly,sourceWorldContentHash:evidence.sourceWorldContentHash}
+}
+
+const sourceOfV4=(e:Awaited<ReturnType<typeof readAvgAdoptedGeneratedReferenceChoiceV4>>)=>parseAvgGeneratedReferenceSourceV2({
+  schema:'storyforge.avg.generated-reference-source',version:2,productionKey:e.productionKey,requirementKey:e.choice.requirementKey,
+  raw:e.rawProof,compilation:e.compilation,choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})
+
+/** Local stage sources dispatch by their explicit version. Old V1 readers
+ * and outbound reference parsing retain their existing closed contracts. */
+export async function prepareAvgAdoptedGeneratedImageV2(input:{scope:WorkspaceScope;choiceId:number}){
+  const scope=await resolveScope({scope:input.scope}),row=await db.productBuildArtifacts.get(input.choiceId)
+  if(!row||row.status!=='accepted'||!row.artifactKey.startsWith('avg.media.choice.')||!await assertRecordInScope(scope,'productBuildArtifacts',row,{owner:'work'}))throw new Error('[avg-media] 需要当前作品准确的已采用生成图')
+  const build=await db.productBuilds.get(row.buildId),brief=build?await db.productProductionBriefs.where('[productionId+revision]').equals([build.productionId,build.briefRevision]).first():null
+  if(!brief||!JSON.parse(brief.briefJson).avgVisualPlanning)return prepareAvgAdoptedGeneratedImageV1(input)
+  const evidence=await readAvgAdoptedGeneratedReferenceChoiceV4({scope,buildId:row.buildId,controlEpoch:row.controlEpoch,
+    artifactKey:row.artifactKey,version:row.version,contentHash:row.contentHash})
+  return {asset:evidence.choice.asset,source:sourceOfV4(evidence),referenceOnly:evidence.choice.referenceOnly,sourceWorldContentHash:evidence.sourceWorldContentHash}
+}
+
+export async function readAvgAdoptedGeneratedImageV2(input:{scope:WorkspaceScope;source:AvgGeneratedImageSource}){
+  const source=parseAvgGeneratedImageSource(input.source)
+  if(source.version===1)return readAvgAdoptedGeneratedImageV1({...input,source})
+  const scope=await resolveScope({scope:input.scope})
+  const productions=await db.productProductions.where('workId').equals(scope.workId)
+    .filter(p=>p.productType==='avg'&&p.productionKey===source.productionKey).limit(2).toArray()
+  if(productions.length!==1||!productions[0].id||!await assertRecordInScope(scope,'productProductions',productions[0],{owner:'work'}))throw new Error('[avg-visual-history] 原图制作来源不存在、重复或跨作品')
+  const build=await db.productBuilds.where('[productionId+buildNumber]').equals([productions[0].id,source.raw.buildNumber]).first()
+  if(!build?.id||build.briefHash!==source.raw.briefHash||build.planHash!==source.raw.planHash||!await assertRecordInScope(scope,'productBuilds',build,{owner:'work'}))throw new Error('[avg-visual-history] 原图版本已变化')
+  const evidence=await readAvgAdoptedGeneratedReferenceChoiceV4({scope,buildId:build.id,controlEpoch:source.raw.controlEpoch,...source.choice})
+  if(!same(sourceOfV4(evidence),source))throw new Error('[avg-visual-history] 原图、编译、评审或作者证明已变化')
+  const blob=evidence.image.blobObjectId===null?null:await db.mediaBlobObjects.get(evidence.image.blobObjectId)
+  if(!blob||!await assertRecordInScope(scope,'mediaBlobObjects',blob,{owner:'work'})||blob.contentHash!==evidence.choice.asset.contentHash
+    ||blob.mimeType!==evidence.choice.asset.mimeType||blob.byteSize!==evidence.choice.asset.byteSize)throw new Error('[avg-visual-history] 原图缺少准确同作品字节')
+  const read=()=>readVerifiedMediaBlobObjectData(blob)
+  const data=Dexie.currentTransaction?await Dexie.waitFor(Dexie.ignoreTransaction(read),20_000):await read()
+  return {asset:evidence.choice.asset,source,family:evidence.requirement.family,referenceOnly:evidence.choice.referenceOnly,
+    sourceWorldContentHash:evidence.sourceWorldContentHash,blobObjectId:evidence.image.blobObjectId!,data}
 }
 
 /** Actual source is verified before delivery. Matching an imported asset key

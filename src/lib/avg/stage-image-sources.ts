@@ -12,7 +12,7 @@ import { verifyRetainedAvgRawImageArtifactV1, verifyAvgProcessedImageArtifactV1 
 import { assertAvgRawImageArtifactV1 } from './media-raw-contract'
 import { avgProcessedImageArtifactKeyV1 } from './image-processing-contract'
 import { inspectAvgProcessedImageSourceV1 } from './image-processing-source'
-import { prepareAvgAdoptedGeneratedImageV1, readAvgAdoptedGeneratedImageV1 } from './media-generated-reference'
+import { prepareAvgAdoptedGeneratedImageV2, readAvgAdoptedGeneratedImageV2 } from './media-generated-reference'
 import type { AvgInheritedStageImageV1 } from './stage-image-source-contract'
 import type { AvgVoiceRecoveryV1 } from './voice-recovery-contract'
 import { assertAvgVoiceDraftV1 } from './voice-draft-contract'
@@ -25,7 +25,7 @@ export async function readAvgInheritedStageImagesV1(input:{scope:WorkspaceScope;
   const generated=new Map<string,{asset:FrozenRuntimeMediaAssetV2;blobObjectId:number}>()
   for(const entry of input.payload.inheritedImages??[]){
     const asset=input.payload.stage.assets.find(asset=>asset.assetKey===entry.assetKey)
-    const image=await readAvgAdoptedGeneratedImageV1({scope:input.scope,source:entry.source})
+    const image=await readAvgAdoptedGeneratedImageV2({scope:input.scope,source:entry.source})
     if(!asset||!same(asset,image.asset)||image.referenceOnly||image.sourceWorldContentHash!==input.worldContentHash
       ||image.source.productionKey===input.productionKey&&image.source.raw.buildNumber>=input.targetBuildNumber)throw new Error('[avg-media] 演出继承缺少准确的旧版公开图像来源，不能借用参考或当前版本')
     generated.set(entry.assetKey,{asset:image.asset,blobObjectId:image.blobObjectId})
@@ -66,7 +66,7 @@ export async function prepareAvgInheritedStageDraftV1(input:{scope:WorkspaceScop
     if(matches.length>1)throw new Error('[avg-media] 旧演出图像来源不唯一')
     if(matches[0]){
       if(!await assertRecordInScope(input.scope,'productBuildArtifacts',matches[0],{owner:'work'}))throw new Error('[avg-media] 旧演出来源跨作品')
-      const image=await prepareAvgAdoptedGeneratedImageV1({scope:input.scope,choiceId:matches[0].id!})
+      const image=await prepareAvgAdoptedGeneratedImageV2({scope:input.scope,choiceId:matches[0].id!})
       if(image.referenceOnly||image.sourceWorldContentHash!==input.worldContentHash)throw new Error('[avg-media] 不能把参考图或其他世界来源自动提升为演出图')
       entries.push({assetKey:asset.assetKey,source:image.source,declaration:'在此编辑草稿中保留准确旧图；待本版本作者核对演出、用途与来源后确认采用'})
     }else{

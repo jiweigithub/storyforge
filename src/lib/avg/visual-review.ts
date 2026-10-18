@@ -1,6 +1,6 @@
 import Dexie from 'dexie'
 import { db } from '../db/schema'
-import type { ProductBuildArtifactRecordV1, ProductProductionBriefV3, WorkspaceScope } from '../types'
+import type { FrozenRuntimeMediaAssetV2, ProductBuildArtifactRecordV1, ProductProductionBriefV3, WorkspaceScope } from '../types'
 import { assertRecordInScope } from '../workspace/scope'
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
@@ -57,6 +57,14 @@ export async function validateAvgAuthorVisualReviewV1(input:{scope:WorkspaceScop
   const processed=needsProcessing?(input.processed?await inspectAvgProcessedImageSourceV1({...input,processed:input.processed}):await readAvgProcessedImageSourceV1({...input,buildId:input.raw.buildId})):undefined
   if(!needsProcessing&&input.processed)throw new Error('[avg-process] 评审不能夹带未冻结加工')
   const image=processed?.row??input.raw,asset=processed?.asset??raw.asset
+  return validateAvgAuthorVisualReviewFromSourceV1({scope:input.scope,payload:report,requirement:r,image,asset})
+}
+
+/** Recheck actual observed pixels and references from an independently
+ * proved original or current definition. This creates no review/adoption. */
+export async function validateAvgAuthorVisualReviewFromSourceV1(input:{scope:WorkspaceScope;payload:unknown;
+  requirement:AvgVisualProductionRequirementV1;image:ProductBuildArtifactRecordV1;asset:FrozenRuntimeMediaAssetV2}){
+  const report=parseAvgAuthorVisualReviewV1(input.payload),{requirement:r,image,asset}=input
   assertAvgVisualReviewScopeV1(report,r,image.contentHash)
   if(report.visualEvidence!.imageHash){
     const blob=image.blobObjectId===null?null:await db.mediaBlobObjects.get(image.blobObjectId)

@@ -34,3 +34,46 @@ export function parseAvgGeneratedReferenceSourceV1(value: unknown): AvgGenerated
     choice:{artifactKey:c.artifactKey,version:avgNumber(c.version,'reference.choice.version',1,1e9),
       contentHash:avgHash(c.contentHash,'reference.choice.contentHash'),authorReceiptHash:avgHash(c.authorReceiptHash,'reference.choice.authorReceiptHash')} }
 }
+
+/** V4 originals use a distinct tagged source. V1 reference requests keep
+ * their own parser; this source first serves explicit local stage retention. */
+export interface AvgGeneratedReferenceSourceV2 {
+  schema:'storyforge.avg.generated-reference-source';version:2
+  productionKey:string;requirementKey:string
+  raw:{schema:'storyforge.avg.visual-image-producer-proof';version:4;buildNumber:number;briefHash:string;planHash:string;controlEpoch:number;
+    taskKey:string;artifactKey:string;artifactVersion:number;contentHash:string;inputHash:string;producerReceiptHash:string;
+    candidateHash:string;responseEvidenceHash:string;proofHash:string}
+  compilation:{artifactKey:'avg.media.compiled-visual-requirements';version:number;contentHash:string}
+  choice:{artifactKey:string;version:number;contentHash:string;authorReceiptHash:string}
+  review:{artifactKey:string;version:number;contentHash:string;authorReceiptHash:string}
+  processing?:never
+}
+export type AvgGeneratedImageSource=AvgGeneratedReferenceSourceV1|AvgGeneratedReferenceSourceV2
+
+export function parseAvgGeneratedReferenceSourceV2(value:unknown):AvgGeneratedReferenceSourceV2 {
+  const r=avgRecord(value,['schema','version','productionKey','requirementKey','raw','compilation','choice','review'],'V4 image source')
+  if(r.schema!=='storyforge.avg.generated-reference-source'||r.version!==2)throw new Error('[avg-visual-history] 图片来源版本无效')
+  const requirementKey=avgKey(r.requirementKey,'source.requirementKey')
+  const p=avgRecord(r.raw,['schema','version','buildNumber','briefHash','planHash','controlEpoch','taskKey','artifactKey','artifactVersion','contentHash','inputHash','producerReceiptHash','candidateHash','responseEvidenceHash','proofHash'],'V4 image producer')
+  if(p.schema!=='storyforge.avg.visual-image-producer-proof'||p.version!==4||p.taskKey!==`avg.media.generate.${requirementKey}`||p.artifactKey!==`avg.media.raw.${requirementKey}`)throw new Error('[avg-visual-history] 来源不是准确 V4 图片 producer')
+  const raw:AvgGeneratedReferenceSourceV2['raw']={schema:p.schema,version:4,buildNumber:avgNumber(p.buildNumber,'source.buildNumber',1,1e9),
+    briefHash:avgHash(p.briefHash,'source.briefHash'),planHash:avgHash(p.planHash,'source.planHash'),controlEpoch:avgNumber(p.controlEpoch,'source.controlEpoch',0,1e9),
+    taskKey:p.taskKey,artifactKey:p.artifactKey,artifactVersion:avgNumber(p.artifactVersion,'source.artifactVersion',1,1e9),
+    contentHash:avgHash(p.contentHash,'source.contentHash'),inputHash:avgHash(p.inputHash,'source.inputHash'),producerReceiptHash:avgHash(p.producerReceiptHash,'source.producerReceiptHash'),
+    candidateHash:avgHash(p.candidateHash,'source.candidateHash'),responseEvidenceHash:avgHash(p.responseEvidenceHash,'source.responseEvidenceHash'),proofHash:avgHash(p.proofHash,'source.proofHash')}
+  const c=avgRecord(r.compilation,['artifactKey','version','contentHash'],'V4 image compilation')
+  if(c.artifactKey!=='avg.media.compiled-visual-requirements')throw new Error('[avg-visual-history] 原编译来源不匹配')
+  const author=(value:unknown,key:string)=>{
+    const a=avgRecord(value,['artifactKey','version','contentHash','authorReceiptHash'],'V4 image author source')
+    if(a.artifactKey!==key)throw new Error('[avg-visual-history] 原作者来源不匹配')
+    return {artifactKey:key,version:avgNumber(a.version,'source.authorVersion',1,1e9),contentHash:avgHash(a.contentHash,'source.authorContentHash'),authorReceiptHash:avgHash(a.authorReceiptHash,'source.authorReceiptHash')}
+  }
+  return {schema:r.schema,version:2,productionKey:avgKey(r.productionKey,'source.productionKey'),requirementKey,raw,
+    compilation:{artifactKey:c.artifactKey,version:avgNumber(c.version,'source.compilationVersion',1,1e9),contentHash:avgHash(c.contentHash,'source.compilationHash')},
+    choice:author(r.choice,`avg.media.choice.${requirementKey}`),review:author(r.review,`avg.review.visual.${requirementKey}`)}
+}
+
+export function parseAvgGeneratedImageSource(value:unknown):AvgGeneratedImageSource {
+  return value&&typeof value==='object'&&'version'in value&&value.version===2
+    ?parseAvgGeneratedReferenceSourceV2(value):parseAvgGeneratedReferenceSourceV1(value)
+}

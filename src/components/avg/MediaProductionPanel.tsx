@@ -7,7 +7,7 @@ import { avgMediaChoiceArtifactKeyV1, avgRawMediaArtifactKeyV1, avgVisualReviewA
   type AvgVisualProductionRequirementV1 } from '../../lib/avg/media-production-contract'
 import { parseAvgMediaReferencesV1, type AvgMediaReferenceV1 } from '../../lib/avg/media-reference-contract'
 import { importAvgMediaForAssemblyV1 } from '../../lib/avg/editor-service'
-import { configureAvgChosenMediaDraftV2, confirmAvgWorkspaceInputV1, stageAvgMediaChoiceV2, keepAvgGeneratedStageDraftV1, type readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
+import { configureAvgChosenMediaDraftV2, confirmAvgWorkspaceInputV1, stageAvgMediaChoiceV2, keepAvgGeneratedStageDraftV1, prepareAvgAssemblyBriefV1, type readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
 import MediaAssetPreview from './MediaAssetPreview'
 import MediaRecoveryPanel from './MediaRecoveryPanel'
 import GeneratedReferencePicker, { type GeneratedReferenceSelection } from './GeneratedReferencePicker'
@@ -132,6 +132,9 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const currentBatch = definition?.mediaBatch??null
   const recovery=definition?.imageRecovery
   const closed=!!build&&['cancelled','failed','recovery-required'].includes(build.status)
+  const pendingNextBrief=view.details?.production.status==='brief-ready'&&view.details.brief?.revision!==build?.briefRevision
+  const retainedVisualDraft=!!build&&workspace.presentation.inheritedImages?.some(entry=>entry.source.version===2
+    &&entry.source.productionKey===view.details?.production.productionKey&&entry.source.raw.buildNumber===build.buildNumber)
   const accepted = (key: string) => view.artifacts.find(row => row.artifactKey === key && row.status === 'accepted')
   const allChoices = !!currentBatch && currentBatch.requirements.every(r => accepted(avgMediaChoiceArtifactKeyV1(r.requirementKey)))
   const outstanding = currentBatch?.requirements.filter(r => !accepted(avgRawMediaArtifactKeyV1(r.requirementKey))).length ?? 0
@@ -237,6 +240,16 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
     {workspace.mediaBatch?.visualReviewPolicy&&<ImageProcessingPlanPanel scope={scope} workspace={workspace} draftRevision={view.draft.revision} canEdit={canEdit&&enabled}
       disabled={disabled||pending||familyPending||anyReviewPending} onPending={setProcessingPending} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
     {currentBatch&&!visualPlanning&&assembly?.version!==3&&<MediaRecoveryPanel scope={scope} view={view} disabled={editDisabled||pending||familyPending||anyReviewPending} visible={visible} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
+    {enabled&&visualPlanning&&build&&productionId&&(closed||build.previewHash)&&workspace.presentation.stage.assets.length>0
+      &&(!pendingNextBrief||retainedVisualDraft)&&<section aria-label="保留专业演出图片">
+      <h5>保留已选图片，继续编辑演出</h5><p>核对原专业方案、作者评审、选图与图片，再准备零生成调用的新方案。到制作页明确开始，逐项确认系统、对白和演出。</p>
+      {pendingNextBrief&&<p>当前有待开始方案。再次准备会核对是否为同一次图片沿用；其他方案请到制作页查看。</p>}
+      {build.previewHash&&workspace.basePreviewHash!==build.previewHash&&<p>请先在制作页选择“以此预览开始修订”，保存草稿后再准备新方案。</p>}
+      <button className="lf-action" disabled={editDisabled||pending||familyPending||anyReviewPending||!!build.previewHash&&workspace.basePreviewHash!==build.previewHash} onClick={()=>void onAction(async()=>{
+        await prepareAvgAssemblyBriefV1({scope,expectedDraftRevision:view.draft.revision,visualStageContinuation:{expectedBuildId:build.id!,expectedBuildRevision:build.stateRevision}})
+        await onReload();onNotice('已保留准确专业演出图并准备零生成调用的新方案；请到制作页核对并明确开始，当前演出仍需重新确认。')
+      })}>保留专业演出图并准备新方案</button>
+    </section>}
     {!!workspace.presentation.inheritedImages?.length&&<details><summary>新版本待确认的旧图来源（{workspace.presentation.inheritedImages.length} 张）</summary><ul>{workspace.presentation.inheritedImages.map(entry=><li key={entry.assetKey}>{workspace.presentation.stage.assets.find(asset=>asset.assetKey===entry.assetKey)?.name} · 原 Build #{entry.source.raw.buildNumber} · {entry.source.raw.contentHash.slice(0,12)}<p>{entry.declaration}</p></li>)}</ul><p>保留原始字节不会重新调用图片服务；新版本的用途和演出须再次确认采用。</p></details>}
     {currentBatch&&closed&&<section aria-label="已停止的图片调用"><p>本次调用已停止。请先核对原始记录与未知费用，当前不会自动重发。</p><p>如需更改需求或制作下一批，请先到制作页准备新版本，再回此处编辑。</p><button className="lf-action" disabled>生成本批图片（最多 {outstanding} 次）</button></section>}
     {currentBatch?.visualReviewPolicy&&closed&&<details><summary>已停止批次的作者视觉记录</summary><p>保留原记录和未观察项；新版需要重新核对，不能继承旧选用授权。</p>{view.artifacts.filter(row=>row.artifactKey.startsWith('avg.review.visual.')).map(row=><article key={row.id}><p>{row.artifactKey} · v{row.version} · {row.status}</p><pre>{row.payloadJson}</pre></article>)}</details>}

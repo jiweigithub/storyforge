@@ -1,11 +1,11 @@
 import Dexie from 'dexie'
 import { db } from '../db/schema'
-import type { ProductBuildArtifactRecordV1, ProductProductionBriefV3, WorkspaceScope } from '../types'
+import type { FrozenRuntimeMediaAssetV2, ProductBuildArtifactRecordV1, ProductProductionBriefV3, WorkspaceScope } from '../types'
 import { assertRecordInScope } from '../workspace/scope'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/artifact-store'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
-import { parseAvgAuthorMediaChoice, type AvgAuthorMediaChoice } from './media-production-contract'
+import { parseAvgAuthorMediaChoice, type AvgAuthorMediaChoice, type AvgVisualProductionRequirementV1 } from './media-production-contract'
 import { inspectAvgImageBytesV1 } from './image-decoder'
 import { inspectAvgProcessedImageSourceV1, readAvgProcessedImageSourceV1 } from './image-processing-source'
 import { assertAvgConsumedRawImageV4, readAvgImageConsumptionDefinitionV4 } from './image-consumption'
@@ -44,6 +44,17 @@ export async function inspectAvgChosenImageV1(input: { scope: WorkspaceScope; br
     :await readAvgProcessedImageSourceV1({scope:input.scope,buildId:row.buildId,brief:input.brief,raw:row,version:choice.processed.version,contentHash:choice.processed.contentHash})):undefined
   if(choice.version===2&&(!processed||processed.row.artifactKey!==choice.processed.artifactKey||processed.row.version!==choice.processed.version||processed.row.contentHash!==choice.processed.contentHash))throw new Error('[avg-process] 选择的准确加工版本已变化')
   const asset=processed?.asset??raw.asset,image=processed?.row??row
+  return inspectAvgChosenImageBytesV1({scope:input.scope,choice,row,processed,asset,image,requirement:r})
+}
+
+/** Byte/choice checks shared by current consumption and the separate original
+ * V4 historical proof. The caller must prove its own exact definition,
+ * producer, processing and author authority before supplying these records. */
+export async function inspectAvgChosenImageBytesV1(input:{scope:WorkspaceScope;choice:AvgAuthorMediaChoice;
+  row:ProductBuildArtifactRecordV1;image:ProductBuildArtifactRecordV1;asset:FrozenRuntimeMediaAssetV2;
+  requirement:AvgVisualProductionRequirementV1;processed?:Awaited<ReturnType<typeof inspectAvgProcessedImageSourceV1>>}){
+  const {row,image,asset,processed,requirement:r}=input,choice=parseAvgAuthorMediaChoice(input.choice)
+  if(choice.raw.artifactKey!==row.artifactKey||choice.raw.version!==row.version||choice.raw.contentHash!==row.contentHash)throw new Error('[avg-media] 选择未绑定准确原图版本')
   if (choice.requirementKey !== r.requirementKey || choice.requirementRevision !== r.revision
     || choice.referenceOnly !== (r.consumer.domain === 'reference') || canonicalProductProductionJsonV2(choice.asset) !== canonicalProductProductionJsonV2(asset)) {
     throw new Error('[avg-media] 作者选择与准确的原图、需求修订或用途不一致')

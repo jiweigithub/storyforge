@@ -30,8 +30,13 @@ import { prepareAvgVisualProposalReuseV4, readAvgVisualReuseOptionsV4 } from '..
 import { resolveAvgVisualPlanningExecutionV4 } from '../../src/lib/avg/visual-planning-workspace'
 import { readAvgHistoricalRawImageV4,readAvgHistoricalImageCandidatesV4,readAvgHistoricalImageCandidateBytesV4 } from '../../src/lib/avg/visual-image-history'
 import * as imageProducerProof from '../../src/lib/product-production/artifact-store'
+import * as stageImageSources from '../../src/lib/avg/stage-image-sources'
+import { assertAvgVisualPlanningRestartKnownV4 } from '../../src/lib/avg/visual-planning-restart'
 import { prepareAvgVisualImageRouteV4 } from '../../src/lib/avg/visual-image-route-workspace'
-import { AVG_IMAGE_REFERENCE_CAPABILITY_V2 } from '../../src/lib/avg/media-reference-contract'
+import { readAvgAdoptedGeneratedReferenceChoiceV4 } from '../../src/lib/avg/author-artifacts'
+import { prepareAvgAdoptedGeneratedImageV2,readAvgAdoptedGeneratedImageV2 } from '../../src/lib/avg/media-generated-reference'
+import { parseAvgGeneratedReferenceSourceV1,parseAvgGeneratedReferenceSourceV2 } from '../../src/lib/avg/media-generated-reference-contract'
+import { AVG_IMAGE_REFERENCE_CAPABILITY_V2,parseAvgMediaReferencesV1 } from '../../src/lib/avg/media-reference-contract'
 import * as textCapabilities from '../../src/lib/product-production/capabilities'
 import { refuseAvgVisualPlanningBatchV4, stageAvgVisualPlanningAuthorInputV4 } from '../../src/lib/avg/visual-planning-workspace'
 import { avgVisualReviewFixture } from '../helpers/avg-visual-review-fixture'
@@ -837,6 +842,225 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
         expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
       }finally{vi.doUnmock('../../src/lib/avg/media-response-proof');await vi.dynamicImportSettled()}
     },30_000)
+  })
+
+  describe('V4 adopted image source for explicit current stage retention',()=>{
+    let generated:Awaited<ReturnType<typeof generatedImage>>,choice:ProductBuildArtifactRecordV1
+    beforeEach(async()=>{
+      generated=await generatedImage('valid')
+      await generated.confirm(await generated.review());choice=await generated.choose();await generated.confirm(choice)
+      await stopProductProductionV1({scope:generated.s.scope,production:(await db.productProductions.get(generated.s.productionId))!})
+      useAIConfigStore.getState().setConfig({apiKey:''})
+    })
+    const input=()=>({scope:generated.s.scope,buildId:generated.s.buildId,controlEpoch:choice.controlEpoch,
+      artifactKey:choice.artifactKey,version:choice.version,contentHash:choice.contentHash})
+    it('reproves the exact original compiled input, author review, choice and pixels without Stage, credentials or writes',async()=>{
+      const {s,raw}=generated,{exportedAt:_beforeAt,...before}=await exportProjectJSON(s.scope.projectId)
+      const proof=await readAvgAdoptedGeneratedReferenceChoiceV4(input())
+      expect(proof.raw).toEqual(raw);expect(proof.rawProof.version).toBe(4);expect(proof.compilation.artifactKey).toBe('avg.media.compiled-visual-requirements')
+      const selected=await prepareAvgAdoptedGeneratedImageV2({scope:s.scope,choiceId:choice.id!})
+      expect(selected.source.version).toBe(2);expect(parseAvgGeneratedReferenceSourceV2(selected.source)).toEqual(selected.source)
+      expect(()=>parseAvgGeneratedReferenceSourceV1(selected.source)).toThrow()
+      expect(()=>parseAvgMediaReferencesV1([{...generated.requirement.references[0],assetKey:proof.choice.asset.assetKey,
+        assetVersion:proof.choice.asset.version,contentHash:proof.choice.asset.contentHash,mimeType:proof.choice.asset.mimeType,
+        byteSize:proof.choice.asset.byteSize,license:proof.choice.asset.license,generatedSource:selected.source}])).toThrow(/generated reference source/)
+      expect(JSON.stringify(selected.source)).not.toMatch(/"(?:runId|buildId|blobObjectId|rootRunId)"/)
+      const image=await readAvgAdoptedGeneratedImageV2({scope:s.scope,source:selected.source})
+      expect(image.data).toEqual(s.imageBytes);expect(image.sourceWorldContentHash).toBe(s.brief.source.worldContentHash)
+      expect(image.blobObjectId).toBe(raw.blobObjectId);expect(JSON.parse(raw.payloadJson).provider.costUsd).toBeNull()
+      const {exportedAt:_afterAt,...after}=await exportProjectJSON(s.scope.projectId);expect(after).toEqual(before)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+    it.each(['pending-choice','missing-review','missing-choice-command','unknown-review-schema','changed-decoder','wrong-version','wrong-owner'] as const)('rejects %s before any stage-retention permission',async failure=>{
+      const {s}=generated
+      if(failure==='pending-choice')await db.productBuildArtifacts.update(choice.id!,{status:'pending'})
+      if(failure==='missing-review')await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([s.buildId,`avg.review.visual.${generated.requirement.requirementKey}`]).delete()
+      if(failure==='missing-choice-command'){
+        const row=(await db.productBuildArtifacts.get(choice.id!))!,metadata=JSON.parse(row.metadataJson)
+        await db.productProductionCommands.where('[productionId+commandId]').equals([s.productionId,metadata.commandId]).delete()
+      }
+      if(failure==='unknown-review-schema'){
+        const row=(await accepted(s,`avg.review.visual.${generated.requirement.requirementKey}`))!,metadata=JSON.parse(row.metadataJson)
+        const {candidateHash:_candidateHash,...body}=metadata.candidate;body.version=99
+        metadata.candidate={...body,candidateHash:await hashProductProductionValueV2(body)}
+        const {receiptHash:_receiptHash,...receipt}=metadata;metadata.receiptHash=await hashProductProductionValueV2(receipt)
+        await db.productBuildArtifacts.update(row.id!,{metadataJson:canonicalProductProductionJsonV2(metadata),inputHash:await hashProductProductionValueV2({...body,payloadHash:null})})
+        const command=(await db.productProductionCommands.where('[productionId+commandId]').equals([s.productionId,metadata.commandId]).first())!,result=JSON.parse(command.resultJson)
+        result.authorReceiptHash=metadata.receiptHash;await db.productProductionCommands.update(command.id!,{resultJson:canonicalProductProductionJsonV2(result)})
+      }
+      if(failure==='changed-decoder')vi.mocked(imageDecoder.inspectAvgImageBytesV1).mockResolvedValue({width:1152,height:648,hasAlpha:false})
+      await expect(readAvgAdoptedGeneratedReferenceChoiceV4({...input(),...(failure==='wrong-version'?{version:choice.version+1}:{}),...(failure==='wrong-owner'?{scope:{...s.scope,workId:s.scope.workId+900}}:{})})).rejects.toThrow()
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+    it('rejects changed portable compilation, review, producer and author hashes',async()=>{
+      const selected=await prepareAvgAdoptedGeneratedImageV2({scope:generated.s.scope,choiceId:choice.id!})
+      expect(selected.source.version).toBe(2);if(selected.source.version!==2)throw new Error('Expected V4 source')
+      for(const field of ['compilation','review','raw','choice'] as const){
+        const changed=structuredClone(selected.source);changed[field].contentHash='f'.repeat(64)
+        await expect(readAvgAdoptedGeneratedImageV2({scope:generated.s.scope,source:changed})).rejects.toThrow()
+      }
+      expect(()=>parseAvgGeneratedReferenceSourceV2({...selected.source,processing:{}})).toThrow()
+      expect(()=>parseAvgGeneratedReferenceSourceV2({...selected.source,buildId:generated.s.buildId})).toThrow()
+    })
+    it('reads the same portable author/pixel proof after full backup remap and preserves the original after copied Work deletion',async()=>{
+      const {s}=generated,selected=await prepareAvgAdoptedGeneratedImageV2({scope:s.scope,choiceId:choice.id!})
+      const projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),build=(await db.productBuilds.where('projectId').equals(projectId).first())!
+      const scope={projectId,workId:build.workId!,worldId:build.worldId!}
+      const copy=await readAvgAdoptedGeneratedImageV2({scope,source:selected.source})
+      expect(copy.data).toEqual(s.imageBytes);expect(copy.source).toEqual(selected.source)
+      await deleteWork(scope.workId)
+      expect((await readAvgAdoptedGeneratedImageV2({scope:s.scope,source:selected.source})).data).toEqual(s.imageBytes)
+      await expect(readAvgAdoptedGeneratedImageV2({scope,source:selected.source})).rejects.toThrow()
+    })
+    it('keeps original proof reads inside the caller transaction and rolls back the caller write on failure',async()=>{
+      const {s}=generated,selected=await prepareAvgAdoptedGeneratedImageV2({scope:s.scope,choiceId:choice.id!}),draft=await readAvgDraftV1(s.scope)
+      await expect(db.transaction('rw',db.tables,async()=>{
+        expect((await readAvgAdoptedGeneratedImageV2({scope:s.scope,source:selected.source})).data).toEqual(s.imageBytes)
+        await db.avgAuthoringDrafts.update(draft.id!,{updatedAt:draft.updatedAt+1})
+        throw new Error('deliberate-retention-rollback')
+      })).rejects.toThrow('deliberate-retention-rollback')
+      expect(await readAvgDraftV1(s.scope)).toEqual(draft)
+    })
+  })
+
+  describe('explicit V4 image to new zero-provider author-stage handoff',()=>{
+    let generated:Awaited<ReturnType<typeof generatedImage>>
+    beforeEach(async()=>{generated=await generatedImage('valid');await adoptedImageStage(generated)})
+    async function continuation(frozen=false){
+      const {s}=generated
+      if(frozen)await run(s)
+      else await stopProductProductionV1({scope:s.scope,production:(await db.productProductions.get(s.productionId))!})
+      let draft=await readAvgDraftV1(s.scope);const build=await current(s)
+      if(frozen){const workspace=parseAvgAuthorWorkspaceV1(draft.editorJson);workspace.basePreviewHash=build.previewHash;draft=await saveAvgAuthorWorkspaceV1(s.scope,draft.revision,workspace)}
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      return {scope:s.scope,expectedDraftRevision:draft.revision,visualStageContinuation:{expectedBuildId:s.buildId,expectedBuildRevision:build.stateRevision}}
+    }
+    it.each([false,true])('explicitly prepares, starts and adopts a new offline image-preserving Preview after frozen=%s',async frozen=>{
+      const {s,raw}=generated,input=await continuation(frozen),old=await current(s),oldRaw=await db.productBuildArtifacts.get(raw.id!)
+      const beforeRuns=await db.agentRuns.where('productBuildId').equals(s.buildId).count(),details=await prepareAvgAssemblyBriefV1(input)
+      expect(details.production.status).toBe('brief-ready');expect(details.build!.id).toBe(s.buildId)
+      expect(details.brief!.status).toBe('draft')
+      const brief=parseProductProductionBriefV3(details.brief!.briefJson)
+      expect(brief.avgVisualPlanning).toBeUndefined();expect(brief.avgAssembly!.version).toBe(1)
+      expect(brief.productionBudget.maximumMediaCalls).toBe(0);expect(brief.capabilityRequirements).toEqual([])
+      const workspace=parseAvgAuthorWorkspaceV1((await readAvgDraftV1(s.scope)).editorJson)
+      expect(workspace.presentation.inheritedImages).toHaveLength(1);expect(workspace.presentation.inheritedImages![0].source.version).toBe(2)
+      expect(await db.agentRuns.where('productBuildId').equals(s.buildId).count()).toBe(beforeRuns)
+      expect(await db.productBuildArtifacts.get(raw.id!)).toEqual(oldRaw)
+      await startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:details.brief!.briefHash})
+      const currentDraft=await readAvgDraftV1(s.scope),build=(await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])).build!
+      expect(build.buildNumber).toBe(old.buildNumber+1);expect(build.parentBuildNumber).toBe(old.buildNumber)
+      for(const artifactKey of ['avg.system.plan',...workspace.systemPlan.scenes.map(scene=>`avg.content.scene-script.${scene.key}`),'avg.author.stage']){
+        const candidate=await stageAvgWorkspaceInputV1({scope:s.scope,productionId:s.productionId,expectedDraftRevision:currentDraft.revision,artifactKey,declaration:'重新确认本版本准确系统、对白及旧图用途和演出'})
+        await confirmAvgWorkspaceInputV1({scope:s.scope,productionId:s.productionId,artifactKey,candidateVersion:candidate.version,candidateHash:JSON.parse(candidate.metadataJson).candidateHash})
+      }
+      await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})
+      const next=(await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])).build!
+      expect(next.status).toBe('preview-ready');const preview=await verifyStoredProductBuildPreview(next)
+      expect(preview!.runtimePackage.modules[0].stage.assets[0].contentHash).toBe(raw.contentHash)
+      expect(await db.productBuildArtifacts.where('buildId').equals(next.id!).filter(r=>r.artifactKey.startsWith('avg.media.raw.')).count()).toBe(0)
+      expect(await db.avgDraftMedia.where('workId').equals(s.scope.workId).count()).toBe(1) // Original reference only; no image import alias.
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+      expect((await db.productBuilds.get(s.buildId))!.previewHash).toBe(old.previewHash)
+      await verifyProductBuildTerminalArtifactSetV1({scope:s.scope,productionId:s.productionId,buildId:next.id!,expectedControlEpoch:next.controlEpoch,expectedPlanHash:next.planHash})
+      const projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),copied=(await db.productBuilds.where('projectId').equals(projectId).sortBy('buildNumber')).at(-1)!
+      const scope={projectId,workId:copied.workId!,worldId:copied.worldId!}
+      // Existing V1 restore permits frozen Preview/source reads; it does not
+      // rebind old producer Runs or grant current author/publication authority.
+      await expect(recoverImportedProductProductionProofsV1({scope,productionId:copied.productionId})).rejects.toThrow(/不支持导入生产证明复验/)
+      const copiedWorkspace=parseAvgAuthorWorkspaceV1((await readAvgDraftV1(scope)).editorJson)
+      expect((await readAvgAdoptedGeneratedImageV2({scope,source:copiedWorkspace.presentation.inheritedImages![0].source})).data).toEqual(s.imageBytes)
+      const session=await startProductProductionPreviewV1({scope,productionId:copied.productionId,expectedBuildId:copied.id!,expectedPreviewHash:copied.previewHash!})
+      expect((await db.productRuntimeSessions.get(session.sessionId))!.productBuildId).toBe(copied.id)
+      const restored=(await db.productBuilds.get(copied.id!))!,restoredPreview=await verifyStoredProductBuildPreview(restored)
+      expect(restoredPreview!.runtimePackage.modules[0].stage.assets[0].contentHash).toBe(raw.contentHash)
+      await deleteWork(scope.workId)
+      expect(await verifyStoredProductBuildPreview(next)).not.toBeNull()
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
+    it.each(['draft-save','brief-save','brief-save-remap'] as const)('preserves evidence after %s failure and explicitly completes the same offline continuation on retry',async failure=>{
+      const {s,raw}=generated,input=await continuation(true),before=await readAvgDraftV1(s.scope),original=await current(s)
+      const add=db.productProductionBriefs.add.bind(db.productProductionBriefs)
+      const spy=failure==='draft-save'?vi.spyOn(db.avgAuthoringDrafts,'put').mockImplementationOnce(()=>{throw new Error('controlled-retention-draft-save')})
+        :vi.spyOn(db.productProductionBriefs,'add').mockImplementation((row,...args)=>{if(JSON.parse(row.briefJson).avgAssembly?.version===1)throw new Error('controlled-retention-brief-save');return add(row,...args)})
+      await expect(prepareAvgAssemblyBriefV1(input)).rejects.toThrow(/controlled-retention/);spy.mockRestore()
+      if(failure==='draft-save')expect(await readAvgDraftV1(s.scope)).toEqual(before)
+      else expect(parseAvgAuthorWorkspaceV1((await readAvgDraftV1(s.scope)).editorJson).presentation.inheritedImages).toHaveLength(1)
+      if(failure!=='draft-save'){
+        const refreshed=await readAvgAssemblyWorkspaceV1(s.scope,s.productionId)
+        expect(refreshed.imageDefinition).toBeNull();expect(refreshed.visualProgress).toBeNull()
+        expect(refreshed.details!.brief!.revision).toBeGreaterThan(original.briefRevision)
+      }
+      expect(await current(s)).toEqual(original);expect((await db.productBuildArtifacts.get(raw.id!))!.contentHash).toBe(raw.contentHash)
+      expect(await db.productBuilds.where('workId').equals(s.scope.workId).count()).toBe(1)
+      if(failure==='brief-save-remap'){
+        const projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),build=(await db.productBuilds.where('projectId').equals(projectId).first())!
+        const scope={projectId,worldId:build.worldId!,workId:build.workId!}
+        const runs=await db.agentRuns.where('productBuildId').equals(build.id!).toArray()
+        const events=await db.agentRunEvents.where('projectId').equals(projectId).toArray()
+        await expect(assertAvgVisualPlanningRestartKnownV4(scope,build)).rejects.toThrow(/旧请求 Run 尚未完成/)
+        expect((await readAvgAssemblyWorkspaceV1(scope,build.productionId)).imageDefinition).toBeNull()
+        const restored=await prepareAvgAssemblyBriefV1({scope,expectedDraftRevision:(await readAvgDraftV1(scope)).revision,
+          visualStageContinuation:{expectedBuildId:build.id!,expectedBuildRevision:build.stateRevision}})
+        expect(parseProductProductionBriefV3(restored.brief!.briefJson).avgAssembly!.version).toBe(1)
+        expect(await db.productProductionCommands.where('productionId').equals(build.productionId).filter(row=>row.type==='evolve'&&row.status==='succeeded').count()).toBe(1)
+        expect(await db.agentRuns.where('productBuildId').equals(build.id!).toArray()).toEqual(runs)
+        expect(await db.agentRunEvents.where('projectId').equals(projectId).toArray()).toEqual(events)
+        await expect(assertAvgVisualPlanningRestartKnownV4(scope,build)).rejects.toThrow(/旧请求 Run 尚未完成/)
+        await deleteWork(scope.workId)
+      }
+      const next=await prepareAvgAssemblyBriefV1({...input,expectedDraftRevision:(await readAvgDraftV1(s.scope)).revision})
+      expect(parseProductProductionBriefV3(next.brief!.briefJson).avgAssembly!.version).toBe(1)
+      expect((await readAvgAssemblyWorkspaceV1(s.scope,s.productionId)).imageDefinition).toBeNull()
+      expect(next.production.status).toBe('brief-ready');expect(s.imageFetcher).toHaveBeenCalledTimes(1);expect(s.runText).toHaveBeenCalledTimes(2)
+      // The existing command ledger owns retry identity; no second evolution.
+      expect(await db.productProductionCommands.where('productionId').equals(s.productionId).filter(row=>row.type==='evolve'&&row.status==='succeeded').count()).toBe(1)
+    },30_000)
+    it('rejects a concurrent pending Brief saved after image-source verification before it can overwrite the other author or draft',async()=>{
+      const {s}=generated,input=await continuation(),before=await readAvgDraftV1(s.scope)
+      const inherit=stageImageSources.prepareAvgInheritedStageDraftV1
+      let otherRevision=0
+      vi.spyOn(stageImageSources,'prepareAvgInheritedStageDraftV1').mockImplementationOnce(async args=>{
+        const result=await inherit(args),details=await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])
+        const brief=parseProductProductionBriefV3({...s.brief,intent:{...s.brief.intent,openingSituation:'另一编辑器明确保存的待开始方案'}})
+        const saved=await executeProductProductionCommand({scope:s.scope,productionId:s.productionId,command:{type:'save-brief-revision',commandId:'concurrent-pending-author',
+          expectedStateRevision:details.production.stateRevision,parentRevision:details.brief!.revision,brief}})
+        expect(saved.ok).toBe(true);otherRevision=Number(saved.result.briefRevision);return result
+      })
+      await expect(prepareAvgAssemblyBriefV1(input)).rejects.toThrow(/变化/)
+      expect(await readAvgDraftV1(s.scope)).toEqual(before)
+      const current=await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])
+      expect(current.brief!.revision).toBe(otherRevision);expect(parseProductProductionBriefV3(current.brief!.briefJson).intent.openingSituation).toBe('另一编辑器明确保存的待开始方案')
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+    it('preserves an unrelated pending professional Brief instead of overwriting it as an offline continuation',async()=>{
+      const {s}=generated,input=await continuation(),details=await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])
+      const saved=await executeProductProductionCommand({scope:s.scope,productionId:s.productionId,command:{type:'save-brief-revision',commandId:'other-explicit-pending',
+        expectedStateRevision:details.production.stateRevision,parentRevision:details.brief!.revision,brief:s.brief}})
+      expect(saved.ok).toBe(true);const before=await readAvgDraftV1(s.scope)
+      await expect(prepareAvgAssemblyBriefV1(input)).rejects.toThrow(/其他待开始方案/)
+      expect(await readAvgDraftV1(s.scope)).toEqual(before)
+      expect((await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])).brief!.revision).toBe(details.brief!.revision+1)
+    })
+    it.each(['stale-build','stale-draft','missing-choice','missing-source-proof','unknown-call','world-drift','disabled-feature'] as const)('rejects %s without preparing a new Brief or changing original pixels',async failure=>{
+      const {s,raw}=generated,input=await continuation(),details=await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])
+      if(failure==='stale-build')input.visualStageContinuation.expectedBuildRevision++
+      if(failure==='stale-draft')input.expectedDraftRevision++
+      if(failure==='disabled-feature')vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION','0')
+      if(failure==='missing-choice')await db.productBuildArtifacts.where('buildId').equals(s.buildId).filter(r=>r.artifactKey.startsWith('avg.media.choice.')).delete()
+      if(failure==='missing-source-proof'){const c=(await accepted(s,'avg.media.compiled-visual-requirements'))!;await db.productBuildArtifacts.update(c.id!,{qualityJson:'{}'})}
+      if(failure==='unknown-call'){const build=await current(s),ledger=JSON.parse(build.budgetLedgerJson);ledger.attempts[0].usageKnown=false;await db.productBuilds.update(build.id!,{budgetLedgerJson:JSON.stringify(ledger)})}
+      if(failure==='world-drift'){const draft=await readAvgDraftV1(s.scope);await db.avgAuthoringDrafts.update(draft.id!,{worldReleaseId:999999})}
+      await expect(prepareAvgAssemblyBriefV1(input)).rejects.toThrow()
+      if(failure==='disabled-feature'){
+        const choice=(await accepted(s,`avg.media.choice.${generated.requirement.requirementKey}`))!
+        const source=await prepareAvgAdoptedGeneratedImageV2({scope:s.scope,choiceId:choice.id!})
+        expect((await readAvgAdoptedGeneratedImageV2({scope:s.scope,source:source.source})).data).toEqual(s.imageBytes)
+      }
+      expect((await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])).brief!.id).toBe(details.brief!.id)
+      expect((await db.productBuildArtifacts.get(raw.id!))!.contentHash).toBe(raw.contentHash)
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('full historical V4 compiled image definition',()=>{
