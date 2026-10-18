@@ -18,8 +18,9 @@ import { inspectAvgVisualProcessedImageV5 } from '../../src/lib/avg/visual-image
 import { readAvgProcessedImageSourceV5 } from '../../src/lib/avg/image-processing-source-v5'
 import { readAvgChosenMediaSourceV5 } from '../../src/lib/avg/media-choice-validation-v5'
 import { stageAvgVisualReviewV2,stageAvgMediaChoiceV5 } from '../../src/lib/avg/visual-review-service-v5'
-import { configureAvgChosenMediaDraftV2,stageAvgWorkspaceInputV1,confirmAvgWorkspaceInputV1,runAvgAssemblyV1 } from '../../src/lib/avg/assembly-service'
+import { prepareAvgAssemblyBriefV1,readAvgAssemblyWorkspaceV1,configureAvgChosenMediaDraftV2,stageAvgWorkspaceInputV1,confirmAvgWorkspaceInputV1,runAvgAssemblyV1 } from '../../src/lib/avg/assembly-service'
 import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
+import { saveAvgAuthorWorkspaceV1 } from '../../src/lib/avg/editor-service'
 import { parseAvgAuthorWorkspaceV1 } from '../../src/lib/avg/author-workspace-contract'
 import { verifyFrozenAvgAuthorInputsV1 } from '../../src/lib/avg/author-artifacts'
 import { verifyStoredProductBuildPreview } from '../../src/lib/product-production/preview-manifest'
@@ -154,6 +155,18 @@ describe('AVG actual V5 local derivative producer and author consumption',()=>{
     await expect(stageAvgMediaChoiceV5({...base,scope:copyScope,productionId:copy.productionId})).rejects.toThrow()
     await deleteWork(copy.workId)
     expect(await sha256MediaData((await readAvgAdoptedGeneratedImageV2({scope:s.scope,source})).data)).toBe(processed.contentHash)
+    // The current workbench continuation must recognize genuine Source5/6,
+    // while leaving all prior producer/adoption records untouched.
+    const originalDraft=await readAvgDraftV1(s.scope),continued=parseAvgAuthorWorkspaceV1(originalDraft.editorJson)
+    continued.basePreviewHash=build.previewHash
+    const revised=await saveAvgAuthorWorkspaceV1(s.scope,originalDraft.revision,continued)
+    await prepareAvgAssemblyBriefV1({scope:s.scope,expectedDraftRevision:revised.revision,visualStageContinuation:{expectedBuildId:build.id!,expectedBuildRevision:build.stateRevision}})
+    const nextView=await readAvgAssemblyWorkspaceV1(s.scope),nextBrief=parseProductProductionBriefV3(nextView.details!.brief!.briefJson)
+    const inherited=parseAvgAuthorWorkspaceV1(nextView.draft.editorJson).presentation.inheritedImages!
+    expect(inherited).toHaveLength(5);expect(inherited.some(i=>i.source.version===6)).toBe(true);expect(inherited.some(i=>i.source.version===5)).toBe(true)
+    expect(nextBrief.avgVisualPlanning).toBeUndefined();expect(nextBrief.productionBudget).toMatchObject({maximumModelCalls:0,maximumMediaCalls:0})
+    expect(nextView.details!.build!.id).toBe(build.id);expect(nextView.details!.production.status).toBe('brief-ready')
+    expect(await db.productBuildArtifacts.get(raw.id!)).toEqual(beforeRaw)
     expect(process).toHaveBeenCalledTimes(1);expect(s.imageCalls).toHaveLength(5);expect(s.calls).toHaveLength(4)
   },180_000)
   it.each(['swapped-compiler','swapped-recipe','changed-permission','damaged-original'] as const)('rejects %s without accepting a derivative or silently reprocessing',async mode=>{

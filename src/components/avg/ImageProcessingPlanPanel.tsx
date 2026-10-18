@@ -45,8 +45,8 @@ export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,
     if(!remove)entries.push({requirementKey:key,recipe})
     const next:AvgImageProcessingPlanV1|null=entries.length?{schema:'storyforge.avg.image-processing-plan',version:1,entries}:null
     if(visual){
-      const {prepareAvgVisualImageProcessingV4}=await import('../../lib/avg/visual-processing-workspace')
-      await prepareAvgVisualImageProcessingV4({scope,productionId:details!.production.id!,expectedBriefHash:details!.brief!.briefHash,expectedDraftRevision:draftRevision,
+      const {prepareAvgVisualImageProcessingV4,prepareAvgVisualImageProcessingV5}=await import('../../lib/avg/visual-processing-workspace')
+      await (visual.version===5?prepareAvgVisualImageProcessingV5:prepareAvgVisualImageProcessingV4)({scope,productionId:details!.production.id!,expectedBriefHash:details!.brief!.briefHash,expectedDraftRevision:draftRevision,
         expectedBuild:details!.build?{id:details!.build.id!,revision:details!.build.stateRevision}:null,plan:next})
     }else await saveAvgImageProcessingDraftV1({scope,expectedDraftRevision:dirty?editDraftRevision:draftRevision,plan:next})
     setDirty(false);await onReload();onNotice(visual?'加工配方已保存到尚未开始的专业制作方案；尚未执行或采用，原图与供应商请求保留。':'加工配方已保存为下次制作方案草稿；尚未执行或采用，原图与供应商请求保留。')

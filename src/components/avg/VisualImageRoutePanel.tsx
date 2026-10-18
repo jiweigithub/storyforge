@@ -2,7 +2,7 @@ import { useEffect,useState } from 'react'
 import type { WorkspaceScope } from '../../lib/types'
 import type { readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
 import { parseProductProductionBriefV3 } from '../../lib/product-production/contracts'
-import { prepareAvgVisualImageRouteV4 } from '../../lib/avg/visual-image-route-workspace'
+import { prepareAvgVisualImageRouteV4,prepareAvgVisualImageRouteV5 } from '../../lib/avg/visual-image-route-workspace'
 import type { AvgImageAdapterIdV4 } from '../../lib/avg/media-reference-contract'
 
 type View=Awaited<ReturnType<typeof readAvgAssemblyWorkspaceV1>>
@@ -21,7 +21,7 @@ export default function VisualImageRoutePanel({scope,view,disabled,onAction,onRe
       <option value="agnes.image-2.5-flash.v1">Agnes Image 2.5 Flash</option>
     </select></label>
     <button className="lf-action" disabled={disabled} onClick={()=>void onAction(async()=>{
-      await prepareAvgVisualImageRouteV4({scope,productionId:details.production.id!,expectedBriefHash:details.brief!.briefHash,
+      await (brief.avgVisualPlanning!.version===5?prepareAvgVisualImageRouteV5:prepareAvgVisualImageRouteV4)({scope,productionId:details.production.id!,expectedBriefHash:details.brief!.briefHash,
         expectedDraftRevision:view.draft.revision,expectedBuild:details.build?{id:details.build.id!,revision:details.build.stateRevision}:null,adapterId:selected})
       await onReload();onNotice('图片模型与当前配置已核对并保存；方案尚未开始。')
     })}>核对并保存图片模型</button>

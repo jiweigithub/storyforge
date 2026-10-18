@@ -4,7 +4,7 @@ import { parseAvgVisualProductionRequirementV1, parseAvgAuthorMediaChoice,
   type AvgVisualProductionRequirementV1, type AvgVisualProductionBatchV1, type AvgAuthorMediaChoice } from './media-production-contract'
 import { validateAvgVisualProductionBatchSourceV1 } from './media-source'
 import { validateAvgVisualProductionBatchSourceV2 } from './media-source-v2'
-import type { AvgVisualProductionBatchV2 } from './media-production-contract-v2'
+import { parseAvgVisualProductionRequirementV2,type AvgVisualProductionRequirementV2,type AvgVisualProductionBatchV2 } from './media-production-contract-v2'
 
 /** Undo only the unconsumed image-slot proposals made by a previous batch.
  * Authored predicates, unrelated bindings and actually selected assets stay
@@ -24,9 +24,18 @@ export function resetAvgUnconsumedMediaDeclarationsV1(value: AvgAuthorWorkspaceV
 /** A reviewable draft proposal before source freeze. It only declares existing
  * item display slots; predicates, gameplay states and actions remain authored. */
 export function prepareAvgMediaConsumerDeclarationsV1(value: AvgAuthorWorkspaceV1, requirements: AvgVisualProductionRequirementV1[]) {
+  return declareSlots(value,requirements.map(parseAvgVisualProductionRequirementV1))
+}
+
+/** Exact new requirement parser before the common, memory-only item-slot proposal. */
+export function prepareAvgMediaConsumerDeclarationsV2(value:AvgAuthorWorkspaceV1,requirements:AvgVisualProductionRequirementV2[]){
+  return declareSlots(value,requirements.map(parseAvgVisualProductionRequirementV2))
+}
+
+function declareSlots(value:AvgAuthorWorkspaceV1,requirements:ReadonlyArray<Pick<AvgVisualProductionRequirementV1,'consumer'|'itemVariantKey'|'assetKey'>>){
   const next = parseAvgAuthorWorkspaceV1(value)
-  for (const raw of requirements) {
-    const r = parseAvgVisualProductionRequirementV1(raw), c = r.consumer
+  for (const r of requirements) {
+    const c = r.consumer
     if (c.domain !== 'inventory' && c.domain !== 'evidence') continue
     const item = next.systemPlan.version === 2 ? next.systemPlan.inventory.items.find(item => item.key === c.subjectKey) : undefined
     const view = r.itemVariantKey === null ? item : item?.variants.find(v => v.key === r.itemVariantKey)

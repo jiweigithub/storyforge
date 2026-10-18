@@ -15,9 +15,14 @@ import { readAvgGeneratedReferenceImageV1 } from '../../lib/avg/media-generated-
 import { inspectConfiguredAgnesImageCapabilityV1 } from '../../lib/product-production/media-transport'
 import CharacterFamilyPanel from './CharacterFamilyPanel'
 import VisualReviewPanel from './VisualReviewPanel'
+import { assertAvgVisualReviewSelectableV2 } from '../../lib/avg/visual-review-v2'
+import { stageAvgMediaChoiceV5 } from '../../lib/avg/visual-review-service-v5'
+import { parseAvgVisualProductionRequirementV2,type AvgVisualProductionRequirementV2 } from '../../lib/avg/media-production-contract-v2'
+import { avgVisualPlanningExecutionReadyV5 } from '../../lib/avg/visual-planning-brief-v5'
 import { assertAvgVisualReviewSelectableV1 } from '../../lib/avg/visual-review'
 import ImageProcessingPlanPanel from './ImageProcessingPlanPanel'
 import HistoricalImagePanel from './HistoricalImagePanel'
+import HistoricalImagePanelV5 from './HistoricalImagePanelV5'
 import { avgProcessedImageArtifactKeyV1 } from '../../lib/avg/image-processing-contract'
 
 type View = Awaited<ReturnType<typeof readAvgAssemblyWorkspaceV1>>
@@ -29,8 +34,8 @@ const SIZES = [{ label: '横图 16:9', width: 576, height: 324 }, { label: '竖�
   { label: '方图 1:1', width: 512, height: 512 }, { label: '横图 4:3', width: 640, height: 480 }]
 const hashOf = (row?: ProductBuildArtifactRecordV1) => { try { return String(JSON.parse(row?.metadataJson ?? '{}').candidateHash ?? '') } catch { return '' } }
 
-function RawChoiceCard({ scope, productionId, requirement, raw, processed,needsProcessing,pending, selected, disabled, canAdopt, declaration, expanded, onExpand, onAction, onReload,reviewPolicy,review,reviewCandidate,reviewLocked,anyReviewPending,onReviewPending }: {
-  scope: WorkspaceScope; productionId: number; requirement: AvgVisualProductionRequirementV1; raw?: ProductBuildArtifactRecordV1;
+function RawChoiceCard({ scope, productionId, requirement,visualVersion, raw, processed,needsProcessing,pending, selected, disabled, canAdopt, declaration, expanded, onExpand, onAction, onReload,reviewPolicy,review,reviewCandidate,reviewLocked,anyReviewPending,onReviewPending }: {
+  scope: WorkspaceScope; productionId: number; requirement: AvgVisualProductionRequirementV1|AvgVisualProductionRequirementV2; visualVersion?:5;raw?: ProductBuildArtifactRecordV1;
   pending?: ProductBuildArtifactRecordV1; selected?: ProductBuildArtifactRecordV1; disabled: boolean; canAdopt: boolean; declaration: string;
   expanded: boolean; onExpand: () => void;
   onAction: (task: () => Promise<void>) => Promise<void>; onReload: () => Promise<void>
@@ -38,8 +43,8 @@ function RawChoiceCard({ scope, productionId, requirement, raw, processed,needsP
   reviewPolicy:boolean;review?:ProductBuildArtifactRecordV1;reviewCandidate?:ProductBuildArtifactRecordV1;reviewLocked:boolean;anyReviewPending:boolean;onReviewPending:(key:string,pending:boolean)=>void
 }) {
   const image=needsProcessing?processed:raw
-  const [observed, setObserved] = useState(''), [reviewed, setReviewed] = useState('')
-  useEffect(() => { setObserved('') }, [expanded, image?.contentHash])
+  const [observed, setObserved] = useState(''),[originalObserved,setOriginalObserved]=useState(''), [reviewed, setReviewed] = useState('')
+  useEffect(() => { setObserved('');setOriginalObserved('') }, [expanded, image?.contentHash,raw?.contentHash,scope.projectId,scope.worldId,scope.workId])
   const asset = useMemo(() => { try { return image ? JSON.parse(image.metadataJson) as FrozenRuntimeMediaAssetV2 : null } catch { return null } }, [image])
   const rawAsset=useMemo(()=>{try{return raw?JSON.parse(raw.metadataJson) as FrozenRuntimeMediaAssetV2:null}catch{return null}},[raw])
   const candidateHash = hashOf(pending)
@@ -47,29 +52,42 @@ function RawChoiceCard({ scope, productionId, requirement, raw, processed,needsP
   try { cost = raw ? JSON.parse(raw.payloadJson).provider.costUsd : null } catch { /* Reader reports damaged evidence before preview/selection. */ }
   const reviewedKey = `${image?.contentHash ?? ''}:${candidateHash}`
   const reviewPendingChanged=useCallback((value:boolean)=>onReviewPending(requirement.requirementKey,value),[onReviewPending,requirement.requirementKey])
+  const [policyReady,setPolicyReady]=useState(false),reviewJson=review?.payloadJson??'',imageHash=image?.contentHash??'',requirementJson=JSON.stringify(requirement)
+  useEffect(()=>{
+    let active=true;setPolicyReady(false)
+    if(visualVersion===5&&reviewPolicy&&reviewJson&&imageHash){
+      const check=async()=>assertAvgVisualReviewSelectableV2(reviewJson,parseAvgVisualProductionRequirementV2(JSON.parse(requirementJson)),imageHash)
+      void check().then(()=>{if(active)setPolicyReady(true)}).catch(()=>{/* Unknown/blocking policy stays unselectable. */})
+    }
+    return()=>{active=false}
+  },[visualVersion,reviewPolicy,reviewJson,imageHash,requirementJson])
   let reviewReady=!reviewPolicy
-  if(reviewPolicy&&review&&image)try{assertAvgVisualReviewSelectableV1(review.payloadJson,requirement,image.contentHash);reviewReady=true}catch{/* Unknown/blocking records stay readable and cannot select an image. */}
-  const original=image&&asset?<>{needsProcessing&&raw&&rawAsset&&<MediaAssetPreview scope={scope} asset={rawAsset} productionId={productionId} caption="供应商原图（保留）"
-    raw={{requirementKey:requirement.requirementKey,version:raw.version,contentHash:raw.contentHash}}/>}<MediaAssetPreview scope={scope} asset={asset} productionId={productionId} caption={needsProcessing?'加工后候选':undefined}
-    raw={{requirementKey:requirement.requirementKey,version:image.version,contentHash:image.contentHash,processed:needsProcessing}} comparisonAspectRatio={reviewPolicy?requirement.width/requirement.height:undefined}
-    smallImageSizes={reviewPolicy&&requirement.consumer.slot==='icon'?[32,48]:undefined} onObserved={()=>setObserved(image.contentHash)}/></>:null
+  if(visualVersion===5)reviewReady=!reviewPolicy||policyReady
+  else if(reviewPolicy&&review&&image)try{assertAvgVisualReviewSelectableV1(review.payloadJson,parseAvgVisualProductionRequirementV1(requirement),image.contentHash);reviewReady=true}catch{/* Unknown/blocking records cannot select. */}
+  const displayReady=observed===image?.contentHash&&(visualVersion!==5||!needsProcessing||originalObserved===raw?.contentHash)
+  const original=image&&asset?<>{needsProcessing&&raw&&rawAsset&&<MediaAssetPreview scope={scope} asset={rawAsset} productionId={productionId} caption="供应商原图（保留）" onObserved={()=>setOriginalObserved(raw.contentHash)} onUnavailable={()=>setOriginalObserved('')}
+    raw={{visualVersion,requirementKey:requirement.requirementKey,version:raw.version,contentHash:raw.contentHash}}/>}<MediaAssetPreview scope={scope} asset={asset} productionId={productionId} caption={needsProcessing?'加工后候选':undefined}
+    raw={{visualVersion,requirementKey:requirement.requirementKey,version:image.version,contentHash:image.contentHash,processed:needsProcessing}} comparisonAspectRatio={reviewPolicy?requirement.width/requirement.height:undefined}
+    smallImageSizes={reviewPolicy&&requirement.consumer.slot==='icon'?[32,48]:undefined} onObserved={()=>setObserved(image.contentHash)} onUnavailable={()=>setObserved('')}/></>:null
   return <article className="avg-assembly-candidate" aria-label={`图片候选：${requirement.name}`}><h5>{requirement.name}</h5>
     <p>{selected ? '已确认选用' : raw ? '原图已接收，等待作者选择' : '等待生成'}{pending ? ` · 选图候选 v${pending.version}` : ''}</p>
     {raw && asset && <button className="lf-action" disabled={anyReviewPending} onClick={onExpand}>{expanded ? '隐藏原图' : '查看原图'}：{requirement.name}</button>}
     {raw&&needsProcessing&&!processed&&<p>原图已保留，等待本次冻结配方的本地加工；加工结果返回前不能评审或选用。</p>}
-    {raw && image&&asset && expanded && <>{reviewPolicy?<VisualReviewPanel scope={scope} productionId={productionId} requirement={requirement} raw={raw} reviewedImage={image} accepted={review} pending={reviewCandidate}
-      image={original} rawObserved={observed===image.contentHash} disabled={disabled} canAdopt={canAdopt} locked={reviewLocked} declaration={declaration} onPending={reviewPendingChanged} onAction={onAction} onReload={onReload}/>:original}
+    {raw && image&&asset && expanded && <>{reviewPolicy?<VisualReviewPanel scope={scope} productionId={productionId} requirement={requirement} policyVersion={visualVersion===5?2:undefined} raw={raw} reviewedImage={image} accepted={review} pending={reviewCandidate}
+      image={original} rawObserved={displayReady} disabled={disabled} canAdopt={canAdopt} locked={reviewLocked} declaration={declaration} onPending={reviewPendingChanged} onAction={onAction} onReload={onReload}/>:original}
       {processed&&<details><summary>核对加工来源、配方与回执</summary><pre>{processed.payloadJson}</pre><p>本地加工没有供应商请求；原图费用和权利记录保留。</p></details>}
       {reviewPolicy&&!reviewReady&&<p>请先记录并确认准确视觉评审；未观察项或 blocking 问题解决前不能选用。</p>}
       <p>{typeof cost === 'number' ? `已记录费用：$${cost}` : '费用未知，请核对供应商账单。'} 使用前须核对本账号输出条款及参考授权。</p>
-      <button className="lf-action" disabled={disabled || anyReviewPending || !reviewReady || !canAdopt || !!selected || observed !== image.contentHash} onClick={() => void onAction(async () => {
-        await stageAvgMediaChoiceV2({ scope, productionId, requirementKey: requirement.requirementKey, rawVersion: raw.version, rawContentHash: raw.contentHash, declaration,...(processed?{processed:{version:processed.version,contentHash:processed.contentHash}}:{}) })
+      <button className="lf-action" disabled={disabled || anyReviewPending || !reviewReady || !canAdopt || !!selected || !displayReady} onClick={() => void onAction(async () => {
+        const selection={scope,productionId,requirementKey:requirement.requirementKey,rawVersion:raw.version,rawContentHash:raw.contentHash,declaration}
+        if(visualVersion===5)await stageAvgMediaChoiceV5(selection)
+        else await stageAvgMediaChoiceV2({...selection,...(processed?{processed:{version:processed.version,contentHash:processed.contentHash}}:{})})
         await onReload()
       })}>保存选图候选：{requirement.name}</button>
       {pending && <><details><summary>查看选图版本、用途与声明</summary><pre>{pending.payloadJson}</pre></details>
-        <label><input type="checkbox" disabled={disabled || !canAdopt || observed !== image.contentHash} checked={reviewed === reviewedKey}
+        <label><input type="checkbox" disabled={disabled || !canAdopt || !displayReady} checked={reviewed === reviewedKey}
           onChange={event => setReviewed(event.target.checked ? reviewedKey : '')} />我已查看这张图片并核对用途、来源与使用权</label>
-        <button className="lf-action" disabled={disabled || anyReviewPending || !reviewReady || !canAdopt || !candidateHash || observed !== image.contentHash || reviewed !== reviewedKey} onClick={() => void onAction(async () => {
+        <button className="lf-action" disabled={disabled || anyReviewPending || !reviewReady || !canAdopt || !candidateHash || !displayReady || reviewed !== reviewedKey} onClick={() => void onAction(async () => {
           await confirmAvgWorkspaceInputV1({ scope, productionId, artifactKey: pending.artifactKey, candidateVersion: pending.version, candidateHash })
           await onReload()
         })}>确认选用：{requirement.name}</button></>}
@@ -92,7 +110,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const [pending, setPending] = useState(false), [error, setError] = useState('')
   const [processingPending,setProcessingPending]=useState(false)
   const [rawSelectionPending,setRawSelectionPending]=useState(false)
-  const editDisabled=disabled||processingPending||rawSelectionPending
+  const editDisabled=disabled||processingPending||rawSelectionPending||view.details?.executionBrief?.avgVisualPlanning?.version===5&&!avgVisualPlanningExecutionReadyV5()
   const [familyPending,setFamilyPending]=useState(false)
   const [familyOpen,setFamilyOpen]=useState(false)
   const [reviewPending,setReviewPending]=useState<Record<string,boolean>>({})
@@ -128,13 +146,13 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const importImages = view.media.items.map(row => row.asset).filter(asset => asset.mimeType.startsWith('image/'))
   const build = view.details?.build, productionId = view.details?.production.id
   const assembly = view.details?.executionBrief?.avgAssembly
-  const visualPlanning=!!view.details?.executionBrief?.avgVisualPlanning
+  const visual=view.details?.executionBrief?.avgVisualPlanning,visualPlanning=!!visual
   const definition=view.imageDefinition??(view.details?.executionBrief&&!visualPlanning?readAvgOptionalImageDefinitionV3(view.details.executionBrief):null)
   const currentBatch = definition?.mediaBatch??null
   const recovery=definition?.imageRecovery
   const closed=!!build&&['cancelled','failed','recovery-required'].includes(build.status)
   const pendingNextBrief=view.details?.production.status==='brief-ready'&&view.details.brief?.revision!==build?.briefRevision
-  const retainedVisualDraft=!!build&&workspace.presentation.inheritedImages?.some(entry=>(entry.source.version===2||entry.source.version===3||entry.source.version===4)
+  const retainedVisualDraft=!!build&&workspace.presentation.inheritedImages?.some(entry=>(entry.source.version===2||entry.source.version===3||entry.source.version===4||entry.source.version===5||entry.source.version===6)
     &&entry.source.productionKey===view.details?.production.productionKey&&entry.source.raw.buildNumber===build.buildNumber)
   const accepted = (key: string) => view.artifacts.find(row => row.artifactKey === key && row.status === 'accepted')
   const allChoices = !!currentBatch && currentBatch.requirements.every(r => accepted(avgMediaChoiceArtifactKeyV1(r.requirementKey)))
@@ -256,11 +274,12 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
     {!!workspace.presentation.inheritedImages?.length&&<details><summary>新版本待确认的旧图来源（{workspace.presentation.inheritedImages.length} 张）</summary><ul>{workspace.presentation.inheritedImages.map(entry=>{
       const source=entry.source,originalBuild=source.version===3?source.original.raw.buildNumber:source.version===4?source.original?.raw.buildNumber??source.raw.buildNumber:source.raw.buildNumber
       return <li key={entry.assetKey}>{workspace.presentation.stage.assets.find(asset=>asset.assetKey===entry.assetKey)?.name} · 原图 Build #{originalBuild} · {source.raw.contentHash.slice(0,12)}
-        {source.version===4&&<span> · 加工字节 {source.processing.contentHash.slice(0,12)}</span>}<p>{entry.declaration}</p></li>
+        {(source.version===4||source.version===6)&&<span> · 加工字节 {source.processing.contentHash.slice(0,12)}</span>}<p>{entry.declaration}</p></li>
     })}</ul><p>保留已选字节不会重新调用图片服务；新版本的用途和演出须再次确认采用。</p></details>}
     {currentBatch&&closed&&<section aria-label="已停止的图片调用"><p>本次调用已停止。请先核对原始记录与未知费用，当前不会自动重发。</p><p>如需更改需求或制作下一批，请先到制作页准备新版本，再回此处编辑。</p><button className="lf-action" disabled>生成本批图片（最多 {outstanding} 次）</button></section>}
     {currentBatch?.visualReviewPolicy&&closed&&<details><summary>已停止批次的作者视觉记录</summary><p>保留原记录和未观察项；新版需要重新核对，不能继承旧选用授权。</p>{view.artifacts.filter(row=>row.artifactKey.startsWith('avg.review.visual.')).map(row=><article key={row.id}><p>{row.artifactKey} · v{row.version} · {row.status}</p><pre>{row.payloadJson}</pre></article>)}</details>}
-    {visualPlanning&&build&&['paused','cancelled','failed','recovery-required'].includes(build.status)&&view.artifacts.some(row=>row.artifactKey==='avg.media.compiled-visual-requirements'&&row.status==='accepted')&&<HistoricalImagePanel scope={scope} view={view} disabled={disabled||processingPending||pending||familyPending||anyReviewPending} onAction={onAction} onReload={onReload} onNotice={onNotice} onPending={setRawSelectionPending}/>}
+    {visual?.version===5&&build&&['paused','cancelled','failed','recovery-required','preview-ready','release-ready','released'].includes(build.status)&&<HistoricalImagePanelV5 scope={scope} view={view} disabled={disabled} visible={visible}/>}
+    {visual?.version===4&&build&&['paused','cancelled','failed','recovery-required'].includes(build.status)&&view.artifacts.some(row=>row.artifactKey==='avg.media.compiled-visual-requirements'&&row.status==='accepted')&&<HistoricalImagePanel scope={scope} view={view} disabled={disabled||processingPending||pending||familyPending||anyReviewPending} onAction={onAction} onReload={onReload} onNotice={onNotice} onPending={setRawSelectionPending}/>}
     {currentBatch && productionId && build && !closed && <section aria-label="本次图片生成与选用"><h5>本次图片生成与选用 · Build #{build.buildNumber}</h5>
       <p>本批 {currentBatch.requirements.length} 项，尚待接收 {outstanding} 项。原图接收后逐项确认，再配置并确认演出。</p>
       {!sourcesReady && <p>请先在制作页确认系统规则和全部场景脚本。</p>}
@@ -268,7 +287,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
       {recovery&&<p>本方案保留 {recovery.retained.length} 张原图，以零调用复验；其余 {recovery.rerunRequirementKeys.length} 项在本版本至多各请求一次。原图、旧账单和回执留在原版本。</p>}
       <button className="lf-action lf-action-primary" disabled={editDisabled || pending || familyPending || anyReviewPending || blockedProcessing.length>0 || assembly?.version===3&&!avgVoiceProductionEnabledV3() || (newRequests>0&&(!enabled||!readiness.ready)) || !canAdopt || !sourcesReady || !unfinished} onClick={() => void onGenerate()}>{assembly?.version===3?'执行已确认的图片及联合配音任务':outstanding===0&&pendingProcessing>0?`执行本地加工（0 次新请求）`:visualPlanning&&view.details?.executionBrief?.avgVisualPlanning?.rawReuse?.length?`复验并执行本批图片（最多 ${newRequests} 次新请求）`:recovery?`复验并执行本批图片（最多 ${newRequests} 次新请求）`:`生成本批图片（最多 ${outstanding} 次）`}</button>
       {generating && <button className="lf-action" onClick={onCancel}>停止等待并保留调用记录</button>}
-      {currentBatch.requirements.map(r => <RawChoiceCard key={`${build.id}:${r.requirementKey}`} scope={scope} productionId={productionId} requirement={r}
+      {currentBatch.requirements.map(r => <RawChoiceCard key={`${build.id}:${r.requirementKey}`} scope={scope} productionId={productionId} requirement={r} visualVersion={visual?.version===5?5:undefined}
         expanded={visible && expandedKey === r.requirementKey} onExpand={() => setPreviewKey(expandedKey === r.requirementKey ? '' : r.requirementKey)}
         raw={accepted(avgRawMediaArtifactKeyV1(r.requirementKey))} processed={accepted(avgProcessedImageArtifactKeyV1(r.requirementKey))} needsProcessing={!!definition?.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)} selected={accepted(avgMediaChoiceArtifactKeyV1(r.requirementKey))}
         pending={view.artifacts.find(row => row.artifactKey === avgMediaChoiceArtifactKeyV1(r.requirementKey) && row.status === 'pending')}

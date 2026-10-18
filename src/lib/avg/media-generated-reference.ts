@@ -167,7 +167,7 @@ export async function readAvgGeneratedReferenceImageV2(input:{scope:WorkspaceSco
 
 /** No same-key import fallback. Source parsing, original/current producer,
  * compilation, review/choice and exact Work bytes all precede delivery. */
-export async function readAvgGeneratedReferenceBytesV2(scope:WorkspaceScope,reference:AvgMediaReferenceV2,targetFamily?:AvgVisualProductionRequirementV1['family']){
+export async function readAvgGeneratedReferenceForPurposeV2(scope:WorkspaceScope,reference:AvgMediaReferenceV2,targetFamily?:AvgVisualProductionRequirementV1['family']){
   const ref=parseAvgMediaReferencesV2([reference])[0]!
   if(!ref.generatedSource)throw new Error('[avg-reference] 缺少准确已采用生成来源')
   const image=await readAvgGeneratedReferenceImageV2({scope,source:ref.generatedSource}),asset=image.asset
@@ -177,7 +177,11 @@ export async function readAvgGeneratedReferenceBytesV2(scope:WorkspaceScope,refe
     if(image.family.subjectKey!==targetFamily.subjectKey)throw new Error('[avg-reference] 身份参考不能替换另一个主体')
     if(image.family.familyKey===targetFamily.familyKey&&image.family.revision!==targetFamily.revision)throw new Error('[avg-reference] 身份家族基准修订已变化')
   }
-  return image.data
+  return image
+}
+
+export async function readAvgGeneratedReferenceBytesV2(scope:WorkspaceScope,reference:AvgMediaReferenceV2,targetFamily?:AvgVisualProductionRequirementV1['family']){
+  return (await readAvgGeneratedReferenceForPurposeV2(scope,reference,targetFamily)).data
 }
 
 /** Actual source is verified before delivery. Matching an imported asset key

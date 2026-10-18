@@ -1,3 +1,4 @@
+import { readAvgRawImageCandidateBytesV5,readAvgProcessedImageCandidateBytesV5,type AvgV5PreviewBoundary } from '../../lib/avg/media-candidate-preview-v5'
 import type { AvgVisualRawReuseSourceV4 } from '../../lib/avg/visual-image-reuse-contract'
 import { useEffect, useRef, useState } from 'react'
 import type { FrozenRuntimeMediaAssetV2, ProductMediaKind, WorkspaceScope } from '../../lib/types'
@@ -12,12 +13,12 @@ import type { AvgHistoricalVisualBoundaryV4 } from '../../lib/avg/visual-image-h
 
 export const AVG_MEDIA_KIND_LABELS: Record<ProductMediaKind, string> = { background: '背景', 'character-pose': '角色姿势', 'character-expression': '角色表情',
   cg: 'CG', ui: '图标与界面', bgm: '音乐', ambience: '环境声', sfx: '音效', voice: '配音' }
-export interface AvgRawPreviewReference { requirementKey: string; version: number; contentHash: string; retained?:boolean;processed?:boolean;historical?:Omit<AvgHistoricalVisualBoundaryV4,'scope'>;historicalSource?:AvgVisualRawReuseSourceV4 }
+export interface AvgRawPreviewReference { requirementKey: string; version: number; contentHash: string; visualVersion?:5;historicalV5?:AvgV5PreviewBoundary; retained?:boolean;processed?:boolean;historical?:Omit<AvgHistoricalVisualBoundaryV4,'scope'>;historicalSource?:AvgVisualRawReuseSourceV4 }
 
 /** Local URLs are created only after the existing owner/hash proof reader.
  * Provider URL strings and arbitrary Blob IDs are never displayed directly. */
-export default function MediaAssetPreview({ scope, asset, productionId, raw, generatedSource, generatedVoiceSource, onObserved,comparisonAspectRatio,smallImageSizes,caption }: {
-  scope: WorkspaceScope; asset: FrozenRuntimeMediaAssetV2; productionId?: number | null; raw?: AvgRawPreviewReference; generatedSource?: AvgGeneratedImageSource; onObserved?: () => void
+export default function MediaAssetPreview({ scope, asset, productionId, raw, generatedSource, generatedVoiceSource, onObserved,onUnavailable,comparisonAspectRatio,smallImageSizes,caption }: {
+  scope: WorkspaceScope; asset: FrozenRuntimeMediaAssetV2; productionId?: number | null; raw?: AvgRawPreviewReference; generatedSource?: AvgGeneratedImageSource; onObserved?: () => void;onUnavailable?:()=>void
   comparisonAspectRatio?:number;smallImageSizes?:readonly number[];caption?:string
   generatedVoiceSource?: AvgGeneratedVoiceSourceV1
 }) {
@@ -25,10 +26,12 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
   const [readAttempt, setReadAttempt] = useState(0)
   const [voiceOrigin, setVoiceOrigin] = useState<{ buildNumber: number; text: string; speaker: string; voiceId: string;
     declaration: string; reference: string } | null>(null)
+  const unavailable=useRef(onUnavailable);unavailable.current=onUnavailable
   const audio = useRef<HTMLAudioElement>(null)
   const requirementKey = raw?.requirementKey, version = raw?.version, contentHash = raw?.contentHash
   const retained=raw?.retained??false
-  const processed=raw?.processed??false
+  const processed=raw?.processed??false,visualVersion=raw?.visualVersion
+  const historicalV5Json=raw?.historicalV5?JSON.stringify(raw.historicalV5):''
   const historicalJson=raw?.historical?JSON.stringify(raw.historical):''
   const historicalSourceJson=raw?.historicalSource?JSON.stringify(raw.historicalSource):''
   const generatedSourceJson=generatedSource?JSON.stringify(generatedSource):''
@@ -40,6 +43,7 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
     setUrl(''); setError(''); setVoiceOrigin(null)
     const current = JSON.parse(assetJson) as FrozenRuntimeMediaAssetV2
     const read = async () => {
+      if(historicalV5Json&&(visualVersion!==5||!requirementKey))throw new Error('新版历史预览缺少准确版本')
       if ([!!requirementKey, !!generatedSourceJson, !!generatedVoiceSourceJson].filter(Boolean).length > 1) throw new Error('媒资预览不能同时声明多种来源')
       if(historicalSourceJson&&!historicalJson)throw new Error('便携原图预览缺少准确历史边界')
       if(historicalJson&&(!requirementKey||processed||retained))throw new Error('历史原图预览缺少准确来源或混入了其他加工来源')
@@ -58,24 +62,26 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
       }
       if (!requirementKey) return readAvgDraftMediaV1(scope, current)
       if (!productionId || version === undefined || !contentHash) throw new Error('原图缺少准确制作来源')
-      const reader=processed?readAvgProcessedImageCandidateBytesV1:retained?readAvgRetainedImageCandidateBytesV1:readAvgRawImageCandidateBytesV2
+      if(visualVersion===5&&(retained||historicalSourceJson||historicalJson))throw new Error('新版预览不能混入旧版原图复验来源')
+      const reader=visualVersion===5?(processed?readAvgProcessedImageCandidateBytesV5:readAvgRawImageCandidateBytesV5)
+        :processed?readAvgProcessedImageCandidateBytesV1:retained?readAvgRetainedImageCandidateBytesV1:readAvgRawImageCandidateBytesV2
       const candidate = historicalJson
         ?await(await import('../../lib/avg/visual-image-history')).readAvgHistoricalImageCandidateBytesV4({
           ...JSON.parse(historicalJson) as Omit<AvgHistoricalVisualBoundaryV4,'scope'>,scope,productionId,requirementKey,version,contentHash,...(historicalSourceJson?{source:JSON.parse(historicalSourceJson) as AvgVisualRawReuseSourceV4}:{})})
-        :await reader({ scope, productionId, requirementKey, version, contentHash })
+        :await reader({ scope, productionId, requirementKey, version, contentHash,...(historicalV5Json?{historical:JSON.parse(historicalV5Json) as AvgV5PreviewBoundary}:{}) })
       if (canonicalProductProductionJsonV2(candidate.asset) !== canonicalProductProductionJsonV2(current)) throw new Error('显示图片与准确原图不一致')
       return candidate.data
     }
     void read().then(bytes => {
       if (!alive) return
       created = URL.createObjectURL(new Blob([bytes], { type: current.mimeType })); setUrl(created)
-    }).catch(cause => { if (alive) setError(String(cause)) })
+    }).catch(cause => { if (alive){setError(String(cause));unavailable.current?.()} })
     return () => { alive = false; element?.pause(); if (created) URL.revokeObjectURL(created) }
-  }, [scope, assetJson, productionId, requirementKey, version, contentHash, retained, processed, historicalJson, historicalSourceJson, generatedSourceJson, generatedVoiceSourceJson, readAttempt])
+  }, [scope, assetJson, productionId, requirementKey, version, contentHash, retained, processed, visualVersion, historicalV5Json, historicalJson, historicalSourceJson, generatedSourceJson, generatedVoiceSourceJson, readAttempt])
   return <figure className="avg-assembly-media-preview"><figcaption>{caption??asset.name} · {AVG_MEDIA_KIND_LABELS[asset.kind]}</figcaption>
     {error && <><p role="alert">{error}</p><button className="lf-action" aria-label={`重新读取媒资：${asset.name}`} onClick={()=>setReadAttempt(value=>value+1)}>重新读取媒资</button><p>重新核验已保存文件与准确来源，不会新增生成请求。</p></>}
     {asset.mimeType.startsWith('audio/') ? <audio ref={audio} controls src={url || undefined} preload="metadata" />
-      : url ? <><img key={url} src={url} alt={asset.altText || asset.name} onLoad={onObserved} onError={historicalJson||generatedSourceJson?()=>setError('原图无法解码，请重新读取并核对文件。'):undefined} style={comparisonAspectRatio?{aspectRatio:comparisonAspectRatio}:undefined}/>
+      : url ? <><img key={url} src={url} alt={asset.altText || asset.name} onLoad={onObserved} onError={historicalJson||historicalV5Json||visualVersion===5||generatedSourceJson||onUnavailable?()=>{setError('原图无法解码，请重新读取并核对文件。');unavailable.current?.()}:undefined} style={comparisonAspectRatio?{aspectRatio:comparisonAspectRatio}:undefined}/>
         {smallImageSizes&&<div className="avg-review-icon-sizes">{smallImageSizes.map(size=><img key={size} src={url} alt={`${asset.name} · ${size} 像素观察`} style={{width:size,height:size,objectFit:'contain'}}/>)}</div>}</> : <p>读取图片…</p>}
     <p>{asset.width && asset.height ? `${asset.width} × ${asset.height}` : `${((asset.durationMs ?? 0) / 1000).toFixed(2)} 秒`} · {Math.ceil(asset.byteSize / 1024)} KiB</p>
     <p>来源：{asset.source} · 授权：{asset.license}</p>

@@ -1,8 +1,9 @@
 import type { FrozenRuntimeMediaAssetV2 } from '../types'
 import type { AvgAuthorWorkspaceV1 } from './author-workspace-contract'
-import type { AvgVisualPlanningDraftV4 } from './visual-planning-workspace'
+import type { AvgVisualPlanningDraftV4,AvgVisualPlanningDraftV5 } from './visual-planning-workspace'
 import type { AvgVisualRequirementTemplateV1 } from './visual-planning-contract'
 import type { AvgMediaReferenceV1 } from './media-reference-contract'
+import type { AvgMediaReferenceV2 } from './media-reference-contract-v2'
 
 export type AvgVisualFormPurposeV4 = 'background' | 'pose' | 'expression' | 'icon' | 'detail'
 
@@ -42,7 +43,18 @@ export function avgVisualFormReferenceV4(asset: FrozenRuntimeMediaAssetV2, purpo
     providerInputAllowed:true,derivativeUseAllowed:true,crop:null,mask:null,...(generatedSource?{generatedSource}:{})}
 }
 
-export function pruneAvgVisualFormReferencesV4(value: AvgVisualPlanningDraftV4): AvgVisualPlanningDraftV4 {
+/** Neutral unsaved form shape. This never becomes a persisted protocol body;
+ * preparation still requires either the exact old or exact new parser. */
+export type AvgVisualFormDraft=Omit<AvgVisualPlanningDraftV4,'version'|'referenceCatalog'>&{
+  version:1|2;referenceCatalog:Array<{referenceKey:string;reference:AvgMediaReferenceV1|AvgMediaReferenceV2}>
+}
+
+export function avgVisualFormReferenceV5(asset:FrozenRuntimeMediaAssetV2,purpose:AvgMediaReferenceV2['purpose'],generatedSource?:AvgMediaReferenceV2['generatedSource']):AvgMediaReferenceV2{
+  const base=avgVisualFormReferenceV4(asset,purpose)
+  return {...base,schema:'storyforge.avg.media-reference',version:2,...(generatedSource?{generatedSource}:{}),contentPolicy:{permittedFeatures:[],excludedFeatures:[]}}
+}
+
+export function pruneAvgVisualFormReferences<T extends AvgVisualFormDraft>(value:T):T {
   const draft=structuredClone(value),used=new Set(draft.templates.flatMap(t=>t.allowedReferenceKeys))
   draft.referenceCatalog=draft.referenceCatalog.filter(r=>used.has(r.referenceKey))
   return draft
@@ -50,7 +62,7 @@ export function pruneAvgVisualFormReferencesV4(value: AvgVisualPlanningDraftV4):
 
 /** Explicitly replace one displayed reference purpose for exact target cards.
  * Other reference purposes, metadata and untouched targets retain their bytes. */
-export function replaceAvgVisualFormReferenceV4(value: AvgVisualPlanningDraftV4, targets: string[], purpose: AvgMediaReferenceV1['purpose'], reference: AvgMediaReferenceV1 | null) {
+export function replaceAvgVisualFormReference(value:AvgVisualFormDraft, targets:string[],purpose:AvgMediaReferenceV1['purpose'],reference:AvgMediaReferenceV1|AvgMediaReferenceV2|null):AvgVisualFormDraft {
   const draft=structuredClone(value),old=new Set(draft.referenceCatalog.filter(r=>r.reference.purpose===purpose).map(r=>r.referenceKey))
   if(reference&&reference.purpose!==purpose)throw new Error('[avg-visual-form] 参考职责与所选用途不一致')
   const entry=reference?{referenceKey:`visual.reference.${crypto.randomUUID()}`,reference:structuredClone(reference)}:null
@@ -59,5 +71,16 @@ export function replaceAvgVisualFormReferenceV4(value: AvgVisualPlanningDraftV4,
     if(entry){t.allowedReferenceKeys.push(entry.referenceKey);t.requiredReferenceKeys.push(entry.referenceKey)}
   }
   if(entry)draft.referenceCatalog.push(entry)
-  return pruneAvgVisualFormReferencesV4(draft)
+  return pruneAvgVisualFormReferences(draft)
 }
+
+/** Legacy editing wrappers retain the genuine V1 reference type. */
+export function pruneAvgVisualFormReferencesV4(value:AvgVisualPlanningDraftV4):AvgVisualPlanningDraftV4{return pruneAvgVisualFormReferences(value)}
+export function replaceAvgVisualFormReferenceV4(value:AvgVisualPlanningDraftV4,targets:string[],purpose:AvgMediaReferenceV1['purpose'],reference:AvgMediaReferenceV1|null):AvgVisualPlanningDraftV4{
+  const result=replaceAvgVisualFormReference(value,targets,purpose,reference)
+  return {...result,version:1,referenceCatalog:result.referenceCatalog.map(entry=>{
+    if('contentPolicy' in entry.reference)throw new Error('[avg-visual-form] 旧用途不能接收新版参考声明')
+    return {...entry,reference:entry.reference}
+  })}
+}
+export function pruneAvgVisualFormReferencesV5(value:AvgVisualPlanningDraftV5):AvgVisualPlanningDraftV5{return pruneAvgVisualFormReferences(value)}

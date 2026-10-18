@@ -3,9 +3,10 @@ import type { ProductBuildArtifactRecordV1, WorkspaceScope } from '../../lib/typ
 import type { AvgAuthorWorkspaceV1 } from '../../lib/avg/author-workspace-contract'
 import { parseProductProductionBriefV3 } from '../../lib/product-production/contracts'
 import type { readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
-import { confirmAvgWorkspaceInputV1, restartAvgVisualPlanningFromDraftV4 } from '../../lib/avg/assembly-service'
+import { confirmAvgWorkspaceInputV1, restartAvgVisualPlanningFromDraftV4,restartAvgVisualPlanningFromDraftV5 } from '../../lib/avg/assembly-service'
+import { avgVisualPlanningExecutionReadyV5 } from '../../lib/avg/visual-planning-brief-v5'
 import { avgVisualPlanningExecutionReadyV4 } from '../../lib/avg/visual-planning-brief'
-import { stageAvgVisualPlanningAuthorInputV4, refuseAvgVisualPlanningBatchV4, type AvgVisualPlanningDraftV4 } from '../../lib/avg/visual-planning-workspace'
+import { stageAvgVisualPlanningAuthorInputV4, refuseAvgVisualPlanningBatchV4,stageAvgVisualPlanningAuthorInputV5,refuseAvgVisualPlanningBatchV5,type AvgVisualPlanningDraftV5,type AvgVisualPlanningDraftV4 } from '../../lib/avg/visual-planning-workspace'
 import type { AvgVisualBibleV1, AvgMediaBriefV1 } from '../../lib/avg/visual-planning-contract'
 import VisualPlanningScopeForm from './VisualPlanningScopeForm'
 import VisualProposalReusePanel from './VisualProposalReusePanel'
@@ -58,9 +59,9 @@ function ProposalCard({scope,view,proposal,workspace,disabled,declaration,onActi
           <p>用途、尺寸和参考权限来自已确认制作方案，本卡只能修改画面设计。</p>
         </fieldset>})}
       </>}
-      <button className="lf-action" disabled={!declaration.trim()} onClick={()=>void onAction(async()=>{await stageAvgVisualPlanningAuthorInputV4({...selection,payload:value,declaration});setChanged(false);await onReload();onNotice('方案已保存为待确认版本；尚未采用或发送图片请求。')})}>保存待确认：{label}</button>
+      <button className="lf-action" disabled={!declaration.trim()} onClick={()=>void onAction(async()=>{await (view.details!.executionBrief!.avgVisualPlanning!.version===5?stageAvgVisualPlanningAuthorInputV5:stageAvgVisualPlanningAuthorInputV4)({...selection,payload:value,declaration});setChanged(false);await onReload();onNotice('方案已保存为待确认版本；尚未采用或发送图片请求。')})}>保存待确认：{label}</button>
       {pending&&<><label><input type="checkbox" checked={reviewed} onChange={e=>setReviewed(e.target.checked)}/>我已核对本方案内容及允许参考</label><button className="lf-action" disabled={changed||!reviewed} onClick={()=>void onAction(async()=>{await confirmAvgWorkspaceInputV1({scope,productionId,artifactKey:key,candidateVersion:pending.version,candidateHash});setReason('');await onReload();onNotice('该准确方案已采用；下一步仍需明确执行。')})}>确认采用：{label}</button></>}
-      <label>退回依据<textarea aria-label="退回依据" value={reason} onChange={e=>setReason(e.target.value)}/></label><button className="lf-action" disabled={!reason.trim()} onClick={()=>void onAction(async()=>{await refuseAvgVisualPlanningBatchV4({...selection,reason});setChanged(false);setReason('');await onReload();onNotice('已记录退回依据并停止本批；原方案、账单和图片均保留，不会自动重发。')})}>退回此方案并停止本批</button>
+      <label>退回依据<textarea aria-label="退回依据" value={reason} onChange={e=>setReason(e.target.value)}/></label><button className="lf-action" disabled={!reason.trim()} onClick={()=>void onAction(async()=>{await (view.details!.executionBrief!.avgVisualPlanning!.version===5?refuseAvgVisualPlanningBatchV5:refuseAvgVisualPlanningBatchV4)({...selection,reason});setChanged(false);setReason('');await onReload();onNotice('已记录退回依据并停止本批；原方案、账单和图片均保留，不会自动重发。')})}>退回此方案并停止本批</button>
     </fieldset>
     {changed&&<button className="lf-action" disabled={disabled} onClick={()=>{setValue(structuredClone(original.payload));setChanged(false)}}>撤销本卡未保存修改</button>}
     {!!reason.trim()&&<button className="lf-action" disabled={disabled} onClick={()=>setReason('')}>撤销未提交的退回依据</button>}
@@ -69,14 +70,15 @@ function ProposalCard({scope,view,proposal,workspace,disabled,declaration,onActi
 
 export default function VisualPlanningPanel({scope,view,workspace,disabled,visible,activeBuild,sourcesReady,declaration,generating,onAction,onPrepare,onGenerate,onCancel,onReload,onNotice,onPending}: {
   scope:WorkspaceScope;view:View;workspace:AvgAuthorWorkspaceV1;disabled:boolean;visible:boolean;activeBuild:boolean;sourcesReady:boolean;declaration:string;generating:boolean;
-  onAction:(task:()=>Promise<void>)=>Promise<void>;onPrepare:(value:AvgVisualPlanningDraftV4)=>Promise<void>;onGenerate:()=>Promise<void>;onCancel:()=>void;
+  onAction:(task:()=>Promise<void>)=>Promise<void>;onPrepare:(value:AvgVisualPlanningDraftV4|AvgVisualPlanningDraftV5)=>Promise<void>;onGenerate:()=>Promise<void>;onCancel:()=>void;
   onReload:()=>Promise<void>;onNotice:(text:string)=>void;onPending:(pending:boolean)=>void
 }) {
   const brief=view.details?.brief?parseProductProductionBriefV3(view.details.brief.briefJson):null
-  const planning=brief?.avgVisualPlanning,prepared=planning?.version===4?planning.scope:undefined
+  const planning=brief?.avgVisualPlanning,prepared=planning?.scope
+  const version=planning?.version??(avgVisualPlanningExecutionReadyV5()?5:4)
   const [edited,setEdited]=useState(false),[cardsPending,setCardsPending]=useState<Record<string,boolean>>({}),[editPrepared,setEditPrepared]=useState(false),[reusePending,setReusePending]=useState(false),[routePending,setRoutePending]=useState(false)
   const pendingCards=Object.values(cardsPending).some(Boolean)
-  const enabled=avgVisualPlanningExecutionReadyV4()
+  const enabled=version===5?avgVisualPlanningExecutionReadyV5():avgVisualPlanningExecutionReadyV4()
   const build=view.details?.build,closed=!!build&&!['authorized','building','integrating'].includes(build.status)
   const failed=!!build&&['failed','recovery-required'].includes(build.status)
   const recordedUsage=view.visualRecordedUsage??view.visualProgress?.budget.usage
@@ -85,19 +87,18 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
   const available=!workspace.mediaBatch&&!workspace.voiceProduction&&!workspace.imageProcessing&&!workspace.presentation.stage.assets.some(a=>!a.mimeType.startsWith('image/'))
   useEffect(()=>{onPending(edited||pendingCards||reusePending||routePending);return()=>onPending(false)},[edited,pendingCards,reusePending,routePending,onPending])
   const cardPending=useCallback((key:string,value:boolean)=>setCardsPending(old=>old[key]===value?old:{...old,[key]:value}),[])
-  if(planning?.version===5)return <section className="lf-paper" aria-label="专业视觉策划（实验）"><p role="status">此制作方案需要新版媒资工作台。当前先保留记录，正式制作接通后继续。</p></section>
   if(!enabled&&!planning)return null
   return <section className="lf-paper" aria-label="专业视觉策划（实验）"><h4>专业视觉策划 <small>实验</small></h4>
     <p>先确认具体用途与合法参考，再由美术方向及对应的场景、人物、物件岗位提出方案。采用后编译图片需求，每项最多请求一次；费用可能未知，图片返回后仍须单独评审、选用和确认演出。</p>
     {!planning&&<p>可在同一批声明背景、人物姿态/表情及物件图标/详情图。没有身份基准时只生成原创设计，不承诺人物连续性；实际图像仍须逐项检查。</p>}
     {!available&&!planning&&<p>当前草稿已使用其他生成或声音方案。请保留该记录，通过原制作流程完成本批。</p>}
     {enabled&&available&&!activeBuild&&!build?.previewHash&&(!prepared||editPrepared)&&<VisualPlanningScopeForm
-      key={view.details?.brief?.briefHash??'new'} {...{scope,workspace,view,prepared,visible,onAction}} disabled={disabled||pendingCards}
+      version={version} key={view.details?.brief?.briefHash??`new.${version}`} {...{scope,workspace,view,prepared,visible,onAction}} disabled={disabled||pendingCards}
       onPending={setEdited} onCancel={()=>setEditPrepared(false)} onPrepare={async value=>{await onPrepare(value);setEdited(false);setEditPrepared(false)}}/>}
     {prepared&&<><p>已保存专业用途：{prepared.templates.map(t=>t.parameters.name).join('、')}；{prepared.referenceCatalog.length} 张授权参考。准备方案不会调用模型，须到制作页核对并明确开始。</p>
       <p>{pendingVersion?'新方案':'本批'}上限：{brief!.productionBudget.maximumModelCalls} 次方案调用、{brief!.productionBudget.maximumMediaCalls} 次图片请求。{recordedUsage?`${pendingVersion?'上一版已记录':'已记录'} ${recordedUsage.modelCalls} 次方案、${recordedUsage.mediaCalls} 次图片调用；费用${recordedUsage.costUsd===null?'未知':` $${recordedUsage.costUsd}`}。`:'费用以实际回执为准。'}</p>
       {pendingVersion&&<p role="status">新版本方案 v{view.details!.brief!.revision} 已准备，尚未开始。上一版及原始调用记录只读保留；请到制作页核对后明确开始。</p>}
-      {pendingVersion&&<VisualProposalReusePanel {...{scope,view,workspace,onAction,onReload,onNotice}} disabled={disabled||edited} onPending={setReusePending}/>}
+      {pendingVersion&&planning?.version===4&&<VisualProposalReusePanel {...{scope,view,workspace,onAction,onReload,onNotice}} disabled={disabled||edited} onPending={setReusePending}/>}
       {planning&&!activeBuild&&(!build||pendingVersion)&&<VisualImageRoutePanel {...{scope,view,onAction,onReload,onNotice}} disabled={disabled||edited||reusePending} onPending={setRoutePending}/>}
       {!activeBuild&&(!build||pendingVersion)&&!edited&&<button className="lf-action" disabled={disabled} onClick={()=>setEditPrepared(true)}>修改尚未开始的专业用途</button>}
       {build&&<><p>模型方案与原始响应、用量和未知费用保存在本次制作记录中。刷新只读取记录；继续执行需要明确点击。</p>
@@ -109,7 +110,7 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
         {enabled&&!pendingVersion&&!build.previewHash&&['cancelled','failed','recovery-required'].includes(build.status)&&<>
           <p>准备新方案不发送请求。当前采用与评审不会复制到新版；开始后将按新方案的有限上限重新执行，旧结果未知时禁止重发。</p>
           <button className="lf-action" disabled={disabled||edited||pendingCards||generating} onClick={()=>void onAction(async()=>{
-            await restartAvgVisualPlanningFromDraftV4({scope,productionId:view.details!.production.id!,expectedBuildId:build.id!,expectedBuildRevision:build.stateRevision,expectedDraftRevision:view.draft.revision})
+            await (version===5?restartAvgVisualPlanningFromDraftV5:restartAvgVisualPlanningFromDraftV4)({scope,productionId:view.details!.production.id!,expectedBuildId:build.id!,expectedBuildRevision:build.stateRevision,expectedDraftRevision:view.draft.revision})
             await onReload();onNotice('新版本方案已准备，未发送请求；请到制作页核对并明确开始。')
           })}>保留记录并准备新版本方案</button>
         </>}

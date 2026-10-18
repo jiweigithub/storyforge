@@ -23,7 +23,7 @@ import { parseAvgExecutableStageV1 } from './stage-contract';
 import { createAvgReferenceImageAdapterV1, createAvgReferenceImageAdapterV2 } from './media-reference-adapter';
 import { verifyAvgReferenceBytesV1, type AvgImageRequestV1, type AvgMediaReferenceV1 } from './media-reference-contract';
 import { assertAvgImageRequestV2, avgReferenceMetadataV2, parseAvgMediaReferencesV2, type AvgImageRequestV2, type AvgMediaReferenceV2 } from './media-reference-contract-v2';
-import { readAvgGeneratedReferenceImageV1, readAvgGeneratedReferenceBytesV2 } from './media-generated-reference';
+import { readAvgGeneratedReferenceImageV1, readAvgGeneratedReferenceForPurposeV2 } from './media-generated-reference';
 import type { AvgVisualProductionRequirementV1 } from './media-production-contract';
 
 /** Authors may retain unfinished graph edits; full package validation gates production. */
@@ -212,13 +212,16 @@ export async function createAvgDraftReferenceAdapterV1(input: { scope: Workspace
   } });
 }
 
-/** Versioned headless input foundation. Existing V1 callers never dispatch
- * V2 references; a later durable producer must freeze their explicit contract. */
-export async function readAvgDraftReferenceBytesV2(scope:WorkspaceScope,reference:AvgMediaReferenceV2,targetFamily?:AvgVisualProductionRequirementV1['family']){
+/** Actual V2 reference display/bytes, with the same strict policy, original
+ * selected source and target-family checks as provider delivery. */
+export async function readAvgDraftReferenceImageV2(scope:WorkspaceScope,reference:AvgMediaReferenceV2,targetFamily?:AvgVisualProductionRequirementV1['family']){
   const ref=parseAvgMediaReferencesV2([reference])[0]!
-  const data=ref.generatedSource?await readAvgGeneratedReferenceBytesV2(scope,ref,targetFamily)
-    :(await readAvgDraftReferenceImageV1(scope,avgReferenceMetadataV2(ref))).data
-  return verifyAvgReferenceBytesV1(ref,data)
+  const image=ref.generatedSource?await readAvgGeneratedReferenceForPurposeV2(scope,ref,targetFamily)
+    :await readAvgDraftReferenceImageV1(scope,avgReferenceMetadataV2(ref))
+  return {asset:image.asset,data:await verifyAvgReferenceBytesV1(ref,image.data)}
+}
+export async function readAvgDraftReferenceBytesV2(scope:WorkspaceScope,reference:AvgMediaReferenceV2,targetFamily?:AvgVisualProductionRequirementV1['family']){
+  return (await readAvgDraftReferenceImageV2(scope,reference,targetFamily)).data
 }
 
 export async function createAvgDraftReferenceAdapterV2(input:{scope:WorkspaceScope;frozen:AvgImageRequestV2;
