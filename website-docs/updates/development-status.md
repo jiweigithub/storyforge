@@ -1,5 +1,36 @@
 # 待合并开发记录与分支核对
 
+
+## 2026-10-18 本轮核对
+
+从上次成功维护基线 `404ee3bf` 核对至最新远程 main `9cc1f4cf`。完整枚举 **136 个本地分支（含维护分支）和 112 个关联工作区**，包含 detached；102 个分支 head 尚非 main 祖先。这些是 Git 身份数量，不是遗漏功能数。完整分支、路径、提交、补丁和工作文件差异保存在本轮维护证据中。
+
+### 已交付与使用说明
+
+- [PR #153](https://github.com/yuanbw2025/storyforge/pull/153) 已合入 main `8197579a`；[v4.0.2](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2) 于 10 月 16 日发布，固定源码 `04de86d7`。Windows/Mac 安装器、Android APK 与四平台便携 ZIP 均有正式附件。[安装指南](/getting-started/install)列出平台选择、首次协议、更新及备份步骤。
+- “通用设置 → 问题与建议”里的“报告问题”“功能建议”进入维护者私有收件箱，可选择附带预览过的诊断摘要。备用网页表单创建公开 GitHub Issue。本轮修正仍写“开发中”的反馈说明并补齐[操作步骤](/guides/troubleshooting#下载版的问题与故障反馈)及[隐私说明](/guides/privacy)。
+- 上轮文案调整 [PR #162](https://github.com/yuanbw2025/storyforge/pull/162) 已合入并完成部署。两天内其余主干提交为流量归档，不计产品功能更新。
+
+### 活动开发与待交付内容
+
+| 分支 / 核对 head | 观察到的内容 | 状态与去重结论 |
+| --- | --- | --- |
+| `feat/avg-v5-formal-foundation-20261018`、`feat/avg-versioned-planning-validation-20261018`、`feat/avg-visual-recovery-20261017` · 同为 `b5a2f629` | 专业媒资用途和人物/道具家族、视觉方案与请求编译、原图保存/导入/恢复、显式复用与新版本、历史只读核验、费用与失败证据、配音制作衔接 | 已推送至[草稿 PR #160](https://github.com/yuanbw2025/storyforge/pull/160)，未合并。视觉/历史/原图/本地处理系列分支为依赖链，三个相同 head 只计一次。`avg-extension-contracts-20261015/storyforge` 有 34 个未提交条目，涉及版本化视觉方案、来源与组装；只记录观察范围。 |
+| `feat/avg-media-recovery-20261016` · `4b40877b`；`avg-media-recovery-20261016/storyforge` | 媒资工作台、受治理图片处理、组装、采纳及恢复 | head 已推送，尚未进入 main；工作区另有 100 个未提交条目，包含代码与用例，不能据此声称新功能已完成。与上一行共享 AVG 基础，重叠不重复计算。 |
+| `feat/character-chat-optimization-20261006` · `a4f16fd9`；`character-chat-plan/storyforge` | 角色定向、行动与历史、关系与私域记忆、咨询和来源；工作区另涉及会话范围、受众、开场审阅、私有角色与运行恢复 | 233 个主干外提交均未被 origin 引用包含，其中 226 个为非 merge 提交；无对应开放 PR。相较上轮继续推进，另有 162 个未提交条目。临时核验 head 是这条链的祖先，不当作多套功能。 |
+| `feat/ttrpg-entity-ai-20261016` · `9e053308` | 模板内实体与逐人确认、局势采用、原始配音任务、审阅和试听；最新提交在作者明确审阅后结束原始配音生成 | [草稿 PR #128](https://github.com/yuanbw2025/storyforge/pull/128) 已推送至 `9e053308`，尚未合并；提交文档前已重新获取远程并确认包含最新配音审阅提交。记忆、回顾、局势和语音分支属于同一后续链，方案 [#124](https://github.com/yuanbw2025/storyforge/pull/124) 与共享读取底座 [#150](https://github.com/yuanbw2025/storyforge/pull/150) 仍未合并。 |
+| `feat/narrative-domain-projection-20261014`、`feat/narrative-reader-provenance-20261015` · `16b006fd`；`feat/narrative-world-integration-20261016` · `8197579a` | NW-0B/1A/1B 已提交底座；工作区继续包含语义索引、投影、精确读取、来源、候选采纳、生命周期及集成改动 | 前两个 head 的 5 个主干外提交仍仅本地（含 1 个 merge）；设计分支同 head/等价补丁已去重。三个相关工作区有未提交内容：`narrative-world-design`、`nw2e-retrieval-repair`、`nw-mainline-refresh-20261016`。集成 head 在 main 不代表其未提交开发已合入；核验材料和产物不按文件数计成功能。 |
+| `feat/text-open-world-productization-20261013` · `aa8f6d2b`；`open-world-productization/storyforge` | 三线生产、图片确认、人审与本地反馈；工作区继续涉及规则、目录生产、任务预算及恢复 | 已推送，[PR #134](https://github.com/yuanbw2025/storyforge/pull/134) 未合并；另有 39 个未提交条目，其中 2 个工作文件与最新 main 相同，37 个不同。既有内容、主干同步和当前改动分开记录，不替作者提交。 |
+| `feat/longform-quality-m2-20261014` · `1b854005`；既有 AVG 系统链 `36b3e55f` | 长篇系统文要求、质量审校和范围修订；AVG 规则、播放器、作者工作台、组装及资源窗口 | 长篇 [#135](https://github.com/yuanbw2025/storyforge/pull/135)、[#141](https://github.com/yuanbw2025/storyforge/pull/141) 与 AVG [#133](https://github.com/yuanbw2025/storyforge/pull/133)、[#137](https://github.com/yuanbw2025/storyforge/pull/137)、[#140](https://github.com/yuanbw2025/storyforge/pull/140)、[#143](https://github.com/yuanbw2025/storyforge/pull/143) 及后续系统链仍未合并，head 范围与上轮相同；不重复作为新增遗漏提醒。#156/#157 同 head。 |
+
+### 等价提交、旧核验目录与未提交内容
+
+以下本地提交已有推送的相同补丁：AVG `22bafcf4` → `336b3f6c`、`a522a380` → `537bb309`、`969d1928` → `c2d955db`、`691154d0` → `ad51277b`；长篇 `3521a8d4` → `ff257777`、`f44ef5c6` → `3ccb0acc`、`e95f188d` → `bcc2c908`。`023310fb` 与 `e2a0ae36` 的生产代码和测试文件完全相同，差异只在生成的架构指标。它们不算待补交的新产品功能。
+
+23 个有状态工作区分为：**9 个包含工作文件改动的工作区**、13 个已按 `.codex-retired-assets.json` 回收静态资产的旧跑团核验目录，以及 1 个纯 `.vite-e2e-cache/` 目录。13 处删除逐项匹配清单与 Git blob，不当作产品文件遗漏，也不自动恢复。9 处中的旧内置游戏、宣传截图 CSS 范围与前轮相同；旧内置作品已由 #111 进入 main，不重复算新增开发。
+
+历史雾港、世界媒资、旧开放世界、青铜 UI 与备份分支继续沿用已核对结论；仅 merge 的提供商备份不计功能，已明确废弃的 9 月 12 日 UI 不重新提出合并。本轮未提交、推送、合并或清理其他开发，未运行产品测试。下方旧日期内容保留为历史快照。
+
 ## 2026-10-16：客户端交付更新
 
 [PR #153](https://github.com/yuanbw2025/storyforge/pull/153) 的 4.0.2 客户端提供 Windows、Mac 和 Android 安装包、应用内更新与问题建议入口，iOS 暂缓。首次启动直接显示可离线阅读的统一《用户协议》，个人信息与隐私保护内容包含在正文内；阅读并同意后进入软件。设置中可再次查阅协议，手动问题与建议仍需检查后确认发送。

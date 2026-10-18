@@ -1,10 +1,10 @@
 # 安装与启动
 
-推荐从 [最新版本下载页](https://github.com/yuanbw2025/storyforge/releases/latest) 获取本地便携包。最新便携包包含发布时冻结的主干功能、界面和内置媒资，不再要求普通用户先安装开发环境。旧 Release 保留为历史版本；固定发行不会自动跟随之后的主干开发。
+从[最新版本下载页](https://github.com/yuanbw2025/storyforge/releases/latest)选择客户端安装包或便携 ZIP。Windows 和 Mac 可安装桌面客户端，Android 使用 APK；Linux 使用便携 ZIP。便携包自带运行环境和内置媒资，无需先安装开发环境。
 
 ## Windows / macOS / Android 客户端 {#开发中的-windows-android-客户端}
 
-4.0.2 增加桌面安装器与 Android APK。请以[该版本发行页](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2)实际公开的附件为准；草稿与开发构建不代表已发布。iOS 本次暂缓。
+[v4.0.2](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2) 已于 2026-10-16 发布桌面安装器与 Android APK，另有四平台便携 ZIP。iOS 本次暂缓。
 
 | 设备 | 下载文件 | 安装方式 |
 |---|---|---|

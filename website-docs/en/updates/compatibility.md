@@ -2,9 +2,11 @@
 
 ## Which version these docs describe
 
-This incremental review covers **October 16, 2026, main baseline 451ac153**, checking user-visible changes since the last successful maintenance baseline `1c6bb315`. Each product retains its own maturity status; the review date does not raise it.
+This incremental review covers **October 18, 2026, main baseline 9cc1f4cf**, checking user-visible changes since successful maintenance baseline `404ee3bf`. Product status follows each product guide.
 
 The source package version is **4.0.2**; the [latest release page](https://github.com/yuanbw2025/storyforge/releases/latest) lists the fixed archives actually available for download. Version 4.0.2 adds Windows, Mac and Android installers, in-app updates and the unified User Agreement; see [installation](/en/getting-started/install). Builds of v4.0.1 include explicit failure feedback and the text-adventure recovery, image-preserving revisions, and standalone web export from [PR #119](https://github.com/yuanbw2025/storyforge/pull/119). See [troubleshooting and capture limits](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds).
+
+v4.0.2 was formally published on October 16, 2026 at fixed source `04de86d7`. Its release page provides a Windows EXE, Apple Silicon/Intel Mac DMGs, an Android APK, four Windows/Mac/Linux portable ZIP targets, and `SHA256SUMS.txt`. In-app problems and suggestions go to a private maintainer inbox; the fallback web form creates a public Issue. See [troubleshooting](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds).
 
 The historical [formal v4.0.0 release](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.0) was published on October 13, 2026 at fixed commit `78416965`; it does not include those later changes. Include the version, build commit, address, and date when reporting issues.
 

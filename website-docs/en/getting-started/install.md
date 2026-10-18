@@ -1,10 +1,10 @@
 # Install and launch
 
-Get a local portable package from the [latest release page](https://github.com/yuanbw2025/storyforge/releases/latest). The latest portable version includes the main-branch features, interface and bundled media at release time; ordinary users no longer need a development setup. Older releases remain historical snapshots. A fixed release does not automatically receive later main-branch changes.
+Choose an installer or portable ZIP from the [latest release page](https://github.com/yuanbw2025/storyforge/releases/latest). Windows and Mac have desktop installers; Android uses an APK, and Linux uses a portable ZIP. Portable packages include the runtime and built-in media without requiring a development environment.
 
 ## Windows / macOS / Android clients {#windows-android-clients-in-development}
 
-Version 4.0.2 adds desktop installers and an Android APK. Download only the assets listed in the [release](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2); a draft or development build is not a published release. iOS is deferred.
+[v4.0.2](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2), published on October 16, 2026, provides desktop installers, an Android APK, and four portable ZIP targets. iOS is deferred.
 
 | Device | File | Installation |
 |---|---|---|

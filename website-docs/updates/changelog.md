@@ -2,9 +2,9 @@
 
 本页按用户可感知的变化整理功能更新、修复和操作改进。版本信息见[版本与兼容说明](/updates/compatibility)。
 
-## v4.0.2 · 桌面与 Android 客户端
+## 2026-10-16 · v4.0.2 桌面与 Android 客户端
 
-本次发行准备 Windows、Mac Apple Silicon/Intel 安装包与 Android APK，加入统一的首次启动用户协议，以及私有的应用内问题与建议。iOS 暂缓。可下载状态以[发行页](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2)公开附件为准。见[安装说明](/getting-started/install)与[隐私说明](/guides/privacy)。实现依据：[PR #153](https://github.com/yuanbw2025/storyforge/pull/153)。
+本次发行提供 Windows、Mac Apple Silicon/Intel 安装包与 Android APK，加入统一的首次启动用户协议，以及私有的应用内问题与建议。iOS 暂缓。通用设置中的“问题与建议”提供应用内私有反馈，操作见[故障排查](/guides/troubleshooting#下载版的问题与故障反馈)。可下载状态以[发行页](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2)公开附件为准。见[安装说明](/getting-started/install)与[隐私说明](/guides/privacy)。实现依据：[PR #153](https://github.com/yuanbw2025/storyforge/pull/153)。
 
 ## 2026-10-16 · 大纲 Agent 候选采纳修复
 

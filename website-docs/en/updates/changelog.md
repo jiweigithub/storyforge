@@ -2,9 +2,9 @@
 
 Feature updates, fixes, and workflow improvements are organized by user impact. See [compatibility](/en/updates/compatibility) for version information.
 
-## Version 4.0.2 · Desktop and Android clients
+## October 16, 2026 · v4.0.2 desktop and Android clients
 
-This release prepares Windows, Apple Silicon/Intel macOS installers and an Android APK, plus a unified first-launch User Agreement and private in-app problems and suggestions. iOS is deferred. Published attachments on the [release page](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2) determine availability. See [installation](/en/getting-started/install) and [privacy](/en/guides/privacy). Implementation: [PR #153](https://github.com/yuanbw2025/storyforge/pull/153).
+This release provides Windows, Apple Silicon/Intel macOS installers and an Android APK, plus a unified first-launch User Agreement and private in-app problems and suggestions. iOS is deferred. General settings → Problems and suggestions provides private in-app feedback; see [troubleshooting](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds). Published attachments on the [release page](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2) determine availability. See [installation](/en/getting-started/install) and [privacy](/en/guides/privacy). Implementation: [PR #153](https://github.com/yuanbw2025/storyforge/pull/153).
 
 ## October 16, 2026 · Outline Agent candidate adoption fix
 
