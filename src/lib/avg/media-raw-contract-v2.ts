@@ -6,6 +6,7 @@ import { parseAvgVisualProductionRequirementV2,type AvgVisualProductionBatchV2,t
 import { assertAvgImageRequestV2,type AvgImageRequestV2 } from './media-reference-contract-v2'
 import { avgImageReferenceCapabilityV2,type AvgImageAdapterIdV4 } from './media-reference-contract'
 import { assertAvgRawImageAssetMetadataV1,parseAvgRawImageProviderRightsV1,avgVisualRequestTextV1,type AvgRawImagePayloadV1,type assertAvgRawImageArtifactV1 } from './media-raw-contract'
+import { avgReferenceTransmissionV1 } from './media-reference-adapter'
 
 /** Explicit V2 raw identity: content policy and exact target family remain in
  * the original request hash. A legacy parser must reject this payload. */
@@ -37,4 +38,17 @@ export async function assertAvgRawImageArtifactFromDefinitionV2(definition:{
     ||!same([...request.allowedDataClasses].sort(),[...capability.allowedDataClasses].sort())
     ||payload.request.resolutionTier!==r.resolutionTier||!same(payload.request.references,r.references)||!same(payload.request.targetFamily,r.family))throw new Error('[avg-media] 新原图与准确编译需求或参考策略不一致')
   return {payload,asset:assertAvgRawImageAssetMetadataV1({requirement:r,request,rights:payload.rights,capability},row)}
+}
+
+/** Exact reception metadata shared by original admission and later consumers.
+ * This records the sent policy, never art compliance or native decoding. */
+export function assertAvgRawImageReceptionV2(qualityJson:string,source:{request:AvgImageRequestV2;rule:unknown;scripts:unknown;compilation:unknown}){
+  const q=avgRecord(JSON.parse(qualityJson),['received','rawResponseRecorded','responseEvidenceHash','headerVerified','contentHashVerified',
+    'decoderVerified','referenceTransmission','sourceRule','sourceScripts','sourceCompilation','sourceContextHash'],'versioned compiled image evidence')
+  const same=(a:unknown,b:unknown)=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(b)
+  if(q.received!==true||q.rawResponseRecorded!==true||q.headerVerified!==true||q.contentHashVerified!==true||q.decoderVerified!==false
+    ||!same(q.sourceRule,source.rule)||!same(q.sourceScripts,source.scripts)||!same(q.sourceCompilation,source.compilation)
+    ||!same(q.referenceTransmission,avgReferenceTransmissionV1(source.request)))throw new Error('[avg-visual-image] 新原图必须保留准确参考用途/家族回执，不能冒充解码或画面合规')
+  avgHash(q.sourceContextHash,'sourceContextHash')
+  return q
 }

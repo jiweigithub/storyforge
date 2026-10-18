@@ -3,7 +3,7 @@ import { db } from '../../src/lib/db/schema'
 import { useAIConfigStore } from '../../src/stores/ai-config'
 import * as readiness from '../../src/lib/avg/visual-planning-brief-v5'
 import * as decoder from '../../src/lib/avg/image-decoder'
-import { avgV5RegisteredProposalsFixture,adoptAvgV5Artifact,adoptAvgV5Sources,avgV5Accepted,cycleAvgV5Until,type AvgV5RegisteredFixture } from '../helpers/avg-v5-registered-proposals-fixture'
+import { avgV5RegisteredProposalsFixture,adoptAvgV5CompiledSources,cycleAvgV5Until,type AvgV5RegisteredFixture } from '../helpers/avg-v5-registered-proposals-fixture'
 import { deterministicRegionMapPngV1 } from '../../src/lib/product-production/production-executor'
 import { runProductProductionUntilBlockedV1,runProductProductionSchedulerCycleV1 } from '../../src/lib/product-production/scheduler'
 import { readAvgCompiledImageDefinitionV5 } from '../../src/lib/avg/visual-planning-image-definition-v5'
@@ -28,7 +28,6 @@ beforeEach(async()=>{
   vi.stubGlobal('fetch',vi.fn(()=>{throw new Error('Unconfigured engineering network forbidden')}))
 })
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();vi.unstubAllEnvs();db.close()})
-const compilationKey='avg.media.compiled-visual-requirements'
 async function compileImages(mode:'normal'|'unknown'|'unauthorized'|'malformed'|'changed-license'='normal',image25=false){
   vi.spyOn(readiness,'avgVisualPlanningExecutionReadyV5').mockReturnValue(true)
   // Happy DOM cannot decode images. Only this physical browser observation is
@@ -48,12 +47,7 @@ async function compileImages(mode:'normal'|'unknown'|'unauthorized'|'malformed'|
     return new Response(JSON.stringify({data:[{b64_json:mode==='malformed'?'%%%%':btoa(binary)}]}),
       {headers:{'content-type':'application/json','x-request-id':`controlled-v5-original-${index}`}})
   }})
-  await adoptAvgV5Sources(s);await cycleAvgV5Until(s,'avg.proposal.visual-bible')
-  await adoptAvgV5Artifact(s,'avg.media.visual-bible',s.author.visualBible)
-  const targets=s.plan.tasks.filter(t=>t.kind==='avg-v5-subject-visual-proposal').map(t=>t.outputArtifactKeys[0])
-  await cycleAvgV5Until(s,targets[targets.length-1])
-  for(const key of targets){const p=JSON.parse((await avgV5Accepted(s,key))!.payloadJson);await adoptAvgV5Artifact(s,p.targetArtifactKey,p.payload)}
-  await cycleAvgV5Until(s,compilationKey)
+  await adoptAvgV5CompiledSources(s)
   expect(s.calls).toHaveLength(4);expect(s.imageCalls).toHaveLength(0)
   return s
 }

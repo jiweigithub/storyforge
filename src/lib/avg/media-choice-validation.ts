@@ -50,9 +50,9 @@ export async function inspectAvgChosenImageV1(input: { scope: WorkspaceScope; br
 /** Byte/choice checks shared by current consumption and the separate original
  * V4 historical proof. The caller must prove its own exact definition,
  * producer, processing and author authority before supplying these records. */
-export async function inspectAvgChosenImageBytesV1(input:{scope:WorkspaceScope;choice:AvgAuthorMediaChoice;
+export async function inspectAvgChosenImageBytesV1<R extends Omit<AvgVisualProductionRequirementV1,'references'>>(input:{scope:WorkspaceScope;choice:AvgAuthorMediaChoice;
   row:ProductBuildArtifactRecordV1;image:ProductBuildArtifactRecordV1;asset:FrozenRuntimeMediaAssetV2;
-  requirement:AvgVisualProductionRequirementV1;processed?:Awaited<ReturnType<typeof inspectAvgProcessedImageSourceV1>>}){
+  requirement:R;processed?:Awaited<ReturnType<typeof inspectAvgProcessedImageSourceV1>>}){
   const {row,image,asset,processed,requirement:r}=input,choice=parseAvgAuthorMediaChoice(input.choice)
   if(choice.raw.artifactKey!==row.artifactKey||choice.raw.version!==row.version||choice.raw.contentHash!==row.contentHash)throw new Error('[avg-media] 选择未绑定准确原图版本')
   if (choice.requirementKey !== r.requirementKey || choice.requirementRevision !== r.revision
@@ -77,5 +77,10 @@ export async function inspectAvgChosenImageBytesV1(input:{scope:WorkspaceScope;c
 }
 
 export async function validateAvgMediaChoiceV1(input: Parameters<typeof readAvgChosenMediaSourceV2>[0]): Promise<AvgMediaChoiceValidation> {
+  if(input.brief.avgVisualPlanning?.version===5){
+    const load=()=>import('./media-choice-validation-v5')
+    const {readAvgChosenMediaSourceV5}=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
+    return (await readAvgChosenMediaSourceV5(input)).validation
+  }
   return (await readAvgChosenMediaSourceV2(input)).validation
 }

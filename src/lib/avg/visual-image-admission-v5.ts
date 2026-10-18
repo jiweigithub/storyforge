@@ -5,13 +5,11 @@ import { assembleContext } from '../registry/assemble-context'
 import { preserveProductProductionContextV1 } from '../product-production/context'
 import type { assertAvgMediaRawProducerAdmissionV2 } from './media-production-admission'
 import { readAvgCompiledImageDefinitionV5 } from './visual-planning-image-definition-v5'
-import { assertAvgRawImageArtifactFromDefinitionV2 } from './media-raw-contract-v2'
+import { assertAvgRawImageArtifactFromDefinitionV2,assertAvgRawImageReceptionV2 } from './media-raw-contract-v2'
 import { AVG_COMPILED_IMAGE_SKILL_V5 } from './visual-planning-plan-v5'
 import { AVG_VISUAL_PLANNING_CONTEXT_V5 } from './visual-planning-roles-v5'
 import { hashAvgTaskRuntimeBindingV1 } from './task-claim'
-import { avgRecord } from './protocol-validation'
 import { assertAvgOriginalImageResponseV1 } from './media-response-proof'
-import { avgReferenceTransmissionV1 } from './media-reference-adapter'
 
 /** Sealed admission under the actual V5 Brief, compiler and durable producer.
  * Original bytes cannot be accepted as a legacy request or as reviewed art. */
@@ -28,12 +26,8 @@ export async function assertAvgCompiledImageProducerAdmissionV5(input:Parameters
   const run=await db.agentRuns.get(input.producerRunId)
   if(!run||(JSON.parse(run.contractJson) as {runtimeBindingHash?:string}).runtimeBindingHash!==await hashAvgTaskRuntimeBindingV1({
     planHash:input.build.planHash,task,capabilityBindings:[binding]}))throw new Error('[avg-visual-image] 新原图路由与真实 Harness 不一致')
-  const q=avgRecord(JSON.parse(a.qualityJson),['received','rawResponseRecorded','responseEvidenceHash','headerVerified','contentHashVerified',
-    'decoderVerified','referenceTransmission','sourceRule','sourceScripts','sourceCompilation','sourceContextHash'],'versioned compiled image evidence')
+  const q=assertAvgRawImageReceptionV2(a.qualityJson,{request:raw.payload.request,rule:d.source.artifact,scripts:d.source.scripts.map(s=>s.artifact),compilation:d.definition.compilation})
   const same=(a:unknown,b:unknown)=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(b)
-  if(q.received!==true||q.rawResponseRecorded!==true||q.headerVerified!==true||q.contentHashVerified!==true||q.decoderVerified!==false
-    ||!same(q.sourceRule,d.source.artifact)||!same(q.sourceScripts,d.source.scripts.map(s=>s.artifact))||!same(q.sourceCompilation,d.definition.compilation)
-    ||!same(q.referenceTransmission,avgReferenceTransmissionV1(raw.payload.request)))throw new Error('[avg-visual-image] 新原图必须保留准确参考用途/家族回执，不能冒充解码或画面合规')
   await assertAvgOriginalImageResponseV1(input.scope,input.producerRunId,task.taskKey,q)
   const assembled=await assembleContext({projectId:input.scope.projectId,scope:input.scope,productProductionId:input.build.productionId,
     productBuildId:input.build.id,productProductionTaskKey:task.taskKey,productArtifactKeys:task.inputArtifactKeys,sourceKeys:[AVG_VISUAL_PLANNING_CONTEXT_V5],

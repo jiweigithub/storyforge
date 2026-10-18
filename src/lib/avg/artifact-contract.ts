@@ -68,6 +68,18 @@ export type AvgProfessionalArtifactV1 = AvgProductionPlanV1 | AvgSourceAuditV1 |
 
 function texts(value: unknown, label: string): string[] { return avgList(value, label, avgText, 1000) }
 function nullableKey(value: unknown, label: string): string | null { return value === null ? null : avgKey(value, label) }
+/** Shared review scalar fields only. The enclosing codec checks its own
+ * original schema/version and evidence keys before calling this helper. */
+export function parseAvgReviewFieldsV1(row:Record<string,unknown>):Pick<AvgReviewIssuesV1,'targetKey'|'observations'|'unobserved'|'issues'>{
+  const observations=avgUnique(avgList(row.observations,'observations',value=>avgEnum(value,['text','visual','audio','interaction'] as const,'observation'),4),value=>value,'observations')
+  const issues=avgUnique(avgList(row.issues,'issues',value=>{
+    const issue=avgRecord(value,['issueKey','locationKey','evidence','severity','owner','allowedChange','impact','recheck'],'issue')
+    return {issueKey:avgKey(issue.issueKey,'issueKey'),locationKey:avgKey(issue.locationKey,'locationKey'),evidence:avgText(issue.evidence,'evidence'),
+      severity:avgEnum(issue.severity,['blocking','major','minor'] as const,'severity'),owner:avgEnum(issue.owner,['content','system','media'] as const,'owner'),
+      allowedChange:avgText(issue.allowedChange,'allowedChange'),impact:avgText(issue.impact,'impact'),recheck:avgText(issue.recheck,'recheck')}
+  }),issue=>issue.issueKey,'issues')
+  return {targetKey:avgKey(row.targetKey,'targetKey'),observations,unobserved:texts(row.unobserved,'unobserved'),issues}
+}
 function payloadRow(value: unknown, schema: string, keys: string[]): Record<string, unknown> {
   return avgRecord(value, ['schema','version',...keys], schema)
 }
@@ -178,17 +190,11 @@ export function parseAvgProfessionalArtifactV1(value: unknown): AvgProfessionalA
       const hasVisual=Object.prototype.hasOwnProperty.call(raw,'visualEvidence')
       const hasAudio=Object.prototype.hasOwnProperty.call(raw,'audioEvidence')
       const row = payloadRow(raw, header.schema, ['targetKey','observations','unobserved','issues',...(hasVisual?['visualEvidence']:[]),...(hasAudio?['audioEvidence']:[])])
-      const observations = avgUnique(avgList(row.observations, 'observations', value => avgEnum(value, ['text','visual','audio','interaction'] as const, 'observation'), 4), value => value, 'observations')
-      const issues = avgUnique(avgList(row.issues, 'issues', value => {
-        const issue = avgRecord(value, ['issueKey','locationKey','evidence','severity','owner','allowedChange','impact','recheck'], 'issue')
-        return { issueKey: avgKey(issue.issueKey, 'issueKey'), locationKey: avgKey(issue.locationKey, 'locationKey'), evidence: avgText(issue.evidence, 'evidence'),
-          severity: avgEnum(issue.severity, ['blocking','major','minor'] as const, 'severity'), owner: avgEnum(issue.owner, ['content','system','media'] as const, 'owner'),
-          allowedChange: avgText(issue.allowedChange, 'allowedChange'), impact: avgText(issue.impact, 'impact'), recheck: avgText(issue.recheck, 'recheck') }
-      }), issue => issue.issueKey, 'issues')
+      const fields=parseAvgReviewFieldsV1(row)
       let visualEvidence:AvgReviewIssuesV1['visualEvidence']
       if(hasVisual)visualEvidence=parseAvgAuthorVisualEvidenceV1(row.visualEvidence)
       const audioEvidence=hasAudio?parseAvgAuthorVoiceEvidenceV1(row.audioEvidence):undefined
-      return { schema: header.schema, version: 1, targetKey: avgKey(row.targetKey, 'targetKey'), observations, unobserved: texts(row.unobserved, 'unobserved'), issues,...(hasVisual?{visualEvidence}:{}),...(audioEvidence?{audioEvidence}:{}) }
+      return { schema: header.schema, version: 1, ...fields,...(hasVisual?{visualEvidence}:{}),...(audioEvidence?{audioEvidence}:{}) }
     }
     default: throw new Error('[avg] 未登记或尚未就绪的专业 artifact schema')
   }

@@ -84,10 +84,13 @@ export async function adoptAvgV5Artifact(s:AvgV5RegisteredFixture,key:string,pay
   const build=(await db.productBuilds.get(s.buildId))!,task=s.plan.tasks.find(t=>t.executionMode==='human-import'&&t.outputArtifactKeys.includes(key))!
   const candidate=await stageAvgAuthorArtifactV1({scope:s.scope,buildId:s.buildId,expectedBuildRevision:build.stateRevision,controlEpoch:build.controlEpoch,
     taskKey:task.taskKey,artifactKey:key,kind:key==='avg.system.plan'?'product-module':'narrative',payload,declaration:'作者明确核对本项工程候选及参考用途；不代表图像/艺术或商业验收'})
+  return confirmAvgV5PendingCandidate(s,candidate)
+}
+export async function confirmAvgV5PendingCandidate(s:AvgV5RegisteredFixture,candidate:ProductBuildArtifactRecordV1){
   const current=(await db.productBuilds.get(s.buildId))!,production=(await db.productProductions.get(s.productionId))!
   const result=await executeProductProductionCommand({scope:s.scope,productionId:s.productionId,command:{type:'adopt-avg-artifact',commandId:`v5.author.${crypto.randomUUID()}`,
     expectedStateRevision:production.stateRevision,expectedBuildRevision:current.stateRevision,controlEpoch:current.controlEpoch,buildNumber:current.buildNumber,
-    artifactKey:key,candidateVersion:candidate.version,candidateHash:JSON.parse(candidate.metadataJson).candidateHash}})
+    artifactKey:candidate.artifactKey,candidateVersion:candidate.version,candidateHash:JSON.parse(candidate.metadataJson).candidateHash}})
   if(!result.ok)throw new Error(JSON.stringify(result))
   return candidate
 }
@@ -101,4 +104,14 @@ export async function avgV5Accepted(s:AvgV5RegisteredFixture,key:string):Promise
 export async function cycleAvgV5Until(s:AvgV5RegisteredFixture,key:string){
   for(let i=0;i<12;i++){if(await avgV5Accepted(s,key))return;await runProductProductionSchedulerCycleV1(s)}
   throw new Error(`Actual V5 Harness did not reach ${key}: ${(await db.productBuilds.get(s.buildId))!.failureJson}`)
+}
+
+/** Shared actual author-to-compiler graph for downstream media fixtures. */
+export async function adoptAvgV5CompiledSources(s:AvgV5RegisteredFixture){
+  await adoptAvgV5Sources(s);await cycleAvgV5Until(s,'avg.proposal.visual-bible')
+  await adoptAvgV5Artifact(s,'avg.media.visual-bible',s.author.visualBible)
+  const targets=s.plan.tasks.filter(t=>t.kind==='avg-v5-subject-visual-proposal').map(t=>t.outputArtifactKeys[0])
+  await cycleAvgV5Until(s,targets[targets.length-1])
+  for(const key of targets){const p=JSON.parse((await avgV5Accepted(s,key))!.payloadJson);await adoptAvgV5Artifact(s,p.targetArtifactKey,p.payload)}
+  await cycleAvgV5Until(s,'avg.media.compiled-visual-requirements')
 }

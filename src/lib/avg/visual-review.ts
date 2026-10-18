@@ -13,6 +13,10 @@ import { inspectAvgProcessedImageSourceV1, readAvgProcessedImageSourceV1 } from 
 import { assertAvgConsumedRawImageV4, readAvgImageConsumptionDefinitionV4 } from './image-consumption'
 
 const same=(a:unknown,b:unknown)=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(b)
+export type AvgVisualObservationFields=Pick<AvgReviewIssuesV1,'targetKey'|'observations'|'unobserved'|'issues'|'visualEvidence'>
+export type AvgVisualObservationRequirement=Omit<AvgVisualProductionRequirementV1,'references'>&{
+  references:Array<Pick<AvgVisualProductionRequirementV1['references'][number],'assetKey'|'contentHash'|'purpose'|'mimeType'>>
+}
 export function parseAvgAuthorVisualReviewV1(value:unknown){
   const report=parseAvgProfessionalArtifactV1(value)
   if(report.schema!=='storyforge.avg.review-issues'||!report.visualEvidence||report.observations.some(o=>o!=='visual')
@@ -20,6 +24,11 @@ export function parseAvgAuthorVisualReviewV1(value:unknown){
   return report
 }
 export function assertAvgVisualReviewScopeV1(report:AvgReviewIssuesV1,r:AvgVisualProductionRequirementV1,rawHash:string){
+  assertAvgVisualObservationScopeV1(report,r,rawHash)
+}
+/** Shared observation fields only; versioned review/permission codecs remain
+ * with their own callers. This helper grants no legacy or current authority. */
+export function assertAvgVisualObservationScopeV1(report:AvgVisualObservationFields,r:AvgVisualObservationRequirement,rawHash:string){
   const v=report.visualEvidence
   const locations=new Set([r.requirementKey,r.assetKey,r.family.subjectKey,r.consumer.sceneKey,r.triggerBeatKey,...r.references.map(ref=>ref.assetKey)])
   if(!v||report.targetKey!==r.requirementKey||v.imageHash!==null&&v.imageHash!==rawHash||v.referenceHashes.some(hash=>!r.references.some(ref=>ref.contentHash===hash))
@@ -36,8 +45,11 @@ export function assertAvgVisualReviewScopeV1(report:AvgReviewIssuesV1,r:AvgVisua
 }
 export function assertAvgVisualReviewSelectableV1(value:unknown,r:AvgVisualProductionRequirementV1,rawHash:string){
   const report=parseAvgAuthorVisualReviewV1(value);assertAvgVisualReviewScopeV1(report,r,rawHash)
-  if(!report.observations.includes('visual')||report.unobserved.length||report.visualEvidence!.checks.some(check=>['unknown','fail'].includes(check.result))||report.issues.some(issue=>issue.severity==='blocking'))throw new Error('[avg-review] 评审有未观察或 blocking 问题，请先返修并重新核对，不能选用')
+  assertAvgVisualObservationSelectableV1(report)
   return report
+}
+export function assertAvgVisualObservationSelectableV1(report:AvgVisualObservationFields){
+  if(!report.observations.includes('visual')||report.unobserved.length||report.visualEvidence!.checks.some(check=>['unknown','fail'].includes(check.result))||report.issues.some(issue=>issue.severity==='blocking'))throw new Error('[avg-review] 评审有未观察或 blocking 问题，请先返修并重新核对，不能选用')
 }
 export function assertAvgVisualReviewRevisionV1(previous:unknown|null,next:AvgReviewIssuesV1){
   if(previous===null)return
@@ -66,6 +78,19 @@ export async function validateAvgAuthorVisualReviewFromSourceV1(input:{scope:Wor
   requirement:AvgVisualProductionRequirementV1;image:ProductBuildArtifactRecordV1;asset:FrozenRuntimeMediaAssetV2}){
   const report=parseAvgAuthorVisualReviewV1(input.payload),{requirement:r,image,asset}=input
   assertAvgVisualReviewScopeV1(report,r,image.contentHash)
+  return validateAvgVisualObservedBytesV1({scope:input.scope,report,requirement:r,image,asset,readReference:async reference=>{
+    await validateAvgGeneratedReferencesV1(input.scope,[reference],r.family)
+    return readAvgDraftReferenceBytesV1(input.scope,reference)
+  }})
+}
+
+/** One physical owner/Blob/native-decoder path for explicit review versions.
+ * The supplied reader must prove that version's exact reference permission. */
+export async function validateAvgVisualObservedBytesV1<Report extends AvgVisualObservationFields,Requirement extends AvgVisualObservationRequirement>(input:{
+  scope:WorkspaceScope;report:Report;requirement:Requirement;image:ProductBuildArtifactRecordV1;asset:FrozenRuntimeMediaAssetV2;
+  readReference(reference:Requirement['references'][number]):Promise<ArrayBuffer>
+}){
+  const {report,requirement:r,image,asset}=input
   if(report.visualEvidence!.imageHash){
     const blob=image.blobObjectId===null?null:await db.mediaBlobObjects.get(image.blobObjectId)
     if(!blob||!await assertRecordInScope(input.scope,'mediaBlobObjects',blob,{owner:'work'})||blob.contentHash!==asset.contentHash||blob.mimeType!==asset.mimeType||blob.byteSize!==asset.byteSize)throw new Error('[avg-review] 评审图片字节不存在或跨作品')
@@ -76,8 +101,7 @@ export async function validateAvgAuthorVisualReviewFromSourceV1(input:{scope:Wor
   }
   for(const reference of r.references){
     if(!report.visualEvidence!.referenceHashes.includes(reference.contentHash))continue
-    await validateAvgGeneratedReferencesV1(input.scope,[reference],r.family)
-    const data=await readAvgDraftReferenceBytesV1(input.scope,reference)
+    const data=await input.readReference(reference)
     const inspect=()=>inspectAvgImageBytesV1({data,...reference})
     if(Dexie.currentTransaction)await Dexie.waitFor(Dexie.ignoreTransaction(inspect),20_000);else await inspect()
   }
