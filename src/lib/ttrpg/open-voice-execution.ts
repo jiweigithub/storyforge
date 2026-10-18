@@ -90,7 +90,8 @@ export async function prepareTtrpgOpenLocalVoiceExecutionV1(request: Locator & {
       await b.original.owner.assertCurrent()
       let snapshot = await readChild(input, b)
       if (!snapshot) {
-        snapshot = await createAgentRunV1({ scope: input.scope, productRuntimeSessionId: input.sessionId, worldGroupId: null, contract: b.expected.contract })
+        snapshot = await createAgentRunV1({ scope: input.scope, productRuntimeSessionId: input.sessionId, worldGroupId: null,
+          expectedRuntimeSessionHash: await hashCanonicalValue(b.original.owner.session), contract: b.expected.contract })
       }
       if (!['planned', 'running'].includes(snapshot.projection.state) || snapshot.events.some(e => ['model.requested', 'model.responded', 'tool.called', 'tool.returned', 'candidate.persisted'].includes(e.type))) p.fail('原语音执行已派发或结束，请查看原任务，不会重新准备或发送')
       const append = (type: 'step.scheduled' | 'step.started' | 'context.assembled', payload: unknown) => appendAgentRunEventV1({

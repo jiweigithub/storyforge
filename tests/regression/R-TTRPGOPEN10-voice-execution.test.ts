@@ -97,6 +97,25 @@ console.log(JSON.stringify({text:input.execution.source.text,reading:input.execu
     for (const type of ['step.scheduled', 'step.started', 'context.assembled']) expect(snapshot.events.filter(e => e.type === type)).toHaveLength(1)
     expect(snapshot.events.filter(e => e.type === 'evidence.artifact.recorded')).toHaveLength(2)
   })
+  it('cancellation that wins before child creation leaves no contradictory local execution child', async () => {
+    const s = await fixture(), create = ledger.createAgentRunV1
+    let intercepted = false
+    vi.spyOn(ledger, 'createAgentRunV1').mockImplementation(async input => {
+      if (!intercepted && (input.contract as { objective?: string }).objective === 'ttrpg.open.local-voice:' + s.requested.requestKey) {
+        intercepted = true
+        await cancelTtrpgOpenVoiceRequestV1({ ...s.owner, requestKey: s.requested.requestKey, decision: 'cancel-this-unsent-voice-request' })
+      }
+      return create(input)
+    })
+    await expect(prepareTtrpgOpenLocalVoiceExecutionV1(s.input)).rejects.toMatchObject({ code: 'runtime_snapshot_stale' })
+    const children = (await db.agentRuns.toArray()).filter(r => r.parentRelation === relation)
+    const modelEvents = (await db.agentRunEvents.toArray()).filter(e => e.type === 'model.requested')
+    expect(intercepted).toBe(true); expect(modelEvents).toHaveLength(0); expect(children).toHaveLength(0)
+    const desk = await readTtrpgOpenVoiceRequestDeskV1(s.owner)
+    expect(desk.requests).toHaveLength(1); expect(desk.requests[0].status).toBe('cancelled-before-send')
+    const parents = await db.agentRuns.toArray()
+    expect(parents).toHaveLength(1); expect(parents[0].status).toBe('completed')
+  })
   it.each(['created', 'started', 'input', 'manifest', 'context'] as const)('recovers a real lost %s return through the same original child; read-only reload never fills the gap', async boundary => {
     const s = await fixture()
     if (boundary === 'created') {
