@@ -10,6 +10,11 @@ import { readAvgAssemblyWorkspaceV1 } from '../../src/lib/avg/assembly-service'
 import { parseAvgAuthorWorkspaceV1 } from '../../src/lib/avg/author-workspace-contract'
 import { assertAvgVoiceDraftV1 } from '../../src/lib/avg/voice-draft-contract'
 import { avgAuthorWorkspaceFixture } from '../helpers/avg-author-stage-fixture'
+import { avgVoiceAssemblyFixtureV3 } from '../helpers/avg-voice-production-fixture'
+import { saveAvgVoiceProductionDraftV1 } from '../../src/lib/avg/voice-draft-service'
+import { configuredAvgVoiceEndpointHashV1 } from '../../src/lib/avg/voice-transport'
+import { hashAvgSpeechProtocolV1 } from '../../src/lib/avg/voice-request-contract'
+import { AVG_LOCAL_VOICE_MODEL_V1,AVG_LOCAL_VOICE_PROVIDER_V1 } from '../../src/lib/avg/voice-local-profile'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 const roots: Root[] = []
@@ -26,11 +31,22 @@ afterEach(async () => {
   vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); db.close(); document.body.innerHTML = ''
 })
 
-async function setup() {
+async function setup(legacy = false) {
   const owner = await createAvgDraftV1('逐句配音表单工程验证'), workspace = avgAuthorWorkspaceFixture()
   workspace.presentation.reading = { schema: 'storyforge.avg.reading-plan', version: 1, manualVoice: 'wait', voiceFailure: 'pause',
     maximumVoiceWaitMs: 60_000, autoDelayMs: 800, voices: [] }
-  await saveAvgAuthorWorkspaceV1(owner.scope, 0, workspace)
+  const initial=await saveAvgAuthorWorkspaceV1(owner.scope, 0, workspace)
+  // A legacy form comes from an actual saved, unstarted packet. New works
+  // deliberately use the local profile; this does not invent Agnes speech.
+  if(legacy){
+    const {assembly}=await avgVoiceAssemblyFixtureV3(),{protocol,batch}=assembly.voice
+    protocol.provider='agnes';protocol.endpointRouteHash=await configuredAvgVoiceEndpointHashV1({baseUrl:config.baseUrl,model:protocol.model})
+    const preset=batch.presets[0]!,r=batch.requirements[0]!
+    Object.assign(preset,{provider:protocol.provider,endpointRouteHash:protocol.endpointRouteHash,capabilityHash:await hashAvgSpeechProtocolV1(protocol)})
+    await saveAvgVoiceProductionDraftV1({scope:owner.scope,expectedDraftRevision:initial.revision,protocol,presets:[preset],
+      lines:[{requirementKey:r.requirementKey,assetKey:r.assetKey,sceneKey:r.sceneKey,lineKey:r.lineKey,presetKey:r.presetKey,
+        maximumDurationMs:r.maximumDurationMs,performance:r.performance}]})
+  }
   let view = await readAvgAssemblyWorkspaceV1(owner.scope), lastAction = Promise.resolve()
   const host = document.createElement('div'); document.body.append(host)
   const root = createRoot(host); roots.push(root)
@@ -40,7 +56,7 @@ async function setup() {
     onPending={onPending} onAction={task => { lastAction = task().catch(error => { errors.push(String(error)) }); return lastAction }}
     onReload={async () => { view = await readAvgAssemblyWorkspaceV1(owner.scope); render() }} onGenerate={onGenerate} onCancel={() => {}} onNotice={onNotice} />)
   await act(async () => render())
-  return { host, scope: owner.scope, view: () => view, onPending, onGenerate, onNotice, errors, action: () => lastAction }
+  return { host, legacy, scope: owner.scope, view: () => view, onPending, onGenerate, onNotice, errors, action: () => lastAction }
 }
 function control(host: HTMLElement, label: string) {
   const wrapper = Array.from(host.querySelectorAll('label')).find(e => e.textContent?.startsWith(label))
@@ -62,10 +78,11 @@ async function click(host: HTMLElement, text: string) {
   await act(async () => button.click())
 }
 async function proposal(s: Awaited<ReturnType<typeof setup>>) {
-  await fill(s.host, 'Agnes 配音模型 ID', 'speech-fixture')
+  if(s.legacy)await fill(s.host, '兼容服务模型 ID', 'speech-fixture')
+  else expect(s.host.textContent).toContain('本机免费配音')
   const line = Array.from(s.host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(e => e.closest('label')?.textContent?.includes('第 1 句'))!
-  await act(async () => line.click())
-  await fill(s.host, '音色 ID', 'voice-a')
+  if(!line.checked)await act(async () => line.click())
+  await fill(s.host, '音色', s.legacy?'voice-a':'Serena')
   await fill(s.host, '音色使用权说明', '工程声明 e\u0301，不是商业许可证明')
   await fill(s.host, '音色条款或授权依据', '本测试原创协议声明')
 }
@@ -87,14 +104,15 @@ describe('AVG real Work voice batch editor without provider or start authority',
     expect(parsed.voice.batch.requirements).toHaveLength(1)
     const requirement = parsed.voice.batch.requirements[0]!
     expect(requirement.text).toBe(actual.scripts.find(x => x.sceneKey === requirement.sceneKey)!.lines.find(x => x.lineKey === requirement.lineKey)!.text)
-    expect(parsed.voice.protocol.model).toBe('speech-fixture')
+    expect(parsed.voice.protocol.model).toBe(AVG_LOCAL_VOICE_MODEL_V1)
+    expect(parsed.voice.protocol.provider).toBe(AVG_LOCAL_VOICE_PROVIDER_V1)
     expect(parsed.voice.batch.presets[0]!.rights.declaration).toContain('e\u0301')
-    expect(s.onPending).toHaveBeenLastCalledWith(false); expect(s.host.textContent).toContain('配音收费生产尚未开放')
+    expect(s.onPending).toHaveBeenLastCalledWith(false); expect(s.host.textContent).toContain('实验性配音生产尚未开放')
     expect(s.onGenerate).not.toHaveBeenCalled(); await noProduction()
   })
 
   it('does not drop unsupported performance instructions, and retains the pending form and original persisted packet on rejection', async () => {
-    const s = await setup(); await proposal(s); await save(s)
+    const s = await setup(true); await proposal(s); await save(s)
     const before = s.view().draft.editorJson
     await fill(s.host, '演法指令', '压低声音，保留准确台词')
     await save(s)
@@ -105,11 +123,11 @@ describe('AVG real Work voice batch editor without provider or start authority',
   })
 
   it('discards only unsaved voice form changes and restores the saved packet without changing source words or making calls', async () => {
-    const s = await setup(); await proposal(s); await save(s)
+    const s = await setup(true); await proposal(s); await save(s)
     const before = s.view().draft.editorJson
-    await fill(s.host, 'Agnes 配音模型 ID', 'unsaved-other-model')
+    await fill(s.host, '兼容服务模型 ID', 'unsaved-other-model')
     await act(async () => { await click(s.host, '撤销未保存的配音需求'); await s.action() })
-    expect(control(s.host, 'Agnes 配音模型 ID').value).toBe('speech-fixture')
+    expect(control(s.host, '兼容服务模型 ID').value).toBe('speech-fixture')
     expect(s.view().draft.editorJson).toBe(before); expect(s.onPending).toHaveBeenLastCalledWith(false)
     expect(s.errors).toEqual([]); await noProduction()
   })
@@ -129,7 +147,7 @@ describe('AVG real Work voice batch editor without provider or start authority',
   })
 
   it('uses only the selected Agnes route and refuses a text-provider fallback without mutating model settings or the Work', async () => {
-    const s = await setup(); await proposal(s)
+    const s = await setup(true); await proposal(s)
     useAIConfigStore.getState().setConfig({ ...config, provider: 'deepseek', baseUrl: 'https://api.deepseek.com/v1' })
     const before = s.view().draft.editorJson
     await save(s)
