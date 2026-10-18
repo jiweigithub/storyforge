@@ -114,6 +114,7 @@ export async function readTtrpgOpenVoiceRequestDeskV1(request: TtrpgOpenAudioRea
       cancellationConfirmed: false as const, automaticRetryAllowed: false as const } : undefined
     return {
     requestKey: r.requestKey, sourceRef: r.sourceRef, worldTurn: r.worldTurn, script: structuredClone(r.script), part: structuredClone(r.part), ...(r.reading === undefined ? {} : { reading: structuredClone(r.reading) }),
+    intentComplete: !!original && original.status === 'completed' && !!original.terminalReceiptHash,
     status: r.cancelledRef ? 'cancelled-before-send' as const : execution ? execution.dispatchRecorded ? 'execution-dispatch-recorded' as const : 'execution-preparation-recorded' as const : original ? 'reserved-without-dispatch' as const : 'history-only' as const,
     ...(execution ? { execution } : {}), generationAllowed: false as const, adoptionAllowed: false as const }
   })) : []

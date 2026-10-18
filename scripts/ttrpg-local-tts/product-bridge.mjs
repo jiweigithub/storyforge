@@ -2,6 +2,7 @@
 // automatic launch-on-read, inference retry, or adopted media is exposed.
 import { createProductVoiceJobs } from './product-jobs.mjs'
 import { productProfileHash, productProfile } from './product-contract.mjs'
+import { previewLocalReading, validateReadingInput, verifyReadingPreview } from './reading-preview.mjs'
 export const PREFIX = '/storyforge/local-tts/v1'
 export function allowedProductVoiceRequest(req) {
   try {
@@ -12,21 +13,37 @@ export function allowedProductVoiceRequest(req) {
       && (!req.headers['sec-fetch-site'] || req.headers['sec-fetch-site'] === 'same-origin')
   } catch { return false }
 }
-function send(res, code, data) { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(data)) }
+function send(res, code, data) { if (res.destroyed || res.writableEnded) return; res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(data)) }
 async function body(req) {
   if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) throw new Error('JSON required')
   let size = 0; const chunks = []
   for await (const chunk of req) { size += chunk.length; if (size > 65536) throw new Error('Bounded job input exceeded'); chunks.push(chunk) }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(Buffer.concat(chunks)))
 }
 export function createProductVoiceBridge(runtimeDir, options = {}) {
   const jobs = createProductVoiceJobs(runtimeDir, options)
+  let preview = null, closed = false
   async function middleware(req, res, next) {
     const url = new URL(req.url, 'http://localhost')
     if (!url.pathname.startsWith(PREFIX)) return next()
     if (!allowedProductVoiceRequest(req)) return send(res, 403, { error: 'local-origin-required' })
     try {
+      if (closed) return send(res, 409, { error: 'local-service-closed' })
       if (req.method === 'GET' && url.pathname === PREFIX + '/profile') return send(res, 200, { kind: 'local-offline-speech-v1', profileHash: productProfileHash, profile: productProfile })
+      if (req.method === 'POST' && url.pathname === PREFIX + '/reading-preview') {
+        if (preview) return send(res, 409, { error: 'reading-preview-busy', automaticRetryAllowed: false })
+        const value = await body(req)
+        if (Object.keys(value).sort().join(',') !== 'decision,input' || value.decision !== 'preview-this-original-voice-reading') throw new Error('Explicit reading preview required')
+        validateReadingInput(value.input)
+        if (preview || closed || req.aborted || res.destroyed || res.writableEnded) throw new Error('Reading preview slot changed or request closed')
+        const controller = new AbortController(), abort = () => controller.abort()
+        preview = controller; res.once('close', abort)
+        try {
+          const result = await (options.previewReading ?? previewLocalReading)(runtimeDir, value.input, { signal: controller.signal })
+          if (controller.signal.aborted || closed) throw new Error('Reading preview cancelled')
+          return send(res, 200, verifyReadingPreview(result, value.input))
+        } finally { res.removeListener('close', abort); if (preview === controller) preview = null }
+      }
       if (req.method === 'POST' && url.pathname === PREFIX + '/jobs') return send(res, 200, jobs.create(await body(req)))
       const match = url.pathname.slice(PREFIX.length).match(/^\/jobs\/([^/]+)(?:\/(start|cancel|raw|lease|recover-raw))?$/)
       if (!match) return send(res, 404, { error: 'not-found' })
@@ -40,7 +57,7 @@ export function createProductVoiceBridge(runtimeDir, options = {}) {
       return send(res, 405, { error: 'method-not-allowed' })
     } catch { return send(res, 409, { error: 'original-local-voice-job-needs-review', automaticRetryAllowed: false }) }
   }
-  return { middleware, close: jobs.close }
+  return { middleware, close() { closed = true; preview?.abort(); jobs.close() } }
 }
 export function localTtsPlugin() {
   const install = server => {

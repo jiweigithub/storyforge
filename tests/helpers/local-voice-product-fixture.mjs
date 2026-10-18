@@ -38,8 +38,8 @@ export function syntheticRuntime() {
 export function fakeChild() {
   const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.signals = []; child.kill = signal => { child.signals.push(signal); return true }; return child
 }
-export function syntheticResult(input) {
-  const samples = 4410, bytes = Buffer.alloc(44 + samples * 2), sr = productProfile.sampleRate
+export function syntheticResult(input, samples = 4410) {
+  const bytes = Buffer.alloc(44 + samples * 2), sr = productProfile.sampleRate
   bytes.write('RIFF', 0); bytes.writeUInt32LE(bytes.length - 8, 4); bytes.write('WAVEfmt ', 8); bytes.writeUInt32LE(16, 16); bytes.writeUInt16LE(1, 20); bytes.writeUInt16LE(1, 22)
   bytes.writeUInt32LE(sr, 24); bytes.writeUInt32LE(sr * 2, 28); bytes.writeUInt16LE(2, 32); bytes.writeUInt16LE(16, 34); bytes.write('data', 36); bytes.writeUInt32LE(samples * 2, 40)
   let sum = 0, peak = 0

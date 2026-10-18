@@ -47,7 +47,7 @@
       },
       {
         "path": "scripts/ttrpg-local-tts/product-bridge.mjs",
-        "sha256": "6f2f32bf9d6f1d063de8560bd61acfaa06e71ebeafdc6898646dafbab80ce827"
+        "sha256": "d8a95e27e0ae6e10c1f23d95168c648800dcd612d824d2ad6615c804d34cddef"
       },
       {
         "path": "scripts/ttrpg-local-tts/engine.py",

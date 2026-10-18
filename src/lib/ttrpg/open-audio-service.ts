@@ -2,7 +2,7 @@
 // The existing audio service remains the public domain boundary for both
 // licensed files and human-only script review. Source review grants no dispatch.
 export { prepareTtrpgOpenVoiceScriptV1, readTtrpgOpenReviewedVoiceScriptV1 } from './open-voice-script-service'
-export { prepareTtrpgOpenVoiceReadingReviewV1, readTtrpgOpenReviewedVoiceReadingV1 } from './open-voice-reading-service'
+export { prepareTtrpgOpenVoiceReadingReviewV1, readTtrpgOpenReviewedVoiceReadingV1, previewTtrpgOpenVoiceReadingV1 } from './open-voice-reading-service'
 export type { TtrpgOpenVoiceScriptReviewV1 } from './open-voice-script-service'
 import { loadTtrpgOpenAudioReadStateV1 as owner, type TtrpgOpenAudioReadInputV1 } from './open-audio-read-state'
 import { assertTtrpgOpenAudioWriteAllowedV1, createTtrpgOpenAudioReceiptV1, parseTtrpgOpenAudioRequestV1, ttrpgOpenAudioKindV1,
@@ -210,6 +210,7 @@ export { readTtrpgOpenLocalVoiceJobV1 } from './open-voice-job-service'
 export { stopTtrpgOpenLocalVoiceJobV1 } from './open-voice-job-stop'
 export { recoverTtrpgOpenLocalVoiceRawV1 } from './open-voice-raw-recovery'
 export { prepareTtrpgOpenVoiceCandidateV1, readTtrpgOpenVoiceCandidateV1 } from './open-voice-candidate'
+export { prepareTtrpgOpenVoiceAuditionV1, observeTtrpgOpenVoiceAuditionV1 } from './open-voice-audition'
 
 export { recoverTtrpgOpenVoiceIntentV1 } from './open-voice-intent-receipt'
 export { prepareTtrpgOpenLocalVoiceExecutionV1, readTtrpgOpenLocalVoicePreparationV1, generateTtrpgOpenLocalVoiceV1 } from './open-voice-execution'

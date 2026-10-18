@@ -14,7 +14,7 @@ import * as p from './open-contract-parse'
 
 type Basis = Awaited<ReturnType<typeof loadTtrpgOpenVoiceRawBasisForKernelV1>>
 type Verified = Awaited<ReturnType<typeof verifyTtrpgOpenVoiceRawResultForKernelV1>>
-async function build(b: Basis) {
+async function build(b: Basis,includeAuditionBytes = false) {
   const reading = b.original.request.reading
   if (!b.raw || !b.responded || !reading || !b.sourceContent) p.fail('请先明确取回并完整记录原始返回；候选不会查询或重发')
   let verified: Verified | null = null
@@ -39,7 +39,7 @@ async function build(b: Basis) {
     requestKey: b.input.requestKey, profileHash: b.identity.profileHash, artifact, validation }
   const candidate = { ...body, candidateHash: await hashCanonicalValue(body) }
   await b.original.owner.assertCurrent()
-  return { candidate, content: canonicalStringify(candidate) }
+  return { candidate, content: canonicalStringify(candidate), auditionData: includeAuditionBytes && verified ? verified.bytes : null }
 }
 export type TtrpgOpenVoiceCandidateV1 = Awaited<ReturnType<typeof build>>['candidate']
 async function retained(b: Basis) {
@@ -78,6 +78,30 @@ export async function readTtrpgOpenVoiceCandidateV1(request: TtrpgOpenVoiceJobLo
   const receipt = await receipts(b,built.candidate)
   await b.original.owner.assertCurrent()
   return { candidate: built.candidate, complete: receipt.persisted && receipt.checkpoint, generationAllowed: false as const, adoptionAllowed: false as const }
+}
+/** Internal actual-byte handoff only; the public audition service owns its
+ * local lifetime. Nothing here creates a listening/adoption receipt. */
+export async function readTtrpgOpenVoiceAuditionBasisForKernelV1(request: TtrpgOpenVoiceJobLocatorV1 & { candidateHash: string }) {
+  const input = structuredClone(request);p.hash(input.candidateHash,'exact voice audition candidate')
+  const b = await loadTtrpgOpenVoiceRawBasisForKernelV1(input), content = await retained(b), built = await build(b,true)
+  const receipt = await receipts(b,built.candidate)
+  if (b.original.owner.runtime.product.safety.status !== 'active' || content !== built.content || built.candidate.candidateHash !== input.candidateHash
+    || !receipt.persisted || !receipt.checkpoint || !built.auditionData || !built.candidate.validation
+    || !['ready','usable-with-warnings'].includes(built.candidate.artifact.status)) p.fail('本次原候选尚不能试听；核对原证据、本人权限和当前安全状态')
+  await b.original.owner.assertCurrent()
+  const proof = { content: built.content, ledgerHash: await hashCanonicalValue([b.snapshot,b.original.snapshot]) }
+  return { basis: b,candidate: built.candidate,data: built.auditionData,timeline: built.candidate.validation.timeline,
+    assertCurrent: () => assertAuditionEvidence(input,proof) }
+}
+/** Close the prepare → observer gap using original evidence, without decoding
+ * PCM again or retaining another raw/base64 copy for the preview lifetime. */
+async function assertAuditionEvidence(input: TtrpgOpenVoiceJobLocatorV1, proof: {content: string;ledgerHash: string}) {
+  const b = await loadTtrpgOpenVoiceRawBasisForKernelV1(input), content = await retained(b)
+  if (content !== proof.content || await hashCanonicalValue([b.snapshot,b.original.snapshot]) !== proof.ledgerHash
+    || b.original.owner.runtime.product.safety.status !== 'active') p.fail('试听的原证据或安全状态已变化')
+  const receipt = await receipts(b,JSON.parse(proof.content) as TtrpgOpenVoiceCandidateV1)
+  if (!receipt.persisted || !receipt.checkpoint) p.fail('试听的原候选证明已不可用')
+  await b.original.owner.assertCurrent()
 }
 export async function prepareTtrpgOpenVoiceCandidateV1(request: TtrpgOpenVoiceJobLocatorV1 & { decision: 'review-this-original-local-voice-result' }) {
   const input = structuredClone(request); p.literal(input.decision,'review-this-original-local-voice-result','explicit original audio review')

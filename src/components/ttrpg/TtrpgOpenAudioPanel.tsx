@@ -6,6 +6,7 @@ import type { TtrpgOpenAudioRequestV1 } from '../../lib/ttrpg/open-audio-contrac
 import TtrpgOpenAudioPlayer, { type TtrpgLocalAudioStopV1 } from './TtrpgOpenAudioPlayer'
 import { rememberTtrpgAudioPositionV1 } from '../../lib/ttrpg/open-audio-playback'
 import { createTtrpgAudioTransitionPlaybackV1 } from '../../lib/ttrpg/open-audio-transition-playback'
+import TtrpgOpenVoiceStudio from './TtrpgOpenVoiceStudio'
 
 const channels: Record<TtrpgAudioChannelV1, string> = { music: '背景音乐', ambience: '环境声', sfx: '音效', voice: '配音' }
 const audiences: Record<TtrpgAudioAudienceV1, string> = { public: '公开', party: '本次全队', private: '指定角色', 'gm-only': '仅主持' }
@@ -37,6 +38,8 @@ export default function TtrpgOpenAudioPanel(props: {
   const [urls, setUrls] = useState<Record<string, string>>({}), [clipFailures, setClipFailures] = useState<Record<string, boolean>>({}), [reload, setReload] = useState(0)
   const [retained, setRetained] = useState<Array<{ visit: typeof currentIdentity.current; track: TtrpgOpenAudioDeskV1['tracks'][number]; url: string }>>([])
   const playbackOrder = useRef<string[]>([])
+  const voiceStop = useRef<()=>void>(()=>undefined)
+  const registerVoiceStop = useCallback((handle:(()=>void)|null)=>{voiceStop.current=handle??(()=>undefined)},[])
   const revision = useRef(0), live = useRef(false), operationLocked = useRef(false), clips = useRef(new Map<string, { url: string; blob: Blob }>()), elements = useRef(new Map<string, TtrpgLocalAudioStopV1>()), bookmarks = useRef(new Map<string, number>()), fileRead = useRef<AbortController | null>(null)
   const lastView = useRef<{ visit: typeof currentIdentity.current; value: TtrpgOpenAudioDeskV1 } | null>(null)
   const localChoice = useRef({ visit: currentIdentity.current, enabled: false, follow: false })
@@ -48,6 +51,7 @@ export default function TtrpgOpenAudioPanel(props: {
   const visit = currentIdentity.current
   const remember = useCallback((key: string, seconds: number) => { if (currentIdentity.current === visit) rememberTtrpgAudioPositionV1(bookmarks.current, key, seconds) }, [visit])
   const releaseLocal = useCallback(() => {
+    voiceStop.current()
     transitions.cancel()
     for (const stop of elements.current.values()) stop()
     for (const clip of clips.current.values()) URL.revokeObjectURL(clip.url)
@@ -201,6 +205,7 @@ export default function TtrpgOpenAudioPanel(props: {
       {clipFailures[track.clipKey] && <><p role="status">音频不可用，已保留文字说明。</p><button onClick={() => { const clip = clips.current.get(track.clipKey); if (clip) URL.revokeObjectURL(clip.url); clips.current.delete(track.clipKey); setReload(value => value + 1) }}>重新加载此音轨</button></>}
       {!retiring && view?.humanHost && <button disabled={working || props.busy || !view.canStop} onClick={() => void prepareSaved(track.sourceRef, 'stop')}>核对停止{channels[track.channel]}</button>}
     </article> })}
+    {view?.humanHost && <TtrpgOpenVoiceStudio key={`${identity}:${view.authorizationRevision}`} input={input()} view={view} enabled={enabled&&!silenced} busy={props.busy} sequence={props.sequence} registerStop={registerVoiceStop} onChanged={props.onChanged}/>}
     {view?.humanHost && <details><summary>主持音轨管理</summary>
       {view.unavailable && <p>{view.unavailable}</p>}
       {!pending && <fieldset disabled={working || props.busy || !view.canPlay}>
