@@ -7,7 +7,7 @@ const cache = new Map<string, TtrpgVersionedRuntimeContent>()
 // Only values produced and deeply frozen here may take the identity fast path.
 // An externally frozen input or a claimed contentHash is never enough.
 const frozenViews = new WeakMap<object, { sourceWorldHash: string; playerVersion: 1 | 2 }>()
-type Snapshot = { key: string; value: unknown }
+type Snapshot = { key: string }
 
 function freeze(value: unknown): void {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return
@@ -18,14 +18,16 @@ function freeze(value: unknown): void {
 /** Accessors, symbols, holes, exotic objects and non-JSON values use the original parser. */
 function snapshot(value: unknown): Snapshot | undefined {
   const visiting = new Set<object>()
+  const parts: string[] = []
   let nodes = 0, characters = 0
-  function visit(value: unknown, depth: number): Snapshot {
+  function visit(value: unknown, depth: number): void {
     if (++nodes > 50000 || depth > 128) throw new Error('uncached content')
     if (value === null || typeof value === 'boolean' || typeof value === 'number' && Number.isFinite(value) || typeof value === 'string') {
       const key = Object.is(value, -0) ? '-0' : JSON.stringify(value)
       characters += key.length
       if (characters > MAX_INPUT_CHARACTERS) throw new Error('uncached content')
-      return { key, value }
+      parts.push(key)
+      return
     }
     if (!value || typeof value !== 'object' || visiting.has(value)) throw new Error('uncached content')
     const array = Array.isArray(value), prototype = Object.getPrototypeOf(value)
@@ -33,24 +35,27 @@ function snapshot(value: unknown): Snapshot | undefined {
     visiting.add(value)
     const keys = Reflect.ownKeys(value)
     if (array && (keys.length !== value.length + 1 || !keys.includes('length'))) throw new Error('uncached content')
-    const result = array ? [] : Object.create(prototype)
-    const parts: string[] = []
+    parts.push(array ? '[' : '{')
+    let index = 0
     for (const name of keys) {
       if (array && name === 'length') continue
       const descriptor = Object.getOwnPropertyDescriptor(value, name)
       if (typeof name !== 'string' || !descriptor?.enumerable || !('value' in descriptor)
-        || array && name !== String(parts.length)) throw new Error('uncached content')
-      const child = visit(descriptor.value, depth + 1)
-      Object.defineProperty(result, name, { value: child.value, enumerable: true, configurable: true, writable: true })
+        || array && name !== String(index)) throw new Error('uncached content')
       const key = JSON.stringify(name)
       characters += key.length + 3
       if (characters > MAX_INPUT_CHARACTERS) throw new Error('uncached content')
-      parts.push(array ? child.key : `${key}:${child.key}`)
+      if (index++) parts.push(',')
+      if (!array) parts.push(key, ':')
+      visit(descriptor.value, depth + 1)
     }
     visiting.delete(value)
-    return { key: array ? `[${parts.join(',')}]` : `{${parts.join(',')}}`, value: result }
+    parts.push(array ? ']' : '}')
   }
-  try { return visit(value, 0) } catch { return undefined }
+  // The token stream is the original exact JSON key (including -0). Building
+  // per-node copies on every cache hit made long journals repeatedly allocate
+  // the whole frozen campaign. Only a cache miss needs a materialized snapshot.
+  try { visit(value, 0); return { key: parts.join('') } } catch { return undefined }
 }
 
 export function parseTtrpgFrozenContentCachedV1(
@@ -61,9 +66,7 @@ export function parseTtrpgFrozenContentCachedV1(
   const trusted = immutable && value && typeof value === 'object' ? frozenViews.get(value) : undefined
   if (trusted && trusted.sourceWorldHash === sourceWorldHash && trusted.playerVersion === playerVersion) return value as TtrpgVersionedRuntimeContent
   const input = snapshot(value)
-  const protocol = input?.value && typeof input.value === 'object' && !Array.isArray(input.value)
-    ? (input.value as { compatibility?: { runtimeProtocol?: unknown } }).compatibility?.runtimeProtocol : undefined
-  if (!input || protocol !== 2 || typeof sourceWorldHash !== 'string' || playerVersion !== 1 && playerVersion !== 2) {
+  if (!input || typeof sourceWorldHash !== 'string' || playerVersion !== 1 && playerVersion !== 2) {
     const parsed = parse(value, sourceWorldHash, playerVersion)
     if (immutable) { freeze(parsed); frozenViews.set(parsed, { sourceWorldHash, playerVersion }) }
     return parsed
@@ -74,9 +77,17 @@ export function parseTtrpgFrozenContentCachedV1(
     cache.delete(key); cache.set(key, previous)
     return immutable ? previous : structuredClone(previous)
   }
-  // Parse the same descriptor snapshot used for the key. A caller mutation or
-  // proxy cannot put a differently parsed value behind an earlier signature.
-  const parsed = parse(input.value, sourceWorldHash, playerVersion)
+  // Materialize only these captured bytes, never reread a mutable/proxy input.
+  // JSON.parse preserves -0 and makes __proto__ an ordinary own data field.
+  const snapshotValue: unknown = JSON.parse(input.key)
+  const protocol = snapshotValue && typeof snapshotValue === 'object' && !Array.isArray(snapshotValue)
+    ? (snapshotValue as { compatibility?: { runtimeProtocol?: unknown } }).compatibility?.runtimeProtocol : undefined
+  if (protocol !== 2) {
+    const parsed = parse(value, sourceWorldHash, playerVersion)
+    if (immutable) { freeze(parsed); frozenViews.set(parsed, { sourceWorldHash, playerVersion }) }
+    return parsed
+  }
+  const parsed = parse(snapshotValue, sourceWorldHash, playerVersion)
   const retained = structuredClone(parsed)
   freeze(retained)
   frozenViews.set(retained, { sourceWorldHash, playerVersion })

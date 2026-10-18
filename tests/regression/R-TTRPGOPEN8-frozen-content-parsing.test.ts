@@ -114,4 +114,22 @@ describe('R-TTRPGOPEN8 exact frozen content parsing reuse', () => {
     expect(() => parseTtrpgFrozenRuntimeContentV1(copy, raw.campaign.sourceWorld.contentHash)).toThrow()
     expect(parseTtrpgFrozenRuntimeContentV1(frozen, raw.campaign.sourceWorld.contentHash)).toBe(frozen)
   })
+  it('preserves escaped JSON text and null-prototype input on a cold snapshot and an exact warm read', async () => {
+    const title = 'cache.roundtrip " \\ \n \u0000 \ud800 🌊 __proto__', raw = await content(title)
+    Object.setPrototypeOf(raw, null); Object.setPrototypeOf(raw.campaign, null)
+    const first = parseTtrpgFrozenRuntimeContentV1(raw, raw.campaign.sourceWorld.contentHash)
+    expect(first.campaign.title).toBe(title)
+    expect(parseTtrpgFrozenRuntimeContentV1(structuredClone(raw), raw.campaign.sourceWorld.contentHash)).toBe(first)
+    const mutable = parseTtrpgRuntimeContentVersionedV1(raw, raw.campaign.sourceWorld.contentHash, 2)
+    mutable.campaign.title = 'independent author copy'
+    expect(first.campaign.title).toBe(title)
+  })
+  it('keeps an own prototype-named extra field distinct from a valid cached body and cannot pollute prototypes', async () => {
+    const raw = await content('cache.proto-field'), frozen = parseTtrpgFrozenRuntimeContentV1(raw, raw.campaign.sourceWorld.contentHash)
+    const altered = structuredClone(raw)
+    Object.defineProperty(altered.campaign, '__proto__', { enumerable: true, value: { cachePolluted: true } })
+    expect(() => parseTtrpgFrozenRuntimeContentV1(altered, raw.campaign.sourceWorld.contentHash)).toThrow()
+    expect(Object.prototype).not.toHaveProperty('cachePolluted')
+    expect(parseTtrpgFrozenRuntimeContentV1(raw, raw.campaign.sourceWorld.contentHash)).toBe(frozen)
+  })
 })
