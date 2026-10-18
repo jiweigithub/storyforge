@@ -46,6 +46,17 @@ export async function createAvgReferenceImageAdapterV2(input: {
   return createReferenceAdapter(await assertAvgImageRequestV2(input.frozen), input.readReference)
 }
 
+/** Shared exact receipt construction for transport and sealed admission. It
+ * records instructions sent, never proves that the returned art obeyed them. */
+export function avgReferenceTransmissionV1(frozen:Omit<AvgImageRequestV1,'version'|'references'>&{
+  version:1|2;references:Array<AvgMediaReferenceV1|AvgMediaReferenceV2>;targetFamily?:AvgImageRequestV2['targetFamily']
+}){
+  return {schema:'storyforge.avg.reference-transmission',version:frozen.version,inputHash:frozen.inputHash,
+    capabilityHash:frozen.capabilityHash,resolutionTier:frozen.resolutionTier,
+    references:frozen.references.map((r,index)=>({...r,inputIndex:index+1})),encoding:'data-uri',nativeCrop:false,nativeMask:false,alphaGuaranteed:false,
+    ...(frozen.version===2?{referencePurposeGuaranteed:false,targetFamily:frozen.targetFamily}:{})}
+}
+
 function createReferenceAdapter<R extends AvgMediaReferenceV1 | AvgMediaReferenceV2>(
   frozen: Omit<AvgImageRequestV1, 'version' | 'references'> & { version: 1 | 2; references: R[]; targetFamily?:AvgImageRequestV2['targetFamily'] },
   readReference: (reference: R) => Promise<ArrayBuffer>,
@@ -57,13 +68,7 @@ function createReferenceAdapter<R extends AvgMediaReferenceV1 | AvgMediaReferenc
       throw new Error('[avg-media] 执行请求与冻结的参考输入不一致')
     }
   }
-  const lineage = {
-    schema: 'storyforge.avg.reference-transmission', version: frozen.version,
-    inputHash: frozen.inputHash, capabilityHash: frozen.capabilityHash, resolutionTier: frozen.resolutionTier,
-    references: frozen.references.map((r, index) => ({ ...r, inputIndex: index + 1 })),
-    encoding: 'data-uri', nativeCrop: false, nativeMask: false, alphaGuaranteed: false,
-    ...(frozen.version === 2 ? { referencePurposeGuaranteed: false, targetFamily:frozen.targetFamily } : {}),
-  }
+  const lineage=avgReferenceTransmissionV1(frozen)
   return {
     capability: structuredClone(adapter.capability),
     async estimate(request) {

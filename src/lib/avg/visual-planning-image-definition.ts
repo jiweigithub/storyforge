@@ -1,14 +1,12 @@
 import { db } from '../db/schema'
-import type { ProductProductionBriefV3, WorkspaceScope } from '../types'
-import { resolveScope, assertRecordInScope } from '../workspace/scope'
-import { parseProductProductionBriefV3 } from '../product-production/contracts'
-import { parseProductProductionPlanV3 } from '../product-production/plan'
-import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
+import { readAvgCompiledImageAuthority } from './visual-image-authority'
+import type { ProductBuildRecordV1, ProductProductionBriefV3, WorkspaceScope } from '../types'
+import { hashProductProductionValueV2 } from '../product-production/hash'
 import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/artifact-store'
 import { readAvgConfirmedVisualArtifactsV4, readAvgSystemPlanForCompilationV1, readAvgFrozenVisualSourceInputsV4 } from './author-artifacts'
 import { assertAvgVisualPlanningProposalV1 } from './media-source'
 import { AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4 } from './visual-planning-plan'
-import { verifyAvgReferenceBytesV1, avgImageReferenceCapabilityV2 } from './media-reference-contract'
+import { verifyAvgReferenceBytesV1 } from './media-reference-contract'
 import { readAvgDraftReferenceBytesV1 } from './editor-service'
 import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 import { prepareAvgRawImageRequestFromBatchV1 } from './media-raw-contract'
@@ -21,29 +19,7 @@ export async function readAvgCompiledImageDefinitionV4(input: {
   expectedBrief?: ProductProductionBriefV3
   purpose?: 'assembly' | 'frozen-verification'
 }) {
-  const scope = await resolveScope({ scope: input.scope }), build = await db.productBuilds.get(input.buildId)
-  const frozen=input.purpose==='frozen-verification'
-  if (!build?.id || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })
-    || !(frozen?['building','validating','preview-ready','release-ready','released']:input.purpose==='assembly'?['building','integrating']:['building']).includes(build.status)
-    || (frozen? !build.packageHash||!build.previewHash||!build.rootTerminalReceiptHash:!!build.packageHash||!!build.previewHash||build.releasedProductReleaseId!=null)
-    || build.stateRevision !== input.expectedBuildRevision || build.controlEpoch !== input.controlEpoch) throw new Error('[avg-visual-image] 准确当前 Build 已 stale 或跨 Work')
-  const production = await db.productProductions.get(build.productionId)
-  const briefRow = await db.productProductionBriefs.where('[productionId+revision]').equals([build.productionId, build.briefRevision]).first()
-  if (!production || !await assertRecordInScope(scope, 'productProductions', production, { owner: 'work' })
-    || production.productType !== 'avg' || !frozen&&(production.status !== 'producing' || production.currentBuildNumber !== build.buildNumber
-    || production.controlEpoch !== build.controlEpoch || production.currentBriefRevision !== build.briefRevision)
-    || !briefRow || !await assertRecordInScope(scope, 'productProductionBriefs', briefRow, { owner: 'work' })
-    || briefRow.status !== 'authorized' || briefRow.briefHash !== build.briefHash || briefRow.authorizedAt !== build.authorizedAt) throw new Error('[avg-visual-image] 缺少准确当前 V4 授权来源')
-  const brief = parseProductProductionBriefV3(briefRow.briefJson), planning = brief.avgVisualPlanning
-  const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
-  if (planning?.version!==4 || await hashProductProductionValueV2(brief) !== build.briefHash
-    || input.expectedBrief && !same(input.expectedBrief, brief)) throw new Error('[avg-visual-image] 实际完整 V4 Brief 不一致')
-  const capability = brief.capabilityRequirements.find(c => c.requirementKey === 'avg.media.image')!
-  if (capability.capabilityHash !== await hashProductProductionValueV2(avgImageReferenceCapabilityV2(planning.imageBinding.adapterId))) throw new Error('[avg-visual-image] 图片能力不是准确冻结模型的参考输入协议')
-  const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash)
-  const compiler = plan.tasks.find(t => t.kind === 'avg-v4-visual-requirements-compile')
-  if (!compiler || plan.controlEpoch !== build.controlEpoch || plan.buildNumber !== build.buildNumber
-    || await hashProductProductionValueV2(plan) !== build.planHash || !same(plan, JSON.parse(build.planJson))) throw new Error('[avg-visual-image] 编译任务不属于当前准确固定 Plan')
+  const {scope,build,production,briefRow,brief,planning,capability,plan,compiler,frozen,same}=await readAvgCompiledImageAuthority(input,4)
   const rows = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id, AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4])
     .filter(r => r.status === 'accepted' && r.controlEpoch === build.controlEpoch).toArray()
   if (rows.length !== 1) throw new Error('[avg-visual-image] 图片需求尚未准确编译/接收')
@@ -71,7 +47,7 @@ export async function readAvgCompiledImageDefinitionV4(input: {
   if (!same(current, build) || !same(await db.productProductions.get(production.id!), production)
     || !same(await db.productProductionBriefs.get(briefRow.id!), briefRow)
     || !same(await db.productBuildArtifacts.get(compilation.id!), compilation)) throw new Error('[avg-visual-image] 编译来源在读取期间变化')
-  return { brief, planning, build, production, plan, compiler, compilation, proposal, source, visual, capability,
+  return { brief, planning, build:build as ProductBuildRecordV1, production, plan, compiler, compilation, proposal, source, visual, capability,
     definition: { schema: 'storyforge.avg.compiled-image-definition' as const, version: 4 as const,
       assembly: planning.assembly, mediaBatch: proposal.batch, imageBinding: planning.imageBinding,
       ...(planning.imageProcessing?{imageProcessing:planning.imageProcessing}:{}),

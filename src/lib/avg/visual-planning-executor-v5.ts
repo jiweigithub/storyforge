@@ -14,10 +14,12 @@ import { avgVisualRoleTargetV5,prepareAvgVisualRoleProposalV5 } from './visual-r
 import { hashAvgVisualExactTextV1 } from './visual-planning-evidence'
 import { compileAvgVisualPlanningProposalV2 } from './media-source-v2'
 import { AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4 } from './visual-planning-plan'
+import type { ResolvedProductMediaCapabilityV1 } from '../product-production/media-transport'
 
 /** Same registered runner and durable Harness; explicit new request/evidence
  * grammar. The global start gate remains closed until image consumers join. */
-export function createAvgVisualPlanningExecutorV5(options:{brief:ProductProductionBriefV3;runText:ProductionTextRunnerV1}):ProductProductionTaskExecutorV1{
+export function createAvgVisualPlanningExecutorV5(options:{brief:ProductProductionBriefV3;runText:ProductionTextRunnerV1;
+  mediaCapabilities?:ReadonlyMap<string,ResolvedProductMediaCapabilityV1>;imageEndpointRouteHash?:string}):ProductProductionTaskExecutorV1{
   const brief=structuredClone(options.brief)
   if(brief.avgVisualPlanning?.version!==5||!avgVisualPlanningExecutionReadyV5())throw new Error('[avg-visual-plan] 新专业执行尚未开放')
   return async input=>{
@@ -26,6 +28,10 @@ export function createAvgVisualPlanningExecutorV5(options:{brief:ProductProducti
     try{
       if(!avgVisualPlanningExecutionReadyV5())throw new Error('[avg-visual-plan] 新专业执行尚未开放')
       if(input.signal.aborted)throw new DOMException('Aborted','AbortError')
+      if(input.task.kind==='avg-media-image-generate'){
+        const {executeAvgMediaImageTaskV2}=await import('./media-production-executor')
+        return executeAvgMediaImageTaskV2(input,{brief,mediaCapabilities:options.mediaCapabilities??new Map(),imageEndpointRouteHash:options.imageEndpointRouteHash})
+      }
       if(input.task.executionMode!=='model'&&input.task.kind!=='avg-v5-visual-requirements-compile')throw new Error('[avg-visual-plan] 新图片消费执行尚未接通，未发送请求')
       source=await readAvgVisualPlanningExecutionSourcesV5(input,brief)
     }catch(error){throw new ProductProductionDraftRejectedErrorV1(error instanceof Error?error.message:'新专业视觉来源无效',zero())}

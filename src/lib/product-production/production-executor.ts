@@ -10697,7 +10697,8 @@ export function createConfiguredProductProductionExecutorV1(input: {
   if (input.brief.avgVisualPlanning) {
     if(input.brief.avgVisualPlanning.version===5){
       if(!avgVisualPlanningExecutionReadyV5())throw new Error('[avg-visual-plan] 本方案版本的专业视觉执行尚未接通，不能创建执行器')
-      const options={brief:structuredClone(input.brief),runText:input.runText??defaultTextRunner}
+      const options={brief:structuredClone(input.brief),runText:input.runText??defaultTextRunner,
+        mediaCapabilities:input.mediaCapabilities,imageEndpointRouteHash:input.avgImageEndpointRouteHash}
       let executor:Promise<ProductProductionTaskExecutorV1>|undefined
       return async request=>{executor??=import('../avg/visual-planning-executor-v5').then(module=>module.createAvgVisualPlanningExecutorV5(options));return (await executor)(request)}
     }

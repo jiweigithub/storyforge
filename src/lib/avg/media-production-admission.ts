@@ -26,6 +26,7 @@ import { assembleContext } from '../registry/assemble-context'
 import { preserveProductProductionContextV1 } from '../product-production/context'
 import { inspectAvgVisualProcessedImageV4 } from './visual-image-processing'
 import { parseAvgProcessedImagePayloadV1 } from './image-processing-contract'
+import { assertAvgCompiledImageProducerAdmissionV5 } from './visual-image-admission-v5'
 
 /** Extra product admission inside the shared sealed-producer transaction.
  * The caller separately verifies exact checkpoint/result/Plan/Blob proof. */
@@ -40,7 +41,7 @@ export async function assertAvgMediaRawProducerAdmissionV2(input: {
   if (!row || !await assertRecordInScope(input.scope, 'productProductionBriefs', row, { owner: 'work' }) || row.status !== 'authorized'
     || row.briefHash !== input.build.briefHash) throw new Error('[avg-media] 原图接收缺少准确的已授权 Brief')
   const brief = parseProductProductionBriefV3(row.briefJson)
-  if (brief.avgVisualPlanning) return assertAvgCompiledImageProducerAdmissionV4(input, brief)
+  if (brief.avgVisualPlanning) return brief.avgVisualPlanning.version===5?assertAvgCompiledImageProducerAdmissionV5(input,brief):assertAvgCompiledImageProducerAdmissionV4(input, brief)
   const {assembly,capability}=await assertAvgImageProductionDefinitionV3(brief)
   await validateAvgVoiceRecoveryV1({ scope: input.scope, productionId: input.build.productionId, brief,
     targetBuild: input.build, checkProspectiveRequests: false })

@@ -8,7 +8,9 @@ import { avgVisualPlanningBudgetV5,avgVisualPlanningGateIdsV5 } from '../../src/
 import { parseProductProductionBriefV3 } from '../../src/lib/product-production/contracts'
 import { parseProductProductionPlanV3 } from '../../src/lib/product-production/plan'
 import { resolveConfiguredTextCapabilityV1 } from '../../src/lib/product-production/capabilities'
-import { resolveAvgImageExecutionCapabilityV2 } from '../../src/lib/avg/media-capability'
+import { resolveAvgImageExecutionCapabilityV4 } from '../../src/lib/avg/media-capability'
+import { avgImageReferenceCapabilityV2,type AvgImageAdapterIdV4 } from '../../src/lib/avg/media-reference-contract'
+import { hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 import { executeProductProductionCommand } from '../../src/lib/product-production/commands'
 import { readProductProductionDetailsV1 } from '../../src/lib/product-production/service'
 import { runProductProductionSchedulerCycleV1 } from '../../src/lib/product-production/scheduler'
@@ -18,8 +20,10 @@ import type { ProductBuildArtifactRecordV1 } from '../../src/lib/types'
 /** All domain rows come from public author/production/Harness commands. The
  * caller opens only the closed feature fence in isolated fake-indexeddb data;
  * original model bytes travel through the real configured runner and HTTP. */
-export async function avgV5RegisteredProposalsFixture(options:{malformed?:boolean;missingGeneratedProof?:boolean;onResponse?:()=>Promise<void>}={}){
-  const {owner,author,brief}=await avgV5FormalFixture(),calls:Array<{body:any;packet:any}>=[]
+export async function avgV5RegisteredProposalsFixture(options:{malformed?:boolean;missingGeneratedProof?:boolean;onResponse?:()=>Promise<void>;
+  imageResponse?:(body:Record<string,unknown>,index:number)=>Promise<Response>;imageAdapterId?:AvgImageAdapterIdV4}={}){
+  const {owner,author,brief}=await avgV5FormalFixture(),calls:Array<{body:any;packet:any}>=[],imageCalls:Array<Record<string,unknown>>=[]
+  if(options.imageResponse)for(const b of author.mediaBriefs)for(const output of b.outputs)output.prompt+=` 工程目标 ${output.requirementKey}`
   const data=await deterministicRegionMapPngV1({width:32,height:32,palette:['#253746','#9f8772','#d1cbb8']})
   const catalog=[]
   for(const entry of brief.avgVisualPlanning.scope.referenceCatalog){
@@ -32,7 +36,9 @@ export async function avgV5RegisteredProposalsFixture(options:{malformed?:boolea
   brief.avgVisualPlanning.scope=await freezeAvgVisualPlanningScopeV2({...unhashed,referenceCatalog:catalog},author.source)
   const text=await resolveConfiguredTextCapabilityV1({projectId:owner.scope.projectId,category:'product-production',requirementKey:'avg.visual.planning.text'})
   brief.capabilityRequirements.find(c=>c.mediaClass==='text')!.capabilityHash=text.receipt.capabilityHash
-  const image=await resolveAvgImageExecutionCapabilityV2({projectId:owner.scope.projectId,requirement:brief.capabilityRequirements.find(c=>c.mediaClass==='image')!})
+  const imageAdapterId=options.imageAdapterId??'agnes.image-2.1-flash.v1',imageRequirement=brief.capabilityRequirements.find(c=>c.mediaClass==='image')!
+  imageRequirement.capabilityHash=await hashProductProductionValueV2(avgImageReferenceCapabilityV2(imageAdapterId))
+  const image=await resolveAvgImageExecutionCapabilityV4({projectId:owner.scope.projectId,requirement:imageRequirement,adapterId:imageAdapterId})
   brief.avgVisualPlanning.imageBinding={...image.binding,endpointRouteHash:image.endpointRouteHash}
   brief.productionBudget=avgVisualPlanningBudgetV5(brief);brief.completionContract.requiredGateIds=avgVisualPlanningGateIdsV5(brief)
   const parsed=parseProductProductionBriefV3(brief)
@@ -45,6 +51,9 @@ export async function avgV5RegisteredProposalsFixture(options:{malformed?:boolea
   if(!started.ok)throw new Error(JSON.stringify(started))
   const details=await readProductProductionDetailsV1(owner.scope,owner.productionId,['avg']),buildId=details.build!.id!
   const fetcher=vi.fn(async(target:RequestInfo|URL,init?:RequestInit)=>{
+    if(options.imageResponse&&String(target)==='https://v5-proposal.fixture.invalid/v1/images/generations'){
+      const body=JSON.parse(String(init?.body));imageCalls.push(body);return options.imageResponse(body,imageCalls.length-1)
+    }
     if(String(target)!=='https://v5-proposal.fixture.invalid/v1/chat/completions')throw new Error('Unexpected network route; V5 proposal checks never generate images')
     const body=JSON.parse(String(init?.body)),context=String(body.messages.find((m:{role:string})=>m.role==='user').content)
     const packet=JSON.parse(context.slice(context.indexOf('{'),context.lastIndexOf('}')+1));calls.push({body,packet})
@@ -53,9 +62,10 @@ export async function avgV5RegisteredProposalsFixture(options:{malformed?:boolea
     await options.onResponse?.()
     return new Response(JSON.stringify({choices:[{message:{role:'assistant',content:options.malformed?'{broken new proposal':JSON.stringify(payload)}}],usage:{prompt_tokens:200,completion_tokens:200}}),{headers:{'content-type':'application/json'}})
   });vi.stubGlobal('fetch',fetcher)
-  const executor=createConfiguredProductProductionExecutorV1({production:details.production,brief:parsed})
+  const executor=createConfiguredProductProductionExecutorV1({production:details.production,brief:parsed,
+    ...(options.imageResponse?{mediaCapabilities:new Map([['avg.media.image',image.resolved]]),avgImageEndpointRouteHash:image.endpointRouteHash}:{})})
   const capabilityBindings=[{requirementKey:text.receipt.requirementKey,adapterId:text.receipt.adapterId,bindingHash:text.receipt.capabilityHash,provider:text.receipt.provider,model:text.receipt.model},image.binding]
-  const s={...owner,author,brief:parsed,buildId,executor,capabilityBindings,calls,fetcher}
+  const s={...owner,author,brief:parsed,buildId,executor,capabilityBindings,calls,imageCalls,image,fetcher}
   await runProductProductionSchedulerCycleV1(s)
   const build=(await db.productBuilds.get(buildId))!,plan=parseProductProductionPlanV3(build.planJson,parsed,build.briefHash)
   return {...s,plan}

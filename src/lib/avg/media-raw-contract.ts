@@ -69,16 +69,21 @@ export async function parseAvgRawImagePayloadV1(value: unknown): Promise<AvgRawI
     'requirement', 'request', 'provider', 'rights', 'capabilityBindingHash'], 'raw image')
   if (r.schema !== 'storyforge.avg.raw-image' || r.version !== 1) throw new Error('[avg-media] 原始图片版本无效')
   const requirement = parseAvgVisualProductionRequirementV1(r.requirement), request = await assertAvgImageRequestV1(r.request as AvgImageRequestV1)
+  const {provider,rights}=parseAvgRawImageProviderRightsV1({provider:r.provider,rights:r.rights},request.request)
+  return { schema: r.schema, version: 1, batchKey: avgKey(r.batchKey, 'batchKey'), batchRevision: avgNumber(r.batchRevision, 'batchRevision', 1, 1_000_000),
+    sourceInputHash: avgHash(r.sourceInputHash, 'sourceInputHash'), requirement, request,provider,rights,
+    capabilityBindingHash: avgHash(r.capabilityBindingHash, 'capabilityBindingHash') }
+}
+
+/** Shared physical receipt grammar, independent of the reference version. */
+export function parseAvgRawImageProviderRightsV1(r:{provider:unknown;rights:unknown},request:ProductMediaRequestV1){
   const provider = avgRecord(r.provider, ['providerRequestId', 'executionLocation', 'usage', 'costUsd'], 'provider receipt')
   const rights = avgRecord(r.rights, ['origin', 'adapterId', 'rightsPolicyVersion', 'commercialUse', 'requiresProviderTermsReview'], 'image rights')
   if (provider.providerRequestId !== null && typeof provider.providerRequestId !== 'string'
     || provider.executionLocation !== 'browser-direct' || provider.costUsd !== null && (typeof provider.costUsd !== 'number' || !Number.isFinite(provider.costUsd) || provider.costUsd < 0)
-    || rights.origin !== 'generated' || rights.adapterId !== request.request.adapterId || rights.rightsPolicyVersion !== request.request.rightsPolicyVersion
+    || rights.origin !== 'generated' || rights.adapterId !== request.adapterId || rights.rightsPolicyVersion !== request.rightsPolicyVersion
     || typeof rights.commercialUse !== 'boolean' || rights.requiresProviderTermsReview !== true) throw new Error('[avg-media] 原图缺少准确的 provider/权利回执')
-  return { schema: r.schema, version: 1, batchKey: avgKey(r.batchKey, 'batchKey'), batchRevision: avgNumber(r.batchRevision, 'batchRevision', 1, 1_000_000),
-    sourceInputHash: avgHash(r.sourceInputHash, 'sourceInputHash'), requirement, request,
-    provider: provider as unknown as AvgRawImagePayloadV1['provider'], rights: rights as unknown as AvgRawImagePayloadV1['rights'],
-    capabilityBindingHash: avgHash(r.capabilityBindingHash, 'capabilityBindingHash') }
+  return {provider:provider as unknown as AvgRawImagePayloadV1['provider'],rights:rights as unknown as AvgRawImagePayloadV1['rights']}
 }
 
 export async function assertAvgRawImageArtifactV1(brief: ProductProductionBriefV3, row: Pick<ProductBuildArtifactRecordV1,
@@ -109,11 +114,18 @@ export async function assertAvgRawImageArtifactFromDefinitionV1(definition: {
     || request.width !== r.width || request.height !== r.height || request.qualityProfile !== definition.qualityProfile
     || request.rightsPolicyVersion !== capability.rightsPolicyVersion || !same([...request.allowedDataClasses].sort(), [...capability.allowedDataClasses].sort())
     || payload.request.resolutionTier !== r.resolutionTier || !same(payload.request.references, r.references)) throw new Error('[avg-media] 原图与准确冻结需求不一致')
+  return {payload,asset:assertAvgRawImageAssetMetadataV1({requirement:r,request,rights:payload.rights,capability},row)}
+}
+
+/** Pixel/header and stage metadata checks do not reinterpret semantic versions. */
+export function assertAvgRawImageAssetMetadataV1(input:{requirement:Omit<AvgVisualProductionRequirementV1,'references'>;
+  request:ProductMediaRequestV1;rights:ProductMediaCandidateV1['rights'];capability:ProviderCapabilityRequirementV1},row:Parameters<typeof assertAvgRawImageArtifactV1>[1]){
+  const {requirement:r,request,rights,capability}=input
   const asset = parseAvgExecutableStageV1({ version: 1, cues: [], assets: [JSON.parse(row.metadataJson)] }).assets[0]!
   if (asset.assetKey !== r.assetKey || asset.version !== 1 || asset.kind !== r.mediaKind || asset.name !== r.name || asset.altText !== r.altText
     || asset.contentHash !== row.contentHash || asset.mimeType !== row.mimeType || asset.byteSize !== row.byteSize || asset.source !== request.adapterId
     || asset.license !== `rights-policy:${capability.rightsPolicyVersion}` || asset.characterTag !== (r.mediaKind.startsWith('character-') ? r.family.subjectKey : '')
     || asset.sceneTag !== (r.consumer.sceneKey ?? '') || asset.durationMs !== null || !asset.width || !asset.height
-    || !same(JSON.parse(row.rightsJson), payload.rights)) throw new Error('[avg-media] 原图元数据或权利与真实候选不一致')
-  return { payload, asset }
+    || canonicalProductProductionJsonV2(JSON.parse(row.rightsJson))!==canonicalProductProductionJsonV2(rights)) throw new Error('[avg-media] 原图元数据或权利与真实候选不一致')
+  return asset
 }

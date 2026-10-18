@@ -8,11 +8,11 @@ import { ProductProductionDraftRejectedErrorV1, ProductProductionResultUnknownEr
 import { assertExactRunArtifactBodySafeV1 } from '../memory/evidence-policy'
 import { readAvgImageTaskSourcesV2 } from './media-task-source'
 import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
-import { createAvgDraftReferenceAdapterV1 } from './editor-service'
+import { createAvgDraftReferenceAdapterV1,createAvgDraftReferenceAdapterV2 } from './editor-service'
 import { assertAvgImageProductionDefinitionV3 } from './media-production-definition'
 import { avgVoiceProductionEnabledV3 } from './assembly-contract'
 import { avgImageReferenceCapabilityV2 } from './media-reference-contract'
-import { avgRawMediaArtifactKeyV1 } from './media-production-contract'
+import { avgRawMediaArtifactKeyV1,parseAvgVisualProductionRequirementV1 } from './media-production-contract'
 import { prepareAvgRawImageRequestV1, prepareAvgRawImageRequestFromBatchV1, type AvgRawImagePayloadV1 } from './media-raw-contract'
 import { AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1 } from './assembly-plan'
 import { avgImageRouteBindingHashV2 } from './media-capability'
@@ -22,6 +22,12 @@ import { readAvgCompiledImageDefinitionV4 } from './visual-planning-image-defini
 import { readAvgVisualPlanningExecutionSourcesV4 } from './visual-planning-task-source'
 import { avgVisualPlanningExecutionReadyV4 } from './visual-planning-brief'
 import { AVG_COMPILED_IMAGE_SKILL_V4 } from './visual-planning-roles'
+import { readAvgCompiledImageDefinitionV5 } from './visual-planning-image-definition-v5'
+import { readAvgVisualPlanningExecutionSourcesV5 } from './visual-planning-task-source-v5'
+import { avgVisualPlanningExecutionReadyV5 } from './visual-planning-brief-v5'
+import { AVG_COMPILED_IMAGE_SKILL_V5 } from './visual-planning-plan-v5'
+import { prepareAvgRawImageRequestFromBatchV2 } from './media-request-v2'
+import type { AvgRawImagePayloadV2 } from './media-raw-contract-v2'
 
 const MAXIMUM_RESPONSE_EVIDENCE_BYTES = 48 * 1024 * 1024
 function base64(bytes: ArrayBuffer): string {
@@ -73,24 +79,27 @@ export async function executeAvgMediaImageTaskV2(input: ProductProductionTaskExe
     durationMs: Date.now() - started, storageBytes })
   try {
     if (!avgMediaProductionEnabledV2()) throw new Error('[avg-media] 实验性图片生产未启用，未发送请求')
-    if (options.brief.avgVisualPlanning && !avgVisualPlanningExecutionReadyV4()) throw new Error('[avg-visual-image] V4 图片消费尚未开放，未发送请求')
+    const version=options.brief.avgVisualPlanning?.version
+    if (version && !(version===5?avgVisualPlanningExecutionReadyV5():avgVisualPlanningExecutionReadyV4())) throw new Error('[avg-visual-image] 当前版本图片消费尚未开放，未发送请求')
     if (options.brief.avgAssembly?.version === 3 && !avgVoiceProductionEnabledV3()) throw new Error('[avg-media] 联合图音生产尚未开放，未发送请求')
     const brief = options.brief
-    const executionSource = brief.avgVisualPlanning ? await readAvgVisualPlanningExecutionSourcesV4(input, brief) : null
-    const compiled = executionSource ? await readAvgCompiledImageDefinitionV4({ scope: input.scope, buildId: input.buildId,
+    const readExecutionSources=version===5?readAvgVisualPlanningExecutionSourcesV5:readAvgVisualPlanningExecutionSourcesV4
+    const readCompiled=version===5?readAvgCompiledImageDefinitionV5:readAvgCompiledImageDefinitionV4
+    const executionSource = brief.avgVisualPlanning ? await readExecutionSources(input, brief) : null
+    const compiled = executionSource ? await readCompiled({ scope: input.scope, buildId: input.buildId,
       expectedBuildRevision: executionSource.build.stateRevision, controlEpoch: input.controlEpoch, expectedBrief: brief }) : null
     const legacy = compiled ? null : await assertAvgImageProductionDefinitionV3(brief)
     const assembly = compiled?.definition ?? legacy!.assembly, capability = compiled?.capability ?? legacy!.capability, batch = assembly.mediaBatch
     const r = batch.requirements.find(r => input.task.taskKey === `avg.media.generate.${r.requirementKey}`)
     if (!r || !input.taskRunId || !input.onMediaOutput || input.task.executionMode !== 'media-provider' || input.task.kind !== 'avg-media-image-generate'
-      || input.task.skillId !== (compiled ? AVG_COMPILED_IMAGE_SKILL_V4 : brief.avgAssembly?.version === 3 ? 'avg.media-request.v1' : 'product-production.media-request.v1') || input.attempt !== 1 || input.task.maxAttempts !== 1
+      || input.task.skillId !== (compiled ? version===5?AVG_COMPILED_IMAGE_SKILL_V5:AVG_COMPILED_IMAGE_SKILL_V4 : brief.avgAssembly?.version === 3 ? 'avg.media-request.v1' : 'product-production.media-request.v1') || input.attempt !== 1 || input.task.maxAttempts !== 1
       || input.task.outputArtifactKeys.length !== 1 || input.task.outputArtifactKeys[0] !== avgRawMediaArtifactKeyV1(r.requirementKey)
       || input.task.budgetReservation.mediaCalls !== 1 || input.task.budgetReservation.modelCalls !== 0 || !input.contextText.trim()) {
       throw new Error('[avg-media] 图片任务不属于准确的冻结 Harness/Skill/单次调用域')
     }
     const source = compiled ? async () => {
-      const current = await readAvgVisualPlanningExecutionSourcesV4(input, brief)
-      const fresh = await readAvgCompiledImageDefinitionV4({ scope: input.scope, buildId: input.buildId,
+      const current = await readExecutionSources(input, brief)
+      const fresh = await readCompiled({ scope: input.scope, buildId: input.buildId,
         expectedBuildRevision: current.build.stateRevision, controlEpoch: input.controlEpoch, expectedBrief: brief })
       if (canonicalProductProductionJsonV2(fresh.definition.compilation) !== canonicalProductProductionJsonV2(compiled.definition.compilation)) throw new Error('[avg-visual-image] 当前编译需求已变化')
       return fresh.source
@@ -111,13 +120,17 @@ export async function executeAvgMediaImageTaskV2(input: ProductProductionTaskExe
         requirementKey: binding.requirementKey, adapterId: binding.adapterId, baseCapabilityHash: resolved.binding.bindingHash, endpointRouteHash: options.imageEndpointRouteHash })) {
       throw new Error('[avg-media] 图片配置路由已变化，请重新准备并确认制作方案')
     }
-    const frozen = compiled ? await prepareAvgRawImageRequestFromBatchV1({ batch, capability, qualityProfile: brief.qualityProfile,
-      requirementKey: r.requirementKey, idempotencyKey: input.idempotencyKey,adapterId:compiled.definition.imageBinding.adapterId })
+    const fields={capability,qualityProfile:brief.qualityProfile,requirementKey:r.requirementKey,idempotencyKey:input.idempotencyKey}
+    const frozen = compiled ? compiled.definition.version===5
+      ?await prepareAvgRawImageRequestFromBatchV2({...fields,batch:compiled.definition.mediaBatch,adapterId:compiled.definition.imageBinding.adapterId})
+      :await prepareAvgRawImageRequestFromBatchV1({...fields,batch:compiled.definition.mediaBatch,adapterId:compiled.definition.imageBinding.adapterId})
       : await prepareAvgRawImageRequestV1({ brief, requirementKey: r.requirementKey, idempotencyKey: input.idempotencyKey })
     const request = { ...frozen.request, inputHash: frozen.inputHash }
-    const adapter = await createAvgDraftReferenceAdapterV1({ scope: input.scope, frozen, inspectReference: async (reference, bytes) => {
+    const inspectReference=async (reference:{assetKey:string;contentHash:string;mimeType:string}, bytes:ArrayBuffer) => {
       await inspectAvgImageBytesV1({ data: bytes, assetKey: reference.assetKey, contentHash: reference.contentHash, mimeType: reference.mimeType })
-    } })
+    }
+    const adapter=frozen.version===2?await createAvgDraftReferenceAdapterV2({scope:input.scope,frozen,inspectReference})
+      :await createAvgDraftReferenceAdapterV1({scope:input.scope,frozen,inspectReference})
     const estimate = await adapter.estimate(request)
     if (capability.maximumRequestCost !== null && (estimate.estimatedCostUsd === null || estimate.estimatedCostUsd > capability.maximumRequestCost)
       || brief.productionBudget.maximumCostUsd !== null && estimate.estimatedCostUsd === null) throw new Error('[avg-media] 无法核实当前账号费用，不能执行现金硬上限请求')
@@ -151,15 +164,20 @@ export async function executeAvgMediaImageTaskV2(input: ProductProductionTaskExe
     if (!dimensions) throw new Error('[avg-media] 原图尺寸头无效；原始回执已保留')
     if (input.signal.aborted) throw new ProductProductionResultUnknownErrorV1()
     await source()
-    await validateAvgGeneratedReferencesV1(input.scope, r.references, r.family)
+    if(frozen.version===1)await validateAvgGeneratedReferencesV1(input.scope, frozen.references, r.family)
     const blob = await putMediaBlobObject({ scope: input.scope, data: candidate.data, mimeType: candidate.mimeType, expectedContentHash: candidate.contentHash })
     const asset: FrozenRuntimeMediaAssetV2 = { assetKey: r.assetKey, version: 1, kind: r.mediaKind, name: r.name, altText: r.altText,
       mimeType: blob.mimeType, byteSize: blob.byteSize, contentHash: blob.contentHash, blobContentHash: blob.contentHash,
       width: dimensions.width, height: dimensions.height, durationMs: null, source: candidate.adapterId,
       license: `rights-policy:${capability.rightsPolicyVersion}`, characterTag: r.mediaKind.startsWith('character-') ? r.family.subjectKey : '', sceneTag: r.consumer.sceneKey ?? '' }
-    const payload: AvgRawImagePayloadV1 = { schema: 'storyforge.avg.raw-image', version: 1, batchKey: batch.batchKey, batchRevision: batch.revision,
-      sourceInputHash: batch.sourceInputHash, requirement: r, request: frozen, provider: candidate.providerReceipt, rights: candidate.rights,
-      capabilityBindingHash: binding.bindingHash }
+    const rawBody={schema:'storyforge.avg.raw-image' as const,batchKey:batch.batchKey,batchRevision:batch.revision,sourceInputHash:batch.sourceInputHash,
+      provider:candidate.providerReceipt,rights:candidate.rights,capabilityBindingHash:binding.bindingHash}
+    let payload:AvgRawImagePayloadV1|AvgRawImagePayloadV2
+    if(frozen.version===2&&compiled?.definition.version===5){
+      const requirement=compiled.definition.mediaBatch.requirements.find(v=>v.requirementKey===r.requirementKey)!
+      payload={...rawBody,version:2,requirement,request:frozen}
+    }else if(frozen.version===1)payload={...rawBody,version:1,requirement:parseAvgVisualProductionRequirementV1(r),request:frozen}
+    else throw new Error('[avg-media] 真实编译需求与原图版本不一致')
     const artifact = { artifactKey: avgRawMediaArtifactKeyV1(r.requirementKey), requirementKey: capability.requirementKey, kind: 'image' as const, mediaKind: r.mediaKind,
       payload, metadata: asset, rights: candidate.rights, contentHash: blob.contentHash, blobObjectId: blob.id!, mimeType: blob.mimeType, byteSize: blob.byteSize,
       quality: { received: true, rawResponseRecorded: responseRecorded, responseEvidenceHash, headerVerified: true, contentHashVerified: true, decoderVerified: false,

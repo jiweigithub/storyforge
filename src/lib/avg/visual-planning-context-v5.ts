@@ -1,6 +1,6 @@
 import type { AssembleContextInput } from '../registry/types'
 import type { ProductProductionPlanTaskV3 } from '../types'
-import { canonicalProductProductionJsonV2 } from '../product-production/hash'
+import { canonicalProductProductionJsonV2,hashProductProductionValueV2 } from '../product-production/hash'
 import { readAvgVisualContextAuthority,assertAvgVisualContextFresh } from './visual-planning-context-authority'
 import { readAvgSystemPlanForCompilationV1,readAvgConfirmedVisualArtifactsV5 } from './author-artifacts'
 import { parseAvgVisualPlanningBriefV5,type AvgVisualPlanningBriefV5 } from './visual-planning-brief-v5'
@@ -9,6 +9,8 @@ import type { AvgMediaSourceInputV1 } from './media-source'
 import { parseAvgVisualBibleV1,type AvgVisualBibleV1 } from './visual-planning-contract'
 import { avgVisualRoleTargetV5 } from './visual-role-proposal-v5'
 import { readAvgDraftReferenceBytesV2 } from './editor-service'
+import { readAvgCompiledImageDefinitionV5 } from './visual-planning-image-definition-v5'
+import { AVG_COMPILED_IMAGE_SKILL_V5 } from './visual-planning-plan-v5'
 
 /** Explicit projection, never a spread of a reference or its portable proof.
  * Raw story text, hidden facts, bytes, license packets and Run ids stay local. */
@@ -35,13 +37,15 @@ export function projectAvgVisualPlanningTaskV5(input:{planning:AvgVisualPlanning
     visualDirection:bible&&!direction?{style:bible.style,subjects:bible.subjects.filter(s=>selected.some(([key])=>s.subjectKey===key))}:null}
 }
 
-/** Current roles and deterministic compile only. Raw-image, processing and
- * consumption get their own exact bindings before the V5 start gate opens. */
+/** Registered roles, compile and original-image production. Processing and
+ * consumers still require their own exact bindings before the start gate opens. */
 export async function readAvgVisualPlanningContextV5(input:AssembleContextInput):Promise<string>{
-  const authority=await readAvgVisualContextAuthority(input,5),{scope,build,production,row,task,planning}=authority
+  const authority=await readAvgVisualContextAuthority(input,5),{scope,build,production,row,brief,task,planning}=authority
   const compile=task.kind==='avg-v5-visual-requirements-compile'&&task.executionMode==='deterministic'&&task.contextProfile==='avg-visual-planning-v5'
-  if(!compile)avgVisualRoleTargetV5(task,planning.scope)
-  const source=await readAvgSystemPlanForCompilationV1({scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,controlEpoch:build.controlEpoch,includeSceneScripts:true})
+  const imageTask=task.kind==='avg-media-image-generate'&&task.executionMode==='media-provider'&&task.skillId===AVG_COMPILED_IMAGE_SKILL_V5
+  if(!compile&&!imageTask)avgVisualRoleTargetV5(task,planning.scope)
+  const image=imageTask?await readAvgCompiledImageDefinitionV5({scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,controlEpoch:build.controlEpoch,expectedBrief:brief}):null
+  const source=image?.source??await readAvgSystemPlanForCompilationV1({scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,controlEpoch:build.controlEpoch,includeSceneScripts:true})
   const canonicalSource={systemPlan:source.plan,scripts:source.scripts.map(s=>s.payload),presentation:{aspectRatio:planning.scope.aspectRatio}}
   const {sourceInputHash:_hash,aspectRatio:_ratio,...unhashed}=planning.scope
   const checked=await freezeAvgVisualPlanningScopeV2(unhashed,canonicalSource)
@@ -49,16 +53,29 @@ export async function readAvgVisualPlanningContextV5(input:AssembleContextInput)
   const keys=task.inputArtifactKeys.filter(k=>k==='avg.media.visual-bible'||/^avg\.media\.(character|environment|prop)-brief\./.test(k))
   const adopted=keys.length?await readAvgConfirmedVisualArtifactsV5({scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,controlEpoch:build.controlEpoch,artifactKeys:keys}):[]
   const bible=adopted.find(r=>r.payload.schema==='storyforge.avg.visual-bible')?.payload
-  const packet=compile?{schema:'storyforge.avg.visual-planning-inputs',version:5,sourceInputHash:checked.sourceInputHash,aspectRatio:checked.aspectRatio,operation:'compile-adopted-visual-requirements'}
+  const requirement=image?.definition.mediaBatch.requirements.find(r=>task.taskKey===`avg.media.generate.${r.requirementKey}`)
+  if(image&&!requirement)throw new Error('[avg-visual-image] 新图片任务没有准确编译需求')
+  // No portable proof, license packet or Run id is disclosed in this context.
+  // The full original requirement is still bound by its canonical hash.
+  const packet=image?{schema:'storyforge.avg.visual-planning-inputs',version:5,sourceInputHash:checked.sourceInputHash,aspectRatio:checked.aspectRatio,
+    operation:'produce-compiled-image',requirementHash:await hashProductProductionValueV2(requirement),
+    requirement:{requirementKey:requirement!.requirementKey,revision:requirement!.revision,name:requirement!.name,mediaKind:requirement!.mediaKind,
+      family:requirement!.family,width:requirement!.width,height:requirement!.height,resolutionTier:requirement!.resolutionTier,alpha:requirement!.alpha,
+      prompt:requirement!.prompt,negativePrompt:requirement!.negativePrompt,invariants:requirement!.invariants,forbiddenDepictions:requirement!.forbiddenDepictions,
+      references:requirement!.references.map(r=>({assetKey:r.assetKey,assetVersion:r.assetVersion,contentHash:r.contentHash,purpose:r.purpose,
+        allowedChange:r.allowedChange,permittedFeatures:r.contentPolicy.permittedFeatures,excludedFeatures:r.contentPolicy.excludedFeatures,
+        observation:'exact original bytes delivered separately to image provider; purpose compliance requires review'}))},
+    imageBinding:image.definition.imageBinding,compilation:image.definition.compilation}
+    :compile?{schema:'storyforge.avg.visual-planning-inputs',version:5,sourceInputHash:checked.sourceInputHash,aspectRatio:checked.aspectRatio,operation:'compile-adopted-visual-requirements'}
     :projectAvgVisualPlanningTaskV5({planning,task,source:canonicalSource,visualBible:bible?.schema==='storyforge.avg.visual-bible'?bible:undefined})
-  const references=compile?checked.referenceCatalog:checked.referenceCatalog.filter(ref=>'references' in packet&&packet.references.some(r=>r.referenceKey===ref.referenceKey))
+  const references=compile?checked.referenceCatalog:image?[]:checked.referenceCatalog.filter(ref=>'references' in packet&&packet.references.some(r=>r.referenceKey===ref.referenceKey))
   for(const {referenceKey,reference} of references){
     const targets=checked.templates.filter(t=>t.allowedReferenceKeys.includes(referenceKey))
     const families=[...new Map(targets.map(t=>{const f=t.parameters.family;return [`${f.subjectKey}/${f.familyKey}/${f.revision}`,f] as const})).values()]
     if(reference.purpose==='identity'&&families.length)for(const family of families)await readAvgDraftReferenceBytesV2(scope,reference,family)
     else await readAvgDraftReferenceBytesV2(scope,reference)
   }
-  const availableRefs=[source.artifact,...source.scripts.map(s=>s.artifact),...adopted.map(r=>r.artifact)]
+  const availableRefs=[source.artifact,...source.scripts.map(s=>s.artifact),...adopted.map(r=>r.artifact),...(image?[image.definition.compilation]:[])]
   if(availableRefs.length!==task.inputArtifactKeys.length||availableRefs.some(r=>!task.inputArtifactKeys.includes(r.artifactKey)))throw new Error('[avg-visual-plan] 新岗位准确作者依赖不闭合')
   const refs=task.inputArtifactKeys.map(key=>availableRefs.find(r=>r.artifactKey===key)!)
   await assertAvgVisualContextFresh(authority)
