@@ -7078,7 +7078,7 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
     payload = facts; kind = 'product-design'; quality = { openSourceFactsVerified: true,
       requiresAuthorConfirmation: facts.factPolicy.some(item => !item.authorConfirmed) }
   } else if (options.brief.ttrpgOpen && input.task.taskKey === 'ttrpg.open.rule-system') {
-    const system = parseTtrpgOpenRuleSystemArtifactV1(raw, options.brief.ttrpgOpen.rulePack)
+    const system = parseTtrpgOpenRuleSystemArtifactV1(raw, options.brief.ttrpgOpen.rulePack, options.brief.ttrpgOpen.settings)
     if (!input.authorDraftJson) for (const template of system.characterTemplates) {
       for (const mapping of Object.values(template.attributeMappings)) mapping.authorConfirmed = false
     }

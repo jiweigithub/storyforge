@@ -8,6 +8,7 @@ import { validatePortableWorldReferenceV1 } from "../world-engine/world-referenc
 import { parseTtrpgAuthoringSettingsV2, type TtrpgAuthoringSettingsV2 } from "./authoring-contract-v2";
 import type { RulePackV2 } from "./open-contract";
 import { parseRulePackV2 } from "./rule-pack-v2";
+import { assertTtrpgOpenAuthoringSeatPlanCurrentV1 } from './open-authoring-seat-plan';
 
 /** Detached open handoff only. No DB writes, start command or model execution. */
 export interface TtrpgProductionBriefContentV3 {
@@ -77,6 +78,8 @@ export function parseTtrpgProductionBriefContentShapeV3(input: unknown): TtrpgPr
   if (!authoring.companionPolicy || !authoring.stageClosurePolicy || !authoring.runtimePolicy ||
     !authoring.situationTemplates.length || !authoring.openingSituationKeys.length)
     fail("正式 Brief 的 openAuthoring 尚未完成");
+  if (settings.authoringSeatPlan) assertTtrpgOpenAuthoringSeatPlanCurrentV1({ plan: settings.authoringSeatPlan,
+    seats: settings.wizard.seats, companionPolicy: authoring.companionPolicy });
   const templates = new Set(authoring.situationTemplates.map((item) => item.templateKey));
   if (authoring.openingSituationKeys.some((key) => !templates.has(key)))
     fail("开局局势引用不存在");

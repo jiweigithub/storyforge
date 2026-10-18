@@ -2,6 +2,7 @@ import { parseTtrpgSettingsV1, type TtrpgAuthoringSettingsV1 } from "./authoring
 import { createDefaultTtrpgProductionWizardValueV2 } from "./authoring-settings";
 import type { TtrpgOpenAuthoringV1 } from "./open-contract";
 import { parseTtrpgOpenAuthoringV1 } from "./open-contract-parse";
+import { parseTtrpgOpenAuthoringSeatPlanV1, type TtrpgOpenAuthoringSeatPlanV1 } from './open-authoring-seat-plan';
 
 type CommonSettings = Pick<TtrpgAuthoringSettingsV1,
   "wizard" | "openingSituation" | "playerRole" | "qualityProfile">;
@@ -12,7 +13,7 @@ export type TtrpgAuthoringSettingsV2 = CommonSettings & {
   version: 2;
 } & (
   | { runFormat: "scripted"; openAuthoring: null }
-  | { runFormat: "open"; openAuthoring: TtrpgOpenAuthoringV1 }
+  | { runFormat: "open"; openAuthoring: TtrpgOpenAuthoringV1; authoringSeatPlan?: TtrpgOpenAuthoringSeatPlanV1 }
 );
 
 export function defaultTtrpgSettingsV2(
@@ -50,9 +51,10 @@ export function parseTtrpgAuthoringSettingsV2(input: unknown): TtrpgAuthoringSet
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new Error("跑团 Settings V2 必须是对象");
   const row = input as Record<string, unknown>;
+  const hasSeatPlan = Object.prototype.hasOwnProperty.call(row, 'authoringSeatPlan');
   const fields = [
     "schema", "version", "runFormat", "wizard", "openingSituation",
-    "playerRole", "qualityProfile", "openAuthoring",
+    "playerRole", "qualityProfile", "openAuthoring", ...(hasSeatPlan ? ['authoringSeatPlan'] : []),
   ];
   if (Object.keys(row).some((key) => !fields.includes(key)) ||
     fields.some((key) => !Object.prototype.hasOwnProperty.call(row, key)))
@@ -89,9 +91,11 @@ export function parseTtrpgAuthoringSettingsV2(input: unknown): TtrpgAuthoringSet
     version: 2 as const,
   };
   if (row.runFormat === "scripted") {
+    if (hasSeatPlan) throw new Error('scripted Settings 不接受开放角色预留计划');
     if (row.openAuthoring !== null)
       throw new Error("scripted Settings 的 openAuthoring 必须为 null");
     return { ...base, runFormat: "scripted", openAuthoring: null };
   }
-  return { ...base, runFormat: "open", openAuthoring: parseTtrpgOpenAuthoringV1(row.openAuthoring) };
+  return { ...base, runFormat: "open", openAuthoring: parseTtrpgOpenAuthoringV1(row.openAuthoring),
+    ...(hasSeatPlan ? { authoringSeatPlan: parseTtrpgOpenAuthoringSeatPlanV1(row.authoringSeatPlan) } : {}) };
 }

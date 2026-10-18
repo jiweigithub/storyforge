@@ -11,6 +11,7 @@ export function ttrpgOpenProductionSystemPromptV1(taskKey: string): string | nul
     '只返回严格 JSON，不添加身份/hash/发布/采纳回执；这些由系统按真实版本与证据生成。',
     '引用完整已授权 resources 与上游原文。缺少来源或字段时明确失败，不用名字摘要代替真实来源，不猜测未读内容。',
     contract,
+    ...(taskKey === 'ttrpg.open.rule-system' ? ['Brief Settings 显式含 authoringSeatPlan 时，seats 是作者预留的玩家角色身份：逐个严格使用其 seatKey、characterKey、controller，不能另造玩家身份、交换控制者或让 NPC 占用这些 key。companionPolicy 的批准关系仍由作者决定；预留身份不代表已生成实际角色卡或确认属性映射。旧 Brief 没有该计划时保持其原已确认角色/席位语义，不自行补一个计划。'] : []),
     ...(taskKey === 'ttrpg.open.situation-layer' ? ['冻结 RulePack 的 interactionBindings 是作者已经决定的无检定互动：不得重写 key、行动、前置条件或耗时。每个非空 effectPlanRef 必须在 effectPlanTemplates 中提供对应 success 模板；移动和撤退的每个选项都必须实际对行动者 location.set 到已存在的合法地点。未能绑定来源、实体或规则时明确失败，不能用叙述假装已经移动、支付或发现线索。'] : []),
   ].join('\n') : null
 }

@@ -6,6 +6,8 @@ import { frozenFact } from './open-content-predicates'
 import { projectTtrpgRulePackMechanicalCoreV1 } from './rule-pack-v2'
 import { parseTtrpgOpenAuthoringV1 } from './open-content-authoring'
 import * as p from './open-contract-parse'
+import type { TtrpgAuthoringSettingsV2 } from './authoring-contract-v2'
+import { assertTtrpgOpenAuthoringSeatPlanSystemV1 } from './open-authoring-seat-plan'
 
 export interface TtrpgOpenSourceFactsArtifactV1 {
   schema: 'storyforge.ttrpg-open-source-facts'; version: 1
@@ -38,7 +40,7 @@ export function parseTtrpgOpenSourceFactsArtifactV1(value: unknown): TtrpgOpenSo
   return { schema: 'storyforge.ttrpg-open-source-facts', version: 1, factPolicy }
 }
 
-export function parseTtrpgOpenRuleSystemArtifactV1(value: unknown, rule: RulePackV2): TtrpgOpenRuleSystemArtifactV1 {
+export function parseTtrpgOpenRuleSystemArtifactV1(value: unknown, rule: RulePackV2, settings?: TtrpgAuthoringSettingsV2): TtrpgOpenRuleSystemArtifactV1 {
   const r = p.record(p.json(value), ['schema', 'version', 'characterTemplates', 'entityBindings', 'sessionZero', 'gmMode',
     'informationPolicy'], 'open rule system artifact')
   p.literal(r.schema, 'storyforge.ttrpg-open-rule-system', 'rule system schema'); p.literal(r.version, 1, 'rule system version')
@@ -47,6 +49,7 @@ export function parseTtrpgOpenRuleSystemArtifactV1(value: unknown, rule: RulePac
   const entityBindings = p.list(r.entityBindings, 'bindings', entityBinding, 3000, 1)
   p.unique(characterTemplates.map(template => template.characterKey), 'characters')
   p.unique(entityBindings.map(binding => binding.bindingKey), 'bindings')
+  if (settings) assertTtrpgOpenAuthoringSeatPlanSystemV1({ settings, characters: characterTemplates })
   const s = p.record(r.sessionZero, ['premise', 'consentChecklist', 'lines', 'veils', 'pauseSignal', 'openDoor'], 'sessionZero')
   const i = p.record(r.informationPolicy, ['characterPrivateChannels', 'gmSecrets', 'hiddenNpcState', 'hiddenDice',
     'interPlayerWhispers', 'revealAuditTrail'], 'informationPolicy')

@@ -38,7 +38,7 @@ export async function compileProductionTtrpgOpenCampaignV2(input: {
     if (!facts.factPolicy.some(item => stable(item) === stable(locked))) throw new Error('[ttrpg-open-compiler] 制作不能丢弃或改写 Brief 已确认事实')
   }
   const factFields = await verifyTtrpgOpenAuthoringSourceProvenanceV1({ sourcePlan, facts: facts.factPolicy.map(item => item.fact) })
-  const system = parseTtrpgOpenRuleSystemArtifactV1(input.ruleSystem.payload, open.rulePack)
+  const system = parseTtrpgOpenRuleSystemArtifactV1(input.ruleSystem.payload, open.rulePack, open.settings)
   const layer = parseTtrpgOpenSituationLayerArtifactV1(input.situationLayer.payload, facts)
   // Entity bindings carry independent source claims, including entities without a fact.
   // Validate those fields through the same frozen-source verifier, without declaring a new semantic fact.

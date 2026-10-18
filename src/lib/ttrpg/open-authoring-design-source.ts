@@ -14,6 +14,7 @@ import type { TtrpgAuthoringSettingsV2 } from './authoring-contract-v2'
 import type { RulePackV2 } from './open-contract'
 import { readTtrpgRulePackVersionedV1 } from './rule-pack-library'
 import { verifyTtrpgOpenAuthoringSourceProvenanceV1 } from './open-source-provenance'
+import { assertTtrpgOpenAuthoringSeatPlanCurrentV1 } from './open-authoring-seat-plan'
 
 export interface TtrpgOpenAuthoringDesignSourceV1 {
   schema: 'storyforge.ttrpg-open-authoring-design-source'; version: 1; portable: false
@@ -60,6 +61,8 @@ async function prepare(input: { scope: WorkspaceScope; revision: number }, origi
   if (!settings.openingSituation.trim() || !settings.playerRole.trim()) fail('请先填写开场目标与玩家身份')
   const policy = settings.openAuthoring
   if (!policy.companionPolicy || !policy.stageClosurePolicy || !policy.runtimePolicy) fail('请先填写本桌边界草稿')
+  if (settings.authoringSeatPlan) assertTtrpgOpenAuthoringSeatPlanCurrentV1({ plan: settings.authoringSeatPlan,
+    seats: settings.wizard.seats, companionPolicy: policy.companionPolicy })
   if (!draft.worldReleaseId || !draft.selectionJson || !draft.suggestionKey) fail('请先选择冻结世界并保存出口范围')
   if (settings.wizard.ruleOrigin !== 'saved-rule-pack' || !draft.savedRulePackId
     || settings.wizard.savedRulePackId !== draft.savedRulePackId) fail('请先确认本作品的开放规则')

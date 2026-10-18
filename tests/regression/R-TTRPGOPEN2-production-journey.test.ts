@@ -11,11 +11,13 @@ import { runProductProductionUntilBlockedV1 } from '../../src/lib/product-produc
 import { resolveProductRuntimeSource } from '../../src/lib/product-production/preview-source'
 import { createProductRuntimeInstanceFromSource } from '../../src/lib/product/runtime-instances'
 import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
+import { withOpenAuthoringSeatPlanFixtureV1 } from '../helpers/ttrpg-open-seat-plan'
 
 describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transport)', () => {
   beforeEach(async () => { await db.delete(); await db.open() })
   afterEach(() => db.close())
-  it.each([false, true])('requires both human reviews and completes a pinned protocol 2 preview (owned image=%s)', async withMedia => {
+  it.each([{ withMedia: false, withSeatPlan: false }, { withMedia: true, withSeatPlan: false }, { withMedia: false, withSeatPlan: true }])(
+    'requires human reviews and completes a pinned preview (image=$withMedia, explicit seat plan=$withSeatPlan)', async ({ withMedia, withSeatPlan }) => {
     const { scope, draft } = await createFreshOpenDraftFixtureV1(2, true)
     const productionId = await prepareTtrpgBrief(scope, draft.revision)
     let production = (await db.productProductions.get(productionId))!
@@ -23,6 +25,7 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
       .equals([productionId, production.currentBriefRevision!]).first())!
     const brief = parseProductProductionBriefV3(row.briefJson)
     const data = await openProductionCompilerFixtureV1(true, { brief, productionId, scope })
+    if (withSeatPlan) brief.ttrpgOpen!.settings = withOpenAuthoringSeatPlanFixtureV1(brief.ttrpgOpen!.settings, data.ruleSystem.characterTemplates)
     const mediaPayload = { schema: 'storyforge.product-media-requirements-artifact', version: 2,
       visual: withMedia ? [{ artifactKey: 'media.visual.001', mediaKind: 'background', sceneTag: 'slot.harbor', beatKey: 'open.entry.text',
         prompt: '无人物的港口远景', altText: '港口', width: 640, height: 360,
@@ -37,7 +40,9 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
       brief.capabilityRequirements.push({ ...basis, capabilityHash: await hashProductProductionValueV2(basis) })
       data.situationLayer.metadata.mediaManifest.slots = [{ slotKey: 'slot.harbor', kind: 'scene', targetRef: 'harbor', audience: 'party',
         productionRequired: true, assetKey: null, fallbackText: '港口远景', altText: '港口', promptTemplate: '无人物的港口远景', width: 640, height: 360 }]
-      const saved = await executeProductProductionCommand({ scope, productionId, command: { type: 'save-brief-revision', commandId: 'journey.media.brief',
+    }
+    if (withMedia || withSeatPlan) {
+      const saved = await executeProductProductionCommand({ scope, productionId, command: { type: 'save-brief-revision', commandId: 'journey.explicit.brief',
         expectedStateRevision: production.stateRevision, parentRevision: production.currentBriefRevision, brief } })
       expect(saved.ok).toBe(true)
       production = (await db.productProductions.get(productionId))!
@@ -52,7 +57,16 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
     const runText: ProductionTextRunnerV1 = async request => {
       let taskKey: string, payload: unknown
       if (request.system.includes('storyforge.ttrpg-open-source-facts')) { taskKey = 'ttrpg.open.source-facts'; payload = data.sourceFacts }
-      else if (request.system.includes('storyforge.ttrpg-open-rule-system')) { taskKey = 'ttrpg.open.rule-system'; payload = data.ruleSystem }
+      else if (request.system.includes('storyforge.ttrpg-open-rule-system')) {
+        taskKey = 'ttrpg.open.rule-system'; payload = data.ruleSystem
+        if (withSeatPlan) {
+          expect(request.contextText).toContain('authoringSeatPlan')
+          for (const reserved of brief.ttrpgOpen!.settings.authoringSeatPlan!.seats) expect(request.contextText).toContain(reserved.characterKey)
+          const wrong = structuredClone(data.ruleSystem), companions = wrong.characterTemplates.filter(actor => actor.controller === 'ai')
+          ;[companions[0].seatKey, companions[1].seatKey] = [companions[1].seatKey, companions[0].seatKey]
+          payload = wrong
+        }
+      }
       else if (request.system.includes('storyforge.ttrpg-open-situation-layer')) { taskKey = 'ttrpg.open.situation-layer'; payload = data.situationLayer }
       else if (request.system.includes('storyforge.product-media-requirements-artifact')) {
         taskKey = 'ttrpg.open.media-plan'; payload = mediaPayload
@@ -73,10 +87,14 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
       expect(blocked.buildStatus).toBe('recovery-required')
       const build = (await db.productBuilds.where('productionId').equals(productionId).first())!
       expect(JSON.parse(build.failureJson).taskKey, build.failureJson).toBe(taskKey)
-      expect(calls.filter(key => key === taskKey)).toHaveLength(1)
+      if (withSeatPlan && taskKey === 'ttrpg.open.rule-system') expect(JSON.parse(build.failureJson).detail).toContain('authoringSeatPlan')
+      // Invalid model output consumes the original explicitly budgeted repair
+      // attempt. A refresh must not grant a third call or hide that cost.
+      const expectedCalls = withSeatPlan && taskKey === 'ttrpg.open.rule-system' ? 2 : 1
+      expect(calls.filter(key => key === taskKey)).toHaveLength(expectedCalls)
       const repeat = await run()
       expect(repeat.buildStatus).toBe('recovery-required')
-      expect(calls.filter(key => key === taskKey)).toHaveLength(1)
+      expect(calls.filter(key => key === taskKey)).toHaveLength(expectedCalls)
       production = (await db.productProductions.get(productionId))!
       const reviewed = await executeProductProductionCommand({ scope, productionId, command: { type: 'resolve-blocker',
         commandId: `author.review.${taskKey}`, expectedStateRevision: production.stateRevision, blockerKey: taskKey,
@@ -86,7 +104,7 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
     const complete = await run()
     const diagnostic = (await db.productBuilds.where('productionId').equals(productionId).first())!
     expect(complete.terminal, diagnostic.failureJson).toBe(true)
-    expect(calls).toEqual(['ttrpg.open.source-facts', 'ttrpg.open.rule-system', 'ttrpg.open.situation-layer', 'ttrpg.open.media-plan'])
+    expect(calls).toEqual(['ttrpg.open.source-facts', 'ttrpg.open.rule-system', ...(withSeatPlan ? ['ttrpg.open.rule-system'] : []), 'ttrpg.open.situation-layer', 'ttrpg.open.media-plan'])
     const build = (await db.productBuilds.where('productionId').equals(productionId).first())!
     expect(build.rootTerminalReceiptHash).toMatch(/^[a-f0-9]{64}$/)
     const source = { kind: 'build' as const, productBuildId: build.id!, expectedPreviewHash: build.previewHash }
