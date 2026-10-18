@@ -32,7 +32,7 @@ export async function readAvgVisualPlanningExecutionSourcesV4(input: ProductProd
   if (assembled.text !== input.contextText || assembled.overBudgetAfterTrim || assembled.segments.length !== 1
     || canonicalProductProductionJsonV2(assembled.included) !== canonicalProductProductionJsonV2([AVG_VISUAL_PLANNING_CONTEXT_V1])
     || !assembled.sourceEvidence?.length || assembled.sourceEvidence.some(s => s.status !== 'included' || s.delivery !== 'full')) throw new Error('[avg-visual-plan] 实际上下文不是当前完整登记投影')
-  const packet = JSON.parse(assembled.segments[0].content) as { schema?: string; version?: number; artifacts?: Array<{ artifactKey: string; version: number; contentHash: string }> }
+  const packet = JSON.parse(assembled.segments[0].content) as { schema?: string; version?: number; operation?:unknown; rawReuseSource?:unknown; artifacts?: Array<{ artifactKey: string; version: number; contentHash: string }> }
   const suppliedRefs = input.inputArtifacts.map(r => ({ artifactKey: r.artifactKey, version: r.version, contentHash: r.contentHash }))
   // Shared Harness delivers inputs sorted by key; the registered projection
   // preserves the frozen Plan order. Compare the exact set in that order.

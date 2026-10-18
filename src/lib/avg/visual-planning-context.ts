@@ -75,8 +75,9 @@ export async function readAvgVisualPlanningContextV4(input: AssembleContextInput
   const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash), task = plan.tasks.find(t => t.taskKey === input.productProductionTaskKey)
   if (!task || await hashProductProductionValueV2(plan) !== build.planHash || plan.buildNumber !== build.buildNumber || plan.controlEpoch !== build.controlEpoch
     || canonicalProductProductionJsonV2(input.productArtifactKeys ?? []) !== canonicalProductProductionJsonV2(task.inputArtifactKeys)) throw new Error('[avg-visual-plan] Plan 或准确依赖选择不一致')
+  const rawReuse=task.kind==='avg-media-image-reuse'&&task.executionMode==='deterministic'&&task.contextProfile==='avg-visual-planning-v4'
   const imageTask = task.kind === 'avg-media-image-generate' && task.executionMode === 'media-provider' && task.skillId === AVG_COMPILED_IMAGE_SKILL_V4
-  const image = imageTask ? await readAvgCompiledImageDefinitionV4({ scope, buildId: build.id!, expectedBuildRevision: build.stateRevision,
+  const image = imageTask||rawReuse ? await readAvgCompiledImageDefinitionV4({ scope, buildId: build.id!, expectedBuildRevision: build.stateRevision,
     controlEpoch: build.controlEpoch, expectedBrief: brief }) : null
   const source = image?.source ?? await readAvgSystemPlanForCompilationV1({ scope, buildId: build.id!, expectedBuildRevision: build.stateRevision,
     controlEpoch: build.controlEpoch, includeSceneScripts: true })
@@ -92,7 +93,9 @@ export async function readAvgVisualPlanningContextV4(input: AssembleContextInput
   const requirement = image?.definition.mediaBatch.requirements.find(r => task.taskKey === `avg.media.generate.${r.requirementKey}`)
   if (image && !requirement) throw new Error('[avg-visual-image] 当前图片任务不属于准确编译需求')
   const packet = image ? { schema: 'storyforge.avg.visual-planning-inputs', version: 4, sourceInputHash: checked.sourceInputHash,
-    aspectRatio: checked.aspectRatio, operation: 'produce-compiled-image', requirement, imageBinding: image.definition.imageBinding,
+    aspectRatio: checked.aspectRatio, operation: rawReuse?'revalidate-original-compiled-image':'produce-compiled-image',
+    ...(rawReuse?{rawReuseSource:brief.avgVisualPlanning.rawReuse?.find(r=>r.requirementKey===requirement!.requirementKey)}:{}),
+    requirement, imageBinding: image.definition.imageBinding,
     compilation: image.definition.compilation }
     : compilation ? { schema: 'storyforge.avg.visual-planning-inputs', version: 4, sourceInputHash: checked.sourceInputHash,
     aspectRatio: checked.aspectRatio, operation: 'compile-adopted-visual-requirements' }

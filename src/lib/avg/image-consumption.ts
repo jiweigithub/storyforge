@@ -1,6 +1,8 @@
+import type { AvgRawImagePayloadV1 } from './media-raw-contract'
+import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
 import Dexie from 'dexie'
 import { db } from '../db/schema'
-import type { ProductBuildArtifactRecordV1, ProductProductionBriefV3, WorkspaceScope } from '../types'
+import type { ProductBuildArtifactRecordV1, ProductProductionBriefV3, WorkspaceScope, FrozenRuntimeMediaAssetV2 } from '../types'
 import type { AvgAssemblyBriefV2 } from './assembly-contract'
 import type { AvgVisualImageBindingV4 } from './visual-planning-brief'
 import { readAvgImageDefinitionV3 } from './media-production-definition'
@@ -29,10 +31,21 @@ export async function readAvgImageConsumptionDefinitionV4(input: {
  * accepted producer, Work-owned Blob and author command before consumption. */
 export async function assertAvgConsumedRawImageV4(input: {
   scope: WorkspaceScope; brief: ProductProductionBriefV3; row: ProductBuildArtifactRecordV1
-}) {
-  if (!input.brief.avgVisualPlanning) return assertAvgRawImageArtifactV1(input.brief, input.row)
+}):Promise<{payload:AvgRawImagePayloadV1;asset:FrozenRuntimeMediaAssetV2;requirement:AvgVisualProductionRequirementV1}> {
+  if (!input.brief.avgVisualPlanning){const raw=await assertAvgRawImageArtifactV1(input.brief,input.row);return {...raw,requirement:raw.payload.requirement}}
+  if(input.brief.avgVisualPlanning.rawReuse?.some(r=>input.row.artifactKey===`avg.media.raw.${r.requirementKey}`)){
+    const build=await db.productBuilds.get(input.row.buildId)
+    if(!build)throw new Error('[avg-visual-raw-reuse] 当前复验 Build 缺失')
+    const load=()=>Promise.all([import('./visual-planning-image-definition'),import('./visual-image-revalidation')])
+    const [{readAvgCompiledImageDefinitionV4},{inspectAvgRevalidatedRawV4}]=await (Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
+    const compiled=await readAvgCompiledImageDefinitionV4({...input,buildId:build.id!,expectedBuildRevision:build.stateRevision,controlEpoch:build.controlEpoch,
+      expectedBrief:input.brief,purpose:build.packageHash||build.previewHash?'frozen-verification':'assembly'})
+    const raw=await inspectAvgRevalidatedRawV4({scope:input.scope,compiled,artifact:input.row})
+    return {payload:raw.payload,asset:raw.asset,requirement:raw.requirement}
+  }
   const definition = await readAvgImageConsumptionDefinitionV4({ ...input, buildId: input.row.buildId })
   const capability = input.brief.capabilityRequirements.find(c => c.requirementKey === 'avg.media.image')!
-  return assertAvgRawImageArtifactFromDefinitionV1({ mediaBatch: definition.mediaBatch, imageBinding: definition.imageBinding,
+  const raw=await assertAvgRawImageArtifactFromDefinitionV1({ mediaBatch: definition.mediaBatch, imageBinding: definition.imageBinding,
     capability, qualityProfile: input.brief.qualityProfile }, input.row)
+  return {...raw,requirement:raw.payload.requirement}
 }

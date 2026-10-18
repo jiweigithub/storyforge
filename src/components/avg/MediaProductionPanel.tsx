@@ -91,6 +91,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const [requirements, setRequirements] = useState(workspace.mediaBatch?.requirements ?? [])
   const [pending, setPending] = useState(false), [error, setError] = useState('')
   const [processingPending,setProcessingPending]=useState(false)
+  const [rawSelectionPending,setRawSelectionPending]=useState(false)
   const editDisabled=disabled||processingPending
   const [familyPending,setFamilyPending]=useState(false)
   const [familyOpen,setFamilyOpen]=useState(false)
@@ -109,7 +110,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const [previewKey, setPreviewKey] = useState<string | null>(null)
   const [formOpen, setFormOpen] = useState(!workspace.mediaBatch?.requirements.length)
   useEffect(() => { const saved = JSON.parse(batchJson) as AvgAuthorWorkspaceV1['mediaBatch'] | null; setRequirements(saved?.requirements ?? []); setPending(false); setFormOpen(!saved?.requirements.length) }, [batchJson])
-  useEffect(() => { onPending(pending||familyPending||anyReviewPending||processingPending) }, [pending, familyPending, anyReviewPending, processingPending, onPending])
+  useEffect(() => { onPending(pending||familyPending||anyReviewPending||processingPending||rawSelectionPending) }, [pending, familyPending, anyReviewPending, processingPending, rawSelectionPending, onPending])
   useEffect(()=>{setGeneratedReference(null);setReferenceKey('');setReferences([]);setReferenceNames({});setExternalAllowed(false);setDerivativeAllowed(false)},[scope.projectId,scope.worldId,scope.workId])
   const changed = () => setPending(true)
   const scene = workspace.systemPlan.scenes.find(scene => scene.key === sceneKey) ?? workspace.systemPlan.scenes[0]
@@ -133,7 +134,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const recovery=definition?.imageRecovery
   const closed=!!build&&['cancelled','failed','recovery-required'].includes(build.status)
   const pendingNextBrief=view.details?.production.status==='brief-ready'&&view.details.brief?.revision!==build?.briefRevision
-  const retainedVisualDraft=!!build&&workspace.presentation.inheritedImages?.some(entry=>entry.source.version===2
+  const retainedVisualDraft=!!build&&workspace.presentation.inheritedImages?.some(entry=>(entry.source.version===2||entry.source.version===3)
     &&entry.source.productionKey===view.details?.production.productionKey&&entry.source.raw.buildNumber===build.buildNumber)
   const accepted = (key: string) => view.artifacts.find(row => row.artifactKey === key && row.status === 'accepted')
   const allChoices = !!currentBatch && currentBatch.requirements.every(r => accepted(avgMediaChoiceArtifactKeyV1(r.requirementKey)))
@@ -141,7 +142,9 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const pendingProcessing=currentBatch?.requirements.filter(r=>definition?.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)&&!accepted(avgProcessedImageArtifactKeyV1(r.requirementKey))).length??0
   const unfinished=outstanding+pendingProcessing
   const blockedProcessing=view.processingTasks.filter(task=>['blocked','stale'].includes(task.status))
-  const newRequests=currentBatch?.requirements.filter(r=>!accepted(avgRawMediaArtifactKeyV1(r.requirementKey))&&!recovery?.retained.some(row=>row.requirementKey===r.requirementKey)).length??0
+  const newRequests=currentBatch?.requirements.filter(r=>!accepted(avgRawMediaArtifactKeyV1(r.requirementKey))&&!recovery?.retained.some(row=>row.requirementKey===r.requirementKey)&&!view.details?.executionBrief?.avgVisualPlanning?.rawReuse?.some(row=>row.requirementKey===r.requirementKey)).length??0
+  const zeroImagePlan=!!(pendingNextBrief?JSON.parse(view.details!.brief!.briefJson).avgVisualPlanning?.rawReuse?.length&&JSON.parse(view.details!.brief!.briefJson).productionBudget.maximumMediaCalls===0
+    :view.details?.executionBrief?.avgVisualPlanning?.rawReuse?.length&&view.details.executionBrief.productionBudget.maximumMediaCalls===0)
   const expandedKey = previewKey ?? currentBatch?.requirements.find(r => accepted(avgRawMediaArtifactKeyV1(r.requirementKey)))?.requirementKey
   const enabled = avgMediaProductionEnabledV2()
   const readiness = inspectConfiguredAgnesImageCapabilityV1({ projectId: scope.projectId })
@@ -178,7 +181,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   return <section className="lf-paper avg-image-production" aria-label="图片生产（实验）"><h4>图片生产 <small>实验</small></h4>
     <p>先保存规则和对白，再声明图片用途与合法参考。每批最多 8 项、每项一次图片请求；供应商费用可能未知，原图返回后仍须查看和确认选用。</p>
     {!enabled && <p>当前仅可查看已有需求和候选，新增图片调用未开放。</p>}
-    {enabled && <p>{readiness.ready ? '本机 Agnes 图片配置已就绪，账户可用性与费用以实际回执为准。' : `${readiness.issue ?? '图片配置尚未就绪'} 请在通用设置中核对 Agnes 配置。`}</p>}
+    {enabled && <p>{zeroImagePlan?'本方案保留原图，图片任务为零调用复验。':readiness.ready ? '本机 Agnes 图片配置已就绪，账户可用性与费用以实际回执为准。' : `${readiness.issue ?? '图片配置尚未就绪'} 请在通用设置中核对 Agnes 配置。`}</p>}
     {error && <p role="alert">{error}</p>}
     {enabled&&!visualPlanning&&<details open={familyOpen} onToggle={event=>setFamilyOpen(event.currentTarget.open)}><summary>批量制作人物家族</summary><CharacterFamilyPanel scope={scope} view={view} workspace={workspace} visible={visible&&familyOpen} disabled={editDisabled||pending||anyReviewPending||!canEdit} onPending={setFamilyPending} onAction={onAction} onReload={onReload} onNotice={onNotice}/></details>}
     {workspace.mediaBatch?.characterFamily&&<p>当前批次保存了人物家族方案。请在家族面板中修订；如需普通需求，先明确结束或移除当前批次。</p>}
@@ -250,16 +253,16 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
         await onReload();onNotice('已保留准确专业演出图并准备零生成调用的新方案；请到制作页核对并明确开始，当前演出仍需重新确认。')
       })}>保留专业演出图并准备新方案</button>
     </section>}
-    {!!workspace.presentation.inheritedImages?.length&&<details><summary>新版本待确认的旧图来源（{workspace.presentation.inheritedImages.length} 张）</summary><ul>{workspace.presentation.inheritedImages.map(entry=><li key={entry.assetKey}>{workspace.presentation.stage.assets.find(asset=>asset.assetKey===entry.assetKey)?.name} · 原 Build #{entry.source.raw.buildNumber} · {entry.source.raw.contentHash.slice(0,12)}<p>{entry.declaration}</p></li>)}</ul><p>保留原始字节不会重新调用图片服务；新版本的用途和演出须再次确认采用。</p></details>}
+    {!!workspace.presentation.inheritedImages?.length&&<details><summary>新版本待确认的旧图来源（{workspace.presentation.inheritedImages.length} 张）</summary><ul>{workspace.presentation.inheritedImages.map(entry=><li key={entry.assetKey}>{workspace.presentation.stage.assets.find(asset=>asset.assetKey===entry.assetKey)?.name} · 原图 Build #{entry.source.version===3?entry.source.original.raw.buildNumber:entry.source.raw.buildNumber} · {entry.source.raw.contentHash.slice(0,12)}<p>{entry.declaration}</p></li>)}</ul><p>保留原始字节不会重新调用图片服务；新版本的用途和演出须再次确认采用。</p></details>}
     {currentBatch&&closed&&<section aria-label="已停止的图片调用"><p>本次调用已停止。请先核对原始记录与未知费用，当前不会自动重发。</p><p>如需更改需求或制作下一批，请先到制作页准备新版本，再回此处编辑。</p><button className="lf-action" disabled>生成本批图片（最多 {outstanding} 次）</button></section>}
     {currentBatch?.visualReviewPolicy&&closed&&<details><summary>已停止批次的作者视觉记录</summary><p>保留原记录和未观察项；新版需要重新核对，不能继承旧选用授权。</p>{view.artifacts.filter(row=>row.artifactKey.startsWith('avg.review.visual.')).map(row=><article key={row.id}><p>{row.artifactKey} · v{row.version} · {row.status}</p><pre>{row.payloadJson}</pre></article>)}</details>}
-    {visualPlanning&&build&&['paused','cancelled','failed','recovery-required'].includes(build.status)&&view.artifacts.some(row=>row.artifactKey==='avg.media.compiled-visual-requirements'&&row.status==='accepted')&&<HistoricalImagePanel scope={scope} view={view}/>}
+    {visualPlanning&&build&&['paused','cancelled','failed','recovery-required'].includes(build.status)&&view.artifacts.some(row=>row.artifactKey==='avg.media.compiled-visual-requirements'&&row.status==='accepted')&&<HistoricalImagePanel scope={scope} view={view} disabled={editDisabled||pending||familyPending||anyReviewPending} onAction={onAction} onReload={onReload} onNotice={onNotice} onPending={setRawSelectionPending}/>}
     {currentBatch && productionId && build && !closed && <section aria-label="本次图片生成与选用"><h5>本次图片生成与选用 · Build #{build.buildNumber}</h5>
       <p>本批 {currentBatch.requirements.length} 项，尚待接收 {outstanding} 项。原图接收后逐项确认，再配置并确认演出。</p>
       {!sourcesReady && <p>请先在制作页确认系统规则和全部场景脚本。</p>}
       {blockedProcessing.map(task=><p role="alert" key={task.taskKey}>本地加工已暂停：{task.taskKey} · {task.blocker??'请检查制作记录'}。原图保留，本版本不会重试；请明确保留并准备新版本后复验。</p>)}
       {recovery&&<p>本方案保留 {recovery.retained.length} 张原图，以零调用复验；其余 {recovery.rerunRequirementKeys.length} 项在本版本至多各请求一次。原图、旧账单和回执留在原版本。</p>}
-      <button className="lf-action lf-action-primary" disabled={editDisabled || pending || familyPending || anyReviewPending || blockedProcessing.length>0 || assembly?.version===3&&!avgVoiceProductionEnabledV3() || (newRequests>0&&(!enabled||!readiness.ready)) || !canAdopt || !sourcesReady || !unfinished} onClick={() => void onGenerate()}>{assembly?.version===3?'执行已确认的图片及联合配音任务':outstanding===0&&pendingProcessing>0?`执行本地加工（0 次新请求）`:recovery?`复验并执行本批图片（最多 ${newRequests} 次新请求）`:`生成本批图片（最多 ${outstanding} 次）`}</button>
+      <button className="lf-action lf-action-primary" disabled={editDisabled || pending || familyPending || anyReviewPending || blockedProcessing.length>0 || assembly?.version===3&&!avgVoiceProductionEnabledV3() || (newRequests>0&&(!enabled||!readiness.ready)) || !canAdopt || !sourcesReady || !unfinished} onClick={() => void onGenerate()}>{assembly?.version===3?'执行已确认的图片及联合配音任务':outstanding===0&&pendingProcessing>0?`执行本地加工（0 次新请求）`:visualPlanning&&view.details?.executionBrief?.avgVisualPlanning?.rawReuse?.length?`复验并执行本批图片（最多 ${newRequests} 次新请求）`:recovery?`复验并执行本批图片（最多 ${newRequests} 次新请求）`:`生成本批图片（最多 ${outstanding} 次）`}</button>
       {generating && <button className="lf-action" onClick={onCancel}>停止等待并保留调用记录</button>}
       {currentBatch.requirements.map(r => <RawChoiceCard key={`${build.id}:${r.requirementKey}`} scope={scope} productionId={productionId} requirement={r}
         expanded={visible && expandedKey === r.requirementKey} onExpand={() => setPreviewKey(expandedKey === r.requirementKey ? '' : r.requirementKey)}

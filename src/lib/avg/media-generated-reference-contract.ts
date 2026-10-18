@@ -1,3 +1,4 @@
+import { parseAvgVisualRawReuseSourceV4, type AvgVisualRawReuseSourceV4 } from './visual-image-reuse-contract'
 import { avgHash, avgKey, avgNumber, avgRecord } from './protocol-validation'
 import { parseAvgRetainedRawProofV1, type AvgRetainedRawProofV1 } from './media-recovery-contract'
 
@@ -48,7 +49,13 @@ export interface AvgGeneratedReferenceSourceV2 {
   review:{artifactKey:string;version:number;contentHash:string;authorReceiptHash:string}
   processing?:never
 }
-export type AvgGeneratedImageSource=AvgGeneratedReferenceSourceV1|AvgGeneratedReferenceSourceV2
+export interface AvgGeneratedReferenceSourceV3 extends Omit<AvgGeneratedReferenceSourceV2,'version'|'raw'> {
+  version:3
+  raw:Omit<AvgGeneratedReferenceSourceV2['raw'],'schema'|'version'|'responseEvidenceHash'>&{
+    schema:'storyforge.avg.image-revalidation-producer-proof';version:1;noProviderRequest:true;revalidationEvidenceHash:string}
+  original:AvgVisualRawReuseSourceV4
+}
+export type AvgGeneratedImageSource=AvgGeneratedReferenceSourceV1|AvgGeneratedReferenceSourceV2|AvgGeneratedReferenceSourceV3
 
 /** Structural original HTTP proof only. Every consumer must independently
  * verify the actual portable producer and bytes; parsing grants no use. */
@@ -79,7 +86,40 @@ export function parseAvgGeneratedReferenceSourceV2(value:unknown):AvgGeneratedRe
     choice:author(r.choice,`avg.media.choice.${requirementKey}`),review:author(r.review,`avg.review.visual.${requirementKey}`)}
 }
 
+/** A current local producer and current author witnesses, with the original
+ * HTTP origin kept separately. Existing V1/V2 sources stay closed. */
+export function parseAvgGeneratedReferenceSourceV3(value:unknown):AvgGeneratedReferenceSourceV3 {
+  const r=avgRecord(value,['schema','version','productionKey','requirementKey','raw','compilation','choice','review','original'],'revalidated image source')
+  if(r.schema!=='storyforge.avg.generated-reference-source'||r.version!==3)throw new Error('[avg-visual-raw-reuse] 本地复验图片来源版本无效')
+  const requirementKey=avgKey(r.requirementKey,'source.requirementKey'),productionKey=avgKey(r.productionKey,'source.productionKey')
+  const original=parseAvgVisualRawReuseSourceV4(r.original)
+  const p=avgRecord(r.raw,['schema','version','buildNumber','briefHash','planHash','controlEpoch','taskKey','artifactKey','artifactVersion','contentHash',
+    'inputHash','producerReceiptHash','candidateHash','proofHash','noProviderRequest','revalidationEvidenceHash'],'local image producer')
+  if(p.schema!=='storyforge.avg.image-revalidation-producer-proof'||p.version!==1||p.noProviderRequest!==true
+    ||p.taskKey!==`avg.media.generate.${requirementKey}`||p.artifactKey!==`avg.media.raw.${requirementKey}`
+    ||original.productionKey!==productionKey||original.requirementKey!==requirementKey||original.raw.contentHash!==p.contentHash)throw new Error('[avg-visual-raw-reuse] 本地复验与原始图片来源不闭合')
+  const raw:AvgGeneratedReferenceSourceV3['raw']={schema:p.schema,version:1,noProviderRequest:true,
+    buildNumber:avgNumber(p.buildNumber,'local buildNumber',1,1e9),controlEpoch:avgNumber(p.controlEpoch,'local controlEpoch',0,1e9),
+    briefHash:avgHash(p.briefHash,'local briefHash'),planHash:avgHash(p.planHash,'local planHash'),taskKey:p.taskKey,artifactKey:p.artifactKey,
+    artifactVersion:avgNumber(p.artifactVersion,'local artifactVersion',1,1e9),contentHash:avgHash(p.contentHash,'local contentHash'),
+    inputHash:avgHash(p.inputHash,'local inputHash'),producerReceiptHash:avgHash(p.producerReceiptHash,'local producerReceiptHash'),
+    candidateHash:avgHash(p.candidateHash,'local candidateHash'),proofHash:avgHash(p.proofHash,'local proofHash'),
+    revalidationEvidenceHash:avgHash(p.revalidationEvidenceHash,'local quality hash')}
+  if(original.raw.buildNumber>=raw.buildNumber)throw new Error('[avg-visual-raw-reuse] 原始图片必须早于本次复验')
+  const c=avgRecord(r.compilation,['artifactKey','version','contentHash'],'local compilation')
+  if(c.artifactKey!=='avg.media.compiled-visual-requirements')throw new Error('[avg-visual-raw-reuse] 本次编译来源不准确')
+  const author=(value:unknown,key:string)=>{
+    const a=avgRecord(value,['artifactKey','version','contentHash','authorReceiptHash'],'local visual author')
+    if(a.artifactKey!==key)throw new Error('[avg-visual-raw-reuse] 本次评审或选择不准确')
+    return {artifactKey:key,version:avgNumber(a.version,'local authorVersion',1,1e9),contentHash:avgHash(a.contentHash,'local authorHash'),authorReceiptHash:avgHash(a.authorReceiptHash,'local authorReceipt')}
+  }
+  return {schema:r.schema,version:3,productionKey,requirementKey,raw,original,
+    compilation:{artifactKey:c.artifactKey,version:avgNumber(c.version,'local compilationVersion',1,1e9),contentHash:avgHash(c.contentHash,'local compilationHash')},
+    choice:author(r.choice,`avg.media.choice.${requirementKey}`),review:author(r.review,`avg.review.visual.${requirementKey}`)}
+}
+
 export function parseAvgGeneratedImageSource(value:unknown):AvgGeneratedImageSource {
+  if(value&&typeof value==='object'&&'version'in value&&value.version===3)return parseAvgGeneratedReferenceSourceV3(value)
   return value&&typeof value==='object'&&'version'in value&&value.version===2
     ?parseAvgGeneratedReferenceSourceV2(value):parseAvgGeneratedReferenceSourceV1(value)
 }

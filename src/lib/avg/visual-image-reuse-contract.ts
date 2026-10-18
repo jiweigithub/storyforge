@@ -1,5 +1,5 @@
 import type { readAvgHistoricalRawImageV4 } from './visual-image-history'
-import { avgHash, avgKey, avgProtocolBody, avgRecord } from './protocol-validation'
+import { avgHash, avgKey, avgProtocolBody, avgRecord, avgList, avgUnique } from './protocol-validation'
 import { parseAvgVisualArtifactRefV4, type AvgVisualArtifactRefV4 } from './visual-planning-reuse-contract'
 import { parseAvgVisualRawProducerProofV4, type AvgGeneratedReferenceSourceV2 } from './media-generated-reference-contract'
 import { parseAvgVisualProductionRequirementV1 } from './media-production-contract'
@@ -46,4 +46,10 @@ export async function avgVisualRawReuseDescriptorV4(history:Awaited<ReturnType<t
     productionKey:history.production.productionKey,requirementKey:hashes.requirement.requirementKey,
     raw:history.provenance,compilation:history.definition.compilation,sourceWorldContentHash:history.brief.source.worldContentHash,
     requirementHash:hashes.requirementHash,semanticRequirementHash:hashes.semanticRequirementHash})
+}
+
+export function parseAvgVisualRawReuseSourcesV4(value:unknown,requirementKeys:readonly string[]){
+  const sources=avgUnique(avgList(value,'raw reuse',parseAvgVisualRawReuseSourceV4,8),s=>s.requirementKey,'raw reuse requirement')
+  if(!sources.length||sources.some(s=>!requirementKeys.includes(s.requirementKey)))throw new Error('[avg-visual-raw-reuse] 原图沿用为空或超出准确批次')
+  return sources
 }

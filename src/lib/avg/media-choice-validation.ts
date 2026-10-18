@@ -36,7 +36,7 @@ export async function readAvgChosenMediaSourceV2(input: { scope: WorkspaceScope;
 export async function inspectAvgChosenImageV1(input: { scope: WorkspaceScope; brief: ProductProductionBriefV3;
   choice: AvgAuthorMediaChoice; row: ProductBuildArtifactRecordV1; processed?:ProductBuildArtifactRecordV1 }) {
   const choice = parseAvgAuthorMediaChoice(input.choice), row = input.row
-  const raw = await assertAvgConsumedRawImageV4(input), r = raw.payload.requirement
+  const raw = await assertAvgConsumedRawImageV4(input), r = raw.requirement
   const definition=await readAvgImageConsumptionDefinitionV4({...input,buildId:row.buildId})
   const frozenProcessing=definition.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)??false
   if(frozenProcessing!==(choice.version===2))throw new Error('[avg-process] 选择不能绕过冻结的加工步骤，也不能夹带未冻结加工')

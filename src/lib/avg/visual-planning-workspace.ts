@@ -82,7 +82,7 @@ export async function assertAvgVisualPlanningDraftMatchesV4(scope: WorkspaceScop
 export async function resolveAvgVisualPlanningExecutionV4(scope: WorkspaceScope, brief: ProductProductionBriefV3, buildId?: number) {
   const v = brief.avgVisualPlanning
   if (!v || !avgVisualPlanningExecutionReadyV4()) throw new Error('[avg-visual-plan] 专业视觉制作尚未启用')
-  const plan = buildAvgVisualPlanningPlanV4({ brief: { ...brief, avgVisualPlanning: v }, briefHash: '0'.repeat(64), buildNumber: 1+Math.max(0,...(v.proposalReuse??[]).map(r=>r.buildNumber)), controlEpoch: 0 })
+  const plan = buildAvgVisualPlanningPlanV4({ brief: { ...brief, avgVisualPlanning: v }, briefHash: '0'.repeat(64), buildNumber: 1+Math.max(0,...(v.proposalReuse??[]).map(r=>r.buildNumber),...(v.rawReuse??[]).map(r=>r.raw.buildNumber)), controlEpoch: 0 })
   const bindings: ProductProductionCapabilityBindingV1[] = []
   const modelTasks = plan.tasks.filter(t => t.executionMode === 'model')
   for (const task of modelTasks) {
@@ -101,8 +101,9 @@ export async function resolveAvgVisualPlanningExecutionV4(scope: WorkspaceScope,
   }
   if (modelTasks.length && (!textBinding || textBinding.bindingHash !== brief.capabilityRequirements.find(c => c.requirementKey === AVG_VISUAL_TEXT_CAPABILITY_V4)!.capabilityHash
     || bindings.some(b => canonicalProductProductionJsonV2(b) !== canonicalProductProductionJsonV2(textBinding)))) throw new Error('[avg-visual-plan] 已接收专业方案与冻结文本路由不一致')
-  let imagesReceived = buildId !== undefined
-  for (const template of v.scope.templates) {
+  const providerTemplates=v.scope.templates.filter(t=>!v.rawReuse?.some(r=>r.requirementKey===t.parameters.requirementKey))
+  let imagesReceived = providerTemplates.length===0 || buildId !== undefined
+  for (const template of providerTemplates) {
     const rows = buildId === undefined ? [] : await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([buildId, `avg.media.raw.${template.parameters.requirementKey}`])
       .filter(r => r.status === 'accepted').toArray()
     if (rows.length !== 1) { imagesReceived = false; break }

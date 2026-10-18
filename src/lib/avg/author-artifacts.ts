@@ -16,9 +16,9 @@ import { avgKey, avgText } from './protocol-validation'
 import { validateAvgSystemPlanForAuthorV1, type AvgSystemValidationV1 } from './system-compiler'
 import { buildAvgNativeAssemblyPlan } from './assembly-plan'
 import { buildAvgVisualPlanningPlanV4 } from './visual-planning-plan'
-import { parseAvgAuthorMediaChoice, avgMediaChoiceArtifactKeyV1, avgVisualReviewArtifactKeyV1, type AvgAuthorMediaChoice } from './media-production-contract'
+import { parseAvgAuthorMediaChoice, avgMediaChoiceArtifactKeyV1, avgVisualReviewArtifactKeyV1, type AvgAuthorMediaChoice, type AvgVisualProductionRequirementV1 } from './media-production-contract'
 import { inspectAvgChosenImageV1, inspectAvgChosenImageBytesV1, readAvgChosenMediaSourceV2, validateAvgMediaChoiceV1, type AvgMediaChoiceValidation } from './media-choice-validation'
-import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1, verifyAvgProcessedImageArtifactV1, verifyAvgHistoricalRawVoiceArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4 } from '../product-production/artifact-store'
+import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1, verifyAvgProcessedImageArtifactV1, verifyAvgHistoricalRawVoiceArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4, verifyHistoricalAvgImageRevalidationProducerV1 } from '../product-production/artifact-store'
 import { assertAvgRawImageOriginV1 } from './media-recovery'
 import { readAvgInheritedStageImagesV1 } from './stage-image-sources'
 import { readAvgInheritedStageVoicesV1 } from './stage-voice-sources'
@@ -844,6 +844,15 @@ export async function readAvgAdoptedGeneratedReferenceChoiceV4(input:{scope:Work
     if(choice.version!==1)throw new Error('[avg-visual-history] 原 V4 未冻结加工来源，不能夹带加工选图')
     const original=await readAvgHistoricalRawImageV4({scope,buildId:input.buildId,expectedBuildRevision:context.build.stateRevision,
       controlEpoch:input.controlEpoch,expectedBriefHash:context.build.briefHash,expectedPlanHash:context.build.planHash,artifact:choice.raw})
+    return {...await readAdoptedVisualChoiceWitnessV4(context,row,choice,{...input,scope},{...original,requirement:original.payload.requirement}),rawProof:original.provenance}
+  })
+}
+
+type VisualChoiceImageV4=Pick<Awaited<ReturnType<typeof import('./visual-image-history').readAvgHistoricalRawImageV4>>,
+  'brief'|'definition'|'raw'|'asset'|'compilation'>&{requirement:AvgVisualProductionRequirementV1}
+async function readAdoptedVisualChoiceWitnessV4(context:Awaited<ReturnType<typeof authority>>,row:ProductBuildArtifactRecordV1,
+  choice:Extract<AvgAuthorMediaChoice,{version:1}>,input:Parameters<typeof readAvgAdoptedGeneratedReferenceChoiceV4>[0],original:VisualChoiceImageV4){
+  const scope=input.scope
     if(canonicalProductProductionJsonV2(original.brief)!==canonicalProductProductionJsonV2(context.brief)
       ||!original.definition.mediaBatch.visualReviewPolicy)throw new Error('[avg-visual-history] 原选图缺少准确视觉评审合同')
     const reviewKey=avgVisualReviewArtifactKeyV1(choice.requirementKey),[reviewRow]=await acceptedInputs(scope,input.buildId,input.controlEpoch,[reviewKey])
@@ -853,19 +862,42 @@ export async function readAvgAdoptedGeneratedReferenceChoiceV4(input:{scope:Work
       ||canonicalProductProductionJsonV2(reviewTask.inputArtifactKeys)!==canonicalProductProductionJsonV2([original.raw.artifactKey]))throw new Error('[avg-visual-history] 原视觉评审任务不匹配')
     const reviewCandidate=await assertFrozenAuthorCandidateV1(context,reviewRow,reviewTask,[original.raw],input.controlEpoch)
     if(reviewCandidate.version!==1)throw new Error('[avg-visual-history] 原视觉评审候选版本不受支持')
-    const report=await validateAvgAuthorVisualReviewFromSourceV1({scope,payload:reviewRow.payloadJson,requirement:original.payload.requirement,image:original.raw,asset:original.asset})
-    assertAvgVisualReviewSelectableV1(report,original.payload.requirement,original.raw.contentHash)
+    const report=await validateAvgAuthorVisualReviewFromSourceV1({scope,payload:reviewRow.payloadJson,requirement:original.requirement,image:original.raw,asset:original.asset})
+    assertAvgVisualReviewSelectableV1(report,original.requirement,original.raw.contentHash)
     const task=context.plan.tasks.find(t=>t.taskKey===`avg.author.media.${choice.requirementKey}`)
     if(!task||task.kind!=='avg-author-media-choice'||task.executionMode!=='human-import'||task.skillId!==null
       ||canonicalProductProductionJsonV2(task.outputArtifactKeys)!==canonicalProductProductionJsonV2([row.artifactKey])
       ||canonicalProductProductionJsonV2(task.inputArtifactKeys)!==canonicalProductProductionJsonV2([original.raw.artifactKey,reviewKey]))throw new Error('[avg-visual-history] 原作者选图任务不匹配')
-    const selected=await inspectAvgChosenImageBytesV1({scope,choice,row:original.raw,image:original.raw,asset:original.asset,requirement:original.payload.requirement})
+    const selected=await inspectAvgChosenImageBytesV1({scope,choice,row:original.raw,image:original.raw,asset:original.asset,requirement:original.requirement})
     const candidate=await assertFrozenAuthorCandidateV1(context,row,task,[original.raw,reviewRow],input.controlEpoch)
     if(candidate.version!==4||canonicalProductProductionJsonV2(candidate.mediaChoiceValidation)!==canonicalProductProductionJsonV2(selected.validation))throw new Error('[avg-visual-history] 原作者选图缺少准确解码/采用证据')
-    return {choice,artifact:ref(row),authorReceiptHash:String(JSON.parse(row.metadataJson).receiptHash),raw:original.raw,rawProof:original.provenance,
+    return {choice,artifact:ref(row),authorReceiptHash:String(JSON.parse(row.metadataJson).receiptHash),raw:original.raw,
       compilation:ref(original.compilation),review:{...ref(reviewRow),authorReceiptHash:String(JSON.parse(reviewRow.metadataJson).receiptHash)},
       image:selected.image,productionKey:context.production.productionKey,buildNumber:context.build.buildNumber,
       requirement:selected.requirement,sourceWorldContentHash:context.brief.source.worldContentHash}
+}
+
+/** A distinct local producer proof, never an original HTTP source. Current
+ * review/choice bind the current compiled requirement; original bytes and
+ * request remain independently proven through a flat original proof4. */
+export async function readAvgAdoptedRevalidatedImageChoiceV4(input:Parameters<typeof readAvgAdoptedGeneratedReferenceChoiceV4>[0]){
+  const scope=await resolveScope({scope:input.scope}),proofTables=await mediaProofTables(input.buildId)
+  const load=()=>Promise.all([import('./visual-image-history'),import('./visual-image-revalidation')])
+  const [{readAvgHistoricalCompiledImageDefinitionV4},{inspectAvgRevalidatedRawV4}]=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
+  return db.transaction('r',scopeTransactionTables(db.productProductions,db.productProductionBriefs,db.productProductionCommands,
+    db.productBuilds,db.productBuildArtifacts,db.avgDraftMedia,db.mediaBlobObjects,...proofTables),async()=>{
+    const context=await authority(scope,input.buildId,true,false,input.controlEpoch,'visual')
+    const [row]=await acceptedInputs(scope,input.buildId,input.controlEpoch,[input.artifactKey])
+    if(row.version!==input.version||row.contentHash!==input.contentHash||row.kind!=='presentation')throw new Error('[avg-visual-history] 需要准确本版已采用选图')
+    const choice=parseAvgAuthorMediaChoice(row.payloadJson)
+    if(choice.version!==1)throw new Error('[avg-visual-history] 本地复验未冻结加工选图')
+    const boundary={scope,buildId:input.buildId,expectedBuildRevision:context.build.stateRevision,controlEpoch:input.controlEpoch,
+      expectedBriefHash:context.build.briefHash,expectedPlanHash:context.build.planHash}
+    const compiled=await readAvgHistoricalCompiledImageDefinitionV4(boundary)
+    const proof=await verifyHistoricalAvgImageRevalidationProducerV1({...boundary,sourceControlEpoch:input.controlEpoch,...choice.raw})
+    const image=await inspectAvgRevalidatedRawV4({scope,compiled,artifact:proof.artifact})
+    return {...await readAdoptedVisualChoiceWitnessV4(context,row,choice,{...input,scope},
+      {...compiled,raw:proof.artifact,asset:image.asset,requirement:image.requirement}),rawProof:proof.provenance,original:image.source}
   })
 }
 

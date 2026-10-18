@@ -1,3 +1,4 @@
+import { avgVisualPlanningBudgetV4,avgVisualPlanningGateIdsV4 } from '../../src/lib/avg/visual-planning-policy'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { scopeTransactionTables } from '../../src/lib/workspace/scope'
@@ -32,13 +33,15 @@ import { readAvgHistoricalRawImageV4,readAvgHistoricalImageCandidatesV4,readAvgH
 import { prepareAvgVisualRawReuseSourceV4, readAvgVisualRawReuseSourceV4, inspectAvgVisualRawReuseCompatibilityV4 } from '../../src/lib/avg/visual-image-reuse'
 import { parseAvgVisualRawReuseSourceV4 } from '../../src/lib/avg/visual-image-reuse-contract'
 import * as rawReuseContract from '../../src/lib/avg/visual-image-reuse-contract'
+import { prepareAvgVisualRawReuseV4 } from '../../src/lib/avg/visual-image-reuse-workspace'
+import { readAgentRunV1 } from '../../src/lib/agent/run/event-store'
 import * as imageProducerProof from '../../src/lib/product-production/artifact-store'
 import * as stageImageSources from '../../src/lib/avg/stage-image-sources'
 import { assertAvgVisualPlanningRestartKnownV4 } from '../../src/lib/avg/visual-planning-restart'
 import { prepareAvgVisualImageRouteV4 } from '../../src/lib/avg/visual-image-route-workspace'
 import { readAvgAdoptedGeneratedReferenceChoiceV4 } from '../../src/lib/avg/author-artifacts'
 import { prepareAvgAdoptedGeneratedImageV2,readAvgAdoptedGeneratedImageV2 } from '../../src/lib/avg/media-generated-reference'
-import { parseAvgGeneratedReferenceSourceV1,parseAvgGeneratedReferenceSourceV2 } from '../../src/lib/avg/media-generated-reference-contract'
+import { parseAvgGeneratedReferenceSourceV1,parseAvgGeneratedReferenceSourceV2,parseAvgGeneratedReferenceSourceV3 } from '../../src/lib/avg/media-generated-reference-contract'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V2,parseAvgMediaReferencesV1 } from '../../src/lib/avg/media-reference-contract'
 import * as textCapabilities from '../../src/lib/product-production/capabilities'
 import { refuseAvgVisualPlanningBatchV4, stageAvgVisualPlanningAuthorInputV4 } from '../../src/lib/avg/visual-planning-workspace'
@@ -68,7 +71,7 @@ beforeEach(async () => {
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); db.close() })
 
-async function setup(options: { fenced?:boolean; malformed?: boolean; wrongBinding?: boolean; visualShape?: 'combined-schema-key' | 'string-palette' | 'extra-root-fields'; unknown?: boolean; reference?: 'valid' | 'missing' | 'tampered'; image?: 'valid' | 'unknown' | 'malformed' | 'corrupt-json' | 'busy' } = {}) {
+async function setup(options: { secondImage?:boolean; fenced?:boolean; malformed?: boolean; wrongBinding?: boolean; visualShape?: 'combined-schema-key' | 'string-palette' | 'extra-root-fields'; unknown?: boolean; reference?: 'valid' | 'missing' | 'tampered'; image?: 'valid' | 'unknown' | 'malformed' | 'corrupt-json' | 'busy' } = {}) {
   vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION', '1')
   const imageBytes = await deterministicRegionMapPngV1({ width: 576, height: 324, palette: ['#18213b', '#39506b', '#c8dce8'] })
   const view = new Uint8Array(imageBytes); let binary = ''
@@ -83,6 +86,16 @@ async function setup(options: { fenced?:boolean; malformed?: boolean; wrongBindi
   vi.stubGlobal('fetch', imageFetcher)
   const fixture = await avgVisualPlanningFixtureV4(), { owner, source } = fixture
   const brief = structuredClone(fixture.brief)
+  if(options.secondImage){
+    const old=brief.avgVisualPlanning!.scope,{sourceInputHash:_hash,aspectRatio:_ratio,...draftScope}=old
+    const extra=structuredClone(draftScope.templates[0]);extra.parameters.requirementKey+='-reference';extra.parameters.assetKey+='-reference'
+    extra.parameters.consumer={...extra.parameters.consumer,domain:'reference',slot:'style',required:false,sceneKey:null,consumerKey:extra.parameters.consumer.consumerKey+'-reference'}
+    extra.parameters.triggerBeatKey=null;extra.parameters.family.variantKey='style'
+    draftScope.templates.push(extra)
+    brief.avgVisualPlanning!.scope=await freezeAvgVisualPlanningScopeV1(draftScope,source)
+    brief.media.imageCount=2
+  }
+
   if (options.reference) {
     const data = await deterministicRegionMapPngV1({ width: 32, height: 32, palette: ['#112233', '#445566', '#778899'] })
     const asset = await importAvgMediaV1({ scope: owner.scope, data, mimeType: 'image/png', kind: 'background', name: '原创工程风格参考',
@@ -108,6 +121,7 @@ async function setup(options: { fenced?:boolean; malformed?: boolean; wrongBindi
   const image = await resolveAvgImageExecutionCapabilityV2({ projectId: owner.scope.projectId,
     requirement: brief.capabilityRequirements.find(c => c.mediaClass === 'image')! })
   brief.avgVisualPlanning!.imageBinding = { ...image.binding, endpointRouteHash: image.endpointRouteHash }
+  if(options.secondImage){brief.productionBudget=avgVisualPlanningBudgetV4(brief);brief.completionContract.requiredGateIds=avgVisualPlanningGateIdsV4(brief)}
   const parsed = parseProductProductionBriefV3(brief)
   const saved = await executeProductProductionCommand({ scope: owner.scope, productionId: owner.productionId,
     command: { type: 'save-brief-revision', commandId: 'visual.actual.save', expectedStateRevision: owner.details.production.stateRevision,
@@ -1067,6 +1081,189 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
     })
   })
 
+
+  describe('current V4 raw revalidation producer',()=>{
+    async function prepareRetained(s:Setup,raw:ProductBuildArtifactRecordV1,adapterId?:typeof AVG_IMAGE_REFERENCE_CAPABILITY_V2.adapterId){
+      const parent=await current(s),origin=await prepareAvgVisualRawReuseSourceV4({scope:s.scope,buildId:s.buildId,expectedBuildRevision:parent.stateRevision,
+        controlEpoch:s.plan.controlEpoch,expectedBriefHash:parent.briefHash,expectedPlanHash:parent.planHash,
+        artifact:{artifactKey:raw.artifactKey,version:raw.version,contentHash:raw.contentHash}})
+      const pending=await restartAvgVisualPlanningFromDraftV4(await restartInput(s))
+      const options=await readAvgVisualReuseOptionsV4({scope:s.scope,productionId:s.productionId,buildNumber:parent.buildNumber,expectedBuildRevision:parent.stateRevision})
+      const draft=await readAvgDraftV1(s.scope)
+      const roles=await prepareAvgVisualProposalReuseV4({scope:s.scope,productionId:s.productionId,expectedBriefHash:pending.brief!.briefHash,
+        expectedDraftRevision:draft.revision,expectedBuildId:parent.id!,expectedBuildRevision:parent.stateRevision,
+        selections:options.options.flatMap(o=>o.available?[o.selection]:[])})
+      const selectedRoute=adapterId?await prepareAvgVisualImageRouteV4({scope:s.scope,productionId:s.productionId,expectedBriefHash:roles.brief!.briefHash,expectedDraftRevision:draft.revision,
+        expectedBuild:{id:parent.id!,revision:parent.stateRevision},adapterId}):roles
+      const ready=await prepareAvgVisualRawReuseV4({scope:s.scope,productionId:s.productionId,expectedBriefHash:selectedRoute.brief!.briefHash,
+        expectedDraftRevision:draft.revision,expectedBuildId:parent.id!,expectedBuildRevision:parent.stateRevision,sources:[origin]})
+      return {ready,origin,parent}
+    }
+    async function startRetained(s:Setup,ready:Awaited<ReturnType<typeof prepareRetained>>['ready']){
+      const brief=parseProductProductionBriefV3(ready.brief!.briefJson)
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      const details=await startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:ready.brief!.briefHash}),build=details.build!
+      const execution=await resolveAvgVisualPlanningExecutionV4(s.scope,brief,build.id!),executor=createConfiguredProductProductionExecutorV1({production:details.production,brief,runText:s.runText,...execution})
+      return {...s,brief,buildId:build.id!,plan:parseProductProductionPlanV3(build.planJson,brief,build.briefHash),executor,capabilityBindings:execution.capabilityBindings}
+    }
+    async function adoptRetainedRoles(child:Setup,changePrompt=false){
+      await sources(child);await run(child)
+      const direction=(await accepted(child,'avg.proposal.visual-bible'))!
+      await adopt(child,await stage(child,'avg.media.visual-bible',JSON.parse(direction.payloadJson).payload));await run(child)
+      const subject=(await accepted(child,`avg.proposal.environment-brief.${child.media.subjectKey}`))!,payload=JSON.parse(subject.payloadJson).payload
+      if(changePrompt)payload.outputs[0].prompt+='；本版作者改为另一种窗户构图'
+      await adopt(child,await stage(child,`avg.media.environment-brief.${child.media.subjectKey}`,payload))
+    }
+    async function preparedOriginal(){
+      const generated=await generatedImage('valid'),{s,raw}=generated
+      await stopProductProductionV1({scope:s.scope,production:(await db.productProductions.get(s.productionId))!})
+      return {...generated,...await prepareRetained(s,raw)}
+    }
+    it('uses a real zero-capability Harness with no Key, keeps unselected original bytes and requires current author review and choice',async()=>{
+      const generated=await generatedImage('valid'),{s,raw}=generated
+      await stopProductProductionV1({scope:s.scope,production:(await db.productProductions.get(s.productionId))!})
+      const {ready,origin}=await prepareRetained(s,raw)
+      const brief=parseProductProductionBriefV3(ready.brief!.briefJson)
+      expect(brief.productionBudget).toMatchObject({maximumModelCalls:0,maximumMediaCalls:0,maximumCostUsd:0})
+      const originalRows=await db.productBuildArtifacts.where('buildId').equals(s.buildId).toArray()
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      const details=await startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:ready.brief!.briefHash})
+      const build=details.build!,execution=await resolveAvgVisualPlanningExecutionV4(s.scope,brief,build.id!)
+      const executor=createConfiguredProductProductionExecutorV1({production:details.production,brief,runText:s.runText,...execution})
+      const child={...s,buildId:build.id!,brief,plan:parseProductProductionPlanV3(build.planJson,brief,build.briefHash),executor,capabilityBindings:execution.capabilityBindings}
+      await sources(child);await run(child)
+      const direction=(await accepted(child,'avg.proposal.visual-bible'))!
+      await adopt(child,await stage(child,'avg.media.visual-bible',JSON.parse(direction.payloadJson).payload));await run(child)
+      const subject=(await accepted(child,`avg.proposal.environment-brief.${s.media.subjectKey}`))!
+      await adopt(child,await stage(child,`avg.media.environment-brief.${s.media.subjectKey}`,JSON.parse(subject.payloadJson).payload))
+      await cycle(child);await cycle(child)
+      const currentRaw=await accepted(child,raw.artifactKey)
+      expect(currentRaw,(await current(child)).failureJson).toBeDefined()
+      expect(currentRaw!.requirementKey).toBeNull();expect(currentRaw!.payloadJson).toBe(raw.payloadJson)
+      expect(currentRaw!.metadataJson).toBe(raw.metadataJson);expect(currentRaw!.rightsJson).toBe(raw.rightsJson)
+      expect(currentRaw!.contentHash).toBe(raw.contentHash)
+      expect(currentRaw!.producerRunId).not.toBe(raw.producerRunId)
+      const runProof=await readAgentRunV1(s.scope,currentRaw!.producerRunId!)
+      expect(runProof.events.some(e=>e.type==='model.requested'||e.type==='tool.called'||e.type==='evidence.artifact.recorded'&&e.payload.artifactKind==='raw-response')).toBe(false)
+      const ledger=JSON.parse((await current(child)).budgetLedgerJson)
+      expect(ledger.attempts.every((a:{usage:{modelCalls:number;mediaCalls:number;costUsd:number}|null})=>a.usage&&a.usage.modelCalls===0&&a.usage.mediaCalls===0&&a.usage.costUsd===0)).toBe(true)
+      expect(await accepted(child,`avg.review.visual.${origin.requirementKey}`)).toBeUndefined()
+      const choose=()=>stageAvgMediaChoiceV2({scope:s.scope,productionId:s.productionId,requirementKey:origin.requirementKey,
+        rawVersion:currentRaw!.version,rawContentHash:currentRaw!.contentHash,declaration:'明确选用本版复验图，仅工程观察'})
+      await expect(choose()).rejects.toThrow()
+      const definition=await readAvgImageConsumptionDefinitionV4({scope:s.scope,buildId:child.buildId,brief})
+      const report=avgVisualReviewFixture(definition.mediaBatch.requirements[0],currentRaw!.contentHash)
+      const review=await stageAvgVisualReviewV1({scope:s.scope,productionId:s.productionId,requirementKey:origin.requirementKey,
+        rawVersion:currentRaw!.version,rawContentHash:currentRaw!.contentHash,report,declaration:'本版重新观察工程原图；非艺术或真人验收'})
+      await adopt(child,review);await adopt(child,await choose())
+      expect(await accepted(child,`avg.media.choice.${origin.requirementKey}`)).toBeTruthy()
+      const currentDraft=await readAvgDraftV1(s.scope),configured=await configureAvgChosenMediaDraftV2({scope:s.scope,productionId:s.productionId,expectedDraftRevision:currentDraft.revision})
+      mockStageImageObservation()
+      await adopt(child,await stageAvgWorkspaceInputV1({scope:s.scope,productionId:s.productionId,expectedDraftRevision:configured.revision,
+        artifactKey:'avg.author.stage',declaration:'确认本版原图复验后的准确演出；仅工程验收'}))
+      const finished=await run(child),frozen=await current(child)
+      expect(finished.buildStatus,frozen.failureJson).toBe('preview-ready')
+      const preview=await verifyStoredProductBuildPreview(frozen),module=preview.runtimePackage.modules[0]
+      if(module.version!==2)throw new Error('Expected native V2 module')
+      expect(module.stage.assets[0].contentHash).toBe(raw.contentHash)
+      const zeroProof=await imageProducerProof.verifyHistoricalAvgImageRevalidationProducerV1({scope:s.scope,buildId:frozen.id!,
+        expectedBuildRevision:frozen.stateRevision,expectedBriefHash:frozen.briefHash,expectedPlanHash:frozen.planHash,sourceControlEpoch:frozen.controlEpoch,
+        artifactKey:currentRaw!.artifactKey,version:currentRaw!.version,contentHash:currentRaw!.contentHash})
+      expect(zeroProof.provenance).toMatchObject({schema:'storyforge.avg.image-revalidation-producer-proof',version:1,noProviderRequest:true})
+      const currentChoice=(await accepted(child,`avg.media.choice.${origin.requirementKey}`))!
+      const selected=await prepareAvgAdoptedGeneratedImageV2({scope:s.scope,choiceId:currentChoice.id!})
+      expect(selected.source.version).toBe(3)
+      if(selected.source.version!==3)throw new Error('Expected distinct local source3')
+      expect(selected.source.raw.schema).toBe('storyforge.avg.image-revalidation-producer-proof')
+      expect(selected.source.original).toEqual(origin)
+      expect(parseAvgGeneratedReferenceSourceV3(selected.source)).toEqual(selected.source)
+      expect(()=>parseAvgGeneratedReferenceSourceV1(selected.source)).toThrow()
+      expect(()=>parseAvgGeneratedReferenceSourceV2(selected.source)).toThrow()
+      expect((await readAvgAdoptedGeneratedImageV2({scope:s.scope,source:selected.source})).data).toEqual(s.imageBytes)
+      await expect(readAvgAdoptedGeneratedImageV2({scope:s.scope,source:{...selected.source,raw:{...selected.source.raw,revalidationEvidenceHash:'f'.repeat(64)}}})).rejects.toThrow()
+      const projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),copy=(await db.productBuilds.where('projectId').equals(projectId).filter(b=>b.buildNumber===frozen.buildNumber).first())!
+      const copyScope={projectId,worldId:copy.worldId,workId:copy.workId}
+      expect((await verifyStoredProductBuildPreview(copy)).previewHash).toBe(frozen.previewHash)
+      expect((await readAvgAdoptedGeneratedImageV2({scope:copyScope,source:selected.source})).data).toEqual(s.imageBytes)
+      await recoverImportedProductProductionProofsV1({scope:copyScope,productionId:copy.productionId})
+      await verifyProductBuildTerminalArtifactSetV1({scope:copyScope,productionId:copy.productionId,buildId:copy.id!,expectedControlEpoch:copy.controlEpoch,expectedPlanHash:copy.planHash})
+      await deleteWork(copyScope.workId!,copyScope)
+      expect(await db.productBuildArtifacts.where('buildId').equals(s.buildId).toArray()).toEqual(originalRows)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },120_000)
+    it('retains the successful original Image2.1 and dispatches only the failed slot through the explicitly selected Image2.5 model',async()=>{
+      const s=await setup({image:'valid',secondImage:true})
+      s.imageFetcher.mockImplementationOnce(async()=>new Response(JSON.stringify({data:[{b64_json:s.imageBase64}]}),{headers:{'content-type':'application/json'}}))
+        .mockImplementationOnce(async()=>new Response(JSON.stringify({error:{message:'known 503'}}),{status:503,headers:{'content-type':'application/json'}}))
+      await sources(s);await run(s);await adopt(s,await stage(s,'avg.media.visual-bible',s.bible));await run(s)
+      await adopt(s,await stage(s,`avg.media.environment-brief.${s.media.subjectKey}`,s.media));await run(s)
+      const raw=(await accepted(s,`avg.media.raw.${s.media.outputs[0].requirementKey}`))!
+      expect(raw).toBeDefined();expect(await accepted(s,`avg.media.raw.${s.media.outputs[1].requirementKey}`)).toBeUndefined()
+      expect(s.imageFetcher).toHaveBeenCalledTimes(2)
+      const {ready}=await prepareRetained(s,raw,AVG_IMAGE_REFERENCE_CAPABILITY_V2.adapterId),brief=parseProductProductionBriefV3(ready.brief!.briefJson)
+      expect(brief.productionBudget).toMatchObject({maximumModelCalls:0,maximumMediaCalls:1})
+      const details=await startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:ready.brief!.briefHash}),build=details.build!
+      const execution=await resolveAvgVisualPlanningExecutionV4(s.scope,brief,build.id!),executor=createConfiguredProductProductionExecutorV1({production:details.production,brief,runText:s.runText,...execution})
+      const child={...s,brief,buildId:build.id!,plan:parseProductProductionPlanV3(build.planJson,brief,build.briefHash),executor,capabilityBindings:execution.capabilityBindings}
+      await sources(child);await run(child)
+      const direction=(await accepted(child,'avg.proposal.visual-bible'))!;await adopt(child,await stage(child,'avg.media.visual-bible',JSON.parse(direction.payloadJson).payload));await run(child)
+      const subject=(await accepted(child,`avg.proposal.environment-brief.${s.media.subjectKey}`))!
+      await adopt(child,await stage(child,`avg.media.environment-brief.${s.media.subjectKey}`,JSON.parse(subject.payloadJson).payload));await run(child)
+      const kept=(await accepted(child,raw.artifactKey))!,fresh=(await accepted(child,`avg.media.raw.${s.media.outputs[1].requirementKey}`))!
+      expect(kept,(await current(child)).failureJson).toBeDefined();expect(fresh,(await current(child)).failureJson).toBeDefined()
+      expect(kept.payloadJson).toBe(raw.payloadJson);expect(JSON.parse(kept.metadataJson).source).toBe('agnes.image-2.1-flash.v1')
+      expect(JSON.parse(fresh.metadataJson).source).toBe('agnes.image-2.5-flash.v1')
+      expect(JSON.parse(String(s.imageFetcher.mock.calls[2][1]!.body)).model).toBe('agnes-image-2.5-flash')
+      expect(s.imageFetcher).toHaveBeenCalledTimes(3);expect(s.runText).toHaveBeenCalledTimes(2)
+      const ledger=JSON.parse((await current(child)).budgetLedgerJson)
+      expect(ledger.attempts.reduce((n:number,a:{usage:{mediaCalls:number}|null})=>n+(a.usage?.mediaCalls??0),0)).toBe(1)
+    },60_000)
+    it('rejects an incompatible current adopted design without generating a replacement',async()=>{
+      const {s,raw,ready}=await preparedOriginal(),child=await startRetained(s,ready)
+      await adoptRetainedRoles(child,true);await run(child)
+      expect(await accepted(child,raw.artifactKey)).toBeUndefined();expect((await current(child)).failureJson).toContain('不兼容')
+      expect((await db.productBuildArtifacts.get(raw.id!))!.payloadJson).toBe(raw.payloadJson)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },60_000)
+    it.each(['provider-envelope','asset-origin','compiled-origin'] as const)('rejects a replaced %s at actual sealed admission with no paid fallback',async mode=>{
+      const {s,raw,ready}=await preparedOriginal(),child=await startRetained(s,ready),execute=child.executor
+      child.executor=async input=>{
+        const result=await execute(input)
+        if(input.task.kind!=='avg-media-image-reuse')return result
+        return {...result,artifacts:result.artifacts.map(a=>mode==='provider-envelope'?{...a,requirementKey:'avg.media.image'}
+          :mode==='asset-origin'?{...a,metadata:{...(a.metadata as Record<string,unknown>),source:'agnes.image-2.5-flash.v1'}}
+          :{...a,quality:{...(a.quality as Record<string,unknown>),sourceCompilation:{artifactKey:'avg.media.compiled-visual-requirements',version:1,contentHash:'f'.repeat(64)}}})}
+      }
+      await adoptRetainedRoles(child);await expect(run(child)).rejects.toThrow()
+      expect(await accepted(child,raw.artifactKey)).toBeUndefined()
+      expect((await db.productBuildArtifacts.get(raw.id!))!.payloadJson).toBe(raw.payloadJson)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },60_000)
+    it('rechecks damaged selected bytes at explicit start before creating another Build or Run',async()=>{
+      const {s,raw,ready}=await preparedOriginal(),blob=(await db.mediaBlobObjects.get(raw.blobObjectId!))!,bytes=new Uint8Array(blob.data!.slice(0))
+      bytes[bytes.length-1]^=1;await db.mediaBlobObjects.update(blob.id!,{data:bytes.buffer})
+      const runs=await db.agentRuns.count()
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      await expect(startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:ready.brief!.briefHash})).rejects.toThrow()
+      expect(await db.productBuilds.count()).toBe(1);expect(await db.agentRuns.count()).toBe(runs)
+      expect((await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])).brief!.briefHash).toBe(ready.brief!.briefHash)
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },60_000)
+    it('idempotently keeps the exact source and explicitly clears it back to a finite paid requirement without dispatch',async()=>{
+      const {s,ready,origin,parent}=await preparedOriginal(),draft=await readAvgDraftV1(s.scope)
+      const input={scope:s.scope,productionId:s.productionId,expectedBriefHash:ready.brief!.briefHash,expectedDraftRevision:draft.revision,
+        expectedBuildId:parent.id!,expectedBuildRevision:parent.stateRevision,sources:[origin]}
+      const before=await exportProjectJSON(s.scope.projectId)
+      await prepareAvgVisualRawReuseV4(input)
+      expect({...await exportProjectJSON(s.scope.projectId),exportedAt:0}).toEqual({...before,exportedAt:0})
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      const cleared=await prepareAvgVisualRawReuseV4({...input,sources:[]}),brief=parseProductProductionBriefV3(cleared.brief!.briefJson)
+      expect(brief.avgVisualPlanning!.rawReuse).toBeUndefined();expect(brief.productionBudget).toMatchObject({maximumModelCalls:0,maximumMediaCalls:1})
+      expect(brief.capabilityRequirements.find(c=>c.mediaClass==='image')!.required).toBe(true)
+      await expect(startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:cleared.brief!.briefHash})).rejects.toThrow()
+      expect(await db.productBuilds.count()).toBe(1);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },60_000)
+  })
 
   describe('unselected V4 raw reuse compatibility',()=>{
     let generated:Awaited<ReturnType<typeof generatedImage>>

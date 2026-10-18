@@ -1,3 +1,4 @@
+import { parseAvgVisualRawReuseSourcesV4, type AvgVisualRawReuseSourceV4 } from './visual-image-reuse-contract'
 import { avgKey, avgHash, avgProtocolBody, avgRecord } from './protocol-validation'
 import { parseAvgAssemblyBriefV1, type AvgAssemblyBriefV1, type AvgAssemblyBriefV2 } from './assembly-contract'
 import { parseAvgVisualPlanningScopeV1, type AvgVisualPlanningScopeV1 } from './visual-planning-contract'
@@ -16,13 +17,15 @@ export interface AvgVisualPlanningBriefV4 {
   scope: AvgVisualPlanningScopeV1
   imageBinding: AvgVisualImageBindingV4
   proposalReuse?: AvgVisualProposalReuseSourceV4[]
+  rawReuse?: AvgVisualRawReuseSourceV4[]
 }
 
 export function parseAvgVisualPlanningBriefV4(value: unknown): AvgVisualPlanningBriefV4 {
   const body=avgProtocolBody(value)
+  const hasRawReuse=Object.prototype.hasOwnProperty.call(body??{},'rawReuse')
   const hasReuse=Object.prototype.hasOwnProperty.call(body??{},'proposalReuse')
   const r = avgRecord(body, ['schema', 'version', 'assembly', 'scope', 'imageBinding',
-    ...(hasReuse?['proposalReuse']:[])], 'visual planning Brief')
+    ...(hasReuse?['proposalReuse']:[]),...(hasRawReuse?['rawReuse']:[])], 'visual planning Brief')
   if (r.schema !== 'storyforge.avg.visual-planning-brief' || r.version !== 4) throw new Error('[avg-visual-plan] 专业视觉 Brief 版本无效')
   const assembly = parseAvgAssemblyBriefV1(r.assembly), scope = parseAvgVisualPlanningScopeV1(r.scope)
   const b = avgRecord(r.imageBinding, ['requirementKey', 'adapterId', 'bindingHash', 'endpointRouteHash'], 'planning image binding')
@@ -35,7 +38,8 @@ export function parseAvgVisualPlanningBriefV4(value: unknown): AvgVisualPlanning
   }
   return { schema: r.schema, version: 4, assembly, scope, imageBinding: { requirementKey: avgKey(b.requirementKey, 'requirementKey'),
     adapterId: selected.adapterId, bindingHash: avgHash(b.bindingHash, 'bindingHash'), endpointRouteHash: avgHash(b.endpointRouteHash, 'endpointRouteHash') },
-    ...(hasReuse?{proposalReuse:parseAvgVisualProposalReuseSourcesV4(r.proposalReuse,scope)}:{}) }
+    ...(hasReuse?{proposalReuse:parseAvgVisualProposalReuseSourcesV4(r.proposalReuse,scope)}:{}),
+    ...(hasRawReuse?{rawReuse:parseAvgVisualRawReuseSourcesV4(r.rawReuse,scope.templates.map(t=>t.parameters.requirementKey))}:{}) }
 }
 
 /** Separate default-off professional workbench experiment. Both switches,

@@ -52,7 +52,7 @@ export function assertAvgVisualReviewRevisionV1(previous:unknown|null,next:AvgRe
 export async function validateAvgAuthorVisualReviewV1(input:{scope:WorkspaceScope;brief:ProductProductionBriefV3;raw:ProductBuildArtifactRecordV1;payload:unknown;processed?:ProductBuildArtifactRecordV1}){
   const a=await readAvgImageConsumptionDefinitionV4({...input,buildId:input.raw.buildId})
   if(!a.mediaBatch.visualReviewPolicy)throw new Error('[avg-review] 当前冻结批次没有视觉评审合同')
-  const report=parseAvgAuthorVisualReviewV1(input.payload),raw=await assertAvgConsumedRawImageV4({...input,row:input.raw}),r=raw.payload.requirement
+  const report=parseAvgAuthorVisualReviewV1(input.payload),raw=await assertAvgConsumedRawImageV4({...input,row:input.raw}),r=raw.requirement
   const needsProcessing=a.imageProcessing?.entries.some(e=>e.requirementKey===r.requirementKey)
   const processed=needsProcessing?(input.processed?await inspectAvgProcessedImageSourceV1({...input,processed:input.processed}):await readAvgProcessedImageSourceV1({...input,buildId:input.raw.buildId})):undefined
   if(!needsProcessing&&input.processed)throw new Error('[avg-process] 评审不能夹带未冻结加工')

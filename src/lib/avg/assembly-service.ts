@@ -684,7 +684,7 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
       const inherited=old.avgVisualPlanning&&!input.visualStageContinuation?workspace:await prepareAvgInheritedStageDraftV1({scope:input.scope,workspace,build:details.build,
         productionKey:details.production.productionKey,targetBuildNumber:Math.max(...details.buildHistory.map(row=>row.buildNumber))+1,
         worldContentHash:old.source.worldContentHash,...(voiceRecovery ? { voiceRecovery } : {})})
-      if(input.visualStageContinuation&&!inherited.presentation.inheritedImages?.some(entry=>entry.source.version===2
+      if(input.visualStageContinuation&&!inherited.presentation.inheritedImages?.some(entry=>(entry.source.version===2||entry.source.version===3)
         &&entry.source.productionKey===details.production.productionKey&&entry.source.raw.buildNumber===details.build!.buildNumber))throw new Error('[avg-visual-retain] 当前演出没有此专业版本准确已采用的旧图')
       const continuationCommandId=input.visualStageContinuation?`avg.keep.${await hashProductProductionValueV2({schema:'storyforge.avg.visual-stage-continuation',version:1,
         productionKey:details.production.productionKey,buildNumber:details.build.buildNumber,briefHash:details.build.briefHash,planHash:details.build.planHash,workspace:inherited})}`:undefined
@@ -794,6 +794,8 @@ export async function startAvgAssemblyV1(input: { scope: WorkspaceScope; product
     workspace=(await(await import('./visual-planning-scope-draft')).prepareAvgVisualPlanningSourceDraftV4({workspace,planning,previous:unstartedAvgVisualPlanningScopes(details)})).workspace
     await (await import('./visual-planning-workspace')).assertAvgVisualPlanningDraftMatchesV4(input.scope,workspace,brief)
     await (await import('./visual-planning-reuse-workspace')).assertAvgVisualProposalReuseSourcesV4(input.scope,input.productionId,brief,
+      1+Math.max(0,...details.buildHistory.map(b=>b.buildNumber)))
+    await (await import('./visual-image-reuse-workspace')).assertAvgVisualRawReuseSourcesV4(input.scope,input.productionId,brief,
       1+Math.max(0,...details.buildHistory.map(b=>b.buildNumber)))
   }
   if (workspace.voiceProduction && assembly.version !== 3) throw new Error('[avg-voice] 草稿已包含配音批次，请重新准备匹配的制作方案')

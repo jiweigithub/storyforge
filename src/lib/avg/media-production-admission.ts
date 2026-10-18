@@ -1,3 +1,4 @@
+import { inspectAvgRevalidatedRawV4 } from './visual-image-revalidation'
 import { db } from '../db/schema'
 import { validateAvgVoiceRecoveryV1 } from './voice-recovery'
 import type { ProductBuildArtifactRecordV1, ProductBuildRecordV1, ProductProductionPlanTaskV3, WorkspaceScope } from '../types'
@@ -31,7 +32,7 @@ export async function assertAvgMediaRawProducerAdmissionV2(input: {
   build: ProductBuildRecordV1 & { id: number }
   task: ProductProductionPlanTaskV3
   producerRunId: number
-  artifact: Pick<ProductBuildArtifactRecordV1, 'artifactKey' | 'kind' | 'mediaKind' | 'payloadJson' | 'metadataJson' | 'qualityJson' | 'rightsJson' | 'contentHash' | 'mimeType' | 'byteSize' | 'blobObjectId'>
+  artifact: Pick<ProductBuildArtifactRecordV1, 'artifactKey' | 'requirementKey' | 'kind' | 'mediaKind' | 'payloadJson' | 'metadataJson' | 'qualityJson' | 'rightsJson' | 'contentHash' | 'mimeType' | 'byteSize' | 'blobObjectId'>
 }) {
   const row = await db.productProductionBriefs.where('[productionId+revision]').equals([input.build.productionId, input.build.briefRevision]).first()
   if (!row || !await assertRecordInScope(input.scope, 'productProductionBriefs', row, { owner: 'work' }) || row.status !== 'authorized'
@@ -105,6 +106,13 @@ async function assertAvgCompiledImageProducerAdmissionV4(input: Parameters<typeo
   const d = await readAvgCompiledImageDefinitionV4({ scope: input.scope, buildId: input.build.id,
     expectedBuildRevision: input.build.stateRevision, controlEpoch: input.build.controlEpoch, expectedBrief: brief })
   const task = input.task, a = input.artifact
+  if(task.kind==='avg-media-image-reuse'){
+    const raw=await inspectAvgRevalidatedRawV4({scope:input.scope,compiled:d,artifact:a})
+    const run=await db.agentRuns.get(input.producerRunId)
+    if(!run||(JSON.parse(run.contractJson) as {runtimeBindingHash?:string}).runtimeBindingHash!==await hashAvgTaskRuntimeBindingV1({
+      planHash:input.build.planHash,task,capabilityBindings:[]}))throw new Error('[avg-visual-raw-reuse] 原图复验不属于实际无能力绑定的 Harness')
+    await assertContext(raw.sourceContextHash);return
+  }
   if (task.kind !== 'avg-media-image-generate' || task.executionMode !== 'media-provider' || task.skillId !== AVG_COMPILED_IMAGE_SKILL_V4
     || task.maxAttempts !== 1 || task.budgetReservation.mediaCalls !== 1 || task.budgetReservation.modelCalls !== 0
     || task.outputArtifactKeys.length !== 1 || task.outputArtifactKeys[0] !== a.artifactKey
@@ -122,11 +130,14 @@ async function assertAvgCompiledImageProducerAdmissionV4(input: Parameters<typeo
     || !same(q.sourceRule, d.source.artifact) || !same(q.sourceScripts, d.source.scripts.map(s => s.artifact))
     || !same(q.sourceCompilation, d.definition.compilation)) throw new Error('[avg-visual-image] 原图接收不能替换编译来源或冒充解码/艺术验收')
   await assertAvgOriginalImageResponseV1(input.scope, input.producerRunId, task.taskKey, q)
-  const assembled = await assembleContext({ projectId: input.scope.projectId, scope: input.scope,
-    productProductionId: input.build.productionId, productBuildId: input.build.id, productProductionTaskKey: task.taskKey,
-    productArtifactKeys: task.inputArtifactKeys, sourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V1],
-    inputBudgetTokens: task.budgetReservation.inputTokens, sourceTransformer: preserveProductProductionContextV1 })
-  if (assembled.overBudgetAfterTrim || assembled.segments.length !== 1 || !assembled.sourceEvidence?.length
-    || assembled.sourceEvidence.some(s => s.status !== 'included' || s.delivery !== 'full')
-    || q.sourceContextHash !== await hashProductProductionValueV2(assembled.text)) throw new Error('[avg-visual-image] 原图的实际登记输入与编译来源不一致')
+  await assertContext(q.sourceContextHash)
+  async function assertContext(sourceContextHash:unknown){
+    const assembled = await assembleContext({ projectId: input.scope.projectId, scope: input.scope,
+      productProductionId: input.build.productionId, productBuildId: input.build.id, productProductionTaskKey: task.taskKey,
+      productArtifactKeys: task.inputArtifactKeys, sourceKeys: [AVG_VISUAL_PLANNING_CONTEXT_V1],
+      inputBudgetTokens: task.budgetReservation.inputTokens, sourceTransformer: preserveProductProductionContextV1 })
+    if (assembled.overBudgetAfterTrim || assembled.segments.length !== 1 || !assembled.sourceEvidence?.length
+      || assembled.sourceEvidence.some(s => s.status !== 'included' || s.delivery !== 'full')
+      || sourceContextHash !== await hashProductProductionValueV2(assembled.text)) throw new Error('[avg-visual-image] 原图的实际登记输入与编译来源不一致')
+  }
 }

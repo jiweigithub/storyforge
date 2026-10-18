@@ -20,7 +20,9 @@ export function buildAvgVisualPlanningPlanV4(input: {
   const v = parseAvgVisualPlanningBriefV4(input.brief.avgVisualPlanning), image = input.brief.capabilityRequirements.filter(c => c.requirementKey === 'avg.media.image')
   const text = input.brief.capabilityRequirements.filter(c => c.requirementKey === AVG_VISUAL_TEXT_CAPABILITY_V4)
   if (image.length !== 1 || text.length !== 1 || input.brief.capabilityRequirements.length !== 2
+    || image[0].mediaClass !== 'image' || image[0].required !== (v.scope.templates.length>(v.rawReuse?.length??0))
     || text[0].mediaClass !== 'text' || text[0].required !== (avgVisualPlanningTargetKeysV4(v.scope).length>(v.proposalReuse?.length??0))) throw new Error('[avg-visual-plan] 必须冻结准确图片和实际仍需调用的专业文本能力')
+  if(v.rawReuse?.some(r=>r.raw.buildNumber>=input.buildNumber))throw new Error('[avg-visual-raw-reuse] 原图来源必须早于当前版本')
   if(v.proposalReuse?.some(r=>r.buildNumber>=input.buildNumber))throw new Error('[avg-visual-reuse] 来源必须早于当前版本')
   // Reuse the existing consumer/review/stage topology only. These inert words
   // are never serialized as V4 requests or sent to a provider. The V4 executor
@@ -29,8 +31,10 @@ export function buildAvgVisualPlanningPlanV4(input: {
     batchKey: v.scope.batchKey, revision: v.scope.revision, aspectRatio: v.scope.aspectRatio, sourceInputHash: v.scope.sourceInputHash,
     visualReviewPolicy: 'author-visual-v1' as const,
     requirements: avgVisualPlanningTemplateRequirementsV1(v.scope) }
+  // The pure legacy topology requires an image capability. It does not
+  // resolve it; retained slots below become exact zero-capability tasks.
   const base = buildAvgImageAssemblyTopologyV1({ briefHash:input.briefHash,buildNumber:input.buildNumber,controlEpoch:input.controlEpoch,
-    capabilityRequirements:image,declaration:{...v.assembly,mediaBatch} })
+    capabilityRequirements:image.map(c=>({...c,required:true})),declaration:{...v.assembly,mediaBatch} })
   const sourceTasks = base.tasks.filter(t => ['avg-author-rules', 'avg-author-script'].includes(t.kind))
   const sourceKeys = sourceTasks.flatMap(t => t.outputArtifactKeys), sourceTaskKeys = sourceTasks.map(t => t.taskKey)
   const template = sourceTasks[0]!, additions: ProductProductionPlanTaskV3[] = []
@@ -73,8 +77,11 @@ export function buildAvgVisualPlanningPlanV4(input: {
     : task.kind === 'avg-media-image-generate' ? { ...task,
     skillId: AVG_COMPILED_IMAGE_SKILL_V4,
     inputArtifactKeys: [...task.inputArtifactKeys, AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4],
-    dependsOn: [...task.dependsOn, compileTask], requiredReceipts: [...task.requiredReceipts, { taskKey: compileTask, receiptHash: null }] } : task)
-  const firstImage = tasks.findIndex(t => t.kind === 'avg-media-image-generate')
+    dependsOn: [...task.dependsOn, compileTask], requiredReceipts: [...task.requiredReceipts, { taskKey: compileTask, receiptHash: null }],
+    ...(v.rawReuse?.some(r=>task.taskKey===`avg.media.generate.${r.requirementKey}`)?{kind:'avg-media-image-reuse' as const,
+      executionMode:'deterministic' as const,skillId:null,contextProfile:'avg-visual-planning-v4' as const,capabilityRequirementKeys:[],maxAttempts:1,reuse:null,timeoutMs:60_000,
+      budgetReservation:{modelCalls:0,inputTokens:24_000,outputTokens:0,mediaCalls:0,maximumCostUsd:0,durationMs:60_000,storageBytes:4*1024*1024}}:{}) } : task)
+  const firstImage = tasks.findIndex(t => t.taskKey.startsWith('avg.media.generate.'))
   tasks.splice(firstImage, 0, ...additions)
   if (tasks.length > 100) throw new Error('[avg-visual-plan] 方案候选、作者采用、消费和终态超出共享任务上界')
   return { ...base, tasks }
