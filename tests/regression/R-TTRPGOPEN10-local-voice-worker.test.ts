@@ -18,6 +18,21 @@ function unknownComplete(jobs,runtime,input){
 ${script}`], { encoding: 'utf8', maxBuffer: 2 * 1024 * 1024 }))
 }
 describe('R-TTRPGOPEN10 actual offline worker protocol and physical raw audio boundary', () => {
+  it('keeps the first complete raw delivery byte-identical after a later stop while status still reports the new request', () => {
+    expect(node(`const runtime=syntheticRuntime(),input=syntheticJob(),jobs=createProductVoiceJobs(runtime,{spawnWorker(){throw new Error('must-not-infer')}});
+unknownComplete(jobs,runtime,input);const first=jobs.recoverRaw(input.jobKey,input.inputArtifactHash),before=jobs.get(input.jobKey);
+jobs.cancel(input.jobKey);const second=jobs.raw(input.jobKey),after=jobs.get(input.jobKey);
+const restarted=createProductVoiceJobs(runtime,{spawnWorker(){throw new Error('must-not-infer')}}),again=restarted.raw(input.jobKey);
+console.log(JSON.stringify({sameBytes:JSON.stringify(first)===JSON.stringify(second)&&JSON.stringify(first)===JSON.stringify(again),beforeCancellation:before.cancellationRequested,nowCancellation:after.cancellationRequested,rawCancellation:second.cancellationRequested,smallReceipt:readFileSync(path.join(runtime,'product-jobs-v2',digest(input.jobKey),'raw-delivery-v1.json')).length<2048,runtime}));
+`)).toMatchObject({ sameBytes: true, beforeCancellation: false, nowCancellation: true, rawCancellation: false, smallReceipt: true })
+  })
+  it('does not overwrite a corrupted first-delivery record or accept changed result bytes as the same raw response', () => {
+    expect(node(`const runtime=syntheticRuntime(),input=syntheticJob(),jobs=createProductVoiceJobs(runtime,{spawnWorker(){throw new Error('must-not-infer')}});
+const {dir}=unknownComplete(jobs,runtime,input);jobs.recoverRaw(input.jobKey,input.inputArtifactHash);
+const file=path.join(dir,'raw-delivery-v1.json'),record=JSON.parse(readFileSync(file,'utf8'));record.inputArtifactHash='0'.repeat(64);writeFileSync(file,stable(record));
+const corrupt=readFileSync(file,'utf8');assert.throws(()=>jobs.raw(input.jobKey));assert.equal(readFileSync(file,'utf8'),corrupt);
+console.log(JSON.stringify({preserved:true,runtime}));`).preserved).toBe(true)
+  })
   it('pins the product implementation independently while old eval and reading keep no product/model permission', () => {
     expect(node(`assertProductImplementation();const input=syntheticJob();assert.deepEqual(validateProductJob(input),input);
 const invalid=[{...input,outputDir:'/tmp/author'},{...input,jobKey:'other'}, {...input,execution:{...input.execution,profileHash:'0'.repeat(64)}}];

@@ -45,4 +45,28 @@ describe('R-TTRPGOPEN10 original job stop transport', () => {
     await vi.advanceTimersByTimeAsync(profile.statusRequestTimeoutMs); await result
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
+  it('retrieves unparsed original raw bytes through one explicit recovery endpoint and captures identity before yielding', async () => {
+    const input = { ...identity(), profileHash: 'b'.repeat(64) }, content = '\uFEFF raw\n原始字节 '
+    let complete!: (r: Response) => void
+    const fetcher = vi.fn(() => new Promise<Response>(resolve => { complete = resolve })); vi.stubGlobal('fetch', fetcher)
+    const result = createTtrpgOpenVoiceJobControllerV1().recoverRaw(input)
+    input.jobKey = 'ttrpg.voice.8.' + 'c'.repeat(64); input.inputArtifactHash = 'c'.repeat(64)
+    complete(new Response(content, { headers: { 'Content-Type': 'application/json' } }))
+    expect(await result).toBe(content); expect(fetcher).toHaveBeenCalledTimes(1)
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/storyforge/local-tts/v1/jobs/' + identity().jobKey + '/recover-raw')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ decision: 'recover-original-complete-raw-without-resending', inputArtifactHash: identity().inputArtifactHash })
+  })
+  it('requires a full raw-reading identity, bounds the envelope, and never retries a lost fetch', async () => {
+    const input = { ...identity(), profileHash: 'b'.repeat(64) }
+    const fetcher = vi.fn(async () => { throw new Error('unknown-raw-http') }); vi.stubGlobal('fetch', fetcher)
+    await expect(createTtrpgOpenVoiceJobControllerV1().recoverRaw({ ...input, profileHash: '' })).rejects.toThrow()
+    expect(fetcher).not.toHaveBeenCalled()
+    await expect(createTtrpgOpenVoiceJobControllerV1().recoverRaw(input)).rejects.toThrow('unknown-raw-http')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('oversized', { headers: { 'Content-Type': 'application/json',
+      'Content-Length': String(Math.ceil(profile.maxAudioBytes / 3) * 4 + 1048577) } })))
+    await expect(createTtrpgOpenVoiceJobControllerV1().recoverRaw(input)).rejects.toThrow(/超过/)
+  })
 })

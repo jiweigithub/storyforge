@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync, renameSync, openSync, closeSync
 import { spawn, execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
-import { base, stable, digest, productProfile as profile, productProfileHash, assertProductImplementation, readStoredProductJob, validateProductJob, verifyProductResult, ownedRuntime } from './product-contract.mjs'
+import { base, stable, digest, exact, productProfile as profile, productProfileHash, assertProductImplementation, readStoredProductJob, validateProductJob, verifyProductResult, ownedRuntime } from './product-contract.mjs'
 
 function writeNew(file, value) {
   const fd = openSync(file, 'wx', 0o600)
@@ -248,8 +248,19 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
       || terminal?.kind === 'verified-result-worker-absent')) throw new Error('No observed complete raw speech result; inspect the original job')
     const { result, bytes } = verifiedOutput(job)
     if (terminal.kind === 'verified-result-worker-absent' && (terminal.resultHash !== digest(stable(result)) || terminal.audioHash !== digest(bytes))) throw new Error('Recovered original output changed')
-    return { schema: 'storyforge.ttrpg-local-tts-product-raw-response', version: 1, result, workerExecutionKind: state.workerExecutionKind,
-      completionEvidence: terminal.kind, cancellationRequested: state.cancellationRequested, audio: { encoding: 'base64', data: bytes.toString('base64') }, candidateAccepted: false, adoptionAllowed: false }
+    // Freeze small first-delivery metadata, not another copy of audio. A later
+    // stop changes status, but cannot change the exact response bound by a Run
+    // recovery checkpoint. Incomplete/corrupt exclusive records fail closed.
+    const binding = { version: 1, jobKey, inputArtifactHash: job.input.inputArtifactHash, launchNonce: job.record.launchNonce,
+      resultHash: digest(stable(result)), audioHash: digest(bytes), workerExecutionKind: state.workerExecutionKind, completionEvidence: terminal.kind }
+    const file = path.join(job.dir, 'raw-delivery-v1.json')
+    try { writeNew(file, { ...binding, cancellationRequested: state.cancellationRequested }) }
+    catch (error) { if (error.code !== 'EEXIST') throw error }
+    const delivery = read(file)
+    if (!exact(delivery, [...Object.keys(binding), 'cancellationRequested']) || Object.entries(binding).some(([key, value]) => delivery[key] !== value)
+      || typeof delivery.cancellationRequested !== 'boolean') throw new Error('Original raw delivery evidence changed; preserve it')
+    return { schema: 'storyforge.ttrpg-local-tts-product-raw-response', version: 1, result: JSON.parse(stable(result)), workerExecutionKind: delivery.workerExecutionKind,
+      completionEvidence: delivery.completionEvidence, cancellationRequested: delivery.cancellationRequested, audio: { encoding: 'base64', data: bytes.toString('base64') }, candidateAccepted: false, adoptionAllowed: false }
   }
   function recoverRaw(jobKey, inputArtifactHash) {
     const job = jobData(jobKey)

@@ -467,3 +467,53 @@ test('native original voice stop survives reload and generic recovery without an
   expect(calls).toHaveLength(4); expect(calls.filter(c => c.method === 'POST')).toHaveLength(2)
   expect(await inspect(page, f.owner.sessionId)).toEqual(before)
 })
+
+test('native unknown voice raw recovery survives reload with one original HTTP retrieval and no second inference or adopted media', async ({ page }) => {
+  test.setTimeout(180000); await page.goto('./')
+  const f = await page.evaluate(async () => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    return (await load('/storyforge/tests/helpers/open-voice-execution-runtime.ts')).setupConfirmedVoiceExecutionRuntimeV1()
+  })
+  const before = await inspect(page, f.owner.sessionId)
+  const prepared = await page.evaluate(async f => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    const prepared = await api.prepareTtrpgOpenLocalVoiceExecutionV1({ ...f.owner, requestKey: f.requestKey, decision: 'prepare-this-confirmed-local-voice-execution' })
+    const execution = await load('/storyforge/src/lib/ttrpg/open-voice-execution.ts')
+    let calls = 0, unknown = false
+    try { await execution.dispatchTtrpgOpenLocalVoiceForKernelV1({ ...f.owner, requestKey: f.requestKey, decision: 'dispatch-this-original-local-voice-execution',
+      transport: { kind: 'local-offline-speech-v1', profileHash: prepared.profileHash, execute: async () => { calls++; throw new Error('fixture-original-unknown') } } }) }
+    catch (error) { unknown = (error as Error).message === 'fixture-original-unknown' }
+    return { ...prepared, calls, unknown }
+  }, f)
+  expect(prepared.calls).toBe(1); expect(prepared.unknown).toBe(true)
+  const jobKey = `ttrpg.voice.${prepared.runId}.${prepared.inputArtifactHash}`, raw = '\uFEFF fixture raw only\n未经音频候选验证 '
+  let retrievals = 0
+  await page.route('**/storyforge/local-tts/v1/**', async route => {
+    const req = route.request()
+    expect(new URL(req.url()).pathname).toBe('/storyforge/local-tts/v1/jobs/' + jobKey + '/recover-raw')
+    expect(req.method()).toBe('POST'); expect(req.postDataJSON()).toEqual({ decision: 'recover-original-complete-raw-without-resending', inputArtifactHash: prepared.inputArtifactHash })
+    retrievals++; await route.fulfill({ contentType: 'application/json', body: raw })
+  })
+  await page.reload()
+  const recovered = await page.evaluate(async f => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    return api.recoverTtrpgOpenLocalVoiceRawV1({ ...f.owner, requestKey: f.requestKey, decision: 'recover-this-original-local-voice-raw-without-resending' })
+  }, f)
+  expect(recovered).toMatchObject({ runId: prepared.runId, jobKey, status: 'raw-response-recorded', retrievedFromLocalJob: true,
+    candidateAccepted: false, adoptionAllowed: false, automaticRetryAllowed: false })
+  await page.reload()
+  const repeated = await page.evaluate(async ({ f, recovered }) => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>, api = await load('/storyforge/src/lib/ttrpg/open-audio-service.ts')
+    const { db } = await load('/storyforge/src/lib/db/schema.ts'), artifacts = await load('/storyforge/src/lib/memory/artifact-store.ts')
+    const again = await api.recoverTtrpgOpenLocalVoiceRawV1({ ...f.owner, requestKey: f.requestKey, decision: 'recover-this-original-local-voice-raw-without-resending' })
+    const events = await db.agentRunEvents.where('runId').equals(recovered.runId).toArray()
+    return { again, raw: await artifacts.readAgentRunArtifactExactV1({ projectId: f.owner.scope.projectId, artifactKind: 'raw-response', contentHash: recovered.responseArtifactHash }),
+      requested: events.filter((e: any) => e.type === 'model.requested').length, responded: events.filter((e: any) => e.type === 'model.responded').length,
+      checkpoints: await db.agentRunCheckpoints.count(), runs: await db.agentRuns.count(), media: await db.productMediaAssets.count(), desk: await api.readTtrpgOpenVoiceRequestDeskV1(f.owner) }
+  }, { f, recovered })
+  expect(retrievals).toBe(1); expect(repeated.raw).toBe(raw)
+  expect(repeated.again).toMatchObject({ responseArtifactHash: recovered.responseArtifactHash, retrievedFromLocalJob: false })
+  expect(repeated.requested).toBe(1); expect(repeated.responded).toBe(1); expect(repeated.checkpoints).toBe(1)
+  expect(repeated.runs).toBe(2); expect(repeated.media).toBe(0); expect(repeated.desk.budget).toMatchObject({ requests: 1, characters: 6 })
+  expect(await inspect(page, f.owner.sessionId)).toEqual(before)
+})
