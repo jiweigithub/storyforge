@@ -1,15 +1,56 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
 test.beforeEach(() => test.skip(process.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW !== '1', 'requires isolated open preview'))
+
+/** click() observes dispatch, not completion of the page's async save. Reload
+ * only after the actual success receipt and persisted scoped rule selection. */
+async function savedRuleBeforeReload(page: Page, id: string) {
+  return test.step('observe committed author rule selection before reload', async () => {
+    await expect(page.getByRole('status').filter({ hasText: /^制作配置已保存$/ })).toBeVisible()
+    const saved = await page.evaluate(async () => {
+      const load = new Function('p', 'return import(p)'), { db } = await load('/storyforge/src/lib/db/schema.ts')
+      const draft = await db.ttrpgAuthoringDrafts.toCollection().first()
+      const settings = (await load('/storyforge/src/lib/ttrpg/authoring-contract.ts')).settingsFromTtrpgDraft(draft)
+      const rule = await db.ttrpgRulePacks.get(draft.savedRulePackId)
+      return { draft, settings, rule }
+    })
+    expect(saved.draft.savedRulePackId).toBe(Number(id)); expect(saved.settings.wizard.savedRulePackId).toBe(Number(id))
+    expect(saved.rule).toMatchObject({ id: Number(id), projectId: saved.draft.projectId, worldId: saved.draft.worldId, workId: saved.draft.workId })
+    return saved
+  })
+}
 
 test('a saved open rule remains selectable after a normal author reload', async ({ page }, info) => {
   await page.goto('./ttrpg/library')
   await page.getByRole('button', { name: '新建开放跑团（预览）', exact: true }).click()
   await page.getByLabel('战役名称', { exact: true }).fill('开放规则重载验证')
+  // Deliberately hold the newly created Work's list projection. Navigation
+  // must retain the saved URL identity even before the first row arrives.
+  await page.evaluate(async () => {
+    const load = new Function('p', 'return import(p)'), { db } = await load('/storyforge/src/lib/db/schema.ts')
+    const original = db.works.toArray.bind(db.works)
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve })
+    db.works.toArray = async () => { const rows = await original(); if (rows.some((row: any) => row.kind === 'ttrpg')) await gate; return rows }
+    ;(globalThis as any).__releaseAuthorWorkList = () => { db.works.toArray = original; release() }
+  })
   await page.getByRole('button', { name: '保存制作方案', exact: true }).click()
   await expect(page).toHaveURL(/project=/)
+  const savedIdentity = new URL(page.url()).searchParams
+  await expect(page.getByRole('textbox', { name: '战役名称', exact: true })).toBeDisabled()
+  // Even an unverified production locator must be retained, never treated as
+  // ownership or substituted with a different/latest record during loading.
+  await page.evaluate(() => {
+    const url = new URL(location.href); url.searchParams.set('production', '424242')
+    history.replaceState(history.state, '', url); dispatchEvent(new PopStateEvent('popstate', { state: history.state }))
+  })
   const content = page.getByRole('navigation', { name: '跑团内容导航', exact: true })
   await content.getByRole('button', { name: '规则与村规', exact: true }).click()
+  await expect(page).toHaveURL(/\/ttrpg\/rules\?project=/)
+  expect(new URL(page.url()).searchParams.get('project')).toBe(savedIdentity.get('project'))
+  expect(new URL(page.url()).searchParams.get('work')).toBe(savedIdentity.get('work'))
+  expect(new URL(page.url()).searchParams.get('production')).toBe('424242')
+  await page.evaluate(() => { (globalThis as any).__releaseAuthorWorkList(); delete (globalThis as any).__releaseAuthorWorkList })
+  await expect(page.getByRole('textbox', { name: '战役名称', exact: true })).toBeEnabled()
   const rule = await page.evaluate(async () => {
     const load = new Function('p', 'return import(p)')
     return JSON.stringify((await load('/storyforge/tests/helpers/ttrpg-open-content.ts')).openRuleFixture())
@@ -20,6 +61,8 @@ test('a saved open rule remains selectable after a normal author reload', async 
   await expect(select).toHaveValue(/^[1-9]\d*$/)
   const id = await select.inputValue()
   await page.getByRole('button', { name: '保存制作方案', exact: true }).click()
+  const committed = await savedRuleBeforeReload(page, id)
+  await info.attach('committed-open-rule-before-reload', { body: JSON.stringify(committed), contentType: 'application/json' })
   await page.reload()
   const persisted = await page.evaluate(async () => {
     const load = new Function('p', 'return import(p)'), { db } = await load('/storyforge/src/lib/db/schema.ts')
@@ -76,7 +119,10 @@ test('a blank author previews and explicitly saves first-party open rules, reloa
   await candidate.getByRole('button', { name: '确认并使用这份规则', exact: true }).click()
   const select = page.getByRole('combobox', { name: '规则包', exact: true })
   await expect(select).toHaveValue(/^[1-9]\d*$/); const id = await select.inputValue()
-  await page.getByRole('button', { name: '保存制作方案', exact: true }).click(); await page.reload()
+  await page.getByRole('button', { name: '保存制作方案', exact: true }).click()
+  const committed = await savedRuleBeforeReload(page, id)
+  await info.attach('committed-first-party-rule-before-reload', { body: JSON.stringify(committed), contentType: 'application/json' })
+  await page.reload()
   await expect(select).toHaveValue(id); await expect(select.locator(`option[value="${id}"]`)).toBeEnabled()
   await expect(page.getByRole('combobox', { name: '基础规则', exact: true }).locator('option[value^="builtin-"]')).toHaveCount(0)
   // Repeating the explicit preparation cannot rewrite a validated identity.

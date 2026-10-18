@@ -234,8 +234,14 @@ export default function TtrpgPage() {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
-  const path = (id: string, target = row, extra = "") =>
-    `/ttrpg/${id}${target ? `?project=${target.project.id}&work=${target.work.id}${target === row && productionId && !extra.includes("production=") ? `&production=${productionId}` : ""}${extra}` : newOpen ? '?format=open' : ''}`;
+  const path = (id: string, target = row, extra = "") => {
+    const production = productionId && !extra.includes('production=') ? `&production=${productionId}` : '';
+    if (target) return `/ttrpg/${id}?project=${target.project.id}&work=${target.work.id}${target === row ? production : ''}${extra}`;
+    // Requested locators survive a late list projection. They grant no record
+    // access; the original loaded scope and domain guards still decide that.
+    if (projectId) return `/ttrpg/${id}?project=${projectId}${workId ? `&work=${workId}` : ''}${production}${extra}`;
+    return `/ttrpg/${id}${newOpen ? '?format=open' : ''}`;
+  };
   const run = async (action: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);
@@ -633,7 +639,7 @@ export default function TtrpgPage() {
                         保存配置不会调用模型或开始制作。未选择世界时也可以填写。
                       </p>
                       <fieldset
-                        disabled={busy || Boolean(row && !row.draft)}
+                        disabled={busy || loading || Boolean(projectId && !row) || Boolean(row && !row.draft)}
                         className="avg-form"
                       >
                         <label>
