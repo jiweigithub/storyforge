@@ -2,6 +2,7 @@ import Dexie from 'dexie'
 import { db } from '../db/schema'
 import type { ProductBuildArtifactRecordV1, ProductProductionBriefV3, WorkspaceScope } from '../types'
 import type { AvgAssemblyBriefV2 } from './assembly-contract'
+import type { AvgVisualImageBindingV4 } from './visual-planning-brief'
 import { readAvgImageDefinitionV3 } from './media-production-definition'
 import { assertAvgRawImageArtifactFromDefinitionV1, assertAvgRawImageArtifactV1 } from './media-raw-contract'
 
@@ -10,7 +11,7 @@ import { assertAvgRawImageArtifactFromDefinitionV1, assertAvgRawImageArtifactV1 
  * grants permission to resume imported, stopped or frozen production. */
 export async function readAvgImageConsumptionDefinitionV4(input: {
   scope: WorkspaceScope; buildId: number; brief: ProductProductionBriefV3
-}): Promise<Pick<AvgAssemblyBriefV2, 'mediaBatch' | 'imageBinding' | 'imageProcessing'>> {
+}): Promise<Pick<AvgAssemblyBriefV2, 'mediaBatch' | 'imageProcessing'> & {imageBinding:AvgVisualImageBindingV4}> {
   if (!input.brief.avgVisualPlanning) return readAvgImageDefinitionV3(input.brief)
   const build = await db.productBuilds.get(input.buildId)
   if (!build) throw new Error('[avg-visual-image] 图片消费缺少准确 Build')

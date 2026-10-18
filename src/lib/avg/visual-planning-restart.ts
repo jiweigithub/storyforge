@@ -66,8 +66,8 @@ export async function assertAvgVisualPlanningRestartKnownV4(scope:WorkspaceScope
 /** Dispatch fence as well as a workbench preflight. A caller using the shared
  * Brief/start commands cannot evade a held request with a renamed scope or a
  * second Production in this same Work. The current task owns its own claim. */
-export async function assertAvgVisualPlanningOtherRequestsKnownV4(scope:WorkspaceScope,current:ProductBuildRecordV1){
-  const others=await db.productBuilds.where('projectId').equals(scope.projectId).filter(row=>row.workId===scope.workId&&row.id!==current.id).toArray()
+export async function assertAvgVisualPlanningOtherRequestsKnownV4(scope:WorkspaceScope,current:Pick<ProductBuildRecordV1,'id'>|null){
+  const others=await db.productBuilds.where('projectId').equals(scope.projectId).filter(row=>row.workId===scope.workId&&row.id!==current?.id).toArray()
   for(const build of others){
     if(!await assertRecordInScope(scope,'productBuilds',build,{owner:'work'}))throw new Error('[avg-visual-restart] 历史版本跨作品')
     const row=await db.productProductionBriefs.where('[productionId+revision]').equals([build.productionId,build.briefRevision]).first()

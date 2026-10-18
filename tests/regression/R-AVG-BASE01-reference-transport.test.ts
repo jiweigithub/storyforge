@@ -5,9 +5,11 @@ import { ProductProductionResultUnknownErrorV1 } from '../../src/lib/product-pro
 import type { MediaProviderTransportV1, MediaTransportResponseV1, ProductMediaRequestV1 } from '../../src/lib/product-production/media-adapters'
 import {
   assertAvgImageRequestV1, freezeAvgImageRequestV1, parseAvgMediaReferencesV1,
+  AVG_IMAGE_REFERENCE_CAPABILITY_V1,AVG_IMAGE_REFERENCE_CAPABILITY_V2,
   type AvgMediaReferenceV1,
 } from '../../src/lib/avg/media-reference-contract'
 import { AvgImageOperationUnknownErrorV1, createAvgReferenceImageAdapterV1 } from '../../src/lib/avg/media-reference-adapter'
+import { hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='
 const PNG = Uint8Array.from(atob(PNG_BASE64), c => c.charCodeAt(0)).buffer
@@ -39,6 +41,22 @@ async function prepare(refs?: AvgMediaReferenceV1[]) {
 }
 
 describe('R-AVG-BASE01 · actual reference image transport', () => {
+  it('keeps the original 2.1 capability hash and makes an explicit 2.5 request with ordered reference bytes and unknown fees',async()=>{
+    const legacy=await freezeAvgImageRequestV1({request:request(),resolutionTier:'2K',references:[await reference()]})
+    expect(await hashProductProductionValueV2(AVG_IMAGE_REFERENCE_CAPABILITY_V1)).toBe('30267b82c57a8c48709b69963aafccccffdb72f1f5d77612f63f38050abdb65c')
+    const frozen=await freezeAvgImageRequestV1({request:{...request(),adapterId:'agnes.image-2.5-flash.v1'},resolutionTier:'2K',references:legacy.references})
+    expect(frozen.capabilityHash).toBe(await hashProductProductionValueV2(AVG_IMAGE_REFERENCE_CAPABILITY_V2))
+    expect(frozen.capabilityHash).not.toBe(legacy.capabilityHash);expect(frozen.inputHash).not.toBe(legacy.inputHash)
+    const adapter=await createAvgReferenceImageAdapterV1({frozen,readReference:async()=>PNG.slice(0)}),{transport,dispatch}=provider()
+    const [candidate]=await adapter.generate({...frozen.request,inputHash:frozen.inputHash},transport,signal())
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect((dispatch.mock.calls[0] as unknown as [{body:unknown}])[0].body).toMatchObject({model:'agnes-image-2.5-flash',extra_body:{image:[`data:image/png;base64,${PNG_BASE64}`]}})
+    expect(candidate.providerReceipt.costUsd).toBeNull()
+    await expect(assertAvgImageRequestV1({...frozen,capabilityHash:legacy.capabilityHash})).rejects.toThrow(/stale/)
+    await expect(adapter.generate({...frozen.request,adapterId:'agnes.image-2.1-flash.v1',inputHash:frozen.inputHash},transport,signal())).rejects.toThrow()
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(await freezeAvgImageRequestV1({request:request(),resolutionTier:'2K',references:legacy.references})).toEqual(legacy)
+  })
   it('传入真实参考字节及用途顺序，保留未知费用和可验证回执', async () => {
     const first = await reference(), second = { ...first, assetKey: 'avg.asset.pose.reference', purpose: 'pose' as const, allowedChange: '采用右手姿势；保留第一图身份' }
     const { adapter, executable, frozen, readReference } = await prepare([first, second])

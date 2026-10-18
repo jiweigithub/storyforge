@@ -50,6 +50,7 @@ describe('AVG media production inputs and explicit choices', () => {
       adapterFamily: 'agnes', minimumCapabilityVersion: '1', allowedDataClasses: ['avg-reference'], maximumRequestCost: null,
       maximumTotalCost: null, rightsPolicyVersion: 'avg-rights.v1', capabilityHash: 'b'.repeat(64), required: true }
     const brief = { avgAssembly: parseAvgAssemblyBriefV2({ ...base, version: 2, mediaBatch: batch(), imageBinding }), capabilityRequirements: [capability] }
+    expect(()=>parseAvgAssemblyBriefV2({...brief.avgAssembly,imageBinding:{...imageBinding,adapterId:'agnes.image-2.5-flash.v1'}})).toThrow(/准确/)
     const plan = buildAvgMediaAssemblyPlanV2({ brief, briefHash: 'c'.repeat(64), buildNumber: 1, controlEpoch: 0 })
     const raw = plan.tasks.find(t => t.kind === 'avg-media-image-generate')!, choice = plan.tasks.find(t => t.kind === 'avg-author-media-choice')!
     expect(raw).toMatchObject({ executionMode: 'media-provider', maxAttempts: 1, budgetReservation: { mediaCalls: 1, modelCalls: 0, maximumCostUsd: null } })

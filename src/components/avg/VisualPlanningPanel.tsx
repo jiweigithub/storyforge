@@ -9,6 +9,7 @@ import { stageAvgVisualPlanningAuthorInputV4, refuseAvgVisualPlanningBatchV4, ty
 import type { AvgVisualBibleV1, AvgMediaBriefV1 } from '../../lib/avg/visual-planning-contract'
 import VisualPlanningScopeForm from './VisualPlanningScopeForm'
 import VisualProposalReusePanel from './VisualProposalReusePanel'
+import VisualImageRoutePanel from './VisualImageRoutePanel'
 
 type View = Awaited<ReturnType<typeof readAvgAssemblyWorkspaceV1>>
 type Semantic = AvgVisualBibleV1 | AvgMediaBriefV1
@@ -73,7 +74,7 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
 }) {
   const brief=view.details?.brief?parseProductProductionBriefV3(view.details.brief.briefJson):null
   const planning=brief?.avgVisualPlanning,prepared=planning?.scope
-  const [edited,setEdited]=useState(false),[cardsPending,setCardsPending]=useState<Record<string,boolean>>({}),[editPrepared,setEditPrepared]=useState(false),[reusePending,setReusePending]=useState(false)
+  const [edited,setEdited]=useState(false),[cardsPending,setCardsPending]=useState<Record<string,boolean>>({}),[editPrepared,setEditPrepared]=useState(false),[reusePending,setReusePending]=useState(false),[routePending,setRoutePending]=useState(false)
   const pendingCards=Object.values(cardsPending).some(Boolean)
   const enabled=avgVisualPlanningExecutionReadyV4()
   const build=view.details?.build,closed=!!build&&!['authorized','building','integrating'].includes(build.status)
@@ -82,7 +83,7 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
   const pendingVersion=!!build&&!!view.details?.brief&&view.details.brief.revision!==build.briefRevision&&view.details.production.status==='brief-ready'
   const proposals=view.artifacts.filter(a=>a.artifactKey.startsWith('avg.proposal.')&&a.status==='accepted')
   const available=!workspace.mediaBatch&&!workspace.voiceProduction&&!workspace.imageProcessing&&!workspace.presentation.stage.assets.some(a=>!a.mimeType.startsWith('image/'))
-  useEffect(()=>{onPending(edited||pendingCards||reusePending);return()=>onPending(false)},[edited,pendingCards,reusePending,onPending])
+  useEffect(()=>{onPending(edited||pendingCards||reusePending||routePending);return()=>onPending(false)},[edited,pendingCards,reusePending,routePending,onPending])
   const cardPending=useCallback((key:string,value:boolean)=>setCardsPending(old=>old[key]===value?old:{...old,[key]:value}),[])
   if(!enabled&&!planning)return null
   return <section className="lf-paper" aria-label="专业视觉策划（实验）"><h4>专业视觉策划 <small>实验</small></h4>
@@ -96,6 +97,7 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
       <p>{pendingVersion?'新方案':'本批'}上限：{brief!.productionBudget.maximumModelCalls} 次方案调用、{brief!.productionBudget.maximumMediaCalls} 次图片请求。{recordedUsage?`${pendingVersion?'上一版已记录':'已记录'} ${recordedUsage.modelCalls} 次方案、${recordedUsage.mediaCalls} 次图片调用；费用${recordedUsage.costUsd===null?'未知':` $${recordedUsage.costUsd}`}。`:'费用以实际回执为准。'}</p>
       {pendingVersion&&<p role="status">新版本方案 v{view.details!.brief!.revision} 已准备，尚未开始。上一版及原始调用记录只读保留；请到制作页核对后明确开始。</p>}
       {pendingVersion&&<VisualProposalReusePanel {...{scope,view,workspace,onAction,onReload,onNotice}} disabled={disabled||edited} onPending={setReusePending}/>}
+      {planning&&!activeBuild&&(!build||pendingVersion)&&<VisualImageRoutePanel {...{scope,view,onAction,onReload,onNotice}} disabled={disabled||edited||reusePending} onPending={setRoutePending}/>}
       {!activeBuild&&(!build||pendingVersion)&&!edited&&<button className="lf-action" disabled={disabled} onClick={()=>setEditPrepared(true)}>修改尚未开始的专业用途</button>}
       {build&&<><p>模型方案与原始响应、用量和未知费用保存在本次制作记录中。刷新只读取记录；继续执行需要明确点击。</p>
         {!sourcesReady&&!closed&&<p>请先到制作页明确采用系统规则和全部场景脚本。</p>}

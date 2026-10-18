@@ -1,11 +1,13 @@
 import type { AIConfig, ProviderCapabilityRequirementV1 } from '../types'
 import { useAIConfigStore } from '../../stores/ai-config'
 import { resolveRequestConfig } from '../ai/client'
-import { resolveConfiguredAgnesImageCapabilityV1, configuredAgnesImageEndpointHashV1 } from '../product-production/media-transport'
+import { resolveConfiguredAgnesImageCapabilityV1, configuredAgnesImageEndpointHashV1,
+  resolveConfiguredAgnesImageCapabilityV2,configuredAgnesImageEndpointHashV2 } from '../product-production/media-transport'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import { configuredAvgVoiceEndpointHashV1, createConfiguredAvgVoiceTransportV1 } from './voice-transport'
 import type { AvgAssemblyBriefV3 } from './voice-assembly-contract'
 import type { AvgAssemblyBriefV2 } from './assembly-contract'
+import { avgImageReferenceCapabilityV2,type AvgImageAdapterIdV4 } from './media-reference-contract'
 
 export async function avgImageRouteBindingHashV2(input: { requirementKey: string; adapterId: string; baseCapabilityHash: string; endpointRouteHash: string }) {
   return hashProductProductionValueV2({ schema: 'storyforge.avg.image-route-binding', version: 2, ...input })
@@ -28,6 +30,21 @@ export async function resolveAvgImageExecutionCapabilityV2(input: {
       adapterId, baseCapabilityHash: resolved.binding.bindingHash, endpointRouteHash }),
   }
   return { resolved, binding, endpointRouteHash }
+}
+
+/** V4 selects a model explicitly. Existing V2/V3 resolvers remain exactly 2.1;
+ * changing the configured text model cannot change a frozen image request. */
+export async function resolveAvgImageExecutionCapabilityV4(input:{projectId:number;requirement:ProviderCapabilityRequirementV1;adapterId:AvgImageAdapterIdV4;config?:AIConfig}){
+  const capability=avgImageReferenceCapabilityV2(input.adapterId)
+  if(input.requirement.capabilityHash!==await hashProductProductionValueV2(capability))throw new Error('[avg-visual-image] 图片模型与冻结输入能力不一致')
+  if(input.adapterId==='agnes.image-2.1-flash.v1')return resolveAvgImageExecutionCapabilityV2(input)
+  const config=structuredClone(input.config??resolveRequestConfig(useAIConfigStore.getState().config,{category:'product-production',projectId:input.projectId}).config)
+  const resolved=await resolveConfiguredAgnesImageCapabilityV2({...input,config})
+  if(resolved.binding.adapterId!==input.adapterId)throw new Error('[avg-visual-image] 图片模型与实际绑定不一致')
+  const endpointRouteHash=await configuredAgnesImageEndpointHashV2({projectId:input.projectId,config})
+  const binding={...resolved.binding,adapterId:input.adapterId,bindingHash:await avgImageRouteBindingHashV2({requirementKey:input.requirement.requirementKey,
+    adapterId:input.adapterId,baseCapabilityHash:resolved.binding.bindingHash,endpointRouteHash})}
+  return {resolved,binding,endpointRouteHash}
 }
 
 /** Reuses only the explicitly selected current route/credential snapshot.

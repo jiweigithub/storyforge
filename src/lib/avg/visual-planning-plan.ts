@@ -1,5 +1,5 @@
 import type { ProductProductionBriefV3, ProductProductionPlanTaskV3, ProductProductionPlanV3 } from '../types'
-import { buildAvgMediaAssemblyPlanV2 } from './assembly-plan'
+import { buildAvgImageAssemblyTopologyV1 } from './assembly-plan'
 import { parseAvgVisualPlanningBriefV4, type AvgVisualPlanningBriefV4 } from './visual-planning-brief'
 import { avgMediaBriefArtifactKeyV1, avgVisualPlanningTemplateRequirementsV1, type AvgVisualDesignKindV1 } from './visual-planning-contract'
 import { avgKey } from './protocol-validation'
@@ -29,8 +29,8 @@ export function buildAvgVisualPlanningPlanV4(input: {
     batchKey: v.scope.batchKey, revision: v.scope.revision, aspectRatio: v.scope.aspectRatio, sourceInputHash: v.scope.sourceInputHash,
     visualReviewPolicy: 'author-visual-v1' as const,
     requirements: avgVisualPlanningTemplateRequirementsV1(v.scope) }
-  const base = buildAvgMediaAssemblyPlanV2({ ...input, brief: { capabilityRequirements: image,
-    avgAssembly: { ...v.assembly, version: 2, mediaBatch, imageBinding: v.imageBinding } } })
+  const base = buildAvgImageAssemblyTopologyV1({ briefHash:input.briefHash,buildNumber:input.buildNumber,controlEpoch:input.controlEpoch,
+    capabilityRequirements:image,declaration:{...v.assembly,mediaBatch} })
   const sourceTasks = base.tasks.filter(t => ['avg-author-rules', 'avg-author-script'].includes(t.kind))
   const sourceKeys = sourceTasks.flatMap(t => t.outputArtifactKeys), sourceTaskKeys = sourceTasks.map(t => t.taskKey)
   const template = sourceTasks[0]!, additions: ProductProductionPlanTaskV3[] = []

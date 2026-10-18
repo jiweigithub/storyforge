@@ -5,10 +5,10 @@ import type { AvgVisualPlanningScopeV1 } from './visual-planning-contract'
 import { avgVisualPlanningExecutionReadyV4, parseAvgVisualPlanningBriefV4 } from './visual-planning-brief'
 import { freezeAvgVisualPlanningScopeV1 } from './media-source'
 import { readAvgDraftReferenceBytesV1 } from './editor-service'
-import { verifyAvgReferenceBytesV1, AVG_IMAGE_REFERENCE_CAPABILITY_V1 } from './media-reference-contract'
+import { verifyAvgReferenceBytesV1, avgImageReferenceCapabilityV2,type AvgImageAdapterIdV4 } from './media-reference-contract'
 import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 import { resolveConfiguredTextCapabilityV1 } from '../product-production/capabilities'
-import { resolveAvgImageExecutionCapabilityV2 } from './media-capability'
+import { resolveAvgImageExecutionCapabilityV2,resolveAvgImageExecutionCapabilityV4 } from './media-capability'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { AVG_VISUAL_TEXT_CAPABILITY_V4 } from './visual-planning-roles'
 import { avgVisualPlanningBudgetV4, avgVisualPlanningGateIdsV4, AVG_VISUAL_PLANNING_TEXT_DATA_CLASS_V4 } from './visual-planning-policy'
@@ -26,7 +26,7 @@ export type AvgVisualPlanningDraftV4 = Omit<AvgVisualPlanningScopeV1, 'sourceInp
 
 /** Validate before creating or changing a Production. This resolves existing
  * non-secret capabilities, never sends a provider request or saves a draft. */
-export async function prepareAvgVisualPlanningConfigurationV4(scope: WorkspaceScope, workspace: AvgAuthorWorkspaceV1, value: AvgVisualPlanningDraftV4) {
+export async function prepareAvgVisualPlanningConfigurationV4(scope: WorkspaceScope, workspace: AvgAuthorWorkspaceV1, value: AvgVisualPlanningDraftV4,adapterId:AvgImageAdapterIdV4='agnes.image-2.1-flash.v1') {
   if (!avgVisualPlanningExecutionReadyV4()) throw new Error('[avg-visual-plan] 专业视觉制作尚未启用')
   if (workspace.mediaBatch || workspace.voiceProduction || workspace.imageProcessing || workspace.presentation.stage.assets.some(a => !a.mimeType.startsWith('image/'))) {
     throw new Error('[avg-visual-plan] 本专业视觉批次不能混入旧生成/配音/加工方案；请保留原制作记录')
@@ -44,8 +44,9 @@ export async function prepareAvgVisualPlanningConfigurationV4(scope: WorkspaceSc
   const imageRequirement: ProviderCapabilityRequirementV1 = { requirementKey: 'avg.media.image', mediaClass: 'image', operation: 'generate',
     adapterFamily: 'agnes', minimumCapabilityVersion: '1', allowedDataClasses: [...new Set(['image-prompt', ...planning.referenceCatalog.map(r => r.reference.dataClass)])],
     maximumRequestCost: null, maximumTotalCost: null, rightsPolicyVersion: 'storyforge-avg-image-rights.v1',
-    capabilityHash: await hashProductProductionValueV2(AVG_IMAGE_REFERENCE_CAPABILITY_V1), required: true }
-  const image = await resolveAvgImageExecutionCapabilityV2({ projectId: scope.projectId, requirement: imageRequirement })
+    capabilityHash: await hashProductProductionValueV2(avgImageReferenceCapabilityV2(adapterId)), required: true }
+  const image = adapterId==='agnes.image-2.1-flash.v1'?await resolveAvgImageExecutionCapabilityV2({ projectId: scope.projectId, requirement: imageRequirement })
+    :await resolveAvgImageExecutionCapabilityV4({projectId:scope.projectId,requirement:imageRequirement,adapterId})
   return { planning, capabilities: [textRequirement, imageRequirement], imageBinding: { ...image.binding, endpointRouteHash: image.endpointRouteHash } }
 }
 
@@ -108,7 +109,7 @@ export async function resolveAvgVisualPlanningExecutionV4(scope: WorkspaceScope,
     await verifyAcceptedProductBuildArtifactV1({ scope, buildId: buildId!, artifactKey: rows[0].artifactKey, version: rows[0].version, contentHash: rows[0].contentHash })
   }
   const capability = brief.capabilityRequirements.find(c => c.requirementKey === 'avg.media.image')!
-  const configured = imagesReceived ? null : await resolveAvgImageExecutionCapabilityV2({ projectId: scope.projectId, requirement: capability })
+  const configured = imagesReceived ? null : await resolveAvgImageExecutionCapabilityV4({ projectId: scope.projectId, requirement: capability,adapterId:v.imageBinding.adapterId })
   if (configured && (configured.binding.bindingHash !== v.imageBinding.bindingHash || configured.endpointRouteHash !== v.imageBinding.endpointRouteHash)) throw new Error('[avg-visual-plan] 图片路由已变化，请重新核对方案')
   return { capabilityBindings: [...(textBinding?[textBinding]:[]), { requirementKey: v.imageBinding.requirementKey, adapterId: v.imageBinding.adapterId, bindingHash: v.imageBinding.bindingHash }],
     mediaCapabilities: new Map(configured ? [['avg.media.image', configured.resolved]] : []), avgImageEndpointRouteHash: configured?.endpointRouteHash }

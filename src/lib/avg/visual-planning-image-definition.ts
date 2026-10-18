@@ -8,7 +8,7 @@ import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/arti
 import { readAvgConfirmedVisualArtifactsV4, readAvgSystemPlanForCompilationV1, readAvgFrozenVisualSourceInputsV4 } from './author-artifacts'
 import { assertAvgVisualPlanningProposalV1 } from './media-source'
 import { AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4 } from './visual-planning-plan'
-import { verifyAvgReferenceBytesV1, AVG_IMAGE_REFERENCE_CAPABILITY_V1 } from './media-reference-contract'
+import { verifyAvgReferenceBytesV1, avgImageReferenceCapabilityV2 } from './media-reference-contract'
 import { readAvgDraftReferenceBytesV1 } from './editor-service'
 import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 import { prepareAvgRawImageRequestFromBatchV1 } from './media-raw-contract'
@@ -39,7 +39,7 @@ export async function readAvgCompiledImageDefinitionV4(input: {
   if (!planning || await hashProductProductionValueV2(brief) !== build.briefHash
     || input.expectedBrief && !same(input.expectedBrief, brief)) throw new Error('[avg-visual-image] 实际完整 V4 Brief 不一致')
   const capability = brief.capabilityRequirements.find(c => c.requirementKey === 'avg.media.image')!
-  if (capability.capabilityHash !== await hashProductProductionValueV2(AVG_IMAGE_REFERENCE_CAPABILITY_V1)) throw new Error('[avg-visual-image] 图片能力不是当前冻结参考输入协议')
+  if (capability.capabilityHash !== await hashProductProductionValueV2(avgImageReferenceCapabilityV2(planning.imageBinding.adapterId))) throw new Error('[avg-visual-image] 图片能力不是准确冻结模型的参考输入协议')
   const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash)
   const compiler = plan.tasks.find(t => t.kind === 'avg-v4-visual-requirements-compile')
   if (!compiler || plan.controlEpoch !== build.controlEpoch || plan.buildNumber !== build.buildNumber
@@ -83,6 +83,6 @@ export async function prepareAvgCompiledImageRequestV4(input: Parameters<typeof 
   if(input.purpose)throw new Error('[avg-visual-image] 组装或冻结只读证明不能授予图片请求权')
   const resolved = await readAvgCompiledImageDefinitionV4(input)
   const frozen = await prepareAvgRawImageRequestFromBatchV1({ batch: resolved.definition.mediaBatch, capability: resolved.capability,
-    qualityProfile: resolved.brief.qualityProfile, requirementKey: input.requirementKey, idempotencyKey: input.idempotencyKey })
+    qualityProfile: resolved.brief.qualityProfile, requirementKey: input.requirementKey, idempotencyKey: input.idempotencyKey,adapterId:resolved.definition.imageBinding.adapterId })
   return { resolved, frozen }
 }

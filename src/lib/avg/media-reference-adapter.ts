@@ -1,5 +1,5 @@
 import {
-  agnesImage21FlashAdapterV1,
+  resolveProductMediaProviderAdapterV1,
   type MediaProviderTransportV1, type ProductMediaProviderAdapterV1, type ProductMediaRequestV1,
 } from '../product-production/media-adapters'
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
@@ -33,6 +33,7 @@ export async function createAvgReferenceImageAdapterV1(input: {
   readReference(reference: AvgMediaReferenceV1): Promise<ArrayBuffer>
 }): Promise<ProductMediaProviderAdapterV1> {
   const frozen = await assertAvgImageRequestV1(input.frozen)
+  const adapter=resolveProductMediaProviderAdapterV1(frozen.request.adapterId)
   const expectedRequest: ProductMediaRequestV1 = { ...frozen.request, inputHash: frozen.inputHash }
   const assertRequest = (request: ProductMediaRequestV1) => {
     if (canonicalProductProductionJsonV2(request) !== canonicalProductProductionJsonV2(expectedRequest)) {
@@ -46,10 +47,10 @@ export async function createAvgReferenceImageAdapterV1(input: {
     encoding: 'data-uri', nativeCrop: false, nativeMask: false, alphaGuaranteed: false,
   }
   return {
-    capability: structuredClone(agnesImage21FlashAdapterV1.capability),
+    capability: structuredClone(adapter.capability),
     async estimate(request) {
       assertRequest(request)
-      const estimate = await agnesImage21FlashAdapterV1.estimate(request)
+      const estimate = await adapter.estimate(request)
       return { ...estimate, estimatedStorageBytes: frozen.resolutionTier === '2K' ? 32 * 1024 * 1024 : 16 * 1024 * 1024 }
     },
     async generate(request, transport, signal) {
@@ -98,12 +99,12 @@ export async function createAvgReferenceImageAdapterV1(input: {
           return response
         },
       }
-      const candidates = await agnesImage21FlashAdapterV1.generate(request, governed, signal)
+      const candidates = await adapter.generate(request, governed, signal)
       return candidates.map(candidate => ({ ...candidate, metadata: { ...candidate.metadata,
         providerSize: frozen.resolutionTier, avgReferenceTransmission: structuredClone(lineage) } }))
     },
     async parseAndVerify(value) {
-      const candidate = await agnesImage21FlashAdapterV1.parseAndVerify(value)
+      const candidate = await adapter.parseAndVerify(value)
       if (candidate.requestId !== expectedRequest.requestId || candidate.mediaKind !== expectedRequest.mediaKind
         || candidate.mediaClass !== 'image' || candidate.candidateIndex !== 0
         || candidate.rights?.adapterId !== expectedRequest.adapterId || candidate.rights.origin !== 'generated'

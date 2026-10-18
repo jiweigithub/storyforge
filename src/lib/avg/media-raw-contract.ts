@@ -7,7 +7,7 @@ import { parseAvgExecutableStageV1 } from './stage-contract'
 import { avgHash, avgKey, avgNumber, avgProtocolBody, avgRecord } from './protocol-validation'
 import { assertAvgImageProductionDefinitionV3 } from './media-production-definition'
 import { AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1 } from './assembly-plan'
-import { AVG_IMAGE_REFERENCE_CAPABILITY_V1 } from './media-reference-contract'
+import { avgImageReferenceCapabilityV2,type AvgImageAdapterIdV4 } from './media-reference-contract'
 
 export interface AvgRawImagePayloadV1 {
   schema: 'storyforge.avg.raw-image'
@@ -38,11 +38,12 @@ export async function prepareAvgRawImageRequestV1(input: { brief: ProductProduct
 export async function prepareAvgRawImageRequestFromBatchV1(input: {
   batch: AvgVisualProductionBatchV1; capability: ProviderCapabilityRequirementV1
   qualityProfile: ProductProductionBriefV3['qualityProfile']; requirementKey: string; idempotencyKey: string
+  adapterId?:AvgImageAdapterIdV4
 }) {
   const { batch, capability } = input, r = batch.requirements.find(r => r.requirementKey === input.requirementKey)
   if (!r) throw new Error('[avg-media] 请求不在冻结图片批次中')
   const request: ProductMediaRequestV1 = { schema: 'storyforge.product-media-request', version: 1,
-    requestId: `avg.media.${input.idempotencyKey.slice(0, 64)}`, adapterId: 'agnes.image-2.1-flash.v1', mediaClass: 'image', mediaKind: r.mediaKind,
+    requestId: `avg.media.${input.idempotencyKey.slice(0, 64)}`, adapterId: input.adapterId??'agnes.image-2.1-flash.v1', mediaClass: 'image', mediaKind: r.mediaKind,
     requirementKey: AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1, artifactKey: avgRawMediaArtifactKeyV1(r.requirementKey),
     ...avgVisualRequestTextV1(r), count: 1, width: r.width, height: r.height, durationMs: null,
     inputHash: await hashProductProductionValueV2({ idempotencyKey: input.idempotencyKey, batchKey: batch.batchKey,
@@ -81,14 +82,16 @@ export async function assertAvgRawImageArtifactV1(brief: ProductProductionBriefV
 /** Same raw-request/asset checks for a proven definition. The V4 caller must
  * first read the actual adopted compiler artifact under its original Brief. */
 export async function assertAvgRawImageArtifactFromDefinitionV1(definition: {
-  mediaBatch: AvgVisualProductionBatchV1; imageBinding: { bindingHash: string }
+  mediaBatch: AvgVisualProductionBatchV1; imageBinding: { bindingHash: string;adapterId?:AvgImageAdapterIdV4 }
   capability: ProviderCapabilityRequirementV1; qualityProfile: ProductProductionBriefV3['qualityProfile']
 }, row: Parameters<typeof assertAvgRawImageArtifactV1>[1]): Promise<{ payload: AvgRawImagePayloadV1; asset: FrozenRuntimeMediaAssetV2 }> {
   const { capability } = definition
   const payload = await parseAvgRawImagePayloadV1(row.payloadJson), batch = definition.mediaBatch
   const r = batch.requirements.find(r => row.artifactKey === avgRawMediaArtifactKeyV1(r.requirementKey))
   const request = payload.request.request, text = r && avgVisualRequestTextV1(r)
-  if (capability.capabilityHash !== await hashProductProductionValueV2(AVG_IMAGE_REFERENCE_CAPABILITY_V1)) throw new Error('[avg-media] 原图能力快照与当前登记的图片输入协议不一致')
+  const adapterId=definition.imageBinding.adapterId??'agnes.image-2.1-flash.v1'
+  if (capability.capabilityHash !== await hashProductProductionValueV2(avgImageReferenceCapabilityV2(adapterId))
+    ||request.adapterId!==adapterId) throw new Error('[avg-media] 原图能力快照与准确冻结的图片模型协议不一致')
   const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
   if (!r || !same(payload.requirement, r) || payload.batchKey !== batch.batchKey || payload.batchRevision !== batch.revision || payload.sourceInputHash !== batch.sourceInputHash
     || payload.capabilityBindingHash !== definition.imageBinding.bindingHash

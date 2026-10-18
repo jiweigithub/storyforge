@@ -40,14 +40,25 @@ export function buildAvgMediaAssemblyPlanV2(input: {
   brief: Pick<ProductProductionBriefV3, 'capabilityRequirements'> & { avgAssembly: AvgAssemblyBriefV2 }
   briefHash: string; buildNumber: number; controlEpoch: number
 }): ProductProductionPlanV3 {
-  const assembly = parseAvgAssemblyBriefV2(input.brief.avgAssembly)
+  return buildAvgImageAssemblyTopologyV1({briefHash:input.briefHash,buildNumber:input.buildNumber,controlEpoch:input.controlEpoch,
+    capabilityRequirements:input.brief.capabilityRequirements,declaration:parseAvgAssemblyBriefV2(input.brief.avgAssembly)})
+}
+
+/** Shared fixed topology only. Each caller validates its own actual Brief;
+ * a V4 image model never needs a counterfactual legacy V2 model binding. */
+export function buildAvgImageAssemblyTopologyV1(input:{
+  briefHash:string;buildNumber:number;controlEpoch:number
+  capabilityRequirements:ProductProductionBriefV3['capabilityRequirements']
+  declaration:Omit<AvgAssemblyBriefV2,'version'|'imageBinding'>
+}):ProductProductionPlanV3{
+  const assembly=input.declaration
   const { mediaBatch } = assembly
   const baseAssembly = { schema: assembly.schema, title: assembly.title, sceneKeys: assembly.sceneKeys,
     mediaAssetKeys: assembly.mediaAssetKeys, basePackageHash: assembly.basePackageHash }
   const base = buildAvgAssemblyPlanV1({ ...input, brief: { avgAssembly: { ...baseAssembly, version: 1 } } })
-  const capability = input.brief.capabilityRequirements.filter(r => r.requirementKey === AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1)
+  const capability = input.capabilityRequirements.filter(r => r.requirementKey === AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1)
   if (capability.length !== 1 || capability[0].mediaClass !== 'image' || !capability[0].required
-    || input.brief.capabilityRequirements.length !== 1) throw new Error('[avg-media] 视觉生产必须绑定唯一冻结图片能力，不能夹带文本或其他调用')
+    || input.capabilityRequirements.length !== 1) throw new Error('[avg-media] 视觉生产必须绑定唯一冻结图片能力，不能夹带文本或其他调用')
   const authorInputs = base.tasks.filter(t => t.executionMode === 'human-import' && t.taskKey !== 'avg.author.stage')
   const template = authorInputs[0]!
   const choices: string[] = [], choiceTaskKeys: string[] = [], mediaTasks: ProductProductionPlanTaskV3[] = []

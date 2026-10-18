@@ -11,7 +11,7 @@ import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 import { createAvgDraftReferenceAdapterV1 } from './editor-service'
 import { assertAvgImageProductionDefinitionV3 } from './media-production-definition'
 import { avgVoiceProductionEnabledV3 } from './assembly-contract'
-import { AVG_IMAGE_REFERENCE_CAPABILITY_V1 } from './media-reference-contract'
+import { avgImageReferenceCapabilityV2 } from './media-reference-contract'
 import { avgRawMediaArtifactKeyV1 } from './media-production-contract'
 import { prepareAvgRawImageRequestV1, prepareAvgRawImageRequestFromBatchV1, type AvgRawImagePayloadV1 } from './media-raw-contract'
 import { AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1 } from './assembly-plan'
@@ -96,10 +96,10 @@ export async function executeAvgMediaImageTaskV2(input: ProductProductionTaskExe
       return fresh.source
     } : () => readAvgImageTaskSourcesV2(input,brief)
     const accepted = await source()
-    if (capability.capabilityHash !== await hashProductProductionValueV2(AVG_IMAGE_REFERENCE_CAPABILITY_V1)) throw new Error('[avg-media] 图片能力快照已变化，请重新准备批次')
+    if (capability.capabilityHash !== await hashProductProductionValueV2(avgImageReferenceCapabilityV2(assembly.imageBinding.adapterId))) throw new Error('[avg-media] 图片能力快照已变化，请重新准备批次')
     const resolved = options.mediaCapabilities.get(AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1)
     const binding = input.capabilityBindings.find(b => b.requirementKey === capability.requirementKey)
-    if (!resolved || !binding || input.capabilityBindings.length !== 1 || binding.adapterId !== 'agnes.image-2.1-flash.v1'
+    if (!resolved || !binding || input.capabilityBindings.length !== 1 || binding.adapterId !== assembly.imageBinding.adapterId
       || resolved.adapter.capability.adapterId !== binding.adapterId
       || resolved.binding.requirementKey !== binding.requirementKey || resolved.receipt.capabilityHash !== resolved.binding.bindingHash
       || resolved.receipt.requirementKey !== binding.requirementKey || resolved.transport.executionLocation !== 'browser-direct'
@@ -112,7 +112,7 @@ export async function executeAvgMediaImageTaskV2(input: ProductProductionTaskExe
       throw new Error('[avg-media] 图片配置路由已变化，请重新准备并确认制作方案')
     }
     const frozen = compiled ? await prepareAvgRawImageRequestFromBatchV1({ batch, capability, qualityProfile: brief.qualityProfile,
-      requirementKey: r.requirementKey, idempotencyKey: input.idempotencyKey })
+      requirementKey: r.requirementKey, idempotencyKey: input.idempotencyKey,adapterId:compiled.definition.imageBinding.adapterId })
       : await prepareAvgRawImageRequestV1({ brief, requirementKey: r.requirementKey, idempotencyKey: input.idempotencyKey })
     const request = { ...frozen.request, inputHash: frozen.inputHash }
     const adapter = await createAvgDraftReferenceAdapterV1({ scope: input.scope, frozen, inspectReference: async (reference, bytes) => {

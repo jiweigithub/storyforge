@@ -18,6 +18,19 @@ export const AVG_IMAGE_REFERENCE_CAPABILITY_V1 = {
   source: 'https://agnes-ai.com/en/docs/agnes-image-21-flash',
 } as const
 
+/** A distinct, explicitly frozen model capability. Limits are StoryForge's
+ * bounded input policy; public pricing is not an account billing receipt. */
+export const AVG_IMAGE_REFERENCE_CAPABILITY_V2 = {
+  ...AVG_IMAGE_REFERENCE_CAPABILITY_V1,version:2,adapterId:'agnes.image-2.5-flash.v1',model:'agnes-image-2.5-flash',
+  source:'https://wiki.agnes-ai.com/en/docs/agnes-image-25-flash',
+} as const
+export type AvgImageAdapterIdV4=typeof AVG_IMAGE_REFERENCE_CAPABILITY_V1.adapterId|typeof AVG_IMAGE_REFERENCE_CAPABILITY_V2.adapterId
+export function avgImageReferenceCapabilityV2(adapterId:string){
+  if(adapterId===AVG_IMAGE_REFERENCE_CAPABILITY_V1.adapterId)return AVG_IMAGE_REFERENCE_CAPABILITY_V1
+  if(adapterId===AVG_IMAGE_REFERENCE_CAPABILITY_V2.adapterId)return AVG_IMAGE_REFERENCE_CAPABILITY_V2
+  throw new Error('[avg-media] 未登记的准确图片模型能力')
+}
+
 export interface AvgMediaReferenceV1 {
   assetKey: string
   assetVersion: number
@@ -78,10 +91,13 @@ export async function freezeAvgImageRequestV1(input: {
   request: ProductMediaRequestV1; resolutionTier: '1K' | '2K'; references: AvgMediaReferenceV1[]
 }): Promise<AvgImageRequestV1> {
   const request = structuredClone(input.request), references = parseAvgMediaReferencesV1(input.references)
+  // The envelope format stays V1. Adapter id and capability hash carry model
+  // identity; a new model never rewrites an earlier 2.1 envelope or hash.
+  const capability=avgImageReferenceCapabilityV2(request.adapterId)
   avgRecord(request, ['schema', 'version', 'requestId', 'adapterId', 'mediaClass', 'mediaKind', 'requirementKey', 'artifactKey',
     'prompt', 'negativePrompt', 'count', 'width', 'height', 'durationMs', 'inputHash', 'qualityProfile', 'environment',
     'allowedDataClasses', 'rightsPolicyVersion'], 'image request')
-  if (request.adapterId !== AVG_IMAGE_REFERENCE_CAPABILITY_V1.adapterId || request.mediaClass !== 'image'
+  if (request.adapterId !== capability.adapterId || request.mediaClass !== 'image'
     || request.count !== 1 || request.schema !== 'storyforge.product-media-request' || request.version !== 1) {
     throw new Error('[avg-media] 图片请求不在冻结 AVG 单图能力中')
   }
@@ -94,9 +110,9 @@ export async function freezeAvgImageRequestV1(input: {
   avgKeys(request.allowedDataClasses, 'allowedDataClasses')
   if (request.durationMs !== null) throw new Error('[avg-media] 图片请求不能声明音频时长')
   avgNumber(request.width, 'width', 1, 32_768); avgNumber(request.height, 'height', 1, 32_768)
-  const resolutionTier = avgEnum(input.resolutionTier, AVG_IMAGE_REFERENCE_CAPABILITY_V1.tiers, 'resolutionTier')
+  const resolutionTier = avgEnum(input.resolutionTier, capability.tiers, 'resolutionTier')
   if (references.some(r => !request.allowedDataClasses.includes(r.dataClass))) throw new Error('[avg-media] 参考数据类别未在请求中授权')
-  const capabilityHash = await hashProductProductionValueV2(AVG_IMAGE_REFERENCE_CAPABILITY_V1)
+  const capabilityHash = await hashProductProductionValueV2(capability)
   const body = { schema: 'storyforge.avg.image-request' as const, version: 1 as const, request, references, resolutionTier, capabilityHash }
   return { ...body, inputHash: await hashProductProductionValueV2(body) }
 }

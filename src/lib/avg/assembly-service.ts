@@ -535,7 +535,7 @@ export async function readAvgAssemblyWorkspaceV1(scope: WorkspaceScope, selected
   const visualRecordedUsage=details?.build?.planRevision&&details.executionBrief?.avgVisualPlanning?projectProductProductionRecordedUsageV1(details.build.budgetLedgerJson):null
   const visualProgress=details?.build?.planRevision&&details.executionBrief?.avgVisualPlanning&&details.brief?.revision===details.build.briefRevision
     ?await projectProductProductionSchedulerV1({scope,productionId:details.production.id!}):null
-  const imageDefinition: Pick<AvgAssemblyBriefV2,'mediaBatch'|'imageBinding'|'imageProcessing'|'imageRecovery'>|null = details?.build?.id && details.executionBrief?.avgVisualPlanning
+  const imageDefinition: (Pick<AvgAssemblyBriefV2,'mediaBatch'|'imageProcessing'|'imageRecovery'> & {imageBinding:import('./visual-planning-brief').AvgVisualImageBindingV4})|null = details?.build?.id && details.executionBrief?.avgVisualPlanning
     && ['building','integrating','validating','preview-ready','release-ready','released'].includes(details.build.status)
     ? artifacts.some(row => row.artifactKey === 'avg.media.compiled-visual-requirements' && row.status === 'accepted')
       ? await readAvgImageConsumptionDefinitionV4({scope,buildId:details.build.id,brief:details.executionBrief}) : null
@@ -571,12 +571,17 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
   if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg] 编辑草稿已变化，请刷新后再准备方案')
   let workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
   if (input.visualPlanning && (input.imageRecovery || input.voiceRecovery)) throw new Error('[avg-visual-plan] 专业视觉不能借用旧批次恢复合同')
+  let visualAdapter:import('./media-reference-contract').AvgImageAdapterIdV4='agnes.image-2.1-flash.v1'
   if(input.visualPlanning){
     const existing=draft.productionId?await readProductProductionDetailsV1(input.scope,draft.productionId,['avg']):null
+    if(existing?.brief){
+      const saved=parseProductProductionBriefV3(existing.brief.briefJson).avgVisualPlanning
+      if(saved)visualAdapter=saved.imageBinding.adapterId
+    }
     const previous=existing?unstartedAvgVisualPlanningScopes(existing):[]
     workspace=(await(await import('./visual-planning-scope-draft')).prepareAvgVisualPlanningSourceDraftV4({workspace,planning:input.visualPlanning,previous})).workspace
   }
-  const visual = input.visualPlanning ? await (await import('./visual-planning-workspace')).prepareAvgVisualPlanningConfigurationV4(input.scope,workspace,input.visualPlanning) : null
+  const visual = input.visualPlanning ? await (await import('./visual-planning-workspace')).prepareAvgVisualPlanningConfigurationV4(input.scope,workspace,input.visualPlanning,visualAdapter) : null
   const voice = workspace.voiceProduction ? await validateAvgVoiceDraftSourcesV1(workspace.voiceProduction, workspace) : null
   if (voice && (!avgVoiceProductionEnabledV3() || !avgMediaProductionEnabledV2())) throw new Error('[avg-voice] 配音生产尚未开放；已保存批次不能按零调用流程开始')
   if (workspace.mediaBatch) {
