@@ -29,6 +29,9 @@ import { readAvgRawImageCandidateBytesV2, stageAvgVisualReviewV1, stageAvgMediaC
 import { prepareAvgVisualProposalReuseV4, readAvgVisualReuseOptionsV4 } from '../../src/lib/avg/visual-planning-reuse-workspace'
 import { resolveAvgVisualPlanningExecutionV4 } from '../../src/lib/avg/visual-planning-workspace'
 import { readAvgHistoricalRawImageV4,readAvgHistoricalImageCandidatesV4,readAvgHistoricalImageCandidateBytesV4 } from '../../src/lib/avg/visual-image-history'
+import { prepareAvgVisualRawReuseSourceV4, readAvgVisualRawReuseSourceV4, inspectAvgVisualRawReuseCompatibilityV4 } from '../../src/lib/avg/visual-image-reuse'
+import { parseAvgVisualRawReuseSourceV4 } from '../../src/lib/avg/visual-image-reuse-contract'
+import * as rawReuseContract from '../../src/lib/avg/visual-image-reuse-contract'
 import * as imageProducerProof from '../../src/lib/product-production/artifact-store'
 import * as stageImageSources from '../../src/lib/avg/stage-image-sources'
 import { assertAvgVisualPlanningRestartKnownV4 } from '../../src/lib/avg/visual-planning-restart'
@@ -1060,6 +1063,123 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       }
       expect((await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])).brief!.id).toBe(details.brief!.id)
       expect((await db.productBuildArtifacts.get(raw.id!))!.contentHash).toBe(raw.contentHash)
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+  })
+
+
+  describe('unselected V4 raw reuse compatibility',()=>{
+    let generated:Awaited<ReturnType<typeof generatedImage>>
+    beforeEach(async()=>{generated=await generatedImage('valid')})
+    async function original(){
+      const {s,raw}=generated
+      await stopProductProductionV1({scope:s.scope,production:(await db.productProductions.get(s.productionId))!})
+      const build=await current(s)
+      return prepareAvgVisualRawReuseSourceV4({scope:s.scope,buildId:s.buildId,expectedBuildRevision:build.stateRevision,
+        controlEpoch:s.plan.controlEpoch,expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,
+        artifact:{artifactKey:raw.artifactKey,version:raw.version,contentHash:raw.contentHash}})
+    }
+    it('proves unselected original pixels without credentials, author choice or writes and keeps old source codecs strict',async()=>{
+      const {s,raw}=generated,source=await original()
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      const before=await exportProjectJSON(s.scope.projectId),history=await readAvgVisualRawReuseSourceV4({scope:s.scope,source})
+      expect(history.raw).toEqual(await db.productBuildArtifacts.get(raw.id!));expect(history.raw.payloadJson).toBe(raw.payloadJson)
+      expect(history.raw.rightsJson).toBe(raw.rightsJson);expect(history.asset.contentHash).toBe(raw.contentHash)
+      expect(await accepted(s,`avg.media.choice.${source.requirementKey}`)).toBeUndefined()
+      expect(await accepted(s,`avg.review.visual.${source.requirementKey}`)).toBeUndefined()
+      const build=await current(s),boundary={scope:s.scope,productionId:s.productionId,buildId:s.buildId,
+        expectedBuildRevision:build.stateRevision,controlEpoch:s.plan.controlEpoch,expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash}
+      const candidates=await readAvgHistoricalImageCandidatesV4(boundary),candidate=candidates.candidates.find(c=>c.available)
+      if(!candidate?.available)throw new Error('missing proved unselected candidate')
+      expect(candidate.reuseSource).toEqual(source)
+      const preview={...boundary,requirementKey:source.requirementKey,version:raw.version,contentHash:raw.contentHash,source:candidate.reuseSource}
+      expect((await readAvgHistoricalImageCandidateBytesV4(preview)).data).toEqual(s.imageBytes)
+      await expect(readAvgHistoricalImageCandidateBytesV4({...preview,expectedBuildRevision:build.stateRevision+1})).rejects.toThrow()
+      await expect(readAvgHistoricalImageCandidateBytesV4({...preview,requirementKey:'another.requirement'})).rejects.toThrow()
+      expect(parseAvgVisualRawReuseSourceV4(source)).toEqual(source)
+      expect(()=>parseAvgVisualRawReuseSourceV4({...source,buildId:s.buildId})).toThrow()
+      expect(()=>parseAvgVisualRawReuseSourceV4({...source,version:2})).toThrow()
+      expect(()=>parseAvgGeneratedReferenceSourceV1(source)).toThrow();expect(()=>parseAvgGeneratedReferenceSourceV2(source)).toThrow()
+      expect({...await exportProjectJSON(s.scope.projectId),exportedAt:0}).toEqual({...before,exportedAt:0})
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+    it('accepts only a logical requirement revision change while preserving the original request, physical version and fees',async()=>{
+      const {s,raw,requirement}=generated,source=await original(),next={...requirement,revision:requirement.revision+1}
+      const before=await exportProjectJSON(s.scope.projectId)
+      const history=await inspectAvgVisualRawReuseCompatibilityV4({scope:s.scope,source,productionKey:source.productionKey,
+        buildNumber:source.raw.buildNumber+1,sourceWorldContentHash:source.sourceWorldContentHash,requirement:next})
+      expect(history.currentRequirement).toEqual(next);expect(history.currentRequirementHash).not.toBe(source.requirementHash)
+      expect(history.raw.payloadJson).toBe(raw.payloadJson);expect(history.payload.requirement.revision).toBe(requirement.revision)
+      expect(history.payload.provider).toEqual(JSON.parse(raw.payloadJson).provider)
+      expect({...await exportProjectJSON(s.scope.projectId),exportedAt:0}).toEqual({...before,exportedAt:0})
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+    it('rejects changed visual semantics, reference permissions, consumer, world and ancestry without paid fallback',async()=>{
+      const {s,requirement}=generated,source=await original()
+      const input={scope:s.scope,source,productionKey:source.productionKey,buildNumber:source.raw.buildNumber+1,
+        sourceWorldContentHash:source.sourceWorldContentHash,requirement}
+      const alternatives=[{...requirement,prompt:requirement.prompt+' changed'}, {...requirement,negativePrompt:'changed'},
+        {...requirement,family:{...requirement.family,revision:requirement.family.revision+1}},
+        {...requirement,consumer:{...requirement.consumer,consumerKey:'another.consumer'}},
+        {...requirement,width:requirement.width+16},{...requirement,alpha:'required'},
+        {...requirement,references:[]},
+        {...requirement,references:requirement.references.map((r:typeof requirement.references[number])=>({...r,allowedChange:'changed reference permission'}))},
+        {...requirement,unexpectedFutureField:'must not disappear'}]
+      for(const next of alternatives)await expect(inspectAvgVisualRawReuseCompatibilityV4({...input,requirement:next})).rejects.toThrow()
+      await expect(inspectAvgVisualRawReuseCompatibilityV4({...input,sourceWorldContentHash:'f'.repeat(64)})).rejects.toThrow()
+      await expect(inspectAvgVisualRawReuseCompatibilityV4({...input,productionKey:'another.production'})).rejects.toThrow()
+      await expect(inspectAvgVisualRawReuseCompatibilityV4({...input,buildNumber:source.raw.buildNumber})).rejects.toThrow()
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+    it('rejects modified portable origin, compilation, requirement or HTTP proofs instead of trusting parsed hashes',async()=>{
+      const {s}=generated,source=await original(),before=await exportProjectJSON(s.scope.projectId)
+      for(const altered of [{...source,requirementHash:'f'.repeat(64)},{...source,semanticRequirementHash:'f'.repeat(64)},
+        {...source,sourceWorldContentHash:'f'.repeat(64)},{...source,compilation:{...source.compilation,contentHash:'f'.repeat(64)}},
+        ...(['proofHash','responseEvidenceHash','producerReceiptHash','candidateHash'] as const).map(key=>({...source,raw:{...source.raw,[key]:'f'.repeat(64)}}))]){
+        await expect(readAvgVisualRawReuseSourceV4({scope:s.scope,source:altered})).rejects.toThrow()
+      }
+      expect({...await exportProjectJSON(s.scope.projectId),exportedAt:0}).toEqual({...before,exportedAt:0})
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+    it('rechecks original records after asynchronous descriptor hashes before returning reuse evidence',async()=>{
+      const {s,raw}=generated,source=await original(),describe=rawReuseContract.avgVisualRawReuseDescriptorV4
+      vi.spyOn(rawReuseContract,'avgVisualRawReuseDescriptorV4').mockImplementationOnce(async history=>{
+        const result=await describe(history)
+        await db.productBuildArtifacts.update(raw.id!,{qualityJson:'{}'})
+        return result
+      })
+      await expect(readAvgVisualRawReuseSourceV4({scope:s.scope,source})).rejects.toThrow(/读取期间变化/)
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+    it('detects corrupt retained pixels and preserves the failure without retrying',async()=>{
+      const {s,raw}=generated,source=await original(),blob=(await db.mediaBlobObjects.get(raw.blobObjectId!))!
+      const bytes=new Uint8Array(blob.data!.slice(0));bytes[bytes.length-1]^=1
+      await db.mediaBlobObjects.update(blob.id!,{data:bytes.buffer})
+      await expect(readAvgVisualRawReuseSourceV4({scope:s.scope,source})).rejects.toThrow()
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+    it('resolves the same portable unselected source after full remap and deletes only the imported Work',async()=>{
+      const {s,raw}=generated,source=await original(),before=await exportProjectJSON(s.scope.projectId)
+      const projectId=await importProjectJSON(before),build=(await db.productBuilds.where('projectId').equals(projectId).first())!
+      const scope={projectId,worldId:build.worldId,workId:build.workId},copy=await readAvgVisualRawReuseSourceV4({scope,source})
+      expect(copy.reuseSource).toEqual(source);expect(copy.raw.id).not.toBe(raw.id);expect(copy.raw.payloadJson).toBe(raw.payloadJson)
+      expect(copy.raw.rightsJson).toBe(raw.rightsJson)
+      await deleteWork(scope.workId!,scope)
+      await expect(readAvgVisualRawReuseSourceV4({scope,source})).rejects.toThrow()
+      expect((await readAvgVisualRawReuseSourceV4({scope:s.scope,source})).raw.payloadJson).toBe(raw.payloadJson)
+      expect({...await exportProjectJSON(s.scope.projectId),exportedAt:0}).toEqual({...before,exportedAt:0})
+      expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    })
+    it('keeps the original proof inside a caller transaction and rolls back a later author write',async()=>{
+      const {s,raw}=generated,source=await original()
+      await expect(db.transaction('rw',scopeTransactionTables(db.productProductions,db.productProductionBriefs,
+        db.productProductionCommands,db.productBuilds,db.productBuildArtifacts,db.avgDraftMedia,db.mediaBlobObjects,
+        db.agentRuns,db.agentRunEvents,db.agentRunCheckpoints,db.agentRunArtifacts),async()=>{
+        await readAvgVisualRawReuseSourceV4({scope:s.scope,source})
+        await db.productBuildArtifacts.update(raw.id!,{updatedAt:raw.updatedAt+1})
+        throw new Error('controlled unselected raw transaction rollback')
+      })).rejects.toThrow('controlled unselected raw transaction rollback')
+      expect((await db.productBuildArtifacts.get(raw.id!))!.updatedAt).toBe(raw.updatedAt)
       expect(s.imageFetcher).toHaveBeenCalledTimes(1)
     })
   })

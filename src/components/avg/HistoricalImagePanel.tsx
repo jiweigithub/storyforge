@@ -37,7 +37,7 @@ export default function HistoricalImagePanel({scope,view}:{scope:WorkspaceScope;
         {candidate.available?<><p>{candidate.asset.source==='agnes.image-2.5-flash.v1'?'Agnes Image 2.5 Flash':'Agnes Image 2.1 Flash'} · {candidate.asset.width} × {candidate.asset.height} · 原调用费用：{candidate.costUsd===null?'未知':`$${candidate.costUsd}`}</p>
           <button className="lf-action" onClick={()=>setExpanded(expanded===candidate.requirement.requirementKey?'':candidate.requirement.requirementKey)}>{expanded===candidate.requirement.requirementKey?'收起原图':'查看原图'}</button>
           {expanded===candidate.requirement.requirementKey&&<MediaAssetPreview scope={scope} productionId={details.production.id!} asset={candidate.asset}
-            raw={{requirementKey:candidate.requirement.requirementKey,version:candidate.raw.version,contentHash:candidate.raw.contentHash,historical:snapshot.boundary}}/>}
+            raw={{requirementKey:candidate.requirement.requirementKey,version:candidate.raw.version,contentHash:candidate.raw.contentHash,historical:snapshot.boundary,historicalSource:candidate.reuseSource}}/>}
         </>:<p>{candidate.issue}</p>}
       </article>)}
     </>}

@@ -1,3 +1,5 @@
+import Dexie from 'dexie'
+import { avgVisualRawReuseDescriptorV4, type AvgVisualRawReuseSourceV4 } from './visual-image-reuse-contract'
 import { db } from '../db/schema'
 import type { ProductBuildArtifactRecordV1, WorkspaceScope } from '../types'
 import { assertRecordInScope, resolveScope } from '../workspace/scope'
@@ -144,7 +146,7 @@ export async function readAvgHistoricalImageCandidatesV4(input:Omit<AvgHistorica
     try{
       if(rows.length!==1)throw new Error('[avg-visual-history] 原图版本不唯一')
       const image=await inspectHistoricalRaw(resolved,ref(rows[0]))
-      candidates.push({requirement,available:true as const,asset:image.asset,raw:ref(image.raw),costUsd:image.payload.provider.costUsd})
+      candidates.push({requirement,available:true as const,asset:image.asset,raw:ref(image.raw),reuseSource:await avgVisualRawReuseDescriptorV4(image),costUsd:image.payload.provider.costUsd})
     }catch(error){candidates.push({requirement,available:false as const,issue:error instanceof Error?error.message:'原图来源未通过核验'})}
   }
   await assertFresh(resolved)
@@ -154,9 +156,18 @@ export async function readAvgHistoricalImageCandidatesV4(input:Omit<AvgHistorica
 
 /** Same owner/hash reader for native preview; never an HTTP image URL. */
 export async function readAvgHistoricalImageCandidateBytesV4(input:AvgHistoricalVisualBoundaryV4&{
-  productionId:number;requirementKey:string;version:number;contentHash:string
+  productionId:number;requirementKey:string;version:number;contentHash:string;source?:AvgVisualRawReuseSourceV4
 }){
-  const image=await readAvgHistoricalRawImageV4({...input,artifact:{artifactKey:avgRawMediaArtifactKeyV1(input.requirementKey),version:input.version,contentHash:input.contentHash}})
+  let image:Awaited<ReturnType<typeof readAvgHistoricalRawImageV4>>
+  if(input.source){
+    const load=()=>import('./visual-image-reuse')
+    const {readAvgVisualRawReuseSourceV4}=await (Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
+    image=await readAvgVisualRawReuseSourceV4({scope:input.scope,source:input.source})
+    if(image.build.id!==input.buildId||image.build.stateRevision!==input.expectedBuildRevision||image.plan.controlEpoch!==input.controlEpoch
+      ||image.build.briefHash!==input.expectedBriefHash||image.build.planHash!==input.expectedPlanHash
+      ||image.raw.artifactKey!==avgRawMediaArtifactKeyV1(input.requirementKey)||image.raw.version!==input.version
+      ||image.raw.contentHash!==input.contentHash)throw new Error('[avg-visual-history] 便携原图与所选来源边界不一致')
+  }else image=await readAvgHistoricalRawImageV4({...input,artifact:{artifactKey:avgRawMediaArtifactKeyV1(input.requirementKey),version:input.version,contentHash:input.contentHash}})
   if(image.production.id!==input.productionId)throw new Error('[avg-visual-history] 原图不属于所选制作记录')
   const blob=image.raw.blobObjectId===null?null:await db.mediaBlobObjects.get(image.raw.blobObjectId)
   if(!blob||!await assertRecordInScope(input.scope,'mediaBlobObjects',blob,{owner:'work'})||blob.contentHash!==image.asset.contentHash

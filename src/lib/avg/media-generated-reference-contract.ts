@@ -50,17 +50,23 @@ export interface AvgGeneratedReferenceSourceV2 {
 }
 export type AvgGeneratedImageSource=AvgGeneratedReferenceSourceV1|AvgGeneratedReferenceSourceV2
 
-export function parseAvgGeneratedReferenceSourceV2(value:unknown):AvgGeneratedReferenceSourceV2 {
-  const r=avgRecord(value,['schema','version','productionKey','requirementKey','raw','compilation','choice','review'],'V4 image source')
-  if(r.schema!=='storyforge.avg.generated-reference-source'||r.version!==2)throw new Error('[avg-visual-history] 图片来源版本无效')
-  const requirementKey=avgKey(r.requirementKey,'source.requirementKey')
-  const p=avgRecord(r.raw,['schema','version','buildNumber','briefHash','planHash','controlEpoch','taskKey','artifactKey','artifactVersion','contentHash','inputHash','producerReceiptHash','candidateHash','responseEvidenceHash','proofHash'],'V4 image producer')
+/** Structural original HTTP proof only. Every consumer must independently
+ * verify the actual portable producer and bytes; parsing grants no use. */
+export function parseAvgVisualRawProducerProofV4(value:unknown,requirementKey:string):AvgGeneratedReferenceSourceV2['raw'] {
+  const p=avgRecord(value,['schema','version','buildNumber','briefHash','planHash','controlEpoch','taskKey','artifactKey','artifactVersion','contentHash','inputHash','producerReceiptHash','candidateHash','responseEvidenceHash','proofHash'],'V4 image producer')
   if(p.schema!=='storyforge.avg.visual-image-producer-proof'||p.version!==4||p.taskKey!==`avg.media.generate.${requirementKey}`||p.artifactKey!==`avg.media.raw.${requirementKey}`)throw new Error('[avg-visual-history] 来源不是准确 V4 图片 producer')
-  const raw:AvgGeneratedReferenceSourceV2['raw']={schema:p.schema,version:4,buildNumber:avgNumber(p.buildNumber,'source.buildNumber',1,1e9),
+  return {schema:p.schema,version:4,buildNumber:avgNumber(p.buildNumber,'source.buildNumber',1,1e9),
     briefHash:avgHash(p.briefHash,'source.briefHash'),planHash:avgHash(p.planHash,'source.planHash'),controlEpoch:avgNumber(p.controlEpoch,'source.controlEpoch',0,1e9),
     taskKey:p.taskKey,artifactKey:p.artifactKey,artifactVersion:avgNumber(p.artifactVersion,'source.artifactVersion',1,1e9),
     contentHash:avgHash(p.contentHash,'source.contentHash'),inputHash:avgHash(p.inputHash,'source.inputHash'),producerReceiptHash:avgHash(p.producerReceiptHash,'source.producerReceiptHash'),
     candidateHash:avgHash(p.candidateHash,'source.candidateHash'),responseEvidenceHash:avgHash(p.responseEvidenceHash,'source.responseEvidenceHash'),proofHash:avgHash(p.proofHash,'source.proofHash')}
+}
+
+export function parseAvgGeneratedReferenceSourceV2(value:unknown):AvgGeneratedReferenceSourceV2 {
+  const r=avgRecord(value,['schema','version','productionKey','requirementKey','raw','compilation','choice','review'],'V4 image source')
+  if(r.schema!=='storyforge.avg.generated-reference-source'||r.version!==2)throw new Error('[avg-visual-history] 图片来源版本无效')
+  const requirementKey=avgKey(r.requirementKey,'source.requirementKey')
+  const raw=parseAvgVisualRawProducerProofV4(r.raw,requirementKey)
   const c=avgRecord(r.compilation,['artifactKey','version','contentHash'],'V4 image compilation')
   if(c.artifactKey!=='avg.media.compiled-visual-requirements')throw new Error('[avg-visual-history] 原编译来源不匹配')
   const author=(value:unknown,key:string)=>{
