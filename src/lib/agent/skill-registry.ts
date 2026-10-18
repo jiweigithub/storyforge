@@ -1315,6 +1315,16 @@ function productProductionInputPolicy(sourceKeys: readonly string[]): AgentSkill
 
 export const AGENT_SKILLS = [
   {
+    version: 1, id: 'ttrpg.open.authoring-design.v1', agentId: 'outline', defaultForAgent: false,
+    label: '开放跑团作者三设计候选', owner: 'outline-agent', promptVersion: 'ttrpg-open-authoring-design-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: ['ttrpg.open.authoring-design'], optionalContextSourceKeys: [],
+    inputPolicy: productProductionInputPolicy(['ttrpg.open.authoring-design', 'worldRelease']),
+    contextCompression: compressionPolicy(['worldRelease']), contextGateway: PRODUCT_PRODUCTION_WORLD_GATEWAY_POLICY,
+    maxOutputTokens: 16_000, writeTargets: [], lastVerifiedAt: '2026-10-19',
+    regressionTests: ['R-TTRPGOPEN2-authoring-design-harness'],
+  },
+  {
     version: 1, id: 'extensions.generate', agentId: 'prose', defaultForAgent: false,
     label: '插件自有内容候选', owner: 'extension-host', promptVersion: 'extension-generate-v1', executionMode: 'extension-generate', contextTaskKind: 'agent-prose', readToolNames: [],
     contextSourceKeys: ['extensionRecords'], optionalContextSourceKeys: ['worldview', 'storyCore', 'characters', 'historical', 'storyTimeline'],

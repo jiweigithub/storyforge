@@ -1,4 +1,5 @@
-/** Internal S2 assisted-design contract/source API. This foundation exposes no
- * model call, draft write, production start or public product route. */
+/** Internal S2 design contract/source/candidate API. Production start and
+ * canonical draft adoption remain separate; no public product route yet. */
 export * from './open-authoring-design-contract'
 export * from './open-authoring-design-source'
+export * from './open-authoring-design-harness'

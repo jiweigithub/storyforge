@@ -3,9 +3,11 @@ import { db } from '../../src/lib/db/schema'
 import { createFreshOpenDraftFixtureV1 } from '../helpers/open-ttrpg-fresh-authoring'
 import { readTtrpgDraft, saveTtrpgDraft, saveTtrpgSourceSelection, prepareTtrpgOpenProductionBriefV3 } from '../../src/lib/ttrpg/authoring-service'
 import { suggestProductStartingPoints } from '../../src/lib/product-production/consultation'
-import { prepareTtrpgOpenAuthoringDesignSourceV1 } from '../../src/lib/ttrpg/open-authoring-design'
+import { assertTtrpgOpenAuthoringDesignSourceCurrentV1, prepareTtrpgOpenAuthoringDesignSourceV1 } from '../../src/lib/ttrpg/open-authoring-design'
 import { hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 import * as provenance from '../../src/lib/ttrpg/open-source-provenance'
+import { assembleContext } from '../../src/lib/registry/assemble-context'
+import { readTtrpgOpenAuthoringDesignContextV1 } from '../../src/lib/ttrpg/open-authoring-design-context'
 
 async function fixture(options: { select?: boolean; ruleVersion?: 1 | 2 } = {}) {
   const made = await createFreshOpenDraftFixtureV1(options.ruleVersion ?? 2)
@@ -58,6 +60,37 @@ describe('R-TTRPGOPEN2 real saved S2 assisted-design source boundary', () => {
   it('requires the author to save the explicit exit selection, instead of silently reading the whole frozen catalogue', async () => {
     const { scope, draft } = await fixture({ select: false }), before = await databaseSnapshot()
     await expect(prepareTtrpgOpenAuthoringDesignSourceV1({ scope, revision: draft.revision })).rejects.toThrow('保存出口范围')
+    expect(await databaseSnapshot()).toEqual(before)
+  })
+  it('verifies a serialized original source after time advances, while rejecting changed selection and same-revision row bytes', async () => {
+    const { scope, draft } = await fixture()
+    const { source } = await prepareTtrpgOpenAuthoringDesignSourceV1({ scope, revision: draft.revision })
+    const retained = JSON.parse(JSON.stringify(source)), before = await databaseSnapshot()
+    vi.spyOn(Date, 'now').mockReturnValue(source.sourcePlan.createdAt + 60_000)
+    await assertTtrpgOpenAuthoringDesignSourceCurrentV1(retained)
+    expect(await databaseSnapshot()).toEqual(before)
+    const tampered = structuredClone(retained)
+    tampered.sourceSelection.resourceKeys = []
+    const { basisHash: _oldHash, ...body } = tampered
+    tampered.basisHash = await hashProductProductionValueV2(body)
+    await expect(assertTtrpgOpenAuthoringDesignSourceCurrentV1(tampered)).rejects.toThrow('不一致')
+    await db.ttrpgAuthoringDrafts.update(draft.id!, { updatedAt: draft.updatedAt + 1 })
+    await expect(assertTtrpgOpenAuthoringDesignSourceCurrentV1(retained)).rejects.toThrow('不一致')
+  })
+  it('assembles the complete registered source at an exact revision, refuses omitted scope and atomic truncation, and writes no table', async () => {
+    const { scope, draft } = await fixture(), before = await databaseSnapshot()
+    const input = { projectId: scope.projectId, scope, sourceKeys: ['ttrpg.open.authoring-design'], ttrpgAuthoringDesignRevision: draft.revision, inputBudgetTokens: 40_000 }
+    const assembled = await assembleContext(input)
+    expect(assembled.included).toEqual(['ttrpg.open.authoring-design'])
+    expect(assembled.sourceEvidence?.[0]).toMatchObject({ key: 'ttrpg.open.authoring-design', delivery: 'full', status: 'included' })
+    const source = JSON.parse(assembled.segments[0].content)
+    expect(source.revision).toBe(draft.revision)
+    expect(source.sourceSelection.resourceKeys.length).toBeGreaterThan(0)
+    await assertTtrpgOpenAuthoringDesignSourceCurrentV1(source)
+    await expect(assembleContext({ ...input, inputBudgetTokens: 1 })).rejects.toThrow()
+    await expect(assembleContext({ ...input, ttrpgAuthoringDesignRevision: undefined })).resolves.toMatchObject({ included: [] })
+    await expect(readTtrpgOpenAuthoringDesignContextV1({ ...input, ttrpgAuthoringDesignRevision: undefined })).rejects.toThrow('明确作品')
+    await expect(assembleContext({ ...input, ttrpgAuthoringDesignRevision: draft.revision - 1 })).rejects.toThrow('草稿已变化')
     expect(await databaseSnapshot()).toEqual(before)
   })
   it('rejects an old rule or stale/foreign author scope without creating model or production records', async () => {

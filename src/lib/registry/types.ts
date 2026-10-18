@@ -613,6 +613,8 @@ export interface AssembleContextInput {
   ttrpgPlayerActorKey?: string
   /** One original human-selected speech request; never an actor/Chapter alias. */
   ttrpgVoiceRequest?: { viewerKey: string; requestKey: string; intentReceiptHash: string }
+  /** S2 exact saved draft revision; the registered reader resolves its real source. */
+  ttrpgAuthoringDesignRevision?: number
   /** PRODUCTPROD-1 registered production context anchors. */
   productProductionId?: number
   /** Exact task identity for registered, Build-bound repair feedback. */

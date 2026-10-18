@@ -1,13 +1,13 @@
 /** Read-only S2 basis. Preparing an assisted design is neither a formal Brief
  * nor production authorization; it may start from empty situation templates. */
 import { db } from '../db/schema'
-import type { ProductSourcePlanV1, WorldReferenceV1, WorkspaceScope } from '../types'
+import type { ProductProductionBriefV3, ProductSourcePlanV1, WorldReferenceV1, WorkspaceScope } from '../types'
 import { resolveScope } from '../workspace/scope'
 import { createWorldReferenceV1 } from '../world-engine/world-reference'
 import { assertWorldSemanticReleaseCurrentV1 } from '../context-gateway/world-release-client'
 import { draftTtrpgOpenProductionCommonBriefV3 } from '../product-production/consultation'
 import { createProductProductionSourcePlanV1 } from '../product-production/source-contracts'
-import { hashProductProductionValueV2 } from '../product-production/hash'
+import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { readTtrpgDraft } from './authoring-service'
 import { isTtrpgAuthoringSettingsV2, settingsFromTtrpgDraft } from './authoring-contract'
 import type { TtrpgAuthoringSettingsV2 } from './authoring-contract-v2'
@@ -20,6 +20,8 @@ export interface TtrpgOpenAuthoringDesignSourceV1 {
   scope: WorkspaceScope; draftId: number; revision: number
   settings: Extract<TtrpgAuthoringSettingsV2, { runFormat: 'open' }>
   settingsHash: string; selectionHash: string; rulePackId: number; rulePack: RulePackV2; rulePackHash: string
+  draftRecordHash: string; ruleRecordHash: string
+  sourceSelection: ProductProductionBriefV3['source']['selection']
   worldReference: WorldReferenceV1; sourcePlan: ProductSourcePlanV1
   basisHash: string
 }
@@ -32,6 +34,20 @@ function freeze(value: unknown): void {
 }
 
 export async function prepareTtrpgOpenAuthoringDesignSourceV1(input: { scope: WorkspaceScope; revision: number }): Promise<{
+  source: TtrpgOpenAuthoringDesignSourceV1; assertCurrent: () => Promise<void>
+}> {
+  return prepare(input)
+}
+
+/** Reconstruct the original read-only snapshot at its recorded creation time.
+ * This is verification, never a new preparation or a permission to re-send. */
+export async function assertTtrpgOpenAuthoringDesignSourceCurrentV1(source: TtrpgOpenAuthoringDesignSourceV1): Promise<void> {
+  if (!source || !Number.isSafeInteger(source.sourcePlan?.createdAt) || source.sourcePlan.createdAt < 0) fail('来源计划创建时刻无效')
+  const rebuilt = await prepare({ scope: source.scope, revision: source.revision }, source.sourcePlan.createdAt)
+  if (canonicalProductProductionJsonV2(rebuilt.source) !== canonicalProductProductionJsonV2(source)) fail('保存的设计来源与当前草稿、规则或世界不一致')
+}
+
+async function prepare(input: { scope: WorkspaceScope; revision: number }, originalCreatedAt?: number): Promise<{
   source: TtrpgOpenAuthoringDesignSourceV1; assertCurrent: () => Promise<void>
 }> {
   const scope = await resolveScope({ scope: input.scope }), draft = await readTtrpgDraft(scope)
@@ -59,10 +75,11 @@ export async function prepareTtrpgOpenAuthoringDesignSourceV1(input: { scope: Wo
     qualityProfile: settings.qualityProfile, scale: 'campaign', playerRole: settings.playerRole,
     openingSituation: settings.openingSituation, visualLevel: settings.wizard.maximumGeneratedAssets > 0 ? 'key-scenes' : 'none', audioLevel: 'none' })
   const settingsHash = await hashProductProductionValueV2(settings), selectionHash = await hashProductProductionValueV2(JSON.parse(draft.selectionJson))
+  const draftRecordHash = await hashProductProductionValueV2(draft), ruleRecordHash = await hashProductProductionValueV2(rule.record)
   const instance = await hashProductProductionValueV2({ scope, draftId: draft.id, revision: draft.revision,
-    settingsHash, selectionHash, worldReferenceHash: worldReference.referenceHash, rulePackHash: rule.record.contentHash })
+    settingsHash, selectionHash, draftRecordHash, ruleRecordHash, worldReferenceHash: worldReference.referenceHash, rulePackHash: rule.record.contentHash })
   const sourcePlan = await createProductProductionSourcePlanV1({ scope, productionKey: `ttrpg-authoring.${instance.slice(0, 40)}`,
-    brief: common })
+    brief: common, ...(originalCreatedAt === undefined ? {} : { createdAt: originalCreatedAt }) })
   if (sourcePlan.worldReference.referenceHash !== worldReference.referenceHash) fail('来源计划与实际世界不一致')
   await verifyTtrpgOpenAuthoringSourceProvenanceV1({ sourcePlan, facts: policy.factPolicy.map(item => item.fact) })
   const originalDraft = JSON.stringify(draft), originalRule = JSON.stringify(rule.record)
@@ -79,6 +96,8 @@ export async function prepareTtrpgOpenAuthoringDesignSourceV1(input: { scope: Wo
   await assertCurrent()
   const body = { schema: 'storyforge.ttrpg-open-authoring-design-source' as const, version: 1 as const, portable: false as const,
     scope, draftId: draft.id!, revision: draft.revision, settings, settingsHash, selectionHash,
+    draftRecordHash, ruleRecordHash,
+    sourceSelection: common.source.selection,
     rulePackId: draft.savedRulePackId, rulePack: rule.rulePack, rulePackHash: rule.record.contentHash, worldReference, sourcePlan }
   const source: TtrpgOpenAuthoringDesignSourceV1 = { ...body, basisHash: await hashProductProductionValueV2(body) }
   freeze(source)

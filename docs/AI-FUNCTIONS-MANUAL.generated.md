@@ -80,7 +80,7 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 153 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 154 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
@@ -113,6 +113,7 @@
 | `ttrpgPublicNarration` | 正式 TTRPG 已授权公开叙述素材 | runtime | L0 | 10000 |
 | `ttrpgNpcRuntime` | 正式 TTRPG NPC 独立知情视角 | runtime | L0 | 10000 |
 | `ttrpgPlayerRuntime` | 正式 TTRPG 单角色玩家运行视角 | runtime | L0 | 10000 |
+| `ttrpg.open.authoring-design` | 开放跑团作者设计的准确草稿与冻结来源 | project | L0 | 24000 |
 | `ai-town.authoring` | AI 小镇 作者方案与会谈 | project | L0 | 16000 |
 | `avg.authoring` | AVG 作者方案与会谈 | project | L0 | 16000 |
 | `chat.authoring` | 角色聊天作者方案与会谈 | project | L0 | 16000 |
@@ -469,10 +470,11 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ## 五、正式 AI 入口（FormalAIEntryBindingV1）
 
-共 59 个操作级绑定。运行时按 entryId 校验 category 和 Skill；采纳权限不由文字说明决定。显式 outputModality=audio 使用独立冻结音频执行器，文本入口不补默认字段。
+共 60 个操作级绑定。运行时按 entryId 校验 category 和 Skill；采纳权限不由文字说明决定。显式 outputModality=audio 使用独立冻结音频执行器，文本入口不补默认字段。
 
 | entryId | Skill | category | 边界 | 候选 | 采纳目标 | 调用方 |
 |---|---|---|---|---|---|---|
+| `ttrpg.open.authoring-design` | `ttrpg.open.authoring-design.v1` | `authoring.ttrpg-open-design` | formal / durable-run | `ttrpg-open-authoring-design-creative-artifact` | 禁止 | `src/lib/ttrpg/open-authoring-design-harness.ts` |
 | `ttrpg.open.common-oracle-interpret` | `prose.ttrpg-open-common-oracle-interpret` | `runtime.ttrpg-open.common-oracle-interpret` | formal / product-runtime | `storyforge.ttrpg-open-common-oracle-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
 | `ttrpg.open.oracle-interpret` | `prose.ttrpg-open-oracle-interpret` | `runtime.ttrpg-open.oracle-interpret` | formal / product-runtime | `storyforge.ttrpg-open-oracle-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
 | `ttrpg.open.fact-normalize` | `prose.ttrpg-open-fact-normalize` | `runtime.ttrpg-open.fact-normalize` | formal / product-runtime | `storyforge.ttrpg-open-oracle-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
@@ -535,4 +537,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `7a16dd37`
+生成时间基准:commit `545b01b2`

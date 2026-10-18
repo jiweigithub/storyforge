@@ -240,6 +240,8 @@ const scannedFiles = [
   'src/lib/open-world/runtime-ai-execution.ts',
   // Open TTRPG has its own actor-scoped, one-send governed transport boundary.
   'src/lib/ttrpg/open-intent-harness.ts',
+  // S2 author proposals use their own frozen Work-owned request and raw receipt.
+  'src/lib/ttrpg/open-authoring-design-harness.ts',
   'src/lib/ttrpg/open-voice-execution.ts',
   // Fixed-fixture offline speech evaluation is a limited transport, never a
   // creative binding or an application/provider fallback.

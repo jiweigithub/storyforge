@@ -2145,6 +2145,12 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     read: readTtrpgPlayerRuntimeContextV1,
   },
   {
+    key: 'ttrpg.open.authoring-design', label: '开放跑团作者设计的准确草稿与冻结来源', scope: 'project', layer: 'L0', ownerFrom: 'work',
+    budgetTokens: 24000, protectedFromTrim: true, atomic: true,
+    enabled: input => Number.isSafeInteger(input.ttrpgAuthoringDesignRevision),
+    read: async input => (await import('../ttrpg/open-authoring-design-context')).readTtrpgOpenAuthoringDesignContextV1(input),
+  },
+  {
     key: 'ai-town.authoring', label: 'AI 小镇 作者方案与会谈', scope: 'project', layer: 'L0', ownerFrom: 'work',
     budgetTokens: 16000, protectedFromTrim: true,
     read: async input => {
