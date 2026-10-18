@@ -17,15 +17,17 @@ const terminal = new Set(['completed', 'cancelled', 'failed'])
 const statusLabels: Record<string, string> = { planned: '已准备', running: '执行中', paused: '等待核对原结果', recovering: '恢复中',
   awaiting_confirmation: '等待本人确认', verifying: '等待补回执', completed: '已完成', cancelled: '已结束', failed: '失败' }
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
+const defaultSections = (facts: boolean): Section[] => ['situationTemplates', 'openingSituationKeys', 'effectPlanTemplates', 'pressure', ...(facts ? ['factProposals' as const] : [])]
 
 /** S2 only. All model and canonical writes enter the existing product facade.
  * Local choices grant no permission; only the explicit adoption action writes. */
-export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEdits, beforeGenerate, beforeAdopt, onAdopted }: {
+export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEdits, needsInitialFacts, beforeGenerate, beforeAdopt, onAdopted }: {
   scope: WorkspaceScope; revision: number; hasUnsavedEdits: boolean
+  needsInitialFacts: boolean
   beforeGenerate: () => Promise<number>; beforeAdopt: () => Promise<void>; onAdopted: () => Promise<void>
 }) {
   const config = useAIConfigStore(state => state.config)
-  const [instruction, setInstruction] = useState(''), [sections, setSections] = useState<Section[]>(['situationTemplates', 'openingSituationKeys', 'effectPlanTemplates', 'pressure'])
+  const [instruction, setInstruction] = useState(''), [sections, setSections] = useState<Section[]>(() => defaultSections(needsInitialFacts))
   const [runs, setRuns] = useState<Awaited<ReturnType<typeof design.listTtrpgOpenAuthoringDesignRunsV1>>>([])
   const [runId, setRunId] = useState<number | null>(null), [review, setReview] = useState<Review | null>(null)
   const [adoption, setAdoption] = useState<Adoption | null>(null), [raw, setRaw] = useState<string | null>(null)
@@ -34,6 +36,8 @@ export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEd
   const [requestDirty, setRequestDirty] = useState(false)
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [refresh, setRefresh] = useState(0)
   const [unknownAck, setUnknownAck] = useState(false), [factPage, setFactPage] = useState(0)
+  const requestEdited = useRef(false)
+  useEffect(() => { if (!requestEdited.current) setSections(defaultSections(needsInitialFacts)) }, [needsInitialFacts])
   const live = useRef(true), epoch = useRef(0), activeOperation = useRef(false), ownFlush = useRef(false)
   const blocked = useRef(false), pendingRef = useRef(false), controller = useRef<AbortController | null>(null), loadedCandidate = useRef('')
   pendingRef.current = pending; blocked.current = pending || busy
@@ -88,7 +92,7 @@ export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEd
   }, [review, selection])
   const oldFactKeys = new Set(review?.source.settings.openAuthoring.factPolicy.map(item => item.fact.factKey) ?? [])
   const facts = composition.value?.factPolicy.filter(item => !oldFactKeys.has(item.fact.factKey)) ?? []
-  const mark = () => { pendingRef.current = true; blocked.current = true; setPending(true); setError('') }
+  const mark = () => { requestEdited.current = true; pendingRef.current = true; blocked.current = true; setPending(true); setError('') }
   const choose = (next: Record<string, string>) => { mark(); setSelection(next); setConfirmed([]); setFactPage(0) }
   // The parent's preflight invokes the synchronous flusher once. Exemption ends
   // before awaiting it, so another navigation cannot borrow our authorization.
@@ -128,6 +132,7 @@ export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEd
     await onAdopted()
   })
   const canAdopt = !!review?.adoptionAllowed && review.current && review.runStatus === 'awaiting_confirmation' && !!composition.value && !adoption && !hasUnsavedEdits && !requestDirty
+  const missingInitialFacts = needsInitialFacts && sections.includes('situationTemplates') && !sections.includes('factProposals')
   return <section className="md:col-span-2 ttrpg-open-design-assistant" data-testid="ttrpg-open-design-assistant">
     <h4>与 AI 起草开放设计</h4>
     <p>使用本作品已保存的世界出口、规则与本桌边界，一次请求三个方向。只在确认选择后保存草稿；正式开始制作仍在后续页面。</p>
@@ -135,7 +140,8 @@ export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEd
       <label>本次设计要求<textarea aria-label="本次设计要求" maxLength={5000} rows={3} value={instruction} onChange={event => { mark(); setRequestDirty(true); setInstruction(event.target.value) }}/></label>
       <fieldset><legend>本次要起草的分区</legend>{design.TTRPG_OPEN_AUTHORING_DESIGN_SECTIONS_V1.map(key => <label className="ttrpg-check" key={key}>
         <input type="checkbox" checked={sections.includes(key)} onChange={event => { mark(); setRequestDirty(true); setSections(previous => event.target.checked ? [...previous, key] : previous.filter(item => item !== key)) }}/>{labels[key]}</label>)}</fieldset>
-      <button className="lf-action lf-action-primary" type="button" disabled={!instruction.trim() || !sections.length || runs.some(item => !terminal.has(item.status))} onClick={generate}>生成三个开放设计方向</button>
+      {missingInitialFacts && <p>空白作品的局势需要事实来源，请勾选“新增世界事实”。生成后仍需本人逐条核对。</p>}
+      <button className="lf-action lf-action-primary" type="button" disabled={!instruction.trim() || !sections.length || missingInitialFacts || runs.some(item => !terminal.has(item.status))} onClick={generate}>生成三个开放设计方向</button>
       {runs.some(item => !terminal.has(item.status)) && <p>先查看并处理原请求，之后才能发起新的请求。</p>}
       {pending && <button className="lf-action" type="button" onClick={() => {
         setInstruction(''); setConfirmed([]); setFactPage(0)

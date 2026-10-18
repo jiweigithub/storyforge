@@ -26,7 +26,7 @@ describe('R-TTRPGOPEN2 normal S2 design comparison and explicit adoption', () =>
     throw new Error(`assistant did not settle: ${host.textContent}`)
   }
   async function render(dirty = false) {
-    await act(async () => root.render(createElement(Assistant, { scope: f.scope, revision: f.revision, hasUnsavedEdits: dirty,
+    await act(async () => root.render(createElement(Assistant, { scope: f.scope, revision: f.revision, hasUnsavedEdits: dirty, needsInitialFacts: true,
       beforeGenerate: async () => { await flushPendingEditsV1(); return f.revision }, beforeAdopt, onAdopted })))
     await rendered(() => !host.textContent?.includes('正在读取原记录'))
   }
@@ -39,6 +39,17 @@ describe('R-TTRPGOPEN2 normal S2 design comparison and explicit adoption', () =>
     await rendered(() => !host.textContent?.includes('正在读取原记录'))
     expect(await db.agentRuns.count()).toBe(0); expect(await db.productProductions.count()).toBe(0)
     expect(await readTtrpgDraft(f.scope)).toEqual(before)
+  })
+  it('visibly includes unconfirmed source facts for a blank design and blocks an impossible situation request while allowing pressure-only work', async () => {
+    await render()
+    const checkbox = (text: string) => [...host.querySelectorAll('label')].find(label => label.textContent === text)!.querySelector<HTMLInputElement>('input')!
+    expect(checkbox('新增世界事实').checked).toBe(true)
+    await act(async () => checkbox('新增世界事实').click())
+    expect(host.textContent).toContain('空白作品的局势需要事实来源')
+    expect(button('生成三个开放设计方向').disabled).toBe(true)
+    await act(async () => checkbox('局势与动机').click())
+    expect(host.textContent).not.toContain('空白作品的局势需要事实来源')
+    expect(await db.agentRuns.count()).toBe(0); expect(await db.productProductions.count()).toBe(0)
   })
   it('shows three original directions and readable pressure, blocks navigation for local choices, and adopts only after the explicit button', async () => {
     const c = await candidate(), before = await readTtrpgDraft(f.scope); await render()

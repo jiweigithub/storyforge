@@ -30,6 +30,13 @@ export interface TtrpgOpenAuthoringDesignContextV1 {
   readWorldResourceKeys: readonly string[]
 }
 
+/** An existing authored design may already declare references whose final
+ * source/actor closure belongs to S3. A genuinely empty draft has no such basis;
+ * its first situations must request explicit, still-unconfirmed source facts. */
+export function ttrpgOpenDesignNeedsInitialFactsV1(base: TtrpgOpenAuthoringV1): boolean {
+  return base.factPolicy.length === 0 && base.situationTemplates.length === 0
+}
+
 export function parseTtrpgOpenAuthoringDesignRequestV1(input: unknown): TtrpgOpenAuthoringDesignRequestV1 {
   const row = p.record(p.json(input), ['schema', 'version', 'instruction', 'sections'], 'authoring design request')
   const selected = p.unique(p.list(row.sections, 'design sections', (v, l) =>

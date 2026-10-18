@@ -17,6 +17,7 @@ import {
   type TtrpgAuthoringDraftV1,
 } from "../lib/ttrpg/authoring-contract";
 import { defaultTtrpgSettingsV2 } from '../lib/ttrpg/authoring-contract-v2';
+import { ttrpgOpenDesignNeedsInitialFactsV1 } from '../lib/ttrpg/open-authoring-design-contract';
 import {
   createTtrpgDraft,
   saveTtrpgDraft,
@@ -763,6 +764,7 @@ export default function TtrpgPage() {
                           onChange={openAuthoring => { setSettings(current => current.runFormat === 'open' ? { ...current, openAuthoring } : current); setDirty(true) }}/>}
                         {openPreview && settings.runFormat === 'open' && step === 1 && scope && row?.draft && <OpenDesignAssistant
                           key={`design:${scope.projectId}:${scope.worldId}:${scope.workId}`} scope={scope} revision={row.draft.revision}
+                          needsInitialFacts={ttrpgOpenDesignNeedsInitialFactsV1(settings.openAuthoring)}
                           hasUnsavedEdits={dirty} beforeGenerate={() => prepareOpenDesign(true)}
                           beforeAdopt={async () => { await prepareOpenDesign(false) }} onAdopted={reloadAdoptedDesign}/>}
                         {openPreview && settings.runFormat === 'open' && step === 3 && (scope && editBasis && row?.draft && sameScope(scope, editBasis.scope) && !draftConflict ? <OpenSeatApprovalEditor

@@ -5,7 +5,7 @@ import type { AIConfig, ChatMessage, ContextManifestV2, WorkspaceScope } from '.
 import type { AssembleContextResult } from '../registry/types'
 import { assembleContext } from '../registry/assemble-context'
 import { resolveRequestConfig, type ChatResult } from '../ai/client'
-import { estimateTokens } from '../ai/context-budget'
+import { estimateTokens, trimMessagesToFit } from '../ai/context-budget'
 import { getAgentSkillV1 } from '../agent/skill-registry'
 import { createAgentSkillExecutionBindingV2 } from '../agent/execution-binding'
 import { executeFrozenFormalAIEntryV1, freezeFormalAIEntryBindingV1 } from '../agent/formal-ai-entry'
@@ -23,6 +23,7 @@ import { recordContextGatewayPreflightEvidenceV1, finalizeContextGatewayAttemptE
 import { resolveProductSourceReadBoundaryV1 } from '../product/source-contracts'
 import { assertTtrpgOpenAuthoringDesignSourceCurrentV1, type TtrpgOpenAuthoringDesignSourceV1 } from './open-authoring-design-source'
 import { parseTtrpgOpenAuthoringDesignRequestV1, parseTtrpgOpenAuthoringDesignProposalsV1,
+  ttrpgOpenDesignNeedsInitialFactsV1,
   type TtrpgOpenAuthoringDesignRequestV1, type TtrpgOpenAuthoringDesignProposalsV1 } from './open-authoring-design-contract'
 import { buildTtrpgOpenAuthoringDesignMessagesV1 } from './open-authoring-design-prompt'
 
@@ -109,6 +110,8 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
     sourceKeys: [SOURCE], ttrpgAuthoringDesignRevision: input.revision, inputBudgetTokens: 24_000 })
   if (basisAssembly.included.length !== 1 || basisAssembly.trimmed.length || basisAssembly.overBudgetAfterTrim) fail('作者来源未能完整交付')
   const source = JSON.parse(basisAssembly.segments[0].content) as TtrpgOpenAuthoringDesignSourceV1
+  if (ttrpgOpenDesignNeedsInitialFactsV1(source.settings.openAuthoring) && request.sections.includes('situationTemplates') && !request.sections.includes('factProposals'))
+    fail('空白作品的局势需要事实来源，请同时选择“新增世界事实”；生成后仍需本人逐条核对，尚未发送请求')
   const boundary = await resolveProductSourceReadBoundaryV1(source.sourcePlan), selected = new Set(source.sourceSelection.resourceKeys)
   const allowedResourceKeys = boundary.allowedResourceKeys.filter(key => selected.has(key))
   const retained = [...source.settings.openAuthoring.situationTemplates, ...source.settings.openAuthoring.pressure.clocks,
@@ -130,6 +133,15 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
   if (requestTokens > 64_000) fail('完整请求超过本次输入预算，请缩小设计分区或来源；未发起模型请求')
   const meta = { category: CATEGORY, projectId: input.scope.projectId, contextOverflowPolicy: 'reject' as const, configOverrides: { maxTokens: skill.maxOutputTokens } }
   const resolved = input.aiConfig ? resolveRequestConfig(input.aiConfig, meta) : null
+  if (!input.runAI && resolved) {
+    // Assert with the same pure request-side budget calculation as the original
+    // client. Never pass the returned trimmed copy to the model. A known local
+    // capacity failure must not create an apparently unknown dispatched Run.
+    const config = resolved.config
+    const fit = trimMessagesToFit(messages, config.provider, config.model, config.maxTokens, config.contextWindow)
+    if (fit.trimmed || !fit.protectedEnvelopePreserved || requestTokens > fit.inputBudget)
+      fail(`当前连接输入预算不足以容纳完整设计请求（原始约 ${requestTokens} / 可用 ${fit.inputBudget} tokens）。请在通用设置核对上下文窗口，或明确调整读取范围与分区；尚未发送请求`)
+  }
   const modelIdentity = input.runAI ? { provider: 'test-adapter', model: 'injected' }
     : { provider: resolved!.config.provider, model: resolved!.config.model }
   const requestBindingHash = await bindingHash({ source, request, messages, modelIdentity, readResourceKeys })

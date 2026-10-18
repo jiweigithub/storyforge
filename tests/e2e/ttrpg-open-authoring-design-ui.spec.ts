@@ -43,6 +43,7 @@ async function pressureRequest(page: Page, facts = false) {
   const assistant = page.getByTestId('ttrpg-open-design-assistant')
   for (const name of ['局势与动机', '开局局势', '后果与代价']) await assistant.getByRole('checkbox', { name, exact: true }).uncheck()
   if (facts) await assistant.getByRole('checkbox', { name: '新增世界事实', exact: true }).check()
+  else await assistant.getByRole('checkbox', { name: '新增世界事实', exact: true }).uncheck()
   await assistant.getByLabel('本次设计要求', { exact: true }).fill('请起草三个不同的调查压力方向，保留作者选择。')
 }
 async function proof(page: Page, scope: Setup['scope']) {
@@ -54,6 +55,74 @@ async function proof(page: Page, scope: Setup['scope']) {
       productions: await db.productProductions.count(), builds: await db.productBuilds.count() }
   }, scope)
 }
+
+test('blank design visibly requests its source facts and a known small connection window stops before a Run or provider send', async ({ page }, info) => {
+  const f = await prepare(page), before = await proof(page, f.scope)
+  let requests = 0
+  await page.route('**/fixture-design-ui/v1/chat/completions', async route => { requests++; await route.abort() })
+  const assistant = page.getByTestId('ttrpg-open-design-assistant')
+  await expect(assistant.getByRole('checkbox', { name: '新增世界事实', exact: true })).toBeChecked()
+  await assistant.getByLabel('本次设计要求', { exact: true }).fill('请起草有事实来源的三个局势方向。')
+  await assistant.getByRole('checkbox', { name: '新增世界事实', exact: true }).uncheck()
+  await expect(assistant).toContainText('空白作品的局势需要事实来源')
+  await expect(assistant.getByRole('button', { name: '生成三个开放设计方向', exact: true })).toBeDisabled()
+  await pressureRequest(page)
+  await page.evaluate(async () => {
+    const load = new Function('p', 'return import(p)'), { useAIConfigStore } = await load('/storyforge/src/stores/ai-config.ts')
+    useAIConfigStore.getState().setConfig({ contextWindow: 16000 })
+  })
+  await assistant.getByRole('button', { name: '生成三个开放设计方向', exact: true }).click()
+  await expect(assistant.getByRole('alert')).toContainText('输入预算不足以容纳完整设计请求')
+  const after = await proof(page, f.scope)
+  expect(after).toEqual(before); expect(requests).toBe(0)
+  await info.attach('native-beforeRun-capacity-and-explicit-fact-choice', { body: JSON.stringify({ before, after, requests }), contentType: 'application/json' })
+})
+
+test('the default full blank design keeps five sections and author-reviewed source facts through original adoption and reload', async ({ page }, info) => {
+  const f = await prepare(page), before = await proof(page, f.scope)
+  let requests = 0
+  await page.route('**/fixture-design-ui/v1/chat/completions', async route => {
+    requests++
+    const messages = route.request().postDataJSON().messages, output = JSON.parse(response(f, messages, true))
+    const keys = JSON.parse(messages[1].content.match(/【实际读取资源闭集】([^\n]+)/)![1])
+    for (const proposal of output.proposals) {
+      proposal.patch.factProposals = proposal.patch.factProposals.slice(0, 1)
+      const factKey = proposal.patch.factProposals[0].factKey
+      const map = (value: any): any => typeof value === 'string' ? value === 'world.harbor' ? keys[0] : value === 'fact.harbor' ? factKey : value
+        : Array.isArray(value) ? value.map(map) : value && typeof value === 'object'
+          ? Object.fromEntries(Object.entries(value).map(([key, child]) => [key, map(child)])) : value
+      Object.assign(proposal.patch, map({ situationTemplates: f.campaign.situationTemplates,
+        openingSituationKeys: f.campaign.openingSituationKeys, effectPlanTemplates: f.campaign.effectPlanTemplates }))
+    }
+    await route.fulfill({ json: { choices: [{ message: { content: JSON.stringify(output) }, finish_reason: 'stop' }], usage: { prompt_tokens: 100, completion_tokens: 200, total_tokens: 300 } } })
+  })
+  const assistant = page.getByTestId('ttrpg-open-design-assistant')
+  await expect(assistant.getByRole('checkbox', { name: '新增世界事实', exact: true })).toBeChecked()
+  await assistant.getByLabel('本次设计要求', { exact: true }).fill('请起草包含真实来源事实的局势、开局、后果与压力三方向。')
+  await assistant.getByRole('button', { name: '生成三个开放设计方向', exact: true }).click()
+  await expect(assistant.locator('.ttrpg-design-proposal')).toHaveCount(3)
+  const generated = await proof(page, f.scope)
+  expect(generated.draft).toEqual(before.draft); expect(generated.adoptions).toHaveLength(0)
+  const original = await page.evaluate(async scope => {
+    const load = new Function('p', 'return import(p)'), api = await load('/storyforge/src/lib/ttrpg/open-authoring-design.ts')
+    const runs = await api.listTtrpgOpenAuthoringDesignRunsV1(scope)
+    return api.readTtrpgOpenAuthoringDesignReviewV1({ scope, runId: runs[0].id })
+  }, f.scope)
+  expect(original.request.sections).toEqual(['situationTemplates', 'openingSituationKeys', 'effectPlanTemplates', 'pressure', 'factProposals'])
+  await expect(assistant.getByRole('checkbox', { name: /^我确认新增事实 fact\.ui\.0\.0/ })).not.toBeChecked()
+  await assistant.getByRole('checkbox', { name: /^我确认新增事实 fact\.ui\.0\.0/ }).check()
+  await assistant.getByRole('button', { name: '确认选择并保存到开放草稿', exact: true }).click()
+  await expect(assistant).toContainText(`这份设计已保存到草稿版本 ${f.revision + 1}`)
+  const adopted = await proof(page, f.scope)
+  expect(adopted.settings.openAuthoring.factPolicy.map((item: any) => [item.fact.factKey, item.authorConfirmed])).toEqual([['fact.ui.0.0', true]])
+  expect(adopted.settings.openAuthoring.situationTemplates[0].driverBeliefs[0].factRef).toBe('fact.ui.0.0')
+  expect(adopted.settings.openAuthoring.companionPolicy).toEqual(before.settings.openAuthoring.companionPolicy)
+  expect(adopted.settings.openAuthoring.runtimePolicy).toEqual(before.settings.openAuthoring.runtimePolicy)
+  expect(adopted.productions).toBe(0); expect(adopted.builds).toBe(0)
+  await page.reload(); await expect(assistant).toContainText(`这份设计已保存到草稿版本 ${f.revision + 1}`)
+  expect((await proof(page, f.scope)).draft).toEqual(adopted.draft); expect(requests).toBe(1)
+  await info.attach('native-full-five-section-source-fact-review', { body: JSON.stringify({ generated, original, adopted, requests }), contentType: 'application/json' })
+})
 
 test('normal author saves current edits, requests once, mixes sections, confirms only chosen new facts and reloads current canonical draft', async ({ page }, info) => {
   const f = await prepare(page); let requests = 0
