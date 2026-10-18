@@ -1,5 +1,5 @@
-/** Internal S2 design contract/source/candidate API. Production start and
- * canonical draft adoption remain separate; no public product route yet. */
+/** S2 author design facade. The normal author page uses this original
+ * source/Run/candidate/adoption chain; production start remains separate. */
 export * from './open-authoring-design-contract'
 export * from './open-authoring-design-source'
 export * from './open-authoring-design-harness'

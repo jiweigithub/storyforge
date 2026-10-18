@@ -108,7 +108,7 @@ flowchart TB
 | 当前事实 | 数值 | 单一事实源 |
 |---|---:|---|
 | 应用语义版本 | `4.0.2` | `package.json` |
-| TypeScript 生产源码 | 1798 个文件 / 566339 行 | `tsconfig.json` |
+| TypeScript 生产源码 | 1800 个文件 / 566610 行 | `tsconfig.json` |
 | IndexedDB schema | v12 / 129 张 required tables | `schema.ts` / `REQUIRED_TABLES` |
 | PROJECT_TABLES | 129 张表 | `project-tables.ts` |
 | Prompt 主线 | 65 个 moduleKey / 238 条内置模板 | `PromptModuleKey` / `prompt-seeds*.ts` |
@@ -157,6 +157,8 @@ AI 入口注册表同时允许有明确边界的 `auxiliary`、`evaluation` 和 
 ### 6.2 `FIELD_REGISTRY` / Adoption
 
 Field Registry 决定 AI 可写字段；Adoption Schema/Extension 决定集合身份、外键、替换范围和领域事务。候选不是正式数据；stale 校验、作者确认和 post-state 回读构成采纳闭环。
+
+开放跑团 S2 的战役愿景页通过 `open-authoring-design` facade 复用登记来源、冻结 Skill/正式入口、单次 Run、原回答与候选。三方向/分区选择及新事实核对由作者明确确认；写回只经登记 `settingsJson` 的原事务策略和草稿服务。正常界面不发放可序列化写票据，不绕过旧只读 Run 的冻结权限；未知结果只读恢复，历史采纳回执不覆盖当前人工草稿。此入口受开发预览开关控制，正式生产开始另行授权。
 
 ### 6.3 `PROJECT_TABLES`
 

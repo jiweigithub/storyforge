@@ -30,6 +30,7 @@ import { listLocalWorldReferenceChoicesV1 } from "../lib/world-engine/reference-
 import { updateWorkspace } from "../lib/workspace/works";
 import { exportProjectJSON, downloadJSON } from "../lib/export/json-export";
 import { downloadTextFile } from '../lib/export/text-export';
+import { canonicalProductProductionJsonV2 } from '../lib/product-production/hash';
 import { PRODUCT_NAVIGATION } from "../components/navigation/product-navigation";
 import {
   TTRPG_PAGES,
@@ -52,6 +53,7 @@ const Player = lazy(() => import("../components/ttrpg/AuthorPlayer"));
 const Community = lazy(() => import("./TtrpgCommunityPage"));
 const Proposal = lazy(() => import("../components/ttrpg/AuthorProposal"));
 const OpenAuthoringEditor = lazy(() => import('../components/ttrpg/TtrpgOpenAuthoringEditor'));
+const OpenDesignAssistant = lazy(() => import('../components/ttrpg/TtrpgOpenDesignAssistant'));
 const Inspector = lazy(() => import("../components/ttrpg/AuthorInspector"));
 const Outlet = lazy(
   () => import("../components/world-engine/WorldResourceBrowser"),
@@ -111,6 +113,8 @@ export default function TtrpgPage() {
     [rowProjectId, rowWorldId, rowWorkId],
   );
   const currentScope = useRef(scope); currentScope.current = scope;
+  const currentDirty = useRef(dirty); currentDirty.current = dirty;
+  const designPreparing = useRef(false);
   const draftConflict = Boolean(dirty && editBasis && (!sameScope(scope, editBasis.scope) ||
     !row?.draft || row.draft.revision !== editBasis.revision));
   const productionId =
@@ -245,8 +249,8 @@ export default function TtrpgPage() {
       setBusy(false);
     }
   };
-  const save = async () => {
-    await flushPendingEditsV1();
+  const save = async (flush = true) => {
+    if (flush) await flushPendingEditsV1();
     if (loading || (projectId && !row)) throw new Error("作品正在加载或已不存在，请从作品库重新选择");
     if (editBasis && (!sameScope(scope, editBasis.scope) || !row?.draft))
       throw new Error('正在编辑的方案与当前作品不一致，本窗口修改已保留，请先下载修改副本再载入最新方案');
@@ -278,6 +282,38 @@ export default function TtrpgPage() {
     const target = { project: made.project, work: made.work };
     setDirty(false);
     return target;
+  };
+  const prepareOpenDesign = async (saveEdits: boolean) => {
+    // Called by the assistant before any model request or canonical adoption.
+    // Flush once; save(false) must not re-enter its own pending-edit barrier.
+    if (designPreparing.current || busy || !scope || !row?.draft) throw new Error('请先保存并载入当前作品');
+    const captured = scope;
+    designPreparing.current = true; setBusy(true);
+    try {
+      await flushPendingEditsV1();
+      if (!sameScope(currentScope.current, captured)) throw new Error('作品已切换，请在当前作品重新操作');
+      if (dirty) {
+        if (!saveEdits) throw new Error('本窗口尚有人工修改，请先保存并重新检查原候选');
+        await save(false);
+      }
+      const draft = await readTtrpgDraft(captured);
+      if (!sameScope(currentScope.current, captured)) throw new Error('作品已切换，未发起新请求');
+      if (!draft.selectionJson || !draft.suggestionKey || !selection || suggestionKey !== draft.suggestionKey ||
+        canonicalProductProductionJsonV2(selection) !== canonicalProductProductionJsonV2(JSON.parse(draft.selectionJson)))
+        throw new Error('请先到世界出口页明确保存读取范围，再起草设计');
+      return draft.revision;
+    } finally { designPreparing.current = false; setBusy(false) }
+  };
+  const reloadAdoptedDesign = async () => {
+    if (!scope) return;
+    const captured = scope;
+    const [draft, work] = await Promise.all([readTtrpgDraft(captured), db.works.get(captured.workId)]);
+    // Never load a historical receipt post-state over later local edits.
+    if (!sameScope(currentScope.current, captured) || currentDirty.current || !work) return;
+    setSettings(settingsFromTtrpgDraft(draft)); setTitle(work.title);
+    setEditBasis({ scope: captured, revision: draft.revision });
+    setRows(current => current.map(item => item.work.id === captured.workId &&
+      (!item.draft || item.draft.revision <= draft.revision) ? { ...item, work, draft } : item));
   };
   const leave = (url: string) => void run(async () => {
     await flushPendingEditsV1();
@@ -660,6 +696,10 @@ export default function TtrpgPage() {
                         {openPreview && settings.runFormat === 'open' && step === 1 && <OpenAuthoringEditor
                           key={scope ? `${scope.projectId}:${scope.worldId}:${scope.workId}` : 'new-open'} value={settings.openAuthoring}
                           onChange={openAuthoring => { setSettings(current => current.runFormat === 'open' ? { ...current, openAuthoring } : current); setDirty(true) }}/>}
+                        {openPreview && settings.runFormat === 'open' && step === 1 && scope && row?.draft && <OpenDesignAssistant
+                          key={`design:${scope.projectId}:${scope.worldId}:${scope.workId}`} scope={scope} revision={row.draft.revision}
+                          hasUnsavedEdits={dirty} beforeGenerate={() => prepareOpenDesign(true)}
+                          beforeAdopt={async () => { await prepareOpenDesign(false) }} onAdopted={reloadAdoptedDesign}/>}
                         {step === 7 && (
                           <label>
                             制作质量
