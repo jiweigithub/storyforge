@@ -1,4 +1,5 @@
 import BrandIcon from '../components/shared/BrandIcon'
+import { useDialog } from '../components/shared/Dialog';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { liveQuery } from "dexie";
@@ -28,6 +29,7 @@ import { consultProductProductionStartV1 } from "../lib/product-production/servi
 import { listLocalWorldReferenceChoicesV1 } from "../lib/world-engine/reference-cache";
 import { updateWorkspace } from "../lib/workspace/works";
 import { exportProjectJSON, downloadJSON } from "../lib/export/json-export";
+import { downloadTextFile } from '../lib/export/text-export';
 import { PRODUCT_NAVIGATION } from "../components/navigation/product-navigation";
 import {
   TTRPG_PAGES,
@@ -62,7 +64,10 @@ type Row = {
   draft?: TtrpgAuthoringDraftV1;
   productionId?: number;
 };
+const sameScope = (a: WorkspaceScope | null, b: WorkspaceScope | null) => Boolean(a && b &&
+  a.projectId === b.projectId && a.worldId === b.worldId && a.workId === b.workId);
 export default function TtrpgPage() {
+  const dialog = useDialog();
   const { pageId = "library" } = useParams(),
     [params] = useSearchParams(),
     navigate = useNavigate();
@@ -83,6 +88,9 @@ export default function TtrpgPage() {
     [title, setTitle] = useState(""),
     [dirty, setDirty] = useState(false),
     [search, setSearch] = useState("");
+  // This is the version actually loaded into the form. A liveQuery update must
+  // never lend its newer revision to older, unsaved settings.
+  const [editBasis, setEditBasis] = useState<{ scope: WorkspaceScope; revision: number } | null>(null);
   const [worlds, setWorlds] = useState<
     Awaited<ReturnType<typeof listLocalWorldReferenceChoicesV1>>
   >([]);
@@ -102,6 +110,9 @@ export default function TtrpgPage() {
       : null,
     [rowProjectId, rowWorldId, rowWorkId],
   );
+  const currentScope = useRef(scope); currentScope.current = scope;
+  const draftConflict = Boolean(dirty && editBasis && (!sameScope(scope, editBasis.scope) ||
+    !row?.draft || row.draft.revision !== editBasis.revision));
   const productionId =
     Number(params.get("production")) ||
     row?.draft?.productionId ||
@@ -163,8 +174,9 @@ export default function TtrpgPage() {
         row?.draft ? settingsFromTtrpgDraft(row.draft) : newOpen ? defaultTtrpgSettingsV2('open') : defaultTtrpgSettings(),
       );
       setTitle(row?.work.title ?? "");
+      setEditBasis(scope && row?.draft ? { scope, revision: row.draft.revision } : null);
     }
-  }, [row?.work.id, row?.draft?.revision, dirty, newOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [row?.work.id, row?.work.title, row?.draft?.revision, dirty, newOpen, scope]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     void listLocalWorldReferenceChoicesV1()
       .then(setWorlds)
@@ -236,13 +248,25 @@ export default function TtrpgPage() {
   const save = async () => {
     await flushPendingEditsV1();
     if (loading || (projectId && !row)) throw new Error("作品正在加载或已不存在，请从作品库重新选择");
+    if (editBasis && (!sameScope(scope, editBasis.scope) || !row?.draft))
+      throw new Error('正在编辑的方案与当前作品不一致，本窗口修改已保留，请先下载修改副本再载入最新方案');
     if (row && scope && row.draft) {
-      await saveTtrpgDraft(
+      if (!editBasis) throw new Error('方案尚未载入完成，请稍后再保存');
+      const nextTitle = title || '未命名战役';
+      const saved = await saveTtrpgDraft(
         scope,
-        row.draft.revision,
+        editBasis.revision,
         settings,
-        title || "未命名战役",
+        nextTitle,
       );
+      setSettings(settingsFromTtrpgDraft(saved));
+      setTitle(nextTitle.trim());
+      setEditBasis({ scope, revision: saved.revision });
+      // Publish our successful snapshot before clearing dirty. Otherwise the
+      // still-old liveQuery row can briefly reload the previous form/basis.
+      setRows(current => current.map(item => item.work.id === scope.workId &&
+        (!item.draft || item.draft.revision <= saved.revision)
+        ? { ...item, draft: saved, work: { ...item.work, title: nextTitle.trim() } } : item));
       setDirty(false);
       return row;
     }
@@ -468,6 +492,31 @@ export default function TtrpgPage() {
               </p>
             )}
             {notice && <p role="status">{notice}</p>}
+            {draftConflict && <section className="lf-paper" data-testid="ttrpg-draft-conflict" aria-label="方案版本冲突">
+              <h3>方案已在其他窗口或作品中变化</h3>
+              <p>本窗口未保存的修改仍保留，不能直接覆盖最新方案。请先下载修改副本；载入最新方案后可对照副本继续编辑。</p>
+              <div className="avg-actions">
+                <button className="lf-action" disabled={busy} onClick={() => void run(async () => {
+                  await flushPendingEditsV1();
+                  await downloadTextFile(JSON.stringify({ productType: 'ttrpg', purpose: 'unsaved-authoring-comparison',
+                    scope: editBasis?.scope, baseRevision: editBasis?.revision, title, settings }, null, 2), '跑团-未保存修改.json', 'application/json');
+                })}>下载本窗口修改副本</button>
+                <button className="lf-action" disabled={busy || !scope || !row?.draft} onClick={() => void run(async () => {
+                  await flushPendingEditsV1();
+                  if (!await dialog.confirm({ title: '载入最新方案？',
+                    message: '这会替换本窗口未保存的修改。请先下载修改副本，再对照最新方案继续编辑。',
+                    confirmText: '载入最新方案', cancelText: '保留本窗口修改' })) return;
+                  if (!scope) throw new Error('请先选择当前作品');
+                  const latest = await readTtrpgDraft(scope), work = await db.works.get(scope.workId);
+                  if (!sameScope(currentScope.current, scope)) throw new Error('当前作品已切换，本窗口内容未替换，请重新核对');
+                  if (!work || work.projectId !== scope.projectId || work.worldId !== scope.worldId) throw new Error('作品已不存在或不属于当前范围');
+                  setRows(current => current.map(item => item.work.id === scope.workId &&
+                    (!item.draft || item.draft.revision <= latest.revision) ? { ...item, draft: latest, work } : item));
+                  setSettings(settingsFromTtrpgDraft(latest)); setTitle(work.title); setEditBasis({ scope, revision: latest.revision }); setDirty(false);
+                  setNotice('最新方案已载入；修改副本可用于人工比对，不是完整作品备份。');
+                })}>载入最新方案</button>
+              </div>
+            </section>}
             {loading ? (
               <p>读取跑团作品…</p>
             ) : (
@@ -478,8 +527,10 @@ export default function TtrpgPage() {
                       <div className="avg-actions">
                         <button
                           className="lf-action lf-action-primary"
+                          disabled={busy || draftConflict}
                           onClick={() => {
                             setDirty(false);
+                            setEditBasis(null);
                             setSettings(defaultTtrpgSettings());
                             setTitle("");
                             navigate("/ttrpg/vision");
@@ -487,8 +538,8 @@ export default function TtrpgPage() {
                         >
                           新建战役
                         </button>
-                        {openPreview && <button className="lf-action" onClick={() => {
-                          setDirty(false); setSettings(defaultTtrpgSettingsV2('open')); setTitle(''); navigate('/ttrpg/vision?format=open');
+                        {openPreview && <button className="lf-action" disabled={busy || draftConflict} onClick={() => {
+                          setDirty(false); setEditBasis(null); setSettings(defaultTtrpgSettingsV2('open')); setTitle(''); navigate('/ttrpg/vision?format=open');
                         }}>新建开放跑团（预览）</button>}
                         <input
                           aria-label="搜索战役"
