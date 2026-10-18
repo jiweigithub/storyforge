@@ -2,6 +2,7 @@
 // The existing audio service remains the public domain boundary for both
 // licensed files and human-only script review. Source review grants no dispatch.
 export { prepareTtrpgOpenVoiceScriptV1, readTtrpgOpenReviewedVoiceScriptV1 } from './open-voice-script-service'
+export { prepareTtrpgOpenVoiceReadingReviewV1, readTtrpgOpenReviewedVoiceReadingV1 } from './open-voice-reading-service'
 export type { TtrpgOpenVoiceScriptReviewV1 } from './open-voice-script-service'
 import { loadTtrpgOpenAudioReadStateV1 as owner, type TtrpgOpenAudioReadInputV1 } from './open-audio-read-state'
 import { assertTtrpgOpenAudioWriteAllowedV1, createTtrpgOpenAudioReceiptV1, parseTtrpgOpenAudioRequestV1, ttrpgOpenAudioKindV1,
