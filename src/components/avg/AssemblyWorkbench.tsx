@@ -37,6 +37,7 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
   const [view,setView]=useState<View|null>(null),[model,setModel]=useState<AvgAuthorWorkspaceV1>(()=>createAvgAuthoringPresetV1())
   const [section,setSection]=useState<Section>(sectionForPage(page)),[dirty,setDirty]=useState(false),[busy,setBusy]=useState(false)
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[sceneKey,setSceneKey]=useState('')
+  const [progressReadError,setProgressReadError]=useState('')
   const [advanced,setAdvanced]=useState(''),[jsonPending,setJsonPending]=useState(false),[reviewed,setReviewed]=useState<Record<string,boolean>>({})
   const [declaration,setDeclaration]=useState('使用原创工程校准文本及我提供的合法媒资；已核对当前候选及素材来源授权。')
   const [selectedAsset,setSelectedAsset]=useState<FrozenRuntimeMediaAssetV2|null>(null)
@@ -60,12 +61,12 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
   },[scope,productionId])
   useEffect(()=>{alive.current=true;void reload().catch(cause=>{if(alive.current)setError(String(cause))});return()=>{alive.current=false;mediaAbort.current?.abort()}},[reload])
   useEffect(()=>{
-    if(!mediaRunning)return
+    if(!mediaRunning){setProgressReadError('');return}
     let active=true,reading=false
     const sequence=loadSequence.current
     const timer=window.setInterval(()=>{if(reading)return;reading=true;void readAvgAssemblyWorkspaceV1(scope,productionId).then(next=>{
-      if(active&&alive.current&&sequence===loadSequence.current)setView(next)
-    }).catch(cause=>{if(active&&alive.current)setError(String(cause))}).finally(()=>{reading=false})},4000)
+      if(active&&alive.current&&sequence===loadSequence.current){setView(next);setProgressReadError('')}
+    }).catch(cause=>{if(active&&alive.current&&sequence===loadSequence.current)setProgressReadError(String(cause))}).finally(()=>{reading=false})},4000)
     return()=>{active=false;window.clearInterval(timer)}
   },[mediaRunning,scope,productionId])
   useEffect(()=>setSection(sectionForPage(page)),[page])
@@ -207,6 +208,7 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
     <section className="lf-paper"><h3>系统与效果组装 <small>实验</small></h3>
       <p>编辑规则、对白、演出和合法媒资，逐项确认后生成试玩预览。内置文本用于工程校准，专业故事与艺术质量另行验收。</p>
       {error&&<p role="alert" className="avg-assembly-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
+      {progressReadError&&<p role="status" aria-label="制作进度读取状态">进度暂未更新：{progressReadError}。已接收的结果保留。</p>}
       {!view?<p>{error?'当前工作区无法打开，请按错误提示处理或返回作品库。':'读取作者工作区…'}</p>:<><div className="avg-actions">
         <button className="lf-action lf-action-primary" disabled={busy||jsonPending||mediaPending} onClick={()=>void run(persist)}>保存编辑草稿</button>
         <button className="lf-action" disabled={busy||dirty||jsonPending||mediaPending} onClick={()=>void run(reload)}>读取已保存版本</button>
