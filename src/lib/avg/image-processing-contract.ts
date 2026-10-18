@@ -3,6 +3,7 @@ import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '
 import { avgBoolean, avgEnum, avgHash, avgKey, avgList, avgNumber, avgProtocolBody, avgRecord, avgText, avgUnique } from './protocol-validation'
 import { parseAvgExecutableStageV1 } from './stage-contract'
 import { readAvgImageDefinitionV3 } from './media-production-definition'
+import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
 
 export const AVG_IMAGE_PROCESSOR_V1 = 'storyforge.avg.local-canvas.v1' as const
 export const AVG_IMAGE_PROCESSING_PIXEL_LIMIT_V1 = 16 * 1024 * 1024
@@ -71,6 +72,16 @@ export function parseAvgImageProcessingPlanV1(value: unknown): AvgImageProcessin
   if (!entries.length) throw new Error('[avg-process] 加工方案不能是空数组；不加工时省略整个字段')
   return { schema: r.schema, version: 1, entries }
 }
+/** The same physical output constraints for each actual product definition;
+ * this is not a synthetic legacy Brief or any execution authority. */
+export function assertAvgImageProcessingRequirementsV1(plan:AvgImageProcessingPlanV1,requirements:ReadonlyArray<Pick<AvgVisualProductionRequirementV1,'requirementKey'|'width'|'height'|'alpha'>>){
+  for(const entry of plan.entries){
+    const r=requirements.find(r=>r.requirementKey===entry.requirementKey),p=entry.recipe
+    if(!r)throw new Error('[avg-process] 加工缺少准确冻结需求')
+    if(p.width<r.width||p.height<r.height||Math.abs((p.width/p.height)/(r.width/r.height)-1)>0.02)throw new Error('[avg-process] 加工画布不满足冻结需求的最小尺寸或画幅，请先修订配方')
+    if(r.alpha==='required'&&p.background?.alpha===255)throw new Error('[avg-process] 必需透明需求不能使用不透明底色填充')
+  }
+}
 /** Integer, bounded source and destination rectangles. cover crops the source
  * instead of allocating or drawing an unbounded off-canvas intermediate. */
 export function deriveAvgImageProcessingGeometryV1(recipeInput: AvgImageProcessingRecipeV1, width: number, height: number): AvgImageProcessingGeometryV1 {
@@ -134,9 +145,17 @@ export async function parseAvgProcessedImagePayloadV1(value: unknown): Promise<A
     contentHash: avgHash(raw.contentHash, 'raw.contentHash'), producerReceiptHash: avgHash(raw.producerReceiptHash, 'raw.producerReceiptHash') }, sourceAsset, recipe, receipt }
 }
 /** Producer authority and physical bytes are verified by the caller. */
-export async function assertAvgProcessedImageArtifactV1(brief: ProductProductionBriefV3, row: Pick<ProductBuildArtifactRecordV1,
-  'artifactKey'|'kind'|'mediaKind'|'payloadJson'|'metadataJson'|'rightsJson'|'contentHash'|'mimeType'|'byteSize'|'blobObjectId'>) {
-  const payload = await parseAvgProcessedImagePayloadV1(row.payloadJson), a = readAvgImageDefinitionV3(brief)
+export type AvgProcessedImageArtifactFieldsV1=Pick<ProductBuildArtifactRecordV1,
+  'artifactKey'|'kind'|'mediaKind'|'payloadJson'|'metadataJson'|'rightsJson'|'contentHash'|'mimeType'|'byteSize'|'blobObjectId'>
+export async function assertAvgProcessedImageArtifactV1(brief:ProductProductionBriefV3,row:AvgProcessedImageArtifactFieldsV1){
+  return assertAvgProcessedImageArtifactFromDefinitionV1(readAvgImageDefinitionV3(brief),row)
+}
+/** Pure payload/recipe/metadata checks. The caller supplies a separately
+ * proven definition and verifies producer authority and physical bytes. */
+export async function assertAvgProcessedImageArtifactFromDefinitionV1(a:{imageProcessing?:AvgImageProcessingPlanV1;mediaBatch:{requirements:AvgVisualProductionRequirementV1[]}},row:AvgProcessedImageArtifactFieldsV1):Promise<{
+  payload:AvgProcessedImagePayloadV1;asset:FrozenRuntimeMediaAssetV2;requirement:AvgVisualProductionRequirementV1
+}>{
+  const payload = await parseAvgProcessedImagePayloadV1(row.payloadJson)
   const entry = a.imageProcessing?.entries.find(e => e.requirementKey === payload.requirementKey)
   const requirement = a.mediaBatch.requirements.find(r => r.requirementKey === payload.requirementKey)
   if (!entry || !requirement || !same(entry.recipe, payload.recipe) || payload.sourceAsset.assetKey !== requirement.assetKey || payload.sourceAsset.kind !== requirement.mediaKind

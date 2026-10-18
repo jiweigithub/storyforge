@@ -99,7 +99,7 @@ export async function readAvgHistoricalCompiledImageDefinitionV4(input:AvgHistor
   return {scope,brief,planning,build,production,plan,compiler,compilation,proposal,capability,records:{brief:briefRow,artifacts:[compilation,...inputs]},
     source:{plan:systemPlan,artifact:ref(rule),scripts},visual,
     definition:{schema:'storyforge.avg.compiled-image-definition' as const,version:4 as const,assembly:planning.assembly,
-      mediaBatch:proposal.batch,imageBinding:planning.imageBinding,compilation:ref(compilation)}}
+      mediaBatch:proposal.batch,imageBinding:planning.imageBinding,...(planning.imageProcessing?{imageProcessing:planning.imageProcessing}:{}),compilation:ref(compilation)}}
 }
 
 /** Full original definition + intrinsic producer evidence. Author selection,

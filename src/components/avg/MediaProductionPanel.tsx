@@ -80,9 +80,9 @@ function RawChoiceCard({ scope, productionId, requirement, raw, processed,needsP
 
 /** An author-facing shell over existing draft, Harness and adoption services.
  * Editing requirements never dispatches, adopts or silently replaces pixels. */
-export default function MediaProductionPanel({ scope, view, workspace, disabled, canEdit, canAdopt, sourcesReady, declaration, generating, visible,
+export default function MediaProductionPanel({ scope, view, workspace, disabled, canEdit, canPrepareProcessing, canAdopt, sourcesReady, declaration, generating, visible,
   onPending, onAction, onSave, onClear, onReload, onNotice, onGenerate, onCancel }: {
-  scope: WorkspaceScope; view: View; workspace: AvgAuthorWorkspaceV1; disabled: boolean; canEdit: boolean; canAdopt: boolean; sourcesReady: boolean;
+  scope: WorkspaceScope; view: View; workspace: AvgAuthorWorkspaceV1; disabled: boolean; canEdit: boolean; canPrepareProcessing: boolean; canAdopt: boolean; sourcesReady: boolean;
   declaration: string; generating: boolean; visible: boolean; onPending: (pending: boolean) => void; onAction: (task: () => Promise<void>) => Promise<void>;
   onSave: (requirements: AvgVisualProductionRequirementV1[]) => Promise<void>; onClear: () => Promise<void>; onReload: () => Promise<void>; onNotice: (notice: string) => void;
   onGenerate: () => Promise<void>; onCancel: () => void
@@ -92,7 +92,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const [pending, setPending] = useState(false), [error, setError] = useState('')
   const [processingPending,setProcessingPending]=useState(false)
   const [rawSelectionPending,setRawSelectionPending]=useState(false)
-  const editDisabled=disabled||processingPending
+  const editDisabled=disabled||processingPending||rawSelectionPending
   const [familyPending,setFamilyPending]=useState(false)
   const [familyOpen,setFamilyOpen]=useState(false)
   const [reviewPending,setReviewPending]=useState<Record<string,boolean>>({})
@@ -134,7 +134,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const recovery=definition?.imageRecovery
   const closed=!!build&&['cancelled','failed','recovery-required'].includes(build.status)
   const pendingNextBrief=view.details?.production.status==='brief-ready'&&view.details.brief?.revision!==build?.briefRevision
-  const retainedVisualDraft=!!build&&workspace.presentation.inheritedImages?.some(entry=>(entry.source.version===2||entry.source.version===3)
+  const retainedVisualDraft=!!build&&workspace.presentation.inheritedImages?.some(entry=>(entry.source.version===2||entry.source.version===3||entry.source.version===4)
     &&entry.source.productionKey===view.details?.production.productionKey&&entry.source.raw.buildNumber===build.buildNumber)
   const accepted = (key: string) => view.artifacts.find(row => row.artifactKey === key && row.status === 'accepted')
   const allChoices = !!currentBatch && currentBatch.requirements.every(r => accepted(avgMediaChoiceArtifactKeyV1(r.requirementKey)))
@@ -240,8 +240,8 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
         await onReload();onNotice('已在编辑草稿中保留准确旧图并结束本批需求；新版本仍需核对方案与确认演出，旧图和调用账单保留。')
       })}>保留已选演出图片，结束本批需求</button>}
       <span>{pending ? '图片需求尚未保存，请保存或撤销后切换分区。' : workspace.mediaBatch ? '图片需求已保存，尚需在制作页确认方案并开始。' : '保存图片需求不会开始调用。'}</span></div></>}
-    {workspace.mediaBatch?.visualReviewPolicy&&<ImageProcessingPlanPanel scope={scope} workspace={workspace} draftRevision={view.draft.revision} canEdit={canEdit&&enabled}
-      disabled={disabled||pending||familyPending||anyReviewPending} onPending={setProcessingPending} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
+    {(workspace.mediaBatch?.visualReviewPolicy||visualPlanning)&&<ImageProcessingPlanPanel scope={scope} workspace={workspace} view={view} draftRevision={view.draft.revision} canEdit={(visualPlanning?canPrepareProcessing:canEdit)&&enabled}
+      disabled={disabled||rawSelectionPending||pending||familyPending||anyReviewPending} onPending={setProcessingPending} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
     {currentBatch&&!visualPlanning&&assembly?.version!==3&&<MediaRecoveryPanel scope={scope} view={view} disabled={editDisabled||pending||familyPending||anyReviewPending} visible={visible} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
     {enabled&&visualPlanning&&build&&productionId&&(closed||build.previewHash)&&workspace.presentation.stage.assets.length>0
       &&(!pendingNextBrief||retainedVisualDraft)&&<section aria-label="保留专业演出图片">
@@ -253,10 +253,14 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
         await onReload();onNotice('已保留准确专业演出图并准备零生成调用的新方案；请到制作页核对并明确开始，当前演出仍需重新确认。')
       })}>保留专业演出图并准备新方案</button>
     </section>}
-    {!!workspace.presentation.inheritedImages?.length&&<details><summary>新版本待确认的旧图来源（{workspace.presentation.inheritedImages.length} 张）</summary><ul>{workspace.presentation.inheritedImages.map(entry=><li key={entry.assetKey}>{workspace.presentation.stage.assets.find(asset=>asset.assetKey===entry.assetKey)?.name} · 原图 Build #{entry.source.version===3?entry.source.original.raw.buildNumber:entry.source.raw.buildNumber} · {entry.source.raw.contentHash.slice(0,12)}<p>{entry.declaration}</p></li>)}</ul><p>保留原始字节不会重新调用图片服务；新版本的用途和演出须再次确认采用。</p></details>}
+    {!!workspace.presentation.inheritedImages?.length&&<details><summary>新版本待确认的旧图来源（{workspace.presentation.inheritedImages.length} 张）</summary><ul>{workspace.presentation.inheritedImages.map(entry=>{
+      const source=entry.source,originalBuild=source.version===3?source.original.raw.buildNumber:source.version===4?source.original?.raw.buildNumber??source.raw.buildNumber:source.raw.buildNumber
+      return <li key={entry.assetKey}>{workspace.presentation.stage.assets.find(asset=>asset.assetKey===entry.assetKey)?.name} · 原图 Build #{originalBuild} · {source.raw.contentHash.slice(0,12)}
+        {source.version===4&&<span> · 加工字节 {source.processing.contentHash.slice(0,12)}</span>}<p>{entry.declaration}</p></li>
+    })}</ul><p>保留已选字节不会重新调用图片服务；新版本的用途和演出须再次确认采用。</p></details>}
     {currentBatch&&closed&&<section aria-label="已停止的图片调用"><p>本次调用已停止。请先核对原始记录与未知费用，当前不会自动重发。</p><p>如需更改需求或制作下一批，请先到制作页准备新版本，再回此处编辑。</p><button className="lf-action" disabled>生成本批图片（最多 {outstanding} 次）</button></section>}
     {currentBatch?.visualReviewPolicy&&closed&&<details><summary>已停止批次的作者视觉记录</summary><p>保留原记录和未观察项；新版需要重新核对，不能继承旧选用授权。</p>{view.artifacts.filter(row=>row.artifactKey.startsWith('avg.review.visual.')).map(row=><article key={row.id}><p>{row.artifactKey} · v{row.version} · {row.status}</p><pre>{row.payloadJson}</pre></article>)}</details>}
-    {visualPlanning&&build&&['paused','cancelled','failed','recovery-required'].includes(build.status)&&view.artifacts.some(row=>row.artifactKey==='avg.media.compiled-visual-requirements'&&row.status==='accepted')&&<HistoricalImagePanel scope={scope} view={view} disabled={editDisabled||pending||familyPending||anyReviewPending} onAction={onAction} onReload={onReload} onNotice={onNotice} onPending={setRawSelectionPending}/>}
+    {visualPlanning&&build&&['paused','cancelled','failed','recovery-required'].includes(build.status)&&view.artifacts.some(row=>row.artifactKey==='avg.media.compiled-visual-requirements'&&row.status==='accepted')&&<HistoricalImagePanel scope={scope} view={view} disabled={disabled||processingPending||pending||familyPending||anyReviewPending} onAction={onAction} onReload={onReload} onNotice={onNotice} onPending={setRawSelectionPending}/>}
     {currentBatch && productionId && build && !closed && <section aria-label="本次图片生成与选用"><h5>本次图片生成与选用 · Build #{build.buildNumber}</h5>
       <p>本批 {currentBatch.requirements.length} 项，尚待接收 {outstanding} 项。原图接收后逐项确认，再配置并确认演出。</p>
       {!sourcesReady && <p>请先在制作页确认系统规则和全部场景脚本。</p>}

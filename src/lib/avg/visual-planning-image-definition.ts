@@ -74,6 +74,7 @@ export async function readAvgCompiledImageDefinitionV4(input: {
   return { brief, planning, build, production, plan, compiler, compilation, proposal, source, visual, capability,
     definition: { schema: 'storyforge.avg.compiled-image-definition' as const, version: 4 as const,
       assembly: planning.assembly, mediaBatch: proposal.batch, imageBinding: planning.imageBinding,
+      ...(planning.imageProcessing?{imageProcessing:planning.imageProcessing}:{}),
       compilation: { artifactKey: compilation.artifactKey, version: compilation.version, contentHash: compilation.contentHash } } }
 }
 

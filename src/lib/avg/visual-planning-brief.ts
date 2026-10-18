@@ -5,6 +5,7 @@ import { parseAvgVisualPlanningScopeV1, type AvgVisualPlanningScopeV1 } from './
 import { avgMediaProductionEnabledV2 } from './assembly-contract'
 import { parseAvgVisualProposalReuseSourcesV4, type AvgVisualProposalReuseSourceV4 } from './visual-planning-reuse-contract'
 import { avgImageReferenceCapabilityV2,type AvgImageAdapterIdV4 } from './media-reference-contract'
+import { parseAvgImageProcessingPlanV1,assertAvgImageProcessingRequirementsV1,type AvgImageProcessingPlanV1 } from './image-processing-contract'
 
 export interface AvgVisualImageBindingV4 extends Omit<AvgAssemblyBriefV2['imageBinding'],'adapterId'> {adapterId:AvgImageAdapterIdV4}
 
@@ -18,16 +19,20 @@ export interface AvgVisualPlanningBriefV4 {
   imageBinding: AvgVisualImageBindingV4
   proposalReuse?: AvgVisualProposalReuseSourceV4[]
   rawReuse?: AvgVisualRawReuseSourceV4[]
+  imageProcessing?:AvgImageProcessingPlanV1
 }
 
 export function parseAvgVisualPlanningBriefV4(value: unknown): AvgVisualPlanningBriefV4 {
   const body=avgProtocolBody(value)
   const hasRawReuse=Object.prototype.hasOwnProperty.call(body??{},'rawReuse')
   const hasReuse=Object.prototype.hasOwnProperty.call(body??{},'proposalReuse')
+  const hasProcessing=Object.prototype.hasOwnProperty.call(body??{},'imageProcessing')
   const r = avgRecord(body, ['schema', 'version', 'assembly', 'scope', 'imageBinding',
-    ...(hasReuse?['proposalReuse']:[]),...(hasRawReuse?['rawReuse']:[])], 'visual planning Brief')
+    ...(hasReuse?['proposalReuse']:[]),...(hasRawReuse?['rawReuse']:[]),...(hasProcessing?['imageProcessing']:[])], 'visual planning Brief')
   if (r.schema !== 'storyforge.avg.visual-planning-brief' || r.version !== 4) throw new Error('[avg-visual-plan] 专业视觉 Brief 版本无效')
   const assembly = parseAvgAssemblyBriefV1(r.assembly), scope = parseAvgVisualPlanningScopeV1(r.scope)
+  const imageProcessing=hasProcessing?parseAvgImageProcessingPlanV1(r.imageProcessing):undefined
+  if(imageProcessing)assertAvgImageProcessingRequirementsV1(imageProcessing,scope.templates.map(t=>t.parameters))
   const b = avgRecord(r.imageBinding, ['requirementKey', 'adapterId', 'bindingHash', 'endpointRouteHash'], 'planning image binding')
   const selected=avgImageReferenceCapabilityV2(String(b.adapterId))
   if (b.requirementKey !== 'avg.media.image') throw new Error('[avg-visual-plan] 图片能力与准确 Agnes 路由不一致')
@@ -39,7 +44,8 @@ export function parseAvgVisualPlanningBriefV4(value: unknown): AvgVisualPlanning
   return { schema: r.schema, version: 4, assembly, scope, imageBinding: { requirementKey: avgKey(b.requirementKey, 'requirementKey'),
     adapterId: selected.adapterId, bindingHash: avgHash(b.bindingHash, 'bindingHash'), endpointRouteHash: avgHash(b.endpointRouteHash, 'endpointRouteHash') },
     ...(hasReuse?{proposalReuse:parseAvgVisualProposalReuseSourcesV4(r.proposalReuse,scope)}:{}),
-    ...(hasRawReuse?{rawReuse:parseAvgVisualRawReuseSourcesV4(r.rawReuse,scope.templates.map(t=>t.parameters.requirementKey))}:{}) }
+    ...(hasRawReuse?{rawReuse:parseAvgVisualRawReuseSourcesV4(r.rawReuse,scope.templates.map(t=>t.parameters.requirementKey))}:{}),
+    ...(imageProcessing?{imageProcessing}:{}) }
 }
 
 /** Separate default-off professional workbench experiment. Both switches,

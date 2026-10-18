@@ -271,7 +271,7 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
         onGenerate={()=>run(async()=>{if(!details?.production.id)throw new Error('请先核对方案并明确开始');const controller=new AbortController();mediaAbort.current=controller;setMediaRunning(true)
           try{const result=await runAvgAssemblyV1({scope,productionId:details.production.id,signal:controller.signal});await reload();setNotice(`专业视觉步骤已执行，当前状态：${result.buildStatus}。请查看方案或图片并逐项确认。`)}finally{mediaAbort.current=null;if(alive.current)setMediaRunning(false)}})}/></Suspense></div>}
       {(avgMediaProductionEnabledV2()||model.mediaBatch||mediaBatch)&&<div hidden={section!=='media'}><MediaProductionPanel scope={scope} view={view} workspace={model}
-        disabled={busy||dirty||jsonPending||voicePending||visualPending} canEdit={canEditMediaDomain&&!visualPlanning} canAdopt={canAdopt} sourcesReady={sourcesReady} declaration={declaration} generating={mediaRunning} visible={section==='media'}
+        disabled={busy||dirty||jsonPending||voicePending||visualPending} canEdit={canEditMediaDomain&&!visualPlanning} canPrepareProcessing={canEditMediaDomain} canAdopt={canAdopt} sourcesReady={sourcesReady} declaration={declaration} generating={mediaRunning} visible={section==='media'}
         onPending={setImagePending} onAction={run} onReload={reload} onClear={async()=>{await clearAvgVisualBatchDraftV1({scope,expectedDraftRevision:view.draft.revision});await reload();setNotice('未使用的生成批次已移除，参考图与制作记录仍保留。')}} onNotice={setNotice} onCancel={()=>mediaAbort.current?.abort()}
         onSave={async requirements=>{
           await saveAvgVisualBatchDraftV1({scope,expectedDraftRevision:view.draft.revision,batchKey:model.mediaBatch?.batchKey??`batch.${crypto.randomUUID()}`,

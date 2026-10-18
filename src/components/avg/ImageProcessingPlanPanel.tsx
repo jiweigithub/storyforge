@@ -1,43 +1,61 @@
 import { useEffect,useState } from 'react'
 import type { WorkspaceScope } from '../../lib/types'
 import type { AvgAuthorWorkspaceV1 } from '../../lib/avg/author-workspace-contract'
-import type { AvgImageProcessingRecipeV1 } from '../../lib/avg/image-processing-contract'
+import type { AvgImageProcessingRecipeV1,AvgImageProcessingPlanV1 } from '../../lib/avg/image-processing-contract'
 import { saveAvgImageProcessingDraftV1 } from '../../lib/avg/assembly-service'
+import type { readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
+import type { AvgVisualProductionRequirementV1 } from '../../lib/avg/media-production-contract'
+import { parseProductProductionBriefV3 } from '../../lib/product-production/contracts'
 
-function initial(workspace:AvgAuthorWorkspaceV1,key:string):AvgImageProcessingRecipeV1{
-  const saved=workspace.imageProcessing?.entries.find(e=>e.requirementKey===key)
-  const r=workspace.mediaBatch!.requirements.find(r=>r.requirementKey===key)!
+type Requirement=Pick<AvgVisualProductionRequirementV1,'requirementKey'|'name'|'width'|'height'|'alpha'>
+function initial(requirements:Requirement[],plan:AvgImageProcessingPlanV1|undefined,key:string):AvgImageProcessingRecipeV1{
+  const saved=plan?.entries.find(e=>e.requirementKey===key)
+  const r=requirements.find(r=>r.requirementKey===key)!
   return saved?.recipe??{schema:'storyforge.avg.image-processing-recipe',version:1,crop:null,width:r.width,height:r.height,fit:'contain',anchor:{x:5000,y:5000},background:null,declaration:''}
 }
-export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,disabled,canEdit,onPending,onAction,onReload,onNotice}:{
+export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,view,disabled,canEdit,onPending,onAction,onReload,onNotice}:{
   scope:WorkspaceScope;workspace:AvgAuthorWorkspaceV1;draftRevision:number;disabled:boolean;canEdit:boolean;onPending:(value:boolean)=>void;
+  view?:Awaited<ReturnType<typeof readAvgAssemblyWorkspaceV1>>;
   onAction:(task:()=>Promise<void>)=>Promise<void>;onReload:()=>Promise<void>;onNotice:(message:string)=>void
 }){
-  const [key,setKey]=useState(workspace.mediaBatch?.requirements[0]?.requirementKey??''),[recipe,setRecipe]=useState<AvgImageProcessingRecipeV1|null>(null)
-  const [dirty,setDirty]=useState(false),[editRevision,setEditRevision]=useState(draftRevision)
-  const savedJson=JSON.stringify(workspace.imageProcessing??null),batchJson=JSON.stringify(workspace.mediaBatch??null)
+  const details=view?.details,visual=details?.brief?parseProductProductionBriefV3(details.brief.briefJson).avgVisualPlanning:undefined
+  const requirements:Requirement[]=visual?visual.scope.templates.map(t=>t.parameters):workspace.mediaBatch?.requirements??[]
+  const plan=visual?visual.imageProcessing:workspace.imageProcessing
+  const editAllowed=canEdit&&(!visual||details!.production.status==='brief-ready'&&(!details!.build||details!.brief!.revision>details!.build.briefRevision))
+  const revisionKey=`${scope.projectId}:${scope.worldId}:${scope.workId}:${draftRevision}:${visual?`${details!.production.id}:${details!.brief!.briefHash}:${details!.build?.id??0}:${details!.build?.stateRevision??0}`:'legacy'}`
+  const [key,setKey]=useState(requirements[0]?.requirementKey??''),[recipe,setRecipe]=useState<AvgImageProcessingRecipeV1|null>(null)
+  const [dirty,setDirty]=useState(false),[editRevision,setEditRevision]=useState(revisionKey)
+  const [editDraftRevision,setEditDraftRevision]=useState(draftRevision)
+  const savedJson=JSON.stringify(plan??null),batchJson=JSON.stringify(requirements)
   useEffect(()=>{
     if(dirty)return
-    const r=workspace.mediaBatch?.requirements.find(r=>r.requirementKey===key)??workspace.mediaBatch?.requirements[0]
-    setKey(r?.requirementKey??'');setRecipe(r?initial(workspace,r.requirementKey):null);setEditRevision(draftRevision)
-  },[key,savedJson,batchJson,draftRevision,dirty,workspace])
+    const list=JSON.parse(batchJson) as Requirement[],saved=JSON.parse(savedJson) as AvgImageProcessingPlanV1|null
+    const r=list.find(r=>r.requirementKey===key)??list[0]
+    setKey(r?.requirementKey??'');setRecipe(r?initial(list,saved??undefined,r.requirementKey):null);setEditRevision(revisionKey);setEditDraftRevision(draftRevision)
+  },[key,savedJson,batchJson,revisionKey,dirty,draftRevision])
   useEffect(()=>{onPending(dirty)},[dirty,onPending])
   useEffect(()=>()=>onPending(false),[onPending])
-  if(!workspace.mediaBatch||!recipe)return null
-  const r=workspace.mediaBatch.requirements.find(r=>r.requirementKey===key)
-  if(!r)return null
-  const edit=(next:AvgImageProcessingRecipeV1)=>{if(!dirty)setEditRevision(draftRevision);setRecipe(next);setDirty(true)}
+  if(!requirements.length||!recipe)return null
+  const r=requirements.find(r=>r.requirementKey===key)
+  if(!r)return <section aria-label="本地图像加工配方"><p role="alert">加工目标已变化，请撤销未保存的加工后重新核对。</p><button className="lf-action" onClick={()=>setDirty(false)}>撤销未保存的加工</button></section>
+  const edit=(next:AvgImageProcessingRecipeV1)=>{if(!dirty){setEditRevision(revisionKey);setEditDraftRevision(draftRevision)}setRecipe(next);setDirty(true)}
   const save=(remove=false)=>void onAction(async()=>{
-    const entries=(workspace.imageProcessing?.entries??[]).filter(e=>e.requirementKey!==key)
+    if(dirty&&editRevision!==revisionKey)throw new Error('[avg-process] 编辑期间草稿或专业方案已变化，请撤销未保存的加工后重新核对')
+    const entries=(plan?.entries??[]).filter(e=>e.requirementKey!==key)
     if(!remove)entries.push({requirementKey:key,recipe})
-    await saveAvgImageProcessingDraftV1({scope,expectedDraftRevision:dirty?editRevision:draftRevision,plan:entries.length?{schema:'storyforge.avg.image-processing-plan',version:1,entries}:null})
-    setDirty(false);await onReload();onNotice('加工配方已保存为下次制作方案草稿；尚未执行或采用，原图与供应商请求保留。')
+    const next:AvgImageProcessingPlanV1|null=entries.length?{schema:'storyforge.avg.image-processing-plan',version:1,entries}:null
+    if(visual){
+      const {prepareAvgVisualImageProcessingV4}=await import('../../lib/avg/visual-processing-workspace')
+      await prepareAvgVisualImageProcessingV4({scope,productionId:details!.production.id!,expectedBriefHash:details!.brief!.briefHash,expectedDraftRevision:draftRevision,
+        expectedBuild:details!.build?{id:details!.build.id!,revision:details!.build.stateRevision}:null,plan:next})
+    }else await saveAvgImageProcessingDraftV1({scope,expectedDraftRevision:dirty?editDraftRevision:draftRevision,plan:next})
+    setDirty(false);await onReload();onNotice(visual?'加工配方已保存到尚未开始的专业制作方案；尚未执行或采用，原图与供应商请求保留。':'加工配方已保存为下次制作方案草稿；尚未执行或采用，原图与供应商请求保留。')
   })
   return <section aria-label="本地图像加工配方" className="avg-processing-plan"><h5>本地图像加工配方</h5>
     <p>先保存图片需求，再为下次 Build 冻结加工配方。裁切后等比适配到共同画布，保留原图；加工结果还须独立视觉评审和选用。透明留边不会移除原图的不透明底色。</p>
-    {!canEdit&&<p>当前制作方案已冻结。修改配方前请先保留当前版本，并在制作页明确准备新版本。</p>}
-    <fieldset className="avg-form" disabled={disabled||!canEdit}>
-      <label>加工目标<select value={key} disabled={dirty} onChange={e=>setKey(e.target.value)}>{workspace.mediaBatch.requirements.map(r=><option key={r.requirementKey} value={r.requirementKey}>{r.name}</option>)}</select></label>
+    {!editAllowed&&<p>当前制作方案已冻结。修改配方前请先保留当前版本，并在制作页明确准备新版本。</p>}
+    <fieldset className="avg-form" disabled={disabled||!editAllowed}>
+      <label>加工目标<select value={key} disabled={dirty} onChange={e=>setKey(e.target.value)}>{requirements.map(r=><option key={r.requirementKey} value={r.requirementKey}>{r.name}</option>)}</select></label>
       <label>加工画布宽<input type="number" min={32} max={4096} value={recipe.width} onChange={e=>edit({...recipe,width:Number(e.target.value)})}/></label>
       <label>加工画布高<input type="number" min={32} max={4096} value={recipe.height} onChange={e=>edit({...recipe,height:Number(e.target.value)})}/></label>
       <label>画布适配<select value={recipe.fit} onChange={e=>edit({...recipe,fit:e.target.value as 'contain'|'cover'})}><option value="contain">完整放入并留边</option><option value="cover">填满画布并裁去超出部分</option></select></label>
@@ -50,9 +68,9 @@ export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,
       <label>允许的加工与用途说明<textarea value={recipe.declaration} maxLength={2000} onChange={e=>edit({...recipe,declaration:e.target.value})}/></label>
       <p>最终选图仍须满足该需求的 {r.width} × {r.height} 最小尺寸、画幅和透明要求；裁掉主体或放大变糊须记录返修。</p>
       <button className="lf-action" disabled={!dirty||!recipe.declaration.trim()} onClick={()=>save()}>保存本项加工配方</button>
-      <button className="lf-action" disabled={dirty||!workspace.imageProcessing?.entries.some(e=>e.requirementKey===key)} onClick={()=>save(true)}>移除此项加工配方</button>
-      <button className="lf-action" disabled={!dirty} onClick={()=>{setDirty(false);setRecipe(initial(workspace,key))}}>撤销未保存的加工</button>
+      <button className="lf-action" disabled={dirty||!plan?.entries.some(e=>e.requirementKey===key)} onClick={()=>save(true)}>移除此项加工配方</button>
+      <button className="lf-action" disabled={!dirty} onClick={()=>{setDirty(false);setRecipe(initial(requirements,plan,key))}}>撤销未保存的加工</button>
     </fieldset>
-    {!!workspace.imageProcessing?.entries.length&&<details><summary>已保存的加工配方（{workspace.imageProcessing.entries.length} 项）</summary><pre>{savedJson}</pre></details>}
+    {!!plan?.entries.length&&<details><summary>已保存的加工配方（{plan.entries.length} 项）</summary><pre>{savedJson}</pre></details>}
   </section>
 }

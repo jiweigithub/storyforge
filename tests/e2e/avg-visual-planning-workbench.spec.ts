@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page,type Locator } from '@playwright/test'
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { confirmEngineeringVisualReview } from '../helpers/avg-visual-review-playwright'
@@ -14,7 +14,29 @@ async function adoptSource(page:Page,label:string,waitForCompletion=false){
   return Date.now()-started
 }
 
-async function prepare(page:Page,firstImageBusy=false,imageModel='agnes.image-2.1-flash.v1'){
+async function saveProcessingRecipe(page:Page){
+  const form=page.getByRole('region',{name:'本地图像加工配方',exact:true})
+  await expect(form.getByRole('checkbox',{name:'明确裁切原图范围',exact:true})).toBeEnabled()
+  await form.getByRole('checkbox',{name:'明确裁切原图范围',exact:true}).check()
+  await form.getByLabel('裁切宽度（%）',{exact:true}).fill('50')
+  await form.getByLabel('允许的加工与用途说明',{exact:true}).fill('明确保留原创工程图左半边，等比放入共同画布并透明留边；只验像素链路，不签艺术质量。')
+  await form.getByRole('button',{name:'保存本项加工配方',exact:true}).click()
+  await expect(page.getByRole('status').filter({hasText:'加工配方已保存到尚未开始的专业制作方案'})).toBeVisible()
+}
+
+async function adoptProfessionalDesign(page:Page,label:string){
+  const panel=page.getByRole('region',{name:'专业视觉策划（实验）',exact:true})
+  const card=panel.getByRole('article',{name:`专业方案：${label}`,exact:true})
+  await expect(card).toBeVisible({timeout:60_000})
+  if(label==='视觉基准')await card.getByLabel('构图与留白',{exact:true}).fill('作者修订：保留下方完整对白区')
+  else await card.getByLabel('生成画面要求',{exact:true}).fill('作者修订：保留下方完整对白区；保持已批准的门窗布局')
+  await card.getByRole('button',{name:`保存待确认：${label}`,exact:true}).click()
+  await card.getByRole('checkbox',{name:'我已核对本方案内容及允许参考',exact:true}).check()
+  await card.getByRole('button',{name:`确认采用：${label}`,exact:true}).click()
+  await panel.getByRole('button',{name:'执行已确认的专业方案与图片任务',exact:true}).click()
+}
+
+async function prepare(page:Page,firstImageBusy=false,imageModel='agnes.image-2.1-flash.v1',processing=false){
   await page.addInitScript(()=>localStorage.setItem('storyforge_guide_completed','e2e'))
   await page.goto('./avg/library')
   const origin=new URL(page.url()).origin
@@ -86,6 +108,7 @@ async function prepare(page:Page,firstImageBusy=false,imageModel='agnes.image-2.
     await panel.getByRole('button',{name:'核对并保存图片模型',exact:true}).click()
     await expect(page.getByRole('status').filter({hasText:'图片模型与当前配置已核对并保存'})).toBeVisible()
   }
+  if(processing){await saveProcessingRecipe(page);expect(models).toHaveLength(0);expect(images).toHaveLength(0)}
   await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
   await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
   await adoptSource(page,'系统规则');for(const title of source.titles)await adoptSource(page,`场景：${title}`)
@@ -693,16 +716,7 @@ test('unselected original is revalidated offline into current review and Preview
   test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION!=='1'||process.env.VITE_STORYFORGE_AVG_VISUAL_PLANNING!=='1','Both visual experiments must be explicit')
   const {source,models,images,panel}=await prepare(page,false)
   const labels=['视觉基准',`场景方案：${source.titles[0]}`],name=`${source.titles[0]}背景`
-  const adoptDesign=async(label:string)=>{
-    const card=panel.getByRole('article',{name:`专业方案：${label}`,exact:true})
-    await expect(card).toBeVisible({timeout:60_000})
-    if(label==='视觉基准')await card.getByLabel('构图与留白',{exact:true}).fill('作者修订：保留下方完整对白区')
-    else await card.getByLabel('生成画面要求',{exact:true}).fill('作者修订：保留下方完整对白区；保持已批准的门窗布局')
-    await card.getByRole('button',{name:`保存待确认：${label}`,exact:true}).click()
-    await card.getByRole('checkbox',{name:'我已核对本方案内容及允许参考',exact:true}).check()
-    await card.getByRole('button',{name:`确认采用：${label}`,exact:true}).click()
-    await panel.getByRole('button',{name:'执行已确认的专业方案与图片任务',exact:true}).click()
-  }
+  const adoptDesign=(label:string)=>adoptProfessionalDesign(page,label)
   for(const label of labels)await adoptDesign(label)
   const image=page.getByRole('article',{name:`图片候选：${name}`,exact:true})
   await expect(image.getByText('原图已接收，等待作者选择',{exact:true})).toBeVisible({timeout:60_000})
@@ -779,5 +793,89 @@ test('unselected original is revalidated offline into current review and Preview
   await page.screenshot({path:info.outputPath('avg-v4-unselected-source3-offline-native-preview.png')})
   await page.evaluate(async workId=>{const load=new Function('p','return import(p)');await(await load('/storyforge/src/lib/workspace/lifecycle.ts')).deleteWork(workId)},restored.scope.workId)
   await page.goto(originalUrl);await expect.poll(decoded).toBe(true)
+  expect(models).toHaveLength(2);expect(images).toHaveLength(1)
+})
+
+for(const mode of ['direct','revalidated'] as const)test(`professional ${mode} original is natively cropped with transparent padding and retained through Source4 Preview and portable restore`,async({page},info)=>{
+  test.setTimeout(420_000)
+  test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION!=='1'||process.env.VITE_STORYFORGE_AVG_VISUAL_PLANNING!=='1','Both visual experiments must be explicit')
+  const {source,models,images,panel}=await prepare(page,false,'agnes.image-2.1-flash.v1',mode==='direct')
+  const labels=['视觉基准',`场景方案：${source.titles[0]}`],name=`${source.titles[0]}背景`
+  if(mode==='revalidated'){
+    for(const label of labels)await adoptProfessionalDesign(page,label)
+    const image=page.getByRole('article',{name:`图片候选：${name}`,exact:true})
+    await expect(image.getByText('原图已接收，等待作者选择',{exact:true})).toBeVisible({timeout:60_000})
+    await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
+    await page.getByRole('button',{name:'停止专业视觉制作并保留记录',exact:true}).click()
+    await expect(page.getByRole('status').filter({hasText:'本次专业视觉制作已停止'})).toBeVisible()
+    await page.getByRole('button',{name:'素材',exact:true}).click()
+    await panel.getByRole('button',{name:'保留记录并准备新版本方案',exact:true}).click()
+    const roles=panel.getByRole('region',{name:'历史专业方案复用',exact:true})
+    await roles.getByRole('button',{name:'读取此版本已确认方案',exact:true}).click()
+    for(const label of labels)await roles.getByRole('checkbox',{name:`复用已确认方案：${label}`,exact:true}).check()
+    await roles.getByRole('button',{name:'保存复用方案',exact:true}).click()
+    await expect(panel.getByText(/新方案上限：0 次方案调用、1 次图片请求/)).toBeVisible()
+    const history=page.getByRole('region',{name:'已停止版本的原图',exact:true})
+    await history.getByRole('button',{name:'读取原图与来源',exact:true}).click()
+    await history.getByRole('checkbox',{name:`沿用原图：${name}`,exact:true}).check()
+    await history.getByRole('button',{name:'保存原图沿用方案',exact:true}).click()
+    await expect(panel.getByText(/新方案上限：0 次方案调用、0 次图片请求/)).toBeVisible()
+    await saveProcessingRecipe(page)
+    expect(models).toHaveLength(2);expect(images).toHaveLength(1)
+    await page.evaluate(async()=>{const load=new Function('p','return import(p)');(await load('/storyforge/src/stores/ai-config.ts')).useAIConfigStore.getState().setConfig({apiKey:''})})
+    await page.reload();await page.getByRole('button',{name:'素材',exact:true}).click()
+    await expect(page.getByRole('region',{name:'本地图像加工配方',exact:true}).getByLabel('裁切宽度（%）',{exact:true})).toHaveValue('50')
+    await page.getByRole('button',{name:'制作与试玩',exact:true}).click();await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
+    await adoptSource(page,'系统规则');for(const title of source.titles)await adoptSource(page,`场景：${title}`)
+    await page.getByRole('button',{name:'素材',exact:true}).click();await panel.getByRole('button',{name:'执行已确认的专业方案与图片任务',exact:true}).click()
+  }
+  for(const label of labels)await adoptProfessionalDesign(page,label)
+  const card=page.getByRole('article',{name:`图片候选：${name}`,exact:true})
+  const output=card.locator('figure').filter({has:page.locator('figcaption').filter({hasText:'加工后候选'})}).getByRole('img')
+  const pixels=async(image:Locator)=>{
+    await expect(image).toBeVisible({timeout:60_000})
+    await expect.poll(()=>image.evaluate((i:HTMLImageElement)=>i.complete?[i.naturalWidth,i.naturalHeight]:[])).toEqual([576,324])
+    const measured=await image.evaluate((i:HTMLImageElement)=>{const c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight
+      const ctx=c.getContext('2d')!;ctx.drawImage(i,0,0);return {padding:Array.from(ctx.getImageData(10,20,1,1).data),retained:Array.from(ctx.getImageData(250,80,1,1).data)}})
+    expect(measured).toEqual({padding:[0,0,0,0],retained:[228,194,132,255]})
+  }
+  await pixels(output);await card.locator('.avg-visual-review-grid').screenshot({path:info.outputPath(`avg-v4-${mode}-native-processing-comparison.png`)})
+  await confirmEngineeringVisualReview(card,name)
+  await card.getByRole('button',{name:`保存选图候选：${name}`,exact:true}).click()
+  await card.getByRole('checkbox',{name:'我已查看这张图片并核对用途、来源与使用权',exact:true}).check()
+  await card.getByRole('button',{name:`确认选用：${name}`,exact:true}).click()
+  await page.getByRole('button',{name:'将已选图片配置到演出草稿',exact:true}).click()
+  await page.getByRole('button',{name:'制作与试玩',exact:true}).click();await adoptSource(page,'演出与媒资',true)
+  await page.getByRole('button',{name:'执行组装并生成新预览',exact:true}).click()
+  await expect(page.getByRole('status').filter({hasText:'新预览已冻结'})).toBeVisible({timeout:60_000})
+  const productionUrl=page.url();await page.getByRole('button',{name:'试玩此预览',exact:true}).click();await pixels(page.locator('.avg-background img'))
+  await page.goto(productionUrl);await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
+  await page.getByRole('button',{name:'以此预览开始修订',exact:true}).click();await page.getByRole('button',{name:'保存编辑草稿',exact:true}).click()
+  await page.getByRole('button',{name:'素材',exact:true}).click();await page.getByRole('button',{name:'保留专业演出图并准备新方案',exact:true}).click()
+  await expect(page.getByRole('status').filter({hasText:'已保留准确专业演出图并准备零生成调用的新方案'})).toBeVisible({timeout:60_000})
+  await page.reload();await page.getByRole('button',{name:'制作与试玩',exact:true}).click();await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
+  await adoptSource(page,'系统规则');for(const title of source.titles)await adoptSource(page,`场景：${title}`);await adoptSource(page,'演出与媒资',true)
+  await page.getByRole('button',{name:'执行组装并生成新预览',exact:true}).click()
+  await expect(page.getByRole('status').filter({hasText:'新预览已冻结'})).toBeVisible({timeout:60_000})
+  await page.getByRole('button',{name:'试玩此预览',exact:true}).click();await pixels(page.locator('.avg-background img'))
+  const originalUrl=page.url(),restored=await page.evaluate(async({scope,mode})=>{
+    const load=new Function('p','return import(p)'),[schema,backup,reference,workspace,service]=await Promise.all([
+      load('/storyforge/src/lib/db/schema.ts'),load('/storyforge/src/lib/export/json-export.ts'),load('/storyforge/src/lib/avg/media-generated-reference.ts'),
+      load('/storyforge/src/lib/avg/author-workspace-contract.ts'),load('/storyforge/src/lib/product-production/service.ts')])
+    const draft=await schema.db.avgAuthoringDrafts.where('workId').equals(scope.workId).first(),w=workspace.parseAvgAuthorWorkspaceV1(draft.editorJson),origin=w.presentation.inheritedImages[0].source
+    if(w.mediaBatch||w.imageProcessing||origin.version!==4||origin.processing.noProviderRequest!==true||origin.raw.schema!==(mode==='direct'?'storyforge.avg.visual-image-producer-proof':'storyforge.avg.image-revalidation-producer-proof'))throw new Error('Expected real separate original/local/processing source and no mirrored batch')
+    const projectId=await backup.importProjectJSON(await backup.exportProjectJSON(scope.projectId)),build=(await schema.db.productBuilds.where('projectId').equals(projectId).sortBy('buildNumber')).at(-1)
+    const importedScope={projectId,worldId:build.worldId,workId:build.workId},proved=await reference.readAvgAdoptedGeneratedImageV2({scope:importedScope,source:origin})
+    const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',proved.data))).map(b=>b.toString(16).padStart(2,'0')).join('')
+    if(hash!==origin.processing.contentHash||hash===origin.raw.contentHash)throw new Error('Derived pixels must retain their own accurate proof')
+    const session=await service.startProductProductionPreviewV1({scope:importedScope,productionId:build.productionId,expectedBuildId:build.id,expectedPreviewHash:build.previewHash})
+    return {scope:importedScope,sessionId:session.sessionId,hash,rawHash:origin.raw.contentHash,source:origin}
+  },{scope:source.scope,mode})
+  expect(restored.hash).not.toBe(restored.rawHash)
+  const importedUrl=new URL(originalUrl);importedUrl.searchParams.set('project',String(restored.scope.projectId));importedUrl.searchParams.set('work',String(restored.scope.workId));importedUrl.searchParams.set('session',String(restored.sessionId))
+  await page.goto(importedUrl.toString());await pixels(page.locator('.avg-background img'))
+  await page.screenshot({path:info.outputPath(`avg-v4-${mode}-processed-source4-restored-preview.png`)})
+  await page.evaluate(async workId=>{const load=new Function('p','return import(p)');await(await load('/storyforge/src/lib/workspace/lifecycle.ts')).deleteWork(workId)},restored.scope.workId)
+  await page.goto(originalUrl);await pixels(page.locator('.avg-background img'))
   expect(models).toHaveLength(2);expect(images).toHaveLength(1)
 })

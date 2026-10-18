@@ -219,8 +219,19 @@ export async function readAvgProcessedImageCandidateBytesV1(input:{scope:Workspa
   const details=await readProductProductionDetailsV1(input.scope,input.productionId,['avg']),build=details.build
   const briefRow=build?details.briefHistory.find(r=>r.revision===build.briefRevision&&r.briefHash===build.briefHash):null
   const brief=briefRow?parseProductProductionBriefV3(briefRow.briefJson):null
-  if(!build?.id||!brief||!readAvgOptionalImageDefinitionV3(brief))throw new Error('[avg-process] 当前版本没有准确加工来源')
+  if(!build?.id||!brief||!brief.avgVisualPlanning&&!readAvgOptionalImageDefinitionV3(brief))throw new Error('[avg-process] 当前版本没有准确加工来源')
   const plan=parseProductProductionPlanV3(build.planJson,brief,build.briefHash)
+  if(brief.avgVisualPlanning){
+    const [{readAvgCompiledImageDefinitionV4},{readAvgHistoricalCompiledImageDefinitionV4},{readAvgVisualProcessingEvidenceV4}]=await Promise.all([
+      import('./visual-planning-image-definition'),import('./visual-image-history'),import('./visual-image-processing')])
+    const boundary={scope:input.scope,buildId:build.id,expectedBuildRevision:build.stateRevision,expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,controlEpoch:plan.controlEpoch}
+    const compiled=['paused','cancelled','failed','recovery-required'].includes(build.status)?await readAvgHistoricalCompiledImageDefinitionV4(boundary)
+      :await readAvgCompiledImageDefinitionV4({...boundary,expectedBrief:brief,purpose:build.packageHash||build.previewHash?'frozen-verification':'assembly'})
+    const proved=await readAvgVisualProcessingEvidenceV4({scope:input.scope,compiled,artifact:{artifactKey:avgProcessedImageArtifactKeyV1(input.requirementKey),version:input.version,contentHash:input.contentHash}})
+    const blob=await db.mediaBlobObjects.get(proved.processing.blobObjectId!)
+    if(!blob||!await assertRecordInScope(input.scope,'mediaBlobObjects',blob,{owner:'work'}))throw new Error('[avg-process] 加工图字节不存在或跨作品')
+    return {asset:proved.image.asset,data:await readVerifiedMediaBlobObjectData(blob)}
+  }
   const boundary={scope:input.scope,buildId:build.id,expectedBuildRevision:build.stateRevision,expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,sourceControlEpoch:plan.controlEpoch}
   const proved=await verifyAvgProcessedImageArtifactV1({...boundary,artifactKey:avgProcessedImageArtifactKeyV1(input.requirementKey),version:input.version,contentHash:input.contentHash})
   const p=(await assertAvgProcessedImageArtifactV1(brief,proved.artifact)).payload
@@ -332,7 +343,7 @@ export async function configureAvgChosenMediaDraftV2(input: { scope: WorkspaceSc
   const image = await readAvgImageConsumptionDefinitionV4({scope:input.scope,buildId:build.id,brief})
   if (brief.avgVisualPlanning ? !!workspace.mediaBatch
     : canonicalProductProductionJsonV2(workspace.mediaBatch ?? null) !== canonicalProductProductionJsonV2(image.mediaBatch)) throw new Error('[avg-media] 草稿需求与冻结批次已不一致')
-  if(canonicalProductProductionJsonV2(workspace.imageProcessing??null)!==canonicalProductProductionJsonV2(image.imageProcessing??null))throw new Error('[avg-process] 加工草稿与本次冻结配方不一致，请明确准备新版本')
+  if(brief.avgVisualPlanning?!!workspace.imageProcessing:canonicalProductProductionJsonV2(workspace.imageProcessing??null)!==canonicalProductProductionJsonV2(image.imageProcessing??null))throw new Error('[avg-process] 加工草稿与本次冻结配方不一致，请明确准备新版本')
   const source = await readAvgMediaChoicesForConfigurationV2({ scope: input.scope, buildId: build.id, expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch })
   await readAvgInheritedStageImagesV1({scope:input.scope,payload:workspace.presentation,productionKey:details.production.productionKey,
     targetBuildNumber:build.buildNumber,worldContentHash:brief.source.worldContentHash})
@@ -530,7 +541,7 @@ export async function readAvgAssemblyWorkspaceV1(scope: WorkspaceScope, selected
       artifacts.push(...accepted,...pending)
     }
   }
-  const processingTasks=details?.build?.planRevision&&details.executionBrief&&readAvgOptionalImageDefinitionV3(details.executionBrief)?.imageProcessing
+  const processingTasks=details?.build?.planRevision&&details.brief?.revision===details.build.briefRevision&&details.executionBrief&&(details.executionBrief.avgVisualPlanning?.imageProcessing??readAvgOptionalImageDefinitionV3(details.executionBrief)?.imageProcessing)
     ?(await projectProductProductionSchedulerV1({scope,productionId:details.production.id!})).tasks.filter(task=>task.taskKey.startsWith('avg.media.process.')):[]
   const visualRecordedUsage=details?.build?.planRevision&&details.executionBrief?.avgVisualPlanning?projectProductProductionRecordedUsageV1(details.build.budgetLedgerJson):null
   const visualProgress=details?.build?.planRevision&&details.executionBrief?.avgVisualPlanning&&details.brief?.revision===details.build.briefRevision
@@ -684,7 +695,7 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
       const inherited=old.avgVisualPlanning&&!input.visualStageContinuation?workspace:await prepareAvgInheritedStageDraftV1({scope:input.scope,workspace,build:details.build,
         productionKey:details.production.productionKey,targetBuildNumber:Math.max(...details.buildHistory.map(row=>row.buildNumber))+1,
         worldContentHash:old.source.worldContentHash,...(voiceRecovery ? { voiceRecovery } : {})})
-      if(input.visualStageContinuation&&!inherited.presentation.inheritedImages?.some(entry=>(entry.source.version===2||entry.source.version===3)
+      if(input.visualStageContinuation&&!inherited.presentation.inheritedImages?.some(entry=>(entry.source.version===2||entry.source.version===3||entry.source.version===4)
         &&entry.source.productionKey===details.production.productionKey&&entry.source.raw.buildNumber===details.build!.buildNumber))throw new Error('[avg-visual-retain] 当前演出没有此专业版本准确已采用的旧图')
       const continuationCommandId=input.visualStageContinuation?`avg.keep.${await hashProductProductionValueV2({schema:'storyforge.avg.visual-stage-continuation',version:1,
         productionKey:details.production.productionKey,buildNumber:details.build.buildNumber,briefHash:details.build.briefHash,planHash:details.build.planHash,workspace:inherited})}`:undefined

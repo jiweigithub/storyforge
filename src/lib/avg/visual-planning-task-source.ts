@@ -32,7 +32,7 @@ export async function readAvgVisualPlanningExecutionSourcesV4(input: ProductProd
   if (assembled.text !== input.contextText || assembled.overBudgetAfterTrim || assembled.segments.length !== 1
     || canonicalProductProductionJsonV2(assembled.included) !== canonicalProductProductionJsonV2([AVG_VISUAL_PLANNING_CONTEXT_V1])
     || !assembled.sourceEvidence?.length || assembled.sourceEvidence.some(s => s.status !== 'included' || s.delivery !== 'full')) throw new Error('[avg-visual-plan] 实际上下文不是当前完整登记投影')
-  const packet = JSON.parse(assembled.segments[0].content) as { schema?: string; version?: number; operation?:unknown; rawReuseSource?:unknown; artifacts?: Array<{ artifactKey: string; version: number; contentHash: string }> }
+  const packet = JSON.parse(assembled.segments[0].content) as { schema?: string; version?: number; operation?:unknown; processing?:unknown; rawReuseSource?:unknown; artifacts?: Array<{ artifactKey: string; version: number; contentHash: string }> }
   const suppliedRefs = input.inputArtifacts.map(r => ({ artifactKey: r.artifactKey, version: r.version, contentHash: r.contentHash }))
   // Shared Harness delivers inputs sorted by key; the registered projection
   // preserves the frozen Plan order. Compare the exact set in that order.
@@ -40,7 +40,13 @@ export async function readAvgVisualPlanningExecutionSourcesV4(input: ProductProd
   if (suppliedRefs.length !== refs.length || new Set(suppliedRefs.map(r => r.artifactKey)).size !== refs.length || refs.some(r => !r)
     || packet.schema !== 'storyforge.avg.visual-planning-inputs' || packet.version !== 4
     || canonicalProductProductionJsonV2(packet.artifacts) !== canonicalProductProductionJsonV2(refs)) throw new Error('[avg-visual-plan] Harness 输入与准确作者采用凭证不一致')
-  for (const row of input.inputArtifacts) if (await hashProductProductionValueV2(JSON.parse(row.payloadJson)) !== row.contentHash) throw new Error('[avg-visual-plan] Harness 输入字节与已验证 hash 不一致')
+  for (const row of input.inputArtifacts){
+    if(row.kind==='image'){
+      if(input.task.kind!=='avg-media-image-process'||!row.artifactKey.startsWith('avg.media.raw.'))throw new Error('[avg-visual-plan] 只有本地加工可读取准确原图字节')
+      // This hash identifies physical pixels, not the raw metadata JSON.
+      // The registered reader and task both recheck its actual producer/Blob.
+    }else if(await hashProductProductionValueV2(JSON.parse(row.payloadJson))!==row.contentHash)throw new Error('[avg-visual-plan] Harness 输入字节与已验证 hash 不一致')
+  }
   const rules = input.inputArtifacts.find(r => r.artifactKey === 'avg.system.plan')
   if (!rules) throw new Error('[avg-visual-plan] 缺少准确规则输入')
   const scripts = input.inputArtifacts.filter(r => r.artifactKey.startsWith('avg.content.scene-script.')).map(r => {

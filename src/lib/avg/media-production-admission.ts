@@ -24,6 +24,8 @@ import { hashAvgTaskRuntimeBindingV1 } from './task-claim'
 import { avgRecord } from './protocol-validation'
 import { assembleContext } from '../registry/assemble-context'
 import { preserveProductProductionContextV1 } from '../product-production/context'
+import { inspectAvgVisualProcessedImageV4 } from './visual-image-processing'
+import { parseAvgProcessedImagePayloadV1 } from './image-processing-contract'
 
 /** Extra product admission inside the shared sealed-producer transaction.
  * The caller separately verifies exact checkpoint/result/Plan/Blob proof. */
@@ -106,6 +108,15 @@ async function assertAvgCompiledImageProducerAdmissionV4(input: Parameters<typeo
   const d = await readAvgCompiledImageDefinitionV4({ scope: input.scope, buildId: input.build.id,
     expectedBuildRevision: input.build.stateRevision, controlEpoch: input.build.controlEpoch, expectedBrief: brief })
   const task = input.task, a = input.artifact
+  if(a.artifactKey.startsWith('avg.media.processed.')){
+    const payload=await parseAvgProcessedImagePayloadV1(a.payloadJson)
+    const raw=await verifyAcceptedProductBuildArtifactV1({scope:input.scope,buildId:input.build.id,...payload.raw})
+    const processed=await inspectAvgVisualProcessedImageV4({scope:input.scope,compiled:d,raw,artifact:a})
+    const run=await db.agentRuns.get(input.producerRunId)
+    if(!run||(JSON.parse(run.contractJson) as {runtimeBindingHash?:string}).runtimeBindingHash!==await hashAvgTaskRuntimeBindingV1({
+      planHash:input.build.planHash,task,capabilityBindings:[]}))throw new Error('[avg-process] 加工不属于准确无能力绑定的 Harness')
+    await assertContext(processed.sourceContextHash);return
+  }
   if(task.kind==='avg-media-image-reuse'){
     const raw=await inspectAvgRevalidatedRawV4({scope:input.scope,compiled:d,artifact:a})
     const run=await db.agentRuns.get(input.producerRunId)

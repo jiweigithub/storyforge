@@ -5,12 +5,32 @@ import { readAvgCompiledImageDefinitionV4 } from './visual-planning-image-defini
 import { readAvgVisualPlanningExecutionSourcesV4 } from './visual-planning-task-source'
 import { inspectAvgVisualRawReuseCompatibilityV4 } from './visual-image-reuse'
 import { avgHash,avgRecord } from './protocol-validation'
+import { assertAvgRawImageArtifactFromDefinitionV1,type AvgRawImagePayloadV1 } from './media-raw-contract'
+import type { FrozenRuntimeMediaAssetV2 } from '../types'
+import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
 
 type Definition=Awaited<ReturnType<typeof readAvgCompiledImageDefinitionV4>>
-type Compiled=Pick<Definition,'definition'|'planning'|'plan'|'production'|'build'|'brief'>&{source:{
+export type AvgVerifiedCompiledImageDefinitionV4=Pick<Definition,'definition'|'planning'|'plan'|'production'|'build'|'brief'>&{source:{
   artifact:Definition['source']['artifact'];scripts:Array<{artifact:Definition['source']['scripts'][number]['artifact']}>}}
+type Compiled=AvgVerifiedCompiledImageDefinitionV4
 type Raw=Pick<ProductBuildArtifactRecordV1,'artifactKey'|'requirementKey'|'kind'|'mediaKind'|'payloadJson'|'metadataJson'|'rightsJson'|'qualityJson'|'contentHash'|'blobObjectId'|'mimeType'|'byteSize'>
 const same=(a:unknown,b:unknown)=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(b)
+
+/** Payload/semantic check against a caller-proved current or historical
+ * compilation. Physical producer evidence remains the caller's duty. */
+export async function inspectAvgCompiledRawImageV4(input:{scope:WorkspaceScope;compiled:Compiled;artifact:Raw}):Promise<{
+  payload:AvgRawImagePayloadV1;asset:FrozenRuntimeMediaAssetV2;requirement:AvgVisualProductionRequirementV1
+}>{
+  if(input.compiled.planning.rawReuse?.some(s=>input.artifact.artifactKey===`avg.media.raw.${s.requirementKey}`)){
+    const raw=await inspectAvgRevalidatedRawV4(input);return {payload:raw.payload,asset:raw.asset,requirement:raw.requirement}
+  }
+  const raw=await assertAvgRawImageArtifactFromDefinitionV1({...input.compiled.definition,
+    capability:input.compiled.brief.capabilityRequirements.find(c=>c.requirementKey==='avg.media.image')!,qualityProfile:input.compiled.brief.qualityProfile},input.artifact)
+  const q=JSON.parse(input.artifact.qualityJson)
+  if(!same(q.sourceCompilation,input.compiled.definition.compilation)||!same(q.sourceRule,input.compiled.source.artifact)
+    ||!same(q.sourceScripts,input.compiled.source.scripts.map(s=>s.artifact)))throw new Error('[avg-visual-image] 原图没有绑定准确的已采用编译来源')
+  return {...raw,requirement:raw.payload.requirement}
+}
 
 async function original(scope:WorkspaceScope,compiled:Compiled,artifactKey:string){
   const requirement=compiled.definition.mediaBatch.requirements.find(r=>artifactKey===`avg.media.raw.${r.requirementKey}`)

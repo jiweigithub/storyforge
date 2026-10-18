@@ -34,6 +34,10 @@ export function createAvgVisualPlanningExecutorV4(options: { brief: ProductProdu
         const {executeAvgVisualRawReuseTaskV4}=await import('./visual-image-revalidation')
         return executeAvgVisualRawReuseTaskV4(input,brief)
       }
+      if(input.task.kind==='avg-media-image-process'){
+        const {executeAvgVisualImageProcessingTaskV4}=await import('./visual-image-processing')
+        return executeAvgVisualImageProcessingTaskV4(input,brief)
+      }
       if (input.task.kind === 'avg-media-image-generate') {
         const { executeAvgMediaImageTaskV2 } = await import('./media-production-executor')
         return executeAvgMediaImageTaskV2(input, { brief, mediaCapabilities: options.mediaCapabilities ?? new Map(), imageEndpointRouteHash: options.imageEndpointRouteHash })

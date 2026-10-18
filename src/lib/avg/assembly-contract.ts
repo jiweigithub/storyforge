@@ -1,7 +1,7 @@
 import { avgHash, avgKey, avgKeys, avgProtocolBody, avgRecord, avgText } from './protocol-validation'
 import { parseAvgVisualProductionBatchV1, type AvgVisualProductionBatchV1 } from './media-production-contract'
 import { parseAvgImageRecoveryV1, type AvgImageRecoveryV1 } from './media-recovery-contract'
-import { parseAvgImageProcessingPlanV1, type AvgImageProcessingPlanV1 } from './image-processing-contract'
+import { parseAvgImageProcessingPlanV1,assertAvgImageProcessingRequirementsV1, type AvgImageProcessingPlanV1 } from './image-processing-contract'
 import { parseAvgStoredAssemblyBriefV3, type AvgStoredAssemblyBriefV3 } from './voice-assembly-storage'
 
 /** Frozen output domain for author assembly. Canonical rules/text remain adopted artifacts. */
@@ -73,11 +73,7 @@ export function parseAvgAssemblyBriefV2(value: unknown): AvgAssemblyBriefV2 {
   const mediaBatch = parseAvgVisualProductionBatchV1(rawBatch)
   const imageProcessing = hasProcessing ? parseAvgImageProcessingPlanV1(rawProcessing) : undefined
   if (imageProcessing && (!mediaBatch.visualReviewPolicy || imageProcessing.entries.some(e => !mediaBatch.requirements.some(r => r.requirementKey === e.requirementKey)))) throw new Error('[avg-process] 加工必须有准确冻结需求和独立视觉评审')
-  for(const entry of imageProcessing?.entries??[]){
-    const r=mediaBatch.requirements.find(r=>r.requirementKey===entry.requirementKey)!,p=entry.recipe
-    if(p.width<r.width||p.height<r.height||Math.abs((p.width/p.height)/(r.width/r.height)-1)>0.02)throw new Error('[avg-process] 加工画布不满足冻结需求的最小尺寸或画幅，请先修订配方')
-    if(r.alpha==='required'&&p.background?.alpha===255)throw new Error('[avg-process] 必需透明需求不能使用不透明底色填充')
-  }
+  if(imageProcessing)assertAvgImageProcessingRequirementsV1(imageProcessing,mediaBatch.requirements)
   if (base.sceneKeys.length + 4 + (mediaBatch.visualReviewPolicy?3:2) * mediaBatch.requirements.length + (imageProcessing?.entries.length ?? 0) > 100) throw new Error('[avg-media] 场景、原始候选、加工、视觉评审、作者选择与终态 join 超过共享 100 任务上限')
   for (const requirement of mediaBatch.requirements) {
     const included = base.mediaAssetKeys.includes(requirement.assetKey)

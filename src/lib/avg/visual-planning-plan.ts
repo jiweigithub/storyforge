@@ -34,7 +34,7 @@ export function buildAvgVisualPlanningPlanV4(input: {
   // The pure legacy topology requires an image capability. It does not
   // resolve it; retained slots below become exact zero-capability tasks.
   const base = buildAvgImageAssemblyTopologyV1({ briefHash:input.briefHash,buildNumber:input.buildNumber,controlEpoch:input.controlEpoch,
-    capabilityRequirements:image.map(c=>({...c,required:true})),declaration:{...v.assembly,mediaBatch} })
+    capabilityRequirements:image.map(c=>({...c,required:true})),declaration:{...v.assembly,mediaBatch,...(v.imageProcessing?{imageProcessing:v.imageProcessing}:{})} })
   const sourceTasks = base.tasks.filter(t => ['avg-author-rules', 'avg-author-script'].includes(t.kind))
   const sourceKeys = sourceTasks.flatMap(t => t.outputArtifactKeys), sourceTaskKeys = sourceTasks.map(t => t.taskKey)
   const template = sourceTasks[0]!, additions: ProductProductionPlanTaskV3[] = []
@@ -80,7 +80,11 @@ export function buildAvgVisualPlanningPlanV4(input: {
     dependsOn: [...task.dependsOn, compileTask], requiredReceipts: [...task.requiredReceipts, { taskKey: compileTask, receiptHash: null }],
     ...(v.rawReuse?.some(r=>task.taskKey===`avg.media.generate.${r.requirementKey}`)?{kind:'avg-media-image-reuse' as const,
       executionMode:'deterministic' as const,skillId:null,contextProfile:'avg-visual-planning-v4' as const,capabilityRequirementKeys:[],maxAttempts:1,reuse:null,timeoutMs:60_000,
-      budgetReservation:{modelCalls:0,inputTokens:24_000,outputTokens:0,mediaCalls:0,maximumCostUsd:0,durationMs:60_000,storageBytes:4*1024*1024}}:{}) } : task)
+      budgetReservation:{modelCalls:0,inputTokens:24_000,outputTokens:0,mediaCalls:0,maximumCostUsd:0,durationMs:60_000,storageBytes:4*1024*1024}}:{}) }
+    :task.kind==='avg-media-image-process'?{...task,contextProfile:'avg-visual-planning-v4' as const,
+      inputArtifactKeys:[...sourceKeys,AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4,...task.inputArtifactKeys],
+      dependsOn:[...sourceTaskKeys,compileTask,...task.dependsOn],requiredReceipts:[...sourceTaskKeys,compileTask,...task.dependsOn].map(taskKey=>({taskKey,receiptHash:null})),
+      budgetReservation:{...task.budgetReservation,inputTokens:24_000}}:task)
   const firstImage = tasks.findIndex(t => t.taskKey.startsWith('avg.media.generate.'))
   tasks.splice(firstImage, 0, ...additions)
   if (tasks.length > 100) throw new Error('[avg-visual-plan] 方案候选、作者采用、消费和终态超出共享任务上界')

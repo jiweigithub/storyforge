@@ -6,18 +6,42 @@ import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
 import { verifyAcceptedProductBuildArtifactV1,verifyAvgProcessedImageArtifactV1 } from '../product-production/artifact-store'
 import { assertAvgRawImageArtifactV1 } from './media-raw-contract'
-import { assertAvgProcessedImageArtifactV1, avgProcessedImageArtifactKeyV1 } from './image-processing-contract'
+import { assertAvgProcessedImageArtifactV1, avgProcessedImageArtifactKeyV1,type AvgProcessedImagePayloadV1 } from './image-processing-contract'
 import { inspectAvgImageBytesV1 } from './image-decoder'
 import { readAvgImageRecoverySourceV1 } from './media-recovery'
 import { parseProductProductionBriefV3 } from '../product-production/contracts'
 import { readAvgImageDefinitionV3 } from './media-production-definition'
+import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
+
+export interface AvgInspectedProcessedImageV1 {
+  payload:AvgProcessedImagePayloadV1;asset:FrozenRuntimeMediaAssetV2;requirement:AvgVisualProductionRequirementV1
+  row:ProductBuildArtifactRecordV1;measured:Awaited<ReturnType<typeof inspectAvgImageBytesV1>>
+}
 
 /** Current or caller-proved historical producer. No adopt/carry authority. */
-export async function inspectAvgProcessedImageSourceV1(input:{scope:WorkspaceScope;brief:ProductProductionBriefV3;raw:ProductBuildArtifactRecordV1;processed:ProductBuildArtifactRecordV1}){
+export async function inspectAvgProcessedImageSourceV1(input:{scope:WorkspaceScope;brief:ProductProductionBriefV3;raw:ProductBuildArtifactRecordV1;processed:ProductBuildArtifactRecordV1}):Promise<AvgInspectedProcessedImageV1>{
+  if(input.brief.avgVisualPlanning){
+    const build=await db.productBuilds.get(input.raw.buildId)
+    if(!build)throw new Error('[avg-process] 当前加工 Build 缺失')
+    const load=()=>Promise.all([import('./visual-planning-image-definition'),import('./visual-image-processing')])
+    const [{readAvgCompiledImageDefinitionV4},{inspectAvgVisualProcessedImageV4}]=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
+    const compiled=await readAvgCompiledImageDefinitionV4({scope:input.scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,
+      controlEpoch:build.controlEpoch,expectedBrief:input.brief,purpose:build.packageHash||build.previewHash?'frozen-verification':'assembly'})
+    const image=await inspectAvgVisualProcessedImageV4({scope:input.scope,compiled,raw:input.raw,artifact:input.processed})
+    return inspectAvgProcessedImageBytesV1({...input,image})
+  }
   const image=await assertAvgProcessedImageArtifactV1(input.brief,input.processed),raw=await assertAvgRawImageArtifactV1(input.brief,input.raw)
+  if(canonicalProductProductionJsonV2(image.payload.sourceAsset)!==canonicalProductProductionJsonV2(raw.asset))throw new Error('[avg-process] 加工原图元数据已变化')
+  return inspectAvgProcessedImageBytesV1({...input,image})
+}
+
+/** Byte/decoder inspection only. The caller proves the real definition,
+ * recipe, raw source and producer authority before supplying this image. */
+export async function inspectAvgProcessedImageBytesV1(input:{scope:WorkspaceScope;raw:ProductBuildArtifactRecordV1;processed:ProductBuildArtifactRecordV1;
+  image:Pick<AvgInspectedProcessedImageV1,'payload'|'asset'|'requirement'>}):Promise<AvgInspectedProcessedImageV1>{
+  const {image}=input
   const ref={artifactKey:input.raw.artifactKey,version:input.raw.version,contentHash:input.raw.contentHash,producerReceiptHash:input.raw.producerReceiptHash}
   if(canonicalProductProductionJsonV2(image.payload.raw)!==canonicalProductProductionJsonV2(ref)
-    ||canonicalProductProductionJsonV2(image.payload.sourceAsset)!==canonicalProductProductionJsonV2(raw.asset)
     ||input.processed.buildId!==input.raw.buildId||input.processed.controlEpoch!==input.raw.controlEpoch)throw new Error('[avg-process] 加工图缺少准确的原始 producer/版本/元数据')
   const quality=JSON.parse(input.processed.qualityJson)
   if(quality.processingReceiptHash!==image.payload.receipt.receiptHash||quality.rawProducerReceiptHash!==input.raw.producerReceiptHash
@@ -30,9 +54,10 @@ export async function inspectAvgProcessedImageSourceV1(input:{scope:WorkspaceSco
   if(measured.hasAlpha!==image.payload.receipt.output.hasAlpha)throw new Error('[avg-process] 加工回执与实际透明像素不符')
   return {...image,row:input.processed,measured}
 }
-export async function readAvgProcessedImageSourceV1(input:{scope:WorkspaceScope;buildId:number;brief:ProductProductionBriefV3;raw:ProductBuildArtifactRecordV1;version?:number;contentHash?:string}){
-  readAvgImageDefinitionV3(input.brief)
-  const requirementKey=(await assertAvgRawImageArtifactV1(input.brief,input.raw)).payload.requirement.requirementKey
+export async function readAvgProcessedImageSourceV1(input:{scope:WorkspaceScope;buildId:number;brief:ProductProductionBriefV3;raw:ProductBuildArtifactRecordV1;version?:number;contentHash?:string}):Promise<AvgInspectedProcessedImageV1>{
+  const load=()=>import('./image-consumption')
+  const {assertAvgConsumedRawImageV4}=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
+  const requirementKey=(await assertAvgConsumedRawImageV4({...input,row:input.raw})).requirement.requirementKey
   const rows=await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([input.buildId,avgProcessedImageArtifactKeyV1(requirementKey)])
     .filter(r=>r.status==='accepted'&&r.controlEpoch===input.raw.controlEpoch).limit(2).toArray()
   const row=rows[0]
