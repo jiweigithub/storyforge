@@ -36,7 +36,9 @@ describe('R-TTRPGOPEN10 source-preserving local reading contract', () => {
     }
     expect(metadata.size).toBeGreaterThan(0)
     for (const asset of metadata) expect(included(asset), asset).toBe(true)
-    for (const file of ['engine.py', 'evaluate.mjs', 'reading_frontend.py']) expect(included(`scripts/ttrpg-local-tts/${file}`)).toBe(false)
+    for (const file of ['product-bridge.mjs', 'product-jobs.mjs', 'product-contract.mjs', 'reading-preview.mjs']) expect(included(`scripts/ttrpg-local-tts/${file}`)).toBe(true)
+    expect(runner).toContain('delete snapshotEnv.STORYFORGE_TTRPG_LOCAL_TTS_RUNTIME_DIR')
+    for (const file of ['engine.py', 'evaluate.mjs', 'reading_frontend.py', 'product-worker.py']) expect(included(`scripts/ttrpg-local-tts/${file}`)).toBe(false)
   })
   it('retains original bytes and full UTF-16 ranges for explicit pronunciations, including a supplementary glyph', () => {
     const text = '𠮷野掷2d6+3。'

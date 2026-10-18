@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { db } from '../../src/lib/db/schema'
 import { setupAudioRuntimeV1 } from '../helpers/open-audio-runtime'
 import { rt } from '../helpers/open-ttrpg-branch-recovery'
@@ -43,6 +44,20 @@ async function fixture(confirmed = true) {
 describe('R-TTRPGOPEN10 unique governed local speech preparation', { timeout: 60000 }, () => {
   beforeEach(async () => { await db.delete(); await db.open() })
   afterEach(() => { vi.restoreAllMocks(); db.close() })
+  it('the actual registered-source input is accepted unchanged by the Node worker protocol, without creating a job or calling models', async () => {
+    const s = await fixture(), prepared = await prepareTtrpgOpenLocalVoiceExecutionV1(s.input)
+    const content = await artifacts.readAgentRunArtifactExactV1({ projectId: s.owner.scope.projectId, artifactKind: 'source-snapshot', contentHash: prepared.inputArtifactHash })
+    const packet = { jobKey: `ttrpg.voice.${prepared.runId}.${prepared.inputArtifactHash}`, inputArtifactHash: prepared.inputArtifactHash, execution: JSON.parse(content) }
+    const result = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `
+import {readFileSync} from 'node:fs';
+import {validateProductJob} from './scripts/ttrpg-local-tts/product-contract.mjs';
+const input=validateProductJob(JSON.parse(readFileSync(0,'utf8')));
+console.log(JSON.stringify({text:input.execution.source.text,reading:input.execution.reading.normalizedText,scope:input.execution.source.scope,hash:input.inputArtifactHash}));
+`], { encoding: 'utf8', input: JSON.stringify(packet) }))
+    expect(result).toEqual({ text: '编号001。', reading: '编号零零一.', scope: packet.execution.source.scope, hash: prepared.inputArtifactHash })
+    expect((await db.agentRunEvents.toArray()).some(e => e.type === 'model.requested')).toBe(false)
+    expect(await db.productMediaAssets.count()).toBe(0)
+  })
   it('keeps one completed intent and one original execution Run, exact raw context plus explicit reading, without model/media/mechanical writes', async () => {
     const s = await fixture(), before = await readProductRuntimeState(s.owner.sessionId), eventCount = await db.productRuntimeEvents.count()
     const prepared = await prepareTtrpgOpenLocalVoiceExecutionV1(s.input)

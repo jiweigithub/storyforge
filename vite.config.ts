@@ -2,6 +2,7 @@ import { defineConfig, type ViteDevServer, type PreviewServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { localCodexPlugin } from './scripts/local-codex/bridge.mjs'
+import { localTtsPlugin } from './scripts/ttrpg-local-tts/product-bridge.mjs'
 import { execSync } from 'node:child_process'
 import { providerProxies } from './scripts/distribution/proxies.mjs'
 
@@ -140,6 +141,7 @@ export default defineConfig(({ mode }) => {
   },
   plugins: [
     ...(!showcase ? [localCodexPlugin()] : []),
+    ...(!showcase ? [localTtsPlugin()] : []),
     ...(showcase ? [{
       name: 'storyforge-showcase-html',
       transformIndexHtml: {

@@ -1,4 +1,4 @@
-# 本机中文语音开发评测
+# 本机中文语音与开发评测
 
 固定台词的离线 CPU 评测，入口登记为 `ttrpg.local-voice.eval`。当前支持中文精简内核的验证；正式团局配音沿施工方案 §35.103 独立接入原叙述、候选试听、确认与异步生命周期。
 
@@ -46,7 +46,13 @@ node scripts/ttrpg-local-tts/evaluate.mjs --runtime-dir "$HOME/.local/share/stor
 
 产品内部 `prepareTtrpgOpenLocalVoiceExecutionV1` 仅沿原完成意图创建唯一子 Run，冻结准确原文 Context Manifest、明确读法、完整产品描述和 hash；未确认/不支持的旧读法、导入和祖先意图不能执行。准备不发送模型，原请求预算不重复预留。`dispatchTtrpgOpenLocalVoiceForKernelV1` 是桥接用的一次派发边界：显式动作、准确版本、冻结正式音频入口和真实身份校验后先持久记账，原始返回先保存；丢失返回或重复继续只能核查原 job，不能推断未发送再发。原始返回仍待协议与真实音频校验，不是已通过的候选。
 
-当前没有接通正式离线产品 worker、桌面桥接 UI、真实音频候选、片段/样本时序、试听或 E16 采用。现有固定台词评测和 CPU 读法预检继续使用各自明确入口，不能把产品描述或注入传输的工程测试当作正式音频已生成。
+产品 V2 新增 `product-worker.py` 与 `product-jobs.mjs` / `product-bridge.mjs`，原 V1 描述保留为 `product-profile-v1.json`。九项实际实现源码按 SHA-256 冻结；改动相关实现后须明确运行 `node scripts/ttrpg-local-tts/pin-product-profile.mjs`，并用同一命令的 `--check` 核对。旧输入保留原版本，可以查询和请求停止，不取得当前启动权限。
+
+操作者明确设置 `STORYFORGE_TTRPG_LOCAL_TTS_RUNTIME_DIR` 为已有运行库目录后，Vite 开发/预览服务才启用 loopback 同源接口；静态托管没有这个进程。创建、查询和刷新不启动模型，实际启动只能由原已确认意图的内部 `generateTtrpgOpenLocalVoiceV1` 动作经正式 Run 派发。服务保留原输入、永久启动 claim、租约、逐段调用记录、进程输出、部分音频和终态，不自动重试；安装/评测/产品共用单一物理槽位，至少保留 5 GiB 磁盘余量，不复制模型。
+
+worker 在加载模型前复算原确认读法，完整分段且每段最多 60 秒；两线程 CPU、禁网络和嵌套进程，所有实际模型调用和样本时序留证。原文/展开文字、64 段/各 64 次调用、900 秒、100 MiB 和 30 分钟上限保持；64 KiB 进程诊断输出超限即停止并保留前缀。客户端每两秒复查原来源/本人授权，再续约十秒租约；Node 与 worker 以单调时间约束，断连或重启不续命，时钟回拨和迟到续约不复活过期任务。停止请求不等于进程确实终止，完整迟到结果仍保留。状态传输限制 64 KiB /15 秒，原始返回另受 Base64 预算和 120 秒读取期限约束。
+
+原始结果复核真实 PCM、文件 hash、完整归一文字/段落样本覆盖及模型次数。段落样本边界不能冒充逐字对齐；原始返回不是 CreativeArtifact 候选、试听通过或采用证据。当前真实产品 worker 验收尚待执行，paused/unknown 证据恢复、桌面 UI、候选试听、独立 E16 采用与发行安装继续施工。显式隔离验收用例为 `tests/e2e/ttrpg-open-real-local-voice.spec.ts`，还须同时设置 `VITE_ENABLE_TTRPG_OPEN_PREVIEW=1`、`STORYFORGE_TTRPG_REAL_VOICE_ACCEPTANCE=1` 和上述运行库变量；默认 E2E 移除运行库变量且不会加载模型。旧固定评测和 CPU 预检保留各自权限，不能把合成 PCM 或注入进程当作真实语音或真人听感。
 
 ## 来源与许可
 

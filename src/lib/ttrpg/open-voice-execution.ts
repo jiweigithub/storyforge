@@ -136,7 +136,7 @@ export async function readTtrpgOpenLocalVoicePreparationV1(request: Locator) {
  * output on disk. UI wiring and the actual offline worker are separate work. */
 export interface TtrpgOpenLocalVoiceTransportV1 {
   kind: 'local-offline-speech-v1'; profileHash: string
-  execute: (input: { jobKey: string; inputArtifactHash: string; execution: TtrpgOpenVoiceExecutionInputV1; signal?: AbortSignal }) => Promise<string>
+  execute: (input: { jobKey: string; inputArtifactHash: string; execution: TtrpgOpenVoiceExecutionInputV1; signal?: AbortSignal; assertCurrentBeforeStart: () => Promise<void> }) => Promise<string>
 }
 /** One durable dispatch only. Raw bytes are evidence, never an accepted audio
  * candidate. Unknown/lost returns are inspected by job key, never auto resent. */
@@ -174,7 +174,15 @@ export async function dispatchTtrpgOpenLocalVoiceForKernelV1(request: Locator & 
         // Frozen-entry verification is asynchronous. Consent/pause/identity
         // can change while it runs, so the last check belongs inside invoke.
         await b.original.owner.assertCurrent(); signal?.throwIfAborted()
-        return transport.execute({ jobKey, inputArtifactHash: b.inputHash, execution: structuredClone(b.input), signal })
+        return transport.execute({ jobKey, inputArtifactHash: b.inputHash, execution: structuredClone(b.input), signal,
+          assertCurrentBeforeStart: async () => {
+            // Waiting/lease renewal may span harmless game progress. Re-read
+            // the same registered original source and current consent rather
+            // than granting new text or relying on an old state snapshot.
+            const fresh = await basis(input)
+            if (fresh.inputHash !== b.inputHash) p.fail('原文字、读法、受众或执行版本已经变化')
+            signal?.throwIfAborted()
+          } })
       },
       { category: 'runtime.ttrpg-open.local-voice', projectId: input.scope.projectId }, signal)
     // The file cap remains the existing 100 MiB. Base64 envelope allowance is
@@ -193,4 +201,17 @@ export async function dispatchTtrpgOpenLocalVoiceForKernelV1(request: Locator & 
       type: 'run.paused', payload: { reason: '语音派发已记账；发送、返回或留存结果需按原 job 核查。不得自动重发、返还额度或当作已确认停止。', recoverable: true }, expectedLastSequence: latest.projection.lastSequence })
     throw error
   }
+}
+
+/** The explicit generate action reuses the already reserved original reading.
+ * A probe/refresh cannot call this action or manufacture a new reservation. */
+export async function generateTtrpgOpenLocalVoiceV1(request: Locator & { decision: 'generate-this-original-confirmed-local-voice'; signal?: AbortSignal }) {
+  const input = structuredClone({ scope: request.scope, sessionId: request.sessionId, viewerKey: request.viewerKey, requestKey: request.requestKey, decision: request.decision }), signal = request.signal
+  p.literal(input.decision, 'generate-this-original-confirmed-local-voice', 'explicit original speech generation')
+  signal?.throwIfAborted()
+  const prepared = await prepareTtrpgOpenLocalVoiceExecutionV1({ ...input, decision })
+  const { createTtrpgOpenLocalVoiceTransportV1 } = await import('./open-local-voice-transport')
+  const transport = await createTtrpgOpenLocalVoiceTransportV1(signal)
+  const result = await dispatchTtrpgOpenLocalVoiceForKernelV1({ ...input, decision: 'dispatch-this-original-local-voice-execution', signal, transport })
+  return { prepared, result }
 }
