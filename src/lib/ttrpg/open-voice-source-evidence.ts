@@ -23,7 +23,8 @@ function refs(events: readonly AnyAgentRunEventV1[]): ExactRunArtifactIdentityV1
   return [...result.entries()].sort(([a],[b])=>a<b?-1:a>b?1:0).map(([,ref])=>ref)
 }
 function freezeLog(s: AgentRunSnapshotV1) { return { runId: s.run.id, contractHash: s.run.contractHash, contractJson: s.run.contractJson, events: s.events } }
-async function log(value: unknown) {
+/** Internal historical parser; returns data only, never a resumable Run. */
+export async function parseTtrpgOpenVoiceArchivedRunForKernelV1(value: unknown) {
   const r = p.record(value,['runId','contractHash','contractJson','events'],'voice archived run')
   if (typeof r.contractJson !== 'string' || new TextEncoder().encode(r.contractJson).length > 200000) p.fail('原配音契约字节超限')
   const [{parseAgentRunContract},{parseAgentRunEventV1},{replayAgentRunEventsV1}] = await Promise.all([
@@ -62,7 +63,7 @@ export async function readTtrpgOpenVoiceSourceEvidenceForKernelV1(input: {
   if(new TextEncoder().encode(content).length>1048576)p.fail('原语音来源快照超过有界历史读取预算')
   const r=p.record(p.json(content),['schema','version','request','intent','execution','checkpoint','candidateHash','candidateArtifactHash','artifactRefs'],'voice source evidence')
   if(r.schema!==schema||r.version!==1||stable(r)!==content||r.candidateHash!==expected.candidateHash)p.fail('不是准确原候选的规范来源快照')
-  const request=parseTtrpgOpenVoiceRequestV1(r.request),intent=await log(r.intent),execution=await log(r.execution)
+  const request=parseTtrpgOpenVoiceRequestV1(r.request),intent=await parseTtrpgOpenVoiceArchivedRunForKernelV1(r.intent),execution=await parseTtrpgOpenVoiceArchivedRunForKernelV1(r.execution)
   if(intent.events.length+execution.events.length>4096)p.fail('原父子语音事件总量超出来源快照预算')
   const parent=execution.contract.lineage?.parent,scope=execution.contract.scope.runtime
   if(request.requestKey!==expected.requestKey||request.script.sessionKey!==expected.sessionKey||request.script.runtimeSourceHash!==expected.runtimeSourceHash

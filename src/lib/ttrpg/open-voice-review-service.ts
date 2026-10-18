@@ -1,6 +1,6 @@
 /** Finish the original read-only generator after an explicit quality review.
  * No model, media import, text adopt(), E16 or runtime write is performed. */
-import { canonicalStringify as stable, hashCanonicalValue as hash } from '../agent/run/hash'
+import { canonicalStringify as stable } from '../agent/run/hash'
 import { AgentRunStoreError, appendAgentRunEventV1 } from '../agent/run/event-store'
 import { AgentRunArtifactStoreError, readAgentRunArtifactExactV1, recordAgentRunArtifactV1 } from '../memory/artifact-store'
 import { loadTtrpgOpenVoiceJobReadStateForKernelV1, type TtrpgOpenVoiceJobLocatorV1 } from './open-voice-job-read-state'
@@ -8,17 +8,12 @@ import { freezeTtrpgOpenVoiceSourceEvidenceV1, readTtrpgOpenVoiceSourceEvidenceF
 import { TTRPG_OPEN_VOICE_EXECUTION_STEP_V1 as stepId } from './open-voice-execution-input'
 import { parseTtrpgOpenVoiceQualityReviewV1, TTRPG_OPEN_VOICE_REVIEW_SCHEMA_V1 as schema,
   TTRPG_OPEN_VOICE_REVIEW_DECISION_V1 as decision, type TtrpgOpenVoiceQualityReviewV1 } from './open-voice-review-contract'
+import { buildTtrpgOpenVoiceGenerationVerificationV1, ttrpgOpenVoiceQualityConfirmationV1 as confirmationPayload,
+  TTRPG_OPEN_VOICE_GENERATION_VERIFIER_V1 as verifier, TTRPG_OPEN_VOICE_GENERATION_VERIFICATION_SCHEMA_V1 as verificationSchema } from './open-voice-generation-verification'
 import * as p from './open-contract-parse'
 
 type Basis = Awaited<ReturnType<typeof loadTtrpgOpenVoiceJobReadStateForKernelV1>>
 type Input = TtrpgOpenVoiceJobLocatorV1 & { candidateHash: string }
-const verifier = 'ttrpg.open.local-voice-v1'
-const verificationSchema = 'storyforge.ttrpg-open-voice-generation-verification'
-const reviewNote = '原音频候选的本人试听声明；不代表音轨采用或独立真人验收。'
-function confirmationPayload(candidateHash: string, reviewArtifactHash: string) {
-  return { stepId, candidateHash, decision:'adopt' as const, reviewItemId:'voice-quality:'+reviewArtifactHash,
-    reviewDecision:'acknowledged' as const, note:reviewNote }
-}
 
 async function artifacts(b: Basis, wanted: string) {
   const found: Array<{ hash: string; body: Record<string,unknown>; event: Extract<typeof b.snapshot.events[number],{type:'evidence.artifact.recorded'}> }> = []
@@ -72,23 +67,11 @@ async function checkedReview(b: Basis, input: Input, saved: NonNullable<Awaited<
 }
 
 async function terminal(b: Basis, checked: Awaited<ReturnType<typeof checkedReview>>) {
-  const { review, reviewArtifactHash } = checked
-  const { createVerificationReceiptV1 } = await import('../agent/run/verification-receipt')
-  const contexts=b.snapshot.events.filter(e=>e.type==='context.assembled')
-  if (contexts.length!==1 || contexts[0].type!=='context.assembled' || contexts[0].payload.stepId!==stepId || contexts[0].payload.attempt!==1) p.fail('原生成终验缺少唯一实际 Manifest')
-  const requested=b.snapshot.events.filter(e=>e.type==='model.requested'),responded=b.snapshot.events.filter(e=>e.type==='model.responded')
-  if (requested.length!==1 || requested[0].type!=='model.requested' || requested[0].payload.stepId!==stepId || requested[0].payload.attempt!==1 || requested[0].payload.bindingHash!==b.inputArtifactHash
-    || responded.length!==1 || responded[0].type!=='model.responded' || responded[0].payload.stepId!==stepId || responded[0].payload.attempt!==1) p.fail('原生成终验缺少唯一准确步骤的实际派发和返回')
-  const receipt = await createVerificationReceiptV1({ version: 1, runId: b.snapshot.run.id, generation: b.snapshot.projection.generation,
-    contractHash: b.snapshot.run.contractHash, contextManifestHashes: [contexts[0].payload.manifestHash],
-    candidateHashes: [review.candidateHash], adoptionEventIds: [], postStateHash: review.runtimeReadEvidence.stateHash,
-    verifierSetVersion: verifier, acceptedAt: review.reviewedAt, lineage: { runId: b.original.snapshot.run.id,
-      receiptHash: b.original.receipt.receiptHash, artifactHash: b.original.artifactHash, relation: b.snapshot.run.parentRelation! },
-    criteria: [{ id: 'voice.audio-candidate', status: 'passed', evidenceRefs: ['candidate:'+review.candidateHash,
-      'raw:'+responded[0].payload.outputHash,
-      'source:'+review.sourceEvidenceArtifactHash,'review:'+reviewArtifactHash,'audio:'+review.audioContentHash] }] })
-  const body = { schema: verificationSchema, version: 1, requestKey: b.input.requestKey, reviewArtifactHash, receipt }
-  return { receipt, content: stable(body), artifactHash: await hash(body) }
+  return buildTtrpgOpenVoiceGenerationVerificationV1({ runId: b.snapshot.run.id, generation: b.snapshot.projection.generation,
+    contractHash: b.snapshot.run.contractHash, events: b.snapshot.events, inputArtifactHash: b.inputArtifactHash,
+    requestKey: b.input.requestKey, review: checked.review, reviewArtifactHash: checked.reviewArtifactHash,
+    lineage: { runId: b.original.snapshot.run.id, receiptHash: b.original.receipt.receiptHash,
+      artifactHash: b.original.artifactHash, relation: b.snapshot.run.parentRelation! } })
 }
 
 /** Read existing original review/terminal only; never repairs or grants media rights. */

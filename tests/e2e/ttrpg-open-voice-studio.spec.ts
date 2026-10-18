@@ -83,20 +83,28 @@ console.log(JSON.stringify({schema:'storyforge.ttrpg-local-tts-product-raw-respo
     const core=await load('/storyforge/src/lib/product/runtime-core.ts'),state=await core.readProductRuntimeState(owner.sessionId),requestKey=state.ttrpg.openRun.voiceRequests[0].requestKey
     const original={...owner,requestKey},candidate=(await api.readTtrpgOpenVoiceCandidateV1(original)).candidate
     const saved=await api.freezeTtrpgOpenVoiceSourceEvidenceV1({...original,candidateHash:candidate.candidateHash,decision:'freeze-this-original-voice-source-evidence'})
+    const completed=await api.captureTtrpgOpenVoiceCompletionV1({...original,candidateHash:candidate.candidateHash})
     const bytes=await (await load('/storyforge/src/lib/ttrpg/open-voice-candidate.ts')).readTtrpgOpenVoiceAuditionBasisForKernelV1({...original,candidateHash:candidate.candidateHash})
-    await (await load('/storyforge/src/lib/product/runtime-media-library.ts')).importProductRuntimeMediaAssetV1({scope:owner.scope,productRuntimeSessionId:owner.sessionId,assetKey:'native.voice.capsule.fixture',kind:'voice',name:'Unadopted capsule fixture',blob:new Blob([bytes.data],{type:'audio/wav'}),source:'Synthetic browser lifecycle fixture',license:'Fixture only; no listening, rights or E16 acceptance',durationMs:saved.audio.durationMs,exactArtifactRefs:saved.artifactRefs})
+    await (await load('/storyforge/src/lib/product/runtime-media-library.ts')).importProductRuntimeMediaAssetV1({scope:owner.scope,productRuntimeSessionId:owner.sessionId,assetKey:'native.voice.capsule.fixture',kind:'voice',name:'Unadopted capsule fixture',blob:new Blob([bytes.data],{type:'audio/wav'}),source:'Synthetic browser lifecycle fixture',license:'Fixture only; no listening, rights or E16 acceptance',durationMs:saved.audio.durationMs,exactArtifactRefs:completed.artifactRefs})
     const parent=(await db.agentRuns.get(candidate.runId)).parentRunId,{deleteAgentRunV1}=await load('/storyforge/src/lib/agent/run/event-store.ts')
     await deleteAgentRunV1(owner.scope,candidate.runId);await deleteAgentRunV1(owner.scope,parent)
     const input={projectId:owner.scope.projectId,evidenceArtifactHash:saved.evidenceArtifactHash,candidateHash:candidate.candidateHash,requestKey,sessionKey:state.ttrpg.sessionKey,runtimeSourceHash:(await db.productRuntimeSessions.get(owner.sessionId)).runtimeSourceHash}
     const {readTtrpgOpenVoiceSourceEvidenceForKernelV1}=await load('/storyforge/src/lib/ttrpg/open-voice-source-evidence.ts'),before=await readTtrpgOpenVoiceSourceEvidenceForKernelV1(input)
     const {exportProjectJSON,importProjectJSON}=await load('/storyforge/src/lib/export/json-export.ts'),copy=await importProjectJSON(await exportProjectJSON(owner.scope.projectId)),after=await readTtrpgOpenVoiceSourceEvidenceForKernelV1({...input,projectId:copy})
+    const {readTtrpgOpenVoiceCompletionForKernelV1}=await load('/storyforge/src/lib/ttrpg/open-voice-completion-evidence.ts')
+    const completedInput={projectId:owner.scope.projectId,requestKey,sessionKey:input.sessionKey,runtimeSourceHash:input.runtimeSourceHash,completion:completed.completion}
+    const completionBefore=await readTtrpgOpenVoiceCompletionForKernelV1(completedInput),completionAfter=await readTtrpgOpenVoiceCompletionForKernelV1({...completedInput,projectId:copy})
     const capsule=await (await load('/storyforge/src/lib/memory/artifact-store.ts')).readAgentRunArtifactExactV1({projectId:copy,artifactKind:'source-snapshot',contentHash:saved.evidenceArtifactHash})
     return {sameArchive:JSON.stringify(before)===JSON.stringify(after),archiveOnly:after.archiveOnly,generationAllowed:after.generationAllowed,adoptionAllowed:after.adoptionAllowed,humanListening:after.humanListening,physicalAudioRechecked:after.physicalAudioRechecked,
       audioReceipts:(await core.readProductRuntimeState(owner.sessionId)).ttrpg.openRun.audioReceipts?.length??0,visibleTracks:(await api.readTtrpgOpenAudioDeskV1(owner)).tracks.length,
-      originalRunsGone:!(await db.agentRuns.get(candidate.runId))&&!(await db.agentRuns.get(parent)),originalAssets:await db.productMediaAssets.where('projectId').equals(owner.scope.projectId).count(),importedAssets:await db.productMediaAssets.where('projectId').equals(copy).count(),capsule}
+      originalRunsGone:!(await db.agentRuns.get(candidate.runId))&&!(await db.agentRuns.get(parent)),originalAssets:await db.productMediaAssets.where('projectId').equals(owner.scope.projectId).count(),importedAssets:await db.productMediaAssets.where('projectId').equals(copy).count(),capsule,
+      completionSame:JSON.stringify(completed)===JSON.stringify(completionBefore)&&JSON.stringify(completionBefore)===JSON.stringify(completionAfter),completion:completionAfter}
   },f)
-  const {capsule,...archiveSummary}=archive
-  expect(archiveSummary).toEqual({sameArchive:true,archiveOnly:true,generationAllowed:false,adoptionAllowed:false,humanListening:'unproven',physicalAudioRechecked:false,audioReceipts:0,visibleTracks:0,originalRunsGone:true,originalAssets:1,importedAssets:1})
+  const {capsule,completion,...archiveSummary}=archive
+  expect(archiveSummary).toEqual({sameArchive:true,archiveOnly:true,generationAllowed:false,adoptionAllowed:false,humanListening:'unproven',physicalAudioRechecked:false,audioReceipts:0,visibleTracks:0,originalRunsGone:true,originalAssets:1,importedAssets:1,completionSame:true})
+  expect(completion).toMatchObject({archiveOnly:true,generationAllowed:false,adoptionAllowed:false,independentListening:'unproven',physicalAudioRechecked:false,runtimePostStateReplayed:false})
+  expect(completion.completion.receiptHash).toBe(originalReview.review.receiptHash)
   await test.info().attach('original-voice-source-capsule',{body:Buffer.from(capsule),contentType:'application/json'})
+  await test.info().attach('original-voice-generation-completion',{body:Buffer.from(JSON.stringify(completion)),contentType:'application/json'})
   expect({starts,creates,previews,rawReads}).toEqual({starts:1,creates:1,previews:1,rawReads:1})
 })
