@@ -292,7 +292,9 @@ export async function readTtrpgOpenAudioClipV1(request: TtrpgOpenAudioDeskInputV
 export { reserveTtrpgOpenVoiceRequestV1, cancelTtrpgOpenVoiceRequestV1, readTtrpgOpenVoiceRequestDeskV1 } from './open-voice-request-service'
 export { readTtrpgOpenLocalVoiceJobV1 } from './open-voice-job-service'
 export { freezeTtrpgOpenVoiceSourceEvidenceV1 } from './open-voice-source-evidence'
-export { acceptTtrpgOpenVoiceCandidateReviewV1, readTtrpgOpenVoiceCandidateReviewV1 } from './open-voice-review-service'
+export { acceptTtrpgOpenVoiceCandidateReviewV1, readTtrpgOpenVoiceCandidateReviewV1,
+  rejectTtrpgOpenVoiceCandidateReviewV1, readTtrpgOpenVoiceCandidateRejectionV1 } from './open-voice-review-service'
+export { resumeTtrpgOpenVoiceCandidateReviewV1 } from './open-voice-review-recovery'
 export { stopTtrpgOpenLocalVoiceJobV1 } from './open-voice-job-stop'
 export { recoverTtrpgOpenLocalVoiceRawV1 } from './open-voice-raw-recovery'
 export { prepareTtrpgOpenVoiceCandidateV1, readTtrpgOpenVoiceCandidateV1 } from './open-voice-candidate'

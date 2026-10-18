@@ -2,6 +2,7 @@
  * No model, media import, text adopt(), E16 or runtime write is performed. */
 import { canonicalStringify as stable } from '../agent/run/hash'
 import { AgentRunStoreError, appendAgentRunEventV1 } from '../agent/run/event-store'
+import { createAgentRunCheckpointV1 } from '../agent/run/checkpoint'
 import { AgentRunArtifactStoreError, readAgentRunArtifactExactV1, recordAgentRunArtifactV1 } from '../memory/artifact-store'
 import { loadTtrpgOpenVoiceJobReadStateForKernelV1, type TtrpgOpenVoiceJobLocatorV1 } from './open-voice-job-read-state'
 import { freezeTtrpgOpenVoiceSourceEvidenceV1, readTtrpgOpenVoiceSourceEvidenceForKernelV1 } from './open-voice-source-evidence'
@@ -11,6 +12,9 @@ import { parseTtrpgOpenVoiceQualityReviewV1, TTRPG_OPEN_VOICE_REVIEW_SCHEMA_V1 a
 import { buildTtrpgOpenVoiceGenerationVerificationV1, ttrpgOpenVoiceQualityConfirmationV1 as confirmationPayload,
   TTRPG_OPEN_VOICE_GENERATION_VERIFIER_V1 as verifier, TTRPG_OPEN_VOICE_GENERATION_VERIFICATION_SCHEMA_V1 as verificationSchema } from './open-voice-generation-verification'
 import * as p from './open-contract-parse'
+import { parseTtrpgOpenVoiceQualityRejectionV1, TTRPG_OPEN_VOICE_REJECTION_SCHEMA_V1 as rejectionSchema,
+  TTRPG_OPEN_VOICE_REJECTION_DECISION_V1 as rejectionDecision, type TtrpgOpenVoiceQualityRejectionV1 } from './open-voice-rejection-contract'
+import { readTtrpgOpenVoiceExecutionControlsForKernelV1, TTRPG_OPEN_VOICE_CONTROL_SCHEMA_V1 } from './open-voice-execution'
 
 type Basis = Awaited<ReturnType<typeof loadTtrpgOpenVoiceJobReadStateForKernelV1>>
 type Input = TtrpgOpenVoiceJobLocatorV1 & { candidateHash: string }
@@ -45,8 +49,9 @@ async function source(b: Basis, input: Input, evidenceArtifactHash: string) {
   return saved
 }
 
-async function checkedReview(b: Basis, input: Input, saved: NonNullable<Awaited<ReturnType<typeof artifacts>>>) {
-  const review = parseTtrpgOpenVoiceQualityReviewV1(saved.body), original = await source(b,input,review.sourceEvidenceArtifactHash)
+async function checkedQuality<T extends TtrpgOpenVoiceQualityReviewV1 | TtrpgOpenVoiceQualityRejectionV1>(b: Basis, input: Input,
+  saved: NonNullable<Awaited<ReturnType<typeof artifacts>>>, parse: (value:unknown)=>T) {
+  const review = parse(saved.body), original = await source(b,input,review.sourceEvidenceArtifactHash)
   if (stable(b.snapshot.contract.acceptance)!==stable([{id:'voice.audio-candidate',kind:'deterministic-check',required:true}])
     || stable(b.snapshot.contract.verificationPlan)!==stable([{id:'voice.audio-terminal',kind:'terminal',verifier,criterionIds:['voice.audio-candidate']}])) p.fail('原生成任务不是冻结的只读音频候选验收合同')
   const capsuleEvent=b.snapshot.events.find(e=>e.type==='evidence.artifact.recorded' && e.payload.contentHash===review.sourceEvidenceArtifactHash)
@@ -65,6 +70,9 @@ async function checkedReview(b: Basis, input: Input, saved: NonNullable<Awaited<
   if (state.lastSequence !== review.runtimeReadEvidence.sequence || await hashProductRuntimeStateV1(state) !== review.runtimeReadEvidence.stateHash) p.fail('原配音终验缺少真实的只读运行状态')
   return { review, original, reviewArtifactHash: saved.hash }
 }
+async function checkedReview(b: Basis, input: Input, saved: NonNullable<Awaited<ReturnType<typeof artifacts>>>) {
+  return checkedQuality(b,input,saved,parseTtrpgOpenVoiceQualityReviewV1)
+}
 
 async function terminal(b: Basis, checked: Awaited<ReturnType<typeof checkedReview>>) {
   return buildTtrpgOpenVoiceGenerationVerificationV1({ runId: b.snapshot.run.id, generation: b.snapshot.projection.generation,
@@ -78,6 +86,10 @@ async function terminal(b: Basis, checked: Awaited<ReturnType<typeof checkedRevi
 export async function readTtrpgOpenVoiceCandidateReviewV1(request: Input) {
   const input = structuredClone(request), b = await loadTtrpgOpenVoiceJobReadStateForKernelV1(input)
   const saved = await artifacts(b,schema)
+  if(await artifacts(b,rejectionSchema)){
+    if(saved)p.fail('同一原音频存在相互冲突的接受与拒绝工件，保留证据并停止')
+    return null
+  }
   if (!saved) {
     if (b.snapshot.projection.state==='completed') p.fail('已完成的原生成任务缺少本人审阅工件')
     return null
@@ -113,10 +125,12 @@ export async function acceptTtrpgOpenVoiceCandidateReviewV1(request: Input & {
   for (let attempt=0;attempt<12;attempt++) {
     try {
       const b = await loadTtrpgOpenVoiceJobReadStateForKernelV1(input), saved = await artifacts(b,schema)
+      if(await artifacts(b,rejectionSchema))p.fail('本人已经拒绝这条原配音；不能改成接受或补造成功终验')
       if (!saved) {
         if (b.snapshot.projection.state !== 'awaiting_confirmation' || b.original.owner.runtime.product.safety.status !== 'active') p.fail('请先核对实际原候选并恢复有效的本人审阅状态')
         const original = await freezeTtrpgOpenVoiceSourceEvidenceV1({ ...input, decision:'freeze-this-original-voice-source-evidence' })
         const current = await loadTtrpgOpenVoiceJobReadStateForKernelV1(input)
+        if(await artifacts(current,rejectionSchema))p.fail('原配音已先保存拒绝决定，不能再接受')
         if (await artifacts(current,schema)) continue
         if (current.snapshot.projection.state !== 'awaiting_confirmation' || current.original.owner.runtime.product.safety.status !== 'active') p.fail('原候选审阅状态已变化')
         const owner=current.original.owner, reviewedAt=Date.now()
@@ -162,4 +176,89 @@ export async function acceptTtrpgOpenVoiceCandidateReviewV1(request: Input & {
     }
   }
   p.fail('原配音审阅终验持续竞争，请明确恢复同一记录；没有重新生成或采用音轨')
+}
+
+const rejectionFailure=(artifactHash:string)=>'ttrpg-voice-quality-rejected:'+artifactHash
+const rejectionConfirmation=(candidateHash:string)=>({stepId,candidateHash,decision:'reject' as const})
+async function rejectionControls(b:Basis){
+  const controlled=await readTtrpgOpenVoiceExecutionControlsForKernelV1({scope:b.input.scope,sessionId:b.input.sessionId,runId:b.snapshot.run.id,inputArtifactHash:b.inputArtifactHash})
+  if(stable(controlled.snapshot)!==stable(b.snapshot))throw new AgentRunStoreError('sequence_conflict','原配音审阅期间账本已变化')
+  const responses=b.snapshot.events.filter(e=>e.type==='model.responded')
+  if(responses.length!==1||controlled.controls.some(c=>c.payload.action==='recover-original-raw-only'&&c.payload.expectedRawResponseHash!==responses[0].payload.outputHash))p.fail('拒绝决定缺少准确原返回或与现有取回屏障冲突')
+  return controlled.controls
+}
+
+/** Read a native original's actual negative declaration, including failed
+ * terminal history. This read grants no recovery, inference or media rights. */
+export async function readTtrpgOpenVoiceCandidateRejectionV1(request:TtrpgOpenVoiceJobLocatorV1&{candidateHash?:string}){
+  const locator=structuredClone(request),b=await loadTtrpgOpenVoiceJobReadStateForKernelV1(locator),saved=await artifacts(b,rejectionSchema)
+  if(!saved)return null
+  if(await artifacts(b,schema))p.fail('原配音有相互冲突的接受与拒绝，保留原始证据')
+  const declared=parseTtrpgOpenVoiceQualityRejectionV1(saved.body)
+  const input={...locator,candidateHash:locator.candidateHash===undefined?declared.candidateHash:p.hash(locator.candidateHash,'exact rejected candidate')}
+  const checked=await checkedQuality(b,input,saved,parseTtrpgOpenVoiceQualityRejectionV1),step=b.snapshot.projection.steps[stepId]
+  const controls=await rejectionControls(b),beforeDeclaration=controls.some(c=>b.snapshot.events.some(e=>e.type==='checkpoint.created'
+    &&e.payload.checkpointHash===c.checkpointHash&&e.sequence<saved.event.sequence))
+  const confirmations=b.snapshot.events.filter(e=>e.type==='confirmation.recorded'),failures=b.snapshot.events.filter(e=>e.type==='run.failed')
+  if(!step||step.candidateHash!==input.candidateHash||step.attempt!==1||!beforeDeclaration||confirmations.length>1
+    ||confirmations.some(e=>stable(e.payload)!==stable(rejectionConfirmation(input.candidateHash))||e.sequence<=saved.event.sequence)
+    ||b.snapshot.events.some(e=>['verification.started','verification.accepted','adoption.started','adoption.committed','runtime.candidate.adopted'].includes(e.type)))p.fail('原拒绝缺少唯一决定、真实先行推理屏障或被错误终验')
+  const complete=b.snapshot.projection.state==='failed'&&failures.length===1&&failures[0].payload.code===rejectionFailure(saved.hash)&&failures[0].payload.retryable===false
+  if(complete&&(confirmations.length!==1||step.confirmation!=='reject'||step.status!=='failed'||failures[0].sequence<=confirmations[0].sequence))p.fail('原拒绝终态缺少准确决定与失败顺序')
+  await b.original.owner.assertCurrent()
+  return {rejection:checked.review,rejectionArtifactHash:saved.hash,runId:b.snapshot.run.id,runState:b.snapshot.projection.state,complete,
+    futureInferenceBlocked:true as const,generationAllowed:false as const,adoptionAllowed:false as const,independentListening:'unproven' as const}
+}
+
+export async function rejectTtrpgOpenVoiceCandidateReviewV1(request:Input&{
+  decision:typeof rejectionDecision;listening:'self-reported-original-listening';judgment:'not-acceptable-to-me';reason:string
+}){
+  const input=structuredClone(request)
+  p.literal(input.decision,rejectionDecision,'explicit original negative quality review');p.literal(input.listening,'self-reported-original-listening','personal rejected original listening')
+  p.literal(input.judgment,'not-acceptable-to-me','negative personal judgment');p.hash(input.candidateHash,'rejected original candidate')
+  input.reason=p.text(input.reason,'personal original rejection reason',2000)
+  let frozen:Awaited<ReturnType<typeof freezeTtrpgOpenVoiceSourceEvidenceV1>>|null=null
+  for(let attempt=0;attempt<12;attempt++){
+    try{
+      const b=await loadTtrpgOpenVoiceJobReadStateForKernelV1(input),saved=await artifacts(b,rejectionSchema)
+      if(await artifacts(b,schema))p.fail('本人已经保存接受声明；拒绝不能改写原决定或已采用音轨')
+      if(!saved){
+        if(b.snapshot.projection.state!=='awaiting_confirmation'||b.original.owner.runtime.product.safety.status!=='active')p.fail('请先明确恢复准确原候选审阅，再保存拒绝')
+        frozen??=await freezeTtrpgOpenVoiceSourceEvidenceV1({...input,decision:'freeze-this-original-voice-source-evidence'})
+        const current=await loadTtrpgOpenVoiceJobReadStateForKernelV1(input)
+        if(await artifacts(current,schema))p.fail('原配音已先保存接受声明，不能再拒绝')
+        if(await artifacts(current,rejectionSchema))continue
+        if(current.snapshot.projection.state!=='awaiting_confirmation'||current.original.owner.runtime.product.safety.status!=='active')p.fail('原拒绝前的审阅状态已变化')
+        await source(current,input,frozen.evidenceArtifactHash)
+        const controls=await rejectionControls(current)
+        await current.original.owner.assertCurrent()
+        if(!controls.length){
+          await createAgentRunCheckpointV1({scope:input.scope,productRuntimeSessionId:input.sessionId,runId:current.snapshot.run.id,
+            expectedLastSequence:current.snapshot.projection.lastSequence,resumePayload:{schema:TTRPG_OPEN_VOICE_CONTROL_SCHEMA_V1,version:1,action:'stop-original-job',jobKey:current.jobKey,inputArtifactHash:current.inputArtifactHash}});continue
+        }
+        const owner=current.original.owner,reviewedAt=Date.now()
+        const rejection:TtrpgOpenVoiceQualityRejectionV1=parseTtrpgOpenVoiceQualityRejectionV1({schema:rejectionSchema,version:1,decision:rejectionDecision,
+          candidateHash:input.candidateHash,sourceEvidenceArtifactHash:frozen.evidenceArtifactHash,runId:current.snapshot.run.id,contractHash:current.snapshot.run.contractHash,
+          reviewer:{viewerKey:input.viewerKey,seatKey:frozen.request.script.scope.issuerSeatKey},audioContentHash:frozen.audio.contentHash,sourceTextHash:frozen.request.textHash,
+          normalizedTextSha256:frozen.request.reading!.normalizedTextSha256,listening:input.listening,judgment:input.judgment,independentListening:'unproven',
+          runtimeReadEvidence:{sessionKey:owner.runtime.sessionKey,runtimeSourceHash:owner.session.runtimeSourceHash,sequence:owner.state.lastSequence,stateHash:owner.stateHash},reviewedAt,reason:input.reason})
+        await recordAgentRunArtifactV1({scope:input.scope,productRuntimeSessionId:input.sessionId,runId:current.snapshot.run.id,artifactKind:'source-snapshot',
+          content:stable(rejection),expectedLastSequence:current.snapshot.projection.lastSequence,now:reviewedAt});continue
+      }
+      const checked=await checkedQuality(b,input,saved,parseTtrpgOpenVoiceQualityRejectionV1)
+      if(checked.review.reason!==input.reason)p.fail('原拒绝原因已保存，不能用另一原因覆盖原决定')
+      const read=await readTtrpgOpenVoiceCandidateRejectionV1(input)
+      if(read?.complete)return read
+      if(!['awaiting_confirmation','running'].includes(b.snapshot.projection.state))p.fail('原拒绝尚待收尾；暂停须明确恢复，已失败或取消不能复活')
+      const confirmations=b.snapshot.events.filter(e=>e.type==='confirmation.recorded')
+      await b.original.owner.assertCurrent()
+      const owner={scope:input.scope,productRuntimeSessionId:input.sessionId,runId:b.snapshot.run.id,expectedLastSequence:b.snapshot.projection.lastSequence}
+      if(!confirmations.length){await appendAgentRunEventV1({...owner,type:'confirmation.recorded',payload:rejectionConfirmation(input.candidateHash)});continue}
+      await appendAgentRunEventV1({...owner,type:'run.failed',payload:{code:rejectionFailure(saved.hash),retryable:false}})
+    }catch(error){
+      if(error instanceof AgentRunStoreError&&error.code==='sequence_conflict'||error instanceof AgentRunArtifactStoreError&&error.code==='sequence-conflict')continue
+      throw error
+    }
+  }
+  p.fail('原拒绝回执持续竞争，请读取并明确补齐同一决定；没有重新生成或采用')
 }

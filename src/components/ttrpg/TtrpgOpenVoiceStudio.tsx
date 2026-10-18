@@ -10,6 +10,7 @@ import TtrpgOpenGeneratedVoiceAdoption from './TtrpgOpenGeneratedVoiceAdoption'
 
 type Desk=Awaited<ReturnType<typeof api.readTtrpgOpenVoiceRequestDeskV1>>
 type QualityReview=Awaited<ReturnType<typeof api.readTtrpgOpenVoiceCandidateReviewV1>>
+type Rejection=Awaited<ReturnType<typeof api.readTtrpgOpenVoiceCandidateRejectionV1>>
 type Generation={controller:AbortController;key:string;phase:'reserving'|'preparing'|'running';stopRequested:boolean}
 const jobLabels:Record<string,string>={'not-found':'本机尚未发现任务','waiting-for-slot':'等待本机资源','launch-recorded':'启动已记账','running':'正在生成','running-observed':'观察到原任务仍在运行','unknown':'结果未知，需核对原任务','generated':'原结果已生成','failed':'原任务失败','cancelled-before-start':'启动前已取消','cancelled-before-spawn':'进程创建前已取消','cancelled-confirmed':'已确认停止','stop-requested-without-job':'已阻止后续启动，未确认进程关闭'}
 export default function TtrpgOpenVoiceStudio(props:{input:api.TtrpgOpenAudioDeskInputV1;view:api.TtrpgOpenAudioDeskV1;enabled:boolean;busy:boolean;sequence:number;registerStop:(stop:(()=>void)|null)=>void;onChanged:()=>Promise<void>}) {
@@ -23,6 +24,7 @@ export default function TtrpgOpenVoiceStudio(props:{input:api.TtrpgOpenAudioDesk
   const originalBox=useRef<HTMLTextAreaElement|null>(null),partBox=useRef<HTMLTextAreaElement|null>(null)
   const [candidate,setCandidate]=useState<TtrpgOpenVoiceCandidateV1|null>(null),[job,setJob]=useState(''),[audition,setAudition]=useState<{value:TtrpgOpenVoiceAuditionV1;url:string}|null>(null)
   const [quality,setQuality]=useState<QualityReview>(null),[listened,setListened]=useState(false)
+  const [rejection,setRejection]=useState<Rejection>(null),[rejectReason,setRejectReason]=useState('')
   const current=useRef(props);current.current=props
   const stop=useCallback(()=>{previewEpoch.current++;previewStop.current();const old=life.current;life.current=null;old?.dispose();if(old)URL.revokeObjectURL(old.url);if(live.current){setAudition(null);setListened(false)}},[])
   const registerPlayer=useCallback((handle:(()=>void)|null)=>{previewStop.current=handle??(()=>undefined)},[])
@@ -38,7 +40,7 @@ export default function TtrpgOpenVoiceStudio(props:{input:api.TtrpgOpenAudioDesk
   const changedPart=(selection:{textOffset:number;textLength:number})=>{setPart(selection);setOverrides([]);setReading(null);setAgreed(false)}
   const partText=part&&source?source.script.text.slice(part.textOffset,part.textOffset+part.textLength):''
   async function perform(job:()=>Promise<void>){if(locked.current||!live.current)return;locked.current=true;setWorking(true);setMessage('');try{await job()}catch(error){if(live.current)setMessage(error instanceof Error&&error.message.startsWith('本机')?error.message:'操作未完成，请读取原记录并核对本机服务与读法；不会自动重新生成。')}finally{if(live.current){locked.current=false;setWorking(false)}}}
-  const choose=(key:string)=>{stop();setSelected(key);setCandidate(null);setQuality(null);setJob('');setMessage('')}
+  const choose=(key:string)=>{stop();setSelected(key);setCandidate(null);setQuality(null);setRejection(null);setRejectReason('');setJob('');setMessage('')}
   async function preview(){const selectedCause=props.view.causes.find(c=>JSON.stringify(c.sourceRef)===cause);if(!selectedCause)return
     const reviewed=source??await api.prepareTtrpgOpenVoiceScriptV1({...props.input,narrationSourceRef:selectedCause.sourceRef,audience,privateActorKey:audience==='private'?actor:null,decision:'review-original-narration-for-voice'})
     if(!live.current)return
@@ -83,15 +85,39 @@ export default function TtrpgOpenVoiceStudio(props:{input:api.TtrpgOpenAudioDesk
     const observer=api.observeTtrpgOpenVoiceAuditionV1(value,()=>{stop();if(live.current)setMessage('本次试听已关闭，请重新核对权限或原记录。')})
     try{await observer.ready;if(!live.current||!current.current.enabled||previewEpoch.current!==token){observer.dispose();return}const url=URL.createObjectURL(value.blob);life.current={url,dispose:observer.dispose};setAudition({value,url})}catch(error){observer.dispose();throw error}
   }
-  async function readCandidate(){const value=await api.prepareTtrpgOpenVoiceCandidateV1({...props.input,requestKey:selected,decision:'review-this-original-local-voice-result'})
+  async function readRejection(){const saved=await api.readTtrpgOpenVoiceCandidateRejectionV1({...props.input,requestKey:selected})
+    if(!live.current)return
+    if(saved){stop();setRejection(saved);setRejectReason(saved.rejection.reason);setCandidate(null);setQuality(null)}
+    else setMessage('未发现原拒绝决定；可继续核对原音频候选。')
+    await refresh();return saved
+  }
+  async function readCandidate(){
+    const rejected=await api.readTtrpgOpenVoiceCandidateRejectionV1({...props.input,requestKey:selected})
+    if(!live.current)return
+    if(rejected){stop();setRejection(rejected);setRejectReason(rejected.rejection.reason);setCandidate(null);setQuality(null);await refresh();return}
+    const value=await api.prepareTtrpgOpenVoiceCandidateV1({...props.input,requestKey:selected,decision:'review-this-original-local-voice-result'})
     const saved=await api.readTtrpgOpenVoiceCandidateReviewV1({...props.input,requestKey:selected,candidateHash:value.candidate.candidateHash})
-    if(live.current){setCandidate(value.candidate);setQuality(saved);setListened(false)}await refresh()
+    if(live.current){setCandidate(value.candidate);setQuality(saved);setRejection(null);setListened(false)}await refresh()
   }
   async function confirmQuality(){if(!candidate)return
     stop()
     const saved=await api.acceptTtrpgOpenVoiceCandidateReviewV1({...props.input,requestKey:selected,candidateHash:candidate.candidateHash,
       decision:'accept-this-original-voice-candidate-for-review',listening:'self-reported-original-listening',judgment:'acceptable-to-me'})
     if(live.current){setQuality(saved);setListened(false);setMessage('本人试听确认已保存，原生成任务已核验完成；尚未加入本局音轨。');await refresh();await props.onChanged()}
+  }
+  async function rejectQuality(){const candidateHash=rejection?.rejection.candidateHash??candidate?.candidateHash;if(!candidateHash)return
+    stop()
+    const saved=await api.rejectTtrpgOpenVoiceCandidateReviewV1({...props.input,requestKey:selected,candidateHash,
+      decision:'reject-this-original-voice-candidate-for-session-use',listening:'self-reported-original-listening',judgment:'not-acceptable-to-me',reason:rejection?.rejection.reason??rejectReason})
+    if(live.current){setRejection(saved);setRejectReason(saved?.rejection.reason??rejectReason);setCandidate(null);setQuality(null);setListened(false)
+      setMessage(saved?.complete?'本人拒绝已保存，原音频保留，未加入音轨。':'原拒绝决定已保存，请读取并补齐原回执。');await refresh();await props.onChanged()}
+  }
+  const reviewCandidateHash=rejection?.rejection.candidateHash??candidate?.candidateHash??quality?.review.candidateHash
+  const rejectionInterrupted=!!rejection&&!rejection.complete&&['failed','cancelled','completed','recovery_required'].includes(rejection.runState)
+  const rejectionPaused=!!rejection&&['paused','recovering'].includes(rejection.runState)
+  async function resumeReview(){if(!reviewCandidateHash)return;stop()
+    await api.resumeTtrpgOpenVoiceCandidateReviewV1({...props.input,requestKey:selected,candidateHash:reviewCandidateHash,decision:'resume-this-original-voice-review-without-inference'})
+    if(live.current){await readCandidate();setMessage('原审阅已恢复，不会重新生成或自动确认听感。')}
   }
   return <details data-testid="ttrpg-open-voice-studio"><summary>免费本机配音</summary>
     <p>选择已确认叙述，核对读法后生成。读取、刷新和试听均不重复生成。</p>{message&&<p role="status">{message}</p>}
@@ -119,14 +145,24 @@ export default function TtrpgOpenVoiceStudio(props:{input:api.TtrpgOpenAudioDesk
         {row.execution&&!row.execution.dispatchRecorded&&row.reading&&<button disabled={busy} onClick={()=>void generateExisting()}>生成原已确认片段</button>}
         {row.execution&&<><button disabled={stopping} onClick={()=>void requestStop()}>停止原本机任务</button><button disabled={working} onClick={()=>void perform(async()=>{const result=await api.readTtrpgOpenLocalVoiceJobV1({...props.input,requestKey:selected});if(live.current)setJob(jobLabels[result.backend.status]??'原状态需要核对')})}>核对原本机任务</button></>}
         {row.execution?.dispatchRecorded&&<><button disabled={busy} onClick={()=>void perform(async()=>{await api.recoverTtrpgOpenLocalVoiceRawV1({...props.input,requestKey:selected,decision:'recover-this-original-local-voice-raw-without-resending'});await refresh()})}>取回原始结果</button><button disabled={busy||!row.execution?.rawResponseEvidenceRecorded} onClick={()=>void perform(readCandidate)}>核对原音频候选</button></>}
+        {row.execution?.rawResponseEvidenceRecorded&&<button disabled={busy} onClick={()=>void perform(async()=>{await readRejection()})}>读取拒绝决定</button>}
+        {row.execution&&['paused','recovering'].includes(row.execution.runState)&&<button disabled={busy||!props.view.canPlay||!reviewCandidateHash} onClick={()=>void perform(resumeReview)}>继续原审阅</button>}
       </div>}{job&&<p role="status">{job}</p>}</section>}
     {(sending||generation.current)&&<button disabled={stopping} onClick={()=>void requestStop()}>停止本次生成</button>}
     {candidate&&<section data-testid="ttrpg-voice-candidate"><h4>{candidate.artifact.status==='blocked'?'原结果需要处理':quality?.complete?'本人审阅已保存':quality?'原审阅回执待补齐':'原音频候选待试听'}</h4>{candidate.artifact.issues.map(issue=><p key={issue.code}>{issue.message}</p>)}
       <p>{quality?'本人审阅已保留，尚未加入本局音轨。':'尚未确认听感，也未加入本局音轨。'}</p><button disabled={busy||!props.enabled||candidate.artifact.status==='blocked'} onClick={()=>void perform(prepareAudition)}>准备这条候选试听</button>{!props.enabled&&<p>请先开启本机音频，再准备试听。</p>}
-      {!quality&&candidate.artifact.status!=='blocked'&&<><label><input type="checkbox" aria-label="确认这条原音频的本人试听结果" disabled={busy||!audition} checked={listened} onChange={e=>setListened(e.target.checked)}/>我已亲自试听这条原音频，确认音质与读法适合本桌。</label><button disabled={busy||!audition||!listened} onClick={()=>void perform(confirmQuality)}>保存本人试听确认</button></>}
+      {!quality&&!rejection&&candidate.artifact.status!=='blocked'&&<><p>适合本桌时保存试听确认；不适合时填写原因并拒绝。</p><label><input type="checkbox" aria-label="确认这条原音频的本人试听结果" disabled={busy||!audition} checked={listened} onChange={e=>setListened(e.target.checked)}/>我已亲自试听这条原音频，将保存下方选择的审阅结果。</label><button disabled={busy||!audition||!listened} onClick={()=>void perform(confirmQuality)}>保存本人试听确认</button>
+        <label>拒绝原因<textarea aria-label="配音拒绝原因" value={rejectReason} maxLength={2000} disabled={busy} onChange={e=>setRejectReason(e.target.value)}/></label>
+        <button disabled={busy||!audition||!listened||!rejectReason.trim()} onClick={()=>void perform(rejectQuality)}>拒绝这条配音</button></>}
       {quality&&!quality.complete&&<button disabled={busy} onClick={()=>void perform(confirmQuality)}>补齐原审阅回执</button>}
     </section>}
-    {selected&&<TtrpgOpenGeneratedVoiceAdoption key={JSON.stringify([props.input.scope,props.input.sessionId,props.input.viewerKey,selected])}
+    {rejection&&<section data-testid="ttrpg-voice-rejection"><h4>{rejection.complete?'原配音已拒绝':rejectionInterrupted?'原拒绝决定需核对':'原拒绝回执待补齐'}</h4><p>{rejection.rejection.reason}</p>
+      <p>原音频和决定已保留，未加入音轨。需要新配音时，请重新核对原文与本桌额度。</p>
+      {rejectionInterrupted&&<p>任务已有其他终态，请保留原决定并核对记录。</p>}
+      {rejectionPaused&&<p>请先继续原审阅，再补齐拒绝记录。</p>}
+      {!rejection.complete&&!rejectionInterrupted&&<button disabled={busy||rejectionPaused} onClick={()=>void perform(rejectQuality)}>补齐原拒绝回执</button>}
+    </section>}
+    {selected&&!rejection&&<TtrpgOpenGeneratedVoiceAdoption key={JSON.stringify([props.input.scope,props.input.sessionId,props.input.viewerKey,selected])}
       input={props.input} requestKey={selected} candidateHash={candidate?.candidateHash} reviewed={!!quality?.complete} canPlay={props.view.canPlay}
       busy={busy} sequence={props.sequence} stopAudition={stop} onChanged={props.onChanged}/>}
     {audition&&<TtrpgOpenVoiceAuditionPlayer audition={audition.value} url={audition.url} register={registerPlayer} onFailure={()=>{stop();setMessage('本次音频无法播放，原候选保留。')}}/>}
