@@ -13,6 +13,8 @@ const snapshotEntries = [
   // Local voice replay imports this pinned, model-free reading descriptor.
   'scripts/ttrpg-local-tts/reading-profile.json',
   'scripts/ttrpg-local-tts/product-profile.json',
+  // The browser verifies historical raw against this immutable V2 wire core.
+  'scripts/ttrpg-local-tts/product-profile-v2.json',
   // Vite's inactive local transport still needs its Node module imports.
   // Python inference and installed assets remain outside ordinary E2E.
   'scripts/ttrpg-local-tts/product-bridge.mjs',

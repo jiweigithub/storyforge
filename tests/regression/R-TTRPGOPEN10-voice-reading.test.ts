@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { dirname, relative, resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
@@ -28,13 +28,14 @@ describe('R-TTRPGOPEN10 source-preserving local reading contract', () => {
     expect(manifest).toBeDefined()
     const entries = runInNewContext(manifest!) as string[], included = (asset: string) => entries.some(entry => asset === entry || asset.startsWith(`${entry}/`))
     const metadata = new Set<string>()
-    for (const file of ['src/lib/ttrpg/open-voice-reading-contract.ts', 'src/lib/ttrpg/open-voice-request-service.ts', 'src/lib/ttrpg/open-voice-execution-input.ts']) {
-      for (const imported of readFileSync(file, 'utf8').matchAll(/\bfrom\s+['"]([^'"]+\.json)['"]/g)) {
+    for (const file of readdirSync('src/lib/ttrpg').filter(name => /\.tsx?$/.test(name)).map(name => 'src/lib/ttrpg/' + name)) {
+      for (const imported of readFileSync(file, 'utf8').matchAll(/\b(?:from\s+|import\s*(?:\(\s*)?)['"]([^'"]+\.json)['"]/g)) {
         const absolute = resolve(dirname(resolve(file)), imported[1]), asset = relative(process.cwd(), absolute).replace(/\\/g, '/')
         expect(existsSync(absolute), asset).toBe(true); metadata.add(asset)
       }
     }
     expect(metadata.size).toBeGreaterThan(0)
+    expect(metadata.has('scripts/ttrpg-local-tts/product-profile-v2.json')).toBe(true)
     for (const asset of metadata) expect(included(asset), asset).toBe(true)
     for (const file of ['product-bridge.mjs', 'product-jobs.mjs', 'product-contract.mjs', 'reading-preview.mjs']) expect(included(`scripts/ttrpg-local-tts/${file}`)).toBe(true)
     expect(runner).toContain('delete snapshotEnv.STORYFORGE_TTRPG_LOCAL_TTS_RUNTIME_DIR')
