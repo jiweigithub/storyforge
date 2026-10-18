@@ -83,7 +83,10 @@ test('documented public SDK recipe yields a separately installable, upgradable a
   await openHelp(page, `./workshop/installed?project=${project}&owner=work`)
   await expect(page.getByLabel('安装插件文件')).toBeEnabled()
   await page.getByLabel('安装插件文件').setInputFiles(v1)
-  const card = (version: string) => page.locator('.sf-workshop-card').filter({ has: page.getByRole('heading', { name: '章节检查便笺', exact: true }) }).filter({ hasText: version })
+  // Card text includes hidden manifests and recovery history; the visible
+  // version label identifies the intended package while live queries refresh.
+  const card = (version: string) => page.locator('.sf-workshop-card').filter({ has: page.getByRole('heading', { name: '章节检查便笺', exact: true }) })
+    .filter({ has: page.getByText(`v${version} · Community reader`, { exact: true }) })
   await card('0.1.0').getByRole('button', { name: '启用', exact: true }).click()
   await page.getByRole('button', { name: '信任并启用', exact: true }).click()
   const notes = async () => {
@@ -103,7 +106,10 @@ test('documented public SDK recipe yields a separately installable, upgradable a
   await expect(page.getByLabel('安装插件文件')).toBeEnabled()
   await page.getByLabel('安装插件文件').setInputFiles(v2)
   await card('0.2.0').getByRole('button', { name: '切换到此版本', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '升级到 0.2.0？', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '信任并升级', exact: true }).click()
+  await expect(page.getByText('升级完成；请重新启用。旧数据代已保留。', { exact: true })).toBeVisible()
+  await expect(card('0.2.0').getByRole('button', { name: '启用', exact: true })).toBeEnabled()
   await card('0.2.0').getByRole('button', { name: '启用', exact: true }).click()
   await page.getByRole('button', { name: '信任并启用', exact: true }).click()
   await notes()
