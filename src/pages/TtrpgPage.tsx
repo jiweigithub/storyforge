@@ -1,6 +1,6 @@
 import BrandIcon from '../components/shared/BrandIcon'
 import { useDialog } from '../components/shared/Dialog';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { liveQuery } from "dexie";
 import { BookOpen } from "lucide-react";
@@ -54,11 +54,14 @@ const Community = lazy(() => import("./TtrpgCommunityPage"));
 const Proposal = lazy(() => import("../components/ttrpg/AuthorProposal"));
 const OpenAuthoringEditor = lazy(() => import('../components/ttrpg/TtrpgOpenAuthoringEditor'));
 const OpenDesignAssistant = lazy(() => import('../components/ttrpg/TtrpgOpenDesignAssistant'));
+const OpenSeatApprovalEditor = lazy(() => import('../components/ttrpg/TtrpgOpenSeatApprovalEditor'));
 const Inspector = lazy(() => import("../components/ttrpg/AuthorInspector"));
 const Outlet = lazy(
   () => import("../components/world-engine/WorldResourceBrowser"),
 );
 import { flushPendingEditsV1 } from "../lib/authoring/pending-edit-coordinator";
+import { acknowledgeSeatApprovalSave, clearSeatApprovalDraft, markSeatApprovalApplied, readSeatApprovalDraft,
+  reviewSeatApprovalDraft, setSeatApprovalHost, subscribeSeatApprovalDraft, type SeatApprovalDraft } from '../components/ttrpg/open-seat-approval-draft';
 const PRODUCTS = ["ttrpg"] as const;
 type Row = {
   project: Project;
@@ -93,6 +96,7 @@ export default function TtrpgPage() {
   // This is the version actually loaded into the form. A liveQuery update must
   // never lend its newer revision to older, unsaved settings.
   const [editBasis, setEditBasis] = useState<{ scope: WorkspaceScope; revision: number } | null>(null);
+  const seatApprovalDraft = useSyncExternalStore(subscribeSeatApprovalDraft, readSeatApprovalDraft);
   const [worlds, setWorlds] = useState<
     Awaited<ReturnType<typeof listLocalWorldReferenceChoicesV1>>
   >([]);
@@ -117,6 +121,15 @@ export default function TtrpgPage() {
   const designPreparing = useRef(false);
   const draftConflict = Boolean(dirty && editBasis && (!sameScope(scope, editBasis.scope) ||
     !row?.draft || row.draft.revision !== editBasis.revision));
+  useEffect(() => {
+    if (scope && editBasis && sameScope(scope, editBasis.scope) && row?.draft?.revision === editBasis.revision && settings.runFormat === 'open')
+      return setSeatApprovalHost(scope, editBasis.revision, settings);
+  }, [scope, editBasis, row?.draft?.revision, settings]);
+  useEffect(() => {
+    if (!scope || !row?.draft) return;
+    const savedSettings = settingsFromTtrpgDraft(row.draft);
+    if (savedSettings.runFormat === 'open') acknowledgeSeatApprovalSave(scope, row.draft.revision, savedSettings);
+  }, [scope, row?.draft, seatApprovalDraft]);
   const productionId =
     Number(params.get("production")) ||
     row?.draft?.productionId ||
@@ -269,7 +282,9 @@ export default function TtrpgPage() {
         settings,
         nextTitle,
       );
-      setSettings(settingsFromTtrpgDraft(saved));
+      const savedSettings = settingsFromTtrpgDraft(saved);
+      if (savedSettings.runFormat === 'open') acknowledgeSeatApprovalSave(scope, saved.revision, savedSettings);
+      setSettings(savedSettings);
       setTitle(nextTitle.trim());
       setEditBasis({ scope, revision: saved.revision });
       // Publish our successful snapshot before clearing dirty. Otherwise the
@@ -289,6 +304,11 @@ export default function TtrpgPage() {
     setDirty(false);
     return target;
   };
+  const discardSeatApprovalCopy = (pending: SeatApprovalDraft) => void run(async () => {
+    if (!await dialog.confirm({ title: '清除批准配置暂存副本？', message: '清除后无法恢复这份暂存副本。已应用到本窗口表单的修改仍保留；如需放弃表单修改，请先下载副本，再载入最新方案。',
+      confirmText: '清除暂存副本', cancelText: '保留副本' })) return;
+    clearSeatApprovalDraft(pending);
+  });
   const prepareOpenDesign = async (saveEdits: boolean) => {
     // Called by the assistant before any model request or canonical adoption.
     // Flush once; save(false) must not re-enter its own pending-edit barrier.
@@ -534,6 +554,19 @@ export default function TtrpgPage() {
               </p>
             )}
             {notice && <p role="status">{notice}</p>}
+            {seatApprovalDraft && <section className="lf-paper" data-testid="ttrpg-seat-approval-recovery" aria-label="批准配置暂存副本">
+              <p>“{rows.find(item => item.work.id === seatApprovalDraft.owner.workId && item.project.id === seatApprovalDraft.owner.projectId)?.work.title ?? '原作品'}”有一份 AI 队友批准配置尚待保存。关闭或刷新页面会丢失暂存副本，请先保存或下载。</p>
+              <div className="avg-actions">
+                <button type="button" className="lf-action" disabled={busy} onClick={() => {
+                  // Recovery preserves the existing pending buffer and grants no writes.
+                  navigate(`/ttrpg/seats?project=${seatApprovalDraft.owner.projectId}&work=${seatApprovalDraft.owner.workId}`);
+                }}>恢复核对批准配置</button>
+                <button type="button" className="lf-action" disabled={busy} onClick={() => void run(async () => {
+                  await downloadTextFile(JSON.stringify({ purpose: 'unsaved-seat-approval-comparison', ...seatApprovalDraft }, null, 2), '跑团-待确认批准配置.json', 'application/json');
+                })}>下载待确认批准配置</button>
+                <button type="button" className="lf-action" disabled={busy} onClick={() => discardSeatApprovalCopy(seatApprovalDraft)}>清除批准配置暂存副本</button>
+              </div>
+            </section>}
             {draftConflict && <section className="lf-paper" data-testid="ttrpg-draft-conflict" aria-label="方案版本冲突">
               <h3>方案已在其他窗口或作品中变化</h3>
               <p>本窗口未保存的修改仍保留，不能直接覆盖最新方案。请先下载修改副本；载入最新方案后可对照副本继续编辑。</p>
@@ -706,6 +739,17 @@ export default function TtrpgPage() {
                           key={`design:${scope.projectId}:${scope.worldId}:${scope.workId}`} scope={scope} revision={row.draft.revision}
                           hasUnsavedEdits={dirty} beforeGenerate={() => prepareOpenDesign(true)}
                           beforeAdopt={async () => { await prepareOpenDesign(false) }} onAdopted={reloadAdoptedDesign}/>}
+                        {openPreview && settings.runFormat === 'open' && step === 3 && (scope && editBasis && row?.draft && sameScope(scope, editBasis.scope) && !draftConflict ? <OpenSeatApprovalEditor
+                          key={`approvals:${scope.projectId}:${scope.worldId}:${scope.workId}`} owner={scope} revision={editBasis.revision} value={settings}
+                          onVision={() => go('vision')} onDiscard={discardSeatApprovalCopy} onApply={(pending, plan, policy) => {
+                            if (!sameScope(currentScope.current, scope) || !sameScope(editBasis.scope, scope) || row.draft?.revision !== editBasis.revision)
+                              throw new Error('作品或方案已变化，请先恢复原作品并核对版本');
+                            // Recheck in the owner before merging only these two Settings fields.
+                            reviewSeatApprovalDraft(pending, scope, editBasis.revision, settings);
+                            const next = { ...settings, authoringSeatPlan: plan, openAuthoring: { ...settings.openAuthoring, companionPolicy: policy } };
+                            markSeatApprovalApplied(pending, next); setSettings(next); setDirty(true);
+                          }}/>
+                          : <p>请先保存并载入当前作品，再配置 AI 队友批准关系。</p>)}
                         {step === 7 && (
                           <label>
                             制作质量

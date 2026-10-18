@@ -11,8 +11,9 @@ import { runProductProductionUntilBlockedV1 } from '../../src/lib/product-produc
 import { resolveProductRuntimeSource } from '../../src/lib/product-production/preview-source'
 import { createProductRuntimeInstanceFromSource } from '../../src/lib/product/runtime-instances'
 import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
+import { openReservedProductionFixtureV1 } from './ttrpg-open-reserved-production'
 
-export interface OpenBrowserProductionFixtureV1 { scope: WorkspaceScope; productionId: number; cooperative?: boolean }
+export interface OpenBrowserProductionFixtureV1 { scope: WorkspaceScope; productionId: number; cooperative?: boolean; reservedSeatPlan?: boolean }
 export async function seedOpenBrowserProductionV1(options: { humanGm?: boolean; runtimeAIEnabled?: boolean; cooperative?: boolean } = {}): Promise<OpenBrowserProductionFixtureV1> {
   const { scope, draft } = await createFreshOpenDraftFixtureV1(2, true,options)
   const productionId = await prepareTtrpgBrief(scope, draft.revision), production = (await db.productProductions.get(productionId))!
@@ -28,7 +29,8 @@ export async function runOpenBrowserProductionV1(input: OpenBrowserProductionFix
   const { scope, productionId } = input, production = (await db.productProductions.get(productionId))!
   const row = (await db.productProductionBriefs.where('[productionId+revision]').equals([productionId, production.currentBriefRevision!]).first())!
   const brief = parseProductProductionBriefV3(row.briefJson)
-  const data = await openProductionCompilerFixtureV1(true, { brief, productionId, scope, preferAuthorSituations: input.cooperative })
+  const data = input.reservedSeatPlan ? await openReservedProductionFixtureV1({ brief, productionId, scope })
+    : await openProductionCompilerFixtureV1(true, { brief, productionId, scope, preferAuthorSituations: input.cooperative })
   const buildBefore = (await db.productBuilds.where('[productionId+buildNumber]').equals([productionId,production.currentBuildNumber!]).first())!
   if (authorReview) {
     const taskKey = JSON.parse(buildBefore.failureJson).taskKey as string
