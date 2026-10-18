@@ -2921,7 +2921,10 @@ async function executeTransaction(input: {
     db.productReleases,
     db.productProductions, db.productProductionBriefs, db.productProductionCommands,
     db.productBuilds, db.productBuildArtifacts, db.mediaBlobObjects, db.productQualityGateReceipts,
-    ...(command.type === 'adopt-avg-artifact' ? [db.avgDraftMedia] : []),
+    // AVG recovery re-reads the original author reference while proving a
+    // received failure; it must share this transaction rather than lose that
+    // proof or read outside the command's consistent snapshot.
+    ...(command.type === 'adopt-avg-artifact' || command.type === 'evolve' && command.base.kind === 'recovery-build' ? [db.avgDraftMedia] : []),
     db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts,
     ...(command.type === 'authorize-text-open-world-creator-start'
       // Creator source adapters expose only opaque transaction capabilities;

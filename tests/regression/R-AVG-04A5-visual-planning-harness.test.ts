@@ -11,7 +11,7 @@ import { resolveAvgImageExecutionCapabilityV2 } from '../../src/lib/avg/media-ca
 import { parseProductProductionBriefV3 } from '../../src/lib/product-production/contracts'
 import { parseProductProductionPlanV3 } from '../../src/lib/product-production/plan'
 import { executeProductProductionCommand } from '../../src/lib/product-production/commands'
-import { readProductProductionDetailsV1, startProductProductionPreviewV1, recoverImportedProductProductionProofsV1, stopProductProductionV1 } from '../../src/lib/product-production/service'
+import { beginProductProductionEvolutionV1, readProductProductionDetailsV1, startProductProductionPreviewV1, recoverImportedProductProductionProofsV1, stopProductProductionV1 } from '../../src/lib/product-production/service'
 import { verifyStoredProductBuildPreview } from '../../src/lib/product-production/preview-manifest'
 import { createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1 } from '../../src/lib/product-production/production-executor'
 import { runProductProductionSchedulerCycleV1, runProductProductionUntilBlockedV1 } from '../../src/lib/product-production/scheduler'
@@ -2150,6 +2150,22 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       return {scope:s.scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,controlEpoch:plan.controlEpoch,
         expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,taskKey:task.taskKey,runId:attempt.runId,attempt:attempt.attempt}
     }
+    it.each([false,true])('evolves an exact held reference after import=%s inside the command transaction without settling or dispatching',async imported=>{
+      let s=await heldFailure()
+      if(imported){
+        const projectId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),build=(await db.productBuilds.where('projectId').equals(projectId).first())!
+        s={...s,scope:{projectId,worldId:build.worldId,workId:build.workId},buildId:build.id!,productionId:build.productionId}
+      }
+      const details=await readProductProductionDetailsV1(s.scope,s.productionId,['avg']),old=await current(s),runs=await db.agentRuns.toArray(),events=await db.agentRunEvents.toArray(),references=await db.avgDraftMedia.toArray()
+      await expect(readAvgHeldImageQueueFailureV4(await proofInput(s))).resolves.toMatchObject({resultKnown:true,usageKnown:false,status:503})
+      await beginProductProductionEvolutionV1({scope:s.scope,productionId:s.productionId,expectedStateRevision:details.production.stateRevision,
+        userText:'已接收的准确503响应允许准备新版本，未知费用和原预留保持',affectedLanes:['content','product','visual','audio']})
+      const next=await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])
+      expect(next.production.status).toBe('brief-ready')
+      expect(parseProductProductionBriefV3(next.brief!.briefJson).evolution!.base).toMatchObject({kind:'recovery-build',buildNumber:old.buildNumber,briefHash:old.briefHash,planHash:old.planHash})
+      expect(await current(s)).toEqual(old);expect(await db.agentRuns.toArray()).toEqual(runs);expect(await db.agentRunEvents.toArray()).toEqual(events)
+      expect(await db.avgDraftMedia.toArray()).toEqual(references);expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },30_000)
     it.each([false,true])('proves an observed old failure after import=%s without changing its hold and prepares only a fresh explicitly started version',async imported=>{
       let s=await heldFailure()
       const original=await current(s)
