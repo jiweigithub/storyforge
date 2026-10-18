@@ -56,7 +56,10 @@ async function currentDefinition(s:AvgV5RegisteredFixture){
   return readAvgCompiledImageDefinitionV5({scope:s.scope,buildId:s.buildId,expectedBuildRevision:build.stateRevision,controlEpoch:build.controlEpoch,expectedBrief:s.brief})
 }
 describe('AVG V5 original images from actual registered compiler and producer',()=>{
-  it('keeps the incomplete V5 global gate closed',()=>expect(readiness.avgVisualPlanningExecutionReadyV5()).toBe(false))
+  it.each([['0','0',false],['0','1',false],['1','0',false],['1','1',true]] as const)('requires both original experiment switches: media=%s visual=%s', (media,visual,expected)=>{
+    vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION',media);vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING',visual)
+    expect(readiness.avgVisualPlanningExecutionReadyV5()).toBe(expected)
+  })
   it('sends exact reference bytes and declared policies for all five tasks, retains raw V2 evidence and grants no author choice',async()=>{
     const started=performance.now(),phases:Array<{phase:string;elapsedMs:number}>=[]
     const mark=(phase:string)=>phases.push({phase,elapsedMs:Math.round(performance.now()-started)})

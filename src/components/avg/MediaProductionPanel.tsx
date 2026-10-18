@@ -98,9 +98,9 @@ function RawChoiceCard({ scope, productionId, requirement,visualVersion, raw, pr
 
 /** An author-facing shell over existing draft, Harness and adoption services.
  * Editing requirements never dispatches, adopts or silently replaces pixels. */
-export default function MediaProductionPanel({ scope, view, workspace, disabled, canEdit, canPrepareProcessing, canAdopt, sourcesReady, declaration, generating, visible,
+export default function MediaProductionPanel({ scope, view, workspace, disabled, canEdit,canImportReference=canEdit, canPrepareProcessing, canAdopt, sourcesReady, declaration, generating, visible,
   onPending, onAction, onSave, onClear, onReload, onNotice, onGenerate, onCancel }: {
-  scope: WorkspaceScope; view: View; workspace: AvgAuthorWorkspaceV1; disabled: boolean; canEdit: boolean; canPrepareProcessing: boolean; canAdopt: boolean; sourcesReady: boolean;
+  scope: WorkspaceScope; view: View; workspace: AvgAuthorWorkspaceV1; disabled: boolean; canEdit: boolean;canImportReference?:boolean; canPrepareProcessing: boolean; canAdopt: boolean; sourcesReady: boolean;
   declaration: string; generating: boolean; visible: boolean; onPending: (pending: boolean) => void; onAction: (task: () => Promise<void>) => Promise<void>;
   onSave: (requirements: AvgVisualProductionRequirementV1[]) => Promise<void>; onClear: () => Promise<void>; onReload: () => Promise<void>; onNotice: (notice: string) => void;
   onGenerate: () => Promise<void>; onCancel: () => void
@@ -203,7 +203,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
     {error && <p role="alert">{error}</p>}
     {enabled&&!visualPlanning&&<details open={familyOpen} onToggle={event=>setFamilyOpen(event.currentTarget.open)}><summary>批量制作人物家族</summary><CharacterFamilyPanel scope={scope} view={view} workspace={workspace} visible={visible&&familyOpen} disabled={editDisabled||pending||anyReviewPending||!canEdit} onPending={setFamilyPending} onAction={onAction} onReload={onReload} onNotice={onNotice}/></details>}
     {workspace.mediaBatch?.characterFamily&&<p>当前批次保存了人物家族方案。请在家族面板中修订；如需普通需求，先明确结束或移除当前批次。</p>}
-    {enabled && canEdit && <><details><summary>导入仅供生成使用的参考图</summary><fieldset className="avg-form" disabled={editDisabled || !canEdit || !enabled}>
+    {enabled && canImportReference && <details><summary>导入仅供生成使用的参考图</summary><fieldset className="avg-form" disabled={editDisabled || !canImportReference || !enabled}>
       <label>参考图文件<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event => setReferenceFile(event.target.files?.[0] ?? null)} /></label>
       <label>参考图来源与授权<input value={referenceLicense} onChange={event => setReferenceLicense(event.target.value)} /></label>
       <button className="lf-action" disabled={!referenceFile || !referenceLicense.trim()} onClick={() => void onAction(async () => {
@@ -213,8 +213,8 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
           license: referenceLicense, altText: referenceFile.name, characterTag: '' })
         await onReload(); setReferenceFile(null); onNotice('参考图已解码并保留在当前作品，尚未加入演出。请逐项授权本次外发与衍生使用。')
       })}>导入为参考，不加入演出</button>
-    </fieldset></details>
-    <details open={formOpen} onToggle={event => setFormOpen(event.currentTarget.open)}><summary>新增图片需求</summary><fieldset className="avg-form" disabled={editDisabled || !canEdit || !enabled || familyPending || !!workspace.mediaBatch?.characterFamily}>
+    </fieldset></details>}
+    {enabled && canEdit && <><details open={formOpen} onToggle={event => setFormOpen(event.currentTarget.open)}><summary>新增图片需求</summary><fieldset className="avg-form" disabled={editDisabled || !canEdit || !enabled || familyPending || !!workspace.mediaBatch?.characterFamily}>
       <legend>新增图片需求</legend>
       <label>图片用途<select value={kind} onChange={e => { setKind(e.target.value as Kind); setSubject(''); setVariant(''); changed() }}>{KINDS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
       {!itemKind && kind !== 'reference' && <label>图片出现的场景<select value={scene?.key ?? ''} onChange={e => { setSceneKey(e.target.value); setSubject(''); setLineKey(''); changed() }}>{workspace.systemPlan.scenes.map(s => <option key={s.key} value={s.key}>{s.title}</option>)}</select></label>}

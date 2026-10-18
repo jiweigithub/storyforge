@@ -88,7 +88,8 @@ describe('AVG V5 explicit workbench preparation, no provider or adoption authori
     await expect(prepareAvgVisualPlanningSourceDraftV5({workspace:f.source,planning:f.versioned})).rejects.toThrow()
     expect(f.source).toEqual(snapshot)
   })
-  it('keeps the incomplete V5 start fence closed before resolving a route or changing records',async()=>{
+  it('keeps V5 preparation closed when its original visual experiment is disabled before resolving a route or changing records',async()=>{
+    vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING','0')
     const f=await avgV5WorkbenchPreparationFixture(),resolve=vi.spyOn(capabilities,'resolveConfiguredTextCapabilityV1')
     expect(readiness.avgVisualPlanningExecutionReadyV5()).toBe(false)
     await expect(prepareAvgVisualPlanningConfigurationV5(f.owner.scope,f.workspace,f.planning)).rejects.toThrow(/尚未启用/)
@@ -141,7 +142,8 @@ describe('AVG V5 explicit workbench preparation, no provider or adoption authori
     expect(view.details!.build!.id).toBe(started.build!.id);expect(view.imageDefinition).toBeNull()
     expect(await db.agentRuns.count()).toBeGreaterThan(0);expect(fetch).not.toHaveBeenCalled()
   })
-  it('rejects changed draft revision and the closed start fence without persisting a V5 proposal or Run',async()=>{
+  it('rejects changed draft revision and a disabled visual experiment without persisting a V5 proposal or Run',async()=>{
+    vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING','0')
     const f=await avgV5WorkbenchPreparationFixture(),draft=await readAvgDraftV1(f.owner.scope),before=await db.productProductionBriefs.toArray()
     await expect(prepareAvgAssemblyBriefV1({scope:f.owner.scope,expectedDraftRevision:draft.revision-1,visualPlanning:f.planning})).rejects.toThrow(/草稿已变化/)
     await expect(prepareAvgAssemblyBriefV1({scope:f.owner.scope,expectedDraftRevision:draft.revision,visualPlanning:f.planning})).rejects.toThrow(/尚未启用/)

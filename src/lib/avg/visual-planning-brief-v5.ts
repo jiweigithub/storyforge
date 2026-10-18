@@ -1,7 +1,7 @@
 import { avgProtocolBody,avgRecord } from './protocol-validation'
 import { parseAvgAssemblyBriefV1 } from './assembly-contract'
 import { parseAvgVisualPlanningScopeV2,type AvgVisualPlanningScopeV2 } from './visual-planning-contract-v2'
-import { assertAvgVisualPlanningAssemblyTargetsV1,parseAvgVisualImageBindingV4,type AvgVisualPlanningBriefV4 } from './visual-planning-brief'
+import { assertAvgVisualPlanningAssemblyTargetsV1,parseAvgVisualImageBindingV4,avgVisualPlanningExecutionReadyV4,type AvgVisualPlanningBriefV4 } from './visual-planning-brief'
 import { assertAvgImageProcessingRequirementsV1,parseAvgImageProcessingPlanV1 } from './image-processing-contract'
 
 /** Explicit new contract. Old reuse packets cannot claim a model used the new
@@ -22,6 +22,7 @@ export function parseAvgVisualPlanningBriefV5(value:unknown):AvgVisualPlanningBr
   if(imageProcessing)assertAvgImageProcessingRequirementsV1(imageProcessing,scope.templates.map(t=>t.parameters))
   return {schema:r.schema,version:5,assembly,scope,imageBinding,...(imageProcessing?{imageProcessing}:{})}
 }
-/** Foundation cannot authorize a partial Run. Enable only after all registered
- * producer, Context, adoption, review and consumption bindings are connected. */
-export function avgVisualPlanningExecutionReadyV5():boolean{return false}
+/** The connected workbench shares the original two default-off experiment
+ * switches. Actual Brief/start, versioned inputs and per-task authority remain
+ * mandatory; this never promotes an old V4 packet into a V5 request. */
+export function avgVisualPlanningExecutionReadyV5():boolean{return avgVisualPlanningExecutionReadyV4()}

@@ -75,7 +75,7 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
 }) {
   const brief=view.details?.brief?parseProductProductionBriefV3(view.details.brief.briefJson):null
   const planning=brief?.avgVisualPlanning,prepared=planning?.scope
-  const version=planning?.version??(avgVisualPlanningExecutionReadyV5()?5:4)
+  const version=planning?.version??5
   const [edited,setEdited]=useState(false),[cardsPending,setCardsPending]=useState<Record<string,boolean>>({}),[editPrepared,setEditPrepared]=useState(false),[reusePending,setReusePending]=useState(false),[routePending,setRoutePending]=useState(false)
   const pendingCards=Object.values(cardsPending).some(Boolean)
   const enabled=version===5?avgVisualPlanningExecutionReadyV5():avgVisualPlanningExecutionReadyV4()
@@ -98,9 +98,9 @@ export default function VisualPlanningPanel({scope,view,workspace,disabled,visib
     {prepared&&<><p>已保存专业用途：{prepared.templates.map(t=>t.parameters.name).join('、')}；{prepared.referenceCatalog.length} 张授权参考。准备方案不会调用模型，须到制作页核对并明确开始。</p>
       <p>{pendingVersion?'新方案':'本批'}上限：{brief!.productionBudget.maximumModelCalls} 次方案调用、{brief!.productionBudget.maximumMediaCalls} 次图片请求。{recordedUsage?`${pendingVersion?'上一版已记录':'已记录'} ${recordedUsage.modelCalls} 次方案、${recordedUsage.mediaCalls} 次图片调用；费用${recordedUsage.costUsd===null?'未知':` $${recordedUsage.costUsd}`}。`:'费用以实际回执为准。'}</p>
       {pendingVersion&&<p role="status">新版本方案 v{view.details!.brief!.revision} 已准备，尚未开始。上一版及原始调用记录只读保留；请到制作页核对后明确开始。</p>}
-      {pendingVersion&&planning?.version===4&&<VisualProposalReusePanel {...{scope,view,workspace,onAction,onReload,onNotice}} disabled={disabled||edited} onPending={setReusePending}/>}
-      {planning&&!activeBuild&&(!build||pendingVersion)&&<VisualImageRoutePanel {...{scope,view,onAction,onReload,onNotice}} disabled={disabled||edited||reusePending} onPending={setRoutePending}/>}
-      {!activeBuild&&(!build||pendingVersion)&&!edited&&<button className="lf-action" disabled={disabled} onClick={()=>setEditPrepared(true)}>修改尚未开始的专业用途</button>}
+      {pendingVersion&&planning?.version===4&&<VisualProposalReusePanel {...{scope,view,workspace,onAction,onReload,onNotice}} disabled={!enabled||disabled||edited} onPending={setReusePending}/>}
+      {planning&&!activeBuild&&(!build||pendingVersion)&&<VisualImageRoutePanel {...{scope,view,onAction,onReload,onNotice}} disabled={!enabled||disabled||edited||reusePending} onPending={setRoutePending}/>}
+      {!activeBuild&&(!build||pendingVersion)&&!edited&&<button className="lf-action" disabled={!enabled||disabled} onClick={()=>setEditPrepared(true)}>修改尚未开始的专业用途</button>}
       {build&&<><p>模型方案与原始响应、用量和未知费用保存在本次制作记录中。刷新只读取记录；继续执行需要明确点击。</p>
         {!sourcesReady&&!closed&&<p>请先到制作页明确采用系统规则和全部场景脚本。</p>}
         {!closed&&<button className="lf-action lf-action-primary" disabled={!enabled||disabled||edited||pendingCards||!sourcesReady||!declaration.trim()} onClick={()=>void onGenerate()}>执行已确认的专业方案与图片任务</button>}

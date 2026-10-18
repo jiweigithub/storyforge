@@ -112,8 +112,9 @@ describe('AVG exact reference-policy observations in the native review controls'
     const view={draft:{revision:1,worldReleaseId:1},details:{production:{id:8,status:'producing'},build:{id:1,status:'building',budgetLedgerJson:'{}'},executionBrief:{avgVisualPlanning:{version:5}}},
       imageDefinition:{mediaBatch:{requirements:[r],visualReviewPolicy:'author-visual-v1'},imageProcessing:{entries:[{requirementKey:r.requirementKey}]}},artifacts,media:{items:[]},processingTasks:[]}
     const host=document.createElement('div');document.body.append(host);const root=createRoot(host);roots.push(root);const noop=vi.fn()
-    await act(async()=>root.render(<MediaProductionPanel scope={scope} view={view as never} workspace={workspace} disabled={false} canEdit={false} canPrepareProcessing={false} canAdopt={true} sourcesReady={true}
+    await act(async()=>root.render(<MediaProductionPanel scope={scope} view={view as never} workspace={workspace} disabled={false} canEdit={false} canImportReference={true} canPrepareProcessing={false} canAdopt={true} sourcesReady={true}
       declaration="controlled UI" generating={false} visible={true} onPending={noop} onAction={task=>task()} onSave={noop} onClear={noop} onReload={noop} onNotice={noop} onGenerate={noop} onCancel={noop}/>))
+    expect(host.textContent).toContain('导入仅供生成使用的参考图');expect(host.textContent).not.toContain('新增图片需求')
     const figures=[...host.querySelectorAll('figure.avg-assembly-media-preview')],original=figures[0].querySelector('img')!,derived=figures[1].querySelector('img')!
     await act(async()=>derived.dispatchEvent(new Event('load')))
     expect(host.textContent).toContain('原图尚未显示')

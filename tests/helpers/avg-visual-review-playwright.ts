@@ -13,6 +13,11 @@ export async function confirmEngineeringVisualReview(card:Locator,name:string){
     const control=review.getByRole('combobox',{name:`观察结果：${label}`,exact:true})
     if(await control.inputValue()!=='not-applicable')await control.selectOption('pass')
   }
+  const policy=review.getByRole('group',{name:'逐项参考内容核对',exact:true})
+  if(await policy.count()){
+    for(const control of await policy.getByRole('combobox').all())await control.selectOption('pass')
+    for(const note of await policy.getByRole('textbox').all())await note.fill('明确对照准确工程候选和本张准确参考；仅测试允许/排除声明的记录，不认定艺术质量。')
+  }
   await review.getByRole('textbox',{name:'本次评审依据与修订说明',exact:true}).fill('重新对照准确工程图与全部参考，原先控制问题已重新核对；本次只验证工程流程，不认定艺术质量。')
   await review.getByRole('button',{name:`保存视觉评审候选：${name}`,exact:true}).click()
   await review.getByRole('checkbox',{name:'我已核对这份准确评审及未观察项',exact:true}).check()

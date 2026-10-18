@@ -36,13 +36,27 @@ async function adoptProfessionalDesign(page:Page,label:string){
   await panel.getByRole('button',{name:'执行已确认的专业方案与图片任务',exact:true}).click()
 }
 
+/** Compatibility setup uses a genuine old pending Brief through the public
+ * preparation service. It never seeds a Build/Run/adoption or relabels V5. */
+async function prepareLegacyProfessionalIntent(page:Page,scope:{projectId:number;worldId:number;workId:number}){
+  await page.evaluate(async scope=>{
+    const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
+    const [service,forms,contracts]=await Promise.all([load('/storyforge/src/lib/avg/assembly-service.ts'),load('/storyforge/src/lib/avg/visual-planning-form.ts'),load('/storyforge/src/lib/avg/author-workspace-contract.ts')])
+    const view=await service.readAvgAssemblyWorkspaceV1(scope),workspace=contracts.parseAvgAuthorWorkspaceV1(view.draft.editorJson)
+    const template=forms.createAvgVisualFormTemplateV4(workspace,'background')
+    template.requiredDetails=['已有作者用途，进入旧版表单后另行核对修订']
+    await service.prepareAvgAssemblyBriefV1({scope,expectedDraftRevision:view.draft.revision,visualPlanning:{schema:'storyforge.avg.visual-planning-scope',version:1,
+      batchKey:`legacy.native.${crypto.randomUUID()}`,revision:1,templates:[template],referenceCatalog:[]}})
+  },scope)
+}
+
 async function prepare(page:Page,firstImageBusy=false,imageModel='agnes.image-2.1-flash.v1',processing=false){
   await page.addInitScript(()=>localStorage.setItem('storyforge_guide_completed','e2e'))
   await page.goto('./avg/library')
   const origin=new URL(page.url()).origin
   await page.route('**/*',async route=>{const url=new URL(route.request().url());if(url.origin===origin||['blob:','data:'].includes(url.protocol))await route.continue();else await route.abort('blockedbyclient')})
-  // Seed only an author-owned saved workspace and frozen world. Production,
-  // Brief/start/Plan/Run, original responses and adoption are the actual UI.
+  // Save the author workspace/world, then a genuine V4 pending Brief through
+  // the public service. Subsequent editing/start/Run/adoption use the real UI.
   const source=await page.evaluate(async()=>{
     const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
     const [drafts,editor,presets,worlds,config]=await Promise.all([load('/storyforge/src/lib/avg/draft-service.ts'),load('/storyforge/src/lib/avg/editor-service.ts'),
@@ -76,6 +90,7 @@ async function prepare(page:Page,firstImageBusy=false,imageModel='agnes.image-2.
     if(firstImageBusy&&images.length===1){await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{message:'生图队列已满，请稍后重试'}})});return}
     await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({data:[{b64_json:source.png}]})})
   })
+  await prepareLegacyProfessionalIntent(page,source.scope)
   await page.goto(`./avg/production?project=${source.scope.projectId}&work=${source.scope.workId}`)
   await page.getByRole('button',{name:'素材',exact:true}).click()
   const media=page.getByRole('region',{name:'图片生产（实验）',exact:true})
@@ -85,6 +100,7 @@ async function prepare(page:Page,firstImageBusy=false,imageModel='agnes.image-2.
   await media.getByRole('button',{name:'导入为参考，不加入演出',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'参考图已解码'})).toBeVisible()
   const panel=page.getByRole('region',{name:'专业视觉策划（实验）',exact:true})
+  await panel.getByRole('button',{name:'修改尚未开始的专业用途',exact:true}).click()
   await panel.getByLabel('必须呈现的场景细节（每行一项）',{exact:true}).fill('明确窗户、书桌与门的位置；保留下方对白区')
   await panel.getByLabel('本次风格参考',{exact:true}).selectOption({label:'原创专业参考.png'})
   await panel.getByLabel('参考允许改变的内容',{exact:true}).fill('只参考配色，允许重新设计布局细节')
@@ -461,7 +477,7 @@ test('author refuses an exact professional proposal and refresh retains its reas
 
 })
 
-async function prepareProfessionalFamily(page:Page,options:{propReference?:boolean}={}){
+async function prepareProfessionalFamily(page:Page,options:{propReference?:boolean;version?:4|5;processing?:boolean;processingTargetIndex?:number}={}){
   await page.addInitScript(()=>localStorage.setItem('storyforge_guide_completed','e2e'))
   await page.goto('./avg/library')
   const origin=new URL(page.url()).origin,calls:string[]=[]
@@ -478,6 +494,7 @@ async function prepareProfessionalFamily(page:Page,options:{propReference?:boole
     return {scope:owner.scope,references,titles:workspace.systemPlan.scenes.map((s:any)=>s.title),characterName:workspace.systemPlan.characters[0].displayName,itemName:workspace.systemPlan.inventory.items[0].name,
       scenes:workspace.scripts.map((s:any)=>({key:s.sceneKey,lineKey:s.lines[0].lineKey,text:s.lines[0].text}))}
   })
+  if(options.version!==5)await prepareLegacyProfessionalIntent(page,source.scope)
   await page.goto(`./avg/production?project=${source.scope.projectId}&work=${source.scope.workId}`)
   await page.getByRole('button',{name:'素材',exact:true}).click()
   const media=page.getByRole('region',{name:'图片生产（实验）',exact:true})
@@ -489,6 +506,7 @@ async function prepareProfessionalFamily(page:Page,options:{propReference?:boole
     await expect(page.getByRole('status').filter({hasText:'参考图已解码'})).toBeVisible()
   }
   const panel=page.getByRole('region',{name:'专业视觉策划（实验）',exact:true})
+  if(options.version!==5)await panel.getByRole('button',{name:'修改尚未开始的专业用途',exact:true}).click()
   await panel.getByLabel('必须呈现的场景细节（每行一项）',{exact:true}).fill('保持已有门窗与对白区')
   for(const name of ['新增人物姿态','新增人物表情','新增物件图标与详情图'])await panel.getByRole('button',{name,exact:true}).click()
   await expect(panel.getByRole('article',{name:/^专业用途 /})).toHaveCount(5)
@@ -507,6 +525,14 @@ async function prepareProfessionalFamily(page:Page,options:{propReference?:boole
     await icon.getByLabel('家族基准允许变化',{exact:true}).fill('保持同一信封的轮廓与封印，仅改变图标和详情的观察尺度')
     await expect(detail.getByLabel('已导入的家族基准',{exact:true})).toHaveValue(await icon.getByLabel('已导入的家族基准',{exact:true}).inputValue())
   }
+  if(options.version===5){
+    const policies=panel.locator('fieldset[aria-label^="参考内容范围："]')
+    await expect(policies).toHaveCount(options.propReference?3:2)
+    for(const policy of await policies.all()){
+      await policy.getByRole('textbox',{name:/^允许参考：/}).fill('只取用本次已确认的配色、主体比例与公开造型')
+      await policy.getByRole('textbox',{name:/^必须排除：/}).fill('发光按钮\n新增剧情物件')
+    }
+  }
   const prepareButton=panel.getByRole('button',{name:'准备专业视觉制作方案',exact:true})
   await expect(prepareButton).toBeDisabled()
   for(const name of ['我有权向本次图片供应商发送该参考','我有权用该参考进行本次衍生创作'])await panel.getByRole('checkbox',{name,exact:true}).check()
@@ -519,6 +545,10 @@ async function prepareProfessionalFamily(page:Page,options:{propReference?:boole
   await pose.getByLabel('图像宽度',{exact:true}).fill('704')
   await expect(expression.getByLabel('图像宽度',{exact:true})).toHaveValue('704')
   await panel.getByRole('button',{name:'撤销未保存的专业用途',exact:true}).click()
+  if(options.processing){
+    if(options.processingTargetIndex!==undefined)await page.getByRole('region',{name:'本地图像加工配方',exact:true}).getByLabel('加工目标',{exact:true}).selectOption({index:options.processingTargetIndex})
+    await saveProcessingRecipe(page)
+  }
   await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
   await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'已明确开始，等待逐项作者确认。'})).toBeVisible()
@@ -544,13 +574,35 @@ test('professional family form preserves five exact targets and reference permis
 })
 
 
-test('professional family images use exact references, alpha and five consumers through native Preview and portable restore',async({page},info)=>{
+test('fresh V5 native family form preserves reference content policies and starts the actual five-target Plan without a provider request',async({page},info)=>{
+  test.setTimeout(120_000)
+  test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION!=='1'||process.env.VITE_STORYFORGE_AVG_VISUAL_PLANNING!=='1','Both original default-off experiments must be explicit')
+  const {source,calls}=await prepareProfessionalFamily(page,{version:5,propReference:true,processing:true})
+  const state=await page.evaluate(async scope=>{
+    const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
+    const [service,contracts]=await Promise.all([load('/storyforge/src/lib/avg/assembly-service.ts'),load('/storyforge/src/lib/product-production/contracts.ts')])
+    const view=await service.readAvgAssemblyWorkspaceV1(scope),brief=contracts.parseProductProductionBriefV3(view.details.brief.briefJson),plan=JSON.parse(view.details.build.planJson)
+    return {version:brief.avgVisualPlanning.version,scope:brief.avgVisualPlanning.scope,processing:brief.avgVisualPlanning.imageProcessing,
+      modelTasks:plan.tasks.filter((t:any)=>t.executionMode==='model').length,imageTasks:plan.tasks.filter((t:any)=>t.kind==='avg-media-image-generate').length,
+      imageSkills:plan.tasks.filter((t:any)=>t.kind==='avg-media-image-generate').map((t:any)=>t.skillId),usage:view.visualProgress.budget.usage,assets:JSON.parse(view.draft.editorJson).presentation.stage.assets}
+  },source.scope)
+  expect(state.version).toBe(5);expect(state.scope.version).toBe(2);expect(state.scope.templates).toHaveLength(5)
+  expect(state.scope.referenceCatalog).toHaveLength(3)
+  for(const entry of state.scope.referenceCatalog){expect(entry.reference.version).toBe(2);expect(entry.reference.contentPolicy).toEqual({permittedFeatures:['只取用本次已确认的配色、主体比例与公开造型'],excludedFeatures:['发光按钮','新增剧情物件']})}
+  expect(state.processing.entries).toHaveLength(1);expect(state.modelTasks).toBe(4);expect(state.imageTasks).toBe(5);expect(new Set(state.imageSkills)).toEqual(new Set(['avg.compiled-image-request.v2']))
+  expect(state.usage).toMatchObject({modelCalls:0,mediaCalls:0});expect(state.assets).toEqual([]);expect(calls).toEqual([])
+  await page.getByRole('button',{name:'素材',exact:true}).click()
+  await page.getByRole('region',{name:'专业视觉策划（实验）',exact:true}).scrollIntoViewIfNeeded()
+  await page.screenshot({path:info.outputPath('avg-v5-professional-family-scope.png'),fullPage:true})
+})
+
+for(const [visualVersion,noKeyBeforeProcessing] of [[4,false],[5,false],[5,true]] as const)test(noKeyBeforeProcessing?'V5 native received images resume local processing after key removal and refresh without any new request':visualVersion===4?'professional family images use exact references, alpha and five consumers through native Preview and portable restore':'V5 native family images preserve policy2, local derivatives and five consumers through Source5/6 Preview and portable restore',async({page},info)=>{
   // Hosted trace: full portable proof alone took 132.7s, with all assertions
   // still passing. Keep the existing 30s UI phase bounds and allow the whole
   // five-image author/preview/restore/delete slice to finish on that runner.
   test.setTimeout(420_000)
   test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION!=='1'||process.env.VITE_STORYFORGE_AVG_VISUAL_PLANNING!=='1','Both default-off visual experiments must be explicit')
-  const {source,panel,calls}=await prepareProfessionalFamily(page,{propReference:true})
+  const {source,panel,calls}=await prepareProfessionalFamily(page,{propReference:true,version:visualVersion,processing:visualVersion===5,...(noKeyBeforeProcessing?{processingTargetIndex:4}:{})})
   const fixture=await page.evaluate(async scope=>{
     const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
     const view=await(await load('/storyforge/src/lib/avg/assembly-service.ts')).readAvgAssemblyWorkspaceV1(scope)
@@ -571,7 +623,7 @@ test('professional family images use exact references, alpha and five consumers 
       c.fillStyle='#e8d7a0';c.font='14px sans-serif';c.fillText(`ENGINEERING ${index+1}`,12,22)
       return {key:p.requirementKey,png:canvas.toDataURL('image/png').split(',')[1]}
     })
-    return {templates:planning.scope.templates,catalog:planning.scope.referenceCatalog,images}
+    return {templates:planning.scope.templates,catalog:planning.scope.referenceCatalog,processing:planning.imageProcessing,images}
   },source.scope)
   expect(calls).toEqual([])
   const referenceBytes=new Map(source.references.map((r:any)=>[createHash('sha256').update(Buffer.from(r.png,'base64')).digest('hex'),`data:image/png;base64,${r.png}`]))
@@ -580,7 +632,7 @@ test('professional family images use exact references, alpha and five consumers 
     const body=route.request().postDataJSON();models.push(body)
     const content=body.messages.find((m:any)=>m.role==='user').content as string
     const packet=JSON.parse(content.slice(content.indexOf('{'),content.lastIndexOf('}')+1))
-    expect(packet.schema).toBe('storyforge.avg.visual-planning-inputs');expect(content).not.toContain(source.scenes[0].text);expect(content).not.toContain('data:image/')
+    expect(packet.schema).toBe('storyforge.avg.visual-planning-inputs');if(visualVersion===5)expect(packet.version).toBe(5);expect(content).not.toContain(source.scenes[0].text);expect(content).not.toContain('data:image/')
     const direction=body.messages.find((m:any)=>m.role==='system').content.includes('storyforge.avg.visual-bible')
     const payload=direction?{schema:'storyforge.avg.visual-bible',version:1,style:{medium:'二维工程插画',rendering:'统一轮廓',palette:['灰绿','暖黄'],lighting:'左上柔光',composition:'人物共同画布，下方保留对白区'},
       subjects:packet.subjects.map((s:any)=>({subjectKey:s.subjectKey,subjectKind:s.subjectKind,identityInvariants:['公开主体和比例保持'],allowedChanges:['仅变化已确认用途与姿态'],forbiddenDepictions:['新增剧情秘密']}))}
@@ -595,6 +647,7 @@ test('professional family images use exact references, alpha and five consumers 
     const expected=template.requiredReferenceKeys.map((k:string)=>referenceBytes.get(fixture.catalog.find((r:any)=>r.referenceKey===k).reference.contentHash))
     expect(expected.every((r:unknown)=>typeof r==='string')).toBe(true)
     expect(body.extra_body.image).toEqual(expected)
+    if(visualVersion===5){expect(body.prompt).toContain('发光按钮');expect(body.prompt).toContain('只取用本次已确认的配色、主体比例与公开造型')}
     const image=fixture.images.find((i:any)=>i.key===key)!
     images.push({key:key!,references:body.extra_body.image})
     await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({data:[{b64_json:image.png}]})})
@@ -615,16 +668,54 @@ test('professional family images use exact references, alpha and five consumers 
   await generate.click()
   for(const label of [`场景方案：${source.titles[0]}`,`人物方案：${source.characterName}`,`物件方案：${source.itemName}`])await approve(label)
   expect(models).toHaveLength(4);expect(images).toHaveLength(0)
-  await generate.click()
+  if(noKeyBeforeProcessing){
+    // Bounded real scheduler cycles create all five actual HTTP/producer rows.
+    // The final requirement owns the recipe, so its processor cannot be ready
+    // until the next cycle. No execution result, event, pixel or adoption is
+    // replaced. The subsequent cold UI resumes the real local processor.
+    const received=await page.evaluate(async scope=>{
+      const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
+      const [{db},service,visual,configured,scheduler,config]=await Promise.all([load('/storyforge/src/lib/db/schema.ts'),load('/storyforge/src/lib/product-production/service.ts'),
+        load('/storyforge/src/lib/avg/visual-planning-workspace.ts'),load('/storyforge/src/lib/product-production/production-executor.ts'),load('/storyforge/src/lib/product-production/scheduler.ts'),load('/storyforge/src/stores/ai-config.ts')])
+      const build=await db.productBuilds.where('workId').equals(scope.workId).first(),details=await service.readProductProductionDetailsV1(scope,build.productionId,['avg'])
+      const execution=await visual.resolveAvgVisualPlanningExecutionV5(scope,details.executionBrief,build.id)
+      const executor=configured.createConfiguredProductProductionExecutorV1({production:details.production,brief:details.executionBrief,...execution})
+      const raws=()=>db.productBuildArtifacts.where('buildId').equals(build.id).filter((r:any)=>r.status==='accepted'&&r.artifactKey.startsWith('avg.media.raw.')).count()
+      for(let cycle=0;cycle<12&&await raws()<5;cycle++)await scheduler.runProductProductionSchedulerCycleV1({scope,productionId:build.productionId,...execution,executor})
+      const rawCount=await raws(),processed=await db.productBuildArtifacts.where('buildId').equals(build.id).filter((r:any)=>r.status==='accepted'&&r.artifactKey.startsWith('avg.media.processed.')).count()
+      if(rawCount!==5||processed!==0)throw new Error('Expected actual completed raw prefix before its first local processor')
+      config.useAIConfigStore.getState().setConfig({apiKey:''})
+      return {rawCount,processed,keyConfigured:!!config.useAIConfigStore.getState().config.apiKey}
+    },source.scope)
+    expect(received).toEqual({rawCount:5,processed:0,keyConfigured:false});expect(models).toHaveLength(4);expect(images).toHaveLength(5)
+    await page.reload();await page.getByRole('button',{name:'素材',exact:true}).click()
+    expect(await page.evaluate(async()=>{const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;const {useAIConfigStore}=await load('/storyforge/src/stores/ai-config.ts');return !!useAIConfigStore.getState().config.apiKey})).toBe(false)
+    const local=page.getByRole('button',{name:'执行本地加工（0 次新请求）',exact:true})
+    await expect(local).toBeEnabled();await local.click()
+    await expect.poll(()=>page.evaluate(async scope=>{
+      const load=new Function('p','return import(p)') as (p:string)=>Promise<any>,{db}=await load('/storyforge/src/lib/db/schema.ts')
+      const build=await db.productBuilds.where('workId').equals(scope.workId).first()
+      return db.productBuildArtifacts.where('buildId').equals(build.id).filter((r:any)=>r.status==='accepted'&&r.artifactKey.startsWith('avg.media.processed.')).count()
+    },source.scope),{timeout:30_000}).toBe(1)
+    await expect(local).toHaveCount(0)
+    expect(models).toHaveLength(4);expect(images).toHaveLength(5)
+    const evidence=info.outputPath('native-no-key-before-first-local-processing.json')
+    await writeFile(evidence,JSON.stringify({before:received,after:{processed:1,modelCalls:models.length,imageCalls:images.length},scope:'Actual cold browser UI resumed native local processor, controlled HTTP originals, no provider requests after key removal. No artistic acceptance.'}))
+    await info.attach('native-no-key-before-first-local-processing',{path:evidence,contentType:'application/json'})
+  }else{
+    await generate.click()
+    await expect(page.getByRole('status').filter({hasText:'专业视觉步骤已执行'})).toBeVisible({timeout:60_000})
+  }
   for(const t of fixture.templates)await expect(page.getByRole('article',{name:`图片候选：${t.parameters.name}`,exact:true}).getByText('原图已接收，等待作者选择',{exact:false})).toBeVisible({timeout:60_000})
   expect(images).toHaveLength(5);expect(images.map(i=>i.references.length).sort()).toEqual([1,2,2,2,2])
-  const measured=await page.evaluate(async scope=>{
+  const measured=await page.evaluate(async({scope,visualVersion})=>{
     const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
     const [service,decoder]=await Promise.all([load('/storyforge/src/lib/avg/assembly-service.ts'),load('/storyforge/src/lib/avg/image-decoder.ts')])
     const view=await service.readAvgAssemblyWorkspaceV1(scope),result=[]
-    for(const r of view.imageDefinition.mediaBatch.requirements){const row=view.artifacts.find((a:any)=>a.artifactKey===`avg.media.raw.${r.requirementKey}`),bytes=await service.readAvgRawImageCandidateBytesV2({scope,productionId:view.details.production.id,requirementKey:r.requirementKey,version:row.version,contentHash:row.contentHash});result.push({key:r.requirementKey,...await decoder.inspectAvgImageBytesV1({data:bytes.data,...bytes.asset,requireAlpha:r.alpha==='required'})})}
+    const preview=visualVersion===5?await load('/storyforge/src/lib/avg/media-candidate-preview-v5.ts'):service
+    for(const r of view.imageDefinition.mediaBatch.requirements){const row=view.artifacts.find((a:any)=>a.artifactKey===`avg.media.raw.${r.requirementKey}`),bytes=await (visualVersion===5?preview.readAvgRawImageCandidateBytesV5:preview.readAvgRawImageCandidateBytesV2)({scope,productionId:view.details.production.id,requirementKey:r.requirementKey,version:row.version,contentHash:row.contentHash});result.push({key:r.requirementKey,...await decoder.inspectAvgImageBytesV1({data:bytes.data,...bytes.asset,requireAlpha:r.alpha==='required'})})}
     return result
-  },source.scope)
+  },{scope:source.scope,visualVersion})
   expect(measured.filter((r:any)=>r.hasAlpha)).toHaveLength(2)
   const readMeasurements:Array<{name:string;elapsedMs:number;explicitRereads:number;initialReadErrors:string[]}>=[]
   for(const t of fixture.templates){
@@ -645,6 +736,15 @@ test('professional family images use exact references, alpha and five consumers 
     await expect(card.getByRole('region',{name:`视觉评审：${name}`,exact:true}).getByText(`准确原图已显示 · 参考 ${referenceCount}/${referenceCount}。`,{exact:true})).toBeVisible({timeout:30_000})
     await expect.poll(()=>card.getByRole('img').evaluateAll((imgs:HTMLImageElement[],count:number)=>imgs.length>=count&&imgs.every(i=>i.complete&&i.naturalWidth>0),t.requiredReferenceKeys.length+1)).toBe(true)
     readMeasurements.push({name,elapsedMs:Date.now()-readStarted,explicitRereads:Number(needsReread),initialReadErrors})
+    if(visualVersion===5&&fixture.processing.entries.some((e:any)=>e.requirementKey===t.parameters.requirementKey)){
+      await expect(card.getByText('供应商原图（保留）',{exact:false})).toBeVisible()
+      await expect(card.getByText('加工后候选',{exact:false})).toBeVisible()
+      const viewport=page.viewportSize()!
+      await page.setViewportSize({...viewport,height:1800})
+      await card.locator('.avg-visual-review-grid').scrollIntoViewIfNeeded()
+      await card.locator('.avg-visual-review-grid').screenshot({path:info.outputPath('avg-v5-native-processing-policy-comparison.png')})
+      await page.setViewportSize(viewport)
+    }
     await confirmEngineeringVisualReview(card,name)
     await card.getByRole('button',{name:`保存选图候选：${name}`,exact:true}).click()
     await card.getByRole('checkbox',{name:'我已查看这张图片并核对用途、来源与使用权',exact:true}).check()
@@ -690,7 +790,7 @@ test('professional family images use exact references, alpha and five consumers 
   await page.getByRole('button',{name:'物品与证据',exact:true}).click();const inventory=page.getByRole('dialog',{name:'物品与证据',exact:true})
   await expect.poll(()=>inventory.locator('nav img').evaluate((i:HTMLImageElement)=>i.complete?i.naturalWidth:0)).toBe(icon.width)
   await expect.poll(()=>inventory.locator('.avg-inventory-detail-image').evaluate((i:HTMLImageElement)=>i.complete?i.naturalWidth:0)).toBe(detail.width)
-  await page.screenshot({path:info.outputPath('avg-v4-family-pose-inventory.png'),fullPage:true})
+  await page.screenshot({path:info.outputPath(`avg-v${visualVersion}-family-pose-inventory.png`),fullPage:true})
   await inventory.getByRole('button',{name:'关闭',exact:true}).click()
   await expect(page.locator('.avg-dialogue p')).toHaveText(source.scenes[0].text)
   await page.getByRole('button',{name:'继续',exact:true}).click();await page.getByRole('button',{name:'继续保管',exact:true}).click()
@@ -700,7 +800,7 @@ test('professional family images use exact references, alpha and five consumers 
   expect(Math.abs(nextBounds!.width-bounds!.width)).toBeLessThan(1);expect(Math.abs(nextBounds!.height-bounds!.height)).toBeLessThan(1)
   await page.reload();await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',expression.altText)
   await expect(page.locator('.avg-dialogue p')).toHaveText(source.scenes[1].text)
-  await page.screenshot({path:info.outputPath('avg-v4-family-expression.png'),fullPage:true})
+  await page.screenshot({path:info.outputPath(`avg-v${visualVersion}-family-expression.png`),fullPage:true})
   const restoreStarted=Date.now()
   const restored=await page.evaluate(async scope=>{
     const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
@@ -721,6 +821,23 @@ test('professional family images use exact references, alpha and five consumers 
   await page.goto(originalUrl);await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',expression.altText)
   expect(models).toHaveLength(4);expect(images).toHaveLength(5);expect(calls).toEqual([])
   await page.goto(`./avg/production?project=${source.scope.projectId}&work=${source.scope.workId}`)
+  if(visualVersion===5){
+    await page.getByRole('button',{name:'素材',exact:true}).click()
+    const history=page.getByRole('region',{name:'新版已停止版本的图像',exact:true})
+    await history.getByRole('button',{name:'读取保留图像与来源',exact:true}).click()
+    await expect(history.getByRole('status')).toContainText('5 项原图来源可读取')
+    const target=fixture.templates.find((t:any)=>t.parameters.requirementKey===fixture.processing.entries[0].requirementKey)!
+    const original=history.getByRole('article',{name:`新版历史图像：${target.parameters.name}`,exact:true})
+    await original.getByRole('button',{name:'查看保留图像',exact:true}).click()
+    await expect(original.getByRole('img')).toHaveCount(2)
+    await expect.poll(()=>original.getByRole('img').evaluateAll((imgs:HTMLImageElement[])=>imgs.every(i=>i.complete&&i.naturalWidth>0))).toBe(true)
+    await expect(history.getByRole('button',{name:/保存选图候选/})).toHaveCount(0)
+    expect(models).toHaveLength(4);expect(images).toHaveLength(5)
+    const viewport=page.viewportSize()!
+    await page.setViewportSize({...viewport,height:1800});await original.scrollIntoViewIfNeeded()
+    await original.screenshot({path:info.outputPath('avg-v5-frozen-historical-raw-processed.png')})
+    await page.setViewportSize(viewport)
+  }
   await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
   await page.getByRole('button',{name:'以此预览开始修订',exact:true}).click();await page.getByRole('button',{name:'保存编辑草稿',exact:true}).click()
   await page.getByRole('button',{name:'素材',exact:true}).click()
@@ -742,7 +859,7 @@ test('professional family images use exact references, alpha and five consumers 
     await proof.verifyProductBuildTerminalArtifactSetV1({scope,productionId:build.productionId,buildId:build.id,expectedControlEpoch:build.controlEpoch,expectedPlanHash:build.planHash})
     return workspace.parseAvgAuthorWorkspaceV1(draft.editorJson).presentation.inheritedImages.map((entry:any)=>({assetKey:entry.assetKey,version:entry.source.version,originalHash:entry.source.raw.contentHash}))
   },source.scope)
-  expect(retained).toHaveLength(5);expect(retained.every((entry:any)=>entry.version===2)).toBe(true)
+  expect(retained).toHaveLength(5);expect(retained.map((entry:any)=>entry.version).sort()).toEqual(visualVersion===5?[5,5,5,5,6]:[2,2,2,2,2])
   await page.getByRole('button',{name:'试玩此预览',exact:true}).click()
   await expect.poll(()=>page.locator('.avg-stage img').evaluateAll((imgs:HTMLImageElement[])=>imgs.length>0&&imgs.every(i=>i.complete&&i.naturalWidth>0))).toBe(true)
   await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',pose.altText)
@@ -757,8 +874,67 @@ test('professional family images use exact references, alpha and five consumers 
   await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',expression.altText)
   await expect(page.locator('.avg-dialogue p')).toHaveText(source.scenes[1].text)
   await expect(page.locator('.avg-text-cursor')).toHaveClass(/is-complete/)
-  await page.screenshot({path:info.outputPath('avg-v4-five-originals-retained-new-stage.png'),fullPage:true})
+  await page.screenshot({path:info.outputPath(`avg-v${visualVersion}-five-originals-retained-new-stage.png`),fullPage:true})
   expect(models).toHaveLength(4);expect(images).toHaveLength(5);expect(calls).toEqual([])
+})
+
+for(const outcome of ['unknown','unauthorized'] as const)test(`V5 native ${outcome} keeps the original response and never silently resends`,async({page},info)=>{
+  test.setTimeout(120_000)
+  test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION!=='1'||process.env.VITE_STORYFORGE_AVG_VISUAL_PLANNING!=='1','Both original default-off experiments must be explicit')
+  const {source,panel,calls}=await prepareProfessionalFamily(page,{version:5,propReference:true,processing:true})
+  let modelCalls=0,imageCalls=0
+  await page.route('https://visual.fixture.invalid/v1/chat/completions',async route=>{
+    modelCalls++
+    const body=route.request().postDataJSON(),content=body.messages.find((m:any)=>m.role==='user').content as string
+    const packet=JSON.parse(content.slice(content.indexOf('{'),content.lastIndexOf('}')+1))
+    expect(packet.version).toBe(5)
+    const direction=body.messages.find((m:any)=>m.role==='system').content.includes('storyforge.avg.visual-bible')
+    const payload=direction?{schema:'storyforge.avg.visual-bible',version:1,style:{medium:'二维工程插画',rendering:'统一轮廓',palette:['灰绿'],lighting:'自然光',composition:'保留对白区'},
+      subjects:packet.subjects.map((t:any)=>({subjectKey:t.subjectKey,subjectKind:t.subjectKind,identityInvariants:['工程公开身份'],allowedChanges:['本次画面用途'],forbiddenDepictions:['新增秘密']}))}
+      :{schema:'storyforge.avg.media-brief',version:1,subjectKey:packet.subjects[0].subjectKey,subjectKind:packet.subjects[0].subjectKind,designIntent:'工程失败保留校准，不签艺术质量',
+        outputs:packet.requirements.map((r:any)=>({requirementKey:r.requirementKey,prompt:`工程故障候选[${r.requirementKey}]`,negativePrompt:'水印',invariants:['保持公开主体'],forbiddenDepictions:['新增秘密'],referenceKeys:r.requiredReferenceKeys}))}
+    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({choices:[{message:{role:'assistant',content:JSON.stringify(payload)},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:200}})})
+  })
+  await page.route('https://visual.fixture.invalid/v1/images/generations',async route=>{
+    imageCalls++
+    expect(imageCalls).toBe(1)
+    await route.fulfill({status:outcome==='unknown'?202:401,contentType:'application/json',body:JSON.stringify(outcome==='unknown'?{operation_id:'controlled-native-v5-pending'}:{error:{message:'controlled native authorization failure'}})})
+  })
+  await adoptSource(page,'系统规则');for(const title of source.titles)await adoptSource(page,`场景：${title}`)
+  await page.getByRole('button',{name:'素材',exact:true}).click()
+  const generate=panel.getByRole('button',{name:'执行已确认的专业方案与图片任务',exact:true})
+  const approve=async(label:string)=>{
+    const card=panel.getByRole('article',{name:`专业方案：${label}`,exact:true})
+    await card.getByRole('button',{name:`保存待确认：${label}`,exact:true}).click()
+    await card.getByRole('checkbox',{name:'我已核对本方案内容及允许参考',exact:true}).check()
+    await card.getByRole('button',{name:`确认采用：${label}`,exact:true}).click()
+    await expect(card.getByText('此方案已明确采用。',{exact:false})).toBeVisible()
+  }
+  await generate.click();await approve('视觉基准')
+  await generate.click();for(const label of [`场景方案：${source.titles[0]}`,`人物方案：${source.characterName}`,`物件方案：${source.itemName}`])await approve(label)
+  await generate.click()
+  const restart=panel.getByRole('button',{name:'保留记录并准备新版本方案',exact:true})
+  await expect(restart).toBeVisible({timeout:60_000})
+  const read=()=>page.evaluate(async scope=>{
+    const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
+    const [{db},config]=await Promise.all([load('/storyforge/src/lib/db/schema.ts'),load('/storyforge/src/stores/ai-config.ts')])
+    const build=await db.productBuilds.where('workId').equals(scope.workId).first(),production=await db.productProductions.get(build.productionId),draft=await db.avgAuthoringDrafts.where('workId').equals(scope.workId).first()
+    return {buildNumber:build.buildNumber,status:build.status,failure:build.failureJson,ledger:build.budgetLedgerJson,briefRevision:production.currentBriefRevision,draftRevision:draft.revision,
+      rawCount:await db.productBuildArtifacts.where('buildId').equals(build.id).filter((r:any)=>r.artifactKey.startsWith('avg.media.raw.')).count(),keyConfigured:!!config.useAIConfigStore.getState().config.apiKey}
+  },source.scope)
+  const before=await read()
+  expect(['failed','recovery-required']).toContain(before.status);expect(before.rawCount).toBe(0);expect(before.keyConfigured).toBe(true)
+  expect(modelCalls).toBe(4);expect(imageCalls).toBe(1)
+  if(outcome==='unknown'){
+    await restart.click()
+    await expect(page.getByRole('alert').filter({hasText:/未知结果.*不能|不能.*重发/})).toBeVisible()
+    expect(await read()).toEqual(before)
+  }
+  await page.reload();await page.getByRole('button',{name:'素材',exact:true}).click()
+  expect(await read()).toEqual(before);expect(modelCalls).toBe(4);expect(imageCalls).toBe(1);expect(calls).toEqual([])
+  const proof=info.outputPath(`avg-v5-native-${outcome}-retained-without-resend.json`)
+  await writeFile(proof,JSON.stringify({outcome,modelCalls,imageCalls,...before,scope:'Controlled actual native HTTP failure, original records retained, no new request or key reset; unknown restart rejected before any new Brief.'}))
+  await info.attach(`avg-v5-native-${outcome}-retained`,{path:proof,contentType:'application/json'})
 })
 
 test('unselected original is revalidated offline into current review and Preview then retained through source3 and complete restore',async({page},info)=>{

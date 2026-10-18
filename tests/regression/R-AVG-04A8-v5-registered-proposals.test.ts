@@ -29,8 +29,8 @@ beforeEach(async()=>{
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();vi.unstubAllEnvs();db.close()})
 const openEngineeringFence=()=>vi.spyOn(readiness,'avgVisualPlanningExecutionReadyV5').mockReturnValue(true)
 describe('AVG V5 registered proposals and explicit author compilation',()=>{
-  it('registers distinct new snapshots without changing V4 defaults or opening V5 production',()=>{
-    expect(readiness.avgVisualPlanningExecutionReadyV5()).toBe(false)
+  it('registers distinct new snapshots without changing original V4 agent defaults',()=>{
+    expect(readiness.avgVisualPlanningExecutionReadyV5()).toBe(true)
     expect(CONTEXT_SOURCE_BY_KEY.get(AVG_VISUAL_PLANNING_CONTEXT_V5)).toMatchObject({ownerFrom:'work',layer:'L0',protectedFromTrim:true,budgetTokens:24000})
     for(const [i,role] of AVG_VISUAL_PLANNING_ROLES_V5.entries()){
       const skill=getAgentSkillV1(role.skillId),old=getAgentSkillV1(AVG_VISUAL_PLANNING_ROLES_V1[i].skillId)

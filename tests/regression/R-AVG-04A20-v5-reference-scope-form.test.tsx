@@ -17,7 +17,8 @@ Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true})
 const roots:Root[]=[]
 beforeEach(async()=>{
   await db.delete();await db.open();vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION','1');vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING','1')
-  // Test-only reachability of a still closed feature; never enables production.
+  // Isolate the controlled fixture gate; real entrypoints still require both
+  // original default-off experiment switches and explicit author start.
   vi.spyOn(readiness,'avgVisualPlanningExecutionReadyV5').mockReturnValue(true)
   useAIConfigStore.getState().setConfig({provider:'agnes',apiKey:'test-only-no-network',baseUrl:'https://v5-ui.fixture.invalid/v1',model:'agnes-2.5-flash'})
   vi.stubGlobal('fetch',vi.fn(()=>{throw new Error('Form/start/restart must not dispatch models')}))
@@ -73,11 +74,12 @@ describe('AVG actual Scope2 form into separate V5 public preparation and start',
     expect(brief.avgVisualPlanning!.version).toBe(5);expect(brief.avgVisualPlanning!.imageBinding.adapterId).toBe('agnes.image-2.5-flash.v1')
     await act(async()=>root.render(<ImageProcessingPlanPanel scope={f.owner.scope} workspace={f.workspace} view={view} draftRevision={view.draft.revision} disabled={false} canEdit={true}
       onAction={onAction} onReload={onReload} onNotice={vi.fn()} onPending={vi.fn()}/>))
+    await act(async()=>{const target=panel.querySelector<HTMLSelectElement>('[aria-label="加工目标"]')!;expect(target).not.toBeNull();target.value=f.scope.templates[4].parameters.requirementKey;target.dispatchEvent(new Event('change',{bubbles:true}))})
     const textarea=panel.querySelector('textarea')!
     await act(async()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(textarea,'仅透明留边和明确裁切，不承诺去除背景');textarea.dispatchEvent(new Event('input',{bubbles:true}))})
     await act(async()=>{button(panel,'保存本项加工配方').click();await action})
     const next=parseProductProductionBriefV3(view.details!.brief!.briefJson)
-    expect(next.avgVisualPlanning!.version).toBe(5);expect(next.avgVisualPlanning!.imageProcessing!.entries[0].recipe.declaration).toContain('明确裁切')
+    expect(next.avgVisualPlanning!.version).toBe(5);expect(next.avgVisualPlanning!.imageProcessing!.entries[0].recipe.declaration).toContain('明确裁切');expect(next.avgVisualPlanning!.imageProcessing!.entries[0].requirementKey).toBe(f.scope.templates[4].parameters.requirementKey)
     expect(next.avgVisualPlanning!.scope).toEqual(brief.avgVisualPlanning!.scope);expect(view.draft).toEqual(before)
     expect(await db.productBuilds.count()).toBe(0);expect(await db.agentRuns.count()).toBe(0);expect(fetch).not.toHaveBeenCalled()
   },30_000)

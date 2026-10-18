@@ -15,6 +15,7 @@ import MediaPreview, { AVG_MEDIA_KIND_LABELS as MEDIA_NAMES } from './MediaAsset
 import MediaProductionPanel from './MediaProductionPanel'
 import VoiceProductionPanel from './VoiceProductionPanel'
 import { avgMediaProductionEnabledV2, avgVoiceProductionEnabledV3 } from '../../lib/avg/assembly-contract'
+import { avgVisualPlanningExecutionReadyV5 } from '../../lib/avg/visual-planning-brief-v5'
 import { avgVisualPlanningExecutionReadyV4 } from '../../lib/avg/visual-planning-brief'
 import { readAvgOptionalImageDefinitionV3 } from '../../lib/avg/media-production-definition'
 import { parseAvgStoredAssemblyBriefV3 } from '../../lib/avg/voice-assembly-storage'
@@ -108,7 +109,9 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
   const imageDefinition=view?.imageDefinition??(details?.executionBrief&&!details.executionBrief.avgVisualPlanning?readAvgOptionalImageDefinitionV3(details.executionBrief):null)
   const mediaBatch=imageDefinition?.mediaBatch??null
   const storedAssembly=details?.executionBrief?.avgAssembly
-  const visualPlanning=details?.executionBrief?.avgVisualPlanning??(details?.brief?parseProductProductionBriefV3(details.brief.briefJson).avgVisualPlanning:undefined)
+  const preparedVisual=details?.brief?parseProductProductionBriefV3(details.brief.briefJson).avgVisualPlanning:undefined
+  const visualPlanning=details?.executionBrief?.avgVisualPlanning??preparedVisual
+  const visualStartReady=!preparedVisual||(preparedVisual.version===5?avgVisualPlanningExecutionReadyV5():avgVisualPlanningExecutionReadyV4())
   const assembly=storedAssembly??visualPlanning?.assembly
   const voiceBatch=storedAssembly?.version===3?parseAvgStoredAssemblyBriefV3(storedAssembly).assembly.voice.batch:null
   const choiceKeys=[...(mediaBatch?.requirements.map(r=>avgMediaChoiceArtifactKeyV1(r.requirementKey))??[]),
@@ -271,7 +274,7 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
         onGenerate={()=>run(async()=>{if(!details?.production.id)throw new Error('请先核对方案并明确开始');const controller=new AbortController();mediaAbort.current=controller;setMediaRunning(true)
           try{const result=await runAvgAssemblyV1({scope,productionId:details.production.id,signal:controller.signal});await reload();setNotice(`专业视觉步骤已执行，当前状态：${result.buildStatus}。请查看方案或图片并逐项确认。`)}finally{mediaAbort.current=null;if(alive.current)setMediaRunning(false)}})}/></Suspense></div>}
       {(avgMediaProductionEnabledV2()||model.mediaBatch||mediaBatch)&&<div hidden={section!=='media'}><MediaProductionPanel scope={scope} view={view} workspace={model}
-        disabled={busy||dirty||jsonPending||voicePending||visualPending} canEdit={canEditMediaDomain&&!visualPlanning} canPrepareProcessing={canEditMediaDomain} canAdopt={canAdopt} sourcesReady={sourcesReady} declaration={declaration} generating={mediaRunning} visible={section==='media'}
+        disabled={busy||dirty||jsonPending||voicePending||visualPending} canEdit={canEditMediaDomain&&!visualPlanning} canImportReference={canEditMediaDomain} canPrepareProcessing={canEditMediaDomain} canAdopt={canAdopt} sourcesReady={sourcesReady} declaration={declaration} generating={mediaRunning} visible={section==='media'}
         onPending={setImagePending} onAction={run} onReload={reload} onClear={async()=>{await clearAvgVisualBatchDraftV1({scope,expectedDraftRevision:view.draft.revision});await reload();setNotice('未使用的生成批次已移除，参考图与制作记录仍保留。')}} onNotice={setNotice} onCancel={()=>mediaAbort.current?.abort()}
         onSave={async requirements=>{
           await saveAvgVisualBatchDraftV1({scope,expectedDraftRevision:view.draft.revision,batchKey:model.mediaBatch?.batchKey??`batch.${crypto.randomUUID()}`,
@@ -321,7 +324,7 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
         <ol><li>保存编辑草稿，核对冻结世界与场景/媒资清单。</li><li>准备制作方案并明确开始，逐项查看、确认候选。</li><li>执行组装，检查实际舞台；修订生成新 Build，旧预览和存档保留。</li></ol>
         <p>场景 {model.systemPlan.scenes.length} 个 · 媒资 {assets.length} 项 · {visualPlanning?`已保存 ${visualPlanning.scope.templates.length} 项专业视觉用途，模型与图片调用按明确开始后的实际记录计量；专业故事调用为 0。`:model.mediaBatch||model.voiceProduction?`已配置 ${model.mediaBatch?.requirements.length??0} 项图片需求${model.voiceProduction?'及逐句配音需求':''}，生成须另行明确开始；专业故事调用为 0。`:'本流程模型/媒资生成调用为 0。'}</p>
         <div className="avg-actions"><button className="lf-action" disabled={!!visualPlanning||!readyForStage||!view.draft.editorJson||!view.draft.worldReleaseId||activeBuild||mediaPending||!!model.voiceProduction&&!avgVoiceProductionEnabledV3()} onClick={()=>void run(async()=>{await prepareAvgAssemblyBriefV1({scope,expectedDraftRevision:view.draft.revision});await reload();setNotice('制作方案已准备，请核对后明确开始。')})}>{frozen?'准备新版本方案':'准备制作方案'}</button>
-          <button className="lf-action lf-action-primary" disabled={!readyForStage||details?.production.status!=='brief-ready'||!!model.voiceProduction&&!avgVoiceProductionEnabledV3()} onClick={()=>void run(async()=>{await startAvgAssemblyV1({scope,productionId:details!.production.id!,expectedBriefHash:details!.brief!.briefHash});await reload();setNotice('已明确开始，等待逐项作者确认。')})}>确认方案并开始组装</button>
+          <button className="lf-action lf-action-primary" disabled={!visualStartReady||!readyForStage||details?.production.status!=='brief-ready'||!!model.voiceProduction&&!avgVoiceProductionEnabledV3()} onClick={()=>void run(async()=>{await startAvgAssemblyV1({scope,productionId:details!.production.id!,expectedBriefHash:details!.brief!.briefHash});await reload();setNotice('已明确开始，等待逐项作者确认。')})}>确认方案并开始组装</button>
           {frozen&&<button className="lf-action" disabled={busy||jsonPending} onClick={()=>edit(next=>{next.basePreviewHash=build!.previewHash})}>以此预览开始修订</button>}
         </div>
         {(mediaBatch||visualPlanning)&&<p>确认系统与全部脚本后，到素材分区执行专业方案或图片任务；方案和图片逐项确认，配置演出后再返回此页确认并生成预览。</p>}{details?.brief&&<details><summary>当前制作方案与投入边界</summary><pre>{JSON.stringify(JSON.parse(details.brief.briefJson),null,2)}</pre></details>}

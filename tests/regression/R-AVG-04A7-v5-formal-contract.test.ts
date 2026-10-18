@@ -78,8 +78,8 @@ describe('AVG V5 formal contract and strict legacy boundary',()=>{
     if(mode==='model-context')model.contextProfile='avg-visual-planning-v5'
     expect(()=>parseProductProductionPlanV3(changed,brief,briefHash)).toThrow()
   })
-  it('keeps V5 save closed before any new Brief, Build, Run, media or author-draft writes',async()=>{
-    vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION','1');vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING','1')
+  it('keeps V5 save closed with the visual experiment off before any new Brief, Build, Run, media or author-draft writes',async()=>{
+    vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION','1');vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING','0')
     const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher)
     const {owner,brief}=await avgV5FormalFixture(),tables=[db.productProductions,db.productProductionBriefs,db.productBuilds,db.agentRuns,db.agentRunEvents,db.agentRunArtifacts,db.agentRunCheckpoints,db.mediaBlobObjects,db.avgAuthoringDrafts,db.avgDraftMedia]
     const snapshot=()=>Promise.all(tables.map(t=>t.toArray())),before=await snapshot()
@@ -93,7 +93,7 @@ describe('AVG V5 formal contract and strict legacy boundary',()=>{
     vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION','1');vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING','1')
     const {owner,brief}=await avgV5FormalFixture(),gate=vi.spyOn(readinessV5,'avgVisualPlanningExecutionReadyV5').mockReturnValue(true)
     const saved=await executeProductProductionCommand({scope:owner.scope,productionId:owner.productionId,command:{type:'save-brief-revision',commandId:'v5.test.prepare-only',expectedStateRevision:owner.details.production.stateRevision,parentRevision:owner.details.brief!.revision,brief}})
-    expect(saved.ok).toBe(true);gate.mockRestore();expect(avgVisualPlanningExecutionReadyV5()).toBe(false)
+    expect(saved.ok).toBe(true);gate.mockRestore();vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING','0');expect(avgVisualPlanningExecutionReadyV5()).toBe(false)
     const details=await readProductProductionDetailsV1(owner.scope,owner.productionId,['avg']),tables=[db.productProductions,db.productProductionBriefs,db.productBuilds,db.agentRuns,db.agentRunEvents,db.agentRunArtifacts,db.agentRunCheckpoints,db.mediaBlobObjects,db.avgAuthoringDrafts,db.avgDraftMedia]
     const snapshot=()=>Promise.all(tables.map(t=>t.toArray())),before=await snapshot(),fetcher=vi.fn();vi.stubGlobal('fetch',fetcher)
     const started=await executeProductProductionCommand({scope:owner.scope,productionId:owner.productionId,command:{type:'authorize-start',commandId:'v5.closed.start',expectedStateRevision:details.production.stateRevision,briefRevision:details.brief!.revision,briefHash:details.brief!.briefHash,authorizationNonce:'explicit-controlled-author-start'}})
@@ -101,8 +101,8 @@ describe('AVG V5 formal contract and strict legacy boundary',()=>{
     expect(await db.productProductionCommands.where('productionId').equals(owner.productionId).filter(row=>row.commandId==='v5.closed.start').first()).toMatchObject({status:'failed',errorCode:'brief-not-authorized'})
   })
 
-  it('rejects V5 through both configured dispatch and the old executor factory even when V4 experiments are enabled',async()=>{
-    vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION','1');vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING','1')
+  it('keeps configured V5 dispatch gated and rejects the old executor family',async()=>{
+    vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION','1');vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING','0')
     const {owner,brief}=await avgV5FormalFixture(),snapshot=()=>Promise.all(db.tables.map(t=>t.toArray())),before=await snapshot()
     const runText=vi.fn(async()=>{throw new Error('V5 cannot use the old model runner')}),fetcher=vi.fn();vi.stubGlobal('fetch',fetcher)
     expect(()=>createConfiguredProductProductionExecutorV1({production:owner.details.production,brief,runText})).toThrow('方案版本')
