@@ -6,9 +6,10 @@ import {canonicalStringify} from '../agent/run/hash'
 import type {CharacterInteractionRuntimeState} from '../types'
 import {CHAT_SITUATION_REVIEW_CHECKS_V1} from '../types/chat-narrative'
 import type {ChatSituationDraftV1, ChatSituationReviewV1} from '../types/chat-narrative'
-import {parseChatNarrativeStateV1} from './narrative-contract'
+import {chatTurnActionLimitV1, parseChatNarrativeStateV1} from './narrative-contract'
 import {chatSituationConstructionBlockedV1, chatSituationConstructionRequestV1} from './narrative-progression'
 import {chatRelationshipEvidenceV1} from './narrative-relationships'
+import {assertChatTurnAudienceV1, chatTurnAudienceBoundaryV1, chatTurnAudienceGuidanceV1, chatTurnHasPrivateSceneBoundaryV1} from './narrative-audience'
 
 function fail(message: string): never {throw new Error(`[chat-situation] ${message}`)}
 function object(value: unknown, fields: string): Record<string, unknown> {
@@ -117,6 +118,17 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
   if (!Number.isSafeInteger(input.sequence) || input.sequence <= 0 || input.sequence <= story.lastEventSequence) fail('情境提交事件无效')
   if (state.remainingDirectorBudget < 2) fail('情境构建与审查预算不足')
   const draft = parseChatSituationDraftV1(input.draft)
+  const boundary = chatTurnAudienceBoundaryV1(state, trigger)
+  const conversation = boundary?.audienceParticipantKeys
+  if (conversation) {
+    assertChatTurnAudienceV1(boundary, state.playerKey, [
+      ...draft.newFacts.flatMap(f => f.audienceKeys), ...draft.newGoals.map(g => g.actorKey),
+      ...draft.newThreads.flatMap(t => [...t.audienceKeys, ...t.participantKeys]), ...draft.possibilities.map(p => p.actorKey),
+      ...(draft.discoveries ?? []).map(d => d.actorKey), ...(draft.inquiryResult?.audienceKeys ?? []),
+    ])
+    if (chatTurnHasPrivateSceneBoundaryV1(state, boundary) && (draft.title !== story.situation.title
+      || draft.location !== story.situation.location || draft.timeLabel !== story.situation.timeLabel)) fail('私聊不能改变所有在场人物共用的场景名称、地点或时间')
+  }
   if (request.origin === 'player-followup' && (!draft.newGoals.some(g => g.actorKey === request.actorKey)
     || !draft.newThreads.some(t => t.participantKeys.includes(request.actorKey)))) fail('新事项须给出有依据的自身新目标和可收束问题，不能只生成背景后继续空转')
   if (request.origin === 'player-followup' && (draft.newFacts.some(f => f.audienceKeys.some(k => !request.audienceKeys.includes(k)))
@@ -175,11 +187,13 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
   if (draft.possibilities.some(p => !scene.activeParticipantKeys.includes(p.actorKey))) fail('不能替玩家或场外角色预定行动')
   if (request.actorKey && draft.possibilities.some(p => p.actorKey !== request.actorKey || !p.evidenceFactKeys.length)) fail('角色推进不能替其他角色规划行动')
   if (!observationResult && !draft.inquiryResult) story.situation.possibilities = request.actorKey
-    ? [...story.situation.possibilities.filter(p => p.actorKey !== request.actorKey), ...draft.possibilities] : draft.possibilities
+    ? [...story.situation.possibilities.filter(p => p.actorKey !== request.actorKey), ...draft.possibilities]
+    : conversation ? [...story.situation.possibilities.filter(p => !conversation.includes(p.actorKey)), ...draft.possibilities] : draft.possibilities
   story.situation.title = draft.title
   story.situation.location = draft.location; story.situation.timeLabel = draft.timeLabel
   story.situation.seed = {text: request.text, origin: request.origin, sourceEventSequence: trigger.requestedSequence, sourceThreadKey: request.sourceThreadKey}
   delete story.pendingSituation
+  if (trigger.direction?.settleSituationVersion === 1 && trigger.actionSequences.length >= chatTurnActionLimitV1(story.permissions, trigger)) trigger.status = 'complete'
   story.revision++; story.lastEventSequence = input.sequence
   state.chatNarrative = parseChatNarrativeStateV1(story, {participantKeys: state.profiles.map(p => p.participantKey), characterKeys: state.profiles.map(p => p.characterKey), sceneKeys: state.sceneTemplates.map(s => s.sceneKey)})
   scene.title = draft.title; scene.location = draft.location; scene.timeLabel = draft.timeLabel
@@ -193,6 +207,7 @@ export function chatSituationCoordinatorViewV1(state: CharacterInteractionRuntim
   if (!state.chatNarrative || !state.activeScene) fail('当前实例没有叙事情境')
   return structuredClone({
     profiles: state.profiles, knowledge: state.knowledge, persona: state.chatNarrative.persona,
+    ...chatTurnAudienceGuidanceV1(state.chatNarrative.triggers[state.chatNarrative.triggers.length - 1]?.direction),
     ...(state.chatNarrative.discoveryHistory ? {discoveryHistory: state.chatNarrative.discoveryHistory} : {}),
     ...(state.chatNarrative.inquiryHistory ? {inquiryHistory: state.chatNarrative.inquiryHistory} : {}),
     relationships: state.relationships,

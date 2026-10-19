@@ -2,6 +2,8 @@ import {validateChatSceneTransitionV1, requireChatSceneTransitionV1, applyChatSc
 import {requireChatPromiseRequestV1} from './narrative-promise-request'
 import {recordChatResolutionEvidenceV1} from './resolution-evidence'
 import {recordChatFactEvidenceV1} from './fact-evidence'
+import {chatHasPendingTurnSettlementV1} from './narrative-progression'
+import {assertChatTurnAudienceV1, chatTurnAudienceBoundaryV1, chatTurnHasPrivateSceneBoundaryV1} from './narrative-audience'
 import {chatConversationEvidenceV1} from './narrative-conversation-evidence'
 import {applyChatPlayerGoalResumeV1, requireChatExistingGoalPauseV1, validateChatPlayerRequestEvidenceV1} from './narrative-player-pause'
 import {applyChatThreadFollowupGoalV1, chatCanFollowThreadV1} from './narrative-thread-followup'
@@ -166,15 +168,21 @@ export function requestChatNarrativeTriggerV1(stateValue: CharacterInteractionRu
   if (!story.permissions.triggers.includes(kind)) fail('该主动触发未经作品授权')
   if (!Number.isSafeInteger(input.sourceEventSequence) || Number(input.sourceEventSequence) >= input.sequence) fail('触发来源事件无效')
   const source = Number(input.sourceEventSequence)
+  let eligibleAudience = state.activeScene!.activeParticipantKeys
   if (kind === 'scene-start' && source !== state.activeScene!.startedAtSequence) fail('开场触发必须指向当前真实开场')
   if (kind === 'scene-start' && state.messages.some(m => m.eventSequence > source)) fail('已有互动后不能重新生成开场')
   if (kind === 'player-response') {
     const message = state.messages.filter(m => m.role === 'player' && m.supersededBySequence == null).slice(-1)[0]
     if (!message || message.eventSequence !== source || source < state.activeScene!.startedAtSequence) fail('回应触发必须指向当前场景最新玩家消息')
     if (!isChatMessageRetrievableV1(state, message)) fail('这条玩家消息已排除上下文，请先恢复或发送新消息')
+    eligibleAudience = eligibleAudience.filter(key => message.audienceKeys == null || message.audienceKeys.includes(key))
     if (direction && message.audienceKeys != null && !message.audienceKeys.includes(direction.actorKey)) fail('指定角色听不到这条玩家消息')
     if (direction?.scheduling && message.audienceKeys != null && direction.scheduling.participantKeys.some(key => !message.audienceKeys!.includes(key))) fail('调度范围包含听不到玩家消息的角色')
+    if (direction?.audienceParticipantKeys && message.audienceKeys != null && direction.audienceParticipantKeys.some(key => !message.audienceKeys!.includes(key))) fail('本轮对话范围不能扩大原玩家消息的听众')
+    if (direction?.conversationMode === 'present' && (message.playerConversation === 'private'
+      || message.playerConversation !== 'present' && message.audienceKeys != null && state.profiles.some(p => !message.audienceKeys!.includes(p.participantKey)))) fail('私聊消息不能作为公开情境请求处理')
   }
+  if (direction?.conversationMode === 'present' && eligibleAudience.some(key => !direction.audienceParticipantKeys!.includes(key))) fail('公开对话必须包含当前可听见该对话的全部在场角色')
   if (['continue', 'return', 'player-seed'].includes(kind) && source !== input.sequence - 1) fail('玩家操作必须基于当前事件头')
   if (['scene-start', 'player-response'].includes(kind) && story.triggers.some(t => t.kind === kind && t.sourceEventSequence === source)) fail('该开场或玩家消息已经触发过演绎')
   if (story.triggers.length >= 5000) fail('当前会话触发记录已达上限，请保存并停止演绎')
@@ -219,6 +227,9 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   delete story.pendingEdit
   if (action.text.length > story.permissions.maxActionCharacters) fail('行动表达超出授权长度')
   const audiences = [state.playerKey, ...state.activeScene!.activeParticipantKeys]
+  const conversation = chatTurnAudienceBoundaryV1(state, trigger)
+  assertChatTurnAudienceV1(conversation, state.playerKey, action.audienceKeys)
+  if (action.sceneTransition && chatTurnHasPrivateSceneBoundaryV1(state, conversation)) fail('私聊不能改变整个场景；请在公开对话中提出转场')
   if (!action.audienceKeys.includes(actorKey) || !action.audienceKeys.includes(state.playerKey)
     || action.audienceKeys.some(k => !audiences.includes(k))) fail('行动听众缺少玩家、行动者或引用场外人物')
   applyChatPlayerGoalResumeV1(state, {action, actorKey, trigger})
@@ -328,6 +339,10 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   trigger.actionSequences.push(input.sequence)
   trigger.status = action.waitingForPlayer ? 'waiting-player'
     : action.goalKey === null && action.situationRequest?.purpose !== 'player-followup' || action.kind === 'pause' || trigger.actionSequences.length >= chatTurnActionLimitV1(story.permissions, trigger) ? 'complete' : 'ready'
+  if (trigger.status === 'complete' && trigger.direction?.settleSituationVersion === 1 && action.situationRequest) {
+    trigger.status = 'ready'
+    if (!chatHasPendingTurnSettlementV1(state)) trigger.status = 'complete'
+  }
   advance(story, input.sequence)
   state.chatNarrative = parseChatNarrativeStateV1(story, {
     participantKeys: state.profiles.map(p => p.participantKey), characterKeys: state.profiles.map(p => p.characterKey), sceneKeys: state.sceneTemplates.map(s => s.sceneKey),

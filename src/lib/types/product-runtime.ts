@@ -968,6 +968,8 @@ export interface InteractionRuntimeScene extends InteractionRuntimeSceneTemplate
 }
 
 export interface InteractionRuntimeMessage {
+  /** New narrative player messages retain explicit private versus present-room intent. */
+  playerConversation?: 'private' | 'present'
   messageId: string;
   eventSequence: number;
   role: "player" | "character" | "system";
@@ -1208,6 +1210,7 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "ttrpg.media.failed",
   "ttrpg.media.cancelled",
   "interaction.scene.started",
+  "interaction.release.upgraded",
   "interaction.scene.ended",
   "interaction.participant.joined",
   "interaction.participant.left",

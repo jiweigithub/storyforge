@@ -1,3 +1,4 @@
+import {chatTurnAudienceGuidanceV1} from './narrative-audience'
 import {CHAT_HISTORY_CAPACITY_V1, assertChatHistoryCapacityV1} from './history-capacity'
 import {validateChatSceneTransitionRecordsV1} from './narrative-scene-transition'
 import {validateChatResolutionEvidenceV1} from './resolution-evidence'
@@ -21,18 +22,28 @@ export function chatTurnActionLimitV1(permissions: ChatNarrativePermissionsV1, t
 
 export function parseChatTurnDirectionV1(value: unknown, participantKeys: readonly string[], maximum: number): ChatTurnDirectionV1 {
   const hasScheduling = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'scheduling')
-  const direction = row(value, 'actorKey,actionLimit' + (hasScheduling ? ',scheduling' : ''), '本轮演绎设置')
+  const hasSettlement = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'settleSituationVersion')
+  const hasAudience = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'audienceParticipantKeys')
+  const hasMode = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'conversationMode')
+  const direction = row(value, 'actorKey,actionLimit' + (hasScheduling ? ',scheduling' : '') + (hasSettlement ? ',settleSituationVersion' : '') + (hasAudience ? ',audienceParticipantKeys' : '') + (hasMode ? ',conversationMode' : ''), '本轮演绎设置')
+  if (hasMode && (!hasAudience || direction.conversationMode !== 'private' && direction.conversationMode !== 'present')) fail('本轮对话方式缺少听众或无效')
+  if (hasSettlement && direction.settleSituationVersion !== 1) fail('本轮情境结算版本无效')
+  const settlement = hasSettlement ? {settleSituationVersion: 1 as const} : {}
   members([direction.actorKey], participantKeys, '本轮行动角色', true)
+  const audience = hasAudience ? members(direction.audienceParticipantKeys, participantKeys, '本轮对话角色', true) : undefined
+  if (audience && !audience.includes(String(direction.actorKey))) fail('本轮行动角色不在对话范围')
+  const conversation = audience ? {audienceParticipantKeys: [...audience], ...(hasMode ? {conversationMode: direction.conversationMode as 'private' | 'present'} : {})} : {}
   integer(direction.actionLimit, '本轮动作上限', 1, maximum)
   if (hasScheduling) {
     const scheduling = row(direction.scheduling, 'mode,participantKeys', '本轮角色调度')
     if (!['natural', 'round-robin'].includes(String(scheduling.mode))) fail('本轮角色调度方式无效')
     const pool = members(scheduling.participantKeys, participantKeys, '本轮调度角色', true)
     if (!pool.includes(String(direction.actorKey))) fail('本轮首选角色不在调度范围')
-    return {actorKey: String(direction.actorKey), actionLimit: Number(direction.actionLimit),
+    if (audience && pool.some(key => !audience.includes(key))) fail('本轮调度角色超出对话范围')
+    return {actorKey: String(direction.actorKey), actionLimit: Number(direction.actionLimit), ...settlement, ...conversation,
       scheduling: {mode: scheduling.mode as 'natural' | 'round-robin', participantKeys: [...pool]}}
   }
-  return {actorKey: String(direction.actorKey), actionLimit: Number(direction.actionLimit)}
+  return {actorKey: String(direction.actorKey), actionLimit: Number(direction.actionLimit), ...settlement, ...conversation}
 }
 export interface ChatNarrativeBoundaryV1 {
   participantKeys: readonly string[]
@@ -255,7 +266,9 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
       sequence(value, false, '行动事件')
       if (Number(value) <= Number(i ? actions[i - 1] : trigger.requestedSequence)) fail('行动事件顺序无效')
     })
-    if (trigger.status === 'ready' && actions.length >= limit) fail('主动触发已耗尽动作预算')
+    if (trigger.status === 'ready' && actions.length >= limit && !(direction?.settleSituationVersion === 1
+      && state.permissions.allowActorSituationExpansion === true
+      && state.pendingSituation?.sourceEventSequence === actions[actions.length - 1])) fail('主动触发已耗尽动作预算')
     if (trigger.status === 'waiting-player' && !actions.length) fail('等待玩家缺少角色行动')
   }
   if (state.pendingSituation !== undefined) {
@@ -309,6 +322,7 @@ export function chatNarrativeViewV1(state: ChatNarrativeStateV1, viewerKey: stri
     situationKey: situation.situationKey, sceneKey: situation.sceneKey, title: situation.title, location: situation.location, timeLabel: situation.timeLabel,
     persona: state.persona,
     permissions: state.permissions,
+    ...chatTurnAudienceGuidanceV1(state.triggers[state.triggers.length - 1]?.direction),
     facts: situation.facts.filter(f => f.audienceKeys.includes(viewerKey)).map(({discovery: _rule, ...fact}) => fact),
     ...(state.discoveryHistory?.some(record => record.actorKey === viewerKey) ? {investigations: chatActorInvestigationResultsV1(state, viewerKey)} : {}),
     ...(state.inquiryHistory?.some(record => record.audienceKeys.includes(viewerKey)) ? {inquiryReplies: chatInquiryRepliesV1(state, viewerKey)} : {}),

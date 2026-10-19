@@ -179,10 +179,12 @@ function message(value: unknown): InteractionRuntimeMessage {
   if (!isObject(value)) throw new Error('互动消息必须是对象。')
   const role = String(value.role ?? '')
   if (role !== 'player' && role !== 'character' && role !== 'system') throw new Error('互动消息角色无效。')
+  if (value.playerConversation !== undefined && (role !== 'player' || value.playerConversation !== 'private' && value.playerConversation !== 'present' || !Array.isArray(value.audienceKeys))) throw new Error('玩家对话范围标记无效。')
   return {
     messageId: text(value.messageId, '互动消息 ID', 200),
     eventSequence: integer(value.eventSequence, '互动消息事件序号', Number.MIN_SAFE_INTEGER),
     role,
+    ...(value.playerConversation === undefined ? {} : {playerConversation: value.playerConversation as 'private' | 'present'}),
     speakerKey: text(value.speakerKey, '互动消息说话者', 160),
     audienceKeys: optionalStrings(value.audienceKeys, '互动消息听众', 160),
     text: text(value.text, '互动消息文本', 20_000),
@@ -635,9 +637,9 @@ function parseAudience(value: unknown, state: CharacterInteractionRuntimeState):
  * boundary. Old events retain their original null/public semantics; replay
  * must never reinterpret already saved model inputs or checkpoint hashes. */
 function playerMessageAudience(body: Record<string, unknown>, state: CharacterInteractionRuntimeState): string[] | null {
-  if (body.playerAudienceVersion !== undefined && body.playerAudienceVersion !== 1) throw new Error('玩家消息听众版本不受支持。')
+  if (body.playerAudienceVersion !== undefined && body.playerAudienceVersion !== 1 && body.playerAudienceVersion !== 2) throw new Error('玩家消息听众版本不受支持。')
   const audience = parseAudience(body.audienceKeys, state)
-  if (!state.chatNarrative || body.playerAudienceVersion !== 1) return audience
+  if (!state.chatNarrative || body.playerAudienceVersion === undefined) return audience
   const active = requireScene(state).activeParticipantKeys
   if (audience?.some(key => key !== state.playerKey && !active.includes(key))) throw new Error('玩家消息只能发送给当前在场角色；离场角色不会自动听见。')
   return [...new Set([state.playerKey, ...(audience ?? active)])]
@@ -689,6 +691,9 @@ export function applyInteractionEvent(
   verifyEnvelope(event, body)
 
   switch (event.type) {
+    // The composition root validates the frozen target and portable receipt.
+    // An upgrade records a copy; it never advances or rewrites the fiction.
+    case 'interaction.release.upgraded': return state
     case 'interaction.scene.started': {
       if (state.activeScene) throw new Error('结束当前互动场景后才能开始新场景。')
       const sceneId = text(body.sceneId, '互动场景 ID', 200)
@@ -773,6 +778,7 @@ export function applyInteractionEvent(
         messageId,
         eventSequence: event.sequence,
         role: 'player',
+        ...(state.chatNarrative && body.playerAudienceVersion === 2 ? {playerConversation: body.audienceKeys == null ? 'present' as const : 'private' as const} : {}),
         speakerKey: state.playerKey,
         audienceKeys: playerMessageAudience(body, state),
         text: text(body.text, '玩家互动消息', 12_000),

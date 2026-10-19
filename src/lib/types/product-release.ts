@@ -130,6 +130,12 @@ export interface FrozenInteractionRuntimeV2 {
   chatSource?: import('./character-interaction').FrozenChatSourceProjectionV1
   /** Experimental chat narrative module; absent in existing releases. */
   chatNarrative?: import('./chat-narrative').FrozenChatNarrativeV1
+  /** Player-visible images owned by this frozen product, never by the world. */
+  chatMedia?: import('../character-interaction/media-contract').ChatMediaBindingsV1
+  /** Attribution for converted external cards; never copied into role knowledge. */
+  chatCardCredits?: import('../character-interaction/card-credits').ChatCharacterCardCreditsV1
+  /** Public author statements, frozen per release and excluded from AI knowledge. */
+  chatExperienceInfo?: import('../character-interaction/experience-info').ChatExperienceInfoV1
 }
 
 export interface FrozenRuntimeMediaAssetV2 extends FrozenProductMediaAsset {

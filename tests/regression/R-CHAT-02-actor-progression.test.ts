@@ -6,7 +6,7 @@ import {applyReviewedChatNarrativeActionV1, applyChatNarrativeActionV1, requestC
 import {parseChatNarrativeStateV1, parseChatNarrativePermissionsV1} from '../../src/lib/character-interaction/narrative-contract'
 import {applyChatSituationV1, isChatSituationPreparedV1} from '../../src/lib/character-interaction/narrative-situations'
 import {chatSituationConstructionRequestV1} from '../../src/lib/character-interaction/narrative-progression'
-import {advanceChatNarrativeTurnV1} from '../../src/lib/character-interaction/narrative-turn'
+import {advanceChatNarrativeTurnV1, readChatNarrativeTurnResumeV1, resumeChatNarrativeTurnV1} from '../../src/lib/character-interaction/narrative-turn'
 import * as harness from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, commitChatNarrativeAction, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {chatNarrativeFixture, chatActionReviewFixture, chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
@@ -176,7 +176,7 @@ it('uses the formal bounded turn to propose, construct/review and then act witho
   expect((await readProductRuntimeState(f.sessionId)).interaction).toEqual(state)
 })
 
-function mockProgression(options: {keepProposing?: boolean; beforeConstruction?: () => Promise<void>; beforeReview?: () => Promise<void>; rejectReview?: boolean} = {}) {
+function mockProgression(options: {keepProposing?: boolean; nextAction?: ChatNarrativeActionV1; beforeConstruction?: () => Promise<void>; beforeReview?: () => Promise<void>; rejectReview?: boolean} = {}) {
   const calls = {actions: 0, constructions: 0, reviews: 0}
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
     runAI: async () => {
@@ -185,7 +185,7 @@ function mockProgression(options: {keepProposing?: boolean; beforeConstruction?:
       }
       calls.actions++
       return JSON.stringify(calls.actions === 1 || options.keepProposing ? proposal()
-        : {...proposal(), kind: 'pause', text: '门闩的松动值得留意，我先停在这里。', evidenceFactKeys: ['latch'], situationRequest: null})
+        : options.nextAction ?? {...proposal(), kind: 'pause', text: '门闩的松动值得留意，我先停在这里。', evidenceFactKeys: ['latch'], situationRequest: null})
     },
     runReviewAI: async () => {
       calls.reviews++
@@ -333,4 +333,94 @@ it('imports a completed run as history and continues its saved direction without
   expect(state.chatNarrative!.situation.facts.filter(f => f.factKey === 'latch')).toHaveLength(1)
   expect(calls).toEqual({actions: 2, constructions: 1, reviews: 3})
   expect(await db.agentRuns.get(row.id!)).toEqual(row)
+})
+
+it('settles the last reviewed direction in a versioned one-action turn, so a short refusal can receive actual progress', async () => {
+  const f = await seedChatNarrativeRuntimeFixture({actorSituationExpansion: true})
+  const nextAction: ChatNarrativeActionV1 = {...proposal(), kind: 'complete', text: '你不用动手。我独自拧紧松动的门闩，门扇现在可以合上。',
+    evidenceFactKeys: ['latch'], situationRequest: null, newFacts: [{factKey: 'door-fixed', kind: 'observation', text: '门扇现在可以合上。', evidenceFactKeys: ['latch'], evidenceExcerpt: '门扇现在可以合上。'}]}
+  const calls = mockProgression({nextAction}), world = JSON.stringify(await db.worldReleases.toArray())
+  const v = await readProductRuntimeStateVersion(f.sessionId)
+  await advanceChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, kind: 'scene-start', participantKey: 'guard', expectedSequence: v.sequence, aiConfig: config, actionLimit: 1, settleSituation: true})
+  const first = (await readProductRuntimeState(f.sessionId)).interaction!
+  expect(calls).toEqual({actions: 1, constructions: 1, reviews: 2})
+  expect(first.messages).toHaveLength(1)
+  expect(first.chatNarrative!.triggers[0]).toMatchObject({status: 'complete', direction: {settleSituationVersion: 1, actionLimit: 1}})
+  expect(first.chatNarrative!.pendingSituation).toBeUndefined()
+  expect(first.chatNarrative!.situation.facts.some(fact => fact.factKey === 'latch')).toBe(true)
+  const head = await readProductRuntimeStateVersion(f.sessionId)
+  const message = await commitInteractionPlayerMessage({sessionId: f.sessionId, commandId: 'settled-short-reply', baseSequence: head.sequence,
+    baseStateHash: head.stateHash, messageId: 'short-reply', text: '我在听，还是不参与调查。'})
+  await advanceChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, kind: 'player-response', replyToSequence: message.sequence,
+    participantKey: 'guard', expectedSequence: message.sequence, aiConfig: config, actionLimit: 1, settleSituation: true})
+  const final = (await readProductRuntimeState(f.sessionId)).interaction!
+  expect(calls).toEqual({actions: 2, constructions: 1, reviews: 3})
+  expect(final.chatNarrative!.situation.facts.some(fact => fact.factKey === 'door-fixed')).toBe(true)
+  expect(final.messages.filter(m => m.role === 'player').map(m => m.text)).toEqual(['我在听，还是不参与调查。'])
+  expect(JSON.stringify(await db.worldReleases.toArray())).toBe(world)
+  db.close(); await db.open()
+  expect((await readProductRuntimeState(f.sessionId)).interaction).toEqual(final)
+})
+
+it.each(['review', 'unknown'] as const)('retains the adopted action after %s final settlement failure and never resends', async failure => {
+  const f = await seedChatNarrativeRuntimeFixture({actorSituationExpansion: true}), calls = mockProgression(failure === 'review' ? {rejectReview: true} : {beforeConstruction: async () => {throw new Error('unknown fixture outcome')}})
+  const v = await readProductRuntimeStateVersion(f.sessionId)
+  await expect(advanceChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, kind: 'scene-start', participantKey: 'guard', expectedSequence: v.sequence,
+    aiConfig: config, actionLimit: 1, settleSituation: true})).rejects.toThrow()
+  const state = await readProductRuntimeState(f.sessionId)
+  expect(state.interaction!.messages).toHaveLength(1)
+  expect(state.interaction!.chatNarrative!.situation.facts.some(fact => fact.factKey === 'latch')).toBe(false)
+  expect(state.interaction!.chatNarrative!.pendingSituation).toMatchObject({direction})
+  const resume = await readChatNarrativeTurnResumeV1(f.scope, f.sessionId, state.interaction!)
+  expect(resume).toMatchObject({remainingActions: 0, pendingSituation: true})
+  expect(resume!.blockedReason).toContain(failure === 'review' ? '失败或取消' : '结果未知')
+  await expect(resumeChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, expectedSequence: state.lastSequence, aiConfig: config})).rejects.toThrow(failure === 'review' ? '失败或取消' : '结果未知')
+  expect(calls).toEqual({actions: 1, constructions: 1, reviews: failure === 'review' ? 2 : 1})
+})
+
+it('cancels in-flight final settlement on new player input without losing the already adopted action', async () => {
+  const f = await seedChatNarrativeRuntimeFixture({actorSituationExpansion: true})
+  const calls = mockProgression({beforeReview: async () => {
+    const v = await readProductRuntimeStateVersion(f.sessionId)
+    await commitInteractionPlayerMessage({sessionId: f.sessionId, commandId: 'stop-settlement', baseSequence: v.sequence,
+      baseStateHash: v.stateHash, messageId: 'stop', text: '先停下，我不想继续调查。'})
+  }})
+  const v = await readProductRuntimeStateVersion(f.sessionId)
+  await expect(advanceChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, kind: 'scene-start', participantKey: 'guard', expectedSequence: v.sequence,
+    aiConfig: config, actionLimit: 1, settleSituation: true})).rejects.toThrow()
+  const state = (await readProductRuntimeState(f.sessionId)).interaction!
+  expect(state.messages.map(m => m.role)).toEqual(['character', 'player'])
+  expect(state.chatNarrative!.pendingSituation).toBeUndefined()
+  expect(state.chatNarrative!.triggers[0].status).toBe('cancelled')
+  expect(state.chatNarrative!.situation.facts.some(fact => fact.factKey === 'latch')).toBe(false)
+  expect(calls).toEqual({actions: 1, constructions: 1, reviews: 2})
+})
+
+it('recovers only unfinished final settlement after branch/import without granting another action', async () => {
+  const f = await seedChatNarrativeRuntimeFixture({actorSituationExpansion: true}), calls = mockProgression()
+  const v = await readProductRuntimeStateVersion(f.sessionId)
+  const trigger = await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'settle-recovery', baseSequence: v.sequence, baseStateHash: v.stateHash,
+    kind: 'scene-start', sourceEventSequence: f.sceneSequence, direction: {actorKey: 'guard', actionLimit: 1, settleSituationVersion: 1}})
+  const generated = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId,
+    skillId: 'character.chat-narrative-action', participantKey: 'guard', narrativeTriggerSequence: trigger.sequence, objective: '工程中断检查点', aiConfig: config})
+  await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
+  const first = await readProductRuntimeState(f.sessionId)
+  expect(await readChatNarrativeTurnResumeV1(f.scope, f.sessionId, first.interaction!)).toMatchObject({pendingSituation: true, remainingActions: 0, blockedReason: null})
+  expect(() => applyReviewedChatNarrativeActionV1(first.interaction!, {sequence: first.lastSequence + 1, triggerSequence: trigger.sequence,
+    actorKey: 'guard', messageId: 'extra', action: proposal(), review: chatActionReviewFixture(proposal())})).toThrow()
+  await branchProductRuntimeSession({parentSessionId: f.sessionId, throughSequence: first.lastSequence, title: 'pending-settlement'})
+  const imported = await importProjectJSON(await exportProjectJSON(f.scope.projectId))
+  const branch = (await db.productRuntimeSessions.where('projectId').equals(imported).toArray()).find(s => s.title === 'pending-settlement')!
+  const scope = {projectId: branch.projectId, worldId: branch.worldId!, workId: branch.workId!}
+  db.close(); await db.open()
+  const restored = await readProductRuntimeState(branch.id!)
+  expect(calls).toEqual({actions: 1, constructions: 0, reviews: 1})
+  expect(await readChatNarrativeTurnResumeV1(scope, branch.id!, restored.interaction!)).toMatchObject({pendingSituation: true, remainingActions: 0, blockedReason: null})
+  await resumeChatNarrativeTurnV1({scope, sessionId: branch.id!, expectedSequence: restored.lastSequence, aiConfig: config})
+  const final = (await readProductRuntimeState(branch.id!)).interaction!
+  expect(calls).toEqual({actions: 1, constructions: 1, reviews: 2})
+  expect(final.messages).toHaveLength(1)
+  expect(final.chatNarrative!.triggers.slice(-1)[0].status).toBe('complete')
+  expect(final.chatNarrative!.pendingSituation).toBeUndefined()
+  expect((await readProductRuntimeState(f.sessionId)).interaction).toEqual(first.interaction)
 })

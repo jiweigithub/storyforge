@@ -22,15 +22,25 @@ function mock(value: () => ChatNarrativeActionV1 = () => action()) {
     runAI: async () => JSON.stringify(value()), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
 }
 
-it.each([1, 2, undefined])('executes the explicit %s action limit and preserves absent historical directions', async limit => {
+it.each([1, 2, undefined])('executes the explicit %s action limit and freezes the current public audience', async limit => {
   const f = await seedChatNarrativeRuntimeFixture({maxActionsPerTrigger: 3}), spy = mock()
   await advanceChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, expectedSequence: f.sceneSequence, kind: 'scene-start', participantKey: 'guard', actionLimit: limit, aiConfig: {} as never})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!, trigger = state.chatNarrative!.triggers[0]
   expect(spy).toHaveBeenCalledTimes(limit ?? 3)
   expect(trigger.actionSequences).toHaveLength(limit ?? 3)
   expect(trigger.status).toBe('complete')
-  expect(trigger.direction).toEqual(limit === undefined ? undefined : {actorKey: 'guard', actionLimit: limit})
+  expect(trigger.direction).toEqual({actorKey: 'guard', actionLimit: limit ?? 3, audienceParticipantKeys: ['guard', 'artisan'], conversationMode: 'present'})
   expect(await readChatNarrativeTurnResumeV1(f.scope, f.sessionId, state)).toBeNull()
+})
+
+it('retains an absent historical direction when reading or resuming its saved trigger', async () => {
+  const f = await seedChatNarrativeRuntimeFixture({maxActionsPerTrigger: 3})
+  await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'scene-start', sourceEventSequence: f.sceneSequence})
+  db.close(); await db.open()
+  const state = (await readProductRuntimeState(f.sessionId)).interaction!
+  expect(state.chatNarrative!.triggers[0]).not.toHaveProperty('direction')
+  expect(await readChatNarrativeTurnResumeV1(f.scope, f.sessionId, state)).toMatchObject({remainingActions: 3})
+  expect((await readProductRuntimeState(f.sessionId)).interaction!.chatNarrative!.triggers[0]).not.toHaveProperty('direction')
 })
 
 it.each([0, -1, 4, 1.5, NaN])('rejects invalid limit %s before creating a trigger or model call', async actionLimit => {

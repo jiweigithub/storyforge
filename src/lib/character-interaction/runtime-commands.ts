@@ -2,7 +2,7 @@
 import { db } from "../db/schema";
 import {scopeTransactionTables} from '../workspace/scope';
 import type {WorkspaceScope, ChatComposerDraftV1} from '../types';
-import {ChatComposerConflictError, parseChatComposerDraftV1} from './composer-draft-contract';
+import {ChatComposerConflictError, chatComposerAudienceEqualV1, parseChatComposerDraftV1} from './composer-draft-contract';
 import {readChatComposerSessionV1} from './composer-draft-read';
 import {replayChatRuntimeEventsV1} from './runtime-replay';
 import type { ProductRuntimeCommandEnvelopeV1 } from "../product/runtime-command-id";
@@ -10,15 +10,18 @@ import { JsonObject, applyProductRuntimeEvent, hashStateJson, normalizeCommandId
 import type { ProductRuntimeEventType, ProductRuntimeEvent, InteractionMemoryKind } from "../types";
 import type { ChatNarrativeActionV1, ChatNarrativeActionReviewV1, ChatNarrativeTriggerV1, ChatSituationDraftV1, ChatSituationReviewV1 } from "../types/chat-narrative";
 
-export interface ChatComposerSendBindingV1 {scope: WorkspaceScope; sessionId: number; revision: number; text: string}
-export async function saveChatComposerDraftV1(input: {scope: WorkspaceScope; sessionId: number; expectedRevision: number; text: string}): Promise<ChatComposerDraftV1> {
+export interface ChatComposerSendBindingV1 {scope: WorkspaceScope; sessionId: number; revision: number; text: string; audienceKeys?: string[] | null}
+export async function saveChatComposerDraftV1(input: {scope: WorkspaceScope; sessionId: number; expectedRevision: number; text: string; audienceKeys?: string[] | null}): Promise<ChatComposerDraftV1> {
   const request = structuredClone(input);
-  const draft = parseChatComposerDraftV1({version: 1, text: request.text, revision: request.expectedRevision + 1, updatedAt: Date.now()});
   return db.transaction('rw', scopeTransactionTables(db.productRuntimeSessions), async () => {
     const session = await readChatComposerSessionV1(request.scope, request.sessionId);
     if (!['active', 'paused'].includes(session.status)) throw new Error('已结束或归档的存档不能修改输入草稿。');
     const current = session.chatComposerDraft === undefined ? null : parseChatComposerDraftV1(session.chatComposerDraft);
     if ((current?.revision ?? 0) !== request.expectedRevision) throw new ChatComposerConflictError(current);
+    // An old text-only caller cannot silently widen a saved private draft.
+    const audienceKeys = request.audienceKeys === undefined ? current?.audienceKeys : request.audienceKeys;
+    const draft = parseChatComposerDraftV1({version: 1, text: request.text, revision: request.expectedRevision + 1, updatedAt: Date.now(),
+      ...(audienceKeys !== undefined ? {audienceKeys} : {})}, parseProductRuntimeState(session.initialStateJson).interaction?.profiles.map(p => p.participantKey) ?? []);
     await db.productRuntimeSessions.update(request.sessionId, {chatComposerDraft: draft});
     return draft;
   });
@@ -50,9 +53,9 @@ async function appendInteractionCommand(
     const prior = previewEvents.find(event => event.commandId === commandId);
     // New narrative messages freeze their listeners in the reducer. An exact
     // retry of an old command keeps its original version and payload binding.
-    if (!prior || parseEventPayload(prior).playerAudienceVersion === 1) {
-      input = {...input, payload: {...input.payload, playerAudienceVersion: 1}};
-    }
+    const priorVersion = prior ? parseEventPayload(prior).playerAudienceVersion : undefined;
+    if (!prior) input = {...input, payload: {...input.payload, playerAudienceVersion: 2}};
+    else if (priorVersion === 1 || priorVersion === 2) input = {...input, payload: {...input.payload, playerAudienceVersion: priorVersion}};
   }
   const previewStateJson = JSON.stringify(previewState);
   const previewStateHash = await hashStateJson(previewStateJson);
@@ -115,6 +118,8 @@ async function appendInteractionCommand(
       if (input.composerDraft) {
         const current = session.chatComposerDraft === undefined ? null : parseChatComposerDraftV1(session.chatComposerDraft);
         if (!current || current.revision !== input.composerDraft.revision || current.text !== input.composerDraft.text
+          || !chatComposerAudienceEqualV1(current.audienceKeys, input.composerDraft.audienceKeys)
+          || !chatComposerAudienceEqualV1(current.audienceKeys, input.payload.audienceKeys as string[] | null)
           || current.text.trim() !== input.payload.text) throw new ChatComposerConflictError(current);
         consumedDraft = parseChatComposerDraftV1({...current, text: '', revision: current.revision + 1, updatedAt: Date.now()});
       }
@@ -284,7 +289,7 @@ export async function commitInteractionPlayerMessage(
     payload: {
       messageId: input.messageId.trim(),
       text: input.text.trim(),
-      audienceKeys: input.audienceKeys ?? null,
+      audienceKeys: input.audienceKeys == null ? null : [...input.audienceKeys],
     },
   });
 }

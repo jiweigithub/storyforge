@@ -51,9 +51,9 @@ function choose(state: CharacterInteractionRuntimeState, pool: string[], mode: E
 }
 
 export function createChatScheduledDirectionV1(state: CharacterInteractionRuntimeState, input: {
-  mode: Exclude<ChatSchedulingModeV1, 'manual'>; kind: ChatNarrativeTriggerV1; sourceSequence: number; actionLimit: number
+  mode: Exclude<ChatSchedulingModeV1, 'manual'>; kind: ChatNarrativeTriggerV1; sourceSequence: number; actionLimit: number; audienceParticipantKeys?: string[]
 }): ChatTurnDirectionV1 {
-  const participantKeys = chatSchedulingPoolV1(state, input.kind, input.sourceSequence)
+  const participantKeys = chatSchedulingPoolV1(state, input.kind, input.sourceSequence).filter(key => !input.audienceParticipantKeys || input.audienceParticipantKeys.includes(key))
   const eligible = ['player-seed', 'player-response'].includes(input.kind) ? participantKeys : participantKeys.filter(key => chatCanFollowThreadV1(state, key, {kind: input.kind, actionSequences: []}) || chatHasPendingPlayerFollowupV1(state, key) || state.chatNarrative!.situation.goals.some(g => g.actorKey === key && g.status === 'active'))
   const actorKey = choose(state, eligible, input.mode, undefined, participantKeys)
   if (!actorKey) throw new Error('当前没有能听到这轮对话且仍有可推进目标的角色；可指定角色或提出新情境。')

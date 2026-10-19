@@ -5,12 +5,14 @@ import {createChatNarrativeSituationV1, advanceChatNarrativeTurnV1, readChatNarr
 import {commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {chatActionReviewOutputFixture} from '../helpers/chat-narrative-fixture'
-import {followupAction, followupResultAction, followupSituation, followupSituationReview, followupPlayerText, seedClosedChatFollowupFixtureV1} from '../helpers/chat-player-followup'
+import {followupAction, followupResultAction, followupSituation as baseSituation, followupSituationReview, followupPlayerText, seedClosedChatFollowupFixtureV1} from '../helpers/chat-player-followup'
 import type {ChatNarrativeActionV1, ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
 
 const generate = harness.generateInteractionRuntimeCandidateV1
 const config = {provider: 'openai' as const, model: 'fixture', apiKey: 'fixture', baseUrl: 'https://chat-continuous.invalid/v1', temperature: .2, maxTokens: 4000}
 const resultText = '门口浅水没有漫过门槛，远处路面仍未知。'
+// This request is private: its own new thread must not rename the shared scene.
+function followupSituation(): ChatSituationDraftV1 {return {...baseSituation(), title: '暴雨驿站'}}
 function outcome(): ChatSituationDraftV1 {
   return {kind: 'chat-situation', title: followupSituation().title, location: '驿站', timeLabel: '傍晚',
     newFacts: [{factKey: 'entry-result', kind: 'observation', text: resultText, audienceKeys: ['guard', 'player'], evidenceFactKeys: ['entry-observed'], seedExcerpt: '确认已经完成的门内观察所见'}],
@@ -54,6 +56,8 @@ it.each(['manual', 'natural', 'round-robin'] as const)('finishes a new request, 
   await start(schedulingMode)
   const after = (await readProductRuntimeState(f.sessionId)).interaction!, story = after.chatNarrative!
   expect(calls).toEqual({actions: 3, constructions: 2, reviews: 5})
+  expect(after.messages.find(m => m.role === 'player')).toMatchObject({playerConversation: 'private', audienceKeys: ['player', 'guard']})
+  expect(story.situation.title).toBe('暴雨驿站')
   expect(story.triggers.at(-1)).toMatchObject({status: 'complete', actionSequences: expect.any(Array)})
   expect(story.triggers.at(-1)?.actionSequences).toHaveLength(3)
   expect(story.situation.goals.find(g => g.goalKey === 'check-entry')?.status).toBe('fulfilled')

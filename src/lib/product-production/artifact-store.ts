@@ -1840,7 +1840,7 @@ async function verifyChatPreservedProducerCarryV1(input: {
   dependencies: Array<{ taskKey: string; receiptHash: string }>
 }): Promise<void> {
   const { task, build, ledger } = input
-  const explicitDecision = ['source.author-gate', 'media.anchor-author-gate', 'content.chat-author-gate'].includes(task.taskKey)
+  const explicitDecision = ['source.author-gate', 'media.anchor-author-gate', 'content.chat-author-gate', 'media.chat-author-gate'].includes(task.taskKey)
   if (task.reuse !== null || task.executionMode === 'human-import'
     || (task.executionMode === 'deterministic' && !explicitDecision)
     || ledger.attempt !== 1 || !isZeroPortableUsageV1(ledger.usage)

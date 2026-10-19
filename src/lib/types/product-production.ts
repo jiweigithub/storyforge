@@ -691,10 +691,11 @@ export interface ProductEvolutionImpactV1 {
 export interface ProductProductionBlockerResolutionV1 {
   action:
     "retry" | "author-edit" | "fallback" | "waive-soft-gate" | "change-capability"
-    | "accept-product-private-expansion" | "confirm-character-anchors" | "confirm-chat-situation" | "cancel";
+    | "accept-product-private-expansion" | "confirm-character-anchors" | "confirm-chat-situation" | "confirm-chat-media" | "cancel";
   note: string;
   /** Exact initial-situation candidate and source approved by the author. */
   chatSituation?: {candidatesHash: string; sourceHash: string; selectedOptionKey: string};
+  chatMedia?: import('../character-interaction/media-selection').ChatMediaProductionDecisionV1;
   /** Explicit authored replacement; validated by the same task parser before acceptance. */
   authorDraftJson?: string;
   /**

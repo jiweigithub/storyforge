@@ -1,3 +1,4 @@
+import {chatVisualMediaProfileV1} from '../character-interaction/visual-intent'
 import { parseChatAuthoringSettings, type ChatAuthoringSettings } from '../character-interaction/authoring-contract'
 import { readPreparedChatSourceProjectionViewV1 } from '../character-interaction/source-projection'
 import {readChatRoleProfilesV1} from '../character-interaction/role-profile-store'
@@ -162,7 +163,12 @@ function mediaProfile(input: {
   aiTown?: Pick<AiTownBriefSettingsV1,
     'residentTarget' | 'majorLocationTarget' | 'portraits' | 'expressions' | 'locationCards' | 'ambientAudio'>
   qualityProfile: ProductProductionBriefV3['qualityProfile']
+  characterChat?: ChatAuthoringSettings
 }): ProductProductionMediaProfileV1 {
+  if (input.productType === 'character-interaction') {
+    const visual = chatVisualMediaProfileV1(input.characterChat, input.visualLevel)
+    return {...visual, visualLevel: visual.imageCount ? 'key-scenes' : 'none', audioLevel: 'none', musicTrackCount: 0, sfxCount: 0, voiceLineCount: 0}
+  }
   // Each presentation product owns its own count/profile while sharing the
   // content-addressed media transport and release integrity primitives.
   const presentationEnabled = ['avg', 'ttrpg', 'ai-town', 'text-adventure', 'text-open-world'].includes(input.productType)
@@ -385,7 +391,8 @@ export async function draftProductProductionBriefV3(input: {
   }
   const media = mediaProfile({
     productType: input.productType,
-    visualLevel: input.visualLevel ?? 'key-scenes',
+    visualLevel: input.visualLevel ?? (input.productType === 'character-interaction' ? 'none' : 'key-scenes'),
+    characterChat: characterChat ?? undefined,
     audioLevel: input.audioLevel ?? 'none',
     aiTown: input.productType === 'ai-town' ? {
       residentTarget: selectedCatalog.characterResourceKeys.length,
@@ -468,7 +475,8 @@ export async function draftProductProductionBriefV3(input: {
     ],
   })]
   if (media.imageCount > 0) requirements.push(await capabilityRequirement({
-    requirementKey: 'media.visual', mediaClass: 'image', required: qualityProfile === 'commercial-candidate',
+    requirementKey: 'media.visual', mediaClass: 'image', required: qualityProfile === 'commercial-candidate' || input.productType === 'character-interaction',
+    ...(input.productType === 'character-interaction' ? {allowedDataClasses: ['author-intent']} : {}),
   }))
   if (media.musicTrackCount > 0) requirements.push(await capabilityRequirement({
     requirementKey: 'media.music', mediaClass: 'music', required: qualityProfile === 'commercial-candidate',
@@ -615,7 +623,7 @@ export async function draftProductProductionBriefV3(input: {
     qualityProfile,
     capabilityRequirements: requirements,
     externalDataPolicy: {
-      allowedDataClasses: ['world-selection'], forbiddenDataClasses: ['api-key', 'private-note'],
+      allowedDataClasses: ['world-selection', ...(input.productType === 'character-interaction' && media.imageCount > 0 ? ['author-intent'] : [])], forbiddenDataClasses: ['api-key', 'private-note'],
       allowReferenceImages: false, allowVoiceScripts: false,
     },
     fallbackPolicy: {

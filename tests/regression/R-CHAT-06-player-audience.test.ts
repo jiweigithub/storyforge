@@ -1,6 +1,6 @@
 import {afterEach, beforeEach, expect, it} from 'vitest'
 import {db} from '../../src/lib/db/schema'
-import {applyInteractionEvent, buildInteractionContextWindow, createInitialInteractionState, interactionVisibilityView} from '../../src/lib/character-interaction/runtime'
+import {applyInteractionEvent, buildInteractionContextWindow, createInitialInteractionState, interactionVisibilityView, parseInteractionState} from '../../src/lib/character-interaction/runtime'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, deleteProductRuntimeSession, joinInteractionParticipant, leaveInteractionParticipant, readProductRuntimeState, readProductRuntimeStateVersion} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {chatNarrativeFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
@@ -35,9 +35,20 @@ it('keeps old event replay and non-narrative state unchanged while versioning ne
   expect(interactionVisibilityView(legacy, 'artisan').messages).toHaveLength(1)
   const current = applyInteractionEvent(initial(), oldEvent(1))!
   expect(current.messages[0].audienceKeys).toEqual(['player', 'guard'])
+  expect(current.messages[0]).not.toHaveProperty('playerConversation')
   expect(interactionVisibilityView(current, 'artisan').messages).toEqual([])
   expect(applyInteractionEvent(initial(false), oldEvent(1))).toEqual(applyInteractionEvent(initial(false), oldEvent()))
-  expect(() => applyInteractionEvent(initial(), oldEvent(2))).toThrow('听众版本')
+  expect(applyInteractionEvent(initial(), oldEvent(2))!.messages[0]).toMatchObject({audienceKeys: ['player', 'guard'], playerConversation: 'present'})
+  expect(applyInteractionEvent(initial(false), oldEvent(2))).toEqual(applyInteractionEvent(initial(false), oldEvent()))
+  expect(() => applyInteractionEvent(initial(), oldEvent(3))).toThrow('听众版本')
+})
+
+it('rejects malformed conversation modes when restoring saved messages instead of coercing arrays or objects into a valid mode', () => {
+  const state = applyInteractionEvent(initial(), oldEvent(2))!
+  for (const playerConversation of [['private'], ['present'], null, {mode: 'private'}, 1]) {
+    expect(() => parseInteractionState({...state, messages: [{...state.messages[0], playerConversation}]})).toThrow('范围标记')
+  }
+  expect(parseInteractionState(state)!.messages[0].playerConversation).toBe('present')
 })
 
 it('freezes public listeners so a returning role does not learn dialogue said in its absence', async () => {
@@ -45,10 +56,11 @@ it('freezes public listeners so a returning role does not learn dialogue said in
   await leaveInteractionParticipant({...await command(f.sessionId), participantKey: 'artisan'})
   const before = (await readProductRuntimeState(f.sessionId)).interaction!
   const message = await say(f.sessionId)
-  expect(JSON.parse(message.payloadJson).playerAudienceVersion).toBe(1)
+  expect(JSON.parse(message.payloadJson).playerAudienceVersion).toBe(2)
   await joinInteractionParticipant({...await command(f.sessionId), participantKey: 'artisan'})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!
   expect(state.messages[0].audienceKeys).toEqual(['player', 'guard'])
+  expect(state.messages[0].playerConversation).toBe('present')
   expect(buildInteractionContextWindow(state, 'artisan').messages).toEqual([])
   expect(buildInteractionContextWindow(state, 'guard').messages[0].text).toContain('铜铃往事')
   expect(state.knowledge).toEqual(before.knowledge)
@@ -63,6 +75,7 @@ it('keeps an explicit private audience private and rejects targeting an absent r
   await say(f.sessionId, ['guard'])
   let state = (await readProductRuntimeState(f.sessionId)).interaction!
   expect(state.messages[0].audienceKeys).toEqual(['player', 'guard'])
+  expect(state.messages[0].playerConversation).toBe('private')
   expect(interactionVisibilityView(state, 'artisan').messages).toEqual([])
   await leaveInteractionParticipant({...await command(f.sessionId), participantKey: 'artisan'})
   const before = await readProductRuntimeState(f.sessionId)
@@ -81,15 +94,17 @@ it('returns the original event for an exact retry even after the set of listener
   await expect(commitInteractionPlayerMessage({...input, text: '不同内容'})).rejects.toThrow('不同命令')
 })
 
-it('preserves the payload binding of an old unversioned command when retried through the new API', async () => {
+it.each([undefined, 1])('preserves the payload binding of an old version %s command when retried through the new API', async version => {
   const f = await seedChatNarrativeRuntimeFixture(), input = {...await command(f.sessionId), messageId: 'old-retry', text: '旧版消息', audienceKeys: null}
   const event = {...oldEvent(), projectId: f.scope.projectId, sessionId: f.sessionId, sequence: input.baseSequence + 1,
     commandId: input.commandId, baseSequence: input.baseSequence, baseStateHash: input.baseStateHash,
     payloadJson: JSON.stringify({commandId: input.commandId, baseSequence: input.baseSequence, baseStateHash: input.baseStateHash,
-      messageId: input.messageId, text: input.text, audienceKeys: null})}
+      messageId: input.messageId, text: input.text, audienceKeys: null, ...(version === undefined ? {} : {playerAudienceVersion: version})})}
   const id = await db.productRuntimeEvents.add(event)
   expect(await commitInteractionPlayerMessage(input)).toEqual({...event, id})
-  expect((await readProductRuntimeState(f.sessionId)).interaction!.messages[0].audienceKeys).toBeNull()
+  const message = (await readProductRuntimeState(f.sessionId)).interaction!.messages[0]
+  expect(message.audienceKeys).toEqual(version === undefined ? null : ['player', 'guard', 'artisan'])
+  expect(message).not.toHaveProperty('playerConversation')
 })
 
 it('retains the original audience after nested branching, parent deletion, export/import and refresh', async () => {
@@ -108,6 +123,7 @@ it('retains the original audience after nested branching, parent deletion, expor
   const after = (await readProductRuntimeState(restored.id!)).interaction!
   expect(after).toEqual(before)
   expect(after.messages[0].eventSequence).toBeLessThan(0)
+  expect(after.messages[0].playerConversation).toBe('present')
   expect(interactionVisibilityView(after, 'artisan').messages).toEqual([])
   expect(interactionVisibilityView(after, 'guard').messages[0].text).toContain('铜铃往事')
 })

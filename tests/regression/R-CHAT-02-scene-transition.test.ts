@@ -116,15 +116,22 @@ it('does not grant legacy unreviewed events or consequence revisions new travel 
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => {vi.restoreAllMocks(); db.close()})
-async function prepared() {
+async function prepared(privateConversation = false) {
   const f = await seedChatNarrativeRuntimeFixture({onlyGuard: true, knownDestination: true}), v = await readProductRuntimeStateVersion(f.sessionId)
-  const message = await commitInteractionPlayerMessage({sessionId: f.sessionId, commandId: 'visit.player', messageId: 'visit.player-message', baseSequence: v.sequence, baseStateHash: v.stateHash, text: request, audienceKeys: audience})
+  const message = await commitInteractionPlayerMessage({sessionId: f.sessionId, commandId: 'visit.player', messageId: 'visit.player-message', baseSequence: v.sequence, baseStateHash: v.stateHash, text: request, audienceKeys: privateConversation ? audience : null})
   const now = await readProductRuntimeStateVersion(f.sessionId)
   await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'visit.trigger', baseSequence: now.sequence, baseStateHash: now.stateHash, kind: 'player-response', sourceEventSequence: message.sequence})
   return {...f, action: action(message.sequence)}
 }
 const input = (f: Awaited<ReturnType<typeof prepared>>) => ({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const,
   objective: '工程注入：完成玩家授权的已知地点转场', runAI: async () => JSON.stringify(f.action), runReviewAI: async () => JSON.stringify(review(f.action))})
+it('refuses a private scene transfer even when its listeners equal the public audience', async () => {
+  const f = await prepared(true), before = await readProductRuntimeState(f.sessionId)
+  expect(before.interaction!.messages.find(m => m.role === 'player')).toMatchObject({playerConversation: 'private', audienceKeys: ['player', 'guard']})
+  let calls = 0
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => {calls++; return JSON.stringify(f.action)}, runReviewAI: async () => {calls++; return JSON.stringify(review(f.action))}})).rejects.toThrow('私聊不能改变整个场景')
+  expect(calls).toBe(1); expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
+})
 it('resumes saved candidate once, adopts atomically, and preserves transfer through nested branches, deletion and repeated import', async () => {
   const f = await prepared(); let runId = 0, calls = 0
   await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async messages => {calls++; expect(messages[0].content).toContain('sceneTransition'); return JSON.stringify(f.action)}, onNarrativeActionSaved: id => {runId = id; throw Error('saved')}})).rejects.toThrow('saved')

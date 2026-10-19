@@ -1,4 +1,6 @@
 import {CHAT_OPENING_REVIEW_KEY, assertChatOpeningReviewedV1} from '../character-interaction/situation-production-review'
+import {CHAT_MEDIA_AUTHOR_GATE, readCurrentChatMediaReviewV1} from './chat-media-authority'
+import {confirmChatMediaSelectionV1} from '../character-interaction/media-selection'
 import {readChatConsultationLineageWitnessV1} from '../character-interaction/consultation-harness'
 import { canReviseTextContentBuildV1, createTextContentRevisionPlanV1 } from './text-content-revision'
 import Dexie from 'dexie'
@@ -2060,9 +2062,24 @@ async function applyCommand(input: {
           }})
       } catch { reject('invalid-state-transition', '初始情境选择无效或版本已变化，请重新比较并选择') }
     }
+    if (command.resolution.action === 'confirm-chat-media') {
+      const decision = command.resolution.chatMedia
+      if (production.productType !== 'character-interaction' || command.blockerKey !== CHAT_MEDIA_AUTHOR_GATE
+        || previousFailure.taskKey !== CHAT_MEDIA_AUTHOR_GATE || !decision
+        || decision.buildNumber !== build.buildNumber || decision.controlEpoch !== build.controlEpoch) {
+        reject('invalid-state-transition', '图片确认只能用于当前角色聊天制作的待确认步骤')
+      }
+      try {
+        const review = await readCurrentChatMediaReviewV1({scope, build})
+        await confirmChatMediaSelectionV1({source: review.source,
+          submitted: {sourceHash: decision.sourceHash, bindings: decision.bindings}, authorCommandId: command.commandId})
+      } catch (cause) {
+        reject('invalid-state-transition', cause instanceof Error ? cause.message : '当前图片不能确认，请重新查看')
+      }
+    }
     if (![
       'retry', 'author-edit', 'change-capability', 'accept-product-private-expansion',
-      'confirm-character-anchors', 'confirm-chat-situation', 'cancel',
+      'confirm-character-anchors', 'confirm-chat-situation', 'confirm-chat-media', 'cancel',
     ].includes(command.resolution.action)) {
       reject('invalid-state-transition', '当前 blocker 只允许重试、更换能力、处理已登记作者闸门或取消；降级/豁免必须先生成新 Brief')
     }

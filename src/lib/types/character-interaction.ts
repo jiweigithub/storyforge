@@ -4,6 +4,8 @@
 export interface ChatComposerDraftV1 {
   version: 1
   text: string
+  /** Intended role recipients. Missing/null means everybody currently present. */
+  audienceKeys?: string[] | null
   revision: number
   updatedAt: number
 }

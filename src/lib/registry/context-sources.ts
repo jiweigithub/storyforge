@@ -2038,7 +2038,10 @@ export const CONTEXT_SOURCES: ContextSource[] = [
       const scope = await resolveScope(input)
       const rows = await readOwnedRows<import('../character-interaction/authoring-contract').ChatAuthoringDraftV1>(scope, 'chatAuthoringDrafts', { owner: 'work' })
       const draft = rows[0]
-      return draft ? JSON.stringify({ revision: draft.revision, settings: JSON.parse(draft.settingsJson), conversation: (JSON.parse(draft.conversationJson) as import('../character-interaction/draft-service').ChatConversationTurnV1[]).filter(turn=>!turn.archived), worldSelected: draft.worldReleaseId != null }) : ''
+      if (!draft) return ''
+      const settings = JSON.parse(draft.settingsJson) as import('../character-interaction/authoring-contract').ChatAuthoringSettings
+      const {chatSettingsForAIContextV1} = await import('../character-interaction/experience-info')
+      return JSON.stringify({ revision: draft.revision, settings: chatSettingsForAIContextV1(settings), conversation: (JSON.parse(draft.conversationJson) as import('../character-interaction/draft-service').ChatConversationTurnV1[]).filter(turn=>!turn.archived), worldSelected: draft.worldReleaseId != null })
     },
   },
   {

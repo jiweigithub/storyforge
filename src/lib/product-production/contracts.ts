@@ -1,4 +1,6 @@
+import {chatVisualMediaProfileV1} from '../character-interaction/visual-intent'
 import { parseChatAuthoringSettings } from '../character-interaction/authoring-contract'
+import {parseChatMediaProductionDecisionV1} from '../character-interaction/media-selection'
 import {parseChatRoleProfileSetV1} from '../character-interaction/role-profile'
 import {parseChatSourceUnitSetV1} from '../character-interaction/source-unit-authorization'
 import { parseAvgAuthoringSettingsV1 } from '../avg/authoring-contract'
@@ -370,6 +372,17 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
       ? { evolution: parseEvolutionImpact(row.evolution) }
       : {}),
   }
+  if (productType === 'character-interaction' && (parsed.media.imageCount > 0 || parsed.media.visualLevel !== 'none')) {
+    const expected = chatVisualMediaProfileV1(parsed.characterChat, parsed.media.visualLevel)
+    const imageRequirements = parsed.capabilityRequirements.filter(item => item.mediaClass === 'image')
+    if (parsed.media.imageCount !== expected.imageCount
+      || canonicalProductProductionJsonV2([...parsed.media.requiredMediaKinds].sort()) !== canonicalProductProductionJsonV2([...expected.requiredMediaKinds].sort())
+      || parsed.media.audioLevel !== 'none' || parsed.media.musicTrackCount + parsed.media.sfxCount + parsed.media.voiceLineCount !== 0
+      || imageRequirements.length !== 1 || imageRequirements[0].requirementKey !== 'media.visual' || !imageRequirements[0].required
+      || canonicalProductProductionJsonV2(imageRequirements[0].allowedDataClasses) !== '["author-intent"]'
+      || !parsed.externalDataPolicy.allowedDataClasses.includes('author-intent')
+      || parsed.externalDataPolicy.forbiddenDataClasses.includes('author-intent')) fail('角色聊天图片必须对应明确的画面数量、类型与作者输入授权')
+  }
   if (parsed.intent.protagonistRefs.some(ref => !parsed.source.startingPoint.protagonistRefs.includes(ref))) {
     fail('intent.protagonistRefs 必须来自 startingPoint 候选')
   }
@@ -450,10 +463,12 @@ function expectedRevision(value: unknown): number {
 function parseResolution(value: unknown): ProductProductionBlockerResolutionV1 {
   const row = record(value, 'resolution')
   const hasUnknownReservation = Object.prototype.hasOwnProperty.call(row, 'unknownResultReservation')
+  if (row.action === 'confirm-chat-media' && hasUnknownReservation) fail('图片确认不能同时处置未知费用')
   exactKeys(row, [
     'action', 'note',
     ...(row.action === 'author-edit' ? ['authorDraftJson'] : []),
     ...(row.action === 'confirm-chat-situation' ? ['chatSituation'] : []),
+    ...(row.action === 'confirm-chat-media' ? ['chatMedia'] : []),
     ...(hasUnknownReservation ? ['unknownResultReservation'] : []),
   ], 'resolution')
   if (row.action === 'author-edit') record(JSON.parse(text(row.authorDraftJson, 'resolution.authorDraftJson', 120000)), 'authorDraft')
@@ -474,9 +489,10 @@ function parseResolution(value: unknown): ProductProductionBlockerResolutionV1 {
   return {
     action: enumValue(row.action, [
       'retry', 'author-edit', 'fallback', 'waive-soft-gate', 'change-capability',
-      'accept-product-private-expansion', 'confirm-character-anchors', 'confirm-chat-situation', 'cancel',
+      'accept-product-private-expansion', 'confirm-character-anchors', 'confirm-chat-situation', 'confirm-chat-media', 'cancel',
     ], 'resolution.action'),
     note: text(row.note, 'resolution.note', 4000),
+    ...(row.action === 'confirm-chat-media' ? {chatMedia: parseChatMediaProductionDecisionV1(row.chatMedia)} : {}),
     ...(row.action === 'author-edit' ? { authorDraftJson: text(row.authorDraftJson, 'resolution.authorDraftJson', 120000) } : {}),
     ...(row.action === 'confirm-chat-situation' ? {chatSituation: (() => {
       const choice = record(row.chatSituation, 'resolution.chatSituation')

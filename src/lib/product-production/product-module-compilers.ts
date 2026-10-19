@@ -2,6 +2,7 @@ import { parseAdventureContent } from '../adventure/runtime'
 import { parseAiTownRuntimeContentV1 } from '../ai-town/runtime'
 import { assertPreparedChatPrivateCharactersV1, chatProjectionResourcesV1, readPreparedChatSourceProjectionViewV1 } from '../character-interaction/source-projection'
 import {chatPrivateCharacterKeysV1} from '../character-interaction/private-character'
+import type {ChatCharacterCardCreditsV1} from '../character-interaction/card-credits'
 import {composeChatRoleVoiceRulesV1, formatChatRoleProfileV1, validateChatRoleProfilesForSourceV1} from '../character-interaction/role-profile'
 import {validateChatSourceUnitSetForProjectionV1} from '../character-interaction/source-unit-authorization'
 import {compileChatSourceUnitKnowledgeV1} from '../character-interaction/source-unit-runtime'
@@ -335,7 +336,17 @@ export function compileInteractionModulesV1(input: ProductModuleCompilerInputV1)
       || chat.narrative.location && content.initialSituation.location !== chat.narrative.location
       || chat.narrative.timeLabel && content.initialSituation.timeLabel !== chat.narrative.timeLabel) fail('选定情境改变了作者的身份、种子、时地或运行权限')
     const situation = content.initialSituation
+    const cardCredits: ChatCharacterCardCreditsV1['characters'] = (chat.privateCharacters ?? []).flatMap(character => {
+      if (!character.cardOrigin) return []
+      const profile = profiles.find(profile => profile.characterKey === character.characterKey)
+      const source = projected.content.privateCharacterSources?.find(source => source.resourceKey === character.characterKey)
+      if (!profile || !source) fail('外部角色卡缺少已确认的人物来源')
+      return [{participantKey: profile.participantKey, characterKey: character.characterKey, sourceHash: source.sourceHash,
+        cardContentHash: character.cardOrigin.contentHash, creator: character.cardOrigin.creator, characterVersion: character.cardOrigin.characterVersion}]
+    })
     return {playerKey: 'player' as const, profiles, chatSource: projected.content, chatNarrative: content,
+      ...(cardCredits.length ? {chatCardCredits: {version: 1 as const, characters: cardCredits}} : {}),
+      ...(chat.experienceInfo ? {chatExperienceInfo: structuredClone(chat.experienceInfo)} : {}),
       sceneTemplates: [{sceneKey: situation.sceneKey, title: situation.title, purpose: chat.experience || situation.title,
         location: situation.location, timeLabel: situation.timeLabel, participantKeys,
         publicKnowledgeKeys: projected.content.knowledge.filter(k => ['player', ...participantKeys].every(viewer => k.audienceKeys.includes(viewer))).map(k => k.key),

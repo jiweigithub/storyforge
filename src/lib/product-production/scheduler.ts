@@ -2460,7 +2460,7 @@ async function ensurePlan(input: {
         const previous = previousTasks.get(task.taskKey)
         const carriesExplicitAuthorDecision = task.taskKey === 'source.author-gate'
           || task.taskKey === 'media.anchor-author-gate'
-          || task.taskKey === 'content.chat-author-gate'
+          || task.taskKey === 'content.chat-author-gate' || task.taskKey === 'media.chat-author-gate'
         const clockCapacityRevision = task.taskKey === 'content.product-module'
           && parsedObject(state.build.failureJson).code === 'author-revised-content'
           && parsedObject(state.build.failureJson).blockerKey === task.taskKey
@@ -2556,7 +2556,7 @@ function authorResolutionEvidence(
   const candidate = resolution as Record<string, unknown>
   const actions: ProductProductionBlockerResolutionV1['action'][] = [
     'retry', 'author-edit', 'fallback', 'waive-soft-gate', 'change-capability',
-    'accept-product-private-expansion', 'confirm-character-anchors', 'confirm-chat-situation', 'cancel',
+    'accept-product-private-expansion', 'confirm-character-anchors', 'confirm-chat-situation', 'confirm-chat-media', 'cancel',
   ]
   if (typeof candidate.action !== 'string'
     || !actions.includes(candidate.action as ProductProductionBlockerResolutionV1['action'])
@@ -2568,6 +2568,7 @@ function authorResolutionEvidence(
       action: candidate.action as ProductProductionBlockerResolutionV1['action'],
       note: candidate.note,
       ...(candidate.action === 'confirm-chat-situation' ? {chatSituation: structuredClone(candidate.chatSituation) as ProductProductionBlockerResolutionV1['chatSituation']} : {}),
+      ...(candidate.action === 'confirm-chat-media' ? {chatMedia: structuredClone(candidate.chatMedia) as ProductProductionBlockerResolutionV1['chatMedia']} : {}),
     },
     resolvedAt: row.resolvedAt,
   }
@@ -4239,7 +4240,7 @@ async function ensureCarriedForwardTaskRuns(input: {
     for (const task of input.plan.tasks) {
       const carriesExplicitAuthorDecision = task.taskKey === 'source.author-gate'
         || task.taskKey === 'media.anchor-author-gate'
-        || task.taskKey === 'content.chat-author-gate'
+        || task.taskKey === 'content.chat-author-gate' || task.taskKey === 'media.chat-author-gate'
       if (task.executionMode === 'deterministic' && task.reuse == null
         && !carriesExplicitAuthorDecision) continue
       const outputs = artifacts.filter(row => task.outputArtifactKeys.includes(row.artifactKey)
@@ -5010,7 +5011,7 @@ async function runClaimedTaskCore(input: {
       ?? (error instanceof ProductProductionDraftRejectedErrorV1
         || error instanceof ProductProductionRetryableExecutionErrorV1
         ? error.usage : paidUsageFromExecutorError(error))
-      ?? (input.task.taskKey === 'content.chat-author-gate'
+      ?? (['content.chat-author-gate', 'media.chat-author-gate'].includes(input.task.taskKey)
         && input.task.executionMode === 'deterministic' && !costBearing(input.task) ? zeroUsage() : null)
     let paidUsageBudgetExceeded = false
     if (paidUsage != null) {

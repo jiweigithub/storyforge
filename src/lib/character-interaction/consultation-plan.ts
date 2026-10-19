@@ -42,10 +42,11 @@ export function applyChatPlanChangesV1(settings: ChatAuthoringSettings, changes:
   }
   return parseChatAuthoringSettings(next)
 }
-/** Every registered settings write preserves identity, cast, source consent and execution permissions. */
+/** Every registered settings write preserves identity, cast, source consent,
+ * execution permissions and the author's public publication statements. */
 export function assertChatPlanAdoptionV1(before: unknown, after: unknown) {
   const previous = parseChatAuthoringSettings(typeof before === 'string' ? JSON.parse(before) : before)
   const next = parseChatAuthoringSettings(typeof after === 'string' ? JSON.parse(after) : after)
   const allowed = applyChatPlanChangesV1(previous, Object.entries(chatPlanValuesV1(next)).map(([field, value]) => ({field: field as ChatPlanFieldV1, value: value!})))
-  if (canonicalStringify(allowed) !== canonicalStringify(next)) throw new Error('方案采纳不能修改角色身份、来源、知情范围或运行权限')
+  if (canonicalStringify(allowed) !== canonicalStringify(next)) throw new Error('方案采纳不能修改角色身份、来源、知情范围、运行权限或作品使用说明')
 }

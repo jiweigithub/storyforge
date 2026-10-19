@@ -1,5 +1,6 @@
 import {chatRelationshipHistoryKeyV1} from './relationship-history-context'
 import {createChatHistoryProjectionCacheV1} from './history-context-cache'
+import {indexChatHistoryRowsV1} from './history-projection-rows'
 import type {CharacterInteractionRuntimeState} from '../types'
 import {chatSituationCoordinatorViewV1} from './narrative-situations'
 import {interactionMemoryForContextV1} from './memory-review-contract'
@@ -82,12 +83,25 @@ export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteract
     threads: full.situation.threads.filter(t => ['open', 'blocked', 'paused'].includes(t.status)).map(t => [t.title, t.question]),
     player: [...full.messages].reverse().find(m => m.role === 'player')?.text ?? ''}))
   const historyKinds = [...new Set([...plan.entries.values()].map(e => e.kind))]
+  const compactHistory = candidate.retrievalVersion === 'chat-relevance-v9' || candidate.retrievalVersion === 'chat-relevance-v10'
+  const totals = new Map(historyKinds.map(kind => {
+    const rows = [...plan.entries.values()].filter(e => e.kind === kind)
+    return [kind, {total: rows.length, required: rows.filter(e => e.required.length).length}]
+  }))
+  const selectedFacts = indexChatHistoryRowsV1(full.situation.facts, 'facts', f => f.factKey)
   const render = (selected: ReadonlySet<string>) => {
-    const evidence = plan.evidence(selected)
+    // Current readers render counts only. Build the complete identity audit
+    // once after selection, rather than for every rejected budget trial.
+    const evidence = compactHistory ? [] : plan.evidence(selected)
+    const included = new Map(historyKinds.map(kind => [kind, 0]))
+    if (compactHistory) for (const key of selected) {
+      const kind = plan.entries.get(key)!.kind
+      included.set(kind, included.get(kind)! + 1)
+    }
     const has = (kind: Parameters<typeof id>[0], key: string) => selected.has(id(kind, key))
     const selectedCommitments = new Set(commitments.filter(c => has('commitments', c.commitmentKey)).map(c => c.commitmentKey))
     const result = {...full, memoryCorrections,
-      situation: {...full.situation, facts: full.situation.facts.filter(f => has('facts', f.factKey)),
+      situation: {...full.situation, facts: selectedFacts(selected),
         goals: projectChatGoalCommitmentsV1(full.situation.goals.filter(g => has('goals', g.goalKey)), selectedCommitments),
         threads: full.situation.threads.filter(t => has('threads', t.threadKey))},
       knowledge: knowledge.filter(k => has('knowledge', k.knowledgeKey)), memories: memories.filter(m => has('memories', m.memoryId)),
@@ -98,8 +112,8 @@ export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteract
       selection: {version: (candidate.retrievalVersion === 'chat-relevance-v9' || candidate.retrievalVersion === 'chat-relevance-v10') ? 6 : 5, totalKnowledgeEntries: knowledge.length, omittedKnowledgeEntries: knowledge.filter(k => !has('knowledge', k.knowledgeKey)).length,
         totalMemoryEntries: memories.length, omittedMemoryEntries: memories.filter(m => !has('memories', m.memoryId)).length,
         totalCommitmentEntries: commitments.length, omittedCommitmentEntries: commitments.filter(c => !has('commitments', c.commitmentKey)).length, history: Object.fromEntries(historyKinds.map(kind => {
+        if (compactHistory) return [kind, {included: included.get(kind)!, omitted: totals.get(kind)!.total - included.get(kind)!, required: totals.get(kind)!.required}]
         const rows = evidence.filter(e => e.kind === kind)
-        if (candidate.retrievalVersion === 'chat-relevance-v9' || candidate.retrievalVersion === 'chat-relevance-v10') return [kind, {included: rows.filter(e => e.included).length, omitted: rows.filter(e => !e.included).length, required: rows.filter(e => e.required.length).length}]
         return [kind, {included: rows.filter(e => e.included).map(e => e.key), omitted: rows.filter(e => !e.included).map(e => e.key),
           required: Object.fromEntries(rows.filter(e => e.required.length).map(e => [e.key, e.required]))}]
       }))},

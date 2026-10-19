@@ -1,3 +1,5 @@
+import type {ChatExperienceInfoV1} from '../../src/lib/character-interaction/experience-info'
+import type {ChatCharacterCardOriginV1} from '../../src/lib/character-interaction/private-character'
 import {CHAT_OPENING_CHECKS, type ChatOpeningReviewDraftV1} from '../../src/lib/character-interaction/situation-production-review'
 import { seedCurrentProductWorld } from './current-product-world'
 import { createChatDraftV3, selectChatWorldV1, saveChatDraftV1, loadChatSourceProjectionV1, confirmChatSourceReviewV1, readChatDraftV1 } from '../../src/lib/character-interaction/draft-service'
@@ -10,7 +12,7 @@ import type { ChatNarrativeProductionSourceV1, ChatSituationCandidatesV1 } from 
 import {chatProjectionResourcesV1} from '../../src/lib/character-interaction/source-projection'
 import {createChatPrivateCharacterV1} from '../../src/lib/character-interaction/private-character'
 
-export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?: boolean; factDiscovery?: boolean; worldDiscovery?: boolean; privateCast?: 'only' | 'mixed'; consultation?: boolean} = {}) {
+export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?: boolean; factDiscovery?: boolean; worldDiscovery?: boolean; privateCast?: 'only' | 'mixed'; consultation?: boolean; cardOrigin?: ChatCharacterCardOriginV1; experienceInfo?: ChatExperienceInfoV1} = {}) {
   const world = await seedCurrentProductWorld('CHAT situation production', options.worldDiscovery ? {characterDetails: {
     background: '红铜钥匙藏在修钟台下的木匣里。', shortDescription: '修钟台下有一只获准由店主检查的木匣。',
   }} : {})
@@ -22,7 +24,8 @@ export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?
   if (base.version !== 3) throw new Error('fixture version')
   const playerCharacterKey = index.selectionOptions.characters.find(c => c.label === '守潮人')!.resourceKey
   const draft = await saveChatDraftV1(scope, linked.revision, {...base,
-    ...(options.privateCast ? {mode: options.privateCast === 'mixed' ? 'multi' : 'single', privateCharacters: [{...createChatPrivateCharacterV1(), name: '苏禾', identity: '本体验的修钟铺店主', background: '希望修好旧钟，愿意自己检查工具。', personality: '温和而有主见。', voice: '仅作者掌握的私域结局'}]} : {}),
+    ...(options.experienceInfo ? {experienceInfo: options.experienceInfo} : {}),
+    ...(options.privateCast ? {mode: options.privateCast === 'mixed' ? 'multi' : 'single', privateCharacters: [{...createChatPrivateCharacterV1(), ...(options.cardOrigin ? {cardOrigin: options.cardOrigin} : {}), name: '苏禾', identity: '本体验的修钟铺店主', background: '希望修好旧钟，愿意自己检查工具。', personality: '温和而有主见。', voice: '仅作者掌握的私域结局'}]} : {}),
     ...(options.mappedPlayer || options.factDiscovery || options.worldDiscovery ? {narrative: {...base.narrative, ...(options.mappedPlayer ? {playerCharacterKey, personaName: '守潮人'} : {}), ...(options.factDiscovery || options.worldDiscovery ? {permissions: {...base.narrative.permissions, allowActorSituationExpansion: true, maxDiscoveriesPerSituation: 2}} : {})}} : {}),
     playerRole: options.mappedPlayer ? '来到修钟铺的守潮人，没有答应帮忙修理。' : '来店里借书的旅人沈禾，没有答应帮忙修理。', openingSituation: '雨天，修钟铺的一台旧钟停了。',
     characters: options.privateCast === 'only' ? [] : [{sourceKey, voiceRules: '', privateKnowledge: '', initialTrust: 0}]})
@@ -64,7 +67,7 @@ export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?
     playerRole: settings.playerRole, openingSituation: settings.openingSituation, visualLevel: 'none', audioLevel: 'none'})
   const sourceCatalog = await loadProductProductionWorldSourceCatalogV2({scope, worldReleaseId: confirmed.worldReleaseId!, selection: brief.source.selection, chatPrivateCharacters: settings.privateCharacters})
   const projected = prepareChatNarrativeCompilerSourceV1({brief, sourceCatalog})
-  const {privateCharacters: _privateCharacters, ...reviewedSettings} = settings
+  const {privateCharacters: _privateCharacters, visuals: _visuals, experienceInfo: _experienceInfo, ...reviewedSettings} = settings
   const source: ChatNarrativeProductionSourceV1 = {
     schema: 'storyforge.chat-narrative-production-source', version: 1, settings: reviewedSettings, source: projected.content,
     participants: projected.participantKeys.map((participantKey, i) => ({participantKey, characterKey: projected.characterKeys[i], name: projected.names[i], voiceRules: projected.voices[i] || '自然表达'})),

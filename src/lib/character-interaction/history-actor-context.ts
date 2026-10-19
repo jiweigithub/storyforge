@@ -1,5 +1,6 @@
 import {chatRelationshipHistoryRowsV1, addChatRelationshipHistoryV1} from './relationship-history-context'
 import {createChatHistoryProjectionCacheV1} from './history-context-cache'
+import {indexChatHistoryRowsV1} from './history-projection-rows'
 import type {CharacterInteractionRuntimeState, InteractionRuntimeProfile} from '../types'
 import type {InteractionContextWindow, InteractionVisibilityView} from './runtime'
 import {createContextTextScorerV1} from '../context-gateway/lexical-query'
@@ -57,34 +58,36 @@ export function selectChatHistoryActorContextV1(state: CharacterInteractionRunti
   // and keep the complete audit outside the repeated model-text rendering.
   const relevanceById = new Map([...plan.entries].map(([key, entry]) => [key, relevance(entry.text)]))
   const reasonFor = (kind: Parameters<typeof id>[0], key: string) => relevanceById.get(id(kind, key))!.reason
+  const selectedFacts = indexChatHistoryRowsV1(narrative.facts, 'facts', f => f.factKey)
   const project = (selected: ReadonlySet<string>, audit = false): InteractionContextWindow => {
     const has = (kind: Parameters<typeof id>[0], key: string) => selected.has(id(kind, key))
     const goalKeys = new Set(commitments.filter(c => has('commitments', c.commitmentKey)).map(c => c.commitmentKey))
     const decisions = audit ? plan.evidence(selected) : []
+    const facts = selectedFacts(selected), messages = eligible.filter(m => has('messages', m.messageId))
     return {...view,
       ...(limits.relationshipHistory ? {relationshipEvidence: relationships.filter(r => has('relationships', r.key)).map(r => r.change)} : {}),
       knowledge: view.knowledge.filter(k => has('knowledge', k.knowledgeKey)), memories: view.memories.filter(m => has('memories', m.memoryId)),
-      messages: eligible.filter(m => has('messages', m.messageId)),
-      chatNarrative: {...narrative, facts: narrative.facts.filter(f => has('facts', f.factKey)),
+      messages,
+      chatNarrative: {...narrative, facts,
         goals: projectChatGoalCommitmentsV1(narrative.goals.filter(g => has('goals', g.goalKey)), goalKeys),
         threads: narrative.threads.filter(t => has('threads', t.threadKey))},
       sharedCommitments: view.sharedCommitments?.filter(c => has('commitments', c.commitmentKey)),
       historyContext: {version: 1, policy: CHAT_HISTORY_POLICY_V1, resolutions: plan.resolutions(selected),
-        omitted: {facts: narrative.facts.filter(f => !has('facts', f.factKey)).length,
+        omitted: {facts: narrative.facts.length - facts.length,
           goals: narrative.goals.filter(g => !has('goals', g.goalKey)).length, threads: narrative.threads.filter(t => !has('threads', t.threadKey)).length}},
       selection: {version: limits.relationshipHistory ? 6 : 5,
         knowledge: view.knowledge.map(k => ({key: k.knowledgeKey, included: has('knowledge', k.knowledgeKey), reason: reasonFor('knowledge', k.knowledgeKey)})),
         memories: view.memories.map(m => ({key: m.memoryId, included: has('memories', m.memoryId), reason: pending.has(m.memoryId) ? 'pending-correction' : m.playerPinned ? 'player-pin' : reasonFor('memories', m.memoryId)})),
         commitments: decisions.filter(d => d.kind === 'commitments').map(d => ({key: d.key, included: d.included, reason: commitments.find(c => c.commitmentKey === d.key)?.resolution === null ? 'open-commitment' : latestCommitments.has(d.key) ? 'latest-resolution' : reasonFor('commitments', d.key)})),
         history: decisions},
-      omittedMessageCount: view.messages.length - eligible.filter(m => has('messages', m.messageId)).length, characterCount: 0}
+      omittedMessageCount: view.messages.length - messages.length, characterCount: 0}
   }
   const size = (result: InteractionContextWindow) => formatInteractionRuntimeContextV1(profile, result).length + 200
   const measured = (keys: ReadonlySet<string>, audit = false) => {const result = project(keys, audit); result.characterCount = size(result); result.characterCount = size(result); return result}
   const required = plan.required()
   const selected = plan.choose(keys => {
     const result = measured(keys), text = formatInteractionRuntimeContextV1(profile, result)
-    const characters = size(result), tokens = estimateTokens(text) + 200
+    const characters = text.length + 200, tokens = estimateTokens(text) + 200
     // Review headroom limits optional enrichment only. Required promises,
     // refusals and source closure retain the original hard source budget.
     return characters <= limits.maxCharacters && tokens <= CHAT_CONTEXT_SOURCE_TOKENS_V1

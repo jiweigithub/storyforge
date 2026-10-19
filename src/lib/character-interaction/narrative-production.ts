@@ -58,6 +58,8 @@ export function validateChatNarrativeProductionSourceV1(value: ChatNarrativeProd
   const settings = parseChatAuthoringSettings(value.settings)
   if (settings.version !== 3 || !settings.sourceReview || !settings.playerRole.trim() || !settings.openingSituation.trim()) fail('情境制作需要已确认资料、玩家虚构背景和开场种子')
   if (settings.privateCharacters !== undefined) fail('情境模型不能读取未分类的体验新角色原文')
+  if (settings.visuals !== undefined) fail('画面草稿不能进入情境模型或成为故事事实')
+  if (settings.experienceInfo !== undefined) fail('作品署名与使用说明不能进入情境模型或成为故事事实')
   if (settings.sourceReview.projectionHash !== value.source.projectionHash) fail('情境来源确认已过期')
   if (!Array.isArray(value.participants) || !value.participants.length || value.participants.length > 8 || settings.mode === 'single' && value.participants.length !== 1) fail('情境参与角色与模式不符')
   const resourceKeys = value.participants.map(p => p.characterKey)

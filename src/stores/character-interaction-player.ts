@@ -5,6 +5,7 @@ import {applyChatMessageRetrievalPlanV1, type ChatMessageRetrievalPlanV1} from '
 import { create } from 'zustand'
 import type {ChatComposerSendBindingV1} from '../lib/character-interaction/runtime-api'
 import {ChatComposerConflictError} from '../lib/character-interaction/composer-draft-contract'
+import {resolveChatOpeningSceneV1} from '../lib/character-interaction/release-preview'
 import { db } from '../lib/db/schema'
 import {
   readInteractionDirectorPlanV1,
@@ -25,6 +26,8 @@ import {
   readProductRuntimeState,
   readProductRuntimeStateVersion,
   startInteractionScene,
+  joinInteractionParticipant,
+  leaveInteractionParticipant,
   updateChatMessageEditDraft,
 } from '../lib/character-interaction/runtime-api'
 import {
@@ -86,14 +89,15 @@ interface CharacterInteractionPlayerState {
   error: string
   load(scope: WorkspaceScope, worldGroupId: number | null, initialSessionId?: number | null): Promise<void>
   select(sessionId: number | null): Promise<void>
-  start(productReleaseId: number, title?: string): Promise<number>
+  start(productReleaseId: number, title?: string, options?: {sceneKey?: string}): Promise<number>
   startScene(sceneKey: string): Promise<void>
+  setParticipantPresence(participantKey: string, present: boolean): Promise<void>
   sendPlayerMessage(text: string, audienceKeys?: string[] | null, draft?: {binding: ChatComposerSendBindingV1; onCommitted: () => void}): Promise<number>
   applyFixedAction(ruleKey: string): Promise<void>
-  generateReplies(input: { aiConfig: AIConfig; replyToSequence: number; preferredParticipantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1 }): Promise<void>
-  advanceNarrative(input: { aiConfig: AIConfig; kind: ChatPlayerTriggerV1; compare?: boolean; participantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1 }): Promise<void>
+  generateReplies(input: { aiConfig: AIConfig; replyToSequence: number; preferredParticipantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1; audienceKeys?: string[] | null }): Promise<void>
+  advanceNarrative(input: { aiConfig: AIConfig; kind: ChatPlayerTriggerV1; compare?: boolean; participantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1; audienceKeys?: string[] | null }): Promise<void>
   resumeNarrativeTurn(input: {aiConfig: AIConfig; situationAiConfig?: AIConfig; participantKey?: string}): Promise<void>
-  createSituation(input: {aiConfig: AIConfig; actionAiConfig?: AIConfig; seed: string; participantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1}): Promise<void>
+  createSituation(input: {aiConfig: AIConfig; actionAiConfig?: AIConfig; seed: string; participantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1; audienceKeys?: string[] | null}): Promise<void>
   reviseNarrativeAction(runId: number, aiConfig: AIConfig): Promise<void>
   resumeNarrativeReview(runId: number, aiConfig: AIConfig): Promise<void>
   selectNarrativeOption(runId: number, optionKey: ChatNarrativeOptionKeyV1): Promise<void>
@@ -274,13 +278,13 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
     await assertInteractionSession(get().scope!, id)
     return { id, ...await readProductRuntimeStateVersion(id) }
   }
-  const performNarrative = async (input: {aiConfig: AIConfig; kind: ChatPlayerTriggerV1; compare?: boolean; participantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1; replyToSequence?: number}) => {
+  const performNarrative = async (input: {aiConfig: AIConfig; kind: ChatPlayerTriggerV1; compare?: boolean; participantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1; audienceKeys?: string[] | null; replyToSequence?: number}) => {
     const scope = get().scope, sessionId = get().selectedSessionId
     if (!scope || sessionId == null) throw new Error('请先选择角色聊天存档。')
     const controller = new AbortController()
     generationAbortController = controller
     try {
-      await advanceChatNarrativeTurnV1({...input, scope, sessionId, expectedSequence: get().runtimeState.lastSequence,
+      await advanceChatNarrativeTurnV1({...input, scope, sessionId, settleSituation: true, expectedSequence: get().runtimeState.lastSequence,
         signal: controller.signal, onRunCreated: id => set({generatingRunId: id})})
     } catch (reason) {
       if (!controller.signal.aborted) throw reason
@@ -330,26 +334,26 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       finally { if (epoch === loadEpoch) set({ loading: false }) }
     },
 
-    start: async (productReleaseId, title) => withBusy(async () => {
+    start: async (productReleaseId, title, options) => withBusy(async () => {
       const scope = get().scope
       const item = get().releases.find(row => row.release.id === productReleaseId)
       if (!scope || !item?.manifest || item.error) throw new Error('请选择可用的角色互动发布。')
+      const sceneKey = resolveChatOpeningSceneV1(item.manifest, options?.sceneKey)
       const session = await createCharacterInteractionInstance({
         scope,
         productReleaseId,
         title: title?.trim() || `${item.manifest.definition.title} · 新会话`,
         worldGroupId: get().worldGroupId,
       })
-      const first = item.manifest.interaction.sceneTemplates[0]
-      if (first) {
+      {
         const base = await readProductRuntimeStateVersion(session.id!)
         await startInteractionScene({
           sessionId: session.id!,
           commandId: commandId('interaction.scene.start', session.id!),
           baseSequence: base.sequence,
           baseStateHash: base.stateHash,
-          sceneId: `scene:${first.sceneKey}:${crypto.randomUUID()}`,
-          sceneKey: first.sceneKey,
+          sceneId: `scene:${sceneKey}:${crypto.randomUUID()}`,
+          sceneKey,
         })
       }
       await reload(session.id!)
@@ -366,6 +370,15 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
         sceneId: `scene:${sceneKey}:${crypto.randomUUID()}`,
         sceneKey,
       })
+      await refresh()
+    }),
+
+    setParticipantPresence: async (participantKey, present) => withBusy(async () => {
+      const base = await version()
+      const command = {sessionId: base.id, commandId: commandId('interaction.presence', base.id),
+        baseSequence: base.sequence, baseStateHash: base.stateHash, participantKey}
+      if (present) await joinInteractionParticipant(command)
+      else await leaveInteractionParticipant(command)
       await refresh()
     }),
 
@@ -433,7 +446,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
 
     generateReplies: async input => withBusy(async () => {
       if (get().runtimeState.interaction?.chatNarrative) {
-        await performNarrative({aiConfig: input.aiConfig, kind: 'player-response', replyToSequence: input.replyToSequence, participantKey: input.preferredParticipantKey, actionLimit: input.actionLimit, schedulingMode: input.schedulingMode})
+        await performNarrative({aiConfig: input.aiConfig, kind: 'player-response', replyToSequence: input.replyToSequence, participantKey: input.preferredParticipantKey, actionLimit: input.actionLimit, schedulingMode: input.schedulingMode, audienceKeys: input.audienceKeys})
         return
       }
       const scope = get().scope
@@ -523,7 +536,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       if (!scope || sessionId == null) throw new Error('请先选择角色聊天存档。')
       const controller = new AbortController(); generationAbortController = controller
       try {
-        await createChatNarrativeSituationV1({...input, scope, sessionId, expectedSequence: get().runtimeState.lastSequence,
+        await createChatNarrativeSituationV1({...input, scope, sessionId, settleSituation: true, expectedSequence: get().runtimeState.lastSequence,
           signal: controller.signal, onRunCreated: id => set({generatingRunId: id})})
       } catch (reason) {if (!controller.signal.aborted) throw reason}
     }),

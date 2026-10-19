@@ -1,6 +1,16 @@
 import type {CharacterInteractionRuntimeState} from '../types'
 import {isChatMessageRetrievableV1} from './narrative-retrieval'
 
+/** Only the final action of an explicitly versioned turn can leave background
+ * settlement pending. It grants no additional action or construction cycle. */
+export function chatHasPendingTurnSettlementV1(state: CharacterInteractionRuntimeState): boolean {
+  const story = state.chatNarrative, trigger = story?.triggers.slice(-1)[0]
+  return !!(trigger?.direction?.settleSituationVersion === 1 && trigger.status === 'ready'
+    && trigger.actionSequences.length === trigger.direction.actionLimit
+    && story?.pendingSituation?.sourceEventSequence === trigger.actionSequences.slice(-1)[0]
+    && chatSituationConstructionRequestV1(state))
+}
+
 /** A reviewed new direction keeps its exact player source through save/branch.
  * Later player input interrupts it; mere elapsed time never executes it. */
 export function chatHasPendingPlayerFollowupV1(state: CharacterInteractionRuntimeState, actorKey: string): boolean {

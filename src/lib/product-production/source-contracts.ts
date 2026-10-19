@@ -117,7 +117,7 @@ export async function createProductProductionSourcePlanV1(input: {
 
 export function productProductionTaskUsesWorldGatewayV1(task: ProductProductionPlanTaskV3): boolean {
   const isDeterministicIntegration = task.executionMode === 'deterministic'
-    && task.kind === 'runtime-package'
+    && ['runtime-package', 'chat-media-requirements', 'chat-media-review'].includes(task.kind)
   const skill = getAgentSkillV1(task.skillId ?? 'product-production.integrate.v1')
   return skill.contextGateway?.providerSourceKeys.includes('worldRelease') === true
     && (task.executionMode === 'model' || task.skillId === 'product-production.integrate.v1'

@@ -12,6 +12,7 @@ import { adventureNarrativeActionCommandIdV1 } from '../adventure/command-identi
 import { parseAvgPresentationState, applyAvgPresentationEvent, createInitialAvgPresentationState } from '../avg/runtime'
 import { parseInteractionState, applyInteractionEvent, createInitialInteractionState, rebaseInteractionStateForBranch } from '../character-interaction/runtime'
 import {prepareChatMessageEditBranchV1} from '../character-interaction/narrative-edit-contract'
+import {assertChatReleaseUpgradeReceiptV1} from '../character-interaction/release-upgrade-receipt'
 import type {ChatHistoricalOptionBranchIntentV1, ChatMessageEditBranchIntentV1} from '../types/chat-narrative'
 import {prepareChatHistoricalOptionBranchV1} from '../character-interaction/narrative-options-history'
 import { evaluateNarrativeChoices } from './narrative-content'
@@ -174,6 +175,7 @@ export function applyProductOwnedRuntimeEventV1(
     return state
   }
   if (event.type.startsWith('interaction.')) {
+    if (event.type === 'interaction.release.upgraded') assertChatReleaseUpgradeReceiptV1(state, event, payload)
     state.interaction = applyInteractionEvent(state.interaction ?? null, event)
     state.lastSequence = event.sequence
     return state

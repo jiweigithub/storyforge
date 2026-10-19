@@ -95,7 +95,7 @@ function mock(playerEventSequence: number, options: {interrupt?: () => Promise<v
     runAI: async messages => {
       if (input.skillId === 'character.chat-situation-construction') {
         calls.constructions++; expect(JSON.stringify(messages)).toContain(followupDirection)
-        await options.interrupt?.(); return JSON.stringify(followupSituation())
+        await options.interrupt?.(); return JSON.stringify({...followupSituation(), title: '暴雨驿站'})
       }
       expect(JSON.stringify(messages)).not.toContain('柜台下')
       calls.actions++; return JSON.stringify(calls.actions === 1 ? followupAction(playerEventSequence) : followupResultAction())
@@ -136,6 +136,8 @@ it.each(['manual', 'natural', 'round-robin'] as const)('continues a bounded two-
   expect(calls).toEqual({actions: 2, constructions: 1, reviews: 3})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!
   expect(state.chatNarrative!.triggers.at(-1)?.actionSequences).toHaveLength(2)
+  expect(state.messages.find(m => m.role === 'player')).toMatchObject({playerConversation: 'private', audienceKeys: ['player', 'guard']})
+  expect(state.chatNarrative!.situation.title).toBe('暴雨驿站')
   expect(state.chatNarrative!.situation.goals[0].status).toBe('abandoned')
 })
 it('new player input cancels the unexecuted direction, and stale construction cannot write over it', async () => {

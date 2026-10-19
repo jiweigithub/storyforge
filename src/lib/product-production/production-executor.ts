@@ -1,3 +1,7 @@
+import {assertChatVisualRequirementsV1, CHAT_PUBLIC_VISUAL_CONSTRAINTS_V1} from '../character-interaction/visual-intent'
+import {executeChatMediaDeterministicTaskV1} from './chat-media-tasks'
+import {createChatMediaReviewSourceV1} from '../character-interaction/media-selection'
+import {readChatMediaAuthorConfirmationV1} from './chat-media-authority'
 import {readChatOpeningProductionVersionV1} from '../character-interaction/opening-production-binding'
 import {chatOpeningReviewPromptV1, createChatOpeningReviewV1} from '../character-interaction/situation-production-review'
 import { parseTextAdventureQuestScriptArtifact, textAdventureQuestRecipientsV3 } from '../adventure/quest-settlement'
@@ -2631,7 +2635,7 @@ function parseProductModule(value: unknown, brief: ProductProductionBriefV3): Ac
 }
 
 function expectedVisualKeys(brief: ProductProductionBriefV3): string[] {
-  if (!['avg', 'ttrpg', 'ai-town', 'text-adventure'].includes(brief.intent.productType)
+  if (!['avg', 'ttrpg', 'ai-town', 'text-adventure', 'character-interaction'].includes(brief.intent.productType)
     || brief.media.imageCount < 1) return []
   return Array.from({ length: brief.media.imageCount }, (_, index) => `media.visual.${String(index + 1).padStart(3, '0')}`)
 }
@@ -3130,6 +3134,7 @@ export function parseProductMediaRequirementsArtifactV2(
   const allowedCharacterAnchors = new Set([
     'intent:protagonist',
     ...productCharacterKeys(brief),
+    ...(brief.characterChat?.version === 3 ? brief.characterChat.visuals?.characters.map(character => character.characterKey) ?? [] : []),
     ...characterAnchors.flatMap(anchor => [anchor.characterKey, ...(anchor.sourceResourceKey ? [anchor.sourceResourceKey] : [])]),
   ])
   const textAdventureBlueprints = brief.intent.productType === 'text-adventure'
@@ -3259,7 +3264,8 @@ export function parseProductMediaRequirementsArtifactV2(
         ))
         .map(character => [character.characterKey, character] as const)),
     ).values()]
-    const requiredCharacterConstraints = [...new Set([
+    const requiredCharacterConstraints = brief.intent.productType === 'character-interaction'
+      ? [...CHAT_PUBLIC_VISUAL_CONSTRAINTS_V1] : [...new Set([
       '保持角色身份、年龄段与核心视觉特征',
       ...(anchoredCharacters.length > 0
         ? anchoredCharacters.flatMap(character => [
@@ -3381,6 +3387,10 @@ export function parseProductMediaRequirementsArtifactV2(
       && !visual.some(item => item.mediaKind === 'character-pose')) fail(`${brief.intent.productType} 视觉需求缺少 character-pose`)
     if (brief.media.requiredMediaKinds.includes('character-expression')
       && !visual.some(item => item.mediaKind === 'character-expression')) fail(`${brief.intent.productType} 视觉需求缺少 character-expression`)
+  }
+  if (brief.intent.productType === 'character-interaction' && visual.length) {
+    if (brief.characterChat?.version !== 3 || !brief.characterChat.visuals) fail('角色聊天缺少公开画面描述')
+    assertChatVisualRequirementsV1(value, brief.characterChat.visuals)
   }
   return { schema: 'storyforge.product-media-requirements-artifact', version: 2, visual, audio }
 }
@@ -8378,7 +8388,7 @@ async function executeVisualTask(input: ProductProductionTaskExecutionInputV1, o
         || reference === 'intent:protagonist' && character.role === 'player'
       ))
     )) ?? []
-    const characterFallback = requirementCharacters.length === 1
+    const characterFallback = options.brief.intent.productType === 'character-interaction' ? requirement.prompt : requirementCharacters.length === 1
       ? `单人角色锚点立绘，唯一角色：${requirementCharacters[0].name}，${requirementCharacters[0].publicIdentity}；视觉锚点：${requirementCharacters[0].visualAnchor}`
       : `单人角色锚点立绘，角色身份：${options.brief.intent.playerRole}`
     const governedPrompt = isAgnesCharacter
@@ -10187,6 +10197,16 @@ async function executeIntegrationTask(input: ProductProductionTaskExecutionInput
       runtimePackage.definition.enabledCapabilities.push('presentation')
     }
     if (runtimePackage.adventure?.version === 2) runtimePackage.adventure.media.assetKeys = assets.map(asset => asset.assetKey)
+  } else if (options.brief.intent.productType === 'character-interaction' && options.brief.media.imageCount > 0) {
+    if (!runtimePackage.interaction) fail('角色聊天图片缺少选定情境')
+    const source = createChatMediaReviewSourceV1(runtimePackage.interaction, assets)
+    if (canonicalProductProductionJsonV2(source) !== canonicalProductProductionJsonV2(artifactPayload(input, 'media.chat-review'))) fail('角色聊天图片审查与最终内容不一致')
+    runtimePackage.interaction.chatMedia = await readChatMediaAuthorConfirmationV1({
+      scope: input.scope, productionId: input.productionId, buildNumber: input.buildNumber, controlEpoch: input.controlEpoch,
+      source, value: artifactPayload(input, 'media.chat-selection'),
+    })
+    runtimePackage.presentation = {version: 1, cues: [], assets}
+    runtimePackage.definition.enabledCapabilities.push('presentation')
   } else if (assets.length > 0) fail('当前产品 adapter 不能把媒资接入 RuntimePackage')
   const parsed = parseProductRuntimePackageV1(runtimePackage)
   const ttrpgArtifacts: ProductProductionTaskArtifactV1[] = parsed.ttrpg ? [
@@ -10843,6 +10863,12 @@ export function createConfiguredProductProductionExecutorV1(input: {
     if (options.brief.characterChat?.version === 3 && request.task.executionMode === 'deterministic'
       && ['content.design', 'content.chat-author-gate', 'content.narrative'].includes(request.task.taskKey)) {
       return executeChatSituationDeterministicTaskV1(request, options)
+    }
+    if (options.brief.characterChat?.version === 3 && options.brief.media.imageCount > 0
+      && request.task.executionMode === 'deterministic'
+      && ['media.requirements', 'media.chat-review', 'media.chat-author-gate'].includes(request.task.taskKey)) {
+      return executeChatMediaDeterministicTaskV1(request, options,
+        request.inputArtifacts.filter(row => row.blobObjectId != null).map(row => mediaAsset(row).asset))
     }
     if (request.task.executionMode === 'model') return executeModelTask(request, options)
     if (request.task.taskKey === 'source.author-gate') {

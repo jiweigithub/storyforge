@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import {seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
-import {saveChatComposerDraftV1, readChatComposerDraftV1, commitInteractionPlayerMessage, readProductRuntimeStateVersion, readProductRuntimeState, branchProductRuntimeSession, deleteProductRuntimeSession} from '../../src/lib/character-interaction/runtime-api'
+import {saveChatComposerDraftV1, readChatComposerDraftV1, commitInteractionPlayerMessage, readProductRuntimeStateVersion, readProductRuntimeState, branchProductRuntimeSession, deleteProductRuntimeSession, leaveInteractionParticipant} from '../../src/lib/character-interaction/runtime-api'
 import {ChatComposerConflictError} from '../../src/lib/character-interaction/composer-draft-contract'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {assembleContext} from '../../src/lib/registry/assemble-context'
@@ -123,5 +123,53 @@ it('imports older backups without inventing drafts and rejects cross-product dra
   const projectId = await importProjectJSON(backup)
   const session = (await db.productRuntimeSessions.where('projectId').equals(projectId).first())!
   expect(await readChatComposerDraftV1({projectId, workId: session.workId, worldId: session.worldId}, session.id!)).toBeNull()
+  expect(await readChatComposerDraftV1(f.scope, f.sessionId)).toEqual(f.draft)
+})
+
+it('binds private recipients to the saved text, rejects widened or stale sends and preserves the recipient after send', async () => {
+  const f = await ready('只对守卫说的话')
+  const audienceKeys = ['guard']
+  const saving = saveChatComposerDraftV1({...f, expectedRevision: 1, text: f.draft.text, audienceKeys})
+  audienceKeys.push('artisan')
+  const saved = await saving
+  expect(saved.audienceKeys).toEqual(['guard'])
+  const binding = {...f.command.composerDraft, revision: 2, audienceKeys: ['guard']}
+  for (const command of [f.command, {...f.command, composerDraft: binding},
+    {...f.command, audienceKeys: ['guard'], composerDraft: {...binding, audienceKeys: null}}]) {
+    await expect(commitInteractionPlayerMessage(command)).rejects.toBeInstanceOf(ChatComposerConflictError)
+  }
+  expect((await readProductRuntimeState(f.sessionId)).interaction!.messages).toHaveLength(0)
+  expect(await readChatComposerDraftV1(f.scope, f.sessionId)).toEqual(saved)
+  await commitInteractionPlayerMessage({...f.command, audienceKeys: ['guard'], composerDraft: binding})
+  expect((await readProductRuntimeState(f.sessionId)).interaction!.messages[0].audienceKeys).toEqual(['player', 'guard'])
+  expect(await readChatComposerDraftV1(f.scope, f.sessionId)).toMatchObject({text: '', audienceKeys: ['guard'], revision: 3})
+})
+it('does not widen a private draft through a text-only save and requires an explicit public selection', async () => {
+  const f = await ready()
+  await saveChatComposerDraftV1({...f, expectedRevision: 1, text: '私聊内容', audienceKeys: ['guard']})
+  expect(await saveChatComposerDraftV1({...f, expectedRevision: 2, text: '修改私聊内容'})).toMatchObject({audienceKeys: ['guard']})
+  expect(await saveChatComposerDraftV1({...f, expectedRevision: 3, text: '改为在场人可见', audienceKeys: null})).toMatchObject({audienceKeys: null})
+})
+it('retains private drafts through absence, reopening and import without granting an absent role a message', async () => {
+  const f = await ready(), v = await readProductRuntimeStateVersion(f.sessionId)
+  await leaveInteractionParticipant({sessionId: f.sessionId, commandId: 'draft-recipient-leaves', baseSequence: v.sequence, baseStateHash: v.stateHash, participantKey: 'guard'})
+  const saved = await saveChatComposerDraftV1({...f, expectedRevision: 1, text: '等守卫回来再说', audienceKeys: ['guard']})
+  const version = await readProductRuntimeStateVersion(f.sessionId)
+  await expect(commitInteractionPlayerMessage({...f.command, baseSequence: version.sequence, baseStateHash: version.stateHash,
+    text: saved.text, audienceKeys: ['guard'], composerDraft: {...f.command.composerDraft, text: saved.text, revision: 2, audienceKeys: ['guard']}})).rejects.toThrow('当前在场')
+  db.close(); await db.open()
+  expect(await readChatComposerDraftV1(f.scope, f.sessionId)).toEqual(saved)
+  const projectId = await importProjectJSON(await exportProjectJSON(f.scope.projectId))
+  const session = (await db.productRuntimeSessions.where('projectId').equals(projectId).first())!
+  expect(await readChatComposerDraftV1({projectId, worldId: session.worldId, workId: session.workId}, session.id!)).toEqual(saved)
+  expect((await readProductRuntimeState(session.id!)).interaction!.messages).toHaveLength(0)
+})
+it.each([[], ['guard', 'guard'], ['player'], ['foreign'], [' guard']].map(audienceKeys => ({audienceKeys})))('rejects invalid draft recipients in saves and imports without partial writes: $audienceKeys', async ({audienceKeys}) => {
+  const f = await ready()
+  await expect(saveChatComposerDraftV1({...f, expectedRevision: 1, text: 'bad', audienceKeys})).rejects.toThrow('草稿')
+  const backup = await exportProjectJSON(f.scope.projectId), count = await db.projects.count()
+  backup.productRuntimeSessions[0].chatComposerDraft = {...f.draft, audienceKeys}
+  await expect(importProjectJSON(backup)).rejects.toThrow('草稿')
+  expect(await db.projects.count()).toBe(count)
   expect(await readChatComposerDraftV1(f.scope, f.sessionId)).toEqual(f.draft)
 })

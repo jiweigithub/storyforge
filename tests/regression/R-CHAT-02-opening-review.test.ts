@@ -2,6 +2,7 @@ import {afterEach, beforeEach, expect, it} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import {assertChatOpeningReviewedV1, createChatOpeningReviewV1, parseChatOpeningReviewDraftV1, readChatOpeningReviewV1} from '../../src/lib/character-interaction/situation-production-review'
 import {chatOpeningAgencyReviewFixture, chatOpeningReviewFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
+import {seedIllustratedChatBriefFixture} from '../helpers/chat-media-production-fixture'
 import {createProductProductionPlanV3} from '../../src/lib/product-production/plan'
 import {hashProductProductionValueV2} from '../../src/lib/product-production/hash'
 import {draftProductProductionBriefV3, suggestProductStartingPoints} from '../../src/lib/product-production/consultation'
@@ -10,6 +11,7 @@ import {productProductionTaskUsesWorldGatewayV1} from '../../src/lib/product-pro
 import {verifyChatNarrativeShellV1} from '../../src/lib/product-production/chat-situation-tasks'
 import {selectChatNarrativeCandidateV1, chatNarrativeShellV1} from '../../src/lib/character-interaction/narrative-production'
 import type {ProductProductionTaskExecutionInputV1} from '../../src/lib/product-production/scheduler'
+import type {ChatAuthoringSettingsV3} from '../../src/lib/character-interaction/authoring-contract'
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => db.close())
@@ -69,14 +71,29 @@ it('registers the review between creation and author choice, and requires the sa
   await expect(verifyChatNarrativeShellV1(legacy)).resolves.toMatchObject({content})
 })
 
-it.each([['key-scenes', 'none'], ['none', 'music-sfx'], ['illustrated', 'full']] as const)('keeps opening review inside the authorized budget with visual=%s audio=%s', async (visualLevel, audioLevel) => {
-  const f = await seedChatNarrativeProductionFixture()
+it.each([['key-scenes', 'none'], ['none', 'music-sfx'], ['key-scenes', 'full']] as const)('keeps opening review inside the authorized budget with visual=%s audio=%s', async (visualLevel, audioLevel) => {
+  // Picture production requires the author's public descriptions; device speech
+  // remains outside the production media budget even when generic audio is requested.
+  const f = visualLevel === 'none' ? await seedChatNarrativeProductionFixture() : await seedIllustratedChatBriefFixture()
   const starting = await suggestProductStartingPoints({scope: f.scope, worldReleaseId: f.confirmed.worldReleaseId!})
   const brief = await draftProductProductionBriefV3({scope: f.scope, worldReleaseId: f.confirmed.worldReleaseId!, suggestionKey: starting.suggestions[0].suggestionKey,
     productType: 'character-interaction', characterChat: f.settings, playerRole: f.settings.playerRole, openingSituation: f.settings.openingSituation, visualLevel, audioLevel})
+  expect(brief.media).toMatchObject({visualLevel, audioLevel: 'none', imageCount: visualLevel === 'none' ? 0 : 2})
   const before = structuredClone(brief.productionBudget)
   const plan = await createProductProductionPlanV3({brief, briefHash: await hashProductProductionValueV2(brief), buildNumber: 1})
+  expect(plan.tasks.some(task => task.taskKey === 'content.chat-opening-review')).toBe(true)
   expect(brief.productionBudget).toEqual(before)
   expect(plan.tasks.reduce((sum, task) => sum + task.budgetReservation.inputTokens, 0)).toBeLessThanOrEqual(before.maximumInputTokens)
   expect(plan.tasks.reduce((sum, task) => sum + task.budgetReservation.durationMs, 0)).toBeLessThanOrEqual(before.maximumDurationMs)
+})
+
+it.each(['missing-public-descriptions', 'unsupported-illustrated-level'] as const)('rejects invalid visual production before assigning an opening budget: %s', async invalid => {
+  const f = await seedIllustratedChatBriefFixture(), settings: ChatAuthoringSettingsV3 = structuredClone(f.settings)
+  if (invalid === 'missing-public-descriptions') delete settings.visuals
+  const starting = await suggestProductStartingPoints({scope: f.scope, worldReleaseId: f.confirmed.worldReleaseId!})
+  await expect(draftProductProductionBriefV3({scope: f.scope, worldReleaseId: f.confirmed.worldReleaseId!,
+    suggestionKey: starting.suggestions[0].suggestionKey, productType: 'character-interaction', characterChat: settings,
+    playerRole: settings.playerRole, openingSituation: settings.openingSituation,
+    visualLevel: invalid === 'unsupported-illustrated-level' ? 'illustrated' : 'key-scenes', audioLevel: 'none'}))
+    .rejects.toThrow('[chat-visual-intent]')
 })

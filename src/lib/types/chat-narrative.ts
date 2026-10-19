@@ -321,6 +321,12 @@ export interface ChatNarrativeTriggerStateV1 {
 export interface ChatTurnDirectionV1 {
   actorKey: string
   actionLimit: number
+  /** New explicit turns may settle the last reviewed direction without another action. */
+  settleSituationVersion?: 1
+  /** Explicit conversation scope for new turns; cannot be widened by a candidate. */
+  audienceParticipantKeys?: string[]
+  /** Missing on historical turns; old narrowed turns retain conservative scene boundaries. */
+  conversationMode?: 'private' | 'present'
   /** Absent on historical/manual turns. The pool is frozen for this trigger. */
   scheduling?: {mode: 'natural' | 'round-robin'; participantKeys: string[]}
 }

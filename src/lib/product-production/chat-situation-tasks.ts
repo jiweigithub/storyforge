@@ -50,7 +50,7 @@ export async function executeChatSituationDeterministicTaskV1(input: ProductProd
     const projected = prepareChatNarrativeCompilerSourceV1({brief: options.brief, sourceCatalog})
     // Raw authored prose can be unclassified or author-only. Only the reviewed
     // projection may enter a production model's input, including for new cast.
-    const {privateCharacters: _privateCharacters, ...reviewedSettings} = settings
+    const {privateCharacters: _privateCharacters, visuals: _visuals, experienceInfo: _experienceInfo, ...reviewedSettings} = settings
     const source: ChatNarrativeProductionSourceV1 = {
       schema: 'storyforge.chat-narrative-production-source', version: 1, settings: reviewedSettings,
       source: projected.content,

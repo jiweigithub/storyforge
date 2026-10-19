@@ -71,9 +71,10 @@ it('freezes a private audience and rejects a forged wider scheduler before any m
   const sent = await commitInteractionPlayerMessage({...await command(f.sessionId), messageId: 'private', text: '只和守卫讨论铜印。', audienceKeys: ['guard', 'player']})
   await expect(requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'player-response', sourceEventSequence: sent.sequence,
     direction: {actorKey: 'guard', actionLimit: 3, scheduling: {mode: 'natural', participantKeys: ['guard', 'artisan']}}})).rejects.toThrow('听不到')
-  const spy = mock()
+  const spy = mock((_key, draft) => ({...draft, audienceKeys: ['guard', 'player']}))
   await advanceChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, kind: 'player-response', replyToSequence: sent.sequence, expectedSequence: sent.sequence, schedulingMode: 'natural', actionLimit: 2, aiConfig: {} as never})
   expect(spy.mock.calls.map(([input]) => input.participantKey)).toEqual(['guard', 'guard'])
+  expect((await readProductRuntimeState(f.sessionId)).interaction!.messages.every(message => !message.audienceKeys!.includes('artisan'))).toBe(true)
 })
 
 it('checks the computed next actor in both Harness generation and deterministic adoption', async () => {

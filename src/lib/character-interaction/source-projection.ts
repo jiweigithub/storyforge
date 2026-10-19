@@ -211,7 +211,7 @@ export async function createChatSourceProjectionDraftV1(input: {
   const characters: ChatSourceProjectionDraftV1['characters'] = await Promise.all([...input.characterResourceKeys].sort().map(key => project(key, true)))
   for (const character of authored.slice().sort((a, b) => a.characterKey.localeCompare(b.characterKey))) {
     if (byKey.has(character.characterKey) || input.characterResourceKeys.includes(character.characterKey) || input.playerCharacterKey === character.characterKey) fail('体验新角色不能借用世界或玩家身份')
-    const {characterKey, ...content} = character
+    const {characterKey, cardOrigin: _cardOrigin, ...content} = character
     const hash = hashCanonicalValue(character)
     characters.push({resourceKey: characterKey, sourceHash: Dexie.currentTransaction ? await Dexie.waitFor(hash) : await hash,
       origin: 'product-private', label: character.name,

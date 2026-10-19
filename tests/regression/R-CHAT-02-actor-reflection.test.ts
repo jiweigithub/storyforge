@@ -142,15 +142,15 @@ it('keeps the global hypothesis limit and closes old plans when all goals are co
 describe('durable role reflection', () => {
   beforeEach(async () => {db.close(); await db.delete(); await db.open()})
   afterEach(() => db.close())
-  async function prepared(additionalGuardGoal = false) {
+  async function prepared(additionalGuardGoal = false, publicConversation = false) {
     const f = await seedChatNarrativeRuntimeFixture({additionalGuardGoal})
     const envelope = async (commandId: string) => {const v = await readProductRuntimeStateVersion(f.sessionId); return {sessionId: f.sessionId, commandId, baseSequence: v.sequence, baseStateHash: v.stateHash}}
-    const player = await commitInteractionPlayerMessage({...await envelope('player'), messageId: 'player', text: '我不想查后门，先休息。', audienceKeys: ['guard']})
+    const player = await commitInteractionPlayerMessage({...await envelope('player'), messageId: 'player', text: '我不想查后门，先休息。', audienceKeys: publicConversation ? null : ['guard']})
     await requestChatNarrativeTrigger({...await envelope('trigger'), kind: 'player-response', sourceEventSequence: player.sequence})
     return {...f, envelope}
   }
   it('recovers and adopts the whole closure once, with goal provenance intact through branch/export/import', async () => {
-    const f = await prepared(true), action = closureResponse(); let runId = 0
+    const f = await prepared(true, true), action = closureResponse(); let runId = 0
     await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '收束相关目标',
       runAI: async () => JSON.stringify(action), onNarrativeActionSaved: id => {runId = id; throw new Error('host-crash')}})).rejects.toThrow('host-crash')
     db.close(); await db.open()
@@ -159,6 +159,7 @@ describe('durable role reflection', () => {
     await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
     const saved = (await readProductRuntimeState(f.sessionId)).interaction!
     expect(saved.messages.filter(m => m.role === 'character')).toHaveLength(1)
+    expect(saved.messages.find(m => m.role === 'player')).toMatchObject({playerConversation: 'present', audienceKeys: ['player', 'guard', 'artisan']})
     expect(saved.chatNarrative!.situation.goals.filter(g => g.actorKey === 'guard').every(g => g.status === 'fulfilled' && g.updatedSequence === adopted.event!.sequence)).toBe(true)
     const branch = await branchProductRuntimeSession({parentSessionId: f.sessionId, throughSequence: adopted.event!.sequence, title: '目标收束'})
     const expected = (await readProductRuntimeState(branch.id!)).interaction!.chatNarrative!
