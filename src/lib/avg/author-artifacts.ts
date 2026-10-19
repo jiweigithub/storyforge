@@ -17,6 +17,9 @@ import { validateAvgSystemPlanForAuthorV1, type AvgSystemValidationV1 } from './
 import { buildAvgNativeAssemblyPlan } from './assembly-plan'
 import { buildAvgVisualPlanningPlanV4 } from './visual-planning-plan'
 import { buildAvgVisualPlanningPlanV5 } from './visual-planning-plan-v5'
+import { buildAvgSoundProductionPlanV1, AVG_SOUND_PLAN_KEY_V1, AVG_SOUND_PROPOSAL_KEY_V1 } from './sound-production-plan'
+import { assertAvgSoundRoleProposalV1, validateAvgSoundPlanSemanticV1 } from './sound-role-proposal'
+import { readAvgSoundProposalEvidenceV1 } from './sound-planning-evidence'
 import { parseAvgAuthorMediaChoice, avgMediaChoiceArtifactKeyV1, avgVisualReviewArtifactKeyV1, type AvgAuthorMediaChoice, type AvgVisualProductionRequirementV1 } from './media-production-contract'
 import { inspectAvgChosenImageV1, inspectAvgChosenImageBytesV1, validateAvgMediaChoiceV1, type AvgMediaChoiceValidation } from './media-choice-validation'
 import type { AvgInspectedProcessedImageV1 } from './image-processing-source'
@@ -54,7 +57,9 @@ interface AuthorCandidateBase {
 }
 type AuthorCandidateBody = AuthorCandidateBase & ({ version: 1 } | { version: 2; systemValidation: AvgSystemValidationV1 } | { version: 3; assemblyValidation: AvgAssemblyValidationV1 }
   | { version: 4; mediaChoiceValidation: AvgMediaChoiceValidation } | { version: 5; voiceChoiceValidation: AvgVoiceChoiceValidationV1 }
-  | { version: 6 | 7; visualProposalValidation: AvgVisualProposalValidationV4 })
+  | { version: 6 | 7; visualProposalValidation: AvgVisualProposalValidationV4 }
+  | { version: 8; soundProposalValidation: AvgSoundProposalValidationV1 })
+interface AvgSoundProposalValidationV1 { proposal: Ref; scopeHash: string; originalPayloadHash: string; authorEdited: boolean }
 interface AvgVisualProposalValidationV4 { proposal: Ref; scopeHash: string; originalPayloadHash: string; authorEdited: boolean; reuseSourceHash?:string }
 type AuthorCandidate = AuthorCandidateBody & { candidateHash: string }
 type AdoptCommand = Extract<ProductProductionCommandV1, { type: 'adopt-avg-artifact' }>
@@ -68,9 +73,9 @@ async function mediaProofTables(buildId: number, withStageSources = false) {
   const row = build ? await db.productProductionBriefs.where('[productionId+revision]').equals([build.productionId, build.briefRevision]).first() : null
   // Only chooses transaction tables; authority() rechecks the actual frozen
   // scope/Brief/hash inside the transaction before any read or write grant.
-  const stored = row && JSON.parse(row.briefJson) as { avgAssembly?: { version?: number }; avgVisualPlanning?: unknown }
+  const stored = row && JSON.parse(row.briefJson) as { avgAssembly?: { version?: number }; avgVisualPlanning?: unknown; avgSoundPlanning?: unknown }
   const version = stored?.avgAssembly?.version
-  const media = withStageSources || version === 2 || version === 3 || !!stored?.avgVisualPlanning
+  const media = withStageSources || version === 2 || version === 3 || !!stored?.avgVisualPlanning || !!stored?.avgSoundPlanning
   return media ? [db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts] : []
 }
 
@@ -218,7 +223,7 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
     || briefRow.briefHash !== build.briefHash || !frozenVerification && !referenceRead && production.currentBriefRevision !== build.briefRevision) throw new Error('[avg] Brief 授权已 stale')
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
   if (brief.intent.productType !== 'avg' || await hash(brief) !== build.briefHash) throw new Error('[avg] Brief 内容/hash 不一致')
-  if (frozenVerification && !brief.avgAssembly&&!brief.avgVisualPlanning) throw new Error('[avg] 只读作者验证只接受原生组装合同')
+  if (frozenVerification && !brief.avgAssembly&&!brief.avgVisualPlanning&&!brief.avgSoundPlanning) throw new Error('[avg] 只读作者验证只接受原生组装合同')
   if (referenceRead && referenceKind === 'image' && !readAvgOptionalImageDefinitionV3(brief)) throw new Error('[avg-media] 生成参考只接受原生图片生产来源')
   if (referenceRead && referenceKind === 'voice' && brief.avgAssembly?.version !== 3) throw new Error('[avg-voice] 沿用配音只接受原生配音生产来源')
   if (referenceRead && referenceKind === 'visual' && brief.avgVisualPlanning?.version!==4) throw new Error('[avg-visual-history] 历史专业方案只接受准确 V4 来源')
@@ -244,7 +249,7 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
     || canonicalProductProductionJsonV2(plan) !== build.planJson) throw new Error('[avg] 冻结 Plan/hash 已 stale')
   if (frozenVerification || referenceRead) {
     const input={brief,briefHash:build.briefHash,buildNumber:build.buildNumber,controlEpoch:sourceEpoch}
-    const expected=brief.avgVisualPlanning?.version===5?buildAvgVisualPlanningPlanV5({...input,brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning}}):brief.avgVisualPlanning?.version===4?buildAvgVisualPlanningPlanV4({...input,brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning}}):buildAvgNativeAssemblyPlan(input)
+    const expected=brief.avgSoundPlanning?buildAvgSoundProductionPlanV1(input):brief.avgVisualPlanning?.version===5?buildAvgVisualPlanningPlanV5({...input,brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning}}):brief.avgVisualPlanning?.version===4?buildAvgVisualPlanningPlanV4({...input,brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning}}):buildAvgNativeAssemblyPlan(input)
     if(canonicalProductProductionJsonV2(expected)!==build.planJson)throw new Error('[avg] 原生作者 Plan 不是冻结的固定组装拓扑')
   }
   return { scope,build, production: production as ProductProductionRecordV1 & { id: number }, briefRow, brief, plan, sourcePlan,reusePath:[] as AvgVisualReusePathV4 }
@@ -255,11 +260,12 @@ async function acceptedInputs(scope: WorkspaceScope, buildId: number, epoch: num
   const result: ProductBuildArtifactRecordV1[] = []
   for (const key of keys) {
     const matches = rows.filter(row => row.artifactKey === key && row.status === 'accepted' && row.controlEpoch === epoch)
-    if (key.startsWith('avg.media.raw.')||key.startsWith('avg.media.processed.')||key.startsWith('avg.voice.raw.')||key.startsWith('avg.proposal.')||key==='avg.media.compiled-visual-requirements') {
+    if (key.startsWith('avg.media.raw.')||key.startsWith('avg.media.processed.')||key.startsWith('avg.voice.raw.')||key.startsWith('avg.proposal.')||key==='avg.media.compiled-visual-requirements'||key==='avg.media.compiled-sound-requirements') {
       const row = matches[0]
       if (matches.length !== 1 || !row) throw new Error('[avg-media] 原图未准确接收')
       const verified = await verifyAcceptedProductBuildArtifactV1({ scope, buildId, artifactKey: key, version: row.version, contentHash: row.contentHash })
-      if (key.startsWith('avg.proposal.')) await readAvgVisualProposalEvidence(scope, verified)
+      if (key === AVG_SOUND_PROPOSAL_KEY_V1) await readAvgSoundProposalEvidenceV1(scope, verified)
+      else if (key.startsWith('avg.proposal.')) await readAvgVisualProposalEvidence(scope, verified)
       result.push(verified)
       continue
     }
@@ -291,9 +297,10 @@ function authorTask(context: Awaited<ReturnType<typeof authority>>, taskKey: str
     || task.outputArtifactKeys.length !== 1 || task.outputArtifactKeys[0] !== artifactKey
     || task.budgetReservation.modelCalls !== 0 || task.budgetReservation.mediaCalls !== 0) throw new Error('[avg] 候选超出冻结的作者输入写域')
   if(['avg-author-visual-review','avg-author-voice-review'].includes(task.kind)&&Object.prototype.hasOwnProperty.call((JSON.parse(context.build.budgetLedgerJson) as {tasks?:object}).tasks??{},task.taskKey))throw new Error('[avg-review] 评审已被执行消费；修订须新建 Build')
-  if (!readOnly && context.brief.avgVisualPlanning && ['avg-author-rules', 'avg-author-script'].includes(task.kind)
+  if (!readOnly && (context.brief.avgVisualPlanning || context.brief.avgSoundPlanning) && ['avg-author-rules', 'avg-author-script'].includes(task.kind)
     && Object.keys((JSON.parse(context.build.budgetLedgerJson) as { tasks?: object }).tasks ?? {}).length) throw new Error('[avg-visual-plan] 正式来源已进入生产，规则或脚本修订须新建 Build')
-  if (!readOnly && context.brief.avgVisualPlanning && ['avg-author-visual-bible', 'avg-author-media-brief'].includes(task.kind)) {
+  if (!readOnly && (context.brief.avgVisualPlanning && ['avg-author-visual-bible', 'avg-author-media-brief'].includes(task.kind)
+    || context.brief.avgSoundPlanning && task.kind === 'avg-author-sound-plan')) {
     const ledger = (JSON.parse(context.build.budgetLedgerJson) as { tasks?: Record<string, unknown> }).tasks ?? {}
     if (context.plan.tasks.some(t => t.executionMode !== 'human-import' && t.inputArtifactKeys.includes(artifactKey) && ledger[t.taskKey])) throw new Error('[avg-visual-plan] 视觉方案已被下游执行消费；修订须新建 Build')
   }
@@ -306,7 +313,7 @@ function authorTask(context: Awaited<ReturnType<typeof authority>>, taskKey: str
 }
 
 function assertSourceReferences(context: Awaited<ReturnType<typeof authority>>, payload: AuthorPayload) {
-  const expected = context.brief.avgAssembly ?? context.brief.avgVisualPlanning?.assembly
+  const expected = context.brief.avgAssembly ?? context.brief.avgVisualPlanning?.assembly ?? context.brief.avgSoundPlanning?.assembly
   if (expected) {
     const same = (a: string[], b: string[]) => canonicalProductProductionJsonV2([...a].sort()) === canonicalProductProductionJsonV2([...b].sort())
     if (payload.schema === 'storyforge.avg.system-plan' && !same(expected.sceneKeys, payload.scenes.map(scene => scene.key))
@@ -416,16 +423,16 @@ async function readCurrentChoiceVisualReview(context:Awaited<ReturnType<typeof a
 
 function candidateBody(context: Awaited<ReturnType<typeof authority>>, input: {
   taskKey: string; artifactKey: string; kind: ProductBuildArtifactRecordV1['kind']; payloadHash: string
-  base: Ref | null; inputs: Ref[]; declaration: string; systemValidation?: AvgSystemValidationV1; assemblyValidation?: AvgAssemblyValidationV1; mediaChoiceValidation?: AvgMediaChoiceValidation; voiceChoiceValidation?: AvgVoiceChoiceValidationV1; visualProposalValidation?: AvgVisualProposalValidationV4
+  base: Ref | null; inputs: Ref[]; declaration: string; systemValidation?: AvgSystemValidationV1; assemblyValidation?: AvgAssemblyValidationV1; mediaChoiceValidation?: AvgMediaChoiceValidation; voiceChoiceValidation?: AvgVoiceChoiceValidationV1; visualProposalValidation?: AvgVisualProposalValidationV4; soundProposalValidation?: AvgSoundProposalValidationV1
 }): AuthorCandidateBody {
-  const { systemValidation, assemblyValidation, mediaChoiceValidation, voiceChoiceValidation, visualProposalValidation, ...payload } = input
-  const base: AuthorCandidateBase = { schema: 'storyforge.avg.author-candidate', origin: visualProposalValidation?.reuseSourceHash?'history-reuse':visualProposalValidation ? 'model-proposal' : 'author-import',
+  const { systemValidation, assemblyValidation, mediaChoiceValidation, voiceChoiceValidation, visualProposalValidation, soundProposalValidation, ...payload } = input
+  const base: AuthorCandidateBase = { schema: 'storyforge.avg.author-candidate', origin: visualProposalValidation?.reuseSourceHash?'history-reuse':visualProposalValidation || soundProposalValidation ? 'model-proposal' : 'author-import',
     productionKey: context.production.productionKey, buildNumber: context.build.buildNumber,
     briefRevision: context.build.briefRevision, briefHash: context.build.briefHash,
     confirmedBriefHash: context.briefRow.confirmedBriefHash, sourcePlanHash: context.briefRow.sourcePlanHash,
     planRevision: context.build.planRevision, planHash: context.build.planHash, controlEpoch: context.build.controlEpoch,
     ...payload }
-  return visualProposalValidation ? { ...base, version: visualProposalValidation.reuseSourceHash?7:6, visualProposalValidation } : voiceChoiceValidation ? { ...base, version: 5, voiceChoiceValidation } : mediaChoiceValidation ? { ...base, version: 4, mediaChoiceValidation } : assemblyValidation ? { ...base, version: 3, assemblyValidation } : systemValidation ? { ...base, version: 2, systemValidation } : { ...base, version: 1 }
+  return soundProposalValidation ? { ...base, version: 8, soundProposalValidation } : visualProposalValidation ? { ...base, version: visualProposalValidation.reuseSourceHash?7:6, visualProposalValidation } : voiceChoiceValidation ? { ...base, version: 5, voiceChoiceValidation } : mediaChoiceValidation ? { ...base, version: 4, mediaChoiceValidation } : assemblyValidation ? { ...base, version: 3, assemblyValidation } : systemValidation ? { ...base, version: 2, systemValidation } : { ...base, version: 1 }
 }
 
 async function validateVisualProposal(context: Awaited<ReturnType<typeof authority>>, payload: AuthorPayload, artifactKey: string, inputs: ProductBuildArtifactRecordV1[]) {
@@ -444,6 +451,21 @@ async function validateVisualProposal(context: Awaited<ReturnType<typeof authori
   return { proposal: ref(original), scopeHash: proposal.scopeHash, originalPayloadHash: await hash(modelPayload),
     authorEdited: canonicalProductProductionJsonV2(payload) !== canonicalProductProductionJsonV2(modelPayload),
     ...(evidence?.reused?{reuseSourceHash:await hash(evidence.source)}:{}) }
+}
+
+async function validateSoundProposal(context: Awaited<ReturnType<typeof authority>>, payload: AuthorPayload, artifactKey: string, inputs: ProductBuildArtifactRecordV1[]) {
+  if (payload.schema !== 'storyforge.avg.sound-plan') return undefined
+  const sound = context.brief.avgSoundPlanning
+  if (!sound || artifactKey !== AVG_SOUND_PLAN_KEY_V1) throw new Error('[avg-sound-plan] 作者声音计划不能借用其他Brief/写域')
+  const originals = inputs.filter(r => r.artifactKey === AVG_SOUND_PROPOSAL_KEY_V1)
+  if (originals.length !== 1) throw new Error('[avg-sound-plan] 作者采用必须绑定唯一实际声音模型方案')
+  const original = originals[0], task = context.plan.tasks.find(t => t.outputArtifactKeys.includes(original.artifactKey))
+  if (!task || original.producerRunId === null || original.producerReceiptHash === null) throw new Error('[avg-sound-plan] 原声音方案缺少准确producer')
+  const proposal = await assertAvgSoundRoleProposalV1(original.payloadJson, task, sound.scope)
+  await readAvgSoundProposalEvidenceV1(context.scope, original)
+  await validateAvgSoundPlanSemanticV1(payload, sound.scope)
+  return { proposal: ref(original), scopeHash: proposal.scopeHash, originalPayloadHash: await hash(proposal.payload),
+    authorEdited: canonicalProductProductionJsonV2(payload) !== canonicalProductProductionJsonV2(proposal.payload) }
 }
 
 /** Stores only a pending candidate, never an author receipt or accepted content.
@@ -486,9 +508,10 @@ export async function stageAvgAuthorArtifactV1(input: {
       ? await validateAvgMediaChoiceV1({ scope, buildId: input.buildId, brief: context.brief, choice: prepared.payload }) : undefined
     const voiceChoiceValidation = await validateVoiceChoice(context, scope, prepared.payload)
     const visualProposalValidation = await validateVisualProposal(context, prepared.payload, artifactKey, inputs)
+    const soundProposalValidation = await validateSoundProposal(context, prepared.payload, artifactKey, inputs)
     const contentHash = await hash(prepared.payload)
     const body = candidateBody(context, { taskKey, artifactKey, kind: input.kind, payloadHash: contentHash,
-      base, inputs: inputs.map(ref), declaration, systemValidation, assemblyValidation, mediaChoiceValidation, voiceChoiceValidation, visualProposalValidation })
+      base, inputs: inputs.map(ref), declaration, systemValidation, assemblyValidation, mediaChoiceValidation, voiceChoiceValidation, visualProposalValidation, soundProposalValidation })
     const candidateHash = await hash(body)
     const metadataJson = canonicalProductProductionJsonV2({ ...body, candidateHash } satisfies AuthorCandidate)
     const existing = rows.find(row => row.artifactKey === artifactKey && row.status === 'pending' && row.metadataJson === metadataJson)
@@ -542,9 +565,10 @@ async function prepareAdoption(scope: WorkspaceScope, production: ProductProduct
     ? await validateAvgMediaChoiceV1({ scope, buildId: build.id, brief: context.brief, choice: prepared.payload }) : undefined
   const voiceChoiceValidation = await validateVoiceChoice(context, scope, prepared.payload)
   const visualProposalValidation = await validateVisualProposal(context, prepared.payload, candidate.artifactKey, inputs)
+  const soundProposalValidation = await validateSoundProposal(context, prepared.payload, candidate.artifactKey, inputs)
   const body = candidateBody(context, { taskKey: task.taskKey, artifactKey: candidate.artifactKey, kind: candidate.kind,
     payloadHash: await hash(prepared.payload), base: bases[0] ? ref(bases[0]) : null, inputs: inputs.map(ref),
-    declaration: avgText(envelope.declaration, 'author declaration', 2000), systemValidation, assemblyValidation, mediaChoiceValidation, voiceChoiceValidation, visualProposalValidation })
+    declaration: avgText(envelope.declaration, 'author declaration', 2000), systemValidation, assemblyValidation, mediaChoiceValidation, voiceChoiceValidation, visualProposalValidation, soundProposalValidation })
   const candidateHash = await hash(body)
   if (candidateHash !== command.candidateHash || envelope.candidateHash !== candidateHash
     || canonicalProductProductionJsonV2({ ...body, candidateHash }) !== candidate.metadataJson
@@ -592,7 +616,7 @@ async function assertFrozenAuthorCandidateV1(context: Awaited<ReturnType<typeof 
   const envelope = JSON.parse(row.metadataJson) as { candidate: AuthorCandidate }
   const { candidateHash, ...body } = envelope.candidate
   if (row.producerRunId !== null || row.producerReceiptHash !== null || row.carriedFrom !== null
-    || body.schema !== 'storyforge.avg.author-candidate' || body.origin !== (body.version === 7?'history-reuse':body.version === 6 ? 'model-proposal' : 'author-import')
+    || body.schema !== 'storyforge.avg.author-candidate' || body.origin !== (body.version === 7?'history-reuse':[6,8].includes(body.version) ? 'model-proposal' : 'author-import')
     || body.productionKey !== context.production.productionKey || body.buildNumber !== context.build.buildNumber
     || body.briefRevision !== context.build.briefRevision || body.briefHash !== context.build.briefHash
     || body.confirmedBriefHash !== context.briefRow.confirmedBriefHash || body.sourcePlanHash !== context.briefRow.sourcePlanHash
@@ -606,6 +630,10 @@ async function assertFrozenAuthorCandidateV1(context: Awaited<ReturnType<typeof 
     ? await validateVisualProposal(context, parseAvgProfessionalArtifactV1(row.payloadJson), row.artifactKey, upstream) : undefined
   if ([6,7].includes(body.version) !== !!validation || validation && (!('visualProposalValidation' in body)
     ||body.version!==(validation.reuseSourceHash?7:6)||canonicalProductProductionJsonV2(body.visualProposalValidation) !== canonicalProductProductionJsonV2(validation))) throw new Error('[avg-visual-plan] 模型来源或作者修订证据不一致')
+  const soundValidation = task.kind === 'avg-author-sound-plan'
+    ? await validateSoundProposal(context, parseAvgProfessionalArtifactV1(row.payloadJson), row.artifactKey, upstream) : undefined
+  if ((body.version === 8) !== !!soundValidation || soundValidation && (!('soundProposalValidation' in body)
+    || canonicalProductProductionJsonV2(body.soundProposalValidation) !== canonicalProductProductionJsonV2(soundValidation))) throw new Error('[avg-sound-plan] 模型来源或作者声音修改凭证不一致')
   return envelope.candidate
 }
 
@@ -735,6 +763,24 @@ async function readAvgConfirmedVisualArtifacts(input: Pick<Parameters<typeof rea
       result.push({ payload, artifact: ref(row), authorReceiptHash: String(JSON.parse(row.metadataJson).receiptHash) })
     }
     return result
+  })
+}
+
+/** Current author-adopted sound plan with original model and author receipts.
+ * No metadata packet, caller-supplied plan or old adoption can substitute. */
+export async function readAvgConfirmedSoundPlanV1(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope' | 'buildId' | 'expectedBuildRevision' | 'controlEpoch'>) {
+  const scope = await resolveScope({ scope: input.scope })
+  return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands,
+    db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects, db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts), async () => {
+    const context = await authority(scope, input.buildId, true)
+    if (!context.brief.avgSoundPlanning || context.build.stateRevision !== input.expectedBuildRevision || context.build.controlEpoch !== input.controlEpoch) throw new Error('[avg-sound-plan] 声音采用来源或Build已stale')
+    const task = authorTask(context, 'avg.author.sound-plan', AVG_SOUND_PLAN_KEY_V1, true)
+    const [row] = await acceptedInputs(scope, input.buildId, input.controlEpoch, [AVG_SOUND_PLAN_KEY_V1])
+    const upstream = await acceptedInputs(scope, input.buildId, input.controlEpoch, task.inputArtifactKeys)
+    await assertFrozenAuthorCandidateV1(context, row, task, upstream, input.controlEpoch)
+    const payload = parseAvgProfessionalArtifactV1(row.payloadJson)
+    if (payload.schema !== 'storyforge.avg.sound-plan') throw new Error('[avg-sound-plan] 采用的声音schema无效')
+    return { payload, artifact: ref(row), authorReceiptHash: String(JSON.parse(row.metadataJson).receiptHash) }
   })
 }
 

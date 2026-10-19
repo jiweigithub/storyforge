@@ -3,6 +3,7 @@ import { createAvgAssemblyExecutorV1 } from '../avg/assembly-executor'
 import { parseProductionModelJsonObjectV1 } from './model-json-object'
 import { avgVisualPlanningExecutionReadyV4 } from '../avg/visual-planning-brief'
 import { avgVisualPlanningExecutionReadyV5 } from '../avg/visual-planning-brief-v5'
+import { avgSoundProductionExecutionReadyV1 } from '../avg/sound-production-brief'
 import { hasFrozenAuthorUploadRightsV1 } from './media-rights'
 import { TTRPG_SCENARIO_PROMPT_V1 } from '../ttrpg/scenario-prompt'
 import { parseTtrpgAuthoredScenarioV1, type TtrpgAuthoredScenarioV1 } from '../ttrpg/scenario-authoring'
@@ -10694,7 +10695,15 @@ export function createConfiguredProductProductionExecutorV1(input: {
   avgImageEndpointRouteHash?: string
   avgVoiceTransport?: Parameters<typeof createAvgAssemblyExecutorV1>[0]['voiceTransport']
 }): ProductProductionTaskExecutorV1 {
-  if (input.brief.avgSoundPlanning) throw new Error('[avg-sound] 声音实际生产、审听和采用闭环尚未接通，不能创建执行器或回退通用任务')
+  if (input.brief.avgSoundPlanning) {
+    if (!avgSoundProductionExecutionReadyV1()) throw new Error('[avg-sound] 声音实际生产、审听和采用闭环尚未接通，不能创建执行器或回退通用任务')
+    const options = { brief: structuredClone(input.brief), runText: input.runText ?? defaultTextRunner }
+    let executor: Promise<ProductProductionTaskExecutorV1> | undefined
+    return async request => {
+      executor ??= import('../avg/sound-planning-executor').then(module => module.createAvgSoundPlanningExecutorV1(options))
+      return (await executor)(request)
+    }
+  }
   if (input.brief.avgVisualPlanning) {
     if(input.brief.avgVisualPlanning.version===5){
       if(!avgVisualPlanningExecutionReadyV5())throw new Error('[avg-visual-plan] 本方案版本的专业视觉执行尚未接通，不能创建执行器')

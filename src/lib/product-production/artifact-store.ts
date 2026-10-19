@@ -2500,6 +2500,7 @@ async function acceptSealedProducerArtifactV1(
   input: ProductBuildArtifactAcceptanceInputV1,
   avgMediaRawAdmission = false,
   avgVisualPlanningAdmission = false,
+  avgSoundPlanningAdmission = false,
 ): Promise<ProductBuildArtifactRecordV1> {
   const scope = await resolveScope({ scope: input.scope })
   if (!isSha256Hash(input.inputHash)) throw new Error('[product-production-artifact] inputHash 无效')
@@ -2519,7 +2520,7 @@ async function acceptSealedProducerArtifactV1(
   // After V4 author inputs are complete the shared scheduler revisits already
   // settled semantic/image checkpoints while integrating. This is an exact read,
   // never permission to admit a new proposal, compilation or processed image.
-  let v4CheckpointRead=avgVisualPlanningAdmission
+  let v4CheckpointRead=avgVisualPlanningAdmission||avgSoundPlanningAdmission
   if(avgMediaRawAdmission&&preliminaryBuild.status==='integrating'
     &&(input.artifactKey.startsWith('avg.media.raw.')||input.artifactKey.startsWith('avg.media.processed.'))){
     const briefRow=await db.productProductionBriefs.where('[productionId+revision]')
@@ -2568,11 +2569,12 @@ async function acceptSealedProducerArtifactV1(
     ? await import('../avg/voice-production-admission') : null
   const avgAdmission = avgMediaRawAdmission && !voiceAdmission ? await import('../avg/media-production-admission') : null
   const planningAdmission = avgVisualPlanningAdmission ? await import('../avg/visual-planning-admission') : null
+  const soundPlanningAdmission = avgSoundPlanningAdmission ? await import('../avg/sound-planning-admission') : null
   const stored = await db.transaction('rw', scopeTransactionTables(
     db.productProductions, db.productProductionBriefs, db.productProductionCommands,
     db.productBuilds, db.productBuildArtifacts, db.mediaBlobObjects,
     db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints,
-    ...(avgMediaRawAdmission || avgVisualPlanningAdmission ? [db.avgDraftMedia, db.agentRunArtifacts] : []),
+    ...(avgMediaRawAdmission || avgVisualPlanningAdmission || avgSoundPlanningAdmission ? [db.avgDraftMedia, db.agentRunArtifacts] : []),
   ), async () => {
     const build = await db.productBuilds.get(input.buildId)
     if (!build || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })) {
@@ -2602,6 +2604,11 @@ async function acceptSealedProducerArtifactV1(
       if (!producerProof || input.producerRunId == null) throw new Error('[avg-visual-plan] 原始方案必须携带严格 producer 证明')
       const admit=producerProof.task.kind.startsWith('avg-v5-')?planningAdmission.assertAvgVisualPlanningProducerAdmissionV5:planningAdmission.assertAvgVisualPlanningProducerAdmissionV4
       await admit({ scope, build: build as ProductBuildRecordV1 & { id: number },
+        task: producerProof.task, producerRunId: input.producerRunId, artifact: prepared })
+    }
+    if (soundPlanningAdmission) {
+      if (!producerProof || input.producerRunId == null) throw new Error('[avg-sound-plan] 声音方案必须携带严格producer证明')
+      await soundPlanningAdmission.assertAvgSoundPlanningProducerAdmissionV1({ scope, build: build as ProductBuildRecordV1 & { id: number },
         task: producerProof.task, producerRunId: input.producerRunId, artifact: prepared })
     }
     if (prepared.blobObjectId != null) {
@@ -3668,6 +3675,7 @@ export async function acceptProductBuildArtifact(
   const productType = await productTypeForBuildV1(input.buildId)
   // AVG raw/processed image and raw voice candidates use sealed admission. Human choices,
   // V1 assembly and every other product keep their existing writer semantics.
+  if (productType === 'avg' && (input.artifactKey === 'avg.proposal.sound-plan' || input.artifactKey === 'avg.media.compiled-sound-requirements')) return acceptSealedProducerArtifactV1(input, false, false, true)
   if (productType === 'avg' && (input.artifactKey.startsWith('avg.media.raw.')||input.artifactKey.startsWith('avg.media.processed.')||input.artifactKey.startsWith('avg.voice.raw.'))) return acceptSealedProducerArtifactV1(input, true)
   if (productType === 'avg' && (input.artifactKey.startsWith('avg.proposal.') || input.artifactKey === 'avg.media.compiled-visual-requirements')) return acceptSealedProducerArtifactV1(input, false, true)
   return productType === 'text-open-world'

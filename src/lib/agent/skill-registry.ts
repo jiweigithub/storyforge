@@ -5012,7 +5012,7 @@ export const AGENT_SKILLS = [
     inputPolicy: productProductionInputPolicy([AVG_SOUND_CONTEXT_V1]),
     contextCompression: compressionPolicy([AVG_SOUND_CONTEXT_V1]), maxOutputTokens: 8_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-10-19', regressionTests: ['R-AVG-04B-sound-production-contract', 'R-AVG-04B-sound-planning-context'],
+    lastVerifiedAt: '2026-10-19', regressionTests: ['R-AVG-04B-sound-production-contract', 'R-AVG-04B-sound-planning-context', 'R-AVG-04B-sound-planning-harness'],
   },
   {
     version: 1, id: 'avg.sound-request.v1', agentId: 'avg-sound-operator', defaultForAgent: true,
@@ -5022,7 +5022,7 @@ export const AGENT_SKILLS = [
     inputPolicy: productProductionInputPolicy([AVG_SOUND_CONTEXT_V1]),
     contextCompression: compressionPolicy([AVG_SOUND_CONTEXT_V1]), maxOutputTokens: 4_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: [], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-10-19', regressionTests: ['R-AVG-04B-sound-production-contract', 'R-AVG-04B-sound-planning-context'],
+    lastVerifiedAt: '2026-10-19', regressionTests: ['R-AVG-04B-sound-production-contract', 'R-AVG-04B-sound-planning-context', 'R-AVG-04B-sound-planning-harness'],
   },
   {
     version: 1, id: 'avg.visual-bible.v1', agentId: 'avg-art-director', defaultForAgent: true,

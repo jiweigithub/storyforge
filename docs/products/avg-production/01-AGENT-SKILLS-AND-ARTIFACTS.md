@@ -1,9 +1,9 @@
 # AVG 专业岗位、工件与生产图
 
-> L2 · 版本：1.11.0 · 生效：2026-10-19 · 受 [AVG 产品契约](../AVG.md)约束。
+> L2 · 版本：1.12.0 · 生效：2026-10-19 · 受 [AVG 产品契约](../AVG.md)约束。
 > 22 岗位/Skill 是目标合同；BASE-00B 已登记首批八种 schema、输出 key、关闭的专业 AI 写口和作者输入采用接缝，实际验证状态见实施计划。未登记的专业 Skill 尚不可调用，schema 或作者输入采用不等于岗位实现。
 
-当前声音合同/任务图与`avg.sound-plan.v1`、技术`avg.sound-request.v1`已完成登记基础工程验收，使用受保护的`product-production.avg-sound-planning-inputs`；当前仅策划投影实现，实际声音producer、观察和采用未接通，所有正式声音开始入口继续关闭。登记不等于产生过正式Run，见[工作包§10.4](../../roadmap/AVG-WORK-PACKAGE-CARDS.md#104-正式声音制作合同任务图与登记投影基础工程验收执行仍关闭)。
+当前声音合同/任务图与`avg.sound-plan.v1`、技术`avg.sound-request.v1`已完成登记基础工程验收，使用受保护的`product-production.avg-sound-planning-inputs`；已连接准确策划/编译投影、模型原始响应及作者计划采用，实际音频producer、观察和选音未接通，所有正式声音开始入口继续关闭。登记不等于产生过正式Run，见[工作包§10.4](../../roadmap/AVG-WORK-PACKAGE-CARDS.md#104-正式声音制作合同任务图与登记投影基础工程验收执行仍关闭)。
 
 ## 1 主助手、岗位与确定性职责
 

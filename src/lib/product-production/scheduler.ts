@@ -2311,7 +2311,7 @@ async function ensurePlan(input: {
   // that a deterministic failure can invalidate a carried parent artifact.
   // Re-applying parent reuse here would resurrect the exact stale artifact
   // that the recovery closure just proved unsuitable.
-  if (!state.creatorContracts && !state.brief.avgAssembly && !input.suppliedPlan && !currentMediaRevisionPlan
+  if (!state.creatorContracts && !state.brief.avgAssembly && !state.brief.avgSoundPlanning && !input.suppliedPlan && !currentMediaRevisionPlan
     && currentPlan == null && state.build.planRevision === 0) {
     const reuse = await applyCrossBuildEvolutionReuseV1({
       scope: input.scope, build: state.build, brief: state.brief, plan,
@@ -6290,14 +6290,15 @@ export async function runProductProductionSchedulerCycleV1(input: {
     }
   }
   const pendingAvgHumanTasks = new Set<string>()
-  if (state.brief.avgAssembly || state.brief.avgVisualPlanning) {
+  if (state.brief.avgAssembly || state.brief.avgVisualPlanning || state.brief.avgSoundPlanning) {
     const authorTasks = state.plan.tasks.filter(task => task.executionMode === 'human-import')
     const artifacts = await db.productBuildArtifacts.where('buildId').equals(state.build.id!).toArray()
     const accepted = (task: ProductProductionPlanTaskV3) => task.outputArtifactKeys.every(key => artifacts.filter(row => row.artifactKey === key
       && row.status === 'accepted' && row.controlEpoch === state.build.controlEpoch).length === 1)
     const ready = authorTasks.every(accepted)
     if (!ready && (state.brief.avgAssembly?.version === 1 || authorTasks.filter(task => !['avg-author-media-choice', 'avg-author-stage','avg-author-visual-review','avg-author-voice-review','avg-author-voice-choice',
-      ...(state.brief.avgVisualPlanning ? ['avg-author-visual-bible', 'avg-author-media-brief'] : [])].includes(task.kind)).some(task => !accepted(task)))) {
+      ...(state.brief.avgVisualPlanning ? ['avg-author-visual-bible', 'avg-author-media-brief'] : []),
+      ...(state.brief.avgSoundPlanning ? ['avg-author-sound-plan', 'avg-author-sound-review', 'avg-author-sound-choice'] : [])].includes(task.kind)).some(task => !accepted(task)))) {
       return projectProductProductionSchedulerV1({ scope, productionId: input.productionId })
     }
     for (const task of authorTasks) if (!accepted(task)) pendingAvgHumanTasks.add(task.taskKey)

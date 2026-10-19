@@ -4,11 +4,11 @@ import { assertRecordInScope } from '../workspace/scope'
 import { parseProductProductionBriefV3 } from '../product-production/contracts'
 import { parseProductProductionPlanV3 } from '../product-production/plan'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
-import { readAvgSystemPlanForCompilationV1 } from './author-artifacts'
+import { readAvgConfirmedSoundPlanV1, readAvgSystemPlanForCompilationV1 } from './author-artifacts'
 import type { AvgMediaSourceInputV1 } from './media-source'
 import { validateAvgSoundPlanningSourcesV1 } from './sound-source'
 import { parseAvgSoundPlanningBriefV1 } from './sound-production-brief'
-import { AVG_SOUND_PROPOSAL_KEY_V1 } from './sound-production-plan'
+import { AVG_SOUND_COMPILED_KEY_V1, AVG_SOUND_PROPOSAL_KEY_V1 } from './sound-production-plan'
 
 /** The complete canonical rules/scripts are used only to verify freshness.
  * Default model input contains the explicitly declared sound purposes and
@@ -45,19 +45,23 @@ export async function readAvgSoundPlanningContextV1(input: AssembleContextInput)
   const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash), task = plan.tasks.find(t => t.taskKey === input.productProductionTaskKey)
   if (!task || await hashProductProductionValueV2(plan) !== build.planHash || plan.buildNumber !== build.buildNumber || plan.controlEpoch !== build.controlEpoch
     || canonicalProductProductionJsonV2(input.productArtifactKeys ?? []) !== canonicalProductProductionJsonV2(task.inputArtifactKeys)) throw new Error('[avg-sound-context] 任务及准确依赖已变化')
-  if (task.kind !== 'avg-sound-plan-propose' || task.executionMode !== 'model' || task.skillId !== 'avg.sound-plan.v1'
-    || canonicalProductProductionJsonV2(task.outputArtifactKeys) !== canonicalProductProductionJsonV2([AVG_SOUND_PROPOSAL_KEY_V1])) {
-    throw new Error('[avg-sound-context] 当前只接通声音策划投影；真实声音执行/编译投影须随producer另行接通')
-  }
+  const proposal = task.kind === 'avg-sound-plan-propose' && task.executionMode === 'model' && task.skillId === 'avg.sound-plan.v1'
+    && canonicalProductProductionJsonV2(task.outputArtifactKeys) === canonicalProductProductionJsonV2([AVG_SOUND_PROPOSAL_KEY_V1])
+  const compilation = task.kind === 'avg-sound-requirements-compile' && task.executionMode === 'deterministic' && task.skillId === null
+    && task.contextProfile === 'avg-sound-planning-v1' && canonicalProductProductionJsonV2(task.outputArtifactKeys) === canonicalProductProductionJsonV2([AVG_SOUND_COMPILED_KEY_V1])
+  if (!proposal && !compilation) throw new Error('[avg-sound-context] 真实声音producer/演出执行投影尚未接通')
   // This existing reader checks actual start command, SourcePlan/confirmed
   // Brief, author candidates/receipts and physical source hashes in its own
   // complete snapshot. It does not inherit another Build's adoption authority.
   const source = await readAvgSystemPlanForCompilationV1({ scope, buildId: build.id!, expectedBuildRevision: build.stateRevision,
     controlEpoch: build.controlEpoch, includeSceneScripts: true })
-  const refs = [source.artifact, ...source.scripts.map(s => s.artifact)]
+  const adopted = compilation ? await readAvgConfirmedSoundPlanV1({ scope, buildId: build.id!, expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch }) : null
+  const refs = [source.artifact, ...source.scripts.map(s => s.artifact), ...(adopted ? [adopted.artifact] : [])]
   if (refs.length !== task.inputArtifactKeys.length || refs.some(r => !task.inputArtifactKeys.includes(r.artifactKey))) throw new Error('[avg-sound-context] 已采用规则/脚本未覆盖准确任务输入')
-  const packet = await projectAvgSoundPlanningInputsV1(brief.avgSoundPlanning, { systemPlan: source.plan,
+  const projected = await projectAvgSoundPlanningInputsV1(brief.avgSoundPlanning, { systemPlan: source.plan,
     scripts: source.scripts.map(s => s.payload), presentation: { aspectRatio: brief.avgSoundPlanning.aspectRatio } })
+  const packet = adopted ? { schema: projected.schema, version: projected.version, sourceInputHash: projected.sourceInputHash,
+    scopeHash: projected.scopeHash, operation: 'compile-adopted-sound-requirements', soundPlan: adopted.payload } : projected
   const current = await db.productBuilds.get(build.id!), owner = await db.productProductions.get(production.id!)
   if (!current || !owner || current.stateRevision !== build.stateRevision || current.controlEpoch !== build.controlEpoch
     || current.planHash !== build.planHash || current.briefHash !== build.briefHash || current.status !== build.status
