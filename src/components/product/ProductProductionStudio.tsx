@@ -155,6 +155,7 @@ interface CommandActivityV1 {
 const loadProductQualityReceiptsV1 = () => import('../../lib/product-production/quality-receipts')
 const loadTtrpgProductionWizardV2 = () => import('../ttrpg/TtrpgProductionWizard')
 const TtrpgProductionWizard = lazy(loadTtrpgProductionWizardV2)
+const TtrpgOpenProductionReview = lazy(() => import('../ttrpg/TtrpgOpenProductionReview'))
 const TextAdventurePackagePanel = lazy(() => import('./TextAdventurePackagePanel'))
 
 const SOURCE_SELECTION_FACETS = [
@@ -701,34 +702,41 @@ export default function ProductProductionStudio(props: {
   const [unknownResultDisposition, setUnknownResultDisposition] = useState<
     '' | 'confirmed-not-charged' | 'charge-reservation-upper-bound'
   >('')
-  const recoveryDraftScopeRef = useRef<{ productionId: number | null; controlEpoch: number | null }>({
-    productionId: null,
-    controlEpoch: null,
-  })
+  const recoveryDraftScopeRef = useRef<{
+    scopeKey: string | null; productionId: number | null; buildId: number | null; controlEpoch: number | null
+    taskKey: string | null; runId: number | null; attempt: number | null
+  }>({ scopeKey: null, productionId: null, buildId: null, controlEpoch: null, taskKey: null, runId: null, attempt: null })
   const recoveryDraftControlEpoch = progress?.productionId === selectedProductionId
     ? progress.controlEpoch
     : details?.production.id === selectedProductionId
       ? details.build?.controlEpoch ?? null
       : null
+  const recoveryDraftTaskKey = details?.build ? readProductProductionRecoveryTaskKeyV1(details.build.failureJson) : null
+  const recoveryDraftTask = progress?.productionId === selectedProductionId && progress.buildId === details?.build?.id
+    && progress.controlEpoch === recoveryDraftControlEpoch
+    ? progress.tasks.find(task => task.taskKey === recoveryDraftTaskKey) : undefined
+  const recoveryDraftIdentity = JSON.stringify({ scopeKey: JSON.stringify([props.scope.projectId, props.scope.worldId, props.scope.workId]),
+    productionId: selectedProductionId, buildId: details?.build?.id ?? null, controlEpoch: recoveryDraftControlEpoch,
+    taskKey: recoveryDraftTaskKey, runId: recoveryDraftTask?.runId ?? null, attempt: recoveryDraftTask?.attempt ?? null })
   useEffect(() => {
     const previous = recoveryDraftScopeRef.current
-    const productionChanged = previous.productionId !== selectedProductionId
-    const controlEpochChanged = !productionChanged
-      && previous.controlEpoch != null
-      && recoveryDraftControlEpoch != null
-      && previous.controlEpoch !== recoveryDraftControlEpoch
-    recoveryDraftScopeRef.current = {
-      productionId: selectedProductionId,
-      controlEpoch: recoveryDraftControlEpoch
-        ?? (productionChanged ? null : previous.controlEpoch),
+    const incoming: typeof previous = JSON.parse(recoveryDraftIdentity)
+    const changed = previous.scopeKey !== incoming.scopeKey || previous.productionId !== incoming.productionId
+      || (['buildId', 'controlEpoch', 'taskKey', 'runId', 'attempt'] as const)
+        .some(key => previous[key] != null && incoming[key] != null && previous[key] !== incoming[key])
+    // Filling the first async progress snapshot is not an owner change. Keep
+    // the original behavior for authors who already typed while it was loading.
+    recoveryDraftScopeRef.current = changed ? incoming : {
+      ...incoming, buildId: incoming.buildId ?? previous.buildId, controlEpoch: incoming.controlEpoch ?? previous.controlEpoch,
+      taskKey: incoming.taskKey ?? previous.taskKey, runId: incoming.runId ?? previous.runId, attempt: incoming.attempt ?? previous.attempt,
     }
-    if (!productionChanged && !controlEpochChanged) return
+    if (!changed) return
     setTaskEvidence(null)
     setRepairNote('')
     setAuthorDraftJson('')
     setContentRevision(null)
     setUnknownResultDisposition('')
-  }, [recoveryDraftControlEpoch, selectedProductionId])
+  }, [recoveryDraftIdentity])
   const [performanceGate, setPerformanceGate] = useState<VerifiedProductBrowserPerformanceGateV1 | null>(null)
   const [performanceGateError, setPerformanceGateError] = useState('')
   const [performanceLabRunning, setPerformanceLabRunning] = useState(false)
@@ -1848,6 +1856,14 @@ export default function ProductProductionStudio(props: {
     }
     catch { return null }
   }, [details?.brief, details?.executionBrief])
+  const ttrpgReviewOwner: import('../../lib/ttrpg/open-production-review-service').TtrpgOpenProductionReviewOwnerV1 | null = details?.production.productType === 'ttrpg' && selectedBrief?.ttrpgOpen
+    && details.build?.id && canRetryBlocker && recoveryPolicy?.authorDraftAllowed && !providerReservationBlocked
+    && (blockerTaskKey === 'ttrpg.open.source-facts' || blockerTaskKey === 'ttrpg.open.rule-system')
+    && progress?.buildId === details.build.id && progress.controlEpoch === details.build.controlEpoch
+    && recoveryDraftTask?.runId && recoveryDraftTask.attempt > 0
+    ? { scope: props.scope, productionId: details.production.id!, buildId: details.build.id,
+      controlEpoch: details.build.controlEpoch, planHash: details.build.planHash, taskKey: blockerTaskKey,
+      runId: recoveryDraftTask.runId, attempt: recoveryDraftTask.attempt } : null
   const modelBudgetExhausted = !!progress && !!selectedBrief
     && progress.budget.usage.modelCalls >= selectedBrief.productionBudget.maximumModelCalls
   const canRecoverProductionBudget = !!details && canRecoverTextAdventureProductionBudgetV1(details)
@@ -2140,6 +2156,8 @@ export default function ProductProductionStudio(props: {
           </div>}
           {canRetryBlocker && <div className="mt-3 rounded border border-error/30 bg-error/5 p-3 text-[10px] text-error"><strong className="block">自动制作停在可恢复边界</strong><span className="mt-1 block">{blockerSummary || '执行能力返回失败；可检查全局 AI 配置后重试。'}</span></div>}
           {canRetryBlocker && recoveryPolicy?.repairNoteAllowed && <label className="mt-3 block text-xs text-text-muted">本次修复要求（可选）<textarea aria-label="本次修复要求" maxLength={4000} value={repairNote} onChange={event => setRepairNote(event.target.value)} className="mt-2 block min-h-24 w-full rounded border border-border bg-bg-base p-3 text-text-main" placeholder="指出需要修正的内容；仍需遵守已确认的世界、规则和安全边界。" /></label>}
+          {ttrpgReviewOwner && selectedBrief?.ttrpgOpen && <Suspense fallback={<p>正在打开待审稿…</p>}><TtrpgOpenProductionReview key={JSON.stringify(ttrpgReviewOwner)}
+            owner={ttrpgReviewOwner} brief={selectedBrief.ttrpgOpen} value={authorDraftJson} onChange={setAuthorDraftJson} disabled={busy || productionRunning} /></Suspense>}
           {canRetryBlocker && recoveryPolicy?.authorDraftAllowed && <details className="mt-3 text-xs text-text-muted"><summary className="cursor-pointer">直接修订任务草稿（高级）</summary><p className="my-2">填写完整 JSON 将跳过本次模型重写，按原任务规则校验；保留原始模型证据，记录为作者修订。只适用于失败的文本任务。</p><textarea aria-label="作者修订的完整任务 JSON" maxLength={120000} value={authorDraftJson} onChange={event => setAuthorDraftJson(event.target.value)} className="min-h-60 w-full rounded border border-border bg-bg-base p-3 font-mono text-text-main" /></details>}
           {providerReservationBlocked && <fieldset className="mt-3 rounded border border-error/30 bg-error/5 p-3 text-xs text-text-muted" data-testid="product-production-unknown-result-disposition"><legend className="px-1 font-medium text-error">先结算供应商请求</legend><p className="mb-2 text-[10px] leading-5">{pausedProviderReservationBlocked ? '暂停时仍有供应商请求在途。恢复前必须把冻结的每个 Run、attempt 和 epoch 一起封账；本次选择应用于全部在途请求。' : observedUncheckpointedResponseBlocked ? '系统已持久化供应商响应证据，但完整用量未能回传。为避免少记账，只能按该 attempt 的冻结预留上限封账。' : '系统不会猜测这次请求是否扣费。请选择与你核对结果一致的处置，选择会与失败 Run、attempt 和 epoch 一起冻结。'}</p>{!observedUncheckpointedResponseBlocked && <label className="mr-4 inline-flex items-center gap-2"><input type="radio" name="unknown-result-disposition" checked={unknownResultDisposition === 'confirmed-not-charged'} onChange={() => setUnknownResultDisposition('confirmed-not-charged')} />已确认未计费</label>}<label className="inline-flex items-center gap-2"><input type="radio" name="unknown-result-disposition" checked={unknownResultDisposition === 'charge-reservation-upper-bound'} onChange={() => setUnknownResultDisposition('charge-reservation-upper-bound')} />{pausedProviderReservationBlocked ? '全部按冻结预留上限封账' : observedUncheckpointedResponseBlocked ? '按冻结预留上限封账并重试' : '无法确认，按预留上限记账'}</label></fieldset>}
           {canRetryBlocker && !recoveryPolicy?.repairNoteAllowed && <p className="mt-3 rounded border border-border bg-bg-base p-3 text-xs text-text-muted" data-testid="product-production-retry-only">当前任务暂不支持修复要求或直接 JSON 修订；可先查看制作记录，再按原冻结输入重试。</p>}

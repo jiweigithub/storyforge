@@ -12,6 +12,7 @@ import { validateTtrpgOpenNarrativeEnvelopeV1 } from '../ttrpg/open-narrative-en
 import { parseProductProductionSourcePlanV1 } from './source-contracts'
 import { parseTtrpgOpenSourceFactsArtifactV1, parseTtrpgOpenRuleSystemArtifactV1,
   parseTtrpgOpenSituationLayerArtifactV1 } from '../ttrpg/open-production-artifacts'
+import { normalizeTtrpgOpenSourceFactsForReviewV1, normalizeTtrpgOpenRuleSystemForReviewV1 } from '../ttrpg/open-production-review'
 import { TTRPG_SCENARIO_PROMPT_V1 } from '../ttrpg/scenario-prompt'
 import { parseTtrpgAuthoredScenarioV1, type TtrpgAuthoredScenarioV1 } from '../ttrpg/scenario-authoring'
 import type { ChatResult } from '../ai/client'
@@ -7125,18 +7126,14 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
   let kind: ProductProductionTaskArtifactV1['kind']
   let quality: unknown
   if (options.brief.ttrpgOpen && input.task.taskKey === 'ttrpg.open.source-facts') {
-    const facts = parseTtrpgOpenSourceFactsArtifactV1(raw)
-    if (!input.authorDraftJson) {
-      for (const item of facts.factPolicy) item.authorConfirmed = options.brief.ttrpgOpen.settings.openAuthoring.factPolicy
-        .some(locked => canonicalProductProductionJsonV2(locked.fact) === canonicalProductProductionJsonV2(item.fact) && locked.authorConfirmed)
-    }
+    const facts = input.authorDraftJson ? parseTtrpgOpenSourceFactsArtifactV1(raw)
+      : normalizeTtrpgOpenSourceFactsForReviewV1(raw, options.brief.ttrpgOpen)
     payload = facts; kind = 'product-design'; quality = { openSourceFactsVerified: true,
       requiresAuthorConfirmation: facts.factPolicy.some(item => !item.authorConfirmed) }
   } else if (options.brief.ttrpgOpen && input.task.taskKey === 'ttrpg.open.rule-system') {
-    const system = parseTtrpgOpenRuleSystemArtifactV1(raw, options.brief.ttrpgOpen.rulePack, options.brief.ttrpgOpen.settings)
-    if (!input.authorDraftJson) for (const template of system.characterTemplates) {
-      for (const mapping of Object.values(template.attributeMappings)) mapping.authorConfirmed = false
-    }
+    const system = input.authorDraftJson
+      ? parseTtrpgOpenRuleSystemArtifactV1(raw, options.brief.ttrpgOpen.rulePack, options.brief.ttrpgOpen.settings)
+      : normalizeTtrpgOpenRuleSystemForReviewV1(raw, options.brief.ttrpgOpen)
     payload = system; kind = 'product-module'; quality = { openRuleSystemVerified: true,
       requiresAuthorConfirmation: system.characterTemplates.some(template => Object.values(template.attributeMappings).some(mapping => !mapping.authorConfirmed)) }
   } else if (options.brief.ttrpgOpen && input.task.taskKey === 'ttrpg.open.situation-layer') {
