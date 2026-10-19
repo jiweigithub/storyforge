@@ -375,14 +375,16 @@ export function parseProductProductionPlanV3(
         buildNumber: Number(row.buildNumber), controlEpoch: Number(row.controlEpoch) })
       // Reuse is separately authorized against the exact parent proof. It must
       // not change the product's task graph, budgets or execution contracts.
-      const legacyTasks = expected.tasks.map(task => ({ ...task,
+      const previous = buildTtrpgOpenProductionPlanV3({ brief, briefHash: row.briefHash as string,
+        buildNumber: Number(row.buildNumber), controlEpoch: Number(row.controlEpoch), profileVersion: 2 })
+      const legacyTasks = previous.tasks.map(task => ({ ...task,
         skillId: Object.prototype.hasOwnProperty.call(TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1, task.taskKey)
           ? TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1[task.taskKey as TtrpgOpenProductionTaskKeyV2] : task.skillId,
       }))
       const actualTasks = JSON.stringify(tasks.map(task => ({ ...task, reuse: null })))
       // Compare entire closed generations, without rewriting the parsed Plan.
       // Old queued/unknown Runs cannot acquire a new prompt on application update.
-      if (![expected.tasks, legacyTasks].some(generation => JSON.stringify(generation) === actualTasks) || terminalTaskKey !== expected.terminalTaskKey
+      if (![expected.tasks, previous.tasks, legacyTasks].some(generation => JSON.stringify(generation) === actualTasks) || terminalTaskKey !== expected.terminalTaskKey
         || JSON.stringify(parsedConcurrency) !== JSON.stringify(expected.concurrency)) {
         fail('open 跑团计划必须绑定专属任务、真实依赖与授权预算，不能偷换 scripted DAG')
       }
@@ -467,6 +469,7 @@ export async function createProductProductionPlanV3(input: {
   controlEpoch?: number
   briefHash: string
   brief: ProductProductionBriefV3 | string
+  ttrpgOpenExecutionProfile?: 2 | 3
 }): Promise<ProductProductionPlanV3> {
   const brief = parseProductProductionBriefV3(input.brief)
   if (!Number.isInteger(input.buildNumber) || input.buildNumber < 1) fail('buildNumber 无效')
@@ -477,7 +480,7 @@ export async function createProductProductionPlanV3(input: {
   if (brief.ttrpgOpen) {
     await validateTtrpgProductionBriefContentV3(brief.ttrpgOpen)
     return parseProductProductionPlanV3(buildTtrpgOpenProductionPlanV3({ brief, briefHash: input.briefHash,
-      buildNumber: input.buildNumber, controlEpoch }), brief, input.briefHash)
+      buildNumber: input.buildNumber, controlEpoch, profileVersion: input.ttrpgOpenExecutionProfile }), brief, input.briefHash)
   }
 
   const capabilityKeys = (classes: Array<ProductProductionBriefV3['capabilityRequirements'][number]['mediaClass']>) => (

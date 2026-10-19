@@ -12,6 +12,7 @@ import { readAgentRunV1 } from '../../src/lib/agent/run/event-store'
 import { readAgentRunArtifactExactV1 } from '../../src/lib/memory/artifact-store'
 import { sha256Text } from '../../src/lib/ai/chapter-memory/text-normalization'
 import { estimateTokens } from '../../src/lib/ai/context-budget'
+import { estimateTtrpgOpenProductionTextV3, estimateTtrpgOpenProductionWireV3 } from '../../src/lib/ttrpg/open-production-wire-budget'
 import { createProductProductionPlanV3 } from '../../src/lib/product-production/plan'
 import { TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1, type TtrpgOpenProductionTaskKeyV2 } from '../../src/lib/ttrpg/open-production-bindings'
 import { resolveProductRuntimeSource } from '../../src/lib/product-production/preview-source'
@@ -23,8 +24,10 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
   beforeEach(async () => { await db.delete(); await db.open() })
   afterEach(() => db.close())
   it.each([{ withMedia: false, withSeatPlan: false, legacyPrompts: false }, { withMedia: true, withSeatPlan: false, legacyPrompts: false },
-    { withMedia: false, withSeatPlan: true, legacyPrompts: false }, { withMedia: false, withSeatPlan: false, legacyPrompts: true }])(
-    'requires human reviews and completes a pinned preview (image=$withMedia, explicit seat plan=$withSeatPlan, old prompt=$legacyPrompts)', async ({ withMedia, withSeatPlan, legacyPrompts }) => {
+    { withMedia: false, withSeatPlan: true, legacyPrompts: false }, { withMedia: false, withSeatPlan: false, legacyPrompts: true },
+    { withMedia: false, withSeatPlan: false, legacyPrompts: false, profileVersion: 2 }])(
+    'requires human reviews and completes a pinned preview (image=$withMedia, explicit seat plan=$withSeatPlan, old prompt=$legacyPrompts, retained profile=$profileVersion)', async ({ withMedia, withSeatPlan, legacyPrompts, profileVersion }) => {
+    const generation = legacyPrompts ? 1 : profileVersion ?? 3
     const { scope, draft } = await createFreshOpenDraftFixtureV1(2, true)
     const productionId = await prepareTtrpgBrief(scope, draft.revision)
     let production = (await db.productProductions.get(productionId))!
@@ -80,9 +83,9 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
         taskKey = 'ttrpg.open.media-plan'; payload = mediaPayload
       } else throw new Error('unexpected model task')
       if (taskKey !== 'ttrpg.open.media-plan') {
-        expect(request.system.includes('【请求格式版本2】')).toBe(!legacyPrompts)
+        expect(request.system.includes(generation === 3 ? '【请求格式版本3】' : '【请求格式版本2】')).toBe(!legacyPrompts)
         const execution = executions.get(taskKey)!
-        expect(execution.task.skillId).toBe(`product-production.${taskKey.replace('ttrpg.open.', 'ttrpg-open-')}.${legacyPrompts ? 'v1' : 'v2'}`)
+        expect(execution.task.skillId).toBe(`product-production.${taskKey.replace('ttrpg.open.', 'ttrpg-open-')}.${`v${generation}`}`)
         if (!legacyPrompts) {
           const marker = '{"schema":"storyforge.ttrpg-open-production-world-reads"'
           const offset = request.contextText.lastIndexOf(marker)
@@ -98,9 +101,9 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
             return JSON.parse(await readAgentRunArtifactExactV1({ projectId: scope.projectId, artifactKind: kind, contentHash: ref.contentHash }))
           }
           const recorded = await exact('rendered-request'), packet = await exact('context-packet')
-          expect(recorded).toMatchObject({ schema: 'storyforge.ttrpg-open-production-task-request', version: 2,
+          expect(recorded).toMatchObject({ schema: 'storyforge.ttrpg-open-production-task-request', version: generation,
             system: request.system, contextText: request.contextText, worldContentHash: await sha256Text(worldText),
-            systemTokens: estimateTokens(request.system), maximumOutputTokens: request.maximumOutputTokens,
+            systemTokens: generation === 3 ? estimateTtrpgOpenProductionTextV3(request.system) : estimateTokens(request.system), maximumOutputTokens: request.maximumOutputTokens,
             requestHash: await hashProductProductionValueV2({ system: request.system, contextText: request.contextText,
               maximumOutputTokens: request.maximumOutputTokens }) })
           expect(packet.contentHash).toBe(await sha256Text(packet.content))
@@ -109,7 +112,8 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
           expect(projected.resources.map((resource: { resourceKey: string }) => resource.resourceKey).sort())
             .toEqual(decisions.map((read: { resourceKey: string }) => read.resourceKey).sort())
           expect(recorded.worldContentHash).not.toBe(packet.contentHash)
-          expect(estimateTokens(request.system) + estimateTokens(request.contextText)).toBeLessThanOrEqual(execution.attemptBudgetReservation!.inputTokens)
+          expect(generation === 3 ? estimateTtrpgOpenProductionWireV3(request.system, request.contextText)
+            : estimateTokens(request.system) + estimateTokens(request.contextText)).toBeLessThanOrEqual(execution.attemptBudgetReservation!.inputTokens)
           expect(request.maximumOutputTokens).toBeLessThanOrEqual(execution.attemptBudgetReservation!.outputTokens)
           const worldSnapshots = await Promise.all(refs.filter(ref => ref.artifactKind === 'source-snapshot').map(async ref =>
             JSON.parse(await readAgentRunArtifactExactV1({ projectId: scope.projectId, artifactKind: ref.artifactKind, contentHash: ref.contentHash }))))
@@ -133,9 +137,9 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
           credentialPresent: true, capabilityHash: bindingHash, boundAt: 1, receiptHash: bindingHash } }
     }
     const mediaBindings = withMedia ? [await createBuiltInProductionCapabilityBindingV1({ requirementKey: 'media.visual', adapterId: 'storyforge.procedural-svg.v1' })] : []
-    const oldPlan = legacyPrompts ? await createProductProductionPlanV3({ brief, briefHash: row.briefHash, buildNumber: 1,
+    const oldPlan = generation < 3 ? await createProductProductionPlanV3({ brief, briefHash: row.briefHash, buildNumber: 1, ttrpgOpenExecutionProfile: 2,
       controlEpoch: (await db.productProductions.get(productionId))!.controlEpoch }) : null
-    if (oldPlan) for (const task of oldPlan.tasks) if (Object.prototype.hasOwnProperty.call(TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1, task.taskKey)) {
+    if (oldPlan && legacyPrompts) for (const task of oldPlan.tasks) if (Object.prototype.hasOwnProperty.call(TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1, task.taskKey)) {
       task.skillId = TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1[task.taskKey as TtrpgOpenProductionTaskKeyV2]
     }
     let firstRun = true
@@ -176,7 +180,7 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
     const complete = await run()
     const diagnostic = (await db.productBuilds.where('productionId').equals(productionId).first())!
     expect(complete.terminal, diagnostic.failureJson).toBe(true)
-    expect(calls).toEqual(['ttrpg.open.source-facts', 'ttrpg.open.rule-system', ...(withSeatPlan ? ['ttrpg.open.rule-system'] : []), 'ttrpg.open.situation-layer', 'ttrpg.open.media-plan'])
+    expect(calls).toEqual(['ttrpg.open.source-facts', 'ttrpg.open.rule-system', ...(withSeatPlan ? ['ttrpg.open.rule-system'] : []), 'ttrpg.open.situation-layer', ...(withMedia || generation < 3 ? ['ttrpg.open.media-plan'] : [])])
     const build = (await db.productBuilds.where('productionId').equals(productionId).first())!
     expect(build.rootTerminalReceiptHash).toMatch(/^[a-f0-9]{64}$/)
     const source = { kind: 'build' as const, productBuildId: build.id!, expectedPreviewHash: build.previewHash }

@@ -1,7 +1,8 @@
 import { parseTextAdventureQuestScriptArtifact, textAdventureQuestRecipientsV3 } from '../adventure/quest-settlement'
 import { hasFrozenAuthorUploadRightsV1 } from './media-rights'
-import { ttrpgOpenProductionSystemPromptV1, ttrpgOpenProductionSystemPromptV2 } from '../ttrpg/open-production-prompts'
-import { isTtrpgOpenProductionTaskV2 } from '../ttrpg/open-production-bindings'
+import { ttrpgOpenProductionSystemPromptV1, ttrpgOpenProductionSystemPromptV2, ttrpgOpenProductionSystemPromptV3 } from '../ttrpg/open-production-prompts'
+import { isTtrpgOpenProductionTaskV2, isTtrpgOpenProductionTaskV3, isTtrpgOpenEmptyMediaTaskV3 } from '../ttrpg/open-production-bindings'
+import { estimateTtrpgOpenProductionWireV3 } from '../ttrpg/open-production-wire-budget'
 import { ttrpgOpenProductionMediaContextV1, ttrpgOpenProductionMediaPromptV1, assertTtrpgOpenProductionMediaRequirementsV1,
   bindTtrpgOpenProductionMediaV1 } from '../ttrpg/open-production-media'
 import { compileProductionTtrpgOpenCampaignV2 } from '../ttrpg/open-production-compiler'
@@ -7001,9 +7002,18 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
         }
       })()
     : undefined
-  const openV2 = isTtrpgOpenProductionTaskV2(input.task)
-  if (openV2 && !options.brief.ttrpgOpen) fail('V2 跑团任务缺少原 open Brief')
-  const system = isTtrpgOpenProductionTaskV2(input.task) ? ttrpgOpenProductionSystemPromptV2(input.task.taskKey)
+  const openV3 = isTtrpgOpenProductionTaskV3(input.task)
+  const openV2 = isTtrpgOpenProductionTaskV2(input.task) || openV3
+  if (openV2 && !options.brief.ttrpgOpen) fail('版本化跑团任务缺少原 open Brief')
+  if (openV3 && input.task.taskKey === 'ttrpg.open.media-plan') {
+    const context = openMediaContext(input, options.brief)
+    if (!context || options.brief.media.voiceLineCount > 0
+      || context.mediaManifest.slots.filter(slot => slot.productionRequired).length !== options.brief.media.imageCount) {
+      throw new ProductProductionDraftRejectedErrorV1('媒资槽位/数量或配音能力与原授权不一致；未调用模型。', zeroUsage(elapsed(startedAt)))
+    }
+  }
+  const system = isTtrpgOpenProductionTaskV3(input.task) ? ttrpgOpenProductionSystemPromptV3(input.task.taskKey)
+    : isTtrpgOpenProductionTaskV2(input.task) ? ttrpgOpenProductionSystemPromptV2(input.task.taskKey)
     : options.brief.ttrpgOpen && input.task.taskKey === 'ttrpg.open.media-plan'
     ? ttrpgOpenProductionMediaPromptV1(options.brief, openMediaContext(input, options.brief)!) : textSystem(
     input.task.taskKey,
@@ -7027,7 +7037,8 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
   if (openV2 && !input.authorDraftJson) {
     const available = Math.min(input.task.budgetReservation.inputTokens,
       input.attemptBudgetReservation?.inputTokens ?? input.task.budgetReservation.inputTokens)
-    const required = estimateTokens(system) + estimateTokens(input.contextText)
+    const required = openV3 ? estimateTtrpgOpenProductionWireV3(system, input.contextText)
+      : estimateTokens(system) + estimateTokens(input.contextText)
     if (required > available) fail(`完整跑团格式与准确正文超过原输入预算（required=${required}, budget=${available}）；未调用模型`)
     if (openOutputLimit! < 1 || (input.attemptBudgetReservation?.modelCalls ?? 1) < 1) {
       fail('原跑团任务剩余调用/输出预算不足；未调用模型')
@@ -11063,6 +11074,21 @@ export function createConfiguredProductProductionExecutorV1(input: {
     const sceneAssemblyActIndex = textAdventureSceneScriptAssemblyActIndex(request.task.taskKey)
     if (sceneAssemblyActIndex != null) {
       return executeTextAdventureSceneScriptActAssemblyTask(request, options.brief, sceneAssemblyActIndex)
+    }
+    if (isTtrpgOpenEmptyMediaTaskV3(request.task)) {
+      const started = performance.now(), brief = options.brief
+      const context = openMediaContext(request, brief)
+      if (!brief.ttrpgOpen || !context || brief.media.imageCount !== 0 || brief.media.musicTrackCount !== 0
+        || brief.media.sfxCount !== 0 || brief.media.voiceLineCount !== 0 || brief.media.requiredMediaKinds.length > 0
+        || context.mediaManifest.slots.some(slot => slot.productionRequired)) {
+        throw new ProductProductionDraftRejectedErrorV1('零媒资规划与作者授权或已采纳槽位不一致；未调用模型。', zeroUsage(elapsed(started)))
+      }
+      const payload = parseProductMediaRequirementsArtifactV2({ schema: 'storyforge.product-media-requirements-artifact',
+        version: 2, visual: [], audio: [] }, brief, context.characterAnchors, null)
+      assertTtrpgOpenProductionMediaRequirementsV1({ context, ...payload })
+      return { artifacts: [{ artifactKey: 'media.requirements', kind: 'asset-manifest', payload,
+        quality: { planKeysVerified: true }, rights: { origin: 'deterministic-empty-media-plan', containsThirdPartyMedia: false } }],
+        passedGateIds: [...request.task.acceptanceGateIds], usage: zeroUsage(elapsed(started)) }
     }
     if (request.task.executionMode === 'model') return executeModelTask(request, options)
     if (request.task.taskKey === 'source.author-gate') {

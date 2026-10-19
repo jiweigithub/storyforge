@@ -95,12 +95,14 @@ test('fresh UUIDs from normal human approval controls survive save/reload and ac
     const campaign = resolved.runtimePackage.ttrpg.campaign
     resolved.mediaResolver.dispose()
     const after = await db.productProductionBriefs.get(row.id)
-    return { stages, campaign, frozenUnchanged: after.briefJson === frozenBefore, draft, buildHash: build.previewHash,
+    return { stages, campaign, plan: JSON.parse(build.planJson), frozenUnchanged: after.briefJson === frozenBefore, draft, buildHash: build.previewHash,
       receiptHash: build.rootTerminalReceiptHash, worlds: await db.worldReleases.toArray() }
   }, f.scope)
   expect(proof.stages.slice(0, 2).map((stage: any) => stage.status)).toEqual(['recovery-required', 'recovery-required'])
   expect(proof.stages[2].terminal).toBe(true); expect(proof.stages[2].status).toMatch(/^(preview|release)-ready$/)
-  expect(proof.stages[2].modelCalls).toBe(4); expect(proof.frozenUnchanged).toBe(true)
+  expect(proof.stages[2].modelCalls).toBe(3); expect(proof.frozenUnchanged).toBe(true)
+  expect(proof.plan.tasks.find((task: any) => task.taskKey === 'ttrpg.open.media-plan'))
+    .toMatchObject({ executionMode: 'deterministic', skillId: null, budgetReservation: { modelCalls: 0 } })
   const actors = proof.campaign.characterTemplates.filter((actor: any) => actor.role === 'player')
   for (const seat of pending.proposal.plan.seats) expect(actors).toContainEqual(expect.objectContaining(seat))
   expect(proof.campaign.companionPolicy).toEqual(pending.proposal.policy)

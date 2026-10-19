@@ -1,7 +1,7 @@
 /** Open authoring tasks live in the existing production scheduler, with an explicit shared production budget. */
 import type { ProductProductionBriefV3, ProductProductionPlanV3, ProductProductionPlanTaskV3 } from '../types'
 import { getAgentSkillV1 } from '../agent/skill-registry'
-import { TTRPG_OPEN_PRODUCTION_BINDINGS_V2 } from './open-production-bindings'
+import { TTRPG_OPEN_PRODUCTION_BINDINGS_V2, TTRPG_OPEN_PRODUCTION_BINDINGS_V3 } from './open-production-bindings'
 import { createCommonProductMediaBundleTasksV3 } from '../product-production/media-plan-tasks'
 
 export const TTRPG_OPEN_PRODUCTION_TASK_KEYS_V1 = [
@@ -36,29 +36,36 @@ export function ttrpgOpenEvolutionTaskLaneV1(taskKey: string): 'content' | 'visu
 
 export function buildTtrpgOpenProductionPlanV3(input: {
   brief: ProductProductionBriefV3; briefHash: string; buildNumber: number; controlEpoch: number
+  profileVersion?: 2 | 3
 }): ProductProductionPlanV3 {
   const { brief } = input, budget = brief.productionBudget
   if (!brief.ttrpgOpen || brief.ttrpg || brief.intent.productType !== 'ttrpg') throw new Error('[ttrpg-open-plan] 需要独立 open 制作契约')
-  const attempts = Math.min(2, Math.floor(budget.maximumModelCalls / 4))
+  const modern = input.profileVersion !== 2
+  const emptyMedia = modern && brief.media.imageCount === 0 && brief.media.musicTrackCount === 0
+    && brief.media.sfxCount === 0 && brief.media.voiceLineCount === 0 && brief.media.requiredMediaKinds.length === 0
+  const attempts = Math.min(2, Math.floor(budget.maximumModelCalls / (emptyMedia ? 3 : 4)))
+  const bindings = modern ? TTRPG_OPEN_PRODUCTION_BINDINGS_V3 : TTRPG_OPEN_PRODUCTION_BINDINGS_V2
   const audioCalls = brief.media.musicTrackCount + brief.media.sfxCount + brief.media.voiceLineCount
   const mediaLaneCount = Number(brief.media.imageCount > 0) + Number(audioCalls > 0)
-  const inputTokens = Math.floor(budget.maximumInputTokens / (4 + mediaLaneCount))
-  const outputTokens = Math.floor(budget.maximumOutputTokens / 4)
+  const inputTokens = modern ? budget.maximumInputTokens / (36 + (emptyMedia ? 0 : 3) + mediaLaneCount * 8)
+    : Math.floor(budget.maximumInputTokens / (4 + mediaLaneCount))
+  const outputTokens = Math.floor(budget.maximumOutputTokens / (modern ? emptyMedia ? 5 : 6 : 4))
   const durationMs = Math.floor(budget.maximumDurationMs / (6 + mediaLaneCount))
   const storageBytes = Math.floor(budget.maximumStorageBytes / (6 + mediaLaneCount))
-  const maximumCostUsd = budget.maximumCostUsd === null ? null : budget.maximumCostUsd / (4 + mediaLaneCount)
+  const maximumCostUsd = budget.maximumCostUsd === null ? null : budget.maximumCostUsd / ((emptyMedia ? 3 : 4) + mediaLaneCount)
   if (attempts < 1 || inputTokens < 1 || outputTokens < 1 || durationMs < 1 || storageBytes < 1) {
     throw new Error('[ttrpg-open-plan] 六项制作任务缺少明确授权的模型/token/时长/存储预算')
   }
   const definitions = [
-    { taskKey: 'ttrpg.open.source-facts', skillId: TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.source-facts'].skillId, lane: 'content', dependsOn: [],
+    { taskKey: 'ttrpg.open.source-facts', skillId: bindings['ttrpg.open.source-facts'].skillId, lane: 'content', dependsOn: [],
       inputArtifactKeys: [], outputArtifactKeys: ['ttrpg.open.source-facts'] },
-    { taskKey: 'ttrpg.open.rule-system', skillId: TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.rule-system'].skillId, lane: 'content', dependsOn: ['ttrpg.open.source-facts'],
+    { taskKey: 'ttrpg.open.rule-system', skillId: bindings['ttrpg.open.rule-system'].skillId, lane: 'content', dependsOn: ['ttrpg.open.source-facts'],
       inputArtifactKeys: ['ttrpg.open.source-facts'], outputArtifactKeys: ['ttrpg.open.rule-system'] },
-    { taskKey: 'ttrpg.open.situation-layer', skillId: TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.situation-layer'].skillId, lane: 'content',
+    { taskKey: 'ttrpg.open.situation-layer', skillId: bindings['ttrpg.open.situation-layer'].skillId, lane: 'content',
       dependsOn: ['ttrpg.open.source-facts', 'ttrpg.open.rule-system'], inputArtifactKeys: ['ttrpg.open.source-facts', 'ttrpg.open.rule-system'],
       outputArtifactKeys: ['ttrpg.open.situation-layer'] },
-    { taskKey: 'ttrpg.open.media-plan', skillId: 'product-production.media-requirements.v1', lane: 'planning',
+    { taskKey: 'ttrpg.open.media-plan', skillId: emptyMedia ? null : modern
+      ? TTRPG_OPEN_PRODUCTION_BINDINGS_V3['ttrpg.open.media-plan'].skillId : 'product-production.media-requirements.v1', lane: 'planning',
       dependsOn: ['ttrpg.open.rule-system', 'ttrpg.open.situation-layer'], inputArtifactKeys: ['ttrpg.open.rule-system', 'ttrpg.open.situation-layer'],
       outputArtifactKeys: ['media.requirements'] },
     { taskKey: 'ttrpg.open.integration', skillId: null, lane: 'integration', dependsOn: ['ttrpg.open.source-facts', 'ttrpg.open.rule-system', 'ttrpg.open.situation-layer', 'ttrpg.open.media-plan'],
@@ -69,8 +76,10 @@ export function buildTtrpgOpenProductionPlanV3(input: {
   ] as const
   const tasks: ProductProductionPlanTaskV3[] = definitions.map((definition, index) => {
     const model = definition.skillId !== null
-    const maximumOutput = model ? Math.min(outputTokens, getAgentSkillV1(definition.skillId!).maxOutputTokens) : 0
-    const timeoutMs = Math.min(durationMs, 180_000)
+    const inputWeight = modern ? [9, 12, 15, 3, 0, 0][index] : 1
+    const outputWeight = modern ? [1, 2, 2, 1, 0, 0][index] : 1
+    const maximumOutput = model ? Math.min(outputTokens * outputWeight, getAgentSkillV1(definition.skillId!).maxOutputTokens) : 0
+    const timeoutMs = Math.min(durationMs, modern && model ? 600_000 : 180_000)
     return { taskKey: definition.taskKey, lane: definition.lane, kind: definition.taskKey,
       skillId: definition.skillId, executionMode: model ? 'model' : 'deterministic', dependsOn: [...definition.dependsOn],
       requiredReceipts: definition.dependsOn.map(taskKey => ({ taskKey, receiptHash: null })),
@@ -78,7 +87,7 @@ export function buildTtrpgOpenProductionPlanV3(input: {
       requirementKeys: [], capabilityRequirementKeys: model ? brief.capabilityRequirements
         .filter(requirement => requirement.mediaClass === 'text').map(requirement => requirement.requirementKey) : [],
       concurrencyGroup: model ? 'text-provider' : 'cpu', subjectLockKeys: [`ttrpg.open:${definition.taskKey}`], priority: 100 - index,
-      budgetReservation: { modelCalls: model ? attempts : 0, inputTokens: model ? inputTokens : 0,
+      budgetReservation: { modelCalls: model ? attempts : 0, inputTokens: model ? Math.floor(inputTokens * inputWeight) : 0,
         outputTokens: maximumOutput, mediaCalls: 0, maximumCostUsd: model ? maximumCostUsd : 0,
         durationMs, storageBytes }, maxAttempts: model ? attempts : 1, timeoutMs, failurePolicy: 'pause', fallbackTaskKey: null,
       acceptanceGateIds: index === 5 ? [...brief.completionContract.requiredGateIds] : [], reuse: null }
@@ -89,7 +98,7 @@ export function buildTtrpgOpenProductionPlanV3(input: {
     audioArtifactKeys: Array.from({ length: audioCalls }, (_, index) => `media.audio.${String(index + 1).padStart(3, '0')}`),
     durationMs, storageBytes, maximumCostUsd, failurePolicy: 'pause' })
   const integration = tasks.find(task => task.taskKey === 'ttrpg.open.integration')!
-  for (const task of mediaTasks) task.budgetReservation.inputTokens = inputTokens
+  for (const task of mediaTasks) task.budgetReservation.inputTokens = Math.floor(inputTokens * (modern ? 8 : 1))
   integration.dependsOn.push(...mediaTasks.map(task => task.taskKey))
   integration.requiredReceipts.push(...mediaTasks.map(task => ({ taskKey: task.taskKey, receiptHash: null })))
   integration.inputArtifactKeys.push(...mediaTasks.flatMap(task => task.outputArtifactKeys))

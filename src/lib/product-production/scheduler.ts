@@ -1,7 +1,9 @@
 import { isTextRevisionRetainedVisualTaskV1, textRevisionRecoveryPreservesVisualContractV1, validateTextContentRevisionAuthorityV1, verifiedTextRevisionVisualCarryTaskKeysV1 } from './text-content-revision-authority'
 import { ttrpgOpenEvolutionReuseEnvelopeV1, ttrpgOpenEvolutionTaskLaneV1 } from '../ttrpg/open-production-plan'
-import { isTtrpgOpenProductionTaskV2 } from '../ttrpg/open-production-bindings'
-import { ttrpgOpenProductionSystemPromptV2 } from '../ttrpg/open-production-prompts'
+import { isTtrpgOpenProductionTaskV2, isTtrpgOpenProductionTaskV3, isTtrpgOpenEmptyMediaTaskV3 } from '../ttrpg/open-production-bindings'
+import { ttrpgOpenProductionSystemPromptV2, ttrpgOpenProductionSystemPromptV3 } from '../ttrpg/open-production-prompts'
+import { estimateTtrpgOpenProductionTextV3, estimateTtrpgOpenProductionWireV3,
+  TTRPG_OPEN_WIRE_ESTIMATION_V3, TTRPG_OPEN_WIRE_OVERHEAD_RESERVE_V3 } from '../ttrpg/open-production-wire-budget'
 import { renderTtrpgOpenProductionWorldReadsV2 } from '../ttrpg/open-world-reads'
 import { estimateTokens } from '../ai/context-budget'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
@@ -363,9 +365,9 @@ export async function prepareLegacyPausedProductBuildV1<T extends ProductBuildRe
       || binding.planHash !== build.planHash || plan.controlEpoch !== binding.controlEpoch
       || await hashProductProductionValueV2(plan) !== build.planHash
       || snapshot.run.parentRunId !== ledger.rootRunId
-      || snapshot.contract.budget.maxInputTokens !== Math.max(1, task.budgetReservation.inputTokens)
-      || snapshot.contract.budget.maxOutputTokens !== Math.max(1, task.budgetReservation.outputTokens)
-      || snapshot.contract.budget.maxModelCalls !== Math.max(1, task.budgetReservation.modelCalls)) {
+      || snapshot.contract.budget.maxInputTokens !== (isTtrpgOpenEmptyMediaTaskV3(task) ? 0 : Math.max(1, task.budgetReservation.inputTokens))
+      || snapshot.contract.budget.maxOutputTokens !== (isTtrpgOpenEmptyMediaTaskV3(task) ? 0 : Math.max(1, task.budgetReservation.outputTokens))
+      || snapshot.contract.budget.maxModelCalls !== (isTtrpgOpenEmptyMediaTaskV3(task) ? 0 : Math.max(1, task.budgetReservation.modelCalls))) {
       throw new Error('[product-production-scheduler] 旧暂停 Run 与冻结 Plan/预算不一致，不能恢复')
     }
     // A checkpoint/receipt deserves its original settlement path, not an
@@ -1096,6 +1098,7 @@ function taskContextSourceKeys(
   task: ProductProductionPlanTaskV3,
   excludeRepairFeedback = false,
 ): string[] {
+  if (isTtrpgOpenEmptyMediaTaskV3(task)) return []
   // The deterministic runtime compiler receives immutable artifact rows via
   // inputArtifacts and binds their hashes in structuralInput. Re-serializing
   // the same full payload into a model-style context duplicates tens of
@@ -1117,6 +1120,7 @@ function taskContextSourceKeys(
 }
 
 function taskRequiredContextSourceKeys(task: ProductProductionPlanTaskV3): string[] {
+  if (isTtrpgOpenEmptyMediaTaskV3(task)) return []
   if (task.executionMode === 'deterministic' && task.kind === 'runtime-package') {
     return ['product-production.brief']
   }
@@ -1124,7 +1128,8 @@ function taskRequiredContextSourceKeys(task: ProductProductionPlanTaskV3): strin
     const skill = getAgentSkillV1(task.skillId)
     return [...new Set([
       ...skill.contextSourceKeys,
-      ...(task.inputArtifactKeys.length > 0 ? ['product-production.artifact-inputs'] : []),
+      ...(task.inputArtifactKeys.length > 0 && taskContextSourceKeys(task).includes('product-production.artifact-inputs')
+        ? ['product-production.artifact-inputs'] : []),
     ])]
   }
   return ['product-production.brief', ...(task.inputArtifactKeys.length > 0 ? ['product-production.artifact-inputs'] : [])]
@@ -1241,6 +1246,7 @@ async function taskContract(input: {
   task: ProductProductionPlanTaskV3
   capabilityBindingHash?: string
 }) {
+  const zeroMedia = isTtrpgOpenEmptyMediaTaskV3(input.task)
   const sourceKeys = taskContractContextSourceKeys(input.task)
   const skill = input.task.skillId ? getAgentSkillV1(input.task.skillId) : null
   const executionIdentityHash = await productProductionTaskExecutionIdentityHashV1(input.task)
@@ -1272,15 +1278,17 @@ async function taskContract(input: {
         taskKey: input.task.taskKey,
       },
     },
-    permissions: { contextSourceKeys: sourceKeys, writeTargets: artifactWriteTargets(input.task) },
+    permissions: { contextSourceKeys: sourceKeys, writeTargets: zeroMedia ? [] : artifactWriteTargets(input.task) },
     runtimeBindingHash,
     ...(skill ? { executionBindings: [{ stepId: input.task.taskKey, ...createAgentSkillExecutionBindingV1(skill) }] } : {}),
     dependencyReceiptPolicy: { requiredForJoin: true as const, verifierSetVersion: 'product-production-task-v1' },
     budget: {
-      maxModelCalls: Math.max(1, input.task.budgetReservation.modelCalls),
-      maxToolCalls: input.task.budgetReservation.mediaCalls,
-      maxInputTokens: Math.max(1, input.task.budgetReservation.inputTokens),
-      maxOutputTokens: Math.max(1, input.task.budgetReservation.outputTokens),
+      maxModelCalls: zeroMedia ? 0 : Math.max(1, input.task.budgetReservation.modelCalls),
+      // The existing tool-only contract requires a minimum capacity of one;
+      // this pure kernel does not call a tool and settles zero actual usage.
+      maxToolCalls: zeroMedia ? 1 : input.task.budgetReservation.mediaCalls,
+      maxInputTokens: zeroMedia ? 0 : Math.max(1, input.task.budgetReservation.inputTokens),
+      maxOutputTokens: zeroMedia ? 0 : Math.max(1, input.task.budgetReservation.outputTokens),
       maxAttemptsPerStep: input.task.maxAttempts,
     },
     acceptance: [
@@ -4696,9 +4704,11 @@ async function runClaimedTaskCore(input: {
   )
   const requiredNormalSourceKeys = new Set(taskRequiredContextSourceKeys(input.task))
   const contractSourceKeys = taskContractContextSourceKeys(input.task)
-  const openSystem = isTtrpgOpenProductionTaskV2(input.task)
-    ? ttrpgOpenProductionSystemPromptV2(input.task.taskKey) : null
-  const openSystemTokens = openSystem ? estimateTokens(openSystem) : 0
+  const openV3 = isTtrpgOpenProductionTaskV3(input.task)
+  const openSystem = isTtrpgOpenProductionTaskV3(input.task)
+    ? ttrpgOpenProductionSystemPromptV3(input.task.taskKey)
+    : isTtrpgOpenProductionTaskV2(input.task) ? ttrpgOpenProductionSystemPromptV2(input.task.taskKey) : null
+  const openSystemTokens = openSystem ? openV3 ? estimateTtrpgOpenProductionTextV3(openSystem) : estimateTokens(openSystem) : 0
   const openMaximumOutputTokens = openSystem ? Math.min(input.task.budgetReservation.outputTokens,
     getAgentSkillV1(input.task.skillId!).maxOutputTokens, attemptBudgetReservation.outputTokens) : null
   // This generation owns one task-lifetime budget. Previous paid attempts do
@@ -4708,7 +4718,7 @@ async function runClaimedTaskCore(input: {
   const totalInputBudget = openPaidAttempt
     ? Math.min(input.task.budgetReservation.inputTokens, attemptBudgetReservation.inputTokens)
     : Math.max(1, input.task.budgetReservation.inputTokens)
-  const contextInputBudget = totalInputBudget - openSystemTokens
+  const contextInputBudget = totalInputBudget - openSystemTokens - (openV3 ? TTRPG_OPEN_WIRE_OVERHEAD_RESERVE_V3 : 0)
   const worldGatewayUsed = productProductionTaskUsesWorldGatewayV1(input.task)
   const executorOwnsWorldGateway = productProductionTaskOwnsWorldGatewayV1(input.task)
   const worldGatewayRequired = worldGatewayUsed && !executorOwnsWorldGateway
@@ -4727,7 +4737,12 @@ async function runClaimedTaskCore(input: {
     if (openPaidAttempt && (openMaximumOutputTokens! < 1 || attemptBudgetReservation.modelCalls < 1)) {
       throw new ProductProductionContextBudgetErrorV1('[ttrpg-open-production] 原任务剩余调用/输出预算不足；未调用模型')
     }
-    normalAssembled = await assembleContext({
+    // assembleContext([]) intentionally means all sources. A new zero-model
+    // kernel task declares no model context, so never call that default path.
+    normalAssembled = isTtrpgOpenEmptyMediaTaskV3(input.task) ? {
+      text: '', segments: [], included: [], omitted: [], trimmed: [], sourceEvidence: [], sourceSnapshots: [],
+      totalInputTokens: 0, inputBudget: 1, overBudgetBeforeTrim: false, overBudgetAfterTrim: false,
+    } : await assembleContext({
       projectId: input.scope.projectId, scope: input.scope, sourceKeys: normalSourceKeys,
       productProductionId: input.productionId, productBuildId: input.build.id,
       productArtifactKeys: input.task.inputArtifactKeys,
@@ -4848,8 +4863,9 @@ async function runClaimedTaskCore(input: {
         // Manifest totals are the checked sum of per-source evidence. Measure
         // the complete actual wire independently so labels/separators and the
         // static nested format cannot escape the original input ceiling.
-        const requestInputTokenEstimate = openSystem
-          ? Math.max(assembled.totalInputTokens, estimateTokens(assembled.text)) + openSystemTokens
+        const requestInputTokenEstimate = openV3 && openSystem
+          ? estimateTtrpgOpenProductionWireV3(openSystem, assembled.text)
+          : openSystem ? Math.max(assembled.totalInputTokens, estimateTokens(assembled.text)) + openSystemTokens
           : assembled.totalInputTokens
         if (assembled.overBudgetAfterTrim || requestInputTokenEstimate > totalInputBudget) {
           throw new Error('[product-production-scheduler] Brief/Artifact 与冻结世界事实合并后超过任务输入预算'
@@ -4861,7 +4877,7 @@ async function runClaimedTaskCore(input: {
           runId: snapshot.run.id, stepId: input.task.taskKey, attempt,
           projectId: input.scope.projectId, worldGroupId: null,
           declaredSourceKeys: contractSourceKeys, assembled,
-          readerVersion: openSystem ? 'ttrpg-open-production-world-reads-v2' : 'product-production-world-gateway-v1',
+          readerVersion: openV3 ? 'ttrpg-open-task-brief-v3-world-reads-v2' : openSystem ? 'ttrpg-open-production-world-reads-v2' : 'product-production-world-gateway-v1',
         })
         gatewayBaseManifest = await createContextManifestV2FromV1({ manifest: manifestV1, scope: input.scope })
         const recorded = await recordContextGatewayPreflightEvidenceV1({
@@ -4873,7 +4889,8 @@ async function runClaimedTaskCore(input: {
           selector: gatewayExecution.selector,
           renderedRequest: {
             schema: openSystem ? 'storyforge.ttrpg-open-production-task-request' : 'storyforge.product-production-task-request',
-            version: openSystem ? 2 : 1,
+            version: openV3 ? 3 : openSystem ? 2 : 1,
+            ...(openV3 ? { inputEstimationMethod: TTRPG_OPEN_WIRE_ESTIMATION_V3, overheadReserveTokens: TTRPG_OPEN_WIRE_OVERHEAD_RESERVE_V3 } : {}),
             ...(openSystem ? { system: openSystem, systemTokens: openSystemTokens, requestInputTokenEstimate,
               maximumOutputTokens: openMaximumOutputTokens, worldContentHash, requestHash: openRequestHash,
               retrievalTrace: gatewayExecution.retrievalTrace } : {}),
@@ -4897,12 +4914,40 @@ async function runClaimedTaskCore(input: {
         gatewayPreflight = recorded.evidence
       }
     }
+  } else if (isTtrpgOpenEmptyMediaTaskV3(input.task)) {
+    // This kernel has no model context. Preserve exact structural dependencies
+    // instead of fabricating a nonempty Context Manifest or widening its schema.
+    snapshot = (await recordAgentRunArtifactV1({ scope: input.scope, runId: snapshot.run.id,
+      stepId: input.task.taskKey, attempt, artifactKind: 'source-snapshot',
+      content: canonicalProductProductionJsonV2({ schema: 'storyforge.ttrpg-open-empty-media-kernel-input',
+        version: 1, planHash: input.build.planHash, structuralInput, modelContext: null }),
+      expectedLastSequence: snapshot.projection.lastSequence })).snapshot
   } else {
+    // The new media planner reads only registered adopted product material.
+    // It must still freeze the complete actual wire without inventing a
+    // World Gateway read or claiming its parent artifacts were fully sent.
+    if (openV3 && openSystem) {
+      const requestInputTokenEstimate = estimateTtrpgOpenProductionWireV3(openSystem, assembled.text)
+      if (requestInputTokenEstimate > totalInputBudget) throw new ProductProductionContextBudgetErrorV1(
+        `[ttrpg-open-production] 完整媒资请求超过原输入预算（required=${requestInputTokenEstimate}, budget=${totalInputBudget}）；未调用模型`,
+      )
+      openRequestHash = await hashProductProductionValueV2({ system: openSystem,
+        contextText: assembled.text, maximumOutputTokens: openMaximumOutputTokens })
+      snapshot = (await recordAgentRunArtifactV1({ scope: input.scope, runId: snapshot.run.id,
+        stepId: input.task.taskKey, attempt, artifactKind: 'rendered-request',
+        content: canonicalProductProductionJsonV2({ schema: 'storyforge.ttrpg-open-production-task-request', version: 3,
+          taskKey: input.task.taskKey, planHash: input.build.planHash, executionMode: input.task.executionMode,
+          system: openSystem, systemTokens: openSystemTokens, contextText: assembled.text,
+          maximumOutputTokens: openMaximumOutputTokens, requestInputTokenEstimate, requestHash: openRequestHash,
+          inputEstimationMethod: TTRPG_OPEN_WIRE_ESTIMATION_V3, overheadReserveTokens: TTRPG_OPEN_WIRE_OVERHEAD_RESERVE_V3,
+          inputArtifacts: artifacts.map(row => ({ artifactKey: row.artifactKey, contentHash: row.contentHash })) }),
+        expectedLastSequence: snapshot.projection.lastSequence })).snapshot
+    }
     const manifest = await createContextManifestFromAssemblyV1({
       runId: snapshot.run.id, stepId: input.task.taskKey, attempt,
       projectId: input.scope.projectId, worldGroupId: null,
       declaredSourceKeys: normalSourceKeys, assembled,
-      readerVersion: 'product-production-context-v1',
+      readerVersion: openV3 ? 'ttrpg-open-adopted-media-inputs-v3' : 'product-production-context-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: input.task.taskKey, attempt, manifestHash: manifest.manifestHash,

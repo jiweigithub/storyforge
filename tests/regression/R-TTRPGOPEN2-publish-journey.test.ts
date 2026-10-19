@@ -1,3 +1,4 @@
+import * as productionPlan from '../../src/lib/product-production/plan'
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { seedOpenBrowserProductionV1, runOpenBrowserProductionV1 } from '../helpers/open-ttrpg-production-browser'
@@ -18,8 +19,15 @@ async function produce() {
   await runOpenBrowserProductionV1(f);await runOpenBrowserProductionV1(f,true);await runOpenBrowserProductionV1(f,true)
   return f
 }
-describe('R-TTRPGOPEN2 normal author production adoption publication and release play', { timeout: 60000 }, () => {
-  beforeEach(async () => { await db.delete();await db.open() });afterEach(() => { vi.restoreAllMocks();db.close() })
+describe.each([2, 3] as const)('R-TTRPGOPEN2 normal author production adoption publication and release play profile=%s', { timeout: 60000 }, profile => {
+  const retainedPlanFactory = productionPlan.createProductProductionPlanV3
+  beforeEach(async () => {
+    await db.delete(); await db.open()
+    // Emulate the complete original constructor for the retained generation;
+    // suppliedPlan would intentionally skip the normal cross-Build carry path.
+    if (profile === 2) vi.spyOn(productionPlan, 'createProductProductionPlanV3')
+      .mockImplementation(input => retainedPlanFactory({ ...input, ttrpgOpenExecutionProfile: 2 }))
+  });afterEach(() => { vi.restoreAllMocks();db.close() })
   it('publishes only a governed release-ready open Build and starts from the exact immutable author release', async () => {
     const f = await produce(), build = (await db.productBuilds.where('productionId').equals(f.productionId).first())!
     expect(build.status).toBe('release-ready')
@@ -66,7 +74,7 @@ describe('R-TTRPGOPEN2 normal author production adoption publication and release
     production = (await db.productProductions.get(f.productionId))!
     expect((await executeProductProductionCommand({ ...f,command: { type: 'resume',commandId: 'publish.resume',expectedStateRevision: production.stateRevision } })).ok).toBe(true)
     const resumed = await runOpenBrowserProductionV1(f)
-    expect(resumed.terminal).toBe(true);expect(resumed.modelCalls).toBe(4)
+    expect(resumed.terminal).toBe(true);expect(resumed.modelCalls).toBe(profile === 2 ? 4 : 3)
     expect((await db.productBuilds.get(original.id!))!.controlEpoch).toBeGreaterThan(original.controlEpoch)
     const prepared = await prepareProductProductionAdoption(f)
     expect(prepared.intent.packageHash).toBe(original.packageHash)
@@ -88,7 +96,7 @@ describe('R-TTRPGOPEN2 normal author production adoption publication and release
     const build = (await db.productBuilds.where('productionId').equals(f.productionId).first())!
     expect((await db.productBuildArtifacts.where('buildId').equals(build.id!).toArray()).some(r => r.controlEpoch === build.controlEpoch && r.status === 'carried-forward')).toBe(true)
     const resumed = await runOpenBrowserProductionV1(f)
-    expect(resumed.terminal).toBe(true);expect(resumed.modelCalls).toBe(4)
+    expect(resumed.terminal).toBe(true);expect(resumed.modelCalls).toBe(profile === 2 ? 4 : 3)
     expect((await publishProductProductionV1(f)).receipt.releaseVersion).toBe(1)
   })
   it.each(['origin-producer','origin-input','parent-proof','synthetic-ledger'] as const)('rejects %s tampering after real author reviews without publishing', async mode => {
@@ -113,7 +121,7 @@ describe('R-TTRPGOPEN2 normal author production adoption publication and release
     const complete = await recoverImportedProductProductionProofsV1(restored)
     expect(complete.terminal).toBe(true)
     const build = (await db.productBuilds.get(complete.buildId))!, ledger = JSON.parse(build.budgetLedgerJson)
-    expect(ledger.attempts.reduce((n: number,a: { usage: { modelCalls: number } | null }) => n + (a.usage?.modelCalls ?? 0),0)).toBe(4)
+    expect(ledger.attempts.reduce((n: number,a: { usage: { modelCalls: number } | null }) => n + (a.usage?.modelCalls ?? 0),0)).toBe(profile === 2 ? 4 : 3)
     expect((await publishProductProductionV1(restored)).receipt.releaseVersion).toBe(1)
     expect((await db.productProductions.get(f.productionId))!.status).toBe('preview-ready')
   })

@@ -1,4 +1,5 @@
-import { beforeEach, afterEach, describe, it, expect } from 'vitest'
+import * as productionPlan from '../../src/lib/product-production/plan'
+import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { seedOpenBrowserProductionV1, runOpenBrowserProductionV1 } from '../helpers/open-ttrpg-production-browser'
 import { seedCurrentProductWorld } from '../helpers/current-product-world'
@@ -14,8 +15,15 @@ import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '
 import { applyCrossBuildEvolutionReuseV1 } from '../../src/lib/product-production/scheduler'
 import { carryForwardProductBuildArtifactsAcrossBuildsV1 } from '../../src/lib/product-production/artifact-store'
 
-describe('R-TTRPGOPEN2 restored author evolution retains source and immutable history', { timeout: 60000 }, () => {
-  beforeEach(async () => { await db.delete();await db.open() });afterEach(() => db.close())
+describe.each([2, 3] as const)('R-TTRPGOPEN2 restored author evolution retains source and immutable history profile=%s', { timeout: 60000 }, profile => {
+  const retainedPlanFactory = productionPlan.createProductProductionPlanV3
+  beforeEach(async () => {
+    await db.delete(); await db.open()
+    // Emulate the complete original constructor for the retained generation;
+    // suppliedPlan would intentionally skip the normal cross-Build carry path.
+    if (profile === 2) vi.spyOn(productionPlan, 'createProductProductionPlanV3')
+      .mockImplementation(input => retainedPlanFactory({ ...input, ttrpgOpenExecutionProfile: 2 }))
+  });afterEach(() => { vi.restoreAllMocks(); db.close() })
   it.each([
     { released: false,lanes: ['content','product'] as const },
     { released: true,lanes: ['content','product'] as const },
@@ -50,7 +58,7 @@ describe('R-TTRPGOPEN2 restored author evolution retains source and immutable hi
       briefRevision: brief.revision,briefHash: brief.briefHash,authorizationNonce: 'restored.author.confirmed' } })).ok).toBe(true)
     let result = await runOpenBrowserProductionV1(f)
     for (let i = 0; i < 2 && !result.terminal; i++) result = await runOpenBrowserProductionV1(f,true)
-    expect(result.terminal).toBe(true)
+    expect(result.terminal, (await db.productBuilds.get(result.buildId))?.failureJson).toBe(true)
     if (lanes.length === 1) {
       expect(result.modelCalls).toBeLessThan(4)
       const carried = (await db.productBuildArtifacts.where('buildId').equals(result.buildId).toArray()).find(r => r.artifactKey === 'ttrpg.open.source-facts' && r.status === 'carried-forward')
@@ -76,7 +84,7 @@ describe('R-TTRPGOPEN2 restored author evolution retains source and immutable hi
       expect((await executeProductProductionCommand({ ...f,command: { type: 'authorize-start',commandId: 'restored.evolution.third',expectedStateRevision: p.stateRevision,
         briefRevision: b.revision,briefHash: b.briefHash,authorizationNonce: 'author.third.revision' } })).ok).toBe(true)
       const third = await runOpenBrowserProductionV1(f)
-      expect(third.terminal).toBe(true);expect(third.modelCalls).toBe(1)
+      expect(third.terminal).toBe(true);expect(third.modelCalls).toBe(profile === 2 ? 1 : 0)
       const receipt = await publishProductProductionV1(f)
       expect((await db.productReleases.get(receipt.receipt.productReleaseId))!.version).toBe(3)
       expect(await db.productBuilds.get(originalBuild.id!)).toEqual(originalBuild)
@@ -100,7 +108,7 @@ describe('R-TTRPGOPEN2 restored author evolution retains source and immutable hi
     expect((await executeProductProductionCommand({ ...f,command: { type: 'authorize-start',commandId: 'negative.reuse.start',expectedStateRevision: p.stateRevision,
       briefRevision: b.revision,briefHash: b.briefHash,authorizationNonce: 'author.reuse.negative' } })).ok).toBe(true)
     const target = (await db.productBuilds.where('[productionId+buildNumber]').equals([f.productionId,2]).first())!,brief = parseProductProductionBriefV3(b.briefJson)
-    const initial = await createProductProductionPlanV3({ brief,briefHash: b.briefHash,buildNumber: 2,controlEpoch: target.controlEpoch })
+    const initial = await createProductProductionPlanV3({ ttrpgOpenExecutionProfile: profile, brief,briefHash: b.briefHash,buildNumber: 2,controlEpoch: target.controlEpoch })
     const reuse = await applyCrossBuildEvolutionReuseV1({ scope: f.scope,build: target,brief,plan: initial })
     expect(reuse.reusableArtifactKeys).toContain('ttrpg.open.source-facts')
     if (mode === 'origin') {

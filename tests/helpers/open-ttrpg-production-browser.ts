@@ -5,6 +5,7 @@ import { createFreshOpenDraftFixtureV1 } from './open-ttrpg-fresh-authoring'
 import { openProductionCompilerFixtureV1 } from './open-ttrpg-production-artifacts'
 import { prepareTtrpgBrief } from '../../src/lib/ttrpg/authoring-service'
 import { parseProductProductionBriefV3 } from '../../src/lib/product-production/contracts'
+import { createProductProductionPlanV3 } from '../../src/lib/product-production/plan'
 import { executeProductProductionCommand } from '../../src/lib/product-production/commands'
 import { createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1 } from '../../src/lib/product-production/production-executor'
 import { runProductProductionUntilBlockedV1 } from '../../src/lib/product-production/scheduler'
@@ -13,16 +14,18 @@ import { createProductRuntimeInstanceFromSource } from '../../src/lib/product/ru
 import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
 import { openReservedProductionFixtureV1 } from './ttrpg-open-reserved-production'
 
-export interface OpenBrowserProductionFixtureV1 { scope: WorkspaceScope; productionId: number; cooperative?: boolean; reservedSeatPlan?: boolean }
-export async function seedOpenBrowserProductionV1(options: { humanGm?: boolean; runtimeAIEnabled?: boolean; cooperative?: boolean } = {}): Promise<OpenBrowserProductionFixtureV1> {
-  const { scope, draft } = await createFreshOpenDraftFixtureV1(2, true,options)
+export interface OpenBrowserProductionFixtureV1 { scope: WorkspaceScope; productionId: number; cooperative?: boolean; reservedSeatPlan?: boolean; executionProfile?: 2 | 3 }
+export async function seedOpenBrowserProductionV1(options: { humanGm?: boolean; runtimeAIEnabled?: boolean; cooperative?: boolean; executionProfile?: 2 | 3 } = {}): Promise<OpenBrowserProductionFixtureV1> {
+  const { executionProfile, ...settingsOptions } = options
+  const { scope, draft } = await createFreshOpenDraftFixtureV1(2, true,settingsOptions)
   const productionId = await prepareTtrpgBrief(scope, draft.revision), production = (await db.productProductions.get(productionId))!
   const row = (await db.productProductionBriefs.where('[productionId+revision]').equals([productionId, production.currentBriefRevision!]).first())!
   const receipt = await executeProductProductionCommand({ scope, productionId, command: { type: 'authorize-start',
     commandId: 'browser.open.start', expectedStateRevision: production.stateRevision, briefRevision: row.revision,
     briefHash: row.briefHash, authorizationNonce: 'author.browser.open.confirmed' } })
   if (!receipt.ok) throw new Error(JSON.stringify(receipt))
-  return { scope, productionId, ...(options.cooperative ? { cooperative: true } : {}) }
+  return { scope, productionId, ...(options.cooperative ? { cooperative: true } : {}),
+    ...(executionProfile == null ? {} : { executionProfile }) }
 }
 
 export async function runOpenBrowserProductionV1(input: OpenBrowserProductionFixtureV1, authorReview = false) {
@@ -56,7 +59,12 @@ export async function runOpenBrowserProductionV1(input: OpenBrowserProductionFix
         endpointOrigin: 'https://fixture.invalid', executionLocation: 'browser-direct', credentialSource: 'existing-ai-config',
         credentialPresent: true, capabilityHash: bindingHash, boundAt: 1, receiptHash: bindingHash } }
   }
-  const projection = await runProductProductionUntilBlockedV1({ scope, productionId,
+  // Explicit native compatibility fixtures freeze the whole retained profile
+  // on a fresh Build. Existing Plans/epochs are never replaced by this helper.
+  const suppliedPlan = input.executionProfile === 2 && buildBefore.planRevision === 0
+    ? await createProductProductionPlanV3({ brief, briefHash: row.briefHash, buildNumber: buildBefore.buildNumber,
+      controlEpoch: buildBefore.controlEpoch, ttrpgOpenExecutionProfile: 2 }) : undefined
+  const projection = await runProductProductionUntilBlockedV1({ scope, productionId, suppliedPlan,
     executor: createConfiguredProductProductionExecutorV1({ production: (await db.productProductions.get(productionId))!, brief, runText }),
     capabilityBindings: [{ requirementKey, adapterId: 'configured-text.v1', bindingHash }] })
   const build = (await db.productBuilds.where('[productionId+buildNumber]').equals([productionId,production.currentBuildNumber!]).first())!

@@ -9,10 +9,11 @@ import { createConfiguredProductProductionExecutorV1 } from '../../src/lib/produ
 import * as sources from '../../src/lib/product-production/source-contracts'
 import { readAgentRunV1 } from '../../src/lib/agent/run/event-store'
 import { estimateTokens } from '../../src/lib/ai/context-budget'
-import { ttrpgOpenProductionSystemPromptV1, ttrpgOpenProductionSystemPromptV2 } from '../../src/lib/ttrpg/open-production-prompts'
+import { estimateTtrpgOpenProductionTextV3 } from '../../src/lib/ttrpg/open-production-wire-budget'
+import { ttrpgOpenProductionSystemPromptV1, ttrpgOpenProductionSystemPromptV2, ttrpgOpenProductionSystemPromptV3 } from '../../src/lib/ttrpg/open-production-prompts'
 import { TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1, type TtrpgOpenProductionTaskKeyV2 } from '../../src/lib/ttrpg/open-production-bindings'
 
-async function authorized(input: { inputPerTask?: number; legacy?: boolean } = {}) {
+async function authorized(input: { inputPerTask?: number; legacy?: boolean; profile?: 2 | 3 } = {}) {
   const data = await openProductionFixtureV1(), { scope, productionId, brief } = data
   if (input.inputPerTask) brief.productionBudget.maximumInputTokens = input.inputPerTask * 4
   const original = (await db.productProductions.get(productionId))!
@@ -29,7 +30,7 @@ async function authorized(input: { inputPerTask?: number; legacy?: boolean } = {
   const production = (await db.productProductions.get(productionId))!
   const build = (await db.productBuilds.where('productionId').equals(productionId).first())!
   const plan = await createProductProductionPlanV3({ brief, briefHash: row.briefHash,
-    buildNumber: build.buildNumber, controlEpoch: build.controlEpoch })
+    buildNumber: build.buildNumber, controlEpoch: build.controlEpoch, ttrpgOpenExecutionProfile: input.legacy ? 2 : input.profile ?? 3 })
   if (input.legacy) for (const task of plan.tasks) if (Object.prototype.hasOwnProperty.call(TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1, task.taskKey)) {
     task.skillId = TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1[task.taskKey as TtrpgOpenProductionTaskKeyV2]
   }
@@ -42,11 +43,12 @@ describe('R-TTRPGOPEN2 actual delivery rejects unsafe input before POST and pres
   beforeEach(async () => { await db.delete(); await db.open() })
   afterEach(() => { vi.restoreAllMocks(); db.close() })
 
-  it('counts the complete static schema inside the original frozen input ceiling and never dispatches on refresh', async () => {
-    const schemaTokens = estimateTokens(ttrpgOpenProductionSystemPromptV2('ttrpg.open.source-facts'))
-    const data = await authorized({ inputPerTask: schemaTokens - 1 })
+  it.each([2, 3] as const)('counts the complete static schema inside the original frozen input ceiling and never dispatches on refresh (profile=%s)', async profile => {
+    const schemaTokens = profile === 3 ? estimateTtrpgOpenProductionTextV3(ttrpgOpenProductionSystemPromptV3('ttrpg.open.source-facts'))
+      : estimateTokens(ttrpgOpenProductionSystemPromptV2('ttrpg.open.source-facts'))
+    const data = await authorized({ inputPerTask: schemaTokens - 1, profile })
     const executor = vi.fn(async () => { throw new Error('must not dispatch') })
-    const input = { scope: data.scope, productionId: data.productionId, capabilityBindings: data.capabilityBindings, executor }
+    const input = { scope: data.scope, productionId: data.productionId, capabilityBindings: data.capabilityBindings, executor, suppliedPlan: data.plan }
     const first = await runProductProductionUntilBlockedV1(input)
     expect(first.buildStatus).toBe('recovery-required'); expect(executor).not.toHaveBeenCalled()
     const build = (await db.productBuilds.get(data.build.id!))!
@@ -61,8 +63,8 @@ describe('R-TTRPGOPEN2 actual delivery rejects unsafe input before POST and pres
     expect((await db.productBuilds.get(build.id!))!.budgetLedgerJson).toBe(ledger)
   })
 
-  it.each(['body', 'duplicate', 'missing', 'hash'] as const)('refuses a damaged actual Gateway read before the provider boundary: %s', async kind => {
-    const data = await authorized(), original = sources.executeProductProductionWorldGatewayV1
+  it.each(([2, 3] as const).flatMap(profile => (['body', 'duplicate', 'missing', 'hash'] as const).map(kind => ({ profile, kind }))))('refuses a damaged actual Gateway read before the provider boundary: $kind profile=$profile', async ({ profile, kind }) => {
+    const data = await authorized({ profile }), original = sources.executeProductProductionWorldGatewayV1
     vi.spyOn(sources, 'executeProductProductionWorldGatewayV1').mockImplementationOnce(async input => {
       const result = await original(input)
       const decisions = [...result.retrievalTrace.mandatory, ...result.retrievalTrace.autoSelected, ...result.retrievalTrace.agentReads]
@@ -77,7 +79,7 @@ describe('R-TTRPGOPEN2 actual delivery rejects unsafe input before POST and pres
     })
     const executor = vi.fn(async () => { throw new Error('must not dispatch') })
     const result = await runProductProductionUntilBlockedV1({ scope: data.scope, productionId: data.productionId,
-      capabilityBindings: data.capabilityBindings, executor })
+      capabilityBindings: data.capabilityBindings, executor, suppliedPlan: data.plan })
     expect(result.buildStatus).toBe('recovery-required'); expect(executor).not.toHaveBeenCalled()
     const build = (await db.productBuilds.get(data.build.id!))!
     expect(build.failureJson).toContain('世界读取正文与逐资源来源锚点不一致')

@@ -3,7 +3,7 @@ import type {
   ProductionProductKindV1,
 } from '../types'
 import { parseProductProductionPlanV3 } from './plan'
-import { isTtrpgOpenProductionTaskV2 } from '../ttrpg/open-production-bindings'
+import { isTtrpgOpenProductionTaskV2, isTtrpgOpenProductionTaskV3 } from '../ttrpg/open-production-bindings'
 
 const STABLE_TASK_KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/
 
@@ -99,7 +99,7 @@ function supportsGenericAuthorRepair(
   if (productType === 'text-open-world' || task.executionMode !== 'model' || task.failurePolicy !== 'pause') return false
   return GENERIC_AUTHOR_REPAIR_TASKS.get(task.taskKey) === task.skillId
     || (productType === 'ttrpg' && (TTRPG_OPEN_AUTHOR_REPAIR_TASKS.get(task.taskKey) === task.skillId
-      || isTtrpgOpenProductionTaskV2(task)))
+      || isTtrpgOpenProductionTaskV2(task) || isTtrpgOpenProductionTaskV3(task)))
     || (productType === 'text-adventure'
       && TEXT_ADVENTURE_AUTHOR_REPAIR_TASKS.get(task.taskKey) === task.skillId)
 }
