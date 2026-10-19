@@ -2,6 +2,10 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
 import App from './App'
+import ClientUpdatePanel from './components/settings/ClientUpdatePanel'
+import ClientAgreement from './components/settings/ClientAgreement'
+import { collectNativeDiagnostics, nativeTelemetryAllowed } from './lib/platform/native-diagnostics'
+import { installClientTelemetry } from './lib/feedback/client-telemetry'
 import { IS_SHOWCASE } from './lib/showcase/policy'
 import ShowcaseShell from './components/showcase/ShowcaseShell'
 import ErrorBoundary from './components/shared/ErrorBoundary'
@@ -43,6 +47,17 @@ async function requestPersistentStorage() {
 }
 
 async function bootstrap() {
+  if (import.meta.env.MODE === 'android') {
+    const { installAndroidFetch } = await import('./lib/platform/android-fetch')
+    await installAndroidFetch()
+  }
+  if (!IS_SHOWCASE) {
+    // Optional diagnostics must not delay database startup or block an offline editor.
+    void nativeTelemetryAllowed().then(allowed => {
+      installClientTelemetry(allowed)
+      return collectNativeDiagnostics()
+    }).catch(() => {})
+  }
   // 0. FB-11: 尽早申请持久化存储,降低 IndexedDB 被浏览器驱逐("重置")的概率。
   if (!IS_SHOWCASE) void requestPersistentStorage()
 
@@ -73,7 +88,7 @@ async function bootstrap() {
         <ErrorBoundary>
           <BrowserRouter basename="/storyforge/">
             <ToastProvider>
-              {IS_SHOWCASE ? <ShowcaseShell><App /></ShowcaseShell> : <App />}
+              {IS_SHOWCASE ? <ShowcaseShell><App /></ShowcaseShell> : <ClientAgreement><App /><ClientUpdatePanel notice /></ClientAgreement>}
             </ToastProvider>
           </BrowserRouter>
         </ErrorBoundary>

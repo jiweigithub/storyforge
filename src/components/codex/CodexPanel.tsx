@@ -49,11 +49,12 @@ interface Props {
   embedded?: boolean
   /** 当前方面上方的整段全貌，作为 AI 拆分词条的默认来源。 */
   extractionSourceText?: string
+  compact?: boolean
 }
 
 const DOMAINS: CodexDomain[] = ['natural', 'humanity']
 
-export default function CodexPanel({ project, fixedDomain, fixedCategoryKeys, embedded, extractionSourceText = '' }: Props) {
+export default function CodexPanel({ project, fixedDomain, fixedCategoryKeys, embedded, extractionSourceText = '', compact = false }: Props) {
   const dialog = useDialog()
   const toast = useToast()
   const aiConfig = useAIConfigStore(s => s.config)
@@ -432,11 +433,11 @@ export default function CodexPanel({ project, fixedDomain, fixedCategoryKeys, em
 
   return (
     <div className={embedded
-      ? `flex flex-col ${lockedSingle ? 'h-80' : 'h-[30rem]'} border border-border rounded-xl overflow-hidden`
+      ? `flex min-w-0 flex-col ${compact ? 'max-h-[40rem] overflow-y-auto' : lockedSingle ? 'h-80 overflow-hidden' : 'h-[30rem] overflow-hidden'} border border-border rounded-xl`
       : 'h-full flex flex-col'}>
       {/* 顶部：领域切换(嵌入且锁定领域时隐藏;单分类锁定时整条隐藏) */}
       {!lockedSingle && (
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border">
         {!fixedDomain && (
           <>
             <Boxes className="w-5 h-5 text-accent" />
@@ -468,11 +469,11 @@ export default function CodexPanel({ project, fixedDomain, fixedCategoryKeys, em
       </div>
       )}
 
-      <div className="flex-1 flex min-h-0">
+      <div className={compact ? 'flex flex-col min-w-0' : 'flex-1 flex min-h-0'}>
         {/* 左：分类列表(单分类锁定时隐藏) */}
         {!lockedSingle && (
-        <div className="w-44 shrink-0 border-r border-border flex flex-col">
-          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+        <div className={compact ? 'min-w-0 border-b border-border flex flex-col' : 'w-44 shrink-0 border-r border-border flex flex-col'}>
+          <div className={compact ? 'flex flex-wrap gap-1 p-2 max-h-40 overflow-y-auto' : 'flex-1 overflow-y-auto p-2 space-y-0.5'}>
             {visibleCats.map(cat => (
               <div
                 key={cat.id}
@@ -518,7 +519,7 @@ export default function CodexPanel({ project, fixedDomain, fixedCategoryKeys, em
         )}
 
         {/* 中：词条列表 */}
-        <div className="w-52 shrink-0 border-r border-border flex flex-col">
+        <div className={compact ? 'min-w-0 border-b border-border flex flex-col' : 'w-52 shrink-0 border-r border-border flex flex-col'}>
           {/* 排序下拉 */}
           <div className="px-2 pt-2 pb-1 flex items-center gap-1.5">
             <span className="text-[10px] text-text-muted shrink-0">排序</span>
@@ -593,7 +594,7 @@ export default function CodexPanel({ project, fixedDomain, fixedCategoryKeys, em
         </div>
 
         {/* 右：词条详情 */}
-        <div className="flex-1 overflow-y-auto min-w-0">
+        <div className={compact ? 'min-w-0 min-h-24' : 'flex-1 overflow-y-auto min-w-0'}>
           {activeEntry && activeCat ? (
             <CodexEntryDetail
               key={activeEntry.id}

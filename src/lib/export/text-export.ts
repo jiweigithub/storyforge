@@ -1,3 +1,4 @@
+import { saveFile } from '../platform/save-file'
 import { db } from '../db/schema'
 import type { OutlineNode, Chapter } from '../types'
 import { isHtml, htmlToPlainText } from '../utils/html'
@@ -182,15 +183,6 @@ function renderChapterTxt(node: OutlineNode, chapterMap: Map<number, Chapter>): 
 }
 
 /** 下载文本文件 */
-export function downloadTextFile(content: string, filename: string, mimeType: string = 'text/plain') {
-  const blob = new Blob([content], { type: `${mimeType};charset=utf-8` })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  // Embedded browsers may begin reading the URL after click has returned.
-  setTimeout(() => URL.revokeObjectURL(url), 1_000)
+export async function downloadTextFile(content: string, filename: string, mimeType: string = 'text/plain'): Promise<void> {
+  await saveFile(new Blob([content], { type: `${mimeType};charset=utf-8` }), filename)
 }

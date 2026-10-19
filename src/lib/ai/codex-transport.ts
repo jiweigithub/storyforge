@@ -14,7 +14,7 @@ export interface CodexReceipt {
   providerTurn?: { threadId: string; turnId: string; status: 'completed' | 'failed' | 'interrupted' }
 }
 export function isLocalCodexHost(): boolean {
-  return typeof location !== 'undefined' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
+  return import.meta.env.MODE !== 'android' && typeof location !== 'undefined' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
 }
 export async function codexRequest<T>(path: string, body?: unknown): Promise<T> {
   assertGenerationAvailable()

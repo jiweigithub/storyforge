@@ -1611,52 +1611,56 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       setProseGenerationError(error instanceof Error ? error.message : '作者编辑保存失败，已阻止正式续写。')
       return
     }
-    await persistCurrentEditorContent()
-    const backgroundMemoryIds = await prepareContinuityBeforeGeneration()
-    const scope = await resolveScopeLike(project.id!)
-    const contentRevision = await captureWorkspaceContentRevisionV1({
-      scope,
-      worldGroupId: chapterWorldGroupId ?? null,
-    })
-    const {
-      text: fullCtx,
-      assembled,
-      generationBinding,
-      characterContext,
-      continuity,
-      continuityBudgetTokens,
-    } = await buildFullWorldCtx('continue', 'write')
-    await assertWorkspaceContentRevisionFreshV1(contentRevision, {
-      scope,
-      worldGroupId: chapterWorldGroupId ?? null,
-    })
-    const informationBoundary = await buildChapterInformationBoundaryV1({
-      scope: await resolveScopeLike(project.id!),
-      chapterId: currentChapter?.id ?? null,
-      outlineNodeId: outlineNode.id!,
-      worldGroupId: chapterWorldGroupId ?? null,
-      perspectiveCharacterId,
-    })
-    const ctxWithChars = characterContext ? `${fullCtx}\n\n【角色设定】\n${characterContext}` : fullCtx
-    const messages = buildContinuePrompt(
-      plainText,
-      outlineNode.summary,
-      ctxWithChars,
-      [buildInformationBoundaryInstructionV1(informationBoundary), customInstruction.trim()]
-        .filter(Boolean)
-        .join('\n'),
-      { continuity, continuityBudgetTokens },
-    )
-    prepareOrRunChapterGeneration(
-      'continue',
-      'chapter.continue',
-      messages,
-      backgroundMemoryIds,
-      assembled,
-      generationBinding,
-      informationBoundary,
-      contentRevision,
-    )
+    try {
+      await persistCurrentEditorContent()
+      const backgroundMemoryIds = await prepareContinuityBeforeGeneration()
+      const scope = await resolveScopeLike(project.id!)
+      const contentRevision = await captureWorkspaceContentRevisionV1({
+        scope,
+        worldGroupId: chapterWorldGroupId ?? null,
+      })
+      const {
+        text: fullCtx,
+        assembled,
+        generationBinding,
+        characterContext,
+        continuity,
+        continuityBudgetTokens,
+      } = await buildFullWorldCtx('continue', 'write')
+      await assertWorkspaceContentRevisionFreshV1(contentRevision, {
+        scope,
+        worldGroupId: chapterWorldGroupId ?? null,
+      })
+      const informationBoundary = await buildChapterInformationBoundaryV1({
+        scope: await resolveScopeLike(project.id!),
+        chapterId: currentChapter?.id ?? null,
+        outlineNodeId: outlineNode.id!,
+        worldGroupId: chapterWorldGroupId ?? null,
+        perspectiveCharacterId,
+      })
+      const ctxWithChars = characterContext ? `${fullCtx}\n\n【角色设定】\n${characterContext}` : fullCtx
+      const messages = buildContinuePrompt(
+        plainText,
+        outlineNode.summary,
+        ctxWithChars,
+        [buildInformationBoundaryInstructionV1(informationBoundary), customInstruction.trim()]
+          .filter(Boolean)
+          .join('\n'),
+        { continuity, continuityBudgetTokens },
+      )
+      prepareOrRunChapterGeneration(
+        'continue',
+        'chapter.continue',
+        messages,
+        backgroundMemoryIds,
+        assembled,
+        generationBinding,
+        informationBoundary,
+        contentRevision,
+      )
+    } catch (error) {
+      setProseGenerationError(error instanceof Error ? error.message : '正文续写准备失败。')
+    }
   }
 
   const handlePolish = () => {
@@ -3128,8 +3132,8 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
         <div className="mb-3">
           <Suspense fallback={<LazyPanelFallback />}>
             <SettingLookupPanel
-              aiConfig={aiConfig}
-              projectId={project.id!}
+              worldGroupId={chapterWorldGroupId ?? null}
+              project={project}
               onClose={() => setShowSettingsLookup(false)}
             />
           </Suspense>
@@ -3173,7 +3177,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
             onApplyOutline={async (newOutline) => {
               if (currentDetailedOutline?.id != null) {
                 await import('../../stores/detailed-outline').then(({ useDetailedOutlineStore }) => {
-                  useDetailedOutlineStore.getState().save(currentDetailedOutline.id!, {
+                  return useDetailedOutlineStore.getState().save(currentDetailedOutline.id!, {
                     scenes: newOutline.scenes,
                   })
                 })
@@ -3182,7 +3186,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
             onApplyBeats={async (newBeats) => {
               if (currentEmotionCard?.id != null) {
                 await import('../../stores/emotion-beat').then(({ useEmotionBeatStore }) => {
-                  useEmotionBeatStore.getState().updateCard(currentEmotionCard.id!, {
+                  return useEmotionBeatStore.getState().updateCard(currentEmotionCard.id!, {
                     beats: newBeats,
                   })
                 })
@@ -3227,6 +3231,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
         <div className="mb-3 rounded-lg border border-accent/30 bg-accent/5 p-3">
           <PromptPreviewGate
             messages={pendingGeneration.prepared.messages}
+            contextEvidence={pendingGeneration.assembled}
             backLabel="取消本次预览"
             onBack={() => setPendingGeneration(null)}
             onConfirm={messages => {

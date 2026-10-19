@@ -1,6 +1,25 @@
 # 安装与启动
 
-推荐从 [最新版本下载页](https://github.com/yuanbw2025/storyforge/releases/latest) 获取本地便携包。最新便携包包含发布时冻结的主干功能、界面和内置媒资，不再要求普通用户先安装开发环境。旧 Release 保留为历史版本；固定发行不会自动跟随之后的主干开发。
+从[最新版本下载页](https://github.com/yuanbw2025/storyforge/releases/latest)选择客户端安装包或便携 ZIP。Windows 和 Mac 可安装桌面客户端，Android 使用 APK；Linux 使用便携 ZIP。便携包自带运行环境和内置媒资，无需先安装开发环境。
+
+## Windows / macOS / Android 客户端 {#开发中的-windows-android-客户端}
+
+[v4.0.2](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2) 已于 2026-10-16 发布桌面安装器与 Android APK，另有四平台便携 ZIP。iOS 本次暂缓。
+
+| 设备 | 下载文件 | 安装方式 |
+|---|---|---|
+| Windows x64 | `StoryForge-4.0.2-windows-x64-setup.exe` | 运行安装器 |
+| Mac，M 系列芯片 | `StoryForge-4.0.2-macos-arm64.dmg` | 将 StoryForge 拖入“应用程序” |
+| Mac，Intel 芯片 | `StoryForge-4.0.2-macos-x64.dmg` | 将 StoryForge 拖入“应用程序” |
+| Android | `StoryForge-4.0.2-android.apk` | 允许该下载来源安装应用，再确认安装 |
+
+Windows 安装器尚无发布者证书；macOS 使用本地签名，尚未通过 Apple 公证。系统可能要求明确允许打开。请先核对官方发行来源及校验值，不要关闭系统整体安全防护。
+
+首次启动请阅读并同意《用户协议》，其中包含个人信息与隐私保护条款；设置中可再次查阅。在“通用设置 → 问题与建议”可主动提交 Bug 或功能建议。
+
+客户端启动后检查更新，设置中也提供“检查更新”“下载更新”“安装更新”。保存编辑并结束生成任务后再安装：Windows 运行安装器；Android 需系统确认；macOS 打开已下载并校验的 DMG，由您替换“应用程序”里的旧版。检查或下载失败不影响继续使用当前版本。
+
+首次从浏览器切换客户端，请先导出完整 JSON，再在客户端明确导入。浏览器与客户端分别保存作品，各设备不会自动同步。升级前保留备份，直接覆盖安装，不要卸载或清除应用数据。Android 模型服务需使用 HTTPS，不能使用电脑本机 Codex 登录或文件夹备份；长时间生成请保持应用前台。移动布局和专用导出入口仍保留当前适配限制。
 
 ## 便携包：无需安装 Node.js
 

@@ -160,6 +160,24 @@ describe('Text Open World G5-09 · Creator quality studio UI', () => {
     host.remove()
   })
 
+  it('原生文件保存尚未完成或被取消时不提示导出成功', async () => {
+    mocks.read.mockResolvedValue(workspace())
+    let cancel!: (cause: Error) => void
+    mocks.download.mockImplementationOnce(() => new Promise((_resolve, reject) => { cancel = reject }))
+    const onChanged = vi.fn()
+    await act(async () => root.render(createElement(TextOpenWorldCreatorQualityStudio, {
+      scope: SCOPE, productionId: 71, buildId: 81, refreshToken: '1',
+      onPreview: vi.fn(), onChanged,
+    })))
+    await act(async () => button(host, '导出复现回执').click())
+    expect(mocks.download).toHaveBeenCalledOnce()
+    expect(host.textContent).not.toContain('复现回执已导出。')
+    await act(async () => cancel(new Error('已取消保存，备份尚未完成')))
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('已取消保存')
+    expect(host.textContent).not.toContain('复现回执已导出。')
+    expect(onChanged).not.toHaveBeenCalled()
+  })
+
   it('展示硬门和双评审，并以完整覆盖及五项人工确认冻结灰盒回执', async () => {
     mocks.read.mockResolvedValue(workspace())
     const onPreview = vi.fn()

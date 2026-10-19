@@ -1,7 +1,7 @@
 ---
 productId: authoring.nodes
 status: preview
-lastVerified: 2026-10-10
+lastVerified: 2026-10-19
 ---
 # Node authoring
 
@@ -31,11 +31,11 @@ A connected graph does not guarantee semantic correctness. The preview canvas is
 
 Continue: [AI candidates and recovery](/en/guides/ai-workflow).
 
-## Two node entry points
+## Continuing with old prompt workflows
 
-Node authoring in the longform workbench uses formal domain nodes. The workflow editor in the prompt library provides This node's template (本节点模板), material bindings, and AI hints (给 AI 的提示). These are separate entries: updates to prompt workflows do not establish that the domain canvas was updated.
+Formal longform nodes use Workbench → Node authoring. The prompt library retains old workflows under Prompt experiments (提示词实验), with editing, copying, import, and export. Experimental execution is off by default and requires opting in for the current visit. Outputs can be copied or exported but cannot directly write to the official work; useful text can enter the setting-extraction candidate flow for review and confirmation.
 
-Prompt workflows can use [Forge Writing Workshop](/en/guides/using-prompts) templates. Specify variables when connecting upstream material; a connection alone does not supply missing inputs.
+Choose Convert to formal nodes (转换为正式节点) and inspect the step and edge mappings. If compatible, Confirm copy as formal nodes (确认复制为正式节点) creates a graph for the current work while preserving the original workflow and configuration. Fixed templates, custom variables, unsupported targets, and unsupported edges are reported individually and block conversion. Retain the original and configure those parts manually in the formal canvas; conversion never silently drops them.
 
 ## Node maintenance and recovery
 

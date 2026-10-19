@@ -806,7 +806,7 @@ export default function AvgPage() {
                               className="lf-action"
                               onClick={() =>
                                 void run(async () =>
-                                  downloadJSON(
+                                  await downloadJSON(
                                     await exportProjectJSON(scope.projectId),
                                     `${row?.work.title ?? "AVG"}.json`,
                                   ),

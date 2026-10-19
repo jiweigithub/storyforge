@@ -19,31 +19,31 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
   textarea.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-async function mount(result: StepResult) {
+async function mount(result: StepResult, overrides: { saveTarget?: PromptWorkflowStep['saveTarget']; hasProject?: boolean; actionsDisabled?: boolean } = {}) {
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
-  const onSave = vi.fn()
+  const onExtract = vi.fn()
   const onUserInputChange = vi.fn()
   const onOutputChange = vi.fn()
 
   await act(async () => {
     root.render(createElement(StepCard, {
-      step,
+      step: 'saveTarget' in overrides ? { ...step, saveTarget: overrides.saveTarget } : step,
       index: 0,
       result,
       isCurrent: result.status === 'pending',
       onSkip: vi.fn(),
       onRetry: vi.fn(),
-      onSave,
+      onExtract,
       onUserInputChange,
       onOutputChange,
-      saved: false,
-      hasProject: true,
+      hasProject: overrides.hasProject ?? true,
+      actionsDisabled: overrides.actionsDisabled,
     }))
   })
 
-  return { host, root, onSave, onUserInputChange, onOutputChange }
+  return { host, root, onExtract, onUserInputChange, onOutputChange }
 }
 
 describe('HEALTH-4 · 工作流步骤卡用户路径', () => {
@@ -58,18 +58,45 @@ describe('HEALTH-4 · 工作流步骤卡用户路径', () => {
     mounted.host.remove()
   })
 
-  it('编辑 AI 输出后保存使用编辑值，而不是原始输出', async () => {
+  it('编辑 AI 草稿后提取候选使用编辑值，不再提供直接写回入口', async () => {
     const mounted = await mount({ stepId: step.stepId, output: 'AI 原始结果', status: 'done' })
     const textareas = mounted.host.querySelectorAll('textarea')
     expect(textareas).toHaveLength(2)
 
     await act(async () => setTextareaValue(textareas[1], '用户修改后的结果'))
     expect(mounted.onOutputChange).toHaveBeenLastCalledWith('用户修改后的结果')
-    const saveButton = Array.from(mounted.host.querySelectorAll('button'))
-      .find(button => button.textContent?.includes('保存到'))!
-    await act(async () => saveButton.click())
+    const extractButton = Array.from(mounted.host.querySelectorAll('button'))
+      .find(button => button.textContent?.includes('提取为设定候选'))!
+    await act(async () => extractButton.click())
 
-    expect(mounted.onSave).toHaveBeenCalledWith('用户修改后的结果', step.saveTarget)
+    expect(mounted.onExtract).toHaveBeenCalledWith('用户修改后的结果')
+    expect(mounted.host.textContent).not.toContain('保存到')
+    expect(mounted.host.textContent).not.toContain('已存到')
+    await act(async () => mounted.root.unmount())
+    mounted.host.remove()
+  })
+
+  it('未指定旧写入目标的草稿也能进入同一个候选流程', async () => {
+    const mounted = await mount({ stepId: step.stepId, output: '自由实验草稿', status: 'done' }, { saveTarget: undefined })
+    const button = Array.from(mounted.host.querySelectorAll('button'))
+      .find(item => item.textContent?.includes('提取为设定候选'))!
+    await act(async () => button.click())
+    expect(mounted.onExtract).toHaveBeenCalledWith('自由实验草稿')
+    await act(async () => mounted.root.unmount())
+    mounted.host.remove()
+  })
+
+  it.each([
+    { output: '', hasProject: true, actionsDisabled: false },
+    { output: '草稿', hasProject: false, actionsDisabled: false },
+    { output: '草稿', hasProject: true, actionsDisabled: true },
+  ])('空草稿、无作品或正在运行时不能提取：%o', async options => {
+    const mounted = await mount({ stepId: step.stepId, output: options.output, status: 'done' }, options)
+    const button = Array.from(mounted.host.querySelectorAll('button'))
+      .find(item => item.textContent?.includes('提取为设定候选'))!
+    expect(button.disabled).toBe(true)
+    await act(async () => button.click())
+    expect(mounted.onExtract).not.toHaveBeenCalled()
     await act(async () => mounted.root.unmount())
     mounted.host.remove()
   })

@@ -10,6 +10,8 @@ Check the current world before editing a module. Identical character names do no
 
 ## Location library, geography, and maps
 
+Open Worlds and settings → Locations and maps (世界与设定 → 地点与地图) to switch between the location library, geography, world map, city entries, and association preview. Old geography and map links still open their corresponding views. Location entities, geographic trees, and map layouts keep their original data; equal names do not trigger automatic merges. City entries can explicitly link to existing locations, and the preview distinguishes those references from unmapped records.
+
 | Entry | Main content |
 | --- | --- |
 | Location library | Identifiable places and their narrative purpose |

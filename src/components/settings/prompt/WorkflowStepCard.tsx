@@ -4,13 +4,11 @@ import {
   ChevronRight,
   ClipboardCopy,
   Loader2,
-  Save,
   Sparkles,
   X,
 } from 'lucide-react'
 import type { TokenUsage } from '../../../lib/ai/logger'
-import type { PromptWorkflowStep, SaveTarget } from '../../../lib/types/workflow'
-import { targetLabel } from './workflow-helpers'
+import type { PromptWorkflowStep } from '../../../lib/types/workflow'
 
 export interface StepResult {
   stepId: string
@@ -27,10 +25,9 @@ interface Props {
   isCurrent: boolean
   onSkip: () => void
   onRetry: () => void
-  onSave: (output: string, target: SaveTarget) => void
+  onExtract: (output: string) => void
   onUserInputChange: (value: string) => void
   onOutputChange: (value: string) => void
-  saved: boolean
   hasProject: boolean
   actionsDisabled?: boolean
 }
@@ -42,10 +39,9 @@ export function WorkflowStepCard({
   isCurrent,
   onSkip,
   onRetry,
-  onSave,
+  onExtract,
   onUserInputChange,
   onOutputChange,
-  saved,
   hasProject,
   actionsDisabled = false,
 }: Props) {
@@ -63,6 +59,10 @@ export function WorkflowStepCard({
     })
   }
 
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([editedOutput], { type: 'text/plain;charset=utf-8' }))
+    const link = document.createElement('a'); link.href = url; link.download = `storyforge-draft-${step.stepId}.txt`; link.click(); URL.revokeObjectURL(url)
+  }
   const statusIcon = {
     pending: <ChevronRight className="w-4 h-4 text-text-muted" />,
     running: <Loader2 className="w-4 h-4 text-accent animate-spin" />,
@@ -132,7 +132,7 @@ export function WorkflowStepCard({
                 rows={8}
                 className="w-full max-h-72 resize-y rounded border border-border bg-bg-surface p-2 font-sans text-xs text-text-primary focus:border-accent focus:outline-none disabled:opacity-60"
               />
-              <p className="text-[10px] text-text-muted">AI 输出可直接编辑,保存/复制将使用编辑后的内容。</p>
+              <p className="text-[10px] text-text-muted">AI 草稿可直接编辑；复制、导出和提取候选均使用编辑后的内容。</p>
             </>
           )}
           {result.error && <p className="text-xs text-error">⚠ {result.error}</p>}
@@ -153,26 +153,16 @@ export function WorkflowStepCard({
                     {copied ? <Check className="w-3 h-3 text-success" /> : <ClipboardCopy className="w-3 h-3" />}
                     {copied ? '已复制' : '复制'}
                   </button>
-                  {step.saveTarget && (
-                    <>
-                      <span className="text-text-muted">·</span>
-                      <button
-                        onClick={() => onSave(editedOutput, step.saveTarget!)}
-                        disabled={saved || !hasProject || actionsDisabled}
-                        title={!hasProject ? '需先进入项目' : `自动写入 ${targetLabel(step.saveTarget)}`}
-                        className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded ${
-                          saved
-                            ? 'bg-success/15 text-success'
-                            : !hasProject
-                              ? 'text-text-muted opacity-50 cursor-not-allowed'
-                              : 'bg-accent/10 text-accent hover:bg-accent/20'
-                        }`}
-                      >
-                        {saved ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
-                        {saved ? `已存到 ${targetLabel(step.saveTarget)}` : `保存到 ${targetLabel(step.saveTarget)}`}
-                      </button>
-                    </>
-                  )}
+                  <button onClick={download} className="text-xs text-text-secondary">导出草稿</button>
+                  <span className="text-text-muted">·</span>
+                  <button
+                    onClick={() => onExtract(editedOutput)}
+                    disabled={!hasProject || actionsDisabled || !editedOutput.trim()}
+                    title={!hasProject ? '需先进入项目' : '通过词条库提取候选，确认后才能写入'}
+                    className="flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Sparkles className="w-3 h-3" /> 提取为设定候选
+                  </button>
                 </>
               )}
               {result.status !== 'done' && (

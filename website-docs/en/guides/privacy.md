@@ -1,39 +1,25 @@
-# Local data, models, and privacy
+# Privacy
 
-## Where content is stored
+## Works and model services
 
-Core creation primarily uses the browser's local database. After binding a disk workspace, author-confirmed synchronization can store supported content there. This does not automatically cloud-sync across browsers, addresses, or devices.
+Works are stored locally in your browser or installed client. Storage is separate across browsers, clients and devices; export complete backups regularly. A backup may contain private work, so keep it securely.
 
-## When content leaves the device
+When you explicitly use AI, the content required for that operation is sent to the model service you configured. That provider's terms and privacy rules apply. Keep API keys in model settings and never include them in manuscripts, prompts, screenshots or feedback.
 
-- AI generation, analysis, or review sends task-required material to your configured model provider.
-- External image/audio services may receive related requests and assets.
-- Submitting official feedback sends your description and attachments into the official feedback workflow.
+## Client User Agreement {#in-app-feedback-and-usage-reporting-in-development}
 
-Local-first does not mean fully offline when using cloud models. Consult each provider's own retention and use policies.
+The installed client uses one User Agreement, including privacy and information-handling terms. Read it at first launch or view it again in General settings.
 
-## API keys
+After acceptance of the client User Agreement, supported installations send necessary usage and diagnostic information, including a random installation identifier, build version, platform, active date, and redacted error types/code locations. Activity is recorded at most once per day in China time. Ordinary web builds and the hosted experience do not enable this client analytics path; it does not read prose, Prompts, or API keys.
 
-Enter credentials only in model settings and understand storage options such as Remember. Never put keys in prose, Prompts, screenshots, or feedback attachments, or share settings files containing credentials.
+## Feedback you submit
 
-## Is feedback public?
+In-app problems and suggestions go to the maintainers' private inbox. Review the content and any optional diagnostic summary before sending; do not include private works or credentials. The separate website feedback form creates public GitHub Issues and clearly identifies that destination.
 
-Official feedback creates GitHub Issues. Prepare descriptions and attachments as public content. Do not submit private manuscripts, personal information, or keys. Attachments are temporarily stored by the official feedback system and automatically removed after about 10 days; this does not mean the Issue text is deleted.
+Local error summaries help troubleshoot failures. They are not complete crash dumps and do not capture every interruption. See [troubleshooting](/en/guides/troubleshooting).
 
-## Offline use and cost
+## Website use
 
-Manual editing, local checks of existing content, and backups need no cloud model. Whether the app itself loads offline depends on installation, cache, and browser state. Remote models require network access; local models require a running local service.
+The website processes necessary access and technical information to operate the site, maintain security and improve the experience. First-party cookies may support site operation. It does not read works or API keys stored in your creation workspace.
 
-## Website PV and daily UV
-
-The website, knowledge base, and hosted project preview share page views (PV) and daily browser visitors (UV). Reports are available only from the server backend; public pages show no counts. Days follow Beijing time (Asia/Shanghai). A browser counts once per day for UV; refreshes and page navigation add PV, while same-page anchors do not. Existing cumulative PV is retained. Daily reports start with this upgrade, making the first day partial; no historical data is invented. Future shared-entry pages participate, while local creation and previews do not.
-
-UV uses a first-party random cookie valid for 30 days and renewed on visits, restricted to the metrics endpoint. It is not an account or login credential. The website and knowledge base share it. The server stores date-specific deduplication digests for about 31 days, not raw cookies. Aggregates are retained and random retry receipts expire after about a day. No account, IP, browser fingerprint, page URL, query parameters, manuscript, or API key is submitted. Different browsers/devices or cookie deletion create a new identity, so UV is not a count of real people. Blocked cookies still permit PV without inventing UV; disabled scripts, blocked requests, or network errors can undercount.
-
-Continue: [Backup and recovery](/en/guides/backup-restore) · [Model configuration](/en/getting-started/model-config).
-
-## Local errors and explicit feedback
-
-The browser retains at most twenty error types, timestamps, and filtered code locations from the last seven days. The portable launcher separately retains bounded failure and session metadata. These local operational diagnostics are not work-library records, world releases, or project backups, and do not measure first launch, daily activity, or retention.
-
-Diagnostics, screenshots, works, model inputs/outputs, and credentials are not automatically sent. After previewing a summary and opening the official form, you can edit or remove it before explicitly submitting. Submissions enter public Issues; browser errors can be cleared in General settings. See [failure reporting](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds).
+For privacy questions or requests, contact BJxuanxiangkeji@163.com. Continue: [Backup and recovery](/en/guides/backup-restore) · [Model configuration](/en/getting-started/model-config).

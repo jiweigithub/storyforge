@@ -840,7 +840,7 @@ export default function AiTownPage() {
                           className="lf-action"
                           onClick={() =>
                             void run(async () =>
-                              downloadJSON(
+                              await downloadJSON(
                                 await exportProjectJSON(scope.projectId),
                                 `${row?.work.title ?? "AI 小镇"}.json`,
                               ),

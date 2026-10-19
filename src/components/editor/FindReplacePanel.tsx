@@ -20,6 +20,8 @@ import {
 } from '../../lib/editor/find-replace-operation'
 import type { Chapter, OutlineNode } from '../../lib/types'
 import EntityRenamePanel from './EntityRenamePanel'
+import RegisteredTextReplacePanel from './RegisteredTextReplacePanel'
+import { flushPendingEditsV1 } from '../../lib/authoring/pending-edit-coordinator'
 
 type SearchScope = 'chapter' | 'book'
 
@@ -29,7 +31,9 @@ interface Props {
   outlineNodes: OutlineNode[]
   selectedOutlineNodeId: number | null
   onSelectOutlineNode: (outlineNodeId: number) => void
-  onClose: () => void
+  onClose?: () => void
+  initialScope?: SearchScope
+  worldGroupId?: number | null
 }
 
 function formatTime(ts: number): string {
@@ -44,15 +48,17 @@ export default function FindReplacePanel({
   selectedOutlineNodeId,
   onSelectOutlineNode,
   onClose,
+  initialScope = 'chapter',
+  worldGroupId = null,
 }: Props) {
   const dialog = useDialog()
   const toast = useToast()
-  const { updateChapter } = useChapterStore()
+  const loadChapters = useChapterStore(state => state.loadAll)
   const { createSnapshot } = useBackupStore()
   const characters = useCharacterStore(state => state.characters)
   const queryInputRef = useRef<HTMLInputElement | null>(null)
 
-  const [scope, setScope] = useState<SearchScope>('chapter')
+  const [scope, setScope] = useState<SearchScope>(initialScope)
   const [query, setQuery] = useState('')
   const [replacement, setReplacement] = useState('')
   const [caseSensitive, setCaseSensitive] = useState(false)
@@ -61,7 +67,7 @@ export default function FindReplacePanel({
   const [selected, setSelected] = useState<{ chapterId: number; occurrenceIndex: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [undoPatch, setUndoPatch] = useState<FindReplaceUndoPatch | null>(null)
-  const [panelMode, setPanelMode] = useState<'text' | 'entity'>('text')
+  const [panelMode, setPanelMode] = useState<'text' | 'entity' | 'settings'>('text')
 
   useEffect(() => {
     queryInputRef.current?.focus()
@@ -167,7 +173,7 @@ export default function FindReplacePanel({
       message: [
         `将替换 ${plan.count} 处，分布在 ${plan.affectedChapters} 章。`,
         '执行前会自动创建项目快照；本次会话内也可一键撤销到替换前内容。',
-        '如当前章有未保存草稿，请先点击正文页“保存”。',
+        '会先保存当前草稿；若命中内容变化，需要重新查找后再替换。',
       ].join('\n'),
       confirmText: '创建快照并替换',
       cancelText: '取消',
@@ -177,6 +183,7 @@ export default function FindReplacePanel({
 
     setBusy(true)
     try {
+      await flushPendingEditsV1()
       const result = await executeFindReplace({
         mode,
         targets: chaptersToReplace,
@@ -185,13 +192,13 @@ export default function FindReplacePanel({
         projectId,
         selected: activeSelected,
         createSnapshot,
-        updateChapter,
         label: `查找替换前自动快照 ${formatTime(Date.now())}`,
       })
 
       setUndoPatch(result.undoPatch)
       setSelected(null)
       toast.success(`已替换 ${result.replaced} 处，并创建快照`)
+      await loadChapters(projectId).catch(() => toast.error('替换已保存，视图刷新失败；请重新打开页面'))
     } catch (error) {
       toast.error(`替换失败：${error instanceof Error ? error.message : String(error)}`)
     } finally {
@@ -211,7 +218,9 @@ export default function FindReplacePanel({
     if (!ok) return
     setBusy(true)
     try {
-      await undoFindReplace(undoPatch, updateChapter)
+      await flushPendingEditsV1()
+      await undoFindReplace(undoPatch)
+      await loadChapters(projectId)
       setUndoPatch(null)
       toast.success('已撤销上次替换')
     } catch (error) {
@@ -226,7 +235,7 @@ export default function FindReplacePanel({
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div>
           <p className="text-sm font-medium text-text-primary">
-            {panelMode === 'text' ? '全书查找替换' : '智能实体改名'}
+            {panelMode === 'text' ? '全书查找替换' : panelMode === 'entity' ? '智能实体改名' : '跨设定字段替换'}
           </p>
           <p className="text-[11px] text-text-muted">
             {panelMode === 'text'
@@ -234,14 +243,14 @@ export default function FindReplacePanel({
               : '同步稳定实体、正文和结构化冗余名称；执行前先预览并创建快照。'}
           </p>
         </div>
-        <button onClick={onClose} className="rounded p-1 text-text-muted hover:bg-bg-hover hover:text-text-primary" aria-label="关闭查找替换">
+        {onClose && <button onClick={onClose} className="rounded p-1 text-text-muted hover:bg-bg-hover hover:text-text-primary" aria-label="关闭查找替换" disabled={busy}>
           <X className="h-4 w-4" />
-        </button>
+        </button>}
       </div>
 
       <div className="flex gap-1 border-b border-border px-4 pt-2">
         <button
-          onClick={() => setPanelMode('text')}
+          disabled={busy} onClick={() => setPanelMode('text')}
           className={`rounded-t-md px-3 py-1.5 text-xs ${
             panelMode === 'text' ? 'bg-accent/10 text-accent' : 'text-text-muted hover:text-text-primary'
           }`}
@@ -249,16 +258,17 @@ export default function FindReplacePanel({
           文字替换
         </button>
         <button
-          onClick={() => setPanelMode('entity')}
+          disabled={busy} onClick={() => setPanelMode('entity')}
           className={`rounded-t-md px-3 py-1.5 text-xs ${
             panelMode === 'entity' ? 'bg-accent/10 text-accent' : 'text-text-muted hover:text-text-primary'
           }`}
         >
           智能实体改名
         </button>
+        <button disabled={busy} onClick={() => setPanelMode('settings')} className={`rounded-t-md px-3 py-1.5 text-xs ${panelMode === 'settings' ? 'bg-accent/10 text-accent' : 'text-text-muted'}`}>跨设定字段</button>
       </div>
 
-      {panelMode === 'entity' ? (
+      {panelMode === 'settings' ? <RegisteredTextReplacePanel key={`${projectId}:${worldGroupId}`} projectId={projectId} worldGroupId={worldGroupId} onEntityRename={() => setPanelMode('entity')} /> : panelMode === 'entity' ? (
         <EntityRenamePanel projectId={projectId} onSelectOutlineNode={onSelectOutlineNode} />
       ) : (
       <div className="grid gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">

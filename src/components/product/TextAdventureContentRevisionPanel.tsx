@@ -43,13 +43,16 @@ export default function TextAdventureContentRevisionPanel(props: {
       setRevisions(changed)
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }
-  const download = () => {
+  const download = async () => {
+    setError('')
     const revisions = props.artifacts.filter(row => isTextContentRevisionKeyV1(row.artifactKey)).map(row => ({
       artifactKey: row.artifactKey, expectedArtifactVersion: row.version, expectedArtifactHash: row.contentHash,
       note: '文字修订', authorDraftJson: JSON.stringify(row.payload, null, 2),
     }))
-    downloadTextFile(JSON.stringify({ schema: 'storyforge.text-adventure-content-revision', version: 1,
-      buildNumber: props.buildNumber, revisions }, null, 2), `文字修订-Build${props.buildNumber}.json`, 'application/json')
+    try {
+      await downloadTextFile(JSON.stringify({ schema: 'storyforge.text-adventure-content-revision', version: 1,
+        buildNumber: props.buildNumber, revisions }, null, 2), `文字修订-Build${props.buildNumber}.json`, 'application/json')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }
   return <details className="mt-4 rounded border border-border bg-bg-base p-4" data-testid="text-adventure-batch-content-revision">
     <summary className="cursor-pointer text-xs font-semibold">修订定稿并保留插图（高级）</summary>

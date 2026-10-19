@@ -35,7 +35,7 @@ export async function openLongformLeaf(page: Page, name: string): Promise<boolea
   if (!item) throw new Error(`长篇验收导航未映射：${name}`)
   const steps = page.getByRole('navigation', { name: '长篇工作台二级导航' })
   await steps.getByRole('button', { name: item[0], exact: true }).click()
-  if (item[1]) await page.getByRole('navigation', { name: `${item[0]}三级导航`, exact: true }).getByRole('button', { name: item[1], exact: true }).click()
+  if (item[1]) await page.getByRole('navigation', { name: item[0] === '地点与地图' ? '地点与地图视图' : `${item[0]}三级导航`, exact: true }).getByRole('button', { name: item[1], exact: true }).click()
   await expect(steps).toBeVisible()
   return true
 }

@@ -43,7 +43,7 @@ export default function ComicPlanning({scope,root,units,stage,onChanged}:{scope:
  if(['facts','causal','decisions','brief'].includes(stage)&&p.scriptBeats.length&&!await dialog.confirm({title:'确认修改上游内容？',message:'已做的脚本、页格和图片会保留，但分页方案将需要重新确认，才能继续发布。修改原作事实还会清除旧因果关系和删改决定。',confirmText:'确认修改'}))return
  if((['script','rhythm'].includes(stage)&&p.pagePlans.length)||(stage==='visual'&&(await listComicVisualSubjects(scope)).length)){
  if(!await dialog.confirm({title:'确认重新规划？',message:'此操作会替换下游页格、图片候选与审查，并先下载完整备份。已发布版本及其图片保留。锁定内容需要先解锁。',confirmText:'备份并替换'}))return
- downloadJSON(await exportProjectJSON(scope.projectId),'漫画重新规划前备份.json');replace=true
+ await downloadJSON(await exportProjectJSON(scope.projectId),'漫画重新规划前备份.json');replace=true
  }
  const common={scope,adaptationProjectId:root.id!,expectedAdaptationRevision:root.revision,sourceManifestVersion:root.activeSourceManifestVersion};const items=Array.isArray(value)?value.map(candidate=>({candidate,authorStatus:'confirmed' as const})):[]
  if(stage==='facts')await adoptAdaptationSourceFactsV1({...common,items})

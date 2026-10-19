@@ -801,6 +801,38 @@ export const FIELD_REGISTRY: FieldSpec[] = [
   num('stateCards', 'lastChapterId'),
 ]
 
+/** Author editing capabilities live beside the writable fields, not in panels. */
+const replacementFields: Record<string, Record<string, NonNullable<FieldSpec['textReplacement']>>> = {
+  worldviews: {
+    ...Object.fromEntries(WORLDVIEW_GENERATABLE_FIELD_SPECS.filter(spec => spec.type === 'longtext').map(spec => [spec.field, { codec: 'text' as const }])),
+    divineDesign: { codec: 'object', paths: ['divineRank', 'divineNames', 'divineRules'] },
+    naturalResources: { codec: 'object', paths: ['rareCreatures', 'herbs', 'minerals', 'others'] },
+  },
+  storyCores: Object.fromEntries(STORY_CORE_GENERATABLE_FIELD_SPECS.filter(spec => spec.type === 'longtext').map(spec => [spec.field, { codec: 'text' as const }])),
+  powerSystems: { name: { codec: 'text' }, description: { codec: 'text' }, rules: { codec: 'text' }, levels: { codec: 'text-or-json', paths: ['*', '*.name', '*.description', '*.title', '*.requirements', '*.abilities', '*.limits'] } },
+  characters: {
+    name: { codec: 'text', identity: true }, identity: { codec: 'text' }, shortDescription: { codec: 'text' },
+    personality: { codec: 'text' }, background: { codec: 'text' }, abilities: { codec: 'text' },
+  },
+  codexEntries: {
+    name: { codec: 'text', identity: true }, summary: { codec: 'text' }, description: { codec: 'text' },
+    fields: { codec: 'codex-text-fields' },
+  },
+  chapters: { title: { codec: 'text' }, summary: { codec: 'text' }, content: { codec: 'html' }, wordCount: { codec: 'derived-number' } },
+  storyArcs: {
+    name: { codec: 'text' }, description: { codec: 'text' },
+    stages: { codec: 'json', paths: ['*.title', '*.description', '*.turningPoint', '*.keyEvents.*'] },
+  },
+  worldRulesProfiles: { entries: { codec: 'object', paths: ['*.historicalAnchors', '*.fictionalAdaptations'] }, globalNote: { codec: 'text' } },
+}
+for (const [target, fields] of Object.entries(replacementFields)) {
+  for (const [field, capability] of Object.entries(fields)) {
+    const spec = FIELD_REGISTRY.find(item => item.target === target && item.field === field)
+    if (!spec) throw new Error(`Unregistered replacement field: ${target}.${field}`)
+    spec.textReplacement = capability
+  }
+}
+
 export const FIELD_BY_TARGET: ReadonlyMap<string, FieldSpec[]> = new Map(
   Array.from(new Set(FIELD_REGISTRY.map(f => f.target))).map(target => [
     target,

@@ -2,13 +2,17 @@
 
 ## 当前文档描述哪个版本
 
-本轮增量核对至 **2026-10-14，main 基线 cfc5ed3f**；从上次成功维护基线 `ce1cfd6c` 补查用户可见变化。各产品状态仍以自己的指南标记为准，不因维护日期提高成熟度。
+本轮增量核对至 **2026-10-18，main 基线 9cc1f4cf**；从上次成功维护基线 `404ee3bf` 核对用户可见变化。产品状态以各自指南标记为准。
 
-当前源码 package 版本为 **4.0.1**；[最新发行页](https://github.com/yuanbw2025/storyforge/releases/latest)列出实际可下载的固定附件。v4.0.1 构建包含主动故障反馈，以及 [PR #119](https://github.com/yuanbw2025/storyforge/pull/119) 的文字冒险恢复、保图修订和独立网页导出；操作与捕获限制见[故障排查](/guides/troubleshooting#下载版的问题与故障反馈)。
+当前源码 package 版本为 **4.0.2**；[最新发行页](https://github.com/yuanbw2025/storyforge/releases/latest)列出实际可下载的固定附件。4.0.2 增加 Windows、Mac 和 Android 安装包、应用内更新及统一用户协议，见[安装说明](/getting-started/install)。v4.0.1 构建包含主动故障反馈，以及 [PR #119](https://github.com/yuanbw2025/storyforge/pull/119) 的文字冒险恢复、保图修订和独立网页导出；操作与捕获限制见[故障排查](/guides/troubleshooting#下载版的问题与故障反馈)。
 
-历史 [v4.0.0 正式发布](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.0)于 2026-10-13，固定在 `78416965`，不包含上述后续改动。更新知识库不会修改已下载的旧包，也不会替换独立部署的官网体验。排查问题时一起提供版本、构建 commit、访问地址和日期。
+v4.0.2 于 2026-10-16 正式发布，固定源码 `04de86d7`。发行页提供 Windows EXE、Mac Apple Silicon/Intel DMG、Android APK，以及 Windows/Mac/Linux 四平台便携 ZIP 和 `SHA256SUMS.txt`。应用内问题与建议提交到维护者私有收件箱；网页备用表单创建公开 Issue，详见[故障排查](/guides/troubleshooting#下载版的问题与故障反馈)。
+
+历史 [v4.0.0 正式发布](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.0)于 2026-10-13，固定在 `78416965`，不包含上述后续改动。排查问题时一起提供版本、构建 commit、访问地址和日期。
 
 在线站点可能有部署时差；[固定 Releases](https://github.com/yuanbw2025/storyforge/releases)不会自动包含后续 main 功能。
+
+[PR #158](https://github.com/yuanbw2025/storyforge/pull/158) 的大纲候选采纳修复晚于 v4.0.1 固定源码 `e8ce0a0d`，已包含在 4.0.2 客户端源码中。正式可下载状态以发行页为准；其他待合并开发见[开发记录](/updates/development-status)。
 
 ## 升级前
 

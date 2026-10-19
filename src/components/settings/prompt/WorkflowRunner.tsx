@@ -10,11 +10,9 @@ import { useWorldGroupStore } from '../../../stores/world-group'
 import { useAIStream } from '../../../hooks/useAIStream'
 import { renderPrompt } from '../../../lib/ai/prompt-engine'
 import { assembleBoundPrompt } from '../../../lib/ai/prompt-variable-bindings'
-import { extractJSON } from '../../../lib/ai/adapters/import-adapter'
-import { adopt } from '../../../lib/registry/adopt'
 import { assembleContext } from '../../../lib/registry/assemble-context'
-import { db } from '../../../lib/db/schema'
-import type { PromptWorkflow, PromptWorkflowStep, SaveTarget } from '../../../lib/types/workflow'
+import CodexPanel from '../../codex/CodexPanel'
+import type { PromptWorkflow, PromptWorkflowStep } from '../../../lib/types/workflow'
 import type { Project } from '../../../lib/types'
 import { useActiveWork } from '../../../hooks/useActiveWork'
 import { assembleWorkflowStepVars } from './workflow-helpers'
@@ -23,7 +21,6 @@ import {
   runGenerationNode,
 } from '../../../lib/generation/generation-node'
 import { createWorkflowGenerationNode } from '../../../lib/generation/workflow-generation-node'
-import { useToast } from '../../shared/Toast'
 import WorkflowStepCard from './WorkflowStepCard'
 import type { StepResult } from './WorkflowStepCard'
 import WorkflowExecutionGraph from './WorkflowExecutionGraph'
@@ -43,27 +40,13 @@ interface RunnerProps {
   onClose: () => void
 }
 
-async function findExistingOutlineNode(
-  projectId: number,
-  node: { parentId: number | null; type: string; title: string },
-): Promise<number | null> {
-  const rows = await db.outlineNodes.where('projectId').equals(projectId).toArray()
-  const hit = rows.find(n =>
-    (n.parentId ?? null) === (node.parentId ?? null) &&
-    n.type === node.type &&
-    n.title === node.title
-  )
-  return hit?.id ?? null
-}
-
 /**
  * 工作流执行器：按顺序运行一个 PromptWorkflow 的所有步骤，
- * 每步可暂停让用户审核、重试、跳过、或自动写入 SaveTarget。
+ * 每步可暂停让用户审核、重试或跳过；输出只作草稿，不直接写入 SaveTarget。
  * 从 PromptWorkflowsPanel.tsx 抽出。
  */
 export default function WorkflowRunner({ workflow, project, onClose }: RunnerProps) {
   const activeWork = useActiveWork(project)
-  const toast = useToast()
   const ai = useAIStream()
   const { loadAll: loadWorldview } = useWorldviewStore()
   const { loadAll: loadCreativeRules } = useCreativeRulesStore()
@@ -71,7 +54,7 @@ export default function WorkflowRunner({ workflow, project, onClose }: RunnerPro
   const { loadAll: loadOutline } = useOutlineStore()
   const { loadAll: loadForeshadows } = useForeshadowStore()
   const activeGroupId = useWorldGroupStore(s => s.activeGroupId)
-  const [savedSteps, setSavedSteps] = useState<Set<string>>(new Set())
+  const [extractSource, setExtractSource] = useState<string | null>(null)
   const graphCompilation = useMemo(() => {
     try {
       return { compiled: compileWorkflowGraph(workflow), error: null as string | null }
@@ -109,103 +92,6 @@ export default function WorkflowRunner({ workflow, project, onClose }: RunnerPro
     }
   }, [project?.id, loadWorldview, loadCreativeRules, loadCharacters, loadOutline, loadForeshadows])
 
-  /** 写入对应模块 */
-  const handleSaveTarget = async (stepId: string, output: string, target: SaveTarget) => {
-    if (!project?.id) {
-      toast.error('未关联项目，无法自动保存。请进入某个项目后再运行。')
-      return
-    }
-    const projectId = project.id
-    try {
-      if (target.type === 'worldview-field') {
-        await adopt({
-          projectId,
-          target: 'worldviews',
-          mode: target.mode === 'append' ? 'append' : 'replace',
-          data: { [target.field]: output },
-        })
-        await loadWorldview(projectId)
-      } else if (target.type === 'storyCore-field') {
-        await adopt({
-          projectId,
-          target: 'storyCores',
-          mode: target.mode === 'append' ? 'append' : 'replace',
-          data: { [target.field]: output },
-        })
-        await loadWorldview(projectId)
-      } else if (target.type === 'creativeRules-field') {
-        await adopt({
-          projectId,
-          target: 'creativeRules',
-          mode: target.mode === 'append' ? 'append' : 'replace',
-          data: { [target.field]: output },
-        })
-        await loadCreativeRules(projectId)
-      } else if (target.type === 'create-characters') {
-        const parsed = extractJSON(output) as unknown[]
-        if (!Array.isArray(parsed)) throw new Error('AI 输出不是 JSON 数组')
-        const result = await adopt({ projectId, target: 'characters', mode: 'add-many', data: parsed as Record<string, unknown>[] })
-        await loadCharacters(projectId)
-        toast.success(`已写入 ${result.written.length} 个角色${result.skipped.length ? `，跳过 ${result.skipped.length} 个` : ''}`)
-      } else if (target.type === 'create-outline-nodes') {
-        const parsed = extractJSON(output) as unknown[]
-        if (!Array.isArray(parsed)) throw new Error('AI 输出不是 JSON 数组')
-        let order = 0, n = 0
-        const writeNode = async (raw: Record<string, unknown>, parentId: number | null): Promise<number | null> => {
-          if (typeof raw.title !== 'string') return null
-          const isVolume = raw.type === 'volume' || (Array.isArray(raw.children) && raw.children.length > 0)
-          const normalized = {
-            projectId,
-            parentId,
-            type: isVolume ? 'volume' : 'chapter',
-            title: raw.title,
-            summary: String(raw.summary || ''),
-            order: order++,
-          }
-          const adopted = await adopt({
-            projectId,
-            target: 'outlineNodes',
-            mode: 'add',
-            data: normalized,
-          })
-          const id = adopted.written[0]?.id ?? (await findExistingOutlineNode(projectId, normalized))
-          if (adopted.written.length) n++
-          if (id != null && Array.isArray(raw.children)) {
-            for (const child of raw.children) {
-              await writeNode(child as Record<string, unknown>, id)
-            }
-          }
-          return id
-        }
-        for (const x of parsed) {
-          if (typeof x === 'object' && x) await writeNode(x as Record<string, unknown>, null)
-        }
-        await loadOutline(projectId)
-        toast.success(`已写入 ${n} 个大纲节点`)
-      } else if (target.type === 'create-foreshadows') {
-        const parsed = extractJSON(output) as unknown[]
-        if (!Array.isArray(parsed)) throw new Error('AI 输出不是 JSON 数组')
-        const normalized = parsed
-          .filter((raw): raw is Record<string, unknown> => typeof raw === 'object' && raw !== null)
-          .map(f => ({
-            ...f,
-            status: f.status || 'planned',
-            type: f.type || 'chekhov',
-            echoChapterIds: f.echoChapterIds || [],
-            plantChapterId: f.plantChapterId ?? null,
-            resolveChapterId: f.resolveChapterId ?? null,
-            notes: f.notes || '',
-          }))
-        const result = await adopt({ projectId, target: 'foreshadows', mode: 'add-many', data: normalized })
-        await loadForeshadows(projectId)
-        toast.success(`已写入 ${result.written.length} 个伏笔${result.skipped.length ? `，跳过 ${result.skipped.length} 个` : ''}`)
-      }
-      setSavedSteps(prev => new Set(prev).add(stepId))
-    } catch (e) {
-      toast.error(`保存失败：${e instanceof Error ? e.message : String(e)}。角色/大纲/伏笔类目标需 AI 输出 JSON。可用 import.parse-* 类提示词预先调好。`)
-    }
-  }
-
   const [results, setResults] = useState<Map<string, StepResult>>(() => {
     const m = new Map<string, StepResult>()
     executionSteps.forEach(s => m.set(s.stepId, { stepId: s.stepId, output: '', status: 'pending' }))
@@ -233,7 +119,6 @@ export default function WorkflowRunner({ workflow, project, onClose }: RunnerPro
     if (!invalidated.length) return
     const invalidatedIds = new Set(invalidated.map(step => step.stepId))
     invalidatedIds.forEach(stepId => stepOutputsRef.current.delete(stepId))
-    setSavedSteps(current => new Set([...current].filter(stepId => !invalidatedIds.has(stepId))))
     setResults(current => {
       const next = new Map(current)
       invalidated.forEach(step => {
@@ -407,6 +292,8 @@ export default function WorkflowRunner({ workflow, project, onClose }: RunnerPro
 
   return (
     <div className="p-5 space-y-3">
+      <p className="text-xs text-warning">提示词实验：输出仅保留为可编辑草稿，请及时复制或导出。正式保存请转换流程到长篇节点，或通过设定提取生成可确认候选。</p>
+      {extractSource !== null && project && <section className="rounded border border-border p-3"><button onClick={() => setExtractSource(null)}>关闭设定提取</button><CodexPanel project={project} embedded compact extractionSourceText={extractSource} /></section>}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-semibold text-text-primary">▶ 运行：{workflow.name}</h2>
@@ -481,22 +368,16 @@ export default function WorkflowRunner({ workflow, project, onClose }: RunnerPro
             isCurrent={idx === currentIndex && globalStatus === 'running'}
             onSkip={() => handleSkip(step.stepId)}
             onRetry={() => handleRetryStep(idx)}
-            onSave={(output, target) => handleSaveTarget(step.stepId, output, target)}
+            onExtract={output => setExtractSource(output)}
             onUserInputChange={(v) => userInputsRef.current.set(step.stepId, v)}
             onOutputChange={(output) => {
               stepOutputsRef.current.set(step.stepId, output)
               updateResult(step.stepId, { output })
-              setSavedSteps(current => {
-                const next = new Set(current)
-                next.delete(step.stepId)
-                return next
-              })
               if (idx < executionSteps.length - 1) {
                 invalidateFromIndex(idx + 1)
                 setGlobalStatus('paused')
               }
             }}
-            saved={savedSteps.has(step.stepId)}
             hasProject={!!project?.id}
             actionsDisabled={globalStatus === 'running'}
           />
@@ -507,8 +388,8 @@ export default function WorkflowRunner({ workflow, project, onClose }: RunnerPro
         <div className="bg-bg-surface border border-success/30 rounded-xl p-4">
           <h3 className="text-sm font-semibold text-success mb-2">✓ 全部完成</h3>
           <p className="text-xs text-text-secondary mb-3">
-            可以把每步输出复制到对应模块（角色 / 大纲 / 章节正文等）。
-            后续 Phase 可以做"一键写入"自动化。
+            每步输出都是可编辑草稿，可以复制、导出，或提取为设定候选。
+            候选需由你确认采纳后才会写入作品。
           </p>
         </div>
       )}

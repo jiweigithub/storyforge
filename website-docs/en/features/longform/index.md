@@ -1,7 +1,7 @@
 ---
 productId: independent.longform
 status: released
-lastVerified: 2026-10-04
+lastVerified: 2026-10-19
 ---
 # Step-by-step longform
 
@@ -41,6 +41,14 @@ Use these areas as needed. A short realistic scene does not require a power syst
 Start from a minimal confirmed idea, or work only on a selected volume, chapter, prose passage, or character field. Tell the companion your scope—for example, “only add the character's motivation” or “write chapter three first; do not change the world.” Review the plan before confirming. Completing every setting first is not required.
 
 Candidates can be read, edited, discussed further, or explicitly declined. Declining optional work should not force you to complete it. If optional post-adoption organization fails, adopted prose remains saved and the follow-up can be recovered separately where offered. Library word counts reflect saved prose; generated drafts are not saved word counts.
+
+## Free discussion and draft writing
+
+Choose Free discussion / Draft writing (自由讨论 / 试写) under Luniang's conversation mode. Explore settings, draft a random scene, or compare versions without completing every form or creating a chapter first. Optionally select world settings, characters, or story core for the current turn; unselected material is not represented as fully read.
+
+Replies stay in this work's conversation and do not automatically change the work. Choose Extract as setting candidates (提取为设定候选) beside a reply, select a category, then AI split entries from content (AI 从内容拆分词条). Check the source and candidates before confirming Write selected (写入所选). Pending candidates can be recovered in the same work and category; refreshing does not repeat the model call. Switch back to Discussion and planning (讨论与规划) to review and start a creative task plan.
+
+Setting lookup (设定查询) in the prose editor keeps search and reading; writing conversations open Luniang. Old unscoped setting-question history appears only after you choose to inspect it. Export the original first if needed, then confirm whether it belongs to the current work. Claiming copies the messages and retains the original; it does not write settings or prose.
 
 ## Luniang (炉娘) and voice
 

@@ -404,6 +404,12 @@ export interface FieldSpec {
   labels?: string[]
   sanitize?: (val: unknown) => unknown
   label?: string
+  /** Explicit author-operated text replacement surface; never infer from AI writability. */
+  textReplacement?: {
+    codec: 'text' | 'html' | 'json' | 'object' | 'text-or-json' | 'derived-number' | 'codex-text-fields'
+    paths?: readonly string[]
+    identity?: boolean
+  }
   /**
    * AI generation is opt-in. A registered writable field is not automatically
    * generatable; formal Skills derive their target set and field contract from
@@ -466,6 +472,8 @@ export interface AdoptionExtensionSpec {
 }
 
 export interface AdoptInput {
+  /** Author-operated, registry-allowlisted exact text edits; never set from model payloads. */
+  preserveAuthorText?: boolean
   extensionSnapshot?: import('../extensions/types').ExtensionRegistrySnapshot
   projectId: number
   /** Explicit logical read/write boundary. */

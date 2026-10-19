@@ -1,3 +1,4 @@
+import * as detailedRun from '../../src/lib/agent/run/detailed-outline-generation-durable'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { readFileSync } from 'node:fs'
@@ -311,6 +312,31 @@ describe.sequential('R-HARNESS37 · 章节页场景细纲 Agent/Harness 收口',
       skillId: 'outline.details',
       promptVersion: 'detailed-outline-copilot-v2',
     })])
+  })
+
+  it('拒绝细纲失败后保留候选并显示错误，重试成功才清空且不重发模型', async () => {
+    const fixture = await seedWorkspace()
+    const host = await mountScenePanel(fixture)
+    await waitUntil(() => !host.querySelector<HTMLElement>('[title="AI 一键拆场景"]')!.className.includes('pointer-events-none'))
+    await act(async () => { host.querySelector<HTMLElement>('[title="AI 一键拆场景"]')!.click() })
+    await waitUntil(async () => {
+      const run = await db.agentRuns.orderBy('id').last()
+      return !!run?.id && (await readAgentRunV1(fixture.scope, run.id)).projection.state === 'awaiting_confirmation'
+    })
+    await waitUntil(() => !!host.querySelector('[data-testid="dismiss-detail"]'))
+    const reject = vi.spyOn(detailedRun, 'rejectDetailedOutlineGenerationCandidateV1')
+      .mockRejectedValueOnce(new Error('隔离拒绝保存失败'))
+    try {
+      await act(async () => { host.querySelector<HTMLButtonElement>('[data-testid="dismiss-detail"]')!.click() })
+      await waitUntil(() => document.body.textContent!.includes('隔离拒绝保存失败'))
+      expect(host.querySelector('[data-testid="dismiss-detail"]')).not.toBeNull()
+      expect(host.querySelector('[data-testid="edit-detail"]')).not.toBeNull()
+      expect(await db.detailedOutlines.count()).toBe(0)
+      await act(async () => { host.querySelector<HTMLButtonElement>('[data-testid="dismiss-detail"]')!.click() })
+      await waitUntil(() => !host.querySelector('[data-testid="dismiss-detail"]'))
+      expect(mocks.starts).toHaveLength(1)
+      expect(await db.detailedOutlines.count()).toBe(0)
+    } finally { reject.mockRestore() }
   })
 
   it('章节正文页生成后零业务写入，刷新恢复候选，作者确认后才完成并留下回执', async () => {
