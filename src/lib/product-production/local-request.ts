@@ -198,3 +198,35 @@ export async function readProductProductionOriginalLocalReceiptV1(input: {
   return { status: receipt.status, requestId: original.request.requestId, model: original.request.model,
     text: receipt.text, usage: receipt.usage ?? null, source: 'native', candidateReady: false }
 }
+
+/** Read-only pre-dispatch ownership proof for an explicitly requested evidence copy. */
+export type ProductProductionOriginalCaptureQueryV1 = Parameters<typeof readProductProductionOriginalLocalReceiptV1>[0]
+export async function inspectProductProductionOriginalCaptureSourceV1(input: ProductProductionOriginalCaptureQueryV1) {
+  const snapshot = await readAgentRunV1(input.scope, input.runId)
+  const original = await evidence<RequestEvidence>(input.scope, snapshot, input.taskKey, input.attempt, REQUEST)
+  if (!original) fail('原任务没有发送前绑定；不能补造原回答交接')
+  if (original.owner.productionId !== input.productionId || original.owner.buildId !== input.buildId
+    || original.owner.taskKey !== input.taskKey || original.owner.attempt !== input.attempt) fail('交接参数不属于原请求')
+  await verify(original, input.scope, snapshot)
+  await owned(original.owner, false)
+  if (!['failed', 'cancelled'].includes(snapshot.run.status)) fail('原任务尚未结束；请由原执行者保存响应')
+  const build = await db.productBuilds.get(input.buildId)
+  if (!build || build.status !== 'recovery-required' || build.controlEpoch !== original.owner.controlEpoch
+    || build.planHash !== original.owner.planHash) fail('原 Build 已变化，只能保留历史查询，不能交接为当前待审稿')
+  const failure = JSON.parse(build.failureJson)
+  const provenance = failure.failureProvenance
+  if (failure.taskKey !== input.taskKey || provenance?.runId !== input.runId || provenance.attempt !== input.attempt
+    || provenance.controlEpoch !== original.owner.controlEpoch || provenance.planHash !== original.owner.planHash
+    || snapshot.projection.steps[input.taskKey]?.attempt !== input.attempt) fail('只有当前失败尝试可进入原回答交接')
+  const requestArtifactHash = await sha256Text(JSON.stringify(original))
+  if (!snapshot.events.some(event => event.type === 'evidence.artifact.recorded'
+    && event.payload.artifactKind === 'source-snapshot' && event.payload.contentHash === requestArtifactHash
+    && event.payload.stepId === input.taskKey && event.payload.attempt === input.attempt)) fail('缺少准确原请求正文')
+  return { original, requestArtifactHash, originalContractHash: snapshot.run.contractHash,
+    originalProjectionHash: snapshot.run.projectionHash, buildNumber: build.buildNumber }
+}
+export async function captureProductProductionOriginalResponseV1(input: ProductProductionOriginalCaptureQueryV1 & {
+  confirmation: 'retain-original-complete-response-without-inference-v1'
+}) {
+  return (await import('./local-response-capture')).captureProductProductionOriginalResponseCoreV1(input)
+}
