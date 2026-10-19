@@ -1,4 +1,5 @@
 import './agent-workspace.css'
+import CodexPanel from '../codex/CodexPanel'
 import LongformAgentProgress from '../longform/LongformAgentProgress'
 import type { MasterAgentPlan } from '../../lib/agent/orchestrator'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -38,6 +39,7 @@ interface Props {
   worldGroupId: number | null
   worldName: string
   embedded?: boolean
+  initialDiscussionMode?: 'plan' | 'free'
   onClose: () => void
   onOpenModule?: (module: string, chapter?: number) => void
 }
@@ -54,6 +56,7 @@ export default function ChatCopilotPanel({
   worldName,
   onClose,
   embedded = false,
+  initialDiscussionMode = 'plan',
   onOpenModule,
 }: Props) {
   const activeWork = useActiveWork(project)
@@ -61,6 +64,9 @@ export default function ChatCopilotPanel({
   const creativeQualityMode = useAIConfigStore((state) => state.creativeQualityMode)
   const teamBudgetProfile = useAIConfigStore((state) => state.agentTeamBudgetProfile)
   const [showDetails, setShowDetails] = useState(false)
+  const [discussionMode, setDiscussionMode] = useState<'plan' | 'free'>(initialDiscussionMode)
+  const [discussionSource, setDiscussionSource] = useState<'none' | 'worldview' | 'characters' | 'story-core'>('none')
+  const [extractSource, setExtractSource] = useState<string | null>(null)
   const [planningSummary, setPlanningSummary] = useState('')
   const [mobilePane, setMobilePane] = useState<'dialogue' | 'draft'>('dialogue')
   const [elapsed, setElapsed] = useState(0)
@@ -82,7 +88,7 @@ export default function ChatCopilotPanel({
   )
   const pose = companionPose(voice.state.phase, copilot.busy, copilot.pendingCandidates.length > 0, !!(copilot.error || voice.state.error))
   const recording = ['requesting', 'listening', 'transcribing'].includes(voice.state.phase)
-  useEffect(() => { setOverflowTranscript('') }, [project.id, activeWork?.id, worldGroupId])
+  useEffect(() => { setOverflowTranscript(''); setExtractSource(null) }, [project.id, activeWork?.id, worldGroupId])
   const latestTasks = useMemo(() => {
     const result = new Map<string, { taskId: string; instruction: string; status: string; error?: string }>()
     const latestPlan = [...copilot.events]
@@ -219,6 +225,7 @@ export default function ChatCopilotPanel({
                   {message.role === 'assistant' && payload.kind !== 'harness-lifecycle' && (
                     <button type="button" className="mt-2 flex items-center gap-1 text-[11px] text-text-muted hover:text-accent" onClick={() => voice.speak(message.content)} aria-label="朗读这条回复" title="朗读开头，最多 2000 字"><Volume2 size={13} />朗读</button>
                   )}
+                  {message.role === 'assistant' && payload.kind === 'free-discussion' && <button type="button" disabled={copilot.busy} onClick={() => { setExtractSource(message.content); setMobilePane('draft') }} className="mt-2 text-xs text-accent">提取为设定候选</button>}
                   {payload.kind === 'harness-lifecycle' && payload.lifecycle && (
                     <HarnessEvidencePanel lifecycle={payload.lifecycle} />
                   )}
@@ -355,7 +362,7 @@ export default function ChatCopilotPanel({
               event.preventDefault()
               voice.cancel()
               setElapsed(0)
-              void copilot.discuss()
+              void copilot.discuss(discussionMode === 'free', discussionSource)
             }}
           >
             {copilot.error && (
@@ -405,6 +412,11 @@ export default function ChatCopilotPanel({
               <button type="button" disabled={copilot.busy || copilot.authorRequest.length + overflowTranscript.length + 1 > 2000} onClick={() => { copilot.setAuthorRequest([copilot.authorRequest, overflowTranscript].filter(Boolean).join('\n')); setOverflowTranscript('') }}>加入输入框</button>
               <button type="button" onClick={() => setOverflowTranscript('')}>放弃这段识别文字</button>
             </div>}
+            <div className="mb-2 flex flex-wrap gap-2 text-xs">
+              <label>交流方式 <select aria-label="交流方式" value={discussionMode} disabled={copilot.busy} onChange={event => setDiscussionMode(event.target.value as 'plan' | 'free')} className="rounded border border-border bg-bg-base p-1"><option value="plan">讨论与执行计划</option><option value="free">自由讨论 / 试写</option></select></label>
+              {discussionMode === 'free' && <label>参考资料 <select aria-label="讨论参考资料" value={discussionSource} disabled={copilot.busy} onChange={event => setDiscussionSource(event.target.value as typeof discussionSource)} className="rounded border border-border bg-bg-base p-1"><option value="none">对话与作品概况</option><option value="worldview">世界设定与词条</option><option value="characters">角色档案</option><option value="story-core">故事核心</option></select></label>}
+            </div>
+            {discussionMode === 'free' && <p className="mb-2 text-xs text-text-muted">可以自由试写，不要求补齐设定。回复保留在对话，提取为候选并确认后才写入作品。</p>}
             <textarea
               aria-label="告诉主 Agent 你的目标"
               value={copilot.authorRequest}
@@ -422,7 +434,7 @@ export default function ChatCopilotPanel({
                   event.preventDefault()
                   voice.cancel()
                   setElapsed(0)
-                  void copilot.discuss()
+                  void copilot.discuss(discussionMode === 'free', discussionSource)
                 }
               }}
               placeholder={
@@ -453,13 +465,14 @@ export default function ChatCopilotPanel({
                   className="flex items-center gap-1 rounded bg-accent px-3 py-2 text-xs text-white disabled:opacity-40"
                 >
                   <Send className="h-3.5 w-3.5" />
-                  {copilot.pendingCandidates.length ? '讨论候选' : '讨论与规划'}
+                  {discussionMode === 'free' ? '发送讨论 / 试写' : copilot.pendingCandidates.length ? '讨论候选' : '讨论与规划'}
                 </button>
               )}
             </div>
           </form>
         </section>
         <section className="agent-drafts" aria-label="创作区">
+          {extractSource !== null && <div className="mb-3 rounded border border-border p-2"><div className="flex items-center justify-between text-sm"><p>对话 → 设定候选</p><button type="button" onClick={() => setExtractSource(null)}>关闭提取</button></div><p className="my-2 text-xs text-text-muted">选择分类后点击“AI 从内容拆分词条”，检查候选并确认。对话原文保留；关闭或刷新后可从词条库恢复未处理候选。</p><CodexPanel project={project} embedded compact extractionSourceText={extractSource} /></div>}
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="text-sm font-semibold">
               创作区

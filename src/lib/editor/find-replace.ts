@@ -249,3 +249,16 @@ export function replaceChapterContent(
     count: replacedCount,
   }
 }
+
+/** Literal text fields share the editor's matching and replacement semantics. */
+export function replacePlainTextV1(text: string, options: FindReplaceOptions & { replacement: string }): { text: string; count: number } {
+  const matches = findMatchesInText(text, options)
+  let cursor = 0
+  let output = ''
+  for (const match of matches) {
+    output += text.slice(cursor, match.start)
+    output += options.useRegex ? expandReplacement(options.replacement, match.match, match.text) : options.replacement
+    cursor = match.end
+  }
+  return { text: output + text.slice(cursor), count: matches.length }
+}

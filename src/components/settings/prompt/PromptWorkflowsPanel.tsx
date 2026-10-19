@@ -1,4 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router'
+import { useWorldGroupStore } from '../../../stores/world-group'
+import { previewLegacyWorkflowMigrationV1, migrateLegacyWorkflowV1 } from '../../../lib/node-authoring/legacy-workflow-migration'
+import type { PromptWorkflow } from '../../../lib/types/workflow'
 import {
   Play, Trash2, Copy, ArrowRight,
   Upload, Download, Plus, Edit3,
@@ -22,6 +26,20 @@ interface Props {
 /** 工作流面板：列表 + Runner / Editor（同一面板切换视图） */
 export default function PromptWorkflowsPanel({ project }: Props = {}) {
   const dialog = useDialog()
+  const navigate = useNavigate()
+  const [experimental, setExperimental] = useState(false)
+  const [migration, setMigration] = useState<PromptWorkflow | null>(null)
+  const [converting, setConverting] = useState(false)
+  const migrationPreview = migration ? previewLegacyWorkflowMigrationV1(migration) : null
+  const convert = async () => {
+    if (!migration || !project?.id || converting) return
+    setConverting(true)
+    try {
+      await migrateLegacyWorkflowV1(migration, project.id, project.enableMultiWorld ? useWorldGroupStore.getState().activeGroupId : null)
+      setMigration(null); toast.success('已复制为正式节点图；原工作流保留')
+      navigate(`/workspace/${project.id}?module=visual-workflows`)
+    } catch (error) { toast.error(String(error)) } finally { setConverting(false) }
+  }
   const toast = useToast()
   const workflows = useWorkflowStore(s => s.workflows)
   const cloneWorkflow = useWorkflowStore(s => s.clone)
@@ -117,9 +135,9 @@ export default function PromptWorkflowsPanel({ project }: Props = {}) {
     <div className="p-5 space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-text-primary mb-1">节点模式</h2>
+          <h2 className="text-base font-semibold text-text-primary mb-1">提示词实验与历史工作流</h2>
           <p className="text-sm text-text-muted">
-            ComfyUI 式创作模式：连接节点组成流程；每步仍可暂停、编辑和确认。
+            保留已有提示词链、编辑与导入导出。正式长篇节点统一在创作工作台；实验输出不能直接写入作品。
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -151,6 +169,8 @@ export default function PromptWorkflowsPanel({ project }: Props = {}) {
         </div>
       </div>
 
+      <label className="flex items-center gap-2 text-xs text-text-muted"><input type="checkbox" checked={experimental} onChange={event => setExperimental(event.target.checked)} />启用实验运行（本次打开有效，输出仅作草稿）</label>
+      {migration && migrationPreview && <section className="space-y-2 rounded border border-border p-3" aria-label="工作流转换预览"><h3>转换预览：{migration.name}</h3><p className="text-xs">复制为当前作品的正式节点图。提示词选择遵循正式节点规则，生成后逐项确认采纳；原流程与用户配置不改动。</p>{migrationPreview.mappings.map(item => <p key={item} className="text-xs">{item}</p>)}{migrationPreview.issues.map(item => <p key={item} role="alert" className="text-xs text-warning">{item}</p>)}<div className="flex gap-3"><button disabled={converting || !!migrationPreview.issues.length || !project?.id} onClick={() => void convert()} className="text-accent disabled:opacity-40">确认复制为正式节点</button><button disabled={converting} onClick={() => setMigration(null)}>关闭预览</button></div>{!project?.id && <p>请先进入目标作品，再复制流程。</p>}</section>}
       {workflows.length === 0 ? (
         <div className="text-center py-12 text-text-muted text-sm">加载中...</div>
       ) : (
@@ -171,7 +191,9 @@ export default function PromptWorkflowsPanel({ project }: Props = {}) {
                   <p className="mt-0.5 text-xs text-text-secondary">{w.description}</p>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
+                  <button type="button" onClick={() => setMigration(w)} className="px-2 py-1 text-xs text-accent">转换为正式节点</button>
                   <button
+                    disabled={!experimental}
                     type="button"
                     aria-label={`运行工作流 ${w.name}`}
                     onClick={() => setRunningId(w.id!)}

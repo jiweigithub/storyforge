@@ -3,7 +3,7 @@
  * 可视化展示：场景细纲 ↔ 情感节拍 ↔ 5轨叙事引擎 的对应关系
  * 支持：冲突检测、自动适配、手动调整
  */
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { GitBranch, Heart, AlertTriangle, Sparkles, RefreshCw, Settings2, ChevronDown, ChevronUp } from 'lucide-react'
 import { NarrativeEngine, type ChapterFocus } from '../../lib/outline/narrative-engine'
 import { detectOutlineBeatConflicts, adaptOutlineToBeat, adaptBeatToOutline, type ConflictWarning } from '../../lib/editor/outline-beat-conflict'
@@ -15,8 +15,8 @@ interface Props {
   totalChapters: number
   detailedOutline?: DetailedOutline
   emotionBeatCard?: EmotionBeatCard
-  onApplyOutline?: (outline: DetailedOutline) => void
-  onApplyBeats?: (beats: EmotionBeat[]) => void
+  onApplyOutline?: (outline: DetailedOutline) => void | Promise<void>
+  onApplyBeats?: (beats: EmotionBeat[]) => void | Promise<void>
 }
 
 const EMOTION_COLORS: Record<string, string> = {
@@ -74,6 +74,17 @@ export function CoordinationView({
   const [expanded, setExpanded] = useState(true)
   const [adaptMode, setAdaptMode] = useState<'outline' | 'beat' | null>(null)
   const [adaptSuccess, setAdaptSuccess] = useState<string | null>(null)
+  const [adaptError, setAdaptError] = useState<string | null>(null)
+  const saveEpoch = useRef(0)
+  const saving = useRef(false)
+  useEffect(() => {
+    saveEpoch.current += 1
+    saving.current = false
+    setAdaptMode(null)
+    setAdaptSuccess(null)
+    setAdaptError(null)
+    return () => { saveEpoch.current += 1 }
+  }, [chapterTitle, detailedOutline?.id, emotionBeatCard?.id])
   const emotionBeats = emotionBeatCard?.beats ?? []
 
   // 计算 5轨叙事引擎状态
@@ -98,26 +109,25 @@ export function CoordinationView({
     emotionBeats.length
   )
 
-  const handleAdapt = (mode: 'outline' | 'beat') => {
-    if (!detailedOutline || !emotionBeatCard) return
+  const handleAdapt = async (mode: 'outline' | 'beat') => {
+    if (!detailedOutline || !emotionBeatCard || saving.current) return
+    if (mode === 'outline' ? !onApplyOutline : !onApplyBeats) return
+    const epoch = saveEpoch.current
+    saving.current = true
     setAdaptMode(mode)
     setAdaptSuccess(null)
-
-    if (mode === 'outline') {
-      // 以情感节拍为主，调整细纲
-      const adapted = adaptOutlineToBeat(detailedOutline, emotionBeatCard)
-      onApplyOutline?.(adapted)
-    } else {
-      // 以细纲为主，调整情感节拍
-      const adapted = adaptBeatToOutline(emotionBeatCard, detailedOutline)
-      onApplyBeats?.(adapted.beats)
+    setAdaptError(null)
+    try {
+      if (mode === 'outline') await onApplyOutline!(adaptOutlineToBeat(detailedOutline, emotionBeatCard))
+      else await onApplyBeats!(adaptBeatToOutline(emotionBeatCard, detailedOutline).beats)
+      if (epoch === saveEpoch.current) {
+        setAdaptSuccess(mode === 'outline' ? '✅ 已根据情感节拍调整场景细纲' : '✅ 已根据场景细纲调整情感节拍')
+      }
+    } catch (error) {
+      if (epoch === saveEpoch.current) setAdaptError(`保存失败：${error instanceof Error ? error.message : String(error)}。请重试。`)
+    } finally {
+      if (epoch === saveEpoch.current) { saving.current = false; setAdaptMode(null) }
     }
-
-    setTimeout(() => {
-      setAdaptMode(null)
-      setAdaptSuccess(mode === 'outline' ? '✅ 已根据情感节拍调整场景细纲' : '✅ 已根据场景细纲调整情感节拍')
-      setTimeout(() => setAdaptSuccess(null), 3000)
-    }, 500)
   }
 
   if (!detailedOutline && emotionBeats.length === 0) {
@@ -148,6 +158,7 @@ export function CoordinationView({
             </div>
           )}
 
+          {adaptError && <p role="alert" className="text-xs text-error">{adaptError}</p>}
           {/* 成功消息 */}
           {adaptSuccess && (
             <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 animate-pulse">
@@ -162,7 +173,7 @@ export function CoordinationView({
             <>
               <button
                 onClick={(e) => { e.stopPropagation(); handleAdapt('beat') }}
-                disabled={adaptMode !== null}
+                disabled={adaptMode !== null || !onApplyBeats}
                 className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-border hover:border-accent disabled:opacity-50"
                 title="以细纲为主，适配情感节拍"
               >
@@ -171,7 +182,7 @@ export function CoordinationView({
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); handleAdapt('outline') }}
-                disabled={adaptMode !== null}
+                disabled={adaptMode !== null || !onApplyOutline}
                 className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-border hover:border-accent disabled:opacity-50"
                 title="以情感节拍为主，适配细纲"
               >

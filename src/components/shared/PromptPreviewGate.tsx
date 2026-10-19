@@ -1,9 +1,12 @@
+import PromptInfluenceInfo from './PromptInfluenceInfo'
+import type { AgentContextEvidence } from '../../lib/agent/context-policy'
 import { useEffect, useMemo, useState } from 'react'
 import { Eye, RotateCcw, Send } from 'lucide-react'
 import { estimateTokens } from '../../lib/ai/context-budget'
 import type { ChatMessage } from '../../lib/types'
 
 interface Props {
+  contextEvidence?: Pick<AgentContextEvidence, 'included' | 'omitted' | 'trimmed' | 'sourceEvidence'>
   messages: ChatMessage[]
   onBack: () => void
   onConfirm: (messages: ChatMessage[]) => void
@@ -27,6 +30,7 @@ export default function PromptPreviewGate({
   messages,
   onBack,
   onConfirm,
+  contextEvidence,
   backLabel = '返回生成依据',
 }: Props) {
   const [draft, setDraft] = useState(() => cloneMessages(messages))
@@ -67,6 +71,7 @@ export default function PromptPreviewGate({
         </span>
       </div>
 
+      <PromptInfluenceInfo context={contextEvidence} messages={draft} />
       <div className="max-h-[28rem] space-y-3 overflow-auto pr-1">
         {draft.map((message, index) => (
           <label key={`${message.role}-${index}`} className="block space-y-1">

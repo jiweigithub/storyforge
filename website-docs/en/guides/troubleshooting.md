@@ -30,12 +30,22 @@ Continue: [Upgrade and compatibility](/en/updates/compatibility).
 
 ## Problems and failure reports in downloaded builds
 
-Builds containing this feature provide Home → General settings → Problems and failure reports (问题与故障反馈). Rendering failures and blocked startup also offer feedback without requiring the project database. Fixed v4.0.0 archives do not gain the feature automatically; the entry applies to v4.0.1 and later portable builds; check the [latest release](https://github.com/yuanbw2025/storyforge/releases/latest) for published archives.
+v4.0.2 provides Home → General settings → Problems and suggestions (问题与建议). Rendering failures and blocked startup also provide feedback without requiring the project database.
 
-1. Choose Preview failure summary and give feedback (查看故障摘要并反馈), then inspect the local summary. It contains only the application build, operating-system/browser family, recent error types/code locations, and available launcher failure types/timestamps. It excludes error messages, manuscripts, Prompts, API keys, full URLs, disk paths, and database contents.
-2. Choose Open official feedback form with summary (带摘要打开官方反馈表单). A browser fragment carries the summary and is removed after import; the form never submits automatically.
-3. Add a title, description, and reproduction steps. Inspect Additional information and remove anything you do not want public before submitting. Feedback enters public project Issues; inspect screenshots and attachments yourself too.
-4. If offline, retain the local records and reopen the feedback entry later. There are no unlimited background retries or hidden deferred submissions. You can also fill out the [Bug report](/en/feedback/bug) manually.
+### Submit a problem or suggestion inside the application
+
+1. Choose “Report a problem” (报告问题) or “Feature suggestion” (功能建议). A crash is not required: unresponsive buttons, display errors, and requests for improvement can all be reported.
+2. Enter a title and description. For a Bug, optionally add reproduction steps and the expected result. The application includes its version, operating-system category, and client type.
+3. If diagnostics would help, choose “Preview failure summary and give feedback” (查看故障摘要并反馈), inspect it, then select “Attach the redacted error records previewed below” (附带下方预览的脱敏错误记录). This is optional; a report can be sent without error records.
+4. Select “I have checked the content and confirm sending it to the maintainer” (我已检查填写内容，确认发送给维护者), then “Submit feedback” (提交反馈), and wait for the result. In-app feedback enters a private maintainer inbox without automatic publication on GitHub. If submission fails, retain the input and retry as instructed.
+
+### Use the fallback web form
+
+“Give feedback directly” (直接反馈问题) and “Open official feedback form with summary” (带摘要打开官方反馈表单) open the website form. Summary-based feedback in v4.0.1 uses this route too. A browser fragment carries the summary and is removed after import; the form never submits automatically.
+
+Add a title, description, and reproduction steps, then inspect Additional information before submitting. **The web form creates a public GitHub Issue**: do not attach manuscripts, credentials, or screenshots you do not want public. You can directly visit [Bug report](/en/feedback/bug) or [Feature request](/en/feedback/feature).
+
+The summary contains only the application build, operating-system/browser family, error types/code locations, and available launcher failure types/timestamps. It excludes error messages, manuscripts, Prompts, API keys, full URLs, disk paths, and database contents.
 
 The browser retains at most twenty errors from the last seven days, including across refreshes. The summary contains at most the latest five errors and three code locations each. Clear local error records removes only browser diagnostics, not works or model configuration. Complete diagnostic JSON remains a separate download in Data and backup and is not automatically uploaded.
 

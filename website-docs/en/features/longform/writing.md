@@ -54,3 +54,14 @@ The October 4 mainline fix corrects cases where existing material was incorrectl
 Give the main Agent an outline goal, choose “Discuss and plan” (讨论与规划), review the proposed plan, then choose “Confirm plan and start” (确认计划并开始). Review candidate titles and content; only “Adopt” (采纳) writes them into the work. Refreshing should restore a still-pending candidate without automatically generating or adopting it again.
 
 [PR #158](https://github.com/yuanbw2025/storyforge/pull/158), merged on October 16, 2026 in China, fixes a mismatch between the generation and adoption policy identities during automatic volume/chapter outline composition that incorrectly marked valid candidates as stale. Actual changes to sources, permissions, or content still invalidate candidates. Preserve useful text and inspect the reason; do not clear the work or disable freshness checks to bypass a notice.
+
+
+## Search, bulk replacement, and saving
+
+Prose search/replace and the global replacement tool share one interface. Text replacement (文字替换) handles the current chapter or whole book; Entity rename (智能实体改名) updates character, location, and entry references; Across setting fields (跨设定字段) edits descriptive text in selected areas.
+
+Preview each record's before/after text, then confirm snapshot creation and replacement. HTML tags, entity names, entry references, numeric fields, and option fields are not ordinary text targets. Multiple text fields in one entry save together. Changes after preview stop the replacement; preview again. Undo refuses to overwrite later edits. After closing the page, find the pre-replacement snapshot in version history.
+
+Scene-outline and emotion-beat coordination reports the actual save result. Pending saves do not report success early; failures preserve the original and allow retry.
+
+In generation previews and run details, expand Prompt and style sources / overrides (提示词与文风来源、覆盖关系) to inspect the frozen template, parameters, and whether creative rules or style profiles were included. Missing evidence does not establish that a source was read.

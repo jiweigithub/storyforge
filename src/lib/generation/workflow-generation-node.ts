@@ -3,9 +3,8 @@ import type { ChatMessage } from '../types'
 import type { GenerationNode } from './generation-node'
 
 /**
- * PromptWorkflow 步骤到统一 GenerationNode 的正式适配器。
- * category 仍来自已登记的 promptModuleKey；写回继续由 WorkflowRunner 的
- * 作者确认按钮触发，不在节点 run 阶段自动执行。
+ * PromptWorkflow 步骤到统一 GenerationNode 的实验适配器。
+ * category 仍来自已登记的 promptModuleKey；输出仅作实验草稿；正式写入必须转换到领域节点或另行提取 durable 候选。
  */
 export function createWorkflowGenerationNode(input: {
   workflowId: number | string

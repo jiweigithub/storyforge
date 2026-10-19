@@ -155,7 +155,7 @@ export default function PromptManagerPanel({ project }: Props = {}) {
               : 'border-transparent text-text-secondary hover:text-text-primary'
           }`}
         >
-          <Workflow className="w-3.5 h-3.5" /> 工作流
+          <Workflow className="w-3.5 h-3.5" /> 提示词实验
         </button>
       </div>
 

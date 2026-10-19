@@ -55,6 +55,8 @@ describe('R-TTRPGOPEN2 governed author design adoption', () => {
     const f = await fixture(), before = await protectedRows()
     await expect(adopt({ projectId: f.scope.projectId, scope: f.scope, target: 'ttrpgAuthoringDrafts', recordId: f.draft.id,
       mode: 'replace', data: { settingsJson: f.draft.settingsJson } })).rejects.toThrow('同一采纳事务')
+    await expect(adopt({ projectId: f.scope.projectId, scope: f.scope, target: 'ttrpgAuthoringDrafts', recordId: f.draft.id,
+      mode: 'replace', preserveAuthorText: true, data: { settingsJson: f.draft.settingsJson } })).rejects.toThrow('精确文字编辑仅限已登记字段')
     await expect(adoptTtrpgOpenAuthoringDesignV1({ ...f.input, confirmation: 'unconfirmed' as never })).rejects.toThrow('明确确认')
     await expect(adoptTtrpgOpenAuthoringDesignV1({ ...f.input, selection: { pressure: 'missing' } })).rejects.toThrow('没有对应候选')
     await expect(adoptTtrpgOpenAuthoringDesignV1({ ...f.input, confirmedFactKeys: ['unselected.fact'] })).rejects.toThrow('新增事实')

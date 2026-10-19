@@ -1,3 +1,4 @@
+import PromptInfluenceInfo from '../shared/PromptInfluenceInfo'
 import type { AgentContextEvidence } from '../../lib/agent/context-policy'
 import type { HarnessLifecycleEvidenceV1 } from '../../lib/agent/harness-evidence'
 import type { PromptExecutionEvidenceV1 } from '../../lib/agent/prompt-execution'
@@ -50,6 +51,7 @@ export default function HarnessEvidencePanel({
         <span> · Harness 运行证据</span>
       </summary>
       <div className="mt-2 space-y-2 break-words">
+        <PromptInfluenceInfo context={context} prompt={prompt} />
         {lifecycle && (
           <div aria-label="Harness 五段生命周期" className="grid gap-1 sm:grid-cols-5">
             {lifecycle.stages.map(item => (

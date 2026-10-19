@@ -3128,8 +3128,8 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
         <div className="mb-3">
           <Suspense fallback={<LazyPanelFallback />}>
             <SettingLookupPanel
-              aiConfig={aiConfig}
-              projectId={project.id!}
+              worldGroupId={chapterWorldGroupId ?? null}
+              project={project}
               onClose={() => setShowSettingsLookup(false)}
             />
           </Suspense>
@@ -3173,7 +3173,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
             onApplyOutline={async (newOutline) => {
               if (currentDetailedOutline?.id != null) {
                 await import('../../stores/detailed-outline').then(({ useDetailedOutlineStore }) => {
-                  useDetailedOutlineStore.getState().save(currentDetailedOutline.id!, {
+                  return useDetailedOutlineStore.getState().save(currentDetailedOutline.id!, {
                     scenes: newOutline.scenes,
                   })
                 })
@@ -3182,7 +3182,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
             onApplyBeats={async (newBeats) => {
               if (currentEmotionCard?.id != null) {
                 await import('../../stores/emotion-beat').then(({ useEmotionBeatStore }) => {
-                  useEmotionBeatStore.getState().updateCard(currentEmotionCard.id!, {
+                  return useEmotionBeatStore.getState().updateCard(currentEmotionCard.id!, {
                     beats: newBeats,
                   })
                 })
@@ -3227,6 +3227,7 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
         <div className="mb-3 rounded-lg border border-accent/30 bg-accent/5 p-3">
           <PromptPreviewGate
             messages={pendingGeneration.prepared.messages}
+            contextEvidence={pendingGeneration.assembled}
             backLabel="取消本次预览"
             onBack={() => setPendingGeneration(null)}
             onConfirm={messages => {

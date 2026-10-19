@@ -10,6 +10,8 @@ When you explicitly use AI, the content required for that operation is sent to t
 
 The installed client uses one User Agreement, including privacy and information-handling terms. Read it at first launch or view it again in General settings.
 
+After acceptance of the client User Agreement, supported installations send necessary usage and diagnostic information, including a random installation identifier, build version, platform, active date, and redacted error types/code locations. Activity is recorded at most once per day in China time. Ordinary web builds and the hosted experience do not enable this client analytics path; it does not read prose, Prompts, or API keys.
+
 ## Feedback you submit
 
 In-app problems and suggestions go to the maintainers' private inbox. Review the content and any optional diagnostic summary before sending; do not include private works or credentials. The separate website feedback form creates public GitHub Issues and clearly identifies that destination.

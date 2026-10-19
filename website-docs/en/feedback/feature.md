@@ -6,6 +6,6 @@ description: Suggest a StoryForge feature
 
 Describe the current problem through a real use case and explain how you would like it improved. Concrete scenarios help evaluate solutions and priorities.
 
-Clients in development also provide in-app problem reports and feature suggestions, without requiring a crash. In-app reports use a private maintainer inbox; the web form below still creates a public Issue. See [client feedback and reporting](/en/guides/privacy#in-app-feedback-and-usage-reporting-in-development).
+In v4.0.2, use General settings → Problems and suggestions → Feature suggestion (功能建议) to describe the use case and requested improvement, review the content, then confirm sending. In-app reports enter a private maintainer inbox; the web form below creates a public GitHub Issue. See the [feedback instructions](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds) and [privacy information](/en/guides/privacy).
 
 <FeedbackForm type="feature" />

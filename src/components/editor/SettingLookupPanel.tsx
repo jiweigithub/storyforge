@@ -1,96 +1,62 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
-import { Search, X, BookOpen, Users, Scroll, Hash, Sparkles, Loader2, Send, FileText, Check } from 'lucide-react'
-import type { CodexEntry, BuiltInCodexKey } from '../../lib/types/codex'
-import type { Character } from '../../lib/types/character'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router'
+import { Search, X, BookOpen, Users, Scroll, Hash } from 'lucide-react'
+import type { CodexEntry, CodexCategory } from '../../lib/types/codex'
+import type { Character, WorldRulesProfile, Project } from '../../lib/types'
 import { characterAxesLabel } from '../../lib/character/character-axes'
-import type { WorldRuleNodeDef } from '../../lib/types/world-rules'
-import { WORLD_RULE_TREE } from '../../lib/types/world-rules'
+import { WORLD_RULE_TREE, type WorldRuleNodeDef } from '../../lib/types/world-rules'
 import { parseFieldSchema, parseEntryFields } from '../../lib/types/codex'
 import { scoreCodexEntry } from '../../lib/codex/search'
-import {
-  executeRegisteredAIEntryV1,
-  streamRegisteredAIEntryV1,
-} from '../../lib/agent/formal-ai-entry'
-import type { AIConfig } from '../../lib/types'
-import { useCodexStore } from '../../stores/codex'
-import { useCharacterStore } from '../../stores/character'
-import { useWorldRulesStore } from '../../stores/world-rules'
-
-interface Props {
-  aiConfig: AIConfig
-  projectId: number
-  onClose: () => void
-}
+import { readOwnedRows, resolveScope } from '../../lib/workspace/scope'
+import CodexPanel from '../codex/CodexPanel'
+import LegacySettingHistory from '../agent/LegacySettingHistory'
+import { flushPendingEditsV1 } from '../../lib/authoring/pending-edit-coordinator'
 
 interface SearchResult {
-  type: 'codex' | 'character' | 'worldRule'
-  id: number | string
-  name: string
-  summary: string
-  category?: string
-  icon?: string
-  score: number
+  type: 'codex' | 'character' | 'worldRule'; id: number | string; name: string; summary: string; category?: string; icon?: string; score: number
   data: CodexEntry | Character | { node: WorldRuleNodeDef; entry?: { historicalAnchors: string; fictionalAdaptations: string; priority: string } }
 }
-
-interface QAMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
-
-interface ExtractedSetting {
-  id: string
-  name: string
-  category: string
-  categoryKey: BuiltInCodexKey
-  summary: string
-  fields: Record<string, string>
-  existingEntryId?: number
-}
-
-const STORAGE_KEY = 'storyforge-setting-qa-messages'
-
-export default function SettingLookupPanel({
-  aiConfig,
-  projectId,
-  onClose,
-}: Props) {
-  const [mode, setMode] = useState<'search' | 'qa'>('search')
+export default function SettingLookupPanel({ project, worldGroupId = null, onClose }: {
+  project: Project; worldGroupId?: number | null; onClose: () => void
+}) {
+  const projectId = project.id!
+  const [showCodex, setShowCodex] = useState(false)
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [activeTab, setActiveTab] = useState<'all' | 'codex' | 'character' | 'worldRule'>('all')
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null)
-  const [qaMessages, setQaMessages] = useState<QAMessage[]>(() => {
+  const [codexEntries, setEntries] = useState<CodexEntry[]>([])
+  const [codexCategories, setCategories] = useState<CodexCategory[]>([])
+  const [characters, setCharacters] = useState<Character[]>([])
+  const [worldRulesProfile, setRules] = useState<WorldRulesProfile | null>(null)
+  const [error, setError] = useState('')
+  const activeView = useRef(0)
+  useEffect(() => { const version = ++activeView.current; return () => { activeView.current = version + 1 } }, [projectId, project.activeWorkId, worldGroupId])
+  useEffect(() => {
+    let active = true
+    setEntries([]); setCategories([]); setCharacters([]); setRules(null); setSelectedResult(null); setError('')
+    void resolveScope({ projectId }).then(async scope => {
+      const [entries, categories, chars, rules] = await Promise.all([
+        readOwnedRows<CodexEntry>(scope, 'codexEntries'), readOwnedRows<CodexCategory>(scope, 'codexCategories'),
+        readOwnedRows<Character>(scope, 'characters'), readOwnedRows<WorldRulesProfile>(scope, 'worldRulesProfiles'),
+      ])
+      if (!active) return
+      setEntries(entries.filter(entry => (entry.worldGroupId ?? null) === worldGroupId)); setCategories(categories)
+      setCharacters(chars.filter(char => worldGroupId == null || char.homeWorldGroupId == null || char.homeWorldGroupId === worldGroupId))
+      setRules(rules.find(rule => (rule.worldGroupId ?? null) === worldGroupId) ?? null)
+    }).catch(reason => { if (active) setError(String(reason)) })
+    return () => { active = false }
+  }, [projectId, project.activeWorldId, project.activeWorkId, worldGroupId])
+  const openDiscussion = async () => {
+    const version = activeView.current
     try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      return saved ? JSON.parse(saved) : []
-    } catch {
-      return []
-    }
-  })
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [showExtractModal, setShowExtractModal] = useState(false)
-  const [isExtracting, setIsExtracting] = useState(false)
-  const [extractedSettings, setExtractedSettings] = useState<ExtractedSetting[]>([])
-  const [selectedSettings, setSelectedSettings] = useState<Set<string>>(new Set())
-
-  const chatContainerRef = useRef<HTMLDivElement>(null)
-
-  const { categories: codexCategories, entries: codexEntries, addEntry, updateEntry } = useCodexStore()
-  const { characters } = useCharacterStore()
-  const { profile: worldRulesProfile } = useWorldRulesStore()
-
-  useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
-    }
-  }, [qaMessages])
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(qaMessages))
-  }, [qaMessages])
-
+      await flushPendingEditsV1()
+      if (activeView.current !== version) return
+      onClose(); navigate(`/workspace/${projectId}?module=info&mode=agent&discussion=free`)
+    } catch (reason) { if (activeView.current === version) setError(`尚未离开：${String(reason)}`) }
+  }
   const results = useMemo<SearchResult[]>(() => {
-    if (!query.trim() || mode === 'qa') return []
+    if (!query.trim()) return []
 
     const q = query.trim()
     const allResults: SearchResult[] = []
@@ -180,211 +146,7 @@ export default function SettingLookupPanel({
     }
 
     return allResults.sort((a, b) => b.score - a.score).slice(0, 20)
-  }, [query, activeTab, codexEntries, codexCategories, characters, worldRulesProfile, mode])
-
-  const buildKnowledgeContext = useCallback(() => {
-    const parts: string[] = []
-
-    if (codexEntries.length > 0) {
-      const catById = new Map(codexCategories.map(c => [c.id!, c]))
-      parts.push('【设定词条】')
-      for (const entry of codexEntries) {
-        const category = catById.get(entry.categoryId)
-        const fields = parseEntryFields(entry.fields)
-        const fieldDefs = parseFieldSchema(category?.fieldSchema || '')
-        const fieldLines = fieldDefs
-          .map(d => {
-            const v = fields[d.key]
-            return v ? `${d.label}: ${v}` : ''
-          })
-          .filter(Boolean)
-        parts.push(`- ${entry.name}${entry.summary ? `（${entry.summary}）` : ''}`)
-        if (fieldLines.length > 0) {
-          parts.push('  ' + fieldLines.join('；'))
-        }
-      }
-    }
-
-    if (characters.length > 0) {
-      parts.push('\n【角色信息】')
-      for (const char of characters) {
-        parts.push(`- ${char.name}${char.identity ? `（${char.identity}）` : ''}`)
-        if (char.shortDescription) parts.push(`  简介：${char.shortDescription}`)
-        if (char.personality) parts.push(`  性格：${char.personality}`)
-        if (char.background) parts.push(`  背景：${char.background}`)
-      }
-    }
-
-    if (worldRulesProfile) {
-      parts.push('\n【世界规则】')
-      const traverseRules = (nodes: WorldRuleNodeDef[], prefix: string = '') => {
-        for (const node of nodes) {
-          const entry = worldRulesProfile.entries[node.id]
-          if (entry) {
-            const content = [
-              entry.historicalAnchors ? `📜 ${entry.historicalAnchors}` : '',
-              entry.fictionalAdaptations ? `✨ ${entry.fictionalAdaptations}` : '',
-            ].filter(Boolean).join('\n')
-            parts.push(`${prefix}- ${node.label}`)
-            if (content) parts.push(prefix + '  ' + content)
-          }
-          if (node.children) {
-            traverseRules(node.children, prefix + '  ')
-          }
-        }
-      }
-      traverseRules(WORLD_RULE_TREE)
-    }
-
-    return parts.join('\n')
-  }, [codexEntries, codexCategories, characters, worldRulesProfile])
-
-  const handleQASubmit = useCallback(async () => {
-    if (!query.trim() || isGenerating) return
-
-    const userQuestion = query.trim()
-    setIsGenerating(true)
-    setQuery('')
-
-    setQaMessages(prev => [...prev, { role: 'user', content: userQuestion }])
-
-    const knowledgeContext = buildKnowledgeContext()
-    const systemPrompt = `你是一位设定专家，专门协助作者讨论和完善小说设定。
-
-当前设定信息：
-${knowledgeContext}
-
-对话规则：
-1. 用户可能会询问现有设定，也可能提出新的设定想法进行讨论
-2. 如果设定中没有相关信息，明确说明"设定中未提及"，并可以提出建议
-3. 当用户提出新设定想法时，积极参与讨论，帮助完善细节
-4. 回答要简洁明了，直接给出答案或建议
-5. 如果需要推断，请说明推断依据`
-
-    try {
-      const messages = [
-        { role: 'system' as const, content: systemPrompt },
-        ...qaMessages.map(m => ({ role: m.role as 'system' | 'user' | 'assistant', content: m.content })),
-        { role: 'user' as const, content: userQuestion },
-      ]
-
-      setQaMessages(prev => [...prev, { role: 'assistant', content: '' }])
-
-      for await (const chunk of streamRegisteredAIEntryV1(messages, aiConfig, {
-        formalEntryId: 'world.setting.lookup.qa',
-        category: 'setting-qa',
-        projectId,
-      })) {
-        setQaMessages(prev => {
-          const last = [...prev]
-          last[last.length - 1] = { role: 'assistant', content: last[last.length - 1].content + chunk }
-          return last
-        })
-      }
-    } catch (error) {
-      console.error('QA error:', error)
-      setQaMessages(prev => [...prev, { role: 'assistant', content: '抱歉，AI 回答失败，请重试' }])
-    } finally {
-      setIsGenerating(false)
-    }
-  }, [query, isGenerating, buildKnowledgeContext, aiConfig, projectId, qaMessages])
-
-  const handleExtractSettings = useCallback(async () => {
-    if (qaMessages.length === 0 || isExtracting) return
-
-    setIsExtracting(true)
-    setShowExtractModal(true)
-    setExtractedSettings([])
-
-    const conversationText = qaMessages.map(m => `${m.role === 'user' ? '用户' : 'AI'}：${m.content}`).join('\n\n')
-    const knowledgeContext = buildKnowledgeContext()
-
-    const extractPrompt = `你是一位设定提取专家。请分析以下对话内容，提取其中讨论的新设定或对现有设定的修改。
-
-当前已有设定：
-${knowledgeContext}
-
-对话历史：
-${conversationText}
-
-请从对话中提取出需要添加或修改的设定条目。每个条目应该是一个独立的实体（地点、物品、角色、势力等）。
-
-输出格式要求：
-请输出 JSON 数组，每个元素包含以下字段：
-- name: 词条名称
-- category: 分类名称（如：城池重镇、人工器物、种族民族等）
-- categoryKey: 分类的内置键（如：city、artifact、race、faction、mineral、herb、beast 等）
-- summary: 一句话简介
-- fields: 对象，包含该词条的字段及其值
-
-如果对话中没有讨论任何新设定或修改，请返回空数组。
-
-注意：
-1. 只提取对话中明确讨论的内容，不要凭空猜测
-2. 如果是对现有词条的修改，请确保 name 与现有词条完全匹配
-3. categoryKey 必须是以下之一：city, artifact, race, faction, mineral, herb, beast, natStructure, natDimension, natTerrain, natWater, natClimate, humEra, humEvent, humSociety, humConflict, originPower, originDeity`
-
-    try {
-      const response = await executeRegisteredAIEntryV1(
-        'world.setting.lookup.extract',
-        [
-          { role: 'system', content: extractPrompt },
-        ],
-        aiConfig,
-        { category: 'setting-extract', projectId },
-      )
-
-      const jsonMatch = response.match(/\[.*\]/s)
-      if (jsonMatch) {
-        const extracted = JSON.parse(jsonMatch[0]) as ExtractedSetting[]
-        setExtractedSettings(extracted.map((s, idx) => ({ ...s, id: `${idx}` })))
-        setSelectedSettings(new Set(extracted.map((_, idx) => `${idx}`)))
-      } else {
-        setExtractedSettings([])
-      }
-    } catch (error) {
-      console.error('Extract error:', error)
-      setExtractedSettings([])
-    } finally {
-      setIsExtracting(false)
-    }
-  }, [qaMessages, isExtracting, buildKnowledgeContext, aiConfig, projectId])
-
-  const handleSaveSettings = useCallback(async () => {
-    const toSave = extractedSettings.filter(s => selectedSettings.has(s.id))
-
-    for (const setting of toSave) {
-      const category = codexCategories.find(c => c.builtInKey === setting.categoryKey)
-      if (!category) continue
-
-      const existingEntry = codexEntries.find(e => e.categoryId === category.id && e.name === setting.name)
-
-      if (existingEntry) {
-        const fields = parseEntryFields(existingEntry.fields)
-        Object.assign(fields, setting.fields)
-        await updateEntry(existingEntry.id!, {
-          fields: JSON.stringify(fields),
-          summary: setting.summary || existingEntry.summary,
-        })
-      } else {
-        await addEntry({
-          projectId,
-          categoryId: category.id!,
-          name: setting.name,
-          summary: setting.summary,
-          description: '',
-          fields: JSON.stringify(setting.fields),
-          order: codexEntries.filter(e => e.categoryId === category.id!).length,
-        })
-      }
-    }
-
-    setShowExtractModal(false)
-    setExtractedSettings([])
-    setSelectedSettings(new Set())
-
-    setQaMessages(prev => [...prev, { role: 'assistant', content: `✅ 已将 ${toSave.length} 条设定加入系统。您可以继续提问或清空对话。` }])
-  }, [extractedSettings, selectedSettings, codexCategories, codexEntries, projectId, addEntry, updateEntry])
+  }, [query, activeTab, codexEntries, codexCategories, characters, worldRulesProfile])
 
   const renderDetail = () => {
     if (!selectedResult) return null
@@ -524,53 +286,11 @@ ${conversationText}
     return null
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-2xl mx-4 bg-bg-elevated border border-border rounded-xl shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <div className="flex items-center gap-2">
-            <Search className="w-4 h-4 text-accent" />
-            <h2 className="text-sm font-medium text-text-primary">设定查询</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-bg-hover rounded transition-colors"
-          >
-            <X className="w-4 h-4 text-text-muted" />
-          </button>
-        </div>
-
-        <div className="p-4 border-b border-border">
-          <div className="flex gap-1 mb-3">
-            <button
-              onClick={() => setMode('search')}
-              className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg transition-colors ${
-                mode === 'search'
-                  ? 'bg-accent text-white'
-                  : 'bg-bg-base text-text-muted hover:text-text-secondary'
-              }`}
-            >
-              <Search className="w-3 h-3" />
-              硬查询
-            </button>
-            <button
-              onClick={() => {
-                setMode('qa')
-                setSelectedResult(null)
-              }}
-              className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg transition-colors ${
-                mode === 'qa'
-                  ? 'bg-accent text-white'
-                  : 'bg-bg-base text-text-muted hover:text-text-secondary'
-              }`}
-            >
-              <Sparkles className="w-3 h-3" />
-              AI 问答
-            </button>
-          </div>
-
-          {mode === 'search' && (
-            <>
+  return <section className="rounded-xl border border-border bg-bg-elevated" aria-label="设定查询">
+    <div className="flex items-center justify-between border-b border-border p-3"><h2>设定查询</h2><button onClick={onClose} aria-label="关闭设定查询"><X size={16} /></button></div>
+    <div className="space-y-3 p-3"><p className="text-xs text-text-muted">检索当前作品已保存的资料。创意讨论与试写统一在炉娘中进行；设定提取进入词条库的候选确认流程。</p>
+      <div className="flex gap-3 text-xs"><button onClick={openDiscussion} className="text-accent">打开炉娘自由讨论</button><button onClick={() => setShowCodex(value => !value)} className="text-accent">打开词条库提取设定</button></div>
+      <LegacySettingHistory key={`${projectId}:${worldGroupId}`} projectId={projectId} worldGroupId={worldGroupId} onClaimed={openDiscussion} />
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                 <input
@@ -606,18 +326,9 @@ ${conversationText}
                   </button>
                 ))}
               </div>
-            </>
-          )}
-
-          {mode === 'qa' && (
-            <p className="text-[10px] text-text-muted">
-              💡 AI 问答支持多轮对话讨论设定。讨论确定后，点击下方按钮一键整理并加入设定。对话历史会自动保存，关闭后重新打开仍可见。
-            </p>
-          )}
-
-          </div>
-
-        {mode === 'search' ? (
+</div>
+    {showCodex && <CodexPanel project={project} embedded compact />}
+    {error && <p role="alert">{error}</p>}
           <div className="flex h-80">
             <div className="w-1/2 border-r border-border overflow-y-auto">
               {results.length === 0 ? (
@@ -669,208 +380,5 @@ ${conversationText}
               )}
             </div>
           </div>
-        ) : (
-          <div className="flex flex-col h-96">
-            <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
-              {qaMessages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-text-muted">
-                  <Sparkles className="w-8 h-8 mb-2 opacity-30" />
-                  <p className="text-xs">输入问题让 AI 分析设定</p>
-                  <p className="text-[10px] mt-1">支持多轮对话讨论设定，讨论确定后一键加入</p>
-                </div>
-              ) : (
-                qaMessages.map((msg, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
-                  >
-                    <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs ${
-                      msg.role === 'user' ? 'bg-accent text-white' : 'bg-bg-base text-text-muted'
-                    }`}>
-                      {msg.role === 'user' ? '👤' : '🤖'}
-                    </div>
-                    <div className={`max-w-[70%] ${
-                      msg.role === 'user' ? 'items-end' : 'items-start'
-                    }`}>
-                      <div className={`p-3 rounded-lg ${
-                        msg.role === 'user' ? 'bg-accent text-white rounded-tr-none' : 'bg-bg-base text-text-secondary rounded-tl-none'
-                      }`}>
-                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-              {isGenerating && (
-                <div className="flex gap-3">
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-bg-base flex items-center justify-center text-xs text-text-muted">
-                    🤖
-                  </div>
-                  <div className="p-3 bg-bg-base rounded-lg rounded-tl-none">
-                    <div className="flex items-center gap-1">
-                      <Loader2 className="w-4 h-4 animate-spin text-accent" />
-                      <span className="text-xs text-text-muted">AI 正在分析设定...</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 border-t border-border space-y-3">
-              <textarea
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    handleQASubmit()
-                  }
-                }}
-                placeholder="输入问题..."
-                rows={3}
-                className="w-full px-4 py-2 bg-bg-base border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent resize-none"
-                disabled={isGenerating}
-              />
-
-              <div className="flex gap-2">
-                <button
-                  onClick={handleExtractSettings}
-                  disabled={isExtracting || qaMessages.length === 0}
-                  className="flex-1 py-1.5 text-xs bg-accent text-white rounded-lg hover:bg-accent/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
-                >
-                  <FileText className="w-3 h-3" />
-                  {isExtracting ? '提取中...' : '整理并加入设定'}
-                </button>
-                <button
-                  onClick={handleQASubmit}
-                  disabled={isGenerating || !query.trim()}
-                  className="px-4 py-1.5 text-xs bg-accent text-white rounded-lg hover:bg-accent/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                >
-                  {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                  {isGenerating ? '思考中' : '发送'}
-                </button>
-                <button
-                  onClick={() => {
-                    setQaMessages([])
-                    localStorage.removeItem(STORAGE_KEY)
-                  }}
-                  className="px-4 py-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors"
-                >
-                  清空
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showExtractModal && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50">
-            <div className="w-full max-w-lg mx-4 bg-bg-elevated border border-border rounded-xl shadow-xl overflow-hidden max-h-[80vh] flex flex-col">
-              <div className="flex items-center justify-between p-4 border-b border-border">
-                <h3 className="text-sm font-medium text-text-primary">整理设定</h3>
-                <button
-                  onClick={() => {
-                    setShowExtractModal(false)
-                    setExtractedSettings([])
-                    setSelectedSettings(new Set())
-                  }}
-                  className="p-1 hover:bg-bg-hover rounded transition-colors"
-                >
-                  <X className="w-4 h-4 text-text-muted" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4">
-                {isExtracting ? (
-                  <div className="flex flex-col items-center justify-center h-full text-text-muted">
-                    <Loader2 className="w-8 h-8 animate-spin mb-2 opacity-50" />
-                    <p className="text-xs">AI 正在分析对话提取设定...</p>
-                  </div>
-                ) : extractedSettings.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-text-muted">
-                    <FileText className="w-8 h-8 mb-2 opacity-30" />
-                    <p className="text-xs">对话中未发现需要添加的设定</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {extractedSettings.map(setting => (
-                      <div
-                        key={setting.id}
-                        className={`p-3 rounded-lg border transition-colors ${
-                          selectedSettings.has(setting.id)
-                            ? 'border-accent bg-accent/5'
-                            : 'border-border bg-bg-base'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <input
-                                type="checkbox"
-                                checked={selectedSettings.has(setting.id)}
-                                onChange={(e) => {
-                                  const next = new Set(selectedSettings)
-                                  if (e.target.checked) {
-                                    next.add(setting.id)
-                                  } else {
-                                    next.delete(setting.id)
-                                  }
-                                  setSelectedSettings(next)
-                                }}
-                                className="w-3 h-3 rounded border-border text-accent focus:ring-accent"
-                              />
-                              <span className="text-sm font-medium text-text-primary">{setting.name}</span>
-                              <span className="text-[10px] text-text-muted px-1.5 py-0.5 bg-bg-hover rounded">
-                                {setting.category}
-                              </span>
-                            </div>
-                            {setting.summary && (
-                              <p className="text-xs text-text-secondary mb-2">{setting.summary}</p>
-                            )}
-                            {Object.keys(setting.fields).length > 0 && (
-                              <div className="space-y-1">
-                                {Object.entries(setting.fields).map(([key, value]) => (
-                                  <div key={key} className="flex items-start gap-2">
-                                    <span className="text-xs text-text-muted w-16 shrink-0">{key}</span>
-                                    <span className="text-xs text-text-secondary">{value}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {!isExtracting && extractedSettings.length > 0 && (
-                <div className="flex gap-2 p-4 border-t border-border">
-                  <button
-                    onClick={() => {
-                      setShowExtractModal(false)
-                      setExtractedSettings([])
-                      setSelectedSettings(new Set())
-                    }}
-                    className="flex-1 px-4 py-2 text-xs bg-bg-base text-text-secondary rounded-lg hover:bg-bg-hover transition-colors"
-                  >
-                    取消
-                  </button>
-                  <button
-                    onClick={handleSaveSettings}
-                    disabled={selectedSettings.size === 0}
-                    className="flex-1 px-4 py-2 text-xs bg-accent text-white rounded-lg hover:bg-accent/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
-                  >
-                    <Check className="w-3 h-3" />
-                    保存 {selectedSettings.size} 条设定
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
+  </section>
 }

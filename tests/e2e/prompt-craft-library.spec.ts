@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { createLongform } from './helpers/product-entry'
 import { openLongformLeaf } from './helpers/longform-navigation'
 
-test('工坊可搜索并指定到节点，刷新后仍使用指定模板与作者要求', async ({ page }) => {
+test('工坊模板与作者要求在实验草稿中保留，刷新后必须明确启用运行且不能直接写回', async ({ page }) => {
   const requests: string[] = []
   await page.addInitScript(() => {
     localStorage.setItem('storyforge_guide_completed', 'e2e')
@@ -28,7 +28,7 @@ test('工坊可搜索并指定到节点，刷新后仍使用指定模板与作�
   await expect(page.locator('textarea').filter({ hasText: '对正文做最小必要修改' })).toBeVisible()
   await page.getByRole('searchbox').fill('不存在的模板关键词')
   await expect(page.getByText('当前筛选下没有模板')).toBeVisible()
-  await page.getByRole('button', { name: '工作流', exact: true }).click()
+  await page.getByRole('button', { name: '提示词实验', exact: true }).click()
   await page.getByRole('button', { name: '新建', exact: true }).click()
   await page.getByRole('button', { name: '添加节点', exact: true }).click()
   await page.getByLabel('Prompt 模块', { exact: true }).selectOption('chapter.de-ai')
@@ -36,11 +36,15 @@ test('工坊可搜索并指定到节点，刷新后仍使用指定模板与作�
   await page.getByLabel('待轻修的正文').fill('沈宁没有签字。三张船票压在账本下。她用不签字表示了拒绝。')
   await page.getByLabel('给 AI 的提示', { exact: true }).fill('必须保留三张与没有签字，禁止加下雨。')
   await page.getByRole('button', { name: /^保存/ }).click()
-  await expect(page.getByText('节点模式已保存', { exact: true })).toBeVisible()
+  await expect(page.getByText('提示词实验已保存', { exact: true })).toBeVisible()
   await page.reload()
   await openLongformLeaf(page, '提示词库')
-  await page.getByRole('button', { name: '工作流', exact: true }).click()
-  await page.getByRole('button', { name: '运行工作流 新建工作流', exact: true }).click()
+  await page.getByRole('button', { name: '提示词实验', exact: true }).click()
+  const runButton = page.getByRole('button', { name: '运行工作流 新建工作流', exact: true })
+  await expect(runButton).toBeDisabled()
+  expect(requests).toHaveLength(0)
+  await page.getByRole('checkbox', { name: /启用实验运行/ }).check()
+  await runButton.click()
   await page.getByRole('button', { name: '开始', exact: true }).click()
   await expect(page.getByText('✓ 工作流完成')).toBeVisible({ timeout: 30_000 })
   expect(requests).toHaveLength(1)
@@ -49,4 +53,6 @@ test('工坊可搜索并指定到节点，刷新后仍使用指定模板与作�
   expect(requests[0]).toContain('禁止加下雨')
   expect(requests[0]).not.toContain('{{')
   await expect(page.getByRole('textbox').filter({ hasText: '沈宁没有签字。三张船票压在账本下。' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '提取为设定候选', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: /保存到/ })).toHaveCount(0)
 })
