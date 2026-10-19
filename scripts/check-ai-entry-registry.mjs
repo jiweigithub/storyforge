@@ -246,6 +246,7 @@ const scannedFiles = [
   // Fixed-fixture offline speech evaluation is a limited transport, never a
   // creative binding or an application/provider fallback.
   'scripts/ttrpg-local-tts/evaluate.mjs',
+  'scripts/ttrpg-local-tts/timbre-evaluate.mjs',
   // G6-10's independent semantic grader is an eval-only formal model entry.
   // It may judge redacted observations, but can never adopt product content.
   'src/lib/evals/open-world-runtime/judge.ts',

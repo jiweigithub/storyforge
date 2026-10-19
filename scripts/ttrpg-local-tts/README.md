@@ -2,6 +2,8 @@
 
 固定台词的离线 CPU 评测，入口登记为 `ttrpg.local-voice.eval`。当前支持中文精简内核的验证；正式团局配音沿施工方案 §35.103 独立接入原叙述、候选试听、确认与异步生命周期。
 
+多声线准入见方案 §35.155：`timbre-evaluate.mjs --check-only` 只核对有限入口。真实执行另需指定已核对的 `--melo-runtime-dir`、`--timbre-runtime-dir` 和原固定 `--source-wav`，使用 `timbre-eval-profile.json` 固定的公开 WAV SHA 与十个官方合成预置向量，不接收原文或参考人声。它共用已有 Python 依赖，原 OpenVoice 代码/权重按 revision/hash 核对，MIT 声明保留在 `OpenVoice-LICENSE`。本工具不安装依赖、联网推理、自动重试、写项目或采纳；多声线尚须真实中文听感与正式产品合同接入，不是播放器的已上线声线列表。
+
 ## 安装与执行
 
 环境为 macOS Apple Silicon、Python 3.12、Node.js。依赖和模型只在指定本机目录保存一份，不提交仓库或打进交接包。
