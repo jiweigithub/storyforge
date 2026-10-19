@@ -4839,3 +4839,25 @@ accepted/running 不当作成功；unknown/failed/cancelled 的原终态、错�
 用例在关闭后先通过浏览器原生只读 `navigator.locks.query()`，等待同一作品执行者实际不再 held，再执行原唯一恢复点击，另记录关闭瞬间的真实持有状态。保留另一活跃页不能领取的反例、同一 ID/准确 hash/raw/用量、一次推理、零新增取消、独立采用及刷新全部断言；不延长超时、不轮询恢复按钮、不重发模型、不释放或绕过产品锁。此为测试前置条件的明确同步；当前产品源码与其忙碌拒绝继续保留，修正后的定向/云端结果仍分别核验。
 
 修正后的本机隔离 Chrome 已执行该文件全部七项用例，零跳过、重试、flaky 或源码漂移；原请求一次推理、零取消、一次交接，候选恢复未改草稿，独立采用后 revision 才由 4 变为 5。本次关闭瞬间观测为已释放，不把本机结果推断为云端时序已复验；原云端失败继续保留，须在新提交重新运行预览检查后再判断。
+
+### 35.157 用户否决当前 A/B 声线，扩大原生中文多声线选型（2026-10-19）
+
+用户对 OpenVoice 预置转换 A/B 的实际反馈为“区别不明显，且听感需要改善”，并要求广泛搜索开源工具及核对商业风险。此反馈明确否决把当前 A/B 当作可用的沉稳男声/柔和女声；原真实样本、调用、许可及验证记录继续保留，§35.155 的技术执行通过不等于听感准入。此前对原 Melo 中文样本“听感可以”的反馈仍仅适用于原样本。后续优先原生中文不同说话人的 TTS，不继续用预置转换差异或音高数值代替人物声线质量。
+
+以下按官方仓库 LICENSE、实际权重模型卡及来源说明分别核对；此处的许可事实以 2026-10-19 核对版本为准，不以开源标签、包装器许可证或社区音色包名称代替权重及声音来源授权。搜索覆盖十余个项目；候选的质量/性能尚未在本机验证，不能把官方演示或基准当作本产品效果。
+
+| 候选及官方来源 | 代码 / 指定权重许可 | 对本产品的判断 |
+|---|---|---|
+| [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) / [0.6B CustomVoice](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice) | Apache-2.0 / Apache-2.0 | 优先实测。官方列出九种预置，其中 Uncle_Fu 为低沉醇厚男性、Serena 为温柔女性，直接对应需求；先用官方原生中文预置，不导入外部参考人声。原生权重及音频 tokenizer 两个文件合计约 2.49GB，依赖和本机性能另核对。 |
+| [Kokoro](https://github.com/hexgrad/kokoro) / [82M v1.1-zh](https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh) | Apache-2.0 / Apache-2.0 | 与 Qwen 比较。该版本有一百位中文说话人，官方说明中文数据由龙猫数据以宽松许可提供；这是发布方的来源声明，未取得独立的授权合同。主权重 327,247,856 字节，选少量官方男女向量试音，不下载整个声线库或旧版混用音色。 |
+| [Chatterbox](https://github.com/resemble-ai/chatterbox) / [官方模型](https://huggingface.co/ResembleAI/chatterbox)及普通话专版 | MIT / MIT | 保留为 MIT 候选，官方支持中文并提供多语种/普通话版本。不同声音的参考音频路径必须另核声音来源授权，不能用代码/权重 MIT 声称随机参考人声可商用；保留其原水印。先核对最小选定文件，仓库 usedStorage 不是安装量。 |
+| [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) / [官方权重](https://huggingface.co/lj1995/GPT-SoVITS) | MIT / 模型卡 MIT | 保留为 MIT 候选。零/少样本路线依赖参考声音，不能直接采用来历不明的角色、演员或社区音色包；依赖、具体版本权重与参考素材须分别准入。 |
+| [VoxCPM2](https://github.com/OpenBMB/VoxCPM) / [官方权重](https://huggingface.co/openbmb/VoxCPM2) | Apache-2.0 / Apache-2.0 | 可从文字描述设计新声音而不提供参考人声，适合作为更自然声线的后续候选；2B 参数，Mac 支持、资源占用和稳定性待实测，关闭其默认坏例自动重试，不照抄 CUDA 的性能到本机。 |
+| [MOSS-TTS / VoiceGenerator](https://github.com/OpenMOSS/MOSS-TTS)及[MOSS-TTS-Nano](https://github.com/OpenMOSS/MOSS-TTS-Nano) | 官方代码与已核对模型卡 Apache-2.0 | 分别提供描述式声音设计和小型 CPU 路线，列入第二批；不能把大模型声音设计和 Nano 当成同一能力，具体声音来源、依赖及选定权重再核对。 |
+| [CosyVoice](https://github.com/QwenAudio/CosyVoice) / [300M-SFT](https://huggingface.co/FunAudioLLM/CosyVoice-300M-SFT) | Apache-2.0 / Apache-2.0 | 原生语音备选。固定声线与新版本参考声音流程分别核对，不能默认仓库全部附带素材均有产品发行所需权利；本机完整依赖和时延待测。 |
+| [F5-TTS 官方权重](https://huggingface.co/SWivid/F5-TTS)、[Spark-TTS-0.5B](https://huggingface.co/SparkAudio/Spark-TTS-0.5B)、[ChatTTS](https://huggingface.co/2Noise/ChatTTS)、[Fish S1-mini](https://huggingface.co/fishaudio/s1-mini) | 所列权重分别 CC-BY-NC-4.0 / CC-BY-NC-SA-4.0 / CC-BY-NC-4.0 / CC-BY-NC-SA-4.0 | 排除这些有非商用限制的官方权重作为本产品免费商用依赖；F5 代码 MIT 不改变其权重限制。此决定不泛化到所有第三方模型或 Fish 的其他版本。 |
+| [Fish S2-Pro](https://huggingface.co/fishaudio/s2-pro)及[当前代码许可](https://github.com/fishaudio/fish-speech/blob/main/LICENSE) | 指定权重 Fish Audio Research License；当前代码是另有门槛的 Community License | 不作直接准入。已发现代码和权重分别适用不同许可，当前代码还有营业额/托管服务等条款；不能称为通用 Apache/MIT 免费商用。 |
+| [IndexTTS](https://github.com/index-tts/index-tts/blob/main/LICENSE)、[VibeVoice-Realtime](https://huggingface.co/microsoft/VibeVoice-Realtime-0.5B) | 前者为定制模型使用协议；后者 MIT 标签与模型卡研究用途表述并存 | 暂不直接集成，需逐版本明确条款及用途。不能把定制协议等同于禁止所有商用，也不能把 MIT 标签当作其他用途表述已经消失。 |
+| [Piper](https://github.com/OHF-Voice/piper1-gpl)与[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | 当前 Piper 代码 GPL-3.0、声线另有许可；sherpa-onnx 代码 Apache-2.0 | 运行工具不等于新的声线或权重授权。Piper 不作为本轮直接打包的 MIT 方案；sherpa 可用于已核对模型的轻量运行评估，仍须追溯原权重。 |
+
+下一步先核对 Qwen CustomVoice 与 Kokoro v1.1-zh 的最小代码/依赖和精确文件清单，串行生成同一公共原创中文段落的真实男女声对比，再依据中文清晰度、声线区分、长句韵律、开头结尾完整度和本机时延选择。只下载当前验证必需的一份权重，不批量安装全部候选或复制现有环境；不同候选的隔离依赖不能覆盖现有 Melo 已验证环境。MIT 与 Apache-2.0 均需保留适用许可/声明，声音素材和人格授权独立核对，不承诺绝对没有第三方争议。正式接入继续沿原文本、读法、接收者、Run、候选与媒资 owner，不改世界、旧音轨或旧请求合同。
