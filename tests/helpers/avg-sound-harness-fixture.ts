@@ -11,12 +11,17 @@ import { runProductProductionSchedulerCycleV1 } from '../../src/lib/product-prod
 import { stageAvgAuthorArtifactV1 } from '../../src/lib/avg/author-artifacts'
 import { AVG_SOUND_TEXT_CAPABILITY_V1 } from '../../src/lib/avg/sound-production-brief'
 import type { ProductBuildArtifactRecordV1 } from '../../src/lib/types'
+import type { ProductProductionCapabilityBindingV1 } from '../../src/lib/product-production/scheduler'
 
 /** Isolated actual S2, explicit start, author commands, shared scheduler and
  * configured HTTP. Only the feature fence and network are controlled by tests;
  * never seed a Build/Run, adoption/producer receipt or accepted Artifact. */
-export async function avgSoundHarnessFixtureV1(options: { malformed?: boolean; onResponse?: () => Promise<void>; output?: string } = {}) {
+export async function avgSoundHarnessFixtureV1(options: { malformed?: boolean; onResponse?: () => Promise<void>; output?: string;
+  configureSource?: (source: Awaited<ReturnType<typeof avgSoundProductionFixtureV1>>) => Promise<void>;
+  audioFetcher?: (target: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  additionalBindings?: ProductProductionCapabilityBindingV1[] } = {}) {
   const source = await avgSoundProductionFixtureV1()
+  await options.configureSource?.(source)
   const text = await resolveConfiguredTextCapabilityV1({ projectId: source.owner.scope.projectId, category: 'product-production', requirementKey: AVG_SOUND_TEXT_CAPABILITY_V1 })
   source.brief.capabilityRequirements.find(c => c.requirementKey === AVG_SOUND_TEXT_CAPABILITY_V1)!.capabilityHash = text.receipt.capabilityHash
   const brief = parseProductProductionBriefV3(source.brief), owner = source.owner
@@ -32,7 +37,10 @@ export async function avgSoundHarnessFixtureV1(options: { malformed?: boolean; o
   const calls: Array<{ body: Record<string, any>; packet: any }> = []
   const output = options.output ?? (options.malformed ? '{broken sound proposal' : JSON.stringify(source.plan))
   const fetcher = vi.fn(async (target: RequestInfo | URL, init?: RequestInit) => {
-    if (String(target) !== 'https://sound-proposal.fixture.invalid/v1/chat/completions') throw new Error('Unconfigured sound network route forbidden')
+    if (String(target) !== 'https://sound-proposal.fixture.invalid/v1/chat/completions') {
+      if (options.audioFetcher) return options.audioFetcher(target, init)
+      throw new Error('Unconfigured sound network route forbidden')
+    }
     const body = JSON.parse(String(init?.body)), context = String(body.messages.find((m: { role: string }) => m.role === 'user').content)
     const packet = JSON.parse(context.slice(context.indexOf('{'), context.lastIndexOf('}') + 1)); calls.push({ body, packet })
     await options.onResponse?.()
@@ -42,7 +50,7 @@ export async function avgSoundHarnessFixtureV1(options: { malformed?: boolean; o
   vi.stubGlobal('fetch', fetcher)
   const executor = createConfiguredProductProductionExecutorV1({ production: details.production, brief })
   const capabilityBindings = [{ requirementKey: text.receipt.requirementKey, adapterId: text.receipt.adapterId,
-    bindingHash: text.receipt.capabilityHash, provider: text.receipt.provider, model: text.receipt.model }]
+    bindingHash: text.receipt.capabilityHash, provider: text.receipt.provider, model: text.receipt.model }, ...(options.additionalBindings ?? [])]
   const s = { ...owner, author: source, brief, buildId, executor, capabilityBindings, calls, fetcher, output }
   await runProductProductionSchedulerCycleV1(s)
   const build = (await db.productBuilds.get(buildId))!, plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash)

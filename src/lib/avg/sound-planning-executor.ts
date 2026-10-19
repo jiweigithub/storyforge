@@ -13,20 +13,22 @@ import { prepareAvgSoundRoleProposalV1 } from './sound-role-proposal'
 import { hashAvgSoundExactTextV1 } from './sound-planning-evidence'
 import { AVG_SOUND_COMPILED_KEY_V1, AVG_SOUND_PLAN_KEY_V1 } from './sound-production-plan'
 import { compileAvgSoundRequirementsV1 } from './sound-requirements'
+import { executeAvgSoundProductionTaskV1 } from './sound-production-executor'
 
-/** Same durable scheduler, actual model runner and raw-output callback as the
- * existing product. Raw audio and Stage dispatch remain explicitly unready. */
+/** Same durable scheduler, model runner and original-response recorder. Raw
+ * audio is private until observation, author choice and Stage join are ready. */
 export function createAvgSoundPlanningExecutorV1(options: { brief: ProductProductionBriefV3; runText: ProductionTextRunnerV1 }): ProductProductionTaskExecutorV1 {
   const brief = structuredClone(options.brief)
   if (!brief.avgSoundPlanning) throw new Error('[avg-sound-plan] 缺少准确声音Brief')
   return async input => {
+    if (['avg-sound-music-generate', 'avg-sound-library-import'].includes(input.task.kind)) return executeAvgSoundProductionTaskV1(input, brief)
     const started = Date.now(), zero = (): ProductProductionTaskUsageV1 => ({ modelCalls: 0, mediaCalls: 0, inputTokens: 0,
       outputTokens: 0, costUsd: 0, durationMs: Date.now() - started, storageBytes: 0 })
     let source: Awaited<ReturnType<typeof readAvgSoundPlanningExecutionSourcesV1>>
     try {
       if (!avgSoundProductionExecutionReadyV1()) throw new Error('[avg-sound-plan] 正式声音闭环尚未开放')
       if (input.signal.aborted) throw new DOMException('Aborted', 'AbortError')
-      if (!['avg-sound-plan-propose', 'avg-sound-requirements-compile'].includes(input.task.kind)) throw new Error('[avg-sound-plan] 真实音频/演出执行尚未接通；未调用或回退其他生产器')
+      if (!['avg-sound-plan-propose', 'avg-sound-requirements-compile'].includes(input.task.kind)) throw new Error('[avg-sound-plan] 演出执行尚未接通；未调用或回退其他生产器')
       source = await readAvgSoundPlanningExecutionSourcesV1(input, brief)
     } catch (error) { throw new ProductProductionDraftRejectedErrorV1(error instanceof Error ? error.message : '声音来源无效', zero()) }
     if (input.task.kind === 'avg-sound-requirements-compile') {

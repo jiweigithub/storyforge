@@ -3675,7 +3675,7 @@ export async function acceptProductBuildArtifact(
   const productType = await productTypeForBuildV1(input.buildId)
   // AVG raw/processed image and raw voice candidates use sealed admission. Human choices,
   // V1 assembly and every other product keep their existing writer semantics.
-  if (productType === 'avg' && (input.artifactKey === 'avg.proposal.sound-plan' || input.artifactKey === 'avg.media.compiled-sound-requirements')) return acceptSealedProducerArtifactV1(input, false, false, true)
+  if (productType === 'avg' && (input.artifactKey === 'avg.proposal.sound-plan' || input.artifactKey === 'avg.media.compiled-sound-requirements' || input.artifactKey.startsWith('avg.sound.raw.'))) return acceptSealedProducerArtifactV1(input, false, false, true)
   if (productType === 'avg' && (input.artifactKey.startsWith('avg.media.raw.')||input.artifactKey.startsWith('avg.media.processed.')||input.artifactKey.startsWith('avg.voice.raw.'))) return acceptSealedProducerArtifactV1(input, true)
   if (productType === 'avg' && (input.artifactKey.startsWith('avg.proposal.') || input.artifactKey === 'avg.media.compiled-visual-requirements')) return acceptSealedProducerArtifactV1(input, false, true)
   return productType === 'text-open-world'

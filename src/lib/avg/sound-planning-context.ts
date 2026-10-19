@@ -9,6 +9,8 @@ import type { AvgMediaSourceInputV1 } from './media-source'
 import { validateAvgSoundPlanningSourcesV1 } from './sound-source'
 import { parseAvgSoundPlanningBriefV1 } from './sound-production-brief'
 import { AVG_SOUND_COMPILED_KEY_V1, AVG_SOUND_PROPOSAL_KEY_V1 } from './sound-production-plan'
+import { compileAvgSoundRequirementsV1 } from './sound-requirements'
+import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/artifact-store'
 
 /** The complete canonical rules/scripts are used only to verify freshness.
  * Default model input contains the explicitly declared sound purposes and
@@ -49,18 +51,36 @@ export async function readAvgSoundPlanningContextV1(input: AssembleContextInput)
     && canonicalProductProductionJsonV2(task.outputArtifactKeys) === canonicalProductProductionJsonV2([AVG_SOUND_PROPOSAL_KEY_V1])
   const compilation = task.kind === 'avg-sound-requirements-compile' && task.executionMode === 'deterministic' && task.skillId === null
     && task.contextProfile === 'avg-sound-planning-v1' && canonicalProductProductionJsonV2(task.outputArtifactKeys) === canonicalProductProductionJsonV2([AVG_SOUND_COMPILED_KEY_V1])
-  if (!proposal && !compilation) throw new Error('[avg-sound-context] 真实声音producer/演出执行投影尚未接通')
+  const raw = ['avg-sound-music-generate', 'avg-sound-library-import'].includes(task.kind)
+    && task.outputArtifactKeys.length === 1 && task.outputArtifactKeys[0].startsWith('avg.sound.raw.')
+  if (!proposal && !compilation && !raw) throw new Error('[avg-sound-context] 当前任务不属于声音方案、编译或原音频生产')
   // This existing reader checks actual start command, SourcePlan/confirmed
   // Brief, author candidates/receipts and physical source hashes in its own
   // complete snapshot. It does not inherit another Build's adoption authority.
   const source = await readAvgSystemPlanForCompilationV1({ scope, buildId: build.id!, expectedBuildRevision: build.stateRevision,
     controlEpoch: build.controlEpoch, includeSceneScripts: true })
-  const adopted = compilation ? await readAvgConfirmedSoundPlanV1({ scope, buildId: build.id!, expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch }) : null
+  const adopted = compilation || raw ? await readAvgConfirmedSoundPlanV1({ scope, buildId: build.id!, expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch }) : null
   const refs = [source.artifact, ...source.scripts.map(s => s.artifact), ...(adopted ? [adopted.artifact] : [])]
+  let requirement: Awaited<ReturnType<typeof compileAvgSoundRequirementsV1>>['requirements'][number] | undefined
+  let soundPlanHash: string | undefined
+  if (raw) {
+    const compiled = await compileAvgSoundRequirementsV1(brief.avgSoundPlanning.scope, adopted!.payload)
+    soundPlanHash = compiled.planHash
+    const rows = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id!, AVG_SOUND_COMPILED_KEY_V1])
+      .filter(r => r.status === 'accepted' && r.controlEpoch === build.controlEpoch).toArray()
+    const row = rows[0]
+    if (rows.length !== 1 || !row || canonicalProductProductionJsonV2(compiled) !== row.payloadJson) throw new Error('[avg-sound-context] 需要原producer的准确已编译声音需求')
+    await verifyAcceptedProductBuildArtifactV1({ scope, buildId: build.id!, artifactKey: row.artifactKey, version: row.version, contentHash: row.contentHash })
+    refs.push({ artifactKey: row.artifactKey, version: row.version, contentHash: row.contentHash })
+    requirement = compiled.requirements.find(r => task.taskKey === `avg.sound.generate.${r.template.requirementKey}`)
+    if (!requirement || task.outputArtifactKeys[0] !== `avg.sound.raw.${requirement.template.requirementKey}`
+      || (requirement.dispatch.operation === 'generate-music') !== (task.kind === 'avg-sound-music-generate')) throw new Error('[avg-sound-context] 原声音任务与准确编译项不一致')
+  }
   if (refs.length !== task.inputArtifactKeys.length || refs.some(r => !task.inputArtifactKeys.includes(r.artifactKey))) throw new Error('[avg-sound-context] 已采用规则/脚本未覆盖准确任务输入')
   const projected = await projectAvgSoundPlanningInputsV1(brief.avgSoundPlanning, { systemPlan: source.plan,
     scripts: source.scripts.map(s => s.payload), presentation: { aspectRatio: brief.avgSoundPlanning.aspectRatio } })
-  const packet = adopted ? { schema: projected.schema, version: projected.version, sourceInputHash: projected.sourceInputHash,
+  const packet = raw ? { schema: projected.schema, version: projected.version, sourceInputHash: projected.sourceInputHash,
+    scopeHash: projected.scopeHash, operation: 'produce-compiled-sound', soundPlanHash, requirement } : adopted ? { schema: projected.schema, version: projected.version, sourceInputHash: projected.sourceInputHash,
     scopeHash: projected.scopeHash, operation: 'compile-adopted-sound-requirements', soundPlan: adopted.payload } : projected
   const current = await db.productBuilds.get(build.id!), owner = await db.productProductions.get(production.id!)
   if (!current || !owner || current.stateRevision !== build.stateRevision || current.controlEpoch !== build.controlEpoch

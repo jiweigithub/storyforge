@@ -1,3 +1,4 @@
+import Dexie from 'dexie'
 import modelSource from '../../../scripts/avg-local-music/model-source.json'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import { parseAvgMusicPromptV1, parseAvgSoundPlanV1 } from './sound-plan-contract'
@@ -12,6 +13,14 @@ export const AVG_LOCAL_MUSIC_PROFILE_V1 = 'storyforge.avg.instrumental-evaluatio
 /** Deterministic proposal compilation only. Real execution must additionally
  * prove the adopted plan, frozen Brief/Plan/Harness, route and source bytes. */
 export async function compileAvgSoundRequirementsV1(scopeInput: unknown, planInput: unknown) {
+  const compile = () => compileAvgSoundRequirementsIsolatedV1(scopeInput, planInput)
+  // Author adoption and context admission can call this under an atomic DB
+  // lock. Keep one lease around this entirely pure pipeline; individual
+  // parallel hashes must not enqueue additional leases on that transaction.
+  return Dexie.currentTransaction ? Dexie.waitFor(Dexie.ignoreTransaction(compile), 20_000) : compile()
+}
+
+async function compileAvgSoundRequirementsIsolatedV1(scopeInput: unknown, planInput: unknown) {
   const scope = parseAvgSoundPlanningScopeV1(scopeInput), plan = parseAvgSoundPlanV1(planInput)
   if (plan.entries.length !== scope.templates.length
     || plan.entries.some(e => !scope.templates.some(t => t.requirementKey === e.requirementKey))) {

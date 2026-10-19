@@ -12,6 +12,7 @@ import { readAvgSoundProposalEvidenceV1 } from './sound-planning-evidence'
 import { avgSoundPlanningMethodV1 } from './sound-planning-role'
 import { hashAvgTaskRuntimeBindingV1 } from './task-claim'
 import { compileAvgSoundRequirementsV1 } from './sound-requirements'
+import { assertAvgSoundRawProducerAdmissionV1 } from './sound-production-admission'
 
 /** Inside the existing sealed producer transaction, after actual root/child,
  * checkpoint, candidate, ledger and terminal proof. No canonical author write. */
@@ -24,6 +25,10 @@ export async function assertAvgSoundPlanningProducerAdmissionV1(input: {
     || row.briefHash !== input.build.briefHash || row.authorizedAt !== input.build.authorizedAt) throw new Error('[avg-sound-plan] 缺少准确已授权声音Brief')
   const brief = parseProductProductionBriefV3(row.briefJson), planning = brief.avgSoundPlanning, a = input.artifact, task = input.task
   const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
+  if (a.artifactKey.startsWith('avg.sound.raw.')) {
+    if (!planning || await hashProductProductionValueV2(brief) !== input.build.briefHash) throw new Error('[avg-sound] 原声音需要准确完整授权Brief')
+    return assertAvgSoundRawProducerAdmissionV1(input, brief)
+  }
   if (!planning || await hashProductProductionValueV2(brief) !== input.build.briefHash || task.outputArtifactKeys.length !== 1 || task.outputArtifactKeys[0] !== a.artifactKey
     || a.blobObjectId !== null || a.mimeType !== null || a.mediaKind !== null || a.metadataJson !== '{}' || task.maxAttempts !== 1) throw new Error('[avg-sound-plan] 声音方案不能借用媒资/其他写域')
   const assembled = await assembleContext({ projectId: input.scope.projectId, scope: input.scope, productProductionId: input.build.productionId,
