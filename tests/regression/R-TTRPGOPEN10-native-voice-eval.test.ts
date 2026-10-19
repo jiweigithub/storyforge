@@ -30,6 +30,20 @@ describe('R-TTRPGOPEN10 native Chinese voice fixture admission', () => {
       console.log('passed');`
     expect(execFileSync(process.execPath, ['--input-type=module', '-e', source], { encoding: 'utf8' }).trim()).toBe('passed')
   })
+  it('rejects the actually observed over-budget Metal peak even if a worker reports success', () => {
+    const source = `
+      import assert from 'node:assert/strict';
+      import {assertQwenResourceAdmission,selectNativeFixture} from './${caller}';
+      const p=selectNativeFixture('qwen').profile;
+      assert.equal(p.version,2);assert.equal(p.decoderChunkTokens,100);assert.equal(p.gpuMemoryLimitBytes,6442450944);
+      const valid={resourceAcceptance:'passed',memoryGuidelineBytes:6442450944,peakMetalBytes:4000000000,memoryChecks:100};
+      assertQwenResourceAdmission(valid,p);
+      for(const patch of [{peakMetalBytes:7296809999},{peakMetalBytes:0},{peakMetalBytes:'4000000000'},
+        {resourceAcceptance:'unproven'},{memoryGuidelineBytes:8589934592},{memoryChecks:0}])
+        assert.throws(()=>assertQwenResourceAdmission({...valid,...patch},p));
+      console.log('passed');`
+    expect(execFileSync(process.execPath, ['--input-type=module', '-e', source], { encoding: 'utf8' }).trim()).toBe('passed')
+  })
   it.each([
     ['--text', 'private'], ['--reference-voice', 'person.wav'], ['--voice', 'celebrity'], ['--project', '/author'],
     ['--check-only', '--check-only'], ['--check-only', '--melo-runtime-dir', '/tmp'], ['--native-runtime-dir'],

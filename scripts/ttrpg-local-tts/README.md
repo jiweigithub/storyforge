@@ -91,7 +91,7 @@ node scripts/ttrpg-local-tts/native-voice-evaluate.mjs --melo-runtime-dir /absol
 2026-10-19 原生四声线实际生成通过：24 kHz/单声道 PCM，语速统一 0.9，分别为 18.600、18.425、18.200、19.700 秒；整次 24.13 秒，峰值 RSS 约 3.87 GB。原文/音素覆盖、真实 PCM/哈希和调用证据核对通过，未冒充逐字对齐或语义听感证明。新候选已交付试听，独立听感待用户反馈；尚未替代正式 Melo 产品 profile，开局声线选择和真实旁白生成的一致接入继续施工。
 
 
-## Qwen 原生预置评测（施工中）
+## Qwen 原生预置固定试音
 
 同一有限入口增加闭合 `--engine kokoro|qwen`；默认仍为原 Kokoro 四说话人及原 profile/worker。Qwen 只接受固定公开中文段落与 `uncle_fu / serena` 两个原生预置，不接受任意模型路径、台词、指令、参考人声或新声线。`--check-only --engine qwen` 只检查静态描述，不读取运行库或模型；显式执行继续使用原共享物理槽位和本次私有候选槽位。正式产品 profile、旧请求及游戏媒资不因这个选项改变。
 
@@ -99,9 +99,14 @@ node scripts/ttrpg-local-tts/native-voice-evaluate.mjs --melo-runtime-dir /absol
 
 原上游 initializer 会导入多种无关 codec，候选导数只保留准确 Qwen/Mimi 闭包。worker 不调用上游吞掉 tokenizer/codec 加载失败的 post-load hook；按准确索引与量化描述显式、严格加载主模型，单独取固定权重中的 decoder 并严格加载全部 decoder 参数，不实例化克隆参考 encoder。文本 tokenizer 只读本地准确文件、禁止远程自定义代码，原公开台词须 encode/decode 往返一致。现有 Transformers 5.20.1 会在 tokenizer 导入时加载已有 Torch 模块，记录此事实；不加载 Torch 神经网络权重，也不覆盖为官方另一路径要求的 4.57.3。
 
-每次最多两个完整语音生成、每个最多 512 个 codec token，必须实际观察 EOS；耗尽 token 上限不能把截断语音当成功。Metal GPU 上限 6 GiB、整次 300 秒、每段最多 60 秒，禁网络、嵌套进程、自动重试、播放与采用。语音按原生速度生成，Qwen 0.6B 不支持 instruct；个人试听语速继续是独立播放器偏好，不通过后期升降调给同一人声改名。设备探测与静态/协议回归已执行，真实生成、听感与正式接入仍待后续证据。
+每次最多两个完整语音生成、每个最多 512 个 codec token，必须实际观察 EOS；耗尽 token 上限不能把截断语音当成功。Metal 分配目标 6 GiB、逐阶段实际峰值准入阈值 6 GiB（不是操作系统硬上限）、整次 300 秒、每段最多 60 秒，禁网络、嵌套进程、自动重试、播放与采用。语音按原生速度生成，Qwen 0.6B 不支持 instruct；个人试听语速继续是独立播放器偏好，不通过后期升降调给同一人声改名。设备、最小导入与固定中文真实生成已执行；听感和正式接入仍需独立证据。
 
 ```bash
 node scripts/ttrpg-local-tts/native-voice-evaluate.mjs --engine qwen --check-only
 node scripts/ttrpg-local-tts/native-voice-evaluate.mjs --engine qwen --melo-runtime-dir /absolute/existing-melo-runtime --native-runtime-dir /absolute/prepared-qwen-assets
 ```
+
+
+首轮 V1 实际生成了两段音频，但复核实际 Metal 峰值为 7,296,809,999 字节，超过预设 6 GiB；MLX 官方 `set_memory_limit` 仅是分配指导，不能冒充硬上限。原进程通过状态、音频、源码和哈希均保留，资源准入另记失败。`qwen-native-eval-profile-v1.json` 保留该历史合同；当前 V2 保留同一 6 GiB 阈值，将原解码分块从 300 降至 100 codec token、保持原 25-token 左上下文，并逐块立即求值释放中间计算图。主模型/codec 加载、逐步生成、每个解码块和最终结果均检查真实累计峰值，主进程还独立拒绝缺失或超限的资源回执；没有重置峰值来掩盖此前占用，也不承诺系统在单次原生分配期间不会瞬时超出。
+
+V2 的显式新固定评测实际完成两次生成、575 次资源观测；Uncle_Fu 318 个 codec token / 25.360 秒，Serena 239 / 19.040 秒，均真实观察 EOS。整次 28.02 秒、进程峰值 RSS 约 2.93 GB、Metal 累计峰值 5,631,002,983 字节，通过原 6 GiB 准入阈值；WAV/样本/源码/权重核验通过。分块解码不删除原文、样本或时间，不宣称与历史 300-token 解码音频逐字节相同。独立浏览器已核对新 WAV 解码/播放、默认 0.9 倍保持音高、切换暂停及零外部请求；用户听感仍待反馈，正式配音 profile 与开局所选声线的一致接入继续施工。

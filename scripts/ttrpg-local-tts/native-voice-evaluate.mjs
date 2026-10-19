@@ -58,6 +58,11 @@ export function verifyNativeFixturePcm(bytes, expectedHash = null, p = nativeVoi
   if (rms < .00001 || peak > .991) throw new Error('声线静音或削波')
   return { sha256: hash(bytes), bytes: bytes.length, sampleRate: p.sampleRate, samples, durationSeconds: samples / p.sampleRate, rms, peak }
 }
+export function assertQwenResourceAdmission(result, profile) {
+  if (result.resourceAcceptance !== 'passed' || result.memoryGuidelineBytes !== profile.gpuMemoryLimitBytes
+    || !Number.isSafeInteger(result.peakMetalBytes) || result.peakMetalBytes <= 0 || result.peakMetalBytes > profile.gpuMemoryLimitBytes
+    || !Number.isSafeInteger(result.memoryChecks) || result.memoryChecks < 4) throw new Error('Qwen 实际 Metal 峰值未通过准入，分配目标不能冒充硬上限')
+}
 async function main() {
   const options = parseNativeFixtureArgs(process.argv.slice(2))
   assertVoiceTransport('ttrpg.local-voice.native-fixture-eval', 'scripts/ttrpg-local-tts/native-voice-evaluate.mjs')
@@ -96,6 +101,7 @@ async function main() {
       || result.text !== p.fixture || result.network !== 'disabled' || result.calls !== p.maxCalls
       || result.humanListeningAcceptance !== 'unproven' || result.adoptionAllowed !== false
       || JSON.stringify(result.voices.map(v => v.voice)) !== JSON.stringify(p.voices)) throw new Error('真实声线回执身份不符')
+    if (selected.engine === 'qwen') assertQwenResourceAdmission(result, p)
     for (const voice of result.voices) receipt.voices.push({ voice: voice.voice, ...verifyNativeFixturePcm(readFileSync(path.join(directory, voice.voice + '.wav')), voice.audioSha256, p) })
     if (hash(readFileSync(path.join(base, selected.profileFile))) !== receipt.profileSha256 || hash(readFileSync(path.join(base, selected.workerFile))) !== receipt.workerSha256) throw new Error('评测源码变化')
     receipt.status = 'passed'; receipt.humanListeningAcceptance = 'unproven'

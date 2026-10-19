@@ -15,7 +15,7 @@ def main():
     registry=json.loads((base.parent.parent/'src/lib/agent/ai-entry-registry.json').read_text())
     rows=[x for x in registry['limitedTransports'] if x['entryId']==p['entryId']]
     if len(rows)!=1 or rows[0]['boundary']!='offline-fixture-audio-eval' or rows[0]['adoptAllowed'] is not False or rows[0]['allowedCallers']!=['scripts/ttrpg-local-tts/native-voice-evaluate.mjs']:raise ValueError('Unregistered evaluation')
-    if p['version']!=1 or p['maxCalls']!=2 or p['voices']!=['uncle_fu','serena'] or p['productInvocationAllowed'] is not False or p['adoptionAllowed'] is not False or p['network']!='disabled' or p['instructAllowed'] is not False or p['referenceVoiceAllowed'] is not False or p['stream'] is not False:raise ValueError('Unsupported fixed boundary')
+    if p['version']!=2 or p['decoderChunkTokens']!=100 or p['decoderLeftContextTokens']!=25 or p['gpuMemoryLimitBytes']!=6*1024**3 or p['maxCalls']!=2 or p['voices']!=['uncle_fu','serena'] or p['productInvocationAllowed'] is not False or p['adoptionAllowed'] is not False or p['network']!='disabled' or p['instructAllowed'] is not False or p['referenceVoiceAllowed'] is not False or p['stream'] is not False:raise ValueError('Unsupported fixed boundary')
     melo,root,output=(Path(v[k]).resolve() for k in ['meloRuntime','nativeRuntime','outputDir'])
     if output.parent!=root/'evaluations' or {x.name for x in output.iterdir()}!={'attempt.json','worker.log'}:raise ValueError('Output must be a new attempt')
     if Path(sys.prefix).resolve()!=melo/'venv' or sha((melo/'runtime-profile.json').read_bytes())!=p['sharedPythonAssetProfileSha256']:raise ValueError('Shared runtime mismatch')
@@ -61,6 +61,11 @@ def main():
     for row in p['wheels']:
         if importlib.metadata.version(row['name'])!=row['version']:raise ValueError('Private runtime version mismatch')
     mx.set_memory_limit(p['gpuMemoryLimitBytes']);mx.set_cache_limit(256*1024**2)
+    memory_checks=0;stage_peaks={}
+    def check_memory(stage):
+        nonlocal memory_checks
+        peak=mx.get_peak_memory();memory_checks+=1;stage_peaks[stage]=max(stage_peaks.get(stage,0),peak)
+        if not isinstance(peak,int) or peak<0 or peak>p['gpuMemoryLimitBytes']:raise MemoryError(f'Observed Metal peak exceeds admission threshold at {stage}: {peak}')
     config=json.loads((root/'models/config.json').read_text())
     if config['tts_model_type']!='custom_voice' or config['tts_model_size']!='0b6' or config['quantization']!={'group_size':64,'bits':8,'mode':'affine'}:raise ValueError('Wrong selected model')
     model=Model(ModelConfig.from_dict(config))
@@ -69,6 +74,7 @@ def main():
     if set(weights)!=set(index) or set(index.values())!={'model.safetensors'}:raise ValueError('Exact weight index mismatch')
     weights=model.sanitize(weights);apply_quantization(model,config,weights,getattr(model,'model_quant_predicate',None))
     model.load_weights(list(weights.items()),strict=True);mx.eval(model.parameters());model.eval();del weights
+    check_memory('main-loaded')
     if model.speaker_encoder is not None or not set(p['voices']).issubset(set(model.supported_speakers)):raise ValueError('Expected native presets only')
     model.tokenizer=AutoTokenizer.from_pretrained(str(root/'models'),local_files_only=True,trust_remote_code=False)
     ids=model.tokenizer.encode(p['fixture'],add_special_tokens=False)
@@ -86,6 +92,8 @@ def main():
     if tokenizer.encoder_model is not None or tokenizer.output_sample_rate!=p['sampleRate']:raise ValueError('Reference encoder must remain absent')
     model.load_speech_tokenizer(tokenizer);model.load_generate_config(json.loads((root/'models/generation_config.json').read_text()))
     del raw_weights,decoder_weights
+    check_memory('codec-loaded')
+    model._fixture_resource_guard=check_memory;tokenizer.decoder._fixture_resource_guard=check_memory
     unexpected=[x for x in sys.modules if x in {'sounddevice','miniaudio','librosa','scipy'} or x.startswith(('mlx_audio.codec.models.descript','mlx_audio.codec.models.encodec'))]
     if unexpected:raise ValueError('Unneeded audio/model stack loaded: '+str(unexpected))
     result={'status':'running','entryId':p['entryId'],'profileSha256':v['profileSha256'],'workerSha256':v['workerSha256'],
@@ -101,10 +109,12 @@ def main():
             result['calls']+=1;save()
             calls.write(json.dumps({'event':'requested','voice':voice,'atNs':time.time_ns(),'maxCodecTokens':p['maxCodecTokensPerVoice']})+'\n');calls.flush();os.fsync(calls.fileno())
             before=time.monotonic();mx.random.seed(0)
+            check_memory('before-voice')
             outputs=list(model.generate_custom_voice(text=p['fixture'],speaker=voice,language='chinese',instruct=None,
                          max_tokens=p['maxCodecTokensPerVoice'],temperature=.8,top_k=50,top_p=1.,repetition_penalty=1.05,verbose=False,stream=False))
             if len(outputs)!=1 or not model._fixture_eos_seen:raise ValueError('Incomplete or unexpected generated segments')
             generated=outputs[0];mx.eval(generated.audio);audio=np.array(generated.audio,dtype=np.float32)
+            check_memory('generated-voice')
             if generated.sample_rate!=p['sampleRate'] or audio.ndim!=1 or generated.samples!=len(audio) or not np.isfinite(audio).all() or not 5<=len(audio)/p['sampleRate']<=p['maxSecondsPerVoice'] or not 1<=generated.token_count<p['maxCodecTokensPerVoice']:raise ValueError('Invalid native generated PCM or codec usage')
             peak=float(np.abs(audio).max());gain=min(1.,.99/peak) if peak else 0.
             pcm=np.rint(audio*gain*32767).astype('<i2');rms=float(np.sqrt(np.mean((pcm.astype(np.float64)/32767)**2)))
@@ -115,8 +125,9 @@ def main():
             row={'voice':voice,'audioSha256':sha(target.read_bytes()),'sampleRate':p['sampleRate'],'samples':len(pcm),'durationSeconds':len(pcm)/p['sampleRate'],
                  'codecTokens':generated.token_count,'eosObserved':True,'gain':gain,'rms':rms,'wallSeconds':time.monotonic()-before}
             calls.write(json.dumps({'event':'returned',**row})+'\n');calls.flush();os.fsync(calls.fileno());result['voices'].append(row);save();mx.clear_cache()
-    verify();usage=resource.getrusage(resource.RUSAGE_SELF)
-    result.update(status='generated',wallSeconds=time.monotonic()-started,cpuSeconds=usage.ru_utime+usage.ru_stime,maxRssBytes=usage.ru_maxrss,peakMetalBytes=mx.get_peak_memory())
+    verify();usage=resource.getrusage(resource.RUSAGE_SELF);check_memory('final')
+    result.update(status='generated',wallSeconds=time.monotonic()-started,cpuSeconds=usage.ru_utime+usage.ru_stime,maxRssBytes=usage.ru_maxrss,peakMetalBytes=mx.get_peak_memory(),
+                  resourceAcceptance='passed',memoryGuidelineBytes=p['gpuMemoryLimitBytes'],memoryChecks=memory_checks,memoryStagePeaks=stage_peaks)
     save();signal.alarm(0)
 
 if __name__=='__main__':main()
