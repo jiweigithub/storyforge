@@ -293,9 +293,20 @@ export interface ProductReleaseLocalFileProvenanceV1 {
   importedAt: number
 }
 
+/** A verified, self-contained file; it carries no marketplace or creator claim. */
+export interface ProductReleaseLocalBundleProvenanceV1 {
+  source: 'local-bundle'
+  bundleHash: string
+  originalReleaseHash: string
+  remoteCreatorIdentityVerified: false
+  localCopyPreserved: true
+  importedAt: number
+}
+
 export type ProductReleaseDistributionProvenanceV1 =
   | ProductReleaseMarketplaceProvenanceV1
   | ProductReleaseLocalFileProvenanceV1
+  | ProductReleaseLocalBundleProvenanceV1
 
 export interface ProductRelease {
   id?: number
