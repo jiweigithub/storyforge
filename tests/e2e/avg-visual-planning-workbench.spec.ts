@@ -897,6 +897,73 @@ for(const [visualVersion,noKeyBeforeProcessing] of [[4,false],[5,false],[5,true]
   await expect(page.locator('.avg-text-cursor')).toHaveClass(/is-complete/)
   await page.screenshot({path:info.outputPath(`avg-v${visualVersion}-five-originals-retained-new-stage.png`),fullPage:true})
   expect(models).toHaveLength(4);expect(images).toHaveLength(5);expect(calls).toEqual([])
+  if(visualVersion===5&&!noKeyBeforeProcessing){
+    // A real later Plan/root is explicitly started and stopped without any
+    // source adoption or provider dispatch. Keep the already chosen Source5/6
+    // images from Build1 through that empty batch, using the same native action.
+    await page.goto(`./avg/production?project=${source.scope.projectId}&work=${source.scope.workId}`)
+    await page.getByRole('button',{name:'以此预览开始修订',exact:true}).click();await page.getByRole('button',{name:'保存编辑草稿',exact:true}).click()
+    const later=await page.evaluate(async scope=>{
+      const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
+      const [service,drafts,store]=await Promise.all([load('/storyforge/src/lib/avg/assembly-service.ts'),load('/storyforge/src/lib/avg/draft-service.ts'),load('/storyforge/src/stores/ai-config.ts')])
+      const view=await service.readAvgAssemblyWorkspaceV1(scope),original=view.details.buildHistory.find((b:any)=>b.buildNumber===1)
+      const frozen=JSON.parse(view.details.briefHistory.find((b:any)=>b.revision===original.briefRevision).briefJson).avgVisualPlanning.scope
+      const {sourceInputHash:_hash,aspectRatio:_ratio,...planning}=structuredClone(frozen)
+      const draft=await drafts.readAvgDraftV1(scope),workspace=JSON.parse(draft.editorJson),template=planning.templates.find((t:any)=>t.subjectKind==='environment')
+      const scene=workspace.systemPlan.scenes.find((s:any)=>s.key!==template.parameters.consumer.sceneKey),script=workspace.scripts.find((s:any)=>s.sceneKey===scene.key)
+      template.parameters.assetKey+='.later';template.parameters.requirementKey+='.later';template.parameters.name='尚未生成的后继工程背景'
+      template.parameters.consumer={...template.parameters.consumer,consumerKey:template.parameters.consumer.consumerKey+'.later',sceneKey:scene.key,subjectKey:scene.key}
+      template.parameters.family={...template.parameters.family,familyKey:template.parameters.family.familyKey+'.later',subjectKey:scene.key}
+      template.parameters.triggerBeatKey=script.lines[0].lineKey
+      planning.batchKey+='.later';planning.revision++;planning.templates=[template]
+      planning.referenceCatalog=planning.referenceCatalog.filter((r:any)=>template.allowedReferenceKeys.includes(r.referenceKey))
+      store.useAIConfigStore.getState().setConfig({apiKey:'test-only-intercepted-later-preparation'})
+      const prepared=await service.prepareAvgAssemblyBriefV1({scope,expectedDraftRevision:draft.revision,visualPlanning:planning})
+      return {productionId:prepared.production.id,priorNumber:view.details.build.buildNumber}
+    },source.scope)
+    await page.getByRole('button',{name:'读取已保存版本',exact:true}).click()
+    await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
+    await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
+    await expect(page.getByRole('status').filter({hasText:'已明确开始，等待逐项作者确认。'})).toBeVisible()
+    await page.getByRole('button',{name:'停止专业视觉制作并保留记录',exact:true}).click()
+    await expect(page.getByRole('status').filter({hasText:'本次专业视觉制作已停止'})).toBeVisible()
+    const empty=await page.evaluate(async scope=>{
+      const load=new Function('p','return import(p)') as (p:string)=>Promise<any>,{db}=await load('/storyforge/src/lib/db/schema.ts')
+      const build=(await db.productBuilds.where('workId').equals(scope.workId).sortBy('buildNumber')).at(-1)
+      const draft=await db.avgAuthoringDrafts.where('workId').equals(scope.workId).first()
+      return {number:build.buildNumber,status:build.status,planRevision:build.planRevision,rawCount:await db.productBuildArtifacts.where('buildId').equals(build.id).filter((a:any)=>a.artifactKey.startsWith('avg.media.raw.')).count(),sources:JSON.parse(draft.editorJson).presentation.inheritedImages.map((e:any)=>({version:e.source.version,build:e.source.raw.buildNumber,hash:e.source.raw.contentHash}))}
+    },source.scope)
+    expect(empty).toMatchObject({number:later.priorNumber+1,status:'cancelled',planRevision:1,rawCount:0})
+    expect(empty.sources.map((e:any)=>e.version).sort()).toEqual([5,5,5,5,6]);expect(empty.sources.every((e:any)=>e.build===1)).toBe(true)
+    await page.evaluate(async()=>{const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;const {useAIConfigStore}=await load('/storyforge/src/stores/ai-config.ts');useAIConfigStore.getState().setConfig({apiKey:''})})
+    await page.reload();await page.getByRole('button',{name:'素材',exact:true}).click()
+    await page.getByRole('button',{name:'保留专业演出图并准备新方案',exact:true}).click()
+    await expect(page.getByRole('status').filter({hasText:'已保留准确专业演出图并准备零生成调用的新方案'})).toBeVisible({timeout:30_000})
+    await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
+    await page.getByRole('button',{name:'确认方案并开始组装',exact:true}).click()
+    await expect(page.getByRole('status').filter({hasText:'已明确开始，等待逐项作者确认。'})).toBeVisible()
+    await adoptSource(page,'系统规则');for(const title of source.titles)await adoptSource(page,`场景：${title}`)
+    await adoptSource(page,'演出与媒资',true)
+    await page.getByRole('button',{name:'执行组装并生成新预览',exact:true}).click()
+    await expect(page.getByRole('status').filter({hasText:'新预览已冻结'})).toBeVisible({timeout:60_000})
+    const continued=await page.evaluate(async scope=>{
+      const load=new Function('p','return import(p)') as (p:string)=>Promise<any>,{db}=await load('/storyforge/src/lib/db/schema.ts')
+      const builds=await db.productBuilds.where('workId').equals(scope.workId).sortBy('buildNumber'),build=builds.at(-1)
+      const brief=JSON.parse((await db.productProductionBriefs.where('[productionId+revision]').equals([build.productionId,build.briefRevision]).first()).briefJson)
+      const draft=await db.avgAuthoringDrafts.where('workId').equals(scope.workId).first()
+      return {number:build.buildNumber,parent:build.parentBuildNumber,status:build.status,planRevision:build.planRevision,assemblyVersion:brief.avgAssembly.version,visual:!!brief.avgVisualPlanning,capabilities:brief.capabilityRequirements,budget:brief.productionBudget,rawCount:await db.productBuildArtifacts.where('buildId').equals(build.id).filter((a:any)=>a.artifactKey.startsWith('avg.media.raw.')).count(),sources:JSON.parse(draft.editorJson).presentation.inheritedImages.map((e:any)=>({version:e.source.version,build:e.source.raw.buildNumber,hash:e.source.raw.contentHash})),olderPreviews:builds.filter((b:any)=>b.buildNumber<build.parentBuildNumber).map((b:any)=>({number:b.buildNumber,previewHash:b.previewHash}))}
+    },source.scope)
+    expect(continued).toMatchObject({number:empty.number+1,parent:empty.number,status:'preview-ready',planRevision:1,assemblyVersion:1,visual:false,capabilities:[],rawCount:0,budget:{maximumMediaCalls:0,maximumModelCalls:0}})
+    expect(continued.sources).toEqual(empty.sources);expect(continued.olderPreviews.every((b:any)=>b.previewHash)).toBe(true)
+    expect(models).toHaveLength(4);expect(images).toHaveLength(5);expect(calls).toEqual([])
+    await page.getByRole('button',{name:'试玩此预览',exact:true}).click()
+    await expect.poll(()=>page.locator('.avg-background img').evaluate((i:HTMLImageElement)=>i.complete?i.naturalWidth:0)).toBe(background.width)
+    await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',pose.altText)
+    await page.screenshot({path:info.outputPath('avg-v5-earlier-images-after-empty-batch.png'),fullPage:true})
+    const proof=info.outputPath('avg-v5-earlier-images-after-empty-batch.json')
+    await writeFile(proof,JSON.stringify({empty,continued,modelCalls:models.length,imageCalls:images.length,scope:'Actual native start/stop/olderSource5and6 continuation, no provider dispatch in later or continued Builds. Controlled engineering pixels, not art or real-provider acceptance.'}))
+    await info.attach('avg-v5-earlier-images-after-empty-batch',{path:proof,contentType:'application/json'})
+  }
 })
 
 for(const outcome of ['unknown','unauthorized'] as const)test(`V5 native ${outcome} keeps the original response and never silently resends`,async({page},info)=>{

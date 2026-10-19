@@ -719,8 +719,10 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
       const inherited=old.avgVisualPlanning&&!input.visualStageContinuation?workspace:await prepareAvgInheritedStageDraftV1({scope:input.scope,workspace,build:details.build,
         productionKey:details.production.productionKey,targetBuildNumber:Math.max(...details.buildHistory.map(row=>row.buildNumber))+1,
         worldContentHash:old.source.worldContentHash,...(voiceRecovery ? { voiceRecovery } : {})})
+      // A later stopped batch may have no selected output of its own. The
+      // source reader above still proves every saved older choice and pixel.
       if(input.visualStageContinuation&&!inherited.presentation.inheritedImages?.some(entry=>(entry.source.version===2||entry.source.version===3||entry.source.version===4||entry.source.version===5||entry.source.version===6)
-        &&entry.source.productionKey===details.production.productionKey&&entry.source.raw.buildNumber===details.build!.buildNumber))throw new Error('[avg-visual-retain] 当前演出没有此专业版本准确已采用的旧图')
+        &&entry.source.productionKey===details.production.productionKey&&entry.source.raw.buildNumber<=details.build!.buildNumber))throw new Error('[avg-visual-retain] 当前演出没有准确已采用的专业旧图')
       const continuationCommandId=input.visualStageContinuation?`avg.keep.${await hashProductProductionValueV2({schema:'storyforge.avg.visual-stage-continuation',version:1,
         productionKey:details.production.productionKey,buildNumber:details.build.buildNumber,briefHash:details.build.briefHash,planHash:details.build.planHash,workspace:inherited})}`:undefined
       if(input.visualStageContinuation&&pending){

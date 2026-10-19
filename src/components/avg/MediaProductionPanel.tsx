@@ -153,7 +153,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
   const closed=!!build&&['cancelled','failed','recovery-required'].includes(build.status)
   const pendingNextBrief=view.details?.production.status==='brief-ready'&&view.details.brief?.revision!==build?.briefRevision
   const retainedVisualDraft=!!build&&workspace.presentation.inheritedImages?.some(entry=>(entry.source.version===2||entry.source.version===3||entry.source.version===4||entry.source.version===5||entry.source.version===6)
-    &&entry.source.productionKey===view.details?.production.productionKey&&entry.source.raw.buildNumber===build.buildNumber)
+    &&entry.source.productionKey===view.details?.production.productionKey&&entry.source.raw.buildNumber<=build.buildNumber)
   const accepted = (key: string) => view.artifacts.find(row => row.artifactKey === key && row.status === 'accepted')
   const allChoices = !!currentBatch && currentBatch.requirements.every(r => accepted(avgMediaChoiceArtifactKeyV1(r.requirementKey)))
   const outstanding = currentBatch?.requirements.filter(r => !accepted(avgRawMediaArtifactKeyV1(r.requirementKey))).length ?? 0
@@ -264,6 +264,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
     {enabled&&visualPlanning&&build&&productionId&&(closed||build.previewHash)&&workspace.presentation.stage.assets.length>0
       &&(!pendingNextBrief||retainedVisualDraft)&&<section aria-label="保留专业演出图片">
       <h5>保留已选图片，继续编辑演出</h5><p>核对原专业方案、作者评审、选图与图片，再准备零生成调用的新方案。到制作页明确开始，逐项确认系统、对白和演出。</p>
+      <p>已保存的旧图可以来自更早版本。本批未完成的用途、原结果和账单继续保留，新方案不会重试图片；配音需求可在新方案中另行准备。</p>
       {pendingNextBrief&&<p>当前有待开始方案。再次准备会核对是否为同一次图片沿用；其他方案请到制作页查看。</p>}
       {build.previewHash&&workspace.basePreviewHash!==build.previewHash&&<p>请先在制作页选择“以此预览开始修订”，保存草稿后再准备新方案。</p>}
       <button className="lf-action" disabled={editDisabled||pending||familyPending||anyReviewPending||!!build.previewHash&&workspace.basePreviewHash!==build.previewHash} onClick={()=>void onAction(async()=>{

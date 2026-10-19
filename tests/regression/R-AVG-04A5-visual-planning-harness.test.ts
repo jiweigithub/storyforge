@@ -996,6 +996,68 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       useAIConfigStore.getState().setConfig({apiKey:''})
       return {scope:s.scope,expectedDraftRevision:draft.revision,visualStageContinuation:{expectedBuildId:s.buildId,expectedBuildRevision:build.stateRevision}}
     }
+    it.each([false,true])('keeps an earlier chosen image after stopping a later empty visual batch, unresolved ancestor=%s',async unresolved=>{
+      const {s,raw}=generated
+      const ordinary=await prepareAvgAssemblyBriefV1(await continuation())
+      const second=await startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:ordinary.brief!.briefHash})
+      await stopProductProductionV1({scope:s.scope,production:second.production})
+      vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING','1');useAIConfigStore.getState().setConfig(config)
+      const {sourceInputHash:_hash,aspectRatio:_ratio,...planning}=structuredClone(s.brief.avgVisualPlanning!.scope)
+      const scene=s.source.systemPlan.scenes[1],script=s.source.scripts.find(row=>row.sceneKey===scene.key)!
+      planning.batchKey+='.later';planning.revision++
+      const template=planning.templates[0];template.parameters.assetKey+='.later';template.parameters.requirementKey+='.later'
+      template.parameters.consumer={...template.parameters.consumer,consumerKey:template.parameters.consumer.consumerKey+'.later',sceneKey:scene.key,subjectKey:scene.key}
+      template.parameters.family={...template.parameters.family,familyKey:template.parameters.family.familyKey+'.later',subjectKey:scene.key}
+      template.parameters.triggerBeatKey=script.lines[0].lineKey
+      const ready=await prepareAvgAssemblyBriefV1({scope:s.scope,expectedDraftRevision:(await readAvgDraftV1(s.scope)).revision,visualPlanning:planning})
+      const started=await startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:ready.brief!.briefHash})
+      expect(started.build).toMatchObject({buildNumber:3,status:'building',planRevision:1})
+      await stopProductProductionV1({scope:s.scope,production:started.production})
+      const stopped=await readProductProductionDetailsV1(s.scope,s.productionId,['avg']),parent=stopped.build!
+      expect(await db.productBuildArtifacts.where('buildId').equals(parent.id!).filter(row=>row.artifactKey.startsWith('avg.media.raw.')).count()).toBe(0)
+      useAIConfigStore.getState().setConfig({apiKey:''})
+      if(unresolved){const old=await current(s),ledger=JSON.parse(old.budgetLedgerJson);ledger.attempts.find((attempt:{taskKey:string})=>attempt.taskKey.startsWith('avg.media.generate.')).usageKnown=false;await db.productBuilds.update(old.id!,{budgetLedgerJson:JSON.stringify(ledger)})}
+      const draft=await readAvgDraftV1(s.scope),workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
+      expect(workspace.presentation.inheritedImages![0].source.raw.buildNumber).toBe(1)
+      const beforeBuilds=await db.productBuilds.toArray(),beforeRuns=await db.agentRuns.toArray(),beforeArtifacts=await db.productBuildArtifacts.toArray()
+      const input={scope:s.scope,expectedDraftRevision:draft.revision,visualStageContinuation:{expectedBuildId:parent.id!,expectedBuildRevision:parent.stateRevision}}
+      if(unresolved){
+        await expect(prepareAvgAssemblyBriefV1(input)).rejects.toThrow(/未知结果/)
+        expect(await readAvgDraftV1(s.scope)).toEqual(draft)
+        expect((await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])).brief!.id).toBe(stopped.brief!.id)
+      }else{
+        const prepared=await prepareAvgAssemblyBriefV1(input),brief=parseProductProductionBriefV3(prepared.brief!.briefJson)
+        expect(brief.avgVisualPlanning).toBeUndefined();expect(brief.avgAssembly!.version).toBe(1)
+        expect(brief.evolution!.base).toMatchObject({kind:'recovery-build',buildNumber:3,briefHash:parent.briefHash,planHash:parent.planHash})
+        expect(brief.capabilityRequirements).toEqual([]);expect(brief.productionBudget).toMatchObject({maximumMediaCalls:0,maximumModelCalls:0})
+        expect(brief.media.imageCount).toBe(1)
+        expect(await db.productBuilds.toArray()).toEqual(beforeBuilds);expect(await db.agentRuns.toArray()).toEqual(beforeRuns)
+        const next=await startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:prepared.brief!.briefHash})
+        expect(next.build).toMatchObject({buildNumber:4,parentBuildNumber:3,status:'building',planRevision:1})
+        const currentDraft=await readAvgDraftV1(s.scope)
+        for(const artifactKey of ['avg.system.plan',...workspace.systemPlan.scenes.map(scene=>`avg.content.scene-script.${scene.key}`),'avg.author.stage']){
+          const candidate=await stageAvgWorkspaceInputV1({...s,expectedDraftRevision:currentDraft.revision,artifactKey,declaration:'独立核对当前规则、对白和更早已选图；不签新图或艺术质量'})
+          await confirmAvgWorkspaceInputV1({...s,artifactKey,candidateVersion:candidate.version,candidateHash:JSON.parse(candidate.metadataJson).candidateHash})
+        }
+        await runAvgAssemblyV1({scope:s.scope,productionId:s.productionId})
+        const completed=(await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])).build!
+        expect(completed.status).toBe('preview-ready')
+        const preview=await verifyStoredProductBuildPreview(completed)
+        expect(preview!.runtimePackage.modules[0].stage.assets[0].contentHash).toBe(raw.contentHash)
+        expect(await db.productBuildArtifacts.where('buildId').equals(completed.id!).filter(row=>row.artifactKey.startsWith('avg.media.raw.')).count()).toBe(0)
+        const copyId=await importProjectJSON(await exportProjectJSON(s.scope.projectId)),copy=(await db.productBuilds.where('projectId').equals(copyId).sortBy('buildNumber')).at(-1)!
+        const copyScope={projectId:copyId,worldId:copy.worldId!,workId:copy.workId!},copyWorkspace=parseAvgAuthorWorkspaceV1((await readAvgDraftV1(copyScope)).editorJson)
+        expect((await verifyStoredProductBuildPreview(copy))!.previewHash).toBe(preview!.previewHash)
+        expect((await readAvgAdoptedGeneratedImageV2({scope:copyScope,source:copyWorkspace.presentation.inheritedImages![0].source})).data).toEqual(s.imageBytes)
+        await deleteWork(copy.workId!)
+        expect((await verifyStoredProductBuildPreview(completed))!.previewHash).toBe(preview!.previewHash)
+      }
+      expect(await db.productBuilds.bulkGet(beforeBuilds.map(row=>row.id!))).toEqual(beforeBuilds)
+      expect(await db.agentRuns.bulkGet(beforeRuns.map(row=>row.id!))).toEqual(beforeRuns)
+      expect(await db.productBuildArtifacts.bulkGet(beforeArtifacts.map(row=>row.id!))).toEqual(beforeArtifacts)
+      expect((await db.productBuildArtifacts.get(raw.id!))!.contentHash).toBe(raw.contentHash)
+      expect(s.runText).toHaveBeenCalledTimes(2);expect(s.imageFetcher).toHaveBeenCalledTimes(1)
+    },60_000)
     it.each([false,true])('explicitly prepares, starts and adopts a new offline image-preserving Preview after frozen=%s',async frozen=>{
       const {s,raw}=generated,input=await continuation(frozen),old=await current(s),oldRaw=await db.productBuildArtifacts.get(raw.id!)
       const beforeRuns=await db.agentRuns.where('productBuildId').equals(s.buildId).count(),details=await prepareAvgAssemblyBriefV1(input)
