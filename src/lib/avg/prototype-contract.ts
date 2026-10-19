@@ -6,6 +6,8 @@ import { parseAvgStoredAssemblyBriefV3 } from './voice-assembly-storage';
 import { assertAvgVoiceProductionPolicyV3 } from './voice-production-policy';
 import { assertAvgSoundProductionPolicyV1 } from './sound-production-policy';
 import { avgSoundProductionExecutionReadyV1 } from './sound-production-brief';
+import { parseAvgVisualPlanningBriefV5, avgVisualPlanningExecutionReadyV5 } from './visual-planning-brief-v5';
+import { assertAvgVisualPlanningPolicyV5 } from './visual-planning-policy-v5';
 /** This identifies a closed author-owned engineering route. It cannot admit
  * commercial candidates, legacy AVG or arbitrary V2 modules. */
 export function isAvgAuthorPrototypeBriefV1(brief: ProductProductionBriefV3): brief is ProductProductionBriefV3 & {
@@ -27,10 +29,19 @@ export function isAvgAuthorPrototypeBriefV1(brief: ProductProductionBriefV3): br
         return true;
     } catch { return false; }
 }
-/** Classification adds the original Sound contract without granting the
+/** Classification adds original Sound and professional V5 contracts without granting the
  * avgAssembly field promised by the legacy predicate above. It never rewrites
  * a Brief or supplies producer, author, route or decoder evidence. */
-export function classifyAvgAuthorPrototypeBriefV1(brief: ProductProductionBriefV3): 'assembly' | 'sound' | null {
+export function classifyAvgAuthorPrototypeBriefV1(brief: ProductProductionBriefV3): 'assembly' | 'sound' | 'visual-v5' | null {
+    if (brief.avgVisualPlanning !== undefined) {
+        if (brief.intent.productType !== 'avg' || brief.qualityProfile !== 'prototype' || brief.avgSoundPlanning !== undefined
+            || brief.avgVisualPlanning.version !== 5) return null;
+        try {
+            const visual = parseAvgVisualPlanningBriefV5(brief.avgVisualPlanning);
+            assertAvgVisualPlanningPolicyV5({ ...brief, avgVisualPlanning: visual });
+            return 'visual-v5';
+        } catch { return null; }
+    }
     if (brief.avgSoundPlanning !== undefined) {
         if (brief.intent.productType !== 'avg' || brief.qualityProfile !== 'prototype') return null;
         try {
@@ -44,6 +55,11 @@ export function classifyAvgAuthorPrototypeBriefV1(brief: ProductProductionBriefV
  * source/Release reads and successful command replay remain independent. */
 export function assertAvgSoundPrototypeWriteEnabledV1(): void {
     if (!avgSoundProductionExecutionReadyV1()) throw new Error('[avg-sound] 声音原型验收与发布尚未启用，已有声音与版本仍可只读播放');
+}
+/** The two existing image/planning switches fence actual prototype writes;
+ * classification and immutable original reads do not require an open factory. */
+export function assertAvgVisualPrototypeWriteEnabledV5(): void {
+    if (!avgVisualPlanningExecutionReadyV5()) throw new Error('[avg-visual-plan] 专业视觉原型验收与发布尚未启用，已有图片与版本仍可只读播放');
 }
 /** Frozen pre-preview QA is technical only. Real full-catalog decoding and an
  * explicit completed-route author receipt must still qualify it after preview;

@@ -122,9 +122,11 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
   const visualStartReady=!preparedVisual||(preparedVisual.version===5?avgVisualPlanningExecutionReadyV5():avgVisualPlanningExecutionReadyV4())
   const preparedSound=details?.brief?parseProductProductionBriefV3(details.brief.briefJson).avgSoundPlanning:undefined
   const soundPlanning=details?.executionBrief?.avgSoundPlanning??preparedSound
-  const soundPrototype=!!details?.executionBrief&&classifyAvgAuthorPrototypeBriefV1(details.executionBrief)==='sound'
+  const prototypeKind=details?.executionBrief?classifyAvgAuthorPrototypeBriefV1(details.executionBrief):null
+  const soundPrototype=prototypeKind==='sound',visualPrototype=prototypeKind==='visual-v5'
   const soundStartReady=(!model.soundProduction||!!preparedSound)&&(!soundPlanning&&!inheritedSound||avgSoundProductionExecutionReadyV1())
   const soundProofRecoveryRequired=!!soundPlanning&&frozen&&view?.soundProgress!=null&&!view.soundProgress.terminal
+  const visualProofRecoveryRequired=!!view?.visualProofRecoveryRequired
   const assembly=storedAssembly??visualPlanning?.assembly??soundPlanning?.assembly
   const voiceBatch=storedAssembly?.version===3?parseAvgStoredAssemblyBriefV3(storedAssembly).assembly.voice.batch:null
   const choiceKeys=[...(mediaBatch?.requirements.map(r=>avgMediaChoiceArtifactKeyV1(r.requirementKey))??[]),
@@ -394,12 +396,17 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
           {soundProofRecoveryRequired&&<button className="lf-action" disabled={busy||dirty||jsonPending||mediaPending} onClick={()=>void run(async()=>{
             await recoverImportedProductProductionProofsV1({scope,productionId:details!.production.id!});await reload();setNotice('导入声音完成记录已在当前作品复验；原音频和预览保持，没有调用模型或授予新的采用。')
           })}>复验导入声音证明</button>}
-          <button className="lf-action" disabled={busy||jsonPending||!frozen||soundProofRecoveryRequired} onClick={()=>void run(async()=>{if(dirty)await persist();const result=await startProductProductionPreviewV1({scope,productionId:details!.production.id!,expectedBuildId:build!.id,expectedPreviewHash:build!.previewHash});if(alive.current)onPreviewStarted(result.sessionId)})}>试玩此预览</button>
+          {visualProofRecoveryRequired&&<button className="lf-action" disabled={busy||dirty||jsonPending||mediaPending} onClick={()=>void run(async()=>{
+            await recoverImportedProductProductionProofsV1({scope,productionId:details!.production.id!});await reload();setNotice('导入视觉完成记录已在当前作品复验；原图片、加工图和版本保持，没有调用模型或授予新的采用。')
+          })}>复验导入视觉证明</button>}
+          <button className="lf-action" disabled={busy||jsonPending||!frozen||soundProofRecoveryRequired||visualProofRecoveryRequired} onClick={()=>void run(async()=>{if(dirty)await persist();const result=await startProductProductionPreviewV1({scope,productionId:details!.production.id!,expectedBuildId:build!.id,expectedPreviewHash:build!.previewHash});if(alive.current)onPreviewStarted(result.sessionId)})}>试玩此预览</button>
           <button className="lf-action" disabled={busy} onClick={()=>void run(async()=>{downloadJSON(await exportProjectJSON(scope.projectId),'avg-workspace-backup.json')})}>导出完整备份</button>
         </div>
         {build&&<><p>Build #{build.buildNumber} · {build.status}{build.previewHash?` · 预览 ${build.previewHash.slice(0,12)}`:''}</p>{build.failureJson!=='{}'&&<pre role="status">{build.failureJson}</pre>}<details><summary>版本与验收证据</summary><p>根回执：{build.rootTerminalReceiptHash||'待组装完成'}</p><pre>{build.qualityReportJson}</pre></details></>}
-        {frozen&&visualPlanning&&<p>专业视觉预览已冻结。本路径的后继修订与本地原型发布尚待验收，当前可试玩和导出完整备份。</p>}
-        {frozen&&!visualPlanning&&(!soundPlanning||soundPrototype)&&details?.production.id&&<PrototypeReleasePanel key={`${scope.workId}:${build!.id}:${build!.previewHash}`} scope={scope} productionId={details.production.id} build={build!} disabled={busy||dirty||jsonPending} writesEnabled={(!soundPlanning&&!inheritedSound)||avgSoundProductionExecutionReadyV1()} onChanged={reload} onStarted={onPreviewStarted} onBusyChange={value=>{busyRef.current=value;setBusy(value)}}/>}
+        {frozen&&visualPlanning&&<p>{visualPrototype?'专业视觉预览已冻结。后续修改须建立新版本并保留原来源；本地原型仍需完整路线、全部媒资解码与独立确认，艺术和商业质量另验。':'专业视觉预览已冻结。本路径的本地原型发布尚待交付，当前可试玩和导出完整备份。'}</p>}
+        {visualPlanning?.version===5&&!avgVisualPlanningExecutionReadyV5()&&<p role="status">专业视觉原型验收与发布关闭；已有原图片、加工图和版本可只读播放。</p>}
+        {visualProofRecoveryRequired&&<p role="status">导入的视觉制作证明尚待显式复验；已发布版本可从版本区直接开始新存档，原制作与媒资不自动改写。</p>}
+        {frozen&&(!visualPlanning||visualPrototype)&&(!soundPlanning||soundPrototype)&&details?.production.id&&<PrototypeReleasePanel key={`${scope.workId}:${build!.id}:${build!.previewHash}`} scope={scope} productionId={details.production.id} build={build!} disabled={busy||dirty||jsonPending} writesEnabled={!visualProofRecoveryRequired&&((!soundPlanning&&!inheritedSound)||avgSoundProductionExecutionReadyV1())&&(!visualPlanning||visualPrototype&&avgVisualPlanningExecutionReadyV5())} onChanged={reload} onStarted={onPreviewStarted} onBusyChange={value=>{busyRef.current=value;setBusy(value)}}/>}
       </section>}
       <section className="lf-paper"><details><summary>高级配置：完整规则、脚本与演出</summary><p>配置作为编辑草稿保存；正式采用前会严格校验，不能写入脚本代码或未登记模块。</p>
         <textarea aria-label="高级组装配置" className="avg-assembly-json" spellCheck={false} disabled={busy||mediaPending} value={advanced} onChange={event=>{setAdvanced(event.target.value);setJsonPending(true)}}/>

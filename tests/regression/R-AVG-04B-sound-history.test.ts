@@ -17,12 +17,17 @@ import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
 import { prepareAvgAssemblyBriefV1 } from '../../src/lib/avg/assembly-service'
 import { exportProjectJSON } from '../../src/lib/export/json-export'
 import { assertAvgSoundOtherRequestsKnownV1 } from '../../src/lib/avg/visual-planning-restart'
+import { mockAvgSoundOggDecoderV1 } from '../helpers/avg-sound-decoder-fixture'
 
 beforeEach(async () => {
   await db.delete(); await db.open()
   useAIConfigStore.getState().setConfig({ provider: 'agnes', baseUrl: 'https://sound-proposal.fixture.invalid/v1', apiKey: 'intercepted-engineering-key-no-external-account',
     model: 'agnes-2.5-flash', temperature: .7, maxTokens: 0 })
   vi.spyOn(readiness, 'avgSoundProductionExecutionReadyV1').mockReturnValue(true)
+  // Library import runs alongside the deliberately lost music response. Its
+  // unavailable Happy DOM decoder must not accidentally stop the whole Build
+  // before this test's original unknown-request precondition is established.
+  mockAvgSoundOggDecoderV1()
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); db.close() })
 const backup = async (projectId: number) => ({ ...await exportProjectJSON(projectId), exportedAt: 0 })

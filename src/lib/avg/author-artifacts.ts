@@ -280,7 +280,7 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
   const briefRow = await db.productProductionBriefs.where('[productionId+revision]').equals([production.id, build.briefRevision]).first()
   if (!briefRow || !await assertRecordInScope(scope, 'productProductionBriefs', briefRow, { owner: 'work' })) throw new Error('[avg] Brief 授权已 stale')
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
-  if (!(referenceRead || frozenVerification && !!brief.avgSoundPlanning ? ['authorized','superseded'] : ['authorized']).includes(briefRow.status) || briefRow.authorizedAt !== build.authorizedAt
+  if (!(referenceRead || frozenVerification && (!!brief.avgSoundPlanning || brief.avgVisualPlanning?.version === 5) ? ['authorized','superseded'] : ['authorized']).includes(briefRow.status) || briefRow.authorizedAt !== build.authorizedAt
     || briefRow.briefHash !== build.briefHash || !frozenVerification && !referenceRead && production.currentBriefRevision !== build.briefRevision) throw new Error('[avg] Brief 授权已 stale')
   if (brief.intent.productType !== 'avg' || await hash(brief) !== build.briefHash) throw new Error('[avg] Brief 内容/hash 不一致')
   if (frozenVerification && !brief.avgAssembly&&!brief.avgVisualPlanning&&!brief.avgSoundPlanning) throw new Error('[avg] 只读作者验证只接受原生组装合同')

@@ -8,7 +8,7 @@ import { assertAvgSoundPrototypeWriteEnabledV1 } from './prototype-contract'
  * Call again inside the final transaction; the stage table joins that lease. */
 export async function assertAvgSoundBuildWriteEnabledV1(scope: WorkspaceScope, buildId: number, brief: ProductProductionBriefV3) {
   if (brief.avgSoundPlanning) { assertAvgSoundPrototypeWriteEnabledV1(); return true }
-  if (brief.intent.productType !== 'avg' || !brief.avgAssembly) return false
+  if (brief.intent.productType !== 'avg' || !brief.avgAssembly && !brief.avgVisualPlanning) return false
   const rows = await db.productBuildArtifacts.where('buildId').equals(buildId)
     .filter(row => row.artifactKey === 'avg.author.stage' && row.status === 'accepted').limit(2).toArray()
   for (const row of rows) {

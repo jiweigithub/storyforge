@@ -1,6 +1,7 @@
 import { expect, test, type Page,type Locator } from '@playwright/test'
 import { createHash } from 'node:crypto'
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { confirmEngineeringVisualReview } from '../helpers/avg-visual-review-playwright'
 
 async function adoptSource(page:Page,label:string,waitForCompletion=false){
@@ -618,6 +619,7 @@ test('fresh V5 native family form preserves reference content policies and start
 })
 
 for(const [visualVersion,noKeyBeforeProcessing] of [[4,false],[5,false],[5,true]] as const)test(noKeyBeforeProcessing?'V5 native received images resume local processing after key removal and refresh without any new request':visualVersion===4?'professional family images use exact references, alpha and five consumers through native Preview and portable restore':'V5 native family images preserve policy2, local derivatives and five consumers through Source5/6 Preview and portable restore',async({page},info)=>{
+  let publishedV5Backup: Record<string, unknown> | undefined
   // Hosted trace: full portable proof alone took 132.7s, with all assertions
   // still passing. Keep the existing 30s UI phase bounds and allow the whole
   // five-image author/preview/restore/delete slice to finish on that runner.
@@ -822,6 +824,59 @@ for(const [visualVersion,noKeyBeforeProcessing] of [[4,false],[5,false],[5,true]
   await page.reload();await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',expression.altText)
   await expect(page.locator('.avg-dialogue p')).toHaveText(source.scenes[1].text)
   await page.screenshot({path:info.outputPath(`avg-v${visualVersion}-family-expression.png`),fullPage:true})
+  if(visualVersion===5&&!noKeyBeforeProcessing){
+    // The original V5 Brief/producer/processed/author chain stays intact.
+    // A complete route, all native catalog pixels and independent publication
+    // are additional gates; the preview's technical QA is not rewritten.
+    await expect(page.locator('.avg-text-cursor')).toHaveClass(/is-complete/)
+    await page.getByRole('button',{name:'继续',exact:true}).click()
+    const routeSession=Number(new URL(originalUrl).searchParams.get('session'))
+    expect(routeSession).toBeGreaterThan(0)
+    await expect.poll(()=>page.evaluate(async id=>{
+      const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
+      return (await(await load('/storyforge/src/lib/product/runtime-core.ts')).readProductRuntimeState(id)).narrative.completed
+    },routeSession)).toBe(true)
+    await page.goto(`./avg/production?project=${source.scope.projectId}&work=${source.scope.workId}&assembly=1`)
+    await page.getByRole('button',{name:'制作与试玩',exact:true}).click()
+    const release=page.getByRole('region',{name:'本地原型版本验收',exact:true})
+    await release.getByRole('button',{name:'准备本地原型版本',exact:true}).click()
+    await expect(release.getByRole('alert')).toBeVisible()
+    await release.getByRole('checkbox',{name:'我已核对此预览存档的完整路线，确认系统与演出结果',exact:true}).check()
+    await release.getByRole('button',{name:'确认此预览的完整路线',exact:true}).click()
+    await expect(release.getByText(/完整路线：已确认/)).toBeVisible()
+    await release.getByRole('button',{name:'准备本地原型版本',exact:true}).click()
+    await expect(release.getByRole('alert')).toBeVisible()
+    await release.getByRole('button',{name:'验证全部冻结媒资',exact:true}).click()
+    await expect(release.getByRole('status').filter({hasText:'全部冻结媒资已实际解码'})).toBeVisible({timeout:60_000})
+    await release.getByRole('button',{name:'准备本地原型版本',exact:true}).click()
+    await expect(release.getByRole('status').filter({hasText:'本地原型版本已准备，请核对后保存。'})).toBeVisible({timeout:60_000})
+    await expect(release.getByRole('button',{name:'确认保存本地原型版本',exact:true})).toBeDisabled()
+    await release.getByRole('checkbox',{name:'我已核对版本，将它保存为本地原型',exact:true}).check()
+    await release.getByRole('button',{name:'确认保存本地原型版本',exact:true}).click()
+    await expect(release.getByText('此版本已冻结；后续修改请创建新 Build。',{exact:true})).toBeVisible({timeout:60_000})
+    publishedV5Backup=await page.evaluate(async({scope,backgroundKey,poseKey,expressionKey,iconKey,detailKey})=>{
+      const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
+      const [{db},files,pkg,module,config]=await Promise.all([load('/storyforge/src/lib/db/schema.ts'),load('/storyforge/src/lib/export/json-export.ts'),
+        load('/storyforge/src/lib/product-production/runtime-package.ts'),load('/storyforge/src/lib/avg/executable-module.ts'),load('/storyforge/src/stores/ai-config.ts')])
+      const build=await db.productBuilds.where('workId').equals(scope.workId).first(),record=await db.productReleases.get(build.releasedProductReleaseId)
+      const manifest=await pkg.verifyProductReleaseManifest(record.manifestJson)
+      const brief=await db.productProductionBriefs.where('[productionId+revision]').equals([build.productionId,build.briefRevision]).first()
+      if(JSON.parse(brief.briefJson).avgAssembly||JSON.parse(brief.briefJson).avgVisualPlanning.version!==5||config.useAIConfigStore.getState().config.apiKey)throw new Error('Original V5/no-Key publication boundary changed')
+      return {schema:'storyforge.avg.visual-release-native-test-export',version:1,backup:await files.exportProjectJSON(scope.projectId),
+        expected:{scope,releaseId:record.id,releaseUid:manifest.lineage.releaseUid,manifestJson:record.manifestJson,packageHash:build.packageHash,
+          previewJson:build.previewManifestJson,assets:module.avgRuntimeStage(manifest.runtimePackage).assets,backgroundKey,poseKey,expressionKey,iconKey,detailKey}}
+    },{scope:source.scope,backgroundKey:background.assetKey,poseKey:pose.assetKey,expressionKey:expression.assetKey,iconKey:icon.assetKey,detailKey:detail.assetKey})
+    await release.getByRole('button',{name:'从此版本开始新存档',exact:true}).click()
+    await expect(page).toHaveURL(/[?&]session=[1-9]\d*(?:&|$)/)
+    await expect.poll(()=>page.locator('.avg-background img').evaluate((img:HTMLImageElement)=>img.complete?img.naturalWidth:0)).toBe(background.width)
+    const releaseSession=Number(new URL(page.url()).searchParams.get('session'))
+    const binding=await page.evaluate(async id=>{const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;return(await load('/storyforge/src/lib/db/schema.ts')).db.productRuntimeSessions.get(id)},releaseSession)
+    expect(binding.productBuildId).toBeNull();expect(binding.productReleaseId).toBe((publishedV5Backup.expected as any).releaseId)
+    await page.screenshot({path:info.outputPath('avg-v5-original-release-playing.png')})
+    await page.goto(originalUrl)
+    await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',expression.altText)
+    expect(models).toHaveLength(4);expect(images).toHaveLength(5);expect(calls).toEqual([])
+  }
   const restoreStarted=Date.now()
   const restored=await page.evaluate(async scope=>{
     const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
@@ -963,6 +1018,28 @@ for(const [visualVersion,noKeyBeforeProcessing] of [[4,false],[5,false],[5,true]
     const proof=info.outputPath('avg-v5-earlier-images-after-empty-batch.json')
     await writeFile(proof,JSON.stringify({empty,continued,modelCalls:models.length,imageCalls:images.length,scope:'Actual native start/stop/olderSource5and6 continuation, no provider dispatch in later or continued Builds. Controlled engineering pixels, not art or real-provider acceptance.'}))
     await info.attach('avg-v5-earlier-images-after-empty-batch',{path:proof,contentType:'application/json'})
+  }
+  if(publishedV5Backup){
+    const expected=publishedV5Backup.expected as any
+    const originalRelease=await page.evaluate(async expected=>{
+      const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
+      const [{db},media,hash,runtime]=await Promise.all([load('/storyforge/src/lib/db/schema.ts'),load('/storyforge/src/lib/product-production/release-media.ts'),
+        load('/storyforge/src/lib/product-production/media-blob-store.ts'),load('/storyforge/src/lib/product/runtime-instances.ts')])
+      const record=await db.productReleases.get(expected.releaseId)
+      if(record.manifestJson!==expected.manifestJson)throw new Error('Original V5 Release changed after child revisions')
+      for(const asset of expected.assets)if(await hash.sha256MediaData(await media.readProductReleaseMediaBytes({scope:expected.scope,productReleaseId:record.id,asset}))!==asset.blobContentHash)throw new Error('Original V5 Release bytes changed')
+      return runtime.createProductRuntimeInstance({scope:expected.scope,kind:'avg',title:'V5 original after child revisions',productSource:{kind:'release',productReleaseId:record.id}})
+    },expected)
+    const oldReleaseUrl=new URL(originalUrl);oldReleaseUrl.searchParams.set('session',String(originalRelease.id))
+    await page.goto(oldReleaseUrl.toString())
+    await expect.poll(()=>page.locator('.avg-background img').evaluate((img:HTMLImageElement)=>img.complete?img.naturalWidth:0)).toBe(background.width)
+    await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',pose.altText)
+    expect(models).toHaveLength(4);expect(images).toHaveLength(5);expect(calls).toEqual([])
+    // Export only after the whole original native case, including later
+    // source5/6 revisions, restore and old-release boundaries, has passed.
+    const exportPath=process.env.AVG_VISUAL_RELEASE_BACKUP_FILE??info.outputPath('v5-native-release.json')
+    await mkdir(dirname(exportPath),{recursive:true})
+    await writeFile(exportPath,JSON.stringify({...publishedV5Backup,backupSHA256:createHash('sha256').update(JSON.stringify(publishedV5Backup.backup)).digest('hex')}),{flag:'wx'})
   }
 })
 

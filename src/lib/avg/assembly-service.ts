@@ -589,9 +589,16 @@ export async function readAvgAssemblyWorkspaceV1(scope: WorkspaceScope, selected
   const visualRecordedUsage=details?.build?.planRevision&&details.executionBrief?.avgVisualPlanning?projectProductProductionRecordedUsageV1(details.build.budgetLedgerJson):null
   const visualProgress=details?.build?.planRevision&&details.executionBrief?.avgVisualPlanning&&details.brief?.revision===details.build.briefRevision
     ?await projectProductProductionSchedulerV1({scope,productionId:details.production.id!}):null
+  // Import intentionally stales completed producer Runs. Reading the saved
+  // workspace or an immutable published Release must not rehydrate them or
+  // require current compilation authority merely to render release controls.
+  // Exact compilation/author/producer readers remain mandatory for actual
+  // consumption and publication; their explicit import recovery is separate.
+  const visualProofRecoveryRequired=!!details?.build?.previewHash&&details.executionBrief?.avgVisualPlanning?.version===5
+    &&visualProgress!=null&&!visualProgress.terminal
   // A pending Brief owns no current image task. Original images are read via
   // their exact historical source when explicitly preparing retention.
-  const imageDefinition: (Awaited<ReturnType<typeof readAvgCurrentImageConsumptionDefinition>>&Pick<AvgAssemblyBriefV2,'imageRecovery'>)|null = details?.build?.id && details.executionBrief?.avgVisualPlanning
+  const imageDefinition: (Awaited<ReturnType<typeof readAvgCurrentImageConsumptionDefinition>>&Pick<AvgAssemblyBriefV2,'imageRecovery'>)|null = visualProofRecoveryRequired?null:details?.build?.id && details.executionBrief?.avgVisualPlanning
     && details.brief?.revision===details.build.briefRevision
     && ['building','integrating','validating','preview-ready','release-ready','released'].includes(details.build.status)
     ? artifacts.some(row => row.artifactKey === 'avg.media.compiled-visual-requirements' && row.status === 'accepted')
@@ -601,7 +608,7 @@ export async function readAvgAssemblyWorkspaceV1(scope: WorkspaceScope, selected
     ? await projectProductProductionSchedulerV1({ scope, productionId: details.production.id! }) : null
   const soundRecordedUsage = details?.build?.planRevision && details.executionBrief?.avgSoundPlanning
     ? projectProductProductionRecordedUsageV1(details.build.budgetLedgerJson) : null
-  return { draft,details,artifacts,media:await listAvgDraftMediaV1(scope),processingTasks,imageDefinition,visualProgress,visualRecordedUsage,soundProgress,soundRecordedUsage }
+  return { draft,details,artifacts,media:await listAvgDraftMediaV1(scope),processingTasks,imageDefinition,visualProgress,visualRecordedUsage,visualProofRecoveryRequired,soundProgress,soundRecordedUsage }
 }
 
 export async function confirmAvgWorkspaceInputV1(input: { scope: WorkspaceScope; productionId: number; artifactKey: string; candidateVersion: number; candidateHash: string }) {

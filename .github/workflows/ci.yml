@@ -134,7 +134,24 @@ jobs:
 
       - name: 验证全部 AVG 原生路径（含图片与配音实验）
         if: steps.scope.outputs.enabled == 'true'
-        run: npm run ci:e2e -- -- --project=chromium tests/e2e/avg- --output test-results/avg-media/all
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: test-results/avg-media/all/report.json
+          AVG_VISUAL_RELEASE_BACKUP_FILE: test-results/avg-media/visual-release.json
+        run: npm run ci:e2e -- -- --project=chromium tests/e2e/avg- --reporter=github,json --output test-results/avg-media/all
+
+      - name: 验证专业视觉工厂关闭后的原图加工图版本恢复
+        id: avg-visual-frozen
+        if: always() && steps.scope.outputs.enabled == 'true'
+        env:
+          VITE_STORYFORGE_AVG_MEDIA_PRODUCTION: '0'
+          VITE_STORYFORGE_AVG_VISUAL_PLANNING: '0'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: test-results/avg-media/visual-frozen/report.json
+          AVG_VISUAL_RELEASE_BACKUP_FILE: test-results/avg-media/visual-release.json
+        run: npm run ci:e2e -- -- --project=chromium tests/e2e/avg-visual-prototype-read.spec.ts --reporter=github,json --output test-results/avg-media/visual-frozen
+
+      - name: 核验专业视觉原生发布与关闭恢复的实际报告
+        if: always() && steps.scope.outputs.enabled == 'true'
+        run: node scripts/check-avg-visual-release-ci-reports.mjs test-results/avg-media
 
       - name: 核验声音模式实际执行及报告留存
         if: always() && steps.scope.outputs.enabled == 'true'

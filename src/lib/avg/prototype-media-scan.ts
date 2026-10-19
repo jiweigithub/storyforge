@@ -8,7 +8,8 @@ import { createBuildProductMediaResolver } from '../product-production/media-res
 import { verifyProductMediaRuntimeUrlsV1 } from '../product-production/media-runtime-verifier';
 import { recordProductMediaRuntimeMeasurementV1, type ProductPlaythroughBrowserEnvironmentV1, type ProductMediaRuntimeAssetEvidenceV1 } from '../product-production/quality-receipts';
 import { avgRuntimeStage } from './executable-module';
-import { classifyAvgAuthorPrototypeBriefV1, assertAvgSoundPrototypeWriteEnabledV1 } from './prototype-contract';
+import { classifyAvgAuthorPrototypeBriefV1 } from './prototype-contract';
+import { assertAvgPrototypeBuildWriteEnabledV1 } from './prototype-write-guard';
 /** Full immutable catalog validation is separate from the player's lazy scene
  * window. Keep at most two assets alive, but sign only the complete result. */
 export async function scanAvgPrototypeMediaV1(input: {
@@ -30,7 +31,7 @@ export async function scanAvgPrototypeMediaV1(input: {
     if (await hashProductProductionValueV2(brief) !== build.briefHash) throw new Error('[avg] 原型方案字节与冻结版本不一致');
     const prototypeKind = classifyAvgAuthorPrototypeBriefV1(brief);
     if (!prototypeKind) throw new Error('[avg] 仅允许核验已授权的作者原型');
-    if (prototypeKind === 'sound') assertAvgSoundPrototypeWriteEnabledV1();
+    await assertAvgPrototypeBuildWriteEnabledV1(scope, build.id!, brief);
     const preview = await verifyProductBuildPreviewManifest(build.previewManifestJson);
     if (preview.version !== 2 || preview.previewHash !== build.previewHash || preview.packageHash !== build.packageHash)
         throw new Error('[avg] 原生预览来源不闭合');
