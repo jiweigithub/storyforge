@@ -2,7 +2,11 @@ import { CONTEXT_SOURCE_BY_KEY } from '../../src/lib/registry/context-sources'
 import { createProductProductionPlanV3 } from '../../src/lib/product-production/plan'
 import { executeProductProductionCommand } from '../../src/lib/product-production/commands'
 import { runProductProductionUntilBlockedV1, ProductProductionResultUnknownErrorV1 } from '../../src/lib/product-production/scheduler'
-/** Registered task views only; no new default Plan, provider or author acceptance. */
+import { readProductProductionRepairFeedback } from '../../src/lib/product-production/context'
+import { seedOpenBrowserProductionV1, runOpenBrowserProductionV1 } from '../helpers/open-ttrpg-production-browser'
+import { openProductionCompilerFixtureV1 } from '../helpers/open-ttrpg-production-artifacts'
+import { parseProductProductionBriefV3 } from '../../src/lib/product-production/contracts'
+/** Registered task views and same-task repair; explicit fixture transport only. */
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { openProductionFixtureV1 } from '../helpers/open-ttrpg-production'
@@ -85,4 +89,33 @@ it('default source discovery never enables new views for an unrelated product or
     expect(await source.enabled!({ projectId: scope.projectId })).toBe(false)
   }
   expect(JSON.stringify(await db.productBuilds.get(build.id!))).toBe(original)
+}, 30000)
+
+it('a role-only author revision remains available to that role task and never enters a sibling media or content input', async () => {
+  const f = await seedOpenBrowserProductionV1()
+  await runOpenBrowserProductionV1(f)
+  const blocked = await runOpenBrowserProductionV1(f, true)
+  expect(blocked.taskKey).toBe('ttrpg.open.rule-system')
+  const production = (await db.productProductions.get(f.productionId))!
+  const row = (await db.productProductionBriefs.where('[productionId+revision]')
+    .equals([f.productionId, production.currentBriefRevision!]).first())!
+  const data = await openProductionCompilerFixtureV1(true, { ...f, brief: parseProductProductionBriefV3(row.briefJson) })
+  data.ruleSystem.characterTemplates.find(actor => actor.gmProfile)!.gmProfile!.secret = 'PRIVATE_ROLE_REVIEW_MUST_STAY_IN_ITS_TASK'
+  const authorDraftJson = JSON.stringify(data.ruleSystem), note = '仅供角色任务读取的作者意见'
+  expect((await executeProductProductionCommand({ ...f, command: { type: 'resolve-blocker',
+    commandId: 'feedback.role-only', expectedStateRevision: production.stateRevision, blockerKey: 'ttrpg.open.rule-system',
+    resolution: { action: 'author-edit', note, authorDraftJson } } })).ok).toBe(true)
+  const before = JSON.stringify({ builds: await db.productBuilds.toArray(), events: await db.agentRunEvents.toArray() })
+  const input = { projectId: f.scope.projectId, ...f, productProductionId: f.productionId, productBuildId: blocked.buildId }
+  const current = JSON.parse(await readProductProductionRepairFeedback({ ...input, productProductionTaskKey: 'ttrpg.open.rule-system' }))
+  expect(current).toMatchObject({ authorDraftJson, authorRepairNote: note })
+  for (const key of ['ttrpg.open.media-plan', 'ttrpg.open.situation-layer']) {
+    const other = await readProductProductionRepairFeedback({ ...input, productProductionTaskKey: key })
+    expect(JSON.parse(other)).toMatchObject({ authorDraftJson: null, authorRepairNote: null })
+    expect(other).not.toContain('PRIVATE_ROLE_REVIEW_MUST_STAY_IN_ITS_TASK')
+    expect(other).not.toContain('storyforge.ttrpg-open-rule-system')
+  }
+  await expect(readProductProductionRepairFeedback({ ...input, scope: { ...f.scope, workId: f.scope.workId! + 1 },
+    productProductionTaskKey: 'ttrpg.open.rule-system' })).rejects.toThrow()
+  expect(JSON.stringify({ builds: await db.productBuilds.toArray(), events: await db.agentRunEvents.toArray() })).toBe(before)
 }, 30000)

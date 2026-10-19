@@ -2127,7 +2127,11 @@ export async function readProductProductionRepairFeedback(input: AssembleContext
   const { scope, production, build } = await productionAndBuild(input)
   if (!build || !input.productProductionTaskKey) throw new Error('[product-production-context] 修复反馈需要 Build 与 task key')
   if (production.productType !== 'text-open-world') {
-    const resolution = JSON.parse(build.failureJson).resolution
+    const failure = JSON.parse(build.failureJson)
+    // A resolved sibling blocker is history, not this task's author input.
+    // Keep its complete record without sending private drafts to another lane.
+    const target = typeof failure.blockerKey === 'string' ? failure.blockerKey : failure.taskKey
+    const resolution = target === input.productProductionTaskKey ? failure.resolution : null
     const authorRepairNote = typeof resolution?.note === 'string' ? resolution.note : null
     const authorDraftJson = resolution?.action === 'author-edit'
       && typeof resolution.authorDraftJson === 'string' ? resolution.authorDraftJson : null
