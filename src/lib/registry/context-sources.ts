@@ -269,6 +269,17 @@ function ttrpgOpenEntityProvider(): ContextResourceProviderV1 {
 async function readProductProductionBriefContext(input: AssembleContextInput): Promise<string> {
   return (await import('../product-production/context')).readProductProductionBriefContext(input)
 }
+async function ttrpgOpenProductionTaskProjectionEnabledV3(input: AssembleContextInput): Promise<boolean> {
+  if (!Number.isSafeInteger(input.productProductionId) || !Number.isSafeInteger(input.productBuildId)
+    || !input.productProductionTaskKey?.startsWith('ttrpg.open.')) return false
+  return (await import('../product-production/context')).canReadTtrpgOpenProductionTaskProjectionV3(input)
+}
+async function readTtrpgOpenProductionTaskBriefContextV3(input: AssembleContextInput): Promise<string> {
+  return (await import('../product-production/context')).readTtrpgOpenProductionTaskBriefContextV3(input)
+}
+async function readTtrpgOpenProductionMediaInputsV3(input: AssembleContextInput): Promise<string> {
+  return (await import('../product-production/context')).readTtrpgOpenProductionMediaInputsV3(input)
+}
 async function readProductProductionArtifactInputs(input: AssembleContextInput): Promise<string> {
   return (await import('../product-production/context')).readProductProductionArtifactInputs(input)
 }
@@ -2190,6 +2201,20 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     protectedFromTrim: true,
     enabled: input => Number.isInteger(input.productProductionId),
     read: readProductProductionBriefContext,
+  },
+  {
+    key: 'product-production.ttrpg-open-task-brief', label: '开放跑团 V3 原授权任务方案投影',
+    scope: 'project', layer: 'L0', ownerFrom: 'work', budgetTokens: 8000,
+    protectedFromTrim: true, atomic: true,
+    enabled: ttrpgOpenProductionTaskProjectionEnabledV3,
+    read: readTtrpgOpenProductionTaskBriefContextV3,
+  },
+  {
+    key: 'product-production.ttrpg-open-media-inputs', label: '开放跑团已采纳的媒资槽位与身份锚点',
+    scope: 'project', layer: 'L0', ownerFrom: 'work', budgetTokens: 16000,
+    protectedFromTrim: true, atomic: true,
+    enabled: async input => input.productProductionTaskKey === 'ttrpg.open.media-plan' && await ttrpgOpenProductionTaskProjectionEnabledV3(input),
+    read: readTtrpgOpenProductionMediaInputsV3,
   },
   {
     key: 'product-production.artifact-inputs',

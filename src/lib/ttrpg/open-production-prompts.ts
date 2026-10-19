@@ -6,7 +6,7 @@ import contextTypes from './open-context-policy.ts?raw'
 import triggerTypes from './context-trigger-contract.ts?raw'
 import consumerTypes from './open-model-purpose-contract.ts?raw'
 import { TTRPG_OPEN_STORY_EFFECT_OPERATIONS_V1 } from './open-contract'
-import type { TtrpgOpenProductionTaskKeyV2 } from './open-production-bindings'
+import type { TtrpgOpenProductionTaskKeyV2, TtrpgOpenProductionTaskKeyV3 } from './open-production-bindings'
 
 /** Dedicated open task prompts; closed deterministic parsers and author adoption remain the authority. */
 export function ttrpgOpenProductionSystemPromptV1(taskKey: string): string | null {
@@ -118,4 +118,20 @@ export function ttrpgOpenProductionSystemPromptV2(taskKey: TtrpgOpenProductionTa
     ] : []),
     '【完整嵌套 JSON 字段类型；不返回这些代码】', ttrpgOpenProductionOutputTypesV2(taskKey),
   ].join('\n\n')
+}
+
+/** New input generation; old complete output schema and parsers remain V1. */
+export function ttrpgOpenProductionSystemPromptV3(taskKey: TtrpgOpenProductionTaskKeyV3): string {
+  const input = '【请求格式版本3】登记的 task-brief 是原授权 Brief 的按任务投影；original 绑定准确原版本，不能将省略的编排字段视为新授权。世界资源仍以实际完整 reads 为准，上游以登记的已采纳版本为准。'
+  if (taskKey === 'ttrpg.open.media-plan') return [input,
+    '只依据登记的媒资输入和 Brief.media 产生完整 JSON，不重新读取世界、改写剧情/角色或声称已有文件。原槽位 audience、targetRef、尺寸与 productionRequired 保持；不同密级素材不可互相泄漏。',
+    '输出 {"schema":"storyforge.product-media-requirements-artifact","version":2,"visual":[],"audio":[]}。每项 visual 精确包含 artifactKey,mediaKind,sceneTag,beatKey,prompt,altText,width,height,palette,characterAnchorRefs,hardConstraints；palette 是三个 #RRGGBB，后两项是 string[]。',
+    'visual 按 mediaManifest.slots 中 productionRequired 的原顺序完整覆盖，artifactKey 从 media.visual.001 连续编号，sceneTag=slotKey，beatKey=open.entry.text。不得新增槽位或改数量；非空冻结尺寸逐值保留，否则1280x720。',
+    'slot.kind scene/map 使用 background 或 cg（map也可ui）；character-portrait 使用character-pose；character-expression同名；token可character-pose或ui；item-icon/handout用ui。角色素材引用该slot真实角色key与身份锚点。hardConstraints 可为空，系统按原身份派生；不使用外部IP、商标或在世艺术家名字。',
+    'audio 严格按 Brief.media.musicTrackCount/sfxCount 的数量，从 media.audio.001 连续编号。每项精确含 artifactKey,mediaKind（bgm/ambience/sfx）,sceneTag,beatKey（open.entry.text）,prompt,altText,durationMs（整数250至120000）。无音频需求时[]，配音不能伪装成音乐/音效。',
+    '这里只返回规划候选，不生成文件、权利或采用回执。每个文案只能改编对应已确认槽位的 promptTemplate/fallbackText/altText 和视觉圣经；保留角色、地点和密级。',
+  ].join('\n\n')
+  const old = ttrpgOpenProductionSystemPromptV2(taskKey)
+  return input + '\n\n' + old.replace('【请求格式版本2】', '【完整输出字段沿原 V2；输入已显式版本化】')
+    + '\n\n投影字段：source-facts 使用 confirmedFacts 与 ruleFactPolicy；rule-system 使用 settings、rulePack 与 companionPolicy；situation-layer 使用 settings、rulePack、authoring 与 media。authoring 不含 factPolicy，实际事实来自已采纳上游。所有作者确认和权限语义保持。'
 }
