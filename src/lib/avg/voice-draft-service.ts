@@ -1,27 +1,18 @@
 import { db } from '../db/schema'
 import type { WorkspaceScope } from '../types'
-import { assertRecordInScope, scopeTransactionTables } from '../workspace/scope'
+import { scopeTransactionTables } from '../workspace/scope'
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { parseAvgAuthorWorkspaceV1, type AvgAuthorWorkspaceV1 } from './author-workspace-contract'
 import { readAvgDraftV1 } from './draft-service'
 import { saveAvgAuthorWorkspaceV1 } from './editor-service'
 import { prepareAvgVoiceDraftV1, readAvgVoiceDraftV1 } from './voice-draft-contract'
+import { assertAvgMediaProductionDraftEditableV1 } from './production-draft-editability'
 
 /** Must run inside the final draft write transaction after expensive, DB-free
  * protocol/source compilation. Active starts cannot be raced by a late save.
  */
 async function assertEditable(scope: WorkspaceScope, draft: Awaited<ReturnType<typeof readAvgDraftV1>>) {
-  if (!draft.productionId) return
-  const production = await db.productProductions.get(draft.productionId)
-  if (!production || production.productType !== 'avg' || !await assertRecordInScope(scope, 'productProductions', production, { owner: 'work' })) {
-    throw new Error('[avg-voice] 配音草稿的制作指针不存在或跨作品')
-  }
-  if (production.currentBuildNumber === null) return
-  const build = await db.productBuilds.where('[productionId+buildNumber]').equals([draft.productionId, production.currentBuildNumber]).first()
-  if (!build || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })) throw new Error('[avg-voice] 配音草稿的制作版本不存在或跨作品')
-  if (!build.previewHash && production.status !== 'brief-ready' && !['cancelled', 'failed', 'recovery-required'].includes(build.status)) {
-    throw new Error('[avg-voice] 当前配音批次已开始，请先明确停止并保留调用记录后准备新版本')
-  }
+  return assertAvgMediaProductionDraftEditableV1(scope, draft, 'voice')
 }
 
 function assertUnconsumed(workspace: AvgAuthorWorkspaceV1) {

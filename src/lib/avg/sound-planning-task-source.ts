@@ -19,6 +19,7 @@ export async function readAvgSoundPlanningExecutionSourcesV1(input: ProductProdu
     || build.productionId !== input.productionId || build.buildNumber !== input.buildNumber || build.controlEpoch !== input.controlEpoch
     || build.planHash !== input.planHash || build.briefHash !== await hashProductProductionValueV2(brief)) throw new Error('[avg-sound-plan] 执行来源或完整Brief已stale')
   const claim = await assertAvgTaskHarnessClaimV1(input, build.budgetLedgerJson)
+  await (await import('./visual-planning-restart')).assertAvgSoundOtherRequestsKnownV1(input.scope, build)
   if (claim.child.contract.runtimeBindingHash !== await hashAvgTaskRuntimeBindingV1(input)) throw new Error('[avg-sound-plan] 本次路由不是实际Harness claim')
   const normal = await assembleContext({ projectId: input.scope.projectId, scope: input.scope,
     productProductionId: input.productionId, productBuildId: input.buildId, productProductionTaskKey: input.task.taskKey,

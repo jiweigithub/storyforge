@@ -94,6 +94,7 @@ import {
   type ProductProductionSchedulerProjectionV1,
 } from './scheduler'
 import { createProductRuntimeInstanceFromSource } from '../product/runtime-instances'
+import { avgSoundProductionExecutionReadyV1 } from '../avg/sound-production-brief'
 import { startAiTownInitialSceneV1 } from '../ai-town/runtime-api'
 import {
   listProductMediaProviderCapabilitiesV1,
@@ -864,10 +865,11 @@ export function inspectProductProductionCapabilityReadinessV1(input: {
  * capability required by that frozen Brief is bound.
  */
 export function evaluateProductProductionAuthorizationReadinessV1(input: {
-  brief: Pick<ProductProductionBriefV3, 'capabilityRequirements' | 'avgRevision' | 'avgAssembly' | 'avgVisualPlanning'>
+  brief: Pick<ProductProductionBriefV3, 'capabilityRequirements' | 'avgRevision' | 'avgAssembly' | 'avgVisualPlanning' | 'avgSoundPlanning'>
   readiness: ProductProductionCapabilityReadinessV1
 }): ProductProductionAuthorizationReadinessV1 {
   const blockerMessages: string[] = []
+  if (input.brief.avgSoundPlanning && !avgSoundProductionExecutionReadyV1()) blockerMessages.push('声音正式制作尚未开放，已保存需求与原有产物保留。')
   // The parsed V4 Brief derives this requirement from its unreused roles.
   // A missing text configuration must not block an entirely local role plan.
   const visualTextNotRequired = !!input.brief.avgVisualPlanning && input.brief.capabilityRequirements.some(requirement => (
@@ -884,7 +886,7 @@ export function evaluateProductProductionAuthorizationReadinessV1(input: {
   const retainedOnly = image?.imageRecovery?.rerunRequirementKeys.length === 0
   const requiresImage = !retainedOnly&&input.brief.capabilityRequirements
     .some(requirement => requirement.required && requirement.mediaClass === 'image')
-  const requiresAudio = input.brief.capabilityRequirements
+  const requiresAudio = !input.brief.avgSoundPlanning && input.brief.capabilityRequirements
     .some(requirement => requirement.required && ['music', 'sfx'].includes(requirement.mediaClass))
   if (requiresImage && !input.readiness.image.ready && !input.readiness.mediaRelayReady) {
     blockerMessages.push(input.readiness.image.issue || '全局 Agnes 图片能力尚未就绪。')
@@ -1275,6 +1277,11 @@ export async function authorizeProductProductionStartV1(input: {
   const brief = input.details.brief
   if (!brief) throw new Error('[product-production-service] 缺少当前 Brief')
   const parsedBrief = parseProductProductionBriefV3(brief.briefJson)
+  if (parsedBrief.avgSoundPlanning) {
+    await (await import('../avg/sound-planning-workspace')).assertAvgSoundPreparationMatchesBriefV1({
+      scope: input.scope, productionId: input.details.production.id!, brief: parsedBrief,
+    })
+  }
   const readiness = evaluateProductProductionAuthorizationReadinessV1({
     brief: parsedBrief,
     readiness: inspectProductProductionCapabilityReadinessV1({ projectId: input.scope.projectId }),

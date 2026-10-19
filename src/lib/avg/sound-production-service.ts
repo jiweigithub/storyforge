@@ -35,6 +35,7 @@ export async function runAvgSoundProductionV1(input: {
     if (details.production.status !== 'producing' || details.brief?.revision !== build.briefRevision
       || details.production.currentBuildNumber !== build.buildNumber || details.production.controlEpoch !== build.controlEpoch
       || !['authorized', 'building', 'integrating'].includes(build.status)) throw new Error('[avg-sound] 当前声音任务已停止或待开始方案已变化')
+    await (await import('./visual-planning-restart')).assertAvgSoundOtherRequestsKnownV1(scope, build)
     const capabilityBindings: ProductProductionCapabilityBindingV1[] = []
     const music = createConfiguredAvgSoundTransportV1({ declaration: brief.avgSoundPlanning }).binding
     if (music) capabilityBindings.push(music)

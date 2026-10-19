@@ -9,6 +9,7 @@ import { parseAvgImageProcessingPlanV1, type AvgImageProcessingPlanV1 } from './
 import { readAvgVoiceDraftV1 } from './voice-draft-contract'
 import type { AvgVoiceExactStorageV1 } from './voice-exact-storage'
 import { parseAvgInheritedStageVoicesV1, type AvgInheritedStageVoiceV1 } from './stage-voice-source-contract'
+import { parseAvgSoundProductionDraftV1, type AvgSoundProductionDraftV1 } from './sound-draft-contract'
 
 /** Human-authored assembly, not a professional director Skill result. No local IDs. */
 export interface AvgAuthorStageV1 {
@@ -48,13 +49,15 @@ export interface AvgAuthorWorkspaceV1 {
   mediaBatch?: AvgVisualProductionBatchV1
   imageProcessing?: AvgImageProcessingPlanV1
   voiceProduction?: AvgVoiceExactStorageV1
+  soundProduction?: AvgSoundProductionDraftV1
 }
 export function parseAvgAuthorWorkspaceV1(value: unknown): AvgAuthorWorkspaceV1 {
   const body = avgProtocolBody(value)
   const hasBatch = !!body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'mediaBatch')
   const hasProcessing=!!body&&Object.prototype.hasOwnProperty.call(body,'imageProcessing')
   const hasVoice=!!body&&Object.prototype.hasOwnProperty.call(body,'voiceProduction')
-  const row = avgRecord(body, ['schema','version','basePreviewHash','systemPlan','scripts','presentation', ...(hasBatch ? ['mediaBatch'] : []),...(hasProcessing?['imageProcessing']:[]),...(hasVoice?['voiceProduction']:[])], 'author workspace')
+  const hasSound=!!body&&Object.prototype.hasOwnProperty.call(body,'soundProduction')
+  const row = avgRecord(body, ['schema','version','basePreviewHash','systemPlan','scripts','presentation', ...(hasBatch ? ['mediaBatch'] : []),...(hasProcessing?['imageProcessing']:[]),...(hasVoice?['voiceProduction']:[]),...(hasSound?['soundProduction']:[])], 'author workspace')
   if (row.schema !== 'storyforge.avg.author-workspace' || row.version !== 1) throw new Error('[avg] 作者工作区版本无效')
   const scripts = avgUnique(avgList(row.scripts, 'scripts', value => {
     const script = parseAvgProfessionalArtifactV1(value)
@@ -66,5 +69,6 @@ export function parseAvgAuthorWorkspaceV1(value: unknown): AvgAuthorWorkspaceV1 
   if(imageProcessing&&(!mediaBatch?.visualReviewPolicy||imageProcessing.entries.some(e=>!mediaBatch.requirements.some(r=>r.requirementKey===e.requirementKey))))throw new Error('[avg-process] 加工草稿缺少准确需求与独立视觉评审')
   return { schema: row.schema, version: 1, basePreviewHash: row.basePreviewHash === null ? null : avgHash(row.basePreviewHash, 'basePreviewHash'),
     systemPlan: parseAvgSystemPlan(row.systemPlan), scripts, presentation: parseAvgAuthorStageV1(row.presentation),
-    ...(mediaBatch?{mediaBatch}:{}),...(imageProcessing?{imageProcessing}:{}),...(voiceProduction?{voiceProduction}:{}) }
+    ...(mediaBatch?{mediaBatch}:{}),...(imageProcessing?{imageProcessing}:{}),...(voiceProduction?{voiceProduction}:{}),
+    ...(hasSound?{soundProduction:parseAvgSoundProductionDraftV1(row.soundProduction)}:{}) }
 }

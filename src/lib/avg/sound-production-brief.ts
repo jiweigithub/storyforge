@@ -46,3 +46,9 @@ export function parseAvgSoundPlanningBriefV1(value: unknown): AvgSoundPlanningBr
  * public preparation/start/executor entry closed until producer, observation,
  * author adoption and portable lifecycle are connected as one slice. */
 export function avgSoundProductionExecutionReadyV1(): boolean { return false }
+
+/** Default-hidden author requirement editor only. This switch never opens
+ * preparation, authorization, model/audio dispatch, review or adoption. */
+export function avgSoundPreparationEnabledV1(): boolean {
+  return import.meta.env.VITE_STORYFORGE_AVG_SOUND_PREPARATION === '1'
+}

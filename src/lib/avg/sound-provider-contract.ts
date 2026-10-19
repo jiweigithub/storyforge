@@ -4,6 +4,7 @@ import { sha256MediaData } from '../product-production/media-blob-store'
 import { avgHash, avgNumber, avgRecord } from './protocol-validation'
 import { AVG_LOCAL_MUSIC_MODEL_V1, AVG_LOCAL_MUSIC_CODE_REVISION_V1, AVG_LOCAL_MUSIC_PROFILE_V1, compileAvgSoundRequirementsV1 } from './sound-requirements'
 import { inspectAvgVoiceWaveV1 } from './voice-wave'
+import type { AvgSoundLibrarySourceV1 } from './sound-scope-contract'
 
 export const AVG_LOCAL_SOUND_BASE_URL_V1 = 'http://127.0.0.1:5298/v1'
 export const AVG_LOCAL_MUSIC_ADAPTER_V1 = 'storyforge.avg.local-music.v1'
@@ -36,13 +37,24 @@ export async function avgLocalMusicRouteV1(capability: ReturnType<typeof parseAv
 
 /** Original pinned CC0 source metadata. This comparison never proves audio
  * bytes or decodability and never converts a catalogue entry into adoption. */
-export function assertAvgLicensedSoundSourceV1(requirement: AvgCompiledSoundRequirementV1) {
-  const d = requirement.dispatch
-  if (d.operation !== 'import-licensed-audio') throw new Error('[avg-sound] 不是准确原音效导入')
-  const s = d.source, archive = catalogue.archives.find(a => a.archiveHash === s.archiveHash)
+export function assertAvgSoundLibraryMetadataV1(s: AvgSoundLibrarySourceV1) {
+  const archive = catalogue.archives.find(a => a.archiveHash === s.archiveHash)
   const member = archive?.members.find(m => m.memberPath === s.memberPath && m.memberHash === s.memberHash)
   if (!archive || !member || s.publisherPage !== archive.publisherPage || s.license !== catalogue.license) throw new Error('[avg-sound] 来源不在已核验原发布者CC0目录中')
   return { archive, member }
+}
+export function assertAvgLicensedSoundSourceV1(requirement: AvgCompiledSoundRequirementV1) {
+  if (requirement.dispatch.operation !== 'import-licensed-audio') throw new Error('[avg-sound] 不是准确原音效导入')
+  return assertAvgSoundLibraryMetadataV1(requirement.dispatch.source)
+}
+
+/** Metadata choices only. The raw producer still verifies archive, licence,
+ * exact original member bytes and decoder before any review or selection. */
+export function listAvgSoundLibraryMetadataV1(): AvgSoundLibrarySourceV1[] {
+  return catalogue.archives.flatMap(archive => archive.members.map((member, index) => ({
+    sourceKey: `kenney.${archive.key}.${index}`, publisherPage: archive.publisherPage, license: 'CC0-1.0' as const,
+    archiveHash: archive.archiveHash, memberPath: member.memberPath, memberHash: member.memberHash,
+  })))
 }
 
 /** Called against exact original HTTP bytes again during sealed admission. */

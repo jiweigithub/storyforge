@@ -608,6 +608,9 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
   let draft = await readAvgDraftV1(input.scope)
   if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg] 编辑草稿已变化，请刷新后再准备方案')
   let workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
+  if (workspace.soundProduction && (input.visualPlanning || input.imageRecovery || input.voiceRecovery || input.visualStageContinuation)) throw new Error('[avg-sound] 请单独准备已保存的声音制作范围')
+  const soundServices = workspace.soundProduction ? await import('./sound-planning-workspace') : null
+  const sound = soundServices ? await soundServices.prepareAvgSoundPlanningConfigurationV1(input.scope, workspace) : null
   if(input.visualStageContinuation&&!avgMediaProductionEnabledV2())throw new Error('[avg-visual-retain] 实验性图片沿用未启用')
   if(input.visualStageContinuation&&(!draft.productionId||input.visualPlanning||input.imageRecovery||input.voiceRecovery||workspace.mediaBatch||workspace.voiceProduction))throw new Error('[avg-visual-retain] 请单独保留专业演出图并准备零调用组装方案')
   if (input.visualPlanning && (input.imageRecovery || input.voiceRecovery)) throw new Error('[avg-visual-plan] 专业视觉不能借用旧批次恢复合同')
@@ -687,6 +690,10 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
   const configured = mediaCapability&&(!recovery||recovery.rerunRequirementKeys.length>0) ? await resolveAvgImageExecutionCapabilityV2({ projectId: input.scope.projectId, requirement: mediaCapability }) : null
   const imageBinding=configured?{...configured.binding,endpointRouteHash:configured.endpointRouteHash}:retainedBinding
   if(recovery&&canonicalProductProductionJsonV2(imageBinding)!==canonicalProductProductionJsonV2(retainedBinding))throw new Error('[avg-media] 图片路由已改变，不能在同一恢复中复用旧原图')
+  if (sound) {
+    const current = await readAvgDraftV1(input.scope)
+    if (current.revision !== draft.revision || current.productionId !== draft.productionId || current.editorJson !== draft.editorJson) throw new Error('[avg-sound] 准备期间作者草稿已变化')
+  }
   let productionId = draft.productionId
   let basePackageHash: string | null = null
   let continuationState: {productionRevision:number;buildId:number;buildRevision:number}|null=null
@@ -781,7 +788,7 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
     return draftProductProductionBriefV3({ scope:input.scope,worldReleaseId:draft.worldReleaseId!,
       suggestionKey:suggestions.suggestions[0].suggestionKey,productType:'avg',scale:'scene',visualLevel:'none',audioLevel:'none',requiredFacts:[],forbiddenChanges:['源世界只读'] })
   })()
-  const { avgVisualPlanning: _priorVisual, ...sourceBrief } = sourceValue
+  const { avgVisualPlanning: _priorVisual, avgSoundPlanning: _priorSound, ...sourceBrief } = sourceValue
   const assets = workspace.presentation.stage.assets
   const baseAssembly = { schema: 'storyforge.avg.assembly-brief' as const, title: work.title,
     sceneKeys: workspace.systemPlan.scenes.map(scene => scene.key), mediaAssetKeys: runtimeMediaKeys(workspace), basePackageHash }
@@ -816,6 +823,7 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
     completionContract:{ requiresPlayablePreview:true,requiredGateIds:voiceAssembly ? avgVoiceAssemblyGateIdsV3(voiceAssembly) : workspace.mediaBatch ? avgMediaAssemblyGateIdsV2(workspace.mediaBatch,workspace.imageProcessing) : [...AVG_ASSEMBLY_GATE_IDS_V1],minimumMediaCoverage:1,allowSoftWaivers:false },
     unresolvedDecisionKeys:[] })
   if(visual)brief=parseProductProductionBriefV3(visual.version===5?planningServices!.completeAvgVisualPlanningBriefV5(brief,visual.configuration):planningServices!.completeAvgVisualPlanningBriefV4(brief,visual.configuration))
+  if(sound)brief=soundServices!.completeAvgSoundPlanningBriefV1(brief,sound)
   const saved = await executeProductProductionCommand({ scope:input.scope,productionId,command:{ type:'save-brief-revision',commandId:commandId('brief'),
     expectedStateRevision:continuationState?.productionRevision??details.production.stateRevision,parentRevision:details.brief?.revision ?? null,brief } })
   if (!saved.ok) throw new Error(String(saved.result.message ?? saved.errorCode))
@@ -831,11 +839,12 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
 export async function startAvgAssemblyV1(input: { scope: WorkspaceScope; productionId: number; expectedBriefHash: string }) {
   let details = await readProductProductionDetailsV1(input.scope,input.productionId,['avg'])
   const brief = details.brief ? parseProductProductionBriefV3(details.brief.briefJson) : null
-  const assembly = brief?.avgAssembly ?? brief?.avgVisualPlanning?.assembly
+  const assembly = brief?.avgAssembly ?? brief?.avgVisualPlanning?.assembly ?? brief?.avgSoundPlanning?.assembly
   if (!brief || !assembly || details.brief!.briefHash !== input.expectedBriefHash) throw new Error('[avg] 制作方案已变化，请重新核对')
   if(brief.avgVisualPlanning?.version===5&&!avgVisualPlanningExecutionReadyV5())throw new Error('[avg] 新版参考媒资工作台尚未开放')
   const draft=await readAvgDraftV1(input.scope)
   let workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
+  if (workspace.soundProduction && !brief.avgSoundPlanning) throw new Error('[avg-sound] 已保存声音需求尚未包含在本方案中，请重新准备制作方案')
   if (brief.avgVisualPlanning) {
     if(details.build&&details.build.briefRevision!==details.brief!.revision)await assertAvgVisualPlanningRestartKnownV4(input.scope,details.build)
     const sources=await import('./visual-planning-scope-draft'),services=await import('./visual-planning-workspace')
@@ -876,7 +885,7 @@ export async function startAvgAssemblyV1(input: { scope: WorkspaceScope; product
   const same=(a:string[],b:string[])=>canonicalProductProductionJsonV2([...a].sort())===canonicalProductProductionJsonV2([...b].sort())
   if(draft.productionId!==input.productionId||draft.worldReleaseId!==brief.source.worldReleaseId
     ||!same(assembly.sceneKeys,workspace.systemPlan.scenes.map(scene=>scene.key))
-    ||!same(assembly.mediaAssetKeys,[...new Set([...runtimeMediaKeys(workspace),...(brief.avgVisualPlanning?.scope.templates.filter(t=>t.parameters.consumer.domain!=='reference').map(t=>t.parameters.assetKey)??[])])])) throw new Error('[avg] 场景、媒资或来源清单已变化，请重新准备制作方案')
+    ||!same(assembly.mediaAssetKeys,[...new Set([...runtimeMediaKeys(workspace),...(brief.avgVisualPlanning?.scope.templates.filter(t=>t.parameters.consumer.domain!=='reference').map(t=>t.parameters.assetKey)??[]),...(brief.avgSoundPlanning?.scope.templates.map(t=>t.assetKey)??[])])])) throw new Error('[avg] 场景、媒资或来源清单已变化，请重新准备制作方案')
   if (assembly.basePackageHash !== await expectedBaselinePackageHash(details)) throw new Error('[avg] 组装修订基线与实际 Build 谱系不一致，请重新准备方案')
   const execution = await assemblyExecutionOptions(input.scope, brief, input.productionId)
   if(brief.avgVisualPlanning&&canonicalProductProductionJsonV2(workspace)!==canonicalProductProductionJsonV2(parseAvgAuthorWorkspaceV1(draft.editorJson))){
