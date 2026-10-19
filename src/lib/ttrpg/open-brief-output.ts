@@ -81,4 +81,3 @@ export async function ttrpgOpenDeliveredBriefAttributionsV1(reads: readonly Cont
   }
   return result
 }
-

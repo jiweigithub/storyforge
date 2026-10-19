@@ -1611,52 +1611,56 @@ export default function ChapterEditor({ project, outlineNodeId }: Props) {
       setProseGenerationError(error instanceof Error ? error.message : '作者编辑保存失败，已阻止正式续写。')
       return
     }
-    await persistCurrentEditorContent()
-    const backgroundMemoryIds = await prepareContinuityBeforeGeneration()
-    const scope = await resolveScopeLike(project.id!)
-    const contentRevision = await captureWorkspaceContentRevisionV1({
-      scope,
-      worldGroupId: chapterWorldGroupId ?? null,
-    })
-    const {
-      text: fullCtx,
-      assembled,
-      generationBinding,
-      characterContext,
-      continuity,
-      continuityBudgetTokens,
-    } = await buildFullWorldCtx('continue', 'write')
-    await assertWorkspaceContentRevisionFreshV1(contentRevision, {
-      scope,
-      worldGroupId: chapterWorldGroupId ?? null,
-    })
-    const informationBoundary = await buildChapterInformationBoundaryV1({
-      scope: await resolveScopeLike(project.id!),
-      chapterId: currentChapter?.id ?? null,
-      outlineNodeId: outlineNode.id!,
-      worldGroupId: chapterWorldGroupId ?? null,
-      perspectiveCharacterId,
-    })
-    const ctxWithChars = characterContext ? `${fullCtx}\n\n【角色设定】\n${characterContext}` : fullCtx
-    const messages = buildContinuePrompt(
-      plainText,
-      outlineNode.summary,
-      ctxWithChars,
-      [buildInformationBoundaryInstructionV1(informationBoundary), customInstruction.trim()]
-        .filter(Boolean)
-        .join('\n'),
-      { continuity, continuityBudgetTokens },
-    )
-    prepareOrRunChapterGeneration(
-      'continue',
-      'chapter.continue',
-      messages,
-      backgroundMemoryIds,
-      assembled,
-      generationBinding,
-      informationBoundary,
-      contentRevision,
-    )
+    try {
+      await persistCurrentEditorContent()
+      const backgroundMemoryIds = await prepareContinuityBeforeGeneration()
+      const scope = await resolveScopeLike(project.id!)
+      const contentRevision = await captureWorkspaceContentRevisionV1({
+        scope,
+        worldGroupId: chapterWorldGroupId ?? null,
+      })
+      const {
+        text: fullCtx,
+        assembled,
+        generationBinding,
+        characterContext,
+        continuity,
+        continuityBudgetTokens,
+      } = await buildFullWorldCtx('continue', 'write')
+      await assertWorkspaceContentRevisionFreshV1(contentRevision, {
+        scope,
+        worldGroupId: chapterWorldGroupId ?? null,
+      })
+      const informationBoundary = await buildChapterInformationBoundaryV1({
+        scope: await resolveScopeLike(project.id!),
+        chapterId: currentChapter?.id ?? null,
+        outlineNodeId: outlineNode.id!,
+        worldGroupId: chapterWorldGroupId ?? null,
+        perspectiveCharacterId,
+      })
+      const ctxWithChars = characterContext ? `${fullCtx}\n\n【角色设定】\n${characterContext}` : fullCtx
+      const messages = buildContinuePrompt(
+        plainText,
+        outlineNode.summary,
+        ctxWithChars,
+        [buildInformationBoundaryInstructionV1(informationBoundary), customInstruction.trim()]
+          .filter(Boolean)
+          .join('\n'),
+        { continuity, continuityBudgetTokens },
+      )
+      prepareOrRunChapterGeneration(
+        'continue',
+        'chapter.continue',
+        messages,
+        backgroundMemoryIds,
+        assembled,
+        generationBinding,
+        informationBoundary,
+        contentRevision,
+      )
+    } catch (error) {
+      setProseGenerationError(error instanceof Error ? error.message : '正文续写准备失败。')
+    }
   }
 
   const handlePolish = () => {

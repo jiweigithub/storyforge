@@ -88,4 +88,3 @@ export function parseTtrpgContextTriggerDefinitionV1(value: unknown): TtrpgConte
     sourceRefs,
   }
 }
-

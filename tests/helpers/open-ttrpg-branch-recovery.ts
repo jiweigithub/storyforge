@@ -73,4 +73,3 @@ export async function forkAndStart(parentId: number) {
   const op = rt(await readProductRuntimeState(sessionId)).openRun!.operations[0]
   return { child, sessionId, taskKey: task.taskKey, op, marker, started }
 }
-

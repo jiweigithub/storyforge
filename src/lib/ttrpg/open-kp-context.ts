@@ -72,4 +72,3 @@ function stripProofMetadata(value: unknown): unknown {
   if (!value || typeof value !== 'object') return value
   return Object.fromEntries(Object.entries(value).filter(([key]) => !['sourceRef', 'acquisitionRef', 'retiredRef', 'knownByActorKeys', 'origin', 'sourceSessionKey', 'sourceSequence'].includes(key)).map(([key, v]) => [key, stripProofMetadata(v)]))
 }
-

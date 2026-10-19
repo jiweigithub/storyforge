@@ -398,18 +398,15 @@ export function useDetailedOutlineGenerationController(
   const dismissCandidate = useCallback(async (operation: DetailedOutlineGenerationOperationV1) => {
     const pending = pendingCandidate
     if (!pending || pending.candidate.operation !== operation) return
-    try {
-      const scope = await resolveScopeLike(projectId)
-      await rejectDetailedOutlineGenerationCandidateV1({
-        scope,
-        runId: pending.candidate.durable.runId,
-        candidate: pending.candidate,
-      })
-    } finally {
-      setPendingCandidate(null)
-      if (operation === 'scenes') ai.reset()
-      else enhanceAI.reset()
-    }
+    const scope = await resolveScopeLike(projectId)
+    await rejectDetailedOutlineGenerationCandidateV1({
+      scope,
+      runId: pending.candidate.durable.runId,
+      candidate: pending.candidate,
+    })
+    setPendingCandidate(null)
+    if (operation === 'scenes') ai.reset()
+    else enhanceAI.reset()
   }, [ai, enhanceAI, projectId, pendingCandidate])
 
   const clearPendingCandidate = useCallback(() => setPendingCandidate(null), [])

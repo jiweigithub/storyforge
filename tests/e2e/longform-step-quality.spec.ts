@@ -189,3 +189,32 @@ test('step prose honors the author request in the wire prompt and adopts edited 
   await page.getByRole('button', { name: /^2 仅大纲 第2章/ }).click()
   await expect(page.locator('.tiptap-editor')).toHaveText(secondText)
 })
+
+
+for (const missing of ['summary', 'detail'] as const) {
+  test(`continuation reports missing ${missing} without an unhandled rejection or model request`, async ({ page }) => {
+    const errors: string[] = []
+    let requests = 0
+    page.on('pageerror', error => errors.push(error.message))
+    await page.addInitScript(() => {
+      localStorage.setItem('storyforge-ai-config', JSON.stringify({ provider: 'ollama', baseUrl: 'https://continuation-guard.invalid/v1', model: 'guard-test', maxTokens: 4000, temperature: 0 }))
+    })
+    await page.route('https://continuation-guard.invalid/**', async route => { requests++; await route.abort() })
+    await createLongform(page, `续写前置条件隔离 ${missing}`)
+    await page.getByRole('button', { name: '大纲与章纲', exact: true }).click()
+    await page.getByRole('button', { name: '添加卷', exact: true }).click()
+    await page.getByRole('button', { name: '添加章节', exact: true }).click()
+    await page.getByRole('textbox', { name: '章节摘要（可编辑，失焦自动保存）' }).fill(missing === 'summary' ? '' : '守灯人发现一封来信，决定追查寄件人。')
+    await page.getByRole('button', { name: '正文', exact: true }).click()
+    const manuscript = '守灯人将旧信藏在灯下，窗外的潮水仍在上涨。'
+    await page.locator('.tiptap-editor').fill(manuscript)
+    await page.getByRole('button', { name: '📝 续写', exact: true }).click()
+    await expect(page.getByText(missing === 'summary' ? /正文生成前必须先确认目标章纲/ : /请先填写或生成目标章细纲/)).toBeVisible()
+    expect(requests).toBe(0)
+    expect(errors).toEqual([])
+    await expect(page.locator('.tiptap-editor')).toHaveText(manuscript)
+    await page.reload()
+    await expect(page.locator('.tiptap-editor')).toHaveText(manuscript)
+    expect(requests).toBe(0)
+  })
+}
