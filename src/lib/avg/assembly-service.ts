@@ -35,6 +35,8 @@ import type { ResolvedProductMediaCapabilityV1 } from '../product-production/med
 import { assertAvgConsumedRawImageV4, readAvgImageConsumptionDefinitionV4 } from './image-consumption'
 import { readAvgCurrentImageConsumptionDefinition } from './current-image-consumption'
 export { stageAvgVisualReviewV2,stageAvgMediaChoiceV5 } from './visual-review-service-v5'
+export { configureAvgChosenSoundDraftV1 } from './sound-author-service'
+import { avgSoundProductionExecutionReadyV1 } from './sound-production-brief'
 import { freezeAvgVisualProductionBatchV1 } from './media-source'
 import { applyAvgMediaChoicesToDraftV2, applyAvgMediaChoicesToDraftV1, prepareAvgMediaConsumerDeclarationsV1, resetAvgUnconsumedMediaDeclarationsV1 } from './media-configuration'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
@@ -889,7 +891,8 @@ export async function stageAvgWorkspaceInputV1(input: { scope: WorkspaceScope; p
   if (draft.revision !== input.expectedDraftRevision || draft.productionId !== input.productionId) throw new Error('[avg] 草稿或制作指针已变化')
   const workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
   const details = await readProductProductionDetailsV1(input.scope,input.productionId,['avg'])
-  if (!details.build || !details.executionBrief?.avgAssembly&&!details.executionBrief?.avgVisualPlanning) throw new Error('[avg] 请先明确开始作者组装')
+  if (!details.build || !details.executionBrief?.avgAssembly&&!details.executionBrief?.avgVisualPlanning&&!details.executionBrief?.avgSoundPlanning) throw new Error('[avg] 请先明确开始作者组装')
+  if (details.executionBrief?.avgSoundPlanning && !avgSoundProductionExecutionReadyV1()) throw new Error('[avg-sound] 正式声音工作流尚未开放')
   const plan = JSON.parse(details.build.planJson) as { tasks:Array<{taskKey:string;outputArtifactKeys:string[]}> }
   const task = plan.tasks.find(task=>task.outputArtifactKeys.includes(input.artifactKey))
   if (!task) throw new Error('[avg] 输入不在冻结写域')

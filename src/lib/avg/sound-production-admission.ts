@@ -61,9 +61,19 @@ export async function readAvgSoundOriginalMediaResponseV1(input: { scope: Worksp
 }
 
 /** Inside existing sealed producer transaction; no independent writer. */
-export async function assertAvgSoundRawProducerAdmissionV1(input: { scope: WorkspaceScope; build: ProductBuildRecordV1 & { id: number };
+type AvgSoundRawProofInputV1 = { scope: WorkspaceScope; build: ProductBuildRecordV1 & { id: number };
   task: ProductProductionPlanTaskV3; producerRunId: number; artifact: Pick<ProductBuildArtifactRecordV1,
-    'artifactKey' | 'kind' | 'mediaKind' | 'payloadJson' | 'metadataJson' | 'qualityJson' | 'rightsJson' | 'contentHash' | 'mimeType' | 'byteSize' | 'blobObjectId'> }, brief: ProductProductionBriefV3) {
+    'artifactKey' | 'kind' | 'mediaKind' | 'payloadJson' | 'metadataJson' | 'qualityJson' | 'rightsJson' | 'contentHash' | 'mimeType' | 'byteSize' | 'blobObjectId'> }
+export async function assertAvgSoundRawProducerAdmissionV1(input: AvgSoundRawProofInputV1, brief: ProductProductionBriefV3) {
+  await verifyAvgSoundRawProducerV1(input, brief, true)
+}
+/** Read-only reinspection of an already sealed candidate. Original bytes and
+ * author/Run/source proofs remain exact; device resampling and DSP estimates
+ * are a new observation, never a rewrite of the original measurement. */
+export async function readAvgSoundRawProducerSourceV1(input: AvgSoundRawProofInputV1, brief: ProductProductionBriefV3) {
+  return verifyAvgSoundRawProducerV1(input, brief, false)
+}
+async function verifyAvgSoundRawProducerV1(input: AvgSoundRawProofInputV1, brief: ProductProductionBriefV3, exactMeasurement: boolean) {
   const planning = brief.avgSoundPlanning!, task = input.task, a = input.artifact
   const assembled = await assembleContext({ projectId: input.scope.projectId, scope: input.scope, productProductionId: input.build.productionId,
     productBuildId: input.build.id, productProductionTaskKey: task.taskKey, productArtifactKeys: task.inputArtifactKeys,
@@ -106,5 +116,9 @@ export async function assertAvgSoundRawProducerAdmissionV1(input: { scope: Works
     return inspectAvgSoundBytesV1({ data, contentHash: response.contentHash, assetKey: req.template.assetKey, mimeType: response.mimeType })
   }
   const measured = (Dexie.currentTransaction ? await Dexie.waitFor(Dexie.ignoreTransaction(inspect), 20_000) : await inspect()).measurement
-  if (!same(measured, m)) throw new Error('[avg-sound] 接收时实际音频解码/信号指标与原测量不一致')
+  if (exactMeasurement ? !same(measured, m) : measured.contentHash !== m.contentHash || measured.mimeType !== m.mimeType
+    || measured.byteSize !== m.byteSize || measured.channelCount !== m.channelCount || Math.abs(measured.durationMs - m.durationMs) > 1) {
+    throw new Error('[avg-sound] 接收时实际音频解码/信号指标与原测量不一致')
+  }
+  return { originalMeasurement: m, currentMeasurement: measured }
 }

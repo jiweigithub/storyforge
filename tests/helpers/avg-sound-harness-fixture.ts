@@ -70,7 +70,8 @@ export async function confirmAvgSoundCandidateV1(s: AvgSoundHarnessFixtureV1, ca
 export async function stageAvgSoundArtifactV1(s: AvgSoundHarnessFixtureV1, key: string, payload: unknown) {
   const build = (await db.productBuilds.get(s.buildId))!, task = s.plan.tasks.find(t => t.executionMode === 'human-import' && t.outputArtifactKeys.includes(key))!
   return stageAvgAuthorArtifactV1({ scope: s.scope, buildId: s.buildId, expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch,
-    taskKey: task.taskKey, artifactKey: key, kind: key === 'avg.system.plan' ? 'product-module' : 'narrative', payload,
+    taskKey: task.taskKey, artifactKey: key, kind: key === 'avg.system.plan' ? 'product-module' : key.startsWith('avg.review.') ? 'quality-report'
+      : key.startsWith('avg.sound.choice.') || key === 'avg.author.stage' ? 'presentation' : 'narrative', payload,
     declaration: '作者明确采用准确工程声音方案；不代表真实音频、审听或商业质量通过' })
 }
 export async function adoptAvgSoundArtifactV1(s: AvgSoundHarnessFixtureV1, key: string, payload: unknown) {
