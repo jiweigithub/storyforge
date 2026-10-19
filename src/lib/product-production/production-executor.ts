@@ -10694,6 +10694,7 @@ export function createConfiguredProductProductionExecutorV1(input: {
   avgImageEndpointRouteHash?: string
   avgVoiceTransport?: Parameters<typeof createAvgAssemblyExecutorV1>[0]['voiceTransport']
 }): ProductProductionTaskExecutorV1 {
+  if (input.brief.avgSoundPlanning) throw new Error('[avg-sound] 声音实际生产、审听和采用闭环尚未接通，不能创建执行器或回退通用任务')
   if (input.brief.avgVisualPlanning) {
     if(input.brief.avgVisualPlanning.version===5){
       if(!avgVisualPlanningExecutionReadyV5())throw new Error('[avg-visual-plan] 本方案版本的专业视觉执行尚未接通，不能创建执行器')

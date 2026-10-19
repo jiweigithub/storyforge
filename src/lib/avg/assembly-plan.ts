@@ -9,7 +9,13 @@ export const AVG_IMAGE_CAPABILITY_REQUIREMENT_KEY_V1 = 'avg.media.image'
 
 /** Pure topology, frozen by the shared planner/scheduler before author adoption. */
 export function buildAvgAssemblyPlanV1(input: { brief: Pick<ProductProductionBriefV3, 'avgAssembly'>; briefHash: string; buildNumber: number; controlEpoch: number }): ProductProductionPlanV3 {
-  const assembly = parseAvgAssemblyBriefV1(input.brief.avgAssembly)
+  return buildAvgAuthorAssemblyTopologyV1({ ...input, declaration: parseAvgAssemblyBriefV1(input.brief.avgAssembly) })
+}
+
+/** Shared topology only; never a synthetic legacy authorization packet. */
+export function buildAvgAuthorAssemblyTopologyV1(input: { declaration: Parameters<typeof parseAvgAssemblyBriefV1>[0];
+  briefHash: string; buildNumber: number; controlEpoch: number }): ProductProductionPlanV3 {
+  const assembly = parseAvgAssemblyBriefV1(input.declaration)
   const scripts = assembly.sceneKeys.map(key => `avg.content.scene-script.${key}`)
   const media = assembly.mediaAssetKeys.map((_,i) => `avg.media.${i}`)
   const tasks: ProductProductionPlanTaskV3[] = []

@@ -28,6 +28,8 @@ import { AGENT_TOOL_BY_NAME } from './tool-registry'
 import { WORLD_RELEASE_RESOURCE_KINDS_V1 } from '../context-gateway/world-release-provider-contract'
 import { AVG_VISUAL_PLANNING_CONTEXT_V5 } from '../avg/visual-planning-roles-v5'
 import { AVG_VISUAL_PLANNING_AGENT_IDS_V1, AVG_VISUAL_PLANNING_CONTEXT_V1, AVG_COMPILED_IMAGE_AGENT_V4 } from '../avg/visual-planning-roles'
+import { AVG_SOUND_AGENT_IDS_V1 } from '../avg/sound-planning-role'
+import { AVG_SOUND_CONTEXT_V1 } from '../avg/sound-production-brief'
 
 export const DOMAIN_AGENT_IDS = ['world-origin', 'character', 'inspiration', 'outline', 'prose'] as const
 export type DomainAgentId = typeof DOMAIN_AGENT_IDS[number]
@@ -60,7 +62,7 @@ export const TEXT_ADVENTURE_PRODUCTION_AGENT_IDS = [
   'text-adventure-playtest-director',
 ] as const
 export type TextAdventureProductionAgentId = typeof TEXT_ADVENTURE_PRODUCTION_AGENT_IDS[number]
-export const REGISTERED_AGENT_IDS = [...DOMAIN_AGENT_IDS, ...TEXT_ADVENTURE_PRODUCTION_AGENT_IDS, ...AVG_VISUAL_PLANNING_AGENT_IDS_V1, AVG_COMPILED_IMAGE_AGENT_V4] as const
+export const REGISTERED_AGENT_IDS = [...DOMAIN_AGENT_IDS, ...TEXT_ADVENTURE_PRODUCTION_AGENT_IDS, ...AVG_VISUAL_PLANNING_AGENT_IDS_V1, AVG_COMPILED_IMAGE_AGENT_V4, ...AVG_SOUND_AGENT_IDS_V1] as const
 export type RegisteredAgentId = typeof REGISTERED_AGENT_IDS[number]
 
 export type AgentSkillExecutionModeV1 =
@@ -5003,6 +5005,26 @@ export const AGENT_SKILLS = [
     lastVerifiedAt: '2026-10-17', regressionTests: ['R-AVG-04A5-professional-roles', 'R-AVG-04A5-visual-planning-harness'],
   },
   {
+    version: 1, id: 'avg.sound-plan.v1', agentId: 'avg-sound-director', defaultForAgent: true,
+    label: 'AVG 声音计划（生产接线中）', owner: 'avg-sound-director', promptVersion: 'avg.sound-plan.v1-method-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: [AVG_SOUND_CONTEXT_V1], optionalContextSourceKeys: [],
+    inputPolicy: productProductionInputPolicy([AVG_SOUND_CONTEXT_V1]),
+    contextCompression: compressionPolicy([AVG_SOUND_CONTEXT_V1]), maxOutputTokens: 8_000,
+    writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
+    lastVerifiedAt: '2026-10-19', regressionTests: ['R-AVG-04B-sound-production-contract', 'R-AVG-04B-sound-planning-context'],
+  },
+  {
+    version: 1, id: 'avg.sound-request.v1', agentId: 'avg-sound-operator', defaultForAgent: true,
+    label: 'AVG 已编译声音请求（生产接线中）', owner: 'avg-sound-operator', promptVersion: 'avg.sound-request.v1-method-v1',
+    executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
+    contextSourceKeys: [AVG_SOUND_CONTEXT_V1], optionalContextSourceKeys: [],
+    inputPolicy: productProductionInputPolicy([AVG_SOUND_CONTEXT_V1]),
+    contextCompression: compressionPolicy([AVG_SOUND_CONTEXT_V1]), maxOutputTokens: 4_000,
+    writeTargets: [{ table: 'productBuildArtifacts', fields: [], adoptionExtension: 'product-production-artifacts' }],
+    lastVerifiedAt: '2026-10-19', regressionTests: ['R-AVG-04B-sound-production-contract', 'R-AVG-04B-sound-planning-context'],
+  },
+  {
     version: 1, id: 'avg.visual-bible.v1', agentId: 'avg-art-director', defaultForAgent: true,
     label: 'AVG 美术方向', owner: 'avg-art-director', promptVersion: 'avg.visual-bible.v1-method-v3',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
@@ -5407,6 +5429,8 @@ export function validateAgentSkillDefinitionsV1(
     'avg-environment-designer': productProductionModes,
     'avg-prop-designer': productProductionModes,
     'avg-image-operator': productProductionModes,
+    'avg-sound-director': productProductionModes,
+    'avg-sound-operator': productProductionModes,
   }
   const ids = new Set<string>()
   const defaultAgents = new Set<RegisteredAgentId>()

@@ -30,6 +30,7 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
   mediaCapabilities?: ReadonlyMap<string, ResolvedProductMediaCapabilityV1>; imageEndpointRouteHash?: string;
   voiceTransport?: Awaited<ReturnType<typeof createConfiguredAvgVoiceTransportV1>> }): ProductProductionTaskExecutorV1 {
   const brief = structuredClone(options.brief), productionKey = options.production.productionKey
+  if (brief.avgSoundPlanning) throw new Error('[avg-sound] 声音合同不能借用旧组装执行器；实际声音闭环尚未接通')
   const legacyImage = readAvgOptionalImageDefinitionV3(brief)
   const assembly=brief.avgAssembly??brief.avgVisualPlanning?.assembly
   return async request => {

@@ -4,6 +4,7 @@ import { avgMediaProductionEnabledV2, avgVoiceProductionEnabledV3 } from '../avg
 import { assertAvgStoredAssemblyBriefV3 } from '../avg/voice-assembly-storage'
 import { avgVisualPlanningExecutionReadyV4 } from '../avg/visual-planning-brief'
 import { avgVisualPlanningExecutionReadyV5 } from '../avg/visual-planning-brief-v5'
+import { avgSoundProductionExecutionReadyV1 } from '../avg/sound-production-brief'
 import { assertAvgNoUnresolvedVoiceRequestsV1 } from '../avg/voice-request-safety'
 import { avgPendingVoiceRequestsV1, resetAvgVoiceRecoveryForEvolutionV1, validateAvgVoiceRecoveryV1 } from '../avg/voice-recovery'
 import { canReviseTextContentBuildV1, createTextContentRevisionPlanV1 } from './text-content-revision'
@@ -1108,6 +1109,7 @@ async function applyCommand(input: {
 
   if (command.type === 'save-brief-revision') {
     const brief = command.brief
+    if (brief.avgSoundPlanning && !avgSoundProductionExecutionReadyV1()) reject('brief-not-authorized', 'AVG 声音实际生产、审听和采用闭环尚未接通，不能准备新任务')
     if (brief.avgVisualPlanning && !(brief.avgVisualPlanning.version===5?avgVisualPlanningExecutionReadyV5():avgVisualPlanningExecutionReadyV4())) reject('brief-not-authorized', 'AVG 专业视觉候选采用和需求消费尚未接通，不能准备新任务')
     if (brief.avgAssembly?.version === 3 && !avgVoiceProductionEnabledV3()) reject('brief-not-authorized', 'AVG 配音生产的采用、编译与恢复闭环尚未开放，不能准备新任务')
     if (brief.avgAssembly?.version === 3) await assertVoicePacketForCommand(brief, scope, production.id, production.currentBuildNumber)
@@ -1251,6 +1253,7 @@ async function applyCommand(input: {
       reject('brief-not-authorized', 'Creator Brief 尚未完成 G5-04 正式来源计划，不能创建 Build')
     }
     const brief = parseProductProductionBriefV3(briefRow.briefJson)
+    if (brief.avgSoundPlanning && !avgSoundProductionExecutionReadyV1()) reject('brief-not-authorized', 'AVG 声音实际生产、审听和采用闭环尚未接通，不能开始新调用')
     if (brief.avgVisualPlanning && !(brief.avgVisualPlanning.version===5?avgVisualPlanningExecutionReadyV5():avgVisualPlanningExecutionReadyV4())) reject('brief-not-authorized', 'AVG 专业视觉候选采用和需求消费尚未接通，不能开始新调用')
     if (brief.avgAssembly?.version === 3 && !avgVoiceProductionEnabledV3()) reject('brief-not-authorized', 'AVG 配音生产的采用、编译与恢复闭环尚未开放，不能开始新任务')
     if (brief.avgAssembly?.version === 3) await assertVoicePacketForCommand(brief, scope, production.id, production.currentBuildNumber)

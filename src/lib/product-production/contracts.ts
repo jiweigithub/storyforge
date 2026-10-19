@@ -7,6 +7,8 @@ import { parseAvgSettingsForLegacyProduction } from '../avg/settings-v2'
 import { parseAvgVisualPlanningBrief } from '../avg/visual-planning-brief-codec'
 import { assertAvgVisualPlanningPolicyV5 } from '../avg/visual-planning-policy-v5'
 import { assertAvgVisualPlanningPolicyV4 } from '../avg/visual-planning-policy'
+import { parseAvgSoundPlanningBriefV1 } from '../avg/sound-production-brief'
+import { assertAvgSoundProductionPolicyV1 } from '../avg/sound-production-policy'
 import type {
   TextAdventureContentRevisionV1,
   ProductConsultationBudgetV1,
@@ -282,6 +284,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
     ...(Object.prototype.hasOwnProperty.call(row, 'avgRevision') ? ['avgRevision'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgAssembly') ? ['avgAssembly'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgVisualPlanning') ? ['avgVisualPlanning'] : []),
+    ...(Object.prototype.hasOwnProperty.call(row, 'avgSoundPlanning') ? ['avgSoundPlanning'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'ttrpg') ? ['ttrpg'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'aiTown') ? ['aiTown'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'textAdventure') ? ['textAdventure'] : []),
@@ -320,6 +323,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
     ...(avgRevision ? { avgRevision } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgAssembly') ? { avgAssembly: parseAvgAssemblyBrief(row.avgAssembly) } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgVisualPlanning') ? { avgVisualPlanning: parseAvgVisualPlanningBrief(row.avgVisualPlanning) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, 'avgSoundPlanning') ? { avgSoundPlanning: parseAvgSoundPlanningBriefV1(row.avgSoundPlanning) } : {}),
     ...(row.characterChat ? { characterChat: parseChatAuthoringSettingsV1(row.characterChat) } : {}),
     ...(row.avg ? { avg: parseAvgSettingsForLegacyProduction(row.avg) } : {}),
     schema: 'storyforge.product-production-brief', version: 3,
@@ -373,6 +377,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
       ? { evolution: parseEvolutionImpact(row.evolution) }
       : {}),
   }
+  if (parsed.avgSoundPlanning) assertAvgSoundProductionPolicyV1(parsed)
   if (parsed.avgVisualPlanning) {
     if(parsed.avgVisualPlanning.version===5)assertAvgVisualPlanningPolicyV5(parsed)
     else assertAvgVisualPlanningPolicyV4(parsed)

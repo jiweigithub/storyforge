@@ -1689,6 +1689,7 @@ export async function runAuthorizedProductProductionV1(input: {
   }
   const brief = creatorContracts?.executionBrief
     ?? parseProductProductionBriefV3(details.brief.briefJson)
+  if (brief.avgSoundPlanning) throw new Error('[avg-sound] 声音实际生产、审听和采用闭环尚未接通，未解析凭据或创建调用')
   if (brief.avgRevision) return (await import('../avg/revision-production')).runAvgRevisionV1({ ...input, scope, details, brief })
   if (brief.avgAssembly) {
     const projection = await (await import('../avg/assembly-service')).runAvgAssemblyV1({ scope, productionId: input.productionId, signal: input.signal })

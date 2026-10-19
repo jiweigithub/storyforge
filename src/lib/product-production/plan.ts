@@ -7,6 +7,7 @@ import type {
 import { buildAvgNativeAssemblyPlan } from '../avg/assembly-plan'
 import { AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4, buildAvgVisualPlanningPlanV4 } from '../avg/visual-planning-plan'
 import { buildAvgVisualPlanningPlanV5 } from '../avg/visual-planning-plan-v5'
+import { buildAvgSoundProductionPlanV1 } from '../avg/sound-production-plan'
 import { PRODUCTION_PRODUCT_KINDS_V1 } from '../types'
 import { parseTextAdventureContentRevisionV1, parseProductProductionBriefV3 } from './contracts'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2, isSha256Hash } from './hash'
@@ -283,7 +284,7 @@ function parseTask(value: unknown, index: number): ProductProductionPlanTaskV3 {
     reuse,
     ...(authorRevision ? { authorRevision } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'contextProfile')
-      ? { contextProfile: enumValue(row.contextProfile, ['avg-task-v1', 'avg-visual-planning-v4','avg-visual-planning-v5'] as const, `${label}.contextProfile`) } : {}),
+      ? { contextProfile: enumValue(row.contextProfile, ['avg-task-v1', 'avg-visual-planning-v4','avg-visual-planning-v5','avg-sound-planning-v1'] as const, `${label}.contextProfile`) } : {}),
   }
 }
 
@@ -347,6 +348,10 @@ export function parseProductProductionPlanV3(
     if (task.contextProfile === 'avg-task-v1' && (productType !== 'avg' || task.executionMode !== 'deterministic'
       || !['avg-assembly-integrate', 'avg-assembly-verify', 'avg-media-image-process', 'avg-media-image-reuse', 'avg-media-voice-reuse'].includes(task.kind))) {
       fail(`${task.taskKey} 上下文投影只用于准确 AVG 确定性任务`)
+    }
+    if (task.contextProfile === 'avg-sound-planning-v1' && (productType !== 'avg' || task.executionMode !== 'deterministic'
+      || !['avg-sound-requirements-compile', 'avg-sound-library-import', 'avg-assembly-integrate', 'avg-assembly-verify'].includes(task.kind))) {
+      fail(`${task.taskKey} 声音投影只允许准确声音合同的确定性任务`)
     }
     if(task.contextProfile==='avg-visual-planning-v5'&&(productType!=='avg'||task.executionMode!=='deterministic'
       ||!['avg-v5-visual-requirements-compile','avg-media-image-process'].includes(task.kind)))fail(`${task.taskKey} V5 投影只用于准确新需求编译或加工`)
@@ -460,6 +465,9 @@ export function parseProductProductionPlanV3(
     briefHash: row.briefHash, controlEpoch: integer(row.controlEpoch, 'controlEpoch'),
     concurrency: parsedConcurrency, tasks, terminalTaskKey,
   }
+  if (brief?.avgSoundPlanning && canonicalProductProductionJsonV2(parsed) !== canonicalProductProductionJsonV2(buildAvgSoundProductionPlanV1({
+    brief, briefHash: parsed.briefHash, buildNumber: parsed.buildNumber, controlEpoch: parsed.controlEpoch,
+  }))) fail('AVG 声音 Plan 必须等于准确候选、采用、真实音频与审听的固定拓扑')
   if (brief?.avgVisualPlanning?.version===5 && canonicalProductProductionJsonV2(parsed)!==canonicalProductProductionJsonV2(buildAvgVisualPlanningPlanV5({
     brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning},briefHash:parsed.briefHash,buildNumber:parsed.buildNumber,controlEpoch:parsed.controlEpoch,
   })))fail('AVG V5 专业视觉 Plan 必须等于本次冻结的新岗位与需求消费拓扑')
@@ -507,6 +515,7 @@ export async function createProductProductionPlanV3(input: {
   const controlEpoch = input.controlEpoch ?? 0
   if (!Number.isInteger(controlEpoch) || controlEpoch < 0) fail('controlEpoch 无效')
 
+  if (brief.avgSoundPlanning) return parseProductProductionPlanV3(buildAvgSoundProductionPlanV1({ ...input, brief, controlEpoch }), brief, input.briefHash)
   if (brief.avgVisualPlanning?.version===5)return parseProductProductionPlanV3(buildAvgVisualPlanningPlanV5({...input,brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning},controlEpoch}),brief,input.briefHash)
   if (brief.avgVisualPlanning?.version===4) return parseProductProductionPlanV3(buildAvgVisualPlanningPlanV4({ ...input, brief: { ...brief, avgVisualPlanning: brief.avgVisualPlanning }, controlEpoch }), brief, input.briefHash)
   if (brief.avgAssembly) return parseProductProductionPlanV3(buildAvgNativeAssemblyPlan({ ...input, brief, controlEpoch }), brief, input.briefHash)

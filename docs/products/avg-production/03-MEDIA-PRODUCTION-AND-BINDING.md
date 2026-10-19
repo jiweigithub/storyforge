@@ -358,6 +358,12 @@ voice、music、ambience、sfx 分用途音量/混音；BGM/环境循环、一�
 
 本地服务仅接准确单句/完整演法，返回24kHz PCM16 WAV；没有Work读取、候选或采用权限。正式入口复用登记的AVG媒体Skill、单任务Context、Production/Build/Run/ledger和原音频字节、审听、选择、采用、逐句配置及备份生命周期；无新表/schema/AI正式写域。新草稿预填本机固定能力与音色，保存零网络；冻结本地provider和新路由hash，每次生成前核对服务能力，缺失或变化零生成拒绝，不替换全局图文配置。旧Agnes合同和历史证据保持严格，不重标版本。有限生成、无自动重试；进程重启不覆盖浏览器未知结果防重。工程/原生/真实语音/人工与商业验收分别记录，当前仍partial。两句真实本机语音已通过实际Harness接收、字节/解码与原生ended，并导出完整原回执；五项听感仍unknown，未选用。准确时长、成本、推理效率与限制见工作包§4.17。
 
+### 5.3 声音策划及原始音效/音乐的正式任务合同（执行关闭）
+
+AVG专用`avgSoundPlanning`冻结准确声音范围、规范规则/脚本/画幅hash、原生组装目录和音乐路由声明，独立于原图片/逐句配音批次。图中方案候选、作者方案采用、编译、真实生成或原库导入、观察、作者选音和Stage采用各有任务/输入/门；预算取自同图，库导入不消耗推理调用，不能用其他媒资路由或忽略审听完成任务。旧图片/配音只能经已有合法谱系进入后继演出，不复制其开始或采用授权。
+
+声音指导只读取登记的准确用途/参数和本项允许来源目录，整份对白/规则仅作规范hash核验，不默认外发。音效目录及CC0标签是声明，真实producer仍必须证明原ZIP、许可及成员字节；保留原OGG/WAV。真实音乐必须保留固定版本/完整请求、原始float/WAV、费用/失败/未知结果和物理Blob。当前仅合同/图及策划投影，生产/审听/采用入口关闭，不能据此宣称已有工作台声音工厂。声音观察不能借用逐句语音的文本核对证明；未知听感不得选用或由模型自报通过。
+
 ## 6 typed 消费绑定与自动配置
 
 目标 `AvgMediaBindingV1` 字段：bindingKey、requirementKey/revision、subjectKey/familyKey/variantKey、consumerDomain/consumerKey/slot、scene/line 或 event（适用时）、locale、state/visibility condition、layout/anchor、required/fallback、assetKey/blobHash、采用/处理/上游 revision。

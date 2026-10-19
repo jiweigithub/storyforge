@@ -1094,6 +1094,7 @@ function taskContextSourceKeys(
   if (task.contextProfile === 'avg-task-v1') return ['product-production.avg-task-inputs']
   if (task.contextProfile === 'avg-visual-planning-v4') return ['product-production.avg-visual-planning-inputs']
   if (task.contextProfile === 'avg-visual-planning-v5') return ['product-production.avg-visual-planning-inputs-v5']
+  if (task.contextProfile === 'avg-sound-planning-v1') return ['product-production.avg-sound-planning-inputs']
   // The deterministic runtime compiler receives immutable artifact rows via
   // inputArtifacts and binds their hashes in structuralInput. Re-serializing
   // the same full payload into a model-style context duplicates tens of
@@ -1118,6 +1119,7 @@ function taskRequiredContextSourceKeys(task: ProductProductionPlanTaskV3): strin
   if (task.contextProfile === 'avg-task-v1') return ['product-production.avg-task-inputs']
   if (task.contextProfile === 'avg-visual-planning-v4') return ['product-production.avg-visual-planning-inputs']
   if (task.contextProfile === 'avg-visual-planning-v5') return ['product-production.avg-visual-planning-inputs-v5']
+  if (task.contextProfile === 'avg-sound-planning-v1') return ['product-production.avg-sound-planning-inputs']
   if (task.executionMode === 'deterministic' && task.kind === 'runtime-package') {
     return ['product-production.brief']
   }
@@ -1125,7 +1127,7 @@ function taskRequiredContextSourceKeys(task: ProductProductionPlanTaskV3): strin
     const skill = getAgentSkillV1(task.skillId)
     return [...new Set([
       ...skill.contextSourceKeys,
-      ...(task.inputArtifactKeys.length > 0 && !skill.contextSourceKeys.some(key => ['product-production.avg-task-inputs', 'product-production.avg-visual-planning-inputs', 'product-production.avg-visual-planning-inputs-v5'].includes(key))
+      ...(task.inputArtifactKeys.length > 0 && !skill.contextSourceKeys.some(key => ['product-production.avg-task-inputs', 'product-production.avg-visual-planning-inputs', 'product-production.avg-visual-planning-inputs-v5', 'product-production.avg-sound-planning-inputs'].includes(key))
         ? ['product-production.artifact-inputs'] : []),
     ])]
   }
@@ -4698,6 +4700,7 @@ async function runClaimedTaskCore(input: {
   const worldGatewayRequired = worldGatewayUsed && !executorOwnsWorldGateway
   const requiresExactContext = worldGatewayUsed || input.task.executionMode === 'model'
     || normalSourceKeys.includes('product-production.avg-task-inputs') || normalSourceKeys.includes('product-production.avg-visual-planning-inputs')
+    || normalSourceKeys.includes('product-production.avg-sound-planning-inputs')
   // The gateway below receives the declared budget minus the context actually
   // assembled here. A fixed percentage cap would reject a valid, exact Brief
   // and artifact set before the remaining world budget can even be measured.
