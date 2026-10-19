@@ -26,7 +26,6 @@ import {
 } from '../registry/types'
 import { AGENT_TOOL_BY_NAME } from './tool-registry'
 import { WORLD_RELEASE_RESOURCE_KINDS_V1 } from '../context-gateway/world-release-provider-contract'
-import { TTRPG_OPEN_PRODUCTION_BINDINGS_V2 } from '../ttrpg/open-production-bindings'
 
 export const DOMAIN_AGENT_IDS = ['world-origin', 'character', 'inspiration', 'outline', 'prose'] as const
 export type DomainAgentId = typeof DOMAIN_AGENT_IDS[number]
@@ -5217,8 +5216,8 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1,
-    id: TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.source-facts'].skillId,
-    promptVersion: TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.source-facts'].promptVersion,
+    id: 'product-production.ttrpg-open-source-facts.v2',
+    promptVersion: 'ttrpg-open-source-facts-v2',
     agentId: 'outline',
     defaultForAgent: false,
     label: '开放跑团逐资源来源事实候选 V2',
@@ -5238,8 +5237,8 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1,
-    id: TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.rule-system'].skillId,
-    promptVersion: TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.rule-system'].promptVersion,
+    id: 'product-production.ttrpg-open-rule-system.v2',
+    promptVersion: 'ttrpg-open-rule-system-v2',
     agentId: 'outline',
     defaultForAgent: false,
     label: '开放跑团完整角色与规则候选 V2',
@@ -5259,8 +5258,8 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1,
-    id: TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.situation-layer'].skillId,
-    promptVersion: TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.situation-layer'].promptVersion,
+    id: 'product-production.ttrpg-open-situation-layer.v2',
+    promptVersion: 'ttrpg-open-situation-layer-v3',
     agentId: 'outline',
     defaultForAgent: false,
     label: '开放跑团完整局势与压力候选 V2',
