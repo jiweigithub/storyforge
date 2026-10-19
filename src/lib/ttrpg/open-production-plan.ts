@@ -1,6 +1,7 @@
 /** Open authoring tasks live in the existing production scheduler, with an explicit shared production budget. */
 import type { ProductProductionBriefV3, ProductProductionPlanV3, ProductProductionPlanTaskV3 } from '../types'
 import { getAgentSkillV1 } from '../agent/skill-registry'
+import { TTRPG_OPEN_PRODUCTION_BINDINGS_V2 } from './open-production-bindings'
 import { createCommonProductMediaBundleTasksV3 } from '../product-production/media-plan-tasks'
 
 export const TTRPG_OPEN_PRODUCTION_TASK_KEYS_V1 = [
@@ -50,11 +51,11 @@ export function buildTtrpgOpenProductionPlanV3(input: {
     throw new Error('[ttrpg-open-plan] 六项制作任务缺少明确授权的模型/token/时长/存储预算')
   }
   const definitions = [
-    { taskKey: 'ttrpg.open.source-facts', skillId: 'product-production.ttrpg-open-source-facts.v1', lane: 'content', dependsOn: [],
+    { taskKey: 'ttrpg.open.source-facts', skillId: TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.source-facts'].skillId, lane: 'content', dependsOn: [],
       inputArtifactKeys: [], outputArtifactKeys: ['ttrpg.open.source-facts'] },
-    { taskKey: 'ttrpg.open.rule-system', skillId: 'product-production.ttrpg-open-rule-system.v1', lane: 'content', dependsOn: ['ttrpg.open.source-facts'],
+    { taskKey: 'ttrpg.open.rule-system', skillId: TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.rule-system'].skillId, lane: 'content', dependsOn: ['ttrpg.open.source-facts'],
       inputArtifactKeys: ['ttrpg.open.source-facts'], outputArtifactKeys: ['ttrpg.open.rule-system'] },
-    { taskKey: 'ttrpg.open.situation-layer', skillId: 'product-production.ttrpg-open-situation-layer.v1', lane: 'content',
+    { taskKey: 'ttrpg.open.situation-layer', skillId: TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.situation-layer'].skillId, lane: 'content',
       dependsOn: ['ttrpg.open.source-facts', 'ttrpg.open.rule-system'], inputArtifactKeys: ['ttrpg.open.source-facts', 'ttrpg.open.rule-system'],
       outputArtifactKeys: ['ttrpg.open.situation-layer'] },
     { taskKey: 'ttrpg.open.media-plan', skillId: 'product-production.media-requirements.v1', lane: 'planning',

@@ -1,6 +1,7 @@
 import { parseTextAdventureQuestScriptArtifact, textAdventureQuestRecipientsV3 } from '../adventure/quest-settlement'
 import { hasFrozenAuthorUploadRightsV1 } from './media-rights'
-import { ttrpgOpenProductionSystemPromptV1 } from '../ttrpg/open-production-prompts'
+import { ttrpgOpenProductionSystemPromptV1, ttrpgOpenProductionSystemPromptV2 } from '../ttrpg/open-production-prompts'
+import { isTtrpgOpenProductionTaskV2 } from '../ttrpg/open-production-bindings'
 import { ttrpgOpenProductionMediaContextV1, ttrpgOpenProductionMediaPromptV1, assertTtrpgOpenProductionMediaRequirementsV1,
   bindTtrpgOpenProductionMediaV1 } from '../ttrpg/open-production-media'
 import { compileProductionTtrpgOpenCampaignV2 } from '../ttrpg/open-production-compiler'
@@ -6977,7 +6978,10 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
         }
       })()
     : undefined
-  const system = options.brief.ttrpgOpen && input.task.taskKey === 'ttrpg.open.media-plan'
+  const openV2 = isTtrpgOpenProductionTaskV2(input.task)
+  if (openV2 && !options.brief.ttrpgOpen) fail('V2 跑团任务缺少原 open Brief')
+  const system = isTtrpgOpenProductionTaskV2(input.task) ? ttrpgOpenProductionSystemPromptV2(input.task.taskKey)
+    : options.brief.ttrpgOpen && input.task.taskKey === 'ttrpg.open.media-plan'
     ? ttrpgOpenProductionMediaPromptV1(options.brief, openMediaContext(input, options.brief)!) : textSystem(
     input.task.taskKey,
     options.brief,
@@ -6995,10 +6999,21 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
     textAdventureEndingRouteDecisions,
     input.contextText,
   )
+  const openOutputLimit = openV2 ? Math.min(productProductionProviderOutputLimitV1(input.task, input.contextText),
+    input.attemptBudgetReservation?.outputTokens ?? input.task.budgetReservation.outputTokens) : null
+  if (openV2 && !input.authorDraftJson) {
+    const available = Math.min(input.task.budgetReservation.inputTokens,
+      input.attemptBudgetReservation?.inputTokens ?? input.task.budgetReservation.inputTokens)
+    const required = estimateTokens(system) + estimateTokens(input.contextText)
+    if (required > available) fail(`完整跑团格式与准确正文超过原输入预算（required=${required}, budget=${available}）；未调用模型`)
+    if (openOutputLimit! < 1 || (input.attemptBudgetReservation?.modelCalls ?? 1) < 1) {
+      fail('原跑团任务剩余调用/输出预算不足；未调用模型')
+    }
+  }
   const response = input.authorDraftJson ? null : await options.runText({
     projectId: input.scope.projectId, requirementKey, category: options.category,
     system, contextText: input.contextText,
-    maximumOutputTokens: productProductionProviderOutputLimitV1(input.task, input.contextText), signal: input.signal,
+    maximumOutputTokens: openOutputLimit ?? productProductionProviderOutputLimitV1(input.task, input.contextText), signal: input.signal,
   })
   const output = input.authorDraftJson ?? response!.output
   if (response) await input.onModelOutput?.(output)

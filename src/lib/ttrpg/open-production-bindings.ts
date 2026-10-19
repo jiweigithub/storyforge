@@ -17,6 +17,13 @@ export const TTRPG_OPEN_PRODUCTION_BINDINGS_V2 = {
 
 export type TtrpgOpenProductionTaskKeyV2 = keyof typeof TTRPG_OPEN_PRODUCTION_BINDINGS_V2
 
+/** Retained whole generation; a mixed Plan is never inferred as compatible. */
+export const TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1 = {
+  'ttrpg.open.source-facts': 'product-production.ttrpg-open-source-facts.v1',
+  'ttrpg.open.rule-system': 'product-production.ttrpg-open-rule-system.v1',
+  'ttrpg.open.situation-layer': 'product-production.ttrpg-open-situation-layer.v1',
+} as const
+
 export function isTtrpgOpenProductionTaskV2(task: {
   taskKey: string; skillId: string | null; executionMode: string
 }): task is typeof task & { taskKey: TtrpgOpenProductionTaskKeyV2 } {

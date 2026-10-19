@@ -6,6 +6,8 @@ import { parseProductProductionBriefV3 } from '../../src/lib/product-production/
 import { createProductProductionPlanV3, parseProductProductionPlanV3 } from '../../src/lib/product-production/plan'
 import { hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 import { TTRPG_OPEN_PRODUCTION_TASK_KEYS_V1 } from '../../src/lib/ttrpg/open-production-plan'
+import { TTRPG_OPEN_PRODUCTION_BINDINGS_V2, TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1,
+  type TtrpgOpenProductionTaskKeyV2 } from '../../src/lib/ttrpg/open-production-bindings'
 import { executeProductProductionCommand } from '../../src/lib/product-production/commands'
 import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
 
@@ -20,7 +22,26 @@ describe('R-TTRPGOPEN2 budgeted production envelope and distinct authoring DAG',
     expect(plan.tasks.find(task => task.taskKey === 'ttrpg.open.integration')!.dependsOn).toEqual([
       'ttrpg.open.source-facts', 'ttrpg.open.rule-system', 'ttrpg.open.situation-layer', 'ttrpg.open.media-plan'])
     expect(plan.tasks.some(task => ['content.narrative', 'content.product-module'].includes(task.taskKey))).toBe(false)
+    for (const [key, binding] of Object.entries(TTRPG_OPEN_PRODUCTION_BINDINGS_V2)) {
+      expect(plan.tasks.find(task => task.taskKey === key)!.skillId).toBe(binding.skillId)
+    }
     expect(parseProductProductionPlanV3(JSON.stringify(plan), brief, briefHash)).toEqual(plan)
+  })
+  it('reads the complete old frozen task generation byte-for-byte without accepting mixed or forged bindings', async () => {
+    const { brief } = await openProductionFixtureV1(), briefHash = await hashProductProductionValueV2(brief)
+    const current = await createProductProductionPlanV3({ brief, briefHash, buildNumber: 1 })
+    const legacy = structuredClone(current)
+    for (const task of legacy.tasks) if (Object.prototype.hasOwnProperty.call(TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1, task.taskKey)) {
+      task.skillId = TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1[task.taskKey as TtrpgOpenProductionTaskKeyV2]
+    }
+    const frozen = JSON.stringify(legacy)
+    expect(JSON.stringify(parseProductProductionPlanV3(frozen, brief, briefHash))).toBe(frozen)
+    const mixed = structuredClone(legacy)
+    mixed.tasks[0].skillId = TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.source-facts'].skillId
+    expect(() => parseProductProductionPlanV3(mixed, brief, briefHash)).toThrow(/专属任务/)
+    const forged = structuredClone(current)
+    forged.tasks[0].skillId = TTRPG_OPEN_PRODUCTION_BINDINGS_V2['ttrpg.open.rule-system'].skillId
+    expect(() => parseProductProductionPlanV3(forged, brief, briefHash)).toThrow(/专属任务/)
   })
   it('rejects a mixed format and a divergent world/direction', async () => {
     const { brief, scripted } = await openProductionFixtureV1()

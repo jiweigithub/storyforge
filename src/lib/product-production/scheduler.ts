@@ -1,5 +1,10 @@
 import { isTextRevisionRetainedVisualTaskV1, textRevisionRecoveryPreservesVisualContractV1, validateTextContentRevisionAuthorityV1, verifiedTextRevisionVisualCarryTaskKeysV1 } from './text-content-revision-authority'
 import { ttrpgOpenEvolutionReuseEnvelopeV1, ttrpgOpenEvolutionTaskLaneV1 } from '../ttrpg/open-production-plan'
+import { isTtrpgOpenProductionTaskV2 } from '../ttrpg/open-production-bindings'
+import { ttrpgOpenProductionSystemPromptV2 } from '../ttrpg/open-production-prompts'
+import { renderTtrpgOpenProductionWorldReadsV2 } from '../ttrpg/open-world-reads'
+import { estimateTokens } from '../ai/context-budget'
+import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import { verifiedHumanImportCarryProofsV1 } from './text-adventure-artifact-store'
 import { isTextAdventureClockCapacityRevisionV1 } from './clock-capacity-revision'
 import { db } from '../db/schema'
@@ -2239,15 +2244,16 @@ async function ensurePlan(input: {
       || task.reuse?.reason.startsWith('文字修订：') === true
   )) ? currentPlan : null
   let plan: ProductProductionPlanV3
-  if (state.creatorContracts) {
+  if (state.creatorContracts || (state.brief.ttrpgOpen && state.build.planRevision > 0)) {
+    const frozenPlanOwner = state.creatorContracts ? 'Creator' : '开放跑团'
     if (!currentPlan || await hashProductProductionValueV2(currentPlan) !== state.build.planHash) {
-      throw new Error('[product-production-scheduler] Creator Build 的冻结 Plan 缺失或损坏，不能恢复')
+      throw new Error(`[product-production-scheduler] ${frozenPlanOwner} Build 的冻结 Plan 缺失或损坏，不能恢复`)
     }
     if (currentPlan.controlEpoch > state.build.controlEpoch) {
-      throw new Error('[product-production-scheduler] Creator Build 的 Plan epoch 超前，不能恢复')
+      throw new Error(`[product-production-scheduler] ${frozenPlanOwner} Build 的 Plan epoch 超前，不能恢复`)
     }
     if (input.suppliedPlan) {
-      throw new Error('[product-production-scheduler] Creator Build 不接受外部 Plan 替换')
+      throw new Error(`[product-production-scheduler] ${frozenPlanOwner} Build 不接受外部 Plan 替换`)
     }
     plan = parseProductProductionPlanV3({
       ...currentPlan,
@@ -4669,7 +4675,19 @@ async function runClaimedTaskCore(input: {
   )
   const requiredNormalSourceKeys = new Set(taskRequiredContextSourceKeys(input.task))
   const contractSourceKeys = taskContractContextSourceKeys(input.task)
-  const totalInputBudget = Math.max(1, input.task.budgetReservation.inputTokens)
+  const openSystem = isTtrpgOpenProductionTaskV2(input.task)
+    ? ttrpgOpenProductionSystemPromptV2(input.task.taskKey) : null
+  const openSystemTokens = openSystem ? estimateTokens(openSystem) : 0
+  const openMaximumOutputTokens = openSystem ? Math.min(input.task.budgetReservation.outputTokens,
+    getAgentSkillV1(input.task.skillId!).maxOutputTokens, attemptBudgetReservation.outputTokens) : null
+  // This generation owns one task-lifetime budget. Previous paid attempts do
+  // not grant another full input envelope. Human revisions remain zero-call.
+  const openPaidAttempt = openSystem !== null && authorizedDirectResult == null
+    && frozenAuthorRevision == null && authorResolution?.resolution.action !== 'author-edit'
+  const totalInputBudget = openPaidAttempt
+    ? Math.min(input.task.budgetReservation.inputTokens, attemptBudgetReservation.inputTokens)
+    : Math.max(1, input.task.budgetReservation.inputTokens)
+  const contextInputBudget = totalInputBudget - openSystemTokens
   const worldGatewayUsed = productProductionTaskUsesWorldGatewayV1(input.task)
   const executorOwnsWorldGateway = productProductionTaskOwnsWorldGatewayV1(input.task)
   const worldGatewayRequired = worldGatewayUsed && !executorOwnsWorldGateway
@@ -4679,9 +4697,15 @@ async function runClaimedTaskCore(input: {
   // The gateway below receives the declared budget minus the context actually
   // assembled here. A fixed percentage cap would reject a valid, exact Brief
   // and artifact set before the remaining world budget can even be measured.
-  const normalInputBudget = totalInputBudget
+  const normalInputBudget = Math.max(1, contextInputBudget)
   let normalAssembled: AssembleContextResult
   try {
+    if (openSystem && contextInputBudget < 1) throw new ProductProductionContextBudgetErrorV1(
+      `[ttrpg-open-production] 完整格式说明已超过原任务剩余输入预算（system=${openSystemTokens}, budget=${totalInputBudget}）；未调用模型`,
+    )
+    if (openPaidAttempt && (openMaximumOutputTokens! < 1 || attemptBudgetReservation.modelCalls < 1)) {
+      throw new ProductProductionContextBudgetErrorV1('[ttrpg-open-production] 原任务剩余调用/输出预算不足；未调用模型')
+    }
     normalAssembled = await assembleContext({
       projectId: input.scope.projectId, scope: input.scope, sourceKeys: normalSourceKeys,
       productProductionId: input.productionId, productBuildId: input.build.id,
@@ -4739,6 +4763,7 @@ async function runClaimedTaskCore(input: {
   let gatewayPreflight: ContextGatewayPreflightEvidenceV1 | null = null
   let sourcePlanHash: string | null = null
   let confirmedBriefHash: string | null = null
+  let openRequestHash: string | null = null
   if (worldGatewayUsed) {
     const production = await db.productProductions.get(input.productionId)
     if (!production?.id || production.currentBriefRevision == null) {
@@ -4765,6 +4790,7 @@ async function runClaimedTaskCore(input: {
       }
     } else {
       const brief = parseProductProductionBriefV3(briefRow.briefJson)
+      if (openSystem && !brief.ttrpgOpen) throw new Error('[ttrpg-open-production] 新版本任务缺少原 open Brief；未调用模型')
       const sourcePlan = await parseProductProductionSourcePlanV1(briefRow)
       const confirmedBrief = await parseConfirmedProductBriefV1({ row: briefRow, sourcePlan })
       await assertFormalProductProductionStartV1({
@@ -4775,7 +4801,7 @@ async function runClaimedTaskCore(input: {
       sourcePlanHash = sourcePlan.planHash
       confirmedBriefHash = confirmedBrief.confirmationHash
       if (worldGatewayRequired) {
-        const worldBudget = Math.max(1, totalInputBudget - normalAssembled.totalInputTokens)
+        const worldBudget = Math.max(1, contextInputBudget - normalAssembled.totalInputTokens)
         gatewayExecution = await executeProductProductionWorldGatewayV1({
           scope: input.scope,
           sourcePlan,
@@ -4786,22 +4812,35 @@ async function runClaimedTaskCore(input: {
             && input.task.kind === 'runtime-package',
           signal: input.signal,
         })
+        // Only the explicitly versioned TTRPG model contracts use this view.
+        // Keep the original packet/trace/snapshots for freshness and evidence.
+        const worldContent = openSystem
+          ? await renderTtrpgOpenProductionWorldReadsV2(gatewayExecution)
+          : gatewayExecution.contextPacket.content
+        const worldContentHash = openSystem
+          ? await sha256Text(worldContent) : gatewayExecution.contextPacket.contentHash
         assembled = combineProductProductionContextV1({
-          assembled: normalAssembled,
-          worldContent: gatewayExecution.contextPacket.content,
-          worldContentHash: gatewayExecution.contextPacket.contentHash,
-          worldTokens: gatewayExecution.contextPacket.tokenCount,
-          inputBudget: totalInputBudget,
+          assembled: normalAssembled, worldContent, worldContentHash,
+          worldTokens: openSystem ? estimateTokens(worldContent) : gatewayExecution.contextPacket.tokenCount,
+          inputBudget: contextInputBudget,
         })
-        if (assembled.overBudgetAfterTrim) {
+        // Manifest totals are the checked sum of per-source evidence. Measure
+        // the complete actual wire independently so labels/separators and the
+        // static nested format cannot escape the original input ceiling.
+        const requestInputTokenEstimate = openSystem
+          ? Math.max(assembled.totalInputTokens, estimateTokens(assembled.text)) + openSystemTokens
+          : assembled.totalInputTokens
+        if (assembled.overBudgetAfterTrim || requestInputTokenEstimate > totalInputBudget) {
           throw new Error('[product-production-scheduler] Brief/Artifact 与冻结世界事实合并后超过任务输入预算'
-            + `（required=${assembled.totalInputTokens}, budget=${totalInputBudget}）`)
+            + `（required=${requestInputTokenEstimate}, budget=${totalInputBudget}）`)
         }
+        if (openSystem) openRequestHash = await hashProductProductionValueV2({ system: openSystem,
+          contextText: assembled.text, maximumOutputTokens: openMaximumOutputTokens })
         const manifestV1 = await createContextManifestFromAssemblyV1({
           runId: snapshot.run.id, stepId: input.task.taskKey, attempt,
           projectId: input.scope.projectId, worldGroupId: null,
           declaredSourceKeys: contractSourceKeys, assembled,
-          readerVersion: 'product-production-world-gateway-v1',
+          readerVersion: openSystem ? 'ttrpg-open-production-world-reads-v2' : 'product-production-world-gateway-v1',
         })
         gatewayBaseManifest = await createContextManifestV2FromV1({ manifest: manifestV1, scope: input.scope })
         const recorded = await recordContextGatewayPreflightEvidenceV1({
@@ -4812,7 +4851,11 @@ async function runClaimedTaskCore(input: {
           contextPacket: gatewayExecution.contextPacket,
           selector: gatewayExecution.selector,
           renderedRequest: {
-            schema: 'storyforge.product-production-task-request', version: 1,
+            schema: openSystem ? 'storyforge.ttrpg-open-production-task-request' : 'storyforge.product-production-task-request',
+            version: openSystem ? 2 : 1,
+            ...(openSystem ? { system: openSystem, systemTokens: openSystemTokens, requestInputTokenEstimate,
+              maximumOutputTokens: openMaximumOutputTokens, worldContentHash, requestHash: openRequestHash,
+              retrievalTrace: gatewayExecution.retrievalTrace } : {}),
             taskKey: input.task.taskKey, planHash: input.build.planHash,
             executionMode: input.task.executionMode,
             contextText: assembled.text,
@@ -4849,6 +4892,7 @@ async function runClaimedTaskCore(input: {
     sourcePlanHash,
     confirmedBriefHash,
     contextPacketHash: gatewayExecution?.contextPacket.packetHash ?? null,
+    ...(openRequestHash ? { ttrpgOpenRequestHash: openRequestHash } : {}),
     creatorDerivedAuthorizationHash: authorizedDirectResult == null
       ? null
       : input.repairAuthority?.authorization.authorizationHash

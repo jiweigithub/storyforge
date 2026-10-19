@@ -7,6 +7,7 @@ import type {
 import { PRODUCTION_PRODUCT_KINDS_V1 } from '../types'
 import { parseTextAdventureContentRevisionV1, parseProductProductionBriefV3 } from './contracts'
 import { buildTtrpgOpenProductionPlanV3 } from '../ttrpg/open-production-plan'
+import { TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1, type TtrpgOpenProductionTaskKeyV2 } from '../ttrpg/open-production-bindings'
 import { createCommonProductMediaBundleTasksV3 } from './media-plan-tasks'
 import { validateTtrpgProductionBriefContentV3 } from '../ttrpg/production-brief-v3'
 import { hashProductProductionValueV2, isSha256Hash } from './hash'
@@ -374,7 +375,14 @@ export function parseProductProductionPlanV3(
         buildNumber: Number(row.buildNumber), controlEpoch: Number(row.controlEpoch) })
       // Reuse is separately authorized against the exact parent proof. It must
       // not change the product's task graph, budgets or execution contracts.
-      if (JSON.stringify(tasks.map(task => ({ ...task, reuse: null }))) !== JSON.stringify(expected.tasks) || terminalTaskKey !== expected.terminalTaskKey
+      const legacyTasks = expected.tasks.map(task => ({ ...task,
+        skillId: Object.prototype.hasOwnProperty.call(TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1, task.taskKey)
+          ? TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1[task.taskKey as TtrpgOpenProductionTaskKeyV2] : task.skillId,
+      }))
+      const actualTasks = JSON.stringify(tasks.map(task => ({ ...task, reuse: null })))
+      // Compare entire closed generations, without rewriting the parsed Plan.
+      // Old queued/unknown Runs cannot acquire a new prompt on application update.
+      if (![expected.tasks, legacyTasks].some(generation => JSON.stringify(generation) === actualTasks) || terminalTaskKey !== expected.terminalTaskKey
         || JSON.stringify(parsedConcurrency) !== JSON.stringify(expected.concurrency)) {
         fail('open 跑团计划必须绑定专属任务、真实依赖与授权预算，不能偷换 scripted DAG')
       }

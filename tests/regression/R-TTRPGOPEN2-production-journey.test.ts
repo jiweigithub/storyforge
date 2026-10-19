@@ -7,7 +7,13 @@ import { parseProductProductionBriefV3 } from '../../src/lib/product-production/
 import { executeProductProductionCommand } from '../../src/lib/product-production/commands'
 import { createConfiguredProductProductionExecutorV1, createBuiltInProductionCapabilityBindingV1, type ProductionTextRunnerV1 } from '../../src/lib/product-production/production-executor'
 import { hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
-import { runProductProductionUntilBlockedV1 } from '../../src/lib/product-production/scheduler'
+import { runProductProductionUntilBlockedV1, type ProductProductionTaskExecutionInputV1 } from '../../src/lib/product-production/scheduler'
+import { readAgentRunV1 } from '../../src/lib/agent/run/event-store'
+import { readAgentRunArtifactExactV1 } from '../../src/lib/memory/artifact-store'
+import { sha256Text } from '../../src/lib/ai/chapter-memory/text-normalization'
+import { estimateTokens } from '../../src/lib/ai/context-budget'
+import { createProductProductionPlanV3 } from '../../src/lib/product-production/plan'
+import { TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1, type TtrpgOpenProductionTaskKeyV2 } from '../../src/lib/ttrpg/open-production-bindings'
 import { resolveProductRuntimeSource } from '../../src/lib/product-production/preview-source'
 import { createProductRuntimeInstanceFromSource } from '../../src/lib/product/runtime-instances'
 import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
@@ -16,8 +22,9 @@ import { withOpenAuthoringSeatPlanFixtureV1 } from '../helpers/ttrpg-open-seat-p
 describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transport)', () => {
   beforeEach(async () => { await db.delete(); await db.open() })
   afterEach(() => db.close())
-  it.each([{ withMedia: false, withSeatPlan: false }, { withMedia: true, withSeatPlan: false }, { withMedia: false, withSeatPlan: true }])(
-    'requires human reviews and completes a pinned preview (image=$withMedia, explicit seat plan=$withSeatPlan)', async ({ withMedia, withSeatPlan }) => {
+  it.each([{ withMedia: false, withSeatPlan: false, legacyPrompts: false }, { withMedia: true, withSeatPlan: false, legacyPrompts: false },
+    { withMedia: false, withSeatPlan: true, legacyPrompts: false }, { withMedia: false, withSeatPlan: false, legacyPrompts: true }])(
+    'requires human reviews and completes a pinned preview (image=$withMedia, explicit seat plan=$withSeatPlan, old prompt=$legacyPrompts)', async ({ withMedia, withSeatPlan, legacyPrompts }) => {
     const { scope, draft } = await createFreshOpenDraftFixtureV1(2, true)
     const productionId = await prepareTtrpgBrief(scope, draft.revision)
     let production = (await db.productProductions.get(productionId))!
@@ -54,6 +61,7 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
     expect(started.ok).toBe(true)
     const bindingHash = 'a'.repeat(64), requirementKey = brief.capabilityRequirements.find(requirement => requirement.mediaClass === 'text')!.requirementKey
     const calls: string[] = []
+    const executions = new Map<string, ProductProductionTaskExecutionInputV1>()
     const runText: ProductionTextRunnerV1 = async request => {
       let taskKey: string, payload: unknown
       if (request.system.includes('storyforge.ttrpg-open-source-facts')) { taskKey = 'ttrpg.open.source-facts'; payload = data.sourceFacts }
@@ -71,6 +79,52 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
       else if (request.system.includes('storyforge.product-media-requirements-artifact')) {
         taskKey = 'ttrpg.open.media-plan'; payload = mediaPayload
       } else throw new Error('unexpected model task')
+      if (taskKey !== 'ttrpg.open.media-plan') {
+        expect(request.system.includes('【请求格式版本2】')).toBe(!legacyPrompts)
+        const execution = executions.get(taskKey)!
+        expect(execution.task.skillId).toBe(`product-production.${taskKey.replace('ttrpg.open.', 'ttrpg-open-')}.${legacyPrompts ? 'v1' : 'v2'}`)
+        if (!legacyPrompts) {
+          const marker = '{"schema":"storyforge.ttrpg-open-production-world-reads"'
+          const offset = request.contextText.lastIndexOf(marker)
+          expect(offset).toBeGreaterThan(0)
+          const worldText = request.contextText.slice(offset), projected = JSON.parse(worldText)
+          expect(projected.version).toBe(2); expect(projected.resources.length).toBeGreaterThan(0)
+          const snapshot = await readAgentRunV1(scope, execution.taskRunId)
+          const refs = snapshot.events.filter(event => event.type === 'evidence.artifact.recorded'
+            && event.payload.stepId === taskKey && event.payload.attempt === execution.attempt)
+            .map(event => event.payload as { artifactKind: 'rendered-request' | 'context-packet' | 'source-snapshot'; contentHash: string })
+          const exact = async (kind: typeof refs[number]['artifactKind']) => {
+            const ref = refs.find(item => item.artifactKind === kind)!
+            return JSON.parse(await readAgentRunArtifactExactV1({ projectId: scope.projectId, artifactKind: kind, contentHash: ref.contentHash }))
+          }
+          const recorded = await exact('rendered-request'), packet = await exact('context-packet')
+          expect(recorded).toMatchObject({ schema: 'storyforge.ttrpg-open-production-task-request', version: 2,
+            system: request.system, contextText: request.contextText, worldContentHash: await sha256Text(worldText),
+            systemTokens: estimateTokens(request.system), maximumOutputTokens: request.maximumOutputTokens,
+            requestHash: await hashProductProductionValueV2({ system: request.system, contextText: request.contextText,
+              maximumOutputTokens: request.maximumOutputTokens }) })
+          expect(packet.contentHash).toBe(await sha256Text(packet.content))
+          expect(recorded.retrievalTrace.traceHash).toBe(packet.retrievalTraceHash)
+          const decisions = [...recorded.retrievalTrace.mandatory, ...recorded.retrievalTrace.autoSelected, ...recorded.retrievalTrace.agentReads]
+          expect(projected.resources.map((resource: { resourceKey: string }) => resource.resourceKey).sort())
+            .toEqual(decisions.map((read: { resourceKey: string }) => read.resourceKey).sort())
+          expect(recorded.worldContentHash).not.toBe(packet.contentHash)
+          expect(estimateTokens(request.system) + estimateTokens(request.contextText)).toBeLessThanOrEqual(execution.attemptBudgetReservation!.inputTokens)
+          expect(request.maximumOutputTokens).toBeLessThanOrEqual(execution.attemptBudgetReservation!.outputTokens)
+          const worldSnapshots = await Promise.all(refs.filter(ref => ref.artifactKind === 'source-snapshot').map(async ref =>
+            JSON.parse(await readAgentRunArtifactExactV1({ projectId: scope.projectId, artifactKind: ref.artifactKind, contentHash: ref.contentHash }))))
+          const actual = worldSnapshots.filter(source => source.sourceKey === 'worldRelease')
+          expect(projected.resources.map((resource: { resourceKey: string }) => resource.resourceKey).sort())
+            .toEqual(actual.map(source => source.resourceKey).sort())
+          for (const resource of projected.resources) {
+            const original = actual.find(source => source.resourceKey === resource.resourceKey)!
+            expect(resource.readContent).toBe(original.content)
+            expect(resource.contentHash).toBe(original.sourceRefs[0].contentHash)
+            expect(resource.depth).toBe(decisions.find((read: { resourceKey: string }) => read.resourceKey === resource.resourceKey)!.depth)
+            if (resource.depth === 'full' || resource.depth === 'original') expect(await sha256Text(resource.readContent)).toBe(resource.contentHash)
+          }
+        }
+      }
       calls.push(taskKey)
       return { output: JSON.stringify(payload), usage: { inputTokens: 100, outputTokens: 200 },
         bindingReceipt: { schema: 'storyforge.provider-binding-receipt', version: 1, requirementKey,
@@ -79,9 +133,27 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
           credentialPresent: true, capabilityHash: bindingHash, boundAt: 1, receiptHash: bindingHash } }
     }
     const mediaBindings = withMedia ? [await createBuiltInProductionCapabilityBindingV1({ requirementKey: 'media.visual', adapterId: 'storyforge.procedural-svg.v1' })] : []
-    const run = async () => runProductProductionUntilBlockedV1({ scope, productionId,
-      executor: createConfiguredProductProductionExecutorV1({ production: (await db.productProductions.get(productionId))!, brief, runText }),
-      capabilityBindings: [{ requirementKey, adapterId: 'configured-text.v1', bindingHash }, ...mediaBindings] })
+    const oldPlan = legacyPrompts ? await createProductProductionPlanV3({ brief, briefHash: row.briefHash, buildNumber: 1,
+      controlEpoch: (await db.productProductions.get(productionId))!.controlEpoch }) : null
+    if (oldPlan) for (const task of oldPlan.tasks) if (Object.prototype.hasOwnProperty.call(TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1, task.taskKey)) {
+      task.skillId = TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1[task.taskKey as TtrpgOpenProductionTaskKeyV2]
+    }
+    let firstRun = true
+    const run = async () => {
+      const execute = createConfiguredProductProductionExecutorV1({ production: (await db.productProductions.get(productionId))!, brief, runText })
+      const suppliedPlan = firstRun && oldPlan ? oldPlan : undefined
+      firstRun = false
+      const result = await runProductProductionUntilBlockedV1({ scope, productionId, suppliedPlan,
+        executor: async request => { executions.set(request.task.taskKey, request); return execute(request) },
+        capabilityBindings: [{ requirementKey, adapterId: 'configured-text.v1', bindingHash }, ...mediaBindings] })
+      if (legacyPrompts) {
+        const saved = (await db.productBuilds.where('productionId').equals(productionId).first())!
+        for (const task of JSON.parse(saved.planJson).tasks) if (Object.prototype.hasOwnProperty.call(TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1, task.taskKey)) {
+          expect(task.skillId).toBe(TTRPG_OPEN_PRODUCTION_SKILL_IDS_V1[task.taskKey as TtrpgOpenProductionTaskKeyV2])
+        }
+      }
+      return result
+    }
     for (const [taskKey, payload] of [['ttrpg.open.source-facts', data.sourceFacts], ['ttrpg.open.rule-system', data.ruleSystem]] as const) {
       const blocked = await run()
       expect(blocked.buildStatus).toBe('recovery-required')
@@ -91,7 +163,7 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
       // Invalid model output consumes the original explicitly budgeted repair
       // attempt. A refresh must not grant a third call or hide that cost.
       const expectedCalls = withSeatPlan && taskKey === 'ttrpg.open.rule-system' ? 2 : 1
-      expect(calls.filter(key => key === taskKey)).toHaveLength(expectedCalls)
+      expect(calls.filter(key => key === taskKey), build.failureJson).toHaveLength(expectedCalls)
       const repeat = await run()
       expect(repeat.buildStatus).toBe('recovery-required')
       expect(calls.filter(key => key === taskKey)).toHaveLength(expectedCalls)
