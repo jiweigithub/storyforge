@@ -207,3 +207,38 @@ export async function readProductProductionOriginalAuthorSourceForExecutionV1(in
   return { source: checked.source, sourceHash: String(value.sourceHash), evidenceJson: canonicalProductProductionJsonV2(checked.source),
     authorDraftJson: resolution.authorDraftJson }
 }
+
+/** Re-read only the explicit authored source snapshot of this exact failed task. */
+export async function readProductProductionRejectedOriginalAuthorDraftV1(input: {
+  scope: WorkspaceScope; productionId: number; buildId: number; taskKey: string; controlEpoch: number
+  planHash: string; runId: number; attempt: number
+}): Promise<string | null> {
+  const details = await readProductProductionDetailsV1(input.scope, input.productionId, ['ttrpg'])
+  const build = details.build
+  if (!build || build.id !== input.buildId || build.status !== 'recovery-required'
+    || build.controlEpoch !== input.controlEpoch || build.planHash !== input.planHash) fail('作者修订原稿不属于当前失败轮次')
+  const failure = object(JSON.parse(build.failureJson)), provenance = object(failure.failureProvenance)
+  const snapshot = await readAgentRunV1(input.scope, input.runId), binding = snapshot.contract.scope.productProduction
+  if (failure.code !== 'task-draft-rejected' || failure.taskKey !== input.taskKey
+    || provenance.runId !== input.runId || provenance.attempt !== input.attempt
+    || provenance.controlEpoch !== input.controlEpoch || provenance.planHash !== input.planHash
+    || snapshot.run.status !== 'failed' || snapshot.run.productBuildId !== input.buildId
+    || binding?.taskKey !== input.taskKey || binding.controlEpoch !== input.controlEpoch || binding.planHash !== input.planHash
+    || snapshot.projection.steps[input.taskKey]?.attempt !== input.attempt) fail('作者修订原稿缺少准确失败 Run/attempt')
+  const rows: Array<{ hash: string; content: string }> = []
+  for (const event of snapshot.events) {
+    if (event.type !== 'evidence.artifact.recorded' || event.payload.artifactKind !== 'source-snapshot'
+      || event.payload.stepId !== input.taskKey || event.payload.attempt !== input.attempt
+      || rows.some(row => row.hash === event.payload.contentHash)) continue
+    rows.push({ hash: event.payload.contentHash, content: await readAgentRunArtifactExactV1({ projectId: input.scope.projectId,
+      artifactKind: 'source-snapshot', contentHash: event.payload.contentHash }) })
+  }
+  const sources = rows.filter(row => { try { return JSON.parse(row.content)?.schema === SCHEMA } catch { return false } })
+  if (!sources.length) return null
+  if (sources.length !== 1) fail('作者修订来源证明冲突')
+  const checked = await verified(JSON.parse(sources[0].content), sources[0].hash, input.scope, input.productionId,
+    input.buildId, input.taskKey, input.controlEpoch)
+  const draft = rows.find(row => row.hash === checked.source.authorDraftHash)
+  if (!draft || await sha256Text(draft.content) !== checked.source.authorDraftHash) fail('作者原修订稿缺失或字节变化')
+  return draft.content
+}

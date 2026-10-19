@@ -7,7 +7,7 @@ import { hashProductProductionValueV2 } from '../product-production/hash'
 import { parseProductionModelJsonObjectV1 } from '../product-production/production-executor'
 import { inspectProductProductionBuildRecoveryPolicyV1, readProductProductionRecoveryTaskKeyV1 } from '../product-production/recovery-policy'
 import { productProductionFailureNeedsProviderAccountingV1 } from '../product-production/scheduler'
-import { normalizeTtrpgOpenSourceFactsForReviewV1, normalizeTtrpgOpenRuleSystemForReviewV1,
+import { parseTtrpgOpenProductionReviewDraftV1, normalizeTtrpgOpenSourceFactsForReviewV1, normalizeTtrpgOpenRuleSystemForReviewV1,
   type TtrpgOpenProductionReviewTaskV1 } from './open-production-review'
 
 export interface TtrpgOpenProductionReviewOwnerV1 {
@@ -58,11 +58,14 @@ export async function readTtrpgOpenProductionReviewDraftV1(input: TtrpgOpenProdu
   const rows = await readProductProductionTaskEvidenceV1(input)
   const originals = [...new Set(rows.filter(row => row.kind === 'raw-response' && row.attempt === input.attempt)
     .map(row => row.content))]
-  if (originals.length !== 1) throw new Error(originals.length
+  const authored = originals.length === 0 ? await (await import('../product-production/original-response-author-source'))
+    .readProductProductionRejectedOriginalAuthorDraftV1(input) : null
+  if (originals.length !== 1 && authored == null) throw new Error(originals.length
     ? '原任务存在不同版本的回答，请先查看制作记录；系统不会替你选择。'
     : '原任务没有完整回答可供逐项审阅；原记录仍保留，可使用高级修订。')
-  const value = parseProductionModelJsonObjectV1(originals[0], input.taskKey)
-  const artifact = input.taskKey === 'ttrpg.open.source-facts'
+  const value = parseProductionModelJsonObjectV1(authored ?? originals[0], input.taskKey)
+  const artifact = authored != null ? parseTtrpgOpenProductionReviewDraftV1(input.taskKey, authored, before.brief).artifact
+    : input.taskKey === 'ttrpg.open.source-facts'
     ? normalizeTtrpgOpenSourceFactsForReviewV1(value, before.brief)
     : normalizeTtrpgOpenRuleSystemForReviewV1(value, before.brief)
   const text = JSON.stringify(artifact)

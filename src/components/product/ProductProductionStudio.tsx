@@ -1,3 +1,4 @@
+import { ttrpgOpenOriginalBookingSummaryV1 } from '../../lib/ttrpg/open-original-response-review-service'
 import { canReviseTextContentBuildV1 } from '../../lib/product-production/text-content-revision'
 import { productProductionFailureNeedsProviderAccountingV1 } from '../../lib/product-production/scheduler'
 import { supportsProductProductionLocalRequestV1 } from '../../lib/product-production/local-request'
@@ -156,6 +157,7 @@ const loadProductQualityReceiptsV1 = () => import('../../lib/product-production/
 const loadTtrpgProductionWizardV2 = () => import('../ttrpg/TtrpgProductionWizard')
 const TtrpgProductionWizard = lazy(loadTtrpgProductionWizardV2)
 const TtrpgOpenProductionReview = lazy(() => import('../ttrpg/TtrpgOpenProductionReview'))
+const TtrpgOpenOriginalResponseHandoff = lazy(() => import('../ttrpg/TtrpgOpenOriginalResponseHandoff'))
 const TextAdventurePackagePanel = lazy(() => import('./TextAdventurePackagePanel'))
 
 const SOURCE_SELECTION_FACETS = [
@@ -698,6 +700,9 @@ export default function ProductProductionStudio(props: {
   const [taskEvidence, setTaskEvidence] = useState<{ taskKey: string; text: string } | null>(null)
   const [repairNote, setRepairNote] = useState('')
   const [authorDraftJson, setAuthorDraftJson] = useState('')
+  const [originalResponseDraftSource, setOriginalResponseDraftSource] = useState<{ ownerKey: string;
+    source: import('../../lib/ttrpg/open-original-response-review-service').TtrpgOpenOriginalResponseRefV1 } | null>(null)
+  const [originalHandoffBusyOwner, setOriginalHandoffBusyOwner] = useState<string | null>(null)
   const [contentRevision, setContentRevision] = useState<import('../../lib/types').TextAdventureContentRevisionV1 | null>(null)
   const [unknownResultDisposition, setUnknownResultDisposition] = useState<
     '' | 'confirmed-not-charged' | 'charge-reservation-upper-bound'
@@ -732,6 +737,8 @@ export default function ProductProductionStudio(props: {
     }
     if (!changed) return
     setTaskEvidence(null)
+    setOriginalResponseDraftSource(null)
+    setOriginalHandoffBusyOwner(null)
     setRepairNote('')
     setAuthorDraftJson('')
     setContentRevision(null)
@@ -1663,14 +1670,16 @@ export default function ProductProductionStudio(props: {
       details,
       ...(recoveryPolicy?.repairNoteAllowed ? { repairNote } : {}),
       ...(recoveryPolicy?.authorDraftAllowed ? { authorDraftJson: authorDraftJson.trim() || undefined } : {}),
-      ...(unknownResultDisposition ? { unknownResultDisposition } : {}),
+      ...(activeOriginalResponseSource ? { originalResponseSource: activeOriginalResponseSource } : unknownResultDisposition ? { unknownResultDisposition } : {}),
     })
+    setOriginalResponseDraftSource(null)
     setRepairNote('')
     setAuthorDraftJson('')
     setUnknownResultDisposition('')
     await refresh(productionId)
     setMessage('重试已由作者确认；未受影响的已完成产物会跨 epoch 复用，阻塞工件及其下游将按质量反馈定向重做。')
-    setMessage(unknownResultAccounting === 'provider-actual-charge'
+    setMessage(activeOriginalResponseSource ? '完整原回答已按你的修订提交；该任务不会重新生成，旧用量保持原核对记录。'
+      : unknownResultAccounting === 'provider-actual-charge'
       ? '重试已继续；提交处置时系统已收到供应商真实用量，因此按真实用量结算，未采用“确认未计费”的旧选择。'
       : unknownResultAccounting === 'author-charged-reservation-upper-bound'
         ? '重试已继续；旧请求已按冻结的预留上限结算。'
@@ -1856,8 +1865,22 @@ export default function ProductProductionStudio(props: {
     }
     catch { return null }
   }, [details?.brief, details?.executionBrief])
+  const ttrpgOriginalOwner: import('../../lib/ttrpg/open-original-response-review-service').TtrpgOpenOriginalResponseOwnerV1 | null = details?.production.productType === 'ttrpg' && selectedBrief?.ttrpgOpen
+    && details.production.projectId === props.scope.projectId && details.production.worldId === props.scope.worldId && details.production.workId === props.scope.workId
+    && details.build?.id && canRetryBlocker && recoveryPolicy?.authorDraftAllowed && blockerTaskKey && supportsProductProductionLocalRequestV1(blockerTaskKey)
+    && progress?.buildId === details.build.id && progress.controlEpoch === details.build.controlEpoch && progress.planHash === details.build.planHash
+    && recoveryDraftTask?.runId && recoveryDraftTask.attempt > 0
+    ? { scope: props.scope, productionId: details.production.id!, buildId: details.build.id, controlEpoch: details.build.controlEpoch,
+      planHash: details.build.planHash, taskKey: blockerTaskKey, runId: recoveryDraftTask.runId, attempt: recoveryDraftTask.attempt } : null
+  const originalOwnerKey = ttrpgOriginalOwner ? JSON.stringify(ttrpgOriginalOwner) : ''
+  const originalBooking = ttrpgOriginalOwner && details ? ttrpgOpenOriginalBookingSummaryV1(details, ttrpgOriginalOwner) : null
+  const activeOriginalResponseSource = originalResponseDraftSource && originalResponseDraftSource.ownerKey === originalOwnerKey && authorDraftJson.trim()
+    ? originalResponseDraftSource.source : null
+  const originalSourceDraftReady = !!activeOriginalResponseSource && originalBooking?.blocked === false
+    && originalBooking.captureRunId === activeOriginalResponseSource.captureRunId && originalBooking.captureReceiptHash === activeOriginalResponseSource.captureReceiptHash
+  const originalHandoffBusy = originalOwnerKey !== '' && originalHandoffBusyOwner === originalOwnerKey
   const ttrpgReviewOwner: import('../../lib/ttrpg/open-production-review-service').TtrpgOpenProductionReviewOwnerV1 | null = details?.production.productType === 'ttrpg' && selectedBrief?.ttrpgOpen
-    && details.build?.id && canRetryBlocker && recoveryPolicy?.authorDraftAllowed && !providerReservationBlocked
+    && details.build?.id && canRetryBlocker && recoveryPolicy?.authorDraftAllowed && (!providerReservationBlocked || originalSourceDraftReady)
     && (blockerTaskKey === 'ttrpg.open.source-facts' || blockerTaskKey === 'ttrpg.open.rule-system')
     && progress?.buildId === details.build.id && progress.controlEpoch === details.build.controlEpoch
     && recoveryDraftTask?.runId && recoveryDraftTask.attempt > 0
@@ -2156,10 +2179,18 @@ export default function ProductProductionStudio(props: {
           </div>}
           {canRetryBlocker && <div className="mt-3 rounded border border-error/30 bg-error/5 p-3 text-[10px] text-error"><strong className="block">自动制作停在可恢复边界</strong><span className="mt-1 block">{blockerSummary || '执行能力返回失败；可检查全局 AI 配置后重试。'}</span></div>}
           {canRetryBlocker && recoveryPolicy?.repairNoteAllowed && <label className="mt-3 block text-xs text-text-muted">本次修复要求（可选）<textarea aria-label="本次修复要求" maxLength={4000} value={repairNote} onChange={event => setRepairNote(event.target.value)} className="mt-2 block min-h-24 w-full rounded border border-border bg-bg-base p-3 text-text-main" placeholder="指出需要修正的内容；仍需遵守已确认的世界、规则和安全边界。" /></label>}
+          {ttrpgOriginalOwner && (providerReservationBlocked || originalBooking) && <Suspense fallback={<p>正在打开原回答恢复…</p>}><TtrpgOpenOriginalResponseHandoff key={originalOwnerKey}
+            owner={ttrpgOriginalOwner} expectedStateRevision={details.production.stateRevision} booking={originalBooking}
+            value={authorDraftJson} disabled={busy || productionRunning}
+            onBusy={value => setOriginalHandoffBusyOwner(previous => value ? originalOwnerKey : previous === originalOwnerKey ? null : previous)}
+            onBooked={result => { setDetails(result.details); setProgress(result.progress); setUnknownResultDisposition('');
+              setProductions(previous => previous.map(row => row.id === result.details.production.id ? result.details.production : row)) }}
+            onDraft={(value, source) => { setAuthorDraftJson(value); setOriginalResponseDraftSource({ ownerKey: originalOwnerKey, source }); setUnknownResultDisposition('') }}
+          /></Suspense>}
           {ttrpgReviewOwner && selectedBrief?.ttrpgOpen && <Suspense fallback={<p>正在打开待审稿…</p>}><TtrpgOpenProductionReview key={JSON.stringify(ttrpgReviewOwner)}
-            owner={ttrpgReviewOwner} brief={selectedBrief.ttrpgOpen} value={authorDraftJson} onChange={setAuthorDraftJson} disabled={busy || productionRunning} /></Suspense>}
+            owner={ttrpgReviewOwner} brief={selectedBrief.ttrpgOpen} value={authorDraftJson} onChange={setAuthorDraftJson} disabled={busy || productionRunning || originalHandoffBusy} /></Suspense>}
           {canRetryBlocker && recoveryPolicy?.authorDraftAllowed && <details className="mt-3 text-xs text-text-muted"><summary className="cursor-pointer">直接修订任务草稿（高级）</summary><p className="my-2">填写完整 JSON 将跳过本次模型重写，按原任务规则校验；保留原始模型证据，记录为作者修订。只适用于失败的文本任务。</p><textarea aria-label="作者修订的完整任务 JSON" maxLength={120000} value={authorDraftJson} onChange={event => setAuthorDraftJson(event.target.value)} className="min-h-60 w-full rounded border border-border bg-bg-base p-3 font-mono text-text-main" /></details>}
-          {providerReservationBlocked && <fieldset className="mt-3 rounded border border-error/30 bg-error/5 p-3 text-xs text-text-muted" data-testid="product-production-unknown-result-disposition"><legend className="px-1 font-medium text-error">先结算供应商请求</legend><p className="mb-2 text-[10px] leading-5">{pausedProviderReservationBlocked ? '暂停时仍有供应商请求在途。恢复前必须把冻结的每个 Run、attempt 和 epoch 一起封账；本次选择应用于全部在途请求。' : observedUncheckpointedResponseBlocked ? '系统已持久化供应商响应证据，但完整用量未能回传。为避免少记账，只能按该 attempt 的冻结预留上限封账。' : '系统不会猜测这次请求是否扣费。请选择与你核对结果一致的处置，选择会与失败 Run、attempt 和 epoch 一起冻结。'}</p>{!observedUncheckpointedResponseBlocked && <label className="mr-4 inline-flex items-center gap-2"><input type="radio" name="unknown-result-disposition" checked={unknownResultDisposition === 'confirmed-not-charged'} onChange={() => setUnknownResultDisposition('confirmed-not-charged')} />已确认未计费</label>}<label className="inline-flex items-center gap-2"><input type="radio" name="unknown-result-disposition" checked={unknownResultDisposition === 'charge-reservation-upper-bound'} onChange={() => setUnknownResultDisposition('charge-reservation-upper-bound')} />{pausedProviderReservationBlocked ? '全部按冻结预留上限封账' : observedUncheckpointedResponseBlocked ? '按冻结预留上限封账并重试' : '无法确认，按预留上限记账'}</label></fieldset>}
+          {providerReservationBlocked && !originalBooking && <fieldset className="mt-3 rounded border border-error/30 bg-error/5 p-3 text-xs text-text-muted" data-testid="product-production-unknown-result-disposition"><legend className="px-1 font-medium text-error">先结算供应商请求</legend><p className="mb-2 text-[10px] leading-5">{pausedProviderReservationBlocked ? '暂停时仍有供应商请求在途。恢复前必须把冻结的每个 Run、attempt 和 epoch 一起封账；本次选择应用于全部在途请求。' : observedUncheckpointedResponseBlocked ? '系统已持久化供应商响应证据，但完整用量未能回传。为避免少记账，只能按该 attempt 的冻结预留上限封账。' : '系统不会猜测这次请求是否扣费。请选择与你核对结果一致的处置，选择会与失败 Run、attempt 和 epoch 一起冻结。'}</p>{!observedUncheckpointedResponseBlocked && <label className="mr-4 inline-flex items-center gap-2"><input type="radio" name="unknown-result-disposition" checked={unknownResultDisposition === 'confirmed-not-charged'} onChange={() => setUnknownResultDisposition('confirmed-not-charged')} />已确认未计费</label>}<label className="inline-flex items-center gap-2"><input type="radio" name="unknown-result-disposition" checked={unknownResultDisposition === 'charge-reservation-upper-bound'} onChange={() => setUnknownResultDisposition('charge-reservation-upper-bound')} />{pausedProviderReservationBlocked ? '全部按冻结预留上限封账' : observedUncheckpointedResponseBlocked ? '按冻结预留上限封账并重试' : '无法确认，按预留上限记账'}</label></fieldset>}
           {canRetryBlocker && !recoveryPolicy?.repairNoteAllowed && <p className="mt-3 rounded border border-border bg-bg-base p-3 text-xs text-text-muted" data-testid="product-production-retry-only">当前任务暂不支持修复要求或直接 JSON 修订；可先查看制作记录，再按原冻结输入重试。</p>}
           <div className="mt-4 flex flex-wrap gap-2">
             {details.production.status === 'brief-ready' && <button disabled={busy || productionRunning || authorizationReadiness?.ready !== true} onClick={authorize} className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-xs text-white disabled:opacity-40"><ShieldCheck className="h-3.5 w-3.5" />作者授权并开始自动制作</button>}
@@ -2176,7 +2207,7 @@ export default function ProductProductionStudio(props: {
             {canUpgradeExecutionPlan && <button disabled={busy || productionRunning} onClick={upgradeExecutionPlan} className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-xs text-white"><GitBranch className="h-3.5 w-3.5" />生成执行计划升级 Brief</button>}
             {canRepairVisualContract && <button disabled={busy || productionRunning} onClick={repairVisualContract} className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-xs text-white"><GitBranch className="h-3.5 w-3.5" />重建媒资规划 Brief</button>}
             {canRepairRuntimeCopy && <button disabled={busy || productionRunning} onClick={repairRuntimeCopy} className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-xs text-white"><GitBranch className="h-3.5 w-3.5" />重建公开文案运行包</button>}
-            {canRetryBlocker && !modelBudgetExhausted && !canRecoverProductionBudget && !canUpgradeExecutionPlan && !canRepairRuntimeCopy && <button disabled={busy || productionRunning || (providerReservationBlocked && !unknownResultDisposition)} onClick={retryBlocker} className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-xs text-white disabled:opacity-40"><RefreshCw className="h-3.5 w-3.5" />{recoveryPolicy?.repairNoteAllowed ? '修正后继续制作' : '重试失败任务'}</button>}
+            {canRetryBlocker && (!modelBudgetExhausted || originalSourceDraftReady) && !canRecoverProductionBudget && !canUpgradeExecutionPlan && !canRepairRuntimeCopy && <button disabled={busy || productionRunning || originalHandoffBusy || originalBooking?.blocked === true || (providerReservationBlocked && !originalSourceDraftReady && !unknownResultDisposition)} onClick={retryBlocker} className="flex items-center gap-2 rounded bg-accent px-4 py-2 text-xs text-white disabled:opacity-40"><RefreshCw className="h-3.5 w-3.5" />{recoveryPolicy?.repairNoteAllowed ? '修正后继续制作' : '重试失败任务'}</button>}
             {importedProofRecoveryRequired && <button disabled={busy || productionRunning} onClick={recoverImportedProofs} data-testid="product-production-recover-import-proof" className="flex items-center gap-2 rounded border border-warning/50 bg-warning/10 px-4 py-2 text-xs text-text-main disabled:opacity-40"><ShieldCheck className="h-3.5 w-3.5" />复验导入生产证明</button>}
             {details.build && ['preview-ready', 'release-ready', 'released'].includes(details.build.status) && <button disabled={busy || productionRunning || importedProofRecoveryRequired} onClick={preview} className="flex items-center gap-2 rounded border border-accent/40 bg-accent/10 px-4 py-2 text-xs text-accent"><Play className="h-3.5 w-3.5" />{details.build.status === 'released' ? '试玩此 Build' : '试玩未发布 Build'}</button>}
             {details.build?.status === 'release-ready' && !isTextOpenWorldCreator && <button disabled={busy || productionRunning || (commercialPerformanceRequired && !commercialQualityPassed)} onClick={publish} className="flex items-center gap-2 rounded bg-success px-4 py-2 text-xs text-white disabled:opacity-40"><Rocket className="h-3.5 w-3.5" />复验并原子发布</button>}
