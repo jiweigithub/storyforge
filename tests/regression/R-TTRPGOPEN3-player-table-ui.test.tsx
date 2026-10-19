@@ -17,6 +17,7 @@ describe('R-TTRPGOPEN3 real player desk identity and preview boundary', () => {
     for (let n = 0; n < 200; n++) { await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)) });if (check()) return }
     throw new Error(`view did not resolve: ${host.textContent}`)
   }
+  const playerChoice = () => host.querySelector<HTMLSelectElement>('select[aria-label="我的角色"]')
   async function fixture() {
     const f = await readyOpenTtrpgSessionV1('scoped player screen', pkg => {
       pkg.ttrpg!.campaign.characterTemplates[0].playerProfile!.secret = 'HERO-PRIVATE-SCREEN'
@@ -34,19 +35,34 @@ describe('R-TTRPGOPEN3 real player desk identity and preview boundary', () => {
   })
   it('requires identity confirmation, renders only the owned secret and clears private state during handoff', async () => {
     const { props } = await fixture()
-    await act(async () => root.render(createElement(TtrpgOpenPlayTable, props)))
-    await until(() => Boolean(host.querySelector('select')))
+    const actualRead = table.readTtrpgOpenTableV1
+    let releaseRead!: () => void
+    const pendingRead = new Promise<void>(resolve => { releaseRead = resolve })
+    const read = vi.spyOn(table, 'readTtrpgOpenTableV1').mockImplementationOnce(async input => {
+      await pendingRead
+      return actualRead(input)
+    }).mockImplementation(actualRead)
+    try {
+      await act(async () => root.render(createElement(TtrpgOpenPlayTable, props)))
+      expect(read).toHaveBeenCalledTimes(1)
+      expect(host.querySelector('select[aria-label="旁白语速"]')).not.toBeNull()
+      expect(playerChoice()).toBeNull()
+      expect(host.textContent).not.toContain('确认身份并进入')
+      expect(host.textContent).not.toContain('HERO-PRIVATE-SCREEN');expect(host.textContent).not.toContain('AI-PRIVATE-SCREEN')
+    } finally { releaseRead() }
+    await until(() => Boolean(playerChoice()))
     expect(host.textContent).not.toContain('HERO-PRIVATE-SCREEN');expect(host.textContent).not.toContain('AI-PRIVATE-SCREEN')
-    const select = host.querySelector('select')!
+    const select = playerChoice()!
     await act(async () => { select.value = OPEN_HUMAN_VIEWER;select.dispatchEvent(new Event('change', { bubbles: true })) })
     const enter = [...host.querySelectorAll('button')].find(b => b.textContent === '确认身份并进入')!
+    expect(enter).toBeDefined();expect(enter.disabled).toBe(false)
     await act(async () => enter.click())
     await until(() => (host.textContent ?? '').includes('HERO-PRIVATE-SCREEN'))
     expect(host.textContent).not.toContain('AI-PRIVATE-SCREEN')
     const leave = [...host.querySelectorAll('button')].find(b => b.textContent === '交接给另一位玩家')!
     await act(async () => leave.click())
     expect(host.textContent).not.toContain('HERO-PRIVATE-SCREEN')
-    await until(() => Boolean(host.querySelector('select')))
+    await until(() => Boolean(playerChoice()))
     expect(host.textContent).not.toContain('HERO-PRIVATE-SCREEN');expect(host.querySelector('textarea')).toBeNull()
   })
   it('retries a concurrent display read without repeating a saved action or exposing private identity', async () => {
@@ -55,7 +71,7 @@ describe('R-TTRPGOPEN3 real player desk identity and preview boundary', () => {
     const read = vi.spyOn(table, 'readTtrpgOpenTableV1').mockRejectedValueOnce(new TtrpgOpenReadConflictV1('current head advanced'))
       .mockRejectedValueOnce(new TtrpgOpenReadConflictV1('current head advanced again')).mockImplementation(actual)
     await act(async () => root.render(createElement(TtrpgOpenPlayTable, props)))
-    await until(() => Boolean(host.querySelector('select')))
+    await until(() => Boolean(playerChoice()))
     expect(read).toHaveBeenCalledTimes(3);expect(host.querySelector('[role="alert"]')).toBeNull()
     expect(host.textContent).not.toContain('HERO-PRIVATE-SCREEN');expect(host.textContent).not.toContain('AI-PRIVATE-SCREEN')
     expect(props.onChanged).not.toHaveBeenCalled();expect(await db.agentRuns.count()).toBe(0)
@@ -74,7 +90,7 @@ describe('R-TTRPGOPEN3 real player desk identity and preview boundary', () => {
     expect(read).toHaveBeenCalledTimes(4)
     read.mockImplementation(actual)
     await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent === '重新读取进度')!.click())
-    await until(() => Boolean(host.querySelector('select')))
+    await until(() => Boolean(playerChoice()))
     expect(host.textContent).not.toContain('HERO-PRIVATE-SCREEN');expect(props.onChanged).not.toHaveBeenCalled()
   })
 })
