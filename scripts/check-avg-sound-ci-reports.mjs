@@ -8,6 +8,7 @@ const modes = [
   { directory: 'sound-closed', file: 'avg-sound-requirements.spec.ts', minimumExecuted: 1, minimumSkipped: 3 },
   { directory: 'sound-preparation', file: 'avg-sound-requirements.spec.ts', minimumExecuted: 3, minimumSkipped: 1 },
   { directory: 'sound-production', file: 'avg-sound-production.spec.ts', minimumExecuted: 3, minimumSkipped: 0 },
+  { directory: 'sound-frozen', file: 'avg-sound-prototype-read.spec.ts', minimumExecuted: 1, minimumSkipped: 0 },
 ]
 const maximumBytes = 8 * 1024 * 1024
 const fail = message => { throw new Error(message) }
@@ -46,7 +47,7 @@ async function verifyMode(root, mode) {
   if (!report.stats || Object.entries(counts).some(([key, count]) => report.stats[key] !== count)) fail('报告统计与逐例结果不一致')
   if (counts.unexpected) fail(`${mode.directory} 存在失败用例`)
   if (counts.expected + counts.flaky < mode.minimumExecuted || counts.skipped < mode.minimumSkipped
-    || mode.directory === 'sound-production' && counts.skipped !== 0) fail(`${mode.directory} 未实际覆盖声明的声音模式，不能以跳过充当通过`)
+    || mode.minimumSkipped === 0 && counts.skipped !== 0) fail(`${mode.directory} 未实际覆盖声明的声音模式，不能以跳过充当通过`)
   return { mode: mode.directory, ...counts }
 }
 

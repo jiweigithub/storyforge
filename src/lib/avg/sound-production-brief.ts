@@ -45,7 +45,8 @@ export function parseAvgSoundPlanningBriefV1(value: unknown): AvgSoundPlanningBr
 /** Bounded experimental original Sound factory, default hidden. This flag
  * grants no start/adoption by itself: original source/route, Brief/Plan/Run,
  * native observation, author commands and Preview proofs remain mandatory.
- * Formal release and commercial quality are separate gates. */
+ * Local prototype publication additionally needs full catalog/route evidence
+ * and an explicit author command; commercial quality remains separate. */
 export function avgSoundProductionExecutionReadyV1(): boolean {
   return import.meta.env.VITE_STORYFORGE_AVG_SOUND_PRODUCTION === '1'
 }

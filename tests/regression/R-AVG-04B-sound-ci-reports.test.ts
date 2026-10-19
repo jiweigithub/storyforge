@@ -26,6 +26,7 @@ async function fixture() {
     ['sound-closed', 'avg-sound-requirements.spec.ts', 1, 3],
     ['sound-preparation', 'avg-sound-requirements.spec.ts', 3, 1],
     ['sound-production', 'avg-sound-production.spec.ts', 3, 0],
+    ['sound-frozen', 'avg-sound-prototype-read.spec.ts', 1, 0],
   ] as const) {
     await mkdir(join(root, mode)); await writeFile(join(root, mode, 'report.json'), JSON.stringify(report(file, expected, skipped)))
   }
@@ -34,12 +35,13 @@ async function fixture() {
 }
 
 describe('AVG Sound CI execution and retained reports', () => {
-  it('requires all three declared modes without writing or granting any media acceptance', async () => {
+  it('requires all declared modes including the closed-factory immutable read without granting any media acceptance', async () => {
     const s = await fixture(), before = await readFile(s.path)
     expect(JSON.parse((await s.run()).stdout).modes).toEqual([
       { mode: 'sound-closed', expected: 1, flaky: 0, unexpected: 0, skipped: 3 },
       { mode: 'sound-preparation', expected: 3, flaky: 0, unexpected: 0, skipped: 1 },
       { mode: 'sound-production', expected: 3, flaky: 0, unexpected: 0, skipped: 0 },
+      { mode: 'sound-frozen', expected: 1, flaky: 0, unexpected: 0, skipped: 0 },
     ])
     expect(await readFile(s.path)).toEqual(before)
   })
@@ -55,6 +57,12 @@ describe('AVG Sound CI execution and retained reports', () => {
   it('rejects a preparation report mislabeled as default-off even though some tests passed', async () => {
     const s = await fixture(); await writeFile(join(s.root, 'sound-closed', 'report.json'), JSON.stringify(report('avg-sound-requirements.spec.ts', 3, 1)))
     await expect(s.run()).rejects.toThrow(/声明的声音模式/)
+  })
+  it.each(['missing', 'skipped'])('rejects %s closed-factory Release execution evidence', async reason => {
+    const s = await fixture(), path = join(s.root, 'sound-frozen', 'report.json')
+    if (reason === 'missing') await rm(path)
+    else await writeFile(path, JSON.stringify(report('avg-sound-prototype-read.spec.ts', 0, 1)))
+    await expect(s.run()).rejects.toThrow()
   })
   it.each(['missing', 'invalid JSON', 'oversize'])('rejects %s retained evidence', async reason => {
     const s = await fixture()

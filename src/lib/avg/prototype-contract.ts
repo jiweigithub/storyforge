@@ -4,6 +4,8 @@ import { parseAvgAssemblyBriefV2, type AvgAssemblyBrief } from './assembly-contr
 import { assertAvgVisualProductionPolicyV2 } from './media-production-policy';
 import { parseAvgStoredAssemblyBriefV3 } from './voice-assembly-storage';
 import { assertAvgVoiceProductionPolicyV3 } from './voice-production-policy';
+import { assertAvgSoundProductionPolicyV1 } from './sound-production-policy';
+import { avgSoundProductionExecutionReadyV1 } from './sound-production-brief';
 /** This identifies a closed author-owned engineering route. It cannot admit
  * commercial candidates, legacy AVG or arbitrary V2 modules. */
 export function isAvgAuthorPrototypeBriefV1(brief: ProductProductionBriefV3): brief is ProductProductionBriefV3 & {
@@ -25,6 +27,24 @@ export function isAvgAuthorPrototypeBriefV1(brief: ProductProductionBriefV3): br
         return true;
     } catch { return false; }
 }
+/** Classification adds the original Sound contract without granting the
+ * avgAssembly field promised by the legacy predicate above. It never rewrites
+ * a Brief or supplies producer, author, route or decoder evidence. */
+export function classifyAvgAuthorPrototypeBriefV1(brief: ProductProductionBriefV3): 'assembly' | 'sound' | null {
+    if (brief.avgSoundPlanning !== undefined) {
+        if (brief.intent.productType !== 'avg' || brief.qualityProfile !== 'prototype') return null;
+        try {
+            assertAvgSoundProductionPolicyV1(brief);
+            return 'sound';
+        } catch { return null; }
+    }
+    return isAvgAuthorPrototypeBriefV1(brief) ? 'assembly' : null;
+}
+/** Check at actual write boundaries, including the final transaction. Frozen
+ * source/Release reads and successful command replay remain independent. */
+export function assertAvgSoundPrototypeWriteEnabledV1(): void {
+    if (!avgSoundProductionExecutionReadyV1()) throw new Error('[avg-sound] 声音原型验收与发布尚未启用，已有声音与版本仍可只读播放');
+}
 /** Frozen pre-preview QA is technical only. Real full-catalog decoding and an
  * explicit completed-route author receipt must still qualify it after preview;
  * this predicate never supplies those receipts or changes the frozen report. */
@@ -36,7 +56,7 @@ export function avgPrototypeTechnicalQualitySatisfiedV1(input: {
     packageHash: string;
 }): boolean {
     const { brief, runtimePackage: pkg, quality } = input;
-    if (!isAvgAuthorPrototypeBriefV1(brief) || pkg.version !== 2 || !avgExecutableModule(pkg))
+    if (!classifyAvgAuthorPrototypeBriefV1(brief) || pkg.version !== 2 || !avgExecutableModule(pkg))
         return false;
     const passed = new Set(quality.hardGateResults.filter(gate => gate.passed).map(gate => gate.gateId));
     return quality.buildNumber === input.buildNumber && quality.packageHash === input.packageHash && quality.playable

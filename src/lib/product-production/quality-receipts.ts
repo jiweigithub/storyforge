@@ -1,5 +1,5 @@
 import { avgRuntimeStage } from '../avg/executable-module'
-import { isAvgAuthorPrototypeBriefV1, avgPrototypeTechnicalQualitySatisfiedV1 } from '../avg/prototype-contract'
+import { classifyAvgAuthorPrototypeBriefV1, assertAvgSoundPrototypeWriteEnabledV1, avgPrototypeTechnicalQualitySatisfiedV1 } from '../avg/prototype-contract'
 import { parseProductBuildQualityReportV1 } from './quality-contract'
 import { db } from '../db/schema'
 import type {
@@ -1355,6 +1355,7 @@ export async function recordProductMediaRuntimeMeasurementV1(input: {
   if (input.measurement.measuredAt < build.createdAt || input.measurement.measuredAt > now + 5 * 60 * 1000) {
     fail('媒资测量时间早于 Build 或超出允许时钟偏差')
   }
+  if (brief.avgSoundPlanning) assertAvgSoundPrototypeWriteEnabledV1()
   if(brief.qualityProfile==='commercial-candidate'&&preview.runtimePackage.version!==1)fail('当前 V2 商业媒资策略尚未登记')
   const measuredAssets = structuredClone(input.measurement.assets).map(asset => ({
     ...asset,
@@ -1421,6 +1422,7 @@ export async function recordProductMediaRuntimeMeasurementV1(input: {
     const currentBrief = await db.productProductionBriefs
       .where('[productionId+revision]').equals([current.productionId, current.briefRevision]).first()
     if (!currentBrief || currentBrief.briefHash !== briefRow.briefHash) fail('Build 对应 Brief 在写入回执前已变化')
+    if (brief.avgSoundPlanning) assertAvgSoundPrototypeWriteEnabledV1()
     let stored = await db.productQualityGateReceipts
       .where('[buildId+gateId+receiptHash]').equals([
         current.id!, gateReceipt.gateId, gateReceipt.receiptHash,
@@ -2097,7 +2099,8 @@ export async function recordProductBuildMainRoutePlaythroughV1(input: {
     || briefRow.briefHash !== build.briefHash) fail('Build 对应 Brief 不存在或 hash 不一致')
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
   if (await hashProductProductionValueV2(brief) !== briefRow.briefHash) fail('Build 对应 Brief hash 校验失败')
-  if (brief.qualityProfile !== 'commercial-candidate' && !isAvgAuthorPrototypeBriefV1(brief)) fail('主路线人工回执仅用于已登记的商业候选或 AVG 作者原型')
+  if (brief.qualityProfile !== 'commercial-candidate' && !classifyAvgAuthorPrototypeBriefV1(brief)) fail('主路线人工回执仅用于已登记的商业候选或 AVG 作者原型')
+  if (brief.avgSoundPlanning) assertAvgSoundPrototypeWriteEnabledV1()
   const session = await db.productRuntimeSessions.get(input.productRuntimeSessionId)
   const expectedSessionKind: ProductRuntimeKind = brief.intent.productType
   if (!session || session.projectId !== scope.projectId || session.worldId !== scope.worldId
@@ -2172,6 +2175,7 @@ export async function recordProductBuildMainRoutePlaythroughV1(input: {
       || currentRouteEvents.some((event, index) => event.sequence !== routeEvents[index].sequence)) {
       fail('试玩路线在写入回执前已变化')
     }
+    if (brief.avgSoundPlanning) assertAvgSoundPrototypeWriteEnabledV1()
     const existing = await db.productQualityGateReceipts
       .where('[buildId+gateId+receiptHash]').equals([
         build.id!, gateReceipt.gateId, gateReceipt.receiptHash,
@@ -2483,6 +2487,7 @@ async function reconcileAvgAuthorPrototypeReadinessV1(scope:WorkspaceScope,build
       rows.sort((a,b)=>b.createdAt-a.createdAt||(b.id??0)-(a.id??0))
       if(canonicalProductProductionJsonV2(rows[0]??null)!==canonicalProductProductionJsonV2(expected))fail('AVG 原型质量回执在刷新状态前已变化')
     }
+    if (brief.avgSoundPlanning) assertAvgSoundPrototypeWriteEnabledV1()
     if(current.status!==nextStatus)await db.productBuilds.update(current.id!,{status:nextStatus,stateRevision:current.stateRevision+1,updatedAt:Date.now()})
     return nextStatus
   })
@@ -2501,7 +2506,8 @@ export async function reconcileCommercialProductBuildReadinessV1(input: {
   if (!briefRow || briefRow.briefHash !== build.briefHash) fail('Build 对应 Brief 不存在或 hash 不一致')
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
   if (await hashProductProductionValueV2(brief) !== briefRow.briefHash) fail('Build 对应 Brief hash 校验失败')
-  if(isAvgAuthorPrototypeBriefV1(brief))return reconcileAvgAuthorPrototypeReadinessV1(scope,{...build,id:build.id!},brief)
+  if (brief.avgSoundPlanning) assertAvgSoundPrototypeWriteEnabledV1()
+  if(classifyAvgAuthorPrototypeBriefV1(brief))return reconcileAvgAuthorPrototypeReadinessV1(scope,{...build,id:build.id!},brief)
   if (brief.qualityProfile !== 'commercial-candidate') {
     return build.status === 'release-ready' ? 'release-ready' : 'preview-ready'
   }

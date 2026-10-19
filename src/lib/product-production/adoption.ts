@@ -1,5 +1,5 @@
 import { avgRuntimeStage } from '../avg/executable-module'
-import { isAvgAuthorPrototypeBriefV1, avgPrototypeTechnicalQualitySatisfiedV1 } from '../avg/prototype-contract'
+import { classifyAvgAuthorPrototypeBriefV1, assertAvgSoundPrototypeWriteEnabledV1, avgPrototypeTechnicalQualitySatisfiedV1 } from '../avg/prototype-contract'
 import { parseProductBuildQualityReportV1 } from './quality-contract'
 export { parseProductBuildQualityReportV1 } from './quality-contract'
 import { db } from '../db/schema'
@@ -138,6 +138,7 @@ interface VerifiedAdoption extends PreparedProductProductionAdoptionV1 {
   scope: WorkspaceScope
   runtimePackage: AnyProductRuntimePackage
   nativePrototype: boolean
+  prototypeKind: ReturnType<typeof classifyAvgAuthorPrototypeBriefV1>
   artifacts: ProductBuildArtifactRecordV1[]
   mediaArtifacts: Map<string, ProductBuildArtifactRecordV1>
   /** In-memory physical-byte witnesses. They are never serialized into a
@@ -380,7 +381,9 @@ async function inspectAdoption(scope: WorkspaceScope, productionId: number): Pro
     || preview.buildNumber !== build.buildNumber || preview.runtimePackage.sourceWorld.contentHash !== brief.source.worldContentHash) {
     fail('Preview 与 Build/Brief 不闭合')
   }
-  const nativePrototype=isAvgAuthorPrototypeBriefV1(brief)&&preview.version===2
+  const prototypeKind=classifyAvgAuthorPrototypeBriefV1(brief)
+  if(prototypeKind==='sound')assertAvgSoundPrototypeWriteEnabledV1()
+  const nativePrototype=prototypeKind!==null&&preview.version===2
   if(preview.version===2&&!nativePrototype)fail('V2 当前只支持已登记的 AVG 作者本地原型发布')
   const mediaRuntimeRequired = (avgRuntimeStage(preview.runtimePackage)?.assets.length??0)>0 || brief.media.requiredMediaKinds.length > 0
   const [browserPerformance, mainRoutePlaythrough, mediaRuntime] = brief.qualityProfile === 'commercial-candidate' || nativePrototype
@@ -729,7 +732,7 @@ async function inspectAdoption(scope: WorkspaceScope, productionId: number): Pro
     }
   }
   return {
-    nativePrototype,scope, intent, adoptionIntentHash: await hashProductProductionValueV2(intent),
+    nativePrototype,prototypeKind,scope, intent, adoptionIntentHash: await hashProductProductionValueV2(intent),
     productType: preview.runtimePackage.productType, title: preview.runtimePackage.definition.title,
     mediaAssetKeys: runtimeAssets.map(asset => asset.assetKey).sort(),
     creatorRelease,
@@ -1177,6 +1180,7 @@ export async function publishProductProductionBuild(input: {
       const duplicateCommand = await db.productProductionCommands
         .where('[productionId+commandId]').equals([input.productionId, command.commandId]).first()
       if (duplicateCommand) fail('publish command 已被并发 claim')
+      if (verified.prototypeKind === 'sound') assertAvgSoundPrototypeWriteEnabledV1()
       const now = releaseCreatedAt
       const claim = stampNewRecord(scope, 'productProductionCommands', {
         projectId: scope.projectId, worldId: scope.worldId, workId: scope.workId,

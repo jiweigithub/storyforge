@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { createHash } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { avgSoundCapabilityFixtureV1, avgSoundLibraryFixtureV1, avgSoundPcmFixtureV1, avgSoundMusicResultFixtureV1 } from '../helpers/avg-sound-wire-data'
 
 test.setTimeout(300_000)
@@ -219,6 +221,69 @@ test('native original sound plan, actual continuous audition, independent author
   await page.getByRole('button', { name: '试玩此预览', exact: true }).click()
   await expect.poll(async () => page.locator('audio[data-channel="bgm"]').evaluateAll(elements => elements.some(a => !(a as HTMLAudioElement).paused && (a as HTMLAudioElement).currentTime > .1)), { timeout: 30_000 }).toBe(true)
   expect(s.counts.text).toBe(1); expect(s.counts.music).toBe(1); expect(s.counts.library).toBe(2); expect(s.counts.unknown).toEqual([])
+
+  // Complete an actual Preview route. The separate route confirmation,
+  // full native catalog scan and publication all use the existing controls.
+  const previewSession = Number(new URL(page.url()).searchParams.get('session'))
+  await expect(page.locator('.avg-text-cursor')).toHaveClass(/is-complete/)
+  await page.getByRole('button', { name: '继续', exact: true }).click()
+  await page.getByRole('button', { name: '打开灯光', exact: true }).click()
+  await expect(page.locator('.avg-dialogue p')).toContainText('灯光亮起')
+  await expect(page.locator('.avg-text-cursor')).toHaveClass(/is-complete/)
+  await page.getByRole('button', { name: '继续', exact: true }).click()
+  await expect.poll(() => page.evaluate(async id => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    return (await (await load('/storyforge/src/lib/product/runtime-core.ts')).readProductRuntimeState(id)).narrative.completed
+  }, previewSession)).toBe(true)
+  await page.goto(`./avg/production?project=${s.scope.projectId}&work=${s.scope.workId}&assembly=1`)
+  await tab(page, '制作与试玩')
+  const release = page.getByRole('region', { name: '本地原型版本验收', exact: true })
+  await expect(release).toBeVisible()
+  await release.getByRole('checkbox', { name: '我已核对此预览存档的完整路线，确认系统与演出结果', exact: true }).check()
+  await release.getByRole('button', { name: '确认此预览的完整路线', exact: true }).click()
+  await expect(release.getByText(/完整路线：已确认/)).toBeVisible()
+  await release.getByRole('button', { name: '准备本地原型版本', exact: true }).click()
+  await expect(release.getByRole('alert')).toBeVisible()
+  await release.getByRole('button', { name: '验证全部冻结媒资', exact: true }).click()
+  await expect(release.getByRole('status').filter({ hasText: '全部冻结媒资已实际解码' })).toBeVisible({ timeout: 60_000 })
+  await release.getByRole('button', { name: '准备本地原型版本', exact: true }).click()
+  await expect(release.getByRole('button', { name: '确认保存本地原型版本', exact: true })).toBeDisabled()
+  await release.getByRole('checkbox', { name: '我已核对版本，将它保存为本地原型', exact: true }).check()
+  await release.getByRole('button', { name: '确认保存本地原型版本', exact: true }).click()
+  await expect(release.getByText('此版本已冻结；后续修改请创建新 Build。', { exact: true })).toBeVisible({ timeout: 60_000 })
+  const exported = await page.evaluate(async scope => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    const [{ db }, files, pkg, module, config] = await Promise.all([load('/storyforge/src/lib/db/schema.ts'), load('/storyforge/src/lib/export/json-export.ts'),
+      load('/storyforge/src/lib/product-production/runtime-package.ts'), load('/storyforge/src/lib/avg/executable-module.ts'), load('/storyforge/src/stores/ai-config.ts')])
+    const build = await db.productBuilds.where('workId').equals(scope.workId).first(), record = await db.productReleases.get(build.releasedProductReleaseId)
+    const manifest = await pkg.verifyProductReleaseManifest(record.manifestJson), gates = await db.productQualityGateReceipts.where('buildId').equals(build.id).toArray()
+    const media = gates.find((row: any) => JSON.parse(row.receiptJson).verifierId === 'storyforge.browser-media-runtime')
+    return { backup: await files.exportProjectJSON(scope.projectId), expected: { scope, releaseId: record.id, releaseUid: manifest.lineage.releaseUid,
+      manifestJson: record.manifestJson, packageHash: build.packageHash, previewJson: build.previewManifestJson, assets: module.avgRuntimeStage(manifest.runtimePackage).assets,
+      nativeMedia: JSON.parse(JSON.parse(media.receiptJson).measuredJson), frozenQA: JSON.parse(build.qualityReportJson).releaseReady,
+      hasTextKey: !!config.useAIConfigStore.getState().config.apiKey } }
+  }, s.scope)
+  expect(exported.expected.hasTextKey).toBe(false); expect(exported.expected.frozenQA).toBe(false)
+  expect(exported.expected.previewJson).toBe(receipt.build.previewManifestJson)
+  expect(exported.expected.nativeMedia.assets).toHaveLength(3)
+  expect(exported.expected.nativeMedia.assets.every((a: any) => a.status === 'decoded' && a.decodedSampleRateHz > 0)).toBe(true)
+  await release.getByRole('button', { name: '从此版本开始新存档', exact: true }).click()
+  await expect.poll(async () => page.locator('audio[data-channel="bgm"]').evaluateAll(elements => elements.some(a => !(a as HTMLAudioElement).paused && (a as HTMLAudioElement).currentTime > .1)), { timeout: 30_000 }).toBe(true)
+  const releasedSession = Number(new URL(page.url()).searchParams.get('session'))
+  const pinned = await page.evaluate(async id => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    return (await load('/storyforge/src/lib/db/schema.ts')).db.productRuntimeSessions.get(id)
+  }, releasedSession)
+  expect(pinned.productReleaseId).toBe(exported.expected.releaseId); expect(pinned.productBuildId).toBeNull()
+  expect(releasedSession).not.toBe(previewSession)
+  await page.screenshot({ path: info.outputPath('native-sound-release-playing.png') })
+  expect(s.counts.text).toBe(1); expect(s.counts.music).toBe(1); expect(s.counts.library).toBe(2); expect(s.counts.unknown).toEqual([])
+  // Export only after every actual publication/playback assertion passed;
+  // do not let a failed earlier attempt supply the next closed-build test.
+  const exportPath = process.env.AVG_SOUND_RELEASE_BACKUP_FILE ?? info.outputPath('original-sound-native-release.json')
+  await mkdir(dirname(exportPath), { recursive: true })
+  await writeFile(exportPath, JSON.stringify({ schema: 'storyforge.avg.sound-release-native-test-export', version: 1, ...exported,
+    backupSHA256: createHash('sha256').update(JSON.stringify(exported.backup)).digest('hex') }), { flag: 'wx' })
 })
 
 test('native loop boundary failure survives interruption and refresh as blocking evidence, with no selection or duplicate dispatch', async ({ page }) => {
