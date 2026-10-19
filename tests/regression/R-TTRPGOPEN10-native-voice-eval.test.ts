@@ -17,9 +17,23 @@ describe('R-TTRPGOPEN10 native Chinese voice fixture admission', () => {
     expect(parseLimitedAITransports([entry])[0]).toMatchObject({ boundary: 'offline-fixture-audio-eval', adoptAllowed: false })
     expect(() => assertFormalAIEntryCallV1({ formalEntryId: entryId, category: 'runtime.ttrpg-open.local-voice' })).toThrow()
   })
+  it('selects only two fixed Qwen presets through the same limited entry without loading a model', () => {
+    const result = JSON.parse(execFileSync(process.execPath, [caller, '--engine', 'qwen', '--check-only'], { encoding: 'utf8' }))
+    expect(result).toEqual({ entryId, evaluationOnly: true, adoptionAllowed: false, modelCalled: false, voices: ['uncle_fu', 'serena'] })
+    const source = `
+      import assert from 'node:assert/strict';import {selectNativeFixture} from './${caller}';
+      const k=selectNativeFixture(),q=selectNativeFixture('qwen');
+      assert.equal(k.engine,'kokoro');assert.equal(q.profile.fixture,k.profile.fixture);
+      assert.equal(q.profile.maxCalls,2);assert.equal(q.profile.maxCodecTokensPerVoice,512);
+      assert.equal(q.profile.instructAllowed,false);assert.equal(q.profile.referenceVoiceAllowed,false);
+      assert.throws(()=>selectNativeFixture('../unregistered-worker'));
+      console.log('passed');`
+    expect(execFileSync(process.execPath, ['--input-type=module', '-e', source], { encoding: 'utf8' }).trim()).toBe('passed')
+  })
   it.each([
     ['--text', 'private'], ['--reference-voice', 'person.wav'], ['--voice', 'celebrity'], ['--project', '/author'],
     ['--check-only', '--check-only'], ['--check-only', '--melo-runtime-dir', '/tmp'], ['--native-runtime-dir'],
+    ['--engine', 'unknown'], ['--engine', '../worker'], ['--engine'], ['--engine', 'qwen', '--engine', 'kokoro'],
   ])('rejects arbitrary/ambiguous input %j', (...args) => {
     const r = spawnSync(process.execPath, [caller, ...args], { encoding: 'utf8' })
     expect(r.status).toBe(1); expect(r.stdout).toBe(''); expect(r.stderr).toContain('ttrpg-native-fixture:')
@@ -44,14 +58,14 @@ describe('R-TTRPGOPEN10 native Chinese voice fixture admission', () => {
       console.log('passed');`
     expect(execFileSync(process.execPath, ['--input-type=module', '-e', source], { encoding: 'utf8' }).trim()).toBe('passed')
   })
-  it('respects the shared physical slot and preserves its owner while retaining the failed attempt', () => {
+  it.each(['kokoro', 'qwen'])('respects the shared physical slot for %s and preserves its owner', engine => {
     const temporary = mkdtempSync(path.join(tmpdir(), 'ttrpg-native-fixture-slot-'))
     try {
       const melo = path.join(temporary, 'shared'), runtime = path.join(temporary, 'candidate')
       mkdirSync(melo); mkdirSync(runtime)
       const lock = path.join(melo, '.eval.lock'), owner = JSON.stringify({ kind: 'other-active-evaluation', pid: process.pid })
       writeFileSync(lock, owner)
-      const r = spawnSync(process.execPath, [caller, '--melo-runtime-dir', melo, '--native-runtime-dir', runtime], { encoding: 'utf8' })
+      const r = spawnSync(process.execPath, [caller, '--engine', engine, '--melo-runtime-dir', melo, '--native-runtime-dir', runtime], { encoding: 'utf8' })
       expect(r.status).toBe(1); expect(r.stderr).toContain('EEXIST'); expect(readFileSync(lock, 'utf8')).toBe(owner)
       expect(existsSync(path.join(runtime, '.eval.lock'))).toBe(false)
       const runs = readdirSync(path.join(runtime, 'evaluations')); expect(runs).toHaveLength(1)

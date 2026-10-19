@@ -10,6 +10,15 @@ const caller = 'scripts/ttrpg-local-tts/native-voice-evaluate.mjs'
 const entryId = 'ttrpg.local-voice.native-fixture-eval'
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 export const nativeVoiceProfile = JSON.parse(readFileSync(path.join(base, 'native-voice-eval-profile.json'), 'utf8'))
+export function selectNativeFixture(engine = 'kokoro') {
+  if (!['kokoro', 'qwen'].includes(engine)) throw new Error('仅允许已登记的 Kokoro 或 Qwen 固定试音')
+  const profileFile = engine === 'qwen' ? 'qwen-native-eval-profile.json' : 'native-voice-eval-profile.json'
+  const workerFile = engine === 'qwen' ? 'qwen-native-worker.py' : 'native-voice-worker.py'
+  const profile = engine === 'kokoro' ? nativeVoiceProfile : JSON.parse(readFileSync(path.join(base, profileFile), 'utf8'))
+  if (profile.entryId !== entryId || profile.adoptionAllowed !== false || profile.productInvocationAllowed !== false
+    || profile.network !== 'disabled' || profile.fixture !== nativeVoiceProfile.fixture) throw new Error('声线评测不能扩大到产品或任意原文')
+  return { engine, profile, profileFile, workerFile }
+}
 export function assertVoiceTransport(id, actualCaller, registry = JSON.parse(readFileSync(path.join(base, '../../src/lib/agent/ai-entry-registry.json'), 'utf8'))) {
   const rows = registry.limitedTransports?.filter(row => row.entryId === id)
   if (id !== entryId || actualCaller !== caller || registry.version !== 2 || rows?.length !== 1
@@ -21,16 +30,19 @@ export function parseNativeFixtureArgs(args) {
   const result = {}, seen = new Set()
   for (let i = 0; i < args.length; i++) {
     const key = args[i]
-    if (seen.has(key) || !['--check-only', '--melo-runtime-dir', '--native-runtime-dir'].includes(key)) throw new Error('只接受已核对运行库路径；不接受自定义台词、声线或参考人声')
+    if (seen.has(key) || !['--check-only', '--engine', '--melo-runtime-dir', '--native-runtime-dir'].includes(key)) throw new Error('只接受已核对运行库路径；不接受自定义台词、声线或参考人声')
     seen.add(key)
     if (key === '--check-only') result.checkOnly = true
-    else { const value = args[++i]; if (!value || value.startsWith('--')) throw new Error('缺少路径'); result[key.slice(2)] = path.resolve(value) }
+    else {
+      const value = args[++i]; if (!value || value.startsWith('--')) throw new Error('缺少路径或已登记引擎')
+      if (key === '--engine') { if (!['kokoro', 'qwen'].includes(value)) throw new Error('未知评测引擎'); result.engine = value }
+      else result[key.slice(2)] = path.resolve(value)
+    }
   }
-  if (result.checkOnly && seen.size !== 1) throw new Error('静态检查不能混入执行参数')
+  if (result.checkOnly && [...seen].some(key => !['--check-only', '--engine'].includes(key))) throw new Error('静态检查不能混入执行参数')
   return result
 }
-export function verifyNativeFixturePcm(bytes, expectedHash = null) {
-  const p = nativeVoiceProfile
+export function verifyNativeFixturePcm(bytes, expectedHash = null, p = nativeVoiceProfile) {
   if (!Buffer.isBuffer(bytes) || bytes.length < 44 || bytes.length > 44 + p.sampleRate * 2 * p.maxSecondsPerVoice
     || bytes.toString('ascii', 0, 4) !== 'RIFF' || bytes.readUInt32LE(4) !== bytes.length - 8
     || bytes.toString('ascii', 8, 16) !== 'WAVEfmt ' || bytes.readUInt32LE(16) !== 16
@@ -49,13 +61,14 @@ export function verifyNativeFixturePcm(bytes, expectedHash = null) {
 async function main() {
   const options = parseNativeFixtureArgs(process.argv.slice(2))
   assertVoiceTransport('ttrpg.local-voice.native-fixture-eval', 'scripts/ttrpg-local-tts/native-voice-evaluate.mjs')
-  if (options.checkOnly) { console.log(JSON.stringify({ entryId, evaluationOnly: true, adoptionAllowed: false, modelCalled: false, voices: nativeVoiceProfile.voices })); return }
+  const selected = selectNativeFixture(options.engine), p = selected.profile
+  if (options.checkOnly) { console.log(JSON.stringify({ entryId, evaluationOnly: true, adoptionAllowed: false, modelCalled: false, voices: p.voices })); return }
   const melo = options['melo-runtime-dir'], runtime = options['native-runtime-dir']
   if (!melo || !runtime) throw new Error('请指定现有共享 Python 与已核对原生声线资产目录')
   const runId = `run-${randomUUID()}`, directory = path.join(runtime, 'evaluations', runId), acquired = []
-  const receipt = { status: 'preparing', entryId, runId, pid: process.pid, startedAt: Date.now(), directory,
+  const receipt = { status: 'preparing', entryId, engine: selected.engine, runId, pid: process.pid, startedAt: Date.now(), directory,
     evaluationOnly: true, adoptionAllowed: false, automaticRetryAllowed: false, voices: [],
-    profileSha256: hash(readFileSync(path.join(base, 'native-voice-eval-profile.json'))), workerSha256: hash(readFileSync(path.join(base, 'native-voice-worker.py'))) }
+    profileSha256: hash(readFileSync(path.join(base, selected.profileFile))), workerSha256: hash(readFileSync(path.join(base, selected.workerFile))) }
   const save = () => writeFileSync(path.join(directory, 'attempt.json'), JSON.stringify(receipt, null, 2) + '\n')
   mkdirSync(directory, { recursive: true }); save()
   try {
@@ -68,23 +81,23 @@ async function main() {
     const stdout = openSync(path.join(directory, 'worker.log'), 'wx', 0o600)
     let child, timer, killTimer
     try {
-      child = spawn(path.join(melo, 'venv/bin/python3'), ['-I', '-B', path.join(base, 'native-voice-worker.py')], { stdio: ['pipe', stdout, stdout], env: { ...process.env, HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', PYTHONNOUSERSITE: '1' } })
+      child = spawn(path.join(melo, 'venv/bin/python3'), ['-I', '-B', path.join(base, selected.workerFile)], { stdio: ['pipe', stdout, stdout], env: { ...process.env, HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', PYTHONNOUSERSITE: '1' } })
       child.stdin.on('error', error => { receipt.inputError = String(error); save() })
       receipt.workerPid = child.pid; receipt.status = 'running'; save()
       child.stdin.end(JSON.stringify({ meloRuntime: melo, nativeRuntime: runtime, outputDir: directory, profileSha256: receipt.profileSha256, workerSha256: receipt.workerSha256 }))
       receipt.workerExit = await new Promise((resolve, reject) => {
-        timer = setTimeout(() => { receipt.deadlineExceeded = true; save(); child.kill('SIGTERM'); killTimer = setTimeout(() => child.kill('SIGKILL'), 3000) }, nativeVoiceProfile.timeoutMs)
+        timer = setTimeout(() => { receipt.deadlineExceeded = true; save(); child.kill('SIGTERM'); killTimer = setTimeout(() => child.kill('SIGKILL'), 3000) }, p.timeoutMs)
         child.once('error', reject); child.once('exit', (exit, signal) => resolve({ exit, signal }))
       })
       if (receipt.workerExit.exit !== 0 || receipt.deadlineExceeded) throw new Error('原生声线评测失败；保留原证据，不自动重试')
     } finally { clearTimeout(timer); clearTimeout(killTimer); closeSync(stdout) }
     const result = JSON.parse(readFileSync(path.join(directory, 'result.json'), 'utf8'))
     if (result.status !== 'generated' || result.profileSha256 !== receipt.profileSha256 || result.workerSha256 !== receipt.workerSha256
-      || result.text !== nativeVoiceProfile.fixture || result.network !== 'disabled' || result.calls !== nativeVoiceProfile.maxCalls
+      || result.text !== p.fixture || result.network !== 'disabled' || result.calls !== p.maxCalls
       || result.humanListeningAcceptance !== 'unproven' || result.adoptionAllowed !== false
-      || JSON.stringify(result.voices.map(v => v.voice)) !== JSON.stringify(nativeVoiceProfile.voices)) throw new Error('真实声线回执身份不符')
-    for (const voice of result.voices) receipt.voices.push({ voice: voice.voice, ...verifyNativeFixturePcm(readFileSync(path.join(directory, voice.voice + '.wav')), voice.audioSha256) })
-    if (hash(readFileSync(path.join(base, 'native-voice-eval-profile.json'))) !== receipt.profileSha256 || hash(readFileSync(path.join(base, 'native-voice-worker.py'))) !== receipt.workerSha256) throw new Error('评测源码变化')
+      || JSON.stringify(result.voices.map(v => v.voice)) !== JSON.stringify(p.voices)) throw new Error('真实声线回执身份不符')
+    for (const voice of result.voices) receipt.voices.push({ voice: voice.voice, ...verifyNativeFixturePcm(readFileSync(path.join(directory, voice.voice + '.wav')), voice.audioSha256, p) })
+    if (hash(readFileSync(path.join(base, selected.profileFile))) !== receipt.profileSha256 || hash(readFileSync(path.join(base, selected.workerFile))) !== receipt.workerSha256) throw new Error('评测源码变化')
     receipt.status = 'passed'; receipt.humanListeningAcceptance = 'unproven'
   } catch (error) { receipt.status = 'failed'; receipt.error = String(error); throw error }
   finally {

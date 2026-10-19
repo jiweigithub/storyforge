@@ -4885,3 +4885,14 @@ accepted/running 不当作成功；unknown/failed/cancelled 的原终态、错�
 旧 `33776b0d` 云端完整 CI 已实际结束：6488 项通过、1 项失败（1035 文件通过、1 文件失败），失败为 `R-TTRPGOPEN3-player-table-ui.test.tsx` 在确认身份前对缺失按钮调用 click；原运行与失败日志保留，不再标为进行中。当前 `e170615f` 的同一文件定向复现同样为 3 通过/1 失败，不能将先前其他用例通过扩张为整套 CI 通过。
 
 根因是新增公共旁白试听后，旧测试按首个 select 等待、再给它写入 viewerKey，实际命中旁白语速；该控件可先于异步角色读取出现。测试现按 `select[aria-label="我的角色"]` 定位原角色控件，同文件的恢复与交接检查同步收口。身份用例以受控 Promise 暂缓首次真实表读取，明确核对公共语速已出现、角色与身份确认入口尚未出现、双方秘密未显示，再释放原读取、选择本人角色并检查确认按钮启用。原本人秘密/他人秘密、交接后清空私密状态、显示冲突有界重读与权限拒绝断言全部保留；没有延长等待、放宽产品身份保护或增加模型调用。修正后的同一文件四项定向检查通过，当前提交完整 CI/原生及产品验收仍须独立重验。
+
+
+### 35.160 Qwen 原生预置的有界评测准入（施工中，2026-10-19）
+
+继续 P10 语音产品能力研发，在原有限 `ttrpg.local-voice.native-fixture-eval` 增加闭合 `--engine kokoro|qwen`，默认原 Kokoro profile/worker 不变。Qwen 固定同一公开原创中文与 Uncle_Fu / Serena 两个原生说话人；不接收作者文本、参考人声、模型路径或自定义指令，不新增正式 AI 绑定、Context/Field/表或产品媒资 owner。预游戏声线与正式生成的版本化接入仍是后续单元，不把评测 CLI 当作产品入口。
+
+已核对准确 MLX Audio 代码 `1865f49c`（MIT）和社区 Qwen CustomVoice 8bit 模型 `049ef77f`（Apache-2.0 模型卡），完整必要模型文件 1,973,575,388 字节。该社区模型声明由 MLX Audio 0.3.0 转换自官方 Qwen，但未给出原权重 commit attestation，保留此证据限度。音频 tokenizer 文件 SHA 与已核对官方权重完全一致，可从对应官方精确 pin 取得同字节文件，逐次真实下载来源另留证。私有两个 MLX/Metal wheel 不写入原 Python/Torch；MIT 运行库、Apple lm、Kyutai Mimi 源码及 Apache-2.0 metal_cpp/Qwen 声明分别保留，不概括为全链 MIT。Mac Metal 设备探测已通过，未调用神经模型，不能据此声称 Qwen 性能或音质已验证。
+
+准确导数移除会连带导入无关 codec 的两个 initializer；显式按原索引/量化描述完整严格加载主模型与所用 decoder，不调用原会吞掉加载错误并使用 strict=False 的 post-load hook，不实例化参考 encoder。文本 tokenizer 仅本地读取、禁止远程代码、固定中文 encode/decode 往返一致；原生生成必须在 512 个 codec token 内实际观察 EOS，不能把上限耗尽当成功。整次 300 秒、两次完整语音生成、每段 60 秒、Metal 6 GiB 上限、共用原物理槽位，原失败/部分证据保留，不自动重试、播放或采用。0.6B instruct 明确禁用，试听速度是独立播放偏好，不伪装为新的音色。
+
+静态与协议回归已覆盖默认旧路径、Qwen 准确两预置、同一公开台词、未知/路径式/重复引擎与任意/参考人声输入拒绝、两引擎对原物理槽位的共同互斥，以及原 WAV 校验。当前权重仍在有界准备，真实生成、浏览器试听、独立真人反馈与完整产品接入尚未证明；原 Kokoro 真实四声线与 OpenVoice A/B 否定反馈继续分别保留。

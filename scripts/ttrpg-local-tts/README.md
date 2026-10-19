@@ -89,3 +89,19 @@ node scripts/ttrpg-local-tts/native-voice-evaluate.mjs --melo-runtime-dir /absol
 两份运行库共用原 `.eval.lock` 物理槽位；保留已有/未知任务，失败只释放本次准确 claim。四次推理、CPU 两线程、整次 240 秒及每段 60 秒上限，加载和推理均禁网络/子进程，逐次调用留证，不截断文本或丢弃未知音素。最新上游为 ONNX 导出新增的 affine InstanceNorm 与此权重不符，评测导数明确还原为非 affine 的 eager 结构，完整严格加载所有权重；没有使用 `strict=False` 或放开 pickle。下载超时和首轮零推理加载失败均保留，核明原因后才显式开始新评测，不隐藏重试。
 
 2026-10-19 原生四声线实际生成通过：24 kHz/单声道 PCM，语速统一 0.9，分别为 18.600、18.425、18.200、19.700 秒；整次 24.13 秒，峰值 RSS 约 3.87 GB。原文/音素覆盖、真实 PCM/哈希和调用证据核对通过，未冒充逐字对齐或语义听感证明。新候选已交付试听，独立听感待用户反馈；尚未替代正式 Melo 产品 profile，开局声线选择和真实旁白生成的一致接入继续施工。
+
+
+## Qwen 原生预置评测（施工中）
+
+同一有限入口增加闭合 `--engine kokoro|qwen`；默认仍为原 Kokoro 四说话人及原 profile/worker。Qwen 只接受固定公开中文段落与 `uncle_fu / serena` 两个原生预置，不接受任意模型路径、台词、指令、参考人声或新声线。`--check-only --engine qwen` 只检查静态描述，不读取运行库或模型；显式执行继续使用原共享物理槽位和本次私有候选槽位。正式产品 profile、旧请求及游戏媒资不因这个选项改变。
+
+准确代码为 MLX Audio `1865f49cc9a40de9b5e4fcf55952b9812d751f1d`，仓库内保留原 `MLX-Audio-LICENSE`，适用于评测导数与 profile 中的补丁片段。私有 MLX/MLX Metal 0.32.4 wheel 覆盖层不安装进现有 Python/Torch。保留 MLX Audio、Apple vendored lm、Kyutai Mimi Python 的 MIT 原始声明，以及 bundled metal_cpp 与 Qwen Apache-2.0；不能将整个链条称为纯 MIT。社区转换权重 `mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit@049ef77fe8816b536193c0c25f9a214d17921282` 模型卡 Apache-2.0，来源声称使用 MLX Audio 0.3.0 转换官方 Qwen；未提供原始权重 commit attestation，因此不把发布方来源说明扩张为独立授权保证。完整必要文件 1,973,575,388 字节，所有文件均按 Git blob/LFS SHA-256 固定。
+
+原上游 initializer 会导入多种无关 codec，候选导数只保留准确 Qwen/Mimi 闭包。worker 不调用上游吞掉 tokenizer/codec 加载失败的 post-load hook；按准确索引与量化描述显式、严格加载主模型，单独取固定权重中的 decoder 并严格加载全部 decoder 参数，不实例化克隆参考 encoder。文本 tokenizer 只读本地准确文件、禁止远程自定义代码，原公开台词须 encode/decode 往返一致。现有 Transformers 5.20.1 会在 tokenizer 导入时加载已有 Torch 模块，记录此事实；不加载 Torch 神经网络权重，也不覆盖为官方另一路径要求的 4.57.3。
+
+每次最多两个完整语音生成、每个最多 512 个 codec token，必须实际观察 EOS；耗尽 token 上限不能把截断语音当成功。Metal GPU 上限 6 GiB、整次 300 秒、每段最多 60 秒，禁网络、嵌套进程、自动重试、播放与采用。语音按原生速度生成，Qwen 0.6B 不支持 instruct；个人试听语速继续是独立播放器偏好，不通过后期升降调给同一人声改名。设备探测与静态/协议回归已执行，真实生成、听感与正式接入仍待后续证据。
+
+```bash
+node scripts/ttrpg-local-tts/native-voice-evaluate.mjs --engine qwen --check-only
+node scripts/ttrpg-local-tts/native-voice-evaluate.mjs --engine qwen --melo-runtime-dir /absolute/existing-melo-runtime --native-runtime-dir /absolute/prepared-qwen-assets
+```
