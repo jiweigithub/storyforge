@@ -87,6 +87,10 @@ describe('R-TTRPGOPEN2 initial design fact dependency and pre-dispatch capacity'
     expect(await rows()).toBe(before); expect(await db.productProductions.count()).toBe(0); expect(await db.productBuilds.count()).toBe(0)
     const system = runAI.mock.calls[0][0][0].content
     expect(system).toContain('至少一条 factRef 必须非 null'); expect(system).toContain('不能用 world resource')
+    expect(system).toContain('effects 与 alternatives 两个数组字段都必须保留，且严格二选一')
+    expect(system).toContain('直接执行时 effects 有1–100项、alternatives=[]')
+    expect(system).toContain('需要玩家选择时 effects=[]、alternatives 有2–20项')
+    expect(system).toContain('不能只有一个备选，也不能两者都为空')
   })
 
   it.each([20045, 24001])('freezes the complete situation request at 24K and retains actual provider output %i under that exact contract', async outputTokens => {
@@ -177,13 +181,41 @@ describe('R-TTRPGOPEN2 initial design fact dependency and pre-dispatch capacity'
     })
     const candidate = await generateTtrpgOpenAuthoringDesignCandidateV1({ ...f, request: { ...f.request, sections: ['pressure', 'effectPlanTemplates'] }, runAI })
     legacy.mockRestore()
-    expect(skills.getAgentSkillV1('ttrpg.open.authoring-design.v1').promptVersion).toBe('ttrpg-open-authoring-design-v2')
+    expect(skills.getAgentSkillV1('ttrpg.open.authoring-design.v1').promptVersion).toBe('ttrpg-open-authoring-design-v3')
     expect(candidate.artifact.status).toBe('ready')
     const review = await readTtrpgOpenAuthoringDesignReviewV1({ scope: f.scope, runId: candidate.runId })
     expect(review.ruleRefs).toBeUndefined(); expect(review.maxOutputTokens).toBe(16000)
     expect(review.candidate).toEqual(candidate)
     expect((await recoverTtrpgOpenAuthoringDesignCandidateV1({ scope: f.scope, runId: candidate.runId })).candidateHash).toBe(candidate.candidateHash)
     expect(runAI).toHaveBeenCalledOnce(); expect(await rows()).toBe(before)
+  })
+  it('preserves a blocked frozen v2 full candidate after live v3 instructions change, with no automatic choice or second model call', async () => {
+    const f = await createSavedOpenDesignFixtureV1(), before = await rows(), actual = skills.getAgentSkillV1
+    const legacy = vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => {
+      const value = actual(id)
+      return id === 'ttrpg.open.authoring-design.full.v1' ? { ...value, promptVersion: 'ttrpg-open-authoring-design-v2' } : value
+    })
+    let raw = ''
+    const runAI = vi.fn(async (messages: ChatMessage[]) => {
+      const value = JSON.parse(await fullResponse(messages)), plan = value.proposals[0].patch.effectPlanTemplates[0]
+      plan.alternatives = [{ alternativeKey: 'only-one', title: '只有一个附加备选', effects: structuredClone(plan.effects) }]
+      raw = JSON.stringify(value); return raw
+    })
+    const candidate = await generateTtrpgOpenAuthoringDesignCandidateV1({ ...f, request: { ...f.request, sections: [...sections, 'factProposals'] }, runAI })
+    const snapshot = await readAgentRunV1(f.scope, candidate.runId)
+    const originalRequest = await artifacts.readAgentRunArtifactExactV1({ projectId: f.scope.projectId, artifactKind: 'source-snapshot', contentHash: candidate.requestArtifactHash })
+    expect(candidate.artifact.status).toBe('blocked'); expect(candidate.proposals).toBeNull()
+    expect(candidate.artifact.issues[0].message).toContain('必须二选一')
+    expect(JSON.parse(snapshot.contract.executionBindings![0].skillDefinitionJson).promptVersion).toBe('ttrpg-open-authoring-design-v2')
+    legacy.mockRestore()
+    expect(skills.getAgentSkillV1('ttrpg.open.authoring-design.full.v1').promptVersion).toBe('ttrpg-open-authoring-design-v3')
+    const review = await readTtrpgOpenAuthoringDesignReviewV1({ scope: f.scope, runId: candidate.runId })
+    expect(review.ruleRefs).toContain('standard'); expect(review.maxOutputTokens).toBe(24000)
+    expect(review.candidate).toEqual(candidate); expect(review.candidate.artifact.originalText).toBe(raw)
+    expect(await recoverTtrpgOpenAuthoringDesignCandidateV1({ scope: f.scope, runId: candidate.runId })).toEqual(candidate)
+    expect(await artifacts.readAgentRunArtifactExactV1({ projectId: f.scope.projectId, artifactKind: 'source-snapshot', contentHash: candidate.requestArtifactHash })).toBe(originalRequest)
+    expect(runAI).toHaveBeenCalledOnce(); expect(await rows()).toBe(before)
+    expect(await db.productProductions.count()).toBe(0); expect(await db.productBuilds.count()).toBe(0)
   })
   it('stops an unsupported prompt version before any Run, model attempt or canonical write instead of treating it as legacy', async () => {
     const f = await createSavedOpenDesignFixtureV1(), before = await rows(), actual = skills.getAgentSkillV1

@@ -1316,7 +1316,7 @@ function productProductionInputPolicy(sourceKeys: readonly string[]): AgentSkill
 export const AGENT_SKILLS = [
   {
     version: 1, id: 'ttrpg.open.authoring-design.v1', agentId: 'outline', defaultForAgent: false,
-    label: '开放跑团作者三设计候选', owner: 'outline-agent', promptVersion: 'ttrpg-open-authoring-design-v2',
+    label: '开放跑团作者三设计候选', owner: 'outline-agent', promptVersion: 'ttrpg-open-authoring-design-v3',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: ['ttrpg.open.authoring-design'], optionalContextSourceKeys: [],
     inputPolicy: productProductionInputPolicy(['ttrpg.open.authoring-design', 'worldRelease']),
@@ -1326,7 +1326,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'ttrpg.open.authoring-design.full.v1', agentId: 'outline', defaultForAgent: false,
-    label: '开放跑团完整局势三设计候选', owner: 'outline-agent', promptVersion: 'ttrpg-open-authoring-design-v2',
+    label: '开放跑团完整局势三设计候选', owner: 'outline-agent', promptVersion: 'ttrpg-open-authoring-design-v3',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: ['ttrpg.open.authoring-design'], optionalContextSourceKeys: [],
     inputPolicy: productProductionInputPolicy(['ttrpg.open.authoring-design', 'worldRelease']),

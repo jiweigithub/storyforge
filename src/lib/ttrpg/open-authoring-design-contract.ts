@@ -12,6 +12,7 @@ export const TTRPG_OPEN_AUTHORING_DESIGN_SECTIONS_V1 = [
 ] as const
 export type TtrpgOpenAuthoringDesignSectionV1 = typeof TTRPG_OPEN_AUTHORING_DESIGN_SECTIONS_V1[number]
 export const TTRPG_OPEN_DESIGN_PROMPT_VERSION_V2 = 'ttrpg-open-authoring-design-v2'
+export const TTRPG_OPEN_DESIGN_PROMPT_VERSION_V3 = 'ttrpg-open-authoring-design-v3'
 /** These are bounded execution profiles of the same pipeline and authority.
  * Each must match its registered Skill and exact formal-entry binding. */
 export const TTRPG_OPEN_DESIGN_PROFILES_V1 = [

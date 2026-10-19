@@ -55,6 +55,7 @@ export function buildTtrpgOpenAuthoringDesignMessagesV1(input: {
     '局势准备动机、障碍、可发现证据、至少可执行的介入路径、失败前进和压力征兆。开局key必须属于所给局势。不得把线性场景图、固定结局或假choices充作开放局势。',
     'factProposals只能新增有具体世界字段证据的事实；既有事实/确认、companionPolicy、stageClosurePolicy、runtimePolicy和contextPolicy均不能改。后果和时钟只能使用冻结规则与合法计划，不用文字伪装机械结算。',
     'effectPlanTemplates.ruleRef 只能引用本次准确 rulePack 的 ruleSystemId、actions[].key、checks[].key 或 oracles[].oracleKey，不能自造 rules.fail-forward、rules.open-checks 等键。模板后果不重复扣除原行动已结算的消耗；压力变化通过原压力配置表达。',
+    '每个后果模板的 effects 与 alternatives 两个数组字段都必须保留，且严格二选一：直接执行时 effects 有1–100项、alternatives=[]；需要玩家选择时 effects=[]、alternatives 有2–20项，每项 effects 有1–100项。不能同时填写两者，不能只有一个备选，也不能两者都为空；备选不是直接后果的附加奖励或兜底。',
     '每个局势的 driverBeliefs 至少一项，且至少一条 factRef 必须非 null，并引用现有事实或本次 factProposals 的真实 factKey。空白设计先依据已读字段/hash起草少量足以支撑本次局势的事实候选，再用这些 key 连接信念和证据；不能用 world resource、角色、front、clock 或虚构 campaign key 冒充事实。事实仍待作者确认。',
     '每个局势至少2个障碍，至少一项 dependsOn 指向同局势障碍且无环；至少2个介入点，targetsObstacleKeys指向本局势障碍；至少2条证据且至少一条isRequired=false。证据的discoverableBy与discoveryPolicy.paths的key闭合，每条path指向本局势介入点，证据须有sourceFactRefs或实际读取sourceResourceRefs。',
     'whyNowRefs至少2项，使用world:<subjectRef>:<predicateKey>、clock:<clockKey>或telegraph:<telegraphKey>，并绑定真实事实或本次实际时钟/征兆；首次设计不能虚构会话事实。不介入后果afterWorldTurns为1–50，effectPlanRef或advancesClockKeys至少一项。',

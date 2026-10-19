@@ -24,7 +24,7 @@ import { resolveProductSourceReadBoundaryV1 } from '../product/source-contracts'
 import { assertTtrpgOpenAuthoringDesignSourceCurrentV1, type TtrpgOpenAuthoringDesignSourceV1 } from './open-authoring-design-source'
 import { parseTtrpgOpenAuthoringDesignRequestV1, parseTtrpgOpenAuthoringDesignProposalsV1,
   ttrpgOpenDesignNeedsInitialFactsV1, ttrpgOpenDesignProfileV1, ttrpgOpenDesignProfileForSkillV1, TTRPG_OPEN_DESIGN_PROFILES_V1,
-  ttrpgOpenDesignRuleRefsV1, TTRPG_OPEN_DESIGN_PROMPT_VERSION_V2,
+  ttrpgOpenDesignRuleRefsV1, TTRPG_OPEN_DESIGN_PROMPT_VERSION_V2, TTRPG_OPEN_DESIGN_PROMPT_VERSION_V3,
   type TtrpgOpenAuthoringDesignRequestV1, type TtrpgOpenAuthoringDesignProposalsV1 } from './open-authoring-design-contract'
 import { buildTtrpgOpenAuthoringDesignMessagesV1, renderTtrpgOpenDesignWorldReadsV1 } from './open-authoring-design-prompt'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
@@ -45,7 +45,8 @@ interface RequestEvidence {
   retrievalTrace: ContextGatewayExecutionV1['retrievalTrace']; gatewayVersionHash: string; policyHash: string
 }
 function usesRuleRefs(skillId: string, promptVersion?: string): boolean {
-  if (promptVersion === TTRPG_OPEN_DESIGN_PROMPT_VERSION_V2 && ttrpgOpenDesignProfileForSkillV1(skillId)) return true
+  if ((promptVersion === TTRPG_OPEN_DESIGN_PROMPT_VERSION_V2 || promptVersion === TTRPG_OPEN_DESIGN_PROMPT_VERSION_V3)
+    && ttrpgOpenDesignProfileForSkillV1(skillId)) return true
   if (skillId === TTRPG_OPEN_DESIGN_PROFILES_V1[0].skillId && promptVersion === 'ttrpg-open-authoring-design-v1') return false
   return fail('设计格式版本尚未支持；请保留原记录，不能发送或继续采用')
 }
@@ -190,7 +191,7 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
       sourceEvidence: [...basisAssembly.sourceEvidence!, { key: 'worldRelease', status: 'included', delivery: 'full', sourceHash: await sha256Text(worldText),
         originalCharacters: worldText.length, inputCharacters: worldText.length, originalTokens: worldTokens, inputTokens: worldTokens }] }
     const manifestV1 = await createContextManifestFromAssemblyV1({ runId: snapshot.run.id, stepId: STEP, attempt: 1,
-      projectId: input.scope.projectId, worldGroupId: null, declaredSourceKeys: [...binding.contextSourceKeys], assembled, readerVersion: 'ttrpg-open-authoring-design-v2' })
+      projectId: input.scope.projectId, worldGroupId: null, declaredSourceKeys: [...binding.contextSourceKeys], assembled, readerVersion: TTRPG_OPEN_DESIGN_PROMPT_VERSION_V3 })
     const manifest = await createContextManifestV2FromV1({ manifest: manifestV1, scope: input.scope })
     const preflight = await recordContextGatewayPreflightEvidenceV1({ scope: input.scope, runId: snapshot.run.id, stepId: STEP, attempt: 1,
       contextPacket: gateway.contextPacket, selector: gateway.selector, renderedRequest: { messages, modelIdentity },

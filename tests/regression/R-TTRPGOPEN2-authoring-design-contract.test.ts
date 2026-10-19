@@ -67,6 +67,22 @@ describe('R-TTRPGOPEN2 closed S2 design proposals', () => {
     value.proposals[1].proposalKey = value.proposals[0].proposalKey
     expect(() => parseTtrpgOpenAuthoringDesignProposalsV1(value, context)).toThrow('重复')
   })
+  it.each(['immediate', 'choice', 'mixed-single', 'mixed-choice', 'single', 'empty', 'empty-option'] as const)(
+    'keeps immediate and player-choice consequences mutually exclusive without changing the candidate: %s', shape => {
+      const { value, context } = fixture(), plan = value.proposals[0].patch.effectPlanTemplates[0]
+      const effect = structuredClone(plan.effects[0])
+      plan.effects = shape === 'immediate' || shape.startsWith('mixed') ? [effect] : []
+      plan.alternatives = shape === 'immediate' || shape === 'empty' ? [] : [
+        { alternativeKey: 'choose.a', title: '选择第一项后果', effects: shape === 'empty-option' ? [] : [structuredClone(effect)] },
+        ...(['choice', 'mixed-choice', 'empty-option'].includes(shape)
+          ? [{ alternativeKey: 'choose.b', title: '选择另一项后果', effects: [structuredClone(effect)] }] : []),
+      ]
+      const raw = JSON.stringify(value), before = JSON.stringify(context)
+      if (shape === 'immediate' || shape === 'choice') expect(parseTtrpgOpenAuthoringDesignProposalsV1(raw, context).proposals).toHaveLength(3)
+      else expect(() => parseTtrpgOpenAuthoringDesignProposalsV1(raw, context)).toThrow()
+      expect(JSON.stringify(value)).toBe(raw); expect(JSON.stringify(context)).toBe(before)
+    },
+  )
   it('cannot override retained facts, self-confirm a proposed fact or cite an allowed-but-unread resource', () => {
     const { value, context } = fixture()
     const overwrite = structuredClone(value); overwrite.proposals[0].patch.factProposals[0].factKey = 'fact.author.locked'

@@ -194,6 +194,9 @@ export interface TtrpgOpenEffectPlanTemplateV1 {
   reason: string
   audience: TtrpgEffectAudienceV2
   parameters: TtrpgOpenEffectParameterV1[]
+  /** Both array fields are required. Immediate plan: 1–100 effects and no alternatives.
+   * Choice plan: no immediate effects and 2–20 alternatives, each with 1–100 effects.
+   * The two forms are mutually exclusive; the deterministic parser enforces this. */
   effects: TtrpgOpenEffectPrimitiveV1[]
   alternatives: Array<{ alternativeKey: string; title: string; effects: TtrpgOpenEffectPrimitiveV1[] }>
 }
