@@ -1656,6 +1656,11 @@ export async function runAuthorizedProductProductionV1(input: {
   const scope = await resolveScope({ scope: input.scope })
   const details = await readProductProductionDetailsV1(scope, input.productionId)
   if (!details.brief || !details.build) throw new Error('[product-production-service] Production 尚未授权 Build')
+  if (details.executionBrief?.avgSoundPlanning) {
+    return (await import('../avg/sound-production-service')).runAvgSoundProductionV1({
+      ...input, scope, expectedBuildId: details.build.id!,
+    })
+  }
   if (!['producing', 'preview-ready'].includes(details.production.status)) {
     throw new Error(`[product-production-service] Production 状态 ${details.production.status} 不允许自动制作`)
   }

@@ -535,7 +535,7 @@ export async function readAvgAssemblyWorkspaceV1(scope: WorkspaceScope, selected
   const details = productionId ? await readProductProductionDetailsV1(scope,productionId,['avg']) : null
   if (details?.brief) {
     const brief = parseProductProductionBriefV3(details.brief.briefJson)
-    if (!brief.avgAssembly && !brief.avgVisualPlanning) throw new Error('[avg] 此记录使用旧版制作流程；请在新 AVG 作品中试用系统组装')
+    if (!brief.avgAssembly && !brief.avgVisualPlanning && !brief.avgSoundPlanning) throw new Error('[avg] 此记录使用旧版制作流程；请在新 AVG 作品中试用系统组装')
   }
   const artifacts = []
   if (details?.build?.planRevision && details.executionBrief) {
@@ -546,7 +546,7 @@ export async function readAvgAssemblyWorkspaceV1(scope: WorkspaceScope, selected
     const plan = parseProductProductionPlanV3(details.build.planJson,parseProductProductionBriefV3(frozenBrief.briefJson),details.build.briefHash)
     const retainedVisual = !!details.executionBrief.avgVisualPlanning && ['paused','cancelled','failed','recovery-required'].includes(details.build.status)
     const artifactEpoch = retainedVisual ? plan.controlEpoch : details.build.controlEpoch
-    const keys = [...new Set([...plan.tasks.filter(task=>details.executionBrief!.avgVisualPlanning||task.executionMode==='human-import'||['avg-media-image-generate','avg-media-image-reuse','avg-media-image-process','avg-media-voice-generate','avg-media-voice-reuse'].includes(task.kind)).flatMap(task=>task.outputArtifactKeys),'runtime.package','quality.report'])]
+    const keys = [...new Set([...plan.tasks.filter(task=>details.executionBrief!.avgVisualPlanning||details.executionBrief!.avgSoundPlanning||task.executionMode==='human-import'||['avg-media-image-generate','avg-media-image-reuse','avg-media-image-process','avg-media-voice-generate','avg-media-voice-reuse'].includes(task.kind)).flatMap(task=>task.outputArtifactKeys),'runtime.package','quality.report'])]
     for (const key of keys) {
       const accepted = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([details.build.id!,key])
         .filter(row=>row.status==='accepted'&&row.controlEpoch===artifactEpoch).limit(2).toArray()
@@ -572,12 +572,17 @@ export async function readAvgAssemblyWorkspaceV1(scope: WorkspaceScope, selected
     ? artifacts.some(row => row.artifactKey === 'avg.media.compiled-visual-requirements' && row.status === 'accepted')
       ? await readAvgCurrentImageConsumptionDefinition({scope,buildId:details.build.id,brief:details.executionBrief}) : null
     : details?.executionBrief ? readAvgOptionalImageDefinitionV3(details.executionBrief) : null
-  return { draft,details,artifacts,media:await listAvgDraftMediaV1(scope),processingTasks,imageDefinition,visualProgress,visualRecordedUsage }
+  const soundProgress = details?.build?.planRevision && details.executionBrief?.avgSoundPlanning && details.brief?.revision === details.build.briefRevision
+    ? await projectProductProductionSchedulerV1({ scope, productionId: details.production.id! }) : null
+  const soundRecordedUsage = details?.build?.planRevision && details.executionBrief?.avgSoundPlanning
+    ? projectProductProductionRecordedUsageV1(details.build.budgetLedgerJson) : null
+  return { draft,details,artifacts,media:await listAvgDraftMediaV1(scope),processingTasks,imageDefinition,visualProgress,visualRecordedUsage,soundProgress,soundRecordedUsage }
 }
 
 export async function confirmAvgWorkspaceInputV1(input: { scope: WorkspaceScope; productionId: number; artifactKey: string; candidateVersion: number; candidateHash: string }) {
   const details = await readProductProductionDetailsV1(input.scope,input.productionId,['avg'])
-  if (!details.build || !details.executionBrief?.avgAssembly&&!details.executionBrief?.avgVisualPlanning) throw new Error('[avg] 当前制作缺少作者组装 Build')
+  if (!details.build || !details.executionBrief?.avgAssembly&&!details.executionBrief?.avgVisualPlanning&&!details.executionBrief?.avgSoundPlanning) throw new Error('[avg] 当前制作缺少作者组装 Build')
+  if (details.executionBrief.avgSoundPlanning && !avgSoundProductionExecutionReadyV1()) throw new Error('[avg-sound] 正式声音工作流尚未开放')
   const result = await executeProductProductionCommand({scope:input.scope,productionId:input.productionId,command:{type:'adopt-avg-artifact',
     commandId:commandId('confirm'),expectedStateRevision:details.production.stateRevision,expectedBuildRevision:details.build.stateRevision,
     buildNumber:details.build.buildNumber,controlEpoch:details.build.controlEpoch,artifactKey:input.artifactKey,candidateVersion:input.candidateVersion,candidateHash:input.candidateHash}})
@@ -906,6 +911,9 @@ export async function stageAvgWorkspaceInputV1(input: { scope: WorkspaceScope; p
 
 export async function runAvgAssemblyV1(input: { scope: WorkspaceScope; productionId: number; signal?: AbortSignal }) {
   const details = await readProductProductionDetailsV1(input.scope,input.productionId,['avg'])
+  if (details.executionBrief?.avgSoundPlanning) return (await import('./sound-production-service')).runAvgSoundProductionV1({
+    ...input, expectedBuildId: details.build?.id,
+  })
   if (!details.executionBrief?.avgAssembly&&!details.executionBrief?.avgVisualPlanning || !details.build || !['authorized','building','integrating'].includes(details.build.status)) throw new Error('[avg] 当前 Build 不可组装')
   const execution = await assemblyExecutionOptions(input.scope, details.executionBrief, input.productionId, details.build.id!)
   return runProductProductionUntilBlockedV1({ ...input, ...execution, executor:createConfiguredProductProductionExecutorV1({ production:details.production,brief:details.executionBrief,...execution }) })

@@ -10,7 +10,7 @@ import type { ProductBuildArtifactRecordV1 } from '../../src/lib/types'
 /** Actual S2/start/adoption/Run authority. Only HTTP, the feature fence and
  * unavailable DOM decoder are controlled by callers. Review assertions below
  * are explicit ENGINEERING author declarations, never real hearing evidence. */
-export async function avgSoundReviewHarnessFixtureV1() {
+export async function avgSoundReviewStartFixtureV1() {
   const semantic = await avgSoundPlanningFixtureV1(), req = semantic.compiled.requirements.find(r => r.dispatch.operation === 'generate-music')!
   const wire = await avgSoundWireFixtureV1(req)
   const s = await avgSoundHarnessFixtureV1({ audioFetcher: wire.fetcher,
@@ -23,11 +23,15 @@ export async function avgSoundReviewHarnessFixtureV1() {
       Object.assign(source.brief.avgSoundPlanning!.musicBinding!, wire.route)
       source.brief.capabilityRequirements.find(c => c.requirementKey === 'avg.media.music')!.capabilityHash = wire.route.bindingHash
     } })
+  return { ...s, wire }
+}
+export async function avgSoundReviewHarnessFixtureV1() {
+  const s = await avgSoundReviewStartFixtureV1()
   await adoptAvgSoundSourcesV1(s); await cycleAvgSoundUntilV1(s, 'avg.proposal.sound-plan')
   await adoptAvgSoundArtifactV1(s, 'avg.media.sound-plan', s.author.plan)
   await cycleAvgSoundUntilV1(s, 'avg.media.compiled-sound-requirements')
   await cycleAvgSoundUntilV1(s, 'avg.sound.raw.desk.bgm'); await cycleAvgSoundUntilV1(s, 'avg.sound.raw.desk.sfx')
-  return { ...s, wire }
+  return s
 }
 export function avgSoundAuthorReviewFixtureV3(raw: AvgRawSoundPayloadV1, heard = true): AvgSoundReviewIssuesV3 {
   const cycles = raw.requirement.template.cue.loop ? 2 : 1
