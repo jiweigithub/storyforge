@@ -253,7 +253,7 @@ const limited = new Map()
 for (const entry of registry.limitedTransports ?? []) {
   if (!entry.entryId || registered.has(entry.entryId) || limited.has(entry.entryId)
     || entry.adoptAllowed !== false || entry.adoptionTargets?.length
-    || !['ephemeral-author-input', 'read-only-audio'].includes(entry.boundary)
+    || !['ephemeral-author-input', 'ephemeral-player-input', 'read-only-audio'].includes(entry.boundary)
     || !entry.allowedCallers?.length || !entry.reason) {
     failures.push('有限语音入口边界无效: ' + entry.entryId)
   }

@@ -4,7 +4,9 @@
   "scope": "formal-ai-execution-entry",
   "limitedTransports": [
     { "entryId": "longform.voice.input", "boundary": "ephemeral-author-input", "adoptAllowed": false, "allowedCallers": ["src/lib/longform-voice/session.ts"], "reason": "浏览器或独立语音服务仅将显式录音转成可编辑输入，不自动发送、执行或采纳。" },
-    { "entryId": "longform.voice.output", "boundary": "read-only-audio", "adoptAllowed": false, "allowedCallers": ["src/lib/longform-voice/session.ts"], "reason": "仅朗读作者选择的可见文本；不读取数据库、检索上下文或写作品，音频播放后释放。" }
+    { "entryId": "longform.voice.output", "boundary": "read-only-audio", "adoptAllowed": false, "allowedCallers": ["src/lib/longform-voice/session.ts"], "reason": "仅朗读作者选择的可见文本；不读取数据库、检索上下文或写作品，音频播放后释放。" },
+    { "entryId": "chat.voice.input", "boundary": "ephemeral-player-input", "adoptAllowed": false, "allowedCallers": ["src/lib/longform-voice/session.ts"], "reason": "玩家显式开始浏览器录音，仅形成待确认的临时转写；确认后才进入当前存档输入草稿，不自动发送、不调用叙事模型或提交事件。" },
+    { "entryId": "chat.voice.output", "boundary": "read-only-audio", "adoptAllowed": false, "allowedCallers": ["src/lib/longform-voice/session.ts"], "reason": "仅以浏览器音色朗读玩家选中的可见正式角色消息；不读隐藏知识或候选，不生成事实，不持久化音频，停止及切换存档释放资源。" }
   ],
   "entries": [
     { "entryId": "chat.source-unit-confirmation", "skillId": "chat.source-unit-confirmation.v1", "categories": ["authoring.chat-source-unit-confirmation"], "runContractBuilderId": "chat-source-unit-confirmation-durable", "executionBoundary": "durable-run", "entryKind": "formal", "candidateKind": "chat-source-unit-confirmation", "adoptAllowed": true, "adoptionTargets": ["chatAuthoringDrafts"], "allowedCallers": ["src/lib/character-interaction/source-unit-confirmation-harness.ts"], "reason": "独立复核事实、初知与发现条件，精确候选通过后仍须作者明确确认，经治理采纳原子保存事实、来源与回执；旧只读拆分/复核运行不获得写权限。" },
