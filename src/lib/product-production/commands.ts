@@ -72,6 +72,7 @@ import { verifyTextOpenWorldCreatorProductionPreflightConfirmationV1 } from '../
 import { useAIConfigStore } from '../../stores/ai-config'
 import {
   assertProductProductionBudgetLedgerV1,
+  productProductionFailureNeedsProviderAccountingV1,
   prepareLegacyPausedProductBuildV1,
   resolveProductProductionUnknownResultReservationLedgerV2,
 } from './scheduler'
@@ -2169,8 +2170,7 @@ async function applyCommand(input: {
     let resolvedUnknownReservation: ReturnType<
       typeof resolveProductProductionUnknownResultReservationLedgerV2
     > | null = null
-    const providerReservationFailure = failure.code === 'unknown-result'
-      || failure.code === 'provider-response-uncheckpointed'
+    const providerReservationFailure = productProductionFailureNeedsProviderAccountingV1(build)
     if (providerReservationFailure) {
       if (command.resolution.action !== 'cancel' && !unknownResultReservation) {
         reject('invalid-state-transition', failure.code === 'provider-response-uncheckpointed'

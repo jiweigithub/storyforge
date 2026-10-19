@@ -83,6 +83,7 @@ import { detectProductImageDimensionsV1, detectProductMediaMimeTypeV1 } from './
 import { useAIConfigStore } from '../../stores/ai-config'
 import {
   assertProductProductionBudgetLedgerV1,
+  productProductionFailureNeedsProviderAccountingV1,
   prepareLegacyPausedProductBuildV1,
   projectProductProductionSchedulerV1,
   recoverImportedProductProductionProofsV1 as recoverImportedProductProductionProofsCoreV1,
@@ -1499,8 +1500,7 @@ export async function retryProductProductionBlockerV1(input: {
       failure = parsed as Record<string, unknown>
     }
   } catch { /* command boundary will reject corrupt failure evidence */ }
-  const providerReservationFailure = failure.code === 'unknown-result'
-    || failure.code === 'provider-response-uncheckpointed'
+  const providerReservationFailure = productProductionFailureNeedsProviderAccountingV1(input.details.build)
   if (providerReservationFailure) {
     if (!input.unknownResultDisposition) {
       throw new Error(failure.code === 'provider-response-uncheckpointed'

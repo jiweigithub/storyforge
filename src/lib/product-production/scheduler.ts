@@ -694,6 +694,24 @@ export function assertProductProductionBudgetLedgerV1(value: string): void {
   parseLedger(value)
 }
 
+/** Workbench, service and command share this accounting classification.
+ * Scheduler's internal failure names do not bypass explicit provider booking.
+ * Legacy timeouts need booking while the original ledger still holds usage. */
+export function productProductionFailureNeedsProviderAccountingV1(
+  build: Pick<ProductBuildRecordV1, 'failureJson' | 'budgetLedgerJson'>,
+): boolean {
+  try {
+    const failure = JSON.parse(build.failureJson) as Record<string, unknown>
+    if (!failure || typeof failure !== 'object' || Array.isArray(failure)) return true
+    if (['unknown-result', 'provider-response-uncheckpointed', 'task-result-unknown', 'provider-result-unknown']
+      .includes(String(failure.code))) return true
+    if (failure.code !== 'task-timeout') return false
+    return parseLedger(build.budgetLedgerJson).attempts.some(entry => entry.taskKey === failure.taskKey
+      && !entry.usageKnown && (entry.usage == null
+        || entry.usage.modelCalls > 0 || entry.usage.mediaCalls > 0 || (entry.usage.costUsd ?? 0) > 0))
+  } catch { return true }
+}
+
 /**
  * Close one conservatively held result-unknown attempt without changing the
  * mainline append-only attempt ledger. The unknown attempt already stores its
@@ -836,6 +854,9 @@ function isProviderTransportResultUnknown(error: unknown): boolean {
 }
 
 const NON_AUTOMATIC_RETRY_FAILURE_CODES = new Set([
+  // A paid timeout can leave remote work or usage unknown. Historical timeout
+  // rows must also wait for explicit disposition rather than reopening a call.
+  'task-timeout',
   'provider-safety-refusal',
   'provider-result-unknown',
   'task-preflight-failed',
@@ -5074,12 +5095,16 @@ async function runClaimedTaskCore(input: {
     }
     const providerTransportResultUnknown = costBearing(input.task)
       && paidUsage == null
-      && isProviderTransportResultUnknown(error)
-    const code = timedOut || (error instanceof Error && error.name === 'TimeoutError') ? 'task-timeout'
+      && (isProviderTransportResultUnknown(error)
+        || (!authorizedDirectResult && !authorDraftJson && !localProceduralMedia
+          && (timedOut || (error instanceof Error && error.name === 'TimeoutError'))))
+    // Aborting an observing transport is not proof that the paid operation was
+    // never accepted or uncharged. Preserve the original unknown usage hold.
+    const code = providerTransportResultUnknown ? 'task-result-unknown'
+      : timedOut || (error instanceof Error && error.name === 'TimeoutError') ? 'task-timeout'
       : error instanceof Error && error.name === 'AbortError' ? 'task-aborted'
       : error instanceof ProductProductionDraftRejectedErrorV1 ? 'task-draft-rejected'
       : error instanceof ProductProductionResultUnknownErrorV1 ? 'task-result-unknown'
-      : providerTransportResultUnknown ? 'task-result-unknown'
       : error instanceof Error && error.message.includes('provider-safety-refusal')
         ? 'provider-safety-refusal'
         : paidUsageBudgetExceeded
@@ -5412,6 +5437,16 @@ function attemptHasMediaEvent(
     && event.payload.toolName === 'game-media-provider')
 }
 
+function taskFailureProvenanceV1(snapshot: AgentRunSnapshotV1, taskKey: string) {
+  const boundary = snapshot.contract.scope.productProduction
+  const step = snapshot.projection.steps[taskKey]
+  if (!boundary || boundary.taskKey !== taskKey || snapshot.run.parentRunId == null || !step) {
+    throw new Error('[product-production-scheduler] 失败任务缺少真实 Run/Plan/attempt 归属')
+  }
+  return { runId: snapshot.run.id, rootRunId: snapshot.run.parentRunId,
+    controlEpoch: boundary.controlEpoch, planHash: boundary.planHash, attempt: step.attempt }
+}
+
 /**
  * A browser refresh/HMR discards the promise that owned an in-flight child
  * Run, but its append-only events remain. Re-entry must classify those events
@@ -5436,6 +5471,21 @@ async function reconcileAbandonedTaskRunsV1(input: {
   for (const task of input.plan.tasks) {
     let snapshot = input.children.get(task.taskKey)
     if (!snapshot || !['planned', 'running'].includes(snapshot.projection.state)) continue
+    const failedStep = snapshot.projection.steps[task.taskKey]
+    if (failedStep?.status === 'failed' && !permitsAutomaticTaskRetry(failedStep.failureCode)) {
+      // An older scheduler may have left a retryable timeout step in a running
+      // Run. Its paid attempt is already settled/held: do not wait another
+      // deadline, replay it, or settle a second reservation on re-entry.
+      const previous = textAdventureTaskFailures(input.build.failureJson).get(task.taskKey)
+      snapshot = await append(input.scope, snapshot, 'run.failed', {
+        code: failedStep.failureCode ?? 'task-executor-failed', retryable: false,
+      })
+      blockers.push({ ...(previous ?? {}), failureProvenance: taskFailureProvenanceV1(snapshot, task.taskKey), taskKey: task.taskKey,
+        code: failedStep.failureCode, attempt: failedStep.attempt,
+        detail: typeof previous?.detail === 'string' ? previous.detail
+          : '原任务已失败且不能自动重试；请核对原请求与实际用量后明确处理。' })
+      continue
+    }
     const lastDurableEventAt = snapshot.events[snapshot.events.length - 1]?.createdAt
       ?? snapshot.run.updatedAt
     const localProceduralBoundary = snapshot.events.some(event => (
@@ -5528,7 +5578,8 @@ async function reconcileAbandonedTaskRunsV1(input: {
         usage: null, errorCode: code,
       },
     })
-    blockers.push({ taskKey: task.taskKey, code, attempt, detail })
+    blockers.push({ taskKey: task.taskKey, code, attempt, detail,
+      failureProvenance: taskFailureProvenanceV1(snapshot, task.taskKey) })
   }
 
   if (blockers.length > 0) {
@@ -5804,6 +5855,9 @@ export async function projectProductProductionSchedulerV1(input: {
       else if (['failed', 'cancelled', 'recovery_required', 'paused'].includes(child.projection.state)) {
         status = 'blocked'
         blocker = failureDetail ?? step?.failureCode ?? `run-${child.projection.state}`
+      } else if (step?.status === 'failed' && !permitsAutomaticTaskRetry(step.failureCode)) {
+        status = 'blocked'
+        blocker = failureDetail ?? step.failureCode ?? 'task-executor-failed'
       } else if (step?.status === 'failed' && permitsAutomaticTaskRetry(step.failureCode)
         && step.attempt < task.maxAttempts) {
         status = 'retry-ready'

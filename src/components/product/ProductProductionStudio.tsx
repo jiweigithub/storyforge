@@ -1,4 +1,5 @@
 import { canReviseTextContentBuildV1 } from '../../lib/product-production/text-content-revision'
+import { productProductionFailureNeedsProviderAccountingV1 } from '../../lib/product-production/scheduler'
 import TextAdventureContentRevisionPanel from './TextAdventureContentRevisionPanel'
 import type { ChatAuthoringSettingsV1 } from '../../lib/character-interaction/authoring-contract'
 import type { AvgAuthoringSettingsV1 } from '../../lib/avg/authoring-contract'
@@ -1799,7 +1800,9 @@ export default function ProductProductionStudio(props: {
     && (details.build.status === 'recovery-required'
       || (details.production.status === 'paused' && details.build.status === 'paused'))
     ? buildFailureCode(details.build.failureJson) : ''
-  const unknownResultBlocked = providerReservationFailureCode === 'unknown-result'
+  const unknownResultBlocked = !!details?.build && providerReservationFailureCode !== ''
+    && providerReservationFailureCode !== 'provider-response-uncheckpointed'
+    && productProductionFailureNeedsProviderAccountingV1(details.build)
   const observedUncheckpointedResponseBlocked = providerReservationFailureCode === 'provider-response-uncheckpointed'
   const pausedProviderReservationBlocked = details?.production.status === 'paused'
     && providerReservationFailureCode === 'pause-provider-result-unknown'
