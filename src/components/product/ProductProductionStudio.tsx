@@ -1,5 +1,6 @@
 import { canReviseTextContentBuildV1 } from '../../lib/product-production/text-content-revision'
 import { productProductionFailureNeedsProviderAccountingV1 } from '../../lib/product-production/scheduler'
+import { supportsProductProductionLocalRequestV1 } from '../../lib/product-production/local-request'
 import TextAdventureContentRevisionPanel from './TextAdventureContentRevisionPanel'
 import type { ChatAuthoringSettingsV1 } from '../../lib/character-interaction/authoring-contract'
 import type { AvgAuthoringSettingsV1 } from '../../lib/avg/authoring-contract'
@@ -1332,6 +1333,18 @@ export default function ProductProductionStudio(props: {
     })
   }, '读取任务证据')
 
+  const inspectOriginalLocalRequest = (taskKey: string, runId: number, attempt: number) => run(async () => {
+    if (!details?.production.id || !details.build?.id) throw new Error('缺少当前制作任务。')
+    const { readProductProductionOriginalLocalReceiptV1 } = await import('../../lib/product-production/local-request')
+    const receipt = await readProductProductionOriginalLocalReceiptV1({ scope: props.scope,
+      productionId: details.production.id, buildId: details.build.id, taskKey, runId, attempt })
+    setTaskEvidence({ taskKey, text: receipt.status === 'unbound'
+      ? '原任务没有发送前保存的本机请求引用；保留原记录，不能事后按正文或 hash 关联。'
+      : `原请求只读查询：${receipt.status}（${receipt.source === 'owner' ? '已保存的作品原文' : '原本机回执'}）\n`
+        + '本次查询没有重新生成、结算或采用。部分或失败回答不能作为成功候选。\n'
+        + `请求：${receipt.requestId}\n模型：${receipt.model}\n真实用量：${JSON.stringify(receipt.usage)}\n\n${receipt.text}` })
+  }, '查询原本机请求')
+
   const preview = () => run(async () => {
     if (!details) throw new Error('缺少 Production。')
     const opened = await startProductProductionPreviewV1({
@@ -2178,7 +2191,7 @@ export default function ProductProductionStudio(props: {
           </div>
           <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{progress.tasks.map(task => {
             const presentation = productionTaskPresentation(task.taskKey)
-            return <article key={task.taskKey} className="rounded border border-border bg-bg-base p-3"><span className="flex items-center justify-between gap-2"><strong className="text-[10px]">{presentation.label}</strong><em className={`not-italic text-[9px] ${task.status === 'completed' ? 'text-success' : task.status === 'blocked' ? 'text-error' : 'text-accent'}`}>{statusLabel(task.status)}</em></span><p className="mt-1 text-[9px] text-text-muted">{presentation.owner}</p><code className="mt-1 block text-[8px] text-text-muted">{task.taskKey}</code><p className="mt-2 text-[9px] text-text-muted">{task.lane} · attempt {task.attempt || '—'}{task.blocker ? ` · 阻塞：${task.blocker}` : ''}</p>{task.latestDurableBoundary && <p className="mt-1 text-[9px] text-text-muted">边界：{task.latestDurableBoundary.eventType} #{task.latestDurableBoundary.sequence}</p>}{task.checkpoint && <p className="mt-1 text-[9px] text-text-muted">checkpoint：{task.checkpoint.status} · {task.checkpoint.resumeKind}</p>}{task.runId && <button type="button" disabled={busy} onClick={() => inspectTaskEvidence(task.taskKey)} className="mt-2 rounded border border-border px-2 py-1 text-[9px] text-text-muted disabled:opacity-40">查看冻结证据</button>}</article>
+            return <article key={task.taskKey} className="rounded border border-border bg-bg-base p-3"><span className="flex items-center justify-between gap-2"><strong className="text-[10px]">{presentation.label}</strong><em className={`not-italic text-[9px] ${task.status === 'completed' ? 'text-success' : task.status === 'blocked' ? 'text-error' : 'text-accent'}`}>{statusLabel(task.status)}</em></span><p className="mt-1 text-[9px] text-text-muted">{presentation.owner}</p><code className="mt-1 block text-[8px] text-text-muted">{task.taskKey}</code><p className="mt-2 text-[9px] text-text-muted">{task.lane} · attempt {task.attempt || '—'}{task.blocker ? ` · 阻塞：${task.blocker}` : ''}</p>{task.latestDurableBoundary && <p className="mt-1 text-[9px] text-text-muted">边界：{task.latestDurableBoundary.eventType} #{task.latestDurableBoundary.sequence}</p>}{task.checkpoint && <p className="mt-1 text-[9px] text-text-muted">checkpoint：{task.checkpoint.status} · {task.checkpoint.resumeKind}</p>}{task.runId && <button type="button" disabled={busy} onClick={() => inspectTaskEvidence(task.taskKey)} className="mt-2 rounded border border-border px-2 py-1 text-[9px] text-text-muted disabled:opacity-40">查看冻结证据</button>}{selectedBrief?.ttrpgOpen && task.runId && task.attempt > 0 && supportsProductProductionLocalRequestV1(task.taskKey) && <button type="button" disabled={busy} onClick={() => inspectOriginalLocalRequest(task.taskKey, task.runId!, task.attempt)} className="ml-2 mt-2 rounded border border-border px-2 py-1 text-[9px] text-text-muted disabled:opacity-40">查询原本机请求</button>}</article>
           })}</div>
           {taskEvidence && <div className="mt-4 rounded border border-border bg-bg-base p-3" data-testid="product-production-task-evidence"><div className="flex items-center justify-between gap-2"><strong className="text-[10px]">{taskEvidence.taskKey} · 冻结证据</strong><button type="button" onClick={() => setTaskEvidence(null)} className="text-[9px] text-text-muted">关闭</button></div><pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap text-[9px] leading-5 text-text-muted">{taskEvidence.text}</pre></div>}
         </section>}

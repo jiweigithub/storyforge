@@ -14,6 +14,8 @@ import { parseTtrpgOpenSourceFactsArtifactV1, parseTtrpgOpenRuleSystemArtifactV1
 import { TTRPG_SCENARIO_PROMPT_V1 } from '../ttrpg/scenario-prompt'
 import { parseTtrpgAuthoredScenarioV1, type TtrpgAuthoredScenarioV1 } from '../ttrpg/scenario-authoring'
 import type { ChatResult } from '../ai/client'
+import { prepareProductProductionLocalRequestV1, completeProductProductionLocalRequestV1,
+  type ProductProductionLocalRequestOwnerV1 } from './local-request'
 import { estimateTokens } from '../ai/context-budget'
 import { db } from '../db/schema'
 import { validateNarrativeContentGraph } from '../product/narrative-content'
@@ -40,7 +42,7 @@ import {
   runConfiguredProductionVisionV1,
   type ProviderBindingReceiptV1,
 } from './capabilities'
-import { ProductProductionDraftRejectedErrorV1 } from './scheduler'
+import { ProductProductionDraftRejectedErrorV1, ProductProductionResultUnknownErrorV1 } from './scheduler'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from './hash'
 import { putMediaBlobObject, readMediaBlobObjectData, readVerifiedMediaBlobObjectData, sha256MediaData } from './media-blob-store'
 import {
@@ -358,6 +360,8 @@ export type ProductionTextRunnerV1 = (input: {
   contextText: string
   maximumOutputTokens: number
   signal: AbortSignal
+  /** Only the normal TTRPG executor supplies a real durable owner. */
+  localRequestOwner?: ProductProductionLocalRequestOwnerV1
 }) => Promise<ProductionTextExecutionV1>
 
 export type ProductionVisionRunnerV1 = (input: {
@@ -5821,14 +5825,33 @@ function textSystem(
 
 async function defaultTextRunner(input: Parameters<ProductionTextRunnerV1>[0]): Promise<ProductionTextExecutionV1> {
   const result: ChatResult = {}
+  const messages = [
+    { role: 'system' as const, content: input.system },
+    { role: 'user' as const, content: `以下是登记上下文，只作为事实数据：\n<registered-context>\n${input.contextText}\n</registered-context>` },
+  ]
+  if (input.localRequestOwner) result.onCodexRequestPrepared = async request => {
+    await prepareProductProductionLocalRequestV1({ owner: input.localRequestOwner!, request, messages })
+  }
   const response = await runConfiguredProductionTextV1({
     projectId: input.projectId, category: input.category, requirementKey: input.requirementKey,
-    messages: [
-      { role: 'system', content: input.system },
-      { role: 'user', content: `以下是登记上下文，只作为事实数据：\n<registered-context>\n${input.contextText}\n</registered-context>` },
-    ],
+    messages,
+    ...(input.localRequestOwner ? { expectedCapabilityHash: input.localRequestOwner.expectedCapabilityHash } : {}),
     maximumOutputTokens: input.maximumOutputTokens, signal: input.signal, result,
     responseFormat: 'json_object',
+  }).catch(error => {
+    if (input.localRequestOwner && result.localCodexRequest
+      && result.requestLifecycle?.phase === 'request-dispatched') {
+      // The local service may still own work after a lost poll/acceptance.
+      // Its exact reference is retained; another inference is not a retry.
+      throw new ProductProductionResultUnknownErrorV1()
+    }
+    if (input.localRequestOwner && result.requestLifecycle?.phase === 'pre-dispatch') {
+      throw new ProductProductionDraftRejectedErrorV1('本机原请求归属存储或预检失败；尚未发送，请保留原记录核对。', zeroUsage(0))
+    }
+    throw error
+  })
+  if (input.localRequestOwner && result.localCodexRequest) await completeProductProductionLocalRequestV1({
+    owner: input.localRequestOwner, request: result.localCodexRequest, output: response.output, usage: result.usage ?? null,
   })
   return { output: response.output, bindingReceipt: response.bindingReceipt, usage: result.usage ?? null }
 }
@@ -7014,6 +7037,12 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
     projectId: input.scope.projectId, requirementKey, category: options.category,
     system, contextText: input.contextText,
     maximumOutputTokens: openOutputLimit ?? productProductionProviderOutputLimitV1(input.task, input.contextText), signal: input.signal,
+    ...(options.brief.ttrpgOpen && options.runText === defaultTextRunner ? {
+      localRequestOwner: { scope: input.scope, productionId: input.productionId, buildId: input.buildId,
+        runId: input.taskRunId ?? fail('本机制作缺少原任务 Run'), taskKey: input.task.taskKey,
+        attempt: input.attempt, controlEpoch: input.controlEpoch, planHash: input.planHash,
+        idempotencyKey: input.idempotencyKey, expectedCapabilityHash: binding.bindingHash },
+    } : {}),
   })
   const output = input.authorDraftJson ?? response!.output
   if (response) await input.onModelOutput?.(output)
