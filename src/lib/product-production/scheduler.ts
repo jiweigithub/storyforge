@@ -1144,7 +1144,7 @@ function taskContractContextSourceKeys(task: ProductProductionPlanTaskV3): strin
   ])]
 }
 
-function combineProductProductionContextV1(input: {
+export function combineProductProductionContextV1(input: {
   assembled: AssembleContextResult
   worldContent: string
   worldContentHash: string
