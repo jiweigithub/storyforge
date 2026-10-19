@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 test.setTimeout(120_000)
+test.skip(process.env.VITE_STORYFORGE_AVG_SOUND_PRODUCTION === '1', 'This suite verifies saved requirements while the Sound factory is closed')
 
 /** Uses actual Work/source/draft APIs in a fresh isolated browser context.
  * No Build, Run, model response, audio, hearing or adoption is seeded. */

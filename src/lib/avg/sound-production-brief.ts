@@ -42,10 +42,13 @@ export function parseAvgSoundPlanningBriefV1(value: unknown): AvgSoundPlanningBr
   return { schema: r.schema, version: 1, assembly, aspectRatio: avgEnum(r.aspectRatio, ['16:9', '4:3'] as const, 'sound source aspect ratio'), scope, musicBinding }
 }
 
-/** A parseable frozen declaration is not an executable product. Keep every
- * public preparation/start/executor entry closed until producer, observation,
- * author adoption and portable lifecycle are connected as one slice. */
-export function avgSoundProductionExecutionReadyV1(): boolean { return false }
+/** Bounded experimental original Sound factory, default hidden. This flag
+ * grants no start/adoption by itself: original source/route, Brief/Plan/Run,
+ * native observation, author commands and Preview proofs remain mandatory.
+ * Formal release and commercial quality are separate gates. */
+export function avgSoundProductionExecutionReadyV1(): boolean {
+  return import.meta.env.VITE_STORYFORGE_AVG_SOUND_PRODUCTION === '1'
+}
 
 /** Default-hidden author requirement editor only. This switch never opens
  * preparation, authorization, model/audio dispatch, review or adoption. */

@@ -17,10 +17,11 @@ export interface AvgRawPreviewReference { requirementKey: string; version: numbe
 
 /** Local URLs are created only after the existing owner/hash proof reader.
  * Provider URL strings and arbitrary Blob IDs are never displayed directly. */
-export default function MediaAssetPreview({ scope, asset, productionId, raw, generatedSource, generatedVoiceSource, onObserved,onUnavailable,comparisonAspectRatio,smallImageSizes,caption }: {
+export default function MediaAssetPreview({ scope, asset, productionId, raw, rawSound, generatedSource, generatedVoiceSource, onObserved,onUnavailable,comparisonAspectRatio,smallImageSizes,caption }: {
   scope: WorkspaceScope; asset: FrozenRuntimeMediaAssetV2; productionId?: number | null; raw?: AvgRawPreviewReference; generatedSource?: AvgGeneratedImageSource; onObserved?: () => void;onUnavailable?:()=>void
   comparisonAspectRatio?:number;smallImageSizes?:readonly number[];caption?:string
   generatedVoiceSource?: AvgGeneratedVoiceSourceV1
+  rawSound?: { artifactKey: string; version: number; contentHash: string }
 }) {
   const [url, setUrl] = useState(''), [error, setError] = useState('')
   const [readAttempt, setReadAttempt] = useState(0)
@@ -37,6 +38,7 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
   const generatedSourceJson=generatedSource?JSON.stringify(generatedSource):''
   const generatedVoiceSourceJson = generatedVoiceSource ? JSON.stringify(generatedVoiceSource) : ''
   const assetJson = JSON.stringify(asset)
+  const rawSoundJson = rawSound ? JSON.stringify(rawSound) : ''
   useEffect(() => {
     let alive = true, created = ''
     const element = audio.current
@@ -44,7 +46,13 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
     const current = JSON.parse(assetJson) as FrozenRuntimeMediaAssetV2
     const read = async () => {
       if(historicalV5Json&&(visualVersion!==5||!requirementKey))throw new Error('新版历史预览缺少准确版本')
-      if ([!!requirementKey, !!generatedSourceJson, !!generatedVoiceSourceJson].filter(Boolean).length > 1) throw new Error('媒资预览不能同时声明多种来源')
+      if ([!!requirementKey, !!rawSoundJson, !!generatedSourceJson, !!generatedVoiceSourceJson].filter(Boolean).length > 1) throw new Error('媒资预览不能同时声明多种来源')
+      if (rawSoundJson) {
+        if (!productionId) throw new Error('原声音缺少准确制作来源')
+        const candidate = await (await import('../../lib/avg/sound-workbench-service')).readAvgSoundCandidateV1({ scope, productionId, raw: JSON.parse(rawSoundJson) })
+        if (canonicalProductProductionJsonV2(candidate.asset) !== canonicalProductProductionJsonV2(current)) throw new Error('显示声音与准确原音频不一致')
+        return candidate.data
+      }
       if(historicalSourceJson&&!historicalJson)throw new Error('便携原图预览缺少准确历史边界')
       if(historicalJson&&(!requirementKey||processed||retained))throw new Error('历史原图预览缺少准确来源或混入了其他加工来源')
       if (generatedVoiceSourceJson) {
@@ -77,7 +85,7 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, gen
       created = URL.createObjectURL(new Blob([bytes], { type: current.mimeType })); setUrl(created)
     }).catch(cause => { if (alive){setError(String(cause));unavailable.current?.()} })
     return () => { alive = false; element?.pause(); if (created) URL.revokeObjectURL(created) }
-  }, [scope, assetJson, productionId, requirementKey, version, contentHash, retained, processed, visualVersion, historicalV5Json, historicalJson, historicalSourceJson, generatedSourceJson, generatedVoiceSourceJson, readAttempt])
+  }, [scope, assetJson, productionId, requirementKey, version, contentHash, retained, processed, visualVersion, historicalV5Json, historicalJson, historicalSourceJson, generatedSourceJson, generatedVoiceSourceJson, rawSoundJson, readAttempt])
   return <figure className="avg-assembly-media-preview"><figcaption>{caption??asset.name} · {AVG_MEDIA_KIND_LABELS[asset.kind]}</figcaption>
     {error && <><p role="alert">{error}</p><button className="lf-action" aria-label={`重新读取媒资：${asset.name}`} onClick={()=>setReadAttempt(value=>value+1)}>重新读取媒资</button><p>重新核验已保存文件与准确来源，不会新增生成请求。</p></>}
     {asset.mimeType.startsWith('audio/') ? <audio ref={audio} controls src={url || undefined} preload="metadata" />
