@@ -40,6 +40,14 @@ test('a closed Codex observer is recovered by original ID after reload, another 
   await assistant.getByRole('button', { name: '读取原回答并恢复候选', exact: true }).click()
   await expect(assistant.getByRole('alert')).toContainText('仍在本机页面执行或恢复')
   await page.close()
+  // Closing the observer returns before another renderer necessarily observes
+  // Web Locks ownership release. Wait for that real precondition, rather than
+  // treating a second, correctly rejected busy click as failed receipt parsing.
+  // This is read-only: no retry of recovery, transport, cancellation or model.
+  const ownerKey = `storyforge:ttrpg-open-design:${f.scope.projectId}:${f.scope.worldId}:${f.scope.workId}`
+  const ownerHeld = () => other.evaluate(async key => (await navigator.locks.query()).held?.some(lock => lock.name === key) ?? false, ownerKey)
+  const heldAfterClose = await ownerHeld()
+  await expect.poll(ownerHeld).toBe(false)
   complete = true; const priorCancels = cancels
   await assistant.getByRole('button', { name: '读取原回答并恢复候选', exact: true }).click()
   await expect(assistant.locator('.ttrpg-design-proposal')).toHaveCount(3)
@@ -55,7 +63,7 @@ test('a closed Codex observer is recovered by original ID after reload, another 
   await expect(assistant).toContainText('这份设计已保存到草稿版本')
   const adopted = await proof(other, f.scope)
   expect(adopted.draft.revision).toBe(before.draft.revision + 1); expect(adopted.productions).toBe(0); expect(adopted.builds).toBe(0)
-  await info.attach('original-request-only-recovery', { body: JSON.stringify({ originalId: original.id, inference, cancels, handoffs,
+  await info.attach('original-request-only-recovery', { body: JSON.stringify({ originalId: original.id, inference, cancels, handoffs, heldAfterClose,
     recoveredRevision: recovered.draft.revision, adoptedRevision: adopted.draft.revision, usage: original.usage }), contentType: 'application/json' })
 })
 
