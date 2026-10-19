@@ -5,34 +5,14 @@ import productTypes from '../types/ttrpg-product.ts?raw'
 import type { ChatMessage } from '../types'
 import { ttrpgOpenDesignOutputBudgetV1, type TtrpgOpenAuthoringDesignRequestV1 } from './open-authoring-design-contract'
 import { TTRPG_OPEN_STORY_EFFECT_OPERATIONS_V1 } from './open-contract'
-import type { ContextGatewayExecutionV1 } from '../context-gateway/execution'
-import { sha256Text } from '../ai/chapter-memory/text-normalization'
+import { projectTtrpgOpenWorldReadsV1, type TtrpgOpenWorldReadsInputV1 } from './open-world-reads'
 
 /** A product view of verified, actually delivered reads. Never look up a new
  * descriptor or confuse an original resource hash with a summary/packet hash.
  * The original ContextPacket/trace are retained separately by the Harness. */
-export async function renderTtrpgOpenDesignWorldReadsV1(input: {
-  retrievalTrace: Pick<ContextGatewayExecutionV1['retrievalTrace'], 'mandatory' | 'autoSelected' | 'agentReads'>
-  sourceSnapshots: ContextGatewayExecutionV1['sourceSnapshots']
-}): Promise<string> {
-  function fail(): never { throw new Error('[ttrpg-authoring-design] 世界读取正文与逐资源来源锚点不一致；尚未发送请求') }
-  const reads = [...input.retrievalTrace.mandatory, ...input.retrievalTrace.autoSelected, ...input.retrievalTrace.agentReads]
-  const byKey = new Map(reads.map(read => [read.resourceKey, read]))
-  if (!reads.length || byKey.size !== reads.length || input.sourceSnapshots.length !== reads.length) fail()
-  const seen = new Set<string>(), resources = []
-  for (const snapshot of input.sourceSnapshots) {
-    const read = snapshot.resourceKey ? byKey.get(snapshot.resourceKey) : undefined
-    if (!read || read.sourceKey !== 'worldRelease' || snapshot.sourceKey !== 'worldRelease'
-      || seen.has(read.resourceKey) || typeof snapshot.content !== 'string' || !/^[a-f0-9]{64}$/.test(read.contentHash)
-      || snapshot.sourceRefs?.length !== 1 || snapshot.sourceRefs[0].table !== 'worldReleases'
-      || snapshot.sourceRefs[0].contentHash !== read.contentHash
-      || JSON.stringify(snapshot.sourceRefs) !== JSON.stringify(read.sourceRefs)) fail()
-    if ((read.depth === 'full' || read.depth === 'original') && await sha256Text(snapshot.content as string) !== read.contentHash) fail()
-    seen.add(read.resourceKey)
-    resources.push({ resourceKey: read.resourceKey, contentHash: read.contentHash, depth: read.depth, readContent: snapshot.content as string })
-  }
+export async function renderTtrpgOpenDesignWorldReadsV1(input: TtrpgOpenWorldReadsInputV1): Promise<string> {
   return JSON.stringify({ schema: 'storyforge.ttrpg-open-design-world-reads', version: 1,
-    resources: resources.sort((left, right) => left.resourceKey.localeCompare(right.resourceKey)) })
+    resources: await projectTtrpgOpenWorldReadsV1(input) })
 }
 
 function block(from: string, to: string): string {
