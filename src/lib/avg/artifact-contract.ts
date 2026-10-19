@@ -4,6 +4,7 @@ import { avgEnum, avgHash, avgKey, avgKeys, avgList, avgProtocolBody, avgRecord,
 import { parseAvgSystemPlan, type AvgSystemPlan } from './system-contract'
 import { parseAvgAuthorVisualEvidenceV1,type AvgAuthorVisualEvidenceV1 } from './visual-review-contract'
 import { parseAvgAuthorVoiceEvidenceV1, type AvgAuthorVoiceEvidenceV1 } from './voice-review-contract'
+import { parseAvgSoundPlanV1, type AvgSoundPlanV1 } from './sound-plan-contract'
 import { avgMediaBriefArtifactKeyV1, parseAvgMediaBriefV1, parseAvgVisualBibleV1, type AvgMediaBriefV1, type AvgVisualBibleV1 } from './visual-planning-contract'
 
 /** Reserved role contracts do not register an AI call or assert professional competence. */
@@ -64,7 +65,7 @@ export type AvgReviewIssuesV1 = Schema<'review-issues'> & {
   visualEvidence?: AvgAuthorVisualEvidenceV1
   audioEvidence?: AvgAuthorVoiceEvidenceV1
 }
-export type AvgProfessionalArtifactV1 = AvgProductionPlanV1 | AvgSourceAuditV1 | AvgStoryBibleV1 | AvgCastBibleV1 | AvgRoutePlanV1 | AvgSceneScriptV1 | AvgDialoguePatchV1 | AvgReviewIssuesV1 | AvgSystemPlan | AvgVisualBibleV1 | AvgMediaBriefV1
+export type AvgProfessionalArtifactV1 = AvgProductionPlanV1 | AvgSourceAuditV1 | AvgStoryBibleV1 | AvgCastBibleV1 | AvgRoutePlanV1 | AvgSceneScriptV1 | AvgDialoguePatchV1 | AvgReviewIssuesV1 | AvgSystemPlan | AvgVisualBibleV1 | AvgMediaBriefV1 | AvgSoundPlanV1
 
 function texts(value: unknown, label: string): string[] { return avgList(value, label, avgText, 1000) }
 function nullableKey(value: unknown, label: string): string | null { return value === null ? null : avgKey(value, label) }
@@ -90,6 +91,7 @@ export function parseAvgProfessionalArtifactV1(value: unknown): AvgProfessionalA
   if (header.schema === 'storyforge.avg.system-plan') return parseAvgSystemPlan(raw)
   if (header.version !== 1 || typeof header.schema !== 'string') throw new Error('[avg] artifact schema/version 无效')
   switch (header.schema) {
+    case 'storyforge.avg.sound-plan': return parseAvgSoundPlanV1(raw)
     case 'storyforge.avg.visual-bible': return parseAvgVisualBibleV1(raw)
     case 'storyforge.avg.media-brief': return parseAvgMediaBriefV1(raw)
     case 'storyforge.avg.production-plan': {
