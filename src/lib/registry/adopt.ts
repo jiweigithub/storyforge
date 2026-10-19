@@ -68,6 +68,11 @@ export async function adopt(input: AdoptInput): Promise<AdoptResult> {
     return result
   }
 
+  if (input.preserveAuthorText && (input.recordId == null || input.mode !== 'replace' || input.compareAndSet || Array.isArray(input.data)
+    || Object.keys(input.data).some(key => !fieldSpecs.find(field => field.field === key)?.textReplacement))) {
+    throw new Error('[adopt] 精确文字编辑仅限已登记字段的定点 replace')
+  }
+
   const tableSpec = REGISTRY_BY_NAME.get(input.target)
   if (!tableSpec) throw new Error(`[adopt] target ${input.target} 不在 PROJECT_TABLES`)
 
@@ -218,7 +223,7 @@ async function adoptCollectionRecord(
     })
     return result
   }
-  let patch = normalizeAndValidate(input.data, fieldSpecs, result)
+  let patch = normalizeAndValidate(input.data, fieldSpecs, result, { preserveEmptyStrings: input.preserveAuthorText, preserveAuthorText: input.preserveAuthorText })
   if (!patch || Object.keys(patch).length === 0) return result
   if (input.target === 'characters') patch = normalizeCharacterAxes(patch, target)
 
@@ -607,7 +612,7 @@ function normalizeAndValidate(
   raw: Record<string, unknown>,
   fieldSpecs: FieldSpec[],
   result: AdoptResult,
-  options: { preserveEmptyStrings?: boolean } = {},
+  options: { preserveEmptyStrings?: boolean; preserveAuthorText?: boolean } = {},
 ): Record<string, unknown> | null {
   const out: Record<string, unknown> = {}
   const byName = new Map(fieldSpecs.map(f => [f.field, f] as const))
@@ -630,7 +635,7 @@ function normalizeAndValidate(
       out[key] = null
       continue
     }
-    const cleaned = validateAndCoerce(spec, val, result)
+    const cleaned = validateAndCoerce(spec, val, result, options.preserveAuthorText)
     if (cleaned !== undefined) out[key] = cleaned
   }
 
@@ -639,8 +644,8 @@ function normalizeAndValidate(
   return out
 }
 
-function validateAndCoerce(spec: FieldSpec, value: unknown, result: AdoptResult): unknown {
-  const raw = spec.sanitize ? spec.sanitize(value) : value
+function validateAndCoerce(spec: FieldSpec, value: unknown, result: AdoptResult, preserveAuthorText = false): unknown {
+  const raw = spec.sanitize && !preserveAuthorText ? spec.sanitize(value) : value
   if (spec.type === 'string' || spec.type === 'longtext') {
     if (typeof raw === 'string') return raw
     result.typeErrors.push({ field: spec.field, expected: spec.type, got: typeof value })
@@ -668,6 +673,9 @@ function validateAndCoerce(spec: FieldSpec, value: unknown, result: AdoptResult)
   }
   if (spec.type === 'json') {
     if (typeof raw === 'string') {
+      // Historical power levels may be newline text. Only exact author edits
+      // preserve this registered legacy format; model adoption keeps JSON validation.
+      if (preserveAuthorText && spec.textReplacement?.codec === 'text-or-json') return raw
       try {
         JSON.parse(raw)
         return raw

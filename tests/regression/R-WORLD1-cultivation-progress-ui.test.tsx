@@ -178,7 +178,12 @@ describe('WORLD-1 · 修炼进度作者确认 UI', () => {
       await new Promise(resolve => setTimeout(resolve, 10))
     })
     await vi.waitFor(() => expect(db.cultivationProgress.count()).resolves.toBe(1))
-    expect(host.textContent).toContain('已原子写入 1 条修炼历程并完成终验')
+    // A row can exist before the durable terminal receipt and React feedback.
+    // Wait for settlement before assertions/teardown close the database.
+    await vi.waitFor(async () => {
+      await act(async () => {})
+      expect(host.textContent).toContain('已原子写入 1 条修炼历程并完成终验')
+    })
     expect(await db.cultivationProgress.toArray()).toEqual([
       expect.objectContaining({
         characterId,

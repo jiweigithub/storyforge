@@ -50,16 +50,15 @@ const DetailedOutlinePanel = lazy(() => import('../components/outline/DetailedOu
 const ChaptersListPanel = lazy(() => import('../components/editor/ChaptersListPanel'))
 const ForeshadowPanel = lazy(() => import('../components/foreshadow/ForeshadowPanel'))
 const StyleLearningPanel = lazy(() => import('../components/style/StyleLearningPanel'))
-const GeographyPanel = lazy(() => import('../components/geography/GeographyPanel'))
+const PlacesWorkspace = lazy(() => import('../components/location/PlacesWorkspace'))
+import type { PlacesTab } from '../components/location/PlacesWorkspace'
 const HistoryPanel = lazy(() => import('../components/history/HistoryPanel'))
 const CreativeRulesPanel = lazy(() => import('../components/rules/CreativeRulesPanel'))
 const CharacterRelationPanel = lazy(() => import('../components/relations/CharacterRelationPanel'))
-const WorldMapPanel = lazy(() => import('../components/geography/WorldMapPanel'))
 const StatePanel = lazy(() => import('../components/state/StatePanel'))
 const StoryArcPanel = lazy(() => import('../components/outline/StoryArcPanel'))
 const CharacterDrivenPlotPanel = lazy(() => import('../components/outline/CharacterDrivenPlotPanel'))
 const InspirationPanel = lazy(() => import('../components/project/InspirationPanel'))
-const LocationPanel = lazy(() => import('../components/location/LocationPanel'))
 const InventoryPanel = lazy(() => import('../components/items/InventoryPanel'))
 const FactLibraryPanel = lazy(() => import('../components/facts/FactLibraryPanel'))
 const StoryTimelinePanel = lazy(() => import('../components/timeline/StoryTimelinePanel'))
@@ -430,9 +429,12 @@ export default function WorkspacePage({ embeddedProjectId, embeddedModule }: { e
       case 'worldview-humanity':
         return <WorldviewHumanityPanel project={project} onOpenHistory={() => selectModule('history')} />
       case 'geography':
-        return <GeographyPanel project={project} />
       case 'world-map':
-        return <WorldMapPanel project={project} />
+      case 'locations': {
+        const requestedTab = query.get('placeTab')
+        const tab: PlacesTab = activeModule !== 'locations' ? activeModule : ['geography', 'world-map', 'city', 'links'].includes(requestedTab ?? '') ? requestedTab as PlacesTab : 'locations'
+        return <PlacesWorkspace project={project} tab={tab} onTab={next => afterPendingEdits(() => navigate(`/workspace/${project.id}?module=locations&placeTab=${next}`), '地点编辑保存失败')} />
+      }
       case 'history':
         return <HistoryPanel project={project} />
       // ── 设定库 - 故事设计 ─────────────────────────────────────────
@@ -506,8 +508,6 @@ export default function WorkspacePage({ embeddedProjectId, embeddedModule }: { e
         return <ForeshadowPanel project={project} />
       case 'style-learning':
         return <StyleLearningPanel project={project} />
-      case 'locations':
-        return <LocationPanel project={project} />
       case 'story-arc':
         return <StoryArcPanel
           project={project}
@@ -696,7 +696,7 @@ export default function WorkspacePage({ embeddedProjectId, embeddedModule }: { e
             {isLongform && longSection === 'versions' && <><LongformCompletion project={project}/><ShortNovelHistory project={project}/></>}
             {isLongform && longSection === 'settings' && <nav className="lf-subtabs" aria-label="通用设置">{([['settings', '通用设置'], ['usage-stats', '用量统计']] as const).map(([id, label]) => <button key={id} aria-current={activeModule === id ? 'page' : undefined} onClick={() => selectModule(id)}>{label}</button>)}</nav>}
             <ExtensionSurface projectId={project.id!} owner={activeModule === 'history' || project.workspacePurpose === 'world-engine' && activeModule !== 'story-timeline' ? 'world' : 'work'} workId={activeWork?.id} target={activeModule}>
-            {isLongform && ['derive', 'community'].includes(longSection) ? <LongformWorlds project={project} community={longSection === 'community'} onOpen={id => navigate(`/workspace/${id}`)} /> : isLongform && longMode === 'agent' ? <ChatCopilotPanel embedded project={project} worldGroupId={copilotWorldGroupId} worldName={copilotWorldName} onClose={() => changeLongMode('steps')} onOpenModule={(module, chapter) => afterPendingEdits(() => navigate(`/workspace/${project.id}?module=${module}${chapter ? `&chapter=${chapter}` : ''}`), '编辑保存失败')} /> : renderMainPanel()}
+            {isLongform && ['derive', 'community'].includes(longSection) ? <LongformWorlds project={project} community={longSection === 'community'} onOpen={id => navigate(`/workspace/${id}`)} /> : isLongform && longMode === 'agent' ? <ChatCopilotPanel initialDiscussionMode={query.get('discussion') === 'free' ? 'free' : 'plan'} embedded project={project} worldGroupId={copilotWorldGroupId} worldName={copilotWorldName} onClose={() => changeLongMode('steps')} onOpenModule={(module, chapter) => afterPendingEdits(() => navigate(`/workspace/${project.id}?module=${module}${chapter ? `&chapter=${chapter}` : ''}`), '编辑保存失败')} /> : renderMainPanel()}
             </ExtensionSurface>
           </Suspense>
         </div>

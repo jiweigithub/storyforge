@@ -10,6 +10,9 @@ import {
   executeFindReplace,
   undoFindReplace,
 } from '../../src/lib/editor/find-replace-operation'
+import { db } from '../../src/lib/db/schema'
+import { seedCurrentWorkspace } from '../helpers/current-workspace'
+import { stampNewRecord } from '../../src/lib/workspace/scope'
 import type { Chapter, OutlineNode } from '../../src/lib/types'
 
 const target: ChapterSearchTarget = {
@@ -183,57 +186,27 @@ describe('EDITOR-1 · 全书查找替换底层能力', () => {
         updatedAt: 1,
       },
     ]
-    const targets = chapters.map(chapter => ({
-      id: chapter.id!,
-      outlineNodeId: chapter.outlineNodeId,
-      title: chapter.title,
-      content: chapter.content,
-    }))
-    const calls: string[] = []
-    const contents = new Map(chapters.map(chapter => [chapter.id!, chapter.content]))
-    const wordCounts = new Map(chapters.map(chapter => [chapter.id!, chapter.wordCount]))
-
+    const { scope } = await seedCurrentWorkspace('正文批量替换')
+    for (const chapter of chapters) {
+      const outlineId = await db.outlineNodes.add(stampNewRecord(scope, 'outlineNodes', { projectId: scope.projectId, type: 'chapter', parentId: null, title: chapter.title, summary: '', order: chapter.order, createdAt: 1, updatedAt: 1 }) as never)
+      chapter.outlineNodeId = outlineId
+      chapter.id = await db.chapters.add(stampNewRecord(scope, 'chapters', { ...chapter, id: undefined, projectId: scope.projectId }, { owner: 'work' }) as never)
+    }
     const result = await executeFindReplace({
-      mode: 'book',
-      targets,
-      chapters,
-      options: { query: '李明', replacement: '林照' },
-      projectId: 100,
+      mode: 'book', targets: chapters.map(chapter => ({ id: chapter.id!, outlineNodeId: chapter.outlineNodeId, title: chapter.title, content: chapter.content })), chapters,
+      options: { query: '李明', replacement: '林照' }, projectId: scope.projectId,
       createSnapshot: async () => {
-        calls.push('snapshot')
+        expect((await db.chapters.get(chapters[0].id!))?.content).toContain('李明')
         return 77
-      },
-      updateChapter: async (id, patch) => {
-        calls.push(`update:${id}`)
-        if (typeof patch.content === 'string') contents.set(id, patch.content)
-        if (typeof patch.wordCount === 'number') wordCounts.set(id, patch.wordCount)
-      },
-      label: '测试快照',
+      }, label: '测试快照',
     })
-
-    expect(calls).toEqual(['snapshot', 'update:1', 'update:2'])
     expect(result.snapshotId).toBe(77)
     expect(result.replaced).toBe(3)
     expect(result.affectedChapters).toBe(2)
-    expect(result.undoPatch.chapters.map(chapter => chapter.content)).toEqual([
-      '<p>李明遇见李明。</p>',
-      '<p>李明离开。</p>',
-    ])
-    expect(contents.get(1)).toContain('林照遇见林照')
-    expect(contents.get(2)).toContain('林照离开')
-
-    calls.length = 0
-    const restored = await undoFindReplace(result.undoPatch, async (id, patch) => {
-      calls.push(`undo:${id}`)
-      if (typeof patch.content === 'string') contents.set(id, patch.content)
-      if (typeof patch.wordCount === 'number') wordCounts.set(id, patch.wordCount)
-    })
-
-    expect(restored).toBe(2)
-    expect(calls).toEqual(['undo:1', 'undo:2'])
-    expect(contents.get(1)).toBe('<p>李明遇见李明。</p>')
-    expect(contents.get(2)).toBe('<p>李明离开。</p>')
-    expect(wordCounts.get(1)).toBe(6)
-    expect(wordCounts.get(2)).toBe(4)
+    expect((await db.chapters.get(chapters[0].id!))?.content).toContain('林照遇见林照')
+    expect((await db.chapters.get(chapters[1].id!))?.content).toContain('林照离开')
+    expect(await undoFindReplace(result.undoPatch)).toBe(2)
+    expect((await db.chapters.get(chapters[0].id!))?.content).toBe(chapters[0].content)
+    expect((await db.chapters.get(chapters[1].id!))?.wordCount).toBe(chapters[1].wordCount)
   })
 })

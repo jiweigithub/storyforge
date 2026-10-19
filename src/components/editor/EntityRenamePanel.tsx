@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { flushPendingEditsV1 } from '../../lib/authoring/pending-edit-coordinator'
 import { AlertTriangle, CheckCircle2, Eye, RotateCcw, ShieldCheck } from 'lucide-react'
 import { useBackupStore } from '../../stores/backup'
 import { useChapterStore } from '../../stores/chapter'
@@ -111,6 +112,7 @@ export default function EntityRenamePanel({ projectId, onSelectOutlineNode }: Pr
     }
     setBusy(true)
     try {
+      await flushPendingEditsV1()
       setPreview(await buildEntityRenamePreview(projectId, target, newName))
     } catch (error) {
       toast.error(`预览失败：${error instanceof Error ? error.message : String(error)}`)
@@ -136,6 +138,7 @@ export default function EntityRenamePanel({ projectId, onSelectOutlineNode }: Pr
 
     setBusy(true)
     try {
+      await flushPendingEditsV1()
       const result = await executeEntityRename({
         projectId,
         entity: { kind: preview.entity.kind, id: preview.entity.id },
@@ -176,6 +179,7 @@ export default function EntityRenamePanel({ projectId, onSelectOutlineNode }: Pr
     if (!ok) return
     setBusy(true)
     try {
+      await flushPendingEditsV1()
       await undoEntityRename(undoPatch)
       await refreshProjectStores()
       await refreshEntities()

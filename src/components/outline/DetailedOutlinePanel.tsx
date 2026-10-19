@@ -294,32 +294,33 @@ export default function DetailedOutlinePanel({ project, initialNodeId }: Props) 
   }, [acceptCandidate, adoptDetailedPatch, currentChapter, enhanceAI, loadDetailed, pendingBatchCandidate, project.id, toast, validCharacterIds, validForeshadowIds])
 
   const handleDismissDetailed = useCallback(async (operation: DetailedOutlineGenerationOperationV1) => {
-    const batchPending = pendingBatchCandidate
-    if (batchPending) {
-      if (operation !== 'enhanced') return
-      const decide = batchDecisionRef.current
-      if (decide) {
-        batchDecisionRef.current = null
-        setPendingBatchCandidate(null)
-        enhanceAI.reset()
-        decide('reject')
-        return
-      }
-      try {
+    try {
+      const batchPending = pendingBatchCandidate
+      if (batchPending) {
+        if (operation !== 'enhanced') return
+        const decide = batchDecisionRef.current
+        if (decide) {
+          batchDecisionRef.current = null
+          setPendingBatchCandidate(null)
+          enhanceAI.reset()
+          decide('reject')
+          return
+        }
         const scope = await resolveScopeLike(project.id!)
         await rejectDetailedOutlineBatchCandidateV1({
           scope,
           runId: batchPending.runId,
           candidate: batchPending,
         })
-      } finally {
         setPendingBatchCandidate(null)
         enhanceAI.reset()
+        return
       }
-      return
+      await dismissCandidate(operation)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '拒绝细纲失败，请重试')
     }
-    await dismissCandidate(operation)
-  }, [dismissCandidate, enhanceAI, pendingBatchCandidate, project.id])
+  }, [dismissCandidate, enhanceAI, pendingBatchCandidate, project.id, toast])
 
   const totalWords = currentDetailed?.scenes.reduce((s, sc) => s + (sc.estimatedWords || 0), 0) ?? 0
 

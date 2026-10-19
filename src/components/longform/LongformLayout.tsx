@@ -1,3 +1,4 @@
+import { canonicalAuthoringFeatureModule } from '../../lib/workspace/feature-entry-registry'
 import BrandIcon from '../shared/BrandIcon'
 import { Link } from 'react-router'
 import { useState, type ReactNode } from 'react'
@@ -16,7 +17,7 @@ export default function LongformLayout({ children, title, section, mode = 'steps
   const [stepsOpen, setStepsOpen] = useState(false)
   const selectSection = (next: LongformSection) => { setNavigationOpen(false); setStepsOpen(false); onSection(next) }
   const selectModule = (next: SidebarModule) => { setStepsOpen(false); onModule?.(next) }
-  const current = LONGFORM_STEPS.find(step => step.modules.some(([id]) => id === module))
+  const current = LONGFORM_STEPS.find(step => step.modules.some(([id]) => id === canonicalAuthoringFeatureModule(module)))
   return <div className={`longform-app ${navigationOpen ? 'lf-navigation-open' : ''} ${stepsOpen ? 'lf-step-menu-open' : ''}`}>
     <header className="lf-top"><button className="lf-brand" aria-label="返回首页" onClick={onHome}><BrandIcon/><span><strong>StoryForge</strong><small>故事熔炉</small></span></button><nav aria-label="产品导航">{PRODUCT_NAVIGATION.map(item => <Link key={item.id} to={item.path} aria-current={item.id === 'long' ? 'page' : undefined} onClick={event => {
       if (item.id === 'home') { event.preventDefault(); onHome() }

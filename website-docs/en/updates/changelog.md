@@ -2,6 +2,18 @@
 
 Feature updates, fixes, and workflow improvements are organized by user impact. See [compatibility](/en/updates/compatibility) for version information.
 
+## 2026-10-19 · Longform entry consolidation and save protection
+
+Applies to versions containing [implementation commit d32b2471](https://github.com/yuanbw2025/storyforge/commit/d32b2471d0d89e9ef09057e89e8f6fd15b27db91). Mainline merge and online deployment are separate states. Existing v4.0.2 downloads do not change automatically when source code is updated.
+
+- Search and replacement share one implementation. Cross-setting edits require a preview and snapshot before an atomic commit, fixing overwritten fields within one entry and accidental HTML-tag replacement. Stale previews and undo cannot overwrite later manuscript edits.
+- Scene-outline and emotion-beat coordination waits for the actual save instead of a success timer. Failures preserve the original and allow retry.
+- Luniang offers explicit free discussion and draft writing without completing every form. Useful replies enter the existing setting-candidate adoption flow. Setting lookup retains search; authors can inspect, export, and explicitly claim old history whose work ownership was never recorded.
+- Formal nodes use the longform workbench. Old prompt workflows remain experimental assets with execution disabled by default. Compatible graphs can be previewed and copied; originals remain intact and incompatible configuration is not silently dropped.
+- Locations, geography, maps, and city entries share a workspace. Old links remain usable and original data identities are retained. Generation previews and run details show actual prompt/style sources and overrides.
+
+See [Longform and Luniang](/en/features/longform/), [replacement and saving](/en/features/longform/writing), [node authoring](/en/features/nodes), and [locations and maps](/en/features/longform/worlds-maps). This change does not automatically merge equal-name locations or migrate real works in the author's browser. Engineering regressions do not establish literary quality.
+
 ## October 16, 2026 · v4.0.2 desktop and Android clients
 
 This release provides Windows, Apple Silicon/Intel macOS installers and an Android APK, plus a unified first-launch User Agreement and private in-app problems and suggestions. iOS is deferred. General settings → Problems and suggestions provides private in-app feedback; see [troubleshooting](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds). Published attachments on the [release page](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2) determine availability. See [installation](/en/getting-started/install) and [privacy](/en/guides/privacy). Implementation: [PR #153](https://github.com/yuanbw2025/storyforge/pull/153).

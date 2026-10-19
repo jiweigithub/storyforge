@@ -87,7 +87,7 @@ export function adaptOutlineToBeat(
   detailed: DetailedOutline,
   beatCard: EmotionBeatCard,
 ): DetailedOutline {
-  const newScenes = [...detailed.scenes]
+  const newScenes = structuredClone(detailed.scenes)
   const beatCount = beatCard.beats.length
   const sceneCount = newScenes.length
 
@@ -132,7 +132,7 @@ export function adaptBeatToOutline(
   beatCard: EmotionBeatCard,
   detailed: DetailedOutline,
 ): EmotionBeatCard {
-  const newBeats = [...beatCard.beats]
+  const newBeats = structuredClone(beatCard.beats)
   const sceneCount = detailed.scenes.length
   const beatCount = newBeats.length
 

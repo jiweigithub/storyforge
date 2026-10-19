@@ -386,7 +386,7 @@ export function useMasterCopilot(input: {
 
   const submitRequest = useCallback(async (
     requestOverride?: string,
-    options?: { pinnedTask?: PinnedMasterAgentTaskV1; planningOnly?: boolean; confirmedPlan?: MasterAgentPlan },
+    options?: { pinnedTask?: PinnedMasterAgentTaskV1; planningOnly?: boolean; freeDiscussion?: boolean; discussionSource?: 'none' | 'worldview' | 'characters' | 'story-core'; confirmedPlan?: MasterAgentPlan },
   ) => {
     const request = (requestOverride ?? authorRequest).trim()
     if (!request || busy || conversationId == null) return
@@ -429,13 +429,15 @@ export function useMasterCopilot(input: {
         signal: controller.signal,
         pinnedTask: options?.pinnedTask,
         planningOnly: options?.planningOnly,
+        freeDiscussion: options?.freeDiscussion,
+        discussionSource: options?.discussionSource,
         readOnlyDiscussion: options?.planningOnly && pendingCandidates.length > 0,
         conversationId,
       })
       if (controller.signal.aborted) throw new DOMException('会谈已停止', 'AbortError')
       if (!options?.confirmedPlan && (options?.planningOnly || plan.phase === 'proposal' || plan.tasks.length === 0)) {
-        await appendAgentEvent({ projectId: project.id!, conversationId, kind: 'plan', content: plan.summary, payload: { type: 'longform-plan-draft-v1', plan }, scope: workspaceScope })
-        await appendAgentEvent({ projectId: project.id!, conversationId, kind: 'message', role: 'assistant', content: plan.summary, scope: workspaceScope })
+        if (!options?.freeDiscussion) await appendAgentEvent({ projectId: project.id!, conversationId, kind: 'plan', content: plan.summary, payload: { type: 'longform-plan-draft-v1', plan }, scope: workspaceScope })
+        await appendAgentEvent({ projectId: project.id!, conversationId, kind: 'message', role: 'assistant', content: plan.summary, payload: { kind: options?.freeDiscussion ? 'free-discussion' : 'planning-reply' }, scope: workspaceScope })
         return
       }
       if (options?.confirmedPlan) {
@@ -567,7 +569,7 @@ export function useMasterCopilot(input: {
     }
     return null
   }, [events])
-  const discuss = useCallback(() => submitRequest(undefined, { planningOnly: true }), [submitRequest])
+  const discuss = useCallback((freeDiscussion = false, discussionSource: 'none' | 'worldview' | 'characters' | 'story-core' = 'none') => submitRequest(undefined, { planningOnly: true, freeDiscussion, discussionSource }), [submitRequest])
   const confirmPlan = useCallback(() => pendingPlan ? submitRequest('确认开始上述计划。', { confirmedPlan: pendingPlan }) : Promise.resolve(), [pendingPlan, submitRequest])
   const submit = useCallback(() => submitRequest(), [submitRequest])
 

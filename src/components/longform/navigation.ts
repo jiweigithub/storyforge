@@ -23,7 +23,7 @@ export const LONGFORM_STEPS: { label: string; modules: [SidebarModule, string][]
   { label: '事实与认知', modules: [['fact-library', '事实库']], auxiliary: true },
   { label: '状态与物品', modules: [['state-table', '状态表'], ['inventory', '物品栏']], auxiliary: true },
   { label: '故事年表', modules: [['story-timeline', '故事年表']], auxiliary: true },
-  { label: '地点与地图', modules: [['locations', '地点库'], ['geography', '地理设定'], ['world-map', '世界地图']], auxiliary: true },
+  { label: '地点与地图', modules: [['locations', '地点与地图']], auxiliary: true },
   { label: '修炼进度', modules: [['cultivation-progress', '修炼进度']], auxiliary: true },
   { label: '场景考证', modules: [['scene-verify', '场景考证']], auxiliary: true },
   { label: '文风学习', modules: [['style-learning', '文风学习']], auxiliary: true },

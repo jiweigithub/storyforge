@@ -8,6 +8,11 @@ import type { AdoptionExtensionSpec, CollectionAdoptionSpec } from './types'
 import { REGISTRY_BY_NAME } from './project-tables'
 
 const ADOPTION_SCHEMAS_RAW: CollectionAdoptionSpec[] = [
+  // Existing singleton records also support exact author edits by ID. Creation
+  // still uses the singleton boundary; these entries never permit collection adds.
+  { target: 'worldviews', identity: 'id', recordOnly: true, duplicatePolicy: 'error', required: [], autoStamps: ['updatedAt'] },
+  { target: 'powerSystems', identity: 'id', recordOnly: true, duplicatePolicy: 'error', required: [], autoStamps: ['updatedAt'] },
+  { target: 'worldRulesProfiles', identity: 'id', recordOnly: true, duplicatePolicy: 'error', required: [], autoStamps: ['updatedAt'] },
   { target: 'extensionRecords', identity: 'id', recordOnly: true, duplicatePolicy: 'error', required: ['payload'], autoStamps: [], writePolicy: 'extension-record-v1' },
   {
     target: 'projects',

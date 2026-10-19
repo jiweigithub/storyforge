@@ -1,4 +1,8 @@
 import type { Chapter } from '../types'
+import { db } from '../db/schema'
+import { assertRecordInScope, resolveScope } from '../workspace/scope'
+import { canonicalStringify } from '../agent/run/hash'
+import { commitAuthorTextChangesV1, undoTextReplacementV1, type AuthorTextEditReceiptV1, type AuthorTextChangeV1 } from './registered-text-replacement'
 import {
   findChapterMatches,
   replaceChapterContent,
@@ -10,6 +14,7 @@ export type ReplaceMode = 'one' | 'chapter' | 'book'
 
 export interface FindReplaceUndoPatch {
   label: string
+  receipt: AuthorTextEditReceiptV1
   chapters: Array<{
     id: number
     content: string
@@ -25,7 +30,6 @@ interface ExecuteReplaceArgs {
   projectId: number
   selected?: { chapterId: number; occurrenceIndex: number } | null
   createSnapshot: (projectId: number, label: string, type: 'auto' | 'manual') => Promise<number>
-  updateChapter: (id: number, patch: Partial<Chapter>) => Promise<void>
   label: string
 }
 
@@ -62,20 +66,8 @@ export async function executeFindReplace(args: ExecuteReplaceArgs): Promise<Exec
     throw new Error('没有可替换的命中')
   }
 
-  const snapshotId = await args.createSnapshot(args.projectId, args.label, 'manual')
-  const undoPatch: FindReplaceUndoPatch = {
-    label: `${args.label} · 快照 #${snapshotId}`,
-    chapters: targetsWithMatches.map(target => {
-      const chapter = args.chapters.find(item => item.id === target.id)
-      if (!chapter) throw new Error(`章节不存在:${target.id}`)
-      return {
-        id: target.id,
-        content: chapter.content || '',
-        wordCount: chapter.wordCount || 0,
-      }
-    }),
-  }
-
+  const scope = await resolveScope({ projectId: args.projectId })
+  const changes: AuthorTextChangeV1[] = []
   let replaced = 0
   let affectedChapters = 0
   for (const target of targetsWithMatches) {
@@ -88,25 +80,25 @@ export async function executeFindReplace(args: ExecuteReplaceArgs): Promise<Exec
     if (!result.count) continue
     replaced += result.count
     affectedChapters += 1
-    await args.updateChapter(target.id, {
-      content: result.html,
-      wordCount: result.wordCount,
-    })
+    const chapter = await db.chapters.get(target.id)
+    if (!chapter || !await assertRecordInScope(scope, 'chapters', chapter) || chapter.content !== target.content) {
+      throw new Error('正文已变化，请刷新查找结果后重试。')
+    }
+    changes.push({ target: 'chapters', id: target.id, label: target.title,
+      before: { content: chapter.content, wordCount: chapter.wordCount },
+      after: { content: result.html, wordCount: result.wordCount },
+      baseline: canonicalStringify(chapter), fields: ['正文'], count: result.count })
     if (args.mode === 'one') break
   }
 
-  return { replaced, affectedChapters, snapshotId, undoPatch }
+  const receipt = await commitAuthorTextChangesV1({ scope, worldGroupId: null, changes,
+    createSnapshot: args.createSnapshot, label: args.label })
+  const undoPatch: FindReplaceUndoPatch = { label: `${args.label} · 快照 #${receipt.snapshotId}`, receipt,
+    chapters: changes.map(change => ({ id: change.id, content: String(change.before.content), wordCount: Number(change.before.wordCount) })) }
+  return { replaced, affectedChapters, snapshotId: receipt.snapshotId, undoPatch }
 }
 
-export async function undoFindReplace(
-  undoPatch: FindReplaceUndoPatch,
-  updateChapter: (id: number, patch: Partial<Chapter>) => Promise<void>,
-): Promise<number> {
-  for (const chapter of undoPatch.chapters) {
-    await updateChapter(chapter.id, {
-      content: chapter.content,
-      wordCount: chapter.wordCount,
-    })
-  }
+export async function undoFindReplace(undoPatch: FindReplaceUndoPatch): Promise<number> {
+  await undoTextReplacementV1(undoPatch.receipt)
   return undoPatch.chapters.length
 }

@@ -193,7 +193,7 @@ export default function WorkflowEditor({
     try {
       await saveWorkflow(draft)
       setDirty(false)
-      toast.success('节点模式已保存')
+      toast.success('提示词实验已保存')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     }
@@ -243,7 +243,7 @@ export default function WorkflowEditor({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-bg-surface px-4 py-3">
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold text-text-primary">
-            节点模式 · {draft.name}
+            提示词实验 · {draft.name}
           </h2>
           <p className="text-xs text-text-muted">
             FLOW-1 第一阶段 · DAG 编排会复用现有 GenerationNode 和作者确认写回

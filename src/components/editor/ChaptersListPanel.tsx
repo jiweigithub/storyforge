@@ -8,6 +8,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { ChevronDown, ChevronRight, Search } from 'lucide-react'
 import { useOutlineStore } from '../../stores/outline'
 import { useChapterStore } from '../../stores/chapter'
+import { useWorldGroupStore } from '../../stores/world-group'
 import { useCharacterStore } from '../../stores/character'
 import PanelLayout from '../shared/PanelLayout'
 import ScenePanel from '../outline/ScenePanel'
@@ -47,6 +48,7 @@ const STATUS_DOT: Record<ChapterStatus, string> = {
 export default function ChaptersListPanel({ project, initialNodeId }: Props) {
   const { nodes, loadAll: loadOutline } = useOutlineStore()
   const { chapters, loadAll: loadChapters } = useChapterStore()
+  const activeGroupId = useWorldGroupStore(state => state.activeGroupId)
   const loadCharacters = useCharacterStore(state => state.loadAll)
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(initialNodeId ?? null)
   const [expandedVols, setExpandedVols] = useState<Set<number>>(new Set())
@@ -220,7 +222,9 @@ export default function ChaptersListPanel({ project, initialNodeId }: Props) {
             </div>
             {showFindReplace && (
               <FindReplacePanel
+                key={`${project.id}:${project.activeWorkId}:${project.activeWorldId}:${activeGroupId}`}
                 projectId={project.id!}
+                worldGroupId={project.enableMultiWorld ? activeGroupId : null}
                 chapters={chapters}
                 outlineNodes={nodes}
                 selectedOutlineNodeId={selectedNodeId}
