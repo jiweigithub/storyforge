@@ -63,6 +63,11 @@ export function assertQwenResourceAdmission(result, profile) {
     || !Number.isSafeInteger(result.peakMetalBytes) || result.peakMetalBytes <= 0 || result.peakMetalBytes > profile.gpuMemoryLimitBytes
     || !Number.isSafeInteger(result.memoryChecks) || result.memoryChecks < 4) throw new Error('Qwen 实际 Metal 峰值未通过准入，分配目标不能冒充硬上限')
 }
+export function assertQwenCodecClock(voice, pcm, profile) {
+  if (!Number.isSafeInteger(voice.codecTokens) || voice.codecTokens < 1 || voice.codecTokens >= profile.maxCodecTokensPerVoice
+    || voice.eosObserved !== true || voice.samples !== pcm.samples || voice.sampleRate !== pcm.sampleRate
+    || pcm.samples !== voice.codecTokens * profile.decodeUpsampleRate) throw new Error('Qwen 完整音频码与真实 PCM 时序不符，不能丢弃合法零号音频码')
+}
 async function main() {
   const options = parseNativeFixtureArgs(process.argv.slice(2))
   assertVoiceTransport('ttrpg.local-voice.native-fixture-eval', 'scripts/ttrpg-local-tts/native-voice-evaluate.mjs')
@@ -102,7 +107,11 @@ async function main() {
       || result.humanListeningAcceptance !== 'unproven' || result.adoptionAllowed !== false
       || JSON.stringify(result.voices.map(v => v.voice)) !== JSON.stringify(p.voices)) throw new Error('真实声线回执身份不符')
     if (selected.engine === 'qwen') assertQwenResourceAdmission(result, p)
-    for (const voice of result.voices) receipt.voices.push({ voice: voice.voice, ...verifyNativeFixturePcm(readFileSync(path.join(directory, voice.voice + '.wav')), voice.audioSha256, p) })
+    for (const voice of result.voices) {
+      const pcm = verifyNativeFixturePcm(readFileSync(path.join(directory, voice.voice + '.wav')), voice.audioSha256, p)
+      if (selected.engine === 'qwen') assertQwenCodecClock(voice, pcm, p)
+      receipt.voices.push({ voice: voice.voice, ...pcm })
+    }
     if (hash(readFileSync(path.join(base, selected.profileFile))) !== receipt.profileSha256 || hash(readFileSync(path.join(base, selected.workerFile))) !== receipt.workerSha256) throw new Error('评测源码变化')
     receipt.status = 'passed'; receipt.humanListeningAcceptance = 'unproven'
   } catch (error) { receipt.status = 'failed'; receipt.error = String(error); throw error }

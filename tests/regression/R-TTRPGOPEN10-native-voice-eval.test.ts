@@ -35,12 +35,25 @@ describe('R-TTRPGOPEN10 native Chinese voice fixture admission', () => {
       import assert from 'node:assert/strict';
       import {assertQwenResourceAdmission,selectNativeFixture} from './${caller}';
       const p=selectNativeFixture('qwen').profile;
-      assert.equal(p.version,2);assert.equal(p.decoderChunkTokens,100);assert.equal(p.gpuMemoryLimitBytes,6442450944);
+      assert.equal(p.version,3);assert.equal(p.decoderChunkTokens,100);assert.equal(p.gpuMemoryLimitBytes,6442450944);
       const valid={resourceAcceptance:'passed',memoryGuidelineBytes:6442450944,peakMetalBytes:4000000000,memoryChecks:100};
       assertQwenResourceAdmission(valid,p);
       for(const patch of [{peakMetalBytes:7296809999},{peakMetalBytes:0},{peakMetalBytes:'4000000000'},
         {resourceAcceptance:'unproven'},{memoryGuidelineBytes:8589934592},{memoryChecks:0}])
         assert.throws(()=>assertQwenResourceAdmission({...valid,...patch},p));
+      console.log('passed');`
+    expect(execFileSync(process.execPath, ['--input-type=module', '-e', source], { encoding: 'utf8' }).trim()).toBe('passed')
+  })
+  it('preserves the valid zero codec frame instead of accepting the actual short V2 sample count', () => {
+    const source = `
+      import assert from 'node:assert/strict';import {assertQwenCodecClock,selectNativeFixture} from './${caller}';
+      const p=selectNativeFixture('qwen').profile;assert.equal(p.decodeUpsampleRate,1920);
+      const voice={codecTokens:318,samples:610560,sampleRate:24000,eosObserved:true};
+      const pcm={samples:610560,sampleRate:24000};assertQwenCodecClock(voice,pcm,p);
+      assert.throws(()=>assertQwenCodecClock({...voice,samples:608640},{...pcm,samples:608640},p));
+      assert.throws(()=>assertQwenCodecClock({...voice,eosObserved:false},pcm,p));
+      assert.throws(()=>assertQwenCodecClock({...voice,codecTokens:512},pcm,p));
+      assert.throws(()=>assertQwenCodecClock({...voice,codecTokens:'318'},pcm,p));
       console.log('passed');`
     expect(execFileSync(process.execPath, ['--input-type=module', '-e', source], { encoding: 'utf8' }).trim()).toBe('passed')
   })

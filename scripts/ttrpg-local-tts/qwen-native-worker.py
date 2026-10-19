@@ -15,7 +15,7 @@ def main():
     registry=json.loads((base.parent.parent/'src/lib/agent/ai-entry-registry.json').read_text())
     rows=[x for x in registry['limitedTransports'] if x['entryId']==p['entryId']]
     if len(rows)!=1 or rows[0]['boundary']!='offline-fixture-audio-eval' or rows[0]['adoptAllowed'] is not False or rows[0]['allowedCallers']!=['scripts/ttrpg-local-tts/native-voice-evaluate.mjs']:raise ValueError('Unregistered evaluation')
-    if p['version']!=2 or p['decoderChunkTokens']!=100 or p['decoderLeftContextTokens']!=25 or p['gpuMemoryLimitBytes']!=6*1024**3 or p['maxCalls']!=2 or p['voices']!=['uncle_fu','serena'] or p['productInvocationAllowed'] is not False or p['adoptionAllowed'] is not False or p['network']!='disabled' or p['instructAllowed'] is not False or p['referenceVoiceAllowed'] is not False or p['stream'] is not False:raise ValueError('Unsupported fixed boundary')
+    if p['version']!=3 or p['decodeUpsampleRate']!=1920 or p['decoderChunkTokens']!=100 or p['decoderLeftContextTokens']!=25 or p['gpuMemoryLimitBytes']!=6*1024**3 or p['maxCalls']!=2 or p['voices']!=['uncle_fu','serena'] or p['productInvocationAllowed'] is not False or p['adoptionAllowed'] is not False or p['network']!='disabled' or p['instructAllowed'] is not False or p['referenceVoiceAllowed'] is not False or p['stream'] is not False:raise ValueError('Unsupported fixed boundary')
     melo,root,output=(Path(v[k]).resolve() for k in ['meloRuntime','nativeRuntime','outputDir'])
     if output.parent!=root/'evaluations' or {x.name for x in output.iterdir()}!={'attempt.json','worker.log'}:raise ValueError('Output must be a new attempt')
     if Path(sys.prefix).resolve()!=melo/'venv' or sha((melo/'runtime-profile.json').read_bytes())!=p['sharedPythonAssetProfileSha256']:raise ValueError('Shared runtime mismatch')
@@ -115,6 +115,7 @@ def main():
             if len(outputs)!=1 or not model._fixture_eos_seen:raise ValueError('Incomplete or unexpected generated segments')
             generated=outputs[0];mx.eval(generated.audio);audio=np.array(generated.audio,dtype=np.float32)
             check_memory('generated-voice')
+            if len(audio)!=generated.token_count*p['decodeUpsampleRate']:raise ValueError('Complete codec clock mismatch; valid zero code must not shorten audio')
             if generated.sample_rate!=p['sampleRate'] or audio.ndim!=1 or generated.samples!=len(audio) or not np.isfinite(audio).all() or not 5<=len(audio)/p['sampleRate']<=p['maxSecondsPerVoice'] or not 1<=generated.token_count<p['maxCodecTokensPerVoice']:raise ValueError('Invalid native generated PCM or codec usage')
             peak=float(np.abs(audio).max());gain=min(1.,.99/peak) if peak else 0.
             pcm=np.rint(audio*gain*32767).astype('<i2');rms=float(np.sqrt(np.mean((pcm.astype(np.float64)/32767)**2)))

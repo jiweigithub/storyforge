@@ -1,6 +1,6 @@
 {
   "schema": "storyforge.ttrpg-qwen-native-fixture-eval",
-  "version": 2,
+  "version": 3,
   "entryId": "ttrpg.local-voice.native-fixture-eval",
   "productInvocationAllowed": false,
   "adoptionAllowed": false,
@@ -351,7 +351,7 @@
     },
     {
       "path": "mlx_audio/tts/models/qwen3_tts/speech_tokenizer.py",
-      "sha256": "670ffc558a5fbea09b29b78211e42c5ab979f133e3cd8e36db19b0d20a0451bc",
+      "sha256": "f345689f3daa91989374f3d4a7faf1529a6beef8aa69bf7e1acc1e81db27c296",
       "edits": [
         {
           "old": "        wav = self.decoder.chunked_decode(codes).squeeze(1)",
@@ -360,6 +360,10 @@
         {
           "old": "            wav_chunk = self(codes_chunk)\n            wavs.append",
           "new": "            wav_chunk = self(codes_chunk)\n            mx.eval(wav_chunk)\n            self._fixture_resource_guard(\"decode-chunk\")\n            mx.clear_cache()\n            wavs.append"
+        },
+        {
+          "old": "        audio_lengths = (audio_codes[..., 0] > 0).sum(",
+          "new": "        audio_lengths = (audio_codes[..., 0].astype(mx.int32) > -1).sum("
         }
       ]
     },
@@ -2842,5 +2846,7 @@
   ],
   "decoderChunkTokens": 100,
   "decoderLeftContextTokens": 25,
-  "memoryLimitSemantics": "allocation guideline plus explicit observed-peak acceptance checks; not an OS hard ceiling"
+  "memoryLimitSemantics": "allocation guideline plus explicit observed-peak acceptance checks; not an OS hard ceiling",
+  "decodeUpsampleRate": 1920,
+  "codecClockSemantics": "actual unpadded nonnegative codec frames, including valid code0, times1920samples; -1 is padding per official source"
 }
