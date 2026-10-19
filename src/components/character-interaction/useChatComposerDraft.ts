@@ -1,10 +1,11 @@
 import {useEffect, useRef, useState} from 'react'
 import type {WorkspaceScope, ChatComposerDraftV1} from '../../lib/types'
 import {readChatComposerDraftV1, saveChatComposerDraftV1, type ChatComposerSendBindingV1} from '../../lib/character-interaction/runtime-api'
-import {ChatComposerConflictError} from '../../lib/character-interaction/composer-draft-contract'
+import {ChatComposerConflictError, chatComposerContentEqualV1} from '../../lib/character-interaction/composer-draft-contract'
 
 type Entry = {
   scope: WorkspaceScope; sessionId: number; text: string; saved: ChatComposerDraftV1 | null
+  audienceKeys?: string[] | null
   loading: boolean; pending: number; sending: boolean; error: string
   conflict: ChatComposerDraftV1 | null | undefined; queue: Promise<void>; writeEpoch: number
 }
@@ -20,7 +21,7 @@ export function useChatComposerDraft(scope: WorkspaceScope | undefined, sessionI
   useEffect(() => {
     mounted.current = true
     const warn = (event: BeforeUnloadEvent) => {
-      if ([...entries.values()].some(row => row.pending || row.text !== (row.saved?.text ?? ''))) {
+      if ([...entries.values()].some(row => row.pending || !chatComposerContentEqualV1(row, row.saved))) {
         event.preventDefault(); event.returnValue = ''
       }
     }
@@ -31,7 +32,7 @@ export function useChatComposerDraft(scope: WorkspaceScope | undefined, sessionI
     if (!scope || sessionId == null || entries.has(key)) return
     const row: Entry = {scope: {...scope}, sessionId, text: '', saved: null, loading: true, pending: 0, sending: false, error: '', conflict: undefined, queue: Promise.resolve(), writeEpoch: 0}
     entries.set(key, row)
-    row.queue = readChatComposerDraftV1(row.scope, row.sessionId).then(saved => {row.saved = saved; row.text = saved?.text ?? ''})
+    row.queue = readChatComposerDraftV1(row.scope, row.sessionId).then(saved => {row.saved = saved; row.text = saved?.text ?? ''; row.audienceKeys = saved?.audienceKeys == null ? saved?.audienceKeys : [...saved.audienceKeys]})
       .catch(cause => {row.error = message(cause)}).finally(() => {row.loading = false; if (mounted.current) redraw(value => value + 1)})
     redraw(value => value + 1)
     // The stable key contains all scope fields and the session identity.
@@ -40,10 +41,11 @@ export function useChatComposerDraft(scope: WorkspaceScope | undefined, sessionI
   const entry = entries.get(key)
   const enqueue = (row: Entry) => {
     const text = row.text, epoch = row.writeEpoch
+    const audience = row.audienceKeys === undefined ? {} : {audienceKeys: row.audienceKeys === null ? null : [...row.audienceKeys]}
     row.pending++
     row.queue = row.queue.then(async () => {
       if (epoch !== row.writeEpoch || row.error || row.conflict !== undefined) return
-      row.saved = await saveChatComposerDraftV1({scope: row.scope, sessionId: row.sessionId, text, expectedRevision: row.saved?.revision ?? 0})
+      row.saved = await saveChatComposerDraftV1({scope: row.scope, sessionId: row.sessionId, text, ...audience, expectedRevision: row.saved?.revision ?? 0})
     }).catch(cause => {
       row.writeEpoch++
       if (cause instanceof ChatComposerConflictError) row.conflict = cause.current
@@ -52,12 +54,15 @@ export function useChatComposerDraft(scope: WorkspaceScope | undefined, sessionI
     notify()
   }
   const change = (text: string) => {if (entry && !entry.loading && !entry.sending) {entry.text = text; enqueue(entry)}}
+  const changeAudience = (audienceKeys: string[] | null) => {
+    if (entry && !entry.loading && !entry.sending) {entry.audienceKeys = audienceKeys === null ? null : [...audienceKeys]; enqueue(entry)}
+  }
   const resolve = (keepLocal: boolean) => {
     if (!entry || entry.conflict === undefined) return
     entry.writeEpoch++
     entry.saved = entry.conflict; entry.conflict = undefined; entry.error = ''
     if (keepLocal) enqueue(entry)
-    else {entry.text = entry.saved?.text ?? ''; notify()}
+    else {entry.text = entry.saved?.text ?? ''; entry.audienceKeys = entry.saved?.audienceKeys == null ? entry.saved?.audienceKeys : [...entry.saved.audienceKeys]; notify()}
   }
   const retry = async () => {
     if (!entry) return
@@ -66,11 +71,11 @@ export function useChatComposerDraft(scope: WorkspaceScope | undefined, sessionI
     entry.loading = true; notify()
     try {
       const current = await readChatComposerDraftV1(entry.scope, entry.sessionId)
-      if ((current?.revision ?? 0) !== (entry.saved?.revision ?? 0) && current?.text !== entry.text) {
+      if ((current?.revision ?? 0) !== (entry.saved?.revision ?? 0) && !chatComposerContentEqualV1(entry, current)) {
         entry.conflict = current; entry.error = new ChatComposerConflictError(current).message
       } else {
         entry.saved = current; entry.error = ''; entry.conflict = undefined
-        if (current?.text !== entry.text) enqueue(entry)
+        if (!chatComposerContentEqualV1(entry, current)) enqueue(entry)
       }
     } catch (cause) {entry.error = message(cause)}
     finally {entry.loading = false; notify()}
@@ -82,17 +87,18 @@ export function useChatComposerDraft(scope: WorkspaceScope | undefined, sessionI
     try {
       await row.queue
       if (row.error || row.conflict !== undefined) throw new Error(row.error || '请先选择要发送的草稿版本。')
-      if (!row.saved || row.saved.text !== row.text || !row.text.trim()) throw new Error('草稿尚未保存，不能发送。')
-      const binding: ChatComposerSendBindingV1 = {scope: row.scope, sessionId: row.sessionId, text: row.text, revision: row.saved.revision}
+      if (!row.saved || !chatComposerContentEqualV1(row, row.saved) || !row.text.trim()) throw new Error('草稿尚未保存，不能发送。')
+      const binding: ChatComposerSendBindingV1 = {scope: row.scope, sessionId: row.sessionId, text: row.text, revision: row.saved.revision,
+        ...(row.saved.audienceKeys !== undefined ? {audienceKeys: row.saved.audienceKeys === null ? null : [...row.saved.audienceKeys]} : {})}
       return {binding, onCommitted: () => {
-        row.saved = {version: 1, text: '', revision: binding.revision + 1, updatedAt: Date.now()}; row.text = ''; notify()
+        row.saved = {...row.saved!, text: '', revision: binding.revision + 1, updatedAt: Date.now()}; row.text = ''; notify()
       }, onFailed: (cause: unknown) => {
         if (!(cause instanceof ChatComposerConflictError)) return false
         row.writeEpoch++; row.conflict = cause.current; row.error = cause.message; notify(); return true
       }, finish: () => {row.sending = false; notify()}}
     } catch (cause) {row.sending = false; notify(); throw cause}
   }
-  return {text: entry?.text ?? '', loading: !entry || entry.loading, saving: !!entry?.pending, sending: !!entry?.sending,
-    saved: !!entry?.saved && !entry.error && entry.conflict === undefined && !entry.pending && entry.text === entry.saved.text,
-    error: entry?.error ?? '', conflict: entry?.conflict, change, retry, resolve, prepareSend}
+  return {text: entry?.text ?? '', audienceKeys: entry?.audienceKeys, loading: !entry || entry.loading, saving: !!entry?.pending, sending: !!entry?.sending,
+    saved: !!entry?.saved && !entry.error && entry.conflict === undefined && !entry.pending && chatComposerContentEqualV1(entry, entry.saved),
+    error: entry?.error ?? '', conflict: entry?.conflict, change, changeAudience, retry, resolve, prepareSend}
 }

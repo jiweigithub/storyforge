@@ -152,7 +152,7 @@ for (const rejectRelationship of [false, true]) test(`dialogue relationship cons
     if (rejectRelationship) {
         await expect(page.getByText(/行动语义审查未通过/)).toBeVisible();
         await expect(page.getByText(responseText, {exact: true})).toHaveCount(0);
-    } else await expect(page.getByText(responseText, {exact: true})).toBeVisible();
+    } else await expect(page.getByRole('region', {name: '对话记录', exact: true}).getByText(responseText, {exact: true})).toBeVisible();
     expect(calls).toBe(2);
     await page.reload();
     await expect(page.getByTestId('chat-narrative-controls')).toBeVisible();
@@ -163,11 +163,20 @@ for (const rejectRelationship of [false, true]) test(`dialogue relationship cons
     expect(calls).toBe(2);
     if (!rejectRelationship) {
         await page.getByRole('button', {name: '关系与记忆', exact: true}).click();
-        await expect(page.getByText(/0 → 1：我更愿意听取你的判断/)).toBeVisible();
+        const relationship = page.getByTestId('chat-relationship-panel');
+        await relationship.getByText('共同经历（1）', {exact: true}).click();
+        const cause = relationship.getByTestId('chat-relationship-cause');
+        await expect(cause).toHaveCount(1);
+        await expect(cause.getByText('我更愿意听取你的判断', {exact: true})).toBeVisible();
+        await expect(cause.getByText(/：0 → 1$/)).toBeVisible();
+        await cause.getByText('查看双方原话', {exact: true}).click();
+        await expect(cause.getByText(playerText, {exact: true})).toBeVisible();
+        await expect(cause.getByText(responseText, {exact: true})).toBeVisible();
+        expect(calls).toBe(2);
         await page.getByRole('button', {name: '开始对话', exact: true}).click();
         await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard');
         await page.getByRole('button', {name: '让角色继续', exact: true}).click();
-        await expect(page.getByText('我先按你提醒的核对记录，不急着指认任何人。', {exact: true})).toBeVisible();
+        await expect(page.getByRole('region', {name: '对话记录', exact: true}).getByText('我先按你提醒的核对记录，不急着指认任何人。', {exact: true})).toBeVisible();
         expect(calls).toBe(4);
         expect((await read()).relationshipHistory).toHaveLength(1);
     }

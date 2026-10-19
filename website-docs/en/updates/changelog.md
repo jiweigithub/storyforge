@@ -2,6 +2,12 @@
 
 Changes are organized by user impact. **Main-branch updates do not mean a new version has been released.** The package version is 4.0.1; tagged releases retain their original content, and later main-branch changes do not automatically enter downloaded archives. Live deployments may lag; see [compatibility](/en/updates/compatibility).
 
+## In development: Candidate character-chat flows (unreleased)
+
+The character-chat branch is integrating character-card conversion, experience-package installation/export, compatible save-upgrade copies, and three original starter drafts. The committed baseline is `a4f16fd9`; the subsequent changes observed here remain uncommitted and are not released features. See [Character chat](/en/features/interactive/character-chat#new-flows-in-the-development-branch-unreleased) for candidate instructions and limitations, and [pending development records](/en/updates/development-status#character-chat-candidate) for delivery status.
+
+The candidate also includes authorship and usage statements frozen with each release, and fixes installation numbering that could break a complete backup when a newer version was installed first. Full validation remains in progress.
+
 ## October 15, 2026 · v4.0.1 failure-feedback builds
 
 General settings, rendering fallbacks, and blocked startup offer a summary preview and official feedback entry. Browser errors survive refresh; the portable launcher retains bounded startup failures and uncertain interruption records. Users inspect the summary before taking it to the official form, which never submits automatically. Works, Prompts, and credentials are not automatically uploaded. See [troubleshooting and capture limits](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds). This applies to v4.0.1 and later portable builds; check the [latest release](https://github.com/yuanbw2025/storyforge/releases/latest) for published archives. Fixed v4.0.0 downloads remain unchanged. This does not add launch/activity/retention statistics.

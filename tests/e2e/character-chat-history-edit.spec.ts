@@ -59,6 +59,11 @@ test('editing a character message creates a recoverable draft branch and reconci
   await page.getByRole('button', {name: '建立改写分支', exact: true}).click()
   await expect(page.getByTestId('chat-pending-edit')).toBeVisible()
   await expect(page.getByText(original, {exact: true})).toHaveCount(0)
+  const branchId = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/src/stores/character-interaction-player.ts')).useCharacterInteractionPlayerStore.getState().selectedSessionId})
+  expect(branchId).not.toBe(f.sessionId)
+  // No waiting for background refresh: a visible branch must already have a
+  // reload-safe address, even while the final store cleanup is still busy.
+  expect(new URL(page.url()).searchParams.get('session')).toBe(String(branchId))
   expect(await read()).toEqual(parent)
   await page.reload()
   await expect(page.getByLabel('待采用的改写', {exact: true})).toHaveValue(edited)

@@ -1,5 +1,15 @@
 # Pending development and branch audit
 
+## 2026-10-19: Candidate character-chat flows {#character-chat-candidate}
+
+This section checks only `feat/character-chat-optimization-20261006`: its committed baseline is `a4f16fd9`, followed by observed uncommitted character-chat changes. They have not been merged into main, included in a fixed download, or publicly deployed. The October 16 “clean worktree” record below describes that earlier snapshot only.
+
+Candidate interfaces add pictures and device speech, external character-card conversion, complete experience-package installation/export, save copies for compatible versions, and three original starter drafts hidden by default. Upgrades retain the original save; story or character-knowledge changes cannot be forced onto it. Starter drafts still require the author to review sources, produce, and publish; they are not delivered experience packages. See the candidate instructions in [Character chat](/en/features/interactive/character-chat#new-flows-in-the-development-branch-unreleased).
+
+The previous integration candidate passed 402 browser cases with four environment-dependent skips. Full CI had five timeouts; those cases passed unchanged targeted diagnostics, but that does not complete full CI. The latest fetched main `d3df49a3` adds shared adoption and longform changes, so the combined version requires fresh engineering validation. Real-model story quality and independent playtesting remain unfinished. Passing engineering load tests does not establish story quality or commercial acceptance. This section does not reassess other product branches.
+
+The candidate also includes authorship and usage statements frozen with each release, and fixes installation numbering that could break a complete backup when a newer version was installed first. Full validation remains in progress.
+
 ## October 14, 2026 review
 
 Incremental range: last successful baseline `ce1cfd6c` → latest remote main `cfc5ed3f`. This review enumerated **51 local branches (including this maintenance branch) and 68 associated worktrees**, including detached ones. Twenty-three branch heads are not main ancestors. These are Git identities, not 23 missing features. Author worktrees were inspected read-only; the following is a point-in-time snapshot and later commits or PR states may change.

@@ -28,6 +28,7 @@ test('a returning role cannot read a player message sent while absent, including
     const command = async (id: number) => {const v = await api.readProductRuntimeStateVersion(id); return {sessionId: id, commandId: crypto.randomUUID(), baseSequence: v.sequence, baseStateHash: v.stateHash}}
     const before = await api.readProductRuntimeState(f.sessionId)
     if (JSON.stringify(before.interaction.messages[0].audienceKeys) !== JSON.stringify(['player', 'guard'])) throw new Error('Player UI did not freeze actual listeners')
+    if (before.interaction.messages[0].playerConversation !== 'present') throw new Error('Public UI conversation was reclassified as private because another role was absent')
     await api.joinInteractionParticipant({...await command(f.sessionId), participantKey: 'artisan'})
     const title = (await db.productRuntimeSessions.get(f.sessionId)).title
     const projectId = await portable.importProjectJSON(await portable.exportProjectJSON(f.scope.projectId))
@@ -52,5 +53,6 @@ test('a returning role cannot read a player message sent while absent, including
   await page.reload()
   const after = await page.evaluate(async id => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(id)}, result.sessionId)
   expect(after).toEqual(result.state)
+  expect(after.interaction.messages[0].playerConversation).toBe('present')
   expect(externalCalls).toBe(0)
 })

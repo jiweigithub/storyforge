@@ -108,7 +108,7 @@ flowchart TB
 | 当前事实 | 数值 | 单一事实源 |
 |---|---:|---|
 | 应用语义版本 | `4.0.1` | `package.json` |
-| TypeScript 生产源码 | 1587 个文件 / 532650 行 | `tsconfig.json` |
+| TypeScript 生产源码 | 1621 个文件 / 535409 行 | `tsconfig.json` |
 | IndexedDB schema | v11 / 128 张 required tables | `schema.ts` / `REQUIRED_TABLES` |
 | PROJECT_TABLES | 128 张表 | `project-tables.ts` |
 | Prompt 主线 | 65 个 moduleKey / 238 条内置模板 | `PromptModuleKey` / `prompt-seeds*.ts` |
@@ -270,6 +270,10 @@ AVG 会谈使用 `avg.consult.v1` 和 `avg.authoring` 注册上下文，经 dura
 `Work.kind=character-interaction` 拥有 `chatAuthoringDrafts`；统一 schema v10 接入该表；v8/v9 兼容桥保留独立聊天分支已有草稿，且保留所有既有版本。设置及会谈由注册表进行完整生命周期管理。`chat.consult.v1` / `chat.authoring` 与 AVG 共用可恢复会谈运行器，各产品独立定义设置及上下文源。会谈不开始制作，候选由作者确认后回填草稿。正式 `characterChat` Brief 配置控制角色私密知识、初始信任、场景回合及回复预算。
 
 玩家页对消息听众和记忆证据进行可见性过滤；作者人物快照明确区分公开/私密知识。失败和取消清理 UI 生成状态，多角色导演的结束决策由实例命令执行。当前角色聊天生成发布以纯文字内容为边界；不把未生成的画像或语音标为已完成。
+
+外部角色卡在 S2 本地预览、确认映射后进入既有私域角色草稿；署名元数据从 AI 来源片段剔除。S3 将公开署名冻结为可选 `chatCardCredits`，绑定人物及已确认私域来源，作者备注不发行；沿原 Work/Build/Release 生命周期管理，无新表或模型入口。
+
+可选图片目录与 `interaction.chatMedia` 绑定复用 Build/Release 媒资 owner，玩家按冻结来源和已提交在场/地点只读展示；制作期通过公开画面清单、既有图片能力及当前 Build/epoch 的原图确认门生成候选，作者明确确认后才装配。浏览器语音复用 VoiceSession，聊天转写属于 `ephemeral-player-input`，确认后仅进入原输入草稿；朗读属于 `read-only-audio`，限定玩家可见的正式角色消息。二者不拥有剧情状态、World 或媒资表写权限；取消和 owner 切换使迟到结果失效。详见上层产品合同及 CHAT-07 当前证据。
 
 ## 当前 UI 开发基线（2026-09-15）
 

@@ -76,22 +76,34 @@ for (const [continuous, ownGoal] of [[false, false], [true, false], [false, true
   await page.getByRole('button', {name: '发送并生成', exact: true}).click()
   await expect(page.getByRole('paragraph').filter({hasText: ownGoal ? /^我站在门内向外查看了门口的积水。$/ : /^我可以看看门口的积水。你留在屋里就好，这不需要重新寻找铜印。$/})).toBeVisible()
   if (!continuous) {
-  expect(calls).toHaveLength(2)
-  const pending = await read()
-  expect(pending.chatNarrative.situation.goals[0].status).toBe('abandoned')
-  expect(pending.chatNarrative.pendingSituation.purpose).toBe(ownGoal ? 'observation-result' : 'player-followup')
+  await expect.poll(async () => {
+    const story = (await read()).chatNarrative
+    return ownGoal ? story.situation.facts.some((fact: {factKey: string}) => fact.factKey === 'entry-result')
+      : story.situation.goals.some((goal: {goalKey: string}) => goal.goalKey === 'check-entry')
+  }).toBe(true)
+  expect(calls).toEqual(['action', 'action-review', 'construction', 'situation-review'])
+  expect(actions).toBe(1)
+  const settled = await read()
+  expect(settled.chatNarrative.pendingSituation).toBeUndefined()
+  expect(settled.chatNarrative.situation.goals[0].status).toBe('abandoned')
+  expect(settled.chatNarrative.situation.goals.find((g: {goalKey: string}) => g.goalKey === 'check-entry').status).toBe('active')
+  expect(settled.chatNarrative.situation.facts.filter((fact: {factKey: string}) => fact.factKey === 'entry-result')).toHaveLength(ownGoal ? 1 : 0)
   await page.reload(); await expect(page.getByTestId('chat-narrative-controls')).toBeVisible()
-  expect(await read()).toEqual(pending); expect(calls).toHaveLength(2)
+  expect(await read()).toEqual(settled); expect(calls).toHaveLength(4)
   f = await page.evaluate(async f => {
     const load = new Function('p', 'return import(p)'), backup = await load('/storyforge/src/lib/export/json-export.ts'), {db} = await load('/storyforge/src/lib/db/schema.ts')
     const projectId = await backup.importProjectJSON(await backup.exportProjectJSON(f.scope.projectId)), session = (await db.productRuntimeSessions.where('projectId').equals(projectId).toArray())[0]
     return {scope: {projectId, worldId: session.worldId, workId: session.workId}, sessionId: session.id}
   }, f)
-  await open(); expect(calls).toHaveLength(2)
+  await open(); expect(calls).toHaveLength(4)
+  expect(actions).toBe(1)
   await page.getByRole('button', {name: '让角色继续', exact: true}).click()
   if (!ownGoal) {
     await expect(page.getByRole('paragraph').filter({hasText: /^我站在门内向外查看了门口的积水。$/})).toBeVisible()
-    expect(calls).toHaveLength(6)
+    await expect.poll(async () => (await read()).chatNarrative.situation.facts.some((fact: {factKey: string}) => fact.factKey === 'entry-result')).toBe(true)
+    expect(calls).toHaveLength(8)
+    expect(actions).toBe(2)
+    expect((await read()).chatNarrative.pendingSituation).toBeUndefined()
     await page.getByRole('button', {name: '让角色继续', exact: true}).click()
   }
   }

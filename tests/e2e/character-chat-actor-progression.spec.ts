@@ -1,6 +1,6 @@
 import {test, expect} from '@playwright/test'
 
-test('a reviewed role direction survives reload and import, constructs on continue and feeds the next role action', async ({page}) => {
+test('one visible action settles its reviewed direction and survives import before a short reply receives actual progress', async ({page}) => {
   const direction = '检查后门门闩，补足局部线索，不预设铜印已经找到。'
   const calls: string[] = []
   let actions = 0
@@ -26,9 +26,9 @@ test('a reviewed role direction survives reload and import, constructs on contin
       actions++
       expect(prompt).not.toContain('柜台下')
       if (actions === 2) expect(prompt).toContain('后门门闩有一处松动。')
-      output = {kind: actions === 1 ? 'speak' : 'pause', text: actions === 1 ? '我想先独自检查后门门闩。你可以留在这里。' : '门闩的松动值得留意，我先停在这里。',
+      output = {kind: actions === 1 ? 'speak' : 'complete', text: actions === 1 ? '我想先独自检查后门门闩。你可以留在这里。' : '你不用动手。我独自拧紧松动的门闩，门扇现在可以合上。',
         goalKey: 'find-seal', evidenceFactKeys: [actions === 1 ? 'lost' : 'latch'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
-        newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
+        newFacts: actions === 1 ? [] : [{factKey: 'door-fixed', kind: 'observation', text: '门扇现在可以合上。', evidenceFactKeys: ['latch'], evidenceExcerpt: '门扇现在可以合上。'}], disclosures: [], threadUpdates: [], goalStatus: null,
         situationRequest: actions === 1 ? {threadKey: 'investigate', direction, evidenceFactKeys: ['lost'], evidenceExcerpt: '我想先独自检查后门门闩。'} : null}
     }
     await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
@@ -39,10 +39,11 @@ test('a reviewed role direction survives reload and import, constructs on contin
   await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
   await page.getByRole('button', {name: '让角色开场', exact: true}).click()
   await expect(page.getByText('我想先独自检查后门门闩。你可以留在这里。', {exact: true})).toBeVisible()
-  expect(calls).toEqual(['action', 'action-review'])
+  await expect.poll(() => calls).toEqual(['action', 'action-review', 'construction', 'situation-review'])
+  await expect(page.getByRole('button', {name: '让角色继续', exact: true})).toBeEnabled()
   await page.reload()
   await expect(page.getByTestId('chat-narrative-controls')).toBeVisible()
-  expect(calls).toEqual(['action', 'action-review'])
+  await expect.poll(() => calls).toEqual(['action', 'action-review', 'construction', 'situation-review'])
   f = await page.evaluate(async f => {
     const load = new Function('p', 'return import(p)'), backup = await load('/storyforge/src/lib/export/json-export.ts')
     const projectId = await backup.importProjectJSON(await backup.exportProjectJSON(f.scope.projectId))
@@ -53,14 +54,16 @@ test('a reviewed role direction survives reload and import, constructs on contin
   await page.goto(`./chat/play?project=${f.scope.projectId}&work=${f.scope.workId}&session=${f.sessionId}`)
   await expect(page.getByTestId('chat-narrative-controls')).toBeVisible()
   await expect(page.getByRole('button', {name: /^恢复 Run/})).toHaveCount(0)
-  expect(calls).toEqual(['action', 'action-review'])
+  await expect.poll(() => calls).toEqual(['action', 'action-review', 'construction', 'situation-review'])
   await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
-  await page.getByRole('button', {name: '让角色继续', exact: true}).click()
-  await expect(page.getByText('门闩的松动值得留意，我先停在这里。', {exact: true})).toBeVisible()
+  await page.getByLabel('发送给角色的消息').fill('我在听，还是不参与调查。')
+  await page.getByRole('button', {name: '发送并生成', exact: true}).click()
+  await expect(page.getByText('你不用动手。我独自拧紧松动的门闩，门扇现在可以合上。', {exact: true})).toBeVisible()
   expect(calls).toEqual(['action', 'action-review', 'construction', 'situation-review', 'action', 'action-review'])
   const read = () => page.evaluate(async f => {const load = new Function('p', 'return import(p)'); return (await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(f.sessionId)).interaction}, f)
   const before = await read()
-  expect(before.messages.map((m: {role: string}) => m.role)).toEqual(['character', 'character'])
+  expect(before.messages.map((m: {role: string}) => m.role)).toEqual(['character', 'player', 'character'])
+  expect(before.chatNarrative.situation.facts.some((fact: {factKey: string}) => fact.factKey === 'door-fixed')).toBe(true)
   expect(before.chatNarrative.situation.seed.origin).toBe('continued-thread')
   expect(before.chatNarrative.pendingSituation).toBeUndefined()
   await page.reload()
