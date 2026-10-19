@@ -1,6 +1,7 @@
 import { useLayoutEffect,useRef,useState } from 'react'
 import type { TtrpgOpenVoiceAuditionV1 } from '../../lib/ttrpg/open-voice-audition'
 import { ttrpgOpenVoiceReadingPositionV1 } from '../../lib/ttrpg/open-voice-timeline-contract'
+import { applyTtrpgNarrationRateV1,useTtrpgNarrationRateV1 } from '../../lib/ttrpg/narration-listening-preferences'
 
 /** A private draft preview, not an accepted E16 track or word alignment. */
 export default function TtrpgOpenVoiceAuditionPlayer(props: { audition: TtrpgOpenVoiceAuditionV1; url: string; register: (stop: (()=>void)|null)=>void; onFailure: ()=>void }) {
@@ -9,6 +10,7 @@ export default function TtrpgOpenVoiceAuditionPlayer(props: { audition: TtrpgOpe
   const {clock:timeline,normalizedText:readingText}=generatedTimeline
   const {originalPart}=timeline,{active}=position
   const {url,register}=props
+  const narrationRate=useTtrpgNarrationRateV1()
   useLayoutEffect(()=>{
     const element=node.current
     if(!element)return
@@ -17,6 +19,7 @@ export default function TtrpgOpenVoiceAuditionPlayer(props: { audition: TtrpgOpe
     register(stop)
     return()=>{stop();register(null)}
   },[url,register])
+  useLayoutEffect(()=>{if(node.current)applyTtrpgNarrationRateV1(node.current,narrationRate)},[narrationRate,url,register])
   const sample=(element:HTMLAudioElement)=>{
     setPosition(ttrpgOpenVoiceReadingPositionV1(timeline,element.currentTime))
   }

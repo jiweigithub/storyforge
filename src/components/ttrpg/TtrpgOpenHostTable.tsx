@@ -8,6 +8,7 @@ import TtrpgOpenWorldPatchPanel from './TtrpgOpenWorldPatchPanel'
 import TtrpgOpenHistoricalResponses from './TtrpgOpenHistoricalResponses'
 import TtrpgOpenMemoryPanel from './TtrpgOpenMemoryPanel'
 import TtrpgOpenAudioPanel from './TtrpgOpenAudioPanel'
+import TtrpgNarrationListeningSettings from './TtrpgNarrationListeningSettings'
 import TtrpgOpenIdentityKnowledgePanel from './TtrpgOpenIdentityKnowledgePanel'
 import TtrpgOpenTableConversation from './TtrpgOpenTableConversation'
 import TtrpgOpenPrivateChoicePanel from './TtrpgOpenPrivateChoicePanel'
@@ -50,6 +51,7 @@ export default function TtrpgOpenHostTable(props: TtrpgPlayTablePropsV1 & { view
     <header><p className="sf-open-table-preview">开放跑团 · 开发预览</p><h1>真人主持桌面</h1><p>{view?.title ?? props.session.title}</p>
       <p>此处可能显示主持专用资料。交接给玩家前，请返回身份选择。</p>
       <button disabled={busy} onClick={props.onExit}>返回身份选择</button></header>
+    <TtrpgNarrationListeningSettings key={`listening:${sessionId}:${viewerKey}`} paused={props.state.ttrpg?.product.safety.status !== 'active'}/>
     {error && <div role="alert">{error}</div>}{notice && <p role="status">{notice}</p>}
     <button disabled={busy} onClick={() => { setError('');void refresh() }}>读取主持最新进度</button>
     {!view && !error && <p role="status">正在读取主持进度…</p>}

@@ -2,6 +2,7 @@ import TtrpgOpenSituationPanel from './TtrpgOpenSituationPanel'
 import TtrpgOpenPublicSituationPanel from './TtrpgOpenPublicSituationPanel'
 import TtrpgOpenCommonOraclePanel from './TtrpgOpenCommonOraclePanel'
 import TtrpgOpenAudioPanel from './TtrpgOpenAudioPanel'
+import TtrpgNarrationListeningSettings from './TtrpgNarrationListeningSettings'
 import TtrpgOpenIdentityKnowledgePanel from './TtrpgOpenIdentityKnowledgePanel'
 import TtrpgOpenEntityPanel from './TtrpgOpenEntityPanel'
 import TtrpgOpenBriefPanel from './TtrpgOpenBriefPanel'
@@ -105,6 +106,7 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
   }} />
   return <section className="sf-open-table" data-testid="ttrpg-open-player-table">
     <header><p className="sf-open-table-preview">开放跑团 · 开发预览</p><h1>{view?.title ?? props.session.title}</h1>{view && <p>{view.pitch}</p>}</header>
+    <TtrpgNarrationListeningSettings key={`listening:${sessionId}:${viewerKey}`} paused={props.state.ttrpg?.product.safety.status !== 'active'}/>
     {error && <div role="alert"><p>{error}</p><button disabled={busy} onClick={() => { setError('');void refresh() }}>重新读取进度</button></div>}
     {notice && <p role="status">{notice}</p>}
     {view && viewerKey && !view.started && <button disabled={busy} onClick={() => { ++revision.current;activeViewer.current = '';setViewerKey('');setSelected('');setAccepted(false);setView(null);setError('');setNotice('') }}>返回身份选择</button>}

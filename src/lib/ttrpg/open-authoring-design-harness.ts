@@ -5,6 +5,8 @@ import type { AIConfig, ChatMessage, ContextManifestV2, WorkspaceScope } from '.
 import type { AssembleContextResult } from '../registry/types'
 import { assembleContext } from '../registry/assemble-context'
 import { resolveRequestConfig, type ChatResult } from '../ai/client'
+import { readBoundCodexReceiptV1, acknowledgeBoundCodexReceiptV1, CODEX_DURABLE_RECEIPT_RETENTION_V1,
+  CODEX_REQUEST_HASH_ALGORITHM_V1, type CodexRequestRefV1, type CodexReceipt } from '../ai/codex-transport'
 import { estimateTokens, trimMessagesToFit } from '../ai/context-budget'
 import { getAgentSkillV1 } from '../agent/skill-registry'
 import { createAgentSkillExecutionBindingV2 } from '../agent/execution-binding'
@@ -12,7 +14,7 @@ import { executeFrozenFormalAIEntryV1, freezeFormalAIEntryBindingV1 } from '../a
 import { createAgentRunV1, readAgentRunV1, appendAgentRunEventV1, type AgentRunSnapshotV1 } from '../agent/run/event-store'
 import { beginAgentRunRecoveryV1, completeAgentRunRecoveryV1, createAgentRunCheckpointV1 } from '../agent/run/checkpoint'
 import { createContextManifestFromAssemblyV1, createContextManifestV2FromV1 } from '../agent/run/context-manifest'
-import { hashCanonicalValue } from '../agent/run/hash'
+import { hashCanonicalValue, canonicalStringify } from '../agent/run/hash'
 import { runCreativeExecutionV1, createCreativeIssueV1, type CreativeRawModelResultV1 } from '../agent/creative-execution'
 import { parseCreativeArtifactV1, type CreativeArtifactV1 } from '../agent/creative-reliability'
 import { AgentTeamBudgetTracker } from '../agent/team-budget'
@@ -28,12 +30,15 @@ import { parseTtrpgOpenAuthoringDesignRequestV1, parseTtrpgOpenAuthoringDesignPr
   type TtrpgOpenAuthoringDesignRequestV1, type TtrpgOpenAuthoringDesignProposalsV1 } from './open-authoring-design-contract'
 import { buildTtrpgOpenAuthoringDesignMessagesV1, renderTtrpgOpenDesignWorldReadsV1 } from './open-authoring-design-prompt'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
+import { withTtrpgOpenDesignOwnerV1 } from './open-authoring-design-owner'
 
 export const TTRPG_OPEN_DESIGN_STEP_V1 = 'ttrpg:open-authoring-design' as const
 const CATEGORY = 'authoring.ttrpg-open-design'
 const SOURCE = 'ttrpg.open.authoring-design', STEP = TTRPG_OPEN_DESIGN_STEP_V1
 const EVIDENCE = 'storyforge.ttrpg-open-authoring-design-request-evidence'
 const CANDIDATE = 'storyforge.ttrpg-open-authoring-design-candidate'
+const TRANSPORT = 'storyforge.ttrpg-open-design-local-request'
+const RESPONSE = 'storyforge.ttrpg-open-design-response-metadata'
 const terminal = new Set(['completed', 'failed', 'cancelled'])
 function fail(message: string): never { throw new Error(`[ttrpg-authoring-design] ${message}`) }
 
@@ -43,6 +48,16 @@ interface RequestEvidence {
   preflight: ContextGatewayPreflightEvidenceV1; manifest: ContextManifestV2
   selector: ContextGatewayExecutionV1['selector']; sufficiency: ContextGatewayExecutionV1['sufficiency']
   retrievalTrace: ContextGatewayExecutionV1['retrievalTrace']; gatewayVersionHash: string; policyHash: string
+}
+interface LocalRequestEvidence {
+  schema: typeof TRANSPORT; version: 1; portable: false; runId: number
+  requestArtifactHash: string; requestBindingHash: string; request: CodexRequestRefV1
+}
+interface ResponseMetadata {
+  schema: typeof RESPONSE; version: 1; rawResponseHash: string
+  usage: CreativeRawModelResultV1['usage'] | null; durationMs: number | null
+  localRequestHash?: string; transportStatus?: CodexReceipt['status']
+  receiptMetadata?: Omit<CodexReceipt, 'text'>
 }
 function usesRuleRefs(skillId: string, promptVersion?: string): boolean {
   if ((promptVersion === TTRPG_OPEN_DESIGN_PROMPT_VERSION_V2 || promptVersion === TTRPG_OPEN_DESIGN_PROMPT_VERSION_V3)
@@ -95,6 +110,103 @@ async function frozen(scope: WorkspaceScope, snapshot: AgentRunSnapshotV1) {
   return result
 }
 
+async function verifyLocalRequest(scope: WorkspaceScope, snapshot: AgentRunSnapshotV1,
+  retained: { hash: string; value: RequestEvidence }, local: LocalRequestEvidence) {
+  const ref = local?.request, evidence = retained.value
+  if (local?.schema !== TRANSPORT || local.version !== 1 || local.portable !== false || local.runId !== snapshot.run.id
+    || local.requestArtifactHash !== retained.hash || local.requestBindingHash !== evidence.requestBindingHash
+    || canonicalStringify(scope) !== canonicalStringify(evidence.source.scope)
+    || snapshot.events.some(event => (event.type === 'run.cancelled' && event.payload.reason === 'project-import-nonportable-checkpoint')
+      || (event.type === 'verification.staled' && event.payload.reason === 'project-import-scope-rebound'))
+    || evidence.modelIdentity.provider !== 'codex' || ref?.model !== evidence.modelIdentity.model
+    || ref?.version !== 1 || ref.provider !== 'codex' || Object.keys(ref).length !== 6
+    || !/^[a-f0-9-]{36}$/i.test(ref.requestId) || ref.requestHashAlgorithm !== CODEX_REQUEST_HASH_ALGORITHM_V1
+    || !/^[a-f0-9]{64}$/.test(ref.requestHash)
+    || !snapshot.events.some(event => event.type === 'model.requested' && event.payload.bindingHash === evidence.requestBindingHash)
+    || await sha256Text(JSON.stringify({ id: ref.requestId, model: ref.model, messages: evidence.messages,
+      receiptRetention: CODEX_DURABLE_RECEIPT_RETENTION_V1 })) !== ref.requestHash) {
+    fail('原本机引用与冻结请求、作品或发送记录不一致；不能关联服务记录或重发')
+  }
+}
+
+const HANDOFF = 'storyforge.ttrpg-open-design-local-handoff'
+async function handoff(scope: WorkspaceScope, snapshot: AgentRunSnapshotV1, request: CodexRequestRefV1, rawResponseHash: string) {
+  const saved = await snapshotsWithSchema<{ requestHash: string; rawResponseHash: string }>(scope, snapshot, HANDOFF)
+  if (saved) {
+    if (saved.value.requestHash !== request.requestHash || saved.value.rawResponseHash !== rawResponseHash) fail('原回执交接记录不一致')
+    return snapshot
+  }
+  // The owner already holds exact raw and metadata. A failed retention handoff
+  // leaves the native copy protected and visible for an explicit later action.
+  let receipt: Awaited<ReturnType<typeof acknowledgeBoundCodexReceiptV1>>
+  try { receipt = await acknowledgeBoundCodexReceiptV1({ request, rawResponseHash, confirmation: 'owner-record-saved-v1' }) }
+  catch { return snapshot }
+  if (terminal.has(snapshot.run.status)) return snapshot
+  return (await recordAgentRunArtifactV1({ scope, runId: snapshot.run.id, stepId: STEP, attempt: 1, artifactKind: 'source-snapshot',
+    content: JSON.stringify({ schema: HANDOFF, version: 1, portable: false, runId: snapshot.run.id,
+      requestHash: request.requestHash, rawResponseHash, receipt }), expectedLastSequence: snapshot.projection.lastSequence })).snapshot
+}
+
+/** Explicit original-ID lookup only. No inference POST, new Run, credential,
+ * source read, author adoption or legacy hash-based association is performed. */
+export async function recoverTtrpgOpenDesignOriginalReceiptV1(input: { scope: WorkspaceScope; runId: number }) {
+  return withTtrpgOpenDesignOwnerV1(input.scope, async () => {
+    let snapshot = await readAgentRunV1(input.scope, input.runId)
+    const retained = await frozen(input.scope, snapshot)
+    const local = await snapshotsWithSchema<LocalRequestEvidence>(input.scope, snapshot, TRANSPORT)
+    if (!local) {
+      // Existing non-Codex/legacy saved raw still uses its original local path.
+      // Missing raw must never invent a pre-dispatch binding for an old Run.
+      return { status: 'local' as const, candidate: await materialize(input), handoffPending: false }
+    }
+    await verifyLocalRequest(input.scope, snapshot, retained, local.value)
+    if (typeof window !== 'undefined' && !navigator.locks?.request) fail('当前浏览器不能确认其他页面是否仍在执行，请使用支持安全恢复的本机浏览器；原记录保留')
+    const ref = local.value.request
+    const raw = snapshot.events.find(event => event.type === 'evidence.artifact.recorded' && event.payload.artifactKind === 'raw-response' && event.payload.stepId === STEP)
+    const metadata = await snapshotsWithSchema<ResponseMetadata>(input.scope, snapshot, RESPONSE)
+    if (raw?.type === 'evidence.artifact.recorded' && metadata?.value.transportStatus === 'completed') {
+      // Owner storage survives native retention release/pruning. No remote read
+      // is necessary to reconstruct an already-saved successful answer.
+      const candidate = await materialize(input)
+      snapshot = await readAgentRunV1(input.scope, input.runId)
+      snapshot = await handoff(input.scope, snapshot, ref, candidate.rawResponseHash)
+      return { status: 'completed' as const, candidate, handoffPending: !await snapshotsWithSchema(input.scope, snapshot, HANDOFF) }
+    }
+    if (terminal.has(snapshot.run.status)) fail('原请求已经结束，保留历史记录，不能重新领取服务结果')
+    const receipt = await readBoundCodexReceiptV1(ref)
+    if (receipt.receiptRetention !== CODEX_DURABLE_RECEIPT_RETENTION_V1) fail('原本机回执没有约定的作品交接保留策略')
+    if (receipt.status === 'accepted' || receipt.status === 'running') return { status: receipt.status, candidate: null, handoffPending: true }
+    if (receipt.status === 'completed' && (!receipt.dispatched || !receipt.text.trim())) fail('原本机完成回执不包含有效完整回答')
+    if (snapshot.run.status === 'paused' || snapshot.run.status === 'recovering') {
+      const recovery = await beginAgentRunRecoveryV1({ ...input, expectedLastSequence: snapshot.projection.lastSequence })
+      snapshot = await completeAgentRunRecoveryV1({ ...input, checkpointHash: recovery.checkpointHash,
+        expectedLastSequence: recovery.snapshot.projection.lastSequence })
+    }
+    if (snapshot.run.status !== 'running') fail('原请求当前不能领取回执，请保留记录核对')
+    const rawHash = await sha256Text(receipt.text)
+    if (raw?.type === 'evidence.artifact.recorded' && raw.payload.contentHash !== rawHash) fail('服务回执与作品原始回答冲突，不能追加第二份回答')
+    if (metadata && (metadata.value.rawResponseHash !== rawHash || metadata.value.transportStatus !== receipt.status
+      || metadata.value.localRequestHash !== ref.requestHash)) fail('服务回执与作品已保存的回答元数据冲突')
+    // Store terminal status before raw so an interrupted unknown/failed partial
+    // response can never be mistaken for a complete local answer.
+    const { text: _text, ...receiptMetadata } = receipt
+    if (!metadata) snapshot = (await recordAgentRunArtifactV1({ ...input, stepId: STEP, attempt: 1, artifactKind: 'source-snapshot',
+      content: JSON.stringify({ schema: RESPONSE, version: 1, rawResponseHash: rawHash, usage: receipt.usage ?? null,
+        durationMs: null, localRequestHash: ref.requestHash, transportStatus: receipt.status, receiptMetadata }), expectedLastSequence: snapshot.projection.lastSequence })).snapshot
+    snapshot = (await recordAgentRunArtifactV1({ ...input, stepId: STEP, attempt: 1, artifactKind: 'raw-response',
+      content: receipt.text, expectedLastSequence: snapshot.projection.lastSequence })).snapshot
+    snapshot = await handoff(input.scope, snapshot, ref, rawHash)
+    const handoffPending = !await snapshotsWithSchema(input.scope, snapshot, HANDOFF)
+    if (receipt.status !== 'completed') {
+      snapshot = await append(input.scope, snapshot, receipt.status === 'unknown' ? 'run.paused' : 'run.failed', receipt.status === 'unknown'
+        ? { reason: '原本机请求结果未知，部分回答已保留；不能生成候选或重发', recoverable: true }
+        : { code: `ttrpg-design-local-${receipt.status}-no-retry`, retryable: false })
+      return { status: receipt.status, candidate: null, handoffPending }
+    }
+    return { status: receipt.status, candidate: await materialize(input), handoffPending }
+  })
+}
+
 /** All Work-owned requests remain in the existing Run lifecycle, including
  * orphaned planned requests. No parallel conversation store or silent discard. */
 export async function listTtrpgOpenAuthoringDesignRunsV1(scope: WorkspaceScope) {
@@ -120,6 +232,9 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
   runAI?: (messages: ChatMessage[], signal?: AbortSignal) => Promise<string>
   onPrepared?: (runId: number) => void
 }): Promise<TtrpgOpenAuthoringDesignCandidateV1> {
+  return withTtrpgOpenDesignOwnerV1(input.scope, () => generateOwned(input))
+}
+async function generateOwned(input: Parameters<typeof generateTtrpgOpenAuthoringDesignCandidateV1>[0]): Promise<TtrpgOpenAuthoringDesignCandidateV1> {
   const request = parseTtrpgOpenAuthoringDesignRequestV1(input.request), profile = ttrpgOpenDesignProfileV1(request.sections)
   const skill = getAgentSkillV1(profile.skillId), outputBudget = profile.maxOutputTokens
   if (outputBudget !== skill.maxOutputTokens) fail('登记的设计容量与本次分区不一致；尚未发送请求')
@@ -205,7 +320,7 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
       artifactKind: 'source-snapshot', content: JSON.stringify(evidence), expectedLastSequence: snapshot.projection.lastSequence })
     snapshot = recordedRequest.snapshot
     snapshot = (await createAgentRunCheckpointV1({ scope: input.scope, runId: snapshot.run.id,
-      resumePayload: { schema: 'storyforge.ttrpg-open-design-prepared-checkpoint', version: 1, requestArtifactHash: recordedRequest.artifact.contentHash },
+      resumePayload: { schema: 'storyforge.ttrpg-open-design-prepared-checkpoint', version: 1, portable: false, requestArtifactHash: recordedRequest.artifact.contentHash },
       expectedLastSequence: snapshot.projection.lastSequence })).snapshot
     await assertTtrpgOpenAuthoringDesignSourceCurrentV1(source)
     if (input.signal?.aborted) throw input.signal.reason ?? new Error('请求已取消，尚未发送')
@@ -213,6 +328,13 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
     snapshot = await append(input.scope, snapshot, 'model.requested', { stepId: STEP, attempt: 1, bindingHash: requestBindingHash })
     const result: ChatResult = {}, started = Date.now()
     transportResult = result
+    if (!input.runAI && modelIdentity.provider === 'codex') result.onCodexRequestPrepared = async request => {
+      const value: LocalRequestEvidence = { schema: TRANSPORT, version: 1, portable: false, runId: snapshot.run.id,
+        requestArtifactHash: recordedRequest.artifact.contentHash, requestBindingHash, request: { ...request } }
+      await verifyLocalRequest(input.scope, snapshot, { hash: recordedRequest.artifact.contentHash, value: evidence }, value)
+      snapshot = (await recordAgentRunArtifactV1({ scope: input.scope, runId: snapshot.run.id, stepId: STEP, attempt: 1,
+        artifactKind: 'source-snapshot', content: JSON.stringify(value), expectedLastSequence: snapshot.projection.lastSequence })).snapshot
+    }
     const output = input.runAI ? await input.runAI(messages, input.signal)
       : profile.entryId === 'ttrpg.open.authoring-design.full'
         ? await executeFrozenFormalAIEntryV1('ttrpg.open.authoring-design.full', binding.formalEntry, skill, 'src/lib/ttrpg/open-authoring-design-harness.ts',
@@ -223,11 +345,13 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
       artifactKind: 'raw-response', content: output, expectedLastSequence: snapshot.projection.lastSequence })
     snapshot = raw.snapshot
     snapshot = (await recordAgentRunArtifactV1({ scope: input.scope, runId: snapshot.run.id, stepId: STEP, attempt: 1,
-      artifactKind: 'source-snapshot', content: JSON.stringify({ schema: 'storyforge.ttrpg-open-design-response-metadata', version: 1,
-        rawResponseHash: raw.artifact.contentHash, usage: result.usage ?? null, durationMs: Math.max(0, Date.now() - started) }),
+      artifactKind: 'source-snapshot', content: JSON.stringify({ schema: RESPONSE, version: 1,
+        rawResponseHash: raw.artifact.contentHash, usage: result.usage ?? null, durationMs: Math.max(0, Date.now() - started),
+        ...(result.localCodexRequest ? { localRequestHash: result.localCodexRequest.requestHash, transportStatus: 'completed' } : {}) }),
       expectedLastSequence: snapshot.projection.lastSequence })).snapshot
+    if (result.localCodexRequest) snapshot = await handoff(input.scope, snapshot, result.localCodexRequest, raw.artifact.contentHash)
     snapshot = await append(input.scope, snapshot, 'model.responded', { stepId: STEP, attempt: 1, outputHash: raw.artifact.contentHash })
-    return await recoverTtrpgOpenAuthoringDesignCandidateV1({ scope: input.scope, runId: snapshot.run.id })
+    return await materialize({ scope: input.scope, runId: snapshot.run.id })
   } catch (error) {
     // No transport retry. A durable requested marker is conservative even if a
     // provider cannot report its transport phase; only explicit review can close it.
@@ -237,7 +361,8 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
         const sent = snapshot.events.some(event => event.type === 'model.requested')
         const status = transportResult?.requestLifecycle?.responseStatus
         const denied = status != null && status >= 400 && status < 500 && status !== 408
-        await append(input.scope, snapshot, sent && !denied ? 'run.paused' : 'run.failed', sent && !denied
+        const knownUnsent = transportResult?.requestLifecycle?.phase === 'pre-dispatch'
+        await append(input.scope, snapshot, sent && !denied && !knownUnsent ? 'run.paused' : 'run.failed', sent && !denied && !knownUnsent
           ? { reason: '设计请求结果待核对；保留原请求和回答，不能自动重发', recoverable: true }
           : { code: denied ? `ttrpg-design-http-${status}-no-retry` : 'ttrpg-design-pre-dispatch-failed', retryable: false })
       }
@@ -249,8 +374,18 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
 /** Materialization uses the original raw bytes as the original logical call;
  * runCreativeExecution performs parsing/artifact construction, with no transport. */
 export async function recoverTtrpgOpenAuthoringDesignCandidateV1(input: { scope: WorkspaceScope; runId: number }): Promise<TtrpgOpenAuthoringDesignCandidateV1> {
+  return withTtrpgOpenDesignOwnerV1(input.scope, () => materialize(input))
+}
+async function materialize(input: { scope: WorkspaceScope; runId: number }): Promise<TtrpgOpenAuthoringDesignCandidateV1> {
   let snapshot = await readAgentRunV1(input.scope, input.runId)
   const retained = await frozen(input.scope, snapshot), evidence = retained.value
+  const metadata = await snapshotsWithSchema<ResponseMetadata>(input.scope, snapshot, RESPONSE)
+  const local = await snapshotsWithSchema<LocalRequestEvidence>(input.scope, snapshot, TRANSPORT)
+  if (local) {
+    await verifyLocalRequest(input.scope, snapshot, retained, local.value)
+    if (!metadata || metadata.value.localRequestHash !== local.value.request.requestHash || metadata.value.transportStatus !== 'completed')
+      fail('原本机请求尚无完整成功回执；请明确读取原服务记录，结果未知或部分回答不能成为候选')
+  }
   const rawEvents = snapshot.events.filter(event => event.type === 'evidence.artifact.recorded'
     && event.payload.artifactKind === 'raw-response' && event.payload.stepId === STEP && event.payload.attempt === 1)
   if (rawEvents.length !== 1 || rawEvents[0].type !== 'evidence.artifact.recorded') fail('没有唯一已保存回答；恢复不会发起模型请求')
@@ -267,7 +402,7 @@ export async function recoverTtrpgOpenAuthoringDesignCandidateV1(input: { scope:
     if (manifest.manifest.candidate.candidateHash !== candidateHash) fail('设计候选缺少相同来源回执')
     const persistedIndex = snapshot.events.findIndex(event => event.type === 'candidate.persisted')
     if (!snapshot.events.slice(persistedIndex + 1).some(event => event.type === 'checkpoint.created')) {
-      await createAgentRunCheckpointV1({ ...input, resumePayload: { schema: 'storyforge.ttrpg-open-design-checkpoint', version: 1,
+      await createAgentRunCheckpointV1({ ...input, resumePayload: { schema: 'storyforge.ttrpg-open-design-checkpoint', version: 1, portable: false,
         requestArtifactHash: retained.hash, candidateHash }, expectedLastSequence: snapshot.projection.lastSequence })
     }
     return { ...body, artifact: parseCreativeArtifactV1(body.artifact), candidateHash }
@@ -279,7 +414,6 @@ export async function recoverTtrpgOpenAuthoringDesignCandidateV1(input: { scope:
   }
   if (snapshot.run.status !== 'running') fail('原请求当前不可解析；保留原记录，不能重发')
   if (!snapshot.events.some(event => event.type === 'model.responded')) snapshot = await append(input.scope, snapshot, 'model.responded', { stepId: STEP, attempt: 1, outputHash: rawHash })
-  const metadata = await snapshotsWithSchema<{ rawResponseHash: string; usage: CreativeRawModelResultV1['usage'] | null; durationMs: number }>(input.scope, snapshot, 'storyforge.ttrpg-open-design-response-metadata')
   if (metadata && metadata.value.rawResponseHash !== rawHash) fail('回答用量记录不属于原回答')
   const usage = metadata?.value.usage
   const invalidUsage = !!usage && (![usage.inputTokens, usage.outputTokens, usage.totalTokens].every(value => Number.isSafeInteger(value) && value >= 0)
@@ -300,7 +434,7 @@ export async function recoverTtrpgOpenAuthoringDesignCandidateV1(input: { scope:
         issues: [createCreativeIssueV1({ code: invalidUsage || overBudget ? 'ttrpg-design-budget' : 'ttrpg-design-protocol', path: '$', message: error instanceof Error ? error.message : String(error), disposition: 'blocking', action: 'edit' })] } }
     }, buildRepairMessages: () => fail('本次请求不授权自动修复'), budget: new AgentTeamBudgetTracker('expanded'), callLabel: '原设计回答解析',
     maxOutputTokens: snapshot.contract.budget.maxOutputTokens, qualityMode: 'economy', modelIdentity: evidence.modelIdentity, canonEvidenceRefs: [`source-plan:${evidence.source.sourcePlan.planHash}`] })
-  if (!metadata) creative.artifact.callEvidence[0].latencyMs = null
+  if (!metadata || metadata.value.durationMs == null) creative.artifact.callEvidence[0].latencyMs = null
   const body: Omit<TtrpgOpenAuthoringDesignCandidateV1, 'candidateHash'> = { schema: CANDIDATE, version: 1, portable: false, runId: input.runId, requestArtifactHash: retained.hash,
     rawResponseHash: rawHash, sourceBasisHash: evidence.source.basisHash, proposals: creative.output, artifact: creative.artifact }
   const candidate: TtrpgOpenAuthoringDesignCandidateV1 = { ...body, candidateHash: await hashCanonicalValue(body) }
@@ -315,7 +449,7 @@ export async function recoverTtrpgOpenAuthoringDesignCandidateV1(input: { scope:
     fail('恢复候选与原来源回执不一致')
   }
   snapshot = await append(input.scope, snapshot, 'candidate.persisted', { stepId: STEP, attempt: 1, candidateHash: candidate.candidateHash, requiresConfirmation: true })
-  await createAgentRunCheckpointV1({ ...input, resumePayload: { schema: 'storyforge.ttrpg-open-design-checkpoint', version: 1,
+  await createAgentRunCheckpointV1({ ...input, resumePayload: { schema: 'storyforge.ttrpg-open-design-checkpoint', version: 1, portable: false,
     requestArtifactHash: retained.hash, candidateHash: candidate.candidateHash }, expectedLastSequence: snapshot.projection.lastSequence })
   return candidate
 }
@@ -323,13 +457,18 @@ export async function recoverTtrpgOpenAuthoringDesignCandidateV1(input: { scope:
 /** Read the original comparison basis; a later author save never silently
  * substitutes a new base under an earlier set of proposals. */
 export async function readTtrpgOpenAuthoringDesignReviewV1(input: { scope: WorkspaceScope; runId: number }) {
-  const candidate = await recoverTtrpgOpenAuthoringDesignCandidateV1(input)
+  // Two concurrent confirmations may read the same already-persisted candidate.
+  // The adoption transaction owns their CAS; a read must not seize an execution
+  // owner or reject the second identical confirmation as an active generation.
+  const candidate = await materialize(input)
   const snapshot = await readAgentRunV1(input.scope, input.runId), evidence = (await frozen(input.scope, snapshot)).value
+  const local = await snapshotsWithSchema<LocalRequestEvidence>(input.scope, snapshot, TRANSPORT)
+  const handoffPending = !!local && !await snapshotsWithSchema(input.scope, snapshot, HANDOFF)
   let current = true, staleReason = ''
   try { await assertTtrpgOpenAuthoringDesignSourceCurrentV1(evidence.source) }
   catch (error) { current = false; staleReason = error instanceof Error ? error.message : String(error) }
   return { candidate, source: evidence.source, request: evidence.request, readWorldResourceKeys: evidence.readResourceKeys,
-    runStatus: snapshot.run.status, current, staleReason, maxOutputTokens: snapshot.contract.budget.maxOutputTokens, ruleRefs: frozenRuleRefs(snapshot, evidence),
+    runStatus: snapshot.run.status, current, staleReason, handoffPending, maxOutputTokens: snapshot.contract.budget.maxOutputTokens, ruleRefs: frozenRuleRefs(snapshot, evidence),
     adoptionAllowed: snapshot.contract.executionBindings?.some(binding => binding.stepId === STEP && binding.version === 2
       && binding.writeTargets.some(target => target.table === 'ttrpgAuthoringDrafts' && target.mode === 'author-confirmed' && target.fields.includes('settingsJson'))
       && binding.formalEntry && JSON.parse(binding.formalEntry.bindingJson).adoptAllowed === true) === true }

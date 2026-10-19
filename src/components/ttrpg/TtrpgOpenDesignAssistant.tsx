@@ -167,6 +167,7 @@ export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEd
       {terminal.has(review.runStatus) && <p role="status">原请求已结束，内容保留参考。</p>}
       {!review.adoptionAllowed && <p role="status">这份历史请求只允许参考。请明确结束原请求后，以当前权限重新起草。</p>}
       {!review.current && <p role="alert">原草稿、规则或来源已变化，这份设计只可参考。{review.staleReason}</p>}
+      {review.handoffPending && <p role="status">原回答已保存在本作品，本机副本的交接回执仍待核对；可点击“读取原回答并恢复候选”再次交接，不会重新生成。</p>}
       {hasUnsavedEdits && <p role="status">本窗口还有人工修改，请先保存；原候选不会覆盖这些修改。</p>}
       <p>原草稿版本 {review.source.revision}；实际读取 {review.readWorldResourceKeys.length} 项世界资源。分区混合后仍会核对局部引用和来源。</p>
       <div className="ttrpg-design-proposals">{review.candidate.proposals?.proposals.map(proposal => <article key={proposal.proposalKey} className="ttrpg-design-proposal">
@@ -195,13 +196,15 @@ export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEd
         if (live.current) setNotice(result.receiptPending ? `草稿已保存，回执仍待补齐：${result.terminalError}` : '原采纳回执已补齐；保留作者之后的修改。')
       })}>补齐原采纳回执</button>}</section>}
     {selectedRun && !terminal.has(selectedRun.status) && !adoption && <fieldset disabled={busy || loading}>
-      {['paused', 'recovering', 'running'].includes(selectedRun.status) && <><p>刷新或停止等待不会重新发送。可核对已保存的原回答；结果未知时请先检查原服务记录。</p>
+      {(['paused', 'recovering', 'running'].includes(selectedRun.status) || review?.handoffPending) && <><p>刷新或停止等待不会重新发送。已绑定的本机请求只读取原服务回执；其他历史请求只读取已保存回答。</p>
         <button className="lf-action" type="button" onClick={() => void act(async () => {
-          await design.recoverTtrpgOpenAuthoringDesignCandidateV1({ scope, runId: selectedRun.id })
-          if (live.current) setNotice('已从保存的原回答恢复候选，没有重新请求模型。')
+          const result = await design.recoverTtrpgOpenDesignOriginalReceiptV1({ scope, runId: selectedRun.id })
+          if (live.current) setNotice(result.candidate ? `已从原回答恢复候选，没有重新请求模型。${result.handoffPending ? '本机副本交接待核对，原回答已保存。' : ''}`
+            : result.status === 'accepted' || result.status === 'running' ? '原本机请求仍在执行，请稍后明确刷新；没有重发。'
+              : '原本机请求未完整成功，原回执及部分回答已保留；没有生成候选或重发。')
         })}>读取原回答并恢复候选</button></>}
-      {selectedRun.status === 'paused' && <label><input type="checkbox" checked={unknownAck} onChange={event => setUnknownAck(event.target.checked)}/>我已核对原请求，仍需结束这份结果未知的等待；服务端可能已经处理</label>}
-      <button className="lf-action" type="button" disabled={selectedRun.status === 'running' || selectedRun.status === 'recovering' || (selectedRun.status === 'paused' && !unknownAck)} onClick={() => void act(async () => {
+      {['paused', 'running', 'recovering'].includes(selectedRun.status) && <label><input type="checkbox" checked={unknownAck} onChange={event => setUnknownAck(event.target.checked)}/>我已核对原请求，仍需结束这份结果未知的等待；服务端可能已经处理</label>}
+      <button className="lf-action" type="button" disabled={['paused', 'running', 'recovering'].includes(selectedRun.status) && !unknownAck} onClick={() => void act(async () => {
         await design.dismissTtrpgOpenAuthoringDesignRequestV1({ scope, runId: selectedRun.id, confirmation: 'discard-design-request-v1', acknowledgeUnknown: unknownAck })
         if (live.current) { clearPending(); setNotice('这份请求已明确结束，原回答与记录保留。') }
       })}>结束这份请求，不采用候选</button>

@@ -12,7 +12,7 @@ import type { AgentSkillDefinitionV1 } from '../agent/skill-registry'
 import { readAgentRunV1, readVerifiedAgentRunInTransactionV1, appendPrivilegedAgentRunEventInTransactionV1,
   appendAgentRunEventV1, withAgentRunMutationLockV1, agentRunScopeTransactionTablesV1, type AgentRunSnapshotV1 } from '../agent/run/event-store'
 import { parseAgentRunEventV1 } from '../agent/run/event-schema'
-import { createAgentRunCheckpointInTransactionV1, verifyAgentRunCheckpointV1 } from '../agent/run/checkpoint'
+import { createAgentRunCheckpointInTransactionV1, verifyAgentRunCheckpointV1, completeAgentRunRecoveryV1 } from '../agent/run/checkpoint'
 import { createVerificationReceiptV1 } from '../agent/run/verification-receipt'
 import { readAgentRunArtifactExactV1, recordAgentRunArtifactV1 } from '../memory/artifact-store'
 import { readContextGatewayManifestV3ForAttemptV1 } from '../context-gateway/attempt-evidence'
@@ -25,6 +25,7 @@ import { composeTtrpgOpenAuthoringDesignV1, parseTtrpgOpenAuthoringDesignProposa
 import { verifyTtrpgOpenAuthoringSourceProvenanceV1 } from './open-source-provenance'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import * as p from './open-contract-parse'
+import { withTtrpgOpenDesignOwnerV1 } from './open-authoring-design-owner'
 
 const STEP = TTRPG_OPEN_DESIGN_STEP_V1, TARGET = 'ttrpgAuthoringDrafts'
 const SCHEMA = 'storyforge.ttrpg-open-authoring-design-adoption'
@@ -211,6 +212,10 @@ export async function readTtrpgOpenAuthoringDesignAdoptionV1(input: { scope: Wor
 export async function dismissTtrpgOpenAuthoringDesignRequestV1(input: {
   scope: WorkspaceScope; runId: number; confirmation: 'discard-design-request-v1'; acknowledgeUnknown?: boolean
 }) {
+  const snapshot = await readAgentRunV1(input.scope, input.runId)
+  return withTtrpgOpenDesignOwnerV1(input.scope, () => dismissOwned(input), ['running', 'recovering'].includes(snapshot.run.status))
+}
+async function dismissOwned(input: Parameters<typeof dismissTtrpgOpenAuthoringDesignRequestV1>[0]) {
   if (input.confirmation !== 'discard-design-request-v1') fail('请明确确认结束这份请求')
   let snapshot = await readAgentRunV1(input.scope, input.runId)
   if (!snapshot.contract.executionBindings?.some(binding => binding.stepId === STEP && !!ttrpgOpenDesignProfileForSkillV1(binding.skillId))
@@ -221,8 +226,12 @@ export async function dismissTtrpgOpenAuthoringDesignRequestV1(input: {
   if (snapshot.run.status === 'awaiting_confirmation' && step?.candidateHash) {
     snapshot = await appendAgentRunEventV1({ ...input, type: 'confirmation.recorded', payload: { stepId: STEP, candidateHash: step.candidateHash, decision: 'reject' },
       expectedLastSequence: snapshot.projection.lastSequence })
-  } else if (snapshot.run.status === 'paused') {
+  } else if (['paused', 'running', 'recovering'].includes(snapshot.run.status)) {
     if (!input.acknowledgeUnknown) fail('请先核对原请求，并明确确认结束结果未知的等待')
+    if (snapshot.run.status === 'recovering') {
+      snapshot = await completeAgentRunRecoveryV1({ ...input, checkpointHash: snapshot.projection.lastCheckpointHash!,
+        expectedLastSequence: snapshot.projection.lastSequence })
+    }
   } else if (snapshot.run.status !== 'planned' && step?.confirmation !== 'reject') fail('请求仍在执行，请先停止本机等待并保留原结果')
   snapshot = await appendAgentRunEventV1({ ...input, type: 'run.cancelled', payload: { reason: '作者明确结束设计请求，原始回答和证据保留' },
     expectedLastSequence: snapshot.projection.lastSequence })

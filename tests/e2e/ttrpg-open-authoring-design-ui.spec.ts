@@ -1,6 +1,63 @@
 import { test, expect, type Page } from '@playwright/test'
+import { createHash } from 'node:crypto'
 
 test.beforeEach(() => test.skip(process.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW !== '1', 'requires isolated open preview'))
+
+test('a closed Codex observer is recovered by original ID after reload, another live tab cannot claim it, and author adoption stays explicit', async ({ page, context }, info) => {
+  test.setTimeout(180_000)
+  const f = await prepare(page), before = await proof(page, f.scope)
+  await page.evaluate(async () => {
+    const load = new Function('p', 'return import(p)')
+    ;(await load('/storyforge/src/stores/ai-config.ts')).useAIConfigStore.getState().setConfig({ provider: 'codex', model: 'fixture-design-codex',
+      baseUrl: '/storyforge/local-codex/v1', apiKey: '', temperature: 0, maxTokens: 16_000, contextWindow: 131_072 })
+  })
+  let original: any, complete = false, inference = 0, gets = 0, cancels = 0, handoffs = 0
+  await context.route('**/local-codex/v1/**', async route => {
+    const req = route.request(), path = new URL(req.url()).pathname
+    if (path.endsWith('/status')) return route.fulfill({ json: { state: 'ready' } })
+    if (path.endsWith('/requests') && req.method() === 'POST') {
+      inference++; const wire = req.postDataJSON()
+      expect(wire.receiptRetention).toBe('until-owner-ack-v1')
+      original = { id: wire.id, model: wire.model, text: response(f, wire.messages), dispatched: true, createdAt: Date.now(),
+        requestHash: createHash('sha256').update(JSON.stringify(wire)).digest('hex'), requestHashAlgorithm: 'sha256-json-request-v1',
+        receiptRetention: wire.receiptRetention, usage: { inputTokens: 100, outputTokens: 200, totalTokens: 300 } }
+      return route.fulfill({ status: 202, json: { id: wire.id } })
+    }
+    if (path.endsWith('/cancel')) { cancels++; return route.fulfill({ json: { id: original.id } }) }
+    if (path.endsWith('/acknowledge')) {
+      handoffs++; expect(req.postDataJSON().rawResponseHash).toBe(createHash('sha256').update(original.text).digest('hex'))
+      return route.fulfill({ json: { id: original.id, status: 'completed', acknowledged: true, acknowledgedAt: Date.now() } })
+    }
+    gets++; return route.fulfill({ json: { ...original, status: complete ? 'completed' : 'running', text: complete ? original.text : '' } })
+  })
+  await pressureRequest(page)
+  await page.getByRole('button', { name: '生成三个开放设计方向', exact: true }).click()
+  await expect.poll(() => gets).toBeGreaterThan(0)
+  const url = page.url(), other = await context.newPage()
+  await other.goto(url)
+  const assistant = other.getByTestId('ttrpg-open-design-assistant')
+  await expect(assistant).toContainText('原请求状态：执行中')
+  await assistant.getByRole('button', { name: '读取原回答并恢复候选', exact: true }).click()
+  await expect(assistant.getByRole('alert')).toContainText('仍在本机页面执行或恢复')
+  await page.close()
+  complete = true; const priorCancels = cancels
+  await assistant.getByRole('button', { name: '读取原回答并恢复候选', exact: true }).click()
+  await expect(assistant.locator('.ttrpg-design-proposal')).toHaveCount(3)
+  const recovered = await proof(other, f.scope)
+  expect(recovered.draft).toEqual(before.draft); expect(recovered.work).toEqual(before.work)
+  expect(inference).toBe(1); expect(cancels).toBe(priorCancels); expect(handoffs).toBe(1)
+  const priorGets = gets
+  await other.reload()
+  await expect(assistant.locator('.ttrpg-design-proposal')).toHaveCount(3)
+  expect(gets).toBe(priorGets)
+  await assistant.getByRole('button', { name: '选择整套：方向1：调查节奏', exact: true }).click()
+  await assistant.getByRole('button', { name: '确认选择并保存到开放草稿', exact: true }).click()
+  await expect(assistant).toContainText('这份设计已保存到草稿版本')
+  const adopted = await proof(other, f.scope)
+  expect(adopted.draft.revision).toBe(before.draft.revision + 1); expect(adopted.productions).toBe(0); expect(adopted.builds).toBe(0)
+  await info.attach('original-request-only-recovery', { body: JSON.stringify({ originalId: original.id, inference, cancels, handoffs,
+    recoveredRevision: recovered.draft.revision, adoptedRevision: adopted.draft.revision, usage: original.usage }), contentType: 'application/json' })
+})
 
 /** Saved source/RulePack are isolated engineering input. All request/review/
  * composition/adoption operations below use normal product controls and the

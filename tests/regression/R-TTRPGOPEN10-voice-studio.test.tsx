@@ -24,15 +24,16 @@ console.log(JSON.stringify({schema:'storyforge.ttrpg-local-tts-product-raw-respo
 `],{input:JSON.stringify(packet),encoding:'utf8'})}
 describe('R-TTRPGOPEN10 normal original voice controls and local audition lifecycle',{timeout:120000},()=>{
   let host:HTMLDivElement,root:Root,props:Parameters<typeof TtrpgOpenVoiceStudio>[0],release:(()=>void)|null
+  let currentFixtureVisit:object
   let createDescriptor:PropertyDescriptor|undefined,revokeDescriptor:PropertyDescriptor|undefined
-  beforeEach(async()=>{await db.delete();await db.open();host=document.createElement('div');document.body.append(host);root=createRoot(host);release=null
+  beforeEach(async()=>{currentFixtureVisit={};await db.delete();await db.open();host=document.createElement('div');document.body.append(host);root=createRoot(host);release=null
     createDescriptor=Object.getOwnPropertyDescriptor(URL,'createObjectURL');revokeDescriptor=Object.getOwnPropertyDescriptor(URL,'revokeObjectURL')
     Object.defineProperty(URL,'createObjectURL',{configurable:true,value:vi.fn(()=>`blob:voice-ui-${crypto.randomUUID()}`)})
     Object.defineProperty(URL,'revokeObjectURL',{configurable:true,value:vi.fn()})
     vi.spyOn(HTMLMediaElement.prototype,'pause').mockImplementation(()=>undefined);vi.spyOn(HTMLMediaElement.prototype,'load').mockImplementation(()=>undefined)
     vi.spyOn(HTMLMediaElement.prototype,'play').mockResolvedValue()
   })
-  afterEach(async()=>{await act(async()=>{release?.();release=null;root.unmount()});host.remove();vi.restoreAllMocks();vi.unstubAllGlobals()
+  afterEach(async()=>{currentFixtureVisit={};await act(async()=>{release?.();release=null;root.unmount()});host.remove();vi.restoreAllMocks();vi.unstubAllGlobals()
     if(createDescriptor)Object.defineProperty(URL,'createObjectURL',createDescriptor);else Reflect.deleteProperty(URL,'createObjectURL')
     if(revokeDescriptor)Object.defineProperty(URL,'revokeObjectURL',revokeDescriptor);else Reflect.deleteProperty(URL,'revokeObjectURL');db.close()})
   const render=()=>root.render(createElement(StrictMode,null,createElement(TtrpgOpenVoiceStudio,props)))
@@ -40,9 +41,14 @@ describe('R-TTRPGOPEN10 normal original voice controls and local audition lifecy
   const button=(text:string)=>[...host.querySelectorAll('button')].find(el=>el.textContent===text)!
   async function click(text:string){await act(async()=>button(text).click())}
   async function select(label:string,value:string){await act(async()=>{const el=host.querySelector(`[aria-label="${label}"]`) as HTMLSelectElement;el.value=value;el.dispatchEvent(new Event('change',{bubbles:true}))})}
-  async function setup(input:api.TtrpgOpenAudioDeskInputV1,enabled=false){const view=await api.readTtrpgOpenAudioDeskV1(input)
+  async function setup(input:api.TtrpgOpenAudioDeskInputV1,enabled=false){const visit=currentFixtureVisit={},mountedRoot=root,view=await api.readTtrpgOpenAudioDeskV1(input)
     let changes=0
-    const registerStop=vi.fn(),onChanged=vi.fn(async()=>{props={...props,view:await api.readTtrpgOpenAudioDeskV1(input),sequence:(await readProductRuntimeState(input.sessionId)).lastSequence};render();changes++})
+    // Match the parent's stable visit: an old callback must not copy props before
+    // await or render a replacement root after the personal-review remount.
+    const registerStop=vi.fn(),onChanged=vi.fn(async()=>{if(currentFixtureVisit!==visit||root!==mountedRoot)return
+      const view=await api.readTtrpgOpenAudioDeskV1(input),sequence=(await readProductRuntimeState(input.sessionId)).lastSequence
+      if(currentFixtureVisit!==visit||root!==mountedRoot)return
+      props={...props,view,sequence};render();changes++})
     props={input,view,enabled,busy:false,sequence:view.sequence,registerStop,onChanged};await act(async()=>render());await until(()=>!!host.textContent?.includes('本轮已预留'))
     return {changes:()=>changes}
   }

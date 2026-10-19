@@ -3,6 +3,7 @@ import type { TtrpgOpenAudioDeskV1 } from '../../lib/ttrpg/open-audio-service'
 import { startTtrpgAudioFadeInV1, ttrpgVoiceCaptionNavigationV1, ttrpgVoiceCaptionMarksV1 } from '../../lib/ttrpg/open-audio-playback'
 import type { TtrpgLocalAudioHandleV1 } from '../../lib/ttrpg/open-audio-transition-playback'
 import { ttrpgOpenVoiceReadingPositionV1 } from '../../lib/ttrpg/open-voice-timeline-contract'
+import { applyTtrpgNarrationRateV1, useTtrpgNarrationRateV1 } from '../../lib/ttrpg/narration-listening-preferences'
 
 export type TtrpgLocalAudioStopV1 = TtrpgLocalAudioHandleV1
 type Track = TtrpgOpenAudioDeskV1['tracks'][number]
@@ -15,6 +16,10 @@ export default function TtrpgOpenAudioPlayer(props: {
   remember: (key: string, seconds: number) => void; onFailure: () => void; onVolumeTakeover?: () => void
 }) {
   const { track, url, register, remember } = props, element = useRef<HTMLAudioElement | null>(null)
+  const narrationRate = useTtrpgNarrationRateV1()
+  useLayoutEffect(() => {
+    if (element.current && track.channel === 'voice') applyTtrpgNarrationRateV1(element.current, narrationRate)
+  }, [narrationRate, track.channel, url, props.failed])
   const [caption, setCaption] = useState({ active: -1, previous: -1, next: -1 }), [resumed, setResumed] = useState(false)
   const frame = useRef(0), stopFade = useRef<() => void>(() => undefined), latest = useRef(props)
   const nextFade = useRef<number | null>(null), followEpoch = useRef(0)

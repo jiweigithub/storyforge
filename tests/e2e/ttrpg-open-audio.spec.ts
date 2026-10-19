@@ -263,8 +263,10 @@ test('native caption seeks and follows the exact original timeline inside its ow
     return { sessionId: s.owner.sessionId, text, ending }
   })
   const before = await inspect(page, seeded.sessionId), card = await enter(page, seeded.sessionId)
+  await page.getByLabel('旁白语速', { exact: true }).selectOption('0.75')
   await card.getByRole('button', { name: '开启本机音频', exact: true }).click()
   const audio = card.locator('audio'); await expect(audio).toHaveCount(1, { timeout: 30000 }); await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.duration)).toBe(8)
+  expect(await audio.evaluate((el: HTMLAudioElement) => ({ rate: el.playbackRate, pitch: el.preservesPitch }))).toEqual({ rate: 0.75, pitch: true })
   const pageY = await page.evaluate(() => scrollY)
   await audio.evaluate((el: HTMLAudioElement) => { el.currentTime = 5 })
   await expect(card.getByTestId('ttrpg-audio-caption-active')).toHaveText(seeded.ending)
