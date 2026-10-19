@@ -49,6 +49,8 @@ jobs:
       VITE_STORYFORGE_AVG_MEDIA_PRODUCTION: '1'
       VITE_STORYFORGE_AVG_VOICE_PRODUCTION: '1'
       VITE_STORYFORGE_AVG_VISUAL_PLANNING: '1'
+      VITE_STORYFORGE_AVG_SOUND_PREPARATION: '0'
+      VITE_STORYFORGE_AVG_SOUND_PRODUCTION: '0'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -94,9 +96,38 @@ jobs:
         if: steps.scope.outputs.enabled == 'true'
         run: npx playwright install --with-deps chromium
 
+      - name: 验证声音需求默认关闭与明确清除
+        id: avg-sound-closed
+        if: steps.scope.outputs.enabled == 'true'
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: test-results/avg-media/sound-closed/report.json
+        run: npm run ci:e2e -- -- --project=chromium tests/e2e/avg-sound-requirements.spec.ts --reporter=github,json --output test-results/avg-media/sound-closed
+
+      - name: 验证声音需求编辑与保存边界
+        id: avg-sound-preparation
+        if: steps.scope.outputs.enabled == 'true'
+        env:
+          VITE_STORYFORGE_AVG_SOUND_PREPARATION: '1'
+          VITE_STORYFORGE_AVG_SOUND_PRODUCTION: '0'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: test-results/avg-media/sound-preparation/report.json
+        run: npm run ci:e2e -- -- --project=chromium tests/e2e/avg-sound-requirements.spec.ts --reporter=github,json --output test-results/avg-media/sound-preparation
+
+      - name: 验证原生声音生产审听与联合预览
+        id: avg-sound-production
+        if: steps.scope.outputs.enabled == 'true'
+        env:
+          VITE_STORYFORGE_AVG_SOUND_PREPARATION: '1'
+          VITE_STORYFORGE_AVG_SOUND_PRODUCTION: '1'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: test-results/avg-media/sound-production/report.json
+        run: npm run ci:e2e -- -- --project=chromium tests/e2e/avg-sound-production.spec.ts --reporter=github,json --output test-results/avg-media/sound-production
+
       - name: 验证全部 AVG 原生路径（含图片与配音实验）
         if: steps.scope.outputs.enabled == 'true'
-        run: npm run ci:e2e -- -- --project=chromium tests/e2e/avg- --output test-results/avg-media
+        run: npm run ci:e2e -- -- --project=chromium tests/e2e/avg- --output test-results/avg-media/all
+
+      - name: 核验声音模式实际执行及报告留存
+        if: always() && steps.scope.outputs.enabled == 'true'
+        run: node scripts/check-avg-sound-ci-reports.mjs test-results/avg-media
 
       - name: 保存 AVG 浏览器验收证据
         if: always() && steps.scope.outputs.enabled == 'true'
