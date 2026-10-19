@@ -14,6 +14,8 @@ import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
 import { hashCanonicalValue } from '../../src/lib/agent/run/hash'
 import { sha256Text } from '../../src/lib/ai/chapter-memory/text-normalization'
 import profile from '../../scripts/ttrpg-local-tts/product-profile.json'
+import { currentTtrpgOpenVoiceProductProfileV1 } from '../../src/lib/ttrpg/open-voice-product-profile'
+import { saveTtrpgNarratorVoiceV1 } from '../../src/lib/ttrpg/narration-listening-preferences'
 import readingProfile from '../../scripts/ttrpg-local-tts/reading-profile.json'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT=true
@@ -26,7 +28,7 @@ describe('R-TTRPGOPEN10 normal original voice controls and local audition lifecy
   let host:HTMLDivElement,root:Root,props:Parameters<typeof TtrpgOpenVoiceStudio>[0],release:(()=>void)|null
   let currentFixtureVisit:object
   let createDescriptor:PropertyDescriptor|undefined,revokeDescriptor:PropertyDescriptor|undefined
-  beforeEach(async()=>{currentFixtureVisit={};await db.delete();await db.open();host=document.createElement('div');document.body.append(host);root=createRoot(host);release=null
+  beforeEach(async()=>{localStorage.clear();currentFixtureVisit={};await db.delete();await db.open();host=document.createElement('div');document.body.append(host);root=createRoot(host);release=null
     createDescriptor=Object.getOwnPropertyDescriptor(URL,'createObjectURL');revokeDescriptor=Object.getOwnPropertyDescriptor(URL,'revokeObjectURL')
     Object.defineProperty(URL,'createObjectURL',{configurable:true,value:vi.fn(()=>`blob:voice-ui-${crypto.randomUUID()}`)})
     Object.defineProperty(URL,'revokeObjectURL',{configurable:true,value:vi.fn()})
@@ -35,7 +37,7 @@ describe('R-TTRPGOPEN10 normal original voice controls and local audition lifecy
   })
   afterEach(async()=>{currentFixtureVisit={};await act(async()=>{release?.();release=null;root.unmount()});host.remove();vi.restoreAllMocks();vi.unstubAllGlobals()
     if(createDescriptor)Object.defineProperty(URL,'createObjectURL',createDescriptor);else Reflect.deleteProperty(URL,'createObjectURL')
-    if(revokeDescriptor)Object.defineProperty(URL,'revokeObjectURL',revokeDescriptor);else Reflect.deleteProperty(URL,'revokeObjectURL');db.close()})
+    if(revokeDescriptor)Object.defineProperty(URL,'revokeObjectURL',revokeDescriptor);else Reflect.deleteProperty(URL,'revokeObjectURL');localStorage.clear();db.close()})
   const render=()=>root.render(createElement(StrictMode,null,createElement(TtrpgOpenVoiceStudio,props)))
   async function until(check:()=>boolean){for(let n=0;n<3000;n++){await act(async()=>{await new Promise(done=>setTimeout(done,5))});if(check())return}throw Error('Voice UI did not settle: '+host.textContent)}
   const button=(text:string)=>[...host.querySelectorAll('button')].find(el=>el.textContent===text)!
@@ -54,37 +56,62 @@ describe('R-TTRPGOPEN10 normal original voice controls and local audition lifecy
   }
   async function network(running=false){let packet:{jobKey:string;inputArtifactHash:string;execution:{profileHash:string}}|null=null,starts=0,previews=0,creates=0,cancelled=false
     const profileHash=await hashCanonicalValue(profile)
-    const status=(state:string)=>({...packet!,profileHash,execution:undefined,status:state,canStart:state==='waiting-for-slot',cancellationRequested:cancelled,cancellationConfirmed:state==='cancelled-confirmed',hasResultFile:state==='generated',automaticRetryAllowed:false})
+    const status=(state:string)=>({...packet!,profileHash:packet?.execution.profileHash??profileHash,execution:undefined,status:state,canStart:state==='waiting-for-slot',cancellationRequested:cancelled,cancellationConfirmed:state==='cancelled-confirmed',hasResultFile:state==='generated',automaticRetryAllowed:false})
     const fetcher=vi.fn(async(url:string,init:RequestInit={})=>{
       if(url.endsWith('/reading-preview')){previews++;const value=JSON.parse(init.body as string);expect(value.decision).toBe('preview-this-original-voice-reading');const text=value.input.text,normalized=text.replaceAll('。','.')
         return response({schema:'storyforge.ttrpg-local-tts-reading-preview',version:1,profileHash:await hashCanonicalValue(readingProfile),normalizerSha256:readingProfile.normalizerSha256,status:'ready-for-reading-review',sourceText:text,sourceTextSha256:await sha256Text(text),overrides:[],readingText:text,normalizedText:normalized,normalizedTextSha256:await sha256Text(normalized),issues:[],issueCount:0,issueOffsetsReferTo:'readingText-utf16',modelCalled:false,generationAllowed:false,adoptionAllowed:false,network:'disabled'})}
-      if(url.endsWith('/profile'))return response({kind:'local-offline-speech-v1',profileHash,profile})
+      if(new URL(url,'http://localhost').pathname.endsWith('/profile')){
+        const id=new URL(url,'http://localhost').searchParams.get('profileId')
+        const selected=id==='qwen-mlx-uncle_fu-product-v1'?currentTtrpgOpenVoiceProductProfileV1('qwen.uncle_fu'):id==='qwen-mlx-serena-product-v1'?currentTtrpgOpenVoiceProductProfileV1('qwen.serena'):profile
+        return response({kind:'local-offline-speech-v1',profileHash:await hashCanonicalValue(selected),profile:selected})
+      }
       if(url.endsWith('/jobs')){creates++;packet=JSON.parse(init.body as string);return response(status('waiting-for-slot'))}
       if(url.endsWith('/start')){starts++;return response(status(running?'running':'generated'))}
       if(url.endsWith('/cancel')){cancelled=true;const value=status('cancelled-confirmed');delete value.execution;return response(value)}
       if(url.endsWith('/raw'))return response(raw(packet))
       const value=status(cancelled?'cancelled-confirmed':running?'running':'generated');delete value.execution;return response(value)
-    });vi.stubGlobal('fetch',fetcher);return {fetcher,counts:()=>({starts,previews,creates,cancelled})}
+    });vi.stubGlobal('fetch',fetcher);return {fetcher,counts:()=>({starts,previews,creates,cancelled}),packet:()=>packet}
   }
   async function chooseOriginal(key:string){await select('原配音记录',key);await until(()=>!!button('准备原本机任务')||!!button('核对原音频候选'))}
   async function retainedCandidate(){const f=await setupVoiceCandidateFixtureV1();await api.prepareTtrpgOpenVoiceCandidateV1(f.review);await setup(f.owner,true);await chooseOriginal(f.input.requestKey)
     await click('核对原音频候选');await until(()=>!!button('准备这条候选试听')&&!button('准备这条候选试听').disabled);return f}
+  it('a selected unavailable engine fails before reserving any voice intent or spending its session quota',async()=>{
+    const f=await setupAudioRuntimeV1(true,'门口的灯。'),net=await network();await setup(f.owner)
+    await select('配音原文',JSON.stringify(f.narrationSourceRef));await click('预览本机读法');await until(()=>!!host.querySelector('[aria-label="确认原文读法与范围"]'))
+    const fetcher=globalThis.fetch,before=await readProductRuntimeState(f.owner.sessionId),runs=await db.agentRuns.count()
+    vi.stubGlobal('fetch',vi.fn(async(url:string,init?:RequestInit)=>new URL(url,'http://localhost').pathname.endsWith('/profile')?new Response(JSON.stringify({error:'selected-local-voice-unavailable'}),{status:409,headers:{'Content-Type':'application/json'}}):fetcher(url,init)))
+    await act(async()=>(host.querySelector('[aria-label="确认原文读法与范围"]') as HTMLInputElement).click());await click('确认并生成本机配音')
+    await until(()=>host.textContent!.includes('本次未预留配音任务'))
+    expect(await db.agentRuns.count()).toBe(runs);expect(await readProductRuntimeState(f.owner.sessionId)).toEqual(before)
+    expect(net.counts()).toEqual({starts:0,previews:1,creates:0,cancelled:false})
+  })
   it('uses source → reading confirmation → one original request → retained candidate → explicit local manual audition; refresh never regenerates or adopts',async()=>{
     const f=await setupAudioRuntimeV1(true,'门口的灯。'),before=await readProductRuntimeState(f.owner.sessionId),net=await network();await setup(f.owner)
     expect(net.counts()).toEqual({starts:0,previews:0,creates:0,cancelled:false});expect(URL.createObjectURL).not.toHaveBeenCalled()
     await select('配音原文',JSON.stringify(f.narrationSourceRef));await click('预览本机读法');await until(()=>!!host.querySelector('[aria-label="确认原文读法与范围"]'))
     expect((host.querySelector('[aria-label="配音完整原文"]') as HTMLTextAreaElement).value).toBe(f.text);expect(button('确认并生成本机配音').disabled).toBe(true)
+    let releaseReservation!:()=>void
+    const reservationGate=new Promise<void>(resolve=>{releaseReservation=resolve}),reserve=api.reserveTtrpgOpenVoiceRequestV1
+    const reservation=vi.spyOn(api,'reserveTtrpgOpenVoiceRequestV1').mockImplementation(async input=>{await reservationGate;return reserve(input)})
     await act(async()=>(host.querySelector('[aria-label="确认原文读法与范围"]') as HTMLInputElement).click());await click('确认并生成本机配音')
+    await until(()=>reservation.mock.calls.length===1)
+    await act(async()=>{saveTtrpgNarratorVoiceV1('qwen.serena');releaseReservation()})
     await until(()=>!!host.querySelector('[data-testid="ttrpg-voice-candidate"]')&&!button('停止本次生成'))
+    expect((net.packet() as any).execution.profile.speaker).toBe('uncle_fu')
+    expect(host.querySelector('[data-testid="ttrpg-voice-candidate"]')!.textContent).toContain('沉稳男声 · Uncle_Fu')
+    reservation.mockRestore()
     expect(net.counts()).toMatchObject({starts:1,previews:1,creates:1});expect(button('准备这条候选试听').disabled).toBe(true)
     props={...props,enabled:true};await act(async()=>render());await click('准备这条候选试听');await until(()=>!!host.querySelector('audio'))
     const element=host.querySelector('audio')!;expect(element.autoplay).toBe(false);expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled()
     expect(element.getAttribute('src')).toBe(vi.mocked(URL.createObjectURL).mock.results[0].value);expect(element.muted).toBe(false)
-    Object.defineProperty(element,'duration',{configurable:true,value:.1});await act(async()=>{element.dispatchEvent(new Event('loadedmetadata'));element.currentTime=.05;element.dispatchEvent(new Event('timeupdate'))})
+    const saved=await api.readTtrpgOpenVoiceCandidateV1({...props.input,requestKey:(host.querySelector('[aria-label="原配音记录"]') as HTMLSelectElement).value})
+    const clock=saved!.candidate.validation!.timeline,duration=clock.samples/clock.sampleRate
+    expect(clock.sampleRate).toBe(24000)
+    Object.defineProperty(element,'duration',{configurable:true,value:duration});await act(async()=>{element.dispatchEvent(new Event('loadedmetadata'));element.currentTime=duration/2;element.dispatchEvent(new Event('timeupdate'))})
     expect(host.querySelector('[aria-label="试听原文"]')!.textContent).toBe(f.text)
     expect(host.querySelector('[aria-label="本次配音原文范围"]')!.textContent).toBe(f.text)
     expect(host.querySelector('[aria-label="试听读法"] mark')!.textContent).toBe('门口的灯.')
-    await act(async()=>{element.currentTime=.1;element.dispatchEvent(new Event('timeupdate'))})
+    await act(async()=>{element.currentTime=duration;element.dispatchEvent(new Event('timeupdate'))})
     expect(host.querySelector('[aria-label="试听读法"] mark')).toBeNull();expect(button('上一段读法').disabled).toBe(false)
     await click('上一段读法');expect(element.currentTime).toBe(0);expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled()
     await act(async()=>{await element.play()});expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1)

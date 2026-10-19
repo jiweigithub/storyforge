@@ -17,6 +17,7 @@ import { createTtrpgOpenVoiceExecutionInputForKernelV1, TTRPG_OPEN_VOICE_EXECUTI
   TTRPG_OPEN_VOICE_EXECUTION_RELATION_V1 as relation, TTRPG_OPEN_VOICE_EXECUTION_DECISION_V1 as decision,
   type TtrpgOpenVoiceExecutionInputV1 } from './open-voice-execution-input'
 import * as p from './open-contract-parse'
+import type { TtrpgNarratorVoiceV1 } from './narration-listening-preferences'
 
 type Locator = { scope: WorkspaceScope; sessionId: number; viewerKey: string; requestKey: string }
 export const TTRPG_OPEN_VOICE_CONTROL_SCHEMA_V1 = 'storyforge.ttrpg-open-voice-control'
@@ -63,15 +64,41 @@ async function assertMayInfer(input: ExecutionIdentity) {
   const current = await readTtrpgOpenVoiceExecutionControlsForKernelV1(input)
   if (current.controls.length || current.snapshot.projection.state !== 'running') p.fail('原语音已有停止/仅取回证据屏障或已暂停；不能重新推理')
 }
-async function basis(request: Locator) {
+async function basis(request: Locator & { voice?: TtrpgNarratorVoiceV1 }) {
   const original = await finishTtrpgOpenVoiceIntentForKernelV1(request, true)
   const assembled = await assembleContext({ projectId: request.scope.projectId, scope: request.scope, productRuntimeSessionId: request.sessionId,
     sourceKeys: ['ttrpgOpenVoiceText'], ttrpgVoiceRequest: { viewerKey: request.viewerKey, requestKey: request.requestKey, intentReceiptHash: original.receipt.receiptHash }, inputBudgetTokens: 8000 })
   if (assembled.included.join(',') !== 'ttrpgOpenVoiceText' || assembled.omitted.length || assembled.trimmed.length
     || assembled.segments.length !== 1 || assembled.text !== assembled.segments[0].content
     || assembled.sourceEvidence?.[0]?.delivery !== 'full' || assembled.overBudgetAfterTrim) p.fail('语音执行必须从注册来源完整读取准确原片段')
-  const input = await createTtrpgOpenVoiceExecutionInputForKernelV1({ row: original.request, sourceText: assembled.text,
-    intentReceiptHash: original.receipt.receiptHash, intentVerificationArtifactHash: original.artifactHash })
+  const make = (selection: { voice?: TtrpgNarratorVoiceV1; originalProfile?: unknown }) => createTtrpgOpenVoiceExecutionInputForKernelV1({
+    row: original.request, sourceText: assembled.text, intentReceiptHash: original.receipt.receiptHash,
+    intentVerificationArtifactHash: original.artifactHash, ...selection })
+  const children = await db.agentRuns.where('[parentRunId+parentRelation]').equals([original.snapshot.run.id, relation]).toArray()
+  if (children.length > 1) p.fail('原配音意图存在重复执行子任务，保留证据并停止')
+  let input: TtrpgOpenVoiceExecutionInputV1
+  if (children.length) {
+    const child = await readInstanceAgentRunV1(request.scope, children[0].id!)
+    if (child.run.productRuntimeSessionId !== request.sessionId || child.run.portableRuntimeOriginJson !== undefined) p.fail('不能借用别的团局或导入副本的原声线')
+    const hash = p.hash(child.contract.runtimeBindingHash, 'original voice input')
+    const retained = child.events.some(e => e.type === 'evidence.artifact.recorded' && e.payload.artifactKind === 'source-snapshot'
+      && e.payload.stepId === stepId && e.payload.attempt === 1 && e.payload.contentHash === hash)
+    if (retained) {
+      const content = await readAgentRunArtifactExactV1({ projectId: request.scope.projectId, artifactKind: 'source-snapshot', contentHash: hash })
+      const body = p.object(p.json(content), 'original voice input')
+      input = await make({ originalProfile: body.profile })
+      if (canonicalStringify(input) !== content) p.fail('原执行的来源、读法或声线已变化，不重新拼装旧任务')
+    } else {
+      // The child may have been durably created before its input artifact. Only
+      // an exact current closed profile whose full input hash was committed in
+      // that child can resume the interrupted bookkeeping. No preference wins.
+      const candidates = await Promise.all([make({}), make({ voice: 'qwen.uncle_fu' }), make({ voice: 'qwen.serena' })])
+      const matches = []
+      for (const candidate of candidates) if (await hashCanonicalValue(candidate) === hash) matches.push(candidate)
+      if (matches.length !== 1) p.fail('原输入正文缺少且当前版本不匹配，保留旧任务，不升级或重发')
+      input = matches[0]
+    }
+  } else input = await make({ voice: request.voice })
   const inputHash = await hashCanonicalValue(input), skill = getAgentSkillV1('prose.ttrpg-open-local-voice')
   const expected = await acceptAgentRunContract({ version: 3, executionBoundary: 'product-runtime',
     objective: 'ttrpg.open.local-voice:' + request.requestKey, workflowKind: 'direct-generation',
@@ -126,7 +153,7 @@ async function assertMaterial(request: Locator, b: Awaited<ReturnType<typeof bas
 
 /** Explicit action; a lost return resumes only the unique original ledger.
  * No model.requested event, transport, quota reservation or media write here. */
-export async function prepareTtrpgOpenLocalVoiceExecutionV1(request: Locator & { decision: typeof decision }) {
+export async function prepareTtrpgOpenLocalVoiceExecutionV1(request: Locator & { decision: typeof decision; voice?: TtrpgNarratorVoiceV1 }) {
   const input = structuredClone(request)
   p.literal(input.decision, decision, 'explicit local voice preparation')
   const b = await basis(input)
@@ -261,7 +288,8 @@ export async function generateTtrpgOpenLocalVoiceV1(request: Locator & { decisio
   signal?.throwIfAborted()
   const prepared = await prepareTtrpgOpenLocalVoiceExecutionV1({ ...input, decision })
   const { createTtrpgOpenLocalVoiceTransportV1 } = await import('./open-local-voice-transport')
-  const transport = await createTtrpgOpenLocalVoiceTransportV1(signal)
+  const original = await basis(input)
+  const transport = await createTtrpgOpenLocalVoiceTransportV1(signal, original.input.profile)
   const result = await dispatchTtrpgOpenLocalVoiceForKernelV1({ ...input, decision: 'dispatch-this-original-local-voice-execution', signal, transport })
   return { prepared, result }
 }

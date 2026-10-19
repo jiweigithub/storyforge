@@ -5,8 +5,9 @@ import { canonicalStringify, hashCanonicalValue } from '../agent/run/hash'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import { sha256MediaData } from '../product-production/media-blob-store'
 import type { TtrpgOpenVoiceRequestV1 } from './open-voice-request-contract'
-import { verifyTtrpgOpenVoiceSampleClockV1 } from './open-voice-timeline-contract'
+import { verifyTtrpgOpenVoiceSampleClockV1, verifyTtrpgOpenVoiceSampleClockV2 } from './open-voice-timeline-contract'
 import * as p from './open-contract-parse'
+import { parseTtrpgOpenOriginalVoiceProfileV1 } from './open-voice-product-profile'
 
 export interface TtrpgOpenVoiceResultIdentityV1 {
   jobKey: string; inputArtifactHash: string; profileHash: string; profile: unknown
@@ -41,15 +42,9 @@ async function verify(raw: string, expected: TtrpgOpenVoiceResultIdentityV1) {
   integer(expected.originalPart.textOffset,'original source offset')
   if (!new RegExp('^ttrpg\\.voice\\.[1-9][0-9]*\\.' + expected.inputArtifactHash + '$').test(expected.jobKey)
     || !expected.normalizedText.length || expected.normalizedText.length > wireProfile.maxReadingUtf16) invalid()
-  const original = p.object(expected.profile,'original speech profile'), { implementation, ...core } = original
-  const { implementation: supportedImplementation, ...supportedCore } = wireProfile
-  const impl = p.record(implementation,['version','sources'],'original speech implementation')
-  const sources = p.list(impl.sources,'implementation sources',(value,label) => {
-    const row = p.record(value,['path','sha256'],label); p.hash(row.sha256,label); return row
-  },supportedImplementation.sources.length,supportedImplementation.sources.length)
-  if (canonicalStringify(core) !== canonicalStringify(supportedCore) || impl.version !== supportedImplementation.version
-    || canonicalStringify(sources.map(s => s.path)) !== canonicalStringify(supportedImplementation.sources.map(s => s.path))
-    || await hashCanonicalValue(original) !== expected.profileHash || await sha256Text(expected.normalizedText) !== expected.normalizedTextSha256
+  const profile = parseTtrpgOpenOriginalVoiceProfileV1(expected.profile), impl = profile.implementation
+  const qwen = 'nativeAssetProfileSha256' in profile
+  if (await hashCanonicalValue(profile) !== expected.profileHash || await sha256Text(expected.normalizedText) !== expected.normalizedTextSha256
     || expected.originalPart.textHash !== expected.sourceTextHash) invalid()
   const envelope = p.record(p.json(raw),['schema','version','result','workerExecutionKind','completionEvidence','cancellationRequested','audio','candidateAccepted','adoptionAllowed'],'original audio envelope')
   if (envelope.schema !== 'storyforge.ttrpg-local-tts-product-raw-response' || envelope.version !== 1 || envelope.workerExecutionKind !== 'pinned-offline-worker'
@@ -60,28 +55,44 @@ async function verify(raw: string, expected: TtrpgOpenVoiceResultIdentityV1) {
   p.literal(transport.encoding,'base64','original audio encoding')
   const bytes = decodeOriginalBase64(transport.data), view = new DataView(bytes)
   const r = p.record(envelope.result,['schema','version','status','jobKey','inputArtifactHash','profileHash','implementationHash','sourceTextHash',
-    'normalizedTextSha256','previewHash','audio','alignment','usage','metrics','network','candidateAccepted','adoptionAllowed','humanListening'],'original speech result')
-  if (r.schema !== 'storyforge.ttrpg-local-tts-product-result' || r.version !== 1 || r.status !== 'generated' || r.jobKey !== expected.jobKey
+    'normalizedTextSha256','previewHash','audio','alignment','usage','metrics','network','candidateAccepted','adoptionAllowed','humanListening',...(qwen?['native']:[])],'original speech result')
+  if (r.schema !== 'storyforge.ttrpg-local-tts-product-result' || r.version !== (qwen ? 2 : 1) || r.status !== 'generated' || r.jobKey !== expected.jobKey
     || r.inputArtifactHash !== expected.inputArtifactHash || r.profileHash !== expected.profileHash || r.implementationHash !== await hashCanonicalValue(impl)
     || r.sourceTextHash !== expected.sourceTextHash || r.normalizedTextSha256 !== expected.normalizedTextSha256 || r.previewHash !== expected.previewHash
     || r.network !== 'disabled' || r.candidateAccepted !== false || r.adoptionAllowed !== false || r.humanListening !== 'unproven') invalid()
   const a = p.record(r.audio,['mimeType','byteSize','sha256','sampleRate','channels','sampleFormat','samples','durationMs'],'actual PCM descriptor')
-  const samples = integer(a.samples,'PCM samples',wireProfile.sampleRate * wireProfile.maxAudioSeconds,1)
-  const audioHash = await sha256MediaData(bytes), durationMs = Math.round(samples * 1000 / wireProfile.sampleRate)
+  const samples = integer(a.samples,'PCM samples',profile.sampleRate * profile.maxAudioSeconds,1)
+  const audioHash = await sha256MediaData(bytes), durationMs = Math.round(samples * 1000 / profile.sampleRate)
   const ascii = (offset: number,length: number) => String.fromCharCode(...new Uint8Array(bytes,offset,length))
-  if (a.mimeType !== 'audio/wav' || a.byteSize !== bytes.byteLength || a.sha256 !== audioHash || a.sampleRate !== wireProfile.sampleRate
+  if (a.mimeType !== 'audio/wav' || a.byteSize !== bytes.byteLength || a.sha256 !== audioHash || a.sampleRate !== profile.sampleRate
     || a.channels !== 1 || a.sampleFormat !== 's16le' || a.durationMs !== durationMs || samples * 2 !== bytes.byteLength - 44
     || ascii(0,4) !== 'RIFF' || view.getUint32(4,true) + 8 !== bytes.byteLength || ascii(8,8) !== 'WAVEfmt '
-    || view.getUint32(16,true) !== 16 || view.getUint16(20,true) !== 1 || view.getUint16(22,true) !== 1 || view.getUint32(24,true) !== wireProfile.sampleRate
-    || view.getUint32(28,true) !== wireProfile.sampleRate * 2 || view.getUint16(32,true) !== 2 || view.getUint16(34,true) !== 16
+    || view.getUint32(16,true) !== 16 || view.getUint16(20,true) !== 1 || view.getUint16(22,true) !== 1 || view.getUint32(24,true) !== profile.sampleRate
+    || view.getUint32(28,true) !== profile.sampleRate * 2 || view.getUint16(32,true) !== 2 || view.getUint16(34,true) !== 16
     || ascii(36,4) !== 'data' || view.getUint32(40,true) !== bytes.byteLength - 44) invalid()
   const alignment = p.record(r.alignment,['kind','wordAlignmentProvided','originalPart','segments'],'actual segment clock')
   if (alignment.kind !== 'normalized-reading-segments' || alignment.wordAlignmentProvided !== false || canonicalStringify(alignment.originalPart) !== canonicalStringify(expected.originalPart)) invalid()
-  const timeline = await verifyTtrpgOpenVoiceSampleClockV1({ ...alignment, sampleRate: wireProfile.sampleRate, samples }, expected.normalizedText)
+  const timeline = await (qwen ? verifyTtrpgOpenVoiceSampleClockV2 : verifyTtrpgOpenVoiceSampleClockV1)({ ...alignment, sampleRate: profile.sampleRate, samples }, expected.normalizedText)
   const { segments } = timeline
   const u = p.record(r.usage,['textEncoderCallsStarted','textEncoderCallsCompleted','speechCallsStarted','speechCallsCompleted'],'actual physical model usage')
-  if (Object.values(u).some(v => v !== segments.length)
-    || segments.length > wireProfile.maxSpeechInferenceCalls || segments.length > wireProfile.maxTextEncoderCalls) invalid()
+  if (u.textEncoderCallsStarted !== (qwen ? 0 : segments.length) || u.textEncoderCallsCompleted !== (qwen ? 0 : segments.length)
+    || u.speechCallsStarted !== segments.length || u.speechCallsCompleted !== segments.length
+    || segments.length > profile.maxSpeechInferenceCalls || (!qwen && segments.length > profile.maxTextEncoderCalls)) invalid()
+  if (qwen) {
+    const n = p.record(r.native,['kind','speaker','assetProfileSha256','memoryGuidelineBytes','peakMetalBytes','memoryChecks','segments'],'native voice evidence')
+    if (n.kind !== 'qwen3-tts-native-v1' || n.speaker !== profile.speaker || n.assetProfileSha256 !== profile.nativeAssetProfileSha256
+      || n.memoryGuidelineBytes !== profile.gpuMemoryLimitBytes) invalid()
+    integer(n.peakMetalBytes,'observed Metal peak',profile.gpuMemoryLimitBytes,1)
+    let tokens = 0, tokensIndex = 0
+    p.list(n.segments,'native codec segments',(value,label) => {
+      const row = p.record(value,['index','codecTokens','eosObserved'],label)
+      const index = integer(row.index,'native segment index',segments.length-1)
+      const count = integer(row.codecTokens,'actual codec tokens',profile.maxCodecTokensPerSegment-1,1)
+      if (index !== tokensIndex++ || row.eosObserved !== true || segments[index].sampleCount !== count * profile.decodeUpsampleRate) invalid()
+      tokens += count; return row
+    },segments.length,segments.length)
+    integer(n.memoryChecks,'actual memory observations',Number.MAX_SAFE_INTEGER,tokens+2)
+  }
   let energy = 0, peak = 0
   for (let i = 44; i < bytes.byteLength; i += 2) { const value = view.getInt16(i,true) / 32767; energy += value * value; peak = Math.max(peak,Math.abs(value)) }
   const rms = Math.sqrt(energy / samples), m = p.record(r.metrics,['wallMs','cpuMs','maxRssBytes','rms','peak'],'actual PCM metrics')
@@ -90,7 +101,7 @@ async function verify(raw: string, expected: TtrpgOpenVoiceResultIdentityV1) {
   if (Math.abs(reportedRms - rms) > 1e-7 || Math.abs(reportedPeak - peak) > 1e-7 || rms < .00001 || peak > .9901) invalid()
   return { bytes, resultHash: await hashCanonicalValue(r), audio: { mimeType: 'audio/wav' as const, contentHash: audioHash, byteLength: bytes.byteLength, durationMs },
     timeline,
-    usage: { textEncoderCallsStarted: segments.length, textEncoderCallsCompleted: segments.length, speechCallsStarted: segments.length, speechCallsCompleted: segments.length },
+    usage: { textEncoderCallsStarted: qwen ? 0 : segments.length, textEncoderCallsCompleted: qwen ? 0 : segments.length, speechCallsStarted: segments.length, speechCallsCompleted: segments.length },
     metrics: { wallMs,cpuMs,maxRssBytes,rms: reportedRms,peak: reportedPeak }, completionEvidence: p.oneOf(envelope.completionEvidence,['observed-child-close','verified-result-worker-absent'],'completion evidence'), cancellationRequested }
 }
 export async function verifyTtrpgOpenVoiceRawResultForKernelV1(raw: string, identity: TtrpgOpenVoiceResultIdentityV1) {

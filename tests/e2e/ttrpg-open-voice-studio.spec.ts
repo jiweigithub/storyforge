@@ -14,16 +14,22 @@ async function enter(page:Page,id:number){await page.goto('./play/session/'+id);
   const panel=page.getByTestId('ttrpg-open-audio-panel');await expect(panel).toBeVisible({timeout:30000});const studio=panel.getByTestId('ttrpg-open-voice-studio');await studio.locator('summary').click();return {panel,studio}}
 test('native original source/reading/generation/review reaches a manual decoded audition, survives reload without resend and releases on identity handoff',async({page})=>{
   test.setTimeout(240000);let starts=0,creates=0,previews=0,rawReads=0,packet:any
-  const profile=JSON.parse(readFileSync('scripts/ttrpg-local-tts/product-profile.json','utf8')),profileHash=hash(JSON.stringify(stable(profile)))
+  let profile=JSON.parse(readFileSync('scripts/ttrpg-local-tts/product-profile.json','utf8')),profileHash=hash(JSON.stringify(stable(profile)))
   const reading=JSON.parse(readFileSync('scripts/ttrpg-local-tts/reading-profile.json','utf8'))
   await page.route('**/storyforge/local-tts/v1/**',async route=>{const path=new URL(route.request().url()).pathname,send=(value:any)=>route.fulfill({contentType:'application/json',body:typeof value==='string'?value:JSON.stringify(value)})
     if(path.endsWith('/reading-preview')){previews++;const {input,decision}=route.request().postDataJSON();expect(decision).toBe('preview-this-original-voice-reading');const normalized=input.text.replaceAll('。','.').replaceAll('1000','一千')
       return send({schema:'storyforge.ttrpg-local-tts-reading-preview',version:1,profileHash:hash(JSON.stringify(stable(reading))),normalizerSha256:reading.normalizerSha256,status:'ready-for-reading-review',sourceText:input.text,sourceTextSha256:hash(input.text),overrides:[],readingText:input.text,normalizedText:normalized,normalizedTextSha256:hash(normalized),issues:[],issueCount:0,issueOffsetsReferTo:'readingText-utf16',modelCalled:false,generationAllowed:false,adoptionAllowed:false,network:'disabled'})}
-    if(path.endsWith('/profile'))return send({kind:'local-offline-speech-v1',profileHash,profile})
+    if(path.endsWith('/profile')){
+      const id=new URL(route.request().url()).searchParams.get('profileId')
+      const file=id==='qwen-mlx-uncle_fu-product-v1'?'product-qwen-uncle_fu-v1.json':id==='qwen-mlx-serena-product-v1'?'product-qwen-serena-v1.json':!id||id==='melo-zh-product-v2'?'product-profile.json':null
+      if(!file)throw Error('Unknown closed voice profile')
+      profile=JSON.parse(readFileSync('scripts/ttrpg-local-tts/'+file,'utf8'));profileHash=hash(JSON.stringify(stable(profile)))
+      return send({kind:'local-offline-speech-v1',profileHash,profile})
+    }
     if(path.endsWith('/jobs')){creates++;packet=route.request().postDataJSON();return send({jobKey:packet.jobKey,inputArtifactHash:packet.inputArtifactHash,profileHash,status:'waiting-for-slot',canStart:true})}
     if(path.endsWith('/start')){starts++;return send({jobKey:packet.jobKey,inputArtifactHash:packet.inputArtifactHash,profileHash,status:'generated',canStart:false})}
     if(path.endsWith('/raw')){rawReads++;const content=execFileSync(process.execPath,['--input-type=module','-e',`
-import{readFileSync}from'node:fs';import{syntheticResult}from'./tests/helpers/local-voice-product-fixture.mjs';const packet=JSON.parse(readFileSync(0,'utf8')),{bytes,result}=syntheticResult(packet,8*44100);
+import{readFileSync}from'node:fs';import{syntheticResult}from'./tests/helpers/local-voice-product-fixture.mjs';const packet=JSON.parse(readFileSync(0,'utf8')),{bytes,result}=syntheticResult(packet,8*packet.execution.profile.sampleRate);
 console.log(JSON.stringify({schema:'storyforge.ttrpg-local-tts-product-raw-response',version:1,result,workerExecutionKind:'pinned-offline-worker',completionEvidence:'observed-child-close',cancellationRequested:false,audio:{encoding:'base64',data:bytes.toString('base64')},candidateAccepted:false,adoptionAllowed:false}));
 `],{input:JSON.stringify(packet),encoding:'utf8',maxBuffer:2*1024*1024});return send(content)}
     throw Error('Unexpected native voice request: '+path)

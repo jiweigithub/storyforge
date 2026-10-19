@@ -3,7 +3,7 @@ The owning Node job creates the input/claim before launch. All outputs stay in
 that job, including partial WAV, call journal and failures. No retry/adoption.
 """
 from pathlib import Path
-import hashlib, json, os, re, resource, signal, subprocess, sys, time, wave, math, threading
+import hashlib, json, os, re, resource, signal, subprocess, sys, time, wave, math, threading, contextlib, importlib.util
 
 def canonical(value):
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
@@ -65,7 +65,7 @@ def plan_segments(text, profile):
             raise ValueError('A complete segment has no supported speakable text; choose a reading explicitly')
         rows.append({'index': len(rows), 'readingOffsetUtf16': offset, 'readingLengthUtf16': utf16(part), 'text': part, 'textSha256': sha(part.encode())})
         offset += utf16(part); start = end
-    if len(rows) > min(profile['maxSegments'], profile['maxSpeechInferenceCalls'], profile['maxTextEncoderCalls']) or ''.join(r['text'] for r in rows) != text:
+    if len(rows) > min(profile['maxSegments'], profile['maxSpeechInferenceCalls'], profile['maxSpeechInferenceCalls'] if profile['engine']=='qwen3-tts-mlx-metal' else profile['maxTextEncoderCalls']) or ''.join(r['text'] for r in rows) != text:
         raise ValueError('Complete reading exceeds the bounded segment plan')
     return rows
 
@@ -76,16 +76,21 @@ def main():
     if job.parent != root / 'product-jobs-v2' or not re.fullmatch('[a-f0-9]{64}', job.name) or job.stat().st_uid != os.getuid(): raise ValueError('Invalid owned job directory')
     payload_bytes = (job / 'input.json').read_bytes()
     if len(payload_bytes) > 65536: raise ValueError('Input exceeds physical byte limit')
-    payload = json.loads(payload_bytes); e = payload['execution']; p = json.loads((base / 'product-profile.json').read_text())
+    payload = json.loads(payload_bytes); e = payload['execution']
+    selected=e.get('profile',{});is_qwen=selected.get('engine')=='qwen3-tts-mlx-metal'
+    files={'melo-zh-product-v2':'product-profile.json','qwen-mlx-uncle_fu-product-v1':'product-qwen-uncle_fu-v1.json','qwen-mlx-serena-product-v1':'product-qwen-serena-v1.json'}
+    if selected.get('profileId') not in files: raise ValueError('Unknown product voice')
+    profile_file=base/files[selected['profileId']];p=json.loads(profile_file.read_text())
     claim = json.loads((job / 'start.json').read_text())
     if claim.get('kind') != 'start-authorized' or sha(payload['jobKey'].encode()) != job.name or e['profile'] != p or e['profileHash'] != sha(canonical(p).encode()) or payload['inputArtifactHash'] != sha(canonical(e).encode()) or claim['inputArtifactHash'] != payload['inputArtifactHash'] or claim['jobKey'] != payload['jobKey']:
         raise ValueError('Original job, profile or launch claim changed')
     sources = p['implementation']['sources']
     expected = ['scripts/ttrpg-local-tts/product-contract.mjs', 'scripts/ttrpg-local-tts/product-worker.py', 'scripts/ttrpg-local-tts/product-jobs.mjs', 'scripts/ttrpg-local-tts/product-bridge.mjs', 'scripts/ttrpg-local-tts/engine.py', 'scripts/ttrpg-local-tts/reading_frontend.py', 'scripts/ttrpg-local-tts/reading-preview.mjs', 'src/lib/ttrpg/open-local-voice-transport.ts', 'src/lib/ttrpg/open-voice-execution.ts']
+    if is_qwen: expected+=['scripts/ttrpg-local-tts/qwen-product.py','scripts/ttrpg-local-tts/qwen-native-eval-profile.json','src/lib/ttrpg/open-voice-execution-input.ts','src/lib/ttrpg/open-voice-product-profile.ts']
     def source_check():
-        if json.loads((base / 'product-profile.json').read_text()) != p or [r['path'] for r in sources] != expected or any(sha((repo / r['path']).read_bytes()) != r['sha256'] for r in sources): raise ValueError('Pinned product implementation changed')
+        if json.loads(profile_file.read_text()) != p or [r['path'] for r in sources] != expected or any(sha((repo / r['path']).read_bytes()) != r['sha256'] for r in sources): raise ValueError('Pinned product implementation changed')
     source_check()
-    if p['version'] != 2 or p['network'] != 'disabled' or p['adoptionAllowed'] is not False or p['automaticRetryAllowed'] is not False or p['maxSegmentAudioSeconds'] != 60:
+    if p['version'] != (3 if is_qwen else 2) or p['network'] != 'disabled' or p['adoptionAllowed'] is not False or p['automaticRetryAllowed'] is not False or p['maxSegmentAudioSeconds'] != 60:
         raise ValueError('Unsupported product boundary')
     atomic(job / 'worker-started.json', {'jobKey': payload['jobKey'], 'inputArtifactHash': payload['inputArtifactHash'], 'launchNonce': claim['nonce'], 'pid': os.getpid(),
                                        'processStart': subprocess.check_output(['ps', '-p', str(os.getpid()), '-o', 'lstart='], text=True, env={**os.environ, 'LC_ALL': 'C'}).strip()})
@@ -142,42 +147,59 @@ def main():
             if time.monotonic() - started > p['timeoutMs'] / 1000: raise TimeoutError('Product speech deadline exceeded')
         current()
         _, imports = verify_runtime(base, root)
-        cache = root / 'cache'; cache.mkdir(exist_ok=True)
-        os.environ.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', HF_HUB_DISABLE_TELEMETRY='1', TOKENIZERS_PARALLELISM='false', TMPDIR=str(cache), HF_HOME=str(cache / 'huggingface'), STORYFORGE_TTS_ENCODER_DIR=str(root / 'models/textEncoder'))
-        sys.path.insert(0, str(imports))
-        import torch
-        import numpy as np
-        from transformers import AutoModelForMaskedLM
-        from melo.models import SynthesizerTrn
-        from melo.text import cleaned_text_to_sequence, chinese_mix
-        from melo import commons
-        torch.set_num_threads(p['cpuThreads']); torch.set_num_interop_threads(1); torch.manual_seed(0)
-        current()
-        encoder = AutoModelForMaskedLM.from_pretrained(str(root / 'models/textEncoder'), local_files_only=True, trust_remote_code=False).to('cpu').eval()
-        config = json.loads((root / 'models/speech/config.json').read_text())
-        if config['data']['sampling_rate'] != p['sampleRate'] or p['speaker'] not in config['data']['spk2id']: raise ValueError('Pinned speaker/sample rate changed')
-        model = SynthesizerTrn(len(config['symbols']), config['data']['filter_length'] // 2 + 1, config['train']['segment_size'] // config['data']['hop_length'], n_speakers=config['data']['n_speakers'], num_tones=config['num_tones'], num_languages=config['num_languages'], **config['model']).to('cpu').eval()
-        model.load_state_dict(torch.load(root / 'models/speech/checkpoint.pth', map_location='cpu', weights_only=True)['model'], strict=True)
-        sr = p['sampleRate']; hop = math.prod(config['model']['upsample_rates']); samples = 0; sum_squares = 0.; peak = 0.
-        with wave.open(str(job / 'audio.wav.part'), 'wb') as wav, torch.inference_mode():
+        native_rows=[];native_root=None
+        if is_qwen:
+            native_root=Path(os.environ.get('STORYFORGE_QWEN_ASSET_DIR','')).resolve()
+            admission=json.loads((native_root/'product-asset-admission-v1.json').read_text())
+            if admission.get('status')!='verified-assets-only' or admission.get('nativeAssetProfileSha256')!=p['nativeAssetProfileSha256'] or p['profileId'] not in admission.get('productProfileIds',[]): raise ValueError('Native product assets have not been explicitly admitted')
+            spec=importlib.util.spec_from_file_location('storyforge_qwen_product',base/'qwen-product.py')
+            engine=importlib.util.module_from_spec(spec);spec.loader.exec_module(engine)
+            native_descriptor=json.loads((base/'qwen-native-eval-profile.json').read_text())
+            engine.verify_assets(base,native_root,root,native_descriptor,p['nativeAssetProfileSha256']);current()
+            synthesize,native_evidence=engine.load_native(base,native_root,root,native_descriptor,current)
+            import numpy as np
+        else:
+            cache = root / 'cache'; cache.mkdir(exist_ok=True)
+            os.environ.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', HF_HUB_DISABLE_TELEMETRY='1', TOKENIZERS_PARALLELISM='false', TMPDIR=str(cache), HF_HOME=str(cache / 'huggingface'), STORYFORGE_TTS_ENCODER_DIR=str(root / 'models/textEncoder'))
+            sys.path.insert(0, str(imports))
+            import torch
+            import numpy as np
+            from transformers import AutoModelForMaskedLM
+            from melo.models import SynthesizerTrn
+            from melo.text import cleaned_text_to_sequence, chinese_mix
+            from melo import commons
+            torch.set_num_threads(p['cpuThreads']); torch.set_num_interop_threads(1); torch.manual_seed(0)
+            current()
+            encoder = AutoModelForMaskedLM.from_pretrained(str(root / 'models/textEncoder'), local_files_only=True, trust_remote_code=False).to('cpu').eval()
+            config = json.loads((root / 'models/speech/config.json').read_text())
+            if config['data']['sampling_rate'] != p['sampleRate'] or p['speaker'] not in config['data']['spk2id']: raise ValueError('Pinned speaker/sample rate changed')
+            model = SynthesizerTrn(len(config['symbols']), config['data']['filter_length'] // 2 + 1, config['train']['segment_size'] // config['data']['hop_length'], n_speakers=config['data']['n_speakers'], num_tones=config['num_tones'], num_languages=config['num_languages'], **config['model']).to('cpu').eval()
+            model.load_state_dict(torch.load(root / 'models/speech/checkpoint.pth', map_location='cpu', weights_only=True)['model'], strict=True)
+        sr = p['sampleRate']; hop = None if is_qwen else math.prod(config['model']['upsample_rates']); samples = 0; sum_squares = 0.; peak = 0.
+        with wave.open(str(job / 'audio.wav.part'), 'wb') as wav, (contextlib.nullcontext() if is_qwen else torch.inference_mode()):
             wav.setnchannels(1); wav.setsampwidth(2); wav.setframerate(sr)
             for segment in segments:
                 current(); text = segment['text']
-                phones, tones, word2ph = chinese_mix.g2p(text)
-                phone, tone, language = cleaned_text_to_sequence(phones, tones, 'ZH_MIX_EN', {s: i for i, s in enumerate(config['symbols'])})
-                if config['data']['add_blank']:
-                    phone = commons.intersperse(phone, 0); tone = commons.intersperse(tone, 0); language = commons.intersperse(language, 0)
-                    word2ph = [count * 2 for count in word2ph]; word2ph[0] += 1
-                current(); progress['usage']['textEncoderCallsStarted'] += 1; journal('encoder.requested', segment['index']); atomic(job / 'progress.json', progress)
-                features = encoder(**chinese_mix.tokenizer(text, return_tensors='pt'), output_hidden_states=True).hidden_states[-3][0]
-                progress['usage']['textEncoderCallsCompleted'] += 1; journal('encoder.returned', segment['index'])
-                if len(word2ph) != features.shape[0] or sum(word2ph) != len(phone): raise ValueError('Exact segment phoneme alignment failed')
-                bert = torch.repeat_interleave(features, torch.tensor(word2ph), dim=0).T
-                model.storyforge_max_frames = math.floor(min(p['maxSegmentAudioSeconds'], p['maxAudioSeconds'] - samples / sr) * sr / hop)
-                if model.storyforge_max_frames < 1: raise ValueError('No remaining sample budget')
-                current(); progress['usage']['speechCallsStarted'] += 1; journal('speech.requested', segment['index']); atomic(job / 'progress.json', progress)
-                audio = model.infer(torch.LongTensor(phone)[None, :], torch.LongTensor([len(phone)]), torch.LongTensor([config['data']['spk2id'][p['speaker']]]), torch.LongTensor(tone)[None, :], torch.LongTensor(language)[None, :], torch.zeros(1, 1024, len(phone)), bert[None, :, :], sdp_ratio=.2, noise_scale=.6, noise_scale_w=.8, length_scale=1)[0][0, 0].float().numpy()
-                progress['usage']['speechCallsCompleted'] += 1; journal('speech.returned', segment['index'])
+                if is_qwen:
+                    current();progress['usage']['speechCallsStarted']+=1;journal('speech.requested',segment['index']);atomic(job/'progress.json',progress)
+                    audio,native=synthesize(text,p['speaker'],p['maxCodecTokensPerSegment'])
+                    progress['usage']['speechCallsCompleted']+=1;journal('speech.returned',segment['index']);native_rows.append({'index':segment['index'],**native})
+                else:
+                    phones, tones, word2ph = chinese_mix.g2p(text)
+                    phone, tone, language = cleaned_text_to_sequence(phones, tones, 'ZH_MIX_EN', {s: i for i, s in enumerate(config['symbols'])})
+                    if config['data']['add_blank']:
+                        phone = commons.intersperse(phone, 0); tone = commons.intersperse(tone, 0); language = commons.intersperse(language, 0)
+                        word2ph = [count * 2 for count in word2ph]; word2ph[0] += 1
+                    current(); progress['usage']['textEncoderCallsStarted'] += 1; journal('encoder.requested', segment['index']); atomic(job / 'progress.json', progress)
+                    features = encoder(**chinese_mix.tokenizer(text, return_tensors='pt'), output_hidden_states=True).hidden_states[-3][0]
+                    progress['usage']['textEncoderCallsCompleted'] += 1; journal('encoder.returned', segment['index'])
+                    if len(word2ph) != features.shape[0] or sum(word2ph) != len(phone): raise ValueError('Exact segment phoneme alignment failed')
+                    bert = torch.repeat_interleave(features, torch.tensor(word2ph), dim=0).T
+                    model.storyforge_max_frames = math.floor(min(p['maxSegmentAudioSeconds'], p['maxAudioSeconds'] - samples / sr) * sr / hop)
+                    if model.storyforge_max_frames < 1: raise ValueError('No remaining sample budget')
+                    current(); progress['usage']['speechCallsStarted'] += 1; journal('speech.requested', segment['index']); atomic(job / 'progress.json', progress)
+                    audio = model.infer(torch.LongTensor(phone)[None, :], torch.LongTensor([len(phone)]), torch.LongTensor([config['data']['spk2id'][p['speaker']]]), torch.LongTensor(tone)[None, :], torch.LongTensor(language)[None, :], torch.zeros(1, 1024, len(phone)), bert[None, :, :], sdp_ratio=.2, noise_scale=.6, noise_scale_w=.8, length_scale=1)[0][0, 0].float().numpy()
+                    progress['usage']['speechCallsCompleted'] += 1; journal('speech.returned', segment['index'])
                 if not len(audio) or not np.isfinite(audio).all() or len(audio) > sr * p['maxSegmentAudioSeconds'] or samples + len(audio) > sr * p['maxAudioSeconds'] or 44 + (samples + len(audio)) * 2 > p['maxAudioBytes']: raise ValueError('Physical speech samples exceed the exact profile')
                 original_peak = float(np.abs(audio).max()); gain = min(1., .99 / original_peak) if original_peak else 0.
                 pcm = np.rint(audio * gain * 32767).astype('<i2'); normalized_pcm = pcm.astype('float64') / 32767
@@ -194,12 +216,15 @@ def main():
         # become accepted raw output merely because it matched before loading.
         verify_runtime(base, root); current()
         usage = resource.getrusage(resource.RUSAGE_SELF)
-        result = {'schema': 'storyforge.ttrpg-local-tts-product-result', 'version': 1, 'status': 'generated', 'jobKey': payload['jobKey'], 'inputArtifactHash': payload['inputArtifactHash'], 'profileHash': e['profileHash'],
+        result = {'schema': 'storyforge.ttrpg-local-tts-product-result', 'version': 2 if is_qwen else 1, 'status': 'generated', 'jobKey': payload['jobKey'], 'inputArtifactHash': payload['inputArtifactHash'], 'profileHash': e['profileHash'],
                   'implementationHash': sha(canonical(p['implementation']).encode()), 'sourceTextHash': source['textHash'], 'normalizedTextSha256': reading['normalizedTextSha256'], 'previewHash': reading['previewHash'],
                   'audio': {'mimeType': 'audio/wav', 'byteSize': (job / 'audio.wav').stat().st_size, 'sha256': sha_file(job / 'audio.wav'), 'sampleRate': sr, 'channels': 1, 'sampleFormat': 's16le', 'samples': samples, 'durationMs': round(samples * 1000 / sr)},
                   'alignment': {'kind': 'normalized-reading-segments', 'wordAlignmentProvided': False, 'originalPart': source['part'], 'segments': progress['segments']}, 'usage': progress['usage'],
                   'metrics': {'wallMs': round((time.monotonic() - started) * 1000), 'cpuMs': round((usage.ru_utime + usage.ru_stime) * 1000), 'maxRssBytes': usage.ru_maxrss * (1 if sys.platform == 'darwin' else 1024), 'rms': math.sqrt(sum_squares / samples), 'peak': peak},
                   'network': 'disabled', 'candidateAccepted': False, 'adoptionAllowed': False, 'humanListening': 'unproven'}
+        if is_qwen:
+            engine.verify_assets(base,native_root,root,native_descriptor,p['nativeAssetProfileSha256']);current()
+            result['native']={**native_evidence(p['speaker'],p['nativeAssetProfileSha256']),'segments':native_rows}
         atomic(job / 'result.json', result)
         finished.set()
 

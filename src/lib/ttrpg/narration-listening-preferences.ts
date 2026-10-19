@@ -9,6 +9,7 @@ export const TTRPG_NARRATION_RATES_V1 = [0.75, 0.8, 0.85, 0.9, 0.95, 1, 1.05, 1.
 export const TTRPG_NARRATOR_VOICES_V1 = [
   { id: 'qwen.uncle_fu', speaker: 'uncle_fu', label: '沉稳男声', name: 'Uncle_Fu' },
   { id: 'qwen.serena', speaker: 'serena', label: '柔和女声', name: 'Serena' },
+  { id: 'melo.zh', speaker: 'ZH', label: '基础中文旁白', name: 'Melo' },
 ] as const
 export type TtrpgNarratorVoiceV1 = typeof TTRPG_NARRATOR_VOICES_V1[number]['id']
 export const TTRPG_NARRATOR_DEFAULT_VOICE_V1: TtrpgNarratorVoiceV1 = 'qwen.uncle_fu'

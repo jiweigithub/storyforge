@@ -67,13 +67,13 @@ console.log(JSON.stringify({job,started,calls,audio:raw.result.audio,usage:raw.r
 
 // Explicit serial/physical-slot acceptance only. This leaves listening and
 // rights unchecked; the retained original WAV can be judged by a real person.
-test('real normal host UI generates and manually decodes the original offline Chinese voice without inferring human acceptance',async({page},info)=>{
+for (const voice of ['melo.zh','qwen.uncle_fu','qwen.serena'] as const) test('real normal host UI generates and manually decodes the selected offline Chinese voice '+voice+' without inferring human acceptance',async({page},info)=>{
   test.skip(process.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW!=='1'||process.env.STORYFORGE_TTRPG_REAL_VOICE_ACCEPTANCE!=='1'
-    ||!process.env.STORYFORGE_TTRPG_LOCAL_TTS_RUNTIME_DIR,'explicit isolated normal UI real CPU acceptance only')
+    ||!process.env.STORYFORGE_TTRPG_LOCAL_TTS_RUNTIME_DIR||voice.startsWith('qwen.')&&(!process.env.STORYFORGE_TTRPG_QWEN_TTS_RUNTIME_DIR||process.env.STORYFORGE_TTRPG_REAL_QWEN_ACCEPTANCE!=='1'),'explicit isolated selected-engine real voice acceptance only')
   test.setTimeout(240000)
   await page.goto('./')
   const f=await page.evaluate(async()=>{const load=new Function('p','return import(p)'),s=await(await load('/storyforge/tests/helpers/open-audio-runtime.ts')).setupAudioRuntimeV1(true,'湖畔灯火。'),state=await(await load('/storyforge/src/lib/product/runtime-core.ts')).readProductRuntimeState(s.owner.sessionId);return {owner:s.owner,narrationSourceRef:s.narrationSourceRef,text:s.text,entities:JSON.stringify(state.entities),time:JSON.stringify(state.ttrpg.openRun.worldTime)}})
-  await page.goto('./play/session/'+f.owner.sessionId);await page.getByLabel('我的主持席位',{exact:true}).selectOption('viewer.gm')
+  await page.goto('./play/session/'+f.owner.sessionId);await page.getByLabel('旁白试听声线',{exact:true}).selectOption(voice);await page.getByLabel('我的主持席位',{exact:true}).selectOption('viewer.gm')
   await page.getByLabel('我是本桌真人主持，已了解安全约定，可以查看主持专用资料。',{exact:true}).check();await page.getByRole('button',{name:'确认主持身份并进入',exact:true}).click()
   const panel=page.getByTestId('ttrpg-open-audio-panel'),studio=panel.getByTestId('ttrpg-open-voice-studio')
   await expect(panel).toBeVisible({timeout:30000});await studio.locator('summary').click()
@@ -110,7 +110,15 @@ test('real normal host UI generates and manually decodes the original offline Ch
 import{readFileSync}from'node:fs';import path from'node:path';import{validateProductJob,verifyProductResult,digest}from'./scripts/ttrpg-local-tts/product-contract.mjs';const{packet,raw}=JSON.parse(readFileSync(0,'utf8'));validateProductJob(packet);verifyProductResult(raw.result,Buffer.from(raw.audio.data,'base64'),packet);
 const dir=path.join(process.env.STORYFORGE_TTRPG_LOCAL_TTS_RUNTIME_DIR,'product-jobs-v2',digest(packet.jobKey)),job=JSON.parse(readFileSync(path.join(dir,'job.json'),'utf8')),started=JSON.parse(readFileSync(path.join(dir,'worker-started.json'),'utf8')),calls=readFileSync(path.join(dir,'calls.jsonl'),'utf8').trim().split(String.fromCharCode(10)).map(line=>JSON.parse(line));if(job.terminal?.kind!=='observed-child-close'||job.terminal.code!==0||started.jobKey!==packet.jobKey||digest(readFileSync(path.join(dir,'audio.wav')))!==raw.result.audio.sha256)throw Error('Missing actual native UI original worker terminal');console.log(JSON.stringify({job,started,calls,audio:raw.result.audio,usage:raw.result.usage,humanListening:'unproven'}));
 `],{encoding:'utf8',input:JSON.stringify({packet:proof.packet,raw}),maxBuffer:4*1024*1024}))
-  expect(physical.calls.map((e:any)=>e.type)).toEqual(['encoder.requested','encoder.returned','speech.requested','speech.returned'])
-  expect(physical.usage).toEqual({textEncoderCallsStarted:1,textEncoderCallsCompleted:1,speechCallsStarted:1,speechCallsCompleted:1})
+  expect(physical.calls.map((e:any)=>e.type)).toEqual(voice.startsWith('qwen.')?['speech.requested','speech.returned']:['encoder.requested','encoder.returned','speech.requested','speech.returned'])
+  expect(physical.usage).toEqual({textEncoderCallsStarted:voice.startsWith('qwen.')?0:1,textEncoderCallsCompleted:voice.startsWith('qwen.')?0:1,speechCallsStarted:1,speechCallsCompleted:1})
+  expect(proof.packet.execution.profile.speaker).toBe(voice==='melo.zh'?'ZH':voice.slice(5))
+  expect(physical.audio.sampleRate).toBe(voice==='melo.zh'?44100:24000)
+  if(voice.startsWith('qwen.')){
+    expect(raw.result.native.speaker).toBe(voice.slice(5));expect(raw.result.native.peakMetalBytes).toBeLessThanOrEqual(6442450944)
+    expect(raw.result.native.segments).toHaveLength(1);expect(raw.result.native.segments[0].eosObserved).toBe(true)
+    expect(raw.result.audio.samples).toBe(raw.result.native.segments[0].codecTokens*1920)
+    await info.attach('actual-qwen-native-resource-clock',{body:JSON.stringify(raw.result.native),contentType:'application/json'})
+  }
   await info.attach('actual-normal-ui-original-worker-terminal',{body:JSON.stringify(physical),contentType:'application/json'})
 })

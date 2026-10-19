@@ -1,7 +1,7 @@
 // Same-origin loopback transport. No author paths, API key, CORS relaxation,
 // automatic launch-on-read, inference retry, or adopted media is exposed.
 import { createProductVoiceJobs } from './product-jobs.mjs'
-import { productProfileHash, productProfile } from './product-contract.mjs'
+import { digest, stable } from './product-contract.mjs'
 import { previewLocalReading, validateReadingInput, verifyReadingPreview } from './reading-preview.mjs'
 export const PREFIX = '/storyforge/local-tts/v1'
 export function allowedProductVoiceRequest(req) {
@@ -29,7 +29,12 @@ export function createProductVoiceBridge(runtimeDir, options = {}) {
     if (!allowedProductVoiceRequest(req)) return send(res, 403, { error: 'local-origin-required' })
     try {
       if (closed) return send(res, 409, { error: 'local-service-closed' })
-      if (req.method === 'GET' && url.pathname === PREFIX + '/profile') return send(res, 200, { kind: 'local-offline-speech-v1', profileHash: productProfileHash, profile: productProfile })
+      if (req.method === 'GET' && url.pathname === PREFIX + '/profile') {
+        if ([...url.searchParams.keys()].some(k => k !== 'profileId') || url.searchParams.getAll('profileId').length > 1) throw new Error('Closed profile selection required')
+        const selected = jobs.profiles().find(p => p.profileId === (url.searchParams.get('profileId') ?? 'melo-zh-product-v2'))
+        if (!selected) return send(res, 409, { error: 'selected-local-voice-unavailable', automaticRetryAllowed: false })
+        return send(res, 200, { kind: 'local-offline-speech-v1', profileHash: digest(stable(selected)), profile: selected })
+      }
       if (req.method === 'POST' && url.pathname === PREFIX + '/reading-preview') {
         if (preview) return send(res, 409, { error: 'reading-preview-busy', automaticRetryAllowed: false })
         const value = await body(req)
@@ -63,7 +68,7 @@ export function localTtsPlugin() {
   const install = server => {
     const runtime = process.env.STORYFORGE_TTRPG_LOCAL_TTS_RUNTIME_DIR
     if (!runtime) return
-    const bridge = createProductVoiceBridge(runtime)
+    const bridge = createProductVoiceBridge(runtime, { qwenRuntimeDir: process.env.STORYFORGE_TTRPG_QWEN_TTS_RUNTIME_DIR })
     server.middlewares.use(bridge.middleware)
     server.httpServer?.once('close', bridge.close)
   }

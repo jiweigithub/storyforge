@@ -6,7 +6,7 @@ import evidence from '../../src/assets/ttrpg/narration-qwen-source-v1.json'
 import { TTRPG_NARRATOR_VOICES_V1 } from '../../src/lib/ttrpg/narration-listening-preferences'
 
 it('ships the exact two complete native Qwen recordings, with original public text and retained license evidence', () => {
-  expect(evidence.voices.map(v => v.voice)).toEqual(TTRPG_NARRATOR_VOICES_V1.map(v => v.speaker))
+  expect(evidence.voices.map(v => v.voice)).toEqual(TTRPG_NARRATOR_VOICES_V1.filter(v => v.id.startsWith('qwen.')).map(v => v.speaker))
   expect(evidence.referencePersonAudio).toBe(false)
   expect(evidence.sessionAudioAdoption).toBe(false)
   const hashes = new Set<string>()

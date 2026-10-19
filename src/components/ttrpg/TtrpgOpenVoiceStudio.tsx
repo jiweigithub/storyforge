@@ -7,13 +7,17 @@ import type { TtrpgOpenVoiceCandidateV1 } from '../../lib/ttrpg/open-voice-candi
 import type { TtrpgOpenVoiceAuditionV1 } from '../../lib/ttrpg/open-voice-audition'
 import TtrpgOpenVoiceAuditionPlayer from './TtrpgOpenVoiceAuditionPlayer'
 import TtrpgOpenGeneratedVoiceAdoption from './TtrpgOpenGeneratedVoiceAdoption'
+import { readTtrpgNarratorVoiceV1, TTRPG_NARRATOR_VOICES_V1, useTtrpgNarratorVoiceV1, type TtrpgNarratorVoiceV1 } from '../../lib/ttrpg/narration-listening-preferences'
+import { currentTtrpgOpenVoiceProductProfileV1, ttrpgOpenOriginalVoiceLabelV1 } from '../../lib/ttrpg/open-voice-product-profile'
+import { probeTtrpgOpenLocalVoiceProfileV1 } from '../../lib/ttrpg/open-local-voice-transport'
 
 type Desk=Awaited<ReturnType<typeof api.readTtrpgOpenVoiceRequestDeskV1>>
 type QualityReview=Awaited<ReturnType<typeof api.readTtrpgOpenVoiceCandidateReviewV1>>
 type Rejection=Awaited<ReturnType<typeof api.readTtrpgOpenVoiceCandidateRejectionV1>>
-type Generation={controller:AbortController;key:string;phase:'reserving'|'preparing'|'running';stopRequested:boolean}
+type Generation={controller:AbortController;key:string;phase:'checking'|'reserving'|'preparing'|'running';stopRequested:boolean;voice:TtrpgNarratorVoiceV1}
 const jobLabels:Record<string,string>={'not-found':'本机尚未发现任务','waiting-for-slot':'等待本机资源','launch-recorded':'启动已记账','running':'正在生成','running-observed':'观察到原任务仍在运行','unknown':'结果未知，需核对原任务','generated':'原结果已生成','failed':'原任务失败','cancelled-before-start':'启动前已取消','cancelled-before-spawn':'进程创建前已取消','cancelled-confirmed':'已确认停止','stop-requested-without-job':'已阻止后续启动，未确认进程关闭'}
 export default function TtrpgOpenVoiceStudio(props:{input:api.TtrpgOpenAudioDeskInputV1;view:api.TtrpgOpenAudioDeskV1;enabled:boolean;busy:boolean;sequence:number;registerStop:(stop:(()=>void)|null)=>void;onChanged:()=>Promise<void>}) {
+  const narratorVoice=useTtrpgNarratorVoiceV1()
   const live=useRef(false),revision=useRef(0),previewEpoch=useRef(0),locked=useRef(false),stopLocked=useRef(false),previewStop=useRef<()=>void>(()=>undefined)
   const life=useRef<{url:string;dispose:()=>void}|null>(null),generation=useRef<Generation|null>(null)
   const previewAbort=useRef<AbortController|null>(null)
@@ -52,7 +56,7 @@ export default function TtrpgOpenVoiceStudio(props:{input:api.TtrpgOpenAudioDesk
     if(live.current&&!controller.signal.aborted){setReading(result);setAgreed(false)}
   }
   async function continueGeneration(operation:Generation){
-    operation.phase='preparing';await api.prepareTtrpgOpenLocalVoiceExecutionV1({...props.input,requestKey:operation.key,decision:'prepare-this-confirmed-local-voice-execution'})
+    operation.phase='preparing';await api.prepareTtrpgOpenLocalVoiceExecutionV1({...props.input,requestKey:operation.key,decision:'prepare-this-confirmed-local-voice-execution',voice:operation.voice})
     if(operation.stopRequested||operation.controller.signal.aborted){await api.stopTtrpgOpenLocalVoiceJobV1({...props.input,requestKey:operation.key,decision:'stop-this-original-local-voice-execution'});return}
     operation.phase='running';await refresh()
     const result=await api.generateTtrpgOpenLocalVoiceV1({...props.input,requestKey:operation.key,decision:'generate-this-original-confirmed-local-voice',signal:operation.controller.signal})
@@ -61,18 +65,20 @@ export default function TtrpgOpenVoiceStudio(props:{input:api.TtrpgOpenAudioDesk
   }
   async function finishGeneration(operation:Generation){if(generation.current===operation)generation.current=null;if(live.current){setSending(false);setAgreed(false);await refresh();try{await props.onChanged()}catch{if(live.current)setMessage('原记录已保存，桌面尚未刷新，请重新读取。')}}}
   async function generate(){if(!source||!part||!reading||!agreed||generation.current)return
-    const operation:Generation={controller:new AbortController(),key:'',phase:'reserving',stopRequested:false};generation.current=operation;setSending(true);setMessage('')
+    const operation:Generation={controller:new AbortController(),key:'',phase:'checking',stopRequested:false,voice:readTtrpgNarratorVoiceV1()};generation.current=operation;setSending(true);setMessage('')
     try{
+      await probeTtrpgOpenLocalVoiceProfileV1(currentTtrpgOpenVoiceProductProfileV1(operation.voice),operation.controller.signal)
+      operation.phase='reserving'
       const reserved=await api.reserveTtrpgOpenVoiceRequestV1({...props.input,review:source,part,submissionKey:`voice.ui.${crypto.randomUUID()}`,readingConfirmation:{review:reading,decision:'confirm-this-exact-local-voice-reading'},decision:'reserve-this-original-voice-part'})
       operation.key=reserved.requestKey
       if(live.current)choose(reserved.requestKey)
       if(operation.controller.signal.aborted){await api.cancelTtrpgOpenVoiceRequestV1({...props.input,requestKey:operation.key,decision:'cancel-this-unsent-voice-request'});return}
       await continueGeneration(operation)
-    }catch{if(live.current&&!operation.stopRequested)setMessage('生成已结束等待或结果未知，请核对原记录；不会自动重发。')}
+    }catch{if(live.current&&!operation.stopRequested)setMessage(operation.phase==='checking'?'所选声线的本机生成器尚未就绪，请先准备本机配音服务，或继续文字游玩。本次未预留配音任务。':'生成已结束等待或结果未知，请核对原记录；不会自动重发。')}
     finally{await finishGeneration(operation)}
   }
   async function generateExisting(){if(generation.current||locked.current||!selected||!live.current)return
-    const operation:Generation={controller:new AbortController(),key:selected,phase:'preparing',stopRequested:false};generation.current=operation;setSending(true);setMessage('')
+    const operation:Generation={controller:new AbortController(),key:selected,phase:'preparing',stopRequested:false,voice:readTtrpgNarratorVoiceV1()};generation.current=operation;setSending(true);setMessage('')
     try{await continueGeneration(operation)}catch{if(live.current&&!operation.stopRequested)setMessage('原生成已结束等待或结果未知，请读取原任务，不会自动重发。')}finally{await finishGeneration(operation)}
   }
   async function requestStop(){const operation=generation.current,key=operation?.key||selected;if(!key&&!operation)return
@@ -120,7 +126,7 @@ export default function TtrpgOpenVoiceStudio(props:{input:api.TtrpgOpenAudioDesk
     if(live.current){await readCandidate();setMessage('原审阅已恢复，不会重新生成或自动确认听感。')}
   }
   return <details data-testid="ttrpg-open-voice-studio"><summary>免费本机配音</summary>
-    <p>选择已确认叙述，核对读法后生成。读取、刷新和试听均不重复生成。</p>{message&&<p role="status">{message}</p>}
+    <p>选择已确认叙述，核对读法后生成。新任务声线：{TTRPG_NARRATOR_VOICES_V1.find(v=>v.id===narratorVoice)?.label}。已准备的任务保留原声线；读取、刷新和试听均不重复生成。</p>{message&&<p role="status">{message}</p>}
     <fieldset disabled={busy||!props.view.canPlay}><legend>从原文准备配音</legend>
       <label>配音原文<select aria-label="配音原文" value={cause} onChange={e=>{clearDraft();setCause(e.target.value)}}><option value="">选择已完成的叙述</option>{props.view.causes.map(c=><option key={JSON.stringify(c.sourceRef)} value={JSON.stringify(c.sourceRef)}>{c.text.slice(0,60)}</option>)}</select></label>
       <label>配音范围<select aria-label="配音范围" value={audience} onChange={e=>{clearDraft();setAudience(e.target.value as typeof audience)}}><option value="party">本次全队</option>{props.view.privateControlAllowed&&<><option value="private">指定角色</option><option value="gm-only">仅主持</option></>}</select></label>
@@ -141,7 +147,7 @@ export default function TtrpgOpenVoiceStudio(props:{input:api.TtrpgOpenAudioDesk
       {row.status==='history-only'?<p>此记录仅供历史核对，不能恢复执行权。</p>:row.status!=='cancelled-before-send'&&<div className="sf-open-audio-actions">
         {!row.intentComplete&&<button disabled={busy} onClick={()=>void perform(async()=>{await api.recoverTtrpgOpenVoiceIntentV1({...props.input,requestKey:selected,decision:'verify-original-voice-intent-only'});await refresh()})}>恢复预留回执</button>}
         {!row.execution&&<button disabled={busy} onClick={()=>void perform(async()=>{await api.cancelTtrpgOpenVoiceRequestV1({...props.input,requestKey:selected,decision:'cancel-this-unsent-voice-request'});await refresh()})}>取消未发送片段</button>}
-        {!row.execution?.dispatchRecorded&&row.reading&&<button disabled={busy||!row.intentComplete} onClick={()=>void perform(async()=>{await api.prepareTtrpgOpenLocalVoiceExecutionV1({...props.input,requestKey:selected,decision:'prepare-this-confirmed-local-voice-execution'});await refresh()})}>准备原本机任务</button>}
+        {!row.execution?.dispatchRecorded&&row.reading&&<button disabled={busy||!row.intentComplete} onClick={()=>void perform(async()=>{await api.prepareTtrpgOpenLocalVoiceExecutionV1({...props.input,requestKey:selected,decision:'prepare-this-confirmed-local-voice-execution',voice:readTtrpgNarratorVoiceV1()});await refresh()})}>准备原本机任务</button>}
         {row.execution&&!row.execution.dispatchRecorded&&row.reading&&<button disabled={busy} onClick={()=>void generateExisting()}>生成原已确认片段</button>}
         {row.execution&&<><button disabled={stopping} onClick={()=>void requestStop()}>停止原本机任务</button><button disabled={working} onClick={()=>void perform(async()=>{const result=await api.readTtrpgOpenLocalVoiceJobV1({...props.input,requestKey:selected});if(live.current)setJob(jobLabels[result.backend.status]??'原状态需要核对')})}>核对原本机任务</button></>}
         {row.execution?.dispatchRecorded&&<><button disabled={busy} onClick={()=>void perform(async()=>{await api.recoverTtrpgOpenLocalVoiceRawV1({...props.input,requestKey:selected,decision:'recover-this-original-local-voice-raw-without-resending'});await refresh()})}>取回原始结果</button><button disabled={busy||!row.execution?.rawResponseEvidenceRecorded} onClick={()=>void perform(readCandidate)}>核对原音频候选</button></>}
@@ -149,7 +155,7 @@ export default function TtrpgOpenVoiceStudio(props:{input:api.TtrpgOpenAudioDesk
         {row.execution&&['paused','recovering'].includes(row.execution.runState)&&<button disabled={busy||!props.view.canPlay||!reviewCandidateHash} onClick={()=>void perform(resumeReview)}>继续原审阅</button>}
       </div>}{job&&<p role="status">{job}</p>}</section>}
     {(sending||generation.current)&&<button disabled={stopping} onClick={()=>void requestStop()}>停止本次生成</button>}
-    {candidate&&<section data-testid="ttrpg-voice-candidate"><h4>{candidate.artifact.status==='blocked'?'原结果需要处理':quality?.complete?'本人审阅已保存':quality?'原审阅回执待补齐':'原音频候选待试听'}</h4>{candidate.artifact.issues.map(issue=><p key={issue.code}>{issue.message}</p>)}
+    {candidate&&<section data-testid="ttrpg-voice-candidate"><h4>{candidate.artifact.status==='blocked'?'原结果需要处理':quality?.complete?'本人审阅已保存':quality?'原审阅回执待补齐':'原音频候选待试听'}</h4><p>本条候选声线：{ttrpgOpenOriginalVoiceLabelV1(candidate.artifact.requestEvidence.model)}</p>{candidate.artifact.issues.map(issue=><p key={issue.code}>{issue.message}</p>)}
       <p>{quality?'本人审阅已保留，尚未加入本局音轨。':'尚未确认听感，也未加入本局音轨。'}</p><button disabled={busy||!props.enabled||candidate.artifact.status==='blocked'} onClick={()=>void perform(prepareAudition)}>准备这条候选试听</button>{!props.enabled&&<p>请先开启本机音频，再准备试听。</p>}
       {!quality&&!rejection&&candidate.artifact.status!=='blocked'&&<><p>适合本桌时保存试听确认；不适合时填写原因并拒绝。</p><label><input type="checkbox" aria-label="确认这条原音频的本人试听结果" disabled={busy||!audition} checked={listened} onChange={e=>setListened(e.target.checked)}/>我已亲自试听这条原音频，将保存下方选择的审阅结果。</label><button disabled={busy||!audition||!listened} onClick={()=>void perform(confirmQuality)}>保存本人试听确认</button>
         <label>拒绝原因<textarea aria-label="配音拒绝原因" value={rejectReason} maxLength={2000} disabled={busy} onChange={e=>setRejectReason(e.target.value)}/></label>

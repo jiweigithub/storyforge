@@ -1,6 +1,7 @@
 /** Dedicated local speech input. The original registered source and its
  * explicit reading transform remain distinct; no prompt or executable path. */
-import profile from '../../../scripts/ttrpg-local-tts/product-profile.json'
+import { currentTtrpgOpenVoiceProductProfileV1, parseTtrpgOpenOriginalVoiceProfileV1 } from './open-voice-product-profile'
+import type { TtrpgNarratorVoiceV1 } from './narration-listening-preferences'
 import readingProfile from '../../../scripts/ttrpg-local-tts/reading-profile.json'
 import type { TtrpgOpenVoiceRequestV1 } from './open-voice-request-contract'
 import { verifyTtrpgOpenConfirmedVoiceReadingV1 } from './open-voice-confirmed-reading-contract'
@@ -14,8 +15,10 @@ export const TTRPG_OPEN_VOICE_EXECUTION_DECISION_V1 = 'prepare-this-confirmed-lo
 
 export async function createTtrpgOpenVoiceExecutionInputForKernelV1(input: {
   row: TtrpgOpenVoiceRequestV1; sourceText: string; intentReceiptHash: string; intentVerificationArtifactHash: string
+  voice?: TtrpgNarratorVoiceV1; originalProfile?: unknown
 }) {
   const row = structuredClone(input.row), sourceText = input.sourceText
+  const profile = input.originalProfile === undefined ? currentTtrpgOpenVoiceProductProfileV1(input.voice) : parseTtrpgOpenOriginalVoiceProfileV1(input.originalProfile)
   if (!row.reading) p.fail('原请求没有明确确认的读法，旧意图不能自动升级为语音执行')
   const { reading } = await verifyTtrpgOpenConfirmedVoiceReadingV1(row.reading, sourceText, row.part.textHash)
   if (sourceText !== row.script.text.slice(row.part.textOffset, row.part.textOffset + row.part.textLength)

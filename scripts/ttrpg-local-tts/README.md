@@ -117,3 +117,20 @@ V2 的显式新固定评测实际完成两次生成、575 次资源观测；Uncl
 V3 worker 和主进程双重核对固定单条、无 padding 的实际 `codecTokens × 1920` 完整样本数与 EOS。实际新试音保留 318/239 个 codec token，完整 PCM 为 610560/458880 样本，即 25.440/19.120 秒；两次生成、575 次资源观测，实际 Metal 峰值仍为 5,631,002,983 字节，整次 40.08 秒。原文 tokenizer 往返、音频帧完整与实际听感是不同证据；这些计时核验不冒充 ASR、逐字对齐或真人音质验收。没有再次下载模型或改共享环境，历史源码、失败和所有 WAV 保留。
 
 用户随后明确选择 Qwen 组为主要接入方向（Uncle_Fu / Serena）；此组别反馈不等于正式音轨采用、使用权或完整产品验收。开局声线选择与受治理正式生成继续接通，旧音轨和旧请求不自动改声线。
+
+
+## 当前产品接入：Qwen 两个原生说话人
+
+方案 §35.164 已把所选声线接回原 `ttrpg.open.local-voice` durable 链。它与上面的固定台词评测是不同权限，不能用 native-fixture CLI 合成作者内容。新 Qwen product profile V3 / raw result V2 / 24k timeline V2 与原 Melo profile V1/V2 / raw result V1 / 44.1k timeline V1 分开，旧请求与音轨不自动升级。默认 API 无声线参数仍沿旧 Melo；正常界面在明确新生成时捕获浏览器选择，可明确改选基础中文旁白。
+
+运营者先按固定资产描述准备并核对原单份缓存，再执行仅资产准入（无模型调用），保留旧评测 owner。示例中的路径是运营者本机路径，不能由浏览器请求指定：
+
+```bash
+/absolute/existing-melo-runtime/venv/bin/python3 -I scripts/ttrpg-local-tts/qwen-product.py --admit-assets /absolute/prepared-qwen-assets --shared-runtime /absolute/existing-melo-runtime
+```
+
+同一 loopback 服务同时配置 `STORYFORGE_TTRPG_LOCAL_TTS_RUNTIME_DIR` 和 `STORYFORGE_TTRPG_QWEN_TTS_RUNTIME_DIR`。未配置/未准入 Qwen 时拒绝它的 profile，不悄悄改成其他声线，也不预留正常界面的新配音意图。普通冻结 E2E 移除两个环境变量；真实模型用例另需 `STORYFORGE_TTRPG_REAL_VOICE_ACCEPTANCE=1`，Qwen 还需 `STORYFORGE_TTRPG_REAL_QWEN_ACCEPTANCE=1`，只在独立数据中显式执行。
+
+worker 保留原确认读法复算、授权租约、取消/未知结果、一次永久启动与音频预算。Qwen 每段 100 UTF-16 单位/少于 512 codec token、真实 EOS、原生 24k PCM；零码合法，实际帧数乘 1920 必须等于真实样本数。最多 64 次完整语音调用，没有独立文本编码模型调用；逐步观测实际 Metal 累计峰值，不扩大原 6 GiB 准入、不重置峰值。数学库请求两线程不等于 OS 进程硬线程限额。仅释放真实终态且归自己的 shared/native 两个 claim，安装/他人/未知锁保留。
+
+首轮正常主持 UI 真实生成双声线均返回可试听候选并手动播放，原 raw/WAV/调用/资源/终态保留；源码冻结期间两个用例均通过且零重试。团局机械状态与媒资数量未改变，质量确认/使用权/E16 没有自动执行。Qwen 当前 MLX 路径仅在本机 Mac 验证；其他平台发行安装、独立真人与完整产品 CI/作者长局继续分开验收，不能把 Apache-2.0 模型卡与用户声线偏好当作无争议或自动采用证明。

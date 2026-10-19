@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync, renameSync, openSync, closeSync
 import { spawn, execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
-import { base, stable, digest, exact, productProfile as profile, productProfileHash, assertProductImplementation, readStoredProductJob, validateProductJob, verifyProductResult, ownedRuntime } from './product-contract.mjs'
+import { base, stable, digest, exact, productProfile as profile, productProfiles, isQwenProfile, currentProductProfile, assertProductImplementation, readStoredProductJob, validateProductJob, verifyProductResult, ownedRuntime } from './product-contract.mjs'
 
 function writeNew(file, value) {
   const fd = openSync(file, 'wx', 0o600)
@@ -34,11 +34,29 @@ function processStart(pid) {
 export function createProductVoiceJobs(runtimeDir, options = {}) {
   assertProductImplementation()
   const runtime = ownedRuntime(runtimeDir), jobs = path.join(runtime, 'product-jobs-v2'), lock = path.join(runtime, '.product-voice-worker.lock'), physicalSlot = path.join(runtime, '.eval.lock')
+  let nativeRuntime = null
+  try { if (options.qwenRuntimeDir !== undefined) nativeRuntime = ownedNativeRuntime(options.qwenRuntimeDir) }
+  catch { /* An optional engine cannot disable the existing bridge/readers. Its profiles stay unavailable; no other voice is substituted. */ }
+  const nativeSlot = nativeRuntime && path.join(nativeRuntime, '.eval.lock')
   mkdirSync(jobs, { recursive: true, mode: 0o700 })
   const active = new Map(), owner = { pid: process.pid, start: processStart(process.pid), token: randomUUID() }
   if (!owner.start || lstatSync(jobs).isSymbolicLink() || lstatSync(jobs).uid !== process.getuid()) throw new Error('Cannot own speech jobs')
   const worker = path.join(base, 'product-worker.py'), injected = typeof options.spawnWorker === 'function'
   let closed = false
+  function ownedNativeRuntime(dir) {
+    const st = lstatSync(dir)
+    if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== process.getuid()) throw new Error('Unowned Qwen product assets')
+    const admission = read(path.join(dir, 'product-asset-admission-v1.json'))
+    const native = productProfiles.filter(isQwenProfile)
+    if (admission.schema !== 'storyforge.ttrpg-qwen-product-assets' || admission.version !== 1 || admission.status !== 'verified-assets-only'
+      || admission.modelCalls !== 0 || admission.adoptionAllowed !== false || admission.humanRightsAcceptance !== 'unproven'
+      || native.some(p => p.nativeAssetProfileSha256 !== admission.nativeAssetProfileSha256)
+      || stable(admission.productProfileIds) !== stable(native.map(p => p.profileId))) throw new Error('Qwen assets lack their separate explicit product admission')
+    return path.resolve(dir)
+  }
+  function supported(p) {
+    try { currentProductProfile(p); return !isQwenProfile(p) || !!nativeRuntime && ownedNativeRuntime(nativeRuntime) === nativeRuntime } catch { return false }
+  }
   function directory(jobKey) { if (typeof jobKey !== 'string' || !/^ttrpg\.voice\.[1-9][0-9]*\.[a-f0-9]{64}$/.test(jobKey)) throw new Error('Invalid original job key'); return path.join(jobs, digest(jobKey)) }
   function cancellationFile(jobKey) { directory(jobKey); return path.join(jobs, 'cancellations', digest(jobKey) + '.json') }
   function persistCancellation(jobKey, reason) {
@@ -68,6 +86,12 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
     if (held.kind !== 'product-voice-physical-slot') return // Never retire an evaluation's lock.
     if (held.jobKey !== claim.jobKey || held.inputArtifactHash !== claim.inputArtifactHash || held.nonce !== claim.nonce) throw new Error('Physical speech slot identity changed')
     ownedDirectory(path.join(jobs, 'lock-history'))
+    if (claim.nativeRuntime) {
+      if (!nativeRuntime || path.resolve(claim.nativeRuntime) !== nativeRuntime) throw new Error('Original native slot needs its configured owner; preserve both claims')
+      const native = read(nativeSlot)
+      if (native.kind !== 'product-voice-native-slot' || native.nonce !== claim.nonce || native.jobKey !== claim.jobKey || native.inputArtifactHash !== claim.inputArtifactHash) throw new Error('Native physical slot owner changed')
+      renameSync(nativeSlot, path.join(jobs, 'lock-history', 'native-' + kind + '-' + claim.nonce + '.json'))
+    }
     renameSync(physicalSlot, path.join(jobs, 'lock-history', 'physical-' + kind + '-' + claim.nonce + '.json'))
   }
   function archiveUnlaunchedLocks(claim, physicalAcquired = true) {
@@ -105,13 +129,17 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
     else if (claim && !record.terminal && !running) status = liveWorker(dir) ? 'running-observed' : 'unknown'
     if (!claim && record.status !== 'waiting-for-slot' && record.status !== 'cancelled-before-start') throw new Error('Job status lacks its launch proof')
     return { jobKey, inputArtifactHash: input.inputArtifactHash, profileHash: input.execution.profileHash, status,
-      canStart: input.execution.profileHash === productProfileHash && !closed && !claim && record.status === 'waiting-for-slot' && !existsSync(path.join(runtime, '.setup.lock')) && retireLockIfObservedAbsent() && !existsSync(physicalSlot),
+      canStart: supported(input.execution.profile) && !closed && !claim && record.status === 'waiting-for-slot' && !existsSync(path.join(runtime, '.setup.lock'))
+        && (!isQwenProfile(input.execution.profile) || !existsSync(path.join(nativeRuntime, '.prepare.lock')) && !existsSync(nativeSlot))
+        && retireLockIfObservedAbsent() && !existsSync(physicalSlot),
       cancellationRequested: existsSync(path.join(dir, 'cancel-request.json')), cancellationConfirmed,
       workerExecutionKind: record.workerExecutionKind, hasResultFile: existsSync(path.join(dir, 'result.json')), automaticRetryAllowed: false }
   }
   function create(value) {
     if (closed) throw new Error('Speech service closed')
-    assertProductImplementation(); const input = validateProductJob(value), dir = directory(input.jobKey)
+    const input = validateProductJob(value), dir = directory(input.jobKey)
+    assertProductImplementation(input.execution.profile)
+    if (!supported(input.execution.profile)) throw new Error('Selected local voice engine is not configured; no job created')
     if (existsSync(dir)) {
       const prior = jobData(input.jobKey)
       if (stable(prior.input) !== stable(input)) throw new Error('Cannot replace the original speech payload')
@@ -147,24 +175,43 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
   }
   function start(jobKey, inputArtifactHash) {
     if (closed) throw new Error('Speech service closed')
-    assertProductImplementation(); const job = jobData(jobKey)
+    const job = jobData(jobKey)
     if (!job || job.input.inputArtifactHash !== inputArtifactHash) throw new Error('Original speech input not found')
     if (existsSync(cancellationFile(jobKey))) return cancel(jobKey, 'original-stop-already-persisted')
     if (existsSync(path.join(job.dir, 'start.json')) || existsSync(path.join(job.dir, 'cancel-request.json'))) return projection(jobKey)
     validateProductJob(job.input)
+    const selectedProfile = job.input.execution.profile, qwen = isQwenProfile(selectedProfile)
+    assertProductImplementation(selectedProfile)
+    if (!supported(selectedProfile)) throw new Error('Original selected engine is not configured')
+    const profile = selectedProfile
+    if (qwen && (existsSync(path.join(nativeRuntime, '.prepare.lock')) || existsSync(nativeSlot))) return projection(jobKey)
     if (existsSync(path.join(runtime, '.setup.lock')) || !retireLockIfObservedAbsent() || existsSync(physicalSlot)) return projection(jobKey)
     const disk = statfsSync(runtime)
     if (disk.bavail * disk.bsize < profile.minimumFreeBytes) throw new Error('Insufficient free space; original job retained without starting')
-    const nonce = randomUUID(), claim = { kind: 'start-authorized', jobKey, inputArtifactHash, owner, nonce, at: Date.now() }
+    const nonce = randomUUID(), claim = { kind: 'start-authorized', jobKey, inputArtifactHash, owner, nonce, at: Date.now(), ...(qwen ? { nativeRuntime } : {}) }
     try { writeNew(lock, claim) } catch (error) { if (error.code === 'EEXIST') return projection(jobKey); throw error }
     // The existing eval launcher owns this same exclusive file. Taking only
     // a separate product lock or checking the other's file would leave a
     // check/create race and allow two physical inference processes.
     try { writeNew(physicalSlot, { ...claim, kind: 'product-voice-physical-slot' }) }
     catch (error) { if (error.code !== 'EEXIST') throw error; archiveUnlaunchedLocks(claim, false); return projection(jobKey) }
+    if (qwen) {
+      try { writeNew(nativeSlot, { ...claim, kind: 'product-voice-native-slot' }) }
+      catch (error) {
+        // Candidate setup/eval won. We own only the common slot and must not
+        // retire the other owner's candidate lock while releasing our claims.
+        const held = read(physicalSlot)
+        if (held.nonce !== nonce) throw new Error('Common slot ownership changed')
+        ownedDirectory(path.join(jobs, 'lock-history'))
+        renameSync(physicalSlot, path.join(jobs, 'lock-history', 'physical-not-launched-' + nonce + '.json'))
+        archiveUnlaunchedLocks(claim, false)
+        if (error.code !== 'EEXIST') throw error
+        return projection(jobKey)
+      }
+    }
     // Installer owns .setup.lock before checking .eval.lock; both directions
     // recheck after claiming, so a simultaneous setup cannot alter live assets.
-    if (existsSync(path.join(runtime, '.setup.lock'))) { archiveUnlaunchedLocks(claim); return projection(jobKey) }
+    if (existsSync(path.join(runtime, '.setup.lock')) || qwen && existsSync(path.join(nativeRuntime, '.prepare.lock'))) { archiveUnlaunchedLocks(claim); return projection(jobKey) }
     // Permanent claim precedes spawn. A lost return is unknown, never unsent.
     try { writeNew(path.join(job.dir, 'start.json'), claim) }
     catch (error) {
@@ -186,7 +233,8 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
     let child
     try {
       child = injected ? options.spawnWorker(job.dir, job.input) : spawn(path.join(runtime, 'venv/bin/python3'), ['-I', worker, '--runtime-dir', runtime, '--job-dir', job.dir], {
-        cwd: runtime, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH, LANG: 'en_US.UTF-8', PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1', HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', HF_HUB_DISABLE_TELEMETRY: '1' },
+        cwd: runtime, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH, LANG: 'en_US.UTF-8', PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1', HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', HF_HUB_DISABLE_TELEMETRY: '1',
+          ...(qwen ? { STORYFORGE_QWEN_ASSET_DIR: nativeRuntime, TOKENIZERS_PARALLELISM: 'false', OMP_NUM_THREADS: String(profile.cpuThreads), OPENBLAS_NUM_THREADS: String(profile.cpuThreads), MKL_NUM_THREADS: String(profile.cpuThreads), VECLIB_MAXIMUM_THREADS: String(profile.cpuThreads) } : {}) },
       })
     } catch (error) {
       atomic(path.join(job.dir, 'job.json'), { ...job.record, status: 'unknown', launchNonce: nonce, errorCode: 'spawn-return-unknown' }); throw error
@@ -290,5 +338,5 @@ export function createProductVoiceJobs(runtimeDir, options = {}) {
     if (!run) throw new Error('Original live worker cannot be renewed from an unknown job')
     run.renew(); return projection(jobKey)
   }
-  return { create, get: projection, start, cancel, renew, raw, recoverRaw, close() { closed = true; for (const [key] of active) cancel(key, 'owning-service-closed') } }
+  return { profiles: () => productProfiles.filter(supported), create, get: projection, start, cancel, renew, raw, recoverRaw, close() { closed = true; for (const [key] of active) cancel(key, 'owning-service-closed') } }
 }

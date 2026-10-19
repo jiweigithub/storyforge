@@ -16,6 +16,14 @@ export const exact = (row, keys) => row && typeof row === 'object' && !Array.isA
   && Object.keys(row).sort().join(',') === [...keys].sort().join(',')
 export const productProfile = JSON.parse(readFileSync(path.join(base, 'product-profile.json'), 'utf8'))
 export const productProfileHash = digest(stable(productProfile))
+export const qwenProductProfiles = ['uncle_fu', 'serena'].map(voice => JSON.parse(readFileSync(path.join(base, `product-qwen-${voice}-v1.json`), 'utf8')))
+export const productProfiles = [productProfile, ...qwenProductProfiles]
+export function currentProductProfile(value) {
+  const p = productProfiles.find(p => p.profileId === value?.profileId)
+  if (!p || stable(p) !== stable(value)) throw new Error('Unsupported current speech profile; preserve the original job')
+  return p
+}
+export const isQwenProfile = p => p?.version === 3 && p.engine === 'qwen3-tts-mlx-metal'
 export const IMPLEMENTATION_PATHS = [
   'scripts/ttrpg-local-tts/product-contract.mjs', 'scripts/ttrpg-local-tts/product-worker.py',
   'scripts/ttrpg-local-tts/product-jobs.mjs', 'scripts/ttrpg-local-tts/product-bridge.mjs',
@@ -23,14 +31,20 @@ export const IMPLEMENTATION_PATHS = [
   'scripts/ttrpg-local-tts/reading-preview.mjs', 'src/lib/ttrpg/open-local-voice-transport.ts',
   'src/lib/ttrpg/open-voice-execution.ts',
 ]
-export function assertProductImplementation() {
-  const p = productProfile, sources = p.implementation?.sources
-  if (digest(stable(JSON.parse(readFileSync(path.join(base, 'product-profile.json'), 'utf8')))) !== productProfileHash
-    || p.version !== 2 || p.profileId !== 'melo-zh-product-v2' || p.requiredAuthority !== 'original-durable-voice-execution-v1'
+export const QWEN_IMPLEMENTATION_PATHS = [...IMPLEMENTATION_PATHS, 'scripts/ttrpg-local-tts/qwen-product.py',
+  'scripts/ttrpg-local-tts/qwen-native-eval-profile.json', 'src/lib/ttrpg/open-voice-execution-input.ts', 'src/lib/ttrpg/open-voice-product-profile.ts']
+export function assertProductImplementation(profile = productProfile) {
+  const p = currentProductProfile(profile), sources = p.implementation?.sources, qwen = isQwenProfile(p)
+  const file = qwen ? `product-qwen-${p.speaker}-v1.json` : 'product-profile.json'
+  if (stable(JSON.parse(readFileSync(path.join(base, file), 'utf8'))) !== stable(p)
+    || (!qwen && (p.version !== 2 || p.profileId !== 'melo-zh-product-v2')) || p.requiredAuthority !== 'original-durable-voice-execution-v1'
     || p.network !== 'disabled' || p.automaticRetryAllowed !== false || p.adoptionAllowed !== false
     || p.maxSegmentAudioSeconds !== 60 || p.maxConcurrentJobs !== 1 || p.authorizationLeaseMs !== 10000 || p.authorizationRenewMs !== 2000 || p.statusRequestTimeoutMs !== 15000 || p.rawResponseTimeoutMs !== 120000 || p.readingRecomputationRequired !== true
-    || p.implementation?.version !== 'storyforge-local-tts-worker-v1' || !Array.isArray(sources)
-    || stable(sources.map(row => row.path)) !== stable(IMPLEMENTATION_PATHS)) throw new Error('Unsupported pinned product implementation')
+    || p.implementation?.version !== (qwen ? 'storyforge-local-tts-qwen-worker-v1' : 'storyforge-local-tts-worker-v1') || !Array.isArray(sources)
+    || stable(sources.map(row => row.path)) !== stable(qwen ? QWEN_IMPLEMENTATION_PATHS : IMPLEMENTATION_PATHS)) throw new Error('Unsupported pinned product implementation')
+  if (qwen && (p.sampleRate !== 24000 || p.maxTextEncoderCalls !== 0 || p.maxCodecTokensPerSegment !== 512 || p.decodeUpsampleRate !== 1920
+    || p.gpuMemoryLimitBytes !== 6442450944 || !['uncle_fu', 'serena'].includes(p.speaker) || p.instructAllowed !== false || p.referenceVoiceAllowed !== false
+    || digest(readFileSync(path.join(repo, p.nativeAssetDescriptor))) !== p.nativeAssetProfileSha256)) throw new Error('Unsupported native Qwen contract')
   for (const row of sources) {
     if (!exact(row, ['path', 'sha256']) || digest(readFileSync(path.join(repo, row.path))) !== row.sha256) throw new Error('Product implementation bytes changed')
   }
@@ -51,12 +65,16 @@ export function readStoredProductJob(value) {
     || !exact(e, ['schema', 'version', 'requestKey', 'decision', 'intent', 'source', 'reading', 'profile', 'profileHash'])
     || e.schema !== 'storyforge.ttrpg-open-voice-execution-input' || e.version !== 1 || !key(e.requestKey)
     || digest(stable(e)) !== value.inputArtifactHash || digest(stable(p)) !== e.profileHash
-    || p.schema !== 'storyforge.ttrpg-local-tts-product-profile' || ![1, 2].includes(p.version)
+    || p.schema !== 'storyforge.ttrpg-local-tts-product-profile' || ![1, 2, 3].includes(p.version)
     || p.assetProfileSha256 !== productProfile.assetProfileSha256 || p.network !== 'disabled' || p.automaticRetryAllowed !== false || p.adoptionAllowed !== false
     || !s || typeof s.text !== 'string' || s.text.length > 2000 || digest(s.text) !== s.textHash
     || !s.part || !Number.isSafeInteger(s.part.textOffset) || s.part.textOffset < 0 || s.part.textLength !== s.text.length || s.part.textHash !== s.textHash
     || !r || typeof r.normalizedText !== 'string' || r.normalizedText.length > 4000 || digest(r.normalizedText) !== r.normalizedTextSha256
     || r.sourceTextHash !== s.textHash || digest(stable(r.profile)) !== r.profileHash) throw new Error('Stored original speech identity changed')
+  if (p.version === 3) {
+    const supported = qwenProductProfiles.find(profile => profile.profileId === p.profileId)
+    if (!supported || stable({ ...p, implementation: null }) !== stable({ ...supported, implementation: null })) throw new Error('Unsupported original Qwen identity')
+  }
   return structuredClone(value)
 }
 export function validateProductJob(value) {
@@ -64,10 +82,11 @@ export function validateProductJob(value) {
   if (!exact(value, ['jobKey', 'inputArtifactHash', 'execution']) || !hash(value.inputArtifactHash)
     || typeof value.jobKey !== 'string' || !new RegExp('^ttrpg\\.voice\\.[1-9][0-9]*\\.' + value.inputArtifactHash + '$').test(value.jobKey)) throw new Error('Invalid original speech job identity')
   const e = value.execution
+  const selected = currentProductProfile(e.profile), selectedHash = digest(stable(selected))
   if (!exact(e, ['schema', 'version', 'requestKey', 'decision', 'intent', 'source', 'reading', 'profile', 'profileHash'])
     || e.schema !== 'storyforge.ttrpg-open-voice-execution-input' || e.version !== 1 || !key(e.requestKey)
-    || e.decision !== 'prepare-this-confirmed-local-voice-execution' || e.profileHash !== productProfileHash
-    || stable(e.profile) !== stable(productProfile) || digest(stable(e)) !== value.inputArtifactHash
+    || e.decision !== 'prepare-this-confirmed-local-voice-execution' || e.profileHash !== selectedHash
+    || stable(e.profile) !== stable(selected) || digest(stable(e)) !== value.inputArtifactHash
     || !exact(e.intent, ['inputArtifactHash', 'receiptHash', 'verificationArtifactHash']) || !Object.values(e.intent).every(hash)) throw new Error('Speech job does not match its exact original input/profile')
   const s = e.source, r = e.reading
   if (!exact(s, ['text', 'textHash', 'scriptHash', 'part', 'narrationSourceRef', 'reservationSourceRef', 'scope'])
@@ -99,6 +118,21 @@ export function ownedRuntime(value) {
     || owner.profileId !== productProfile.assetProfileId || setup.status !== 'passed' || setup.profileHash !== owner.profileHash) throw new Error('Pinned shared runtime is not ready')
   return runtime
 }
+export function verifyQwenNativeResult(result, profile) {
+  const n = result.native, rows = n?.segments, segments = result.alignment.segments
+  if (!exact(n, ['kind', 'speaker', 'assetProfileSha256', 'memoryGuidelineBytes', 'peakMetalBytes', 'memoryChecks', 'segments'])
+    || n.kind !== 'qwen3-tts-native-v1' || n.speaker !== profile.speaker || n.assetProfileSha256 !== profile.nativeAssetProfileSha256
+    || n.memoryGuidelineBytes !== profile.gpuMemoryLimitBytes || !Number.isSafeInteger(n.peakMetalBytes) || n.peakMetalBytes < 1 || n.peakMetalBytes > profile.gpuMemoryLimitBytes
+    || !Array.isArray(rows) || rows.length !== segments.length) throw new Error('Native speaker or actual Metal resource evidence failed')
+  let tokens = 0
+  for (const [index, row] of rows.entries()) {
+    if (!exact(row, ['index', 'codecTokens', 'eosObserved']) || row.index !== index || row.eosObserved !== true
+      || !Number.isSafeInteger(row.codecTokens) || row.codecTokens < 1 || row.codecTokens >= profile.maxCodecTokensPerSegment
+      || segments[index].sampleCount !== row.codecTokens * profile.decodeUpsampleRate) throw new Error('Native Qwen codec clock is incomplete; zero codes must be retained')
+    tokens += row.codecTokens
+  }
+  if (!Number.isSafeInteger(n.memoryChecks) || n.memoryChecks < tokens + 2) throw new Error('Actual per-step memory observations missing')
+}
 
 /** Recheck the actual canonical PCM and complete normalized-reading coverage.
  * Segment clocks are physical sample boundaries, never word/character timing. */
@@ -107,14 +141,17 @@ export function verifyProductResult(result, bytes, input) {
   // The wire/physical contract is unchanged; keep its original implementation
   // hashes instead of requiring today's code hash for an already finished job.
   const p = input.execution.profile, a = result?.audio, alignment = result?.alignment
-  const { implementation: currentImplementation, ...currentCore } = productProfile
+  const supported = productProfiles.find(profile => profile.profileId === p.profileId)
+  if (!supported) throw new Error('Unsupported original output profile')
+  const qwen = isQwenProfile(supported)
+  const { implementation: currentImplementation, ...currentCore } = supported
   const { implementation, ...originalCore } = p
   if (stable(originalCore) !== stable(currentCore) || input.execution.profileHash !== digest(stable(p))
     || !exact(implementation, ['version', 'sources']) || implementation.version !== currentImplementation.version
-    || !Array.isArray(implementation.sources) || stable(implementation.sources.map(row => row.path)) !== stable(IMPLEMENTATION_PATHS)
+    || !Array.isArray(implementation.sources) || stable(implementation.sources.map(row => row.path)) !== stable(qwen ? QWEN_IMPLEMENTATION_PATHS : IMPLEMENTATION_PATHS)
     || implementation.sources.some(row => !exact(row, ['path', 'sha256']) || !hash(row.sha256))) throw new Error('Unsupported original output contract; preserve its files')
-  if (!exact(result, ['schema', 'version', 'status', 'jobKey', 'inputArtifactHash', 'profileHash', 'implementationHash', 'sourceTextHash', 'normalizedTextSha256', 'previewHash', 'audio', 'alignment', 'usage', 'metrics', 'network', 'candidateAccepted', 'adoptionAllowed', 'humanListening'])
-    || result.schema !== 'storyforge.ttrpg-local-tts-product-result' || result.version !== 1 || result.status !== 'generated'
+  if (!exact(result, ['schema', 'version', 'status', 'jobKey', 'inputArtifactHash', 'profileHash', 'implementationHash', 'sourceTextHash', 'normalizedTextSha256', 'previewHash', 'audio', 'alignment', 'usage', 'metrics', 'network', 'candidateAccepted', 'adoptionAllowed', 'humanListening', ...(qwen ? ['native'] : [])])
+    || result.schema !== 'storyforge.ttrpg-local-tts-product-result' || result.version !== (qwen ? 2 : 1) || result.status !== 'generated'
     || result.jobKey !== input.jobKey || result.inputArtifactHash !== input.inputArtifactHash || result.profileHash !== input.execution.profileHash
     || result.implementationHash !== digest(stable(p.implementation)) || result.sourceTextHash !== input.execution.source.textHash
     || result.normalizedTextSha256 !== input.execution.reading.normalizedTextSha256 || result.previewHash !== input.execution.reading.previewHash
@@ -140,7 +177,10 @@ export function verifyProductResult(result, bytes, input) {
   }
   const count = alignment.segments.length, u = result.usage
   if (offset !== text.length || sample !== a.samples || !exact(u, ['textEncoderCallsStarted', 'textEncoderCallsCompleted', 'speechCallsStarted', 'speechCallsCompleted'])
-    || Object.values(u).some(value => value !== count) || count > p.maxSpeechInferenceCalls || count > p.maxTextEncoderCalls) throw new Error('Physical model-call/segment evidence does not close')
+    || u.textEncoderCallsStarted !== (qwen ? 0 : count) || u.textEncoderCallsCompleted !== (qwen ? 0 : count)
+    || u.speechCallsStarted !== count || u.speechCallsCompleted !== count
+    || count > p.maxSpeechInferenceCalls || (!qwen && count > p.maxTextEncoderCalls)) throw new Error('Physical model-call/segment evidence does not close')
+  if (qwen) verifyQwenNativeResult(result, p)
   let energy = 0, peak = 0
   for (let i = 44; i < bytes.length; i += 2) { const value = bytes.readInt16LE(i) / 32767; energy += value * value; peak = Math.max(peak, Math.abs(value)) }
   const rms = Math.sqrt(energy / a.samples), m = result.metrics

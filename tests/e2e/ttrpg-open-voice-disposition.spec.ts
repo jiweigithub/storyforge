@@ -12,15 +12,22 @@ async function enter(page:Page,id:number){await page.goto('./play/session/'+id);
 test('native original review resumes without inference, explicitly rejects one candidate and rereads the same failed original after reload without adopting or regenerating',async({page},info)=>{
   test.skip(process.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW!=='1','isolated preview only');test.setTimeout(240000)
   let creates=0,starts=0,rawReads=0,previews=0,cancels=0,packet:any,raw=''
-  const profile=JSON.parse(readFileSync('scripts/ttrpg-local-tts/product-profile.json','utf8')),profileHash=hash(JSON.stringify(stable(profile))),reading=JSON.parse(readFileSync('scripts/ttrpg-local-tts/reading-profile.json','utf8'))
+  let profile=JSON.parse(readFileSync('scripts/ttrpg-local-tts/product-profile.json','utf8')),profileHash=hash(JSON.stringify(stable(profile)))
+  const reading=JSON.parse(readFileSync('scripts/ttrpg-local-tts/reading-profile.json','utf8'))
   await page.route('**/storyforge/local-tts/v1/**',async route=>{const path=new URL(route.request().url()).pathname,send=(v:any)=>route.fulfill({contentType:'application/json',body:typeof v==='string'?v:JSON.stringify(v)})
     if(path.endsWith('/reading-preview')){previews++;const {input}=route.request().postDataJSON(),normalized=input.text.replaceAll('。','.')
       return send({schema:'storyforge.ttrpg-local-tts-reading-preview',version:1,profileHash:hash(JSON.stringify(stable(reading))),normalizerSha256:reading.normalizerSha256,status:'ready-for-reading-review',sourceText:input.text,sourceTextSha256:hash(input.text),overrides:[],readingText:input.text,normalizedText:normalized,normalizedTextSha256:hash(normalized),issues:[],issueCount:0,issueOffsetsReferTo:'readingText-utf16',modelCalled:false,generationAllowed:false,adoptionAllowed:false,network:'disabled'})}
-    if(path.endsWith('/profile'))return send({kind:'local-offline-speech-v1',profileHash,profile})
+    if(path.endsWith('/profile')){
+      const id=new URL(route.request().url()).searchParams.get('profileId')
+      const file=id==='qwen-mlx-uncle_fu-product-v1'?'product-qwen-uncle_fu-v1.json':id==='qwen-mlx-serena-product-v1'?'product-qwen-serena-v1.json':!id||id==='melo-zh-product-v2'?'product-profile.json':null
+      if(!file)throw Error('Unknown closed voice profile')
+      profile=JSON.parse(readFileSync('scripts/ttrpg-local-tts/'+file,'utf8'));profileHash=hash(JSON.stringify(stable(profile)))
+      return send({kind:'local-offline-speech-v1',profileHash,profile})
+    }
     if(path.endsWith('/jobs')){creates++;packet=route.request().postDataJSON();return send({jobKey:packet.jobKey,inputArtifactHash:packet.inputArtifactHash,profileHash,status:'waiting-for-slot',canStart:true})}
     if(path.endsWith('/start')){starts++;return send({jobKey:packet.jobKey,inputArtifactHash:packet.inputArtifactHash,profileHash,status:'generated',canStart:false})}
     if(path.endsWith('/raw')){rawReads++;raw=execFileSync(process.execPath,['--input-type=module','-e',`
-import{readFileSync}from'node:fs';import{syntheticResult}from'./tests/helpers/local-voice-product-fixture.mjs';import{verifyProductResult}from'./scripts/ttrpg-local-tts/product-contract.mjs';const input=JSON.parse(readFileSync(0,'utf8')),{bytes,result}=syntheticResult(input,8*44100);verifyProductResult(result,bytes,input);console.log(JSON.stringify({schema:'storyforge.ttrpg-local-tts-product-raw-response',version:1,result,workerExecutionKind:'pinned-offline-worker',completionEvidence:'observed-child-close',cancellationRequested:false,audio:{encoding:'base64',data:bytes.toString('base64')},candidateAccepted:false,adoptionAllowed:false}));
+import{readFileSync}from'node:fs';import{syntheticResult}from'./tests/helpers/local-voice-product-fixture.mjs';import{verifyProductResult}from'./scripts/ttrpg-local-tts/product-contract.mjs';const input=JSON.parse(readFileSync(0,'utf8')),{bytes,result}=syntheticResult(input,8*input.execution.profile.sampleRate);verifyProductResult(result,bytes,input);console.log(JSON.stringify({schema:'storyforge.ttrpg-local-tts-product-raw-response',version:1,result,workerExecutionKind:'pinned-offline-worker',completionEvidence:'observed-child-close',cancellationRequested:false,audio:{encoding:'base64',data:bytes.toString('base64')},candidateAccepted:false,adoptionAllowed:false}));
 `],{input:JSON.stringify(packet),encoding:'utf8',maxBuffer:2*1024*1024});return send(raw)}
     if(path.endsWith('/cancel')){cancels++;return send({jobKey:packet.jobKey,inputArtifactHash:packet.inputArtifactHash,profileHash,status:'generated',canStart:false,cancellationConfirmed:false,cancellationRequested:true,futureStartBlocked:true,hasResultFile:true,workerExecutionKind:'pinned-offline-worker',automaticRetryAllowed:false})}
     throw Error('Unexpected disposition fixture request: '+path)

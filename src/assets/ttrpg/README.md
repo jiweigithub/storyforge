@@ -13,4 +13,4 @@ Qwen 主方向（用户已明确偏好此组）：`narration-qwen-uncle_fu-v1.wa
 
 模型来源为 [社区 Qwen CustomVoice 8bit 准确版本](https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit/tree/049ef77fe8816b536193c0c25f9a214d17921282)，模型卡标注 Apache-2.0；适用声明保留在 `public/licenses/ttrpg-qwen-Apache-2.0.txt`（随应用静态文件分发）。运行器来自 [MLX Audio 准确版本](https://github.com/Blaizzy/mlx-audio/tree/1865f49cc9a40de9b5e4fcf55952b9812d751f1d)，MIT 声明另保留于 `scripts/ttrpg-local-tts/MLX-Audio-LICENSE`。仅分发固定合成试听，不分发模型/环境或真人录音，不含克隆参考声音。发布方的来源说明与用户组别偏好不作为独立声音权利合同、团局音轨采用或完整产品验收。
 
-试听页默认不加载/播放声音；仅明确播放时读取已打包 WAV，不调用模型。选择保存在本浏览器，旧 Melo 样本、旧音轨和旧请求保持原样。游戏正式合成的 Qwen 声线冻结继续单独接入。
+试听页默认不加载/播放声音；仅明确播放时读取已打包 WAV，不调用模型。选择保存在本浏览器，旧 Melo 样本、旧音轨和旧请求保持原样。新生成动作沿原受治理配音链冻结所选 Qwen 或明确兼容 Melo；已有音轨和请求保留原声线。固定试听不是正式音轨采用，具体接入与验证见方案 §35.164。

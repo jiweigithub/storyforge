@@ -19,12 +19,13 @@ import { markAndSweepAgentRunArtifactsV1,pruneAgentRunArtifactsExplicitlyV1 } fr
 import { configureTtrpgSessionParticipantV2,readTtrpgSessionParticipantsV2 } from '../../src/lib/ttrpg/participants'
 import { loadTtrpgOpenPlayerContextV1 } from '../../src/lib/ttrpg/open-player-context'
 import { loadTtrpgOpenBriefContextV1 } from '../../src/lib/ttrpg/open-brief-context'
+import type { TtrpgNarratorVoiceV1 } from '../../src/lib/ttrpg/narration-listening-preferences'
 
 describe('R-TTRPGOPEN10 explicit generated voice E16',{timeout:120000},()=>{
   beforeEach(async()=>{await db.delete();await db.open()})
   afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();db.close()})
-  async function fixture(humanGm=true){
-    const f=await setupVoiceCandidateFixtureV1(true,humanGm),{candidate}=await api.prepareTtrpgOpenVoiceCandidateV1(f.review)
+  async function fixture(humanGm=true,voice?:TtrpgNarratorVoiceV1){
+    const f=await setupVoiceCandidateFixtureV1(true,humanGm,voice),{candidate}=await api.prepareTtrpgOpenVoiceCandidateV1(f.review)
     await api.acceptTtrpgOpenVoiceCandidateReviewV1({...f.input,candidateHash:candidate.candidateHash,decision:'accept-this-original-voice-candidate-for-review',
       listening:'self-reported-original-listening',judgment:'acceptable-to-me'})
     const prepare={...f.input,candidateHash:candidate.candidateHash,name:'调查配音',source:'合成PCM工程fixture',license:'仅用于隔离工程验证',
@@ -37,8 +38,8 @@ describe('R-TTRPGOPEN10 explicit generated voice E16',{timeout:120000},()=>{
     return result.review
   }
   const confirm=(f:Awaited<ReturnType<typeof fixture>>,review:api.TtrpgOpenAudioReviewV1)=>api.confirmTtrpgOpenAudioReviewV1({...f.owner,review,decision:'confirm-this-audio-and-audience'})
-  it('prepares real source-bound bytes without adopting, then commits one V2 E16 and reads its actual file with truthful timing',async()=>{
-    const f=await fixture(false),before=await readProductRuntimeState(f.owner.sessionId)
+  it.each([undefined,'qwen.serena'] as const)('prepares real source-bound bytes without adopting, then commits one V2 E16 and reads truthful timing: %s',async voice=>{
+    const f=await fixture(false,voice),before=await readProductRuntimeState(f.owner.sessionId)
     const input={scope:f.owner.scope,sessionId:f.owner.sessionId},actorBefore=await loadTtrpgOpenPlayerContextV1({...input,actorKey:'hero'}),briefBefore=await loadTtrpgOpenBriefContextV1({...input,actorKey:'gm'})
     const review=await prepared(f)
     expect(await readProductRuntimeState(f.owner.sessionId)).toEqual(before)
@@ -62,6 +63,8 @@ describe('R-TTRPGOPEN10 explicit generated voice E16',{timeout:120000},()=>{
     expect(JSON.parse((await db.productMediaAssets.toCollection().first())!.exactArtifactRefsJson!)).toEqual(receipt.generated.artifactRefs)
     const desk=await api.readTtrpgOpenAudioDeskV1(f.owner);expect(desk.tracks).toHaveLength(1);expect(desk.tracks[0].voiceMarks).toBeNull()
     expect(desk.tracks[0].generatedTimeline).toEqual(receipt.generated.timeline)
+    expect(receipt.generated.timeline.version).toBe(voice?2:1)
+    expect(receipt.generated.timeline.clock.sampleRate).toBe(voice?24000:44100)
     expect((await api.readTtrpgOpenAudioClipV1({...f.owner,sourceRef:desk.tracks[0].sourceRef,expectedClipKey:desk.tracks[0].clipKey})).blob.size).toBe(receipt.asset.byteSize)
     expect((await api.readTtrpgOpenGeneratedAudioAdoptionV1(f.input))?.choiceKey).toBe(receipt.generated.choiceKey)
     expect(f.execute).toHaveBeenCalledTimes(1);expect(f.fetcher).not.toHaveBeenCalled()
@@ -109,8 +112,8 @@ describe('R-TTRPGOPEN10 explicit generated voice E16',{timeout:120000},()=>{
     const receipts=(await readProductRuntimeState(f.owner.sessionId)).ttrpg!.openRun!.audioReceipts!
     expect(receipts.map(r=>r.version)).toEqual([2,1,2]);expect(f.execute).toHaveBeenCalledTimes(1)
   })
-  it('preserves an adopted generated file and complete evidence through child consent, parent deletion, collection and full backup/import',async()=>{
-    const f=await fixture(),review=await prepared(f);await confirm(f,review)
+  it.each([undefined,'qwen.serena'] as const)('preserves adopted bytes and complete evidence through child consent, parent deletion, collection and backup/import: %s',async voice=>{
+    const f=await fixture(true,voice),review=await prepared(f);await confirm(f,review)
     const state=await readProductRuntimeState(f.owner.sessionId),child=await branchProductRuntimeSession({parentSessionId:f.owner.sessionId,throughSequence:state.lastSequence,title:'生成音频续团'})
     const childOwner={...f.owner,sessionId:child.id!},before=await readProductRuntimeState(child.id!)
     await expect(api.readTtrpgOpenAudioDeskV1(childOwner)).rejects.toThrow()

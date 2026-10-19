@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import maleSample from '../../assets/ttrpg/narration-qwen-uncle_fu-v1.wav'
 import femaleSample from '../../assets/ttrpg/narration-qwen-serena-v1.wav'
+import legacySample from '../../assets/ttrpg/narration-preview.wav'
 import { applyTtrpgNarrationRateV1, saveTtrpgNarrationRateV1, saveTtrpgNarratorVoiceV1, TTRPG_NARRATION_RATES_V1,
   TTRPG_NARRATOR_VOICES_V1, useTtrpgNarrationRateV1, useTtrpgNarratorVoiceV1, type TtrpgNarratorVoiceV1 } from '../../lib/ttrpg/narration-listening-preferences'
 
-const samples = { 'qwen.uncle_fu': maleSample, 'qwen.serena': femaleSample }
+const samples = { 'qwen.uncle_fu': maleSample, 'qwen.serena': femaleSample, 'melo.zh': legacySample }
 
 /** A public fixed sample; playing it reveals no session text or private role. */
 export default function TtrpgNarrationListeningSettings({ paused = false }: { paused?: boolean }) {
@@ -33,7 +34,7 @@ export default function TtrpgNarrationListeningSettings({ paused = false }: { pa
       audio.current?.pause()
       setError(saveTtrpgNarratorVoiceV1(event.target.value as TtrpgNarratorVoiceV1) ? '' : '浏览器暂不能保存设置，请检查存储权限。')
     }}>{TTRPG_NARRATOR_VOICES_V1.map(value => <option key={value.id} value={value.id}>{value.label} · {value.name}</option>)}</select></label>
-    <p>声线用于试听比较；已有旁白保留原来的声音。</p>
+    <p>新生成的旁白使用所选声线，已有旁白保留原来的声音。播放语速可随时调整。</p>
     <audio key={voice} ref={audio} src={paused ? undefined : samples[voice]} controls preload="none" aria-label="旁白语速试听" onPlay={event => {
       if (paused) event.currentTarget.pause()
       else applyTtrpgNarrationRateV1(event.currentTarget, rate)

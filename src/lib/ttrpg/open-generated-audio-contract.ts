@@ -10,7 +10,7 @@ import { parseTtrpgOpenAudioAssetV1, assertTtrpgOpenAudioWriteAllowedV1, ttrpgOp
 import { parseTtrpgOpenAudioScopeV1, createTtrpgOpenAudioScopeV1, parseTtrpgOpenScopedAudioEventV2,
   type TtrpgOpenAudioScopeV1, type TtrpgOpenScopedAudioEventV2 } from './open-audio-scope'
 import { parseTtrpgOpenVoiceCompletionV1, type TtrpgOpenVoiceCompletionV1 } from './open-voice-completion-contract'
-import { parseTtrpgOpenGeneratedVoiceTimelineV1, type TtrpgOpenGeneratedVoiceTimelineV1 } from './open-voice-timeline-contract'
+import { parseTtrpgOpenGeneratedVoiceTimeline, type TtrpgOpenGeneratedVoiceTimeline } from './open-voice-timeline-contract'
 import * as p from './open-contract-parse'
 
 export const TTRPG_GENERATED_AUDIO_RIGHTS_V1 = 'i-have-rights-to-use-this-voice-for-its-original-session-recipients' as const
@@ -18,7 +18,7 @@ export interface TtrpgOpenGeneratedAudioOriginV1 {
   schema: 'storyforge.ttrpg-open-generated-audio-origin'; version: 1
   originSessionKey: string; requestKey: string; originScope: TtrpgOpenAudioScopeV1
   choiceKey: string; rightsDeclaration: typeof TTRPG_GENERATED_AUDIO_RIGHTS_V1
-  completion: TtrpgOpenVoiceCompletionV1; timeline: TtrpgOpenGeneratedVoiceTimelineV1
+  completion: TtrpgOpenVoiceCompletionV1; timeline: TtrpgOpenGeneratedVoiceTimeline
   artifactRefs: ExactRunArtifactIdentityV1[]
 }
 export interface TtrpgOpenAudioRequestV2 {
@@ -52,7 +52,7 @@ export function parseTtrpgOpenGeneratedAudioOriginV1(value: unknown): TtrpgOpenG
   return {schema: p.literal(r.schema, 'storyforge.ttrpg-open-generated-audio-origin', 'generated audio origin schema'), version: p.literal(r.version, 1, 'generated origin version'),
     originSessionKey: p.key(r.originSessionKey, 'generated original session'), requestKey: p.key(r.requestKey, 'generated original request'), originScope,
     choiceKey: p.hash(r.choiceKey, 'generated metadata choice'), rightsDeclaration: p.literal(r.rightsDeclaration, TTRPG_GENERATED_AUDIO_RIGHTS_V1, 'explicit generated media rights'),
-    completion, timeline: parseTtrpgOpenGeneratedVoiceTimelineV1(r.timeline), artifactRefs }
+    completion, timeline: parseTtrpgOpenGeneratedVoiceTimeline(r.timeline), artifactRefs }
 }
 export function parseTtrpgOpenAudioRequestV2(value: unknown): TtrpgOpenAudioRequestV2 {
   const r = p.record(value, ['version','action','channel','audience','privateActorKey','narrationSourceRef','fade','voiceTimeline','media'], 'generated audio request')
