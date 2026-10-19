@@ -1,3 +1,5 @@
+import { prepareProductProductionOriginalResponseBookingV1, assertProductProductionOriginalBookingCurrentV1,
+  type PreparedOriginalResponseBookingV1 } from './original-response-booking'
 import { canReviseTextContentBuildV1, createTextContentRevisionPlanV1 } from './text-content-revision'
 import Dexie from 'dexie'
 import { db } from '../db/schema'
@@ -1041,6 +1043,7 @@ async function createRevisionBuildWithCarriesV1(input: {
 }
 
 async function applyCommand(input: {
+  preparedOriginalResponseBooking?: PreparedOriginalResponseBookingV1 | null
   preparedTextRevision?: Awaited<ReturnType<typeof prepareTextContentRevisionV1>> | null
   preparedPausedBuild?: PreparedPausedBuildV1 | null
   scope: WorkspaceScope
@@ -1078,6 +1081,23 @@ async function applyCommand(input: {
   if (command.type !== 'create-intent' && command.type !== 'create-text-open-world-intent'
     && command.expectedStateRevision !== production.stateRevision) {
     reject('production-state-conflict', `Production revision 已从 ${command.expectedStateRevision} 变为 ${production.stateRevision}`)
+  }
+
+  if (command.type === 'book-original-response') {
+    const prepared = input.preparedOriginalResponseBooking
+    if (!prepared || production.productType !== 'ttrpg') reject('invalid-state-transition', '缺少准确原回答的受核对记账准备')
+    const build = await currentBuild(production)
+    try { await assertProductProductionOriginalBookingCurrentV1(prepared, production, build) }
+    catch { reject('production-state-conflict', '原回答、费用或作品状态已经变化，请重新核对') }
+    if (!prepared.alreadyBooked) {
+      await db.productBuilds.update(build.id, { budgetLedgerJson: prepared.budgetLedgerJson,
+        failureJson: safeJson({ ...readResult(build.failureJson), originalResponseBooking: prepared.booking }),
+        stateRevision: build.stateRevision + 1, updatedAt: now })
+      production = { ...production, stateRevision: production.stateRevision + 1, updatedAt: now }
+      await db.productProductions.update(production.id, { stateRevision: production.stateRevision, updatedAt: now })
+    }
+    return { production, result: { status: 'original-response-booked', blocked: prepared.booking.blocked,
+      originalResponseBooking: prepared.booking, newModelCalls: 0, candidateCreated: false, adopted: false } }
   }
 
   if (command.type === 'create-intent') {
@@ -2092,6 +2112,11 @@ async function applyCommand(input: {
   if (command.type === 'resolve-blocker') {
     const build = await currentBuild(production)
     const previousFailure = readResult(build.failureJson)
+    const originalBooking = previousFailure.originalResponseBooking
+    if (command.resolution.action !== 'cancel' && originalBooking && typeof originalBooking === 'object'
+      && !Array.isArray(originalBooking) && (originalBooking as Record<string, unknown>).blocked === true) {
+      reject('invalid-state-transition', '原回答用量已经如实记账，但旧任务或 Build 授权不足；请明确修订 Brief，不能沿旧授权继续')
+    }
     const compactPreviousFailure = compactRecoveryFailure(previousFailure)
     const repairingLegacyFailure = isRepairRetryableFailedProductBuildV1(build)
     if (!['recovery-required', 'paused'].includes(build.status) && !repairingLegacyFailure) {
@@ -2915,6 +2940,7 @@ async function applyCommand(input: {
 }
 
 async function executeTransaction(input: {
+  preparedOriginalResponseBooking?: PreparedOriginalResponseBookingV1 | null
   preparedTextRevision?: Awaited<ReturnType<typeof prepareTextContentRevisionV1>> | null
   preparedPausedBuild?: PreparedPausedBuildV1 | null
   scope: WorkspaceScope
@@ -3082,6 +3108,7 @@ async function executeTransaction(input: {
         }
       }
       const applied = await applyCommand({
+        preparedOriginalResponseBooking: input.preparedOriginalResponseBooking,
         preparedTextRevision: input.preparedTextRevision,
         scope, production, command,
         preparedBriefHash: input.preparedBriefHash,
@@ -3512,6 +3539,8 @@ export async function executeProductProductionCommand(input: {
       authorizedAt: command.authorizedAt,
     })
   }
+  const preparedOriginalResponseBooking = command.type === 'book-original-response'
+    ? await prepareProductProductionOriginalResponseBookingV1({ scope, productionId: input.productionId!, command, now }) : null
   let preparedPausedBuild: PreparedPausedBuildV1 | null = null
   if (command.type === 'resume') {
     const production = await productionInScope(scope, input.productionId!)
@@ -3523,6 +3552,7 @@ export async function executeProductProductionCommand(input: {
     preparedPausedBuild = { before, after, runs }
   }
   const request = {
+    preparedOriginalResponseBooking,
     preparedTextRevision,
     scope,
     productionId: input.productionId,

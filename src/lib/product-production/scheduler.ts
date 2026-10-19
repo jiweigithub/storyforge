@@ -977,41 +977,7 @@ async function assertBuildLifetimeBudgetCapacity(input: {
     current.build.planJson, current.brief, current.briefRow.briefHash,
   )
   const ledger = parseLedger(current.build.budgetLedgerJson)
-  const planTaskByKey = new Map(plan.tasks.map(task => [task.taskKey, task]))
-  const charged = ledger.attempts.flatMap(attempt => {
-    if (!attempt.usage) return []
-    const task = planTaskByKey.get(attempt.taskKey)
-    return [{
-      ...attempt.usage,
-      costUsd: task
-        ? proportionalTaskCostUpperBoundV1(task.budgetReservation, attempt.usage)
-        : attempt.usage.costUsd,
-    }]
-  })
-  const inFlight = Object.entries(ledger.tasks).flatMap(([taskKey, entry]) => {
-    if (entry.status !== 'claimed') return []
-    const task = planTaskByKey.get(taskKey)
-    return task ? [reservationUsage(remainingTaskAttemptBudgetV1({
-      task,
-      ledger,
-      controlEpoch: current.build.controlEpoch,
-    }))] : []
-  })
-  const usage = sumTaskUsage([...charged, ...inFlight])
-  const limits = current.brief.productionBudget
-  const exceeded = [
-    ['modelCalls', usage.modelCalls, limits.maximumModelCalls],
-    ['inputTokens', usage.inputTokens, limits.maximumInputTokens],
-    ['outputTokens', usage.outputTokens, limits.maximumOutputTokens],
-    ['mediaCalls', usage.mediaCalls, limits.maximumMediaCalls],
-    ['durationMs', usage.durationMs, limits.maximumDurationMs],
-    ['storageBytes', usage.storageBytes, limits.maximumStorageBytes],
-  ].filter(([, actual, maximum]) => actual > maximum)
-    .map(([field, actual, maximum]) => `${field}=${actual}/${maximum}`)
-  if (limits.maximumCostUsd != null
-    && (usage.costUsd == null || usage.costUsd > limits.maximumCostUsd)) {
-    exceeded.push(`costUsd=${usage.costUsd ?? 'unknown'}/${limits.maximumCostUsd}`)
-  }
+  const exceeded = buildLifetimeBudgetExceededFieldsV1({ ledger, plan, brief: current.brief, controlEpoch: current.build.controlEpoch })
   if (exceeded.length > 0) {
     throw new Error(`[product-production-scheduler] Build lifetime budget 不足:${exceeded.join(',')}`)
   }
@@ -6671,4 +6637,103 @@ export async function runProductProductionUntilBlockedV1(input: {
     previousSignature = signature
   }
   throw new Error('[product-production-scheduler] 超出最大调度 cycle，拒绝隐藏循环')
+}
+
+function buildLifetimeBudgetExceededFieldsV1(input: { ledger: SchedulerLedgerV2; plan: ProductProductionPlanV3; brief: ProductProductionBriefV3; controlEpoch: number }): string[] {
+  const { ledger, plan } = input
+  const planTaskByKey = new Map(plan.tasks.map(task => [task.taskKey, task]))
+  const charged = ledger.attempts.flatMap(attempt => {
+    if (!attempt.usage) return []
+    const task = planTaskByKey.get(attempt.taskKey)
+    return [{
+      ...attempt.usage,
+      costUsd: task
+        ? proportionalTaskCostUpperBoundV1(task.budgetReservation, attempt.usage)
+        : attempt.usage.costUsd,
+    }]
+  })
+  const inFlight = Object.entries(ledger.tasks).flatMap(([taskKey, entry]) => {
+    if (entry.status !== 'claimed') return []
+    const task = planTaskByKey.get(taskKey)
+    return task ? [reservationUsage(remainingTaskAttemptBudgetV1({
+      task,
+      ledger,
+      controlEpoch: input.controlEpoch,
+    }))] : []
+  })
+  const usage = sumTaskUsage([...charged, ...inFlight])
+  const limits = input.brief.productionBudget
+  const exceeded = [
+    ['modelCalls', usage.modelCalls, limits.maximumModelCalls],
+    ['inputTokens', usage.inputTokens, limits.maximumInputTokens],
+    ['outputTokens', usage.outputTokens, limits.maximumOutputTokens],
+    ['mediaCalls', usage.mediaCalls, limits.maximumMediaCalls],
+    ['durationMs', usage.durationMs, limits.maximumDurationMs],
+    ['storageBytes', usage.storageBytes, limits.maximumStorageBytes],
+  ].filter(([, actual, maximum]) => actual > maximum)
+    .map(([field, actual, maximum]) => `${field}=${actual}/${maximum}`)
+  if (limits.maximumCostUsd != null
+    && (usage.costUsd == null || usage.costUsd > limits.maximumCostUsd)) {
+    exceeded.push(`costUsd=${usage.costUsd ?? 'unknown'}/${limits.maximumCostUsd}`)
+  }
+  return exceeded
+}
+
+/** Pure accounting only. Caller must first verify the original capture owner and receipt. */
+export function bookProductProductionOriginalUsageLedgerV1(input: {
+  budgetLedgerJson: string; taskKey: string; runId: number; attempt: number; controlEpoch: number
+  disposition: 'use-native-token-usage' | 'charge-reservation-upper-bound'
+  nativeUsage: { inputTokens: number; outputTokens: number } | null
+  observedDurationMs: number
+}) {
+  const ledger = parseLedger(input.budgetLedgerJson)
+  const entry = ledger.attempts.find(row => row.taskKey === input.taskKey && row.runId === input.runId
+    && row.attempt === input.attempt && row.controlEpoch === input.controlEpoch)
+  const current = ledger.tasks[input.taskKey]
+  if (!entry || entry.outcome !== 'failed' || !current || current.runId !== input.runId || current.attempt !== input.attempt || current.status !== 'failed'
+    || entry.idempotencyKey !== current.idempotencyKey) throw Error('[original-response-booking] 原失败尝试归属不一致')
+  if (entry.usageKnown && !entry.resolution && (!entry.usage || entry.usage.modelCalls !== 1
+    || (input.nativeUsage && (entry.usage.inputTokens !== input.nativeUsage.inputTokens
+      || entry.usage.outputTokens !== input.nativeUsage.outputTokens)))) {
+    throw Error('[original-response-booking] 原已知用量与准确原请求/回执冲突')
+  }
+  if (input.disposition === 'charge-reservation-upper-bound') {
+    const resolved = resolveProductProductionUnknownResultReservationLedgerV2({ ...input,
+      disposition: 'charge-reservation-upper-bound' })
+    return { budgetLedgerJson: resolved.budgetLedgerJson, usage: resolved.accounting.usage,
+      effectiveDisposition: resolved.accounting.effectiveDisposition, observedPhysicalRequests: 1 as const }
+  }
+  const native = input.nativeUsage
+  if (!native || !Number.isSafeInteger(native.inputTokens) || !Number.isSafeInteger(native.outputTokens)
+    || native.inputTokens <= 0 || native.outputTokens <= 0) throw Error('[original-response-booking] 完整回执没有可靠的 token 用量；需要明确按原预留上限暂记')
+  if (entry.resolution) throw Error('[original-response-booking] 原尝试已有明确处置，不能追写为另一项费用结论')
+  if (entry.usageKnown) {
+    if (!entry.usage || entry.usage.modelCalls !== 1 || entry.usage.inputTokens !== native.inputTokens
+      || entry.usage.outputTokens !== native.outputTokens) throw Error('[original-response-booking] 原已知用量与保留回执冲突')
+  } else {
+    entry.usage = parseLedgerUsage({ modelCalls: 1, inputTokens: native.inputTokens, outputTokens: native.outputTokens,
+      mediaCalls: 0, costUsd: null, durationMs: input.observedDurationMs, storageBytes: 0 }, 'verified original native usage')
+    entry.usageKnown = true
+  }
+  return { budgetLedgerJson: canonicalProductProductionJsonV2(ledger), usage: entry.usage!,
+    effectiveDisposition: 'provider-actual-charge' as const, observedPhysicalRequests: 1 as const }
+}
+
+/** Same ceilings and cost policy as normal execution; never widen a frozen Plan. */
+export function inspectProductProductionOriginalBookingBudgetV1(input: {
+  budgetLedgerJson: string; brief: ProductProductionBriefV3; plan: ProductProductionPlanV3
+  taskKey: string; controlEpoch: number
+}) {
+  const ledger = parseLedger(input.budgetLedgerJson), task = input.plan.tasks.find(row => row.taskKey === input.taskKey)
+  if (!task) throw Error('[original-response-booking] 原 Plan 没有该任务')
+  const blockers: string[] = []
+  const usage = sumTaskUsage(ledger.attempts.filter(row => row.taskKey === input.taskKey
+    && row.controlEpoch === input.controlEpoch && row.usage != null).map(row => row.usage!))
+  try { boundedUsage(usage, task.budgetReservation) } catch (error) { blockers.push(error instanceof Error ? error.message : String(error)) }
+  blockers.push(...buildLifetimeBudgetExceededFieldsV1({ ledger, plan: input.plan, brief: input.brief,
+    controlEpoch: input.controlEpoch }).map(detail => 'Build:' + detail))
+  if (ledger.attempts.some(row => row.taskKey === input.taskKey && row.controlEpoch === input.controlEpoch && !row.usageKnown)) {
+    blockers.push('原任务仍有其他未明确结算的尝试；不能忽略历史占用继续')
+  }
+  return { blocked: blockers.length > 0, blockers }
 }

@@ -717,6 +717,18 @@ export function parseProductProductionCommandV1(value: unknown): ProductProducti
   if (type === 'stop') return { type, commandId: commandHeader(row, type, ['expectedStateRevision', 'retention']), expectedStateRevision: expectedRevision(row.expectedStateRevision), retention: enumValue(row.retention, ['keep-build', 'discard-unreleased'], 'retention') }
   if (type === 'archive') return { type, commandId: commandHeader(row, type, ['expectedStateRevision', 'reason']), expectedStateRevision: expectedRevision(row.expectedStateRevision), reason: text(row.reason, 'reason', 4000) }
   if (type === 'restore') return { type, commandId: commandHeader(row, type, ['expectedStateRevision']), expectedStateRevision: expectedRevision(row.expectedStateRevision) }
+  if (type === 'book-original-response') {
+    const commandId = commandHeader(row, type, ['expectedStateRevision', 'buildNumber', 'controlEpoch', 'planHash',
+      'taskKey', 'originalRunId', 'originalAttempt', 'captureRunId', 'captureReceiptHash', 'disposition'])
+    if (!isSha256Hash(row.planHash) || !isSha256Hash(row.captureReceiptHash)) fail('原回答记账必须绑定准确 Plan 与保留回执 hash')
+    return { type, commandId, expectedStateRevision: expectedRevision(row.expectedStateRevision),
+      buildNumber: positiveId(row.buildNumber, 'buildNumber'),
+      controlEpoch: finite(row.controlEpoch, 'controlEpoch', Number.MAX_SAFE_INTEGER, true),
+      planHash: row.planHash, taskKey: stableKey(row.taskKey, 'taskKey'),
+      originalRunId: positiveId(row.originalRunId, 'originalRunId'), originalAttempt: positiveId(row.originalAttempt, 'originalAttempt'),
+      captureRunId: positiveId(row.captureRunId, 'captureRunId'), captureReceiptHash: row.captureReceiptHash,
+      disposition: enumValue(row.disposition, ['use-native-token-usage', 'charge-reservation-upper-bound'], 'disposition') }
+  }
   if (type === 'resolve-blocker') return { type, commandId: commandHeader(row, type, ['expectedStateRevision', 'blockerKey', 'resolution']), expectedStateRevision: expectedRevision(row.expectedStateRevision), blockerKey: stableKey(row.blockerKey, 'blockerKey'), resolution: parseResolution(row.resolution) }
   if (type === 'request-preview') return { type, commandId: commandHeader(row, type, ['expectedStateRevision', 'buildNumber']), expectedStateRevision: expectedRevision(row.expectedStateRevision), buildNumber: positiveId(row.buildNumber, 'buildNumber') }
   if (type === 'revise-text-content') {

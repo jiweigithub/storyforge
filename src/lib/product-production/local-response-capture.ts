@@ -173,3 +173,21 @@ export async function captureProductProductionOriginalResponseCoreV1(input: Prod
     return capture(input)
   })
 }
+
+/** Read a retained proof only. Never creates a Run, GET, ACK, inference or adoption. */
+export async function readProductProductionCapturedResponseForAuthorV1(input: ProductProductionOriginalCaptureQueryV1 & {
+  captureRunId: number; captureReceiptHash: string
+}) {
+  const source = await inspectProductProductionOriginalCaptureSourceV1(input)
+  const inputHash = await hashCanonicalValue({ schema: RECEIPT, version: 1, owner: source.original.owner,
+    requestArtifactHash: source.requestArtifactHash, originalContractHash: source.originalContractHash,
+    originalProjectionHash: source.originalProjectionHash })
+  const expected = await acceptAgentRunContract(contract(source, inputHash))
+  const snapshot = await readAgentRunV1(input.scope, input.captureRunId)
+  if (snapshot.run.productBuildId !== input.buildId || snapshot.run.contractHash !== expected.contractHash
+    || snapshot.run.status !== 'completed' || snapshot.projection.terminalReceiptHash !== input.captureReceiptHash) {
+    fail('原响应保留证明不属于当前作品、Build 或尝试')
+  }
+  const retained = await result(input.scope, snapshot, inputHash, source)
+  return { ...retained, originalOwner: source.original.owner }
+}

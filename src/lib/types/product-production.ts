@@ -144,6 +144,7 @@ export const PRODUCT_PRODUCTION_COMMAND_TYPES = [
   "resume",
   "stop",
   "resolve-blocker",
+  "book-original-response",
   "request-preview",
   "revise-media-asset",
   "revise-media-assets",
@@ -752,6 +753,20 @@ export interface ProductBuildCompatibilityReportV1 {
 }
 
 export type ProductProductionCommandV1 =
+  | {
+      type: "book-original-response";
+      commandId: string;
+      expectedStateRevision: number;
+      buildNumber: number;
+      controlEpoch: number;
+      planHash: string;
+      taskKey: string;
+      originalRunId: number;
+      originalAttempt: number;
+      captureRunId: number;
+      captureReceiptHash: string;
+      disposition: "use-native-token-usage" | "charge-reservation-upper-bound";
+    }
   | {
       type: "create-intent";
       commandId: string;
