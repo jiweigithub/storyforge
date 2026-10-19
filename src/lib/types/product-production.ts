@@ -695,6 +695,8 @@ export interface ProductProductionBlockerResolutionV1 {
   note: string;
   /** Explicit authored replacement; validated by the same task parser before acceptance. */
   authorDraftJson?: string;
+  /** Explicit reference to an already retained and booked complete original response. */
+  originalResponseSource?: { captureRunId: number; captureReceiptHash: string };
   /**
    * Required before retrying an attempt whose provider result or usage has not
    * been fully settled. The exact durable attempt is named explicitly so a

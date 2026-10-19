@@ -282,6 +282,7 @@ export interface ProductProductionTaskExecutionInputV1 {
 }
 
 export interface ProductProductionAuthorResolutionEvidenceV1 {
+  originalResponseSource?: { sourceHash: string; rawResponseHash: string; captureReceiptHash: string }
   commandId: string
   blockerKey: string
   resolution: ProductProductionBlockerResolutionV1
@@ -4597,6 +4598,17 @@ async function runClaimedTaskCore(input: {
   const attempt = previous?.status === 'failed' ? previous.attempt + 1 : 1
   if (!previous) snapshot = await append(input.scope, snapshot, 'step.scheduled', { stepId: input.task.taskKey })
   snapshot = await append(input.scope, snapshot, 'step.started', { stepId: input.task.taskKey, attempt })
+  // Keep the optional author recovery service outside the scheduler's static cycle.
+  const originalAuthorSource = await (await import('./original-response-author-source')).readProductProductionOriginalAuthorSourceForExecutionV1({
+    scope: input.scope, productionId: input.productionId, build: input.build, taskKey: input.task.taskKey,
+  })
+  if (originalAuthorSource) {
+    for (const content of [originalAuthorSource.evidenceJson, originalAuthorSource.authorDraftJson]) {
+      snapshot = (await recordAgentRunArtifactV1({ scope: input.scope, runId: snapshot.run.id,
+        stepId: input.task.taskKey, attempt, artifactKind: 'source-snapshot', content,
+        expectedLastSequence: snapshot.projection.lastSequence })).snapshot
+    }
+  }
   // A missing retained visual output is a recovery failure, never permission
   // to generate a replacement design or spend on replacement images.
   if (isTextRevisionRetainedVisualTaskV1(input.task) && input.task.reuse?.reason.startsWith('文字修订：')) {
@@ -4645,6 +4657,11 @@ async function runClaimedTaskCore(input: {
   const authorResolution = authorResolutionEvidence(input.build.failureJson, input.task.taskKey)
     ?? (frozenAuthorRevision ? { commandId: frozenAuthorRevision.commandId, blockerKey: input.task.taskKey,
       resolution: { action: 'author-edit' as const, note: frozenAuthorRevision.note }, resolvedAt: authorRevisionAuthority!.authorizedAt } : null)
+  if (originalAuthorSource) {
+    if (!authorResolution || authorResolution.resolution.action !== 'author-edit') throw new Error('[original-response-author-source] 缺少明确作者修订')
+    authorResolution.originalResponseSource = { sourceHash: originalAuthorSource.sourceHash,
+      rawResponseHash: originalAuthorSource.source.captured.rawResponseHash, captureReceiptHash: originalAuthorSource.source.captured.receiptHash }
+  }
   const dependencyRuns = await Promise.all(input.task.dependsOn.map(async taskKey => {
     const row = await db.agentRuns.where('[parentRunId+parentRelation]')
       .equals([snapshot.run.parentRunId!, `task:${taskKey}`]).first()
@@ -4947,7 +4964,7 @@ async function runClaimedTaskCore(input: {
   }
   const authorDraftJson = repair.blockerKey === input.task.taskKey && repair.resolution?.action === 'author-edit'
     ? repair.resolution.authorDraftJson as string : frozenAuthorRevision?.authorDraftJson
-  if (authorDraftJson || authorizedDirectResult) {
+  if ((authorDraftJson && !originalAuthorSource) || authorizedDirectResult) {
     const recorded = await recordAgentRunArtifactV1({
       scope: input.scope, runId: snapshot.run.id, stepId: input.task.taskKey, attempt,
       artifactKind: 'source-snapshot', content: authorDraftJson ?? authorizedDirectResult!.evidenceJson,

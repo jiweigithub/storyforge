@@ -7809,7 +7809,10 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
         origin: input.authorDraftJson ? 'author-revised-model-draft' : 'configured-text-model',
         containsThirdPartyMedia: false,
         ...(input.authorDraftJson && input.authorResolution
-          ? { authorRevisionCommandId: input.authorResolution.commandId } : {}),
+          ? { authorRevisionCommandId: input.authorResolution.commandId,
+              ...(input.authorResolution.originalResponseSource ? { originalResponseSourceHash: input.authorResolution.originalResponseSource.sourceHash,
+                originalResponseRawHash: input.authorResolution.originalResponseSource.rawResponseHash,
+                originalResponseCaptureReceiptHash: input.authorResolution.originalResponseSource.captureReceiptHash } : {}) } : {}),
       },
     }],
     passedGateIds: [...input.task.acceptanceGateIds],

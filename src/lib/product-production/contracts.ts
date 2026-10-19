@@ -459,13 +459,22 @@ function expectedRevision(value: unknown): number {
 
 function parseResolution(value: unknown): ProductProductionBlockerResolutionV1 {
   const row = record(value, 'resolution')
+  const hasOriginalSource = Object.prototype.hasOwnProperty.call(row, 'originalResponseSource')
   const hasUnknownReservation = Object.prototype.hasOwnProperty.call(row, 'unknownResultReservation')
   exactKeys(row, [
     'action', 'note',
     ...(row.action === 'author-edit' ? ['authorDraftJson'] : []),
     ...(hasUnknownReservation ? ['unknownResultReservation'] : []),
+    ...(hasOriginalSource ? ['originalResponseSource'] : []),
   ], 'resolution')
   if (row.action === 'author-edit') record(JSON.parse(text(row.authorDraftJson, 'resolution.authorDraftJson', 120000)), 'authorDraft')
+  const originalResponseSource = hasOriginalSource ? (() => {
+    if (row.action !== 'author-edit') fail('原完整回答来源只允许明确作者修订')
+    const source = record(row.originalResponseSource, 'resolution.originalResponseSource')
+    exactKeys(source, ['captureRunId', 'captureReceiptHash'], 'resolution.originalResponseSource')
+    if (!isSha256Hash(source.captureReceiptHash)) fail('原回答来源缺少准确终验 hash')
+    return { captureRunId: positiveId(source.captureRunId, 'originalResponseSource.captureRunId'), captureReceiptHash: source.captureReceiptHash }
+  })() : undefined
   const unknownResultReservation = hasUnknownReservation
     ? (() => {
         const reservation = record(row.unknownResultReservation, 'resolution.unknownResultReservation')
@@ -488,6 +497,7 @@ function parseResolution(value: unknown): ProductProductionBlockerResolutionV1 {
     note: text(row.note, 'resolution.note', 4000),
     ...(row.action === 'author-edit' ? { authorDraftJson: text(row.authorDraftJson, 'resolution.authorDraftJson', 120000) } : {}),
     ...(unknownResultReservation ? { unknownResultReservation } : {}),
+    ...(originalResponseSource ? { originalResponseSource } : {}),
   }
 }
 

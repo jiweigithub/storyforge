@@ -1,3 +1,5 @@
+import { prepareProductProductionOriginalAuthorSourceV1, assertProductProductionOriginalAuthorSourceCurrentV1,
+  type PreparedProductProductionOriginalAuthorSourceV1 } from './original-response-author-source'
 import { prepareProductProductionOriginalResponseBookingV1, assertProductProductionOriginalBookingCurrentV1,
   type PreparedOriginalResponseBookingV1 } from './original-response-booking'
 import { canReviseTextContentBuildV1, createTextContentRevisionPlanV1 } from './text-content-revision'
@@ -1043,6 +1045,7 @@ async function createRevisionBuildWithCarriesV1(input: {
 }
 
 async function applyCommand(input: {
+  preparedOriginalAuthorSource?: PreparedProductProductionOriginalAuthorSourceV1 | null
   preparedOriginalResponseBooking?: PreparedOriginalResponseBookingV1 | null
   preparedTextRevision?: Awaited<ReturnType<typeof prepareTextContentRevisionV1>> | null
   preparedPausedBuild?: PreparedPausedBuildV1 | null
@@ -2111,6 +2114,12 @@ async function applyCommand(input: {
 
   if (command.type === 'resolve-blocker') {
     const build = await currentBuild(production)
+    const originalAuthorSource = input.preparedOriginalAuthorSource
+    if (command.resolution.originalResponseSource && !originalAuthorSource) reject('invalid-state-transition', '原回答来源缺少准确作者核对准备')
+    if (originalAuthorSource) {
+      try { await assertProductProductionOriginalAuthorSourceCurrentV1(originalAuthorSource, production, build) }
+      catch { reject('production-state-conflict', '原回答来源、账本或作者修订已变化') }
+    }
     const previousFailure = readResult(build.failureJson)
     const originalBooking = previousFailure.originalResponseBooking
     if (command.resolution.action !== 'cancel' && originalBooking && typeof originalBooking === 'object'
@@ -2196,7 +2205,14 @@ async function applyCommand(input: {
       typeof resolveProductProductionUnknownResultReservationLedgerV2
     > | null = null
     const providerReservationFailure = productProductionFailureNeedsProviderAccountingV1(build)
-    if (providerReservationFailure) {
+    if (providerReservationFailure && originalAuthorSource
+      && originalAuthorSource.source.original.controlEpoch === build.controlEpoch) {
+      resolvedUnknownReservation = resolveProductProductionUnknownResultReservationLedgerV2({
+        budgetLedgerJson: build.budgetLedgerJson, taskKey: command.blockerKey,
+        runId: originalAuthorSource.source.original.runId, attempt: originalAuthorSource.source.original.attempt,
+        controlEpoch: build.controlEpoch, disposition: 'charge-reservation-upper-bound',
+      })
+    } else if (providerReservationFailure) {
       if (command.resolution.action !== 'cancel' && !unknownResultReservation) {
         reject('invalid-state-transition', failure.code === 'provider-response-uncheckpointed'
           ? '已观察到供应商响应但用量未结算；必须按冻结预留上限封账后才能重试'
@@ -2252,6 +2268,7 @@ async function applyCommand(input: {
             ? { authorDraftJson: command.resolution.authorDraftJson }
             : {}),
           unknownResultAccounting,
+          ...(command.resolution.originalResponseSource ? { originalResponseSource: command.resolution.originalResponseSource } : {}),
         }
       : command.resolution
     const controlEpoch = production.controlEpoch + 1
@@ -2283,6 +2300,7 @@ async function applyCommand(input: {
           resolution: persistedResolution,
           unknownResultAccounting,
           previousFailure: compactPreviousFailure,
+          ...(originalAuthorSource ? { originalResponseAuthorSource: { source: originalAuthorSource.source, sourceHash: originalAuthorSource.sourceHash } } : {}),
           resolvedAt: now,
         }),
         stateRevision: build.stateRevision + 1, completedAt: null, updatedAt: now,
@@ -2295,6 +2313,8 @@ async function applyCommand(input: {
     return { production, result: {
       buildNumber: build.buildNumber, blockerKey: command.blockerKey,
       action: command.resolution.action, controlEpoch, unknownResultAccounting,
+      ...(originalAuthorSource ? { originalResponseAuthorSourceHash: originalAuthorSource.sourceHash,
+        originalResponseAuthorSource: originalAuthorSource.source } : {}),
     } }
   }
 
@@ -2940,6 +2960,7 @@ async function applyCommand(input: {
 }
 
 async function executeTransaction(input: {
+  preparedOriginalAuthorSource?: PreparedProductProductionOriginalAuthorSourceV1 | null
   preparedOriginalResponseBooking?: PreparedOriginalResponseBookingV1 | null
   preparedTextRevision?: Awaited<ReturnType<typeof prepareTextContentRevisionV1>> | null
   preparedPausedBuild?: PreparedPausedBuildV1 | null
@@ -3108,6 +3129,7 @@ async function executeTransaction(input: {
         }
       }
       const applied = await applyCommand({
+        preparedOriginalAuthorSource: input.preparedOriginalAuthorSource,
         preparedOriginalResponseBooking: input.preparedOriginalResponseBooking,
         preparedTextRevision: input.preparedTextRevision,
         scope, production, command,
@@ -3539,6 +3561,8 @@ export async function executeProductProductionCommand(input: {
       authorizedAt: command.authorizedAt,
     })
   }
+  const preparedOriginalAuthorSource = command.type === 'resolve-blocker' && command.resolution.action === 'author-edit'
+    ? await prepareProductProductionOriginalAuthorSourceV1({ scope, productionId: input.productionId!, command, payloadHash, now }) : null
   const preparedOriginalResponseBooking = command.type === 'book-original-response'
     ? await prepareProductProductionOriginalResponseBookingV1({ scope, productionId: input.productionId!, command, now }) : null
   let preparedPausedBuild: PreparedPausedBuildV1 | null = null
@@ -3552,6 +3576,7 @@ export async function executeProductProductionCommand(input: {
     preparedPausedBuild = { before, after, runs }
   }
   const request = {
+    preparedOriginalAuthorSource,
     preparedOriginalResponseBooking,
     preparedTextRevision,
     scope,
