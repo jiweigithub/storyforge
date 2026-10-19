@@ -23,13 +23,14 @@ import { recordContextGatewayPreflightEvidenceV1, finalizeContextGatewayAttemptE
 import { resolveProductSourceReadBoundaryV1 } from '../product/source-contracts'
 import { assertTtrpgOpenAuthoringDesignSourceCurrentV1, type TtrpgOpenAuthoringDesignSourceV1 } from './open-authoring-design-source'
 import { parseTtrpgOpenAuthoringDesignRequestV1, parseTtrpgOpenAuthoringDesignProposalsV1,
-  ttrpgOpenDesignNeedsInitialFactsV1,
+  ttrpgOpenDesignNeedsInitialFactsV1, ttrpgOpenDesignProfileV1, ttrpgOpenDesignProfileForSkillV1, TTRPG_OPEN_DESIGN_PROFILES_V1,
+  ttrpgOpenDesignRuleRefsV1, TTRPG_OPEN_DESIGN_PROMPT_VERSION_V2,
   type TtrpgOpenAuthoringDesignRequestV1, type TtrpgOpenAuthoringDesignProposalsV1 } from './open-authoring-design-contract'
 import { buildTtrpgOpenAuthoringDesignMessagesV1, renderTtrpgOpenDesignWorldReadsV1 } from './open-authoring-design-prompt'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
 
 export const TTRPG_OPEN_DESIGN_STEP_V1 = 'ttrpg:open-authoring-design' as const
-const SKILL = 'ttrpg.open.authoring-design.v1', ENTRY = 'ttrpg.open.authoring-design', CATEGORY = 'authoring.ttrpg-open-design'
+const CATEGORY = 'authoring.ttrpg-open-design'
 const SOURCE = 'ttrpg.open.authoring-design', STEP = TTRPG_OPEN_DESIGN_STEP_V1
 const EVIDENCE = 'storyforge.ttrpg-open-authoring-design-request-evidence'
 const CANDIDATE = 'storyforge.ttrpg-open-authoring-design-candidate'
@@ -43,6 +44,17 @@ interface RequestEvidence {
   selector: ContextGatewayExecutionV1['selector']; sufficiency: ContextGatewayExecutionV1['sufficiency']
   retrievalTrace: ContextGatewayExecutionV1['retrievalTrace']; gatewayVersionHash: string; policyHash: string
 }
+function usesRuleRefs(skillId: string, promptVersion?: string): boolean {
+  if (promptVersion === TTRPG_OPEN_DESIGN_PROMPT_VERSION_V2 && ttrpgOpenDesignProfileForSkillV1(skillId)) return true
+  if (skillId === TTRPG_OPEN_DESIGN_PROFILES_V1[0].skillId && promptVersion === 'ttrpg-open-authoring-design-v1') return false
+  return fail('设计格式版本尚未支持；请保留原记录，不能发送或继续采用')
+}
+function frozenRuleRefs(snapshot: AgentRunSnapshotV1, evidence: RequestEvidence) {
+  const binding = snapshot.contract.executionBindings?.find(item => item.stepId === STEP)
+  if (binding?.version !== 2) fail('设计请求缺少原冻结 Skill')
+  const definition = JSON.parse(binding.skillDefinitionJson) as { promptVersion?: string }
+  return usesRuleRefs(binding.skillId, definition.promptVersion) ? ttrpgOpenDesignRuleRefsV1(evidence.source.rulePack) : undefined
+}
 export interface TtrpgOpenAuthoringDesignCandidateV1 {
   schema: typeof CANDIDATE; version: 1; portable: false; runId: number
   requestArtifactHash: string; rawResponseHash: string; sourceBasisHash: string
@@ -54,8 +66,9 @@ async function append(scope: WorkspaceScope, snapshot: AgentRunSnapshotV1, type:
 }
 function assertRun(snapshot: AgentRunSnapshotV1): void {
   const binding = snapshot.contract.executionBindings?.find(item => item.stepId === STEP)
+  const profile = binding ? ttrpgOpenDesignProfileForSkillV1(binding.skillId) : undefined
   if (snapshot.run.productRuntimeSessionId != null || snapshot.run.productBuildId != null || binding?.version !== 2
-    || binding.skillId !== SKILL || binding.formalEntry?.entryId !== ENTRY || snapshot.contract.executionBindings?.length !== 1) fail('不是当前作品的设计请求')
+    || !profile || binding.formalEntry?.entryId !== profile.entryId || snapshot.contract.executionBindings?.length !== 1) fail('不是当前作品的设计请求')
 }
 async function bindingHash(input: Pick<RequestEvidence, 'source' | 'request' | 'messages' | 'modelIdentity' | 'readResourceKeys'>) {
   return hashCanonicalValue({ sourceBasisHash: input.source.basisHash, request: input.request, messages: input.messages,
@@ -86,11 +99,12 @@ async function frozen(scope: WorkspaceScope, snapshot: AgentRunSnapshotV1) {
 export async function listTtrpgOpenAuthoringDesignRunsV1(scope: WorkspaceScope) {
   const rows = await readOwnedRows<AgentRunSnapshotV1['run']>(scope, 'agentRuns', { owner: 'work' })
   return rows.filter(row => {
-    if (!row.contractJson.includes(SKILL)) return false
+    if (!TTRPG_OPEN_DESIGN_PROFILES_V1.some(profile => row.contractJson.includes(profile.skillId))) return false
     let contract: { executionBindings?: { stepId?: string; skillId?: string }[] }
     try { contract = JSON.parse(row.contractJson) }
     catch { fail('设计运行合同损坏，请先检查原记录；未创建第二条会谈数据') }
-    return Array.isArray(contract.executionBindings) && contract.executionBindings.some(binding => binding.stepId === STEP && binding.skillId === SKILL)
+    return Array.isArray(contract.executionBindings) && contract.executionBindings.some(binding => binding.stepId === STEP
+      && typeof binding.skillId === 'string' && !!ttrpgOpenDesignProfileForSkillV1(binding.skillId))
   }).sort((a, b) => b.id - a.id)
 }
 async function assertFirstPending(scope: WorkspaceScope, snapshot: AgentRunSnapshotV1) {
@@ -105,7 +119,10 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
   runAI?: (messages: ChatMessage[], signal?: AbortSignal) => Promise<string>
   onPrepared?: (runId: number) => void
 }): Promise<TtrpgOpenAuthoringDesignCandidateV1> {
-  const request = parseTtrpgOpenAuthoringDesignRequestV1(input.request), skill = getAgentSkillV1(SKILL)
+  const request = parseTtrpgOpenAuthoringDesignRequestV1(input.request), profile = ttrpgOpenDesignProfileV1(request.sections)
+  const skill = getAgentSkillV1(profile.skillId), outputBudget = profile.maxOutputTokens
+  if (outputBudget !== skill.maxOutputTokens) fail('登记的设计容量与本次分区不一致；尚未发送请求')
+  usesRuleRefs(skill.id, skill.promptVersion)
   if (!input.runAI && !input.aiConfig) fail('请先配置现有 AI 连接')
   const basisAssembly = await assembleContext({ projectId: input.scope.projectId, scope: input.scope,
     sourceKeys: [SOURCE], ttrpgAuthoringDesignRevision: input.revision, inputBudgetTokens: 24_000 })
@@ -130,10 +147,10 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
   if (!readResourceKeys.length || readResourceKeys.some(key => !selected.has(key))) fail('世界实际读取未满足已选出口范围')
   const worldText = await renderTtrpgOpenDesignWorldReadsV1(gateway), worldTokens = estimateTokens(worldText)
   const messages = buildTtrpgOpenAuthoringDesignMessagesV1({ request, authorContext: basisAssembly.text,
-    worldContext: worldText, readResourceKeys })
+    worldContext: worldText, readResourceKeys, ruleRefs: ttrpgOpenDesignRuleRefsV1(source.rulePack) })
   const requestTokens = messages.reduce((sum, item) => sum + estimateTokens(item.content), 0)
   if (requestTokens > 64_000) fail('完整请求超过本次输入预算，请缩小设计分区或来源；未发起模型请求')
-  const meta = { category: CATEGORY, projectId: input.scope.projectId, contextOverflowPolicy: 'reject' as const, configOverrides: { maxTokens: skill.maxOutputTokens } }
+  const meta = { category: CATEGORY, projectId: input.scope.projectId, contextOverflowPolicy: 'reject' as const, configOverrides: { maxTokens: outputBudget } }
   const resolved = input.aiConfig ? resolveRequestConfig(input.aiConfig, meta) : null
   if (!input.runAI && resolved) {
     // Assert with the same pure request-side budget calculation as the original
@@ -149,13 +166,13 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
   const requestBindingHash = await bindingHash({ source, request, messages, modelIdentity, readResourceKeys })
   const binding = { stepId: STEP, ...await createAgentSkillExecutionBindingV2(skill, {
     writeTargets: [{ table: 'ttrpgAuthoringDrafts', fields: ['settingsJson'], mode: 'author-confirmed' }],
-  }), formalEntry: await freezeFormalAIEntryBindingV1(ENTRY) }
+  }), formalEntry: await freezeFormalAIEntryBindingV1(profile.entryId) }
   await assertTtrpgOpenAuthoringDesignSourceCurrentV1(source)
   let snapshot = await createAgentRunV1({ scope: input.scope, worldGroupId: null, contract: {
     version: 3, executionBoundary: 'formal', objective: request.instruction.slice(0, 4000), workflowKind: 'direct-generation',
     scope: { projectId: input.scope.projectId, worldGroupId: null }, executionBindings: [binding], runtimeBindingHash: requestBindingHash,
     permissions: { contextSourceKeys: [...binding.contextSourceKeys], writeTargets: [...binding.writeTargets] },
-    budget: { maxModelCalls: 1, maxToolCalls: 0, maxInputTokens: 64_000, maxOutputTokens: skill.maxOutputTokens, maxAttemptsPerStep: 1 },
+    budget: { maxModelCalls: 1, maxToolCalls: 0, maxInputTokens: 64_000, maxOutputTokens: outputBudget, maxAttemptsPerStep: 1 },
     failurePolicy: { onProtocolError: 'fail', onVerificationFailure: 'fail', onStaleInput: 'pause-for-author' },
     acceptance: ['design.candidate-valid', 'design.source-current', 'design.author-adopted'].map(id => ({ id, kind: 'deterministic-check' as const, required: true })),
     verificationPlan: [{ id: 'design.terminal', kind: 'terminal', verifier: 'ttrpg-open-authoring-design-adoption-v1',
@@ -173,7 +190,7 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
       sourceEvidence: [...basisAssembly.sourceEvidence!, { key: 'worldRelease', status: 'included', delivery: 'full', sourceHash: await sha256Text(worldText),
         originalCharacters: worldText.length, inputCharacters: worldText.length, originalTokens: worldTokens, inputTokens: worldTokens }] }
     const manifestV1 = await createContextManifestFromAssemblyV1({ runId: snapshot.run.id, stepId: STEP, attempt: 1,
-      projectId: input.scope.projectId, worldGroupId: null, declaredSourceKeys: [...binding.contextSourceKeys], assembled, readerVersion: 'ttrpg-open-authoring-design-v1' })
+      projectId: input.scope.projectId, worldGroupId: null, declaredSourceKeys: [...binding.contextSourceKeys], assembled, readerVersion: 'ttrpg-open-authoring-design-v2' })
     const manifest = await createContextManifestV2FromV1({ manifest: manifestV1, scope: input.scope })
     const preflight = await recordContextGatewayPreflightEvidenceV1({ scope: input.scope, runId: snapshot.run.id, stepId: STEP, attempt: 1,
       contextPacket: gateway.contextPacket, selector: gateway.selector, renderedRequest: { messages, modelIdentity },
@@ -196,8 +213,11 @@ export async function generateTtrpgOpenAuthoringDesignCandidateV1(input: {
     const result: ChatResult = {}, started = Date.now()
     transportResult = result
     const output = input.runAI ? await input.runAI(messages, input.signal)
-      : await executeFrozenFormalAIEntryV1('ttrpg.open.authoring-design', binding.formalEntry, skill, 'src/lib/ttrpg/open-authoring-design-harness.ts',
-        messages, input.aiConfig!, { ...meta, category: 'authoring.ttrpg-open-design' }, input.signal, result, undefined, resolved!)
+      : profile.entryId === 'ttrpg.open.authoring-design.full'
+        ? await executeFrozenFormalAIEntryV1('ttrpg.open.authoring-design.full', binding.formalEntry, skill, 'src/lib/ttrpg/open-authoring-design-harness.ts',
+          messages, input.aiConfig!, { ...meta, category: 'authoring.ttrpg-open-design' }, input.signal, result, undefined, resolved!)
+        : await executeFrozenFormalAIEntryV1('ttrpg.open.authoring-design', binding.formalEntry, skill, 'src/lib/ttrpg/open-authoring-design-harness.ts',
+          messages, input.aiConfig!, { ...meta, category: 'authoring.ttrpg-open-design' }, input.signal, result, undefined, resolved!)
     const raw = await recordAgentRunArtifactV1({ scope: input.scope, runId: snapshot.run.id, stepId: STEP, attempt: 1,
       artifactKind: 'raw-response', content: output, expectedLastSequence: snapshot.projection.lastSequence })
     snapshot = raw.snapshot
@@ -266,7 +286,8 @@ export async function recoverTtrpgOpenAuthoringDesignCandidateV1(input: { scope:
   const inputTokens = usage && !invalidUsage ? usage.inputTokens : evidence.messages.reduce((sum, item) => sum + estimateTokens(item.content), 0)
   const outputTokens = usage && !invalidUsage ? usage.outputTokens : estimateTokens(output)
   const overBudget = inputTokens > snapshot.contract.budget.maxInputTokens || outputTokens > snapshot.contract.budget.maxOutputTokens
-  const context = { request: evidence.request, base: evidence.source.settings.openAuthoring, readWorldResourceKeys: evidence.readResourceKeys }
+  const context = { request: evidence.request, base: evidence.source.settings.openAuthoring, readWorldResourceKeys: evidence.readResourceKeys,
+    ruleRefs: frozenRuleRefs(snapshot, evidence) }
   const creative = await runCreativeExecutionV1<TtrpgOpenAuthoringDesignProposalsV1 | null>({ initialMessages: evidence.messages,
     runRaw: async () => ({ output, ...(usage && !invalidUsage ? { usage } : {}), durationMs: metadata?.value.durationMs ?? 0 }),
     parse: raw => {
@@ -277,7 +298,7 @@ export async function recoverTtrpgOpenAuthoringDesignCandidateV1(input: { scope:
       } catch (error) { return { status: 'blocked', output: null, editableText: '', validFragments: [], rejectedFragments: [], assumptions: [],
         issues: [createCreativeIssueV1({ code: invalidUsage || overBudget ? 'ttrpg-design-budget' : 'ttrpg-design-protocol', path: '$', message: error instanceof Error ? error.message : String(error), disposition: 'blocking', action: 'edit' })] } }
     }, buildRepairMessages: () => fail('本次请求不授权自动修复'), budget: new AgentTeamBudgetTracker('expanded'), callLabel: '原设计回答解析',
-    maxOutputTokens: 16_000, qualityMode: 'economy', modelIdentity: evidence.modelIdentity, canonEvidenceRefs: [`source-plan:${evidence.source.sourcePlan.planHash}`] })
+    maxOutputTokens: snapshot.contract.budget.maxOutputTokens, qualityMode: 'economy', modelIdentity: evidence.modelIdentity, canonEvidenceRefs: [`source-plan:${evidence.source.sourcePlan.planHash}`] })
   if (!metadata) creative.artifact.callEvidence[0].latencyMs = null
   const body: Omit<TtrpgOpenAuthoringDesignCandidateV1, 'candidateHash'> = { schema: CANDIDATE, version: 1, portable: false, runId: input.runId, requestArtifactHash: retained.hash,
     rawResponseHash: rawHash, sourceBasisHash: evidence.source.basisHash, proposals: creative.output, artifact: creative.artifact }
@@ -307,7 +328,7 @@ export async function readTtrpgOpenAuthoringDesignReviewV1(input: { scope: Works
   try { await assertTtrpgOpenAuthoringDesignSourceCurrentV1(evidence.source) }
   catch (error) { current = false; staleReason = error instanceof Error ? error.message : String(error) }
   return { candidate, source: evidence.source, request: evidence.request, readWorldResourceKeys: evidence.readResourceKeys,
-    runStatus: snapshot.run.status, current, staleReason,
+    runStatus: snapshot.run.status, current, staleReason, maxOutputTokens: snapshot.contract.budget.maxOutputTokens, ruleRefs: frozenRuleRefs(snapshot, evidence),
     adoptionAllowed: snapshot.contract.executionBindings?.some(binding => binding.stepId === STEP && binding.version === 2
       && binding.writeTargets.some(target => target.table === 'ttrpgAuthoringDrafts' && target.mode === 'author-confirmed' && target.fields.includes('settingsJson'))
       && binding.formalEntry && JSON.parse(binding.formalEntry.bindingJson).adoptAllowed === true) === true }

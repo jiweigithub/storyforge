@@ -4,6 +4,7 @@ import type {
 } from './open-contract'
 import * as p from './open-contract-parse'
 import { parsePredicate, sourceField } from './open-content-predicates'
+import { TTRPG_OPEN_STORY_EFFECT_OPERATIONS_V1 } from './open-contract'
 
 const ENTITY_KINDS = ['actor', 'location', 'item'] as const
 export function effect(value: unknown, label: string): TtrpgOpenEffectPrimitiveV1 {
@@ -52,7 +53,7 @@ export function effect(value: unknown, label: string): TtrpgOpenEffectPrimitiveV
       p.exact(r, [...common, 'storyKey', 'value'], label)
       return { effectKey, targetRef, family: r.family,
         // Pressure clocks and evidence have their own owners in open content.
-        operation: p.oneOf(r.operation, ['secret.reveal', 'quest.set', 'location.set', 'world-fact.candidate'], label),
+        operation: p.oneOf(r.operation, TTRPG_OPEN_STORY_EFFECT_OPERATIONS_V1, label),
         storyKey: p.key(r.storyKey, label), value: p.nullable(r.value, p.scalar, label) }
     case 'knowledge':
       p.exact(r, [...common, 'evidenceRef'], label)

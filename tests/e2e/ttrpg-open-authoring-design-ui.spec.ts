@@ -81,6 +81,7 @@ test('the default full blank design keeps five sections and author-reviewed sour
   let requests = 0
   await page.route('**/fixture-design-ui/v1/chat/completions', async route => {
     requests++
+    expect(route.request().postDataJSON().max_tokens).toBe(24000)
     const messages = route.request().postDataJSON().messages, output = JSON.parse(response(f, messages, true))
     const keys = JSON.parse(messages[1].content.match(/【实际读取资源闭集】([^\n]+)/)![1])
     for (const proposal of output.proposals) {
@@ -97,6 +98,7 @@ test('the default full blank design keeps five sections and author-reviewed sour
   const assistant = page.getByTestId('ttrpg-open-design-assistant')
   await expect(assistant.getByRole('checkbox', { name: '新增世界事实', exact: true })).toBeChecked()
   await assistant.getByLabel('本次设计要求', { exact: true }).fill('请起草包含真实来源事实的局势、开局、后果与压力三方向。')
+  await expect(assistant).toContainText('输出验收上限 24,000 tokens')
   await assistant.getByRole('button', { name: '生成三个开放设计方向', exact: true }).click()
   await expect(assistant.locator('.ttrpg-design-proposal')).toHaveCount(3)
   const generated = await proof(page, f.scope)
@@ -107,6 +109,7 @@ test('the default full blank design keeps five sections and author-reviewed sour
     return api.readTtrpgOpenAuthoringDesignReviewV1({ scope, runId: runs[0].id })
   }, f.scope)
   expect(original.request.sections).toEqual(['situationTemplates', 'openingSituationKeys', 'effectPlanTemplates', 'pressure', 'factProposals'])
+  expect(original.maxOutputTokens).toBe(24000)
   await expect(assistant.getByRole('checkbox', { name: /^我确认新增事实 fact\.ui\.0\.0/ })).not.toBeChecked()
   await assistant.getByRole('checkbox', { name: /^我确认新增事实 fact\.ui\.0\.0/ }).check()
   await assistant.getByRole('button', { name: '确认选择并保存到开放草稿', exact: true }).click()

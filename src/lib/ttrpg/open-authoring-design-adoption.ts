@@ -21,7 +21,7 @@ import { readTtrpgDraft, saveTtrpgDraft } from './authoring-service'
 import { serializeTtrpgSettings, type TtrpgAuthoringDraftV1 } from './authoring-contract'
 import type { TtrpgAuthoringSettingsV2 } from './authoring-contract-v2'
 import { readTtrpgOpenAuthoringDesignReviewV1, TTRPG_OPEN_DESIGN_STEP_V1 } from './open-authoring-design-harness'
-import { composeTtrpgOpenAuthoringDesignV1, parseTtrpgOpenAuthoringDesignProposalsV1 } from './open-authoring-design-contract'
+import { composeTtrpgOpenAuthoringDesignV1, parseTtrpgOpenAuthoringDesignProposalsV1, ttrpgOpenDesignProfileForSkillV1 } from './open-authoring-design-contract'
 import { verifyTtrpgOpenAuthoringSourceProvenanceV1 } from './open-source-provenance'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import * as p from './open-contract-parse'
@@ -61,10 +61,11 @@ export async function adoptTtrpgOpenAuthoringDesignPayloadV1(input: AdoptInput):
 }
 async function assertWriteAuthority(snapshot: AgentRunSnapshotV1): Promise<void> {
   const binding = snapshot.contract.executionBindings?.find(row => row.stepId === STEP)
-  if (binding?.version !== 2 || !binding.formalEntry || binding.skillId !== 'ttrpg.open.authoring-design.v1') fail('原设计缺少冻结采纳权限')
+  const profile = binding && ttrpgOpenDesignProfileForSkillV1(binding.skillId)
+  if (binding?.version !== 2 || !binding.formalEntry || !profile) fail('原设计缺少冻结采纳权限')
   const definition = { ...JSON.parse(binding.skillDefinitionJson), version: 1 } as AgentSkillDefinitionV1
   const entry = await assertFormalAIEntrySnapshotIntegrityV1(binding.formalEntry, new Map([[binding.skillId, definition]]))
-  if (!entry.adoptAllowed || entry.entryId !== 'ttrpg.open.authoring-design' || !equal(entry.adoptionTargets, [TARGET])
+  if (!entry.adoptAllowed || entry.entryId !== profile.entryId || !equal(entry.adoptionTargets, [TARGET])
     || binding.writeTargets.length !== 1 || !equal(binding.writeTargets[0], { table: TARGET, fields: ['settingsJson'], mode: 'author-confirmed' })) {
     fail('这份旧设计只允许参考；请明确发起具有采纳权限的新请求')
   }
@@ -135,7 +136,7 @@ async function commitOrRead(input: TtrpgOpenDesignAdoptionInputV1) {
   if (!review.current || snapshot.run.status !== 'awaiting_confirmation' || input.candidateHash !== review.candidate.candidateHash
     || !creativeArtifactCanAdoptV1(review.candidate.artifact) || !review.candidate.proposals) fail('原候选不可采纳，请保留参考并重新核对当前方案')
   const raw = await readAgentRunArtifactExactV1({ projectId: input.scope.projectId, artifactKind: 'raw-response', contentHash: review.candidate.rawResponseHash })
-  const context = { request: review.request, base: review.source.settings.openAuthoring, readWorldResourceKeys: review.readWorldResourceKeys }
+  const context = { request: review.request, base: review.source.settings.openAuthoring, readWorldResourceKeys: review.readWorldResourceKeys, ruleRefs: review.ruleRefs }
   const parsed = parseTtrpgOpenAuthoringDesignProposalsV1(raw, context)
   if (!equal(parsed, review.candidate.proposals) || review.candidate.artifact.originalText !== raw
     || review.candidate.artifact.callEvidence.length !== 1 || review.candidate.artifact.callEvidence[0].outputHash !== await hashCanonicalValue(raw)) fail('候选不是原始回答的同一解析结果')
@@ -212,7 +213,7 @@ export async function dismissTtrpgOpenAuthoringDesignRequestV1(input: {
 }) {
   if (input.confirmation !== 'discard-design-request-v1') fail('请明确确认结束这份请求')
   let snapshot = await readAgentRunV1(input.scope, input.runId)
-  if (!snapshot.contract.executionBindings?.some(binding => binding.stepId === STEP && binding.skillId === 'ttrpg.open.authoring-design.v1')
+  if (!snapshot.contract.executionBindings?.some(binding => binding.stepId === STEP && !!ttrpgOpenDesignProfileForSkillV1(binding.skillId))
     || snapshot.run.productRuntimeSessionId != null || snapshot.run.productBuildId != null) fail('不是当前作品的作者设计请求')
   if (['completed', 'cancelled', 'failed'].includes(snapshot.run.status)) return snapshot.run.status
   const step = snapshot.projection.steps[STEP]

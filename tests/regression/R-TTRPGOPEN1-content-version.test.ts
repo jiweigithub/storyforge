@@ -11,10 +11,35 @@ import { createSignedTtrpgCreatorPackageV2, verifyTtrpgCreatorPackageVersionedV1
 import { createTtrpgVerifiedContentViewV1, hashTtrpgFrozenPredicateIndexV1 } from '../../src/lib/ttrpg/content-version'
 import { openCampaignFixture, openHybridCampaignFixture, openRuleFixture, emptyOpenAuthoringFixture } from '../helpers/ttrpg-open-content'
 import type { RulePackV2, TtrpgCampaignContentV2, TtrpgCharacterTemplateV2, TtrpgPredicateV1, TtrpgOpenApprovalActorV1 } from '../../src/lib/ttrpg/open-contract'
-import type { TtrpgCharacterTemplateV1 } from '../../src/lib/types'
+import type { TtrpgCharacterTemplateV1, TtrpgEffectPrimitiveV2 } from '../../src/lib/types'
+import type { TtrpgOpenEffectPrimitiveV1 } from '../../src/lib/ttrpg/open-contract'
+import { effect } from '../../src/lib/ttrpg/open-content-templates'
+import { parseTtrpgEffectPlanV2 } from '../../src/lib/ttrpg/effect-plan'
 
 const rule = openRuleFixture()
 const campaign = openCampaignFixture()
+
+describe('R-TTRPGOPEN1 actual open effect wire subset', () => {
+  it('uses the existing open story subset in the TypeScript contract and parser while retaining the knowledge owner', () => {
+    expectTypeOf<Extract<TtrpgOpenEffectPrimitiveV1, { family: 'story' }>['operation']>()
+      .toEqualTypeOf<'secret.reveal' | 'quest.set' | 'location.set' | 'world-fact.candidate'>()
+    expectTypeOf<Extract<TtrpgEffectPrimitiveV2, { family: 'story' }>['operation']>()
+      .toEqualTypeOf<'clue.discover' | 'secret.reveal' | 'quest.set' | 'clock.advance' | 'location.set' | 'world-fact.candidate'>()
+    const knowledge = { effectKey: 'knowledge.original', family: 'knowledge', operation: 'knowledge.discover', targetRef: 'hero', evidenceRef: 'clue.harbor' }
+    expect(effect(knowledge, 'open knowledge')).toEqual(knowledge)
+    expect(() => parseTtrpgCampaignContentV2(openCampaignFixture(), rule)).not.toThrow()
+  })
+  it.each(['clock.advance', 'clue.discover'])('preserves generic/scripted %s but does not grant it to an open effect template', operation => {
+    const primitive = { effectKey: 'legacy.original', family: 'story', operation, targetRef: 'hero', storyKey: 'original', value: 1 }
+    const generic = parseTtrpgEffectPlanV2({ schema: 'storyforge.ttrpg-effect-plan', version: 2, planKey: 'legacy.plan', degree: 'success',
+      sourceEventId: 'event.1', ruleRef: 'rules.original', reason: '原通用格式', audience: 'party', idempotencyKey: 'legacy.plan', status: 'immediate', effects: [primitive] })
+    expect(generic.effects).toEqual([primitive])
+    expect(() => effect(primitive, 'open template')).toThrow('枚举无效')
+    const c = openCampaignFixture() as unknown as { effectPlanTemplates: { effects: unknown[] }[] }
+    c.effectPlanTemplates[0].effects = [primitive]
+    expect(() => parseTtrpgCampaignContentV2(c, rule)).toThrow('枚举无效')
+  })
+})
 
 describe('R-TTRPGOPEN1 frozen shared pools', () => {
   it('rejects missing, unaffordable and conflicting pool definitions without altering V1 parsing', () => {

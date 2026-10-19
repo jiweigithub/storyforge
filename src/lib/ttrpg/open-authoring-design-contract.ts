@@ -1,7 +1,7 @@
 /** S2 design proposals are drafts, never a production start or a runtime plan.
  * Models may fill only the sections requested by the author. Protected policy,
  * prior facts and ownership come from the captured draft, not model JSON. */
-import type { TtrpgOpenAuthoringV1, TtrpgOpenFrozenFactV1 } from './open-contract'
+import type { TtrpgOpenAuthoringV1, TtrpgOpenFrozenFactV1, RulePackV2 } from './open-contract'
 import { parseTtrpgOpenAuthoringV1 } from './open-content-authoring'
 import { frozenFact } from './open-content-predicates'
 import { canonicalProductProductionJsonV2 as stable } from '../product-production/hash'
@@ -11,6 +11,28 @@ export const TTRPG_OPEN_AUTHORING_DESIGN_SECTIONS_V1 = [
   'situationTemplates', 'openingSituationKeys', 'effectPlanTemplates', 'pressure', 'dynamicEntityTemplates', 'factProposals',
 ] as const
 export type TtrpgOpenAuthoringDesignSectionV1 = typeof TTRPG_OPEN_AUTHORING_DESIGN_SECTIONS_V1[number]
+export const TTRPG_OPEN_DESIGN_PROMPT_VERSION_V2 = 'ttrpg-open-authoring-design-v2'
+/** These are bounded execution profiles of the same pipeline and authority.
+ * Each must match its registered Skill and exact formal-entry binding. */
+export const TTRPG_OPEN_DESIGN_PROFILES_V1 = [
+  { skillId: 'ttrpg.open.authoring-design.v1', entryId: 'ttrpg.open.authoring-design', maxOutputTokens: 16_000 },
+  { skillId: 'ttrpg.open.authoring-design.full.v1', entryId: 'ttrpg.open.authoring-design.full', maxOutputTokens: 24_000 },
+] as const
+export function ttrpgOpenDesignProfileForSkillV1(skillId: string) {
+  return TTRPG_OPEN_DESIGN_PROFILES_V1.find(profile => profile.skillId === skillId)
+}
+export function ttrpgOpenDesignProfileV1(sections: readonly TtrpgOpenAuthoringDesignSectionV1[]) {
+  return TTRPG_OPEN_DESIGN_PROFILES_V1[sections.includes('situationTemplates') ? 1 : 0]
+}
+/** Per-request intent under the registered Skill ceiling; never used to
+ * reinterpret the budget of an already frozen request. */
+export function ttrpgOpenDesignOutputBudgetV1(sections: readonly TtrpgOpenAuthoringDesignSectionV1[]): number {
+  return ttrpgOpenDesignProfileV1(sections).maxOutputTokens
+}
+export function ttrpgOpenDesignRuleRefsV1(rule: RulePackV2): string[] {
+  return [...new Set([rule.ruleSystemId, ...rule.actions.map(item => item.key), ...rule.checks.map(item => item.key),
+    ...rule.oracles.map(item => item.oracleKey)])].sort()
+}
 export const MAX_TTRPG_OPEN_AUTHORING_DESIGN_CHARACTERS_V1 = 120_000
 type DesignFields = Exclude<TtrpgOpenAuthoringDesignSectionV1, 'factProposals'>
 export type TtrpgOpenAuthoringDesignPatchV1 = Partial<Pick<TtrpgOpenAuthoringV1, DesignFields>> & { factProposals?: TtrpgOpenFrozenFactV1[] }
@@ -28,6 +50,9 @@ export interface TtrpgOpenAuthoringDesignContextV1 {
   /** Producer must derive this from actual Context Manifest reads, not merely
    * the allowed SourcePlan catalogue. Field-body/hash verification stays separate. */
   readWorldResourceKeys: readonly string[]
+  /** Only the new frozen prompt protocol supplies this set. Older requests
+   * retain their original staged S3 rule-reference validation semantics. */
+  ruleRefs?: readonly string[]
 }
 
 /** An existing authored design may already declare references whose final
@@ -64,6 +89,10 @@ function draftFromPatch(value: unknown, context: TtrpgOpenAuthoringDesignContext
   const merged: Record<string, unknown> = { ...base, factPolicy: [...base.factPolicy, ...facts.map(fact => ({ fact, authorConfirmed: false }))] }
   for (const key of request.sections) if (key !== 'factProposals') merged[key] = row[key]
   const authoring = parseTtrpgOpenAuthoringV1(merged)
+  if (context.ruleRefs && request.sections.includes('effectPlanTemplates')) {
+    const rules = new Set(context.ruleRefs)
+    for (const plan of authoring.effectPlanTemplates) if (!rules.has(plan.ruleRef)) p.fail(`后果模板引用未冻结规则:${plan.ruleRef}`)
+  }
   // Typed draft parsers own the nested shape. Check only actual-world source
   // references here; character bindings and complete campaign closure still need
   // the original S3 production/compiler/publication gates.

@@ -174,7 +174,13 @@ export interface TtrpgOpenEffectParameterV1 {
   allowDynamicFromTemplateKeys: string[]
   required: boolean
 }
-export type TtrpgOpenEffectPrimitiveV1 = TtrpgEffectPrimitiveV2 | {
+/** Pressure clocks and evidence use their own open owners. The generic
+ * scripted story branch is broader than the open parser/runtime contract. */
+export const TTRPG_OPEN_STORY_EFFECT_OPERATIONS_V1 = ['secret.reveal', 'quest.set', 'location.set', 'world-fact.candidate'] as const
+export type TtrpgOpenEffectPrimitiveV1 = Exclude<TtrpgEffectPrimitiveV2, { family: 'story' }>
+  | (Omit<Extract<TtrpgEffectPrimitiveV2, { family: 'story' }>, 'operation'> & {
+    operation: typeof TTRPG_OPEN_STORY_EFFECT_OPERATIONS_V1[number]
+  }) | {
   effectKey: string
   family: 'knowledge'
   operation: 'knowledge.discover'

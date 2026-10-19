@@ -36,6 +36,7 @@ export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEd
   const [requestDirty, setRequestDirty] = useState(false)
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [refresh, setRefresh] = useState(0)
   const [unknownAck, setUnknownAck] = useState(false), [factPage, setFactPage] = useState(0)
+  const [frozenOutputBudget, setFrozenOutputBudget] = useState<number | null>(null)
   const requestEdited = useRef(false)
   useEffect(() => { if (!requestEdited.current) setSections(defaultSections(needsInitialFacts)) }, [needsInitialFacts])
   const live = useRef(true), epoch = useRef(0), activeOperation = useRef(false), ownFlush = useRef(false)
@@ -58,6 +59,7 @@ export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEd
     const generation = epoch, token = ++generation.current
     const current = () => live.current && token === generation.current
     setLoading(true)
+    setFrozenOutputBudget(null)
     void (async () => {
       const history = await design.listTtrpgOpenAuthoringDesignRunsV1(scope)
       if (!current()) return
@@ -73,7 +75,7 @@ export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEd
       const result = snapshot.events.some(event => event.type === 'candidate.persisted') || saved
         ? await design.readTtrpgOpenAuthoringDesignReviewV1({ scope, runId: id }) : null
       if (!current()) return
-      setAdoption(saved); setReview(result); setRaw(original)
+      setAdoption(saved); setReview(result); setRaw(original); setFrozenOutputBudget(snapshot.contract.budget.maxOutputTokens)
       if (result && result.candidate.candidateHash !== loadedCandidate.current) {
         loadedCandidate.current = result.candidate.candidateHash
         setSelection(Object.fromEntries(result.request.sections.map(key => [key, result.candidate.proposals?.proposals[0]?.proposalKey ?? ''])))
@@ -87,7 +89,7 @@ export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEd
   const composition = useMemo(() => {
     if (!review?.candidate.proposals) return { value: null, error: '' }
     try { return { value: design.composeTtrpgOpenAuthoringDesignV1(review.candidate.proposals, selection, {
-      request: review.request, base: review.source.settings.openAuthoring, readWorldResourceKeys: review.readWorldResourceKeys }), error: '' } }
+      request: review.request, base: review.source.settings.openAuthoring, readWorldResourceKeys: review.readWorldResourceKeys, ruleRefs: review.ruleRefs }), error: '' } }
     catch (error) { return { value: null, error: message(error) } }
   }, [review, selection])
   const oldFactKeys = new Set(review?.source.settings.openAuthoring.factPolicy.map(item => item.fact.factKey) ?? [])
@@ -141,6 +143,7 @@ export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEd
       <fieldset><legend>本次要起草的分区</legend>{design.TTRPG_OPEN_AUTHORING_DESIGN_SECTIONS_V1.map(key => <label className="ttrpg-check" key={key}>
         <input type="checkbox" checked={sections.includes(key)} onChange={event => { mark(); setRequestDirty(true); setSections(previous => event.target.checked ? [...previous, key] : previous.filter(item => item !== key)) }}/>{labels[key]}</label>)}</fieldset>
       {missingInitialFacts && <p>空白作品的局势需要事实来源，请勾选“新增世界事实”。生成后仍需本人逐条核对。</p>}
+      <p>本次最多调用 1 次模型；输出验收上限 {design.ttrpgOpenDesignOutputBudgetV1(sections).toLocaleString('zh-CN')} tokens。超出时保留原回答，不能采用。</p>
       <button className="lf-action lf-action-primary" type="button" disabled={!instruction.trim() || !sections.length || missingInitialFacts || runs.some(item => !terminal.has(item.status))} onClick={generate}>生成三个开放设计方向</button>
       {runs.some(item => !terminal.has(item.status)) && <p>先查看并处理原请求，之后才能发起新的请求。</p>}
       {pending && <button className="lf-action" type="button" onClick={() => {
@@ -148,13 +151,14 @@ export default function TtrpgOpenDesignAssistant({ scope, revision, hasUnsavedEd
         setSelection(Object.fromEntries(review?.request.sections.map(key => [key, review.candidate.proposals?.proposals[0]?.proposalKey ?? '']) ?? [])); clearPending()
       }}>放弃本页未保存的要求与选择</button>}
       {!!runs.length && <label>本作品的设计请求<select aria-label="本作品的设计请求" disabled={pending} value={selectedId ?? ''} onChange={event => {
-        epoch.current++; loadedCandidate.current = ''; setReview(null); setAdoption(null); setRaw(null); setUnknownAck(false); setError(''); setRunId(Number(event.target.value))
+        epoch.current++; loadedCandidate.current = ''; setReview(null); setAdoption(null); setRaw(null); setFrozenOutputBudget(null); setUnknownAck(false); setError(''); setRunId(Number(event.target.value))
       }}>{runs.map(item => <option key={item.id} value={item.id}>请求 {item.id} · {statusLabels[item.status] ?? item.status} · {new Date(item.createdAt).toLocaleString()}</option>)}</select></label>}
       <button className="lf-action" type="button" onClick={() => setRefresh(value => value + 1)}>刷新原请求状态</button>
     </fieldset>
     {busy && <p role="status">正在处理本次操作。{controller.current && <button className="lf-action" type="button" onClick={() => controller.current?.abort()}>停止本机等待</button>}</p>}
     {loading && <p role="status">正在读取原记录…</p>}
     {selectedRun && <p>原请求状态：{statusLabels[selectedRun.status] ?? selectedRun.status}</p>}
+    {selectedRun && frozenOutputBudget != null && <p>原请求冻结的输出验收上限：{frozenOutputBudget.toLocaleString('zh-CN')} tokens。</p>}
     {raw != null && <details><summary>查看与下载模型原始回答</summary><pre className="ttrpg-design-json">{raw}</pre>
       <button className="lf-action" type="button" onClick={() => downloadTextFile(raw, `跑团设计请求-${selectedId}-原始回答.txt`, 'text/plain')}>下载原始回答</button></details>}
     {review && !adoption && <>
