@@ -1,3 +1,4 @@
+import { assertAvgSoundBuildWriteEnabledV1 } from '../avg/sound-write-guard'
 import { avgRuntimeStage } from '../avg/executable-module'
 import { classifyAvgAuthorPrototypeBriefV1, assertAvgSoundPrototypeWriteEnabledV1, avgPrototypeTechnicalQualitySatisfiedV1 } from '../avg/prototype-contract'
 import { parseProductBuildQualityReportV1 } from './quality-contract'
@@ -381,8 +382,9 @@ async function inspectAdoption(scope: WorkspaceScope, productionId: number): Pro
     || preview.buildNumber !== build.buildNumber || preview.runtimePackage.sourceWorld.contentHash !== brief.source.worldContentHash) {
     fail('Preview 与 Build/Brief 不闭合')
   }
-  const prototypeKind=classifyAvgAuthorPrototypeBriefV1(brief)
-  if(prototypeKind==='sound')assertAvgSoundPrototypeWriteEnabledV1()
+  const originalKind=classifyAvgAuthorPrototypeBriefV1(brief)
+  const usesOriginalSound=await assertAvgSoundBuildWriteEnabledV1(scope,build.id!,brief)
+  const prototypeKind=originalKind&&usesOriginalSound?'sound':originalKind
   const nativePrototype=prototypeKind!==null&&preview.version===2
   if(preview.version===2&&!nativePrototype)fail('V2 当前只支持已登记的 AVG 作者本地原型发布')
   const mediaRuntimeRequired = (avgRuntimeStage(preview.runtimePackage)?.assets.length??0)>0 || brief.media.requiredMediaKinds.length > 0

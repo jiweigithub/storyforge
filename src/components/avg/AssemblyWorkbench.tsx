@@ -4,7 +4,7 @@ import { PRODUCT_MEDIA_KINDS } from '../../lib/types'
 import { AVG_AUTHORING_PRESETS_V1, createAvgAuthoringPresetV1 } from '../../lib/avg/authoring-presets'
 import { parseAvgAuthorWorkspaceV1, type AvgAuthorWorkspaceV1 } from '../../lib/avg/author-workspace-contract'
 import { saveAvgAuthorWorkspaceV1, importAvgMediaForAssemblyV1, listAvgDraftMediaV1 } from '../../lib/avg/editor-service'
-import { readAvgAssemblyWorkspaceV1, prepareAvgAssemblyBriefV1, startAvgAssemblyV1, stageAvgWorkspaceInputV1, confirmAvgWorkspaceInputV1, runAvgAssemblyV1, restartAvgAssemblyFromDraftV1, saveAvgVisualBatchDraftV1, clearAvgVisualBatchDraftV1 } from '../../lib/avg/assembly-service'
+import { readAvgAssemblyWorkspaceV1, prepareAvgAssemblyBriefV1, startAvgAssemblyV1, stageAvgWorkspaceInputV1, confirmAvgWorkspaceInputV1, runAvgAssemblyV1, restartAvgAssemblyFromDraftV1, saveAvgVisualBatchDraftV1, clearAvgVisualBatchDraftV1, keepAvgGeneratedSoundStageDraftV1 } from '../../lib/avg/assembly-service'
 import { startProductProductionPreviewV1, stopProductProductionV1, recoverImportedProductProductionProofsV1 } from '../../lib/product-production/service'
 import { parseProductProductionBriefV3 } from '../../lib/product-production/contracts'
 import { canonicalProductProductionJsonV2 } from '../../lib/product-production/hash'
@@ -104,7 +104,8 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
 
   const build=view?.details?.build,details=view?.details
   const frozen=!!build?.previewHash
-  const canAdopt=!!build&&['authorized','building'].includes(build.status)&&(!details?.executionBrief?.avgSoundPlanning||avgSoundProductionExecutionReadyV1())
+  const inheritedSound=!!model.presentation.inheritedSounds?.length
+  const canAdopt=!!build&&['authorized','building'].includes(build.status)&&(!details?.executionBrief?.avgSoundPlanning&&!inheritedSound||avgSoundProductionExecutionReadyV1())
   const activeBuild=!!build&&!frozen&&details?.production.status!=='brief-ready'
   const canEditMediaDomain=!activeBuild
   const currentScene=model.systemPlan.scenes.find(scene=>scene.key===sceneKey)??model.systemPlan.scenes[0]
@@ -122,7 +123,7 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
   const preparedSound=details?.brief?parseProductProductionBriefV3(details.brief.briefJson).avgSoundPlanning:undefined
   const soundPlanning=details?.executionBrief?.avgSoundPlanning??preparedSound
   const soundPrototype=!!details?.executionBrief&&classifyAvgAuthorPrototypeBriefV1(details.executionBrief)==='sound'
-  const soundStartReady=(!model.soundProduction||!!preparedSound)&&(!soundPlanning||avgSoundProductionExecutionReadyV1())
+  const soundStartReady=(!model.soundProduction||!!preparedSound)&&(!soundPlanning&&!inheritedSound||avgSoundProductionExecutionReadyV1())
   const soundProofRecoveryRequired=!!soundPlanning&&frozen&&view?.soundProgress!=null&&!view.soundProgress.terminal
   const assembly=storedAssembly??visualPlanning?.assembly??soundPlanning?.assembly
   const voiceBatch=storedAssembly?.version===3?parseAvgStoredAssemblyBriefV3(storedAssembly).assembly.voice.batch:null
@@ -176,7 +177,7 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
       ...(type==='play-audio'?{volume:0.8,loop:asset?.kind==='bgm'||asset?.kind==='ambience'}:{})})
     })
   }
-  const readyForStage=!!view&&!dirty&&!jsonPending&&!busy&&!mediaPending&&(!soundPlanning||avgSoundProductionExecutionReadyV1())
+  const readyForStage=!!view&&!dirty&&!jsonPending&&!busy&&!mediaPending&&(!soundPlanning&&!inheritedSound||avgSoundProductionExecutionReadyV1())
   const bindVoice=(lineKey:string,assetKey:string)=>{
     if(!script) return
     const source=accepted(`avg.content.scene-script.${script.sceneKey}`)
@@ -231,7 +232,7 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
       <p>编辑规则、对白、演出和合法媒资，逐项确认后生成试玩预览。内置文本用于工程校准，专业故事与艺术质量另行验收。</p>
       {error&&<p role="alert" className="avg-assembly-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
       {progressReadError&&<p role="status" aria-label="制作进度读取状态">进度暂未更新：{progressReadError}。已接收的结果保留。</p>}
-      {soundPlanning&&!avgSoundProductionExecutionReadyV1()&&<p role="status">声音制作处于实验阶段，已有记录和产物保留；当前生成、采用与本地原型验收关闭，已有原声音和版本可只读播放。</p>}
+      {(soundPlanning||inheritedSound)&&!avgSoundProductionExecutionReadyV1()&&<p role="status">声音制作处于实验阶段，已有记录和产物保留；当前生成、采用与本地原型验收关闭，已有原声音和版本可只读播放。</p>}
       {!view?<p>{error?'当前工作区无法打开，请按错误提示处理或返回作品库。':'读取作者工作区…'}</p>:<><div className="avg-actions">
         <button className="lf-action lf-action-primary" disabled={busy||jsonPending||mediaPending} onClick={()=>void run(persist)}>保存编辑草稿</button>
         <button className="lf-action" disabled={busy||dirty||jsonPending||mediaPending} onClick={()=>void run(reload)}>读取已保存版本</button>
@@ -325,6 +326,11 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
         disabled={busy||dirty||jsonPending||imagePending||voicePending||visualPending||soundWorkPending}
         canEdit={!build||frozen||details?.production.status==='brief-ready'||['cancelled','failed','recovery-required'].includes(build.status)}
         onPending={setSoundDraftPending} onAction={run} onReload={reload} onNotice={setNotice}/></Suspense></div>}
+      {soundPlanning&&model.soundProduction&&frozen&&build?.id&&<div hidden={section!=='media'}><p>保留已确认声音及原播放用途，结束本批需求后可编辑下一版本；原音频、审听、费用和已保存版本继续保留。</p>
+        <button className="lf-action" disabled={busy||dirty||mediaPending||mediaRunning||!avgSoundProductionExecutionReadyV1()} onClick={()=>void run(async()=>{
+          await keepAvgGeneratedSoundStageDraftV1({scope,productionId:details!.production.id!,expectedDraftRevision:view.draft.revision,expectedBuildId:build.id!})
+          await reload();setNotice('已保留原声音与播放用途；新版本仍需独立确认演出和验收。')
+        })}>保留已采用声音，结束本批需求</button></div>}
       {soundPlanning&&<div hidden={section!=='media'}><Suspense fallback={<p>正在读取声音制作工作台…</p>}><SoundProductionPanel scope={scope} view={view}
         disabled={busy||dirty||jsonPending||imagePending||voicePending||visualPending||soundDraftPending} canAdopt={canAdopt} sourcesReady={sourcesReady}
         declaration={declaration} visible={section==='media'} generating={mediaRunning} onPending={setSoundWorkPending} onAction={run} onReload={reload} onNotice={setNotice}
@@ -393,7 +399,7 @@ export default function AssemblyWorkbench({scope,productionId,page,onSource,onPr
         </div>
         {build&&<><p>Build #{build.buildNumber} · {build.status}{build.previewHash?` · 预览 ${build.previewHash.slice(0,12)}`:''}</p>{build.failureJson!=='{}'&&<pre role="status">{build.failureJson}</pre>}<details><summary>版本与验收证据</summary><p>根回执：{build.rootTerminalReceiptHash||'待组装完成'}</p><pre>{build.qualityReportJson}</pre></details></>}
         {frozen&&visualPlanning&&<p>专业视觉预览已冻结。本路径的后继修订与本地原型发布尚待验收，当前可试玩和导出完整备份。</p>}
-        {frozen&&!visualPlanning&&(!soundPlanning||soundPrototype)&&details?.production.id&&<PrototypeReleasePanel key={`${scope.workId}:${build!.id}:${build!.previewHash}`} scope={scope} productionId={details.production.id} build={build!} disabled={busy||dirty||jsonPending} writesEnabled={!soundPlanning||avgSoundProductionExecutionReadyV1()} onChanged={reload} onStarted={onPreviewStarted} onBusyChange={value=>{busyRef.current=value;setBusy(value)}}/>}
+        {frozen&&!visualPlanning&&(!soundPlanning||soundPrototype)&&details?.production.id&&<PrototypeReleasePanel key={`${scope.workId}:${build!.id}:${build!.previewHash}`} scope={scope} productionId={details.production.id} build={build!} disabled={busy||dirty||jsonPending} writesEnabled={(!soundPlanning&&!inheritedSound)||avgSoundProductionExecutionReadyV1()} onChanged={reload} onStarted={onPreviewStarted} onBusyChange={value=>{busyRef.current=value;setBusy(value)}}/>}
       </section>}
       <section className="lf-paper"><details><summary>高级配置：完整规则、脚本与演出</summary><p>配置作为编辑草稿保存；正式采用前会严格校验，不能写入脚本代码或未登记模块。</p>
         <textarea aria-label="高级组装配置" className="avg-assembly-json" spellCheck={false} disabled={busy||mediaPending} value={advanced} onChange={event=>{setAdvanced(event.target.value);setJsonPending(true)}}/>

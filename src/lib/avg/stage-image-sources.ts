@@ -43,6 +43,7 @@ export async function prepareAvgInheritedStageDraftV1(input:{scope:WorkspaceScop
   for(const asset of next.presentation.stage.assets){
     if(entries.some(entry=>entry.assetKey===asset.assetKey))continue
     if (asset.kind === 'voice' && next.presentation.inheritedVoices?.some(entry => entry.assetKey === asset.assetKey)) continue
+    if (next.presentation.inheritedSounds?.some(entry => entry.assetKey === asset.assetKey)) continue
     if (asset.kind === 'voice' && input.voiceRecovery && next.voiceProduction) {
       const { voice } = await assertAvgVoiceDraftV1(next.voiceProduction)
       const incoming = voice.batch.requirements.find(r => r.assetKey === asset.assetKey)

@@ -19,16 +19,21 @@ test('original published Sound backup remains natively playable with both factor
   })
   await page.addInitScript(() => localStorage.setItem('storyforge_guide_completed', 'e2e'))
   await page.goto('./avg/library')
-  const copied = await page.evaluate(async backup => {
+  const copied = await page.evaluate(async ({ backup, releaseUid, sourceScope }) => {
     const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
     const [drafts, files, { db }, config] = await Promise.all([load('/storyforge/src/lib/avg/draft-service.ts'), load('/storyforge/src/lib/export/json-export.ts'),
       load('/storyforge/src/lib/db/schema.ts'), load('/storyforge/src/stores/ai-config.ts')])
-    await drafts.createAvgDraftV1('声音版本恢复的隔离占位作品')
+    const occupied = Math.max(sourceScope.projectId, sourceScope.workId)
+    if (!Number.isSafeInteger(occupied) || occupied < 1 || occupied > 32) throw new Error('Native fixture owner range exceeded')
+    for (let i = 0; i < occupied; i++) await drafts.createAvgDraftV1(`声音版本恢复的隔离占位作品 ${i + 1}`)
     config.useAIConfigStore.getState().setConfig({ provider: 'agnes', baseUrl: 'https://sound-proposal.fixture.invalid/v1', apiKey: '', model: 'agnes-2.5-flash' })
-    const projectId = await files.importProjectJSON(backup), record = await db.productReleases.where('projectId').equals(projectId).first()
+    const projectId = await files.importProjectJSON(backup), records = await db.productReleases.where('projectId').equals(projectId).toArray()
+    const matches = records.filter((r: any) => JSON.parse(r.manifestJson).lineage.releaseUid === releaseUid)
+    if (matches.length !== 1) throw new Error('Missing or ambiguous exact exported Release')
+    const record = matches[0]
     return { projectId, worldId: record.worldId, workId: record.workId, releaseId: record.id, manifestJson: record.manifestJson,
       counts: [await db.productBuilds.count(), await db.agentRuns.count(), await db.productQualityGateReceipts.count(), await db.productProductionCommands.count(), await db.productReleases.count()] }
-  }, exported.backup)
+  }, { backup: exported.backup, releaseUid: exported.expected.releaseUid, sourceScope: exported.expected.scope })
   expect(copied.projectId).not.toBe(exported.expected.scope.projectId)
   expect(copied.workId).not.toBe(exported.expected.scope.workId)
   expect(createHash('sha256').update(copied.manifestJson).digest('hex')).toBe(createHash('sha256').update(exported.expected.manifestJson).digest('hex'))

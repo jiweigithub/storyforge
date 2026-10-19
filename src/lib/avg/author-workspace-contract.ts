@@ -10,6 +10,7 @@ import { readAvgVoiceDraftV1 } from './voice-draft-contract'
 import type { AvgVoiceExactStorageV1 } from './voice-exact-storage'
 import { parseAvgInheritedStageVoicesV1, type AvgInheritedStageVoiceV1 } from './stage-voice-source-contract'
 import { parseAvgSoundProductionDraftV1, type AvgSoundProductionDraftV1 } from './sound-draft-contract'
+import { parseAvgInheritedStageSoundsV1, type AvgInheritedStageSoundV1 } from './stage-sound-source-contract'
 
 /** Human-authored assembly, not a professional director Skill result. No local IDs. */
 export interface AvgAuthorStageV1 {
@@ -20,14 +21,16 @@ export interface AvgAuthorStageV1 {
   reading?: AvgReadingPlanV1
   inheritedImages?: AvgInheritedStageImageV1[]
   inheritedVoices?: AvgInheritedStageVoiceV1[]
+  inheritedSounds?: AvgInheritedStageSoundV1[]
 }
 export function parseAvgAuthorStageV1(value: unknown): AvgAuthorStageV1 {
   const body = avgProtocolBody(value)
   const hasReading = !!body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'reading')
   const hasInherited=!!body&&typeof body==='object'&&Object.prototype.hasOwnProperty.call(body,'inheritedImages')
   const hasInheritedVoices = !!body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'inheritedVoices')
+  const hasInheritedSounds = !!body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'inheritedSounds')
   const row = avgRecord(body, ['schema','version','aspectRatio','stage', ...(hasReading ? ['reading'] : []),...(hasInherited?['inheritedImages']:[]),
-    ...(hasInheritedVoices ? ['inheritedVoices'] : [])], 'author stage')
+    ...(hasInheritedVoices ? ['inheritedVoices'] : []), ...(hasInheritedSounds ? ['inheritedSounds'] : [])], 'author stage')
   if (row.schema !== 'storyforge.avg.author-stage' || row.version !== 1) throw new Error('[avg] 作者演出版本无效')
   const stage = parseAvgExecutableStageV1(row.stage)
   if (stage.assets.length > 128 || stage.assets.reduce((sum,asset) => sum + asset.byteSize, 0) > 64*1024*1024)
@@ -35,7 +38,8 @@ export function parseAvgAuthorStageV1(value: unknown): AvgAuthorStageV1 {
   return { schema: row.schema, version: 1, aspectRatio: avgEnum(row.aspectRatio, ['16:9','4:3'] as const, 'aspectRatio'),
     stage, ...(hasReading ? { reading: parseAvgReadingPlanV1(row.reading) } : {}),
     ...(hasInherited?{inheritedImages:parseAvgInheritedStageImagesV1(row.inheritedImages,stage.assets)}:{}),
-    ...(hasInheritedVoices ? { inheritedVoices: parseAvgInheritedStageVoicesV1(row.inheritedVoices, stage.assets) } : {}) }
+    ...(hasInheritedVoices ? { inheritedVoices: parseAvgInheritedStageVoicesV1(row.inheritedVoices, stage.assets) } : {}),
+    ...(hasInheritedSounds ? { inheritedSounds: parseAvgInheritedStageSoundsV1(row.inheritedSounds, stage.assets) } : {}) }
 }
 
 /** Editable input only. Saving this draft neither starts production nor adopts anything. */

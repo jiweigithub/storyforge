@@ -21,6 +21,8 @@ import { buildAvgSoundProductionPlanV1, AVG_SOUND_PLAN_KEY_V1, AVG_SOUND_PROPOSA
 import { assertAvgSoundRoleProposalV1, validateAvgSoundPlanSemanticV1 } from './sound-role-proposal'
 import { readAvgSoundProposalEvidenceV1 } from './sound-planning-evidence'
 import { parseAvgAuthorSoundChoiceV1, type AvgAuthorSoundChoiceV1 } from './sound-choice-contract'
+import { readAvgInheritedStageSoundsV1 } from './stage-sound-sources'
+import { assertAvgSoundPrototypeWriteEnabledV1 } from './prototype-contract'
 import { parseAvgAuthorSoundReviewV3, type AvgSoundReviewIssuesV3 } from './sound-review-contract'
 import { assertAvgSoundReviewRevisionV3, assertAvgSoundReviewScopeV3, assertAvgSoundReviewSelectableV3 } from './sound-review'
 import { readAvgRawSoundSourceV1, readAvgChosenSoundSourceV1, type AvgSoundChoiceValidationV1 } from './sound-choice-validation'
@@ -238,6 +240,19 @@ async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, 
     for (const [key, voice] of inheritedVoices) {
       if (generated.has(key)) throw new Error('[avg-voice] 本批新配音不能同时借旧版配音来源')
       generated.set(key, voice)
+    }
+  }
+  if (payload.inheritedSounds?.length) {
+    const scripts = inputs.filter(row => row.artifactKey.startsWith('avg.content.scene-script.')).map(row => {
+      const script = parseAvgProfessionalArtifactV1(row.payloadJson)
+      if (script.schema !== 'storyforge.avg.scene-script') throw new Error('[avg-sound] 沿用声音缺少已采用脚本')
+      return script
+    })
+    const sounds = await readAvgInheritedStageSoundsV1({ scope, payload, scripts, productionKey: context.production.productionKey,
+      targetBuildNumber: context.build.buildNumber, worldContentHash: context.brief.source.worldContentHash })
+    for (const [key, sound] of sounds) {
+      if (generated.has(key)) throw new Error('[avg-sound] 当前声音不能同时借用旧版来源')
+      generated.set(key, sound)
     }
   }
   return validateAvgAuthorAssemblyV1({ scope, payload, inputs: context.brief.avgVisualPlanning || context.brief.avgSoundPlanning || a && a.version !== 1
@@ -556,10 +571,11 @@ export async function stageAvgAuthorArtifactV1(input: {
   const systemValidation = prepared.payload.schema === 'storyforge.avg.system-plan'
     ? await validateSystem(prepared.payload) : undefined
   const proofTables = await mediaProofTables(input.buildId,prepared.payload.schema==='storyforge.avg.author-stage'
-    && (!!prepared.payload.inheritedImages?.length || !!prepared.payload.inheritedVoices?.length))
+    && (!!prepared.payload.inheritedImages?.length || !!prepared.payload.inheritedVoices?.length || !!prepared.payload.inheritedSounds?.length))
   return db.transaction('rw', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands, db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects,
     ...proofTables), async () => {
     const context = await authority(scope, input.buildId)
+    if (prepared.payload.schema === 'storyforge.avg.author-stage' && prepared.payload.inheritedSounds?.length) assertAvgSoundPrototypeWriteEnabledV1()
     if (context.build.stateRevision !== input.expectedBuildRevision || context.build.controlEpoch !== input.controlEpoch) throw new Error('[avg] Build revision/epoch 已 stale')
     const task = authorTask(context, taskKey, artifactKey)
     assertSourceReferences(context, prepared.payload)
@@ -626,6 +642,7 @@ async function prepareAdoption(scope: WorkspaceScope, production: ProductProduct
   const task = authorTask(context, envelope.taskKey, command.artifactKey)
   const prepared = prepareAuthorInput({ artifactKey: candidate.artifactKey, kind: candidate.kind,
     payload: candidate.payloadJson, allowedOutputKeys: task.outputArtifactKeys })
+  if (prepared.payload.schema === 'storyforge.avg.author-stage' && prepared.payload.inheritedSounds?.length) assertAvgSoundPrototypeWriteEnabledV1()
   const systemValidation = prepared.payload.schema === 'storyforge.avg.system-plan'
     ? await validateSystem(prepared.payload) : undefined
   assertSourceReferences(context, prepared.payload)
@@ -893,7 +910,8 @@ export async function readAvgConfirmedSoundChoicesV1(input: Pick<Parameters<type
       const validation = { ...selected.validation, reviewReceiptHash: review.authorReceiptHash }
       if (candidate.version !== 9 || canonicalProductProductionJsonV2(candidate.soundChoiceValidation) !== canonicalProductProductionJsonV2(validation)) throw new Error('[avg-sound] 作者选音的原字节或观察采用回执已stale')
       result.push({ payload, artifact: ref(row), authorReceiptHash: String(JSON.parse(row.metadataJson).receiptHash),
-        raw: selected.raw, compiled: selected.compiled, blobObjectId: selected.blobObjectId, validation, review })
+        raw: selected.raw, compiled: selected.compiled, blobObjectId: selected.blobObjectId, validation, review,
+        sourceWorldContentHash: context.brief.source.worldContentHash })
     }
     return result
   })

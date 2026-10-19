@@ -12,6 +12,8 @@ import { executeAvgImageRecoveryTaskV1 } from './media-recovery-executor'
 import type { ResolvedProductMediaCapabilityV1 } from '../product-production/media-transport'
 import { readAvgInheritedStageImagesV1 } from './stage-image-sources'
 import { readAvgInheritedStageVoicesV1 } from './stage-voice-sources'
+import { readAvgInheritedStageSoundsV1 } from './stage-sound-sources'
+import { assertAvgSoundPrototypeWriteEnabledV1 } from './prototype-contract'
 import { executeAvgImageProcessingTaskV1 } from './image-processing-executor'
 import { executeAvgVoiceTaskV3 } from './voice-production-executor'
 import type { createConfiguredAvgVoiceTransportV1 } from './voice-transport'
@@ -79,6 +81,14 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
     for (const [key, voice] of inheritedVoices) {
       if (inherited.has(key)) throw new Error('[avg-voice] 图片与配音不能声明同一沿用身份')
       inherited.set(key, voice)
+    }
+    if (compiled.source.authorStage!.payload.inheritedSounds?.length) assertAvgSoundPrototypeWriteEnabledV1()
+    const inheritedSounds = await readAvgInheritedStageSoundsV1({ scope: request.scope, payload: compiled.source.authorStage!.payload,
+      scripts: compiled.source.scripts.map(script => script.payload), productionKey,
+      targetBuildNumber: build.buildNumber, worldContentHash: brief.source.worldContentHash })
+    for (const [key, sound] of inheritedSounds) {
+      if (inherited.has(key)) throw new Error('[avg-sound] 不同媒资不能声明同一沿用身份')
+      inherited.set(key, sound)
     }
     const expectedKeys = assembly.mediaAssetKeys
     if (assets.length !== expectedKeys.length || expectedKeys.some(key => !assets.some(asset => asset.assetKey === key))) throw new Error('[avg] 组装媒体目录超出冻结 Brief')

@@ -7,7 +7,7 @@ import { resolve, basename } from 'node:path'
 const modes = [
   { directory: 'sound-closed', file: 'avg-sound-requirements.spec.ts', minimumExecuted: 1, minimumSkipped: 3 },
   { directory: 'sound-preparation', file: 'avg-sound-requirements.spec.ts', minimumExecuted: 3, minimumSkipped: 1 },
-  { directory: 'sound-production', file: 'avg-sound-production.spec.ts', minimumExecuted: 3, minimumSkipped: 0 },
+  { directory: 'sound-production', file: 'avg-sound-production.spec.ts', minimumExecuted: 4, minimumSkipped: 0 },
   { directory: 'sound-frozen', file: 'avg-sound-prototype-read.spec.ts', minimumExecuted: 1, minimumSkipped: 0 },
 ]
 const maximumBytes = 8 * 1024 * 1024

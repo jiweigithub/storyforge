@@ -25,7 +25,7 @@ async function fixture() {
   for (const [mode, file, expected, skipped] of [
     ['sound-closed', 'avg-sound-requirements.spec.ts', 1, 3],
     ['sound-preparation', 'avg-sound-requirements.spec.ts', 3, 1],
-    ['sound-production', 'avg-sound-production.spec.ts', 3, 0],
+    ['sound-production', 'avg-sound-production.spec.ts', 4, 0],
     ['sound-frozen', 'avg-sound-prototype-read.spec.ts', 1, 0],
   ] as const) {
     await mkdir(join(root, mode)); await writeFile(join(root, mode, 'report.json'), JSON.stringify(report(file, expected, skipped)))
@@ -40,12 +40,13 @@ describe('AVG Sound CI execution and retained reports', () => {
     expect(JSON.parse((await s.run()).stdout).modes).toEqual([
       { mode: 'sound-closed', expected: 1, flaky: 0, unexpected: 0, skipped: 3 },
       { mode: 'sound-preparation', expected: 3, flaky: 0, unexpected: 0, skipped: 1 },
-      { mode: 'sound-production', expected: 3, flaky: 0, unexpected: 0, skipped: 0 },
+      { mode: 'sound-production', expected: 4, flaky: 0, unexpected: 0, skipped: 0 },
       { mode: 'sound-frozen', expected: 1, flaky: 0, unexpected: 0, skipped: 0 },
     ])
     expect(await readFile(s.path)).toEqual(before)
   })
   it.each([
+    ['the old production suite missing retained-sound revision', report('avg-sound-production.spec.ts', 3, 0)],
     ['an entirely skipped production suite', report('avg-sound-production.spec.ts', 0, 3)],
     ['a different spec with passing counts', report('unrelated.spec.ts', 3, 0)],
     ['a failed case', report('avg-sound-production.spec.ts', 2, 0, 0, 1)],
@@ -71,9 +72,9 @@ describe('AVG Sound CI execution and retained reports', () => {
     await expect(s.run()).rejects.toThrow()
   })
   it('preserves a visible flaky result instead of claiming first-pass success', async () => {
-    const s = await fixture(); await writeFile(s.path, JSON.stringify(report('avg-sound-production.spec.ts', 2, 0, 1)))
+    const s = await fixture(); await writeFile(s.path, JSON.stringify(report('avg-sound-production.spec.ts', 3, 0, 1)))
     const before = await readFile(s.path), result = JSON.parse((await s.run()).stdout)
-    expect(result.modes[2]).toMatchObject({ expected: 2, flaky: 1, skipped: 0 })
+    expect(result.modes[2]).toMatchObject({ expected: 3, flaky: 1, skipped: 0 })
     expect(await readFile(s.path)).toEqual(before)
   })
 })

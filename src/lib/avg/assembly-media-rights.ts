@@ -18,13 +18,15 @@ export function avgAssemblyMediaRightsV1(source: AuthorSource, asset: FrozenRunt
   const sound = source.soundChoices?.find(c => c.payload.asset.assetKey === asset.assetKey)
   const inherited = stage.payload.inheritedImages?.find(c => c.assetKey === asset.assetKey)
   const inheritedVoice = stage.payload.inheritedVoices?.find(c => c.assetKey === asset.assetKey)
-  if ([choice, voice, sound, inherited, inheritedVoice].filter(Boolean).length > 1) throw new Error('[avg] 媒资存在冲突的采用来源')
+  const inheritedSound = stage.payload.inheritedSounds?.find(c => c.assetKey === asset.assetKey)
+  if ([choice, voice, sound, inherited, inheritedVoice, inheritedSound].filter(Boolean).length > 1) throw new Error('[avg] 媒资存在冲突的采用来源')
   return {
     origin: sound ? sound.raw.requirementKey === 'avg.media.music' ? 'author-selected-local-music' : 'author-selected-original-library'
-      : choice || voice ? 'author-selected-provider' : inherited || inheritedVoice ? 'author-inherited-provider' : 'author-import',
+      : inheritedSound ? 'author-inherited-original-sound' : choice || voice ? 'author-selected-provider' : inherited || inheritedVoice ? 'author-inherited-provider' : 'author-import',
     license: asset.license, source: asset.source, authorStageReceipt: stage.authorReceiptHash,
     ...(inherited ? { inheritedStageSource: inherited } : {}),
     ...(inheritedVoice ? { inheritedStageVoiceSource: inheritedVoice } : {}),
+    ...(inheritedSound ? { inheritedStageSoundSource: inheritedSound } : {}),
     ...(choice ? { authorChoiceReceipt: choice.authorReceiptHash, rawArtifactKey: choice.raw.artifactKey,
       rawVersion: choice.raw.version, rawContentHash: choice.raw.contentHash, rawProducerReceiptHash: choice.raw.producerReceiptHash,
       ...(choice.processed ? { processedProducerReceiptHash: choice.processed.row.producerReceiptHash,

@@ -46,6 +46,7 @@ import { listWorldReferenceCatalogV1 } from '../product/source'
 import { validateAvgGeneratedReferencesV1 } from './media-generated-reference'
 import { prepareAvgInheritedStageDraftV1, readAvgInheritedStageImagesV1 } from './stage-image-sources'
 import { prepareAvgInheritedVoiceDraftV1 } from './stage-voice-sources'
+import { prepareAvgInheritedSoundDraftV1, readAvgInheritedStageSoundsV1 } from './stage-sound-sources'
 import { parseAvgImageProcessingPlanV1, assertAvgProcessedImageArtifactV1, avgProcessedImageArtifactKeyV1, type AvgImageProcessingPlanV1 } from './image-processing-contract'
 import { inspectAvgProcessedImageSourceV1, readAvgProcessedImageSourceV1,verifyAvgRecoveryPlaceholderV1 } from './image-processing-source'
 import { assertAvgImageProductionDefinitionV3, readAvgOptionalImageDefinitionV3 } from './media-production-definition'
@@ -181,6 +182,30 @@ export async function keepAvgGeneratedVoiceStageDraftV1(input: { scope: Workspac
   }
   return saveAvgAuthorWorkspaceV1(input.scope, draft.revision, next)
 }
+
+/** Finish only a frozen, consumed batch. The draft proposes original sound
+ * sources; original Runs, bills, choices, Preview and Release stay immutable. */
+export async function keepAvgGeneratedSoundStageDraftV1(input: { scope: WorkspaceScope; productionId: number;
+  expectedDraftRevision: number; expectedBuildId: number }) {
+  const draft = await readAvgDraftV1(input.scope), details = await readProductProductionDetailsV1(input.scope, input.productionId, ['avg'])
+  const build = details.build, brief = details.executionBrief, workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
+  if (draft.revision !== input.expectedDraftRevision || draft.productionId !== input.productionId || build?.id !== input.expectedBuildId
+    || !build.previewHash || !brief?.avgSoundPlanning || !workspace.soundProduction
+    || !sameSoundScope(workspace.soundProduction.scope, brief.avgSoundPlanning.scope)) throw new Error('[avg-sound] 请先完成准确原声音版本；需求或制作版本已变化')
+  const next = await prepareAvgInheritedSoundDraftV1({ scope: input.scope, workspace, build, productionKey: details.production.productionKey,
+    targetBuildNumber: Math.max(...details.buildHistory.map(row => row.buildNumber)) + 1, worldContentHash: brief.source.worldContentHash })
+  if (brief.avgSoundPlanning.scope.templates.some(t => !next.presentation.inheritedSounds?.some(entry => entry.assetKey === t.assetKey))) {
+    throw new Error('[avg-sound] 不能沿用缺少准确原作者选用证明的声音')
+  }
+  delete next.soundProduction
+  return db.transaction('rw', scopeTransactionTables(db.avgAuthoringDrafts, db.productProductions, db.productBuilds), async () => {
+    const current = await db.productBuilds.get(build.id!), production = await db.productProductions.get(input.productionId)
+    if (!current || !sameSoundScope(current, build) || !production || production.stateRevision !== details.production.stateRevision
+      || production.currentBuildNumber !== build.buildNumber || !await assertRecordInScope(input.scope, 'productProductions', production, { owner: 'work' })) throw new Error('[avg-sound] 沿用核对期间制作版本已变化')
+    return saveAvgAuthorWorkspaceV1(input.scope, draft.revision, next)
+  })
+}
+const sameSoundScope = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
 
 export async function stageAvgMediaChoiceV2(input: { scope: WorkspaceScope; productionId: number; requirementKey: string;
   rawVersion: number; rawContentHash: string; declaration: string;processed?:{version:number;contentHash:string} }) {
@@ -704,8 +729,16 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
       const old = details.executionBrief
       const frozenSource=details.briefHistory.find(row=>row.revision===details.build!.briefRevision&&row.briefHash===details.build!.briefHash)
       const reference=(await listWorldReferenceCatalogV1(input.scope)).find(entry=>entry.reference.localReleaseRecordId===draft.worldReleaseId)?.reference
-      if ((!old?.avgAssembly&&!(old?.avgVisualPlanning&&(visual||input.visualStageContinuation))) || !frozenSource || frozenSource.sourceWorldReleaseId!==draft.worldReleaseId || !reference
+      if ((!old?.avgAssembly&&!(old?.avgVisualPlanning&&(visual||input.visualStageContinuation))&&!(old?.avgSoundPlanning&&(sound||workspace.presentation.inheritedSounds?.length))) || !frozenSource || frozenSource.sourceWorldReleaseId!==draft.worldReleaseId || !reference
         ||reference.releaseHash!==old.source.worldContentHash||frozenSource.sourceWorldContentHash!==reference.releaseHash) throw new Error('[avg] 当前修订不能替换产品协议或世界来源')
+      if (old.avgSoundPlanning && !sound) {
+        if (!details.build.previewHash || workspace.soundProduction) throw new Error('[avg-sound] 请先完成并明确结束原声音批次')
+        await readAvgInheritedStageSoundsV1({ scope: input.scope, payload: workspace.presentation, scripts: workspace.scripts,
+          productionKey: details.production.productionKey, targetBuildNumber: Math.max(...details.buildHistory.map(row => row.buildNumber)) + 1,
+          worldContentHash: old.source.worldContentHash })
+        if (old.avgSoundPlanning.scope.templates.some(t => !workspace.presentation.inheritedSounds?.some(e => e.assetKey === t.assetKey
+          && e.source.productionKey === details.production.productionKey && e.source.buildNumber === details.build!.buildNumber))) throw new Error('[avg-sound] 后继方案须保留原批全部已确认声音来源')
+      }
       if(old.avgVisualPlanning){
         const continuation=input.visualStageContinuation
         if(continuation){
