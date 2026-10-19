@@ -170,6 +170,9 @@ export async function putMediaBlobObject(input: {
   if (input.backend === 'opfs' && !supportsOpfs) throw new Error('[product-production] 当前浏览器不支持 OPFS')
   const opfsPath = backend === 'opfs' ? `storyforge/media/v1/work-${scope.workId}/${contentHash}` : null
   const now = Date.now()
+  // IndexedDB stores metadata and bytes in one atomic row. Publishing a
+  // pending row first exposes a false incomplete object to concurrent
+  // consumers of identical bytes. OPFS still requires its journaled write.
   const pending = stampNewRecord(scope, 'mediaBlobObjects', {
     projectId: scope.projectId,
     worldId: scope.worldId,
@@ -178,12 +181,12 @@ export async function putMediaBlobObject(input: {
     mimeType,
     byteSize: data.byteLength,
     backend,
-    storageState: 'pending-write',
-    data: null,
+    storageState: backend === 'indexeddb' ? 'ready' : 'pending-write',
+    data: backend === 'indexeddb' ? data : null,
     opfsPath,
     leaseOwner: null,
     leaseExpiresAt: null,
-    lastVerifiedAt: null,
+    lastVerifiedAt: backend === 'indexeddb' ? now : null,
     createdAt: now,
     updatedAt: now,
   } satisfies MediaBlobObjectRecordV1, { owner: 'work' })
@@ -194,15 +197,20 @@ export async function putMediaBlobObject(input: {
     const raced = await db.mediaBlobObjects
       .where('[workId+contentHash]').equals([scope.workId, contentHash]).first()
     if (!raced) throw cause
+    if (!await assertRecordInScope(scope, 'mediaBlobObjects', raced, { owner: 'work' })
+      || raced.mimeType !== mimeType || raced.byteSize !== data.byteLength) {
+      throw new Error('[product-production] 相同 contentHash 的共享媒资元数据冲突')
+    }
     await readVerifiedMediaBlobObjectData(raced)
     return raced
   }
+  if (backend === 'indexeddb') return { ...pending, id }
 
   try {
     if (backend === 'opfs') await writeOpfsData(opfsPath!, data)
     const updatedAt = Date.now()
     await db.mediaBlobObjects.update(id, {
-      data: backend === 'indexeddb' ? data : null,
+      data: null,
       storageState: 'ready',
       lastVerifiedAt: updatedAt,
       updatedAt,

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import Dexie from 'dexie'
 import { db } from '../../src/lib/db/schema'
 import { useAIConfigStore } from '../../src/stores/ai-config'
 import * as readiness from '../../src/lib/avg/sound-production-brief'
@@ -50,6 +51,40 @@ async function original(s: Awaited<ReturnType<typeof setup>>, key: string) {
     responseEvidenceHash: raw.responseEvidenceHash, idempotencyKey: ledger.idempotencyKey, musicBinding: s.brief.avgSoundPlanning!.musicBinding })
 }
 describe('AVG actual sound raw producer chain with controlled HTTP and decoder', () => {
+  it('does not mistake an independent ledger entry update for producer mutation, but still rejects changes to the original input settlement', async () => {
+    const s = await setup(), row = (await acceptedAvgSoundArtifactV1(s, 'avg.media.compiled-sound-requirements'))!
+    const ref = { scope: s.scope, buildId: s.buildId, artifactKey: row.artifactKey, version: row.version, contentHash: row.contentHash }
+    const get = db.productBuilds.get.bind(db.productBuilds)
+    let write: Promise<unknown> | undefined
+    const spy = vi.spyOn(db.productBuilds, 'get').mockImplementationOnce((...args) => get(...args).then(build => {
+      if (build) {
+        const ledger = JSON.parse(build.budgetLedgerJson)
+        ledger.tasks['avg.author.sound-plan'].errorCode = 'ENGINEERING sibling ledger update'
+        // A separate native transaction is queued without awaiting it inside
+        // the reader. No producer/adoption evidence is manufactured.
+        write = Dexie.ignoreTransaction(() => db.transaction('rw', db.productBuilds,
+          () => db.productBuilds.update(build.id!, { budgetLedgerJson: JSON.stringify(ledger) })))
+      }
+      return build
+    }))
+    const result = await Promise.allSettled([verifyAcceptedProductBuildArtifactV1(ref)])
+    spy.mockRestore(); await write
+    if (result[0].status === 'rejected') throw result[0].reason
+    expect(result[0].status).toBe('fulfilled')
+    const changed = vi.spyOn(db.productBuilds, 'get').mockImplementationOnce(async (...args) => {
+      const build = await get(...args), ledger = JSON.parse(build!.budgetLedgerJson)
+      ledger.tasks['avg.sound.compile.requirements'].usage.durationMs += 1
+      await db.productBuilds.update(s.buildId, { budgetLedgerJson: JSON.stringify(ledger) })
+      return build
+    })
+    await expect(verifyAcceptedProductBuildArtifactV1(ref)).rejects.toThrow(/已采用输入在读取期间已变化/)
+    changed.mockRestore()
+    const build = (await db.productBuilds.get(s.buildId))!, ledger = JSON.parse(build.budgetLedgerJson)
+    ledger.tasks['avg.sound.compile.requirements'].status = 'failed'
+    await db.productBuilds.update(s.buildId, { budgetLedgerJson: JSON.stringify(ledger) })
+    await expect(verifyAcceptedProductBuildArtifactV1(ref)).rejects.toThrow()
+  }, 60_000)
+
   it('independently receives music and original CC0 OGG via real claims, seals exact Blob evidence, preserves backup/remap and awaits review', async () => {
     const s = await setup(); await cycleAvgSoundUntilV1(s, 'avg.sound.raw.desk.bgm'); await cycleAvgSoundUntilV1(s, 'avg.sound.raw.desk.sfx')
     const bgm = (await acceptedAvgSoundArtifactV1(s, 'avg.sound.raw.desk.bgm'))!, sfx = (await acceptedAvgSoundArtifactV1(s, 'avg.sound.raw.desk.sfx'))!

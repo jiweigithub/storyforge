@@ -2958,8 +2958,13 @@ export async function verifyAcceptedProductBuildArtifactV1(input: {
   }
   await verifiedBlobProofsV1({ scope, artifacts: [row], label: 'accepted input' })
   const currentBuild = await db.productBuilds.get(build.id), current = await db.productBuildArtifacts.get(row.id!)
+  // Parallel siblings can settle their own entries without changing this
+  // producer. Fence the complete input task settlement, not the unrelated
+  // mutable aggregate. The original Build/epoch/Plan/root/Run fingerprint and
+  // exact candidate/receipt/bytes remain mandatory below.
   if (!currentBuild?.id || !current || canonicalProductProductionJsonV2(current) !== canonicalProductProductionJsonV2(row)
-    || currentBuild.budgetLedgerJson !== build.budgetLedgerJson) throw new Error('[product-production-artifact] 已采用输入在读取期间已变化')
+    || canonicalProductProductionJsonV2(terminalRawLedgerTaskV1(currentBuild.budgetLedgerJson, proof.task.taskKey))
+      !== canonicalProductProductionJsonV2(ledger)) throw new Error('[product-production-artifact] 已采用输入在读取期间已变化')
   await assertVerifiedProducerCandidateFreshV1({ build: currentBuild as ProductBuildRecordV1 & { id: number }, proof })
   return structuredClone(row)
 }
