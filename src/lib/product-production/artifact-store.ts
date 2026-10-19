@@ -34,6 +34,7 @@ import {
   verifyProductBuildRootTerminalReceiptV1,
 } from './receipts'
 import { productProductionTerminalArtifactKeysV1 } from './runtime-package'
+import { verifyImportedPublishedRootOriginV1 } from './published-root-origin'
 import {
   hashProductProductionCarriedCandidateV1,
   hashProductProductionCarriedReceiptV1,
@@ -497,7 +498,13 @@ async function sealedBuildProofContextV1(input: {
     artifacts: activeRows,
   }
   const rootReceipt = await createProductBuildRootTerminalReceiptV1(rootReceiptInput)
-  if (rootReceipt !== build.rootTerminalReceiptHash) {
+  let importedPublishedOrigin = false
+  if (rootReceipt !== build.rootTerminalReceiptHash && production.productType === 'ttrpg' && build.status === 'released') {
+    const rootRunId = Number(JSON.parse(build.budgetLedgerJson).rootRunId)
+    const root = await readAgentRunV1(input.scope, rootRunId)
+    importedPublishedOrigin = await verifyImportedPublishedRootOriginV1({ scope: input.scope, production, build, root, receiptInput: rootReceiptInput })
+  }
+  if (rootReceipt !== build.rootTerminalReceiptHash && !importedPublishedOrigin) {
     const compatibility = await verifyProductBuildRootTerminalReceiptV1({
       ...rootReceiptInput,
       expectedReceiptHash: build.rootTerminalReceiptHash ?? '',

@@ -70,6 +70,7 @@ import {
 } from './plan'
 import { createProductBuildPreviewManifestV1 } from './preview-manifest'
 import { createProductBuildRootTerminalReceiptV1 } from './receipts'
+import { verifyImportedPublishedRootOriginV1 } from './published-root-origin'
 import { readMediaBlobObjectData } from './media-blob-store'
 import {
   parseProductRuntimePackageV1,
@@ -5780,19 +5781,32 @@ async function compileTerminalBuild(input: {
     || qualityReportHash !== build.qualityReportHash)) {
     throw new Error('[product-production-scheduler] 导入复验不得改变已封存 Build 内容或清单')
   }
-  const rootTerminalReceiptHash = await createProductBuildRootTerminalReceiptV1({
+  const receiptInput = {
     planHash: build.planHash, manifestHash, packageHash, qualityReportHash,
     controlEpoch: build.controlEpoch, budgetLedgerJson: build.budgetLedgerJson, artifacts,
-  })
+  }
+  const localRootReceiptHash = await createProductBuildRootTerminalReceiptV1(receiptInput)
+  const importedPublishedOrigin = input.restoreImportedProofs && build.status === 'released' && production.productType === 'ttrpg'
+    && await verifyImportedPublishedRootOriginV1({ scope: input.scope, production, build: { ...build, id: build.id! }, root: input.root, receiptInput })
+  // Preserve publication identity only after the complete original preimage and
+  // registered reference graph pass. Ordinary/new Builds still seal local bytes.
+  const rootTerminalReceiptHash = importedPublishedOrigin ? build.rootTerminalReceiptHash! : localRootReceiptHash
   let root = input.root
   const importedRootReceipt = importedScopeReboundReceiptV1(root)
-  if (importedRootReceipt) {
+  if (importedPublishedOrigin && root.projection.state === 'verifying') {
+    // A previous import verification may have committed its start before its
+    // caller disappeared. The complete original proof was rechecked above;
+    // finish that same verification, without another start or producer call.
+    root = await append(input.scope, root, 'verification.accepted', {
+      receiptHash: rootTerminalReceiptHash,
+    })
+  } else if (importedRootReceipt) {
     const rootStep = root.projection.steps[ROOT_STEP_ID]
     if (rootStep?.status !== 'succeeded' || importedRootReceipt !== build.rootTerminalReceiptHash) {
       throw new Error('[product-production-scheduler] 导入 root 完成证据无法在新 scope 复验')
     }
     root = await append(input.scope, root, 'verification.started', {
-      verifierSetVersion: 'product-production-root-import-rebind-v1',
+      verifierSetVersion: importedPublishedOrigin ? 'product-production-root-published-origin-rebind-v1' : 'product-production-root-import-rebind-v1',
     })
     root = await append(input.scope, root, 'verification.accepted', {
       receiptHash: rootTerminalReceiptHash,
@@ -6129,7 +6143,23 @@ export async function recoverImportedProductProductionProofsV1(input: {
     throw new Error('[product-production-scheduler] 导入 Build 缺少已结算 root/预算证明')
   }
   let root = await readAgentRunV1(scope, ledger.rootRunId)
-  if (root.projection.state !== 'completed' && !importedScopeReboundReceiptV1(root)) {
+  let resumingPublishedRoot = false
+  if (root.projection.state === 'verifying' && current.production.productType === 'ttrpg'
+    && current.build.status === 'released') {
+    const resumeArtifacts = (await db.productBuildArtifacts.where('buildId').equals(current.build.id!).toArray())
+      .filter(row => row.controlEpoch === current.build.controlEpoch
+        && (row.status === 'accepted' || row.status === 'carried-forward'))
+    resumingPublishedRoot = await verifyImportedPublishedRootOriginV1({
+      scope, production: current.production, build: { ...current.build, id: current.build.id! }, root,
+      receiptInput: {
+        planHash: current.build.planHash, manifestHash: current.build.manifestHash,
+        packageHash: current.build.packageHash, qualityReportHash: current.build.qualityReportHash,
+        controlEpoch: current.build.controlEpoch, budgetLedgerJson: current.build.budgetLedgerJson,
+        artifacts: resumeArtifacts,
+      },
+    })
+  }
+  if (root.projection.state !== 'completed' && !importedScopeReboundReceiptV1(root) && !resumingPublishedRoot) {
     throw new Error('[product-production-scheduler] root 不是可复验的导入完成态')
   }
   const children = await childSnapshots(scope, current.build.id!, root.run.id)

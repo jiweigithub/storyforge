@@ -207,6 +207,9 @@ export async function portableizeAgentRunLedgerExportV1(
       const { freezeTtrpgOpenRunOriginForExportV1 } = await import('../../ttrpg/open-run-portability')
       const runtimeOrigin = await freezeTtrpgOpenRunOriginForExportV1(localRunId, { contractHash: run.contractHash, lastSequence: run.lastSequence })
       if (runtimeOrigin !== undefined) run.portableRuntimeOriginJson = runtimeOrigin
+      const { freezePublishedRootOriginForExportV1 } = await import('../../product-production/published-root-origin')
+      const rootOrigin = await freezePublishedRootOriginForExportV1(localRunId)
+      if (rootOrigin !== undefined) run.portablePublishedRootOriginJson = rootOrigin
     }
     const hashes = await portableGenerationHashes({ run, events: runEvents, idMaps })
     for (const event of runEvents) {
@@ -370,6 +373,12 @@ export async function finalizeImportedAgentRunLedgersV1(input: {
       await Dexie.waitFor((async () => {
         const { assertPortableWorldContextBindingsV1 } = await import('../../product/world-context-portability')
         await assertPortableWorldContextBindingsV1(run.portableWorldContextBindingsJson)
+      })())
+    }
+    if (run.portablePublishedRootOriginJson !== undefined) {
+      await Dexie.waitFor((async () => {
+        const { assertImportedPublishedRootOriginOwnerV1 } = await import('../../product-production/published-root-origin')
+        await assertImportedPublishedRootOriginOwnerV1(run)
       })())
     }
     const events = await db.agentRunEvents.where('runId').equals(runId).sortBy('sequence')

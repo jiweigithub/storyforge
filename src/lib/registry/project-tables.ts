@@ -1166,6 +1166,8 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
     // carries it unchanged; it contains no local ID requiring reference remapping.
     // portableRuntimeOriginJson likewise preserves historical bytes. Its original
     // numeric identities are evidence only and MUST NOT be remapped or used as locators.
+    // portablePublishedRootOriginJson carries the exact historical published RootV2
+    // preimage unchanged; strict backup hooks validate it, not reference remapping.
     domainOwner: {
       allowed: ['work', 'instance'], defaultOwner: 'work',
       locator: { kind: 'exclusive-work-instance', workField: 'workId', instanceField: 'productRuntimeSessionId' },

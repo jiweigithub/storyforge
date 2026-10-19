@@ -553,6 +553,8 @@ export interface AgentRunRecord {
   portableWorldContextBindingsJson?: string
   /** Exact historical TTRPG Run/event bytes; original numbers are provenance, never current locators or authority. */
   portableRuntimeOriginJson?: string
+  /** Opaque original published RootV2 preimage. Historical Run numbers are evidence, never locators. */
+  portablePublishedRootOriginJson?: string
   generation: number
   lastSequence: number
   projectionJson: string

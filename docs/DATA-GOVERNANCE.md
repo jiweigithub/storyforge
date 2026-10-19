@@ -222,3 +222,12 @@ E15 原事件和稳定回执是确认依据，唯一记忆表是可核对的查�
 `productMediaAssets.exactArtifactRefsJson` 是可选的逐字证据引用数组，沿上述注册表作为媒资自己的保留根。旧记录与无证据导入不补字段、不改默认值，不新增表或索引。运行媒资导入者可明确提供最多 64 个闭集引用，先冻结参数并检查本项目准确原文，再在媒资绑定事务内重验可用性；相同文件/版本不能换一套证据或给旧人工素材补造来源。同页同原导入串行，跨页原生锁忙时明确拒绝、没有后台重试；绑定事务重读现有版本，无原生锁的物理写竞争也不能被当作已成功，原操作完成后须明确继续。此字段只保留证据，不代表已听、已采用、可播放或可分发；具体产品仍须独立确认原候选、权限、许可、实际文件和运行回执。分支复制沿原媒资行带走引用，备份不重写内容 hash；源 Run 或父实例删除后，只要仍有媒资拥有者，原证据继续受保留根保护。
 
 跑团生成音轨的采用回执另以 `audioReceipts[].generated.artifactRefs` 声明准确原文证据。`productRuntimeSessions` 的初始/当前状态及祖先切点、`productRuntimeEvents` 的 `ttrpg.audio.cue.applied` 回执、`productRuntimeCheckpoints.stateJson` 的当前/祖先快照均通过同一注册表保留这些引用，不要求源 Run 或媒资行继续存活。检查点的通用状态只读取其中的 `ttrpg` 路径，其他产品合法 JSON 无该路径时不产生引用；已声明 JSON 或引用损坏时清理失败关闭。旧人工音轨和无 `generated` 的状态不补字段、不改 hash；此基础登记本身不证明新音轨已确认、已采用或可播放，生成来源与 E16 仍须由产品的版本合同独立验证。
+
+
+### 跑团已发布 RootV2 的备份身份（2026-10-20）
+
+完整工作区备份可在移除原本地主键前，由原 Work-owned 生产 root 冻结 `agentRuns.portablePublishedRootOriginJson`。它保存原 RootV2 的完整 preimage、原终态 hash、productionKey 和 Build 版本；原数字仅为历史证据，沿既有 Run 生命周期原样保存，不作为当前 locator，也不授予发送、采用、费用改写或新发布权限。世界封存不生成该上层证明。
+
+首次冻结必须由实际已发布 Build、原完成 root/join 与同一不可变 ProductRelease 闭合；已重绑但缺少证明的旧备份保持可保存、只读，不从残留编号补造原身份。结构导入只校验闭集、容量、原 hash 和 Work/Build/root owner，不代表正式复验通过。
+
+显式本地复验须有严格重放的原完成前缀和真实 project-import-scope-rebound 事件。所有 Artifact envelope 与原终态指针保持一致；整个预算账包括历史 attempt、未知费用处置、用量、费用及非引用字段逐值相等，仅允许 PROJECT_TABLES 已登记的预算 Run 引用双射重绑，并独立核对当前作用域、Build、任务、epoch、attempt、root/child 关系。当前 root 的复验沿原 Harness 追加专用 verifier 与既有记忆结算；原已发布 Build、Production、Release 的字段和原 hash 全部保留。连续备份继续携带相同原证明；复制 JSON、缺失前缀、别名冲突、跨域或原文/元数据/权利变化均不能取得该关联。

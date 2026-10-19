@@ -25,21 +25,30 @@ describe.each([2, 3] as const)('R-TTRPGOPEN2 restored author evolution retains s
       .mockImplementation(input => retainedPlanFactory({ ...input, ttrpgOpenExecutionProfile: 2 }))
   });afterEach(() => { vi.restoreAllMocks(); db.close() })
   it.each([
-    { released: false,lanes: ['content','product'] as const },
-    { released: true,lanes: ['content','product'] as const },
-    { released: true,lanes: ['visual'] as const },
-  ])('restores a complete backup and publishes a new authorized revision %j', async ({ released,lanes }) => {
+    { released: false,lanes: ['content','product'] as const, keepOriginals: false },
+    { released: true,lanes: ['content','product'] as const, keepOriginals: false },
+    { released: true,lanes: ['visual'] as const, keepOriginals: false },
+    { released: false,lanes: ['content','product'] as const, keepOriginals: true },
+    { released: true,lanes: ['content','product'] as const, keepOriginals: true },
+    { released: true,lanes: ['visual'] as const, keepOriginals: true },
+  ])('restores a complete backup and publishes a new authorized revision %j', async ({ released,lanes,keepOriginals }) => {
     const source = await seedOpenBrowserProductionV1()
     await runOpenBrowserProductionV1(source);await runOpenBrowserProductionV1(source,true);await runOpenBrowserProductionV1(source,true)
     if (released) await publishProductProductionV1(source)
     const key = (await db.productProductions.get(source.productionId))!.productionKey
+    const sourceProduction = (await db.productProductions.get(source.productionId))!
+    const sourceBuild = (await db.productBuilds.where('[productionId+buildNumber]').equals([source.productionId,1]).first())!
+    const sourceRelease = released ? await db.productReleases.get(sourceProduction.currentProductReleaseId!) : null
+    const sourceRootRunId = JSON.parse(sourceBuild.budgetLedgerJson).rootRunId
     const backup = await exportProjectJSON(source.scope.projectId)
-    await db.delete();await db.open()
+    // Both a clean machine and a copy beside real existing Run IDs must work.
+    if (!keepOriginals) { await db.delete();await db.open() }
     for (let i = 0; i < 3; i++) await seedCurrentProductWorld(`other machine ${i}`)
     const projectId = await importProjectJSON(backup)
     const production = (await db.productProductions.where('projectId').equals(projectId).toArray()).find(p => p.productionKey === key)!
     const f = { scope: { projectId,worldId: production.worldId,workId: production.workId },productionId: production.id! }
     const originalBuild = (await db.productBuilds.where('[productionId+buildNumber]').equals([f.productionId,1]).first())!
+    if (keepOriginals) expect(JSON.parse(originalBuild.budgetLedgerJson).rootRunId).not.toBe(sourceRootRunId)
     const originalBrief = (await db.productProductionBriefs.where('[productionId+revision]').equals([f.productionId,production.currentBriefRevision!]).first())!
     const originalRelease = released ? await db.productReleases.get(production.currentProductReleaseId!) : null
     const session = released ? await createProductRuntimeInstanceFromSource({ scope: f.scope,source: { kind: 'release',productReleaseId: originalRelease!.id! },title: '原版本试玩',seed: 'restored.original' }) : null
@@ -89,14 +98,22 @@ describe.each([2, 3] as const)('R-TTRPGOPEN2 restored author evolution retains s
       expect((await db.productReleases.get(receipt.receipt.productReleaseId))!.version).toBe(3)
       expect(await db.productBuilds.get(originalBuild.id!)).toEqual(originalBuild)
       expect(await readProductRuntimeState(session!.id!)).toEqual(before)
+      const chainedSourceBuild = (await db.productBuilds.where('[productionId+buildNumber]').equals([f.productionId,3]).first())!
+      const chainedRootRunId = JSON.parse(chainedSourceBuild.budgetLedgerJson).rootRunId
       const chainedBackup = await exportProjectJSON(f.scope.projectId)
-      await db.delete();await db.open()
+      if (!keepOriginals) { await db.delete();await db.open() }
       for (let i = 0; i < 6; i++) await seedCurrentProductWorld(`third machine ${i}`)
       const thirdProject = await importProjectJSON(chainedBackup),restored = (await db.productProductions.where('projectId').equals(thirdProject).toArray()).find(p => p.productionKey === key)!
       const restoredBuild = (await db.productBuilds.where('[productionId+buildNumber]').equals([restored.id!,3]).first())!
+      if (keepOriginals) expect(JSON.parse(restoredBuild.budgetLedgerJson).rootRunId).not.toBe(chainedRootRunId)
       expect((await recoverImportedProductProductionProofsV1({ scope: { projectId: thirdProject,worldId: restored.worldId,workId: restored.workId },productionId: restored.id! })).terminal).toBe(true)
       expect(await db.productBuilds.get(restoredBuild.id!)).toEqual(restoredBuild)
       expect(await db.productProductions.get(restored.id!)).toEqual(restored)
+    }
+    if (keepOriginals) {
+      expect(await db.productBuilds.get(sourceBuild.id!)).toEqual(sourceBuild)
+      expect(await db.productProductions.get(source.productionId)).toEqual(sourceProduction)
+      if (sourceRelease) expect(await db.productReleases.get(sourceRelease.id!)).toEqual(sourceRelease)
     }
   })
   it.each(['origin','reuse-key','unbound-plan','changed-input','affected-lane'] as const)('rejects corrupt cross-build %s without adopting target artifacts', async mode => {
