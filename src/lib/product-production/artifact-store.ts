@@ -234,6 +234,46 @@ function samePreparedProducerArtifactV1(input: {
 
 const producerProofCache = new Map<string, Promise<VerifiedProducerCandidateV1>>()
 
+interface ReadonlyProducerSnapshotV1 {
+  proofs: Map<string, Promise<VerifiedProducerCandidateV1>>
+  eventHashes: Map<number, Promise<string>>
+}
+const readonlyProducerSnapshots = new WeakMap<IDBTransaction, ReadonlyProducerSnapshotV1>()
+
+function readonlyProducerSnapshotV1(): ReadonlyProducerSnapshotV1 | undefined {
+  const transaction = Dexie.currentTransaction
+  // A Dexie readonly child can share a native readwrite transaction. Only the
+  // native readonly snapshot prevents either this caller or another writer
+  // from changing the IDB evidence during reuse. Physical Blob reads remain
+  // independent: OPFS bytes are not protected by this snapshot.
+  if (!transaction?.active || transaction.db !== db || transaction.idbtrans?.mode !== 'readonly'
+    || ![db.productBuilds, db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts]
+      .every(table => transaction.idbtrans.objectStoreNames.contains(table.name))) return undefined
+  let snapshot = readonlyProducerSnapshots.get(transaction.idbtrans)
+  if (!snapshot) {
+    snapshot = { proofs: new Map(), eventHashes: new Map() }
+    readonlyProducerSnapshots.set(transaction.idbtrans, snapshot)
+  }
+  return snapshot
+}
+
+async function readSnapshotEvidenceV1<K, V>(
+  cache: Map<K, Promise<V>> | undefined, key: K, read: () => Promise<V>,
+): Promise<V> {
+  let pending = cache?.get(key)
+  if (!pending) {
+    pending = read()
+    if (cache) {
+      if (cache.size >= 32) cache.clear()
+      cache.set(key, pending)
+    }
+  }
+  try { return await pending } catch (error) {
+    if (cache?.get(key) === pending) cache.delete(key)
+    throw error
+  }
+}
+
 function parentRunWitness(row: AgentRunRecord): ProductProductionParentRunWitnessV1 {
   let boundary: ProductProductionParentRunWitnessV1['boundary'] | null = null
   try {
@@ -1118,6 +1158,18 @@ async function eventStreamHashV1(
   runId: number,
   expectedSnapshot?: AgentRunSnapshotV1,
 ): Promise<string> {
+  const hash = await readSnapshotEvidenceV1(readonlyProducerSnapshotV1()?.eventHashes, runId,
+    () => readEventStreamHashV1(runId))
+  // Every supplied snapshot still has to match the original serialized event
+  // rows, including payloadJson bytes. Reuse never validates a new argument.
+  if (expectedSnapshot
+    && hash !== await hashProductProductionValueV2(eventStreamRowsFromSnapshotV1(expectedSnapshot))) {
+    throw new Error('[product-production-artifact] producer Run events 在验证期间发生变化')
+  }
+  return hash
+}
+
+async function readEventStreamHashV1(runId: number): Promise<string> {
   const rows = await db.agentRunEvents
     .where('[runId+sequence]')
     .between([runId, Dexie.minKey], [runId, Dexie.maxKey])
@@ -1133,12 +1185,7 @@ async function eventStreamHashV1(
     payloadJson: row.payloadJson,
     createdAt: row.createdAt,
   }))
-  const hash = await hashProductProductionValueV2(materialized)
-  if (expectedSnapshot
-    && hash !== await hashProductProductionValueV2(eventStreamRowsFromSnapshotV1(expectedSnapshot))) {
-    throw new Error('[product-production-artifact] producer Run events 在验证期间发生变化')
-  }
-  return hash
+  return hashProductProductionValueV2(materialized)
 }
 
 async function checkpointFingerprintV1(input: {
@@ -1263,7 +1310,7 @@ function producerProofCacheKeyV1(input: {
   ].join(':')
 }
 
-async function createVerifiedProducerCandidateV1(input: {
+type ProducerProofInputV1 = {
   scope: WorkspaceScope
   build: ProductBuildRecordV1 & { id: number }
   producerRunId: number
@@ -1273,7 +1320,24 @@ async function createVerifiedProducerCandidateV1(input: {
   buildFingerprint: ProducerBuildFingerprintV1
   /** Read-only recovery proof only; never used by accepted/carry writers. */
   retainedRoot?: true
-}): Promise<VerifiedProducerCandidateV1> {
+}
+
+async function createVerifiedProducerCandidateV1(input: ProducerProofInputV1): Promise<VerifiedProducerCandidateV1> {
+  const snapshot = readonlyProducerSnapshotV1()
+  if (!snapshot) return computeVerifiedProducerCandidateV1(input)
+  const key = canonicalProductProductionJsonV2({
+    scope: { projectId: input.scope.projectId, worldId: input.scope.worldId, workId: input.scope.workId },
+    build: input.buildFingerprint, producerRunId: input.producerRunId,
+    producerReceiptHash: input.producerReceiptHash, inputHash: input.inputHash,
+    retainedRoot: input.retainedRoot === true,
+  })
+  const proof = await readSnapshotEvidenceV1(snapshot.proofs, key, () => computeVerifiedProducerCandidateV1(input))
+  // Admission consumes this set. Keep it private to each caller even though
+  // only readonly consumers can reach the shared, fully verified evidence.
+  return { ...proof, cacheKey: input.cacheKey, remainingArtifactKeys: new Set(proof.remainingArtifactKeys) }
+}
+
+async function computeVerifiedProducerCandidateV1(input: ProducerProofInputV1): Promise<VerifiedProducerCandidateV1> {
   const plan = parseProductProductionPlanV3(input.build.planJson, undefined, input.build.briefHash)
   if (canonicalProductProductionJsonV2(plan) !== input.build.planJson
     || await hashProductProductionValueV2(plan) !== input.build.planHash

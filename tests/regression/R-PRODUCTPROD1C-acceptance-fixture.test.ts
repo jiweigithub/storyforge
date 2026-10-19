@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import Dexie from 'dexie'
 import { db } from '../../src/lib/db/schema'
 import {
   textOpenWorldProductArtifactStoreV1,
@@ -12,6 +13,7 @@ import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '
 import { createProductProductionPlanV3, parseProductProductionPlanV3 } from '../../src/lib/product-production/plan'
 import { beginProductProductionEvolutionV1 } from '../../src/lib/product-production/service'
 import { readLatestVerifiedAgentRunCheckpointV1 } from '../../src/lib/agent/run/checkpoint'
+import * as producerCheckpoints from '../../src/lib/agent/run/checkpoint'
 import { acceptAgentRunContract } from '../../src/lib/agent/run/contract'
 import { canonicalStringify as canonicalAgentRunJsonV1 } from '../../src/lib/agent/run/hash'
 import { verifyProductBuildPreviewManifestV1 } from '../../src/lib/product-production/preview-manifest'
@@ -206,6 +208,121 @@ describe('R-PRODUCTPROD-1C · authorized deterministic acceptance fixture', () =
       expect(await verifyAcceptedProductBuildArtifactV1(input)).toEqual(artifact)
     })
     expect(await db.productBuildArtifacts.count()).toBe(before)
+  }, 15_000)
+
+  it.each(['image', 'narrative'] as const)('%s 只在同一原生只读快照复用真实 producer，逐项版本仍核验且新事务重新证明', async kind => {
+    const owned = await authorizedProduction({ name: `readonly-producer-snapshot-${kind}`, visualLevel: 'key-scenes' })
+    await runCurrentProductProductionAcceptanceFixture({ scope: owned.scope, productionId: owned.productionId })
+    const artifact = (await db.productBuildArtifacts.where('buildId').equals(owned.buildId).toArray()).find(row => row.kind === kind)!
+    const input = { scope: owned.scope, buildId: owned.buildId, artifactKey: artifact.artifactKey, version: artifact.version, contentHash: artifact.contentHash }
+    const tables = scopeTransactionTables(db.productBuilds, db.productBuildArtifacts, db.mediaBlobObjects,
+      db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts)
+    const checkpointReads = vi.spyOn(producerCheckpoints, 'readLatestVerifiedAgentRunCheckpointV1')
+    try {
+      await db.transaction('r', tables, async () => {
+        const native = Dexie.currentTransaction!.idbtrans
+        expect(native.mode).toBe('readonly')
+        expect(await verifyAcceptedProductBuildArtifactV1(input)).toEqual(artifact)
+        await db.transaction('r', tables, async () => {
+          expect(Dexie.currentTransaction!.idbtrans).toBe(native)
+          expect(await verifyAcceptedProductBuildArtifactV1(input)).toEqual(artifact)
+        })
+        await expect(verifyAcceptedProductBuildArtifactV1({ ...input, version: artifact.version + 1 })).rejects.toThrow(/revision/)
+        await expect(verifyAcceptedProductBuildArtifactV1({ ...input, contentHash: 'f'.repeat(64) })).rejects.toThrow(/revision/)
+        expect(checkpointReads).toHaveBeenCalledTimes(1)
+      })
+      await db.transaction('r', tables, async () => {
+        expect(await verifyAcceptedProductBuildArtifactV1(input)).toEqual(artifact)
+      })
+      expect(checkpointReads).toHaveBeenCalledTimes(2)
+      expect(await verifyAcceptedProductBuildArtifactV1(input)).toEqual(artifact)
+      expect(await verifyAcceptedProductBuildArtifactV1(input)).toEqual(artifact)
+      expect(checkpointReads).toHaveBeenCalledTimes(4)
+    } finally { checkpointReads.mockRestore() }
+  }, 15_000)
+
+  it('只读证明不跨事务掩盖原 checkpoint 或原始事件被改写', async () => {
+    const owned = await authorizedProduction({ name: 'readonly-producer-stale', visualLevel: 'key-scenes' })
+    await runCurrentProductProductionAcceptanceFixture({ scope: owned.scope, productionId: owned.productionId })
+    const artifact = (await db.productBuildArtifacts.where('buildId').equals(owned.buildId).toArray()).find(row => row.kind === 'image')!
+    const input = { scope: owned.scope, buildId: owned.buildId, artifactKey: artifact.artifactKey, version: artifact.version, contentHash: artifact.contentHash }
+    const tables = scopeTransactionTables(db.productBuilds, db.productBuildArtifacts, db.mediaBlobObjects,
+      db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts)
+    await db.transaction('r', tables, async () => {
+      expect(await verifyAcceptedProductBuildArtifactV1(input)).toEqual(artifact)
+    })
+    const checkpoint = await db.agentRunCheckpoints.where('[runId+throughSequence]')
+      .between([artifact.producerRunId!, Dexie.minKey], [artifact.producerRunId!, Dexie.maxKey]).last()
+    if (!checkpoint?.id) throw new Error('fixture needs its real producer checkpoint')
+    await db.agentRunCheckpoints.update(checkpoint.id, { checkpointHash: 'f'.repeat(64) })
+    await expect(db.transaction('r', tables, async () => {
+      await verifyAcceptedProductBuildArtifactV1(input)
+    })).rejects.toThrow(/checkpoint|检查点/)
+    await db.agentRunCheckpoints.put(checkpoint)
+    const event = await db.agentRunEvents.where('runId').equals(artifact.producerRunId!).first()
+    if (!event?.id) throw new Error('fixture needs its original producer event')
+    await db.agentRunEvents.update(event.id, { payloadJson: `${event.payloadJson} ` })
+    await expect(db.transaction('r', tables, async () => {
+      await verifyAcceptedProductBuildArtifactV1(input)
+    })).rejects.toThrow(/events/)
+    await db.agentRunEvents.put(event)
+    await db.transaction('r', tables, async () => {
+      expect(await verifyAcceptedProductBuildArtifactV1(input)).toEqual(artifact)
+    })
+  }, 15_000)
+
+  it('原生写事务中的只读子事务不复用证明，能拒绝本事务内被改写的事件', async () => {
+    const owned = await authorizedProduction({ name: 'readwrite-producer-stale', visualLevel: 'key-scenes' })
+    await runCurrentProductProductionAcceptanceFixture({ scope: owned.scope, productionId: owned.productionId })
+    const artifact = (await db.productBuildArtifacts.where('buildId').equals(owned.buildId).toArray()).find(row => row.kind === 'image')!
+    const input = { scope: owned.scope, buildId: owned.buildId, artifactKey: artifact.artifactKey, version: artifact.version, contentHash: artifact.contentHash }
+    const tables = scopeTransactionTables(db.productBuilds, db.productBuildArtifacts, db.mediaBlobObjects,
+      db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts)
+    const checkpointReads = vi.spyOn(producerCheckpoints, 'readLatestVerifiedAgentRunCheckpointV1')
+    try {
+      await db.transaction('rw', tables, async () => {
+        const native = Dexie.currentTransaction!.idbtrans
+        expect(native.mode).toBe('readwrite')
+        expect(await verifyAcceptedProductBuildArtifactV1(input)).toEqual(artifact)
+        const event = await db.agentRunEvents.where('runId').equals(artifact.producerRunId!).first()
+        if (!event?.id) throw new Error('fixture needs its original producer event')
+        await db.agentRunEvents.update(event.id, { payloadJson: `${event.payloadJson} ` })
+        await db.transaction('r', tables, async () => {
+          expect(Dexie.currentTransaction!.mode).toBe('readonly')
+          expect(Dexie.currentTransaction!.idbtrans).toBe(native)
+          await expect(verifyAcceptedProductBuildArtifactV1(input)).rejects.toThrow(/events/)
+        })
+        expect(checkpointReads).toHaveBeenCalledTimes(2)
+        await db.agentRunEvents.put(event)
+      })
+    } finally { checkpointReads.mockRestore() }
+  }, 15_000)
+
+  it('同一只读快照复用 producer 时仍重新读取 OPFS，拒绝外部物理字节变化', async () => {
+    const owned = await authorizedProduction({ name: 'readonly-producer-opfs', visualLevel: 'key-scenes' })
+    await runCurrentProductProductionAcceptanceFixture({ scope: owned.scope, productionId: owned.productionId })
+    const artifact = (await db.productBuildArtifacts.where('buildId').equals(owned.buildId).toArray()).find(row => row.kind === 'image')!
+    const blob = await db.mediaBlobObjects.get(artifact.blobObjectId!)
+    if (!blob?.id || !blob.data) throw new Error('fixture needs IndexedDB media bytes')
+    const fakeOpfs = installFakeOpfsV1()
+    const checkpointReads = vi.spyOn(producerCheckpoints, 'readLatestVerifiedAgentRunCheckpointV1')
+    try {
+      const opfsPath = `storyforge/media/v1/work-${owned.scope.workId}/${blob.contentHash}`
+      fakeOpfs.files.set(`/${opfsPath}`, blob.data.slice(0))
+      await db.mediaBlobObjects.update(blob.id, { backend: 'opfs', data: null, opfsPath })
+      const input = { scope: owned.scope, buildId: owned.buildId, artifactKey: artifact.artifactKey, version: artifact.version, contentHash: artifact.contentHash }
+      await db.transaction('r', scopeTransactionTables(db.productBuilds, db.productBuildArtifacts, db.mediaBlobObjects,
+        db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts), async () => {
+        expect(await verifyAcceptedProductBuildArtifactV1(input)).toEqual(artifact)
+        const reads = fakeOpfs.readCount
+        const changed = blob.data!.slice(0)
+        new Uint8Array(changed)[0] ^= 1
+        fakeOpfs.files.set(`/${opfsPath}`, changed)
+        await expect(verifyAcceptedProductBuildArtifactV1(input)).rejects.toThrow(/哈希/)
+        expect(fakeOpfs.readCount).toBeGreaterThan(reads)
+        expect(checkpointReads).toHaveBeenCalledTimes(1)
+      })
+    } finally { checkpointReads.mockRestore(); fakeOpfs.restore() }
   }, 15_000)
 
   it('从冻结 WorldRelease 生成唯一清单、可玩 AVG 预览与可验证 SVG，并可幂等重入', async () => {
