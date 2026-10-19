@@ -4861,3 +4861,20 @@ accepted/running 不当作成功；unknown/failed/cancelled 的原终态、错�
 | [Piper](https://github.com/OHF-Voice/piper1-gpl)与[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | 当前 Piper 代码 GPL-3.0、声线另有许可；sherpa-onnx 代码 Apache-2.0 | 运行工具不等于新的声线或权重授权。Piper 不作为本轮直接打包的 MIT 方案；sherpa 可用于已核对模型的轻量运行评估，仍须追溯原权重。 |
 
 下一步先核对 Qwen CustomVoice 与 Kokoro v1.1-zh 的最小代码/依赖和精确文件清单，串行生成同一公共原创中文段落的真实男女声对比，再依据中文清晰度、声线区分、长句韵律、开头结尾完整度和本机时延选择。只下载当前验证必需的一份权重，不批量安装全部候选或复制现有环境；不同候选的隔离依赖不能覆盖现有 Melo 已验证环境。MIT 与 Apache-2.0 均需保留适用许可/声明，声音素材和人格授权独立核对，不承诺绝对没有第三方争议。正式接入继续沿原文本、读法、接收者、Run、候选与媒资 owner，不改世界、旧音轨或旧请求合同。
+
+
+### 35.158 原生中文四说话人真实试音与准确权重兼容（2026-10-19）
+
+本单元是跑团 P10 语音能力研发中的公开固定台词评测，不是作者 S2 定向、S3 作品生产或运行媒资采用。入口只读原公开中文段落、固定官方模型和原生说话人向量；交付四个真实 PCM、调用/资产证据与独立离线试听页。有限 AI 入口 `ttrpg.local-voice.native-fixture-eval` 不读 `CONTEXT_SOURCES` 的作者数据，不写 `FIELD_REGISTRY` / Adoption 或 `PROJECT_TABLES`，不创建正式 Run/候选/媒资。后续正式接入仍须由新版本 product profile 冻结准确所选声线，沿原读法、本人接收者、唯一子 Run、候选试听与 E16；本机试听页选择不能冒充游戏已生效。
+
+采用 [Kokoro 官方中文 v1.1](https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh) `01e7505bd6a7a2ac4975463114c3a7650a9f7218`，仅一份主权重与四个官方原生向量 `zm_010 / zf_001 / zm_011 / zf_017`，全部必要模型文件共 329,353,685 字节。代码 Kokoro `dfb907a02bba8152ca444717ca5d78747ccb4bec`、Misaki `fba1236595f2d2bf21d414ba6e57d25256afada3` 均为 Apache-2.0，保留原源码、导数、许可与上游 StyleTTS2 MIT 声明；官方权重卡为 Apache-2.0。中文训练来源为发布方的龙猫数据授权声明，未独立取得其底层合同，不把这些证据扩张为绝无第三方争议的保证。
+
+复用原 Melo 的现有 Python/Torch 与准确包版本；只在候选私有目录读取两个额外 MIT wheel（loguru、addict），未安装进原环境，未创建第二份 Python/Torch。完整 KPipeline/英文语言栈、未用 attr 导入与 `pypinyin_dict.large_pinyin` 不加载。额外审查发现 [phrase-pinyin-data 官方说明](https://github.com/mozillazg/phrase-pinyin-data) 中 large_pinyin 混合汉典、CC-CEDICT 等来源，因此不以顶层 MIT 包标签概括其全部底层数据权利；已下载的小词典包仅留为未执行审查材料，不解包或导入。固定公开台词使用已核对的原 pypinyin 与中文音素前端，不宣称任意人名、多音字、数字/中英混读已解决。
+
+下载单次超时保留原 102,707,208 字节前缀和失败回执；在原准备进程确已结束后，以有界 Range 续传，核对每个 Content-Range、前缀/分段哈希与完整原权重 SHA-256，不再下载一套模型。首次本机评测在严格加载阶段发现最新版源码为 ONNX 导出新增 affine InstanceNorm 参数，原权重没有这些参数；该次实际语音推理为零，失败原日志与完整源码身份保留。已将导数准确恢复为与原权重对应的非 affine eager 结构，仍要求全部组件/权重完整 `strict=True`，不通过接受缺失权重、随机补参或不安全 pickle 绕过。
+
+显式新评测 `run-93f73306-6099-40d0-bd7c-e639290061c3` 在 CPU 两线程、禁网络/子进程下实际完成四次原生语音推理，完整台词不截断、未知音素不丢弃、无外部人物参考录音。统一模型语速 0.9，24 kHz 单声道 PCM；四段分别 18.600 / 18.425 / 18.200 / 19.700 秒，整次 24.13 秒、峰值 RSS 3,873,554,432 字节。逐次请求/返回、原文/音素覆盖、实际 PCM 能量/时长/文件哈希和末次资产/源码核验均通过；这不是 ASR、逐字对齐、语义听感或其他设备性能证明。原 Melo 长段落音频 SHA-256 未变化。
+
+四段新候选已独立交付试听；听感仍待用户反馈，不能把技术执行通过写成已达到“沉稳男声、柔和女声”。原生四声线入口另受原共享物理 `.eval.lock` 与候选锁约束，保留已有/未知任务；四次调用、CPU 两线程、240 秒整次/60 秒单段上限，保留失败/部分结果，不自动重试、播放或采用。静态/协议回归覆盖不可升级为正式入口、任意/参考人声输入拒绝、损坏/静音/错采样 WAV、物理槽位占用及启动失败只释放自身 claim。完整 CI、实际游戏内所选声线一致性、独立真人与发行准入仍待后续验证。
+
+另已核对 Qwen 官方源码 `022e286b98fbec7e1e916cb940cdf532cd9f488e`：0.6B CustomVoice 显式清空 instruct，故只评估原生预置说话人，不承诺指令式情绪/音色控制。其官方依赖要求 Transformers 4.57.3，与现有 5.20.1 不同，不覆盖原环境安装。新增 [MLX Audio](https://github.com/Blaizzy/mlx-audio) 作为 Apple Silicon 运行备选：运行器为 MIT，[社区转换的 Qwen 8bit](https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit) 标注 Apache-2.0；它不是新的声线授权，仍须核对准确源权重、转换代码、所有必要文件与最小依赖，尚未下载/推理或准入产品。

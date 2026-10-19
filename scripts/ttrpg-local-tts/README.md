@@ -72,3 +72,20 @@ worker 在加载模型前复算原确认读法，完整分段且每段最多 60 
 - `runtime-profile.json` 固定 41 个 Python 包及其发布许可元数据/文件哈希；包含 Apache、BSD、MIT 等依赖，tqdm 保留 MPL-2.0/MIT 原许可。整个依赖链不能被称为均为 MIT。
 
 完整上游多语言安装列表未准入：本工具不引入日文/其他语言前端、`pykakasi`、`Unidecode`、`num2words`、`g2p_en`、Web UI、训练或音频编解码栈。MeloTTS 的中文入口明确裁剪未使用的分派；CPU 特征读取与超长输出拒绝由评测引擎负责。不会通过 `weights_only=False`、远程自定义模型代码或下载回退绕过固定权重校验。
+
+## 原生中文多说话人固定试音
+
+用户否决 OpenVoice A/B 的区分度与听感后，新增 `native-voice-evaluate.mjs`，仅登记为 `ttrpg.local-voice.native-fixture-eval` 的离线有限入口。它复用原公开中文长段落，固定 Kokoro v1.1-zh 的 `zm_010 / zf_001 / zm_011 / zf_017` 四个官方说话人；不接受任意台词、项目、参考人声或自定义声线，不授予产品执行、采用或自动播放权限。正式配音、原请求、原音轨和世界数据保持原 owner。
+
+`native-voice-eval-profile.json` 冻结代码、权重、声线、最小依赖和原/导数哈希。Kokoro `dfb907a0`、Misaki `fba12365` 为 Apache-2.0，保留其原代码及 StyleTTS2 MIT 来源声明；权重 `hexgrad/Kokoro-82M-v1.1-zh@01e7505b` 模型卡为 Apache-2.0。全部必要模型文件共 329,353,685 字节。现有 Python/Torch 不重装；仅在候选私有目录加载已核对的 loguru / addict MIT wheel 文件，不写共享环境。原语言 pipeline、英文依赖及来源混合的 `pypinyin_dict.large_pinyin` 不加载；后者的底层来源不能由包上的 MIT 标签一概覆盖。此固定台词前端不表示任意中文、多音字或数字已验收。
+
+本机准备资产后运行：
+
+```bash
+node scripts/ttrpg-local-tts/native-voice-evaluate.mjs --check-only
+node scripts/ttrpg-local-tts/native-voice-evaluate.mjs --melo-runtime-dir /absolute/existing-melo-runtime --native-runtime-dir /absolute/prepared-native-assets
+```
+
+两份运行库共用原 `.eval.lock` 物理槽位；保留已有/未知任务，失败只释放本次准确 claim。四次推理、CPU 两线程、整次 240 秒及每段 60 秒上限，加载和推理均禁网络/子进程，逐次调用留证，不截断文本或丢弃未知音素。最新上游为 ONNX 导出新增的 affine InstanceNorm 与此权重不符，评测导数明确还原为非 affine 的 eager 结构，完整严格加载所有权重；没有使用 `strict=False` 或放开 pickle。下载超时和首轮零推理加载失败均保留，核明原因后才显式开始新评测，不隐藏重试。
+
+2026-10-19 原生四声线实际生成通过：24 kHz/单声道 PCM，语速统一 0.9，分别为 18.600、18.425、18.200、19.700 秒；整次 24.13 秒，峰值 RSS 约 3.87 GB。原文/音素覆盖、真实 PCM/哈希和调用证据核对通过，未冒充逐字对齐或语义听感证明。新候选已交付试听，独立听感待用户反馈；尚未替代正式 Melo 产品 profile，开局声线选择和真实旁白生成的一致接入继续施工。

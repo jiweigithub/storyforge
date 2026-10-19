@@ -3,6 +3,7 @@
   "bindingVersion": 1,
   "scope": "formal-ai-execution-entry",
   "limitedTransports": [
+    { "entryId": "ttrpg.local-voice.native-fixture-eval", "boundary": "offline-fixture-audio-eval", "adoptAllowed": false, "allowedCallers": ["scripts/ttrpg-local-tts/native-voice-evaluate.mjs"], "reason": "仅固定原创公开中文与官方原生预置声线的离线评测；不读作者数据或参考人声，不创建正式 Run、候选、媒资，不播放、不采纳。" },
     { "entryId": "ttrpg.local-voice.timbre-eval", "boundary": "offline-fixture-audio-eval", "adoptAllowed": false, "allowedCallers": ["scripts/ttrpg-local-tts/timbre-evaluate.mjs"], "reason": "仅固定公开中文 WAV 与官方合成预置向量的离线多声线评测；不接受作者文本或参考人声，不读项目、不采纳、不播放。" },
     { "entryId": "ttrpg.local-voice.eval", "boundary": "offline-fixture-audio-eval", "adoptAllowed": false, "allowedCallers": ["scripts/ttrpg-local-tts/evaluate.mjs"], "reason": "仅固定台词的本机离线音频评测；不读项目、不采纳、不播放。" },
     { "entryId": "longform.voice.input", "boundary": "ephemeral-author-input", "adoptAllowed": false, "allowedCallers": ["src/lib/longform-voice/session.ts"], "reason": "浏览器或独立语音服务仅将显式录音转成可编辑输入，不自动发送、执行或采纳。" },
