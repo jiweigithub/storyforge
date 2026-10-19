@@ -29,7 +29,8 @@ export async function readAvgRawSoundSourceV1(input: { scope: WorkspaceScope; bu
   if (!briefRow || !await assertRecordInScope(scope, 'productProductionBriefs', briefRow, { owner: 'work' })) throw new Error('[avg-sound] 缺少准确声音Brief')
   const brief = parseProductProductionBriefV3(briefRow.briefJson), plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash)
   const task = plan.tasks.find(t => t.outputArtifactKeys.includes(row.artifactKey))
-  if (!brief.avgSoundPlanning || briefRow.status !== 'authorized' || briefRow.briefHash !== build.briefHash || briefRow.authorizedAt !== build.authorizedAt
+  const frozen = ['validating', 'preview-ready', 'release-ready', 'released'].includes(build.status) && !!build.packageHash && !!build.previewHash && !!build.rootTerminalReceiptHash
+  if (!brief.avgSoundPlanning || !(frozen ? ['authorized', 'superseded'] : ['authorized']).includes(briefRow.status) || briefRow.briefHash !== build.briefHash || briefRow.authorizedAt !== build.authorizedAt
     || await hashProductProductionValueV2(brief) !== build.briefHash || !row.artifactKey.startsWith('avg.sound.raw.') || !task
     || !['avg-sound-music-generate', 'avg-sound-library-import'].includes(task.kind)
     || await hashProductProductionValueV2(plan) !== build.planHash) throw new Error('[avg-sound] 声音不是准确当前producer版本')

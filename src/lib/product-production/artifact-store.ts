@@ -2228,7 +2228,7 @@ export async function verifyProductBuildTerminalArtifactSetV1(input: {
   const briefRow = casReadSet.briefRows.find(row => row.revision === build.briefRevision && row.briefHash === build.briefHash)
   const nativeAuthorReceipts = new Map<string, string>()
   const avgNativeBrief=production.productType==='avg'&&briefRow?parseProductProductionBriefV3(briefRow.briefJson):null
-  if (avgNativeBrief&&(avgNativeBrief.avgAssembly||avgNativeBrief.avgVisualPlanning)) {
+  if (avgNativeBrief&&(avgNativeBrief.avgAssembly||avgNativeBrief.avgVisualPlanning||avgNativeBrief.avgSoundPlanning)) {
     casReadSet.authorCommandRows = (await db.productProductionCommands.where('productionId').equals(production.id).toArray())
       .sort((left,right) => (left.id ?? 0) - (right.id ?? 0))
     const { verifyFrozenAvgAuthorInputsV1 } = await import('../avg/author-artifacts')
@@ -2243,6 +2243,11 @@ export async function verifyProductBuildTerminalArtifactSetV1(input: {
       nativeAuthorReceipts.set(choice.artifact.artifactKey, choice.authorReceiptHash)
       nativeAuthorReceipts.set(choice.review.artifact.artifactKey, choice.review.authorReceiptHash)
     }
+    for (const choice of author.soundChoices ?? []) {
+      nativeAuthorReceipts.set(choice.artifact.artifactKey, choice.authorReceiptHash)
+      nativeAuthorReceipts.set(choice.review.artifact.artifactKey, choice.review.authorReceiptHash)
+    }
+    if (author.soundPlan) nativeAuthorReceipts.set(author.soundPlan.artifact.artifactKey, author.soundPlan.authorReceiptHash)
     if (author.authorStage) nativeAuthorReceipts.set(author.authorStage.artifact.artifactKey, author.authorStage.authorReceiptHash)
     if(avgNativeBrief.avgVisualPlanning){
       const {readAvgConfirmedVisualArtifactsV4,readAvgConfirmedVisualArtifactsV5}=await import('../avg/author-artifacts')
@@ -2318,6 +2323,16 @@ export async function verifyProductBuildTerminalArtifactSetV1(input: {
       ].filter((code): code is string => code != null)
       if (mismatchCodes.length > 0) {
         throw new Error(`[product-production-artifact] terminal accepted candidate/receipt/ledger 不闭合:${task.taskKey}:${mismatchCodes.join('|')}`)
+      }
+      if (avgNativeBrief?.avgSoundPlanning) {
+        const { productProductionTaskUsesWorldGatewayV1 } = await import('./source-contracts')
+        if (productProductionTaskUsesWorldGatewayV1(task)) {
+          const { verifyContextGatewayCandidateEvidenceV1 } = await import('../context-gateway/attempt-evidence')
+          await verifyContextGatewayCandidateEvidenceV1({
+            scope, runId: producerRunId, stepId: task.taskKey,
+            attempt: proof.attempt, candidateHash: proof.candidateHash,
+          })
+        }
       }
       proofMembers.push({
         taskKey: task.taskKey,

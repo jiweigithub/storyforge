@@ -15,11 +15,13 @@ export function avgAssemblyMediaRightsV1(source: AuthorSource, asset: FrozenRunt
     !== canonicalProductProductionJsonV2(asset)) throw new Error('[avg] 媒资权利投影缺少准确的已采用演出')
   const choice = source.mediaChoices?.find(c => !c.payload.referenceOnly && c.payload.asset.assetKey === asset.assetKey)
   const voice = source.voiceChoices?.find(c => c.payload.asset.assetKey === asset.assetKey)
+  const sound = source.soundChoices?.find(c => c.payload.asset.assetKey === asset.assetKey)
   const inherited = stage.payload.inheritedImages?.find(c => c.assetKey === asset.assetKey)
   const inheritedVoice = stage.payload.inheritedVoices?.find(c => c.assetKey === asset.assetKey)
-  if ([choice, voice, inherited, inheritedVoice].filter(Boolean).length > 1) throw new Error('[avg] 媒资存在冲突的采用来源')
+  if ([choice, voice, sound, inherited, inheritedVoice].filter(Boolean).length > 1) throw new Error('[avg] 媒资存在冲突的采用来源')
   return {
-    origin: choice || voice ? 'author-selected-provider' : inherited || inheritedVoice ? 'author-inherited-provider' : 'author-import',
+    origin: sound ? sound.raw.requirementKey === 'avg.media.music' ? 'author-selected-local-music' : 'author-selected-original-library'
+      : choice || voice ? 'author-selected-provider' : inherited || inheritedVoice ? 'author-inherited-provider' : 'author-import',
     license: asset.license, source: asset.source, authorStageReceipt: stage.authorReceiptHash,
     ...(inherited ? { inheritedStageSource: inherited } : {}),
     ...(inheritedVoice ? { inheritedStageVoiceSource: inheritedVoice } : {}),
@@ -30,6 +32,12 @@ export function avgAssemblyMediaRightsV1(source: AuthorSource, asset: FrozenRunt
     ...(voice ? { authorVoiceChoiceReceipt: voice.authorReceiptHash, audioReviewReceipt: voice.review.authorReceiptHash,
       rawVoice: { artifactKey: voice.raw.artifactKey, version: voice.raw.version, contentHash: voice.raw.contentHash },
       rawVoiceProducerReceiptHash: voice.raw.producerReceiptHash, requestIdentityHash: voice.payload.requestIdentityHash } : {}),
+    ...(sound ? { authorSoundChoiceReceipt: sound.authorReceiptHash, audioReviewReceipt: sound.review.authorReceiptHash,
+      rawSound: { artifactKey: sound.raw.artifactKey, version: sound.raw.version, contentHash: sound.raw.contentHash },
+      rawSoundProducerReceiptHash: sound.raw.producerReceiptHash, responseEvidenceHash: sound.validation.responseEvidenceHash,
+      requestSnapshotHash: sound.validation.requestSnapshotHash, requestIdentityHash: sound.payload.requestIdentityHash,
+      compiledSound: sound.validation.compiled, originalRights: JSON.parse(sound.raw.rightsJson), rightsHash: sound.validation.rightsHash,
+      authorSoundDeclaration: sound.payload.declaration } : {}),
   }
 }
 

@@ -28,6 +28,12 @@ export function createAvgSoundPlanningExecutorV1(options: { brief: ProductProduc
     try {
       if (!avgSoundProductionExecutionReadyV1()) throw new Error('[avg-sound-plan] 正式声音闭环尚未开放')
       if (input.signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      if (['avg-assembly-integrate', 'avg-assembly-verify'].includes(input.task.kind)) {
+        const { db } = await import('../db/schema'), { createAvgAssemblyExecutorV1 } = await import('./assembly-executor')
+        const build = await db.productBuilds.get(input.buildId), production = build ? await db.productProductions.get(build.productionId) : null
+        if (!production || build!.productionId !== input.productionId) throw new Error('[avg-sound] 组装缺少准确Production')
+        return createAvgAssemblyExecutorV1({ brief, production })(input)
+      }
       if (!['avg-sound-plan-propose', 'avg-sound-requirements-compile'].includes(input.task.kind)) throw new Error('[avg-sound-plan] 演出执行尚未接通；未调用或回退其他生产器')
       source = await readAvgSoundPlanningExecutionSourcesV1(input, brief)
     } catch (error) { throw new ProductProductionDraftRejectedErrorV1(error instanceof Error ? error.message : '声音来源无效', zero()) }

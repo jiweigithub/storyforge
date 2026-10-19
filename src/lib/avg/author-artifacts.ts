@@ -263,10 +263,10 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
   if (referenceRead && (!Number.isSafeInteger(referenceEpoch) || referenceEpoch < 0 || referenceEpoch > build.controlEpoch
     || !['building','integrating','validating','preview-ready','release-ready','released','paused','cancelled','failed','recovery-required'].includes(build.status))) throw new Error('[avg-media] 生成参考来源不属于可验证的已执行版本')
   const briefRow = await db.productProductionBriefs.where('[productionId+revision]').equals([production.id, build.briefRevision]).first()
-  if (!briefRow || !await assertRecordInScope(scope, 'productProductionBriefs', briefRow, { owner: 'work' })
-    || !(referenceRead ? ['authorized','superseded'] : ['authorized']).includes(briefRow.status) || briefRow.authorizedAt !== build.authorizedAt
-    || briefRow.briefHash !== build.briefHash || !frozenVerification && !referenceRead && production.currentBriefRevision !== build.briefRevision) throw new Error('[avg] Brief 授权已 stale')
+  if (!briefRow || !await assertRecordInScope(scope, 'productProductionBriefs', briefRow, { owner: 'work' })) throw new Error('[avg] Brief 授权已 stale')
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
+  if (!(referenceRead || frozenVerification && !!brief.avgSoundPlanning ? ['authorized','superseded'] : ['authorized']).includes(briefRow.status) || briefRow.authorizedAt !== build.authorizedAt
+    || briefRow.briefHash !== build.briefHash || !frozenVerification && !referenceRead && production.currentBriefRevision !== build.briefRevision) throw new Error('[avg] Brief 授权已 stale')
   if (brief.intent.productType !== 'avg' || await hash(brief) !== build.briefHash) throw new Error('[avg] Brief 内容/hash 不一致')
   if (frozenVerification && !brief.avgAssembly&&!brief.avgVisualPlanning&&!brief.avgSoundPlanning) throw new Error('[avg] 只读作者验证只接受原生组装合同')
   if (referenceRead && referenceKind === 'image' && !readAvgOptionalImageDefinitionV3(brief)) throw new Error('[avg-media] 生成参考只接受原生图片生产来源')
@@ -718,7 +718,7 @@ async function assertFrozenAuthorCandidateV1(context: Awaited<ReturnType<typeof 
  * Pure engineering previews remain available without this persistence receipt. */
 async function readAuthorInputs(input: {
   scope: WorkspaceScope; buildId: number; expectedBuildRevision: number; controlEpoch: number; includeSceneScripts?: boolean; includeAuthorStage?: boolean; includeMediaChoices?: boolean; includeVoiceChoices?: boolean
-}, frozenVerification = false) {
+}, frozenVerification = false, soundPrefixOnly = false) {
   const scope = await resolveScope({ scope: input.scope })
   const proofTables = await mediaProofTables(input.buildId,!!input.includeAuthorStage)
   return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands, db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects,
@@ -726,7 +726,8 @@ async function readAuthorInputs(input: {
     const context = await authority(scope, input.buildId, true, frozenVerification)
     if (context.build.stateRevision !== input.expectedBuildRevision || context.build.controlEpoch !== input.controlEpoch) throw new Error('[avg] 规则编译 Build revision/epoch 已 stale')
     if (frozenVerification) {
-      for (const task of context.plan.tasks.filter(task => task.executionMode === 'human-import')) {
+      for (const task of context.plan.tasks.filter(task => task.executionMode === 'human-import'
+        && (!soundPrefixOnly || ['avg-author-rules', 'avg-author-script'].includes(task.kind)))) {
         const [row] = await acceptedInputs(scope, input.buildId, input.controlEpoch, task.outputArtifactKeys)
         const upstream = await acceptedInputs(scope, input.buildId, input.controlEpoch, task.inputArtifactKeys)
         await assertFrozenAuthorCandidateV1(context, row, task, upstream, input.controlEpoch)
@@ -786,7 +787,8 @@ async function readAuthorInputs(input: {
           raw: selected.raw, blobObjectId: selected.blobObjectId, validation: selected.validation, review })
       }
     }
-    const soundChoices = input.includeAuthorStage && context.brief.avgSoundPlanning ? await readAvgConfirmedSoundChoicesV1(input) : []
+    const soundChoices = input.includeAuthorStage && context.brief.avgSoundPlanning ? await readAvgConfirmedSoundChoicesV1(input, frozenVerification) : []
+    const soundPlan = input.includeAuthorStage && context.brief.avgSoundPlanning ? await readAvgConfirmedSoundPlanV1(input, frozenVerification) : undefined
     let authorStage: { payload: AvgAuthorStageV1; artifact: Ref; authorReceiptHash: string; validation: AvgAssemblyValidationV1 } | null = null
     if (input.includeAuthorStage) {
       const [stageRow] = await acceptedInputs(scope, input.buildId, input.controlEpoch, ['avg.author.stage'])
@@ -805,7 +807,7 @@ async function readAuthorInputs(input: {
     return { plan: prepared.payload, artifact: ref(artifact), validation, authorReceiptHash: receipt.receiptHash, scripts, ...(input.includeAuthorStage ? { authorStage } : {}),
       ...(image ? { mediaChoices } : {}),
       ...(context.brief.avgAssembly?.version === 3 ? { voiceChoices } : {}),
-      ...(context.brief.avgSoundPlanning && input.includeAuthorStage ? { soundChoices } : {}),
+      ...(context.brief.avgSoundPlanning && input.includeAuthorStage ? { soundChoices, soundPlan } : {}),
       sourceWorld: { contentHash: context.brief.source.worldContentHash, selection: context.brief.source.selection },
       build: { productionKey: context.production.productionKey, buildNumber: context.build.buildNumber, stateRevision: context.build.stateRevision, controlEpoch: context.build.controlEpoch, planRevision: context.build.planRevision, planHash: context.build.planHash } }
   })
@@ -819,6 +821,12 @@ export function readAvgSystemPlanForCompilationV1(input: Parameters<typeof readA
  * No stage/choice recursion while proving the compiled visual definition. */
 export function readAvgFrozenVisualSourceInputsV4(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope'|'buildId'|'expectedBuildRevision'|'controlEpoch'>) {
   return readAuthorInputs({...input,includeSceneScripts:true},true)
+}
+
+/** Immutable sound source prefix only. Reconstructing an original raw task
+ * must not recurse into the Stage/choices that consume that same raw audio. */
+export function readAvgFrozenSoundSourceInputsV1(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope'|'buildId'|'expectedBuildRevision'|'controlEpoch'>) {
+  return readAuthorInputs({ ...input, includeSceneScripts: true }, true, true)
 }
 
 /** Planning reads canonical direction only after the existing author command,
@@ -848,11 +856,11 @@ async function readAvgConfirmedVisualArtifacts(input: Pick<Parameters<typeof rea
 
 /** Current author-adopted sound plan with original model and author receipts.
  * No metadata packet, caller-supplied plan or old adoption can substitute. */
-export async function readAvgConfirmedSoundPlanV1(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope' | 'buildId' | 'expectedBuildRevision' | 'controlEpoch'>) {
+export async function readAvgConfirmedSoundPlanV1(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope' | 'buildId' | 'expectedBuildRevision' | 'controlEpoch'>, frozenVerification = false) {
   const scope = await resolveScope({ scope: input.scope })
   return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands,
     db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects, db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts), async () => {
-    const context = await authority(scope, input.buildId, true)
+    const context = await authority(scope, input.buildId, true, frozenVerification)
     if (!context.brief.avgSoundPlanning || context.build.stateRevision !== input.expectedBuildRevision || context.build.controlEpoch !== input.controlEpoch) throw new Error('[avg-sound-plan] 声音采用来源或Build已stale')
     const task = authorTask(context, 'avg.author.sound-plan', AVG_SOUND_PLAN_KEY_V1, true)
     const [row] = await acceptedInputs(scope, input.buildId, input.controlEpoch, [AVG_SOUND_PLAN_KEY_V1])
@@ -867,11 +875,11 @@ export async function readAvgConfirmedSoundPlanV1(input: Pick<Parameters<typeof 
 /** Exact current author choices for configuration. Reproves the raw bytes,
  * original producer and adopted review; this read neither chooses, writes a
  * workspace nor signs hearing or commercial quality on the author's behalf. */
-export async function readAvgConfirmedSoundChoicesV1(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope' | 'buildId' | 'expectedBuildRevision' | 'controlEpoch'>) {
+export async function readAvgConfirmedSoundChoicesV1(input: Pick<Parameters<typeof readAuthorInputs>[0], 'scope' | 'buildId' | 'expectedBuildRevision' | 'controlEpoch'>, frozenVerification = false) {
   const scope = await resolveScope({ scope: input.scope })
   return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands,
     db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects, db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts), async () => {
-    const context = await authority(scope, input.buildId, true)
+    const context = await authority(scope, input.buildId, true, frozenVerification)
     if (!context.brief.avgSoundPlanning || context.build.stateRevision !== input.expectedBuildRevision || context.build.controlEpoch !== input.controlEpoch) throw new Error('[avg-sound] 声音选用来源或Build已stale')
     const result = []
     for (const t of context.brief.avgSoundPlanning.scope.templates) {
