@@ -72,3 +72,44 @@ export function chatOpeningReviewOutputSchemaV1(
     $defs: {sourceEvidence: evidence('source', stringPaths(source).filter(sourceCitationPath))},
   }}
 }
+
+/** A branch-free transport schema for constrained decoders. Cross-field
+ * relations are still checked by parseChatOpeningReviewDraftV1 against the
+ * exact option; a provider accepting this schema never authorizes adoption.
+ * V1 stays byte-for-byte unchanged for historical execution bindings. */
+export function chatOpeningReviewOutputSchemaV2(
+  source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1,
+): NonNullable<ChatRequestOptions['jsonSchema']> {
+  parseChatSituationCandidatesV1(candidates, source)
+  const text = (maxLength: number) => ({type: 'string', minLength: 1, maxLength})
+  const object = (properties: Record<string, unknown>) =>
+    ({type: 'object', properties, required: Object.keys(properties), additionalProperties: false})
+  const array = (items: unknown, minItems: number, maxItems: number) => ({type: 'array', items, minItems, maxItems})
+  const choice = (values: string[]) => ({type: 'string', enum: [...new Set(values)]})
+  const actors = source.participants.map(p => p.participantKey)
+  const options = candidates.options
+  const facts = options.flatMap(o => o.situation.facts
+    .filter(f => f.audienceKeys.some(key => actors.includes(key))).map(f => f.factKey))
+  const maximumPossibilities = Math.max(...options.map(o => o.situation.possibilities.length))
+  const agency = maximumPossibilities && facts.length ? {
+    ...object({
+      actorKey: choice(actors), goalKey: choice(options.flatMap(o => o.situation.goals.map(g => g.goalKey))),
+      possibilityIndex: {type: 'integer', minimum: 0, maximum: maximumPossibilities - 1},
+      basisFactKeys: array(choice(facts), 1, 3), mode: choice(['act', 'wait']),
+      expectedChange: text(600), unresolved: text(600),
+    }), type: ['object', 'null'],
+  } : {type: 'null'}
+  const pointers = [
+    ...stringPaths(source).filter(sourceCitationPath),
+    ...options.flatMap(o => stringPaths(o).filter(optionCitationPath)),
+  ]
+  return {name: 'chat_opening_review_v2', strict: true, schema: object({
+    options: array(object({
+      optionKey: choice(options.map(o => o.optionKey)), agency,
+      checks: array(object({
+        check: choice([...CHAT_OPENING_CHECKS]), passed: {type: 'boolean'}, reason: text(1000),
+        evidence: array(object({target: choice(['source', 'option']), pointer: choice(pointers), quote: text(800)}), 1, 4),
+      }), CHAT_OPENING_CHECKS.length, CHAT_OPENING_CHECKS.length),
+    }), options.length, options.length),
+  })}
+}

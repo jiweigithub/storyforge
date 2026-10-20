@@ -10,7 +10,7 @@ import {planChatOpeningRepairV4, applyChatOpeningOptionRepairV1, chatOpeningRefe
 import {chatOpeningReferencePromptV1} from '../character-interaction/opening-reference-prompt'
 import {parseChatOpeningSourceBoundOutputV1, parseChatOpeningSourceBoundOutputV2} from '../character-interaction/opening-source-references'
 import {chatOpeningOutputSchemaV1} from '../character-interaction/opening-output-schema'
-import {chatOpeningReviewOutputSchemaV1} from '../character-interaction/opening-review-output'
+import {chatOpeningReviewOutputSchemaV1, chatOpeningReviewOutputSchemaV2} from '../character-interaction/opening-review-output'
 import {recordChatOpeningRepairV1, requireDeliveredChatOpeningRepairV1} from '../character-interaction/opening-repair-evidence'
 import {chatOpeningReviewPromptV1, createChatOpeningReviewV1} from '../character-interaction/situation-production-review'
 import {chatOpeningContinuationProductionPromptV1, chatOpeningContinuationReviewPromptV1, chatOpeningScopedReviewPromptV1, chatOpeningIndependentReviewPromptV1} from '../character-interaction/opening-continuation'
@@ -7016,7 +7016,7 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
   const openingJsonSchema = chatOpeningVersion?.completeSourceFacts && input.attempt === 1 && !input.authorDraftJson
     ? await chatOpeningOutputSchemaV1(chatProductionSourceV1(input), chatOpeningCatalog)
     : chatOpeningVersion?.scopedReview && !input.authorDraftJson
-      ? chatOpeningReviewOutputSchemaV1(chatProductionSourceV1(input),
+      ? (chatOpeningVersion.flatReview ? chatOpeningReviewOutputSchemaV2 : chatOpeningReviewOutputSchemaV1)(chatProductionSourceV1(input),
         parseChatSituationCandidatesV1(chatProductionArtifactPayloadV1(input, 'content.chat-candidates'), chatProductionSourceV1(input)))
       : undefined
   // Reserve the schema overhead even for providers using the JSON-object

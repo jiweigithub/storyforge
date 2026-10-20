@@ -7,7 +7,7 @@ import {CHAT_OPENING_FACT_CATALOG_KEY, CHAT_OPENING_REFERENCE_GATE_V1, CHAT_OPEN
 import {CHAT_OPENING_OPTION_REPAIR_GATE_V1} from './opening-option-repair'
 
 /** Select prompt/output semantics from this durable attempt, never the live registry. */
-export async function readChatOpeningProductionVersionV1(input: ProductProductionTaskExecutionInputV1): Promise<{groundedAgency: boolean; targetedRepair?: true; patchRepair?: true; sourceReferences?: true; optionRepair?: true; completeSourceFacts?: true; meaningfulContinuation?: true; scopedReview?: true; independentReview?: true}> {
+export async function readChatOpeningProductionVersionV1(input: ProductProductionTaskExecutionInputV1): Promise<{groundedAgency: boolean; targetedRepair?: true; patchRepair?: true; sourceReferences?: true; optionRepair?: true; completeSourceFacts?: true; meaningfulContinuation?: true; scopedReview?: true; independentReview?: true; flatReview?: true}> {
   if (input.taskRunId == null) throw new Error('开场制作缺少冻结任务运行，不能选择提示版本')
   const snapshot = await readAgentRunV1(input.scope, input.taskRunId)
   const binding = snapshot.contract.executionBindings?.find(b => b.stepId === input.task.taskKey && b.skillId === input.task.skillId)
@@ -16,9 +16,10 @@ export async function readChatOpeningProductionVersionV1(input: ProductProductio
   if (!['character.chat-situation-production', 'character.chat-opening-review'].includes(input.task.skillId ?? '')) throw new Error('不是开场制作或审查任务')
   const production = input.task.skillId === 'character.chat-situation-production'
   // Only pre-change versions with independently verified prompt bytes are executable.
-  const allowed = production ? ['chat-situation-production-v5', 'chat-situation-production-v6', 'chat-situation-production-v7', 'chat-situation-production-v8', 'chat-situation-production-v9', 'chat-situation-production-v10', 'chat-situation-production-v11', 'chat-situation-production-v12'] : ['chat-opening-review-v1', 'chat-opening-review-v2', 'chat-opening-review-v3', 'chat-opening-review-v4', 'chat-opening-review-v5']
+  const allowed = production ? ['chat-situation-production-v5', 'chat-situation-production-v6', 'chat-situation-production-v7', 'chat-situation-production-v8', 'chat-situation-production-v9', 'chat-situation-production-v10', 'chat-situation-production-v11', 'chat-situation-production-v12'] : ['chat-opening-review-v1', 'chat-opening-review-v2', 'chat-opening-review-v3', 'chat-opening-review-v4', 'chat-opening-review-v5', 'chat-opening-review-v6']
   if (!allowed.includes(binding.promptVersion)) throw new Error('无法执行未支持的冻结开场提示版本')
-  const independentReview = !production && binding.promptVersion === 'chat-opening-review-v5'
+  const flatReview = !production && binding.promptVersion === 'chat-opening-review-v6'
+  const independentReview = flatReview || !production && binding.promptVersion === 'chat-opening-review-v5'
   const scopedReview = independentReview || !production && binding.promptVersion === 'chat-opening-review-v4'
   const meaningfulContinuation = scopedReview || binding.promptVersion === (production ? 'chat-situation-production-v12' : 'chat-opening-review-v3')
   const groundedAgency = meaningfulContinuation || binding.promptVersion === (production ? 'chat-situation-production-v6' : 'chat-opening-review-v2')
@@ -38,5 +39,5 @@ export async function readChatOpeningProductionVersionV1(input: ProductProductio
   if (targetedRepair && (!production || legacyRepair && patchRepair
     || binding.promptVersion !== (meaningfulContinuation ? 'chat-situation-production-v12' : completeSourceFacts ? 'chat-situation-production-v11' : optionRepair ? 'chat-situation-production-v10' : sourceReferences ? 'chat-situation-production-v9' : patchRepair ? 'chat-situation-production-v8' : 'chat-situation-production-v7')
     || input.task.budgetReservation.modelCalls !== 2 || input.task.maxAttempts !== 2)) throw new Error('冻结开场合同不支持定向修复，不能自动换约')
-  return {groundedAgency, ...(targetedRepair ? {targetedRepair: true as const} : {}), ...(patchRepair ? {patchRepair: true as const} : {}), ...(sourceReferences ? {sourceReferences: true as const} : {}), ...(optionRepair ? {optionRepair: true as const} : {}), ...(completeSourceFacts ? {completeSourceFacts: true as const} : {}), ...(meaningfulContinuation ? {meaningfulContinuation: true as const} : {}), ...(scopedReview ? {scopedReview: true as const} : {}), ...(independentReview ? {independentReview: true as const} : {})}
+  return {groundedAgency, ...(targetedRepair ? {targetedRepair: true as const} : {}), ...(patchRepair ? {patchRepair: true as const} : {}), ...(sourceReferences ? {sourceReferences: true as const} : {}), ...(optionRepair ? {optionRepair: true as const} : {}), ...(completeSourceFacts ? {completeSourceFacts: true as const} : {}), ...(meaningfulContinuation ? {meaningfulContinuation: true as const} : {}), ...(scopedReview ? {scopedReview: true as const} : {}), ...(independentReview ? {independentReview: true as const} : {}), ...(flatReview ? {flatReview: true as const} : {})}
 }

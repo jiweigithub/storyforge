@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, expect, it} from 'vitest'
 import Ajv from 'ajv'
 import {db} from '../../src/lib/db/schema'
-import {chatOpeningReviewOutputSchemaV1} from '../../src/lib/character-interaction/opening-review-output'
+import {chatOpeningReviewOutputSchemaV1, chatOpeningReviewOutputSchemaV2} from '../../src/lib/character-interaction/opening-review-output'
 import {parseChatOpeningReviewDraftV1} from '../../src/lib/character-interaction/situation-production-review'
 import {chatOpeningContinuationReviewPromptV1, chatOpeningScopedReviewPromptV1, chatOpeningIndependentReviewPromptV1} from '../../src/lib/character-interaction/opening-continuation'
 import {executeProductProductionCommand} from '../../src/lib/product-production/commands'
@@ -42,6 +42,36 @@ it('validates exact per-option pointers and visible opportunity identities witho
   expect(chatOpeningScopedReviewPromptV1().endsWith(chatOpeningContinuationReviewPromptV1())).toBe(true)
 })
 
+it('accepts a flat transport while locally rejecting wrong roots, cross-option opportunities and fabricated quotes', async () => {
+  const f = await seedChatNarrativeProductionFixture({factDiscovery: true})
+  const last = f.candidates.options[f.candidates.options.length - 1]
+  last.situation.facts.push({factKey: 'last-option-only', text: '另一开场新增的公共柜架。',
+    audienceKeys: ['player', f.source.participants[0].participantKey],
+    origin: 'author-private', sourceKnowledgeKey: null, sourceEventSequence: 0})
+  last.situation.possibilities[0].evidenceFactKeys.push('last-option-only')
+  const schema = chatOpeningReviewOutputSchemaV2(f.source, f.candidates)
+  const validate = new Ajv().compile(schema.schema)
+  const report = chatOpeningAgencyReviewFixture(f.candidates)
+  expect(validate(report)).toBe(true)
+  expect(() => parseChatOpeningReviewDraftV1(report, f.source, f.candidates, 2)).not.toThrow()
+  expect(JSON.stringify(schema)).not.toMatch(/"anyOf"|"oneOf"|"\$ref"/)
+  const wrongRoot = structuredClone(report)
+  wrongRoot.options[0].checks[0].evidence = [{target: 'option', pointer: '/settings/openingSituation', quote: f.source.settings.openingSituation}]
+  expect(validate(wrongRoot)).toBe(true)
+  expect(() => parseChatOpeningReviewDraftV1(wrongRoot, f.source, f.candidates, 2)).toThrow('引用路径不属于')
+  const wrongOption = structuredClone(report)
+  wrongOption.options[0].agency!.basisFactKeys = ['last-option-only']
+  expect(validate(wrongOption)).toBe(true)
+  expect(() => parseChatOpeningReviewDraftV1(wrongOption, f.source, f.candidates, 2)).toThrow('行动机会不得借用')
+  const fakeQuote = structuredClone(report)
+  fakeQuote.options[0].checks[0].evidence[0].quote = 'invented evidence'
+  expect(validate(fakeQuote)).toBe(true)
+  expect(() => parseChatOpeningReviewDraftV1(fakeQuote, f.source, f.candidates, 2)).toThrow('连续摘录')
+  const repeated = {options: report.options.map(() => report.options[0])}
+  expect(validate(repeated)).toBe(true)
+  expect(() => parseChatOpeningReviewDraftV1(repeated, f.source, f.candidates, 2)).toThrow('身份缺失或重复')
+})
+
 it.each(['accepted', 'provider-ignored-schema', 'semantic-rejection', 'schema-budget', 'output-limit', 'independent-retry'] as const)(
   'uses the registered production run and preserves failure without another request: %s', async scenario => {
     const f = await seedChatNarrativeProductionFixture()
@@ -73,7 +103,7 @@ it.each(['accepted', 'provider-ignored-schema', 'semantic-rejection', 'schema-bu
           .filter(row => row.artifactKey === 'content.chat-candidates').last())!.payloadJson)
       let output = JSON.stringify(candidates)
       if (!isOpening) {
-        expect(request.jsonSchema?.name).toBe('chat_opening_review_v1')
+        expect(request.jsonSchema?.name).toBe('chat_opening_review_v2')
         expect(request.system).toBe(chatOpeningIndependentReviewPromptV1())
         expect(request.maximumOutputTokens).toBeLessThanOrEqual(15_000)
         expect(request.contextText).not.toContain('REJECTED_REVIEW_NOT_SOURCE')
