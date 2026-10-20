@@ -32,6 +32,7 @@ export function applyTtrpgOpenModelCallEventV1(state: ProductRuntimeState, event
       || !entry.request && (Object.keys(p.object(intent.effectBindings,'clarified effect bindings')).length > 0 || intent.discovery !== undefined)
       || run.operations.some(o => o.intentEvidence?.runContractHash === call.runContractHash)) p.fail('澄清必须绑定原真人、原候选和当前未执行线程，最多三次')
     assertTtrpgOpenModelActorV1(auth,call.skillId,call.actorKey,entry.viewerKey)
+    if (entry.sceneScope && state.entities[entry.actorKey]?.locationKey !== entry.sceneScope.locationRef) p.fail('人工澄清的场景范围不是行动者的实际当前场景')
     call.intentClarifications = [...records,entry]
     parseTtrpgOpenModelCallV1(call)
     state.ttrpg = runtime

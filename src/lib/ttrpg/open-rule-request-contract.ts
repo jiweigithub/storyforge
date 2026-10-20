@@ -1,5 +1,29 @@
 /** Pure request shapes shared by frozen rule plans and durable clarification records. */
 import * as p from './open-contract-parse'
+import type { RuleActionDefinitionV1 } from '../types'
+
+export interface TtrpgOpenSceneScopeV1 { kind: 'current-scene'; locationRef: string }
+export function parseTtrpgOpenSceneScopeV1(value: unknown): TtrpgOpenSceneScopeV1 {
+  const r = p.record(value,['kind','locationRef'],'intent scene scope')
+  return { kind: p.literal(r.kind,'current-scene','scene scope kind'),locationRef: p.key(r.locationRef,'scene location') }
+}
+/** Preserve semantic scope separately from the kernel's null scene target. */
+export function resolveTtrpgOpenIntentTargetV1(input: {
+  route: 'existing-action' | 'generic-check'; actionTarget?: RuleActionDefinitionV1['target']
+  actorKey: string; targetRefs: readonly string[]; currentLocationRef: string | null
+}): { targetKey: string | null; sceneScope?: TtrpgOpenSceneScopeV1 } {
+  if (input.targetRefs.length > 1) p.fail('当前裁定需要单个明确目标，不能静默丢弃其他目标')
+  if (input.route === 'existing-action' && input.actionTarget === 'scene') {
+    if (!input.targetRefs.length) return { targetKey: null }
+    if (!input.currentLocationRef || input.targetRefs[0] !== input.currentLocationRef) p.fail('场景行动只能指向行动者的当前场景，请明确澄清目标')
+    return { targetKey: null,sceneScope: { kind: 'current-scene',locationRef: input.currentLocationRef } }
+  }
+  if (input.route === 'existing-action' && input.actionTarget === 'self') {
+    if (input.targetRefs.length) p.fail('自身行动不能替换为其他目标，请明确澄清目标')
+    return { targetKey: input.actorKey }
+  }
+  return { targetKey: input.targetRefs[0] ?? null }
+}
 
 export interface TtrpgOpenDiscoveryRequestV1 {
   situationKey: string; evidenceRef: string; interventionPointKey: string

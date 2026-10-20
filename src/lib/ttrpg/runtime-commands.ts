@@ -104,6 +104,7 @@ import { parseTtrpgOpenEpochV1, frozenTtrpgOpenEpochBudgetV1,
 import { key as openKey, text as openText, hash as openHash, list as openList } from "./open-contract-parse";
 import { hashProductProductionValueV2 } from "../product-production/hash";
 import { createTtrpgOpenRulePlanV1, ttrpgOpenMechanicalStateHashV1, parseTtrpgOpenRuleRequestV1, type TtrpgOpenRuleRequestV1 } from './open-rule-plan';
+import { resolveTtrpgOpenIntentTargetV1 } from './open-rule-request-contract';
 import { parseTtrpgOpenOperationV1, parseTtrpgOpenRuleReceiptV1, ttrpgOpenOperationStepsV1, nextTtrpgOpenOperationStepV1, ttrpgOpenOperationRuleCauseV1 } from './open-operation';
 import { parseTtrpgOpenRulePlanV1 } from './open-rule-plan';
 import { ttrpgOpenRecoveryApprovalsV1, ttrpgOpenAncestorRuleReceiptForTaskV1, ttrpgOpenCoveredBusinessKeysV1 } from './open-branch-recovery';
@@ -1666,15 +1667,17 @@ export async function clarifyTtrpgOpenIntentCandidateV1(input: Omit<TtrpgOpenSem
       const { inspectTtrpgOpenIntentRoutingV1,prepareTtrpgOpenClarifiedRuleRequestV1 } = await import('./open-intent-clarification');
       const content = requireTtrpgOpenContent(context.ttrpgContent);
       const inspected = await inspectTtrpgOpenIntentRoutingV1({ scope,session: context.session,state: context.state,content,viewerKey,candidate });
-      if (inspected.originalPreview.route !== 'needs-clarification' || (inspected.call.intentClarifications?.length ?? 0) !== expectedCount) throw Error('原澄清线程已变化，不能替换其他候选或重置次数');
+      if (!inspected.originalRequiresClarification || (inspected.call.intentClarifications?.length ?? 0) !== expectedCount) throw Error('原澄清线程已变化，不能替换其他候选或重置次数');
       if (!inspected.review.canClarify) throw Error('同一澄清线程最多提交三次补充');
       if (selection.method !== null && !inspected.review.catalog.rules.some(r => (r.interactionKey ?? r.ruleKey) === selection.method)) throw Error('请选择双方可见的冻结规则方法');
-      const request = await prepareTtrpgOpenClarifiedRuleRequestV1({ inspected,candidate,selection,bindings: effectBindings,discovery,
+      const prepared = await prepareTtrpgOpenClarifiedRuleRequestV1({ inspected,candidate,selection,bindings: effectBindings,discovery,
         state: context.state,content,runtimeSourceHash: context.session.runtimeSourceHash! });
+      const { request } = prepared;
       if (!request && (Object.keys(effectBindings).length || discovery)) throw Error('尚未明确裁定方式，不能附加后果或线索绑定');
       const body: Omit<TtrpgOpenIntentClarificationV1,'clarificationHash'> = { schema: 'storyforge.ttrpg-open-intent-clarification',version: 1,
         sourceRef: { sessionKey: inspected.runtime.sessionKey,sequence: context.sequence },candidateHash,
-        threadKey: candidate.intent!.clarificationThreadKey,actorKey: candidate.actorKey,viewerKey,attempt: expectedCount + 1,selection,request };
+        threadKey: candidate.intent!.clarificationThreadKey,actorKey: candidate.actorKey,viewerKey,attempt: expectedCount + 1,selection,request,
+        ...(prepared.sceneScope ? { sceneScope: prepared.sceneScope } : {}) };
       return { actorKey: candidate.actorKey,targetKey: null,payload: { requestKey,viewerKey,clarification: { ...body,clarificationHash: await hashTtrpgOpenIntentClarificationV1(body) } },agentEvidence: evidence };
     },
   });
@@ -1728,8 +1731,9 @@ async function startTtrpgOpenSemanticOperationV1(input: TtrpgOpenSemanticOperati
         if (Object.keys(effectBindings).length && stableJson(effectBindings) !== stableJson(clarification.request.effectBindings)) throw Error('不能替换已核对的澄清后果绑定');
         const checked = await prepareTtrpgOpenClarifiedRuleRequestV1({ inspected,candidate,selection: clarification.selection,
           bindings: clarification.request.effectBindings,discovery: clarification.request.discovery,state: context.state,content,runtimeSourceHash: context.session.runtimeSourceHash! });
-        if (!checked) throw Error('当前澄清仍需要补充，不能执行');
-        assertTtrpgOpenClarifiedRequestEqualV1(checked,clarification.request);
+        if (!checked.request) throw Error('当前澄清仍需要补充，不能执行');
+        assertTtrpgOpenClarifiedRequestEqualV1(checked.request,clarification.request);
+        if (stableJson(checked.sceneScope ?? null) !== stableJson(clarification.sceneScope ?? null)) throw Error('已核对的澄清场景范围已变化');
         intent = inspected.intent;
       }
       if (intent.targetRefs.length > 1) throw new Error('[ttrpg-open-intent] 当前裁定需要单个明确目标，不能静默丢弃其他目标');
@@ -1757,11 +1761,13 @@ async function startTtrpgOpenSemanticOperationV1(input: TtrpgOpenSemanticOperati
       if (Object.values(effectBindings).some(bindings => Object.values(bindings).some(ref => ref !== null && !allowedBindings.has(ref)))) {
         throw new Error('[ttrpg-open-intent] 后果绑定引用了当前角色不可见的对象');
       }
+      const target = resolveTtrpgOpenIntentTargetV1({ route: ruleRoute,actorKey: candidate.actorKey,targetRefs: intent.targetRefs,
+        actionTarget: view.view.rules.actions.find(action => action.actionKey === ruleKey)?.target,currentLocationRef: view.view.self.locationKey });
       const request = clarification?.request ?? parseTtrpgOpenRuleRequestV1({ route: ruleRoute, ruleKey, actorKey: candidate.actorKey,...(interactionKey ? { interactionKey } : {}),
-        targetKey: ruleRoute === 'existing-action' && view.view.rules.actions.find(action => action.actionKey === ruleKey)?.target === 'self'
-          ? candidate.actorKey : intent.targetRefs[0] ?? null, controllerMode: intent.source.startsWith('companion:') ? 'ai' : 'human', effectBindings });
+        targetKey: target.targetKey, controllerMode: intent.source.startsWith('companion:') ? 'ai' : 'human', effectBindings });
       const operation = await prepareStartedTtrpgOpenOperationV1(context, viewerKey, request, commandId, {
         ...(hostingDelegationRef ? { hostingDelegationRef } : {}),
+        ...(target.sceneScope ? { sceneScope: target.sceneScope } : {}),
         sourceRef: call.terminalRef, candidateHash, runContractHash: call.runContractHash,
         inputManifestHash: call.inputManifestHash, rawResponseHash: candidate.rawResponseHash,
         ...(clarification ? { clarificationRef: { sourceRef: clarification.sourceRef,clarificationHash: clarification.clarificationHash } } : {}) });

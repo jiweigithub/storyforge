@@ -9,6 +9,7 @@ import { parseTtrpgOpenSituationFrozenContentV1 } from './open-situation-runtime
 import { ttrpgOpenPredicateContextV1 } from './open-rule-plan'
 import * as p from './open-contract-parse'
 import { assertTtrpgOpenDelegatedCompanionProposalV1 } from './open-hosting-delegation'
+import { resolveTtrpgOpenIntentTargetV1 } from './open-rule-request-contract'
 export interface TtrpgOpenCompanionPreauthorizationV1 {
   hostingDelegationRef?: TtrpgOpenSourceRefV1
   sourceRef: TtrpgOpenSourceRefV1; authorizationRef: TtrpgOpenSourceRefV1; candidateHash: string; actionKind: 'observe' | 'talk' | 'assist' | 'move' | 'low-risk-check'; basis: 'session-zero-policy'
@@ -27,6 +28,11 @@ export function previewTtrpgOpenCompanionPermissionV1(state: ProductRuntimeState
   const actors = content.campaign.characterTemplates.map(t => { const s = auth.seats.find(s => s.actorKey === t.characterKey); return { ...t, ...(s ? { controller: s.controller, seatKey: s.seatKey } : {}), ...(t.characterKey === actorKey ? { actionKeys: context.actors![actorKey].abilityKeys } : {}) } })
   const preview = routeTtrpgOpenIntentV1(intent, { rulePack: content.rulePack.content, campaign: content.campaign, actors, predicateContext: context })
   const action = operation.plan.rulePack.actions.find(a => a.key === operation.plan.request.ruleKey)
+  if (operation.intentEvidence?.sceneScope) {
+    const target = resolveTtrpgOpenIntentTargetV1({ route: operation.plan.request.route,actionTarget: action?.target,
+      actorKey,targetRefs: intent.targetRefs,currentLocationRef: state.entities[actorKey]?.locationKey ?? null })
+    if (target.targetKey !== operation.plan.request.targetKey || stable(target.sceneScope ?? null) !== stable(operation.intentEvidence.sceneScope)) p.fail('队友预授权的原意图与当前场景范围不一致')
+  }
   if (!seat || seat.controller !== 'ai' || !seat.consent.aiAdviceAllowed || intent.actorKey !== actorKey || intent.source !== `companion:${actorKey}` || operation.inheritance
     || operation.status !== 'awaiting-approval' || operation.approvals.length || operation.businessRefs.length || operation.preauthorization || operation.plan.request.controllerMode !== 'ai'
     || run.stage.status !== 'open' || runtime.product.safety.status !== 'active' || preview.authorization !== 'preauthorized' || preview.requiresConfirmation || preview.confirmationReasonKinds.length

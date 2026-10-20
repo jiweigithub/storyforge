@@ -50,6 +50,7 @@ export function applyTtrpgOpenOperationEventV1(state: ProductRuntimeState, event
     assertTtrpgOpenOperationIntentCallV1(operation, run.coordination.calls)
     if (operation.intentEvidence) {
       if (intent.candidateHash !== operation.intentEvidence.candidateHash) p.fail('提案不是本次真实候选版本')
+      if (operation.intentEvidence.sceneScope && state.entities[operation.plan.request.actorKey]?.locationKey !== operation.intentEvidence.sceneScope.locationRef) p.fail('行动开始时的场景范围不是行动者的实际当前场景')
       const delegationRef = operation.intentEvidence.hostingDelegationRef
       if (delegationRef) {
         if (intent.decision !== 'delegate-proposal' || stable(intent.hostingDelegationRef) !== stable(delegationRef)) p.fail('队友系统提案不能冒充新的真人确认')
