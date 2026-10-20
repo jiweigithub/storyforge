@@ -11,11 +11,15 @@ import {
 } from '../../src/lib/prose/post-adoption-policy'
 import {
   authorizeChapterPostAdoptionV1,
+  buildChapterPostAdoptionRunContractV1,
   chapterPostAdoptionChainStateV1,
   createChapterPostAdoptionDurableRunV1,
+  recoverChapterPostAdoptionAuthorizationV1,
   scheduleChapterPostAdoptionStepsV1,
   CHAPTER_POST_ADOPTION_STEP_IDS_V1,
 } from '../../src/lib/agent/run/chapter-post-adoption-durable'
+import { appendAgentRunEventV1, createAgentRunV1 } from '../../src/lib/agent/run/event-store'
+import { buildChapterPostAdoptionResumePlanV1 } from '../../src/lib/agent/run/chapter-post-adoption-resume'
 import {
   adoptChapterOrganizationSelection,
   parseChapterOrganizationOutput,
@@ -78,6 +82,32 @@ async function seed(label: string, projectId?: number, worldId?: number): Promis
   return { scope, chapterId }
 }
 
+async function interruptedAuthorization(label: string, preauthorized = false) {
+  const fixture = await seed(label)
+  const chapter = await db.chapters.get(fixture.chapterId)
+  const settings = preauthorized ? resolveWorkPostAdoptionSettingsV1({
+    postAdoptionPolicy: 'auto-with-budget',
+    postAdoptionTaskTypes: ['organization', 'memory', 'retrieval', 'consistency'],
+    postAdoptionBudget: { maxModelCalls: 2, maxInputTokens: 48_000, maxOutputTokens: 16_000, maxCostUsd: 0.25, allowUnknownCost: true },
+  }) : await readWorkPostAdoptionSettingsV1(fixture.scope)
+  const authorization = await buildPostAdoptionAuthorizationSnapshotV1({
+    scope: fixture.scope, chapterId: fixture.chapterId,
+    sourceTextHash: await hashChapterText(chapter!.content), settings,
+    modelRoutes: [
+      { taskType: 'organization', provider: 'gemini', model: 'gemini-3.5-flash' },
+      { taskType: 'memory', provider: 'gemini', model: 'gemini-3.5-flash' },
+    ],
+  })
+  let partial = await createAgentRunV1({
+    scope: fixture.scope, worldGroupId: null,
+    contract: buildChapterPostAdoptionRunContractV1({ projectId: fixture.scope.projectId, worldGroupId: null, chapterId: fixture.chapterId, authorization }),
+  })
+  const stepId = CHAPTER_POST_ADOPTION_STEP_IDS_V1.authorization
+  partial = await appendAgentRunEventV1({ scope: fixture.scope, runId: partial.run.id, type: 'step.scheduled', payload: { stepId } })
+  partial = await appendAgentRunEventV1({ scope: fixture.scope, runId: partial.run.id, type: 'step.started', payload: { stepId, attempt: 1 } })
+  return { fixture, chapter, authorization, partial }
+}
+
 describe.sequential('PROGRESS-1 · 章后策略、预算与七域演化', () => {
   beforeEach(async () => {
     await db.delete()
@@ -120,6 +150,106 @@ describe.sequential('PROGRESS-1 · 章后策略、预算与七域演化', () => 
     })
     expect(repeated.run.id).toBe(first.run.id)
     expect(repeated.events.filter(event => event.type === 'candidate.persisted')).toHaveLength(1)
+  })
+
+  it.each(['created', 'scheduled', 'running'] as const)('授权准备中断在 %s 后，重建同一 Run 恢复待确认且不调用模型', async stoppedAfter => {
+    const fixture = await seed(`interrupted-${stoppedAfter}`)
+    const chapter = await db.chapters.get(fixture.chapterId)
+    const authorization = await buildPostAdoptionAuthorizationSnapshotV1({
+      scope: fixture.scope,
+      chapterId: fixture.chapterId,
+      sourceTextHash: await hashChapterText(chapter!.content),
+      modelRoutes: [
+        { taskType: 'organization', provider: 'gemini', model: 'gemini-3.5-flash' },
+        { taskType: 'memory', provider: 'gemini', model: 'gemini-3.5-flash' },
+      ],
+      settings: await readWorkPostAdoptionSettingsV1(fixture.scope),
+    })
+    let partial = await createAgentRunV1({
+      scope: fixture.scope,
+      worldGroupId: null,
+      contract: buildChapterPostAdoptionRunContractV1({
+        projectId: fixture.scope.projectId,
+        worldGroupId: null,
+        chapterId: fixture.chapterId,
+        authorization,
+      }),
+    })
+    const stepId = CHAPTER_POST_ADOPTION_STEP_IDS_V1.authorization
+    if (stoppedAfter !== 'created') partial = await appendAgentRunEventV1({
+      scope: fixture.scope, runId: partial.run.id,
+      type: 'step.scheduled', payload: { stepId },
+    })
+    if (stoppedAfter === 'running') partial = await appendAgentRunEventV1({
+      scope: fixture.scope, runId: partial.run.id,
+      type: 'step.started', payload: { stepId, attempt: 1 },
+    })
+
+    const recovered = await createChapterPostAdoptionDurableRunV1({
+      scope: fixture.scope, worldGroupId: null, chapterId: fixture.chapterId, authorization,
+    })
+    expect(recovered.run.id).toBe(partial.run.id)
+    expect(chapterPostAdoptionChainStateV1(recovered)).toBe('downstream-suggested')
+    expect(recovered.projection.steps[stepId]).toMatchObject({ status: 'awaiting_confirmation', attempt: 1 })
+    expect(recovered.events.filter(event => event.type === 'candidate.persisted')).toHaveLength(1)
+    expect(recovered.events.filter(event => event.type === 'model.requested')).toHaveLength(0)
+    expect(await db.chapters.get(fixture.chapterId)).toEqual(chapter)
+  })
+
+  it('并发和重复恢复只补一份授权候选，不改 Canon、不自动确认', async () => {
+    const { fixture, chapter, partial } = await interruptedAuthorization('concurrent-authorization')
+    const recovered = await Promise.all(Array.from({ length: 4 }, () => recoverChapterPostAdoptionAuthorizationV1(fixture.scope, partial)))
+    expect(new Set(recovered.map(value => value.run.id))).toEqual(new Set([partial.run.id]))
+    const repeated = await recoverChapterPostAdoptionAuthorizationV1(fixture.scope, partial)
+    expect(repeated.projection.steps[CHAPTER_POST_ADOPTION_STEP_IDS_V1.authorization].status).toBe('awaiting_confirmation')
+    expect(repeated.events.filter(event => event.type === 'candidate.persisted')).toHaveLength(1)
+    expect(repeated.events.filter(event => event.type === 'confirmation.recorded' || event.type === 'model.requested')).toHaveLength(0)
+    expect(await db.chapters.get(fixture.chapterId)).toEqual(chapter)
+    expect(await db.agentRuns.count()).toBe(1)
+  })
+
+  it('过期正文和错误 Work 都不能补齐旧授权', async () => {
+    const { fixture, partial } = await interruptedAuthorization('stale-preparation')
+    const other = await seed('foreign-preparation', fixture.scope.projectId, fixture.scope.worldId)
+    await expect(recoverChapterPostAdoptionAuthorizationV1(other.scope, partial)).rejects.toThrow()
+    await db.chapters.update(fixture.chapterId, { content: '<p>作者已改写成另一条路线。</p>', updatedAt: Date.now() })
+    const before = await db.agentRunEvents.toArray()
+    const recovered = await recoverChapterPostAdoptionAuthorizationV1(fixture.scope, partial)
+    expect(recovered.projection.steps[CHAPTER_POST_ADOPTION_STEP_IDS_V1.authorization].status).toBe('running')
+    expect(await db.agentRunEvents.toArray()).toEqual(before)
+  })
+
+  it('预授权准备恢复只补授权证据，模型任务仍等待显式继续', async () => {
+    const { fixture, chapter, partial } = await interruptedAuthorization('preauthorized-preparation', true)
+    const recovered = await recoverChapterPostAdoptionAuthorizationV1(fixture.scope, partial)
+    expect(recovered.projection.steps[CHAPTER_POST_ADOPTION_STEP_IDS_V1.authorization]).toMatchObject({ status: 'succeeded', confirmation: 'adopt' })
+    expect(recovered.events.filter(event => event.type === 'model.requested')).toHaveLength(0)
+    expect(buildChapterPostAdoptionResumePlanV1(recovered).canResume).toBe(true)
+    expect(await db.chapters.get(fixture.chapterId)).toEqual(chapter)
+  })
+
+  it.each(['adopt', 'reject'] as const)('作者 %s 已记录但终态未写入时，恢复沿用同一决定', async decision => {
+    const { fixture, partial, authorization } = await interruptedAuthorization(`decision-${decision}`)
+    let pending = await recoverChapterPostAdoptionAuthorizationV1(fixture.scope, partial)
+    pending = await appendAgentRunEventV1({
+      scope: fixture.scope, runId: pending.run.id, type: 'confirmation.recorded',
+      payload: { stepId: CHAPTER_POST_ADOPTION_STEP_IDS_V1.authorization, candidateHash: authorization.taskKey, decision },
+    })
+    const recovered = await recoverChapterPostAdoptionAuthorizationV1(fixture.scope, pending)
+    expect(recovered.events.filter(event => event.type === 'confirmation.recorded')).toHaveLength(1)
+    expect(recovered.events.filter(event => event.type === 'model.requested')).toHaveLength(0)
+    expect(chapterPostAdoptionChainStateV1(recovered)).toBe(decision === 'reject' ? 'downstream-skipped' : 'unlinked')
+    expect(recovered.projection.steps[CHAPTER_POST_ADOPTION_STEP_IDS_V1.authorization].confirmation).toBe(decision)
+    const repeated = await recoverChapterPostAdoptionAuthorizationV1(fixture.scope, pending)
+    expect(repeated.events).toEqual(recovered.events)
+  })
+
+  it('已取消的准备运行不会因刷新而复活', async () => {
+    const { fixture, partial } = await interruptedAuthorization('cancelled-preparation')
+    const cancelled = await appendAgentRunEventV1({ scope: fixture.scope, runId: partial.run.id, type: 'run.cancelled', payload: { reason: 'author-stopped' } })
+    const recovered = await recoverChapterPostAdoptionAuthorizationV1(fixture.scope, cancelled)
+    expect(recovered.projection.state).toBe('cancelled')
+    expect(recovered.events).toEqual(cancelled.events)
   })
 
   it('作者授权幂等且只调度预先选择的任务；设置严格隔离在 Work 内', async () => {

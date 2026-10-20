@@ -667,6 +667,7 @@ export default function ChapterEditorToolbar({
       <button onClick={onToggleReviewPanel}
         disabled={!hasText}
         title="质量审校"
+        aria-label="质量审校"
         aria-pressed={showReviewPanel}
         className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md transition-colors disabled:opacity-50 ${
           showReviewPanel

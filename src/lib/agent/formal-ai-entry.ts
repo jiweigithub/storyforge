@@ -317,7 +317,8 @@ export async function* streamRegisteredAIEntryV1(
   meta: FormalAICallMetaV1,
   signal?: AbortSignal,
   result?: StreamResult,
+  frozenResolution?: AIRequestConfigResolution,
 ): AsyncGenerator<string> {
   if (assertFormalAIEntryCallV1(meta).outputModality !== undefined) fail(`${meta.formalEntryId} 音频入口不得借用文本模型执行器`)
-  yield* streamChat(messages, config, signal, result, meta)
+  yield* streamChat(messages, config, signal, result, meta, frozenResolution)
 }

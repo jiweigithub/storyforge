@@ -861,6 +861,11 @@ test('一致性 Agent 显式单次检测，刷新恢复只读报告且不写业�
   })
   await page.route('http://localhost:1234/v1/chat/completions', async route => {
     consistencyCalls += 1
+    const request = route.request().postDataJSON()
+    expect(request.stream).toBe(false)
+    expect(request.response_format).toEqual({ type: 'json_object' })
+    expect(request.temperature).toBe(0)
+    expect(request.max_tokens).toBe(16_000)
     const content = JSON.stringify({
       findings: [],
       cognitionReferences: [],
@@ -868,16 +873,11 @@ test('一致性 Agent 显式单次检测，刷新恢复只读报告且不写业�
     })
     await route.fulfill({
       status: 200,
-      contentType: 'text/event-stream',
-      body: [
-        `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}`,
-        `data: ${JSON.stringify({
-          choices: [{ delta: {} }],
-          usage: { prompt_tokens: 150, completion_tokens: 20, total_tokens: 170 },
-        })}`,
-        'data: [DONE]',
-        '',
-      ].join('\n\n'),
+      contentType: 'application/json',
+      body: JSON.stringify({
+        choices: [{ message: { role: 'assistant', content }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 150, completion_tokens: 20, total_tokens: 170 },
+      }),
     })
   })
 
@@ -893,7 +893,7 @@ test('一致性 Agent 显式单次检测，刷新恢复只读报告且不写业�
 
   await expect(page.getByText('当前正文报告 · Fast Guard', { exact: false })).toBeVisible()
   await expect(page.getByText('1/7 次模型调用', { exact: false })).toBeVisible()
-  await expect(page.getByText('未发现有证据支持的一致性问题。', { exact: true })).toBeVisible()
+  await expect(page.getByText('本次未发现可定位的一致性问题，仍需核对关键事实和结算。', { exact: true })).toBeVisible()
   expect(consistencyCalls).toBe(1)
 
   await page.reload()
@@ -901,7 +901,7 @@ test('一致性 Agent 显式单次检测，刷新恢复只读报告且不写业�
   await page.getByRole('button', { name: '质量审校', exact: true }).click()
   await page.locator('main').getByText('一致性', { exact: true }).last().click()
   await expect(page.getByText('当前正文报告 · Fast Guard', { exact: false })).toBeVisible()
-  await expect(page.getByText('未发现有证据支持的一致性问题。', { exact: true })).toBeVisible()
+  await expect(page.getByText('本次未发现可定位的一致性问题，仍需核对关键事实和结算。', { exact: true })).toBeVisible()
   expect(consistencyCalls).toBe(1)
 
   await openSidebarLeaf(page, '创作区', '故事年表')
@@ -1514,7 +1514,8 @@ test('创作规则建议通过固定 Skill 刷新恢复，拒绝重生后编辑�
   await expect(page.getByRole('heading', { name: /创作规则/ })).toBeVisible()
 
   const writingStyle = page.getByPlaceholder(/描述期望的写作风格/)
-  await page.getByRole('button', { name: 'AI 建议', exact: true }).first().click()
+  const writingStyleSuggestion = page.locator('label').filter({ hasText: /^写作风格$/ }).locator('..').getByRole('button', { name: 'AI 建议', exact: true })
+  await writingStyleSuggestion.click()
   const candidate = page.getByRole('textbox', { name: '写作风格候选内容' })
   await expect(candidate).toHaveValue(modelCandidate.value)
   await expect(writingStyle).toHaveValue('')
@@ -1528,7 +1529,7 @@ test('创作规则建议通过固定 Skill 刷新恢复，拒绝重生后编辑�
   await expect(candidate).toHaveCount(0)
   expect(generationCalls).toBe(1)
 
-  await page.getByRole('button', { name: 'AI 建议', exact: true }).first().click()
+  await writingStyleSuggestion.click()
   const edited = '作者确认：用克制短句和可见动作呈现压力，只写视角人物能够感知的信息。'
   await candidate.fill(edited)
   await page.getByRole('button', { name: '确认写入', exact: true }).click()

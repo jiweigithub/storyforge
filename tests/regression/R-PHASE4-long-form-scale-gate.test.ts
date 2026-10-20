@@ -237,7 +237,10 @@ describe.sequential('PHASE4 · 10万/30万/100万字符分步骤正文封闭规�
           maxAssemblyDurationMs: LOCAL_MAX_ASSEMBLY_DURATION_MS * CI_ASSEMBLY_DURATION_MULTIPLIER,
         },
       })
-      expect(artifact.status, artifact.checks.filter(check => !check.passed)).toBe('pass')
+      expect(artifact.status, JSON.stringify({
+        measurements: artifact.measurements,
+        failedChecks: artifact.checks.filter(check => !check.passed),
+      })).toBe('pass')
       expect(await verifyLongFormScaleGateArtifactV1(artifact)).toBe(true)
       expect(artifact.measurements.packetTokens).toBeLessThanOrEqual(64_000)
       expect(artifact.measurements.manuscriptCharacters).toBeGreaterThanOrEqual(tier)

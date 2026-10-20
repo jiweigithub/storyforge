@@ -11091,19 +11091,19 @@ export function createConfiguredProductProductionExecutorV1(input: {
     }
     if (isTtrpgOpenEmptyMediaTaskV3(request.task)) {
       return executeTtrpgOpenKernelWithUsageV1(async () => {
-      const started = performance.now(), brief = options.brief
-      const context = openMediaContext(request, brief)
-      if (!brief.ttrpgOpen || !context || brief.media.imageCount !== 0 || brief.media.musicTrackCount !== 0
-        || brief.media.sfxCount !== 0 || brief.media.voiceLineCount !== 0 || brief.media.requiredMediaKinds.length > 0
-        || context.mediaManifest.slots.some(slot => slot.productionRequired)) {
-        throw new ProductProductionDraftRejectedErrorV1('零媒资规划与作者授权或已采纳槽位不一致；未调用模型。', zeroUsage(elapsed(started)))
-      }
-      const payload = parseProductMediaRequirementsArtifactV2({ schema: 'storyforge.product-media-requirements-artifact',
-        version: 2, visual: [], audio: [] }, brief, context.characterAnchors, null)
-      assertTtrpgOpenProductionMediaRequirementsV1({ context, ...payload })
-      return { artifacts: [{ artifactKey: 'media.requirements', kind: 'asset-manifest', payload,
-        quality: { planKeysVerified: true }, rights: { origin: 'deterministic-empty-media-plan', containsThirdPartyMedia: false } }],
-        passedGateIds: [...request.task.acceptanceGateIds], usage: zeroUsage(elapsed(started)) }
+        const started = performance.now(), brief = options.brief
+        const context = openMediaContext(request, brief)
+        if (!brief.ttrpgOpen || !context || brief.media.imageCount !== 0 || brief.media.musicTrackCount !== 0
+          || brief.media.sfxCount !== 0 || brief.media.voiceLineCount !== 0 || brief.media.requiredMediaKinds.length > 0
+          || context.mediaManifest.slots.some(slot => slot.productionRequired)) {
+          throw new ProductProductionDraftRejectedErrorV1('零媒资规划与作者授权或已采纳槽位不一致；未调用模型。', zeroUsage(elapsed(started)))
+        }
+        const payload = parseProductMediaRequirementsArtifactV2({ schema: 'storyforge.product-media-requirements-artifact',
+          version: 2, visual: [], audio: [] }, brief, context.characterAnchors, null)
+        assertTtrpgOpenProductionMediaRequirementsV1({ context, ...payload })
+        return { artifacts: [{ artifactKey: 'media.requirements', kind: 'asset-manifest', payload,
+          quality: { planKeysVerified: true }, rights: { origin: 'deterministic-empty-media-plan', containsThirdPartyMedia: false } }],
+          passedGateIds: [...request.task.acceptanceGateIds], usage: zeroUsage(elapsed(started)) }
       })
     }
     if (request.task.executionMode === 'model') return executeModelTask(request, options)

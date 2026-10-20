@@ -1,5 +1,20 @@
 # Pending development and branch audit
 
+## October 20, 2026 · Longform quality changes entered main
+
+[PR #141](https://github.com/yuanbw2025/storyforge/pull/141) merged as `1b96e80a` on October 20. System-fiction elements, scene tasks, whole-chapter review, and scoped revision are no longer pending development. Instructions now live in [planning](/en/features/longform/planning) and [prose and revision](/en/features/longform/writing); see the [change log](/en/updates/changelog) for version boundaries. Node mode as a whole remains a preview. Existing v4.0.2 downloads do not update automatically; online deployment is verified separately.
+
+Head `fb682a28` passed complete CLI checks (824 files / 4594 tests), complete browser checks (309 passes / 4 environment-dependent skips), and regular CI on the latest main merge tree. Three settings with two ten-chapter workflows each, totaling 60 manuscripts / 30 pairs, plus 12 openings / 6 pairs from new settings and two service models have request, workflow, and lifecycle verification. Poor drafts and failures are retained. The user moved independent reader review and independent author timing to optional follow-up research, so this delivery requires no recruitment. Missing outcomes are not passes; independent quality and time benefits remain unverified. Exposed experiment labels and omitted optional review instructions in sampling limit interpretation; these are not strict blinded tests or platform-quality certification.
+
+Older dated sections below retain their historical branch snapshots. This section supersedes statements that #141 remains unmerged and does not reassess other development branches.
+
+## October 19, 2026 · Longform author-feedback iteration (development branch)
+
+[PR #141](https://github.com/yuanbw2025/storyforge/pull/141) continues to address character reactions, responsive dialogue, and endings exposed by actual author repairs. Generation, whole-chapter review, scoped revision, and recheck share the existing strategy and explicit adoption chain. Reviews distinguish internal contradictions, omitted explicit task requirements, and optional expression preferences, so polishing does not silently remove important conditions. Four internal author micro-scene repairs have been returned; they do not establish independent formal literary benefit or lower repair cost.
+
+In prose Quality review (质量审校), enter separate requirements in Review instructions (本轮评审补充要求) and Revision instructions (本轮修稿要求). Select actual issues, allowed paragraphs, and protected quotations before one revision and one recheck. Saved reports and comparisons show the instructions actually used and recover after refresh. Authors still judge model suggestions; failures, unknown outcomes, and older candidates retain their recovery and freshness boundaries.
+
+Complete engineering checks passed for earlier source `1b854005` (4495 tests, 3 production-agent checks, 293 browser passes / 2 skips). New commits integrating main must be verified at their actual head; see PR evidence. This branch remains unmerged, undeployed, and absent from existing downloads. Older dated sections below remain historical snapshots.
 
 ## October 18, 2026 review
 
@@ -71,6 +86,39 @@ Of twenty worktrees with status entries, fifteen belong to narrative foundations
 Old built-in works entered main through #111. Historical Fog Harbor, world-media, open-world, bronze UI and backup branches retain the conclusions below. `feat/codex-provider-merge-20261010` has only a unique merge and no new ordinary patch. The September 12 UI was explicitly abandoned and is not proposed for merging again. A historical branch does not justify adopting an old architecture.
 
 This run only updates the public knowledge base. None of the listed product work was committed, pushed, merged or cleaned up; no product tests, full CI or browser regression were run. All older dated content remains as historical snapshots and does not override this section.
+
+## October 15, 2026 · Longform quality development trial {#longform-quality-trial}
+
+This section reviews only system-fiction longform Q02–Q10; other products' snapshots below are unchanged. The product source in [draft PR #141](https://github.com/yuanbw2025/storyforge/pull/141) is `c2836ba8`, unmerged and undeployed. Existing v4.0.0 downloads and the hosted experience do not include these additions. The instructions below apply to that development branch. Node mode remains a preview.
+
+### From elements to prose
+
+1. Select the genre in Work information (作品概况). Open Story design → Creative rules → System-fiction elements (故事设计 → 创作规则 → 系统文元素) and enter the protagonist's situation and goal, system mechanism, rewards and growth, limits and costs, and opposition and relationships. Check Enable these system-fiction author requirements (启用这些系统文作者要求), click Save elements (保存元素), and confirm Elements saved (元素已保存). Fields may be blank. Disabling retains the text; planned rewards do not become acquired items, and your selected prompt template is retained.
+2. Select the chapter in Outline and chapter plans (大纲与章纲), then open Scene beats (场景细纲). Expand Optional scene tasks (场景任务（可选，可留白）) to specify entry state, scene goal, key choice, consequences, exit state, and scene function/reader expectations as needed. Everyday, quiet, and ending scenes are supported; enemies and penalties are optional.
+3. Use the links between this chapter's scene beats and prose. Wait for edits to save before moving to the same chapter. If saving fails, retain and retry the current input. Write or generate prose, inspect the content and candidate, then decide whether to adopt. A word-count target is not a guarantee of exact length.
+
+### Whole-chapter review and scoped revision
+
+1. Open Quality review (质量审校) in the prose toolbar, choose Review (审校), Expression and repetition (表达与重复), or Read-through appeal (追读力), then Start detection (开始检测). Reports cover the current saved prose and show full-input and quotation evidence. Detection is blocked when the complete input cannot be sent. Sending the full chapter does not guarantee that the model notices every issue.
+2. Select issues for this revision. Only their paragraphs are editable by default. Expand Select other editable paragraphs (选择其它可改段落) when necessary; enter one exact sentence per line in Protected original sentences (保护原句).
+3. Click Generate revision and recheck (生成修订并复核). This round allows one revision and one recheck: at most two additional model requests. Wait for the recheck, compare both texts, then Confirm adoption (确认采纳修订) or Abandon revision (放弃修订). A failed recheck retains a preview without writing to the prose.
+4. Reopening reads saved reports and decisions without automatically resending requests. Changes to prose or relevant materials can make old reports and candidates stale. Resolve changes before explicitly starting another round. Suggestions, a clean report, or “the model considers this improved” do not replace author judgment.
+
+### The same workflow in node mode
+
+Connect Whole-chapter review and revision (全文评审与修订) to Scoped revision and recheck (定向修订与复核). Select issues and scope in the revision node; Prompt, temperature, output limit, and AI configuration can be connected. Wait for the actual candidate and full recheck, adopt or reject in the run results, then verify the same prose and formatting in step mode.
+
+Continuing downstream after upstream adoption rereads current materials and reuses confirmed content that remains valid. Changes to materials, targets, or connections can still invalidate old candidates. Recovering after refresh does not automatically generate again.
+
+### Returning formal reading files
+
+The organizer assigns one formal HTML per reader and genre. Do not assign the same packet code to multiple people. Open it in a browser, select participation details and reading answers, click Save completed HTML (保存已填写 HTML), and return the new HTML with `result` in its filename. Answers are embedded: open the saved file offline or on another device to continue, without importing separate data. The original blank file is not overwritten automatically. If group-chat previews cannot operate the form, use a browser or computer.
+
+You may return the first pair and finish later. The first pair is estimated at 19–37 minutes; all ten pairs take approximately 197–453 minutes depending on genre. These are text-length estimates. The actual author receives a separate repair HTML, edits four manuscripts, and saves the revisions and timing; the estimate is 66–137 minutes. Authors must edit prose, while readers need not type comments. Automatic website collection is not deployed.
+
+### Evidence and remaining work
+
+The formal comparison is frozen at 60 chapters / 30 pairs across three genres, with three additional pairs from another model. Evidence includes 1,900 exact main-study checks and backup, import, and deletion across six workspaces. [Four Linux review/revision paths](https://github.com/yuanbw2025/storyforge/actions/runs/38682424600) passed. Product source `c2836ba8` passed [core CI](https://github.com/yuanbw2025/storyforge/actions/runs/38682961173) and the [complete CLI checks](https://github.com/yuanbw2025/storyforge/actions/runs/38682961091/job/116251468491); core CI included the full browser suite with 288 passes, one pass after retry, and two skips. A separate full browser run retained one failure and two passes after retry: original traces show that automation had not actually cleared the text and combat operations were still settling. A three-file test synchronization patch preserves result assertions and overall deadlines; its five related paths passed locally. Linux and final-version full validation after that patch remain pending. Independent reader returns and actual author-repair results are still zero. Literary improvement, platform acceptance, and Q10 completion are not established.
 
 ## October 14, 2026 review
 

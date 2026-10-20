@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { seedCurrentWorkspace } from '../helpers/current-workspace'
 import { stampNewRecord } from '../../src/lib/workspace/scope'
-import type { OutlineNode } from '../../src/lib/types'
+import { AIError, type OutlineNode } from '../../src/lib/types'
 import * as client from '../../src/lib/ai/client'
 import { createMasterAgentPlan } from '../../src/lib/agent/orchestrator'
 import { getOrCreateAgentConversation } from '../../src/lib/agent/conversations'
@@ -149,10 +149,45 @@ describe.sequential('longform main Agent chapter post-adoption handoff', () => {
     await runChapterPostAdoptionV1({ project: fixture.project, aiConfig: useAIConfigStore.getState().config, task, callbacks: { onError: error => errors.push(error) } })
     expect(errors).toEqual([])
     expect(model).toHaveBeenCalledOnce()
+    expect(model.mock.calls[0]).toEqual([
+      'prose.chapter.memory', expect.any(Array), useAIConfigStore.getState().config,
+      { category: 'chapter.memory', projectId: fixture.project.id!, configOverrides: { maxTokens: 8_000 }, contextOverflowPolicy: 'reject' },
+      undefined, undefined, { responseFormat: 'json_object' },
+    ])
     expect((await db.chapters.get(chapter.id!))?.summary).toContain('查验旧信')
     expect((await readAgentRunV1(fixture.scope, child.run.id)).projection.state).toBe('completed')
     await runChapterPostAdoptionV1({ project: fixture.project, aiConfig: useAIConfigStore.getState().config, task })
     expect(model).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['trailing comma', '{"summary":"不可修补的输出","handoff":{},}'],
+    ['provider rejection', new AIError(403, 'Forbidden')],
+  ] as const)('leaves memory unchanged and makes no hidden resend after %s', async (_reason, response) => {
+    const fixture = await prepare(true)
+    await commitMasterAgentCandidateAdoptionV1({ scope: fixture.scope, runId: fixture.result.runId, candidateEventId: fixture.result.candidates[0].event.id!, worldGroupId: null })
+    await verifyMasterAgentRunV1({ scope: fixture.scope, runId: fixture.result.runId })
+    await prepareMasterChapterPostAdoptionV1({ scope: fixture.scope, runId: fixture.result.runId })
+    const chapter = (await db.chapters.toArray())[0]
+    const child = (await readLatestChapterPostAdoptionRunV1({ scope: fixture.scope, chapterId: chapter.id! }))!
+    await authorizeChapterPostAdoptionV1({ scope: fixture.scope, snapshot: child, source: 'author-click' })
+    const model = vi.spyOn(entries, 'executeRegisteredAIEntryV1').mockImplementation(async () => {
+      if (response instanceof Error) throw response
+      return response
+    })
+    const errors: string[] = []
+    await runChapterPostAdoptionV1({
+      project: fixture.project, aiConfig: useAIConfigStore.getState().config,
+      task: { chapterId: chapter.id!, chapterTitle: chapter.title, chapterContent: chapter.content, chapterPlainText: htmlToPlainText(chapter.content), resumeRunId: child.run.id },
+      callbacks: { onError: error => errors.push(error) },
+    })
+    expect(model).toHaveBeenCalledOnce()
+    expect(model.mock.calls[0][6]).toEqual({ responseFormat: 'json_object' })
+    expect(errors).toHaveLength(1)
+    expect(await db.chapters.get(chapter.id!)).toEqual(chapter)
+    const failed = await readAgentRunV1(fixture.scope, child.run.id)
+    expect(failed.projection.steps['chapter-post-adoption:memory']).toMatchObject({ status: 'failed', attempt: 1 })
+    expect(buildChapterPostAdoptionResumePlanV1(failed).canResume).toBe(!(response instanceof Error))
   })
 
 })

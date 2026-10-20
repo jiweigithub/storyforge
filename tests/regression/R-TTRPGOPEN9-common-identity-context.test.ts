@@ -45,11 +45,15 @@ const provider = () => CONTEXT_SOURCE_BY_KEY.get(TTRPG_OPEN_COMMON_IDENTITY_SOUR
 describe('R-TTRPGOPEN9 all-current-player model identity intersection', { timeout: 60000 }, () => {
   beforeEach(async () => { await db.delete(); await db.open() })
   afterEach(() => { vi.restoreAllMocks(); db.close() })
-  it('freezes the actual v19 tool declaration and restores exact v18 when only the two identity sources are removed', async () => {
+  it('freezes merged v20, retains exact v19 without the new Work source and exact v18 without the two identity sources', async () => {
     const snapshot = getAgentToolSchemaSnapshotV1()
-    const previous = JSON.parse(JSON.stringify(snapshot), (_key, value) => Array.isArray(value) ? value.filter(item => !['ttrpgOpenLearnedIdentities', 'ttrpgOpenCommonIdentities'].includes(item)) : value)
+    // Main added only its author-confirmed Work intent source. Removing that
+    // new enum member must retain the complete prior TTRPG v19 declaration.
+    const ttrpgV19 = JSON.parse(JSON.stringify(snapshot), (_key, value) => Array.isArray(value) ? value.filter(item => item !== 'workAuthoringIntent') : value)
+    expect(await hashCanonicalValue(ttrpgV19)).toBe('4efc0b11ea06cac242c56c3648ff2d4627ed238f51e029044a18e53717a09545')
+    const previous = JSON.parse(JSON.stringify(ttrpgV19), (_key, value) => Array.isArray(value) ? value.filter(item => !['ttrpgOpenLearnedIdentities', 'ttrpgOpenCommonIdentities'].includes(item)) : value)
     expect(await hashCanonicalValue(snapshot)).toBe(AGENT_TOOL_SCHEMA_HASH_V1)
-    expect(AGENT_TOOL_SCHEMA_VERSION_V1).toBe('agent-read-tools-v19')
+    expect(AGENT_TOOL_SCHEMA_VERSION_V1).toBe('agent-read-tools-v20')
     expect(await hashCanonicalValue(previous)).toBe('633a1385e92901aa1bba03f99abe413a68161577954917bd4073394fad9fdc18')
     for (const skill of AGENT_SKILLS.filter(skill => !['prose.ttrpg-open-kp', 'prose.ttrpg-open-brief'].includes(skill.id))) expect(resolveAgentSkillContextSourceKeysV1(skill, { includeOptional: true, includeGatewayProviders: true }), skill.id).not.toContain(TTRPG_OPEN_COMMON_IDENTITY_SOURCE_V1)
   })

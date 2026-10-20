@@ -36,7 +36,7 @@ async function addPair(f: Awaited<ReturnType<typeof seed>>, table: 'storylinePro
     : f.add(table, { arcIdA: f.arcIds[0], arcIdB: f.arcIds[1], chapterId: null, chapterTitle: '', note: `交汇证据 ${index}`, evidenceQuote: `相遇 ${index}` })))
 }
 
-async function descriptors(scope: WorkspaceScope) {
+async function descriptors(scope: WorkspaceScope, kind: ContextResourceDescriptorV1['kind'] = 'storyline-progress') {
   const items: ContextResourceDescriptorV1[] = []
   let cursor: string | undefined
   do {
@@ -44,7 +44,7 @@ async function descriptors(scope: WorkspaceScope) {
     items.push(...page.items)
     cursor = page.nextCursor ?? undefined
   } while (cursor)
-  return items.filter(item => item.kind === 'storyline-progress')
+  return items.filter(item => item.kind === kind)
 }
 
 describe('R-FEEDBACK116 unnamed Canon records keep separate stable identities', () => {
@@ -89,6 +89,49 @@ describe('R-FEEDBACK116 unnamed Canon records keep separate stable identities', 
       await f.add('characters', { name: '岑阿婆', shortDescription, homeWorldGroupId: null, isCrossWorld: false, roleWeight: 'main', moralAxis: 'neutral', orderAxis: 'neutral' }, 'world')
     }
     await expect(prepareProseGatewayAssemblyV1(f.input)).rejects.toThrow('same-name-different-canon')
+  })
+
+  it('the same item can have separate gain and consumption records in the real prose Gateway', async () => {
+    const f = await seed()
+    for (const [action, quantity, note] of [
+      ['gain', 5, '通过顾客反馈获得'], ['consume', 2, '用于定位流程瓶颈'],
+    ] as const) {
+      await f.add('itemLedger', { itemName: '观察点', heldByName: '守灯人', action, quantity, note, chapterId: null, characterId: null, chapterTitle: '前章' })
+    }
+    const result = await prepareProseGatewayAssemblyV1(f.input)
+    const text = result.contextGatewayExecution.contextPacket.content
+    for (const expected of ['获得5 × 观察点', '消耗2 × 观察点', '通过顾客反馈获得', '用于定位流程瓶颈']) expect(text).toContain(expected)
+    expect(result.contextGatewayExecution.sufficiency.obligations.some(row => row.reasonCode === 'same-name-different-canon')).toBe(false)
+  })
+
+  it('item ledger record and field titles retain event identity through official backup remapping', async () => {
+    const f = await seed()
+    for (const note of ['第一次获得', '第二次获得']) {
+      await f.add('itemLedger', { itemName: '观察点', heldByName: '守灯人', action: 'gain', quantity: 1, note, chapterId: null, characterId: null, chapterTitle: '前章' })
+    }
+    const before = (await descriptors(f.scope, 'fact')).filter(row => row.sourceRefs[0]?.table === 'itemLedger')
+    expect(before.filter(row => !row.resourceKey.includes(':field:'))).toHaveLength(2)
+    expect(new Set(before.map(row => row.title)).size).toBe(before.length)
+    const projectId = await importProjectJSON(await exportProjectJSON(f.scope.projectId))
+    const ownership = await resolveWorkspaceOwnership(projectId)
+    const after = new Map((await descriptors(ownership.scope, 'fact')).map(row => [row.resourceKey, row]))
+    for (const row of before) {
+      const imported = after.get(row.resourceKey)!
+      expect(imported.title).toBe(row.title)
+      expect(imported.contentHash).toBe(row.contentHash)
+      expect(imported.sourceRefs[0].recordId).not.toBe(row.sourceRefs[0].recordId)
+    }
+  })
+
+  it('repeated timeline event titles describe distinct occurrences, not duplicate Canon definitions', async () => {
+    const f = await seed()
+    for (const [storyTime, description] of [['第1天', '收到第一次期限通知'], ['第7天', '收到第二次期限通知']]) {
+      await f.add('storyTimelineEvents', { title: '期限通知', storyTime, description, importance: 2, chapterId: null, chapterTitle: '前章' })
+    }
+    const result = await prepareProseGatewayAssemblyV1(f.input)
+    for (const text of ['收到第一次期限通知', '收到第二次期限通知']) expect(result.contextGatewayExecution.contextPacket.content).toContain(text)
+    const events = (await descriptors(f.scope, 'fact')).filter(row => row.sourceRefs[0]?.table === 'storyTimelineEvents')
+    expect(new Set(events.map(row => row.title)).size).toBe(events.length)
   })
 
   it('singleton worldview retains its existing author-facing label', async () => {

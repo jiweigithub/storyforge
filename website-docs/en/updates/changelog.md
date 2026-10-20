@@ -2,6 +2,17 @@
 
 Feature updates, fixes, and workflow improvements are organized by user impact. See [compatibility](/en/updates/compatibility) for version information.
 
+## October 20, 2026 · System-fiction planning, whole-chapter review, and scoped revision
+
+[PR #141](https://github.com/yuanbw2025/storyforge/pull/141) merged into main as `1b96e80a`. These changes apply to source versions containing that commit. Online deployment and fixed releases require separate verification; existing v4.0.2 downloads do not automatically acquire later changes.
+
+- Enter optional system-fiction elements in the original work’s material. The separate Scene beats page records goals, choices, consequences, and continuity, with links between the same chapter’s plan, scene outline, and prose. See [planning](/en/features/longform/planning).
+- Whole-chapter review accepts round-specific instructions and locates issues in the source. Authors select issues, editable paragraphs, and protected quotations before one revision and one recheck, then confirm adoption. Failed rechecks retain the preview and original. Step and node modes read the same work. See [prose and revision](/en/features/longform/writing).
+- Fixes protect drafts during rapid chapter changes, recover interrupted post-adoption authorization preparation, request structured chapter memory, and distinguish multiple same-named item events during retrieval. Stale sources and unknown model outcomes do not trigger hidden resends.
+- Engineering head `fb682a28` passed 4594 CLI tests and 309 browser tests, with 4 environment-dependent skips. Regular CI also passed the latest main merge tree. Paired ten-chapter workflows, new-setting checks with two service models, and lifecycle evidence retain failures; they do not certify literary benefit.
+
+Independent reader reviews and independent author repair timing are optional follow-up research. This delivery does not require recruitment or questionnaire completion. Existing internal feedback is retained; engagement, independently measured time savings, and platform acceptance remain unverified.
+
 ## 2026-10-19 · Longform entry consolidation and save protection
 
 Applies to versions containing [implementation commit d32b2471](https://github.com/yuanbw2025/storyforge/commit/d32b2471d0d89e9ef09057e89e8f6fd15b27db91). Mainline merge and online deployment are separate states. Existing v4.0.2 downloads do not change automatically when source code is updated.
@@ -33,6 +44,10 @@ Source: [failure-feedback implementation 80e48bc9](https://github.com/yuanbw2025
 ## 2026-10-15 · Client candidate implementation (unreleased)
 
 Development builds now cover a standalone Windows window and an Android APK, with in-app update checks, downloads and confirmed installation. Complete JSON backups on Android use the system file-saving dialog; cancellation or a failed save blocks operations that depend on that backup. This increment remains on a development branch, with no official release or real-device upgrade acceptance on either platform yet. Existing v4.0.0 downloads do not include these capabilities. See [Installation and startup](/en/getting-started/install#windows-android-clients-in-development).
+
+## October 15, 2026 · Longform quality development instructions (unreleased)
+
+[Draft PR #141](https://github.com/yuanbw2025/storyforge/pull/141) now has [trial instructions](/en/updates/development-status) for system-fiction elements, optional scene tasks, whole-chapter review, scoped revision, and returning HTML with embedded answers. Product source `c2836ba8` is unmerged and undeployed; complete engineering and independent human acceptance remain pending. This is a development-documentation update, not a change to v4.0.0 downloads or the hosted experience.
 
 ## October 14, 2026 · Knowledge-base scrolling
 

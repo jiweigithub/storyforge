@@ -1,6 +1,7 @@
 import { db } from '../db/schema'
 import { assembleContext } from '../registry/assemble-context'
 import { normalizeChapterText, hashChapterText } from '../ai/chapter-memory/text-normalization'
+import { estimateTokens } from '../ai/context-budget'
 import {
   buildConsistencyAuditPrompt,
   parseConsistencyAuditResult,
@@ -53,6 +54,10 @@ export interface ConsistencyAgentContextEvidence {
   included: string[]
   omitted: string[]
   trimmed: string[]
+  /** Absent on historical reports; source-level clipping is distinct from omitted sources. */
+  truncated?: string[]
+  /** Frozen by explicit durable audits; historical/background reports may lack it. */
+  contentRevisionHash?: string
   inputTokens: number
   inputBudget: number
 }
@@ -89,6 +94,8 @@ export interface ConsistencyAgentRun {
 }
 
 export const CONSISTENCY_AGENT_FAST_SOURCES_V1 = [
+  'chapterOutline',
+  'detailedOutline',
   'chapterContinuityHandoff',
   'previousPlanReconciliation',
   'currentFacts',
@@ -119,8 +126,9 @@ export const CONSISTENCY_AGENT_INPUT_BUDGET_V1 = {
 } as const
 
 export const CONSISTENCY_AGENT_OUTPUT_BUDGET_V1 = {
-  fast: 4_000,
-  deep: 6_000,
+  // Includes provider reasoning tokens, which can exhaust 4K before any report text.
+  fast: 16_000,
+  deep: 16_000,
 } as const
 
 export interface ConsistencyAgentExecutionTraceV1 {
@@ -130,7 +138,13 @@ export interface ConsistencyAgentExecutionTraceV1 {
     sourceTextHash: string
   }) => void | Promise<void>
   modelRequested?: (input: { messages: ChatMessage[] }) => void | Promise<void>
-  modelResponded?: (input: { raw: string }) => void | Promise<void>
+  modelResponded?: (input: { raw: string; completion?: 'complete' | 'incomplete'; finishReason?: string }) => void | Promise<void>
+}
+
+export type ConsistencyAgentModelResponseV1 = string | {
+  raw: string
+  completion: 'complete' | 'incomplete'
+  finishReason?: string
 }
 
 function emptyContext(): ConsistencyAgentContextEvidence {
@@ -262,7 +276,7 @@ export async function runConsistencyAgent(input: {
   provider?: Parameters<typeof assembleContext>[0]['provider']
   model?: string
   budget: AgentTeamBudgetTracker
-  call: (messages: ChatMessage[]) => Promise<string>
+  call: (messages: ChatMessage[]) => Promise<ConsistencyAgentModelResponseV1>
   trace?: ConsistencyAgentExecutionTraceV1
 }): Promise<ConsistencyAgentCandidate> {
   const scope = await resolveReadScopeLike(input.projectId)
@@ -285,7 +299,6 @@ export async function runConsistencyAgent(input: {
       provider: input.provider,
       model: input.model,
       inputBudgetMaxTokens: CONSISTENCY_AGENT_INPUT_BUDGET_V1[input.mode],
-      sourceBudgetScale: input.mode === 'fast' ? 0.55 : 1,
     }),
     readCognitionAuditSnapshot(input.projectId, input.chapterId, input.worldGroupId, input.outlineNodeId, scope),
     readLifecycleAuditSnapshot(input.projectId, input.chapterId, input.worldGroupId, scope),
@@ -305,6 +318,11 @@ export async function runConsistencyAgent(input: {
     cognitionCatalog: formatCognitionCatalog(cognition.catalog),
     lifecycleCatalog: formatLifecycleCatalog(lifecycle.catalog),
   })
+  // The audit budget includes the full chapter and catalogs, not just registered sources.
+  const requestTokens = messages.reduce((total, message) => total + estimateTokens(message.content), 0)
+  if (requestTokens > CONSISTENCY_AGENT_INPUT_BUDGET_V1[input.mode]) {
+    throw new Error(`本章全文与审计资料超出${input.mode === 'fast' ? ' Fast Guard' : ' Deep Audit'} 输入预算；未发送模型请求。${input.mode === 'fast' ? '可选择 Deep Audit 进行更大范围审计。' : ''}`)
+  }
   await input.trace?.contextAssembled?.({ assembled: evidence, messages, sourceTextHash })
   await input.trace?.modelRequested?.({ messages })
   const reservation = input.budget.reserveCall({
@@ -313,14 +331,19 @@ export async function runConsistencyAgent(input: {
     maxOutputTokens: CONSISTENCY_AGENT_OUTPUT_BUDGET_V1[input.mode],
   })
   let raw: string
+  let received: ConsistencyAgentModelResponseV1
   try {
-    raw = await input.call(messages)
+    received = await input.call(messages)
+    raw = typeof received === 'string' ? received : received.raw
     input.budget.settleCall(reservation, raw)
   } catch (error) {
     input.budget.settleFailedCall(reservation)
     throw error
   }
-  await input.trace?.modelResponded?.({ raw })
+  await input.trace?.modelResponded?.({ raw, ...(typeof received === 'string' ? {} : { completion: received.completion, finishReason: received.finishReason }) })
+  if (typeof received !== 'string' && received.completion !== 'complete') {
+    throw new Error('一致性响应未完整结束，未生成报告或自动重发。')
+  }
   const parsed = parseConsistencyAuditResult({
     raw,
     mode: input.mode,
@@ -328,7 +351,7 @@ export async function runConsistencyAgent(input: {
     evidenceContext: evidence.text,
   })
   if (!parsed) {
-    throw new Error('一致性 Agent 返回的 JSON 无法解析；没有保存不完整报告。')
+    throw new Error('一致性 Agent 返回的 JSON 无法解析或引文、证据无效；没有保存不完整报告。')
   }
   const cognitionFindings = checkCognitionBoundary(
     chapterText,
@@ -353,6 +376,7 @@ export async function runConsistencyAgent(input: {
       included: evidence.included,
       omitted: evidence.omitted,
       trimmed: evidence.trimmed,
+      truncated: (evidence.sourceEvidence ?? []).filter(source => source.delivery === 'truncated').map(source => source.key),
       inputTokens: evidence.totalInputTokens,
       inputBudget: evidence.inputBudget,
     },

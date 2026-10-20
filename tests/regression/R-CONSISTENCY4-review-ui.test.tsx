@@ -11,13 +11,9 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const startMock = vi.hoisted(() => vi.fn())
 
-vi.mock('../../src/hooks/useAIStream', () => ({
-  useAIStream: () => ({
-    start: startMock,
-    isStreaming: false,
-    output: '',
-    error: null,
-  }),
+vi.mock('../../src/lib/agent/formal-ai-entry', async importOriginal => ({
+  ...await importOriginal<typeof import('../../src/lib/agent/formal-ai-entry')>(),
+  executeRegisteredAIEntryV1: startMock,
 }))
 
 describe('CONSISTENCY-4 · ReviewPanel 存亡 finding 出口', () => {
@@ -83,7 +79,7 @@ describe('CONSISTENCY-4 · ReviewPanel 存亡 finding 出口', () => {
     await finalizeCurrentFixtureV1(projectId)
 
     const chapterContent = '林飞推门走进议事厅，亲手展开了地图。'
-    startMock.mockResolvedValue(JSON.stringify({
+    const raw = JSON.stringify({
       findings: [],
       cognitionReferences: [],
       lifecycleReferences: [{
@@ -91,7 +87,11 @@ describe('CONSISTENCY-4 · ReviewPanel 存亡 finding 出口', () => {
         activityType: 'normal-activity',
         quote: chapterContent,
       }],
-    }))
+    })
+    startMock.mockImplementation(async (_entry, _messages, _config, _meta, _signal, result) => {
+      result.finishReason = 'stop'
+      return raw
+    })
     useReviewResultStore.getState().setActiveTab(currentChapterId, 'consistency')
 
     await act(async () => {

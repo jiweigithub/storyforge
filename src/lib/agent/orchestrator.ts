@@ -1842,7 +1842,7 @@ async function executeSequentialMasterAgentPlan(
         await input.executionTrace?.contextGatewayPrepared?.(task, {
           execution: prepared.contextGatewayExecution,
           assembled: prepared.input.assembled,
-          renderedRequest: prepared.prepared.messages,
+          renderedRequest: prepared.renderedRequest,
         })
         const result = await runProseCreativeReliabilityV1({
           prepared,
@@ -1883,7 +1883,7 @@ async function executeSequentialMasterAgentPlan(
           contextGatewayRuntime: {
             execution: prepared.contextGatewayExecution,
             assembled: prepared.input.assembled,
-            renderedRequest: prepared.prepared.messages,
+            renderedRequest: prepared.renderedRequest,
             rawResponse: result.artifact,
           },
         })
