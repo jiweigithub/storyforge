@@ -208,11 +208,12 @@ export async function readProductProductionOriginalAuthorSourceForExecutionV1(in
     authorDraftJson: resolution.authorDraftJson }
 }
 
-/** Re-read only the explicit authored source snapshot of this exact failed task. */
-export async function readProductProductionRejectedOriginalAuthorDraftV1(input: {
+type RejectedAuthorDraftReadV1 = {
   scope: WorkspaceScope; productionId: number; buildId: number; taskKey: string; controlEpoch: number
   planHash: string; runId: number; attempt: number
-}): Promise<string | null> {
+}
+/** Re-read only this exact failed task/attempt's retained source bodies. */
+async function readRejectedAuthorDraftRowsV1(input: RejectedAuthorDraftReadV1) {
   const details = await readProductProductionDetailsV1(input.scope, input.productionId, ['ttrpg'])
   const build = details.build
   if (!build || build.id !== input.buildId || build.status !== 'recovery-required'
@@ -233,6 +234,12 @@ export async function readProductProductionRejectedOriginalAuthorDraftV1(input: 
     rows.push({ hash: event.payload.contentHash, content: await readAgentRunArtifactExactV1({ projectId: input.scope.projectId,
       artifactKind: 'source-snapshot', contentHash: event.payload.contentHash }) })
   }
+  return { snapshot, rows }
+}
+
+/** Re-read only the explicit authored source snapshot of this exact failed task. */
+export async function readProductProductionRejectedOriginalAuthorDraftV1(input: RejectedAuthorDraftReadV1): Promise<string | null> {
+  const { rows } = await readRejectedAuthorDraftRowsV1(input)
   const sources = rows.filter(row => { try { return JSON.parse(row.content)?.schema === SCHEMA } catch { return false } })
   if (!sources.length) return null
   if (sources.length !== 1) fail('作者修订来源证明冲突')
@@ -241,4 +248,20 @@ export async function readProductProductionRejectedOriginalAuthorDraftV1(input: 
   const draft = rows.find(row => row.hash === checked.source.authorDraftHash)
   if (!draft || await sha256Text(draft.content) !== checked.source.authorDraftHash) fail('作者原修订稿缺失或字节变化')
   return draft.content
+}
+
+/** Input recovery only. This body never proves model output, adoption or author confirmation. */
+export async function readProductProductionRejectedAuthorInputV1(input: RejectedAuthorDraftReadV1): Promise<string | null> {
+  const { snapshot, rows } = await readRejectedAuthorDraftRowsV1(input)
+  if (snapshot.events.some(event => event.type === 'model.requested' && event.payload.stepId === input.taskKey
+    && event.payload.attempt === input.attempt)) return null
+  const schema = input.taskKey === 'ttrpg.open.source-facts' ? 'storyforge.ttrpg-open-source-facts'
+    : input.taskKey === 'ttrpg.open.rule-system' ? 'storyforge.ttrpg-open-rule-system' : null
+  if (schema == null) return null
+  const drafts = [...new Set(rows.filter(row => { try { return JSON.parse(row.content)?.schema === schema } catch { return false } }).map(row => row.content))]
+  if (drafts.length > 1) fail('保留的作者输入存在不同版本，请先核对原制作记录')
+  const after = await readAgentRunV1(input.scope, input.runId)
+  if (after.run.contractHash !== snapshot.run.contractHash || after.run.projectionHash !== snapshot.run.projectionHash
+    || after.run.lastSequence !== snapshot.run.lastSequence) fail('作者输入读取期间原 Run 已变化')
+  return drafts[0] ?? null
 }

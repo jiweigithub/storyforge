@@ -16,6 +16,7 @@ export default function TtrpgOpenProductionReview(props: ({ owner: TtrpgOpenProd
   const [reading, setReading] = useState(false), [error, setError] = useState(''), [page, setPage] = useState(0)
   const active = useRef(true), serial = useRef(0), current = useRef(props)
   current.current = props
+  useEffect(() => { setError('') }, [props.value])
   useEffect(() => {
     const generation = serial
     active.current = true

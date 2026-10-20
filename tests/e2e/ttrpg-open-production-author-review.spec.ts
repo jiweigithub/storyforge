@@ -53,6 +53,28 @@ test('the author reviews original facts and numeric mappings through normal cont
   expect(seen).toEqual(['sourceFacts', 'ruleSystem'])
   await review.getByRole('button', { name: '读取本任务待审稿', exact: true }).click()
   await expect(review.getByRole('checkbox').first()).toBeVisible()
+  expect(await review.getByRole('checkbox').count()).toBeGreaterThan(1)
+  await review.getByRole('checkbox').first().check()
+  await page.getByText('直接修订任务草稿（高级）', { exact: true }).click()
+  const editor = page.getByLabel('作者修订的完整任务 JSON', { exact: true })
+  const authorDraft = JSON.parse(await editor.inputValue())
+  authorDraft.characterTemplates[0].description += ' 作者保留的修订说明。'
+  await editor.fill(JSON.stringify(authorDraft))
+  const previousEpoch = await page.evaluate(async f => {
+    const load = new Function('p', 'return import(p)'), { db } = await load('/storyforge/src/lib/db/schema.ts')
+    return (await db.productBuilds.get(f.buildId)).controlEpoch
+  }, f)
+  await page.getByRole('button', { name: '修正后继续制作', exact: true }).click()
+  await expect.poll(() => page.evaluate(async f => {
+    const load = new Function('p', 'return import(p)'), { db } = await load('/storyforge/src/lib/db/schema.ts')
+    const build = await db.productBuilds.get(f.buildId)
+    return { epoch: build.controlEpoch, status: build.status, code: JSON.parse(build.failureJson).code }
+  }, f)).toEqual({ epoch: previousEpoch + 1, status: 'recovery-required', code: 'task-draft-rejected' })
+  await page.reload()
+  await review.getByRole('button', { name: '读取本任务待审稿', exact: true }).click()
+  await expect(review.getByRole('checkbox').first()).toBeVisible()
+  await expect(review).toContainText('作者保留的修订说明。')
+  expect(seen).toEqual(['sourceFacts', 'ruleSystem'])
   for (const checkbox of await review.getByRole('checkbox').all()) { await expect(checkbox).not.toBeChecked(); await checkbox.check() }
   await page.screenshot({ path: info.outputPath('author-reviewed-original-numeric-mappings.png'), fullPage: true })
   await page.getByRole('button', { name: '修正后继续制作', exact: true }).click()
@@ -67,8 +89,8 @@ test('the author reviews original facts and numeric mappings through normal cont
   }, f)
   expect(after.worlds).toEqual(f.worlds); expect(after.build.status).toBe('released'); expect(after.releases).toHaveLength(1)
   const edits = after.commands.filter((row: any) => row.type === 'resolve-blocker' && JSON.parse(row.resultJson).action === 'author-edit')
-  expect(edits).toHaveLength(2)
+  expect(edits).toHaveLength(3)
   expect(JSON.parse(after.build.budgetLedgerJson).attempts.reduce((n: number, row: any) => n + (row.usage?.modelCalls ?? 0), 0)).toBe(3)
-  await info.attach('three-fixture-calls-two-human-control-author-revisions', { contentType: 'application/json',
+  await info.attach('three-fixture-calls-three-explicit-author-revisions-with-input-recovery', { contentType: 'application/json',
     body: JSON.stringify({ seen, buildId: f.buildId, commands: edits, provider: 'fixture HTTP only', independentHumanAcceptance: false }) })
 })

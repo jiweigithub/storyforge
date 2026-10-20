@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import * as service from '../../src/lib/product-production/service'
+import { executeProductProductionCommand } from '../../src/lib/product-production/commands'
 import { readTtrpgOpenProductionReviewDraftV1, type TtrpgOpenProductionReviewOwnerV1 } from '../../src/lib/ttrpg/open-production-review-service'
 import { normalizeTtrpgOpenSourceFactsForReviewV1, normalizeTtrpgOpenRuleSystemForReviewV1,
   parseTtrpgOpenProductionReviewDraftV1 } from '../../src/lib/ttrpg/open-production-review'
@@ -90,4 +91,32 @@ it('rejects a result if the author command revision changes while exact task evi
     return rows
   })
   await expect(readTtrpgOpenProductionReviewDraftV1(f.owner)).rejects.toThrow('读取期间')
+}, 30000)
+
+it.each([false, true])('reloads retained author input after an ordinary zero-model review rejection without granting confirmation (role=%s)', async role => {
+  const f = await blocked(role), data = await openProductionCompilerFixtureV1(true, { ...f, brief: f.details.executionBrief! })
+  const draft = role ? normalizeTtrpgOpenRuleSystemForReviewV1(data.ruleSystem, f.brief)
+    : normalizeTtrpgOpenSourceFactsForReviewV1(data.sourceFacts, f.brief)
+  if ('characterTemplates' in draft) {
+    draft.characterTemplates[0].description += ' 作者保留的修订说明。'
+    Object.values(draft.characterTemplates[0].attributeMappings)[0].authorConfirmed = true
+  }
+  const production = (await db.productProductions.get(f.productionId))!
+  await executeProductProductionCommand({ scope: f.scope, productionId: f.productionId, command: {
+    type: 'resolve-blocker', commandId: 'ordinary.author-input.review', expectedStateRevision: production.stateRevision,
+    blockerKey: f.owner.taskKey, resolution: { action: 'author-edit', note: '保存完整作者修订，余下确认仍待逐项核对', authorDraftJson: JSON.stringify(draft) },
+  } })
+  await runOpenBrowserProductionV1(f)
+  const details = await service.readProductProductionDetailsV1(f.scope, f.productionId)
+  const progress = await service.readProductProductionProgressV1(f), task = progress.tasks.find(t => t.taskKey === f.owner.taskKey)!
+  const owner = { ...f.owner, controlEpoch: details.build!.controlEpoch, planHash: details.build!.planHash, runId: task.runId!, attempt: task.attempt }
+  const rows = await service.readProductProductionTaskEvidenceV1(owner)
+  expect(rows.some(row => row.kind === 'raw-response')).toBe(false)
+  const before = await snapshot(), expected = role ? normalizeTtrpgOpenRuleSystemForReviewV1(draft, f.brief)
+    : normalizeTtrpgOpenSourceFactsForReviewV1(draft, f.brief)
+  expect(JSON.parse(await readTtrpgOpenProductionReviewDraftV1(owner))).toEqual(expected)
+  expect(await snapshot()).toBe(before)
+  db.close(); await db.open()
+  expect(JSON.parse(await readTtrpgOpenProductionReviewDraftV1(owner))).toEqual(expected)
+  expect(await snapshot()).toBe(before)
 }, 30000)
