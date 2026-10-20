@@ -11042,7 +11042,16 @@ export function createConfiguredProductProductionExecutorV1(input: {
     mediaCapabilities: input.mediaCapabilities ?? new Map<string, ResolvedProductMediaCapabilityV1>(),
   }
   return async request => {
-    if (request.signal.aborted) throw new DOMException('Aborted', 'AbortError')
+    if (request.signal.aborted) {
+      // This entry guard precedes executor-owned task work and model/media
+      // dispatch. Its own new failure has definite zero provider usage even
+      // when the scheduler has recorded the logical requested boundary.
+      const failure = new DOMException('Aborted', 'AbortError')
+      Object.defineProperty(failure, 'productProductionUsage', {
+        value: zeroUsage(0), enumerable: false, configurable: false, writable: false,
+      })
+      throw failure
+    }
     if (request.task.taskKey === 'media.repair-feedback'
       && request.task.executionMode === 'human-import') {
       const rows = await db.productBuildArtifacts
