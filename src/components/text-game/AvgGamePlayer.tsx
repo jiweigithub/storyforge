@@ -370,6 +370,24 @@ export default function AvgGamePlayer(props: { project: Project; scope: Workspac
         </nav>
       </header>
       {store.error && <div role="alert" className="avg-alert">{store.error}</div>}
+      <div className="avg-audio-transports" role="group" aria-label="声音播放与恢复" onClick={event => event.stopPropagation()}>
+        {visualStage?.activeAudio.filter(audio => !nativeReading || audio.channel !== 'voice').map(audio => {
+          const src = mediaUrls[audio.assetKey]
+          if (!src) return null
+          const volume = (prefs.muted ? 0 : audio.volume) * prefs.volume * prefs[`${audio.channel}Volume`]
+          if (nativeModule && !audio.loop) {
+            const target = selectAvgOnceAudioTargetV1(store.runtimeState, audio, activeCues)
+            if (!target) return null
+            return <NativeOnceAudio key={`${store.selectedSessionId}:${target.visit}:${target.cueKey}`}
+              sessionId={store.selectedSessionId!} {...target} channel={audio.channel} src={src} paused={pausedTransport} volume={volume}
+              receipt={avgOnceAudioReceiptV1(store.runtimeState, target.cueKey, target.visit)}
+              durationMs={presentation!.assets.find(a => a.assetKey === audio.assetKey)?.durationMs ?? 0} />
+          }
+          if (nativeModule && ['sfx','voice'].includes(audio.channel) && !activeCueEntries.some(e => e.cue.type === 'play-audio' && e.cue.assetKey === audio.assetKey)) return null
+          return <StageAudio key={`${audio.channel}:${audio.assetKey}`} src={src} loop={audio.loop} channel={audio.channel} paused={pausedTransport} volume={volume} />
+        })}
+        {nativeReading && currentBeat && nativeReading.plan.voices.some(v => v.lineKey === currentBeat.beatKey) && <NativeVoice key={beatIdentity} sessionId={store.selectedSessionId!} lineKey={currentBeat.beatKey} visit={narrative!.visitedNodeKeys.length-1} plan={nativeReading.plan} current={nativeReading.current} src={mediaUrls[nativeReading.plan.voices.find(v => v.lineKey === currentBeat.beatKey)!.assetKey]} missing={mediaFailures.some(f => f.assetKey === nativeReading.plan.voices.find(v => v.lineKey === currentBeat.beatKey)!.assetKey)} paused={pausedTransport} muted={prefs.muted} volume={prefs.volume * prefs.voiceVolume} />}
+      </div>
       <div className="avg-stage" aria-busy={mediaLoading} style={{aspectRatio:(store.selectedManifest && (avgExecutableModule(store.selectedManifest)?.aspectRatio ?? store.selectedManifest.definition.initialVariables.avgAspectRatio)) === "4:3" ? "4 / 3" : "16 / 9"}} data-tone={visualStage?.tone ?? 'normal'} data-transition={visualStage?.lastTransition ?? 'none'} onClick={event => {
         if (event.target instanceof HTMLElement && event.target.closest('button, input, summary, details')) return
         if (currentBeat && !panel) advance()
@@ -387,22 +405,7 @@ export default function AvgGamePlayer(props: { project: Project; scope: Workspac
         {visualStage?.mask && <div className="avg-mask" data-mask={visualStage.mask} />}
         {nativeModule?transientCues.map(cue=><NativeVisualCue key={`${beatIdentity}:${cue.cueKey}`} cue={cue} stageRef={stageRef} paused={pausedTransport} reducedMotion={prefs.reducedMotion}/>):visualStage?.lastTransition === 'flash' && <div key={`flash:${currentBeat?.beatKey}`} className="avg-flash" />}
         {sceneTitleVisible && node?.title && <div key={`scene:${node.key}`} className="avg-scene-title" aria-label={`场景 ${node.title}`}><span>SCENE</span><strong>{node.title}</strong></div>}
-        {visualStage?.activeAudio.filter(audio => !nativeReading || audio.channel !== 'voice').map(audio => {
-          const src = mediaUrls[audio.assetKey]
-          if (!src) return null
-          const volume = (prefs.muted ? 0 : audio.volume) * prefs.volume * prefs[`${audio.channel}Volume`]
-          if (nativeModule && !audio.loop) {
-            const target = selectAvgOnceAudioTargetV1(store.runtimeState, audio, activeCues)
-            if (!target) return null
-            return <NativeOnceAudio key={`${store.selectedSessionId}:${target.visit}:${target.cueKey}`}
-              sessionId={store.selectedSessionId!} {...target} channel={audio.channel} src={src} paused={pausedTransport} volume={volume}
-              receipt={avgOnceAudioReceiptV1(store.runtimeState, target.cueKey, target.visit)}
-              durationMs={presentation!.assets.find(a => a.assetKey === audio.assetKey)?.durationMs ?? 0} />
-          }
-          if (nativeModule && ['sfx','voice'].includes(audio.channel) && !activeCueEntries.some(e => e.cue.type === 'play-audio' && e.cue.assetKey === audio.assetKey)) return null
-          return <StageAudio key={`${audio.channel}:${audio.assetKey}`} src={src} loop={audio.loop} channel={audio.channel} paused={pausedTransport} volume={volume} />
-        })}
-        {nativeReading && currentBeat && nativeReading.plan.voices.some(v => v.lineKey === currentBeat.beatKey) && <NativeVoice key={beatIdentity} sessionId={store.selectedSessionId!} lineKey={currentBeat.beatKey} visit={narrative!.visitedNodeKeys.length-1} plan={nativeReading.plan} current={nativeReading.current} src={mediaUrls[nativeReading.plan.voices.find(v => v.lineKey === currentBeat.beatKey)!.assetKey]} missing={mediaFailures.some(f => f.assetKey === nativeReading.plan.voices.find(v => v.lineKey === currentBeat.beatKey)!.assetKey)} paused={pausedTransport} muted={prefs.muted} volume={prefs.volume * prefs.voiceVolume} />}
+
 
         {(prefs.muted || prefs.reducedMotion) && <div className="avg-stage-status"><span>{prefs.muted ? '静音' : ''}</span><span>{prefs.reducedMotion ? '减少动态' : ''}</span></div>}
         <section key={`dialogue:${currentBeat?.beatKey ?? narrative?.currentNodeKey}`} className={`avg-dialogue ${speakerLabel ? 'is-dialogue' : 'is-narration'} ${!currentBeat ? 'is-choice' : ''}`} aria-live="polite">

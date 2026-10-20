@@ -4,7 +4,7 @@ import { useAvgGamePlayerStore } from '../../stores/avg-game-player'
 
 /** A persisted request is not proof that the browser played or finished it.
  * Only this mounted controller's newly admitted generation may auto-play. */
-export function NativeOnceAudio(props: { sessionId: number; cueKey: string; visit: number; channel: string
+export function NativeOnceAudio(props: { sessionId: number; cueKey: string; visit: number; channel: AvgOnceAudioReceiptV1['channel']
   receipt: AvgOnceAudioReceiptV1 | null; src: string; paused: boolean; volume: number; durationMs: number }) {
   const [attempt, setAttempt] = useState(0), [generation, setGeneration] = useState<number | null>(null), [error, setError] = useState('')
   const reported = useRef<number | null>(null)
@@ -50,9 +50,10 @@ export function NativeOnceAudio(props: { sessionId: number; cueKey: string; visi
   }, [generation, props.receipt?.generation, status, props.src, props.paused]) // eslint-disable-line react-hooks/exhaustive-deps
   const unknown = status === 'requested' && generation === null && starts.current.size === 0
   const recover = unknown || status === 'failed' || !!error
+  const channelLabel = { bgm: '音乐', ambience: '环境音', sfx: '音效', voice: '配音' }[props.channel]
   return <div className="avg-once-audio-transport" data-cue={props.cueKey} data-status={status ?? 'loading'}>
     <audio ref={audio} src={props.src} preload="auto" data-channel={props.channel} data-generation={generation ?? ''} />
-    {recover && <div className="avg-voice-recovery" role="status"><span>{error || (unknown ? '上次声音播放未确认结束。' : props.receipt?.reason)}</span>
+    {recover && <div className="avg-voice-recovery" role="status" aria-label={`${channelLabel}恢复`}><strong>{channelLabel}</strong><span>{error || (unknown ? '上次声音播放未确认结束。' : props.receipt?.reason)}</span>
       <button type="button" disabled={props.paused} onClick={() => { audio.current?.pause(); setGeneration(null); setError(''); setAttempt(n => n + 1) }}>重新播放声音片段</button>
     </div>}
   </div>
