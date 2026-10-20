@@ -464,6 +464,8 @@ V5的本地原型发布接入原质量回执与adoption intent/CAS，不重写�
 
 隔离验证快照须显式携带新公共目录JSON，不复制本机模型、运行时、凭据或provider记录库。需求工作台复用原入口提供原151项与三个新来源。正式准入仍经过原开始/作者方案/编译、HTTP原响应、真实字节/解码、Work Blob与sealed producer，审听/选用和当前Stage采用独立；网页许可或旧回执不自动提升商业品质/听感。三段真实原件及读取器的有限来源/技术复验保持。固定源码九阶段定向检查通过：41项Python、88项关联（包含先验6项）、16项工程门与四声音模式10项Chromium首遍成功，无flaky。新增原雨声用例实际解码/完整播放、保留未知听感与禁选、原字节完整恢复/重映射/删副本均通过；该新增来源尚无被选用后的Stage/Release及关闭工厂消费验收，旧声音版本恢复不能代验。准确新提交完整CI、实际连续混音与听感仍另验，详见工作包§10.17。
 
+source/result@2的下游验收须经过原作者选择、独立Stage采用、原型路线/目录验证与独立发布确认，再将同一成功导出的完整备份交给关闭工厂的新浏览器验证；必须保留原OGG、许可来源/版本、Release-only存档及owner重映射，且不得新增制作/质量写入。CI保留旧声音用例并核对新生产/恢复的准确标题和真实报告，不能仅累加通过数或拿旧来源发布充当新来源。该下游增量在固定源码通过新3项合同和15文件91项关联（共16文件94项，不重复计数）、16项工程检查、原CI配方核对及四声音模式12条Chromium路径（1/3/6/2），全部首遍成功、无flaky。生产与恢复确实消费准确新来源和同一成功导出，390px恢复画面已检查；实际来源41项Python沿用相同1814项生产/后端文件hash的已完成证据，不冒称新运行。准确整合源码完整CI和真实连续听感另验，隔离工程声明不替真实样本审听。
+
 ## 6 typed 消费绑定与自动配置
 
 目标 `AvgMediaBindingV1` 字段：bindingKey、requirementKey/revision、subjectKey/familyKey/variantKey、consumerDomain/consumerKey/slot、scene/line 或 event（适用时）、locale、state/visibility condition、layout/anchor、required/fallback、assetKey/blobHash、采用/处理/上游 revision。
