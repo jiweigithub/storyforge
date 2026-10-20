@@ -1214,7 +1214,10 @@ export async function authorizeTtrpgOpenPublicSituationV1(input: FormalTtrpgComm
       const content = requireTtrpgOpenContent(ttrpgContent), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
       if (!runtime?.authorization || !runtime.openRun || !content.campaign.runtimePolicy.enabled
         || runtime.openRun.coordination.activeEpochKey !== null) throw new Error('[ttrpg-public-situation] 需要当前已授权团局和独立空闲窗口')
-      if (grant.budget.maximumInputTokens > 16000 || grant.budget.maximumOutputTokens > content.campaign.runtimePolicy.maximumOutputTokens) throw new Error('[ttrpg-public-situation] 本次输入或输出预算超过冻结作品策略')
+      const budget = ttrpgOpenEpochBudgetForTriggerV1(frozenTtrpgOpenEpochBudgetV1(content.campaign), TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1)
+      if (grant.budget.maximumInputTokens + grant.budget.maximumOutputTokens > budget.maximumTokens
+        || grant.budget.maximumOutputTokens > content.campaign.runtimePolicy.maximumOutputTokens
+        || grant.budget.maximumCostUsd > budget.maximumCostUsd) throw new Error('[ttrpg-public-situation] 本次输入、输出或费用预算超过冻结作品策略')
       assertTtrpgOpenSituationEpochAuthorityV1(runtime, viewerKey)
       const seat = assertTtrpgOpenAuthorizationCurrentV1({ authorization: runtime.authorization, participants, viewerKey })
       const scope = await resolveScope({ scope: { projectId: session.projectId, worldId: session.worldId, workId: session.workId } })
@@ -1227,7 +1230,7 @@ export async function authorizeTtrpgOpenPublicSituationV1(input: FormalTtrpgComm
         triggeredBySeatKey: seat.seatKey, viewerKey, triggerKind: TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1,
         inputRevision: proof.inputRevision, sessionZeroRevision: runtime.authorization.revision,
         authorizationHash: await hashProductProductionValueV2(runtime.authorization),
-        budget: ttrpgOpenEpochBudgetForTriggerV1(frozenTtrpgOpenEpochBudgetV1(content.campaign), TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1),
+        budget,
         successfulActorKeys: [], reservedCalls: 0, consumedTokens: 0, actualCostUsd: 0, stopReason: null })
       return { actorKey: seat.actorKey, targetKey: null, payload: { epoch }, agentEvidence: proof.evidence }
     } })

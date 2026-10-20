@@ -17,7 +17,7 @@ import { proposeTtrpgOpenManualActionV1 } from '../../src/lib/ttrpg/open-table-s
 describe('R-TTRPGOPEN3 durable bounded hosting permission', { timeout: 60000 },() => {
   beforeEach(async () => { await db.delete();await db.open() });afterEach(() => db.close())
   async function setup(enabled = true) {
-    const f = await readyOpenTtrpgSessionV1('本轮有限主持',p => { p.ttrpg!.campaign.runtimePolicy.enabled = enabled })
+    const f = await readyOpenTtrpgSessionV1('本轮有限主持',p => { p.ttrpg!.campaign.runtimePolicy.enabled = enabled; p.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 200000 })
     await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(f.sessionId,'hosting.epoch'),viewerKey: OPEN_HUMAN_VIEWER,triggerKind: 'continue-host',rawInput: '我明确开始本轮有限主持' })
     const epoch = rt(await readProductRuntimeState(f.sessionId)).openRun!.coordination.epochs[0]
     const grantEnvelope = await openEnvelopeV1(f.sessionId,'hosting.grant')
@@ -60,7 +60,7 @@ describe('R-TTRPGOPEN3 durable bounded hosting permission', { timeout: 60000 },(
     await expect(x.grant()).rejects.toThrow(/未允许/);expect(await readProductRuntimeState(x.f.sessionId)).toEqual(before)
   })
   it('does not upgrade a manual-action-only epoch into model delegation',async () => {
-    const x = await seedOpenInteractionV1('dialogue',p => { p.ttrpg!.campaign.runtimePolicy.enabled = true })
+    const x = await seedOpenInteractionV1('dialogue',p => { p.ttrpg!.campaign.runtimePolicy.enabled = true; p.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 200000 })
     await proposeTtrpgOpenManualActionV1({ ...x.input,request: x.request,submissionKey: 'hosting.manual',basisHash: x.catalog.basisHash,rawInput: '我只授权本人的人工行动' })
     const before = await readProductRuntimeState(x.f.sessionId)
     await expect(delegateTtrpgOpenHostingV1({ ...await openEnvelopeV1(x.f.sessionId,'hosting.manual.denied'),epochKey: rt(before).openRun!.coordination.activeEpochKey!,

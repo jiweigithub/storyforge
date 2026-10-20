@@ -10,7 +10,7 @@ beforeEach(async () => { await db.delete(); await db.open() })
 afterEach(() => { vi.restoreAllMocks(); db.close() })
 it.each([2000, 800])('freezes a usable actor request within both the campaign output limit %s and the registered Skill', async limit => {
   const f = await readyOpenTtrpgSessionV1('table actor output budget', pkg => {
-    pkg.ttrpg!.campaign.runtimePolicy.enabled = true
+    pkg.ttrpg!.campaign.runtimePolicy.enabled = true; pkg.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000
     pkg.ttrpg!.campaign.runtimePolicy.maximumOutputTokens = limit
   }), before = await readProductRuntimeState(f.sessionId)
   const original = harness.generateTtrpgOpenIntentCandidateV1

@@ -131,7 +131,7 @@ describe('R-TTRPGOPEN3 frozen no-roll interaction kernel', { timeout: 60000 },()
     await settleOpenPaidTurnsV1(command);expect(await readProductRuntimeState(x.f.sessionId)).toEqual(after)
   })
   it('admits an actual governed semantic candidate only through the actor-visible frozen interaction',async () => {
-    const x = await seedOpenInteractionV1('move',p => { p.ttrpg!.campaign.runtimePolicy.enabled = true })
+    const x = await seedOpenInteractionV1('move',p => { p.ttrpg!.campaign.runtimePolicy.enabled = true; p.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000 })
     const view = await loadTtrpgOpenPlayerContextV1({ ...x.input,actorKey: 'hero' })
     expect(view.view.rules.interactions).toContainEqual(expect.objectContaining({ interactionKey: x.rule.interactionKey,kind: 'move',timeCostWorldTurns: 2 }))
     expect(JSON.stringify(view.view.rules.interactions)).not.toMatch(/location.set|effectPlanRef|preconditions/)
@@ -164,7 +164,7 @@ describe('R-TTRPGOPEN3 frozen no-roll interaction kernel', { timeout: 60000 },()
     expect(rt(after).openRun!.coordination.calls).toHaveLength(1)
   })
   it('uses the original Session Zero permission for a safe companion interaction and consumes its real bounded action slot',async () => {
-    const x = await seedOpenInteractionV1('observe',p => { p.ttrpg!.campaign.runtimePolicy.enabled = true })
+    const x = await seedOpenInteractionV1('observe',p => { p.ttrpg!.campaign.runtimePolicy.enabled = true; p.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000 })
     await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(x.f.sessionId,'interaction.companion.epoch'),viewerKey: x.input.viewerKey,triggerKind: 'continue-host',rawInput: '给队友一次建议机会' })
     const generated = await generateTtrpgOpenCompanionCandidateV1({ ...await openEnvelopeV1(x.f.sessionId,'interaction.companion.prepare'),...x.input,
       actorKey: 'companion.1',rawInput: '只观察自己可见的环境',maximumOutputTokens: 800,maximumCostUsd: 0.1,

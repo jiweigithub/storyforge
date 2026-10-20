@@ -8,7 +8,7 @@ import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
 export async function setupCommonOracleSourceV1(audience: 'party' | 'public' = 'party', late = false, configure?: Parameters<typeof setupOpenEntityPlanningV1>[0]) {
   const s = await setupOpenEntityPlanningV1(pkg => {
     const c = pkg.ttrpg!.campaign, rule = pkg.ttrpg!.rulePack.content
-    c.runtimePolicy.enabled = true; rule.oracles[0].audience = audience
+    c.runtimePolicy.enabled = true; c.runtimePolicy.maximumEpochTokens = 50000; rule.oracles[0].audience = audience
     const npc = c.characterTemplates.find(row => row.characterKey === 'keeper')!, item = rule.items[0]
     npc.gmProfile!.secret = 'COMMON-ORACLE-GM-PROFILE-CANARY'; npc.itemKeys = [item.key]
     npc.characterSheet = createCompleteTtrpgCharacterSheetV2({ template: npc, rulePack: rule })

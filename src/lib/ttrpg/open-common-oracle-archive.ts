@@ -5,6 +5,7 @@ import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
 import { readTtrpgOpenImportedCallOwnerV1 } from './open-run-portability'
 import { readAgentRunArtifactExactV1 } from '../memory/artifact-store'
 import { estimateTokens } from '../ai/context-budget'
+import { estimateTtrpgOpenRuntimeFallbackInputV1 } from './open-runtime-wire-budget'
 import { hashCanonicalValue } from '../agent/run/hash'
 import { assertTtrpgOpenCommonOracleCallOriginV1, parseTtrpgOpenModelCallV1 } from './open-model-calls'
 import { assertTtrpgOpenCommonOracleArchiveReaderV1, parseTtrpgOpenCommonOracleArchiveReceiptV1,
@@ -53,7 +54,7 @@ export async function prepareTtrpgOpenCommonOracleArchiveForKernelV1(input: Arch
       if (!Array.isArray(rendered.messages) || rendered.messages.some(row => typeof row.content !== 'string')) throw new Error('缺少原完整请求正文')
       observation = 'retained-response'
       call = parseTtrpgOpenModelCallV1({ ...previous, status: 'succeeded', terminalRef: sourceRef, responseArtifactHash,
-        usage: { source: 'estimated', inputTokens: estimateTokens(rendered.messages.map(row => row.content).join('\n')), outputTokens: estimateTokens(raw), actualCostUsd: null },
+        usage: { source: 'estimated', inputTokens: estimateTtrpgOpenRuntimeFallbackInputV1(rendered), outputTokens: estimateTokens(raw), actualCostUsd: null },
         terminalReason: 'imported-response-retained-by-human-archive' })
     } else {
       if (owner?.origin.events.some(event => event.type === 'model.responded' && event.payload.stepId === previous.stepId && event.payload.attempt === previous.attempt)) throw new Error('原回答回执存在但完整正文缺失，须先核对')

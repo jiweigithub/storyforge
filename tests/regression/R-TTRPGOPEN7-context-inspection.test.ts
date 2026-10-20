@@ -11,7 +11,7 @@ import { resolveScope } from '../../src/lib/workspace/scope'
 
 async function setup(large = false) {
   const f = await readyOpenTtrpgSessionV1('context inspection', pkg => {
-    pkg.ttrpg!.campaign.runtimePolicy.enabled = true
+    pkg.ttrpg!.campaign.runtimePolicy.enabled = true; pkg.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000
     pkg.ttrpg!.campaign.characterTemplates[1].controller = 'hybrid'
     const policy = openContextPolicyFixtureV1()
     policy.maximumContextTokens = large ? 3000 : 8000

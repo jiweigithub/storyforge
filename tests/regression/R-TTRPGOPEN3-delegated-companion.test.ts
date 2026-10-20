@@ -13,7 +13,7 @@ describe('R-TTRPGOPEN3 delegated companion proposal and actual safe admission', 
   beforeEach(async () => { await db.delete();await db.open() });afterEach(() => db.close())
   async function setup(options: { safe?: boolean;bound?: boolean } = {}) {
     const f = await readyOpenTtrpgSessionV1('有限委托的真实队友提案',p => {
-      p.ttrpg!.campaign.runtimePolicy.enabled = true
+      p.ttrpg!.campaign.runtimePolicy.enabled = true; p.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000
       if (options.safe !== false) {
         const action = p.ttrpg!.rulePack.content.actions.find(a => a.key === 'investigate')!
         action.effects = [];action.description = '观察现场，不消耗资源。'

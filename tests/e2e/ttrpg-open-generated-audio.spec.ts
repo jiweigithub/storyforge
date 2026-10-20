@@ -28,7 +28,12 @@ console.log(JSON.stringify({schema:'storyforge.ttrpg-local-tts-product-raw-respo
     throw Error('Unexpected native generated-audio fixture request: '+path)
   })
   await page.goto('./');const f=await page.evaluate(async()=>{const load=new Function('p','return import(p)'),s=await(await load('/storyforge/tests/helpers/open-audio-runtime.ts')).setupAudioRuntimeV1(true,'编号1000。'.repeat(42)),state=await(await load('/storyforge/src/lib/product/runtime-core.ts')).readProductRuntimeState(s.owner.sessionId);return {owner:s.owner,text:s.text,narrationSourceRef:s.narrationSourceRef,entities:JSON.stringify(state.entities),time:JSON.stringify(state.ttrpg.openRun.worldTime)}})
-  let panel=await enter(page,f.owner.sessionId);let studio=panel.getByTestId('ttrpg-open-voice-studio');await studio.locator('summary').click()
+  let panel=await enter(page,f.owner.sessionId)
+  // This raw/WAV fixture exercises the retained Melo worker protocol. Choose
+  // that voice explicitly; the product's Qwen default remains independently tested.
+  const narrator=page.getByTestId('ttrpg-narration-listening-settings').getByLabel('旁白试听声线',{exact:true})
+  await expect(narrator).toHaveValue('qwen.uncle_fu');await narrator.selectOption('melo.zh')
+  let studio=panel.getByTestId('ttrpg-open-voice-studio');await studio.locator('summary').click()
   await studio.getByLabel('配音原文',{exact:true}).selectOption(JSON.stringify(f.narrationSourceRef));await studio.getByRole('button',{name:'预览本机读法',exact:true}).click()
   await expect(studio.getByLabel('本机归一读法',{exact:true})).toHaveText(f.text.replaceAll('。','.').replaceAll('1000','一千'))
   await studio.getByLabel('确认原文读法与范围',{exact:true}).check();await studio.getByRole('button',{name:'确认并生成本机配音',exact:true}).click()

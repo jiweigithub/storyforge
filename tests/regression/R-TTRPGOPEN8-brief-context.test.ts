@@ -24,7 +24,7 @@ import type { FrozenResourceScopeV1 } from '../../src/lib/registry/types'
 
 const provider = createTtrpgOpenBriefContextProviderV1()
 async function setup(enabled = true) {
-  const f = await readyOpenTtrpgSessionV1('Stage recap context', p => { p.ttrpg!.campaign.runtimePolicy.enabled = enabled })
+  const f = await readyOpenTtrpgSessionV1('Stage recap context', p => { p.ttrpg!.campaign.runtimePolicy.enabled = enabled; p.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000 })
   return { f, input: { scope: f.scope, sessionId: f.sessionId, actorKey: 'gm' }, scope: { ...f.scope, productRuntimeSessionId: f.sessionId, runtimeActorKey: 'gm' } }
 }
 async function readAll(scope: FrozenResourceScopeV1) {

@@ -16,7 +16,7 @@ import { hashProductProductionValueV2 } from '../product-production/hash'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import type { TtrpgOpenModelCallV1 } from './open-model-calls'
 import { loadTtrpgOpenModelContextV1, ttrpgOpenModelPurposeForSkillV1 } from './open-model-purpose'
-import { estimateTokens } from '../ai/context-budget'
+import { estimateTtrpgOpenFrozenRuntimeInputTokensV1 } from './open-runtime-wire-budget'
 import { getAgentSkillV1 } from '../agent/skill-registry'
 import { assertAgentSkillExecutionBindingV1, assertAgentSkillExecutionBindingIntegrityV2,
   projectFrozenAgentSkillDefinitionV1 } from '../agent/execution-binding'
@@ -150,7 +150,7 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
     return body
   }
   const renderedRequest = await exact('rendered-request', call.requestHash)
-  if (estimateTokens(renderedRequest) > call.reservedInputTokens) throw new Error('[ttrpg-open-call] 实际请求超过预留输入预算')
+  if (estimateTtrpgOpenFrozenRuntimeInputTokensV1(renderedRequest) > call.reservedInputTokens) throw new Error('[ttrpg-open-call] 实际请求超过预留输入预算')
   // Context snapshots use governed exact storage; a caller-provided hash alone is insufficient.
   let foundManifest = false
   let verifiedPreflight = false

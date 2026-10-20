@@ -54,7 +54,19 @@ test(`${revisionPage}: restored published backup creates a new revision and pres
       return result
     },f)
     expect(productionResult.terminal).toBe(true)
-    if (revisionPage === 'media') expect(productionResult.modelCalls).toBe(1)
+    if (revisionPage === 'media') {
+      const mediaPlan = await other.evaluate(async f => {
+        const load = new Function('p','return import(p)') as (p: string) => Promise<any>
+        const { db } = await load('/storyforge/src/lib/db/schema.ts')
+        const build = await db.productBuilds.get(f.buildId)
+        const row = await db.productProductionBriefs.where('[productionId+revision]').equals([f.productionId,build.briefRevision]).first()
+        return { task: JSON.parse(build.planJson).tasks.find((task: any) => task.taskKey === 'ttrpg.open.media-plan'),
+          media: JSON.parse(row.briefJson).media }
+      },{...f,buildId:productionResult.buildId})
+      expect(mediaPlan.media).toMatchObject({ imageCount: 0,musicTrackCount: 0,sfxCount: 0,voiceLineCount: 0,requiredMediaKinds: [] })
+      expect(mediaPlan.task).toMatchObject({ executionMode: 'deterministic',skillId: null })
+      expect(productionResult.modelCalls).toBe(0)
+    }
     await other.goto(url('release'))
     await other.getByRole('button',{ name: '复验并原子发布',exact: true }).click()
     await expect(other).toHaveURL(/\/ttrpg\/play/,{ timeout: 20000 })

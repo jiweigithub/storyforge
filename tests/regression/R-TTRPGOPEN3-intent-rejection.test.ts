@@ -10,7 +10,7 @@ import { readInstanceAgentRunV1 } from '../../src/lib/agent/run/event-store'
 describe('R-TTRPGOPEN3 actual player rejection and original cost evidence', () => {
   beforeEach(async () => { await db.delete();await db.open() });afterEach(() => { vi.restoreAllMocks();db.close() })
   async function setup(invalid = false) {
-    const f = await readyOpenTtrpgSessionV1('reject intent', pkg => { pkg.ttrpg!.campaign.runtimePolicy.enabled = true })
+    const f = await readyOpenTtrpgSessionV1('reject intent', pkg => { pkg.ttrpg!.campaign.runtimePolicy.enabled = true; pkg.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000 })
     const rawInput = '调查港口'
     await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(f.sessionId, 'epoch'), viewerKey: OPEN_HUMAN_VIEWER, triggerKind: 'submit-action', rawInput })
     const runAI = vi.fn(async () => invalid ? 'invalid retained response' : JSON.stringify({ goal: rawInput, method: '调查', targetRefs: [], declaredResources: [], declaredAssumptions: [], requestedOutcome: null }))

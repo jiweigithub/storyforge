@@ -12,7 +12,7 @@ describe('R-TTRPGOPEN3 real companion role purpose and owned source', { timeout:
   beforeEach(async () => { await db.delete();await db.open() });afterEach(() => db.close())
   async function setup(safe = false) {
     const fixture = await readyOpenTtrpgSessionV1('bounded companion', pkg => {
-      const c = pkg.ttrpg!.campaign;c.runtimePolicy.enabled = true
+      const c = pkg.ttrpg!.campaign;c.runtimePolicy.enabled = true; c.runtimePolicy.maximumEpochTokens = 50000
       if (safe) { const a = pkg.ttrpg!.rulePack.content.actions.find(a => a.key === 'investigate')!;a.effects = [];a.description = '观察现场，不消耗资源。' }
       c.characterTemplates[0].playerProfile = { privateGoal: 'HUMAN-PRIVATE-GOAL', secret: 'HUMAN-PRIVATE-SECRET', portrayal: '谨慎' }
       c.characterTemplates[1].playerProfile = { privateGoal: 'AI-ONE-OWN-GOAL', secret: 'AI-ONE-OWN-SECRET', portrayal: '乐于观察' }

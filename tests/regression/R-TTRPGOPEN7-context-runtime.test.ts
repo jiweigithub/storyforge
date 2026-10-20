@@ -60,7 +60,7 @@ describe('R-TTRPGOPEN7 actual frozen runtime context selection', { timeout: 6000
     const f = await readyOpenTtrpgSessionV1('formal privacy', pkg => {
       const front = pkg.ttrpg!.campaign.fronts[0]
       p.triggers[1].trigger.predicate = { op: 'not', of: { op: 'front-stage-at-least', frontKey: front.frontKey, stageKey: front.escalationStages[0].stageKey } }
-      pkg.ttrpg!.campaign.contextPolicy = p; pkg.ttrpg!.campaign.runtimePolicy.enabled = true
+      pkg.ttrpg!.campaign.contextPolicy = p; pkg.ttrpg!.campaign.runtimePolicy.enabled = true; pkg.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000
     })
     await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(f.sessionId, 'privacy.epoch'), viewerKey: OPEN_HUMAN_VIEWER, triggerKind: 'submit-action', rawInput })
     const prepared = await prepareTtrpgOpenIntentInputV1({ ...await openEnvelopeV1(f.sessionId, 'privacy.prepare'), scope: f.scope, actorKey: 'hero', viewerKey: OPEN_HUMAN_VIEWER,

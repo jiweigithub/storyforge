@@ -42,7 +42,7 @@ describe('R-TTRPGOPEN3 bounded continuous hosting through existing owners', { ti
   }, process.env.CI ? 240000 : 120000)
   async function quick(safe = false) {
     const f = await readyOpenTtrpgSessionV1('bounded hosting stop', pkg => {
-      pkg.ttrpg!.campaign.runtimePolicy.enabled = true
+      pkg.ttrpg!.campaign.runtimePolicy.enabled = true; pkg.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 200000
       if (safe) pkg.ttrpg!.rulePack.content.actions.find(a => a.key === 'investigate')!.effects = []
     })
     await commands.startTtrpgOpenEpochV1({ ...await openEnvelopeV1(f.sessionId, 'host.epoch'), viewerKey: OPEN_HUMAN_VIEWER,

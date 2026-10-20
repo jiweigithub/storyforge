@@ -35,6 +35,7 @@ describe('R-TTRPGOPEN10 original local Run before public authorization', { timeo
     const result = await createTtrpgOpenPublicSituationAuthorizationV1(input)
     const repeated = await createTtrpgOpenPublicSituationAuthorizationV1(input)
     expect(repeated).toEqual(result); expect(await db.agentRuns.count()).toBe(1)
+    expect(result.grant.budget).toMatchObject({ maximumInputTokens: 44000, maximumOutputTokens: 4000 })
     const state = await readProductRuntimeState(f.sessionId), epoch = state.ttrpg!.openRun!.coordination.epochs[0]
     expect(epoch).toMatchObject({ triggerKind: 'request-public-situation', reservedCalls: 0, budget: { maximumCalls: 1, maximumAiActions: 0 } })
     expect(epoch.publicSituation!.basis.sharedRequest.text).toBe(input.rawInput)
@@ -66,6 +67,22 @@ describe('R-TTRPGOPEN10 original local Run before public authorization', { timeo
       await expect(createTtrpgOpenPublicSituationAuthorizationV1({ ...input, ...patch } as typeof input)).rejects.toThrow()
     }
     expect(await db.agentRuns.count()).toBe(0); expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
+  })
+  it.each(['input-total', 'output-limit', 'cost-limit'] as const)('rejects %s above the frozen policy before committing authority or reserving a model call', async kind => {
+    const { f, input } = await setup(), before = await readProductRuntimeState(f.sessionId)
+    const real = api.authorizeTtrpgOpenPublicSituationV1
+    vi.spyOn(api, 'authorizeTtrpgOpenPublicSituationV1').mockImplementation(async command => {
+      const authorization = structuredClone(command.authorization) as Awaited<ReturnType<typeof createTtrpgOpenPublicSituationAuthorizationV1>>['grant']
+      if (kind === 'input-total') authorization.budget.maximumInputTokens = before.ttrpg!.epochBudget.maximumTokens - authorization.budget.maximumOutputTokens + 1
+      if (kind === 'output-limit') authorization.budget.maximumOutputTokens = 8001
+      if (kind === 'cost-limit') authorization.budget.maximumCostUsd = before.ttrpg!.epochBudget.maximumCostUsd + 0.01
+      return real({ ...command, authorization })
+    })
+    await expect(createTtrpgOpenPublicSituationAuthorizationV1(input)).rejects.toThrow(/超过冻结作品策略/)
+    expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
+    const runs = await db.agentRuns.toArray()
+    expect(runs).toHaveLength(1); expect(runs[0].status).toBe('failed')
+    expect((await db.agentRunEvents.toArray()).some(event => event.type === 'model.requested')).toBe(false)
   })
   it('explicitly closes the original authorization before any input or reservation, retaining its cancelled Run and zero model calls', async () => {
     const { f, input } = await setup(), result = await createTtrpgOpenPublicSituationAuthorizationV1(input)

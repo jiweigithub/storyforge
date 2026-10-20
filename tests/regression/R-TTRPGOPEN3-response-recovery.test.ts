@@ -24,7 +24,7 @@ describe('R-TTRPGOPEN3 paid-response materialization recovery without transport'
   beforeEach(async () => { await db.delete(); await db.open() })
   afterEach(() => { vi.restoreAllMocks(); db.close() })
   async function setup() {
-    const fixture = await readyOpenTtrpgSessionV1('response recovery', pkg => { pkg.ttrpg!.campaign.runtimePolicy.enabled = true })
+    const fixture = await readyOpenTtrpgSessionV1('response recovery', pkg => { pkg.ttrpg!.campaign.runtimePolicy.enabled = true; pkg.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000 })
     await commands.startTtrpgOpenEpochV1({ ...await openEnvelopeV1(fixture.sessionId, 'recovery.epoch'), viewerKey: OPEN_HUMAN_VIEWER,
       triggerKind: 'submit-action', rawInput: '调查河港' })
     const prepared = await prepareTtrpgOpenIntentInputV1({ ...await openEnvelopeV1(fixture.sessionId, 'recovery.prepare'), scope: fixture.scope,

@@ -12,7 +12,7 @@ describe('R-TTRPGOPEN1 human-confirmed semantic candidates enter frozen rule adm
   beforeEach(async () => { await db.delete(); await db.open() })
   afterEach(() => db.close())
   async function setup(badOutput = false, declaredAssumptions: string[] = []) {
-    const fixture = await readyOpenTtrpgSessionV1('open candidate admission', pkg => { pkg.ttrpg!.campaign.runtimePolicy.enabled = true })
+    const fixture = await readyOpenTtrpgSessionV1('open candidate admission', pkg => { pkg.ttrpg!.campaign.runtimePolicy.enabled = true; pkg.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000 })
     const view = await loadTtrpgOpenPlayerContextV1({ scope: fixture.scope, sessionId: fixture.sessionId, actorKey: 'hero' })
     const action = view.view.rules.actions.find(action => action.target === 'scene'
       && view.view.rules.core.actionCatalog.some(row => row.actionKey === action.actionKey && row.available))!

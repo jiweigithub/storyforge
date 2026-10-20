@@ -216,7 +216,8 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
         {candidate.schema === 'storyforge.ttrpg-open-kp-candidate' ? candidate.narration?.paragraphs.map((paragraph, i) => <p key={i}>{paragraph.text}</p>) : <><p>{candidate.intent?.goal}</p><p>方法：{candidate.intent?.method}</p></>}
         {['ready', 'usable-with-warnings'].includes(candidate.artifact.status) ? <button disabled={busy} onClick={() => void perform(async () => {
           await acceptTtrpgOpenTableCandidateV1({ ...input(), runId: candidate.runId, requestKey: candidate.requestKey, candidateHash: candidate.candidateHash, kind: candidate.schema === 'storyforge.ttrpg-open-kp-candidate' ? 'kp' : 'intent' })
-        })}>确认这份{candidate.schema === 'storyforge.ttrpg-open-kp-candidate' ? '叙述' : '行动意图'}</button> : <p>这份结果需要修订，尚不能执行；原始响应已经保留。</p>}
+        })}>确认这份{candidate.schema === 'storyforge.ttrpg-open-kp-candidate' ? '叙述' : '行动意图'}</button> : <><p>这份结果需要修订，尚不能执行；原始响应已经保留。</p>
+          {candidate.artifact.issues.filter(issue => issue.disposition === 'blocking').map(issue => <p key={`${issue.code}:${issue.path}`} role="alert">{issue.message}</p>)}</>}
         {candidate.schema === 'storyforge.ttrpg-open-intent-candidate' && <button disabled={busy} onClick={() => void perform(async () => { await rejectTtrpgOpenTableIntentV1({ ...input(), runId: candidate.runId, requestKey: candidate.requestKey, candidateHash: candidate.candidateHash });setNotice('已放弃这份行动建议，原始记录和调用用量会保留。') })}>放弃这份行动建议</button>}
       </section>)}
       {op && <section className="sf-open-table-card" aria-label="当前行动"><h2>{op.ruleLabel}</h2><p>行动者：{op.actorName}；目标：{op.targetName ?? '目标尚未公开，需先详细审查'}。</p><p>当前步骤：{labels[op.nextStepKey?.split('.')[0] ?? ''] ?? '等待行动确认'}</p><p>耗时：{op.timeCostWorldTurns} 个世界轮次。</p>

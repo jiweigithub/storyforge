@@ -1,16 +1,18 @@
 import { expect, test } from '@playwright/test'
 import { createHash } from 'node:crypto'
 
-test('before the first turn real native narrator voices preserve the chosen speed and stop on a voice change or reload without inference or game changes', async ({ page }, info) => {
+test('before Session Zero native narrator choices survive audition, reload and explicit game start without inference or early authorization', async ({ page }, info) => {
   test.skip(process.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW !== '1', 'requires isolated open preview')
   await page.goto('./')
   const f = await page.evaluate(async () => {
     const load = new Function('p', 'return import(p)')
     const helper = await load('/storyforge/tests/helpers/open-ttrpg-session.ts')
-    const f = await helper.readyOpenTtrpgSessionV1('进入前旁白试听')
+    const f = await helper.seedOpenTtrpgSessionV1('进入前旁白试听')
     const core = await load('/storyforge/src/lib/product/runtime-core.ts')
     return { sessionId: f.sessionId, state: JSON.stringify(await core.readProductRuntimeState(f.sessionId)) }
   })
+  expect(JSON.parse(f.state).ttrpg.authorization).toBeNull()
+  expect(JSON.parse(f.state).ttrpg.openRun).toBeNull()
   let inference = 0
   page.context().on('request', req => { if (req.method() === 'POST' && (/\/local-codex\/v1\/requests$/.test(req.url()) || /\/local-tts\/v1\/jobs(?:\/[^/]+\/start)?$/.test(req.url()) || req.url().includes('/chat/completions'))) inference++ })
   await page.goto(`./play/session/${f.sessionId}`)
@@ -18,6 +20,8 @@ test('before the first turn real native narrator voices preserve the chosen spee
   await expect(settings).toBeVisible(); await expect(settings.getByLabel('旁白语速', { exact: true })).toHaveValue('0.9')
   await expect(settings.getByLabel('旁白试听声线', { exact: true })).toHaveValue('qwen.uncle_fu')
   await expect(page.getByLabel('我的角色', { exact: true })).toBeVisible()
+  await expect(page.getByRole('checkbox', { name: '我已了解安全约定和 AI 身份，并确认这是我的角色。', exact: true })).not.toBeChecked()
+  await expect(page.getByRole('button', { name: '确认身份并进入', exact: true })).toBeDisabled()
   await settings.getByLabel('旁白语速', { exact: true }).selectOption('0.8')
   await audio.evaluate(async (el: HTMLAudioElement) => { await el.play() })
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => ({ paused: el.paused, rate: el.playbackRate, pitch: el.preservesPitch }))).toEqual({ paused: false, rate: 0.8, pitch: true })
@@ -53,4 +57,25 @@ test('before the first turn real native narrator voices preserve the chosen spee
     return JSON.stringify(await (await load('/storyforge/src/lib/product/runtime-core.ts')).readProductRuntimeState(sessionId))
   }, f.sessionId)
   expect(after).toBe(f.state); expect(inference).toBe(0)
+  await page.getByLabel('我的角色', { exact: true }).selectOption('viewer.seat.hero')
+  await page.getByRole('checkbox', { name: '我已了解安全约定和 AI 身份，并确认这是我的角色。', exact: true }).check()
+  await page.getByRole('button', { name: '确认身份并进入', exact: true }).click()
+  await expect(settings.getByLabel('旁白语速', { exact: true })).toHaveValue('0.8')
+  await expect(settings.getByLabel('旁白试听声线', { exact: true })).toHaveValue('qwen.uncle_fu')
+  await expect(page.getByRole('checkbox', { name: '我确认以上约定，开始这场冒险。', exact: true })).not.toBeChecked()
+  await page.getByRole('checkbox', { name: '我确认以上约定，开始这场冒险。', exact: true }).check()
+  await page.getByRole('button', { name: '开始冒险', exact: true }).click()
+  await expect(page.getByText('冒险已经开始。', { exact: true })).toBeVisible()
+  const started = await page.evaluate(async sessionId => {
+    const load = new Function('p', 'return import(p)')
+    const state = await (await load('/storyforge/src/lib/product/runtime-core.ts')).readProductRuntimeState(sessionId)
+    return { authorized: Boolean(state.ttrpg.authorization), open: Boolean(state.ttrpg.openRun), worldTurn: state.ttrpg.openRun.worldTime.worldTurn }
+  }, f.sessionId)
+  expect(started).toEqual({ authorized: true, open: true, worldTurn: 0 })
+  await expect(settings.getByLabel('旁白语速', { exact: true })).toHaveValue('0.8')
+  await expect(settings.getByLabel('旁白试听声线', { exact: true })).toHaveValue('qwen.uncle_fu')
+  expect(await audio.evaluate((el: HTMLAudioElement) => ({ paused: el.paused, rate: el.playbackRate }))).toEqual({ paused: true, rate: 0.8 })
+  expect(inference).toBe(0)
+  await info.attach('pre-session-zero-listening-and-explicit-start', { contentType: 'application/json',
+    body: JSON.stringify({ sessionId: f.sessionId, preferencesChangedNoGameState: after === f.state, started, inference, independentHumanAcceptance: false }) })
 })

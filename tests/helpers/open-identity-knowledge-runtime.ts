@@ -16,7 +16,7 @@ export async function setupIdentityKnowledgeRuntimeV1(lateCreation = false, mode
   const s = await setupOpenEntityPlanningV1(pkg => {
     const c = pkg.ttrpg!.campaign, rule = pkg.ttrpg!.rulePack.content
     c.gmMode = 'human'; c.dynamicEntityTemplates[0].audience = 'gm-only'
-    if (modelReadEnabled) c.runtimePolicy.enabled = true
+    if (modelReadEnabled) { c.runtimePolicy.enabled = true; c.runtimePolicy.maximumEpochTokens = 50000 }
     c.characterTemplates.find(row => row.characterKey === 'companion.2')!.controller = 'hybrid'
     rule.actions[0].effects = []; rule.timePolicy.existingAction = 1; rule.timePolicy.actionOverrides = []
     for (const template of c.situationTemplates) {

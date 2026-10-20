@@ -73,7 +73,10 @@ export async function createTtrpgOpenPublicSituationAuthorizationV1(input: Ttrpg
     participants: await readTtrpgSessionParticipantsV2(input.sessionId), viewerKey })
   const skill = getAgentSkillV1(TTRPG_OPEN_PUBLIC_SITUATION_SKILL_V1)
   const epochBudget = ttrpgOpenEpochBudgetForTriggerV1(runtime.epochBudget, TTRPG_OPEN_PUBLIC_SITUATION_TRIGGER_V1)
-  const maximumInputTokens = Math.min(16000, epochBudget.maximumTokens - maximumOutputTokens - 2000)
+  // Freeze this new one-call grant within the author's existing epoch total.
+  // The old 16k ceiling could reject complete JSON requests despite capacity.
+  // Replayed grants return above with their exact original limits unchanged.
+  const maximumInputTokens = epochBudget.maximumTokens - maximumOutputTokens - 2000
   if (epochBudget.maximumCalls !== 1 || maximumInputTokens < 1 || maximumOutputTokens > skill.maxOutputTokens
     || maximumCostUsd > epochBudget.maximumCostUsd) throw new Error('[ttrpg-public-situation] 本次请求没有明确且足够的一次调用预算')
   const budget = { maximumInputTokens, maximumOutputTokens, maximumCostUsd }

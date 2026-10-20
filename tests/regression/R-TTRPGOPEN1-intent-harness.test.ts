@@ -16,7 +16,10 @@ describe('R-TTRPGOPEN1 governed one-send intent transport and recoverable candid
   beforeEach(async () => { await db.delete(); await db.open() })
   afterEach(() => db.close())
   async function setup() {
-    const fixture = await readyOpenTtrpgSessionV1('open semantic candidate', pkg => { pkg.ttrpg!.campaign.runtimePolicy.enabled = true })
+    const fixture = await readyOpenTtrpgSessionV1('open semantic candidate', pkg => {
+      pkg.ttrpg!.campaign.runtimePolicy.enabled = true
+      pkg.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50_000
+    })
     await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(fixture.sessionId, 'intent.epoch'), viewerKey: OPEN_HUMAN_VIEWER,
       triggerKind: 'submit-action', rawInput: '调查河港' })
     const input = { ...await openEnvelopeV1(fixture.sessionId, 'intent.prepare'), scope: fixture.scope,

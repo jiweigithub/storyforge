@@ -10,12 +10,18 @@ import { finalizeContextGatewayAttemptEvidenceV1, verifyContextGatewayCandidateE
 import { recordAgentRunArtifactV1, readAgentRunArtifactExactV1 } from '../../src/lib/memory/artifact-store'
 import { hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 import { verifyTtrpgOpenInputEvidenceV1 } from '../../src/lib/ttrpg/open-input-evidence'
+import { TTRPG_OPEN_RUNTIME_INPUT_ESTIMATION_V1 } from '../../src/lib/ttrpg/open-runtime-wire-budget'
 
 describe('R-TTRPGOPEN1 actual progressive actor input before one authorized send', () => {
   beforeEach(async () => { await db.delete(); await db.open() })
   afterEach(() => db.close())
   async function setup() {
-    const fixture = await readyOpenTtrpgSessionV1('open actual input', pkg => { pkg.ttrpg!.campaign.runtimePolicy.enabled = true })
+    const fixture = await readyOpenTtrpgSessionV1('open actual input', pkg => {
+      pkg.ttrpg!.campaign.runtimePolicy.enabled = true
+      // Input/evidence lifecycle tests need room for the complete new wire.
+      // The separate runtime-input-budget suite keeps the 10k refusal boundary.
+      pkg.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50_000
+    })
     await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(fixture.sessionId, 'input.epoch'), viewerKey: OPEN_HUMAN_VIEWER,
       triggerKind: 'submit-action', rawInput: '调查河港' })
     const input = { ...await openEnvelopeV1(fixture.sessionId, 'input.prepare'), scope: fixture.scope,
@@ -33,7 +39,8 @@ describe('R-TTRPGOPEN1 actual progressive actor input before one authorized send
     expect(prepared.evidence.selector.selected.every(item => item.depth === 'full' && item.resourceKey.includes(':hero:'))).toBe(true)
     const rendered = await readAgentRunArtifactExactV1({ projectId: fixture.scope.projectId,
       artifactKind: 'rendered-request', contentHash: prepared.evidence.preflight.promptHash })
-    expect(JSON.parse(rendered)).toEqual({ messages: prepared.messages, modelIdentity: input.modelIdentity, contextSelection: prepared.evidence.contextSelection })
+    expect(JSON.parse(rendered)).toEqual({ messages: prepared.messages, modelIdentity: input.modelIdentity,
+      contextSelection: prepared.evidence.contextSelection, inputEstimation: TTRPG_OPEN_RUNTIME_INPUT_ESTIMATION_V1 })
     expect(rendered).not.toContain('effectPlanTemplates')
     const before = await readProductRuntimeState(fixture.sessionId)
     const envelope = { ...await openEnvelopeV1(fixture.sessionId, 'input.dispatch'), requestKey: prepared.requestKey,

@@ -31,6 +31,7 @@ import { ttrpgOpenCallBudgetV1, assertTtrpgOpenOracleInterpretationSlotV1, asser
 import { reserveTtrpgOpenModelCallV1, type FormalTtrpgCommandEnvelope } from './runtime-commands'
 import { type TtrpgOpenInputEvidenceV1 } from './open-input-evidence'
 import { estimateTokens } from '../ai/context-budget'
+import { estimateTtrpgOpenRuntimeInputTokensV1, TTRPG_OPEN_RUNTIME_INPUT_ESTIMATION_V1 } from './open-runtime-wire-budget'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { assertTtrpgOpenHostingRequestV1 } from './open-hosting-delegation'
 import { db } from '../db/schema'
@@ -343,9 +344,11 @@ async function prepareTtrpgOpenModelInputV1(input: TtrpgOpenRuntimeModelInputV1,
     '不输出 route、角色身份或授权字段；系统会确定匹配规则和所需确认。游戏内无检定互动必须从当前 interactions 选择可用条目，method 精确填写该 interactionKey；不得只写其底层 actionKey 或用对白、观察等关键词发明未定义互动。多项含义不明确时保留 method=null，由真人澄清。规则询问和桌外讨论由本桌独立讨论入口处理。',
   ].join('\n') }, { role: 'user', content: `【真人输入】\n${rawInput}\n\n【角色授权上下文】\n${gateway.contextPacket.content}` }]
   const renderedRequest = { messages, modelIdentity: input.modelIdentity, contextSelection: selection.receipt,
+    inputEstimation: TTRPG_OPEN_RUNTIME_INPUT_ESTIMATION_V1,
     ...(publicKernelHash ? { publicKernelHash } : {}) }
-  const requestTokens = estimateTokens(canonicalStringify(renderedRequest))
-  if (requestTokens + input.maximumOutputTokens > remainingTokens) throw new Error('[ttrpg-open-input] 完整请求超过剩余硬预算')
+  const requestTokens = estimateTtrpgOpenRuntimeInputTokensV1(renderedRequest)
+  if (requestTokens + input.maximumOutputTokens > remainingTokens) throw new Error(
+    `[ttrpg-open-input] 完整请求超过剩余硬预算（预计输入 ${requestTokens}，输出预留 ${input.maximumOutputTokens}，剩余 ${remainingTokens}）`)
   if (publicAuthorization && requestTokens > publicAuthorization.budget.maximumInputTokens) throw new Error('[ttrpg-public-situation] 完整请求超过本次冻结输入预算')
   if (commonAuthorization && requestTokens > commonAuthorization.basis.budget.maximumInputTokens) throw new Error('完整共同事实请求超过本次冻结输入预算')
   const segments = sourceKeys.map(key => {
@@ -501,7 +504,7 @@ async function recoverTtrpgOpenOriginalPreparedInputV1(input: OriginalPreparedRe
     viewerKey: input.viewerKey, actorKey: 'gm', admissionStateHash: owner.admissionStateHash, visibilityHash: owner.visibilityHash,
     runtimeSourceHash: owner.runtimeSourceHash, runId: input.runId, runContractHash: owner.contractHash,
     skillId: owner.skillId, stepId: owner.stepId, attempt: 1,
-    requestHash, inputManifestHash: evidence.manifest.manifestHash, reservedInputTokens: estimateTokens(canonicalStringify(rendered)),
+    requestHash, inputManifestHash: evidence.manifest.manifestHash, reservedInputTokens: estimateTtrpgOpenRuntimeInputTokensV1(rendered),
     reservedOutputTokens: owner.budget.maximumOutputTokens, reservedCostUsd: owner.budget.maximumCostUsd,
     ...(owner.commonOracle ? { commonOracle: owner.commonOracle } : {}) }
   const runtime = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg)

@@ -5,6 +5,7 @@ import { verifyTtrpgOpenModelCallEvidenceV1 } from './open-model-call-evidence'
 import { readInstanceAgentRunV1, appendAgentRunEventV1 } from '../agent/run/event-store'
 import { readAgentRunArtifactExactV1 } from '../memory/artifact-store'
 import { estimateTokens } from '../ai/context-budget'
+import { estimateTtrpgOpenRuntimeFallbackInputV1 } from './open-runtime-wire-budget'
 import { readProductRuntimeStateVersion, readProductRuntimeState } from '../product/runtime-core'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { finishTtrpgOpenModelCallV1 } from './runtime-commands'
@@ -86,7 +87,7 @@ async function repairOriginalResponse(input: TtrpgOpenCandidateReadV1, publicSit
           payload: { stepId: call.stepId, attempt: call.attempt, outputHash: actualHash }, expectedLastSequence: snapshot.projection.lastSequence })
         const rendered = JSON.parse(await readAgentRunArtifactExactV1({ projectId: input.scope.projectId, artifactKind: 'rendered-request', contentHash: call.requestHash })) as { messages?: Array<{ content: string }> }
         if (!Array.isArray(rendered.messages) || rendered.messages.some(m => typeof m.content !== 'string')) throw new Error('缺少原始完整请求正文')
-        const inputTokens = estimateTokens(rendered.messages.map(m => m.content).join('\n')), outputTokens = estimateTokens(raw)
+        const inputTokens = estimateTtrpgOpenRuntimeFallbackInputV1(rendered), outputTokens = estimateTokens(raw)
         await finishTtrpgOpenModelCallV1({ ...await command(input), status: 'succeeded', responseArtifactHash: actualHash,
           usage: { source: 'estimated', inputTokens, outputTokens, actualCostUsd: null },
           terminalReason: inputTokens > call.reservedInputTokens || outputTokens > call.reservedOutputTokens ? 'token-budget-overrun' : 'response-recorded-after-interruption' })

@@ -13,6 +13,7 @@ import { parseTtrpgOpenKpNarrationV1, type TtrpgOpenKpNarrationV1 } from './open
 import type { AIConfig, ChatMessage, WorkspaceScope } from '../types'
 import { resolveRequestConfig, type ChatResult } from '../ai/client'
 import { estimateTokens } from '../ai/context-budget'
+import { estimateTtrpgOpenRuntimeFallbackInputV1 } from './open-runtime-wire-budget'
 import { computeKnownCostUsd } from '../ai/usage-log'
 import { executeFrozenFormalAIEntryV1 } from '../agent/formal-ai-entry'
 import { projectFrozenAgentSkillDefinitionV1 } from '../agent/execution-binding'
@@ -487,7 +488,7 @@ async function executeTtrpgOpenRuntimeRequestV1(input: RuntimeRequest, purpose: 
   snapshot = await appendAgentRunEventV1({ scope: input.scope, productRuntimeSessionId: input.sessionId, runId: input.runId,
     type: 'model.responded', payload: { stepId: call.stepId, attempt: call.attempt, outputHash: raw.artifact.contentHash },
     expectedLastSequence: raw.snapshot.projection.lastSequence })
-  const inputTokens = result.usage?.inputTokens ?? estimateTokens(rendered.messages.map(message => message.content).join('\n'))
+  const inputTokens = result.usage?.inputTokens ?? estimateTtrpgOpenRuntimeFallbackInputV1(rendered)
   const outputTokens = result.usage?.outputTokens ?? estimateTokens(output)
   // Token receipts are not a billing receipt. Unknown actual cost stays null and consumes the conservative reservation.
   await finishTtrpgOpenModelCallV1({ ...await envelope(), status: 'succeeded', responseArtifactHash: raw.artifact.contentHash,

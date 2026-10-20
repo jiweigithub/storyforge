@@ -6,7 +6,7 @@ import { OPEN_HUMAN_VIEWER } from './open-ttrpg-session'
 export async function setupOpenEntityModelV1(audience: 'party' | 'private' | 'gm-only' = 'party', configure?: Parameters<typeof setupOpenEntityPlanningV1>[0]) {
   const viewerKey = audience === 'gm-only' ? 'viewer.gm' : OPEN_HUMAN_VIEWER
   const s = await setupOpenEntityPlanningV1(pkg => {
-    const c = pkg.ttrpg!.campaign; c.runtimePolicy.enabled = true
+    const c = pkg.ttrpg!.campaign; c.runtimePolicy.enabled = true; c.runtimePolicy.maximumEpochTokens = 50000
     if (audience === 'gm-only') { c.gmMode = 'human'; pkg.ttrpg!.rulePack.content.oracles[0].audience = 'gm-only' }
     c.characterTemplates.find(c => c.characterKey === 'keeper')!.gmProfile!.secret = 'ENTITY-MODEL-NPC-SECRET-CANARY'
     c.fronts[0].goal = 'ENTITY-MODEL-FRONT-SECRET-CANARY'

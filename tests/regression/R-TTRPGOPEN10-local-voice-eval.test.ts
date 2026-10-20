@@ -24,9 +24,10 @@ describe('R-TTRPGOPEN10 fixed offline voice evaluation boundary', () => {
   })
   it('does not grant the evaluation transport creative or legacy binding authority', () => {
     expect(parseLimitedAITransports([transport])[0]).toMatchObject({ boundary: 'offline-fixture-audio-eval', adoptAllowed: false })
-    expect(parseFormalAIEntryRegistryV1(registry).entries).toHaveLength(59)
+    const formalEntries = parseFormalAIEntryRegistryV1(registry).entries
+    expect(formalEntries.some(entry => entry.entryId === transport.entryId)).toBe(false)
     const frozen = structuredClone(registry); delete frozen.limitedTransports
-    expect(parseFormalAIEntryRegistryV1(frozen).entries).toHaveLength(59)
+    expect(parseFormalAIEntryRegistryV1(frozen).entries).toEqual(formalEntries)
     expect(() => assertFormalAIEntryCallV1({ formalEntryId: 'ttrpg.local-voice.eval', category: 'runtime.ttrpg-open.intent' })).toThrow(/未登记正式 AI 入口/)
     for (const patch of [{ adoptAllowed: true }, { adoptionTargets: ['work'] }, { allowedCallers: ['src/components/Ttrpg.tsx'] },
       { allowedCallers: ['scripts/ttrpg-local-tts/../adopt.mjs'] }, { boundary: 'product-runtime' }]) {
