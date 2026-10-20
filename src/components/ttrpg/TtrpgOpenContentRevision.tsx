@@ -5,9 +5,11 @@ import type { TtrpgOpenContentRevisionViewV1, inspectTtrpgOpenContentRevisionV1,
   submitTtrpgOpenContentRevisionV1, prepareTtrpgOpenLocalNoDispatchProposalV1, submitTtrpgOpenLocalNoDispatchV1 } from '../../lib/ttrpg/open-production-content-revision-service'
 type Inspection = Awaited<ReturnType<typeof inspectTtrpgOpenContentRevisionV1>>
 type Source = Awaited<ReturnType<typeof readTtrpgOpenContentRevisionDraftV1>>
-type Proposal = Awaited<ReturnType<typeof prepareTtrpgOpenContentRevisionProposalV1>>
 type LocalProposal = Awaited<ReturnType<typeof prepareTtrpgOpenLocalNoDispatchProposalV1>>
 type Key = Source['artifactKey']
+type Proposal = Awaited<ReturnType<typeof prepareTtrpgOpenContentRevisionProposalV1>> & {
+  inputSnapshot: { selected: Key; draft: string; note: string }
+}
 const LABELS: Record<string, string> = { 'ttrpg.open.source-facts': '来源事实', 'ttrpg.open.rule-system': '规则与角色',
   'ttrpg.open.situation-layer': '局势与压力', 'ttrpg.open.media-plan': '素材规划', 'ttrpg.open.integration': '作品集成', 'ttrpg.open.quality': '质量核对' }
 const viewKey = (v: TtrpgOpenContentRevisionViewV1) => JSON.stringify([v.scope.projectId, v.scope.worldId, v.scope.workId,
@@ -65,11 +67,12 @@ export default function TtrpgOpenContentRevision(props: {
       source, authorDraftJson: snapshot.draft, note: snapshot.note, commandId: `ttrpg.content.${crypto.randomUUID()}` })
     if (!valid(before, token)) return
     if (JSON.stringify(fields.current) !== JSON.stringify(snapshot)) throw Error('核对期间稿件已变化，请重新核对。')
-    setProposal(value)
+    setProposal({ ...value, inputSnapshot: snapshot })
   })
   const submit = () => perform(async (before, token) => {
-    if (!proposal || proposal.blockedReason || proposal.command.ttrpgContentRevision?.authorDraftJson !== fields.current.draft
-      || proposal.command.ttrpgContentRevision.note !== fields.current.note) return
+    // Command parsing normalizes text; freshness belongs to the raw reviewed inputs.
+    if (!proposal || proposal.blockedReason || proposal.inputSnapshot.selected !== fields.current.selected
+      || proposal.inputSnapshot.draft !== fields.current.draft || proposal.inputSnapshot.note !== fields.current.note) return
     const result = await (await import('../../lib/ttrpg/open-production-content-revision-service')).submitTtrpgOpenContentRevisionV1(proposal)
     if (valid(before, token)) before.onSubmitted(result)
   })

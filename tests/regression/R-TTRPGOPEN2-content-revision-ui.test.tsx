@@ -2,6 +2,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import Panel from '../../src/components/ttrpg/TtrpgOpenContentRevision'
+import { parseProductProductionCommandV1 } from '../../src/lib/product-production/contracts'
 const m = vi.hoisted(() => ({ inspect: vi.fn(), read: vi.fn(), prepare: vi.fn(), submit: vi.fn(), prepareLocal: vi.fn(), submitLocal: vi.fn() }))
 vi.mock('../../src/lib/ttrpg/open-production-content-revision-service', () => ({ inspectTtrpgOpenContentRevisionV1: m.inspect,
   readTtrpgOpenContentRevisionDraftV1: m.read, prepareTtrpgOpenContentRevisionProposalV1: m.prepare, submitTtrpgOpenContentRevisionV1: m.submit, prepareTtrpgOpenLocalNoDispatchProposalV1: m.prepareLocal, submitTtrpgOpenLocalNoDispatchV1: m.submitLocal }))
@@ -18,8 +19,12 @@ const submitted = { receipt: { ok: true }, details: { production: { id: 4, statu
 const props = () => ({ view, disabled: false, onBusy: vi.fn(), onAccounted: vi.fn(), onSubmitted: vi.fn() })
 beforeEach(() => {
   vi.clearAllMocks(); m.inspect.mockResolvedValue(inspection); m.read.mockResolvedValue(source); m.submit.mockResolvedValue(submitted)
-  m.prepare.mockImplementation(async input => ({ source: input.source, command: { type: 'resume', commandId: input.commandId,
-    ttrpgContentRevision: { authorDraftJson: input.authorDraftJson, note: input.note } }, commandHash: 'e'.repeat(64), additionalTaskKeys: [], blockedReason: null, tasks: [
+  m.prepare.mockImplementation(async input => ({ source: input.source, command: parseProductProductionCommandV1({
+    type: 'resume', commandId: input.commandId, expectedStateRevision: input.source.owner.expectedStateRevision,
+    ttrpgContentRevision: { artifactKey: input.source.artifactKey, expectedArtifactVersion: input.source.version,
+      expectedArtifactHash: input.source.contentHash, expectedPlanHash: input.source.owner.planHash,
+      expectedControlEpoch: input.source.owner.controlEpoch, authorDraftJson: input.authorDraftJson, note: input.note } }),
+    commandHash: 'e'.repeat(64), additionalTaskKeys: [], blockedReason: null, tasks: [
     { taskKey: 'ttrpg.open.situation-layer', execution: 'author' }, { taskKey: 'ttrpg.open.media-plan', execution: 'deterministic' }] }))
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
 })
@@ -58,6 +63,27 @@ it('invalidates the proposal after an edit or failed fresh preview', async () =>
   await click('核对返修与影响'); await wait(() => expect(button('提交返修并继续制作')).toBeTruthy())
   m.prepare.mockRejectedValueOnce(Error('原稿已变化')); await click('核对返修与影响'); await wait(() => expect(host.querySelector('[role=alert]')?.textContent).toContain('已变化'))
   expect(button('提交返修并继续制作')).toBeUndefined(); expect(m.submit).not.toHaveBeenCalled()
+})
+it.each([
+  { label: 'pasted JSON with a final newline', draft: `${JSON.stringify(original, null, 2)}\n`, note: '  作者明确修订原稿 \n' },
+  { label: 'decomposed Unicode in the JSON and note', draft: JSON.stringify({ ...original, retained: 'cafe\u0301' }), note: 'cafe\u0301' },
+])('submits the reviewed $label using the canonical command without replacing the editor input', async ({ draft, note }) => {
+  const p = await loaded(); await edit('返修原稿 JSON', draft); await edit('返修说明', note)
+  await click('核对返修与影响'); await wait(() => expect(button('提交返修并继续制作')).toBeTruthy())
+  expect(m.prepare).toHaveBeenCalledWith(expect.objectContaining({ authorDraftJson: draft, note }))
+  expect((host.querySelector('[aria-label="返修原稿 JSON"]') as HTMLTextAreaElement).value).toBe(draft)
+  expect(m.submit).not.toHaveBeenCalled(); await click('提交返修并继续制作')
+  await wait(() => expect(p.onSubmitted).toHaveBeenCalledWith(submitted)); expect(m.submit).toHaveBeenCalledOnce()
+  const sent = m.submit.mock.calls[0][0].command.ttrpgContentRevision
+  expect(sent.authorDraftJson).toBe(draft.trim().normalize('NFC')); expect(sent.note).toBe(note.trim().normalize('NFC'))
+})
+it('requires a new preview after a formatting-only edit even when canonical contents would be unchanged', async () => {
+  const p = await prepared(); const draft = (host.querySelector('[aria-label="返修原稿 JSON"]') as HTMLTextAreaElement).value
+  await edit('返修原稿 JSON', `${draft}\n`); expect(button('提交返修并继续制作')).toBeUndefined()
+  expect(m.submit).not.toHaveBeenCalled(); expect(p.onSubmitted).not.toHaveBeenCalled()
+  await click('核对返修与影响'); await wait(() => expect(button('提交返修并继续制作')).toBeTruthy())
+  await click('提交返修并继续制作'); await wait(() => expect(p.onSubmitted).toHaveBeenCalledOnce())
+  expect(m.prepare).toHaveBeenCalledTimes(2); expect(m.submit).toHaveBeenCalledOnce()
 })
 it('retains the same command after a lost return and never retries automatically', async () => {
   const p = await prepared(); m.submit.mockRejectedValueOnce(Error('提交返回中断')); await click('提交返修并继续制作')
