@@ -29,6 +29,7 @@ export function describeTtrpgOpenHumanEffectV1(input: {
     if (effect.family === 'numeric') { const label = resource(effect.valueKey);return label && verb ? `${target}：${label}${verb} ${effect.amount}` : hidden() }
     if (effect.family === 'condition') { const label = condition(effect.conditionKey);return label && verb ? `${target}：${verb}「${label}」${effect.stacks} 层，持续${effect.duration === null ? '至明确解除' : `${effect.duration} 轮`}` : hidden() }
     if (effect.family === 'ability') { const label = rules.actions.find(a => a.key === effect.abilityKey)?.name;return label && verb && (effect.clockRef === null || host) ? `${target}：${label}${verb}${effect.amount === null ? '' : ` ${effect.amount}`}` : hidden() }
+    if (effect.family === 'knowledge' && effect.operation === 'knowledge.discover') return `${target}：获得一条线索；内容仅在合法发现后向接收者展示`
     if (effect.family === 'item') {
       const item = effect.itemInstanceRef ? state.ttrpg!.product.inventory.items[effect.itemInstanceRef] : null
       const definition = effect.itemDefinitionRef ?? item?.definitionRef, defined = rules.items.find(i => i.key === definition)
@@ -47,10 +48,13 @@ export function describeTtrpgOpenHumanEffectV1(input: {
 }
 export function projectTtrpgOpenTableRiskV1(input: { state: ProductRuntimeState; content: TtrpgRuntimeContentV2; operation: TtrpgOpenOperationV1; actorKey: string; seatKey: string; host?: boolean }) {
   const { state, content, operation: op, actorKey, seatKey, host = false } = input, plan = op.plan, rules = plan.rulePack
+  const runtime = parseTtrpgRuntimeStateV2(state.ttrpg), selectedActors = new Set(runtime?.authorization?.selectedActorKeys ?? [])
+  // Session Zero already displays selected player identities; this grants no profile, location or inventory access.
+  const participantName = (ref: string) => selectedActors.has(ref) ? content.campaign.characterTemplates.find(t => t.characterKey === ref && t.role === 'player')?.name ?? null : null
   const blocked = new Set<string>(), lines: string[] = []
   const permitted = (audience: string) => host || audience === 'public' || audience === 'party' || audience === `actor:${actorKey}`
-  const visible = (ref: string) => host || ref === actorKey || ref === state.entities[actorKey]?.locationKey || content.campaign.entityBindings.some(b => b.bindingKey === ref && (b.audience === 'public' || b.audience === 'party' || b.audience === 'private' && b.knownByActorKeys.includes(actorKey)))
-  const name = (ref: string | null) => ref && visible(ref) ? state.entities[ref]?.name ?? null : null
+  const visible = (ref: string) => host || ref === actorKey || ref === state.entities[actorKey]?.locationKey || participantName(ref) !== null || content.campaign.entityBindings.some(b => b.bindingKey === ref && (b.audience === 'public' || b.audience === 'party' || b.audience === 'private' && b.knownByActorKeys.includes(actorKey)))
+  const name = (ref: string | null) => ref && visible(ref) ? (host || ref === actorKey ? state.entities[ref]?.name ?? null : participantName(ref) ?? state.entities[ref]?.name ?? null) : null
   const resource = (key: string) => rules.resources.find(r => r.key === key)?.name ?? null
   const condition = (key: string) => rules.conditions.find(c => c.key === key)?.name ?? null
   const hidden = () => { blocked.add('有未公开或尚不能完整展示的后果，请由主持人先完成审查。');return '有待主持人审查的后果' }
@@ -101,7 +105,7 @@ export function projectTtrpgOpenTableRiskV1(input: { state: ProductRuntimeState;
   const discoveryEvidence = plan.discoveryPlan ? ttrpgOpenDiscoveryEvidenceV1(plan.discoveryPlan) : undefined
   const discovery = (plan.discoveryPlan?.effectTemplates ?? []).map(t => ({ ...templateView(t, plan.discoveryPlan!.request.effectBindings[t.planKey]), when: discoveryEvidence?.discoveryPolicy.costEffectPlanRef === t.planKey ? '尝试发现线索时' : '发现检定未成功后的继续推进' }))
   const canChoose = plan.requiredApprovals.some(a => a.actorKey === plan.request.actorKey && a.allowedSeatKeys.includes(seatKey))
-  const receipt = parseTtrpgRuntimeStateV2(state.ttrpg)?.openRun?.ruleReceipts.find(r => r.operationKey === op.operationKey)
+  const receipt = runtime?.openRun?.ruleReceipts.find(r => r.operationKey === op.operationKey)
   const next = nextTtrpgOpenOperationStepV1(op)?.kind
   const choices: Array<{ kind: 'effect' | 'knowledge'; templateKey: string; alternatives: Array<{ alternativeKey: string; title: string; lines: string[] }>; canChoose: boolean; disclosureHash?: string }> = []
   if ((host || plan.rollVisibility === 'public') && op.status === 'executing' && next === 'effect' && op.pendingChoice?.selectedAlternativeKey === null) {
@@ -113,15 +117,15 @@ export function projectTtrpgOpenTableRiskV1(input: { state: ProductRuntimeState;
     if (actual.alternatives.length && !op.discoveryChoices?.some(c => c.templateKey === actual.planKey)) choices.push({ kind: 'knowledge', templateKey: t.templateKey, alternatives: t.alternatives, canChoose: canChoose && t.reviewable })
   }
   if (plan.rollVisibility !== 'public') {
-    const runtime = parseTtrpgRuntimeStateV2(state.ttrpg)!
+    const currentRuntime = runtime!
     if (host) for (const choice of choices) {
-      const review = currentTtrpgOpenPrivateChoiceV1({ state,runtime,operation: op,kind: choice.kind,templateKey: choice.templateKey })
+      const review = currentTtrpgOpenPrivateChoiceV1({ state,runtime: currentRuntime,operation: op,kind: choice.kind,templateKey: choice.templateKey })
       choice.canChoose = choice.canChoose && review !== null
       if (review) choice.disclosureHash = review.reviewHash
     }
     else if (canChoose) for (const candidate of op.privateChoiceDisclosures ?? []) {
       if (choices.some(c => c.kind === candidate.body.kind && c.templateKey === candidate.body.templateKey)) continue
-      const review = currentTtrpgOpenPrivateChoiceV1({ state,runtime,operation: op,kind: candidate.body.kind,templateKey: candidate.body.templateKey })
+      const review = currentTtrpgOpenPrivateChoiceV1({ state,runtime: currentRuntime,operation: op,kind: candidate.body.kind,templateKey: candidate.body.templateKey })
       if (review) choices.push({ kind: review.body.kind,templateKey: review.body.templateKey,alternatives: structuredClone(review.body.alternatives),canChoose: true,disclosureHash: review.reviewHash })
     }
   }
