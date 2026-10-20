@@ -13,7 +13,7 @@ test.beforeEach(async ({page}) => {
 
 const privateDraft = '选择草稿专用标记：先询问已有线索，不预定玩家回答。'
 const reply = '你愿意说说铜印最后出现的地方吗？'
-const choice = {directions: [{id: 'ask', action: privateDraft, evidenceFactKeys: ['lost'], changes: '澄清尚未得知的线索，不预定答案',
+const choice = {directions: [{id: 'ask', action: privateDraft, evidenceFactKeys: ['lost'], evidenceMessageIds: [], changes: '澄清尚未得知的线索，不预定答案',
   playerDependency: '玩家是否愿意回答', unconfirmedConditions: [], kind: 'question'}], selectedId: 'ask', decisionSummary: '先询问当前目标缺少的线索。'}
 const action = {kind: 'speak', text: reply, goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player', 'artisan'],
   waitingForPlayer: true, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
@@ -27,7 +27,7 @@ async function provider(page: Page, malformedReview = false, strictChoice = fals
       : prompt.includes('本次持久化行动候选') ? 'review' : 'expression'
     calls.push(step)
     if (strictChoice && step === 'choice') {
-      expect(request.response_format).toMatchObject({type: 'json_schema', json_schema: {name: 'chat_action_choice_v2', strict: true}})
+      expect(request.response_format).toMatchObject({type: 'json_schema', json_schema: {name: 'chat_action_choice_v3', strict: true}})
       const validate = new Ajv().compile(request.response_format.json_schema.schema)
       expect(validate(choice)).toBe(true)
       expect(validate({...choice, directions: [{...choice.directions[0], kind: 'own-action'}]})).toBe(false)
@@ -49,7 +49,7 @@ async function seed(page: Page, phase: Phase, directorBudget = 3) {
     const load = new Function('p', 'return import(p)')
     const fixture = await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')
     const skills = await load('/storyforge/src/lib/agent/skill-registry.ts')
-    if (skills.getAgentSkillV1('character.chat-narrative-action').promptVersion !== 'chat-narrative-action-v52') throw Error('current default must use the choice contract')
+    if (skills.getAgentSkillV1('character.chat-narrative-action').promptVersion !== 'chat-narrative-action-v53') throw Error('current default must use the choice contract')
     const f = await fixture.seedChatNarrativeRuntimeFixture({directorBudget})
     if (phase === 'fresh') return {...f, runId: null}
     const api = await load('/storyforge/src/lib/character-interaction/runtime-api.ts')

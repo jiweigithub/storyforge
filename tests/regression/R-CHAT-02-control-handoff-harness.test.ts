@@ -1,4 +1,4 @@
-import {chatActionOutcomeFixture} from '../helpers/chat-action-outcome'
+import {chatActionOutcomeFixture, chatActionChoiceFixture} from '../helpers/chat-action-outcome'
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import * as skills from '../../src/lib/agent/skill-registry'
@@ -18,7 +18,7 @@ import {useCharacterInteractionPlayerStore as store} from '../../src/stores/char
 const originalSkill = skills.getAgentSkillV1
 const action = {kind: 'speak', text: '查看你的包裹需要你明确同意，暂时不用回答。', goalKey: 'find-seal', evidenceFactKeys: ['lost'],
   audienceKeys: ['player', 'guard', 'artisan'], waitingForPlayer: true, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
-const choice = {directions: [{id: 'wait', action: '等待是否允许查看包裹的决定', evidenceFactKeys: ['lost'], changes: '不将继续当作许可',
+const choice = {directions: [{id: 'wait', action: '等待是否允许查看包裹的决定', evidenceFactKeys: ['lost'], evidenceMessageIds: [], changes: '不将继续当作许可',
   playerDependency: '玩家是否同意', unconfirmedConditions: ['尚未答复'], kind: 'wait'}], selectedId: 'wait', decisionSummary: '保留玩家的许可决定，不制造新进展。'}
 const reviewOutput = () => ({checks: CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1.map(check => ({check, passed: true, reason: '工程语义夹具，不是质量验收'}))})
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
@@ -29,7 +29,7 @@ async function start() {
   await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'open', baseSequence: base.sequence, baseStateHash: base.stateHash,
     kind: 'scene-start', sourceEventSequence: f.sceneSequence})
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard',
-    skillId: 'character.chat-narrative-action', objective: '说明许可边界', runAI: async messages => JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? choice : chatActionOutcomeFixture(messages, action)),
+    skillId: 'character.chat-narrative-action', objective: '说明许可边界', runAI: async messages => JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? chatActionChoiceFixture(messages, choice) : chatActionOutcomeFixture(messages, action)),
     runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   const state = await readProductRuntimeState(f.sessionId), source = state.interaction!.messages.slice(-1)[0]
@@ -41,7 +41,7 @@ async function start() {
   return {...f, trigger, handoff}
 }
 function enable() {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v52')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v53')
   expect(originalSkill('character.chat-narrative-action-review').promptVersion).toBe('chat-narrative-action-review-v35')
 }
 function legacy() {
@@ -55,7 +55,7 @@ function request(f: Awaited<ReturnType<typeof start>>) {
   return {calls, reviews, input: {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const,
     objective: '承接局面；合理等待时交还控制，不重复台词', runAI: async (messages: ChatMessage[]) => {
       calls.push(messages)
-      return JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? choice : {outcome: 'handoff', action: null, handoff: f.handoff})
+      return JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? chatActionChoiceFixture(messages, choice) : {outcome: 'handoff', action: null, handoff: f.handoff})
     }, runReviewAI: async (messages: ChatMessage[]) => {reviews.push(messages); return JSON.stringify(reviewOutput())}}}
 }
 
@@ -113,7 +113,7 @@ it('retains ordinary independent actions under the new producer', async () => {
   const f = await start(); enable()
   const independent = {...action, text: '叶岑走到门边，查看自己脚边能看清的地面。', kind: 'complete', waitingForPlayer: false}
   const run = request(f), input = {...run.input, runAI: async (messages: ChatMessage[]) => JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿')
-    ? choice : {outcome: 'action', action: independent, handoff: null}), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}
+    ? chatActionChoiceFixture(messages, choice) : {outcome: 'action', action: independent, handoff: null}), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}
   const generated = await generateInteractionRuntimeCandidateV1(input)
   expect(generated.candidate.kind).toBe('chat-narrative-action-candidate')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
@@ -125,7 +125,7 @@ it('still vetoes meaningless ordinary speech instead of reclassifying it as a ha
   const run = request(f), output = chatActionReviewOutputFixture(), before = await readProductRuntimeState(f.sessionId)
   output.checks.find(check => check.check === 'meaningful-direction')!.passed = false
   await expect(generateInteractionRuntimeCandidateV1({...run.input,
-    runAI: async messages => JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? choice : {outcome: 'action', action, handoff: null}),
+    runAI: async messages => JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? chatActionChoiceFixture(messages, choice) : {outcome: 'action', action, handoff: null}),
     runReviewAI: async () => JSON.stringify(output)})).rejects.toThrow('审查未通过')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
 })
@@ -253,7 +253,7 @@ it('retains a flat legacy expression as a failed raw response under the actual d
   let calls = 0
   await expect(generateInteractionRuntimeCandidateV1({...run.input, runAI: async messages => {
     calls++
-    return messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? JSON.stringify(choice) : raw
+    return messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? JSON.stringify(chatActionChoiceFixture(messages, choice)) : raw
   }})).rejects.toThrow('运行结果字段')
   expect(calls).toBe(2); expect(run.reviews).toHaveLength(0)
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)

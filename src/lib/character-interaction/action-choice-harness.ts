@@ -138,7 +138,7 @@ export async function chooseRuntimeChatActionV1(input: {
     await readChatActionOutputBudgetV1(input.scope, snapshot)
     if (input.signal?.aborted) fail('选择已取消')
     await assertRuntimeHarnessFreshV1(freshness)
-    const choice = parseChatActionChoiceV1(JSON.parse(output), roleContext)
+    const choice = parseChatActionChoiceV1(JSON.parse(output), roleContext, binding.promptVersion)
     const choiceHash = await hashCanonicalValue({version: 1, choice, contextPacketHash})
     const succeeded = snapshot.events.find(event => event.type === 'step.succeeded' && event.payload.stepId === stepId)
     if (succeeded?.type === 'step.succeeded') {

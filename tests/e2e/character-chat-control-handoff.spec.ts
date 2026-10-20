@@ -13,7 +13,7 @@ test.beforeEach(async ({page}) => {
 
 const permission = '查看你的包裹需要你明确同意，暂时不用回答。'
 const privateReason = '交还控制内部依据标记，不应成为角色气泡'
-const choice = {directions: [{id: 'wait', action: '等待玩家决定是否允许查看包裹', evidenceFactKeys: ['lost'], changes: '保留玩家许可', playerDependency: '是否同意',
+const choice = {directions: [{id: 'wait', action: '等待玩家决定是否允许查看包裹', evidenceFactKeys: ['lost'], evidenceMessageIds: [], changes: '保留玩家许可', playerDependency: '是否同意',
   unconfirmedConditions: ['尚未回答'], kind: 'wait'}], selectedId: 'wait', decisionSummary: privateReason}
 
 async function seed(page: Page) {
@@ -22,7 +22,7 @@ async function seed(page: Page) {
     const load = new Function('p', 'return import(p)')
     const fixture = await load('/storyforge/tests/helpers/chat-narrative-fixture.ts'), api = await load('/storyforge/src/lib/character-interaction/runtime-api.ts')
     const skills = await load('/storyforge/src/lib/agent/skill-registry.ts')
-    if (skills.getAgentSkillV1('character.chat-narrative-action').promptVersion !== 'chat-narrative-action-v52'
+    if (skills.getAgentSkillV1('character.chat-narrative-action').promptVersion !== 'chat-narrative-action-v53'
       || skills.getAgentSkillV1('character.chat-narrative-action-review').promptVersion !== 'chat-narrative-action-review-v35') throw Error('unexpected default control contract')
     const f = await fixture.seedChatNarrativeRuntimeFixture({directorBudget: 30})
     const version = await api.readProductRuntimeStateVersion(f.sessionId)

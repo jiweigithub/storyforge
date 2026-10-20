@@ -1,9 +1,10 @@
 import type {Route} from '@playwright/test'
-import {chatActionOutcomeFixture} from '../../helpers/chat-action-outcome'
+import {chatActionOutcomeFixture, chatActionChoiceFixture} from '../../helpers/chat-action-outcome'
 
 /** Serialize the expression fixture for the version requested by the app. */
 export function chatActionResponseFixture(route: Route, output: unknown): string {
-  return JSON.stringify(chatActionOutcomeFixture(route.request().postDataJSON()?.messages ?? [], output))
+  const messages = route.request().postDataJSON()?.messages ?? []
+  return JSON.stringify(chatActionOutcomeFixture(messages, chatActionChoiceFixture(messages, output)))
 }
 
 /** Valid empty choice for expression/review-focused browser fixtures. The

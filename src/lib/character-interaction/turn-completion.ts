@@ -1,8 +1,13 @@
 import type {CharacterInteractionRuntimeState} from '../types'
 import type {ChatNarrativeActionV1, ChatTurnCompletionV1} from '../types/chat-narrative'
+import {supportsChatActionChoiceMessagesV1} from './action-choice-message-evidence'
 
 export const CHAT_TURN_COMPLETION_PRODUCER_V1 = 'chat-narrative-action-v52'
 export const CHAT_TURN_COMPLETION_REVIEWER_V1 = 'chat-narrative-action-review-v35'
+
+export function supportsChatTurnCompletionV1(version: string | undefined): boolean {
+  return version === CHAT_TURN_COMPLETION_PRODUCER_V1 || supportsChatActionChoiceMessagesV1(version)
+}
 
 function fail(reason: string): never {throw new Error(`[chat-turn-completion] ${reason}`)}
 
@@ -53,7 +58,7 @@ export function assertChatTurnCompletionBindingV1(action: ChatNarrativeActionV1,
   if (action.turnCompletion == null) return
   const bindings = contract.executionBindings ?? []
   if (!bindings.some(binding => binding.stepId === 'interaction:runtime-candidate'
-    && binding.skillId === 'character.chat-narrative-action' && binding.promptVersion === CHAT_TURN_COMPLETION_PRODUCER_V1)) fail('本轮结束缺少版本化原生成合同')
+    && binding.skillId === 'character.chat-narrative-action' && supportsChatTurnCompletionV1(binding.promptVersion))) fail('本轮结束缺少版本化原生成合同')
   assertChatTurnCompletionReviewVersionV1([action], bindings.find(binding => binding.stepId === 'interaction:action-review')?.promptVersion)
 }
 

@@ -85,7 +85,7 @@ export async function readChatActionChoiceEvidenceV1(input: {scope: WorkspaceSco
     || !(selected.event.sequence < request.event.sequence && request.event.sequence < requested.sequence && requested.sequence < responded.sequence
       && responded.sequence < raw.event.sequence && raw.event.sequence < completed.sequence)
     || snapshot.projection.steps[CHAT_ACTION_CHOICE_STEP_V1]?.status !== 'succeeded') fail('选择请求、响应或完成步骤不一致')
-  const choice = parseChatActionChoiceV1(JSON.parse(raw.content), roleContext)
+  const choice = parseChatActionChoiceV1(JSON.parse(raw.content), roleContext, binding.promptVersion)
   const choiceHash = await hashCanonicalValue({version: 1, choice, contextPacketHash: selected.event.payload.contentHash})
   if (completed.payload.outputHash !== choiceHash) fail('选择草稿与完成步骤不一致')
   return {choice, choiceHash, actorMessages, roleContext, original, expressionManifest: expression.manifest,

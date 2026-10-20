@@ -15,7 +15,7 @@ import {DEFAULT_CHAT_NARRATIVE_SETUP_V1} from '../../src/lib/character-interacti
 const originalSkill = skills.getAgentSkillV1, generate = harness.generateInteractionRuntimeCandidateV1
 const config = {provider: 'openai' as const, model: 'fixture', apiKey: 'fixture', temperature: .2, maxTokens: 4000}
 const seed = '门外传来敲门声。不要预先决定来者身份。'
-const choice = {directions: [{id: 'ask', action: '询问铜印的线索', evidenceFactKeys: ['lost'], changes: '澄清仍未知的线索，不预定回答',
+const choice = {directions: [{id: 'ask', action: '询问铜印的线索', evidenceFactKeys: ['lost'], evidenceMessageIds: [], changes: '澄清仍未知的线索，不预定回答',
   playerDependency: '玩家是否愿意回答', unconfirmedConditions: [], kind: 'question'}], selectedId: 'ask', decisionSummary: '先询问当前目标所缺的线索。'}
 const action = (): ChatNarrativeActionV1 => ({kind: 'speak', text: '你愿意说说铜印最后出现的地方吗？', goalKey: 'find-seal', evidenceFactKeys: ['lost'],
   audienceKeys: ['guard', 'player', 'artisan'], waitingForPlayer: true, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})
@@ -25,7 +25,7 @@ const directionBackground = (): ChatSituationDraftV1 => ({kind: 'chat-situation'
   newFacts: [{factKey: 'latch', kind: 'object', text: '后门门闩有一处松动。', audienceKeys: ['guard', 'player', 'artisan'], evidenceFactKeys: ['lost'], seedExcerpt: '检查后门门闩'}],
   newGoals: [], newThreads: [], possibilities: [{actorKey: 'guard', text: '可以查看门闩，也可以先询问修理师。', evidenceFactKeys: ['latch']}]})
 beforeEach(async () => {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v52')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v53')
   db.close(); await db.delete(); await db.open()
 })
 afterEach(() => {vi.restoreAllMocks(); db.close()})

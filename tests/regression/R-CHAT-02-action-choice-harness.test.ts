@@ -30,12 +30,12 @@ import type {ChatMessage} from '../../src/lib/types'
 const originalSkill = skills.getAgentSkillV1
 const realResumeAction = resumeChatNarrativeActionV1
 const createRun = runStore.createAgentRunV1
-const choice = {directions: [{id: 'ask', action: '询问铜印最后出现的位置', evidenceFactKeys: ['lost'], changes: '澄清仍未得知的地点，不预定玩家知道答案',
+const choice = {directions: [{id: 'ask', action: '询问铜印最后出现的位置', evidenceFactKeys: ['lost'], evidenceMessageIds: [], changes: '澄清仍未得知的地点，不预定玩家知道答案',
   playerDependency: '玩家是否愿意提供线索', unconfirmedConditions: [], kind: 'question'}], selectedId: 'ask', decisionSummary: '先提出与未解决线索有关的问题。'}
 const action = {kind: 'speak', text: '你记得最后一次见到铜印的地方吗？', goalKey: 'find-seal', evidenceFactKeys: ['lost'],
   audienceKeys: ['player', 'guard', 'artisan'], waitingForPlayer: true, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
 beforeEach(async () => {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v52')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v53')
   db.close(); await db.delete(); await db.open()
 })
 afterEach(() => {vi.restoreAllMocks(); db.close()})
@@ -408,7 +408,7 @@ it('uses the frozen choice output cap and strict provider schema on the existing
   const generated = await generateInteractionRuntimeCandidateV1({...request, aiConfig: {provider: 'agnes', baseUrl: 'https://invalid.example/v1', model: 'agnes-2.5-flash', apiKey: 'fixture-only', temperature: .2, maxTokens: 9000}})
   expect(chat).toHaveBeenCalledTimes(3)
   expect(chat.mock.calls.map(call => call[1].maxTokens)).toEqual([2000, 4000, 8000])
-  expect(chat.mock.calls[0][5]?.jsonSchema).toMatchObject({name: 'chat_action_choice_v2', strict: true})
+  expect(chat.mock.calls[0][5]?.jsonSchema).toMatchObject({name: 'chat_action_choice_v3', strict: true})
   const counted = (await readChatActionChoiceInputBudgetV1(f.scope, generated.snapshot))!
   for (const [index, call] of chat.mock.calls.entries()) {
     expect(counted.calls[index].estimatedInputTokens).toBe(estimateChatActionRequestInputV1(call[0], call[5]))

@@ -1,5 +1,5 @@
 import {parseChatControlHandoffV1, type ChatControlHandoffV1} from './control-handoff-contract'
-import {CHAT_TURN_COMPLETION_PRODUCER_V1, CHAT_TURN_COMPLETION_REVIEWER_V1} from './turn-completion'
+import {supportsChatTurnCompletionV1, CHAT_TURN_COMPLETION_REVIEWER_V1} from './turn-completion'
 
 export const CHAT_CONTROL_HANDOFF_PRODUCER_V1 = 'chat-narrative-action-v46'
 export const CHAT_CONTROL_HANDOFF_REVIEWER_V1 = 'chat-narrative-action-review-v33'
@@ -10,7 +10,7 @@ export const CHAT_CONTROL_HANDOFF_PRODUCER_V4 = 'chat-narrative-action-v50'
 export const CHAT_CONTROL_HANDOFF_PRODUCER_V5 = 'chat-narrative-action-v51'
 
 export function supportsChatControlHandoffV1(version: string | undefined): boolean {
-  return version === CHAT_CONTROL_HANDOFF_PRODUCER_V1 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V2 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V3 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V4 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V5 || version === CHAT_TURN_COMPLETION_PRODUCER_V1
+  return version === CHAT_CONTROL_HANDOFF_PRODUCER_V1 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V2 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V3 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V4 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V5 || supportsChatTurnCompletionV1(version)
 }
 
 /** New output envelope preserves the old action body exactly. The two results
@@ -49,11 +49,11 @@ export function assertChatControlHandoffBindingsV1(contract: {
 }): void {
   const bindings = contract.executionBindings ?? []
   const producer = bindings.find(binding => binding.stepId === 'interaction:runtime-candidate')?.promptVersion
-  const current = producer === CHAT_CONTROL_HANDOFF_PRODUCER_V2 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V3 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V4 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V5 || producer === CHAT_TURN_COMPLETION_PRODUCER_V1
+  const current = producer === CHAT_CONTROL_HANDOFF_PRODUCER_V2 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V3 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V4 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V5 || supportsChatTurnCompletionV1(producer)
   const expected = [
     ['interaction:action-choice', 'character.chat-narrative-action', current ? producer : CHAT_CONTROL_HANDOFF_PRODUCER_V1],
     ['interaction:runtime-candidate', 'character.chat-narrative-action', current ? producer : CHAT_CONTROL_HANDOFF_PRODUCER_V1],
-    ['interaction:action-review', 'character.chat-narrative-action-review', producer === CHAT_TURN_COMPLETION_PRODUCER_V1 ? CHAT_TURN_COMPLETION_REVIEWER_V1 : current ? CHAT_CONTROL_HANDOFF_REVIEWER_V2 : CHAT_CONTROL_HANDOFF_REVIEWER_V1],
+    ['interaction:action-review', 'character.chat-narrative-action-review', supportsChatTurnCompletionV1(producer) ? CHAT_TURN_COMPLETION_REVIEWER_V1 : current ? CHAT_CONTROL_HANDOFF_REVIEWER_V2 : CHAT_CONTROL_HANDOFF_REVIEWER_V1],
   ]
   if (bindings.length !== 3 || expected.some(([stepId, skillId, promptVersion]) => bindings.filter(binding => binding.stepId === stepId
     && binding.skillId === skillId && binding.promptVersion === promptVersion).length !== 1)

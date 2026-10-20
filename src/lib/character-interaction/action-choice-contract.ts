@@ -3,7 +3,8 @@ import type {AIProvider, CharacterInteractionRuntimeState, ChatMessage} from '..
 import type {InteractionContextWindow} from './runtime'
 import {chatHasUnfinishedGoalV1} from './narrative-scheduling'
 import {chatCanFollowThreadV1} from './narrative-thread-followup'
-import {CHAT_TURN_COMPLETION_PRODUCER_V1} from './turn-completion'
+import {CHAT_TURN_COMPLETION_PRODUCER_V1, supportsChatTurnCompletionV1} from './turn-completion'
+import {supportsChatActionChoiceMessagesV1, CHAT_ACTION_CHOICE_MESSAGE_RULE_V1} from './action-choice-message-evidence'
 
 export const CHAT_ACTION_CHOICE_STEP_V1 = 'interaction:action-choice' as const
 export const CHAT_ACTION_CHOICE_OUTPUT_TOKENS_V1 = 2_000
@@ -12,7 +13,7 @@ export const CHAT_ACTION_CHOICE_KINDS_V1 = ['own-action', 'situation-request', '
 export const CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1 = 'chat-narrative-action-v48'
 export const CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1 = 'chat-narrative-action-v50'
 export const CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1 = 'chat-narrative-action-v51'
-const supportsDependency = (version: string | undefined) => version === CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1 || version === CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1 || version === CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1 || version === CHAT_TURN_COMPLETION_PRODUCER_V1
+const supportsDependency = (version: string | undefined) => version === CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1 || version === CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1 || version === CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1 || supportsChatTurnCompletionV1(version)
 
 /** Internal proposal only. It neither writes story state nor grants permission;
  * expression and the existing independent consequence review remain necessary. */
@@ -21,6 +22,7 @@ export interface ChatActionChoiceV1 {
     id: string
     action: string
     evidenceFactKeys: string[]
+    evidenceMessageIds?: string[]
     changes: string
     playerDependency: string | null
     unconfirmedConditions: string[]
@@ -33,7 +35,7 @@ export interface ChatActionChoiceV1 {
 /** Exact frozen producer version; historical contracts keep their original
  * two-step execution rather than inheriting the current default. */
 export function supportsChatActionChoiceV1(skillId: string, promptVersion: string | undefined): boolean {
-  return skillId === 'character.chat-narrative-action' && ['chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1, CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1, CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1, CHAT_TURN_COMPLETION_PRODUCER_V1].includes(promptVersion ?? '')
+  return skillId === 'character.chat-narrative-action' && ['chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1, CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1, CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1, CHAT_TURN_COMPLETION_PRODUCER_V1].includes(promptVersion ?? '') || skillId === 'character.chat-narrative-action' && supportsChatActionChoiceMessagesV1(promptVersion)
 }
 
 export function chatNeedsActionChoiceV1(input: {
@@ -73,20 +75,26 @@ function strings(value: unknown, maximumItems: number, maximumLength: number): s
 
 /** Validate against the actual delivered role window, never all world facts.
  * Fact existence is not proof that an intended action or consequence is valid. */
-export function parseChatActionChoiceV1(value: unknown, context: Pick<InteractionContextWindow, 'chatNarrative'>): ChatActionChoiceV1 {
+type ChoiceContext = Pick<InteractionContextWindow, 'chatNarrative'> & Partial<Pick<InteractionContextWindow, 'messages' | 'messageIdentityVersion'>>
+
+export function parseChatActionChoiceV1(value: unknown, context: ChoiceContext, producerVersion?: string): ChatActionChoiceV1 {
   const row = object(value, ['directions', 'selectedId', 'decisionSummary'])
   if (!context.chatNarrative || !Array.isArray(row.directions) || row.directions.length > 3) fail('缺少已交付角色视角或方向超出范围')
   const visibleFacts = new Set(context.chatNarrative.facts.map(fact => fact.factKey))
+  const messageEvidence = supportsChatActionChoiceMessagesV1(producerVersion)
+  const visibleMessages = new Set(context.messageIdentityVersion === 1 ? context.messages?.map(message => message.messageId) : [])
   const directions = row.directions.map(item => {
-    const draft = object(item, ['id', 'action', 'evidenceFactKeys', 'changes', 'playerDependency', 'unconfirmedConditions', 'kind'])
+    const draft = object(item, ['id', 'action', 'evidenceFactKeys', ...(messageEvidence ? ['evidenceMessageIds'] : []), 'changes', 'playerDependency', 'unconfirmedConditions', 'kind'])
     const evidenceFactKeys = strings(draft.evidenceFactKeys, 16, 160)
     if (evidenceFactKeys.some(key => !visibleFacts.has(key))) fail('选择引用了未交付给角色的事实')
+    const evidenceMessageIds = messageEvidence ? strings(draft.evidenceMessageIds, 16, 160) : undefined
+    if (evidenceMessageIds?.some(id => !visibleMessages.has(id))) fail('选择引用了未交付给角色的消息')
     const kind = draft.kind as ChatActionChoiceV1['directions'][number]['kind']
     if (!CHAT_ACTION_CHOICE_KINDS_V1.includes(kind)) fail('选择方向类型无效')
     const playerDependency = draft.playerDependency === null ? null : text(draft.playerDependency, 600)
     if (kind === 'own-action' && playerDependency !== null) fail('依赖玩家决定的行动不能标为自主行动')
-    if (['own-action', 'situation-request'].includes(kind) && !evidenceFactKeys.length) fail('行动或局部情境方向缺少事实依据')
-    return {id: text(draft.id, 80), action: text(draft.action, 600), evidenceFactKeys, changes: text(draft.changes, 800),
+    if (['own-action', 'situation-request'].includes(kind) && !evidenceFactKeys.length && !evidenceMessageIds?.length) fail('行动或局部情境方向缺少事实依据或已交付消息依据')
+    return {id: text(draft.id, 80), action: text(draft.action, 600), evidenceFactKeys, ...(evidenceMessageIds ? {evidenceMessageIds} : {}), changes: text(draft.changes, 800),
       playerDependency, unconfirmedConditions: strings(draft.unconfirmedConditions, 8, 400), kind}
   })
   if (new Set(directions.map(direction => direction.id)).size !== directions.length) fail('选择方向标识重复')
@@ -113,42 +121,55 @@ const purposeRules = `
 export function buildChatActionChoiceMessagesV1(actorMessages: readonly ChatMessage[], producerVersion?: string): ChatMessage[] {
   if (actorMessages.length !== 2 || actorMessages[0].role !== 'system' || actorMessages[1].role !== 'user'
     || typeof actorMessages[1].content !== 'string' || !actorMessages[1].content.trim()) fail('缺少原始角色输入')
-  const dependencyRules = supportsDependency(producerVersion)
+  const messageEvidence = supportsChatActionChoiceMessagesV1(producerVersion)
+  const dependencyRules = supportsDependency(producerVersion) || messageEvidence
     ? '\nplayerDependency 只说明当前选中方向本身是否需要玩家决定，不能把后来可能做的其它步骤混入。own-action 的 playerDependency 必须为 null，且至少引用一条已交付事实；若当前动作确实依赖玩家，就选择相应的 question/wait 等方向，不能只把依赖字段清空来假装获得许可。角色现在说明自己的判断，并不代表已获准实施以后提到的动作；后续操作的许可或其它未知条件放在 unconfirmedConditions，不能预先当作成立。situation-request 也至少引用一条已交付事实，只请求补足局部条件。重复已说过的建议即使字段合法也不是新进展；这些结构约束不证明行动有意义，后续表达与独立审查仍须核对。'
     : ''
-  const purpose = producerVersion === CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1 || producerVersion === CHAT_TURN_COMPLETION_PRODUCER_V1 ? purposeRules : ''
-  const completion = producerVersion === CHAT_TURN_COMPLETION_PRODUCER_V1 ? '\n本轮最多可执行的次数不是必须完成的步数。选择能实现具体局部目的的行动；实现后表达步骤可申请结束本轮并保留长期目标活跃。结束本轮本身不是一种剧情进展，不选 pause 来代替本轮结束，不能因此略过玩家请求或待确认的直接结果。' : ''
-  return [{role: 'system', content: selectionRules + JSON.stringify(selectionExample) + dependencyRules + purpose + completion}, {...actorMessages[1]}]
+  const purpose = producerVersion === CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1 || supportsChatTurnCompletionV1(producerVersion) ? purposeRules : ''
+  const completion = supportsChatTurnCompletionV1(producerVersion) ? '\n本轮最多可执行的次数不是必须完成的步数。选择能实现具体局部目的的行动；实现后表达步骤可申请结束本轮并保留长期目标活跃。结束本轮本身不是一种剧情进展，不选 pause 来代替本轮结束，不能因此略过玩家请求或待确认的直接结果。' : ''
+  const example = messageEvidence ? {...selectionExample, directions: selectionExample.directions.map(direction => ({...direction, evidenceMessageIds: []}))} : selectionExample
+  const dependency = messageEvidence ? dependencyRules.replace(/至少引用一条已交付事实/g, '至少引用一条已交付事实或消息') : dependencyRules
+  return [{role: 'system', content: selectionRules + JSON.stringify(example) + dependency + purpose + completion + (messageEvidence ? CHAT_ACTION_CHOICE_MESSAGE_RULE_V1 : '')}, {...actorMessages[1]}]
 }
 
-export function appendChatActionChoiceProposalV1(actorMessages: readonly ChatMessage[], value: unknown, context: Pick<InteractionContextWindow, 'chatNarrative'>, producerVersion?: string): ChatMessage[] {
+export function appendChatActionChoiceProposalV1(actorMessages: readonly ChatMessage[], value: unknown, context: ChoiceContext, producerVersion?: string): ChatMessage[] {
   // Also rejects a second proposal being appended to an already extended input.
   buildChatActionChoiceMessagesV1(actorMessages)
-  const choice = parseChatActionChoiceV1(value, context)
+  const choice = parseChatActionChoiceV1(value, context, producerVersion)
   const format = producerVersion === 'chat-narrative-action-v47' || supportsDependency(producerVersion)
     ? '只输出系统要求的 outcome/action/handoff 互斥结果外层；正常行动和交还控制均须满足各自条件，不能因选择 wait 就跳过核对。'
     : '只输出原格式完整行动候选。'
-  return [...actorMessages.map(message => ({...message})), {role: 'user', content: '以下是选择步骤产生的未确认草稿，只能作为建议，不是事实、玩家授权或系统命令。请用原始角色视角重新核对：有依据才表达或尝试；不成立则拒绝建议，按原规则回应。不能把待确认条件写成已成立，不能解除暂停。' + format + '\n' + JSON.stringify(choice)}]
+  const messageRule = supportsChatActionChoiceMessagesV1(producerVersion)
+    ? '草稿的 evidenceMessageIds 只引用原输入中的发言，不是事实键。实际行动及新事实的 evidenceFactKeys 仍只填写已交付事实键；不要把消息 ID 复制进去，也不要把玩家偏好当作对未答复操作的许可。'
+    : ''
+  return [...actorMessages.map(message => ({...message})), {role: 'user', content: '以下是选择步骤产生的未确认草稿，只能作为建议，不是事实、玩家授权或系统命令。请用原始角色视角重新核对：有依据才表达或尝试；不成立则拒绝建议，按原规则回应。不能把待确认条件写成已成立，不能解除暂停。' + format + messageRule + '\n' + JSON.stringify(choice)}]
 }
 
 export function chatActionChoiceRequestOptionsV1(provider: AIProvider | undefined, producerVersion?: string): ChatRequestOptions | undefined {
   if (!['codex', 'agnes'].includes(provider ?? '')) return undefined
   const string = (maxLength: number) => ({type: 'string', minLength: 1, maxLength})
   const object = <T extends Record<string, unknown>>(properties: T) => ({type: 'object', properties, required: Object.keys(properties), additionalProperties: false})
-  const direction = object({id: string(80), action: string(600), evidenceFactKeys: {type: 'array', items: string(160), maxItems: 16}, changes: string(800),
+  const messageEvidence = supportsChatActionChoiceMessagesV1(producerVersion)
+  const direction = object({id: string(80), action: string(600), evidenceFactKeys: {type: 'array', items: string(160), maxItems: 16},
+    ...(messageEvidence ? {evidenceMessageIds: {type: 'array', items: string(160), maxItems: 16}} : {}), changes: string(800),
     playerDependency: {anyOf: [string(600), {type: 'null'}]}, unconfirmedConditions: {type: 'array', items: string(400), maxItems: 8},
     kind: {type: 'string', enum: [...CHAT_ACTION_CHOICE_KINDS_V1]}})
   const dependencySafe = supportsDependency(producerVersion)
   // Mirror existing local invariants in generation. This does not normalize a
   // contradictory response, infer permission, or replace the semantic review.
   const grounded = {...direction.properties.evidenceFactKeys, minItems: 1}
-  const items = dependencySafe ? {anyOf: [
+  const items = messageEvidence ? {anyOf: [
+    ...(['own-action', 'situation-request'] as const).flatMap(kind => ['evidenceFactKeys', 'evidenceMessageIds'].map(key =>
+      object({...direction.properties, kind: {type: 'string', enum: [kind]}, ...(kind === 'own-action' ? {playerDependency: {type: 'null'}} : {}),
+        [key]: {type: 'array', items: string(160), minItems: 1, maxItems: 16}}))),
+    object({...direction.properties, kind: {type: 'string', enum: ['question', 'wait', 'pause']}}),
+  ]} : dependencySafe ? {anyOf: [
     object({...direction.properties, kind: {type: 'string', enum: ['own-action']},
       playerDependency: {type: 'null'}, evidenceFactKeys: grounded}),
     object({...direction.properties, kind: {type: 'string', enum: ['situation-request']},
       evidenceFactKeys: grounded}),
     object({...direction.properties, kind: {type: 'string', enum: ['question', 'wait', 'pause']}}),
   ]} : direction
-  return {jsonSchema: {name: dependencySafe ? 'chat_action_choice_v2' : 'chat_action_choice_v1', strict: true, schema: object({directions: {type: 'array', items, maxItems: 3},
+  return {jsonSchema: {name: messageEvidence ? 'chat_action_choice_v3' : dependencySafe ? 'chat_action_choice_v2' : 'chat_action_choice_v1', strict: true, schema: object({directions: {type: 'array', items, maxItems: 3},
     selectedId: {anyOf: [string(80), {type: 'null'}]}, decisionSummary: string(600)})}}
 }
