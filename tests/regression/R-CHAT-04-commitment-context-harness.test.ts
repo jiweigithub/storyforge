@@ -10,9 +10,10 @@ import * as manifests from '../../src/lib/agent/run/context-manifest'
 import {CONTEXT_SOURCES} from '../../src/lib/registry/context-sources'
 import {seedChatCommitmentHistoryRuntimeFixture} from '../helpers/chat-commitment-history-runtime'
 import {historyTerms} from '../helpers/chat-commitment-history-fixture'
-import {seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {chatCommitmentReviewOutputFixture, chatPromiseActionFixture, chatFulfillActionFixture} from '../helpers/chat-commitment-fixture'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
+import {freezeLegacyChatActionContractFixture} from '../helpers/chat-historical-reader'
 
 beforeEach(async () => {await db.delete(); await db.open()})
 afterEach(async () => {vi.restoreAllMocks(); await db.delete()})
@@ -25,12 +26,12 @@ it('delivers selected promise history through registered sources and preserves e
   const action = {...chatPromiseActionFixture(), text: '地图那项约定已撤回；我还记得另外答应交给你的巡视记录。', commitmentEffects: []}
   let calls = 0
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '核对旧约定',
-    runAI: async messages => {
+    runAI: withChatActionChoiceFixture(async messages => {
       calls++
       expect(messages[1].content).toContain(historyTerms(7)); expect(messages[1].content).toContain(historyTerms(15))
       expect(messages[1].content).toContain('withdrawn'); expect(messages[1].content).not.toContain('柜台下')
       return JSON.stringify(action)
-    }, runReviewAI: async messages => {
+    }), runReviewAI: async messages => {
       calls++
       for (const c of selected.chatNarrative!.goals[0].commitments!) expect(messages[1].content).toContain(c.commitmentKey)
       return JSON.stringify(chatCommitmentReviewOutputFixture(action))
@@ -57,10 +58,11 @@ it('resumes a saved v6 promise context with its original full-history policy aft
   const f = await seedChatNarrativeRuntimeFixture()
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'scene-start', sourceEventSequence: f.sceneSequence})
   const first = chatPromiseActionFixture(), base = {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '旧读取版本恢复'}
-  const generated = await generateInteractionRuntimeCandidateV1({...base, runAI: async () => JSON.stringify(first), runReviewAI: async () => JSON.stringify(chatCommitmentReviewOutputFixture(first))})
+  const generated = await generateInteractionRuntimeCandidateV1({...base, runAI: withChatActionChoiceFixture(async () => JSON.stringify(first)), runReviewAI: async () => JSON.stringify(chatCommitmentReviewOutputFixture(first))})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'continue', sourceEventSequence: (await readProductRuntimeStateVersion(f.sessionId)).sequence})
   const action = chatFulfillActionFixture(`message:harness:${generated.snapshot.run.id}:promise`)
+  freezeLegacyChatActionContractFixture()
   let oldSelection: unknown
   vi.spyOn(CONTEXT_SOURCES.find(s => s.key === 'interactionRuntime')!, 'read').mockImplementation(async () => {
     const s = (await readProductRuntimeState(f.sessionId)).interaction!
@@ -75,8 +77,9 @@ it('resumes a saved v6 promise context with its original full-history policy aft
   vi.spyOn(artifacts, 'recordAgentRunArtifactV1').mockImplementation(input => record(input.artifactKind === 'context-packet'
     ? {...input, content: JSON.stringify({...JSON.parse(input.content), selection: oldSelection})} : input))
   let runId = 0, calls = 0
-  await expect(generateInteractionRuntimeCandidateV1({...base, runAI: async () => {calls++; return JSON.stringify(action)}, onNarrativeActionSaved: id => {runId = id; throw new Error('saved-v6')}})).rejects.toThrow('saved-v6')
+  await expect(generateInteractionRuntimeCandidateV1({...base, runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(action)}), onNarrativeActionSaved: id => {runId = id; throw new Error('saved-v6')}})).rejects.toThrow('saved-v6')
   vi.restoreAllMocks()
+  freezeLegacyChatActionContractFixture()
   await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async messages => {
     calls++; expect(messages[1].content).not.toContain('commitmentPolicy')
     return JSON.stringify(chatCommitmentReviewOutputFixture(action))

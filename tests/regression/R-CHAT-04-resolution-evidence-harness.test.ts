@@ -1,11 +1,11 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import * as api from '../../src/lib/character-interaction/runtime-api'
-import {useHistoricalChatReaderFixture} from '../helpers/chat-historical-reader'
+import {useHistoricalChatReaderFixture, freezeLegacyChatActionContractFixture} from '../helpers/chat-historical-reader'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1, resumeChatNarrativeReviewV1} from '../../src/lib/character-interaction/harness'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {sha256Text} from '../../src/lib/ai/chapter-memory/text-normalization'
-import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture} from '../helpers/chat-narrative-fixture'
+import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {chatResolutionActionFixture} from '../helpers/chat-resolution-evidence'
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
@@ -15,9 +15,9 @@ async function prepared() {
   const f = await seedChatNarrativeRuntimeFixture({additionalGuardGoal: true}), v = await api.readProductRuntimeStateVersion(f.sessionId)
   await api.requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'start', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'scene-start', sourceEventSequence: f.sceneSequence})
   const observed = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action',
-    objective: '收束来源工程夹具', runAI: async () => JSON.stringify({kind: 'complete', text: '借用登记中没有记录铜印的去向。', goalKey: 'find-seal', evidenceFactKeys: ['lost'],
+    objective: '收束来源工程夹具', runAI: withChatActionChoiceFixture(async () => JSON.stringify({kind: 'complete', text: '借用登记中没有记录铜印的去向。', goalKey: 'find-seal', evidenceFactKeys: ['lost'],
       audienceKeys: ['guard', 'artisan', 'player'], waitingForPlayer: false, newFacts: [{factKey: 'no-registration', kind: 'observation', text: '借用登记中没有记录铜印的去向。', evidenceFactKeys: ['lost'], evidenceExcerpt: '借用登记中没有记录铜印的去向。'}],
-      disclosures: [], threadUpdates: [], goalStatus: null}), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+      disclosures: [], threadUpdates: [], goalStatus: null})), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: observed.snapshot.run.id})
   const next = await api.readProductRuntimeStateVersion(f.sessionId)
   await api.requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'continue', baseSequence: next.sequence, baseStateHash: next.stateHash, kind: 'continue', sourceEventSequence: next.sequence})
@@ -33,9 +33,10 @@ it.each(['current', 'saved-v10', 'options'] as const)('preserves exact terminal 
   let runId = 0, calls = 0
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard',
     skillId: mode === 'options' ? 'character.chat-narrative-options' : 'character.chat-narrative-action', objective: '收束依据版本恢复，不是剧情验收',
-    runAI: async () => {calls++; return JSON.stringify(mode === 'options' ? {options: [action, alternate]} : action)},
+    runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(mode === 'options' ? {options: [action, alternate]} : action)}),
     onNarrativeActionSaved: id => {runId = id; throw Error('before-review')}})).rejects.toThrow('before-review')
   expect(await runtime(f.sessionId)).toEqual(before); vi.restoreAllMocks(); db.close(); await db.open()
+  if (mode === 'saved-v10') freezeLegacyChatActionContractFixture()
   await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async () => {calls++; return JSON.stringify(mode === 'options'
     ? {options: ['option-1', 'option-2'].map(optionKey => ({optionKey, ...chatActionReviewOutputFixture()}))} : chatActionReviewOutputFixture())}})
   const commit = api.commitChatNarrativeAction
@@ -100,7 +101,7 @@ it('does not store terminal status or evidence when semantic review rejects the 
   review.checks.find(c => c.check === 'consequences')!.passed = false
   let calls = 0, runId = 0
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '失败原子性',
-    onRunCreated: id => {runId = id}, runAI: async () => {calls++; return JSON.stringify(chatResolutionActionFixture())}, runReviewAI: async () => {calls++; return JSON.stringify(review)}})).rejects.toThrow()
+    onRunCreated: id => {runId = id}, runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(chatResolutionActionFixture())}), runReviewAI: async () => {calls++; return JSON.stringify(review)}})).rejects.toThrow()
   await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})).rejects.toThrow()
   expect(await runtime(f.sessionId)).toEqual(before); expect(calls).toBe(2)
 })

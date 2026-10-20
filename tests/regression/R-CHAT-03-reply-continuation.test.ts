@@ -4,7 +4,7 @@ import * as harness from '../../src/lib/character-interaction/harness'
 import {applyChatMessageEditV1, forkChatMessageEditV1, readChatMessageContinuationPlanV1} from '../../src/lib/character-interaction/narrative-edit'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, proposeInteractionMemory, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger, resolveInteractionMemory, updateChatMessageEditDraft} from '../../src/lib/character-interaction/runtime-api'
 import {useCharacterInteractionPlayerStore as store} from '../../src/stores/character-interaction-player'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
@@ -29,7 +29,7 @@ async function original() {
   const player = await commitInteractionPlayerMessage({...await command(f.sessionId), messageId: 'player', text: '我来核对账簿。'})
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'player-response', sourceEventSequence: player.sequence})
   const generated = await generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '原回复',
-    runAI: async () => JSON.stringify(expression(player.sequence)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(expression(player.sequence))), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   const message = (await readProductRuntimeState(f.sessionId)).interaction!.messages.at(-1)!
   await proposeInteractionMemory({...await command(f.sessionId), memoryId: 'light', participantKey: 'guard', kind: 'key-memory', content: '记住门边的光亮。', importance: 8,
@@ -45,9 +45,9 @@ async function complete(f: Awaited<ReturnType<typeof original>>, sessionId: numb
   const state = (await readProductRuntimeState(sessionId)).interaction!
   const sequence = state.chatNarrative!.triggers.at(-1)!.sourceEventSequence
   const seen: string[] = []
-  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(i => generate({...i, runAI: async messages => {
+  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(i => generate({...i, runAI: withChatActionChoiceFixture(async messages => {
     seen.push(JSON.stringify(messages)); const action = expression(sequence, true); return JSON.stringify(mutate ? mutate(action) : action)
-  }, runReviewAI: async messages => {seen.push(JSON.stringify(messages)); const review = chatActionReviewOutputFixture(); if (rejectedReview) review.checks[0].passed = false; return JSON.stringify(review)}}))
+  }), runReviewAI: async messages => {seen.push(JSON.stringify(messages)); const review = chatActionReviewOutputFixture(); if (rejectedReview) review.checks[0].passed = false; return JSON.stringify(review)}}))
   await applyChatMessageEditV1({scope: f.scope, sessionId, expectedSequence: (await readProductRuntimeStateVersion(sessionId)).sequence, text: prefix, aiConfig: {} as never})
   return seen
 }
@@ -100,7 +100,7 @@ it('rejects player/older messages, tampered prefix, stale preview and no remaini
   await requestChatNarrativeTrigger({...await command(source.sessionId), kind: 'scene-start', sourceEventSequence: source.sceneSequence})
   const action: ChatNarrativeActionV1 = {...expression(0), text: '我'.repeat(1600), newFacts: [], relationshipUpdates: []}
   const generated = await generate({scope: source.scope, productRuntimeSessionId: source.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '长度边界',
-    runAI: async () => JSON.stringify(action), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await harness.adoptInteractionRuntimeCandidateV1({scope: source.scope, runId: generated.snapshot.run.id})
   const message = (await readProductRuntimeState(source.sessionId)).interaction!.messages[0]
   await expect(readChatMessageContinuationPlanV1(source.scope, source.sessionId, message.messageId)).rejects.toThrow('长度上限')
@@ -130,7 +130,7 @@ it('recovers a saved continuation without regenerating text or applying original
   const f = await original(), child = await fork(f), state = (await readProductRuntimeState(child.id!)).interaction!
   let calls = 0, runId = 0
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(i => generate({...i,
-    runAI: async () => {calls++; return JSON.stringify(expression(state.chatNarrative!.triggers.at(-1)!.sourceEventSequence, true))},
+    runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(expression(state.chatNarrative!.triggers.at(-1)!.sourceEventSequence, true))}),
     onNarrativeActionSaved: id => {runId = id; throw new Error('crash-before-review')}}))
   await expect(applyChatMessageEditV1({scope: f.scope, sessionId: child.id!, expectedSequence: (await readProductRuntimeStateVersion(child.id!)).sequence, text: prefix, aiConfig: {} as never})).rejects.toThrow('crash-before-review')
   db.close(); await db.open(); await store.getState().load(f.scope, null, child.id!)

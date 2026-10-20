@@ -14,7 +14,7 @@ test('portable promise replacement keeps both public versions after branch and p
     const command = async () => {const v = await api.readProductRuntimeStateVersion(f.sessionId); return {sessionId: f.sessionId, commandId: crypto.randomUUID(), baseSequence: v.sequence, baseStateHash: v.stateHash}}
     const run = async (action: unknown) => {
       const result = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '约定工程核验',
-        runAI: async () => JSON.stringify(action), runReviewAI: async () => JSON.stringify(fixture.chatCommitmentReviewOutputFixture(action))})
+        runAI: (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(fixture.chatCommitmentReviewOutputFixture(action))})
       await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
     }
     await api.requestChatNarrativeTrigger({...await command(), kind: 'scene-start', sourceEventSequence: f.sceneSequence})

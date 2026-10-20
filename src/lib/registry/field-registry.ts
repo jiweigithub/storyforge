@@ -3,6 +3,8 @@ import type { FieldSpec } from './types'
 import {parseChatAuthoringSettings} from '../character-interaction/authoring-contract'
 import {parseChatRoleProfileSetV1} from '../character-interaction/role-profile'
 import {parseChatSourceUnitSetV1} from '../character-interaction/source-unit-authorization'
+import { parseSystemFictionElementsV1 } from '../prose/system-fiction-contract'
+import { normalizeDetailedScenes } from '../types/detailed-outline'
 
 const trimString = (val: unknown): unknown =>
   typeof val === 'string' ? val.trim() : val
@@ -500,6 +502,8 @@ export const FIELD_REGISTRY: FieldSpec[] = [
   json('creativeRules', 'prohibitions', ['禁止事项']),
   json('creativeRules', 'consistencyRules', ['一致性规则']),
   longtext('creativeRules', 'specialRequirements', ['特殊要求']),
+  { ...object('creativeRules', 'systemFictionElements', ['系统文元素']), sanitize: parseSystemFictionElementsV1,
+    contextEnabled: value => parseSystemFictionElementsV1(value).enabled },
   json('creativeRules', 'citedReferenceIds'),
   json('creativeRules', 'citedInsightIds'),
 
@@ -527,7 +531,7 @@ export const FIELD_REGISTRY: FieldSpec[] = [
 
   num('detailedOutlines', 'outlineNodeId'),
   // scenes 必须是数组语义：`json` 会被 adopt() JSON.stringify 成字符串 → 渲染端 .map/.reduce 崩溃（CF-2）。
-  arr('detailedOutlines', 'scenes', ['场景']),
+  { ...arr('detailedOutlines', 'scenes', ['场景']), sanitize: normalizeDetailedScenes },
   longtext('detailedOutlines', 'openingHook'),
   longtext('detailedOutlines', 'endingCliffhanger'),
   text('detailedOutlines', 'sceneLocation'),

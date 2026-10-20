@@ -1,6 +1,55 @@
 # Pending development and branch audit
 
 
+## October 20, 2026 complete review
+
+This review covers successful maintenance baseline `9e480ac7` through remote main `38104e61`. It enumerated **175 local branches (including maintenance) and 112 associated worktrees**, including detached ones; 127 heads are not main ancestors. Branches, commits, and working-file entries are not feature-completion counts. Full paths, commits, patches, and differences are retained in the maintenance evidence.
+
+### In main
+
+- [PR #165](https://github.com/yuanbw2025/storyforge/pull/165) merged longform entry consolidation, replacement, and save protection as `a45cb1db`; [PR #141](https://github.com/yuanbw2025/storyforge/pull/141) merged system-fiction planning, whole-chapter review, and scoped revision as `1b96e80a`. These formerly pending capabilities have [longform](/en/features/longform/), [planning](/en/features/longform/planning), [prose/revision](/en/features/longform/writing), and [node](/en/features/nodes) guidance and are no longer listed as missing features.
+- [PR #166](https://github.com/yuanbw2025/storyforge/pull/166) merged as `b344cc0b`. This run adds [handling steps](/en/features/longform/writing) and the [changelog](/en/updates/changelog) for continuation preparation errors and retained candidates after failed outline rejection.
+- Longform delivery documentation in [PR #169](https://github.com/yuanbw2025/storyforge/pull/169) merged as `66763953` and deployed. Its independent evaluation status is retained; engineering checks do not establish literary benefit.
+- The latest formal release remains [v4.0.2](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2), fixed source `04de86d7`. Version facts are centralized in [compatibility](/en/updates/compatibility). Traffic CSV archives are not product capabilities.
+
+### Active branches and worktrees
+
+This is a review-time snapshot. “Unpushed” means absent from all fetched origin refs. Uncommitted content is observed scope, not completion, and is not committed, pushed, or merged for its author.
+
+| Branch / head / worktree | Scope | State and deduplication |
+| --- | --- | --- |
+| `feat/avg-combined-stage-20261020`, `feat/avg-publisher-stage-release-20261020`, `feat/avg-v5-native-workbench-20261019`, `feat/avg-v5-review-validation-20261018` · `534b3812` | Image/audio production workbench, visual plans/local derivatives, fixed voices/local music, author configuration, prototype releases, successor sound versions, frozen recovery | Pushed to [draft PR #160](https://github.com/yuanbw2025/storyforge/pull/160), unmerged. V5 configuration/media/history/sound branches form a dependency chain; identical heads are not separate capabilities. |
+| `feat/avg-combined-native-20261020`, `fix/avg-pending-voice-recovery-implementation-20261020`, `fix/avg-pending-voice-recovery-revision-20261020` · `f44bf5f8`; `feat/avg-foreground-processing-contract-20261020` · `d08d2610` | Ambient-audio source/license admission, generated-voice write scope, one-shot audio restoration, independent interrupted-channel recovery; foreground-processing work-package design | Six commits on the `f44bf5f8` chain are absent from origin refs. `d08d2610` inherits that chain and adds one design-document commit, not an implemented foreground-processing feature. Integration/verification branches `55ea0efa`, `f451b4d9`, `a8e8d961`, and `628f6f1f` retain their own differences/evidence; shared scope is deduplicated. |
+| `avg-base00a-20261014/storyforge`, `avg-extension-contracts-20261015/storyforge`, `avg-media-harness-20261016/storyforge` · `f44bf5f8`; `avg-media-recovery-20261016/storyforge` · `4b40877b` | Audio-recovery controls, assembly/material, verification cases/CI/display styles; older media-processing/recovery work | Respectively 2, 9, 14, and 100 uncommitted entries. The first three share a commit baseline but different working files; copies are not overwritten or merged. The fourth retains its earlier observed scope. Entries are not accepted features. |
+| `feat/character-chat-optimization-20261006` · `2a2aae10`; `character-chat-plan/storyforge` | Player media, package workflows, recoverable session navigation; working files also concern action choice/budgets, control handoff, opening continuation/repair, source observations | All 239 commits outside main are absent from origin refs, including 231 non-merge commits. No matching open PR. Another 252 uncommitted entries include implementation, design, cases, and verification material. Development has advanced since the previous review; its author still needs to reconcile completion. Temporary verification heads are ancestors of the same chain. |
+| `feat/ttrpg-entity-ai-20261016` · `0c99f468`; `ttrpg-entity-ai-20261016/storyforge` | Open production, original-request/voice recovery, two local voices, restoring rejected author input without confirming it, purpose-bounded output | Pushed; [draft PR #128](https://github.com/yuanbw2025/storyforge/pull/128) unmerged. Memory/situation/recap/sound branches are a dependency chain. Thirty-five additional uncommitted entries concern action inputs, public situations, call evidence, and original-request recovery; observed scope only. |
+| `feat/text-open-world-productization-20261013` · `aa8f6d2b`; `open-world-productization/storyforge` | Three-track production, image confirmation, human review, local feedback, production/budget recovery | Pushed; [PR #134](https://github.com/yuanbw2025/storyforge/pull/134) unmerged. Its worktree is merging main `fe87ece4`; 144 status entries include synchronization and product changes. Comparison with the actual merge parent is retained rather than counting every entry as a new feature. |
+| `feat/narrative-domain-projection-20261014`, `feat/narrative-reader-provenance-20261015` · `16b006fd`; `feat/narrative-world-integration-20261016` · `8197579a` | Narrative projection, IR, semantic indexing, exact reads, provenance, adoption/lifecycle integration | Five commits outside main remain local only, including one merge. `narrative-world-design`, `nw2e-retrieval-repair`, and `nw-mainline-refresh-20261016` retain uncommitted development and substantial verification material. Their earlier undelivered state is unchanged; more outputs are not new features. Identical-head design copies/equivalent patches remain deduplicated. |
+
+### Deduplicated and preserved work
+
+Longform and Q01–Q10 development entered main through #141. `e95f188d`, `f44ef5c6`, and `3521a8d4` are patch-equivalent to main. Remaining old verification branches contain test synchronization, verification, or historical documents rather than another undelivered longform product. Existing AVG aliases `22bafcf4`, `a522a380`, `969d1928`, and `691154d0` have pushed equivalents. Production/test files in `023310fb` match later `e2a0ae36`; prior equivalence evidence is retained.
+
+Of 26 worktrees with status entries, **12 contain working-file changes, 13 have retired static assets in old TTRPG verification copies, and one contains only test cache**. Every deletion in the thirteen copies was again matched to `.codex-retired-assets.json` and its Git blob; they are not unsubmitted code and are not automatically restored. Old built-in-game and promotional-CSS scopes retain earlier conclusions; #111 already delivered the built-in works. Historical Fog Harbor, world-media, old open-world, bronze UI, backup, and explicitly abandoned September 12 UI branches are not proposed for merging again.
+
+This run only maintains the public knowledge base, without product tests or author-branch/worktree/browser-data changes or cleanup. Older dated sections below remain historical; current state is described above.
+
+## October 20, 2026 · Longform quality changes entered main
+
+[PR #141](https://github.com/yuanbw2025/storyforge/pull/141) merged as `1b96e80a` on October 20. System-fiction elements, scene tasks, whole-chapter review, and scoped revision are no longer pending development. Instructions now live in [planning](/en/features/longform/planning) and [prose and revision](/en/features/longform/writing); see the [change log](/en/updates/changelog) for version boundaries. Node mode as a whole remains a preview.
+
+Head `fb682a28` passed complete CLI checks (824 files / 4594 tests), complete browser checks (309 passes / 4 environment-dependent skips), and regular CI on the latest main merge tree. Three settings with two ten-chapter workflows each, totaling 60 manuscripts / 30 pairs, plus 12 openings / 6 pairs from new settings and two service models have request, workflow, and lifecycle verification. Poor drafts and failures are retained. The user moved independent reader review and independent author timing to optional follow-up research, so this delivery requires no recruitment. Missing outcomes are not passes; independent quality and time benefits remain unverified. Exposed experiment labels and omitted optional review instructions in sampling limit interpretation; these are not strict blinded tests or platform-quality certification.
+
+Older dated sections below retain their historical branch snapshots. This section supersedes statements that #141 remains unmerged and does not reassess other development branches.
+
+## October 19, 2026 · Longform author-feedback iteration (development branch)
+
+[PR #141](https://github.com/yuanbw2025/storyforge/pull/141) continues to address character reactions, responsive dialogue, and endings exposed by actual author repairs. Generation, whole-chapter review, scoped revision, and recheck share the existing strategy and explicit adoption chain. Reviews distinguish internal contradictions, omitted explicit task requirements, and optional expression preferences, so polishing does not silently remove important conditions. Four internal author micro-scene repairs have been returned; they do not establish independent formal literary benefit or lower repair cost.
+
+In prose Quality review (质量审校), enter separate requirements in Review instructions (本轮评审补充要求) and Revision instructions (本轮修稿要求). Select actual issues, allowed paragraphs, and protected quotations before one revision and one recheck. Saved reports and comparisons show the instructions actually used and recover after refresh. Authors still judge model suggestions; failures, unknown outcomes, and older candidates retain their recovery and freshness boundaries.
+
+Complete engineering checks passed for earlier source `1b854005` (4495 tests, 3 production-agent checks, 293 browser passes / 2 skips). New commits integrating main must be verified at their actual head; see PR evidence. This branch remains unmerged, undeployed, and absent from existing downloads. Older dated sections below remain historical snapshots.
+
 ## 2026-10-19: Candidate character-chat flows {#character-chat-candidate}
 
 This section checks only `feat/character-chat-optimization-20261006`: its committed baseline is `a4f16fd9`, followed by observed uncommitted character-chat changes. They have not been merged into main, included in a fixed download, or publicly deployed. The October 16 “clean worktree” record below describes that earlier snapshot only.
@@ -81,6 +130,39 @@ Of twenty worktrees with status entries, fifteen belong to narrative foundations
 Old built-in works entered main through #111. Historical Fog Harbor, world-media, open-world, bronze UI and backup branches retain the conclusions below. `feat/codex-provider-merge-20261010` has only a unique merge and no new ordinary patch. The September 12 UI was explicitly abandoned and is not proposed for merging again. A historical branch does not justify adopting an old architecture.
 
 This run only updates the public knowledge base. None of the listed product work was committed, pushed, merged or cleaned up; no product tests, full CI or browser regression were run. All older dated content remains as historical snapshots and does not override this section.
+
+## October 15, 2026 · Longform quality development trial {#longform-quality-trial}
+
+This section reviews only system-fiction longform Q02–Q10; other products' snapshots below are unchanged. The product source in [draft PR #141](https://github.com/yuanbw2025/storyforge/pull/141) is `c2836ba8`, unmerged and undeployed. Existing v4.0.0 downloads and the hosted experience do not include these additions. The instructions below apply to that development branch. Node mode remains a preview.
+
+### From elements to prose
+
+1. Select the genre in Work information (作品概况). Open Story design → Creative rules → System-fiction elements (故事设计 → 创作规则 → 系统文元素) and enter the protagonist's situation and goal, system mechanism, rewards and growth, limits and costs, and opposition and relationships. Check Enable these system-fiction author requirements (启用这些系统文作者要求), click Save elements (保存元素), and confirm Elements saved (元素已保存). Fields may be blank. Disabling retains the text; planned rewards do not become acquired items, and your selected prompt template is retained.
+2. Select the chapter in Outline and chapter plans (大纲与章纲), then open Scene beats (场景细纲). Expand Optional scene tasks (场景任务（可选，可留白）) to specify entry state, scene goal, key choice, consequences, exit state, and scene function/reader expectations as needed. Everyday, quiet, and ending scenes are supported; enemies and penalties are optional.
+3. Use the links between this chapter's scene beats and prose. Wait for edits to save before moving to the same chapter. If saving fails, retain and retry the current input. Write or generate prose, inspect the content and candidate, then decide whether to adopt. A word-count target is not a guarantee of exact length.
+
+### Whole-chapter review and scoped revision
+
+1. Open Quality review (质量审校) in the prose toolbar, choose Review (审校), Expression and repetition (表达与重复), or Read-through appeal (追读力), then Start detection (开始检测). Reports cover the current saved prose and show full-input and quotation evidence. Detection is blocked when the complete input cannot be sent. Sending the full chapter does not guarantee that the model notices every issue.
+2. Select issues for this revision. Only their paragraphs are editable by default. Expand Select other editable paragraphs (选择其它可改段落) when necessary; enter one exact sentence per line in Protected original sentences (保护原句).
+3. Click Generate revision and recheck (生成修订并复核). This round allows one revision and one recheck: at most two additional model requests. Wait for the recheck, compare both texts, then Confirm adoption (确认采纳修订) or Abandon revision (放弃修订). A failed recheck retains a preview without writing to the prose.
+4. Reopening reads saved reports and decisions without automatically resending requests. Changes to prose or relevant materials can make old reports and candidates stale. Resolve changes before explicitly starting another round. Suggestions, a clean report, or “the model considers this improved” do not replace author judgment.
+
+### The same workflow in node mode
+
+Connect Whole-chapter review and revision (全文评审与修订) to Scoped revision and recheck (定向修订与复核). Select issues and scope in the revision node; Prompt, temperature, output limit, and AI configuration can be connected. Wait for the actual candidate and full recheck, adopt or reject in the run results, then verify the same prose and formatting in step mode.
+
+Continuing downstream after upstream adoption rereads current materials and reuses confirmed content that remains valid. Changes to materials, targets, or connections can still invalidate old candidates. Recovering after refresh does not automatically generate again.
+
+### Returning formal reading files
+
+The organizer assigns one formal HTML per reader and genre. Do not assign the same packet code to multiple people. Open it in a browser, select participation details and reading answers, click Save completed HTML (保存已填写 HTML), and return the new HTML with `result` in its filename. Answers are embedded: open the saved file offline or on another device to continue, without importing separate data. The original blank file is not overwritten automatically. If group-chat previews cannot operate the form, use a browser or computer.
+
+You may return the first pair and finish later. The first pair is estimated at 19–37 minutes; all ten pairs take approximately 197–453 minutes depending on genre. These are text-length estimates. The actual author receives a separate repair HTML, edits four manuscripts, and saves the revisions and timing; the estimate is 66–137 minutes. Authors must edit prose, while readers need not type comments. Automatic website collection is not deployed.
+
+### Evidence and remaining work
+
+The formal comparison is frozen at 60 chapters / 30 pairs across three genres, with three additional pairs from another model. Evidence includes 1,900 exact main-study checks and backup, import, and deletion across six workspaces. [Four Linux review/revision paths](https://github.com/yuanbw2025/storyforge/actions/runs/38682424600) passed. Product source `c2836ba8` passed [core CI](https://github.com/yuanbw2025/storyforge/actions/runs/38682961173) and the [complete CLI checks](https://github.com/yuanbw2025/storyforge/actions/runs/38682961091/job/116251468491); core CI included the full browser suite with 288 passes, one pass after retry, and two skips. A separate full browser run retained one failure and two passes after retry: original traces show that automation had not actually cleared the text and combat operations were still settling. A three-file test synchronization patch preserves result assertions and overall deadlines; its five related paths passed locally. Linux and final-version full validation after that patch remain pending. Independent reader returns and actual author-repair results are still zero. Literary improvement, platform acceptance, and Q10 completion are not established.
 
 ## October 14, 2026 review
 

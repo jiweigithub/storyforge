@@ -19,9 +19,9 @@ test('persists reviewed memory reconciliation through browser reload and portabl
     await api.requestChatNarrativeTrigger({...await command(), kind: 'player-response', sourceEventSequence: source.sequence})
     const before = await api.readProductRuntimeState(f.sessionId), skill = skills.getAgentSkillV1('character.chat-narrative-action-review')
     const action = {kind: 'speak', text: '我自己去检查门口。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
-    let injectedCalls = 0
+    let expressionAndReviewCalls = 0
       const generated = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '隔离浏览器合同检查',
-        runAI: async (messages: Array<{content: string}>) => {injectedCalls++; if (!messages[1].content.includes('尚待本次行动核对的记忆修正')) throw new Error('修正未进入角色输入'); return JSON.stringify(action)}, runReviewAI: async () => {injectedCalls++; return JSON.stringify({...fixture.chatActionReviewOutputFixture(),
+        runAI: (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).withChatActionChoiceFixture(async (messages: Array<{content: string}>) => {expressionAndReviewCalls++; if (!messages[1].content.includes('尚待本次行动核对的记忆修正')) throw new Error('修正未进入角色输入'); return JSON.stringify(action)}), runReviewAI: async () => {expressionAndReviewCalls++; return JSON.stringify({...fixture.chatActionReviewOutputFixture(),
           memoryChecks: [{memoryId: 'corrected', sourceSequence: correction.sequence, passed: true, reason: '注入的工程判定，不是模型质量证据。'}]})}})
       await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
       await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
@@ -34,10 +34,10 @@ test('persists reviewed memory reconciliation through browser reload and portabl
     const projectId = await portable.importProjectJSON(await portable.exportProjectJSON(f.scope.projectId))
     const imported = (await db.productRuntimeSessions.where('projectId').equals(projectId).toArray()).find((s: {title: string}) => s.title === '核对继承')
     if (JSON.stringify((await api.readProductRuntimeState(imported.id)).interaction) !== JSON.stringify(expected)) throw new Error('便携核对记录发生变化')
-    return {sessionId: imported.id, expected, injectedCalls, productionBinding: skill.promptVersion}
+    return {sessionId: imported.id, expected, expressionAndReviewCalls, productionBinding: skill.promptVersion}
   })
-  expect(f.injectedCalls).toBe(2)
-  expect(f.productionBinding).toBe('chat-narrative-action-review-v31')
+  expect(f.expressionAndReviewCalls).toBe(2)
+  expect(f.productionBinding).toBe('chat-narrative-action-review-v34')
   expect(f.expected.chatNarrative.memoryReconciliations).toHaveLength(1)
   expect(f.expected.chatNarrative.memoryReconciliations[0].sourceSequence).toBeLessThan(0)
   await page.reload()
@@ -47,7 +47,7 @@ test('persists reviewed memory reconciliation through browser reload and portabl
     const state = (await api.readProductRuntimeState(sessionId)).interaction
     return {state, pending: rules.pendingChatMemoryCorrectionsV1(state, 'guard'), productionBinding: skills.getAgentSkillV1('character.chat-narrative-action-review').promptVersion}
   }, f.sessionId)
-  expect(after).toEqual({state: f.expected, pending: [], productionBinding: 'chat-narrative-action-review-v31'})
+  expect(after).toEqual({state: f.expected, pending: [], productionBinding: 'chat-narrative-action-review-v34'})
 })
 
 test('shows the exact delivered correction and shared evidence after adoption and reload without a new model call', async ({page}, info) => {
@@ -69,8 +69,8 @@ test('shows the exact delivered correction and shared evidence after adoption an
     const corrected = await api.correctChatMemory({...await command(), memoryId: 'old', replacementMemoryId: 'corrected', content: '玩家只是暂借地图，没有答应帮忙。', sourceEventSequences: [source.sequence], evidenceExcerpt: '没有答应帮忙', reason: '依照原话修正'})
     await api.requestChatNarrativeTrigger({...await command(), kind: 'player-response', sourceEventSequence: source.sequence})
     const generated = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '核对修正输入',
-      runAI: async () => JSON.stringify({kind: 'speak', text: '我自己去核对借用登记。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
-        nextPossibilities: [{text: '自己核对借用登记。', evidenceFactKeys: ['lost']}]}),
+      runAI: (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).withChatActionChoiceFixture(async () => JSON.stringify({kind: 'speak', text: '我自己去核对借用登记。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
+        nextPossibilities: [{text: '自己核对借用登记。', evidenceFactKeys: ['lost']}]})),
       runReviewAI: async () => JSON.stringify({...fixture.chatActionReviewOutputFixture(), memoryChecks: [{memoryId: 'corrected', sourceSequence: corrected.sequence, passed: true, reason: '不可对玩家显示的审查理由。'}]})})
     await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
     return f

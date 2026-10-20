@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect, type Page} from '@playwright/test'
 
 const input = (page: Page) => page.getByRole('textbox', {name: '发送给角色的消息', exact: true})
@@ -71,13 +72,14 @@ test('two pages resolve recipient-only conflicts without silently publishing ide
 test('private reply and continuation keep the original conversation through import without automatic model calls', async ({page}) => {
   const calls: string[] = []
   await page.route('https://chat-private.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n')
     const review = prompt.includes('本次持久化行动候选')
     calls.push(review ? 'review' : 'action')
     if (!review) {expect(prompt).toContain('conversationBoundary'); expect(prompt).toContain('这段私聊只有叶岑可以听见。')}
     const output = review ? {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'].map(check => ({check, passed: true, reason: '工程夹具，不是质量验收'}))}
       : {kind: 'speak', text: calls.length === 1 ? '我压低声音回应，先自己核对账簿。' : '我继续轻声说明自己的核对办法。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   const f = await setup(page, true)
   await audience(page).selectOption(JSON.stringify(['guard']))

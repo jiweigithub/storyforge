@@ -5,7 +5,7 @@ import {selectChatCoordinatorContextV1} from '../../src/lib/character-interactio
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, changeChatMemoryUse, commitInteractionPlayerMessage, correctChatMemory, deleteProductRuntimeSession, proposeInteractionMemory, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger, resolveInteractionMemory} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => db.close())
@@ -34,11 +34,11 @@ async function generated(f: Awaited<ReturnType<typeof start>>) {
   const v = await readProductRuntimeStateVersion(f.sessionId)
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'continue', sourceEventSequence: v.sequence})
   return generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '记忆后续输入工程检查',
-    runAI: async messages => {
+    runAI: withChatActionChoiceFixture(async messages => {
       expect(JSON.stringify(messages)).toContain(oldContent)
       return JSON.stringify({kind: 'speak', text: '我先继续查看门边。', goalKey: 'find-seal', evidenceFactKeys: ['lost'],
         audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})
-    }, runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    }), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
 }
 
 it('disables and explicitly restores both actor and coordinator memory retrieval without changing facts, goals or relations', async () => {
@@ -101,13 +101,13 @@ it('does not adopt an action generated against the old memory after a correction
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'continue', sourceEventSequence: v.sequence})
   let reads = 0
   const fresh = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '读取更正后的记忆',
-    runAI: async messages => {
+    runAI: withChatActionChoiceFixture(async messages => {
       reads++
       expect(JSON.stringify(messages)).toContain(corrected)
       expect(JSON.stringify(messages)).not.toContain(oldContent)
       return JSON.stringify({kind: 'speak', text: '我先继续查看门边。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
         newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})
-    }, runReviewAI: async messages => {
+    }), runReviewAI: async messages => {
       reads++
       expect(JSON.stringify(messages)).toContain(corrected)
       expect(JSON.stringify(messages)).not.toContain(oldContent)

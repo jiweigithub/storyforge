@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {expect, test} from '@playwright/test'
 
 for (const rejectRevision of [false, true]) test(`explicitly revises rejected consequence bookkeeping once and refresh never retries (${rejectRevision})`, async ({page}) => {
@@ -12,6 +13,7 @@ for (const rejectRevision of [false, true]) test(`explicitly revises rejected co
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-fixture-key')
   })
   await page.route('https://chat-revision.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     calls++
     const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n')
     const reviewing = prompt.includes('本次持久化行动候选')
@@ -19,7 +21,7 @@ for (const rejectRevision of [false, true]) test(`explicitly revises rejected co
     const output = reviewing ? {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction']
       .map(check => ({check, passed: !(check === 'consequences' && (calls === 2 || rejectRevision)), reason: '审查私有理由：柜台下。工程夹具，不是质量评分。'}))}
       : calls === 1 ? action : {...action, threadUpdates: [{threadKey: 'investigate', status: 'paused', evidenceExcerpt: text}]}
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   const f = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture()})

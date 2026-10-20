@@ -3,6 +3,7 @@ import {Plus} from 'lucide-react'
 import type {CharacterInteractionLibraryItem} from '../../stores/character-interaction-player'
 import {chatReleasePreviewV1} from '../../lib/character-interaction/release-preview'
 import ExperienceInfo from './ExperienceInfo'
+import {chatNextActionLimitV1} from '../../lib/character-interaction/narrative-pacing'
 
 export default function ReleaseStartCard({item, disabled, onStart}: {
   item: CharacterInteractionLibraryItem; disabled: boolean
@@ -39,6 +40,7 @@ export default function ReleaseStartCard({item, disabled, onStart}: {
         {preview.canStartAction && scene.participants.length > 1 && <label className="block">谁先行动<select aria-label="开场行动角色" disabled={disabled} className="ml-2 max-w-full rounded border border-border bg-bg-surface p-2" value={actor} onChange={e => setActor(e.target.value)}><option value="">开始后再决定</option>{scene.participants.map(p => <option key={p.participantKey} value={p.participantKey}>{p.name}</option>)}</select></label>}
       </>}
       {!scene && <p role="alert">这个版本没有可用的开场。</p>}
+      {preview.canStartAction && actor && <p className="text-xs text-text-muted">新建后角色最多连续行动 {chatNextActionLimitV1(item.manifest?.interaction.chatNarrative?.permissions)} 步；需要你决定时会停下，也可以随时打断。</p>}
     </div>}
     <button disabled={disabled || !scene} onClick={() => scene && onStart(scene.sceneKey, preview?.canStartAction && scene.participants.some(p => p.participantKey === actor) ? actor : undefined)} className="mt-3 flex w-full items-center justify-center gap-1 rounded bg-accent px-3 py-2 text-sm text-white disabled:opacity-40"><Plus className="h-4 w-4" />新建会话</button>
   </article>

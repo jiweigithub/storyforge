@@ -5,6 +5,9 @@ import type {WorkspaceScope, ChatComposerDraftV1} from '../types';
 import {ChatComposerConflictError, chatComposerAudienceEqualV1, parseChatComposerDraftV1} from './composer-draft-contract';
 import {readChatComposerSessionV1} from './composer-draft-read';
 import {replayChatRuntimeEventsV1} from './runtime-replay';
+import {chatActionChoiceVersionForContractV1, parseChatActionChoiceVersionV1} from './action-choice-budget';
+import {assertChatControlHandoffBindingsV1} from './control-handoff-wire';
+import type {ChatControlHandoffV1, ChatControlHandoffReviewV1} from './control-handoff-contract';
 import type { ProductRuntimeCommandEnvelopeV1 } from "../product/runtime-command-id";
 import { JsonObject, applyProductRuntimeEvent, hashStateJson, normalizeCommandId, parseEventPayload, parseProductRuntimeState, readSessionEvents, replayProductRuntimeEvents, stableJson, updateProductRuntimeSessionHeadV1 } from "../product/runtime-core";
 import type { ProductRuntimeEventType, ProductRuntimeEvent, InteractionMemoryKind } from "../types";
@@ -46,6 +49,28 @@ async function appendInteractionCommand(
   const previewSession = await db.productRuntimeSessions.get(input.sessionId);
   if (!previewSession) throw new Error("角色互动会话不存在。");
   const previewEvents = await readSessionEvents(previewSession);
+  if (input.type === 'interaction.narrative.control-handoff.committed' && !previewEvents.some(event => event.commandId === commandId)) {
+    if (!input.harnessRun) throw new Error('交还控制必须绑定原已审查运行。');
+    const {assertChatActionChoiceCommitEvidenceV1} = await import('./action-choice-evidence');
+    await assertChatActionChoiceCommitEvidenceV1({scope: {projectId: previewSession.projectId, worldId: previewSession.worldId, workId: previewSession.workId},
+      runId: input.harnessRun.id, lastSequence: input.harnessRun.lastSequence, sessionId: input.sessionId, baseSequence: input.baseSequence,
+      baseStateHash, commandId, actorKey: input.payload.actorKey as string, triggerSequence: input.payload.triggerSequence as number,
+      outcome: 'handoff', handoff: input.payload.handoff as unknown as ChatControlHandoffV1, review: input.payload.review as unknown as ChatControlHandoffReviewV1});
+  }
+  if (input.type === 'interaction.narrative.action-reviewed.committed' && input.payload.actionChoiceVersion !== undefined
+    && !previewEvents.some(event => event.commandId === commandId)) {
+    if (!input.harnessRun) throw new Error('角色行动选择额度必须绑定原运行。');
+    const run = await db.agentRuns.get(input.harnessRun.id);
+    if (!run || chatActionChoiceVersionForContractV1(JSON.parse(run.contractJson)) !== parseChatActionChoiceVersionV1(input.payload.actionChoiceVersion)) {
+      throw new Error('角色行动选择额度与原运行合同不一致。');
+    }
+    const {assertChatActionChoiceCommitEvidenceV1} = await import('./action-choice-evidence');
+    await assertChatActionChoiceCommitEvidenceV1({scope: {projectId: previewSession.projectId, worldId: previewSession.worldId, workId: previewSession.workId},
+      runId: input.harnessRun.id, lastSequence: input.harnessRun.lastSequence, sessionId: input.sessionId, baseSequence: input.baseSequence,
+      baseStateHash, commandId, actorKey: input.payload.actorKey as string, triggerSequence: input.payload.triggerSequence as number,
+      messageId: input.payload.messageId as string, action: input.payload.action as unknown as ChatNarrativeActionV1,
+      review: input.payload.review as unknown as ChatNarrativeActionReviewV1});
+  }
   const previewState = previewSession.kind === 'character-interaction'
     ? replayChatRuntimeEventsV1(previewSession.initialStateJson, previewEvents)
     : replayProductRuntimeEvents(parseProductRuntimeState(previewSession.initialStateJson), previewEvents);
@@ -131,6 +156,15 @@ async function appendInteractionCommand(
           || run.status !== 'running' || run.lastSequence !== input.harnessRun.lastSequence) {
           throw new Error('角色行动运行已取消、暂停或变化，未提交后果。');
         }
+        if (input.type === 'interaction.narrative.action-reviewed.committed'
+          && chatActionChoiceVersionForContractV1(JSON.parse(run.contractJson)) !== parseChatActionChoiceVersionV1(input.payload.actionChoiceVersion)) {
+          throw new Error('角色行动选择额度与原运行合同不一致。');
+        }
+        if (input.type === 'interaction.narrative.control-handoff.committed') assertChatControlHandoffBindingsV1(JSON.parse(run.contractJson));
+      } else if (input.type === 'interaction.narrative.action-reviewed.committed' && input.payload.actionChoiceVersion !== undefined) {
+        throw new Error('角色行动选择额度必须绑定原运行。');
+      } else if (input.type === 'interaction.narrative.control-handoff.committed') {
+        throw new Error('交还控制必须绑定原已审查运行。');
       }
       const state = session.kind === 'character-interaction'
         ? replayChatRuntimeEventsV1(session.initialStateJson, events)
@@ -199,12 +233,22 @@ export async function commitChatNarrativeAction(input: ProductRuntimeCommandEnve
   actorKey: string; triggerSequence: number; messageId: string; action: ChatNarrativeActionV1; review: ChatNarrativeActionReviewV1;
   factEvidenceVersion?: 1;
   resolutionEvidenceVersion?: 1;
+  actionChoiceVersion?: 1;
   harnessRun?: {id: number; lastSequence: number};
 }): Promise<ProductRuntimeEvent> {
   return appendInteractionCommand({...input, type: 'interaction.narrative.action-reviewed.committed',
     payload: {actorKey: input.actorKey, triggerSequence: input.triggerSequence, messageId: input.messageId, action: input.action, review: input.review,
       ...(input.factEvidenceVersion === undefined ? {} : {factEvidenceVersion: input.factEvidenceVersion}),
+      ...(input.actionChoiceVersion === undefined ? {} : {actionChoiceVersion: input.actionChoiceVersion}),
       ...(input.resolutionEvidenceVersion === undefined ? {} : {resolutionEvidenceVersion: input.resolutionEvidenceVersion})}});
+}
+
+export async function commitChatControlHandoff(input: ProductRuntimeCommandEnvelopeV1 & {
+  actorKey: string; triggerSequence: number; handoff: ChatControlHandoffV1; review: ChatControlHandoffReviewV1;
+  harnessRun: {id: number; lastSequence: number};
+}): Promise<ProductRuntimeEvent> {
+  return appendInteractionCommand({...input, type: 'interaction.narrative.control-handoff.committed',
+    payload: {actorKey: input.actorKey, triggerSequence: input.triggerSequence, handoff: input.handoff, review: input.review}});
 }
 
 export async function commitChatSituation(input: ProductRuntimeCommandEnvelopeV1 & {

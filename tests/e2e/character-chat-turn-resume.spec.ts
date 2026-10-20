@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect, type Page} from '@playwright/test'
 
 test.beforeEach(async ({page}) => {
@@ -25,11 +26,11 @@ async function seed(page: Page, mode: 'partial' | 'unknown' | 'player') {
     const harness = await load('/storyforge/src/lib/character-interaction/harness.ts')
     try {
       const first = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '首段工程夹具',
-        runAI: async () => {
+        runAI: (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).withChatActionChoiceFixture(async () => {
           if (mode === 'unknown') throw new Error('fixture response unknown')
           return JSON.stringify({kind: 'complete', text: '我把灯移到门边，门边亮了起来。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
             newFacts: [{factKey: 'light', kind: 'observation', text: '门边亮了起来。', evidenceFactKeys: ['lost'], evidenceExcerpt: '门边亮了起来。'}], disclosures: [], threadUpdates: [], goalStatus: null})
-        }, runReviewAI: async () => JSON.stringify(fixture.chatActionReviewOutputFixture()),
+        }), runReviewAI: async () => JSON.stringify(fixture.chatActionReviewOutputFixture()),
       })
       await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: first.snapshot.run.id})
     } catch (error) {if (mode !== 'unknown' || !(error instanceof Error) || error.message !== 'fixture response unknown') throw error}
@@ -42,6 +43,7 @@ async function seed(page: Page, mode: 'partial' | 'unknown' | 'player') {
 test('refresh keeps an unfinished turn and explicitly completes only its remaining actions with the original role', async ({page}) => {
   let actions = 0, reviews = 0
   await page.route('https://chat-resume.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n')
     let output: unknown
     if (prompt.includes('本次持久化行动候选')) {
@@ -54,7 +56,7 @@ test('refresh keeps an unfinished turn and explicitly completes only its remaini
       output = {kind: actions <= 2 ? 'speak' : 'pause', text: actions <= 2 ? `我继续核对第 ${actions} 项。` : '下一轮我先停下等你。', goalKey: 'find-seal', evidenceFactKeys: ['lost'],
         audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
     }
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   await seed(page, 'partial')
   await expect(page.getByTestId('chat-turn-resume')).toContainText('最多 2 次行动额度')
@@ -73,7 +75,7 @@ test('refresh keeps an unfinished turn and explicitly completes only its remaini
   expect(state.messages.map((m: {speakerKey: string}) => m.speakerKey)).toEqual(['guard', 'guard', 'guard'])
   expect(state.chatNarrative.triggers).toHaveLength(1)
   expect(state.chatNarrative.triggers[0].actionSequences).toHaveLength(3)
-  expect(state.remainingDirectorBudget).toBe(94)
+  expect(state.remainingDirectorBudget).toBe(91)
   expect(actions).toBe(2); expect(reviews).toBe(2)
   await page.reload()
   await expect(page.getByText('我继续核对第 2 项。', {exact: true})).toBeVisible()
@@ -100,11 +102,12 @@ test('an unknown request remains visible after refresh and cannot be resent thro
 test('a saved player message starts one response and a waiting role offers no misleading reply-resume button', async ({page}) => {
   let calls = 0
   await page.route('https://chat-resume.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     calls++
     const review = route.request().postDataJSON().messages.some((m: {content: string}) => m.content.includes('本次持久化行动候选'))
     const output = review ? {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'].map(check => ({check, passed: true, reason: '工程夹具'}))}
       : {kind: 'attempt', text: '可以先休息；等你想说时再告诉我。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: true, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   await seed(page, 'player')
   await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')

@@ -269,7 +269,7 @@ function statusLabel(value: string): string {
     'release-ready': '可发布', 'recovery-required': '需要处理', cancelled: '已取消',
     draft: '草稿', superseded: '已取代',
     waiting: '等待依赖', ready: '可执行', running: '执行中', 'retry-ready': '等待重试', completed: '已完成',
-    blocked: '阻塞', stale: '旧 epoch',
+    blocked: '阻塞', stale: '旧 epoch', 'verification-required': '待核对',
   } as Record<string, string>)[value] ?? value
 }
 

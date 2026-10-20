@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect} from '@playwright/test'
 
 test('one visible action settles its reviewed direction and survives import before a short reply receives actual progress', async ({page}) => {
@@ -10,6 +11,7 @@ test('one visible action settles its reviewed direction and survives import befo
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
   })
   await page.route('https://chat-progression.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n')
     const actionReview = prompt.includes('本次持久化行动候选'), situationReview = prompt.includes('本次持久化情境候选')
     const construction = !situationReview && prompt.includes('你是 StoryForge 受治理的幕后情境构建器')
@@ -31,7 +33,7 @@ test('one visible action settles its reviewed direction and survives import befo
         newFacts: actions === 1 ? [] : [{factKey: 'door-fixed', kind: 'observation', text: '门扇现在可以合上。', evidenceFactKeys: ['latch'], evidenceExcerpt: '门扇现在可以合上。'}], disclosures: [], threadUpdates: [], goalStatus: null,
         situationRequest: actions === 1 ? {threadKey: 'investigate', direction, evidenceFactKeys: ['lost'], evidenceExcerpt: '我想先独自检查后门门闩。'} : null}
     }
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   let f = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture({actorSituationExpansion: true})})

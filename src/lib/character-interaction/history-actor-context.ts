@@ -16,7 +16,7 @@ const projectionCache = createChatHistoryProjectionCacheV1<InteractionContextWin
  * with its dependency closure; rejection rolls back the whole trial. */
 export function selectChatHistoryActorContextV1(state: CharacterInteractionRuntimeState,
   view: InteractionVisibilityView & {excludedMessageCount?: number}, profile: InteractionRuntimeProfile,
-  limits: {maxCharacters: number; maxRecentMessages: number; optionalMaxCharacters?: number; optionalMaxTokens?: number; relationshipHistory?: boolean}): InteractionContextWindow {
+  limits: {maxCharacters: number; maxRecentMessages: number; optionalMaxCharacters?: number; optionalMaxTokens?: number; relationshipHistory?: boolean; messageIdentities?: boolean}): InteractionContextWindow {
   const cacheKey = projectionCache.key([state, view, profile, limits])
   const cached = projectionCache.read(cacheKey)
   if (cached) return cached
@@ -65,6 +65,7 @@ export function selectChatHistoryActorContextV1(state: CharacterInteractionRunti
     const decisions = audit ? plan.evidence(selected) : []
     const facts = selectedFacts(selected), messages = eligible.filter(m => has('messages', m.messageId))
     return {...view,
+      ...(limits.messageIdentities ? {messageIdentityVersion: 1 as const} : {}),
       ...(limits.relationshipHistory ? {relationshipEvidence: relationships.filter(r => has('relationships', r.key)).map(r => r.change)} : {}),
       knowledge: view.knowledge.filter(k => has('knowledge', k.knowledgeKey)), memories: view.memories.filter(m => has('memories', m.memoryId)),
       messages,

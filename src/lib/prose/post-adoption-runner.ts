@@ -269,7 +269,7 @@ export async function runChapterPostAdoptionV1(input: {
       const memoryResult = await runChapterMemoryTask({
         signal,
         projectId: project.id!,
-        call: messages => executeRegisteredAIEntryV1('prose.chapter.memory', messages, aiConfig, { category: 'chapter.memory', projectId: project.id!, configOverrides: { maxTokens: 8_000 }, contextOverflowPolicy: 'reject' }, signal),
+        call: messages => executeRegisteredAIEntryV1('prose.chapter.memory', messages, aiConfig, { category: 'chapter.memory', projectId: project.id!, configOverrides: { maxTokens: 8_000 }, contextOverflowPolicy: 'reject' }, signal, undefined, { responseFormat: 'json_object' }),
         chapterId: task.chapterId,
         chapterTitle: task.chapterTitle,
         chapterContent: task.chapterContent,

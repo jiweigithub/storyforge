@@ -9,7 +9,7 @@ import {advanceChatNarrativeTurnV1, readChatNarrativeTurnResumeV1, resumeChatNar
 import * as harness from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatNarrativeFixture, chatActionReviewFixture, chatActionReviewOutputFixture} from '../helpers/chat-narrative-fixture'
+import {chatNarrativeFixture, chatActionReviewFixture, chatActionReviewOutputFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {followupAction, followupDirection, followupPlayerText, followupResultAction, followupSituation, followupSituationReview, seedClosedChatFollowupFixtureV1} from '../helpers/chat-player-followup'
 
 function initial() {
@@ -92,14 +92,14 @@ async function turn(f: Awaited<ReturnType<typeof seedClosedChatFollowupFixtureV1
 function mock(playerEventSequence: number, options: {interrupt?: () => Promise<void>; reject?: boolean} = {}) {
   const calls = {actions: 0, constructions: 0, reviews: 0}
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async messages => {
+    runAI: withChatActionChoiceFixture(async messages => {
       if (input.skillId === 'character.chat-situation-construction') {
         calls.constructions++; expect(JSON.stringify(messages)).toContain(followupDirection)
         await options.interrupt?.(); return JSON.stringify({...followupSituation(), title: '暴雨驿站'})
       }
       expect(JSON.stringify(messages)).not.toContain('柜台下')
       calls.actions++; return JSON.stringify(calls.actions === 1 ? followupAction(playerEventSequence) : followupResultAction())
-    }, runReviewAI: async messages => {
+    }), runReviewAI: async messages => {
       calls.reviews++; const output = input.skillId === 'character.chat-situation-construction' ? {checks: followupSituationReview().checks} : chatActionReviewOutputFixture()
       expect(JSON.stringify(messages)).toContain('player-followup')
       if (options.reject) output.checks.find(c => c.check === 'meaningful-direction')!.passed = false
@@ -162,7 +162,7 @@ it('unknown construction remains blocked on resume without resending or losing t
   const f = await seedClosedChatFollowupFixtureV1(), source = await send(f); mock(source.sequence)
   await turn(f, 'player-response', source.sequence); vi.restoreAllMocks()
   let requests = 0
-  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: async () => {requests++; throw new Error('connection lost after dispatch')}}))
+  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: withChatActionChoiceFixture(async () => {requests++; throw new Error('connection lost after dispatch')})}))
   await expect(turn(f, 'continue')).rejects.toThrow('connection lost')
   const state = await readProductRuntimeState(f.sessionId)
   const resume = await readChatNarrativeTurnResumeV1(f.scope, f.sessionId, state.interaction!)
@@ -178,7 +178,7 @@ it('recovers a saved new situation for review and adopts it once without regener
   const trigger = await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'followup.recovery', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'continue', sourceEventSequence: v.sequence})
   let runId = 0, generations = 0, reviews = 0
   await expect(generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'player', skillId: 'character.chat-situation-construction', narrativeTriggerSequence: trigger.sequence,
-    objective: '承接已审查的新事项', runAI: async () => {generations++; return JSON.stringify(followupSituation())},
+    objective: '承接已审查的新事项', runAI: withChatActionChoiceFixture(async () => {generations++; return JSON.stringify(followupSituation())}),
     onSituationDraftSaved: id => {runId = id; throw new Error('saved-before-host-exit')},
   })).rejects.toThrow('saved-before-host-exit')
   db.close(); await db.open()

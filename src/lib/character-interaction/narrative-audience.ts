@@ -46,6 +46,17 @@ export function chatTurnAudienceGuidanceV1(direction: ConversationBoundary | und
   }} : {}
 }
 
+/** Model projection only. A scene person's presence comes from visible facts,
+ * never from the roster of independently scheduled principal participants.
+ * Historical and private turns retain their original conservative boundary. */
+export function chatTurnAudienceGuidanceV2(direction: ConversationBoundary | undefined) {
+  const original = chatTurnAudienceGuidanceV1(direction)
+  if (!original.conversationBoundary || direction?.conversationMode !== 'present') return original
+  return {conversationBoundary: {...original.conversationBoundary,
+    instruction: 'participantKeys 是本轮可调度主角色的范围；表达、新事实和答复的 audienceKeys 只登记玩家及这里列出的主角色，不为场景人物编造 participantKey。调度、新目标、打算和剧情线不能扩至名单外的主角色。场景人物以角色可见事实为在场和接触依据，不需要加入主角色名单才能交谈；已有依据明确可交谈时，可以实际向其发问，不需重复请求“纳入交谈范围”。人物未被证实在场或可接触时仍须先补足真实条件；能提问不代表对方知情、愿意或已经回答。只有冻结 permissions.allowInquiryResults=true 且符合原情境权限时，实际问题才能请求后续 inquiryResult；角色不能预写答复、发现或玩家行动。不得把私有信息说给无权得知的场景人物，也不得绕过明确拒绝或玩家暂停。已有共同事项不能在未通知其他参与者时私下修改。',
+  }}
+}
+
 /** Public conversation remains public even if another role is currently absent.
  * Historical narrowed turns without an explicit mode keep conservative metadata rules. */
 export function chatTurnHasPrivateSceneBoundaryV1(state: CharacterInteractionRuntimeState, direction: ConversationBoundary | undefined): boolean {

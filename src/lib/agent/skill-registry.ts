@@ -103,6 +103,7 @@ export type AgentSkillExecutionModeV1 =
   | 'selection-check'
   | 'review'
   | 'revise'
+  | 'quality-revise'
   | 'organize'
   | 'memory'
   | 'consistency'
@@ -615,7 +616,7 @@ export const OUTLINE_IMPACT_REGENERATION_CONTEXT_SOURCE_KEYS = [
 
 export const OUTLINE_DETAIL_CONTEXT_SOURCE_KEYS = ['ragSelection'] as const
 
-const PROSE_CONTEXT_SOURCE_KEYS = ['ragSelection'] as const
+const PROSE_CONTEXT_SOURCE_KEYS = ['ragSelection', 'workAuthoringIntent'] as const
 
 const PROSE_EMOTION_BEAT_CONTEXT_SOURCE_KEYS = [
   'chapterOutline',
@@ -936,6 +937,10 @@ const OUTLINE_DETAIL_INPUT_POLICY = {
 
 const PROSE_INPUT_POLICY = {
   sourceKeys: [
+    'workAuthoringIntent',
+    'userStyleProfile',
+    'storyCore',
+    'creativeRules',
     'chapterOutline',
     'detailedOutline',
     'storyArcs',
@@ -1129,13 +1134,13 @@ const OUTLINE_IMPACT_REGENERATION_COMPRESSION_POLICY = compressionPolicy(
   OUTLINE_IMPACT_REGENERATION_CONTEXT_SOURCE_KEYS,
 )
 const OUTLINE_DETAIL_COMPRESSION_POLICY = compressionPolicy(['ragSelection'])
-const PROSE_COMPRESSION_POLICY = compressionPolicy(['ragSelection'])
+const PROSE_COMPRESSION_POLICY = compressionPolicy(['ragSelection', 'workAuthoringIntent'])
 
 const PROSE_CONTEXT_GATEWAY_POLICY = {
   version: 1 as const,
   rollout: 'required' as const,
   requiredWriteTargets: ['chapters.content', 'chapters.wordCount'],
-  providerSourceKeys: ['ragSelection'],
+  providerSourceKeys: ['ragSelection', 'workAuthoringIntent'],
   allowedResourceKinds: [
     'world', 'worldview-field', 'story-core-field', 'character',
     'character-relation', 'story-arc', 'storyline-progress', 'outline-node',
@@ -1703,7 +1708,7 @@ export const AGENT_SKILLS = [
     maxOutputTokens: 4_000,
     writeTargets: [{
       table: 'creativeRules',
-      fields: ['writingStyle', 'atmosphere', 'specialRequirements'],
+      fields: ['writingStyle', 'atmosphere', 'specialRequirements', 'systemFictionElements'],
     }],
     lastVerifiedAt: '2026-09-26',
     regressionTests: [
@@ -2764,7 +2769,7 @@ export const AGENT_SKILLS = [
     defaultForAgent: true,
     label: '章节正文生成与续写',
     owner: 'prose-agent',
-    promptVersion: 'prose-copilot-v1',
+    promptVersion: 'prose-copilot-v7',
     executionMode: 'auto',
     contextTaskKind: 'agent-prose',
     readToolNames: [],
@@ -2775,8 +2780,8 @@ export const AGENT_SKILLS = [
     contextGateway: PROSE_CONTEXT_GATEWAY_POLICY,
     maxOutputTokens: 16_000,
     writeTargets: [{ table: 'chapters', fields: ['content', 'wordCount'] }],
-    lastVerifiedAt: '2026-10-09',
-    regressionTests: ['R-WEH0-skill-runtime-contract', 'R-HARNESS7-prose-generation-durable', 'R-HARNESS9-information-boundary', 'R-HARNESS16-semantic-context-compression', 'R-HARNESS18-execution-version-freshness'],
+    lastVerifiedAt: '2026-10-19',
+    regressionTests: ['R-LFQ6-scene-feedback', 'R-WEH0-skill-runtime-contract', 'R-HARNESS7-prose-generation-durable', 'R-HARNESS9-information-boundary', 'R-HARNESS16-semantic-context-compression', 'R-HARNESS18-execution-version-freshness'],
   },
   {
     version: 1,
@@ -2785,7 +2790,7 @@ export const AGENT_SKILLS = [
     defaultForAgent: false,
     label: '章节正文生成',
     owner: 'prose-agent',
-    promptVersion: 'prose-copilot-v2',
+    promptVersion: 'prose-copilot-v7',
     executionMode: 'generate',
     contextTaskKind: 'agent-prose',
     readToolNames: [],
@@ -2796,8 +2801,8 @@ export const AGENT_SKILLS = [
     contextGateway: PROSE_CONTEXT_GATEWAY_POLICY,
     maxOutputTokens: 16_000,
     writeTargets: [{ table: 'chapters', fields: ['content', 'wordCount'] }],
-    lastVerifiedAt: '2026-10-09',
-    regressionTests: ['R-WEH0-skill-runtime-contract', 'R-HARNESS14-workflow-classifier', 'R-HARNESS7-prose-generation-durable', 'R-HARNESS16-semantic-context-compression', 'R-HARNESS17-context-compression-eval', 'R-HARNESS18-execution-version-freshness'],
+    lastVerifiedAt: '2026-10-19',
+    regressionTests: ['R-LFQ6-scene-feedback', 'R-WEH0-skill-runtime-contract', 'R-HARNESS14-workflow-classifier', 'R-HARNESS7-prose-generation-durable', 'R-HARNESS16-semantic-context-compression', 'R-HARNESS17-context-compression-eval', 'R-HARNESS18-execution-version-freshness'],
   },
   {
     version: 1,
@@ -2806,7 +2811,7 @@ export const AGENT_SKILLS = [
     defaultForAgent: false,
     label: '章节正文续写',
     owner: 'prose-agent',
-    promptVersion: 'prose-copilot-v2',
+    promptVersion: 'prose-copilot-v7',
     executionMode: 'continue',
     contextTaskKind: 'agent-prose',
     readToolNames: [],
@@ -2817,8 +2822,8 @@ export const AGENT_SKILLS = [
     contextGateway: PROSE_CONTEXT_GATEWAY_POLICY,
     maxOutputTokens: 16_000,
     writeTargets: [{ table: 'chapters', fields: ['content', 'wordCount'] }],
-    lastVerifiedAt: '2026-10-09',
-    regressionTests: ['R-WEH0-skill-runtime-contract', 'R-HARNESS14-workflow-classifier', 'R-HARNESS7-prose-generation-durable', 'R-HARNESS16-semantic-context-compression', 'R-HARNESS18-execution-version-freshness'],
+    lastVerifiedAt: '2026-10-19',
+    regressionTests: ['R-LFQ6-scene-feedback', 'R-WEH0-skill-runtime-contract', 'R-HARNESS14-workflow-classifier', 'R-HARNESS7-prose-generation-durable', 'R-HARNESS16-semantic-context-compression', 'R-HARNESS18-execution-version-freshness'],
   },
   {
     version: 1,
@@ -3037,6 +3042,69 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1,
+    id: 'prose.quality-review',
+    agentId: 'prose',
+    defaultForAgent: false,
+    label: '全章阅读质量建议',
+    owner: 'prose-agent',
+    promptVersion: 'whole-chapter-quality-review-v12',
+    executionMode: 'review',
+    contextTaskKind: 'agent-prose',
+    readToolNames: [],
+    contextSourceKeys: PROSE_CONTEXT_SOURCE_KEYS,
+    optionalContextSourceKeys: [],
+    inputPolicy: PROSE_INPUT_POLICY,
+    contextCompression: PROSE_COMPRESSION_POLICY,
+    contextGateway: { ...PROSE_CONTEXT_GATEWAY_POLICY, requiredWriteTargets: [] },
+    maxOutputTokens: 16_000,
+    writeTargets: [],
+    lastVerifiedAt: '2026-10-19',
+    regressionTests: ['R-LFQ6-scene-feedback', 'R-LFQ7-whole-review-contract', 'R-LFQ7-durable-review'],
+  },
+  {
+    version: 1,
+    id: 'prose.quality-revise',
+    agentId: 'prose',
+    defaultForAgent: false,
+    label: '作者选题的范围修订',
+    owner: 'prose-agent',
+    promptVersion: 'quality-revision-patches-v7',
+    executionMode: 'quality-revise',
+    contextTaskKind: 'agent-prose',
+    readToolNames: [],
+    contextSourceKeys: PROSE_CONTEXT_SOURCE_KEYS,
+    optionalContextSourceKeys: [],
+    inputPolicy: PROSE_INPUT_POLICY,
+    contextCompression: PROSE_COMPRESSION_POLICY,
+    contextGateway: PROSE_CONTEXT_GATEWAY_POLICY,
+    maxOutputTokens: 16_000,
+    writeTargets: [{ table: 'chapters', fields: ['content', 'wordCount'] }],
+    lastVerifiedAt: '2026-10-19',
+    regressionTests: ['R-LFQ6-scene-feedback', 'R-LFQ8-selected-revision-contract', 'R-LFQ8-rich-revision'],
+  },
+  {
+    version: 1,
+    id: 'prose.quality-recheck',
+    agentId: 'prose',
+    defaultForAgent: false,
+    label: '范围修订的一次复核',
+    owner: 'prose-agent',
+    promptVersion: 'quality-revision-recheck-v10',
+    executionMode: 'review',
+    contextTaskKind: 'agent-prose',
+    readToolNames: [],
+    contextSourceKeys: PROSE_CONTEXT_SOURCE_KEYS,
+    optionalContextSourceKeys: [],
+    inputPolicy: PROSE_INPUT_POLICY,
+    contextCompression: PROSE_COMPRESSION_POLICY,
+    contextGateway: { ...PROSE_CONTEXT_GATEWAY_POLICY, requiredWriteTargets: [] },
+    maxOutputTokens: 16_000,
+    writeTargets: [],
+    lastVerifiedAt: '2026-10-19',
+    regressionTests: ['R-LFQ6-scene-feedback', 'R-LFQ8-selected-revision-contract'],
+  },
+  {
+    version: 1,
     id: 'prose.revise',
     agentId: 'prose',
     defaultForAgent: false,
@@ -3156,7 +3224,7 @@ export const AGENT_SKILLS = [
     defaultForAgent: false,
     label: '角色聊天情境行动候选',
     owner: 'character-chat-product',
-    promptVersion: 'chat-narrative-action-v37',
+    promptVersion: 'chat-narrative-action-v50',
     executionMode: 'character-reply',
     contextTaskKind: 'agent-character',
     readToolNames: [],
@@ -3166,42 +3234,42 @@ export const AGENT_SKILLS = [
     contextCompression: INTERACTION_RUNTIME_COMPRESSION_POLICY,
     maxOutputTokens: 4_000,
     writeTargets: [],
-    lastVerifiedAt: '2026-10-16',
-    regressionTests: ['R-CHAT-02-replanning', 'R-CHAT-02-existing-goal-pause', 'R-CHAT-04-promise-request', 'R-CHAT-04-commitment-generation', 'R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-post-closure', 'R-CHAT-02-fact-discovery', 'R-CHAT-03-scheduling', 'R-CHAT-03-context-retrieval', 'R-CHAT-02-narrative-actions', 'R-CHAT-02-narrative-harness', 'R-CHAT-02-narrative-player', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression', 'R-CHAT-03-history-edit', 'R-CHAT-03-reply-continuation', 'R-CHAT-03-turn-resume', 'R-CHAT-03-options-history', 'R-CHAT-03-context-inspector', 'R-CHAT-03-turn-direction'],
+    lastVerifiedAt: '2026-10-20',
+    regressionTests: ['R-CHAT-02-scene-person-boundary', 'R-CHAT-02-action-choice-dependency', 'R-CHAT-02-control-handoff', 'R-CHAT-02-control-handoff-harness', 'R-CHAT-02-player-decision', 'R-CHAT-02-output-contract', 'R-CHAT-02-replanning', 'R-CHAT-02-existing-goal-pause', 'R-CHAT-04-promise-request', 'R-CHAT-04-commitment-generation', 'R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-post-closure', 'R-CHAT-02-fact-discovery', 'R-CHAT-03-scheduling', 'R-CHAT-03-context-retrieval', 'R-CHAT-02-narrative-actions', 'R-CHAT-02-narrative-harness', 'R-CHAT-02-narrative-player', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression', 'R-CHAT-03-history-edit', 'R-CHAT-03-reply-continuation', 'R-CHAT-03-turn-resume', 'R-CHAT-03-options-history', 'R-CHAT-03-context-inspector', 'R-CHAT-03-turn-direction'],
   },
   {
     version: 1, id: 'character.chat-action-revision', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天未通过回复的后果修订', owner: 'character-chat-product', promptVersion: 'chat-action-revision-v16',
+    label: '角色聊天未通过回复的后果修订', owner: 'character-chat-product', promptVersion: 'chat-action-revision-v20',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['interactionRuntime', 'chatActionRevision'], optionalContextSourceKeys: [],
     inputPolicy: {...INTERACTION_RUNTIME_INPUT_POLICY, sourceKeys: ['interactionRuntime', 'chatActionRevision']},
     contextCompression: INTERACTION_RUNTIME_COMPRESSION_POLICY, maxOutputTokens: 4000, writeTargets: [],
-    lastVerifiedAt: '2026-10-15', regressionTests: ['R-CHAT-02-existing-goal-pause', 'R-CHAT-04-promise-request', 'R-CHAT-04-commitment-generation', 'R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-action-revision'],
+    lastVerifiedAt: '2026-10-19', regressionTests: ['R-CHAT-02-output-contract', 'R-CHAT-02-existing-goal-pause', 'R-CHAT-04-promise-request', 'R-CHAT-04-commitment-generation', 'R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-action-revision'],
   },
   {
     version: 1, id: 'character.chat-narrative-action-review', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天行动及后果审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-action-review-v31',
+    label: '角色聊天行动及后果审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-action-review-v34',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['chatSituationRuntime', 'chatActionCandidate'], optionalContextSourceKeys: [],
     inputPolicy: CHAT_ACTION_REVIEW_INPUT_POLICY,
-    contextCompression: compressionPolicy(['chatSituationRuntime', 'chatActionCandidate']), maxOutputTokens: 2400, writeTargets: [],
-    lastVerifiedAt: '2026-10-16', regressionTests: ['R-CHAT-02-spoken-inquiry-review', 'R-CHAT-02-replanning', 'R-CHAT-02-existing-goal-pause', 'R-CHAT-04-promise-request', 'R-CHAT-02-review-normalization', 'R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-post-closure', 'R-CHAT-02-fact-discovery', 'R-CHAT-03-context-retrieval', 'R-CHAT-02-action-review', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression', 'R-CHAT-03-history-edit', 'R-CHAT-03-reply-continuation', 'R-CHAT-03-options-history'],
+    contextCompression: compressionPolicy(['chatSituationRuntime', 'chatActionCandidate']), maxOutputTokens: 8000, writeTargets: [],
+    lastVerifiedAt: '2026-10-20', regressionTests: ['R-CHAT-02-action-choice-dependency', 'R-CHAT-02-control-handoff', 'R-CHAT-02-control-handoff-harness', 'R-CHAT-02-player-decision', 'R-CHAT-02-output-contract', 'R-CHAT-02-spoken-inquiry-review', 'R-CHAT-02-replanning', 'R-CHAT-02-existing-goal-pause', 'R-CHAT-04-promise-request', 'R-CHAT-02-review-normalization', 'R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-post-closure', 'R-CHAT-02-fact-discovery', 'R-CHAT-03-context-retrieval', 'R-CHAT-02-action-review', 'R-CHAT-02-relationship-consequences', 'R-CHAT-02-actor-reflection', 'R-CHAT-02-actor-progression', 'R-CHAT-03-history-edit', 'R-CHAT-03-reply-continuation', 'R-CHAT-03-options-history'],
   },
   {
     version: 1, id: 'character.chat-narrative-options', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天两种行动候选', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-v27',
+    label: '角色聊天两种行动候选', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-v34',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['interactionRuntime'], optionalContextSourceKeys: [], inputPolicy: INTERACTION_RUNTIME_INPUT_POLICY,
     contextCompression: INTERACTION_RUNTIME_COMPRESSION_POLICY, maxOutputTokens: 8000, writeTargets: [],
-    lastVerifiedAt: '2026-10-16', regressionTests: ['R-CHAT-02-replanning', 'R-CHAT-02-existing-goal-pause', 'R-CHAT-04-promise-request', 'R-CHAT-04-commitment-generation', 'R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-post-closure', 'R-CHAT-02-fact-discovery', 'R-CHAT-03-scheduling', 'R-CHAT-03-context-retrieval', 'R-CHAT-03-action-options', 'R-CHAT-03-options-history', 'R-CHAT-03-context-inspector', 'R-CHAT-03-turn-direction'],
+    lastVerifiedAt: '2026-10-20', regressionTests: ['R-CHAT-02-player-decision', 'R-CHAT-02-output-contract', 'R-CHAT-02-replanning', 'R-CHAT-02-existing-goal-pause', 'R-CHAT-04-promise-request', 'R-CHAT-04-commitment-generation', 'R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-post-closure', 'R-CHAT-02-fact-discovery', 'R-CHAT-03-scheduling', 'R-CHAT-03-context-retrieval', 'R-CHAT-03-action-options', 'R-CHAT-03-options-history', 'R-CHAT-03-context-inspector', 'R-CHAT-03-turn-direction'],
   },
   {
     version: 1, id: 'character.chat-narrative-options-review', agentId: 'character', defaultForAgent: false,
-    label: '角色聊天行动候选组审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-review-v25',
+    label: '角色聊天行动候选组审查', owner: 'character-chat-product', promptVersion: 'chat-narrative-options-review-v26',
     executionMode: 'character-reply', contextTaskKind: 'agent-character', readToolNames: [],
     contextSourceKeys: ['chatSituationRuntime', 'chatActionCandidate'], optionalContextSourceKeys: [], inputPolicy: CHAT_ACTION_REVIEW_INPUT_POLICY,
-    contextCompression: compressionPolicy(['chatSituationRuntime', 'chatActionCandidate']), maxOutputTokens: 4800, writeTargets: [],
-    lastVerifiedAt: '2026-10-16', regressionTests: ['R-CHAT-02-spoken-inquiry-review', 'R-CHAT-02-replanning', 'R-CHAT-02-existing-goal-pause', 'R-CHAT-04-promise-request', 'R-CHAT-02-review-normalization', 'R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-post-closure', 'R-CHAT-03-context-retrieval', 'R-CHAT-03-action-options', 'R-CHAT-03-options-history'],
+    contextCompression: compressionPolicy(['chatSituationRuntime', 'chatActionCandidate']), maxOutputTokens: 16000, writeTargets: [],
+    lastVerifiedAt: '2026-10-20', regressionTests: ['R-CHAT-02-player-decision', 'R-CHAT-02-output-contract', 'R-CHAT-02-spoken-inquiry-review', 'R-CHAT-02-replanning', 'R-CHAT-02-existing-goal-pause', 'R-CHAT-04-promise-request', 'R-CHAT-02-review-normalization', 'R-CHAT-02-conversation-evidence', 'R-CHAT-02-player-pause', 'R-CHAT-02-thread-followup', 'R-CHAT-04-memory-reconciliation-harness', 'R-CHAT-04-memory-correction-context', 'R-CHAT-04-commitment-harness', 'R-CHAT-02-natural-disclosure', 'R-CHAT-02-prompt-selection', 'R-CHAT-02-followup-action', 'R-CHAT-02-player-followup', 'R-CHAT-02-observation-results', 'R-CHAT-02-post-closure', 'R-CHAT-03-context-retrieval', 'R-CHAT-03-action-options', 'R-CHAT-03-options-history'],
   },
   {
     version: 1, id: 'character.chat-situation-construction', agentId: 'character', defaultForAgent: false,
@@ -3728,7 +3796,7 @@ export const AGENT_SKILLS = [
   {
     version: 1,
     id: 'chat.source-unit-confirmation.v1', agentId: 'outline', defaultForAgent: false,
-    label: '角色聊天事实与权限确认', owner: 'outline-agent', promptVersion: 'chat-source-unit-confirmation-v1',
+    label: '角色聊天事实与权限确认', owner: 'outline-agent', promptVersion: 'chat-source-unit-confirmation-v2',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: ['chat.source-unit-confirmation'], optionalContextSourceKeys: [],
     inputPolicy: {sourceKeys: ['chat.source-unit-confirmation'], states: {
@@ -3736,12 +3804,12 @@ export const AGENT_SKILLS = [
       partial: {handling: 'require-upstream', instruction: '全部原文、候选和前提必须完整交付；不截断证据。'},
       complete: {handling: 'grounded-transform', instruction: '独立复核忠实性、原子性、覆盖及初知/发现授权；任何否决都阻止采纳。只有精确候选获作者确认后才可写产品私域事实整理，不改世界。'},
     }}, contextCompression: compressionPolicy(['chat.source-unit-confirmation']), maxOutputTokens: 6000,
-    writeTargets: [{table: 'chatAuthoringDrafts', fields: ['sourceUnitsJson']}], lastVerifiedAt: '2026-10-16', regressionTests: ['R-CHAT-02-source-unit-confirmation'],
+    writeTargets: [{table: 'chatAuthoringDrafts', fields: ['sourceUnitsJson']}], lastVerifiedAt: '2026-10-20', regressionTests: ['R-CHAT-02-source-unit-confirmation', 'R-CHAT-02-source-discovery-policy'],
   },
   {
     version: 1,
     id: 'chat.source-units.v1', agentId: 'outline', defaultForAgent: false,
-    label: '角色聊天事实拆分候选', owner: 'outline-agent', promptVersion: 'chat-source-units-v1',
+    label: '角色聊天事实拆分候选', owner: 'outline-agent', promptVersion: 'chat-source-units-v2',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: ['chat.source-units'], optionalContextSourceKeys: [],
     inputPolicy: {sourceKeys: ['chat.source-units'], states: {
@@ -3749,7 +3817,7 @@ export const AGENT_SKILLS = [
       partial: {handling: 'require-upstream', instruction: '不截断原文，缩小选择后再生成。'},
       complete: {handling: 'grounded-transform', instruction: '逐段整理事实与限制，保留主体、时态、否定和全部实质含义；只形成候选，独立复核与作者确认前不用于生产。'},
     }}, contextCompression: compressionPolicy(['chat.source-units']),
-    maxOutputTokens: 6000, writeTargets: [], lastVerifiedAt: '2026-10-16', regressionTests: ['R-CHAT-02-source-units'],
+    maxOutputTokens: 6000, writeTargets: [], lastVerifiedAt: '2026-10-20', regressionTests: ['R-CHAT-02-source-units', 'R-CHAT-02-observable-source-units'],
   },
   {
     version: 1,
@@ -4654,7 +4722,7 @@ export const AGENT_SKILLS = [
     defaultForAgent: false,
     label: '角色聊天初始情境制作',
     owner: 'outline-agent',
-    promptVersion: 'chat-situation-production-v6',
+    promptVersion: 'chat-situation-production-v12',
     executionMode: 'product-production',
     contextTaskKind: 'agent-outline',
     readToolNames: [],
@@ -4665,18 +4733,18 @@ export const AGENT_SKILLS = [
     maxOutputTokens: 16_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
     lastVerifiedAt: '2026-10-16',
-    regressionTests: ['R-CHAT-02-opening-agency', 'R-CHAT-01-world-discovery', 'R-CHAT-02-fact-discovery', 'R-CHAT-02-narrative-production'],
+    regressionTests: ['R-CHAT-02-opening-continuation', 'R-CHAT-02-opening-source-completeness', 'R-CHAT-02-opening-option-repair', 'R-CHAT-02-opening-source-references', 'R-CHAT-02-opening-repair', 'R-CHAT-02-production-repair', 'R-CHAT-02-opening-agency', 'R-CHAT-01-world-discovery', 'R-CHAT-02-fact-discovery', 'R-CHAT-02-narrative-production', 'R-CHAT-02-source-unit-production'],
   },
   {
     version: 1, id: 'character.chat-opening-review', agentId: 'outline', defaultForAgent: false,
-    label: '角色聊天开场叙事审查', owner: 'character-chat-product', promptVersion: 'chat-opening-review-v2',
+    label: '角色聊天开场叙事审查', owner: 'character-chat-product', promptVersion: 'chat-opening-review-v5',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
-    contextSourceKeys: ['product-production.artifact-inputs'], optionalContextSourceKeys: ['product-production.repair-feedback'],
+    contextSourceKeys: ['product-production.artifact-inputs'], optionalContextSourceKeys: [],
     inputPolicy: productProductionInputPolicy(['product-production.artifact-inputs']),
-    contextCompression: compressionPolicy(['product-production.artifact-inputs', 'product-production.repair-feedback']),
-    maxOutputTokens: 10_000,
+    contextCompression: compressionPolicy(['product-production.artifact-inputs']),
+    maxOutputTokens: 15_000,
     writeTargets: [{table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts'}],
-    lastVerifiedAt: '2026-10-16', regressionTests: ['R-CHAT-02-opening-agency', 'R-CHAT-02-opening-review', 'R-CHAT-02-narrative-production'],
+    lastVerifiedAt: '2026-10-21', regressionTests: ['R-CHAT-02-opening-review-output', 'R-CHAT-02-opening-continuation', 'R-CHAT-02-opening-agency', 'R-CHAT-02-opening-review', 'R-CHAT-02-narrative-production'],
   },
   {
     version: 1,
@@ -5475,7 +5543,7 @@ export function validateAgentSkillDefinitionsV1(
     character: new Set(['create', 'supplement', 'lifecycle', 'relationships', 'character-reply', 'memory-curator']),
     inspiration: new Set(['reference-summary', 'reference-characters', 'reverse', 'review']),
     outline: new Set(['auto', 'story-arcs', 'foreshadow-suggestions', 'storyline-progress', 'character-driven', 'character-revision', 'impact-summary-regenerate', 'volumes', 'chapters', 'details', 'adaptation-source-analysis', 'adaptation-causal-graph', 'screenplay-adaptation-brief', 'screenplay-decision-pass', 'screenplay-beat-sheet', 'screenplay-scene-card', 'screenplay-grounding-review', 'screenplay-dramaturgy-review', 'comic-adaptation-brief', 'comic-decision-pass', 'comic-script-adaptation', 'comic-page-rhythm', 'comic-panel-plan', 'comic-visual-bible', 'comic-image-request', 'comic-visual-continuity-review', 'comic-targeted-repair', 'comic-page-review', 'motion-drama-series-bible', 'motion-drama-asset-bible', 'motion-drama-episode-outline', 'motion-drama-shot-design', 'motion-drama-image-prompts', 'motion-drama-video-prompts', 'motion-drama-quality-review', 'short-intent-brief', 'short-story-design', 'short-scene-plan', 'short-continuity-review', 'character-interaction-production', 'product-production']),
-    prose: new Set(['extension-generate', 'auto', 'generate', 'continue', 'emotion-beats', 'inventory-extraction', 'story-timeline-extraction', 'cultivation-progress-extraction', 'style-learn', 'selection-edit', 'selection-check', 'review', 'revise', 'organize', 'memory', 'consistency', 'scene-director', 'ai-town-director', 'adventure-intent', 'adventure-narrator', 'open-world-briefing', 'open-world-advisor', 'open-world-outcome-narrator', 'open-world-actor-suggestion', 'open-world-expression', 'open-world-narration', 'text-open-world-runtime-intent', 'text-open-world-runtime-dialogue', 'text-open-world-runtime-expression', 'text-open-world-runtime-quest-packaging', 'text-open-world-runtime-direction', 'text-open-world-runtime-memory', 'screenplay-scene-draft', 'screenplay-targeted-rewrite', 'motion-drama-episode-script', 'short-chapter-draft', 'short-targeted-rewrite', 'ttrpg-gm-narrator', 'ttrpg-gm-actor-intent', 'ttrpg-director', 'ttrpg-private-guidance', 'ttrpg-player-intent']),
+    prose: new Set(['extension-generate', 'auto', 'generate', 'continue', 'emotion-beats', 'inventory-extraction', 'story-timeline-extraction', 'cultivation-progress-extraction', 'style-learn', 'selection-edit', 'selection-check', 'review', 'revise', 'quality-revise', 'organize', 'memory', 'consistency', 'scene-director', 'ai-town-director', 'adventure-intent', 'adventure-narrator', 'open-world-briefing', 'open-world-advisor', 'open-world-outcome-narrator', 'open-world-actor-suggestion', 'open-world-expression', 'open-world-narration', 'text-open-world-runtime-intent', 'text-open-world-runtime-dialogue', 'text-open-world-runtime-expression', 'text-open-world-runtime-quest-packaging', 'text-open-world-runtime-direction', 'text-open-world-runtime-memory', 'screenplay-scene-draft', 'screenplay-targeted-rewrite', 'motion-drama-episode-script', 'short-chapter-draft', 'short-targeted-rewrite', 'ttrpg-gm-narrator', 'ttrpg-gm-actor-intent', 'ttrpg-director', 'ttrpg-private-guidance', 'ttrpg-player-intent']),
     'text-adventure-showrunner': productProductionModes,
     'text-adventure-creative-director': productProductionModes,
     'text-adventure-source-editor': productProductionModes,

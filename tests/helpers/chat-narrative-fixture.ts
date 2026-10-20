@@ -1,11 +1,30 @@
 import {canonicalStringify} from '../../src/lib/agent/run/hash'
 import {CHAT_ACTION_REVIEW_CHECKS_V1, type ChatNarrativeActionV1, type ChatNarrativeActionReviewV1} from '../../src/lib/types/chat-narrative'
 import type { FrozenInteractionRuntimeV2 } from '../../src/lib/types/product-release'
-import type { ProductRuntimePackageV1 } from '../../src/lib/types'
+import type { ChatMessage, ProductRuntimePackageV1 } from '../../src/lib/types'
 import { readProductRuntimeStateVersion, startInteractionScene } from '../../src/lib/character-interaction/runtime-api'
 import { seedCurrentProductBuild } from './current-product-build'
 import { currentProductSelection, loadCurrentProductWorldSourceCatalogV1, seedCurrentProductWorld } from './current-product-world'
 import {chatNarrativeShellV1} from '../../src/lib/character-interaction/narrative-production'
+import {chatActionOutcomeFixture} from './chat-action-outcome'
+
+/** Keep expression/review fixtures focused on the rule they exercise while
+ * still running the real choice step, its evidence, budgets and recovery.
+ * The permitted empty proposal adds no facts or permission. The supplied
+ * callback counts expression calls only; the run ledger counts all calls.
+ * Choice-content/error tests use their own explicit model fixtures instead. */
+export function withChatActionChoiceFixture(runAI: (messages: ChatMessage[], signal?: AbortSignal) => Promise<string>) {
+  return async (messages: ChatMessage[], signal?: AbortSignal): Promise<string> => {
+    if (messages[0]?.content.startsWith('这是尚未发生的角色行动选择草稿')) {
+      return JSON.stringify({directions: [], selectedId: null, decisionSummary: '本工程用例不增加方向建议；表达仍须按原角色视角独立校验。'})
+    }
+    const output = await runAI(messages, signal)
+    let parsed: unknown
+    try {parsed = JSON.parse(output)} catch {return output}
+    const wire = chatActionOutcomeFixture(messages, parsed)
+    return wire === parsed ? output : JSON.stringify(wire)
+  }
+}
 
 /** Engineering fixture for contract/visibility tests, never real-model acceptance. */
 export function chatNarrativeFixture(worldReleaseHash = '1'.repeat(64), characterKeys = ['character:guard', 'character:artisan']): FrozenInteractionRuntimeV2 {

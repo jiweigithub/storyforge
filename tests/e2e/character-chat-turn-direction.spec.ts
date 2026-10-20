@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {openChatNarrativeTools} from './helpers/character-chat-ui'
 import {test, expect, type Page} from '@playwright/test'
 
@@ -17,28 +18,36 @@ const action = (n: number, waiting = false) => ({kind: waiting ? 'attempt' : 'sp
   audienceKeys: ['guard', 'player'], waitingForPlayer: waiting, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})
 const review = () => ({checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'].map(check => ({check, passed: true, reason: '工程夹具'}))})
 
-test('defaults to one step, explicitly permits two, and stops for player decisions within a three-step allowance', async ({page}) => {
+test('defaults to two steps, remembers explicit pacing and stops for player decisions within a three-step allowance', async ({page}) => {
   let actions = 0, calls = 0
   await page.route('https://chat-direction.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     calls++
     const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n')
     const output = prompt.includes('本次持久化行动候选') ? review() : action(++actions, actions === 4)
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   const f = await seed(page)
   const read = () => page.evaluate(async id => {const load = new Function('p', 'return import(p)'); return (await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(id)).interaction}, f.sessionId)
-  await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('1')
+  await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('2')
+  expect(actions).toBe(0)
   await page.getByRole('button', {name: '让角色开场', exact: true}).click()
+  await expect(page.getByText('我独自核对第 2 项。', {exact: true})).toBeVisible()
   await expect(page.getByRole('button', {name: '让角色继续', exact: true})).toBeEnabled()
-  expect(actions).toBe(1); expect(calls).toBe(2)
-  expect((await read()).chatNarrative.triggers[0]).toMatchObject({direction: {actorKey: 'guard', actionLimit: 1}, status: 'complete'})
+  expect(actions).toBe(2); expect(calls).toBe(4)
+  expect((await read()).chatNarrative.triggers[0]).toMatchObject({direction: {actorKey: 'guard', actionLimit: 2}, status: 'complete'})
+  await page.reload()
+  await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('2')
+  expect(actions).toBe(2); expect(calls).toBe(4)
+  await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
   await openChatNarrativeTools(page)
-  await page.getByLabel('演绎节奏', {exact: true}).selectOption('2')
+  await page.getByLabel('演绎节奏', {exact: true}).selectOption('1')
+  expect(actions).toBe(2)
   await page.getByRole('button', {name: '让角色继续', exact: true}).click()
   await expect(page.getByText('我独自核对第 3 项。', {exact: true})).toBeVisible()
   await expect(page.getByRole('button', {name: '让角色继续', exact: true})).toBeEnabled()
   expect(actions).toBe(3); expect(calls).toBe(6)
-  expect((await read()).chatNarrative.triggers[1]).toMatchObject({direction: {actorKey: 'guard', actionLimit: 2}, status: 'complete'})
+  expect((await read()).chatNarrative.triggers[1]).toMatchObject({direction: {actorKey: 'guard', actionLimit: 1}, status: 'complete'})
   await page.reload()
   await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('1')
   expect(actions).toBe(3)
@@ -66,12 +75,13 @@ for (const interrupt of ['message', 'stop'] as const) test(`${interrupt} interru
   let actions = 0, calls = 0, release!: () => void
   const gate = new Promise<void>(resolve => {release = resolve})
   await page.route('https://chat-direction.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     calls++
     const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n')
     let output: unknown
     if (prompt.includes('本次持久化行动候选')) output = review()
     else {actions++; if (actions === 2) await gate; output = action(actions)}
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   const f = await seed(page)
   await openChatNarrativeTools(page)
@@ -92,7 +102,7 @@ for (const interrupt of ['message', 'stop'] as const) test(`${interrupt} interru
   if (interrupt === 'stop') await expect(page.getByRole('button', {name: '补齐未完成本轮', exact: true})).toBeDisabled()
   expect(actions).toBe(2); expect(calls).toBe(3)
   await page.reload()
-  await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('1')
+  await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('3')
   expect(await read()).toEqual(state)
   expect(calls).toBe(3)
 })

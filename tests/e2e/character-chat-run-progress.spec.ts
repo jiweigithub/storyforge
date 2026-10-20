@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect, type Page} from '@playwright/test'
 
 test.beforeEach(async ({page}) => {
@@ -30,9 +31,10 @@ test('shows actual generation and review phases without displaying the unadopted
   const generation = gate(), checking = gate()
   let calls = 0
   await page.route('https://chat-progress.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const check = ++calls === 2
     await (check ? checking : generation).promise
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(check ? review : action)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, check ? review : action)}, finish_reason: 'stop'}]})})
   })
   try {
     await seed(page)
@@ -60,28 +62,31 @@ test('shows actual generation and review phases without displaying the unadopted
   } finally {generation.release(); checking.release()}
 })
 
-test('refresh labels the persisted request as history and does not restart it', async ({page}) => {
+for (const phase of ['choice', 'expression'] as const) test(`refresh labels the persisted ${phase} request as history and does not restart it`, async ({page}) => {
   const generation = gate()
+  const stage = phase === 'choice' ? '正在选择角色的下一步行动' : '等待角色行动'
+  const expectedCalls = phase === 'choice' ? 1 : 2
   let calls = 0
   await page.route('https://chat-progress.invalid/**', async route => {
     calls++
+    if (phase === 'expression' && await fulfillChatActionChoiceFixture(route)) return
     await generation.promise
     await route.abort()
   })
   try {
     await seed(page)
     await page.getByRole('button', {name: '让角色继续', exact: true}).click()
-    await expect(page.getByTestId('chat-run-progress')).toContainText('等待角色行动')
-    await expect.poll(() => calls).toBe(1)
+    await expect(page.getByTestId('chat-run-progress')).toContainText(stage)
+    await expect.poll(() => calls).toBe(expectedCalls)
     await page.reload()
     const progress = page.getByTestId('chat-run-progress')
-    await expect(progress).toContainText('上次保存的阶段：等待角色行动')
+    await expect(progress).toContainText(`上次保存的阶段：${stage}`)
     await expect(progress).toContainText('不代表模型仍在运行')
     await expect(progress).not.toContainText('本阶段已等待')
     await expect(page.getByRole('button', {name: '补齐未完成本轮', exact: true})).toBeDisabled()
     await page.reload()
     await expect(page.getByTestId('chat-run-progress')).toContainText('上次保存的阶段')
-    expect(calls).toBe(1)
+    expect(calls).toBe(expectedCalls)
   } finally {generation.release()}
 })
 
@@ -89,9 +94,10 @@ test('cancelling during review stops local progress and cannot apply the late re
   const checking = gate()
   let calls = 0
   await page.route('https://chat-progress.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const check = ++calls === 2
     if (check) await checking.promise
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(check ? review : action)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, check ? review : action)}, finish_reason: 'stop'}]})})
   })
   try {
     const f = await seed(page)

@@ -44,19 +44,19 @@ async function prepare(page: Page) {
     const f = await helpers.seedChatNarrativeRuntimeFixture(), v = await api.readProductRuntimeStateVersion(f.sessionId)
     await api.requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'voice.opening', baseSequence: v.sequence, baseStateHash: v.stateHash,
       kind: 'scene-start', sourceEventSequence: f.sceneSequence, direction: {actorKey: 'guard', actionLimit: 1}})
-    let injectedCalls = 0
+    let expressionAndReviewCalls = 0
     const candidate = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard',
       skillId: 'character.chat-narrative-action', objective: 'Voice UI engineering fixture; not narrative quality evidence',
-      runAI: async () => {injectedCalls++; return JSON.stringify({kind: 'speak', text: '雨还没停，我先看看门边的告示。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
-        newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})},
-      runReviewAI: async () => {injectedCalls++; return JSON.stringify(helpers.chatActionReviewOutputFixture())}})
+      runAI: (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).withChatActionChoiceFixture(async () => {expressionAndReviewCalls++; return JSON.stringify({kind: 'speak', text: '雨还没停，我先看看门边的告示。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
+        newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})}),
+      runReviewAI: async () => {expressionAndReviewCalls++; return JSON.stringify(helpers.chatActionReviewOutputFixture())}})
     await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: candidate.snapshot.run.id})
     const {db} = await load('/storyforge/src/lib/db/schema.ts')
-    return {...f, injectedCalls, state: JSON.stringify(await api.readProductRuntimeState(f.sessionId)), worlds: JSON.stringify(await db.worldReleases.toArray())}
+    return {...f, expressionAndReviewCalls, state: JSON.stringify(await api.readProductRuntimeState(f.sessionId)), worlds: JSON.stringify(await db.worldReleases.toArray())}
   })
   await page.goto(`./chat/play?project=${f.scope.projectId}&work=${f.scope.workId}&session=${f.sessionId}`)
   await expect(page.getByRole('button', {name: '朗读', exact: true})).toBeEnabled()
-  expect(f.injectedCalls).toBe(2)
+  expect(f.expressionAndReviewCalls).toBe(2)
   return {f, calls: () => externalCalls}
 }
 

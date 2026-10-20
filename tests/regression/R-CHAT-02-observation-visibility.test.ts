@@ -5,7 +5,7 @@ import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {buildInteractionContextWindow, interactionVisibilityView} from '../../src/lib/character-interaction/runtime'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {CHAT_SITUATION_REVIEW_CHECKS_V1, type ChatNarrativeActionV1, type ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
 
 const skillId = 'character.chat-situation-construction' as const
@@ -25,7 +25,7 @@ async function prepared() {
     newFacts: [{factKey: 'inspected', kind: 'observation', text, evidenceFactKeys: ['box'], evidenceExcerpt: text}], disclosures: [], threadUpdates: [], goalStatus: null,
     situationRequest: {purpose: 'observation-result', threadKey: 'investigate', direction, evidenceFactKeys: ['box', 'inspected'], evidenceExcerpt: text}}
   const acted = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action',
-    objective: '已完成且公开可见的动作与私下查看', runAI: async () => JSON.stringify(action), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    objective: '已完成且公开可见的动作与私下查看', runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: acted.snapshot.run.id})
   const sent = await commitInteractionPlayerMessage({...await command(f.sessionId), messageId: 'refusal', text: refusal, audienceKeys: ['player', 'guard']})
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'player-response', sourceEventSequence: sent.sequence})
@@ -45,12 +45,12 @@ it.each([false, true])('preserves private canonical discovery with optional shar
   const result = await generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: () => {
     vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === skillId ? {...original(id), promptVersion: 'chat-situation-construction-v11'}
       : id === 'character.chat-situation-review' ? {...original(id), promptVersion: 'chat-situation-review-v10'} : original(id))
-  }, runAI: async messages => {
+  }, runAI: withChatActionChoiceFixture(async messages => {
     calls++; expect(messages[0].content).toContain('动作的听众与结果的知情者分别判断')
     expect(messages[0].content).toContain('newFacts 可以为 []')
     expect(messages[1].content).toContain('discoveryEvidence'); expect(messages[1].content).toContain(refusal)
     return JSON.stringify(value)
-  }, runReviewAI: async messages => {
+  }), runReviewAI: async messages => {
     calls++; expect(messages[0].content).toContain('newFacts=[] 本身不是 meaningful-direction 失败')
     expect(messages[0].content).toContain('不改候选或听众来放行')
     return JSON.stringify(report())
@@ -82,7 +82,7 @@ it('keeps a concrete shared observation and an inconclusive private finding with
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId), value = draft(before.interaction!.chatNarrative!.pendingSituation!.sourceEventSequence, true)
   value.discoveries![0].result = 'inconclusive'
   value.discoveries![0].reason = '测试注入有限结论，不宣称发现。'
-  const result = await generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => JSON.stringify(value), runReviewAI: async () => JSON.stringify(report())})
+  const result = await generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => JSON.stringify(value)), runReviewAI: async () => JSON.stringify(report())})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!
   expect(state.chatNarrative!.situation.facts.find(f => f.factKey === 'secret')!.audienceKeys).toEqual([])
@@ -97,7 +97,7 @@ it.each(['indirect public disclosure', 'private semantic duplicate', 'unsupporte
   if (invalid === 'unsupported discovery') {value.newFacts = []; value.discoveries![0].reason = 'targets 列出此事实，所以必须发现。'}
   const denied = report(invalid === 'unsupported discovery' ? 'continuity' : 'visibility')
   let calls = 0, runId = 0
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: id => {runId = id}, runAI: async () => {calls++; return JSON.stringify(value)},
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: id => {runId = id}, runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(value)}),
     runReviewAI: async () => {calls++; return JSON.stringify(denied)}})).rejects.toThrow('语义审查未通过')
   expect((await db.agentRuns.get(runId))?.status).toBe('failed')
   await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})).rejects.toThrow()

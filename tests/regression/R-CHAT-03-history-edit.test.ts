@@ -4,7 +4,7 @@ import * as harness from '../../src/lib/character-interaction/harness'
 import {applyChatMessageEditV1, forkChatMessageEditV1, readChatMessageEditPlanV1} from '../../src/lib/character-interaction/narrative-edit'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, deleteProductRuntimeSession, proposeInteractionMemory, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger, resolveInteractionMemory, updateChatMessageEditDraft} from '../../src/lib/character-interaction/runtime-api'
 import {useCharacterInteractionPlayerStore as store} from '../../src/stores/character-interaction-player'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
@@ -24,7 +24,7 @@ async function history() {
   const player = await commitInteractionPlayerMessage({...await command(f.sessionId), messageId: 'player-old', text: '请先看门边。', audienceKeys: ['guard']})
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'player-response', sourceEventSequence: player.sequence})
   const generated = await realGenerate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '原路径',
-    runAI: async () => JSON.stringify(action()), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(action())), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   const committed = await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   const message = (await readProductRuntimeState(f.sessionId)).interaction!.messages.at(-1)!
   await proposeInteractionMemory({...await command(f.sessionId), memoryId: 'after-light', participantKey: 'guard', kind: 'key-memory', content: '我把灯移到门边。', importance: 8, sourceEventSequences: [committed.event!.sequence], evidenceExcerpt: '我把灯移到门边。'})
@@ -59,9 +59,9 @@ it('reconciles exact edited character text through the existing action and revie
   const f = await history(), parent = await readProductRuntimeState(f.sessionId), text = '我先坐下听你说。'
   const child = await forkChatMessageEditV1({scope: f.scope, plan: await readChatMessageEditPlanV1(f.scope, f.sessionId, f.message.messageId), text})
   const seen: string[] = []
-  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(i => realGenerate({...i, runAI: async messages => {
+  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(i => realGenerate({...i, runAI: withChatActionChoiceFixture(async messages => {
     seen.push(JSON.stringify(messages)); return JSON.stringify({...action(text), kind: 'pause', newFacts: [], goalStatus: 'paused', nextPossibilities: []})
-  }, runReviewAI: async messages => {seen.push(JSON.stringify(messages)); return JSON.stringify(chatActionReviewOutputFixture())}}))
+  }), runReviewAI: async messages => {seen.push(JSON.stringify(messages)); return JSON.stringify(chatActionReviewOutputFixture())}}))
   await applyChatMessageEditV1({scope: f.scope, sessionId: child.id!, expectedSequence: (await readProductRuntimeStateVersion(child.id!)).sequence, text, aiConfig: {} as never})
   const state = (await readProductRuntimeState(child.id!)).interaction!
   expect(state.messages.map(m => m.text)).toEqual(['请先看门边。', text])
@@ -77,7 +77,7 @@ it.each(['text', 'audience', 'review'])('rejects a %s mismatch without committin
   const f = await history(), text = '我先坐下听你说。'
   const child = await forkChatMessageEditV1({scope: f.scope, plan: await readChatMessageEditPlanV1(f.scope, f.sessionId, f.message.messageId), text})
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(i => realGenerate({...i,
-    runAI: async () => JSON.stringify({...action(mismatch === 'text' ? text + '我又站起来。' : text), kind: 'pause', newFacts: [], audienceKeys: mismatch === 'audience' ? ['guard', 'player', 'artisan'] : ['guard', 'player']}),
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify({...action(mismatch === 'text' ? text + '我又站起来。' : text), kind: 'pause', newFacts: [], audienceKeys: mismatch === 'audience' ? ['guard', 'player', 'artisan'] : ['guard', 'player']})),
     runReviewAI: async () => {const result = chatActionReviewOutputFixture(); result.checks[0].passed = false; return JSON.stringify(result)}}))
   await expect(applyChatMessageEditV1({scope: f.scope, sessionId: child.id!, expectedSequence: (await readProductRuntimeStateVersion(child.id!)).sequence, text, aiConfig: {} as never})).rejects.toThrow()
   const state = (await readProductRuntimeState(child.id!)).interaction!
@@ -151,7 +151,7 @@ it('cuts knowledge disclosures, relationship changes, goals, beliefs and plans a
     nextPossibilities: [], beliefUpdates: [{beliefKey: 'borrowed', text: null, evidenceFactKeys: ['found']}],
     relationshipUpdates: [{dimensionKey: 'trust', delta: 1, sourceEventSequence: player.sequence, playerExcerpt: '先核对证据。', evidenceExcerpt: '我更愿意听取你的判断'}]}
   const run = await realGenerate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '原路径',
-    runAI: async () => JSON.stringify(draft), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: run.snapshot.run.id})
   const old = await readProductRuntimeState(f.sessionId)
   expect(project(old)).not.toEqual(before)
@@ -165,7 +165,7 @@ it('recovers the retained edited draft review without generating another express
   const child = await forkChatMessageEditV1({scope: f.scope, plan: await readChatMessageEditPlanV1(f.scope, f.sessionId, f.message.messageId), text})
   let calls = 0, runId = 0
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(i => realGenerate({...i,
-    runAI: async () => {calls++; return JSON.stringify({...action(text), kind: 'pause', newFacts: []})},
+    runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify({...action(text), kind: 'pause', newFacts: []})}),
     onNarrativeActionSaved: id => {runId = id; throw new Error('crash-before-review')}}))
   await expect(applyChatMessageEditV1({scope: f.scope, sessionId: child.id!, expectedSequence: (await readProductRuntimeStateVersion(child.id!)).sequence, text, aiConfig: {} as never})).rejects.toThrow('crash-before-review')
   db.close(); await db.open(); await store.getState().load(f.scope, null, child.id!)

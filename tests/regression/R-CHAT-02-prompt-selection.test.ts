@@ -6,7 +6,7 @@ import {requestChatNarrativeTriggerV1} from '../../src/lib/character-interaction
 import {chatActionPromptFeaturesV1, chatActionPromptRulesV1, chatActionReviewPromptRulesV1} from '../../src/lib/character-interaction/narrative-action-prompt'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1, resumeChatNarrativeReviewV1} from '../../src/lib/character-interaction/harness'
 import {commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
-import {chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {followupOwnAction, followupResultAction} from '../helpers/chat-player-followup'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
@@ -50,12 +50,18 @@ it('hidden truth and other roles cannot change the actor instruction selection',
 
 it('does not ask immutable edits or consequence-only revisions to improve the original expression', () => {
   const state = prepared(), originalView = view(state)
-  expect(chatActionPromptRulesV1(originalView).join('\n')).toContain('一次回复可以连贯完成')
-  expect(chatActionPromptRulesV1(originalView, {preserveExpression: true}).join('\n')).not.toContain('一次回复可以连贯完成')
+  const options = {producerVersion: 'chat-narrative-action-v44', replanning: true}
+  const current = chatActionPromptRulesV1(originalView, options).join('\n')
+  expect(current).toContain('一次回复可以连贯完成')
+  expect(current).toContain('承接实际所得，判断它使原事项中的哪个问题')
+  const revision = chatActionPromptRulesV1(originalView, {...options, preserveExpression: true}).join('\n')
+  expect(revision).not.toContain('一次回复可以连贯完成')
+  expect(revision).not.toContain('承接实际所得，判断它使原事项中的哪个问题')
   originalView.chatNarrative!.pendingEdit = {sourceMessageId: 'old', role: 'character', actorKey: 'guard', text: '原文保持不变。', audienceKeys: ['guard', 'player'], requestedSequence: 0}
-  const edited = chatActionPromptRulesV1(originalView).join('\n')
+  const edited = chatActionPromptRulesV1(originalView, options).join('\n')
   expect(edited).toContain('默认必须逐字保留其 text')
   expect(edited).not.toContain('一次回复可以连贯完成')
+  expect(edited).not.toContain('承接实际所得，判断它使原事项中的哪个问题')
 })
 
 it('keeps the new-goal and background alternatives only for the authorized first closed-goal response', () => {
@@ -99,12 +105,12 @@ it('retains exact registered role context, durable rendered requests and indepen
   let runId = 0, generated = 0, reviewed = 0
   const before = await readProductRuntimeState(f.sessionId)
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', narrativeTriggerSequence: trigger.sequence,
-    objective: '一次有依据的行动', runAI: async messages => {
+    objective: '一次有依据的行动', runAI: withChatActionChoiceFixture(async messages => {
       generated++; expect(messages[0].content).not.toContain('pendingEdit.mode=option')
       expect(messages[1].content).toContain('担心再次错怪人')
       expect(messages[1].content).not.toContain('柜台下')
       return JSON.stringify(action())
-    }, onNarrativeActionSaved: id => {runId = id; throw new Error('saved-before-review')},
+    }), onNarrativeActionSaved: id => {runId = id; throw new Error('saved-before-review')},
   })).rejects.toThrow('saved-before-review')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   db.close(); await db.open()
@@ -119,7 +125,7 @@ it('retains exact registered role context, durable rendered requests and indepen
   expect([generated, reviewed]).toEqual([1, 1])
   const hashes = new Set(recovered.snapshot.events.flatMap(e => e.type === 'evidence.artifact.recorded' ? [e.payload.contentHash] : []))
   const artifacts = (await db.agentRunArtifacts.where('projectId').equals(f.scope.projectId).toArray()).filter(a => hashes.has(a.contentHash))
-  expect(artifacts.filter(a => a.artifactKind === 'rendered-request')).toHaveLength(2)
+  expect(artifacts.filter(a => a.artifactKind === 'rendered-request')).toHaveLength(3)
   expect(artifacts.some(a => a.artifactKind === 'context-packet')).toBe(true)
   expect((await readProductRuntimeState(f.sessionId)).interaction!.messages).toHaveLength(1)
 })
@@ -129,7 +135,7 @@ it('does not use prompt selection to authorize a stale saved candidate', async (
   await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'prompt.start', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'scene-start', sourceEventSequence: f.sceneSequence})
   let runId = 0, reviews = 0
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '原行动',
-    runAI: async () => JSON.stringify(action()), onNarrativeActionSaved: id => {runId = id; throw new Error('saved')},
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(action())), onNarrativeActionSaved: id => {runId = id; throw new Error('saved')},
   })).rejects.toThrow('saved')
   const version = await readProductRuntimeStateVersion(f.sessionId)
   await commitInteractionPlayerMessage({sessionId: f.sessionId, commandId: 'interrupt', baseSequence: version.sequence, baseStateHash: version.stateHash, messageId: 'interrupt', text: '先停一下。'})

@@ -1,3 +1,14 @@
+import {chatActionRequestOptionsV1, boundedChatOutputTokensV1, chatActionOutputRulesV1} from './action-output-contract'
+import {assertChatControlHandoffBindingsV1, chatNarrativeOutcomeRulesV1, parseChatNarrativeOutcomeWireV1, supportsChatControlHandoffV1} from './control-handoff-wire'
+import {assertChatControlHandoffContextV1, previewChatControlHandoffV1, type ChatControlHandoffV1, type ChatControlHandoffReviewV1} from './control-handoff-contract'
+import {bindChatOwnEvidenceV1} from './action-evidence-binding'
+import {chatActionChoiceVersionForContractV1} from './action-choice-budget'
+import {chooseRuntimeChatActionV1, ChatActionChoiceHostInterruptionV1} from './action-choice-harness'
+import {assertChatActionChoiceInputBudgetV1} from './action-choice-input-budget'
+import {readChatActionChoiceEvidenceV1, readChatActionChoiceExpressionV1} from './action-choice-evidence'
+import {appendChatActionChoiceProposalV1, chatNeedsActionChoiceV1, CHAT_ACTION_CHOICE_STEP_V1, CHAT_ACTION_CHOICE_INPUT_TOKENS_V1, CHAT_ACTION_CHOICE_OUTPUT_TOKENS_V1} from './action-choice-contract'
+import {supportsChatActionWireV1, resolveChatActionWireAudienceV1, compileChatActionWireV1, chatActionWireExampleV1} from './action-wire'
+import {chatSettledProgressRulesV1} from './narrative-replanning'
 import {supportsChatPlayerDecisionPromptV1} from './player-decision-prompt'
 import {readChatCoordinatorSelectionEvidenceV1} from '../registry/context-sources'
 import {readChatRuntimeStateAtSequenceV1} from './runtime-replay'
@@ -21,8 +32,10 @@ import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1, assertChatAc
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1} from './narrative-scheduling'
 import {buildInteractionContextWindow, type InteractionContextWindow} from './runtime'
-import {CHAT_CONTEXT_READER_VERSION_V10} from './context-selection'
-import { chat } from '../ai/client'
+import {chatActionContextVersionsV1} from './context-selection'
+import { chat, type ChatResult } from '../ai/client'
+import {CHAT_ACTION_OUTPUT_BUDGET_CRITERION_V1, hasChatActionOutputBudgetV1, recordChatActionOutputBudgetV1, readChatActionOutputBudgetV1} from './action-choice-output-budget'
+import {CHAT_ACTION_TERMINAL_VERIFIER_V2, readChatActionTerminalReceiptV1, retainChatActionTerminalReceiptV1} from './action-terminal-receipt'
 import { createAgentSkillExecutionBindingV1, createAgentSkillExecutionBindingV2 } from '../agent/execution-binding'
 import { getAgentSkillV1, type AgentSkillId } from '../agent/skill-registry'
 import { createAgentRunCheckpointV1, readLatestVerifiedAgentRunCheckpointV1 } from '../agent/run/checkpoint'
@@ -42,9 +55,10 @@ import {
 import { createVerificationReceiptV1 } from '../agent/run/verification-receipt'
 import { db } from '../db/schema'
 import { assembleContext } from '../registry/assemble-context'
-import { recordAgentRunArtifactV1 } from '../memory/artifact-store'
+import { readAgentRunArtifactExactV1, recordAgentRunArtifactV1 } from '../memory/artifact-store'
 import {
   commitChatNarrativeAction,
+  commitChatControlHandoff,
   commitChatSituation,
   commitInteractionCharacterReply,
   proposeInteractionMemory,
@@ -143,6 +157,14 @@ export interface ChatNarrativeActionCandidateV1 extends RuntimeCandidateBaseV1 {
   candidateHash: string
 }
 
+export interface ChatControlHandoffCandidateV1 extends RuntimeCandidateBaseV1 {
+  kind: 'chat-control-handoff-candidate'
+  triggerSequence: number
+  handoff: ChatControlHandoffV1
+  review: ChatControlHandoffReviewV1 | null
+  candidateHash: string
+}
+
 export interface ChatNarrativeOptionsCandidateV1 extends RuntimeCandidateBaseV1 {
   kind: 'chat-narrative-options-candidate'
   triggerSequence: number
@@ -164,6 +186,7 @@ export type InteractionRuntimeCandidateV1 =
   | InteractionDirectorCandidateV1
   | InteractionMemoryCandidateV1
   | ChatNarrativeActionCandidateV1
+  | ChatControlHandoffCandidateV1
   | ChatNarrativeOptionsCandidateV1
   | ChatSituationCandidateV1
 
@@ -173,6 +196,7 @@ type InteractionRuntimeCandidateDraftV1 =
   | Pick<InteractionDirectorCandidateV1, 'kind' | 'responders' | 'shouldEnd' | 'endReason'>
   | Pick<InteractionMemoryCandidateV1, 'kind' | 'memoryId' | 'memoryKind' | 'content' | 'importance' | 'sourceEventSequences' | 'evidenceExcerpt'>
   | Pick<ChatNarrativeActionCandidateV1, 'kind' | 'action'>
+  | Pick<ChatControlHandoffCandidateV1, 'kind' | 'handoff'>
   | Pick<ChatNarrativeOptionsCandidateV1, 'kind' | 'options'>
   | Pick<ChatSituationCandidateV1, 'kind' | 'draft' | 'review'>
 
@@ -240,6 +264,8 @@ function parseDisclosures(value: unknown): InteractionReplyCandidateV1['disclosu
 function parseModelDraft(input: {
   skillId: InteractionRuntimeSkillIdV1
   output: string
+  promptVersion: string
+  audience?: readonly string[]
 }): InteractionRuntimeCandidateDraftV1 {
   const row = parseJson(input.output)
   if (input.skillId === 'character.chat-situation-construction') {
@@ -247,10 +273,13 @@ function parseModelDraft(input: {
   }
   if (input.skillId === 'character.chat-narrative-options') {
     exact(row, ['options'], '行动候选组')
-    return {kind: 'chat-narrative-options-candidate', options: parseChatNarrativeOptionsV1(row.options)}
+    const options = Array.isArray(row.options) ? row.options.map(action => bindChatOwnEvidenceV1(compileChatActionWireV1(action, input.promptVersion, input.audience), input.promptVersion)) : row.options
+    return {kind: 'chat-narrative-options-candidate', options: parseChatNarrativeOptionsV1(options)}
   }
   if ((input.skillId === 'character.chat-narrative-action' || input.skillId === CHAT_ACTION_REVISION_SKILL)) {
-    return {kind: 'chat-narrative-action-candidate', action: parseChatNarrativeActionV1(row)}
+    const outcome = supportsChatControlHandoffV1(input.promptVersion) ? parseChatNarrativeOutcomeWireV1(row) : null
+    if (outcome?.outcome === 'handoff') return {kind: 'chat-control-handoff-candidate', handoff: outcome.handoff}
+    return {kind: 'chat-narrative-action-candidate', action: parseChatNarrativeActionV1(bindChatOwnEvidenceV1(compileChatActionWireV1(outcome?.outcome === 'action' ? outcome.action : row, input.promptVersion, input.audience), input.promptVersion))}
   }
   if (input.skillId === 'character.interaction-reply' || input.skillId === 'character.ai-town-reply') {
     exact(row, ['kind', 'text', 'replyToSequence', 'audienceKeys', 'budgetCost', 'disclosures'], '角色回复')
@@ -332,6 +361,7 @@ function prompt(input: {
   context: string
   roleContext?: InteractionContextWindow
   producerVersion?: string
+  audience?: readonly string[]
 }): ChatMessage[] {
   const sceneTransition = supportsChatSceneTransitionPromptV1(input.producerVersion)
   const existingGoalPause = supportsChatExistingGoalPausePromptV1(input.producerVersion)
@@ -370,10 +400,13 @@ function prompt(input: {
         '只有在场角色可有目标或打算，不给玩家写行动、同意、内心、关系升级或既成结果。角色的未实施计划只进入 possibilities，不进入事实。',
         '承接已有未解决问题，避免为反转而制造危机。新增剧情线加上旧活跃线不能超过 maxActiveThreads。可以不增加新线，只深化现有矛盾；给出可拒绝、可暂停、可改变方向的空间。',
       ] : []),
-      ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? chatActionPromptRulesV1(input.roleContext!, {preserveExpression: input.skillId === CHAT_ACTION_REVISION_SKILL, playerPause: true, conversationEvidence: true, commitmentSemanticsV2, promiseRequest, existingGoalPause, sceneTransition, playerDecision: supportsChatPlayerDecisionPromptV1(input.producerVersion), actionKind: supportsChatActionKindPromptV1(input.producerVersion), replanning: supportsChatReplanningPromptV1(input.producerVersion)}) : []),
-      `严格输出 JSON：${schemaInstruction(input.skillId, promiseRequest, existingGoalPause, sceneTransition)}`,
+      ...([CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId) ? chatActionPromptRulesV1(input.roleContext!, {producerVersion: input.producerVersion, preserveExpression: input.skillId === CHAT_ACTION_REVISION_SKILL, playerPause: true, conversationEvidence: true, commitmentSemanticsV2, promiseRequest, existingGoalPause, sceneTransition, playerDecision: supportsChatPlayerDecisionPromptV1(input.producerVersion), actionKind: supportsChatActionKindPromptV1(input.producerVersion), replanning: supportsChatReplanningPromptV1(input.producerVersion)}) : []),
+      ...chatSettledProgressRulesV1(input.producerVersion, !!input.roleContext?.chatNarrative?.pendingEdit),
+      `严格输出 JSON：${chatActionWireExampleV1(schemaInstruction(input.skillId, promiseRequest, existingGoalPause, sceneTransition), input.producerVersion)}`,
       ...(input.skillId === 'character.chat-situation-construction' ? chatInquiryGenerationRulesV1(input.producerVersion) : []),
       ...(commitmentSemanticsV2 ? [CHAT_COMMITMENT_OUTPUT_CHECK_V2 + (existingGoalPause ? CHAT_EXISTING_GOAL_PAUSE_COMMITMENT_RULE_V1 : '')] : []),
+      ...chatActionOutputRulesV1(input.producerVersion, input.audience),
+      ...chatNarrativeOutcomeRulesV1(input.producerVersion),
     ].join('\n'),
   }, {
     role: 'user',
@@ -387,6 +420,7 @@ async function buildContract(input: {
   skillId: InteractionRuntimeSkillIdV1
   runtimeBindingHash: string
   memoryReview?: boolean
+  actionChoice?: boolean
   executionBinding: ReturnType<typeof createAgentSkillExecutionBindingV1> | Awaited<ReturnType<typeof createAgentSkillExecutionBindingV2>>
 }) {
   const skill = getAgentSkillV1(input.skillId)
@@ -404,15 +438,16 @@ async function buildContract(input: {
     scope: input.boundary.scope,
     permissions: { contextSourceKeys: input.memoryReview ? [sourceKey, 'chatMemoryReview'] : situation ? [sourceKey, 'chatSituationCandidate'] : action ? [sourceKey, 'chatSituationRuntime', 'chatActionCandidate', ...(input.skillId === CHAT_ACTION_REVISION_SKILL ? ['chatActionRevision'] : [])] : [sourceKey], writeTargets: [] },
     runtimeBindingHash: input.runtimeBindingHash,
-    executionBindings: [{
+    executionBindings: [...(input.actionChoice ? [{stepId: CHAT_ACTION_CHOICE_STEP_V1,
+      ...await createAgentSkillExecutionBindingV2({...skill, maxOutputTokens: CHAT_ACTION_CHOICE_OUTPUT_TOKENS_V1})}] : []), {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
       ...input.executionBinding,
     }, ...(reviewed ? [{stepId: reviewStep, ...await createAgentSkillExecutionBindingV2(getAgentSkillV1(reviewSkill))}] : [])],
     budget: {
-      maxModelCalls: reviewed ? 2 : 1,
+      maxModelCalls: (reviewed ? 2 : 1) + (input.actionChoice ? 1 : 0),
       maxToolCalls: 0,
-      maxInputTokens: reviewed ? 40_000 : 16_000,
-      maxOutputTokens: skill.maxOutputTokens + (reviewed ? getAgentSkillV1(reviewSkill).maxOutputTokens : 0),
+      maxInputTokens: (reviewed ? 40_000 : 16_000) + (input.actionChoice ? CHAT_ACTION_CHOICE_INPUT_TOKENS_V1 : 0),
+      maxOutputTokens: skill.maxOutputTokens + (reviewed ? getAgentSkillV1(reviewSkill).maxOutputTokens : 0) + (input.actionChoice ? CHAT_ACTION_CHOICE_OUTPUT_TOKENS_V1 : 0),
       maxAttemptsPerStep: 1,
     },
     acceptance: [
@@ -420,12 +455,13 @@ async function buildContract(input: {
       { id: 'runtime.freshness', kind: 'deterministic-check' as const, required: true },
       { id: 'runtime.adoption', kind: 'post-state-matches' as const, required: true },
       ...(options ? [{id: 'runtime.selection', kind: 'deterministic-check' as const, required: true}] : []),
+      ...(input.actionChoice ? [{id: CHAT_ACTION_OUTPUT_BUDGET_CRITERION_V1, kind: 'deterministic-check' as const, required: true}] : []),
     ],
     verificationPlan: [{
       id: 'runtime.terminal',
       kind: 'terminal' as const,
-      verifier: INTERACTION_RUNTIME_VERIFIER_SET_V1,
-      criterionIds: ['runtime.candidate', 'runtime.freshness', 'runtime.adoption', ...(options ? ['runtime.selection'] : [])],
+      verifier: input.actionChoice ? CHAT_ACTION_TERMINAL_VERIFIER_V2 : INTERACTION_RUNTIME_VERIFIER_SET_V1,
+      criterionIds: ['runtime.candidate', 'runtime.freshness', 'runtime.adoption', ...(options ? ['runtime.selection'] : []), ...(input.actionChoice ? [CHAT_ACTION_OUTPUT_BUDGET_CRITERION_V1] : [])],
     }],
     failurePolicy: {
       onProtocolError: 'fail' as const,
@@ -476,6 +512,8 @@ export interface InteractionRuntimeGenerationInputV1 {
   onSituationDraftSaved?: (runId: number) => void | Promise<void>
   onNarrativeActionSaved?: (runId: number) => void | Promise<void>
   onMemoryCandidateSaved?: (runId: number) => void | Promise<void>
+  onActionChoiceBoundary?: Parameters<typeof chooseRuntimeChatActionV1>[0]['onDurableBoundary']
+  onActionExpressionBoundary?: (boundary: 'model.requested' | 'raw-response.saved' | 'candidate.persisted', snapshot: AgentRunSnapshotV1) => void | Promise<void>
   onMemoryReviewResponseSaved?: (runId: number) => void | Promise<void>
 }
 
@@ -505,7 +543,7 @@ export async function generateInteractionRuntimeCandidateV1(input: InteractionRu
       await input.onMemoryCandidateSaved?.(generated.snapshot.run.id)
       return reviewChatMemoryCandidateV1({...input, ...generated, candidate: generated.candidate})
     }
-    if (generated.candidate.kind !== 'chat-situation-candidate' && generated.candidate.kind !== 'chat-narrative-action-candidate' && generated.candidate.kind !== 'chat-narrative-options-candidate') return generated
+    if (generated.candidate.kind !== 'chat-situation-candidate' && generated.candidate.kind !== 'chat-narrative-action-candidate' && generated.candidate.kind !== 'chat-control-handoff-candidate' && generated.candidate.kind !== 'chat-narrative-options-candidate') return generated
     if (generated.candidate.kind === 'chat-situation-candidate') await input.onSituationDraftSaved?.(generated.snapshot.run.id)
     else await input.onNarrativeActionSaved?.(generated.snapshot.run.id)
     return reviewRuntimeChatCandidateV1({...input, snapshot: generated.snapshot, candidate: generated.candidate})
@@ -531,11 +569,11 @@ async function withNarrativeGenerationLock<T>(id: number, injected: boolean, gen
  * a requested-but-missing response is never automatically regenerated. */
 export async function resumeChatNarrativeReviewV1(input: Pick<InteractionRuntimeGenerationInputV1, 'scope' | 'aiConfig' | 'runAI' | 'runReviewAI' | 'signal'> & {runId: number}) {
   const loaded = await readInteractionRuntimeCandidateV1(input.scope, input.runId)
-  if (loaded.candidate.kind !== 'chat-situation-candidate' && loaded.candidate.kind !== 'chat-narrative-action-candidate' && loaded.candidate.kind !== 'chat-narrative-options-candidate') fail('当前候选不支持叙事审查')
+  if (loaded.candidate.kind !== 'chat-situation-candidate' && loaded.candidate.kind !== 'chat-narrative-action-candidate' && loaded.candidate.kind !== 'chat-control-handoff-candidate' && loaded.candidate.kind !== 'chat-narrative-options-candidate') fail('当前候选不支持叙事审查')
   const candidate = loaded.candidate
   return withNarrativeGenerationLock(candidate.productRuntimeSessionId, !!(input.runAI || input.runReviewAI), async () => {
     const latest = await readInteractionRuntimeCandidateV1(input.scope, input.runId)
-    if (latest.candidate.kind !== 'chat-situation-candidate' && latest.candidate.kind !== 'chat-narrative-action-candidate' && latest.candidate.kind !== 'chat-narrative-options-candidate') fail('叙事候选已变化')
+    if (latest.candidate.kind !== 'chat-situation-candidate' && latest.candidate.kind !== 'chat-narrative-action-candidate' && latest.candidate.kind !== 'chat-control-handoff-candidate' && latest.candidate.kind !== 'chat-narrative-options-candidate') fail('叙事候选已变化')
     const situation = latest.candidate.kind === 'chat-situation-candidate'
     const skillId = situation ? 'character.chat-situation-construction' : latest.candidate.kind === 'chat-narrative-options-candidate' ? 'character.chat-narrative-options' : latest.candidate.kind === 'chat-narrative-action-candidate' && latest.candidate.revision ? CHAT_ACTION_REVISION_SKILL : 'character.chat-narrative-action'
     const stepId = situation ? CHAT_SITUATION_REVIEW_STEP_V1 : CHAT_ACTION_REVIEW_STEP_V1
@@ -575,6 +613,64 @@ export async function resumeChatMemoryReviewV1(input: Pick<InteractionRuntimeGen
 
 export const resumeChatSituationReviewV1 = resumeChatNarrativeReviewV1
 
+/** Explicit recovery of a saved selection. Selection and expression responses
+ * are consumed once from their original evidence; an ambiguous call is never
+ * sent again. The existing review/adoption chain still owns the final action. */
+export async function resumeChatNarrativeActionV1(input: Pick<InteractionRuntimeGenerationInputV1,
+  'scope' | 'aiConfig' | 'runAI' | 'runReviewAI' | 'signal' | 'onNarrativeActionSaved' | 'onActionExpressionBoundary'> & {runId: number}) {
+  const loaded = await readInstanceAgentRunV1(input.scope, input.runId)
+  if (chatActionChoiceVersionForContractV1(loaded.contract) !== 1 || !loaded.run.productRuntimeSessionId) fail('当前运行没有可恢复的角色选择步骤')
+  await withNarrativeGenerationLock(loaded.run.productRuntimeSessionId, !!(input.runAI || input.runReviewAI), async () => {
+    let snapshot = await readInstanceAgentRunV1(input.scope, input.runId)
+    const saved = await readLatestVerifiedAgentRunCheckpointV1(input.scope, input.runId, {owner: 'instance'})
+    if (saved && isCandidate(saved.resumePayload)) return
+    if (snapshot.projection.state !== 'running') fail('当前角色行动已停止，不能继续表达')
+    const sessionId = snapshot.run.productRuntimeSessionId!, boundary = snapshot.contract.scope.runtime!
+    const stepId = INTERACTION_RUNTIME_STEP_ID_V1
+    const requested = snapshot.events.filter(event => event.type === 'model.requested' && event.payload.stepId === stepId)
+    const retained = snapshot.events.filter(event => event.type === 'evidence.artifact.recorded' && event.payload.stepId === stepId && event.payload.artifactKind === 'raw-response')
+    if (requested.length && !retained.length) fail('表达调用结果未知；保留原运行，不会再次调用')
+    const choiceRaw = snapshot.events.filter(event => event.type === 'evidence.artifact.recorded' && event.payload.stepId === CHAT_ACTION_CHOICE_STEP_V1 && event.payload.artifactKind === 'raw-response')
+    if (!choiceRaw.length) fail('选择调用结果未知或尚未保存；保留原运行，不会再次调用')
+    const binding = snapshot.contract.executionBindings!.find(item => item.stepId === stepId)!
+    if (binding.version !== 2) fail('表达缺少冻结的输出额度')
+    if (!retained.length) {
+      const executionBinding = await createAgentSkillExecutionBindingV2(getAgentSkillV1('character.chat-narrative-action'))
+      const modelIdentity = input.runAI ? {provider: 'test-adapter', model: 'injected', transport: 'chat-v1'}
+        : {provider: input.aiConfig?.provider, model: input.aiConfig?.model, transport: 'chat-v1'}
+      if (await hashCanonicalValue({executionBinding, modelIdentity}) !== snapshot.contract.runtimeBindingHash) fail('表达配置或功能版本已变化，请恢复原配置；不会换约重发')
+    }
+    const packets = snapshot.events.filter(event => event.type === 'evidence.artifact.recorded' && event.payload.stepId === CHAT_ACTION_CHOICE_STEP_V1 && event.payload.artifactKind === 'context-packet')
+    if (packets.length !== 1 || packets[0].type !== 'evidence.artifact.recorded') fail('缺少原选择输入')
+    const packet = JSON.parse(await readAgentRunArtifactExactV1({projectId: input.scope.projectId, artifactKind: 'context-packet', contentHash: packets[0].payload.contentHash}))
+    const participantKey = stringValue(packet.participantKey, 'participantKey', 160)
+    await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: snapshot.contract.scope, participantKey})
+    const generation: InteractionRuntimeGenerationInputV1 = {...input, productRuntimeSessionId: sessionId, participantKey,
+      skillId: 'character.chat-narrative-action', objective: snapshot.contract.objective}
+    try {
+      const assembled = await assembleContext({projectId: input.scope.projectId, scope: input.scope, worldGroupId: snapshot.run.worldGroupId ?? null,
+        productRuntimeSessionId: sessionId, interactionParticipantKey: participantKey, sourceKeys: ['interactionRuntime'],
+        ...(['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50'].includes(binding.promptVersion) ? {chatActionContextRunId: snapshot.run.id} : {}),
+        provider: input.aiConfig?.provider, model: input.aiConfig?.model, inputBudgetMaxTokens: CHAT_ACTION_CHOICE_INPUT_TOKENS_V1})
+      snapshot = (await chooseRuntimeChatActionV1({scope: input.scope, snapshot, participantKey, assembled, actorMessages: packet.actorMessages,
+        aiConfig: input.aiConfig, runAI: input.runAI, signal: input.signal})).snapshot
+      const proof = await readChatActionChoiceEvidenceV1({scope: input.scope, snapshot, participantKey})
+      const expressed = await executeRuntimeExpressionV1({input: generation, snapshot, messages: proof.messages,
+        contextManifestHash: proof.expressionManifest.manifestHash, promptVersion: binding.promptVersion,
+        maxOutputTokens: binding.maxOutputTokens, resumeProof: proof})
+      snapshot = expressed.snapshot
+      if (input.signal?.aborted) fail('运行已取消')
+      await retainRuntimeCandidateV1({input: generation, snapshot, output: expressed.output, promptVersion: binding.promptVersion,
+        audience: resolveChatActionWireAudienceV1(proof.original.interaction!, participantKey), initialState: proof.original,
+        runtimeBoundary: boundary, contextManifestHash: proof.expressionManifest.manifestHash, revision: null})
+    } catch (error) {
+      return failRuntimeGenerationV1(generation, input.runId, error)
+    }
+  })
+  await input.onNarrativeActionSaved?.(input.runId)
+  return resumeChatNarrativeReviewV1(input)
+}
+
 async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInputV1): Promise<{ snapshot: AgentRunSnapshotV1; candidate: InteractionRuntimeCandidateV1 }> {
   const participantKey = stringValue(input.participantKey, 'participantKey', 160)
   if (input.signal?.aborted) fail('运行已取消')
@@ -612,6 +708,9 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
     && (await db.productRuntimeSessions.get(input.productRuntimeSessionId))?.kind === 'character-interaction'
   const executionBinding = memoryReview || situation || [CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)
     ? await createAgentSkillExecutionBindingV2(skill) : createAgentSkillExecutionBindingV1(skill)
+  const actionChoice = initialState.interaction ? chatNeedsActionChoiceV1({skillId: input.skillId, promptVersion: executionBinding.promptVersion,
+    state: initialState.interaction, actorKey: participantKey}) : false
+  if (actionChoice && initialState.interaction!.remainingDirectorBudget < 3) fail('当前场景行动选择、表达与审查预算不足')
   const modelIdentity = input.runAI
     ? { provider: 'test-adapter', model: 'injected', transport: 'chat-v1' }
     : { provider: input.aiConfig?.provider, model: input.aiConfig?.model, transport: 'chat-v1' }
@@ -621,7 +720,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
     scope: input.scope,
     productRuntimeSessionId: input.productRuntimeSessionId,
     worldGroupId: boundary.scope.worldGroupId,
-    contract: await buildContract({ objective, boundary, skillId: input.skillId, runtimeBindingHash, executionBinding, memoryReview }),
+    contract: await buildContract({ objective, boundary, skillId: input.skillId, runtimeBindingHash, executionBinding, memoryReview, actionChoice }),
   })
   await input.onRunCreated?.(snapshot.run.id)
   snapshot = await append(input.scope, snapshot, 'step.scheduled', { stepId: INTERACTION_RUNTIME_STEP_ID_V1 })
@@ -636,6 +735,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       sourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       ...(revision ? {chatActionRevisionCurrentRunId: snapshot.run.id} : {}),
       ...(situation ? {chatSituationConstructionRunId: snapshot.run.id} : {}),
+      ...(['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50'].includes(executionBinding.promptVersion) ? {chatActionContextRunId: snapshot.run.id} : {}),
       provider: input.aiConfig?.provider,
       model: input.aiConfig?.model,
       inputBudgetMaxTokens: 16_000,
@@ -656,7 +756,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       declaredSourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       assembled,
-      readerVersion: situation ? 'chat-situation-runtime-view-v15' : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? CHAT_CONTEXT_READER_VERSION_V10 : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? 'chat-situation-runtime-view-v15' : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? chatActionContextVersionsV1(executionBinding.promptVersion).readerVersion : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
@@ -664,7 +764,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       manifestHash: manifest.manifestHash,
     })
     const roleContext = [CHAT_ACTION_REVISION_SKILL, 'character.chat-narrative-action', 'character.chat-narrative-options'].includes(input.skillId)
-      ? buildInteractionContextWindow(initialState.interaction!, participantKey) : undefined
+      ? buildInteractionContextWindow(initialState.interaction!, participantKey, {retrievalVersion: chatActionContextVersionsV1(executionBinding.promptVersion).retrievalVersion}) : undefined
     const coordinatorSelection = situation ? await readChatCoordinatorSelectionEvidenceV1({projectId: input.scope.projectId, scope: input.scope,
       worldGroupId: boundary.scope.worldGroupId, productRuntimeSessionId: input.productRuntimeSessionId, chatSituationConstructionRunId: snapshot.run.id}, assembled.text) : undefined
     if (roleContext || situation) {
@@ -675,132 +775,200 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
         stepId: INTERACTION_RUNTIME_STEP_ID_V1, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence,
       })).snapshot
     }
-    const messages = prompt({ objective, skillId: input.skillId, context: assembled.text, roleContext, producerVersion: executionBinding.promptVersion })
-    snapshot = (await recordAgentRunArtifactV1({
-      scope: input.scope, runId: snapshot.run.id, productRuntimeSessionId: input.productRuntimeSessionId,
-      artifactKind: 'rendered-request', content: JSON.stringify(messages),
-      stepId: INTERACTION_RUNTIME_STEP_ID_V1, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence,
-    })).snapshot
-    snapshot = await append(input.scope, snapshot, 'model.requested', {
-      stepId: INTERACTION_RUNTIME_STEP_ID_V1,
-      attempt: 1,
-      bindingHash: await hashCanonicalValue({ runtimeBindingHash, manifestHash: manifest.manifestHash, messages }),
-    })
-    if (input.signal?.aborted) fail('运行已取消')
-    const output = input.runAI
-      ? await input.runAI(messages, input.signal)
-      : await chat(messages, {...input.aiConfig!, maxTokens: Math.min(input.aiConfig!.maxTokens ?? skill.maxOutputTokens, skill.maxOutputTokens)}, {
-          category: `runtime.${input.skillId}`,
-          projectId: input.scope.projectId,
-          contextOverflowPolicy: 'reject',
-        }, input.signal)
-    snapshot = await append(input.scope, snapshot, 'model.responded', {
-      stepId: INTERACTION_RUNTIME_STEP_ID_V1,
-      attempt: 1,
-      outputHash: await hashCanonicalValue(output),
-    })
-    // Keep the exact visible model response before parsing. A malformed JSON
-    // reply must remain inspectable without another paid generation attempt.
-    snapshot = (await recordAgentRunArtifactV1({
-      scope: input.scope, runId: snapshot.run.id, productRuntimeSessionId: input.productRuntimeSessionId,
-      artifactKind: 'raw-response', content: output,
-      stepId: INTERACTION_RUNTIME_STEP_ID_V1, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence,
-    })).snapshot
-    if (input.signal?.aborted) fail('运行已取消')
-    const draft = parseModelDraft({ skillId: input.skillId, output })
-    if (revision && draft.kind === 'chat-narrative-action-candidate') assertChatActionRevisionExpressionV1(revision, draft.action)
-    const state = await readProductRuntimeState(input.productRuntimeSessionId)
-    const sceneId = state.interaction?.activeScene?.sceneId
-    if (!sceneId) fail('模型返回时互动场景已经结束')
-    const commandId = draft.kind === 'scene-director-candidate'
-      ? null
-      : `harness:${snapshot.run.id}:${draft.kind}`
-    const common: RuntimeCandidateBaseV1 = {
-      version: 1,
-      portable: false,
-      runId: snapshot.run.id,
-      participantKey,
-      sceneId,
-      ...boundary.scope.runtime,
-      contextManifestHash: manifest.manifestHash,
-      commandId,
-    }
-    let body: Record<string, unknown>
-    if (draft.kind === 'chat-situation-candidate') {
-      assertChatInquiryBindingV1(draft.draft.inquiryResult, executionBinding.promptVersion, snapshot.contract.executionBindings?.find(binding => binding.skillId === 'character.chat-situation-review')?.promptVersion)
-      const triggerSequence = initialState.interaction!.chatNarrative!.triggers.slice(-1)[0]!.requestedSequence
-      await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: snapshot.contract.scope, participantKey, view: 'chat-situation'})
-      previewChatSituationV1(initialState.interaction!, {sequence: boundary.scope.runtime.baseSequence + 1, triggerSequence, draft: draft.draft})
-      body = {...common, ...draft, triggerSequence, review: null}
-    } else if (draft.kind === 'chat-narrative-action-candidate' || draft.kind === 'chat-narrative-options-candidate') {
-      const triggerSequence = initialState.interaction!.chatNarrative!.triggers.slice(-1)[0]!.requestedSequence
-      // Validate against the same captured version before retaining an adoptable
-      // candidate; adoption repeats this check in the event transaction.
+    const audience = supportsChatActionWireV1(executionBinding.promptVersion)
+      ? resolveChatActionWireAudienceV1(initialState.interaction!, participantKey, revision?.action.audienceKeys) : undefined
+    let messages = prompt({ objective, skillId: input.skillId, context: assembled.text, roleContext, producerVersion: executionBinding.promptVersion, audience })
+    if (actionChoice) {
+      const chosen = await chooseRuntimeChatActionV1({scope: input.scope, snapshot, participantKey, assembled, actorMessages: messages,
+        aiConfig: input.aiConfig, runAI: input.runAI, signal: input.signal, onDurableBoundary: input.onActionChoiceBoundary})
+      snapshot = chosen.snapshot
+      messages = appendChatActionChoiceProposalV1(messages, chosen.choice, roleContext!, executionBinding.promptVersion)
       await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: snapshot.contract.scope, participantKey})
-      if (draft.kind === 'chat-narrative-options-candidate') assertChatNarrativeOptionsPreviewableV1(initialState.interaction!, draft.options)
-      for (const action of draft.kind === 'chat-narrative-options-candidate' ? draft.options : [draft.action]) previewChatNarrativeActionV1(initialState.interaction!, {sequence: boundary.scope.runtime.baseSequence + 1,
-        triggerSequence, actorKey: participantKey, messageId: `message:harness:${snapshot.run.id}`, action})
-      body = {...common, ...draft, triggerSequence, review: null, ...(revision ? {revision: {sourceCandidateHash: revision.candidateHash, sourceReviewHash: revision.reviewHash}} : {})}
-    } else if (draft.kind === 'character-reply-candidate') {
-      const replyToSequence = input.replyToSequence ?? draft.replyToSequence
-      const source = state.interaction?.messages.find(item => item.eventSequence === replyToSequence)
-      if (!source || source.role !== 'player' || source.supersededBySequence != null
-        || (source.audienceKeys != null && !source.audienceKeys.includes(participantKey))) {
-        fail('角色回复目标不是该角色可见的现行玩家消息')
-      }
-      const supersedesSequence = input.supersedesSequence ?? null
-      if (supersedesSequence != null) {
-        const superseded = state.interaction?.messages.find(item => item.eventSequence === supersedesSequence)
-        if (!superseded || superseded.role !== 'character' || superseded.speakerKey !== participantKey
-          || superseded.replyToSequence !== replyToSequence || superseded.supersededBySequence != null) {
-          fail('重试指定的旧回复无效')
-        }
-      }
-      const budgetCost = input.replyBudgetCost == null
-        ? draft.budgetCost
-        : integer(input.replyBudgetCost, 'replyBudgetCost', 0, 1_000_000)
-      body = { ...common, ...draft, replyToSequence, supersedesSequence, budgetCost }
-    } else if (draft.kind === 'memory-curator-candidate') {
-      body = { ...common, ...draft, memoryId: `memory:harness:${snapshot.run.id}` }
-    } else {
-      body = { ...common, ...draft, ...(input.replyToSequence != null ? {replyToSequence: input.replyToSequence} : {}) }
     }
-    const candidate = { ...body, candidateHash: await hashCanonicalValue(body) } as unknown as InteractionRuntimeCandidateV1
-    snapshot = await append(input.scope, snapshot, 'candidate.persisted', {
+    const expressed = await executeRuntimeExpressionV1({input, snapshot, messages, contextManifestHash: manifest.manifestHash,
+      promptVersion: executionBinding.promptVersion, maxOutputTokens: skill.maxOutputTokens})
+    snapshot = expressed.snapshot
+    const output = expressed.output
+    if (input.signal?.aborted) fail('运行已取消')
+    return await retainRuntimeCandidateV1({input, snapshot, output, promptVersion: executionBinding.promptVersion, audience,
+      initialState, runtimeBoundary: boundary.scope.runtime, contextManifestHash: manifest.manifestHash, revision})
+  } catch (error) {
+    return failRuntimeGenerationV1(input, snapshot.run.id, error)
+  }
+}
+
+async function failRuntimeGenerationV1(input: InteractionRuntimeGenerationInputV1, runId: number, error: unknown): Promise<never> {
+  if (error instanceof ChatActionChoiceHostInterruptionV1) throw error
+  const current = await readInstanceAgentRunV1(input.scope, runId)
+  if (['failed', 'cancelled'].includes(current.projection.state)) throw error
+  let snapshot = current
+  if (current.projection.steps[INTERACTION_RUNTIME_STEP_ID_V1]?.status === 'running') {
+    snapshot = await append(input.scope, current, 'step.failed', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
       attempt: 1,
-      candidateHash: candidate.candidateHash,
-      requiresConfirmation: false,
+      code: input.signal?.aborted ? 'runtime-generation-cancelled' : 'runtime-generation-failed',
+      retryable: !input.signal?.aborted,
+      category: input.signal?.aborted ? 'cancelled' : 'protocol',
+      action: 'fail',
     })
-    const saved = await createAgentRunCheckpointV1({
-      scope: input.scope,
-      runId: snapshot.run.id,
-      productRuntimeSessionId: input.productRuntimeSessionId,
-      resumePayload: candidate,
-      expectedLastSequence: snapshot.projection.lastSequence,
-    })
-    return { snapshot: saved.snapshot, candidate }
-  } catch (error) {
-    const current = await readInstanceAgentRunV1(input.scope, snapshot.run.id)
-    if (['failed', 'cancelled'].includes(current.projection.state)) throw error
-    snapshot = current
-    if (current.projection.steps[INTERACTION_RUNTIME_STEP_ID_V1]?.status === 'running') {
-      snapshot = await append(input.scope, current, 'step.failed', {
-        stepId: INTERACTION_RUNTIME_STEP_ID_V1,
-        attempt: 1,
-        code: input.signal?.aborted ? 'runtime-generation-cancelled' : 'runtime-generation-failed',
-        retryable: !input.signal?.aborted,
-        category: input.signal?.aborted ? 'cancelled' : 'protocol',
-        action: 'fail',
-      })
-    }
-    if (snapshot.projection.state !== 'failed' && snapshot.projection.state !== 'cancelled') {
-      await append(input.scope, snapshot, input.signal?.aborted ? 'run.cancelled' : 'run.failed', input.signal?.aborted
-        ? { reason: 'runtime-generation-cancelled' }
-        : { code: 'runtime-generation-failed', retryable: false })
-    }
-    throw error
   }
+  if (snapshot.projection.state !== 'failed' && snapshot.projection.state !== 'cancelled') {
+    await append(input.scope, snapshot, input.signal?.aborted ? 'run.cancelled' : 'run.failed', input.signal?.aborted
+      ? { reason: 'runtime-generation-cancelled' }
+      : { code: 'runtime-generation-failed', retryable: false })
+  }
+  throw error
+}
+
+async function executeRuntimeExpressionV1(args: {
+  input: InteractionRuntimeGenerationInputV1; snapshot: AgentRunSnapshotV1; messages: ChatMessage[]; contextManifestHash: string
+  promptVersion: string; maxOutputTokens: number; resumeProof?: Awaited<ReturnType<typeof readChatActionChoiceEvidenceV1>>
+}) {
+  const {input, messages, contextManifestHash, promptVersion, maxOutputTokens, resumeProof} = args
+  let {snapshot} = args
+  const stepId = INTERACTION_RUNTIME_STEP_ID_V1
+  const requested = snapshot.events.filter(event => event.type === 'model.requested' && event.payload.stepId === stepId)
+  const retained = snapshot.events.filter(event => event.type === 'evidence.artifact.recorded' && event.payload.stepId === stepId && event.payload.artifactKind === 'raw-response')
+  if (requested.length || retained.length) {
+    if (requested.length === 1 && !retained.length) fail('表达调用结果未知；保留原运行，不会再次调用')
+    if (!resumeProof) fail('表达已有调用证据，不能重复发送')
+    await readChatActionOutputBudgetV1(input.scope, snapshot)
+    return {snapshot, output: (await readChatActionChoiceExpressionV1({scope: input.scope, snapshot, proof: resumeProof})).output}
+  }
+  if (resumeProof) {
+    const executionBinding = await createAgentSkillExecutionBindingV2(getAgentSkillV1(input.skillId))
+    const modelIdentity = input.runAI ? {provider: 'test-adapter', model: 'injected', transport: 'chat-v1'}
+      : {provider: input.aiConfig?.provider, model: input.aiConfig?.model, transport: 'chat-v1'}
+    if (await hashCanonicalValue({executionBinding, modelIdentity}) !== snapshot.contract.runtimeBindingHash) fail('表达配置或功能版本已变化，请恢复原配置；不会换约重发')
+  }
+  if (!input.runAI && !input.aiConfig) fail('缺少表达模型配置')
+  if (input.signal?.aborted) fail('运行已取消')
+  const requestOptions = input.runAI ? undefined : chatActionRequestOptionsV1(promptVersion, input.aiConfig?.provider)
+  const deliveredRequest = requestOptions ? {version: 1, messages, requestOptions} : messages
+  const priorRequests = snapshot.events.filter(event => event.type === 'evidence.artifact.recorded' && event.payload.stepId === stepId && event.payload.artifactKind === 'rendered-request')
+  if (priorRequests.length) {
+    const prior = priorRequests[0]
+    if (priorRequests.length !== 1 || prior.type !== 'evidence.artifact.recorded' || prior.payload.attempt !== 1
+      || await hashCanonicalValue(JSON.parse(await readAgentRunArtifactExactV1({projectId: input.scope.projectId,
+        artifactKind: 'rendered-request', contentHash: prior.payload.contentHash}))) !== await hashCanonicalValue(deliveredRequest)) fail('已保存的表达请求与恢复输入不一致')
+  }
+  snapshot = (await recordAgentRunArtifactV1({scope: input.scope, runId: snapshot.run.id, productRuntimeSessionId: input.productRuntimeSessionId,
+    artifactKind: 'rendered-request', content: JSON.stringify(deliveredRequest), stepId, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence})).snapshot
+  await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: snapshot.contract.scope, participantKey: input.participantKey,
+    ...(input.skillId === 'character.chat-situation-construction' ? {view: 'chat-situation' as const} : {})})
+  await assertChatActionChoiceInputBudgetV1({scope: input.scope, snapshot, stepId, messages, requestOptions})
+  snapshot = await append(input.scope, snapshot, 'model.requested', {stepId, attempt: 1,
+    bindingHash: await hashCanonicalValue({runtimeBindingHash: snapshot.contract.runtimeBindingHash, manifestHash: contextManifestHash, messages, ...(requestOptions ? {requestOptions} : {})})})
+  const boundary = async (name: 'model.requested' | 'raw-response.saved') => {
+    try {await input.onActionExpressionBoundary?.(name, snapshot)} catch (error) {throw new ChatActionChoiceHostInterruptionV1(String(error))}
+  }
+  await boundary('model.requested')
+  if (input.signal?.aborted) fail('运行已取消')
+  const result: ChatResult = {}
+  const callConfig = input.aiConfig ? {...input.aiConfig, maxTokens: boundedChatOutputTokensV1(input.aiConfig.maxTokens, maxOutputTokens)} : undefined
+  const output = input.runAI ? await input.runAI(messages, input.signal)
+    : await chat(messages, callConfig!,
+      {category: `runtime.${input.skillId}`, projectId: input.scope.projectId, contextOverflowPolicy: 'reject'}, input.signal, result, requestOptions)
+  snapshot = await append(input.scope, snapshot, 'model.responded', {stepId, attempt: 1, outputHash: await hashCanonicalValue(output)})
+  snapshot = (await recordAgentRunArtifactV1({scope: input.scope, runId: snapshot.run.id, productRuntimeSessionId: input.productRuntimeSessionId,
+    artifactKind: 'raw-response', content: output, stepId, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence})).snapshot
+  snapshot = await recordChatActionOutputBudgetV1({scope: input.scope, snapshot, stepId, output, result, aiConfig: callConfig, injected: !!input.runAI})
+  await boundary('raw-response.saved')
+  await readChatActionOutputBudgetV1(input.scope, snapshot)
+  return {snapshot, output}
+}
+
+async function retainRuntimeCandidateV1(args: {
+  input: InteractionRuntimeGenerationInputV1; snapshot: AgentRunSnapshotV1; output: string; promptVersion: string; audience?: readonly string[]
+  initialState: Awaited<ReturnType<typeof readProductRuntimeState>>
+  runtimeBoundary: Awaited<ReturnType<typeof captureRuntimeHarnessBoundaryV1>>['scope']['runtime']
+  contextManifestHash: string; revision: Awaited<ReturnType<typeof readChatActionRevisionSourceV1>>
+}): Promise<{snapshot: AgentRunSnapshotV1; candidate: InteractionRuntimeCandidateV1}> {
+  const {input, output, promptVersion, audience, initialState, runtimeBoundary, contextManifestHash, revision} = args
+  const participantKey = input.participantKey
+  let {snapshot} = args
+  const draft = parseModelDraft({ skillId: input.skillId, output, promptVersion: promptVersion, audience })
+  if (revision && draft.kind === 'chat-narrative-action-candidate') assertChatActionRevisionExpressionV1(revision, draft.action)
+  const state = await readProductRuntimeState(input.productRuntimeSessionId)
+  const sceneId = state.interaction?.activeScene?.sceneId
+  if (!sceneId) fail('模型返回时互动场景已经结束')
+  const commandId = draft.kind === 'scene-director-candidate'
+    ? null
+    : `harness:${snapshot.run.id}:${draft.kind}`
+  const common: RuntimeCandidateBaseV1 = {
+    version: 1,
+    portable: false,
+    runId: snapshot.run.id,
+    participantKey,
+    sceneId,
+    ...runtimeBoundary,
+    contextManifestHash: contextManifestHash,
+    commandId,
+  }
+  let body: Record<string, unknown>
+  if (draft.kind === 'chat-situation-candidate') {
+    assertChatInquiryBindingV1(draft.draft.inquiryResult, promptVersion, snapshot.contract.executionBindings?.find(binding => binding.skillId === 'character.chat-situation-review')?.promptVersion)
+    const triggerSequence = initialState.interaction!.chatNarrative!.triggers.slice(-1)[0]!.requestedSequence
+    await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: snapshot.contract.scope, participantKey, view: 'chat-situation'})
+    previewChatSituationV1(initialState.interaction!, {sequence: runtimeBoundary.baseSequence + 1, triggerSequence, draft: draft.draft})
+    body = {...common, ...draft, triggerSequence, review: null}
+  } else if (draft.kind === 'chat-control-handoff-candidate') {
+    assertChatControlHandoffBindingsV1(snapshot.contract)
+    const proof = await readChatActionChoiceEvidenceV1({scope: input.scope, snapshot, participantKey})
+    assertChatControlHandoffContextV1(draft.handoff, proof.roleContext)
+    const triggerSequence = initialState.interaction!.chatNarrative!.triggers.slice(-1)[0]!.requestedSequence
+    await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: snapshot.contract.scope, participantKey})
+    previewChatControlHandoffV1(initialState.interaction!, {sequence: runtimeBoundary.baseSequence + 1, triggerSequence, actorKey: participantKey, handoff: draft.handoff})
+    body = {...common, ...draft, triggerSequence, review: null}
+  } else if (draft.kind === 'chat-narrative-action-candidate' || draft.kind === 'chat-narrative-options-candidate') {
+    const triggerSequence = initialState.interaction!.chatNarrative!.triggers.slice(-1)[0]!.requestedSequence
+    // Validate against the same captured version before retaining an adoptable
+    // candidate; adoption repeats this check in the event transaction.
+    await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: snapshot.contract.scope, participantKey})
+    if (draft.kind === 'chat-narrative-options-candidate') assertChatNarrativeOptionsPreviewableV1(initialState.interaction!, draft.options)
+    for (const action of draft.kind === 'chat-narrative-options-candidate' ? draft.options : [draft.action]) previewChatNarrativeActionV1(initialState.interaction!, {sequence: runtimeBoundary.baseSequence + 1,
+      triggerSequence, actorKey: participantKey, messageId: `message:harness:${snapshot.run.id}`, action})
+    body = {...common, ...draft, triggerSequence, review: null, ...(revision ? {revision: {sourceCandidateHash: revision.candidateHash, sourceReviewHash: revision.reviewHash}} : {})}
+  } else if (draft.kind === 'character-reply-candidate') {
+    const replyToSequence = input.replyToSequence ?? draft.replyToSequence
+    const source = state.interaction?.messages.find(item => item.eventSequence === replyToSequence)
+    if (!source || source.role !== 'player' || source.supersededBySequence != null
+      || (source.audienceKeys != null && !source.audienceKeys.includes(participantKey))) {
+      fail('角色回复目标不是该角色可见的现行玩家消息')
+    }
+    const supersedesSequence = input.supersedesSequence ?? null
+    if (supersedesSequence != null) {
+      const superseded = state.interaction?.messages.find(item => item.eventSequence === supersedesSequence)
+      if (!superseded || superseded.role !== 'character' || superseded.speakerKey !== participantKey
+        || superseded.replyToSequence !== replyToSequence || superseded.supersededBySequence != null) {
+        fail('重试指定的旧回复无效')
+      }
+    }
+    const budgetCost = input.replyBudgetCost == null
+      ? draft.budgetCost
+      : integer(input.replyBudgetCost, 'replyBudgetCost', 0, 1_000_000)
+    body = { ...common, ...draft, replyToSequence, supersedesSequence, budgetCost }
+  } else if (draft.kind === 'memory-curator-candidate') {
+    body = { ...common, ...draft, memoryId: `memory:harness:${snapshot.run.id}` }
+  } else {
+    body = { ...common, ...draft, ...(input.replyToSequence != null ? {replyToSequence: input.replyToSequence} : {}) }
+  }
+  const candidate = { ...body, candidateHash: await hashCanonicalValue(body) } as unknown as InteractionRuntimeCandidateV1
+  const priorCandidate = snapshot.events.filter(event => event.type === 'candidate.persisted' && event.payload.stepId === INTERACTION_RUNTIME_STEP_ID_V1).slice(-1)[0]
+  if (priorCandidate?.type === 'candidate.persisted') {
+    if (priorCandidate.payload.candidateHash !== candidate.candidateHash) fail('已保存的候选与原表达结果不一致，不能覆盖')
+  } else snapshot = await append(input.scope, snapshot, 'candidate.persisted', {
+    stepId: INTERACTION_RUNTIME_STEP_ID_V1, attempt: 1, candidateHash: candidate.candidateHash, requiresConfirmation: false,
+  })
+  try {await input.onActionExpressionBoundary?.('candidate.persisted', snapshot)} catch (error) {throw new ChatActionChoiceHostInterruptionV1(String(error))}
+  const saved = await createAgentRunCheckpointV1({
+    scope: input.scope,
+    runId: snapshot.run.id,
+    productRuntimeSessionId: input.productRuntimeSessionId,
+    resumePayload: candidate,
+    expectedLastSequence: snapshot.projection.lastSequence,
+  })
+  return { snapshot: saved.snapshot, candidate }
 }
 
 function candidateBody(candidate: InteractionRuntimeCandidateV1): Omit<InteractionRuntimeCandidateV1, 'candidateHash'> {
@@ -817,7 +985,7 @@ function isCandidate(value: unknown): value is InteractionRuntimeCandidateV1 {
     && typeof row.stateHash === 'string' && typeof row.visibilityHash === 'string'
     && typeof row.releaseHash === 'string' && typeof row.contextManifestHash === 'string'
     && typeof row.candidateHash === 'string'
-    && ['character-reply-candidate', 'scene-director-candidate', 'memory-curator-candidate', 'chat-narrative-action-candidate', 'chat-narrative-options-candidate', 'chat-situation-candidate'].includes(String(row.kind))
+    && ['character-reply-candidate', 'scene-director-candidate', 'memory-curator-candidate', 'chat-narrative-action-candidate', 'chat-control-handoff-candidate', 'chat-narrative-options-candidate', 'chat-situation-candidate'].includes(String(row.kind))
 }
 
 export async function readInteractionRuntimeCandidateV1(scope: WorkspaceScope, runId: number): Promise<{
@@ -833,7 +1001,7 @@ export async function readInteractionRuntimeCandidateV1(scope: WorkspaceScope, r
   return { snapshot: saved.snapshot, candidate }
 }
 
-async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSequence: number, optionKey?: string, evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1} = {}): Promise<ProductRuntimeEvent | null> {
+async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSequence: number, optionKey?: string, evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1} = {}): Promise<ProductRuntimeEvent | null> {
   if (candidate.kind === 'scene-director-candidate') return null
   const envelope = {
     sessionId: candidate.productRuntimeSessionId,
@@ -849,6 +1017,11 @@ async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSeque
     if (!candidate.review) fail('行动尚未审查，不能采用')
     return commitChatNarrativeAction({...envelope, actorKey: candidate.participantKey, triggerSequence: candidate.triggerSequence,
       messageId: `message:harness:${candidate.runId}`, action: candidate.action, review: candidate.review, ...evidenceVersions, harnessRun: {id: candidate.runId, lastSequence: runSequence}})
+  }
+  if (candidate.kind === 'chat-control-handoff-candidate') {
+    if (!candidate.review) fail('交还控制尚未审查，不能采用')
+    return commitChatControlHandoff({...envelope, actorKey: candidate.participantKey, triggerSequence: candidate.triggerSequence,
+      handoff: candidate.handoff, review: candidate.review, harnessRun: {id: candidate.runId, lastSequence: runSequence}})
   }
   if (candidate.kind === 'chat-narrative-options-candidate') {
     const selected = selectedChatNarrativeOptionV1(candidate.options, candidate.review, optionKey)
@@ -900,12 +1073,14 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
     if (confirmation?.type === 'confirmation.recorded' && (confirmation.payload.candidateHash !== candidate.candidateHash || recordedOption !== optionKey)) fail('该运行已选择另一条候选；改换已发生走向须从选择前分支')
   } else if (input.optionKey != null) fail('当前运行不是可比较的行动候选组')
   const commandId = options ? `${candidate.commandId}:${optionKey}` : candidate.commandId
+  if (candidate.kind === 'chat-control-handoff-candidate') assertChatControlHandoffBindingsV1(snapshot.contract)
   if (candidate.kind === 'chat-situation-candidate') assertChatInquiryBindingV1(candidate.draft.inquiryResult,
     snapshot.contract.executionBindings?.find(binding => binding.skillId === 'character.chat-situation-construction')?.promptVersion,
     snapshot.contract.executionBindings?.find(binding => binding.skillId === 'character.chat-situation-review')?.promptVersion)
   let adopted = snapshot.events.find(event => event.type === 'runtime.candidate.adopted')
   const completedAdoption = adopted?.type === 'runtime.candidate.adopted' ? adopted : null
   if (completedAdoption && snapshot.projection.state === 'completed') {
+    await readChatActionTerminalReceiptV1(input.scope, snapshot)
     const commandEvents = completedAdoption.payload.commandIds.length
       ? await db.productRuntimeEvents.where('sessionId').equals(candidate.productRuntimeSessionId).toArray()
       : []
@@ -974,16 +1149,20 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
       candidateHash: candidate.candidateHash, decision: 'adopt', reviewItemId: optionKey!, reviewDecision: 'acknowledged', note: `玩家选定行动候选 ${optionKey}`})
     await input.onDurableBoundary?.('confirmation.recorded', snapshot)
   }
-  const evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1} = {}
+  const evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1} = {}
   if (!adopted && ['chat-situation-candidate', 'chat-narrative-action-candidate', 'chat-narrative-options-candidate'].includes(candidate.kind)) {
     // Recovery may already have committed the command. Verify its producer
     // against the original state, never the current default reader or new head.
     const original = await readChatRuntimeStateAtSequenceV1(candidate.productRuntimeSessionId, candidate.baseSequence)
     const situation = candidate.kind === 'chat-situation-candidate'
+    if (!situation) {
+      const choiceVersion = chatActionChoiceVersionForContractV1(snapshot.contract)
+      if (choiceVersion !== undefined) evidenceVersions.actionChoiceVersion = choiceVersion
+    }
     const reader = await readChatCandidateRetrievalVersion(snapshot, input.scope.projectId,
       situation ? 'chatSituationRuntime' : 'interactionRuntime', situation ? undefined : candidate.participantKey, original.interaction ?? undefined)
-    if (reader === 'chat-relevance-v6' || reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10') evidenceVersions.factEvidenceVersion = 1
-    if (!situation && (reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10')) evidenceVersions.resolutionEvidenceVersion = 1
+    if (reader === 'chat-relevance-v6' || reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10' || (reader === 'chat-relevance-v11' || reader === 'chat-relevance-v12')) evidenceVersions.factEvidenceVersion = 1
+    if (!situation && (reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10' || (reader === 'chat-relevance-v11' || reader === 'chat-relevance-v12'))) evidenceVersions.resolutionEvidenceVersion = 1
   }
   const event = adopted
     ? priorCommand
@@ -1031,6 +1210,7 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
     await input.onDurableBoundary?.('runtime.candidate.adopted', snapshot)
   }
   if (adopted?.type !== 'runtime.candidate.adopted') fail('采用事件缺失')
+  const terminalVerifier = snapshot.contract.verificationPlan.find(plan => plan.id === 'runtime.terminal')?.verifier ?? INTERACTION_RUNTIME_VERIFIER_SET_V1
   if (!snapshot.events.some(item => item.type === 'step.succeeded' && item.payload.stepId === INTERACTION_RUNTIME_STEP_ID_V1)) {
     snapshot = await append(input.scope, snapshot, 'step.succeeded', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
@@ -1041,7 +1221,7 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
   }
   if (!snapshot.events.some(item => item.type === 'verification.started')) {
     snapshot = await append(input.scope, snapshot, 'verification.started', {
-      verifierSetVersion: INTERACTION_RUNTIME_VERIFIER_SET_V1,
+      verifierSetVersion: terminalVerifier,
     })
     await input.onDurableBoundary?.('verification.started', snapshot)
   }
@@ -1049,7 +1229,8 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
   if (version.sequence !== adopted.payload.resultingSequence) {
     fail('采用后 SIM 状态已继续推进，拒绝对过期终态签发回执')
   }
-  const receipt = await createVerificationReceiptV1({
+  const outputBudget = hasChatActionOutputBudgetV1(snapshot) ? await readChatActionOutputBudgetV1(input.scope, snapshot) : null
+  let receipt = await createVerificationReceiptV1({
     version: 1,
     runId: snapshot.run.id,
     generation: snapshot.projection.generation,
@@ -1058,15 +1239,19 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
     candidateHashes: [candidate.candidateHash],
     adoptionEventIds: event?.id == null ? [] : [event.id],
     postStateHash: version.stateHash,
-    verifierSetVersion: INTERACTION_RUNTIME_VERIFIER_SET_V1,
+    verifierSetVersion: terminalVerifier,
     criteria: [
       { id: 'runtime.candidate', status: 'passed', evidenceRefs: [`candidate:${candidate.candidateHash}`] },
       { id: 'runtime.freshness', status: 'passed', evidenceRefs: [`base:${candidate.baseSequence}:${candidate.stateHash}`] },
       { id: 'runtime.adoption', status: 'passed', evidenceRefs: [`post-state:${version.stateHash}`] },
       ...(options ? [{id: 'runtime.selection', status: 'passed' as const, evidenceRefs: [`selected:${optionKey}`, `command:${commandId}`]}] : []),
+      ...(outputBudget ? [{id: CHAT_ACTION_OUTPUT_BUDGET_CRITERION_V1, status: 'passed' as const, evidenceRefs: outputBudget.calls.map(call => `artifact:${call.receiptHash}`)}] : []),
     ],
     acceptedAt: Date.now(),
   })
+  const retained = await retainChatActionTerminalReceiptV1({scope: input.scope, snapshot, receipt})
+  snapshot = retained.snapshot; receipt = retained.receipt
+  if (terminalVerifier === CHAT_ACTION_TERMINAL_VERIFIER_V2) await input.onDurableBoundary?.('terminal-receipt.recorded', snapshot)
   snapshot = await append(input.scope, snapshot, 'verification.accepted', { receiptHash: receipt.receiptHash })
   return { snapshot, event, receiptHash: receipt.receiptHash }
 }

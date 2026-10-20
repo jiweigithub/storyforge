@@ -1,9 +1,9 @@
 import { db } from '../../db/schema'
+import type { AIRequestSettingsV1 } from '../../ai/client'
 import type {
   AgentRunContractV1,
   AgentRunEventTypeV1,
   AgentRunRecord,
-  ChatMessage,
   WorkspaceScope,
 } from '../../types'
 import { hashChapterText, normalizeChapterText } from '../../ai/chapter-memory/text-normalization'
@@ -22,6 +22,8 @@ import {
   type ConsistencyAgentRun,
 } from '../consistency-agent'
 import { AgentTeamBudgetTracker } from '../team-budget'
+import { captureWorkspaceContentRevisionV1 } from '../../authoring/content-revision'
+import { recordAgentRunArtifactV1 } from '../../memory/artifact-store'
 import {
   beginAgentRunRecoveryV1,
   completeAgentRunRecoveryV1,
@@ -41,7 +43,7 @@ import { createVerificationReceiptV1 } from './verification-receipt'
 
 export const CONSISTENCY_AUDIT_DURABLE_STEP_ID_V1 = 'chapter:consistency-audit' as const
 export const CONSISTENCY_AUDIT_VERIFIER_SET_V1 = 'chapter-consistency-audit-terminal-v1' as const
-export const CONSISTENCY_AUDIT_ADAPTER_VERSION_V1 = 'chapter-consistency-audit-durable-v1' as const
+export const CONSISTENCY_AUDIT_ADAPTER_VERSION_V1 = 'chapter-consistency-audit-durable-v5' as const
 
 const ACTIVE_STATES = new Set(['planned', 'running', 'paused', 'awaiting_confirmation', 'verifying'])
 const AUDIT_IN_FLIGHT = new Map<string, Promise<DurableConsistencyAuditResultV1>>()
@@ -74,8 +76,9 @@ export interface RunDurableConsistencyAuditInputV1 {
   mode: ExplicitConsistencyModeV1
   provider?: string
   model?: string
+  requestSettings?: AIRequestSettingsV1
   budget: AgentTeamBudgetTracker
-  call: (messages: ChatMessage[]) => Promise<string>
+  call: Parameters<typeof runConsistencyAgent>[0]['call']
   onDurableBoundary?: (boundary: ConsistencyAuditDurableBoundaryV1, snapshot: AgentRunSnapshotV1) => void | Promise<void>
 }
 
@@ -191,6 +194,9 @@ async function assertCandidateFresh(input: {
   if (await hashChapterText(chapter.content ?? '') !== input.candidate.sourceTextHash) {
     throw new Error('一致性审计候选已过期，正文内容发生变化。')
   }
+  if (input.candidate.context.contentRevisionHash && input.candidate.context.contentRevisionHash !== (
+    await captureWorkspaceContentRevisionV1({ scope: input.scope, worldGroupId: input.candidate.worldGroupId })
+  ).vectorHash) throw new Error('一致性审计候选已过期，作品资料发生变化。')
   const durable = input.candidate.durable
   if (!durable
     || durable.runId !== input.snapshot.run.id
@@ -344,9 +350,11 @@ async function executeDurableConsistencyAuditV1(
   if (await hashChapterText(chapter.content ?? '') !== sourceTextHash) {
     throw new Error('编辑器正文尚未稳定保存，不能创建一致性审计 Run。')
   }
+  const contentRevision = await captureWorkspaceContentRevisionV1({ scope: input.scope, worldGroupId: input.worldGroupId })
   const runtimeBindingHash = await hashCanonicalValue({
     version: 1,
     adapterVersion: CONSISTENCY_AUDIT_ADAPTER_VERSION_V1,
+    requestSettings: input.requestSettings ?? null,
     provider: input.provider?.trim() || 'unknown-provider',
     model: input.model?.trim() || 'unknown-model',
     mode: input.mode,
@@ -412,7 +420,14 @@ async function executeDurableConsistencyAuditV1(
       budget: input.budget,
       call: input.call,
       trace: {
-        contextAssembled: async ({ assembled }) => {
+        contextAssembled: async ({ assembled, messages }) => {
+          snapshot = (await recordAgentRunArtifactV1({
+            scope: input.scope, runId: snapshot.run.id,
+            stepId: CONSISTENCY_AUDIT_DURABLE_STEP_ID_V1, attempt: 1,
+            artifactKind: 'rendered-request',
+            content: JSON.stringify({ version: 'consistency-audit-request-v1', messages, provider: input.provider, model: input.model, settings: input.requestSettings }),
+            expectedLastSequence: snapshot.projection.lastSequence,
+          })).snapshot
           const manifest = await createContextManifestFromAssemblyV1({
             runId: snapshot.run.id,
             stepId: CONSISTENCY_AUDIT_DURABLE_STEP_ID_V1,
@@ -440,7 +455,13 @@ async function executeDurableConsistencyAuditV1(
           modelRequested = true
           await notify(input.onDurableBoundary, 'model.requested', snapshot)
         },
-        modelResponded: async ({ raw }) => {
+        modelResponded: async ({ raw, completion, finishReason }) => {
+          snapshot = (await recordAgentRunArtifactV1({
+            scope: input.scope, runId: snapshot.run.id,
+            stepId: CONSISTENCY_AUDIT_DURABLE_STEP_ID_V1, attempt: 1,
+            artifactKind: 'raw-response', content: JSON.stringify({ version: 'consistency-audit-received-v1', raw, completion, finishReason }),
+            expectedLastSequence: snapshot.projection.lastSequence,
+          })).snapshot
           snapshot = await append(input.scope, snapshot, 'model.responded', {
             stepId: CONSISTENCY_AUDIT_DURABLE_STEP_ID_V1,
             attempt: 1,
@@ -483,6 +504,7 @@ async function executeDurableConsistencyAuditV1(
     throw error
   }
   if (!manifestHash) throw new Error('一致性审计没有生成 ContextManifest。')
+  candidate = { ...candidate, context: { ...candidate.context, contentRevisionHash: contentRevision.vectorHash } }
   const used = input.budget.snapshot()
   snapshot = await append(input.scope, snapshot, 'budget.settled', {
     stepId: CONSISTENCY_AUDIT_DURABLE_STEP_ID_V1,
@@ -540,7 +562,7 @@ export async function runDurableConsistencyAuditV1(
   })
 }
 
-/** Mark a completed explicit audit stale when its chapter source changed.
+/** Mark a completed explicit audit stale when its chapter or frozen Canon changed.
  * Background/post-adoption reports keep their own lifecycle authorities. */
 export async function refreshDurableConsistencyAuditFreshnessV1(input: {
   scope: WorkspaceScope
@@ -564,6 +586,9 @@ export async function refreshDurableConsistencyAuditFreshnessV1(input: {
     chapter
     && await assertRecordInScope(input.scope, 'chapters', chapter, { owner: 'work' })
     && await hashChapterText(chapter.content ?? '') === input.candidate.sourceTextHash
+    && (!input.candidate.context.contentRevisionHash || input.candidate.context.contentRevisionHash === (
+      await captureWorkspaceContentRevisionV1({ scope: input.scope, worldGroupId: input.candidate.worldGroupId })
+    ).vectorHash)
   )
   if (current || snapshot.projection.state !== 'completed') return { current, snapshot }
   return {
@@ -571,7 +596,7 @@ export async function refreshDurableConsistencyAuditFreshnessV1(input: {
     snapshot: await staleAgentRunVerificationV1({
       scope: input.scope,
       runId: snapshot.run.id,
-      reason: `chapter-source-changed:${input.candidate.sourceTextHash}`,
+      reason: `chapter-or-context-source-changed:${input.candidate.sourceTextHash}`,
     }),
   }
 }

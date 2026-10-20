@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect} from '@playwright/test'
 
 for (const accepted of [true, false]) test(`known-place arrival and scene header remain atomic after reload/import (${accepted})`, async ({page}, info) => {
@@ -11,6 +12,7 @@ for (const accepted of [true, false]) test(`known-place arrival and scene header
   })
   const read = () => page.evaluate(async id => {const load = new Function('p', 'return import(p)'); return (await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(id)).interaction}, sessionId)
   await page.route('https://scene-transition.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const messages = route.request().postDataJSON().messages as Array<{content: string}>, review = messages[1].content.includes('本次持久化行动候选')
     calls.push(review ? 'review' : 'action'); let value: unknown
     if (review) {
@@ -24,7 +26,7 @@ for (const accepted of [true, false]) test(`known-place arrival and scene header
         newFacts: [{factKey: 'arrival-1', kind: 'observation', text: arrived, evidenceExcerpt: arrived, evidenceFactKeys: ['courtyard']}], disclosures: [], goalStatus: null, threadUpdates: [],
         sceneTransition: {destinationFactKey: 'courtyard', destinationExcerpt: '后院', arrivalFactKey: 'arrival-1', evidenceExcerpt: arrived, playerEventSequence: sourceSequence, playerExcerpt: request}}
     }
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(value)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, value)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   let f = await page.evaluate(async () => {

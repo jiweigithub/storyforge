@@ -11,7 +11,8 @@ import {listChatContextInspectionsV1, readChatContextInspectionV1} from '../../s
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger, setChatMessageRetrieval} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
+import {freezeLegacyChatActionContractFixture} from '../helpers/chat-historical-reader'
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => {vi.restoreAllMocks(); db.close()})
@@ -29,7 +30,7 @@ async function start() {
 }
 async function generate(f: Awaited<ReturnType<typeof start>>) {
   return generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '检查可见上下文',
-    runAI: async messages => {expect(JSON.stringify(messages)).toContain('无辜旅人'); return JSON.stringify({kind: 'speak', text: '我先查看门边。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})},
+    runAI: withChatActionChoiceFixture(async messages => {expect(JSON.stringify(messages)).toContain('无辜旅人'); return JSON.stringify({kind: 'speak', text: '我先查看门边。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})}),
     runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
 }
 
@@ -93,6 +94,7 @@ it('labels older calls without packets instead of reconstructing them as deliver
 })
 
 it('verifies a preserved v3 historical input using its original selection policy', async () => {
+  freezeLegacyChatActionContractFixture()
   const source = CONTEXT_SOURCES.find(s => s.key === 'interactionRuntime')!
   vi.spyOn(source, 'read').mockImplementation(async input => {
     const state = (await readProductRuntimeState(input.productRuntimeSessionId!)).interaction!
@@ -157,6 +159,7 @@ it.each(['actor', 'manifest', 'text', 'selection'])('rejects a consistently stor
 })
 
 it('verifies a preserved v5 input and its original selection after the memory retrieval upgrade', async () => {
+  freezeLegacyChatActionContractFixture()
   let selection: unknown
   vi.spyOn(CONTEXT_SOURCES.find(s => s.key === 'interactionRuntime')!, 'read').mockImplementation(async input => {
     const state = (await readProductRuntimeState(input.productRuntimeSessionId!)).interaction!, key = input.interactionParticipantKey!

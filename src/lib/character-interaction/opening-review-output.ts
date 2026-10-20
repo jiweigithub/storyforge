@@ -1,0 +1,74 @@
+import type {ChatRequestOptions} from '../ai/client'
+import {parseChatSituationCandidatesV1, type ChatNarrativeProductionSourceV1, type ChatSituationCandidatesV1} from './narrative-production'
+import {CHAT_OPENING_CHECKS} from './situation-production-review'
+
+/** Canonical, string-valued JSON Pointers only. The schema contains identities
+ * and paths, never source prose, model conclusions or newly granted knowledge. */
+function stringPaths(root: unknown, path = ''): string[] {
+  if (path.length > 300 || path.split('/').length > 20) return []
+  if (typeof root === 'string') return root.trim() && path ? [path] : []
+  if (!root || typeof root !== 'object') return []
+  return Object.entries(root).flatMap(([key, value]) =>
+    stringPaths(value, `${path}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`))
+}
+
+// The reviewer reads the complete registered input, but evidence quotes need
+// narrative text, not hundreds of hashes, resource keys and classification IDs.
+// Limiting transport enums does not remove any source content or change parsing.
+function sourceCitationPath(path: string): boolean {
+  return /^\/settings\/(?:openingSituation|playerRole|contentBoundaries|experience)$/u.test(path)
+    || /^\/settings\/characters\/\d+\/(?:privateKnowledge|voiceRules)$/u.test(path)
+    || /^\/participants\/\d+\/(?:name|voiceRules)$/u.test(path)
+    || path === '/source/playerRole'
+    || /^\/source\/knowledge\/\d+\/(?:content|discovery\/condition)$/u.test(path)
+    || /^\/source\/sourceUnits\/bundles\/\d+\/(?:source\/fragments\/\d+\/valueJson|candidate\/fragments\/\d+\/(?:facts|constraints)\/\d+\/text|permissions\/\d+\/discovery\/condition)$/u.test(path)
+}
+function optionCitationPath(path: string): boolean {
+  return /^\/(?:title|pitch)$/u.test(path)
+    || /^\/situation\/(?:title|location|timeLabel)$/u.test(path)
+    || /^\/situation\/facts\/\d+\/(?:text|discovery\/condition)$/u.test(path)
+    || /^\/situation\/goals\/\d+\/(?:desire|concern|boundary)$/u.test(path)
+    || /^\/situation\/(?:beliefs|possibilities)\/\d+\/text$/u.test(path)
+    || /^\/situation\/threads\/\d+\/(?:title|question|closureSignals\/\d+)$/u.test(path)
+}
+
+export function chatOpeningReviewOutputSchemaV1(
+  source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1,
+): NonNullable<ChatRequestOptions['jsonSchema']> {
+  parseChatSituationCandidatesV1(candidates, source)
+  const text = (maxLength: number) => ({type: 'string', minLength: 1, maxLength})
+  const object = (properties: Record<string, unknown>) =>
+    ({type: 'object', properties, required: Object.keys(properties), additionalProperties: false})
+  const array = (items: unknown, minItems: number, maxItems: number) => ({type: 'array', items, minItems, maxItems})
+  const choice = (values: string[]) => ({type: 'string', enum: values})
+  const evidence = (target: 'source' | 'option', paths: string[]) =>
+    object({target: choice([target]), pointer: choice(paths), quote: text(800)})
+  const options = candidates.options.map(option => {
+    const directions = option.situation.possibilities.flatMap((direction, possibilityIndex) => {
+      const goals = option.situation.goals.filter(goal => goal.actorKey === direction.actorKey)
+      const facts = option.situation.facts.filter(fact =>
+        direction.evidenceFactKeys.includes(fact.factKey) && fact.audienceKeys.includes(direction.actorKey))
+      if (!goals.length || !facts.length) return []
+      return [object({
+        actorKey: choice([direction.actorKey]), goalKey: choice(goals.map(goal => goal.goalKey)),
+        possibilityIndex: {type: 'integer', enum: [possibilityIndex]},
+        basisFactKeys: array(choice(facts.map(fact => fact.factKey)), 1, Math.min(3, facts.length)),
+        mode: choice(['act', 'wait']), expectedChange: text(600), unresolved: text(600),
+      })]
+    })
+    return object({
+      optionKey: choice([option.optionKey]),
+      agency: {anyOf: [{type: 'null'}, ...directions]},
+      checks: array(object({
+        check: choice([...CHAT_OPENING_CHECKS]), passed: {type: 'boolean'}, reason: text(1000),
+        evidence: array({anyOf: [
+          {$ref: '#/$defs/sourceEvidence'}, evidence('option', stringPaths(option).filter(optionCitationPath)),
+        ]}, 1, 4),
+      }), CHAT_OPENING_CHECKS.length, CHAT_OPENING_CHECKS.length),
+    })
+  })
+  return {name: 'chat_opening_review_v1', strict: true, schema: {
+    ...object({options: array({anyOf: options}, options.length, options.length)}),
+    $defs: {sourceEvidence: evidence('source', stringPaths(source).filter(sourceCitationPath))},
+  }}
+}

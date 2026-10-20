@@ -13,8 +13,7 @@ import { getFactPredicate } from './fact-predicate-registry'
 import { retrieveChunks, embedQuery, readNarrativeSummaryContext } from '../retrieval/retrieval'
 import { isEmbeddingReady, embeddingModelTag } from '../ai/adapters/embedding-adapter'
 import { useAIConfigStore } from '../../stores/ai-config'
-import {CHAT_CONTEXT_SOURCE_TOKENS_V1} from '../character-interaction/context-selection'
-import {CHAT_COORDINATOR_SOURCE_TOKENS_V1} from '../character-interaction/coordinator-selection'
+import {CHAT_CONTEXT_SOURCE_TOKENS_V1, CHAT_COORDINATOR_SOURCE_TOKENS_V1} from '../character-interaction/source-budgets'
 import {
   buildCreativeRulesContext,
   buildHistoricalContext,
@@ -35,6 +34,7 @@ import { getChapterDerivedMemoryStatus, normalizeChapterText } from '../ai/chapt
 import { parseStages } from '../types/story-arc'
 import { parseFields } from '../types/state-card'
 import { parseBeats } from '../types/emotion-beat'
+import { DETAILED_SCENE_TASK_FIELDS } from '../types/detailed-outline'
 import { buildForeshadowTaskContext } from '../foreshadow/context'
 import { formatHeldItemsContext, readProjectHeldItems } from '../consistency/held-items'
 import { formatCharacterKnowledgeContext, readProjectCharacterKnowledge } from '../knowledge-ledger/knowledge-ledger'
@@ -59,6 +59,7 @@ import {
 import { readForeshadowSuggestionBaselineContextV1 } from '../foreshadow/suggestions'
 import { readStyleLearningBaselineContextV1 } from '../style/learning-agent'
 import { CANON_RESOURCE_PROVIDER_V1 } from '../context-gateway/canon-provider'
+import { WORK_AUTHORING_INTENT_PROVIDER_V1, readWorkAuthoringIntentV1 } from '../context-gateway/work-intent-provider'
 import {
   WORLD_RELEASE_NORMALIZATION_VERSION_V1,
   WORLD_RELEASE_PROVIDER_ID_V1,
@@ -714,12 +715,24 @@ async function readChatActionCandidateValue(input: AssembleContextInput) {
   const {readLatestVerifiedAgentRunCheckpointV1} = await import('../agent/run/checkpoint')
   const saved = await readLatestVerifiedAgentRunCheckpointV1(input.scope, input.chatActionCandidateRunId, {owner: 'instance'})
   if (!saved || saved.snapshot.run.productRuntimeSessionId !== input.productRuntimeSessionId) return null
-  const candidate = saved.resumePayload as {kind?: string; participantKey?: string; action?: unknown; options?: unknown}
+  const candidate = saved.resumePayload as {kind?: string; participantKey?: string; action?: unknown; options?: unknown; handoff?: unknown}
   if (!candidate?.participantKey) return null
   if (candidate.kind === 'chat-narrative-options-candidate') {
     const {parseChatNarrativeOptionsV1, CHAT_NARRATIVE_OPTION_KEYS_V1} = await import('../character-interaction/narrative-options')
     return {snapshot: saved.snapshot, value: {actorKey: candidate.participantKey,
       options: parseChatNarrativeOptionsV1(candidate.options).map((action, index) => ({optionKey: CHAT_NARRATIVE_OPTION_KEYS_V1[index], action}))}}
+  }
+  if (candidate.kind === 'chat-control-handoff-candidate') {
+    const {parseChatControlHandoffV1, readChatControlHandoffBasisV1} = await import('../character-interaction/control-handoff-contract')
+    const {assertChatControlHandoffBindingsV1} = await import('../character-interaction/control-handoff-wire')
+    const {readChatActionChoiceEvidenceV1} = await import('../character-interaction/action-choice-evidence')
+    assertChatControlHandoffBindingsV1(saved.snapshot.contract)
+    const {choice} = await readChatActionChoiceEvidenceV1({scope: input.scope, snapshot: saved.snapshot, participantKey: candidate.participantKey})
+    const handoff = parseChatControlHandoffV1(candidate.handoff)
+    const state = await readProductRuntimeStateForContext(input.productRuntimeSessionId)
+    if (!state.interaction) return null
+    return {snapshot: saved.snapshot, value: {actorKey: candidate.participantKey, handoff, actionChoice: choice,
+      basisMessages: readChatControlHandoffBasisV1(state.interaction, candidate.participantKey, handoff)}}
   }
   if (candidate.kind !== 'chat-narrative-action-candidate') return null
   const {parseChatNarrativeActionV1} = await import('../character-interaction/narrative-actions')
@@ -741,7 +754,7 @@ async function readChatActionCandidateContext(input: AssembleContextInput): Prom
   const saved = await readChatActionCandidateValue(input)
   if (!saved) return ''
   const candidate = saved.value
-  return `${'options' in candidate ? '【本次持久化行动候选组，仅供逐项审查，彼此互斥且均未发生】' : '【本次持久化行动候选，仅供审查，尚未展示或提交】'}\n${JSON.stringify(candidate)}`
+  return `${'options' in candidate ? '【本次持久化行动候选组，仅供逐项审查，彼此互斥且均未发生】' : 'handoff' in candidate ? '【本次持久化交还控制候选及完整对话依据，仅供审查，无新台词或后果】' : '【本次持久化行动候选，仅供审查，尚未展示或提交】'}\n${'handoff' in candidate ? canonicalStringify(candidate) : JSON.stringify(candidate)}`
 }
 
 async function readChatSituationRuntimeProjection(input: AssembleContextInput) {
@@ -824,9 +837,25 @@ async function readInteractionRuntimeContext(input: AssembleContextInput): Promi
   const profile = state.interaction.profiles.find(item => item.participantKey === participantKey)
   if (!profile) return ''
   const { buildInteractionContextWindow } = await import('../character-interaction/runtime')
+  let retrievalVersion: import('../character-interaction/context-selection').ChatRetrievalVersion = 'chat-relevance-v10'
+  if (input.chatActionContextRunId != null) {
+    if (!input.scope || session.kind !== 'character-interaction') throw new Error('角色对话标识读取缺少实例作用域')
+    const {readInstanceAgentRunV1} = await import('../agent/run/event-store')
+    const producer = await readInstanceAgentRunV1(input.scope, input.chatActionContextRunId)
+    const binding = producer.contract.executionBindings?.find(b => b.stepId === 'interaction:runtime-candidate')
+    if (producer.run.productRuntimeSessionId !== session.id || producer.projection.state !== 'running'
+      || binding?.skillId !== 'character.chat-narrative-action' || !['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50'].includes(binding.promptVersion)) {
+      throw new Error('角色对话标识读取缺少当前实例的生成合同')
+    }
+    const {assertRuntimeHarnessFreshV1} = await import('../agent/run/runtime-scope')
+    await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: producer.contract.scope, participantKey})
+    const {chatActionContextVersionsV1} = await import('../character-interaction/context-selection')
+    retrievalVersion = chatActionContextVersionsV1(binding.promptVersion).retrievalVersion
+  }
   const view = buildInteractionContextWindow(state.interaction, participantKey, {
     maxCharacters: 24_000,
     maxRecentMessages: 32,
+    retrievalVersion,
   })
   const town = state.town
   const townResident = town?.content.residents.find(item => {
@@ -1699,6 +1728,10 @@ async function readDetailedOutline(projectId: number, outlineNodeId?: number | n
     const bits = [s.summary, s.conflict ? `冲突:${s.conflict}` : '', s.location ? `地点:${s.location}` : '']
       .filter(Boolean).join(' / ')
     parts.push(`场景${i + 1} ${s.title || ''}: ${bits}`)
+    for (const { key, label } of DETAILED_SCENE_TASK_FIELDS) {
+      if (typeof s[key] === 'string' && s[key].trim()) parts.push(`${label}:${s[key]}`)
+    }
+    if (typeof s.notes === 'string' && s.notes.trim()) parts.push(`作者备注:${s.notes}`)
   })
   if (detail.prohibitions?.length) {
     parts.push(`不可写清单:${detail.prohibitions.join('；')}`)
@@ -2856,6 +2889,20 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     read: readAgentSearchResults,
   },
   {
+    key: 'workAuthoringIntent',
+    label: '作者确认的作品意图与文风',
+    scope: 'project',
+    ownerFrom: 'work',
+    layer: 'L0',
+    budgetTokens: 6000,
+    protectedFromTrim: true,
+    resources: WORK_AUTHORING_INTENT_PROVIDER_V1,
+    read: async input => readWorkAuthoringIntentV1({
+      ...await resolveScope({ projectId: input.projectId, scope: input.scope }),
+      worldGroupId: input.worldGroupId ?? null,
+    }),
+  },
+  {
     // RAG-1: 作者在可见资料库/节点中精确选择的记录字段。正文仍实时读取 Canon，
     // 稳定选择键和实际纳入证据分别由源记录元数据与节点运行快照保存。
     key: 'ragSelection',
@@ -3153,6 +3200,7 @@ export const CONTEXT_SOURCES: ContextSource[] = [
       await buildLongTermConsistencyDossierV1({
         scope: input.scope!,
         boundaryChapterId: input.chapterId!,
+        perspectiveCharacterId: input.characterId,
         query: input.stateReferenceText,
         maxTokens: 5_500,
       }),
@@ -3552,3 +3600,4 @@ export const CONTEXT_SOURCES: ContextSource[] = [
 export const CONTEXT_SOURCE_BY_KEY: ReadonlyMap<string, ContextSource> = new Map(
   CONTEXT_SOURCES.map(source => [source.key, source] as const),
 )
+import {canonicalStringify} from '../agent/run/hash'

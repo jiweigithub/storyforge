@@ -9,7 +9,7 @@ import {chatSituationConstructionRequestV1} from '../../src/lib/character-intera
 import {advanceChatNarrativeTurnV1, readChatNarrativeTurnResumeV1, resumeChatNarrativeTurnV1} from '../../src/lib/character-interaction/narrative-turn'
 import * as harness from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, commitChatNarrativeAction, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
-import {chatNarrativeFixture, chatActionReviewFixture, chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatNarrativeFixture, chatActionReviewFixture, chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {readInstanceAgentRunV1} from '../../src/lib/agent/run/event-store'
 import {isImportedCompletedInteractionRunV1} from '../../src/lib/character-interaction/runtime-run-recovery'
@@ -150,7 +150,7 @@ it('uses the formal bounded turn to propose, construct/review and then act witho
   const f = await seedChatNarrativeRuntimeFixture({actorSituationExpansion: true, maxActionsPerTrigger: 3})
   let roleCalls = 0, reviewCalls = 0, constructions = 0
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async messages => {
+    runAI: withChatActionChoiceFixture(async messages => {
       if (input.skillId === 'character.chat-situation-construction') {
         constructions++; expect(JSON.stringify(messages)).toContain(direction); return JSON.stringify(background())
       }
@@ -159,7 +159,7 @@ it('uses the formal bounded turn to propose, construct/review and then act witho
       if (roleCalls === 1) return JSON.stringify(proposal())
       expect(JSON.stringify(messages)).toContain('后门门闩有一处松动。')
       return JSON.stringify({...proposal(), kind: 'pause', text: '门闩确有松动，我先留意这一处，不打扰你休息。', evidenceFactKeys: ['latch'], situationRequest: null})
-    },
+    }),
     runReviewAI: async () => {reviewCalls++; return JSON.stringify(input.skillId === 'character.chat-situation-construction'
       ? {checks: situationReview().checks} : chatActionReviewOutputFixture())},
   }))
@@ -171,7 +171,7 @@ it('uses the formal bounded turn to propose, construct/review and then act witho
   expect(state.chatNarrative!.situation.seed.origin).toBe('continued-thread')
   expect(state.chatNarrative!.triggers[0].actionSequences).toHaveLength(2)
   expect(state.chatNarrative!.triggers[0].status).toBe('complete')
-  expect(state.remainingDirectorBudget).toBe(94)
+  expect(state.remainingDirectorBudget).toBe(92)
   db.close(); await db.open()
   expect((await readProductRuntimeState(f.sessionId)).interaction).toEqual(state)
 })
@@ -179,14 +179,14 @@ it('uses the formal bounded turn to propose, construct/review and then act witho
 function mockProgression(options: {keepProposing?: boolean; nextAction?: ChatNarrativeActionV1; beforeConstruction?: () => Promise<void>; beforeReview?: () => Promise<void>; rejectReview?: boolean} = {}) {
   const calls = {actions: 0, constructions: 0, reviews: 0}
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async () => {
+    runAI: withChatActionChoiceFixture(async () => {
       if (input.skillId === 'character.chat-situation-construction') {
         calls.constructions++; await options.beforeConstruction?.(); return JSON.stringify(background())
       }
       calls.actions++
       return JSON.stringify(calls.actions === 1 || options.keepProposing ? proposal()
         : options.nextAction ?? {...proposal(), kind: 'pause', text: '门闩的松动值得留意，我先停在这里。', evidenceFactKeys: ['latch'], situationRequest: null})
-    },
+    }),
     runReviewAI: async () => {
       calls.reviews++
       if (input.skillId !== 'character.chat-situation-construction') return JSON.stringify(chatActionReviewOutputFixture())
@@ -229,14 +229,14 @@ it('does not loop new construction when the second action proposes another direc
   expect(calls).toEqual({actions: 2, constructions: 1, reviews: 3})
   expect(state.chatNarrative!.pendingSituation!.sourceEventSequence).toBe(state.messages.at(-1)!.eventSequence)
   expect(chatSituationConstructionRequestV1(state, 'guard')).toBeNull()
-  expect(state.remainingDirectorBudget).toBe(94)
+  expect(state.remainingDirectorBudget).toBe(92)
 })
 
 it('rejects an unaffordable continuation before consuming a trigger or making a provider request', async () => {
   const f = await seedChatNarrativeRuntimeFixture({actorSituationExpansion: true, directorBudget: 5}), calls = mockProgression()
   await advance(f, 'scene-start')
   const before = await readProductRuntimeState(f.sessionId)
-  expect(before.interaction!.remainingDirectorBudget).toBe(3)
+  expect(before.interaction!.remainingDirectorBudget).toBe(2)
   await expect(advance(f, 'continue')).rejects.toThrow('预算不足')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   expect(calls).toEqual({actions: 1, constructions: 0, reviews: 1})
@@ -288,7 +288,7 @@ it('recovers a saved autonomous background and reviews it once without regenerat
   let runId = 0, constructions = 0, reviews = 0
   await expect(generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'player',
     skillId: 'character.chat-situation-construction', narrativeTriggerSequence: trigger.sequence, objective: '承接已审查角色方向',
-    runAI: async () => {constructions++; return JSON.stringify(background())},
+    runAI: withChatActionChoiceFixture(async () => {constructions++; return JSON.stringify(background())}),
     onSituationDraftSaved: id => {runId = id; throw new Error('host-crashed')},
   })).rejects.toThrow('host-crashed')
   db.close(); await db.open()
@@ -300,7 +300,7 @@ it('recovers a saved autonomous background and reviews it once without regenerat
   expect(state.chatNarrative!.pendingSituation).toBeUndefined()
   expect(state.chatNarrative!.situation.facts.filter(f => f.factKey === 'latch')).toHaveLength(1)
   expect(state.messages.map(m => m.role)).toEqual(['character'])
-  expect(state.remainingDirectorBudget).toBe(96)
+  expect(state.remainingDirectorBudget).toBe(95)
 })
 
 it('imports a completed run as history and continues its saved direction without replaying or revalidating old actions', async () => {

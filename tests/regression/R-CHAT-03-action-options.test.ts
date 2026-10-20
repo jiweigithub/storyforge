@@ -1,6 +1,6 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {parseChatNarrativeOptionsV1, bindChatNarrativeOptionsReviewV1, selectedChatNarrativeOptionV1} from '../../src/lib/character-interaction/narrative-options'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 import * as harness from '../../src/lib/character-interaction/harness'
 import {useCharacterInteractionPlayerStore as store} from '../../src/stores/character-interaction-player'
@@ -52,15 +52,15 @@ async function prepared() {
 function input(f: Awaited<ReturnType<typeof prepared>>) {
   return {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-options' as const,
     narrativeTriggerSequence: f.triggerSequence, objective: '比较两条互斥走向，等待玩家选择',
-    runAI: async () => JSON.stringify({options: options()}), runReviewAI: async () => JSON.stringify(reviews())}
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify({options: options()})), runReviewAI: async () => JSON.stringify(reviews())}
 }
 
 it('persists reviewed alternatives without consequences and commits only the explicit choice after refresh', async () => {
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId)
   let calls = 0
-  const generated = await generateInteractionRuntimeCandidateV1({...input(f), runAI: async messages => {
+  const generated = await generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async messages => {
     calls++; expect(JSON.stringify(messages)).not.toContain('柜台下'); return JSON.stringify({options: options()})
-  }, runReviewAI: async messages => {
+  }), runReviewAI: async messages => {
     calls++; const prompt = JSON.stringify(messages)
     expect(prompt).toContain('option-1'); expect(prompt).toContain('option-2'); expect(prompt).toContain('柜台下')
     return JSON.stringify(reviews())
@@ -137,7 +137,7 @@ it('serializes competing choices and preserves only the winner through branch an
 it('rejects alternatives hidden from the player before invoking the reviewer', async () => {
   const f = await prepared(), hidden = options(), review = vi.fn(async () => JSON.stringify(reviews()))
   hidden[0].audienceKeys = ['guard']
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => JSON.stringify({options: hidden}), runReviewAI: review})).rejects.toThrow('对玩家可见')
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => JSON.stringify({options: hidden})), runReviewAI: review})).rejects.toThrow('对玩家可见')
   expect(review).not.toHaveBeenCalled()
 })
 
@@ -166,7 +166,7 @@ it('player comparison stops at one candidate batch even with three actions allow
   await store.getState().load(f.scope, null, f.sessionId)
   const real = harness.generateInteractionRuntimeCandidateV1
   const generate = vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(i => real({...i,
-    runAI: async () => JSON.stringify({options: options()}), runReviewAI: async () => JSON.stringify(reviews())}))
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify({options: options()})), runReviewAI: async () => JSON.stringify(reviews())}))
   await store.getState().advanceNarrative({kind: 'scene-start', compare: true, participantKey: 'guard', aiConfig: {} as never})
   const runId = store.getState().narrativeOptions[0].runId
   expect(generate).toHaveBeenCalledTimes(1)
@@ -204,7 +204,7 @@ it('explicitly develops the shared background before comparison and cancellation
   await store.getState().load(f.scope, null, f.sessionId)
   const real = harness.generateInteractionRuntimeCandidateV1, calls: string[] = []
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(i => real({...i,
-    runAI: async () => {
+    runAI: withChatActionChoiceFixture(async () => {
       calls.push(i.skillId)
       if (i.skillId === 'character.chat-narrative-action') return JSON.stringify({...options()[0], kind: 'speak', newFacts: [], text: '我想先独自检查后门门闩。',
         situationRequest: {threadKey: 'investigate', direction: '检查后门门闩，补足局部线索。', evidenceFactKeys: ['lost'], evidenceExcerpt: '我想先独自检查后门门闩。'}})
@@ -212,7 +212,7 @@ it('explicitly develops the shared background before comparison and cancellation
         newFacts: [{factKey: 'latch', kind: 'object', text: '后门门闩有一处松动。', audienceKeys: ['guard', 'player'], evidenceFactKeys: ['lost'], seedExcerpt: '检查后门门闩'}],
         newGoals: [], newThreads: [], possibilities: [{actorKey: 'guard', text: '可以继续查看，也可以暂停。', evidenceFactKeys: ['latch']}]})
       return JSON.stringify({options: options()})
-    }, runReviewAI: async () => JSON.stringify(i.skillId === 'character.chat-narrative-options' ? reviews()
+    }), runReviewAI: async () => JSON.stringify(i.skillId === 'character.chat-narrative-options' ? reviews()
       : {checks: chatActionReviewOutputFixture().checks.filter(c => i.skillId !== 'character.chat-situation-construction' || c.check !== 'consequences')})}))
   await store.getState().advanceNarrative({kind: 'scene-start', participantKey: 'guard', aiConfig: {} as never})
   await store.getState().advanceNarrative({kind: 'continue', compare: true, participantKey: 'guard', aiConfig: {} as never})
@@ -231,7 +231,7 @@ it('does not reveal a private known fact through an unchosen disclosure preview'
   draft[0] = {...draft[0], kind: 'speak', text: '叶岑曾误指控一位无辜旅人，始终后悔。', newFacts: [],
     disclosures: [{factKey: 'regret', toParticipantKeys: ['player'], evidenceExcerpt: '叶岑曾误指控一位无辜旅人，始终后悔。'}]}
   const review = vi.fn(async () => JSON.stringify(reviews()))
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => JSON.stringify({options: draft}), runReviewAI: review})).rejects.toThrow('预览不能提前披露')
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => JSON.stringify({options: draft})), runReviewAI: review})).rejects.toThrow('预览不能提前披露')
   expect(review).not.toHaveBeenCalled()
   expect((await readProductRuntimeState(f.sessionId)).interaction!.chatNarrative!.situation.facts.find(f => f.factKey === 'regret')!.audienceKeys).toEqual(['guard'])
 })

@@ -8,7 +8,7 @@ import {readChatActionRevisionSourceV1} from '../../src/lib/character-interactio
 import {readChatMessageEditPlanV1, forkChatMessageEditV1} from '../../src/lib/character-interaction/narrative-edit'
 import {readChatContextInspectionV1} from '../../src/lib/character-interaction/context-inspector'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {CHAT_PROMISE_FIXTURE, chatPromiseActionFixture, chatFulfillActionFixture, chatCommitmentReviewOutputFixture} from '../helpers/chat-commitment-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
@@ -22,16 +22,16 @@ async function prepared() {
 }
 function input(f: Awaited<ReturnType<typeof prepared>>, action = chatPromiseActionFixture()) {
   return {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const,
-    objective: '依据当前局面处理自己的约定', runAI: async () => JSON.stringify(action), runReviewAI: async () => JSON.stringify(chatCommitmentReviewOutputFixture(action))}
+    objective: '依据当前局面处理自己的约定', runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatCommitmentReviewOutputFixture(action))}
 }
 
 it('recovers an exact reviewed promise, recalls it in a later scene, fulfills once and preserves portable branch evidence', async () => {
   const f = await prepared(), worlds = await db.worldReleases.toArray(), before = await readProductRuntimeState(f.sessionId)
   let runId = 0, calls = 0
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async messages => {
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async messages => {
     calls++; expect(messages[0].content).toContain('commitmentEffects'); expect(messages[1].content).not.toContain('柜台下')
     return JSON.stringify(chatPromiseActionFixture())
-  }, onNarrativeActionSaved: id => {runId = id; throw new Error('saved-before-review')}})).rejects.toThrow('saved-before-review')
+  }), onNarrativeActionSaved: id => {runId = id; throw new Error('saved-before-review')}})).rejects.toThrow('saved-before-review')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   db.close(); await db.open()
   await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async messages => {
@@ -51,10 +51,10 @@ it('recovers an exact reviewed promise, recalls it in a later scene, fulfills on
   const returned = await startInteractionScene({...await command(f.sessionId), sceneId: 'inn.return', sceneKey: 'inn'})
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'scene-start', sourceEventSequence: returned.sequence})
   const fulfill = chatFulfillActionFixture(promise.commitmentKey)
-  const generated = await generateInteractionRuntimeCandidateV1({...input(f, fulfill), runAI: async messages => {
+  const generated = await generateInteractionRuntimeCandidateV1({...input(f, fulfill), runAI: withChatActionChoiceFixture(async messages => {
     calls++; expect(messages[1].content).toContain(CHAT_PROMISE_FIXTURE); expect(messages[1].content).toContain(promise.commitmentKey)
     expect(messages[1].content).not.toContain('柜台下'); return JSON.stringify(fulfill)
-  }, runReviewAI: async messages => {
+  }), runReviewAI: async messages => {
     calls++; expect(messages[1].content).toContain(CHAT_PROMISE_FIXTURE); return JSON.stringify(chatCommitmentReviewOutputFixture(fulfill))
   }})
   const inspectionBefore = await readChatContextInspectionV1(f.scope, f.sessionId, generated.snapshot.run.id)
@@ -95,7 +95,7 @@ it('refuses an older frozen reviewer before making a review call or adopting a r
   const f = await prepared(), original = skills.getAgentSkillV1
   vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => {
     const skill = original(id)
-    return id === 'character.chat-narrative-action-review' ? {...skill, promptVersion: 'chat-narrative-action-review-v18'} : skill
+    return id === 'character.chat-narrative-action-review' ? {...skill, promptVersion: 'chat-narrative-action-review-v18'} : id === 'character.chat-narrative-action' ? {...skill, promptVersion: 'chat-narrative-action-v45'} : skill
   })
   let runId = 0, reviews = 0
   await expect(generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: id => {runId = id}, runReviewAI: async () => {reviews++; return JSON.stringify(chatCommitmentReviewOutputFixture(chatPromiseActionFixture()))}})).rejects.toThrow('旧审查合同')
@@ -117,7 +117,7 @@ it('registers only the chosen alternative and exposes shared promises without pr
   const f = await prepared(), first = chatPromiseActionFixture(), second = chatPromiseActionFixture('我答应检查门闩后告诉你结果。')
   second.audienceKeys.push('artisan')
   const actions = [first, second]
-  const generated = await generateInteractionRuntimeCandidateV1({...input(f), skillId: 'character.chat-narrative-options', runAI: async () => JSON.stringify({options: actions}),
+  const generated = await generateInteractionRuntimeCandidateV1({...input(f), skillId: 'character.chat-narrative-options', runAI: withChatActionChoiceFixture(async () => JSON.stringify({options: actions})),
     runReviewAI: async messages => {
       expect(messages[0].content).toContain('commitmentChecks')
       return JSON.stringify({options: actions.map((a, i) => ({optionKey: `option-${i+1}`, ...chatCommitmentReviewOutputFixture(a)}))})

@@ -11,6 +11,7 @@ import {hashProductProductionValueV2} from '../../src/lib/product-production/has
 import {selectedChatProductionNarrativeV1} from '../../src/lib/product-production/chat-situation-tasks'
 import type {ProductProductionTaskExecutionInputV1} from '../../src/lib/product-production/scheduler'
 import {chatOpeningAgencyReviewFixture, chatOpeningReviewFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
+import {buildChatOpeningFactCatalogV2, parseChatOpeningSourceBoundOutputV2} from '../../src/lib/character-interaction/opening-source-references'
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => {vi.restoreAllMocks(); db.close()})
@@ -81,6 +82,7 @@ it('preserves a semantic rejection with no claimed opportunity and prevents its 
 
 it.each(['content.chat-author-gate', 'content.narrative', 'integration.package'])('does not let legacy reports or absent dependencies satisfy the new %s contract', async taskKey => {
   const f = await seedChatNarrativeProductionFixture(), plan = await createProductProductionPlanV3({brief: f.brief, briefHash: await hashProductProductionValueV2(f.brief), buildNumber: 1})
+  f.candidates = await parseChatOpeningSourceBoundOutputV2(f.candidates, f.source, await buildChatOpeningFactCatalogV2(f.source))
   const task = plan.tasks.find(t => t.taskKey === taskKey)!
   expect(task.acceptanceGateIds).toContain(CHAT_OPENING_AGENCY_GATE_V2)
   const report = await createChatOpeningReviewV1(chatOpeningReviewFixture(f.candidates), f.source, f.candidates)
@@ -94,12 +96,44 @@ it.each(['content.chat-author-gate', 'content.narrative', 'integration.package']
 it('reads saved production/review bindings; rejects missing, foreign, unsupported or falsely upgraded contracts', async () => {
   const f = await seedChatNarrativeProductionFixture(), plan = await createProductProductionPlanV3({brief: f.brief, briefHash: await hashProductProductionValueV2(f.brief), buildNumber: 1})
   for (const [taskKey, oldVersion, newVersion] of [['content.product-module', 'chat-situation-production-v5', 'chat-situation-production-v6'], ['content.chat-opening-review', 'chat-opening-review-v1', 'chat-opening-review-v2']]) {
-    const input = {scope: f.scope, buildId: 7, buildNumber: 2, controlEpoch: 3, planHash: 'a'.repeat(64), taskRunId: 1, task: plan.tasks.find(t => t.taskKey === taskKey)!} as ProductProductionTaskExecutionInputV1
+    const originalTask = plan.tasks.find(t => t.taskKey === taskKey)!
+    const input = {scope: f.scope, buildId: 7, buildNumber: 2, controlEpoch: 3, planHash: 'a'.repeat(64), taskRunId: 1,
+      task: {...originalTask, acceptanceGateIds: originalTask.acceptanceGateIds.filter(id => !id.startsWith('chat.opening-targeted-repair.') && id !== 'chat.opening-source-references.v1' && id !== 'chat.opening-option-repair.v1' && id !== 'chat.opening-source-completeness.v1')}} as ProductProductionTaskExecutionInputV1
     const scope = {productBuildId: input.buildId, buildNumber: input.buildNumber, controlEpoch: input.controlEpoch, planHash: input.planHash, taskKey}
     const snapshot = {contract: {scope: {productProduction: scope}, executionBindings: [{stepId: taskKey, skillId: input.task.skillId, promptVersion: newVersion}]}} as runs.AgentRunSnapshotV1
     const read = vi.spyOn(runs, 'readAgentRunV1').mockResolvedValue(snapshot)
     await expect(readChatOpeningProductionVersionV1(input)).resolves.toEqual({groundedAgency: true})
     const binding = snapshot.contract.executionBindings![0]
+    if (taskKey === 'content.product-module') {
+      binding.promptVersion = 'chat-situation-production-v7'
+      const v8Task = {...originalTask, acceptanceGateIds: originalTask.acceptanceGateIds.filter(id => id !== 'chat.opening-source-references.v1' && id !== 'chat.opening-option-repair.v1' && id !== 'chat.opening-source-completeness.v1')}
+      const v7Task = {...v8Task, acceptanceGateIds: v8Task.acceptanceGateIds.map(id => id === 'chat.opening-targeted-repair.v2' ? 'chat.opening-targeted-repair.v1' : id)}
+      await expect(readChatOpeningProductionVersionV1({...input, task: v7Task})).resolves.toEqual({groundedAgency: true, targetedRepair: true})
+      await expect(readChatOpeningProductionVersionV1({...input, task: originalTask})).rejects.toThrow('不能自动换约')
+      binding.promptVersion = 'chat-situation-production-v8'
+      await expect(readChatOpeningProductionVersionV1({...input, task: v8Task})).resolves.toEqual({groundedAgency: true, targetedRepair: true, patchRepair: true})
+      await expect(readChatOpeningProductionVersionV1({...input, task: v7Task})).rejects.toThrow('不能自动换约')
+      await expect(readChatOpeningProductionVersionV1({...input, task: originalTask})).rejects.toThrow('不能自动换约')
+      const v9Task = {...originalTask, acceptanceGateIds: originalTask.acceptanceGateIds.filter(id => id !== 'chat.opening-option-repair.v1' && id !== 'chat.opening-source-completeness.v1')}
+      binding.promptVersion = 'chat-situation-production-v9'
+      await expect(readChatOpeningProductionVersionV1({...input, task: originalTask})).rejects.toThrow('不能自动换约')
+      await expect(readChatOpeningProductionVersionV1({...input, task: v9Task})).resolves.toEqual({groundedAgency: true, targetedRepair: true, patchRepair: true, sourceReferences: true})
+      await expect(readChatOpeningProductionVersionV1({...input, task: v8Task})).rejects.toThrow('不能自动换约')
+      await expect(readChatOpeningProductionVersionV1({...input, task: {...originalTask, inputArtifactKeys: ['design.game']}})).rejects.toThrow('不能自动换约')
+      await expect(readChatOpeningProductionVersionV1(input)).rejects.toThrow('不能自动换约')
+      await expect(readChatOpeningProductionVersionV1({...input, task: {...originalTask, budgetReservation: {...originalTask.budgetReservation, modelCalls: 1}}})).rejects.toThrow('不能自动换约')
+      const v10Task = {...originalTask, acceptanceGateIds: originalTask.acceptanceGateIds.filter(id => id !== 'chat.opening-source-completeness.v1')}
+      binding.promptVersion = 'chat-situation-production-v10'
+      await expect(readChatOpeningProductionVersionV1({...input, task: originalTask})).rejects.toThrow('不能自动换约')
+      await expect(readChatOpeningProductionVersionV1({...input, task: v10Task})).resolves.toEqual({groundedAgency: true, targetedRepair: true, patchRepair: true, sourceReferences: true, optionRepair: true})
+      await expect(readChatOpeningProductionVersionV1({...input, task: v9Task})).rejects.toThrow('不能自动换约')
+      await expect(readChatOpeningProductionVersionV1({...input, task: {...originalTask, inputArtifactKeys: ['design.game']}})).rejects.toThrow('不能自动换约')
+      binding.promptVersion = 'chat-situation-production-v11'
+      await expect(readChatOpeningProductionVersionV1({...input, task: originalTask})).resolves.toEqual({groundedAgency: true, targetedRepair: true, patchRepair: true, sourceReferences: true, optionRepair: true, completeSourceFacts: true})
+      await expect(readChatOpeningProductionVersionV1({...input, task: v10Task})).rejects.toThrow('不能自动换约')
+      binding.promptVersion = newVersion
+      await expect(readChatOpeningProductionVersionV1({...input, task: originalTask})).rejects.toThrow('不能自动换约')
+    }
     binding.promptVersion = oldVersion
     await expect(readChatOpeningProductionVersionV1(input)).rejects.toThrow('不能自动换约')
     const legacy = {...input, task: {...input.task, acceptanceGateIds: input.task.acceptanceGateIds.filter(g => g !== CHAT_OPENING_AGENCY_GATE_V2)}}

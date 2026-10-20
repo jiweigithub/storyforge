@@ -12,6 +12,8 @@
 
 ## Recommended sequence
 
+The optional scene tasks, whole-chapter review, and scoped revision below apply to source versions containing [PR #141](https://github.com/yuanbw2025/storyforge/pull/141), merged into main on October 20, 2026.
+
 1. Select a volume or chapter in Outline and chapter plans (大纲与章纲); establish the current level.
 2. Write or generate outline candidates; check continuity with completed content before confirming.
 3. In Scene beats (场景细纲), check characters, locations, conflicts, turns, and the chapter ending.
@@ -19,11 +21,37 @@
 5. Review the candidate, edit unsuitable passages, then confirm writing it back.
 6. Check the actual prose and save state, then perform [post-chapter review](/en/features/longform/continuity).
 
+## Scene outlines and chapter tasks
+
+Select the chapter in Outline and chapter plans, then open the separate Scene beats page. Expand optional scene tasks (场景任务) to record the entering state, scene goal, key choice, consequences, leaving state, and scene function / reader expectations. Fields may remain blank. Everyday, transition, and closing scenes are supported without requiring a punishment, enemy, or reward in every scene.
+
+Use Edit this chapter’s scene outline (编辑本章细纲), Write this chapter (写本章正文), and View this chapter’s scene outline (查看本章细纲) to move within the same chapter. Wait for current edits to save. Check requirements, sources, and target length before generation; requested length is not an exact guarantee.
+
+## Whole-chapter review and scoped revision
+
+1. Save the prose, open Quality review (质量审校), and choose Review, Expression and repetition, or Read-on appeal. Optionally enter Review instructions (本轮评审补充要求), then choose Start detection (开始检测). Incomplete chapter coverage blocks review; complete coverage can still miss or misjudge issues.
+2. Check quotations and select the issues to address. By default, only issue paragraphs may change. Expand Select other editable paragraphs (选择其它可改段落) when needed. In Protected quotations (保护原句), enter one exact original quotation per line; each must occur only once in the original.
+3. Optionally enter Revision instructions (本轮修稿要求), including actions, character expression, or closure to preserve. Choose Generate revision and recheck (生成修订并复核). A round permits one revision and one recheck, at most two additional model requests.
+4. Wait for the saved candidate and complete recheck, compare the versions, then confirm adoption or discard. A failed recheck retains a read-only preview and preserves the original. Authors must judge improvement even when the model reports it.
+5. Refreshing restores reports, instructions, and decisions without resending. Changed prose or sources can invalidate older reports and candidates. Inspect changes before explicitly starting another round.
+
+Node mode uses the same workflow. Connect Whole-chapter review and revision (全文评审与修订) and Scoped revision and recheck (定向修订与复核); select issues, scope, prompt, temperature, output limit, and AI configuration. Wait for official output before adopting or rejecting, then verify the same prose and formatting in step mode. Continuing after upstream adoption rereads current sources. Changed targets, sources, or links can still invalidate older candidates. Node mode as a whole remains a preview.
+
+These controls improve source handoff and author control; they do not guarantee a more engaging story or platform acceptance. Independent reader review and author timing are optional follow-up evaluations for this delivery. No questionnaire is required to use the features.
+
 ## Continuation and rewriting
 
 Continuation should follow the existing ending; polishing focuses on expression; rewriting may change events and characterization. Define the scope before calling AI, and keep the original or a version record.
 
 If important facts change, do not judge only the revised passage's fluency. Check effects on later chapter plans, foreshadowing, and character states.
+
+## When continuation preparation or outline dismissal fails
+
+If saving current edits, preparing continuity material, or assembling generation context fails after you choose Continue, the prose area shows the reason. Preserve the current text, address the indicated saving, material, or configuration issue, then explicitly retry. Generation not starting is not a save or completion acknowledgment.
+
+When dismissing a scene-outline or batch-outline candidate, a failed save of the rejection shows an error and retains the pending candidate for inspection and retry. The candidate is cleared only after rejection succeeds; failure is not recorded as successful dismissal. Preserve useful content rather than clearing the work.
+
+Both fixes are documented in [PR #166](https://github.com/yuanbw2025/storyforge/pull/166).
 
 ## After outline changes
 

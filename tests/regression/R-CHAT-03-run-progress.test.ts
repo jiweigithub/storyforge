@@ -3,7 +3,7 @@ import {db} from '../../src/lib/db/schema'
 import {readChatRunProgressV1} from '../../src/lib/character-interaction/run-progress'
 import {adoptInteractionRuntimeCandidateV1, cancelInteractionRuntimeRunV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => {vi.restoreAllMocks(); db.close()})
@@ -15,7 +15,7 @@ async function start() {
   return f
 }
 const action = {kind: 'speak', text: '我先查看门边。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
-const input = (f: Awaited<ReturnType<typeof start>>) => ({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '工程进度检查', runAI: async () => JSON.stringify(action), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+const input = (f: Awaited<ReturnType<typeof start>>) => ({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '工程进度检查', runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
 
 it('projects actual request and review boundaries without exposing text or mutating story/evidence', async () => {
   const f = await start(), before = await readProductRuntimeState(f.sessionId)
@@ -24,11 +24,11 @@ it('projects actual request and review boundaries without exposing text or mutat
   const generated = await generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: async id => {
     runId = id
     expect(await read()).toMatchObject({phase: 'preparing', label: '正在准备角色行动'})
-  }, runAI: async () => {
+  }, runAI: withChatActionChoiceFixture(async () => {
     calls++
     expect(await read()).toMatchObject({phase: 'generation', label: '等待角色行动'})
     return JSON.stringify(action)
-  }, runReviewAI: async messages => {
+  }), runReviewAI: async messages => {
     calls++
     expect(JSON.stringify(messages)).toContain('柜台下')
     const counts = [await db.agentRunEvents.count(), await db.productRuntimeEvents.count()]

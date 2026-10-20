@@ -5,7 +5,7 @@ import {seedChatSourceUnitConfirmationFixture, sourceUnitAuthorizationReportFixt
 import {saveChatDraftV1, readChatDraftV1} from '../../src/lib/character-interaction/draft-service'
 import {reviewChatSourceUnitConfirmationV1, adoptChatSourceUnitConfirmationV1} from '../../src/lib/character-interaction/source-unit-confirmation-harness'
 import {chatRoleProfileCompilerInput} from '../helpers/chat-role-profile'
-import {chatSituationCandidatesFixture, chatOpeningAgencyReviewFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatSituationCandidatesFixture, chatSituationReferenceDraftFixture, chatOpeningAgencyReviewFixture} from '../helpers/chat-narrative-production-fixture'
 import type {ChatNarrativeProductionSourceV1} from '../../src/lib/character-interaction/narrative-production'
 import {executeProductProductionCommand} from '../../src/lib/product-production/commands'
 import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
@@ -22,7 +22,7 @@ import {SOURCE_UNITS_FIXTURE_TEXT} from '../helpers/chat-source-units'
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => db.close())
 
-it('carries author-confirmed units through real production commands, source manifests, selection, Release, new session and portable restore', async () => {
+it.each([false, true])('carries author-confirmed units through real production commands, source manifests, selection, Release, new session and portable restore (references=%s)', async referenceWire => {
   // Scripted semantic decisions test the production boundary, not real-model quality.
   const f = await seedChatSourceUnitConfirmationFixture(), worlds = await db.worldReleases.toArray()
   const draft = await saveChatDraftV1(f.scope, f.draft.revision, {...f.settings, narrative: {...f.settings.narrative,
@@ -53,12 +53,16 @@ it('carries author-confirmed units through real production commands, source mani
     expect(source.settings.narrative.permissions.allowInquiryResults).toBe(true)
     expect(source.source.sourceUnits!.bundles[0].source.fragments[0].valueJson).toBe(JSON.stringify(SOURCE_UNITS_FIXTURE_TEXT))
     if (isGeneration) {
-      expect(input.system).toContain('每一条都必须在每个候选中作为唯一 reviewed-world 事实完整保留')
+      expect(input.system).toContain('带 source.unit 的逐项确认事实全部由系统保留')
       expect(input.system).toContain('人物存在不等于在场')
     }
     if (isReview) expect(input.system).toContain('系统校验身份、引用和知情范围')
-    const candidates = chatSituationCandidatesFixture(source)
-    const output = isGeneration ? candidates : isReview ? chatOpeningAgencyReviewFixture(candidates) : {schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: []}
+    const candidates = isReview ? JSON.parse((await db.productBuildArtifacts.filter(row => row.artifactKey === 'content.chat-candidates').last())!.payloadJson) : chatSituationCandidatesFixture(source)
+    const references = referenceWire && isGeneration ? await chatSituationReferenceDraftFixture(source, candidates) : null
+    // The author-confirmed units, including undiscoverable secrets, must survive
+    // even when the model selects no world fact at all.
+    if (references) for (const option of references.options) option.situation.worldFactKeys = []
+    const output = isGeneration ? references ?? candidates : isReview ? chatOpeningAgencyReviewFixture(candidates) : {schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: []}
     return {output: JSON.stringify(output), usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {
       schema: 'storyforge.provider-binding-receipt', version: 1, requirementKey, adapterId: 'configured-text.v1', adapterVersion: 1,
       provider: 'fixture', model: 'fixture-model', endpointOrigin: 'https://fixture.invalid', executionLocation: 'browser-direct',

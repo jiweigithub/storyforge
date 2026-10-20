@@ -3,12 +3,13 @@ import {createChatSourceRunHarnessV1} from './source-run-harness'
 import {readChatSourceUnitsContextV1, readChatSourceUnitsReviewContextV1, validateChatSourceUnitsRequestV1, validateChatSourceUnitsReviewRequestV1,
   type ChatSourceUnitsReviewRequestV1} from './source-units-context'
 import type {ChatSourceReviewRequestV1} from './source-review-context'
-import {CHAT_SOURCE_UNITS_PROMPT_V1, CHAT_SOURCE_UNITS_REVIEW_PROMPT_V1, createChatSourceUnitsArtifactV1, createChatSourceUnitsReviewArtifactV1} from './source-units-candidate'
+import {CHAT_SOURCE_UNITS_REVIEW_PROMPT_V1, createChatSourceUnitsArtifactV1, createChatSourceUnitsReviewArtifactV1} from './source-units-candidate'
+import {chatSourceUnitsPromptV1} from './source-observation-units'
 
 const generation = createChatSourceRunHarnessV1({
   step: 'chat:source-units', skill: 'chat.source-units.v1', entry: 'chat.source-units', category: 'authoring.chat-source-units',
   kind: 'storyforge.chat-source-units-run', verifier: 'chat-source-units-v1', lockKey: 'chat-source-units',
-  prompt: CHAT_SOURCE_UNITS_PROMPT_V1, objective: '从完整所选原文提出事实和保留限制候选；不写入作品设置或运行知识',
+  prompt: chatSourceUnitsPromptV1, objective: '从完整所选原文提出事实和保留限制候选；不写入作品设置或运行知识',
   criterion: 'source-units.quoted-candidate', writeTargets: [],
   source: {key: 'chat.source-units', options: (request: ChatSourceReviewRequestV1) => ({chatSourceUnitsRequest: request}),
     read: readChatSourceUnitsContextV1, validateRequest: validateChatSourceUnitsRequestV1},

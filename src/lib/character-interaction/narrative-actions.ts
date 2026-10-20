@@ -8,6 +8,7 @@ import {chatConversationEvidenceV1} from './narrative-conversation-evidence'
 import {applyChatPlayerGoalResumeV1, requireChatExistingGoalPauseV1, validateChatPlayerRequestEvidenceV1} from './narrative-player-pause'
 import {applyChatThreadFollowupGoalV1, chatCanFollowThreadV1} from './narrative-thread-followup'
 import {applyChatMemoryReconciliationsV1, parseChatMemoryReconciliationChecksV1} from './memory-reconciliation'
+import {chatReviewedActionAllowanceV1} from './action-choice-budget'
 import {assertChatResponseRetrievableV1, isChatMessageRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1, chatCanRespondAfterClosureV1} from './narrative-scheduling'
 import {canonicalStringify} from '../agent/run/hash'
@@ -414,12 +415,13 @@ export function chatNarrativeActionReviewPassedV1(review: ChatNarrativeActionRev
 
 /** New writes require reviewed expression and consequences. The original
  * reducer remains available only for exact replay of historical events. */
-export function applyReviewedChatNarrativeActionV1(state: CharacterInteractionRuntimeState, input: Parameters<typeof applyChatNarrativeActionV1>[1] & {review: unknown}) {
+export function applyReviewedChatNarrativeActionV1(state: CharacterInteractionRuntimeState, input: Parameters<typeof applyChatNarrativeActionV1>[1] & {review: unknown; actionChoiceVersion?: unknown}) {
+  const allowance = chatReviewedActionAllowanceV1(input.actionChoiceVersion)
+  if (state.remainingDirectorBudget < allowance) fail(allowance === 3 ? '角色行动选择、表达与审查预算不足' : '角色行动与审查预算不足')
   const result = previewChatNarrativeActionV1(state, input)
-  if (state.remainingDirectorBudget < 2) fail('角色行动与审查预算不足')
   const review = parseChatNarrativeActionReviewV1(input.review, parseChatNarrativeActionV1(input.action))
   if (!chatNarrativeActionReviewPassedV1(review)) fail('行动语义审查未通过，表达与后果均未提交')
   applyChatMemoryReconciliationsV1(state, result, {actorKey: input.actorKey as string, messageId: input.messageId as string, sequence: input.sequence, review})
-  result.remainingDirectorBudget -= 1
+  result.remainingDirectorBudget -= allowance - 1
   return result
 }

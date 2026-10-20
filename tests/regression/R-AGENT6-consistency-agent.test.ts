@@ -163,7 +163,7 @@ describe('AGENT-1 27.2c · 一致性 Agent', () => {
     })
   })
 
-  it('显式 Fast Guard 最多一次模型调用，伪造正文与证据引用不能进入报告', async () => {
+  it('显式 Fast Guard 最多一次模型调用，准确正文与证据引用可以进入报告', async () => {
     const { project, targetChapterId, targetOutlineId } = await seedConsistencyProject()
     let calls = 0
     let sentCreativeRule = false
@@ -192,22 +192,6 @@ describe('AGENT-1 27.2c · 一致性 Agent', () => {
               quote: '潮汐钥匙 ×1',
             }],
             reason: '正文重复写成获得。',
-          }, {
-            category: '伪造正文',
-            severity: 'hard',
-            quote: '正文里没有这句话。',
-            evidence: [],
-            reason: '不应通过。',
-          }, {
-            category: '伪造证据',
-            severity: 'hard',
-            quote: targetText,
-            evidence: [{
-              sourceType: 'canon',
-              sourceId: 999,
-              quote: '证据上下文里不存在。',
-            }],
-            reason: '无有效证据时不能保持 hard。',
           }],
           cognitionReferences: [],
           lifecycleReferences: [],
@@ -220,11 +204,36 @@ describe('AGENT-1 27.2c · 一致性 Agent', () => {
     expect(candidate.context.included).toContain('creativeRules')
     expect(candidate.budget.calls).toBe(1)
     expect(candidate.context.inputTokens).toBeLessThanOrEqual(16_000)
-    expect(candidate.findings.some(finding => finding.category === '伪造正文')).toBe(false)
-    expect(candidate.findings.find(finding => finding.category === '伪造证据')?.severity).toBe('unknown')
     expect(candidate.findings.some(finding => (
       finding.category === '物品' && finding.severity === 'hard'
     ))).toBe(true)
+  })
+
+  it.each(['正文', '证据'] as const)('混入伪造%s时整份拒绝，不保存有效子集或自动重发', async kind => {
+    const { project, targetChapterId, targetOutlineId } = await seedConsistencyProject()
+    const budget = new AgentTeamBudgetTracker('economy')
+    const valid = {
+      category: '物品', severity: 'hard', quote: targetText,
+      evidence: [{ sourceType: 'canon', sourceId: 1, quote: '潮汐钥匙 ×1' }],
+      reason: '正文重复写成获得。',
+    }
+    const invalid = kind === '正文'
+      ? { ...valid, quote: '正文里没有这句话。' }
+      : { ...valid, evidence: [{ sourceType: 'canon', sourceId: 999, quote: '证据上下文里不存在。' }] }
+    let calls = 0
+    await expect(runConsistencyAgent({
+      projectId: project.id!, chapterId: targetChapterId, outlineNodeId: targetOutlineId,
+      chapterTitle: '第二章 重逢', worldGroupId: null, chapterContent: targetHtml,
+      mode: 'fast', budget,
+      call: async () => {
+        calls += 1
+        return JSON.stringify({ findings: [valid, invalid], cognitionReferences: [], lifecycleReferences: [] })
+      },
+    })).rejects.toThrow('引文、证据无效')
+    expect(calls).toBe(1)
+    expect(budget.snapshot().calls).toBe(1)
+    expect(await db.agentEvents.count()).toBe(0)
+    expect((await db.chapters.get(targetChapterId))?.content).toBe(targetHtml)
   })
 
   it('报告写入归档事件流后可刷新恢复，同正文同模式重跑只更新一个事件', async () => {

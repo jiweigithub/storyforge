@@ -7,7 +7,7 @@ import {estimateTokens} from '../../src/lib/ai/context-budget'
 import {generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import {readChatContextInspectionV1} from '../../src/lib/character-interaction/context-inspector'
 import {commitInteractionPlayerMessage, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
-import {chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => db.close())
@@ -114,8 +114,8 @@ it('records the actual model selection and exposes only shared historical reason
   await requestChatNarrativeTrigger({...await envelope(), kind: 'player-response', sourceEventSequence: sent.sequence})
   let calls = 0
   const result = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '按已知资料回应',
-    runAI: async messages => {calls++; const text = JSON.stringify(messages); expect(text).toContain('靛蓝地图的出口在北墙'); expect(text).not.toContain('私密暗号');
-      return JSON.stringify({kind: 'speak', text: '我先核对地图，再决定怎样找铜印。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})},
+    runAI: withChatActionChoiceFixture(async messages => {calls++; const text = JSON.stringify(messages); expect(text).toContain('靛蓝地图的出口在北墙'); expect(text).not.toContain('私密暗号');
+      return JSON.stringify({kind: 'speak', text: '我先核对地图，再决定怎样找铜印。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})}),
     runReviewAI: async messages => {calls++; const text = JSON.stringify(messages); expect(text).toContain('出口在北墙'); expect(text).toContain('柜台下'); expect(text).toContain('omittedKnowledgeEntries');
       return JSON.stringify(chatActionReviewOutputFixture())}})
   const inspected = await readChatContextInspectionV1(f.scope, f.sessionId, result.snapshot.run.id)

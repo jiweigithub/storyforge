@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect} from '@playwright/test'
 import {openChatNarrativeTools} from './helpers/character-chat-ui'
 
@@ -10,6 +11,7 @@ test('three independent role consequences survive a local failure and explicit c
   const actors: string[] = []
   let calls = 0
   await page.route('https://chat-ensemble.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     calls++
     const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n')
     const review = prompt.includes('本次持久化行动候选')
@@ -29,7 +31,7 @@ test('three independent role consequences survive a local failure and explicit c
         newFacts: [{factKey: `consequence-${actor}`, kind: 'observation', text: data[2], evidenceFactKeys: [`prepared-${actor}`], evidenceExcerpt: data[2]}],
         disclosures: [], threadUpdates: [], goalStatus: null}
     }
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   const f = await page.evaluate(async () => {

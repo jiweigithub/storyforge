@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {expect, test} from '@playwright/test'
 
 for (const shared of [false, true]) for (const rejected of [false, true]) test(`disclosure retains redundant review evidence without hiding rejection (shared=${shared}, rejected=${rejected})`, async ({page}) => {
@@ -9,6 +10,7 @@ for (const shared of [false, true]) for (const rejected of [false, true]) test(`
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
   })
   await page.route('https://review-normalization.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const messages = route.request().postDataJSON().messages as Array<{content: string}>
     const review = messages[1].content.includes('本次持久化行动候选')
     calls.push(review ? 'review' : 'action')
@@ -18,7 +20,7 @@ for (const shared of [false, true]) for (const rejected of [false, true]) test(`
       : {kind: 'speak', text: spoken, goalKey: 'find-seal', evidenceFactKeys: [shared ? 'road' : 'regret'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
         newFacts: [], disclosures: shared ? [] : [{factKey: 'regret', toParticipantKeys: ['player'], evidenceExcerpt: spoken}], threadUpdates: [], goalStatus: null}
     if (review) rawReview = JSON.stringify(value)
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(value)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, value)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   const f = await page.evaluate(async shared => {

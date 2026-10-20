@@ -2,11 +2,11 @@ import {sha256Text} from '../../src/lib/ai/chapter-memory/text-normalization'
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import * as api from '../../src/lib/character-interaction/runtime-api'
-import {useHistoricalChatReaderFixture} from '../helpers/chat-historical-reader'
+import {useHistoricalChatReaderFixture, freezeLegacyChatActionContractFixture} from '../helpers/chat-historical-reader'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1, resumeChatNarrativeReviewV1} from '../../src/lib/character-interaction/harness'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {chatFactEvidenceAction as action} from '../helpers/chat-fact-evidence'
-import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture} from '../helpers/chat-narrative-fixture'
+import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {CHAT_SITUATION_REVIEW_CHECKS_V1, type ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
 import {chatInquiryDraftFixture, chatInquiryInputFixture, chatInquiryReviewFixture, prepareChatInquiryFixture} from '../helpers/chat-inquiry-result'
 
@@ -23,9 +23,10 @@ it.each(['current', 'saved-v9'] as const)('freezes provenance policy across revi
   }
   let runId = 0, calls = 0
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action',
-    objective: '事实依据持久化工程检查', runAI: async () => {calls++; return JSON.stringify(action)},
+    objective: '事实依据持久化工程检查', runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(action)}),
     onNarrativeActionSaved: id => {runId = id; throw Error('before-review')}})).rejects.toThrow('before-review')
   expect(await runtime(f.sessionId)).toEqual(before); vi.restoreAllMocks(); db.close(); await db.open()
+  if (reader === 'saved-v9') freezeLegacyChatActionContractFixture()
   await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async () => {calls++; return JSON.stringify(chatActionReviewOutputFixture())}})
   // Crash between the SIM transaction and the separate durable run adoption.
   const commit = api.commitChatNarrativeAction
@@ -96,7 +97,7 @@ it.each(['current', 'saved-v11'] as const)('records player situation facts only 
     useHistoricalChatReaderFixture('chat-situation-runtime-view-v11', 'chat-relevance-v5')
   }
   const result = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'player', skillId: 'character.chat-situation-construction',
-    objective: '情境事实来源工程检查', runAI: async () => JSON.stringify(draft), runReviewAI: async () => JSON.stringify({checks: CHAT_SITUATION_REVIEW_CHECKS_V1.map(check => ({check, passed: true, reason: '工程夹具'}))})})
+    objective: '情境事实来源工程检查', runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)), runReviewAI: async () => JSON.stringify({checks: CHAT_SITUATION_REVIEW_CHECKS_V1.map(check => ({check, passed: true, reason: '工程夹具'}))})})
   vi.restoreAllMocks()
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
   const metadata = (await runtime(f.sessionId)).chatNarrative!.factEvidence
@@ -106,7 +107,7 @@ it.each(['current', 'saved-v11'] as const)('records player situation facts only 
 it('records attributed inquiry speech without replacing discovered fact identities or creating provenance for old truths', async () => {
   const f = await prepareChatInquiryFixture(), draft = await chatInquiryDraftFixture(f.sessionId)
   const original = (await runtime(f.sessionId)).chatNarrative!.situation.facts.find(f => f.factKey === 'secret')!
-  const result = await generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: async () => JSON.stringify(draft), runReviewAI: async () => JSON.stringify(chatInquiryReviewFixture(draft))})
+  const result = await generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)), runReviewAI: async () => JSON.stringify(chatInquiryReviewFixture(draft))})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
   const story = (await runtime(f.sessionId)).chatNarrative!
   expect(story.factEvidence).toEqual({version: 1, records: [{factKey: 'clerk-statement', kind: 'observation', evidenceFactKeys: draft.inquiryResult!.evidenceFactKeys,

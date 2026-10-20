@@ -20,6 +20,7 @@ import {
   createAgentSkillExecutionBindingV1,
 } from '../execution-binding'
 import {
+  AgentRunStoreError,
   appendAgentRunEventV1,
   createAgentRunV1,
   readAgentRunChildV1,
@@ -385,16 +386,18 @@ export async function createChapterPostAdoptionDurableRunV1(input: {
     const runs = await readOwnedRows<Record<string, unknown>>(input.scope, 'agentRuns', { owner: 'work' })
     for (const row of runs.sort((a, b) => Number(b.updatedAt ?? 0) - Number(a.updatedAt ?? 0))) {
       if (typeof row.id !== 'number') continue
+      let existing: AgentRunSnapshotV1
       try {
-        const existing = await readAgentRunV1(input.scope, row.id)
-        if (existing.contract.automationAuthorization?.taskKey === input.authorization.taskKey
-          && (!input.parent || (existing.contract.lineage?.parent.runId === input.parent.runId
-            && existing.contract.lineage.parent.receiptHash === input.parent.receiptHash
-            && existing.contract.lineage.parent.artifactHash === input.parent.artifactHash))) {
-          return ensureChapterPostAdoptionAuthorizationPreparedV1(input.scope, existing)
-        }
+        existing = await readAgentRunV1(input.scope, row.id)
       } catch {
         // Corrupt or foreign evidence never hides a valid matching run.
+        continue
+      }
+      if (existing.contract.automationAuthorization?.taskKey === input.authorization.taskKey
+        && (!input.parent || (existing.contract.lineage?.parent.runId === input.parent.runId
+          && existing.contract.lineage.parent.receiptHash === input.parent.receiptHash
+          && existing.contract.lineage.parent.artifactHash === input.parent.artifactHash))) {
+        return recoverChapterPostAdoptionAuthorizationV1(input.scope, existing)
       }
     }
   }
@@ -414,7 +417,7 @@ export async function createChapterPostAdoptionDurableRunV1(input: {
         input.authorization
         && existing.contract.automationAuthorization?.taskKey !== input.authorization.taskKey
       ) throw new Error('正文后处理已有子 Run，但冻结的策略或预算已经变化。')
-      return ensureChapterPostAdoptionAuthorizationPreparedV1(input.scope, existing)
+      return recoverChapterPostAdoptionAuthorizationV1(input.scope, existing)
     }
   }
   try {
@@ -430,7 +433,7 @@ export async function createChapterPostAdoptionDurableRunV1(input: {
         authorization: input.authorization,
       }),
     })
-    return ensureChapterPostAdoptionAuthorizationPreparedV1(input.scope, created)
+    return recoverChapterPostAdoptionAuthorizationV1(input.scope, created)
   } catch (error) {
     // A second tab may win the unique lineage race after the read above.
     if (input.parent && error instanceof Error && error.name === 'ConstraintError') {
@@ -439,7 +442,7 @@ export async function createChapterPostAdoptionDurableRunV1(input: {
         parentRunId: input.parent.runId,
         relation: parentRelation!,
       })
-      if (raced) return ensureChapterPostAdoptionAuthorizationPreparedV1(input.scope, raced)
+      if (raced) return recoverChapterPostAdoptionAuthorizationV1(input.scope, raced)
     }
     throw error
   }
@@ -528,11 +531,15 @@ export async function readLatestChapterPostAdoptionRunV1(input: {
   for (const row of rows) {
     if ((row.parentRelation !== CHAPTER_POST_ADOPTION_PARENT_RELATION_V1
       && row.parentRelation !== `${CHAPTER_POST_ADOPTION_PARENT_RELATION_V1}:${input.chapterId}`) || typeof row.id !== 'number') continue
+    let snapshot: AgentRunSnapshotV1
     try {
-      const snapshot = await readAgentRunV1(input.scope, row.id)
-      if (snapshot.contract.scope.chapterIds?.includes(input.chapterId)) return snapshot
+      snapshot = await readAgentRunV1(input.scope, row.id)
     } catch {
       // A corrupt/foreign row must not hide a later valid child run.
+      continue
+    }
+    if (snapshot.contract.scope.chapterIds?.includes(input.chapterId)) {
+      return recoverChapterPostAdoptionAuthorizationV1(input.scope, snapshot)
     }
   }
   return null
@@ -558,30 +565,56 @@ export async function scheduleChapterPostAdoptionStepsV1(input: {
   return snapshot
 }
 
-async function ensureChapterPostAdoptionAuthorizationPreparedV1(
+/** Recover only deterministic authorization preparation. Refresh never starts
+ * model work or supplies a new author decision. Each missing event is CAS-bound
+ * so two tabs converge on the same candidate rather than preparing two runs. */
+export async function recoverChapterPostAdoptionAuthorizationV1(
   scope: WorkspaceScope,
   input: AgentRunSnapshotV1,
 ): Promise<AgentRunSnapshotV1> {
-  const authorization = input.contract.automationAuthorization
-  if (!authorization) return input
-  let snapshot = input
+  let snapshot = await readAgentRunV1(scope, input.run.id)
   const stepId = CHAPTER_POST_ADOPTION_STEP_IDS_V1.authorization
-  let step = snapshot.projection.steps[stepId]
-  if (!step) {
-    snapshot = await append(scope, snapshot, 'step.scheduled', { stepId })
-    snapshot = await append(scope, snapshot, 'step.started', { stepId, attempt: 1 })
-    snapshot = await append(scope, snapshot, 'candidate.persisted', {
-      stepId,
-      attempt: 1,
-      candidateHash: authorization.taskKey,
-      requiresConfirmation: true,
-    })
-    step = snapshot.projection.steps[stepId]
+  for (let advance = 0; advance < 8; advance++) {
+    const authorization = snapshot.contract.automationAuthorization
+    const step = snapshot.projection.steps[stepId]
+    if (!authorization || ['completed', 'failed', 'cancelled', 'stale', 'recovery_required'].includes(snapshot.projection.state)
+      || step?.status === 'succeeded') return snapshot
+    if (step && !['scheduled', 'running', 'awaiting_confirmation'].includes(step.status)) return snapshot
+    assertChapterPostAdoptionExecutionBindingsV1(snapshot)
+    const chapterId = snapshot.contract.scope.chapterIds?.[0]
+    const chapter = chapterId == null ? null : await db.chapters.get(chapterId)
+    if (!chapter || !await assertRecordInScope(scope, 'chapters', chapter, { owner: 'work' })
+      || await hashChapterText(chapter.content ?? '') !== authorization.sourceTextHash) return snapshot
+    try {
+      await assertChapterPostAdoptionLineageCurrentV1(scope, snapshot)
+    } catch {
+      // Keep stale/unverifiable evidence visible; it cannot gain a candidate.
+      return snapshot
+    }
+    try {
+      if (step?.confirmation === 'reject') {
+        return await rejectChapterPostAdoptionAuthorizationV1({ scope, snapshot })
+      } else if (step?.confirmation === 'adopt') {
+        return await authorizeChapterPostAdoptionV1({ scope, snapshot, source: 'author-click' })
+      } else if (!step) {
+        snapshot = await append(scope, snapshot, 'step.scheduled', { stepId })
+      } else if (step.status === 'scheduled') {
+        snapshot = await append(scope, snapshot, 'step.started', { stepId, attempt: 1 })
+      } else if (step.status === 'running') {
+        snapshot = await append(scope, snapshot, 'candidate.persisted', {
+          stepId, attempt: step.attempt, candidateHash: authorization.taskKey, requiresConfirmation: true,
+        })
+      } else if (authorization.mode === 'preauthorized') {
+        return await authorizeChapterPostAdoptionV1({ scope, snapshot, source: 'work-preauthorization' })
+      } else {
+        return snapshot
+      }
+    } catch (error) {
+      if (!(error instanceof AgentRunStoreError) || error.code !== 'sequence_conflict') throw error
+      snapshot = await readAgentRunV1(scope, snapshot.run.id)
+    }
   }
-  if (authorization.mode === 'preauthorized' && step?.status === 'awaiting_confirmation') {
-    snapshot = await authorizeChapterPostAdoptionV1({ scope, snapshot, source: 'work-preauthorization' })
-  }
-  return snapshot
+  throw new Error('章后授权准备已被其它执行者推进，请刷新后继续。')
 }
 
 /** Durable and idempotent authorization boundary; it never calls a model. */
@@ -602,14 +635,17 @@ export async function authorizeChapterPostAdoptionV1(input: {
   const stepId = CHAPTER_POST_ADOPTION_STEP_IDS_V1.authorization
   const step = input.snapshot.projection.steps[stepId]
   if (step?.status === 'succeeded') return input.snapshot
-  if (!step || step.status !== 'awaiting_confirmation' || step.candidateHash !== authorization.taskKey) {
+  if (!step || (step.status !== 'awaiting_confirmation' && !(step.status === 'running' && step.confirmation === 'adopt'))
+    || step.candidateHash !== authorization.taskKey) {
     throw new Error('章后授权候选与 durable Run 不一致。')
   }
-  let snapshot = await append(input.scope, input.snapshot, 'confirmation.recorded', {
-    stepId,
-    candidateHash: authorization.taskKey,
-    decision: 'adopt',
-  })
+  if (step.confirmation === 'reject') throw new Error('章后授权已记录跳过，不能改为开始。')
+  let snapshot = step.confirmation === 'adopt' ? input.snapshot
+    : await append(input.scope, input.snapshot, 'confirmation.recorded', {
+      stepId,
+      candidateHash: authorization.taskKey,
+      decision: 'adopt',
+    })
   snapshot = await append(input.scope, snapshot, 'step.succeeded', {
     stepId,
     attempt: step.attempt,
@@ -626,11 +662,13 @@ export async function rejectChapterPostAdoptionAuthorizationV1(input: {
   const stepId = CHAPTER_POST_ADOPTION_STEP_IDS_V1.authorization
   const step = input.snapshot.projection.steps[stepId]
   if (!authorization || !step || step.status !== 'awaiting_confirmation') return input.snapshot
-  const snapshot = await append(input.scope, input.snapshot, 'confirmation.recorded', {
-    stepId,
-    candidateHash: authorization.taskKey,
-    decision: 'reject',
-  })
+  if (step.confirmation === 'adopt') throw new Error('章后授权已记录开始，不能改为跳过。')
+  const snapshot = step.confirmation === 'reject' ? input.snapshot
+    : await append(input.scope, input.snapshot, 'confirmation.recorded', {
+      stepId,
+      candidateHash: authorization.taskKey,
+      decision: 'reject',
+    })
   return append(input.scope, snapshot, 'run.cancelled', { reason: 'author-skipped-post-adoption' })
 }
 

@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect} from '@playwright/test'
 import {inquiryAnswer, inquiryQuestion, inquiryPurpose, inquiryTruth, chatInquiryReviewFixture} from '../helpers/chat-inquiry-output'
 import type {ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
@@ -11,6 +12,7 @@ for (const privateAnswer of [false, true]) test(`actual NPC reply is displayed o
   const calls: string[] = []; let actions = 0, proposal: ChatSituationDraftV1
   const followup = '叶岑点点头：“我记下了，接下来会核对具体物件。你可以先做自己的事。”'
   await page.route('https://chat-inquiry.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const messages = route.request().postDataJSON().messages as Array<{content: string}>, prompt = messages.map(m => m.content).join('\n')
     const actionReview = prompt.includes('本次持久化行动候选'), situationReview = prompt.includes('本次持久化情境候选')
     const construction = !situationReview && prompt.includes('你是 StoryForge 受治理的幕后情境构建器')
@@ -34,7 +36,7 @@ for (const privateAnswer of [false, true]) test(`actual NPC reply is displayed o
         evidenceFactKeys: actions === 1 ? ['lost', 'clerk-present', 'box'] : ['clerk-statement'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
         ...(actions === 1 ? {situationRequest: {threadKey: 'investigate', direction: '承接向掌柜提出的具体位置问题，不预定答复。', evidenceFactKeys: ['lost', 'clerk-present', 'box'], evidenceExcerpt: inquiryQuestion}} : {})}
     }
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   const f = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture({inquiryResults: true, factDiscovery: true})})

@@ -1,6 +1,6 @@
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
-import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture} from '../helpers/chat-narrative-fixture'
+import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {applyChatMessageRetrievalPlanV1, readChatMessageRetrievalPlanV1} from '../../src/lib/character-interaction/narrative-retrieval-service'
 import {buildInteractionContextWindow, interactionVisibilityView, parseInteractionState} from '../../src/lib/character-interaction/runtime'
 import {chatSituationCoordinatorViewV1} from '../../src/lib/character-interaction/narrative-situations'
@@ -24,7 +24,7 @@ async function history() {
   const f = await seedChatNarrativeRuntimeFixture()
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'scene-start', sourceEventSequence: f.sceneSequence})
   const candidate = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '原路径',
-    runAI: async () => JSON.stringify(action()), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(action())), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: candidate.snapshot.run.id})
   const message = (await readProductRuntimeState(f.sessionId)).interaction!.messages[0]
   await proposeInteractionMemory({...await command(f.sessionId), memoryId: 'light', participantKey: 'guard', kind: 'key-memory', content: '记住门边的光亮。', importance: 8,
@@ -53,7 +53,7 @@ it('omits only selected dialogue from both registered model views, retaining vis
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'continue', sourceEventSequence: (await readProductRuntimeStateVersion(f.sessionId)).sequence})
   const seen: string[] = []
   const result = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '继续自己的调查',
-    runAI: async messages => {seen.push(JSON.stringify(messages)); return JSON.stringify({...action(), kind: 'speak', text: '灯仍在门边，我先检查桌下。', newFacts: []})},
+    runAI: withChatActionChoiceFixture(async messages => {seen.push(JSON.stringify(messages)); return JSON.stringify({...action(), kind: 'speak', text: '灯仍在门边，我先检查桌下。', newFacts: []})}),
     runReviewAI: async messages => {seen.push(JSON.stringify(messages)); return JSON.stringify(chatActionReviewOutputFixture())}})
   expect(seen).toHaveLength(2)
   expect(seen.every(s => !s.includes('检索标记甲') && s.includes('lit-door'))).toBe(true)
@@ -105,7 +105,7 @@ it('invalidates an already reviewed candidate when the user changes retrieval be
   await commitInteractionPlayerMessage({...await command(f.sessionId), messageId: 'old', text: '检索标记乙。'})
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'continue', sourceEventSequence: (await readProductRuntimeStateVersion(f.sessionId)).sequence})
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '继续',
-    runAI: async () => JSON.stringify(action()), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(action())), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await applyChatMessageRetrievalPlanV1(f.scope, await readChatMessageRetrievalPlanV1(f.scope, f.sessionId, 'old'))
   const before = await readProductRuntimeState(f.sessionId)
   await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})).rejects.toThrow()

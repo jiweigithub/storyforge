@@ -49,6 +49,14 @@ export async function readChatRunProgressV1(scope: WorkspaceScope, sessionId: nu
   const review = snapshot.contract.executionBindings?.find(b => ['interaction:action-review', 'interaction:situation-review', 'interaction:memory-review'].includes(b.stepId))
   const reviewing = review && snapshot.projection.steps[review.stepId]
   if (reviewing?.status === 'succeeded') return result('ready', '检查已通过，等待保存结果', '保存完成后才会更新故事。')
+  const choosing = snapshot.projection.steps['interaction:action-choice']
+  if (choosing && !reviewing && !events.some(event => event.type === 'model.requested' && event.payload.stepId === GENERATION_STEP)) {
+    if (choosing.status === 'succeeded') return result('preparing', '行动进度已保存，等待继续表达', '尚未改变故事；继续后仍需完成回复和检查。')
+    const response = events.find(event => event.type === 'model.responded' && event.payload.stepId === 'interaction:action-choice')
+    if (response) return result('response', '正在核对行动方向', '回复和后果尚未生效。', response.createdAt)
+    const request = events.find(event => event.type === 'model.requested' && event.payload.stepId === 'interaction:action-choice')
+    if (request) return result('generation', '正在选择角色的下一步行动', '依据角色已知的情况准备下一步；尚未改变故事。', request.createdAt)
+  }
   const stepId = reviewing ? review!.stepId : GENERATION_STEP
   const requested = [...events].reverse().find(event => event.type === 'model.requested' && event.payload.stepId === stepId)
   const responded = [...events].reverse().find(event => event.type === 'model.responded' && event.payload.stepId === stepId)

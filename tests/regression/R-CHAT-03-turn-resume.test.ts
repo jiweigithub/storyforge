@@ -6,7 +6,7 @@ import {branchProductRuntimeSession, commitInteractionPlayerMessage, readProduct
 import {applyChatMessageRetrievalPlanV1, readChatMessageRetrievalPlanV1} from '../../src/lib/character-interaction/narrative-retrieval-service'
 import {forkChatMessageEditV1, readChatMessageContinuationPlanV1} from '../../src/lib/character-interaction/narrative-edit'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {CHAT_SITUATION_REVIEW_CHECKS_V1, type ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
 const generate = harness.generateInteractionRuntimeCandidateV1
@@ -23,7 +23,7 @@ async function prepared(limit = 3, seed = false) {
 type Fixture = Awaited<ReturnType<typeof prepared>>
 async function candidate(f: Fixture, value = action()) {
   return generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '工程夹具',
-    runAI: async () => JSON.stringify(value), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(value)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
 }
 async function partial(f: Fixture) {
   const first = await candidate(f, {...action('我把灯移到门边，门边亮了起来。'), kind: 'complete',
@@ -37,7 +37,7 @@ async function resume(f: Fixture, participantKey?: string) {
 async function view(f: Fixture) {return readChatNarrativeTurnResumeV1(f.scope, f.sessionId, (await readProductRuntimeState(f.sessionId)).interaction!)}
 function mockActions(value: () => ChatNarrativeActionV1 = () => action()) {
   return vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async () => JSON.stringify(value()), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(value())), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
 }
 
 it('resumes only the two remaining actions after refresh, preserving the original actor, trigger, first fact and budget', async () => {
@@ -54,7 +54,7 @@ it('resumes only the two remaining actions after refresh, preserving the origina
   expect(state.chatNarrative!.triggers[0]).toMatchObject({requestedSequence: f.triggerSequence, status: 'complete'})
   expect(state.chatNarrative!.triggers[0].actionSequences).toHaveLength(3)
   expect(state.chatNarrative!.situation.facts.filter(fact => fact.factKey === 'light')).toHaveLength(1)
-  expect(state.remainingDirectorBudget).toBe(94)
+  expect(state.remainingDirectorBudget).toBe(91)
   expect(await view(f)).toBeNull()
   await expect(resume(f)).rejects.toThrow('没有可以补齐')
   expect(spy).toHaveBeenCalledTimes(2)
@@ -84,7 +84,7 @@ it.each(['unknown', 'rejected', 'cancelled'] as const)('keeps a %s run blocked e
   let runId = 0
   await expect(generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '失败夹具',
     onRunCreated: id => {runId = id; if (failure === 'cancelled') throw new Error('interrupted before request')},
-    runAI: async () => {if (failure === 'unknown') throw new Error('response unknown'); return JSON.stringify(action())},
+    runAI: withChatActionChoiceFixture(async () => {if (failure === 'unknown') throw new Error('response unknown'); return JSON.stringify(action())}),
     runReviewAI: async () => {const review = chatActionReviewOutputFixture(); review.checks[0].passed = false; return JSON.stringify(review)},
   })).rejects.toThrow()
   if (failure === 'cancelled') await harness.cancelInteractionRuntimeRunV1({scope: f.scope, runId})
@@ -135,14 +135,14 @@ it('preserves the unfinished allowance through branch and import, including veri
 it.each([false, true])('completes a player-seed turn once without repeating its already-prepared background (%s)', async alreadyPrepared => {
   const f = await prepared(1, true)
   const spy = vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async messages => {
+    runAI: withChatActionChoiceFixture(async messages => {
       if (input.skillId === 'character.chat-situation-construction') return JSON.stringify({kind: 'chat-situation', title: '门外的声响', location: '驿站', timeLabel: '傍晚',
         newFacts: [{factKey: 'knocking', kind: 'observation', text: '门外传来敲门声。', audienceKeys: ['guard', 'player', 'artisan'], evidenceFactKeys: ['road'], seedExcerpt: '门外传来敲门声'}],
         newGoals: [], newThreads: [], possibilities: [{actorKey: 'guard', text: '可以隔门询问。', evidenceFactKeys: ['knocking']}]})
       expect(JSON.stringify(messages)).toContain('门外传来敲门声。')
       expect(JSON.stringify(messages)).not.toContain('柜台下')
       return JSON.stringify({...action('我先隔门询问来意。'), evidenceFactKeys: ['knocking']})
-    }, runReviewAI: async () => JSON.stringify(input.skillId === 'character.chat-situation-construction'
+    }), runReviewAI: async () => JSON.stringify(input.skillId === 'character.chat-situation-construction'
       ? {checks: CHAT_SITUATION_REVIEW_CHECKS_V1.map(check => ({check, passed: true, reason: '工程夹具'}))} : chatActionReviewOutputFixture()),
   }))
   if (alreadyPrepared) {
@@ -157,7 +157,7 @@ it.each([false, true])('completes a player-seed turn once without repeating its 
   expect(state.chatNarrative!.triggers).toHaveLength(1)
   expect(state.messages.map(m => m.role)).toEqual(['character'])
   expect(state.chatNarrative!.situation.facts.filter(fact => fact.factKey === 'knocking')).toHaveLength(1)
-  expect(state.remainingDirectorBudget).toBe(96)
+  expect(state.remainingDirectorBudget).toBe(95)
 })
 
 it('does not bypass a pending edit or exhausted generation/review budget', async () => {
@@ -167,7 +167,7 @@ it('does not bypass a pending edit or exhausted generation/review budget', async
   const child = await forkChatMessageEditV1({scope: f.scope, plan, text: plan.text})
   const spy = mockActions()
   await expect(resume({...f, sessionId: child.id!})).rejects.toThrow('没有可以补齐')
-  const small = await seedChatNarrativeRuntimeFixture({maxActionsPerTrigger: 3, directorBudget: 2}), v = await readProductRuntimeStateVersion(small.sessionId)
+  const small = await seedChatNarrativeRuntimeFixture({maxActionsPerTrigger: 3, directorBudget: 3}), v = await readProductRuntimeStateVersion(small.sessionId)
   const trigger = await requestChatNarrativeTrigger({sessionId: small.sessionId, commandId: 'small', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'scene-start', sourceEventSequence: v.sequence})
   const limited = {...small, triggerSequence: trigger.sequence}
   await partial(limited)

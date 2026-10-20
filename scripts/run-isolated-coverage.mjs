@@ -15,6 +15,7 @@ const executable = path.join(
   '.bin',
   process.platform === 'win32' ? 'vitest.cmd' : 'vitest',
 )
+const workers = process.env.CI ? 1 : 2
 
 const result = spawnSync(executable, [
   'run',
@@ -23,12 +24,13 @@ const result = spawnSync(executable, [
   // can share enough runtime state to leave an open connection blocking the
   // next test until its timeout even though the same case takes <1s alone.
   '--pool=forks',
-  // Keep two isolated fork processes. A single reused worker lets one timed-out
-  // Dexie suite retain the fixed-name database lock and poison every later
-  // file; fork isolation keeps those lifecycle domains independent while the
-  // private coverage directory prevents reporter collisions.
-  '--maxWorkers=2',
-  '--minWorkers=2',
+  // Instrumented production replays and the measured million-character gate
+  // must not compete with another file on a shared CI runner. Each file still
+  // gets a fresh child process: one worker is not the reused singleFork mode.
+  '--poolOptions.forks.isolate=true',
+  '--poolOptions.forks.singleFork=false',
+  `--maxWorkers=${workers}`,
+  `--minWorkers=${workers}`,
   `--coverage.reportsDirectory=${reportsDirectory}`,
 ], {
   cwd: process.cwd(),

@@ -7,7 +7,10 @@ import {readInstanceAgentRunV1, appendAgentRunEventV1} from '../../src/lib/agent
 import {hashCanonicalValue} from '../../src/lib/agent/run/hash'
 import {recordAgentRunArtifactV1} from '../../src/lib/memory/artifact-store'
 import {CHAT_ACTION_REVIEW_STEP_V1} from '../../src/lib/character-interaction/situation-harness'
-import {chatActionReviewFixture, chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {recordChatActionOutputBudgetV1} from '../../src/lib/character-interaction/action-choice-output-budget'
+import {assembleContext} from '../../src/lib/registry/assemble-context'
+import {createContextManifestFromAssemblyV1} from '../../src/lib/agent/run/context-manifest'
+import {chatActionReviewFixture, chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
 const action: ChatNarrativeActionV1 = {kind: 'complete', text: '叶岑把油灯移到门边。门边亮了起来。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
@@ -21,28 +24,28 @@ async function prepared() {
 }
 function input(f: Awaited<ReturnType<typeof prepared>>) {
   return {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const,
-    objective: '自主处理当前问题，不替玩家行动', runAI: async () => JSON.stringify(action), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}
+    objective: '自主处理当前问题，不替玩家行动', runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}
 }
 it('keeps role generation filtered, reviews exact stored action with coordinator evidence and adopts both text and fact once', async () => {
   const f = await prepared(), before = await readProductRuntimeStateVersion(f.sessionId)
-  const generated = await generateInteractionRuntimeCandidateV1({...input(f), runAI: async messages => {
+  const generated = await generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async messages => {
     expect(JSON.stringify(messages)).not.toContain('柜台下')
     return JSON.stringify(action)
-  }, runReviewAI: async messages => {
+  }), runReviewAI: async messages => {
     const text = JSON.stringify(messages)
     expect(text).toContain('本次持久化行动候选'); expect(text).toContain('柜台下'); expect(text).toContain('门边亮了起来')
     return JSON.stringify(chatActionReviewOutputFixture())
   }})
-  expect(generated.snapshot.contract.executionBindings?.map(b => b.skillId)).toEqual(['character.chat-narrative-action', 'character.chat-narrative-action-review'])
-  expect(generated.snapshot.contract.executionBindings).toMatchObject([{version: 2, maxOutputTokens: 4000}, {version: 2, maxOutputTokens: 2400}])
-  expect(generated.snapshot.events.filter(e => e.type === 'model.requested')).toHaveLength(2)
+  expect(generated.snapshot.contract.executionBindings?.map(b => b.stepId)).toEqual(['interaction:action-choice', 'interaction:runtime-candidate', 'interaction:action-review'])
+  expect(generated.snapshot.contract.executionBindings).toMatchObject([{version: 2, maxOutputTokens: 2000}, {version: 2, maxOutputTokens: 4000}, {version: 2, maxOutputTokens: 8000}])
+  expect(generated.snapshot.events.filter(e => e.type === 'model.requested')).toHaveLength(3)
   expect(await readProductRuntimeStateVersion(f.sessionId)).toEqual(before)
   db.close(); await db.open()
   const adopted = await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   expect(adopted.event?.type).toBe('interaction.narrative.action-reviewed.committed')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!
-  expect(state.messages).toHaveLength(1); expect(state.remainingDirectorBudget).toBe(98)
+  expect(state.messages).toHaveLength(1); expect(state.remainingDirectorBudget).toBe(97)
   expect(state.chatNarrative!.situation.facts.filter(f => f.factKey === 'lamp')).toHaveLength(1)
 })
 it('keeps a reviewed first-person preference as speech without publishing its private context or promoting it to truth', async () => {
@@ -53,9 +56,9 @@ it('keeps a reviewed first-person preference as speech without publishing its pr
     expect(messages[0].content).toContain('主观发言只作为该角色说过的话保留')
     expect(messages[0].content).toContain('没有可用 factKey 不等于允许披露来源资料中的事实')
   }
-  const generated = await generateInteractionRuntimeCandidateV1({...input(f), runAI: async messages => {
+  const generated = await generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async messages => {
     assertPolicy(messages); return JSON.stringify(expression)
-  }, runReviewAI: async messages => {
+  }), runReviewAI: async messages => {
     assertPolicy(messages); return JSON.stringify(chatActionReviewOutputFixture())
   }})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
@@ -84,7 +87,7 @@ it.each([
   // rejection boundary, not a claim that a test fixture is a semantic judge.
   expect(() => applyChatNarrativeActionV1(state, {sequence: before.sequence + 1, triggerSequence: f.triggerSequence, actorKey: 'guard', messageId: 'dry', action: bad})).not.toThrow()
   let runId = 0
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: id => {runId = id}, runAI: async () => JSON.stringify(bad), runReviewAI: async () => JSON.stringify(review)})).rejects.toThrow('行动语义审查未通过')
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: id => {runId = id}, runAI: withChatActionChoiceFixture(async () => JSON.stringify(bad)), runReviewAI: async () => JSON.stringify(review)})).rejects.toThrow('行动语义审查未通过')
   expect((await readInstanceAgentRunV1(f.scope, runId)).projection.state).toBe('failed')
   expect((await db.agentRunArtifacts.toArray()).some(a => a.artifactKind === 'raw-response' && a.content === JSON.stringify(review))).toBe(true)
   await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})).rejects.toThrow()
@@ -111,19 +114,31 @@ it('restores an unreviewed action without exposing it and only calls the missing
   await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async () => {calls++; return JSON.stringify(chatActionReviewOutputFixture())}})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
   expect(calls).toBe(1)
-  expect((await readInstanceAgentRunV1(f.scope, runId)).events.filter(e => e.type === 'model.requested')).toHaveLength(2)
+  expect((await readInstanceAgentRunV1(f.scope, runId)).events.filter(e => e.type === 'model.requested')).toHaveLength(3)
 })
 it.each([false, true])('does not resend an interrupted review; retained response=%s', async retained => {
   const f = await prepared(); let runId = 0
   await expect(generateInteractionRuntimeCandidateV1({...input(f), onNarrativeActionSaved: id => {runId = id; throw new Error('host-crash')}})).rejects.toThrow('host-crash')
   const stepId = CHAT_ACTION_REVIEW_STEP_V1
-  const append = (type: 'step.scheduled' | 'step.started' | 'model.requested' | 'model.responded', payload: unknown) => appendAgentRunEventV1({scope: f.scope, runId, productRuntimeSessionId: f.sessionId, type, payload} as Parameters<typeof appendAgentRunEventV1>[0])
+  const append = (type: 'step.scheduled' | 'step.started' | 'context.assembled' | 'model.requested' | 'model.responded', payload: unknown) => appendAgentRunEventV1({scope: f.scope, runId, productRuntimeSessionId: f.sessionId, type, payload} as Parameters<typeof appendAgentRunEventV1>[0])
   await append('step.scheduled', {stepId}); await append('step.started', {stepId, attempt: 1})
-  await append('model.requested', {stepId, attempt: 1, bindingHash: await hashCanonicalValue('test')})
+  const saved = await readInstanceAgentRunV1(f.scope, runId), sourceKeys = ['chatSituationRuntime', 'chatActionCandidate']
+  const assembled = await assembleContext({projectId: f.scope.projectId, scope: f.scope, worldGroupId: saved.contract.scope.worldGroupId,
+    productRuntimeSessionId: f.sessionId, chatActionCandidateRunId: runId, sourceKeys, inputBudgetMaxTokens: 24_000})
+  expect(assembled.included).toEqual(expect.arrayContaining(sourceKeys))
+  const manifest = await createContextManifestFromAssemblyV1({runId, stepId, attempt: 1, projectId: f.scope.projectId,
+    worldGroupId: saved.contract.scope.worldGroupId, declaredSourceKeys: sourceKeys, assembled, readerVersion: 'chat-action-review-v14'})
+  await append('context.assembled', {stepId, attempt: 1, manifestHash: manifest.manifestHash})
+  // Injected review recovery fixture: preserve its complete request and actual
+  // registered source, not just a model-request marker with an arbitrary hash.
+  const messages = [{role: 'system', content: '工程模拟的独立行动审查，不是真实模型质量证据。'}, {role: 'user', content: assembled.text}]
+  await recordAgentRunArtifactV1({scope: f.scope, runId, productRuntimeSessionId: f.sessionId, artifactKind: 'rendered-request', content: JSON.stringify(messages), stepId, attempt: 1})
+  await append('model.requested', {stepId, attempt: 1, bindingHash: await hashCanonicalValue({runtimeBindingHash: saved.contract.runtimeBindingHash, manifestHash: manifest.manifestHash, messages})})
   if (retained) {
     const content = JSON.stringify(chatActionReviewOutputFixture())
     await append('model.responded', {stepId, attempt: 1, outputHash: await hashCanonicalValue(content)})
     await recordAgentRunArtifactV1({scope: f.scope, runId, productRuntimeSessionId: f.sessionId, artifactKind: 'raw-response', content, stepId, attempt: 1})
+    await recordChatActionOutputBudgetV1({scope: f.scope, snapshot: await readInstanceAgentRunV1(f.scope, runId), stepId, output: content, result: {}, injected: true})
   }
   let calls = 0
   const resume = () => resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async () => {calls++; return '{}'}})

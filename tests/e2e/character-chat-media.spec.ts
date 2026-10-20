@@ -1,4 +1,5 @@
 import {test, expect} from '@playwright/test'
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 
 test('the author inspects exact Build images and missing Build bytes cannot borrow a Release asset', async ({page}, info) => {
   await page.setViewportSize({width: 390, height: 844})
@@ -50,11 +51,12 @@ for (const width of [390, 1440]) test(`frozen chat images survive save changes a
   let calls = 0
   await page.route('https://chat-media.invalid/**', async route => {
     calls++
+    if (await fulfillChatActionChoiceFixture(route)) return
     const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n')
     const output = prompt.includes('本次持久化行动候选')
       ? {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'].map(check => ({check, passed: true, reason: '图片工程夹具，不作剧情质量验收'}))}
       : {kind: 'speak', text: '我先看看门边的告示，有消息再告诉你。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   const f = await page.evaluate(async () => {
@@ -70,7 +72,7 @@ for (const width of [390, 1440]) test(`frozen chat images survive save changes a
   await expect(messages.getByText('我先看看门边的告示，有消息再告诉你。', {exact: true})).toBeVisible()
   await expect(messages.getByRole('img', {name: '叶岑工程头像与立绘'})).toBeVisible()
   await expect.poll(() => messages.evaluate(el => getComputedStyle(el).backgroundImage)).toContain('blob:')
-  expect(calls).toBe(2)
+  expect(calls).toBe(3)
   await expect(page.getByRole('textbox', {name: '发送给角色的消息'})).toBeInViewport({ratio: 1})
   await expect(page.getByRole('button', {name: '发送并生成', exact: true})).toBeInViewport({ratio: 1})
   await page.getByText('查看画面', {exact: true}).click()
@@ -90,7 +92,7 @@ for (const width of [390, 1440]) test(`frozen chat images survive save changes a
   await expect(messages.getByRole('img', {name: '叶岑工程头像与立绘'})).toBeVisible()
   await page.reload()
   await expect(messages.getByRole('img', {name: '叶岑工程头像与立绘'})).toBeVisible()
-  expect(calls).toBe(2)
+  expect(calls).toBe(3)
   const backup = await page.evaluate(async id => {
     const load = new Function('p', 'return import(p)')
     return (await load('/storyforge/src/lib/export/json-export.ts')).exportProjectJSON(id)
@@ -118,7 +120,7 @@ for (const width of [390, 1440]) test(`frozen chat images survive save changes a
   await expect(page.getByTestId('chat-media-details')).toHaveCount(0)
   await expect(messages.getByRole('img')).toHaveCount(0)
   expect(await messages.evaluate(el => getComputedStyle(el).backgroundImage)).toBe('none')
-  expect(calls).toBe(2)
+  expect(calls).toBe(3)
   expect(await page.evaluate(async () => {
     const load = new Function('p', 'return import(p)')
     return JSON.stringify(await (await load('/storyforge/src/lib/db/schema.ts')).db.worldReleases.toArray())

@@ -8,7 +8,7 @@ import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV
 import {readChatActionRevisionSourceV1} from '../../src/lib/character-interaction/action-revision'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewFixture, chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewFixture, chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1, ChatNarrativeActionReviewV1} from '../../src/lib/types/chat-narrative'
 
 const spoken = '我以前错怪过一个无辜的旅人，一直很后悔，所以这次想查清楚再说。'
@@ -88,14 +88,14 @@ async function prepared() {
   await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'natural.start', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'scene-start', sourceEventSequence: f.sceneSequence})
   return f
 }
-const input = (f: Awaited<ReturnType<typeof prepared>>) => ({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '自然地说明自己的顾虑', runAI: async () => JSON.stringify(natural())})
+const input = (f: Awaited<ReturnType<typeof prepared>>) => ({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '自然地说明自己的顾虑', runAI: withChatActionChoiceFixture(async () => JSON.stringify(natural()))})
 
 it('recovers only the saved candidate review, adopts once and preserves canonical knowledge through branch and backup import', async () => {
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId); let runId = 0, calls = 0
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async messages => {
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async messages => {
     calls++; expect(messages[0].content).toContain('wording:"equivalent"'); expect(messages[1].content).not.toContain('柜台下')
     return JSON.stringify(natural())
-  }, onNarrativeActionSaved: id => {runId = id; throw new Error('saved-before-review')}})).rejects.toThrow('saved-before-review')
+  }), onNarrativeActionSaved: id => {runId = id; throw new Error('saved-before-review')}})).rejects.toThrow('saved-before-review')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   db.close(); await db.open()
   await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async messages => {

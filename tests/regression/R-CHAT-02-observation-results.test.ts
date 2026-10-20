@@ -10,7 +10,7 @@ import {advanceChatNarrativeTurnV1, readChatNarrativeTurnResumeV1, resumeChatNar
 import * as harness from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewFixture, chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewFixture, chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {CHAT_SITUATION_REVIEW_CHECKS_V1, type ChatNarrativeActionV1, type ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
 
 const observationText = '叶岑俯身查看了后门门闩的外侧，没有打开后门。'
@@ -102,7 +102,7 @@ async function command(sessionId: number) {const v = await readProductRuntimeSta
 async function runtime(directorBudget = 100) {
   const f = await seedChatNarrativeRuntimeFixture({actorSituationExpansion: true, directorBudget})
   const spy = vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(i => generate({...i,
-    runAI: async () => JSON.stringify(action()), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(action())), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
   await advanceChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, expectedSequence: f.sceneSequence, kind: 'scene-start', participantKey: 'guard', aiConfig: {} as never})
   const sent = await commitInteractionPlayerMessage({...await command(f.sessionId), messageId: 'refusal', text: '我不动手，你自己决定。', audienceKeys: ['player', 'guard']})
   return {...f, spy, sent}
@@ -117,13 +117,13 @@ it('resolves a completed observation before the role replies after portable bran
   db.close(); await db.open()
   expect((await readProductRuntimeState(imported.id!)).interaction).toEqual(branchState)
   expect(f.spy).toHaveBeenCalledTimes(1)
-  f.spy.mockImplementation(i => generate({...i, runAI: async messages => {
+  f.spy.mockImplementation(i => generate({...i, runAI: withChatActionChoiceFixture(async messages => {
     seen.push(i.skillId)
     if (i.skillId === 'character.chat-situation-construction') return JSON.stringify(outcome())
     expect(JSON.stringify(messages)).toContain('没有在门闩外侧看出明显松动')
     expect(JSON.stringify(messages)).not.toContain('柜台下')
     return JSON.stringify({...action(), kind: 'pause', text: '外侧没有明显松动，我会保留门外未知的判断。', newFacts: [], situationRequest: null})
-  }, runReviewAI: async () => JSON.stringify(i.skillId === 'character.chat-situation-construction' ? {checks: review(outcome()).checks} : chatActionReviewOutputFixture())}))
+  }), runReviewAI: async () => JSON.stringify(i.skillId === 'character.chat-situation-construction' ? {checks: review(outcome()).checks} : chatActionReviewOutputFixture())}))
   const source = branchState.messages.at(-1)!.eventSequence
   await advanceChatNarrativeTurnV1({scope, sessionId: imported.id!, expectedSequence: 0, kind: 'player-response', replyToSequence: source, participantKey: 'guard', aiConfig: {} as never})
   expect(seen).toEqual(['character.chat-situation-construction', 'character.chat-narrative-action'])
@@ -139,7 +139,7 @@ it('resolves a completed observation before the role replies after portable bran
 
 it('preserves the unresolved observation after a failed adjudication and blocks an unknown-call resend', async () => {
   const f = await runtime(), before = (await readProductRuntimeState(f.sessionId)).interaction!
-  f.spy.mockImplementation(i => generate({...i, runAI: async () => {throw new Error('observation response unknown')}}))
+  f.spy.mockImplementation(i => generate({...i, runAI: withChatActionChoiceFixture(async () => {throw new Error('observation response unknown')})}))
   await expect(advanceChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, expectedSequence: f.sent.sequence, kind: 'player-response', replyToSequence: f.sent.sequence, participantKey: 'guard', aiConfig: {} as never})).rejects.toThrow('observation response unknown')
   const failed = await readProductRuntimeState(f.sessionId)
   expect(failed.interaction!.chatNarrative!.pendingSituation).toEqual(before.chatNarrative!.pendingSituation)
@@ -154,7 +154,7 @@ it('retains an empty-result candidate rejected by semantic review without erasin
   draft.newFacts[0].text = '检查已经完成，但检查没有提供结果，仍需等待检查结果。'
   const rejected = {checks: review(draft).checks.map(check => check.check === 'meaningful-direction'
     ? {...check, passed: false, reason: '工程审查夹具：没有具体观察限制，只重复缺少结果。'} : check)}
-  f.spy.mockImplementation(i => generate({...i, runAI: async () => JSON.stringify(draft), runReviewAI: async () => JSON.stringify(rejected)}))
+  f.spy.mockImplementation(i => generate({...i, runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)), runReviewAI: async () => JSON.stringify(rejected)}))
   await expect(advanceChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, expectedSequence: f.sent.sequence,
     kind: 'player-response', replyToSequence: f.sent.sequence, participantKey: 'guard', aiConfig: {} as never})).rejects.toThrow('情境语义审查未通过')
   db.close(); await db.open()

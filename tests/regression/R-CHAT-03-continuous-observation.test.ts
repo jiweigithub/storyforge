@@ -4,7 +4,7 @@ import * as harness from '../../src/lib/character-interaction/harness'
 import {createChatNarrativeSituationV1, advanceChatNarrativeTurnV1, readChatNarrativeTurnResumeV1, resumeChatNarrativeTurnV1} from '../../src/lib/character-interaction/narrative-turn'
 import {commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewOutputFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {followupAction, followupResultAction, followupSituation as baseSituation, followupSituationReview, followupPlayerText, seedClosedChatFollowupFixtureV1} from '../helpers/chat-player-followup'
 import type {ChatNarrativeActionV1, ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
 
@@ -30,7 +30,7 @@ async function scenario(options: {limit?: number; budget?: number; stop?: 'futur
   const source = await commitInteractionPlayerMessage({sessionId: f.sessionId, commandId: 'request', baseSequence: v.sequence, baseStateHash: v.stateHash, messageId: 'request', text: followupPlayerText, audienceKeys: ['guard', 'player']})
   const before = await readProductRuntimeState(f.sessionId), calls = {actions: 0, constructions: 0, reviews: 0}
   let resultRunId = 0
-  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: async () => {
+  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: withChatActionChoiceFixture(async () => {
     if (input.skillId === 'character.chat-situation-construction') return JSON.stringify(++calls.constructions === 1 ? followupSituation() : outcome())
     calls.actions++
     const action = calls.actions === 1 ? followupAction(source.sequence) : calls.actions === 2 ? followupResultAction() : resolution()
@@ -41,7 +41,7 @@ async function scenario(options: {limit?: number; budget?: number; stop?: 'futur
       action.newFacts = []; action.situationRequest = null; action.goalStatus = options.stop === 'pause' ? 'paused' : null
     }
     return JSON.stringify(action)
-  }, onSituationDraftSaved: async id => {
+  }), onSituationDraftSaved: async id => {
     if (calls.constructions === 2) {resultRunId = id; if (options.stop === 'crash') throw new Error('host-crashed-before-result-review')}
   }, runReviewAI: async () => {
     calls.reviews++
@@ -64,7 +64,7 @@ it.each(['manual', 'natural', 'round-robin'] as const)('finishes a new request, 
   expect(story.situation.threads.find(t => t.threadKey === 'entry-condition')?.status).toBe('resolved')
   expect(story.pendingSituation).toBeUndefined()
   expect(after.messages.at(-1)?.text).toBe(resolution().text)
-  expect(before.interaction!.remainingDirectorBudget - after.remainingDirectorBudget).toBe(10)
+  expect(before.interaction!.remainingDirectorBudget - after.remainingDirectorBudget).toBe(12)
   expect(story.situation.goals[0]).toEqual(before.interaction!.chatNarrative!.situation.goals[0])
   db.close(); await db.open()
   expect((await readProductRuntimeState(f.sessionId)).interaction).toEqual(after)
@@ -94,7 +94,7 @@ it('requires the complete result, review and reply budget before starting the se
   const state = (await readProductRuntimeState(f.sessionId)).interaction!
   expect(calls).toEqual({actions: 2, constructions: 1, reviews: 3})
   expect(state.chatNarrative!.pendingSituation?.purpose).toBe('observation-result')
-  expect(state.remainingDirectorBudget).toBe(before.interaction!.remainingDirectorBudget - 6)
+  expect(state.remainingDirectorBudget).toBe(before.interaction!.remainingDirectorBudget - 7)
 })
 
 it('does not resend a result review with unknown outcome during same-turn recovery', async () => {
@@ -127,10 +127,10 @@ it('recovers the saved result, resumes only the third action and retains the out
 it('also resolves an observation after a player seed without rebuilding the seed or losing prepared-state validity', async () => {
   const f = await seedClosedChatFollowupFixtureV1({maxActionsPerTrigger: 2}), v = await readProductRuntimeStateVersion(f.sessionId)
   let actions = 0, constructions = 0
-  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: async () => {
+  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: withChatActionChoiceFixture(async () => {
     if (input.skillId === 'character.chat-situation-construction') return JSON.stringify(++constructions === 1 ? followupSituation() : outcome())
     return JSON.stringify(++actions === 1 ? followupResultAction() : resolution())
-  }, runReviewAI: async () => JSON.stringify(input.skillId === 'character.chat-situation-construction' ? {checks: followupSituationReview().checks} : chatActionReviewOutputFixture())}))
+  }), runReviewAI: async () => JSON.stringify(input.skillId === 'character.chat-situation-construction' ? {checks: followupSituationReview().checks} : chatActionReviewOutputFixture())}))
   await createChatNarrativeSituationV1({scope: f.scope, sessionId: f.sessionId, expectedSequence: v.sequence, seed: '雨停了，角色准备从门内检查门口积水。', participantKey: 'guard', actionLimit: 2, aiConfig: config})
   expect({actions, constructions}).toEqual({actions: 2, constructions: 2})
   const story = (await readProductRuntimeState(f.sessionId)).interaction!.chatNarrative!

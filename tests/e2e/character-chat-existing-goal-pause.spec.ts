@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect} from '@playwright/test'
 
 test('existing goal holds its source through report, return, weak assent and explicit resumption', async ({page}, info) => {
@@ -12,6 +13,7 @@ test('existing goal holds its source through report, return, weak assent and exp
   })
   const read = () => page.evaluate(async id => {const load = new Function('p', 'return import(p)'); return (await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(id)).interaction}, sessionId)
   await page.route('https://player-pause.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const messages = route.request().postDataJSON().messages as Array<{content: string}>, review = messages[1].content.includes('本次持久化行动候选')
     calls.push(review ? 'review' : 'action'); let value: unknown
     if (review) {
@@ -34,7 +36,7 @@ test('existing goal holds its source through report, return, weak assent and exp
           commitmentEffects: []}
       }
     }
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(value)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, value)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   let f = await page.evaluate(async () => {

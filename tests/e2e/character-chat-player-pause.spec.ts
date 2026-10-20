@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect} from '@playwright/test'
 
 test('player pause survives portable branches, ignores continue and weak assent, then resumes from explicit confirmation', async ({page}, info) => {
@@ -12,6 +13,7 @@ test('player pause survives portable branches, ignores continue and weak assent,
   })
   const read = () => page.evaluate(async id => {const load = new Function('p', 'return import(p)'); return (await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(id)).interaction}, sessionId)
   await page.route('https://player-pause.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const messages = route.request().postDataJSON().messages as Array<{content: string}>, review = messages[1].content.includes('本次持久化行动候选')
     calls.push(review ? 'review' : 'action'); let value: unknown
     if (review) {
@@ -35,7 +37,7 @@ test('player pause survives portable branches, ignores continue and weak assent,
           commitmentEffects: [{kind: 'fulfill', commitmentKey: state.chatNarrative.situation.goals.at(-1).commitments[0].commitmentKey, evidenceExcerpt: done}]}
       }
     }
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(value)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, value)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   let f = await page.evaluate(async () => {
@@ -43,7 +45,7 @@ test('player pause survives portable branches, ignores continue and weak assent,
     const f = await helper.seedChatNarrativeRuntimeFixture({actorThreadFollowup: true}), v = await api.readProductRuntimeStateVersion(f.sessionId)
     await api.requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'initial', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'scene-start', sourceEventSequence: f.sceneSequence})
     const run = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '注入工程前缀：结束寻找，离开事项仍在',
-      runAI: async () => JSON.stringify({kind: 'speak', text: '我不再寻找铜印了。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['player', 'guard', 'artisan'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: 'abandoned', nextPossibilities: []}),
+      runAI: (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).withChatActionChoiceFixture(async () => JSON.stringify({kind: 'speak', text: '我不再寻找铜印了。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['player', 'guard', 'artisan'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: 'abandoned', nextPossibilities: []})),
       runReviewAI: async () => JSON.stringify(helper.chatActionReviewOutputFixture())})
     await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: run.snapshot.run.id}); return f
   })

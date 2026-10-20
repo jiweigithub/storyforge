@@ -6,7 +6,7 @@ import {CHAT_SPOKEN_INQUIRY_REVIEW_RULES_V1, supportsChatSpokenInquiryReviewV1} 
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import {readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger, branchProductRuntimeSession} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {prepareChatInquiryFixture, chatInquiryDraftFixture, chatInquiryReviewFixture, chatInquiryInputFixture, inquiryQuestion} from '../helpers/chat-inquiry-result'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
@@ -37,21 +37,22 @@ it.each([[false, true], [true, true], [false, false], [true, false]])('keeps pro
   const a = inquiry(), b = {...a, text: '我问道：“有人愿意说说见过的情况吗？”', situationRequest: null}
   const before = await readProductRuntimeState(f.sessionId), world = await db.worldReleases.toArray()
   let calls = 0
-  const generated = await generateInteractionRuntimeCandidateV1({...input(f), skillId: options ? 'character.chat-narrative-options' : 'character.chat-narrative-action', runAI: async messages => {
+  const generated = await generateInteractionRuntimeCandidateV1({...input(f), skillId: options ? 'character.chat-narrative-options' : 'character.chat-narrative-action', runAI: withChatActionChoiceFixture(async messages => {
     calls++
     // Independently captured on eb5de640 before changing either review binding.
     expect(digest(messages[0].content)).toBe(options ? '024c2868a08ada2689b91c8495008f65ddec1d8c0aeb875a9f814c3bb1dad14b' : '6d15d60074209fd72bb84bc69baa86a8df9978e24d6109af508655da502eff60')
     expect(messages[1].content).not.toContain('铜印在柜台下')
     return JSON.stringify(options ? {options: [a, b]} : a)
-  }, runReviewAI: async messages => {
+  }), runReviewAI: async messages => {
     calls++
     if (legacy) expect(digest(messages[0].content)).toBe(options ? '2d8e376848fcd5db39ff94f1ab7182b3ef57c7968adfecf05be55f870a6227f0' : '08faa2a54700d60112c27098c5512ce234c5393ab93f77d84a6cee92f21b7622')
     for (const rule of CHAT_SPOKEN_INQUIRY_REVIEW_RULES_V1) expect(messages[0].content.includes(rule)).toBe(!legacy)
     expect(messages[0].content.includes('物理观察发现分两阶段')).toBe(!legacy)
+    expect(messages[0].content.includes('旧邀请未答复本身不禁止有依据且不依赖该决定的局部方向')).toBe(!legacy)
     return JSON.stringify(options ? {options: ['option-1', 'option-2'].map(optionKey => ({optionKey, ...chatActionReviewOutputFixture()}))} : chatActionReviewOutputFixture())
   }})
   const binding = generated.snapshot.contract.executionBindings!.find(b => b.skillId === (options ? 'character.chat-narrative-options-review' : 'character.chat-narrative-action-review'))!
-  expect(binding.promptVersion).toBe(options ? `chat-narrative-options-review-v${legacy ? 23 : 25}` : `chat-narrative-action-review-v${legacy ? 29 : 31}`)
+  expect(binding.promptVersion).toBe(options ? `chat-narrative-options-review-v${legacy ? 23 : 26}` : `chat-narrative-action-review-v${legacy ? 29 : 34}`)
   expect(calls).toBe(2); expect(generated.snapshot.contract.budget.maxModelCalls).toBe(2)
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id, ...(options ? {optionKey: 'option-1'} : {})})
@@ -76,10 +77,14 @@ it('retains the actual message as the question evidence for an already grounded 
   expect(question.text).toBe(inquiryQuestion)
   expect(before.chatNarrative!.pendingSituation?.sourceEventSequence).toBe(question.eventSequence)
   expect(before.chatNarrative!.situation.facts.some(f => f.text === question.text)).toBe(false)
-  const requests = (await db.agentRunArtifacts.toArray()).filter(a => a.artifactKind === 'rendered-request').map(a => JSON.parse(a.content)[0].content as string)
+  const requests = (await db.agentRunArtifacts.toArray()).filter(a => a.artifactKind === 'rendered-request').map(a => {
+    const request = JSON.parse(a.content)
+    return (Array.isArray(request) ? request : request.messages)[0].content as string
+  })
+  expect(requests).toHaveLength(3)
   expect(requests.some(text => text.includes(CHAT_SPOKEN_INQUIRY_REVIEW_RULES_V1[0]))).toBe(true)
   const draft = await chatInquiryDraftFixture(f.sessionId), reviewed = await generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f),
-    runAI: async () => JSON.stringify(draft), runReviewAI: async () => JSON.stringify(chatInquiryReviewFixture(draft))})
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)), runReviewAI: async () => JSON.stringify(chatInquiryReviewFixture(draft))})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: reviewed.snapshot.run.id})
   const after = (await readProductRuntimeState(f.sessionId)).interaction!
   expect(after.chatNarrative!.inquiryHistory![0].questionSequence).toBe(question.eventSequence)
@@ -91,7 +96,7 @@ it.each(['new-fact', 'observation-result'] as const)('does not repair a question
   if (invalid === 'new-fact') a.newFacts = [{factKey: 'asked', kind: 'observation', text: a.text, evidenceFactKeys: ['lost'], evidenceExcerpt: a.text}]
   else a.situationRequest!.purpose = 'observation-result'
   let reviews = 0
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => JSON.stringify(a), runReviewAI: async () => {reviews++; return JSON.stringify(chatActionReviewOutputFixture())}})).rejects.toThrow()
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => JSON.stringify(a)), runReviewAI: async () => {reviews++; return JSON.stringify(chatActionReviewOutputFixture())}})).rejects.toThrow()
   expect(reviews).toBe(0); expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
 })
 
@@ -102,7 +107,7 @@ it.each(['physical-omission', 'invented-answer'] as const)('retains %s semantic 
   else a.text = '我朝屋里问完，一名刚出现的伙计立刻回答了铜印的去向。'
   review.checks.find(c => c.check === (invalid === 'physical-omission' ? 'consequences' : 'permissions'))!.passed = false
   let calls = 0, runId = 0
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: id => {runId = id}, runAI: async () => {calls++; return JSON.stringify(a)},
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: id => {runId = id}, runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(a)}),
     runReviewAI: async messages => {calls++; expect(messages[0].content).toContain('物理后果、披露及其它真实变化仍须按各自合同核对'); return JSON.stringify(review)},
   })).rejects.toThrow('语义审查未通过')
   expect(calls).toBe(2); expect((await db.agentRuns.get(runId))?.status).toBe('failed')

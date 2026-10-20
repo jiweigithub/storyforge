@@ -10,7 +10,7 @@ import {
 import { readAgentRunV1 } from '../../src/lib/agent/run/event-store'
 import { buildMemoryArtifactIndexV1 } from '../../src/lib/memory/settlement'
 import { generateWorkspaceUid } from '../../src/lib/memory/identity'
-import { resolveScopeLike } from '../../src/lib/workspace/scope'
+import { resolveScopeLike, stampNewRecord } from '../../src/lib/workspace/scope'
 import type { Project } from '../../src/lib/types'
 import { putCurrentWorkspaceFixtureV1 } from '../helpers/current-workspace'
 import { finalizeCurrentFixtureV1 } from '../helpers/current-resource-identity'
@@ -116,7 +116,7 @@ async function seedConsistencyProject() {
 
 function runInput(
   fixture: Awaited<ReturnType<typeof seedConsistencyProject>>,
-  call: () => Promise<string>,
+  call: Parameters<typeof runDurableConsistencyAuditV1>[0]['call'],
   overrides: Partial<Parameters<typeof runDurableConsistencyAuditV1>[0]> = {},
 ) {
   return {
@@ -206,6 +206,53 @@ describe('MEMORY-CLOSE-1 · 显式一致性审计的 durable Harness 闭环', ()
     expect(await db.agentEvents.count()).toBe(0)
   })
 
+  it('Fast Guard 实际读取本章计划与完整预算的规则，但不把计划当成完成事实', async () => {
+    const fixture = await seedConsistencyProject()
+    await db.outlineNodes.update(fixture.targetOutlineId, { summary: '午时前带回材料，完成后才有奖励。' })
+    await db.detailedOutlines.add(stampNewRecord(fixture.scope, 'detailedOutlines', {
+      projectId: fixture.project.id!, outlineNodeId: fixture.targetOutlineId,
+      scenes: [{ sceneId: 'gate', title: '核实数量', summary: '检查实物后再修改账簿。', characterIds: [], location: '', conflict: '', pace: 'medium', estimatedWords: 500, notes: '', entryState: '三份药材仍在柜中。' }],
+      openingHook: '', endingCliffhanger: '', lastUsedSummary: '', createdAt: now, updatedAt: now,
+    }, { owner: 'work' }))
+    const result = await runDurableConsistencyAuditV1(runInput(fixture, async messages => {
+      const prompt = messages.map(message => message.content).join('\n')
+      expect(prompt).toContain('午时前带回材料')
+      expect(prompt).toContain('三份药材仍在柜中')
+      expect(prompt).toContain('潮汐钥匙只能获得一次')
+      return '{"findings":[]}'
+    }, { mode: 'fast' }))
+    expect(result.snapshot.contract.permissions.contextSourceKeys).toEqual(expect.arrayContaining(['chapterOutline', 'detailedOutline']))
+    expect(result.candidate.context.included).toEqual(expect.arrayContaining(['chapterOutline', 'detailedOutline', 'creativeRules']))
+    expect(result.candidate.context.truncated).toEqual([])
+  })
+
+  it('无效引文不是无问题报告：原响应留痕、单次失败、不保存空候选或修改原稿', async () => {
+    const fixture = await seedConsistencyProject()
+    let calls = 0
+    const raw = JSON.stringify({ findings: [{ category: '持有物', severity: 'hard', quote: '虚构的正文', evidence: [], reason: '无效定位' }] })
+    await expect(runDurableConsistencyAuditV1(runInput(fixture, async () => { calls++; return raw }))).rejects.toThrow('引文、证据无效')
+    const row = await db.agentRuns.orderBy('id').last()
+    const snapshot = await readAgentRunV1(fixture.scope, row!.id!)
+    expect(calls).toBe(1)
+    expect(snapshot.projection.state).toBe('failed')
+    expect(snapshot.events.some(event => event.type === 'model.responded')).toBe(true)
+    expect(await readLatestConsistencyAgentRun({ projectId: fixture.project.id!, chapterId: fixture.targetChapterId })).toBeNull()
+    expect((await db.chapters.get(fixture.targetChapterId))?.content).toBe(targetHtml)
+    const retained = (await db.agentRunArtifacts.toArray()).filter(artifact => artifact.artifactKind === 'raw-response')
+    expect(retained).toHaveLength(1)
+    expect(JSON.parse(retained[0].content!).raw).toBe(raw)
+  })
+
+  it('length结束的有效JSON也保留原响应后失败，不保存无问题报告', async () => {
+    const fixture = await seedConsistencyProject()
+    await expect(runDurableConsistencyAuditV1(runInput(fixture, async () => ({ raw: '{"findings":[]}', completion: 'incomplete', finishReason: 'length' })))).rejects.toThrow('响应未完整结束')
+    const retained = (await db.agentRunArtifacts.toArray()).find(artifact => artifact.artifactKind === 'raw-response')!
+    expect(JSON.parse(retained.content!)).toMatchObject({ raw: '{"findings":[]}', completion: 'incomplete', finishReason: 'length' })
+    expect(await db.agentEvents.count()).toBe(0)
+    const row = await db.agentRuns.orderBy('id').last()
+    expect((await readAgentRunV1(fixture.scope, row!.id!)).projection.state).toBe('failed')
+  })
+
   it('模型结果未知时不自动重试；只有作者再次触发才取消旧 Run 并创建一次新调用', async () => {
     const fixture = await seedConsistencyProject()
     let calls = 0
@@ -262,6 +309,17 @@ describe('MEMORY-CLOSE-1 · 显式一致性审计的 durable Harness 闭环', ()
     expect(await db.agentRuns.count()).toBe(0)
   })
 
+  it('输入预算包含完整正文；过长时零调用，不截断前段冒充全文审计', async () => {
+    const fixture = await seedConsistencyProject()
+    const longHtml = `<p>${'资源每次消耗都需要核对。'.repeat(6000)}</p>`
+    await db.chapters.update(fixture.targetChapterId, { content: longHtml })
+    let calls = 0
+    await expect(runDurableConsistencyAuditV1(runInput(fixture, async () => { calls++; return '{"findings":[]}' }, { mode: 'fast', chapterContent: longHtml }))).rejects.toThrow('全文与审计资料超出 Fast Guard')
+    expect(calls).toBe(0)
+    expect(await db.agentEvents.count()).toBe(0)
+    expect((await db.chapters.get(fixture.targetChapterId))?.content).toBe(longHtml)
+  })
+
   it('同章同模式同正文并发点击共享一个 single-flight Run 与一次模型调用', async () => {
     const fixture = await seedConsistencyProject()
     let calls = 0
@@ -302,6 +360,19 @@ describe('MEMORY-CLOSE-1 · 显式一致性审计的 durable Harness 闭环', ()
     expect(freshness.snapshot?.events.at(-1)?.type).toBe('verification.staled')
     expect(freshness.snapshot?.projection.terminalReceiptHash).toBeUndefined()
     expect(freshness.snapshot?.projection.memorySettlement).toBeUndefined()
+  })
+
+  it('只改章纲而正文不变也会使显式审计过期，查看不会追加模型调用', async () => {
+    const fixture = await seedConsistencyProject()
+    let calls = 0
+    const completed = await runDurableConsistencyAuditV1(runInput(fixture, async () => { calls++; return '{"findings":[]}' }))
+    expect((await refreshDurableConsistencyAuditFreshnessV1({ scope: fixture.scope, candidate: completed.candidate })).current).toBe(true)
+    await db.outlineNodes.update(fixture.targetOutlineId, { summary: '改为今晚截止，不能提前领到奖励。', updatedAt: now + 1 })
+    const refreshed = await refreshDurableConsistencyAuditFreshnessV1({ scope: fixture.scope, candidate: completed.candidate })
+    expect(refreshed.current).toBe(false)
+    expect(refreshed.snapshot?.events.at(-1)?.type).toBe('verification.staled')
+    expect(calls).toBe(1)
+    expect((await db.chapters.get(fixture.targetChapterId))?.content).toBe(targetHtml)
   })
 
   it('页面恢复拒绝只有兼容缓存、没有 durable Run 权威账本的幽灵报告', async () => {

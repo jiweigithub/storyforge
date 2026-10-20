@@ -5,7 +5,7 @@ import {previewChatNarrativeActionV1} from '../../src/lib/character-interaction/
 import {advanceChatNarrativeTurnV1, createChatNarrativeSituationV1, readChatNarrativeTurnResumeV1, resumeChatNarrativeTurnV1} from '../../src/lib/character-interaction/narrative-turn'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
 const generate = harness.generateInteractionRuntimeCandidateV1
@@ -19,7 +19,7 @@ async function command(sessionId: number) {
 }
 function mock(value: () => ChatNarrativeActionV1 = () => action()) {
   return vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async () => JSON.stringify(value()), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(value())), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
 }
 
 it.each([1, 2, undefined])('executes the explicit %s action limit and freezes the current public audience', async limit => {
@@ -59,7 +59,7 @@ it('binds the chosen role before the first call and rejects role changes on gene
   expect(() => previewChatNarrativeActionV1(state.interaction!, {sequence: state.lastSequence + 1, triggerSequence: state.lastSequence, actorKey: 'artisan', messageId: 'wrong-role',
     action: {...action(), goalKey: 'fix-road', evidenceFactKeys: ['road'], audienceKeys: ['artisan', 'player']}})).toThrow('明确选择')
   await expect(generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'artisan', skillId: 'character.chat-narrative-action', objective: '错误角色',
-    runAI: async () => {throw new Error('must not call')}})).rejects.toThrow('明确选择')
+    runAI: withChatActionChoiceFixture(async () => {throw new Error('must not call')})})).rejects.toThrow('明确选择')
   await expect(resumeChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, expectedSequence: (await readProductRuntimeStateVersion(f.sessionId)).sequence, participantKey: 'artisan', aiConfig: {} as never})).rejects.toThrow('沿用原行动角色')
   expect(await db.agentRuns.count()).toBe(0)
 })
@@ -80,7 +80,7 @@ it('keeps the selected role and remaining quota after refresh, branch and import
   const f = await seedChatNarrativeRuntimeFixture({maxActionsPerTrigger: 3})
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'scene-start', sourceEventSequence: f.sceneSequence, direction: {actorKey: 'guard', actionLimit: 2}})
   const candidate = await generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '工程夹具',
-    runAI: async () => JSON.stringify(action()), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(action())), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: candidate.snapshot.run.id})
   const child = await branchProductRuntimeSession({parentSessionId: f.sessionId, throughSequence: (await readProductRuntimeStateVersion(f.sessionId)).sequence, title: 'bounded child'})
   const projectId = await importProjectJSON(await exportProjectJSON(f.scope.projectId))

@@ -1,3 +1,4 @@
+import {chatTurnAudienceGuidanceV2} from './narrative-audience'
 import {selectChatHistoryActorContextV1} from './history-actor-context'
 import {validateFrozenChatSourceUnitsV1} from './source-unit-runtime'
 import {assertChatResolutionEvidenceSourcesV1} from './resolution-evidence'
@@ -31,6 +32,8 @@ import type { FrozenChatSourceProjectionV1 } from '../types/character-interactio
 import { isSha256Hash } from '../product-production/hash'
 import type { FrozenChatNarrativeV1 } from '../types/chat-narrative'
 import { chatNarrativeViewV1, createChatNarrativeStateV1, parseChatNarrativeStateV1, parseFrozenChatNarrativeV1, rebaseChatNarrativeStateV1, type ChatNarrativeViewV1 } from './narrative-contract'
+import {assertChatControlHandoffSourcesV1} from './control-handoff-state'
+import {applyReviewedChatControlHandoffV1} from './control-handoff-contract'
 import { applyChatNarrativeActionV1, applyReviewedChatNarrativeActionV1, interruptChatNarrativeTriggerV1, requestChatNarrativeTriggerV1 } from './narrative-actions'
 import { applyChatSituationV1 } from './narrative-situations'
 import {chatRelationshipEvidenceV1} from './narrative-relationships'
@@ -562,6 +565,7 @@ export function parseInteractionState(value: unknown): CharacterInteractionRunti
   assertChatMemoryReconciliationSourcesV1(result)
   assertChatInquirySourcesV1(result)
   assertChatResolutionEvidenceSourcesV1(result)
+  assertChatControlHandoffSourcesV1(result)
   return result
 }
 
@@ -689,6 +693,7 @@ export function applyInteractionEvent(
   const state = requireInteraction(stateValue)
   const body = payload(event)
   verifyEnvelope(event, body)
+  if (body.actionChoiceVersion !== undefined && event.type !== 'interaction.narrative.action-reviewed.committed') throw new Error('行动选择额度只能随已审查角色行动提交')
 
   switch (event.type) {
     // The composition root validates the frozen target and portable receipt.
@@ -801,7 +806,11 @@ export function applyInteractionEvent(
       if (body.resolutionEvidenceVersion !== undefined) throw new Error('情境事件不能写入角色行动的收束依据')
       return applyChatSituationV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, draft: body.draft, review: body.review, factEvidenceVersion: body.factEvidenceVersion})
     case 'interaction.narrative.action-reviewed.committed':
-      return applyReviewedChatNarrativeActionV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, actorKey: body.actorKey, messageId: body.messageId, action: body.action, review: body.review, factEvidenceVersion: body.factEvidenceVersion, resolutionEvidenceVersion: body.resolutionEvidenceVersion})
+      return applyReviewedChatNarrativeActionV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, actorKey: body.actorKey, messageId: body.messageId, action: body.action, review: body.review, factEvidenceVersion: body.factEvidenceVersion, resolutionEvidenceVersion: body.resolutionEvidenceVersion, actionChoiceVersion: body.actionChoiceVersion})
+    case 'interaction.narrative.control-handoff.committed':
+      if (Object.keys(body).sort().join(',') !== 'actorKey,baseSequence,baseStateHash,commandId,handoff,review,triggerSequence'
+        || event.actorKey !== body.actorKey || typeof body.actorKey !== 'string' || typeof body.triggerSequence !== 'number') throw new Error('交还控制事件载荷无效')
+      return applyReviewedChatControlHandoffV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, actorKey: body.actorKey, handoff: body.handoff, review: body.review})
     case 'interaction.narrative.action.committed':
       return applyChatNarrativeActionV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, actorKey: body.actorKey, messageId: body.messageId, action: body.action, factEvidenceVersion: body.factEvidenceVersion, resolutionEvidenceVersion: body.resolutionEvidenceVersion})
     case 'interaction.character.reply.committed': {
@@ -1113,6 +1122,8 @@ export function interactionRetrievalView(state: CharacterInteractionRuntimeState
 }
 
 export interface InteractionContextWindow extends InteractionVisibilityView {
+  /** Projection-only format marker; never persisted into narrative state. */
+  messageIdentityVersion?: 1
   historyContext?: {version: 1; policy: string; resolutions: ReturnType<import('./history-selection').ChatHistoryPlanV1['resolutions']>; omitted: {facts: number; goals: number; threads: number}}
   selection?: ChatContextSelectionV1
   excludedMessageCount?: number
@@ -1136,6 +1147,10 @@ export function buildInteractionContextWindow(
     const profile = state.profiles.find(p => p.participantKey === participantKey)
     if (!profile) throw new Error('缺少角色视角，无法选择来源资料')
     if (supportsChatCorrectionContextV1(options.retrievalVersion ?? 'chat-relevance-v10')) visible.memoryCorrections = chatMemoryCorrectionContextV1(state, participantKey)
+    if (options.retrievalVersion === 'chat-relevance-v12' && visible.chatNarrative) {
+      visible.chatNarrative = {...visible.chatNarrative, ...chatTurnAudienceGuidanceV2(state.chatNarrative.triggers.slice(-1)[0]?.direction)}
+    }
+    if (options.retrievalVersion === 'chat-relevance-v11' || options.retrievalVersion === 'chat-relevance-v12') return selectChatHistoryActorContextV1(state, visible, profile, {maxCharacters, maxRecentMessages, optionalMaxCharacters: 18_000, optionalMaxTokens: 6000, relationshipHistory: true, messageIdentities: true})
     if ((options.retrievalVersion ?? 'chat-relevance-v10') === 'chat-relevance-v10') return selectChatHistoryActorContextV1(state, visible, profile, {maxCharacters, maxRecentMessages, optionalMaxCharacters: 18_000, optionalMaxTokens: 6000, relationshipHistory: true})
     if (options.retrievalVersion === 'chat-relevance-v9') return selectChatHistoryActorContextV1(state, visible, profile, {maxCharacters, maxRecentMessages, optionalMaxCharacters: 18_000, optionalMaxTokens: 6000})
     if (options.retrievalVersion === 'chat-relevance-v8') return selectChatHistoryActorContextV1(state, visible, profile, {maxCharacters, maxRecentMessages})

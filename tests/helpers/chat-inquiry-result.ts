@@ -1,7 +1,7 @@
 import {type ChatNarrativeActionV1, type ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
 import {generateInteractionRuntimeCandidateV1, adoptInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import {requestChatNarrativeTrigger, readProductRuntimeState, readProductRuntimeStateVersion} from '../../src/lib/character-interaction/runtime-api'
-import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture} from './chat-narrative-fixture'
+import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture, withChatActionChoiceFixture} from './chat-narrative-fixture'
 
 export {inquiryQuestion, inquiryAnswer, inquiryTruth, inquiryPurpose, chatInquiryReviewFixture} from './chat-inquiry-output'
 import {inquiryQuestion, inquiryAnswer} from './chat-inquiry-output'
@@ -16,7 +16,7 @@ export async function prepareChatInquiryFixture() {
     situationRequest: {threadKey: 'investigate', direction: '承接刚才向掌柜提出的具体位置问题，保留其可能拒答或无法确认的空间。',
       evidenceFactKeys: ['lost', 'clerk-present', 'box'], evidenceExcerpt: inquiryQuestion}}
   const asked = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action',
-    objective: '工程实际询问，不预写回答', runAI: async () => JSON.stringify(action), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    objective: '工程实际询问，不预写回答', runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: asked.snapshot.run.id})
   v = await readProductRuntimeStateVersion(f.sessionId)
   await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'inquiry.continue', baseSequence: v.sequence, baseStateHash: v.stateHash,

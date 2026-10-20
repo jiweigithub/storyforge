@@ -12,10 +12,10 @@ import type { ChatNarrativeProductionSourceV1, ChatSituationCandidatesV1 } from 
 import {chatProjectionResourcesV1} from '../../src/lib/character-interaction/source-projection'
 import {createChatPrivateCharacterV1} from '../../src/lib/character-interaction/private-character'
 
-export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?: boolean; factDiscovery?: boolean; worldDiscovery?: boolean; privateCast?: 'only' | 'mixed'; consultation?: boolean; cardOrigin?: ChatCharacterCardOriginV1; experienceInfo?: ChatExperienceInfoV1} = {}) {
+export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?: boolean; factDiscovery?: boolean; worldDiscovery?: boolean; privateKnownFact?: boolean; privateCast?: 'only' | 'mixed'; consultation?: boolean; cardOrigin?: ChatCharacterCardOriginV1; experienceInfo?: ChatExperienceInfoV1} = {}) {
   const world = await seedCurrentProductWorld('CHAT situation production', options.worldDiscovery ? {characterDetails: {
     background: '红铜钥匙藏在修钟台下的木匣里。', shortDescription: '修钟台下有一只获准由店主检查的木匣。',
-  }} : {})
+  }} : options.privateKnownFact ? {characterDetails: {background: '自己保存了一块能试用的旧发条，但不确定能否耐久。'}} : {})
   const {scope} = await createChatDraftV3('修钟铺的一天')
   const linked = await selectChatWorldV1(scope, 0, world.release.id!)
   const index = await loadProductProductionConsultationSourceV2({scope, worldReleaseId: linked.worldReleaseId!})
@@ -37,6 +37,8 @@ export async function seedChatNarrativeProductionFixture(options: {mappedPlayer?
       discovery: {actorKeys: [sourceKey], condition: '店主实际打开并查看修钟台下木匣的内部；仅查看外观不足以发现。', prerequisiteFragmentKeys: [c.fragments.find(item => item.pointer === '/shortDescription')!.fragmentKey]},
     }) : options.worldDiscovery && c.resourceKey === sourceKey && f.pointer === '/shortDescription' ? ({
       projectionHash: projection.projectionHash, fragmentKey: f.fragmentKey, purpose: 'knowledge', visibility: 'public', audienceKeys: [],
+    }) : options.privateKnownFact && c.resourceKey === sourceKey && f.pointer === '/background' ? ({
+      projectionHash: projection.projectionHash, fragmentKey: f.fragmentKey, purpose: 'knowledge', visibility: 'participants', audienceKeys: [sourceKey],
     }) : c.resourceKey === projection.playerCharacter?.resourceKey ? ({
       projectionHash: projection.projectionHash, fragmentKey: f.fragmentKey,
       purpose: ['/name', '/identity'].includes(f.pointer) ? 'identity' : 'knowledge',
@@ -121,4 +123,29 @@ export function chatOpeningAgencyReviewFixture(candidates: ChatSituationCandidat
     })]
   }
   return draft
+}
+
+/** Convert a known valid test draft into the v9 wire format. Production does
+ * not use this helper, and its authored verdicts are not model-quality proof. */
+export async function chatSituationReferenceDraftFixture(source: ChatNarrativeProductionSourceV1, candidates = chatSituationCandidatesFixture(source)) {
+  const {buildChatOpeningFactCatalogV1, CHAT_OPENING_REFERENCE_SCHEMA} = await import('../../src/lib/character-interaction/opening-source-references')
+  const catalog = await buildChatOpeningFactCatalogV1(source)
+  return {schema: CHAT_OPENING_REFERENCE_SCHEMA, version: 1, options: candidates.options.map(option => {
+    const s = option.situation
+    const mappings = new Map(s.facts.filter(f => f.origin === 'reviewed-world').map(f =>
+      [f.factKey, catalog.facts.find(entry => entry.sourceKnowledgeKey === f.sourceKnowledgeKey)!.factKey]))
+    const remap = (keys: string[]) => keys.map(key => mappings.get(key) ?? key)
+    return {...option, situation: {
+      situationKey: s.situationKey, sceneKey: s.sceneKey, title: s.title, location: s.location, timeLabel: s.timeLabel,
+      worldFactKeys: [...mappings.values()],
+      localFacts: s.facts.filter(f => f.origin !== 'reviewed-world').map(f => ({
+        factKey: f.factKey, text: f.text, audienceKeys: f.audienceKeys,
+        ...(f.discovery ? {discovery: {...f.discovery, prerequisiteFactKeys: remap(f.discovery.prerequisiteFactKeys)}} : {}),
+      })),
+      goals: s.goals.map(({status: _status, updatedSequence: _updated, ...g}) => ({...g, evidenceFactKeys: remap(g.evidenceFactKeys)})),
+      beliefs: s.beliefs.map(({updatedSequence: _updated, ...belief}) => ({...belief, evidenceFactKeys: remap(belief.evidenceFactKeys)})),
+      threads: s.threads.map(({status: _status, updatedSequence: _updated, ...thread}) => ({...thread, evidenceFactKeys: remap(thread.evidenceFactKeys)})),
+      possibilities: s.possibilities.map(p => ({...p, evidenceFactKeys: remap(p.evidenceFactKeys)})),
+    }}
+  })}
 }

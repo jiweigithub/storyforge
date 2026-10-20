@@ -1,4 +1,5 @@
 import {chatTurnAudienceGuidanceV1} from './narrative-audience'
+import {parseChatControlHandoffRecordV1} from './control-handoff-state'
 import {CHAT_HISTORY_CAPACITY_V1, assertChatHistoryCapacityV1} from './history-capacity'
 import {validateChatSceneTransitionRecordsV1} from './narrative-scene-transition'
 import {validateChatResolutionEvidenceV1} from './resolution-evidence'
@@ -16,6 +17,7 @@ import type { ChatNarrativePermissionsV1, ChatNarrativeStateV1, ChatNarrativeTri
 import type { FrozenChatSourceProjectionV1 } from '../types/character-interaction'
 
 type Row = Record<string, unknown>
+export const CHAT_INITIAL_FACT_CAPACITY_V1 = 200
 export function chatTurnActionLimitV1(permissions: ChatNarrativePermissionsV1, trigger: ChatNarrativeTriggerStateV1): number {
   return trigger.direction?.actionLimit ?? permissions.maxActionsPerTrigger
 }
@@ -133,7 +135,7 @@ function validateSituation(value: unknown, boundary: ChatNarrativeBoundaryV1, in
   else if (seed.sourceThreadKey !== null) fail('种子剧情线来源与类型不符')
   if (seed.origin !== 'author-confirmed' && seed.sourceEventSequence === 0) fail('运行情景请求缺少真实事件')
   const viewers = ['player', ...boundary.participantKeys]
-  const facts = list(situation.facts, '情境事实', initial ? 200 : CHAT_HISTORY_CAPACITY_V1.facts).map(item => row(item, 'factKey,text,audienceKeys,origin,sourceKnowledgeKey,sourceEventSequence' + (item != null && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'discovery') ? ',discovery' : ''), '情境事实'))
+  const facts = list(situation.facts, '情境事实', initial ? CHAT_INITIAL_FACT_CAPACITY_V1 : CHAT_HISTORY_CAPACITY_V1.facts).map(item => row(item, 'factKey,text,audienceKeys,origin,sourceKnowledgeKey,sourceEventSequence' + (item != null && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'discovery') ? ',discovery' : ''), '情境事实'))
   if (!facts.length) fail('情境缺少确定背景事实')
   unique(facts, 'factKey', '事实标识')
   for (const fact of facts) {
@@ -244,7 +246,8 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
   validateChatSceneTransitionRecordsV1(state, boundary)
   if (state.situation.seed.origin === 'player-followup' && state.permissions.allowPlayerFollowupSituations !== true) fail('新事项情境缺少作品授权')
   for (const fact of state.situation.facts) validateChatFactDiscoveryRuleV1(fact, state.situation.facts, boundary, state.permissions.maxDiscoveriesPerSituation ?? 0)
-  const triggers = list(parsed.triggers, '主动触发记录', 5000).map(item => row(item, 'kind,requestedSequence,sourceEventSequence,seed,status,actionSequences' + (item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'direction') ? ',direction' : ''), '主动触发记录'))
+  const triggers = list(parsed.triggers, '主动触发记录', 5000).map(item => row(item, 'kind,requestedSequence,sourceEventSequence,seed,status,actionSequences'
+    + ['direction', 'controlHandoff'].filter(key => item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, key)).map(key => `,${key}`).join(''), '主动触发记录'))
   if (state.revision === 0 && triggers.length) fail('初始情境不能伪造触发历史')
   const seen = new Set<number>()
   for (const [index, trigger] of triggers.entries()) {
@@ -269,7 +272,11 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
     if (trigger.status === 'ready' && actions.length >= limit && !(direction?.settleSituationVersion === 1
       && state.permissions.allowActorSituationExpansion === true
       && state.pendingSituation?.sourceEventSequence === actions[actions.length - 1])) fail('主动触发已耗尽动作预算')
-    if (trigger.status === 'waiting-player' && !actions.length) fail('等待玩家缺少角色行动')
+    if (trigger.controlHandoff !== undefined) {
+      const handoff = parseChatControlHandoffRecordV1(trigger.controlHandoff, state.triggers[index], boundary.participantKeys)
+      if (index < triggers.length - 1 && handoff.sequence >= Number(triggers[index + 1].requestedSequence)) fail('交还控制越过下一轮触发')
+    }
+    if (trigger.status === 'waiting-player' && !actions.length && trigger.controlHandoff === undefined) fail('等待玩家缺少角色行动或已审查的交还控制')
   }
   if (state.pendingSituation !== undefined) {
     const hasPurpose = Object.prototype.hasOwnProperty.call(state.pendingSituation, 'purpose')
@@ -306,7 +313,7 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
   }
   const sequences = [state.pendingSituation?.sourceEventSequence ?? 0, state.pendingSituation?.purpose === 'player-followup' ? state.pendingSituation.playerEventSequence : 0, state.situation.seed.sourceEventSequence, ...state.situation.facts.map(f => f.sourceEventSequence),
     ...state.situation.goals.map(g => g.updatedSequence), ...chatCommitmentSequencesV1(state.situation.goals), ...chatPlayerPauseSequencesV1(state.situation.goals), ...state.situation.beliefs.map(b => b.updatedSequence), ...state.situation.threads.map(t => t.updatedSequence),
-    ...state.triggers.flatMap(t => [t.requestedSequence, t.sourceEventSequence, ...t.actionSequences])]
+    ...state.triggers.flatMap(t => [t.requestedSequence, t.sourceEventSequence, ...t.actionSequences, t.controlHandoff?.sequence ?? 0, t.controlHandoff?.sourceSequence ?? 0])]
   if (sequences.some(seq => seq !== 0 && (state.lastEventSequence === 0 || seq > state.lastEventSequence))) fail('叙事状态含尚未发生的事件引用')
   validateChatDiscoveryHistoryV1(state)
   validateChatInquiryHistoryV1(state, boundary)
@@ -318,6 +325,8 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
 /** Never expose the seed, coordinator-only truth, or other roles' goals/possibilities. */
 export function chatNarrativeViewV1(state: ChatNarrativeStateV1, viewerKey: string) {
   const situation = state.situation
+  const activeTrigger = state.triggers.slice(-1)[0]
+  const triggerView = activeTrigger ? (({controlHandoff: _controlHandoff, ...trigger}) => ({...trigger, seed: null}))(activeTrigger) : null
   return structuredClone({
     situationKey: situation.situationKey, sceneKey: situation.sceneKey, title: situation.title, location: situation.location, timeLabel: situation.timeLabel,
     persona: state.persona,
@@ -334,7 +343,7 @@ export function chatNarrativeViewV1(state: ChatNarrativeStateV1, viewerKey: stri
     ...(state.pendingEdit && [state.pendingEdit.actorKey, 'player'].includes(viewerKey) ? {pendingEdit: state.pendingEdit} : {}),
     // A scene-setting request can contain coordinator-only directions. Roles
     // receive the constructed view, never the player's raw backstage request.
-    trigger: state.triggers.length ? {...state.triggers[state.triggers.length - 1], seed: null} : null,
+    trigger: triggerView,
   })
 }
 
@@ -356,6 +365,10 @@ export function rebaseChatNarrativeStateV1(state: ChatNarrativeStateV1, rebase: 
     trigger.requestedSequence = rebase(trigger.requestedSequence)
     trigger.sourceEventSequence = rebase(trigger.sourceEventSequence)
     trigger.actionSequences = trigger.actionSequences.map(rebase)
+    if (trigger.controlHandoff) {
+      trigger.controlHandoff.sequence = rebase(trigger.controlHandoff.sequence)
+      trigger.controlHandoff.sourceSequence = rebase(trigger.controlHandoff.sourceSequence)
+    }
   }
 }
 

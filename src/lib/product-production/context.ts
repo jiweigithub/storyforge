@@ -1,4 +1,5 @@
 import {chatSettingsForAIContextV1} from '../character-interaction/experience-info'
+import {readChatOpeningAutomaticRepairFeedbackV1} from '../character-interaction/opening-repair-evidence'
 import { db } from '../db/schema'
 import type { TtrpgProductionBriefV2, WorkspaceScope } from '../types'
 import type { AssembleContextInput, ContextSourceTransformer } from '../registry/types'
@@ -2080,6 +2081,10 @@ export async function readProductProductionQualityFeedback(input: AssembleContex
 export async function readProductProductionRepairFeedback(input: AssembleContextInput): Promise<string> {
   const { scope, production, build } = await productionAndBuild(input)
   if (!build || !input.productProductionTaskKey) throw new Error('[product-production-context] 修复反馈需要 Build 与 task key')
+  if (production.productType === 'character-interaction') {
+    const automatic = await readChatOpeningAutomaticRepairFeedbackV1({scope, build, taskKey: input.productProductionTaskKey})
+    if (automatic) return JSON.stringify(automatic)
+  }
   if (production.productType !== 'text-open-world') {
     const resolution = JSON.parse(build.failureJson).resolution
     const authorRepairNote = typeof resolution?.note === 'string' ? resolution.note : null

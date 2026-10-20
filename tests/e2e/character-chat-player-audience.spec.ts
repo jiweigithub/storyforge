@@ -36,18 +36,18 @@ test('a returning role cannot read a player message sent while absent, including
     const scope = {projectId, worldId: session.worldId, workId: session.workId}
     const version = await command(session.id)
     await api.requestChatNarrativeTrigger({...version, kind: 'continue', sourceEventSequence: version.baseSequence, direction: {actorKey: 'artisan', actionLimit: 1}})
-    let injectedCalls = 0
+    let expressionAndReviewCalls = 0
     const candidate = await harness.generateInteractionRuntimeCandidateV1({scope, productRuntimeSessionId: session.id, participantKey: 'artisan', skillId: 'character.chat-narrative-action', objective: 'Returning participant visibility engineering check',
-      runAI: async (messages: Array<{content: string}>) => {
-        injectedCalls++
+      runAI: (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).withChatActionChoiceFixture(async (messages: Array<{content: string}>) => {
+        expressionAndReviewCalls++
         if (messages.some(message => message.content.includes(privateText))) throw new Error('Returning role heard the absent dialogue')
         return JSON.stringify({kind: 'speak', text: '天黑后不宜搬动倒树，我先考虑白天可行的办法。', goalKey: 'fix-road', evidenceFactKeys: ['road'], audienceKeys: ['artisan', 'player'], waitingForPlayer: false,
           newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})
-      }, runReviewAI: async () => {injectedCalls++; return JSON.stringify(helpers.chatActionReviewOutputFixture())}})
+      }), runReviewAI: async () => {expressionAndReviewCalls++; return JSON.stringify(helpers.chatActionReviewOutputFixture())}})
     await harness.adoptInteractionRuntimeCandidateV1({scope, runId: candidate.snapshot.run.id})
-    return {sessionId: session.id, scope, state: await api.readProductRuntimeState(session.id), injectedCalls}
+    return {sessionId: session.id, scope, state: await api.readProductRuntimeState(session.id), expressionAndReviewCalls}
   }, {f, privateText})
-  expect(result.injectedCalls).toBe(2)
+  expect(result.expressionAndReviewCalls).toBe(2)
   await page.goto(`./chat/play?project=${result.scope.projectId}&work=${result.scope.workId}&session=${result.sessionId}`)
   await expect(page.getByRole('article').getByText(privateText, {exact: true})).toBeVisible()
   await page.reload()

@@ -145,7 +145,7 @@ test(`native IndexedDB retains ${target} consequential actions, actual historica
   writeFileSync(info.outputPath('native-growth-result.json'), JSON.stringify({...outcome.result, externalCalls, worldUnchanged: outcome.worldUnchanged}, null, 2))
   await info.attach('native-growth-result', {body: JSON.stringify({...outcome.result, externalCalls, worldUnchanged: outcome.worldUnchanged}, null, 2), contentType: 'application/json'})
   expect(outcome.result.failure).toBeNull(); expect(outcome.result.actions).toBe(target); expect(outcome.result.facts).toBe(target * 2 + 4)
-  expect(outcome.result.calls).toBe(target * 2 + outcome.result.checkpoints.length * 2)
+  expect(outcome.result.calls).toBe(target * 3 + outcome.result.checkpoints.length * 3)
   expect(outcome.result.checkpoints.every(c => c.actorRead && c.reviewRead)).toBe(true)
   expect(outcome.worldUnchanged).toBe(true); expect(externalCalls).toBe(0)
   await page.reload()

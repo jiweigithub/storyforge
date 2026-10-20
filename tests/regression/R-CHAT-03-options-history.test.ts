@@ -5,7 +5,7 @@ import {forkChatHistoricalOptionV1, readChatHistoricalOptionMessageIdsV1, readCh
 import {applyChatMessageEditV1} from '../../src/lib/character-interaction/narrative-edit'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, deleteProductRuntimeSession, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger, updateChatMessageEditDraft} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
 const generate = harness.generateInteractionRuntimeCandidateV1
@@ -27,7 +27,7 @@ async function selected(crash = false) {
   const f = await seedChatNarrativeRuntimeFixture()
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'scene-start', sourceEventSequence: f.sceneSequence})
   const generated = await generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-options', objective: '比较工程夹具',
-    runAI: async () => JSON.stringify({options: options()}), runReviewAI: async () => JSON.stringify({options: ['option-1', 'option-2'].map(optionKey => ({optionKey, ...chatActionReviewOutputFixture()}))})})
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify({options: options()})), runReviewAI: async () => JSON.stringify({options: ['option-1', 'option-2'].map(optionKey => ({optionKey, ...chatActionReviewOutputFixture()}))})})
   const adoption = harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id, optionKey: 'option-1',
     onDurableBoundary: type => {if (crash && type === 'runtime.candidate.adopted') throw new Error('interrupted after commit')}})
   if (crash) await expect(adoption).rejects.toThrow('interrupted after commit')
@@ -41,7 +41,7 @@ async function later(f: Fixture) {
   const v = await readProductRuntimeStateVersion(f.sessionId)
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'continue', sourceEventSequence: v.sequence})
   const generated = await generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '后续工程夹具',
-    runAI: async () => JSON.stringify({...options()[0], text: '后来窗户被我推开了。', newFacts: [{factKey: 'opened', kind: 'observation', text: '后来窗户被我推开了。', evidenceFactKeys: ['lost'], evidenceExcerpt: '后来窗户被我推开了。'}]}),
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify({...options()[0], text: '后来窗户被我推开了。', newFacts: [{factKey: 'opened', kind: 'observation', text: '后来窗户被我推开了。', evidenceFactKeys: ['lost'], evidenceExcerpt: '后来窗户被我推开了。'}]})),
     runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
 }
@@ -65,7 +65,7 @@ it('offers only verified visible expressions and branches before an older choice
     sourceOption: {candidateHash: plan.candidateHash, optionKey: 'option-2'}})
   let calls = 0
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async messages => {calls++; expect(JSON.stringify(messages)).not.toContain('后来窗户被我推开了'); return JSON.stringify(options()[1])},
+    runAI: withChatActionChoiceFixture(async messages => {calls++; expect(JSON.stringify(messages)).not.toContain('后来窗户被我推开了'); return JSON.stringify(options()[1])}),
     runReviewAI: async () => {calls++; return JSON.stringify(chatActionReviewOutputFixture())},
   }))
   db.close(); await db.open()
@@ -169,7 +169,7 @@ it.each(['text', 'audience', 'review'])('retains the selected draft without cons
   const child = await forkChatHistoricalOptionV1({scope: f.scope, plan, optionKey: 'option-2'})
   const before = (await readProductRuntimeState(child.id!)).interaction!
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async () => {const action = options()[1]; if (failure === 'text') action.text += '后来发生的事。'; if (failure === 'audience') action.audienceKeys = ['guard', 'player']; return JSON.stringify(action)},
+    runAI: withChatActionChoiceFixture(async () => {const action = options()[1]; if (failure === 'text') action.text += '后来发生的事。'; if (failure === 'audience') action.audienceKeys = ['guard', 'player']; return JSON.stringify(action)}),
     runReviewAI: async () => {const review = chatActionReviewOutputFixture(); if (failure === 'review') review.checks[0].passed = false; return JSON.stringify(review)},
   }))
   await expect(applyChatMessageEditV1({scope: f.scope, sessionId: child.id!, expectedSequence: 0, text: options()[1].text, aiConfig: {} as never})).rejects.toThrow()
@@ -184,7 +184,7 @@ it('resumes review of the saved selected alternative without generating its text
   const child = await forkChatHistoricalOptionV1({scope: f.scope, plan, optionKey: 'option-2'})
   let calls = 0, runId = 0
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async () => {calls++; return JSON.stringify(options()[1])}, onNarrativeActionSaved: id => {runId = id; throw new Error('crash before review')},
+    runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(options()[1])}), onNarrativeActionSaved: id => {runId = id; throw new Error('crash before review')},
   }))
   await expect(applyChatMessageEditV1({scope: f.scope, sessionId: child.id!, expectedSequence: 0, text: options()[1].text, aiConfig: {} as never})).rejects.toThrow('crash before review')
   db.close(); await db.open()

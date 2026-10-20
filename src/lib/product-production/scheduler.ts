@@ -79,6 +79,8 @@ import {
 import { assertFormalProductProductionStartV1 } from '../product/source-contracts'
 import { preserveProductProductionContextV1, ProductProductionContextBudgetErrorV1, validateProductProductionRecoveryDirectiveV1 } from './context'
 import { recordAgentRunArtifactV1 } from '../memory/artifact-store'
+import {CHAT_OPENING_REPAIR_GATE_V1} from '../character-interaction/opening-repair'
+import {CHAT_OPENING_REPAIR_GATE_V2} from '../character-interaction/opening-repair-patch'
 import { assertExactRunArtifactBodySafeV1 } from '../memory/evidence-policy'
 import {
   parseTextAdventureQualityReviewArtifactV1,
@@ -433,7 +435,7 @@ interface ResumeCandidateV1 {
 export interface ProductProductionTaskProjectionV1 {
   taskKey: string
   lane: ProductProductionPlanTaskV3['lane']
-  status: 'waiting' | 'ready' | 'running' | 'retry-ready' | 'completed' | 'blocked' | 'stale'
+  status: 'waiting' | 'ready' | 'running' | 'retry-ready' | 'completed' | 'blocked' | 'stale' | 'verification-required'
   runId: number | null
   attempt: number
   terminalReceiptHash: string | null
@@ -4961,7 +4963,8 @@ async function runClaimedTaskCore(input: {
       // correctness cannot depend on that courtesy. The race releases the
       // durable task even when a transport ignores cancellation.
       reject(timeoutError)
-    }, input.task.timeoutMs)
+    }, input.task.acceptanceGateIds.some(id => [CHAT_OPENING_REPAIR_GATE_V1, CHAT_OPENING_REPAIR_GATE_V2].includes(id))
+      ? Math.min(input.task.timeoutMs, attemptBudgetReservation.durationMs) : input.task.timeoutMs)
   })
   try {
     result = authorizedDirectResult?.result ?? await Promise.race([
@@ -5041,6 +5044,8 @@ async function runClaimedTaskCore(input: {
           ? 'task-budget-exceeded'
           : !classifiedFailure.retryable ? 'task-executor-nonretryable' : 'task-executor-failed'
     const retryable = permitsAutomaticTaskRetry(code)
+      && (!input.task.acceptanceGateIds.some(id => [CHAT_OPENING_REPAIR_GATE_V1, CHAT_OPENING_REPAIR_GATE_V2].includes(id))
+        || error instanceof ProductProductionRetryableExecutionErrorV1)
       && !['task-aborted', 'task-draft-rejected', 'task-executor-nonretryable'].includes(code)
       && classifiedFailure.retryable
       && attempt < input.task.maxAttempts
@@ -5736,6 +5741,10 @@ export async function projectProductProductionSchedulerV1(input: {
       const step = child.projection.steps[task.taskKey]
       if (child.contract.scope.productProduction?.controlEpoch !== build.controlEpoch) status = 'stale'
       else if (child.projection.state === 'completed') status = 'completed'
+      else if (importedScopeReboundReceiptV1(child)) {
+        status = 'verification-required'
+        blocker = '导入的已完成步骤待核对，尚未重新执行。'
+      }
       else if (['failed', 'cancelled', 'recovery_required', 'paused'].includes(child.projection.state)) {
         status = 'blocked'
         blocker = failureDetail ?? step?.failureCode ?? `run-${child.projection.state}`

@@ -9,7 +9,7 @@ import {assertChatActionRevisionExpressionV1} from '../../src/lib/character-inte
 import {generateInteractionRuntimeCandidateV1, adoptInteractionRuntimeCandidateV1, resumeChatNarrativeReviewV1} from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, deleteProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatNarrativeFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatNarrativeFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {chatCommitmentReviewOutputFixture} from '../helpers/chat-commitment-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
@@ -122,10 +122,10 @@ async function prepared() {
   return {...f, action: action(message.sequence)}
 }
 const input = (f: Awaited<ReturnType<typeof prepared>>) => ({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const,
-  objective: '工程注入：暂停已有责任并保留真实来源', runAI: async () => JSON.stringify(f.action), runReviewAI: async () => JSON.stringify(chatCommitmentReviewOutputFixture(f.action))})
+  objective: '工程注入：暂停已有责任并保留真实来源', runAI: withChatActionChoiceFixture(async () => JSON.stringify(f.action)), runReviewAI: async () => JSON.stringify(chatCommitmentReviewOutputFixture(f.action))})
 it('recovers once and preserves existing-goal pause through nested branches, parent deletion and repeated import', async () => {
   const f = await prepared(); let runId = 0, calls = 0
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async messages => {calls++; expect(messages[0].content).toContain('pauseGoal'); return JSON.stringify(f.action)}, onNarrativeActionSaved: id => {runId = id; throw Error('saved')}})).rejects.toThrow('saved')
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async messages => {calls++; expect(messages[0].content).toContain('pauseGoal'); return JSON.stringify(f.action)}), onNarrativeActionSaved: id => {runId = id; throw Error('saved')}})).rejects.toThrow('saved')
   db.close(); await db.open()
   await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async messages => {calls++; expect(messages[0].content).toContain('已有目标暂停专审'); return JSON.stringify(chatCommitmentReviewOutputFixture(f.action))}})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId}); await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
@@ -144,16 +144,16 @@ it('recovers once and preserves existing-goal pause through nested branches, par
 })
 it.each(['semantic-rejection', 'old-review'] as const)('retains %s without adopting or silently retrying a pause', async kind => {
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId); let calls = 0, runId = 0
-  if (kind === 'old-review') {const original = skills.getAgentSkillV1; vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v26'} : original(id))}
+  if (kind === 'old-review') {const original = skills.getAgentSkillV1; vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v26'} : id === 'character.chat-narrative-action' ? {...original(id), promptVersion: 'chat-narrative-action-v45'} : original(id))}
   const review = chatCommitmentReviewOutputFixture(f.action); review.checks.find(c => c.check === 'player-agency')!.passed = false
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: id => {runId = id}, runAI: async () => {calls++; return JSON.stringify(f.action)}, runReviewAI: async () => {calls++; return JSON.stringify(review)}})).rejects.toThrow()
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: id => {runId = id}, runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(f.action)}), runReviewAI: async () => {calls++; return JSON.stringify(review)}})).rejects.toThrow()
   expect(calls).toBe(kind === 'old-review' ? 1 : 2); expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})).rejects.toThrow()
 })
 
 it('rejects adoption of a saved pause after another player message without an extra model call', async () => {
   const f = await prepared(); let calls = 0
-  const candidate = await generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => {calls++; return JSON.stringify(f.action)}, runReviewAI: async () => {calls++; return JSON.stringify(chatCommitmentReviewOutputFixture(f.action))}})
+  const candidate = await generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(f.action)}), runReviewAI: async () => {calls++; return JSON.stringify(chatCommitmentReviewOutputFixture(f.action))}})
   const v = await readProductRuntimeStateVersion(f.sessionId)
   await commitInteractionPlayerMessage({sessionId: f.sessionId, commandId: 'hold.new-player', messageId: 'hold.new-player-message', baseSequence: v.sequence, baseStateHash: v.stateHash, text: '这次先只听你说。', audienceKeys: audience})
   const before = await readProductRuntimeState(f.sessionId)

@@ -10,7 +10,7 @@ import {assertChatActionRevisionExpressionV1} from '../../src/lib/character-inte
 import {generateInteractionRuntimeCandidateV1, adoptInteractionRuntimeCandidateV1, resumeChatNarrativeReviewV1} from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, deleteProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatNarrativeFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatNarrativeFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {chatPromiseActionFixture, chatCommitmentReviewOutputFixture} from '../helpers/chat-commitment-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
@@ -107,10 +107,10 @@ async function prepared() {
   await requestChatNarrativeTrigger({...await envelope(f.sessionId), kind: 'player-response', sourceEventSequence: message.sequence})
   return {...f, action: action(message.sequence)}
 }
-const input = (f: Awaited<ReturnType<typeof prepared>>) => ({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '工程测试：玩家请求约定，不构成模型质量证据', runAI: async () => JSON.stringify(f.action), runReviewAI: async () => JSON.stringify(chatCommitmentReviewOutputFixture(f.action))})
+const input = (f: Awaited<ReturnType<typeof prepared>>) => ({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '工程测试：玩家请求约定，不构成模型质量证据', runAI: withChatActionChoiceFixture(async () => JSON.stringify(f.action)), runReviewAI: async () => JSON.stringify(chatCommitmentReviewOutputFixture(f.action))})
 it('recovers once and retains both sources through nested branching, parent deletion and repeated backup import', async () => {
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId), worlds = await db.worldReleases.toArray(); let id = 0, calls = 0
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async messages => {calls++; expect(messages[0].content).toContain('promiseRequest 默认为 null'); expect(messages[1].content).toContain(requestText); return JSON.stringify(f.action)}, onNarrativeActionSaved: runId => {id = runId; throw Error('saved')}})).rejects.toThrow('saved')
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async messages => {calls++; expect(messages[0].content).toContain('promiseRequest 默认为 null'); expect(messages[1].content).toContain(requestText); return JSON.stringify(f.action)}), onNarrativeActionSaved: runId => {id = runId; throw Error('saved')}})).rejects.toThrow('saved')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before); db.close(); await db.open()
   await resumeChatNarrativeReviewV1({scope: f.scope, runId: id, runReviewAI: async messages => {calls++; expect(messages[0].content).toContain('玩家请求约定专审'); return JSON.stringify(chatCommitmentReviewOutputFixture(f.action))}})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: id}); await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: id}); expect(calls).toBe(2)
@@ -133,7 +133,7 @@ it('recovers once and retains both sources through nested branching, parent dele
 })
 it('does not call an old reviewer or adopt a semantically rejected or stale request', async () => {
   const f = await prepared(), original = skills.getAgentSkillV1; let reviewCalls = 0
-  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v24'} : original(id))
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v24'} : id === 'character.chat-narrative-action' ? {...original(id), promptVersion: 'chat-narrative-action-v45'} : original(id))
   await expect(generateInteractionRuntimeCandidateV1({...input(f), runReviewAI: async () => {reviewCalls++; return JSON.stringify(chatCommitmentReviewOutputFixture(f.action))}})).rejects.toThrow('旧审查')
   expect(reviewCalls).toBe(0); vi.restoreAllMocks()
   const rejected = await prepared(), before = await readProductRuntimeState(rejected.sessionId)

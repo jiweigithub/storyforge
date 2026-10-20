@@ -5,7 +5,7 @@ import * as skills from '../../src/lib/agent/skill-registry'
 import {CHAT_ACTION_KIND_RULE_V1, supportsChatActionKindPromptV1} from '../../src/lib/character-interaction/narrative-action-prompt'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import {readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
@@ -32,7 +32,7 @@ it.each([[false, false], [false, true], [true, false], [true, true]])('preserves
   const raw = JSON.stringify(options ? {options: [a, b]} : a), before = await readProductRuntimeState(f.sessionId)
   let calls = 0, rendered = ''
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId, objective: '核验普通询问与玩家决定的边界',
-    runAI: async messages => {
+    runAI: withChatActionChoiceFixture(async messages => {
       calls++; rendered = JSON.stringify(messages)
       expect(messages[0].content.includes(CHAT_ACTION_KIND_RULE_V1)).toBe(!legacy)
       if (legacy) expect(createHash('sha256').update(messages[0].content).digest('hex')).toBe(options
@@ -40,15 +40,16 @@ it.each([[false, false], [false, true], [true, false], [true, true]])('preserves
         : '339fafb4dc218595a12844d0d5639476f7b7dfb7b8355060e16d748598945df7')
       expect(messages[1].content).not.toContain('柜台下')
       return raw
-    }, runReviewAI: async messages => {
+    }), runReviewAI: async messages => {
       calls++; expect(messages[0].content).not.toContain(CHAT_ACTION_KIND_RULE_V1)
       return JSON.stringify(options ? {options: ['option-1', 'option-2'].map(optionKey => ({optionKey, ...chatActionReviewOutputFixture()}))} : chatActionReviewOutputFixture())
     },
   })
-  expect(calls).toBe(2); expect(generated.snapshot.contract.budget.maxModelCalls).toBe(2)
+  expect(calls).toBe(2); expect(generated.snapshot.contract.budget.maxModelCalls).toBe(options || legacy ? 2 : 3)
+  expect(generated.snapshot.events.filter(event => event.type === 'model.requested')).toHaveLength(options || legacy ? 2 : 3)
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   const artifacts = await db.agentRunArtifacts.toArray()
-  expect(artifacts.some(a => a.artifactKind === 'raw-response' && a.content === raw)).toBe(true)
+  expect(artifacts.some(row => row.artifactKind === 'raw-response' && row.content === (options || legacy ? raw : JSON.stringify({outcome: 'action', action: a, handoff: null})))).toBe(true)
   expect(artifacts.some(a => a.artifactKind === 'rendered-request' && a.content === rendered)).toBe(true)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id, ...(options ? {optionKey: 'option-1'} : {})})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!
@@ -73,17 +74,17 @@ it.each(['attempt-without-player', 'speech-with-result', 'speech-with-fulfilled-
   }
   const raw = JSON.stringify(a); let calls = 0, reviewed = 0, runId = 0
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '原样拒绝无效行动组合',
-    runAI: async () => {calls++; return raw}, runReviewAI: async () => {reviewed++; return JSON.stringify(chatActionReviewOutputFixture())}, onRunCreated: id => {runId = id},
+    runAI: withChatActionChoiceFixture(async () => {calls++; return raw}), runReviewAI: async () => {reviewed++; return JSON.stringify(chatActionReviewOutputFixture())}, onRunCreated: id => {runId = id},
   })).rejects.toThrow(kind === 'attempt-without-player' ? '行动尝试必须交还玩家决定' : '意图或等待选择不能写成已完成后果')
   expect([calls, reviewed]).toEqual([1, 0]); expect((await db.agentRuns.get(runId))!.status).toBe('failed')
-  expect((await db.agentRunArtifacts.toArray()).some(a => a.artifactKind === 'raw-response' && a.content === raw)).toBe(true)
+  expect((await db.agentRunArtifacts.toArray()).some(row => row.artifactKind === 'raw-response' && row.content === JSON.stringify({outcome: 'action', action: a, handoff: null}))).toBe(true)
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
 })
 
 it('still waits for the player when the actor requests permission', async () => {
   const f = await prepared(), a = {...inquiry(), kind: 'attempt' as const, text: '你愿意帮我查看屋外吗？', waitingForPlayer: true, situationRequest: null}
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '询问玩家是否愿意参与',
-    runAI: async () => JSON.stringify(a), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture()),
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(a)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture()),
   })
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!
@@ -96,7 +97,7 @@ it('keeps semantic rejection independent of a structurally valid utterance', asy
   review.checks.find(c => c.check === 'player-agency')!.passed = false
   let calls = 0
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '审查拒绝仍保留原状态',
-    runAI: async () => {calls++; return JSON.stringify(a)}, runReviewAI: async () => {calls++; return JSON.stringify(review)},
+    runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(a)}), runReviewAI: async () => {calls++; return JSON.stringify(review)},
   })).rejects.toThrow('语义审查未通过')
   expect(calls).toBe(2); expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
 })

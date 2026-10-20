@@ -1,3 +1,4 @@
+import {withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {recordAgentRunArtifactV1} from '../../src/lib/memory/artifact-store'
 import {appendAgentRunEventV1} from '../../src/lib/agent/run/event-store'
 import {CHAT_SITUATION_REVIEW_STEP_V1} from '../../src/lib/character-interaction/situation-harness'
@@ -24,10 +25,10 @@ it.each([false, true])('commits actual answer and one fact atomically, with hear
   const f = await prepareChatInquiryFixture(), draft = await chatInquiryDraftFixture(f.sessionId, privateAnswer ? ['guard'] : ['guard', 'player'])
   const before = await readProductRuntimeState(f.sessionId), world = await db.worldReleases.toArray()
   let generated = 0, reviewed = 0, runId = 0
-  await expect(generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: async messages => {
+  await expect(generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: withChatActionChoiceFixture(async messages => {
     generated++; expect(messages[0].content).toContain('questionSequence'); expect(messages[1].content).toContain(inquiryPurpose)
     return JSON.stringify(draft)
-  }, onSituationDraftSaved: id => {runId = id; throw new Error('host-before-review')}})).rejects.toThrow('host-before-review')
+  }), onSituationDraftSaved: id => {runId = id; throw new Error('host-before-review')}})).rejects.toThrow('host-before-review')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   db.close(); await db.open()
   const reviewedResult = await resumeChatSituationReviewV1({scope: f.scope, runId, runReviewAI: async messages => {
@@ -67,7 +68,7 @@ it.each([false, true])('commits actual answer and one fact atomically, with hear
 it.each(['statement', 'uncertain', 'declined'] as const)('records %s as attributed speech without certifying hidden truth', async answerKind => {
   const f = await prepareChatInquiryFixture(), draft = await chatInquiryDraftFixture(f.sessionId)
   Object.assign(draft.inquiryResult!, {answerKind, answerText: answerKind === 'declined' ? '我不想在大家面前谈这件事。' : '我只记得柜台昨夜有人整理过，不能据此确认铜印在哪里。', discoveries: []})
-  const result = await generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: async () => JSON.stringify(draft), runReviewAI: async () => JSON.stringify(chatInquiryReviewFixture(draft))})
+  const result = await generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)), runReviewAI: async () => JSON.stringify(chatInquiryReviewFixture(draft))})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
   const state = await runtime(f.sessionId)
   expect(state.chatNarrative!.situation.facts.find(f => f.factKey === 'secret')!.audienceKeys).toEqual([])
@@ -83,7 +84,7 @@ it.each(['missing-discovery', 'failed-discovery', 'failed-answer', 'missing-inqu
   const raw = JSON.stringify(defect === 'missing-inquiry' ? {checks: report.checks} : report)
   let calls = 0, runId = 0
   await expect(generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), onRunCreated: id => {runId = id},
-    runAI: async () => {calls++; return JSON.stringify(draft)}, runReviewAI: async () => {calls++; return raw}})).rejects.toThrow()
+    runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(draft)}), runReviewAI: async () => {calls++; return raw}})).rejects.toThrow()
   expect(calls).toBe(2); await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})).rejects.toThrow()
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   expect((await db.agentRunArtifacts.toArray()).some(a => a.artifactKind === 'raw-response' && a.content === raw)).toBe(true)
@@ -94,7 +95,7 @@ it.each(['producer', 'reviewer'] as const)('rejects a new result under historica
   const original = skills.getAgentSkillV1, id = kind === 'producer' ? 'character.chat-situation-construction' : 'character.chat-situation-review'
   vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(key => key === id ? {...original(key), promptVersion: kind === 'producer' ? 'chat-situation-construction-v7' : 'chat-situation-review-v6'} : original(key))
   let reviews = 0
-  await expect(generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: async () => JSON.stringify(draft), runReviewAI: async () => {reviews++; return JSON.stringify(chatInquiryReviewFixture(draft))}})).rejects.toThrow('旧情境合同')
+  await expect(generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)), runReviewAI: async () => {reviews++; return JSON.stringify(chatInquiryReviewFixture(draft))}})).rejects.toThrow('旧情境合同')
   expect(reviews).toBe(0); expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
 })
 
@@ -132,7 +133,7 @@ it('fails closed for structural authority, evidence, audience and history tamper
 it.each(['cancel', 'stale'] as const)('does not release a fact when %s arrives during the independent answer review', async interruption => {
   const f = await prepareChatInquiryFixture(), draft = await chatInquiryDraftFixture(f.sessionId)
   let calls = 0, runId = 0
-  await expect(generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), onRunCreated: id => {runId = id}, runAI: async () => {calls++; return JSON.stringify(draft)}, runReviewAI: async () => {
+  await expect(generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), onRunCreated: id => {runId = id}, runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(draft)}), runReviewAI: async () => {
     calls++
     if (interruption === 'cancel') await cancelInteractionRuntimeRunV1({scope: f.scope, runId})
     else {
@@ -153,7 +154,7 @@ it('can answer an inherited pending question on a branch without changing its pa
   const branch = await branchProductRuntimeSession({parentSessionId: f.sessionId, throughSequence: version.sequence, title: '回答之前分支'})
   const draft = await chatInquiryDraftFixture(branch.id!)
   expect(draft.inquiryResult!.questionSequence).toBeLessThan(0)
-  const result = await generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture({...f, sessionId: branch.id!}), runAI: async () => JSON.stringify(draft), runReviewAI: async () => JSON.stringify(chatInquiryReviewFixture(draft))})
+  const result = await generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture({...f, sessionId: branch.id!}), runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)), runReviewAI: async () => JSON.stringify(chatInquiryReviewFixture(draft))})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
   expect((await runtime(branch.id!)).chatNarrative!.inquiryHistory).toHaveLength(1)
   expect(await runtime(f.sessionId)).toEqual(before)
@@ -162,7 +163,7 @@ it('can answer an inherited pending question on a branch without changing its pa
 it.each([false, true])('recovers retained inquiry review=%s without resending unknown requests or dropping per-fact verdicts', async retained => {
   const f = await prepareChatInquiryFixture(), draft = await chatInquiryDraftFixture(f.sessionId)
   let runId = 0
-  await expect(generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: async () => JSON.stringify(draft),
+  await expect(generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)),
     onSituationDraftSaved: id => {runId = id; throw new Error('host-crash')}})).rejects.toThrow('host-crash')
   const stepId = CHAT_SITUATION_REVIEW_STEP_V1
   const append = async (type: 'step.scheduled' | 'step.started' | 'model.requested' | 'model.responded', payload: unknown) =>

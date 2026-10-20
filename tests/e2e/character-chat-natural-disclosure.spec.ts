@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect} from '@playwright/test'
 
 for (const rejected of [false, true]) test(`natural disclosure updates knowledge only after per-fact review (rejected=${rejected})`, async ({page}) => {
@@ -9,6 +10,7 @@ for (const rejected of [false, true]) test(`natural disclosure updates knowledge
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
   })
   await page.route('https://natural-disclosure.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const messages = route.request().postDataJSON().messages as Array<{content: string}>
     const review = messages[1].content.includes('本次持久化行动候选')
     calls.push(review ? 'review' : 'action')
@@ -23,7 +25,7 @@ for (const rejected of [false, true]) test(`natural disclosure updates knowledge
       value = {kind: 'speak', text: spoken, goalKey: 'find-seal', evidenceFactKeys: ['regret'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
         newFacts: [], disclosures: [{factKey: 'regret', toParticipantKeys: ['player'], evidenceExcerpt: spoken, wording: 'equivalent'}], threadUpdates: [], goalStatus: null}
     }
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(value)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, value)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   const f = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture()})

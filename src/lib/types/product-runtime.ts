@@ -1224,6 +1224,7 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "interaction.narrative.memory.corrected",
   "interaction.narrative.action.committed",
   "interaction.narrative.action-reviewed.committed",
+  "interaction.narrative.control-handoff.committed",
   "interaction.narrative.situation.committed",
   "interaction.memory.proposed",
   "interaction.memory.accepted",

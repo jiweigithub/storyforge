@@ -9,6 +9,7 @@ import {draftProductProductionBriefV3, suggestProductStartingPoints} from '../..
 import {getAgentSkillV1} from '../../src/lib/agent/skill-registry'
 import {productProductionTaskUsesWorldGatewayV1} from '../../src/lib/product-production/source-contracts'
 import {verifyChatNarrativeShellV1} from '../../src/lib/product-production/chat-situation-tasks'
+import {buildChatOpeningFactCatalogV2, parseChatOpeningSourceBoundOutputV2} from '../../src/lib/character-interaction/opening-source-references'
 import {selectChatNarrativeCandidateV1, chatNarrativeShellV1} from '../../src/lib/character-interaction/narrative-production'
 import type {ProductProductionTaskExecutionInputV1} from '../../src/lib/product-production/scheduler'
 import type {ChatAuthoringSettingsV3} from '../../src/lib/character-interaction/authoring-contract'
@@ -47,6 +48,8 @@ it.each(['missing option', 'duplicate option', 'missing check', 'duplicate check
 
 it('registers the review between creation and author choice, and requires the same report again for navigation and integration', async () => {
   const f = await seedChatNarrativeProductionFixture(), plan = await createProductProductionPlanV3({brief: f.brief, briefHash: await hashProductProductionValueV2(f.brief), buildNumber: 1})
+  // Reach the quality-report boundary with a valid current producer output.
+  const candidates = await parseChatOpeningSourceBoundOutputV2(f.candidates, f.source, await buildChatOpeningFactCatalogV2(f.source))
   const task = plan.tasks.find(t => t.taskKey === 'content.chat-opening-review')!
   expect(task.dependsOn).toEqual(['content.product-module'])
   expect(task.maxAttempts).toBe(1)
@@ -54,12 +57,12 @@ it('registers the review between creation and author choice, and requires the sa
   expect(productProductionTaskUsesWorldGatewayV1(task)).toBe(false)
   expect(getAgentSkillV1(task.skillId!).contextSourceKeys).toEqual(['product-production.artifact-inputs'])
   for (const key of ['content.chat-author-gate', 'content.narrative', 'integration.package']) expect(plan.tasks.find(t => t.taskKey === key)!.inputArtifactKeys).toContain('quality.chat-openings')
-  const selection = {schema: 'storyforge.chat-situation-selection', version: 1, candidatesHash: await hashProductProductionValueV2(f.candidates), sourceHash: await hashProductProductionValueV2(f.source), selectedOptionKey: 'option-2', authorCommandId: 'test.author'}
-  const artifacts = [{artifactKey: 'design.game', payloadJson: JSON.stringify(f.source)}, {artifactKey: 'content.chat-candidates', payloadJson: JSON.stringify(f.candidates)}, {artifactKey: 'content.chat-selection', payloadJson: JSON.stringify(selection)}]
+  const selection = {schema: 'storyforge.chat-situation-selection', version: 1, candidatesHash: await hashProductProductionValueV2(candidates), sourceHash: await hashProductProductionValueV2(f.source), selectedOptionKey: 'option-2', authorCommandId: 'test.author'}
+  const artifacts = [{artifactKey: 'design.game', payloadJson: JSON.stringify(f.source)}, {artifactKey: 'content.chat-candidates', payloadJson: JSON.stringify(candidates)}, {artifactKey: 'content.chat-selection', payloadJson: JSON.stringify(selection)}]
   const input = {task: plan.tasks.find(t => t.taskKey === 'integration.package')!, inputArtifacts: artifacts} as unknown as ProductProductionTaskExecutionInputV1
   await expect(verifyChatNarrativeShellV1(input)).rejects.toThrow('缺少唯一情境生产依赖:quality.chat-openings')
-  const report = await createChatOpeningReviewV1(chatOpeningAgencyReviewFixture(f.candidates), f.source, f.candidates, 2)
-  const content = await selectChatNarrativeCandidateV1({source: f.source, candidates: f.candidates, selection: {...selection, schema: 'storyforge.chat-situation-selection', version: 1}})
+  const report = await createChatOpeningReviewV1(chatOpeningAgencyReviewFixture(candidates), f.source, candidates, 2)
+  const content = await selectChatNarrativeCandidateV1({source: f.source, candidates: candidates, selection: {...selection, schema: 'storyforge.chat-situation-selection', version: 1}})
   artifacts.push({artifactKey: 'content.narrative', payloadJson: JSON.stringify(chatNarrativeShellV1(content))})
   artifacts.push({artifactKey: 'quality.chat-openings', payloadJson: JSON.stringify(report)})
   await expect(verifyChatNarrativeShellV1(input)).resolves.toMatchObject({content})

@@ -10,7 +10,7 @@ import {useCharacterInteractionPlayerStore as player} from '../../src/stores/cha
 import {commitInteractionPlayerMessage, deleteProductRuntimeSession, readProductRuntimeState, readProductRuntimeStateVersion,
   requestChatNarrativeTrigger, saveChatComposerDraftV1} from '../../src/lib/character-interaction/runtime-api'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
-import {chatActionReviewOutputFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {readChatMessageEditPlanV1, forkChatMessageEditV1} from '../../src/lib/character-interaction/narrative-edit'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
@@ -41,7 +41,7 @@ async function candidate(f: Awaited<ReturnType<typeof fixture>>, inspect?: (mess
   const trigger = await requestChatNarrativeTrigger({...await command(f.parentSessionId), kind: 'player-response', sourceEventSequence: message.eventSequence})
   return generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.parentSessionId, participantKey: 'guard',
     skillId: 'character.chat-narrative-action', narrativeTriggerSequence: trigger.sequence, objective: '工程核验',
-    runAI: async messages => {inspect?.(messages); return JSON.stringify(output)}, runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    runAI: withChatActionChoiceFixture(async messages => {inspect?.(messages); return JSON.stringify(output)}), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
 }
 
 it('copies settled story progress once, preserves old state and unsent text, and continues independently after backup and parent deletion', async () => {
@@ -137,7 +137,7 @@ it('rejects a run that starts after preparation even when no new runtime event i
     const prepared = await realPrepare(args)
     await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.parentSessionId, participantKey: 'guard',
       skillId: 'character.chat-narrative-action', narrativeTriggerSequence: trigger.sequence, objective: '另一页面的生成请求',
-      runAI: async () => JSON.stringify(action), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+      runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
     expect((await readProductRuntimeStateVersion(f.parentSessionId)).sequence).toBe(plan.sourceSequence)
     return prepared
   })

@@ -8,7 +8,7 @@ import {parseChatTurnDirectionV1} from '../../src/lib/character-interaction/narr
 import {previewChatNarrativeActionV1} from '../../src/lib/character-interaction/narrative-actions'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 import {CHAT_SITUATION_REVIEW_CHECKS_V1} from '../../src/lib/types/chat-narrative'
 
@@ -21,13 +21,13 @@ const action = (key: string): ChatNarrativeActionV1 => ({kind: 'speak', text: ke
   waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})
 function mock(transform: (key: string, draft: ChatNarrativeActionV1) => ChatNarrativeActionV1 = (_key, draft) => draft) {
   return vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async messages => {
+    runAI: withChatActionChoiceFixture(async messages => {
       const text = JSON.stringify(messages)
       if (input.participantKey === 'artisan') expect(text).not.toContain('无辜旅人')
       else expect(text).not.toContain('天黑后不宜')
       expect(text).not.toContain('柜台下')
       return JSON.stringify(transform(input.participantKey, action(input.participantKey)))
-    }, runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
+    }), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
 }
 function state() {
   const value = createInitialInteractionState(chatNarrativeFixture()), scene = value.sceneTemplates[0]
@@ -63,7 +63,7 @@ it('advances one frozen round-robin turn in causal order with isolated role inpu
   expect(value.messages.map(m => m.speakerKey)).toEqual(['guard', 'artisan', 'guard'])
   expect(spy).toHaveBeenCalledTimes(3)
   expect(value.chatNarrative!.triggers[0]).toMatchObject({status: 'complete', direction: {actionLimit: 3, scheduling: {mode: 'round-robin', participantKeys: ['guard', 'artisan']}}})
-  expect(value.remainingDirectorBudget).toBe(94)
+  expect(value.remainingDirectorBudget).toBe(91)
 })
 
 it('freezes a private audience and rejects a forged wider scheduler before any model call', async () => {
@@ -82,7 +82,7 @@ it('checks the computed next actor in both Harness generation and deterministic 
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'scene-start', sourceEventSequence: f.sceneSequence,
     direction: {actorKey: 'guard', actionLimit: 3, scheduling: {mode: 'round-robin', participantKeys: ['guard', 'artisan']}}})
   const value = (await readProductRuntimeState(f.sessionId)).interaction!, trigger = value.chatNarrative!.triggers[0]
-  await expect(generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'artisan', skillId: 'character.chat-narrative-action', objective: 'wrong actor', runAI: async () => {throw new Error('must not call')}})).rejects.toThrow('调度结果')
+  await expect(generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'artisan', skillId: 'character.chat-narrative-action', objective: 'wrong actor', runAI: withChatActionChoiceFixture(async () => {throw new Error('must not call')})})).rejects.toThrow('调度结果')
   expect(() => previewChatNarrativeActionV1(value, {sequence: value.chatNarrative!.lastEventSequence + 1, triggerSequence: trigger.requestedSequence, actorKey: 'artisan', messageId: 'forged', action: action('artisan')})).toThrow('调度结果')
   expect(await db.agentRuns.count()).toBe(0)
 })
@@ -92,7 +92,7 @@ it('resumes the next role and the original allowance after refresh, nested branc
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'scene-start', sourceEventSequence: f.sceneSequence,
     direction: {actorKey: 'guard', actionLimit: 2, scheduling: {mode: 'round-robin', participantKeys: ['guard', 'artisan']}}})
   const candidate = await generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: 'saved first role',
-    runAI: async () => JSON.stringify(action('guard')), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(action('guard'))), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: candidate.snapshot.run.id})
   const branch = await branchProductRuntimeSession({parentSessionId: f.sessionId, throughSequence: (await readProductRuntimeStateVersion(f.sessionId)).sequence, title: 'group child'})
   const nested = await branchProductRuntimeSession({parentSessionId: branch.id!, throughSequence: 0, title: 'nested group child'})
@@ -133,7 +133,7 @@ it('lets a reviewed role direction construct once before the next eligible role 
   const f = await seedChatNarrativeRuntimeFixture({maxActionsPerTrigger: 2, actorSituationExpansion: true})
   const actors: string[] = []; let constructions = 0
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async messages => {
+    runAI: withChatActionChoiceFixture(async messages => {
       if (input.skillId === 'character.chat-situation-construction') {
         constructions++
         return JSON.stringify({kind: 'chat-situation', title: '门闩的线索', location: '驿站', timeLabel: '傍晚',
@@ -146,7 +146,7 @@ it('lets a reviewed role direction construct once before the next eligible role 
       expect(JSON.stringify(messages)).toContain('后门门闩有一处松动')
       expect(JSON.stringify(messages)).not.toContain('无辜旅人')
       return JSON.stringify({...action(input.participantKey), kind: 'pause'})
-    }, runReviewAI: async () => JSON.stringify(input.skillId === 'character.chat-situation-construction'
+    }), runReviewAI: async () => JSON.stringify(input.skillId === 'character.chat-situation-construction'
       ? {checks: CHAT_SITUATION_REVIEW_CHECKS_V1.map(check => ({check, passed: true, reason: '工程夹具，不是叙事质量证明'}))} : chatActionReviewOutputFixture())}))
   await advanceChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, kind: 'scene-start', expectedSequence: f.sceneSequence, schedulingMode: 'round-robin', actionLimit: 2, aiConfig: {} as never})
   expect(actors).toEqual(['guard', 'artisan'])
@@ -157,7 +157,7 @@ it('lets a reviewed role direction construct once before the next eligible role 
 it('keeps an unknown second role request blocked on resume without replaying the first role or skipping ahead', async () => {
   const f = await seedChatNarrativeRuntimeFixture({maxActionsPerTrigger: 3}); let calls = 0
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async () => {calls++; if (input.participantKey === 'artisan') throw new Error('provider outcome unknown'); return JSON.stringify(action(input.participantKey))},
+    runAI: withChatActionChoiceFixture(async () => {calls++; if (input.participantKey === 'artisan') throw new Error('provider outcome unknown'); return JSON.stringify(action(input.participantKey))}),
     runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
   await expect(advanceChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, kind: 'scene-start', expectedSequence: f.sceneSequence,
     schedulingMode: 'round-robin', actionLimit: 3, aiConfig: {} as never})).rejects.toThrow('provider outcome unknown')

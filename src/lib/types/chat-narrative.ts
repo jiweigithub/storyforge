@@ -316,6 +316,18 @@ export interface ChatNarrativeTriggerStateV1 {
   actionSequences: number[]
   /** Explicit per-turn player choice; absent historical turns keep release limits. */
   direction?: ChatTurnDirectionV1
+  /** Reviewed control disposition, separate from authored actions. Full
+   * candidate/review remain in the event and run; no review prose enters role
+   * context. Sequence references must rebase with parentless branches. */
+  controlHandoff?: ChatControlHandoffRecordV1
+}
+
+export interface ChatControlHandoffRecordV1 {
+  version: 1
+  sequence: number
+  actorKey: string
+  sourceMessageId: string
+  sourceSequence: number
 }
 
 export interface ChatTurnDirectionV1 {

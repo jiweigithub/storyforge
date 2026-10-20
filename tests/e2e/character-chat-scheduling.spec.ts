@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {openChatNarrativeTools} from './helpers/character-chat-ui'
 import {test, expect, type Page} from '@playwright/test'
 
@@ -22,7 +23,7 @@ async function seed(page: Page, partial = false) {
         kind: 'scene-start', sourceEventSequence: f.sceneSequence, direction: {actorKey: 'guard', actionLimit: 2, scheduling: {mode: 'round-robin', participantKeys: ['guard', 'artisan']}}})
       const harness = await load('/storyforge/src/lib/character-interaction/harness.ts')
       const first = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '已完成第一位角色的工程夹具',
-        runAI: async () => JSON.stringify({kind: 'speak', text: '我已核对铜印的保管记录。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'artisan', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}),
+        runAI: (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).withChatActionChoiceFixture(async () => JSON.stringify({kind: 'speak', text: '我已核对铜印的保管记录。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'artisan', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})),
         runReviewAI: async () => JSON.stringify(fixture.chatActionReviewOutputFixture())})
       await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: first.snapshot.run.id})
     }
@@ -36,6 +37,7 @@ async function seed(page: Page, partial = false) {
 async function provider(page: Page, waiting = false) {
   const receipt = {actors: [] as string[], calls: 0}
   await page.route('https://chat-scheduling.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     receipt.calls++
     const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n')
     let output: unknown
@@ -50,7 +52,7 @@ async function provider(page: Page, waiting = false) {
       output = {kind: waiting ? 'attempt' : 'speak', text: waiting ? '接下来需要你决定，我先等你。' : `${key === 'guard' ? '叶岑核对铜印' : '程素检查山路'}，第 ${receipt.actors.length} 步。`,
         goalKey: key === 'guard' ? 'find-seal' : 'fix-road', evidenceFactKeys: [key === 'guard' ? 'lost' : 'road'], audienceKeys: ['guard', 'artisan', 'player'], waitingForPlayer: waiting, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
     }
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   return receipt
 }
@@ -61,7 +63,7 @@ async function read(page: Page, sessionId: number) {
 
 test('bounded round-robin passes visible consequences between roles; natural replies choose the addressed role', async ({page}) => {
   const receipt = await provider(page), f = await seed(page)
-  await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('1')
+  await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('2')
   await expect(page.getByRole('button', {name: '让角色开场', exact: true})).toBeDisabled()
   await openChatNarrativeTools(page)
   await page.getByLabel('角色接续方式', {exact: true}).selectOption('round-robin')
@@ -77,10 +79,11 @@ test('bounded round-robin passes visible consequences between roles; natural rep
   expect((await read(page, f.sessionId)).chatNarrative.triggers[0]).toMatchObject({status: 'complete', direction: {actionLimit: 3, scheduling: {mode: 'round-robin', participantKeys: ['guard', 'artisan']}}})
   await page.reload()
   await expect(page.getByLabel('角色接续方式', {exact: true})).toHaveValue('manual')
-  await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('1')
+  await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('3')
   expect(receipt.calls).toBe(6)
   await openChatNarrativeTools(page)
   await page.getByLabel('角色接续方式', {exact: true}).selectOption('natural')
+  await page.getByLabel('演绎节奏', {exact: true}).selectOption('1')
   await page.getByPlaceholder('对当前场景中的角色说话…').fill('程素，山路何时恢复通行？')
   await page.getByRole('button', {name: '发送并生成', exact: true}).click()
   await expect(page.getByText('程素检查山路，第 4 步。', {exact: true})).toBeVisible()
@@ -133,9 +136,10 @@ test('a player can interrupt resumed automatic scheduling without selecting a ne
   let calls = 0, release!: () => void
   const gate = new Promise<void>(resolve => {release = resolve})
   await page.route('https://chat-scheduling.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     calls++
     await gate
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify({kind: 'speak', text: '这条已打断的回复不能进入故事。', goalKey: 'fix-road', evidenceFactKeys: ['road'], audienceKeys: ['guard', 'artisan', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, {kind: 'speak', text: '这条已打断的回复不能进入故事。', goalKey: 'fix-road', evidenceFactKeys: ['road'], audienceKeys: ['guard', 'artisan', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})}, finish_reason: 'stop'}]})})
   })
   const f = await seed(page, true)
   await expect(page.getByLabel('本轮行动角色', {exact: true})).toHaveValue('')

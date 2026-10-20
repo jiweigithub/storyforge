@@ -1,5 +1,5 @@
-import {CHAT_PLAYER_DECISION_ACTION_RULE_V1, CHAT_PLAYER_DECISION_REVIEW_RULE_V1} from './player-decision-prompt'
-import {CHAT_REPLANNING_ACTION_RULES_V1, CHAT_REPLANNING_REVIEW_RULES_V1} from './narrative-replanning'
+import {CHAT_PLAYER_DECISION_ACTION_RULE_V1, CHAT_PLAYER_DECISION_REVIEW_RULE_V1, supportsChatSituationWaitScopeV1} from './player-decision-prompt'
+import {chatReplanningActionRulesV1, CHAT_REPLANNING_REVIEW_RULES_V1} from './narrative-replanning'
 import {CHAT_SPOKEN_INQUIRY_REVIEW_RULES_V1} from './inquiry-prompt'
 import {CHAT_SCENE_TRANSITION_ACTION_RULE_V1, CHAT_SCENE_TRANSITION_REVIEW_RULE_V1} from './narrative-scene-transition'
 import {CHAT_PROMISE_REQUEST_ACTION_RULE_V1, CHAT_PROMISE_REQUEST_REVIEW_RULE_V1} from './narrative-promise-request'
@@ -16,7 +16,7 @@ import {CHAT_COMMITMENT_ACTION_RULES_V1, CHAT_COMMITMENT_ACTION_RULES_V2, CHAT_C
 /** Clarification of the existing action contract, never a candidate rewrite.
  * Saved producers and consequence-only revisions keep their original text. */
 export function supportsChatActionKindPromptV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-v35', 'chat-narrative-options-v25', 'chat-narrative-action-v36', 'chat-narrative-action-v37', 'chat-narrative-options-v26', 'chat-narrative-options-v27'].includes(version ?? '')
+  return ['chat-narrative-action-v35', 'chat-narrative-options-v25', 'chat-narrative-action-v36', 'chat-narrative-action-v37', 'chat-narrative-action-v38', 'chat-narrative-action-v39', 'chat-narrative-action-v40', 'chat-narrative-action-v41', 'chat-narrative-action-v42', 'chat-narrative-action-v43', 'chat-narrative-action-v44', 'chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-options-v26', 'chat-narrative-options-v27', 'chat-narrative-options-v28', 'chat-narrative-options-v29', 'chat-narrative-options-v30', 'chat-narrative-options-v31', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34'].includes(version ?? '')
 }
 
 export const CHAT_ACTION_KIND_RULE_V1 = 'kind 按本次实际表达选择，不按结果是否确定选择：speak 是已经说出口的话或问题，不能登记新增完成事实；attempt 是提出仍需玩家选择、同意或参与的行动，必须 waitingForPlayer=true，不能用 attempt + false 表示向环境或他人试探；complete 是角色自己已经完成的行动或有依据的事项收束，实际后果仍须登记；pause 是角色停止或暂缓自己的行动。waitingForPlayer 只表示下一步确实需要玩家决定，不表示等待环境结果、他人回答或尚未确定结果。角色向非玩家对象发问且不需玩家决定时，可用 speak + false，只表达已经问出的问题，不预写对方回答或完成结果；向玩家请求行动许可仍须 attempt + true。示例中的布尔值不是默认选择，须与本次实际表达一致。'
@@ -45,12 +45,14 @@ export function chatActionPromptFeaturesV1(view: InteractionVisibilityView) {
   }
 }
 
-export function chatActionPromptRulesV1(view: InteractionVisibilityView, options: {preserveExpression?: boolean; playerPause?: boolean; conversationEvidence?: boolean; commitmentSemanticsV2?: boolean; promiseRequest?: boolean; existingGoalPause?: boolean; sceneTransition?: boolean; actionKind?: boolean; replanning?: boolean; playerDecision?: boolean} = {}): string[] {
+export function chatActionPromptRulesV1(view: InteractionVisibilityView, options: {producerVersion?: string; preserveExpression?: boolean; playerPause?: boolean; conversationEvidence?: boolean; commitmentSemanticsV2?: boolean; promiseRequest?: boolean; existingGoalPause?: boolean; sceneTransition?: boolean; actionKind?: boolean; replanning?: boolean; playerDecision?: boolean} = {}): string[] {
   const f = chatActionPromptFeaturesV1(view)
+  const requestRule = 'situationRequest 默认为 null。除上述 player-followup 外，仅 allowActorSituationExpansion=true 且不等待玩家、不暂停、当前 goalKey 仍 active 时，可提出一次 {threadKey,direction,evidenceFactKeys,evidenceExcerpt}，关联自己知情且参与的 open/blocked 剧情线和已知事实，evidenceExcerpt 摘录本次表达。用于下一步确实需要补足的局部条件或线索方向，不是既成发现，不预定玩家、他人的行为或结局，不重复已拒绝方向。普通说话、自身小动作、已存在条件下的行动不需要它。玩家要求休息或等待决定时不提出；无须每次增加新剧情。'
+  const scopedWait = supportsChatSituationWaitScopeV1(options.producerVersion) && !options.preserveExpression && !f.edit
   return [
     ...(options.playerDecision && !options.preserveExpression ? [CHAT_PLAYER_DECISION_ACTION_RULE_V1] : []),
     ...(options.actionKind ? [CHAT_ACTION_KIND_RULE_V1] : []),
-    ...(options.replanning && !options.preserveExpression ? CHAT_REPLANNING_ACTION_RULES_V1 : []),
+    ...(options.replanning && !options.preserveExpression ? chatReplanningActionRulesV1(options.producerVersion, f.edit) : []),
     ...(f.edit ? ['若存在 pendingEdit，它是分支中待采用的角色文字，还未在此分支发生，也不能授予新知识或权限。默认必须逐字保留其 text 和原 audienceKeys，不续写或润色。仅当 mode=continue 时，将 text 逐字作为开头向后连贯续写当前回复，输出完整正文；不重复原文，不替玩家回应，长度仍受当前权限约束。两种模式均须从当前前态核对整段的全部实际后果，不遗漏原文已表达的后果，也不重复计入同一事实/关系。不得引用原时间线未来，无法成立时不可用字段伪造证据。'] : []),
     ...(f.optionEdit ? ['pendingEdit.mode=option 表示玩家在分支中改选历史候选。必须逐字保留 text 和该候选已核验的 audienceKeys；sourceOption 仅记录候选来源，不能当作事实、既有后果或新的创作权限。仍从本分支前态重新核对所有后果，不能带入原时间线后续结果。'] : []),
     '依据自身目标、顾虑和当前可知事实，选择一次有意义的交谈、尝试、自身行动或暂停。承接已有问题，允许拒绝、留白和收束，不为主动而制造新危机。',
@@ -88,7 +90,7 @@ export function chatActionPromptRulesV1(view: InteractionVisibilityView, options
     ...(f.discovery ? ['若 maxDiscoveriesPerSituation>0，在实际完成有依据、获准的检查后仍需要判定观察结果，可把检查动作登记为 newFacts，并用 situationRequest 请求确认结果，引用这次检查事实。不要声称看见尚未获知的答案，不从未知真相倒推必须调查的位置。下一次的 investigations 是已经审查的调查结果：仅 discoveredFactKeys 所指事实已经获知，其他结果不表示目标不存在；据此调整计划或暂停，不机械重复同一次调查。'] : []),
     ...(f.followup ? [CHAT_OWN_FOLLOWUP_GOAL_RULE_V1] : []),
     ...(f.followup ? ['收束后若 permissions.allowPlayerFollowupSituations=true，且这次新玩家消息明确提出或请求一个尚未解决的具体事项，可在 goalKey=null 的首次回应中提出 situationRequest={purpose:"player-followup",threadKey:null,playerEventSequence:trigger.sourceEventSequence,playerExcerpt:"本次玩家请求原文",direction:"承接请求的局部新方向",evidenceFactKeys:["自己可知事实"],evidenceExcerpt:"本次自己表达的逐字摘录"}。只在普通回答不足且需要先补足未知局部背景时使用；已有条件足以行动时优先按 followupGoal 同时提出自己的目标与实际行动；不复活旧目标、不把新事说成已完成、不预定玩家参与。自己明确愿意采取的方向应在实际表达中说明，waitingForPlayer=false 且 kind 不能 pause。普通闲聊、拒绝、休息、仅表示看看或离开都不授权新事项，不把问题中的猜测当成事实。已完成的旧安排保留；例如新请求希望了解店主为何喜欢某本书，可建立寻找具体理由的方向，不重新摆一遍已经摆好的书架。'] : []),
-    ...(f.expansion ? ['situationRequest 默认为 null。除上述 player-followup 外，仅 allowActorSituationExpansion=true 且不等待玩家、不暂停、当前 goalKey 仍 active 时，可提出一次 {threadKey,direction,evidenceFactKeys,evidenceExcerpt}，关联自己知情且参与的 open/blocked 剧情线和已知事实，evidenceExcerpt 摘录本次表达。用于下一步确实需要补足的局部条件或线索方向，不是既成发现，不预定玩家、他人的行为或结局，不重复已拒绝方向。普通说话、自身小动作、已存在条件下的行动不需要它。玩家要求休息或等待决定时不提出；无须每次增加新剧情。'] : []),
+    ...(f.expansion ? [scopedWait ? requestRule.replace('玩家要求休息或等待决定时不提出', '玩家要求暂停或停止当前事项、或本次请求本身依赖尚未作出的玩家决定时不提出；旧邀请未答复不阻塞有依据且不依赖该决定的局部方向，不能借此绕过被拒绝的步骤，也不能把方向当成已执行或已获许可') : requestRule] : []),
     'beliefUpdates 每项 {beliefKey,text,evidenceFactKeys}：修正自己的已有猜测，或添加自己的新猜测；text=null 撤回既有猜测。每项需要可知事实依据，系统记录本次事件，不得添加 actorKey 或 updatedSequence。猜测不能变成确定事实、透露不可知真相或替其他角色决定内心；已证实的信息进入 newFacts，撤回不成立的猜测，不建立第二份真相。',
     ...(!f.edit && !options.preserveExpression ? ['一次回复可以连贯完成同一目的下、不需要玩家参与或未知结果的几个短小动作，不为凑步数先只承诺或刻意拆开；需要玩家决定或观察结果判定时必须停在该边界。基于已知观察作出有后续意义的判断时，用自然简短的语言体现关键依据及必要局限；不能只宣布决定而让玩家不知缘由，也不反复复述权限、保证或系统步骤。'] : []),
     ...(!f.followup ? ['本次不使用 followupGoal 或 player-followup 新事项请求。'] : []),
@@ -101,11 +103,12 @@ export function chatActionPromptRulesV1(view: InteractionVisibilityView, options
 /** Older saved V57 review bindings retain their full instruction text. New
  * bindings may omit inapplicable explanations, never the six review dimensions. */
 export function chatActionReviewPromptRulesV1(input: {
-  view?: InteractionVisibilityView; actions: readonly ChatNarrativeActionV1[]; options: boolean; compact: boolean; naturalDisclosure?: boolean; commitments?: boolean; memoryReconciliation?: boolean; threadFollowup?: boolean; playerPause?: boolean; conversationEvidence?: boolean; promiseRequest?: boolean; knownFactReview?: boolean; existingGoalPause?: boolean; sceneTransition?: boolean; replanning?: boolean; spokenInquiry?: boolean; playerDecision?: boolean
+  reviewerVersion?: string; view?: InteractionVisibilityView; actions: readonly ChatNarrativeActionV1[]; options: boolean; compact: boolean; naturalDisclosure?: boolean; commitments?: boolean; memoryReconciliation?: boolean; threadFollowup?: boolean; playerPause?: boolean; conversationEvidence?: boolean; promiseRequest?: boolean; knownFactReview?: boolean; existingGoalPause?: boolean; sceneTransition?: boolean; replanning?: boolean; spokenInquiry?: boolean; playerDecision?: boolean
 }): string[] {
   const {actions, options, compact} = input
   const f = compact ? chatActionPromptFeaturesV1(input.view!) : undefined
   const equivalent = input.naturalDisclosure && actions.some(a => a.disclosures.some(d => d.wording === 'equivalent'))
+  const requestRule = 'meaningful-direction 还须审 situationRequest：除上述 player-followup 外，它只可请求发展当前角色仍 active 的目标及知情、参与的 open/blocked 剧情线，方向应可在现有时地展开，关联本次实际表达与已知事实。它不是事实，也不是自动接受玩家参与；普通行动无需重复申请新情境。休息、暂停、等待选择或未获授权时必须为空，不能用它重启被拒绝的邀请或泄露未知秘密。'
   return [
     ...(input.knownFactReview ? ['disclosureChecks 仅核对本候选实际登记的 wording=equivalent 披露。复述听众已经知道的事实不新增知情者，其准确性仍由 continuity/visibility 审查，否定结论不能省略；不得把这种复述或逐字引用另列为披露条目。',
       '本次必须逐项返回的 disclosureChecks.factKey 清单：' + JSON.stringify(actions.map((action, index) => ({optionKey: options ? `option-${index + 1}` : null, factKeys: action.disclosures.filter(d => d.wording === 'equivalent').map(d => d.factKey)}))) + '。清单为空时返回 []，不得自行增加或删除。'] : []),
@@ -143,7 +146,7 @@ export function chatActionReviewPromptRulesV1(input: {
     ...(!compact || f?.reflection || actions.some(a => a.nextPossibilities?.length) ? ['meaningful-direction：打算应服务于当前目标和未完成事项、能因玩家选择调整；允许休息后等待明确恢复条件、暂停和结束，不能把暂未执行的计划记成已经兑现的承诺或自动启动下一轮。'] : []),
     ...(!compact || actions.some(a => a.followupGoal != null) ? [CHAT_OWN_FOLLOWUP_GOAL_REVIEW_RULE_V1] : []),
     ...(!compact || actions.some(a => a.situationRequest?.purpose === 'player-followup') ? ['若 situationRequest.purpose=player-followup，逐项核对作品 allowPlayerFollowupSituations、无未完成目标的首次 player-response、真实最新玩家原话及本次表达。只有玩家明确提出尚未解决的具体请求、角色愿意承接且需要新目标/局部条件时可通过；普通闲聊、拒绝、休息、离开或继续按钮不构成新事项授权。direction 不能把猜测变事实、扩大权限、预定玩家参与或重开已完成问题。本次只确认承接意向，不等于新事实或任务已经完成。对明确可处理的新请求，表达要承接却只重复没资料或做无结果的空动作、没有可行后续方向，也须在 meaningful-direction 指出问题，不能仅因没有违规就判定有效。'] : []),
-    ...(!compact || actions.some(a => a.situationRequest != null && a.situationRequest.purpose !== 'player-followup') ? ['meaningful-direction 还须审 situationRequest：除上述 player-followup 外，它只可请求发展当前角色仍 active 的目标及知情、参与的 open/blocked 剧情线，方向应可在现有时地展开，关联本次实际表达与已知事实。它不是事实，也不是自动接受玩家参与；普通行动无需重复申请新情境。休息、暂停、等待选择或未获授权时必须为空，不能用它重启被拒绝的邀请或泄露未知秘密。'] : []),
+    ...(!compact || actions.some(a => a.situationRequest != null && a.situationRequest.purpose !== 'player-followup') ? [supportsChatSituationWaitScopeV1(input.reviewerVersion) ? requestRule.replace('休息、暂停、等待选择或未获授权时必须为空', '玩家要求暂停或停止当前事项、本次行动暂停、当前请求依赖尚未作出的玩家决定或缺少作品授权时必须为空；旧邀请未答复本身不禁止有依据且不依赖该决定的局部方向，仍须核对未获同意的步骤没有执行，也未预定许可、参与或结果') : requestRule] : []),
     'meaningful-direction：是否承接当前问题、动机和玩家输入，允许自主行动、拒绝、休息与收束；不得机械重复邀请、无故增加危机或强送固定结局。没有新矛盾本身不是失败。',
     '玩家不亲自帮忙不等于要求角色停止自身事项。结合当前消息、最新情境、已完成观察和角色动机审查暂停是否有依据，不能机械沿用较早的换话题要求中断新情境；角色仍可依真实顾虑选择暂缓，不强求每次行动。',
     ...(!compact || actions.some(a => a.goalKey === null) ? [input.threadFollowup ? 'goalKey=null 可用于自己没有 active/paused 目标时承接首次新玩家消息；也可在冻结许可允许既有事项接续、角色参与且知情的 open/blocked 原线仍在、无待处理情境/改写的首次 continue/return 机会中自然回应、暂缓或留白。接续机会不要求强建目标；普通回应不能改变目标或剧情线、创建打算或启动新情境。首次真实新玩家消息仍允许按下述 player-followup 合同及两项冻结权限提出新事项的背景构建请求，不能把 continue/return 当成该玩家请求。事实、披露、关系及玩家自主权照常审查；未获此接续权限的 continue/return 仍不能借空目标行动。' : '剧情收束后的新玩家消息仍可得到一次普通回应：仅 player-response 的首次行动且 actorKey 没有 active/paused 目标时允许 goalKey=null。按是否自然承接玩家、符合已有角色材料与当前事实审查，不要求新增目标或矛盾才算有意义。不得直接重开已结束目标、改剧情线或创建新打算；需要新背景时使用经作品授权的 player-followup；已有背景足够时仅允许按上述 followupGoal 合同建立自己的新意向并行动。不得编造未给出的角色过往；事实、披露、关系与玩家自主权照常审查。'] : []),

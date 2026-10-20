@@ -4,7 +4,7 @@ import {parseChatNarrativeActionReviewV1, chatNarrativeActionReviewPassedV1} fro
 import {bindChatNarrativeOptionsReviewV1} from '../../src/lib/character-interaction/narrative-options'
 import {canonicalStringify} from '../../src/lib/agent/run/hash'
 import {createInitialInteractionState} from '../../src/lib/character-interaction/runtime'
-import {chatNarrativeFixture, chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatNarrativeFixture, chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {db} from '../../src/lib/db/schema'
 import {readInstanceAgentRunV1} from '../../src/lib/agent/run/event-store'
 import {isImportedCompletedInteractionRunV1, readResumableInteractionRunsV1} from '../../src/lib/character-interaction/runtime-run-recovery'
@@ -142,11 +142,11 @@ describe('durable review normalization', () => {
     return f
   }
   const input = (f: Awaited<ReturnType<typeof prepared>>) => ({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const,
-    objective: '逐字披露审查冗余通过项的工程检查', runAI: async () => JSON.stringify(action()), runReviewAI: async () => JSON.stringify(output())})
+    objective: '逐字披露审查冗余通过项的工程检查', runAI: withChatActionChoiceFixture(async () => JSON.stringify(action())), runReviewAI: async () => JSON.stringify(output())})
 
   it('resumes the saved candidate, retains raw and conversion evidence, adopts once and restores after parent deletion', async () => {
     const f = await prepared(), before = await readProductRuntimeState(f.sessionId); let runId = 0, calls = 0
-    await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => {calls++; return JSON.stringify(action())},
+    await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(action())}),
       onNarrativeActionSaved: id => {runId = id; throw Error('saved')}})).rejects.toThrow('saved')
     expect(await readProductRuntimeState(f.sessionId)).toEqual(before); db.close(); await db.open()
     await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async () => {calls++; return JSON.stringify(output())}})
@@ -168,7 +168,7 @@ describe('durable review normalization', () => {
 
   it('resumes a shared-fact review with the unchanged pre-state, preserving conversion and source across import', async () => {
     const f = await prepared(), a = sharedAction(), row = sharedInput().output; let runId = 0, calls = 0
-    await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => {calls++; return JSON.stringify(a)}, onNarrativeActionSaved: id => {runId = id; throw Error('saved')}})).rejects.toThrow('saved')
+    await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(a)}), onNarrativeActionSaved: id => {runId = id; throw Error('saved')}})).rejects.toThrow('saved')
     const before = await readProductRuntimeState(f.sessionId); db.close(); await db.open()
     await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async () => {calls++; return JSON.stringify(row)}})
     await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId}); await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
@@ -209,11 +209,11 @@ describe('durable review normalization', () => {
     const f = await prepared(), before = await readProductRuntimeState(f.sessionId), a = action(), row = output(); let calls = 0, runId = 0
     if (kind === 'old-contract') {
       const original = skills.getAgentSkillV1
-      vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v23'} : original(id))
+      vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v23'} : id === 'character.chat-narrative-action' ? {...original(id), promptVersion: 'chat-narrative-action-v45'} : original(id))
     }
     if (kind === 'literal-rejection') row.disclosureChecks[0].passed = false
     if (kind === 'missing-paraphrase') {a.disclosures[0].wording = 'equivalent'; row.disclosureChecks = []}
-    await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => {calls++; return JSON.stringify(a)}, runReviewAI: async () => {calls++; return JSON.stringify(row)}, onRunCreated: id => {runId = id}})).rejects.toThrow()
+    await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(a)}), runReviewAI: async () => {calls++; return JSON.stringify(row)}, onRunCreated: id => {runId = id}})).rejects.toThrow()
     expect(calls).toBe(2); expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
     await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})).rejects.toThrow()
     expect((await db.agentRuns.get(runId))!.status).toBe('failed')
@@ -223,7 +223,7 @@ describe('durable review normalization', () => {
   it('allows only consequence-only revision after common-fact normalization', async () => {
     const f = await prepared(), row = sharedInput().output; let runId = 0
     row.checks.find(c => c.check === 'consequences')!.passed = false
-    await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => JSON.stringify(sharedAction()), runReviewAI: async () => JSON.stringify(row), onRunCreated: id => {runId = id}})).rejects.toThrow('语义审查未通过')
+    await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => JSON.stringify(sharedAction())), runReviewAI: async () => JSON.stringify(row), onRunCreated: id => {runId = id}})).rejects.toThrow('语义审查未通过')
     expect((await readChatActionRevisionSourceV1({scope: f.scope, sessionId: f.sessionId}))?.runId).toBe(runId)
     expect((await readProductRuntimeState(f.sessionId)).interaction!.messages).toHaveLength(0)
   })

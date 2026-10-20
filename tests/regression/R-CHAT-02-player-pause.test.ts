@@ -11,7 +11,7 @@ import {generateInteractionRuntimeCandidateV1, adoptInteractionRuntimeCandidateV
 import {branchProductRuntimeSession, deleteProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {assertChatActionRevisionExpressionV1} from '../../src/lib/character-interaction/action-revision'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatNarrativeFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatNarrativeFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {chatCommitmentReviewOutputFixture} from '../helpers/chat-commitment-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
@@ -124,7 +124,7 @@ async function prepared() {
 }
 function candidate(f: {scope: Awaited<ReturnType<typeof seedChatNarrativeRuntimeFixture>>['scope']; sessionId: number}, action: ChatNarrativeActionV1) {
   return {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '工程注入：明确暂停或恢复自己的责任',
-    runAI: async () => JSON.stringify(action), runReviewAI: async () => JSON.stringify(chatCommitmentReviewOutputFixture(action))}
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatCommitmentReviewOutputFixture(action))}
 }
 it('saves before review, recovers once, branches twice, deletes parent, imports and resumes the same held responsibility', async () => {
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId), world = await db.worldReleases.toArray(); let runId = 0
@@ -154,7 +154,7 @@ it('saves before review, recovers once, branches twice, deletes parent, imports 
 })
 it('rejects weak assent semantically, old frozen reviewers before review, and stale release adoption', async () => {
   const f = await prepared(), original = skills.getAgentSkillV1; let calls = 0
-  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v21'} : original(id))
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v21'} : id === 'character.chat-narrative-action' ? {...original(id), promptVersion: 'chat-narrative-action-v45'} : original(id))
   await expect(generateInteractionRuntimeCandidateV1({...candidate(f, f.pause), runReviewAI: async () => {calls++; return JSON.stringify(chatCommitmentReviewOutputFixture(f.pause))}})).rejects.toThrow('旧审查合同')
   expect(calls).toBe(0); vi.restoreAllMocks()
   // A new explicit message creates a separate opportunity; keep the old blocked candidate.

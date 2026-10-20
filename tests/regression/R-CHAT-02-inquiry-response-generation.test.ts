@@ -5,7 +5,7 @@ import * as skills from '../../src/lib/agent/skill-registry'
 import {chatSituationResponseRulesV1} from '../../src/lib/character-interaction/narrative-situation-prompt'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import {readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {CHAT_SITUATION_REVIEW_CHECKS_V1, type ChatNarrativeActionV1, type ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
 
 const skillId = 'character.chat-situation-construction' as const
@@ -24,14 +24,14 @@ async function prepared() {
     newFacts: [{factKey: 'clerk-present', kind: 'observation', text: seed, audienceKeys: ['player', 'guard', 'artisan'], evidenceFactKeys: ['road'], seedExcerpt: seed}],
     newGoals: [], newThreads: [], possibilities: []}
   const local = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'player', skillId,
-    objective: '已声明的工程交谈场景', runAI: async () => JSON.stringify(backdrop), runReviewAI: async () => JSON.stringify(review())})
+    objective: '已声明的工程交谈场景', runAI: withChatActionChoiceFixture(async () => JSON.stringify(backdrop)), runReviewAI: async () => JSON.stringify(review())})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: local.snapshot.run.id})
   const text = '叶岑向柜台另一端的掌柜问：“铜印平时如何保管？是否有人经手登记？”'
   const action: ChatNarrativeActionV1 = {kind: 'speak', text, goalKey: 'find-seal', audienceKeys: ['guard', 'player'], evidenceFactKeys: ['lost', 'clerk-present'],
     waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
     situationRequest: {threadKey: 'investigate', direction, evidenceFactKeys: ['lost', 'clerk-present'], evidenceExcerpt: text}}
   const asked = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action',
-    objective: '工程询问，未预写回答', runAI: async () => JSON.stringify(action), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    objective: '工程询问，未预写回答', runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: asked.snapshot.run.id})
   const current = await readProductRuntimeStateVersion(f.sessionId)
   await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'inquiry.continue', baseSequence: current.sequence, baseStateHash: current.stateHash,
@@ -55,14 +55,14 @@ it.each([false, true])('binds inquiry guidance to the saved producer, keeping ol
     ? {...original(id), promptVersion: `chat-situation-construction-v${legacy ? 6 : 7}`}
     : id === 'character.chat-situation-review' ? {...original(id), promptVersion: 'chat-situation-review-v6'} : original(id))
   let calls = 0, rendered = ''
-  const result = await generateInteractionRuntimeCandidateV1({...input(f), runAI: async messages => {
+  const result = await generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async messages => {
     calls++; rendered = JSON.stringify(messages)
     expect(messages[0].content.includes(chatSituationResponseRulesV1('chat-situation-construction-v7')[0])).toBe(!legacy)
     // Digests captured from the unchanged V97 producer and reviewer before this fix.
     if (legacy) expect(digest(messages[0].content)).toBe('41bd4a8eafae948ab4ad400ec4041ac123ce149c108ccce8f19f97c1c2342501')
     expect(messages[1].content).toContain(direction)
     return raw
-  }, runReviewAI: async messages => {
+  }), runReviewAI: async messages => {
     calls++; expect(digest(messages[0].content)).toBe('2be4898f1ab2469e7ca5d1f3d238bc1dc399e32a1db18b532b2e3cc223bf3065')
     return JSON.stringify(review())
   }})
@@ -90,7 +90,7 @@ it.each(['meaningful-direction', 'visibility'] as const)('retains %s rejection w
   report.checks.find(c => c.check === check)!.passed = false
   let calls = 0, runId = 0
   await expect(generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: id => {runId = id},
-    runAI: async () => {calls++; return JSON.stringify(draft)}, runReviewAI: async () => {calls++; return JSON.stringify(report)},
+    runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(draft)}), runReviewAI: async () => {calls++; return JSON.stringify(report)},
   })).rejects.toThrow('语义审查未通过')
   expect(calls).toBe(2)
   expect((await db.agentRuns.get(runId))?.status).toBe('failed')
@@ -103,7 +103,7 @@ it('cannot turn a hidden source into public answer evidence even when generation
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId), draft = response()
   draft.newFacts[0].evidenceFactKeys = ['secret']
   let reviews = 0
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => JSON.stringify(draft),
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)),
     runReviewAI: async () => {reviews++; return JSON.stringify(review())},
   })).rejects.toThrow('不能传播不可知的依据')
   expect(reviews).toBe(0)

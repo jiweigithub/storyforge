@@ -80,4 +80,16 @@ describe('R-FB9 · 细纲进入生成上下文', () => {
     expect(r.included).not.toContain('detailedOutline')
     expect(r.omitted).toContain('detailedOutline')
   })
+
+  it('共享注册源保留作者六项场景任务和备注，旧场景不补造任务', async () => {
+    const { projectId, nodeId } = await seed()
+    const detail = (await db.detailedOutlines.toArray())[0]
+    const task = { entryState: '没有钥匙', goal: '找到可通行的路', keyChoice: '先询问守门人', outcome: '得到路线但尚未出发', exitState: '停在路口', sceneFunction: '建立一个可验证的小目标', notes: '不要追加追兵身份' }
+    await db.detailedOutlines.update(detail.id!, { scenes: [{ ...detail.scenes[0], ...task }, detail.scenes[1]] })
+    const result = await assembleContext({ projectId, outlineNodeId: nodeId, sourceKeys: ['detailedOutline'] })
+    for (const value of Object.values(task)) expect(result.text).toContain(value)
+    expect(result.text).not.toContain('undefined')
+    expect(result.text.match(/进入状态:/g)).toHaveLength(1)
+    expect((await db.detailedOutlines.get(detail.id!))!.scenes[1]).not.toHaveProperty('entryState')
+  })
 })

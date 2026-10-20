@@ -4,7 +4,7 @@ import {useCharacterInteractionPlayerStore as store} from '../../src/stores/char
 import * as harness from '../../src/lib/character-interaction/harness'
 import * as runtimeApi from '../../src/lib/character-interaction/runtime-api'
 import {readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
-import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture} from '../helpers/chat-narrative-fixture'
+import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
 const realGenerate = harness.generateInteractionRuntimeCandidateV1
@@ -67,7 +67,7 @@ for (const delayed of ['library', 'details-error', 'selection'] as const) it(`ke
 
 it('opens without fake player input, stops for a decision, routes refusal through actions and never generates on reload', async () => {
   const f = await loaded(3)
-  const spy = vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: async () => JSON.stringify(action())}))
+  const spy = vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: withChatActionChoiceFixture(async () => JSON.stringify(action()))}))
   await advance()
   expect(spy).toHaveBeenCalledTimes(1)
   expect(store.getState().runtimeState.interaction!.messages.map(m => m.role)).toEqual(['character'])
@@ -91,14 +91,14 @@ it('opens without fake player input, stops for a decision, routes refusal throug
 it('uses the frozen action limit and a pause stops the bounded loop early', async () => {
   await loaded(3)
   let calls = 0
-  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: async () => {
+  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: withChatActionChoiceFixture(async () => {
     calls++
     return JSON.stringify({...action(`叶岑自己整理物品 ${calls}。`), kind: calls === 2 ? 'pause' : 'complete', waitingForPlayer: false})
-  }}))
+  })}))
   await advance()
   expect(calls).toBe(2)
   expect(store.getState().runtimeState.interaction!.chatNarrative!.triggers.at(-1)!.status).toBe('complete')
-  expect(store.getState().runtimeState.interaction!.remainingDirectorBudget).toBe(96)
+  expect(store.getState().runtimeState.interaction!.remainingDirectorBudget).toBe(94)
   await advance('continue')
   expect(calls).toBe(5)
   expect(store.getState().runtimeState.interaction!.chatNarrative!.triggers.at(-1)!.actionSequences).toHaveLength(3)
@@ -107,13 +107,13 @@ it('uses the frozen action limit and a pause stops the bounded loop early', asyn
 it('blocks a second paid attempt at the same head, preserves failures and requires a fresh explicit trigger', async () => {
   const f = await loaded()
   let calls = 0
-  const spy = vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: async () => {calls++; throw new Error('401 no retry')} }))
+  const spy = vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: withChatActionChoiceFixture(async () => {calls++; throw new Error('401 no retry')}) }))
   await expect(advance()).rejects.toThrow('401')
   expect(store.getState()).toMatchObject({busy: false, generatingRunId: null})
   await expect(advance()).rejects.toThrow('已发起')
-  await expect(generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: 'duplicate', runAI: async () => {calls++; return JSON.stringify(action())}})).rejects.toThrow('已有行动运行')
+  await expect(generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: 'duplicate', runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(action())})})).rejects.toThrow('已有行动运行')
   expect(calls).toBe(1)
-  spy.mockImplementation(input => generate({...input, runAI: async () => {calls++; return JSON.stringify(action())}}))
+  spy.mockImplementation(input => generate({...input, runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(action())})}))
   await advance('continue')
   expect(calls).toBe(2)
 })
@@ -121,12 +121,12 @@ it('blocks a second paid attempt at the same head, preserves failures and requir
 it('retains the completed part of a bounded turn across failure and never repeats its consequence', async () => {
   const f = await loaded(3)
   let calls = 0
-  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: async () => {
+  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: withChatActionChoiceFixture(async () => {
     calls++
     if (calls === 2) throw new Error('connection lost')
     return JSON.stringify({...action(calls === 1 ? '叶岑移好了油灯。门边亮了起来。' : '叶岑停下，等你先休息。'), kind: calls === 1 ? 'complete' : 'pause', waitingForPlayer: false,
       newFacts: calls === 1 ? [{factKey: 'lit-door', kind: 'observation', text: '门边亮了起来。', evidenceFactKeys: ['lost'], evidenceExcerpt: '门边亮了起来。'}] : []})
-  }}))
+  })}))
   await expect(advance()).rejects.toThrow('connection lost')
   db.close(); await db.open(); await store.getState().load(f.scope, null, f.sessionId)
   expect(store.getState().runtimeState.interaction!.messages).toHaveLength(1)
@@ -140,14 +140,14 @@ it('recovers a durable candidate before allowing more generation and cancels an 
   const f = await loaded()
   const v = await readProductRuntimeStateVersion(f.sessionId)
   await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'prepared', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'scene-start', sourceEventSequence: f.sceneSequence})
-  const candidate = await generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: 'durable', runAI: async () => JSON.stringify(action())})
+  const candidate = await generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: 'durable', runAI: withChatActionChoiceFixture(async () => JSON.stringify(action()))})
   db.close(); await db.open(); await store.getState().load(f.scope, null, f.sessionId)
   expect(store.getState().recoverableRunIds).toEqual([candidate.snapshot.run.id])
   await expect(advance('continue')).rejects.toThrow('先恢复候选或取消')
   await store.getState().resumeRun(candidate.snapshot.run.id)
   expect(store.getState().pendingNarrativeRunIds).toEqual([])
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    onRunCreated: () => {throw new Error('process disappeared')}, runAI: async () => {throw new Error('must not call')}}))
+    onRunCreated: () => {throw new Error('process disappeared')}, runAI: withChatActionChoiceFixture(async () => {throw new Error('must not call')})}))
   await expect(advance('continue')).rejects.toThrow('process disappeared')
   expect(store.getState().pendingNarrativeRunIds).toHaveLength(1)
   expect(store.getState().recoverableRunIds).toEqual([])
@@ -163,7 +163,7 @@ it('player input cancels an in-flight action even if the provider ignores abort'
   let started!: () => void
   const entered = new Promise<void>(resolve => {started = resolve})
   let calls = 0
-  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: async () => {calls++; started(); await pending; return JSON.stringify(action())}}))
+  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: withChatActionChoiceFixture(async () => {calls++; started(); await pending; return JSON.stringify(action())})}))
   const generation = advance().catch(reason => reason)
   await entered
   const sending = store.getState().sendPlayerMessage('停一下，我想换条路。')
@@ -193,18 +193,18 @@ it('constructs and reviews an explicit seed before the role acts, preserving ref
     newFacts: [{factKey: 'knocking', kind: 'observation', text: '门外传来敲门声。', audienceKeys: ['guard', 'artisan', 'player'], evidenceFactKeys: ['road'], seedExcerpt: '门外传来敲门声'}],
     newGoals: [{goalKey: 'understand-knock', actorKey: 'guard', desire: '了解来意', concern: '贸然开门', boundary: '不替玩家行动', evidenceFactKeys: ['knocking']}], newThreads: [], possibilities: []}
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async messages => {
+    runAI: withChatActionChoiceFixture(async messages => {
       seen.push(input.skillId)
       if (input.skillId === 'character.chat-situation-construction') return JSON.stringify(draft)
       const prompt = JSON.stringify(messages)
       expect(prompt).toContain('knocking'); expect(prompt).not.toContain('柜台下'); expect(prompt).not.toContain('幕后要求')
       return JSON.stringify({...action('我想问问门外的人。你要一起听吗？'), goalKey: 'understand-knock', evidenceFactKeys: ['knocking']})
-    }, runReviewAI: async () => {if (input.skillId === 'character.chat-narrative-action') return JSON.stringify(chatActionReviewOutputFixture()); seen.push('review'); return JSON.stringify({checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'meaningful-direction'].map(check => ({check, passed: true, reason: 'test'}))})},
+    }), runReviewAI: async () => {if (input.skillId === 'character.chat-narrative-action') return JSON.stringify(chatActionReviewOutputFixture()); seen.push('review'); return JSON.stringify({checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'meaningful-direction'].map(check => ({check, passed: true, reason: 'test'}))})},
   }))
   await store.getState().createSituation({seed: '门外传来敲门声。幕后要求保持身份未知。', participantKey: 'guard', aiConfig})
   expect(seen).toEqual(['character.chat-situation-construction', 'review', 'character.chat-narrative-action'])
   expect(store.getState().runtimeState.interaction!.messages.map(m => m.role)).toEqual(['character'])
-  expect(store.getState().runtimeState.interaction!.remainingDirectorBudget).toBe(96)
+  expect(store.getState().runtimeState.interaction!.remainingDirectorBudget).toBe(95)
   db.close(); await db.open(); await store.getState().load(f.scope, null, f.sessionId)
   expect(seen).toHaveLength(3)
   expect(store.getState().pendingNarrativeRunIds).toEqual([])

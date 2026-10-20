@@ -4,7 +4,7 @@ import * as skills from '../../src/lib/agent/skill-registry'
 import {supportsChatCommitmentPromptV2} from '../../src/lib/character-interaction/commitment-prompt'
 import {generateInteractionRuntimeCandidateV1, adoptInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import {readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
-import {seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {chatPromiseActionFixture, chatCommitmentReviewOutputFixture} from '../helpers/chat-commitment-fixture'
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
@@ -32,22 +32,23 @@ it.each([false, true])('records the exact producer instructions while keeping th
   }
   const f = await prepared(), a = action(); let calls = 0, rendered = ''
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '未来条件约定的工程输入验证',
-    runAI: async messages => {
+    runAI: withChatActionChoiceFixture(async messages => {
       calls++; rendered = JSON.stringify(messages)
       expect(messages[0].content.includes('约定成立的时点与履行条件发生的时点不同')).toBe(!legacy)
       expect(messages[0].content.includes('commitmentEffects 默认 []')).toBe(legacy)
       expect(messages[0].content.includes('示例空数组不等于本次无需登记')).toBe(!legacy)
       expect(messages[1].content).not.toContain('柜台下')
       return JSON.stringify(a)
-    },
+    }),
     runReviewAI: async messages => {
       calls++; expect(messages[0].content).toContain('明确的新约定、实际履行或明确撤回若漏记，在 consequences 判失败')
       expect(messages[0].content).not.toContain('约定成立的时点与履行条件发生的时点不同')
       return JSON.stringify(chatCommitmentReviewOutputFixture(a))
     },
   })
-  expect(generated.snapshot.contract.budget.maxModelCalls).toBe(2); expect(calls).toBe(2)
-  expect(generated.snapshot.contract.executionBindings!.find(b => b.stepId === 'interaction:runtime-candidate')!.promptVersion).toBe(legacy ? 'chat-narrative-action-v30' : 'chat-narrative-action-v37')
+  expect(generated.snapshot.contract.budget.maxModelCalls).toBe(legacy ? 2 : 3); expect(calls).toBe(2)
+  expect(generated.snapshot.events.filter(event => event.type === 'model.requested')).toHaveLength(legacy ? 2 : 3)
+  expect(generated.snapshot.contract.executionBindings!.find(b => b.stepId === 'interaction:runtime-candidate')!.promptVersion).toBe(legacy ? 'chat-narrative-action-v30' : 'chat-narrative-action-v50')
   expect((await db.agentRunArtifacts.toArray()).some(a => a.artifactKind === 'rendered-request' && a.content === rendered)).toBe(true)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!
@@ -59,7 +60,7 @@ it('still rejects an omitted promise without committing the expression or silent
   const f = await prepared(), a = {...action(), commitmentEffects: []}, before = await readProductRuntimeState(f.sessionId); let calls = 0, runId = 0
   const rejected = chatCommitmentReviewOutputFixture(a); rejected.checks.find(c => c.check === 'consequences')!.passed = false
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '缺失后果仍被拦截',
-    runAI: async () => {calls++; return JSON.stringify(a)}, runReviewAI: async () => {calls++; return JSON.stringify(rejected)}, onRunCreated: id => {runId = id},
+    runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(a)}), runReviewAI: async () => {calls++; return JSON.stringify(rejected)}, onRunCreated: id => {runId = id},
   })).rejects.toThrow('语义审查未通过')
   expect(calls).toBe(2); expect((await db.agentRuns.get(runId))!.status).toBe('failed')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)

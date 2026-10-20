@@ -9,7 +9,7 @@ import {generateInteractionRuntimeCandidateV1} from '../../src/lib/character-int
 import {branchProductRuntimeSession, changeChatMemoryUse, commitInteractionPlayerMessage, correctChatMemory, deleteProductRuntimeSession, endInteractionScene, startInteractionScene, proposeInteractionMemory, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger, resolveInteractionMemory} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {estimateTokens} from '../../src/lib/ai/context-budget'
-import {chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 
 beforeEach(async () => {await db.delete(); await db.open()})
 afterEach(async () => {await db.delete()})
@@ -131,7 +131,7 @@ it('delivers selected memory through the registered Harness and shows only revie
   await requestChatNarrativeTrigger({...await command(f.sessionId), kind: 'scene-start', sourceEventSequence: returned.sequence})
   let calls = 0
   const result = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '依据承诺继续演绎',
-    runAI: async messages => {calls++; expect(JSON.stringify(messages)).toContain('约好在北侧石墙交还靛蓝地图'); return JSON.stringify({kind: 'speak', text: '我先核对靛蓝地图，再继续找铜印。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})},
+    runAI: withChatActionChoiceFixture(async messages => {calls++; expect(JSON.stringify(messages)).toContain('约好在北侧石墙交还靛蓝地图'); return JSON.stringify({kind: 'speak', text: '我先核对靛蓝地图，再继续找铜印。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})}),
     runReviewAI: async messages => {calls++; expect(JSON.stringify(messages)).toContain('约好在北侧石墙交还靛蓝地图'); return JSON.stringify({...chatActionReviewOutputFixture(), memoryChecks: [{memoryId: 'relevant', sourceSequence: corrected.sequence, passed: true, reason: '注入的工程判定。'}]})}})
   const inspected = await readChatContextInspectionV1(f.scope, f.sessionId, result.snapshot.run.id)
   expect(inspected.available).toBe(true)

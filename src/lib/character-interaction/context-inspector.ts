@@ -45,14 +45,17 @@ export async function readChatContextInspectionV1(scope: WorkspaceScope, session
     readAgentRunArtifactExactV1({projectId: scope.projectId, artifactKind: 'context-packet', contentHash: recorded.payload.contentHash}),
     readAgentRunArtifactExactV1({projectId: scope.projectId, artifactKind: 'rendered-request', contentHash: request.payload.contentHash}),
   ])
-  const packet = JSON.parse(packetText), messages = JSON.parse(requestText)
+  const packet = JSON.parse(packetText), delivered = JSON.parse(requestText)
+  const messages = Array.isArray(delivered) ? delivered : delivered?.version === 1 ? delivered.messages : null
+  const requestOptions = Array.isArray(delivered) ? undefined : delivered?.requestOptions
+  if (!Array.isArray(delivered) && (Object.keys(delivered ?? {}).sort().join(',') !== 'messages,requestOptions,version' || !requestOptions || typeof requestOptions !== 'object' || Array.isArray(requestOptions))) fail()
   if (packet.version !== 1 || typeof packet.text !== 'string' || !packet.text || typeof packet.participantKey !== 'string') fail()
   const manifest = parseContextManifestV1(packet.manifest)
   if (!await verifyContextManifestIntegrityV1(manifest) || manifest.stepId !== STEP || manifest.attempt !== 1 || manifest.manifestHash !== assembled.payload.manifestHash
     || manifest.sources.length !== 1 || manifest.sources[0].key !== 'interactionRuntime' || manifest.sources[0].status !== 'included'
     || manifest.sources[0].contentHash !== await sha256Text(packet.text)) fail()
   if (!Array.isArray(messages) || !messages.some(m => m.role === 'user' && typeof m.content === 'string' && m.content.includes(packet.text))
-    || sent.payload.bindingHash !== await hashCanonicalValue({runtimeBindingHash: snapshot.contract.runtimeBindingHash, manifestHash: manifest.manifestHash, messages})) fail()
+    || sent.payload.bindingHash !== await hashCanonicalValue({runtimeBindingHash: snapshot.contract.runtimeBindingHash, manifestHash: manifest.manifestHash, messages, ...(requestOptions ? {requestOptions} : {})})) fail()
   const events = await db.productRuntimeEvents.where('sessionId').equals(sessionId).toArray()
   const imported = isImportedCompletedInteractionRunV1(snapshot, events)
   if (!imported && (manifest.runId !== runId || manifest.scope.projectId !== scope.projectId)) fail()

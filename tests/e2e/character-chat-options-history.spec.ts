@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {openChatNarrativeTools, openChatMessageTools} from './helpers/character-chat-ui'
 import {test, expect} from '@playwright/test'
 
@@ -15,6 +16,7 @@ test('switches an older reviewed alternative in a refreshed branch, preserves it
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
   })
   await page.route('https://chat-history-options.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n')
     let output: unknown
     if (prompt.includes('本次持久化行动候选组')) {calls.push('options-review'); output = {options: ['option-1', 'option-2'].map(optionKey => ({optionKey, checks: checks()}))}}
@@ -27,7 +29,7 @@ test('switches an older reviewed alternative in a refreshed branch, preserves it
       expect(prompt).not.toContain('柜台下')
       output = action(selected ? 'alternate' : 'future')
     }
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   const f = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture()})

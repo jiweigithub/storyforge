@@ -1,7 +1,7 @@
 import * as api from '../../src/lib/character-interaction/runtime-api'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
-import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture} from './chat-narrative-fixture'
+import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture, withChatActionChoiceFixture} from './chat-narrative-fixture'
 
 /** Injected engineering load over the formal Harness, never story-quality or
  * provider evidence. Also usable in native browser IndexedDB without the unit
@@ -17,7 +17,12 @@ export async function seedChatHistoryGrowthFixture() {
     await api.requestChatNarrativeTrigger({...await command(), kind: player ? 'player-response' : source === f.sceneSequence ? 'scene-start' : 'continue', sourceEventSequence: source})
     const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId,
       participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '正式持续后果容量注入，不计入真实剧情验收',
-      runAI: async messages => {calls++; inspect?.('actor', messages.map(m => m.content).join('\n')); return JSON.stringify(action)},
+      runAI: async (messages, signal) => {
+        calls++ // Count choice and expression; inspection remains role expression only.
+        return withChatActionChoiceFixture(async expression => {
+          inspect?.('actor', expression.map(m => m.content).join('\n')); return JSON.stringify(action)
+        })(messages, signal)
+      },
       runReviewAI: async messages => {calls++; inspect?.('review', messages.map(m => m.content).join('\n')); return JSON.stringify(chatActionReviewOutputFixture())}})
     await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   }

@@ -5,6 +5,7 @@ export {
   commitInteractionPlayerMessage,
   saveChatComposerDraftV1,
   commitChatNarrativeAction,
+  commitChatControlHandoff,
   commitChatSituation,
   requestChatNarrativeTrigger,
   updateChatMessageEditDraft,

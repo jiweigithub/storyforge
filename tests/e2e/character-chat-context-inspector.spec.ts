@@ -24,10 +24,10 @@ test('inspects the exact historical player-visible context after refresh without
     await api.commitInteractionPlayerMessage({...await command(), messageId: 'shared', text: '请先留意门口。靛蓝地图的出口在哪里？'})
     await api.requestChatNarrativeTrigger({...await command(), kind: 'continue', sourceEventSequence: (await api.readProductRuntimeStateVersion(f.sessionId)).sequence})
     const result = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '页面工程夹具',
-      runAI: async (messages: unknown) => {
+      runAI: (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).withChatActionChoiceFixture(async (messages: unknown) => {
         const text = JSON.stringify(messages)
         if (!text.includes('靛蓝地图的出口就在北墙。') || text.includes('私密暗号')) throw new Error('模型实际输入的检索或角色边界错误')
-        return JSON.stringify({kind: 'speak', text: '我先查看门边。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})},
+        return JSON.stringify({kind: 'speak', text: '我先查看门边。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})}),
       runReviewAI: async () => JSON.stringify(fixture.chatActionReviewOutputFixture())})
     await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
     await api.commitInteractionPlayerMessage({...await command(), messageId: 'future', text: '未来标记：现在再看另一边。'})

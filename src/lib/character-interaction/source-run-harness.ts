@@ -46,7 +46,7 @@ export interface ChatSourceRunViewV1<R, C = ChatSourceReviewContextV1> {
 export type ChatSourceRunBoundaryV1 = 'prepared' | 'model.requested' | 'response.saved' | 'model.responded' | 'candidate.persisted' | 'failure.saved' | 'failure.recorded'
 export interface ChatSourceRunProtocolV1<R, Q = ChatSourceReviewRequestV1, C = ChatSourceReviewContextV1> {
   step: string; skill: string; entry: string; category: string; kind: string; verifier: string; lockKey: string
-  prompt: string; objective: string; criterion: string; writeTargets: AgentRunWriteTargetV1[]
+  prompt: string | ((promptVersion: string) => string); objective: string; criterion: string; writeTargets: AgentRunWriteTargetV1[]
   source?: {key: string; options: (request: Q) => Partial<AssembleContextInput>; read: (scope: WorkspaceScope, request: Q) => Promise<C>; validateRequest: (request: Q) => void}
   confirmationCriteria?: readonly [string, string, string]
   createArtifact: (raw: string, context: C, call: CreativeCallEvidenceV1) => R
@@ -243,7 +243,8 @@ async function generate(input: {
     const context = JSON.parse(assembled.segments[0].content) as C
     protocol.validateContext?.(context)
     const model = {provider: resolved?.config.provider ?? 'test', model: resolved?.config.model ?? 'test'}
-    const messages: ChatMessage[] = [{role: 'system', content: protocol.prompt}, {role: 'user', content: assembled.text}]
+    const prompt = typeof protocol.prompt === 'string' ? protocol.prompt : protocol.prompt(binding.promptVersion)
+    const messages: ChatMessage[] = [{role: 'system', content: prompt}, {role: 'user', content: assembled.text}]
     const inputTokens = messages.reduce((sum, row) => sum + estimateTokens(row.content), 0)
     if (inputTokens > 24_000) throw new Error('本次资料超过整理容量，请减少选中资料')
     const payload: ChatSourceRunPayloadV1<R, Q, C> = {kind: KIND, version: 1, request, context, model, messages, manifestHash: '', response: null, result: null}

@@ -8,7 +8,7 @@ import * as harness from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {useCharacterInteractionPlayerStore as store} from '../../src/stores/character-interaction-player'
-import {chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
 const reply: ChatNarrativeActionV1 = {kind: 'speak', text: '可以，我们先聊会儿，眼下这里安全。', goalKey: null,
@@ -80,14 +80,14 @@ async function closedSession() {
   const f = await seedChatNarrativeRuntimeFixture({maxActionsPerTrigger: 3})
   await store.getState().load(f.scope, null, f.sessionId)
   const spy = vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(i => generate({...i,
-    runAI: async () => JSON.stringify({...reply, kind: 'pause', goalKey: 'find-seal', goalStatus: 'abandoned', text: '我决定不再寻找铜印，也不再邀请你参与。', nextPossibilities: []}),
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify({...reply, kind: 'pause', goalKey: 'find-seal', goalStatus: 'abandoned', text: '我决定不再寻找铜印，也不再邀请你参与。', nextPossibilities: []})),
     runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
   await store.getState().advanceNarrative({kind: 'scene-start', participantKey: 'guard', aiConfig: {} as never})
-  spy.mockImplementation(i => generate({...i, runAI: async messages => {
+  spy.mockImplementation(i => generate({...i, runAI: withChatActionChoiceFixture(async messages => {
     const text = JSON.stringify(messages)
     expect(text).toContain('没有 active/paused'); expect(text).not.toContain('柜台下')
     return JSON.stringify(reply)
-  }, runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
+  }), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
   return {...f, spy}
 }
 
@@ -124,7 +124,7 @@ it('resumes an unstarted player reply after closure, but never resends an unknow
   db.close(); await db.open()
   const current = await readProductRuntimeState(f.sessionId)
   expect(await readChatNarrativeTurnResumeV1(f.scope, f.sessionId, current.interaction!)).toMatchObject({actorKey: 'guard', blockedReason: null, remainingActions: 3})
-  f.spy.mockImplementation(i => generate({...i, runAI: async () => {throw new Error('provider outcome unknown')}}))
+  f.spy.mockImplementation(i => generate({...i, runAI: withChatActionChoiceFixture(async () => {throw new Error('provider outcome unknown')})}))
   await expect(resumeChatNarrativeTurnV1({scope: f.scope, sessionId: f.sessionId, expectedSequence: current.lastSequence, aiConfig: {} as never})).rejects.toThrow('provider outcome unknown')
   const failed = await readProductRuntimeState(f.sessionId)
   expect(await readChatNarrativeTurnResumeV1(f.scope, f.sessionId, failed.interaction!)).toMatchObject({blockedReason: expect.stringContaining('结果未知')})

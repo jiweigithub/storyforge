@@ -2,7 +2,7 @@ import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import * as harness from '../../src/lib/character-interaction/harness'
 import {seedChatEnsembleFixture} from '../helpers/chat-ensemble-fixture'
-import {chatActionReviewOutputFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {advanceChatNarrativeTurnV1, resumeChatNarrativeTurnV1} from '../../src/lib/character-interaction/narrative-turn'
 import {readProductRuntimeState, readProductRuntimeStateVersion, leaveInteractionParticipant, joinInteractionParticipant, commitInteractionPlayerMessage} from '../../src/lib/character-interaction/runtime-api'
 import {buildInteractionContextWindow} from '../../src/lib/character-interaction/runtime'
@@ -24,7 +24,7 @@ function mock(resolve: (actor: string, index: number) => ChatNarrativeActionV1) 
   let actions = 0, calls = 0
   const actors: string[] = [], requests: {actor: string; characters: number}[] = []
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async messages => {calls++; actors.push(input.participantKey); requests.push({actor: input.participantKey, characters: JSON.stringify(messages).length}); return JSON.stringify(resolve(input.participantKey, actions++))},
+    runAI: withChatActionChoiceFixture(async messages => {calls++; actors.push(input.participantKey); requests.push({actor: input.participantKey, characters: JSON.stringify(messages).length}); return JSON.stringify(resolve(input.participantKey, actions++))}),
     runReviewAI: async () => {calls++; return JSON.stringify(chatActionReviewOutputFixture())}}))
   return {actors, requests, count: () => calls}
 }
@@ -82,7 +82,7 @@ it('keeps eight roles within three explicit bounded turns and accounts for all g
   expect(new Set(model.actors).size).toBe(8); expect(model.count()).toBe(16)
   expect(state.messages).toHaveLength(8)
   expect(state.chatNarrative!.triggers.map(t => t.actionSequences.length)).toEqual([3, 3, 2])
-  expect(state.remainingDirectorBudget).toBe(84)
+  expect(state.remainingDirectorBudget).toBe(76)
   for (const actor of state.profiles.map(p => p.participantKey)) {
     const view = buildInteractionContextWindow(state, actor)
     expect(view.chatNarrative!.goals.every(g => g.actorKey === actor)).toBe(true)

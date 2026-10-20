@@ -17,20 +17,20 @@ test('historical relationship causes reach actor, review and player inspection a
       ['你慢慢核对，我愿意听你把顾虑说完。', '你耐心听我的顾虑，让我更愿意和你商量。'],
       ['之前关于核对证据的提醒，影响你怎么看我了吗？', '关于先核对证据的提醒，我仍记得；我会继续认真考虑你的判断。'],
     ]
-    let injectedCalls = 0, lastRunId = 0
+    let expressionAndReviewCalls = 0, lastRunId = 0
     for (let i = 0; i < exchanges.length; i++) {
       const [text, reply] = exchanges[i]
       const source = await api.commitInteractionPlayerMessage({...await command(), messageId: `relationship-input-${i}`, text, audienceKeys: ['guard']})
       await api.requestChatNarrativeTrigger({...await command(), kind: 'player-response', sourceEventSequence: source.sequence})
       const candidate = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '关系历史读取页面工程验证',
-        runAI: async (messages: Array<{content: string}>) => {
-          injectedCalls++
+        runAI: (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).withChatActionChoiceFixture(async (messages: Array<{content: string}>) => {
+          expressionAndReviewCalls++
           if (i === 2 && (!messages[1].content.includes(exchanges[0][1]) || !messages[1].content.includes(exchanges[1][1]))) throw new Error('Actor lost a relationship cause')
           return JSON.stringify({kind: 'speak', text: reply, goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
             newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
             relationshipUpdates: i < 2 ? [{dimensionKey: 'trust', delta: 1, sourceEventSequence: source.sequence, playerExcerpt: text, evidenceExcerpt: reply}] : []})
-        }, runReviewAI: async (messages: Array<{content: string}>) => {
-          injectedCalls++
+        }), runReviewAI: async (messages: Array<{content: string}>) => {
+          expressionAndReviewCalls++
           if (i === 2 && !messages[1].content.includes(exchanges[0][1])) throw new Error('Review lost actor-delivered cause')
           return JSON.stringify(helpers.chatActionReviewOutputFixture())
         }})
@@ -42,9 +42,9 @@ test('historical relationship causes reach actor, review and player inspection a
     const restored = (await db.productRuntimeSessions.where('projectId').equals(projectId).toArray()).find((s: {title: string}) => s.title === title)
     const after = await api.readProductRuntimeState(restored.id)
     if (JSON.stringify(before.interaction) !== JSON.stringify(after.interaction)) throw new Error('Portable state changed')
-    return {projectId, workId: restored.workId, sessionId: restored.id, injectedCalls, state: after, oldReason: exchanges[0][1], latestReason: exchanges[1][1]}
+    return {projectId, workId: restored.workId, sessionId: restored.id, expressionAndReviewCalls, state: after, oldReason: exchanges[0][1], latestReason: exchanges[1][1]}
   })
-  expect(result.injectedCalls).toBe(6)
+  expect(result.expressionAndReviewCalls).toBe(6)
   await page.goto(`./chat/play?project=${result.projectId}&work=${result.workId}&session=${result.sessionId}`)
   for (const width of [1440, 390]) {
     await page.setViewportSize({width, height: 844})

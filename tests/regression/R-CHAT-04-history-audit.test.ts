@@ -8,7 +8,7 @@ import * as api from '../../src/lib/character-interaction/runtime-api'
 import {generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import {readAgentRunArtifactExactV1} from '../../src/lib/memory/artifact-store'
 import {readChatCoordinatorSelectionEvidenceV1} from '../../src/lib/registry/context-sources'
-import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture} from '../helpers/chat-narrative-fixture'
+import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => {vi.restoreAllMocks(); db.close()})
@@ -34,14 +34,14 @@ it('persists the actual review audit with its manifest and rejects a different a
   await api.requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'audit', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'scene-start', sourceEventSequence: f.sceneSequence})
   let calls = 0
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '审查选择证据工程检查',
-    runAI: async () => {calls++; return JSON.stringify({kind: 'speak', text: '我先核对登记。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})},
+    runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify({kind: 'speak', text: '我先核对登记。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})}),
     runReviewAI: async () => {calls++; return JSON.stringify(chatActionReviewOutputFixture())}})
   const packets = generated.snapshot.events.filter(e => e.type === 'evidence.artifact.recorded' && e.payload.artifactKind === 'context-packet')
-  expect(packets).toHaveLength(2)
+  expect(packets).toHaveLength(3)
   const recorded = packets.find(e => e.type === 'evidence.artifact.recorded' && e.payload.stepId === 'interaction:action-review')!
   if (recorded.type !== 'evidence.artifact.recorded') throw Error('missing review packet')
   const packet = JSON.parse(await readAgentRunArtifactExactV1({projectId: f.scope.projectId, artifactKind: 'context-packet', contentHash: recorded.payload.contentHash}))
-  expect(packet.manifest.sources[0].readerVersion).toBe('chat-action-review-v14')
+  expect(packet.manifest.sources[0].readerVersion).toBe('chat-action-review-v16')
   expect(packet.coordinatorSelection.history.find((d: {key: string}) => d.key === 'secret')).toMatchObject({included: true})
   const input = {projectId: f.scope.projectId, scope: f.scope, productRuntimeSessionId: f.sessionId, chatActionCandidateRunId: generated.snapshot.run.id}
   db.close(); await db.open()

@@ -3,7 +3,7 @@ import {db} from '../../src/lib/db/schema'
 import * as api from '../../src/lib/character-interaction/runtime-api'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import {buildInteractionContextWindow} from '../../src/lib/character-interaction/runtime'
-import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture} from '../helpers/chat-narrative-fixture'
+import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {chatCommitmentReviewOutputFixture, chatPromiseActionFixture} from '../helpers/chat-commitment-fixture'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
@@ -20,7 +20,7 @@ async function setup() {
     await api.requestChatNarrativeTrigger({...await command(), kind: player ? 'player-response' : source === f.sceneSequence ? 'scene-start' : 'continue', sourceEventSequence: source})
     if (action.followupGoal) action.followupGoal.playerEventSequence = source
     const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '持续后果容量工程注入；不计入剧情质量验收',
-      runAI: async () => {calls++; return JSON.stringify(action)}, runReviewAI: async () => {calls++; return JSON.stringify(action.commitmentEffects ? chatCommitmentReviewOutputFixture(action) : chatActionReviewOutputFixture())}})
+      runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(action)}), runReviewAI: async () => {calls++; return JSON.stringify(action.commitmentEffects ? chatCommitmentReviewOutputFixture(action) : chatActionReviewOutputFixture())}})
     await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
     return generated.snapshot.run.id
   }

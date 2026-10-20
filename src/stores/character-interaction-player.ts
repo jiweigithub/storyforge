@@ -7,12 +7,16 @@ import type {ChatComposerSendBindingV1} from '../lib/character-interaction/runti
 import {ChatComposerConflictError} from '../lib/character-interaction/composer-draft-contract'
 import {resolveChatOpeningSceneV1} from '../lib/character-interaction/release-preview'
 import { db } from '../lib/db/schema'
+import {readInstanceAgentRunV1} from '../lib/agent/run/event-store'
+import {chatActionChoiceVersionForContractV1} from '../lib/character-interaction/action-choice-budget'
+import {CHAT_ACTION_CHOICE_STEP_V1} from '../lib/character-interaction/action-choice-contract'
 import {
   readInteractionDirectorPlanV1,
   adoptInteractionRuntimeCandidateV1,
   cancelInteractionRuntimeRunV1,
   generateInteractionRuntimeCandidateV1,
   resumeChatNarrativeReviewV1,
+  resumeChatNarrativeActionV1,
   resumeChatMemoryReviewV1,
 } from '../lib/character-interaction/harness'
 import {
@@ -76,6 +80,7 @@ interface CharacterInteractionPlayerState {
   pendingNarrativeRunIds: number[]
   narrativeTurnResume: ChatNarrativeTurnResumeV1 | null
   pendingNarrativeReviewRunIds: number[]
+  pendingNarrativeActionRunIds: number[]
   pendingMemoryReviewRunIds: number[]
   pendingActionReviewRunIds: number[]
   actionRevisionRunId: number | null
@@ -100,6 +105,7 @@ interface CharacterInteractionPlayerState {
   createSituation(input: {aiConfig: AIConfig; actionAiConfig?: AIConfig; seed: string; participantKey?: string; actionLimit?: number; schedulingMode?: ChatSchedulingModeV1; audienceKeys?: string[] | null}): Promise<void>
   reviseNarrativeAction(runId: number, aiConfig: AIConfig): Promise<void>
   resumeNarrativeReview(runId: number, aiConfig: AIConfig): Promise<void>
+  resumeNarrativeAction(runId: number, aiConfig: AIConfig): Promise<void>
   selectNarrativeOption(runId: number, optionKey: ChatNarrativeOptionKeyV1): Promise<void>
   applyMessageRetrieval(plan: ChatMessageRetrievalPlanV1): Promise<void>
   forkMessageEdit(plan: ChatMessageEditPlanV1, text: string): Promise<void>
@@ -189,6 +195,20 @@ async function details(scope: WorkspaceScope, sessionId: number) {
     : []
   const optionRows = resumableRows.filter(row => JSON.parse(row.contractJson).executionBindings?.some((b: {skillId?: string}) => b.skillId === 'character.chat-narrative-options'))
   const optionRunIds = optionRows.map(row => row.id!)
+  const choiceStageRunIds = resumableRows.filter(row => {
+    if (chatActionChoiceVersionForContractV1(JSON.parse(row.contractJson)) !== 1) return false
+    const saved = resumeCheckpoints.filter(c => c.runId === row.id).sort((a, b) => b.throughSequence - a.throughSequence)[0]
+    return !saved?.resumePayloadJson || !['chat-narrative-action-candidate', 'chat-control-handoff-candidate'].includes(JSON.parse(saved.resumePayloadJson).kind)
+  }).map(row => row.id!)
+  const pendingNarrativeActionRunIds: number[] = []
+  for (const runId of choiceStageRunIds) {
+    const snapshot = await readInstanceAgentRunV1(scope, runId)
+    if (snapshot.projection.state !== 'running' || snapshot.contract.scope.runtime?.baseSequence !== runtimeState.lastSequence) continue
+    const requested = (step: string) => snapshot.events.filter(event => event.type === 'model.requested' && event.payload.stepId === step)
+    const responses = (step: string) => snapshot.events.filter(event => event.type === 'evidence.artifact.recorded' && event.payload.stepId === step && event.payload.artifactKind === 'raw-response')
+    if (requested(CHAT_ACTION_CHOICE_STEP_V1).length === 1 && responses(CHAT_ACTION_CHOICE_STEP_V1).length === 1
+      && (!requested('interaction:runtime-candidate').length || responses('interaction:runtime-candidate').length === 1)) pendingNarrativeActionRunIds.push(runId)
+  }
   const revision = runtimeState.interaction?.chatNarrative ? await readChatActionRevisionSourceV1({scope, sessionId}).catch(() => null) : null
   return {
     actionRevisionRunId: revision?.runId ?? null,
@@ -200,6 +220,7 @@ async function details(scope: WorkspaceScope, sessionId: number) {
     events,
     checkpoints,
     runtimeState,
+    pendingNarrativeActionRunIds,
     pendingNarrativeRunIds: [...new Set([
       ...(runtimeState.interaction?.chatNarrative ? await readPendingChatNarrativeRunsV1(scope, sessionId, runtimeState.interaction) : []),
       ...resumableRows.filter(row => JSON.parse(row.contractJson).executionBindings?.some((b: {skillId?: string}) => b.skillId === 'character.interaction-memory-curator')).map(row => row.id!),
@@ -208,7 +229,7 @@ async function details(scope: WorkspaceScope, sessionId: number) {
       const saved = resumeCheckpoints.filter(c => c.runId === row.id).sort((a, b) => b.throughSequence - a.throughSequence)[0]
       if (!saved?.resumePayloadJson) return false
       const candidate = JSON.parse(saved.resumePayloadJson)
-      return (['chat-situation-candidate', 'chat-narrative-action-candidate', 'chat-narrative-options-candidate'].includes(candidate.kind) && !candidate.review)
+      return (['chat-situation-candidate', 'chat-narrative-action-candidate', 'chat-control-handoff-candidate', 'chat-narrative-options-candidate'].includes(candidate.kind) && !candidate.review)
         || (candidate.kind === 'memory-curator-candidate' && !candidate.contentReview)
     }).map(row => row.id!),
     pendingMemoryReviewRunIds: resumableRows.filter(row => {
@@ -219,10 +240,10 @@ async function details(scope: WorkspaceScope, sessionId: number) {
       const saved = resumeCheckpoints.filter(c => c.runId === row.id).sort((a, b) => b.throughSequence - a.throughSequence)[0]
       if (!saved?.resumePayloadJson) return false
       const candidate = JSON.parse(saved.resumePayloadJson)
-      return ['chat-narrative-action-candidate', 'chat-narrative-options-candidate'].includes(candidate.kind) && !candidate.review
+      return ['chat-narrative-action-candidate', 'chat-control-handoff-candidate', 'chat-narrative-options-candidate'].includes(candidate.kind) && !candidate.review
     }).map(row => row.id!),
     recoverableRunIds: resumableRows
-      .filter(row => !optionRunIds.includes(row.id!) && resumeCheckpoints.some(item => item.runId === row.id && item.resumePayloadJson != null))
+      .filter(row => !optionRunIds.includes(row.id!) && !choiceStageRunIds.includes(row.id!) && resumeCheckpoints.some(item => item.runId === row.id && item.resumePayloadJson != null))
       .map(row => row.id!),
   }
 }
@@ -258,7 +279,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       ? current : sessions[0]?.id ?? null
     set({ releases, sessions, selectedSessionId })
     if (selectedSessionId != null) await refresh()
-    else set({ events: [], checkpoints: [], recoverableRunIds: [], pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], pendingMemoryReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE) })
+    else set({ events: [], checkpoints: [], recoverableRunIds: [], pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingNarrativeActionRunIds: [], pendingActionReviewRunIds: [], pendingMemoryReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE) })
   }
   const withBusy = async <T>(operation: () => Promise<T>, reportError = true): Promise<T> => {
     if (get().busy) throw new Error('当前操作尚未结束，请稍后再试。')
@@ -300,7 +321,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
     events: [],
     checkpoints: [],
     recoverableRunIds: [],
-    pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], pendingMemoryReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [],
+    pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingNarrativeActionRunIds: [], pendingActionReviewRunIds: [], pendingMemoryReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [],
     runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE),
     loading: false,
     busy: false,
@@ -328,7 +349,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       const epoch = ++loadEpoch
       set({ selectedSessionId, loading: true, error: '' })
       try {
-        if (selectedSessionId == null) set({ events: [], checkpoints: [], recoverableRunIds: [], pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingActionReviewRunIds: [], pendingMemoryReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE) })
+        if (selectedSessionId == null) set({ events: [], checkpoints: [], recoverableRunIds: [], pendingNarrativeRunIds: [], narrativeTurnResume: null, pendingNarrativeReviewRunIds: [], pendingNarrativeActionRunIds: [], pendingActionReviewRunIds: [], pendingMemoryReviewRunIds: [], actionRevisionRunId: null, narrativeOptions: [], narrativeOptionRunIds: [], historicalOptionMessageIds: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE) })
         else await refresh()
       } catch (reason) { if (epoch === loadEpoch) set({ error: reason instanceof Error ? reason.message : String(reason) }) }
       finally { if (epoch === loadEpoch) set({ loading: false }) }
@@ -566,6 +587,17 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
       } catch (reason) {if (!controller.signal.aborted) throw reason}
     }),
 
+    resumeNarrativeAction: async (runId, aiConfig) => withBusy(async () => {
+      const scope = get().scope
+      if (!scope || !get().pendingNarrativeActionRunIds.includes(runId)) throw new Error('当前没有该可继续的角色行动。')
+      const controller = new AbortController(); generationAbortController = controller
+      set({generatingRunId: runId})
+      try {
+        await resumeChatNarrativeActionV1({scope, runId, aiConfig, signal: controller.signal})
+        if (!controller.signal.aborted) await adoptInteractionRuntimeCandidateV1({scope, runId})
+      } catch (reason) {if (!controller.signal.aborted) throw reason}
+    }),
+
     selectNarrativeOption: async (runId, optionKey) => withBusy(async () => {
       const scope = get().scope
       if (!scope || !get().narrativeOptions.some(row => row.runId === runId && !row.unavailableReason)) throw new Error('当前没有该可选行动。')
@@ -610,7 +642,7 @@ export const useCharacterInteractionPlayerStore = create<CharacterInteractionPla
 
     cancelPendingRun: async runId => withBusy(async () => {
       const scope = get().scope
-      if (!scope || ![...get().pendingNarrativeRunIds, ...get().pendingNarrativeReviewRunIds, ...get().narrativeOptionRunIds].includes(runId)) throw new Error('当前没有该未完成行动。')
+      if (!scope || ![...get().pendingNarrativeRunIds, ...get().pendingNarrativeReviewRunIds, ...get().pendingNarrativeActionRunIds, ...get().narrativeOptionRunIds].includes(runId)) throw new Error('当前没有该未完成行动。')
       await cancelInteractionRuntimeRunV1({scope, runId})
     }),
 

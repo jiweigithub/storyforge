@@ -87,8 +87,21 @@ export function parseChatSituationCandidatesV1(value: unknown, input: ChatNarrat
   const row = record(value, 'schema,version,options')
   if (row.schema !== 'storyforge.chat-situation-candidates' || row.version !== 1) fail('情境候选版本无效')
   if (!Array.isArray(row.options) || row.options.length !== input.settings.narrative.openingCount) fail('情境候选数量与作者设置不符')
+  validateOptions(row.options, input)
+  return structuredClone(value) as ChatSituationCandidatesV1
+}
+
+/** Repair planning only: every retained option must be valid before requesting
+ * missing options. Formal adoption still requires the complete candidate set. */
+export function validateChatSituationOptionSubsetV1(options: unknown[], input: ChatNarrativeProductionSourceV1): void {
+  validateChatNarrativeProductionSourceV1(input)
+  if (!Array.isArray(options) || options.length < 1 || options.length > input.settings.narrative.openingCount) fail('待修复情境数量无效')
+  validateOptions(options, input)
+}
+
+function validateOptions(options: unknown[], input: ChatNarrativeProductionSourceV1): void {
   const seen = new Set<string>(), bodies = new Set<string>()
-  for (const raw of row.options) {
+  for (const raw of options) {
     const item = record(raw, 'optionKey,title,pitch,situation')
     key(item.optionKey); text(item.title, 1000); text(item.pitch, 2000)
     if (seen.has(item.optionKey)) fail('情境候选身份重复')
@@ -105,7 +118,6 @@ export function parseChatSituationCandidatesV1(value: unknown, input: ChatNarrat
     if (bodies.has(body)) fail('不同开场不能只替换标题和标识')
     bodies.add(body)
   }
-  return structuredClone(value) as ChatSituationCandidatesV1
 }
 
 export async function selectChatNarrativeCandidateV1(input: {

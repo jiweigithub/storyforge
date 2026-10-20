@@ -7,8 +7,8 @@ import {seedChatNarrativeRuntimeFixture} from './chat-narrative-fixture'
 
 /** Synthetic five-contract release for player-entry engineering checks.
  * Not an author-approved production or a real-model narrative evaluation. */
-export async function seedChatLibraryFixture(options: {secondOrdinaryScene?: boolean; experienceInfo?: ChatExperienceInfoV1} = {}) {
-  const f = await seedChatNarrativeRuntimeFixture()
+export async function seedChatLibraryFixture(options: {secondOrdinaryScene?: boolean; experienceInfo?: ChatExperienceInfoV1; maxActionsPerTrigger?: number} = {}) {
+  const f = await seedChatNarrativeRuntimeFixture({maxActionsPerTrigger: options.maxActionsPerTrigger})
   const session = (await db.productRuntimeSessions.get(f.sessionId))!
   const build = (await db.productBuilds.get(session.productBuildId!))!
   const preview = await verifyProductBuildPreviewManifestV1(build.previewManifestJson!)

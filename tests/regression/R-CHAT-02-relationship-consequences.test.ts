@@ -7,7 +7,7 @@ import {chatSituationCoordinatorViewV1} from '../../src/lib/character-interactio
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, changeInteractionRelationship, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewFixture, chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewFixture, chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
 const playerText = '先核对证据再询问，不要因为旅人着急离开就认定他有罪。'
@@ -110,7 +110,7 @@ describe('durable relationship consequences', () => {
   it('adopts once, restores after refresh/export/nested branches, and supplies the cause to the next role call', async () => {
     const f = await prepared()
     const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '回应玩家提醒',
-      runAI: async messages => {expect(JSON.stringify(messages)).toContain('relationshipUpdates'); return JSON.stringify(f.action)},
+      runAI: withChatActionChoiceFixture(async messages => {expect(JSON.stringify(messages)).toContain('relationshipUpdates'); return JSON.stringify(f.action)}),
       runReviewAI: async messages => {expect(JSON.stringify(messages)).toContain('关系'); return JSON.stringify(chatActionReviewOutputFixture())}})
     expect((await readProductRuntimeState(f.sessionId)).interaction!.relationshipHistory).toEqual([])
     const adopted = await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
@@ -134,13 +134,13 @@ describe('durable relationship consequences', () => {
     const next = await f.envelope('continue')
     await requestChatNarrativeTrigger({...next, kind: 'continue', sourceEventSequence: next.baseSequence})
     await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '承接上次关系和未完成问题',
-      runAI: async messages => {
+      runAI: withChatActionChoiceFixture(async messages => {
         const context = messages.map(m => m.content).join('\n')
         expect(context).toContain('"relationshipEvidence":[{'); expect(context).toContain('"reason":"我更愿意听取你的判断"')
         expect(context).toContain('"value":1'); expect(context).toContain('"largeChangeThreshold":20')
         expect(context).toContain('investigate'); expect(context).not.toContain('柜台下')
         return JSON.stringify({...f.action, kind: 'pause', text: '我先慢慢核对，你可以休息。', relationshipUpdates: []})
-      }, runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+      }), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   })
   it('rejects semantic refusal punishment as a whole and closes the old fixed relationship bypass', async () => {
     const f = await prepared('我不想参与搜查，想休息。'), before = await readProductRuntimeStateVersion(f.sessionId)
@@ -151,7 +151,7 @@ describe('durable relationship consequences', () => {
     expect(() => previewChatNarrativeActionV1(state, {sequence: before.sequence + 1, actorKey: 'guard', triggerSequence: state.chatNarrative!.triggers.at(-1)!.requestedSequence, messageId: 'bad', action: bad})).not.toThrow()
     const review = chatActionReviewOutputFixture(); review.checks.find(c => c.check === 'consequences')!.passed = false
     await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '拒绝反例',
-      runAI: async () => JSON.stringify(bad), runReviewAI: async messages => {expect(JSON.stringify(messages)).toContain('不能仅因拒绝'); return JSON.stringify(review)}})).rejects.toThrow('审查未通过')
+      runAI: withChatActionChoiceFixture(async () => JSON.stringify(bad)), runReviewAI: async messages => {expect(JSON.stringify(messages)).toContain('不能仅因拒绝'); return JSON.stringify(review)}})).rejects.toThrow('审查未通过')
     await expect(changeInteractionRelationship({...await f.envelope('bypass'), fromParticipantKey: 'guard', toParticipantKey: 'player', dimensionKey: 'trust', delta: 1, reason: '绕过', ruleKey: 'fixed', sourceEventSequence: bad.relationshipUpdates![0].sourceEventSequence})).rejects.toThrow('已审查的行动')
     expect(await readProductRuntimeStateVersion(f.sessionId)).toEqual(before)
   })

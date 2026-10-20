@@ -9,7 +9,7 @@ import {forkChatMessageEditV1, readChatMessageEditPlanV1} from '../../src/lib/ch
 import * as harness from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewFixture, chatActionReviewOutputFixture, chatNarrativeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewFixture, chatActionReviewOutputFixture, chatNarrativeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {followupPlayerText, followupOwnAction, followupSituationReview, seedClosedChatFollowupFixtureV1} from '../helpers/chat-player-followup'
 import type {ChatNarrativeActionV1, ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
 
@@ -89,20 +89,20 @@ async function send(sessionId: number) {
   const v = await readProductRuntimeStateVersion(sessionId)
   return commitInteractionPlayerMessage({sessionId, commandId: crypto.randomUUID(), baseSequence: v.sequence, baseStateHash: v.stateHash, messageId: crypto.randomUUID(), text: followupPlayerText, audienceKeys: ['guard', 'player']})
 }
-it('uses six reviewed requests for own observation, limited result and closure; preserves branch and backup state', async () => {
+it('uses seven requests including choice after the new goal, limited result and closure; preserves branch and backup state', async () => {
   const f = await seedClosedChatFollowupFixtureV1({maxActionsPerTrigger: 3}), source = await send(f.sessionId), calls: string[] = []
   const outcome: ChatSituationDraftV1 = {kind: 'chat-situation', title: '暴雨驿站', location: '驿站', timeLabel: '傍晚',
     newFacts: [{factKey: 'entry-result', kind: 'observation', text: '门槛内所见仅有浅水，门外远处仍看不清。', audienceKeys: ['guard', 'player'], evidenceFactKeys: ['entry-observed'], seedExcerpt: '确认已经完成的门内观察所见'}], newGoals: [], newThreads: [], possibilities: []}
   const ending: ChatNarrativeActionV1 = {kind: 'complete', text: '门槛内所见仅有浅水，门外远处仍看不清。我就先查看到这里。', goalKey: 'check-entry', evidenceFactKeys: ['entry-result'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
     newFacts: [], disclosures: [], threadUpdates: [{threadKey: 'entry-condition', status: 'resolved', evidenceExcerpt: '我就先查看到这里。'}], goalStatus: 'fulfilled', nextPossibilities: []}
   let actions = 0
-  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: async messages => {
+  vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input, runAI: withChatActionChoiceFixture(async messages => {
     calls.push(input.skillId)
     if (input.skillId === 'character.chat-situation-construction') return JSON.stringify(outcome)
     expect(JSON.stringify(messages)).not.toContain('柜台下')
     expect(JSON.stringify(messages)).toContain('followupGoal')
     return JSON.stringify(actions++ === 0 ? action(source.sequence) : ending)
-  }, runReviewAI: async () => {
+  }), runReviewAI: async () => {
     calls.push('review'); return JSON.stringify(input.skillId === 'character.chat-situation-construction' ? {checks: followupSituationReview(outcome).checks} : chatActionReviewOutputFixture())
   }}))
   const before = await readProductRuntimeState(f.sessionId)
@@ -112,7 +112,7 @@ it('uses six reviewed requests for own observation, limited result and closure; 
   expect(story.situation.goals.at(-1)?.status).toBe('fulfilled')
   expect(story.situation.threads.at(-1)?.status).toBe('resolved')
   expect(story.triggers.at(-1)?.actionSequences).toHaveLength(2)
-  expect(state.interaction!.remainingDirectorBudget).toBe(before.interaction!.remainingDirectorBudget - 6)
+  expect(state.interaction!.remainingDirectorBudget).toBe(before.interaction!.remainingDirectorBudget - 7)
   db.close(); await db.open(); expect(await readProductRuntimeState(f.sessionId)).toEqual(state)
   const branch = await branchProductRuntimeSession({parentSessionId: f.sessionId, throughSequence: state.lastSequence, title: 'own followup closure'})
   const branchState = (await readProductRuntimeState(branch.id!)).interaction!
@@ -137,7 +137,7 @@ it('one-step pace stops after the actual first action and restores the saved can
   const trigger = await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'first-actual-action', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'player-response', sourceEventSequence: source.sequence})
   const before = await readProductRuntimeState(f.sessionId)
   await expect(generate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', narrativeTriggerSequence: trigger.sequence,
-    objective: '只做获准的一步', runAI: async () => {requests++; return JSON.stringify(action(source.sequence))},
+    objective: '只做获准的一步', runAI: withChatActionChoiceFixture(async () => {requests++; return JSON.stringify(action(source.sequence))}),
     onNarrativeActionSaved: id => {runId = id; throw new Error('saved-before-review')},
   })).rejects.toThrow('saved-before-review')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)

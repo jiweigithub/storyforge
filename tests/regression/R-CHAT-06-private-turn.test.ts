@@ -9,7 +9,7 @@ import {chatTurnHasPrivateSceneBoundaryV1} from '../../src/lib/character-interac
 import {interactionVisibilityView} from '../../src/lib/character-interaction/runtime'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, leaveInteractionParticipant, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1, ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
 
 const generate = harness.generateInteractionRuntimeCandidateV1
@@ -25,7 +25,7 @@ function action(): ChatNarrativeActionV1 {
 }
 function mock(getAction: () => ChatNarrativeActionV1 = action) {
   return vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
-    runAI: async () => JSON.stringify(getAction()), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(getAction())), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
 }
 
 it.each(['manual', 'natural', 'round-robin'] as const)('binds private replies and later explicit continuation to the conversation: %s', async schedulingMode => {

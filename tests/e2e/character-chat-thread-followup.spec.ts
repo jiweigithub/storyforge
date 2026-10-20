@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect} from '@playwright/test'
 
 test('author saves an explicit thread-continuation permission and disabling expansion clears it', async ({page}) => {
@@ -24,6 +25,7 @@ test('player continues an existing thread after personal closure through a revie
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
   })
   await page.route('https://thread-followup.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n'), review = prompt.includes('本次持久化行动候选')
     calls.push(review ? 'review' : 'action')
     expect(prompt).toContain('threadFollowupGoal')
@@ -34,7 +36,7 @@ test('player continues an existing thread after personal closure through a revie
         newFacts: [{factKey: 'route-viewpoint', kind: 'observation', text, evidenceFactKeys: ['road'], evidenceExcerpt: text}], disclosures: [], threadUpdates: [], goalStatus: null,
         threadFollowupGoal: {threadKey: 'investigate', evidenceExcerpt: text, goal: {goalKey: 'assess-road', desire: '判断自己能如何帮助恢复通行', concern: '天黑后处理倒树有危险', boundary: '不要求旅人参与', evidenceFactKeys: ['road']}},
         nextPossibilities: [{text: '判断眼前路况中自己能处理的部分。', evidenceFactKeys: ['road', 'route-viewpoint']}]}
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   const f = await page.evaluate(async () => {
@@ -42,7 +44,7 @@ test('player continues an existing thread after personal closure through a revie
     const f = await helper.seedChatNarrativeRuntimeFixture({actorThreadFollowup: true, onlyGuard: true}), v = await api.readProductRuntimeStateVersion(f.sessionId)
     await api.requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'initial', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'scene-start', sourceEventSequence: f.sceneSequence})
     const generated = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '工程夹具：结束寻找，原事项仍含离开需求',
-      runAI: async () => JSON.stringify({kind: 'speak', text: '我不再寻找铜印了。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: 'abandoned', nextPossibilities: []}),
+      runAI: (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).withChatActionChoiceFixture(async () => JSON.stringify({kind: 'speak', text: '我不再寻找铜印了。', goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: 'abandoned', nextPossibilities: []})),
       runReviewAI: async () => JSON.stringify(helper.chatActionReviewOutputFixture())})
     await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
     return f

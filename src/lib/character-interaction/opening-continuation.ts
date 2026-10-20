@@ -1,0 +1,37 @@
+import {chatOpeningReferencePromptV3} from './opening-option-repair'
+import {chatOpeningReviewPromptV1} from './situation-production-review'
+
+/** New frozen producer/reviewer policy, using the existing situation fields.
+ * These instructions do not grant facts, permissions or predetermined results. */
+const preparation = `本次制作的是能够持续演绎的局面，不只是一次动作的准备。先保留角色真正想解决的事情与人物动机，再准备当前可利用的背景。goals.desire 与 threads.question 承接原事项；第一步采用什么手段写在 possibilities，不把原目标缩成检查某一个物件或位置。
+若首步只是局部尝试，成功也未必完成原事项，或无结果后原事项仍有继续价值，准备有实质差异的后续办法及其当前依据，写入现有 localFacts/possibilities。不同办法须针对不同问题、信息来源、取舍或关系需要；“再查看旁边一点”“没有收获再换方向”“继续讨论”本身不算另一种办法。普通工具、可查资料、角色已有资源、关系或当前可接触条件可以构成背景，但其内容与结果仍可未知，只能在作者权限及原作约束内准备。
+以足够支撑本段互动为限，不凑方向数量、不编完整分支树，不预设首步失败、找到线索、他人合作或玩家参与。已有可行的直接解决方式、自然伴聊或有依据的等待，不必另造任务。确实需要玩家决定时保留真实依赖；确有阻碍时允许暂停，不能为凑备选绕过拒绝、创造人物权限或从幕后真相倒推公开线索。所有方向都须引用行动者已知的具体事实，幕后依据不得进入角色视角。`
+
+const review = `本次在既有 viable-agency 与 open-development 内一并检查情境能否承接首步之后的演绎，输出字段与五项审查维度保持原样。
+viable-agency 仍核验首个实际入口。open-development 还须对照原目标：若首步只是局部尝试，检查背景是否支持角色依据实际结果选择不同办法，而非只有“之后换方向”的空话、不断细分同类检查或重复征求同一个许可。需要后续办法时，用该方向及其角色已知的背景原文作 evidence，解释它针对的不同问题或取舍；仅有“不保证成功”“允许暂停”不证明局面具备继续演绎的条件。发现不足应具体说明缺少哪类行动条件，不能替候选补造事实。
+这不是要求每轮推进、每次检查得到线索或所有目标都能完成。直接解决原事项的可行入口、自然伴聊、已有实际阻碍支持的等待或自主放弃，可以成立；须结合原目标与当前条件说明理由，不强造第二条路线、冲突或陌生人。仅从输入没有答案推断永久无路可走，同样不成立。只用合法可见依据评判角色的方向，不能因审查者知道秘密而要求角色去对应位置；玩家同意、人物创作权及原发现条件均不扩大。`
+
+export function chatOpeningContinuationProductionPromptV1(): string {
+  return preparation + '\n' + chatOpeningReferencePromptV3()
+}
+
+export function chatOpeningContinuationReviewPromptV1(): string {
+  return review + '\n' + chatOpeningReviewPromptV1(2)
+}
+
+/** v4 retains the five existing verdicts and the v2 receipt contract. */
+export function chatOpeningScopedReviewPromptV1(): string {
+  return `本次必须区分“审查者能看到的幕后资料”和“待审字段的读者能够知道的内容”。先按 facts.audienceKeys 对照每个角色与玩家的已知范围，再审下面各字段；不要因为来源里存在某个答案，就认可角色从该答案倒推的行动。
+逐项检查 option.title、pitch、situation.title；goals 的 desire/concern/boundary、beliefs.text 和 possibilities.text 属于各自 actorKey；threads 的 title/question/closureSignals 属于该事项 audienceKeys。尤其检查收束条件：把秘密中的具体经手者、位置或用途写成“某人承认某件秘密”仍然带入了未知答案，不能仅因使用未来语气就通过。允许写不含未知答案的可观察条件，例如核实位置、弄清原因、实际归还或有依据地暂停。
+knowledge-and-player-boundaries 的 reason 必须说明实际检查到的候选字段；evidence 引用这些字段，并在发现越界时对照对应未知事实。只引用“不泄露秘密”的规则，不能证明候选没有泄漏。角色顾虑可以来自其私有经历，但公开标题、pitch、事项不能因此扩散；语义相同的改写仍需核查。
+viable-agency 必须检验 basisFactKeys 的原文是否确实支持接触条件，不能用“东西丢了”证明某个容器可见、某人已在场或允许检查。不存在可核验机会时返回 agency=null 和 viable-agency=false；不要为凑一个通过的机会补造背景。expectedChange/unresolved 同样不能夹带该角色未知答案。
+引用根固定为：target=source 指 artifactKey=design.game 的 payload 本身；target=option 指 content.chat-candidates.payload.options 中本 optionKey 的对象本身。不要使用作者原始资料的局部路径作为 source 路径，不要省略中间层级，也不要添加 artifacts/payload/options 前缀。有结构化输出格式时只选择其中给出的路径；仍须逐字引用该路径的实际字符串，路径合法不能代替语义判断。
+` + chatOpeningContinuationReviewPromptV1()
+}
+
+/** v5 reviews source/candidates afresh; rejected reports are audit history,
+ * never evidence to copy or a draft to repair into a passing verdict. */
+export function chatOpeningIndependentReviewPromptV1(): string {
+  return `这是对完整来源与候选的一次独立复核，不是改写旧审查结论。先检查实际候选，再形成五项判断；不得为了保留原结论而为它寻找理由。每项 reason 简短说明决定性依据，evidence 只摘录足以核实判断的连续原文，不复制整段资料或重复解释规则。通过与不通过使用同样的证据标准，所有候选、维度和必要引用仍须完整。
+` + chatOpeningScopedReviewPromptV1()
+}

@@ -12,8 +12,9 @@ import {readInstanceAgentRunV1} from '../../src/lib/agent/run/event-store'
 import {pendingChatMemoryCorrectionsV1} from '../../src/lib/character-interaction/memory-reconciliation'
 import {readChatActionRevisionSourceV1} from '../../src/lib/character-interaction/action-revision'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
+import {freezeLegacyChatActionContractFixture} from '../helpers/chat-historical-reader'
 
 beforeEach(async () => {await db.delete(); await db.open()})
 afterEach(async () => {vi.restoreAllMocks(); await db.delete()})
@@ -29,7 +30,7 @@ async function prepared(oldPlan = false) {
       nextPossibilities: [{text: '等待玩家一起去寻找铜印。', evidenceFactKeys: ['lost']}]}
     // Inject a historically mistaken dependency; this is not a quality verdict.
     const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard',
-      skillId: 'character.chat-narrative-action', objective: '准备待纠正的旧打算', runAI: async () => JSON.stringify(prior), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+      skillId: 'character.chat-narrative-action', objective: '准备待纠正的旧打算', runAI: withChatActionChoiceFixture(async () => JSON.stringify(prior)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
     await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   }
   const sent = await commitInteractionPlayerMessage({...await command(f.sessionId), messageId: 'correction-source', text: '我只是暂借地图，没有答应帮忙寻找铜印。'})
@@ -45,13 +46,13 @@ function output(f: Awaited<ReturnType<typeof prepared>>, passed = true) {
 }
 function input(f: Awaited<ReturnType<typeof prepared>>) {
   return {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '记忆核对合同工程检查',
-    runAI: async () => JSON.stringify(action), runReviewAI: async () => JSON.stringify(output(f))}
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(output(f))}
 }
 function useOldReviewFixture() {
   const original = skills.getAgentSkillV1
   vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => {
     const skill = original(id)
-    return id === 'character.chat-narrative-action-review' ? {...skill, promptVersion: 'chat-narrative-action-review-v19'} : skill
+    return id === 'character.chat-narrative-action-review' ? {...skill, promptVersion: 'chat-narrative-action-review-v19'} : id === 'character.chat-narrative-action' ? {...skill, promptVersion: 'chat-narrative-action-v45'} : skill
   })
 }
 
@@ -68,7 +69,7 @@ it('stops an old frozen reviewer before a request when corrections require a new
 it('recovers a saved candidate and records only an exact successful reviewed correction, then preserves it after nested branch deletion and import', async () => {
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId), worlds = await db.worldReleases.toArray()
   let runId = 0, calls = 0
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async () => {calls++; return JSON.stringify(action)}, onNarrativeActionSaved: id => {runId = id; throw new Error('saved-before-review')}})).rejects.toThrow('saved-before-review')
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(action)}), onNarrativeActionSaved: id => {runId = id; throw new Error('saved-before-review')}})).rejects.toThrow('saved-before-review')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   db.close(); await db.open()
   await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async () => {calls++; return JSON.stringify(output(f))}})
@@ -144,13 +145,13 @@ it.each([true, false])('requires reviewed consistency of retained plans, changed
   const candidate = {...action, nextPossibilities: changed ? [{text: '我自己查看门口的借用记录。', evidenceFactKeys: ['lost']}] : null}
   let calls = 0, runId = 0
   const generating = generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: id => {runId = id},
-    runAI: async messages => {
+    runAI: withChatActionChoiceFixture(async messages => {
       calls++; expect(messages[1].content).toContain('尚待本次行动核对的记忆修正')
       expect(messages[1].content).toContain('我只是暂借地图，没有答应帮忙寻找铜印。')
       expect(messages[1].content).not.toContain('旧的错误摘要')
       expect(messages[0].content).toContain('保留相反打算不算处理')
       return JSON.stringify(candidate)
-    }, runReviewAI: async messages => {
+    }), runReviewAI: async messages => {
       calls++; expect(messages[0].content).toContain('memoryChecks'); expect(messages[0].content).toContain('commitmentChecks')
       expect(messages[0].content).toContain('口头改口却保留冲突打算')
       expect(messages[1].content).toContain('等待玩家一起去寻找铜印。')
@@ -182,7 +183,7 @@ it('checks both alternatives independently and only records the selected action 
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId)
   const actions = [action, {...action, kind: 'pause', text: '我先自己核对登记，再决定去哪里找。'}]
   const generated = await generateInteractionRuntimeCandidateV1({...input(f), skillId: 'character.chat-narrative-options',
-    runAI: async () => JSON.stringify({options: actions}), runReviewAI: async messages => {
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify({options: actions})), runReviewAI: async messages => {
       expect(messages[0].content).toContain('两条互斥候选必须各自完整核对')
       return JSON.stringify({options: actions.map((_, i) => ({optionKey: `option-${i + 1}`, ...output(f)}))})
     }})
@@ -210,6 +211,7 @@ it('keeps a correction pending after an unknown review result and never retries 
 
 it('does not replace an old producer input with new correction evidence during review', async () => {
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId)
+  freezeLegacyChatActionContractFixture()
   vi.spyOn(CONTEXT_SOURCES.find(s => s.key === 'interactionRuntime')!, 'read').mockImplementation(async () => {
     const state = (await readProductRuntimeState(f.sessionId)).interaction!
     return formatInteractionRuntimeContextV1(state.profiles[0], buildInteractionContextWindow(state, 'guard', {retrievalVersion: 'chat-relevance-v3'}))

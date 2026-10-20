@@ -6,7 +6,7 @@ import {createInitialInteractionState, interactionVisibilityView, parseInteracti
 import {adoptInteractionRuntimeCandidateV1, cancelInteractionRuntimeRunV1, generateInteractionRuntimeCandidateV1, resumeChatNarrativeReviewV1} from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
-import {chatActionReviewFixture, chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewFixture, chatActionReviewOutputFixture, chatNarrativeFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
 const newPlan = '独自核对已经掌握的线索；玩家愿意重新参与前不再邀其查后门。'
@@ -152,7 +152,7 @@ describe('durable role reflection', () => {
   it('recovers and adopts the whole closure once, with goal provenance intact through branch/export/import', async () => {
     const f = await prepared(true, true), action = closureResponse(); let runId = 0
     await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '收束相关目标',
-      runAI: async () => JSON.stringify(action), onNarrativeActionSaved: id => {runId = id; throw new Error('host-crash')}})).rejects.toThrow('host-crash')
+      runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), onNarrativeActionSaved: id => {runId = id; throw new Error('host-crash')}})).rejects.toThrow('host-crash')
     db.close(); await db.open()
     await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
     const adopted = await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
@@ -172,7 +172,7 @@ describe('durable role reflection', () => {
     const f = await prepared(); let runId = 0, reviewCalls = 0
     const action = {...response(), beliefUpdates: [{beliefKey: 'borrowed', text: '目前只知失踪，不再先认定被借走。', evidenceFactKeys: ['lost']}]}
     await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '承接拒绝',
-      runAI: async () => JSON.stringify(action), onNarrativeActionSaved: id => {runId = id; throw new Error('host-crash')}})).rejects.toThrow('host-crash')
+      runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), onNarrativeActionSaved: id => {runId = id; throw new Error('host-crash')}})).rejects.toThrow('host-crash')
     expect((await readProductRuntimeState(f.sessionId)).interaction!.chatNarrative!.situation.possibilities[0].text).not.toBe(newPlan)
     db.close(); await db.open()
     await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async messages => {
@@ -193,12 +193,12 @@ describe('durable role reflection', () => {
     expect((await readProductRuntimeState(restored.id!)).interaction!.chatNarrative).toEqual(expected)
     const next = await f.envelope('continue'); await requestChatNarrativeTrigger({...next, kind: 'continue', sourceEventSequence: next.baseSequence})
     await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '承接已改变的打算',
-      runAI: async messages => {
+      runAI: withChatActionChoiceFixture(async messages => {
         const prompt = messages.map(m => m.content).join('\n')
         expect(prompt).toContain(newPlan); expect(prompt).toContain('目前只知失踪，不再先认定被借走。')
         expect(prompt).not.toContain('可以建议查看后门，也可以先一起处理山路。'); expect(prompt).not.toContain('柜台下')
         return JSON.stringify({...response(), nextPossibilities: null, beliefUpdates: []})
-      }, runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+      }), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   })
   it.each(['semantic-rejection', 'cancel', 'player-input'] as const)('does not change plans or hypotheses after %s', async mode => {
     const f = await prepared(), original = (await readProductRuntimeState(f.sessionId)).interaction!.chatNarrative!.situation
@@ -206,7 +206,7 @@ describe('durable role reflection', () => {
     if (mode === 'semantic-rejection') review.checks.find(c => c.check === 'continuity')!.passed = false
     let runId = 0
     await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '不采纳反例',
-      onRunCreated: id => {runId = id}, runAI: async () => JSON.stringify(response()), runReviewAI: async () => {
+      onRunCreated: id => {runId = id}, runAI: withChatActionChoiceFixture(async () => JSON.stringify(response())), runReviewAI: async () => {
         if (mode === 'cancel') await cancelInteractionRuntimeRunV1({scope: f.scope, runId})
         if (mode === 'player-input') await commitInteractionPlayerMessage({...await f.envelope('new-player'), messageId: 'new-player', text: '先停一下。'})
         return JSON.stringify(review)

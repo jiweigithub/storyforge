@@ -7,7 +7,7 @@ import {chatConversationEvidenceV1, assertChatConversationEvidenceReviewVersionV
 import {chatActionReviewPromptRulesV1} from '../../src/lib/character-interaction/narrative-action-prompt'
 import {generateInteractionRuntimeCandidateV1, adoptInteractionRuntimeCandidateV1, resumeChatNarrativeReviewV1} from '../../src/lib/character-interaction/harness'
 import {commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
-import {chatNarrativeFixture, seedChatNarrativeRuntimeFixture, chatActionReviewFixture, chatActionReviewOutputFixture} from '../helpers/chat-narrative-fixture'
+import {chatNarrativeFixture, seedChatNarrativeRuntimeFixture, chatActionReviewFixture, chatActionReviewOutputFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
 const ack = (): ChatNarrativeActionV1 => ({kind: 'speak', text: '好，我听着。', goalKey: 'find-seal', evidenceFactKeys: [], audienceKeys: ['guard', 'player'], waitingForPlayer: true,
@@ -81,11 +81,11 @@ async function prepared() {
   return f
 }
 function input(f: Awaited<ReturnType<typeof prepared>>, a = ack()) {
-  return {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '工程注入：有对话依据的自然回应', runAI: async () => JSON.stringify(a), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}
+  return {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '工程注入：有对话依据的自然回应', runAI: withChatActionChoiceFixture(async () => JSON.stringify(a)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}
 }
 it('saves and resumes the actual source-bound acknowledgement, adopts once, and retains a semantic refusal of concealed factual claims', async () => {
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId); let id = 0, calls = 0
-  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: async messages => {calls++; expect(messages[0].content).toContain('自然回应也可以有对话依据'); expect(messages[1].content).toContain('我想先说句话'); return JSON.stringify(ack())}, onNarrativeActionSaved: runId => {id = runId; throw Error('saved')}})).rejects.toThrow('saved')
+  await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async messages => {calls++; expect(messages[0].content).toContain('自然回应也可以有对话依据'); expect(messages[1].content).toContain('我想先说句话'); return JSON.stringify(ack())}), onNarrativeActionSaved: runId => {id = runId; throw Error('saved')}})).rejects.toThrow('saved')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before); db.close(); await db.open()
   await resumeChatNarrativeReviewV1({scope: f.scope, runId: id, runReviewAI: async messages => {calls++; expect(messages[0].content).toContain('无事实引用的对话回应专审'); return JSON.stringify(chatActionReviewOutputFixture())}})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: id}); await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: id})
@@ -97,7 +97,7 @@ it('saves and resumes the actual source-bound acknowledgement, adopts once, and 
 })
 it('does not call an old frozen reviewer for a new fact-free response', async () => {
   const f = await prepared(), original = skills.getAgentSkillV1; let reviews = 0
-  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v22'} : original(id))
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v22'} : id === 'character.chat-narrative-action' ? {...original(id), promptVersion: 'chat-narrative-action-v45'} : original(id))
   await expect(generateInteractionRuntimeCandidateV1({...input(f), runReviewAI: async () => {reviews++; return JSON.stringify(chatActionReviewOutputFixture())}})).rejects.toThrow('旧审查')
   expect(reviews).toBe(0)
 })

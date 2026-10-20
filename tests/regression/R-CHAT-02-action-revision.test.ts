@@ -4,7 +4,7 @@ import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1} from '../../
 import {generateInteractionRuntimeCandidateV1, adoptInteractionRuntimeCandidateV1, resumeChatNarrativeReviewV1} from '../../src/lib/character-interaction/harness'
 import {readInstanceAgentRunV1} from '../../src/lib/agent/run/event-store'
 import {readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger, commitInteractionPlayerMessage} from '../../src/lib/character-interaction/runtime-api'
-import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
+import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
@@ -19,7 +19,7 @@ async function rejected(mode: 'consequences' | 'visibility' | 'unknown' | 'malfo
   const trigger = await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'start', baseSequence: v.sequence, baseStateHash: v.stateHash, kind: 'scene-start', sourceEventSequence: f.sceneSequence})
   let runId = 0
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action',
-    objective: '停止整项查找，不替玩家行动', onRunCreated: id => {runId = id}, runAI: async () => JSON.stringify(action), runReviewAI: async () => {
+    objective: '停止整项查找，不替玩家行动', onRunCreated: id => {runId = id}, runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => {
       if (mode === 'unknown') throw new Error('unknown transport outcome')
       if (mode === 'malformed') return '幕后：柜台下。不是 JSON'
       const report = chatActionReviewOutputFixture(); report.checks.find(c => c.check === mode)!.passed = false
@@ -45,7 +45,9 @@ it('explicitly revises once through registered sources and full review, preservi
     calls++; const text = JSON.stringify(messages)
     expect(text).toContain('明确请求修订的未生效行动'); expect(text).toContain(action.text)
     expect(text).not.toContain('柜台下'); expect(text).not.toContain('工程否决夹具')
-    return JSON.stringify(revision)
+    const output: Record<string, unknown> = {...revision, expressionMode: 'self-pause', audienceKeys: null, threadUpdates: revision.threadUpdates.map(t => ({...t, evidenceExcerpt: null}))}
+    delete output.kind; delete output.waitingForPlayer
+    return JSON.stringify(output)
   }, runReviewAI: async messages => {calls++; expect(JSON.stringify(messages)).toContain('柜台下'); return JSON.stringify(chatActionReviewOutputFixture())}})
   expect(calls).toBe(2)
   expect(generated.snapshot.contract.budget.maxModelCalls).toBe(2)

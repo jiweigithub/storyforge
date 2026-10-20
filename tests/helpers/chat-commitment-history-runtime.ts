@@ -1,6 +1,6 @@
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
 import {commitInteractionPlayerMessage, endInteractionScene, readProductRuntimeStateVersion, requestChatNarrativeTrigger, startInteractionScene} from '../../src/lib/character-interaction/runtime-api'
-import {seedChatNarrativeRuntimeFixture} from './chat-narrative-fixture'
+import {seedChatNarrativeRuntimeFixture, withChatActionChoiceFixture} from './chat-narrative-fixture'
 import {chatCommitmentReviewOutputFixture, chatPromiseActionFixture} from './chat-commitment-fixture'
 import {historyTerms, historyResolution} from './chat-commitment-history-fixture'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
@@ -13,7 +13,7 @@ export async function seedChatCommitmentHistoryRuntimeFixture(options: {count?: 
   const command = async () => {const v = await readProductRuntimeStateVersion(f.sessionId); return {sessionId: f.sessionId, commandId: crypto.randomUUID(), baseSequence: v.sequence, baseStateHash: v.stateHash}}
   const perform = async (action: ChatNarrativeActionV1) => {
     const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '承诺历史工程夹具',
-      runAI: async () => JSON.stringify(action), runReviewAI: async () => JSON.stringify(chatCommitmentReviewOutputFixture(action))})
+      runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatCommitmentReviewOutputFixture(action))})
     await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
     return generated.snapshot.run.id
   }

@@ -19,10 +19,10 @@ test('explains 18 retained promises beyond the former storage limit, retains exa
     const f = await fixture.seedChatCommitmentHistoryRuntimeFixture({count: 18})
     const action = {...promise.chatPromiseActionFixture(), text: '地图的约定已经撤回，眼下这项整理约定还在。', commitmentEffects: []}
     const generated = await harness.generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '核对历史输入',
-      runAI: async (messages: Array<{content: string}>) => {
+      runAI: (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).withChatActionChoiceFixture(async (messages: Array<{content: string}>) => {
         if (!messages[1].content.includes('靛蓝地图') || !messages[1].content.includes('withdrawn')) throw new Error('角色未读到相关原约和处置')
         return JSON.stringify(action)
-      }, runReviewAI: async () => JSON.stringify(promise.chatCommitmentReviewOutputFixture(action))})
+      }), runReviewAI: async () => JSON.stringify(promise.chatCommitmentReviewOutputFixture(action))})
     await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
     const state = (await api.readProductRuntimeState(f.sessionId)).interaction
     const open = state.chatNarrative.situation.goals[0].commitments.find((c: {resolution: unknown}) => c.resolution === null)

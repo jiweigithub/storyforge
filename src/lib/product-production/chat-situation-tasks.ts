@@ -6,6 +6,7 @@ import { loadProductProductionWorldSourceCatalogV2 } from './world-source'
 import { readProductProductionBuildWorldScopeV1 } from './world-binding'
 import { prepareChatNarrativeCompilerSourceV1 } from './product-module-compilers'
 import {composeChatRoleVoiceRulesV1} from '../character-interaction/role-profile'
+import {CHAT_OPENING_FACT_CATALOG_KEY, buildChatOpeningFactCatalogV1, validateChatOpeningFactCatalogV1, buildChatOpeningFactCatalogV2, validateChatOpeningFactCatalogV2, assertChatOpeningSourceCompletenessV1, CHAT_OPENING_SOURCE_COMPLETENESS_GATE_V1} from '../character-interaction/opening-source-references'
 import { canonicalProductProductionJsonV2 } from './hash'
 import {
   chatNarrativeShellV1, selectChatNarrativeCandidateV1, validateChatNarrativeProductionSourceV1, parseChatSituationCandidatesV1,
@@ -23,8 +24,25 @@ export function chatProductionSourceV1(input: Pick<ProductProductionTaskExecutio
   validateChatNarrativeProductionSourceV1(source)
   return source
 }
+export async function requireChatOpeningFactCatalogV1(input: ProductProductionTaskExecutionInputV1) {
+  const source = chatProductionSourceV1(input)
+  const complete = input.task.acceptanceGateIds.includes(CHAT_OPENING_SOURCE_COMPLETENESS_GATE_V1)
+  const catalog = await (complete ? validateChatOpeningFactCatalogV2 : validateChatOpeningFactCatalogV1)(chatProductionArtifactPayloadV1(input, CHAT_OPENING_FACT_CATALOG_KEY), source)
+  if (!input.authorDraftJson) {
+    const packets = input.contextText.split(/\n\s*\n/g).flatMap(segment => {
+      try {const value = JSON.parse(segment); return value?.schema === 'storyforge.product-production.artifact-inputs' ? [value] : []} catch {return []}
+    })
+    if (packets.length !== 1 || packets[0].buildNumber !== input.buildNumber) fail('引用目录缺少本次实际交付的上下文')
+    for (const [key, expected] of [['design.game', source], [CHAT_OPENING_FACT_CATALOG_KEY, catalog]] as const) {
+      const delivered = packets[0].artifacts?.filter((item: {artifactKey: string}) => item.artifactKey === key)
+      if (delivered?.length !== 1 || canonicalProductProductionJsonV2(delivered[0].payload) !== canonicalProductProductionJsonV2(expected)) fail('引用来源或目录未完整交付模型')
+    }
+  }
+  return catalog
+}
 async function reviewedSelection(input: Pick<ProductProductionTaskExecutionInputV1, 'inputArtifacts' | 'task'>, selection: ChatSituationSelectionV1) {
   const source = chatProductionSourceV1(input), candidates = chatProductionArtifactPayloadV1(input, 'content.chat-candidates')
+  if (input.task.acceptanceGateIds.includes(CHAT_OPENING_SOURCE_COMPLETENESS_GATE_V1)) await assertChatOpeningSourceCompletenessV1(candidates, source)
   if (input.task.acceptanceGateIds.includes(CHAT_OPENING_AGENCY_GATE_V2) && !input.task.inputArtifactKeys.includes(CHAT_OPENING_REVIEW_KEY)) fail('行动机会验收缺少开场审查依赖')
   if (input.task.inputArtifactKeys.includes(CHAT_OPENING_REVIEW_KEY)) await assertChatOpeningReviewedV1(
     chatProductionArtifactPayloadV1(input, CHAT_OPENING_REVIEW_KEY), source, parseChatSituationCandidatesV1(candidates, source), selection.selectedOptionKey, input.task.acceptanceGateIds.includes(CHAT_OPENING_AGENCY_GATE_V2) ? 2 : 1)
@@ -62,6 +80,10 @@ export async function executeChatSituationDeterministicTaskV1(input: ProductProd
     }
     validateChatNarrativeProductionSourceV1(source)
     artifacts.push({artifactKey: 'design.game', kind: 'product-design', payload: source, quality: {reviewedSourceOnly: true}, rights: {}})
+    if (input.task.outputArtifactKeys.includes(CHAT_OPENING_FACT_CATALOG_KEY)) artifacts.push({
+      artifactKey: CHAT_OPENING_FACT_CATALOG_KEY, kind: 'product-design', payload: await (input.task.acceptanceGateIds.includes(CHAT_OPENING_SOURCE_COMPLETENESS_GATE_V1) ? buildChatOpeningFactCatalogV2 : buildChatOpeningFactCatalogV1)(source),
+      quality: {deterministicFrozenReferences: true}, rights: {},
+    })
   } else if (input.task.taskKey === 'content.chat-author-gate') {
     const decision = input.authorResolution
     if (decision?.blockerKey !== input.task.taskKey || decision.resolution.action !== 'confirm-chat-situation' || !decision.resolution.chatSituation) fail('请比较初始情境并选择一个开场后继续')

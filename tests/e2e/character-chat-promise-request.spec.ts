@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect} from '@playwright/test'
 
 for (const rejected of [false, true]) test(`binds a player-requested promise and displays its original source (rejected=${rejected})`, async ({page}, info) => {
@@ -11,6 +12,7 @@ for (const rejected of [false, true]) test(`binds a player-requested promise and
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
   })
   await page.route('https://promise-request-test.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const messages = route.request().postDataJSON().messages as Array<{content: string}>
     const review = messages[1].content.includes('本次持久化行动候选')
     calls.push(review ? 'review' : 'action')
@@ -25,7 +27,7 @@ for (const rejected of [false, true]) test(`binds a player-requested promise and
       value = {kind: 'speak', text: terms, goalKey: 'find-seal', evidenceFactKeys: [], audienceKeys: ['guard', 'player'], waitingForPlayer: true,
         newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null, promiseRequest: {playerEventSequence: source, playerExcerpt: requestText}, commitmentEffects: [{kind: 'promise', terms, evidenceExcerpt: terms}]}
     }
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(value)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, value)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   const f = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture({onlyGuard: true})})

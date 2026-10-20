@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect} from '@playwright/test'
 
 for (const reject of [false, true]) test(`a completed observation survives player input and its reviewed result informs the reply (reject=${reject})`, async ({page}) => {
@@ -12,6 +13,7 @@ for (const reject of [false, true]) test(`a completed observation survives playe
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
   })
   await page.route('https://chat-observation.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n')
     const actionReview = prompt.includes('本次持久化行动候选'), situationReview = prompt.includes('本次持久化情境候选')
     const construction = !situationReview && prompt.includes('你是 StoryForge 受治理的幕后情境构建器')
@@ -31,7 +33,7 @@ for (const reject of [false, true]) test(`a completed observation survives playe
         newFacts: actions === 1 ? [{factKey: 'inspected', kind: 'observation', text: inspected, evidenceFactKeys: ['lost'], evidenceExcerpt: inspected}] : [], disclosures: [], threadUpdates: [], goalStatus: null,
         situationRequest: actions === 1 ? {purpose: 'observation-result', threadKey: 'investigate', direction, evidenceFactKeys: ['lost', 'inspected'], evidenceExcerpt: inspected} : null}
     }
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   const f = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture({actorSituationExpansion: true})})

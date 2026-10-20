@@ -1,3 +1,4 @@
+import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect} from '@playwright/test'
 
 test('author explicitly controls new player followups and the persisted permission cannot outlive situation expansion', async ({page}) => {
@@ -30,6 +31,7 @@ for (const [continuous, ownGoal] of [[false, false], [true, false], [false, true
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
   })
   await page.route('https://chat-followup.invalid/**', async route => {
+          if (await fulfillChatActionChoiceFixture(route)) return
     const prompt = route.request().postDataJSON().messages.map((m: {content: string}) => m.content).join('\n')
     const actionReview = prompt.includes('本次持久化行动候选'), situationReview = prompt.includes('本次持久化情境候选')
     const construction = !situationReview && prompt.includes('你是 StoryForge 受治理的幕后情境构建器')
@@ -61,7 +63,7 @@ for (const [continuous, ownGoal] of [[false, false], [true, false], [false, true
           threadUpdates: [{threadKey: 'entry-condition', status: 'resolved', evidenceExcerpt: '门口的观察完成了'}]}
       }, {f, actions, ownGoal})
     }
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   f = await page.evaluate(async continuous => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-player-followup.ts')).seedClosedChatFollowupFixtureV1({maxActionsPerTrigger: continuous ? 3 : 1})}, continuous)

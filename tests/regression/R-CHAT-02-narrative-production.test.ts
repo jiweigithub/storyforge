@@ -19,7 +19,8 @@ import {runProductProductionUntilBlockedV1, recoverImportedChatProductionPrefixV
 import {readProductProductionBuildWorldScopeV1} from '../../src/lib/product-production/world-binding'
 import {aggregateProductSourceManifestFromExactRunsV1} from '../../src/lib/product/source-contracts'
 import {readProductProductionDetailsV1, confirmChatSituationDecisionV1, listProductProductionReviewArtifactsV1, retryProductProductionBlockerV1, publishProductProductionV1} from '../../src/lib/product-production/service'
-import {chatSituationCandidatesFixture, chatOpeningAgencyReviewFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatSituationCandidatesFixture, chatSituationReferenceDraftFixture, chatOpeningAgencyReviewFixture} from '../helpers/chat-narrative-production-fixture'
+import {CHAT_OPENING_FACT_CATALOG_KEY, buildChatOpeningFactCatalogV2} from '../../src/lib/character-interaction/opening-source-references'
 import type {ChatNarrativeProductionSourceV1} from '../../src/lib/character-interaction/narrative-production'
 import {verifyProductBuildTerminalArtifactSetV1} from '../../src/lib/product-production/artifact-store'
 import {createCharacterInteractionInstance} from '../../src/lib/product/runtime-instances'
@@ -112,7 +113,16 @@ it('plans a durable author gate and prevents the situation model from rereading 
   expect(() => parseProductProductionCommandV1({...command, resolution: {...command.resolution, chatSituation: {...chatSituation, authorCommandId: 'forged'}}})).toThrow('字段')
 })
 
-it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false, privateCast: undefined, transferAtSelection: true}, {mappedPlayer: true, factDiscovery: false, worldDiscovery: false, privateCast: undefined}, {mappedPlayer: false, factDiscovery: true, worldDiscovery: false, privateCast: undefined}, {mappedPlayer: true, factDiscovery: false, worldDiscovery: true, privateCast: undefined}, {mappedPlayer: true, factDiscovery: true, worldDiscovery: false, privateCast: 'only' as const}, {mappedPlayer: false, factDiscovery: false, worldDiscovery: false, privateCast: 'mixed' as const}])('runs the formal scheduler through selection, release and transfer without regenerating candidates (mapped=$mappedPlayer, discovery=$factDiscovery, world=$worldDiscovery, private=$privateCast, transfer=$transferAtSelection)', async ({mappedPlayer, factDiscovery, worldDiscovery, privateCast, transferAtSelection}) => {
+it.each([
+  {mappedPlayer: false, factDiscovery: false, worldDiscovery: false, privateCast: undefined, transferAtSelection: true, referenceWire: false},
+  {mappedPlayer: true, factDiscovery: false, worldDiscovery: false, privateCast: undefined, referenceWire: false},
+  {mappedPlayer: false, factDiscovery: true, worldDiscovery: false, privateCast: undefined, referenceWire: false},
+  {mappedPlayer: true, factDiscovery: false, worldDiscovery: true, privateCast: undefined, referenceWire: false},
+  {mappedPlayer: true, factDiscovery: true, worldDiscovery: false, privateCast: 'only' as const, referenceWire: false},
+  {mappedPlayer: false, factDiscovery: false, worldDiscovery: false, privateCast: 'mixed' as const, referenceWire: false},
+  {mappedPlayer: true, factDiscovery: false, worldDiscovery: true, privateCast: undefined, transferAtSelection: true, referenceWire: true},
+  {mappedPlayer: true, factDiscovery: true, worldDiscovery: false, privateCast: 'only' as const, referenceWire: true},
+])('runs the formal scheduler through selection, release and transfer without regenerating candidates (mapped=$mappedPlayer, discovery=$factDiscovery, world=$worldDiscovery, private=$privateCast, transfer=$transferAtSelection, references=$referenceWire)', async ({mappedPlayer, factDiscovery, worldDiscovery, privateCast, transferAtSelection, referenceWire}) => {
   const f = await seedChatNarrativeProductionFixture({mappedPlayer, factDiscovery, worldDiscovery, privateCast, consultation: privateCast === 'mixed'})
   const created = await executeProductProductionCommand({scope: f.scope, command: {
     type: 'create-intent', commandId: 'chat.intent', productionKey: 'chat.situation-production', productType: 'character-interaction',
@@ -133,6 +143,7 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false, priv
   const bindingHash = 'a'.repeat(64)
   const capabilityBindings = [{requirementKey, adapterId: 'configured-text.v1', bindingHash}]
   const calls: string[] = []
+  let openingRaw = ''
   let rejectMedia = true
   const runText: ProductionTextRunnerV1 = async request => {
     expect(request.contextText).not.toContain('知道失踪船队真相')
@@ -142,8 +153,17 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false, priv
     calls.push(isSituation ? 'situations' : isReview ? 'opening-review' : 'media')
     const sourceRow = await db.productBuildArtifacts.filter(row => row.artifactKey === 'design.game').last()
     const source = JSON.parse(sourceRow!.payloadJson) as ChatNarrativeProductionSourceV1
-    const output = isSituation ? chatSituationCandidatesFixture(source) : isReview ? chatOpeningAgencyReviewFixture(chatSituationCandidatesFixture(source), 'option-1') : rejectMedia ? {invalid: 'bounded failure after author selection'} : {
+    const candidatesRow = isReview ? await db.productBuildArtifacts.filter(row => row.artifactKey === 'content.chat-candidates').last() : undefined
+    const candidates = candidatesRow ? JSON.parse(candidatesRow.payloadJson) : chatSituationCandidatesFixture(source)
+    const output = isSituation ? referenceWire ? await chatSituationReferenceDraftFixture(source, candidates) : candidates : isReview ? chatOpeningAgencyReviewFixture(candidates, 'option-1') : rejectMedia ? {invalid: 'bounded failure after author selection'} : {
       schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: [],
+    }
+    if (isSituation) {
+      openingRaw = JSON.stringify(output)
+      const catalog = await buildChatOpeningFactCatalogV2(source)
+      expect(JSON.parse((await db.productBuildArtifacts.filter(row => row.artifactKey === CHAT_OPENING_FACT_CATALOG_KEY).last())!.payloadJson)).toEqual(catalog)
+      expect(request.contextText).toContain(CHAT_OPENING_FACT_CATALOG_KEY)
+      if (referenceWire) expect(openingRaw).not.toContain('"sourceKnowledgeKey"')
     }
     return {output: JSON.stringify(output), usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {
       schema: 'storyforge.provider-binding-receipt', version: 1, requirementKey, adapterId: 'configured-text.v1', adapterVersion: 1,
@@ -157,6 +177,18 @@ it.each([{mappedPlayer: false, factDiscovery: false, worldDiscovery: false, priv
   let details = await readProductProductionDetailsV1(f.scope, productionId)
   expect(JSON.parse(details.build!.failureJson), details.build!.failureJson).toMatchObject({taskKey: 'content.chat-author-gate'})
   expect(calls).toEqual(['situations', 'opening-review'])
+  if (referenceWire) {
+    const accepted = JSON.parse((await db.productBuildArtifacts.filter(row => row.artifactKey === 'content.chat-candidates').last())!.payloadJson)
+    expect(accepted.schema).toBe('storyforge.chat-situation-candidates')
+    expect(await db.agentRunArtifacts.filter(row => row.artifactKind === 'raw-response' && row.content === openingRaw).count()).toBe(1)
+    if (worldDiscovery) {
+      const truth = f.source.source.knowledge.find(k => k.discovery)!
+      for (const option of accepted.options) {
+        expect(option.situation.facts.find((fact: {sourceKnowledgeKey: string}) => fact.sourceKnowledgeKey === truth.key))
+          .toMatchObject({text: truth.content, audienceKeys: [], origin: 'reviewed-world'})
+      }
+    }
+  }
   expect(JSON.parse(details.build!.budgetLedgerJson).attempts.find((a: {taskKey: string}) => a.taskKey === 'content.chat-author-gate'))
     .toMatchObject({usageKnown: true, usage: {modelCalls: 0, mediaCalls: 0, costUsd: 0}})
   if (transferAtSelection) {

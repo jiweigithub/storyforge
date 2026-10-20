@@ -8,7 +8,8 @@ import {createVerificationReceiptV1} from '../agent/run/verification-receipt'
 import {readAgentRunV1, type AgentRunSnapshotV1} from '../agent/run/event-store'
 import {createChatSourceRunHarnessV1, type ChatSourceRunPayloadV1} from './source-run-harness'
 import {readChatSourceUnitConfirmationContextV1, validateChatSourceUnitConfirmationRequestV1, type ChatSourceUnitConfirmationRequestV1, type ChatSourceUnitConfirmationContextV1} from './source-unit-confirmation-context'
-import {CHAT_SOURCE_UNIT_CONFIRMATION_PROMPT_V1, createChatSourceUnitConfirmationArtifactV1} from './source-unit-confirmation-candidate'
+import {createChatSourceUnitConfirmationArtifactV1} from './source-unit-confirmation-candidate'
+import {chatSourceUnitConfirmationPromptV1} from './source-unit-discovery-policy'
 import {parseChatSourceUnitSetV1, type ChatSourceUnitSetV1} from './source-unit-authorization'
 import {prepareChatSourceUnitWriteV1, commitChatSourceUnitWriteV1} from './source-unit-store'
 
@@ -18,7 +19,7 @@ const hash = (value: unknown) => Dexie.currentTransaction ? Dexie.waitFor(hashCa
 const harness = createChatSourceRunHarnessV1({
   step: STEP, skill: 'chat.source-unit-confirmation.v1', entry: 'chat.source-unit-confirmation', category: 'authoring.chat-source-unit-confirmation',
   kind: 'storyforge.chat-source-unit-confirmation-run', verifier: VERIFIER, lockKey: 'chat-source-unit-confirmation',
-  prompt: CHAT_SOURCE_UNIT_CONFIRMATION_PROMPT_V1, objective: '独立复核事实、初知和发现条件；只有精确候选获得作者确认后才保存产品私域整理', criterion: CRITERION,
+  prompt: chatSourceUnitConfirmationPromptV1, objective: '独立复核事实、初知和发现条件；只有精确候选获得作者确认后才保存产品私域整理', criterion: CRITERION,
   confirmationCriteria: CRITERIA, writeTargets: [{table: 'chatAuthoringDrafts', fields: ['sourceUnitsJson'], mode: 'author-confirmed'}],
   source: {key: 'chat.source-unit-confirmation', options: (request: ChatSourceUnitConfirmationRequestV1) => ({chatSourceUnitConfirmationRequest: request}),
     read: readChatSourceUnitConfirmationContextV1, validateRequest: validateChatSourceUnitConfirmationRequestV1},
