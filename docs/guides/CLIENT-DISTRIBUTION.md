@@ -114,6 +114,8 @@ Windows 只保存固定枚举的进程异常摘要；主进程原生硬崩溃未
 
 `upgrade-smoke.mjs` 在隔离目录运行 4.0.1 和 4.0.2，Windows 实际运行两个 NSIS 安装器，Mac 从新 DMG 替换应用。4.0.1 的 Mac app 是测试基线，非历史公开发行。生产 `createWorkspace()`、注册表派生的完整导出/导入是测试唯一作品入口；比较完整导出，验证正文、封面、OPFS 探针、非法备份零写入与恢复后重启。此证据不代替全部产品媒资/游戏存档或真人移动布局验收。
 
+原生升级用的测试脚本由 `build-upgrade-fixture.mjs` 单独打包，须沿用生产代码的 `?raw` 文本导入语义，准确内嵌源码而非把其当模块执行。该支持只用于测试包构建，不改生产导入导出流程、备份比较或安装替换断言；测试包编译通过仍须继续实际 Windows/Mac 升级与恢复验证。
+
 Android 正式验证用永久密钥在本机签署测试 runner，测试 runner 与两个正式 APK 暂存于 Release 草稿，CI 只接收签名后的 APK，不接收密钥。分别安装旧 APK、执行 seed、`adb install -r` 新 APK、执行恢复和重启校验。测试 JS 只进入 androidTest 的 assets，不进入公开应用。发布前删除三个 `upgrade-test-*.apk` 附件。
 
 没有 Actions 签名 Secrets 时，正式发布工作流读取草稿中维护者已上传的同版本 APK，校验正式应用 ID、版本和固定证书指纹。未提供正式 APK 则发布失败；不会退回 debug 包。Windows/macOS 仍由 GitHub 自动构建。iOS 本次暂缓。
