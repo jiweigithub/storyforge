@@ -359,6 +359,22 @@ export async function prepareTtrpgOpenProductionBriefV3(input: {
   }
   const work = await db.works.get(scope.workId)
   if (!work || work.kind !== 'ttrpg') throw new Error('open 制作必须属于跑团 Work')
+  // Capture the original CAS basis before source/contract preparation. A
+  // concurrent author-start must never lend its newer state to this save.
+  const { prior, priorBuilds, priorBrief } = await db.transaction('r', scopeTransactionTables(
+    db.ttrpgAuthoringDrafts, db.productProductions, db.productBuilds, db.productProductionBriefs,
+  ), async () => {
+    if (JSON.stringify(await readTtrpgDraft(scope)) !== JSON.stringify(draft)) throw new Error('open 方案已变化，请刷新')
+    const prior = draft.productionId ? await db.productProductions.get(draft.productionId) : null
+    if (prior && !(await assertRecordInScope(scope, 'productProductions', prior, { owner: 'work' }))) throw new Error('open 当前制作记录不属于本作品')
+    const priorBuilds = prior?.id ? await db.productBuilds.where('productionId').equals(prior.id).toArray() : []
+    const priorBrief = prior?.id && prior.currentBriefRevision !== null ? await db.productProductionBriefs
+      .where('[productionId+revision]').equals([prior.id, prior.currentBriefRevision]).first() : null
+    return { prior, priorBuilds, priorBrief }
+  })
+  const { parseProductProductionBriefV3 } = await import('../product-production/contracts')
+  const priorEnvelope = priorBuilds.length > 0 && priorBrief ? parseProductProductionBriefV3(priorBrief.briefJson) : null
+  if (priorEnvelope?.ttrpgOpen && prior?.status === 'producing') throw new Error('open 当前方案已开始制作，请先在原制作记录核对当前轮次')
   const rule = await readTtrpgRulePackVersionedV1({ scope, rulePackId: draft.savedRulePackId })
   if (rule.rulePack.version !== 2) throw new Error('open 制作不能使用旧 RulePack V1')
   const { draftTtrpgOpenProductionCommonBriefV3, suggestProductStartingPoints } = await import('../product-production/consultation')
@@ -376,21 +392,26 @@ export async function prepareTtrpgOpenProductionBriefV3(input: {
     suggestionKey: suggestion.suggestionKey, qualityProfile: settings.qualityProfile, scale: 'campaign',
     visualLevel: settings.wizard.maximumGeneratedAssets > 0 ? 'key-scenes' : 'none', audioLevel: 'none',
     playerRole: settings.playerRole, openingSituation: settings.openingSituation, sourceSelection: selection })
-  const prior = draft.productionId ? await db.productProductions.get(draft.productionId) : null
-  if (prior && !(await assertRecordInScope(scope, 'productProductions', prior, { owner: 'work' }))) throw new Error('open 当前制作记录不属于本作品')
-  const priorBuild = prior?.id ? await db.productBuilds.where('productionId').equals(prior.id).first() : null
-  const priorBrief = prior?.id && prior.currentBriefRevision !== null ? await db.productProductionBriefs
-    .where('[productionId+revision]').equals([prior.id, prior.currentBriefRevision]).first() : null
-  const reuse = prior && !priorBuild && prior.productType === 'ttrpg' && prior.worldId === scope.worldId
+  const releaseRevision = priorEnvelope?.ttrpgOpen != null && priorEnvelope.evolution?.base.kind === 'release'
+  const reuse = prior && (!priorBuilds.length || releaseRevision) && prior.productType === 'ttrpg' && prior.worldId === scope.worldId
     && priorBrief?.sourceWorldReleaseId === draft.worldReleaseId
   const commandId = input.commandId ?? crypto.randomUUID()
   const productionKey = reuse ? prior.productionKey : `productprod.open.${(await hashProductProductionValueV2({ scope,
     revision: input.revision, commandId, worldReferenceHash: worldReference.referenceHash })).slice(0, 40)}`
-  const sourcePlan = await createProductProductionSourcePlanV1({ scope, productionKey, brief: common })
+  const sourcePlan = releaseRevision
+    ? priorEnvelope!.ttrpgOpen!.sourcePlan
+    : await createProductProductionSourcePlanV1({ scope, productionKey, brief: common })
   await verifyTtrpgOpenAuthoringSourceProvenanceV1({ sourcePlan, facts: settings.openAuthoring.factPolicy.map(item => item.fact) })
   const content = await createTtrpgProductionBriefContentV3({ settingsRevision: input.revision, settings,
     rulePack: rule.rulePack, worldReference, sourcePlan })
-  const brief = await createTtrpgOpenProductionBriefV3({ common, content })
+  const brief = releaseRevision && prior && priorBrief
+    ? await (await import('./open-pending-runtime-brief')).reviseTtrpgOpenPendingRuntimeBriefV1({
+      scope, production: prior, row: priorBrief,
+      build: priorBuilds.find(item => item.buildNumber === prior.currentBuildNumber) ?? null,
+      release: prior.currentProductReleaseId ? await db.productReleases.get(prior.currentProductReleaseId) : undefined,
+      settingsRevision: input.revision, settings, rulePack: rule.rulePack, worldReference, common,
+    })
+    : await createTtrpgOpenProductionBriefV3({ common, content })
   if (JSON.stringify(await readTtrpgDraft(scope)) !== JSON.stringify(draft)
     || JSON.stringify((await readTtrpgRulePackVersionedV1({ scope, rulePackId: draft.savedRulePackId })).record) !== JSON.stringify(rule.record)) {
     throw new Error('open 编译期间方案或规则已 stale，未保存制作方案')
@@ -404,7 +425,7 @@ export async function prepareTtrpgOpenProductionBriefV3(input: {
     if (!created.ok) throw new Error(String(created.result.message ?? 'open 制作意图创建失败'))
     productionId = created.productionId
   }
-  const production = (await db.productProductions.get(productionId))!
+  const production = reuse ? prior! : (await db.productProductions.get(productionId))!
   const saved = await executeProductProductionCommand({ scope, productionId, command: { type: 'save-brief-revision',
     commandId: `${commandId}.brief`, expectedStateRevision: production.stateRevision,
     parentRevision: production.currentBriefRevision, brief } })

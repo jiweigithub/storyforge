@@ -61,6 +61,7 @@ export default function TtrpgOpenAuthoringEditor({ value, onChange }: {
     <fieldset disabled={pending || reading}>
       {(!value.companionPolicy || !value.stageClosurePolicy || !policy) && <button className="lf-action" type="button" onClick={() => change(initializeTtrpgOpenAuthoringPoliciesV1(value))}>填写本桌边界草稿</button>}
       {policy && <div className="avg-form">
+        <p className="md:col-span-2">运行额度随制作方案冻结。调整后请保存配置并更新审查方案，再核对新版本；已发布作品的后续版本可在正式开始前调整这里的运行额度。</p>
         <label><input type="checkbox" checked={policy.enabled} onChange={event => change({ ...value, runtimePolicy: { ...policy, enabled: event.target.checked } })}/>本作品允许使用 AI 主持与队友，开局仍需确认</label>
         {([
           ['每次授权最多模型调用', 'maximumCallsPerEpoch', 1, 9], ['每次授权最多 AI 行动', 'maxAiActions', 0, 5],
