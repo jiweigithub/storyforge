@@ -37,7 +37,8 @@ test('the author reviews original facts and numeric mappings through normal cont
   const review = page.getByTestId('ttrpg-open-production-review')
   await expect(review).toBeVisible({ timeout: 30000 })
   await expect(review.getByRole('heading', { name: '核对来源事实', exact: true })).toBeVisible()
-  expect(seen).toEqual(['sourceFacts'])
+  // The review shell can render before the first asynchronous request starts.
+  await expect.poll(() => seen).toEqual(['sourceFacts'])
   await review.getByRole('button', { name: '读取本任务待审稿', exact: true }).click()
   await expect(review.getByRole('checkbox').first()).toBeVisible()
   for (const checkbox of await review.getByRole('checkbox').all()) await expect(checkbox).not.toBeChecked()
