@@ -7065,6 +7065,7 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
     system, contextText: input.contextText,
     ...(openingJsonSchema ? {jsonSchema: openingJsonSchema} : {}),
     maximumOutputTokens: Math.min(productProductionProviderOutputLimitV1(input.task, input.contextText),
+      chatOpeningVersion?.reviewOutputLimit ?? Infinity,
       chatOpeningVersion?.targetedRepair ? input.attemptBudgetReservation!.outputTokens : Infinity), signal: input.signal,
   })
   const output = input.authorDraftJson ?? response!.output

@@ -8,7 +8,8 @@ import {executeProductProductionCommand} from '../../src/lib/product-production/
 import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
 import {runProductProductionUntilBlockedV1} from '../../src/lib/product-production/scheduler'
 import {readProductProductionDetailsV1, retryProductProductionBlockerV1} from '../../src/lib/product-production/service'
-import {estimateTokens} from '../../src/lib/ai/context-budget'
+import {estimateTokens, trimMessagesToFit} from '../../src/lib/ai/context-budget'
+import {estimateChatRequestOptionsTokens} from '../../src/lib/ai/client'
 import {chatOpeningAgencyReviewFixture, chatSituationCandidatesFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
 
 beforeEach(async () => {await db.delete(); await db.open()})
@@ -105,7 +106,14 @@ it.each(['accepted', 'provider-ignored-schema', 'semantic-rejection', 'schema-bu
       if (!isOpening) {
         expect(request.jsonSchema?.name).toBe('chat_opening_review_v2')
         expect(request.system).toBe(chatOpeningBackgroundReviewPromptV1())
-        expect(request.maximumOutputTokens).toBeLessThanOrEqual(15_000)
+        expect(request.maximumOutputTokens).toBe(10_000)
+        // A complete ~18k review fits the existing 32k Codex preset with the
+        // v8 request cap; the former 15k output allocation would clip input.
+        const wholeReview = [{role: 'system' as const, content: request.system},
+          {role: 'user' as const, content: '背景'.repeat(5000)}]
+        const schemaTokens = estimateChatRequestOptionsTokens({jsonSchema: request.jsonSchema})
+        expect(trimMessagesToFit(wholeReview, 'codex', 'gpt-6.1-sol', 15_000, undefined, schemaTokens).trimmed).toBe(true)
+        expect(trimMessagesToFit(wholeReview, 'codex', 'gpt-6.1-sol', request.maximumOutputTokens, undefined, schemaTokens).trimmed).toBe(false)
         expect(request.contextText).not.toContain('REJECTED_REVIEW_NOT_SOURCE')
         expect(request.contextText).not.toContain('storyforge.product-production.repair-feedback')
         reviewInputs.push({source, candidates})

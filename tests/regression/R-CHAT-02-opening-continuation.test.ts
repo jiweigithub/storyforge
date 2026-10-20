@@ -26,7 +26,7 @@ it('preserves independently captured legacy prompt bytes and their repair/output
 
 it.each([
   ['content.product-module', 'character.chat-situation-production', 'chat-situation-production-v13', 'chat-situation-production-v11'],
-  ['content.chat-opening-review', 'character.chat-opening-review', 'chat-opening-review-v7', 'chat-opening-review-v2'],
+  ['content.chat-opening-review', 'character.chat-opening-review', 'chat-opening-review-v8', 'chat-opening-review-v2'],
 ])('selects continuation policy from the saved %s binding without upgrading historical runs', async (taskKey, skillId, current, previous) => {
   const f = await seedChatNarrativeProductionFixture()
   const plan = await createProductProductionPlanV3({brief: f.brief, briefHash: await hashProductProductionValueV2(f.brief), buildNumber: 1})
@@ -43,6 +43,9 @@ it.each([
     expect(selected.scopedReview).toBe(true)
     expect(selected.independentReview).toBe(true)
     expect(selected.flatReview).toBe(true)
+    expect(selected.reviewOutputLimit).toBe(10_000)
+    snapshot.contract.executionBindings![0].promptVersion = 'chat-opening-review-v7'
+    await expect(readChatOpeningProductionVersionV1(input)).resolves.toEqual({groundedAgency: true, meaningfulContinuation: true, scopedReview: true, independentReview: true, flatReview: true, authoredBackground: true})
     snapshot.contract.executionBindings![0].promptVersion = 'chat-opening-review-v6'
     await expect(readChatOpeningProductionVersionV1(input)).resolves.toEqual({groundedAgency: true, meaningfulContinuation: true, scopedReview: true, independentReview: true, flatReview: true})
     snapshot.contract.executionBindings![0].promptVersion = 'chat-opening-review-v5'
@@ -64,6 +67,6 @@ it.each([
   }
   snapshot.contract.executionBindings![0].promptVersion = previous
   const historical = await readChatOpeningProductionVersionV1(input)
-  expect(historical).toEqual(Object.fromEntries(Object.entries(selected).filter(([key]) => !['meaningfulContinuation', 'scopedReview', 'independentReview', 'flatReview', 'authoredBackground'].includes(key))))
+  expect(historical).toEqual(Object.fromEntries(Object.entries(selected).filter(([key]) => !['meaningfulContinuation', 'scopedReview', 'independentReview', 'flatReview', 'authoredBackground', 'reviewOutputLimit'].includes(key))))
   expect(getAgentSkillV1(skillId)?.promptVersion).toBe(current)
 })
