@@ -1,6 +1,6 @@
 import { readAvgRawImageCandidateBytesV5,readAvgProcessedImageCandidateBytesV5,type AvgV5PreviewBoundary } from '../../lib/avg/media-candidate-preview-v5'
 import type { AvgVisualRawReuseSourceV4 } from '../../lib/avg/visual-image-reuse-contract'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { FrozenRuntimeMediaAssetV2, ProductMediaKind, WorkspaceScope } from '../../lib/types'
 import { readAvgDraftMediaV1 } from '../../lib/avg/editor-service'
 import { readAvgRawImageCandidateBytesV2, readAvgRetainedImageCandidateBytesV1,readAvgProcessedImageCandidateBytesV1 } from '../../lib/avg/assembly-service'
@@ -14,6 +14,14 @@ import type { AvgHistoricalVisualBoundaryV4 } from '../../lib/avg/visual-image-h
 export const AVG_MEDIA_KIND_LABELS: Record<ProductMediaKind, string> = { background: '背景', 'character-pose': '角色姿势', 'character-expression': '角色表情',
   cg: 'CG', ui: '图标与界面', bgm: '音乐', ambience: '环境声', sfx: '音效', voice: '配音' }
 export interface AvgRawPreviewReference { requirementKey: string; version: number; contentHash: string; visualVersion?:5;historicalV5?:AvgV5PreviewBoundary; retained?:boolean;processed?:boolean;historical?:Omit<AvgHistoricalVisualBoundaryV4,'scope'>;historicalSource?:AvgVisualRawReuseSourceV4 }
+const previewBackdrops = {
+  original: { label: '原样', style: {} },
+  grid: { label: '透明网格', style: { backgroundColor: '#ffffff', backgroundImage: 'repeating-conic-gradient(#d8d8d8 0 25%, #ffffff 0 50%)', backgroundSize: '20px 20px' } },
+  light: { label: '浅色', style: { backgroundColor: '#f7f7f7', backgroundImage: 'none' } },
+  neutral: { label: '中性灰', style: { backgroundColor: '#808080', backgroundImage: 'none' } },
+  dark: { label: '深色', style: { backgroundColor: '#181818', backgroundImage: 'none' } },
+} satisfies Record<string, { label: string; style: CSSProperties }>
+type PreviewBackdrop = keyof typeof previewBackdrops
 
 /** Local URLs are created only after the existing owner/hash proof reader.
  * Provider URL strings and arbitrary Blob IDs are never displayed directly. */
@@ -24,6 +32,7 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, raw
   rawSound?: { artifactKey: string; version: number; contentHash: string }
 }) {
   const [url, setUrl] = useState(''), [error, setError] = useState('')
+  const [backdrop, setBackdrop] = useState<PreviewBackdrop>('original')
   const [readAttempt, setReadAttempt] = useState(0)
   const [voiceOrigin, setVoiceOrigin] = useState<{ buildNumber: number; text: string; speaker: string; voiceId: string;
     declaration: string; reference: string } | null>(null)
@@ -42,7 +51,7 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, raw
   useEffect(() => {
     let alive = true, created = ''
     const element = audio.current
-    setUrl(''); setError(''); setVoiceOrigin(null)
+    setUrl(''); setError(''); setVoiceOrigin(null); setBackdrop('original')
     const current = JSON.parse(assetJson) as FrozenRuntimeMediaAssetV2
     const read = async () => {
       if(historicalV5Json&&(visualVersion!==5||!requirementKey))throw new Error('新版历史预览缺少准确版本')
@@ -89,8 +98,15 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, raw
   return <figure className="avg-assembly-media-preview"><figcaption>{caption??asset.name} · {AVG_MEDIA_KIND_LABELS[asset.kind]}</figcaption>
     {error && <><p role="alert">{error}</p><button className="lf-action" aria-label={`重新读取媒资：${asset.name}`} onClick={()=>setReadAttempt(value=>value+1)}>重新读取媒资</button><p>重新核验已保存文件与准确来源，不会新增生成请求。</p></>}
     {asset.mimeType.startsWith('audio/') ? <audio ref={audio} controls src={url || undefined} preload="metadata" />
-      : url ? <><img key={url} src={url} alt={asset.altText || asset.name} onLoad={onObserved} onError={historicalJson||historicalV5Json||visualVersion===5||generatedSourceJson||onUnavailable?()=>{setError('原图无法解码，请重新读取并核对文件。');unavailable.current?.()}:undefined} style={comparisonAspectRatio?{aspectRatio:comparisonAspectRatio}:undefined}/>
-        {smallImageSizes&&<div className="avg-review-icon-sizes">{smallImageSizes.map(size=><img key={size} src={url} alt={`${asset.name} · ${size} 像素观察`} style={{width:size,height:size,objectFit:'contain'}}/>)}</div>}</> : <p>读取图片…</p>}
+      : url ? <>{!error&&<details className="avg-preview-backdrops"><summary>透明边缘与底色检查</summary>
+          <div role="group" aria-label={`图片对比底色：${asset.name}`}>
+            {(Object.keys(previewBackdrops) as PreviewBackdrop[]).map(value=><button key={value} type="button" className="lf-action"
+              aria-pressed={backdrop===value} onClick={()=>setBackdrop(value)}>{previewBackdrops[value].label}</button>)}
+          </div><p>切换底色检查边缘残色、孔隙和主体完整性。仅改变当前预览，仍须逐项记录实际观察并独立选用。</p>
+        </details>}
+        <img key={url} src={url} alt={asset.altText || asset.name} onLoad={onObserved} onError={historicalJson||historicalV5Json||visualVersion===5||generatedSourceJson||onUnavailable?()=>{setError('原图无法解码，请重新读取并核对文件。');unavailable.current?.()}:undefined}
+          style={{...previewBackdrops[backdrop].style,...(comparisonAspectRatio?{aspectRatio:comparisonAspectRatio}:{})}}/>
+        {smallImageSizes&&<div className="avg-review-icon-sizes">{smallImageSizes.map(size=><img key={size} src={url} alt={`${asset.name} · ${size} 像素观察`} style={{width:size,height:size,objectFit:'contain',...previewBackdrops[backdrop].style}}/>)}</div>}</> : <p>读取图片…</p>}
     <p>{asset.width && asset.height ? `${asset.width} × ${asset.height}` : `${((asset.durationMs ?? 0) / 1000).toFixed(2)} 秒`} · {Math.ceil(asset.byteSize / 1024)} KiB</p>
     <p>来源：{asset.source} · 授权：{asset.license}</p>
     {voiceOrigin && <div aria-label="沿用配音来源">
