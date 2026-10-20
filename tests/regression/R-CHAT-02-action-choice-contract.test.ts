@@ -1,4 +1,5 @@
 import {expect, it} from 'vitest'
+import {createHash} from 'node:crypto'
 import {createInitialInteractionState, buildInteractionContextWindow} from '../../src/lib/character-interaction/runtime'
 import {requestChatNarrativeTriggerV1} from '../../src/lib/character-interaction/narrative-actions'
 import {chatNarrativeFixture} from '../helpers/chat-narrative-fixture'
@@ -31,6 +32,25 @@ it('keeps a role-grounded proposal separate from facts and the original expressi
   expect(proposal.directions[0].evidenceFactKeys).toEqual(['lost'])
   expect(state).toEqual(before)
   expect(messages).toHaveLength(2)
+})
+
+it('freezes the real v50 choice prompt while v51 changes only selection guidance, retaining role input, output shape and call allowance', () => {
+  const {state, context} = fixture(), before = structuredClone(state)
+  const old = buildChatActionChoiceMessagesV1(messages, 'chat-narrative-action-v50')
+  // Exact system input captured from the completed V275 reading-night request.
+  expect(createHash('sha256').update(old[0].content).digest('hex')).toBe('4f2209675e76116b2fde8854850559eaa2a6a9373f637ef83e09b24ece1da1c5')
+  const current = buildChatActionChoiceMessagesV1(messages, 'chat-narrative-action-v51')
+  expect(current[1]).toEqual(old[1])
+  expect(current[0].content.startsWith(old[0].content)).toBe(true)
+  expect(current[0]).not.toEqual(old[0])
+  expect(appendChatActionChoiceProposalV1(messages, proposal, context, 'chat-narrative-action-v51'))
+    .toEqual(appendChatActionChoiceProposalV1(messages, proposal, context, 'chat-narrative-action-v50'))
+  for (const provider of ['codex', 'agnes'] as const) {
+    expect(chatActionChoiceRequestOptionsV1(provider, 'chat-narrative-action-v51'))
+      .toEqual(chatActionChoiceRequestOptionsV1(provider, 'chat-narrative-action-v50'))
+  }
+  expect(chatActionModelCallAllowanceV1({skillId: 'character.chat-narrative-action', promptVersion: 'chat-narrative-action-v51', state, actorKey: 'guard'})).toBe(3)
+  expect(state).toEqual(before)
 })
 
 it('rejects hidden and merely undelivered facts even if they exist in the full story', () => {

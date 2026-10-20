@@ -6,9 +6,10 @@ export const CHAT_CONTROL_HANDOFF_PRODUCER_V2 = 'chat-narrative-action-v47'
 export const CHAT_CONTROL_HANDOFF_REVIEWER_V2 = 'chat-narrative-action-review-v34'
 export const CHAT_CONTROL_HANDOFF_PRODUCER_V3 = 'chat-narrative-action-v48'
 export const CHAT_CONTROL_HANDOFF_PRODUCER_V4 = 'chat-narrative-action-v50'
+export const CHAT_CONTROL_HANDOFF_PRODUCER_V5 = 'chat-narrative-action-v51'
 
 export function supportsChatControlHandoffV1(version: string | undefined): boolean {
-  return version === CHAT_CONTROL_HANDOFF_PRODUCER_V1 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V2 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V3 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V4
+  return version === CHAT_CONTROL_HANDOFF_PRODUCER_V1 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V2 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V3 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V4 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V5
 }
 
 /** New output envelope preserves the old action body exactly. The two results
@@ -47,7 +48,7 @@ export function assertChatControlHandoffBindingsV1(contract: {
 }): void {
   const bindings = contract.executionBindings ?? []
   const producer = bindings.find(binding => binding.stepId === 'interaction:runtime-candidate')?.promptVersion
-  const current = producer === CHAT_CONTROL_HANDOFF_PRODUCER_V2 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V3 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V4
+  const current = producer === CHAT_CONTROL_HANDOFF_PRODUCER_V2 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V3 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V4 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V5
   const expected = [
     ['interaction:action-choice', 'character.chat-narrative-action', current ? producer : CHAT_CONTROL_HANDOFF_PRODUCER_V1],
     ['interaction:runtime-candidate', 'character.chat-narrative-action', current ? producer : CHAT_CONTROL_HANDOFF_PRODUCER_V1],

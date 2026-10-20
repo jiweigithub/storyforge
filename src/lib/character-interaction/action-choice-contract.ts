@@ -10,7 +10,8 @@ export const CHAT_ACTION_CHOICE_INPUT_TOKENS_V1 = 16_000
 export const CHAT_ACTION_CHOICE_KINDS_V1 = ['own-action', 'situation-request', 'question', 'wait', 'pause'] as const
 export const CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1 = 'chat-narrative-action-v48'
 export const CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1 = 'chat-narrative-action-v50'
-const supportsDependency = (version: string | undefined) => version === CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1 || version === CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1
+export const CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1 = 'chat-narrative-action-v51'
+const supportsDependency = (version: string | undefined) => version === CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1 || version === CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1 || version === CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1
 
 /** Internal proposal only. It neither writes story state nor grants permission;
  * expression and the existing independent consequence review remain necessary. */
@@ -31,7 +32,7 @@ export interface ChatActionChoiceV1 {
 /** Exact frozen producer version; historical contracts keep their original
  * two-step execution rather than inheriting the current default. */
 export function supportsChatActionChoiceV1(skillId: string, promptVersion: string | undefined): boolean {
-  return skillId === 'character.chat-narrative-action' && ['chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1, CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1].includes(promptVersion ?? '')
+  return skillId === 'character.chat-narrative-action' && ['chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1, CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1, CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1].includes(promptVersion ?? '')
 }
 
 export function chatNeedsActionChoiceV1(input: {
@@ -100,6 +101,12 @@ const selectionRules = `这是尚未发生的角色行动选择草稿。只依�
 const selectionExample: ChatActionChoiceV1 = {directions: [{id: 'd1', action: '简短具体行动', evidenceFactKeys: ['已交付的事实键'],
   changes: '希望澄清的问题，不能当作已成立结果', playerDependency: null, unconfirmedConditions: [], kind: 'own-action'}], selectedId: 'd1', decisionSummary: '一两句选择说明，不能当作新事实'}
 
+const purposeRules = `
+从角色在意的事和当前未解决的问题选择下一段行动，而不是以消除所有未知为目标。changes 应说明这一步怎样影响接下来的决定、事件或关系；有依据的安排、表达态度、承担自己的责任、调查和自然收束都可以有意义，不要求每轮增加冲突。
+已有观察应帮助角色作出判断或落实自己的做法。继续检查之前，核对其答案会改变哪个当前决定；与当前决定无关的局限仍可保持未知，不自动变成新的必做检查。不要把同一小事的不同姿态、位置或条件逐个检查当作持续发展，也不要仅重复说明已有结果和限制。确有影响当前选择的新疑点仍可调查，不凭次数禁止调查。
+长期目标尚未实现，不妨碍角色在已知范围内作出可调整的具体安排、采取下一步或明确结束当前局部事项；阶段进展不能冒充整个目标完成。同一目的下、不需新增许可或未知结果的短小动作可连贯安排，遇到真实决定、发现或未知后果边界仍须停下。
+以上不授予新权限，也不证明未知条件成立。实际危险、财物权限、玩家拒绝和依赖玩家的决定不能省略；不能为了显得果断而预定成功、他人反应或虚构事实。`
+
 /** Both stages receive the same Gateway-produced role content. No critic,
  * coordinator-only material or future result is added to the choosing step. */
 export function buildChatActionChoiceMessagesV1(actorMessages: readonly ChatMessage[], producerVersion?: string): ChatMessage[] {
@@ -108,7 +115,8 @@ export function buildChatActionChoiceMessagesV1(actorMessages: readonly ChatMess
   const dependencyRules = supportsDependency(producerVersion)
     ? '\nplayerDependency 只说明当前选中方向本身是否需要玩家决定，不能把后来可能做的其它步骤混入。own-action 的 playerDependency 必须为 null，且至少引用一条已交付事实；若当前动作确实依赖玩家，就选择相应的 question/wait 等方向，不能只把依赖字段清空来假装获得许可。角色现在说明自己的判断，并不代表已获准实施以后提到的动作；后续操作的许可或其它未知条件放在 unconfirmedConditions，不能预先当作成立。situation-request 也至少引用一条已交付事实，只请求补足局部条件。重复已说过的建议即使字段合法也不是新进展；这些结构约束不证明行动有意义，后续表达与独立审查仍须核对。'
     : ''
-  return [{role: 'system', content: selectionRules + JSON.stringify(selectionExample) + dependencyRules}, {...actorMessages[1]}]
+  const purpose = producerVersion === CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1 ? purposeRules : ''
+  return [{role: 'system', content: selectionRules + JSON.stringify(selectionExample) + dependencyRules + purpose}, {...actorMessages[1]}]
 }
 
 export function appendChatActionChoiceProposalV1(actorMessages: readonly ChatMessage[], value: unknown, context: Pick<InteractionContextWindow, 'chatNarrative'>, producerVersion?: string): ChatMessage[] {

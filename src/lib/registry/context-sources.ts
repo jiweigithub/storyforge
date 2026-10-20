@@ -844,7 +844,7 @@ async function readInteractionRuntimeContext(input: AssembleContextInput): Promi
     const producer = await readInstanceAgentRunV1(input.scope, input.chatActionContextRunId)
     const binding = producer.contract.executionBindings?.find(b => b.stepId === 'interaction:runtime-candidate')
     if (producer.run.productRuntimeSessionId !== session.id || producer.projection.state !== 'running'
-      || binding?.skillId !== 'character.chat-narrative-action' || !['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50'].includes(binding.promptVersion)) {
+      || binding?.skillId !== 'character.chat-narrative-action' || !['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51'].includes(binding.promptVersion)) {
       throw new Error('角色对话标识读取缺少当前实例的生成合同')
     }
     const {assertRuntimeHarnessFreshV1} = await import('../agent/run/runtime-scope')

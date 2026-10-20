@@ -3224,7 +3224,7 @@ export const AGENT_SKILLS = [
     defaultForAgent: false,
     label: '角色聊天情境行动候选',
     owner: 'character-chat-product',
-    promptVersion: 'chat-narrative-action-v50',
+    promptVersion: 'chat-narrative-action-v51',
     executionMode: 'character-reply',
     contextTaskKind: 'agent-character',
     readToolNames: [],
