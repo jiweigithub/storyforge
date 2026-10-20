@@ -1445,6 +1445,7 @@ export async function appendProductRuntimeEvent(input: {
     );
   }
   if (input.type.startsWith("avg.reading.")) throw new Error("受治理的 AVG 播放观察只能通过专用命令 API 生成。");
+  if (input.type.startsWith("avg.audio.")) throw new Error("受治理的 AVG 一次性声音只能通过专用命令 API 生成。");
   if (input.type.startsWith("avg.inventory.")) throw new Error("受治理的 AVG 物件事件只能通过专用命令 API 生成。");
   if (input.type.startsWith("presentation.")) {
     throw new Error("受治理的 AVG 演出事件只能通过对应的专用命令 API 生成。");

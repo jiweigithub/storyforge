@@ -1,4 +1,5 @@
 import { parseAvgReadingStateV1 } from '../avg/reading-contract'
+import { applyAvgOnceAudioEventV1, assertAvgOnceAudioStateV1 } from '../avg/once-audio-runtime'
 import { createAvgBranchOriginV1, verifyAvgBranchOriginV1 } from '../avg/branch-origin'
 import { applyAvgVoiceEventV1, recordAvgReadingHistoryV1, createAvgReadingStateV1, assertAvgReadingHistoryV1 } from '../avg/reading-runtime'
 /**
@@ -115,6 +116,12 @@ export function applyProductOwnedRuntimeEventV1(
   event: ProductRuntimeEvent,
   payload: ProductRuntimeJsonObjectV1,
 ): ProductRuntimeState | null {
+  if (event.type.startsWith('avg.audio.')) {
+    if (event.actorKey !== 'player' || event.targetKey !== payload.cueKey) throw new Error('[avg-audio] 观察身份无效')
+    applyAvgOnceAudioEventV1(state, event.type, payload, event.sequence)
+    state.lastSequence = event.sequence
+    return state
+  }
   if (event.type.startsWith('avg.reading.')) {
     if (event.actorKey !== 'player' || event.targetKey !== payload.lineKey) throw new Error('[avg-reading] 观察身份无效')
     applyAvgVoiceEventV1(state, event.type, payload)
@@ -305,6 +312,8 @@ export function assertFrozenProductRuntimeStateV1(input: {
 }): void {
   const { initial, runtimePackage, runtimeSourceHash } = input
   const avgModule = avgExecutableModule(runtimePackage)
+  if (initial.presentation?.onceAudio && (input.origin !== 'branch' || !avgModule)) throw new Error('[avg-audio] 新游戏/旧来源不得预置播放回执')
+  assertAvgOnceAudioStateV1(initial)
   if (initial.avgReading && !avgModule?.reading) throw new Error('[avg-reading] 来源未启用阅读协议')
   if (avgModule?.reading) {
     const expected = createAvgReadingStateV1(avgModule)!
@@ -540,6 +549,7 @@ export async function cloneProductRuntimeBranchExtensionsV1(input: {
 
 /** Product-owned guards apply equally to live commands and event replay. */
 export function assertProductOwnedRuntimeInvariantsV1(state: ProductRuntimeState): void {
+  assertAvgOnceAudioStateV1(state)
   if (state.avgReading) {
     if (!state.avgRules || !state.narrative || !state.presentation) throw new Error('[avg-reading] 阅读状态缺少原生规则/舞台')
     assertAvgReadingHistoryV1(state.avgReading, state)

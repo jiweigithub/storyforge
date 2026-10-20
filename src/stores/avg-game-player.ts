@@ -1,4 +1,6 @@
 import { commitAvgVoiceCommandV1 } from '../lib/avg/runtime-api'
+import { commitAvgOnceAudioCommandV1 } from '../lib/avg/runtime-api'
+import type { AvgOnceAudioActionV1 } from '../lib/avg/once-audio-commands'
 import type { AVG_VOICE_OUTCOMES_V1 } from '../lib/avg/reading-contract'
 import { commitAvgInventoryActionV1 } from '../lib/avg/runtime-api'
 import type { AvgInventoryPlanV1 } from '../lib/avg/inventory-contract'
@@ -22,6 +24,7 @@ interface AvgGamePlayerState {
   load(scope: WorkspaceScope, worldGroupId: number | null, openLibrary?: boolean): Promise<void>; select(id: number | null): Promise<void>
   start(releaseId: number, title?: string): Promise<number>; reachBeat(beatKey: string): Promise<void>; choose(choiceKey: string): Promise<void>
   voiceCommand(input: { lineKey: string; visit: number; expectedSessionId?:number } & ({ type: 'start' } | { type: 'observe'; generation: string; outcome: typeof AVG_VOICE_OUTCOMES_V1[number]; reason: string; playedMs: number })): Promise<string>
+  onceAudioCommand(input: AvgOnceAudioActionV1 & { cueKey: string; visit: number; expectedSessionId: number }): Promise<number>
   actOnItem(actionKey: string, target: AvgInventoryPlanV1['actions'][number]['target']): Promise<void>
   preloadMedia(maximumBytes?: number, windowKeys?: readonly string[]): Promise<{ urls: Record<string, string>; failures: Array<{ assetKey: string; reason: string }> }>
   recordMediaFailures(failures: Array<{ assetKey: string; reason: string }>): Promise<void>
@@ -133,6 +136,18 @@ export const useAvgGamePlayerStore = create<AvgGamePlayerState>((set, get) => {
     try{await fn(context)}catch(error){if(isCurrentOwner(context))set({error:error instanceof Error?error.message:String(error)});throw error}
     finally{if(request===actionRequest&&isCurrentOwner(context))set({busy:false})}
   }
+  // Simultaneously due channels share one CAS state. Serialize their original
+  // commands, never retry a rejected/unknown result, and pin the queued owner.
+  let transportTail: Promise<unknown> = Promise.resolve()
+  const transportAct = (sessionId: number, fn: (context:ReturnType<typeof owner>) => Promise<unknown>) => {
+    const context = owner()
+    const result = transportTail.then(() => {
+      if (!isCurrentOwner(context) || get().selectedSessionId !== sessionId) throw new Error('[avg] 声音回调不属于当前存档')
+      return act(fn)
+    })
+    transportTail = result.catch(() => undefined)
+    return result
+  }
   return {
     scope: null, worldGroupId: null, releases: [], sessions: [], selectedSessionId: null, events: [], checkpoints: [], runtimeState: structuredClone(EMPTY_PRODUCT_RUNTIME_STATE), selectedManifest: null, selectedMediaResolver: null, selectedSourceSessionId: null, speakerNames: {}, loading: false, busy: false, error: '',
     load: async (scope, worldGroupId, openLibrary = false) => {
@@ -164,7 +179,20 @@ export const useAvgGamePlayerStore = create<AvgGamePlayerState>((set, get) => {
     },
     reachBeat: async beatKey => act(async context => { const id = get().selectedSessionId; if (id == null) throw new Error('[avg] 请先开始游戏'); const nodeKey = get().runtimeState.narrative?.currentNodeKey ?? 'unknown'; const visit = get().runtimeState.narrative?.visitedNodeKeys.filter(key => key === nodeKey).length ?? 0; await assertSession(context.scope, id); const base = await readProductRuntimeStateVersion(id); await reachAvgPresentationBeat({ sessionId: id, beatKey, commandId: `avg:beat:${id}:${nodeKey}:${visit}:${beatKey}`, baseSequence: base.sequence, baseStateHash: base.stateHash, snapshotKey: `node:${nodeKey}:visit:${visit}` }); await details(id,context) }),
     choose: async choiceKey => act(async context => { const id = get().selectedSessionId; if (id == null) throw new Error('[avg] 请先开始游戏'); await assertSession(context.scope, id); const base = await readProductRuntimeStateVersion(id); await commitNarrativeChoice({ sessionId: id, choiceKey, commandId: `avg:choice:${id}:${crypto.randomUUID()}`, baseSequence: base.sequence, baseStateHash: base.stateHash }); await ensureAutomaticCheckpoint(id); await details(id,context) }),
-    voiceCommand: async input => { let generation = ''; const {expectedSessionId,...command}=input; if(expectedSessionId!==undefined&&expectedSessionId!==get().selectedSessionId)throw new Error('[avg] 声音回调不属于当前存档'); await act(async context => { const id = get().selectedSessionId; if (id == null) throw new Error('[avg] 请先开始游戏'); if(expectedSessionId!==undefined&&expectedSessionId!==id)throw new Error('[avg] 声音回调不属于当前存档'); await assertSession(context.scope, id); const base = await readProductRuntimeStateVersion(id); const event = await commitAvgVoiceCommandV1({ ...command, sessionId: id, commandId: `avg:voice:${crypto.randomUUID()}`, baseSequence: base.sequence, baseStateHash: base.stateHash }); generation = JSON.parse(event.payloadJson).generation as string; await details(id,context) }); return generation },
+    voiceCommand: async input => { let generation = ''; const {expectedSessionId,...command}=input; if(expectedSessionId!==undefined&&expectedSessionId!==get().selectedSessionId)throw new Error('[avg] 声音回调不属于当前存档'); await transportAct(expectedSessionId ?? get().selectedSessionId!, async context => { const id = get().selectedSessionId; if (id == null) throw new Error('[avg] 请先开始游戏'); if(expectedSessionId!==undefined&&expectedSessionId!==id)throw new Error('[avg] 声音回调不属于当前存档'); await assertSession(context.scope, id); const base = await readProductRuntimeStateVersion(id); const event = await commitAvgVoiceCommandV1({ ...command, sessionId: id, commandId: `avg:voice:${crypto.randomUUID()}`, baseSequence: base.sequence, baseStateHash: base.stateHash }); generation = JSON.parse(event.payloadJson).generation as string; await details(id,context) }); return generation },
+    onceAudioCommand: async input => {
+      let generation = 0
+      const { expectedSessionId, ...command } = input
+      await transportAct(expectedSessionId, async context => {
+        await assertSession(context.scope, expectedSessionId)
+        const base = await readProductRuntimeStateVersion(expectedSessionId)
+        const event = await commitAvgOnceAudioCommandV1({ ...command, sessionId: expectedSessionId,
+          commandId: `avg:audio:${crypto.randomUUID()}`, baseSequence: base.sequence, baseStateHash: base.stateHash })
+        generation = JSON.parse(event.payloadJson).generation as number
+        await details(expectedSessionId, context)
+      })
+      return generation
+    },
     actOnItem: async (actionKey, target) => act(async context => { const id = get().selectedSessionId; if (id == null) throw new Error('[avg] 请先开始游戏'); await assertSession(context.scope, id); const base = await readProductRuntimeStateVersion(id); await commitAvgInventoryActionV1({ sessionId: id, actionKey, target, commandId: `avg:item:${id}:${crypto.randomUUID()}`, baseSequence: base.sequence, baseStateHash: base.stateHash }); await details(id,context) }),
     recordMediaFailures: async failures => {
       const id = get().selectedSessionId

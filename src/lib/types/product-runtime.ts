@@ -1234,6 +1234,8 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "adventure.action.rejected",
   "avg.reading.voice.started",
   "avg.reading.voice.observed",
+  "avg.audio.once.started",
+  "avg.audio.once.observed",
   "avg.inventory.action.committed",
   "presentation.beat.reached",
   "presentation.media.failed",
