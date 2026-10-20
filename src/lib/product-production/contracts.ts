@@ -751,6 +751,25 @@ export function parseProductProductionCommandV1(value: unknown): ProductProducti
   if (type === 'stop') return { type, commandId: commandHeader(row, type, ['expectedStateRevision', 'retention']), expectedStateRevision: expectedRevision(row.expectedStateRevision), retention: enumValue(row.retention, ['keep-build', 'discard-unreleased'], 'retention') }
   if (type === 'archive') return { type, commandId: commandHeader(row, type, ['expectedStateRevision', 'reason']), expectedStateRevision: expectedRevision(row.expectedStateRevision), reason: text(row.reason, 'reason', 4000) }
   if (type === 'restore') return { type, commandId: commandHeader(row, type, ['expectedStateRevision']), expectedStateRevision: expectedRevision(row.expectedStateRevision) }
+  if (type === 'book-local-no-dispatch') {
+    const commandId = commandHeader(row, type, ['expectedStateRevision', 'buildNumber', 'controlEpoch', 'planHash', 'ledgerHash', 'anchor', 'proofs'])
+    const anchor = record(row.anchor, 'anchor')
+    exactKeys(anchor, ['artifactKey', 'version', 'contentHash'], 'anchor')
+    if (!isSha256Hash(row.planHash) || !isSha256Hash(row.ledgerHash) || !isSha256Hash(anchor.contentHash)) fail('未发送记账必须绑定原计划、账本和原稿 Hash')
+    if (!Array.isArray(row.proofs) || row.proofs.length < 1 || row.proofs.length > 16) fail('未发送记账必须明确核对 1～16 条证明')
+    const proofs = row.proofs.map(value => {
+      const proof = record(value, 'proof')
+      exactKeys(proof, ['attemptKeyHash', 'proofHash'], 'proof')
+      if (!isSha256Hash(proof.attemptKeyHash) || !isSha256Hash(proof.proofHash)) fail('未发送记账证明 Hash 无效')
+      return { attemptKeyHash: proof.attemptKeyHash, proofHash: proof.proofHash }
+    })
+    if (new Set(proofs.map(proof => proof.attemptKeyHash)).size !== proofs.length) fail('未发送记账证明重复')
+    return { type, commandId, expectedStateRevision: expectedRevision(row.expectedStateRevision),
+      buildNumber: positiveId(row.buildNumber, 'buildNumber'), controlEpoch: expectedRevision(row.controlEpoch),
+      planHash: row.planHash, ledgerHash: row.ledgerHash,
+      anchor: { artifactKey: enumValue(anchor.artifactKey, ['ttrpg.open.source-facts', 'ttrpg.open.rule-system', 'ttrpg.open.situation-layer'], 'anchor.artifactKey'),
+        version: positiveId(anchor.version, 'anchor.version'), contentHash: anchor.contentHash }, proofs }
+  }
   if (type === 'book-original-response') {
     const commandId = commandHeader(row, type, ['expectedStateRevision', 'buildNumber', 'controlEpoch', 'planHash',
       'taskKey', 'originalRunId', 'originalAttempt', 'captureRunId', 'captureReceiptHash', 'disposition'])

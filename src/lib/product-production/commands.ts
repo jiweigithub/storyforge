@@ -4,6 +4,7 @@ import { prepareProductProductionOriginalResponseBookingV1, assertProductProduct
   type PreparedOriginalResponseBookingV1 } from './original-response-booking'
 import { canReviseTextContentBuildV1, createTextContentRevisionPlanV1 } from './text-content-revision'
 import type { prepareTtrpgOpenContentRevisionV1 } from '../ttrpg/open-production-content-revision'
+import type { prepareProductProductionLocalNoDispatchBookingV1 } from './local-no-dispatch-booking'
 import Dexie from 'dexie'
 import { db } from '../db/schema'
 import type {
@@ -1046,6 +1047,7 @@ async function createRevisionBuildWithCarriesV1(input: {
 }
 
 async function applyCommand(input: {
+  preparedLocalNoDispatchBooking?: Awaited<ReturnType<typeof prepareProductProductionLocalNoDispatchBookingV1>> | null
   preparedTtrpgContentRevision?: Awaited<ReturnType<typeof prepareTtrpgOpenContentRevisionV1>> | null
   preparedOriginalAuthorSource?: PreparedProductProductionOriginalAuthorSourceV1 | null
   preparedOriginalResponseBooking?: PreparedOriginalResponseBookingV1 | null
@@ -1086,6 +1088,20 @@ async function applyCommand(input: {
   if (command.type !== 'create-intent' && command.type !== 'create-text-open-world-intent'
     && command.expectedStateRevision !== production.stateRevision) {
     reject('production-state-conflict', `Production revision 已从 ${command.expectedStateRevision} 变为 ${production.stateRevision}`)
+  }
+
+  if (command.type === 'book-local-no-dispatch') {
+    const prepared = input.preparedLocalNoDispatchBooking
+    if (!prepared || production.productType !== 'ttrpg') reject('invalid-state-transition', '缺少已核对的未发送证明')
+    try { await prepared!.assertCurrent() } catch {
+      reject('production-state-conflict', '原账本、来源或失败记录已变化，请重新核对')
+    }
+    await db.productBuilds.update(prepared!.build.id!, { budgetLedgerJson: prepared!.budgetLedgerJson,
+      stateRevision: prepared!.build.stateRevision + 1, updatedAt: now })
+    production = { ...production, stateRevision: production.stateRevision + 1, updatedAt: now }
+    await db.productProductions.update(production.id, { stateRevision: production.stateRevision, updatedAt: now })
+    return { production, result: { status: 'local-no-dispatch-accounted', accounting: prepared!.accounting,
+      newModelCalls: 0, candidateCreated: false, adopted: false } }
   }
 
   if (command.type === 'book-original-response') {
@@ -2972,6 +2988,7 @@ async function applyCommand(input: {
 }
 
 async function executeTransaction(input: {
+  preparedLocalNoDispatchBooking?: Awaited<ReturnType<typeof prepareProductProductionLocalNoDispatchBookingV1>> | null
   preparedTtrpgContentRevision?: Awaited<ReturnType<typeof prepareTtrpgOpenContentRevisionV1>> | null
   preparedOriginalAuthorSource?: PreparedProductProductionOriginalAuthorSourceV1 | null
   preparedOriginalResponseBooking?: PreparedOriginalResponseBookingV1 | null
@@ -3142,6 +3159,7 @@ async function executeTransaction(input: {
         }
       }
       const applied = await applyCommand({
+        preparedLocalNoDispatchBooking: input.preparedLocalNoDispatchBooking,
         preparedTtrpgContentRevision: input.preparedTtrpgContentRevision,
         preparedOriginalAuthorSource: input.preparedOriginalAuthorSource,
         preparedOriginalResponseBooking: input.preparedOriginalResponseBooking,
@@ -3590,19 +3608,26 @@ export async function executeProductProductionCommand(input: {
     preparedPausedBuild = { before, after, runs }
   }
   let preparedTtrpgContentRevision: Awaited<ReturnType<typeof prepareTtrpgOpenContentRevisionV1>> | null = null
-  let ttrpgPreparationFailure: { cause: unknown } | null = null
+  let readOnlyPreparationFailure: { cause: unknown } | null = null
   if (command.type === 'resume' && command.ttrpgContentRevision && preparedPausedBuild) {
     try {
       preparedTtrpgContentRevision = await (await import('../ttrpg/open-production-content-revision'))
         .prepareTtrpgOpenContentRevisionV1({ scope, productionId: input.productionId!, build: preparedPausedBuild.before, command })
-    } catch (cause) { ttrpgPreparationFailure = { cause } }
+    } catch (cause) { readOnlyPreparationFailure = { cause } }
   }
-  if (ttrpgPreparationFailure && !await db.productProductionCommands.where('[productionId+commandId]')
-    .equals([input.productionId!, command.commandId]).first()) throw ttrpgPreparationFailure.cause
+  let preparedLocalNoDispatchBooking: Awaited<ReturnType<typeof prepareProductProductionLocalNoDispatchBookingV1>> | null = null
+  if (command.type === 'book-local-no-dispatch') {
+    try { preparedLocalNoDispatchBooking = await (await import('./local-no-dispatch-booking'))
+      .prepareProductProductionLocalNoDispatchBookingV1({ scope, productionId: input.productionId!, command }) }
+    catch (cause) { readOnlyPreparationFailure = { cause } }
+  }
+  if (readOnlyPreparationFailure && !await db.productProductionCommands.where('[productionId+commandId]')
+    .equals([input.productionId!, command.commandId]).first()) throw readOnlyPreparationFailure.cause
   // Another connection may finish this exact command while its read-only
   // producer proof is being prepared. Only the durable transaction below can
   // replay that winner (including payload/scope checks); never re-run mutation.
   const request = {
+    preparedLocalNoDispatchBooking,
     preparedTtrpgContentRevision,
     preparedOriginalAuthorSource,
     preparedOriginalResponseBooking,

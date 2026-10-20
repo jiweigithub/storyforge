@@ -6,8 +6,9 @@ import { openProductionCompilerFixtureV1 } from './open-ttrpg-production-artifac
 import { executeProductProductionCommand } from '../../src/lib/product-production/commands'
 import { createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1 } from '../../src/lib/product-production/production-executor'
 import { runProductProductionUntilBlockedV1 } from '../../src/lib/product-production/scheduler'
+import { CONTEXT_SOURCE_BY_KEY } from '../../src/lib/registry/context-sources'
 
-export async function openContentRevisionFixtureV1(options: { pause?: boolean } = {}) {
+export async function openContentRevisionFixtureV1(options: { pause?: boolean; legacyNoDispatch?: boolean } = {}) {
   const f = await openProductionFixtureV1(), { brief, scope, productionId } = f
   Object.assign(brief.productionBudget, { maximumModelCalls: 16, maximumInputTokens: 384000,
     maximumOutputTokens: 120000, maximumDurationMs: 3600000, maximumMediaCalls: 0 })
@@ -55,8 +56,38 @@ export async function openContentRevisionFixtureV1(options: { pause?: boolean } 
     if (JSON.parse(build.failureJson).taskKey !== key) throw Error(build.failureJson)
     await review(key, key)
   }
+  if (options.legacyNoDispatch) {
+    // Genuine failed preflight before any model/tool event. Only the fixture's
+    // input read is fault-injected; restore it before the explicit normal retry.
+    const source = CONTEXT_SOURCE_BY_KEY.get('product-production.ttrpg-open-task-brief')!, read = source.read
+    let failed
+    source.read = async input => {
+      if (input.productProductionTaskKey === 'ttrpg.open.situation-layer') throw Error('fixture historical preflight before provider dispatch')
+      return read(input)
+    }
+    try { failed = await run() } finally { source.read = read }
+    const build = (await db.productBuilds.get(failed.buildId))!
+    if (JSON.parse(build.failureJson).code !== 'task-preflight-failed') throw Error(build.failureJson)
+    const current = (await db.productProductions.get(productionId))!
+    const retried = await command({ type: 'resolve-blocker', commandId: 'content-revision.fixture.preflight-retry',
+      expectedStateRevision: current.stateRevision, blockerKey: 'ttrpg.open.situation-layer',
+      resolution: { action: 'retry', note: '明确重试尚未发送的测试预检，不改变原授权或费用' } })
+    if (!retried.ok) throw Error(JSON.stringify(retried))
+  }
   const stopped = await run(), build = (await db.productBuilds.get(stopped.buildId))!
   if (JSON.parse(build.failureJson).taskKey !== 'ttrpg.open.media-plan') throw Error(build.failureJson)
+  if (options.legacyNoDispatch) {
+    // Preserve the real failed Runs/events/checkpoints. Simulate only the old
+    // ledger format that omitted known zero usage in these two local failures.
+    const ledger = JSON.parse(build.budgetLedgerJson)
+    for (const entry of ledger.attempts) if (entry.errorCode === 'task-preflight-failed'
+      || entry.taskKey === 'ttrpg.open.media-plan' && entry.errorCode === 'task-executor-failed') {
+      entry.usage = null; entry.usageKnown = false; delete entry.resolution
+      const current = ledger.tasks[entry.taskKey]
+      if (current?.runId === entry.runId && current.attempt === entry.attempt) current.usage = null
+    }
+    await db.productBuilds.update(build.id!, { budgetLedgerJson: JSON.stringify(ledger) })
+  }
   p = (await db.productProductions.get(productionId))!
   if (options.pause !== false) {
     const paused = await command({ type: 'pause', commandId: 'content-revision.fixture.pause',

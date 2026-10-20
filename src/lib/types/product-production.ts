@@ -145,6 +145,7 @@ export const PRODUCT_PRODUCTION_COMMAND_TYPES = [
   "stop",
   "resolve-blocker",
   "book-original-response",
+  "book-local-no-dispatch",
   "request-preview",
   "revise-media-asset",
   "revise-media-assets",
@@ -766,6 +767,22 @@ export interface ProductBuildCompatibilityReportV1 {
 }
 
 export type ProductProductionCommandV1 =
+  | {
+      type: "book-local-no-dispatch";
+      commandId: string;
+      expectedStateRevision: number;
+      buildNumber: number;
+      controlEpoch: number;
+      planHash: string;
+      ledgerHash: string;
+      anchor: {
+        artifactKey: TtrpgOpenContentRevisionV1['artifactKey'];
+        version: number;
+        contentHash: string;
+      };
+      /** Stable proof hashes, never portable local Run locators. */
+      proofs: Array<{ attemptKeyHash: string; proofHash: string }>;
+    }
   | {
       type: "book-original-response";
       commandId: string;

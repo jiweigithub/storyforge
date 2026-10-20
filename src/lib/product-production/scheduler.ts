@@ -60,7 +60,7 @@ import {
 import { parseProductBuildQualityReportV1 } from './adoption'
 import { createProductBuildCompatibilityReportV1 } from './compatibility'
 import { parseProductProductionBriefV3 } from './contracts'
-import { canonicalProductProductionJsonV2, hashProductProductionValueV2, isSha256Hash } from './hash'
+import { canonicalProductProductionJsonV2, hashProductProductionValueV2, hashProductProductionTaskInputV1, isSha256Hash } from './hash'
 import {
   createProductProductionPlanV3,
   parseProductProductionPlanV3,
@@ -4951,12 +4951,12 @@ async function runClaimedTaskCore(input: {
       stepId: input.task.taskKey, attempt, manifestHash: manifest.manifestHash,
     })
   }
-  const inputHash = await hashProductProductionValueV2({
-    ...structuralInput,
+  const inputHash = await hashProductProductionTaskInputV1({
+    structuralInput,
     sourcePlanHash,
     confirmedBriefHash,
     contextPacketHash: gatewayExecution?.contextPacket.packetHash ?? null,
-    ...(openRequestHash ? { ttrpgOpenRequestHash: openRequestHash } : {}),
+    ttrpgOpenRequestHash: openRequestHash,
     creatorDerivedAuthorizationHash: authorizedDirectResult == null
       ? null
       : input.repairAuthority?.authorization.authorizationHash
@@ -6748,6 +6748,43 @@ export function bookProductProductionOriginalUsageLedgerV1(input: {
   }
   return { budgetLedgerJson: canonicalProductProductionJsonV2(ledger), usage: entry.usage!,
     effectiveDisposition: 'provider-actual-charge' as const, observedPhysicalRequests: 1 as const }
+}
+
+/** Strict projection of legacy failed attempts without a usage report. */
+export function readProductProductionUnreportedFailedAttemptsV1(budgetLedgerJson: string) {
+  return parseLedger(budgetLedgerJson).attempts.filter(entry => entry.outcome === 'failed'
+    && !entry.usageKnown && entry.usage === null && entry.resolution === undefined).map(entry => structuredClone(entry))
+}
+
+/** Pure settlement; only the separately verified no-dispatch command may use it.
+ * Original entries are retained in that command's stable receipt projection. */
+export function bookProductProductionVerifiedNoDispatchLedgerV1(input: {
+  budgetLedgerJson: string
+  verified: Array<{ original: LedgerAttemptV2; durationMs: number }>
+}) {
+  const ledger = parseLedger(input.budgetLedgerJson)
+  if (!input.verified.length || input.verified.length > 16) throw Error('[local-no-dispatch] 必须明确核对有界原尝试')
+  const seen = new Set<string>()
+  for (const { original, durationMs } of input.verified) {
+    const key = `${original.controlEpoch}:${original.runId}:${original.attempt}`
+    if (seen.has(key) || !Number.isSafeInteger(durationMs) || durationMs < 0) throw Error('[local-no-dispatch] 原尝试重复或时长无效')
+    seen.add(key)
+    const matches = ledger.attempts.filter(entry => `${entry.controlEpoch}:${entry.runId}:${entry.attempt}` === key)
+    const entry = matches[0]
+    if (matches.length !== 1 || canonicalProductProductionJsonV2(entry) !== canonicalProductProductionJsonV2(original)
+      || entry.usageKnown || entry.usage !== null || entry.resolution !== undefined || entry.outcome !== 'failed') {
+      throw Error('[local-no-dispatch] 原未知记录已变化，不能覆盖旧用量或处置')
+    }
+    entry.usage = { ...zeroUsage(), durationMs }
+    entry.usageKnown = true
+    entry.resolution = 'system-released-before-dispatch'
+    const current = ledger.tasks[entry.taskKey]
+    if (current?.runId === entry.runId && current.attempt === entry.attempt) {
+      if (current.status !== 'failed' || current.usage !== null) throw Error('[local-no-dispatch] 当前任务账本与旧未知记录冲突')
+      current.usage = structuredClone(entry.usage)
+    }
+  }
+  return canonicalProductProductionJsonV2(ledger)
 }
 
 /** Same ceilings and cost policy as normal execution; never widen a frozen Plan. */
