@@ -3,7 +3,7 @@ import { createRoot,type Root } from 'react-dom/client'
 import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { readyOpenTtrpgSessionV1,openEnvelopeV1,OPEN_HUMAN_VIEWER } from '../helpers/open-ttrpg-session'
-import { startTtrpgOpenEpochV1 } from '../../src/lib/ttrpg/runtime-commands'
+import { startTtrpgOpenEpochV1,changeTtrpgSituationV1 } from '../../src/lib/ttrpg/runtime-commands'
 import { generateTtrpgOpenIntentCandidateV1 } from '../../src/lib/ttrpg/open-intent-harness'
 import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
 import * as table from '../../src/lib/ttrpg/open-table-service'
@@ -31,10 +31,19 @@ describe('R-TTRPGOPEN3 original intent review and explicit human clarification',
       row.value = [...row.options].find(predicate)!.value;row.dispatchEvent(new Event('change',{ bubbles: true }))
     })
   }
-  async function setup() {
+  async function setup(bindingKind?: 'rule' | 'discovery') {
     const f = await readyOpenTtrpgSessionV1('clarification user controls',p => {
       p.ttrpg!.campaign.runtimePolicy.enabled = true;p.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000
+      if (bindingKind === 'rule') {
+        p.ttrpg!.campaign.effectPlanTemplates[0].parameters = [];p.ttrpg!.campaign.effectPlanTemplates[0].effects[0].targetRef = 'hero'
+      }
+      if (bindingKind === 'discovery') {
+        p.ttrpg!.campaign.effectPlanTemplates.push({ planKey: 'plan.empty.discovery',degree: 'failure',ruleRef: p.ttrpg!.rulePack.content.ruleSystemId,
+          reason: '固定的调查消耗',audience: 'party',parameters: [],effects: [{ effectKey: 'fixed.cost',family: 'numeric',operation: 'resource.spend',targetRef: 'hero',valueKey: p.ttrpg!.rulePack.content.resources[0].key,amount: 1 }],alternatives: [] })
+        p.ttrpg!.campaign.situationTemplates[0].evidence[0].discoveryPolicy.costEffectPlanRef = 'plan.empty.discovery'
+      }
     })
+    if (bindingKind === 'discovery') await changeTtrpgSituationV1({ ...await openEnvelopeV1(f.sessionId,'clarify-ui.opening'),templateKey: f.campaign.openingSituationKeys[0],activationReason: 'opening',mode: 'activated' })
     const rawInput = '先提供掩护，具体方法和对象需要补充'
     await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(f.sessionId,'clarify-ui.epoch'),viewerKey: OPEN_HUMAN_VIEWER,triggerKind: 'submit-action',rawInput })
     const runAI = vi.fn(async () => JSON.stringify({ goal: '原始建议待澄清',method: null,targetRefs: [],declaredResources: [],declaredAssumptions: [],requestedOutcome: null }))
@@ -83,6 +92,19 @@ describe('R-TTRPGOPEN3 original intent review and explicit human clarification',
     expect((await readProductRuntimeState(x.f.sessionId)).ttrpg!.openRun!.coordination.calls[0].intentClarifications).toBeUndefined()
     await act(async () => { button('保存补充并重新核对')!.click() });await until(() => !!button('确认这份行动意图'))
     expect(save).toHaveBeenCalledTimes(2);expect(x.runAI).toHaveBeenCalledOnce()
+  })
+  it.each(['rule','discovery'] as const)('preserves frozen %s templates with an empty parameter binding in the actual saved request',async bindingKind => {
+    const x = await setup(bindingKind),save = vi.spyOn(table,'clarifyTtrpgOpenTableCandidateV1'),before = await readProductRuntimeState(x.f.sessionId)
+    await act(x.render);await until(() => !!button('保存补充并重新核对'))
+    await text('补充后的行动说明','以已经确认的方法尝试取得可复核的结果')
+    await choose('补充行动规则',o => o.value.includes(bindingKind === 'rule' ? 'generic-check' : 'investigate'))
+    if (bindingKind === 'discovery') await choose('补充检查线索',o => o.value !== '')
+    await act(async () => { button('保存补充并重新核对')!.click() });await until(() => !!button('确认这份行动意图'))
+    const bindings = bindingKind === 'rule' ? { 'plan.success': {} } : { 'plan.empty.discovery': {} }
+    expect(save).toHaveBeenCalledWith(expect.objectContaining(bindingKind === 'rule' ? { effectBindings: bindings } : { discovery: expect.objectContaining({ effectBindings: bindings }) }))
+    const state = await readProductRuntimeState(x.f.sessionId),request = state.ttrpg!.openRun!.coordination.calls[0].intentClarifications![0].request!
+    expect(bindingKind === 'rule' ? request.effectBindings : request.discovery!.effectBindings).toEqual(bindings)
+    expect(state.entities).toEqual(before.entities);expect(state.ttrpg!.openRun!.worldTime).toEqual(before.ttrpg!.openRun!.worldTime);expect(x.runAI).toHaveBeenCalledOnce()
   })
   it('clears the previous identity immediately and ignores an old read completed after handoff',async () => {
     const x = await setup(),review = await table.readTtrpgOpenTableIntentReviewV1({ ...x.input,runId: x.g.candidate.runId,requestKey: x.g.candidate.requestKey,candidateHash: x.g.candidate.candidateHash })

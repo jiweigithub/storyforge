@@ -49,8 +49,8 @@ function TtrpgOpenIntentReviewBody(props: Props) {
     && d.evidenceRef === review.request!.discovery!.evidenceRef && d.interventionPointKey === review.request!.discovery!.interventionPointKey) : null
   const fieldsReady = (rule?.parameters ?? []).every(p => !p.required || bindings[p.key] && bindings[p.key] !== 'null')
     && (discovery?.parameters ?? []).every(p => !p.required || discoveryBindings[p.key] && discoveryBindings[p.key] !== 'null')
-  const makeBindings = (parameters: Rule['parameters'],values: Record<string,string>) => {
-    const result: Record<string,Record<string,string | null>> = {}
+  const makeBindings = (templateKeys: string[],parameters: Rule['parameters'],values: Record<string,string>) => {
+    const result: Record<string,Record<string,string | null>> = Object.fromEntries(templateKeys.map(template => [template,{}]))
     for (const p of parameters) { result[p.templateKey] ??= {};result[p.templateKey][p.parameterKey] = JSON.parse(values[p.key] ?? 'null') as string | null }
     return result
   }
@@ -93,8 +93,8 @@ function TtrpgOpenIntentReviewBody(props: Props) {
         const chosenTarget: unknown = target ? JSON.parse(target) : null
         await clarifyTtrpgOpenTableCandidateV1({ ...source,expectedCount: review.attempts,
           selection: { goal,method: rule ? rule.interactionKey ?? rule.ruleKey : null,targetRefs: typeof chosenTarget === 'string' ? [chosenTarget] : [],requestedOutcome: outcome.trim() ? outcome : null },
-          effectBindings: makeBindings(rule?.parameters ?? [],bindings),
-          ...(discovery ? { discovery: { situationKey: discovery.situationKey,evidenceRef: discovery.evidenceRef,interventionPointKey: discovery.interventionPointKey,effectBindings: makeBindings(discovery.parameters,discoveryBindings) } } : {}) })
+          effectBindings: makeBindings(rule?.templateKeys ?? [],rule?.parameters ?? [],bindings),
+          ...(discovery ? { discovery: { situationKey: discovery.situationKey,evidenceRef: discovery.evidenceRef,interventionPointKey: discovery.interventionPointKey,effectBindings: makeBindings(discovery.templateKeys,discovery.parameters,discoveryBindings) } } : {}) })
       })}>保存补充并重新核对</button>
     </fieldset>}
     {review?.canConfirm && !editing && <button disabled={busy} onClick={() => action(() => acceptTtrpgOpenTableCandidateV1({ ...source,kind: 'intent',
