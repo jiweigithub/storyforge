@@ -969,6 +969,7 @@ async function assertBuildLifetimeBudgetCapacity(input: {
   productionId: number
   buildId: number
   controlEpoch: number
+  currentAuthorClaim?: { taskKey: string; runId: number; attempt: number; idempotencyKey: string; reservation: ProductTaskBudgetReservationV1 }
 }): Promise<void> {
   const current = await currentProductionBuild(input.scope, input.productionId)
   if (current.build.id !== input.buildId || current.build.controlEpoch !== input.controlEpoch) {
@@ -978,7 +979,8 @@ async function assertBuildLifetimeBudgetCapacity(input: {
     current.build.planJson, current.brief, current.briefRow.briefHash,
   )
   const ledger = parseLedger(current.build.budgetLedgerJson)
-  const exceeded = buildLifetimeBudgetExceededFieldsV1({ ledger, plan, brief: current.brief, controlEpoch: current.build.controlEpoch })
+  const exceeded = buildLifetimeBudgetExceededFieldsV1({ ledger, plan, brief: current.brief, controlEpoch: current.build.controlEpoch,
+    currentAuthorClaim: input.currentAuthorClaim })
   if (exceeded.length > 0) {
     throw new Error(`[product-production-scheduler] Build lifetime budget 不足:${exceeded.join(',')}`)
   }
@@ -4662,7 +4664,18 @@ async function runClaimedTaskCore(input: {
   const authorizedDirectResult = authorizedRepair ?? authorizedMediaImport
   const authorRevisionAuthority = await validateTextContentRevisionAuthorityV1(input.scope, input.build, input.task)
   const frozenAuthorRevision = authorRevisionAuthority?.revision
-  const attemptBudgetReservation = authorizedDirectResult == null && frozenAuthorRevision == null
+  const repair = JSON.parse(input.build.failureJson)
+  const authorDraftJson = repair.blockerKey === input.task.taskKey && repair.resolution?.action === 'author-edit'
+    ? repair.resolution.authorDraftJson as string : frozenAuthorRevision?.authorDraftJson
+  const openAuthorDraft = isTtrpgOpenProductionTaskV3(input.task) && typeof authorDraftJson === 'string' && authorDraftJson.trim().length > 0
+  if (openAuthorDraft) {
+    // Only an exact durable author command can replace this attempt's provider
+    // reservation. Historical usage and other in-flight claims remain charged.
+    await (await import('../ttrpg/open-author-draft-budget')).assertTtrpgOpenAuthorDraftBudgetAuthorityV1({
+      scope: input.scope, productionId: input.productionId, buildId: input.build.id, controlEpoch: input.build.controlEpoch,
+      taskKey: input.task.taskKey, failureJson: input.build.failureJson })
+  }
+  const attemptBudgetReservation = authorizedDirectResult == null && frozenAuthorRevision == null && !openAuthorDraft
       ? remainingTaskAttemptBudgetV1({
         task: input.task,
         ledger: parseLedger((await db.productBuilds.get(input.build.id))!.budgetLedgerJson),
@@ -4986,15 +4999,12 @@ async function runClaimedTaskCore(input: {
     toolCalls: attemptBudgetReservation.mediaCalls,
     tokens: attemptBudgetReservation.inputTokens + attemptBudgetReservation.outputTokens,
   })
-  const repair = JSON.parse(input.build.failureJson)
   if (repair.code === 'author-revised-content' && repair.blockerKey === input.task.taskKey) {
     await validateProductProductionRecoveryDirectiveV1({
       scope: input.scope, productProductionId: input.productionId, productBuildId: input.build.id,
       productProductionTaskKey: input.task.taskKey, expectedState: 'resolved',
     })
   }
-  const authorDraftJson = repair.blockerKey === input.task.taskKey && repair.resolution?.action === 'author-edit'
-    ? repair.resolution.authorDraftJson as string : frozenAuthorRevision?.authorDraftJson
   if ((authorDraftJson && !originalAuthorSource) || authorizedDirectResult) {
     const recorded = await recordAgentRunArtifactV1({
       scope: input.scope, runId: snapshot.run.id, stepId: input.task.taskKey, attempt,
@@ -5024,6 +5034,8 @@ async function runClaimedTaskCore(input: {
     productionId: input.productionId,
     buildId: input.build.id,
     controlEpoch: input.build.controlEpoch,
+    ...(openAuthorDraft ? { currentAuthorClaim: { taskKey: input.task.taskKey, runId: snapshot.run.id, attempt,
+      idempotencyKey: inputHash, reservation: attemptBudgetReservation } } : {}),
   })
   const bindingHash = frozenExecutionIdentityHash
   if (authorizedDirectResult) {
@@ -6687,7 +6699,9 @@ export async function runProductProductionUntilBlockedV1(input: {
   throw new Error('[product-production-scheduler] 超出最大调度 cycle，拒绝隐藏循环')
 }
 
-function buildLifetimeBudgetExceededFieldsV1(input: { ledger: SchedulerLedgerV2; plan: ProductProductionPlanV3; brief: ProductProductionBriefV3; controlEpoch: number }): string[] {
+function buildLifetimeBudgetExceededFieldsV1(input: { ledger: SchedulerLedgerV2; plan: ProductProductionPlanV3; brief: ProductProductionBriefV3; controlEpoch: number
+  currentAuthorClaim?: { taskKey: string; runId: number; attempt: number; idempotencyKey: string; reservation: ProductTaskBudgetReservationV1 }
+}): string[] {
   const { ledger, plan } = input
   const planTaskByKey = new Map(plan.tasks.map(task => [task.taskKey, task]))
   const charged = ledger.attempts.flatMap(attempt => {
@@ -6703,6 +6717,9 @@ function buildLifetimeBudgetExceededFieldsV1(input: { ledger: SchedulerLedgerV2;
   const inFlight = Object.entries(ledger.tasks).flatMap(([taskKey, entry]) => {
     if (entry.status !== 'claimed') return []
     const task = planTaskByKey.get(taskKey)
+    const author = input.currentAuthorClaim
+    if (author && author.taskKey === taskKey && entry.runId === author.runId && entry.attempt === author.attempt
+      && entry.idempotencyKey === author.idempotencyKey) return [reservationUsage(author.reservation)]
     return task ? [reservationUsage(remainingTaskAttemptBudgetV1({
       task,
       ledger,

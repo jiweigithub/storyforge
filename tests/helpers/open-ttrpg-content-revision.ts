@@ -8,7 +8,7 @@ import { createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV
 import { runProductProductionUntilBlockedV1 } from '../../src/lib/product-production/scheduler'
 import { CONTEXT_SOURCE_BY_KEY } from '../../src/lib/registry/context-sources'
 
-export async function openContentRevisionFixtureV1(options: { pause?: boolean; legacyNoDispatch?: boolean } = {}) {
+export async function openContentRevisionFixtureV1(options: { pause?: boolean; legacyNoDispatch?: boolean; situationFailure?: boolean } = {}) {
   const f = await openProductionFixtureV1(), { brief, scope, productionId } = f
   Object.assign(brief.productionBudget, { maximumModelCalls: 16, maximumInputTokens: 384000,
     maximumOutputTokens: 120000, maximumDurationMs: 3600000, maximumMediaCalls: 0 })
@@ -34,7 +34,7 @@ export async function openContentRevisionFixtureV1(options: { pause?: boolean; l
       : request.system.includes('storyforge.ttrpg-open-rule-system') ? 'ttrpg.open.rule-system' : 'ttrpg.open.situation-layer'
     calls.push(key)
     return { output: JSON.stringify(key === 'ttrpg.open.source-facts' ? data.sourceFacts
-      : key === 'ttrpg.open.rule-system' ? data.ruleSystem : data.situationLayer),
+      : key === 'ttrpg.open.rule-system' ? data.ruleSystem : options.situationFailure ? { ...data.situationLayer, version: 2 } : data.situationLayer),
       usage: { inputTokens: 100, outputTokens: 200 }, bindingReceipt: {
         schema: 'storyforge.provider-binding-receipt', version: 1, requirementKey,
         adapterId: 'configured-text.v1', adapterVersion: 1, provider: 'fixture', model: 'fixture-only',
@@ -75,7 +75,7 @@ export async function openContentRevisionFixtureV1(options: { pause?: boolean; l
     if (!retried.ok) throw Error(JSON.stringify(retried))
   }
   const stopped = await run(), build = (await db.productBuilds.get(stopped.buildId))!
-  if (JSON.parse(build.failureJson).taskKey !== 'ttrpg.open.media-plan') throw Error(build.failureJson)
+  if (JSON.parse(build.failureJson).taskKey !== (options.situationFailure ? 'ttrpg.open.situation-layer' : 'ttrpg.open.media-plan')) throw Error(build.failureJson)
   if (options.legacyNoDispatch) {
     // Preserve the real failed Runs/events/checkpoints. Simulate only the old
     // ledger format that omitted known zero usage in these two local failures.
