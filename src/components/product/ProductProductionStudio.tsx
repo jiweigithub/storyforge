@@ -2205,6 +2205,9 @@ export default function ProductProductionStudio(props: {
           {ttrpgContentRevisionView && <Suspense fallback={<p>正在打开原稿返修…</p>}><TtrpgOpenContentRevision key={JSON.stringify(ttrpgContentRevisionView)}
             view={ttrpgContentRevisionView} disabled={busy || productionRunning}
             onBusy={value => setTtrpgContentBusyOwner(previous => value ? ttrpgBudgetBusyKey : previous === ttrpgBudgetBusyKey ? null : previous)}
+            onAccounted={result => { setDetails(result.details); setProgress(null);
+              setProductions(previous => previous.map(row => row.id === result.details.production.id ? result.details.production : row));
+              setMessage('已关闭证据确认未发送的旧记录，原始凭据与暂停状态保留。请重新载入原稿，再明确返修。') }}
             onSubmitted={result => { setDetails(result.details); setProgress(null);
               setProductions(previous => previous.map(row => row.id === result.details.production.id ? result.details.production : row));
               setMessage('返修已记录，原稿与历史用量保留；将按原预算继续受影响的制作步骤。') }}

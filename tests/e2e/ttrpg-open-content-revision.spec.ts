@@ -3,7 +3,8 @@ test.setTimeout(180000)
 test.beforeEach(() => test.skip(process.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW !== '1', 'requires isolated open preview'))
 /** Native IndexedDB and normal controls. Initial three outputs are explicit
  * internal fixtures. No provider transport is permitted during author repair. */
-test('pauses a real downstream parser failure, revises the original situation, publishes and restores a colliding backup without inference', async ({ page }, info) => {
+for (const legacyNoDispatch of [false, true]) {
+test(legacyNoDispatch ? 'explicitly books proven legacy unsent failures, stays paused, then repairs publishes and restores the full backup' : 'pauses a real downstream parser failure, revises the original situation, publishes and restores a colliding backup without inference', async ({ page }, info) => {
   const transport: string[] = []
   await page.route('**/local-codex/v1/**', async route => {
     const url = new URL(route.request().url())
@@ -13,9 +14,9 @@ test('pauses a real downstream parser failure, revises the original situation, p
     throw Error('Unexpected inference transport during zero-model author repair')
   })
   await page.goto('./')
-  const f = await page.evaluate(async () => {
+  const f = await page.evaluate(async legacyNoDispatch => {
     const load = new Function('p', 'return import(p)'), { db } = await load('/storyforge/src/lib/db/schema.ts')
-    const f = await (await load('/storyforge/tests/helpers/open-ttrpg-content-revision.ts')).openContentRevisionFixtureV1({ pause: false })
+    const f = await (await load('/storyforge/tests/helpers/open-ttrpg-content-revision.ts')).openContentRevisionFixtureV1({ pause: false, legacyNoDispatch })
     const p = await db.projects.get(f.scope.projectId)
     await (await load('/storyforge/src/lib/workspace/works.ts')).updateWorkspace(f.scope.projectId, { productPlatformOptIns: { ...p.productPlatformOptIns, productProductionV3: true } })
     const { useAIConfigStore } = await load('/storyforge/src/stores/ai-config.ts')
@@ -24,7 +25,7 @@ test('pauses a real downstream parser failure, revises the original situation, p
     return { scope: f.scope, productionId: f.productionId, buildId: f.buildId, internalFixtureCalls: f.calls,
       build, artifacts: await db.productBuildArtifacts.where('buildId').equals(f.buildId).toArray(),
       raw: await db.agentRunArtifacts.where('projectId').equals(f.scope.projectId).toArray(), worlds: await db.worldReleases.toArray() }
-  })
+  }, legacyNoDispatch)
   expect(f.internalFixtureCalls).toHaveLength(3)
   expect(JSON.parse(f.build.failureJson)).toMatchObject({ taskKey: 'ttrpg.open.media-plan', code: 'task-executor-failed' })
   expect(f.build.failureJson).toContain('表情基线')
@@ -35,6 +36,25 @@ test('pauses a real downstream parser failure, revises the original situation, p
   await expect(panel).toBeVisible({ timeout: 30000 })
   await expect(panel.getByRole('button', { name: '载入已采用原稿', exact: true })).toBeEnabled()
   await panel.getByRole('button', { name: '载入已采用原稿', exact: true }).click()
+  if (legacyNoDispatch) {
+    await expect(panel.getByRole('button', { name: '新增表情基线', exact: true })).toBeDisabled()
+    await panel.getByRole('button', { name: '核对旧失败记录', exact: true }).click()
+    await expect(panel.getByRole('button', { name: '确认关闭未发送记录', exact: true })).toBeEnabled()
+    await expect(panel).toContainText('发送前预检失败'); await expect(panel).toContainText('本地素材校验失败')
+    expect(transport).toEqual([])
+    await page.screenshot({ path: info.outputPath('ttrpg-legacy-no-dispatch-preview.png'), fullPage: true })
+    await panel.getByRole('button', { name: '确认关闭未发送记录', exact: true }).click()
+    await expect(page.getByText('已关闭证据确认未发送的旧记录，原始凭据与暂停状态保留。请重新载入原稿，再明确返修。', { exact: true })).toBeVisible()
+    const paused = await page.evaluate(async f => {
+      const load = new Function('p', 'return import(p)'), { db } = await load('/storyforge/src/lib/db/schema.ts')
+      return { production: await db.productProductions.get(f.productionId), build: await db.productBuilds.get(f.buildId) }
+    }, f)
+    expect(paused.production.status).toBe('paused'); expect(paused.build.status).toBe('paused')
+    expect(paused.production.controlEpoch).toBe(f.build.controlEpoch + 1)
+    await expect(panel.getByRole('button', { name: '载入已采用原稿', exact: true })).toBeEnabled()
+    await panel.getByRole('button', { name: '载入已采用原稿', exact: true }).click()
+    await expect(panel.getByRole('button', { name: '核对旧失败记录', exact: true })).toHaveCount(0)
+  }
   await expect(panel.getByRole('button', { name: '新增表情基线', exact: true })).toBeVisible()
   await panel.getByRole('button', { name: '新增表情基线', exact: true }).click()
   const actor = JSON.parse(f.artifacts.filter((row: any) => row.artifactKey === 'ttrpg.open.situation-layer' && ['accepted', 'carried-forward'].includes(row.status))
@@ -61,12 +81,29 @@ test('pauses a real downstream parser failure, revises the original situation, p
     const copiedBuild = await db.productBuilds.where('[productionId+buildNumber]').equals([copied.id, build.buildNumber]).first()
     const recovery = await (await load('/storyforge/src/lib/product-production/service.ts')).recoverImportedProductProductionProofsV1({
       scope: { projectId: copiedProject, worldId: copied.worldId, workId: copied.workId }, productionId: copied.id })
-    return { build, production, artifacts, raw, worlds: worldRows, copiedProject, copiedBuild, recovery,
+    const accounting = (await db.productProductionCommands.where('productionId').equals(f.productionId).toArray()).filter((row: any) => row.type === 'book-local-no-dispatch')
+    const copiedAccounting = (await db.productProductionCommands.where('productionId').equals(copied.id).toArray()).filter((row: any) => row.type === 'book-local-no-dispatch')
+    return { build, production, artifacts, raw, worlds: worldRows, copiedProject, copiedBuild, recovery, accounting, copiedAccounting,
       originalAfterImport: await db.productBuilds.get(f.buildId) }
   }, f)
   expect(result.build.status).toBe('released'); expect(result.originalAfterImport).toEqual(result.build)
   expect(result.copiedProject).not.toBe(f.scope.projectId); expect(result.copiedBuild.id).not.toBe(f.buildId); expect(result.recovery.terminal).toBe(true)
-  expect(JSON.parse(result.build.budgetLedgerJson).attempts.slice(0, JSON.parse(f.build.budgetLedgerJson).attempts.length)).toEqual(JSON.parse(f.build.budgetLedgerJson).attempts)
+  const oldAttempts = JSON.parse(f.build.budgetLedgerJson).attempts, finalAttempts = JSON.parse(result.build.budgetLedgerJson).attempts
+  for (let i = 0; i < oldAttempts.length; i++) {
+    const old = oldAttempts[i]
+    if (legacyNoDispatch && !old.usageKnown && old.usage === null) {
+      expect(finalAttempts[i]).toMatchObject({ ...old, usageKnown: true, resolution: 'system-released-before-dispatch',
+        usage: { modelCalls: 0, inputTokens: 0, outputTokens: 0, mediaCalls: 0, costUsd: 0, storageBytes: 0 } })
+    } else expect(finalAttempts[i]).toEqual(old)
+  }
+  expect(result.accounting).toHaveLength(legacyNoDispatch ? 1 : 0)
+  if (legacyNoDispatch) {
+    const receipt = JSON.parse(result.accounting[0].resultJson)
+    expect(receipt.accounting.entries).toHaveLength(2)
+    expect(receipt.accounting.entries.every((row: any) => row.original.usage === null && row.original.usageKnown === false)).toBe(true)
+    expect(receipt.newModelCalls).toBe(0); expect(receipt.adopted).toBe(false)
+    expect(result.copiedAccounting[0].resultJson).toBe(result.accounting[0].resultJson)
+  }
   for (const old of f.artifacts.filter((row: any) => ['accepted', 'carried-forward'].includes(row.status))) {
     const retained = result.artifacts.find((row: any) => row.id === old.id)
     expect(retained).toEqual({ ...old, status: 'invalid', updatedAt: retained.updatedAt })
@@ -74,5 +111,6 @@ test('pauses a real downstream parser failure, revises the original situation, p
   for (const old of f.raw) expect(result.raw.find((row: any) => row.id === old.id)).toEqual(old)
   expect(result.worlds).toEqual(f.worlds); expect(transport).toEqual([])
   await info.attach('native-ttrpg-content-revision-evidence', { contentType: 'application/json',
-    body: JSON.stringify({ f, result, transport, realProvider: false, independentHumanAcceptance: false }) })
+    body: JSON.stringify({ legacyNoDispatch, f, result, transport, realProvider: false, independentHumanAcceptance: false }) })
 })
+}

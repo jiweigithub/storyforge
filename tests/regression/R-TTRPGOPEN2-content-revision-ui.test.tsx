@@ -2,9 +2,9 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import Panel from '../../src/components/ttrpg/TtrpgOpenContentRevision'
-const m = vi.hoisted(() => ({ inspect: vi.fn(), read: vi.fn(), prepare: vi.fn(), submit: vi.fn() }))
+const m = vi.hoisted(() => ({ inspect: vi.fn(), read: vi.fn(), prepare: vi.fn(), submit: vi.fn(), prepareLocal: vi.fn(), submitLocal: vi.fn() }))
 vi.mock('../../src/lib/ttrpg/open-production-content-revision-service', () => ({ inspectTtrpgOpenContentRevisionV1: m.inspect,
-  readTtrpgOpenContentRevisionDraftV1: m.read, prepareTtrpgOpenContentRevisionProposalV1: m.prepare, submitTtrpgOpenContentRevisionV1: m.submit }))
+  readTtrpgOpenContentRevisionDraftV1: m.read, prepareTtrpgOpenContentRevisionProposalV1: m.prepare, submitTtrpgOpenContentRevisionV1: m.submit, prepareTtrpgOpenLocalNoDispatchProposalV1: m.prepareLocal, submitTtrpgOpenLocalNoDispatchV1: m.submitLocal }))
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let host: HTMLDivElement, root: Root
 const view = { scope: { projectId: 1, worldId: 2, workId: 3 }, productionId: 4, buildId: 5, controlEpoch: 7, expectedStateRevision: 11, planHash: 'a'.repeat(64) }
@@ -13,9 +13,9 @@ const selection = { artifactKey: 'ttrpg.open.situation-layer', version: 3, conte
 const original = { schema: 'fixture-only', retained: 'KEEP_ORIGINAL_POLICY_AND_PRIVATE_OWNER', metadata: { visualBible: { characters: [
   { characterKey: 'actor.fixture', identityPrompt: '原角色', expressionBaselines: [], referenceAssetKeys: [] }] } } }
 const source = { ...selection, owner, authorDraftJson: JSON.stringify(original) }
-const inspection = { owner, choices: [selection], needsAccounting: false, brief: {} }
+const inspection = { owner, choices: [selection], needsAccounting: false, unreportedFailedCount: 0, brief: {} }
 const submitted = { receipt: { ok: true }, details: { production: { id: 4, status: 'producing' } } }
-const props = () => ({ view, disabled: false, onBusy: vi.fn(), onSubmitted: vi.fn() })
+const props = () => ({ view, disabled: false, onBusy: vi.fn(), onAccounted: vi.fn(), onSubmitted: vi.fn() })
 beforeEach(() => {
   vi.clearAllMocks(); m.inspect.mockResolvedValue(inspection); m.read.mockResolvedValue(source); m.submit.mockResolvedValue(submitted)
   m.prepare.mockImplementation(async input => ({ source: input.source, command: { type: 'resume', commandId: input.commandId,
@@ -81,4 +81,47 @@ it('discards late source loading after a Work switch and leaves unknown accounti
   await act(async () => { root.render(createElement(Panel, { ...next, key: 'new' })); await Promise.resolve() })
   await wait(() => expect(host.textContent).toContain('仍有在途请求')); await act(async () => { finish(source); await Promise.resolve() })
   expect(button('新增表情基线')).toBeUndefined(); expect(m.prepare).not.toHaveBeenCalled(); expect(m.submit).not.toHaveBeenCalled()
+})
+
+const accounted = { receipt: { ok: true }, details: { production: { id: 4, status: 'paused' } } }
+async function legacyLoaded(p = props()) {
+  m.inspect.mockResolvedValue({ ...inspection, unreportedFailedCount: 2 })
+  m.prepareLocal.mockImplementation(async input => ({ source: input.source, command: { commandId: input.commandId }, commandHash: 'f'.repeat(64), attempts: [
+    { taskKey: 'ttrpg.open.situation-layer', attempt: 1, controlEpoch: 4, classification: 'preflight-before-dispatch', durationMs: 10 },
+    { taskKey: 'ttrpg.open.media-plan', attempt: 1, controlEpoch: 6, classification: 'empty-media-kernel', durationMs: 25 }] }))
+  m.submitLocal.mockResolvedValue(accounted)
+  return loaded(p)
+}
+it('keeps editing locked until a separate explicit evidence preview and bookkeeping confirmation', async () => {
+  const p = await legacyLoaded()
+  expect((button('新增表情基线').closest('fieldset') as HTMLFieldSetElement).disabled).toBe(true)
+  expect((host.querySelector('[aria-label="返修原稿 JSON"]') as HTMLTextAreaElement).disabled).toBe(true)
+  expect(m.prepareLocal).not.toHaveBeenCalled(); expect(m.submitLocal).not.toHaveBeenCalled()
+  await click('核对旧失败记录'); await wait(() => expect(button('确认关闭未发送记录')).toBeTruthy())
+  expect(host.textContent).toContain('发送前预检失败'); expect(host.textContent).toContain('本地素材校验失败')
+  expect(m.submitLocal).not.toHaveBeenCalled(); await click('确认关闭未发送记录')
+  await wait(() => expect(p.onAccounted).toHaveBeenCalledWith(accounted))
+  expect(p.onSubmitted).not.toHaveBeenCalled(); expect(m.prepare).not.toHaveBeenCalled(); expect(m.submit).not.toHaveBeenCalled()
+})
+it('reuses the exact bookkeeping command after a lost return and never repeats automatically', async () => {
+  const p = await legacyLoaded(); await click('核对旧失败记录'); await wait(() => expect(button('确认关闭未发送记录')).toBeTruthy())
+  m.submitLocal.mockRejectedValueOnce(Error('核对回执返回中断')); await click('确认关闭未发送记录')
+  await wait(() => expect(host.querySelector('[role=alert]')?.textContent).toContain('返回中断'))
+  expect(m.submitLocal).toHaveBeenCalledOnce(); expect(p.onAccounted).not.toHaveBeenCalled()
+  const first = m.submitLocal.mock.calls[0][0]; await click('确认关闭未发送记录')
+  await wait(() => expect(p.onAccounted).toHaveBeenCalledOnce()); expect(m.submitLocal.mock.calls[1][0]).toBe(first)
+  expect(m.prepareLocal).toHaveBeenCalledOnce()
+})
+it('discards a late legacy proof after Work changes and cannot confirm an ambiguous record', async () => {
+  await legacyLoaded(); let finish!: (value: unknown) => void
+  m.prepareLocal.mockReturnValueOnce(new Promise(resolve => { finish = resolve })); await click('核对旧失败记录')
+  const next = { ...props(), view: { ...view, scope: { ...view.scope, workId: 999 } } }
+  m.inspect.mockResolvedValue({ ...inspection, owner: { ...owner, ...next.view }, unreportedFailedCount: 1 })
+  await act(async () => { root.render(createElement(Panel, { ...next, key: 'legacy.other-work' })); await Promise.resolve() })
+  await act(async () => { finish({ attempts: [] }); await Promise.resolve() })
+  expect(button('确认关闭未发送记录')).toBeUndefined(); expect(next.onAccounted).not.toHaveBeenCalled()
+  await click('载入已采用原稿'); await wait(() => expect(button('核对旧失败记录')).toBeTruthy())
+  m.prepareLocal.mockRejectedValueOnce(Error('存在发送证据，保留原未知用量'))
+  await click('核对旧失败记录'); await wait(() => expect(host.querySelector('[role=alert]')?.textContent).toContain('保留原未知'))
+  expect(button('确认关闭未发送记录')).toBeUndefined(); expect(m.submitLocal).not.toHaveBeenCalled()
 })

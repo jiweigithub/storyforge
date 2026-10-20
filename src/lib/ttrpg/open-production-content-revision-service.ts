@@ -50,7 +50,9 @@ async function current(view: TtrpgOpenContentRevisionViewV1) {
       || matches[0].workId !== view.scope.workId || matches[0].carriedFrom != null && matches[0].carriedFrom.buildNumber !== build.buildNumber) return []
     return [{ artifactKey, version: matches[0].version, contentHash: matches[0].contentHash }]
   })
+  const { readProductProductionUnreportedFailedAttemptsV1 } = await import('../product-production/scheduler')
   return { details, build: { ...build, id: build.id! }, plan, owner, choices,
+    unreportedFailedCount: readProductProductionUnreportedFailedAttemptsV1(build.budgetLedgerJson).length,
     needsAccounting: JSON.parse(build.failureJson).code === 'pause-provider-result-unknown' }
 }
 async function exact(owner: TtrpgOpenContentRevisionOwnerV1) {
@@ -59,8 +61,8 @@ async function exact(owner: TtrpgOpenContentRevisionOwnerV1) {
   return result
 }
 export async function inspectTtrpgOpenContentRevisionV1(view: TtrpgOpenContentRevisionViewV1) {
-  const { owner, choices, needsAccounting, details } = await current(view)
-  return { owner, choices, needsAccounting, brief: details.executionBrief!.ttrpgOpen! }
+  const { owner, choices, needsAccounting, unreportedFailedCount, details } = await current(view)
+  return { owner, choices, needsAccounting, unreportedFailedCount, brief: details.executionBrief!.ttrpgOpen! }
 }
 export async function readTtrpgOpenContentRevisionDraftV1(input: { owner: TtrpgOpenContentRevisionOwnerV1; artifactKey: Key }) {
   const before = await exact(input.owner), selected = before.choices.find(row => row.artifactKey === input.artifactKey)
@@ -77,6 +79,7 @@ export async function prepareTtrpgOpenContentRevisionProposalV1(input: {
 }) {
   const before = await exact(input.source.owner)
   if (before.needsAccounting) fail('暂停时仍有在途请求；请先用现有费用核对入口明确处理，再暂停返修')
+  if (before.unreportedFailedCount) fail('旧失败仍有未报告用量；请先单独核对原始证据，再载入原稿返修')
   const command = parseProductProductionCommandV1({ type: 'resume', commandId: input.commandId,
     expectedStateRevision: input.source.owner.expectedStateRevision,
     ttrpgContentRevision: { artifactKey: input.source.artifactKey, expectedArtifactVersion: input.source.version,
@@ -106,5 +109,42 @@ export async function submitTtrpgOpenContentRevisionV1(proposal: Awaited<ReturnT
   }
   const receipt = await executeProductProductionCommand({ scope: owner.scope, productionId: owner.productionId, command: command as ProductProductionCommandV1 })
   if (!receipt.ok) fail(receipt.errorCode ?? '修订未提交，请刷新核对')
+  return { receipt, details: await readProductProductionDetailsV1(owner.scope, owner.productionId, ['ttrpg']) }
+}
+
+/** Read-only preview of the separate historical bookkeeping command. */
+export async function prepareTtrpgOpenLocalNoDispatchProposalV1(input: {
+  source: Awaited<ReturnType<typeof readTtrpgOpenContentRevisionDraftV1>>; commandId: string
+}) {
+  const owner = input.source.owner, before = await exact(owner)
+  if (before.needsAccounting) fail('暂停时仍有在途请求；请先通过原费用核对入口处理')
+  if (!before.unreportedFailedCount) fail('当前没有待核对的旧未知记录，请重新载入原稿')
+  const { inspectProductProductionLocalNoDispatchV1 } = await import('../product-production/local-no-dispatch-booking')
+  const view = { expectedStateRevision: owner.expectedStateRevision, buildNumber: before.build.buildNumber,
+    controlEpoch: owner.controlEpoch, planHash: owner.planHash,
+    anchor: { artifactKey: input.source.artifactKey, version: input.source.version, contentHash: input.source.contentHash } }
+  const inspected = await inspectProductProductionLocalNoDispatchV1({ scope: owner.scope, productionId: owner.productionId, view })
+  if (inspected.ledgerHash !== owner.ledgerHash) fail('旧账本已变化，请重新载入原稿')
+  const command = parseProductProductionCommandV1({ type: 'book-local-no-dispatch', commandId: input.commandId, ...view,
+    ledgerHash: inspected.ledgerHash, proofs: inspected.candidates.map(row => ({ attemptKeyHash: row.attemptKeyHash, proofHash: row.proofHash })) })
+  if (command.type !== 'book-local-no-dispatch') fail('旧失败核对命令格式无效')
+  await inspected.assertCurrent(); await exact(owner)
+  return { source: input.source, command, commandHash: await hashProductProductionValueV2(command),
+    attempts: inspected.candidates.map(row => ({ taskKey: row.original.taskKey, attempt: row.original.attempt,
+      controlEpoch: row.original.controlEpoch, classification: row.proof.classification, durationMs: row.durationMs })) }
+}
+
+export async function submitTtrpgOpenLocalNoDispatchV1(proposal: Awaited<ReturnType<typeof prepareTtrpgOpenLocalNoDispatchProposalV1>>) {
+  const command = parseProductProductionCommandV1(proposal.command), owner = proposal.source.owner
+  if (command.type !== 'book-local-no-dispatch' || await hashProductProductionValueV2(command) !== proposal.commandHash) {
+    fail('已核对的旧失败处置已变化，请重新核对')
+  }
+  const existing = await db.productProductionCommands.where('[productionId+commandId]').equals([owner.productionId, command.commandId]).first()
+  if (!existing) {
+    const checked = await prepareTtrpgOpenLocalNoDispatchProposalV1({ source: proposal.source, commandId: command.commandId })
+    if (checked.commandHash !== proposal.commandHash) fail('原失败证据已变化，请重新核对')
+  }
+  const receipt = await executeProductProductionCommand({ scope: owner.scope, productionId: owner.productionId, command })
+  if (!receipt.ok) fail(receipt.errorCode ?? '旧失败核对未提交，请刷新核对')
   return { receipt, details: await readProductProductionDetailsV1(owner.scope, owner.productionId, ['ttrpg']) }
 }
