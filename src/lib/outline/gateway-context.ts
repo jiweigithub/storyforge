@@ -67,11 +67,18 @@ function combineAssembly(
       ...(gateway.sourceEvidence ?? []),
       ...(prior?.sourceEvidence ?? []),
     ],
+    sourceSnapshots: [...(gateway.sourceSnapshots ?? []), ...(prior?.sourceSnapshots ?? [])],
     totalInputTokens,
     inputBudget,
     overBudgetBeforeTrim: gateway.overBudgetBeforeTrim || (prior?.overBudgetBeforeTrim ?? false),
     overBudgetAfterTrim: false,
-    contextGatewayExecution: execution,
+    contextGatewayExecution: {
+      ...execution,
+      sourceSnapshots: [
+        ...execution.sourceSnapshots,
+        ...(prior?.sourceSnapshots ?? []).map(({ key, content }) => ({ sourceKey: key, content })),
+      ],
+    },
   }
 }
 
