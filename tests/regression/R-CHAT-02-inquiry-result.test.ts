@@ -15,18 +15,97 @@ import {buildInteractionContextWindow} from '../../src/lib/character-interaction
 import {formatInteractionRuntimeContextV1} from '../../src/lib/character-interaction/context-format'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {prepareChatInquiryFixture, chatInquiryDraftFixture, chatInquiryReviewFixture, chatInquiryInputFixture, inquiryAnswer, inquiryTruth, inquiryPurpose} from '../helpers/chat-inquiry-result'
+import {chatInquiryEvidenceContextV1} from '../../src/lib/character-interaction/inquiry-evidence'
+import {validateImportedChatNarrativeEvidenceEventV1} from '../../src/lib/character-interaction/narrative-evidence-import'
+import {commitChatSituation} from '../../src/lib/character-interaction/runtime-commands'
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => {vi.restoreAllMocks(); db.close()})
 const boundary = {participantKeys: ['guard', 'artisan'], characterKeys: ['character:guard', 'character:artisan'], sceneKeys: ['inn']}
 const runtime = async (id: number) => (await readProductRuntimeState(id)).interaction!
 
-it.each([false, true])('commits actual answer and one fact atomically, with heard-only UI/context, restore and branch (private=%s)', async privateAnswer => {
-  const f = await prepareChatInquiryFixture(), draft = await chatInquiryDraftFixture(f.sessionId, privateAnswer ? ['guard'] : ['guard', 'player'])
+it('requires explicit frozen prerequisites and excludes unknown, future and unrelated evidence', async () => {
+  const f = await prepareChatInquiryFixture({questionEvidenceFactKeys: ['clerk-present', 'box']})
+  const initial = await runtime(f.sessionId), draft = await chatInquiryDraftFixture(f.sessionId)
+  const input = {sequence: (await readProductRuntimeStateVersion(f.sessionId)).sequence + 1,
+    triggerSequence: initial.chatNarrative!.triggers.at(-1)!.requestedSequence, draft, inquiryEvidenceVersion: 1}
+  const basis = chatInquiryEvidenceContextV1(initial)!
+  expect(basis.questionEvidenceFactKeys).not.toContain('lost')
+  expect(basis.targets.find(t => t.factKey === 'secret')!.requiredEvidenceFactKeys).toContain('lost')
+  expect(previewChatSituationV1(initial, input).chatNarrative!.inquiryHistory![0].evidenceFactKeys).toContain('lost')
+  expect(() => previewChatSituationV1(initial, {...input, inquiryEvidenceVersion: undefined})).toThrow('提问者当时')
+  const mutations: Array<(state: typeof initial, proposal: typeof draft) => void> = [
+    (_s, d) => {d.inquiryResult!.evidenceFactKeys = ['clerk-present', 'box']},
+    (_s, d) => {d.inquiryResult!.evidenceFactKeys.push('road')},
+    (_s, d) => {d.inquiryResult!.evidenceFactKeys.push('purpose')},
+    s => {s.chatNarrative!.situation.facts.find(f => f.factKey === 'lost')!.audienceKeys = ['artisan']},
+    s => {s.chatNarrative!.situation.facts.find(f => f.factKey === 'lost')!.sourceEventSequence = basis.questionSequence + 1},
+    s => {s.chatNarrative!.situation.facts.find(f => f.factKey === 'secret')!.discovery!.actorKeys = ['artisan']},
+    s => {s.chatNarrative!.situation.facts.find(f => f.factKey === 'secret')!.discovery!.sceneKey = 'other-scene'},
+    s => {s.chatNarrative!.triggers.at(-1)!.actionSequences.push(basis.questionSequence + 1)},
+  ]
+  for (const mutate of mutations) {
+    const state = structuredClone(initial), proposal = structuredClone(draft)
+    mutate(state, proposal)
+    const before = structuredClone(state)
+    expect(() => previewChatSituationV1(state, {...input, draft: proposal})).toThrow()
+    expect(state).toEqual(before)
+  }
+  expect(() => previewChatSituationV1(initial, {...input, inquiryEvidenceVersion: 2})).toThrow('版本无效')
+  expect(initial.chatNarrative!.inquiryHistory).toBeUndefined()
+})
+
+it('preserves the original inquiry evidence restriction for a frozen legacy run', async () => {
+  const f = await prepareChatInquiryFixture({questionEvidenceFactKeys: ['clerk-present', 'box']}), draft = await chatInquiryDraftFixture(f.sessionId)
+  const original = skills.getAgentSkillV1, before = await readProductRuntimeState(f.sessionId)
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-situation-construction'
+    ? {...original(id), promptVersion: 'chat-situation-construction-v12'} : id === 'character.chat-situation-review'
+      ? {...original(id), promptVersion: 'chat-situation-review-v11'} : original(id))
+  let reviews = 0
+  await expect(generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: async messages => {
+    expect(messages[1].content).not.toContain('storyforge.chat-inquiry-evidence')
+    expect(messages[0].content).toContain('全部来自 pendingSituation.evidenceFactKeys')
+    return JSON.stringify(draft)
+  }, runReviewAI: async () => {reviews++; return JSON.stringify(chatInquiryReviewFixture(draft))}})).rejects.toThrow('提问者当时')
+  expect(reviews).toBe(0)
+  expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
+})
+
+it('rejects a caller-supplied inquiry version without the original reviewed run', async () => {
+  const f = await prepareChatInquiryFixture({questionEvidenceFactKeys: ['clerk-present', 'box']}), draft = await chatInquiryDraftFixture(f.sessionId)
+  const before = await readProductRuntimeState(f.sessionId), version = await readProductRuntimeStateVersion(f.sessionId)
+  await expect(commitChatSituation({sessionId: f.sessionId, commandId: 'forged-inquiry-version', baseSequence: version.sequence, baseStateHash: version.stateHash,
+    triggerSequence: before.interaction!.chatNarrative!.triggers.at(-1)!.requestedSequence, draft,
+    review: {reviewedProposalJson: canonicalStringify(draft), ...chatInquiryReviewFixture(draft)}, inquiryEvidenceVersion: 1})).rejects.toThrow('必须绑定原已审查运行')
+  expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
+  expect(() => validateImportedChatNarrativeEvidenceEventV1(JSON.stringify({inquiryEvidenceVersion: 2}), 'character-interaction', 'interaction.narrative.situation.committed')).toThrow('版本无效')
+  expect(() => validateImportedChatNarrativeEvidenceEventV1(JSON.stringify({inquiryEvidenceVersion: 1}), 'character-interaction', 'interaction.narrative.action-reviewed.committed')).toThrow('只能来自已审查情境')
+})
+
+it('cannot attach the new inquiry version to a valid but older reviewed run', async () => {
+  const f = await prepareChatInquiryFixture(), draft = await chatInquiryDraftFixture(f.sessionId)
+  const original = skills.getAgentSkillV1
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-situation-construction'
+    ? {...original(id), promptVersion: 'chat-situation-construction-v12'} : id === 'character.chat-situation-review'
+      ? {...original(id), promptVersion: 'chat-situation-review-v11'} : original(id))
+  const generated = await generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: async () => JSON.stringify(draft), runReviewAI: async () => JSON.stringify(chatInquiryReviewFixture(draft))})
+  const before = await readProductRuntimeState(f.sessionId), version = await readProductRuntimeStateVersion(f.sessionId)
+  await expect(commitChatSituation({sessionId: f.sessionId, commandId: 'legacy-run-forged-version', baseSequence: version.sequence, baseStateHash: version.stateHash,
+    triggerSequence: before.interaction!.chatNarrative!.triggers.at(-1)!.requestedSequence, draft,
+    review: {reviewedProposalJson: canonicalStringify(draft), ...chatInquiryReviewFixture(draft)}, inquiryEvidenceVersion: 1,
+    harnessRun: {id: generated.snapshot.run.id, lastSequence: generated.snapshot.projection.lastSequence}})).rejects.toThrow('与原运行合同不一致')
+  expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
+})
+
+it.each([{privateAnswer: false, supplement: false}, {privateAnswer: true, supplement: false},
+  {privateAnswer: false, supplement: true}, {privateAnswer: true, supplement: true}])('commits the reviewed answer, including omitted known prerequisites, with restore and branch (%j)', async ({privateAnswer, supplement}) => {
+  const f = await prepareChatInquiryFixture(supplement ? {questionEvidenceFactKeys: ['clerk-present', 'box']} : {}), draft = await chatInquiryDraftFixture(f.sessionId, privateAnswer ? ['guard'] : ['guard', 'player'])
   const before = await readProductRuntimeState(f.sessionId), world = await db.worldReleases.toArray()
   let generated = 0, reviewed = 0, runId = 0
   await expect(generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: withChatActionChoiceFixture(async messages => {
     generated++; expect(messages[0].content).toContain('questionSequence'); expect(messages[1].content).toContain(inquiryPurpose)
+    expect(messages[1].content).toContain('"schema":"storyforge.chat-inquiry-evidence"')
+    if (supplement) expect(before.interaction!.chatNarrative!.pendingSituation!.evidenceFactKeys).not.toContain('lost')
     return JSON.stringify(draft)
   }), onSituationDraftSaved: id => {runId = id; throw new Error('host-before-review')}})).rejects.toThrow('host-before-review')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
@@ -35,7 +114,7 @@ it.each([false, true])('commits actual answer and one fact atomically, with hear
     reviewed++; expect(messages[0].content).toContain('actual-question'); expect(messages[0].content).toContain('对每个 discovery 单独复核')
     return JSON.stringify(chatInquiryReviewFixture(draft))
   }})
-  expect(reviewedResult.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v11')
+  expect(reviewedResult.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v12')
   await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId, onDurableBoundary: type => {if (type === 'runtime.candidate.adopted') throw new Error('host-after-commit')}})).rejects.toThrow('host-after-commit')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
   const version = await readProductRuntimeStateVersion(f.sessionId)
@@ -48,6 +127,9 @@ it.each([false, true])('commits actual answer and one fact atomically, with hear
   expect(state.messages).toEqual(before.interaction!.messages)
   expect(story.situation.goals).toEqual(before.interaction!.chatNarrative!.situation.goals)
   expect(story.situation.possibilities).toEqual(before.interaction!.chatNarrative!.situation.possibilities)
+  const committed = (await db.productRuntimeEvents.where('sessionId').equals(f.sessionId).toArray()).find(e => e.type === 'interaction.narrative.situation.committed')!
+  expect(JSON.parse(committed.payloadJson).inquiryEvidenceVersion).toBe(1)
+  expect(story.inquiryHistory![0].evidenceFactKeys).toContain('lost')
   expect(chatInquiryRepliesV1(story, 'player')).toHaveLength(privateAnswer ? 0 : 1)
   expect(chatInquiryRepliesV1(story, 'artisan')).toEqual([])
   const actorContext = formatInteractionRuntimeContextV1(state.profiles[0], buildInteractionContextWindow(state, 'guard'))
@@ -95,7 +177,7 @@ it.each(['producer', 'reviewer'] as const)('rejects a new result under historica
   const original = skills.getAgentSkillV1, id = kind === 'producer' ? 'character.chat-situation-construction' : 'character.chat-situation-review'
   vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(key => key === id ? {...original(key), promptVersion: kind === 'producer' ? 'chat-situation-construction-v7' : 'chat-situation-review-v6'} : original(key))
   let reviews = 0
-  await expect(generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)), runReviewAI: async () => {reviews++; return JSON.stringify(chatInquiryReviewFixture(draft))}})).rejects.toThrow('旧情境合同')
+  await expect(generateInteractionRuntimeCandidateV1({...chatInquiryInputFixture(f), runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)), runReviewAI: async () => {reviews++; return JSON.stringify(chatInquiryReviewFixture(draft))}})).rejects.toThrow('询问前提证据与原生成和审查合同不一致')
   expect(reviews).toBe(0); expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
 })
 
@@ -150,7 +232,7 @@ it.each(['cancel', 'stale'] as const)('does not release a fact when %s arrives d
 })
 
 it('can answer an inherited pending question on a branch without changing its parent or initial-fact identity', async () => {
-  const f = await prepareChatInquiryFixture(), before = await runtime(f.sessionId), version = await readProductRuntimeStateVersion(f.sessionId)
+  const f = await prepareChatInquiryFixture({questionEvidenceFactKeys: ['clerk-present', 'box']}), before = await runtime(f.sessionId), version = await readProductRuntimeStateVersion(f.sessionId)
   const branch = await branchProductRuntimeSession({parentSessionId: f.sessionId, throughSequence: version.sequence, title: '回答之前分支'})
   const draft = await chatInquiryDraftFixture(branch.id!)
   expect(draft.inquiryResult!.questionSequence).toBeLessThan(0)

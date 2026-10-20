@@ -1,5 +1,6 @@
 import {parseChatFactDiscoveriesV1, applyChatFactDiscoveriesV1} from './narrative-discovery'
 import {parseChatInquiryResultV1, parseChatInquiryReviewV1, chatInquiryReviewPassedV1, applyChatInquiryResultV1} from './narrative-inquiry'
+import {parseChatInquiryEvidenceVersionV1} from './inquiry-evidence'
 import {isChatMessageRetrievableV1} from './narrative-retrieval'
 import {recordChatFactEvidenceV1, parseChatFactEvidenceVersionV1} from './fact-evidence'
 import {canonicalStringify} from '../agent/run/hash'
@@ -96,7 +97,7 @@ export function isChatSituationPreparedV1(state: CharacterInteractionRuntimeStat
 /** Preserve every established fact, goal and unresolved thread. The constructor
  * may add authorized local background; it cannot execute the player's choices. */
 export function applyChatSituationV1(stateValue: CharacterInteractionRuntimeState, input: {
-  sequence: number; triggerSequence: unknown; draft: unknown; review: unknown; factEvidenceVersion?: unknown
+  sequence: number; triggerSequence: unknown; draft: unknown; review: unknown; factEvidenceVersion?: unknown; inquiryEvidenceVersion?: unknown
 }): CharacterInteractionRuntimeState {
   const draft = parseChatSituationDraftV1(input.draft), review = parseChatSituationReviewV1(input.review, draft)
   if (review.checks.some(check => !check.passed) || review.inquiryReview && !chatInquiryReviewPassedV1(review.inquiryReview)) fail('情境语义审查未通过，原有局面保留')
@@ -106,10 +107,11 @@ export function applyChatSituationV1(stateValue: CharacterInteractionRuntimeStat
 /** Deterministic dry-run only. Callers cannot persist this projection in place
  * of the reviewed situation command. */
 export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeState, input: {
-  sequence: number; triggerSequence: unknown; draft: unknown; factEvidenceVersion?: unknown
+  sequence: number; triggerSequence: unknown; draft: unknown; factEvidenceVersion?: unknown; inquiryEvidenceVersion?: unknown
 }): CharacterInteractionRuntimeState {
   const state = structuredClone(stateValue), story = state.chatNarrative, scene = state.activeScene
   parseChatFactEvidenceVersionV1(input.factEvidenceVersion)
+  parseChatInquiryEvidenceVersionV1(input.inquiryEvidenceVersion)
   if (!story || !scene || story.situation.sceneKey !== scene.sceneKey) fail('缺少已衔接的当前情境')
   const trigger = story.triggers[story.triggers.length - 1]
   if (chatSituationConstructionBlockedV1(state)) fail('该请求已经构建情境')
@@ -141,7 +143,7 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
   if (draft.inquiryResult) {
     if (request.origin !== 'continued-thread' || draft.title !== story.situation.title || draft.location !== story.situation.location || draft.timeLabel !== story.situation.timeLabel
       || draft.newFacts.length || draft.newGoals.length || draft.newThreads.length || draft.possibilities.length || draft.discoveries?.length) fail('实际答复只能记录本次说法及授权事实，不能同时预执行新的剧情或改变时地')
-    applyChatInquiryResultV1(state, draft.inquiryResult, input.sequence, input.factEvidenceVersion)
+    applyChatInquiryResultV1(state, draft.inquiryResult, input.sequence, input.factEvidenceVersion, input.inquiryEvidenceVersion)
   }
   // Discoveries preserve canonical fact identity. New conditions cannot be
   // invented here; author-selected rules and the exact investigation are checked.

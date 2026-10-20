@@ -12,6 +12,7 @@ import {planChatCoordinatorDialogueV1} from './coordinator-dialogue'
 import {chatSourceUnitConstraintsV1} from './source-unit-runtime'
 import type {ChatSourceUnitSetV1} from './source-unit-authorization'
 import {chatDiscoveryEvidenceContextV1} from './discovery-evidence-context'
+import {chatInquiryEvidenceContextV1} from './inquiry-evidence'
 import {CHAT_COORDINATOR_SOURCE_TOKENS_V1} from './source-budgets'
 export {CHAT_COORDINATOR_SOURCE_TOKENS_V1} from './source-budgets'
 
@@ -20,7 +21,7 @@ const HEADER = '【角色聊天情境协调视角，仅供情境构建和审查�
 /** Selection is separate from the complete coordinator view used for stale
  * hashes. v1 keeps every accepted memory; v2 ranks unpinned summaries. Neither
  * may omit established facts, permissions or material delivered to the actor. */
-export function selectChatCoordinatorContextV1(state: CharacterInteractionRuntimeState, candidate: {text: string; actorKey?: string; retrievalVersion?: ChatRetrievalVersion; sourceUnits?: ChatSourceUnitSetV1; discoveryEvidence?: boolean} = {text: ''}) {
+export function selectChatCoordinatorContextV1(state: CharacterInteractionRuntimeState, candidate: {text: string; actorKey?: string; retrievalVersion?: ChatRetrievalVersion; sourceUnits?: ChatSourceUnitSetV1; discoveryEvidence?: boolean; inquiryEvidence?: boolean} = {text: ''}) {
   if (candidate.retrievalVersion === 'chat-relevance-v8' || candidate.retrievalVersion === 'chat-relevance-v9' || candidate.retrievalVersion === 'chat-relevance-v10' || (candidate.retrievalVersion === 'chat-relevance-v11' || candidate.retrievalVersion === 'chat-relevance-v12')) return selectChatHistoryCoordinatorContextV1(state, {...candidate, retrievalVersion: candidate.retrievalVersion})
   const corrections = supportsChatCorrectionContextV1(candidate.retrievalVersion ?? 'chat-relevance-v4')
   const memoryCorrections = corrections ? (candidate.actorKey ? [candidate.actorKey] : state.profiles.map(p => p.participantKey)).flatMap(key => chatMemoryCorrectionContextV1(state, key)) : []
@@ -74,6 +75,7 @@ export function selectChatCoordinatorContextV1(state: CharacterInteractionRuntim
   const result = {...full, ...(corrections ? {memoryCorrections} : {}),
     ...(dialogue ? {messages: [...dialogue.required], dialogueSelection: dialogue.evidence} : {}),
     ...(candidate.discoveryEvidence ? {discoveryEvidence: chatDiscoveryEvidenceContextV1(state)} : {}),
+    ...(candidate.inquiryEvidence ? {inquiryEvidence: chatInquiryEvidenceContextV1(state)} : {}),
     ...(candidate.sourceUnits ? {sourceInterpretationConstraints: chatSourceUnitConstraintsV1(candidate.sourceUnits)} : {}),
     ...(promises ? {situation: {...full.situation, goals: projectChatGoalCommitmentsV1(full.situation.goals, selectedCommitments)}} : {}), knowledge: knowledge.filter(k => required.has(k.knowledgeKey) || k.sourceEventSequence !== 0 && !isSceneBackground(k)),
     memories: modern ? memories.filter(m => requiredMemories.has(m.memoryId)) : memories, selection}

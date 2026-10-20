@@ -73,6 +73,7 @@ import {chatSituationResponseRulesV1} from './narrative-situation-prompt'
 import {chatSituationCharacterRulesV1} from './situation-character-permissions'
 import {chatInquiryGenerationRulesV1} from './inquiry-prompt'
 import {assertChatInquiryBindingV1} from './narrative-inquiry'
+import {chatInquiryEvidenceVersionForContractV1} from './inquiry-evidence'
 import {reviewRuntimeChatCandidateV1, CHAT_SITUATION_REVIEW_STEP_V1, CHAT_ACTION_REVIEW_STEP_V1} from './situation-harness'
 import type { ChatNarrativeActionV1, ChatNarrativeActionReviewV1, ChatSituationDraftV1, ChatSituationReviewV1 } from '../types/chat-narrative'
 import type {
@@ -910,7 +911,8 @@ async function retainRuntimeCandidateV1(args: {
     assertChatInquiryBindingV1(draft.draft.inquiryResult, promptVersion, snapshot.contract.executionBindings?.find(binding => binding.skillId === 'character.chat-situation-review')?.promptVersion)
     const triggerSequence = initialState.interaction!.chatNarrative!.triggers.slice(-1)[0]!.requestedSequence
     await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: snapshot.contract.scope, participantKey, view: 'chat-situation'})
-    previewChatSituationV1(initialState.interaction!, {sequence: runtimeBoundary.baseSequence + 1, triggerSequence, draft: draft.draft})
+    previewChatSituationV1(initialState.interaction!, {sequence: runtimeBoundary.baseSequence + 1, triggerSequence, draft: draft.draft,
+      inquiryEvidenceVersion: chatInquiryEvidenceVersionForContractV1(snapshot.contract)})
     body = {...common, ...draft, triggerSequence, review: null}
   } else if (draft.kind === 'chat-control-handoff-candidate') {
     assertChatControlHandoffBindingsV1(snapshot.contract)
@@ -1001,7 +1003,7 @@ export async function readInteractionRuntimeCandidateV1(scope: WorkspaceScope, r
   return { snapshot: saved.snapshot, candidate }
 }
 
-async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSequence: number, optionKey?: string, evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1} = {}): Promise<ProductRuntimeEvent | null> {
+async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSequence: number, optionKey?: string, evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1} = {}): Promise<ProductRuntimeEvent | null> {
   if (candidate.kind === 'scene-director-candidate') return null
   const envelope = {
     sessionId: candidate.productRuntimeSessionId,
@@ -1149,12 +1151,16 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
       candidateHash: candidate.candidateHash, decision: 'adopt', reviewItemId: optionKey!, reviewDecision: 'acknowledged', note: `玩家选定行动候选 ${optionKey}`})
     await input.onDurableBoundary?.('confirmation.recorded', snapshot)
   }
-  const evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1} = {}
+  const evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1} = {}
   if (!adopted && ['chat-situation-candidate', 'chat-narrative-action-candidate', 'chat-narrative-options-candidate'].includes(candidate.kind)) {
     // Recovery may already have committed the command. Verify its producer
     // against the original state, never the current default reader or new head.
     const original = await readChatRuntimeStateAtSequenceV1(candidate.productRuntimeSessionId, candidate.baseSequence)
     const situation = candidate.kind === 'chat-situation-candidate'
+    if (situation) {
+      const inquiryVersion = chatInquiryEvidenceVersionForContractV1(snapshot.contract)
+      if (inquiryVersion !== undefined) evidenceVersions.inquiryEvidenceVersion = inquiryVersion
+    }
     if (!situation) {
       const choiceVersion = chatActionChoiceVersionForContractV1(snapshot.contract)
       if (choiceVersion !== undefined) evidenceVersions.actionChoiceVersion = choiceVersion

@@ -773,8 +773,9 @@ async function readChatSituationRuntimeProjection(input: AssembleContextInput) {
   const saved = await readChatActionCandidateValue(input)
   const {readChatCandidateRetrievalVersion} = await import('../character-interaction/context-reader-version')
   if (!saved) {
-    let discoveryEvidence = false
+    let discoveryEvidence = false, inquiryEvidence = false
     const {usesChatDiscoveryEvidenceContextV1} = await import('../character-interaction/discovery-evidence-context')
+    const {chatInquiryEvidenceVersionForContractV1} = await import('../character-interaction/inquiry-evidence')
     if (input.chatSituationConstructionRunId != null) {
       const {readInstanceAgentRunV1} = await import('../agent/run/event-store')
       const producer = await readInstanceAgentRunV1(input.scope, input.chatSituationConstructionRunId)
@@ -785,6 +786,7 @@ async function readChatSituationRuntimeProjection(input: AssembleContextInput) {
       const {assertRuntimeHarnessFreshV1} = await import('../agent/run/runtime-scope')
       await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: producer.contract.scope, participantKey: 'player', view: 'chat-situation'})
       discoveryEvidence = usesChatDiscoveryEvidenceContextV1(producer)
+      inquiryEvidence = chatInquiryEvidenceVersionForContractV1(producer.contract) === 1
     }
     let retrievalVersion: import('../character-interaction/context-selection').ChatRetrievalVersion = 'chat-relevance-v9'
     if (input.chatSituationCandidateRunId != null) {
@@ -793,8 +795,9 @@ async function readChatSituationRuntimeProjection(input: AssembleContextInput) {
       if (!producer || producer.snapshot.run.productRuntimeSessionId !== input.productRuntimeSessionId) return {text: ''}
       retrievalVersion = await readChatCandidateRetrievalVersion(producer.snapshot, input.projectId, 'chatSituationRuntime')
       discoveryEvidence = usesChatDiscoveryEvidenceContextV1(producer.snapshot)
+      inquiryEvidence = chatInquiryEvidenceVersionForContractV1(producer.snapshot.contract) === 1
     }
-    return project({text: await readChatSituationCandidateContext(input), retrievalVersion, discoveryEvidence, ...(sourceUnits ? {sourceUnits} : {})})
+    return project({text: await readChatSituationCandidateContext(input), retrievalVersion, discoveryEvidence, inquiryEvidence, ...(sourceUnits ? {sourceUnits} : {})})
   }
   const retrievalVersion = await readChatCandidateRetrievalVersion(saved.snapshot, input.projectId, 'interactionRuntime', saved.value.actorKey, state.interaction)
   return project({text: JSON.stringify(saved.value), actorKey: saved.value.actorKey, retrievalVersion, ...(sourceUnits ? {sourceUnits} : {})})

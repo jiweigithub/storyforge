@@ -2,6 +2,7 @@ import type {CharacterInteractionRuntimeState} from '../types'
 import {CHAT_INQUIRY_REVIEW_CHECKS_V1, type ChatInquiryResultV1, type ChatInquiryReviewV1, type ChatNarrativeStateV1} from '../types/chat-narrative'
 import {isChatMessageRetrievableV1} from './narrative-retrieval'
 import {recordChatFactEvidenceV1} from './fact-evidence'
+import {chatInquiryEvidenceContextV1, parseChatInquiryEvidenceVersionV1} from './inquiry-evidence'
 
 function fail(message: string): never {throw new Error(`[chat-inquiry] ${message}`)}
 function object(value: unknown, fields: string): asserts value is Record<string, unknown> {
@@ -59,7 +60,8 @@ export function chatInquiryStatementTextV1(result: ChatInquiryResultV1) {
 }
 
 /** This mutates only the situation reducer's clone, after an exact independent review. */
-export function applyChatInquiryResultV1(state: CharacterInteractionRuntimeState, result: ChatInquiryResultV1, resultSequence: number, factEvidenceVersion?: unknown) {
+export function applyChatInquiryResultV1(state: CharacterInteractionRuntimeState, result: ChatInquiryResultV1, resultSequence: number, factEvidenceVersion?: unknown, inquiryEvidenceVersion?: unknown) {
+  const expanded = parseChatInquiryEvidenceVersionV1(inquiryEvidenceVersion) === 1
   const story = state.chatNarrative!, scene = state.activeScene!, pending = story.pendingSituation
   if (story.permissions.allowInquiryResults !== true || story.permissions.allowActorSituationExpansion !== true
     || !story.permissions.allowedNewFactKinds.includes('observation') || story.permissions.maxNewFactsPerAction < 1) fail('作品未授权询问结果')
@@ -75,9 +77,19 @@ export function applyChatInquiryResultV1(state: CharacterInteractionRuntimeState
   if (!respondent || !respondent.text.includes(result.respondentExcerpt) || !existedAt(respondent.sourceEventSequence, result.questionSequence)) fail('答复对象缺少问题提出前的实际人物依据')
   if (result.audienceKeys.some(key => ![state.playerKey, ...scene.activeParticipantKeys].includes(key)
     || question.audienceKeys != null && !question.audienceKeys.includes(key) || !respondent.audienceKeys.includes(key))) fail('答复听众超出实际对话或人物可知范围')
+  const allowedEvidence = new Set(pending.evidenceFactKeys)
+  if (expanded) {
+    const basis = chatInquiryEvidenceContextV1(state)
+    if (!basis || !pending.evidenceFactKeys.includes(result.respondentFactKey)) fail('询问前提证据缺少实际提问和人物依据')
+    for (const discovery of result.discoveries) {
+      const target = basis.targets.find(target => target.factKey === discovery.factKey)
+      if (!target) fail('询问发现缺少提问时已知的冻结前提')
+      for (const key of target.requiredEvidenceFactKeys) allowedEvidence.add(key)
+    }
+  }
   for (const key of result.evidenceFactKeys) {
     const fact = story.situation.facts.find(row => row.factKey === key)
-    if (!fact || !pending.evidenceFactKeys.includes(key) || !fact.audienceKeys.includes(result.actorKey) || !existedAt(fact.sourceEventSequence, result.questionSequence)) fail('询问依据须是提问者当时已知的事实')
+    if (!fact || !allowedEvidence.has(key) || !fact.audienceKeys.includes(result.actorKey) || !existedAt(fact.sourceEventSequence, result.questionSequence)) fail('询问依据须是提问者当时已知的事实')
   }
   if (story.situation.facts.some(row => row.factKey === result.statementFactKey || row.text === chatInquiryStatementTextV1(result))) fail('答复记录不得覆盖或重复既有事实')
   if (result.discoveries.length > (story.permissions.maxDiscoveriesPerSituation ?? 0)) fail('询问发现超出作品授权')
@@ -154,5 +166,6 @@ export function assertChatInquiryBindingV1(result: ChatInquiryResultV1 | undefin
     || (producerVersion === 'chat-situation-construction-v10' && reviewerVersion === 'chat-situation-review-v9')
     || (producerVersion === 'chat-situation-construction-v11' && reviewerVersion === 'chat-situation-review-v10')
     || (producerVersion === 'chat-situation-construction-v12' && reviewerVersion === 'chat-situation-review-v11')
+    || (producerVersion === 'chat-situation-construction-v13' && reviewerVersion === 'chat-situation-review-v12')
   if (result && !supportedPair) fail('旧情境合同不能取得询问结果权限，请保留原记录并明确发起新请求')
 }

@@ -6,15 +6,16 @@ import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture, withChat
 export {inquiryQuestion, inquiryAnswer, inquiryTruth, inquiryPurpose, chatInquiryReviewFixture} from './chat-inquiry-output'
 import {inquiryQuestion, inquiryAnswer} from './chat-inquiry-output'
 /** Synthetic reviewers and frozen inquiry authority; not a real-model quality result. */
-export async function prepareChatInquiryFixture() {
+export async function prepareChatInquiryFixture(options: {questionEvidenceFactKeys?: string[]} = {}) {
   const f = await seedChatNarrativeRuntimeFixture({inquiryResults: true, factDiscovery: true})
   let v = await readProductRuntimeStateVersion(f.sessionId)
   await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'inquiry.start', baseSequence: v.sequence, baseStateHash: v.stateHash,
     kind: 'scene-start', sourceEventSequence: f.sceneSequence})
+  const evidenceFactKeys = options.questionEvidenceFactKeys ?? ['lost', 'clerk-present', 'box']
   const action: ChatNarrativeActionV1 = {kind: 'speak', text: inquiryQuestion, goalKey: 'find-seal', audienceKeys: ['guard', 'player'],
-    evidenceFactKeys: ['lost', 'clerk-present', 'box'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
+    evidenceFactKeys, waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
     situationRequest: {threadKey: 'investigate', direction: '承接刚才向掌柜提出的具体位置问题，保留其可能拒答或无法确认的空间。',
-      evidenceFactKeys: ['lost', 'clerk-present', 'box'], evidenceExcerpt: inquiryQuestion}}
+      evidenceFactKeys, evidenceExcerpt: inquiryQuestion}}
   const asked = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action',
     objective: '工程实际询问，不预写回答', runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: asked.snapshot.run.id})

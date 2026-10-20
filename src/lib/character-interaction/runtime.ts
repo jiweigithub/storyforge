@@ -692,6 +692,7 @@ export function applyInteractionEvent(
   if (!event.type.startsWith('interaction.')) return stateValue
   const state = requireInteraction(stateValue)
   const body = payload(event)
+  if (body.inquiryEvidenceVersion !== undefined && event.type !== 'interaction.narrative.situation.committed') throw new Error('询问前提证据只能用于已审查情境事件')
   verifyEnvelope(event, body)
   if (body.actionChoiceVersion !== undefined && event.type !== 'interaction.narrative.action-reviewed.committed') throw new Error('行动选择额度只能随已审查角色行动提交')
 
@@ -804,7 +805,7 @@ export function applyInteractionEvent(
       return requestChatNarrativeTriggerV1(state, {sequence: event.sequence, kind: body.kind, sourceEventSequence: body.sourceEventSequence, seed: body.seed, direction: body.direction})
     case 'interaction.narrative.situation.committed':
       if (body.resolutionEvidenceVersion !== undefined) throw new Error('情境事件不能写入角色行动的收束依据')
-      return applyChatSituationV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, draft: body.draft, review: body.review, factEvidenceVersion: body.factEvidenceVersion})
+      return applyChatSituationV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, draft: body.draft, review: body.review, factEvidenceVersion: body.factEvidenceVersion, inquiryEvidenceVersion: body.inquiryEvidenceVersion})
     case 'interaction.narrative.action-reviewed.committed':
       return applyReviewedChatNarrativeActionV1(state, {sequence: event.sequence, triggerSequence: body.triggerSequence, actorKey: body.actorKey, messageId: body.messageId, action: body.action, review: body.review, factEvidenceVersion: body.factEvidenceVersion, resolutionEvidenceVersion: body.resolutionEvidenceVersion, actionChoiceVersion: body.actionChoiceVersion})
     case 'interaction.narrative.control-handoff.committed':

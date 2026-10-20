@@ -22,6 +22,9 @@ for (const privateAnswer of [false, true]) test(`actual NPC reply is displayed o
     else if (actionReview) output = {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'].map(check => ({check, passed: true, reason: '工程夹具，不是语义验收'}))}
     else if (construction) {
       const pending = JSON.parse(prompt.match(/"pendingSituation":(\{[^}]+\})/)![1])
+      expect(pending.evidenceFactKeys).not.toContain('lost')
+      expect(prompt).toContain('storyforge.chat-inquiry-evidence')
+      expect(prompt).toContain('requiredEvidenceFactKeys')
       proposal = {kind: 'chat-situation', title: '暴雨驿站', location: '驿站', timeLabel: '傍晚', newFacts: [], newGoals: [], newThreads: [], possibilities: [],
         inquiryResult: {actorKey: 'guard', questionSequence: pending.sourceEventSequence, questionExcerpt: inquiryQuestion,
           respondentFactKey: 'clerk-present', respondentExcerpt: '掌柜在柜台另一端，可以当面交谈。', respondentName: '掌柜', statementFactKey: 'clerk-statement',
@@ -29,12 +32,12 @@ for (const privateAnswer of [false, true]) test(`actual NPC reply is displayed o
           discoveries: [{factKey: 'secret', answerExcerpt: '铜印仍在柜台下的木箱里', reason: '工程条件授权保管人确认此位置，不解锁用途'}]}}
       output = proposal
     } else {
-      actions++; expect(prompt).not.toContain(inquiryPurpose); expect(prompt).not.toContain('factEvidence')
+      actions++; expect(prompt).not.toContain(inquiryPurpose); expect(prompt).not.toContain('factEvidence'); expect(prompt).not.toContain('inquiryEvidence')
       if (actions === 1) expect(prompt).not.toContain(inquiryTruth)
       else {expect(prompt).toContain(inquiryAnswer); expect(prompt).toContain(inquiryTruth); expect(prompt).not.toContain('他是保管者')}
       output = {kind: 'speak', text: actions === 1 ? inquiryQuestion : followup, goalKey: 'find-seal', audienceKeys: ['guard', 'player'],
-        evidenceFactKeys: actions === 1 ? ['lost', 'clerk-present', 'box'] : ['clerk-statement'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
-        ...(actions === 1 ? {situationRequest: {threadKey: 'investigate', direction: '承接向掌柜提出的具体位置问题，不预定答复。', evidenceFactKeys: ['lost', 'clerk-present', 'box'], evidenceExcerpt: inquiryQuestion}} : {})}
+        evidenceFactKeys: actions === 1 ? ['clerk-present', 'box'] : ['clerk-statement'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
+        ...(actions === 1 ? {situationRequest: {threadKey: 'investigate', direction: '承接向掌柜提出的具体位置问题，不预定答复。', evidenceFactKeys: ['clerk-present', 'box'], evidenceExcerpt: inquiryQuestion}} : {})}
     }
     await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })

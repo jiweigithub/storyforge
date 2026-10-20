@@ -2,6 +2,7 @@ import {parseChatResolutionEvidenceVersionV1} from './resolution-evidence'
 import {parseInteractionState} from './runtime'
 import {parseChatFactEvidenceVersionV1} from './fact-evidence'
 import {parseChatActionChoiceVersionV1} from './action-choice-budget'
+import {parseChatInquiryEvidenceVersionV1} from './inquiry-evidence'
 import {chatControlHandoffReviewPassedV1, parseChatControlHandoffReviewV1, parseChatControlHandoffV1} from './control-handoff-contract'
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -29,11 +30,15 @@ export function validateImportedChatNarrativeEvidenceEventV1(value: unknown, pro
     if (!chatControlHandoffReviewPassedV1(review, handoff)) throw new Error('[chat-control-handoff] 已提交交还控制缺少通过的审查')
     return
   }
-  if (!body || !['factEvidenceVersion', 'resolutionEvidenceVersion', 'actionChoiceVersion'].some(key => Object.prototype.hasOwnProperty.call(body, key))) return
+  if (!body || !['factEvidenceVersion', 'resolutionEvidenceVersion', 'actionChoiceVersion', 'inquiryEvidenceVersion'].some(key => Object.prototype.hasOwnProperty.call(body, key))) return
   if (productKind !== 'character-interaction' || !['interaction.narrative.action-reviewed.committed', 'interaction.narrative.situation.committed'].includes(String(eventType))) {
     throw new Error('[chat-fact-evidence] 叙事依据提交路径无效')
   }
   parseChatFactEvidenceVersionV1(body.factEvidenceVersion)
+  if (Object.prototype.hasOwnProperty.call(body, 'inquiryEvidenceVersion')) {
+    if (eventType !== 'interaction.narrative.situation.committed') throw new Error('[chat-inquiry] 询问前提证据只能来自已审查情境')
+    parseChatInquiryEvidenceVersionV1(body.inquiryEvidenceVersion)
+  }
   if (Object.prototype.hasOwnProperty.call(body, 'actionChoiceVersion')) {
     if (eventType !== 'interaction.narrative.action-reviewed.committed') throw new Error('[chat-action-choice] 选择额度只能来自已审查行动')
     parseChatActionChoiceVersionV1(body.actionChoiceVersion)
