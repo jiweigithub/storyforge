@@ -4,7 +4,7 @@ Feature updates, fixes, and workflow improvements are organized by user impact. 
 
 ## October 20, 2026 · System-fiction planning, whole-chapter review, and scoped revision
 
-[PR #141](https://github.com/yuanbw2025/storyforge/pull/141) merged into main as `1b96e80a`. These changes apply to source versions containing that commit. Online deployment and fixed releases require separate verification; existing v4.0.2 downloads do not automatically acquire later changes.
+[PR #141](https://github.com/yuanbw2025/storyforge/pull/141) merged into main as `1b96e80a`.
 
 - Enter optional system-fiction elements in the original work’s material. The separate Scene beats page records goals, choices, consequences, and continuity, with links between the same chapter’s plan, scene outline, and prose. See [planning](/en/features/longform/planning).
 - Whole-chapter review accepts round-specific instructions and locates issues in the source. Authors select issues, editable paragraphs, and protected quotations before one revision and one recheck, then confirm adoption. Failed rechecks retain the preview and original. Step and node modes read the same work. See [prose and revision](/en/features/longform/writing).
@@ -13,9 +13,16 @@ Feature updates, fixes, and workflow improvements are organized by user impact. 
 
 Independent reader reviews and independent author repair timing are optional follow-up research. This delivery does not require recruitment or questionnaire completion. Existing internal feedback is retained; engagement, independently measured time savings, and platform acceptance remain unverified.
 
+## October 19, 2026 · Continuation preparation errors and outline dismissal recovery
+
+- If saving current edits, preparing material, or assembling context fails before prose continuation, the prose area displays the reason so you can address it and explicitly retry.
+- Failed dismissal of scene-outline or batch-outline candidates retains the candidate and shows an error instead of clearing it as though rejection succeeded.
+
+See [prose and revision](/en/features/longform/writing). Evidence: [PR #166](https://github.com/yuanbw2025/storyforge/pull/166) · [main commit b344cc0b](https://github.com/yuanbw2025/storyforge/commit/b344cc0b).
+
 ## 2026-10-19 · Longform entry consolidation and save protection
 
-Applies to versions containing [implementation commit d32b2471](https://github.com/yuanbw2025/storyforge/commit/d32b2471d0d89e9ef09057e89e8f6fd15b27db91). Mainline merge and online deployment are separate states. Existing v4.0.2 downloads do not change automatically when source code is updated.
+Implementation: [commit d32b2471](https://github.com/yuanbw2025/storyforge/commit/d32b2471d0d89e9ef09057e89e8f6fd15b27db91) and [PR #165](https://github.com/yuanbw2025/storyforge/pull/165).
 
 - Search and replacement share one implementation. Cross-setting edits require a preview and snapshot before an atomic commit, fixing overwritten fields within one entry and accidental HTML-tag replacement. Stale previews and undo cannot overwrite later manuscript edits.
 - Scene-outline and emotion-beat coordination waits for the actual save instead of a success timer. Failures preserve the original and allow retry.

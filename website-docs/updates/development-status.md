@@ -1,8 +1,42 @@
 # 待合并开发记录与分支核对
 
+
+## 2026-10-20 本轮完整核对
+
+从成功维护基线 `9e480ac7` 核对至远程 main `38104e61`。本轮完整枚举 **175 个本地分支（含维护分支）和 112 个关联工作区**，包含 detached；127 个分支 head 尚非 main 祖先。分支数量、提交数量和工作文件条目均不是功能完成数，完整路径、提交、补丁与差异证据保存在本轮维护记录。
+
+### 已进入主干
+
+- [PR #165](https://github.com/yuanbw2025/storyforge/pull/165) 的长篇入口整合、替换和保存保护已合入 `a45cb1db`；[PR #141](https://github.com/yuanbw2025/storyforge/pull/141) 的系统文规划、全章评审与范围修订已合入 `1b96e80a`。这些原待交付能力已有[长篇指南](/features/longform/)、[规划](/features/longform/planning)、[正文与审修](/features/longform/writing)和[节点说明](/features/nodes)，不再重复列作遗漏功能。
+- [PR #166](https://github.com/yuanbw2025/storyforge/pull/166) 已合入 `b344cc0b`。本轮补齐续写准备失败的错误提示、拒绝细纲失败时保留候选的[处理步骤](/features/longform/writing)，以及[更新日志](/updates/changelog)。
+- [PR #169](https://github.com/yuanbw2025/storyforge/pull/169) 的长篇交付说明已合入 `66763953` 并完成知识库部署。文档中的独立评测状态继续保留，不把工程通过当作文学收益。
+- 最新正式发行仍为 [v4.0.2](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.2)，固定源码 `04de86d7`；版本事实集中见[兼容说明](/updates/compatibility)。流量 CSV 归档不计产品能力。
+
+### 活动分支与工作区
+
+以下为核对时的快照。“未推送”按全部已获取的 origin 引用判断；未提交内容只登记观察范围，不宣称完成，也不替作者提交、推送或合并。
+
+| 分支 / head / 工作区 | 内容 | 状态与去重 |
+| --- | --- | --- |
+| `feat/avg-combined-stage-20261020`、`feat/avg-publisher-stage-release-20261020`、`feat/avg-v5-native-workbench-20261019`、`feat/avg-v5-review-validation-20261018` · `534b3812` | 图声制作工作台、视觉方案和本地衍生、固定声线与本地音乐、作者配置、原型版本、声音后继版本及冻结恢复 | 已推送至[草稿 PR #160](https://github.com/yuanbw2025/storyforge/pull/160)，未合并。V5 配置、媒资、历史、声音等系列分支是依赖链；同 head 不重复算多套能力。 |
+| `feat/avg-combined-native-20261020`、`fix/avg-pending-voice-recovery-implementation-20261020`、`fix/avg-pending-voice-recovery-revision-20261020` · `f44bf5f8`；`feat/avg-foreground-processing-contract-20261020` · `d08d2610` | 环境音来源/许可核验、生成语音写入范围、一次性音频恢复、中断声道独立恢复；前景处理工作包方案 | `f44bf5f8` 链有 6 个未被 origin 引用包含的提交；`d08d2610` 继承该链并增加 1 个方案文档提交，前景处理不据此声明已实现。不同集成或核验分支 `55ea0efa`、`f451b4d9`、`a8e8d961`、`628f6f1f` 保留各自差异与证据，公共范围去重。 |
+| `avg-base00a-20261014/storyforge`、`avg-extension-contracts-20261015/storyforge`、`avg-media-harness-20261016/storyforge` · `f44bf5f8`；`avg-media-recovery-20261016/storyforge` · `4b40877b` | 音频恢复控件、组装和资料、核验用例/CI/展示样式；旧媒资处理与恢复开发 | 分别有 2、9、14、100 个未提交条目。前三处共享同一提交基线，但工作文件不同，不覆盖或合并副本；第四处沿用原有未提交观察范围。未提交条目不当作已验收功能。 |
+| `feat/character-chat-optimization-20261006` · `2a2aae10`；`character-chat-plan/storyforge` | 角色聊天播放器媒资、作品包流程、会话导航恢复；工作区另涉及行动选择/预算、控制权交接、开场延续与修复、来源观察 | 239 个主干外提交均未被 origin 引用包含，其中 231 个非 merge；无对应开放 PR。另有 252 个未提交条目，包含实现、方案、用例和核验材料；相较上轮继续推进，完成范围仍待作者收口。临时核验 head 按祖先关系并入同一链。 |
+| `feat/ttrpg-entity-ai-20261016` · `0c99f468`；`ttrpg-entity-ai-20261016/storyforge` | 开放制作、原请求与配音恢复、本机双声线、拒绝作者输入后恢复而不确认、按已登记用途限制输出 | 已推送，[草稿 PR #128](https://github.com/yuanbw2025/storyforge/pull/128) 未合并；其记忆、局势、回顾和声音系列分支按依赖链去重。工作区另有 35 个未提交条目，涉及行动输入、公共局势、调用证据和原请求恢复，只登记观察范围。 |
+| `feat/text-open-world-productization-20261013` · `aa8f6d2b`；`open-world-productization/storyforge` | 三线生产、图片确认、人审、本地反馈及生产/预算恢复 | 已推送，[PR #134](https://github.com/yuanbw2025/storyforge/pull/134) 未合并。工作区正合入主干 `fe87ece4`，144 个状态条目包含同步与产品改动；按真实 merge 父提交保留比较证据，不将所有条目当作新增功能。 |
+| `feat/narrative-domain-projection-20261014`、`feat/narrative-reader-provenance-20261015` · `16b006fd`；`feat/narrative-world-integration-20261016` · `8197579a` | 叙事投影、IR、语义索引、精确读取、来源和采纳/生命周期集成 | 仍有 5 个主干外仅本地提交（含 1 个 merge）。`narrative-world-design`、`nw2e-retrieval-repair`、`nw-mainline-refresh-20261016` 三处保留未提交开发与大量核验材料；原有未交付结论未变，不将产物增多当作新增功能。设计副本的同 head 与等价补丁继续去重。 |
+
+### 已去重与保持原状的内容
+
+长篇主体及 Q01～Q10 相关开发已随 #141 进入 main。`e95f188d`、`f44ef5c6`、`3521a8d4` 与 main 中补丁等价；旧核验分支余下的是测试同步、核验或历史文档，不登记为另一套未交付长篇功能。AVG 既有别名 `22bafcf4`、`a522a380`、`969d1928`、`691154d0` 有已推送等价补丁；`023310fb` 与后续 `e2a0ae36` 的生产/测试文件相同，沿用此前去重证据。
+
+26 个有状态工作区中，**12 个有工作文件改动，13 个是旧跑团核验目录的静态资产回收，1 个仅有测试缓存**。13 处删除再次逐项匹配 `.codex-retired-assets.json` 与 Git blob，不当作待补交代码，也不自动恢复。旧内置游戏和宣传截图 CSS 范围沿用原结论；旧内置作品已由 #111 进入 main。历史雾港、世界媒资、旧开放世界、青铜 UI、备份及已明确废弃的 9 月 12 日 UI 不重新提出合并。
+
+本轮只维护公开知识库，未运行产品测试，也未改动或清理作者分支、工作区及浏览器数据。下方旧日期记录保留为历史快照，当前状态以上文为准。
+
 ## 2026-10-20 长篇质量专项已进入主干
 
-[PR #141](https://github.com/yuanbw2025/storyforge/pull/141) 已于 10 月 20 日合并为 `1b96e80a`。原系统文元素、场景任务、全文评审与范围修订不再是待合并开发；使用步骤已转入[规划](/features/longform/planning)和[正文与审修](/features/longform/writing)，版本边界见[更新日志](/updates/changelog)。节点模式整体继续为预览，现有 v4.0.2 下载包不会自动更新，在线部署单独核对。
+[PR #141](https://github.com/yuanbw2025/storyforge/pull/141) 已于 10 月 20 日合并为 `1b96e80a`。原系统文元素、场景任务、全文评审与范围修订不再是待合并开发；使用步骤已转入[规划](/features/longform/planning)和[正文与审修](/features/longform/writing)，版本边界见[更新日志](/updates/changelog)。节点模式整体继续为预览。
 
 `fb682a28` 的完整 CLI（824 文件 / 4594 项）、完整浏览器（309 通过 / 4 项环境条件跳过）及最新主干合并树的常规 CI 均通过。三题材两组各十章共 60 稿 / 30 对另加双模型新设定 12 稿 / 6 对已完成流程、请求与生命周期核验，差稿与失败保留。用户将独立读者盲评、独立作者修稿计时移为后续自愿研究；本轮不再需要招募，缺失结果未记为通过，独立质量和省时收益仍未验证。生成侧实验标签暴露与采样评审要求遗漏等限制保留，不作严格盲测或平台质量认证。
 

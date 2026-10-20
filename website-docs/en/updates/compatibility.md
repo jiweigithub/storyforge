@@ -2,7 +2,7 @@
 
 ## Which version these docs describe
 
-This incremental review covers **October 18, 2026, main baseline 9cc1f4cf**, checking user-visible changes since successful maintenance baseline `404ee3bf`. Product status follows each product guide.
+This incremental review covers **October 20, 2026, main baseline 38104e61**, checking user-visible changes since successful maintenance baseline `9e480ac7`. Product status follows each product guide.
 
 The source package version is **4.0.2**; the [latest release page](https://github.com/yuanbw2025/storyforge/releases/latest) lists the fixed archives actually available for download. Version 4.0.2 adds Windows, Mac and Android installers, in-app updates and the unified User Agreement; see [installation](/en/getting-started/install). Builds of v4.0.1 include explicit failure feedback and the text-adventure recovery, image-preserving revisions, and standalone web export from [PR #119](https://github.com/yuanbw2025/storyforge/pull/119). See [troubleshooting and capture limits](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds).
 
@@ -13,6 +13,8 @@ The historical [formal v4.0.0 release](https://github.com/yuanbw2025/storyforge/
 Live sites may lag deployment. [Tagged releases](https://github.com/yuanbw2025/storyforge/releases) do not automatically gain later main-branch features.
 
 The outline candidate adoption fix in [PR #158](https://github.com/yuanbw2025/storyforge/pull/158) came after fixed v4.0.1 source `e8ce0a0d` and is included in the 4.0.2 client source. Use the release page to confirm published downloads; see [development status](/en/updates/development-status) for other pending work.
+
+Current main includes longform entry consolidation in [PR #165](https://github.com/yuanbw2025/storyforge/pull/165), continuation/outline error handling in [PR #166](https://github.com/yuanbw2025/storyforge/pull/166), and system-fiction planning/whole-chapter review in [PR #141](https://github.com/yuanbw2025/storyforge/pull/141). These increments merged as `a45cb1db`, `b344cc0b`, and `1b96e80a`, respectively. See the [longform guide](/en/features/longform/). Fixed v4.0.2 source remains `04de86d7`, listed above.
 
 ## Before upgrading
 

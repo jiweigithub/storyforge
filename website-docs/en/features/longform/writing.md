@@ -12,7 +12,7 @@
 
 ## Recommended sequence
 
-The optional scene tasks, whole-chapter review, and scoped revision below apply to source versions containing [PR #141](https://github.com/yuanbw2025/storyforge/pull/141), merged into main on October 20, 2026. Existing v4.0.2 downloads do not update automatically.
+The optional scene tasks, whole-chapter review, and scoped revision below apply to source versions containing [PR #141](https://github.com/yuanbw2025/storyforge/pull/141), merged into main on October 20, 2026.
 
 1. Select a volume or chapter in Outline and chapter plans (大纲与章纲); establish the current level.
 2. Write or generate outline candidates; check continuity with completed content before confirming.
@@ -44,6 +44,14 @@ These controls improve source handoff and author control; they do not guarantee 
 Continuation should follow the existing ending; polishing focuses on expression; rewriting may change events and characterization. Define the scope before calling AI, and keep the original or a version record.
 
 If important facts change, do not judge only the revised passage's fluency. Check effects on later chapter plans, foreshadowing, and character states.
+
+## When continuation preparation or outline dismissal fails
+
+If saving current edits, preparing continuity material, or assembling generation context fails after you choose Continue, the prose area shows the reason. Preserve the current text, address the indicated saving, material, or configuration issue, then explicitly retry. Generation not starting is not a save or completion acknowledgment.
+
+When dismissing a scene-outline or batch-outline candidate, a failed save of the rejection shows an error and retains the pending candidate for inspection and retry. The candidate is cleared only after rejection succeeds; failure is not recorded as successful dismissal. Preserve useful content rather than clearing the work.
+
+Both fixes are documented in [PR #166](https://github.com/yuanbw2025/storyforge/pull/166).
 
 ## After outline changes
 
