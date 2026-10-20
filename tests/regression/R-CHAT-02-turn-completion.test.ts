@@ -88,6 +88,33 @@ it('stops the actual two-action loop after adoption and allows a fresh explicitl
   expect(spy).toHaveBeenCalledTimes(1)
 })
 
+it('resumes and adopts a fact-free completed response once and preserves it in a portable branch', async () => {
+  const f = await prepared(), before = await readProductRuntimeState(f.sessionId)
+  const text = '明白，你不想帮忙；这不是同意参加，也不代表让我放弃寻找。'
+  const response: ChatNarrativeActionV1 = {...action, kind: 'speak', text, evidenceFactKeys: [], newFacts: [], nextPossibilities: null,
+    turnCompletion: {version: 1, purpose: '确认玩家拒绝参与，保留自己原有目标', evidenceExcerpt: text}}
+  let runId = 0
+  await expect(realGenerate({...request(f, response), onNarrativeActionSaved: id => {runId = id; throw Error('saved-before-review')}})).rejects.toThrow('saved-before-review')
+  expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
+  db.close(); await db.open()
+  let reviewCalls = 0
+  await harness.resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async () => {
+    reviewCalls++; return JSON.stringify({...chatActionReviewOutputFixture(), turnCompletionCheck: check})
+  }})
+  const adopted = await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
+  expect((await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})).receiptHash).toBe(adopted.receiptHash)
+  expect(reviewCalls).toBe(1)
+  const after = await readProductRuntimeState(f.sessionId)
+  expect(after.interaction!.chatNarrative!.situation).toEqual(before.interaction!.chatNarrative!.situation)
+  expect(after.interaction!.chatNarrative!.triggers.at(-1)!.status).toBe('complete')
+  expect(after.interaction!.messages.at(-1)!.text).toBe(text)
+  const child = await branchProductRuntimeSession({parentSessionId: f.sessionId, throughSequence: after.lastSequence, title: 'message-completion'})
+  const childState = await readProductRuntimeState(child.id!), imported = await importProjectJSON(await exportProjectJSON(f.scope.projectId))
+  const copied = (await db.productRuntimeSessions.where('projectId').equals(imported).toArray()).find(session => session.title === 'message-completion')!
+  expect((await readProductRuntimeState(copied.id!)).interaction).toEqual(childState.interaction)
+  expect(await readProductRuntimeState(f.sessionId)).toEqual(after)
+})
+
 it('rejects failed or missing completion review without committing or silently retrying', async () => {
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId)
   await expect(realGenerate(request(f, action, false))).rejects.toThrow('行动语义审查未通过')

@@ -85,9 +85,9 @@ it('keeps old choice shapes exact and makes message citations explicit only in t
   expect(current[0].content).toContain('本轮最多可执行的次数不是必须完成的步数')
 })
 
-it('carries a real delivered message through choice, expression, review, durable adoption and branch import', async () => {
-  expect(getSkill('character.chat-narrative-action').promptVersion).toBe(version)
-  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => ({...getSkill(id), ...(id === 'character.chat-narrative-action' ? {promptVersion: version} : {})}))
+it.each(['chat-narrative-action-v53', 'chat-narrative-action-v54'])('carries a real delivered message through choice, expression, review, durable adoption and branch import for %s', async producerVersion => {
+  expect(getSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v54')
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => ({...getSkill(id), ...(id === 'character.chat-narrative-action' ? {promptVersion: producerVersion} : {})}))
   const f = await seedChatNarrativeRuntimeFixture({onlyGuard: true, directorBudget: 20}), base = await readProductRuntimeStateVersion(f.sessionId)
   const player = await commitInteractionPlayerMessage({sessionId: f.sessionId, commandId: 'preference', baseSequence: base.sequence,
     baseStateHash: base.stateHash, messageId: 'preference', text: '我只想知道铜印在哪里，不帮你取。'})

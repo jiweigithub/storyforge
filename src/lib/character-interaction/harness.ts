@@ -650,7 +650,7 @@ export async function resumeChatNarrativeActionV1(input: Pick<InteractionRuntime
     try {
       const assembled = await assembleContext({projectId: input.scope.projectId, scope: input.scope, worldGroupId: snapshot.run.worldGroupId ?? null,
         productRuntimeSessionId: sessionId, interactionParticipantKey: participantKey, sourceKeys: ['interactionRuntime'],
-        ...(['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53'].includes(binding.promptVersion) ? {chatActionContextRunId: snapshot.run.id} : {}),
+        ...(['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54'].includes(binding.promptVersion) ? {chatActionContextRunId: snapshot.run.id} : {}),
         provider: input.aiConfig?.provider, model: input.aiConfig?.model, inputBudgetMaxTokens: CHAT_ACTION_CHOICE_INPUT_TOKENS_V1})
       snapshot = (await chooseRuntimeChatActionV1({scope: input.scope, snapshot, participantKey, assembled, actorMessages: packet.actorMessages,
         aiConfig: input.aiConfig, runAI: input.runAI, signal: input.signal})).snapshot
@@ -735,7 +735,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       sourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       ...(revision ? {chatActionRevisionCurrentRunId: snapshot.run.id} : {}),
       ...(situation ? {chatSituationConstructionRunId: snapshot.run.id} : {}),
-      ...(['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53'].includes(executionBinding.promptVersion) ? {chatActionContextRunId: snapshot.run.id} : {}),
+      ...(['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54'].includes(executionBinding.promptVersion) ? {chatActionContextRunId: snapshot.run.id} : {}),
       provider: input.aiConfig?.provider,
       model: input.aiConfig?.model,
       inputBudgetMaxTokens: 16_000,

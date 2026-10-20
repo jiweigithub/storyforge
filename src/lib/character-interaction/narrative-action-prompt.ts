@@ -4,7 +4,7 @@ import {CHAT_TURN_COMPLETION_REVIEW_RULE_V1, CHAT_TURN_COMPLETION_REVIEWER_V1} f
 import {CHAT_SPOKEN_INQUIRY_REVIEW_RULES_V1} from './inquiry-prompt'
 import {CHAT_SCENE_TRANSITION_ACTION_RULE_V1, CHAT_SCENE_TRANSITION_REVIEW_RULE_V1} from './narrative-scene-transition'
 import {CHAT_PROMISE_REQUEST_ACTION_RULE_V1, CHAT_PROMISE_REQUEST_REVIEW_RULE_V1} from './narrative-promise-request'
-import {CHAT_CONVERSATION_EVIDENCE_ACTION_RULE_V1, CHAT_CONVERSATION_EVIDENCE_REVIEW_RULE_V1} from './narrative-conversation-evidence'
+import {chatConversationEvidenceActionRuleV1, CHAT_CONVERSATION_EVIDENCE_REVIEW_RULE_V1} from './narrative-conversation-evidence'
 import {CHAT_EXISTING_GOAL_PAUSE_COMMITMENT_RULE_V1, CHAT_EXISTING_GOAL_PAUSE_ACTION_RULE_V1, CHAT_EXISTING_GOAL_PAUSE_REVIEW_RULE_V1, CHAT_PLAYER_PAUSE_ACTION_RULE_V1, CHAT_PLAYER_RESUME_ACTION_RULE_V1, CHAT_PLAYER_PAUSE_REVIEW_RULE_V1} from './narrative-player-pause'
 import {CHAT_THREAD_FOLLOWUP_ACTION_RULE_V1, CHAT_THREAD_FOLLOWUP_REVIEW_RULE_V1, CHAT_GOAL_THREAD_COMPLETION_RULE_V1} from './narrative-thread-followup'
 import {CHAT_MEMORY_CORRECTION_ACTION_RULES_V1, CHAT_MEMORY_CORRECTION_REVIEW_RULES_V1, chatMemoryCorrectionReviewSchemaV1} from './memory-correction-prompt'
@@ -17,7 +17,7 @@ import {CHAT_COMMITMENT_ACTION_RULES_V1, CHAT_COMMITMENT_ACTION_RULES_V2, CHAT_C
 /** Clarification of the existing action contract, never a candidate rewrite.
  * Saved producers and consequence-only revisions keep their original text. */
 export function supportsChatActionKindPromptV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-v35', 'chat-narrative-options-v25', 'chat-narrative-action-v36', 'chat-narrative-action-v37', 'chat-narrative-action-v38', 'chat-narrative-action-v39', 'chat-narrative-action-v40', 'chat-narrative-action-v41', 'chat-narrative-action-v42', 'chat-narrative-action-v43', 'chat-narrative-action-v44', 'chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-options-v26', 'chat-narrative-options-v27', 'chat-narrative-options-v28', 'chat-narrative-options-v29', 'chat-narrative-options-v30', 'chat-narrative-options-v31', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34'].includes(version ?? '')
+  return ['chat-narrative-action-v35', 'chat-narrative-options-v25', 'chat-narrative-action-v36', 'chat-narrative-action-v37', 'chat-narrative-action-v38', 'chat-narrative-action-v39', 'chat-narrative-action-v40', 'chat-narrative-action-v41', 'chat-narrative-action-v42', 'chat-narrative-action-v43', 'chat-narrative-action-v44', 'chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-options-v26', 'chat-narrative-options-v27', 'chat-narrative-options-v28', 'chat-narrative-options-v29', 'chat-narrative-options-v30', 'chat-narrative-options-v31', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34'].includes(version ?? '')
 }
 
 export const CHAT_ACTION_KIND_RULE_V1 = 'kind 按本次实际表达选择，不按结果是否确定选择：speak 是已经说出口的话或问题，不能登记新增完成事实；attempt 是提出仍需玩家选择、同意或参与的行动，必须 waitingForPlayer=true，不能用 attempt + false 表示向环境或他人试探；complete 是角色自己已经完成的行动或有依据的事项收束，实际后果仍须登记；pause 是角色停止或暂缓自己的行动。waitingForPlayer 只表示下一步确实需要玩家决定，不表示等待环境结果、他人回答或尚未确定结果。角色向非玩家对象发问且不需玩家决定时，可用 speak + false，只表达已经问出的问题，不预写对方回答或完成结果；向玩家请求行动许可仍须 attempt + true。示例中的布尔值不是默认选择，须与本次实际表达一致。'
@@ -72,7 +72,7 @@ export function chatActionPromptRulesV1(view: InteractionVisibilityView, options
     '共有剧情线不是角色的个人打算：只暂停自己的寻找时更新自己的 goalStatus，不要顺带暂停大家的剧情线。threadUpdates 只有在实际表达足以支持整条线的变化时填写，并且该线全部 audienceKeys 必须包含在本次表达的 audienceKeys 中；私下对话不能改变其他知情者的共同局面。',
     'goalStatus 仅改变当前 goalKey 的 active/paused/fulfilled/abandoned 状态，不变则 null。证据摘录均为本次 text 的子串。听众至少包括自己与 player。',
     CHAT_GOAL_THREAD_COMPLETION_RULE_V1,
-    ...(options.conversationEvidence ? [options.existingGoalPause ? CHAT_CONVERSATION_EVIDENCE_ACTION_RULE_V1.replace('实际新增、改变或完成的事情仍按原规则提供事实依据和全部后果', '除下述显式 promiseRequest 新约定和 pauseGoal 玩家暂停路径外，实际新增、改变或完成的事情仍按原规则提供事实依据和全部后果') : options.promiseRequest ? CHAT_CONVERSATION_EVIDENCE_ACTION_RULE_V1.replace('实际新增、改变或完成的事情仍按原规则提供事实依据和全部后果', '除下述显式 promiseRequest 路径的新约定外，实际新增、改变或完成的事情仍按原规则提供事实依据和全部后果') : CHAT_CONVERSATION_EVIDENCE_ACTION_RULE_V1] : []),
+    ...(options.conversationEvidence ? [options.existingGoalPause ? chatConversationEvidenceActionRuleV1(options.producerVersion).replace('实际新增、改变或完成的事情仍按原规则提供事实依据和全部后果', '除下述显式 promiseRequest 新约定和 pauseGoal 玩家暂停路径外，实际新增、改变或完成的事情仍按原规则提供事实依据和全部后果') : options.promiseRequest ? chatConversationEvidenceActionRuleV1(options.producerVersion).replace('实际新增、改变或完成的事情仍按原规则提供事实依据和全部后果', '除下述显式 promiseRequest 路径的新约定外，实际新增、改变或完成的事情仍按原规则提供事实依据和全部后果') : chatConversationEvidenceActionRuleV1(options.producerVersion)] : []),
     ...(options.sceneTransition ? [CHAT_SCENE_TRANSITION_ACTION_RULE_V1] : []),
     ...(options.promiseRequest ? [CHAT_PROMISE_REQUEST_ACTION_RULE_V1] : []),
     ...(options.existingGoalPause ? [CHAT_EXISTING_GOAL_PAUSE_ACTION_RULE_V1] : []),
