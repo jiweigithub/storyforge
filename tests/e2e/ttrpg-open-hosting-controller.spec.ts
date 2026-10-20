@@ -106,7 +106,9 @@ test('stop stays available during a dispatched UI request and persists before lo
 })
 
 
-test('author production and local release lead to a real player action and one bounded UI delegation', async ({ page }) => {
+for (const maximumEpochTokens of [60000, 50000]) test(maximumEpochTokens === 60000
+  ? 'author production and local release lead to a real player action and one bounded UI delegation'
+  : 'author production with insufficient input budget finishes through explicit manual narration without resetting its epoch', async ({ page }) => {
   test.setTimeout(240000)
   let requests = 0
   await page.addInitScript(() => {
@@ -120,13 +122,15 @@ test('author production and local release lead to a real player action and one b
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: text } }] }) })
   })
   await page.goto('./')
-  const f = await page.evaluate(async () => {
+  const f = await page.evaluate(async maximumEpochTokens => {
     const importer = new Function('p', 'return import(p)') as (p: string) => Promise<any>
     const helper = await importer('/storyforge/tests/helpers/open-ttrpg-production-browser.ts')
-    const f = await helper.seedOpenBrowserProductionV1({ cooperative: true })
+    // Six conservative calls need more than the original50k when usage is absent.
+    // The separate50k path retains that exact cap and must recover without another call.
+    const f = await helper.seedOpenBrowserProductionV1({ cooperative: true, maximumEpochTokens })
     await helper.runOpenBrowserProductionV1(f); await helper.runOpenBrowserProductionV1(f, true); await helper.runOpenBrowserProductionV1(f, true)
     return f
-  })
+  }, maximumEpochTokens)
   await page.goto(`./ttrpg/release?project=${f.scope.projectId}&work=${f.scope.workId}&production=${f.productionId}`)
   const optIn = page.getByRole('button', { name: '启用本作品的自动制作', exact: true })
   if (await optIn.count()) await optIn.click()
@@ -145,7 +149,56 @@ test('author production and local release lead to a real player action and one b
   await page.getByRole('button', { name: '同意以上风险与代价', exact: true }).click()
   await begin(page)
   await expect(page.getByRole('button', { name: '继续本轮自动主持', exact: true })).toBeEnabled({ timeout: process.env.CI ? 180000 : 120000 })
-  await expect(page.getByText('本轮已到预算或队友行动上限，交回真人。', { exact: true })).toBeVisible()
+  try {
+    await expect(page.getByText('本轮已到预算或队友行动上限，交回真人。', { exact: true })).toBeVisible()
+  } catch (error) {
+    // Preserve the original assertion and retain the actual frozen ledger for diagnosis.
+    const budget = await page.evaluate(async f => {
+      const importer = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+      const { db } = await importer('/storyforge/src/lib/db/schema.ts'), api = await importer('/storyforge/src/lib/ttrpg/runtime-api.ts')
+      const release = await db.productReleases.where('workId').equals(f.scope.workId).first()
+      const session = await db.productRuntimeSessions.where('productReleaseId').equals(release.id).first()
+      const state = await api.readProductRuntimeState(session.id), run = state.ttrpg.openRun
+      const { ttrpgOpenCallBudgetV1 } = await importer('/storyforge/src/lib/ttrpg/open-model-calls.ts')
+      const { readAgentRunArtifactExactV1 } = await importer('/storyforge/src/lib/memory/artifact-store.ts')
+      const { canonicalStringify } = await importer('/storyforge/src/lib/agent/run/hash.ts')
+      const { estimateTokens } = await importer('/storyforge/src/lib/ai/context-budget.ts')
+      const { estimateTtrpgOpenProductionTextV3, TTRPG_OPEN_WIRE_OVERHEAD_RESERVE_V3 } = await importer('/storyforge/src/lib/ttrpg/open-production-wire-budget.ts')
+      const epoch = run.coordination.epochs.find((e: any) => e.epochKey === run.coordination.activeEpochKey)
+      const calls = []
+      for (const call of run.coordination.calls) {
+        const raw = await readAgentRunArtifactExactV1({ projectId: f.scope.projectId, artifactKind: 'rendered-request', contentHash: call.requestHash })
+        const rendered = JSON.parse(raw)
+        calls.push({ skillId: call.skillId, actorKey: call.actorKey, status: call.status, requestKey: call.requestKey,
+          reservedInputTokens: call.reservedInputTokens, reservedOutputTokens: call.reservedOutputTokens, usage: call.usage,
+          estimation: rendered.inputEstimation, renderedChars: raw.length, legacyFullRenderedTokens: estimateTokens(canonicalStringify(rendered)),
+          visibleWireEstimatedTokens: estimateTtrpgOpenProductionTextV3(canonicalStringify(rendered.messages)) + TTRPG_OPEN_WIRE_OVERHEAD_RESERVE_V3,
+          contextSelectionChars: canonicalStringify(rendered.contextSelection ?? null).length })
+      }
+      return { sequence: state.lastSequence, worldTurn: run.worldTime.worldTurn, budget: epoch?.budget,
+        spent: epoch ? ttrpgOpenCallBudgetV1(epoch, run.coordination.calls) : null, calls }
+    }, f).catch(diagnosticError => ({ diagnosticError: String(diagnosticError) }))
+    await test.info().attach('normal-author-frozen-call-budget', { body: JSON.stringify({ requests, budget }, null, 2), contentType: 'application/json' })
+    throw error
+  }
+  const beforeManual = maximumEpochTokens === 50000 ? await page.evaluate(async f => {
+    const importer = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    const { db } = await importer('/storyforge/src/lib/db/schema.ts'), api = await importer('/storyforge/src/lib/ttrpg/runtime-api.ts')
+    const release = await db.productReleases.where('workId').equals(f.scope.workId).first()
+    const session = await db.productRuntimeSessions.where('productReleaseId').equals(release.id).first()
+    return api.readProductRuntimeState(session.id)
+  }, f) : null
+  if (beforeManual) {
+    expect(beforeManual.ttrpg.openRun.operations.map((o: any) => o.status)).toEqual(['completed', 'completed', 'executing'])
+    expect(beforeManual.ttrpg.openRun.coordination.calls).toHaveLength(5); expect(requests).toBe(5)
+    await page.getByText('改由真人主持补写叙述', { exact: true }).click()
+    await page.getByLabel('补写原因', { exact: true }).selectOption('budget-exhausted')
+    await page.getByLabel('人工叙述', { exact: true }).fill('你们核对了本次调查留下的痕迹，接下来的选择仍由你们决定。')
+    await page.getByRole('button', { name: '确认保存人工叙述', exact: true }).click()
+    await expect(page.getByText('人工叙述已保存；原模型记录会继续保留。', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: '继续结算已确认的行动', exact: true }).click()
+    await expect(page.getByRole('button', { name: '结束本轮主持，准备下一次行动', exact: true })).toBeVisible()
+  }
   const saved = await page.evaluate(async f => {
     const importer = new Function('p', 'return import(p)') as (p: string) => Promise<any>
     const { db } = await importer('/storyforge/src/lib/db/schema.ts'), api = await importer('/storyforge/src/lib/ttrpg/runtime-api.ts')
@@ -156,12 +209,22 @@ test('author production and local release lead to a real player action and one b
   expect(saved.session.productBuildId).toBeNull()
   expect(saved.state.ttrpg.openRun.operations.map((o: any) => o.status)).toEqual(['completed', 'completed', 'completed'])
   expect(saved.state.ttrpg.openRun.narrations).toHaveLength(3); expect(saved.state.ttrpg.openRun.worldTime.worldTurn).toBe(3)
-  expect(saved.state.ttrpg.openRun.coordination.calls).toHaveLength(6); expect(requests).toBe(6)
+  const expectedRequests = maximumEpochTokens === 60000 ? 6 : 5
+  expect(saved.state.ttrpg.openRun.coordination.calls).toHaveLength(expectedRequests); expect(requests).toBe(expectedRequests)
+  expect(saved.state.ttrpg.openRun.coordination.epochs[0].budget.maximumTokens).toBe(maximumEpochTokens)
+  if (beforeManual) {
+    expect(saved.state.entities).toEqual(beforeManual.entities)
+    expect(saved.state.ttrpg.openRun.worldTime).toEqual(beforeManual.ttrpg.openRun.worldTime)
+    expect(saved.state.ttrpg.openRun.knowledge).toEqual(beforeManual.ttrpg.openRun.knowledge)
+    expect(saved.state.ttrpg.openRun.factLedger).toEqual(beforeManual.ttrpg.openRun.factLedger)
+    expect(saved.state.ttrpg.openRun.coordination.calls).toEqual(beforeManual.ttrpg.openRun.coordination.calls)
+    expect(saved.state.ttrpg.openRun.narrations.filter((n: any) => n.reason === 'budget-exhausted')).toHaveLength(1)
+  }
   await page.reload()
   await page.getByLabel('我的角色', { exact: true }).selectOption('viewer.seat.hero')
   await page.getByRole('button', { name: '确认身份并进入', exact: true }).click()
   // Reload revalidates the retained three operations and six original model receipts.
   // Wait for that read-only restore, retaining the exact control and no-extra-send check.
   await expect(page.getByRole('button', { name: '继续本轮自动主持', exact: true })).toBeVisible({ timeout: 30000 })
-  expect(requests).toBe(6)
+  expect(requests).toBe(expectedRequests)
 })

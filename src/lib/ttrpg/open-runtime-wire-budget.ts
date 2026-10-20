@@ -4,6 +4,20 @@ import { estimateTtrpgOpenProductionTextV3, TTRPG_OPEN_WIRE_ESTIMATION_V3,
   TTRPG_OPEN_WIRE_OVERHEAD_RESERVE_V3 } from './open-production-wire-budget'
 import * as p from './open-contract-parse'
 
+/** A pre-dispatch refusal; it never represents a sent, failed or unknown call. */
+export class TtrpgOpenInputBudgetErrorV1 extends Error {
+  readonly code = 'ttrpg-open-input-budget-exhausted'
+  constructor(inputTokens: number, outputTokens: number, remainingTokens: number) {
+    super(`[ttrpg-open-input] 完整请求超过剩余硬预算（输入预留 ${inputTokens}，输出预留 ${outputTokens}，剩余 ${remainingTokens}）；既有进度已保存`)
+    this.name = 'TtrpgOpenInputBudgetErrorV1'
+  }
+}
+export function assertTtrpgOpenRuntimeInputAllowanceV1(remainingTokens: number, outputTokens: number) {
+  if (remainingTokens <= outputTokens + TTRPG_OPEN_WIRE_OVERHEAD_RESERVE_V3) {
+    throw new TtrpgOpenInputBudgetErrorV1(TTRPG_OPEN_WIRE_OVERHEAD_RESERVE_V3 + 1, outputTokens, remainingTokens)
+  }
+}
+
 /** New requests freeze their estimator; historical rendered bytes retain their
  * original reservation. This approximation never replaces actual provider usage. */
 export const TTRPG_OPEN_RUNTIME_INPUT_ESTIMATION_V1 = {

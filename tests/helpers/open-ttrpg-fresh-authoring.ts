@@ -6,7 +6,7 @@ import { createMistHarborWorld } from '../../src/lib/world-engine/mist-harbor-pr
 import { createStoryForgeRulePackV1 } from '../../src/lib/ttrpg/storyforge-rule-pack'
 import { openCampaignFixture, openRuleFixture, openPublicationCampaignFixture } from './ttrpg-open-content'
 
-export async function createFreshOpenDraftFixtureV1(ruleVersion: 1 | 2 = 2, publishable = false, options: { humanGm?: boolean; runtimeAIEnabled?: boolean; cooperative?: boolean } = {}) {
+export async function createFreshOpenDraftFixtureV1(ruleVersion: 1 | 2 = 2, publishable = false, options: { humanGm?: boolean; runtimeAIEnabled?: boolean; cooperative?: boolean; maximumEpochTokens?: number } = {}) {
     const settings = defaultTtrpgSettingsV2('open')
     if (settings.runFormat !== 'open') throw new Error('fixture format')
     settings.openingSituation = '潮水上涨时寻找灯塔钥匙'; settings.playerRole = '港口调查队'
@@ -23,6 +23,7 @@ export async function createFreshOpenDraftFixtureV1(ruleVersion: 1 | 2 = 2, publ
         situation.noInterventionOutcome.afterWorldTurns = 20
       }
     }
+    if (options.maximumEpochTokens !== undefined) campaign.runtimePolicy.maximumEpochTokens = options.maximumEpochTokens
     settings.wizard.gmMode = campaign.gmMode
     Object.assign(settings.wizard, campaign.informationPolicy)
     settings.wizard.seats = campaign.characterTemplates.filter(template => template.role === 'player').map(template => ({

@@ -53,6 +53,7 @@ import { previewTtrpgOpenCompanionPermissionV1 } from './open-companion-preautho
 import { assertTtrpgOpenModelActorV1 } from './open-model-purpose';
 import { loadTtrpgOpenKpContextV1 } from './open-kp-context';
 import { verifyTtrpgOpenKpCandidateProofV1 } from './open-kp-candidate';
+import { assertTtrpgOpenKpDeliveryCurrentV1 } from './open-kp-delivered-sources';
 import { parseTtrpgOpenNarrationReceiptV1 } from './open-kp-receipt';
 import { reconcileTtrpgOpenKpRunV1, TtrpgOpenKpReceiptPendingError } from './open-kp-adoption';
 import { parseTtrpgOpenStageClosureV1, planTtrpgOpenStageClosureTicksV1, assertTtrpgOpenStageClosureEligibleV1, settleTtrpgOpenStageClockV1, ttrpgOpenClosedStageRecoveryAllowedV1 } from './open-stage-close';
@@ -6240,6 +6241,7 @@ async function commitTtrpgOpenKpNarrationV1(input: TtrpgOpenNarrationAdoptionInp
       if (hostingDelegationRef) assertTtrpgOpenDelegatedNarrationV1(context.state,{ epochKey: operation.authorizationEpochKey,viewerKey: input.viewerKey,delegationRef: hostingDelegationRef,requestKey: input.requestKey });
       assertTtrpgOpenModelActorV1(runtime.authorization!, 'prose.ttrpg-open-kp', 'gm', input.viewerKey);
       const view = await loadTtrpgOpenKpContextV1({ scope, sessionId: input.sessionId, actorKey: 'gm' });
+      assertTtrpgOpenKpDeliveryCurrentV1(proof.deliveredValues, view.modernResources);
       if (candidate.viewerKey !== input.viewerKey || candidate.binding.operationKey !== operation.operationKey || candidate.binding.frozenPlanHash !== operation.planHash
         || candidate.visibilityHash !== view.visibilityHash || candidate.admissionStateHash !== view.admissionStateHash || candidate.runtimeSourceHash !== context.session.runtimeSourceHash) throw new Error('[ttrpg-kp] 生成期间结果、接收者、权限或叙述步骤已改变。');
       const rule = runtime.openRun!.ruleReceipts.find(r => r.operationKey === operation.operationKey)!;

@@ -191,7 +191,7 @@ function ttrpgOpenProvider(sourceKey: 'ttrpgOpenAuthority' | 'ttrpgOpenKnowledge
           : sourceKey === 'ttrpgOpenFacts' ? module.TTRPG_OPEN_FACTS_PROVIDER_V1 : module.TTRPG_OPEN_GM_ORACLE_INPUT_PROVIDER_V1
   }
   return { version: 'context-resource-provider-v1', providerId: `storyforge.${sourceKey}`,
-    providerVersion: sourceKey === 'ttrpgOpenAuthority' ? 'ttrpg-open-actor-provider-v3' : sourceKey === 'ttrpgOpenKpInput' ? 'ttrpg-open-kp-provider-v2' : 'ttrpg-open-actor-provider-v1', normalizationVersion: 'ttrpg-open-actor-json-v1', kinds: ['fact'],
+    providerVersion: sourceKey === 'ttrpgOpenAuthority' ? 'ttrpg-open-actor-provider-v3' : sourceKey === 'ttrpgOpenKpInput' ? 'ttrpg-open-kp-provider-v3' : 'ttrpg-open-actor-provider-v1', normalizationVersion: 'ttrpg-open-actor-json-v1', kinds: ['fact'],
     listMetadata: async input => (await load()).listMetadata(input), searchMetadata: async input => (await load()).searchMetadata(input),
     read: async input => (await load()).read(input), readOriginal: async input => (await load()).readOriginal(input),
     fingerprint: async scope => (await load()).fingerprint(scope),

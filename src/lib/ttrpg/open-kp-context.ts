@@ -33,9 +33,10 @@ export async function loadTtrpgOpenKpContextV1(input: { scope: WorkspaceScope; s
   const common = await loadTtrpgOpenKpPartyProjectionV1(input)
   const { actorsHere: actors, initialObservations: initial, knowledge, sessionFacts, pressureSignals: signals } = common.view
   const visibleActorKeys = new Set(actors.map(actor => actor.actorKey))
+  const actionReceipt = { actorKey: visibleActorKeys.has(operation.plan.request.actorKey) ? operation.plan.request.actorKey : null,
+    result: operation.plan.rollVisibility === 'public' ? rule.result.outcome : 'not-public', paidWorldTurns: operation.plan.timeCostWorldTurns }
   const entries = [
-    { sourceKey: 'action.receipt', kind: 'rule-receipt', value: { actorKey: visibleActorKeys.has(operation.plan.request.actorKey) ? operation.plan.request.actorKey : null,
-      result: operation.plan.rollVisibility === 'public' ? rule.result.outcome : 'not-public', paidWorldTurns: operation.plan.timeCostWorldTurns } },
+    { sourceKey: 'action.receipt', kind: 'rule-receipt', value: actionReceipt },
     ...initial.map((value, i) => ({ sourceKey: `initial.${i}`, kind: 'release-observation', value })),
     ...knowledge.map((value, i) => ({ sourceKey: `knowledge.${i}`, kind: 'known-evidence', value })),
     ...sessionFacts.map((value, i) => ({ sourceKey: `fact.${i}`, kind: 'confirmed-session-fact', value })),
@@ -50,7 +51,7 @@ export async function loadTtrpgOpenKpContextV1(input: { scope: WorkspaceScope; s
     phase: { status: run.stage.status, worldTurn: run.worldTime.worldTurn }, actors, entries: entries.map(entry => ({ ...entry, value: stripProofMetadata(entry.value) })) }
   const resources = [{ suffix: 'kp-contract', title: 'KP 只读叙述与引用合同', value: contract, mandatory: true },
     { suffix: 'kp-input', title: '实际结算与共同可见资料', value: packet, mandatory: true }]
-  const modernResources = [
+  const legacyModernResources = [
     { suffix: 'kp-contract.v2', title: 'KP 只读叙述与实际交付引用合同', mandatory: true,
       value: { ...contract, version: 2, allowedSourceKeys: ['action.receipt'], additionalCitationsOnlyFromDeliveredEntries: true } },
     { suffix: 'kp-input.v2', title: '本次结算、共同可见场景与阶段', mandatory: true,
@@ -59,12 +60,32 @@ export async function loadTtrpgOpenKpContextV1(input: { scope: WorkspaceScope; s
       suffix: `kp-entry.${entry.sourceKey}`, title: `共同可见来源 · ${entry.sourceKey}`, mandatory: false,
       value: { schema: 'storyforge.ttrpg-open-kp-delivered-entry', version: 1, entry } })),
   ]
+  // Session Zero publishes selected player identities, not their profiles or whereabouts.
+  // A shared rule definition can describe the executed action without exposing its private result.
+  const request = operation.plan.request
+  const publicPlayer = content.campaign.characterTemplates.find(template => template.role === 'player'
+    && template.characterKey === request.actorKey && recipients.includes(template.characterKey))
+  const sharedAction = common.view.rules.actions.find(action => action.actionKey === request.ruleKey)
+  const sharedCheck = common.view.rules.genericChecks.find(check => check.checkKey === request.ruleKey)
+  const action = request.route === 'existing-action'
+    ? sharedAction ? { route: request.route, ruleKey: sharedAction.actionKey, title: sharedAction.name, description: sharedAction.description } : null
+    : sharedCheck ? { route: request.route, ruleKey: sharedCheck.checkKey, title: sharedCheck.title, description: null } : null
+  const modernResources = [
+    { suffix: 'kp-contract.v3', title: 'KP 只读叙述与实际交付引用合同', mandatory: true,
+      value: { ...contract, version: 3, allowedSourceKeys: ['action.receipt'], additionalCitationsOnlyFromDeliveredEntries: true,
+        publicPlayerIdentityDoesNotRevealLocation: true, executedRuleRequiresPartyIntersection: true, privateIntentAndRollExcluded: true } },
+    { suffix: 'kp-input.v3', title: '本次已执行行动、共同可见场景与阶段', mandatory: true,
+      value: { ...packet, version: 3, entries: [{ sourceKey: 'action.receipt', kind: 'rule-receipt', value: { ...actionReceipt,
+        actorKey: publicPlayer?.characterKey ?? actionReceipt.actorKey,
+        actorName: publicPlayer?.name ?? actors.find(actor => actor.actorKey === actionReceipt.actorKey)?.name ?? null, action } }] } },
+    ...legacyModernResources.slice(2),
+  ]
   const visibilityHash = await hashProductProductionValueV2({ contract, packet }), admissionStateHash = await hashProductProductionValueV2({ binding, visibilityHash })
   const stateHash = await hashProductRuntimeStateV1(state), head = await readProductRuntimeStateVersion(input.sessionId)
   if (head.sequence !== state.lastSequence || head.stateHash !== stateHash || common.readEvidence.sequence !== state.lastSequence || common.readEvidence.stateHash !== stateHash
     || common.readEvidence.runtimeSourceHash !== session.runtimeSourceHash || stable(common.recipientActorKeys) !== stable(recipients)) throw new TtrpgOpenReadConflictV1('[ttrpg-kp] 读取期间结算或接收者视图发生变化')
   assertTtrpgOpenAuthorizationRowsCurrentV1({ authorization: auth, participants: await readTtrpgSessionParticipantsV2(input.sessionId) })
-  return { resources, modernResources, predicateFacts: { worldFacts: initial, sessionFacts }, binding, visibilityHash, admissionStateHash, readEvidence: { sequence: state.lastSequence, stateHash, runtimeSourceHash: session.runtimeSourceHash, sessionKey: runtime.sessionKey } }
+  return { resources, modernResources, legacyModernResources, predicateFacts: { worldFacts: initial, sessionFacts }, binding, visibilityHash, admissionStateHash, readEvidence: { sequence: state.lastSequence, stateHash, runtimeSourceHash: session.runtimeSourceHash, sessionKey: runtime.sessionKey } }
 }
 
 function stripProofMetadata(value: unknown): unknown {

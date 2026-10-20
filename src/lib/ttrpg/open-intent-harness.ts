@@ -7,7 +7,7 @@ import { assertTtrpgOpenEntityCandidateReaderV1, type TtrpgOpenEntityCandidateV1
 import { reviewTtrpgOpenEntityModelDeliveryV1 } from './open-entity-model-contract'
 import { parseTtrpgOpenBriefV1, ttrpgOpenDeliveredBriefAttributionsV1, type TtrpgOpenBriefV1, type TtrpgOpenBriefAttributionV1 } from './open-brief-output'
 import type { ContextGatewaySourceSnapshotInputV1 } from '../context-gateway/attempt-evidence'
-import { ttrpgOpenDeliveredKpSourceKeysV1 } from './open-kp-delivered-sources'
+import { ttrpgOpenDeliveredKpSourceKeysV1, assertTtrpgOpenKpDeliveryCurrentV1 } from './open-kp-delivered-sources'
 import { parseTtrpgOpenKpNarrationV1, type TtrpgOpenKpNarrationV1 } from './open-kp-candidate'
 /** One authorized transport attempt, raw receipt first, then a recoverable semantic candidate. */
 import type { AIConfig, ChatMessage, WorkspaceScope } from '../types'
@@ -689,6 +689,10 @@ async function buildSucceededCandidate(args: {
   }
   try {
     const current = await loadTtrpgOpenModelContextV1({ scope: input.scope, sessionId: input.sessionId, actorKey: call.actorKey, skillId: call.skillId })
+    if (purpose === 'kp-narration') {
+      if (!('modernResources' in current)) throw new Error('KP 缺少当前准确交付视图')
+      assertTtrpgOpenKpDeliveryCurrentV1(deliveredValues, current.modernResources)
+    }
     const latestState = await readProductRuntimeState(input.sessionId),latest = parseTtrpgRuntimeStateV2(latestState.ttrpg)
     if (call.hostingDelegationRef) assertTtrpgOpenHostingDelegationV1(latestState,{ epochKey: call.authorizationEpochKey,viewerKey: input.viewerKey,delegationRef: call.hostingDelegationRef })
     if (current.admissionStateHash !== call.admissionStateHash || current.visibilityHash !== call.visibilityHash

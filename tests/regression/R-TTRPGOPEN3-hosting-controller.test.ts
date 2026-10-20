@@ -10,9 +10,11 @@ import { readyOpenTtrpgSessionV1, OPEN_HUMAN_VIEWER } from '../helpers/open-ttrp
 import { operationInput } from '../helpers/open-ttrpg-branch-recovery'
 import { prepareTtrpgOpenCompanionInputV1 } from '../../src/lib/ttrpg/open-intent-input'
 import { generateTtrpgOpenCompanionCandidateV1 } from '../../src/lib/ttrpg/open-intent-harness'
-import { stopTtrpgOpenTableHostingV1, readTtrpgOpenTableV1 } from '../../src/lib/ttrpg/open-table-service'
+import { stopTtrpgOpenTableHostingV1, readTtrpgOpenTableV1, recordTtrpgOpenTableHumanNarrationV1 } from '../../src/lib/ttrpg/open-table-service'
+import { resumeTtrpgOpenPlayV1 } from '../../src/lib/ttrpg/open-play-coordinator'
 import { delegateTtrpgOpenHostingV1 } from '../../src/lib/ttrpg/runtime-commands'
 import { resumeTtrpgOpenHostingV1 } from '../../src/lib/ttrpg/open-hosting-coordinator'
+import { TtrpgOpenInputBudgetErrorV1 } from '../../src/lib/ttrpg/open-runtime-wire-budget'
 
 const companion = JSON.stringify({ goal: '观察港口', method: '调查', targetRefs: [], declaredResources: [], declaredAssumptions: [], requestedOutcome: null })
 const kp = JSON.stringify({ paragraphs: [{ text: '你们看清了本次行动留下的结果。', sourceKeys: ['action.receipt'] }] })
@@ -40,6 +42,31 @@ describe('R-TTRPGOPEN3 bounded continuous hosting through existing owners', { ti
     expect(await resumeTtrpgOpenHostingV1(input)).toMatchObject({ reason: 'budget' })
     expect(await readProductRuntimeState(sessionId)).toEqual(state); expect(calls).toBe(5)
   }, process.env.CI ? 240000 : 120000)
+  it('hands an input budget too small for one complete request back to a human, preserving settlement and allowing manual narration', async () => {
+    const f = await setupChecksFixtureV1({ cooperative: true }, pkg => { pkg.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 2000 })
+    const sessionId = f.command.sessionId
+    expect((await resumeTtrpgOpenPlayV1(f.command)).status).toBe('awaiting-narration')
+    const epoch = (await readProductRuntimeState(sessionId)).ttrpg!.openRun!.coordination.epochs[0]
+    await delegateTtrpgOpenHostingV1({ ...await openEnvelopeV1(sessionId, 'budget.grant'), viewerKey: f.command.viewerKey,
+      epochKey: epoch.epochKey, maximumCostUsdPerCall: .1, decision: 'delegate-this-epoch' })
+    const before = await readProductRuntimeState(sessionId), permission = before.ttrpg!.openRun!.coordination.epochs[0].hostingDelegation!
+    const runAI = vi.fn(async () => kp), input = { scope: f.f.scope, sessionId, viewerKey: f.command.viewerKey,
+      epochKey: epoch.epochKey, hostingDelegationRef: permission.sourceRef, runAI }
+    expect(await resumeTtrpgOpenHostingV1(input)).toMatchObject({ reason: 'budget' })
+    expect(await readProductRuntimeState(sessionId)).toEqual(before)
+    expect(await resumeTtrpgOpenHostingV1(input)).toMatchObject({ reason: 'budget' })
+    expect(await readProductRuntimeState(sessionId)).toEqual(before)
+    expect(runAI).not.toHaveBeenCalled(); expect(await db.agentRuns.count()).toBe(0)
+    await recordTtrpgOpenTableHumanNarrationV1({ scope: f.f.scope, sessionId, viewerKey: f.command.viewerKey,
+      operationKey: f.command.operationKey, text: '你们核对了本次调查留下的痕迹，接下来的选择仍由你们决定。', reason: 'budget-exhausted' })
+    expect((await resumeTtrpgOpenPlayV1(f.command)).status).toBe('completed')
+    const after = await readProductRuntimeState(sessionId)
+    expect(after.entities).toEqual(before.entities)
+    expect(after.ttrpg!.openRun!.worldTime).toEqual(before.ttrpg!.openRun!.worldTime)
+    expect(after.ttrpg!.openRun!.coordination.epochs[0].budget).toEqual(epoch.budget)
+    expect(after.ttrpg!.openRun!.coordination.calls).toEqual([])
+    expect(after.ttrpg!.openRun!.narrations).toHaveLength(1)
+  })
   async function quick(safe = false) {
     const f = await readyOpenTtrpgSessionV1('bounded hosting stop', pkg => {
       pkg.ttrpg!.campaign.runtimePolicy.enabled = true; pkg.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 200000
@@ -56,6 +83,17 @@ describe('R-TTRPGOPEN3 bounded continuous hosting through existing owners', { ti
       rawInput: '依据自己已知的资料调查', maximumOutputTokens: 800, maximumCostUsd: 0.1 })
     return { f, input, model }
   }
+  it('does not relabel a budget-shaped transport failure after dispatch as an unsent budget handoff', async () => {
+    const { input, model } = await quick(), runAI = vi.fn(async () => { throw new TtrpgOpenInputBudgetErrorV1(4097, 1000, 2000) })
+    await prepareTtrpgOpenCompanionInputV1({ ...await model(), modelIdentity: { provider: 'test-adapter', model: 'injected' } })
+    await expect(resumeTtrpgOpenHostingV1({ ...input, runAI })).rejects.toThrow(/完整请求超过剩余硬预算/)
+    const state = await readProductRuntimeState(input.sessionId)
+    expect(state.ttrpg!.openRun!.coordination.calls).toHaveLength(1)
+    expect(state.ttrpg!.openRun!.coordination.calls[0].status).toBe('unknown')
+    expect(await resumeTtrpgOpenHostingV1({ ...input, runAI })).toMatchObject({ reason: 'model-recovery' })
+    expect(runAI).toHaveBeenCalledOnce()
+    expect(await readProductRuntimeState(input.sessionId)).toEqual(state)
+  })
   it('keeps a risky system proposal pending for real humans and never silently asks another model', async () => {
     const { input, model } = await quick()
     await generateTtrpgOpenCompanionCandidateV1({ ...await model(), runAI: async () => companion })

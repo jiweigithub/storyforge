@@ -47,7 +47,8 @@ async function catalog(scope: FrozenResourceScopeV1, sourceKey: SourceKey) {
   const input = { scope: workspace, sessionId: scope.productRuntimeSessionId, actorKey: scope.runtimeActorKey }
   const kpContext = sourceKey === 'ttrpgOpenKpInput' ? await loadTtrpgOpenKpContextV1(input) : undefined
   const context = kpContext ?? ( sourceKey === 'ttrpgOpenGmOracleInput' ? await loadTtrpgOpenGmOracleContextV1(input) : await loadTtrpgOpenPlayerContextV1(input))
-  const legacyRows = 'resources' in context ? context.resources : playerRows(context, scope, sourceKey as Exclude<SourceKey, 'ttrpgOpenGmOracleInput' | 'ttrpgOpenKpInput'>)
+  const legacyRows = kpContext ? [...kpContext.resources, ...kpContext.legacyModernResources.slice(0, 2)]
+    : 'resources' in context ? context.resources : playerRows(context, scope, sourceKey as Exclude<SourceKey, 'ttrpgOpenGmOracleInput' | 'ttrpgOpenKpInput'>)
   const rows: RuntimeResourceRow[] = kpContext ? kpContext.modernResources : sourceKey === 'ttrpgOpenAuthority' && 'view' in context
     ? legacyRows.flatMap(row => row.suffix !== 'authority' ? [row] : [
       { ...row, suffix: 'authority.v3', value: Object.fromEntries(Object.entries(row.value as Record<string, unknown>).filter(([key]) => key !== 'pressureSignals')) },
@@ -84,7 +85,7 @@ async function catalog(scope: FrozenResourceScopeV1, sourceKey: SourceKey) {
 
 function provider(sourceKey: SourceKey): ContextResourceProviderV1 {
   return createTtrpgOpenRuntimeResourceProviderV1({ sourceKey,
-    providerVersion: sourceKey === 'ttrpgOpenAuthority' ? 'ttrpg-open-actor-provider-v3' : sourceKey === 'ttrpgOpenKpInput' ? 'ttrpg-open-kp-provider-v2' : 'ttrpg-open-actor-provider-v1',
+    providerVersion: sourceKey === 'ttrpgOpenAuthority' ? 'ttrpg-open-actor-provider-v3' : sourceKey === 'ttrpgOpenKpInput' ? 'ttrpg-open-kp-provider-v3' : 'ttrpg-open-actor-provider-v1',
     normalizationVersion: 'ttrpg-open-actor-json-v1', kinds: ['fact'], catalog: scope => catalog(scope, sourceKey) })
 }
 export const TTRPG_OPEN_AUTHORITY_PROVIDER_V1 = provider('ttrpgOpenAuthority')

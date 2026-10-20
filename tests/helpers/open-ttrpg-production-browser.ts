@@ -15,7 +15,7 @@ import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
 import { openReservedProductionFixtureV1 } from './ttrpg-open-reserved-production'
 
 export interface OpenBrowserProductionFixtureV1 { scope: WorkspaceScope; productionId: number; cooperative?: boolean; reservedSeatPlan?: boolean; executionProfile?: 2 | 3 }
-export async function seedOpenBrowserProductionV1(options: { humanGm?: boolean; runtimeAIEnabled?: boolean; cooperative?: boolean; executionProfile?: 2 | 3 } = {}): Promise<OpenBrowserProductionFixtureV1> {
+export async function seedOpenBrowserProductionV1(options: { humanGm?: boolean; runtimeAIEnabled?: boolean; cooperative?: boolean; maximumEpochTokens?: number; executionProfile?: 2 | 3 } = {}): Promise<OpenBrowserProductionFixtureV1> {
   const { executionProfile, ...settingsOptions } = options
   const { scope, draft } = await createFreshOpenDraftFixtureV1(2, true,settingsOptions)
   const productionId = await prepareTtrpgBrief(scope, draft.revision), production = (await db.productProductions.get(productionId))!

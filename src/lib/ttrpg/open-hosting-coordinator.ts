@@ -14,6 +14,7 @@ import { assertTtrpgOpenAuthorizationCurrentV1 } from './open-authorization'
 import { readTtrpgSessionParticipantsV2 } from './participants'
 import { assertTtrpgOpenHostingDelegationV1, assertTtrpgOpenHostingRequestV1 } from './open-hosting-delegation'
 import { ttrpgOpenCallBudgetV1 } from './open-model-calls'
+import { TtrpgOpenInputBudgetErrorV1 } from './open-runtime-wire-budget'
 import { nextTtrpgOpenOperationStepV1 } from './open-operation'
 import { evaluateTtrpgOpenHandoffV1 } from './open-handoff'
 import { previewTtrpgOpenCompanionPermissionV1 } from './open-companion-preauthorization'
@@ -167,6 +168,10 @@ export async function resumeTtrpgOpenHostingV1(input: TtrpgOpenHostingInputV1): 
     if (original?.viewerKey === input.viewerKey && stable(original.hostingDelegation?.sourceRef) === stable(input.hostingDelegationRef)) {
       if (original.hostingDelegation?.stoppedRef || original.status !== 'active') return handoff('stopped')
       if (latest?.product.safety.status !== 'active') return handoff('paused')
+      const remaining = ttrpgOpenCallBudgetV1(original, latest!.openRun!.coordination.calls)
+      if (error instanceof TtrpgOpenInputBudgetErrorV1 && !remaining.pending && !remaining.blockedByUnknown && !remaining.blockedByDenial) {
+        return handoff('budget', { detail: error.message })
+      }
     }
     throw error
   }

@@ -107,7 +107,7 @@ describe('R-TTRPGOPEN9 all-current-player model identity intersection', { timeou
     for (const id of ['prose.ttrpg-open-kp', 'prose.ttrpg-open-brief']) expect(assertTtrpgOpenFrozenContextSourcesV1(id, getAgentSkillV1(id).contextSourceKeys)).toContain(TTRPG_OPEN_COMMON_IDENTITY_SOURCE_V1)
     expect(() => assertTtrpgOpenFrozenContextSourcesV1('prose.ttrpg-open-brief', ['ttrpgOpenBriefInput', TTRPG_OPEN_COMMON_IDENTITY_SOURCE_V1])).toThrow(/协议权限/)
     expect(() => assertTtrpgOpenFrozenContextSourcesV1('prose.ttrpg-open-oracle-interpret', ['ttrpgOpenGmOracleInput', TTRPG_OPEN_COMMON_IDENTITY_SOURCE_V1])).toThrow(/协议权限/)
-    expect(getAgentSkillV1('prose.ttrpg-open-kp').promptVersion).toBe('ttrpg-open-kp-v4')
+    expect(getAgentSkillV1('prose.ttrpg-open-kp').promptVersion).toBe('ttrpg-open-kp-v5')
     expect(getAgentSkillV1('prose.ttrpg-open-brief').promptVersion).toBe('ttrpg-open-brief-v2')
   })
   it('delivers common identity to a real KP request and accepts exactly one cited narration without time, entity or knowledge changes', async () => {

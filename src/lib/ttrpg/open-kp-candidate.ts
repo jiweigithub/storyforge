@@ -28,5 +28,5 @@ export async function verifyTtrpgOpenKpCandidateProofV1(input: TtrpgOpenCandidat
   })
   const deliveredSourceKeys = ttrpgOpenDeliveredKpSourceKeysV1(values)
   parseTtrpgOpenKpNarrationV1(candidate.narration, deliveredSourceKeys)
-  return { candidate, evidence, deliveredSourceKeys }
+  return { candidate, evidence, deliveredSourceKeys, deliveredValues: values }
 }
