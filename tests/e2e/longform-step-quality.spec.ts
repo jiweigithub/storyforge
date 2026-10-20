@@ -1,6 +1,83 @@
 import { expect, test } from '@playwright/test'
 import { createLongform } from './helpers/product-entry'
 
+test('style profiles with missing sample statistics remain readable without rewriting stored data', async ({ page }) => {
+  await createLongform(page, '文风画像缺失统计回归')
+  await page.evaluate(async () => {
+    const importer = new Function('path', 'return import(path)') as (path: string) => Promise<any>
+    const { db } = await importer('/storyforge/src/lib/db/schema.ts')
+    const { resolveScope, stampNewRecord } = await importer('/storyforge/src/lib/workspace/scope.ts')
+    const project = await db.projects.toCollection().first()
+    const scope = await resolveScope({ projectId: project.id })
+    await db.userStyleProfiles.add(stampNewRecord(scope, 'userStyleProfiles', {
+      profile: '作者保留的旧文风画像。', enabled: false, sourceChapterIds: '[]', sampleCount: 3,
+      createdAt: 1, updatedAt: 1,
+    }, { owner: 'work' }))
+  })
+  await page.getByRole('button', { name: '文风学习', exact: true }).click()
+  const profile = page.getByPlaceholder('文风画像(可手动编辑,失焦自动保存)', { exact: true })
+  await expect(profile).toHaveValue('作者保留的旧文风画像。')
+  await expect(page.getByText('样本章数：3；样本字数：未记录。', { exact: false })).toBeVisible()
+  const stored = () => page.evaluate(async () => {
+    const importer = new Function('path', 'return import(path)') as (path: string) => Promise<any>
+    const { db } = await importer('/storyforge/src/lib/db/schema.ts')
+    return db.userStyleProfiles.toCollection().first()
+  })
+  expect(await stored()).toMatchObject({ profile: '作者保留的旧文风画像。', sampleCount: 3, updatedAt: 1 })
+  expect(await stored()).not.toHaveProperty('sampleWords')
+  await profile.fill('作者手动修订的文风画像。')
+  await profile.blur()
+  await expect.poll(async () => (await stored()).profile).toBe('作者手动修订的文风画像。')
+  expect(await stored()).not.toHaveProperty('sampleWords')
+  await page.reload()
+  await expect(profile).toHaveValue('作者手动修订的文风画像。')
+  await expect(page.getByText('样本章数：3；样本字数：未记录。', { exact: false })).toBeVisible()
+  for (const words of [0, 1234]) {
+    await page.evaluate(async words => {
+      const importer = new Function('path', 'return import(path)') as (path: string) => Promise<any>
+      const { db } = await importer('/storyforge/src/lib/db/schema.ts')
+      const row = await db.userStyleProfiles.toCollection().first()
+      await db.userStyleProfiles.update(row.id, { sampleWords: words })
+    }, words)
+    await page.reload()
+    await expect(page.getByText(`样本章数：3；样本字数：${words.toLocaleString()}。`, { exact: false })).toBeVisible()
+    expect((await stored()).sampleWords).toBe(words)
+  }
+})
+
+test('scene detail editing retains Chinese composition and the caret after a middle deletion', async ({ page }) => {
+  await createLongform(page, '细纲输入回归验收')
+  await page.getByRole('button', { name: '大纲与章纲', exact: true }).click()
+  await page.getByRole('button', { name: '添加卷', exact: true }).click()
+  await page.getByRole('button', { name: '添加章节', exact: true }).click()
+  await page.getByRole('button', { name: '场景细纲', exact: true }).click()
+  await page.getByRole('button', { name: '第1章', exact: true }).click()
+  await page.getByRole('button', { name: '添加场景', exact: true }).click()
+  const summary = page.getByRole('textbox', { name: '一句话场景概要...', exact: true })
+  const savedSummary = () => page.evaluate(async () => {
+    const importer = new Function('path', 'return import(path)') as (path: string) => Promise<any>
+    const { db } = await importer('/storyforge/src/lib/db/schema.ts')
+    return (await db.detailedOutlines.toCollection().first())?.scenes[0]?.summary
+  })
+  await summary.fill('守灯人改变计划。')
+  await expect.poll(savedSummary).toBe('守灯人改变计划。')
+  await summary.evaluate((element: HTMLTextAreaElement) => { element.focus(); element.setSelectionRange(3, 3) })
+  const input = await page.context().newCDPSession(page)
+  await input.send('Input.imeSetComposition', { text: 'gen', selectionStart: 3, selectionEnd: 3 })
+  await expect(summary).toHaveValue('守灯人gen改变计划。')
+  await input.send('Input.insertText', { text: '更' })
+  await expect.poll(savedSummary).toBe('守灯人更改变计划。')
+  await expect(summary).toHaveValue('守灯人更改变计划。')
+  await summary.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(5, 5))
+  await page.keyboard.press('Backspace')
+  await expect.poll(savedSummary).toBe('守灯人更变计划。')
+  expect(await summary.evaluate((element: HTMLTextAreaElement) => element.selectionStart)).toBe(4)
+  await page.reload()
+  await page.getByRole('button', { name: '第1章', exact: true }).click()
+  await expect(summary).toHaveValue('守灯人更变计划。')
+  await input.detach()
+})
+
 test('step metadata saves before navigation and retains all edits after reload', async ({ page }) => {
   await createLongform(page, '分步骤保存验收')
   await page.getByRole('textbox', { name: '作品名称', exact: true }).fill('修订后的雾港')

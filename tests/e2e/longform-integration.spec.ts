@@ -93,7 +93,7 @@ test('chunked outline choices and formal candidates survive reload and adopt int
       chapterCalls++
       const match = text.match(/为第 (\d+)-(\d+) 章生成 (\d+) 章/)
       expect(match).not.toBeNull()
-      content = JSON.stringify(Array.from({ length: Number(match![3]) }, (_, index) => ({ title: `旧信第${Number(match![1]) + index}章`, summary: '主角追寻旧信的来源，面对邮差的隐瞒，发现下一条线索。' })))
+      content = JSON.stringify(Array.from({ length: Number(match![3]) }, (_, index) => ({ title: `旧信第${Number(match![1]) + index}章`, summary: '主角追寻旧信的来源，面对邮差的隐瞒，发现下一条线索。'.repeat(chapterCalls === 1 && index === 0 ? 400 : 1) })))
     }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }], usage: { prompt_tokens: 100, completion_tokens: 120, total_tokens: 220 } }) })
   })

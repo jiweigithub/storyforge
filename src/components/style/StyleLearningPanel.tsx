@@ -28,6 +28,12 @@ const STATUS_LABEL: Record<string, string> = { revised: '已修改', polished: '
 const PER_CHAPTER_CHARS = STYLE_LEARNING_CHAPTER_CHARS_V1
 const MAX_CORPUS_CHAPTERS = STYLE_LEARNING_MAX_CHAPTERS_V1
 
+function formatRecordedSampleCount(value: unknown): string {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? value.toLocaleString()
+    : '未记录'
+}
+
 export default function StyleLearningPanel({ project }: Props) {
   const dialog = useDialog()
   const { chapters, loadAll } = useChapterStore()
@@ -269,7 +275,7 @@ export default function StyleLearningPanel({ project }: Props) {
             </div>
 
             <p className="text-[11px] text-text-muted">
-              画像基于 {profile.sampleCount} 章、约 {profile.sampleWords.toLocaleString()} 字学习而成。
+              样本章数：{formatRecordedSampleCount(profile.sampleCount)}；样本字数：{formatRecordedSampleCount(profile.sampleWords)}。
               下方可手动修改,失焦自动保存。
             </p>
 
