@@ -22,6 +22,7 @@ import { prepareTtrpgOpenPrivateChoiceDisclosureV1,discloseTtrpgOpenPrivateChoic
 import { currentTtrpgOpenPrivateChoiceV1,verifyTtrpgOpenPrivateChoiceHashesV1 } from './open-private-choice'
 import { ttrpgOpenDiscoveryEffectTemplatesV1 } from './open-discovery-effect-templates'
 import { reconcileTtrpgOpenKpRunV1 } from './open-kp-adoption'
+import { reconcileTtrpgOpenIntentRunV1 } from './open-intent-adoption'
 import { cancelTtrpgOpenPreparedRequestV1 } from './open-request-cancellation'
 import { reconcileTtrpgOpenHumanNarrationV1, readTtrpgOpenHumanNarrationRepairKeysV1 } from './open-human-narration-recovery'
 import { isTtrpgOpenModelNarrationReceiptV1 } from './open-kp-receipt'
@@ -285,6 +286,15 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
     const owner = runs.find(r => r.contractHash === receipt.runContractHash)
     return owner?.id && owner.status !== 'completed' ? [{ runId: owner.id, requestKey: receipt.requestKey, candidateHash: receipt.candidateHash }] : []
   })
+  const semanticIntentRepairs = run.operations.flatMap(operation => {
+    const evidence = operation.intentEvidence,call = run.coordination.calls.find(c => c.runContractHash === evidence?.runContractHash)
+    if (!evidence || !call || operation.startedRef.sessionKey !== f.runtime.sessionKey
+      || run.coordination.epochs.find(e => e.epochKey === call.authorizationEpochKey)?.viewerKey !== input.viewerKey) return []
+    const owner = runs.find(r => r.contractHash === evidence.runContractHash)
+    return owner?.id && !owner.portableRuntimeOriginJson && ['running','awaiting_confirmation','verifying'].includes(owner.status)
+      ? [{ runId: owner.id,requestKey: call.requestKey,candidateHash: evidence.candidateHash,
+        actorName: seats.find(s => s.actorKey === operation.plan.request.actorKey)?.name ?? '行动者' }] : []
+  })
   const candidateRecoveries: Array<{ runId: number; requestKey: string; purpose: string }> = []
   const historicalResponses = await listTtrpgOpenHistoricalResponsesV1({ ...input, viewerKey: input.viewerKey! })
   const candidates: Array<NonNullable<Awaited<ReturnType<typeof readTtrpgOpenIntentCandidateV1>>> | NonNullable<Awaited<ReturnType<typeof readTtrpgOpenKpCandidateV1>>>> = []
@@ -348,7 +358,7 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
     remainingCalls: gateRecovery?.status === 'stopped' ? 0 : epoch ? Math.max(0, epoch.budget.maximumCalls - budget!.countedRequests) : f.runtime.epochBudget.maximumCalls,
     consequence: consequence ? { owner: consequence.owner, cycleKey: consequence.cycle.cycleKey, workKey: consequence.work.workKey, operationKey: consequence.operation.operationKey } : null, consequenceApprovals,
     situationStopRepairs, situationRequestStatus: run.coordination.calls.find(c => c.skillId === 'prose.ttrpg-open-situation-propose' && c.authorizationEpochKey === epoch?.epochKey)?.status ?? null,
-    gateRecovery, stageStatus: run.stage.status, liveCharacter, hosting, canHumanHost, humanNarrationRepairs, modelNarrationRepairs, pendingCancellations, hasPendingModelRequest: Boolean(budget?.pending), hasUnknownModelResult: Boolean(budget?.blockedByUnknown), preauthorizationAvailable, blockedByModel: Boolean(budget?.pending || budget?.blockedByUnknown || budget?.blockedByDenial || candidateRecoveries.length), operation, candidates, candidateRecoveries, historicalResponses, pendingRejections, canRequestKp, hostingAllowed: f.content.campaign.runtimePolicy.enabled, handoff,
+    gateRecovery, stageStatus: run.stage.status, liveCharacter, hosting, canHumanHost, humanNarrationRepairs, modelNarrationRepairs, semanticIntentRepairs, pendingCancellations, hasPendingModelRequest: Boolean(budget?.pending), hasUnknownModelResult: Boolean(budget?.blockedByUnknown), preauthorizationAvailable, blockedByModel: Boolean(budget?.pending || budget?.blockedByUnknown || budget?.blockedByDenial || candidateRecoveries.length), operation, candidates, candidateRecoveries, historicalResponses, pendingRejections, canRequestKp, hostingAllowed: f.content.campaign.runtimePolicy.enabled, handoff,
     affordances, requests: epoch ? run.coordination.calls.filter(c => !['prose.ttrpg-open-entity-propose', 'prose.ttrpg-open-brief', 'prose.ttrpg-open-situation-propose', 'prose.ttrpg-open-public-situation-propose'].includes(c.skillId) && c.authorizationEpochKey === epoch.epochKey && (c.narrationBinding?.viewerKey ?? epoch.viewerKey) === input.viewerKey && c.status !== 'succeeded').map(c => ({ requestKey: c.requestKey, status: c.status, purpose: c.skillId === 'prose.ttrpg-open-kp' ? 'KP 叙述' : c.skillId === 'prose.ttrpg-open-companion' ? '队友行动' : '行动建议' })) : [],
     narrations: (run.narrations ?? []).filter(r => r.recipientActorKeys.includes(current.seat.actorKey!)).map(r => ({ key: `${r.sourceRef.sessionKey}:${r.sourceRef.sequence}`, paragraphs: r.narration.paragraphs.map(p => p.text), sourceKind: isTtrpgOpenModelNarrationReceiptV1(r) ? 'model' : 'human', unresolvedModelResult: !isTtrpgOpenModelNarrationReceiptV1(r) && r.basis.previousRequests.some(c => c.status === 'unknown') })) } }
 }
@@ -669,6 +679,11 @@ export async function cancelTtrpgOpenTablePreparedRequestV1(input: TtrpgOpenTabl
 export async function repairTtrpgOpenTableModelNarrationV1(input: TtrpgOpenTableInputV1 & { runId: number; requestKey: string; candidateHash: string }) {
   await humanTable(input)
   return reconcileTtrpgOpenKpRunV1(input)
+}
+export async function repairTtrpgOpenTableIntentV1(input: TtrpgOpenTableInputV1 & { runId: number; requestKey: string; candidateHash: string }) {
+  await humanTable(input)
+  try { return await reconcileTtrpgOpenIntentRunV1(input) }
+  catch (cause) { throw Object.assign(new Error('原行动提案回执尚未补齐，请重新读取进度并核对当前身份和原记录。'),{ cause }) }
 }
 
 

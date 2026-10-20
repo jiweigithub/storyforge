@@ -11,8 +11,8 @@ import { AgentRunArtifactStoreError, recordAgentRunArtifactV1, readAgentRunArtif
 export async function finalizeTtrpgOpenRuntimeAdoptionV1(input: TtrpgOpenCandidateReadV1 & { candidateHash: string }, args: {
   candidate: { rawResponseHash: string; inputManifestHash: string }; call: TtrpgOpenModelCallV1
   event: ProductRuntimeEvent & { commandId: string; baseSequence: number }
-  adoptionHash: string; postStateHash: string; verifier: 'ttrpg-open-kp-v1' | 'ttrpg-open-brief-v1' | 'ttrpg-open-situation-propose-v1' | 'ttrpg-open-public-situation-propose-v2' | 'ttrpg-open-entity-plan-v2'
-  verificationSchema: 'storyforge.ttrpg-kp-verification' | 'storyforge.ttrpg-brief-verification' | 'storyforge.ttrpg-situation-verification' | 'storyforge.ttrpg-public-situation-verification' | 'storyforge.ttrpg-entity-plan-verification'
+  adoptionHash: string; postStateHash: string; verifier: 'ttrpg-open-kp-v1' | 'ttrpg-open-brief-v1' | 'ttrpg-open-situation-propose-v1' | 'ttrpg-open-public-situation-propose-v2' | 'ttrpg-open-entity-plan-v2' | 'ttrpg-open-intent-admission-v1'
+  verificationSchema: 'storyforge.ttrpg-kp-verification' | 'storyforge.ttrpg-brief-verification' | 'storyforge.ttrpg-situation-verification' | 'storyforge.ttrpg-public-situation-verification' | 'storyforge.ttrpg-entity-plan-verification' | 'storyforge.ttrpg-intent-admission-verification'
   criteria: Parameters<typeof createVerificationReceiptV1>[0]['criteria']
   decisionAuthority?: { kind: string; sourceRef: TtrpgOpenSourceRefV1 }
 }): Promise<string> {

@@ -21,7 +21,7 @@ import type { ProductRuntimeSession, ProductRuntimeState, WorkspaceScope } from 
 import { useAIConfigStore } from '../../stores/ai-config'
 import { readTtrpgOpenTableV1, consentTtrpgOpenTableSeatV1, startTtrpgOpenTableV1, requestTtrpgOpenTableCandidateV1,
   acceptTtrpgOpenTableCandidateV1, confirmTtrpgOpenTableRiskV1, chooseTtrpgOpenTableConsequenceV1, recoverTtrpgOpenTableGatesV1, preauthorizeTtrpgOpenTableCompanionV1, resumeTtrpgOpenTableV1,
-  recordTtrpgOpenTableHumanNarrationV1, repairTtrpgOpenTableHumanNarrationV1, repairTtrpgOpenTableModelNarrationV1, cancelTtrpgOpenTablePreparedRequestV1, finishTtrpgOpenTableWindowV1, rejectTtrpgOpenTableIntentV1, changeTtrpgOpenTableSafetyV1, type TtrpgOpenTableViewV1 } from '../../lib/ttrpg/open-table-service'
+  recordTtrpgOpenTableHumanNarrationV1, repairTtrpgOpenTableHumanNarrationV1, repairTtrpgOpenTableModelNarrationV1, repairTtrpgOpenTableIntentV1, cancelTtrpgOpenTablePreparedRequestV1, finishTtrpgOpenTableWindowV1, rejectTtrpgOpenTableIntentV1, changeTtrpgOpenTableSafetyV1, type TtrpgOpenTableViewV1 } from '../../lib/ttrpg/open-table-service'
 import './ttrpg-open-play.css'
 import TtrpgOpenConsequencePanel from './TtrpgOpenConsequencePanel'
 import TtrpgOpenHostTable from './TtrpgOpenHostTable'
@@ -190,6 +190,7 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
       {p.pendingRejections.map(receipt => <aside className="sf-open-table-card" key={receipt.requestKey}><p>行动建议已放弃，保存回执还需要补齐；不会重新执行或重新调用模型。</p><button disabled={busy} onClick={() => void perform(async () => { await rejectTtrpgOpenTableIntentV1({ ...input(), ...receipt }) })}>补齐放弃记录</button></aside>)}
       {p.pendingCancellations.map(requestKey => <aside className="sf-open-table-card" key={requestKey}><p>尚未发送的请求已取消，停止回执需要补齐。</p><button disabled={busy} onClick={() => void perform(async () => { await cancelTtrpgOpenTablePreparedRequestV1({ ...input(), requestKey }) })}>补齐请求取消回执</button></aside>)}
       {p.modelNarrationRepairs.map(receipt => <aside className="sf-open-table-card" key={receipt.requestKey}><p>KP 叙述已保存，最终采用回执需要补齐；不会重发模型。</p><button disabled={busy} onClick={() => void perform(async () => { await repairTtrpgOpenTableModelNarrationV1({ ...input(), ...receipt }) })}>补齐 KP 叙述回执</button></aside>)}
+      {p.semanticIntentRepairs.map(receipt => <aside className="sf-open-table-card" key={receipt.requestKey}><p>{receipt.actorName}的行动提案已接纳，生成任务的回执需要补齐。提案回执不代表风险批准或行动结算。</p><button disabled={busy} onClick={() => void perform(async () => { await repairTtrpgOpenTableIntentV1({ ...input(), ...receipt }) })}>补齐行动提案回执</button></aside>)}
       {p.humanNarrationRepairs.map(operationKey => <aside className="sf-open-table-card" key={operationKey}><p>人工叙述已保存，原模型候选的停止回执尚待补齐。</p><button disabled={busy} onClick={() => void perform(async () => { await repairTtrpgOpenTableHumanNarrationV1({ ...input(), operationKey }) })}>补齐人工叙述回执</button></aside>)}
       <fieldset className="sf-open-table-actions" disabled={view.safetyStatus === 'paused' || p.passiveRecap}>
       <section className="sf-open-table-card"><h2>模型使用了哪些资料</h2>

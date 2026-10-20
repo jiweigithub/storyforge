@@ -1694,6 +1694,10 @@ export async function startTtrpgOpenDelegatedCompanionOperationV1(input: TtrpgOp
 }
 async function startTtrpgOpenSemanticOperationV1(input: TtrpgOpenSemanticOperationInputV1,
   hostingDelegationRef?: NonNullable<TtrpgOpenModelCallV1['hostingDelegationRef']>): Promise<ProductRuntimeEvent> {
+  const { reconcileTtrpgOpenIntentRunV1,TtrpgOpenIntentReceiptPendingError } = await import('./open-intent-adoption');
+  const session = await db.productRuntimeSessions.get(input.sessionId);
+  if (!session) throw Error('[ttrpg-open-intent] 团局不存在');
+  const scope = await resolveScope({ scope: { projectId: session.projectId,worldId: session.worldId!,workId: session.workId! } });
   const viewerKey = openKey(input.viewerKey, 'viewerKey'), candidateHash = openHash(input.candidateHash, 'candidateHash');
   const requestKey = openKey(input.requestKey, 'requestKey');
   const effectBindings = structuredClone(input.effectBindings ?? {});
@@ -1704,7 +1708,7 @@ async function startTtrpgOpenSemanticOperationV1(input: TtrpgOpenSemanticOperati
   const prior = await db.productRuntimeEvents.where('[sessionId+commandId]').equals([input.sessionId, commandId]).first();
   const envelope = { sessionId: input.sessionId, commandId, baseSequence: prior?.baseSequence ?? input.baseSequence,
     baseStateHash: prior?.baseStateHash ?? input.baseStateHash };
-  return appendFormalTtrpgCommand({ ...envelope, type: 'ttrpg.open.operation.started',
+  const event = await appendFormalTtrpgCommand({ ...envelope, type: 'ttrpg.open.operation.started',
     intent: { viewerKey, requestKey, candidateHash, decision: hostingDelegationRef ? 'delegate-proposal' : 'start',effectBindings,
       ...(hostingDelegationRef ? { hostingDelegationRef } : {}),...(clarificationHash ? { clarificationHash } : {}) },
     build: async context => {
@@ -1774,6 +1778,9 @@ async function startTtrpgOpenSemanticOperationV1(input: TtrpgOpenSemanticOperati
       return { actorKey: request.actorKey, targetKey: request.targetKey, payload: { operation }, agentEvidence: evidence };
     },
   });
+  try { await reconcileTtrpgOpenIntentRunV1({ ...input,scope }); }
+  catch (error) { throw new TtrpgOpenIntentReceiptPendingError(input.sessionId,event.sequence,input.runId,error); }
+  return event;
 }
 
 export async function confirmTtrpgOpenOperationV1(input: TtrpgOpenOperationCommandV1 & {
