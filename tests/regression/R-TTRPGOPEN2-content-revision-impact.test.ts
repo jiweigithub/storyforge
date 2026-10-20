@@ -42,25 +42,23 @@ it('includes upstream execution drift in the same dependency closure and remains
 }, 30000)
 it('rejects legacy unpreviewed drift and a stale or malformed impact hash before any resume write', async () => {
   const f = await fixture(), original = await inspect(f.input); drift(); const before = await snapshot()
-  await expect(f.send(f.command)).rejects.toThrow('未核对')
-  await expect(f.send({ ...f.command, ttrpgContentRevision: { ...f.command.ttrpgContentRevision, expectedImpactHash: original.impactHash } })).rejects.toThrow('未核对')
+  await expect(f.send(f.command)).rejects.toThrow('上游执行版本')
+  await expect(f.send({ ...f.command, ttrpgContentRevision: { ...f.command.ttrpgContentRevision, expectedImpactHash: original.impactHash } })).rejects.toThrow('上游执行版本')
   expect(() => parseProductProductionCommandV1({ ...f.command, ttrpgContentRevision: { ...f.command.ttrpgContentRevision, expectedImpactHash: 'bad' } })).toThrow('影响 Hash')
   expect(await snapshot()).toBe(before); expect(f.calls).toHaveLength(3)
 }, 30000)
 it('checks the frozen preview again at scheduler entry when bindings change after the explicit resume commits', async () => {
   const f = await fixture(), impact = await inspect(f.input)
   expect((await f.send({ ...f.command, ttrpgContentRevision: { ...f.command.ttrpgContentRevision, expectedImpactHash: impact.impactHash } })).ok).toBe(true)
-  drift(); await expect(f.run()).rejects.toThrow('未核对')
+  drift(); await expect(f.run()).rejects.toThrow('上游执行版本')
   expect(f.calls).toHaveLength(3); expect(fetch).not.toHaveBeenCalled()
   expect((await db.productBuildArtifacts.where('buildId').equals(f.buildId).toArray()).some(row => row.controlEpoch > f.plan.controlEpoch)).toBe(false)
 }, 30000)
-it('requires explicit accurate authorization for the additional upstream model work and then follows that real effect', async () => {
-  const f = await fixture(); drift(); const impact = await inspect(f.input)
-  expect((await f.send({ ...f.command, ttrpgContentRevision: { ...f.command.ttrpgContentRevision, expectedImpactHash: impact.impactHash } })).ok).toBe(true)
-  const result = await f.run(), build = (await db.productBuilds.get(result.buildId))!
-  expect(JSON.parse(build.failureJson).taskKey).toBe('ttrpg.open.source-facts')
-  expect(f.calls).toEqual(['ttrpg.open.source-facts', 'ttrpg.open.rule-system', 'ttrpg.open.situation-layer', 'ttrpg.open.source-facts'])
-  expect(fetch).not.toHaveBeenCalled()
+it('keeps the current Build paused even with a matching hash when upstream regeneration would defer the author draft', async () => {
+  const f = await fixture(); drift(); const impact = await inspect(f.input), before = await snapshot()
+  await expect(f.send({ ...f.command, ttrpgContentRevision: { ...f.command.ttrpgContentRevision, expectedImpactHash: impact.impactHash } })).rejects.toThrow('新一轮制作')
+  expect(await snapshot()).toBe(before); expect(f.calls).toHaveLength(3)
+  expect((await db.productProductions.get(f.productionId))!.status).toBe('paused'); expect(fetch).not.toHaveBeenCalled()
 }, 30000)
 
 it('invalidates the prepared effect on an evidence race and refuses a foreign Work without rewriting the old data', async () => {

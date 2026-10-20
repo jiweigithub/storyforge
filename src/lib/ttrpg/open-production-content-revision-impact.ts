@@ -52,6 +52,13 @@ export function assertTtrpgOpenContentRevisionImpactV1(
   impact: Pick<Awaited<ReturnType<typeof inspectTtrpgOpenContentRevisionImpactV1>>, 'impactHash' | 'additionalTaskKeys'>,
   expectedImpactHash: string | undefined,
 ) {
+  // The explicit author draft must execute before any newly generated
+  // descendant can block for review. Rebuilding an ancestor first could
+  // replace its inputs and lose this draft's authority across that review.
+  // A hash of those effects is evidence, not permission to defer the draft.
+  if (impact.additionalTaskKeys.length > 0) {
+    throw Error('[ttrpg-content-impact] 原稿的上游执行版本已变化，不能在此轮局部返修；请保留旧轮次后明确开始新一轮制作')
+  }
   if (expectedImpactHash !== undefined ? expectedImpactHash !== impact.impactHash : impact.additionalTaskKeys.length > 0) {
     throw Error('[ttrpg-content-impact] 执行版本或实际影响已变化，不能增加未核对的岗位；请重新核对返修影响')
   }
