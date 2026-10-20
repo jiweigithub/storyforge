@@ -8,6 +8,7 @@ import { parseTtrpgMechanicalResultV1 } from './rule-action-mechanical'
 import { parseTtrpgOpenRulePlanV1, type TtrpgOpenRulePlanV1 } from './open-rule-plan'
 import { parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coordination'
 import * as p from './open-contract-parse'
+import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import type { TtrpgOpenModelCallV1 } from './open-model-calls'
 
 export const TTRPG_OPEN_POST_OWNER_STEPS = ['pressure', 'situations', 'terminal', 'gates', 'narration', 'handoff'] as const
@@ -43,6 +44,7 @@ export interface TtrpgOpenOperationV1 {
   pressureTurnConditions?: Array<{ tickIndex: number; worldTurn: number; sourceRef: TtrpgOpenSourceRefV1; conditions: TtrpgRuntimeState['product']['conditions'] }>
   discoveryChoices?: TtrpgOpenDiscoveryChoiceV1[]
   intentEvidence?: {
+    clarificationRef?: { sourceRef: TtrpgOpenSourceRefV1; clarificationHash: string }
     sourceRef: TtrpgOpenSourceRefV1; candidateHash: string; runContractHash: string; inputManifestHash: string; rawResponseHash: string
     hostingDelegationRef?: TtrpgOpenSourceRefV1
   }
@@ -66,6 +68,13 @@ export function assertTtrpgOpenOperationIntentCallV1(operation: TtrpgOpenOperati
     && (!evidence.hostingDelegationRef || call.skillId === 'prose.ttrpg-open-companion' && JSON.stringify(call.hostingDelegationRef) === JSON.stringify(evidence.hostingDelegationRef))
     && call.terminalRef?.sessionKey === evidence.sourceRef.sessionKey && call.terminalRef.sequence === evidence.sourceRef.sequence)) {
     p.fail('意图候选没有同角色/窗口/原始响应的真实终态请求')
+  }
+  const records = calls.find(c => c.runContractHash === evidence.runContractHash)?.intentClarifications ?? [],record = records[records.length - 1]
+  if (record || evidence.clarificationRef) {
+    if (!record?.request || !evidence.clarificationRef || record.candidateHash !== evidence.candidateHash
+      || record.clarificationHash !== evidence.clarificationRef.clarificationHash
+      || stable(record.sourceRef) !== stable(evidence.clarificationRef.sourceRef)
+      || stable(record.request) !== stable(operation.plan.request)) p.fail('行动必须使用明确确认的原人工澄清和完整规则绑定')
   }
 }
 export function ttrpgOpenOperationStepsV1(plan: TtrpgOpenRulePlanV1,settlementOrder?: TtrpgOpenOperationV1['settlementOrder']): TtrpgOpenOperationStepV1[] {
@@ -105,15 +114,21 @@ export function parseTtrpgOpenOperationV1(value: unknown, sessionKey?: string): 
 
   const intentEvidence = hasIntentEvidence ? (() => {
     const hasDelegation = Object.prototype.hasOwnProperty.call(p.object(r.intentEvidence,'intent evidence'),'hostingDelegationRef')
-    const e = p.record(r.intentEvidence, ['sourceRef', 'candidateHash', 'runContractHash', 'inputManifestHash', 'rawResponseHash',...(hasDelegation ? ['hostingDelegationRef'] : [])], 'intent evidence')
+    const hasClarification = Object.prototype.hasOwnProperty.call(r.intentEvidence,'clarificationRef')
+    const e = p.record(r.intentEvidence, ['sourceRef', 'candidateHash', 'runContractHash', 'inputManifestHash', 'rawResponseHash',...(hasDelegation ? ['hostingDelegationRef'] : []),...(hasClarification ? ['clarificationRef'] : [])], 'intent evidence')
     const sourceRef = parseTtrpgOpenSourceRefV1(e.sourceRef)
     const hostingDelegationRef = hasDelegation ? parseTtrpgOpenSourceRefV1(e.hostingDelegationRef) : undefined
+    const clarificationRef = hasClarification ? (() => {
+      const c = p.record(e.clarificationRef,['sourceRef','clarificationHash'],'clarified intent source'),ref = parseTtrpgOpenSourceRefV1(c.sourceRef)
+      if (hostingDelegationRef || ref.sessionKey !== sourceRef.sessionKey || ref.sequence <= sourceRef.sequence || ref.sequence >= startedRef.sequence) p.fail('人工澄清必须先于真实行动，且不能冒充自动提案')
+      return { sourceRef: ref,clarificationHash: p.hash(c.clarificationHash,'human clarification hash') }
+    })() : undefined
     if (hostingDelegationRef && (plan.request.controllerMode !== 'ai' || hostingDelegationRef.sessionKey !== sourceRef.sessionKey
       || hostingDelegationRef.sequence >= sourceRef.sequence)) p.fail('队友系统提案必须绑定真实先前委托，不能冒充真人意图')
     if (hasInheritance || sourceRef.sessionKey !== startedRef.sessionKey || sourceRef.sequence >= startedRef.sequence) {
       p.fail('当前意图候选必须引用本团局已提交响应；继承操作保留祖先原证据')
     }
-    return { ...(hostingDelegationRef ? { hostingDelegationRef } : {}),sourceRef, candidateHash: p.hash(e.candidateHash, 'candidate hash'), runContractHash: p.hash(e.runContractHash, 'intent run'),
+    return { ...(hostingDelegationRef ? { hostingDelegationRef } : {}),...(clarificationRef ? { clarificationRef } : {}),sourceRef, candidateHash: p.hash(e.candidateHash, 'candidate hash'), runContractHash: p.hash(e.runContractHash, 'intent run'),
       inputManifestHash: p.hash(e.inputManifestHash, 'intent input'), rawResponseHash: p.hash(e.rawResponseHash, 'intent raw response') }
   })() : undefined
   const inheritance = hasInheritance ? (() => {

@@ -9,8 +9,34 @@ import { assertTtrpgOpenHostingRequestV1,assertTtrpgOpenHostingDelegationV1 } fr
 import { assertTtrpgOpenNarrationCallV1, assertTtrpgOpenCallReservationV1, assertTtrpgOpenOracleInterpretationSlotV1, assertTtrpgOpenSupportSlotV1, assertTtrpgOpenNormalizationSourceV1, parseTtrpgOpenModelCallV1, updateTtrpgOpenEpochCallTotalsV1 } from './open-model-calls'
 import * as p from './open-contract-parse'
 import { assertTtrpgOpenModelActorV1 } from './open-model-purpose'
+import { parseTtrpgOpenIntentClarificationV1 } from './open-intent-clarification-contract'
 
 export function applyTtrpgOpenModelCallEventV1(state: ProductRuntimeState, event: ProductRuntimeEvent, payload: ProductRuntimeJsonObjectV1): boolean {
+  if (event.type === 'ttrpg.open.intent.clarified') {
+    p.exact(payload,['requestKey','viewerKey','clarification','intent'],'intent clarified')
+    const runtime = parseTtrpgRuntimeStateV2(state.ttrpg),run = runtime?.openRun,auth = runtime?.authorization
+    const call = run?.coordination.calls.find(c => c.requestKey === payload.requestKey),epoch = run?.coordination.epochs.find(e => e.epochKey === call?.authorizationEpochKey)
+    const entry = parseTtrpgOpenIntentClarificationV1(payload.clarification),rawIntent = p.object(payload.intent,'clarification intent')
+    const intent = p.record(rawIntent,['viewerKey','requestKey','candidateHash','selection','expectedCount','effectBindings',
+      ...(Object.prototype.hasOwnProperty.call(rawIntent,'discovery') ? ['discovery'] : [])],'clarification intent')
+    const records = call?.intentClarifications ?? []
+    if (!runtime || !run || !auth || !call || !epoch || call.status !== 'succeeded' || call.intentRejection
+      || !['prose.ttrpg-open-intent','prose.ttrpg-open-companion'].includes(call.skillId)
+      || epoch.status !== 'active' || run.coordination.activeEpochKey !== epoch.epochKey || epoch.viewerKey !== payload.viewerKey
+      || runtime.product.safety.status !== 'active' || run.stage.status !== 'open'
+      || entry.viewerKey !== payload.viewerKey || entry.actorKey !== call.actorKey || event.actorKey !== call.actorKey || event.targetKey !== null
+      || records.length >= 3 || entry.attempt !== records.length + 1 || entry.sourceRef.sessionKey !== runtime.sessionKey || entry.sourceRef.sequence !== event.sequence
+      || intent.requestKey !== call.requestKey || intent.candidateHash !== entry.candidateHash || intent.viewerKey !== entry.viewerKey
+      || intent.expectedCount !== records.length || stable(intent.selection) !== stable(entry.selection)
+      || entry.request && (stable(intent.effectBindings) !== stable(entry.request.effectBindings) || stable(intent.discovery ?? null) !== stable(entry.request.discovery ?? null))
+      || !entry.request && (Object.keys(p.object(intent.effectBindings,'clarified effect bindings')).length > 0 || intent.discovery !== undefined)
+      || run.operations.some(o => o.intentEvidence?.runContractHash === call.runContractHash)) p.fail('澄清必须绑定原真人、原候选和当前未执行线程，最多三次')
+    assertTtrpgOpenModelActorV1(auth,call.skillId,call.actorKey,entry.viewerKey)
+    call.intentClarifications = [...records,entry]
+    parseTtrpgOpenModelCallV1(call)
+    state.ttrpg = runtime
+    return true
+  }
   if (event.type === 'ttrpg.open.intent.rejected') {
     p.exact(payload, ['requestKey', 'candidateHash', 'viewerKey', 'sourceRef', 'intent'], 'intent rejected')
     const runtime = parseTtrpgRuntimeStateV2(state.ttrpg), run = runtime?.openRun, auth = runtime?.authorization

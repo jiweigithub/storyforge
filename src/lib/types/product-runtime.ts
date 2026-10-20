@@ -1223,6 +1223,7 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "ttrpg.open.operation.step.completed",
   "ttrpg.open.operation.completed",
   "ttrpg.open.intent.disposed",
+  "ttrpg.open.intent.clarified",
   "ttrpg.open.intent.previewed",
   "ttrpg.open.intent.confirmed",
   "ttrpg.open.choice.disclosed",

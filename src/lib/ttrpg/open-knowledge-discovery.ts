@@ -13,11 +13,9 @@ import { hashProductProductionValueV2 } from '../product-production/hash'
 import { effectTemplate } from './open-content-templates'
 import type { TtrpgOpenEffectPlanTemplateV1 } from './open-contract'
 import * as p from './open-contract-parse'
+import { parseTtrpgOpenDiscoveryRequestV1,type TtrpgOpenDiscoveryRequestV1 } from './open-rule-request-contract'
+export { parseTtrpgOpenDiscoveryRequestV1,type TtrpgOpenDiscoveryRequestV1 } from './open-rule-request-contract'
 
-export interface TtrpgOpenDiscoveryRequestV1 {
-  situationKey: string; evidenceRef: string; interventionPointKey: string
-  effectBindings: Record<string, Record<string, string | null>>
-}
 export interface TtrpgOpenDiscoveryPlanV1 {
   sessionSituation?: TtrpgOpenSessionSituationReceipt
   request: TtrpgOpenDiscoveryRequestV1
@@ -29,15 +27,6 @@ export interface TtrpgOpenDiscoveryPlanV1 {
   route: 'existing-action' | 'generic-check'
   ruleKey: string
   effectTemplates: TtrpgOpenEffectPlanTemplateV1[]
-}
-export function parseTtrpgOpenDiscoveryRequestV1(value: unknown): TtrpgOpenDiscoveryRequestV1 {
-  const r = p.record(value, ['situationKey', 'evidenceRef', 'interventionPointKey', 'effectBindings'], 'discovery request')
-  const bindings = p.object(r.effectBindings, 'discovery bindings')
-  if (Object.keys(bindings).length > 2) p.fail('发现最多绑定冻结代价与失败前进计划')
-  return { situationKey: p.key(r.situationKey, 'discovery situation'), evidenceRef: p.key(r.evidenceRef, 'discovery evidence'),
-    interventionPointKey: p.key(r.interventionPointKey, 'discovery intervention'), effectBindings: Object.fromEntries(Object.entries(bindings).map(([key, value]) =>
-      [p.key(key, 'discovery effect plan'), Object.fromEntries(Object.entries(p.object(value, 'discovery slots')).map(([slot, ref]) =>
-        [p.key(slot, 'discovery parameter'), p.nullable(ref, p.key, 'discovery target')]))])) }
 }
 export function parseTtrpgOpenDiscoveryPlanV1(value: unknown): TtrpgOpenDiscoveryPlanV1 {
   const hasSession = Object.prototype.hasOwnProperty.call(p.object(value, 'discovery plan'), 'sessionSituation')

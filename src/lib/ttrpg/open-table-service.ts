@@ -302,7 +302,10 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
     const call = run.coordination.calls.find(c => c.runContractHash === pending.intentEvidence!.runContractHash), owner = runs.find(r => r.contractHash === call?.runContractHash)
     if (call && owner?.id && epoch?.viewerKey === input.viewerKey) {
       const candidate = await readTtrpgOpenIntentCandidateV1({ ...input, viewerKey: input.viewerKey, runId: owner.id, requestKey: call.requestKey })
-      if (candidate?.intent) try { previewTtrpgOpenCompanionPermissionV1(f.state, f.content, candidate.intent, pending.operationKey);preauthorizationAvailable = true } catch { /* Ordinary risk confirmation is still available. */ }
+      if (candidate?.intent) try {
+        const intent = await (await import('./open-intent-clarification')).ttrpgOpenOperationSemanticIntentV1(pending,call,candidate.intent)
+        previewTtrpgOpenCompanionPermissionV1(f.state, f.content, intent, pending.operationKey);preauthorizationAvailable = true
+      } catch { /* Ordinary risk confirmation is still available. */ }
     }
   }
   let canHumanHost = false
@@ -560,7 +563,25 @@ export async function requestTtrpgOpenTableCandidateV1(input: TtrpgOpenTableInpu
   }
   return generateTtrpgOpenIntentCandidateV1({ ...request, actorKey: f.seat.actorKey! })
 }
-export async function acceptTtrpgOpenTableCandidateV1(input: TtrpgOpenTableInputV1 & { runId: number; requestKey: string; candidateHash: string; kind: 'intent' | 'kp' }) {
+export async function readTtrpgOpenTableIntentReviewV1(input: TtrpgOpenTableInputV1 & { runId: number; requestKey: string; candidateHash: string }) {
+  const f = await humanTable(input)
+  const { verifyTtrpgOpenIntentCandidateProofV1 } = await import('./open-intent-candidate')
+  const { candidate } = await verifyTtrpgOpenIntentCandidateProofV1(input)
+  const { review } = await (await import('./open-intent-clarification')).inspectTtrpgOpenIntentRoutingV1({
+    scope: input.scope,session: f.session,state: f.state,content: f.content,viewerKey: input.viewerKey,candidate })
+  if ((await readProductRuntimeStateVersion(input.sessionId)).sequence !== f.state.lastSequence) throw new TtrpgOpenReadConflictV1('核对意图期间进度已改变，请重新读取')
+  return review
+}
+export async function clarifyTtrpgOpenTableCandidateV1(input: TtrpgOpenTableInputV1 & {
+  runId: number; requestKey: string; candidateHash: string; expectedCount: number
+  selection: import('./open-intent-clarification-contract').TtrpgOpenIntentSelectionV1
+  effectBindings?: import('./open-rule-plan').TtrpgOpenRuleRequestV1['effectBindings']
+  discovery?: import('./open-rule-plan').TtrpgOpenRuleRequestV1['discovery']
+}) {
+  await humanTable(input)
+  return (await import('./runtime-commands')).clarifyTtrpgOpenIntentCandidateV1({ ...await envelope(input.sessionId,'clarify'),...input })
+}
+export async function acceptTtrpgOpenTableCandidateV1(input: TtrpgOpenTableInputV1 & { runId: number; requestKey: string; candidateHash: string; kind: 'intent' | 'kp'; clarificationHash?: string }) {
   await humanTable(input)
   if (input.kind === 'intent') return startTtrpgOpenIntentCandidateOperationV1({ ...await envelope(input.sessionId, 'admit'), ...input, decision: 'start' })
   const candidate = await readTtrpgOpenKpCandidateV1(input)

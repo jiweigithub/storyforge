@@ -16,24 +16,27 @@ function resolveBuildSha(): string {
   }
 }
 
-// Actual static replay dependency groups: leaves -> open state -> event adapters.
+// Actual static replay dependency groups: mechanics -> state -> open -> adapters.
 // Keep adapters separate from their prerequisites to avoid circular chunk loading.
 const TTRPG_REPLAY_CHUNK_MODULES = {
-  state: [
+  mechanics: [
     'ability-ledger', 'action-economy', 'action-feedback', 'action-requirement',
-    'advancement', 'campaign', 'campaign-v2', 'character-sheet',
-    'content-version', 'dice', 'director-model', 'effect-plan',
+    'advancement', 'dice', 'world-time',
+  ],
+  state: [
+    'campaign', 'campaign-v2', 'character-sheet',
+    'content-version', 'director-model', 'effect-plan',
     'effect-runtime', 'frozen-facts', 'frozen-content-cache', 'item-ledger', 'media-contract',
     'open-authorization', 'open-chaos', 'open-content-authoring', 'open-content-common',
     'open-content-predicates', 'open-content-references', 'open-content-situations', 'open-content-templates',
     'open-contract', 'open-contract-parse', 'context-trigger-contract', 'open-context-policy', 'open-model-purpose-contract', 'open-memory-contract', 'open-memory-receipt', 'open-model-memory-contract', 'open-brief-contract', 'open-memory-event-digest', 'open-memory-prefix-proof', 'open-private-choice-contract', 'open-coordination',
-    'open-fact-authority', 'open-fact-ledger', 'open-fact-runtime-references', 'open-gates', 'open-intent',
+    'open-fact-authority', 'open-fact-ledger', 'open-fact-runtime-references', 'open-gates', 'open-intent', 'open-intent-clarification-contract', 'open-rule-request-contract',
     'open-knowledge', 'open-knowledge-share', 'open-identity-knowledge-contract', 'open-kp-binding', 'open-kp-narration',
     'open-kp-receipt', 'open-model-calls', 'open-model-purpose', 'open-oracle-contract',
     'open-interaction', 'oracle', 'participants', 'predicate', 'pressure-runtime',
     'private-guidance-model', 'resolution', 'rule-action-mechanical', 'rule-pack',
     'rule-pack-v2', 'run-format', 'runtime-state', 'session-facts',
-    'situation-engine', 'world-time', 'open-session-situation-contract', 'open-session-situation-catalog',
+    'situation-engine', 'open-session-situation-contract', 'open-session-situation-catalog',
     'character-mechanical-initialization', 'open-public-situation-authorization-contract', 'open-public-situation-request',
     'open-entity-contract', 'open-entity-model-contract', 'open-entity-model-origin-contract', 'open-entity-mechanics', 'open-entity-catalog', 'open-entity-window', 'open-runtime-entity-references', 'open-common-oracle-request', 'open-common-oracle-archive-contract', 'open-oracle-runtime-delivery',
     'open-voice-completion-contract', 'open-voice-timeline-contract',

@@ -112,6 +112,8 @@ import { parseTtrpgOpenModelCallV1, assertTtrpgOpenCallReservationV1, assertTtrp
 import { verifyTtrpgOpenModelCallEvidenceV1, assertTtrpgOpenAgentEvidenceUnchangedV1, assertTtrpgOpenCommonOracleArchiveWitnessV1, type TtrpgOpenCommonOracleArchiveWitnessV1, type TtrpgOpenAgentEvidenceV1 } from './open-model-call-evidence';
 import { resolveScope } from '../workspace/scope';
 import { verifyTtrpgOpenIntentCandidateProofV1 } from './open-intent-candidate';
+import { parseTtrpgOpenIntentSelectionV1, hashTtrpgOpenIntentClarificationV1, type TtrpgOpenIntentClarificationV1,
+  type TtrpgOpenIntentSelectionV1 } from './open-intent-clarification-contract';
 import { readTtrpgOpenOracleCandidateV1, readTtrpgOpenFactNormalizationCandidateV1, verifyTtrpgOpenOracleCandidateProofV1 } from './open-oracle-candidate';
 import type { WorkspaceScope } from '../types';
 import { parseTtrpgOpenCommonOracleRequestCloseV1, type TtrpgOpenCommonOracleRequestCloseV1 } from './open-common-oracle-request';
@@ -196,6 +198,7 @@ type FormalTtrpgEventType = Extract<
   | "ttrpg.audio.voice.cancelled"
   | "ttrpg.audio.cue.applied"
   | "ttrpg.open.intent.disposed"
+  | "ttrpg.open.intent.clarified"
   | "ttrpg.world-turn.advanced"
   | "ttrpg.situation.changed"
   | "ttrpg.open.failure.logged"
@@ -263,7 +266,7 @@ const OPEN_FOUNDATION_COMMANDS: readonly FormalTtrpgEventType[] = [
   "ttrpg.open.call.reserved", "ttrpg.open.call.dispatched", "ttrpg.open.call.finished",
   "ttrpg.open.source.inherited",
   "ttrpg.open.operation.started", "ttrpg.open.operation.step.completed", "ttrpg.open.operation.completed",
-  "ttrpg.open.intent.confirmed", "ttrpg.open.choice.disclosed", "ttrpg.open.table-message.posted", "ttrpg.open.intent.disposed", "ttrpg.rule.action.resolved", "ttrpg.effects.applied",
+  "ttrpg.open.intent.confirmed", "ttrpg.open.intent.clarified", "ttrpg.open.choice.disclosed", "ttrpg.open.table-message.posted", "ttrpg.open.intent.disposed", "ttrpg.rule.action.resolved", "ttrpg.effects.applied",
   "ttrpg.situation.changed", "ttrpg.open.failure.logged",
   "ttrpg.oracle.consulted",
   "ttrpg.fact.asserted", "ttrpg.fact.retired", "ttrpg.open.oracle.reviewed",
@@ -1639,8 +1642,43 @@ export async function startTtrpgOpenOperationV1(input: FormalTtrpgCommandEnvelop
 /** Explicit human semantic confirmation only prepares an operation; affected humans still approve its frozen risk. */
 type TtrpgOpenSemanticOperationInputV1 = FormalTtrpgCommandEnvelope & {
   viewerKey: string; runId: number; requestKey: string; candidateHash: string;
+  clarificationHash?: string;
   effectBindings?: TtrpgOpenRuleRequestV1['effectBindings'];
 };
+/** Explicit human clarification keeps the original candidate, epoch and provider usage intact. */
+export async function clarifyTtrpgOpenIntentCandidateV1(input: Omit<TtrpgOpenSemanticOperationInputV1,'clarificationHash'> & {
+  selection: TtrpgOpenIntentSelectionV1; expectedCount: number; discovery?: TtrpgOpenRuleRequestV1['discovery'];
+}): Promise<ProductRuntimeEvent> {
+  const viewerKey = openKey(input.viewerKey,'clarifying human'),requestKey = openKey(input.requestKey,'original request'),candidateHash = openHash(input.candidateHash,'original candidate');
+  const selection = parseTtrpgOpenIntentSelectionV1(input.selection),expectedCount = input.expectedCount;
+  if (!Number.isInteger(expectedCount) || expectedCount < 0 || expectedCount >= 3) throw Error('同一澄清线程最多提交三次补充');
+  const effectBindings = structuredClone(input.effectBindings ?? {}),discovery = input.discovery === undefined ? undefined : structuredClone(input.discovery);
+  const intent = { viewerKey,requestKey,candidateHash,selection,expectedCount,effectBindings,...(discovery ? { discovery } : {}) };
+  const before = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg);
+  if (!before) throw Error('团局尚未开始');
+  const commandId = await ttrpgOpenScopedKeyV1(before.sessionKey,'intent.clarify',[requestKey,candidateHash,await hashProductProductionValueV2(intent)]);
+  const prior = await db.productRuntimeEvents.where('[sessionId+commandId]').equals([input.sessionId,commandId]).first();
+  return appendFormalTtrpgCommand({ sessionId: input.sessionId,commandId,baseSequence: prior?.baseSequence ?? input.baseSequence,
+    baseStateHash: prior?.baseStateHash ?? input.baseStateHash,type: 'ttrpg.open.intent.clarified',intent,
+    build: async context => {
+      const { scope } = await openModelCallCallerV1(context,viewerKey,true);
+      const { candidate,evidence } = await verifyTtrpgOpenIntentCandidateProofV1({ ...input,scope,candidateHash });
+      const { inspectTtrpgOpenIntentRoutingV1,prepareTtrpgOpenClarifiedRuleRequestV1 } = await import('./open-intent-clarification');
+      const content = requireTtrpgOpenContent(context.ttrpgContent);
+      const inspected = await inspectTtrpgOpenIntentRoutingV1({ scope,session: context.session,state: context.state,content,viewerKey,candidate });
+      if (inspected.originalPreview.route !== 'needs-clarification' || (inspected.call.intentClarifications?.length ?? 0) !== expectedCount) throw Error('原澄清线程已变化，不能替换其他候选或重置次数');
+      if (!inspected.review.canClarify) throw Error('同一澄清线程最多提交三次补充');
+      if (selection.method !== null && !inspected.review.catalog.rules.some(r => (r.interactionKey ?? r.ruleKey) === selection.method)) throw Error('请选择双方可见的冻结规则方法');
+      const request = await prepareTtrpgOpenClarifiedRuleRequestV1({ inspected,candidate,selection,bindings: effectBindings,discovery,
+        state: context.state,content,runtimeSourceHash: context.session.runtimeSourceHash! });
+      if (!request && (Object.keys(effectBindings).length || discovery)) throw Error('尚未明确裁定方式，不能附加后果或线索绑定');
+      const body: Omit<TtrpgOpenIntentClarificationV1,'clarificationHash'> = { schema: 'storyforge.ttrpg-open-intent-clarification',version: 1,
+        sourceRef: { sessionKey: inspected.runtime.sessionKey,sequence: context.sequence },candidateHash,
+        threadKey: candidate.intent!.clarificationThreadKey,actorKey: candidate.actorKey,viewerKey,attempt: expectedCount + 1,selection,request };
+      return { actorKey: candidate.actorKey,targetKey: null,payload: { requestKey,viewerKey,clarification: { ...body,clarificationHash: await hashTtrpgOpenIntentClarificationV1(body) } },agentEvidence: evidence };
+    },
+  });
+}
 export async function startTtrpgOpenIntentCandidateOperationV1(input: TtrpgOpenSemanticOperationInputV1 & { decision: 'start' }): Promise<ProductRuntimeEvent> {
   if (input.decision !== 'start') throw new Error('[ttrpg-open-intent] 需要真人明确确认此候选');
   return startTtrpgOpenSemanticOperationV1(input);
@@ -1656,15 +1694,16 @@ async function startTtrpgOpenSemanticOperationV1(input: TtrpgOpenSemanticOperati
   const viewerKey = openKey(input.viewerKey, 'viewerKey'), candidateHash = openHash(input.candidateHash, 'candidateHash');
   const requestKey = openKey(input.requestKey, 'requestKey');
   const effectBindings = structuredClone(input.effectBindings ?? {});
+  const clarificationHash = input.clarificationHash === undefined ? undefined : openHash(input.clarificationHash,'clarification hash');
   const before = parseTtrpgRuntimeStateV2((await readProductRuntimeState(input.sessionId)).ttrpg);
   if (!before) throw new Error('[ttrpg-open-intent] 团局尚未启动');
-  const commandId = await ttrpgOpenScopedKeyV1(before.sessionKey, 'intent.operation', [requestKey, candidateHash]);
+  const commandId = await ttrpgOpenScopedKeyV1(before.sessionKey, 'intent.operation', [requestKey, candidateHash,...(clarificationHash ? [clarificationHash] : [])]);
   const prior = await db.productRuntimeEvents.where('[sessionId+commandId]').equals([input.sessionId, commandId]).first();
   const envelope = { sessionId: input.sessionId, commandId, baseSequence: prior?.baseSequence ?? input.baseSequence,
     baseStateHash: prior?.baseStateHash ?? input.baseStateHash };
   return appendFormalTtrpgCommand({ ...envelope, type: 'ttrpg.open.operation.started',
     intent: { viewerKey, requestKey, candidateHash, decision: hostingDelegationRef ? 'delegate-proposal' : 'start',effectBindings,
-      ...(hostingDelegationRef ? { hostingDelegationRef } : {}) },
+      ...(hostingDelegationRef ? { hostingDelegationRef } : {}),...(clarificationHash ? { clarificationHash } : {}) },
     build: async context => {
       const { runtime, epoch, scope } = await openModelCallCallerV1(context, viewerKey, true);
       const { candidate, evidence } = await verifyTtrpgOpenIntentCandidateProofV1({ ...input, scope });
@@ -1679,7 +1718,20 @@ async function startTtrpgOpenSemanticOperationV1(input: TtrpgOpenSemanticOperati
       const view = await loadTtrpgOpenPlayerContextV1({ scope, sessionId: input.sessionId, actorKey: candidate.actorKey });
       if (view.visibilityHash !== candidate.visibilityHash) throw new Error('[ttrpg-open-intent] 候选角色读取权限已经 stale');
       const content = requireTtrpgOpenContent(context.ttrpgContent);
-      const intent = candidate.intent!;
+      let intent = candidate.intent!;
+      const clarifications = call.intentClarifications ?? [],clarification = clarifications[clarifications.length - 1];
+      if (clarification || clarificationHash) {
+        const { inspectTtrpgOpenIntentRoutingV1,prepareTtrpgOpenClarifiedRuleRequestV1,assertTtrpgOpenClarifiedRequestEqualV1 } = await import('./open-intent-clarification');
+        const inspected = await inspectTtrpgOpenIntentRoutingV1({ scope,session: context.session,state: context.state,content,viewerKey,candidate });
+        if (!clarification || clarification.clarificationHash !== clarificationHash || !clarification.request) throw Error('请明确确认已核对的当前人工澄清版本');
+        if (hostingDelegationRef) throw Error('人工澄清后的行动需要真人明确确认，不能自动采用');
+        if (Object.keys(effectBindings).length && stableJson(effectBindings) !== stableJson(clarification.request.effectBindings)) throw Error('不能替换已核对的澄清后果绑定');
+        const checked = await prepareTtrpgOpenClarifiedRuleRequestV1({ inspected,candidate,selection: clarification.selection,
+          bindings: clarification.request.effectBindings,discovery: clarification.request.discovery,state: context.state,content,runtimeSourceHash: context.session.runtimeSourceHash! });
+        if (!checked) throw Error('当前澄清仍需要补充，不能执行');
+        assertTtrpgOpenClarifiedRequestEqualV1(checked,clarification.request);
+        intent = inspected.intent;
+      }
       if (intent.targetRefs.length > 1) throw new Error('[ttrpg-open-intent] 当前裁定需要单个明确目标，不能静默丢弃其他目标');
       const actors = content.campaign.characterTemplates.map(template => {
         const seat = runtime.authorization!.seats.find(seat => seat.actorKey === template.characterKey);
@@ -1705,13 +1757,14 @@ async function startTtrpgOpenSemanticOperationV1(input: TtrpgOpenSemanticOperati
       if (Object.values(effectBindings).some(bindings => Object.values(bindings).some(ref => ref !== null && !allowedBindings.has(ref)))) {
         throw new Error('[ttrpg-open-intent] 后果绑定引用了当前角色不可见的对象');
       }
-      const request = parseTtrpgOpenRuleRequestV1({ route: ruleRoute, ruleKey, actorKey: candidate.actorKey,...(interactionKey ? { interactionKey } : {}),
+      const request = clarification?.request ?? parseTtrpgOpenRuleRequestV1({ route: ruleRoute, ruleKey, actorKey: candidate.actorKey,...(interactionKey ? { interactionKey } : {}),
         targetKey: ruleRoute === 'existing-action' && view.view.rules.actions.find(action => action.actionKey === ruleKey)?.target === 'self'
           ? candidate.actorKey : intent.targetRefs[0] ?? null, controllerMode: intent.source.startsWith('companion:') ? 'ai' : 'human', effectBindings });
       const operation = await prepareStartedTtrpgOpenOperationV1(context, viewerKey, request, commandId, {
         ...(hostingDelegationRef ? { hostingDelegationRef } : {}),
         sourceRef: call.terminalRef, candidateHash, runContractHash: call.runContractHash,
-        inputManifestHash: call.inputManifestHash, rawResponseHash: candidate.rawResponseHash });
+        inputManifestHash: call.inputManifestHash, rawResponseHash: candidate.rawResponseHash,
+        ...(clarification ? { clarificationRef: { sourceRef: clarification.sourceRef,clarificationHash: clarification.clarificationHash } } : {}) });
       return { actorKey: request.actorKey, targetKey: request.targetKey, payload: { operation }, agentEvidence: evidence };
     },
   });
@@ -6202,11 +6255,13 @@ export async function preauthorizeTtrpgOpenCompanionV1(input: TtrpgOpenOperation
       if (operation.intentEvidence?.candidateHash !== input.candidateHash) throw new Error('[ttrpg-companion] 不是本操作已确认的真实队友候选。');
       if (hostingDelegationRef) assertTtrpgOpenDelegatedCompanionProposalV1(context.state,{ epochKey: operation.authorizationEpochKey,viewerKey: input.viewerKey,
         delegationRef: hostingDelegationRef,runContractHash: operation.intentEvidence.runContractHash,actorKey: operation.plan.request.actorKey });
-      const preview = previewTtrpgOpenCompanionPermissionV1(context.state, content, proof.candidate.intent, operation.operationKey);
+      const call = runtime.openRun!.coordination.calls.find(c => c.requestKey === input.requestKey)!;
+      const semanticIntent = await (await import('./open-intent-clarification')).ttrpgOpenOperationSemanticIntentV1(operation,call,proof.candidate.intent!);
+      const preview = previewTtrpgOpenCompanionPermissionV1(context.state, content, semanticIntent, operation.operationKey);
       return { actorKey: 'gm', targetKey: operation.plan.request.actorKey, payload: { operationKey: operation.operationKey, frozenPlanHash: operation.planHash,
         permission: { sourceRef: { sessionKey: runtime.sessionKey, sequence: context.sequence }, authorizationRef: runtime.authorization!.sourceRef,
           ...(hostingDelegationRef ? { hostingDelegationRef } : {}),
-          candidateHash: input.candidateHash, actionKind: preview.actionKind, basis: 'session-zero-policy' }, semanticIntent: proof.candidate.intent, frozenContent: content, preview }, agentEvidence: proof.evidence };
+          candidateHash: input.candidateHash, actionKind: preview.actionKind, basis: 'session-zero-policy' }, semanticIntent, frozenContent: content, preview }, agentEvidence: proof.evidence };
     },
   });
 }
