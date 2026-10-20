@@ -158,6 +158,7 @@ const loadTtrpgProductionWizardV2 = () => import('../ttrpg/TtrpgProductionWizard
 const TtrpgProductionWizard = lazy(loadTtrpgProductionWizardV2)
 const TtrpgOpenProductionReview = lazy(() => import('../ttrpg/TtrpgOpenProductionReview'))
 const TtrpgOpenOriginalResponseHandoff = lazy(() => import('../ttrpg/TtrpgOpenOriginalResponseHandoff'))
+const TtrpgOpenProductionBudgetRevision = lazy(() => import('../ttrpg/TtrpgOpenProductionBudgetRevision'))
 const TextAdventurePackagePanel = lazy(() => import('./TextAdventurePackagePanel'))
 
 const SOURCE_SELECTION_FACETS = [
@@ -693,7 +694,10 @@ export default function ProductProductionStudio(props: {
     productionId: number
     brief: ProductProductionBriefV3
   } | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [commandBusy, setBusy] = useState(false)
+  const [ttrpgBudgetBusyOwner, setTtrpgBudgetBusyOwner] = useState<string | null>(null)
+  const ttrpgBudgetBusyKey = JSON.stringify([props.scope.projectId, props.scope.worldId, props.scope.workId, details?.production.id ?? null])
+  const busy = commandBusy || ttrpgBudgetBusyOwner === ttrpgBudgetBusyKey
   const [productionRunning, setProductionRunning] = useState(false)
   const [campaignProposalRunning, setCampaignProposalRunning] = useState(false)
   const [progress, setProgress] = useState<ProductProductionProgressV1 | null>(null)
@@ -1865,6 +1869,12 @@ export default function ProductProductionStudio(props: {
     }
     catch { return null }
   }, [details?.brief, details?.executionBrief])
+  const ttrpgBudgetRevisionView: Omit<import('../../lib/ttrpg/open-production-budget-revision').TtrpgOpenProductionBudgetOwnerV1, 'ledgerHash' | 'failureHash'> | null = details?.production.productType === 'ttrpg'
+    && selectedBrief?.ttrpgOpen && details.production.status === 'stopped' && details.build?.status === 'cancelled' && details.build.id && details.brief
+    && details.production.projectId === props.scope.projectId && details.production.worldId === props.scope.worldId && details.production.workId === props.scope.workId
+    ? { scope: props.scope, productionId: details.production.id!, buildId: details.build.id, buildNumber: details.build.buildNumber,
+      controlEpoch: details.build.controlEpoch, expectedStateRevision: details.production.stateRevision,
+      briefRevision: details.brief.revision, briefHash: details.brief.briefHash } : null
   const ttrpgOriginalOwner: import('../../lib/ttrpg/open-original-response-review-service').TtrpgOpenOriginalResponseOwnerV1 | null = details?.production.productType === 'ttrpg' && selectedBrief?.ttrpgOpen
     && details.production.projectId === props.scope.projectId && details.production.worldId === props.scope.worldId && details.production.workId === props.scope.workId
     && details.build?.id && canRetryBlocker && recoveryPolicy?.authorDraftAllowed && blockerTaskKey && supportsProductProductionLocalRequestV1(blockerTaskKey)
@@ -2177,6 +2187,17 @@ export default function ProductProductionStudio(props: {
               <span className="rounded bg-bg-base p-2">旧 Build：<strong>保留，不原地改写</strong></span>
             </div>}
           </div>}
+          {ttrpgBudgetRevisionView && <Suspense fallback={<p>正在打开预算修订…</p>}><TtrpgOpenProductionBudgetRevision key={JSON.stringify(ttrpgBudgetRevisionView)}
+            view={ttrpgBudgetRevisionView} disabled={busy || productionRunning}
+            onBusy={value => setTtrpgBudgetBusyOwner(previous => value ? ttrpgBudgetBusyKey : previous === ttrpgBudgetBusyKey ? null : previous)}
+            onSaved={result => { setDetails(result.details); setProgress(null);
+              setProductions(previous => previous.map(row => row.id === result.details.production.id ? result.details.production : row));
+              setMessage('新的制作方案已保存，旧轮次与记录保留。核对上限后，请单独授权开始新一轮制作。') }}
+          /></Suspense>}
+          {canRetryBlocker && selectedBrief?.ttrpgOpen && <details className="mt-3 rounded border border-border p-3 text-xs text-text-muted" data-testid="ttrpg-open-budget-revision-help">
+            <summary className="cursor-pointer">需要调整下一轮制作上限</summary>
+            <p className="mt-2 leading-5">如需调整冻结的制作预算，请先使用本页“停止”保留旧轮次，再修订并保存新方案。旧调用的费用和未确认用量继续留在原记录中；新方案不会结算旧调用。</p>
+          </details>}
           {canRetryBlocker && <div className="mt-3 rounded border border-error/30 bg-error/5 p-3 text-[10px] text-error"><strong className="block">自动制作停在可恢复边界</strong><span className="mt-1 block">{blockerSummary || '执行能力返回失败；可检查全局 AI 配置后重试。'}</span></div>}
           {canRetryBlocker && recoveryPolicy?.repairNoteAllowed && <label className="mt-3 block text-xs text-text-muted">本次修复要求（可选）<textarea aria-label="本次修复要求" maxLength={4000} value={repairNote} onChange={event => setRepairNote(event.target.value)} className="mt-2 block min-h-24 w-full rounded border border-border bg-bg-base p-3 text-text-main" placeholder="指出需要修正的内容；仍需遵守已确认的世界、规则和安全边界。" /></label>}
           {ttrpgOriginalOwner && (providerReservationBlocked || originalBooking) && <Suspense fallback={<p>正在打开原回答恢复…</p>}><TtrpgOpenOriginalResponseHandoff key={originalOwnerKey}
