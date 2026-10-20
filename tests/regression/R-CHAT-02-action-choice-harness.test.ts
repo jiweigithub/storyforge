@@ -35,7 +35,7 @@ const choice = {directions: [{id: 'ask', action: '询问铜印最后出现的位
 const action = {kind: 'speak', text: '你记得最后一次见到铜印的地方吗？', goalKey: 'find-seal', evidenceFactKeys: ['lost'],
   audienceKeys: ['player', 'guard', 'artisan'], waitingForPlayer: true, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
 beforeEach(async () => {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v54')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v55')
   db.close(); await db.delete(); await db.open()
 })
 afterEach(() => {vi.restoreAllMocks(); db.close()})
