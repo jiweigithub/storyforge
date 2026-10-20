@@ -1,4 +1,6 @@
 import { readTtrpgOpenModelCallRunsV1 } from './open-model-call-evidence'
+import { getAgentSkillV1 } from '../agent/skill-registry'
+import { TTRPG_OPEN_MODEL_PURPOSES_V1 } from './open-model-purpose-contract'
 /** One explicit, bounded hosting continuation. Durable owners remain the only state machine. */
 import type { AIConfig, WorkspaceScope } from '../types'
 import type { TtrpgOpenSourceRefV1 } from './open-coordination'
@@ -149,7 +151,8 @@ export async function resumeTtrpgOpenHostingV1(input: TtrpgOpenHostingInputV1): 
         maximumCostUsd: epoch!.hostingDelegation!.maximumCostUsdPerCall })
       if (input.signal?.aborted) return handoff('stopped')
       const request = { ...await envelope(input.sessionId, purpose), scope: input.scope, viewerKey: input.viewerKey,
-        rawInput: '只依据自己本轮实际已知资料，提出一次协作行动。', maximumOutputTokens: frozenContent.campaign.runtimePolicy.maximumOutputTokens,
+        rawInput: '只依据自己本轮实际已知资料，提出一次协作行动。', maximumOutputTokens: Math.min(frozenContent.campaign.runtimePolicy.maximumOutputTokens,
+          getAgentSkillV1(TTRPG_OPEN_MODEL_PURPOSES_V1[purpose === 'kp' ? 'kp-narration' : purpose].skillId).maxOutputTokens),
         maximumCostUsd: epoch!.hostingDelegation!.maximumCostUsdPerCall, hostingDelegationRef: input.hostingDelegationRef,
         aiConfig: input.aiConfig, runAI: input.runAI, signal: input.signal }
       if (purpose === 'kp') await generateTtrpgOpenKpCandidateV1(request)

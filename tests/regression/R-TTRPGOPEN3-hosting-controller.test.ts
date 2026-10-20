@@ -19,7 +19,7 @@ const kp = JSON.stringify({ paragraphs: [{ text: '你们看清了本次行动留
 describe('R-TTRPGOPEN3 bounded continuous hosting through existing owners', { timeout: 120000 }, () => {
   beforeEach(async () => { await db.delete(); await db.open() }); afterEach(() => { vi.restoreAllMocks(); db.close() })
   it('settles the real approved human action and two safe companions with three KP receipts under one epoch', async () => {
-    const f = await setupChecksFixtureV1({ cooperative: true }), sessionId = f.command.sessionId
+    const f = await setupChecksFixtureV1({ cooperative: true }, pkg => { pkg.ttrpg!.campaign.runtimePolicy.maximumOutputTokens = 2000 }), sessionId = f.command.sessionId
     const epoch = (await readProductRuntimeState(sessionId)).ttrpg!.openRun!.coordination.epochs[0]
     await delegateTtrpgOpenHostingV1({ ...await openEnvelopeV1(sessionId, 'controller.grant'), viewerKey: f.command.viewerKey,
       epochKey: epoch.epochKey, maximumCostUsdPerCall: 0.1, decision: 'delegate-this-epoch' })
@@ -34,6 +34,8 @@ describe('R-TTRPGOPEN3 bounded continuous hosting through existing owners', { ti
     const state = await readProductRuntimeState(sessionId), run = state.ttrpg!.openRun!
     expect(run.operations.map(o => o.status)).toEqual(['completed', 'completed', 'completed'])
     expect(run.worldTime.worldTurn).toBe(3); expect(run.narrations).toHaveLength(3); expect(calls).toBe(5)
+    expect(run.coordination.calls.filter(c => c.skillId === 'prose.ttrpg-open-companion').map(c => c.reservedOutputTokens)).toEqual([1200, 1200])
+    expect(run.coordination.calls.filter(c => c.skillId === 'prose.ttrpg-open-kp').map(c => c.reservedOutputTokens)).toEqual([2000, 2000, 2000])
     expect(run.operations.slice(1).every(o => o.approvals.length === 0 && o.intentEvidence?.hostingDelegationRef && o.preauthorization?.hostingDelegationRef)).toBe(true)
     expect(await resumeTtrpgOpenHostingV1(input)).toMatchObject({ reason: 'budget' })
     expect(await readProductRuntimeState(sessionId)).toEqual(state); expect(calls).toBe(5)

@@ -5,6 +5,8 @@ import { finishTtrpgOpenSituationDraftV1, readTtrpgOpenSituationStopRepairsV1 } 
 import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { listTtrpgOpenHistoricalResponsesV1, readTtrpgOpenHistoricalResponseV1 } from './open-imported-response'
 import { readTtrpgOpenModelCallRunsV1 } from './open-model-call-evidence'
+import { getAgentSkillV1 } from '../agent/skill-registry'
+import { TTRPG_OPEN_MODEL_PURPOSES_V1 } from './open-model-purpose-contract'
 import { projectTtrpgOpenContextInspectionV1 } from './open-context-inspection'
 import { createTtrpgOpenHostingDelegationV1 } from './open-hosting-delegation'
 import { resumeTtrpgOpenHostingV1, type TtrpgOpenHostingInputV1 } from './open-hosting-coordinator'
@@ -547,7 +549,9 @@ export async function requestTtrpgOpenTableCandidateV1(input: TtrpgOpenTableInpu
   if (!run.coordination.activeEpochKey) await startTtrpgOpenEpochV1({ ...await envelope(input.sessionId, 'epoch'), viewerKey: input.viewerKey,
     triggerKind: input.purpose === 'intent' ? 'submit-action' : 'continue-host', rawInput: input.rawInput })
   const request = { ...await envelope(input.sessionId, 'candidate'), scope: input.scope, viewerKey: input.viewerKey, rawInput: input.rawInput,
-    maximumOutputTokens: f.content.campaign.runtimePolicy.maximumOutputTokens, maximumCostUsd: input.maximumCostUsd, aiConfig: input.aiConfig, signal: input.signal }
+    maximumOutputTokens: Math.min(f.content.campaign.runtimePolicy.maximumOutputTokens,
+      getAgentSkillV1(TTRPG_OPEN_MODEL_PURPOSES_V1[input.purpose === 'kp' ? 'kp-narration' : input.purpose].skillId).maxOutputTokens),
+    maximumCostUsd: input.maximumCostUsd, aiConfig: input.aiConfig, signal: input.signal }
   if (input.purpose === 'kp') return generateTtrpgOpenKpCandidateV1(request)
   if (input.purpose === 'companion') {
     const handoff = run.operations[run.operations.length - 1]?.handoff?.decision
