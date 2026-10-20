@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { WorkspaceScope } from '../../lib/types'
 import { avgVoiceProductionEnabledV3 } from '../../lib/avg/assembly-contract'
 import { parseAvgStoredAssemblyBriefV3 } from '../../lib/avg/voice-assembly-storage'
 import { prepareAvgVoiceRecoveryBriefV1, readAvgRawVoiceCandidateV3, readAvgVoiceRecoveryOptionsV1, type readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
 import VoiceAuditionPlayer from './VoiceAuditionPlayer'
 import MediaAssetPreview from './MediaAssetPreview'
+import { parseAvgAuthorWorkspaceV1 } from '../../lib/avg/author-workspace-contract'
 
 type View = Awaited<ReturnType<typeof readAvgAssemblyWorkspaceV1>>
 type Options = Awaited<ReturnType<typeof readAvgVoiceRecoveryOptionsV1>>
@@ -38,29 +39,42 @@ export default function VoiceRecoveryPanel({ scope, view, disabled, visible, onP
   const build = view.details?.build, productionId = view.details?.production.id, stored = view.details?.executionBrief?.avgAssembly
   const eligible = !!build && !build.previewHash && stored?.version === 3 && ['cancelled', 'failed', 'recovery-required'].includes(build.status)
   const pendingBrief = eligible && view.details?.production.status === 'brief-ready' && view.details.brief?.revision !== build?.briefRevision
+  const savedAssembly = useMemo(() => pendingBrief && stored?.version === 3 ? parseAvgStoredAssemblyBriefV3(stored).assembly : null, [pendingBrief, stored])
+  const [revising, setRevising] = useState(false)
   const [options, setOptions] = useState<Options | null>(null), [error, setError] = useState('')
   const [voices, setVoices] = useState<string[]>([]), [images, setImages] = useState<string[]>([])
   const [seenVoices, setSeenVoices] = useState<Record<string, string>>({}), [seenImages, setSeenImages] = useState<Record<string, string>>({})
   const [voiceOpen, setVoiceOpen] = useState(''), [imageOpen, setImageOpen] = useState(''), [reviewed, setReviewed] = useState(false), [dirty, setDirty] = useState(false)
   const markVoiceSeen = useCallback((key: string, hash: string) => setSeenVoices(old => old[key] === hash ? old : { ...old, [key]: hash }), [])
+  useEffect(() => { setRevising(false) }, [scope, productionId, build?.id, build?.stateRevision])
   useEffect(() => {
-    let active = true; setOptions(null); setVoices([]); setImages([]); setSeenVoices({}); setSeenImages({})
+    let active = true; setOptions(null)
+    setVoices(revising ? savedAssembly?.voice.recovery?.retained.map(item => item.requirementKey) ?? [] : [])
+    setImages(revising ? savedAssembly?.image?.imageRecovery?.retained.map(item => item.requirementKey) ?? [] : [])
+    setSeenVoices({}); setSeenImages({})
     setVoiceOpen(''); setImageOpen(''); setReviewed(false); setDirty(false); setError('')
-    if (eligible && !pendingBrief && productionId) void readAvgVoiceRecoveryOptionsV1(scope, productionId)
+    if (eligible && (!pendingBrief || revising) && productionId) void readAvgVoiceRecoveryOptionsV1(scope, productionId)
       .then(value => { if (active) setOptions(value) }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
     return () => { active = false }
-  }, [scope, productionId, build?.id, build?.stateRevision, eligible, pendingBrief])
+  }, [scope, productionId, build?.id, build?.stateRevision, eligible, pendingBrief, revising, savedAssembly, view.draft.revision])
   useEffect(() => { onPending(dirty); return () => onPending(false) }, [dirty, onPending])
   if (!eligible || !productionId || !build) return null
-  if (pendingBrief && stored?.version === 3) {
-    const a = parseAvgStoredAssemblyBriefV3(stored).assembly, recovery = a.voice.recovery
+  if (pendingBrief && savedAssembly && !revising) {
+    const a = savedAssembly, recovery = a.voice.recovery
     return recovery ? <section aria-label="图音恢复方案"><h4>图音恢复方案已保存</h4>
       <p>保留 {recovery.retained.length} 句原音频；重录 {recovery.rerunRequirementKeys.length} 句。
         {a.image && `图片保留 ${a.image.imageRecovery?.retained.length ?? 0} 张，其余明确重做。`}</p>
-      <p>请到制作页核对方案和本次请求上限，再明确开始新版本；仍须重新确认脚本、逐项评审/选择和演出，旧调用及费用记录保留。</p></section> : null
+      <p>请到制作页核对方案和本次请求上限，再明确开始新版本；仍须重新确认脚本、逐项评审/选择和演出，旧调用及费用记录保留。</p>
+      <p>新增图片需求后，请在这里重新核对保留清单；核对只准备新方案，不会开始生成或重发旧请求。</p>
+      <button className="lf-action" disabled={disabled || !visible} onClick={() => setRevising(true)}>重新核对保留与重录</button>
+    </section> : null
   }
   const voiceReruns = options?.voices.filter(r => !voices.includes(r.requirementKey)) ?? []
   const imageReruns = options?.images?.items.filter(r => !images.includes(r.requirementKey)) ?? []
+  const proposedImages = parseAvgAuthorWorkspaceV1(view.draft.editorJson).mediaBatch?.requirements ?? []
+  const imageRequestCount = proposedImages.filter(r => !images.includes(r.requirementKey)).length
+  const unseenRetained = !!options && (options.voices.some(r => voices.includes(r.requirementKey) && (!r.contentHash || seenVoices[r.requirementKey] !== r.contentHash))
+    || options.images?.items.some(r => images.includes(r.requirementKey) && (!r.proof || seenImages[r.requirementKey] !== r.proof.contentHash)))
   const blocked = [...voiceReruns, ...imageReruns].some(r => !!r.retryBlocker)
   const changed = () => { setDirty(true); setReviewed(false) }
   return <section aria-label="图音恢复方案"><h4>明确保留与重录</h4>
@@ -88,15 +102,16 @@ export default function VoiceRecoveryPanel({ scope, view, disabled, visible, onP
         {!images.includes(item.requirementKey) && item.retryBlocker && <p role="alert">{item.retryBlocker}</p>}
       </article>)}
     </section>}
-    <p>新版本：保留 {voices.length} 句，至多 {voiceReruns.length} 次配音请求；保留 {images.length} 张图片，至多 {imageReruns.length} 次图片请求。原始未知费用不会变成零。</p>
-    <label><input type="checkbox" checked={reviewed} disabled={disabled || !options} onChange={e => { setReviewed(e.target.checked); setDirty(true) }} />我已核对保留/重做清单、原始调用和费用；明确开始后才执行，旧记录保留</label>
-    <button className="lf-action" disabled={disabled || !options || !reviewed || blocked || !avgVoiceProductionEnabledV3()} onClick={() => void onAction(async () => {
+    <p>新版本：保留 {voices.length} 句，至多 {voiceReruns.length} 次配音请求；保留 {images.length} 张图片，至多 {imageRequestCount} 次图片请求。原始未知费用不会变成零。</p>
+    <label><input type="checkbox" checked={reviewed} disabled={disabled || !options || unseenRetained} onChange={e => { setReviewed(e.target.checked); setDirty(true) }} />我已核对保留/重做清单、原始调用和费用；明确开始后才执行，旧记录保留</label>
+    <button className="lf-action" disabled={disabled || !options || !reviewed || unseenRetained || blocked || !avgVoiceProductionEnabledV3()} onClick={() => void onAction(async () => {
       await prepareAvgVoiceRecoveryBriefV1({ scope, productionId, expectedDraftRevision: view.draft.revision, expectedBuildId: options!.buildId,
         expectedBuildRevision: options!.buildRevision, retainedRequirementKeys: voices,
         ...(options!.images ? { retainedImageRequirementKeys: images } : {}),
         declaration: '作者明确保留本次勾选的准确原音频/原图，其他项在新版本明确开始后至多各请求一次；保留项重新评审/审听和采用，原始结果、失败和未知费用不改写。' })
-      setDirty(false); await onReload(); onNotice('图音恢复方案已保存，尚未开始。请到制作页核对并明确开始新版本。')
+      setDirty(false); setRevising(false); await onReload(); onNotice('图音恢复方案已保存，尚未开始。请到制作页核对并明确开始新版本。')
     })}>准备图音恢复方案</button>
     {dirty && <button className="lf-action" disabled={disabled} onClick={() => { setVoices([]); setImages([]); setReviewed(false); setDirty(false) }}>撤销未保存的恢复选择</button>}
+    {revising && <button className="lf-action" disabled={disabled} onClick={() => { setRevising(false); setDirty(false) }}>返回已保存的恢复方案</button>}
   </section>
 }

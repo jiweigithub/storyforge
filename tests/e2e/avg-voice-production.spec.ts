@@ -222,6 +222,47 @@ test('native voice production reaches real decoded audio, native ended, separate
   await page.getByRole('region', { name: '配音审听与选择', exact: true }).screenshot({ path: info.outputPath('avg-voice-native-adopted-offline.png') })
 })
 
+test('pending voice retention can be explicitly rechecked with a new image scope without dispatch, hearing adoption or another Build', async ({ page }, info) => {
+  test.setTimeout(120_000)
+  test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION !== '1' || process.env.VITE_STORYFORGE_AVG_VOICE_PRODUCTION !== '1', 'Both default-off experiments must be explicit')
+  const s = await seedVoice(page)
+  await page.getByRole('button', { name: '停止本批并选择保留或重录', exact: true }).click()
+  const recovery = page.getByRole('region', { name: '图音恢复方案', exact: true })
+  await recovery.getByRole('button', { name: '查看原音频：第 1 句', exact: true }).click()
+  await recovery.getByRole('checkbox', { name: '保留本句原音频待复验', exact: true }).check()
+  const declaration = recovery.getByRole('checkbox', { name: '我已核对保留/重做清单、原始调用和费用；明确开始后才执行，旧记录保留', exact: true })
+  await declaration.check()
+  await recovery.getByRole('button', { name: '准备图音恢复方案', exact: true }).click()
+  await expect(recovery.getByRole('heading', { name: '图音恢复方案已保存', exact: true })).toBeVisible()
+  const snapshot = () => page.evaluate(async scope => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    const backup = await (await load('/storyforge/src/lib/export/json-export.ts')).exportProjectJSON(scope.projectId)
+    return Object.fromEntries(['productBuilds', 'productBuildArtifacts', 'mediaBlobObjects', 'agentRuns', 'agentRunEvents',
+      'productQualityGateReceipts', 'productReleases'].map(key => [key, backup[key]]))
+  }, s.seed.scope)
+  const original = await snapshot()
+  const image = page.getByRole('region', { name: '图片生产（实验）', exact: true })
+  await image.getByLabel('需求名称', { exact: true }).fill('保留配音后新增的工程背景')
+  await image.getByLabel('画面要求', { exact: true }).fill('原创工程背景；仅准备新增图片，不重新请求已经接收的配音。')
+  await image.getByRole('button', { name: '加入本批需求', exact: true }).click()
+  await image.getByRole('button', { name: '保存并冻结图片需求', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: '图片需求和准确来源已保存' })).toBeVisible()
+  await recovery.getByRole('button', { name: '重新核对保留与重录', exact: true }).click()
+  await expect(recovery.getByRole('checkbox', { name: '保留本句原音频待复验', exact: true })).toBeChecked()
+  await expect(declaration).toBeDisabled()
+  await expect(recovery.getByRole('button', { name: '准备图音恢复方案', exact: true })).toBeDisabled()
+  await recovery.getByRole('button', { name: '查看原音频：第 1 句', exact: true }).click()
+  await expect(declaration).toBeEnabled()
+  await expect(recovery).toContainText('至多 0 次配音请求')
+  await expect(recovery).toContainText('至多 1 次图片请求')
+  await declaration.check()
+  await recovery.getByRole('button', { name: '准备图音恢复方案', exact: true }).click()
+  await expect(recovery.getByRole('heading', { name: '图音恢复方案已保存', exact: true })).toBeVisible()
+  expect(await snapshot()).toEqual(original)
+  expect(s.bodies).toHaveLength(1); expect(s.imageBodies).toHaveLength(0)
+  await page.screenshot({ path: info.outputPath('pending-voice-recovery-new-image-zero-voice-requests.png'), fullPage: true })
+})
+
 test('native voice recovery explicitly keeps configured audio, creates a fresh zero-call producer and re-adopts it without credentials', async ({ page }, info) => {
   // Two actual Builds and two native playback/adoption rounds, with a fixed
   // bound from creation. No original production/test timeout is increased.

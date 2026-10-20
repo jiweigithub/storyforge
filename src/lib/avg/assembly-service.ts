@@ -324,30 +324,37 @@ export async function readAvgImageRecoveryOptionsV1(scope:WorkspaceScope,product
   return {buildId:build.id,buildRevision:build.stateRevision,items}
 }
 
+/** A reviewable child Brief never changes the source of an existing Build. */
+async function readAvgAuthorizedVoiceBuildBriefV3(details: Awaited<ReturnType<typeof readProductProductionDetailsV1>>) {
+  const build = details.build
+  const row = build ? details.briefHistory.find(r => r.revision === build.briefRevision && r.briefHash === build.briefHash) : null
+  const brief = row ? parseProductProductionBriefV3(row.briefJson) : null
+  if (!build?.id || !row || brief?.avgAssembly?.version !== 3
+    || !['authorized', 'superseded'].includes(row.status) || row.authorizedAt !== build.authorizedAt
+    || await hashProductProductionValueV2(brief) !== build.briefHash) throw new Error('[avg-voice] 当前版本缺少准确已授权的配音来源')
+  return { build, buildId: build.id, brief, stored: brief.avgAssembly }
+}
+
 /** Read-only recovery inventory from the exact stopped Build's authorized
  * Brief, not a coexisting reviewable child. No selection, repair, ledger
  * resolution, author adoption, transport or new Build authority is granted. */
 export async function readAvgVoiceRecoveryOptionsV1(scope: WorkspaceScope, productionId: number) {
-  const details = await readProductProductionDetailsV1(scope, productionId, ['avg']), build = details.build
-  const row = build ? details.briefHistory.find(r => r.revision === build.briefRevision && r.briefHash === build.briefHash) : null
-  const brief = row ? parseProductProductionBriefV3(row.briefJson) : null
-  if (!build?.id || brief?.avgAssembly?.version !== 3 || build.previewHash
-    || !['cancelled', 'failed', 'recovery-required'].includes(build.status)
-    || !['authorized', 'superseded'].includes(row!.status) || row!.authorizedAt !== build.authorizedAt
-    || await hashProductProductionValueV2(brief) !== build.briefHash) throw new Error('[avg-voice] 请先明确停止未封存批次或处理失败，再核对配音恢复项目')
-  const { assembly, requests } = await assertAvgStoredAssemblyBriefV3(brief.avgAssembly)
+  const details = await readProductProductionDetailsV1(scope, productionId, ['avg'])
+  const { build, buildId, brief, stored } = await readAvgAuthorizedVoiceBuildBriefV3(details)
+  if (build.previewHash || !['cancelled', 'failed', 'recovery-required'].includes(build.status)) throw new Error('[avg-voice] 请先明确停止未封存批次或处理失败，再核对配音恢复项目')
+  const { assembly, requests } = await assertAvgStoredAssemblyBriefV3(stored)
   const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash)
   if (await hashProductProductionValueV2(plan) !== build.planHash) throw new Error('[avg-voice] 恢复清单的原始计划已变化')
   const capability = brief.capabilityRequirements.find(c => c.requirementKey === AVG_VOICE_CAPABILITY_REQUIREMENT_KEY_V1)!
   const voices = []
   for (const r of assembly.voice.batch.requirements) {
-    const rows = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id, `avg.voice.raw.${r.requirementKey}`])
+    const rows = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([buildId, `avg.voice.raw.${r.requirementKey}`])
       .filter(a => a.status === 'accepted' && a.controlEpoch === plan.controlEpoch).limit(2).toArray()
     let selected: Awaited<ReturnType<typeof readAvgRawVoiceSourceV1>> | null = null, issue = '', retryBlocker = ''
     try {
       if (rows.length !== 1) throw new Error('[avg-voice] 本句没有准确的已接收原音频')
       const raw = rows[0]!
-      selected = await readAvgRawVoiceSourceV1({ scope, buildId: build.id, assembly, capability,
+      selected = await readAvgRawVoiceSourceV1({ scope, buildId, assembly, capability,
         raw: { artifactKey: raw.artifactKey, version: raw.version, contentHash: raw.contentHash },
         historicalReadOnly: { expectedBuildRevision: build.stateRevision, expectedBriefHash: build.briefHash,
           expectedPlanHash: build.planHash, sourceControlEpoch: plan.controlEpoch } })
@@ -360,13 +367,13 @@ export async function readAvgVoiceRecoveryOptionsV1(scope: WorkspaceScope, produ
       costUsd: selected?.payload.provider.costUsd ?? null, issue, retryBlocker })
   }
   const images = assembly.image ? await readAvgImageRecoveryOptionsV1(scope, productionId) : null
-  const current = await db.productBuilds.get(build.id), production = await db.productProductions.get(productionId)
+  const current = await db.productBuilds.get(buildId), production = await db.productProductions.get(productionId)
   if (!current || !production || current.stateRevision !== build.stateRevision || current.controlEpoch !== build.controlEpoch
     || current.briefHash !== build.briefHash || current.planHash !== build.planHash || production.currentBuildNumber !== build.buildNumber
     || !await assertRecordInScope(scope, 'productBuilds', current, { owner: 'work' })
     || !await assertRecordInScope(scope, 'productProductions', production, { owner: 'work' })
-    || images && (images.buildId !== build.id || images.buildRevision !== build.stateRevision)) throw new Error('[avg-voice] 核对恢复清单期间版本已变化，请重新读取')
-  return { buildId: build.id, buildRevision: build.stateRevision, voices, images }
+    || images && (images.buildId !== buildId || images.buildRevision !== build.stateRevision)) throw new Error('[avg-voice] 核对恢复清单期间版本已变化，请重新读取')
+  return { buildId, buildRevision: build.stateRevision, voices, images }
 }
 
 /** Applies only actually adopted choices into an editable stage proposal. */
@@ -408,13 +415,12 @@ export async function configureAvgChosenMediaDraftV2(input: { scope: WorkspaceSc
 export async function readAvgRawVoiceCandidateV3(input: { scope: WorkspaceScope; productionId: number; requirementKey: string;
   version: number; contentHash: string }) {
   const details = await readProductProductionDetailsV1(input.scope, input.productionId, ['avg'])
-  const build = details.build, brief = details.executionBrief
-  if (!build?.id || brief?.avgAssembly?.version !== 3) throw new Error('[avg-voice] 当前版本不是准确配音批次')
-  const { assembly } = await assertAvgStoredAssemblyBriefV3(brief.avgAssembly)
+  const { build, buildId, brief, stored } = await readAvgAuthorizedVoiceBuildBriefV3(details)
+  const { assembly } = await assertAvgStoredAssemblyBriefV3(stored)
   const r = assembly.voice.batch.requirements.find(r => r.requirementKey === input.requirementKey)
   const capability = brief.capabilityRequirements.find(c => c.requirementKey === AVG_VOICE_CAPABILITY_REQUIREMENT_KEY_V1)
   if (!r || !capability) throw new Error('[avg-voice] 当前批次没有该句配音需求')
-  const selected = await readAvgRawVoiceSourceV1({ scope: input.scope, buildId: build.id, assembly, capability,
+  const selected = await readAvgRawVoiceSourceV1({ scope: input.scope, buildId, assembly, capability,
     raw: { artifactKey: `avg.voice.raw.${r.requirementKey}`, version: input.version, contentHash: input.contentHash },
     historicalReadOnly: { expectedBuildRevision: build.stateRevision, expectedBriefHash: build.briefHash, expectedPlanHash: build.planHash,
       sourceControlEpoch: parseProductProductionPlanV3(build.planJson, brief, build.briefHash).controlEpoch } })
@@ -422,11 +428,11 @@ export async function readAvgRawVoiceCandidateV3(input: { scope: WorkspaceScope;
   if (!blob || !await assertRecordInScope(input.scope, 'mediaBlobObjects', blob, { owner: 'work' })
     || blob.contentHash !== selected.asset.contentHash || blob.byteSize !== selected.asset.byteSize || blob.mimeType !== selected.asset.mimeType) throw new Error('[avg-voice] 已验证的音频 Blob 不存在或来源已变化')
   const data = await readVerifiedMediaBlobObjectData(blob)
-  const current = await db.productBuilds.get(build.id), production = await db.productProductions.get(input.productionId)
+  const current = await db.productBuilds.get(buildId), production = await db.productProductions.get(input.productionId)
   if (!current || !production || current.controlEpoch !== build.controlEpoch || current.planHash !== build.planHash
     || current.briefHash !== build.briefHash || production.currentBuildNumber !== build.buildNumber) throw new Error('[avg-voice] 音频读取期间制作版本已变化')
-  return { ...selected, data, buildId: build.id, buildNumber: build.buildNumber, controlEpoch: build.controlEpoch,
-    sourceKey: `${input.scope.workId}:${build.id}:${build.controlEpoch}:${selected.raw.version}` }
+  return { ...selected, data, buildId, buildNumber: build.buildNumber, controlEpoch: build.controlEpoch,
+    sourceKey: `${input.scope.workId}:${buildId}:${build.controlEpoch}:${selected.raw.version}` }
 }
 
 export async function stageAvgAudioReviewV3(input: { scope: WorkspaceScope; productionId: number; requirementKey: string;
@@ -667,6 +673,17 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
     :{version:4 as const,configuration:await planningServices!.prepareAvgVisualPlanningConfigurationV4(input.scope,workspace,input.visualPlanning,visualAdapter)}):null
   const voice = workspace.voiceProduction ? await validateAvgVoiceDraftSourcesV1(workspace.voiceProduction, workspace) : null
   if (voice && (!avgVoiceProductionEnabledV3() || !avgMediaProductionEnabledV2())) throw new Error('[avg-voice] 配音生产尚未开放；已保存批次不能按零调用流程开始')
+  if (voice && draft.productionId && !input.voiceRecovery) {
+    const current = await readProductProductionDetailsV1(input.scope, draft.productionId, ['avg'])
+    const saved = current.executionBrief?.avgAssembly
+    if (current.production.status === 'brief-ready' && current.build && current.brief?.revision !== current.build.briefRevision && saved?.version === 3) {
+      const { assembly } = await assertAvgStoredAssemblyBriefV3(saved)
+      if (assembly.voice.recovery?.retained.length
+        && await hashAvgVoiceDeclarationForRecoveryV1(voice.voice) === await hashAvgVoiceDeclarationForRecoveryV1(assembly.voice)) {
+        throw new Error('[avg-voice] 已保存原音频保留方案；请在素材页重新核对保留与重录，不能用普通准备将保留项改成新请求')
+      }
+    }
+  }
   if (workspace.mediaBatch) {
     await validateAvgVisualProductionBatchSourceV1(workspace.mediaBatch, workspace)
     if (!avgMediaProductionEnabledV2()) throw new Error('[avg-media] 媒资生产流程尚未开放；不能把待生成批次按零调用组装执行')

@@ -19,7 +19,7 @@ import { parseAvgAuthorWorkspaceV1 } from '../../src/lib/avg/author-workspace-co
 import { prepareAvgVoiceRecoveryBriefV1, startAvgAssemblyV1, runAvgAssemblyV1, stageAvgWorkspaceInputV1,
   confirmAvgWorkspaceInputV1, readAvgRawVoiceCandidateV3, stageAvgAudioReviewV3, stageAvgVoiceChoiceV3,
   configureAvgChosenVoiceDraftV3, configureAvgChosenMediaDraftV2, stageAvgMediaChoiceV2, readAvgVoiceRecoveryOptionsV1,
-  readAvgAssemblyWorkspaceV1 } from '../../src/lib/avg/assembly-service'
+  readAvgAssemblyWorkspaceV1, saveAvgVisualBatchDraftV1, prepareAvgAssemblyBriefV1 } from '../../src/lib/avg/assembly-service'
 import type { AvgReviewIssuesV1 } from '../../src/lib/avg/artifact-contract'
 import { freezeAvgVisualProductionBatchV1 } from '../../src/lib/avg/media-source'
 import { deterministicRegionMapPngV1 } from '../../src/lib/product-production/production-executor'
@@ -129,6 +129,73 @@ async function chooseAll(s: Owner, raws: Awaited<ReturnType<typeof seed>>['raws'
 }
 
 describe('AVG explicit voice recovery through public author and durable producer paths', () => {
+  it('generic preparation cannot discard an unchanged explicitly retained voice, while explicit re-recording remains available', async () => {
+    const s = await seed(), old = await stop(s)
+    const input = { ...s, expectedBuildId: old.id!, expectedBuildRevision: old.stateRevision,
+      declaration: '先保留原音频；只有重新核对并明确选择重录才改变请求上限。' }
+    await prepareAvgVoiceRecoveryBriefV1({ ...input, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision,
+      retainedRequirementKeys: ['keeper.line.0'] })
+    const before = await exportProjectJSON(s.scope.projectId)
+    await expect(prepareAvgAssemblyBriefV1({ scope: s.scope, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision }))
+      .rejects.toThrow(/保留.*重新核对|重新核对.*保留/)
+    expect({ ...await exportProjectJSON(s.scope.projectId), exportedAt: 0 }).toEqual({ ...before, exportedAt: 0 })
+    const redo = await prepareAvgVoiceRecoveryBriefV1({ ...input, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision,
+      retainedRequirementKeys: [] })
+    const redoBrief = parseProductProductionBriefV3(redo.brief!.briefJson)
+    if (redoBrief.avgAssembly?.version !== 3) throw new Error('Expected explicit redo scope')
+    const parsed = await assertAvgStoredAssemblyBriefV3(redoBrief.avgAssembly)
+    expect(parsed.assembly.voice.recovery!.retained).toEqual([])
+    expect(parsed.assembly.voice.recovery!.rerunRequirementKeys).toEqual(['keeper.line.0'])
+    await prepareAvgAssemblyBriefV1({ scope: s.scope, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision })
+    expect(s.fetcher).toHaveBeenCalledOnce()
+    expect(await db.productBuilds.get(old.id!)).toEqual(old)
+  }, 30_000)
+
+  it('reads the authorized stopped voice rather than a coexisting pending recovery brief without reviving adoption', async () => {
+    const s = await seed(), old = await stop(s), prior = s.raws[0]!
+    const target = { ...s, requirementKey: 'keeper.line.0', version: prior.version, contentHash: prior.contentHash }
+    const original = await readAvgRawVoiceCandidateV3(target)
+    await prepareAvgVoiceRecoveryBriefV1({ ...s, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision,
+      expectedBuildId: old.id!, expectedBuildRevision: old.stateRevision, retainedRequirementKeys: ['keeper.line.0'],
+      declaration: '保留原音频，尚未开始或确认任何听感。' })
+    const before = await exportProjectJSON(s.scope.projectId)
+    const actual = await readAvgRawVoiceCandidateV3(target)
+    expect(actual.data).toEqual(original.data)
+    expect(actual.raw).toEqual(original.raw); expect(actual.asset).toEqual(original.asset)
+    expect(actual.buildId).toBe(old.id)
+    await expect(readAvgRawVoiceCandidateV3({ ...target, contentHash: '0'.repeat(64) })).rejects.toThrow()
+    await expect(readAvgRawVoiceCandidateV3({ ...target, scope: { ...s.scope, workId: s.scope.workId + 1000 } })).rejects.toThrow()
+    await expect(stageAvgWorkspaceInputV1({ ...s, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision,
+      artifactKey: 'avg.system.plan', declaration: '只读比较不能恢复已停止版本的采用权限。' })).rejects.toThrow()
+    expect({ ...await exportProjectJSON(s.scope.projectId), exportedAt: 0 }).toEqual({ ...before, exportedAt: 0 })
+    expect(s.fetcher).toHaveBeenCalledOnce()
+  }, 30_000)
+
+  it('explicitly rechecks a pending voice retention with newly saved image requirements without dispatch or copied adoption', async () => {
+    const s = await seed(), old = await stop(s), prior = s.raws[0]!
+    const input = { ...s, expectedBuildId: old.id!, expectedBuildRevision: old.stateRevision,
+      retainedRequirementKeys: ['keeper.line.0'], declaration: '保留原音频，新增图片另由冻结方案明确请求。' }
+    const first = await prepareAvgVoiceRecoveryBriefV1({ ...input, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision })
+    const fixture = (await avgVoiceAssemblyFixtureV3(true)).assembly.image!
+    await saveAvgVisualBatchDraftV1({ scope: s.scope, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision,
+      batchKey: 'pending.recovery.new-image', revision: 1, requirements: fixture.mediaBatch.requirements })
+    const options = await readAvgVoiceRecoveryOptionsV1(s.scope, s.productionId)
+    expect(options.images).toBeNull(); expect(options.voices[0]!.contentHash).toBe(prior.contentHash)
+    const second = await prepareAvgVoiceRecoveryBriefV1({ ...input, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision })
+    expect(second.brief!.revision).toBeGreaterThan(first.brief!.revision)
+    const brief = parseProductProductionBriefV3(second.brief!.briefJson)
+    if (brief.avgAssembly?.version !== 3) throw new Error('Expected exact new voice/image scope')
+    const { assembly } = await assertAvgStoredAssemblyBriefV3(brief.avgAssembly)
+    expect(assembly.voice.recovery!.retained).toHaveLength(1)
+    expect(assembly.voice.recovery!.retained[0]!.proof.contentHash).toBe(prior.contentHash)
+    expect(assembly.voice.recovery!.rerunRequirementKeys).toEqual([])
+    expect(assembly.image!.mediaBatch.requirements).toHaveLength(1)
+    expect(await db.productBuilds.get(old.id!)).toEqual(old)
+    expect(await db.productBuilds.where('productionId').equals(s.productionId).count()).toBe(1)
+    expect(await db.productBuildArtifacts.where('buildId').equals(old.id!).filter(a => /voice-review|voice-choice/.test(a.artifactKey)).count()).toBe(0)
+    expect(s.fetcher).toHaveBeenCalledOnce()
+  }, 30_000)
+
   it('keeps exact audio without credentials, produces a new zero-call receipt and requires fresh review/choice before Preview', async () => {
     const s = await seed(), prior = s.raws[0]!, old = await stop(s)
     const options = await readAvgVoiceRecoveryOptionsV1(s.scope, s.productionId)
