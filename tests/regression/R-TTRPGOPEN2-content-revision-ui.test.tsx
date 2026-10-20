@@ -19,7 +19,7 @@ const props = () => ({ view, disabled: false, onBusy: vi.fn(), onAccounted: vi.f
 beforeEach(() => {
   vi.clearAllMocks(); m.inspect.mockResolvedValue(inspection); m.read.mockResolvedValue(source); m.submit.mockResolvedValue(submitted)
   m.prepare.mockImplementation(async input => ({ source: input.source, command: { type: 'resume', commandId: input.commandId,
-    ttrpgContentRevision: { authorDraftJson: input.authorDraftJson, note: input.note } }, commandHash: 'e'.repeat(64), tasks: [
+    ttrpgContentRevision: { authorDraftJson: input.authorDraftJson, note: input.note } }, commandHash: 'e'.repeat(64), additionalTaskKeys: [], blockedReason: null, tasks: [
     { taskKey: 'ttrpg.open.situation-layer', execution: 'author' }, { taskKey: 'ttrpg.open.media-plan', execution: 'deterministic' }] }))
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
 })
@@ -124,4 +124,17 @@ it('discards a late legacy proof after Work changes and cannot confirm an ambigu
   m.prepareLocal.mockRejectedValueOnce(Error('存在发送证据，保留原未知用量'))
   await click('核对旧失败记录'); await wait(() => expect(host.querySelector('[role=alert]')?.textContent).toContain('保留原未知'))
   expect(button('确认关闭未发送记录')).toBeUndefined(); expect(m.submitLocal).not.toHaveBeenCalled()
+})
+
+it('shows extra upstream revalidation and blocks submission while preserving the old draft', async () => {
+  m.prepare.mockImplementationOnce(async input => ({ source: input.source, command: { type: 'resume', commandId: input.commandId,
+    ttrpgContentRevision: { authorDraftJson: input.authorDraftJson, note: input.note, expectedImpactHash: 'f'.repeat(64) } },
+    commandHash: 'e'.repeat(64), blockedReason: 'upstream-version-changed', additionalTaskKeys: ['ttrpg.open.rule-system', 'ttrpg.open.source-facts'], tasks: [
+      { taskKey: 'ttrpg.open.source-facts', execution: 'model' }, { taskKey: 'ttrpg.open.rule-system', execution: 'model' },
+      { taskKey: 'ttrpg.open.situation-layer', execution: 'author' }, { taskKey: 'ttrpg.open.media-plan', execution: 'deterministic' }] }))
+  const p = await loaded(); await click('新增表情基线'); await edit('actor.fixture 表情 1 描述', '平静注视前方'); await edit('返修说明', '明确补齐原稿表情')
+  await click('核对返修与影响'); await wait(() => expect(host.textContent).toContain('2 个上游模型岗位'))
+  expect(host.textContent).toContain('局部返修不可提交'); expect(host.textContent).toContain('保留旧轮次')
+  expect(button('提交返修并继续制作')).toBeUndefined(); expect(m.submit).not.toHaveBeenCalled(); expect(p.onSubmitted).not.toHaveBeenCalled()
+  expect(host.textContent).toContain('KEEP_ORIGINAL_POLICY_AND_PRIVATE_OWNER')
 })

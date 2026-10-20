@@ -68,7 +68,7 @@ export default function TtrpgOpenContentRevision(props: {
     setProposal(value)
   })
   const submit = () => perform(async (before, token) => {
-    if (!proposal || proposal.command.ttrpgContentRevision?.authorDraftJson !== fields.current.draft
+    if (!proposal || proposal.blockedReason || proposal.command.ttrpgContentRevision?.authorDraftJson !== fields.current.draft
       || proposal.command.ttrpgContentRevision.note !== fields.current.note) return
     const result = await (await import('../../lib/ttrpg/open-production-content-revision-service')).submitTtrpgOpenContentRevisionV1(proposal)
     if (valid(before, token)) before.onSubmitted(result)
@@ -128,9 +128,10 @@ export default function TtrpgOpenContentRevision(props: {
       <button type="button" disabled={editingLocked || !draft.trim() || !note.trim() || inspection.needsAccounting} onClick={() => { void preview() }}
         className="rounded border border-accent/40 px-3 py-2">核对返修与影响</button>
       {proposal && <div role="status" className="my-3 rounded border border-border p-3">
-        <p>本次返修采用作者稿，不调用模型。后续 {proposal.tasks.filter(task => task.execution === 'model').length} 个模型岗位可能重新调用，仍使用原剩余额度。</p>
-        <ul className="my-2 list-inside list-disc">{proposal.tasks.map(task => <li key={task.taskKey}>{LABELS[task.taskKey] ?? task.taskKey}：{task.execution === 'author' ? '采用本次作者稿' : task.execution === 'model' ? '重新生成并审阅' : '重新校验'}</li>)}</ul>
-        <button type="button" disabled={locked} onClick={() => { void submit() }} className="rounded bg-accent px-3 py-2 text-white">提交返修并继续制作</button>
+        {proposal.blockedReason ? <p role="alert">检测到 {proposal.additionalTaskKeys.length} 个上游模型岗位需要按当前版本重新核验，当前局部返修不可提交。请先停止并保留旧轮次，核对下一轮制作方案后单独授权开始。</p>
+          : <p>本次返修采用作者稿，不调用模型。后续 {proposal.tasks.filter(task => task.execution === 'model').length} 个模型岗位可能重新调用，仍使用原剩余额度。</p>}
+        <ul className="my-2 list-inside list-disc">{proposal.tasks.map(task => <li key={task.taskKey}>{LABELS[task.taskKey] ?? task.taskKey}：{task.execution === 'author' ? proposal.blockedReason ? '原修订稿（未提交）' : '采用本次作者稿' : task.execution === 'model' ? '重新生成并审阅' : '重新校验'}</li>)}</ul>
+        {!proposal.blockedReason && <button type="button" disabled={locked} onClick={() => { void submit() }} className="rounded bg-accent px-3 py-2 text-white">提交返修并继续制作</button>}
       </div>}
     </>}
   </section>

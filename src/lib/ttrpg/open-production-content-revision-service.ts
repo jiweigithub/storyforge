@@ -80,22 +80,24 @@ export async function prepareTtrpgOpenContentRevisionProposalV1(input: {
   const before = await exact(input.source.owner)
   if (before.needsAccounting) fail('暂停时仍有在途请求；请先用现有费用核对入口明确处理，再暂停返修')
   if (before.unreportedFailedCount) fail('旧失败仍有未报告用量；请先单独核对原始证据，再载入原稿返修')
+  const impact = await (await import('./open-production-content-revision-impact')).inspectTtrpgOpenContentRevisionImpactV1({
+    scope: input.source.owner.scope, buildId: before.build.id, plan: before.plan, fromControlEpoch: before.plan.controlEpoch,
+    sourcePlanHash: before.build.planHash, artifactKey: input.source.artifactKey })
   const command = parseProductProductionCommandV1({ type: 'resume', commandId: input.commandId,
     expectedStateRevision: input.source.owner.expectedStateRevision,
     ttrpgContentRevision: { artifactKey: input.source.artifactKey, expectedArtifactVersion: input.source.version,
       expectedArtifactHash: input.source.contentHash, expectedPlanHash: input.source.owner.planHash,
-      expectedControlEpoch: input.source.owner.controlEpoch, note: input.note, authorDraftJson: input.authorDraftJson } })
+      expectedControlEpoch: input.source.owner.controlEpoch, expectedImpactHash: impact.impactHash, note: input.note, authorDraftJson: input.authorDraftJson } })
   if (command.type !== 'resume' || !command.ttrpgContentRevision) fail('修订命令格式无效')
-  await (await import('./open-production-content-revision')).prepareTtrpgOpenContentRevisionV1({
+  const blockedReason = impact.additionalTaskKeys.length > 0 ? 'upstream-version-changed' as const : null
+  if (!blockedReason) await (await import('./open-production-content-revision')).prepareTtrpgOpenContentRevisionV1({
     scope: input.source.owner.scope, productionId: input.source.owner.productionId, build: before.build, command })
-  const { expandProductProductionInvalidatedTaskClosureV1 } = await import('../product-production/scheduler')
-  const affected = expandProductProductionInvalidatedTaskClosureV1(before.plan, [input.source.artifactKey])
-  const tasks = before.plan.tasks.filter(task => affected.has(task.taskKey)).map(task => ({
-    taskKey: task.taskKey, execution: task.taskKey === input.source.artifactKey ? 'author' as const : task.executionMode }))
-  await exact(input.source.owner)
-  return { source: input.source, command, commandHash: await hashProductProductionValueV2(command), tasks }
+  await impact.assertCurrent(); await exact(input.source.owner)
+  return { source: input.source, command, commandHash: await hashProductProductionValueV2(command),
+    tasks: impact.tasks, additionalTaskKeys: impact.additionalTaskKeys, blockedReason }
 }
 export async function submitTtrpgOpenContentRevisionV1(proposal: Awaited<ReturnType<typeof prepareTtrpgOpenContentRevisionProposalV1>>) {
+  if (proposal.blockedReason || proposal.additionalTaskKeys.length > 0) fail('上游执行版本已变化，请保留旧轮次并明确开始新一轮制作')
   const command = parseProductProductionCommandV1(proposal.command)
   if (command.type !== 'resume' || !command.ttrpgContentRevision
     || await hashProductProductionValueV2(command) !== proposal.commandHash) fail('已核对的修订内容已变化')
@@ -104,8 +106,12 @@ export async function submitTtrpgOpenContentRevisionV1(proposal: Awaited<ReturnT
   // obscure a durable receipt already committed by this same author action.
   const existing = await db.productProductionCommands.where('[productionId+commandId]').equals([owner.productionId, command.commandId]).first()
   if (!existing) {
-    await prepareTtrpgOpenContentRevisionProposalV1({ source: proposal.source, commandId: command.commandId,
+    const checked = await prepareTtrpgOpenContentRevisionProposalV1({ source: proposal.source, commandId: command.commandId,
       authorDraftJson: command.ttrpgContentRevision.authorDraftJson, note: command.ttrpgContentRevision.note })
+    if (checked.blockedReason || checked.commandHash !== proposal.commandHash || canonicalProductProductionJsonV2(checked.tasks) !== canonicalProductProductionJsonV2(proposal.tasks)
+      || canonicalProductProductionJsonV2(checked.additionalTaskKeys) !== canonicalProductProductionJsonV2(proposal.additionalTaskKeys)) {
+      fail('执行版本或实际影响已变化，请重新核对返修影响后提交')
+    }
   }
   const receipt = await executeProductProductionCommand({ scope: owner.scope, productionId: owner.productionId, command: command as ProductProductionCommandV1 })
   if (!receipt.ok) fail(receipt.errorCode ?? '修订未提交，请刷新核对')

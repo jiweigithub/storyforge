@@ -82,8 +82,10 @@ test(legacyNoDispatch ? 'explicitly books proven legacy unsent failures, stays p
     const recovery = await (await load('/storyforge/src/lib/product-production/service.ts')).recoverImportedProductProductionProofsV1({
       scope: { projectId: copiedProject, worldId: copied.worldId, workId: copied.workId }, productionId: copied.id })
     const accounting = (await db.productProductionCommands.where('productionId').equals(f.productionId).toArray()).filter((row: any) => row.type === 'book-local-no-dispatch')
+    const revisions = (await db.productProductionCommands.where('productionId').equals(f.productionId).toArray()).filter((row: any) => row.type === 'resume' && JSON.parse(row.resultJson).revisionAuthorization?.ttrpgContentRevision)
+    const copiedRevisions = (await db.productProductionCommands.where('productionId').equals(copied.id).toArray()).filter((row: any) => row.type === 'resume' && JSON.parse(row.resultJson).revisionAuthorization?.ttrpgContentRevision)
     const copiedAccounting = (await db.productProductionCommands.where('productionId').equals(copied.id).toArray()).filter((row: any) => row.type === 'book-local-no-dispatch')
-    return { build, production, artifacts, raw, worlds: worldRows, copiedProject, copiedBuild, recovery, accounting, copiedAccounting,
+    return { build, production, artifacts, raw, worlds: worldRows, copiedProject, copiedBuild, recovery, accounting, copiedAccounting, revisions, copiedRevisions,
       originalAfterImport: await db.productBuilds.get(f.buildId) }
   }, f)
   expect(result.build.status).toBe('released'); expect(result.originalAfterImport).toEqual(result.build)
@@ -96,6 +98,9 @@ test(legacyNoDispatch ? 'explicitly books proven legacy unsent failures, stays p
         usage: { modelCalls: 0, inputTokens: 0, outputTokens: 0, mediaCalls: 0, costUsd: 0, storageBytes: 0 } })
     } else expect(finalAttempts[i]).toEqual(old)
   }
+  expect(result.revisions).toHaveLength(1)
+  expect(JSON.parse(result.revisions[0].resultJson).revisionAuthorization.ttrpgContentRevision.expectedImpactHash).toMatch(/^[0-9a-f]{64}$/)
+  expect(result.copiedRevisions[0].resultJson).toBe(result.revisions[0].resultJson)
   expect(result.accounting).toHaveLength(legacyNoDispatch ? 1 : 0)
   if (legacyNoDispatch) {
     const receipt = JSON.parse(result.accounting[0].resultJson)
