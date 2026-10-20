@@ -2204,7 +2204,9 @@ export const CONTEXT_SOURCES: ContextSource[] = [
   },
   {
     key: 'product-production.ttrpg-open-task-brief', label: '开放跑团 V3 原授权任务方案投影',
-    scope: 'project', layer: 'L0', ownerFrom: 'work', budgetTokens: 8000,
+    // A complete frozen author policy must not hit an unrelated 8k atom cap.
+    // The atomic source is still bounded by this ceiling AND the exact task input budget.
+    scope: 'project', layer: 'L0', ownerFrom: 'work', budgetTokens: 100_000,
     protectedFromTrim: true, atomic: true,
     enabled: ttrpgOpenProductionTaskProjectionEnabledV3,
     read: readTtrpgOpenProductionTaskBriefContextV3,

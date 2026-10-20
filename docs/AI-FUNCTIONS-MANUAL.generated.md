@@ -118,7 +118,7 @@
 | `avg.authoring` | AVG 作者方案与会谈 | project | L0 | 16000 |
 | `chat.authoring` | 角色聊天作者方案与会谈 | project | L0 | 16000 |
 | `product-production.brief` | 已授权上层产品生产 Brief | project | L0 | 8000 |
-| `product-production.ttrpg-open-task-brief` | 开放跑团 V3 原授权任务方案投影 | project | L0 | 8000 |
+| `product-production.ttrpg-open-task-brief` | 开放跑团 V3 原授权任务方案投影 | project | L0 | 100000 |
 | `product-production.ttrpg-open-media-inputs` | 开放跑团已采纳的媒资槽位与身份锚点 | project | L0 | 16000 |
 | `product-production.artifact-inputs` | 上层产品生产任务依赖 | project | L1 | 24000 |
 | `product-production.adventure-scene-script-inputs` | 文字冒险单幕分场写作投影 | project | L0 | 15100 |
@@ -540,4 +540,4 @@ AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(
 
 ---
 
-生成时间基准:commit `36b9ea59`
+生成时间基准:commit `b1bf53a5`
