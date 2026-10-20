@@ -13,7 +13,7 @@ import {chatOpeningOutputSchemaV1} from '../character-interaction/opening-output
 import {chatOpeningReviewOutputSchemaV1, chatOpeningReviewOutputSchemaV2} from '../character-interaction/opening-review-output'
 import {recordChatOpeningRepairV1, requireDeliveredChatOpeningRepairV1} from '../character-interaction/opening-repair-evidence'
 import {chatOpeningReviewPromptV1, createChatOpeningReviewV1} from '../character-interaction/situation-production-review'
-import {chatOpeningContinuationProductionPromptV1, chatOpeningContinuationReviewPromptV1, chatOpeningScopedReviewPromptV1, chatOpeningIndependentReviewPromptV1} from '../character-interaction/opening-continuation'
+import {chatOpeningContinuationProductionPromptV1, chatOpeningContinuationReviewPromptV1, chatOpeningScopedReviewPromptV1, chatOpeningIndependentReviewPromptV1, chatOpeningBackgroundProductionPromptV1, chatOpeningBackgroundReviewPromptV1} from '../character-interaction/opening-continuation'
 import { parseTextAdventureQuestScriptArtifact, textAdventureQuestRecipientsV3 } from '../adventure/quest-settlement'
 import { hasFrozenAuthorUploadRightsV1 } from './media-rights'
 import { TTRPG_SCENARIO_PROMPT_V1 } from '../ttrpg/scenario-prompt'
@@ -6993,9 +6993,9 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
     ? (chatOpeningVersion.completeSourceFacts ? planChatOpeningRepairV5 : chatOpeningVersion.optionRepair ? planChatOpeningRepairV4 : planChatOpeningRepairV3)(raw, chatProductionSourceV1(input), chatOpeningCatalog, error)
     : (chatOpeningVersion?.patchRepair ? planChatOpeningRepairV2 : planChatOpeningRepairV1)(raw, chatProductionSourceV1(input), error)
   const system = options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.product-module'
-    ? chatOpeningVersion?.sourceReferences ? (chatOpeningVersion.meaningfulContinuation ? chatOpeningContinuationProductionPromptV1() : chatOpeningVersion.completeSourceFacts ? chatOpeningReferencePromptV3() : chatOpeningVersion.optionRepair ? chatOpeningReferencePromptV2() : chatOpeningReferencePromptV1())
+    ? chatOpeningVersion?.sourceReferences ? (chatOpeningVersion.authoredBackground ? chatOpeningBackgroundProductionPromptV1() : chatOpeningVersion.meaningfulContinuation ? chatOpeningContinuationProductionPromptV1() : chatOpeningVersion.completeSourceFacts ? chatOpeningReferencePromptV3() : chatOpeningVersion.optionRepair ? chatOpeningReferencePromptV2() : chatOpeningReferencePromptV1())
       : chatSituationProductionPromptV1(!!options.brief.characterChatSourceUnits?.bundles.length, chatOpeningVersion?.groundedAgency) + (chatOpeningVersion?.patchRepair ? CHAT_OPENING_REPAIR_PROMPT_V2 : chatOpeningVersion?.targetedRepair ? CHAT_OPENING_REPAIR_PROMPT_V1 : '') : options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.chat-opening-review'
-      ? chatOpeningVersion?.independentReview ? chatOpeningIndependentReviewPromptV1() : chatOpeningVersion?.scopedReview ? chatOpeningScopedReviewPromptV1() : chatOpeningVersion?.meaningfulContinuation ? chatOpeningContinuationReviewPromptV1() : chatOpeningReviewPromptV1(chatOpeningVersion?.groundedAgency ? 2 : 1) : textSystem(
+      ? chatOpeningVersion?.authoredBackground ? chatOpeningBackgroundReviewPromptV1() : chatOpeningVersion?.independentReview ? chatOpeningIndependentReviewPromptV1() : chatOpeningVersion?.scopedReview ? chatOpeningScopedReviewPromptV1() : chatOpeningVersion?.meaningfulContinuation ? chatOpeningContinuationReviewPromptV1() : chatOpeningReviewPromptV1(chatOpeningVersion?.groundedAgency ? 2 : 1) : textSystem(
     input.task.taskKey,
     options.brief,
     input.attempt,

@@ -35,3 +35,23 @@ export function chatOpeningIndependentReviewPromptV1(): string {
   return `这是对完整来源与候选的一次独立复核，不是改写旧审查结论。先检查实际候选，再形成五项判断；不得为了保留原结论而为它寻找理由。每项 reason 简短说明决定性依据，evidence 只摘录足以核实判断的连续原文，不复制整段资料或重复解释规则。通过与不通过使用同样的证据标准，所有候选、维度和必要引用仍须完整。
 ` + chatOpeningScopedReviewPromptV1()
 }
+
+/** v13 prepares authored circumstances, not future outcomes. Existing facts,
+ * audiences and discovery rules carry the background into the same runtime. */
+export function chatOpeningBackgroundProductionPromptV1(): string {
+  return `你要把种子内化成一小段可供角色演绎的背景，而不是先列出几次调查动作。保留原事项、人物动机和既定真相，明确此刻已经存在的条件、各方关切与尚未解决的问题；角色依据自己的视角选择怎样行动。只准备足以支撑本段互动的背景和大致方向，不写完整故事或必达结局。
+“角色还不知道”不等于“背景没有内容”。在既有创作权限内，把真正承担后续演绎的普通背景写具体：资料中已经存在的内容、可用资源的实际条件、当前利益分歧、关系需要或有原因的阻碍，均可使用现有 localFacts。不能只摆放“可查的记录”“可检查的物件”，把它们的全部内容留空，再把连续的无发现当作推进。允许某处确实没有信息，但局面仍须有能改变判断、选择、目标或关系的实质条件；若当前本就适合直接解决、轻松伴聊或有依据地等待，则按其本来需要准备。
+先区分三类内容：已确认来源逐字保留；权限内新增的当前背景写为 localFacts；尚未发生的行动、合作与结果只写为 possibilities。goals.desire 与 threads.question 保留原事项，第一步手段不能取代真正目的。发展方向应与具体背景相连，允许角色因结果而改道；反复检查相邻位置或重问同一个许可不能充当不同方向。
+背景的知情范围必须准确。角色已经知道的内容只给对应 audienceKeys；尚无人知道但已写定的背景用空 audienceKeys。只有原权限允许时，才为这类事实附上现有 discovery，并给出可接触的已知前提与实际发现条件；条件满足后才让调查角色知情。没有发现授权时，不增设发现规则，不靠角色猜中幕后真相使故事继续。所有 goals、beliefs、possibilities 及面向玩家的标题、pitch、事项字段只使用各自读者已知的内容。
+新增背景不能改写原作、重新解释已经写定的资料、把既定秘密复制成公开线索或伪造来源。不同对象和地点不能因相近而当作同一个。不要预写玩家同意、他人合作、行动成功、未来危机或时间流逝；新增人物与人物回应仍受原权限限制。可以为现有矛盾补足尚未设定的普通条件，但不能借机另起无关危机或强迫玩家参与。
+背景是作者待确认的候选；实际演绎仍由角色行动、玩家选择和后果决定。不以新增事实数量、方向数量或冲突强度作为质量目标。
+` + chatOpeningReferencePromptV3()
+}
+
+/** v7 tests substantive background within the existing five review dimensions. */
+export function chatOpeningBackgroundReviewPromptV1(): string {
+  return `本次还要检查候选是否已经准备了可供演绎的具体背景。open-development 对照原事项，引用实际 facts 背景与相连的发展方向，说明它们怎样支持信息、选择、目标或关系的变化；区分已写定的内容、角色尚未知的内容与尚未发生的结果。只有“有一本可查的记录”“可以继续检查”而没有承担互动的实质条件，不能据此判定可持续演绎。不能替候选补写资料内容或假定以后一定出现线索。
+幕后事实可以作为背景完整性的证据，但不能作为角色当前知道或能行动的依据。检查它是否保留原真相、当前知情范围及获准发现条件；同一条隐情不得借助公开方向或收束条件提前扩散。发现不足时明确判不通过并引用具体缺口，不以“未来语气”“只是条件”免除知情检查。
+这不是要求所有故事都有隐情或每次行动都有发现。已具备实际条件的直接解决、日常互动、合理等待和自然收束同样成立；结合候选自身的目标与条件判断，不凑第二条路线或强制玩家合作。
+` + chatOpeningIndependentReviewPromptV1()
+}

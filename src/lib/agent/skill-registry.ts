@@ -4722,7 +4722,7 @@ export const AGENT_SKILLS = [
     defaultForAgent: false,
     label: '角色聊天初始情境制作',
     owner: 'outline-agent',
-    promptVersion: 'chat-situation-production-v12',
+    promptVersion: 'chat-situation-production-v13',
     executionMode: 'product-production',
     contextTaskKind: 'agent-outline',
     readToolNames: [],
@@ -4737,7 +4737,7 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'character.chat-opening-review', agentId: 'outline', defaultForAgent: false,
-    label: '角色聊天开场叙事审查', owner: 'character-chat-product', promptVersion: 'chat-opening-review-v6',
+    label: '角色聊天开场叙事审查', owner: 'character-chat-product', promptVersion: 'chat-opening-review-v7',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: ['product-production.artifact-inputs'], optionalContextSourceKeys: [],
     inputPolicy: productProductionInputPolicy(['product-production.artifact-inputs']),

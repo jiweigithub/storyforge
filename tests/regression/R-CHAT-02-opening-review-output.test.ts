@@ -3,7 +3,7 @@ import Ajv from 'ajv'
 import {db} from '../../src/lib/db/schema'
 import {chatOpeningReviewOutputSchemaV1, chatOpeningReviewOutputSchemaV2} from '../../src/lib/character-interaction/opening-review-output'
 import {parseChatOpeningReviewDraftV1} from '../../src/lib/character-interaction/situation-production-review'
-import {chatOpeningContinuationReviewPromptV1, chatOpeningScopedReviewPromptV1, chatOpeningIndependentReviewPromptV1} from '../../src/lib/character-interaction/opening-continuation'
+import {chatOpeningContinuationReviewPromptV1, chatOpeningScopedReviewPromptV1, chatOpeningBackgroundProductionPromptV1, chatOpeningBackgroundReviewPromptV1} from '../../src/lib/character-interaction/opening-continuation'
 import {executeProductProductionCommand} from '../../src/lib/product-production/commands'
 import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
 import {runProductProductionUntilBlockedV1} from '../../src/lib/product-production/scheduler'
@@ -104,7 +104,7 @@ it.each(['accepted', 'provider-ignored-schema', 'semantic-rejection', 'schema-bu
       let output = JSON.stringify(candidates)
       if (!isOpening) {
         expect(request.jsonSchema?.name).toBe('chat_opening_review_v2')
-        expect(request.system).toBe(chatOpeningIndependentReviewPromptV1())
+        expect(request.system).toBe(chatOpeningBackgroundReviewPromptV1())
         expect(request.maximumOutputTokens).toBeLessThanOrEqual(15_000)
         expect(request.contextText).not.toContain('REJECTED_REVIEW_NOT_SOURCE')
         expect(request.contextText).not.toContain('storyforge.product-production.repair-feedback')
@@ -123,7 +123,7 @@ it.each(['accepted', 'provider-ignored-schema', 'semantic-rejection', 'schema-bu
         if (scenario !== 'provider-ignored-schema' && scenario !== 'independent-retry') expect(new Ajv().compile(request.jsonSchema!.schema)(report)).toBe(true)
         output = rawReview = JSON.stringify(report)
         rejectedReviews.push(rawReview)
-      }
+      } else expect(request.system).toBe(chatOpeningBackgroundProductionPromptV1())
       // Even a parseable body cannot override an observed truncated response.
       return {output, finishReason: !isOpening && scenario === 'output-limit' ? 'length' : 'stop',
         usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {
@@ -139,7 +139,7 @@ it.each(['accepted', 'provider-ignored-schema', 'semantic-rejection', 'schema-bu
         if (scenario !== 'schema-budget' || input.task.taskKey !== 'content.chat-opening-review') return configured(input)
         // The text alone fits exactly; the additional wire schema must stop before payment.
         return configured({...input, attemptBudgetReservation: {...input.attemptBudgetReservation!,
-          inputTokens: estimateTokens(input.contextText + chatOpeningIndependentReviewPromptV1())}})
+          inputTokens: estimateTokens(input.contextText + chatOpeningBackgroundReviewPromptV1())}})
       },
     })
     await execute()
