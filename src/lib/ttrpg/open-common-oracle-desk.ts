@@ -228,9 +228,9 @@ async function requestDesk(input: Input & Transport & { expectedSequence: number
     configOverrides: { maxTokens: maximumOutputTokens }, contextOverflowPolicy: 'reject' }) : null
   const modelIdentity = input.runAI ? { provider: 'test-adapter', model: 'injected' } : { provider: resolved!.config.provider, model: resolved!.config.model }
   if (modelIdentity.provider === 'poe') throw new Error('当前模型不支持本次输出上限。')
-  const maximumInputTokens = Math.min(18000, loaded.runtime.epochBudget.maximumTokens - maximumOutputTokens, (resolved?.config.contextWindow ?? 32000) - maximumOutputTokens)
+  const maximumInputTokens = Math.min(loaded.runtime.epochBudget.maximumTokens - maximumOutputTokens, (resolved?.config.contextWindow ?? 32000) - maximumOutputTokens)
   const authorized = await startTtrpgOpenCommonOracleWindowV1({ ...input, sessionId: input.sessionId, commandId: 'common.oracle.desk.' + input.submissionKey,
-    baseSequence: loaded.state.lastSequence, baseStateHash: loaded.stateHash, oracleInputHash: input.contentHash, modelIdentity, maximumInputTokens, maximumOutputTokens })
+    baseSequence: loaded.state.lastSequence, baseStateHash: loaded.stateHash, oracleInputHash: input.contentHash, modelIdentity, basisVersion: 2,maximumInputTokens, maximumOutputTokens })
   await input.onAuthorized?.(authorized.requestKey)
   if (input.signal?.aborted) throw new Error('原共同窗口已保留，请读取进度并明确收尾。')
   const read = { ...input, runId: authorized.runId, requestKey: authorized.requestKey }

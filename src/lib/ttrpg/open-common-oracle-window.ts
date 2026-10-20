@@ -30,7 +30,9 @@ export async function startTtrpgOpenCommonOracleWindowV1(input: FormalTtrpgComma
   scope: WorkspaceScope; viewerKey: string; oracleSourceRef: TtrpgOpenSourceRefV1; oracleInputHash: string; snapshotHash: string | null;
   decision: TtrpgOpenCommonOracleRequestBasisV1['decision']; modelIdentity: TtrpgOpenCommonOracleRequestBasisV1['modelIdentity'];
   maximumInputTokens: number; maximumOutputTokens: number; maximumCostUsd: number;
+  basisVersion?: 1 | 2;
 }) {
+  const basisVersion = input.basisVersion === undefined ? 1 : p.integer(input.basisVersion,'common Oracle requested budget version',1,2) as 1 | 2
   const loaded = await loadTtrpgOpenMemoryReadStateV1({ ...input, reader: { kind: 'party' } })
   const { runtime, state, stateHash, authorization, content, source } = loaded, run = runtime.openRun!
   const seat = assertTtrpgOpenHumanHostV1(authorization, input.viewerKey)
@@ -39,7 +41,7 @@ export async function startTtrpgOpenCommonOracleWindowV1(input: FormalTtrpgComma
     const epoch = run.coordination.epochs.find(row => row.startedRef.sessionKey === runtime.sessionKey && row.startedRef.sequence === prior.sequence)
     const basis = epoch?.commonOracle?.basis, gm = authorization.seats.find(row => row.role === 'gm')
     if (prior.type !== 'ttrpg.open.epoch.started' || prior.baseSequence !== input.baseSequence || prior.baseStateHash !== input.baseStateHash
-      || !basis || gm?.controller !== 'ai' || basis.requester.viewerKey !== seat.viewerKey || basis.requester.seatKey !== seat.seatKey
+      || !basis || basis.version !== basisVersion || gm?.controller !== 'ai' || basis.requester.viewerKey !== seat.viewerKey || basis.requester.seatKey !== seat.seatKey
       || basis.requester.seatRevision !== seat.revision || basis.authorizationRevision !== authorization.revision
       || stable(basis.oracleSourceRef) !== stable(input.oracleSourceRef) || basis.oracleInputHash !== input.oracleInputHash
       || (basis.runtimeReferencePolicy?.references.snapshotHash ?? null) !== input.snapshotHash || basis.decision !== input.decision
@@ -64,7 +66,7 @@ export async function startTtrpgOpenCommonOracleWindowV1(input: FormalTtrpgComma
   const oracle = run.oracleReceipts!.find(row => stable(row.sourceRef) === stable(selected.oracleSourceRef))!
   const runtimeReferencePolicy = selected.snapshotHash ? await createTtrpgOpenOracleRuntimeReferencePolicyV1({ content, operations: run.entityOperations ?? [], runtimeSourceHash: source.runtimeSourceHash,
     oracle, recipientActorKeys: actual.recipientActorKeys, consumerRef: { sessionKey: runtime.sessionKey, sequence: state.lastSequence + 1 } }) : null
-  const basis = await createTtrpgOpenCommonOracleRequestBasisV1({ source: actual, oracleSourceRef: selected.oracleSourceRef,
+  const basis = await createTtrpgOpenCommonOracleRequestBasisV1({ version: basisVersion,source: actual, oracleSourceRef: selected.oracleSourceRef,
     requester: { viewerKey: seat.viewerKey, seatKey: seat.seatKey, seatRevision: seat.revision }, runtimeReferencePolicy, decision: input.decision,
     modelIdentity: input.modelIdentity, budget: { maximumInputTokens: input.maximumInputTokens, maximumOutputTokens: input.maximumOutputTokens,
       maximumCostUsd: input.maximumCostUsd, maximumCalls: 1, maximumAiActions: 0, perFactHumanReviewRequired: true } })

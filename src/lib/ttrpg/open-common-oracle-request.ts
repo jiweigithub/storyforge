@@ -25,6 +25,7 @@ export function parseTtrpgOpenCommonOracleRequestBasisV1(value: unknown) {
   const read = p.record(r.readEvidence, ['sequence', 'stateHash'], 'common Oracle source cut')
   const model = p.record(r.modelIdentity, ['provider', 'model'], 'common Oracle model')
   const budget = p.record(r.budget, ['maximumInputTokens', 'maximumOutputTokens', 'maximumCostUsd', 'maximumCalls', 'maximumAiActions', 'perFactHumanReviewRequired'], 'common Oracle budget')
+  const version = p.integer(r.version,'common Oracle request version',1,2) as 1 | 2
   const recipientActorKeys = p.keys(r.recipientActorKeys, 'common Oracle actual recipients', 1000, 1)
   if (stable(recipientActorKeys) !== stable([...recipientActorKeys].sort())) p.fail('共同事实接收者须按实际角色排序')
   const sessionKey = p.key(r.sessionKey, 'common Oracle session'), oracleSourceRef = parseTtrpgOpenSourceRefV1(r.oracleSourceRef)
@@ -38,14 +39,16 @@ export function parseTtrpgOpenCommonOracleRequestBasisV1(value: unknown) {
     || runtimeReferencePolicy.references.references.some(row => row.sourceRef.sessionKey === sessionKey && row.sourceRef.sequence > sequence))) p.fail('共同事实实例范围不属于本次原咨询、接收者或冻结来源')
   if (typeof model.provider !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(model.provider)) p.fail('共同事实模型 provider 无效')
   return { schema: p.literal(r.schema, 'storyforge.ttrpg-open-common-oracle-request-basis', 'common Oracle request schema'),
-    version: p.literal(r.version, 1, 'common Oracle request version'), purpose: p.literal(r.purpose, TTRPG_OPEN_COMMON_ORACLE_REQUEST_POLICY_V1.purpose, 'common Oracle purpose'),
+    version, purpose: p.literal(r.purpose, TTRPG_OPEN_COMMON_ORACLE_REQUEST_POLICY_V1.purpose, 'common Oracle purpose'),
     sessionKey, runtimeSourceHash, rulePackContentHash, authorizationRevision: p.integer(r.authorizationRevision, 'common Oracle authorization revision', 1),
     requester: { viewerKey: p.key(requester.viewerKey, 'common Oracle human viewer'), seatKey: p.key(requester.seatKey, 'common Oracle human seat'), seatRevision: p.integer(requester.seatRevision, 'common Oracle seat revision', 1) },
     readEvidence: { sequence, stateHash: p.hash(read.stateHash, 'common Oracle original head') }, oracleSourceRef, audience, recipientActorKeys,
     oracleInputHash: p.hash(r.oracleInputHash, 'common Oracle full selected body'), sourceVisibilityHash: p.hash(r.sourceVisibilityHash, 'common Oracle original source visibility'),
     runtimeReferencePolicy, decision: p.literal(r.decision, TTRPG_OPEN_COMMON_ORACLE_REQUEST_POLICY_V1.decision, 'common Oracle explicit decision'),
     modelIdentity: { provider: model.provider, model: p.text(model.model, 'common Oracle model name', 200) },
-    budget: { maximumInputTokens: p.integer(budget.maximumInputTokens, 'common Oracle input limit', 1, 16000), maximumOutputTokens: p.integer(budget.maximumOutputTokens, 'common Oracle output limit', 1, 20000),
+    // V1 bytes keep their original ceiling. V2 is structural only: live admission
+    // still binds the actual frozen epoch, model, output and complete wire budget.
+    budget: { maximumInputTokens: p.integer(budget.maximumInputTokens, 'common Oracle input limit', 1, version === 1 ? 16000 : 1_000_000), maximumOutputTokens: p.integer(budget.maximumOutputTokens, 'common Oracle output limit', 1, 20000),
       maximumCostUsd: p.number(budget.maximumCostUsd, 'common Oracle cost limit', 0, 1000), maximumCalls: p.literal(budget.maximumCalls, 1, 'common Oracle call limit'),
       maximumAiActions: p.literal(budget.maximumAiActions, 0, 'common Oracle action limit'), perFactHumanReviewRequired: p.literal(budget.perFactHumanReviewRequired, true, 'common Oracle human review') } }
 }
@@ -77,6 +80,7 @@ export async function assertTtrpgOpenCommonOracleRequestSourceV1(value: unknown,
 }
 /** Pure preparation from already verified source/seat evidence; does not create an epoch or Run. */
 export async function createTtrpgOpenCommonOracleRequestBasisV1(input: {
+  version?: 1 | 2
   source: Source; oracleSourceRef: TtrpgOpenSourceRefV1; requester: TtrpgOpenCommonOracleRequestBasisV1['requester'];
   runtimeReferencePolicy: TtrpgOpenOracleRuntimeReferencePolicyV1 | null; decision: TtrpgOpenCommonOracleRequestBasisV1['decision'];
   modelIdentity: TtrpgOpenCommonOracleRequestBasisV1['modelIdentity']; budget: TtrpgOpenCommonOracleRequestBasisV1['budget'];
@@ -84,7 +88,7 @@ export async function createTtrpgOpenCommonOracleRequestBasisV1(input: {
   const { source } = input, row = source.directory.find(row => stable(row.oracleSourceRef) === stable(input.oracleSourceRef))
   if (!row) p.fail('共同事实请求必须明确选择本次共同可读的原咨询')
   const contract = p.object(source.resources.find(row => row.suffix === 'common-oracle-contract')?.value, 'common Oracle source contract')
-  const basis = parseTtrpgOpenCommonOracleRequestBasisV1({ schema: 'storyforge.ttrpg-open-common-oracle-request-basis', version: 1,
+  const basis = parseTtrpgOpenCommonOracleRequestBasisV1({ schema: 'storyforge.ttrpg-open-common-oracle-request-basis', version: input.version ?? 1,
     purpose: TTRPG_OPEN_COMMON_ORACLE_REQUEST_POLICY_V1.purpose, sessionKey: source.readEvidence.sessionKey, runtimeSourceHash: source.readEvidence.runtimeSourceHash,
     rulePackContentHash: contract.rulePackContentHash, authorizationRevision: source.authorizationRevision, requester: input.requester,
     readEvidence: { sequence: source.readEvidence.sequence, stateHash: source.readEvidence.stateHash }, oracleSourceRef: row.oracleSourceRef, audience: row.audience,
