@@ -2444,6 +2444,23 @@ async function ensurePlan(input: {
         if (!retainedVisualTasks.has(taskKey)) invalidatedTaskKeys.add(taskKey)
       }
     }
+    if (state.production.productType === 'ttrpg') {
+      const failure = parsedObject(state.build.failureJson)
+      if (failure.code === 'author-revised-content') {
+        const command = (await import('./contracts')).parseProductProductionCommandV1(failure.revisionCommand)
+        if (command.type !== 'resume' || !command.ttrpgContentRevision) throw Error('[ttrpg-content-impact] 缺少原返修授权')
+        const revision = command.ttrpgContentRevision
+        const { inspectTtrpgOpenContentRevisionImpactV1, assertTtrpgOpenContentRevisionImpactV1 } = await import('../ttrpg/open-production-content-revision-impact')
+        const impact = await inspectTtrpgOpenContentRevisionImpactV1({ scope: input.scope, buildId: state.build.id!, plan,
+          fromControlEpoch: currentPlan.controlEpoch, sourcePlanHash: revision.expectedPlanHash, artifactKey: revision.artifactKey })
+        assertTtrpgOpenContentRevisionImpactV1(impact, revision.expectedImpactHash)
+        if (canonicalProductProductionJsonV2(impact.tasks.map(task => task.taskKey).sort())
+          !== canonicalProductProductionJsonV2([...invalidatedTaskKeys].sort())) {
+          throw Error('[ttrpg-content-impact] 调度影响与已核对的影响不一致，拒绝开始')
+        }
+        await impact.assertCurrent()
+      }
+    }
     if (parentQualityRollback) {
       const reusableArtifactKeys = textAdventureParentRollbackReusableArtifactKeysV1({
         plan, previousPlan: currentPlan,

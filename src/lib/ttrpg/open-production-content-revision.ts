@@ -73,11 +73,16 @@ export async function prepareTtrpgOpenContentRevisionV1(input: {
     ttrpgOpenProductionMediaContextV1({ ruleSystem: JSON.parse(ruleSource.artifact.payloadJson),
       situationLayer: value, rulePack: parsedBrief.ttrpgOpen.rulePack })
   }
+  const { inspectTtrpgOpenContentRevisionImpactV1, assertTtrpgOpenContentRevisionImpactV1 } = await import('./open-production-content-revision-impact')
+  const impact = await inspectTtrpgOpenContentRevisionImpactV1({ scope, buildId: build.id, plan,
+    fromControlEpoch: plan.controlEpoch, sourcePlanHash: build.planHash, artifactKey: revision.artifactKey })
+  assertTtrpgOpenContentRevisionImpactV1(impact, revision.expectedImpactHash)
   const assertCurrent = async () => {
     if (canonicalProductProductionJsonV2(await db.productProductionBriefs.get(brief.id!))
       !== canonicalProductProductionJsonV2(brief)) throw Error('[ttrpg-content-revision] 原方案读取后已变化')
     await source.assertCurrent()
     await ruleSource?.assertCurrent()
+    await impact.assertCurrent()
   }
   await assertCurrent()
   return { sourceProofHash: source.proofHash, assertCurrent }

@@ -729,6 +729,8 @@ export interface TtrpgOpenContentRevisionV1 {
   expectedArtifactHash: string;
   expectedPlanHash: string;
   expectedControlEpoch: number;
+  /** Freezes the reviewed recovery effects and current executable bindings. */
+  expectedImpactHash?: string;
   note: string;
   authorDraftJson: string;
 }

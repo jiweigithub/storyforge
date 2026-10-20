@@ -521,10 +521,12 @@ export function parseTextAdventureContentRevisionV1(value: unknown): TextAdventu
 export function parseTtrpgOpenContentRevisionV1(value: unknown): TtrpgOpenContentRevisionV1 {
   const r = record(value, 'ttrpgContentRevision')
   exactKeys(r, ['artifactKey', 'expectedArtifactVersion', 'expectedArtifactHash', 'expectedPlanHash',
-    'expectedControlEpoch', 'note', 'authorDraftJson'], 'ttrpgContentRevision')
+    'expectedControlEpoch', 'note', 'authorDraftJson',
+    ...(Object.prototype.hasOwnProperty.call(r, 'expectedImpactHash') ? ['expectedImpactHash'] : [])], 'ttrpgContentRevision')
   const expectedArtifactHash = text(r.expectedArtifactHash, 'expectedArtifactHash', 64)
   const expectedPlanHash = text(r.expectedPlanHash, 'expectedPlanHash', 64)
   if (!isSha256Hash(expectedArtifactHash) || !isSha256Hash(expectedPlanHash)) fail('跑团内容修订 Hash 无效')
+  if (Object.prototype.hasOwnProperty.call(r, 'expectedImpactHash') && !isSha256Hash(r.expectedImpactHash)) fail('跑团修订影响 Hash 无效')
   const authorDraftJson = text(r.authorDraftJson, 'authorDraftJson', 120_000)
   try { record(JSON.parse(authorDraftJson), 'authorDraftJson') } catch { fail('authorDraftJson 必须是 JSON 对象') }
   return {
@@ -532,6 +534,7 @@ export function parseTtrpgOpenContentRevisionV1(value: unknown): TtrpgOpenConten
     expectedArtifactVersion: positiveId(r.expectedArtifactVersion, 'expectedArtifactVersion'),
     expectedArtifactHash, expectedPlanHash,
     expectedControlEpoch: expectedRevision(r.expectedControlEpoch),
+    ...(isSha256Hash(r.expectedImpactHash) ? { expectedImpactHash: r.expectedImpactHash } : {}),
     note: text(r.note, 'note', 2000), authorDraftJson,
   }
 }
