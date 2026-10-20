@@ -3394,6 +3394,10 @@ describe('R-PRODUCTPROD-1D · durable bounded DAG scheduler', () => {
       state: 'failed',
       steps: { 'content.narrative': { status: 'failed', failureCode: 'task-preflight-failed' } },
     })
+    const attempts = JSON.parse((await db.productBuilds.get(first.buildId))!.budgetLedgerJson).attempts
+    expect(attempts.find((entry: { runId: number }) => entry.runId === child!.id)).toMatchObject({
+      usageKnown: true, usage: { modelCalls: 0, inputTokens: 0, outputTokens: 0, mediaCalls: 0, costUsd: 0 },
+    })
     expect((await db.productBuilds.get(first.buildId))!.status).toBe('recovery-required')
   }, 30_000)
 

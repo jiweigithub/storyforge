@@ -7,7 +7,7 @@ import { executeProductProductionCommand } from '../../src/lib/product-productio
 import { createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1 } from '../../src/lib/product-production/production-executor'
 import { runProductProductionUntilBlockedV1 } from '../../src/lib/product-production/scheduler'
 
-export async function openContentRevisionFixtureV1() {
+export async function openContentRevisionFixtureV1(options: { pause?: boolean } = {}) {
   const f = await openProductionFixtureV1(), { brief, scope, productionId } = f
   Object.assign(brief.productionBudget, { maximumModelCalls: 16, maximumInputTokens: 384000,
     maximumOutputTokens: 120000, maximumDurationMs: 3600000, maximumMediaCalls: 0 })
@@ -58,8 +58,10 @@ export async function openContentRevisionFixtureV1() {
   const stopped = await run(), build = (await db.productBuilds.get(stopped.buildId))!
   if (JSON.parse(build.failureJson).taskKey !== 'ttrpg.open.media-plan') throw Error(build.failureJson)
   p = (await db.productProductions.get(productionId))!
-  const paused = await command({ type: 'pause', commandId: 'content-revision.fixture.pause',
-    expectedStateRevision: p.stateRevision, reason: '明确暂停后修订上游原稿' })
-  if (!paused.ok) throw Error(JSON.stringify(paused))
+  if (options.pause !== false) {
+    const paused = await command({ type: 'pause', commandId: 'content-revision.fixture.pause',
+      expectedStateRevision: p.stateRevision, reason: '明确暂停后修订上游原稿' })
+    if (!paused.ok) throw Error(JSON.stringify(paused))
+  }
   return { ...f, data, calls, run, review, command, buildId: build.id! }
 }

@@ -8,6 +8,7 @@ import { resolveProductProductionTaskRecoveryPolicyV1 } from '../product-product
 import { prepareTtrpgOpenContentRevisionSourceV1 } from '../product-production/artifact-store'
 import { parseTtrpgOpenSourceFactsArtifactV1, parseTtrpgOpenRuleSystemArtifactV1,
   parseTtrpgOpenSituationLayerArtifactV1 } from './open-production-artifacts'
+import { ttrpgOpenProductionMediaContextV1 } from './open-production-media'
 
 export async function prepareTtrpgOpenContentRevisionV1(input: {
   scope: WorkspaceScope
@@ -49,6 +50,7 @@ export async function prepareTtrpgOpenContentRevisionV1(input: {
   // Use exactly the production executor's author parsers. They cannot confer
   // rights or turn unconfirmed facts/attributes into author-confirmed content.
   const value = JSON.parse(revision.authorDraftJson)
+  let ruleSource: Awaited<ReturnType<typeof prepareTtrpgOpenContentRevisionSourceV1>> | null = null
   if (revision.artifactKey === 'ttrpg.open.source-facts') parseTtrpgOpenSourceFactsArtifactV1(value)
   else if (revision.artifactKey === 'ttrpg.open.rule-system') {
     parseTtrpgOpenRuleSystemArtifactV1(value, parsedBrief.ttrpgOpen.rulePack, parsedBrief.ttrpgOpen.settings)
@@ -62,11 +64,20 @@ export async function prepareTtrpgOpenContentRevisionV1(input: {
       throw Error('[ttrpg-content-revision] 已采用来源事实不完整或已变化')
     }
     parseTtrpgOpenSituationLayerArtifactV1(value, parseTtrpgOpenSourceFactsArtifactV1(facts[0].payloadJson))
+    const rules = (await db.productBuildArtifacts.where('buildId').equals(build.id).toArray())
+      .filter(row => row.artifactKey === 'ttrpg.open.rule-system' && row.controlEpoch === plan.controlEpoch
+        && (row.status === 'accepted' || row.status === 'carried-forward'))
+    if (rules.length !== 1) throw Error('[ttrpg-content-revision] 已采用规则角色不唯一')
+    ruleSource = await prepareTtrpgOpenContentRevisionSourceV1({ scope, build,
+      artifactKey: 'ttrpg.open.rule-system', version: rules[0].version, contentHash: rules[0].contentHash })
+    ttrpgOpenProductionMediaContextV1({ ruleSystem: JSON.parse(ruleSource.artifact.payloadJson),
+      situationLayer: value, rulePack: parsedBrief.ttrpgOpen.rulePack })
   }
   const assertCurrent = async () => {
     if (canonicalProductProductionJsonV2(await db.productProductionBriefs.get(brief.id!))
       !== canonicalProductProductionJsonV2(brief)) throw Error('[ttrpg-content-revision] 原方案读取后已变化')
     await source.assertCurrent()
+    await ruleSource?.assertCurrent()
   }
   await assertCurrent()
   return { sourceProofHash: source.proofHash, assertCurrent }

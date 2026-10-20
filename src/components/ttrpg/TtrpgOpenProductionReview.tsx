@@ -2,15 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ProductProductionBriefV3 } from '../../lib/types'
 import { parseTtrpgOpenProductionReviewDraftV1 } from '../../lib/ttrpg/open-production-review'
 import type { TtrpgOpenProductionReviewOwnerV1 } from '../../lib/ttrpg/open-production-review-service'
+import type { TtrpgOpenProductionReviewTaskV1 } from '../../lib/ttrpg/open-production-review'
 
 /** An editor for the existing authorDraftJson, not a second confirmation store. */
-export default function TtrpgOpenProductionReview(props: {
-  owner: TtrpgOpenProductionReviewOwnerV1
+export default function TtrpgOpenProductionReview(props: ({ owner: TtrpgOpenProductionReviewOwnerV1; taskKey?: never }
+  | { owner?: never; taskKey: TtrpgOpenProductionReviewTaskV1 }) & {
   brief: NonNullable<ProductProductionBriefV3['ttrpgOpen']>
   value: string
   onChange: (text: string) => void
   disabled: boolean
 }) {
+  const taskKey = props.owner?.taskKey ?? props.taskKey!
   const [reading, setReading] = useState(false), [error, setError] = useState(''), [page, setPage] = useState(0)
   const active = useRef(true), serial = useRef(0), current = useRef(props)
   current.current = props
@@ -21,9 +23,9 @@ export default function TtrpgOpenProductionReview(props: {
   }, [])
   const parsed = useMemo(() => {
     if (!props.value.trim()) return null
-    try { return { draft: parseTtrpgOpenProductionReviewDraftV1(props.owner.taskKey, props.value, props.brief), error: '' } }
+    try { return { draft: parseTtrpgOpenProductionReviewDraftV1(taskKey, props.value, props.brief), error: '' } }
     catch (e) { return { draft: null, error: e instanceof Error ? e.message : String(e) } }
-  }, [props.value, props.owner.taskKey, props.brief])
+  }, [props.value, taskKey, props.brief])
   const draft = parsed?.draft
   const total = draft?.kind === 'facts' ? draft.artifact.factPolicy.length : draft?.kind === 'rules'
     ? draft.artifact.characterTemplates.reduce((sum, actor) => sum + Object.keys(actor.attributeMappings).length, 0) : 0
@@ -33,6 +35,7 @@ export default function TtrpgOpenProductionReview(props: {
   const pageSize = draft?.kind === 'facts' ? 25 : 5, pages = Math.max(1, Math.ceil(count / pageSize)), shownPage = Math.min(page, pages - 1)
   const load = async () => {
     const captured = current.current, token = ++serial.current
+    if (!captured.owner) return
     setReading(true); setError('')
     try {
       const { readTtrpgOpenProductionReviewDraftV1 } = await import('../../lib/ttrpg/open-production-review-service')
@@ -48,9 +51,9 @@ export default function TtrpgOpenProductionReview(props: {
   const checkboxClass = 'mr-2 accent-accent'
   const cardClass = 'rounded border border-border bg-bg-base p-3'
   return <section className="mt-4 rounded border border-accent/40 bg-accent/5 p-4 text-xs text-text-primary" data-testid="ttrpg-open-production-review">
-    <h3 className="font-semibold">{props.owner.taskKey === 'ttrpg.open.source-facts' ? '核对来源事实' : '核对角色属性'}</h3>
+    <h3 className="font-semibold">{taskKey === 'ttrpg.open.source-facts' ? '核对来源事实' : '核对角色属性'}</h3>
     <p className="my-2 leading-5 text-text-muted">逐项查看本任务的待确认稿。勾选只修改本页修订稿；点击下方“修正后继续制作”才提交。未提交的选择刷新后需要重新核对。</p>
-    {!props.value.trim() && <button type="button" className="rounded border border-accent/40 px-3 py-2" disabled={props.disabled || reading} onClick={() => { void load() }}>
+    {props.owner && !props.value.trim() && <button type="button" className="rounded border border-accent/40 px-3 py-2" disabled={props.disabled || reading} onClick={() => { void load() }}>
       {reading ? '正在读取原稿…' : '读取本任务待审稿'}
     </button>}
     {parsed?.error && <p role="alert" className="my-2 text-error">当前修订稿尚不能逐项显示：{parsed.error}。请在下方高级修订中补齐；原记录保持不变。</p>}

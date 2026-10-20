@@ -5423,7 +5423,7 @@ async function settleEscapedClaimedTaskFailure(input: {
       candidateHash: null,
       terminalReceiptHash: null,
       passedGateIds: [],
-      usage: null,
+      usage: providerRequested ? null : zeroUsage(),
       errorCode: code,
     },
   })

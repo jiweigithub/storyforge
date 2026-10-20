@@ -11004,6 +11004,20 @@ export async function createBuiltInProductionCapabilityBindingV1(input: {
   }
 }
 
+/** These three CPU-only TTRPG branches cannot dispatch a provider. Preserve
+ * their error identity and report their measured local usage even if parsing
+ * fails before returning a result. Never apply this wrapper to a model lane. */
+async function executeTtrpgOpenKernelWithUsageV1(execute: () => Promise<ProductProductionTaskExecutionResultV1>): Promise<ProductProductionTaskExecutionResultV1> {
+  const started = performance.now()
+  try { return await execute() } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error))
+    if (!('productProductionUsage' in failure)) Object.defineProperty(failure, 'productProductionUsage', {
+      value: zeroUsage(elapsed(started)), enumerable: false, configurable: false, writable: false,
+    })
+    throw failure
+  }
+}
+
 export function createConfiguredProductProductionExecutorV1(input: {
   production: ProductProductionRecordV1
   brief: ProductProductionBriefV3
@@ -11076,6 +11090,7 @@ export function createConfiguredProductProductionExecutorV1(input: {
       return executeTextAdventureSceneScriptActAssemblyTask(request, options.brief, sceneAssemblyActIndex)
     }
     if (isTtrpgOpenEmptyMediaTaskV3(request.task)) {
+      return executeTtrpgOpenKernelWithUsageV1(async () => {
       const started = performance.now(), brief = options.brief
       const context = openMediaContext(request, brief)
       if (!brief.ttrpgOpen || !context || brief.media.imageCount !== 0 || brief.media.musicTrackCount !== 0
@@ -11089,6 +11104,7 @@ export function createConfiguredProductProductionExecutorV1(input: {
       return { artifacts: [{ artifactKey: 'media.requirements', kind: 'asset-manifest', payload,
         quality: { planKeysVerified: true }, rights: { origin: 'deterministic-empty-media-plan', containsThirdPartyMedia: false } }],
         passedGateIds: [...request.task.acceptanceGateIds], usage: zeroUsage(elapsed(started)) }
+      })
     }
     if (request.task.executionMode === 'model') return executeModelTask(request, options)
     if (request.task.taskKey === 'source.author-gate') {
@@ -11114,8 +11130,8 @@ export function createConfiguredProductProductionExecutorV1(input: {
         : executeAudioTask(request, options)
     }
     if (request.task.taskKey === 'integration.narrative') return executeNarrativeIntegrationTask(request, options)
-    if (request.task.taskKey === 'ttrpg.open.integration') return executeTtrpgOpenIntegrationTask(request, options)
-    if (request.task.taskKey === 'ttrpg.open.quality') return executeTtrpgOpenQualityTask(request, options)
+    if (request.task.taskKey === 'ttrpg.open.integration') return executeTtrpgOpenKernelWithUsageV1(() => executeTtrpgOpenIntegrationTask(request, options))
+    if (request.task.taskKey === 'ttrpg.open.quality') return executeTtrpgOpenKernelWithUsageV1(() => executeTtrpgOpenQualityTask(request, options))
     if (request.task.taskKey === 'integration.package') return executeIntegrationTask(request, options)
     if (request.task.taskKey === 'qa.autoplay') return executeTextAdventureAutoplayTask(request)
     if (request.task.taskKey === 'qa.release') return executeQualityTask(request, options)
