@@ -60,7 +60,9 @@ it('rejects invented quotations, foreign-only evidence, unsupported categories a
   wrongSubject.perspective!.actorKey = f.keys.find(key => key !== f.actor.resourceKey)!
   wrongSubject.cast.push({resourceKey: wrongSubject.perspective!.actorKey, role: 'actor'})
   expect(() => prepareChatRoleProfileV1({candidate: f.candidate, context: wrongSubject, sourceReview: f.review})).toThrow('本人的原文依据')
-  await expect(adopt({projectId: f.scope.projectId, scope: f.scope, target: 'chatAuthoringDrafts', recordId: f.draft.id!, mode: 'replace', data: {roleProfilesJson: '{"profiles":[]}'}})).rejects.toThrow()
+  const rejected = await adopt({projectId: f.scope.projectId, scope: f.scope, target: 'chatAuthoringDrafts', recordId: f.draft.id!, mode: 'replace', data: {roleProfilesJson: '{"profiles":[]}'}})
+  expect(rejected.written).toEqual([])
+  expect(rejected.typeErrors).toEqual([{field: 'roleProfilesJson', expected: 'json', got: '角色整理无效：字段不在允许范围'}])
   expect(await drafts.readChatDraftV1(f.scope)).toEqual(original)
 })
 
