@@ -1908,6 +1908,82 @@ export interface ProductBuildTerminalCasReadSetV1 {
   sealedParentReadSets?: ProductBuildTerminalCasReadSetV1[]
 }
 
+/** Read-only same-Build content proof. Preparation runs outside IndexedDB's
+ * write transaction; assertCurrent closes the exact raw read set inside it.
+ * This exposes the existing producer/lineage verifier, not a new acceptance path. */
+export async function prepareTtrpgOpenContentRevisionSourceV1(input: {
+  scope: WorkspaceScope
+  build: ProductBuildRecordV1 & { id: number }
+  artifactKey: string
+  version: number
+  contentHash: string
+  historical?: boolean
+}) {
+  const { scope, build } = input
+  const plan = parseProductProductionPlanV3(build.planJson)
+  const production = await db.productProductions.get(build.productionId)
+  const brief = await db.productProductionBriefs.where('[productionId+revision]')
+    .equals([build.productionId, build.briefRevision]).first()
+  if (!production || production.productType !== 'ttrpg' || plan.productType !== 'ttrpg'
+    || !await assertRecordInScope(scope, 'productProductions', production, { owner: 'work' })
+    || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })
+    || await hashProductProductionValueV2(plan) !== build.planHash
+    || plan.briefHash !== build.briefHash || plan.buildNumber !== build.buildNumber
+    || !['ttrpg.open.source-facts', 'ttrpg.open.rule-system', 'ttrpg.open.situation-layer'].includes(input.artifactKey)) {
+    throw new Error('[ttrpg-content-revision] 原稿不属于准确的跑团制作计划')
+  }
+  if (!brief || !await assertRecordInScope(scope, 'productProductionBriefs', brief, { owner: 'work' })
+    || brief.briefHash !== build.briefHash || brief.status !== 'authorized') {
+    throw new Error('[ttrpg-content-revision] 原稿没有准确的已授权方案')
+  }
+  const parsedBrief = parseProductProductionBriefV3(brief.briefJson)
+  if (!parsedBrief.ttrpgOpen || await hashProductProductionValueV2(parsedBrief) !== build.briefHash) {
+    throw new Error('[ttrpg-content-revision] 原稿的冻结方案已变化')
+  }
+  parseProductProductionPlanV3(build.planJson, parsedBrief, build.briefHash)
+  const tasks = plan.tasks.filter(task => task.outputArtifactKeys.includes(input.artifactKey))
+  const task = tasks[0]
+  if (tasks.length !== 1 || task.taskKey !== input.artifactKey || task.executionMode !== 'model'
+    || task.reuse !== null || task.outputArtifactKeys.length !== 1) {
+    throw new Error('[ttrpg-content-revision] 原稿没有唯一的本轮内容生产者')
+  }
+  const rows = await db.productBuildArtifacts.where('buildId').equals(build.id).toArray()
+  const matches = rows.filter(row => row.artifactKey === input.artifactKey
+    && row.version === input.version && row.contentHash === input.contentHash)
+  const artifact = matches[0]
+  if (matches.length !== 1 || artifact.id == null
+    || !await assertRecordInScope(scope, 'productBuildArtifacts', artifact, { owner: 'work' })
+    || artifact.blobObjectId != null
+    || (input.historical ? !['accepted', 'carried-forward', 'invalid'].includes(artifact.status)
+      || artifact.controlEpoch >= build.controlEpoch
+      : artifact.controlEpoch !== plan.controlEpoch || !['accepted', 'carried-forward'].includes(artifact.status))
+    || artifact.carriedFrom != null && artifact.carriedFrom.buildNumber !== build.buildNumber) {
+    throw new Error('[ttrpg-content-revision] 原稿版本、状态、来源或作用域已变化')
+  }
+  const readSet = await collectSameBuildCarryParentReadSetV1([artifact])
+  await preparedStoredArtifactV1(artifact)
+  if (artifact.carriedFrom) {
+    await verifySameBuildCarriedLineageV1({ scope, build, plan, target: artifact, allBuildRows: rows })
+  } else {
+    await verifyHistoricalAcceptedTaskV1({ scope, build, task, siblings: [artifact] })
+  }
+  const proofHash = await frozenParentProofHash({ scope, source: artifact, expectedBuildId: build.id })
+  const assertCurrent = async () => {
+    const current = await db.productBuilds.get(build.id)
+    const currentProduction = await db.productProductions.get(build.productionId)
+    const currentRows = await db.productBuildArtifacts.where('buildId').equals(build.id).toArray()
+    if (canonicalProductProductionJsonV2(current) !== canonicalProductProductionJsonV2(build)
+      || canonicalProductProductionJsonV2(currentProduction) !== canonicalProductProductionJsonV2(production)
+      || canonicalProductProductionJsonV2(await db.productProductionBriefs.get(brief.id!)) !== canonicalProductProductionJsonV2(brief)
+      || !sameStoredArtifactRowsV1(rows, currentRows)) {
+      throw new Error('[ttrpg-content-revision] 原稿证明读取后制作状态已变化')
+    }
+    await assertSameBuildCarryParentReadSetUnchangedV1(readSet)
+  }
+  await assertCurrent()
+  return { artifact, proofHash, assertCurrent }
+}
+
 function recordRowsJsonV1(rows: unknown[]): string {
   return canonicalProductProductionJsonV2([...rows].sort((left, right) => {
     const leftId = Number((left as { id?: unknown }).id ?? 0)

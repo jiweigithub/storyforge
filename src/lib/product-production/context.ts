@@ -16,6 +16,7 @@ import { isSha256Hash, canonicalProductProductionJsonV2, hashProductProductionVa
 import { parseProductProductionCommandV1, parseProductProductionBriefV3 } from './contracts'
 import { textAdventureQualityReviewScopeFromTaskKeyV1, parseProductProductionPlanV3 } from './plan'
 import { isTtrpgOpenProductionTaskV3 } from '../ttrpg/open-production-bindings'
+import { resolveProductProductionTaskRecoveryPolicyV1 } from './recovery-policy'
 import { projectTtrpgOpenProductionTaskBriefV1 } from '../ttrpg/open-production-task-brief'
 import { ttrpgOpenProductionMediaContextV1 } from '../ttrpg/open-production-media'
 import {
@@ -153,16 +154,19 @@ export async function validateProductProductionRecoveryDirectiveV1(input: {
   const action = resolvedDirective ? resolvedAction : input.requestedAction ?? null
   if (failureState.code === 'author-revised-content') {
     const command = parseProductProductionCommandV1(failureState.revisionCommand)
-    if (production.productType !== 'text-adventure' || input.expectedState === 'blocked'
-      || action !== 'author-edit' || !['content.product-module', 'content.story-bible', 'content.cast-bible', 'content.adventure-architecture', 'content.narrative-arc-scenes', 'content.narrative-decision-plan', 'content.ending-route-plan', 'content.main-quest-plan', 'content.adventure-side-quests', 'content.adventure-ambient-events', 'content.scene-script.act-1.part-1', 'content.scene-script.act-1.part-2', 'content.scene-script.act-2.part-1', 'content.scene-script.act-2.part-2', 'content.scene-script.act-3.part-1', 'content.scene-script.act-3.part-2', 'content.dialogue-pass.act-1', 'content.dialogue-pass.act-2', 'content.dialogue-pass.act-3', 'content.quest-script.main.act-1.single', 'content.quest-script.main.act-1.multi', 'content.quest-script.main.act-2.single', 'content.quest-script.main.act-2.multi', 'content.quest-script.main.act-3.single', 'content.quest-script.main.act-3.multi', 'content.quest-script.supplemental'].includes(input.productProductionTaskKey)
-      || command.type !== 'resume' || !command.contentRevision || command.contentRevision.artifactKey !== input.productProductionTaskKey
+    const ttrpgRevision = command.type === 'resume' && command.ttrpgContentRevision
+    const revision = command.type === 'resume' ? command.ttrpgContentRevision ?? command.contentRevision : undefined
+    const isTtrpgRevision = production.productType === 'ttrpg' && ttrpgRevision != null
+    if ((production.productType !== 'text-adventure' && !isTtrpgRevision) || input.expectedState === 'blocked'
+      || action !== 'author-edit' || (!isTtrpgRevision && !['content.product-module', 'content.story-bible', 'content.cast-bible', 'content.adventure-architecture', 'content.narrative-arc-scenes', 'content.narrative-decision-plan', 'content.ending-route-plan', 'content.main-quest-plan', 'content.adventure-side-quests', 'content.adventure-ambient-events', 'content.scene-script.act-1.part-1', 'content.scene-script.act-1.part-2', 'content.scene-script.act-2.part-1', 'content.scene-script.act-2.part-2', 'content.scene-script.act-3.part-1', 'content.scene-script.act-3.part-2', 'content.dialogue-pass.act-1', 'content.dialogue-pass.act-2', 'content.dialogue-pass.act-3', 'content.quest-script.main.act-1.single', 'content.quest-script.main.act-1.multi', 'content.quest-script.main.act-2.single', 'content.quest-script.main.act-2.multi', 'content.quest-script.main.act-3.single', 'content.quest-script.main.act-3.multi', 'content.quest-script.supplemental'].includes(input.productProductionTaskKey))
+      || command.type !== 'resume' || !revision || revision.artifactKey !== input.productProductionTaskKey
+      || (ttrpgRevision != null && !isTtrpgRevision)
       || command.commandId !== failureState.commandId) {
       throw new ProductProductionRecoveryDirectiveErrorV1('[product-production-context] 内容修订缺少准确的恢复命令')
     }
     const receipt = await db.productProductionCommands.where('[productionId+commandId]')
       .equals([production.id!, command.commandId]).first()
     const result = receipt ? JSON.parse(receipt.resultJson) : null
-    const revision = command.contentRevision
     const expectedResolution = { action: 'author-edit', note: revision.note, authorDraftJson: revision.authorDraftJson }
     const expectedSource = { artifactKey: revision.artifactKey, version: revision.expectedArtifactVersion, contentHash: revision.expectedArtifactHash }
     if (!receipt || !await assertRecordInScope(scope, 'productProductionCommands', receipt, { owner: 'work' })
@@ -180,6 +184,23 @@ export async function validateProductProductionRecoveryDirectiveV1(input: {
     if (!baseline || !await assertRecordInScope(scope, 'productBuildArtifacts', baseline, { owner: 'work' })
       || await hashProductProductionValueV2(JSON.parse(baseline.payloadJson)) !== baseline.contentHash) {
       throw new ProductProductionRecoveryDirectiveErrorV1('[product-production-context] 内容修订原稿证据已变化')
+    }
+    if (isTtrpgRevision) {
+      const plan = parseProductProductionPlanV3(build.planJson)
+      const task = plan.tasks.find(task => task.taskKey === revision.artifactKey)
+      if (!task || !resolveProductProductionTaskRecoveryPolicyV1({ productType: 'ttrpg', task }).authorDraftAllowed
+        || !ttrpgRevision || ttrpgRevision.expectedControlEpoch + 1 !== build.controlEpoch
+        || failureState.resumedFromControlEpoch !== ttrpgRevision.expectedControlEpoch
+        || result.revisionSourceProofHash !== failureState.revisionSourceProofHash) {
+        throw new ProductProductionRecoveryDirectiveErrorV1('[product-production-context] 跑团修订岗位或原稿证明不一致')
+      }
+      const source = await (await import('./artifact-store')).prepareTtrpgOpenContentRevisionSourceV1({
+        scope, build: { ...build, id: build.id! }, artifactKey: revision.artifactKey,
+        version: revision.expectedArtifactVersion, contentHash: revision.expectedArtifactHash, historical: true,
+      })
+      if (source.proofHash !== result.revisionSourceProofHash) {
+        throw new ProductProductionRecoveryDirectiveErrorV1('[product-production-context] 跑团修订原稿生产者证明已变化')
+      }
     }
     return { resolvedDirective: true, resolution, previousFailure: null, snapshot: null, failedAttempt: null }
   }

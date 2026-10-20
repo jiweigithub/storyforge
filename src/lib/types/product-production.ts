@@ -721,6 +721,17 @@ export interface TextAdventureContentRevisionV1 {
   authorDraftJson: string;
 }
 
+/** Same-Build author revision of an accepted open TTRPG content task. */
+export interface TtrpgOpenContentRevisionV1 {
+  artifactKey: 'ttrpg.open.source-facts' | 'ttrpg.open.rule-system' | 'ttrpg.open.situation-layer';
+  expectedArtifactVersion: number;
+  expectedArtifactHash: string;
+  expectedPlanHash: string;
+  expectedControlEpoch: number;
+  note: string;
+  authorDraftJson: string;
+}
+
 /**
  * Author accounting decision for one exact provider reservation that was still
  * in flight when a Production was paused. Every identity field is required so
@@ -868,6 +879,7 @@ export type ProductProductionCommandV1 =
       /** Required only when pause froze one or more in-flight provider reservations. */
       pausedReservationDispositions?: ProductProductionPausedReservationDispositionV1[];
       contentRevision?: TextAdventureContentRevisionV1;
+      ttrpgContentRevision?: TtrpgOpenContentRevisionV1;
     }
   | {
       type: "stop";

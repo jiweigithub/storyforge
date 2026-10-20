@@ -3,6 +3,7 @@ import { prepareProductProductionOriginalAuthorSourceV1, assertProductProduction
 import { prepareProductProductionOriginalResponseBookingV1, assertProductProductionOriginalBookingCurrentV1,
   type PreparedOriginalResponseBookingV1 } from './original-response-booking'
 import { canReviseTextContentBuildV1, createTextContentRevisionPlanV1 } from './text-content-revision'
+import type { prepareTtrpgOpenContentRevisionV1 } from '../ttrpg/open-production-content-revision'
 import Dexie from 'dexie'
 import { db } from '../db/schema'
 import type {
@@ -1045,6 +1046,7 @@ async function createRevisionBuildWithCarriesV1(input: {
 }
 
 async function applyCommand(input: {
+  preparedTtrpgContentRevision?: Awaited<ReturnType<typeof prepareTtrpgOpenContentRevisionV1>> | null
   preparedOriginalAuthorSource?: PreparedProductProductionOriginalAuthorSourceV1 | null
   preparedOriginalResponseBooking?: PreparedOriginalResponseBookingV1 | null
   preparedTextRevision?: Awaited<ReturnType<typeof prepareTextContentRevisionV1>> | null
@@ -1960,7 +1962,15 @@ async function applyCommand(input: {
     } else if (command.pausedReservationDispositions) {
       reject('invalid-state-transition', '普通暂停没有待处置 provider reservation')
     }
-    const restored = contentRevision ? 'building' : build.resumeState
+    const ttrpgContentRevision = command.ttrpgContentRevision
+    if (ttrpgContentRevision) {
+      if (!input.preparedTtrpgContentRevision) reject('source-stale', '跑团修订缺少完整原稿证明')
+      try { await input.preparedTtrpgContentRevision!.assertCurrent() } catch {
+        reject('source-stale', '跑团原稿或生产证据已变化，请重新读取')
+      }
+    }
+    const revision = ttrpgContentRevision ?? contentRevision
+    const restored = revision ? 'building' : build.resumeState
     const controlEpoch = production.controlEpoch + 1
     const stateRevision = production.stateRevision + 1
     const pausedFailure = readResult(build.failureJson)
@@ -1971,15 +1981,16 @@ async function applyCommand(input: {
       controlEpoch,
       stateRevision: build.stateRevision + 1,
       budgetLedgerJson,
-      failureJson: contentRevision ? safeJson({
+      failureJson: revision ? safeJson({
         code: 'author-revised-content', commandId: command.commandId, revisionCommand: command,
-        blockerKey: contentRevision.artifactKey,
+        blockerKey: revision.artifactKey,
         revisionSource: {
-          artifactKey: contentRevision.artifactKey,
-          version: contentRevision.expectedArtifactVersion,
-          contentHash: contentRevision.expectedArtifactHash,
+          artifactKey: revision.artifactKey,
+          version: revision.expectedArtifactVersion,
+          contentHash: revision.expectedArtifactHash,
         },
-        resolution: { action: 'author-edit', note: contentRevision.note, authorDraftJson: contentRevision.authorDraftJson },
+        ...(ttrpgContentRevision ? { revisionSourceProofHash: input.preparedTtrpgContentRevision!.sourceProofHash } : {}),
+        resolution: { action: 'author-edit', note: revision.note, authorDraftJson: revision.authorDraftJson },
         resumedFromControlEpoch: build.controlEpoch,
         pauseReceipt: pausedFailure, pausedReservationAccountings, resolvedAt: now,
       }) : pausedReservationAccountings.length ? safeJson({
@@ -2010,7 +2021,8 @@ async function applyCommand(input: {
       controlEpoch,
       restored,
       pausedReservationAccountings,
-      ...(contentRevision ? { revisionAuthorization: command } : {}),
+      ...(revision ? { revisionAuthorization: command } : {}),
+      ...(ttrpgContentRevision ? { revisionSourceProofHash: input.preparedTtrpgContentRevision!.sourceProofHash } : {}),
     } }
   }
 
@@ -2960,6 +2972,7 @@ async function applyCommand(input: {
 }
 
 async function executeTransaction(input: {
+  preparedTtrpgContentRevision?: Awaited<ReturnType<typeof prepareTtrpgOpenContentRevisionV1>> | null
   preparedOriginalAuthorSource?: PreparedProductProductionOriginalAuthorSourceV1 | null
   preparedOriginalResponseBooking?: PreparedOriginalResponseBookingV1 | null
   preparedTextRevision?: Awaited<ReturnType<typeof prepareTextContentRevisionV1>> | null
@@ -3129,6 +3142,7 @@ async function executeTransaction(input: {
         }
       }
       const applied = await applyCommand({
+        preparedTtrpgContentRevision: input.preparedTtrpgContentRevision,
         preparedOriginalAuthorSource: input.preparedOriginalAuthorSource,
         preparedOriginalResponseBooking: input.preparedOriginalResponseBooking,
         preparedTextRevision: input.preparedTextRevision,
@@ -3575,7 +3589,21 @@ export async function executeProductProductionCommand(input: {
     })
     preparedPausedBuild = { before, after, runs }
   }
+  let preparedTtrpgContentRevision: Awaited<ReturnType<typeof prepareTtrpgOpenContentRevisionV1>> | null = null
+  let ttrpgPreparationFailure: { cause: unknown } | null = null
+  if (command.type === 'resume' && command.ttrpgContentRevision && preparedPausedBuild) {
+    try {
+      preparedTtrpgContentRevision = await (await import('../ttrpg/open-production-content-revision'))
+        .prepareTtrpgOpenContentRevisionV1({ scope, productionId: input.productionId!, build: preparedPausedBuild.before, command })
+    } catch (cause) { ttrpgPreparationFailure = { cause } }
+  }
+  if (ttrpgPreparationFailure && !await db.productProductionCommands.where('[productionId+commandId]')
+    .equals([input.productionId!, command.commandId]).first()) throw ttrpgPreparationFailure.cause
+  // Another connection may finish this exact command while its read-only
+  // producer proof is being prepared. Only the durable transaction below can
+  // replay that winner (including payload/scope checks); never re-run mutation.
   const request = {
+    preparedTtrpgContentRevision,
     preparedOriginalAuthorSource,
     preparedOriginalResponseBooking,
     preparedTextRevision,

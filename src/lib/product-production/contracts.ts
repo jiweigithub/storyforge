@@ -2,6 +2,7 @@ import { parseChatAuthoringSettingsV1 } from '../character-interaction/authoring
 import { parseAvgAuthoringSettingsV1 } from '../avg/authoring-contract'
 import type {
   TextAdventureContentRevisionV1,
+  TtrpgOpenContentRevisionV1,
   ProductConsultationBudgetV1,
   ProductProductionBlockerResolutionV1,
   ProductProductionBriefV3,
@@ -517,6 +518,24 @@ export function parseTextAdventureContentRevisionV1(value: unknown): TextAdventu
   }
 }
 
+export function parseTtrpgOpenContentRevisionV1(value: unknown): TtrpgOpenContentRevisionV1 {
+  const r = record(value, 'ttrpgContentRevision')
+  exactKeys(r, ['artifactKey', 'expectedArtifactVersion', 'expectedArtifactHash', 'expectedPlanHash',
+    'expectedControlEpoch', 'note', 'authorDraftJson'], 'ttrpgContentRevision')
+  const expectedArtifactHash = text(r.expectedArtifactHash, 'expectedArtifactHash', 64)
+  const expectedPlanHash = text(r.expectedPlanHash, 'expectedPlanHash', 64)
+  if (!isSha256Hash(expectedArtifactHash) || !isSha256Hash(expectedPlanHash)) fail('跑团内容修订 Hash 无效')
+  const authorDraftJson = text(r.authorDraftJson, 'authorDraftJson', 120_000)
+  try { record(JSON.parse(authorDraftJson), 'authorDraftJson') } catch { fail('authorDraftJson 必须是 JSON 对象') }
+  return {
+    artifactKey: enumValue(r.artifactKey, ['ttrpg.open.source-facts', 'ttrpg.open.rule-system', 'ttrpg.open.situation-layer'], 'artifactKey'),
+    expectedArtifactVersion: positiveId(r.expectedArtifactVersion, 'expectedArtifactVersion'),
+    expectedArtifactHash, expectedPlanHash,
+    expectedControlEpoch: expectedRevision(r.expectedControlEpoch),
+    note: text(r.note, 'note', 2000), authorDraftJson,
+  }
+}
+
 export function parseProductProductionCommandV1(value: unknown): ProductProductionCommandV1 {
   const row = record(value, 'command')
   const type = enumValue(row.type, PRODUCT_PRODUCTION_COMMAND_TYPES, 'command.type')
@@ -675,13 +694,17 @@ export function parseProductProductionCommandV1(value: unknown): ProductProducti
   if (type === 'pause') return { type, commandId: commandHeader(row, type, ['expectedStateRevision', 'reason']), expectedStateRevision: expectedRevision(row.expectedStateRevision), reason: text(row.reason, 'reason', 4000) }
   if (type === 'resume') {
     const hasContentRevision = Object.prototype.hasOwnProperty.call(row, 'contentRevision')
+    const hasTtrpgContentRevision = Object.prototype.hasOwnProperty.call(row, 'ttrpgContentRevision')
+    if (hasContentRevision && hasTtrpgContentRevision) fail('一次恢复只能修订一个产品的内容')
     const hasPausedReservations = Object.prototype.hasOwnProperty.call(row, 'pausedReservationDispositions')
     const commandId = commandHeader(row, type, [
       'expectedStateRevision',
       ...(hasPausedReservations ? ['pausedReservationDispositions'] : []),
       ...(hasContentRevision ? ['contentRevision'] : []),
+      ...(hasTtrpgContentRevision ? ['ttrpgContentRevision'] : []),
     ])
     const contentRevision = hasContentRevision ? parseTextAdventureContentRevisionV1(row.contentRevision) : undefined
+    const ttrpgContentRevision = hasTtrpgContentRevision ? parseTtrpgOpenContentRevisionV1(row.ttrpgContentRevision) : undefined
     const pausedReservationDispositions = hasPausedReservations
       ? (() => {
           if (!Array.isArray(row.pausedReservationDispositions)
@@ -722,6 +745,7 @@ export function parseProductProductionCommandV1(value: unknown): ProductProducti
       expectedStateRevision: expectedRevision(row.expectedStateRevision),
       ...(pausedReservationDispositions ? { pausedReservationDispositions } : {}),
       ...(contentRevision ? { contentRevision } : {}),
+      ...(ttrpgContentRevision ? { ttrpgContentRevision } : {}),
     }
   }
   if (type === 'stop') return { type, commandId: commandHeader(row, type, ['expectedStateRevision', 'retention']), expectedStateRevision: expectedRevision(row.expectedStateRevision), retention: enumValue(row.retention, ['keep-build', 'discard-unreleased'], 'retention') }

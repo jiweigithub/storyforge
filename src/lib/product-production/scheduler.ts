@@ -1904,7 +1904,7 @@ export function productProductionTaskReuseSemanticsEqualV1(
     === canonicalProductProductionJsonV2(signature(next))
 }
 
-function expandProductProductionInvalidatedTaskClosureV1(
+export function expandProductProductionInvalidatedTaskClosureV1(
   plan: Pick<ProductProductionPlanV3, 'tasks'>,
   seeds: Iterable<string>,
 ): Set<string> {
@@ -3518,6 +3518,20 @@ export async function recoveryInvalidatedTaskKeys(input: {
   previousControlEpoch: number
   plan: ProductProductionPlanV3
 }): Promise<Set<string>> {
+  if (input.plan.productType === 'ttrpg') {
+    const failure = parsedObject(input.failureJson)
+    if (failure.code !== 'author-revised-content') return new Set()
+    const build = await db.productBuilds.get(input.buildId)
+    if (!build || build.failureJson !== input.failureJson || typeof failure.blockerKey !== 'string') {
+      throw new Error('[ttrpg-content-revision] 修订与当前制作状态不一致')
+    }
+    await validateProductProductionRecoveryDirectiveV1({
+      scope: { projectId: build.projectId, worldId: build.worldId, workId: build.workId },
+      productProductionId: build.productionId, productBuildId: input.buildId,
+      productProductionTaskKey: failure.blockerKey, expectedState: 'resolved',
+    })
+    return expandProductProductionInvalidatedTaskClosureV1(input.plan, [failure.blockerKey])
+  }
   if (input.plan.productType !== 'text-adventure') return new Set()
   const revisedNarrativeReviewRetry = await revisedNarrativeQualityRetryTaskV1({
     buildId: input.buildId, controlEpoch: input.previousControlEpoch,
