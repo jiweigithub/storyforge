@@ -1,4 +1,5 @@
 import {validateChatSceneTransitionV1, requireChatSceneTransitionV1, applyChatSceneTransitionV1, validateChatSceneTransitionCheckV1} from './narrative-scene-transition'
+import {assertChatTurnCompletionV1, parseChatTurnCompletionV1, validateChatTurnCompletionCheckV1} from './turn-completion'
 import {requireChatPromiseRequestV1} from './narrative-promise-request'
 import {recordChatResolutionEvidenceV1} from './resolution-evidence'
 import {recordChatFactEvidenceV1} from './fact-evidence'
@@ -51,7 +52,7 @@ function choice(value: unknown, allowed: readonly string[]) {
 
 /** Structural parse also runs on restored candidates; state-dependent checks run again at commit. */
 export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV1 {
-  const optional = ['relationshipUpdates', 'nextPossibilities', 'beliefUpdates', 'goalUpdates', 'situationRequest', 'followupGoal', 'threadFollowupGoal', 'resumeGoal', 'pauseGoal', 'promiseRequest', 'sceneTransition', 'commitmentEffects'].filter(name => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, name))
+  const optional = ['relationshipUpdates', 'nextPossibilities', 'beliefUpdates', 'goalUpdates', 'situationRequest', 'followupGoal', 'threadFollowupGoal', 'resumeGoal', 'pauseGoal', 'promiseRequest', 'sceneTransition', 'commitmentEffects', 'turnCompletion'].filter(name => value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, name))
   const row = object(value, ['kind,text,goalKey,evidenceFactKeys,audienceKeys,waitingForPlayer,newFacts,disclosures,threadUpdates,goalStatus', ...optional].join(','))
   choice(row.kind, ['speak', 'attempt', 'complete', 'pause'])
   text(row.text, 8000); if (row.goalKey !== null) key(row.goalKey); keys(row.evidenceFactKeys); keys(row.audienceKeys, 33)
@@ -124,6 +125,7 @@ export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV
     const goal = object(proposal.goal, 'goalKey,desire,concern,boundary,evidenceFactKeys')
     key(goal.goalKey); text(goal.desire, 1200); text(goal.concern, 1200); text(goal.boundary, 1200); keys(goal.evidenceFactKeys, 20)
   }
+  if (optional.includes('turnCompletion') && row.turnCompletion !== null) parseChatTurnCompletionV1(row.turnCompletion)
   if (optional.includes('sceneTransition') && row.sceneTransition !== null) validateChatSceneTransitionV1(row.sceneTransition)
   if (optional.includes('promiseRequest') && row.promiseRequest !== null) validateChatPlayerRequestEvidenceV1(row.promiseRequest)
   if (optional.includes('resumeGoal') && row.resumeGoal !== null) validateChatPlayerRequestEvidenceV1(row.resumeGoal)
@@ -218,6 +220,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   }
   if (trigger.actionSequences.length >= chatTurnActionLimitV1(story.permissions, trigger) || state.remainingDirectorBudget < 1) fail('行动预算不足')
   const action = parseChatNarrativeActionV1(input.action)
+  assertChatTurnCompletionV1(state, actorKey, action)
   if (story.pendingEdit) {
     if (action.threadFollowupGoal != null) fail('待处理改写不能建立既有事项接续目标')
     const edit = story.pendingEdit
@@ -339,7 +342,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
   if (sceneTransition) applyChatSceneTransitionV1(state, {actorKey, messageId: input.messageId, sequence: input.sequence, transition: sceneTransition})
   trigger.actionSequences.push(input.sequence)
   trigger.status = action.waitingForPlayer ? 'waiting-player'
-    : action.goalKey === null && action.situationRequest?.purpose !== 'player-followup' || action.kind === 'pause' || trigger.actionSequences.length >= chatTurnActionLimitV1(story.permissions, trigger) ? 'complete' : 'ready'
+    : action.turnCompletion != null || action.goalKey === null && action.situationRequest?.purpose !== 'player-followup' || action.kind === 'pause' || trigger.actionSequences.length >= chatTurnActionLimitV1(story.permissions, trigger) ? 'complete' : 'ready'
   if (trigger.status === 'complete' && trigger.direction?.settleSituationVersion === 1 && action.situationRequest) {
     trigger.status = 'ready'
     if (!chatHasPendingTurnSettlementV1(state)) trigger.status = 'complete'
@@ -357,6 +360,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
 
 /** Preserve the historical unreviewed event format without granting it new writes. */
 export function applyChatNarrativeActionV1(state: CharacterInteractionRuntimeState, input: Parameters<typeof applyActionBase>[1]) {
+  if (input.action && typeof input.action === 'object' && 'turnCompletion' in input.action) fail('本轮结束必须通过独立审查，旧行动事件不可采用')
   if (input.factEvidenceVersion !== undefined || input.resolutionEvidenceVersion !== undefined) fail('旧行动事件不能写入事实来源索引或收束依据')
   if (state.chatNarrative?.pendingEdit) fail('历史改写必须通过行动及后果审查')
   const action = parseChatNarrativeActionV1(input.action)
@@ -377,11 +381,12 @@ export function previewChatNarrativeActionV1(state: CharacterInteractionRuntimeS
 
 
 export function parseChatNarrativeActionReviewV1(value: unknown, action: ChatNarrativeActionV1): ChatNarrativeActionReviewV1 {
+  const hasTurnCompletionCheck = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'turnCompletionCheck')
   const hasDisclosureChecks = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'disclosureChecks')
   const hasCommitmentChecks = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'commitmentChecks')
   const hasSceneTransitionCheck = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'sceneTransitionCheck')
   const hasMemoryChecks = value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'memoryChecks')
-  const row = object(value, 'reviewedActionJson,checks' + (hasSceneTransitionCheck ? ',sceneTransitionCheck' : '') + (hasMemoryChecks ? ',memoryChecks' : '') + (hasDisclosureChecks ? ',disclosureChecks' : '') + (hasCommitmentChecks ? ',commitmentChecks' : ''))
+  const row = object(value, 'reviewedActionJson,checks' + (hasTurnCompletionCheck ? ',turnCompletionCheck' : '') + (hasSceneTransitionCheck ? ',sceneTransitionCheck' : '') + (hasMemoryChecks ? ',memoryChecks' : '') + (hasDisclosureChecks ? ',disclosureChecks' : '') + (hasCommitmentChecks ? ',commitmentChecks' : ''))
   if (row.reviewedActionJson !== canonicalStringify(action)) fail('行动审查绑定了另一份候选')
   const checks = list(row.checks, CHAT_ACTION_REVIEW_CHECKS_V1.length), seen = new Set<string>()
   if (checks.length !== CHAT_ACTION_REVIEW_CHECKS_V1.length) fail('行动语义审查不完整')
@@ -404,11 +409,12 @@ export function parseChatNarrativeActionReviewV1(value: unknown, action: ChatNar
   validateChatCommitmentChecksV1(row.commitmentChecks, action)
   if (hasMemoryChecks) parseChatMemoryReconciliationChecksV1(row.memoryChecks)
   validateChatSceneTransitionCheckV1(row.sceneTransitionCheck, action)
+  validateChatTurnCompletionCheckV1(row.turnCompletionCheck, action)
   return structuredClone(value) as ChatNarrativeActionReviewV1
 }
 
 export function chatNarrativeActionReviewPassedV1(review: ChatNarrativeActionReviewV1): boolean {
-  return (review.sceneTransitionCheck?.passed ?? true) && review.checks.every(check => check.passed) && (review.disclosureChecks ?? []).every(check => check.passed)
+  return (review.turnCompletionCheck?.passed ?? true) && (review.sceneTransitionCheck?.passed ?? true) && review.checks.every(check => check.passed) && (review.disclosureChecks ?? []).every(check => check.passed)
     && (review.commitmentChecks ?? []).every(check => check.passed)
     && (review.memoryChecks ?? []).every(check => check.passed)
 }

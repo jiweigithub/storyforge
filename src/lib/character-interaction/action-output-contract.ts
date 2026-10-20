@@ -4,6 +4,7 @@ import {CHAT_THREAD_STATUSES_V1} from '../types/chat-narrative'
 import {CHAT_OWN_EVIDENCE_ARRAYS_V1, CHAT_OWN_EVIDENCE_OBJECTS_V1, supportsChatOwnEvidenceBindingV1} from './action-evidence-binding'
 import {CHAT_ACTION_EXPRESSION_MODES_V1, supportsChatActionWireV1} from './action-wire'
 import {chatNarrativeOutcomeSchemaV1, supportsChatControlHandoffV1} from './control-handoff-wire'
+import {CHAT_TURN_COMPLETION_ACTION_RULE_V1, CHAT_TURN_COMPLETION_PRODUCER_V1} from './turn-completion'
 
 type Schema = Record<string, unknown>
 const string: Schema = {type: 'string'}
@@ -86,6 +87,12 @@ export function chatActionRequestOptionsV1(version: string | undefined, provider
   if (!supportsChatActionOutputContractV1(version) || !['codex', 'agnes'].includes(provider ?? '')) return undefined
   const ownEvidence = supportsChatOwnEvidenceBindingV1(version)
   const action = ownEvidence ? chatActionOutputSchemaV3() : usesChangeDescriptions(version) ? chatActionOutputSchemaV2() : chatActionOutputSchemaV1()
+  if (version === CHAT_TURN_COMPLETION_PRODUCER_V1) {
+    const properties = action.properties as Record<string, Schema>
+    properties.turnCompletion = nullable(object({version: {type: 'integer', enum: [1]}, purpose: string, evidenceExcerpt: string}))
+    properties.turnCompletion.description = CHAT_TURN_COMPLETION_ACTION_RULE_V1
+    action.required = Object.keys(properties)
+  }
   const wire = supportsChatActionWireV1(version)
   if (wire) {
     const properties = action.properties as Record<string, Schema>
@@ -111,7 +118,7 @@ export const CHAT_ACTION_OUTPUT_CHECK_V1 = '输出完整候选对象，不能省
 
 export function chatActionOutputRulesV1(version: string | undefined, audience?: readonly string[]): string[] {
   if (!supportsChatActionOutputContractV1(version)) return []
-  return [CHAT_ACTION_OUTPUT_CHECK_V1 + (usesChangeDescriptions(version)
+  return [...(version === CHAT_TURN_COMPLETION_PRODUCER_V1 ? [CHAT_TURN_COMPLETION_ACTION_RULE_V1] : []), CHAT_ACTION_OUTPUT_CHECK_V1 + (usesChangeDescriptions(version)
     ? '最后逐项对照行动前状态：goalStatus 是变更指令，不是状态描述；目标继续保持 active 必须填 null，不能填 active。goalUpdates 和 threadUpdates 仅列实际变化，无变化填 []；不能因正在处理事项就重复 open。不得删除原约束、自动补后果或改写原文来规避校验。'
     : '') + (supportsChatOwnEvidenceBindingV1(version)
     ? '本次表达的 evidenceExcerpt 可填 null，由系统逐字绑定完整 text。正文超过对应摘录上限时必须填写连续逐字片段，不能省略或改写：承诺1000字、情境请求1200字、目标/关系/后续目标/暂停/转场2000字、事实/披露/事项8000字。playerExcerpt、destinationExcerpt、历史与来源事实仍必须按各自合同提供原文，不能用 null 代替。绑定原文不代表事实、授权或后果已成立，仍需原校验和独立审查。'

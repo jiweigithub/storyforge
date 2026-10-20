@@ -5,7 +5,7 @@ import * as skills from '../../src/lib/agent/skill-registry'
 import {adoptInteractionRuntimeCandidateV1, cancelInteractionRuntimeRunV1, generateInteractionRuntimeCandidateV1, readInteractionRuntimeCandidateV1, resumeChatNarrativeActionV1, resumeChatNarrativeReviewV1} from '../../src/lib/character-interaction/harness'
 import {branchProductRuntimeSession, commitChatControlHandoff, commitInteractionPlayerMessage, readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarrativeTrigger} from '../../src/lib/character-interaction/runtime-api'
 import {CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1, type ChatControlHandoffV1} from '../../src/lib/character-interaction/control-handoff-contract'
-import {CHAT_CONTROL_HANDOFF_PRODUCER_V4, CHAT_CONTROL_HANDOFF_REVIEWER_V2, parseChatNarrativeOutcomeWireV1} from '../../src/lib/character-interaction/control-handoff-wire'
+import {parseChatNarrativeOutcomeWireV1} from '../../src/lib/character-interaction/control-handoff-wire'
 import {readChatActionTerminalReceiptV1} from '../../src/lib/character-interaction/action-terminal-receipt'
 import {readChatActionOutputBudgetV1} from '../../src/lib/character-interaction/action-choice-output-budget'
 import {readInstanceAgentRunV1} from '../../src/lib/agent/run/event-store'
@@ -41,8 +41,8 @@ async function start() {
   return {...f, trigger, handoff}
 }
 function enable() {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe(CHAT_CONTROL_HANDOFF_PRODUCER_V4)
-  expect(originalSkill('character.chat-narrative-action-review').promptVersion).toBe(CHAT_CONTROL_HANDOFF_REVIEWER_V2)
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v52')
+  expect(originalSkill('character.chat-narrative-action-review').promptVersion).toBe('chat-narrative-action-review-v35')
 }
 function legacy() {
   vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => ({...originalSkill(id),

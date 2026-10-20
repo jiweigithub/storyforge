@@ -1,5 +1,6 @@
 import {CHAT_CONTROL_HANDOFF_REVIEW_RULES_V1, parseChatControlHandoffReviewV1, readChatControlHandoffBasisV1} from './control-handoff-contract'
 import {assertChatControlHandoffBindingsV1} from './control-handoff-wire'
+import {assertChatTurnCompletionReviewVersionV1} from './turn-completion'
 import {readChatActionChoiceEvidenceV1} from './action-choice-evidence'
 import {boundedChatOutputTokensV1} from './action-output-contract'
 import {assertChatActionChoiceInputBudgetV1} from './action-choice-input-budget'
@@ -67,6 +68,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
   if (situation) assertChatInquiryBindingV1(candidate.draft.inquiryResult,
     snapshot.contract.executionBindings?.find(binding => binding.skillId === 'character.chat-situation-construction')?.promptVersion, reviewBinding.promptVersion)
   const actions = situation || control ? [] : options ? candidate.options : [candidate.action]
+  assertChatTurnCompletionReviewVersionV1(actions, reviewBinding.promptVersion)
   assertChatSceneTransitionReviewVersionV1(actions, reviewBinding.promptVersion)
   assertChatConversationEvidenceReviewVersionV1(actions, reviewBinding.promptVersion)
   assertChatThreadFollowupReviewVersionV1(actions, reviewBinding.promptVersion)
@@ -192,7 +194,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
     let row: Record<string, unknown>
     try {row = JSON.parse(source) as Record<string, unknown>}
     catch {fail('审查响应格式无效；原始结果已保存，尚未提交表达或后果')}
-    if (!row || Array.isArray(row) || !(options ? Object.keys(row).join(',') === 'options' : situation ? Object.keys(row).sort().join(',') === (candidate.kind === 'chat-situation-candidate' && candidate.draft.inquiryResult ? 'checks,inquiryReview' : 'checks') : control ? Object.keys(row).join(',') === 'checks' : isChatActionReviewOutputV1(row))) fail('叙事审查输出字段无效')
+    if (!row || Array.isArray(row) || !(options ? Object.keys(row).join(',') === 'options' : situation ? Object.keys(row).sort().join(',') === (candidate.kind === 'chat-situation-candidate' && candidate.draft.inquiryResult ? 'checks,inquiryReview' : 'checks') : control ? Object.keys(row).join(',') === 'checks' : isChatActionReviewOutputV1(row, actions.some(action => action.turnCompletion != null) ? ['turnCompletionCheck'] : []))) fail('叙事审查输出字段无效')
     if (!situation && !control) {
       await assertRuntimeHarnessFreshV1(freshness)
       const normalizationState = (await readProductRuntimeState(input.productRuntimeSessionId)).interaction!

@@ -52,7 +52,7 @@ it.each([[false, true], [true, true], [false, false], [true, false]])('keeps pro
     return JSON.stringify(options ? {options: ['option-1', 'option-2'].map(optionKey => ({optionKey, ...chatActionReviewOutputFixture()}))} : chatActionReviewOutputFixture())
   }})
   const binding = generated.snapshot.contract.executionBindings!.find(b => b.skillId === (options ? 'character.chat-narrative-options-review' : 'character.chat-narrative-action-review'))!
-  expect(binding.promptVersion).toBe(options ? `chat-narrative-options-review-v${legacy ? 23 : 26}` : `chat-narrative-action-review-v${legacy ? 29 : 34}`)
+  expect(binding.promptVersion).toBe(options ? `chat-narrative-options-review-v${legacy ? 23 : 26}` : `chat-narrative-action-review-v${legacy ? 29 : 35}`)
   expect(calls).toBe(2); expect(generated.snapshot.contract.budget.maxModelCalls).toBe(2)
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id, ...(options ? {optionKey: 'option-1'} : {})})

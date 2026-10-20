@@ -3,6 +3,7 @@ import type {AIProvider, CharacterInteractionRuntimeState, ChatMessage} from '..
 import type {InteractionContextWindow} from './runtime'
 import {chatHasUnfinishedGoalV1} from './narrative-scheduling'
 import {chatCanFollowThreadV1} from './narrative-thread-followup'
+import {CHAT_TURN_COMPLETION_PRODUCER_V1} from './turn-completion'
 
 export const CHAT_ACTION_CHOICE_STEP_V1 = 'interaction:action-choice' as const
 export const CHAT_ACTION_CHOICE_OUTPUT_TOKENS_V1 = 2_000
@@ -11,7 +12,7 @@ export const CHAT_ACTION_CHOICE_KINDS_V1 = ['own-action', 'situation-request', '
 export const CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1 = 'chat-narrative-action-v48'
 export const CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1 = 'chat-narrative-action-v50'
 export const CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1 = 'chat-narrative-action-v51'
-const supportsDependency = (version: string | undefined) => version === CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1 || version === CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1 || version === CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1
+const supportsDependency = (version: string | undefined) => version === CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1 || version === CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1 || version === CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1 || version === CHAT_TURN_COMPLETION_PRODUCER_V1
 
 /** Internal proposal only. It neither writes story state nor grants permission;
  * expression and the existing independent consequence review remain necessary. */
@@ -32,7 +33,7 @@ export interface ChatActionChoiceV1 {
 /** Exact frozen producer version; historical contracts keep their original
  * two-step execution rather than inheriting the current default. */
 export function supportsChatActionChoiceV1(skillId: string, promptVersion: string | undefined): boolean {
-  return skillId === 'character.chat-narrative-action' && ['chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1, CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1, CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1].includes(promptVersion ?? '')
+  return skillId === 'character.chat-narrative-action' && ['chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', CHAT_ACTION_CHOICE_DEPENDENCY_PRODUCER_V1, CHAT_ACTION_CHOICE_SCENE_PERSON_PRODUCER_V1, CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1, CHAT_TURN_COMPLETION_PRODUCER_V1].includes(promptVersion ?? '')
 }
 
 export function chatNeedsActionChoiceV1(input: {
@@ -115,8 +116,9 @@ export function buildChatActionChoiceMessagesV1(actorMessages: readonly ChatMess
   const dependencyRules = supportsDependency(producerVersion)
     ? '\nplayerDependency 只说明当前选中方向本身是否需要玩家决定，不能把后来可能做的其它步骤混入。own-action 的 playerDependency 必须为 null，且至少引用一条已交付事实；若当前动作确实依赖玩家，就选择相应的 question/wait 等方向，不能只把依赖字段清空来假装获得许可。角色现在说明自己的判断，并不代表已获准实施以后提到的动作；后续操作的许可或其它未知条件放在 unconfirmedConditions，不能预先当作成立。situation-request 也至少引用一条已交付事实，只请求补足局部条件。重复已说过的建议即使字段合法也不是新进展；这些结构约束不证明行动有意义，后续表达与独立审查仍须核对。'
     : ''
-  const purpose = producerVersion === CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1 ? purposeRules : ''
-  return [{role: 'system', content: selectionRules + JSON.stringify(selectionExample) + dependencyRules + purpose}, {...actorMessages[1]}]
+  const purpose = producerVersion === CHAT_ACTION_CHOICE_PURPOSE_PRODUCER_V1 || producerVersion === CHAT_TURN_COMPLETION_PRODUCER_V1 ? purposeRules : ''
+  const completion = producerVersion === CHAT_TURN_COMPLETION_PRODUCER_V1 ? '\n本轮最多可执行的次数不是必须完成的步数。选择能实现具体局部目的的行动；实现后表达步骤可申请结束本轮并保留长期目标活跃。结束本轮本身不是一种剧情进展，不选 pause 来代替本轮结束，不能因此略过玩家请求或待确认的直接结果。' : ''
+  return [{role: 'system', content: selectionRules + JSON.stringify(selectionExample) + dependencyRules + purpose + completion}, {...actorMessages[1]}]
 }
 
 export function appendChatActionChoiceProposalV1(actorMessages: readonly ChatMessage[], value: unknown, context: Pick<InteractionContextWindow, 'chatNarrative'>, producerVersion?: string): ChatMessage[] {

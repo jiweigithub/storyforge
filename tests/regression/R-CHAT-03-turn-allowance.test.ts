@@ -25,7 +25,7 @@ const directionBackground = (): ChatSituationDraftV1 => ({kind: 'chat-situation'
   newFacts: [{factKey: 'latch', kind: 'object', text: '后门门闩有一处松动。', audienceKeys: ['guard', 'player', 'artisan'], evidenceFactKeys: ['lost'], seedExcerpt: '检查后门门闩'}],
   newGoals: [], newThreads: [], possibilities: [{actorKey: 'guard', text: '可以查看门闩，也可以先询问修理师。', evidenceFactKeys: ['latch']}]})
 beforeEach(async () => {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v51')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v52')
   db.close(); await db.delete(); await db.open()
 })
 afterEach(() => {vi.restoreAllMocks(); db.close()})

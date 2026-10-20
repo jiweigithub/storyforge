@@ -7,6 +7,7 @@ import {readChatComposerSessionV1} from './composer-draft-read';
 import {replayChatRuntimeEventsV1} from './runtime-replay';
 import {chatActionChoiceVersionForContractV1, parseChatActionChoiceVersionV1} from './action-choice-budget';
 import {assertChatControlHandoffBindingsV1} from './control-handoff-wire';
+import {assertChatTurnCompletionBindingV1} from './turn-completion';
 import type {ChatControlHandoffV1, ChatControlHandoffReviewV1} from './control-handoff-contract';
 import type { ProductRuntimeCommandEnvelopeV1 } from "../product/runtime-command-id";
 import { JsonObject, applyProductRuntimeEvent, hashStateJson, normalizeCommandId, parseEventPayload, parseProductRuntimeState, readSessionEvents, replayProductRuntimeEvents, stableJson, updateProductRuntimeSessionHeadV1 } from "../product/runtime-core";
@@ -49,6 +50,10 @@ async function appendInteractionCommand(
   const previewSession = await db.productRuntimeSessions.get(input.sessionId);
   if (!previewSession) throw new Error("角色互动会话不存在。");
   const previewEvents = await readSessionEvents(previewSession);
+  if (input.type === 'interaction.narrative.action-reviewed.committed'
+    && (input.payload.action as unknown as ChatNarrativeActionV1)?.turnCompletion != null && input.payload.actionChoiceVersion !== 1) {
+    throw new Error('本轮结束必须绑定实际选择、表达与独立审查运行。');
+  }
   if (input.type === 'interaction.narrative.control-handoff.committed' && !previewEvents.some(event => event.commandId === commandId)) {
     if (!input.harnessRun) throw new Error('交还控制必须绑定原已审查运行。');
     const {assertChatActionChoiceCommitEvidenceV1} = await import('./action-choice-evidence');
@@ -64,6 +69,7 @@ async function appendInteractionCommand(
     if (!run || chatActionChoiceVersionForContractV1(JSON.parse(run.contractJson)) !== parseChatActionChoiceVersionV1(input.payload.actionChoiceVersion)) {
       throw new Error('角色行动选择额度与原运行合同不一致。');
     }
+    assertChatTurnCompletionBindingV1(input.payload.action as unknown as ChatNarrativeActionV1, JSON.parse(run.contractJson));
     const {assertChatActionChoiceCommitEvidenceV1} = await import('./action-choice-evidence');
     await assertChatActionChoiceCommitEvidenceV1({scope: {projectId: previewSession.projectId, worldId: previewSession.worldId, workId: previewSession.workId},
       runId: input.harnessRun.id, lastSequence: input.harnessRun.lastSequence, sessionId: input.sessionId, baseSequence: input.baseSequence,

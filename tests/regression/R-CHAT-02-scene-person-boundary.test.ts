@@ -21,7 +21,8 @@ afterEach(() => {vi.restoreAllMocks(); db.close()})
 function freeze(version: string) {
   vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => {
     const skill = originalSkill(id)
-    return id === 'character.chat-narrative-action' ? {...skill, promptVersion: version} : skill
+    return id === 'character.chat-narrative-action' ? {...skill, promptVersion: version}
+      : id === 'character.chat-narrative-action-review' ? {...skill, promptVersion: 'chat-narrative-action-review-v34'} : skill
   })
 }
 async function start(mode: 'present' | 'private' = 'present') {

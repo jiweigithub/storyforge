@@ -421,6 +421,14 @@ export interface ChatNarrativeActionV1 {
   promiseRequest?: ChatPlayerRequestEvidenceV1 | null
   /** A completed shared visit, not an invitation or an attempt to depart. */
   sceneTransition?: ChatSceneTransitionV1 | null
+  /** End only this turn after the same action meets a reviewed local purpose. */
+  turnCompletion?: ChatTurnCompletionV1 | null
+}
+
+export interface ChatTurnCompletionV1 {
+  version: 1
+  purpose: string
+  evidenceExcerpt: string
 }
 
 export interface ChatActorThreadFollowupGoalV1 {
@@ -473,4 +481,5 @@ export interface ChatNarrativeActionReviewV1 {
   commitmentChecks?: Array<{effectIndex: number; passed: boolean; reason: string}>
   memoryChecks?: ChatMemoryReconciliationCheckV1[]
   sceneTransitionCheck?: ChatSceneTransitionCheckV1
+  turnCompletionCheck?: {passed: boolean; reason: string}
 }

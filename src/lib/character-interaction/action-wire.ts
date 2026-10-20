@@ -1,5 +1,6 @@
 import type {CharacterInteractionRuntimeState} from '../types'
 import {chatTurnAudienceBoundaryV1} from './narrative-audience'
+import {CHAT_TURN_COMPLETION_PRODUCER_V1} from './turn-completion'
 
 /** One explicit choice binds action kind and player-decision dependency. These
  * are transport names; saved actions keep the existing domain contract. */
@@ -14,7 +15,7 @@ export const CHAT_ACTION_EXPRESSION_MODES_V1 = {
 } as const
 
 export function supportsChatActionWireV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-v41', 'chat-narrative-options-v31', 'chat-action-revision-v20', 'chat-narrative-action-v42', 'chat-narrative-action-v43', 'chat-narrative-action-v44', 'chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34'].includes(version ?? '')
+  return ['chat-narrative-action-v41', 'chat-narrative-options-v31', 'chat-action-revision-v20', 'chat-narrative-action-v42', 'chat-narrative-action-v43', 'chat-narrative-action-v44', 'chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34'].includes(version ?? '')
 }
 
 /** Capture before dispatch, from the registered runtime's actual conversation.
@@ -33,6 +34,7 @@ export function resolveChatActionWireAudienceV1(state: CharacterInteractionRunti
 /** Never infer a mode from prose or repair a contradictory canonical action.
  * Canonical adapters remain accepted by the unchanged domain parser. */
 export function compileChatActionWireV1(value: unknown, version: string | undefined, audience?: readonly string[]): unknown {
+  if (value && typeof value === 'object' && 'turnCompletion' in value && version !== CHAT_TURN_COMPLETION_PRODUCER_V1) throw new Error('[chat-turn-completion] 旧生成合同不能添加本轮结束字段')
   if (!supportsChatActionWireV1(version) || value === null || typeof value !== 'object' || Array.isArray(value)) return value
   const result = structuredClone(value) as Record<string, unknown>
   if (Object.prototype.hasOwnProperty.call(result, 'expressionMode')) {
@@ -53,6 +55,7 @@ export function chatActionWireExampleV1(example: string, version: string | undef
   if (!supportsChatActionWireV1(version)) return example
   const result = JSON.parse(example), actions = result.options ?? [result]
   for (const action of actions) {
+    if (version === CHAT_TURN_COMPLETION_PRODUCER_V1) action.turnCompletion = null
     delete action.kind; delete action.waitingForPlayer
     action.expressionMode = Object.keys(CHAT_ACTION_EXPRESSION_MODES_V1).join('|')
     action.audienceKeys = null
