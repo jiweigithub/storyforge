@@ -16,6 +16,7 @@ const snapshotEntries = [
   // only JSON, never local weights, runtimes, provider journals or credentials.
   'scripts/avg-local-music/model-source.json',
   'scripts/avg-local-music/library-source.json',
+  'scripts/avg-local-music/publisher-library-source.json',
   'data',
   'showcase/short-novel',
   'showcase/screenplay',

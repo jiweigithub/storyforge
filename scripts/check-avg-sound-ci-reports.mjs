@@ -7,7 +7,8 @@ import { resolve, basename } from 'node:path'
 const modes = [
   { directory: 'sound-closed', file: 'avg-sound-requirements.spec.ts', minimumExecuted: 1, minimumSkipped: 3 },
   { directory: 'sound-preparation', file: 'avg-sound-requirements.spec.ts', minimumExecuted: 3, minimumSkipped: 1 },
-  { directory: 'sound-production', file: 'avg-sound-production.spec.ts', minimumExecuted: 4, minimumSkipped: 0 },
+  { directory: 'sound-production', file: 'avg-sound-production.spec.ts', minimumExecuted: 5, minimumSkipped: 0,
+    requiredTitle: 'native publisher-page V2 original audio keeps unknown hearing through actual decoding, playback and portable raw recovery without a Key or music request' },
   { directory: 'sound-frozen', file: 'avg-sound-prototype-read.spec.ts', minimumExecuted: 1, minimumSkipped: 0 },
 ]
 const maximumBytes = 8 * 1024 * 1024
@@ -21,7 +22,7 @@ function testsIn(suites, expectedFile) {
     const tests = specs.flatMap(spec => {
       if (typeof spec.file !== 'string' || basename(spec.file.replaceAll('\\', '/')) !== expectedFile
         || !Array.isArray(spec.tests)) fail('报告并非本模式的准确声音用例')
-      return spec.tests
+      return spec.tests.map(test => ({ ...test, specTitle: spec.title }))
     })
     return [...tests, ...testsIn(suite.suites ?? [], expectedFile)]
   })
@@ -36,7 +37,12 @@ async function verifyMode(root, mode) {
   const report = JSON.parse(content.toString('utf8'))
   if (!Array.isArray(report.errors) || report.errors.length) fail(`${mode.directory} 有运行级失败`)
   const counts = { expected: 0, flaky: 0, unexpected: 0, skipped: 0 }
-  for (const test of testsIn(report.suites, mode.file)) {
+  const tests = testsIn(report.suites, mode.file)
+  if (mode.requiredTitle) {
+    const actual = tests.filter(test => test.specTitle === mode.requiredTitle)
+    if (actual.length !== 1 || !['expected', 'flaky'].includes(actual[0].status)) fail('缺少准确原发布页许可V2的实际原生用例，其他通过数量不能代验')
+  }
+  for (const test of tests) {
     if (test.projectName !== 'chromium' || !Object.hasOwn(counts, test.status)) fail('报告项目或用例终态无效')
     counts[test.status]++
     if (test.status === 'expected' || test.status === 'flaky') {

@@ -35,7 +35,7 @@ def atomic_json(path, value):
 
 def bridge_sources():
     root = Path(__file__).resolve().parent
-    names = ("local_protocol.py", "server.py", "production_job.py", "licensed_library.py", "library-source.json", "engine.py", "offline_handler.py",
+    names = ("local_protocol.py", "server.py", "production_job.py", "licensed_library.py", "library-source.json", "publisher-library-source.json", "engine.py", "offline_handler.py",
              "runtime_guard.py", "haar_correction.py", "model-source.json", "requirements-macos-arm64.lock")
     result = {name: sha256(root / name) for name in names}
     result["avg-local-audio/pinned_model_install.py"] = sha256(root.parent / "avg-local-audio/pinned_model_install.py")

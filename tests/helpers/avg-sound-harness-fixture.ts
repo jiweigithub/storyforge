@@ -16,11 +16,11 @@ import type { ProductProductionCapabilityBindingV1 } from '../../src/lib/product
 /** Isolated actual S2, explicit start, author commands, shared scheduler and
  * configured HTTP. Only the feature fence and network are controlled by tests;
  * never seed a Build/Run, adoption/producer receipt or accepted Artifact. */
-export async function avgSoundHarnessFixtureV1(options: { malformed?: boolean; onResponse?: () => Promise<void>; output?: string;
+export async function avgSoundHarnessFixtureV1(options: { malformed?: boolean; onResponse?: () => Promise<void>; output?: string; libraryOnly?: boolean;
   configureSource?: (source: Awaited<ReturnType<typeof avgSoundProductionFixtureV1>>) => Promise<void>;
   audioFetcher?: (target: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   additionalBindings?: ProductProductionCapabilityBindingV1[] } = {}) {
-  const source = await avgSoundProductionFixtureV1()
+  const source = await avgSoundProductionFixtureV1(options.libraryOnly === true)
   await options.configureSource?.(source)
   const text = await resolveConfiguredTextCapabilityV1({ projectId: source.owner.scope.projectId, category: 'product-production', requirementKey: AVG_SOUND_TEXT_CAPABILITY_V1 })
   source.brief.capabilityRequirements.find(c => c.requirementKey === AVG_SOUND_TEXT_CAPABILITY_V1)!.capabilityHash = text.receipt.capabilityHash

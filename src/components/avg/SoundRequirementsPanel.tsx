@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { WorkspaceScope } from '../../lib/types'
 import type { AvgAuthorWorkspaceV1 } from '../../lib/avg/author-workspace-contract'
 import type { AvgSoundTemplateV1 } from '../../lib/avg/sound-scope-contract'
-import { listAvgSoundLibraryMetadataV1 } from '../../lib/avg/sound-provider-contract'
+import { listAvgSoundLibraryMetadataV2 } from '../../lib/avg/sound-provider-contract'
 import { avgSoundPreparationEnabledV1, avgSoundProductionExecutionReadyV1 } from '../../lib/avg/sound-production-brief'
 import { saveAvgSoundProductionDraftV1, clearAvgSoundProductionDraftV1, validateAvgSoundDraftSourcesV1 } from '../../lib/avg/sound-draft-service'
 import { prepareAvgAssemblyBriefV1 } from '../../lib/avg/assembly-service'
@@ -13,7 +13,7 @@ type Props = {
   onAction: (action: () => Promise<void>) => Promise<void>; onReload: () => Promise<void>; onNotice: (text: string) => void
 }
 const NAMES = { bgm: '背景音乐', ambience: '环境声', sfx: '一次性音效' }
-const curated = listAvgSoundLibraryMetadataV1()
+  const curated = listAvgSoundLibraryMetadataV2()
 
 /** Author requirements only; original bytes and hearing are reviewed later.
  * The separate draft-editor switch cannot grant any formal execution rights. */

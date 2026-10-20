@@ -1,6 +1,7 @@
 import { avgBoolean, avgEnum, avgHash, avgKey, avgList, avgNumber, avgProtocolBody, avgRecord, avgText, avgUnique } from './protocol-validation'
 import { parseAvgConsumerV1, type AvgConsumerV1 } from './runtime-contract-v2'
 import { parseAvgSoundChannelV1, type AvgSoundChannelV1 } from './sound-plan-contract'
+import { parseAvgSoundPublisherLibrarySourceV2, type AvgSoundPublisherLibrarySourceV2 } from './sound-publisher-library'
 
 /** Unverified locators in a frozen declaration. The real local producer must
  * prove the original archive/member bytes and included licence separately. */
@@ -8,6 +9,7 @@ export interface AvgSoundLibrarySourceV1 {
   sourceKey: string; publisherPage: string; license: 'CC0-1.0'
   archiveHash: string; memberPath: string; memberHash: string
 }
+export type AvgSoundLibrarySource = AvgSoundLibrarySourceV1 | AvgSoundPublisherLibrarySourceV2
 export interface AvgSoundTemplateV1 {
   requirementKey: string; assetKey: string; channel: AvgSoundChannelV1
   consumer: AvgConsumerV1; purpose: string; constraints: string[]
@@ -17,10 +19,10 @@ export interface AvgSoundTemplateV1 {
 }
 export interface AvgSoundPlanningScopeV1 {
   schema: 'storyforge.avg.sound-planning-scope'; version: 1; sourceInputHash: string
-  templates: AvgSoundTemplateV1[]; librarySources: AvgSoundLibrarySourceV1[]
+  templates: AvgSoundTemplateV1[]; librarySources: AvgSoundLibrarySource[]
 }
 
-function parseLibrary(value: unknown): AvgSoundLibrarySourceV1 {
+function parseLibraryV1(value: unknown): AvgSoundLibrarySourceV1 {
   const r = avgRecord(value, ['sourceKey', 'publisherPage', 'license', 'archiveHash', 'memberPath', 'memberHash'], 'sound library source')
   const page = avgText(r.publisherPage, 'audio publisher page', 1000), url = new URL(page)
   if (url.protocol !== 'https:' || url.hostname !== 'kenney.nl' || url.username || url.password || url.port || url.search || url.hash
@@ -31,6 +33,11 @@ function parseLibrary(value: unknown): AvgSoundLibrarySourceV1 {
   return { sourceKey: avgKey(r.sourceKey, 'sound library key'), publisherPage: page,
     license: avgEnum(r.license, ['CC0-1.0'] as const, 'audio library licence'),
     archiveHash: avgHash(r.archiveHash, 'audio archive hash'), memberPath, memberHash: avgHash(r.memberHash, 'audio member hash') }
+}
+
+function parseLibrary(value: unknown): AvgSoundLibrarySource {
+  return (value as { version?: unknown } | null)?.version === 2
+    ? parseAvgSoundPublisherLibrarySourceV2(value) : parseLibraryV1(value)
 }
 
 function parseTemplate(value: unknown): AvgSoundTemplateV1 {

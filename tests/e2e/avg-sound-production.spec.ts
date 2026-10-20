@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { avgSoundCapabilityFixtureV1, avgSoundLibraryFixtureV1, avgSoundPcmFixtureV1, avgSoundMusicResultFixtureV1 } from '../helpers/avg-sound-wire-data'
+import { avgSoundPublisherFixtureV2 } from '../helpers/avg-sound-publisher-fixture'
 
 test.setTimeout(300_000)
 test.skip(process.env.VITE_STORYFORGE_AVG_SOUND_PRODUCTION !== '1' || process.env.VITE_STORYFORGE_AVG_SOUND_PREPARATION !== '1', 'Explicit experimental Sound build only; default factory remains closed')
@@ -10,7 +11,7 @@ test.skip(process.env.VITE_STORYFORGE_AVG_SOUND_PRODUCTION !== '1' || process.en
 /** Only provider HTTP is controlled. Work/Brief/start, registered model Run,
  * author candidates/adoption, original bytes, DOM decoding/output and preview
  * all use actual commands. Engineering assessments are not real hearing. */
-async function open(page: Page) {
+async function open(page: Page, publisher = false) {
   await page.addInitScript(() => {
     localStorage.setItem('storyforge_guide_completed', 'e2e')
     const w = window as any; w.__avgNativeSoundWitness = { sources: [], html: [] }
@@ -38,7 +39,7 @@ async function open(page: Page) {
     }
   })
   await page.goto('./avg/library')
-  const state = await page.evaluate(async () => {
+  const state = await page.evaluate(async publisher => {
     const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
     const [drafts, editor, presets, worlds, config, sound, catalog] = await Promise.all([load('/storyforge/src/lib/avg/draft-service.ts'), load('/storyforge/src/lib/avg/editor-service.ts'),
       load('/storyforge/src/lib/avg/authoring-presets.ts'), load('/storyforge/src/lib/world-engine/mist-harbor-preset.ts'), load('/storyforge/src/stores/ai-config.ts'),
@@ -46,12 +47,13 @@ async function open(page: Page) {
     const owner = await drafts.createAvgDraftV1('原生声音完整工程验收'), world = await worlds.createMistHarborWorld()
     const selected = await drafts.selectAvgWorldV1(owner.scope, 0, world.worldReleaseId), workspace = presets.createAvgAuthoringPresetV1('linear')
     const saved = await editor.saveAvgAuthorWorkspaceV1(owner.scope, selected.revision, workspace), script = workspace.scripts[0], line = script.lines[0]
-    const source = catalog.listAvgSoundLibraryMetadataV1().find((s: any) => s.memberPath === 'Audio/click_001.ogg')
-    const templates = ['bgm', 'sfx', 'ambience'].map((channel, i) => ({ requirementKey: `native.${channel}`, assetKey: `native.${channel}`, channel,
+    const source = publisher ? catalog.listAvgSoundLibraryMetadataV2().find((s: any) => s.memberPath === 'rain.ogg')
+      : catalog.listAvgSoundLibraryMetadataV1().find((s: any) => s.memberPath === 'Audio/click_001.ogg')
+    const templates = (publisher ? ['ambience'] : ['bgm', 'sfx', 'ambience']).map((channel, i) => ({ requirementKey: `native.${channel}`, assetKey: `native.${channel}`, channel,
       purpose: `ENGINEERING ${channel} 原生制作与消费检查`, constraints: ['ENGINEERING original or licensed only'],
       consumer: { consumerKey: `native.${channel}.consumer`, domain: 'stage', slot: channel, subjectKey: script.sceneKey, sceneKey: script.sceneKey, lineKey: null, required: true, fallback: 'none' },
-      cue: { cueKey: `native.${channel}.cue`, beatKey: line.lineKey, phase: i ? 'during' : 'before', order: 10 + i, volume: i ? .6 : .2, loop: channel !== 'sfx' },
-      source: i ? { kind: 'licensed-library', allowedSourceKeys: [source.sourceKey] } : { kind: 'generate-music', durationSeconds: 12, seed: 103, bpm: 68, keyscale: 'A Minor' } }))
+      cue: { cueKey: `native.${channel}.cue`, beatKey: line.lineKey, phase: i ? 'during' : 'before', order: 10 + i, volume: i ? .6 : .2, loop: !publisher && channel !== 'sfx' },
+      source: publisher || i ? { kind: 'licensed-library', allowedSourceKeys: [source.sourceKey] } : { kind: 'generate-music', durationSeconds: 12, seed: 103, bpm: 68, keyscale: 'A Minor' } }))
     await sound.saveAvgSoundProductionDraftV1({ scope: owner.scope, expectedDraftRevision: saved.revision, planning: {
       schema: 'storyforge.avg.sound-planning-scope', version: 1, templates, librarySources: [source] } })
     config.useAIConfigStore.getState().setConfig({ provider: 'agnes', baseUrl: 'https://sound-proposal.fixture.invalid/v1', apiKey: 'isolated-engineering-route-no-external-account', model: 'agnes-2.5-flash' })
@@ -60,8 +62,8 @@ async function open(page: Page) {
       entries: templates.map(t => ({ requirementKey: t.requirementKey, designIntent: 'ENGINEERING original purpose',
         prompt: t.channel === 'bgm' ? 'Original calm instrumental piano, quiet spacious arrangement, no lyrics or voices' : null,
         librarySourceKey: t.channel !== 'bgm' ? source.sourceKey : null, acceptanceNotes: ['ENGINEERING inspect original exact clip'] })) } }
-  })
-  const counts = { text: 0, music: 0, library: 0, capabilities: 0, unknown: [] as string[] }, capability = avgSoundCapabilityFixtureV1(), library = avgSoundLibraryFixtureV1()
+  }, publisher)
+  const counts = { text: 0, music: 0, library: 0, capabilities: 0, unknown: [] as string[] }, capability = avgSoundCapabilityFixtureV1(), library = publisher ? avgSoundPublisherFixtureV2() : avgSoundLibraryFixtureV1()
   const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'Content-Type, Authorization, X-Storyforge-Idempotency-Key',
     'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-expose-headers': 'X-Storyforge-Music-Result, X-Storyforge-Library-Result, X-Request-Id' }
   await page.route('**/*', async route => {
@@ -77,7 +79,7 @@ async function open(page: Page) {
       const result = await avgSoundMusicResultFixtureV1({ capability, data, body, idempotencyKey: req.headers()['x-storyforge-idempotency-key'] })
       return route.fulfill({ body: Buffer.from(data), headers: { ...cors, 'content-type': 'audio/wav', 'x-request-id': result.jobId, 'x-storyforge-music-result': JSON.stringify(result) } })
     }
-    if (u.href === `http://127.0.0.1:5298/v1/library/audio/${library.archive.archiveHash}/${library.member.memberHash}`) {
+    if (u.href === `http://127.0.0.1:5298/v1/library/audio/${library.source.archiveHash}/${library.source.memberHash}`) {
       counts.library++; return route.fulfill({ body: Buffer.from(library.data), headers: { ...cors, 'content-type': 'audio/ogg', 'x-storyforge-library-result': JSON.stringify(library.result) } })
     }
     counts.unknown.push(u.href); return route.abort('blockedbyclient')
@@ -93,8 +95,8 @@ async function adopt(page: Page, label: string) {
   await card.getByRole('button', { name: `确认采用：${label}`, exact: true }).click()
   await expect(card.getByText('已采用 v1', { exact: true })).toBeVisible()
 }
-async function produced(page: Page) {
-  const s = await open(page)
+async function produced(page: Page, publisher = false) {
+  const s = await open(page, publisher)
   await page.getByRole('button', { name: '核对并准备声音制作', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: '声音制作方案已保存' })).toBeVisible()
   await tab(page, '制作与试玩')
@@ -115,8 +117,8 @@ async function produced(page: Page) {
   await expect(plan.getByText('已采用声音方案 v1', { exact: true })).toBeVisible()
   await page.evaluate(async () => { const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>; (await load('/storyforge/src/stores/ai-config.ts')).useAIConfigStore.getState().setConfig({ apiKey: '' }) })
   await panel.getByRole('button', { name: '继续本批声音制作', exact: true }).click()
-  await expect(panel.getByRole('button', { name: '查看并审听原声音', exact: true })).toHaveCount(3, { timeout: 60_000 })
-  expect(s.counts.text).toBe(1); expect(s.counts.music).toBe(1); expect(s.counts.library).toBe(2); expect(s.counts.unknown).toEqual([])
+  await expect(panel.getByRole('button', { name: '查看并审听原声音', exact: true })).toHaveCount(publisher ? 1 : 3, { timeout: 60_000 })
+  expect(s.counts.text).toBe(1); expect(s.counts.music).toBe(publisher ? 0 : 1); expect(s.counts.library).toBe(publisher ? 1 : 2); expect(s.counts.unknown).toEqual([])
   return { ...s, panel }
 }
 async function review(page: Page, channel: string) {
@@ -144,6 +146,60 @@ async function passed(panel: Locator, channel: 'bgm' | 'sfx' | 'ambience') {
   await panel.getByRole('button', { name: '确认采用原声音', exact: true }).click()
   await expect(panel.getByText('已采用声音 v1。舞台配置和演出确认仍须另行完成。', { exact: true })).toBeVisible()
 }
+
+test('native publisher-page V2 original audio keeps unknown hearing through actual decoding, playback and portable raw recovery without a Key or music request', async ({ page }, info) => {
+  const s = await produced(page, true), actual = avgSoundPublisherFixtureV2(), panel = await review(page, 'ambience')
+  await panel.getByRole('button', { name: '从头审听原声音', exact: true }).click()
+  await expect(panel.getByRole('status').filter({ hasText: '原声音已完整原速播放 1 遍' })).toBeVisible({ timeout: 20_000 })
+  for (const label of ['符合用途', '噪音与失真', '首尾完整']) {
+    await expect(panel.getByRole('combobox', { name: label, exact: true })).toHaveValue('unknown')
+  }
+  await expect(panel.getByRole('button', { name: '将原声音列为待确认选择', exact: true })).toBeDisabled()
+  const original = await page.evaluate(async scope => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    const [{ db }, drafts, media] = await Promise.all([load('/storyforge/src/lib/db/schema.ts'), load('/storyforge/src/lib/avg/draft-service.ts'), load('/storyforge/src/lib/product-production/media-blob-store.ts')])
+    const draft = await drafts.readAvgDraftV1(scope), build = await db.productBuilds.where('productionId').equals(draft.productionId).first()
+    const rows = await db.productBuildArtifacts.where('buildId').equals(build.id).toArray(), row = rows.find((r: any) => r.artifactKey === 'avg.sound.raw.native.ambience' && r.status === 'accepted')
+    const data = await media.readVerifiedMediaBlobObjectData(await db.mediaBlobObjects.get(row.blobObjectId))
+    return { raw: JSON.parse(row.payloadJson), quality: JSON.parse(row.qualityJson), contentHash: row.contentHash, dataHash: await media.sha256MediaData(data),
+      noReviewOrChoice: !rows.some((r: any) => r.artifactKey.startsWith('avg.review.audio.') || r.artifactKey.startsWith('avg.sound.choice.')),
+      hasKey: !!(await load('/storyforge/src/stores/ai-config.ts')).useAIConfigStore.getState().config.apiKey,
+      witness: (window as any).__avgNativeSoundWitness }
+  }, s.scope)
+  expect(original.hasKey).toBe(false); expect(original.noReviewOrChoice).toBe(true)
+  expect(original.contentHash).toBe(actual.source.memberHash); expect(original.dataHash).toBe(actual.source.memberHash)
+  expect(original.raw.providerResult).toEqual(actual.result); expect(original.raw.requirement.dispatch.source).toEqual(actual.source)
+  expect(original.raw.measurement).toMatchObject({ mimeType: 'audio/ogg', byteSize: actual.data.byteLength, durationMs: 3991, channelCount: 2, decodedSampleRateHz: 48000 })
+  expect(original.quality).toMatchObject({ hearing: 'unobserved', authorAdopted: false })
+  expect(original.witness.sources.some((r: any) => r.ended && r.rate === 1 && !r.loop && Math.abs(r.duration - 3.990666666666667) < .01)).toBe(true)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await panel.getByRole('heading', { name: /准确声音/ }).scrollIntoViewIfNeeded()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: info.outputPath('native-publisher-original-unknown-hearing.png') })
+  await page.reload(); await tab(page, '素材')
+  await expect(page.getByRole('button', { name: '查看并审听原声音', exact: true })).toHaveCount(1)
+  const lifecycle = await page.evaluate(async scope => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    const [{ db }, files, owners, proof, media] = await Promise.all([load('/storyforge/src/lib/db/schema.ts'), load('/storyforge/src/lib/export/json-export.ts'),
+      load('/storyforge/src/lib/workspace/lifecycle.ts'), load('/storyforge/src/lib/avg/sound-production-admission.ts'), load('/storyforge/src/lib/product-production/media-blob-store.ts')])
+    const before = await files.exportProjectJSON(scope.projectId), copyId = await files.importProjectJSON(before)
+    const build = await db.productBuilds.where('projectId').equals(copyId).first(), copyScope = { projectId: copyId, workId: build.workId, worldId: build.worldId }
+    const row = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id, 'avg.sound.raw.native.ambience']).first()
+    const raw = JSON.parse(row.payloadJson), key = 'avg.sound.generate.native.ambience', ledger = JSON.parse(build.budgetLedgerJson).tasks[key]
+    const response = await proof.readAvgSoundOriginalMediaResponseV1({ scope: copyScope, producerRunId: row.producerRunId, taskKey: key,
+      requirement: raw.requirement, responseEvidenceHash: raw.responseEvidenceHash, idempotencyKey: ledger.idempotencyKey, musicBinding: null })
+    const copyHash = await media.sha256MediaData(response.data)
+    await owners.deleteWork(copyScope.workId)
+    const after = await files.exportProjectJSON(scope.projectId)
+    return { copyId, copyWorkId: copyScope.workId, copyHash, rawSource: raw.requirement.dispatch.source, providerResult: raw.providerResult,
+      originalUnchanged: JSON.stringify({ ...before, exportedAt: 0 }) === JSON.stringify({ ...after, exportedAt: 0 }),
+      releases: await db.productReleases.count() }
+  }, s.scope)
+  expect(lifecycle.copyId).not.toBe(s.scope.projectId); expect(lifecycle.copyWorkId).not.toBe(s.scope.workId)
+  expect(lifecycle.copyHash).toBe(actual.source.memberHash); expect(lifecycle.rawSource).toEqual(actual.source); expect(lifecycle.providerResult).toEqual(actual.result)
+  expect(lifecycle.originalUnchanged).toBe(true); expect(lifecycle.releases).toBe(0)
+  expect(s.counts).toEqual({ text: 1, music: 0, library: 1, capabilities: 0, unknown: [] })
+})
 
 test('native original sound plan, actual continuous audition, independent author choices and original Preview remain usable without a text Key', async ({ page }, info) => {
   const s = await produced(page), bgm = await review(page, 'bgm')

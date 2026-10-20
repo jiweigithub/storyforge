@@ -90,8 +90,8 @@ class MusicHandler(BaseHTTPRequestHandler):
             try:
                 data, receipt = original_member(self.server.library, *member.groups())
                 return self.send(200, data, receipt["mimeType"], {"x-storyforge-library-result": json.dumps(receipt, ensure_ascii=True, separators=(",", ":"))})
-            except (OSError, ValueError, KeyError, zipfile.BadZipFile):
-                return self.error(409, "original archive, included licence or member cannot be verified")
+            except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile):
+                return self.error(409, "original archive, licence witness or member cannot be verified")
         match = re.fullmatch(r"/v1/jobs/([a-f0-9]{64})(/audio)?", self.path)
         if not match:
             return self.error(404, "unknown route")
@@ -212,7 +212,7 @@ def main():
     for name in ("data", "model", "source"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--deadline", type=int, default=900)
-    parser.add_argument("--library", type=Path, help="Directory containing the two pinned original archives; never downloaded by this service")
+    parser.add_argument("--library", type=Path, help="Directory containing pinned original archives and licence witness files; never downloaded by this service")
     args = parser.parse_args()
     origins = args.origin or ["http://127.0.0.1:5196", "http://127.0.0.1:1111"]
     if not 1 <= args.port <= 65535 or not 30 <= args.deadline <= 900 or any(not re.fullmatch(r"http://127\.0\.0\.1:[1-9][0-9]{0,4}", origin) for origin in origins):

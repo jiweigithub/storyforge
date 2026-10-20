@@ -11,21 +11,26 @@ afterEach(async () => { for (const path of owned.splice(0)) await rm(path, { rec
 
 // Fabricated Playwright structures exercise only CI reporting, never product
 // Runs, author adoption, actual native playback or real listening evidence.
-function report(file: string, expected: number, skipped: number, flaky = 0, unexpected = 0) {
+function report(file: string, expected: number, skipped: number, flaky = 0, unexpected = 0, publisher = true) {
   const test = (status: string, results: string[]) => ({ projectName: 'chromium', expectedStatus: 'passed', status, results: results.map(status => ({ status })) })
-  return { errors: [], stats: { expected, skipped, flaky, unexpected }, suites: [{ specs: [{ file, tests: [
+  const tests = [
     ...Array.from({ length: expected }, () => test('expected', ['passed'])),
     ...Array.from({ length: skipped }, () => test('skipped', ['skipped'])),
     ...Array.from({ length: flaky }, () => test('flaky', ['failed', 'passed'])),
     ...Array.from({ length: unexpected }, () => test('unexpected', ['failed'])),
-  ] }] }] }
+  ]
+  const source = file === 'avg-sound-production.spec.ts' && tests.length ? tests.splice(0,1) : []
+  return { errors: [], stats: { expected, skipped, flaky, unexpected }, suites: [{ specs: [
+    ...(source.length ? [{ file, title: publisher ? 'native publisher-page V2 original audio keeps unknown hearing through actual decoding, playback and portable raw recovery without a Key or music request' : 'unrelated passing source', tests: source }] : []),
+    { file, title: 'controlled report fixture remaining cases', tests },
+  ] }] }
 }
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'storyforge-avg-sound-ci-reports-')); owned.push(root)
   for (const [mode, file, expected, skipped] of [
     ['sound-closed', 'avg-sound-requirements.spec.ts', 1, 3],
     ['sound-preparation', 'avg-sound-requirements.spec.ts', 3, 1],
-    ['sound-production', 'avg-sound-production.spec.ts', 4, 0],
+    ['sound-production', 'avg-sound-production.spec.ts', 5, 0],
     ['sound-frozen', 'avg-sound-prototype-read.spec.ts', 1, 0],
   ] as const) {
     await mkdir(join(root, mode)); await writeFile(join(root, mode, 'report.json'), JSON.stringify(report(file, expected, skipped)))
@@ -40,13 +45,15 @@ describe('AVG Sound CI execution and retained reports', () => {
     expect(JSON.parse((await s.run()).stdout).modes).toEqual([
       { mode: 'sound-closed', expected: 1, flaky: 0, unexpected: 0, skipped: 3 },
       { mode: 'sound-preparation', expected: 3, flaky: 0, unexpected: 0, skipped: 1 },
-      { mode: 'sound-production', expected: 4, flaky: 0, unexpected: 0, skipped: 0 },
+      { mode: 'sound-production', expected: 5, flaky: 0, unexpected: 0, skipped: 0 },
       { mode: 'sound-frozen', expected: 1, flaky: 0, unexpected: 0, skipped: 0 },
     ])
     expect(await readFile(s.path)).toEqual(before)
   })
   it.each([
     ['the old production suite missing retained-sound revision', report('avg-sound-production.spec.ts', 3, 0)],
+    ['the old four cases without publisher source coverage', report('avg-sound-production.spec.ts', 4, 0)],
+    ['enough passing cases but no exact publisher source test', report('avg-sound-production.spec.ts', 5, 0, 0, 0, false)],
     ['an entirely skipped production suite', report('avg-sound-production.spec.ts', 0, 3)],
     ['a different spec with passing counts', report('unrelated.spec.ts', 3, 0)],
     ['a failed case', report('avg-sound-production.spec.ts', 2, 0, 0, 1)],
@@ -72,9 +79,9 @@ describe('AVG Sound CI execution and retained reports', () => {
     await expect(s.run()).rejects.toThrow()
   })
   it('preserves a visible flaky result instead of claiming first-pass success', async () => {
-    const s = await fixture(); await writeFile(s.path, JSON.stringify(report('avg-sound-production.spec.ts', 3, 0, 1)))
+    const s = await fixture(); await writeFile(s.path, JSON.stringify(report('avg-sound-production.spec.ts', 4, 0, 1)))
     const before = await readFile(s.path), result = JSON.parse((await s.run()).stdout)
-    expect(result.modes[2]).toMatchObject({ expected: 3, flaky: 1, skipped: 0 })
+    expect(result.modes[2]).toMatchObject({ expected: 4, flaky: 1, skipped: 0 })
     expect(await readFile(s.path)).toEqual(before)
   })
 })

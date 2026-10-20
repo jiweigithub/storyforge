@@ -4,7 +4,8 @@ import { sha256MediaData } from '../product-production/media-blob-store'
 import { avgHash, avgNumber, avgRecord } from './protocol-validation'
 import { AVG_LOCAL_MUSIC_MODEL_V1, AVG_LOCAL_MUSIC_CODE_REVISION_V1, AVG_LOCAL_MUSIC_PROFILE_V1, compileAvgSoundRequirementsV1 } from './sound-requirements'
 import { inspectAvgVoiceWaveV1 } from './voice-wave'
-import type { AvgSoundLibrarySourceV1 } from './sound-scope-contract'
+import type { AvgSoundLibrarySource, AvgSoundLibrarySourceV1 } from './sound-scope-contract'
+import { assertAvgSoundPublisherLibraryMetadataV2, avgSoundPublisherLibraryResultV2, isAvgSoundPublisherLibrarySourceV2, listAvgSoundPublisherLibraryMetadataV2 } from './sound-publisher-library'
 
 export const AVG_LOCAL_SOUND_BASE_URL_V1 = 'http://127.0.0.1:5298/v1'
 export const AVG_LOCAL_MUSIC_ADAPTER_V1 = 'storyforge.avg.local-music.v1'
@@ -37,11 +38,13 @@ export async function avgLocalMusicRouteV1(capability: ReturnType<typeof parseAv
 
 /** Original pinned CC0 source metadata. This comparison never proves audio
  * bytes or decodability and never converts a catalogue entry into adoption. */
-export function assertAvgSoundLibraryMetadataV1(s: AvgSoundLibrarySourceV1) {
+export function assertAvgSoundLibraryMetadataV1(s: AvgSoundLibrarySource) {
+  if (isAvgSoundPublisherLibrarySourceV2(s)) return assertAvgSoundPublisherLibraryMetadataV2(s)
+  if ('version' in s) throw new Error('[avg-sound] 音频来源版本无效')
   const archive = catalogue.archives.find(a => a.archiveHash === s.archiveHash)
   const member = archive?.members.find(m => m.memberPath === s.memberPath && m.memberHash === s.memberHash)
   if (!archive || !member || s.publisherPage !== archive.publisherPage || s.license !== catalogue.license) throw new Error('[avg-sound] 来源不在已核验原发布者CC0目录中')
-  return { archive, member }
+  return { version: 1 as const, archive, member }
 }
 export function assertAvgLicensedSoundSourceV1(requirement: AvgCompiledSoundRequirementV1) {
   if (requirement.dispatch.operation !== 'import-licensed-audio') throw new Error('[avg-sound] 不是准确原音效导入')
@@ -55,6 +58,10 @@ export function listAvgSoundLibraryMetadataV1(): AvgSoundLibrarySourceV1[] {
     sourceKey: `kenney.${archive.key}.${index}`, publisherPage: archive.publisherPage, license: 'CC0-1.0' as const,
     archiveHash: archive.archiveHash, memberPath: member.memberPath, memberHash: member.memberHash,
   })))
+}
+
+export function listAvgSoundLibraryMetadataV2(): AvgSoundLibrarySource[] {
+  return [...listAvgSoundLibraryMetadataV1(), ...listAvgSoundPublisherLibraryMetadataV2()]
 }
 
 /** Called against exact original HTTP bytes again during sealed admission. */
@@ -86,11 +93,12 @@ export async function validateAvgSoundProviderResultV1(input: { requirement: Avg
       || !same(r.audio, audio)) throw new Error('[avg-sound] 原音乐WAV真实字节/声道/时长与回执不一致')
     return { mimeType: 'audio/wav' as const, contentHash: hash, result: r }
   }
-  const { archive, member } = assertAvgLicensedSoundSourceV1(req)
-  const expected = { schema: 'storyforge.avg.licensed-audio-result', version: 1,
+  const source = assertAvgLicensedSoundSourceV1(req), { archive, member } = source
+  const expected = source.version === 2 && isAvgSoundPublisherLibrarySourceV2(req.dispatch.source)
+    ? avgSoundPublisherLibraryResultV2(req.dispatch.source) : source.version === 1 ? { schema: 'storyforge.avg.licensed-audio-result', version: 1,
     publisherPage: archive.publisherPage, license: catalogue.license, archiveHash: archive.archiveHash, archiveBytes: archive.archiveBytes,
-    licenseMember: archive.licenseMember, licenseHash: archive.licenseHash, licenseText: archive.licenseText,
-    ...member, inferenceCalls: 0, supplierCostUsd: 0, originalBytes: true, transcoded: false, hearing: 'unobserved', authorAdopted: false }
+    licenseMember: source.archive.licenseMember, licenseHash: source.archive.licenseHash, licenseText: source.archive.licenseText,
+    ...member, inferenceCalls: 0, supplierCostUsd: 0, originalBytes: true, transcoded: false, hearing: 'unobserved', authorAdopted: false } : null
   if (!same(input.result, expected) || data.byteLength !== member.bytes || hash !== member.memberHash
     || String.fromCharCode(...new Uint8Array(data).subarray(0, 4)) !== 'OggS') throw new Error('[avg-sound] 原库音频、包内许可或成员字节不一致')
   return { mimeType: 'audio/ogg' as const, contentHash: hash, result: expected }

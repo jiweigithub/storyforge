@@ -60,3 +60,11 @@ python scripts/avg-local-music/server.py --model /absolute/model-directory --sou
 2026-10-19隔离正式任务实测另有一次真实CPU推理20.589秒，产出12秒、48kHz双声道PCM16、2304044字节，SHA-256 `6d65b5e658730011aa69ee74546f95d5a91339a684751b8b2fc710135e5eaf91`；原CC0点击声4876字节。实际HTTP、作品Blob和完整备份字节一致，真实Chromium对两者分别解码/测量并在接收时复验，原模型float/WAV与单次调用记录保留。文案策划是原创工程夹具，仅在隔离数据中打开未完成feature fence，没有伪造开始/作者/producer回执；本次不签听感、选用、联合播放或商业质量。完整CI、原生兼容与后继闭环按工作包§10.6逐项记录。
 
 补齐V2记录库身份后，仅另做一次明确seed=104的有限验证：CPU21.310秒，仍为12秒双声道，原WAV SHA-256 `d730cec40147c3e0d54ac1bc33c454bfa64c65a03b3ea9c5670fb5b025f356c7`；V2能力、发送前快照、实际claim/结果、原float/WAV、作品Blob及完整备份闭合，真实Chromium再次解码。两次各1次音乐推理、供应商费均0（设备/用电/人工另计），没有重发未知请求。原V1真实备份已由当前V2读者离线导入/remap、核对原响应和Blob、拒绝导入采用权并删除副本，原文件保持；这不代表作者已听过或接受任一片段。
+
+## 原发布页许可的环境声V2（施工，未验收）
+
+`publisher-library-source.json`另外固定rubberduck的[30 CC0 SFX loops](https://opengameart.org/content/30-cc0-sfx-loops)中三个准确OGG成员。原Kenney目录/V1结果及`GET /v1/library/catalogue`保持原语义；新来源显式version2，客户端通过同一原库音频端点接收result@2。网页与官方CC0原文单独证明，原ZIP没有License.txt，不能补造包内许可、重打包或把发布者改成Kenney。
+
+现有`--library`目录中，新来源使用原名`sfx_loops-original.zip`、`rubberduck-30-sfx-loops-page.html`和`cc0-1.0-original-legalcode.txt`；大小/hash由新目录固定。服务逐次只读核对三文件、原作者/许可/下载链接及准确成员；不访问网页、不下载、不推理、不转码。元数据选项不证明音频已经接收、听感、循环接缝或作者选择。新目录进入桥接源码hash，原生成绑定不能默默跨代码变更派发；旧日志/结果保留。
+
+当前三段原件的来源和有限技术解码已实测，新读取器已返回原字节与明确外部许可证明；正式合同/Harness/生命周期、原生播放与交付闸门尚待验收，见工作包§10.17。原始网页/ZIP/官方许可原文与失败记录保留，不能用人工补写的声明替代原证据。
