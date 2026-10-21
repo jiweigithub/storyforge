@@ -127,8 +127,8 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
       await assertRuntimeHarnessFreshV1(freshness)
       const manifest = await createContextManifestFromAssemblyV1({runId: snapshot.run.id, stepId, attempt: 1,
         projectId: input.scope.projectId, worldGroupId: snapshot.contract.scope.worldGroupId, declaredSourceKeys: sourceKeys,
-        assembled, readerVersion: control ? (retrievalVersion === 'chat-relevance-v12' ? 'chat-control-handoff-review-v3' : retrievalVersion === 'chat-relevance-v11' ? 'chat-control-handoff-review-v2' : 'chat-control-handoff-review-v1')
-          : retrievalVersion === 'chat-relevance-v12' ? 'chat-action-review-v16' : retrievalVersion === 'chat-relevance-v11' ? 'chat-action-review-v15' : retrievalVersion === 'chat-relevance-v10' ? 'chat-action-review-v14'
+        assembled, readerVersion: control ? (retrievalVersion === 'chat-relevance-v13' ? 'chat-control-handoff-review-v4' : retrievalVersion === 'chat-relevance-v12' ? 'chat-control-handoff-review-v3' : retrievalVersion === 'chat-relevance-v11' ? 'chat-control-handoff-review-v2' : 'chat-control-handoff-review-v1')
+          : retrievalVersion === 'chat-relevance-v13' ? 'chat-action-review-v17' : retrievalVersion === 'chat-relevance-v12' ? 'chat-action-review-v16' : retrievalVersion === 'chat-relevance-v11' ? 'chat-action-review-v15' : retrievalVersion === 'chat-relevance-v10' ? 'chat-action-review-v14'
           : retrievalVersion === 'chat-relevance-v9' ? situation ? 'chat-situation-review-v14' : 'chat-action-review-v13'
           : retrievalVersion === 'chat-relevance-v8' ? situation ? 'chat-situation-review-v13' : 'chat-action-review-v12'
           : retrievalVersion === 'chat-relevance-v7' ? situation ? 'chat-situation-review-v12' : 'chat-action-review-v11'
@@ -136,7 +136,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
           : retrievalVersion === 'chat-relevance-v5' ? situation ? 'chat-situation-review-v10' : 'chat-action-review-v9'
           : situation ? (supportsChatDiscoveryEvidenceReviewerV1(reviewBinding.promptVersion) ? 'chat-situation-review-v9' : ['chat-situation-review-v7', 'chat-situation-review-v8', 'chat-situation-review-v9'].includes(reviewBinding.promptVersion) ? 'chat-situation-review-v8' : 'chat-situation-review-v7') : memoryReconciliation ? 'chat-action-review-v8' : 'chat-action-review-v7'})
       snapshot = await append(input.scope, snapshot, 'context.assembled', {stepId, attempt: 1, manifestHash: manifest.manifestHash})
-      if (retrievalVersion === 'chat-relevance-v9' || retrievalVersion === 'chat-relevance-v10' || (retrievalVersion === 'chat-relevance-v11' || retrievalVersion === 'chat-relevance-v12')) {
+      if (retrievalVersion === 'chat-relevance-v9' || retrievalVersion === 'chat-relevance-v10' || (retrievalVersion === 'chat-relevance-v11' || retrievalVersion === 'chat-relevance-v12' || retrievalVersion === 'chat-relevance-v13')) {
         const coordinatorSelection = await readChatCoordinatorSelectionEvidenceV1({projectId: input.scope.projectId, scope: input.scope,
           worldGroupId: snapshot.contract.scope.worldGroupId, productRuntimeSessionId: input.productRuntimeSessionId,
           ...(situation ? {chatSituationCandidateRunId: snapshot.run.id} : {chatActionCandidateRunId: snapshot.run.id})}, assembled.text)

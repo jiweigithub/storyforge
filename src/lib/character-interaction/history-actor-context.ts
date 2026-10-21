@@ -7,7 +7,7 @@ import {createContextTextScorerV1} from '../context-gateway/lexical-query'
 import {estimateTokens} from '../ai/context-budget'
 import {formatInteractionRuntimeContextV1} from './context-format'
 import {projectChatGoalCommitmentsV1} from './commitment-context'
-import {createChatHistoryPlanV1, chatHistoryIdV1, CHAT_HISTORY_POLICY_V1} from './history-selection'
+import {createChatHistoryPlanV1, chatHistoryIdV1, CHAT_HISTORY_POLICY_V1, CHAT_HISTORY_POLICY_V2} from './history-selection'
 import {CHAT_CONTEXT_SOURCE_TOKENS_V1, type ChatContextSelectionReasonV1} from './context-selection'
 
 const projectionCache = createChatHistoryProjectionCacheV1<InteractionContextWindow>()
@@ -16,12 +16,12 @@ const projectionCache = createChatHistoryProjectionCacheV1<InteractionContextWin
  * with its dependency closure; rejection rolls back the whole trial. */
 export function selectChatHistoryActorContextV1(state: CharacterInteractionRuntimeState,
   view: InteractionVisibilityView & {excludedMessageCount?: number}, profile: InteractionRuntimeProfile,
-  limits: {maxCharacters: number; maxRecentMessages: number; optionalMaxCharacters?: number; optionalMaxTokens?: number; relationshipHistory?: boolean; messageIdentities?: boolean}): InteractionContextWindow {
+  limits: {maxCharacters: number; maxRecentMessages: number; optionalMaxCharacters?: number; optionalMaxTokens?: number; relationshipHistory?: boolean; messageIdentities?: boolean; followupEvidence?: boolean}): InteractionContextWindow {
   const cacheKey = projectionCache.key([state, view, profile, limits])
   const cached = projectionCache.read(cacheKey)
   if (cached) return cached
   const narrative = view.chatNarrative!, commitments = [...narrative.goals.flatMap(g => g.commitments ?? []), ...(view.sharedCommitments ?? [])]
-  const plan = createChatHistoryPlanV1(state, {...narrative, commitments}), id = chatHistoryIdV1
+  const plan = createChatHistoryPlanV1(state, {...narrative, commitments}, {followupEvidence: limits.followupEvidence}), id = chatHistoryIdV1
   const pending = new Set(view.memoryCorrections?.map(m => m.memoryId))
   const latestCommitments = new Set(narrative.goals.flatMap(g => [...(g.commitments ?? [])].reverse().find(c => c.resolution)?.commitmentKey ?? []))
   for (const e of plan.entries.values()) if (e.kind === 'commitments' && e.required.includes('latest-shared-resolution')) latestCommitments.add(e.key)
@@ -73,7 +73,7 @@ export function selectChatHistoryActorContextV1(state: CharacterInteractionRunti
         goals: projectChatGoalCommitmentsV1(narrative.goals.filter(g => has('goals', g.goalKey)), goalKeys),
         threads: narrative.threads.filter(t => has('threads', t.threadKey))},
       sharedCommitments: view.sharedCommitments?.filter(c => has('commitments', c.commitmentKey)),
-      historyContext: {version: 1, policy: CHAT_HISTORY_POLICY_V1, resolutions: plan.resolutions(selected),
+      historyContext: {version: 1, policy: limits.followupEvidence ? CHAT_HISTORY_POLICY_V2 : CHAT_HISTORY_POLICY_V1, resolutions: plan.resolutions(selected),
         omitted: {facts: narrative.facts.length - facts.length,
           goals: narrative.goals.filter(g => !has('goals', g.goalKey)).length, threads: narrative.threads.filter(t => !has('threads', t.threadKey)).length}},
       selection: {version: limits.relationshipHistory ? 6 : 5,

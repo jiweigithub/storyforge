@@ -101,7 +101,7 @@ export function chatActionRequestOptionsV1(version: string | undefined, provider
     properties.audienceKeys = {...nullable({...array(string), minItems: 2, maxItems: 33}), description: 'null 表示使用提示中冻结的本轮对话听众；有意缩小时显式列出玩家、行动者及实际听众。不能填空数组，不能加对话之外的人。'}
     action.required = Object.keys(properties)
   }
-  const schema = ['chat-narrative-options-v28', 'chat-narrative-options-v29', 'chat-narrative-options-v30', 'chat-narrative-options-v31', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34'].includes(version ?? '')
+  const schema = ['chat-narrative-options-v28', 'chat-narrative-options-v29', 'chat-narrative-options-v30', 'chat-narrative-options-v31', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34', 'chat-narrative-options-v35'].includes(version ?? '')
     ? object({options: {...array(action), minItems: 2, maxItems: 2}}) : action
   if (supportsChatControlHandoffV1(version)) return {jsonSchema: {name: 'chat_narrative_outcome_v1', strict: true, schema: chatNarrativeOutcomeSchemaV1(schema)}}
   return {jsonSchema: {name: wire ? 'chat_action_shape_v4' : ownEvidence ? 'chat_action_shape_v3' : usesChangeDescriptions(version) ? 'chat_action_shape_v2' : 'chat_action_shape_v1', strict: true, schema}}

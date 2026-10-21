@@ -846,14 +846,14 @@ async function readInteractionRuntimeContext(input: AssembleContextInput): Promi
     if (!input.scope || session.kind !== 'character-interaction') throw new Error('角色对话标识读取缺少实例作用域')
     const {readInstanceAgentRunV1} = await import('../agent/run/event-store')
     const producer = await readInstanceAgentRunV1(input.scope, input.chatActionContextRunId)
+    const {chatActionContextVersionsV1, usesChatActionBoundContextV1} = await import('../character-interaction/context-selection')
     const binding = producer.contract.executionBindings?.find(b => b.stepId === 'interaction:runtime-candidate')
     if (producer.run.productRuntimeSessionId !== session.id || producer.projection.state !== 'running'
-      || binding?.skillId !== 'character.chat-narrative-action' || !['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55'].includes(binding.promptVersion)) {
+      || !binding || !usesChatActionBoundContextV1(binding)) {
       throw new Error('角色对话标识读取缺少当前实例的生成合同')
     }
     const {assertRuntimeHarnessFreshV1} = await import('../agent/run/runtime-scope')
     await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: producer.contract.scope, participantKey})
-    const {chatActionContextVersionsV1} = await import('../character-interaction/context-selection')
     retrievalVersion = chatActionContextVersionsV1(binding.promptVersion).retrievalVersion
   }
   const view = buildInteractionContextWindow(state.interaction, participantKey, {

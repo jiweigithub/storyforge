@@ -6,9 +6,11 @@ export type ChatHistoryScopeV1 = Pick<ChatSituationV1, 'facts' | 'goals' | 'thre
 export const chatHistoryIdV1 = (kind: ChatHistoryKindV1, key: string) => `${kind}:${key}`
 export const CHAT_HISTORY_POLICY_V1 = '仅对有来源的历次观察、已结束事项和已处理约定按相关性选择；原事实、状态、权限和存档不变。未选入不表示不存在、已失效或可重复完成。选入条目的已知事实依据和处置原文一起读取；必要依据不足时停止。'
 
+export const CHAT_HISTORY_POLICY_V2 = CHAT_HISTORY_POLICY_V1 + ' 选入运行事实时，一并读取已知且在后续明确引用它的运行记录，按事件顺序理解变化；后续记录不自动抹去或撤销原事实，不能把过去的动作直接当成当前状态。'
+
 /** A projection over an already authorized scope. Canonical metadata supplies
  * dependency edges only; it cannot add another role's private rows or keys. */
-export function createChatHistoryPlanV1(state: CharacterInteractionRuntimeState, scope: ChatHistoryScopeV1) {
+export function createChatHistoryPlanV1(state: CharacterInteractionRuntimeState, scope: ChatHistoryScopeV1, options: {followupEvidence?: boolean} = {}) {
   const story = state.chatNarrative!
   const entries = new Map<string, {kind: ChatHistoryKindV1; key: string; text: string; required: string[]; dependencies: Set<string>; order: number; importance: number}>()
   const id = chatHistoryIdV1
@@ -36,6 +38,20 @@ export function createChatHistoryPlanV1(state: CharacterInteractionRuntimeState,
   for (const t of scope.threads) add('threads', t.threadKey, `${t.title}\n${t.question}\n${t.closureSignals.join('\n')}`, ['open', 'blocked', 'paused'].includes(t.status) ? ['unfinished-thread'] : !threadEvidence.has(t.threadKey) ? ['unclassified-resolution'] : [])
   for (const c of scope.commitments) add('commitments', c.commitmentKey, `${c.terms}\n${c.resolution?.excerpt ?? ''}`, !c.resolution ? ['open-commitment'] : [])
   for (const f of scope.facts) for (const key of factEvidence.get(f.factKey)?.evidenceFactKeys ?? []) link('facts', f.factKey, 'facts', key)
+  if (options.followupEvidence) {
+    const facts = new Map(scope.facts.map(f => [f.factKey, f]))
+    // Follow explicit, chronological evidence edges only within the authorized
+    // view. Initial facts are shared premises, not a reason to load every event.
+    // Both directions make a causal component indivisible during budget trials.
+    for (const fact of scope.facts) if (fact.sourceEventSequence !== 0) {
+      for (const key of factEvidence.get(fact.factKey)?.evidenceFactKeys ?? []) {
+        const source = facts.get(key)
+        if (source && source.sourceEventSequence !== 0 && source.sourceEventSequence < fact.sourceEventSequence) {
+          link('facts', key, 'facts', fact.factKey)
+        }
+      }
+    }
+  }
   for (const kind of ['goals', 'threads'] as const) for (const item of scope[kind]) {
     const key = 'goalKey' in item ? item.goalKey : item.threadKey
     const proof = (kind === 'goals' ? goalEvidence : threadEvidence).get(key)

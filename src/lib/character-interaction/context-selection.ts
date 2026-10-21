@@ -28,16 +28,26 @@ export const CHAT_CONTEXT_READER_VERSION_V10 = 'chat-narrative-runtime-view-v14'
 export const CHAT_CONTEXT_READER_VERSION_V11 = 'chat-narrative-runtime-view-v15'
 // v16 distinguishes public scene-person contact from scheduled role audiences.
 export const CHAT_CONTEXT_READER_VERSION_V12 = 'chat-narrative-runtime-view-v16'
-export type ChatRetrievalVersion = 'legacy' | 'chat-relevance-v1' | 'chat-relevance-v2' | 'chat-relevance-v3' | 'chat-relevance-v4' | 'chat-relevance-v5' | 'chat-relevance-v6' | 'chat-relevance-v7' | 'chat-relevance-v8' | 'chat-relevance-v9' | 'chat-relevance-v10' | 'chat-relevance-v11' | 'chat-relevance-v12'
+// v17 retains later known consequences of selected runtime facts.
+export const CHAT_CONTEXT_READER_VERSION_V13 = 'chat-narrative-runtime-view-v17'
+export type ChatRetrievalVersion = 'legacy' | 'chat-relevance-v1' | 'chat-relevance-v2' | 'chat-relevance-v3' | 'chat-relevance-v4' | 'chat-relevance-v5' | 'chat-relevance-v6' | 'chat-relevance-v7' | 'chat-relevance-v8' | 'chat-relevance-v9' | 'chat-relevance-v10' | 'chat-relevance-v11' | 'chat-relevance-v12' | 'chat-relevance-v13'
 /** Selection and expression must use the same frozen reader, including recovery. */
 export function chatActionContextVersionsV1(producerVersion: string | undefined) {
+  if (['chat-narrative-action-v56', 'chat-narrative-options-v35', 'chat-action-revision-v21'].includes(producerVersion ?? '')) return {readerVersion: CHAT_CONTEXT_READER_VERSION_V13, retrievalVersion: 'chat-relevance-v13' as const}
   if (['chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55'].includes(producerVersion ?? '')) return {readerVersion: CHAT_CONTEXT_READER_VERSION_V12, retrievalVersion: 'chat-relevance-v12' as const}
   return ['chat-narrative-action-v47', 'chat-narrative-action-v48'].includes(producerVersion ?? '')
     ? {readerVersion: CHAT_CONTEXT_READER_VERSION_V11, retrievalVersion: 'chat-relevance-v11' as const}
     : {readerVersion: CHAT_CONTEXT_READER_VERSION_V10, retrievalVersion: 'chat-relevance-v10' as const}
 }
+/** Only a producer's own frozen run may select its versioned actor source. */
+export function usesChatActionBoundContextV1(binding: {skillId: string; promptVersion: string} | undefined): boolean {
+  return binding?.skillId === 'character.chat-narrative-action'
+    && ['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55', 'chat-narrative-action-v56'].includes(binding.promptVersion)
+    || binding?.skillId === 'character.chat-narrative-options' && binding.promptVersion === 'chat-narrative-options-v35'
+    || binding?.skillId === 'character.chat-action-revision' && binding.promptVersion === 'chat-action-revision-v21'
+}
 export function supportsChatCorrectionContextV1(version: ChatRetrievalVersion): boolean {
-  return version === 'chat-relevance-v12' || version === 'chat-relevance-v11' || version === 'chat-relevance-v10' || version === 'chat-relevance-v9' || version === 'chat-relevance-v8' || version === 'chat-relevance-v4' || version === 'chat-relevance-v5' || version === 'chat-relevance-v6' || version === 'chat-relevance-v7'
+  return version === 'chat-relevance-v13' || version === 'chat-relevance-v12' || version === 'chat-relevance-v11' || version === 'chat-relevance-v10' || version === 'chat-relevance-v9' || version === 'chat-relevance-v8' || version === 'chat-relevance-v4' || version === 'chat-relevance-v5' || version === 'chat-relevance-v6' || version === 'chat-relevance-v7'
 }
 export function chatRetrievalVersionForReader(reader: string | undefined): ChatRetrievalVersion | null {
   if (reader === 'chat-narrative-runtime-view-v3') return 'legacy'
@@ -46,6 +56,7 @@ export function chatRetrievalVersionForReader(reader: string | undefined): ChatR
   if (reader === CHAT_CONTEXT_READER_VERSION_V4) return 'chat-relevance-v4'
   if (reader === CHAT_CONTEXT_READER_VERSION_V10) return 'chat-relevance-v10'
   if (reader === CHAT_CONTEXT_READER_VERSION_V11) return 'chat-relevance-v11'
+  if (reader === CHAT_CONTEXT_READER_VERSION_V13) return 'chat-relevance-v13'
   if (reader === CHAT_CONTEXT_READER_VERSION_V12) return 'chat-relevance-v12'
   if (reader === CHAT_CONTEXT_READER_VERSION_V9) return 'chat-relevance-v9'
   if (reader === CHAT_CONTEXT_READER_VERSION_V8) return 'chat-relevance-v8'

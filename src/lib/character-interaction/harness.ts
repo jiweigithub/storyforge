@@ -32,7 +32,7 @@ import {CHAT_ACTION_REVISION_SKILL, readChatActionRevisionSourceV1, assertChatAc
 import {assertChatResponseRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1} from './narrative-scheduling'
 import {buildInteractionContextWindow, type InteractionContextWindow} from './runtime'
-import {chatActionContextVersionsV1} from './context-selection'
+import {chatActionContextVersionsV1, usesChatActionBoundContextV1} from './context-selection'
 import { chat, type ChatResult } from '../ai/client'
 import {CHAT_ACTION_OUTPUT_BUDGET_CRITERION_V1, hasChatActionOutputBudgetV1, recordChatActionOutputBudgetV1, readChatActionOutputBudgetV1} from './action-choice-output-budget'
 import {CHAT_ACTION_TERMINAL_VERIFIER_V2, readChatActionTerminalReceiptV1, retainChatActionTerminalReceiptV1} from './action-terminal-receipt'
@@ -651,7 +651,7 @@ export async function resumeChatNarrativeActionV1(input: Pick<InteractionRuntime
     try {
       const assembled = await assembleContext({projectId: input.scope.projectId, scope: input.scope, worldGroupId: snapshot.run.worldGroupId ?? null,
         productRuntimeSessionId: sessionId, interactionParticipantKey: participantKey, sourceKeys: ['interactionRuntime'],
-        ...(['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55'].includes(binding.promptVersion) ? {chatActionContextRunId: snapshot.run.id} : {}),
+        ...(usesChatActionBoundContextV1(binding) ? {chatActionContextRunId: snapshot.run.id} : {}),
         provider: input.aiConfig?.provider, model: input.aiConfig?.model, inputBudgetMaxTokens: CHAT_ACTION_CHOICE_INPUT_TOKENS_V1})
       snapshot = (await chooseRuntimeChatActionV1({scope: input.scope, snapshot, participantKey, assembled, actorMessages: packet.actorMessages,
         aiConfig: input.aiConfig, runAI: input.runAI, signal: input.signal})).snapshot
@@ -736,7 +736,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       sourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       ...(revision ? {chatActionRevisionCurrentRunId: snapshot.run.id} : {}),
       ...(situation ? {chatSituationConstructionRunId: snapshot.run.id} : {}),
-      ...(['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55'].includes(executionBinding.promptVersion) ? {chatActionContextRunId: snapshot.run.id} : {}),
+      ...(usesChatActionBoundContextV1(executionBinding) ? {chatActionContextRunId: snapshot.run.id} : {}),
       provider: input.aiConfig?.provider,
       model: input.aiConfig?.model,
       inputBudgetMaxTokens: 16_000,
@@ -1167,8 +1167,8 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
     }
     const reader = await readChatCandidateRetrievalVersion(snapshot, input.scope.projectId,
       situation ? 'chatSituationRuntime' : 'interactionRuntime', situation ? undefined : candidate.participantKey, original.interaction ?? undefined)
-    if (reader === 'chat-relevance-v6' || reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10' || (reader === 'chat-relevance-v11' || reader === 'chat-relevance-v12')) evidenceVersions.factEvidenceVersion = 1
-    if (!situation && (reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10' || (reader === 'chat-relevance-v11' || reader === 'chat-relevance-v12'))) evidenceVersions.resolutionEvidenceVersion = 1
+    if (reader === 'chat-relevance-v6' || reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10' || (reader === 'chat-relevance-v11' || reader === 'chat-relevance-v12' || reader === 'chat-relevance-v13')) evidenceVersions.factEvidenceVersion = 1
+    if (!situation && (reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10' || (reader === 'chat-relevance-v11' || reader === 'chat-relevance-v12' || reader === 'chat-relevance-v13'))) evidenceVersions.resolutionEvidenceVersion = 1
   }
   const event = adopted
     ? priorCommand

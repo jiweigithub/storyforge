@@ -1148,10 +1148,10 @@ export function buildInteractionContextWindow(
     const profile = state.profiles.find(p => p.participantKey === participantKey)
     if (!profile) throw new Error('缺少角色视角，无法选择来源资料')
     if (supportsChatCorrectionContextV1(options.retrievalVersion ?? 'chat-relevance-v10')) visible.memoryCorrections = chatMemoryCorrectionContextV1(state, participantKey)
-    if (options.retrievalVersion === 'chat-relevance-v12' && visible.chatNarrative) {
+    if ((options.retrievalVersion === 'chat-relevance-v12' || options.retrievalVersion === 'chat-relevance-v13') && visible.chatNarrative) {
       visible.chatNarrative = {...visible.chatNarrative, ...chatTurnAudienceGuidanceV2(state.chatNarrative.triggers.slice(-1)[0]?.direction)}
     }
-    if (options.retrievalVersion === 'chat-relevance-v11' || options.retrievalVersion === 'chat-relevance-v12') return selectChatHistoryActorContextV1(state, visible, profile, {maxCharacters, maxRecentMessages, optionalMaxCharacters: 18_000, optionalMaxTokens: 6000, relationshipHistory: true, messageIdentities: true})
+    if (options.retrievalVersion === 'chat-relevance-v11' || options.retrievalVersion === 'chat-relevance-v12' || options.retrievalVersion === 'chat-relevance-v13') return selectChatHistoryActorContextV1(state, visible, profile, {maxCharacters, maxRecentMessages, optionalMaxCharacters: 18_000, optionalMaxTokens: 6000, relationshipHistory: true, messageIdentities: true, ...(options.retrievalVersion === 'chat-relevance-v13' ? {followupEvidence: true} : {})})
     if ((options.retrievalVersion ?? 'chat-relevance-v10') === 'chat-relevance-v10') return selectChatHistoryActorContextV1(state, visible, profile, {maxCharacters, maxRecentMessages, optionalMaxCharacters: 18_000, optionalMaxTokens: 6000, relationshipHistory: true})
     if (options.retrievalVersion === 'chat-relevance-v9') return selectChatHistoryActorContextV1(state, visible, profile, {maxCharacters, maxRecentMessages, optionalMaxCharacters: 18_000, optionalMaxTokens: 6000})
     if (options.retrievalVersion === 'chat-relevance-v8') return selectChatHistoryActorContextV1(state, visible, profile, {maxCharacters, maxRecentMessages})
