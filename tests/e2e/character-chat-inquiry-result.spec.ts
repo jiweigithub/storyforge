@@ -1,18 +1,18 @@
 import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect} from '@playwright/test'
-import {inquiryAnswer, inquiryQuestion, inquiryPurpose, inquiryTruth, chatInquiryReviewFixture} from '../helpers/chat-inquiry-output'
+import {inquiryReassurance, inquiryAnswer, inquiryQuestion, inquiryPurpose, inquiryTruth, chatInquiryReviewFixture} from '../helpers/chat-inquiry-output'
 import type {ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
 
-for (const privateAnswer of [false, true]) test(`actual NPC reply is displayed only to its listeners and feeds the next actor turn (private=${privateAnswer})`, async ({page}) => {
+for (const splitQuestion of [false, true]) for (const privateAnswer of [false, true]) test(`actual NPC reply is displayed only to its listeners and feeds the next actor turn (private=${privateAnswer}, split=${splitQuestion})`, async ({page}) => {
   await page.addInitScript(() => {
     localStorage.setItem('storyforge_guide_completed', 'e2e')
     localStorage.setItem('storyforge-ai-config', JSON.stringify({provider: 'openai', baseUrl: 'https://chat-inquiry.invalid/v1', model: 'test', maxTokens: 6000}))
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
   })
-  const calls: string[] = []; let actions = 0, proposal: ChatSituationDraftV1
+  const calls: string[] = []; let actions = 0, totalCalls = 0, sessionId = 0, proposal: ChatSituationDraftV1
   const followup = '叶岑点点头：“我记下了，接下来会核对具体物件。你可以先做自己的事。”'
   await page.route('https://chat-inquiry.invalid/**', async route => {
-          if (await fulfillChatActionChoiceFixture(route)) return
+    totalCalls++; if (await fulfillChatActionChoiceFixture(route)) return
     const messages = route.request().postDataJSON().messages as Array<{content: string}>, prompt = messages.map(m => m.content).join('\n')
     const actionReview = prompt.includes('本次持久化行动候选'), situationReview = prompt.includes('本次持久化情境候选')
     const construction = !situationReview && prompt.includes('你是 StoryForge 受治理的幕后情境构建器')
@@ -25,29 +25,36 @@ for (const privateAnswer of [false, true]) test(`actual NPC reply is displayed o
       expect(pending.evidenceFactKeys).not.toContain('lost')
       expect(prompt).toContain('storyforge.chat-inquiry-evidence')
       expect(prompt).toContain('requiredEvidenceFactKeys')
+      const questionSequence = await page.evaluate(async ({id, question}) => {const load = new Function('p', 'return import(p)'); const state = await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(id); return state.interaction.messages.find((m: {text: string}) => m.text === question).eventSequence}, {id: sessionId, question: inquiryQuestion})
+      expect(prompt).toContain(`"questionSequence":${questionSequence}`)
+      if (splitQuestion) expect(questionSequence).toBeLessThan(pending.sourceEventSequence)
       proposal = {kind: 'chat-situation', title: '暴雨驿站', location: '驿站', timeLabel: '傍晚', newFacts: [], newGoals: [], newThreads: [], possibilities: [],
-        inquiryResult: {actorKey: 'guard', questionSequence: pending.sourceEventSequence, questionExcerpt: inquiryQuestion,
+        inquiryResult: {actorKey: 'guard', questionSequence, questionExcerpt: inquiryQuestion,
           respondentFactKey: 'clerk-present', respondentExcerpt: '掌柜在柜台另一端，可以当面交谈。', respondentName: '掌柜', statementFactKey: 'clerk-statement',
           answerKind: 'statement', answerText: inquiryAnswer, audienceKeys: privateAnswer ? ['guard'] : ['guard', 'player'], evidenceFactKeys: ['lost', 'clerk-present', 'box'],
           discoveries: [{factKey: 'secret', answerExcerpt: '铜印仍在柜台下的木箱里', reason: '工程条件授权保管人确认此位置，不解锁用途'}]}}
       output = proposal
     } else {
       actions++; expect(prompt).not.toContain(inquiryPurpose); expect(prompt).not.toContain('factEvidence'); expect(prompt).not.toContain('inquiryEvidence')
-      if (actions === 1) expect(prompt).not.toContain(inquiryTruth)
+      const asking = actions <= (splitQuestion ? 2 : 1), requestsAnswer = actions === (splitQuestion ? 2 : 1)
+      if (asking) expect(prompt).not.toContain(inquiryTruth)
       else {expect(prompt).toContain(inquiryAnswer); expect(prompt).toContain(inquiryTruth); expect(prompt).not.toContain('他是保管者')}
-      output = {kind: 'speak', text: actions === 1 ? inquiryQuestion : followup, goalKey: 'find-seal', audienceKeys: ['guard', 'player'],
-        evidenceFactKeys: actions === 1 ? ['clerk-present', 'box'] : ['clerk-statement'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
-        ...(actions === 1 ? {situationRequest: {threadKey: 'investigate', direction: '承接向掌柜提出的具体位置问题，不预定答复。', evidenceFactKeys: ['clerk-present', 'box'], evidenceExcerpt: inquiryQuestion}} : {})}
+      const text = actions === 1 ? inquiryQuestion : asking ? inquiryReassurance : followup
+      output = {kind: asking ? 'speak' : 'pause', text, goalKey: 'find-seal', audienceKeys: ['guard', 'player'],
+        evidenceFactKeys: asking ? ['clerk-present', 'box'] : ['clerk-statement'], waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
+        ...(requestsAnswer ? {situationRequest: {threadKey: 'investigate', direction: '承接向掌柜提出的具体位置问题，不预定答复。', evidenceFactKeys: ['clerk-present', 'box'], evidenceExcerpt: text}} : {})}
     }
     await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
-  const f = await page.evaluate(async () => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture({inquiryResults: true, factDiscovery: true})})
+  const f = await page.evaluate(async splitQuestion => {const load = new Function('p', 'return import(p)'); return (await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')).seedChatNarrativeRuntimeFixture({inquiryResults: true, factDiscovery: true, maxActionsPerTrigger: splitQuestion ? 2 : 1})}, splitQuestion)
+  sessionId = f.sessionId
   const read = () => page.evaluate(async f => {const load = new Function('p', 'return import(p)'); return (await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(f.sessionId)).interaction}, f)
   await page.goto(`./chat/play?project=${f.scope.projectId}&work=${f.scope.workId}&session=${f.sessionId}`)
   await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
   await page.getByRole('button', {name: '让角色开场', exact: true}).click()
   await expect(page.getByRole('article').getByText(inquiryQuestion, {exact: true})).toBeVisible()
+  if (splitQuestion) await expect(page.getByRole('article').getByText(inquiryReassurance, {exact: true})).toBeVisible()
   await page.getByRole('button', {name: '让角色继续', exact: true}).click()
   await expect(page.getByRole('article').getByText(followup, {exact: true})).toBeVisible()
   const transcript = page.getByRole('region', {name: '对话记录', exact: true})
@@ -59,7 +66,8 @@ for (const privateAnswer of [false, true]) test(`actual NPC reply is displayed o
     await expect(reply.getByTestId('chat-message-tools')).toHaveCount(0)
   }
   await expect(page.getByText(inquiryPurpose, {exact: true})).toHaveCount(0)
-  expect(calls).toEqual(['action', 'action-review', 'construction', 'situation-review', 'action', 'action-review'])
+  expect(calls).toEqual(['action', 'action-review', ...(splitQuestion ? ['action', 'action-review'] : []), 'construction', 'situation-review', 'action', 'action-review'])
+  expect(totalCalls).toBe(splitQuestion ? 11 : 8)
   const before = await read()
   expect(before.chatNarrative.inquiryHistory).toHaveLength(1)
   expect(before.chatNarrative.factEvidence).toEqual({version: 1, records: [{factKey: 'clerk-statement', kind: 'observation',
@@ -67,7 +75,7 @@ for (const privateAnswer of [false, true]) test(`actual NPC reply is displayed o
   expect(before.chatNarrative.situation.facts.find((f: {factKey: string}) => f.factKey === 'secret').audienceKeys).toEqual(privateAnswer ? ['guard'] : ['guard', 'player'])
   expect(before.chatNarrative.situation.facts.find((f: {factKey: string}) => f.factKey === 'purpose').audienceKeys).toEqual([])
   await page.reload(); await expect(page.getByTestId('chat-narrative-controls')).toBeVisible()
-  expect(await read()).toEqual(before); expect(calls).toHaveLength(6)
+  expect(await read()).toEqual(before); expect(calls).toHaveLength(splitQuestion ? 8 : 6); expect(totalCalls).toBe(splitQuestion ? 11 : 8)
   await expect(transcript.getByTestId('chat-inquiry-reply')).toHaveCount(privateAnswer ? 0 : 1)
   await page.setViewportSize({width: 390, height: 844})
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)

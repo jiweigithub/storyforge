@@ -773,7 +773,8 @@ async function readChatSituationRuntimeProjection(input: AssembleContextInput) {
   const saved = await readChatActionCandidateValue(input)
   const {readChatCandidateRetrievalVersion} = await import('../character-interaction/context-reader-version')
   if (!saved) {
-    let discoveryEvidence = false, inquiryEvidence = false
+    let discoveryEvidence = false
+    let inquiryEvidence: 1 | 2 | undefined
     const {usesChatDiscoveryEvidenceContextV1} = await import('../character-interaction/discovery-evidence-context')
     const {chatInquiryEvidenceVersionForContractV1} = await import('../character-interaction/inquiry-evidence')
     if (input.chatSituationConstructionRunId != null) {
@@ -786,7 +787,7 @@ async function readChatSituationRuntimeProjection(input: AssembleContextInput) {
       const {assertRuntimeHarnessFreshV1} = await import('../agent/run/runtime-scope')
       await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: producer.contract.scope, participantKey: 'player', view: 'chat-situation'})
       discoveryEvidence = usesChatDiscoveryEvidenceContextV1(producer)
-      inquiryEvidence = chatInquiryEvidenceVersionForContractV1(producer.contract) === 1
+      inquiryEvidence = chatInquiryEvidenceVersionForContractV1(producer.contract)
     }
     let retrievalVersion: import('../character-interaction/context-selection').ChatRetrievalVersion = 'chat-relevance-v9'
     if (input.chatSituationCandidateRunId != null) {
@@ -795,7 +796,7 @@ async function readChatSituationRuntimeProjection(input: AssembleContextInput) {
       if (!producer || producer.snapshot.run.productRuntimeSessionId !== input.productRuntimeSessionId) return {text: ''}
       retrievalVersion = await readChatCandidateRetrievalVersion(producer.snapshot, input.projectId, 'chatSituationRuntime')
       discoveryEvidence = usesChatDiscoveryEvidenceContextV1(producer.snapshot)
-      inquiryEvidence = chatInquiryEvidenceVersionForContractV1(producer.snapshot.contract) === 1
+      inquiryEvidence = chatInquiryEvidenceVersionForContractV1(producer.snapshot.contract)
     }
     return project({text: await readChatSituationCandidateContext(input), retrievalVersion, discoveryEvidence, inquiryEvidence, ...(sourceUnits ? {sourceUnits} : {})})
   }

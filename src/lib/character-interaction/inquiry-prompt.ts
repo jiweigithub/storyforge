@@ -9,6 +9,13 @@ export const CHAT_SPOKEN_INQUIRY_REVIEW_RULES_V1 = [
 ]
 
 export function chatInquiryGenerationRulesV1(version: string | undefined): string[] {
+  if (version === 'chat-situation-construction-v14') return [
+    ...chatInquiryGenerationRulesV1('chat-situation-construction-v13').map(rule => rule
+      .replace('questionSequence 必须等于 pendingSituation.sourceEventSequence', 'questionSequence 必须选自 inquiryEvidence.questions，并指向本次方向实际承接的提问消息；pendingSituation.sourceEventSequence 是触发请求的消息，可以是提问之后的补充说明')
+      .replace('inquiryEvidence.targets', 'inquiryEvidence.questions 中与 questionSequence 对应项的 targets')
+      .replace('除 questionEvidenceFactKeys 外', '除该问题的 questionEvidenceFactKeys 外')),
+    '逐字读取所选 questionSequence 对应的消息再生成答复。角色先问问题、后说“不必猜”等补充时，引用前一句真正的问话，不能把补充说明当问题或因此返回空情境。questions 只是同一角色轮次内、知情时间可验证且尚未回答的消息清单，不代表每条都是问题；必须与当前 pendingSituation.direction、真实对象及对话连续性一致。不得选择无关旧问题、猜测不存在的消息，或改写原问题与原请求。',
+  ]
   if (!['chat-situation-construction-v8', 'chat-situation-construction-v9', 'chat-situation-construction-v10', 'chat-situation-construction-v11', 'chat-situation-construction-v12', 'chat-situation-construction-v13'].includes(version ?? '')) return []
   return [
     '新合同可在上述 JSON 中另加 inquiryResult，但只有 permissions.allowInquiryResults=true 且 continued-thread 正在承接一条已实际提出的问题时使用。不要把提问当答案，不能靠 newFacts 绕过询问的知情检查。',
@@ -24,6 +31,10 @@ export function chatInquiryGenerationRulesV1(version: string | undefined): strin
   ]
 }
 export function chatInquiryReviewRulesV1(version?: string): string[] {
+  if (version === 'chat-situation-review-v13') return [
+    ...chatInquiryReviewRulesV1('chat-situation-review-v12'),
+    'actual-question 还须核对所选 questionSequence 在 inquiryEvidence.questions 中，原文确实提出了当前 direction 要承接的问题。requestSequence/sourceEventSequence 可以是之后的补充说明，不要求等于 questionSequence；这不允许改题、回答无关旧问题或把补充说明判成实际问题。核对整个提问到请求的对话，后句若撤回、改变问题或改变对象，拒绝原问题的答复。人物依据、听众及必要前提必须属于所选问题当时的范围，不能借后句获得新权限或秘密。',
+  ]
   return [
     ...(version === 'chat-situation-review-v12' ? ['inquiryEvidence 只允许本次发现补入系统列明、提问时已知的冻结前提，不证明语义条件已满足。逐项核对实际问题、答复、原条件及必要前提；不能替生成器补引用、修改问题或静默放行缺项。'] : []),
     '本候选包含 inquiryResult。除原五项检查，必须提供 inquiryReview={checks:[{check,passed,reason}],discoveries:[{factKey,passed,reason}]}；checks 恰含 actual-question、grounded-respondent、bounded-answer、actual-audience、meaningful-result，discoveries 恰好覆盖候选的每项事实发现。任一项不确定或不通过都拒绝整项答复，不得遗漏困难的检查。',

@@ -2,7 +2,7 @@ import type {CharacterInteractionRuntimeState} from '../types'
 import {CHAT_INQUIRY_REVIEW_CHECKS_V1, type ChatInquiryResultV1, type ChatInquiryReviewV1, type ChatNarrativeStateV1} from '../types/chat-narrative'
 import {isChatMessageRetrievableV1} from './narrative-retrieval'
 import {recordChatFactEvidenceV1} from './fact-evidence'
-import {chatInquiryEvidenceContextV1, parseChatInquiryEvidenceVersionV1} from './inquiry-evidence'
+import {chatInquiryEvidenceContextV1, chatInquiryQuestionEvidenceContextV1, parseChatInquiryEvidenceVersionV1} from './inquiry-evidence'
 
 function fail(message: string): never {throw new Error(`[chat-inquiry] ${message}`)}
 function object(value: unknown, fields: string): asserts value is Record<string, unknown> {
@@ -61,11 +61,14 @@ export function chatInquiryStatementTextV1(result: ChatInquiryResultV1) {
 
 /** This mutates only the situation reducer's clone, after an exact independent review. */
 export function applyChatInquiryResultV1(state: CharacterInteractionRuntimeState, result: ChatInquiryResultV1, resultSequence: number, factEvidenceVersion?: unknown, inquiryEvidenceVersion?: unknown) {
-  const expanded = parseChatInquiryEvidenceVersionV1(inquiryEvidenceVersion) === 1
+  const version = parseChatInquiryEvidenceVersionV1(inquiryEvidenceVersion)
+  const basis = version === 2 ? chatInquiryQuestionEvidenceContextV1(state)?.questions.find(q => q.questionSequence === result.questionSequence)
+    : version === 1 ? chatInquiryEvidenceContextV1(state) : undefined
   const story = state.chatNarrative!, scene = state.activeScene!, pending = story.pendingSituation
   if (story.permissions.allowInquiryResults !== true || story.permissions.allowActorSituationExpansion !== true
     || !story.permissions.allowedNewFactKinds.includes('observation') || story.permissions.maxNewFactsPerAction < 1) fail('作品未授权询问结果')
-  if (!pending || pending.purpose !== undefined || pending.actorKey !== result.actorKey || pending.sourceEventSequence !== result.questionSequence
+  if (!pending || pending.purpose !== undefined || pending.actorKey !== result.actorKey
+    || (version === 2 ? !basis : pending.sourceEventSequence !== result.questionSequence)
     || !scene.activeParticipantKeys.includes(result.actorKey)) fail('答复必须承接当前已审查方向中的实际询问')
   if ((story.inquiryHistory?.length ?? 0) >= 1000 || story.inquiryHistory?.some(row => row.questionSequence === result.questionSequence)) fail('询问已经回答或记录已达上限')
   const question = state.messages.find(row => row.role === 'character' && row.speakerKey === result.actorKey && row.eventSequence === result.questionSequence && row.supersededBySequence == null)
@@ -78,8 +81,7 @@ export function applyChatInquiryResultV1(state: CharacterInteractionRuntimeState
   if (result.audienceKeys.some(key => ![state.playerKey, ...scene.activeParticipantKeys].includes(key)
     || question.audienceKeys != null && !question.audienceKeys.includes(key) || !respondent.audienceKeys.includes(key))) fail('答复听众超出实际对话或人物可知范围')
   const allowedEvidence = new Set(pending.evidenceFactKeys)
-  if (expanded) {
-    const basis = chatInquiryEvidenceContextV1(state)
+  if (version !== undefined) {
     if (!basis || !pending.evidenceFactKeys.includes(result.respondentFactKey)) fail('询问前提证据缺少实际提问和人物依据')
     for (const discovery of result.discoveries) {
       const target = basis.targets.find(target => target.factKey === discovery.factKey)
@@ -167,5 +169,6 @@ export function assertChatInquiryBindingV1(result: ChatInquiryResultV1 | undefin
     || (producerVersion === 'chat-situation-construction-v11' && reviewerVersion === 'chat-situation-review-v10')
     || (producerVersion === 'chat-situation-construction-v12' && reviewerVersion === 'chat-situation-review-v11')
     || (producerVersion === 'chat-situation-construction-v13' && reviewerVersion === 'chat-situation-review-v12')
+    || (producerVersion === 'chat-situation-construction-v14' && reviewerVersion === 'chat-situation-review-v13')
   if (result && !supportedPair) fail('旧情境合同不能取得询问结果权限，请保留原记录并明确发起新请求')
 }

@@ -12,7 +12,7 @@ import {projectChatGoalCommitmentsV1} from './commitment-context'
 import {createContextTextScorerV1} from '../context-gateway/lexical-query'
 import {estimateTokens} from '../ai/context-budget'
 import {chatDiscoveryEvidenceContextV1} from './discovery-evidence-context'
-import {chatInquiryEvidenceContextV1} from './inquiry-evidence'
+import {chatInquiryContextForVersionV1} from './inquiry-evidence'
 import {chatSourceUnitConstraintsV1} from './source-unit-runtime'
 import type {ChatSourceUnitSetV1} from './source-unit-authorization'
 
@@ -22,17 +22,20 @@ const projectionCache = createChatHistoryProjectionCacheV1<CoordinatorProjection
 /** Current review must retain the actor's exact selected rows and every
  * existing candidate reference, then expand their original evidence closure. */
 export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteractionRuntimeState, candidate: {
-  text: string; actorKey?: string; retrievalVersion?: 'chat-relevance-v8' | 'chat-relevance-v9' | 'chat-relevance-v10' | 'chat-relevance-v11' | 'chat-relevance-v12'; sourceUnits?: ChatSourceUnitSetV1; discoveryEvidence?: boolean; inquiryEvidence?: boolean
+  text: string; actorKey?: string; retrievalVersion?: 'chat-relevance-v8' | 'chat-relevance-v9' | 'chat-relevance-v10' | 'chat-relevance-v11' | 'chat-relevance-v12'; sourceUnits?: ChatSourceUnitSetV1; discoveryEvidence?: boolean; inquiryEvidence?: 1 | 2
 }) {
   const cacheKey = projectionCache.key([state, candidate])
   const cached = projectionCache.read(cacheKey)
   if (cached) return cached
   const full = chatSituationCoordinatorViewV1(state), commitments = full.situation.goals.flatMap(g => g.commitments ?? [])
   const plan = createChatHistoryPlanV1(state, {...full.situation, commitments}), id = chatHistoryIdV1
-  const inquiryEvidence = candidate.inquiryEvidence ? chatInquiryEvidenceContextV1(state) : undefined
-  for (const key of inquiryEvidence?.questionEvidenceFactKeys ?? []) plan.require('facts', key, 'inquiry-question-evidence')
-  for (const target of inquiryEvidence?.targets ?? []) {
-    for (const key of [target.factKey, ...target.requiredEvidenceFactKeys]) plan.require('facts', key, 'inquiry-discovery-prerequisite')
+  const inquiryEvidence = candidate.inquiryEvidence ? chatInquiryContextForVersionV1(state, candidate.inquiryEvidence) : undefined
+  const inquiryQuestions = inquiryEvidence?.version === 2 ? inquiryEvidence.questions : inquiryEvidence ? [inquiryEvidence] : []
+  for (const question of inquiryQuestions) {
+    for (const key of question.questionEvidenceFactKeys) plan.require('facts', key, 'inquiry-question-evidence')
+    for (const target of question.targets) {
+      for (const key of [target.factKey, ...target.requiredEvidenceFactKeys]) plan.require('facts', key, 'inquiry-discovery-prerequisite')
+    }
   }
   const memoryCorrections = (candidate.actorKey ? [candidate.actorKey] : state.profiles.map(p => p.participantKey)).flatMap(key => chatMemoryCorrectionContextV1(state, key))
   const pending = new Set(memoryCorrections.map(m => m.memoryId))
@@ -62,6 +65,7 @@ export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteract
     const reasons = dialogue.evidence.requiredMessages.find(r => r.messageId === m.messageId)?.reasons ?? []
     plan.add('messages', m.messageId, m.text, reasons); plan.linkMessage(m)
   }
+  if (inquiryEvidence?.version === 2) for (const question of inquiryEvidence.questions) plan.require('messages', question.messageId, 'inquiry-question-message')
   if (candidate.retrievalVersion === 'chat-relevance-v10' || (candidate.retrievalVersion === 'chat-relevance-v11' || candidate.retrievalVersion === 'chat-relevance-v12')) {
     const actorCauses = new Set(delivered?.relationshipEvidence?.map(chatRelationshipHistoryKeyV1))
     for (const change of full.relationshipEvidence) {
