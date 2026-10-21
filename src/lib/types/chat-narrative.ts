@@ -323,7 +323,8 @@ export interface ChatNarrativeTriggerStateV1 {
 }
 
 export interface ChatControlHandoffRecordV1 {
-  version: 1
+  /** v1 waits for a player decision; v2 completes only this current turn. */
+  version: 1 | 2
   sequence: number
   actorKey: string
   sourceMessageId: string

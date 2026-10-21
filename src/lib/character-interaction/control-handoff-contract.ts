@@ -5,12 +5,13 @@ import {interactionMessageVisibleTo} from './message-visibility'
 import {chatTurnActionLimitV1} from './narrative-contract'
 import {isChatMessageRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1} from './narrative-scheduling'
+import {CHAT_TURN_END_CONTROL_CHECKS_V1, parseChatTurnEndControlV1, previewChatTurnEndControlV1, readChatTurnEndBasisV1, type ChatTurnEndControlV1} from './turn-end-control'
 
 /** A control result, never an action, speech, permission or story consequence.
  * Generation, independent review and adoption must all retain this exact body.
  * V1 covers an explicitly continued single-actor turn; ensemble scheduling
  * needs its own per-actor disposition before it can use a silent handoff. */
-export interface ChatControlHandoffV1 {
+export interface ChatPlayerDecisionHandoffV1 {
   version: 1
   kind: 'yield-to-player'
   reason: 'awaiting-player-decision'
@@ -18,6 +19,7 @@ export interface ChatControlHandoffV1 {
   decision: string
   dependentStep: string
 }
+export type ChatControlHandoffV1 = ChatPlayerDecisionHandoffV1 | ChatTurnEndControlV1
 
 export const CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1 = [
   'current-decision', 'actual-dependency', 'available-direction', 'player-agency', 'visibility',
@@ -25,7 +27,7 @@ export const CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1 = [
 export interface ChatControlHandoffReviewV1 {
   /** Bound by the system to the candidate, never supplied by the model. */
   reviewedHandoffJson: string
-  checks: Array<{check: typeof CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1[number]; passed: boolean; reason: string}>
+  checks: Array<{check: typeof CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1[number] | typeof CHAT_TURN_END_CONTROL_CHECKS_V1[number]; passed: boolean; reason: string}>
 }
 
 /** Choice, result and review still consume their actual three model calls.
@@ -45,6 +47,10 @@ function text(value: unknown, max: number): string {
 }
 
 export function parseChatControlHandoffV1(value: unknown): ChatControlHandoffV1 {
+  if (value && typeof value === 'object' && 'version' in value && value.version === 2) {
+    if (!('kind' in value) || value.kind !== 'finish-current-turn') fail('交还控制版本或原因无效')
+    return parseChatTurnEndControlV1(value)
+  }
   const row = record(value, ['version', 'kind', 'reason', 'source', 'decision', 'dependentStep'])
   if (row.version !== 1 || row.kind !== 'yield-to-player' || row.reason !== 'awaiting-player-decision') fail('交还控制版本或原因无效')
   const source = record(row.source, ['messageId', 'sequence', 'excerpt'])
@@ -68,6 +74,7 @@ export function assertChatControlHandoffContextV1(handoff: ChatControlHandoffV1,
  * not just a matching excerpt. Excluded later dialogue cannot silently erase
  * an answer; reject this result rather than reading it behind the author. */
 export function readChatControlHandoffBasisV1(state: CharacterInteractionRuntimeState, actorKey: string, handoff: ChatControlHandoffV1) {
+  if (handoff.version === 2) return readChatTurnEndBasisV1(state, actorKey, handoff)
   const sourceIndex = state.messages.findIndex(message => message.messageId === handoff.source.messageId && message.eventSequence === handoff.source.sequence)
   if (sourceIndex < 0) fail('交还控制对话依据缺失')
   const basis = state.messages.slice(sourceIndex).filter(message => message.supersededBySequence == null && interactionMessageVisibleTo(message, actorKey))
@@ -77,13 +84,14 @@ export function readChatControlHandoffBasisV1(state: CharacterInteractionRuntime
 
 export function parseChatControlHandoffReviewV1(value: unknown, handoff: ChatControlHandoffV1): ChatControlHandoffReviewV1 {
   const draft = parseChatControlHandoffV1(handoff)
+  const checks: readonly string[] = draft.version === 2 ? CHAT_TURN_END_CONTROL_CHECKS_V1 : CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1
   const row = record(value, ['reviewedHandoffJson', 'checks'])
   if (row.reviewedHandoffJson !== canonicalStringify(draft)) fail('交还控制审查与候选正文不一致')
-  if (!Array.isArray(row.checks) || row.checks.length !== CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1.length) fail('交还控制审查缺少必要项目')
+  if (!Array.isArray(row.checks) || row.checks.length !== checks.length) fail('交还控制审查缺少必要项目')
   const seen = new Set<string>()
   for (const value of row.checks) {
     const check = record(value, ['check', 'passed', 'reason'])
-    if (!CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1.includes(check.check as typeof CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1[number])
+    if (!checks.includes(String(check.check))
       || seen.has(String(check.check)) || typeof check.passed !== 'boolean') fail('交还控制审查项目重复或无效')
     seen.add(String(check.check)); text(check.reason, 4000)
   }
@@ -100,6 +108,7 @@ export function previewChatControlHandoffV1(state: CharacterInteractionRuntimeSt
   sequence: number; triggerSequence: number; actorKey: string; handoff: unknown
 }): CharacterInteractionRuntimeState {
   const handoff = parseChatControlHandoffV1(input.handoff)
+  if (handoff.version === 2) return previewChatTurnEndControlV1(state, {...input, handoff})
   const story = state.chatNarrative, scene = state.activeScene, trigger = story?.triggers.slice(-1)[0]
   if (!story || !scene || scene.status !== 'active' || scene.sceneKey !== story.situation.sceneKey
     || !scene.activeParticipantKeys.includes(input.actorKey)) fail('交还控制缺少当前角色与情境')

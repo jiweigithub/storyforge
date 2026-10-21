@@ -33,7 +33,7 @@ export const CHAT_CONTEXT_READER_VERSION_V13 = 'chat-narrative-runtime-view-v17'
 export type ChatRetrievalVersion = 'legacy' | 'chat-relevance-v1' | 'chat-relevance-v2' | 'chat-relevance-v3' | 'chat-relevance-v4' | 'chat-relevance-v5' | 'chat-relevance-v6' | 'chat-relevance-v7' | 'chat-relevance-v8' | 'chat-relevance-v9' | 'chat-relevance-v10' | 'chat-relevance-v11' | 'chat-relevance-v12' | 'chat-relevance-v13'
 /** Selection and expression must use the same frozen reader, including recovery. */
 export function chatActionContextVersionsV1(producerVersion: string | undefined) {
-  if (['chat-narrative-action-v56', 'chat-narrative-options-v35', 'chat-action-revision-v21'].includes(producerVersion ?? '')) return {readerVersion: CHAT_CONTEXT_READER_VERSION_V13, retrievalVersion: 'chat-relevance-v13' as const}
+  if (['chat-narrative-action-v56', 'chat-narrative-action-v57', 'chat-narrative-options-v35', 'chat-action-revision-v21'].includes(producerVersion ?? '')) return {readerVersion: CHAT_CONTEXT_READER_VERSION_V13, retrievalVersion: 'chat-relevance-v13' as const}
   if (['chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55'].includes(producerVersion ?? '')) return {readerVersion: CHAT_CONTEXT_READER_VERSION_V12, retrievalVersion: 'chat-relevance-v12' as const}
   return ['chat-narrative-action-v47', 'chat-narrative-action-v48'].includes(producerVersion ?? '')
     ? {readerVersion: CHAT_CONTEXT_READER_VERSION_V11, retrievalVersion: 'chat-relevance-v11' as const}
@@ -42,7 +42,7 @@ export function chatActionContextVersionsV1(producerVersion: string | undefined)
 /** Only a producer's own frozen run may select its versioned actor source. */
 export function usesChatActionBoundContextV1(binding: {skillId: string; promptVersion: string} | undefined): boolean {
   return binding?.skillId === 'character.chat-narrative-action'
-    && ['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55', 'chat-narrative-action-v56'].includes(binding.promptVersion)
+    && ['chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55', 'chat-narrative-action-v56', 'chat-narrative-action-v57'].includes(binding.promptVersion)
     || binding?.skillId === 'character.chat-narrative-options' && binding.promptVersion === 'chat-narrative-options-v35'
     || binding?.skillId === 'character.chat-action-revision' && binding.promptVersion === 'chat-action-revision-v21'
 }

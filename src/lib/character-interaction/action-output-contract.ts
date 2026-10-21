@@ -103,7 +103,7 @@ export function chatActionRequestOptionsV1(version: string | undefined, provider
   }
   const schema = ['chat-narrative-options-v28', 'chat-narrative-options-v29', 'chat-narrative-options-v30', 'chat-narrative-options-v31', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34', 'chat-narrative-options-v35'].includes(version ?? '')
     ? object({options: {...array(action), minItems: 2, maxItems: 2}}) : action
-  if (supportsChatControlHandoffV1(version)) return {jsonSchema: {name: 'chat_narrative_outcome_v1', strict: true, schema: chatNarrativeOutcomeSchemaV1(schema)}}
+  if (supportsChatControlHandoffV1(version)) return {jsonSchema: {name: 'chat_narrative_outcome_v1', strict: true, schema: chatNarrativeOutcomeSchemaV1(schema, version)}}
   return {jsonSchema: {name: wire ? 'chat_action_shape_v4' : ownEvidence ? 'chat_action_shape_v3' : usesChangeDescriptions(version) ? 'chat_action_shape_v2' : 'chat_action_shape_v1', strict: true, schema}}
 }
 

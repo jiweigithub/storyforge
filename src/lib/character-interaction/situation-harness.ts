@@ -1,3 +1,4 @@
+import {CHAT_TURN_END_CONTROL_REVIEW_RULES_V1} from './turn-end-control'
 import {CHAT_CONTROL_HANDOFF_REVIEW_RULES_V1, parseChatControlHandoffReviewV1, readChatControlHandoffBasisV1} from './control-handoff-contract'
 import {assertChatControlHandoffBindingsV1} from './control-handoff-wire'
 import {assertChatTurnCompletionReviewVersionV1} from './turn-completion'
@@ -58,7 +59,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
   const candidate = input.candidate, situation = candidate.kind === 'chat-situation-candidate'
   const options = candidate.kind === 'chat-narrative-options-candidate'
   const control = candidate.kind === 'chat-control-handoff-candidate'
-  if (control) assertChatControlHandoffBindingsV1(snapshot.contract)
+  if (control) assertChatControlHandoffBindingsV1(snapshot.contract, candidate.handoff)
   const stepId = situation ? CHAT_SITUATION_REVIEW_STEP_V1 : CHAT_ACTION_REVIEW_STEP_V1
   const reviewSkill = situation ? 'character.chat-situation-review' : options ? 'character.chat-narrative-options-review' : 'character.chat-narrative-action-review'
   const freshness = {scope: input.scope, contractScope: snapshot.contract.scope, participantKey: candidate.participantKey,
@@ -127,7 +128,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
       await assertRuntimeHarnessFreshV1(freshness)
       const manifest = await createContextManifestFromAssemblyV1({runId: snapshot.run.id, stepId, attempt: 1,
         projectId: input.scope.projectId, worldGroupId: snapshot.contract.scope.worldGroupId, declaredSourceKeys: sourceKeys,
-        assembled, readerVersion: control ? (retrievalVersion === 'chat-relevance-v13' ? 'chat-control-handoff-review-v4' : retrievalVersion === 'chat-relevance-v12' ? 'chat-control-handoff-review-v3' : retrievalVersion === 'chat-relevance-v11' ? 'chat-control-handoff-review-v2' : 'chat-control-handoff-review-v1')
+        assembled, readerVersion: control ? (candidate.handoff.version === 2 ? 'chat-turn-end-control-review-v1' : retrievalVersion === 'chat-relevance-v13' ? 'chat-control-handoff-review-v4' : retrievalVersion === 'chat-relevance-v12' ? 'chat-control-handoff-review-v3' : retrievalVersion === 'chat-relevance-v11' ? 'chat-control-handoff-review-v2' : 'chat-control-handoff-review-v1')
           : retrievalVersion === 'chat-relevance-v13' ? 'chat-action-review-v17' : retrievalVersion === 'chat-relevance-v12' ? 'chat-action-review-v16' : retrievalVersion === 'chat-relevance-v11' ? 'chat-action-review-v15' : retrievalVersion === 'chat-relevance-v10' ? 'chat-action-review-v14'
           : retrievalVersion === 'chat-relevance-v9' ? situation ? 'chat-situation-review-v14' : 'chat-action-review-v13'
           : retrievalVersion === 'chat-relevance-v8' ? situation ? 'chat-situation-review-v13' : 'chat-action-review-v12'
@@ -166,7 +167,7 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
         'meaningful-direction：是否承接当前局面、提供有动机且可改变的行动方向，而非机械制造危机、重复问题或预写结局。',
         ...(candidate.kind === 'chat-situation-candidate' && candidate.draft.inquiryResult ? [] : ['仅输出 JSON {"checks":[{"check":"continuity|permissions|player-agency|visibility|meaningful-direction","passed":true,"reason":"引用实际内容解释判断"}]}，必须分别包含上述五项，不得有其他字段。']),
         ...(candidate.kind === 'chat-situation-candidate' && candidate.draft.inquiryResult ? chatInquiryReviewRulesV1(reviewBinding.promptVersion) : []),
-      ] : control ? [...CHAT_CONTROL_HANDOFF_REVIEW_RULES_V1] : chatActionReviewPromptRulesV1({reviewerVersion: reviewBinding.promptVersion, view: roleContext, actions, options, compact, naturalDisclosure, commitments, memoryReconciliation, threadFollowup, playerPause, conversationEvidence, promiseRequest, knownFactReview: supportsChatKnownFactReviewNormalizationV1(reviewBinding.promptVersion), existingGoalPause: supportsChatExistingGoalPauseV1(reviewBinding.promptVersion), sceneTransition: supportsChatSceneTransitionV1(reviewBinding.promptVersion), replanning: supportsChatReplanningReviewV1(reviewBinding.promptVersion), playerDecision: supportsChatPlayerDecisionReviewV1(reviewBinding.promptVersion), spokenInquiry: supportsChatSpokenInquiryReviewV1(reviewBinding.promptVersion)})).join('\n')}, {role: 'user', content: assembled.text}]
+      ] : control ? [...(candidate.handoff.version === 2 ? CHAT_TURN_END_CONTROL_REVIEW_RULES_V1 : CHAT_CONTROL_HANDOFF_REVIEW_RULES_V1)] : chatActionReviewPromptRulesV1({reviewerVersion: reviewBinding.promptVersion, view: roleContext, actions, options, compact, naturalDisclosure, commitments, memoryReconciliation, threadFollowup, playerPause, conversationEvidence, promiseRequest, knownFactReview: supportsChatKnownFactReviewNormalizationV1(reviewBinding.promptVersion), existingGoalPause: supportsChatExistingGoalPauseV1(reviewBinding.promptVersion), sceneTransition: supportsChatSceneTransitionV1(reviewBinding.promptVersion), replanning: supportsChatReplanningReviewV1(reviewBinding.promptVersion), playerDecision: supportsChatPlayerDecisionReviewV1(reviewBinding.promptVersion), spokenInquiry: supportsChatSpokenInquiryReviewV1(reviewBinding.promptVersion)})).join('\n')}, {role: 'user', content: assembled.text}]
       snapshot = (await recordAgentRunArtifactV1({scope: input.scope, runId: snapshot.run.id,
         productRuntimeSessionId: input.productRuntimeSessionId, artifactKind: 'rendered-request', content: JSON.stringify(messages),
         stepId, attempt: 1, expectedLastSequence: snapshot.projection.lastSequence})).snapshot

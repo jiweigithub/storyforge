@@ -124,7 +124,7 @@ export async function assertChatActionChoiceCommitEvidenceV1(input: {
   if (!saved) fail('选择行动缺少已审查候选')
   const {snapshot} = saved, candidate = saved.resumePayload as Record<string, unknown>, boundary = snapshot.contract.scope.runtime
   const control = input.outcome === 'handoff'
-  if (control) assertChatControlHandoffBindingsV1(snapshot.contract)
+  if (control) assertChatControlHandoffBindingsV1(snapshot.contract, input.handoff)
   if (!candidate || candidate.kind !== (control ? 'chat-control-handoff-candidate' : 'chat-narrative-action-candidate') || candidate.version !== 1 || candidate.portable !== false
     || snapshot.projection.state !== 'running' || snapshot.projection.lastSequence !== input.lastSequence
     || snapshot.run.productRuntimeSessionId !== input.sessionId || candidate.runId !== input.runId
@@ -146,7 +146,7 @@ export async function assertChatActionChoiceCommitEvidenceV1(input: {
   const expressed = await readChatActionChoiceExpressionV1({scope: input.scope, snapshot, proof})
   const binding = snapshot.contract.executionBindings!.find(item => item.stepId === expressionStep)!
   const raw = JSON.parse(expressed.output.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, '$1'))
-  const outcome = supportsChatControlHandoffV1(binding.promptVersion) ? parseChatNarrativeOutcomeWireV1(raw) : null
+  const outcome = supportsChatControlHandoffV1(binding.promptVersion) ? parseChatNarrativeOutcomeWireV1(raw, binding.promptVersion) : null
   let actual: ChatNarrativeActionV1 | ChatControlHandoffV1
   if (control) {
     if (outcome?.outcome !== 'handoff') fail('交还控制候选不是原模型结果')

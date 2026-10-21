@@ -278,7 +278,7 @@ function parseModelDraft(input: {
     return {kind: 'chat-narrative-options-candidate', options: parseChatNarrativeOptionsV1(options)}
   }
   if ((input.skillId === 'character.chat-narrative-action' || input.skillId === CHAT_ACTION_REVISION_SKILL)) {
-    const outcome = supportsChatControlHandoffV1(input.promptVersion) ? parseChatNarrativeOutcomeWireV1(row) : null
+    const outcome = supportsChatControlHandoffV1(input.promptVersion) ? parseChatNarrativeOutcomeWireV1(row, input.promptVersion) : null
     if (outcome?.outcome === 'handoff') return {kind: 'chat-control-handoff-candidate', handoff: outcome.handoff}
     return {kind: 'chat-narrative-action-candidate', action: parseChatNarrativeActionV1(bindChatOwnEvidenceV1(compileChatActionWireV1(outcome?.outcome === 'action' ? outcome.action : row, input.promptVersion, input.audience), input.promptVersion))}
   }
@@ -915,7 +915,7 @@ async function retainRuntimeCandidateV1(args: {
       inquiryEvidenceVersion: chatInquiryEvidenceVersionForContractV1(snapshot.contract)})
     body = {...common, ...draft, triggerSequence, review: null}
   } else if (draft.kind === 'chat-control-handoff-candidate') {
-    assertChatControlHandoffBindingsV1(snapshot.contract)
+    assertChatControlHandoffBindingsV1(snapshot.contract, draft.handoff)
     const proof = await readChatActionChoiceEvidenceV1({scope: input.scope, snapshot, participantKey})
     assertChatControlHandoffContextV1(draft.handoff, proof.roleContext)
     const triggerSequence = initialState.interaction!.chatNarrative!.triggers.slice(-1)[0]!.requestedSequence
@@ -1075,7 +1075,7 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
     if (confirmation?.type === 'confirmation.recorded' && (confirmation.payload.candidateHash !== candidate.candidateHash || recordedOption !== optionKey)) fail('该运行已选择另一条候选；改换已发生走向须从选择前分支')
   } else if (input.optionKey != null) fail('当前运行不是可比较的行动候选组')
   const commandId = options ? `${candidate.commandId}:${optionKey}` : candidate.commandId
-  if (candidate.kind === 'chat-control-handoff-candidate') assertChatControlHandoffBindingsV1(snapshot.contract)
+  if (candidate.kind === 'chat-control-handoff-candidate') assertChatControlHandoffBindingsV1(snapshot.contract, candidate.handoff)
   if (candidate.kind === 'chat-situation-candidate') assertChatInquiryBindingV1(candidate.draft.inquiryResult,
     snapshot.contract.executionBindings?.find(binding => binding.skillId === 'character.chat-situation-construction')?.promptVersion,
     snapshot.contract.executionBindings?.find(binding => binding.skillId === 'character.chat-situation-review')?.promptVersion)

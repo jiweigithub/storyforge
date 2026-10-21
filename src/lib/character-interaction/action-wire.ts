@@ -15,7 +15,7 @@ export const CHAT_ACTION_EXPRESSION_MODES_V1 = {
 } as const
 
 export function supportsChatActionWireV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-v41', 'chat-narrative-options-v31', 'chat-action-revision-v20', 'chat-action-revision-v21', 'chat-narrative-action-v42', 'chat-narrative-action-v43', 'chat-narrative-action-v44', 'chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55', 'chat-narrative-action-v56', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34', 'chat-narrative-options-v35'].includes(version ?? '')
+  return ['chat-narrative-action-v41', 'chat-narrative-options-v31', 'chat-action-revision-v20', 'chat-action-revision-v21', 'chat-narrative-action-v42', 'chat-narrative-action-v43', 'chat-narrative-action-v44', 'chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55', 'chat-narrative-action-v56', 'chat-narrative-action-v57', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34', 'chat-narrative-options-v35'].includes(version ?? '')
 }
 
 /** Capture before dispatch, from the registered runtime's actual conversation.

@@ -12,11 +12,14 @@ export function parseChatControlHandoffRecordV1(value: unknown, trigger: Pick<Ch
   const row = value as Record<string, unknown>
   const keys = ['version', 'sequence', 'actorKey', 'sourceMessageId', 'sourceSequence']
   if (Object.keys(row).length !== keys.length || keys.some(key => !Object.prototype.hasOwnProperty.call(row, key))
-    || row.version !== 1 || !Number.isSafeInteger(row.sequence) || row.sequence === 0
+    || ![1, 2].includes(Number(row.version)) || typeof row.version !== 'number' || !Number.isSafeInteger(row.sequence) || row.sequence === 0
     || !Number.isSafeInteger(row.sourceSequence) || row.sourceSequence === 0
     || typeof row.actorKey !== 'string' || !participantKeys.includes(row.actorKey)
     || typeof row.sourceMessageId !== 'string' || !row.sourceMessageId.trim() || row.sourceMessageId.length > 200
-    || trigger.kind !== 'continue' || !['waiting-player', 'cancelled'].includes(trigger.status) || trigger.direction?.scheduling
+    || (row.version === 1 ? trigger.kind !== 'continue' || !['waiting-player', 'cancelled'].includes(trigger.status)
+      : trigger.status !== 'complete' || !trigger.actionSequences.length
+        || trigger.actionSequences.slice(-1)[0] !== row.sourceSequence || Number(row.sourceSequence) <= trigger.requestedSequence)
+    || trigger.direction?.scheduling
     || trigger.direction && trigger.direction.actorKey !== row.actorKey
     || Number(row.sequence) <= trigger.requestedSequence || Number(row.sourceSequence) >= Number(row.sequence)
     || trigger.actionSequences.some(sequence => sequence >= Number(row.sequence))) fail()

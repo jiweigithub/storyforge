@@ -167,7 +167,7 @@ async function appendInteractionCommand(
           && chatActionChoiceVersionForContractV1(JSON.parse(run.contractJson)) !== parseChatActionChoiceVersionV1(input.payload.actionChoiceVersion)) {
           throw new Error('角色行动选择额度与原运行合同不一致。');
         }
-        if (input.type === 'interaction.narrative.control-handoff.committed') assertChatControlHandoffBindingsV1(JSON.parse(run.contractJson));
+        if (input.type === 'interaction.narrative.control-handoff.committed') assertChatControlHandoffBindingsV1(JSON.parse(run.contractJson), input.payload.handoff as unknown as ChatControlHandoffV1);
         if (input.type === 'interaction.narrative.situation.committed'
           && chatInquiryEvidenceVersionForContractV1(JSON.parse(run.contractJson)) !== parseChatInquiryEvidenceVersionV1(input.payload.inquiryEvidenceVersion)) {
           throw new Error('询问前提证据与原运行合同不一致。');

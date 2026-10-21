@@ -70,7 +70,7 @@ it.each([100, 300, 1000])('keeps unrelated histories optional at %s facts sharin
 })
 
 it('binds new ordinary, options and revision runs to the new reader while preserving all old bindings', () => {
-  for (const producer of ['chat-narrative-action-v56', 'chat-narrative-options-v35', 'chat-action-revision-v21'])
+  for (const producer of ['chat-narrative-action-v56', 'chat-narrative-action-v57', 'chat-narrative-options-v35', 'chat-action-revision-v21'])
     expect(chatActionContextVersionsV1(producer)).toEqual({readerVersion: 'chat-narrative-runtime-view-v17', retrievalVersion: 'chat-relevance-v13'})
   expect(chatActionContextVersionsV1('chat-narrative-action-v55').readerVersion).toBe('chat-narrative-runtime-view-v16')
   for (const producer of ['chat-narrative-options-v34', 'chat-action-revision-v20'])

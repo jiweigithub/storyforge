@@ -726,7 +726,7 @@ async function readChatActionCandidateValue(input: AssembleContextInput) {
     const {parseChatControlHandoffV1, readChatControlHandoffBasisV1} = await import('../character-interaction/control-handoff-contract')
     const {assertChatControlHandoffBindingsV1} = await import('../character-interaction/control-handoff-wire')
     const {readChatActionChoiceEvidenceV1} = await import('../character-interaction/action-choice-evidence')
-    assertChatControlHandoffBindingsV1(saved.snapshot.contract)
+    assertChatControlHandoffBindingsV1(saved.snapshot.contract, parseChatControlHandoffV1(candidate.handoff))
     const {choice} = await readChatActionChoiceEvidenceV1({scope: input.scope, snapshot: saved.snapshot, participantKey: candidate.participantKey})
     const handoff = parseChatControlHandoffV1(candidate.handoff)
     const state = await readProductRuntimeStateForContext(input.productRuntimeSessionId)
