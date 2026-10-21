@@ -4,7 +4,7 @@ import type { ProductRuntimeJsonObjectV1 } from '../product/runtime-values'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coordination'
-import { parseTtrpgOpenIntentV1, routeTtrpgOpenIntentV1 } from './open-intent'
+import { parseTtrpgOpenIntentV1, routeTtrpgOpenIntentV1, routeTtrpgOpenIntentV2 } from './open-intent'
 import { parseTtrpgOpenSituationFrozenContentV1 } from './open-situation-runtime'
 import { ttrpgOpenPredicateContextV1 } from './open-rule-plan'
 import * as p from './open-contract-parse'
@@ -26,7 +26,7 @@ export function previewTtrpgOpenCompanionPermissionV1(state: ProductRuntimeState
   const operation = run.operations.find(o => o.operationKey === operationKey) ?? p.fail('预授权操作不存在'), actorKey = operation.plan.request.actorKey
   const seat = auth.seats.find(s => s.actorKey === actorKey), intent = parseTtrpgOpenIntentV1(semanticIntent), context = ttrpgOpenPredicateContextV1(state, content)
   const actors = content.campaign.characterTemplates.map(t => { const s = auth.seats.find(s => s.actorKey === t.characterKey); return { ...t, ...(s ? { controller: s.controller, seatKey: s.seatKey } : {}), ...(t.characterKey === actorKey ? { actionKeys: context.actors![actorKey].abilityKeys } : {}) } })
-  const preview = routeTtrpgOpenIntentV1(intent, { rulePack: content.rulePack.content, campaign: content.campaign, actors, predicateContext: context })
+  const preview = (operation.intentEvidence?.routingVersion === 2 ? routeTtrpgOpenIntentV2 : routeTtrpgOpenIntentV1)(intent, { rulePack: content.rulePack.content, campaign: content.campaign, actors, predicateContext: context })
   const action = operation.plan.rulePack.actions.find(a => a.key === operation.plan.request.ruleKey)
   if (operation.intentEvidence?.sceneScope) {
     const target = resolveTtrpgOpenIntentTargetV1({ route: operation.plan.request.route,actionTarget: action?.target,

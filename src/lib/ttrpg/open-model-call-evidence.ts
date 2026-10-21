@@ -23,6 +23,7 @@ import { assertAgentSkillExecutionBindingV1, assertAgentSkillExecutionBindingInt
 import { assertFormalAIEntrySnapshotIntegrityV1 } from '../agent/formal-ai-entry'
 import { readProductRuntimeState } from '../product/runtime-core'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
+import { ttrpgOpenIntentRoutingVersionForRunV1 } from './open-intent-routing-policy'
 import { verifyTtrpgOpenInputEvidenceV1, type TtrpgOpenInputEvidenceV1 } from './open-input-evidence'
 
 export interface TtrpgOpenAgentEvidenceV1 {
@@ -41,7 +42,7 @@ export async function assertTtrpgOpenCommonOracleArchiveWitnessV1(w: TtrpgOpenCo
 }
 
 export async function ttrpgOpenCallBindingHashV1(input: Pick<TtrpgOpenModelCallV1,
-  'commonOracle' | 'actorKey' | 'authorizationEpochKey' | 'admissionStateHash' | 'visibilityHash' | 'runtimeSourceHash' | 'entityProposal' | 'oracleInterpretation' | 'supportSlot' | 'narrationBinding' | 'hostingDelegationRef'> & { sessionKey: string }) {
+  'intentRoutingVersion' | 'commonOracle' | 'actorKey' | 'authorizationEpochKey' | 'admissionStateHash' | 'visibilityHash' | 'runtimeSourceHash' | 'entityProposal' | 'oracleInterpretation' | 'supportSlot' | 'narrationBinding' | 'hostingDelegationRef'> & { sessionKey: string }) {
   return hashProductProductionValueV2({ schema: 'storyforge.ttrpg-open-call-binding', version: 1, ...input })
 }
 
@@ -51,6 +52,7 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
 }): Promise<TtrpgOpenAgentEvidenceV1> {
   const snapshot = await readInstanceAgentRunV1(input.scope, input.runId)
   const { call } = input
+  if (['prose.ttrpg-open-intent', 'prose.ttrpg-open-companion'].includes(call.skillId)) await ttrpgOpenIntentRoutingVersionForRunV1(snapshot.run, call)
   const definition = ttrpgOpenModelPurposeForSkillV1(call.skillId), expectedSources = [...assertTtrpgOpenFrozenContextSourcesV1(call.skillId, snapshot.contract.permissions.contextSourceKeys)].sort().join(',')
   let originalAuthorizationEvidence: TtrpgOpenAgentEvidenceV1 | undefined
   let commonDelivery: Pick<Parameters<typeof reviewTtrpgOpenCommonOracleDeliveryV1>[0], 'basis' | 'content'> | undefined
@@ -99,6 +101,7 @@ export async function verifyTtrpgOpenModelCallEvidenceV1(input: {
     || snapshot.contract.runtimeBindingHash !== await ttrpgOpenCallBindingHashV1({ sessionKey: call.createdRef.sessionKey,
       actorKey: call.actorKey, authorizationEpochKey: call.authorizationEpochKey, admissionStateHash: call.admissionStateHash,
       visibilityHash: call.visibilityHash, runtimeSourceHash: call.runtimeSourceHash,
+      ...(call.intentRoutingVersion ? { intentRoutingVersion: call.intentRoutingVersion } : {}),
       ...(call.commonOracle ? { commonOracle: call.commonOracle } : {}),
       ...(call.entityProposal ? { entityProposal: call.entityProposal } : {}),
       ...(call.hostingDelegationRef ? { hostingDelegationRef: call.hostingDelegationRef } : {}),

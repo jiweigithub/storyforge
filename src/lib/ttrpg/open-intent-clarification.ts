@@ -4,7 +4,7 @@ import type { TtrpgRuntimeContentV2 } from './content-version'
 import type { TtrpgOpenIntentCandidateV1 } from './open-intent-candidate'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { loadTtrpgOpenHumanViewV1, loadTtrpgOpenPlayerContextV1 } from './open-player-context'
-import { routeTtrpgOpenIntentV1 } from './open-intent'
+import { routeTtrpgOpenIntentV1, routeTtrpgOpenIntentV2 } from './open-intent'
 import { ttrpgOpenMechanicalStateHashV1, ttrpgOpenPredicateContextV1, parseTtrpgOpenRuleRequestV1,
   createTtrpgOpenRulePlanV1, type TtrpgOpenRuleRequestV1 } from './open-rule-plan'
 import { buildTtrpgOpenManualCatalogV1 } from './open-manual-catalog'
@@ -21,10 +21,18 @@ function knownRefs(view: View, actorKey: string) {
     ...view.initialObservations.flatMap(o => [o.subjectRef,o.objectRef].filter((v): v is string => v !== null)),
     ...view.self.inventory.flatMap(i => [i.itemInstanceId,i.definitionRef]), ...(view.self.locationKey ? [view.self.locationKey] : [])])
 }
-export async function inspectTtrpgOpenIntentRoutingV1(input: {
+type IntentRoutingInspectionInput = {
   scope: WorkspaceScope; session: ProductRuntimeSession; state: ProductRuntimeState; content: TtrpgRuntimeContentV2
   viewerKey: string; candidate: TtrpgOpenIntentCandidateV1
-}) {
+}
+export async function inspectTtrpgOpenIntentRoutingV1(input: IntentRoutingInspectionInput) {
+  return inspectIntentRouting(input,1)
+}
+/** Explicit human editing and binding completion; legacy inspection keeps its original eligibility. */
+export async function inspectTtrpgOpenIntentRoutingV2(input: IntentRoutingInspectionInput) {
+  return inspectIntentRouting(input,2)
+}
+async function inspectIntentRouting(input: IntentRoutingInspectionInput,reviewVersion: 1 | 2) {
   const { state,session,content,candidate,viewerKey } = input, runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
   const run = runtime?.openRun, auth = runtime?.authorization, original = candidate.intent
   const call = run?.coordination.calls.find(c => c.requestKey === candidate.requestKey)
@@ -52,10 +60,12 @@ export async function inspectTtrpgOpenIntentRoutingV1(input: {
       ...(template.characterKey === candidate.actorKey ? { actionKeys: actor.view.rules.actions.map(a => a.actionKey) } : {}) }
   })
   const snapshot = { rulePack: content.rulePack.content,campaign: content.campaign,actors,predicateContext: ttrpgOpenPredicateContextV1(state,content) }
-  const originalPreview = routeTtrpgOpenIntentV1(original,snapshot), records = call.intentClarifications ?? [], latest = records[records.length - 1]
+  const originalPreview = (call.intentRoutingVersion === 2 ? routeTtrpgOpenIntentV2 : routeTtrpgOpenIntentV1)(original,snapshot)
+  const records = call.intentClarifications ?? [], latest = records[records.length - 1]
   for (const entry of records) if (entry.candidateHash !== candidate.candidateHash || entry.threadKey !== original.clarificationThreadKey
     || entry.viewerKey !== viewerKey || await hashTtrpgOpenIntentClarificationV1(entry) !== entry.clarificationHash) throw Error('原人工澄清证据不一致，保留候选等待核对')
-  const intent = clarifiedTtrpgOpenIntentV1(original,latest), preview = routeTtrpgOpenIntentV1(intent,snapshot)
+  const routingVersion = latest?.version ?? call.intentRoutingVersion ?? 1
+  const intent = clarifiedTtrpgOpenIntentV1(original,latest), preview = (routingVersion === 2 ? routeTtrpgOpenIntentV2 : routeTtrpgOpenIntentV1)(intent,snapshot)
   const currentLocationRef = actor.view.self.locationKey
   const sceneTarget = (value: TtrpgOpenIntentV1, routed: typeof preview): { invalid: boolean; sceneScope?: TtrpgOpenSceneScopeV1 } => {
     const action = content.rulePack.content.actions.find(a => a.key === routed.routeDetail.actionKey)
@@ -83,28 +93,39 @@ export async function inspectTtrpgOpenIntentRoutingV1(input: {
     .map(d => ({ ...d,parameters: parameters(d.parameters) }))
   const executable = (preview.route === 'existing-action' || preview.route === 'generic-check' || preview.route === 'no-roll' && !!preview.routeDetail.interactionKey)
     && (!latest || !!latest.request) && !currentScene.invalid
+  const rule = rules.find(r => r.ruleKey === (preview.routeDetail.actionKey ?? preview.routeDetail.checkKey)
+    && r.route === (preview.route === 'no-roll' ? 'existing-action' : preview.route) && r.interactionKey === preview.routeDetail.interactionKey)
+  const needsBindings = reviewVersion === 2 && !latest && !!rule?.templateKeys.length
   const review = { route: currentScene.invalid ? 'needs-clarification' as const : preview.route,
-    missingFields: currentScene.invalid ? [...new Set([...preview.missingFields,'targetRefs'])] : preview.missingFields,canConfirm: executable,
+    missingFields: currentScene.invalid ? [...new Set([...preview.missingFields,'targetRefs'])] : preview.missingFields,canConfirm: executable && !needsBindings,
     message: currentScene.invalid ? '场景行动的目标不是行动者的当前场景，请明确补充目标。'
+      : needsBindings ? '请先补充并核对本次规则后果的对象，再确认行动意图。'
       : preview.route === 'needs-clarification' ? '请补充行动方式和可识别的对象，再核对规则。'
       : preview.route === 'rejected' ? '这份行动目前不能执行，请核对规则或明确放弃。'
         : !executable ? '这份意图需要对应的裁定入口，不能直接作为规则行动执行。'
           : currentScene.sceneScope ? '该地点已核对为行动者的当前场景；确认后仍需核对风险与代价。' : null,
-    canClarify: originalRequiresClarification && records.length < 3,attempts: records.length,
+    canClarify: (reviewVersion === 2 || originalRequiresClarification) && records.length < 3,attempts: records.length,
     clarificationHash: latest?.clarificationHash ?? null,selection: latest?.selection ?? null,
     request: latest?.request ?? null,catalog: { actorKey: candidate.actorKey,rules,discoveries } }
-  return { review,intent,preview,originalPreview,originalRequiresClarification,snapshot,call,runtime,epoch,human,currentLocationRef,sharedCurrentScene }
+  return { review,intent,preview,originalPreview,originalRequiresClarification,snapshot,call,runtime,epoch,human,currentLocationRef,sharedCurrentScene,routingVersion }
 }
-export async function prepareTtrpgOpenClarifiedRuleRequestV1(input: {
+type ClarifiedRuleInput = {
   inspected: Awaited<ReturnType<typeof inspectTtrpgOpenIntentRoutingV1>>; candidate: TtrpgOpenIntentCandidateV1
   selection: TtrpgOpenIntentSelectionV1; bindings: TtrpgOpenRuleRequestV1['effectBindings']; discovery?: TtrpgOpenRuleRequestV1['discovery']
   state: ProductRuntimeState; content: TtrpgRuntimeContentV2; runtimeSourceHash: string
-}): Promise<{ request: TtrpgOpenRuleRequestV1 | null; sceneScope?: TtrpgOpenSceneScopeV1 }> {
+}
+export async function prepareTtrpgOpenClarifiedRuleRequestV1(input: ClarifiedRuleInput) {
+  return prepareClarifiedRuleRequest(input,1)
+}
+export async function prepareTtrpgOpenClarifiedRuleRequestV2(input: ClarifiedRuleInput) {
+  return prepareClarifiedRuleRequest(input,2)
+}
+async function prepareClarifiedRuleRequest(input: ClarifiedRuleInput,routingVersion: 1 | 2): Promise<{ request: TtrpgOpenRuleRequestV1 | null; sceneScope?: TtrpgOpenSceneScopeV1 }> {
   const { inspected,selection,candidate } = input
   const knownTargets = new Set(inspected.review.catalog.rules.flatMap(rule => rule.targets.map(t => t.key)))
   if (inspected.sharedCurrentScene) knownTargets.add(inspected.currentLocationRef!)
   if (selection.targetRefs.some(ref => !knownTargets.has(ref))) throw Error('澄清目标不在双方可识别的对象中')
-  const effective = { ...candidate.intent!,...selection }, preview = routeTtrpgOpenIntentV1(effective,inspected.snapshot)
+  const effective = { ...candidate.intent!,...selection }, preview = (routingVersion === 2 ? routeTtrpgOpenIntentV2 : routeTtrpgOpenIntentV1)(effective,inspected.snapshot)
   const interactionKey = preview.routeDetail.interactionKey,route = preview.route === 'no-roll' && interactionKey ? 'existing-action' : preview.route
   const ruleKey = route === 'existing-action' ? preview.routeDetail.actionKey : route === 'generic-check' ? preview.routeDetail.checkKey : null
   if (!ruleKey || route !== 'existing-action' && route !== 'generic-check') return { request: null }

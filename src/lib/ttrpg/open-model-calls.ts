@@ -9,7 +9,7 @@ import type { TtrpgOpenEpochV1, TtrpgOpenSourceRefV1 } from './open-coordination
 import { parseTtrpgOpenSourceRefV1 } from './open-coordination'
 import * as p from './open-contract-parse'
 import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
-import { parseTtrpgOpenIntentClarificationV1, type TtrpgOpenIntentClarificationV1 } from './open-intent-clarification-contract'
+import { parseTtrpgOpenIntentClarification, type TtrpgOpenIntentClarification } from './open-intent-clarification-contract'
 import { ttrpgOpenCommonOracleCallMarkerV1 } from './open-common-oracle-request'
 export interface TtrpgOpenModelCallV1 {
   commonOracle?: { worldTurn: number; oracleSourceRef: TtrpgOpenSourceRefV1; basisHash: string; runtimeReferencePolicy?: TtrpgOpenOracleRuntimeReferencePolicyV1 }
@@ -26,7 +26,8 @@ export interface TtrpgOpenModelCallV1 {
   usage: { source: 'provider' | 'estimated' | 'unknown'; inputTokens: number | null; outputTokens: number | null; actualCostUsd: number | null } | null
   terminalReason: string | null
   intentRejection?: { sourceRef: TtrpgOpenSourceRefV1; candidateHash: string }
-  intentClarifications?: TtrpgOpenIntentClarificationV1[]
+  intentRoutingVersion?: 2
+  intentClarifications?: TtrpgOpenIntentClarification[]
   narrationBinding?: TtrpgOpenNarrationBindingV1
   oracleInterpretation?: { worldTurn: number; oracleSourceRef: TtrpgOpenSourceRefV1; runtimeReferencePolicy?: TtrpgOpenOracleRuntimeReferencePolicyV1 }
   supportSlot?: { worldTurn: number; purpose: 'fact-normalize'; sourceRef: TtrpgOpenSourceRefV1; sourceHash: string; oracleSourceRef: TtrpgOpenSourceRefV1;
@@ -55,7 +56,10 @@ export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 
     ...(Object.prototype.hasOwnProperty.call(value, 'supportSlot') ? ['supportSlot'] : []),
     ...(Object.prototype.hasOwnProperty.call(value, 'narrationBinding') ? ['narrationBinding'] : []),
     ...(Object.prototype.hasOwnProperty.call(value, 'intentRejection') ? ['intentRejection'] : []),
-    ...(Object.prototype.hasOwnProperty.call(value, 'intentClarifications') ? ['intentClarifications'] : [])], 'model call')
+    ...(Object.prototype.hasOwnProperty.call(value, 'intentClarifications') ? ['intentClarifications'] : []),
+    ...(Object.prototype.hasOwnProperty.call(value, 'intentRoutingVersion') ? ['intentRoutingVersion'] : [])], 'model call')
+  const intentRoutingVersion = Object.prototype.hasOwnProperty.call(r, 'intentRoutingVersion') ? p.literal(r.intentRoutingVersion, 2, 'intent routing version') : undefined
+  if (intentRoutingVersion && !['prose.ttrpg-open-intent', 'prose.ttrpg-open-companion'].includes(String(r.skillId))) p.fail('行动识别版本仅属于原角色或队友意图请求')
   const commonOracle = Object.prototype.hasOwnProperty.call(r, 'commonOracle') ? (() => {
     const marker = p.record(r.commonOracle, ['worldTurn', 'oracleSourceRef', 'basisHash', ...(Object.prototype.hasOwnProperty.call(r.commonOracle, 'runtimeReferencePolicy') ? ['runtimeReferencePolicy'] : [])], 'common Oracle call source')
     return { worldTurn: p.integer(marker.worldTurn, 'common Oracle turn', 0), oracleSourceRef: parseTtrpgOpenSourceRefV1(marker.oracleSourceRef), basisHash: p.hash(marker.basisHash, 'common Oracle original basis'),
@@ -117,7 +121,7 @@ export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 
     return { sourceRef, candidateHash: p.hash(row.candidateHash, 'rejected intent candidate') }
   })()
   const intentClarifications = r.intentClarifications === undefined ? undefined
-    : p.list(r.intentClarifications, 'intent clarifications', parseTtrpgOpenIntentClarificationV1, 3, 1)
+    : p.list(r.intentClarifications, 'intent clarifications', parseTtrpgOpenIntentClarification, 3, 1)
   if (intentClarifications?.some((entry,index) => status !== 'succeeded' || !terminalRef
     || !['prose.ttrpg-open-intent','prose.ttrpg-open-companion'].includes(String(r.skillId))
     || entry.actorKey !== r.actorKey || entry.attempt !== index + 1 || entry.sourceRef.sessionKey !== createdRef.sessionKey
@@ -125,7 +129,7 @@ export function parseTtrpgOpenModelCallV1(value: unknown): TtrpgOpenModelCallV1 
     || entry.sourceRef.sequence <= (index ? intentClarifications[index - 1].sourceRef.sequence : terminalRef.sequence)
     || index > 0 && (entry.threadKey !== intentClarifications[0].threadKey || entry.candidateHash !== intentClarifications[0].candidateHash
       || entry.viewerKey !== intentClarifications[0].viewerKey))) p.fail('人工澄清必须绑定原成功候选、角色和有序三次上限')
-  return { ...(commonOracle ? { commonOracle } : {}), requestKey: p.key(r.requestKey, 'requestKey'), authorizationEpochKey: p.key(r.authorizationEpochKey, 'call epoch'),
+  return { ...(intentRoutingVersion ? { intentRoutingVersion } : {}), ...(commonOracle ? { commonOracle } : {}), requestKey: p.key(r.requestKey, 'requestKey'), authorizationEpochKey: p.key(r.authorizationEpochKey, 'call epoch'),
     actorKey: p.key(r.actorKey, 'call actor'), admissionStateHash: p.hash(r.admissionStateHash, 'call admission'),
     visibilityHash: p.hash(r.visibilityHash, 'call visibility'), runtimeSourceHash: p.hash(r.runtimeSourceHash, 'call source'),
     skillId: p.key(r.skillId, 'call Skill'), runContractHash: p.hash(r.runContractHash, 'run contract'), inputManifestHash: p.hash(r.inputManifestHash, 'input manifest'),

@@ -106,7 +106,7 @@ describe('R-TTRPGOPEN9 exact registered model identity knowledge without mechani
     expect(text).toContain('storyforge.ttrpg-open-learned-identity'); expect(text).toContain('observed'); expect(text).not.toContain('gmProfile')
     const run = await readInstanceAgentRunV1(s.f.scope, generated.prepared.runId)
     expect(run.contract.permissions.contextSourceKeys).toContain(TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1)
-    expect(getAgentSkillV1('prose.ttrpg-open-intent').promptVersion).toBe('ttrpg-open-intent-v5')
+    expect(getAgentSkillV1('prose.ttrpg-open-intent').promptVersion).toBe('ttrpg-open-intent-v6')
     const after = await readProductRuntimeState(s.f.sessionId)
     expect(after.entities).toEqual(before.entities); expect(after.ttrpg!.openRun!.worldTime).toEqual(before.ttrpg!.openRun!.worldTime)
   })

@@ -45,6 +45,7 @@ export interface TtrpgOpenOperationV1 {
   pressureTurnConditions?: Array<{ tickIndex: number; worldTurn: number; sourceRef: TtrpgOpenSourceRefV1; conditions: TtrpgRuntimeState['product']['conditions'] }>
   discoveryChoices?: TtrpgOpenDiscoveryChoiceV1[]
   intentEvidence?: {
+    routingVersion?: 2
     sceneScope?: TtrpgOpenSceneScopeV1
     clarificationRef?: { sourceRef: TtrpgOpenSourceRefV1; clarificationHash: string }
     sourceRef: TtrpgOpenSourceRefV1; candidateHash: string; runContractHash: string; inputManifestHash: string; rawResponseHash: string
@@ -71,7 +72,9 @@ export function assertTtrpgOpenOperationIntentCallV1(operation: TtrpgOpenOperati
     && call.terminalRef?.sessionKey === evidence.sourceRef.sessionKey && call.terminalRef.sequence === evidence.sourceRef.sequence)) {
     p.fail('意图候选没有同角色/窗口/原始响应的真实终态请求')
   }
-  const records = calls.find(c => c.runContractHash === evidence.runContractHash)?.intentClarifications ?? [],record = records[records.length - 1]
+  const call = calls.find(c => c.runContractHash === evidence.runContractHash)
+  const records = call?.intentClarifications ?? [],record = records[records.length - 1]
+  if ((evidence.routingVersion ?? 1) !== (record?.version ?? call?.intentRoutingVersion ?? 1)) p.fail('行动识别版本必须来自原冻结请求或最新明确补充')
   if (record || evidence.clarificationRef) {
     if (!record?.request || !evidence.clarificationRef || record.candidateHash !== evidence.candidateHash
       || record.clarificationHash !== evidence.clarificationRef.clarificationHash
@@ -119,7 +122,9 @@ export function parseTtrpgOpenOperationV1(value: unknown, sessionKey?: string): 
     const hasDelegation = Object.prototype.hasOwnProperty.call(p.object(r.intentEvidence,'intent evidence'),'hostingDelegationRef')
     const hasClarification = Object.prototype.hasOwnProperty.call(r.intentEvidence,'clarificationRef')
     const hasSceneScope = Object.prototype.hasOwnProperty.call(r.intentEvidence,'sceneScope')
-    const e = p.record(r.intentEvidence, ['sourceRef', 'candidateHash', 'runContractHash', 'inputManifestHash', 'rawResponseHash',...(hasDelegation ? ['hostingDelegationRef'] : []),...(hasClarification ? ['clarificationRef'] : []),...(hasSceneScope ? ['sceneScope'] : [])], 'intent evidence')
+    const hasRouting = Object.prototype.hasOwnProperty.call(r.intentEvidence,'routingVersion')
+    const e = p.record(r.intentEvidence, ['sourceRef', 'candidateHash', 'runContractHash', 'inputManifestHash', 'rawResponseHash',...(hasDelegation ? ['hostingDelegationRef'] : []),...(hasClarification ? ['clarificationRef'] : []),...(hasSceneScope ? ['sceneScope'] : []),...(hasRouting ? ['routingVersion'] : [])], 'intent evidence')
+    const routingVersion = hasRouting ? p.literal(e.routingVersion,2,'intent routing version') : undefined
     const sourceRef = parseTtrpgOpenSourceRefV1(e.sourceRef)
     const sceneScope = hasSceneScope ? parseTtrpgOpenSceneScopeV1(e.sceneScope) : undefined
     if (sceneScope && (plan.request.route !== 'existing-action' || plan.request.targetKey !== null
@@ -135,7 +140,7 @@ export function parseTtrpgOpenOperationV1(value: unknown, sessionKey?: string): 
     if (hasInheritance || sourceRef.sessionKey !== startedRef.sessionKey || sourceRef.sequence >= startedRef.sequence) {
       p.fail('当前意图候选必须引用本团局已提交响应；继承操作保留祖先原证据')
     }
-    return { ...(hostingDelegationRef ? { hostingDelegationRef } : {}),...(clarificationRef ? { clarificationRef } : {}),...(sceneScope ? { sceneScope } : {}),sourceRef, candidateHash: p.hash(e.candidateHash, 'candidate hash'), runContractHash: p.hash(e.runContractHash, 'intent run'),
+    return { ...(routingVersion ? { routingVersion } : {}),...(hostingDelegationRef ? { hostingDelegationRef } : {}),...(clarificationRef ? { clarificationRef } : {}),...(sceneScope ? { sceneScope } : {}),sourceRef, candidateHash: p.hash(e.candidateHash, 'candidate hash'), runContractHash: p.hash(e.runContractHash, 'intent run'),
       inputManifestHash: p.hash(e.inputManifestHash, 'intent input'), rawResponseHash: p.hash(e.rawResponseHash, 'intent raw response') }
   })() : undefined
   const inheritance = hasInheritance ? (() => {

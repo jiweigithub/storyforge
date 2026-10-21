@@ -60,7 +60,7 @@ describe('R-TTRPGOPEN3 original intent review and explicit human clarification',
   }
   it('requires a saved clarification before confirmation, shows the reviewed rule and admits exactly that version once',async () => {
     const x = await setup(),before = await readProductRuntimeState(x.f.sessionId)
-    const save = vi.spyOn(table,'clarifyTtrpgOpenTableCandidateV1'),accept = vi.spyOn(table,'acceptTtrpgOpenTableCandidateV1')
+    const save = vi.spyOn(table,'clarifyTtrpgOpenTableCandidateV2'),accept = vi.spyOn(table,'acceptTtrpgOpenTableCandidateV1')
     await act(x.render);await until(() => !!host.querySelector('fieldset[aria-label="补充行动意图"]'))
     expect(button('确认这份行动意图')).toBeUndefined()
     await text('补充后的行动说明','改为独立观察公开情况');await text('补充后的期望结果','获取可复核的调查结果')
@@ -83,8 +83,8 @@ describe('R-TTRPGOPEN3 original intent review and explicit human clarification',
     expect(after.entities).toEqual(before.entities);expect(x.runAI).toHaveBeenCalledOnce()
   })
   it('retains entered choices after a storage rejection and allows an explicit retry without a hidden model request',async () => {
-    const x = await setup(),actual = table.clarifyTtrpgOpenTableCandidateV1
-    const save = vi.spyOn(table,'clarifyTtrpgOpenTableCandidateV1').mockRejectedValueOnce(Error('本次保存失败，请保留输入重试')).mockImplementation(actual)
+    const x = await setup(),actual = table.clarifyTtrpgOpenTableCandidateV2
+    const save = vi.spyOn(table,'clarifyTtrpgOpenTableCandidateV2').mockRejectedValueOnce(Error('本次保存失败，请保留输入重试')).mockImplementation(actual)
     await act(x.render);await until(() => !!button('保存补充并重新核对'))
     await text('补充后的行动说明','只观察公开情况');await choose('补充行动规则',o => o.value.includes('investigate'))
     await act(async () => { button('保存补充并重新核对')!.click() });await until(() => host.textContent!.includes('本次保存失败'))
@@ -93,8 +93,25 @@ describe('R-TTRPGOPEN3 original intent review and explicit human clarification',
     await act(async () => { button('保存补充并重新核对')!.click() });await until(() => !!button('确认这份行动意图'))
     expect(save).toHaveBeenCalledTimes(2);expect(x.runAI).toHaveBeenCalledOnce()
   })
+  it('keeps an explicitly selected generic check when the unchanged goal mentions investigation',async () => {
+    const x = await setup('rule'),before = await readProductRuntimeState(x.f.sessionId)
+    await act(x.render);await until(() => !!button('保存补充并重新核对'))
+    const goal = '调查公开线索时先核对自己的状态，不预设成功'
+    await text('补充后的行动说明',goal)
+    await choose('补充行动规则',o => o.value.includes('generic-check'))
+    await act(async () => { button('保存补充并重新核对')!.click() });await until(() => !!button('确认这份行动意图'))
+    const saved = await readProductRuntimeState(x.f.sessionId),call = saved.ttrpg!.openRun!.coordination.calls[0],record = call.intentClarifications![0]
+    expect(record).toMatchObject({ version: 2,selection: { goal },request: { route: 'generic-check',effectBindings: { 'plan.success': {} } } })
+    expect(saved.entities).toEqual(before.entities);expect(saved.ttrpg!.openRun!.worldTime).toEqual(before.ttrpg!.openRun!.worldTime)
+    await act(async () => { button('确认这份行动意图')!.click() })
+    await until(() => x.errors.length > 0 || host.textContent!.includes('原行动候选') || host.textContent!.includes('窗口已变化'))
+    expect(x.errors).toEqual([])
+    const op = (await readProductRuntimeState(x.f.sessionId)).ttrpg!.openRun!.operations[0]
+    expect(op.plan.request).toEqual(record.request);expect(op.intentEvidence?.routingVersion).toBe(2)
+    expect(x.g.candidate.intent?.method).toBeNull();expect(x.runAI).toHaveBeenCalledOnce()
+  })
   it.each(['rule','discovery'] as const)('preserves frozen %s templates with an empty parameter binding in the actual saved request',async bindingKind => {
-    const x = await setup(bindingKind),save = vi.spyOn(table,'clarifyTtrpgOpenTableCandidateV1'),before = await readProductRuntimeState(x.f.sessionId)
+    const x = await setup(bindingKind),save = vi.spyOn(table,'clarifyTtrpgOpenTableCandidateV2'),before = await readProductRuntimeState(x.f.sessionId)
     await act(x.render);await until(() => !!button('保存补充并重新核对'))
     await text('补充后的行动说明','以已经确认的方法尝试取得可复核的结果')
     await choose('补充行动规则',o => o.value.includes(bindingKind === 'rule' ? 'generic-check' : 'investigate'))
@@ -107,10 +124,10 @@ describe('R-TTRPGOPEN3 original intent review and explicit human clarification',
     expect(state.entities).toEqual(before.entities);expect(state.ttrpg!.openRun!.worldTime).toEqual(before.ttrpg!.openRun!.worldTime);expect(x.runAI).toHaveBeenCalledOnce()
   })
   it('clears the previous identity immediately and ignores an old read completed after handoff',async () => {
-    const x = await setup(),review = await table.readTtrpgOpenTableIntentReviewV1({ ...x.input,runId: x.g.candidate.runId,requestKey: x.g.candidate.requestKey,candidateHash: x.g.candidate.candidateHash })
+    const x = await setup(),review = await table.readTtrpgOpenTableIntentReviewV2({ ...x.input,runId: x.g.candidate.runId,requestKey: x.g.candidate.requestKey,candidateHash: x.g.candidate.candidateHash })
     let release!: () => void
     const hold = new Promise<void>(resolve => { release = resolve })
-    const read = vi.spyOn(table,'readTtrpgOpenTableIntentReviewV1').mockImplementationOnce(async () => { await hold;return { ...review,message: 'OLD-REVIEW-PRIVATE-SENTINEL' } })
+    const read = vi.spyOn(table,'readTtrpgOpenTableIntentReviewV2').mockImplementationOnce(async () => { await hold;return { ...review,message: 'OLD-REVIEW-PRIVATE-SENTINEL' } })
     await act(x.render);await until(() => read.mock.calls.length === 1)
     await act(async () => root.render(createElement(TtrpgOpenIntentReview,{ input: { ...x.input,viewerKey: 'viewer.other' },sequence: 0,candidate: x.g.candidate,busy: false,perform: x.perform })))
     expect(host.textContent).not.toContain('原始建议待澄清');expect(host.querySelector('textarea')).toBeNull()

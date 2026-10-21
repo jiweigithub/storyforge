@@ -573,11 +573,19 @@ export async function requestTtrpgOpenTableCandidateV1(input: TtrpgOpenTableInpu
   }
   return generateTtrpgOpenIntentCandidateV1({ ...request, actorKey: f.seat.actorKey! })
 }
-export async function readTtrpgOpenTableIntentReviewV1(input: TtrpgOpenTableInputV1 & { runId: number; requestKey: string; candidateHash: string }) {
+type IntentReviewInput = TtrpgOpenTableInputV1 & { runId: number; requestKey: string; candidateHash: string }
+export async function readTtrpgOpenTableIntentReviewV1(input: IntentReviewInput) {
+  return readIntentReview(input,1)
+}
+export async function readTtrpgOpenTableIntentReviewV2(input: IntentReviewInput) {
+  return readIntentReview(input,2)
+}
+async function readIntentReview(input: IntentReviewInput,version: 1 | 2) {
   const f = await humanTable(input)
   const { verifyTtrpgOpenIntentCandidateProofV1 } = await import('./open-intent-candidate')
   const { candidate } = await verifyTtrpgOpenIntentCandidateProofV1(input)
-  const { review } = await (await import('./open-intent-clarification')).inspectTtrpgOpenIntentRoutingV1({
+  const { inspectTtrpgOpenIntentRoutingV1,inspectTtrpgOpenIntentRoutingV2 } = await import('./open-intent-clarification')
+  const { review } = await (version === 2 ? inspectTtrpgOpenIntentRoutingV2 : inspectTtrpgOpenIntentRoutingV1)({
     scope: input.scope,session: f.session,state: f.state,content: f.content,viewerKey: input.viewerKey,candidate })
   if ((await readProductRuntimeStateVersion(input.sessionId)).sequence !== f.state.lastSequence) throw new TtrpgOpenReadConflictV1('核对意图期间进度已改变，请重新读取')
   return review
@@ -590,6 +598,10 @@ export async function clarifyTtrpgOpenTableCandidateV1(input: TtrpgOpenTableInpu
 }) {
   await humanTable(input)
   return (await import('./runtime-commands')).clarifyTtrpgOpenIntentCandidateV1({ ...await envelope(input.sessionId,'clarify'),...input })
+}
+export async function clarifyTtrpgOpenTableCandidateV2(input: Parameters<typeof clarifyTtrpgOpenTableCandidateV1>[0]) {
+  await humanTable(input)
+  return (await import('./runtime-commands')).clarifyTtrpgOpenIntentCandidateV2({ ...await envelope(input.sessionId,'clarify'),...input })
 }
 export async function acceptTtrpgOpenTableCandidateV1(input: TtrpgOpenTableInputV1 & { runId: number; requestKey: string; candidateHash: string; kind: 'intent' | 'kp'; clarificationHash?: string }) {
   await humanTable(input)

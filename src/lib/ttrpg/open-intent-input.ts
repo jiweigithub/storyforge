@@ -36,6 +36,7 @@ import { estimateTtrpgOpenRuntimeInputTokensV1, TTRPG_OPEN_RUNTIME_INPUT_ESTIMAT
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { assertTtrpgOpenHostingRequestV1 } from './open-hosting-delegation'
 import { db } from '../db/schema'
+import { ttrpgOpenIntentRoutingVersionForSkillV1 } from './open-intent-routing-policy'
 import { readAgentRunArtifactExactV1 } from '../memory/artifact-store'
 import { readProductRuntimeStateVersion } from '../product/runtime-core'
 import { verifyTtrpgOpenPublicSituationAuthorizationV1 } from './open-public-situation-authorization-proof'
@@ -344,6 +345,7 @@ async function prepareTtrpgOpenModelInputV1(input: TtrpgOpenRuntimeModelInputV1,
     ...(sourceKeys.some(key => key === TTRPG_OPEN_LEARNED_IDENTITY_SOURCE_V1) ? ['已知身份只支持谈论原姓名，保留原观察或转述标记；其 entityRef 本身不增加目标、位置、装备或资源权限。targetRefs 与 declaredResources 还必须在角色权限来源中明确允许，不能从姓名推断当前在场。'] : []),
     '只输出 JSON：{"goal":"角色想做什么","method":null或做法,"targetRefs":[],"declaredResources":[],"declaredAssumptions":[],"requestedOutcome":null或期待的结果}。',
     '目标和资源只使用本次读取中的可见 key；不明目标保留为空，假设必须明确列出。',
+    ...(intentPurpose && ttrpgOpenIntentRoutingVersionForSkillV1(skill) === 2 ? ['明确选择冻结规则时，method 精确填写其 actionKey、checkKey、oracleKey 或 interactionKey；目标说明中的其他规则词不会替换这个明确方法。只有本次交付的实际条目可选，含义不明确时保留 method=null。'] : []),
     '不输出 route、角色身份或授权字段；系统会确定匹配规则和所需确认。游戏内无检定互动必须从当前 interactions 选择可用条目，method 精确填写该 interactionKey；不得只写其底层 actionKey 或用对白、观察等关键词发明未定义互动。多项含义不明确时保留 method=null，由真人澄清。规则询问和桌外讨论由本桌独立讨论入口处理。',
   ].join('\n') }, { role: 'user', content: `【真人输入】\n${rawInput}\n\n【角色授权上下文】\n${gateway.contextPacket.content}` }]
   const renderedRequest = { messages, modelIdentity: input.modelIdentity, contextSelection: selection.receipt,
@@ -366,6 +368,7 @@ async function prepareTtrpgOpenModelInputV1(input: TtrpgOpenRuntimeModelInputV1,
     overBudgetBeforeTrim: false, overBudgetAfterTrim: false }
   const identity = { actorKey: input.actorKey, admissionStateHash: context.admissionStateHash,
     visibilityHash: context.visibilityHash, runtimeSourceHash: context.readEvidence.runtimeSourceHash,
+    ...(intentPurpose && ttrpgOpenIntentRoutingVersionForSkillV1(skill) === 2 ? { intentRoutingVersion: 2 as const } : {}),
     ...(commonAuthorization ? { commonOracle: ttrpgOpenCommonOracleCallMarkerV1(commonAuthorization) } : {}),
     ...(entityProposal ? { entityProposal } : {}),
     ...(input.hostingDelegationRef ? { hostingDelegationRef: input.hostingDelegationRef } : {}) }

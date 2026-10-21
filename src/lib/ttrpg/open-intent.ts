@@ -16,6 +16,7 @@ import type {
 import { companionPolicy as parseCompanionPolicy } from './open-content-templates'
 import { parseRulePackV2 } from './rule-pack-v2'
 import * as p from './open-contract-parse'
+import { selectTtrpgOpenExactMethodV2 } from './open-intent-method'
 
 export const TTRPG_OPEN_INTENT_ROUTES = [
   'existing-action',
@@ -596,7 +597,7 @@ function clarificationLimitReached(
   return (snapshot.clarificationCounts?.[intent.clarificationThreadKey] ?? 0) >= 3
 }
 
-function routeWithSnapshot(intent: TtrpgOpenIntentV1, snapshot: TtrpgOpenIntentRoutingSnapshotV1): TtrpgOpenIntentPreviewV1 {
+function routeWithSnapshot(intent: TtrpgOpenIntentV1, snapshot: TtrpgOpenIntentRoutingSnapshotV1, routingVersion: 1 | 2 = 1): TtrpgOpenIntentPreviewV1 {
   const rulePack = parseRulePackV2(snapshot.rulePack)
   const campaign = toCampaign(snapshot)
   const actors = toActorRecords(snapshot)
@@ -622,17 +623,25 @@ function routeWithSnapshot(intent: TtrpgOpenIntentV1, snapshot: TtrpgOpenIntentR
 
   // The method names one frozen interaction exactly. Natural-language keywords alone
   // cannot choose among distinct destinations, costs or consequences.
-  const interactions = (rulePack.interactionBindings ?? []).filter(binding =>
+  const exactMethods = routingVersion === 2 ? selectTtrpgOpenExactMethodV2(rulePack, intent.method) : []
+  if (exactMethods.length > 1) return clarificationPreview(intent,['method'],'方法名称不唯一，请选择准确的冻结规则或互动标识')
+  const selected = exactMethods[0]
+  const interactions = (rulePack.interactionBindings ?? []).filter(binding => selected
+    ? selected.kind === 'interaction' && binding.interactionKey === selected.key
+    :
     normalizedText(intent.method) === normalizedText(binding.interactionKey) || normalizedText(intent.method) === normalizedText(binding.title))
   if (interactions.length > 1) return clarificationPreview(intent,['method'],'互动名称不唯一，请指定冻结 interactionKey')
   const interaction = interactions[0]
-  const action = interaction ? rulePack.actions.find(a => a.key === interaction.actionKey)! : explicitActionMatch(intent, rulePack.actions)
+  const action = interaction ? rulePack.actions.find(a => a.key === interaction.actionKey)!
+    : selected ? selected.kind === 'action' ? rulePack.actions.find(a => a.key === selected.key)! : null : explicitActionMatch(intent, rulePack.actions)
   if (!interaction && action && rulePack.interactionBindings?.some(b => b.actionKey === action.key)) {
     return clarificationPreview(intent,['method'],'该行动要求明确选择冻结互动，请指定 interactionKey')
   }
   if (interaction?.kind === 'retreat' && intent.source !== 'player') return rejectedPreview(intent,'撤退必须由控制角色的真人明确提出')
-  const check = action === null ? explicitGenericCheckMatch(intent, rulePack.genericChecks) : null
-  const oracle = action === null && check === null ? explicitOracleMatch(intent, rulePack) : null
+  const check = action === null ? selected ? selected.kind === 'check' ? rulePack.genericChecks.find(c => c.checkKey === selected.key)! : null
+    : explicitGenericCheckMatch(intent, rulePack.genericChecks) : null
+  const oracle = action === null && check === null ? selected ? selected.kind === 'oracle' ? rulePack.oracles.find(o => o.oracleKey === selected.key)! : null
+    : explicitOracleMatch(intent, rulePack) : null
   const explicitOracleRequest = containsAny(text, ['oracle', '命运', '占卜', '问骰', '问问命运', 'yes-no'])
   const explicitNoRoll = containsAny(text, [
     '对话',
@@ -823,4 +832,9 @@ export function routeTtrpgOpenIntentV1(
   const snapshot = request.snapshot ?? request.state
   if (!snapshot) return fail('route 缺少只读状态快照')
   return routeWithSnapshot(parseTtrpgOpenIntentV1(request.intent), snapshot)
+}
+
+/** Explicitly versioned algorithm; legacy V1 callers and serialized previews retain V1 behavior. */
+export function routeTtrpgOpenIntentV2(intent: TtrpgOpenIntentV1 | unknown, snapshot: TtrpgOpenIntentRoutingSnapshotV1): TtrpgOpenIntentPreviewV1 {
+  return routeWithSnapshot(parseTtrpgOpenIntentV1(intent), snapshot, 2)
 }

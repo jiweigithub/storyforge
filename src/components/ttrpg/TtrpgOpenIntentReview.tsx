@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TtrpgOpenIntentCandidateV1 } from '../../lib/ttrpg/open-intent-candidate'
-import { readTtrpgOpenTableIntentReviewV1, clarifyTtrpgOpenTableCandidateV1, acceptTtrpgOpenTableCandidateV1,
+import { readTtrpgOpenTableIntentReviewV2, clarifyTtrpgOpenTableCandidateV2, acceptTtrpgOpenTableCandidateV1,
   rejectTtrpgOpenTableIntentV1, type TtrpgOpenTableInputV1 } from '../../lib/ttrpg/open-table-service'
 import { readTtrpgOpenSettledViewV1 } from '../../lib/ttrpg/open-read-conflict'
 
-type Review = Awaited<ReturnType<typeof readTtrpgOpenTableIntentReviewV1>>
+type Review = Awaited<ReturnType<typeof readTtrpgOpenTableIntentReviewV2>>
 type Rule = Review['catalog']['rules'][number]
 const key = (r: Rule) => JSON.stringify([r.route,r.ruleKey,r.interactionKey ?? null])
 type Props = {
@@ -28,12 +28,12 @@ function TtrpgOpenIntentReviewBody(props: Props) {
     const token = ++generation.current;setReview(null);setError('');setEditing(false)
     if (!ready) return
     try {
-      const value = await readTtrpgOpenSettledViewV1(() => readTtrpgOpenTableIntentReviewV1({ scope: { projectId,worldId,workId },sessionId,viewerKey,runId,requestKey,candidateHash }),
+      const value = await readTtrpgOpenSettledViewV1(() => readTtrpgOpenTableIntentReviewV2({ scope: { projectId,worldId,workId },sessionId,viewerKey,runId,requestKey,candidateHash }),
         () => alive.current && generation.current === token)
       if (!value || !alive.current || generation.current !== token) return
       setReview(value);setGoal(value.selection?.goal ?? candidate.intent!.goal);setOutcome(value.selection?.requestedOutcome ?? candidate.intent!.requestedOutcome ?? '')
-      const rule = value.catalog.rules.find(r => (r.interactionKey ?? r.ruleKey) === value.selection?.method)
-      setSelected(rule ? key(rule) : '');setTarget(value.request ? JSON.stringify(value.request.targetKey) : value.selection?.targetRefs[0] ? JSON.stringify(value.selection.targetRefs[0]) : '')
+      const rule = value.catalog.rules.find(r => (r.interactionKey ?? r.ruleKey) === (value.selection?.method ?? candidate.intent!.method))
+      setSelected(rule ? key(rule) : '');setTarget(value.request ? JSON.stringify(value.request.targetKey) : (value.selection?.targetRefs ?? candidate.intent!.targetRefs)[0] ? JSON.stringify((value.selection?.targetRefs ?? candidate.intent!.targetRefs)[0]) : rule?.targets.length === 1 ? JSON.stringify(rule.targets[0].key) : '')
       const saved = value.request?.discovery,discovery = saved ? value.catalog.discoveries.find(d => d.situationKey === saved.situationKey && d.evidenceRef === saved.evidenceRef && d.interventionPointKey === saved.interventionPointKey) : null
       setDiscoveryKey(discovery?.key ?? '')
       setBindings(Object.fromEntries((rule?.parameters ?? []).map(p => [p.key,JSON.stringify(value.request?.effectBindings[p.templateKey]?.[p.parameterKey] ?? null)])))
@@ -91,7 +91,7 @@ function TtrpgOpenIntentReviewBody(props: Props) {
       <label>补充后的期望结果<textarea aria-label="补充后的期望结果" value={outcome} maxLength={2000} onChange={e => setOutcome(e.target.value)} /></label>
       <button disabled={!goal.trim() || !fieldsReady} onClick={() => action(async () => {
         const chosenTarget: unknown = target ? JSON.parse(target) : null
-        await clarifyTtrpgOpenTableCandidateV1({ ...source,expectedCount: review.attempts,
+        await clarifyTtrpgOpenTableCandidateV2({ ...source,expectedCount: review.attempts,
           selection: { goal,method: rule ? rule.interactionKey ?? rule.ruleKey : null,targetRefs: typeof chosenTarget === 'string' ? [chosenTarget] : [],requestedOutcome: outcome.trim() ? outcome : null },
           effectBindings: makeBindings(rule?.templateKeys ?? [],rule?.parameters ?? [],bindings),
           ...(discovery ? { discovery: { situationKey: discovery.situationKey,evidenceRef: discovery.evidenceRef,interventionPointKey: discovery.interventionPointKey,effectBindings: makeBindings(discovery.templateKeys,discovery.parameters,discoveryBindings) } } : {}) })
