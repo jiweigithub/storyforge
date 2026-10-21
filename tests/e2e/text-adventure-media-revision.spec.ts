@@ -473,7 +473,18 @@ test('文字修订文件创建独立子版本并在刷新后保留原图与来�
   await expect(submit).toBeDisabled()
   await panel.getByRole('checkbox').check()
   await submit.click()
-  await expect(page.getByTestId('product-production-command-activity')).toContainText('创建内容修订版 · succeeded')
+  // Automatic review can replace the shared activity label immediately. Wait
+  // for this production's durable revision receipt before checking refresh.
+  await expect.poll(() => page.evaluate(async productionId => {
+    const importer = new Function('path', 'return import(path)') as (path: string) => Promise<any>
+    const { db } = await importer('/storyforge/src/lib/db/schema.ts')
+    const commands = await db.productProductionCommands.where('productionId').equals(productionId).toArray()
+    return commands.filter((row: any) => row.type === 'revise-text-content').map((row: any) => ({
+      status: row.status, completed: row.completedAt != null,
+      buildNumber: JSON.parse(row.resultJson || '{}').buildNumber,
+    }))
+  }, seeded.productionId)).toEqual([{ status: 'succeeded', completed: true, buildNumber: 2 }])
+  await expect(page.getByTestId('product-production-studio')).toContainText('#2')
   await page.reload()
   await expect(page.getByTestId('product-production-studio')).toContainText('#2')
   const after = await page.evaluate(async seeded => {

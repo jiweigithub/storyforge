@@ -19,6 +19,9 @@ beforeEach(async () => {await db.delete(); await db.open()})
 afterEach(async () => {vi.restoreAllMocks(); await db.delete()})
 const command = async (sessionId: number) => {const v = await readProductRuntimeStateVersion(sessionId); return {sessionId, commandId: crypto.randomUUID(), baseSequence: v.sequence, baseStateHash: v.stateHash}}
 
+// This case executes 31 durable setup actions and imports every saved ledger.
+// Coverage profiling measured 26 s setup + 21 s import locally; use the same
+// bounded lifecycle allowance as the adjacent full-history round-trip test.
 it('delivers selected promise history through registered sources and preserves exact historical decisions after reopen and portable import', async () => {
   const f = await seedChatCommitmentHistoryRuntimeFixture(), before = await readProductRuntimeState(f.sessionId)
   const selected = buildInteractionContextWindow(before.interaction!, 'guard')
@@ -52,7 +55,7 @@ it('delivers selected promise history through registered sources and preserves e
   const imported = await readChatContextInspectionV1({projectId, workId: session.workId, worldId: session.worldId}, session.id!, run.id!)
   expect(imported.available && imported.selection).toEqual(inspection.selection)
   expect(calls).toBe(2)
-}, 60_000)
+}, 90_000)
 
 it('resumes a saved v6 promise context with its original full-history policy after the v8 reader is activated', async () => {
   const f = await seedChatNarrativeRuntimeFixture()
