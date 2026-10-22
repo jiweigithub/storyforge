@@ -4,7 +4,8 @@ import type { WorkspaceScope } from '../types'
 import { loadTtrpgOpenAudioReadStateV1 } from './open-audio-read-state'
 import { TTRPG_OPEN_VOICE_REQUEST_STEP_V1 as stepId, ttrpgOpenVoiceReservationPayloadV1 } from './open-voice-request-contract'
 import { verifyTtrpgOpenVoiceIntentRunV1 } from './open-voice-request-run'
-import { parseProductRuntimeState, replayProductRuntimeEvents, hashProductRuntimeStateV1 } from '../product/runtime-core'
+import { hashProductRuntimeStateV1 } from '../product/runtime-core'
+import { replayTtrpgOpenReadEventsV1 } from './open-read-replay'
 import { AgentRunStoreError, readInstanceAgentRunV1, appendAgentRunEventV1 } from '../agent/run/event-store'
 import { createVerificationReceiptV1 } from '../agent/run/verification-receipt'
 import { AgentRunArtifactStoreError, recordAgentRunArtifactV1, readAgentRunArtifactExactV1 } from '../memory/artifact-store'
@@ -23,7 +24,10 @@ export async function finishTtrpgOpenVoiceIntentForKernelV1(input: { scope: Work
       const event = loaded.events.find(e => e.sequence === row.sourceRef.sequence)
       if (!event || event.type !== 'ttrpg.audio.voice.reserved' || event.createdAt < 0
         || canonicalStringify(JSON.parse(event.payloadJson)) !== canonicalStringify(ttrpgOpenVoiceReservationPayloadV1(row))) p.fail('缺少原配音预留的真实事件')
-      const committed = replayProductRuntimeEvents(parseProductRuntimeState(loaded.session.initialStateJson), loaded.events.filter(e => e.sequence <= row.sourceRef.sequence))
+      // Reuse only the bounded pure replay of these exact original bytes. The
+      // owner, current source, consent, intent Run and artifacts are still read
+      // and verified on every invocation, including lease renewal.
+      const committed = replayTtrpgOpenReadEventsV1(loaded.session.initialStateJson, loaded.events.filter(e => e.sequence <= row.sourceRef.sequence))
       const committedRow = parseTtrpgRuntimeStateV2(committed.ttrpg)?.openRun?.voiceRequests?.find(r => r.requestKey === row.requestKey)
       if (canonicalStringify(committedRow) !== canonicalStringify(row)) p.fail('配音意图与原事件提交后的真实状态不一致')
       const postStateHash = await hashProductRuntimeStateV1(committed)
