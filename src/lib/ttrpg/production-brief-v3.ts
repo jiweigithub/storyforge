@@ -1,3 +1,4 @@
+import { parseTtrpgCompatibleOpeningRevisionV1, type TtrpgCompatibleOpeningRevisionV1 } from './open-compatible-opening-contract';
 import type { ConfirmedProductBriefV1, ProductSourcePlanV1, WorldReferenceV1 } from "../types";
 import { hashProductProductionValueV2 } from "../product-production/hash";
 import {
@@ -21,6 +22,7 @@ export interface TtrpgProductionBriefContentV3 {
   rulePackHash: string;
   worldReference: WorldReferenceV1;
   sourcePlan: ProductSourcePlanV1;
+  compatibleOpeningRevision?: TtrpgCompatibleOpeningRevisionV1;
 }
 
 export interface TtrpgProductionBriefV3 extends TtrpgProductionBriefContentV3 {
@@ -32,6 +34,9 @@ const CONTENT_FIELDS = [
   "schema", "version", "runFormat", "settingsRevision", "settings",
   "rulePack", "rulePackHash", "worldReference", "sourcePlan",
 ] as const;
+function contentFields(value: unknown): string[] {
+  return [...CONTENT_FIELDS, ...(value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'compatibleOpeningRevision') ? ['compatibleOpeningRevision'] : [])];
+}
 const HASH = /^[a-f0-9]{64}$/;
 
 function fail(message: string): never {
@@ -64,7 +69,7 @@ function parseWorldReferenceShape(input: unknown): WorldReferenceV1 {
 
 /** Shape parsing is synchronous for the shared production envelope. It does not grant source rights or prove hashes. */
 export function parseTtrpgProductionBriefContentShapeV3(input: unknown): TtrpgProductionBriefContentV3 {
-  const row = object(input, CONTENT_FIELDS, "Brief V3");
+  const row = object(input, contentFields(input), "Brief V3");
   if (row.schema !== "storyforge.ttrpg-production-brief" || row.version !== 3 || row.runFormat !== "open")
     fail("schema/version/runFormat 无效，Brief V3 只接受 open");
   const settingsRevision = integer(row.settingsRevision, 0, "Settings revision");
@@ -115,6 +120,7 @@ export function parseTtrpgProductionBriefContentShapeV3(input: unknown): TtrpgPr
     rulePackHash: row.rulePackHash,
     worldReference,
     sourcePlan,
+    ...(Object.prototype.hasOwnProperty.call(row, 'compatibleOpeningRevision') ? { compatibleOpeningRevision: parseTtrpgCompatibleOpeningRevisionV1(row.compatibleOpeningRevision) } : {}),
   };
 }
 
@@ -150,6 +156,7 @@ export async function createTtrpgProductionBriefContentV3(input: {
   rulePack: RulePackV2;
   worldReference: WorldReferenceV1;
   sourcePlan: ProductSourcePlanV1;
+  compatibleOpeningRevision?: TtrpgCompatibleOpeningRevisionV1;
 }): Promise<TtrpgProductionBriefContentV3> {
   const snapshot = structuredClone(input);
   const settings = parseTtrpgAuthoringSettingsV2(snapshot.settings);
@@ -165,6 +172,7 @@ export async function createTtrpgProductionBriefContentV3(input: {
     rulePackHash: await hashProductProductionValueV2(rulePack),
     worldReference: snapshot.worldReference,
     sourcePlan: snapshot.sourcePlan,
+    ...(snapshot.compatibleOpeningRevision ? { compatibleOpeningRevision: snapshot.compatibleOpeningRevision } : {}),
   });
 }
 
@@ -174,7 +182,8 @@ export async function hashTtrpgProductionBriefContentV3(input: TtrpgProductionBr
 }
 
 export async function parseTtrpgProductionBriefV3(input: unknown): Promise<TtrpgProductionBriefV3> {
-  const row = object(readJson(input), [...CONTENT_FIELDS, "startAuthorization"], "Brief V3");
+  const raw = readJson(input);
+  const row = object(raw, [...contentFields(raw), "startAuthorization"], "Brief V3");
   const { startAuthorization: rawAuthorization, ...rawContent } = row;
   const content = await parseContent(rawContent);
   const authRow = object(rawAuthorization, [

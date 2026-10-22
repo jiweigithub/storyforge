@@ -347,7 +347,9 @@ export async function prepareTtrpgBrief(
 export async function prepareTtrpgOpenProductionBriefV3(input: {
   scope: WorkspaceScope; revision: number; commandId?: string
   stagePolicyRevision?: 'revise-pending-stage-policy'
+  openingRevision?: 'revise-pending-compatible-opening'
 }): Promise<number> {
+  if (input.openingRevision !== undefined && input.openingRevision !== 'revise-pending-compatible-opening' || input.openingRevision && input.stagePolicyRevision) throw new Error('兼容开局修订需要独立的明确选择')
   if (input.stagePolicyRevision !== undefined && input.stagePolicyRevision !== 'revise-pending-stage-policy') throw new Error('阶段条件修订需要本次明确选择')
   const scope = await resolveScope({ scope: input.scope }), draft = await readTtrpgDraft(scope)
   if (draft.revision !== input.revision) throw new Error('open 方案已变化，请刷新')
@@ -378,7 +380,7 @@ export async function prepareTtrpgOpenProductionBriefV3(input: {
   const priorEnvelope = priorBuilds.length > 0 && priorBrief ? parseProductProductionBriefV3(priorBrief.briefJson) : null
   if (priorEnvelope?.ttrpgOpen && prior?.status === 'producing') throw new Error('open 当前方案已开始制作，请先在原制作记录核对当前轮次')
   const releaseRevision = priorEnvelope?.ttrpgOpen != null && priorEnvelope.evolution?.base.kind === 'release'
-  if (input.stagePolicyRevision && !releaseRevision) throw new Error('请先在原制作记录建立尚未开始的发布后新版本，再明确更新阶段条件')
+  if ((input.stagePolicyRevision || input.openingRevision) && !releaseRevision) throw new Error('请先在原制作记录建立尚未开始的发布后新版本，再明确更新阶段条件')
   const rule = await readTtrpgRulePackVersionedV1({ scope, rulePackId: draft.savedRulePackId })
   if (rule.rulePack.version !== 2) throw new Error('open 制作不能使用旧 RulePack V1')
   const rulePack = rule.rulePack
@@ -417,6 +419,7 @@ export async function prepareTtrpgOpenProductionBriefV3(input: {
         release: prior.currentProductReleaseId ? await db.productReleases.get(prior.currentProductReleaseId) : undefined,
         settingsRevision: input.revision, settings, rulePack, worldReference, common,
       }
+      if (input.openingRevision) return revisions.reviseTtrpgOpenPendingCompatibleOpeningBriefV1({ ...revisionInput, decision: input.openingRevision })
       return input.stagePolicyRevision
         ? revisions.reviseTtrpgOpenPendingStagePolicyBriefV1({ ...revisionInput, decision: input.stagePolicyRevision })
         : revisions.reviseTtrpgOpenPendingRuntimeBriefV1(revisionInput)

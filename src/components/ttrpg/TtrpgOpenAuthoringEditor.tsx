@@ -5,14 +5,26 @@ import { MAX_TTRPG_OPEN_AUTHORING_EDIT_BYTES_V1, parseTtrpgOpenAuthoringEditV1, 
   initializeTtrpgOpenAuthoringPoliciesV1 } from '../../lib/ttrpg/open-authoring-edit'
 import { registerPendingDraftFlusherV1 } from '../../lib/authoring/pending-edit-coordinator'
 import { downloadTextFile } from '../../lib/export/text-export'
+import type { WorkspaceScope } from '../../lib/types'
+import { readTtrpgCompatibleOpeningAuthoringBaseV1 } from '../../lib/ttrpg/open-compatible-opening-source'
+import { cloneTtrpgCompatibleOpeningTemplateV1 } from '../../lib/ttrpg/open-compatible-opening-contract'
 
 /** Work-owned S2 draft editing. No model, production start or runtime mutation. */
-export default function TtrpgOpenAuthoringEditor({ value, onChange }: {
+export default function TtrpgOpenAuthoringEditor({ value, onChange, releaseBase }: {
   value: TtrpgOpenAuthoringV1; onChange: (next: TtrpgOpenAuthoringV1) => void
+  releaseBase?: { scope: WorkspaceScope; productionId: number }
 }) {
   const [text, setText] = useState(() => JSON.stringify(value, null, 2)), [pending, setPending] = useState(false)
   const [candidate, setCandidate] = useState<TtrpgOpenAuthoringV1 | null>(null), [confirmed, setConfirmed] = useState<string[]>([])
   const [error, setError] = useState(''), [reading, setReading] = useState(false), [factPage, setFactPage] = useState(0)
+  const [publishedBase, setPublishedBase] = useState<Awaited<ReturnType<typeof readTtrpgCompatibleOpeningAuthoringBaseV1>> | null>(null)
+  const [baseLoading, setBaseLoading] = useState(false), [copyFrom, setCopyFrom] = useState('')
+  const baseGeneration = useRef(0)
+  useEffect(() => {
+    const generation = baseGeneration; generation.current++
+    setPublishedBase(null); setBaseLoading(false)
+    return () => { generation.current++ }
+  }, [releaseBase?.productionId])
   const active = useRef(true), epoch = useRef(0), blocked = useRef(false), current = useRef(value), basis = useRef('')
   current.current = value
   useEffect(() => {
@@ -54,6 +66,31 @@ export default function TtrpgOpenAuthoringEditor({ value, onChange }: {
     <p>局势、压力、队友和运行边界随本作品保存。导入后先核对内容，再应用到草稿；制作前还会检查世界来源和规则。</p>
     <p>已有 {value.situationTemplates.length} 个局势、{value.pressure.clocks.length} 个压力时钟、{value.factPolicy.length} 条事实。
       {value.factPolicy.some(item => !item.authorConfirmed) && '仍有事实等待本人确认。'}</p>
+    {releaseBase && <details><summary>从已发布设计准备续团开局</summary>
+      <p>先读取原发布的实际设计，核对后载入草稿，再添加新开局。载入会替换当前开放设计；不会开始制作或修改旧发布、旧存档。</p>
+      <button type="button" disabled={pending || reading || baseLoading} onClick={() => {
+        const token = ++baseGeneration.current; setBaseLoading(true); setError(''); setPublishedBase(null)
+        void readTtrpgCompatibleOpeningAuthoringBaseV1(releaseBase).then(next => {
+          if (active.current && baseGeneration.current === token) setPublishedBase(next)
+        }).catch(e => { if (active.current && baseGeneration.current === token) setError(e instanceof Error ? e.message : String(e)) })
+          .finally(() => { if (active.current && baseGeneration.current === token) setBaseLoading(false) })
+      }}>读取当前发布设计</button>
+      {publishedBase && <><p>{publishedBase.label}（版本 {publishedBase.version}）：{publishedBase.authoring.situationTemplates.length} 个原局势，原规则与压力安排保留。</p>
+        <button type="button" disabled={pending || reading} onClick={() => { change(structuredClone(publishedBase.authoring)); setPublishedBase(null); setCopyFrom('') }}>确认将已发布设计载入草稿</button>
+      </>}
+    </details>}
+    {!!value.situationTemplates.length && <fieldset disabled={pending || reading || baseLoading} aria-label="添加续团开局">
+      <legend>添加新开局</legend><label>参考局势<select aria-label="参考局势" value={copyFrom} onChange={e => setCopyFrom(e.target.value)}><option value="">选择要复制的局势</option>
+        {value.situationTemplates.map(t => <option key={t.templateKey} value={t.templateKey}>{t.title}</option>)}</select></label>
+      <button type="button" disabled={!value.situationTemplates.some(t => t.templateKey === copyFrom)} onClick={() => {
+        const original = value.situationTemplates.find(t => t.templateKey === copyFrom); if (!original) return
+        const templateKey = `author.opening.${crypto.randomUUID()}`
+        change(parseTtrpgOpenAuthoringV1({ ...value, situationTemplates: [...value.situationTemplates,
+          cloneTtrpgCompatibleOpeningTemplateV1(original, templateKey, `${original.title}（续篇）`)], openingSituationKeys: [templateKey] }))
+        setCopyFrom('')
+      }}>复制为新开局并选中</button>
+      <p>复制后请核对新局势的标题、动机、征兆、发现路径和期限。原局势保留；复杂条件可在下方完整设计中修改。</p>
+    </fieldset>}
     {value.factPolicy.some(item => !item.authorConfirmed) && <button className="lf-action" type="button" disabled={pending || reading} onClick={() => {
       markPending(); const source = JSON.stringify(current.current, null, 2); setText(source); inspect(source)
       setConfirmed(current.current.factPolicy.filter(item => item.authorConfirmed).map(item => item.fact.factKey))

@@ -494,7 +494,7 @@ async function appendFormalTtrpgCommand(
       "[ttrpg] 战役已由安全工具暂停；恢复后才能继续规则、场景或 AI 主持。",
     );
   }
-  const continuationRuntime = parseTtrpgRuntimeStateV2(previewState.ttrpg);
+  const continuationRuntime = open ? parseTtrpgRuntimeStateV2(previewState.ttrpg) : null;
   if (continuationRuntime?.openRun?.releaseContinuation) await verifyTtrpgOpenReleaseContinuationRuntimeV1({ runtime: continuationRuntime,
     runtimeSourceHash: previewSession.runtimeSourceHash, seed: previewSession.seed, initialState: JSON.parse(previewSession.initialStateJson) });
   // Preflight command-specific validation before opening the write transaction.

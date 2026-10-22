@@ -1,3 +1,4 @@
+import { TTRPG_COMPATIBLE_OPENING_AUTHORED_TASKS_V1 } from './open-compatible-opening-contract'
 /** Open authoring tasks live in the existing production scheduler, with an explicit shared production budget. */
 import type { ProductProductionBriefV3, ProductProductionPlanV3, ProductProductionPlanTaskV3 } from '../types'
 import { getAgentSkillV1 } from '../agent/skill-registry'
@@ -40,7 +41,7 @@ export function buildTtrpgOpenProductionPlanV3(input: {
 }): ProductProductionPlanV3 {
   const { brief } = input, budget = brief.productionBudget
   if (!brief.ttrpgOpen || brief.ttrpg || brief.intent.productType !== 'ttrpg') throw new Error('[ttrpg-open-plan] 需要独立 open 制作契约')
-  const modern = input.profileVersion !== 2
+  const modern = input.profileVersion !== 2 || !!brief.ttrpgOpen.compatibleOpeningRevision
   const emptyMedia = modern && brief.media.imageCount === 0 && brief.media.musicTrackCount === 0
     && brief.media.sfxCount === 0 && brief.media.voiceLineCount === 0 && brief.media.requiredMediaKinds.length === 0
   const attempts = Math.min(2, Math.floor(budget.maximumModelCalls / (emptyMedia ? 3 : 4)))
@@ -75,13 +76,14 @@ export function buildTtrpgOpenProductionPlanV3(input: {
       inputArtifactKeys: ['ttrpg.rule-pack', 'ttrpg.campaign-pack', 'runtime.package'], outputArtifactKeys: ['quality.report'] },
   ] as const
   const tasks: ProductProductionPlanTaskV3[] = definitions.map((definition, index) => {
-    const model = definition.skillId !== null
+    const authoredOpening = !!brief.ttrpgOpen?.compatibleOpeningRevision && TTRPG_COMPATIBLE_OPENING_AUTHORED_TASKS_V1.some(k => k === definition.taskKey)
+    const model = definition.skillId !== null && !authoredOpening
     const inputWeight = modern ? [9, 12, 15, 3, 0, 0][index] : 1
     const outputWeight = modern ? [1, 2, 2, 1, 0, 0][index] : 1
     const maximumOutput = model ? Math.min(outputTokens * outputWeight, getAgentSkillV1(definition.skillId!).maxOutputTokens) : 0
     const timeoutMs = Math.min(durationMs, modern && model ? 600_000 : 180_000)
     return { taskKey: definition.taskKey, lane: definition.lane, kind: definition.taskKey,
-      skillId: definition.skillId, executionMode: model ? 'model' : 'deterministic', dependsOn: [...definition.dependsOn],
+      skillId: authoredOpening ? null : definition.skillId, executionMode: model ? 'model' : 'deterministic', dependsOn: [...definition.dependsOn],
       requiredReceipts: definition.dependsOn.map(taskKey => ({ taskKey, receiptHash: null })),
       inputArtifactKeys: [...definition.inputArtifactKeys], outputArtifactKeys: [...definition.outputArtifactKeys],
       requirementKeys: [], capabilityRequirementKeys: model ? brief.capabilityRequirements

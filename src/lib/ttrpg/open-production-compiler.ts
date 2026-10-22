@@ -1,3 +1,6 @@
+import type { TtrpgRuntimeContentV2 } from './content-version'
+import { assertTtrpgOpenReleaseCompatibilityV1 } from './open-release-compatibility'
+import { assertTtrpgCompatibleOpeningAuthoringV1, ttrpgCompatibleOpeningAuthoringBaseV1 } from './open-compatible-opening-contract'
 /** Deterministic assembly of adopted open artifacts; no inferred attributes, characters, scenes, choices or endings. */
 import type { ProductProductionBriefV3, ProductSourcePlanV1 } from '../types'
 import { parseProductProductionBriefV3 } from '../product-production/contracts'
@@ -15,6 +18,7 @@ export async function compileProductionTtrpgOpenCampaignV2(input: {
   brief: ProductProductionBriefV3; briefHash: string; campaignKey: string
   /** Actual registry-remapped persisted locator; never changes frozen Brief bytes. */
   verifiedSourcePlan?: ProductSourcePlanV1
+  compatibleBase?: TtrpgRuntimeContentV2
   sourceFacts: { payload: unknown; contentHash: string }
   ruleSystem: { payload: unknown; contentHash: string }
   situationLayer: { payload: unknown; contentHash: string }
@@ -31,6 +35,17 @@ export async function compileProductionTtrpgOpenCampaignV2(input: {
   }
   for (const artifact of [input.sourceFacts, input.ruleSystem, input.situationLayer]) {
     if (await hashProductProductionValueV2(artifact.payload) !== artifact.contentHash) throw new Error('[ttrpg-open-compiler] 采纳产物原文/hash 不一致')
+  }
+  if (open.compatibleOpeningRevision) {
+    const marker = open.compatibleOpeningRevision, base = input.compatibleBase, evolution = brief.evolution?.base, provenance = base?.campaign.designProvenance
+    if (!base || !provenance || !('schema' in provenance) || provenance.schema !== 'storyforge.ttrpg-open-design-provenance' || evolution?.kind !== 'release' || evolution.contentHash !== marker.baseReleaseHash
+      || await hashProductProductionValueV2(base) !== marker.baseContentHash
+      || input.sourceFacts.contentHash !== provenance.sourceFactsArtifactHash
+      || input.ruleSystem.contentHash !== provenance.ruleSystemArtifactHash) {
+      throw new Error('[ttrpg-open-compiler] 兼容开局必须保留真实原发布的来源事实、规则和角色')
+    }
+    const added = assertTtrpgCompatibleOpeningAuthoringV1(ttrpgCompatibleOpeningAuthoringBaseV1(base.campaign, open.settings.openAuthoring.factPolicy), open.settings.openAuthoring)
+    if (stable(added) !== stable(marker.appendedTemplateKeys)) throw new Error('[ttrpg-open-compiler] 兼容开局与作者冻结意图不一致')
   }
   const facts = parseTtrpgOpenSourceFactsArtifactV1(input.sourceFacts.payload)
   if (facts.factPolicy.some(item => !item.authorConfirmed)) throw new Error('[ttrpg-open-compiler] 来源事实仍未经过作者确认')
@@ -73,7 +88,7 @@ export async function compileProductionTtrpgOpenCampaignV2(input: {
   // Protocol 2 uses an actual, portable source-evidence bundle, not an invented full-world bundle hash.
   const sourceBundleHash = await hashProductProductionValueV2({ schema: 'storyforge.ttrpg-open-source-evidence', version: 1,
     worldReference: portableReference, sourcePlanHash: sourcePlan.planHash, fieldRefs })
-  return parseTtrpgCampaignContentV2({ schema: 'storyforge.ttrpg-campaign', version: 2, runFormat: 'open',
+  const campaign = parseTtrpgCampaignContentV2({ schema: 'storyforge.ttrpg-campaign', version: 2, runFormat: 'open',
     campaignKey: input.campaignKey, ...layer.metadata, playerCount: { minimum: 1, maximum: players.length },
     sessionZero: system.sessionZero, characterTemplates: system.characterTemplates, entityBindings: system.entityBindings,
     gmMode: system.gmMode, informationPolicy: system.informationPolicy,
@@ -84,4 +99,9 @@ export async function compileProductionTtrpgOpenCampaignV2(input: {
     openingSceneKey: null, scenes: [], clues: [], quests: [], endings: [], frozenWorldPredicateIndex: index, canonInvariantPredicates,
     ...authoring, clocks: pressure.clocks, fronts: pressure.fronts,
   }, open.rulePack)
+  if (open.compatibleOpeningRevision) {
+    assertTtrpgOpenReleaseCompatibilityV1(input.compatibleBase!, { ...input.compatibleBase!, campaign })
+    if (stable(layer.authoring) !== stable((({ factPolicy: _facts, ...authoring }) => authoring)(open.settings.openAuthoring))) throw new Error('[ttrpg-open-compiler] 兼容开局必须准确使用作者确认的新增设计')
+  }
+  return campaign
 }

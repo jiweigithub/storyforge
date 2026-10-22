@@ -1,3 +1,6 @@
+import { TTRPG_COMPATIBLE_OPENING_AUTHORED_TASKS_V1 } from '../ttrpg/open-compatible-opening-contract'
+import { produceTtrpgCompatibleOpeningArtifactV1, readTtrpgCompatibleOpeningProductionBaseV1 } from '../ttrpg/open-compatible-opening-production'
+import { assertTtrpgOpenReleaseCompatibilityV1 } from '../ttrpg/open-release-compatibility'
 import { parseTextAdventureQuestScriptArtifact, textAdventureQuestRecipientsV3 } from '../adventure/quest-settlement'
 import { hasFrozenAuthorUploadRightsV1 } from './media-rights'
 import { ttrpgOpenProductionSystemPromptV1, ttrpgOpenProductionSystemPromptV2, ttrpgOpenProductionSystemPromptV3 } from '../ttrpg/open-production-prompts'
@@ -10021,8 +10024,10 @@ async function executeTtrpgOpenIntegrationTask(input: ProductProductionTaskExecu
     if (await hashProductProductionValueV2(payload) !== stored.contentHash) fail(`open 采纳产物 hash 不一致:${artifactKey}`)
     return { payload, contentHash: stored.contentHash }
   }
+  const compatibleBase = options.brief.ttrpgOpen.compatibleOpeningRevision
+    ? await readTtrpgCompatibleOpeningProductionBaseV1({ scope: input.scope, productionId: input.productionId, brief: options.brief }) : null
   let campaign = await compileProductionTtrpgOpenCampaignV2({ brief: options.brief, briefHash: build.briefHash,
-    campaignKey: `${options.production.productionKey}.open`, verifiedSourcePlan: sourcePlan,
+    campaignKey: `${options.production.productionKey}.open`, verifiedSourcePlan: sourcePlan, ...(compatibleBase ? { compatibleBase: compatibleBase.content } : {}),
     sourceFacts: await accepted('ttrpg.open.source-facts'), ruleSystem: await accepted('ttrpg.open.rule-system'),
     situationLayer: await accepted('ttrpg.open.situation-layer') })
   const mediaPlan = await accepted('media.requirements')
@@ -10082,6 +10087,10 @@ async function executeTtrpgOpenIntegrationTask(input: ProductProductionTaskExecu
   if (assetsByArtifact.size) {
     pkg.presentation = { version: 1, assets: [...assetsByArtifact.values()], cues: [] }
     pkg.definition.enabledCapabilities.push('presentation')
+  }
+  if (compatibleBase) {
+    if (!pkg.ttrpg || !isTtrpgRuntimeContentV2(pkg.ttrpg)) fail('兼容开局输出必须是完整开放跑团')
+    assertTtrpgOpenReleaseCompatibilityV1(compatibleBase.content, pkg.ttrpg)
   }
   const parsed = parseProductRuntimePackageV1(pkg, { ttrpgProtocol: 2 })
   return { artifacts: [
@@ -11113,6 +11122,14 @@ export function createConfiguredProductProductionExecutorV1(input: {
         return { artifacts: [{ artifactKey: 'media.requirements', kind: 'asset-manifest', payload,
           quality: { planKeysVerified: true }, rights: { origin: 'deterministic-empty-media-plan', containsThirdPartyMedia: false } }],
           passedGateIds: [...request.task.acceptanceGateIds], usage: zeroUsage(elapsed(started)) }
+      })
+    }
+    if (options.brief.ttrpgOpen?.compatibleOpeningRevision && request.task.executionMode === 'deterministic'
+      && TTRPG_COMPATIBLE_OPENING_AUTHORED_TASKS_V1.some(k => k === request.task.taskKey)) {
+      return executeTtrpgOpenKernelWithUsageV1(async () => {
+        const started = performance.now(), artifact = await produceTtrpgCompatibleOpeningArtifactV1({ scope: request.scope,
+          productionId: request.productionId, brief: options.brief, taskKey: request.task.taskKey })
+        return { artifacts: [artifact], passedGateIds: [...request.task.acceptanceGateIds], usage: zeroUsage(elapsed(started)) }
       })
     }
     if (request.task.executionMode === 'model') return executeModelTask(request, options)

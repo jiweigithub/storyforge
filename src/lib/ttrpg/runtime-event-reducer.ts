@@ -594,7 +594,9 @@ export function applyTtrpgRuntimeEventV1(
       const allPlayerKeys = Object.values(state.entities)
         .filter((entity) => entity.kind === "player")
         .map((entity) => entity.entityKey);
-      if (!parseTtrpgRuntimeStateV2(state.ttrpg)?.openRun?.releaseContinuation) ttrpg.campaign.roster = allPlayerKeys.map((characterKey) => ({
+      const continuationRuntime = 'runFormat' in ttrpg && ttrpg.runFormat === 'open'
+        ? parseTtrpgRuntimeStateV2(state.ttrpg) : null;
+      if (!continuationRuntime?.openRun?.releaseContinuation) ttrpg.campaign.roster = allPlayerKeys.map((characterKey) => ({
         characterKey,
         status: selectedCharacterKeys.includes(characterKey)
           ? ("active" as const)
@@ -605,8 +607,8 @@ export function applyTtrpgRuntimeEventV1(
         reason: existingRoster.get(characterKey)?.reason ?? "",
         updatedSequence: event.sequence,
       }));
-      const pendingContinuation = parseTtrpgRuntimeStateV2(state.ttrpg);
-      if (pendingContinuation?.openRun?.releaseContinuation?.plan.childSessionKey === pendingContinuation?.sessionKey && !pendingContinuation?.openRun?.releaseContinuation?.confirmedRef) applyTtrpgOpenContinuationStartV1(state, event, payload);
+      const pendingContinuation = continuationRuntime;
+      if (pendingContinuation && pendingContinuation.openRun?.releaseContinuation?.plan.childSessionKey === pendingContinuation.sessionKey && !pendingContinuation.openRun.releaseContinuation.confirmedRef) applyTtrpgOpenContinuationStartV1(state, event, payload);
       break;
     }
     case "ttrpg.safety.changed": {

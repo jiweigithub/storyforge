@@ -401,7 +401,7 @@ export default function TtrpgPage() {
       </button>
     </section>
   );
-  const compileRevision = (stagePolicyRevision?: 'revise-pending-stage-policy') =>
+  const compileRevision = (revisionChoice?: 'revise-pending-stage-policy' | 'revise-pending-compatible-opening') =>
     void run(async () => {
       await flushPendingEditsV1();
       const target = dirty || !row ? await save() : row;
@@ -415,14 +415,15 @@ export default function TtrpgPage() {
         navigate(path("confirm", target));
         throw new Error("需要一个世界引擎；配置已保存，请到世界引擎页选择版本");
       }
-      const id = stagePolicyRevision
-        ? await prepareTtrpgOpenProductionBriefV3({ scope: targetScope, revision: latest.revision, stagePolicyRevision })
+      const id = revisionChoice
+        ? await prepareTtrpgOpenProductionBriefV3({ scope: targetScope, revision: latest.revision, ...(revisionChoice === 'revise-pending-stage-policy' ? { stagePolicyRevision: revisionChoice } : { openingRevision: revisionChoice }) })
         : await prepareTtrpgBrief(targetScope, latest.revision);
       navigate(path("agent", target, `&production=${id}`));
       setNotice(settings.runFormat === 'open' ? '开放审查方案已保存，请核对并到制作页明确开始。' : '审查方案已保存，请比较提案并确认。尚未开始制作。');
     });
   const compile = () => compileRevision();
   const compileStagePolicyRevision = () => compileRevision('revise-pending-stage-policy');
+  const compileCompatibleOpeningRevision = () => compileRevision('revise-pending-compatible-opening');
   let handoffId: number | null = null,
     handoffError = "";
   try {
@@ -766,6 +767,7 @@ export default function TtrpgPage() {
                         </div>
                         {openPreview && settings.runFormat === 'open' && step === 1 && <OpenAuthoringEditor
                           key={scope ? `${scope.projectId}:${scope.worldId}:${scope.workId}` : 'new-open'} value={settings.openAuthoring}
+                          releaseBase={scope && productionId ? { scope, productionId } : undefined}
                           onChange={openAuthoring => { setSettings(current => current.runFormat === 'open' ? { ...current, openAuthoring } : current); setDirty(true) }}/>}
                         {openPreview && settings.runFormat === 'open' && step === 1 && scope && row?.draft && <OpenDesignAssistant
                           key={`design:${scope.projectId}:${scope.worldId}:${scope.workId}`} scope={scope} revision={row.draft.revision}
@@ -835,6 +837,7 @@ export default function TtrpgPage() {
                               为待开始的新版本更新阶段条件
                             </button>
                           )}
+                          {step === 8 && settings.runFormat === 'open' && productionId && <button className="lf-action" onClick={compileCompatibleOpeningRevision}>为待开始的新版本保存兼容开局</button>}
                         </div>
                       </fieldset>
                       {row && !row.draft && (
