@@ -2,7 +2,7 @@
   "schema": "storyforge.character-chat-acceptance",
   "version": 324,
   "kind": "fixed-code-m1-cohort",
-  "at": "2026-10-22T11:50:24.769131+00:00",
+  "at": "2026-10-22T12:42:19.625187+00:00",
   "cohort": "m1-v324-current",
   "head": "26fd6e29c019f89162f7beb5c081b93a47c3593e",
   "plannedEpisodes": 120,
@@ -51,13 +51,14 @@
   "currentMatrix": {
     "completed": 3,
     "collectorError": 1,
-    "failed": 2,
-    "runtimeBlocked": 6,
+    "failed": 3,
+    "runtimeBlocked": 11,
     "runtimeRunning": 0,
-    "notStarted": 108
+    "notStarted": 102,
+    "productionRunning": 0
   },
   "modelCatalogCheck": "Read-only local model catalog responded and target model was present after failure; this is not proof of generation-service recovery.",
-  "next": "Integrate V325 tests-only fixes into existing draft PR, collect new exact-head full CI/browser results, and prepare the original independent riverside-reading-evening Codex r1 unit. Do not rerun failed inn units or dispatch blocked paired cases.",
+  "next": "Review the retained reading r1 semantic failure before selecting the next independent preregistered unit; do not rerun or silently repair failed units. Keep the five remaining reading r1 paired behaviors blocked under the original protocol. Observe current-head CI/full-delivery CLI/browser without updating or restarting that head.",
   "evidence": {
     "preregistration.json": {
       "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r1/preregistration.json",
@@ -234,6 +235,46 @@
     "remote-browser-119746569677-job.log": {
       "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/remote-browser-119746569677-job.log",
       "sha256": "5d72f081a297e4171934282000eb2bb44eaa3ab50906f2a8ba3861f46134c2ab"
+    },
+    "codex-reading-r1/preregistration.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-reading-r1/preregistration.json",
+      "sha256": "0d6c8e14bd186579748439120eb93d7b2eae80f261cf3237277170c2ad476dd6"
+    },
+    "codex-reading-r1/production-evidence.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-reading-r1/production-evidence.json",
+      "sha256": "fadd21bef593916cd2447d37dfd1e436f67ec5bc56999a02d5d2cb1eb7b748ec"
+    },
+    "codex-reading-r1/production-backup.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-reading-r1/production-backup.json",
+      "sha256": "0bfaf08d60ec4f9eae00731144470a0dfb92a4d9f1896fb1231e190b0e42e5cf"
+    },
+    "codex-reading-r1/reading-r1-weak-guidance.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-reading-r1/reading-r1-weak-guidance.json",
+      "sha256": "29116a1a4d857063aee476289e4e89b1a7551a8377cb98844685900e8d260776"
+    },
+    "codex-reading-r1/reading-r1-weak-guidance-backup.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-reading-r1/reading-r1-weak-guidance-backup.json",
+      "sha256": "f000603891ce02e61a53380bcebcab6a16962582ff3c4161f9bb5f1f72fc5abd"
+    },
+    "codex-reading-r1/reading-r1-weak-guidance-restoration-verified.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-reading-r1/reading-r1-weak-guidance-restoration-verified.json",
+      "sha256": "45c61dd97ad5ea9d43e4983555cd384f7c79a741522b2799c12bd718b9eb866e"
+    },
+    "codex-reading-r1/player-decisions.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-reading-r1/player-decisions.json",
+      "sha256": "b0e4b83f3f747c0fc74ab7d584cc0f485d8a385be4a8cf8684595520fad5bb3c"
+    },
+    "codex-reading-r1/start-control-note.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-reading-r1/start-control-note.json",
+      "sha256": "5e813b01f0f54be7ab81c13c07e60ef64604e1fdfaf938a2027942886960606a"
+    },
+    "codex-reading-r1/collection-verified.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-reading-r1/collection-verified.json",
+      "sha256": "d2ca0b392027ded4c482ee96c3533946195abedb5d092747f05f46eb1dbdaed8"
+    },
+    "remote-engineering-754e4053-20261022T124016Z.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/remote-engineering-754e4053-20261022T124016Z.json",
+      "sha256": "76931f7d60e20e317acbb642abd101bd981ce88677813ffa10dd3a1f1bc1f0f9"
     }
   },
   "secondUnit": {
@@ -333,7 +374,7 @@
     },
     "browserFollowup": "Two observed test synchronization races under diagnosis/repair; do not report first-pass success."
   },
-  "currentEpisode": "Return failed on confirmed provider other; no recognizable cause, no retry. Independent restoration passed. R2 unexpected not dispatched.",
+  "currentEpisode": "Reading r1 terminal narrative-review-failed: repeated closing proposal; 45 native requests completed, 732100 reported tokens; 13 completed histories and one failed run independently restored with zero calls. No active model request.",
   "performanceObservation": {
     "firstAdoptedReplySeconds": [
       52.756,
@@ -560,5 +601,126 @@
     "pairedRemainder": "unexpected not dispatched per original production-unit stop rule",
     "costUsd": null,
     "evidenceSha256": "8c510fbb85c35af93219bee6d57ebb01ffcc53675dc5d6b5d8b12be21bdc503f"
+  },
+  "readingEpisode": {
+    "at": "2026-10-22T12:42:19.625187+00:00",
+    "episodeId": "m1-v324-current/riverside-reading-evening/local-codex/r1/weak-guidance",
+    "completionReason": "narrative-review-failed",
+    "completedAt": "2026-10-22T12:34:08.390Z",
+    "completedStory": false,
+    "formalQualityPass": false,
+    "formalM1Passed": false,
+    "sourceUnchanged": true,
+    "sourceHead": "26fd6e29c019f89162f7beb5c081b93a47c3593e",
+    "requests": 45,
+    "productionRequests": 3,
+    "runtimeRequests": 42,
+    "nativeCompleted": 45,
+    "nativeFailed": 0,
+    "nativeUnknown": 0,
+    "reportedTokens": 732100,
+    "reportedTokensByPhase": {
+      "production": 44364,
+      "runtime": 687736
+    },
+    "missingUsage": [],
+    "completedRuns": 13,
+    "failedRuns": 1,
+    "playerOpportunities": 13,
+    "failure": {
+      "kind": "narrative-review-failed",
+      "requestId": "c361b99c-5972-4fa1-97df-f3147840c494",
+      "nativeStatus": "completed",
+      "failedChecks": [
+        "meaningful-direction"
+      ],
+      "turnCompletionCheck": false,
+      "reason": "第39条消息已提出无人交流时自然结束、不强凑发言且不要求玩家救场。本次近义重述未新增理由、信息、选择或后果，meaningful-direction 与 turnCompletionCheck 均拒绝；其余连续性、权限、玩家控制、可见性和后果检查通过。",
+      "providerFailure": false,
+      "automaticRetry": false
+    },
+    "independentRestoration": [
+      {
+        "stem": "reading-r1-weak-guidance",
+        "runStatusesPreserved": true,
+        "verifiedCompletedHistories": 13,
+        "retainedFailedRuns": 1,
+        "resumableRuns": 0,
+        "openingReviewRetained": true,
+        "modelCalls": 0,
+        "interactionEqual": true,
+        "refreshEqual": true,
+        "worldPreserved": true,
+        "rawEvidenceRetained": true,
+        "terminalReceiptBodiesRetained": true,
+        "usageEvidenceRetained": true
+      }
+    ],
+    "restorationCompletedAt": "2026-10-22T12:34:56.774Z",
+    "runner": {
+      "session": 57180,
+      "exitCode": 1,
+      "terminal": true
+    },
+    "restorationRunner": {
+      "session": 30176,
+      "terminal": true,
+      "modelCalls": 0
+    },
+    "goals": [
+      {
+        "goalKey": "goal-1",
+        "status": "active"
+      }
+    ],
+    "threads": [
+      {
+        "threadKey": "thread-1",
+        "status": "open"
+      }
+    ],
+    "pairedRemainder": "Five paired behaviors not dispatched under original production-unit stop rule.",
+    "costUsd": null,
+    "evidenceSha256": "29116a1a4d857063aee476289e4e89b1a7551a8377cb98844685900e8d260776",
+    "restorationSha256": "45c61dd97ad5ea9d43e4983555cd384f7c79a741522b2799c12bd718b9eb866e",
+    "preregistrationSha256": "0d6c8e14bd186579748439120eb93d7b2eae80f261cf3237277170c2ad476dd6"
+  },
+  "currentIntegration": {
+    "head": "754e40539e475577aa6ffe6742d7e17af2e00f7a",
+    "main": "c5a1cab7",
+    "targetedTests": 156,
+    "localRequiredChecks": "passed",
+    "ci": {
+      "run": 39776190023,
+      "status": "in_progress",
+      "conclusion": ""
+    },
+    "fullDelivery": {
+      "run": 39776189836,
+      "browser": "in_progress",
+      "cli": "in_progress"
+    },
+    "package": {
+      "run": 39776189989,
+      "status": "completed",
+      "conclusion": "success",
+      "build": "success",
+      "platforms": [
+        "macos-arm64",
+        "macos-x64",
+        "windows-x64",
+        "linux-x64"
+      ],
+      "publish": "skipped",
+      "signedUpgrade": "skipped"
+    },
+    "checkedAt": "2026-10-22T12:40:16.969549+00:00",
+    "evidence": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/remote-engineering-754e4053-20261022T124016Z.json",
+      "sha256": "76931f7d60e20e317acbb642abd101bd981ce88677813ffa10dd3a1f1bc1f0f9"
+    },
+    "modelSourceStillFrozenAt": "26fd6e29c019f89162f7beb5c081b93a47c3593e",
+    "oldFailuresRetained": true,
+    "published": false
   }
 }

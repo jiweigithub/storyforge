@@ -41,7 +41,7 @@ async function start() {
   return {...f, trigger, handoff}
 }
 function enable() {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v61')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v62')
   expect(originalSkill('character.chat-narrative-action-review').promptVersion).toBe('chat-narrative-action-review-v38')
 }
 function legacy() {

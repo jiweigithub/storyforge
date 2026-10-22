@@ -1,4 +1,5 @@
 import {chatRelationshipHistoryRowsV1, addChatRelationshipHistoryV1} from './relationship-history-context'
+import {planChatRecentDialogueV1} from './recent-dialogue-context'
 import {createChatHistoryProjectionCacheV1} from './history-context-cache'
 import {indexChatHistoryRowsV1} from './history-projection-rows'
 import type {CharacterInteractionRuntimeState, InteractionRuntimeProfile} from '../types'
@@ -16,7 +17,7 @@ const projectionCache = createChatHistoryProjectionCacheV1<InteractionContextWin
  * with its dependency closure; rejection rolls back the whole trial. */
 export function selectChatHistoryActorContextV1(state: CharacterInteractionRuntimeState,
   view: InteractionVisibilityView & {excludedMessageCount?: number}, profile: InteractionRuntimeProfile,
-  limits: {maxCharacters: number; maxRecentMessages: number; optionalMaxCharacters?: number; optionalMaxTokens?: number; relationshipHistory?: boolean; messageIdentities?: boolean; followupEvidence?: boolean}): InteractionContextWindow {
+  limits: {maxCharacters: number; maxRecentMessages: number; optionalMaxCharacters?: number; optionalMaxTokens?: number; relationshipHistory?: boolean; messageIdentities?: boolean; followupEvidence?: boolean; recentDialogue?: boolean}): InteractionContextWindow {
   const cacheKey = projectionCache.key([state, view, profile, limits])
   const cached = projectionCache.read(cacheKey)
   if (cached) return cached
@@ -34,10 +35,12 @@ export function selectChatHistoryActorContextV1(state: CharacterInteractionRunti
   const relationshipMessages = new Set(relationships.flatMap(r => r.messages.map(m => m.messageId)))
   const current = view.messages.filter(m => m.eventSequence > (view.activeScene?.startedAtSequence ?? -Infinity))
   const recent = view.messages.slice(-limits.maxRecentMessages)
-  const eligible = view.messages.filter(m => relationshipMessages.has(m.messageId) || recent.includes(m) || current.includes(m) && m.role === 'player')
+  const recentDialogue = limits.recentDialogue ? planChatRecentDialogueV1(view, profile.participantKey, state.chatNarrative!.triggers) : new Map<string, string[]>()
+  const eligible = view.messages.filter(m => recentDialogue.has(m.messageId) || relationshipMessages.has(m.messageId) || recent.includes(m) || current.includes(m) && m.role === 'player')
   const latest = view.messages.slice(-1)[0]
   for (const m of eligible) {
     const required = m === latest ? ['latest-dialogue'] : m.role === 'player' && current.includes(m) ? ['current-player'] : []
+    required.push(...(recentDialogue.get(m.messageId) ?? []))
     plan.add('messages', m.messageId, m.text, required); plan.linkMessage(m)
   }
   addChatRelationshipHistoryV1(plan, relationships)

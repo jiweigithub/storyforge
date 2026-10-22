@@ -24,13 +24,13 @@ const projectionCache = createChatHistoryProjectionCacheV1<CoordinatorProjection
 /** Current review must retain the actor's exact selected rows and every
  * existing candidate reference, then expand their original evidence closure. */
 export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteractionRuntimeState, candidate: {
-  text: string; actorKey?: string; retrievalVersion?: 'chat-relevance-v8' | 'chat-relevance-v9' | 'chat-relevance-v10' | 'chat-relevance-v11' | 'chat-relevance-v12' | 'chat-relevance-v13'; sourceUnits?: ChatSourceUnitSetV1; audienceVersion?: 1 | 2; discoveryEvidence?: boolean; inquiryEvidence?: 1 | 2 | 3 | 4
+  text: string; actorKey?: string; retrievalVersion?: 'chat-relevance-v8' | 'chat-relevance-v9' | 'chat-relevance-v10' | 'chat-relevance-v11' | 'chat-relevance-v12' | 'chat-relevance-v13' | 'chat-relevance-v14'; sourceUnits?: ChatSourceUnitSetV1; audienceVersion?: 1 | 2; discoveryEvidence?: boolean; inquiryEvidence?: 1 | 2 | 3 | 4
 }) {
   const cacheKey = projectionCache.key([state, candidate])
   const cached = projectionCache.read(cacheKey)
   if (cached) return cached
   const full = {...chatSituationCoordinatorViewV1(state), ...(candidate.audienceVersion === 2 ? chatCoordinatorScenePersonGuidanceV1(state) : {})}, commitments = full.situation.goals.flatMap(g => g.commitments ?? [])
-  const plan = createChatHistoryPlanV1(state, {...full.situation, commitments}, {followupEvidence: candidate.retrievalVersion === 'chat-relevance-v13'}), id = chatHistoryIdV1
+  const plan = createChatHistoryPlanV1(state, {...full.situation, commitments}, {followupEvidence: (candidate.retrievalVersion === 'chat-relevance-v13' || candidate.retrievalVersion === 'chat-relevance-v14')}), id = chatHistoryIdV1
   const inquiryEvidence = candidate.inquiryEvidence ? chatInquiryContextForVersionV1(state, candidate.inquiryEvidence) : undefined
   const inquiryQuestions = inquiryEvidence && 'questions' in inquiryEvidence ? inquiryEvidence.questions : inquiryEvidence ? [inquiryEvidence] : []
   for (const question of inquiryQuestions) {
@@ -58,7 +58,7 @@ export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteract
   }
   for (const m of memories) {plan.add('memories', m.memoryId, m.content, pending.has(m.memoryId) ? ['pending-correction'] : m.playerPinned ? ['player-pin'] : [], m.importance); plan.linkMemory(m)}
   const delivered = candidate.actorKey ? buildInteractionContextWindow(state, candidate.actorKey, {retrievalVersion: candidate.retrievalVersion ?? 'chat-relevance-v8'}) : null
-  if ((candidate.retrievalVersion === 'chat-relevance-v10' || (candidate.retrievalVersion === 'chat-relevance-v11' || candidate.retrievalVersion === 'chat-relevance-v12' || candidate.retrievalVersion === 'chat-relevance-v13')) && delivered) {
+  if ((candidate.retrievalVersion === 'chat-relevance-v10' || (candidate.retrievalVersion === 'chat-relevance-v11' || candidate.retrievalVersion === 'chat-relevance-v12' || (candidate.retrievalVersion === 'chat-relevance-v13' || candidate.retrievalVersion === 'chat-relevance-v14'))) && delivered) {
     const known = new Set([...full.relationshipEvidence, ...(delivered.relationshipEvidence ?? [])].map(chatRelationshipHistoryKeyV1))
     full.relationshipEvidence = state.relationshipHistory.filter(r => known.has(chatRelationshipHistoryKeyV1(r)))
   }
@@ -69,7 +69,7 @@ export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteract
   }
   if (inquiryEvidence && 'questions' in inquiryEvidence) for (const question of inquiryEvidence.questions) plan.require('messages', question.messageId, 'inquiry-question-message')
   if (inquiryEvidence?.version === 3 || inquiryEvidence?.version === 4) for (const messageId of inquiryEvidence.dialogueMessageIds) plan.require('messages', messageId, 'inquiry-dialogue-continuity')
-  if (candidate.retrievalVersion === 'chat-relevance-v10' || (candidate.retrievalVersion === 'chat-relevance-v11' || candidate.retrievalVersion === 'chat-relevance-v12' || candidate.retrievalVersion === 'chat-relevance-v13')) {
+  if (candidate.retrievalVersion === 'chat-relevance-v10' || (candidate.retrievalVersion === 'chat-relevance-v11' || candidate.retrievalVersion === 'chat-relevance-v12' || (candidate.retrievalVersion === 'chat-relevance-v13' || candidate.retrievalVersion === 'chat-relevance-v14'))) {
     const actorCauses = new Set(delivered?.relationshipEvidence?.map(chatRelationshipHistoryKeyV1))
     for (const change of full.relationshipEvidence) {
       const key = chatRelationshipHistoryKeyV1(change)
@@ -96,7 +96,7 @@ export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteract
     threads: full.situation.threads.filter(t => ['open', 'blocked', 'paused'].includes(t.status)).map(t => [t.title, t.question]),
     player: [...full.messages].reverse().find(m => m.role === 'player')?.text ?? ''}))
   const historyKinds = [...new Set([...plan.entries.values()].map(e => e.kind))]
-  const compactHistory = candidate.retrievalVersion === 'chat-relevance-v9' || candidate.retrievalVersion === 'chat-relevance-v10' || (candidate.retrievalVersion === 'chat-relevance-v11' || candidate.retrievalVersion === 'chat-relevance-v12' || candidate.retrievalVersion === 'chat-relevance-v13')
+  const compactHistory = candidate.retrievalVersion === 'chat-relevance-v9' || candidate.retrievalVersion === 'chat-relevance-v10' || (candidate.retrievalVersion === 'chat-relevance-v11' || candidate.retrievalVersion === 'chat-relevance-v12' || (candidate.retrievalVersion === 'chat-relevance-v13' || candidate.retrievalVersion === 'chat-relevance-v14'))
   const totals = new Map(historyKinds.map(kind => {
     const rows = [...plan.entries.values()].filter(e => e.kind === kind)
     return [kind, {total: rows.length, required: rows.filter(e => e.required.length).length}]
@@ -123,8 +123,8 @@ export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteract
       ...(candidate.inquiryEvidence ? {inquiryEvidence: inquiryEvidence?.version === 4
         ? projectChatInquiryContactEvidenceV1(inquiryEvidence, key => has('facts', key)) : inquiryEvidence} : {}),
       ...(candidate.sourceUnits ? {sourceInterpretationConstraints: chatSourceUnitConstraintsV1(candidate.sourceUnits)} : {}),
-      historyContext: {version: 1, policy: candidate.retrievalVersion === 'chat-relevance-v13' ? CHAT_HISTORY_POLICY_V2 : CHAT_HISTORY_POLICY_V1, resolutions: plan.resolutions(selected)},
-      selection: {version: (candidate.retrievalVersion === 'chat-relevance-v9' || candidate.retrievalVersion === 'chat-relevance-v10' || (candidate.retrievalVersion === 'chat-relevance-v11' || candidate.retrievalVersion === 'chat-relevance-v12' || candidate.retrievalVersion === 'chat-relevance-v13')) ? 6 : 5, totalKnowledgeEntries: knowledge.length, omittedKnowledgeEntries: knowledge.filter(k => !has('knowledge', k.knowledgeKey)).length,
+      historyContext: {version: 1, policy: (candidate.retrievalVersion === 'chat-relevance-v13' || candidate.retrievalVersion === 'chat-relevance-v14') ? CHAT_HISTORY_POLICY_V2 : CHAT_HISTORY_POLICY_V1, resolutions: plan.resolutions(selected)},
+      selection: {version: (candidate.retrievalVersion === 'chat-relevance-v9' || candidate.retrievalVersion === 'chat-relevance-v10' || (candidate.retrievalVersion === 'chat-relevance-v11' || candidate.retrievalVersion === 'chat-relevance-v12' || (candidate.retrievalVersion === 'chat-relevance-v13' || candidate.retrievalVersion === 'chat-relevance-v14'))) ? 6 : 5, totalKnowledgeEntries: knowledge.length, omittedKnowledgeEntries: knowledge.filter(k => !has('knowledge', k.knowledgeKey)).length,
         totalMemoryEntries: memories.length, omittedMemoryEntries: memories.filter(m => !has('memories', m.memoryId)).length,
         totalCommitmentEntries: commitments.length, omittedCommitmentEntries: commitments.filter(c => !has('commitments', c.commitmentKey)).length, history: Object.fromEntries(historyKinds.map(kind => {
         if (compactHistory) return [kind, {included: included.get(kind)!, omitted: totals.get(kind)!.total - included.get(kind)!, required: totals.get(kind)!.required}]

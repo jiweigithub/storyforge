@@ -49,7 +49,7 @@ export const CHAT_CONVERSATION_EVIDENCE_REVIEW_RULE_V1 = '无事实引用的对�
 /** Frozen older prompts retain their original wording. Local completion still
  * requires its existing same-action review; this adds no output or state field. */
 export function chatConversationEvidenceActionRuleV1(producerVersion: string | undefined): string {
-  return ['chat-narrative-action-v54', 'chat-narrative-action-v55', 'chat-narrative-action-v56', 'chat-narrative-action-v57', 'chat-narrative-action-v58', 'chat-narrative-action-v59', 'chat-narrative-action-v60', 'chat-narrative-action-v61'].includes(producerVersion ?? '')
+  return ['chat-narrative-action-v54', 'chat-narrative-action-v55', 'chat-narrative-action-v56', 'chat-narrative-action-v57', 'chat-narrative-action-v58', 'chat-narrative-action-v59', 'chat-narrative-action-v60', 'chat-narrative-action-v61', 'chat-narrative-action-v62'].includes(producerVersion ?? '')
     ? CHAT_CONVERSATION_EVIDENCE_ACTION_RULE_V1.replace('有 goalKey 时 waitingForPlayer=true。',
       '有 goalKey 且仍需玩家决定时 waitingForPlayer=true。仅在本轮首个 player-response 中已实际回应当前可见玩家消息、满足 turnCompletion 条件并保持活跃目标时，纯 speak 回应可用 waitingForPlayer=false 和 turnCompletion 结束本轮，evidenceFactKeys 仍可为空；不要为凑依据引用无关世界事实。结束标记须通过同次独立审查，不能把重复、等待必要决定或遗漏后果伪装成完成。')
     : CHAT_CONVERSATION_EVIDENCE_ACTION_RULE_V1

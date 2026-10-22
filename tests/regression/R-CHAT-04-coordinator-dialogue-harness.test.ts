@@ -34,7 +34,7 @@ it.each(['current', 'saved-v8', 'saved-v13'] as const)('uses the original produc
     return JSON.stringify(chatActionReviewOutputFixture())
   }})
   expect(await readChatCandidateRetrievalVersion(resumed.snapshot, f.scope.projectId, 'interactionRuntime', 'guard', before.interaction!))
-    .toBe(version === 'current' ? 'chat-relevance-v13' : version === 'saved-v13' ? 'chat-relevance-v9' : 'chat-relevance-v4')
+    .toBe(version === 'current' ? 'chat-relevance-v14' : version === 'saved-v13' ? 'chat-relevance-v9' : 'chat-relevance-v4')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
   const after = await readProductRuntimeState(f.sessionId)
   expect(after.interaction!.messages).toHaveLength(before.interaction!.messages.length + 1)

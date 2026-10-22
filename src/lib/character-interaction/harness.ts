@@ -1167,8 +1167,8 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
     }
     const reader = await readChatCandidateRetrievalVersion(snapshot, input.scope.projectId,
       situation ? 'chatSituationRuntime' : 'interactionRuntime', situation ? undefined : candidate.participantKey, original.interaction ?? undefined)
-    if (reader === 'chat-relevance-v6' || reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10' || (reader === 'chat-relevance-v11' || reader === 'chat-relevance-v12' || reader === 'chat-relevance-v13')) evidenceVersions.factEvidenceVersion = 1
-    if (!situation && (reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10' || (reader === 'chat-relevance-v11' || reader === 'chat-relevance-v12' || reader === 'chat-relevance-v13'))) evidenceVersions.resolutionEvidenceVersion = 1
+    if (reader === 'chat-relevance-v6' || reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10' || (reader === 'chat-relevance-v11' || reader === 'chat-relevance-v12' || (reader === 'chat-relevance-v13' || reader === 'chat-relevance-v14'))) evidenceVersions.factEvidenceVersion = 1
+    if (!situation && (reader === 'chat-relevance-v7' || reader === 'chat-relevance-v8' || reader === 'chat-relevance-v9' || reader === 'chat-relevance-v10' || (reader === 'chat-relevance-v11' || reader === 'chat-relevance-v12' || (reader === 'chat-relevance-v13' || reader === 'chat-relevance-v14')))) evidenceVersions.resolutionEvidenceVersion = 1
   }
   const event = adopted
     ? priorCommand
