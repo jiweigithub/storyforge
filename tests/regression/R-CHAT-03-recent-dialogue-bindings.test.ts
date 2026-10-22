@@ -17,7 +17,7 @@ const versions = [
   {skill: 'character.chat-narrative-options', old: 'chat-narrative-options-v37', next: 'chat-narrative-options-v38'},
   {skill: 'character.chat-action-revision', old: 'chat-action-revision-v22', next: 'chat-action-revision-v23'},
 ] as const
-const currentVersions = {'character.chat-narrative-action': 'chat-narrative-action-v66', 'character.chat-narrative-options': 'chat-narrative-options-v40', 'character.chat-action-revision': 'chat-action-revision-v23'} as const
+const currentVersions = {'character.chat-narrative-action': 'chat-narrative-action-v67', 'character.chat-narrative-options': 'chat-narrative-options-v40', 'character.chat-action-revision': 'chat-action-revision-v23'} as const
 const recipe = (producer: string, reviewer = 'chat-narrative-action-review-v38', choice = producer) => ({
   budget: {maxModelCalls: 3, maxAttemptsPerStep: 1}, executionBindings: [
     {stepId: 'interaction:action-choice', skillId: 'character.chat-narrative-action', promptVersion: choice},
@@ -45,7 +45,7 @@ it('keeps future reader and producer versions outside the released allowlist', (
   expect(chatRetrievalVersionForReader('chat-narrative-runtime-view-v17')).toBe('chat-relevance-v13')
   expect(chatRetrievalVersionForReader('chat-narrative-runtime-view-v19')).toBeNull()
   for (const [skillId, promptVersion] of [
-    ['character.chat-narrative-action', 'chat-narrative-action-v67'],
+    ['character.chat-narrative-action', 'chat-narrative-action-v68'],
     ['character.chat-narrative-options', 'chat-narrative-options-v41'],
     ['character.chat-action-revision', 'chat-action-revision-v24'],
   ]) expect(usesChatActionBoundContextV1({skillId, promptVersion})).toBe(false)

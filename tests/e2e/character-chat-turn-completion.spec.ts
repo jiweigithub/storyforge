@@ -30,7 +30,7 @@ async function setup(page: Page, passed = true, provider: 'openai' | 'agnes' = '
     let content = chatActionResponseFixture(route, output)
     if (step === 'expression' && provider === 'agnes') {
       const format = route.request().postDataJSON().response_format
-      expect(format).toMatchObject({type: 'json_schema', json_schema: {name: 'chat_narrative_outcome_v3', strict: true}})
+      expect(format).toMatchObject({type: 'json_schema', json_schema: {name: 'chat_narrative_outcome_v4', strict: true}})
       const response = JSON.parse(content)
       response.action = {goalUpdates: [], commitmentEffects: [], relationshipUpdates: [], nextPossibilities: null, beliefUpdates: [],
         situationRequest: null, followupGoal: null, threadFollowupGoal: null, resumeGoal: null, promiseRequest: null, pauseGoal: null, sceneTransition: null,

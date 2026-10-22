@@ -53,7 +53,7 @@ it('sends required candidate shape, saves the exact schema request and preserves
   expect(chat).toHaveBeenCalledTimes(3)
   const call = chat.mock.calls[1], options = call[5]!
   expect(options.jsonSchema?.strict).toBe(true)
-  expect(options.jsonSchema?.name).toBe('chat_narrative_outcome_v3')
+  expect(options.jsonSchema?.name).toBe('chat_narrative_outcome_v4')
   expect(options.jsonSchema?.schema.required).toEqual(['outcome', 'action', 'handoff'])
   const properties = options.jsonSchema!.schema.properties as Record<string, {anyOf: Array<{required?: string[]}>}>
   const actionShapes = properties.action.anyOf[0] as {anyOf: Array<{required: string[]}>}

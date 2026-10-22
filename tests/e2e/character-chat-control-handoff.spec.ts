@@ -22,7 +22,7 @@ async function seed(page: Page) {
     const load = new Function('p', 'return import(p)')
     const fixture = await load('/storyforge/tests/helpers/chat-narrative-fixture.ts'), api = await load('/storyforge/src/lib/character-interaction/runtime-api.ts')
     const skills = await load('/storyforge/src/lib/agent/skill-registry.ts')
-    if (skills.getAgentSkillV1('character.chat-narrative-action').promptVersion !== 'chat-narrative-action-v66'
+    if (skills.getAgentSkillV1('character.chat-narrative-action').promptVersion !== 'chat-narrative-action-v67'
       || skills.getAgentSkillV1('character.chat-narrative-action-review').promptVersion !== 'chat-narrative-action-review-v41') throw Error('unexpected default control contract')
     const f = await fixture.seedChatNarrativeRuntimeFixture({directorBudget: 30})
     const version = await api.readProductRuntimeStateVersion(f.sessionId)

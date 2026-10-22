@@ -128,6 +128,41 @@ function compactChatCompletionSchemaV1(schema: Schema): Schema {
   return compact
 }
 
+/** V67 shares only byte-identical schema subtrees. Expanded validation, field
+ * descriptions and quote requirements stay unchanged; old versions keep bytes.
+ * Each replacement must reduce the complete schema including its definition. */
+function compactChatRepeatedSchemasV2(schema: Schema): Schema {
+  let compact = structuredClone(schema)
+  const definitions = compact.$defs as Record<string, Schema>
+  const candidates: Array<[string, Schema]> = [
+    ['goal', goal], ['playerRequest', object(playerRequest)],
+    ['controlSource', object({messageId: string, sequence: integer, excerpt: string})],
+    ['goalUpdate', (definitions.goalUpdates as Schema).items as Schema],
+    ['stringList', strings], ['goalState', goalStatus],
+  ]
+  for (const [name, target] of candidates) {
+    const next = structuredClone(compact), exact = JSON.stringify(target)
+    const defs = next.$defs as Record<string, Schema>
+    if (Object.prototype.hasOwnProperty.call(defs, name)) throw new Error('[chat-output] 重复的输出结构定义')
+    let references = 0
+    const replace = (node: Schema): Schema => {
+      if (JSON.stringify(node) === exact) {references += 1; return {$ref: `#/$defs/${name}`}}
+      const fields = node.properties as Record<string, Schema> | undefined
+      if (fields) for (const [key, child] of Object.entries(fields)) fields[key] = replace(child)
+      if (node.items) node.items = replace(node.items as Schema)
+      if (Array.isArray(node.anyOf)) node.anyOf = node.anyOf.map(child => replace(child as Schema))
+      if (node.$defs) for (const [key, child] of Object.entries(node.$defs as Record<string, Schema>))
+        (node.$defs as Record<string, Schema>)[key] = replace(child)
+      return node
+    }
+    replace(next)
+    if (references < 2) continue
+    defs[name] = structuredClone(target)
+    if (JSON.stringify(next).length < JSON.stringify(compact).length) compact = next
+  }
+  return compact
+}
+
 /** Both transports have verified schema support. Other providers retain their
  * existing request contract; a rejected schema request is never auto-retried. */
 export function chatActionRequestOptionsV1(version: string | undefined, provider: AIProvider | undefined): ChatRequestOptions | undefined {
@@ -148,11 +183,17 @@ export function chatActionRequestOptionsV1(version: string | undefined, provider
     properties.audienceKeys = {...nullable({...array(string), minItems: 2, maxItems: 33}), description: 'null 表示使用提示中冻结的本轮对话听众；有意缩小时显式列出玩家、行动者及实际听众。不能填空数组，不能加对话之外的人。'}
     action.required = Object.keys(properties)
   }
-  if (version === 'chat-narrative-action-v59' || (version === 'chat-narrative-action-v60' || (version === 'chat-narrative-action-v61' || (version === 'chat-narrative-action-v62' || (version === 'chat-narrative-action-v63' || (version === 'chat-narrative-action-v64' || (version === 'chat-narrative-action-v65' || version === 'chat-narrative-action-v66'))))))) {
+  const completionVersions = ['chat-narrative-action-v59', 'chat-narrative-action-v60', 'chat-narrative-action-v61',
+    'chat-narrative-action-v62', 'chat-narrative-action-v63', 'chat-narrative-action-v64', 'chat-narrative-action-v65',
+    'chat-narrative-action-v66', 'chat-narrative-action-v67']
+  if (completionVersions.includes(version ?? '')) {
     const constrained = chatCompletionActionSchemaV1(action)
     const schema = {...chatNarrativeOutcomeSchemaV1(constrained.action, version), $defs: constrained.definitions}
-    return {jsonSchema: {name: (version === 'chat-narrative-action-v60' || (version === 'chat-narrative-action-v61' || (version === 'chat-narrative-action-v62' || (version === 'chat-narrative-action-v63' || (version === 'chat-narrative-action-v64' || (version === 'chat-narrative-action-v65' || version === 'chat-narrative-action-v66')))))) ? 'chat_narrative_outcome_v3' : 'chat_narrative_outcome_v2', strict: true,
-      schema: (version === 'chat-narrative-action-v60' || (version === 'chat-narrative-action-v61' || (version === 'chat-narrative-action-v62' || (version === 'chat-narrative-action-v63' || (version === 'chat-narrative-action-v64' || (version === 'chat-narrative-action-v65' || version === 'chat-narrative-action-v66')))))) ? compactChatCompletionSchemaV1(schema) : schema}}
+    const compact = version !== 'chat-narrative-action-v59'
+    const result = compact ? compactChatCompletionSchemaV1(schema) : schema
+    return {jsonSchema: {name: version === 'chat-narrative-action-v67' ? 'chat_narrative_outcome_v4'
+      : compact ? 'chat_narrative_outcome_v3' : 'chat_narrative_outcome_v2', strict: true,
+    schema: version === 'chat-narrative-action-v67' ? compactChatRepeatedSchemasV2(result) : result}}
   }
   const schema = ['chat-narrative-options-v28', 'chat-narrative-options-v29', 'chat-narrative-options-v30', 'chat-narrative-options-v31', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34', 'chat-narrative-options-v35', 'chat-narrative-options-v36', 'chat-narrative-options-v37', 'chat-narrative-options-v38', 'chat-narrative-options-v39', 'chat-narrative-options-v40'].includes(version ?? '')
     ? object({options: {...array(action), minItems: 2, maxItems: 2}}) : action
@@ -171,7 +212,7 @@ export const CHAT_ACTION_OUTPUT_CHECK_V1 = '输出完整候选对象，不能省
 
 export function chatActionOutputRulesV1(version: string | undefined, audience?: readonly string[]): string[] {
   if (!supportsChatActionOutputContractV1(version)) return []
-  return [...(supportsChatTurnCompletionV1(version) ? [CHAT_TURN_COMPLETION_ACTION_RULE_V1] : []), ...(['chat-narrative-action-v59', 'chat-narrative-action-v60', 'chat-narrative-action-v61', 'chat-narrative-action-v62', 'chat-narrative-action-v63', 'chat-narrative-action-v64', 'chat-narrative-action-v65', 'chat-narrative-action-v66'].includes(version ?? '') ? [CHAT_TURN_COMPLETION_OUTPUT_RULE_V1] : []), CHAT_ACTION_OUTPUT_CHECK_V1 + (usesChangeDescriptions(version)
+  return [...(supportsChatTurnCompletionV1(version) ? [CHAT_TURN_COMPLETION_ACTION_RULE_V1] : []), ...(['chat-narrative-action-v59', 'chat-narrative-action-v60', 'chat-narrative-action-v61', 'chat-narrative-action-v62', 'chat-narrative-action-v63', 'chat-narrative-action-v64', 'chat-narrative-action-v65', 'chat-narrative-action-v66', 'chat-narrative-action-v67'].includes(version ?? '') ? [CHAT_TURN_COMPLETION_OUTPUT_RULE_V1] : []), CHAT_ACTION_OUTPUT_CHECK_V1 + (usesChangeDescriptions(version)
     ? '最后逐项对照行动前状态：goalStatus 是变更指令，不是状态描述；目标继续保持 active 必须填 null，不能填 active。goalUpdates 和 threadUpdates 仅列实际变化，无变化填 []；不能因正在处理事项就重复 open。不得删除原约束、自动补后果或改写原文来规避校验。'
     : '') + (supportsChatOwnEvidenceBindingV1(version)
     ? '本次表达的 evidenceExcerpt 可填 null，由系统逐字绑定完整 text。正文超过对应摘录上限时必须填写连续逐字片段，不能省略或改写：承诺1000字、情境请求1200字、目标/关系/后续目标/暂停/转场2000字、事实/披露/事项8000字。playerExcerpt、destinationExcerpt、历史与来源事实仍必须按各自合同提供原文，不能用 null 代替。绑定原文不代表事实、授权或后果已成立，仍需原校验和独立审查。'

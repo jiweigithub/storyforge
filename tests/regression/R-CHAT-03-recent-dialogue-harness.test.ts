@@ -54,7 +54,7 @@ async function packet(projectId: number, snapshot: AgentRunSnapshotV1, stepId: s
 }
 
 it.each(cases)('preserves $producer / $reader through saved candidate, refresh, review and portable inspection', async ({producer, reader, retrieval}) => {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v66')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v67')
   freeze(producer)
   const f = await start(), before = await readProductRuntimeState(f.sessionId), worlds = await db.worldReleases.toArray()
   let modelCalls = 0, reviewCalls = 0, forbiddenCalls = 0

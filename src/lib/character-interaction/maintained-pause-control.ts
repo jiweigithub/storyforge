@@ -14,6 +14,9 @@ export interface ChatMaintainedPauseControlV1 {
   rationale: string
 }
 export const CHAT_MAINTAINED_PAUSE_PRODUCER_V1 = 'chat-narrative-action-v66'
+export function supportsChatMaintainedPauseV1(version: string | undefined): boolean {
+  return version === CHAT_MAINTAINED_PAUSE_PRODUCER_V1 || version === 'chat-narrative-action-v67'
+}
 export const CHAT_MAINTAINED_PAUSE_REVIEWER_V1 = 'chat-narrative-action-review-v41'
 export const CHAT_MAINTAINED_PAUSE_CHECKS_V1 = [
   'current-pause', 'current-opportunity', 'pending-obligations', 'available-direction', 'player-agency', 'visibility',
