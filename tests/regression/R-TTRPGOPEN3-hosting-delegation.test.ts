@@ -90,7 +90,11 @@ describe('R-TTRPGOPEN3 durable bounded hosting permission', { timeout: 60000 },(
       hostingDelegationRef: permission.sourceRef,modelIdentity: { provider: 'test-adapter',model: 'injected' } })
     const call = rt(await readProductRuntimeState(x.f.sessionId)).openRun!.coordination.calls[0],run = await readInstanceAgentRunV1(x.f.scope,prepared.runId)
     expect(call.hostingDelegationRef).toEqual(permission.sourceRef)
+    expect(call.intentRoutingVersion).toBe(2)
     expect(run.contract.runtimeBindingHash).toBe(await ttrpgOpenCallBindingHashV1({ actorKey: call.actorKey,authorizationEpochKey: call.authorizationEpochKey,
+      intentRoutingVersion: 2,
+      admissionStateHash: call.admissionStateHash,visibilityHash: call.visibilityHash,runtimeSourceHash: call.runtimeSourceHash,sessionKey: call.createdRef.sessionKey,hostingDelegationRef: permission.sourceRef }))
+    expect(run.contract.runtimeBindingHash).not.toBe(await ttrpgOpenCallBindingHashV1({ actorKey: call.actorKey,authorizationEpochKey: call.authorizationEpochKey,
       admissionStateHash: call.admissionStateHash,visibilityHash: call.visibilityHash,runtimeSourceHash: call.runtimeSourceHash,sessionKey: call.createdRef.sessionKey,hostingDelegationRef: permission.sourceRef }))
     await stopTtrpgOpenHostingV1({ ...await openEnvelopeV1(x.f.sessionId,'hosting.before-send.stop'),epochKey: x.epoch.epochKey,viewerKey: OPEN_HUMAN_VIEWER,reason: '尚未发送，撤销自动继续' })
     let sends = 0
