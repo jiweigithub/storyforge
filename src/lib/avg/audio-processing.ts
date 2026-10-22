@@ -2,7 +2,7 @@ import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '
 import { sha256MediaData } from '../product-production/media-blob-store'
 import { inspectAvgVoiceWaveV1 } from './voice-wave'
 import { avgEnum, avgHash, avgRecord } from './protocol-validation'
-import { executeAvgAudioGainPcmV1 } from './audio-gain-kernel'
+import { executeAvgAudioGainPcmV1, quantizeAvgAudioGainSampleV1 } from './audio-gain-kernel'
 import { runAvgAudioGainWorkerV1, AVG_AUDIO_WORKER_TIMEOUT_MS_V1 } from './audio-gain-worker-client'
 import { AVG_AUDIO_PCM_GAIN_PROCESSOR_V1, AVG_AUDIO_PCM_KINDS_V1, assertAvgAudioProcessingReceiptV1,
   parseAvgAudioProcessingRecipeV1, parseAvgAudioProcessingWaveObservationV1,
@@ -105,6 +105,12 @@ export async function assertAvgAudioProcessingWaveBytesV1(input: { source: Array
   const raw = new Uint8Array(source), derived = new Uint8Array(output), end = before.dataOffset + before.dataByteSize
   for (let index = 0; index < raw.length; index++) {
     if ((index < before.dataOffset || index >= end) && raw[index] !== derived[index]) throw new Error('[avg-audio-process] 加工改变了原容器或非 PCM 元数据')
+  }
+  const sourceSamples = new DataView(source), outputSamples = new DataView(output), gain = 10 ** (recipe.gainMilliDb / 20_000)
+  for (let offset = before.dataOffset; offset < end; offset += 2) {
+    if (outputSamples.getInt16(offset, true) !== quantizeAvgAudioGainSampleV1(sourceSamples.getInt16(offset, true), gain)) {
+      throw new Error('[avg-audio-process] 实际PCM样本不符合准确原件与冻结增益')
+    }
   }
   return { source: before, output: after, receipt }
 }

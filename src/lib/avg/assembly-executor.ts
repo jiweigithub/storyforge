@@ -27,6 +27,7 @@ import { assertAvgTaskHarnessClaimV1, hashAvgTaskRuntimeBindingV1 } from './task
 import { parseProductProductionPlanV3 } from '../product-production/plan'
 import { avgSoundProductionExecutionReadyV1 } from './sound-production-brief'
 import { readAvgSoundPlanningExecutionSourcesV1 } from './sound-planning-task-source'
+import { avgAudioProcessingExecutionReadyV1 } from './audio-production-brief'
 
 /** V1 remains zero-provider. Opt-in V2 image tasks use the media Harness;
  * human choices/stage stay separate from deterministic package compilation. */
@@ -34,12 +35,14 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
   mediaCapabilities?: ReadonlyMap<string, ResolvedProductMediaCapabilityV1>; imageEndpointRouteHash?: string;
   voiceTransport?: Awaited<ReturnType<typeof createConfiguredAvgVoiceTransportV1>> }): ProductProductionTaskExecutorV1 {
   const brief = structuredClone(options.brief), productionKey = options.production.productionKey
+  if (brief.avgAudioProcessing && !avgAudioProcessingExecutionReadyV1()) throw new Error('[avg-audio-process] 正式音频加工尚未就绪，不能借用旧组装执行器')
   if (brief.avgSoundPlanning && !avgSoundProductionExecutionReadyV1()) throw new Error('[avg-sound] 声音完整工作流尚未开放，不能借用旧组装执行器')
   const legacyImage = readAvgOptionalImageDefinitionV3(brief)
   const assembly=brief.avgAssembly??brief.avgVisualPlanning?.assembly??brief.avgSoundPlanning?.assembly
   return async request => {
     const startedAt = Date.now()
     if (request.signal.aborted) throw new DOMException('Aborted','AbortError')
+    if (request.task.kind === 'avg-audio-process') return (await import('./audio-processing-executor')).executeAvgAudioProcessingTaskV1(request, brief)
     const image=brief.avgVisualPlanning?await readAvgCurrentImageConsumptionDefinition({scope:request.scope,buildId:request.buildId,brief}):legacyImage
     if (brief.avgAssembly?.version === 3 && request.task.kind === 'avg-media-voice-reuse') {
       return executeAvgVoiceRecoveryTaskV1(request, { ...brief, avgAssembly: brief.avgAssembly })
@@ -108,7 +111,12 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
       ...(assembly.version === 3 ? { voiceChoices: (compiled.source.voiceChoices ?? []).map(choice => ({
         choice: choice.artifact, authorReceiptHash: choice.authorReceiptHash,
         raw: { artifactKey: choice.raw.artifactKey, version: choice.raw.version, contentHash: choice.raw.contentHash },
-        rawProducerReceiptHash: choice.raw.producerReceiptHash, responseEvidenceHash: choice.validation.responseEvidenceHash,
+        rawProducerReceiptHash: choice.raw.producerReceiptHash,
+        responseEvidenceHash: choice.validation.version === 2 ? choice.validation.original.responseEvidenceHash : choice.validation.responseEvidenceHash,
+        ...(choice.processed && choice.validation.version === 2 ? { processing: {
+          artifact: choice.validation.processed, producerReceiptHash: choice.processed.producerReceiptHash,
+          processingReceiptHash: choice.validation.processingReceiptHash, recipeHash: choice.validation.recipeHash,
+        } } : {}),
         requestIdentityHash: choice.payload.requestIdentityHash,
         audioReview: { artifact: choice.review.artifact, authorReceiptHash: choice.review.authorReceiptHash } })) } : {}),
       ...(brief.avgSoundPlanning ? { soundPlan: compiled.source.soundPlan,

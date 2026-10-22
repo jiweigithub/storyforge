@@ -1,6 +1,6 @@
 import { canonicalStringify } from '../agent/run/hash'
 import { parseAvgAuthorWorkspaceV1, type AvgAuthorWorkspaceV1 } from './author-workspace-contract'
-import { parseAvgAuthorVoiceChoiceV1, type AvgAuthorVoiceChoiceV1 } from './voice-choice-contract'
+import { parseAvgAuthorVoiceChoice, type AvgAuthorVoiceChoice } from './audio-choice-dispatch'
 import { assertAvgVoiceAssemblyRequestsV3, type AvgAssemblyBriefV3 } from './voice-assembly-contract'
 import { validateAvgVoiceProductionSourcesV1, type AvgVoiceScriptSourceV1 } from './voice-production-source'
 
@@ -12,13 +12,13 @@ export async function applyAvgVoiceChoicesToDraftV1(input: {
   workspace: AvgAuthorWorkspaceV1
   assembly: AvgAssemblyBriefV3
   sourceScripts: AvgVoiceScriptSourceV1[]
-  choices: AvgAuthorVoiceChoiceV1[]
+  choices: AvgAuthorVoiceChoice[]
   replaceableAssets?: Array<{ assetKey: string; contentHash: string }>
 }) {
   const next = parseAvgAuthorWorkspaceV1(input.workspace), { assembly, requests } = await assertAvgVoiceAssemblyRequestsV3(input.assembly)
   const batch = await validateAvgVoiceProductionSourcesV1(assembly.voice.batch, next, input.sourceScripts)
   if (!next.presentation.reading) throw new Error('[avg-voice] 请先明确阅读等待、打断和缺声策略，再配置生成配音')
-  const reading = next.presentation.reading, choices = input.choices.map(parseAvgAuthorVoiceChoiceV1)
+  const reading = next.presentation.reading, choices = input.choices.map(parseAvgAuthorVoiceChoice)
   if (choices.length !== batch.requirements.length || new Set(choices.map(choice => choice.requirementKey)).size !== choices.length) {
     throw new Error('[avg-voice] 自动配置须有本批全部准确且唯一的作者配音选择')
   }

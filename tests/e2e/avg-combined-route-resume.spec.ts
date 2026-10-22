@@ -42,6 +42,20 @@ for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 })
     await prepare(page, false, true)
     await assertCombinedToolbarInViewport(page)
+    const layout = await page.evaluate(() => {
+      const box = (selector: string) => {
+        const node = document.querySelector(selector)
+        if (!node) throw new Error(`Missing actual player region: ${selector}`)
+        const r = node.getBoundingClientRect()
+        return { top: r.top, bottom: r.bottom, width: r.width, height: r.height }
+      }
+      return { toolbar: box('.avg-toolbar'), stage: box('.avg-stage'), art: box('.avg-stage-scene'), dialogue: box('.avg-dialogue') }
+    })
+    expect(layout.stage.top).toBeGreaterThanOrEqual(layout.toolbar.bottom)
+    expect(layout.stage.height).toBeGreaterThan(844 / 2)
+    expect(layout.art.width / layout.art.height).toBeCloseTo(16 / 9, 2)
+    expect(layout.dialogue.top).toBeGreaterThanOrEqual(layout.art.bottom)
+    expect(layout.dialogue.bottom).toBeLessThanOrEqual(844)
     await page.getByRole('button', { name: '物品与证据', exact: true }).click()
     await page.getByRole('dialog', { name: '物品与证据', exact: true }).getByRole('button', { name: '关闭', exact: true }).click()
     await page.getByRole('button', { name: '历史', exact: true }).click()

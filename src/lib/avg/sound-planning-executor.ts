@@ -14,13 +14,16 @@ import { hashAvgSoundExactTextV1 } from './sound-planning-evidence'
 import { AVG_SOUND_COMPILED_KEY_V1, AVG_SOUND_PLAN_KEY_V1 } from './sound-production-plan'
 import { compileAvgSoundRequirementsV1 } from './sound-requirements'
 import { executeAvgSoundProductionTaskV1 } from './sound-production-executor'
+import { avgAudioProcessingExecutionReadyV1 } from './audio-production-brief'
 
 /** Same durable scheduler, model runner and original-response recorder. Raw
  * audio is private until observation, author choice and Stage join are ready. */
 export function createAvgSoundPlanningExecutorV1(options: { brief: ProductProductionBriefV3; runText: ProductionTextRunnerV1 }): ProductProductionTaskExecutorV1 {
   const brief = structuredClone(options.brief)
+  if (brief.avgAudioProcessing && !avgAudioProcessingExecutionReadyV1()) throw new Error('[avg-audio-process] 正式音频加工尚未就绪，不能借用原声音执行器')
   if (!brief.avgSoundPlanning) throw new Error('[avg-sound-plan] 缺少准确声音Brief')
   return async input => {
+    if (input.task.kind === 'avg-audio-process') return (await import('./audio-processing-executor')).executeAvgAudioProcessingTaskV1(input, brief)
     if (['avg-sound-music-generate', 'avg-sound-library-import'].includes(input.task.kind)) return executeAvgSoundProductionTaskV1(input, brief)
     const started = Date.now(), zero = (): ProductProductionTaskUsageV1 => ({ modelCalls: 0, mediaCalls: 0, inputTokens: 0,
       outputTokens: 0, costUsd: 0, durationMs: Date.now() - started, storageBytes: 0 })

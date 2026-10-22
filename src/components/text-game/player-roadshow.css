@@ -251,6 +251,16 @@
   .avg-panel .avg-saves article { align-items: flex-start; flex-direction: column; }
 }
 
+/* Portrait reading keeps the authored art frame above the dialogue. Reserve
+ * actual space for wrapped controls instead of overlaying a short 16:9 stage. */
+@media (max-width: 760px) and (orientation: portrait) {
+  .avg-playing .avg-main { display: flex; flex-direction: column; }
+  .avg-playing .avg-toolbar { position: relative; flex: none; padding: 12px 13px; }
+  .avg-playing .avg-stage { position: relative; inset: auto; flex: 1; width: 100%; }
+  .avg-playing .avg-stage-scene { inset: 0 0 auto; aspect-ratio: inherit; }
+  .avg-playing .avg-scene-title { top: 16px; padding: 12px 18px; }
+}
+
 /* Branching story player v2: book-like presentation with the library outside active play. */
 
 

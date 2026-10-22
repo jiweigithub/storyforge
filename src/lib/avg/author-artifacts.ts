@@ -32,17 +32,20 @@ import { parseAvgAuthorMediaChoice, avgMediaChoiceArtifactKeyV1, avgVisualReview
 import { inspectAvgChosenImageV1, inspectAvgChosenImageBytesV1, validateAvgMediaChoiceV1, type AvgMediaChoiceValidation } from './media-choice-validation'
 import type { AvgInspectedProcessedImageV1 } from './image-processing-source'
 import type { AvgVisualProductionRequirementV2 } from './media-production-contract-v2'
-import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1, verifyAvgProcessedImageArtifactV1, verifyAvgHistoricalRawVoiceArtifactV1, verifyHistoricalAvgVisualPlanningArtifactV4, verifyHistoricalAvgVisualPlanningArtifactV5, verifyHistoricalAvgImageRevalidationProducerV1 } from '../product-production/artifact-store'
+import { verifyAcceptedProductBuildArtifactV1, verifyAvgReferenceRawImageArtifactV1, verifyAvgProcessedImageArtifactV1, verifyAvgHistoricalRawVoiceArtifactV1, verifyHistoricalAvgAudioProcessingProducerV1, verifyHistoricalAvgVisualPlanningArtifactV4, verifyHistoricalAvgVisualPlanningArtifactV5, verifyHistoricalAvgImageRevalidationProducerV1 } from '../product-production/artifact-store'
 import { assertAvgRawImageOriginV1 } from './media-recovery'
 import { readAvgInheritedStageImagesV1 } from './stage-image-sources'
 import { readAvgInheritedStageVoicesV1 } from './stage-voice-sources'
 import { assertAvgVisualReviewSelectableV1, assertAvgVisualReviewRevisionV1, validateAvgAuthorVisualReviewV1, validateAvgAuthorVisualReviewFromSourceV1 } from './visual-review'
-import { parseAvgAuthorVoiceChoiceV1, type AvgAuthorVoiceChoiceV1 } from './voice-choice-contract'
+import { parseAvgAuthorVoiceChoiceV1 } from './voice-choice-contract'
+import { parseAvgAuthorVoiceChoice, type AvgAuthorVoiceChoice } from './audio-choice-dispatch'
+import { readAvgChosenVoiceSource, readAvgFrozenChosenVoiceSourceV2, type AvgVoiceChoiceValidationV2 } from './voice-choice-consumption'
+import { readAvgCurrentProcessedAudioSourceV1 } from './processed-audio-consumption'
 import { assertAvgStoredAssemblyBriefV3 } from './voice-assembly-storage'
 import { AVG_VOICE_CAPABILITY_REQUIREMENT_KEY_V1, avgVoiceChoiceArtifactKeyV1, avgVoiceReviewArtifactKeyV1 } from './voice-assembly-contract'
-import { bindAvgVoiceChoiceToSourceV1, readAvgChosenVoiceSourceV1, readAvgRawVoiceSourceV1, type AvgVoiceChoiceValidationV1 } from './voice-choice-validation'
+import { bindAvgVoiceChoiceToSourceV1, readAvgRawVoiceSourceV1, type AvgVoiceChoiceValidationV1 } from './voice-choice-validation'
 import { parseAvgRetainedVoiceProofV1 } from './voice-recovery-contract'
-import { assertAvgVoiceReviewRevisionV1, assertAvgVoiceReviewScopeV1, assertAvgVoiceReviewSelectableV1 } from './voice-review'
+import { assertAvgVoiceReviewRevisionV1, assertAvgVoiceReviewScopeV1, assertAvgVoiceReviewMeasuredScopeV1, assertAvgVoiceReviewMeasuredSelectableV1 } from './voice-review'
 import { readAvgOptionalImageDefinitionV3 } from './media-production-definition'
 import { validateAvgVisualAuthorProposalV5 } from './visual-planning-author-v5'
 import { assertAvgVisualRoleProposalV4, validateAvgVisualSemanticV4 } from './visual-role-proposal'
@@ -67,7 +70,8 @@ type AuthorCandidateBody = AuthorCandidateBase & ({ version: 1 } | { version: 2;
   | { version: 4; mediaChoiceValidation: AvgMediaChoiceValidation } | { version: 5; voiceChoiceValidation: AvgVoiceChoiceValidationV1 }
   | { version: 6 | 7; visualProposalValidation: AvgVisualProposalValidationV4 }
   | { version: 8; soundProposalValidation: AvgSoundProposalValidationV1 }
-  | { version: 9; soundChoiceValidation: AvgSoundChoiceValidationV1 })
+  | { version: 9; soundChoiceValidation: AvgSoundChoiceValidationV1 }
+  | { version: 10; voiceChoiceValidation: AvgVoiceChoiceValidationV2 })
 interface AvgSoundProposalValidationV1 { proposal: Ref; scopeHash: string; originalPayloadHash: string; authorEdited: boolean }
 interface AvgVisualProposalValidationV4 { proposal: Ref; scopeHash: string; originalPayloadHash: string; authorEdited: boolean; reuseSourceHash?:string }
 type AuthorCandidate = AuthorCandidateBody & { candidateHash: string }
@@ -97,7 +101,7 @@ function validateSystem(value: unknown) {
     : validateAvgSystemPlanForAuthorV1(value)
 }
 
-type AuthorPayload = AvgProfessionalArtifactV1 | AvgAuthorStageV1 | AvgAuthorMediaChoice | AvgAuthorVoiceChoiceV1 | AvgReviewIssuesV2 | AvgSoundReviewIssuesV3 | AvgAuthorSoundChoiceV1
+type AuthorPayload = AvgProfessionalArtifactV1 | AvgAuthorStageV1 | AvgAuthorMediaChoice | AvgAuthorVoiceChoice | AvgReviewIssuesV2 | AvgSoundReviewIssuesV3 | AvgAuthorSoundChoiceV1
 function prepareAuthorInput(input: Parameters<typeof prepareAvgProfessionalArtifactV1>[0]): { payload: AuthorPayload; payloadJson: string } {
   if (input.artifactKey.startsWith('avg.review.audio.') && (avgProtocolBody(input.payload) as { version?: unknown })?.version === 3) {
     const payload = parseAvgAuthorSoundReviewV3(input.payload)
@@ -118,7 +122,7 @@ function prepareAuthorInput(input: Parameters<typeof prepareAvgProfessionalArtif
     return {payload,payloadJson:canonicalProductProductionJsonV2(payload)}
   }
   if (input.artifactKey.startsWith('avg.voice.choice.')) {
-    const payload = parseAvgAuthorVoiceChoiceV1(input.payload)
+    const payload = parseAvgAuthorVoiceChoice(input.payload)
     if (input.kind !== 'presentation' || input.artifactKey !== avgVoiceChoiceArtifactKeyV1(payload.requirementKey)
       || !input.allowedOutputKeys.includes(input.artifactKey)) throw new Error('[avg-voice] 作者配音选择超出冻结输出域')
     return { payload, payloadJson: canonicalProductProductionJsonV2(payload) }
@@ -134,7 +138,7 @@ function prepareAuthorInput(input: Parameters<typeof prepareAvgProfessionalArtif
   const payload = parseAvgAuthorStageV1(input.payload)
   return { payload, payloadJson: canonicalProductProductionJsonV2(payload) }
 }
-async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, scope: WorkspaceScope, payload: AuthorPayload, inputs: ProductBuildArtifactRecordV1[]) {
+async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, scope: WorkspaceScope, payload: AuthorPayload, inputs: ProductBuildArtifactRecordV1[], frozenVerification = false) {
   if (payload.schema !== 'storyforge.avg.author-stage') return undefined
   const generated = new Map<string, { asset: AvgAuthorMediaChoice['asset']; blobObjectId: number }>()
   const a = context.brief.avgAssembly
@@ -179,13 +183,13 @@ async function validateAssembly(context: Awaited<ReturnType<typeof authority>>, 
     for (const r of voice.assembly.voice.batch.requirements) {
       const row = choices.find(row => row.artifactKey === avgVoiceChoiceArtifactKeyV1(r.requirementKey))
       if (!row) throw new Error('[avg-voice] 演出缺少准确需求的配音选择')
-      const choice = parseAvgAuthorVoiceChoiceV1(row.payloadJson)
-      const selected = await readAvgChosenVoiceSourceV1({ scope, buildId: context.build.id!, ...voice, choice })
+      const choice = parseAvgAuthorVoiceChoice(row.payloadJson)
+      const selected = await readVoiceChoiceForContext(context, scope, voice, choice, frozenVerification)
       const review = await readChoiceVoiceReview(context, scope, choice, selected)
       const task = context.plan.tasks.find(task => task.taskKey === `avg.author.voice-choice.${r.requirementKey}`)
       if (!task || task.kind !== 'avg-author-voice-choice') throw new Error('[avg-voice] 演出配音选择任务不存在')
-      const candidate = await assertFrozenAuthorCandidateV1(context, row, task, [selected.raw, review.row], context.build.controlEpoch)
-      if (candidate.version !== 5 || canonicalProductProductionJsonV2(candidate.voiceChoiceValidation) !== canonicalProductProductionJsonV2(selected.validation)) throw new Error('[avg-voice] 演出配音选择缺少准确字节采用回执')
+      const candidate = await assertFrozenAuthorCandidateV1(context, row, task, [selected.raw, review.row, ...(selected.processed ? [selected.processed] : [])], context.build.controlEpoch)
+      if ((candidate.version !== 5 && candidate.version !== 10) || candidate.version !== (selected.validation.version === 2 ? 10 : 5) || canonicalProductProductionJsonV2(candidate.voiceChoiceValidation) !== canonicalProductProductionJsonV2(selected.validation)) throw new Error('[avg-voice] 演出配音选择缺少准确字节采用回执')
       const expectedVoice = { lineKey: r.lineKey, assetKey: r.assetKey, text: r.text, textRevision: r.textRevision,
         speakerKey: r.speakerKey, locale: r.locale }
       const binding = payload.reading.voices.filter(v => v.lineKey === r.lineKey)
@@ -280,7 +284,7 @@ async function authority(scope: WorkspaceScope, buildId: number, forCompilation 
   const briefRow = await db.productProductionBriefs.where('[productionId+revision]').equals([production.id, build.briefRevision]).first()
   if (!briefRow || !await assertRecordInScope(scope, 'productProductionBriefs', briefRow, { owner: 'work' })) throw new Error('[avg] Brief 授权已 stale')
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
-  if (!(referenceRead || frozenVerification && (!!brief.avgSoundPlanning || brief.avgVisualPlanning?.version === 5) ? ['authorized','superseded'] : ['authorized']).includes(briefRow.status) || briefRow.authorizedAt !== build.authorizedAt
+  if (!(referenceRead || frozenVerification && (!!brief.avgSoundPlanning || brief.avgVisualPlanning?.version === 5 || !!brief.avgAudioProcessing) ? ['authorized','superseded'] : ['authorized']).includes(briefRow.status) || briefRow.authorizedAt !== build.authorizedAt
     || briefRow.briefHash !== build.briefHash || !frozenVerification && !referenceRead && production.currentBriefRevision !== build.briefRevision) throw new Error('[avg] Brief 授权已 stale')
   if (brief.intent.productType !== 'avg' || await hash(brief) !== build.briefHash) throw new Error('[avg] Brief 内容/hash 不一致')
   if (frozenVerification && !brief.avgAssembly&&!brief.avgVisualPlanning&&!brief.avgSoundPlanning) throw new Error('[avg] 只读作者验证只接受原生组装合同')
@@ -320,7 +324,7 @@ async function acceptedInputs(scope: WorkspaceScope, buildId: number, epoch: num
   const result: ProductBuildArtifactRecordV1[] = []
   for (const key of keys) {
     const matches = rows.filter(row => row.artifactKey === key && row.status === 'accepted' && row.controlEpoch === epoch)
-    if (key.startsWith('avg.media.raw.')||key.startsWith('avg.media.processed.')||key.startsWith('avg.voice.raw.')||key.startsWith('avg.sound.raw.')||key.startsWith('avg.proposal.')||key==='avg.media.compiled-visual-requirements'||key==='avg.media.compiled-sound-requirements') {
+    if (key.startsWith('avg.media.raw.')||key.startsWith('avg.media.processed.')||key.startsWith('avg.voice.raw.')||key.startsWith('avg.voice.processed.')||key.startsWith('avg.sound.raw.')||key.startsWith('avg.sound.processed.')||key.startsWith('avg.proposal.')||key==='avg.media.compiled-visual-requirements'||key==='avg.media.compiled-sound-requirements') {
       const row = matches[0]
       if (matches.length !== 1 || !row) throw new Error('[avg-media] 原图未准确接收')
       const verified = await verifyAcceptedProductBuildArtifactV1({ scope, buildId, artifactKey: key, version: row.version, contentHash: row.contentHash })
@@ -333,6 +337,30 @@ async function acceptedInputs(scope: WorkspaceScope, buildId: number, epoch: num
       || await hash(JSON.parse(matches[0]!.payloadJson)) !== matches[0]!.contentHash) throw new Error(`[avg] 上游未采用或内容已 stale:${key}`)
     await assertAuthorAdoptionReceipt(scope, matches[0]!)
     result.push(matches[0]!)
+  }
+  return result
+}
+
+/** Frozen author audit only. Imported producer Runs are deliberately staled;
+ * retain their actual completed prefix rather than granting current producer
+ * acceptance. Current staging/adoption continues to use acceptedInputs. */
+async function frozenAuthorInputs(context: Awaited<ReturnType<typeof authority>>, scope: WorkspaceScope, epoch: number, keys: string[]) {
+  if (!context.brief.avgAudioProcessing || context.brief.avgAssembly?.version !== 3) {
+    return acceptedInputs(scope, context.build.id!, epoch, keys)
+  }
+  const result: ProductBuildArtifactRecordV1[] = []
+  const frozen = { scope, buildId: context.build.id!, expectedBuildRevision: context.build.stateRevision,
+    expectedBriefHash: context.build.briefHash, expectedPlanHash: context.build.planHash, sourceControlEpoch: epoch }
+  for (const key of keys) {
+    const original = key.startsWith('avg.voice.raw.')
+    const derived = context.brief.avgAudioProcessing.entries.some(e => e.domain === 'voice' && key === `avg.voice.processed.${e.requirementKey}`)
+    if (!original && !derived) { result.push(...await acceptedInputs(scope, context.build.id!, epoch, [key])); continue }
+    const matches = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([context.build.id!, key])
+      .filter(row => row.status === 'accepted' && row.controlEpoch === epoch).limit(2).toArray()
+    if (matches.length !== 1) throw new Error('[avg-audio-process] 冻结作者输入缺少唯一原音频或加工版本')
+    const input = { ...frozen, ...ref(matches[0]!) }
+    result.push(original ? (await verifyAvgHistoricalRawVoiceArtifactV1(input)).artifact
+      : (await verifyHistoricalAvgAudioProcessingProducerV1(input)).artifact)
   }
   return result
 }
@@ -397,10 +425,17 @@ async function validateVisualReviewInput(context:Awaited<ReturnType<typeof autho
   if (payload.schema === 'storyforge.avg.review-issues' && payload.version === 3) throw new Error('[avg-sound-review] 声音观察不能借用其他产品合同')
   if(payload.schema!=='storyforge.avg.review-issues'||!context.brief.avgAssembly&&!context.brief.avgVisualPlanning)return
   if (payload.audioEvidence || inputs.some(row => row.artifactKey.startsWith('avg.voice.raw.'))) {
-    if (inputs.length !== 1 || inputs[0]!.artifactKey !== `avg.voice.raw.${payload.targetKey}`) throw new Error('[avg-voice] 审听缺少准确的原始音频依赖')
+    const entry = context.brief.avgAudioProcessing?.entries.find(e => e.domain === 'voice' && e.requirementKey === payload.targetKey)
+    if (inputs.length !== (entry ? 2 : 1) || inputs[0]!.artifactKey !== `avg.voice.raw.${payload.targetKey}`
+      || entry && inputs[1]!.artifactKey !== `avg.voice.processed.${payload.targetKey}`) throw new Error('[avg-voice] 审听缺少准确原音频与冻结加工依赖')
     const voice = await readVoiceDefinition(context)
     const selected = await readAvgRawVoiceSourceV1({ scope, buildId: context.build.id!, ...voice, raw: ref(inputs[0]!) })
-    assertAvgVoiceReviewScopeV1(payload, selected.payload)
+    if (entry) {
+      const derived = await readAvgCurrentProcessedAudioSourceV1({ scope, buildId: context.build.id!, domain: 'voice',
+        requirementKey: payload.targetKey, raw: ref(inputs[0]!), processed: ref(inputs[1]!) })
+      assertAvgVoiceReviewMeasuredScopeV1(payload, { requirement: selected.payload.requirement,
+        requestIdentityHash: selected.payload.request.identityHash, audio: { contentHash: derived.asset.contentHash, durationMs: derived.asset.durationMs! } })
+    } else assertAvgVoiceReviewScopeV1(payload, selected.payload)
     return
   }
   const processed=(context.brief.avgVisualPlanning?.imageProcessing??readAvgOptionalImageDefinitionV3(context.brief)?.imageProcessing)?.entries.some(e=>e.requirementKey===payload.targetKey)
@@ -420,25 +455,37 @@ async function readVoiceDefinition(context: Awaited<ReturnType<typeof authority>
 }
 
 async function readChoiceVoiceReview(context: Awaited<ReturnType<typeof authority>>, scope: WorkspaceScope,
-  choice: AvgAuthorVoiceChoiceV1, selected: Awaited<ReturnType<typeof readAvgChosenVoiceSourceV1>>, epoch = context.build.controlEpoch) {
+  choice: AvgAuthorVoiceChoice, selected: Pick<Awaited<ReturnType<typeof readAvgRawVoiceSourceV1>>, 'raw' | 'payload' | 'asset'> & { processed?: ProductBuildArtifactRecordV1 }, epoch = context.build.controlEpoch) {
   const key = avgVoiceReviewArtifactKeyV1(choice.requirementKey)
   const [row] = await acceptedInputs(scope, context.build.id!, epoch, [key])
   const task = context.plan.tasks.find(t => t.taskKey === `avg.author.voice-review.${choice.requirementKey}`)
   if (!task || task.kind !== 'avg-author-voice-review' || task.executionMode !== 'human-import' || task.skillId !== null
     || row.kind !== 'quality-report' || canonicalProductProductionJsonV2(task.outputArtifactKeys) !== canonicalProductProductionJsonV2([key])
-    || canonicalProductProductionJsonV2(task.inputArtifactKeys) !== canonicalProductProductionJsonV2([selected.raw.artifactKey])
+    || canonicalProductProductionJsonV2(task.inputArtifactKeys) !== canonicalProductProductionJsonV2([selected.raw.artifactKey, ...(selected.processed ? [selected.processed.artifactKey] : [])])
     || canonicalProductProductionJsonV2(choice.review) !== canonicalProductProductionJsonV2(ref(row))) {
     throw new Error('[avg-voice] 选择未绑定准确且已采用的审听任务或版本')
   }
-  await assertFrozenAuthorCandidateV1(context, row, task, [selected.raw], epoch)
-  const report = assertAvgVoiceReviewSelectableV1(row.payloadJson, selected.payload)
+  await assertFrozenAuthorCandidateV1(context, row, task, [selected.raw, ...(selected.processed ? [selected.processed] : [])], epoch)
+  const report = assertAvgVoiceReviewMeasuredSelectableV1(row.payloadJson, { requirement: selected.payload.requirement,
+    requestIdentityHash: selected.payload.request.identityHash, audio: { contentHash: selected.asset.contentHash, durationMs: selected.asset.durationMs! } })
   return { row, payload: report, artifact: ref(row), authorReceiptHash: String(JSON.parse(row.metadataJson).receiptHash) }
+}
+
+/** Only the existing frozen author verifier selects this read-only mode.
+ * Staging/adoption commands continue through the current producer reader. */
+function readVoiceChoiceForContext(context: Awaited<ReturnType<typeof authority>>, scope: WorkspaceScope,
+  voice: Awaited<ReturnType<typeof readVoiceDefinition>>, choice: AvgAuthorVoiceChoice, frozenVerification = false) {
+  const request = { scope, buildId: context.build.id!, ...voice, choice }
+  return frozenVerification && choice.version === 2
+    ? readAvgFrozenChosenVoiceSourceV2({ ...request, frozen: { expectedBuildRevision: context.build.stateRevision,
+      expectedBriefHash: context.build.briefHash, expectedPlanHash: context.build.planHash, sourceControlEpoch: context.plan.controlEpoch } })
+    : readAvgChosenVoiceSource(request)
 }
 
 async function validateVoiceChoice(context: Awaited<ReturnType<typeof authority>>, scope: WorkspaceScope, payload: AuthorPayload) {
   if (payload.schema !== 'storyforge.avg.voice-choice') return undefined
   const voice = await readVoiceDefinition(context)
-  const selected = await readAvgChosenVoiceSourceV1({ scope, buildId: context.build.id!, ...voice, choice: payload })
+  const selected = await readAvgChosenVoiceSource({ scope, buildId: context.build.id!, ...voice, choice: payload })
   await readChoiceVoiceReview(context, scope, payload, selected)
   return selected.validation
 }
@@ -513,7 +560,7 @@ async function readCurrentChoiceVisualReview(context:Awaited<ReturnType<typeof a
 
 function candidateBody(context: Awaited<ReturnType<typeof authority>>, input: {
   taskKey: string; artifactKey: string; kind: ProductBuildArtifactRecordV1['kind']; payloadHash: string
-  base: Ref | null; inputs: Ref[]; declaration: string; systemValidation?: AvgSystemValidationV1; assemblyValidation?: AvgAssemblyValidationV1; mediaChoiceValidation?: AvgMediaChoiceValidation; voiceChoiceValidation?: AvgVoiceChoiceValidationV1; visualProposalValidation?: AvgVisualProposalValidationV4; soundProposalValidation?: AvgSoundProposalValidationV1; soundChoiceValidation?: AvgSoundChoiceValidationV1
+  base: Ref | null; inputs: Ref[]; declaration: string; systemValidation?: AvgSystemValidationV1; assemblyValidation?: AvgAssemblyValidationV1; mediaChoiceValidation?: AvgMediaChoiceValidation; voiceChoiceValidation?: AvgVoiceChoiceValidationV1 | AvgVoiceChoiceValidationV2; visualProposalValidation?: AvgVisualProposalValidationV4; soundProposalValidation?: AvgSoundProposalValidationV1; soundChoiceValidation?: AvgSoundChoiceValidationV1
 }): AuthorCandidateBody {
   const { systemValidation, assemblyValidation, mediaChoiceValidation, voiceChoiceValidation, visualProposalValidation, soundProposalValidation, soundChoiceValidation, ...payload } = input
   const base: AuthorCandidateBase = { schema: 'storyforge.avg.author-candidate', origin: visualProposalValidation?.reuseSourceHash?'history-reuse':visualProposalValidation || soundProposalValidation ? 'model-proposal' : 'author-import',
@@ -522,7 +569,7 @@ function candidateBody(context: Awaited<ReturnType<typeof authority>>, input: {
     confirmedBriefHash: context.briefRow.confirmedBriefHash, sourcePlanHash: context.briefRow.sourcePlanHash,
     planRevision: context.build.planRevision, planHash: context.build.planHash, controlEpoch: context.build.controlEpoch,
     ...payload }
-  return soundChoiceValidation ? { ...base, version: 9, soundChoiceValidation } : soundProposalValidation ? { ...base, version: 8, soundProposalValidation } : visualProposalValidation ? { ...base, version: visualProposalValidation.reuseSourceHash?7:6, visualProposalValidation } : voiceChoiceValidation ? { ...base, version: 5, voiceChoiceValidation } : mediaChoiceValidation ? { ...base, version: 4, mediaChoiceValidation } : assemblyValidation ? { ...base, version: 3, assemblyValidation } : systemValidation ? { ...base, version: 2, systemValidation } : { ...base, version: 1 }
+  return soundChoiceValidation ? { ...base, version: 9, soundChoiceValidation } : soundProposalValidation ? { ...base, version: 8, soundProposalValidation } : visualProposalValidation ? { ...base, version: visualProposalValidation.reuseSourceHash?7:6, visualProposalValidation } : voiceChoiceValidation ? voiceChoiceValidation.version === 2 ? { ...base, version: 10, voiceChoiceValidation } : { ...base, version: 5, voiceChoiceValidation } : mediaChoiceValidation ? { ...base, version: 4, mediaChoiceValidation } : assemblyValidation ? { ...base, version: 3, assemblyValidation } : systemValidation ? { ...base, version: 2, systemValidation } : { ...base, version: 1 }
 }
 
 async function validateVisualProposal(context: Awaited<ReturnType<typeof authority>>, payload: AuthorPayload, artifactKey: string, inputs: ProductBuildArtifactRecordV1[]) {
@@ -746,7 +793,7 @@ async function readAuthorInputs(input: {
       for (const task of context.plan.tasks.filter(task => task.executionMode === 'human-import'
         && (!soundPrefixOnly || ['avg-author-rules', 'avg-author-script'].includes(task.kind)))) {
         const [row] = await acceptedInputs(scope, input.buildId, input.controlEpoch, task.outputArtifactKeys)
-        const upstream = await acceptedInputs(scope, input.buildId, input.controlEpoch, task.inputArtifactKeys)
+        const upstream = await frozenAuthorInputs(context, scope, input.controlEpoch, task.inputArtifactKeys)
         await assertFrozenAuthorCandidateV1(context, row, task, upstream, input.controlEpoch)
       }
     }
@@ -785,23 +832,23 @@ async function readAuthorInputs(input: {
         mediaChoices.push({ payload, artifact: ref(row), authorReceiptHash: receipt.receiptHash, raw: selected.raw,image:selected.image,processed:selected.processed,...(review?{review}:{}) })
       }
     }
-    const voiceChoices: Array<{ payload: AvgAuthorVoiceChoiceV1; artifact: Ref; authorReceiptHash: string;
-      raw: ProductBuildArtifactRecordV1; blobObjectId: number; validation: AvgVoiceChoiceValidationV1;
+    const voiceChoices: Array<{ payload: AvgAuthorVoiceChoice; artifact: Ref; authorReceiptHash: string;
+      raw: ProductBuildArtifactRecordV1; processed?: ProductBuildArtifactRecordV1; blobObjectId: number; validation: AvgVoiceChoiceValidationV1 | AvgVoiceChoiceValidationV2;
       review: Awaited<ReturnType<typeof readChoiceVoiceReview>> }> = []
     if ((input.includeAuthorStage || input.includeVoiceChoices) && context.brief.avgAssembly?.version === 3) {
       const voice = await readVoiceDefinition(context)
       const rows = await acceptedInputs(scope, input.buildId, input.controlEpoch,
         voice.assembly.voice.batch.requirements.map(r => avgVoiceChoiceArtifactKeyV1(r.requirementKey)))
       for (const row of rows) {
-        const payload = parseAvgAuthorVoiceChoiceV1(row.payloadJson)
-        const selected = await readAvgChosenVoiceSourceV1({ scope, buildId: input.buildId, ...voice, choice: payload })
+        const payload = parseAvgAuthorVoiceChoice(row.payloadJson)
+        const selected = await readVoiceChoiceForContext(context, scope, voice, payload, frozenVerification)
         const review = await readChoiceVoiceReview(context, scope, payload, selected)
         const task = context.plan.tasks.find(task => task.taskKey === `avg.author.voice-choice.${payload.requirementKey}`)
         if (!task || task.kind !== 'avg-author-voice-choice') throw new Error('[avg-voice] 已采用配音缺少准确选择任务')
-        const candidate = await assertFrozenAuthorCandidateV1(context, row, task, [selected.raw, review.row], input.controlEpoch)
-        if (candidate.version !== 5 || canonicalProductProductionJsonV2(candidate.voiceChoiceValidation) !== canonicalProductProductionJsonV2(selected.validation)) throw new Error('[avg-voice] 已采用配音的来源或测量已 stale')
+        const candidate = await assertFrozenAuthorCandidateV1(context, row, task, [selected.raw, review.row, ...(selected.processed ? [selected.processed] : [])], input.controlEpoch)
+        if ((candidate.version !== 5 && candidate.version !== 10) || candidate.version !== (selected.validation.version === 2 ? 10 : 5) || canonicalProductProductionJsonV2(candidate.voiceChoiceValidation) !== canonicalProductProductionJsonV2(selected.validation)) throw new Error('[avg-voice] 已采用配音的来源或测量已 stale')
         voiceChoices.push({ payload, artifact: ref(row), authorReceiptHash: String(JSON.parse(row.metadataJson).receiptHash),
-          raw: selected.raw, blobObjectId: selected.blobObjectId, validation: selected.validation, review })
+          raw: selected.raw, processed: selected.processed, blobObjectId: selected.blobObjectId, validation: selected.validation, review })
       }
     }
     const soundChoices = input.includeAuthorStage && context.brief.avgSoundPlanning ? await readAvgConfirmedSoundChoicesV1(input, frozenVerification) : []
@@ -816,7 +863,7 @@ async function readAuthorInputs(input: {
       const choiceRows = mediaChoices.length ? await acceptedInputs(scope, input.buildId, input.controlEpoch, mediaChoices.map(row => row.artifact.artifactKey)) : []
       const voiceRows = voiceChoices.length ? await acceptedInputs(scope, input.buildId, input.controlEpoch, voiceChoices.map(row => row.artifact.artifactKey)) : []
       const soundRows = soundChoices.length ? await acceptedInputs(scope, input.buildId, input.controlEpoch, soundChoices.map(row => row.artifact.artifactKey)) : []
-      const validation = await validateAssembly(context, scope, payload, [artifact, ...scriptRows, ...choiceRows, ...voiceRows, ...soundRows])
+      const validation = await validateAssembly(context, scope, payload, [artifact, ...scriptRows, ...choiceRows, ...voiceRows, ...soundRows], frozenVerification)
       if (!validation || stageReceipt.candidate.version !== 3
         || canonicalProductProductionJsonV2(stageReceipt.candidate.assemblyValidation) !== canonicalProductProductionJsonV2(validation)) throw new Error('[avg] 作者演出组装证据缺失或 stale')
       authorStage = { payload, artifact: ref(stageRow), authorReceiptHash: stageReceipt.receiptHash, validation }

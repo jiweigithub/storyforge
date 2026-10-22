@@ -190,6 +190,7 @@ export default function VoiceProductionPanel(props: PanelProps) {
       {batch.requirements.map(r => { const raw = accepted(avgRawVoiceArtifactKeyV1(r.requirementKey)); return <article className="avg-assembly-candidate" key={r.requirementKey}>
         <p>{r.text}</p>{raw ? <><button className="lf-action" disabled={formPending || reviewPending || recoveryPending} onClick={() => setExpanded(expanded === r.requirementKey ? '' : r.requirementKey)}>查看并审听此句</button>
           {expanded === r.requirementKey && <VoiceCandidate scope={scope} productionId={productionId} row={raw}
+            processed={accepted(`avg.voice.processed.${r.requirementKey}`)}
             review={accepted(avgVoiceReviewArtifactKeyV1(r.requirementKey))} pendingReview={pending(avgVoiceReviewArtifactKeyV1(r.requirementKey))}
             choice={accepted(avgVoiceChoiceArtifactKeyV1(r.requirementKey))} pendingChoice={pending(avgVoiceChoiceArtifactKeyV1(r.requirementKey))}
             disabled={disabled || !visible || formPending || recoveryPending || generating} canAdopt={canAdopt} declaration={declaration}

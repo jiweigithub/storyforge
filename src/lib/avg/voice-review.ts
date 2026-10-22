@@ -15,12 +15,23 @@ export function parseAvgAuthorVoiceReviewV1(value: unknown) {
 }
 
 export function assertAvgVoiceReviewScopeV1(value: unknown, raw: AvgRawVoicePayloadV1) {
+  return assertAvgVoiceReviewMeasuredScopeV1(value, { requirement: raw.requirement,
+    requestIdentityHash: raw.request.identityHash, audio: raw.measurement })
+}
+
+/** The caller supplies the actually proved selected clip. Original and
+ * processed audio require separate exact-hash observations; this assessment
+ * helper grants no byte, producer, author or playback authority. */
+export function assertAvgVoiceReviewMeasuredScopeV1(value: unknown, source: {
+  requirement: AvgRawVoicePayloadV1['requirement']; requestIdentityHash: string
+  audio: { contentHash: string; durationMs: number }
+}) {
   const report = parseAvgAuthorVoiceReviewV1(value), evidence = report.audioEvidence!
-  const r = raw.requirement, a = evidence.audition
+  const r = source.requirement, a = evidence.audition
   const locations = new Set([r.requirementKey, r.assetKey, r.lineKey, r.sceneKey, r.speakerKey])
-  if (report.targetKey !== r.requirementKey || evidence.requestIdentityHash !== raw.request.identityHash
-    || evidence.audioHash !== null && evidence.audioHash !== raw.measurement.contentHash
-    || a !== null && Math.abs(a.durationMs - raw.measurement.durationMs) > 1
+  if (report.targetKey !== r.requirementKey || evidence.requestIdentityHash !== source.requestIdentityHash
+    || evidence.audioHash !== null && evidence.audioHash !== source.audio.contentHash
+    || a !== null && Math.abs(a.durationMs - source.audio.durationMs) > 1
     || report.issues.some(issue => !locations.has(issue.locationKey))) {
     throw new Error('[avg-voice] 审听不属于准确音频、台词、音色或演法修订')
   }
@@ -42,7 +53,12 @@ export function assertAvgVoiceReviewScopeV1(value: unknown, raw: AvgRawVoicePayl
 }
 
 export function assertAvgVoiceReviewSelectableV1(value: unknown, raw: AvgRawVoicePayloadV1) {
-  const report = assertAvgVoiceReviewScopeV1(value, raw)
+  return assertAvgVoiceReviewMeasuredSelectableV1(value, { requirement: raw.requirement,
+    requestIdentityHash: raw.request.identityHash, audio: raw.measurement })
+}
+
+export function assertAvgVoiceReviewMeasuredSelectableV1(value: unknown, source: Parameters<typeof assertAvgVoiceReviewMeasuredScopeV1>[1]) {
+  const report = assertAvgVoiceReviewMeasuredScopeV1(value, source)
   if (!report.observations.includes('audio') || report.unobserved.length
     || report.audioEvidence!.checks.some(check => check.result !== 'pass') || report.issues.some(issue => issue.severity === 'blocking')) {
     throw new Error('[avg-voice] 审听仍有未知、失败或 blocking 问题，须返修并重新审听后再选择')

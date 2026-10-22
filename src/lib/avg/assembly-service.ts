@@ -20,7 +20,8 @@ import { avgVoiceProductionBudgetV3, avgVoiceProductionDataClassesV3 } from './v
 import { readAvgRawVoiceSourceV1 } from './voice-choice-validation'
 import { applyAvgVoiceChoicesToDraftV1 } from './voice-configuration'
 import { assertAvgNoUnresolvedVoiceRequestsV1 } from './voice-request-safety'
-import type { AvgAuthorVoiceChoiceV1 } from './voice-choice-contract'
+import type { AvgAuthorVoiceChoice } from './audio-choice-dispatch'
+import { readAvgCurrentProcessedAudioSourceV1 } from './processed-audio-consumption'
 import { listAvgDraftMediaV1, saveAvgAuthorWorkspaceV1 } from './editor-service'
 import { parseProductProductionPlanV3 } from '../product-production/plan'
 import { assertAvgMediaConsumerDeclarationsV1, validateAvgVisualProductionBatchSourceV1 } from './media-source'
@@ -446,9 +447,42 @@ export async function readAvgRawVoiceCandidateV3(input: { scope: WorkspaceScope;
     sourceKey: `${input.scope.workId}:${buildId}:${build.controlEpoch}:${selected.raw.version}` }
 }
 
+/** Exact selected clip for audition. An explicitly frozen processing target
+ * requires its own exact reference, owned bytes and fresh playback identity.
+ * The original-only reader remains available for read-only comparison. */
+export async function readAvgVoiceCandidateV3(input: Parameters<typeof readAvgRawVoiceCandidateV3>[0] & {
+  processed?: { version: number; contentHash: string }
+}) {
+  // Snapshot the declared read identity, not unrelated caller state (which
+  // may include callbacks or non-cloneable view/service objects).
+  const frozen = { scope: structuredClone(input.scope), productionId: input.productionId,
+    requirementKey: input.requirementKey, version: input.version, contentHash: input.contentHash,
+    ...(input.processed ? { processed: { version: input.processed.version, contentHash: input.processed.contentHash } } : {}) }
+  const original = await readAvgRawVoiceCandidateV3(frozen)
+  const details = await readProductProductionDetailsV1(frozen.scope, frozen.productionId, ['avg'])
+  const brief = details.executionBrief
+  const required = brief?.avgAudioProcessing?.entries.some(e => e.domain === 'voice' && e.requirementKey === frozen.requirementKey) ?? false
+  if (required !== !!frozen.processed) throw new Error('[avg-audio-process] 请明确读取冻结加工版本，不能将原音频作为加工审听目标')
+  if (!frozen.processed) return { ...original, processed: undefined, processing: undefined }
+  const source = await readAvgCurrentProcessedAudioSourceV1({ scope: frozen.scope, buildId: original.buildId,
+    domain: 'voice', requirementKey: frozen.requirementKey,
+    raw: { artifactKey: original.raw.artifactKey, version: original.raw.version, contentHash: original.raw.contentHash },
+    processed: { artifactKey: `avg.voice.processed.${frozen.requirementKey}`, ...frozen.processed } })
+  const blob = source.row.blobObjectId === null ? null : await db.mediaBlobObjects.get(source.row.blobObjectId)
+  if (!blob || !await assertRecordInScope(frozen.scope, 'mediaBlobObjects', blob, { owner: 'work' })
+    || blob.contentHash !== source.asset.contentHash) throw new Error('[avg-audio-process] 准确加工音频字节不可用')
+  const data = await readVerifiedMediaBlobObjectData(blob)
+  const after = await db.productBuilds.get(original.buildId)
+  if (!after || canonicalProductProductionJsonV2(after) !== canonicalProductProductionJsonV2(source.build)) {
+    throw new Error('[avg-audio-process] 加工审听准备期间制作版本已变化')
+  }
+  return { ...original, asset: source.asset, blobObjectId: blob.id!, data, processed: source.row, processing: source.payload,
+    sourceKey: `${original.sourceKey}:processed:${source.row.version}:${source.row.contentHash}:${source.payload.receipt.receiptHash}` }
+}
+
 export async function stageAvgAudioReviewV3(input: { scope: WorkspaceScope; productionId: number; requirementKey: string;
-  rawVersion: number; rawContentHash: string; report: AvgReviewIssuesV1; declaration: string }) {
-  const selected = await readAvgRawVoiceCandidateV3({ ...input, version: input.rawVersion, contentHash: input.rawContentHash })
+  rawVersion: number; rawContentHash: string; processed?: { version: number; contentHash: string }; report: AvgReviewIssuesV1; declaration: string }) {
+  const selected = await readAvgVoiceCandidateV3({ ...input, version: input.rawVersion, contentHash: input.rawContentHash })
   const build = await db.productBuilds.get(selected.buildId)
   if (!build || build.controlEpoch !== selected.controlEpoch || input.report.targetKey !== input.requirementKey) throw new Error('[avg-voice] 审听目标或生产来源已变化')
   return stageAvgAuthorArtifactV1({ scope: input.scope, buildId: build.id!, expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch,
@@ -457,17 +491,21 @@ export async function stageAvgAudioReviewV3(input: { scope: WorkspaceScope; prod
 }
 
 export async function stageAvgVoiceChoiceV3(input: { scope: WorkspaceScope; productionId: number; requirementKey: string;
-  rawVersion: number; rawContentHash: string; declaration: string }) {
-  const selected = await readAvgRawVoiceCandidateV3({ ...input, version: input.rawVersion, contentHash: input.rawContentHash })
+  rawVersion: number; rawContentHash: string; processed?: { version: number; contentHash: string }; declaration: string }) {
+  const selected = await readAvgVoiceCandidateV3({ ...input, version: input.rawVersion, contentHash: input.rawContentHash })
   const build = await db.productBuilds.get(selected.buildId), reviewKey = avgVoiceReviewArtifactKeyV1(input.requirementKey)
   if (!build || build.controlEpoch !== selected.controlEpoch) throw new Error('[avg-voice] 选择来源已变化')
   const reviews = await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([build.id!, reviewKey])
     .filter(row => row.status === 'accepted' && row.controlEpoch === build.controlEpoch).toArray()
   if (reviews.length !== 1) throw new Error('[avg-voice] 请先确认准确音频的审听记录')
-  const payload: AvgAuthorVoiceChoiceV1 = { schema: 'storyforge.avg.voice-choice', version: 1, requirementKey: input.requirementKey,
+  const base = { schema: 'storyforge.avg.voice-choice' as const, requirementKey: input.requirementKey,
     requestIdentityHash: selected.payload.request.identityHash,
     raw: { artifactKey: selected.raw.artifactKey, version: selected.raw.version, contentHash: selected.raw.contentHash },
     review: { artifactKey: reviewKey, version: reviews[0]!.version, contentHash: reviews[0]!.contentHash }, asset: selected.asset, declaration: input.declaration }
+  const payload: AvgAuthorVoiceChoice = selected.processed && selected.processing
+    ? { ...base, version: 2, processed: { artifactKey: selected.processed.artifactKey, version: selected.processed.version,
+      contentHash: selected.processed.contentHash, recipeHash: selected.processing.receipt.recipeHash, receiptHash: selected.processing.receipt.receiptHash } }
+    : { ...base, version: 1 }
   return stageAvgAuthorArtifactV1({ scope: input.scope, buildId: build.id!, expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch,
     taskKey: `avg.author.voice-choice.${input.requirementKey}`, artifactKey: avgVoiceChoiceArtifactKeyV1(input.requirementKey), kind: 'presentation', payload, declaration: input.declaration })
 }

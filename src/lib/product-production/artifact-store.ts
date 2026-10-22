@@ -872,15 +872,16 @@ function safeUsageWithinBudget(value: unknown, budget: ProductTaskBudgetReservat
   }
 }
 
+function isAvgProcessedAudioArtifactKeyV1(value: unknown): boolean {
+  return typeof value === 'string' && (value.startsWith('avg.voice.processed.') || value.startsWith('avg.sound.processed.'))
+}
+
 function prepareArtifactAcceptanceV1(
   input: Pick<ProductBuildArtifactAcceptanceInputV1,
     | 'artifactKey' | 'requirementKey' | 'kind' | 'mediaKind' | 'payload'
     | 'metadata' | 'quality' | 'rights' | 'contentHash' | 'blobObjectId'
     | 'mimeType' | 'byteSize'>,
 ): PreparedArtifactAcceptanceV1 {
-  if (typeof input.artifactKey === 'string' && (input.artifactKey.startsWith('avg.voice.processed.') || input.artifactKey.startsWith('avg.sound.processed.'))) {
-    throw new Error('[avg-audio-process] 加工音频专用producer准入尚未就绪，不能回退通用工件写口')
-  }
   const artifactKey = stableKey(input.artifactKey, 'artifactKey')
   const requirementKey = input.requirementKey == null ? null : stableKey(input.requirementKey, 'requirementKey')
   if (!isProductBuildArtifactKindV1(input.kind)) {
@@ -2520,6 +2521,9 @@ async function acceptSealedProducerArtifactV1(
   avgVisualPlanningAdmission = false,
   avgSoundPlanningAdmission = false,
 ): Promise<ProductBuildArtifactRecordV1> {
+  if (isAvgProcessedAudioArtifactKeyV1(input.artifactKey) && !avgMediaRawAdmission) {
+    throw new Error('[avg-audio-process] 加工音频专用producer准入尚未就绪，不能回退通用工件写口')
+  }
   const scope = await resolveScope({ scope: input.scope })
   if (!isSha256Hash(input.inputHash)) throw new Error('[product-production-artifact] inputHash 无效')
   if (input.producerReceiptHash != null && !isSha256Hash(input.producerReceiptHash)) {
@@ -2585,7 +2589,9 @@ async function acceptSealedProducerArtifactV1(
   }
   const voiceAdmission = avgMediaRawAdmission && input.artifactKey.startsWith('avg.voice.raw.')
     ? await import('../avg/voice-production-admission') : null
-  const avgAdmission = avgMediaRawAdmission && !voiceAdmission ? await import('../avg/media-production-admission') : null
+  const audioProcessingAdmission = avgMediaRawAdmission && isAvgProcessedAudioArtifactKeyV1(input.artifactKey)
+    ? await import('../avg/audio-processing-admission') : null
+  const avgAdmission = avgMediaRawAdmission && !voiceAdmission && !audioProcessingAdmission ? await import('../avg/media-production-admission') : null
   const planningAdmission = avgVisualPlanningAdmission ? await import('../avg/visual-planning-admission') : null
   const soundPlanningAdmission = avgSoundPlanningAdmission ? await import('../avg/sound-planning-admission') : null
   const stored = await db.transaction('rw', scopeTransactionTables(
@@ -2615,7 +2621,8 @@ async function acceptSealedProducerArtifactV1(
       if (!producerProof || input.producerRunId == null) throw new Error('[avg-media] 原图必须携带严格 producer 证明')
       const admission = { scope, build: build as ProductBuildRecordV1 & { id: number },
         task: producerProof.task, producerRunId: input.producerRunId, artifact: prepared }
-      if (voiceAdmission) await voiceAdmission.assertAvgVoiceRawProducerAdmissionV3(admission)
+      if (audioProcessingAdmission) await audioProcessingAdmission.assertAvgProcessedAudioProducerAdmissionV1(admission)
+      else if (voiceAdmission) await voiceAdmission.assertAvgVoiceRawProducerAdmissionV3(admission)
       else await avgAdmission!.assertAvgMediaRawProducerAdmissionV2(admission)
     }
     if (planningAdmission) {
@@ -3038,8 +3045,19 @@ export async function verifyHistoricalAvgImageProcessingProducerV1(input:AvgHist
   return {artifact:result.artifact,provenance:{...provenance,proofHash:await hashProductProductionValueV2(provenance)}}
 }
 
-async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvidenceInputV1,mode:'visual'|'raw-image'|'image-revalidation'|'image-processing',visualVersion?:4|5) {
-  const rawImage=mode!=='visual',revalidation=mode==='image-revalidation',processing=mode==='image-processing'
+/** Intrinsic exact local-audio proof, including an imported completed prefix.
+ * This grants no current acceptance, author adoption or execution authority.
+ * The product reader must prove original audio, recipe and physical samples. */
+export async function verifyHistoricalAvgAudioProcessingProducerV1(input: AvgHistoricalMediaEvidenceInputV1) {
+  const result = await readHistoricalAvgProducerEvidenceV1(input, 'audio-processing')
+  const provenance = { schema: 'storyforge.avg.audio-processing-producer-proof' as const, version: 1 as const,
+    ...result.producer, noProviderRequest: true as const,
+    processingEvidenceHash: await hashProductProductionValueV2(JSON.parse(result.artifact.qualityJson)) }
+  return { artifact: result.artifact, provenance: { ...provenance, proofHash: await hashProductProductionValueV2(provenance) } }
+}
+
+async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvidenceInputV1,mode:'visual'|'raw-image'|'image-revalidation'|'image-processing'|'audio-processing',visualVersion?:4|5) {
+  const rawImage=mode!=='visual',revalidation=mode==='image-revalidation',audio=mode==='audio-processing',processing=mode==='image-processing'||audio
   const scope = await resolveScope({ scope: input.scope }), build = await db.productBuilds.get(input.buildId)
   if (!build?.id || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })
     || build.stateRevision !== input.expectedBuildRevision || build.briefHash !== input.expectedBriefHash || build.planHash !== input.expectedPlanHash
@@ -3052,8 +3070,8 @@ async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvide
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
   if(visualVersion!==undefined&&brief.avgVisualPlanning?.version!==visualVersion)throw new Error('[avg-visual-history] 历史 producer 必须保留准确原始视觉版本')
   const legacyLocal=(revalidation||processing)&&(brief.avgAssembly?.version===2||brief.avgAssembly?.version===3&&!!brief.avgAssembly.image)
-  if ((!brief.avgVisualPlanning&&!legacyLocal) || await hashProductProductionValueV2(brief) !== build.briefHash
-    || !(rawImage?input.artifactKey.startsWith(processing?'avg.media.processed.':'avg.media.raw.'):
+  if ((audio ? !brief.avgAudioProcessing : !brief.avgVisualPlanning&&!legacyLocal) || await hashProductProductionValueV2(brief) !== build.briefHash
+    || !(audio ? /^avg\.(voice|sound)\.processed\./.test(input.artifactKey) : rawImage?input.artifactKey.startsWith(processing?'avg.media.processed.':'avg.media.raw.'):
       input.artifactKey.startsWith('avg.proposal.') || input.artifactKey === 'avg.media.compiled-visual-requirements')) throw new Error('[avg-visual-plan] 历史读取仅限准确 V4 直接 producer 工件')
   if(rawImage&&!['building','integrating','validating','preview-ready','release-ready','released','paused','cancelled','failed','recovery-required'].includes(build.status))throw new Error('[avg-visual-image] 原图来源不属于已执行版本')
   const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash)
@@ -3063,7 +3081,8 @@ async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvide
   const row = matches[0]
   if (matches.length !== 1 || !row?.id || !await assertRecordInScope(scope, 'productBuildArtifacts', row, { owner: 'work' })
     || row.status !== 'accepted' || row.contentHash !== input.contentHash || row.producerRunId == null || row.producerReceiptHash == null
-    || (rawImage?row.blobObjectId==null||!row.mediaKind||!row.mimeType?.startsWith('image/')||row.kind!=='image':
+    || (audio ? row.blobObjectId==null||row.kind!=='audio'||row.mimeType!=='audio/wav'
+      || !['voice','bgm','sfx','ambience'].includes(row.mediaKind??'') : rawImage?row.blobObjectId==null||!row.mediaKind||!row.mimeType?.startsWith('image/')||row.kind!=='image':
       row.blobObjectId !== null || row.mediaKind !== null || row.mimeType !== null
       || row.kind !== (input.artifactKey.startsWith('avg.proposal.') ? 'narrative' : 'asset-manifest'))
     || row.carriedFrom !== null || row.parentArtifactHash !== null) throw new Error('[avg-visual-plan] 历史方案不是准确的直接 producer 工件')
@@ -3076,11 +3095,11 @@ async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvide
     || canonicalProductProductionJsonV2(ledger.usage) !== canonicalProductProductionJsonV2(proof.usage)
     || ledger.candidateHash !== proof.candidateHash || ledger.terminalReceiptHash !== row.producerReceiptHash
     || !samePreparedProducerArtifactV1({ expected: await preparedStoredArtifactV1(row), actual: proof.artifacts.get(row.artifactKey), importedScopeRebound: proof.importedScopeRebound })) throw new Error('[avg-visual-plan] 历史方案 checkpoint/ledger 不闭合')
-  const blobs=rawImage?await verifiedBlobProofsV1({scope,artifacts:[row],label:'historical V4 image'}):null
+  const blobs=rawImage?await verifiedBlobProofsV1({scope,artifacts:[row],label:audio?'historical local audio':'historical V4 image'}):null
   let responseEvidenceHash:string|null=null
   if(revalidation||processing){
     const usage=proof.usage as {modelCalls?:number;mediaCalls?:number;costUsd?:number|null}
-    if(proof.task.kind!==(processing?'avg-media-image-process':'avg-media-image-reuse')||proof.task.executionMode!=='deterministic'||proof.task.skillId!==null
+    if(proof.task.kind!==(audio?'avg-audio-process':processing?'avg-media-image-process':'avg-media-image-reuse')||proof.task.executionMode!=='deterministic'||proof.task.skillId!==null
       ||proof.attempt!==1||proof.task.maxAttempts!==1||proof.task.outputArtifactKeys.length!==1||proof.task.outputArtifactKeys[0]!==row.artifactKey
       ||proof.task.budgetReservation.modelCalls!==0||proof.task.budgetReservation.mediaCalls!==0||proof.task.budgetReservation.maximumCostUsd!==0
       ||processing&&proof.task.capabilityRequirementKeys.length!==0
@@ -3090,6 +3109,12 @@ async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvide
     const run=await readAgentRunV1(scope,row.producerRunId)
     if(run.events.some(event=>event.type==='model.requested'||event.type==='tool.called'
       ||event.type==='evidence.artifact.recorded'&&event.payload.artifactKind==='raw-response'))throw new Error('[avg-image-reuse] 本地复验 Run 不能保留供应商派发或新原始响应')
+    if (audio) {
+      const load = () => Promise.all([import('../avg/audio-production-topology'), import('../avg/audio-production-brief')])
+      const [topology, declaration] = await (Dexie.currentTransaction ? Dexie.waitFor(Dexie.ignoreTransaction(load)) : load())
+      declaration.assertAvgAudioProcessingBriefV1(brief)
+      topology.assertAvgAudioProcessingTaskShapeV1(proof.task, plan.tasks, 'avg')
+    }
   }else if(rawImage){
     if(proof.task.kind!=='avg-media-image-generate'||proof.task.executionMode!=='media-provider'
       ||proof.attempt!==1||proof.task.maxAttempts!==1||proof.task.outputArtifactKeys.length!==1||proof.task.outputArtifactKeys[0]!==row.artifactKey)throw new Error('[avg-visual-image] 需要原始单次图片 producer，不能把复用或作者工件改称原图')
@@ -3696,8 +3721,12 @@ export async function acceptProductBuildArtifact(
   input: ProductBuildArtifactAcceptanceInputV1,
 ): Promise<ProductBuildArtifactRecordV1> {
   const productType = await productTypeForBuildV1(input.buildId)
-  if (typeof input.artifactKey === 'string' && (input.artifactKey.startsWith('avg.voice.processed.') || input.artifactKey.startsWith('avg.sound.processed.'))) {
-    throw new Error('[avg-audio-process] 加工音频专用producer准入尚未就绪，不能回退通用工件写口')
+  if (isAvgProcessedAudioArtifactKeyV1(input.artifactKey)) {
+    const { avgAudioProcessingExecutionReadyV1 } = await import('../avg/audio-production-brief')
+    if (productType !== 'avg' || !avgAudioProcessingExecutionReadyV1()) {
+      throw new Error('[avg-audio-process] 加工音频专用producer准入尚未就绪，不能回退通用工件写口')
+    }
+    return acceptSealedProducerArtifactV1(input, true)
   }
   // AVG raw/processed image and raw voice candidates use sealed admission. Human choices,
   // V1 assembly and every other product keep their existing writer semantics.

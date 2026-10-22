@@ -1,3 +1,4 @@
+import Dexie from 'dexie'
 import { db } from '../db/schema'
 import type { AssembleContextInput } from '../registry/types'
 import type { ProductProductionPlanTaskV3 } from '../types'
@@ -103,7 +104,12 @@ export async function readAvgTaskExecutionContextV1(input: AssembleContextInput)
     || canonicalProductProductionJsonV2(input.productArtifactKeys ?? []) !== canonicalProductProductionJsonV2(task.inputArtifactKeys)) {
     throw new Error('[avg-context] Plan、登记 Skill 或准确依赖选择不一致')
   }
-  const resolved = await assertAvgStoredAssemblyBriefV3(brief.avgAssembly)
+  const stored = brief.avgAssembly
+  const parse = () => assertAvgStoredAssemblyBriefV3(stored)
+  // This registered reader also runs inside sealed local-audio admission.
+  // Lease only pure frozen-value crypto; actual DB/producer reads below stay
+  // in the caller's transaction and retain the original scope/CAS fences.
+  const resolved = Dexie.currentTransaction ? await Dexie.waitFor(Dexie.ignoreTransaction(parse), 20_000) : await parse()
   await validateAvgVoiceRecoveryV1({ scope, productionId: production.id!, brief, targetBuild: build, checkProspectiveRequests: false })
   // Reuse actual author command/SourcePlan verification and the full canonical
   // source hash. Narrow delivery must never become narrow source validation.
@@ -111,11 +117,15 @@ export async function readAvgTaskExecutionContextV1(input: AssembleContextInput)
     expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch, includeSceneScripts: true,
     includeAuthorStage: task.inputArtifactKeys.includes('avg.author.stage') })
   const required = new Set(resolved.assembly.voice.batch.requirements.map(r => r.script.artifactKey))
-  await validateAvgVoiceProductionSourcesV1(resolved.assembly.voice.batch,
-    { systemPlan: source.plan, scripts: source.scripts.map(s => s.payload) },
-    source.scripts.filter(s => required.has(s.artifact.artifactKey)).map(s => ({ ...s.artifact, payload: s.payload })))
-  if (resolved.assembly.image) await validateAvgVisualProductionBatchSourceV1(resolved.assembly.image.mediaBatch,
-    { systemPlan: source.plan, scripts: source.scripts.map(s => s.payload), presentation: { aspectRatio: resolved.assembly.image.mediaBatch.aspectRatio } })
+  const checkSource = async () => {
+    await validateAvgVoiceProductionSourcesV1(resolved.assembly.voice.batch,
+      { systemPlan: source.plan, scripts: source.scripts.map(s => s.payload) },
+      source.scripts.filter(s => required.has(s.artifact.artifactKey)).map(s => ({ ...s.artifact, payload: s.payload })))
+    if (resolved.assembly.image) await validateAvgVisualProductionBatchSourceV1(resolved.assembly.image.mediaBatch,
+      { systemPlan: source.plan, scripts: source.scripts.map(s => s.payload), presentation: { aspectRatio: resolved.assembly.image.mediaBatch.aspectRatio } })
+  }
+  if (Dexie.currentTransaction) await Dexie.waitFor(Dexie.ignoreTransaction(checkSource), 20_000)
+  else await checkSource()
   const rows = await db.productBuildArtifacts.where('buildId').equals(build.id!).toArray()
   // Human imports own author command receipts, not producer receipts. Keep
   // that existing distinction; only producer outputs use the producer reader.
