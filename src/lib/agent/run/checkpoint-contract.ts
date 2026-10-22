@@ -1,9 +1,22 @@
+import { failSchema, readString } from './schema-utils'
+
 /**
  * A resume payload is durable JSON, not an unbounded blob channel. The same
  * ceiling is enforced before persistence, import parsing, verification and
  * recovery so a checkpoint can never be accepted but later become unreadable.
  */
 export const AGENT_RUN_MAXIMUM_RESUME_PAYLOAD_BYTES_V1 = 32 * 1024 * 1024
+
+/** Contract snapshots use the same bounded durable JSON envelope as checkpoints. */
+export const AGENT_RUN_MAXIMUM_CONTRACT_JSON_BYTES_V1 = 32 * 1024 * 1024
+
+export function readAgentRunContractJsonV1(value: unknown, path: string): string {
+  const result = readString(value, path, { max: AGENT_RUN_MAXIMUM_CONTRACT_JSON_BYTES_V1 })
+  if (agentRunUtf8ByteLengthV1(result) > AGENT_RUN_MAXIMUM_CONTRACT_JSON_BYTES_V1) {
+    failSchema('invalid_value', path, `契约 UTF-8 大小不得超过 ${AGENT_RUN_MAXIMUM_CONTRACT_JSON_BYTES_V1} 字节`)
+  }
+  return result
+}
 
 /** Exact UTF-8 byte count without allocating a second payload-sized buffer. */
 export function agentRunUtf8ByteLengthV1(value: string): number {

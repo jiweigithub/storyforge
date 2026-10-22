@@ -23,7 +23,8 @@ import type {
   AgentRunWriteMode,
   AgentRunWriteTargetV1,
 } from '../../types/agent-run'
-import { hashCanonicalValue } from './hash'
+import { canonicalStringify, hashCanonicalValue } from './hash'
+import { readAgentRunContractJsonV1 } from './checkpoint-contract'
 import { assertAgentSkillExecutionBindingIntegrityV2 } from '../execution-binding'
 import {
   assertExactKeys,
@@ -716,7 +717,9 @@ function parseAgentRunContractV1Base(
 }
 
 export function parseAgentRunContractV1(value: unknown): AgentRunContractV1 {
-  return parseAgentRunContractV1Base(value, false)
+  const contract = parseAgentRunContractV1Base(value, false)
+  readAgentRunContractJsonV1(canonicalStringify(contract), 'contract')
+  return contract
 }
 
 export async function acceptAgentRunContractV1(value: unknown): Promise<AcceptedAgentRunContractV1> {
@@ -822,12 +825,14 @@ function parseSkillBoundContract(
 
 export function parseAgentRunContractV2(value: unknown): AgentRunContractV2 {
   const { base, executionBindings } = parseSkillBoundContract(value, 2)
-  return { ...base, version: 2, executionBindings }
+  const contract: AgentRunContractV2 = { ...base, version: 2, executionBindings }
+  readAgentRunContractJsonV1(canonicalStringify(contract), 'contract')
+  return contract
 }
 
 export function parseAgentRunContractV3(value: unknown): AgentRunContractV3 {
   const { base, executionBindings, record } = parseSkillBoundContract(value, 3)
-  return {
+  const contract: AgentRunContractV3 = {
     ...base,
     version: 3,
     executionBoundary: readEnum(
@@ -837,6 +842,8 @@ export function parseAgentRunContractV3(value: unknown): AgentRunContractV3 {
     ),
     executionBindings,
   }
+  readAgentRunContractJsonV1(canonicalStringify(contract), 'contract')
+  return contract
 }
 
 export function parseAgentRunContract(value: unknown): AgentRunContract {

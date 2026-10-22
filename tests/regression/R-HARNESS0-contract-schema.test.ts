@@ -4,6 +4,9 @@ import {
   parseAgentRunContractV1,
 } from '../../src/lib/agent/run/contract'
 import { AgentRunSchemaError } from '../../src/lib/agent/run/schema-utils'
+import { parseAgentRunEventV1 } from '../../src/lib/agent/run/event-schema'
+import { canonicalStringify } from '../../src/lib/agent/run/hash'
+import { AGENT_RUN_MAXIMUM_CONTRACT_JSON_BYTES_V1, readAgentRunContractJsonV1 } from '../../src/lib/agent/run/checkpoint-contract'
 
 function validContract() {
   return {
@@ -55,6 +58,53 @@ function validContract() {
     },
   }
 }
+
+it('a valid large contract remains readable in accepted and revised ledger events', async () => {
+  const source = validContract()
+  source.acceptance = Array.from({ length: 1500 }, (_, index) => ({
+    id: `outline.criterion.${index}`, kind: 'output-present', required: true,
+  }))
+  source.verificationPlan = [{
+    id: 'outline.complete', kind: 'terminal', verifier: 'terminal-receipt-v1',
+    criterionIds: source.acceptance.map(criterion => criterion.id),
+  }]
+  const accepted = await acceptAgentRunContractV1(source)
+  const contractJson = canonicalStringify(accepted.contract)
+  expect(contractJson.length).toBeGreaterThan(100_000)
+  for (const type of ['contract.accepted', 'contract.revised']) {
+    expect(() => parseAgentRunEventV1({
+      version: 1, runId: 9, sequence: 2, generation: 1, projectId: 7,
+      worldGroupId: null, contractHash: accepted.contractHash, type,
+      createdAt: 1_786_111_000_002,
+      payload: { contractJson, ...(type === 'contract.revised' ? { previousContractHash: 'a'.repeat(64) } : {}) },
+    })).not.toThrow()
+  }
+})
+
+it('bounds contract snapshots by UTF-8 bytes and still rejects empty/non-string snapshots', () => {
+  const maximum = AGENT_RUN_MAXIMUM_CONTRACT_JSON_BYTES_V1
+  expect(() => readAgentRunContractJsonV1('', 'contract')).toThrow('必须是非空字符串')
+  expect(() => readAgentRunContractJsonV1({}, 'contract')).toThrow('必须是非空字符串')
+  expect(() => readAgentRunContractJsonV1('x'.repeat(maximum + 1), 'contract')).toThrow('长度不得超过')
+  const multibyte = '汉'.repeat(Math.floor(maximum / 3) + 1)
+  expect(multibyte.length).toBeLessThan(maximum)
+  expect(() => readAgentRunContractJsonV1(multibyte, 'contract')).toThrow('UTF-8 大小不得超过')
+})
+
+it('rejects a structurally valid oversized contract before acceptance and hashing', async () => {
+  const source = validContract()
+  const bindingJson = JSON.stringify({ note: '汉'.repeat(62_000) })
+  const oversized = {
+    ...source,
+    executionBindings: Array.from({ length: 190 }, (_, index) => ({
+      version: 1, stepId: `outline.step.${index}`, skillId: 'outline.generate', skillVersion: 1,
+      promptVersion: '1', toolSchemaVersion: '1', toolSchemaHash: 'b'.repeat(64),
+      formalEntry: { version: 1, entryId: 'outline.generate', bindingJson, bindingHash: 'c'.repeat(64) },
+    })),
+  }
+  expect(() => parseAgentRunContractV1(oversized)).toThrow('UTF-8 大小不得超过')
+  await expect(acceptAgentRunContractV1(oversized)).rejects.toThrow('UTF-8 大小不得超过')
+})
 
 describe('R-HARNESS0-contract-schema · RunContractV1', () => {
   it('只接受三注册表内的读取和写入，并生成确定性 contract hash', async () => {

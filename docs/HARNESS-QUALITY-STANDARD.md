@@ -43,6 +43,8 @@ Harness 的目标是让一次 AI 工作可授权、可恢复、可停止、可�
 
 运行中不能由模型扩大权限、创造未登记工具或把辅助结果升级为正式写入。
 
+合同的规范 JSON 与 `contract.accepted` / `contract.revised` 事件快照使用同一 32 MiB UTF-8 有界记录预算，与既有 durable checkpoint JSON 的规模保护一致。合同先校验全部 schema、权限和来源，再在接纳/哈希之前检查完整序列化大小；事件、刷新恢复与备份重映射保持相同边界，不截断或省略合同快照。该记录预算不增加模型调用、Token、单字段或 Skill 的预算。
+
 Instance-owned 运行创建可携带 `expectedRuntimeSessionHash` 前置条件：产品先完成自己的来源/权限读取，创建事务再核对整个原实例记录的 canonical hash，匹配后才写 Run/事件。它是防止取消、删除或其他实例变化穿过“最后一次读取 → 创建”的原子边界，不能代替产品授权。该值在首次 await 前固定，不进入 RunContract 或备份身份；省略它的既有调用与原合同/hash 保持。失败不创建半个 Run，也不借此自动重读来源或重发模型。
 
 零模型的确定性提交可在 V1 终验回执中使用显式 `zeroModelCommit` 扩展：保留原 canonical RunContract、非空准确输入工件引用与实际 post-state/验收依据。仅合同的模型与输入/输出 token 预算全为零、Context/Skill/写回权限为空，且无候选、采用或语义评审时，才允许空 `contextManifestHashes`；合同正文 hash 必须匹配回执合同 hash。不得伪造一份模型 Context Manifest 来完成人工记账。普通模型回执仍保持原非空来源约束，旧回执/hash 不补字段。零模型记录完成只证明确定性提交，后续模型 lineage 必须另冻目的、来源、profile/transport、预算与用户授权。

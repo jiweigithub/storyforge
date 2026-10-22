@@ -5,8 +5,10 @@ import { join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import assert from 'node:assert/strict'
 
-const [oldPackage, nextPackage] = process.argv.slice(2).map(path => resolve(path))
-assert.ok(oldPackage && nextPackage, 'Pass the old and new installer paths')
+const [oldPath, nextPath, previousVersion] = process.argv.slice(2)
+assert.ok(oldPath && nextPath && /^\d+\.\d+\.\d+$/.test(previousVersion ?? ''), 'Pass the old and new installer paths and the expected previous x.y.z version')
+const oldPackage = resolve(oldPath)
+const nextPackage = resolve(nextPath)
 const root = await mkdtemp(join(tmpdir(), 'storyforge-real-upgrade-'))
 const installation = join(root, 'installed')
 const profile = join(root, 'profile')
@@ -48,7 +50,7 @@ async function close() {
 try {
   await install(oldPackage)
   let page = await launch()
-  assert.equal(await app.evaluate(({ app }) => app.getVersion()), '4.0.1')
+  assert.equal(await app.evaluate(({ app }) => app.getVersion()), previousVersion)
   const seeded = await page.evaluate(() => window.__nativeUpgrade.seed())
   const backupPath = join(root, 'backup.json')
   await writeFile(backupPath, JSON.stringify(seeded.backup))
@@ -64,7 +66,7 @@ try {
   page = await launch()
   const restarted = await page.evaluate(() => window.__nativeUpgrade.verify(false))
   assert.equal(restarted.restoredId, result.restoredId)
-  console.log(JSON.stringify({ result: 'passed', oldVersion: '4.0.1', newVersion: currentVersion, platform: process.platform, checks: ['actual installer replacement', 'production workspace export unchanged', 'OPFS file retained', 'invalid backup rejected without writes', 'production backup restored to new work', 'restored work survived process restart', 'workspace UI opened'] }))
+  console.log(JSON.stringify({ result: 'passed', oldVersion: previousVersion, newVersion: currentVersion, platform: process.platform, checks: ['actual installer replacement', 'production workspace export unchanged', 'OPFS file retained', 'invalid backup rejected without writes', 'production backup restored to new work', 'restored work survived process restart', 'workspace UI opened'] }))
 } finally {
   if (app) await app.evaluate(({ app }) => app.exit(0)).catch(() => {})
   await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 })

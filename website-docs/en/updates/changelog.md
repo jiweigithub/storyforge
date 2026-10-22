@@ -1,5 +1,22 @@
 # Changelog
 
+## October 23, 2026 · Saving and restoring large run contracts
+
+With larger run inputs, valid run contracts can be saved and revised in full, then read after a reload or complete-backup restoration, without being rejected by a smaller event-record limit. Oversized records still fail explicitly. Context snapshots are never truncated; model-call budgets, candidate adoption, permissions and freshness checks remain unchanged. Preserve the original work and backup after a capacity error rather than deleting contract fields. Evidence: [PR #185](https://github.com/yuanbw2025/storyforge/pull/185). See [backup and recovery](/en/guides/backup-restore).
+
+## October 22, 2026 · Outline recovery and style statistics instructions
+
+Added [checks and retry steps after detailed-outline interruption](/en/features/longform/writing#continuing-after-detailed-outline-generation-stops) and [the meaning of missing style statistics and how edits save](/en/features/longform/style-learning#when-sample-statistics-show-not-recorded). The [development record](/en/updates/development-status) now covers the complete branch/worktree review, separating merged changes, draft PRs, local unpushed commits, and uncommitted development.
+
+## October 21, 2026 · Detailed outlines, style profiles and scene editing
+
+- Chunked chapter-outline generation retains the complete predecessor candidate snapshot, fixing interruption when truncated evidence lacked an exact snapshot. After handling an error, explicitly retry from the original entry.
+- Style profiles with missing sample word counts display “Not recorded” and remain readable and editable; zero and valid counts retain their actual values.
+- Scene-detail drafts retain edits immediately, improving Chinese composition, caret position after a middle deletion, and saved reload behavior.
+- Website and in-app reports are linked to repository Issues for investigation, fixes and release progress. Private reports are reduced to necessary sanitized technical summaries.
+
+See [outlines and writing](/en/features/longform/writing), [PR #141](https://github.com/yuanbw2025/storyforge/pull/141), [PR #171](https://github.com/yuanbw2025/storyforge/pull/171), and [Issue #183](https://github.com/yuanbw2025/storyforge/issues/183).
+
 Feature updates, fixes, and workflow improvements are organized by user impact. See [compatibility](/en/updates/compatibility) for version information.
 
 ## October 20, 2026 · System-fiction planning, whole-chapter review, and scoped revision

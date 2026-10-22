@@ -93,3 +93,9 @@ Preview each record's before/after text, then confirm snapshot creation and repl
 Scene-outline and emotion-beat coordination reports the actual save result. Pending saves do not report success early; failures preserve the original and allow retry.
 
 In generation previews and run details, expand Prompt and style sources / overrides (提示词与文风来源、覆盖关系) to inspect the frozen template, parameters, and whether creative rules or style profiles were included. Missing evidence does not establish that a source was read.
+
+## Continuing after detailed outline generation stops
+
+When generating detailed chapter plans in chunks from Outline and chapter plans, preserve existing candidates. If a predecessor snapshot or source notice appears, read the error, check the target chapter and related content, address the cause, then explicitly retry from the original action. Do not clear the work or disable validation. Review and adopt the completed candidate explicitly.
+
+[PR #171](https://github.com/yuanbw2025/storyforge/pull/171) preserves the predecessor candidate text needed by chunked generation, fixing interruptions caused by missing snapshots after context truncation. Actual candidate or source changes still block the operation and require another review.

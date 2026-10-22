@@ -17,6 +17,7 @@ import {
 import type { WorkspaceScope } from '../../src/lib/types'
 import { seedCurrentWorkspace } from '../helpers/current-workspace'
 import { stampCurrentFixtureResourceUidsV1 } from '../helpers/current-resource-identity'
+import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
 
 async function createWorkspace(label: string): Promise<{
   scope: WorkspaceScope
@@ -152,6 +153,48 @@ describe('R-HARNESS1-event-store-resume · durable run ledger', () => {
   })
 
   afterEach(() => db.close())
+
+  it('persists, revises and reloads a valid contract above the former event snapshot ceiling', async () => {
+    const fixture = await createWorkspace('大契约事件快照')
+    const base = contract({
+      projectId: fixture.scope.projectId, worldGroupId: fixture.worldGroupId,
+      outlineNodeId: fixture.outlineNodeId,
+    })
+    base.acceptance = Array.from({ length: 1500 }, (_, index) => ({
+      id: `outline.criterion.${index}`, kind: 'output-present', required: true,
+    }))
+    base.verificationPlan = [{
+      id: 'outline.complete', kind: 'terminal', verifier: 'terminal-v1',
+      criterionIds: base.acceptance.map(criterion => criterion.id),
+    }]
+    const created = await createAgentRunV1({ scope: fixture.scope, worldGroupId: fixture.worldGroupId, contract: base })
+    expect(created.run.contractJson.length).toBeGreaterThan(100_000)
+    const checkpoint = await createAgentRunCheckpointV1({ scope: fixture.scope, runId: created.run.id })
+    expect(await verifyAgentRunCheckpointV1(fixture.scope, checkpoint.checkpoint.id)).toBe(true)
+    const revised = await reviseAgentRunContractV1({
+      scope: fixture.scope, runId: created.run.id,
+      contract: { ...base, objective: '修订后的大契约' },
+      expectedLastSequence: checkpoint.snapshot.projection.lastSequence,
+    })
+    expect(revised.run.generation).toBe(2)
+    const reloaded = await readAgentRunV1(fixture.scope, revised.run.id)
+    expect(reloaded.run.contractHash).toBe(revised.run.contractHash)
+    expect(reloaded.contract.acceptance).toHaveLength(1500)
+    expect(reloaded.events.filter(event => event.type === 'contract.accepted' || event.type === 'contract.revised')).toHaveLength(2)
+    const backup = await exportProjectJSON(fixture.scope.projectId)
+    const importedId = await importProjectJSON(backup)
+    const importedProject = await db.projects.get(importedId)
+    const importedRun = await db.agentRuns.where('projectId').equals(importedId).first()
+    expect(importedProject).toBeDefined()
+    expect(importedRun).toBeDefined()
+    const restored = await readAgentRunV1({
+      projectId: importedId, worldId: importedProject!.activeWorldId!, workId: importedProject!.activeWorkId!,
+    }, importedRun!.id!)
+    expect(restored.contract.acceptance).toHaveLength(1500)
+    expect(restored.run.generation).toBe(2)
+    expect(restored.contract.scope.projectId).toBe(importedId)
+    expect((await readAgentRunV1(fixture.scope, created.run.id)).run.contractHash).toBe(revised.run.contractHash)
+  })
 
   it('原子创建运行，并发追加仍保持唯一连续序号，过期写 fail-closed', async () => {
     const fixture = await createWorkspace('并发账本')

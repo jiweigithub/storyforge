@@ -34,3 +34,9 @@ Compare the rewrite with the original, mark Closer or Needs adjustment, and expl
 Resolve conflicting requirements before repeated test generations. Learning and calibration call models; a small representative corpus makes results easier to judge than indiscriminate repeated analysis.
 
 Related: [Project references](/en/features/longform/references) · [Costs](/en/guides/token-cost).
+
+## When sample statistics show “not recorded”
+
+An existing profile without a recorded chapter or character count shows “未记录” (not recorded). You can still read and edit the profile; changes save on blur. Do not delete or relearn a profile merely to fill statistics. Missing counts do not mean the profile is absent and do not trigger automatic changes to work data. Existing zero and valid numeric counts retain their actual values. Reopen the page to verify the content, and use Enabled / Disabled (注入中 / 已关闭) to control later generation.
+
+Repair reference: [PR #171](https://github.com/yuanbw2025/storyforge/pull/171).
