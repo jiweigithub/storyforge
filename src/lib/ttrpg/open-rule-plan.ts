@@ -4,7 +4,7 @@ import { isTtrpgOpenPassiveEpochV1 } from './open-coordination'
 import { parseTtrpgOpenInteractionBindingV1,assertTtrpgOpenInteractionActionV1 } from './open-interaction'
 import { projectTtrpgOpenWorldFactsV1 } from './open-fact-authority'
 import { ttrpgOpenSessionFactsV1 } from './open-fact-ledger'
-import { parseTtrpgOpenDiscoveryPlanV1, createTtrpgOpenDiscoveryPlanV1,
+import { parseTtrpgOpenDiscoveryPlanV1, createTtrpgOpenDiscoveryPlanV1, ttrpgOpenDiscoveryKnowledgeReferenceMatchesV1,
   type TtrpgOpenDiscoveryPlanV1 } from './open-knowledge-discovery'
 import { parseTtrpgOpenRuleRequestV1,type TtrpgOpenRuleRequestV1 } from './open-rule-request-contract'
 export { parseTtrpgOpenRuleRequestV1,type TtrpgOpenRuleRequestV1 } from './open-rule-request-contract'
@@ -276,7 +276,7 @@ export async function createTtrpgOpenRulePlanV1(input: {
     for (const effect of [...template.effects, ...template.alternatives.flatMap(alternative => alternative.effects)]) {
       if (effect.family !== 'knowledge') continue
       const target = effect.targetRef.startsWith('parameter:') ? bindings[effect.targetRef.slice(10)] : effect.targetRef
-      if (!discoveryPlan || effect.evidenceRef !== discoveryPlan.request.evidenceRef
+      if (!discoveryPlan || !ttrpgOpenDiscoveryKnowledgeReferenceMatchesV1(effect, discoveryPlan.request.evidenceRef)
         || (discoveryPlan.recipientActorKeys.length && (target === null || !discoveryPlan.recipientActorKeys.includes(target)))) fail('知识效果必须绑定明确发现路径和冻结接收者')
     }
   }

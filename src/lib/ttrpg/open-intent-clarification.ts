@@ -89,16 +89,27 @@ async function inspectIntentRouting(input: IntentRoutingInspectionInput,reviewVe
     if (!common || rule.parameters.some(p => !common.parameters.some(q => q.key === p.key))) return []
     return [{ ...rule,targets: rule.targets.filter(t => shared(t.key)).map((t,i) => ({ key: t.key,name: label(t.key,i) })),parameters: parameters(rule.parameters) }]
   })
-  const discoveries = actorCatalog.discoveries.filter(d => reviewerCatalog.discoveries.some(r => r.key === d.key))
-    .map(d => ({ ...d,parameters: parameters(d.parameters) }))
+  const discoveries = actorCatalog.discoveries.flatMap(d => {
+    const common = reviewerCatalog.discoveries.find(r => r.key === d.key)
+    if (!common) return []
+    const available = d.available && common.available
+    // The reviewer sees their own numbering, never gaps/counts from an AI's private directions.
+    return [{ ...d,label: common.label,directionNumber: common.directionNumber,available,
+      unavailableReason: available ? null : '这条方向需要作者修订。',parameters: parameters(d.parameters) }]
+  })
   const executable = (preview.route === 'existing-action' || preview.route === 'generic-check' || preview.route === 'no-roll' && !!preview.routeDetail.interactionKey)
     && (!latest || !!latest.request) && !currentScene.invalid
   const rule = rules.find(r => r.ruleKey === (preview.routeDetail.actionKey ?? preview.routeDetail.checkKey)
     && r.route === (preview.route === 'no-roll' ? 'existing-action' : preview.route) && r.interactionKey === preview.routeDetail.interactionKey)
   const needsBindings = reviewVersion === 2 && !latest && !!rule?.templateKeys.length
+  const savedDiscovery = latest?.request?.discovery
+  const discoveryAvailable = !savedDiscovery || discoveries.some(d => d.available && d.situationKey === savedDiscovery.situationKey
+    && d.evidenceRef === savedDiscovery.evidenceRef && d.interventionPointKey === savedDiscovery.interventionPointKey
+    && d.route === latest!.request!.route && d.ruleKey === latest!.request!.ruleKey)
   const review = { route: currentScene.invalid ? 'needs-clarification' as const : preview.route,
-    missingFields: currentScene.invalid ? [...new Set([...preview.missingFields,'targetRefs'])] : preview.missingFields,canConfirm: executable && !needsBindings,
+    missingFields: currentScene.invalid ? [...new Set([...preview.missingFields,'targetRefs'])] : preview.missingFields,canConfirm: executable && !needsBindings && discoveryAvailable,
     message: currentScene.invalid ? '场景行动的目标不是行动者的当前场景，请明确补充目标。'
+      : !discoveryAvailable ? '这条发现方向需要作者修订，请选择可用方向或明确取消本次线索发现。'
       : needsBindings ? '请先补充并核对本次规则后果的对象，再确认行动意图。'
       : preview.route === 'needs-clarification' ? '请补充行动方式和可识别的对象，再核对规则。'
       : preview.route === 'rejected' ? '这份行动目前不能执行，请核对规则或明确放弃。'
@@ -141,7 +152,7 @@ async function prepareClarifiedRuleRequest(input: ClarifiedRuleInput,routingVers
   if (request.discovery) {
     const path = inspected.review.catalog.discoveries.find(d => d.situationKey === request.discovery!.situationKey && d.evidenceRef === request.discovery!.evidenceRef
       && d.interventionPointKey === request.discovery!.interventionPointKey && d.route === request.route && d.ruleKey === request.ruleKey)
-    if (!path) throw Error('发现路径不在双方可见的目录中')
+    if (!path?.available) throw Error('发现路径不在双方可见的可用目录中')
     const refs = new Set(path.parameters.flatMap(p => p.options.map(o => o.key)))
     if (Object.values(request.discovery.effectBindings).some(rows => Object.values(rows).some(ref => ref !== null && !refs.has(ref)))) throw Error('发现后果引用了未共同识别的对象')
   }

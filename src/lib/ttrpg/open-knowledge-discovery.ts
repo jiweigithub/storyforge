@@ -11,10 +11,15 @@ import { ttrpgOpenPredicateContextV1 } from './open-rule-plan'
 import { hashTtrpgOpenEvidenceFieldsV1 } from './open-knowledge'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import { effectTemplate } from './open-content-templates'
-import type { TtrpgOpenEffectPlanTemplateV1 } from './open-contract'
+import type { TtrpgOpenEffectPlanTemplateV1, TtrpgOpenEffectPrimitiveV1 } from './open-contract'
 import * as p from './open-contract-parse'
 import { parseTtrpgOpenDiscoveryRequestV1,type TtrpgOpenDiscoveryRequestV1 } from './open-rule-request-contract'
 export { parseTtrpgOpenDiscoveryRequestV1,type TtrpgOpenDiscoveryRequestV1 } from './open-rule-request-contract'
+
+/** Shared static guard; recipient binding and actual rule admission remain separate. */
+export function ttrpgOpenDiscoveryKnowledgeReferenceMatchesV1(effect: TtrpgOpenEffectPrimitiveV1, evidenceRef: string | undefined) {
+  return effect.family !== 'knowledge' || evidenceRef !== undefined && effect.evidenceRef === evidenceRef
+}
 
 export interface TtrpgOpenDiscoveryPlanV1 {
   sessionSituation?: TtrpgOpenSessionSituationReceipt

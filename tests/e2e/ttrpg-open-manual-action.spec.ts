@@ -109,3 +109,33 @@ test('a saved manual authorization recovers after an operation write failure and
   expect(final.ttrpg.openRun.coordination.epochs).toHaveLength(1);expect(final.ttrpg.openRun.operations).toHaveLength(1)
   expect(final.ttrpg.openRun.operations[0].status).toBe('awaiting-approval');expect(final.ttrpg.openRun.coordination.calls).toEqual([])
 })
+
+test('current visible direction numbers match the rule selector and a legacy broken path cannot be selected', async ({ page }) => {
+  await page.goto('./')
+  const f = await page.evaluate(async () => {
+    const load = new Function('p','return import(p)') as (p: string) => Promise<any>
+    const x = await (await load('/storyforge/tests/helpers/open-ttrpg-manual.ts')).seedManualDiscoveryDirectionsV1()
+    const paths = x.catalog.discoveries.filter((d: any) => d.route === 'generic-check')
+    const rule = x.catalog.rules.find((r: any) => r.route === 'generic-check' && r.ruleKey === paths[1].ruleKey)
+    return { scope: x.f.scope,sessionId: x.f.sessionId,rule: JSON.stringify([rule.route,rule.ruleKey]),target: JSON.stringify(rule.targets[0].key),parameters: rule.parameters.map((p: any) => JSON.stringify(p.options[0]?.key ?? null)),discoveryParameters: paths[1].parameters.map((p: any) => JSON.stringify(p.options[0]?.key ?? null)),old: paths[0].key,current: paths[1].key }
+  })
+  let modelPosts = 0
+  await page.route('**/local-codex/v1/requests',route => { if (route.request().method() === 'POST') { modelPosts++;return route.abort() }return route.continue() })
+  await page.goto('./play/session/'+f.sessionId);await enterPlayer(page)
+  await page.getByLabel('行动规则',{ exact: true }).selectOption(f.rule)
+  await page.getByLabel('行动对象',{ exact: true }).selectOption(f.target)
+  for (let i = 0; i < f.parameters.length; i++) await page.getByLabel(`行动后果对象 ${i + 1}`,{ exact: true }).selectOption(f.parameters[i])
+  const choices = page.getByLabel('检查线索',{ exact: true })
+  await expect(choices.locator('option').filter({ hasText: '方向 1' })).toHaveJSProperty('disabled',true)
+  await expect(choices.locator('option').filter({ hasText: '方向 2' })).toHaveJSProperty('disabled',false)
+  await expect(page.getByRole('region',{ name: '当前可知线索与方向',exact: true })).toContainText('方向 1')
+  await expect(page.getByRole('region',{ name: '当前可知线索与方向',exact: true })).toContainText('方向 2')
+  await expect(page.locator('body')).not.toContainText('PRIVATE_')
+  await choices.selectOption(f.current)
+  await expect(choices).toHaveValue(f.current)
+  for (let i = 0; i < f.discoveryParameters.length; i++) await page.getByLabel(`线索后果对象 ${i + 1}`,{ exact: true }).selectOption(f.discoveryParameters[i])
+  await page.getByLabel('人工行动说明',{ exact: true }).fill('按公开方向审阅风险，不读取尚未发现的线索。')
+  await page.getByRole('button',{ name: '提出行动，查看风险',exact: true }).click()
+  await expect(page.getByRole('region',{ name: '当前行动',exact: true })).toBeVisible()
+  expect(modelPosts).toBe(0)
+})

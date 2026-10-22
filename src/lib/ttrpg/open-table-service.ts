@@ -44,8 +44,7 @@ import { ttrpgOpenSituationEffectWorkV1 } from './open-situation-cycle'
 import { rejectTtrpgOpenIntentCandidateV1 } from './open-intent-disposition'
 import { db } from '../db/schema'
 import type { WorkspaceScope, AIConfig } from '../types'
-import { evaluateTtrpgPredicateV1 } from './predicate'
-import { ttrpgOpenSituationGateContextV1 } from './open-situation-runtime'
+import { listTtrpgOpenHumanDirectionsV1 } from './open-human-directions'
 import { TtrpgOpenReadConflictV1 } from './open-read-conflict'
 import { assertInstanceBinding } from '../product/runtime-instances'
 import { verifyProductRuntimeSessionSourceV1 } from '../product-production/preview-source'
@@ -341,15 +340,10 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
   const humanNarrationRepairs = await readTtrpgOpenHumanNarrationRepairKeysV1({ ...input, viewerKey: input.viewerKey! })
   let canRequestKp = false
   try { assertTtrpgOpenModelActorV1(auth, 'prose.ttrpg-open-kp', 'gm', input.viewerKey);canRequestKp = true } catch { /* The real GM has a separate identity. */ }
-  const pointContext = ttrpgOpenSituationGateContextV1(f.state, f.content, current.seat.actorKey!), availableActions = new Set(own.view.rules.core.actionCatalog.filter(a => a.available).map(a => a.actionKey))
-  const affordances = run.situations.active.flatMap(instance => {
-    if (!ttrpgOpenSessionSituationActorAccessV1(run, instance.templateKey, current.seat.actorKey!)) return []
-    const template = ttrpgOpenSituationCatalogV1(f.content.campaign, f.runtime.openRun).templates.find(t => t.templateKey === instance.templateKey)
-    return (template?.interventionPoints ?? []).filter(point => (point.visibleTo === 'public' || point.visibleTo === 'party' || point.visibleTo === 'private' && point.knownByActorKeys.includes(current.seat.actorKey!))
-      && (!point.requiresPredicate || evaluateTtrpgPredicateV1(point.requiresPredicate, pointContext))
-      && point.targetsObstacleKeys.some(key => !instance.satisfiedObstacleKeys.includes(key))).map(point => ({ key: `${instance.situationKey}:${point.pointKey}`, hint: point.affordanceHint,
+  const availableActions = new Set(own.view.rules.core.actionCatalog.filter(a => a.available).map(a => a.actionKey))
+  const affordances = listTtrpgOpenHumanDirectionsV1({ state: f.state,content: f.content,runtime: f.runtime,actorKey: current.seat.actorKey! })
+    .map(({ key,label,point }) => ({ key,label,hint: point.affordanceHint,
       actions: point.suggestedActionKeys.filter(key => availableActions.has(key)).map(key => own.view.rules.actions.find(a => a.actionKey === key)?.name ?? '').filter(Boolean) }))
-  })
   const budget = epoch ? ttrpgOpenCallBudgetV1(epoch, run.coordination.calls) : null
   const handoff = run.operations[run.operations.length - 1]?.handoff?.decision ?? null
   const liveCharacter = {

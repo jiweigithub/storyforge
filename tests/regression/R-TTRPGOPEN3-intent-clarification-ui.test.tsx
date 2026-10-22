@@ -1,3 +1,4 @@
+import { configureManualDiscoveryDirectionsV1 } from '../helpers/open-ttrpg-manual'
 import { act,createElement } from 'react'
 import { createRoot,type Root } from 'react-dom/client'
 import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest'
@@ -31,9 +32,10 @@ describe('R-TTRPGOPEN3 original intent review and explicit human clarification',
       row.value = [...row.options].find(predicate)!.value;row.dispatchEvent(new Event('change',{ bubbles: true }))
     })
   }
-  async function setup(bindingKind?: 'rule' | 'discovery') {
+  async function setup(bindingKind?: 'rule' | 'discovery' | 'legacy-discovery') {
     const f = await readyOpenTtrpgSessionV1('clarification user controls',p => {
       p.ttrpg!.campaign.runtimePolicy.enabled = true;p.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000
+      if (bindingKind === 'legacy-discovery') configureManualDiscoveryDirectionsV1(p)
       if (bindingKind === 'rule') {
         p.ttrpg!.campaign.effectPlanTemplates[0].parameters = [];p.ttrpg!.campaign.effectPlanTemplates[0].effects[0].targetRef = 'hero'
       }
@@ -43,6 +45,7 @@ describe('R-TTRPGOPEN3 original intent review and explicit human clarification',
         p.ttrpg!.campaign.situationTemplates[0].evidence[0].discoveryPolicy.costEffectPlanRef = 'plan.empty.discovery'
       }
     })
+    if (bindingKind === 'legacy-discovery') for (const templateKey of f.campaign.openingSituationKeys) await changeTtrpgSituationV1({ ...await openEnvelopeV1(f.sessionId,'clarify-ui.opening.'+templateKey),templateKey,activationReason: 'opening',mode: 'activated' })
     if (bindingKind === 'discovery') await changeTtrpgSituationV1({ ...await openEnvelopeV1(f.sessionId,'clarify-ui.opening'),templateKey: f.campaign.openingSituationKeys[0],activationReason: 'opening',mode: 'activated' })
     const rawInput = '先提供掩护，具体方法和对象需要补充'
     await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(f.sessionId,'clarify-ui.epoch'),viewerKey: OPEN_HUMAN_VIEWER,triggerKind: 'submit-action',rawInput })
@@ -134,4 +137,25 @@ describe('R-TTRPGOPEN3 original intent review and explicit human clarification',
     await act(async () => { release();await hold;await Promise.resolve() })
     expect(host.textContent).not.toContain('OLD-REVIEW-PRIVATE-SENTINEL');expect(read).toHaveBeenCalledOnce();expect(x.perform).not.toHaveBeenCalled()
   })
+  it('blocks a stale or forged unavailable discovery selection and saves the available direction through the same original clarification',async () => {
+    const x = await setup('legacy-discovery'),save = vi.spyOn(table,'clarifyTtrpgOpenTableCandidateV2'),before = await readProductRuntimeState(x.f.sessionId)
+    await act(x.render);await until(() => !!button('保存补充并重新核对'))
+    await text('补充后的行动说明','只检查公开方向，保留本人风险和实际发现代价')
+    await choose('补充行动规则',o => o.value.includes('investigate'))
+    const paths = host.querySelector<HTMLSelectElement>('select[aria-label="补充检查线索"]')!
+    expect([...paths.options].find(o => o.value.includes('direction.legacy'))!.disabled).toBe(true)
+    // Programmatic input can bypass a native disabled option; it still must not save or silently drop discovery.
+    await choose('补充检查线索',o => o.value.includes('direction.legacy'))
+    expect(button('保存补充并重新核对')!.disabled).toBe(true)
+    await act(async () => button('保存补充并重新核对')!.click())
+    expect(save).not.toHaveBeenCalled();expect(await readProductRuntimeState(x.f.sessionId)).toEqual(before)
+    await choose('补充检查线索',o => o.value.includes('direction.current'))
+    expect(button('保存补充并重新核对')!.disabled).toBe(false)
+    await act(async () => button('保存补充并重新核对')!.click());await until(() => !!button('确认这份行动意图'))
+    expect(save).toHaveBeenCalledOnce();expect(x.runAI).toHaveBeenCalledOnce()
+    const state = await readProductRuntimeState(x.f.sessionId)
+    expect(state.ttrpg!.openRun!.coordination.calls[0].intentClarifications![0].request!.discovery!.evidenceRef).toBe('direction.current.evidence.1')
+    expect(state.entities).toEqual(before.entities);expect(state.ttrpg!.openRun!.worldTime).toEqual(before.ttrpg!.openRun!.worldTime)
+  })
+
 })

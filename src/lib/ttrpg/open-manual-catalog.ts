@@ -1,5 +1,6 @@
 import { ttrpgOpenEntityIdentityCatalogV1, ttrpgOpenEntityReferenceVisibleV1, ttrpgOpenEntityParameterAllowedV1 } from './open-entity-catalog'
-import { ttrpgOpenSituationCatalogV1, ttrpgOpenSessionSituationActorAccessV1 } from './open-session-situation-catalog'
+import { listTtrpgOpenHumanDirectionsV1 } from './open-human-directions'
+import { ttrpgOpenDiscoveryKnowledgeReferenceMatchesV1 } from './open-knowledge-discovery'
 /** Human projection of the existing frozen rules. No hidden clue text or GM templates. */
 import type { ProductRuntimeState } from '../types'
 import type { TtrpgRuntimeContentV2 } from './content-version'
@@ -45,19 +46,18 @@ export function buildTtrpgOpenManualCatalogV1(input: {
     rules.push({ interactionKey: undefined,route: 'generic-check',ruleKey: check.checkKey,label: check.title,available: true,
       targets: targets.filter(t => check.targetKinds.includes(t.kind)).map(t => ({ key: t.key,name: t.name })),templateKeys: templates.map(t => t.planKey),parameters: parameters(templates),timeCostWorldTurns: check.timeCostWorldTurns })
   }
-  const context = ttrpgOpenPredicateContextV1(state,content)
-  const discoveries = runtime.openRun!.situations.active.flatMap(instance => {
-    if (!ttrpgOpenSessionSituationActorAccessV1(runtime.openRun, instance.templateKey, actorKey)) return []
-    const template = ttrpgOpenSituationCatalogV1(content.campaign, runtime.openRun).templates.find(t => t.templateKey === instance.templateKey)!
-    return template.interventionPoints.filter(point => (point.visibleTo === 'public' || point.visibleTo === 'party' || point.visibleTo === 'private' && point.knownByActorKeys.includes(actorKey))
-      && (!point.requiresPredicate || evaluateTtrpgPredicateV1(point.requiresPredicate,context)) && point.targetsObstacleKeys.some(key => !instance.satisfiedObstacleKeys.includes(key)))
-      .flatMap(point => template.evidence.flatMap(evidence => evidence.discoveryPolicy.paths.filter(path => path.interventionPointKey === point.pointKey).flatMap(path => {
-        const route = path.kind === 'action' ? 'existing-action' as const : 'generic-check' as const
-        if (!rules.some(r => r.route === route && r.ruleKey === path.key) || route === 'existing-action' && !point.suggestedActionKeys.includes(path.key)) return []
-        const plans = [...new Set([evidence.discoveryPolicy.costEffectPlanRef,evidence.discoveryPolicy.failForwardEffectPlanRef].filter((key): key is string => key !== null))].map(key => content.campaign.effectPlanTemplates.find(t => t.planKey === key)!)
-        return [{ key: JSON.stringify([instance.situationKey,point.pointKey,evidence.clueRef,route,path.key]),label: point.affordanceHint,
-          route,ruleKey: path.key,situationKey: instance.situationKey,interventionPointKey: point.pointKey,evidenceRef: evidence.clueRef,templateKeys: plans.map(t => t.planKey),parameters: parameters(plans) }]
-      })))
-  })
+  const discoveries = listTtrpgOpenHumanDirectionsV1(input).flatMap(({ instance,template,point,number,label }) =>
+    template.evidence.flatMap(evidence => evidence.discoveryPolicy.paths.filter(path => path.interventionPointKey === point.pointKey).flatMap(path => {
+      const route = path.kind === 'action' ? 'existing-action' as const : 'generic-check' as const
+      if (!rules.some(r => r.route === route && r.ruleKey === path.key) || route === 'existing-action' && !point.suggestedActionKeys.includes(path.key)) return []
+      const refs = [...new Set([evidence.discoveryPolicy.costEffectPlanRef,evidence.discoveryPolicy.failForwardEffectPlanRef].filter((key): key is string => key !== null))]
+      const resolved = refs.map(key => content.campaign.effectPlanTemplates.find(t => t.planKey === key))
+      const available = resolved.every(plan => plan !== undefined && [...plan.effects,...plan.alternatives.flatMap(a => a.effects)]
+        .every(effect => ttrpgOpenDiscoveryKnowledgeReferenceMatchesV1(effect,evidence.clueRef)))
+      const plans = available ? resolved.filter((plan): plan is TtrpgOpenEffectPlanTemplateV1 => plan !== undefined) : []
+      return [{ key: JSON.stringify([instance.situationKey,point.pointKey,evidence.clueRef,route,path.key]),label: `${label} · ${point.affordanceHint}`,directionNumber: number,
+        available,unavailableReason: available ? null : '这条方向需要作者修订。',
+        route,ruleKey: path.key,situationKey: instance.situationKey,interventionPointKey: point.pointKey,evidenceRef: evidence.clueRef,templateKeys: plans.map(t => t.planKey),parameters: parameters(plans) }]
+    })))
   return { actorKey,rules,discoveries }
 }

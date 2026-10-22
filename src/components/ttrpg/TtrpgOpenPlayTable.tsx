@@ -188,7 +188,7 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
         {p.view.pressureSignals.map((s, i) => <p key={i}>征兆：{s.signalText}</p>)}
       </section>
       <section className="sf-open-table-card" aria-label="当前可知线索与方向"><h2>眼前的线索与方向</h2>
-        {p.affordances.map(point => <article key={point.key}><p>{point.hint}</p>{point.actions.length > 0 && <p>可以尝试：{point.actions.join('、')}</p>}</article>)}
+        {p.affordances.map(point => <article key={point.key}><p><strong>{point.label}</strong> · {point.hint}</p>{point.actions.length > 0 && <p>可以尝试：{point.actions.join('、')}</p>}</article>)}
         {p.view.knowledge.map((clue, i) => <article key={`${clue.evidenceRef}:${i}`}><h3>{clue.title}</h3><p>{clue.description}</p><p>{clue.reliability === 'observed' ? '亲自观察所得' : clue.reliability === 'hearsay' ? '转述消息，尚需核实' : '角色判断，尚需验证'}</p></article>)}
         {!p.affordances.length && !p.view.knowledge.length && <p>当前没有新的可见线索；可以继续观察现场或与同伴交谈。</p>}
       </section>

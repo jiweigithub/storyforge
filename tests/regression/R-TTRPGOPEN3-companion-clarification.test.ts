@@ -1,7 +1,8 @@
+import { configureManualDiscoveryDirectionsV1 } from '../helpers/open-ttrpg-manual'
 import { beforeEach,afterEach,describe,expect,it,vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { readyOpenTtrpgSessionV1,openEnvelopeV1,OPEN_HUMAN_VIEWER } from '../helpers/open-ttrpg-session'
-import { startTtrpgOpenEpochV1,delegateTtrpgOpenHostingV1,stopTtrpgOpenHostingV1,clarifyTtrpgOpenIntentCandidateV1,
+import { startTtrpgOpenEpochV1,delegateTtrpgOpenHostingV1,stopTtrpgOpenHostingV1,clarifyTtrpgOpenIntentCandidateV1,changeTtrpgSituationV1,
   startTtrpgOpenIntentCandidateOperationV1,preauthorizeTtrpgOpenCompanionV1 } from '../../src/lib/ttrpg/runtime-commands'
 import { generateTtrpgOpenCompanionCandidateV1,readTtrpgOpenIntentCandidateV1 } from '../../src/lib/ttrpg/open-intent-harness'
 import { readProductRuntimeState,parseProductRuntimeState,replayProductRuntimeEvents } from '../../src/lib/product/runtime-core'
@@ -12,12 +13,14 @@ import { exportProjectJSON,importProjectJSON } from '../../src/lib/export/json-e
 
 describe('R-TTRPGOPEN3 human clarification retains the actual AI owner', { timeout: 60000 },() => {
   beforeEach(async () => { await db.delete();await db.open() });afterEach(() => db.close())
-  async function setup() {
+  async function setup(configure?: Parameters<typeof readyOpenTtrpgSessionV1>[1]) {
     const f = await readyOpenTtrpgSessionV1('ambiguous original AI proposal',p => {
       p.ttrpg!.campaign.runtimePolicy.enabled = true;p.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000
       p.ttrpg!.campaign.characterTemplates[1].playerProfile!.secret = 'AI-PRIVATE-CLARIFICATION-SENTINEL'
+      configure?.(p)
       const action = p.ttrpg!.rulePack.content.actions.find(a => a.key === 'investigate')!;action.effects = [];action.description = '观察现场，不消耗资源。'
     })
+    if (configure) for (const templateKey of f.campaign.openingSituationKeys) await changeTtrpgSituationV1({ ...await openEnvelopeV1(f.sessionId,'clarify-ai.opening.'+templateKey),templateKey,activationReason: 'opening',mode: 'activated' })
     await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(f.sessionId,'clarify-ai.epoch'),viewerKey: OPEN_HUMAN_VIEWER,triggerKind: 'continue-host',rawInput: '请队友提出当前可做的协作' })
     const epoch = (await readProductRuntimeState(f.sessionId)).ttrpg!.openRun!.coordination.epochs[0]
     await delegateTtrpgOpenHostingV1({ ...await openEnvelopeV1(f.sessionId,'clarify-ai.delegate'),epochKey: epoch.epochKey,viewerKey: OPEN_HUMAN_VIEWER,maximumCostUsdPerCall: 0.1,decision: 'delegate-this-epoch' })
@@ -64,4 +67,15 @@ describe('R-TTRPGOPEN3 human clarification retains the actual AI owner', { timeo
     await expect(clarifyTtrpgOpenIntentCandidateV1({ ...await x.base(),viewerKey: 'viewer.companion.1',expectedCount: 0,selection: x.selection })).rejects.toThrow()
     expect(await readProductRuntimeState(x.f.sessionId)).toEqual(before)
   })
+  it('keeps discovery availability shared and uses the human numbering without leaking private AI direction counts',async () => {
+    const x = await setup(configureManualDiscoveryDirectionsV1),before = await readProductRuntimeState(x.f.sessionId)
+    const view = await x.review(),paths = view.catalog.discoveries.filter(d => d.route === 'generic-check')
+    expect(paths.map(d => d.directionNumber)).toEqual([1,2])
+    expect(paths.map(d => d.available)).toEqual([false,true])
+    expect(paths.map(d => d.label)).toEqual(['方向 1 · 比较公开的两种保管方向','方向 2 · 比较公开的两种保管方向'])
+    expect(JSON.stringify(view)).not.toMatch(/PRIVATE_POINT_HINT|PRIVATE_CLUE|PRIVATE_RULE_REASON|PRIVATE_OLD_AUTHOR_TITLE|PRIVATE_NEW_AUTHOR_TITLE/)
+    expect(await readProductRuntimeState(x.f.sessionId)).toEqual(before)
+    expect(x.runAI).toHaveBeenCalledTimes(1)
+  })
+
 })

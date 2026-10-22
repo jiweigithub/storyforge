@@ -47,7 +47,7 @@ function TtrpgOpenIntentReviewBody(props: Props) {
   const savedTarget = review?.request ? savedRule?.targets.find(t => t.key === review.request!.targetKey)?.name : null
   const savedDiscovery = review?.request?.discovery ? review.catalog.discoveries.find(d => d.situationKey === review.request!.discovery!.situationKey
     && d.evidenceRef === review.request!.discovery!.evidenceRef && d.interventionPointKey === review.request!.discovery!.interventionPointKey) : null
-  const fieldsReady = (rule?.parameters ?? []).every(p => !p.required || bindings[p.key] && bindings[p.key] !== 'null')
+  const fieldsReady = (!discoveryKey || Boolean(discovery?.available)) && (rule?.parameters ?? []).every(p => !p.required || bindings[p.key] && bindings[p.key] !== 'null')
     && (discovery?.parameters ?? []).every(p => !p.required || discoveryBindings[p.key] && discoveryBindings[p.key] !== 'null')
   const makeBindings = (templateKeys: string[],parameters: Rule['parameters'],values: Record<string,string>) => {
     const result: Record<string,Record<string,string | null>> = Object.fromEntries(templateKeys.map(template => [template,{}]))
@@ -85,11 +85,12 @@ function TtrpgOpenIntentReviewBody(props: Props) {
         <label>补充行动对象<select aria-label="补充行动对象" value={target} onChange={e => setTarget(e.target.value)}><option value="">尚未确定</option>{rule.targets.map(t => <option key={JSON.stringify(t.key)} value={JSON.stringify(t.key)}>{t.name}</option>)}</select></label>
         {!rule.targets.length && <p>当前没有可识别的行动对象，可改选不需要其他对象的方式。</p>}
         {rule.parameters.map((p,i) => <label key={p.key}>补充行动后果对象 {i + 1}<select aria-label={`补充行动后果对象 ${i + 1}`} value={bindings[p.key] ?? (p.required ? '' : 'null')} onChange={e => setBindings(v => ({ ...v,[p.key]: e.target.value }))}><option value="">选择对象</option>{!p.required && <option value="null">不绑定</option>}{p.options.map(o => <option key={o.key} value={JSON.stringify(o.key)}>{o.name}</option>)}</select></label>)}
-        {paths.length > 0 && <label>补充检查线索<select aria-label="补充检查线索" value={discoveryKey} onChange={e => { setDiscoveryKey(e.target.value);setDiscoveryBindings({}) }}><option value="">本次不进行线索发现</option>{paths.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}</select></label>}
+        {paths.length > 0 && <label>补充检查线索<select aria-label="补充检查线索" value={discoveryKey} onChange={e => { setDiscoveryKey(e.target.value);setDiscoveryBindings({}) }}><option value="">本次不进行线索发现</option>{paths.map(d => <option key={d.key} value={d.key} disabled={!d.available}>{d.label}{!d.available ? '（需作者修订）' : ''}</option>)}</select></label>}
         {discovery?.parameters.map((p,i) => <label key={p.key}>补充线索后果对象 {i + 1}<select aria-label={`补充线索后果对象 ${i + 1}`} value={discoveryBindings[p.key] ?? (p.required ? '' : 'null')} onChange={e => setDiscoveryBindings(v => ({ ...v,[p.key]: e.target.value }))}><option value="">选择对象</option>{!p.required && <option value="null">不绑定</option>}{p.options.map(o => <option key={o.key} value={JSON.stringify(o.key)}>{o.name}</option>)}</select></label>)}
       </>}
       <label>补充后的期望结果<textarea aria-label="补充后的期望结果" value={outcome} maxLength={2000} onChange={e => setOutcome(e.target.value)} /></label>
       <button disabled={!goal.trim() || !fieldsReady} onClick={() => action(async () => {
+        if (discoveryKey && !discovery?.available) return
         const chosenTarget: unknown = target ? JSON.parse(target) : null
         await clarifyTtrpgOpenTableCandidateV2({ ...source,expectedCount: review.attempts,
           selection: { goal,method: rule ? rule.interactionKey ?? rule.ruleKey : null,targetRefs: typeof chosenTarget === 'string' ? [chosenTarget] : [],requestedOutcome: outcome.trim() ? outcome : null },

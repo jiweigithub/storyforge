@@ -18,7 +18,7 @@ export default function TtrpgOpenManualAction(props: {
   const rule = catalog?.rules.find(r => ruleKey(r) === selected)
   const paths = catalog?.discoveries.filter(d => d.route === rule?.route && d.ruleKey === rule.ruleKey) ?? []
   const discovery = paths.find(d => d.key === discoveryKey)
-  const ready = rule && target && rule.parameters.every(p => !p.required || bindings[p.key]) && (!discovery || discovery.parameters.every(p => !p.required || discoveryBindings[p.key]))
+  const ready = rule && target && (!discoveryKey || Boolean(discovery?.available)) && rule.parameters.every(p => !p.required || bindings[p.key]) && (!discovery || discovery.parameters.every(p => !p.required || discoveryBindings[p.key]))
   const makeBindings = (source: { templateKeys: string[]; parameters: Catalog['rules'][number]['parameters'] },values: Record<string,string>) => {
     const result: Record<string,Record<string,string | null>> = Object.fromEntries(source.templateKeys.map(key => [key,{}]))
     for (const p of source.parameters) result[p.templateKey][p.parameterKey] = values[p.key] ? JSON.parse(values[p.key]) as string | null : null
@@ -33,12 +33,12 @@ export default function TtrpgOpenManualAction(props: {
       {rule && <><p>耗时：{rule.timeCostWorldTurns} 个世界轮次。具体风险和费用将在提交后显示。</p>
         <label>行动对象<select aria-label="行动对象" value={target} onChange={e => setTarget(e.target.value)}><option value="">选择对象</option>{rule.targets.map(t => <option key={JSON.stringify(t.key)} value={JSON.stringify(t.key)}>{t.name}</option>)}</select></label>
         {rule.parameters.map((p,i) => <label key={p.key}>行动后果对象 {i + 1}{p.required ? '（必选）' : '（可选）'}<select aria-label={`行动后果对象 ${i + 1}`} value={bindings[p.key] ?? (p.required ? '' : 'null')} onChange={e => setBindings(v => ({ ...v,[p.key]: e.target.value }))}><option value="">选择合法对象</option>{!p.required && <option value="null">不绑定</option>}{p.options.map(o => <option key={o.key} value={JSON.stringify(o.key)}>{o.name}</option>)}</select></label>)}
-        {paths.length > 0 && <label>检查线索<select aria-label="检查线索" value={discoveryKey} onChange={e => { setDiscoveryKey(e.target.value);setDiscoveryBindings({}) }}><option value="">本次不进行线索发现</option>{paths.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}</select></label>}
+        {paths.length > 0 && <label>检查线索<select aria-label="检查线索" value={discoveryKey} onChange={e => { setDiscoveryKey(e.target.value);setDiscoveryBindings({}) }}><option value="">本次不进行线索发现</option>{paths.map(d => <option key={d.key} value={d.key} disabled={!d.available}>{d.label}{!d.available ? '（需作者修订）' : ''}</option>)}</select></label>}
         {discovery?.parameters.map((p,i) => <label key={p.key}>线索后果对象 {i + 1}{p.required ? '（必选）' : '（可选）'}<select aria-label={`线索后果对象 ${i + 1}`} value={discoveryBindings[p.key] ?? (p.required ? '' : 'null')} onChange={e => setDiscoveryBindings(v => ({ ...v,[p.key]: e.target.value }))}><option value="">选择合法对象</option>{!p.required && <option value="null">不绑定</option>}{p.options.map(o => <option key={o.key} value={JSON.stringify(o.key)}>{o.name}</option>)}</select></label>)}
       </>}
       <label>行动说明<textarea aria-label="人工行动说明" maxLength={10000} value={rawInput} onChange={e => setRawInput(e.target.value)} placeholder="可以补充你准备怎样行动…" /></label>
       <button disabled={!ready} onClick={() => void props.perform(async () => {
-        if (!rule || !target) return
+        if (!rule || !target || discoveryKey && !discovery?.available) return
         await proposeTtrpgOpenManualActionV1({ ...props.input,submissionKey: submission.current,basisHash: catalog.basisHash,rawInput: rawInput.trim() || `我选择${rule.label}`,
           request: { ...(rule.interactionKey ? { interactionKey: rule.interactionKey } : {}),route: rule.route,ruleKey: rule.ruleKey,actorKey: catalog.actorKey,controllerMode: 'human',targetKey: JSON.parse(target) as string | null,effectBindings: makeBindings(rule,bindings),
             ...(discovery ? { discovery: { situationKey: discovery.situationKey,evidenceRef: discovery.evidenceRef,interventionPointKey: discovery.interventionPointKey,effectBindings: makeBindings(discovery,discoveryBindings) } } : {}) } })
