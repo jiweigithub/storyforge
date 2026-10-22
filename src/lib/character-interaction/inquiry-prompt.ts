@@ -9,6 +9,10 @@ export const CHAT_SPOKEN_INQUIRY_REVIEW_RULES_V1 = [
 ]
 
 export function chatInquiryGenerationRulesV1(version: string | undefined): string[] {
+  if (version === 'chat-situation-construction-v15') return [
+    ...chatInquiryGenerationRulesV1('chat-situation-construction-v14').map(rule => rule.replace('同一角色轮次内', '当前场景内跨玩家回合')),
+    'inquiryEvidence.version=3 时，questions 可以包含玩家插话前尚未回答的实际问题。逐字读完整 dialogueMessageIds 对应对话：简短应声或继续听不自动撤销旧问题，当前方向仍承接它时应引用真正问话，不能拿后来“等回答”的说明代替。玩家或角色已经撤回、改题、改对象或停止该方向时，不得答复已失效问题；清单只证明历史知情可核验，不证明仍需答复。不得把插话作为新增人物、听众、秘密或事实权限。',
+  ]
   if (version === 'chat-situation-construction-v14') return [
     ...chatInquiryGenerationRulesV1('chat-situation-construction-v13').map(rule => rule
       .replace('questionSequence 必须等于 pendingSituation.sourceEventSequence', 'questionSequence 必须选自 inquiryEvidence.questions，并指向本次方向实际承接的提问消息；pendingSituation.sourceEventSequence 是触发请求的消息，可以是提问之后的补充说明')
@@ -31,6 +35,10 @@ export function chatInquiryGenerationRulesV1(version: string | undefined): strin
   ]
 }
 export function chatInquiryReviewRulesV1(version?: string): string[] {
+  if (version === 'chat-situation-review-v14') return [
+    ...chatInquiryReviewRulesV1('chat-situation-review-v13'),
+    'inquiryEvidence.version=3 允许原问题跨玩家回合承接，但 actual-question 必须核对 dialogueMessageIds 中的完整原话与听众。简短应声不等于撤回；实际撤回、改题、改对象或停止推进则拒绝过时答复，不能因问题仍在清单就放行。答复仍只使用原提问时已知依据与原听众，插话不授予新权限；不能省略中间对话来推定连续。',
+  ]
   if (version === 'chat-situation-review-v13') return [
     ...chatInquiryReviewRulesV1('chat-situation-review-v12'),
     'actual-question 还须核对所选 questionSequence 在 inquiryEvidence.questions 中，原文确实提出了当前 direction 要承接的问题。requestSequence/sourceEventSequence 可以是之后的补充说明，不要求等于 questionSequence；这不允许改题、回答无关旧问题或把补充说明判成实际问题。核对整个提问到请求的对话，后句若撤回、改变问题或改变对象，拒绝原问题的答复。人物依据、听众及必要前提必须属于所选问题当时的范围，不能借后句获得新权限或秘密。',

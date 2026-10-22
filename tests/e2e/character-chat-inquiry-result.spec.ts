@@ -3,7 +3,9 @@ import {test, expect} from '@playwright/test'
 import {inquiryReassurance, inquiryAnswer, inquiryQuestion, inquiryPurpose, inquiryTruth, chatInquiryReviewFixture} from '../helpers/chat-inquiry-output'
 import type {ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
 
-for (const splitQuestion of [false, true]) for (const privateAnswer of [false, true]) test(`actual NPC reply is displayed only to its listeners and feeds the next actor turn (private=${privateAnswer}, split=${splitQuestion})`, async ({page}) => {
+const inquiryCases = [false, true].flatMap(privateAnswer => [{privateAnswer, splitQuestion: false, playerInterjection: false}, {privateAnswer, splitQuestion: true, playerInterjection: false}, {privateAnswer, splitQuestion: false, playerInterjection: true}])
+for (const {privateAnswer, splitQuestion, playerInterjection} of inquiryCases) test(`actual NPC reply is displayed only to its listeners and feeds the next actor turn (private=${privateAnswer}, split=${splitQuestion}, player=${playerInterjection})`, async ({page}) => {
+  const twoUtterances = splitQuestion || playerInterjection
   await page.addInitScript(() => {
     localStorage.setItem('storyforge_guide_completed', 'e2e')
     localStorage.setItem('storyforge-ai-config', JSON.stringify({provider: 'openai', baseUrl: 'https://chat-inquiry.invalid/v1', model: 'test', maxTokens: 6000}))
@@ -27,7 +29,8 @@ for (const splitQuestion of [false, true]) for (const privateAnswer of [false, t
       expect(prompt).toContain('requiredEvidenceFactKeys')
       const questionSequence = await page.evaluate(async ({id, question}) => {const load = new Function('p', 'return import(p)'); const state = await (await load('/storyforge/src/lib/character-interaction/runtime-api.ts')).readProductRuntimeState(id); return state.interaction.messages.find((m: {text: string}) => m.text === question).eventSequence}, {id: sessionId, question: inquiryQuestion})
       expect(prompt).toContain(`"questionSequence":${questionSequence}`)
-      if (splitQuestion) expect(questionSequence).toBeLessThan(pending.sourceEventSequence)
+      if (twoUtterances) expect(questionSequence).toBeLessThan(pending.sourceEventSequence)
+      if (playerInterjection) {expect(prompt).toContain('嗯，我在听。'); expect(prompt).toContain(inquiryQuestion); expect(prompt).toContain(inquiryReassurance)}
       proposal = {kind: 'chat-situation', title: '暴雨驿站', location: '驿站', timeLabel: '傍晚', newFacts: [], newGoals: [], newThreads: [], possibilities: [],
         inquiryResult: {actorKey: 'guard', questionSequence, questionExcerpt: inquiryQuestion,
           respondentFactKey: 'clerk-present', respondentExcerpt: '掌柜在柜台另一端，可以当面交谈。', respondentName: '掌柜', statementFactKey: 'clerk-statement',
@@ -36,7 +39,7 @@ for (const splitQuestion of [false, true]) for (const privateAnswer of [false, t
       output = proposal
     } else {
       actions++; expect(prompt).not.toContain(inquiryPurpose); expect(prompt).not.toContain('factEvidence'); expect(prompt).not.toContain('inquiryEvidence')
-      const asking = actions <= (splitQuestion ? 2 : 1), requestsAnswer = actions === (splitQuestion ? 2 : 1)
+      const asking = actions <= (twoUtterances ? 2 : 1), requestsAnswer = actions === (twoUtterances ? 2 : 1)
       if (asking) expect(prompt).not.toContain(inquiryTruth)
       else {expect(prompt).toContain(inquiryAnswer); expect(prompt).toContain(inquiryTruth); expect(prompt).not.toContain('他是保管者')}
       const text = actions === 1 ? inquiryQuestion : asking ? inquiryReassurance : followup
@@ -54,7 +57,11 @@ for (const splitQuestion of [false, true]) for (const privateAnswer of [false, t
   await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
   await page.getByRole('button', {name: '让角色开场', exact: true}).click()
   await expect(page.getByRole('article').getByText(inquiryQuestion, {exact: true})).toBeVisible()
-  if (splitQuestion) await expect(page.getByRole('article').getByText(inquiryReassurance, {exact: true})).toBeVisible()
+  if (playerInterjection) {
+    await page.getByLabel('发送给角色的消息', {exact: true}).fill('嗯，我在听。')
+    await page.getByRole('button', {name: '发送并生成', exact: true}).click()
+  }
+  if (twoUtterances) await expect(page.getByRole('article').getByText(inquiryReassurance, {exact: true})).toBeVisible()
   await page.getByRole('button', {name: '让角色继续', exact: true}).click()
   await expect(page.getByRole('article').getByText(followup, {exact: true})).toBeVisible()
   const transcript = page.getByRole('region', {name: '对话记录', exact: true})
@@ -66,8 +73,8 @@ for (const splitQuestion of [false, true]) for (const privateAnswer of [false, t
     await expect(reply.getByTestId('chat-message-tools')).toHaveCount(0)
   }
   await expect(page.getByText(inquiryPurpose, {exact: true})).toHaveCount(0)
-  expect(calls).toEqual(['action', 'action-review', ...(splitQuestion ? ['action', 'action-review'] : []), 'construction', 'situation-review', 'action', 'action-review'])
-  expect(totalCalls).toBe(splitQuestion ? 11 : 8)
+  expect(calls).toEqual(['action', 'action-review', ...(twoUtterances ? ['action', 'action-review'] : []), 'construction', 'situation-review', 'action', 'action-review'])
+  expect(totalCalls).toBe(twoUtterances ? 11 : 8)
   const before = await read()
   expect(before.chatNarrative.inquiryHistory).toHaveLength(1)
   expect(before.chatNarrative.factEvidence).toEqual({version: 1, records: [{factKey: 'clerk-statement', kind: 'observation',
@@ -75,7 +82,7 @@ for (const splitQuestion of [false, true]) for (const privateAnswer of [false, t
   expect(before.chatNarrative.situation.facts.find((f: {factKey: string}) => f.factKey === 'secret').audienceKeys).toEqual(privateAnswer ? ['guard'] : ['guard', 'player'])
   expect(before.chatNarrative.situation.facts.find((f: {factKey: string}) => f.factKey === 'purpose').audienceKeys).toEqual([])
   await page.reload(); await expect(page.getByTestId('chat-narrative-controls')).toBeVisible()
-  expect(await read()).toEqual(before); expect(calls).toHaveLength(splitQuestion ? 8 : 6); expect(totalCalls).toBe(splitQuestion ? 11 : 8)
+  expect(await read()).toEqual(before); expect(calls).toHaveLength(twoUtterances ? 8 : 6); expect(totalCalls).toBe(twoUtterances ? 11 : 8)
   await expect(transcript.getByTestId('chat-inquiry-reply')).toHaveCount(privateAnswer ? 0 : 1)
   await page.setViewportSize({width: 390, height: 844})
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)

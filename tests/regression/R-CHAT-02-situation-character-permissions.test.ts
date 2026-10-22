@@ -45,10 +45,10 @@ function input(f: Awaited<ReturnType<typeof prepared>>) {
   return {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'player', skillId, objective: '结算实际敲门后的有限观察'}
 }
 
-it.each([8, 9, 10, 11, 12, 13, 14])('uses saved instructions without rewriting historical generation/review bytes (producer v%s)', async version => {
+it.each([8, 9, 10, 11, 12, 13, 14, 15])('uses saved instructions without rewriting historical generation/review bytes (producer v%s)', async version => {
   const legacy = version === 8
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId), original = skills.getAgentSkillV1
-  if (version < 14) vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === skillId ? {...original(id), promptVersion: `chat-situation-construction-v${version}`}
+  if (version < 15) vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === skillId ? {...original(id), promptVersion: `chat-situation-construction-v${version}`}
     : id === reviewSkill ? {...original(id), promptVersion: `chat-situation-review-v${version - 1}`} : original(id))
   let calls = 0
   const result = await generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: () => {vi.restoreAllMocks()}, runAI: withChatActionChoiceFixture(async messages => {
@@ -126,8 +126,8 @@ it('rejects hidden-source evidence before independent review, retaining the comp
 
 it('accepts only exact released inquiry binding pairs, never cross-version or future identities', () => {
   const result = {} as ChatInquiryResultV1 // This guard checks capability only; full payload tests use actual inquiry fixtures.
-  for (const [producer, reviewer] of [[8, 7], [9, 8], [10, 9], [11, 10], [12, 11], [13, 12], [14, 13]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).not.toThrow()
-  for (const [producer, reviewer] of [[8, 8], [9, 7], [7, 8], [9, 9], [10, 8], [11, 9], [10, 10], [11, 11], [12, 10], [13, 11], [14, 12], [13, 13], [15, 14], [999, 8], [9, 999]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).toThrow()
+  for (const [producer, reviewer] of [[8, 7], [9, 8], [10, 9], [11, 10], [12, 11], [13, 12], [14, 13], [15, 14]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).not.toThrow()
+  for (const [producer, reviewer] of [[8, 8], [9, 7], [7, 8], [9, 9], [10, 8], [11, 9], [10, 10], [11, 11], [12, 10], [13, 11], [14, 12], [13, 13], [15, 13], [14, 14], [16, 15], [999, 8], [9, 999]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).toThrow()
   for (const version of [undefined, 'chat-situation-construction-v8', 'chat-situation-construction-v999', 'chat-situation-review-v8']) expect(chatSituationCharacterRulesV1(version)).toEqual([])
   for (const version of [undefined, 'chat-situation-review-v7', 'chat-situation-review-v999', 'chat-situation-construction-v9']) expect(chatSituationCharacterReviewRulesV1(version)).toEqual([])
 })

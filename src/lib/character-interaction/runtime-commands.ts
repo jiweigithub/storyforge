@@ -267,7 +267,7 @@ export async function commitChatControlHandoff(input: ProductRuntimeCommandEnvel
 export async function commitChatSituation(input: ProductRuntimeCommandEnvelopeV1 & {
   triggerSequence: number; draft: ChatSituationDraftV1; review: ChatSituationReviewV1;
   factEvidenceVersion?: 1;
-  inquiryEvidenceVersion?: 1 | 2;
+  inquiryEvidenceVersion?: 1 | 2 | 3;
   harnessRun?: {id: number; lastSequence: number};
 }): Promise<ProductRuntimeEvent> {
   return appendInteractionCommand({...input, type: 'interaction.narrative.situation.committed', actorKey: 'player',

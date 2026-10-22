@@ -1003,7 +1003,7 @@ export async function readInteractionRuntimeCandidateV1(scope: WorkspaceScope, r
   return { snapshot: saved.snapshot, candidate }
 }
 
-async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSequence: number, optionKey?: string, evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1 | 2} = {}): Promise<ProductRuntimeEvent | null> {
+async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSequence: number, optionKey?: string, evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1 | 2 | 3} = {}): Promise<ProductRuntimeEvent | null> {
   if (candidate.kind === 'scene-director-candidate') return null
   const envelope = {
     sessionId: candidate.productRuntimeSessionId,
@@ -1151,7 +1151,7 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
       candidateHash: candidate.candidateHash, decision: 'adopt', reviewItemId: optionKey!, reviewDecision: 'acknowledged', note: `玩家选定行动候选 ${optionKey}`})
     await input.onDurableBoundary?.('confirmation.recorded', snapshot)
   }
-  const evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1 | 2} = {}
+  const evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1 | 2 | 3} = {}
   if (!adopted && ['chat-situation-candidate', 'chat-narrative-action-candidate', 'chat-narrative-options-candidate'].includes(candidate.kind)) {
     // Recovery may already have committed the command. Verify its producer
     // against the original state, never the current default reader or new head.

@@ -1,12 +1,12 @@
 import {type ChatNarrativeActionV1, type ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
 import {generateInteractionRuntimeCandidateV1, adoptInteractionRuntimeCandidateV1} from '../../src/lib/character-interaction/harness'
-import {requestChatNarrativeTrigger, readProductRuntimeState, readProductRuntimeStateVersion} from '../../src/lib/character-interaction/runtime-api'
+import {commitInteractionPlayerMessage, requestChatNarrativeTrigger, readProductRuntimeState, readProductRuntimeStateVersion} from '../../src/lib/character-interaction/runtime-api'
 import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture, withChatActionChoiceFixture} from './chat-narrative-fixture'
 
 export {inquiryReassurance, inquiryQuestion, inquiryAnswer, inquiryTruth, inquiryPurpose, chatInquiryReviewFixture} from './chat-inquiry-output'
 import {inquiryReassurance, inquiryQuestion, inquiryAnswer} from './chat-inquiry-output'
 /** Synthetic reviewers and frozen inquiry authority; not a real-model quality result. */
-export async function prepareChatInquiryFixture(options: {questionEvidenceFactKeys?: string[]; splitQuestion?: boolean; reassuranceAudienceKeys?: string[]} = {}) {
+export async function prepareChatInquiryFixture(options: {questionEvidenceFactKeys?: string[]; splitQuestion?: boolean; reassuranceAudienceKeys?: string[]; playerInterjection?: string} = {}) {
   const f = await seedChatNarrativeRuntimeFixture({inquiryResults: true, factDiscovery: true, ...(options.splitQuestion ? {maxActionsPerTrigger: 2} : {})})
   let v = await readProductRuntimeStateVersion(f.sessionId)
   await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'inquiry.start', baseSequence: v.sequence, baseStateHash: v.stateHash,
@@ -14,12 +14,20 @@ export async function prepareChatInquiryFixture(options: {questionEvidenceFactKe
   const evidenceFactKeys = options.questionEvidenceFactKeys ?? ['lost', 'clerk-present', 'box']
   const action: ChatNarrativeActionV1 = {kind: 'speak', text: inquiryQuestion, goalKey: 'find-seal', audienceKeys: ['guard', 'player'],
     evidenceFactKeys, waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
-    ...(!options.splitQuestion ? {situationRequest: {threadKey: 'investigate', direction: '承接刚才向掌柜提出的具体位置问题，保留其可能拒答或无法确认的空间。',
+    ...(!options.splitQuestion || options.playerInterjection ? {situationRequest: {threadKey: 'investigate', direction: '承接刚才向掌柜提出的具体位置问题，保留其可能拒答或无法确认的空间。',
       evidenceFactKeys, evidenceExcerpt: inquiryQuestion}} : {})}
   const asked = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action',
     objective: '工程实际询问，不预写回答', runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: asked.snapshot.run.id})
-  if (options.splitQuestion) {
+  if (options.playerInterjection) {
+    v = await readProductRuntimeStateVersion(f.sessionId)
+    const message = await commitInteractionPlayerMessage({sessionId: f.sessionId, commandId: 'inquiry.player', baseSequence: v.sequence, baseStateHash: v.stateHash,
+      messageId: 'inquiry.player', text: options.playerInterjection, audienceKeys: ['guard']})
+    v = await readProductRuntimeStateVersion(f.sessionId)
+    await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'inquiry.player-response', baseSequence: v.sequence, baseStateHash: v.stateHash,
+      kind: 'player-response', sourceEventSequence: message.sequence})
+  }
+  if (options.splitQuestion || options.playerInterjection) {
     const followup: ChatNarrativeActionV1 = {...action, text: inquiryReassurance, audienceKeys: options.reassuranceAudienceKeys ?? ['guard', 'player'],
       situationRequest: {threadKey: 'investigate', direction: '承接刚才向掌柜提出的具体位置问题，保留其可能拒答或无法确认的空间。', evidenceFactKeys, evidenceExcerpt: inquiryReassurance}}
     const continued = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action',

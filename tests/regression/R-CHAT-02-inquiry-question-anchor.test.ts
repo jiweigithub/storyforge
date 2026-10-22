@@ -71,7 +71,7 @@ it('retains both utterances for independent semantic review and never adopts a r
     runAI: async () => {calls++; return JSON.stringify(draft)}, runReviewAI: async messages => {
       calls++; expect(messages[0].content).toContain('后句若撤回、改变问题或改变对象')
       expect(messages[1].content).toContain(inquiryQuestion); expect(messages[1].content).toContain(inquiryReassurance)
-      expect(messages[1].content).toContain('"version":2')
+      expect(messages[1].content).toContain('"version":3')
       return JSON.stringify(review)
     }})).rejects.toThrow()
   expect(calls).toBe(2)
@@ -87,7 +87,8 @@ it('derives the evidence version from an exact frozen producer/reviewer pair', (
   expect(chatInquiryEvidenceVersionForContractV1(pair(12, 11))).toBeUndefined()
   expect(chatInquiryEvidenceVersionForContractV1(pair(13, 12))).toBe(1)
   expect(chatInquiryEvidenceVersionForContractV1(pair(14, 13))).toBe(2)
-  for (const [producer, reviewer] of [[14, 12], [13, 13], [12, 13]]) expect(() => chatInquiryEvidenceVersionForContractV1(pair(producer, reviewer))).toThrow('合同不一致')
+  expect(chatInquiryEvidenceVersionForContractV1(pair(15, 14))).toBe(3)
+  for (const [producer, reviewer] of [[15, 13], [14, 14], [13, 14], [14, 12], [13, 13], [12, 13]]) expect(() => chatInquiryEvidenceVersionForContractV1(pair(producer, reviewer))).toThrow('合同不一致')
   const repeated = pair(14, 13); repeated.executionBindings.push(repeated.executionBindings[0])
   expect(() => chatInquiryEvidenceVersionForContractV1(repeated)).toThrow('合同不一致')
 })
