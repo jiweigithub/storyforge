@@ -50,7 +50,7 @@ it.each(['current', 'saved-v37'] as const)('persists the actual review audit wit
   if (recorded.type !== 'evidence.artifact.recorded') throw Error('missing review packet')
   const packet = JSON.parse(await readAgentRunArtifactExactV1({projectId: f.scope.projectId, artifactKind: 'context-packet', contentHash: recorded.payload.contentHash}))
   expect(generated.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-narrative-action-review')?.promptVersion)
-    .toBe(version === 'saved-v37' ? 'chat-narrative-action-review-v37' : 'chat-narrative-action-review-v39')
+    .toBe(version === 'saved-v37' ? 'chat-narrative-action-review-v37' : 'chat-narrative-action-review-v40')
   expect(packet.manifest.sources[0].readerVersion).toBe(version === 'saved-v37' ? 'chat-action-review-v17' : 'chat-action-review-v18')
   expect(packet.coordinatorSelection.history.find((d: {key: string}) => d.key === 'secret')).toMatchObject({included: true})
   const input = {projectId: f.scope.projectId, scope: f.scope, productRuntimeSessionId: f.sessionId, chatActionCandidateRunId: generated.snapshot.run.id}

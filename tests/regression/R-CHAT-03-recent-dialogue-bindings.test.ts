@@ -17,7 +17,7 @@ const versions = [
   {skill: 'character.chat-narrative-options', old: 'chat-narrative-options-v37', next: 'chat-narrative-options-v38'},
   {skill: 'character.chat-action-revision', old: 'chat-action-revision-v22', next: 'chat-action-revision-v23'},
 ] as const
-const currentVersions = {'character.chat-narrative-action': 'chat-narrative-action-v64', 'character.chat-narrative-options': 'chat-narrative-options-v40', 'character.chat-action-revision': 'chat-action-revision-v23'} as const
+const currentVersions = {'character.chat-narrative-action': 'chat-narrative-action-v65', 'character.chat-narrative-options': 'chat-narrative-options-v40', 'character.chat-action-revision': 'chat-action-revision-v23'} as const
 const recipe = (producer: string, reviewer = 'chat-narrative-action-review-v38', choice = producer) => ({
   budget: {maxModelCalls: 3, maxAttemptsPerStep: 1}, executionBindings: [
     {stepId: 'interaction:action-choice', skillId: 'character.chat-narrative-action', promptVersion: choice},
@@ -45,11 +45,11 @@ it('keeps future reader and producer versions outside the released allowlist', (
   expect(chatRetrievalVersionForReader('chat-narrative-runtime-view-v17')).toBe('chat-relevance-v13')
   expect(chatRetrievalVersionForReader('chat-narrative-runtime-view-v19')).toBeNull()
   for (const [skillId, promptVersion] of [
-    ['character.chat-narrative-action', 'chat-narrative-action-v65'],
+    ['character.chat-narrative-action', 'chat-narrative-action-v66'],
     ['character.chat-narrative-options', 'chat-narrative-options-v41'],
     ['character.chat-action-revision', 'chat-action-revision-v24'],
   ]) expect(usesChatActionBoundContextV1({skillId, promptVersion})).toBe(false)
-  expect(getAgentSkillV1('character.chat-narrative-action-review').promptVersion).toBe('chat-narrative-action-review-v39')
+  expect(getAgentSkillV1('character.chat-narrative-action-review').promptVersion).toBe('chat-narrative-action-review-v40')
   expect(getAgentSkillV1('character.chat-narrative-options-review').promptVersion).toBe('chat-narrative-options-review-v29')
 })
 
@@ -153,6 +153,7 @@ it('binds the new unchanged producer to review39 without accepting mixed histori
 
 it.each([
   ['chat-narrative-action-v63', 'chat-narrative-action-v64'],
+  ['chat-narrative-action-v64', 'chat-narrative-action-v65'],
   ['chat-narrative-options-v39', 'chat-narrative-options-v40'],
 ])('preserves generation, schemas and source versions when only the review changes: %s → %s', (old, current) => {
   const view = interactionVisibilityView(chatTurnEndControlFixture().state, 'guard')
@@ -167,7 +168,7 @@ it.each([
   expect(chatActionContextVersionsV1(current)).toEqual(chatActionContextVersionsV1(old))
   for (const provider of ['codex', 'agnes'] as const) {
     expect(chatActionRequestOptionsV1(current, provider)).toEqual(chatActionRequestOptionsV1(old, provider))
-    if (current === 'chat-narrative-action-v64') {
+    if (current === 'chat-narrative-action-v64' || current === 'chat-narrative-action-v65') {
       expect(chatActionChoiceRequestOptionsV1(provider, current)).toEqual(chatActionChoiceRequestOptionsV1(provider, old))
       const messages: ChatMessage[] = [{role: 'system', content: '原角色规则'}, {role: 'user', content: '已有真实来源'}]
       expect(buildChatActionChoiceMessagesV1(messages, current)).toEqual(buildChatActionChoiceMessagesV1(messages, old))

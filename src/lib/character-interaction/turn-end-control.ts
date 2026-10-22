@@ -17,6 +17,7 @@ export interface ChatTurnEndControlV1 {
 export const CHAT_TURN_END_CONTROL_PRODUCER_V1 = 'chat-narrative-action-v57'
 export const CHAT_TURN_END_CONTROL_REVIEWER_V1 = 'chat-narrative-action-review-v36'
 export function chatTurnEndReviewerForProducerV1(version: string | undefined): string | undefined {
+  if (version === 'chat-narrative-action-v65') return 'chat-narrative-action-review-v40'
   if (version === 'chat-narrative-action-v64') return 'chat-narrative-action-review-v39'
   if (version === CHAT_TURN_END_CONTROL_PRODUCER_V1) return CHAT_TURN_END_CONTROL_REVIEWER_V1
   if ((version === 'chat-narrative-action-v61' || (version === 'chat-narrative-action-v62' || version === 'chat-narrative-action-v63'))) return 'chat-narrative-action-review-v38'
@@ -104,3 +105,15 @@ export const CHAT_TURN_END_CONTROL_REVIEW_RULES_V1 = [
   'visibility：依据仅来自已交付角色视角和共同可见的当前轮次；不得用内部原因泄露秘密、他人内心或未来剧情。原因只作审查证据，不发布为台词。',
   '仅输出 JSON {"checks":[{"check":"current-turn-progress|local-purpose|pending-obligations|player-agency|visibility","passed":true,"reason":"根据完整现有证据说明判断"}]}，每项各一次。任何一项失败都不结束轮次，原始候选与失败保留。',
 ] as const
+
+/** Only the new reviewer distinguishes an unadopted choice from the final
+ * turn disposition. Historical saved runs retain their exact instructions. */
+export const CHAT_TURN_END_CHOICE_DRAFT_REVIEW_RULES_V1 = [
+  'actionChoice 是尚未采纳的方向选择草稿，包括 selectedId 和 decisionSummary；它不发布为台词，不暂停目标、不改变责任或任何运行状态。当前待审对象只由 handoff 给出，已有行为由 basisMessages 与运行事件证明。不得把未采用草稿中的暂停、等待、许可或结果当作该 handoff 已经实施的行为。',
+  '草稿可以提示需核查的未完工作，但须回到实际对话、既有承诺、待结算结果和 handoff 的 purpose/source 独立验证。草稿中的好建议不能替代本轮真实进展，空草稿或放弃建议也不能免除实际未决义务；如果 handoff 本身或已交付表达越过玩家拒绝、泄露秘密、声称整体暂停/完成或跳过必要结果，仍须拒绝。',
+] as const
+
+export function chatTurnEndControlReviewRulesV1(reviewerVersion: string): readonly string[] {
+  if (reviewerVersion !== 'chat-narrative-action-review-v40') return CHAT_TURN_END_CONTROL_REVIEW_RULES_V1
+  return [CHAT_TURN_END_CONTROL_REVIEW_RULES_V1[0], ...CHAT_TURN_END_CHOICE_DRAFT_REVIEW_RULES_V1, ...CHAT_TURN_END_CONTROL_REVIEW_RULES_V1.slice(1)]
+}

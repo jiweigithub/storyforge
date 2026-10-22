@@ -38,7 +38,7 @@ it.each([false, true])('keeps the frozen v38/v28 pause review bytes and every no
 })
 
 it('does not extend the new interpretation to unregistered reviewers or a player-requested followup pause', () => {
-  for (const version of [undefined, 'chat-narrative-action-review-v38', 'chat-narrative-action-review-v40', 'chat-narrative-options-review-v30'])
+  for (const version of [undefined, 'chat-narrative-action-review-v38', 'chat-narrative-action-review-v41', 'chat-narrative-options-review-v30'])
     expect(chatReplanningReviewRulesV1(version, [pause])).toEqual(CHAT_REPLANNING_REVIEW_RULES_V1)
   const playerHold = {...pause, threadFollowupGoal: {threadKey: 'investigate', evidenceExcerpt: pause.text,
     goal: {goalKey: 'remaining', desire: '继续核实', concern: '尊重暂停', boundary: '不擅自恢复', evidenceFactKeys: ['lost']},
@@ -66,7 +66,7 @@ it.each([false, true])('uses the independent pause review and preserves the unfi
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard',
     skillId: options ? 'character.chat-narrative-options' : 'character.chat-narrative-action', objective: '工程注入只验证暂停候选链路，不证明故事质量', runAI: generate, runReviewAI: review})
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
-  expect(generated.snapshot.contract.executionBindings!.map(b => b.promptVersion)).toContain(options ? 'chat-narrative-options-review-v29' : 'chat-narrative-action-review-v39')
+  expect(generated.snapshot.contract.executionBindings!.map(b => b.promptVersion)).toContain(options ? 'chat-narrative-options-review-v29' : 'chat-narrative-action-review-v40')
   expect(generated.snapshot.events.filter(e => e.type === 'model.requested')).toHaveLength(options ? 2 : 3)
   expect(generated.snapshot.contract.budget.maxAttemptsPerStep).toBe(1)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id, ...(options ? {optionKey: 'option-1'} : {})})

@@ -35,7 +35,7 @@ async function read(page: Page, f: Awaited<ReturnType<typeof seed>>) {
     return {state: await api.readProductRuntimeState(f.sessionId), runs, terminal}
   }, f)
 }
-async function provider(page: Page, handoff: unknown, passed = true) {
+async function provider(page: Page, handoff: unknown, passed = true, unadoptedPause = false) {
   const calls: string[] = []; let expressions = 0
   await page.route('https://turn-end-control.invalid/**', async route => {
     const messages = route.request().postDataJSON().messages, text = JSON.stringify(messages)
@@ -44,8 +44,9 @@ async function provider(page: Page, handoff: unknown, passed = true) {
         : text.includes('本次持久化行动候选') ? 'review-action' : 'result'
     calls.push(step)
     if (step === 'choice' || step === 'result') expect(text).not.toContain('掌柜把铜印留在柜台下')
+    if (step === 'review-control' && unadoptedPause) {expect(messages[0].content).toContain('当前待审对象只由 handoff 给出'); expect(text).toContain('草稿：暂缓寻找铜印')}
     if (step === 'result') expressions++
-    const output = step === 'choice' ? {directions: [], selectedId: null, decisionSummary: privateReason}
+    const output = step === 'choice' ? unadoptedPause && expressions === 0 ? {directions: [{id: 'draft-pause', kind: 'pause', action: '草稿：暂缓寻找铜印', evidenceFactKeys: ['lost'], evidenceMessageIds: [], changes: '草稿：暂停寻找', playerDependency: null, unconfirmedConditions: []}], selectedId: 'draft-pause', decisionSummary: privateReason} : {directions: [], selectedId: null, decisionSummary: privateReason}
       : step === 'result' ? expressions === 1 ? {outcome: 'handoff', action: null, handoff} : {outcome: 'action', handoff: null, action: {
         kind: 'speak', text: nextReply, goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'], waitingForPlayer: true,
         newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}}
@@ -60,7 +61,7 @@ async function provider(page: Page, handoff: unknown, passed = true) {
 // Injected transport responses establish state/UI behavior, never story quality.
 for (const width of [390, 1440]) test(`ends the existing turn without a bubble or goal pause, refreshes and starts a new turn at ${width}`, async ({page}) => {
   await page.setViewportSize({width, height: 900})
-  const f = await seed(page), calls = await provider(page, f.handoff)
+  const f = await seed(page), calls = await provider(page, f.handoff, true, true)
   await open(page, f)
   const before = await read(page, f)
   await page.getByRole('button', {name: '补齐未完成本轮', exact: true}).click()
@@ -76,6 +77,7 @@ for (const width of [390, 1440]) test(`ends the existing turn without a bubble o
   await page.reload()
   await expect(page.getByRole('region', {name: '对话记录', exact: true}).getByText(firstReply, {exact: true})).toHaveCount(1)
   await expect(page.getByText(privateReason, {exact: false})).toHaveCount(0)
+  await expect(page.getByText('草稿：暂缓寻找铜印', {exact: false})).toHaveCount(0)
   expect((await read(page, f)).state).toEqual(after.state)
   expect(calls).toEqual(['choice', 'result', 'review-control'])
   await page.getByRole('button', {name: '让角色继续', exact: true}).click()
