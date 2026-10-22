@@ -28,16 +28,23 @@ function input(f: Awaited<ReturnType<typeof prepared>>) {
   return {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '工程询问：不预写答复或物理结果'}
 }
 
-it.each([[false, true], [true, true], [false, false], [true, false]])('keeps producer and legacy reviewer bytes; pure questions persist as messages, not facts (options=%s, legacy=%s)', async (options, legacy) => {
+it.each([false, true].flatMap(options => (['legacy', 'previous', 'current'] as const).map(reviewMode => ({options, reviewMode}))))('keeps producer and legacy reviewer bytes; pure questions persist as messages, not facts (options=$options, reviewer=$reviewMode)', async ({options, reviewMode}) => {
   const f = await prepared(), original = skills.getAgentSkillV1
+  const legacy = reviewMode === 'legacy'
+  const actionReviewVersion = `chat-narrative-action-review-v${legacy ? 29 : reviewMode === 'previous' ? 37 : 38}`
+  const optionsReviewVersion = `chat-narrative-options-review-v${legacy ? 23 : reviewMode === 'previous' ? 27 : 28}`
+  if (reviewMode === 'current') {
+    expect(original('character.chat-narrative-action-review').promptVersion).toBe(actionReviewVersion)
+    expect(original('character.chat-narrative-options-review').promptVersion).toBe(optionsReviewVersion)
+  }
   vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action' ? {...original(id), promptVersion: 'chat-narrative-action-v36'}
     : id === 'character.chat-narrative-options' ? {...original(id), promptVersion: 'chat-narrative-options-v26'}
-    : legacy && id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v29'}
-    : legacy && id === 'character.chat-narrative-options-review' ? {...original(id), promptVersion: 'chat-narrative-options-review-v23'} : original(id))
+    : id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: actionReviewVersion}
+    : id === 'character.chat-narrative-options-review' ? {...original(id), promptVersion: optionsReviewVersion} : original(id))
   const a = inquiry(), b = {...a, text: '我问道：“有人愿意说说见过的情况吗？”', situationRequest: null}
   const before = await readProductRuntimeState(f.sessionId), world = await db.worldReleases.toArray()
   let calls = 0
-  const generated = await generateInteractionRuntimeCandidateV1({...input(f), skillId: options ? 'character.chat-narrative-options' : 'character.chat-narrative-action', runAI: withChatActionChoiceFixture(async messages => {
+  const generated = await generateInteractionRuntimeCandidateV1({...input(f), skillId: options ? 'character.chat-narrative-options' : 'character.chat-narrative-action', onRunCreated: () => {vi.restoreAllMocks()}, runAI: withChatActionChoiceFixture(async messages => {
     calls++
     // Independently captured on eb5de640 before changing either review binding.
     expect(digest(messages[0].content)).toBe(options ? '024c2868a08ada2689b91c8495008f65ddec1d8c0aeb875a9f814c3bb1dad14b' : '6d15d60074209fd72bb84bc69baa86a8df9978e24d6109af508655da502eff60')
@@ -52,7 +59,7 @@ it.each([[false, true], [true, true], [false, false], [true, false]])('keeps pro
     return JSON.stringify(options ? {options: ['option-1', 'option-2'].map(optionKey => ({optionKey, ...chatActionReviewOutputFixture()}))} : chatActionReviewOutputFixture())
   }})
   const binding = generated.snapshot.contract.executionBindings!.find(b => b.skillId === (options ? 'character.chat-narrative-options-review' : 'character.chat-narrative-action-review'))!
-  expect(binding.promptVersion).toBe(options ? `chat-narrative-options-review-v${legacy ? 23 : 27}` : `chat-narrative-action-review-v${legacy ? 29 : 37}`)
+  expect(binding.promptVersion).toBe(options ? optionsReviewVersion : actionReviewVersion)
   expect(calls).toBe(2); expect(generated.snapshot.contract.budget.maxModelCalls).toBe(2)
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id, ...(options ? {optionKey: 'option-1'} : {})})

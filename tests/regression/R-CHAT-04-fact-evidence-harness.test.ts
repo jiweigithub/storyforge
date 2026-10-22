@@ -2,8 +2,12 @@ import {sha256Text} from '../../src/lib/ai/chapter-memory/text-normalization'
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import * as api from '../../src/lib/character-interaction/runtime-api'
-import {useHistoricalChatReaderFixture, freezeLegacyChatActionContractFixture} from '../helpers/chat-historical-reader'
+import {useHistoricalChatReaderFixture, freezeLegacyChatActionContractFixture, freezeLegacyChatSituationContractFixture} from '../helpers/chat-historical-reader'
 import {adoptInteractionRuntimeCandidateV1, generateInteractionRuntimeCandidateV1, resumeChatNarrativeReviewV1} from '../../src/lib/character-interaction/harness'
+import {readInstanceAgentRunV1} from '../../src/lib/agent/run/event-store'
+import {readAgentRunArtifactExactV1} from '../../src/lib/memory/artifact-store'
+import {readChatCandidateRetrievalVersion} from '../../src/lib/character-interaction/context-reader-version'
+import {selectChatCoordinatorContextV1} from '../../src/lib/character-interaction/coordinator-selection'
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import {chatFactEvidenceAction as action} from '../helpers/chat-fact-evidence'
 import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture, withChatActionChoiceFixture} from '../helpers/chat-narrative-fixture'
@@ -96,12 +100,48 @@ it.each(['current', 'saved-v11'] as const)('records player situation facts only 
   if (reader === 'saved-v11') {
     useHistoricalChatReaderFixture('chat-situation-runtime-view-v11', 'chat-relevance-v5')
   }
-  const result = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'player', skillId: 'character.chat-situation-construction',
-    objective: '情境事实来源工程检查', runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)), runReviewAI: async () => JSON.stringify({checks: CHAT_SITUATION_REVIEW_CHECKS_V1.map(check => ({check, passed: true, reason: '工程夹具'}))})})
+  const before = await runtime(f.sessionId)
+  const legacyText = selectChatCoordinatorContextV1(before, {text: '', retrievalVersion: 'chat-relevance-v5', discoveryEvidence: true})
+  let runId = 0, generated = 0, reviewed = 0
+  await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'player', skillId: 'character.chat-situation-construction',
+    objective: '情境事实来源工程检查', runAI: withChatActionChoiceFixture(async () => {generated++; return JSON.stringify(draft)}),
+    onSituationDraftSaved: id => {runId = id; throw new Error('saved-before-situation-review')}})).rejects.toThrow('saved-before-situation-review')
+  expect(await runtime(f.sessionId)).toEqual(before)
+  const saved = await readInstanceAgentRunV1(f.scope, runId)
+  expect(saved.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-construction')?.promptVersion)
+    .toBe(reader === 'saved-v11' ? 'chat-situation-construction-v12' : 'chat-situation-construction-v18')
+  expect(saved.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion)
+    .toBe(reader === 'saved-v11' ? 'chat-situation-review-v11' : 'chat-situation-review-v17')
+  const recorded = saved.events.find(e => e.type === 'evidence.artifact.recorded' && e.payload.artifactKind === 'context-packet' && e.payload.stepId === 'interaction:runtime-candidate')!
+  if (recorded.type !== 'evidence.artifact.recorded') throw new Error('missing situation source packet')
+  const packetText = await readAgentRunArtifactExactV1({projectId: f.scope.projectId, artifactKind: 'context-packet', contentHash: recorded.payload.contentHash})
+  const packet = JSON.parse(packetText)
+  expect(packet.manifest.sources[0].readerVersion).toBe(reader === 'saved-v11' ? 'chat-situation-runtime-view-v11' : 'chat-situation-runtime-view-v17')
+  expect(await readChatCandidateRetrievalVersion(saved, f.scope.projectId, 'chatSituationRuntime')).toBe(reader === 'saved-v11' ? 'chat-relevance-v5' : 'chat-relevance-v9')
+  if (reader === 'saved-v11') {
+    expect(packet.text).toBe(legacyText)
+    expect(packet.coordinatorSelection).toBeUndefined()
+  } else expect(packet.coordinatorSelection).toBeDefined()
+  // Reopen without the projection/manifest mocks. Review must follow the actual
+  // retained old bytes and contract, not the current defaults or a relabeled packet.
   vi.restoreAllMocks()
-  await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
+  db.close(); await db.open()
+  if (reader === 'saved-v11') freezeLegacyChatSituationContractFixture()
+  await resumeChatNarrativeReviewV1({scope: f.scope, runId, runReviewAI: async () => {
+    reviewed++; return JSON.stringify({checks: CHAT_SITUATION_REVIEW_CHECKS_V1.map(check => ({check, passed: true, reason: '工程夹具'}))})
+  }})
+  expect(await readAgentRunArtifactExactV1({projectId: f.scope.projectId, artifactKind: 'context-packet', contentHash: recorded.payload.contentHash})).toBe(packetText)
+  expect(await runtime(f.sessionId)).toEqual(before)
+  await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
   const metadata = (await runtime(f.sessionId)).chatNarrative!.factEvidence
   expect(metadata).toEqual(reader === 'current' ? {version: 1, records: [{factKey: 'knocking', kind: 'observation', evidenceFactKeys: ['road'], actorKey: null, goalKey: null, source: 'situation'}]} : undefined)
+  const after = await runtime(f.sessionId)
+  const originalSession = (await db.productRuntimeSessions.get(f.sessionId))!
+  const importedProject = await importProjectJSON(await exportProjectJSON(f.scope.projectId))
+  db.close(); await db.open()
+  const imported = (await db.productRuntimeSessions.where('projectId').equals(importedProject).toArray()).find(s => s.title === originalSession.title)!
+  expect(await runtime(imported.id!)).toEqual(after)
+  expect([generated, reviewed]).toEqual([1, 1])
 })
 
 it('records attributed inquiry speech without replacing discovered fact identities or creating provenance for old truths', async () => {

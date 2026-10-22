@@ -1,0 +1,468 @@
+{
+  "schema": "storyforge.character-chat-acceptance",
+  "version": 324,
+  "kind": "fixed-code-m1-cohort",
+  "at": "2026-10-22T11:26:26.888007+00:00",
+  "cohort": "m1-v324-current",
+  "head": "26fd6e29c019f89162f7beb5c081b93a47c3593e",
+  "plannedEpisodes": 120,
+  "productionUnits": 20,
+  "humanScoring": "deferred",
+  "formalQualityPasses": 0,
+  "completedStoryEpisodes": 1,
+  "firstUnit": {
+    "episodeId": "m1-v324-current/inn-missing-seal/local-codex/r1/weak-guidance",
+    "newProduction": "three openings generated and independently reviewed; first passing opening selected by preregistered order; local release created",
+    "requests": 19,
+    "nativeCompleted": 18,
+    "nativeFailed": 1,
+    "nativeUnknown": 0,
+    "reportedTokens": 294850,
+    "usageMissingForFailedRequest": true,
+    "completedRuns": 5,
+    "failedRuns": 1,
+    "progress": "Actor inspected common storage, discovered the existence/location of the container without exposing its contents, asked the innkeeper, and received an adopted public reply. One weak player message supplied no method or answer.",
+    "failure": "Next actor choice stopped on confirmed upstream httpConnectionFailed. No candidate or retry from that failed request.",
+    "originalStoryUnfinished": true,
+    "pairedRemaining": 5,
+    "pairedStatus": "blocked by registered production-unit stop; prepared refusal runner never dispatched"
+  },
+  "restoration": {
+    "sourceUnchanged": true,
+    "results": [
+      {
+        "stem": "inn-r1-weak-guidance",
+        "runStatusesPreserved": true,
+        "verifiedCompletedHistories": 5,
+        "retainedFailedRuns": 1,
+        "resumableRuns": 0,
+        "openingReviewRetained": true,
+        "modelCalls": 0,
+        "interactionEqual": true,
+        "refreshEqual": true,
+        "worldPreserved": true,
+        "rawEvidenceRetained": true,
+        "terminalReceiptBodiesRetained": true,
+        "usageEvidenceRetained": true
+      }
+    ]
+  },
+  "collectorAmendment": "Actor self-pause is a non-completion ending; signed player-pause metadata also uses product source validation. Nine collector checks pass before calls. Original cohorts unchanged.",
+  "currentMatrix": {
+    "completed": 3,
+    "collectorError": 1,
+    "failed": 1,
+    "runtimeBlocked": 5,
+    "runtimeRunning": 1,
+    "notStarted": 109
+  },
+  "modelCatalogCheck": "Read-only local model catalog responded and target model was present after failure; this is not proof of generation-service recovery.",
+  "next": "Observe runner39422; after a committed visible change request temporary leave, refresh with zero calls, then return referencing only that visible change.",
+  "evidence": {
+    "preregistration.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r1/preregistration.json",
+      "sha256": "0895d8912cc40f46e672c52c2f13464bcd5529bc9609e6bdb51681d1fcffbb18"
+    },
+    "production-evidence.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r1/production-evidence.json",
+      "sha256": "caa8e25f9b131e7efa79f40c75c3dda9dfa9a297b04dc218354248f11fd129f4"
+    },
+    "production-backup.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r1/production-backup.json",
+      "sha256": "1d48da429662b955f7d96a840a1b8a5bb374af653a8bb8b5284089c05700cc06"
+    },
+    "inn-r1-weak-guidance.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r1/inn-r1-weak-guidance.json",
+      "sha256": "c1c600e584c7147d6ea980f6462ee09df9d72c6b51af73dcda682dd01d70d810"
+    },
+    "inn-r1-weak-guidance-backup.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r1/inn-r1-weak-guidance-backup.json",
+      "sha256": "46b6d52fd63dfef275f4d4f9a00c998f127108d5cc1f2b6b421774f9b7deca5e"
+    },
+    "inn-r1-weak-guidance-restoration-verified.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r1/inn-r1-weak-guidance-restoration-verified.json",
+      "sha256": "6ccd1444bad0a1de72467cc7536ce32771b837b1ee204cffab437394d31fcf6a"
+    },
+    "evidence-tests.log": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r1/evidence-tests.log",
+      "sha256": "e97d50b40d5f4f9d959e76f9ab30651c2d2ef1458a9ec74d002653cdbf6ddc28"
+    },
+    "codex-inn-r2/inn-r2-weak-guidance.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2/inn-r2-weak-guidance.json",
+      "sha256": "8cb2734cdd243c27a76d3852ff85e78929df5dff210590ddf019179b31dc6fa0"
+    },
+    "codex-inn-r2/inn-r2-weak-guidance-backup.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2/inn-r2-weak-guidance-backup.json",
+      "sha256": "9145e9b0e7b6986f11ab59e70ca1e3cb0ea6eab03c86b8f0f662333495539ccc"
+    },
+    "codex-inn-r2/inn-r2-weak-guidance-restoration-verified.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2/inn-r2-weak-guidance-restoration-verified.json",
+      "sha256": "641353df119a02a5b9e01722f38ec0c5053993c8598e38964f2ded8b43b287db"
+    },
+    "codex-inn-r2/production-evidence.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2/production-evidence.json",
+      "sha256": "8cc3a9fe8697b4e033724ad163b959db9f8f5e28b98b0db3f302992b93a500f8"
+    },
+    "codex-inn-r2/production-backup.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2/production-backup.json",
+      "sha256": "875f1cbf72c0ee90687c54852aff9732eed6b36bae21cf7be809556df10eb381"
+    },
+    "codex-inn-r2/cost-and-latency-observation.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2/cost-and-latency-observation.json",
+      "sha256": "27681cb08305b762c4dfd049e4284509698b3b946dcd08cf9e6bed57ae74b234"
+    },
+    "codex-inn-r2-refuse/preregistration.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-refuse/preregistration.json",
+      "sha256": "a42e86cf7ee83afa4b9c0be1427952b3dedea7a5bb314e17a81610222b765aea"
+    },
+    "metadata-erratum.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/metadata-erratum.json",
+      "sha256": "c345669ade3bde6df9b3c6837b48110fb9042ffa895cf511ef7e6792ec4bb016"
+    },
+    "codex-inn-r2-refuse/inn-r2-refuse.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-refuse/inn-r2-refuse.json",
+      "sha256": "995bb3605b739acae4243ff454e1462de509758ba95bacf682c28059b9c7a425"
+    },
+    "codex-inn-r2-refuse/inn-r2-refuse-backup.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-refuse/inn-r2-refuse-backup.json",
+      "sha256": "083d907fb29e9252d7e58029fbc8602bbf37aba497499965539282bf08add95f"
+    },
+    "codex-inn-r2-refuse/inn-r2-refuse-restoration-verified.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-refuse/inn-r2-refuse-restoration-verified.json",
+      "sha256": "09dfa85920d9880407a8399b506fca1fd9103546e303c891ae470d3ec8221b7e"
+    },
+    "closure-collector-correction.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/closure-collector-correction.json",
+      "sha256": "e37d32b0adce94e33b7384c44b9b9c9ce9bd8804b0d707c9501645ac2d437de4"
+    },
+    "unused-turn-probe.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/unused-turn-probe.json",
+      "sha256": "7d31527da26248b7f1efdf0a58a3df659ab5e016febfd264dc5f3b8b5fcb3512"
+    },
+    "ending-evidence-v2.mjs": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/ending-evidence-v2.mjs",
+      "sha256": "fe629ecc8aca1c036019930b678b9b5c9e8b01b46aff1ae5a0115d38a5066d0b"
+    },
+    "ending-evidence-v2.test.mjs": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/ending-evidence-v2.test.mjs",
+      "sha256": "95039ba6778e3086a3f1180c38269fd0d4af5c0cd759d161898c13e80090abbf"
+    },
+    "codex-inn-r2-alternative/preregistration.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-alternative/preregistration.json",
+      "sha256": "406c56c3d29c0af5024e31bc8b9e4aac6becfe663ae8f639a4cba75ae68a3a0f"
+    },
+    "retired-generated-cleanup-preflight.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/retired-generated-cleanup-preflight.json",
+      "sha256": "28f8b7801236c4da7085ebd7942e3f511fedd3d561244561019f6fe0e64c460f"
+    },
+    "retired-generated-cleanup-result.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/retired-generated-cleanup-result.json",
+      "sha256": "57be6a4cc06490019710f3c553c571b5460a53b6e18b65c5d200f6da75c42ea1"
+    },
+    "codex-inn-r2-alternative/inn-r2-alternative.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-alternative/inn-r2-alternative.json",
+      "sha256": "4c9691a6cc1c05813e3bacb6795033ff080d1293940985fe24bb683ac91c7d44"
+    },
+    "codex-inn-r2-alternative/inn-r2-alternative-backup.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-alternative/inn-r2-alternative-backup.json",
+      "sha256": "18143769e703bcde08104be776a418827baea648701effb519ca2404d03f217c"
+    },
+    "codex-inn-r2-alternative/inn-r2-alternative-restoration-verified.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-alternative/inn-r2-alternative-restoration-verified.json",
+      "sha256": "ee1a35997175a9fd08da066b180ff11acd358f76a6fcd309a3c4c3aee2ef7bcb"
+    },
+    "codex-inn-r2-alternative/collection-verified.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-alternative/collection-verified.json",
+      "sha256": "c5c94a867775c68e0a6876c0b4232305343e1320397c4447f015fda353d68aa5"
+    },
+    "codex-inn-r2-rest/preregistration.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-rest/preregistration.json",
+      "sha256": "e9965702b90a4a67f14ef19de9a091fc38a974830b7f781a0b859c68f3c77c7f"
+    },
+    "codex-inn-r2-rest/inn-r2-rest.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-rest/inn-r2-rest.json",
+      "sha256": "4c20f280308b425a6b2323a9c0a7b8bedc9e48d9a30a5aa1f6d693ee64f0a7d2"
+    },
+    "codex-inn-r2-rest/inn-r2-rest-backup.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-rest/inn-r2-rest-backup.json",
+      "sha256": "8460f958a2640ab47a5624ca77d6f407ba4b793e03e4a7fcbd44b6b2d7a55fd2"
+    },
+    "codex-inn-r2-rest/inn-r2-rest-restoration-verified.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-rest/inn-r2-rest-restoration-verified.json",
+      "sha256": "3ed4c79d7acc480a175a38bdce4704fbd8a58e5cd3b0a5ee4ae24361a1e074a9"
+    },
+    "codex-inn-r2-rest/collection-verified.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-rest/collection-verified.json",
+      "sha256": "23991bfff3b1aaa4061bf0bcfe5510cb9975485f584e1c066a38d81aba488965"
+    },
+    "codex-inn-r2/request-cost-breakdown.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2/request-cost-breakdown.json",
+      "sha256": "141788e1e4d7dcb6a7380dd65c9a28184b0b2fd0273fd97ab3f8e63f7129e938"
+    },
+    "remote-ci-39755565042-failed.log": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/remote-ci-39755565042-failed.log",
+      "sha256": "6c37af2fb48b33c677662cf9b10182f564ddd91bf28dd734a3c1271f125a6abd"
+    },
+    "codex-inn-r2-return/preregistration.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-return/preregistration.json",
+      "sha256": "a1e54ff4ab4307bce2b0f9e793285fec9f1d907c0e22b199ce5036464259b68e"
+    }
+  },
+  "secondUnit": {
+    "episodeId": "m1-v324-current/inn-missing-seal/local-codex/r2/weak-guidance",
+    "completionReason": "meaningful-closure",
+    "sourceUnchanged": true,
+    "requestCount": 39,
+    "productionRequests": 3,
+    "runtimeRequests": 36,
+    "nativeCompleted": 39,
+    "reportedTokens": 653413,
+    "missingUsage": [],
+    "costUsd": null,
+    "playerOpportunities": 3,
+    "completedRuns": 14,
+    "failedRuns": 0,
+    "goals": [
+      {
+        "goalKey": "goal-1",
+        "status": "fulfilled"
+      }
+    ],
+    "threads": [
+      {
+        "threadKey": "thread-1",
+        "status": "resolved"
+      }
+    ],
+    "wallSeconds": 1180.607,
+    "refreshEqual": true,
+    "noModelRequestOnRefresh": true,
+    "independentRestoration": {
+      "stem": "inn-r2-weak-guidance",
+      "runStatusesPreserved": true,
+      "verifiedCompletedHistories": 14,
+      "retainedFailedRuns": 0,
+      "resumableRuns": 0,
+      "openingReviewRetained": true,
+      "modelCalls": 0,
+      "interactionEqual": true,
+      "refreshEqual": true,
+      "worldPreserved": true,
+      "rawEvidenceRetained": true,
+      "terminalReceiptBodiesRetained": true,
+      "usageEvidenceRetained": true
+    },
+    "humanQuality": "deferred",
+    "formalM1Passed": false,
+    "evidenceSha256": "8cb2734cdd243c27a76d3852ff85e78929df5dff210590ddf019179b31dc6fa0",
+    "status": "collected-meaningful-closure",
+    "progress": "With only three preregistered short player replies, the actor inspected public surfaces, asked the innkeeper, checked the communal container, found and returned the seal to its designated holder, and avoided an unsupported accusation. Original goal fulfilled and thread resolved."
+  },
+  "engineeringProgress": {
+    "head": "26fd6e29c019f89162f7beb5c081b93a47c3593e",
+    "fullDeliveryRun": 39755565039,
+    "fullDeliveryStatus": "in_progress",
+    "ciRun": 39755565042,
+    "ciStatus": "failure",
+    "packageRun": 39755565140,
+    "packageStatus": "success",
+    "packages": [
+      "macos-arm64",
+      "macos-x64",
+      "windows-x64",
+      "linux-x64"
+    ],
+    "published": false,
+    "note": "Exact-head browser job succeeded. CI failed; full-delivery CLI remains running. Package success does not imply full delivery or model quality.",
+    "checkedAt": "2026-10-22T11:17:31.880352+00:00",
+    "browserStatus": "success",
+    "browserCompletedAt": "2026-10-22T11:09:13Z",
+    "ciCompletedAt": "2026-10-22T11:13:38Z",
+    "ciTests": {
+      "passed": 6680,
+      "failed": 6,
+      "filesPassed": 986,
+      "filesFailed": 4
+    },
+    "ciFailureScope": "Prompt/version binding assertions and missing coordinator historical-selection evidence. Root causes require inspection; not declared fixture-only or resolved.",
+    "isolatedRepair": {
+      "root": "/Users/qinyingying/.codex/worktrees/chat-regression-compat/storyforge",
+      "testFilesChanged": 5,
+      "productionFilesUnchanged": 1831,
+      "targetedFiles": 11,
+      "targetedTests": 96,
+      "status": "required local gates in progress; source unchanged; original remote failure retained"
+    }
+  },
+  "currentEpisode": "Return automatic opening started on the same frozen release; player leave and return inputs not yet sent.",
+  "performanceObservation": {
+    "firstAdoptedReplySeconds": [
+      52.756,
+      69.724
+    ],
+    "fullTwoStepStateSeconds": [
+      163.022,
+      211.925
+    ],
+    "runtimeReportedTokens": 590269,
+    "runtimeRequests": 36,
+    "scope": "Single story, event timestamps rather than DOM paint or service percentiles; not a performance pass.",
+    "costUsd": null
+  },
+  "metadataErratum": "Original descriptive review label v9 and top-level restoration hash were stale. Enforced skill bindings and actual production runs used v10; enforced pinned helper hashes matched. Original registrations unchanged, new paired registration corrected before calls; see immutable erratum.",
+  "verifiedStoryClosuresIncludingCollectorCorrection": 2,
+  "refusalEpisode": {
+    "kind": "protocol-compatible-closure-collector-correction",
+    "episodeId": "m1-v324-current/inn-missing-seal/local-codex/r2/refuse",
+    "rawCollectionStatus": "failed",
+    "rawCollectionError": "Error: Claimed closure still has unresolved narrative obligations",
+    "originalEvidenceUnchanged": true,
+    "originalEvidenceSha256": "995bb3605b739acae4243ff454e1462de509758ba95bacf682c28059b9c7a425",
+    "verifiedMeaningfulClosure": true,
+    "formalQualityPass": false,
+    "formalM1Passed": false,
+    "reason": "Original protocol requires completed obligations and no necessary pending choice. Product readback explicitly says no action is needed; one unused action allowance is not an unresolved obligation. Original failed collector output is preserved; no model rerun or product state change.",
+    "productResume": {
+      "triggerSequence": 20,
+      "actorKey": "participant.001",
+      "remainingActions": 1,
+      "blockedReason": "本轮角色的目标已经结束，无需补齐行动。"
+    },
+    "probePath": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/unused-turn-probe.json",
+    "helperPath": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/ending-evidence-v2.mjs",
+    "nativeCompleted": 33,
+    "reportedTokens": 532784,
+    "missingUsage": [],
+    "completedRuns": 13,
+    "playerOpportunities": 3,
+    "costUsd": null,
+    "modelCallsDuringCorrection": 0,
+    "restoration": [
+      {
+        "stem": "inn-r2-refuse",
+        "runStatusesPreserved": true,
+        "verifiedCompletedHistories": 13,
+        "retainedFailedRuns": 0,
+        "resumableRuns": 0,
+        "openingReviewRetained": true,
+        "modelCalls": 0,
+        "interactionEqual": true,
+        "refreshEqual": true,
+        "worldPreserved": true,
+        "rawEvidenceRetained": true,
+        "terminalReceiptBodiesRetained": true,
+        "usageEvidenceRetained": true
+      }
+    ]
+  },
+  "diskCleanup": {
+    "at": "2026-10-22T10:33:25.632986+00:00",
+    "removedGeneratedDirectories": 14,
+    "removedLogicalBytes": 2316932134,
+    "availableBytesBefore": 28637511680,
+    "availableBytesAfter": 30527733760,
+    "retainedSourceAndGit": true,
+    "terminalReceiptHashesUnchanged": true,
+    "activeModelFoldersUntouched": true
+  },
+  "alternativeEpisode": {
+    "at": "2026-10-22T10:59:14.927Z",
+    "episodeId": "m1-v324-current/inn-missing-seal/local-codex/r2/alternative",
+    "completionReason": "actor-pause",
+    "completedStory": false,
+    "formalQualityPass": false,
+    "sourceUnchanged": true,
+    "requests": 18,
+    "nativeCompleted": 18,
+    "reportedTokens": 280633,
+    "missingUsage": [],
+    "completedRuns": 7,
+    "failedRuns": 0,
+    "playerOpportunities": 1,
+    "goals": [
+      {
+        "goalKey": "goal-1",
+        "status": "paused"
+      }
+    ],
+    "threads": [
+      {
+        "threadKey": "thread-1",
+        "status": "open"
+      }
+    ],
+    "refreshEqual": true,
+    "noModelRequestOnRefresh": true,
+    "independentRestoration": [
+      {
+        "stem": "inn-r2-alternative",
+        "runStatusesPreserved": true,
+        "verifiedCompletedHistories": 7,
+        "retainedFailedRuns": 0,
+        "resumableRuns": 0,
+        "openingReviewRetained": true,
+        "modelCalls": 0,
+        "interactionEqual": true,
+        "refreshEqual": true,
+        "worldPreserved": true,
+        "rawEvidenceRetained": true,
+        "terminalReceiptBodiesRetained": true,
+        "usageEvidenceRetained": true
+      }
+    ],
+    "costUsd": null,
+    "observedBehavior": "Actor accepted the player alternative, stopped searching the counter, questioned the nearby innkeeper, disclosed actual new handling information and explicitly paused their own search while leaving the shared issue open.",
+    "evidenceSha256": "4c9691a6cc1c05813e3bacb6795033ff080d1293940985fe24bb683ac91c7d44",
+    "verifiedAt": "2026-10-22T11:00:32.964820+00:00"
+  },
+  "restEpisode": {
+    "at": "2026-10-22T11:11:35.330Z",
+    "episodeId": "m1-v324-current/inn-missing-seal/local-codex/r2/rest",
+    "completionReason": "intentional-pause",
+    "completedStory": false,
+    "formalQualityPass": false,
+    "sourceUnchanged": true,
+    "requests": 13,
+    "nativeCompleted": 13,
+    "reportedTokens": 198330,
+    "missingUsage": [],
+    "completedRuns": 5,
+    "failedRuns": 0,
+    "playerOpportunities": 1,
+    "goals": [
+      {
+        "goalKey": "goal-1",
+        "status": "paused"
+      }
+    ],
+    "threads": [
+      {
+        "threadKey": "thread-1",
+        "status": "paused"
+      }
+    ],
+    "refreshEqual": true,
+    "noModelRequestOnRefresh": true,
+    "independentRestoration": [
+      {
+        "stem": "inn-r2-rest",
+        "runStatusesPreserved": true,
+        "verifiedCompletedHistories": 5,
+        "retainedFailedRuns": 0,
+        "resumableRuns": 0,
+        "openingReviewRetained": true,
+        "modelCalls": 0,
+        "interactionEqual": true,
+        "refreshEqual": true,
+        "worldPreserved": true,
+        "rawEvidenceRetained": true,
+        "terminalReceiptBodiesRetained": true,
+        "usageEvidenceRetained": true
+      }
+    ],
+    "costUsd": null,
+    "observedBehavior": "Player explicitly requested rest and no further investigation. Actor acknowledged, paused the goal and shared issue, retained the original player pause request, and returned control without adding a task.",
+    "evidenceSha256": "4c20f280308b425a6b2323a9c0a7b8bedc9e48d9a30a5aa1f6d693ee64f0a7d2",
+    "verifiedAt": "2026-10-22T11:17:31.880352+00:00"
+  }
+}

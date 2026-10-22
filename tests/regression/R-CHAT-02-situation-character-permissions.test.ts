@@ -17,6 +17,7 @@ const reviewSkill = 'character.chat-situation-review' as const
 const direction = '只确认本次敲门后能听见什么，不预定有人回应。'
 const review = () => ({checks: CHAT_SITUATION_REVIEW_CHECKS_V1.map(check => ({check, passed: true, reason: '工程注入审查，不是真实模型质量证据'}))})
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
+const releasedSituationVersions = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] as const
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => {vi.restoreAllMocks(); db.close()})
 
@@ -45,10 +46,11 @@ function input(f: Awaited<ReturnType<typeof prepared>>) {
   return {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'player', skillId, objective: '结算实际敲门后的有限观察'}
 }
 
-it.each([8, 9, 10, 11, 12, 13, 14, 15])('uses saved instructions without rewriting historical generation/review bytes (producer v%s)', async version => {
+it.each(releasedSituationVersions)('uses saved instructions without rewriting historical generation/review bytes (producer v%s)', async version => {
   const legacy = version === 8
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId), original = skills.getAgentSkillV1
-  if (version < 15) vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === skillId ? {...original(id), promptVersion: `chat-situation-construction-v${version}`}
+  // Every historical case must freeze its own pair, independently of today's registry default.
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === skillId ? {...original(id), promptVersion: `chat-situation-construction-v${version}`}
     : id === reviewSkill ? {...original(id), promptVersion: `chat-situation-review-v${version - 1}`} : original(id))
   let calls = 0
   const result = await generateInteractionRuntimeCandidateV1({...input(f), onRunCreated: () => {vi.restoreAllMocks()}, runAI: withChatActionChoiceFixture(async messages => {
@@ -126,8 +128,18 @@ it('rejects hidden-source evidence before independent review, retaining the comp
 
 it('accepts only exact released inquiry binding pairs, never cross-version or future identities', () => {
   const result = {} as ChatInquiryResultV1 // This guard checks capability only; full payload tests use actual inquiry fixtures.
-  for (const [producer, reviewer] of [[8, 7], [9, 8], [10, 9], [11, 10], [12, 11], [13, 12], [14, 13], [15, 14]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).not.toThrow()
-  for (const [producer, reviewer] of [[8, 8], [9, 7], [7, 8], [9, 9], [10, 8], [11, 9], [10, 10], [11, 11], [12, 10], [13, 11], [14, 12], [13, 13], [15, 13], [14, 14], [16, 15], [999, 8], [9, 999]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).toThrow()
+  for (const producer of releasedSituationVersions) {
+    for (const reviewProducer of releasedSituationVersions) {
+      const check = () => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewProducer - 1}`)
+      if (reviewProducer === producer) expect(check).not.toThrow()
+      else expect(check).toThrow()
+    }
+  }
+  // Adjacent numbers do not grant future contracts permission; only released pairs do.
+  for (const [producer, reviewer] of [[7, 6], [7, 8], [19, 18], [999, 998], [999, 8], [9, 999]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).toThrow()
+  expect(() => assertChatInquiryBindingV1(result, undefined, 'chat-situation-review-v17')).toThrow()
+  expect(() => assertChatInquiryBindingV1(result, 'chat-situation-construction-v18', undefined)).toThrow()
+  expect(() => assertChatInquiryBindingV1(result, 'chat-situation-review-v18', 'chat-situation-construction-v17')).toThrow()
   for (const version of [undefined, 'chat-situation-construction-v8', 'chat-situation-construction-v999', 'chat-situation-review-v8']) expect(chatSituationCharacterRulesV1(version)).toEqual([])
   for (const version of [undefined, 'chat-situation-review-v7', 'chat-situation-review-v999', 'chat-situation-construction-v9']) expect(chatSituationCharacterReviewRulesV1(version)).toEqual([])
 })
