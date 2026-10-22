@@ -1,5 +1,9 @@
 # Changelog
 
+## October 23, 2026 · Saving and restoring large run contracts
+
+With larger run inputs, valid run contracts can be saved and revised in full, then read after a reload or complete-backup restoration, without being rejected by a smaller event-record limit. Oversized records still fail explicitly. Context snapshots are never truncated; model-call budgets, candidate adoption, permissions and freshness checks remain unchanged. Preserve the original work and backup after a capacity error rather than deleting contract fields. Evidence: [PR #185](https://github.com/yuanbw2025/storyforge/pull/185). See [backup and recovery](/en/guides/backup-restore).
+
 ## October 22, 2026 · Outline recovery and style statistics instructions
 
 Added [checks and retry steps after detailed-outline interruption](/en/features/longform/writing#continuing-after-detailed-outline-generation-stops) and [the meaning of missing style statistics and how edits save](/en/features/longform/style-learning#when-sample-statistics-show-not-recorded). The [development record](/en/updates/development-status) now covers the complete branch/worktree review, separating merged changes, draft PRs, local unpushed commits, and uncommitted development.
