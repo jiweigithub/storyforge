@@ -44,4 +44,33 @@ describe('R-TTRPGOPEN9 exact-input bounded pure replay reuse', { timeout: 30000 
     expect(replayTtrpgOpenReadEventsV1(session.initialStateJson + ' ', await core.readSessionEvents(session))).toEqual(expected)
     expect(replay.mock.calls.length).toBe(before + 4)
   })
+  it('replays only an exact appended suffix, keeps independent checkpoints and still rejects gaps or changed prefix bytes', async () => {
+    const f = await readyOpenTtrpgSessionV1('Incremental exact replay', p => { p.ttrpg!.campaign.runtimePolicy.enabled = true })
+    const session = (await db.productRuntimeSessions.get(f.sessionId))!
+    const firstEvents = await core.readSessionEvents(session)
+    await recordTtrpgOpenNarrativeMemoryV1({ ...await openEnvelopeV1(f.sessionId, 'incremental.replay.note'), viewerKey: OPEN_HUMAN_VIEWER,
+      draft: { revisionKey: 'incremental.new-event', observerKey: 'hero', reliability: 'belief', audience: 'private', knownBy: ['hero'], summary: '这仍是个人推测。', fromEventSequence: 1, toEventSequence: firstEvents.at(-1)!.sequence } })
+    const allEvents = await core.readSessionEvents(session)
+    expect(allEvents.length).toBeGreaterThan(firstEvents.length)
+    const expected = core.replayProductRuntimeEvents(core.parseProductRuntimeState(session.initialStateJson), allEvents)
+    const prefix = replayTtrpgOpenReadEventsV1(session.initialStateJson, firstEvents)
+    const prefixSequence = prefix.lastSequence
+    prefix.entities.hero.name = 'CALLER-MUTATED-CHECKPOINT'
+    const replay = vi.spyOn(core, 'replayProductRuntimeEvents')
+    const actual = replayTtrpgOpenReadEventsV1(session.initialStateJson, allEvents)
+    expect(actual).toEqual(expected)
+    expect(replay).toHaveBeenCalledTimes(1)
+    expect(replay.mock.calls[0][0].lastSequence).toBe(prefixSequence)
+    expect(replay.mock.calls[0][1]).toEqual(allEvents.slice(firstEvents.length))
+    const changed = structuredClone(allEvents); changed[0].createdAt += 1
+    replay.mockClear()
+    expect(replayTtrpgOpenReadEventsV1(session.initialStateJson, changed)).toEqual(expected)
+    expect(replay.mock.calls[0][0].lastSequence).toBe(JSON.parse(session.initialStateJson).lastSequence)
+    expect(replay.mock.calls[0][1]).toEqual(changed)
+    const gap = { ...changed.at(-1)!, sequence: actual.lastSequence + 2 }
+    await expect(async () => replayTtrpgOpenReadEventsV1(session.initialStateJson, [...changed, gap])).rejects.toThrow(/序号不连续/)
+    // A failed suffix cannot contaminate a later full proof or a caller's state.
+    expect(replayTtrpgOpenReadEventsV1(session.initialStateJson, allEvents)).toEqual(expected)
+  })
+
 })

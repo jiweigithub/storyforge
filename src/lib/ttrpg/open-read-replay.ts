@@ -33,8 +33,16 @@ function equal(a: readonly ProductRuntimeEvent[], b: readonly ProductRuntimeEven
 export function replayTtrpgOpenReadEventsV1(initial: string, events: readonly ProductRuntimeEvent[]): State {
   const bytes = initial.length * 2 + size(events)
   if (bytes <= MAX_REPLAY_BYTES && previous?.initial === initial && equal(events, previous.events)) return structuredClone(previous.state)
+  // Only an exact, already replayed prefix may supply a pure checkpoint. A
+  // live head/hash never does. The original reducer still validates every new
+  // event, including sequence gaps, duplicates and product preconditions.
+  const prefix = bytes <= MAX_REPLAY_BYTES && previous?.initial === initial
+    && events.length > previous.events.length
+    && equal(events.slice(0, previous.events.length), previous.events) ? previous : undefined
   previous = undefined
-  const state = replayProductRuntimeEvents(parseProductRuntimeState(initial), events)
+  const state = prefix
+    ? replayProductRuntimeEvents(prefix.state, events.slice(prefix.events.length))
+    : replayProductRuntimeEvents(parseProductRuntimeState(initial), events)
   if (bytes + JSON.stringify(state).length * 2 <= MAX_REPLAY_BYTES) previous = { initial, events: events.map(event => ({ ...event })), state: structuredClone(state) }
   return state
 }
