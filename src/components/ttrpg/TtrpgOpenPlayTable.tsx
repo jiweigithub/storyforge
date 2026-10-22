@@ -48,6 +48,9 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
   const hostingSignal = useRef<AbortSignal | null>(null)
   const activeViewer = useRef(''), revision = useRef(0), controller = useRef<AbortController | null>(null), live = useRef(true)
   const sessionId = props.session.id!, { projectId, worldId, workId } = props.scope
+  const consultationOwner = JSON.stringify([projectId, worldId, workId, sessionId, viewerKey])
+  const [consultationDisclosure, setConsultationDisclosure] = useState({ owner: '', open: false })
+  useEffect(() => { setConsultationDisclosure({ owner: consultationOwner, open: false }) }, [consultationOwner])
   const refresh = useCallback(async () => {
     const current = ++revision.current
     try {
@@ -146,7 +149,7 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
     {view?.sessionZeroComplete && viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenBriefPanel key={`brief:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(signal => job(signal))} />}
     {view?.sessionZeroComplete && viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenSituationPanel key={`situation:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => job())} />}
     {view?.sessionZeroComplete && viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenPublicSituationPanel key={`public-situation:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => job())} />}
-    {view?.sessionZeroComplete && viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenConsultationPanel key={`consultation:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => job())} />}
+    {view?.sessionZeroComplete && viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenConsultationPanel key={`consultation:${sessionId}:${viewerKey}`} open={consultationDisclosure.owner === consultationOwner && consultationDisclosure.open} onOpenChange={open => setConsultationDisclosure({ owner: consultationOwner, open })} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => job())} />}
     {view?.sessionZeroComplete && viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenCommonOraclePanel key={`common-oracle:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => job())} />}
     {view?.sessionZeroComplete && viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenAudioPanel key={`audio:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} paused={props.state.ttrpg.product.safety.status !== 'active'} busy={busy} onChanged={async () => { await props.onChanged(); await refresh() }} />}
     {view?.sessionZeroComplete && viewerKey && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenIdentityKnowledgePanel key={`identity:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} onChanged={async () => { await props.onChanged(); await refresh() }} />}

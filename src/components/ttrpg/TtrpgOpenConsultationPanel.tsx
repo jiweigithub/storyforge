@@ -5,7 +5,7 @@ import type { TtrpgOpenConsultationInputV1 } from '../../lib/ttrpg/open-human-co
 import { prepareTtrpgOpenClueShareV1, confirmTtrpgOpenClueShareV1, type TtrpgOpenClueShareReviewV1 } from '../../lib/ttrpg/open-knowledge-share-desk'
 import { readTtrpgOpenSettledViewV1 } from '../../lib/ttrpg/open-read-conflict'
 
-type Props = { input: TtrpgOpenConsultationInputV1; sequence: number; busy: boolean; perform: (job: () => Promise<void>) => Promise<void> }
+type Props = { input: TtrpgOpenConsultationInputV1; sequence: number; busy: boolean; open?: boolean; onOpenChange?: (open: boolean) => void; perform: (job: () => Promise<void>) => Promise<void> }
 export default function TtrpgOpenConsultationPanel(props: Props) {
   return <Consultation key={JSON.stringify(props.input)} {...props} />
 }
@@ -14,6 +14,7 @@ function Consultation(props: Props) {
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [tableKey, setTableKey] = useState(''), [tier, setTier] = useState(''), [question, setQuestion] = useState('')
   const [sourceKey, setSourceKey] = useState(''), [audience, setAudience] = useState<'private' | 'party' | 'public'>('party'), [recipients, setRecipients] = useState<string[]>([])
   const [pending, setPending] = useState<{ sequence: number; review: TtrpgOpenClueShareReviewV1 } | null>(null), [agreed, setAgreed] = useState(false)
+  const isExpanded = props.open ?? expanded
   const live = useRef(true), generation = useRef(0), locked = useRef(false)
   const { scope: { projectId, worldId, workId }, sessionId, viewerKey } = props.input
   const input = useCallback(() => ({ scope: { projectId, worldId, workId }, sessionId, viewerKey }), [projectId, worldId, workId, sessionId, viewerKey])
@@ -25,7 +26,7 @@ function Consultation(props: Props) {
     } catch (cause) { if (live.current && token === generation.current) { setPage(null); setError(cause instanceof Error ? cause.message : '咨询暂时无法读取，请核对原进度。') } }
   }, [input])
   useEffect(() => { live.current = true; generation.current += 1; return () => { live.current = false } }, [])
-  useEffect(() => { setPending(null); setAgreed(false); if (expanded) void refresh() }, [expanded, props.sequence, refresh])
+  useEffect(() => { setPending(null); setAgreed(false); if (isExpanded) void refresh() }, [isExpanded, props.sequence, refresh])
   const view = page?.sequence === props.sequence ? page : null, review = pending?.sequence === props.sequence ? pending.review : null
   const source = view?.sharing.sources.find(row => JSON.stringify([row.knowledgeKey, row.actorKey]) === sourceKey)
   const table = view?.tables.find(row => row.key === tableKey)
@@ -37,12 +38,12 @@ function Consultation(props: Props) {
     catch (cause) { if (live.current) setError(cause instanceof Error ? cause.message : '操作未完成，请先读取原进度。') }
     finally { locked.current = false; if (live.current) await refresh() }
   })
-  return <details className="sf-open-table-card" data-testid="ttrpg-open-consultation-desk" open={expanded}
-    onToggle={event => setExpanded(event.currentTarget.open)}>
+  return <details className="sf-open-table-card" data-testid="ttrpg-open-consultation-desk" open={isExpanded}
+    onToggle={event => { setExpanded(event.currentTarget.open); props.onOpenChange?.(event.currentTarget.open) }}>
     <summary>咨询与线索交流</summary>
     <p>可按冻结规则咨询，也可把已经知道的线索明确分享给同伴。咨询和分享不推进游戏时间。</p>
     {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
-    {expanded && <>
+    {isExpanded && <>
       <button disabled={props.busy} onClick={() => { setError(''); void refresh() }}>读取咨询与交流进度</button>
       {!view && !error && <p role="status">正在读取本人可用的咨询与线索…</p>}
       {view && <>
