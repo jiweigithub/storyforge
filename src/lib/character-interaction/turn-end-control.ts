@@ -17,6 +17,7 @@ export interface ChatTurnEndControlV1 {
 export const CHAT_TURN_END_CONTROL_PRODUCER_V1 = 'chat-narrative-action-v57'
 export const CHAT_TURN_END_CONTROL_REVIEWER_V1 = 'chat-narrative-action-review-v36'
 export function chatTurnEndReviewerForProducerV1(version: string | undefined): string | undefined {
+  if (version === 'chat-narrative-action-v64') return 'chat-narrative-action-review-v39'
   if (version === CHAT_TURN_END_CONTROL_PRODUCER_V1) return CHAT_TURN_END_CONTROL_REVIEWER_V1
   if ((version === 'chat-narrative-action-v61' || (version === 'chat-narrative-action-v62' || version === 'chat-narrative-action-v63'))) return 'chat-narrative-action-review-v38'
   if ((version === 'chat-narrative-action-v58' || version === 'chat-narrative-action-v59' || version === 'chat-narrative-action-v60')) return 'chat-narrative-action-review-v37'

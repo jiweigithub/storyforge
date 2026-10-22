@@ -103,11 +103,11 @@ it('limits the clarification to new generators, using the same actor input and n
   expect(choice[1]).toEqual(input[1])
   expect(choice[0].content).toContain('unconfirmedConditions 只列确实影响本步')
   expect(choice[0].content).toContain('独立审查决定能否采用')
-  for (const producerVersion of ['chat-narrative-action-v63', 'chat-narrative-options-v39']) {
+  for (const producerVersion of ['chat-narrative-action-v63', 'chat-narrative-options-v39', 'chat-narrative-action-v64', 'chat-narrative-options-v40']) {
     expect(chatActionPromptRulesV1(view, {producerVersion}).join('\n')).toContain('不要求先有一条“已经做完”的历史记录')
     expect(chatActionPromptRulesV1(view, {producerVersion, preserveExpression: true}).join('\n')).not.toContain('不要求先有一条“已经做完”的历史记录')
   }
-  for (const producerVersion of ['chat-narrative-action-v62', 'chat-narrative-options-v38', 'chat-action-revision-v23', 'chat-narrative-action-v64']) {
+  for (const producerVersion of ['chat-narrative-action-v62', 'chat-narrative-options-v38', 'chat-action-revision-v23', 'chat-narrative-action-v65']) {
     expect(chatActionPromptRulesV1(view, {producerVersion}).join('\n')).not.toContain('不要求先有一条“已经做完”的历史记录')
   }
 })

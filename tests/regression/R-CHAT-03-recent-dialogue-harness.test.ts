@@ -20,6 +20,7 @@ const cases = [
   {producer: 'chat-narrative-action-v61', reader: 'chat-narrative-runtime-view-v17', retrieval: 'chat-relevance-v13'},
   {producer: 'chat-narrative-action-v62', reader: 'chat-narrative-runtime-view-v18', retrieval: 'chat-relevance-v14'},
   {producer: 'chat-narrative-action-v63', reader: 'chat-narrative-runtime-view-v18', retrieval: 'chat-relevance-v14'},
+  {producer: 'chat-narrative-action-v64', reader: 'chat-narrative-runtime-view-v18', retrieval: 'chat-relevance-v14'},
 ] as const
 type Producer = typeof cases[number]['producer']
 const action = {kind: 'speak', text: '你记得最后一次见到铜印的地方吗？', goalKey: 'find-seal', evidenceFactKeys: ['lost'],
@@ -29,7 +30,7 @@ afterEach(() => {vi.restoreAllMocks(); db.close()})
 
 // Freeze the complete released producer before the real Harness creates its
 // contract, Gateway source and packets. Never relabel or rewrite saved bytes.
-function freeze(producer: Producer, reviewer = 'chat-narrative-action-review-v38') {
+function freeze(producer: Producer, reviewer = producer === 'chat-narrative-action-v64' ? 'chat-narrative-action-review-v39' : 'chat-narrative-action-review-v38') {
   vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => {
     const skill = originalSkill(id)
     return id === 'character.chat-narrative-action' ? {...skill, promptVersion: producer}
@@ -53,7 +54,7 @@ async function packet(projectId: number, snapshot: AgentRunSnapshotV1, stepId: s
 }
 
 it.each(cases)('preserves $producer / $reader through saved candidate, refresh, review and portable inspection', async ({producer, reader, retrieval}) => {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v63')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v64')
   freeze(producer)
   const f = await start(), before = await readProductRuntimeState(f.sessionId), worlds = await db.worldReleases.toArray()
   let modelCalls = 0, reviewCalls = 0, forbiddenCalls = 0
@@ -101,7 +102,7 @@ it.each(cases)('preserves $producer / $reader through saved candidate, refresh, 
   // review38 already selected audience-v2 and source-v18 for released producer61.
   expect(review.value.manifest.sources[0].readerVersion).toBe('chat-action-review-v18')
   expect(resumed.snapshot.contract.executionBindings?.find(binding => binding.stepId === 'interaction:action-review')?.promptVersion)
-    .toBe('chat-narrative-action-review-v38')
+    .toBe(producer === 'chat-narrative-action-v64' ? 'chat-narrative-action-review-v39' : 'chat-narrative-action-review-v38')
   const done = await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
   expect(done.snapshot.projection.state).toBe('completed')
   const after = await readProductRuntimeState(f.sessionId)

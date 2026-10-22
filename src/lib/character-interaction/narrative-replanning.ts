@@ -1,10 +1,12 @@
+import type {ChatNarrativeActionV1} from '../types/chat-narrative'
+
 /** New instructions clarify existing, deterministic goal and situation APIs.
  * Never retrofit them into a saved producer, review, or expression-only repair. */
 export function supportsChatReplanningPromptV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-v36', 'chat-narrative-action-v37', 'chat-narrative-action-v38', 'chat-narrative-action-v39', 'chat-narrative-action-v40', 'chat-narrative-action-v41', 'chat-narrative-action-v42', 'chat-narrative-action-v43', 'chat-narrative-action-v44', 'chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55', 'chat-narrative-action-v56', 'chat-narrative-action-v57', 'chat-narrative-action-v58', 'chat-narrative-action-v59', 'chat-narrative-action-v60', 'chat-narrative-action-v61', 'chat-narrative-action-v62', 'chat-narrative-action-v63', 'chat-narrative-options-v26', 'chat-narrative-options-v27', 'chat-narrative-options-v28', 'chat-narrative-options-v29', 'chat-narrative-options-v30', 'chat-narrative-options-v31', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34', 'chat-narrative-options-v35', 'chat-narrative-options-v36', 'chat-narrative-options-v37', 'chat-narrative-options-v38', 'chat-narrative-options-v39'].includes(version ?? '')
+  return ['chat-narrative-action-v36', 'chat-narrative-action-v37', 'chat-narrative-action-v38', 'chat-narrative-action-v39', 'chat-narrative-action-v40', 'chat-narrative-action-v41', 'chat-narrative-action-v42', 'chat-narrative-action-v43', 'chat-narrative-action-v44', 'chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55', 'chat-narrative-action-v56', 'chat-narrative-action-v57', 'chat-narrative-action-v58', 'chat-narrative-action-v59', 'chat-narrative-action-v60', 'chat-narrative-action-v61', 'chat-narrative-action-v62', 'chat-narrative-action-v63', 'chat-narrative-action-v64', 'chat-narrative-options-v26', 'chat-narrative-options-v27', 'chat-narrative-options-v28', 'chat-narrative-options-v29', 'chat-narrative-options-v30', 'chat-narrative-options-v31', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34', 'chat-narrative-options-v35', 'chat-narrative-options-v36', 'chat-narrative-options-v37', 'chat-narrative-options-v38', 'chat-narrative-options-v39', 'chat-narrative-options-v40'].includes(version ?? '')
 }
 export function supportsChatReplanningReviewV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v29', 'chat-narrative-options-review-v23', 'chat-narrative-action-review-v30', 'chat-narrative-action-review-v31', 'chat-narrative-action-review-v32', 'chat-narrative-action-review-v33', 'chat-narrative-action-review-v34', 'chat-narrative-action-review-v35', 'chat-narrative-action-review-v36', 'chat-narrative-action-review-v37', 'chat-narrative-action-review-v38', 'chat-narrative-options-review-v24', 'chat-narrative-options-review-v25', 'chat-narrative-options-review-v26', 'chat-narrative-options-review-v27', 'chat-narrative-options-review-v28'].includes(version ?? '')
+  return ['chat-narrative-action-review-v29', 'chat-narrative-options-review-v23', 'chat-narrative-action-review-v30', 'chat-narrative-action-review-v31', 'chat-narrative-action-review-v32', 'chat-narrative-action-review-v33', 'chat-narrative-action-review-v34', 'chat-narrative-action-review-v35', 'chat-narrative-action-review-v36', 'chat-narrative-action-review-v37', 'chat-narrative-action-review-v38', 'chat-narrative-action-review-v39', 'chat-narrative-options-review-v24', 'chat-narrative-options-review-v25', 'chat-narrative-options-review-v26', 'chat-narrative-options-review-v27', 'chat-narrative-options-review-v28', 'chat-narrative-options-review-v29'].includes(version ?? '')
 }
 
 export const CHAT_REPLANNING_ACTION_RULES_V1 = [
@@ -28,7 +30,7 @@ export const CHAT_REPLANNING_ACTION_RULES_V2 = [
 ]
 
 export function chatReplanningActionRulesV1(version: string | undefined, preserveExpression = false): string[] {
-  if (!['chat-narrative-action-v43', 'chat-narrative-action-v44', 'chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55', 'chat-narrative-action-v56', 'chat-narrative-action-v57', 'chat-narrative-action-v58', 'chat-narrative-action-v59', 'chat-narrative-action-v60', 'chat-narrative-action-v61', 'chat-narrative-action-v62', 'chat-narrative-action-v63', 'chat-narrative-options-v33', 'chat-narrative-options-v34', 'chat-narrative-options-v35', 'chat-narrative-options-v36', 'chat-narrative-options-v37', 'chat-narrative-options-v38', 'chat-narrative-options-v39'].includes(version ?? '')) return CHAT_REPLANNING_ACTION_RULES_V1
+  if (!['chat-narrative-action-v43', 'chat-narrative-action-v44', 'chat-narrative-action-v45', 'chat-narrative-action-v46', 'chat-narrative-action-v47', 'chat-narrative-action-v48', 'chat-narrative-action-v50', 'chat-narrative-action-v51', 'chat-narrative-action-v52', 'chat-narrative-action-v53', 'chat-narrative-action-v54', 'chat-narrative-action-v55', 'chat-narrative-action-v56', 'chat-narrative-action-v57', 'chat-narrative-action-v58', 'chat-narrative-action-v59', 'chat-narrative-action-v60', 'chat-narrative-action-v61', 'chat-narrative-action-v62', 'chat-narrative-action-v63', 'chat-narrative-action-v64', 'chat-narrative-options-v33', 'chat-narrative-options-v34', 'chat-narrative-options-v35', 'chat-narrative-options-v36', 'chat-narrative-options-v37', 'chat-narrative-options-v38', 'chat-narrative-options-v39', 'chat-narrative-options-v40'].includes(version ?? '')) return CHAT_REPLANNING_ACTION_RULES_V1
   return preserveExpression ? [] : CHAT_REPLANNING_ACTION_RULES_V2
 }
 export const CHAT_REPLANNING_REVIEW_RULES_V1 = [
@@ -36,6 +38,22 @@ export const CHAT_REPLANNING_REVIEW_RULES_V1 = [
   '暂停审查要区分一种办法受阻与原目标整体暂不可行：局部无结果不能证明所有范围都查完，出门受阻不能自动否定不依赖出门的办法。核对角色动机、当前可知条件与已获准的局部情境请求路径；仍有有依据且不重复的替代方向却无理由退回同一等待时，在 meaningful-direction 说明。没有事实支持的“替代办法”也不能强行要求执行，更不能依据审查者可见的隐情替角色规划或保证一定找到线索。',
   '没有 playerPause 的原目标可在同条行动中 goalStatus=active，再按已有权限请求有限情境；这是原责任换办法，不是新目标或事实。continuity/consequences 核对恢复表达与字段一致，旧阻碍、事实、约定及玩家边界仍在；含 playerPause 时继续严格核对真实解除依据。情境请求只核实尚未知的局部条件，不预定对象、答案或结果；审查理由应结合本次具体证据，不能用“允许暂停”概括替代连续性判断。',
 ]
+
+/** Only new, frozen review contracts clarify the evaluation of an actual
+ * self-pause candidate. This selects instructions; it never decides acceptance
+ * or supplies a missing character motive. Old and non-pause requests keep bytes. */
+export const CHAT_AUTONOMOUS_PAUSE_REVIEW_RULES_V1 = [
+  '自主暂停须区分人物作出取舍与声称整个目标客观不可行。对没有接受玩家暂停请求的候选，核对本次实际表达、已发生结果及角色已有动机：若有具体依据选择暂不继续，并如实保留尚未完成的部分，不能仅因还有未尝试的办法就否决，也不要求穷尽每个假想办法。必须是本次文字已表达的有意义选择，不能由审查者替候选补写顾虑、虚构代价或承诺以后必定继续；仅复述同一顾虑、等待或未知范围而无新理由、信息、选择或后果仍须拒绝。',
+  '若候选声称没有可行办法、所有范围都查完或整个目标受阻，仍须有支持这一范围的事实；一种办法无结果不能证明其它办法都不可行。否决自主暂停时，应指出候选实际缺失的依据、被忽略的现有责任或具体矛盾，不能只凭允许请求局部情境就要求无限寻找新人物、资料或途径。提出替代方向须有角色当前可知且不重复的依据，不预定他人、线索或成功，不依据审查者可见的隐情规划。玩家拒绝、明确休息、待决许可与原暂停/恢复合同仍严格保持；个人选择暂缓不解决共同事项，也不代替其他候选逐条审查。',
+]
+
+export function chatReplanningReviewRulesV1(version: string | undefined, actions: readonly ChatNarrativeActionV1[]): string[] {
+  const autonomousPause = actions.some(action => !action.pauseGoal && !action.threadFollowupGoal?.pauseRequest
+    && (action.kind === 'pause' || action.goalStatus === 'paused' || action.goalUpdates?.some(goal => goal.status === 'paused')))
+  if (!['chat-narrative-action-review-v39', 'chat-narrative-options-review-v29'].includes(version ?? '') || !autonomousPause)
+    return CHAT_REPLANNING_REVIEW_RULES_V1
+  return [CHAT_REPLANNING_REVIEW_RULES_V1[0], ...CHAT_AUTONOMOUS_PAUSE_REVIEW_RULES_V1, CHAT_REPLANNING_REVIEW_RULES_V1[2]]
+}
 
 /** Interpret the existing actor-visible facts and investigation receipts. This
  * adds no source, inferred outcome, retry or access to coordinator reasoning.

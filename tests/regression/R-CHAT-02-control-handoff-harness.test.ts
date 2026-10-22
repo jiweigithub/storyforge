@@ -41,8 +41,8 @@ async function start() {
   return {...f, trigger, handoff}
 }
 function enable() {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v63')
-  expect(originalSkill('character.chat-narrative-action-review').promptVersion).toBe('chat-narrative-action-review-v38')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v64')
+  expect(originalSkill('character.chat-narrative-action-review').promptVersion).toBe('chat-narrative-action-review-v39')
 }
 function legacy() {
   vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => ({...originalSkill(id),

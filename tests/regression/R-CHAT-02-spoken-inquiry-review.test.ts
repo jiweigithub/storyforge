@@ -28,11 +28,11 @@ function input(f: Awaited<ReturnType<typeof prepared>>) {
   return {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '工程询问：不预写答复或物理结果'}
 }
 
-it.each([false, true].flatMap(options => (['legacy', 'previous', 'current'] as const).map(reviewMode => ({options, reviewMode}))))('keeps producer and legacy reviewer bytes; pure questions persist as messages, not facts (options=$options, reviewer=$reviewMode)', async ({options, reviewMode}) => {
+it.each([false, true].flatMap(options => (['legacy', 'previous', 'saved-v38', 'current'] as const).map(reviewMode => ({options, reviewMode}))))('keeps producer and legacy reviewer bytes; pure questions persist as messages, not facts (options=$options, reviewer=$reviewMode)', async ({options, reviewMode}) => {
   const f = await prepared(), original = skills.getAgentSkillV1
   const legacy = reviewMode === 'legacy'
-  const actionReviewVersion = `chat-narrative-action-review-v${legacy ? 29 : reviewMode === 'previous' ? 37 : 38}`
-  const optionsReviewVersion = `chat-narrative-options-review-v${legacy ? 23 : reviewMode === 'previous' ? 27 : 28}`
+  const actionReviewVersion = `chat-narrative-action-review-v${legacy ? 29 : reviewMode === 'previous' ? 37 : reviewMode === 'saved-v38' ? 38 : 39}`
+  const optionsReviewVersion = `chat-narrative-options-review-v${legacy ? 23 : reviewMode === 'previous' ? 27 : reviewMode === 'saved-v38' ? 28 : 29}`
   if (reviewMode === 'current') {
     expect(original('character.chat-narrative-action-review').promptVersion).toBe(actionReviewVersion)
     expect(original('character.chat-narrative-options-review').promptVersion).toBe(optionsReviewVersion)

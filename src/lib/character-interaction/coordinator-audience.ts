@@ -10,7 +10,9 @@ export function chatCoordinatorAudienceVersionV1(contract: Contract): 1 | 2 {
     ['interaction:runtime-candidate', 'character.chat-situation-construction', 'chat-situation-construction-v17'],
     ['interaction:runtime-candidate', 'character.chat-situation-construction', 'chat-situation-construction-v18'],
     ['interaction:action-review', 'character.chat-narrative-action-review', 'chat-narrative-action-review-v38'],
+    ['interaction:action-review', 'character.chat-narrative-action-review', 'chat-narrative-action-review-v39'],
     ['interaction:action-review', 'character.chat-narrative-options-review', 'chat-narrative-options-review-v28'],
+    ['interaction:action-review', 'character.chat-narrative-options-review', 'chat-narrative-options-review-v29'],
   ]
   return pairs.some(([step, skill, version]) => contract.executionBindings?.some(b =>
     b.stepId === step && b.skillId === skill && b.promptVersion === version)) ? 2 : 1

@@ -151,8 +151,8 @@ it('recovers a persisted discovery candidate, adopts once, and preserves causali
       return JSON.stringify(chatActionReviewOutputFixture())
     },
   })
-  expect(inspected.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-narrative-action-review')?.promptVersion).toBe('chat-narrative-action-review-v38')
-  expect(inspected.snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:runtime-candidate')?.promptVersion).toBe('chat-narrative-action-v63')
+  expect(inspected.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-narrative-action-review')?.promptVersion).toBe('chat-narrative-action-review-v39')
+  expect(inspected.snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:runtime-candidate')?.promptVersion).toBe('chat-narrative-action-v64')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: inspected.snapshot.run.id})
   v = await readProductRuntimeStateVersion(f.sessionId)
   const value = draft(v.sequence)
