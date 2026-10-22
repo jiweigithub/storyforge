@@ -237,6 +237,7 @@ type FormalTtrpgEventType = Extract<
   | "ttrpg.open.situation.activated"
   | "ttrpg.open.intent.rejected"
   | "ttrpg.open.companion.preauthorized"
+  | "ttrpg.open.stage.opened"
   | "ttrpg.open.stage.closed"
   | "ttrpg.open.stage.clock.advanced"
   | "ttrpg.open.stage.settled"
@@ -279,7 +280,7 @@ const OPEN_FOUNDATION_COMMANDS: readonly FormalTtrpgEventType[] = [
   "ttrpg.open.situations.planned", "ttrpg.open.situations.changed", "ttrpg.open.situations.settled",
   "ttrpg.open.situations.effect.confirmed", "ttrpg.open.situations.effect.applied",
   "ttrpg.open.terminal.evaluated", "ttrpg.open.gates.evaluated", "ttrpg.open.gates.settled", "ttrpg.open.gates.recovered", "ttrpg.open.gates.recovery-stopped", "ttrpg.open.narration.accepted", "ttrpg.open.entity.proposed", "ttrpg.open.entity.model-proposed", "ttrpg.open.entity.confirmed", "ttrpg.open.entity.materialized", "ttrpg.open.entity.disposed", "ttrpg.open.situation.accepted", "ttrpg.open.situation.activated", "ttrpg.open.narration.recorded", "ttrpg.open.companion.preauthorized", "ttrpg.open.intent.rejected", "ttrpg.open.handoff.offered",
-  "ttrpg.open.stage.closed", "ttrpg.open.stage.clock.advanced", "ttrpg.open.stage.settled", "ttrpg.open.stage.effect.confirmed", "ttrpg.open.stage.effect.applied",
+  "ttrpg.open.stage.opened", "ttrpg.open.stage.closed", "ttrpg.open.stage.clock.advanced", "ttrpg.open.stage.settled", "ttrpg.open.stage.effect.confirmed", "ttrpg.open.stage.effect.applied",
 ];
 const SHARED_SETUP_COMMANDS: readonly FormalTtrpgEventType[] = [
   "ttrpg.character.customized", "ttrpg.session-zero.completed", "ttrpg.safety.changed",

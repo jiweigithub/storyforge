@@ -1252,6 +1252,7 @@ export const PRODUCT_RUNTIME_EVENT_TYPES = [
   "ttrpg.front.advanced",
   "ttrpg.situation.changed",
   "ttrpg.front.defeated",
+  "ttrpg.open.stage.opened",
   "ttrpg.open.stage.closed",
   "ttrpg.open.stage.clock.advanced",
   "ttrpg.open.stage.settled",
