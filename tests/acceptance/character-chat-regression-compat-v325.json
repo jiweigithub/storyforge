@@ -434,8 +434,8 @@
         "sha256": "289548c4010456026bff093a01852594687a5b1838e2b71d73a1fbadcddb5544"
       }
     ],
-    "fullDelivery": "New exact-head complete CI and browser validation pending remote terminal results. Historical failures and passes remain unchanged and do not substitute for this integration.",
-    "modelEvidenceBoundary": "Original V324 cohort, raw hashes and runtime source remain frozen. reading-r1 has three independently accepted openings and first eligible local test release; first weak guidance received after automatic opening; still running, not M1 passed.",
+    "fullDelivery": "Completed successfully for 754e4053. Full CLI: 991 files / 6696 tests. Dedicated full browser: 501 passed, 4 skipped, no flaky results. Ordinary CI also succeeded but its browser phase retained 2 retry passes. These results do not validate later V326 source.",
+    "modelEvidenceBoundary": "Original V324 source and raw results remain frozen. Its reading-r1 episode failed the semantic review after 13 player opportunities; zero-call restoration passed. V327 on V326 source separately completed one directed resume; neither changes V324 outcomes nor proves M1.",
     "statusCloseoutChecks": [
       {
         "name": "status-docs",
@@ -494,6 +494,61 @@
         "originalFailureRetained": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/merged-files-lint.log",
         "originalFailureReason": "The first invocation explicitly selected two scripts excluded by repository ESLint configuration; --max-warnings=0 rejected ignored-file warnings, with zero code errors. R2 covers all changed TypeScript files under the unchanged configured lint scope. No ignore rules or thresholds changed."
       }
-    ]
+    ],
+    "terminalReadback": {
+      "at": "2026-10-22T17:14:40.557989+00:00",
+      "sourceHead": "754e40539e475577aa6ffe6742d7e17af2e00f7a",
+      "runs": [
+        {
+          "url": "https://github.com/yuanbw2025/storyforge/actions/runs/39776190023",
+          "conclusion": "success",
+          "jobs": [
+            {
+              "name": "verify",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "url": "https://github.com/yuanbw2025/storyforge/actions/runs/39776189836",
+          "conclusion": "success",
+          "jobs": [
+            {
+              "name": "Full delivery / browser",
+              "conclusion": "success"
+            },
+            {
+              "name": "Full delivery / cli",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ],
+      "cli": {
+        "files": 991,
+        "tests": 6696,
+        "failed": 0
+      },
+      "dedicatedBrowser": {
+        "passed": 501,
+        "flaky": 0,
+        "skipped": 4
+      },
+      "ordinaryCIBrowser": {
+        "passed": 499,
+        "flaky": 2,
+        "skipped": 4,
+        "flakyCases": [
+          "character-chat-production-repair.spec.ts",
+          "text-open-world-complete-journey.spec.ts"
+        ],
+        "originalAttemptsPreserved": true
+      },
+      "evidence": {
+        "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/terminal-754e-20261023/receipt.json",
+        "sha256": "23f2997caba0361a9dd0974b42d7ede52955d502abacfc92eeae30ac6cb8c996"
+      },
+      "laterV326SourceIncluded": false
+    }
   }
 }
