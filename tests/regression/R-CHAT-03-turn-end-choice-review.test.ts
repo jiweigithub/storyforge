@@ -18,7 +18,7 @@ const originalSkill = skills.getAgentSkillV1
 it('keeps historical turn-end review bytes and limits the draft distinction to the registered reviewer', () => {
   const historicalHash = createHash('sha256').update(JSON.stringify(CHAT_TURN_END_CONTROL_REVIEW_RULES_V1)).digest('hex')
   expect(historicalHash).toBe('0e4d8f9cdd94b8c539c0a41e27d6cbbb3ff16081c3c295eb3abf3dff1e9a761c')
-  for (const version of ['chat-narrative-action-review-v36', 'chat-narrative-action-review-v38', 'chat-narrative-action-review-v39', 'chat-narrative-action-review-v41'])
+  for (const version of ['chat-narrative-action-review-v36', 'chat-narrative-action-review-v38', 'chat-narrative-action-review-v39', 'chat-narrative-action-review-v42'])
     expect(chatTurnEndControlReviewRulesV1(version)).toEqual(CHAT_TURN_END_CONTROL_REVIEW_RULES_V1)
   expect(chatTurnEndControlReviewRulesV1('chat-narrative-action-review-v40')).toEqual([
     CHAT_TURN_END_CONTROL_REVIEW_RULES_V1[0], ...CHAT_TURN_END_CHOICE_DRAFT_REVIEW_RULES_V1, ...CHAT_TURN_END_CONTROL_REVIEW_RULES_V1.slice(1),
@@ -40,7 +40,7 @@ it('binds the new producer/reviewer pair while retaining the historical pair and
     {stepId: 'interaction:runtime-candidate', skillId: 'character.chat-narrative-action', promptVersion: producer},
     {stepId: 'interaction:action-review', skillId: 'character.chat-narrative-action-review', promptVersion: reviewer},
   ], budget: {maxModelCalls: 3, maxAttemptsPerStep: 1}})
-  for (const [producer, reviewer] of [['chat-narrative-action-v64', 'chat-narrative-action-review-v39'], ['chat-narrative-action-v65', 'chat-narrative-action-review-v40']]) {
+  for (const [producer, reviewer] of [['chat-narrative-action-v64', 'chat-narrative-action-review-v39'], ['chat-narrative-action-v65', 'chat-narrative-action-review-v40'], ['chat-narrative-action-v66', 'chat-narrative-action-review-v41']]) {
     expect(chatTurnEndReviewerForProducerV1(producer)).toBe(reviewer)
     expect(chatActionChoiceVersionForContractV1(contract(producer, reviewer))).toBe(1)
   }

@@ -36,7 +36,7 @@ async function prepared() {
       expect(messages[1].content).toContain(text)
       return JSON.stringify(chatActionReviewOutputFixture())
     }})
-  expect(result.snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:action-review')?.promptVersion).toBe('chat-narrative-action-review-v40')
+  expect(result.snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:action-review')?.promptVersion).toBe('chat-narrative-action-review-v41')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
   const state = await readProductRuntimeState(f.sessionId)
   expect(state.interaction!.chatNarrative!.pendingSituation?.direction).toBe(direction)

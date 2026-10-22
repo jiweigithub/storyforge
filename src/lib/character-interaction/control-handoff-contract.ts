@@ -1,3 +1,4 @@
+import {CHAT_MAINTAINED_PAUSE_CHECKS_V1, parseChatMaintainedPauseControlV1, previewChatMaintainedPauseControlV1, readChatMaintainedPauseBasisV1, type ChatMaintainedPauseControlV1} from './maintained-pause-control'
 import {canonicalStringify} from '../agent/run/hash'
 import type {CharacterInteractionRuntimeState} from '../types'
 import type {InteractionContextWindow} from './runtime'
@@ -19,7 +20,7 @@ export interface ChatPlayerDecisionHandoffV1 {
   decision: string
   dependentStep: string
 }
-export type ChatControlHandoffV1 = ChatPlayerDecisionHandoffV1 | ChatTurnEndControlV1
+export type ChatControlHandoffV1 = ChatPlayerDecisionHandoffV1 | ChatTurnEndControlV1 | ChatMaintainedPauseControlV1
 
 export const CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1 = [
   'current-decision', 'actual-dependency', 'available-direction', 'player-agency', 'visibility',
@@ -27,7 +28,7 @@ export const CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1 = [
 export interface ChatControlHandoffReviewV1 {
   /** Bound by the system to the candidate, never supplied by the model. */
   reviewedHandoffJson: string
-  checks: Array<{check: typeof CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1[number] | typeof CHAT_TURN_END_CONTROL_CHECKS_V1[number]; passed: boolean; reason: string}>
+  checks: Array<{check: typeof CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1[number] | typeof CHAT_TURN_END_CONTROL_CHECKS_V1[number] | typeof CHAT_MAINTAINED_PAUSE_CHECKS_V1[number]; passed: boolean; reason: string}>
 }
 
 /** Choice, result and review still consume their actual three model calls.
@@ -47,6 +48,7 @@ function text(value: unknown, max: number): string {
 }
 
 export function parseChatControlHandoffV1(value: unknown): ChatControlHandoffV1 {
+  if (value && typeof value === 'object' && 'version' in value && value.version === 3) return parseChatMaintainedPauseControlV1(value)
   if (value && typeof value === 'object' && 'version' in value && value.version === 2) {
     if (!('kind' in value) || value.kind !== 'finish-current-turn') fail('交还控制版本或原因无效')
     return parseChatTurnEndControlV1(value)
@@ -74,6 +76,7 @@ export function assertChatControlHandoffContextV1(handoff: ChatControlHandoffV1,
  * not just a matching excerpt. Excluded later dialogue cannot silently erase
  * an answer; reject this result rather than reading it behind the author. */
 export function readChatControlHandoffBasisV1(state: CharacterInteractionRuntimeState, actorKey: string, handoff: ChatControlHandoffV1) {
+  if (handoff.version === 3) return readChatMaintainedPauseBasisV1(state, actorKey, handoff)
   if (handoff.version === 2) return readChatTurnEndBasisV1(state, actorKey, handoff)
   const sourceIndex = state.messages.findIndex(message => message.messageId === handoff.source.messageId && message.eventSequence === handoff.source.sequence)
   if (sourceIndex < 0) fail('交还控制对话依据缺失')
@@ -84,7 +87,7 @@ export function readChatControlHandoffBasisV1(state: CharacterInteractionRuntime
 
 export function parseChatControlHandoffReviewV1(value: unknown, handoff: ChatControlHandoffV1): ChatControlHandoffReviewV1 {
   const draft = parseChatControlHandoffV1(handoff)
-  const checks: readonly string[] = draft.version === 2 ? CHAT_TURN_END_CONTROL_CHECKS_V1 : CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1
+  const checks: readonly string[] = draft.version === 3 ? CHAT_MAINTAINED_PAUSE_CHECKS_V1 : draft.version === 2 ? CHAT_TURN_END_CONTROL_CHECKS_V1 : CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1
   const row = record(value, ['reviewedHandoffJson', 'checks'])
   if (row.reviewedHandoffJson !== canonicalStringify(draft)) fail('交还控制审查与候选正文不一致')
   if (!Array.isArray(row.checks) || row.checks.length !== checks.length) fail('交还控制审查缺少必要项目')
@@ -108,6 +111,7 @@ export function previewChatControlHandoffV1(state: CharacterInteractionRuntimeSt
   sequence: number; triggerSequence: number; actorKey: string; handoff: unknown
 }): CharacterInteractionRuntimeState {
   const handoff = parseChatControlHandoffV1(input.handoff)
+  if (handoff.version === 3) return previewChatMaintainedPauseControlV1(state, {...input, handoff})
   if (handoff.version === 2) return previewChatTurnEndControlV1(state, {...input, handoff})
   const story = state.chatNarrative, scene = state.activeScene, trigger = story?.triggers.slice(-1)[0]
   if (!story || !scene || scene.status !== 'active' || scene.sceneKey !== story.situation.sceneKey

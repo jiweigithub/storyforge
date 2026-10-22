@@ -17,6 +17,7 @@ export interface ChatTurnEndControlV1 {
 export const CHAT_TURN_END_CONTROL_PRODUCER_V1 = 'chat-narrative-action-v57'
 export const CHAT_TURN_END_CONTROL_REVIEWER_V1 = 'chat-narrative-action-review-v36'
 export function chatTurnEndReviewerForProducerV1(version: string | undefined): string | undefined {
+  if (version === 'chat-narrative-action-v66') return 'chat-narrative-action-review-v41'
   if (version === 'chat-narrative-action-v65') return 'chat-narrative-action-review-v40'
   if (version === 'chat-narrative-action-v64') return 'chat-narrative-action-review-v39'
   if (version === CHAT_TURN_END_CONTROL_PRODUCER_V1) return CHAT_TURN_END_CONTROL_REVIEWER_V1
@@ -114,6 +115,6 @@ export const CHAT_TURN_END_CHOICE_DRAFT_REVIEW_RULES_V1 = [
 ] as const
 
 export function chatTurnEndControlReviewRulesV1(reviewerVersion: string): readonly string[] {
-  if (reviewerVersion !== 'chat-narrative-action-review-v40') return CHAT_TURN_END_CONTROL_REVIEW_RULES_V1
+  if (!['chat-narrative-action-review-v40', 'chat-narrative-action-review-v41'].includes(reviewerVersion)) return CHAT_TURN_END_CONTROL_REVIEW_RULES_V1
   return [CHAT_TURN_END_CONTROL_REVIEW_RULES_V1[0], ...CHAT_TURN_END_CHOICE_DRAFT_REVIEW_RULES_V1, ...CHAT_TURN_END_CONTROL_REVIEW_RULES_V1.slice(1)]
 }
