@@ -19,6 +19,7 @@ const originalSkill = skills.getAgentSkillV1
 const cases = [
   {producer: 'chat-narrative-action-v61', reader: 'chat-narrative-runtime-view-v17', retrieval: 'chat-relevance-v13'},
   {producer: 'chat-narrative-action-v62', reader: 'chat-narrative-runtime-view-v18', retrieval: 'chat-relevance-v14'},
+  {producer: 'chat-narrative-action-v63', reader: 'chat-narrative-runtime-view-v18', retrieval: 'chat-relevance-v14'},
 ] as const
 type Producer = typeof cases[number]['producer']
 const action = {kind: 'speak', text: '你记得最后一次见到铜印的地方吗？', goalKey: 'find-seal', evidenceFactKeys: ['lost'],
@@ -52,7 +53,7 @@ async function packet(projectId: number, snapshot: AgentRunSnapshotV1, stepId: s
 }
 
 it.each(cases)('preserves $producer / $reader through saved candidate, refresh, review and portable inspection', async ({producer, reader, retrieval}) => {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v62')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v63')
   freeze(producer)
   const f = await start(), before = await readProductRuntimeState(f.sessionId), worlds = await db.worldReleases.toArray()
   let modelCalls = 0, reviewCalls = 0, forbiddenCalls = 0

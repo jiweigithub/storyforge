@@ -17,6 +17,7 @@ const versions = [
   {skill: 'character.chat-narrative-options', old: 'chat-narrative-options-v37', next: 'chat-narrative-options-v38'},
   {skill: 'character.chat-action-revision', old: 'chat-action-revision-v22', next: 'chat-action-revision-v23'},
 ] as const
+const currentVersions = {'character.chat-narrative-action': 'chat-narrative-action-v63', 'character.chat-narrative-options': 'chat-narrative-options-v39', 'character.chat-action-revision': 'chat-action-revision-v23'} as const
 const recipe = (producer: string, reviewer = 'chat-narrative-action-review-v38', choice = producer) => ({
   budget: {maxModelCalls: 3, maxAttemptsPerStep: 1}, executionBindings: [
     {stepId: 'interaction:action-choice', skillId: 'character.chat-narrative-action', promptVersion: choice},
@@ -28,8 +29,9 @@ const completion = {...chatTurnEndActionFixture(), turnCompletion: {
   version: 1 as const, purpose: '整理现有线索', evidenceExcerpt: '将已经核实的线索按时间排好',
 }}
 
-it.each(versions)('binds only $next to reader18 and retains the released $old reader17', ({skill, old, next}) => {
-  expect(getAgentSkillV1(skill).promptVersion).toBe(next)
+it.each(versions)('retains $next reader18 and $old reader17 while explicitly binding the current default', ({skill, old, next}) => {
+  expect(getAgentSkillV1(skill).promptVersion).toBe(currentVersions[skill])
+  expect(chatActionContextVersionsV1(currentVersions[skill])).toEqual(chatActionContextVersionsV1(next))
   expect(chatActionContextVersionsV1(next)).toEqual({readerVersion: 'chat-narrative-runtime-view-v18', retrievalVersion: 'chat-relevance-v14'})
   expect(chatActionContextVersionsV1(old)).toEqual({readerVersion: 'chat-narrative-runtime-view-v17', retrievalVersion: 'chat-relevance-v13'})
   expect(usesChatActionBoundContextV1({skillId: skill, promptVersion: next})).toBe(true)
@@ -43,15 +45,15 @@ it('keeps future reader and producer versions outside the released allowlist', (
   expect(chatRetrievalVersionForReader('chat-narrative-runtime-view-v17')).toBe('chat-relevance-v13')
   expect(chatRetrievalVersionForReader('chat-narrative-runtime-view-v19')).toBeNull()
   for (const [skillId, promptVersion] of [
-    ['character.chat-narrative-action', 'chat-narrative-action-v63'],
-    ['character.chat-narrative-options', 'chat-narrative-options-v39'],
+    ['character.chat-narrative-action', 'chat-narrative-action-v64'],
+    ['character.chat-narrative-options', 'chat-narrative-options-v40'],
     ['character.chat-action-revision', 'chat-action-revision-v24'],
   ]) expect(usesChatActionBoundContextV1({skillId, promptVersion})).toBe(false)
   expect(getAgentSkillV1('character.chat-narrative-action-review').promptVersion).toBe('chat-narrative-action-review-v38')
   expect(getAgentSkillV1('character.chat-narrative-options-review').promptVersion).toBe('chat-narrative-options-review-v28')
 })
 
-it.each(['chat-narrative-action-v61', 'chat-narrative-action-v62'])('keeps %s bound to review38 and the original three-call budget', producer => {
+it.each(['chat-narrative-action-v61', 'chat-narrative-action-v62', 'chat-narrative-action-v63'])('keeps %s bound to review38 and the original three-call budget', producer => {
   const contract = recipe(producer), {handoff} = chatTurnEndControlFixture()
   expect(chatActionChoiceVersionForContractV1(contract)).toBe(1)
   expect(() => assertChatTurnCompletionBindingV1(completion, contract)).not.toThrow()
@@ -70,12 +72,14 @@ it.each(['chat-narrative-action-v61', 'chat-narrative-action-v62'])('keeps %s bo
 it.each([
   ['chat-narrative-action-v62', 'chat-narrative-action-v61'],
   ['chat-narrative-action-v61', 'chat-narrative-action-v62'],
-  ['chat-narrative-action-v63', 'chat-narrative-action-v63'],
+  ['chat-narrative-action-v62', 'chat-narrative-action-v63'],
+  ['chat-narrative-action-v63', 'chat-narrative-action-v62'],
+  ['chat-narrative-action-v64', 'chat-narrative-action-v64'],
 ])('rejects mixed or future expression %s / choice %s', (producer, choice) => {
   const contract = recipe(producer, 'chat-narrative-action-review-v38', choice)
   expect(() => chatActionChoiceVersionForContractV1(contract)).toThrow('冻结预算合同不一致')
   expect(() => assertChatControlHandoffBindingsV1(contract, chatTurnEndControlFixture().handoff)).toThrow()
-  if (producer.endsWith('-v63')) expect(() => assertChatTurnCompletionBindingV1(completion, contract)).toThrow()
+  if (producer.endsWith('-v64')) expect(() => assertChatTurnCompletionBindingV1(completion, contract)).toThrow()
 })
 
 it('does not add choice or turn-end authority to new options or revision contracts', () => {
@@ -112,5 +116,18 @@ it.each(versions)('preserves all output schemas and prompt rules for $old → $n
   if (skill === 'character.chat-narrative-action') {
     const messages: ChatMessage[] = [{role: 'system', content: '原角色规则'}, {role: 'user', content: '已交付角色视角'}]
     expect(buildChatActionChoiceMessagesV1(messages, next)).toEqual(buildChatActionChoiceMessagesV1(messages, old))
+  }
+})
+
+
+it.each([
+  ['chat-narrative-action-v62', 'chat-narrative-action-v63'],
+  ['chat-narrative-options-v38', 'chat-narrative-options-v39'],
+])('preserves output authority and schemas for ordinary-action clarification %s → %s', (old, current) => {
+  expect(chatActionOutputRulesV1(current, ['player', 'guard'])).toEqual(chatActionOutputRulesV1(old, ['player', 'guard']))
+  expect(chatNarrativeOutcomeRulesV1(current)).toEqual(chatNarrativeOutcomeRulesV1(old))
+  for (const provider of ['codex', 'agnes'] as const) {
+    expect(chatActionRequestOptionsV1(current, provider)).toEqual(chatActionRequestOptionsV1(old, provider))
+    if (current === 'chat-narrative-action-v63') expect(chatActionChoiceRequestOptionsV1(provider, current)).toEqual(chatActionChoiceRequestOptionsV1(provider, old))
   }
 })
