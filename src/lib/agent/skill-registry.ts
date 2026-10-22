@@ -2223,7 +2223,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(SCREENPLAY_SOURCE_ANALYSIS_CONTEXT_KEYS),
     maxOutputTokens: 12_000,
     writeTargets: [{ table: 'adaptationSourceFacts', fields: ['kind', 'statement', 'subjectKeys', 'sourceUnitKeys', 'confidence'], adoptionExtension: 'adaptation-source-fact-lifecycle' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SCREEN2-professional-pipeline', 'R-COMIC2-professional-pipeline'],
   },
   {
@@ -2243,7 +2243,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(SCREENPLAY_CAUSAL_CONTEXT_KEYS),
     maxOutputTokens: 10_000,
     writeTargets: [{ table: 'adaptationCausalEdges', fields: ['fromFactKey', 'toFactKey', 'relation', 'rationale', 'sourceUnitKeys'], adoptionExtension: 'adaptation-causal-edge-lifecycle' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SCREEN2-professional-pipeline', 'R-COMIC2-professional-pipeline'],
   },
   {
@@ -2263,7 +2263,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(SCREENPLAY_BRIEF_CONTEXT_KEYS),
     maxOutputTokens: 6_000,
     writeTargets: [{ table: 'adaptationProjects', fields: ['brief'] }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SCREEN2-professional-pipeline'],
   },
   {
@@ -2283,7 +2283,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(SCREENPLAY_DECISION_CONTEXT_KEYS),
     maxOutputTokens: 10_000,
     writeTargets: [{ table: 'adaptationDecisions', fields: ['action', 'sourceFactKeys', 'targetKeys', 'rationale'], adoptionExtension: 'adaptation-decision-lifecycle' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SCREEN2-professional-pipeline'],
   },
   {
@@ -2303,7 +2303,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(SCREENPLAY_BEAT_CONTEXT_KEYS),
     maxOutputTokens: 12_000,
     writeTargets: [{ table: 'screenplayBeats', fields: ['sectionKey', 'sectionTitle', 'scope', 'episodeNumber', 'order', 'objective', 'conflict', 'turn', 'outcome', 'causalFactKeys', 'decisionKeys', 'sourceUnitKeys', 'estimatedSeconds'], adoptionExtension: 'screenplay-beat-lifecycle' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SCREEN2-professional-pipeline'],
   },
   {
@@ -2323,7 +2323,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(SCREENPLAY_CARD_CONTEXT_KEYS),
     maxOutputTokens: 14_000,
     writeTargets: [{ table: 'screenplaySceneCards', fields: ['beatKey', 'episodeNumber', 'sceneNumber', 'order', 'purpose', 'conflict', 'entryState', 'exitState', 'visibleAction', 'informationReveal', 'sourceUnitKeys', 'estimatedSeconds'], adoptionExtension: 'screenplay-scene-card-lifecycle' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SCREEN2-professional-pipeline'],
   },
   {
@@ -2343,7 +2343,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(SCREENPLAY_DRAFT_CONTEXT_KEYS),
     maxOutputTokens: 14_000,
     writeTargets: [{ table: 'screenplayScenes', fields: ['planSectionKey', 'intExt', 'location', 'timeOfDay', 'summary', 'estimatedSeconds', 'sourceUnitIds', 'blocks'], adoptionExtension: 'screenplay-scene-lifecycle' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SCREEN2-professional-pipeline'],
   },
   {
@@ -2363,7 +2363,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(SCREENPLAY_REVIEW_CONTEXT_KEYS),
     maxOutputTokens: 8_000,
     writeTargets: [{ table: 'screenplayReviewIssues', fields: ['category', 'severity', 'sceneKey', 'blockId', 'evidence', 'problem', 'suggestion', 'sourceUnitKeys'], adoptionExtension: 'screenplay-review-issue-lifecycle' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SCREEN2-professional-pipeline'],
   },
   {
@@ -2383,7 +2383,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(SCREENPLAY_REVIEW_CONTEXT_KEYS),
     maxOutputTokens: 8_000,
     writeTargets: [{ table: 'screenplayReviewIssues', fields: ['category', 'severity', 'sceneKey', 'blockId', 'evidence', 'problem', 'suggestion', 'sourceUnitKeys'], adoptionExtension: 'screenplay-review-issue-lifecycle' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SCREEN2-professional-pipeline'],
   },
   {
@@ -2403,32 +2403,32 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(SCREENPLAY_REWRITE_CONTEXT_KEYS),
     maxOutputTokens: 14_000,
     writeTargets: [{ table: 'screenplayScenes', fields: ['summary', 'blocks'], adoptionExtension: 'screenplay-scene-lifecycle' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SCREEN2-professional-pipeline'],
   },
   {
     version: 1, id: 'comic.adaptation-brief', agentId: 'outline', defaultForAgent: false,
     label: '专业漫画改编 Brief', owner: 'comic-product', promptVersion: 'comic-adaptation-brief-v1', executionMode: 'comic-adaptation-brief', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: COMIC_BRIEF_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(COMIC_BRIEF_CONTEXT_KEYS), maxOutputTokens: 6_000,
-    writeTargets: [{ table: 'adaptationProjects', fields: ['brief'] }], lastVerifiedAt: '2026-09-06', regressionTests: ['R-COMIC2-professional-pipeline'],
+    writeTargets: [{ table: 'adaptationProjects', fields: ['brief'] }], lastVerifiedAt: '2026-10-21', regressionTests: ['R-COMIC2-professional-pipeline'],
   },
   {
     version: 1, id: 'comic.decision-pass', agentId: 'outline', defaultForAgent: false,
     label: '漫画逐项改编决定', owner: 'comic-product', promptVersion: 'comic-decision-pass-v1', executionMode: 'comic-decision-pass', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: COMIC_DECISION_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(COMIC_DECISION_CONTEXT_KEYS), maxOutputTokens: 10_000,
-    writeTargets: [{ table: 'adaptationDecisions', fields: ['action', 'sourceFactKeys', 'targetKeys', 'rationale'], adoptionExtension: 'adaptation-decision-lifecycle' }], lastVerifiedAt: '2026-09-06', regressionTests: ['R-COMIC2-professional-pipeline'],
+    writeTargets: [{ table: 'adaptationDecisions', fields: ['action', 'sourceFactKeys', 'targetKeys', 'rationale'], adoptionExtension: 'adaptation-decision-lifecycle' }], lastVerifiedAt: '2026-10-21', regressionTests: ['R-COMIC2-professional-pipeline'],
   },
   {
     version: 1, id: 'comic.script-adaptation', agentId: 'outline', defaultForAgent: false,
     label: '漫画脚本视觉节拍', owner: 'comic-product', promptVersion: 'comic-script-adaptation-v1', executionMode: 'comic-script-adaptation', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: COMIC_SCRIPT_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(COMIC_SCRIPT_CONTEXT_KEYS), maxOutputTokens: 14_000,
-    writeTargets: [{ table: 'comicScriptBeats', fields: ['sectionKey', 'narrativeFunction', 'visualAction', 'dialogueIntent', 'emotion', 'causalFactKeys', 'decisionKeys', 'sourceUnitKeys'], adoptionExtension: 'comic-script-beat-lifecycle' }], lastVerifiedAt: '2026-09-06', regressionTests: ['R-COMIC2-professional-pipeline'],
+    writeTargets: [{ table: 'comicScriptBeats', fields: ['sectionKey', 'narrativeFunction', 'visualAction', 'dialogueIntent', 'emotion', 'causalFactKeys', 'decisionKeys', 'sourceUnitKeys'], adoptionExtension: 'comic-script-beat-lifecycle' }], lastVerifiedAt: '2026-10-21', regressionTests: ['R-COMIC2-professional-pipeline'],
   },
   {
     version: 1, id: 'comic.page-rhythm', agentId: 'outline', defaultForAgent: false,
     label: '漫画分页与翻页节奏', owner: 'comic-product', promptVersion: 'comic-page-rhythm-v1', executionMode: 'comic-page-rhythm', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: COMIC_PAGE_RHYTHM_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(COMIC_PAGE_RHYTHM_CONTEXT_KEYS), maxOutputTokens: 16_000,
-    writeTargets: [{ table: 'comicPagePlans', fields: ['goal', 'beatKeys', 'endReveal', 'pageTurn'], adoptionExtension: 'comic-page-plan-lifecycle' }], lastVerifiedAt: '2026-09-06', regressionTests: ['R-COMIC2-professional-pipeline'],
+    writeTargets: [{ table: 'comicPagePlans', fields: ['goal', 'beatKeys', 'endReveal', 'pageTurn'], adoptionExtension: 'comic-page-plan-lifecycle' }], lastVerifiedAt: '2026-10-21', regressionTests: ['R-COMIC2-professional-pipeline'],
   },
   {
     version: 1, id: 'comic.panel-plan', agentId: 'outline', defaultForAgent: false,
@@ -2437,7 +2437,7 @@ export const AGENT_SKILLS = [
     writeTargets: [
       { table: 'comicPages', fields: ['pagePlanKey', 'summary'], adoptionExtension: 'comic-page-panel-lifecycle' },
       { table: 'comicPanels', fields: ['frame', 'nextPanelKey', 'shot', 'narrativeFunction', 'moment', 'continuityRefs', 'subjectStates', 'protectedAreas', 'lettering', 'sourceUnitIds'], adoptionExtension: 'comic-panel-lifecycle' },
-    ], lastVerifiedAt: '2026-09-06', regressionTests: ['R-COMIC2-professional-pipeline'],
+    ], lastVerifiedAt: '2026-10-21', regressionTests: ['R-COMIC2-professional-pipeline'],
   },
   {
     version: 1, id: 'comic.visual-bible', agentId: 'outline', defaultForAgent: false,
@@ -2446,31 +2446,31 @@ export const AGENT_SKILLS = [
     writeTargets: [
       { table: 'adaptationProjects', fields: ['visualBible'] },
       { table: 'comicVisualSubjects', fields: ['label', 'design', 'sourceUnitIds'], adoptionExtension: 'comic-visual-subject-lifecycle' },
-    ], lastVerifiedAt: '2026-09-06', regressionTests: ['R-COMIC2-professional-pipeline'],
+    ], lastVerifiedAt: '2026-10-21', regressionTests: ['R-COMIC2-professional-pipeline'],
   },
   {
     version: 1, id: 'comic.image-request', agentId: 'outline', defaultForAgent: false,
     label: '漫画单格图像请求编译', owner: 'comic-product', promptVersion: 'comic-image-request-v1', executionMode: 'comic-image-request', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: COMIC_IMAGE_REQUEST_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(COMIC_IMAGE_REQUEST_CONTEXT_KEYS), maxOutputTokens: 5_000,
-    writeTargets: [{ table: 'comicPanels', fields: ['visualPrompt', 'negativePrompt', 'continuityRefs', 'protectedAreas'], adoptionExtension: 'comic-panel-lifecycle' }], lastVerifiedAt: '2026-09-06', regressionTests: ['R-COMIC2-professional-pipeline'],
+    writeTargets: [{ table: 'comicPanels', fields: ['visualPrompt', 'negativePrompt', 'continuityRefs', 'protectedAreas'], adoptionExtension: 'comic-panel-lifecycle' }], lastVerifiedAt: '2026-10-21', regressionTests: ['R-COMIC2-professional-pipeline'],
   },
   {
     version: 1, id: 'comic.visual-continuity-review', agentId: 'outline', defaultForAgent: false,
     label: '漫画媒资证据与视觉连续性监修', owner: 'comic-product', promptVersion: 'comic-visual-continuity-review-v1', executionMode: 'comic-visual-continuity-review', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: COMIC_REVIEW_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(COMIC_REVIEW_CONTEXT_KEYS), maxOutputTokens: 8_000,
-    writeTargets: [{ table: 'comicReviewIssues', fields: ['category', 'severity', 'pageKey', 'panelKey', 'subjectKey', 'assetKey', 'evidence', 'problem', 'suggestion', 'sourceUnitKeys'], adoptionExtension: 'comic-review-issue-lifecycle' }], lastVerifiedAt: '2026-09-06', regressionTests: ['R-COMIC2-professional-pipeline'],
+    writeTargets: [{ table: 'comicReviewIssues', fields: ['category', 'severity', 'pageKey', 'panelKey', 'subjectKey', 'assetKey', 'evidence', 'problem', 'suggestion', 'sourceUnitKeys'], adoptionExtension: 'comic-review-issue-lifecycle' }], lastVerifiedAt: '2026-10-21', regressionTests: ['R-COMIC2-professional-pipeline'],
   },
   {
     version: 1, id: 'comic.targeted-repair', agentId: 'outline', defaultForAgent: false,
     label: '漫画指定格局部修复编排', owner: 'comic-product', promptVersion: 'comic-targeted-repair-v1', executionMode: 'comic-targeted-repair', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: COMIC_REPAIR_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(COMIC_REPAIR_CONTEXT_KEYS), maxOutputTokens: 6_000,
-    writeTargets: [{ table: 'comicPanels', fields: ['visualPrompt', 'negativePrompt', 'continuityRefs', 'protectedAreas'], adoptionExtension: 'comic-panel-lifecycle' }], lastVerifiedAt: '2026-09-06', regressionTests: ['R-COMIC2-professional-pipeline'],
+    writeTargets: [{ table: 'comicPanels', fields: ['visualPrompt', 'negativePrompt', 'continuityRefs', 'protectedAreas'], adoptionExtension: 'comic-panel-lifecycle' }], lastVerifiedAt: '2026-10-21', regressionTests: ['R-COMIC2-professional-pipeline'],
   },
   {
     version: 1, id: 'comic.page-review', agentId: 'outline', defaultForAgent: false,
     label: '漫画页级叙事与排字审校', owner: 'comic-product', promptVersion: 'comic-page-review-v1', executionMode: 'comic-page-review', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: COMIC_REVIEW_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(COMIC_REVIEW_CONTEXT_KEYS), maxOutputTokens: 8_000,
-    writeTargets: [{ table: 'comicReviewIssues', fields: ['category', 'severity', 'pageKey', 'panelKey', 'subjectKey', 'assetKey', 'evidence', 'problem', 'suggestion', 'sourceUnitKeys'], adoptionExtension: 'comic-review-issue-lifecycle' }], lastVerifiedAt: '2026-09-06', regressionTests: ['R-COMIC2-professional-pipeline'],
+    writeTargets: [{ table: 'comicReviewIssues', fields: ['category', 'severity', 'pageKey', 'panelKey', 'subjectKey', 'assetKey', 'evidence', 'problem', 'suggestion', 'sourceUnitKeys'], adoptionExtension: 'comic-review-issue-lifecycle' }], lastVerifiedAt: '2026-10-21', regressionTests: ['R-COMIC2-professional-pipeline'],
   },
   {
     version: 1, id: 'motion-drama.series-bible', agentId: 'outline', defaultForAgent: false,
@@ -2537,7 +2537,7 @@ export const AGENT_SKILLS = [
     contextCompression: SHORT_NOVEL_DESIGN_COMPRESSION_POLICY,
     maxOutputTokens: 4_000,
     writeTargets: [{ table: 'shortNovelProductions', fields: ['brief'], adoptionExtension: 'short-novel-production-lifecycle' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SHORT2-professional-production'],
   },
   {
@@ -2557,7 +2557,7 @@ export const AGENT_SKILLS = [
     contextCompression: SHORT_NOVEL_DESIGN_COMPRESSION_POLICY,
     maxOutputTokens: 5_000,
     writeTargets: [{ table: 'shortNovelProductions', fields: ['storyDesign'], adoptionExtension: 'short-novel-production-lifecycle' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SHORT2-professional-production'],
   },
   {
@@ -2580,7 +2580,7 @@ export const AGENT_SKILLS = [
       { table: 'outlineNodes', fields: ['title', 'summary', 'order'], adoptionExtension: 'short-novel-outline-skeleton-lifecycle' },
       { table: 'chapters', fields: ['title', 'order'], adoptionExtension: 'chapter-delete-lifecycle' },
     ],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SHORT2-professional-production'],
   },
   {
@@ -2603,7 +2603,7 @@ export const AGENT_SKILLS = [
       { table: 'outlineNodes', fields: ['title'], adoptionExtension: 'short-novel-outline-skeleton-lifecycle' },
       { table: 'chapters', fields: ['title', 'content', 'wordCount', 'status'], adoptionExtension: 'chapter-delete-lifecycle' },
     ],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SHORT2-professional-production'],
   },
   {
@@ -2623,7 +2623,7 @@ export const AGENT_SKILLS = [
     contextCompression: SHORT_NOVEL_MANUSCRIPT_COMPRESSION_POLICY,
     maxOutputTokens: 8_000,
     writeTargets: [{ table: 'shortNovelProductions', fields: ['latestReview'], adoptionExtension: 'short-novel-production-lifecycle' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SHORT2-professional-production'],
   },
   {
@@ -2646,7 +2646,7 @@ export const AGENT_SKILLS = [
       { table: 'outlineNodes', fields: ['title'], adoptionExtension: 'short-novel-outline-skeleton-lifecycle' },
       { table: 'chapters', fields: ['title', 'content', 'wordCount', 'status'], adoptionExtension: 'chapter-delete-lifecycle' },
     ],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-SHORT2-professional-production'],
   },
   {
@@ -3344,7 +3344,7 @@ export const AGENT_SKILLS = [
     contextCompression: AI_TOWN_DIRECTOR_RUNTIME_COMPRESSION_POLICY,
     maxOutputTokens: 2_000,
     writeTargets: [],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-AITOWN2-director'],
   },
   {
@@ -3672,7 +3672,7 @@ export const AGENT_SKILLS = [
     contextTaskKind: 'agent-prose', readToolNames: [], contextSourceKeys: ['ttrpgPrivateGuidance'], optionalContextSourceKeys: [],
     inputPolicy: { ...TTRPG_PLAYER_RUNTIME_INPUT_POLICY, sourceKeys: ['ttrpgPrivateGuidance'] },
     contextCompression: compressionPolicy(['ttrpgPrivateGuidance']), maxOutputTokens: 1500, writeTargets: [],
-    lastVerifiedAt: '2026-09-06', regressionTests: ['R-TTRPG4-ai-kp-director'],
+    lastVerifiedAt: '2026-10-21', regressionTests: ['R-TTRPG4-ai-kp-director'],
   },
   {
     version: 1, id: 'prose.ttrpg-director', agentId: 'prose', defaultForAgent: false,
@@ -3681,7 +3681,7 @@ export const AGENT_SKILLS = [
     contextSourceKeys: ['ttrpgDirector'], optionalContextSourceKeys: [],
     inputPolicy: { ...TTRPG_GM_RUNTIME_INPUT_POLICY, sourceKeys: ['ttrpgDirector'] },
     contextCompression: compressionPolicy(['ttrpgDirector']), maxOutputTokens: 1000, writeTargets: [],
-    lastVerifiedAt: '2026-09-06', regressionTests: ['R-TTRPG4-ai-kp-director'],
+    lastVerifiedAt: '2026-10-21', regressionTests: ['R-TTRPG4-ai-kp-director'],
   },
   {
     version: 1,
@@ -3895,7 +3895,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-OPEN-WORLD3-source-curation'],
   },
   {
@@ -3926,7 +3926,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-OPEN-WORLD3-experience-design'],
   },
   {
@@ -4786,7 +4786,7 @@ export const AGENT_SKILLS = [
     ]),
     maxOutputTokens: 6_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-TEXTADV3-agent-team'],
   },
   {
@@ -5063,7 +5063,7 @@ export const AGENT_SKILLS = [
     ]),
     maxOutputTokens: 8_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-TEXTADV3-agent-team'],
   },
   {
@@ -5135,7 +5135,7 @@ export const AGENT_SKILLS = [
     contextGateway: PRODUCT_PRODUCTION_WORLD_GATEWAY_POLICY,
     maxOutputTokens: 12_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-TEXTADV2-production'],
   },
   {
@@ -5159,7 +5159,7 @@ export const AGENT_SKILLS = [
     contextGateway: PRODUCT_PRODUCTION_WORLD_GATEWAY_POLICY,
     maxOutputTokens: 16_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-TEXTADV2-production'],
   },
   {
@@ -5183,7 +5183,7 @@ export const AGENT_SKILLS = [
     contextGateway: PRODUCT_PRODUCTION_WORLD_GATEWAY_POLICY,
     maxOutputTokens: 12_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-09-06',
+    lastVerifiedAt: '2026-10-21',
     regressionTests: ['R-TEXTADV2-production'],
   },
   {
