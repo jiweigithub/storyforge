@@ -107,7 +107,7 @@ export function ttrpgOpenSituationProjectionActorV1(runtime: TtrpgRuntimeStateV2
 
 /** Shared pure I1-I7 admission; each caller must validate its actual causal owner first. */
 export function admitTtrpgOpenSituationV1(input: { state: ProductRuntimeState; content: TtrpgRuntimeContentV2; templateKey: string; actorKey: string;
-  sequence: number; instanceKey: string; activationReason: 'front-escalation' | 'consequence' | 'session-generation'; recordRejection?: boolean }): { state: ProductRuntimeState; runtime: TtrpgRuntimeStateV2; result: TtrpgOpenSituationWorkResultV1 } {
+  sequence: number; instanceKey: string; activationReason: 'front-escalation' | 'consequence' | 'session-generation' | 'opening'; recordRejection?: boolean }): { state: ProductRuntimeState; runtime: TtrpgRuntimeStateV2; result: TtrpgOpenSituationWorkResultV1 } {
   const state = structuredClone(input.state), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)!, run = runtime.openRun!, content = input.content
   state.ttrpg = runtime
   const template = ttrpgOpenSituationCatalogV1(content.campaign, run).templates.find(t => t.templateKey === input.templateKey) ?? p.fail('冻结准入模板不存在')

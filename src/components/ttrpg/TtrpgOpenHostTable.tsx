@@ -1,3 +1,4 @@
+import TtrpgOpenStageOpeningPanel from './TtrpgOpenStageOpeningPanel'
 import TtrpgOpenBriefPanel from './TtrpgOpenBriefPanel'
 import TtrpgOpenEntityPanel from './TtrpgOpenEntityPanel'
 import TtrpgOpenFactPanel from './TtrpgOpenFactPanel'
@@ -80,6 +81,7 @@ export default function TtrpgOpenHostTable(props: TtrpgPlayTablePropsV1 & { view
         <button disabled={busy} onClick={() => void perform(async () => { await changeTtrpgOpenTableSafetyV1({ ...input(),status: view.safetyStatus === 'paused' ? 'active' : 'paused',reason: view.safetyStatus === 'paused' ? '真人主持明确恢复' : '真人主持使用安全暂停' }) })}>{view.safetyStatus === 'paused' ? '主持恢复冒险' : '主持暂停冒险'}</button>
         <button disabled={busy} onClick={() => void perform(async () => { await props.onCheckpoint(`真人主持 · 世界轮次 ${host.worldTurn}`) })}>保存主持检查点</button>
       </div>
+      {host.stageStatus === 'closed' && <TtrpgOpenStageOpeningPanel input={input()} sequence={view.sequence} busy={busy} perform={perform} />}
       {view.safetyStatus === 'paused' && <p role="status">冒险已暂停，现有进度保留。</p>}
       <section className="sf-open-table-card" aria-label="主持冒险记录"><h2>全队冒险记录</h2>{host.narrations.map(n => <article key={n.key}>{n.paragraphs.map((text,i) => <p key={i}>{text}</p>)}</article>)}</section>
       <section className="sf-open-table-card" aria-label="主持当前局势"><h2>当前局势</h2>{host.situations.map(s => <p key={s.key}>{s.title}</p>)}</section>

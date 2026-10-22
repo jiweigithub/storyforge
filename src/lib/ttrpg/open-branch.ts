@@ -1,3 +1,4 @@
+import { verifyTtrpgOpenStageOpeningReceiptsV1 } from './open-stage-opening-contract'
 /** Prepare an open child from a verified cutpoint; no parent rows or gameplay owners are changed. */
 import type { ProductRuntimeSession, ProductRuntimeState, ProductRuntimeEvent } from '../types'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
@@ -33,6 +34,7 @@ export async function prepareTtrpgOpenBranchStateV1(input: {
   await verifyTtrpgOpenMemoryReceiptsV1({ runtime: parentRuntime, runtimeSourceHash: input.parent.runtimeSourceHash, events: input.events })
   await verifyTtrpgOpenAudioReceiptsV1({ runtime: parentRuntime, runtimeSourceHash: input.parent.runtimeSourceHash, events: input.events, projectId: input.parent.projectId })
   await verifyTtrpgOpenIdentityKnowledgeV1({ runtime: parentRuntime, runtimeSourceHash: input.parent.runtimeSourceHash, events: input.events })
+  await verifyTtrpgOpenStageOpeningReceiptsV1(parentRuntime.openRun?.stageOpenings ?? [])
   const ancestor = await captureTtrpgOpenAncestorV1({ sessionKey: parentRuntime.sessionKey, seed: input.parent.seed,
     runtimeSourceHash: input.parent.runtimeSourceHash, throughSequence: input.throughSequence, state: input.state,
     authorization: parentRuntime.authorization, openRun: parentRuntime.openRun, events: input.events })

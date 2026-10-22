@@ -1,3 +1,4 @@
+import { applyTtrpgOpenStageOpeningEventV1 } from './open-stage-opening-reducer'
 import { applyTtrpgOpenVoiceRequestEventV1 } from './open-voice-request-reducer'
 import { applyTtrpgOpenAudioEventV1 } from './open-audio-reducer'
 import { applyTtrpgOpenCommonOracleArchiveV1 } from './open-common-oracle-archive-contract'
@@ -99,7 +100,7 @@ export function applyTtrpgRuntimeEventV1(
     state.lastSequence = event.sequence
     return state
   }
-  if (state.ttrpg?.sessionKey && (applyTtrpgOpenHostingDelegationEventV1(state,event,payload) || applyTtrpgOpenTableMessageEventV1(state,event,payload) || applyTtrpgOpenPrivateChoiceDisclosureEventV1(state,event,payload) || applyTtrpgOpenHandoffEventV1(state, event, payload) || applyTtrpgOpenCompanionPreauthorizationEventV1(state, event, payload) || applyTtrpgOpenNarrationEventV1(state, event, payload) || applyTtrpgOpenGateRecoveryEventV1(state, event, payload) || applyTtrpgOpenStageClosureEventV1(state, event, payload) || applyTtrpgOpenTerminalGateEventV1(state, event, payload) || applyTtrpgOpenSituationCycleEventV1(state, event, payload) || applyTtrpgOpenSituationWorkEventV1(state, event, payload) || applyTtrpgOpenPressureEffectEventV1(state, event, payload) || applyTtrpgOpenPressureEventV1(state, event, payload))) {
+  if (state.ttrpg?.sessionKey && (applyTtrpgOpenHostingDelegationEventV1(state,event,payload) || applyTtrpgOpenTableMessageEventV1(state,event,payload) || applyTtrpgOpenPrivateChoiceDisclosureEventV1(state,event,payload) || applyTtrpgOpenHandoffEventV1(state, event, payload) || applyTtrpgOpenCompanionPreauthorizationEventV1(state, event, payload) || applyTtrpgOpenNarrationEventV1(state, event, payload) || applyTtrpgOpenGateRecoveryEventV1(state, event, payload) || applyTtrpgOpenStageOpeningEventV1(state, event, payload) || applyTtrpgOpenStageClosureEventV1(state, event, payload) || applyTtrpgOpenTerminalGateEventV1(state, event, payload) || applyTtrpgOpenSituationCycleEventV1(state, event, payload) || applyTtrpgOpenSituationWorkEventV1(state, event, payload) || applyTtrpgOpenPressureEffectEventV1(state, event, payload) || applyTtrpgOpenPressureEventV1(state, event, payload))) {
     state.ttrpg = parseTtrpgRuntimeStateV2(state.ttrpg)!;
     state.lastSequence = event.sequence;
     return state;

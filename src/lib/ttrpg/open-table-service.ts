@@ -1,3 +1,6 @@
+import { prepareTtrpgOpenNextStagePlanV1, type TtrpgOpenNextStagePlanV1 } from './open-stage-opening-plan'
+import { verifyTtrpgOpenStageOpeningReceiptsV1 } from './open-stage-opening-contract'
+import { openTtrpgNextStageV1 } from './runtime-commands'
 import { ttrpgOpenEntityParameterAllowedV1 } from './open-entity-catalog'
 import { verifyTtrpgOpenEntityStateV1 } from './open-entity-proof'
 import { ttrpgOpenSituationCatalogV1, ttrpgOpenSessionSituationActorAccessV1 } from './open-session-situation-catalog'
@@ -183,6 +186,7 @@ async function sourceForTable(input: Pick<TtrpgOpenTableInputV1, 'scope' | 'sess
   const state = await readProductRuntimeState(input.sessionId), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
   if (!runtime || runtime.product.rulePackContentHash !== source.runtimePackage.ttrpg.rulePack.contentHash || runtime.product.campaignKey !== source.runtimePackage.ttrpg.campaign.campaignKey) throw new Error('当前冒险与冻结来源不一致')
   await verifyTtrpgOpenSessionSituationHashesV1(runtime.openRun?.situationReceipts ?? [])
+  await verifyTtrpgOpenStageOpeningReceiptsV1(runtime.openRun?.stageOpenings ?? [])
   await verifyTtrpgOpenEntityStateV1(state, source.runtimePackage.ttrpg)
   await verifyTtrpgOpenPrivateChoiceHashesV1(runtime.openRun?.operations ?? [])
   await verifyTtrpgOpenManualEpochsV1(runtime.openRun?.coordination.epochs ?? [])
@@ -787,4 +791,29 @@ export async function stopTtrpgOpenTableHostingV1(input: TtrpgOpenTableInputV1 &
 /** Explicit owner-only archive read, without executing a historical candidate. */
 export async function readTtrpgOpenTableHistoricalResponseV1(input: TtrpgOpenTableInputV1 & { runId: number; requestKey: string }) {
   return readTtrpgOpenHistoricalResponseV1(input)
+}
+
+/** Explicit host selection, kept separate from authored release revision. */
+export async function readTtrpgOpenTableStageOpeningV1(input: TtrpgOpenTableInputV1) {
+  const f = await humanHostTable(input), run = f.runtime.openRun;
+  if (!run || run.stage.status !== 'closed') return null;
+  const actorKey = f.seat.actorKey ?? f.runtime.authorization!.selectedActorKeys[0];
+  return { sequence: f.state.lastSequence, worldTurn: run.worldTime.worldTurn, maximumWorldTurns: f.content.campaign.stageClosurePolicy.maximumWorldTurns,
+    choices: ttrpgOpenSituationCatalogV1(f.content.campaign, run).templates
+      .filter(t => ttrpgOpenSessionSituationActorAccessV1(run, t.templateKey, actorKey))
+      .map(t => ({ templateKey: t.templateKey, title: t.title, continuing: run.situations.active.some(s => s.templateKey === t.templateKey) })) };
+}
+export async function prepareTtrpgOpenTableStageOpeningV1(input: TtrpgOpenTableInputV1 & { templateKeys: readonly string[] }) {
+  const f = await humanHostTable(input), command = await envelope(input.sessionId, 'stage-opening');
+  const { plan } = await prepareTtrpgOpenNextStagePlanV1({ state: f.state, content: f.content, runtimeSourceHash: f.session.runtimeSourceHash,
+    viewerKey: input.viewerKey, commandId: command.commandId, templateKeys: input.templateKeys });
+  return { command, plan };
+}
+export async function confirmTtrpgOpenTableStageOpeningV1(input: TtrpgOpenTableInputV1 & {
+  preview: { command: Awaited<ReturnType<typeof envelope>>; plan: TtrpgOpenNextStagePlanV1 }
+}) {
+  await humanHostTable(input);
+  if (input.preview.command.sessionId !== input.sessionId || input.preview.plan.viewerKey !== input.viewerKey) throw new Error('开局预览不属于当前桌面身份');
+  return openTtrpgNextStageV1({ ...input.preview.command, viewerKey: input.viewerKey,
+    templateKeys: input.preview.plan.selected.map(s => s.templateKey), expectedPlanHash: input.preview.plan.planHash });
 }

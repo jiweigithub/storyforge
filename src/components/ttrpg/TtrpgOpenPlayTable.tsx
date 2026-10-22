@@ -1,3 +1,4 @@
+import TtrpgOpenStageOpeningPanel from './TtrpgOpenStageOpeningPanel'
 import TtrpgOpenSituationPanel from './TtrpgOpenSituationPanel'
 import TtrpgOpenPublicSituationPanel from './TtrpgOpenPublicSituationPanel'
 import TtrpgOpenCommonOraclePanel from './TtrpgOpenCommonOraclePanel'
@@ -166,6 +167,7 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
         {p.hosting.permission?.stoppedRef && <p role="status">本轮自动主持已停止。可继续处理已保存的进度；新的自动主持需要明确开始下一轮。</p>}
       </section>}
       {p.blockedByEntity && <p role="status">请先在本局对象面板确认或放弃当前计划。</p>}
+      {p.stageStatus === 'closed' && <TtrpgOpenStageOpeningPanel input={input()} sequence={view.sequence} busy={busy} perform={job => perform(async () => { await job() })} />}
       {p.stageStatus === 'closed' && <p role="status">本阶段已明确收束；请完成剩余后果与叙述，并保存进度。</p>}
       <div className="sf-open-table-toolbar"><span>{p.view.self.name} · 世界轮次 {p.view.authority.worldTurn}</span><span>{p.passiveRecap ? p.passivePurpose === 'situation-generation' ? '当前正在拟定新局势' : '当前为阶段复盘' : <>本轮剩余请求额度：{p.remainingCalls}</>}</span>
         <button disabled={busy} onClick={() => void perform(async () => {})}>读取最新进度</button>

@@ -29,7 +29,7 @@ export function evaluateTtrpgOpenTerminalV1(state: ProductRuntimeState, content:
     predicateContext: ttrpgOpenPredicateContextV1(state, content), worldTurn: run.worldTime.worldTurn })
   const status = run.stage.status === 'closed' ? 'stage-closed' : runtime.product.safety.status !== 'active' ? 'safety-paused'
     : closure.maximumReached ? 'maximum-reached' : closure.eligible ? 'closure-available' : 'actionable'
-  return { status, worldTurn: run.worldTime.worldTurn, stageRevision: `stage.${run.stage.openedAtWorldTurn}`, closure }
+  return { status, worldTurn: run.worldTime.worldTurn, stageRevision: run.stageOpenings?.[run.stageOpenings.length - 1]?.plan.stageRevision ?? `stage.${run.stage.openedAtWorldTurn}`, closure }
 }
 export function parseTtrpgOpenTerminalReceiptV1(value: unknown): TtrpgOpenTerminalReceiptV1 {
   const r = p.record(value, ['sourceRef', 'ruleSourceRef', 'frozenContent', 'contentHash', 'runtimeSourceHash', 'decision'], 'terminal receipt')
@@ -76,7 +76,25 @@ export function ttrpgOpenGateHumanActorsV1(runtime: TtrpgRuntimeStateV2): Array<
   return auth.seats.filter(s => s.role === 'player' && s.controller !== 'ai' && s.assignmentState === 'claimed' && s.actorKey && auth.selectedActorKeys.includes(s.actorKey)).map(s => ({ actorKey: s.actorKey!, viewerKey: s.viewerKey }))
 }
 export function evaluateTtrpgOpenPlayerGatesV1(input: { state: ProductRuntimeState; terminal: TtrpgOpenTerminalReceiptV1; actorKey: string; viewerKey: string; basisHash: string }): TtrpgOpenRuntimeGateEvaluationV1 {
-  const runtime = parseTtrpgRuntimeStateV2(input.state.ttrpg)!, run = runtime.openRun!, content = input.terminal.frozenContent, auth = runtime.authorization!
+  return evaluatePlayerGates({ state: input.state, content: input.terminal.frozenContent,
+    actorKey: input.actorKey, viewerKey: input.viewerKey, basisHash: input.basisHash })
+}
+
+/** Pure prospective validation only; no invented rule/terminal receipt or start authority. */
+export function evaluateTtrpgOpenNextStagePlayerGatesV1(input: { state: ProductRuntimeState; content: TtrpgRuntimeContentV2;
+  actorKey: string; viewerKey: string; basisHash: string; openingRevision: string }): TtrpgOpenRuntimeGateEvaluationV1 {
+  const runtime = parseTtrpgRuntimeStateV2(input.state.ttrpg), run = runtime?.openRun
+  if (!runtime || !run || run.stage.status !== 'open' || runtime.product.safety.status !== 'active'
+    || run.stage.openedAtWorldTurn !== run.worldTime.worldTurn
+    || evaluateTtrpgOpenTerminalV1(input.state, input.content).closure.maximumReached
+    || !/^stage\.opening\.[0-9a-f]{64}$/.test(input.openingRevision)) p.fail('下一阶段检查需要准确拟开局、独立版本和原单局额度')
+  p.hash(input.basisHash, 'next stage gate basis')
+  return evaluatePlayerGates(input, input.openingRevision)
+}
+
+function evaluatePlayerGates(input: { state: ProductRuntimeState; content: TtrpgRuntimeContentV2;
+  actorKey: string; viewerKey: string; basisHash: string }, openingRevision?: string): TtrpgOpenRuntimeGateEvaluationV1 {
+  const runtime = parseTtrpgRuntimeStateV2(input.state.ttrpg)!, run = runtime.openRun!, content = input.content, auth = runtime.authorization!
   if (!ttrpgOpenGateHumanActorsV1(runtime).some(s => s.actorKey === input.actorKey && s.viewerKey === input.viewerKey)) p.fail('四门只检查该窗口真实回应的真人角色')
   const seat = auth.seats.find(s => s.viewerKey === input.viewerKey)!, context = ttrpgOpenPredicateContextV1(input.state, content)
   const known = (ref: string) => ttrpgOpenActorKnowsEvidenceV1(run.knowledge, input.actorKey, ref)
@@ -101,7 +119,7 @@ export function evaluateTtrpgOpenPlayerGatesV1(input: { state: ProductRuntimeSta
   const result = evaluateTtrpgOpenRuntimeGatesV1({ campaign, situations: { active }, pressure, worldTurn: run.worldTime.worldTurn, predicateContext: { ...context, pressure },
     viewer: { actorKey: input.actorKey, viewerKey: seat.viewerKey }, viewerKey: seat.viewerKey, actorKey: input.actorKey,
     stageStatus: terminal.status === 'stage-closed' ? 'closed' : terminal.status === 'safety-paused' || terminal.status === 'maximum-reached' ? 'paused' : 'active',
-    stageRevision: terminal.stageRevision, evaluationBasisHash: input.basisHash, sessionFacts: ttrpgOpenSessionFactsV1(run.factLedger),
+    stageRevision: openingRevision ?? terminal.stageRevision, evaluationBasisHash: input.basisHash, sessionFacts: ttrpgOpenSessionFactsV1(run.factLedger),
     previousGateResults: previous?.result.results, consecutiveFailures: previous?.result.consecutiveFailures })
   // The old pure helper labels G1/G2 with actorKey. The durable contract binds the actual seat viewer instead.
   for (const key of TTRPG_OPEN_GATE_KEYS) result.results[key] = { ...result.results[key], viewerKey: seat.viewerKey }

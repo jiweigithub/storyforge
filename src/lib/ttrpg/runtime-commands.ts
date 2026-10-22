@@ -1,3 +1,5 @@
+import { prepareTtrpgOpenNextStagePlanV1 } from './open-stage-opening-plan'
+import { parseTtrpgOpenStageOpeningReceiptV1 } from './open-stage-opening-contract'
 import type { TtrpgOpenVoiceRunSetWitnessV1 } from './open-voice-request-run'
 import { parseTtrpgOpenAudioRequestV1, ttrpgOpenAudioSourceEqualV1 } from './open-audio-contract'
 import { createTtrpgOpenAudioReceipt, parseTtrpgOpenAudioRequest, type TtrpgOpenAudioRequest } from './open-audio-receipt'
@@ -6716,4 +6718,23 @@ export async function cancelTtrpgOpenVoiceRequestForKernelV1(request: FormalTtrp
       payload: contract.ttrpgOpenVoiceCancellationPayloadV1({ ...row, cancelledRef: { sessionKey: loaded.runtime.sessionKey, sequence } }, input.viewerKey),
       agentEvidence: proof.evidence, voiceRunSetWitness: proof.witness, eventEvidence: loaded.events }
   } })
+}
+
+/** Exact preview approval; deterministic start, no model request or budget renewal. */
+export async function openTtrpgNextStageV1(input: FormalTtrpgCommandEnvelope & { viewerKey: string; templateKeys: readonly string[]; expectedPlanHash: string }): Promise<ProductRuntimeEvent> {
+  const viewerKey = pressureParse.key(input.viewerKey, 'stage opening viewer');
+  const templateKeys = pressureParse.keys(input.templateKeys, 'stage opening choices', 20, 1);
+  const expectedPlanHash = pressureParse.hash(input.expectedPlanHash, 'stage opening approval');
+  return appendFormalTtrpgCommand({ ...input, type: 'ttrpg.open.stage.opened', intent: { viewerKey, templateKeys, expectedPlanHash },
+    build: async context => {
+      const runtime = parseTtrpgRuntimeStateV2(context.state.ttrpg);
+      if (!runtime?.authorization) throw new Error('下一阶段需要当前开团授权');
+      assertTtrpgOpenAuthorizationCurrentV1({ authorization: runtime.authorization, participants: context.participants, viewerKey });
+      const content = requireTtrpgOpenContent(context.ttrpgContent);
+      const { plan } = await prepareTtrpgOpenNextStagePlanV1({ state: context.state, content, runtimeSourceHash: context.session.runtimeSourceHash,
+        viewerKey, commandId: input.commandId, templateKeys });
+      if (plan.planHash !== expectedPlanHash || plan.plannedSourceRef.sequence !== context.sequence) throw new Error('阶段开局预览已变化，请重新检查并明确确认');
+      return { actorKey: 'gm', targetKey: null, payload: { receipt: parseTtrpgOpenStageOpeningReceiptV1({ plan, frozenContent: content }) } };
+    },
+  });
 }

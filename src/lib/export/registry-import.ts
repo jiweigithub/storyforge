@@ -1,3 +1,4 @@
+import { assertTtrpgStageOpeningBackupV1 } from '../ttrpg/stage-opening-backup'
 import { validateExtensionBackup } from '../extensions/portable'
 /**
  * 注册表派生的项目导入引擎(AUDIT-1)
@@ -862,6 +863,7 @@ async function validateCurrentBackup(data: ProjectExportData): Promise<void> {
   await validateMotionDramaBackup(value)
   await validateProductArchitectureBackup(value)
   await assertTtrpgNarrativeMemoryBackupV1(value)
+  await assertTtrpgStageOpeningBackupV1(value)
   await validateIndependentCreationBackup(value)
   for (const spec of PROJECT_TABLES) {
     if (!spec.exportable || spec.name === 'projects' || spec.name === 'worlds' || spec.name === 'works') continue

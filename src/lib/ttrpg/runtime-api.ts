@@ -200,3 +200,5 @@ export { finishTtrpgOpenNormalizationInstanceDraftV1, reconcileTtrpgOpenStoppedN
 export { repairTtrpgOpenNormalizationInstanceResponseReceiptV1, abandonTtrpgOpenNormalizationInstanceWaitV1 } from './open-situation-request-recovery'
 export { acceptTtrpgOpenEntityCandidateV1 } from './runtime-commands'
 export { reconcileTtrpgOpenEntityRunV1, TtrpgOpenEntityReceiptPendingError } from './open-entity-adoption'
+
+export { openTtrpgNextStageV1 } from "./runtime-commands";

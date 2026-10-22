@@ -1,3 +1,4 @@
+import { parseTtrpgOpenStageOpeningReceiptV1, type TtrpgOpenStageOpeningReceiptV1 } from './open-stage-opening-contract'
 import { assertTtrpgOpenVoiceJournalV1, parseTtrpgOpenVoiceRequestV1, type TtrpgOpenVoiceRequestV1 } from './open-voice-request-contract'
 import { assertTtrpgOpenAudioJournal, parseTtrpgOpenAudioReceipt, type TtrpgOpenAudioReceipt } from './open-audio-receipt'
 import { assertTtrpgOpenEntityJournalV1 } from './open-entity-journal'
@@ -156,6 +157,7 @@ export interface TtrpgOpenRunStateV1 {
   voiceRequests?: TtrpgOpenVoiceRequestV1[];
   narrations?: TtrpgOpenNarrationReceiptV1[];
   stageClosures?: TtrpgOpenStageClosureV1[];
+  stageOpenings?: TtrpgOpenStageOpeningReceiptV1[];
   terminalReceipts?: TtrpgOpenTerminalReceiptV1[];
   gateReceipts?: TtrpgOpenGateReceiptV1[];
   gateRecoveries?: TtrpgOpenGateRecoveryV1[];
@@ -587,6 +589,7 @@ export function parseTtrpgOpenRunStateV1(
       ...(Object.prototype.hasOwnProperty.call(row, "situationReceipts") ? ["situationReceipts"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "entityOperations") ? ["entityOperations"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "stageClosures") ? ["stageClosures"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "stageOpenings") ? ["stageOpenings"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "terminalReceipts") ? ["terminalReceipts"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "gateReceipts") ? ["gateReceipts"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "gateRecoveries") ? ["gateRecoveries"] : []),
@@ -731,6 +734,7 @@ export function parseTtrpgOpenRunStateV1(
     ...(Object.prototype.hasOwnProperty.call(row, "situationReceipts") ? { situationReceipts: Array.isArray(row.situationReceipts) && row.situationReceipts.length <= 1000 ? row.situationReceipts.map(parseTtrpgOpenSessionSituationReceiptV2) : fail("situationReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "memoryReceipts") ? { memoryReceipts: Array.isArray(row.memoryReceipts) && row.memoryReceipts.length <= 100000 ? row.memoryReceipts.map(parseTtrpgOpenMemoryReceipt) : fail("memoryReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "stageClosures") ? { stageClosures: Array.isArray(row.stageClosures) && row.stageClosures.length <= 100000 ? row.stageClosures.map(parseTtrpgOpenStageClosureV1) : fail("stageClosures 必须有界") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "stageOpenings") ? { stageOpenings: Array.isArray(row.stageOpenings) && row.stageOpenings.length <= 100000 ? row.stageOpenings.map(parseTtrpgOpenStageOpeningReceiptV1) : fail("stageOpenings 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "terminalReceipts") ? { terminalReceipts: Array.isArray(row.terminalReceipts) && row.terminalReceipts.length <= 100000 ? row.terminalReceipts.map(parseTtrpgOpenTerminalReceiptV1) : fail("terminalReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "gateReceipts") ? { gateReceipts: Array.isArray(row.gateReceipts) && row.gateReceipts.length <= 100000 ? row.gateReceipts.map(parseTtrpgOpenGateReceiptV1) : fail("gateReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "situationCycles") ? { situationCycles: Array.isArray(row.situationCycles) && row.situationCycles.length <= 100000
@@ -831,6 +835,19 @@ export function parseTtrpgRuntimeStateV2(
     if (recovery.action === 'evidence' && !openRun!.knowledge.some(k => k.knowledgeKey === recovery.recoveryKey && k.evidenceRef === recovery.targetRef && k.publicFieldsHash === recovery.publicFieldsHash && k.acquisitionRef.sessionKey === recovery.sourceRef.sessionKey && k.acquisitionRef.sequence === recovery.sourceRef.sequence && k.reliability === 'observed' && k.audience === 'private' && k.recipientActorKeys.length === 1 && k.recipientActorKeys[0] === recovery.actorKey)) fail("恢复线索没有真实定向知识记录");
     if (recovery.stoppedRef && recovery.sourceRef.sessionKey === sessionKey && !openRun!.coordination.epochs.some(e => e.epochKey === recovery.authorizationEpochKey && e.status === 'closed' && e.closedRef?.sequence === recovery.stoppedRef!.sequence && e.stopReason === recovery.stopReason)) fail("恢复停止必须闭合实际原授权窗口");
     if (recovery.failedEvaluationRefs.some(ref => !openRun!.gateReceipts?.some(g => g.sourceRef.sessionKey === ref.sessionKey && g.sourceRef.sequence === ref.sequence && g.authorizationEpochKey === recovery.authorizationEpochKey && !g.result.allApplicablePassed))) fail("恢复停止引用了不存在或并未失败的评估");
+  }
+  const openings = openRun?.stageOpenings ?? [];
+  if (new Set(openings.map(o => o.plan.openingKey)).size !== openings.length
+    || new Set(openings.map(o => `${o.plan.previousClosureRef.sessionKey}:${o.plan.previousClosureRef.sequence}`)).size !== openings.length) fail("同一收束只能明确开启一次后续阶段");
+  for (const opening of openings) {
+    const plan = opening.plan;
+    if (!openRun || plan.atWorldTurn > openRun.worldTime.worldTurn
+      || !openRun.stageClosures?.some(c => c.completedRef?.sessionKey === plan.previousClosureRef.sessionKey && c.completedRef.sequence === plan.previousClosureRef.sequence)) fail("阶段开启缺少真实已完成收束");
+    if (plan.sessionKey !== sessionKey) {
+      const ancestor = branchLineage?.ancestors.find(a => a.sessionKey === plan.sessionKey && a.throughSequence >= plan.plannedSourceRef.sequence);
+      const captured = ancestor?.snapshot.openRun?.stageOpenings?.find(o => o.plan.openingKey === plan.openingKey);
+      if (!captured || stableProductRuntimeJsonV1(captured) !== stableProductRuntimeJsonV1(opening)) fail("阶段开启不能改写已冻结祖先回执");
+    }
   }
   const closures = openRun?.stageClosures ?? [];
   if (new Set(closures.map(c => c.cycleKey)).size !== closures.length || closures.some((c, i) => c.stageIndex !== i)) fail("阶段收束身份/索引必须唯一且有序");
