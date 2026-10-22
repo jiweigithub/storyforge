@@ -1,9 +1,11 @@
+import {createHash} from 'node:crypto'
+import budgetCase from '../fixtures/character-chat-opening-review-budget.json'
 import {afterEach, beforeEach, expect, it} from 'vitest'
 import Ajv from 'ajv'
 import {db} from '../../src/lib/db/schema'
-import {chatOpeningReviewOutputSchemaV1, chatOpeningReviewOutputSchemaV2} from '../../src/lib/character-interaction/opening-review-output'
+import {chatOpeningReviewOutputSchemaV1, chatOpeningReviewOutputSchemaV2, chatOpeningReviewOutputSchemaV3} from '../../src/lib/character-interaction/opening-review-output'
 import {parseChatOpeningReviewDraftV1} from '../../src/lib/character-interaction/situation-production-review'
-import {chatOpeningContinuationReviewPromptV1, chatOpeningScopedReviewPromptV1, chatOpeningBackgroundProductionPromptV2, chatOpeningBackgroundReviewPromptV2} from '../../src/lib/character-interaction/opening-continuation'
+import {chatOpeningContinuationReviewPromptV1, chatOpeningScopedReviewPromptV1, chatOpeningBackgroundProductionPromptV2, chatOpeningBackgroundReviewPromptV2, chatOpeningBackgroundReviewPromptV3} from '../../src/lib/character-interaction/opening-continuation'
 import {executeProductProductionCommand} from '../../src/lib/product-production/commands'
 import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
 import {runProductProductionUntilBlockedV1} from '../../src/lib/product-production/scheduler'
@@ -105,15 +107,8 @@ it.each(['accepted', 'provider-ignored-schema', 'semantic-rejection', 'schema-bu
       let output = JSON.stringify(candidates)
       if (!isOpening) {
         expect(request.jsonSchema?.name).toBe('chat_opening_review_v3')
-        expect(request.system).toBe(chatOpeningBackgroundReviewPromptV2())
+        expect(request.system).toBe(chatOpeningBackgroundReviewPromptV3())
         expect(request.maximumOutputTokens).toBe(10_000)
-        // A complete ~18k review fits the existing 32k Codex preset with the
-        // v8 request cap; the former 15k output allocation would clip input.
-        const wholeReview = [{role: 'system' as const, content: request.system},
-          {role: 'user' as const, content: '背景'.repeat(5000)}]
-        const schemaTokens = estimateChatRequestOptionsTokens({jsonSchema: request.jsonSchema})
-        expect(trimMessagesToFit(wholeReview, 'codex', 'gpt-6.1-sol', 15_000, undefined, schemaTokens).trimmed).toBe(true)
-        expect(trimMessagesToFit(wholeReview, 'codex', 'gpt-6.1-sol', request.maximumOutputTokens, undefined, schemaTokens).trimmed).toBe(false)
         expect(request.contextText).not.toContain('REJECTED_REVIEW_NOT_SOURCE')
         expect(request.contextText).not.toContain('storyforge.product-production.repair-feedback')
         reviewInputs.push({source, candidates})
@@ -147,7 +142,7 @@ it.each(['accepted', 'provider-ignored-schema', 'semantic-rejection', 'schema-bu
         if (scenario !== 'schema-budget' || input.task.taskKey !== 'content.chat-opening-review') return configured(input)
         // The text alone fits exactly; the additional wire schema must stop before payment.
         return configured({...input, attemptBudgetReservation: {...input.attemptBudgetReservation!,
-          inputTokens: estimateTokens(input.contextText + chatOpeningBackgroundReviewPromptV2())}})
+          inputTokens: estimateTokens(input.contextText + chatOpeningBackgroundReviewPromptV3())}})
       },
     })
     await execute()
@@ -192,3 +187,25 @@ it.each(['accepted', 'provider-ignored-schema', 'semantic-rejection', 'schema-bu
     expect(await db.worldReleases.get(f.confirmed.worldReleaseId!)).toEqual(world)
   },
 )
+
+
+it('fits the complete real overflow case without reducing output allowance, source text or the review schema', () => {
+  const artifacts = JSON.parse(budgetCase.contextText).artifacts as Array<{artifactKey: string; payload: unknown}>
+  const source = artifacts.find(a => a.artifactKey === 'design.game')!.payload as Parameters<typeof chatOpeningReviewOutputSchemaV3>[0]
+  const candidates = artifacts.find(a => a.artifactKey === 'content.chat-candidates')!.payload as Parameters<typeof chatOpeningReviewOutputSchemaV3>[1]
+  const jsonSchema = chatOpeningReviewOutputSchemaV3(source, candidates)
+  const schemaTokens = estimateChatRequestOptionsTokens({jsonSchema})
+  const previous = chatOpeningBackgroundReviewPromptV2()
+  expect(createHash('sha256').update(previous).digest('hex')).toBe(budgetCase.priorSystemSha256)
+  const original = [{role: 'system' as const, content: previous}, {role: 'user' as const, content: budgetCase.contextText}]
+  expect(trimMessagesToFit(original, 'codex', 'gpt-6.1-sol', 10_000, undefined, schemaTokens).trimmed).toBe(true)
+  const messages = [{role: 'system' as const, content: chatOpeningBackgroundReviewPromptV3()}, original[1]]
+  const result = trimMessagesToFit(messages, 'codex', 'gpt-6.1-sol', 10_000, undefined, schemaTokens)
+  expect(result.trimmed).toBe(false)
+  expect(result.protectedEnvelopePreserved).toBe(true)
+  expect(result.messages).toEqual(messages)
+  expect(result.inputBudget - result.totalInputTokens).toBeGreaterThan(1000)
+  // The physical limit still applies to genuinely larger complete inputs.
+  const larger = [messages[0], {...original[1], content: budgetCase.contextText + '额外完整资料'.repeat(10_000)}]
+  expect(trimMessagesToFit(larger, 'codex', 'gpt-6.1-sol', 10_000, undefined, schemaTokens).trimmed).toBe(true)
+})
