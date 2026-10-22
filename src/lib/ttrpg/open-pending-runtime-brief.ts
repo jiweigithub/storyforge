@@ -1,5 +1,5 @@
 import { isTtrpgRuntimeContentV2 } from './content-version'
-import { ttrpgCompatibleOpeningAuthoringBaseV1, assertTtrpgCompatibleOpeningAuthoringV1, isTtrpgCompatibleOpeningTextFreeProfileV1, type TtrpgCompatibleOpeningRevisionV1 } from './open-compatible-opening-contract'
+import { ttrpgCompatibleOpeningAuthoringBaseV1, assertTtrpgCompatibleOpeningAuthoringV1, appendedTtrpgCompatibleOpeningEffectPlanKeysV2, isTtrpgCompatibleOpeningTextFreeProfileV1, type TtrpgCompatibleOpeningRevision } from './open-compatible-opening-contract'
 /** S2 revision of an unstarted release-based open Brief. No DB writes/start. */
 import type { ProductBuildRecordV1, ProductProductionBriefRecordV1, ProductProductionBriefV3,
   ProductProductionRecordV1, ProductRelease, WorkspaceScope, WorldReferenceV1 } from '../types'
@@ -79,7 +79,7 @@ async function revisePendingBrief(value: PendingTtrpgOpenBriefRevisionInputV1, m
     || manifest.productionProvenance.buildManifestHash !== build.manifestHash
     || manifest.productionProvenance.rootTerminalReceiptHash !== build.rootTerminalReceiptHash) fail('原发布版本与当前制作轮次不一致')
   if (old.compatibleOpeningRevision?.baseReleaseHash === release.contentHash && !openingRevision) fail('兼容开局方案须沿兼容开局操作继续修订，不能改回普通额度方案')
-  let compatibleOpeningRevision: TtrpgCompatibleOpeningRevisionV1 | undefined
+  let compatibleOpeningRevision: TtrpgCompatibleOpeningRevision | undefined
   const settings = structuredClone(input.settings)
   if (settings.runFormat !== 'open') fail('待开始方案只接受 open 配置')
   settings.wizard.savedRulePackId = null
@@ -99,10 +99,13 @@ async function revisePendingBrief(value: PendingTtrpgOpenBriefRevisionInputV1, m
     if (!frozen || !isTtrpgRuntimeContentV2(frozen)) fail('原发布不是开放跑团')
     const base = ttrpgCompatibleOpeningAuthoringBaseV1(frozen.campaign, old.settings.openAuthoring.factPolicy)
     const appendedTemplateKeys = assertTtrpgCompatibleOpeningAuthoringV1(base, settings.openAuthoring)
+    const appendedEffectPlanKeys = appendedTtrpgCompatibleOpeningEffectPlanKeysV2(base, settings.openAuthoring)
     expectedSettings.openAuthoring = { ...base, situationTemplates: structuredClone(settings.openAuthoring.situationTemplates),
-      openingSituationKeys: [...settings.openAuthoring.openingSituationKeys], stageClosurePolicy: structuredClone(settings.openAuthoring.stageClosurePolicy) }
-    compatibleOpeningRevision = { schema: 'storyforge.ttrpg-compatible-opening-revision', version: 1, baseReleaseHash: release.contentHash,
+      openingSituationKeys: [...settings.openAuthoring.openingSituationKeys], stageClosurePolicy: structuredClone(settings.openAuthoring.stageClosurePolicy),
+      effectPlanTemplates: structuredClone(settings.openAuthoring.effectPlanTemplates) }
+    const common = { schema: 'storyforge.ttrpg-compatible-opening-revision' as const, baseReleaseHash: release.contentHash,
       baseRuntimeSourceHash: manifest.packageHash, baseContentHash: await hashProductProductionValueV2(frozen), appendedTemplateKeys }
+    compatibleOpeningRevision = appendedEffectPlanKeys.length ? { ...common, version: 2, appendedEffectPlanKeys } : { ...common, version: 1 }
   }
   if (canonical(settings) !== canonical(expectedSettings) || canonical(input.rulePack) !== canonical(old.rulePack)
     || canonical(input.common.source.selection) !== canonical(prior.source.selection)

@@ -1,4 +1,4 @@
-import { parseTtrpgCompatibleOpeningRevisionV1, type TtrpgCompatibleOpeningRevisionV1 } from './open-compatible-opening-contract';
+import { parseTtrpgCompatibleOpeningRevision, type TtrpgCompatibleOpeningRevision } from './open-compatible-opening-contract';
 import type { ConfirmedProductBriefV1, ProductSourcePlanV1, WorldReferenceV1 } from "../types";
 import { hashProductProductionValueV2 } from "../product-production/hash";
 import {
@@ -22,7 +22,7 @@ export interface TtrpgProductionBriefContentV3 {
   rulePackHash: string;
   worldReference: WorldReferenceV1;
   sourcePlan: ProductSourcePlanV1;
-  compatibleOpeningRevision?: TtrpgCompatibleOpeningRevisionV1;
+  compatibleOpeningRevision?: TtrpgCompatibleOpeningRevision;
 }
 
 export interface TtrpgProductionBriefV3 extends TtrpgProductionBriefContentV3 {
@@ -120,7 +120,7 @@ export function parseTtrpgProductionBriefContentShapeV3(input: unknown): TtrpgPr
     rulePackHash: row.rulePackHash,
     worldReference,
     sourcePlan,
-    ...(Object.prototype.hasOwnProperty.call(row, 'compatibleOpeningRevision') ? { compatibleOpeningRevision: parseTtrpgCompatibleOpeningRevisionV1(row.compatibleOpeningRevision) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, 'compatibleOpeningRevision') ? { compatibleOpeningRevision: parseTtrpgCompatibleOpeningRevision(row.compatibleOpeningRevision) } : {}),
   };
 }
 
@@ -156,7 +156,7 @@ export async function createTtrpgProductionBriefContentV3(input: {
   rulePack: RulePackV2;
   worldReference: WorldReferenceV1;
   sourcePlan: ProductSourcePlanV1;
-  compatibleOpeningRevision?: TtrpgCompatibleOpeningRevisionV1;
+  compatibleOpeningRevision?: TtrpgCompatibleOpeningRevision;
 }): Promise<TtrpgProductionBriefContentV3> {
   const snapshot = structuredClone(input);
   const settings = parseTtrpgAuthoringSettingsV2(snapshot.settings);

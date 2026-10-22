@@ -7,7 +7,7 @@ import { registerPendingDraftFlusherV1 } from '../../lib/authoring/pending-edit-
 import { downloadTextFile } from '../../lib/export/text-export'
 import type { WorkspaceScope } from '../../lib/types'
 import { readTtrpgCompatibleOpeningAuthoringBaseV1 } from '../../lib/ttrpg/open-compatible-opening-source'
-import { cloneTtrpgCompatibleOpeningTemplateV1 } from '../../lib/ttrpg/open-compatible-opening-contract'
+import { cloneTtrpgCompatibleOpeningTemplateWithEffectsV2 } from '../../lib/ttrpg/open-compatible-opening-contract'
 
 /** Work-owned S2 draft editing. No model, production start or runtime mutation. */
 export default function TtrpgOpenAuthoringEditor({ value, onChange, releaseBase }: {
@@ -85,11 +85,15 @@ export default function TtrpgOpenAuthoringEditor({ value, onChange, releaseBase 
       <button type="button" disabled={!value.situationTemplates.some(t => t.templateKey === copyFrom)} onClick={() => {
         const original = value.situationTemplates.find(t => t.templateKey === copyFrom); if (!original) return
         const templateKey = `author.opening.${crypto.randomUUID()}`
-        change(parseTtrpgOpenAuthoringV1({ ...value, situationTemplates: [...value.situationTemplates,
-          cloneTtrpgCompatibleOpeningTemplateV1(original, templateKey, `${original.title}（续篇）`)], openingSituationKeys: [templateKey] }))
-        setCopyFrom('')
+        try {
+          const copied = cloneTtrpgCompatibleOpeningTemplateWithEffectsV2({ original, effectPlanTemplates: value.effectPlanTemplates,
+            templateKey, title: `${original.title}（续篇）` })
+          change(parseTtrpgOpenAuthoringV1({ ...value, situationTemplates: [...value.situationTemplates, copied.template],
+            effectPlanTemplates: [...value.effectPlanTemplates, ...copied.effectPlanTemplates], openingSituationKeys: [templateKey] }))
+          setCopyFrom('')
+        } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
       }}>复制为新开局并选中</button>
-      <p>复制后请核对新局势的标题、动机、征兆、发现路径和期限。原局势保留；复杂条件可在下方完整设计中修改。</p>
+      <p>复制后请核对新局势的标题、动机、征兆、发现路径和期限。原局势和原后果保留；涉及本地线索的发现后果另存副本，代价和接收范围保留。复杂条件可在下方完整设计中修改。</p>
     </fieldset>}
     {value.factPolicy.some(item => !item.authorConfirmed) && <button className="lf-action" type="button" disabled={pending || reading} onClick={() => {
       markPending(); const source = JSON.stringify(current.current, null, 2); setText(source); inspect(source)

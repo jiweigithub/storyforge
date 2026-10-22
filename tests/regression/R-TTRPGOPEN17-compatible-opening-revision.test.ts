@@ -3,7 +3,8 @@ import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
 import { configureOpenSeatsV1, openEnvelopeV1, OPEN_HUMAN_VIEWER } from '../helpers/open-ttrpg-session'
 import { completeTtrpgOpenSessionZeroV1, startTtrpgOpenRunV1 } from '../../src/lib/ttrpg/runtime-commands'
 import { previewTtrpgOpenContinuationV1, createTtrpgOpenContinuationFromPlanV1 } from '../../src/lib/ttrpg/continuity'
-import { startTtrpgOpenTableV1, readTtrpgOpenTableV1, consentTtrpgOpenTableSeatV1 } from '../../src/lib/ttrpg/open-table-service'
+import { startTtrpgOpenTableV1, readTtrpgOpenTableV1, consentTtrpgOpenTableSeatV1, readTtrpgOpenManualActionCatalogV1,
+  proposeTtrpgOpenManualActionV1, confirmTtrpgOpenTableRiskV1, resumeTtrpgOpenTableV1 } from '../../src/lib/ttrpg/open-table-service'
 import { rt } from '../helpers/open-ttrpg-branch-recovery'
 /** Normal production and immutable releases; initial model replies are explicit simulations. */
 import { beforeEach, afterEach, describe, expect, it } from 'vitest'
@@ -19,14 +20,34 @@ import { assertTtrpgOpenReleaseCompatibilityV1 } from '../../src/lib/ttrpg/open-
 import { verifyProductRuntimeSource } from '../../src/lib/product-production/preview-source'
 import { isTtrpgRuntimeContentV2 } from '../../src/lib/ttrpg/content-version'
 import { parseProductProductionPlanV3 } from '../../src/lib/product-production/plan'
-import { cloneTtrpgCompatibleOpeningTemplateV1 } from '../../src/lib/ttrpg/open-compatible-opening-contract'
+import { cloneTtrpgCompatibleOpeningTemplateV1, cloneTtrpgCompatibleOpeningTemplateWithEffectsV2 } from '../../src/lib/ttrpg/open-compatible-opening-contract'
+import { createFreshOpenDraftFixtureV1 } from '../helpers/open-ttrpg-fresh-authoring'
 import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
 import { readProductProductionDetailsV1, authorizeProductProductionStartV1, runAuthorizedProductProductionV1 } from '../../src/lib/product-production/service'
 
 describe('R-TTRPGOPEN17 explicitly authored compatible new opening', { timeout: 60000 }, () => {
   beforeEach(async () => { await db.delete(); await db.open() }); afterEach(() => db.close())
-  async function pending() {
-    const f = await seedOpenBrowserProductionV1({ runtimeAIEnabled: true })
+  async function pending(withKnowledgeEffects = false) {
+    let f: Awaited<ReturnType<typeof seedOpenBrowserProductionV1>>
+    if (withKnowledgeEffects) {
+      const fresh = await createFreshOpenDraftFixtureV1(2, true, { runtimeAIEnabled: true, cooperative: true })
+      const settings = settingsFromTtrpgDraft(fresh.draft)
+      if (settings.runFormat !== 'open') throw Error('requires open')
+      for (const [index, evidence] of settings.openAuthoring.situationTemplates[0].evidence.entries()) {
+        const planKey = `original.discovery.failure.${index}`
+        evidence.discoveryPolicy.failForwardEffectPlanRef = planKey
+        evidence.discoveryPolicy.recipientActorKeys = ['hero']
+        settings.openAuthoring.effectPlanTemplates.push({ planKey, degree: 'failure', ruleRef: 'investigate', audience: 'party',
+          reason: '调查失败仍获得这一条经过冻结授权的线索，不授予其他知识', parameters: [], alternatives: [],
+          effects: [{ effectKey: `${planKey}.grant`, family: 'knowledge', operation: 'knowledge.discover', targetRef: 'hero', evidenceRef: evidence.clueRef }] })
+      }
+      const draft = await saveTtrpgDraft(fresh.scope, fresh.draft.revision, settings, '明确冻结线索失败推进后果')
+      f = { scope: fresh.scope, productionId: await prepareTtrpgBrief(fresh.scope, draft.revision), cooperative: true }
+      const p = await current(f)
+      const start = await executeProductProductionCommand({ ...f, command: { type: 'authorize-start', commandId: 'effects.initial-start',
+        expectedStateRevision: p.production.stateRevision, briefRevision: p.row.revision, briefHash: p.row.briefHash, authorizationNonce: 'effects.initial-confirmed' } })
+      expect(start.ok).toBe(true)
+    } else f = await seedOpenBrowserProductionV1({ runtimeAIEnabled: true })
     let result = await runOpenBrowserProductionV1(f)
     for (let i = 0; i < 2 && !result.terminal; i++) result = await runOpenBrowserProductionV1(f, true)
     expect(result.terminal).toBe(true)
@@ -137,5 +158,57 @@ describe('R-TTRPGOPEN17 explicitly authored compatible new opening', { timeout: 
     expect(build.status).toBe('release-ready')
     expect(JSON.parse(build.budgetLedgerJson).attempts.every((a: { usage: { modelCalls: number } | null }) => (a.usage?.modelCalls ?? 0) === 0)).toBe(true)
     expect(await current(f)).toEqual(original)
+  })
+  it('publishes copied local knowledge consequences and settles an actual manual discovery in the continued table', async () => {
+    const f = await pending(true), edit = await edited(f), originalPlans = structuredClone(edit.base.authoring.effectPlanTemplates)
+    const copy = cloneTtrpgCompatibleOpeningTemplateWithEffectsV2({ original: edit.base.authoring.situationTemplates[0],
+      effectPlanTemplates: originalPlans, templateKey: 'author.effects-opening', title: '继续核对新的局部线索' })
+    edit.settings.openAuthoring.situationTemplates = [...edit.base.authoring.situationTemplates, copy.template]
+    edit.settings.openAuthoring.effectPlanTemplates = [...originalPlans, ...copy.effectPlanTemplates]
+    edit.settings.openAuthoring.openingSituationKeys = [copy.template.templateKey]
+    const draft = await saveTtrpgDraft(f.scope, edit.draft.revision, edit.settings, '复制线索及其原许可范围内的局部后果')
+    await prepareTtrpgOpenProductionBriefV3({ scope: f.scope, revision: draft.revision, openingRevision: 'revise-pending-compatible-opening' })
+    const pendingBrief = await current(f), marker = pendingBrief.brief.ttrpgOpen!.compatibleOpeningRevision!
+    expect(marker.version).toBe(2)
+    if (marker.version !== 2) throw Error('requires local-effects intent')
+    expect(marker.appendedEffectPlanKeys).toEqual(copy.effectPlanTemplates.map(p => p.planKey))
+    const importedProject = await importProjectJSON(await exportProjectJSON(f.scope.projectId))
+    const restoredProduction = (await db.productProductions.where('projectId').equals(importedProject).toArray()).find(p => p.productionKey === pendingBrief.production.productionKey)!
+    expect((await current({ productionId: restoredProduction.id! })).brief.ttrpgOpen!.compatibleOpeningRevision).toEqual(marker)
+    await authorizeProductProductionStartV1({ scope: f.scope, details: await readProductProductionDetailsV1(f.scope, f.productionId) })
+    expect((await runAuthorizedProductProductionV1(f)).terminal).toBe(true)
+    const released = await publishProductProductionV1(f)
+    const parent = await createProductRuntimeInstanceFromSource({ scope: f.scope, source: { kind: 'release', productReleaseId: f.published.receipt.productReleaseId }, title: '原线索记录', seed: 'author.local-effects.seed' })
+    await configureOpenSeatsV1(parent.id!)
+    const initial = rt(await readProductRuntimeState(parent.id!))
+    await completeTtrpgOpenSessionZeroV1({ ...await openEnvelopeV1(parent.id!, 'effects.parent.zero'), viewerKey: OPEN_HUMAN_VIEWER,
+      acceptedItemKeys: initial.product.sessionZero.requiredItemKeys, selectedCharacterKeys: ['hero', 'companion.1', 'companion.2'] })
+    await startTtrpgOpenRunV1({ ...await openEnvelopeV1(parent.id!, 'effects.parent.run'), viewerKey: OPEN_HUMAN_VIEWER })
+    const beforeParent = await readProductRuntimeState(parent.id!), preview = await previewTtrpgOpenContinuationV1({ scope: f.scope, parentSessionId: parent.id!,
+      targetProductReleaseId: released.receipt.productReleaseId, transitionKey: 'effects.continued', approvedBy: OPEN_HUMAN_VIEWER,
+      reason: '保留原知识，调查复制开局中的独立线索', openingTemplateKeys: [copy.template.templateKey] })
+    const child = await createTtrpgOpenContinuationFromPlanV1({ scope: f.scope, preview, title: '局部后果的真实结算验证' })
+    await configureOpenSeatsV1(child.id!)
+    const input = { scope: f.scope, sessionId: child.id!, viewerKey: OPEN_HUMAN_VIEWER }
+    await consentTtrpgOpenTableSeatV1({ ...input, aiAdviceAllowed: false })
+    await startTtrpgOpenTableV1({ ...input, acceptedItemKeys: initial.product.sessionZero.requiredItemKeys })
+    const catalog = await readTtrpgOpenManualActionCatalogV1(input), discovery = catalog.discoveries.find(d => d.evidenceRef === copy.template.evidence[0].clueRef)!
+    expect(discovery).toBeDefined()
+    const rule = catalog.rules.find(r => r.ruleKey === discovery.ruleKey && r.route === discovery.route)!
+    expect([...rule.parameters, ...discovery.parameters].filter(p => p.required)).toEqual([])
+    const proposed = await proposeTtrpgOpenManualActionV1({ ...input, submissionKey: 'effects.manual', basisHash: catalog.basisHash, rawInput: '核对这一条可见线索',
+      request: { route: rule.route, ruleKey: rule.ruleKey, actorKey: catalog.actorKey, controllerMode: 'human', targetKey: rule.targets[0].key,
+        effectBindings: Object.fromEntries(rule.templateKeys.map(k => [k, {}])),
+        discovery: { situationKey: discovery.situationKey, evidenceRef: discovery.evidenceRef, interventionPointKey: discovery.interventionPointKey,
+          effectBindings: Object.fromEntries(discovery.templateKeys.map(k => [k, {}])) } } })
+    const op = (await readTtrpgOpenTableV1(input)).player!.operation!
+    expect(op.operationKey).toBe(proposed.operationKey)
+    for (const approval of op.approvals) await confirmTtrpgOpenTableRiskV1({ ...input, operationKey: op.operationKey, riskHash: op.riskHash, actorKey: approval.actorKey, decision: 'approve' })
+    await resumeTtrpgOpenTableV1({ ...input, operationKey: op.operationKey })
+    const after = rt(await readProductRuntimeState(child.id!))
+    expect(after.openRun!.worldTime.worldTurn).toBeGreaterThan(0)
+    expect(after.openRun!.knowledge.some(r => r.evidenceRef === discovery.evidenceRef)).toBe(true)
+    expect(after.openRun!.coordination.calls).toEqual([])
+    expect(await readProductRuntimeState(parent.id!)).toEqual(beforeParent)
   })
 })

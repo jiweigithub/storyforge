@@ -1,6 +1,6 @@
 import type { TtrpgRuntimeContentV2 } from './content-version'
 import { assertTtrpgOpenReleaseCompatibilityV1 } from './open-release-compatibility'
-import { assertTtrpgCompatibleOpeningAuthoringV1, ttrpgCompatibleOpeningAuthoringBaseV1 } from './open-compatible-opening-contract'
+import { assertTtrpgCompatibleOpeningAuthoringV1, appendedTtrpgCompatibleOpeningEffectPlanKeysV2, ttrpgCompatibleOpeningAuthoringBaseV1 } from './open-compatible-opening-contract'
 /** Deterministic assembly of adopted open artifacts; no inferred attributes, characters, scenes, choices or endings. */
 import type { ProductProductionBriefV3, ProductSourcePlanV1 } from '../types'
 import { parseProductProductionBriefV3 } from '../product-production/contracts'
@@ -44,8 +44,13 @@ export async function compileProductionTtrpgOpenCampaignV2(input: {
       || input.ruleSystem.contentHash !== provenance.ruleSystemArtifactHash) {
       throw new Error('[ttrpg-open-compiler] 兼容开局必须保留真实原发布的来源事实、规则和角色')
     }
-    const added = assertTtrpgCompatibleOpeningAuthoringV1(ttrpgCompatibleOpeningAuthoringBaseV1(base.campaign, open.settings.openAuthoring.factPolicy), open.settings.openAuthoring)
+    const originalAuthoring = ttrpgCompatibleOpeningAuthoringBaseV1(base.campaign, open.settings.openAuthoring.factPolicy)
+    const added = assertTtrpgCompatibleOpeningAuthoringV1(originalAuthoring, open.settings.openAuthoring)
     if (stable(added) !== stable(marker.appendedTemplateKeys)) throw new Error('[ttrpg-open-compiler] 兼容开局与作者冻结意图不一致')
+    const addedPlans = appendedTtrpgCompatibleOpeningEffectPlanKeysV2(originalAuthoring, open.settings.openAuthoring)
+    if (stable(addedPlans) !== stable(marker.version === 2 ? marker.appendedEffectPlanKeys : [])) {
+      throw new Error('[ttrpg-open-compiler] 兼容开局的局部后果与作者冻结意图不一致')
+    }
   }
   const facts = parseTtrpgOpenSourceFactsArtifactV1(input.sourceFacts.payload)
   if (facts.factPolicy.some(item => !item.authorConfirmed)) throw new Error('[ttrpg-open-compiler] 来源事实仍未经过作者确认')
