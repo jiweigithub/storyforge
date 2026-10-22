@@ -2,7 +2,7 @@
   "schema": "storyforge.character-chat-engineering",
   "version": 325,
   "kind": "historical-test-contract-alignment",
-  "at": "2026-10-22T11:28:12.710507+00:00",
+  "at": "2026-10-22T11:49:21.994857+00:00",
   "baseHead": "26fd6e29c019f89162f7beb5c081b93a47c3593e",
   "scope": "Test-only repair for six exact-head CI failures; no production, dependency, schema, world or model configuration changes.",
   "changedFiles": [
@@ -151,16 +151,94 @@
   "productionEquivalence": {
     "files": 1831,
     "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/production-source-equivalence.json",
-    "sha256": "4a1599d74f5a4e249e7ebe46869b8a180b432ffb972c99698c10a70613fdc154"
+    "sha256": "4a1599d74f5a4e249e7ebe46869b8a180b432ffb972c99698c10a70613fdc154",
+    "recheckedAfterBrowserFixes": true
   },
   "independentReview": {
     "blockingFindings": 0,
     "boundary": "Retained old-reader packet equality verifies selection/recovery consistency, not a separately captured historical full-text golden sample."
   },
-  "fullDelivery": "New commit full CI/browser evidence pending; old exact-head browser passed, old CI remains failed.",
+  "fullDelivery": "Original full CLI finished with the same6regression failures. New commit full CI/browser evidence still pending; original browser flaky results retained.",
   "modelQuality": "No M1 or human quality pass added. Original V324 source and denominator retained.",
   "performanceAudit": {
     "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/latency-audit.json",
     "status": "Unimplemented proposals only; no performance gain claimed."
-  }
+  },
+  "browserStabilityRepair": {
+    "files": [
+      "tests/e2e/character-chat-commitment-context.spec.ts",
+      "tests/e2e/character-chat-memory-management.spec.ts"
+    ],
+    "original": {
+      "run": 39755565039,
+      "head": "26fd6e29c019f89162f7beb5c081b93a47c3593e",
+      "passed": 499,
+      "flaky": 2,
+      "skipped": 4
+    },
+    "diagnosis": [
+      "Commitment inspector used an immediate count after details toggle and sometimes skipped the required second page; failing DOM retained first12of18 and the pagination button.",
+      "Memory correction test read persisted state3.22ms after save-click returned while trace still showed a disabled editor. Later error-context showed the new active memory and closed editor, proving commit eventually completed."
+    ],
+    "repair": "Wait for actual pagination and saved-state UI completion; retain all original content/privacy/provenance assertions, timeouts and no-retry semantics.",
+    "verification": {
+      "command": [
+        "npx",
+        "playwright",
+        "test",
+        "tests/e2e/character-chat-commitment-context.spec.ts",
+        "tests/e2e/character-chat-memory-management.spec.ts",
+        "--workers=1",
+        "--retries=0",
+        "--reporter=list"
+      ],
+      "exitCode": 0,
+      "seconds": 62.686,
+      "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/browser-race-fixes.log",
+      "sha256": "9575a85b87fff88bbcb9dd8b37d0b3011a2c529ff148b19760628aead4741646",
+      "automaticRetries": 0,
+      "port": 51535,
+      "realModelCalls": 0,
+      "files": 2,
+      "tests": 5,
+      "firstAttemptPasses": 5
+    },
+    "lint": {
+      "exitCode": 0,
+      "command": [
+        "npx",
+        "eslint",
+        "tests/e2e/character-chat-commitment-context.spec.ts",
+        "tests/e2e/character-chat-memory-management.spec.ts",
+        "--max-warnings=0"
+      ]
+    },
+    "evidence": [
+      {
+        "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/remote-browser-artifact/test-results/character-chat-commitment--4f88f-s-when-dialogue-is-excluded-chromium/trace.zip",
+        "sha256": "3e33e754e5a8aa58a9b4dbb649508c31b5e65bdc0bfcd5f0c45ba609724366bb"
+      },
+      {
+        "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/remote-browser-artifact/test-results/character-chat-commitment--4f88f-s-when-dialogue-is-excluded-chromium/error-context.md",
+        "sha256": "9157abc384ddfb50d0864e806fac9253a7d4321c382b4be1c25dcab78e7e7a3f"
+      },
+      {
+        "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/remote-browser-artifact/test-results/character-chat-commitment--4f88f-s-when-dialogue-is-excluded-chromium/test-failed-1.png",
+        "sha256": "ea912659450b71a3529d84ed37a98671eef11d665b020ad08ac9895bd364c6e8"
+      },
+      {
+        "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/remote-browser-artifact/test-results/character-chat-memory-mana-057bb-ith-portable-branch-history-chromium/trace.zip",
+        "sha256": "92b9e088f12e265361318fe177a4e286faa55508b3870959d0c4794949aef905"
+      },
+      {
+        "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/remote-browser-artifact/test-results/character-chat-memory-mana-057bb-ith-portable-branch-history-chromium/error-context.md",
+        "sha256": "faf00a649a76120f72395ea0d48580ce2daf1648ef1d1ca90b52d12bbc467cbf"
+      },
+      {
+        "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/remote-browser-artifact/test-results/character-chat-memory-mana-057bb-ith-portable-branch-history-chromium/test-failed-1.png",
+        "sha256": "651fb27bf99569982148d44499041cf6f5744e4b692832b973b184d69bc38a88"
+      }
+    ]
+  },
+  "unchangedGateInputs": "TypeScript includes only src. Production src, scripts, dependencies and execution configs remain byte-identical after the two E2E edits; prior required type/build/governance results retained. Added browser tests and changed-file lint passed separately."
 }

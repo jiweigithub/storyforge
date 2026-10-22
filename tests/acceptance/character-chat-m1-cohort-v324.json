@@ -2,7 +2,7 @@
   "schema": "storyforge.character-chat-acceptance",
   "version": 324,
   "kind": "fixed-code-m1-cohort",
-  "at": "2026-10-22T11:26:26.888007+00:00",
+  "at": "2026-10-22T11:50:24.769131+00:00",
   "cohort": "m1-v324-current",
   "head": "26fd6e29c019f89162f7beb5c081b93a47c3593e",
   "plannedEpisodes": 120,
@@ -51,13 +51,13 @@
   "currentMatrix": {
     "completed": 3,
     "collectorError": 1,
-    "failed": 1,
-    "runtimeBlocked": 5,
-    "runtimeRunning": 1,
-    "notStarted": 109
+    "failed": 2,
+    "runtimeBlocked": 6,
+    "runtimeRunning": 0,
+    "notStarted": 108
   },
   "modelCatalogCheck": "Read-only local model catalog responded and target model was present after failure; this is not proof of generation-service recovery.",
-  "next": "Observe runner39422; after a committed visible change request temporary leave, refresh with zero calls, then return referencing only that visible change.",
+  "next": "Integrate V325 tests-only fixes into existing draft PR, collect new exact-head full CI/browser results, and prepare the original independent riverside-reading-evening Codex r1 unit. Do not rerun failed inn units or dispatch blocked paired cases.",
   "evidence": {
     "preregistration.json": {
       "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r1/preregistration.json",
@@ -206,6 +206,34 @@
     "codex-inn-r2-return/preregistration.json": {
       "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-return/preregistration.json",
       "sha256": "a1e54ff4ab4307bce2b0f9e793285fec9f1d907c0e22b199ce5036464259b68e"
+    },
+    "codex-inn-r2-return/inn-r2-return.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-return/inn-r2-return.json",
+      "sha256": "8c510fbb85c35af93219bee6d57ebb01ffcc53675dc5d6b5d8b12be21bdc503f"
+    },
+    "codex-inn-r2-return/inn-r2-return-backup.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-return/inn-r2-return-backup.json",
+      "sha256": "0c5063939f6df1d76c19a849afa4240106a1297e3fbcf91f49fe5a7445233484"
+    },
+    "codex-inn-r2-return/inn-r2-return-restoration-verified.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-return/inn-r2-return-restoration-verified.json",
+      "sha256": "06318893b79563d469ab37da6f1d65310f541faa4fcf8ce994ebeec9d34249c6"
+    },
+    "codex-inn-r2-return/collection-verified.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-return/collection-verified.json",
+      "sha256": "846954cbc6a54ca2514f1b4af9450d69989cbd9e450a86f3baa680deddde87be"
+    },
+    "codex-inn-r2-return/start-control-note.json": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/codex-inn-r2-return/start-control-note.json",
+      "sha256": "59e4de3a6f565a5991aa436ba001934e917915283c2d7977840f5afa88890c3d"
+    },
+    "remote-full-cli-39755565039-failed.log": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/remote-full-cli-39755565039-failed.log",
+      "sha256": "5dadca4474d4b861f3fce19e7dfc489958f3b1c81a09a5199dd65db4c626df47"
+    },
+    "remote-browser-119746569677-job.log": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v324-m1-current/remote-browser-119746569677-job.log",
+      "sha256": "5d72f081a297e4171934282000eb2bb44eaa3ab50906f2a8ba3861f46134c2ab"
     }
   },
   "secondUnit": {
@@ -261,7 +289,7 @@
   "engineeringProgress": {
     "head": "26fd6e29c019f89162f7beb5c081b93a47c3593e",
     "fullDeliveryRun": 39755565039,
-    "fullDeliveryStatus": "in_progress",
+    "fullDeliveryStatus": "failure",
     "ciRun": 39755565042,
     "ciStatus": "failure",
     "packageRun": 39755565140,
@@ -287,14 +315,25 @@
     "ciFailureScope": "Prompt/version binding assertions and missing coordinator historical-selection evidence. Root causes require inspection; not declared fixture-only or resolved.",
     "isolatedRepair": {
       "root": "/Users/qinyingying/.codex/worktrees/chat-regression-compat/storyforge",
-      "testFilesChanged": 5,
+      "testFilesChanged": 7,
       "productionFilesUnchanged": 1831,
       "targetedFiles": 11,
       "targetedTests": 96,
-      "status": "required local gates in progress; source unchanged; original remote failure retained"
-    }
+      "status": "96 targeted tests, 5 browser paths without retries, required local checks passed; new remote full delivery pending",
+      "browserTests": 5,
+      "browserRetries": 0,
+      "requiredLocalChecksPassed": true
+    },
+    "fullDeliveryCompletedAt": "2026-10-22T11:40:02Z",
+    "fullDeliveryFailure": "Same six regression cases as ordinary CI; original result retained.",
+    "browserResults": {
+      "passed": 499,
+      "flaky": 2,
+      "skipped": 4
+    },
+    "browserFollowup": "Two observed test synchronization races under diagnosis/repair; do not report first-pass success."
   },
-  "currentEpisode": "Return automatic opening started on the same frozen release; player leave and return inputs not yet sent.",
+  "currentEpisode": "Return failed on confirmed provider other; no recognizable cause, no retry. Independent restoration passed. R2 unexpected not dispatched.",
   "performanceObservation": {
     "firstAdoptedReplySeconds": [
       52.756,
@@ -464,5 +503,62 @@
     "observedBehavior": "Player explicitly requested rest and no further investigation. Actor acknowledged, paused the goal and shared issue, retained the original player pause request, and returned control without adding a task.",
     "evidenceSha256": "4c20f280308b425a6b2323a9c0a7b8bedc9e48d9a30a5aa1f6d693ee64f0a7d2",
     "verifiedAt": "2026-10-22T11:17:31.880352+00:00"
+  },
+  "returnEpisode": {
+    "at": "2026-10-22T11:45:19.041498+00:00",
+    "episodeId": "m1-v324-current/inn-missing-seal/local-codex/r2/return",
+    "completionReason": "provider-failure",
+    "completedStory": false,
+    "formalQualityPass": false,
+    "sourceUnchanged": true,
+    "requests": 11,
+    "nativeCompleted": 10,
+    "nativeFailed": 1,
+    "reportedTokens": 150136,
+    "missingUsage": [
+      "43e76594-abbc-42c3-8794-a541b52bad33"
+    ],
+    "completedRuns": 4,
+    "failedRuns": 1,
+    "playerOpportunities": 1,
+    "failure": {
+      "requestId": "43e76594-abbc-42c3-8794-a541b52bad33",
+      "status": "failed",
+      "error": "Codex 已确认本次生成失败（提供商报告：提供商未给出可识别原因；other）；未完成内容不会成为正式候选，不会自动重发。",
+      "specificCauseKnown": false
+    },
+    "observedBehavior": "Opening investigation committed two bounded observations. Player requested a temporary leave and pause, but the next action-choice provider call failed before any actor acknowledgement. Planned explicit refresh/return were not performed; independent failed-state restoration is separate.",
+    "independentRestoration": [
+      {
+        "stem": "inn-r2-return",
+        "runStatusesPreserved": true,
+        "verifiedCompletedHistories": 4,
+        "retainedFailedRuns": 1,
+        "resumableRuns": 0,
+        "openingReviewRetained": true,
+        "modelCalls": 0,
+        "interactionEqual": true,
+        "refreshEqual": true,
+        "worldPreserved": true,
+        "rawEvidenceRetained": true,
+        "terminalReceiptBodiesRetained": true,
+        "usageEvidenceRetained": true
+      }
+    ],
+    "goals": [
+      {
+        "goalKey": "goal-1",
+        "status": "active"
+      }
+    ],
+    "threads": [
+      {
+        "threadKey": "thread-1",
+        "status": "open"
+      }
+    ],
+    "pairedRemainder": "unexpected not dispatched per original production-unit stop rule",
+    "costUsd": null,
+    "evidenceSha256": "8c510fbb85c35af93219bee6d57ebb01ffcc53675dc5d6b5d8b12be21bdc503f"
   }
 }

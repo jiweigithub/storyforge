@@ -85,6 +85,9 @@ test('corrects from public sources, keeps disabled state, restores and revokes; 
   await expect(editor).toContainText('我约好周五再来。')
   await editor.getByLabel('修正后的记忆', {exact: true}).fill('分支中仍保留周五约定。')
   await editor.getByRole('button', {name: '保存修正', exact: true}).click()
+  await expect(editor).toHaveCount(0)
+  const branchCorrection = panel.getByTestId('chat-memory-entry').filter({has: page.getByText('分支中仍保留周五约定。', {exact: true})})
+  await expect(branchCorrection).toContainText('使用中')
   const recalled = await page.evaluate(async id => {
     const load = new Function('p', 'return import(p)'), api = await load('/storyforge/src/lib/character-interaction/runtime-api.ts')
     const state = (await api.readProductRuntimeState(id)).interaction
