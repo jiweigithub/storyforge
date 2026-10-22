@@ -10,6 +10,7 @@ import { EMPTY_DIRECTION_TEMPLATE } from '../../src/lib/outline/direction-templa
 import { NarrativeEngine } from '../../src/lib/outline/narrative-engine'
 import { readAgentRunV1 } from '../../src/lib/agent/run'
 import * as entries from '../../src/lib/agent/formal-ai-entry'
+import { verifyContextGatewayCandidateEvidenceV1 } from '../../src/lib/context-gateway/attempt-evidence'
 
 async function seed() {
   const fixture = await seedCurrentWorkspace('精细章纲隔离验收')
@@ -62,6 +63,27 @@ describe.sequential('chunked outline durable integration', () => {
     const model = vi.spyOn(entries, 'executeRegisteredAIEntryV1')
     await expect(runChunkedChapterModel(session, [{ role: 'user', content: '生成' }], 0)).rejects.toThrow()
     expect(model).not.toHaveBeenCalled()
+  })
+  it('retains exact predecessor evidence when a long chunked candidate is truncated for the next block', async () => {
+    const { session, project } = await seed(); select(session); await saveChunkedOutlineSession(session)
+    const first = JSON.stringify([{ title: '旧信', summary: '亲人留下海港线索。'.repeat(2_000) }])
+    const second = JSON.stringify([{ title: '出发', summary: '告别故乡。' }, { title: '风雨', summary: '越过风浪。' }, { title: '港口', summary: '抵达灯塔港。' }])
+    const model = vi.spyOn(entries, 'executeRegisteredAIEntryV1').mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    await runChunkedChapterModel(session, [{ role: 'user', content: '生成第一块' }], 0)
+    const restored = (await restoreChunkedOutlineSession(project.id!))!
+    select(restored); await saveChunkedOutlineSession(restored)
+    await runChunkedChapterModel(restored, [{ role: 'user', content: '生成第二块' }], 1)
+    const recovered = (await restoreChunkedOutlineSession(project.id!))!
+    const candidate = (await readOutlineGenerationCandidateV1(recovered.scope, recovered.candidateRunId!))!
+    const verified = await verifyContextGatewayCandidateEvidenceV1({ scope: recovered.scope, runId: candidate.runId, stepId: candidate.stepId, attempt: 1, candidateHash: candidate.candidateHash })
+    expect(model).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(model.mock.calls[1][1])).toContain('该上下文源已按预算截断')
+    expect(verified.manifest.sources.find(source => source.key === 'priorOutlineCandidate')?.delivery).toBe('truncated')
+    expect(verified.manifest.artifacts.some(artifact => artifact.role === 'source-snapshot' && artifact.sourceKey === 'priorOutlineCandidate')).toBe(true)
+    expect(JSON.parse(candidate.output)).toEqual([...JSON.parse(first), ...JSON.parse(second)])
+    expect(await db.outlineNodes.where('parentId').equals(session.volumeId).count()).toBe(0)
+    await adoptChunkedOutlineSession(recovered)
+    expect((await readAgentRunV1(recovered.scope, candidate.runId)).projection.state).toBe('completed')
   })
   it('rejects a second writer with an outdated checkpoint', async () => {
     const { session } = await seed(); const other = structuredClone(session)
