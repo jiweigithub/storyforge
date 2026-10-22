@@ -77,7 +77,9 @@ test('旧两图商业 Build 可在同一 Production 取消、修订为十二图 
 
   await openTextAdventurePage(page, seeded.scope, 'production')
   const studio = page.getByTestId('product-production-studio')
-  await expect(studio).toContainText('潮门灯塔 · 媒资修订验收')
+  // Identify this recovery surface by its production, rather than a runtime
+  // preview title that is not displayed for the blocked build.
+  await expect(studio).toContainText('媒资修订浏览器验收')
   await expect(page.getByTestId('text-adventure-media-plan-blocker')).toContainText('2 张图片')
   await expect(page.getByTestId('text-adventure-media-plan-blocker')).toContainText('12 张底线')
   await expect(studio.getByRole('button', { name: '确认角色锚点并开始出图' })).toBeDisabled()
