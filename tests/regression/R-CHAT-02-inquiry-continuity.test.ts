@@ -112,10 +112,10 @@ it.each([false, true])('settles a cross-turn answer exactly once through review,
   }, onSituationDraftSaved: id => {runId = id; throw new Error('host-before-review')}})).rejects.toThrow('host-before-review')
   db.close(); await db.open()
   const result = await resumeChatSituationReviewV1({scope: f.scope, runId, runReviewAI: async messages => {
-    reviewed++; expect(messages[1].content).toContain('"version":3')
+    reviewed++; expect(messages[1].content).toContain('"version":4')
     return JSON.stringify(chatInquiryReviewFixture(draft))
   }})
-  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v14')
+  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v17')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
   const saved = await readProductRuntimeState(f.sessionId), version = await readProductRuntimeStateVersion(f.sessionId)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
@@ -125,7 +125,7 @@ it.each([false, true])('settles a cross-turn answer exactly once through review,
   expect(facts.find(f => f.factKey === 'secret')!.audienceKeys).toEqual(draft.inquiryResult!.audienceKeys)
   expect(facts.find(f => f.factKey === 'purpose')!.audienceKeys).toEqual([])
   const event = (await db.productRuntimeEvents.where('sessionId').equals(f.sessionId).toArray()).find(e => e.type === 'interaction.narrative.situation.committed')!
-  expect(JSON.parse(event.payloadJson).inquiryEvidenceVersion).toBe(3)
+  expect(JSON.parse(event.payloadJson).inquiryEvidenceVersion).toBe(4)
   const branch = await branchProductRuntimeSession({parentSessionId: f.sessionId, throughSequence: version.sequence, title: '跨回合答复分支'})
   expect((await readProductRuntimeState(branch.id!)).interaction!.chatNarrative!.inquiryHistory![0].questionSequence).toBeLessThan(0)
   const importedProject = await importProjectJSON(await exportProjectJSON(f.scope.projectId))

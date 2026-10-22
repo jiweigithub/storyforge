@@ -1,11 +1,11 @@
 import {chatActionResponseFixture, fulfillChatActionChoiceFixture} from './helpers/character-chat-choice'
 import {test, expect} from '@playwright/test'
 
-for (const reject of [false, true]) test(`a completed observation survives player input and its reviewed result informs the reply (reject=${reject})`, async ({page}) => {
-  const inspected = '叶岑俯身查看了后门门闩的外侧，没有打开后门。'
-  const direction = '确认这次外侧检查能否看出门闩有明显松动，不涉及门外情况。'
-  const finding = '这次检查没有在门闩外侧看出明显松动，门外情况仍未知。'
-  const reply = '不用你动手，刚才检查的门闩外侧没有明显松动，门外情况我仍不知道。'
+for (const bounded of [false, true]) for (const reject of [false, true]) test(`an actual observation informs the reply without a repeated action (bounded=${bounded}, reject=${reject})`, async ({page}) => {
+  const inspected = bounded ? '叶岑用手试着正常推开后门并查看门外近处，没有强推，也没有走出驿站。' : '叶岑俯身查看了后门门闩的外侧，没有打开后门。'
+  const direction = bounded ? '确认这次推门查看的有限结果：若能正常打开，确认本次门外近处可见情况；若不能则止于开合结果。' : '确认这次外侧检查能否看出门闩有明显松动，不涉及门外情况。'
+  const finding = bounded ? '后门正常推开，门外近处地面被雨打湿；更远处仍看不清，没有继续外出。' : '这次检查没有在门闩外侧看出明显松动，门外情况仍未知。'
+  const reply = bounded ? '不用你动手，刚才从后门看见近处地面湿了，更远处我仍看不清。' : '不用你动手，刚才检查的门闩外侧没有明显松动，门外情况我仍不知道。'
   const calls: string[] = []; let actions = 0
   await page.addInitScript(() => {
     localStorage.setItem('storyforge_guide_completed', 'e2e')
@@ -22,8 +22,9 @@ for (const reject of [false, true]) test(`a completed observation survives playe
     if (actionReview || situationReview) output = {checks: ['continuity', 'permissions', 'player-agency', 'visibility', ...(actionReview ? ['consequences'] : []), 'meaningful-direction'].map(check => ({check, passed: !(reject && situationReview && check === 'continuity'), reason: '工程夹具，不是模型质量验收'}))}
     else if (construction) {
       expect(prompt).toContain('observation-result'); expect(prompt).toContain(inspected)
+      if (bounded) expect(prompt).toContain('尝试本身已完成，成功及所得待判定')
       output = {kind: 'chat-situation', title: '暴雨驿站', location: '驿站', timeLabel: '傍晚',
-        newFacts: [{factKey: 'outside-checked', kind: 'observation', text: finding, audienceKeys: ['guard', 'player'], evidenceFactKeys: ['inspected'], seedExcerpt: '这次外侧检查能否看出门闩有明显松动'}],
+        newFacts: [{factKey: 'outside-checked', kind: 'observation', text: finding, audienceKeys: ['guard', 'player'], evidenceFactKeys: ['inspected'], seedExcerpt: direction}],
         newGoals: [], newThreads: [], possibilities: []}
     } else {
       actions++; expect(prompt).not.toContain('柜台下')

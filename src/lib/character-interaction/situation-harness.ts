@@ -1,3 +1,4 @@
+import {chatCoordinatorAudienceVersionV1} from './coordinator-audience'
 import {CHAT_TURN_END_CONTROL_REVIEW_RULES_V1} from './turn-end-control'
 import {CHAT_CONTROL_HANDOFF_REVIEW_RULES_V1, parseChatControlHandoffReviewV1, readChatControlHandoffBasisV1} from './control-handoff-contract'
 import {assertChatControlHandoffBindingsV1} from './control-handoff-wire'
@@ -128,7 +129,9 @@ export async function reviewRuntimeChatCandidateV1<T extends ChatSituationCandid
       await assertRuntimeHarnessFreshV1(freshness)
       const manifest = await createContextManifestFromAssemblyV1({runId: snapshot.run.id, stepId, attempt: 1,
         projectId: input.scope.projectId, worldGroupId: snapshot.contract.scope.worldGroupId, declaredSourceKeys: sourceKeys,
-        assembled, readerVersion: control ? (candidate.handoff.version === 2 ? 'chat-turn-end-control-review-v1' : retrievalVersion === 'chat-relevance-v13' ? 'chat-control-handoff-review-v4' : retrievalVersion === 'chat-relevance-v12' ? 'chat-control-handoff-review-v3' : retrievalVersion === 'chat-relevance-v11' ? 'chat-control-handoff-review-v2' : 'chat-control-handoff-review-v1')
+        assembled, readerVersion: chatCoordinatorAudienceVersionV1(snapshot.contract) === 2
+          ? situation ? (reviewBinding.promptVersion === 'chat-situation-review-v17' ? 'chat-situation-review-v16' : 'chat-situation-review-v15') : control ? (candidate.handoff.version === 2 ? 'chat-turn-end-control-review-v2' : 'chat-control-handoff-review-v5') : 'chat-action-review-v18'
+          : control ? (candidate.handoff.version === 2 ? 'chat-turn-end-control-review-v1' : retrievalVersion === 'chat-relevance-v13' ? 'chat-control-handoff-review-v4' : retrievalVersion === 'chat-relevance-v12' ? 'chat-control-handoff-review-v3' : retrievalVersion === 'chat-relevance-v11' ? 'chat-control-handoff-review-v2' : 'chat-control-handoff-review-v1')
           : retrievalVersion === 'chat-relevance-v13' ? 'chat-action-review-v17' : retrievalVersion === 'chat-relevance-v12' ? 'chat-action-review-v16' : retrievalVersion === 'chat-relevance-v11' ? 'chat-action-review-v15' : retrievalVersion === 'chat-relevance-v10' ? 'chat-action-review-v14'
           : retrievalVersion === 'chat-relevance-v9' ? situation ? 'chat-situation-review-v14' : 'chat-action-review-v13'
           : retrievalVersion === 'chat-relevance-v8' ? situation ? 'chat-situation-review-v13' : 'chat-action-review-v12'

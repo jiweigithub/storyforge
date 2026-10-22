@@ -53,14 +53,16 @@ it('sends required candidate shape, saves the exact schema request and preserves
   expect(chat).toHaveBeenCalledTimes(3)
   const call = chat.mock.calls[1], options = call[5]!
   expect(options.jsonSchema?.strict).toBe(true)
-  expect(options.jsonSchema?.name).toBe('chat_narrative_outcome_v1')
+  expect(options.jsonSchema?.name).toBe('chat_narrative_outcome_v3')
   expect(options.jsonSchema?.schema.required).toEqual(['outcome', 'action', 'handoff'])
   const properties = options.jsonSchema!.schema.properties as Record<string, {anyOf: Array<{required?: string[]}>}>
-  const actionShape = properties.action.anyOf[0]
-  expect(actionShape.required).toContain('goalKey')
-  expect(actionShape.required).toContain('expressionMode')
-  expect(actionShape.required).not.toContain('kind')
-  expect(actionShape.required).not.toContain('waitingForPlayer')
+  const actionShapes = properties.action.anyOf[0] as {anyOf: Array<{required: string[]}>}
+  for (const actionShape of actionShapes.anyOf) {
+    expect(actionShape.required).toContain('goalKey')
+    expect(actionShape.required).toContain('expressionMode')
+    expect(actionShape.required).not.toContain('kind')
+    expect(actionShape.required).not.toContain('waitingForPlayer')
+  }
   expect(JSON.stringify(options.jsonSchema?.schema)).toContain('目标原本 active 且继续保持 active 时必须填 null')
   expect(call[0][0].content).toContain('pauseGoal 只保存自己的目标暂停')
   expect(call[1].maxTokens).toBe(4000)

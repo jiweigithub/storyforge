@@ -16,6 +16,12 @@ export interface ChatTurnEndControlV1 {
 
 export const CHAT_TURN_END_CONTROL_PRODUCER_V1 = 'chat-narrative-action-v57'
 export const CHAT_TURN_END_CONTROL_REVIEWER_V1 = 'chat-narrative-action-review-v36'
+export function chatTurnEndReviewerForProducerV1(version: string | undefined): string | undefined {
+  if (version === CHAT_TURN_END_CONTROL_PRODUCER_V1) return CHAT_TURN_END_CONTROL_REVIEWER_V1
+  if (version === 'chat-narrative-action-v61') return 'chat-narrative-action-review-v38'
+  if ((version === 'chat-narrative-action-v58' || version === 'chat-narrative-action-v59' || version === 'chat-narrative-action-v60')) return 'chat-narrative-action-review-v37'
+  return undefined
+}
 export const CHAT_TURN_END_CONTROL_CHECKS_V1 = [
   'current-turn-progress', 'local-purpose', 'pending-obligations', 'player-agency', 'visibility',
 ] as const

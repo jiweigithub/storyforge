@@ -130,7 +130,7 @@ it.each([true, false])('keeps a real player decision blocking, while a reviewed 
     waitingForPlayer: waiting, newFacts: waiting ? [] : [{factKey: 'own-note', kind: 'observation', text, evidenceFactKeys: ['lost'], evidenceExcerpt: text}], disclosures: [], threadUpdates: [], goalStatus: null}
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '工程正例，不扩张行动权限',
     runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
-  expect(generated.snapshot.contract.executionBindings!.map(binding => binding.promptVersion)).toEqual(expect.arrayContaining(['chat-narrative-action-v57', 'chat-narrative-action-review-v36']))
+  expect(generated.snapshot.contract.executionBindings!.map(binding => binding.promptVersion)).toEqual(expect.arrayContaining(['chat-narrative-action-v61', 'chat-narrative-action-review-v38']))
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!
   expect(state.chatNarrative!.triggers.at(-1)!.status).toBe(waiting ? 'waiting-player' : 'complete')

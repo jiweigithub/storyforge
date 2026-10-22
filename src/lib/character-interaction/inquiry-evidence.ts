@@ -1,27 +1,36 @@
+import {chatInquiryContactEvidenceContextV1} from './inquiry-contact-evidence'
 import type {CharacterInteractionRuntimeState} from '../types'
 import {isChatMessageRetrievableV1} from './narrative-retrieval'
 import {chatInquiryContinuityContextV1} from './inquiry-continuity'
 
-export function parseChatInquiryEvidenceVersionV1(value: unknown): 1 | 2 | 3 | undefined {
-  if (value === undefined || value === 1 || value === 2 || value === 3) return value
+export function parseChatInquiryEvidenceVersionV1(value: unknown): 1 | 2 | 3 | 4 | undefined {
+  if (value === undefined || value === 1 || value === 2 || value === 3 || value === 4) return value
   throw new Error('[chat-inquiry] 询问前提证据版本无效')
 }
 
 /** This version belongs to the frozen run and committed event, never the model. */
 export function chatInquiryEvidenceVersionForContractV1(contract: {
   executionBindings?: ReadonlyArray<{stepId: string; skillId: string; promptVersion: string}>
-}): 1 | 2 | 3 | undefined {
+}): 1 | 2 | 3 | 4 | undefined {
   const bindings = contract.executionBindings ?? []
   const producers = bindings.filter(b => b.stepId === 'interaction:runtime-candidate')
   const reviewers = bindings.filter(b => b.stepId === 'interaction:situation-review')
-  const versions = ['chat-situation-construction-v13', 'chat-situation-review-v12', 'chat-situation-construction-v14', 'chat-situation-review-v13', 'chat-situation-construction-v15', 'chat-situation-review-v14']
-  if (!bindings.some(b => versions.includes(b.promptVersion))) return undefined
-  const version = producers[0]?.promptVersion === 'chat-situation-construction-v15' ? 3 : producers[0]?.promptVersion === 'chat-situation-construction-v14' ? 2 : 1
-  if (producers.length !== 1 || reviewers.length !== 1
-    || producers[0].skillId !== 'character.chat-situation-construction' || producers[0].promptVersion !== `chat-situation-construction-v${version + 12}`
-    || reviewers[0].skillId !== 'character.chat-situation-review' || reviewers[0].promptVersion !== `chat-situation-review-v${version + 11}`) {
+  const pairs = [
+    ['chat-situation-construction-v13', 'chat-situation-review-v12', 1],
+    ['chat-situation-construction-v14', 'chat-situation-review-v13', 2],
+    ['chat-situation-construction-v15', 'chat-situation-review-v14', 3],
+    ['chat-situation-construction-v16', 'chat-situation-review-v15', 3],
+    ['chat-situation-construction-v17', 'chat-situation-review-v16', 3],
+    ['chat-situation-construction-v18', 'chat-situation-review-v17', 4],
+  ] as const
+  if (!bindings.some(b => pairs.some(pair => pair[0] === b.promptVersion || pair[1] === b.promptVersion))) return undefined
+  const pair = pairs.find(pair => pair[0] === producers[0]?.promptVersion && pair[1] === reviewers[0]?.promptVersion)
+  if (producers.length !== 1 || reviewers.length !== 1 || !pair
+    || producers[0].skillId !== 'character.chat-situation-construction'
+    || reviewers[0].skillId !== 'character.chat-situation-review') {
     throw new Error('[chat-inquiry] 询问前提证据与原生成和审查合同不一致')
   }
+  const version = pair[2]
   return version
 }
 
@@ -89,7 +98,8 @@ export function chatInquiryQuestionEvidenceContextV1(state: CharacterInteraction
     requestSequence: pending.sourceEventSequence, questions}
 }
 
-export function chatInquiryContextForVersionV1(state: CharacterInteractionRuntimeState, version: 1 | 2 | 3) {
+export function chatInquiryContextForVersionV1(state: CharacterInteractionRuntimeState, version: 1 | 2 | 3 | 4) {
+  if (version === 4) return chatInquiryContactEvidenceContextV1(state)
   if (version === 3) return chatInquiryContinuityContextV1(state)
   return version === 2 ? chatInquiryQuestionEvidenceContextV1(state) : chatInquiryEvidenceContextV1(state)
 }

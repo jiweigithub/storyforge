@@ -47,7 +47,7 @@ it('keeps finite access results separate from further inspection, frozen truth a
   }, runAI: withChatActionChoiceFixture(async messages => {
     calls++
     expect(messages[0].content).toContain('不能单独授权未做的查看')
-    expect(messages[0].content).toContain('不能仅凭“打开”“查看”等单个词')
+    expect(messages[0].content).toContain('不能仅凭“尝试”否定已实施检查')
     expect(messages[0].content).not.toContain('不捏造箱内内容')
     expect(messages[1].content).toContain(f.text)
     expect(messages[1].content).toContain(objection)
@@ -59,8 +59,8 @@ it('keeps finite access results separate from further inspection, frozen truth a
     expect(messages[0].content).toContain('秘密仍按冻结发现条件处理')
     return JSON.stringify(review())
   }})
-  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === skillId)?.promptVersion).toBe('chat-situation-construction-v15')
-  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v14')
+  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === skillId)?.promptVersion).toBe('chat-situation-construction-v18')
+  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v17')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
   const after = await readProductRuntimeState(f.sessionId), story = after.interaction!.chatNarrative!

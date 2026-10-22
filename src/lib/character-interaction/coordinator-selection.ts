@@ -1,3 +1,4 @@
+import {chatCoordinatorScenePersonGuidanceV1} from './coordinator-audience'
 import {selectChatHistoryCoordinatorContextV1, buildChatHistoryCoordinatorProjectionV1} from './history-coordinator-context'
 import {chatMemoryCorrectionContextV1} from './memory-correction-context'
 import {estimateTokens} from '../ai/context-budget'
@@ -21,13 +22,13 @@ const HEADER = '【角色聊天情境协调视角，仅供情境构建和审查�
 /** Selection is separate from the complete coordinator view used for stale
  * hashes. v1 keeps every accepted memory; v2 ranks unpinned summaries. Neither
  * may omit established facts, permissions or material delivered to the actor. */
-export function selectChatCoordinatorContextV1(state: CharacterInteractionRuntimeState, candidate: {text: string; actorKey?: string; retrievalVersion?: ChatRetrievalVersion; sourceUnits?: ChatSourceUnitSetV1; discoveryEvidence?: boolean; inquiryEvidence?: 1 | 2 | 3} = {text: ''}) {
+export function selectChatCoordinatorContextV1(state: CharacterInteractionRuntimeState, candidate: {text: string; actorKey?: string; retrievalVersion?: ChatRetrievalVersion; sourceUnits?: ChatSourceUnitSetV1; audienceVersion?: 1 | 2; discoveryEvidence?: boolean; inquiryEvidence?: 1 | 2 | 3 | 4} = {text: ''}) {
   if (candidate.retrievalVersion === 'chat-relevance-v8' || candidate.retrievalVersion === 'chat-relevance-v9' || candidate.retrievalVersion === 'chat-relevance-v10' || (candidate.retrievalVersion === 'chat-relevance-v11' || candidate.retrievalVersion === 'chat-relevance-v12' || candidate.retrievalVersion === 'chat-relevance-v13')) return selectChatHistoryCoordinatorContextV1(state, {...candidate, retrievalVersion: candidate.retrievalVersion})
   const corrections = supportsChatCorrectionContextV1(candidate.retrievalVersion ?? 'chat-relevance-v4')
   const memoryCorrections = corrections ? (candidate.actorKey ? [candidate.actorKey] : state.profiles.map(p => p.participantKey)).flatMap(key => chatMemoryCorrectionContextV1(state, key)) : []
   const promises = corrections || candidate.retrievalVersion == null || candidate.retrievalVersion === 'chat-relevance-v3'
   const modern = promises || candidate.retrievalVersion === 'chat-relevance-v2'
-  const full = chatSituationCoordinatorViewV1(state)
+  const full = {...chatSituationCoordinatorViewV1(state), ...(candidate.audienceVersion === 2 ? chatCoordinatorScenePersonGuidanceV1(state) : {})}
   const grouped = new Map<string, Omit<typeof full.knowledge[number], 'participantKey'> & {participantKeys: string[]}>()
   for (const item of full.knowledge) {
     const {participantKey, ...knowledge} = item

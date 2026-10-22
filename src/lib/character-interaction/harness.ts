@@ -757,7 +757,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       declaredSourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       assembled,
-      readerVersion: situation ? 'chat-situation-runtime-view-v15' : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? chatActionContextVersionsV1(executionBinding.promptVersion).readerVersion : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? (executionBinding.promptVersion === 'chat-situation-construction-v18' ? 'chat-situation-runtime-view-v17' : executionBinding.promptVersion === 'chat-situation-construction-v17' ? 'chat-situation-runtime-view-v16' : 'chat-situation-runtime-view-v15') : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? chatActionContextVersionsV1(executionBinding.promptVersion).readerVersion : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
@@ -1003,7 +1003,7 @@ export async function readInteractionRuntimeCandidateV1(scope: WorkspaceScope, r
   return { snapshot: saved.snapshot, candidate }
 }
 
-async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSequence: number, optionKey?: string, evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1 | 2 | 3} = {}): Promise<ProductRuntimeEvent | null> {
+async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSequence: number, optionKey?: string, evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1 | 2 | 3 | 4} = {}): Promise<ProductRuntimeEvent | null> {
   if (candidate.kind === 'scene-director-candidate') return null
   const envelope = {
     sessionId: candidate.productRuntimeSessionId,
@@ -1151,7 +1151,7 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
       candidateHash: candidate.candidateHash, decision: 'adopt', reviewItemId: optionKey!, reviewDecision: 'acknowledged', note: `玩家选定行动候选 ${optionKey}`})
     await input.onDurableBoundary?.('confirmation.recorded', snapshot)
   }
-  const evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1 | 2 | 3} = {}
+  const evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1 | 2 | 3 | 4} = {}
   if (!adopted && ['chat-situation-candidate', 'chat-narrative-action-candidate', 'chat-narrative-options-candidate'].includes(candidate.kind)) {
     // Recovery may already have committed the command. Verify its producer
     // against the original state, never the current default reader or new head.

@@ -49,7 +49,7 @@ async function seed(page: Page, phase: Phase, directorBudget = 3) {
     const load = new Function('p', 'return import(p)')
     const fixture = await load('/storyforge/tests/helpers/chat-narrative-fixture.ts')
     const skills = await load('/storyforge/src/lib/agent/skill-registry.ts')
-    if (skills.getAgentSkillV1('character.chat-narrative-action').promptVersion !== 'chat-narrative-action-v57') throw Error('current default must use the choice contract')
+    if (skills.getAgentSkillV1('character.chat-narrative-action').promptVersion !== 'chat-narrative-action-v61') throw Error('current default must use the choice contract')
     const f = await fixture.seedChatNarrativeRuntimeFixture({directorBudget})
     if (phase === 'fresh') return {...f, runId: null}
     const api = await load('/storyforge/src/lib/character-interaction/runtime-api.ts')

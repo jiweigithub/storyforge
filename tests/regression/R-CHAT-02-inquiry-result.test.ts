@@ -51,7 +51,7 @@ it('requires explicit frozen prerequisites and excludes unknown, future and unre
     expect(() => previewChatSituationV1(state, {...input, draft: proposal})).toThrow()
     expect(state).toEqual(before)
   }
-  expect(() => previewChatSituationV1(initial, {...input, inquiryEvidenceVersion: 4})).toThrow('版本无效')
+  expect(() => previewChatSituationV1(initial, {...input, inquiryEvidenceVersion: 5})).toThrow('版本无效')
   expect(initial.chatNarrative!.inquiryHistory).toBeUndefined()
 })
 
@@ -78,7 +78,7 @@ it('rejects a caller-supplied inquiry version without the original reviewed run'
     triggerSequence: before.interaction!.chatNarrative!.triggers.at(-1)!.requestedSequence, draft,
     review: {reviewedProposalJson: canonicalStringify(draft), ...chatInquiryReviewFixture(draft)}, inquiryEvidenceVersion: 1})).rejects.toThrow('必须绑定原已审查运行')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
-  expect(() => validateImportedChatNarrativeEvidenceEventV1(JSON.stringify({inquiryEvidenceVersion: 4}), 'character-interaction', 'interaction.narrative.situation.committed')).toThrow('版本无效')
+  expect(() => validateImportedChatNarrativeEvidenceEventV1(JSON.stringify({inquiryEvidenceVersion: 5}), 'character-interaction', 'interaction.narrative.situation.committed')).toThrow('版本无效')
   expect(() => validateImportedChatNarrativeEvidenceEventV1(JSON.stringify({inquiryEvidenceVersion: 1}), 'character-interaction', 'interaction.narrative.action-reviewed.committed')).toThrow('只能来自已审查情境')
 })
 
@@ -119,7 +119,7 @@ it.each([false, true].flatMap(splitQuestion => [false, true].flatMap(privateAnsw
     reviewed++; expect(messages[0].content).toContain('actual-question'); expect(messages[0].content).toContain('对每个 discovery 单独复核')
     return JSON.stringify(chatInquiryReviewFixture(draft))
   }})
-  expect(reviewedResult.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v14')
+  expect(reviewedResult.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v17')
   await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId, onDurableBoundary: type => {if (type === 'runtime.candidate.adopted') throw new Error('host-after-commit')}})).rejects.toThrow('host-after-commit')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
   const version = await readProductRuntimeStateVersion(f.sessionId)
@@ -133,7 +133,7 @@ it.each([false, true].flatMap(splitQuestion => [false, true].flatMap(privateAnsw
   expect(story.situation.goals).toEqual(before.interaction!.chatNarrative!.situation.goals)
   expect(story.situation.possibilities).toEqual(before.interaction!.chatNarrative!.situation.possibilities)
   const committed = (await db.productRuntimeEvents.where('sessionId').equals(f.sessionId).toArray()).find(e => e.type === 'interaction.narrative.situation.committed')!
-  expect(JSON.parse(committed.payloadJson).inquiryEvidenceVersion).toBe(3)
+  expect(JSON.parse(committed.payloadJson).inquiryEvidenceVersion).toBe(4)
   expect(story.inquiryHistory![0].evidenceFactKeys).toContain('lost')
   expect(chatInquiryRepliesV1(story, 'player')).toHaveLength(privateAnswer ? 0 : 1)
   expect(chatInquiryRepliesV1(story, 'artisan')).toEqual([])

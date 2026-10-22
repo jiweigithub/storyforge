@@ -1,6 +1,6 @@
 import {parseChatControlHandoffV1, type ChatControlHandoffV1} from './control-handoff-contract'
 import {supportsChatTurnCompletionV1, CHAT_TURN_COMPLETION_REVIEWER_V1} from './turn-completion'
-import {CHAT_TURN_END_CONTROL_PRODUCER_V1, CHAT_TURN_END_CONTROL_REVIEWER_V1, CHAT_TURN_END_CONTROL_RULES_V1} from './turn-end-control'
+import {chatTurnEndReviewerForProducerV1, CHAT_TURN_END_CONTROL_RULES_V1} from './turn-end-control'
 
 export const CHAT_CONTROL_HANDOFF_PRODUCER_V1 = 'chat-narrative-action-v46'
 export const CHAT_CONTROL_HANDOFF_REVIEWER_V1 = 'chat-narrative-action-review-v33'
@@ -11,7 +11,7 @@ export const CHAT_CONTROL_HANDOFF_PRODUCER_V4 = 'chat-narrative-action-v50'
 export const CHAT_CONTROL_HANDOFF_PRODUCER_V5 = 'chat-narrative-action-v51'
 
 export function supportsChatControlHandoffV1(version: string | undefined): boolean {
-  return version === CHAT_TURN_END_CONTROL_PRODUCER_V1 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V1 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V2 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V3 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V4 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V5 || supportsChatTurnCompletionV1(version)
+  return !!chatTurnEndReviewerForProducerV1(version) || version === CHAT_CONTROL_HANDOFF_PRODUCER_V1 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V2 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V3 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V4 || version === CHAT_CONTROL_HANDOFF_PRODUCER_V5 || supportsChatTurnCompletionV1(version)
 }
 
 /** New output envelope preserves the old action body exactly. The two results
@@ -23,7 +23,7 @@ export function parseChatNarrativeOutcomeWireV1(value: unknown, producerVersion?
   if (row.outcome === 'action' && row.handoff === null && row.action && typeof row.action === 'object' && !Array.isArray(row.action)) return {outcome: 'action', action: row.action}
   if (row.outcome === 'handoff' && row.action === null) {
     const handoff = parseChatControlHandoffV1(row.handoff)
-    if (handoff.version === 2 && producerVersion !== CHAT_TURN_END_CONTROL_PRODUCER_V1) throw new Error('[chat-turn-end] 旧生成合同不能输出本轮结束控制')
+    if (handoff.version === 2 && !chatTurnEndReviewerForProducerV1(producerVersion)) throw new Error('[chat-turn-end] 旧生成合同不能输出本轮结束控制')
     return {outcome: 'handoff', handoff}
   }
   throw new Error('[chat-control-handoff] 行动与交还控制必须互斥，不能省略或混合结果')
@@ -37,7 +37,7 @@ export function chatNarrativeOutcomeSchemaV1(action: Schema, producerVersion?: s
     version: {type: 'integer', enum: [1]}, kind: {type: 'string', enum: ['yield-to-player']}, reason: {type: 'string', enum: ['awaiting-player-decision']},
     source: object({messageId: text, sequence: {type: 'integer'}, excerpt: text}), decision: text, dependentStep: text,
   })
-  const handoff = producerVersion === CHAT_TURN_END_CONTROL_PRODUCER_V1 ? {anyOf: [original, object({
+  const handoff = chatTurnEndReviewerForProducerV1(producerVersion) ? {anyOf: [original, object({
     version: {type: 'integer', enum: [2]}, kind: {type: 'string', enum: ['finish-current-turn']}, reason: {type: 'string', enum: ['local-purpose-completed']},
     source: object({messageId: text, sequence: {type: 'integer'}, excerpt: text}), purpose: text,
   })]} : original
@@ -51,7 +51,7 @@ export function chatNarrativeOutcomeRulesV1(version: string | undefined): string
     '交还控制仅用于明确 continue 的单角色手动轮次：已交付角色对话中已有玩家共同可见的未决许可，当前下一步仍确实依赖它，且没有可落实的自主行动或必要的新说明。它不发布气泡，不算剧情推进，不等于所有办法耗尽。choice 草稿仅供重新核对，选择 wait 本身不授权交还控制；有依据的独立行动仍选择 action。',
     '新玩家消息、scene-start/return/player-seed、多人调度、待处理改写或情境结果不能静默交还控制。不要把旧邀请、已经拒绝或回答的问题、可选陪同当作阻碍。source 必须来自本次实际交付的自己在当前场景的有效消息，不能引用未给出的历史；之后对话可能已经改变其含义，仍需独立审查。',
   ]
-  return version === CHAT_TURN_END_CONTROL_PRODUCER_V1
+  return chatTurnEndReviewerForProducerV1(version)
     ? [...rules.map((rule, index) => index === 0 ? rule : `以下限制仅针对 version:1 等待玩家决定的控制结果：${rule}`), ...CHAT_TURN_END_CONTROL_RULES_V1]
     : rules
 }
@@ -62,13 +62,13 @@ export function assertChatControlHandoffBindingsV1(contract: {
 }, handoff?: ChatControlHandoffV1): void {
   const bindings = contract.executionBindings ?? []
   const producer = bindings.find(binding => binding.stepId === 'interaction:runtime-candidate')?.promptVersion
-  const turnEnd = producer === CHAT_TURN_END_CONTROL_PRODUCER_V1
+  const turnEnd = !!chatTurnEndReviewerForProducerV1(producer)
   if (handoff?.version === 2 && !turnEnd) throw new Error('[chat-turn-end] 本轮结束控制缺少新版本生成及审查合同')
   const current = turnEnd || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V2 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V3 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V4 || producer === CHAT_CONTROL_HANDOFF_PRODUCER_V5 || supportsChatTurnCompletionV1(producer)
   const expected = [
     ['interaction:action-choice', 'character.chat-narrative-action', current ? producer : CHAT_CONTROL_HANDOFF_PRODUCER_V1],
     ['interaction:runtime-candidate', 'character.chat-narrative-action', current ? producer : CHAT_CONTROL_HANDOFF_PRODUCER_V1],
-    ['interaction:action-review', 'character.chat-narrative-action-review', turnEnd ? CHAT_TURN_END_CONTROL_REVIEWER_V1 : supportsChatTurnCompletionV1(producer) ? CHAT_TURN_COMPLETION_REVIEWER_V1 : current ? CHAT_CONTROL_HANDOFF_REVIEWER_V2 : CHAT_CONTROL_HANDOFF_REVIEWER_V1],
+    ['interaction:action-review', 'character.chat-narrative-action-review', turnEnd ? chatTurnEndReviewerForProducerV1(producer)! : supportsChatTurnCompletionV1(producer) ? CHAT_TURN_COMPLETION_REVIEWER_V1 : current ? CHAT_CONTROL_HANDOFF_REVIEWER_V2 : CHAT_CONTROL_HANDOFF_REVIEWER_V1],
   ]
   if (bindings.length !== 3 || expected.some(([stepId, skillId, promptVersion]) => bindings.filter(binding => binding.stepId === stepId
     && binding.skillId === skillId && binding.promptVersion === promptVersion).length !== 1)

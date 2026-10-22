@@ -1,19 +1,22 @@
 import {expect, test, type Page} from '@playwright/test'
+import Ajv from 'ajv'
+import {readFileSync} from 'node:fs'
 import {chatActionResponseFixture} from './helpers/character-chat-choice'
 import {openChatNarrativeTools} from './helpers/character-chat-ui'
 
 const reply = '叶岑把油灯移到门边。门边亮了起来。“入口先照亮了，我会自己继续找，不要求你帮忙。”'
 const purpose = '仅供结束审查的内部局部目的'
+const conflict = JSON.parse(readFileSync(new URL('../fixtures/character-chat-completion-conflict-v315.json', import.meta.url), 'utf8'))
 const action = {kind: 'complete', text: reply, goalKey: 'find-seal', evidenceFactKeys: ['lost'], audienceKeys: ['guard', 'player'],
   waitingForPlayer: false, newFacts: [{factKey: 'lit-entry', kind: 'observation', text: '门边亮了起来。', evidenceFactKeys: ['lost'], evidenceExcerpt: '门边亮了起来。'}],
   disclosures: [], threadUpdates: [], goalStatus: null, turnCompletion: {version: 1, purpose, evidenceExcerpt: '门边亮了起来。'}}
 
-async function setup(page: Page, passed = true) {
-  await page.addInitScript(() => {
+async function setup(page: Page, passed = true, provider: 'openai' | 'agnes' = 'openai') {
+  await page.addInitScript(selectedProvider => {
     localStorage.setItem('storyforge_guide_completed', 'e2e')
-    localStorage.setItem('storyforge-ai-config', JSON.stringify({provider: 'openai', baseUrl: 'https://turn-completion.invalid/v1', model: 'test', maxTokens: 8000}))
+    localStorage.setItem('storyforge-ai-config', JSON.stringify({provider: selectedProvider, baseUrl: 'https://turn-completion.invalid/v1', model: 'test', maxTokens: 8000}))
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
-  })
+  }, provider)
   const calls: string[] = []
   await page.route('https://turn-completion.invalid/**', async route => {
     const messages = route.request().postDataJSON().messages, text = JSON.stringify(messages)
@@ -24,7 +27,21 @@ async function setup(page: Page, passed = true) {
     const output = step === 'choice' ? {directions: [], selectedId: null, decisionSummary: '工程夹具，不证明剧情质量'}
       : step === 'expression' ? action : {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction']
         .map(check => ({check, passed: true, reason: '工程夹具'})), turnCompletionCheck: {passed, reason: '工程注入的局部结束判定'}}
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
+    let content = chatActionResponseFixture(route, output)
+    if (step === 'expression' && provider === 'agnes') {
+      const format = route.request().postDataJSON().response_format
+      expect(format).toMatchObject({type: 'json_schema', json_schema: {name: 'chat_narrative_outcome_v3', strict: true}})
+      const response = JSON.parse(content)
+      response.action = {goalUpdates: [], commitmentEffects: [], relationshipUpdates: [], nextPossibilities: null, beliefUpdates: [],
+        situationRequest: null, followupGoal: null, threadFollowupGoal: null, resumeGoal: null, promiseRequest: null, pauseGoal: null, sceneTransition: null,
+        ...response.action, expressionMode: 'self-action-performed'}
+      delete response.action.kind; delete response.action.waitingForPlayer
+      const validate = new Ajv().compile(format.json_schema.schema)
+      expect(validate(conflict.response)).toBe(false)
+      expect(validate(response)).toBe(true)
+      content = JSON.stringify(response)
+    }
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content}, finish_reason: 'stop'}]})})
   })
   await page.goto('./chat/library')
   const f = await page.evaluate(async () => {
@@ -44,7 +61,7 @@ async function setup(page: Page, passed = true) {
 
 for (const width of [390, 1440]) test(`local completion leaves an active goal without filling the second action at ${width}`, async ({page}) => {
   await page.setViewportSize({width, height: 900})
-  const {calls, read} = await setup(page)
+  const {calls, read} = await setup(page, true, width === 390 ? 'agnes' : 'openai')
   await expect(page.getByLabel('演绎节奏', {exact: true})).toHaveValue('2')
   const before = await read()
   await page.getByPlaceholder('对当前场景中的角色说话…').fill('我不想帮忙，你自己安排吧。')

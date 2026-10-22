@@ -6,11 +6,12 @@ import {seedChatNarrativeRuntimeFixture, chatActionReviewOutputFixture, withChat
 export {inquiryReassurance, inquiryQuestion, inquiryAnswer, inquiryTruth, inquiryPurpose, chatInquiryReviewFixture} from './chat-inquiry-output'
 import {inquiryReassurance, inquiryQuestion, inquiryAnswer} from './chat-inquiry-output'
 /** Synthetic reviewers and frozen inquiry authority; not a real-model quality result. */
-export async function prepareChatInquiryFixture(options: {questionEvidenceFactKeys?: string[]; splitQuestion?: boolean; reassuranceAudienceKeys?: string[]; playerInterjection?: string} = {}) {
+export async function prepareChatInquiryFixture(options: {conversationMode?: 'present' | 'private'; questionEvidenceFactKeys?: string[]; splitQuestion?: boolean; reassuranceAudienceKeys?: string[]; playerInterjection?: string} = {}) {
   const f = await seedChatNarrativeRuntimeFixture({inquiryResults: true, factDiscovery: true, ...(options.splitQuestion ? {maxActionsPerTrigger: 2} : {})})
   let v = await readProductRuntimeStateVersion(f.sessionId)
   await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'inquiry.start', baseSequence: v.sequence, baseStateHash: v.stateHash,
-    kind: 'scene-start', sourceEventSequence: f.sceneSequence})
+    kind: 'scene-start', sourceEventSequence: f.sceneSequence,
+    ...(options.conversationMode ? {direction: {actorKey: 'guard', actionLimit: 1, audienceParticipantKeys: options.conversationMode === 'private' ? ['guard'] : ['guard', 'artisan'], conversationMode: options.conversationMode}} : {})})
   const evidenceFactKeys = options.questionEvidenceFactKeys ?? ['lost', 'clerk-present', 'box']
   const action: ChatNarrativeActionV1 = {kind: 'speak', text: inquiryQuestion, goalKey: 'find-seal', audienceKeys: ['guard', 'player'],
     evidenceFactKeys, waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null,
@@ -36,7 +37,8 @@ export async function prepareChatInquiryFixture(options: {questionEvidenceFactKe
   }
   v = await readProductRuntimeStateVersion(f.sessionId)
   await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'inquiry.continue', baseSequence: v.sequence, baseStateHash: v.stateHash,
-    kind: 'continue', sourceEventSequence: v.sequence})
+    kind: 'continue', sourceEventSequence: v.sequence,
+    ...(options.conversationMode ? {direction: {actorKey: 'guard', actionLimit: 1, audienceParticipantKeys: options.conversationMode === 'private' ? ['guard'] : ['guard', 'artisan'], conversationMode: options.conversationMode}} : {})})
   return f
 }
 export async function chatInquiryDraftFixture(sessionId: number, audienceKeys = ['guard', 'player']): Promise<ChatSituationDraftV1> {

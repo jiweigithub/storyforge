@@ -81,6 +81,53 @@ function chatActionOutputSchemaV3(): Schema {
   return schema
 }
 
+const CHAT_TURN_COMPLETION_OUTPUT_RULE_V1 = '先区分目标变化与本轮结束：本次完成、暂停、放弃或新建目标（包括 threadFollowupGoal）时，turnCompletion 必须为 null。只有继续保留行动前已有的自身 active 目标、goalStatus=null、goalUpdates=[]，且没有新目标、暂停/恢复、情境请求或转场时，才可按原规则填写 turnCompletion；表达方式仅限 speech 或 self-action-performed。不要为使用结束标记而撤销实际目标变化，也不要为了填新目标而虚构后续任务。目标或事项已达到原关闭条件时，如实记录该结果，无需穷尽所有未知。'
+
+/** The union constrains only combinations the domain already rejects. Shared
+ * property definitions avoid duplicating the entire request and its budget.
+ * State-dependent eligibility and independent review remain authoritative. */
+function chatCompletionActionSchemaV1(action: Schema): {action: Schema; definitions: Record<string, Schema>} {
+  const original = action.properties as Record<string, Schema>, definitions: Record<string, Schema> = {}
+  const shared = Object.fromEntries(Object.entries(original).map(([key, value]) => {
+    if (key === 'turnCompletion' || JSON.stringify(value).length < 100) return [key, value]
+    definitions[key] = value
+    return [key, {$ref: `#/$defs/${key}`}]
+  }))
+  const completion = (original.turnCompletion.anyOf as Schema[])[0]
+  return {
+    action: either(
+      object({...shared, turnCompletion: {type: 'null'}}),
+      object({...shared, goalKey: string, goalStatus: {type: 'null'}, goalUpdates: {...original.goalUpdates, maxItems: 0},
+        followupGoal: {type: 'null'}, threadFollowupGoal: {type: 'null'}, pauseGoal: {type: 'null'}, resumeGoal: {type: 'null'},
+        situationRequest: {type: 'null'}, sceneTransition: {type: 'null'}, expressionMode: enumeration('speech', 'self-action-performed'), turnCompletion: completion}),
+    ),
+    definitions,
+  }
+}
+
+/** V60 factors identical explicit current-expression evidence instructions.
+ * Only exact schema equality permits a reference: historical/player/source
+ * quotations retain their different schemas, and no request text is trimmed. */
+function compactChatCompletionSchemaV1(schema: Schema): Schema {
+  const compact = structuredClone(schema)
+  const original = (chatActionOutputSchemaV3().properties as Record<string, Schema>).newFacts.items as Schema
+  const excerpt = (original.properties as Record<string, Schema>).evidenceExcerpt
+  const exact = JSON.stringify(excerpt)
+  const visit = (node: Schema) => {
+    const fields = node.properties as Record<string, Schema> | undefined
+    if (fields) for (const [key, child] of Object.entries(fields)) {
+      if (key === 'evidenceExcerpt' && JSON.stringify(child) === exact) fields[key] = {$ref: '#/$defs/ownEvidenceExcerpt'}
+      else visit(child)
+    }
+    if (node.items) visit(node.items as Schema)
+    if (Array.isArray(node.anyOf)) node.anyOf.forEach(child => visit(child as Schema))
+    if (node.$defs) Object.values(node.$defs as Record<string, Schema>).forEach(visit)
+  }
+  visit(compact)
+  ;(compact.$defs as Record<string, Schema>).ownEvidenceExcerpt = excerpt
+  return compact
+}
+
 /** Both transports have verified schema support. Other providers retain their
  * existing request contract; a rejected schema request is never auto-retried. */
 export function chatActionRequestOptionsV1(version: string | undefined, provider: AIProvider | undefined): ChatRequestOptions | undefined {
@@ -101,7 +148,13 @@ export function chatActionRequestOptionsV1(version: string | undefined, provider
     properties.audienceKeys = {...nullable({...array(string), minItems: 2, maxItems: 33}), description: 'null 表示使用提示中冻结的本轮对话听众；有意缩小时显式列出玩家、行动者及实际听众。不能填空数组，不能加对话之外的人。'}
     action.required = Object.keys(properties)
   }
-  const schema = ['chat-narrative-options-v28', 'chat-narrative-options-v29', 'chat-narrative-options-v30', 'chat-narrative-options-v31', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34', 'chat-narrative-options-v35'].includes(version ?? '')
+  if (version === 'chat-narrative-action-v59' || (version === 'chat-narrative-action-v60' || version === 'chat-narrative-action-v61')) {
+    const constrained = chatCompletionActionSchemaV1(action)
+    const schema = {...chatNarrativeOutcomeSchemaV1(constrained.action, version), $defs: constrained.definitions}
+    return {jsonSchema: {name: (version === 'chat-narrative-action-v60' || version === 'chat-narrative-action-v61') ? 'chat_narrative_outcome_v3' : 'chat_narrative_outcome_v2', strict: true,
+      schema: (version === 'chat-narrative-action-v60' || version === 'chat-narrative-action-v61') ? compactChatCompletionSchemaV1(schema) : schema}}
+  }
+  const schema = ['chat-narrative-options-v28', 'chat-narrative-options-v29', 'chat-narrative-options-v30', 'chat-narrative-options-v31', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34', 'chat-narrative-options-v35', 'chat-narrative-options-v36', 'chat-narrative-options-v37'].includes(version ?? '')
     ? object({options: {...array(action), minItems: 2, maxItems: 2}}) : action
   if (supportsChatControlHandoffV1(version)) return {jsonSchema: {name: 'chat_narrative_outcome_v1', strict: true, schema: chatNarrativeOutcomeSchemaV1(schema, version)}}
   return {jsonSchema: {name: wire ? 'chat_action_shape_v4' : ownEvidence ? 'chat_action_shape_v3' : usesChangeDescriptions(version) ? 'chat_action_shape_v2' : 'chat_action_shape_v1', strict: true, schema}}
@@ -118,7 +171,7 @@ export const CHAT_ACTION_OUTPUT_CHECK_V1 = '输出完整候选对象，不能省
 
 export function chatActionOutputRulesV1(version: string | undefined, audience?: readonly string[]): string[] {
   if (!supportsChatActionOutputContractV1(version)) return []
-  return [...(supportsChatTurnCompletionV1(version) ? [CHAT_TURN_COMPLETION_ACTION_RULE_V1] : []), CHAT_ACTION_OUTPUT_CHECK_V1 + (usesChangeDescriptions(version)
+  return [...(supportsChatTurnCompletionV1(version) ? [CHAT_TURN_COMPLETION_ACTION_RULE_V1] : []), ...(['chat-narrative-action-v59', 'chat-narrative-action-v60', 'chat-narrative-action-v61'].includes(version ?? '') ? [CHAT_TURN_COMPLETION_OUTPUT_RULE_V1] : []), CHAT_ACTION_OUTPUT_CHECK_V1 + (usesChangeDescriptions(version)
     ? '最后逐项对照行动前状态：goalStatus 是变更指令，不是状态描述；目标继续保持 active 必须填 null，不能填 active。goalUpdates 和 threadUpdates 仅列实际变化，无变化填 []；不能因正在处理事项就重复 open。不得删除原约束、自动补后果或改写原文来规避校验。'
     : '') + (supportsChatOwnEvidenceBindingV1(version)
     ? '本次表达的 evidenceExcerpt 可填 null，由系统逐字绑定完整 text。正文超过对应摘录上限时必须填写连续逐字片段，不能省略或改写：承诺1000字、情境请求1200字、目标/关系/后续目标/暂停/转场2000字、事实/披露/事项8000字。playerExcerpt、destinationExcerpt、历史与来源事实仍必须按各自合同提供原文，不能用 null 代替。绑定原文不代表事实、授权或后果已成立，仍需原校验和独立审查。'

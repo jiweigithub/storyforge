@@ -68,7 +68,7 @@ export function applyChatInquiryResultV1(state: CharacterInteractionRuntimeState
   if (story.permissions.allowInquiryResults !== true || story.permissions.allowActorSituationExpansion !== true
     || !story.permissions.allowedNewFactKinds.includes('observation') || story.permissions.maxNewFactsPerAction < 1) fail('作品未授权询问结果')
   if (!pending || pending.purpose !== undefined || pending.actorKey !== result.actorKey
-    || (version === 2 || version === 3 ? !basis : pending.sourceEventSequence !== result.questionSequence)
+    || (version === 2 || version === 3 || version === 4 ? !basis : pending.sourceEventSequence !== result.questionSequence)
     || !scene.activeParticipantKeys.includes(result.actorKey)) fail('答复必须承接当前已审查方向中的实际询问')
   if ((story.inquiryHistory?.length ?? 0) >= 1000 || story.inquiryHistory?.some(row => row.questionSequence === result.questionSequence)) fail('询问已经回答或记录已达上限')
   const question = state.messages.find(row => row.role === 'character' && row.speakerKey === result.actorKey && row.eventSequence === result.questionSequence && row.supersededBySequence == null)
@@ -82,7 +82,13 @@ export function applyChatInquiryResultV1(state: CharacterInteractionRuntimeState
     || question.audienceKeys != null && !question.audienceKeys.includes(key) || !respondent.audienceKeys.includes(key))) fail('答复听众超出实际对话或人物可知范围')
   const allowedEvidence = new Set(pending.evidenceFactKeys)
   if (version !== undefined) {
-    if (!basis || !pending.evidenceFactKeys.includes(result.respondentFactKey)) fail('询问前提证据缺少实际提问和人物依据')
+    const contactAllowed = version === 4
+      ? basis && 'respondentEvidenceFactKeys' in basis && Array.isArray(basis.respondentEvidenceFactKeys)
+        && basis.respondentEvidenceFactKeys.includes(result.respondentFactKey)
+      : pending.evidenceFactKeys.includes(result.respondentFactKey)
+    if (!basis || !contactAllowed) fail('询问前提证据缺少实际提问和人物依据')
+    // Admit only the selected contact reference, never the entire candidate list.
+    if (version === 4) allowedEvidence.add(result.respondentFactKey)
     for (const discovery of result.discoveries) {
       const target = basis.targets.find(target => target.factKey === discovery.factKey)
       if (!target) fail('询问发现缺少提问时已知的冻结前提')
@@ -171,5 +177,8 @@ export function assertChatInquiryBindingV1(result: ChatInquiryResultV1 | undefin
     || (producerVersion === 'chat-situation-construction-v13' && reviewerVersion === 'chat-situation-review-v12')
     || (producerVersion === 'chat-situation-construction-v14' && reviewerVersion === 'chat-situation-review-v13')
     || (producerVersion === 'chat-situation-construction-v15' && reviewerVersion === 'chat-situation-review-v14')
+    || (producerVersion === 'chat-situation-construction-v16' && reviewerVersion === 'chat-situation-review-v15')
+    || (producerVersion === 'chat-situation-construction-v17' && reviewerVersion === 'chat-situation-review-v16')
+    || (producerVersion === 'chat-situation-construction-v18' && reviewerVersion === 'chat-situation-review-v17')
   if (result && !supportedPair) fail('旧情境合同不能取得询问结果权限，请保留原记录并明确发起新请求')
 }

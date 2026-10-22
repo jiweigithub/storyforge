@@ -771,10 +771,12 @@ async function readChatSituationRuntimeProjection(input: AssembleContextInput) {
   const project = (candidate: Parameters<typeof projectChatCoordinatorContextV1>[1]) => projectChatCoordinatorContextV1(state.interaction!, candidate)
   const sourceUnits = playable.runtimePackage.interaction.chatSource?.version === 6 ? playable.runtimePackage.interaction.chatSource.sourceUnits : undefined
   const saved = await readChatActionCandidateValue(input)
+  const {chatCoordinatorAudienceVersionV1} = await import('../character-interaction/coordinator-audience')
   const {readChatCandidateRetrievalVersion} = await import('../character-interaction/context-reader-version')
   if (!saved) {
     let discoveryEvidence = false
-    let inquiryEvidence: 1 | 2 | 3 | undefined
+    let audienceVersion: 1 | 2 = 1
+    let inquiryEvidence: 1 | 2 | 3 | 4 | undefined
     const {usesChatDiscoveryEvidenceContextV1} = await import('../character-interaction/discovery-evidence-context')
     const {chatInquiryEvidenceVersionForContractV1} = await import('../character-interaction/inquiry-evidence')
     if (input.chatSituationConstructionRunId != null) {
@@ -786,6 +788,7 @@ async function readChatSituationRuntimeProjection(input: AssembleContextInput) {
       }
       const {assertRuntimeHarnessFreshV1} = await import('../agent/run/runtime-scope')
       await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: producer.contract.scope, participantKey: 'player', view: 'chat-situation'})
+      audienceVersion = chatCoordinatorAudienceVersionV1(producer.contract)
       discoveryEvidence = usesChatDiscoveryEvidenceContextV1(producer)
       inquiryEvidence = chatInquiryEvidenceVersionForContractV1(producer.contract)
     }
@@ -795,13 +798,14 @@ async function readChatSituationRuntimeProjection(input: AssembleContextInput) {
       const producer = await readLatestVerifiedAgentRunCheckpointV1(input.scope, input.chatSituationCandidateRunId, {owner: 'instance'})
       if (!producer || producer.snapshot.run.productRuntimeSessionId !== input.productRuntimeSessionId) return {text: ''}
       retrievalVersion = await readChatCandidateRetrievalVersion(producer.snapshot, input.projectId, 'chatSituationRuntime')
+      audienceVersion = chatCoordinatorAudienceVersionV1(producer.snapshot.contract)
       discoveryEvidence = usesChatDiscoveryEvidenceContextV1(producer.snapshot)
       inquiryEvidence = chatInquiryEvidenceVersionForContractV1(producer.snapshot.contract)
     }
-    return project({text: await readChatSituationCandidateContext(input), retrievalVersion, discoveryEvidence, inquiryEvidence, ...(sourceUnits ? {sourceUnits} : {})})
+    return project({text: await readChatSituationCandidateContext(input), retrievalVersion, discoveryEvidence, inquiryEvidence, audienceVersion, ...(sourceUnits ? {sourceUnits} : {})})
   }
   const retrievalVersion = await readChatCandidateRetrievalVersion(saved.snapshot, input.projectId, 'interactionRuntime', saved.value.actorKey, state.interaction)
-  return project({text: JSON.stringify(saved.value), actorKey: saved.value.actorKey, retrievalVersion, ...(sourceUnits ? {sourceUnits} : {})})
+  return project({text: JSON.stringify(saved.value), actorKey: saved.value.actorKey, retrievalVersion, audienceVersion: chatCoordinatorAudienceVersionV1(saved.snapshot.contract), ...(sourceUnits ? {sourceUnits} : {})})
 }
 
 async function readChatSituationRuntimeContext(input: AssembleContextInput): Promise<string> {
