@@ -5,8 +5,10 @@ import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { parseAvgAuthorWorkspaceV1, type AvgAuthorWorkspaceV1 } from './author-workspace-contract'
 import { readAvgDraftV1 } from './draft-service'
 import { saveAvgAuthorWorkspaceV1 } from './editor-service'
-import { prepareAvgVoiceDraftV1, readAvgVoiceDraftV1 } from './voice-draft-contract'
+import { prepareAvgVoiceDraftV1, readAvgVoiceDraftV1, validateAvgVoiceDraftSourcesV1 } from './voice-draft-contract'
 import { assertAvgMediaProductionDraftEditableV1 } from './production-draft-editability'
+import { assertAvgVoiceProcessingDraftV1 } from './voice-processing-draft-contract'
+import type { AvgAudioProductionProcessingPlanV1 } from './audio-production-contract'
 
 /** Must run inside the final draft write transaction after expensive, DB-free
  * protocol/source compilation. Active starts cannot be raced by a late save.
@@ -34,6 +36,7 @@ export async function saveAvgVoiceProductionDraftV1(input: {
   if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg-voice] 已保存脚本或配音草稿已变化，请刷新后继续')
   const workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
   const packet = await prepareAvgVoiceDraftV1({ ...input, workspace })
+  if (workspace.voiceProcessing) assertAvgVoiceProcessingDraftV1(workspace.voiceProcessing, readAvgVoiceDraftV1(packet).voice.batch.requirements)
   const same = canonicalProductProductionJsonV2(workspace.voiceProduction ?? null) === canonicalProductProductionJsonV2(packet)
   if (!same) assertUnconsumed(workspace)
   return db.transaction('rw', scopeTransactionTables(db.avgAuthoringDrafts, db.productProductions, db.productBuilds), async () => {
@@ -53,6 +56,29 @@ export async function clearAvgVoiceProductionDraftV1(input: { scope: WorkspaceSc
     if (!workspace.voiceProduction) return draft
     assertUnconsumed(workspace)
     delete workspace.voiceProduction
+    delete workspace.voiceProcessing
     return saveAvgAuthorWorkspaceV1(input.scope, draft.revision, workspace)
+  })
+}
+
+/** The same Work draft/CAS as voice requirements. No audio is generated or adopted. */
+export async function saveAvgVoiceProcessingDraftV1(input: {
+  scope: WorkspaceScope; expectedDraftRevision: number; plan: AvgAudioProductionProcessingPlanV1 | null
+}) {
+  const draft = await readAvgDraftV1(input.scope)
+  if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg-voice-process] 配音或音量草稿已变化，请刷新后继续')
+  const workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
+  if (input.plan !== null && !workspace.voiceProduction) throw new Error('[avg-voice-process] 请先保存逐句配音需求')
+  const voice = input.plan !== null ? await validateAvgVoiceDraftSourcesV1(workspace.voiceProduction, workspace) : null
+  const plan = voice ? assertAvgVoiceProcessingDraftV1(input.plan, voice.voice.batch.requirements) : null
+  const same = canonicalProductProductionJsonV2(workspace.voiceProcessing ?? null) === canonicalProductProductionJsonV2(plan)
+  if (!same) assertUnconsumed(workspace)
+  if (plan) workspace.voiceProcessing = plan
+  else delete workspace.voiceProcessing
+  return db.transaction('rw', scopeTransactionTables(db.avgAuthoringDrafts, db.productProductions, db.productBuilds), async () => {
+    const current = await readAvgDraftV1(input.scope)
+    if (current.revision !== draft.revision || current.productionId !== draft.productionId) throw new Error('[avg-voice-process] 保存音量要求期间草稿已变化')
+    await assertEditable(input.scope, current)
+    return same ? current : saveAvgAuthorWorkspaceV1(input.scope, current.revision, workspace)
   })
 }

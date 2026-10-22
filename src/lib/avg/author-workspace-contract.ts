@@ -8,9 +8,11 @@ import { parseAvgInheritedStageImagesV1, type AvgInheritedStageImageV1 } from '.
 import { parseAvgImageProcessingPlan, assertAvgImageProcessingRequirements, type AvgImageProcessingPlan } from './image-processing-contract'
 import { readAvgVoiceDraftV1 } from './voice-draft-contract'
 import type { AvgVoiceExactStorageV1 } from './voice-exact-storage'
-import { parseAvgInheritedStageVoicesV1, type AvgInheritedStageVoiceV1 } from './stage-voice-source-contract'
+import { parseAvgInheritedStageVoices, type AvgInheritedStageVoice } from './stage-processed-voice-source-contract'
 import { parseAvgSoundProductionDraftV1, type AvgSoundProductionDraftV1 } from './sound-draft-contract'
 import { parseAvgInheritedStageSoundsV1, type AvgInheritedStageSoundV1 } from './stage-sound-source-contract'
+import type { AvgAudioProductionProcessingPlanV1 } from './audio-production-contract'
+import { assertAvgVoiceProcessingDraftV1 } from './voice-processing-draft-contract'
 
 /** Human-authored assembly, not a professional director Skill result. No local IDs. */
 export interface AvgAuthorStageV1 {
@@ -20,7 +22,7 @@ export interface AvgAuthorStageV1 {
   stage: AvgExecutableStageV1
   reading?: AvgReadingPlanV1
   inheritedImages?: AvgInheritedStageImageV1[]
-  inheritedVoices?: AvgInheritedStageVoiceV1[]
+  inheritedVoices?: AvgInheritedStageVoice[]
   inheritedSounds?: AvgInheritedStageSoundV1[]
 }
 export function parseAvgAuthorStageV1(value: unknown): AvgAuthorStageV1 {
@@ -38,7 +40,7 @@ export function parseAvgAuthorStageV1(value: unknown): AvgAuthorStageV1 {
   return { schema: row.schema, version: 1, aspectRatio: avgEnum(row.aspectRatio, ['16:9','4:3'] as const, 'aspectRatio'),
     stage, ...(hasReading ? { reading: parseAvgReadingPlanV1(row.reading) } : {}),
     ...(hasInherited?{inheritedImages:parseAvgInheritedStageImagesV1(row.inheritedImages,stage.assets)}:{}),
-    ...(hasInheritedVoices ? { inheritedVoices: parseAvgInheritedStageVoicesV1(row.inheritedVoices, stage.assets) } : {}),
+    ...(hasInheritedVoices ? { inheritedVoices: parseAvgInheritedStageVoices(row.inheritedVoices, stage.assets) } : {}),
     ...(hasInheritedSounds ? { inheritedSounds: parseAvgInheritedStageSoundsV1(row.inheritedSounds, stage.assets) } : {}) }
 }
 
@@ -53,6 +55,7 @@ export interface AvgAuthorWorkspaceV1 {
   mediaBatch?: AvgVisualProductionBatchV1
   imageProcessing?: AvgImageProcessingPlan
   voiceProduction?: AvgVoiceExactStorageV1
+  voiceProcessing?: AvgAudioProductionProcessingPlanV1
   soundProduction?: AvgSoundProductionDraftV1
 }
 export function parseAvgAuthorWorkspaceV1(value: unknown): AvgAuthorWorkspaceV1 {
@@ -60,8 +63,9 @@ export function parseAvgAuthorWorkspaceV1(value: unknown): AvgAuthorWorkspaceV1 
   const hasBatch = !!body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'mediaBatch')
   const hasProcessing=!!body&&Object.prototype.hasOwnProperty.call(body,'imageProcessing')
   const hasVoice=!!body&&Object.prototype.hasOwnProperty.call(body,'voiceProduction')
+  const hasVoiceProcessing=!!body&&Object.prototype.hasOwnProperty.call(body,'voiceProcessing')
   const hasSound=!!body&&Object.prototype.hasOwnProperty.call(body,'soundProduction')
-  const row = avgRecord(body, ['schema','version','basePreviewHash','systemPlan','scripts','presentation', ...(hasBatch ? ['mediaBatch'] : []),...(hasProcessing?['imageProcessing']:[]),...(hasVoice?['voiceProduction']:[]),...(hasSound?['soundProduction']:[])], 'author workspace')
+  const row = avgRecord(body, ['schema','version','basePreviewHash','systemPlan','scripts','presentation', ...(hasBatch ? ['mediaBatch'] : []),...(hasProcessing?['imageProcessing']:[]),...(hasVoice?['voiceProduction']:[]),...(hasVoiceProcessing?['voiceProcessing']:[]),...(hasSound?['soundProduction']:[])], 'author workspace')
   if (row.schema !== 'storyforge.avg.author-workspace' || row.version !== 1) throw new Error('[avg] 作者工作区版本无效')
   const scripts = avgUnique(avgList(row.scripts, 'scripts', value => {
     const script = parseAvgProfessionalArtifactV1(value)
@@ -70,10 +74,14 @@ export function parseAvgAuthorWorkspaceV1(value: unknown): AvgAuthorWorkspaceV1 
   }), script => script.sceneKey, 'workspace scripts')
   const mediaBatch=hasBatch?parseAvgVisualProductionBatchV1(row.mediaBatch):undefined,imageProcessing=hasProcessing?parseAvgImageProcessingPlan(row.imageProcessing):undefined
   const voiceProduction=hasVoice?readAvgVoiceDraftV1(row.voiceProduction).packet:undefined
+  if (hasVoiceProcessing && !voiceProduction) throw new Error('[avg-voice-process] 音量调整缺少已保存的逐句配音需求')
+  const voiceProcessing = hasVoiceProcessing
+    ? assertAvgVoiceProcessingDraftV1(row.voiceProcessing, readAvgVoiceDraftV1(voiceProduction).voice.batch.requirements) : undefined
   if(imageProcessing&&(!mediaBatch?.visualReviewPolicy||imageProcessing.entries.some(e=>!mediaBatch.requirements.some(r=>r.requirementKey===e.requirementKey))))throw new Error('[avg-process] 加工草稿缺少准确需求与独立视觉评审')
   if(imageProcessing?.version===2&&mediaBatch)assertAvgImageProcessingRequirements(imageProcessing,mediaBatch.requirements)
   return { schema: row.schema, version: 1, basePreviewHash: row.basePreviewHash === null ? null : avgHash(row.basePreviewHash, 'basePreviewHash'),
     systemPlan: parseAvgSystemPlan(row.systemPlan), scripts, presentation: parseAvgAuthorStageV1(row.presentation),
     ...(mediaBatch?{mediaBatch}:{}),...(imageProcessing?{imageProcessing}:{}),...(voiceProduction?{voiceProduction}:{}),
+    ...(voiceProcessing?{voiceProcessing}:{}),
     ...(hasSound?{soundProduction:parseAvgSoundProductionDraftV1(row.soundProduction)}:{}) }
 }

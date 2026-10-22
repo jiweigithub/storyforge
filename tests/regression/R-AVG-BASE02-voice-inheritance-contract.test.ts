@@ -7,6 +7,7 @@ import { canonicalProductProductionJsonV2 } from '../../src/lib/product-producti
 import { parseAvgAuthorStageV1 } from '../../src/lib/avg/author-workspace-contract'
 import { applyAvgVoiceChoicesToDraftV1 } from '../../src/lib/avg/voice-configuration'
 import { assertAvgInheritedVoiceBindingV1, parseAvgGeneratedVoiceSourceV1, parseAvgInheritedStageVoicesV1 } from '../../src/lib/avg/stage-voice-source-contract'
+import { parseAvgGeneratedVoiceSourceV2, parseAvgInheritedStageVoices } from '../../src/lib/avg/stage-processed-voice-source-contract'
 import { avgVoiceConfigurationFixtureV1 } from '../helpers/avg-voice-production-fixture'
 import { hashAvgVoiceTextV1 } from '../../src/lib/avg/voice-production-contract'
 
@@ -42,6 +43,27 @@ async function inheritedWriteInput() {
 }
 
 describe('AVG inherited voice portable locators and exact target consumers', () => {
+  it('keeps V1 strict and binds an explicit successor to separate raw and local producer locators', async () => {
+    const f = await fixture()
+    // Structural metadata only; actual producer/adoption/Blob authority is
+    // exercised by the complete processed-audio command-chain regression.
+    const source = parseAvgGeneratedVoiceSourceV2({ ...f.source, version: 2,
+      processing: { ...f.source.raw, schema: 'storyforge.avg.audio-processing-producer-proof', noProviderRequest: true,
+        taskKey: `avg.voice.process.${f.requirement.requirementKey}`, artifactKey: `avg.voice.processed.${f.requirement.requirementKey}`,
+        contentHash: '4'.repeat(64), processingEvidenceHash: '5'.repeat(64) } })
+    const entry = { ...f.entry, source }, asset = { ...f.asset, contentHash: source.processing.contentHash, blobContentHash: source.processing.contentHash }
+    expect(parseAvgInheritedStageVoices([entry], [asset])).toEqual([entry])
+    expect(parseAvgAuthorStageV1({ ...f.workspace.presentation, stage: { ...f.workspace.presentation.stage, assets: [asset] }, inheritedVoices: [entry] }).inheritedVoices).toEqual([entry])
+    expect(() => parseAvgGeneratedVoiceSourceV1(source)).toThrow()
+    expect(() => parseAvgInheritedStageVoicesV1([entry], [asset])).toThrow()
+    expect(() => parseAvgInheritedStageVoices([entry], [f.asset])).toThrow()
+    for (const processing of [
+      { ...source.processing, noProviderRequest: false }, { ...source.processing, taskKey: 'avg.voice.process.foreign' },
+      { ...source.processing, planHash: '0'.repeat(64) }, { ...source.processing, controlEpoch: source.raw.controlEpoch + 1 },
+      { ...source.processing, runId: 123 },
+    ]) expect(() => parseAvgGeneratedVoiceSourceV2({ ...source, processing })).toThrow()
+    expect(() => parseAvgGeneratedVoiceSourceV2({ ...source, processing: undefined })).toThrow()
+  })
   it('requires both switches for inherited generated voice writes, retaining legacy manual imports and read-only Stage parsing', async () => {
     const s = await inheritedWriteInput()
     for (const flag of ['VITE_STORYFORGE_AVG_MEDIA_PRODUCTION', 'VITE_STORYFORGE_AVG_VOICE_PRODUCTION']) vi.stubEnv(flag, '1')

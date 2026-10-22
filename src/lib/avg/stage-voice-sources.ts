@@ -5,8 +5,8 @@ import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { assertRecordInScope } from '../workspace/scope'
 import { parseAvgAuthorWorkspaceV1, type AvgAuthorStageV1, type AvgAuthorWorkspaceV1 } from './author-workspace-contract'
 import { readAvgDraftMediaV1 } from './editor-service'
-import { parseAvgAuthorVoiceChoiceV1 } from './voice-choice-contract'
-import { prepareAvgAdoptedGeneratedVoiceV1, readAvgAdoptedGeneratedVoiceV1 } from './generated-voice-source'
+import { parseAvgAuthorVoiceChoice } from './audio-choice-dispatch'
+import { prepareAvgAdoptedGeneratedVoice, readAvgAdoptedGeneratedVoice } from './generated-voice-source'
 import { assertAvgInheritedVoiceBindingV1 } from './stage-voice-source-contract'
 
 const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
@@ -19,7 +19,7 @@ export async function readAvgInheritedStageVoicesV1(input: StageSourceInput & { 
   const voices = new Map<string, { asset: FrozenRuntimeMediaAssetV2; blobObjectId: number }>()
   for (const entry of input.payload.inheritedVoices ?? []) {
     const asset = input.payload.stage.assets.find(asset => asset.assetKey === entry.assetKey)
-    const voice = await readAvgAdoptedGeneratedVoiceV1({ scope: input.scope, source: entry.source })
+    const voice = await readAvgAdoptedGeneratedVoice({ scope: input.scope, source: entry.source })
     if (!asset || !same(asset, voice.asset) || voice.sourceWorldContentHash !== input.worldContentHash
       || voice.source.productionKey === input.productionKey && voice.source.raw.buildNumber >= input.targetBuildNumber
       || input.payload.stage.cues.some(cue => cue.assetKey === asset.assetKey)) {
@@ -48,12 +48,12 @@ export async function prepareAvgInheritedVoiceDraftV1(input: StageSourceInput & 
   for (const row of choices) if (!await assertRecordInScope(input.scope, 'productBuildArtifacts', row, { owner: 'work' })) throw new Error('[avg-voice] 旧配音选择跨作品')
   for (const asset of next.presentation.stage.assets.filter(asset => asset.kind === 'voice')) {
     if (entries.some(entry => entry.assetKey === asset.assetKey)) continue
-    const matches = choices.filter(row => same(parseAvgAuthorVoiceChoiceV1(row.payloadJson).asset, asset))
+    const matches = choices.filter(row => same(parseAvgAuthorVoiceChoice(row.payloadJson).asset, asset))
     if (matches.length > 1) throw new Error('[avg-voice] 旧演出配音来源不唯一')
     const row = matches[0]
     if (!row) { await readAvgDraftMediaV1(input.scope, asset); continue }
     if (!row.id || !await assertRecordInScope(input.scope, 'productBuildArtifacts', row, { owner: 'work' })) throw new Error('[avg-voice] 旧配音选择跨作品')
-    const voice = await prepareAvgAdoptedGeneratedVoiceV1({ scope: input.scope, choiceId: row.id })
+    const voice = await prepareAvgAdoptedGeneratedVoice({ scope: input.scope, choiceId: row.id })
     if (voice.sourceWorldContentHash !== input.worldContentHash) throw new Error('[avg-voice] 配音沿用不能跨冻结世界')
     assertAvgInheritedVoiceBindingV1({ asset, requirement: voice.requirement, scripts: next.scripts, reading: next.presentation.reading })
     entries.push({ assetKey: asset.assetKey, source: voice.source,

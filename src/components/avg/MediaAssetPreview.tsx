@@ -7,8 +7,8 @@ import { readAvgRawImageCandidateBytesV2, readAvgRetainedImageCandidateBytesV1,r
 import { canonicalProductProductionJsonV2 } from '../../lib/product-production/hash'
 import { readAvgAdoptedGeneratedImageV2 } from '../../lib/avg/media-generated-reference'
 import type { AvgGeneratedImageSource } from '../../lib/avg/media-generated-reference-contract'
-import { readAvgAdoptedGeneratedVoiceV1 } from '../../lib/avg/generated-voice-source'
-import type { AvgGeneratedVoiceSourceV1 } from '../../lib/avg/stage-voice-source-contract'
+import { readAvgAdoptedGeneratedVoice } from '../../lib/avg/generated-voice-source'
+import type { AvgGeneratedVoiceSource } from '../../lib/avg/stage-processed-voice-source-contract'
 import type { AvgHistoricalVisualBoundaryV4 } from '../../lib/avg/visual-image-history'
 
 export const AVG_MEDIA_KIND_LABELS: Record<ProductMediaKind, string> = { background: '背景', 'character-pose': '角色姿势', 'character-expression': '角色表情',
@@ -28,7 +28,7 @@ type PreviewBackdrop = keyof typeof previewBackdrops
 export default function MediaAssetPreview({ scope, asset, productionId, raw, rawSound, generatedSource, generatedVoiceSource, onObserved,onUnavailable,comparisonAspectRatio,smallImageSizes,caption }: {
   scope: WorkspaceScope; asset: FrozenRuntimeMediaAssetV2; productionId?: number | null; raw?: AvgRawPreviewReference; generatedSource?: AvgGeneratedImageSource; onObserved?: () => void;onUnavailable?:()=>void
   comparisonAspectRatio?:number;smallImageSizes?:readonly number[];caption?:string
-  generatedVoiceSource?: AvgGeneratedVoiceSourceV1
+  generatedVoiceSource?: AvgGeneratedVoiceSource
   rawSound?: { artifactKey: string; version: number; contentHash: string }
 }) {
   const [url, setUrl] = useState(''), [error, setError] = useState('')
@@ -65,7 +65,7 @@ export default function MediaAssetPreview({ scope, asset, productionId, raw, raw
       if(historicalSourceJson&&!historicalJson)throw new Error('便携原图预览缺少准确历史边界')
       if(historicalJson&&(!requirementKey||processed||retained))throw new Error('历史原图预览缺少准确来源或混入了其他加工来源')
       if (generatedVoiceSourceJson) {
-        const candidate = await readAvgAdoptedGeneratedVoiceV1({ scope, source: JSON.parse(generatedVoiceSourceJson) as AvgGeneratedVoiceSourceV1 })
+        const candidate = await readAvgAdoptedGeneratedVoice({ scope, source: JSON.parse(generatedVoiceSourceJson) as AvgGeneratedVoiceSource })
         if (canonicalProductProductionJsonV2(candidate.asset) !== canonicalProductProductionJsonV2(current)) throw new Error('显示配音与准确已采用来源不一致')
         if (alive) setVoiceOrigin({ buildNumber: candidate.source.raw.buildNumber, text: candidate.requirement.text,
           speaker: candidate.requirement.speakerKey ?? '旁白', voiceId: candidate.preset.voiceId,

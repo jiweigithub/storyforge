@@ -5,7 +5,7 @@ import { avgVoiceProductionEnabledV3 } from '../../lib/avg/assembly-contract'
 import { avgRawVoiceArtifactKeyV1, avgVoiceChoiceArtifactKeyV1, avgVoiceReviewArtifactKeyV1 } from '../../lib/avg/voice-assembly-contract'
 import { parseAvgStoredAssemblyBriefV3 } from '../../lib/avg/voice-assembly-storage'
 import { readAvgVoiceDraftV1, type AvgVoiceDraftLineV1 } from '../../lib/avg/voice-draft-contract'
-import { clearAvgVoiceProductionDraftV1, saveAvgVoiceProductionDraftV1 } from '../../lib/avg/voice-draft-service'
+import { clearAvgVoiceProductionDraftV1, saveAvgVoiceProductionDraftV1, saveAvgVoiceProcessingDraftV1 } from '../../lib/avg/voice-draft-service'
 import { hashAvgSpeechProtocolV1, parseAvgSpeechProtocolV1 } from '../../lib/avg/voice-request-contract'
 import { AVG_LOCAL_VOICE_PROVIDER_V1, AVG_LOCAL_VOICE_MODEL_V1, AVG_LOCAL_VOICE_IDS_V1, AVG_LOCAL_VOICE_RIGHTS_REFERENCE_V1, avgLocalVoiceProtocolV1 } from '../../lib/avg/voice-local-profile'
 import { readConfiguredAvgVoiceDraftRouteV1 } from '../../lib/avg/media-capability'
@@ -14,6 +14,9 @@ import VoiceReviewPanel from './VoiceReviewPanel'
 import VoiceRecoveryPanel from './VoiceRecoveryPanel'
 import { stopProductProductionV1 } from '../../lib/product-production/service'
 import { canonicalStringify } from '../../lib/agent/run/hash'
+import VoiceProcessingDraftPanel from './VoiceProcessingDraftPanel'
+import { avgAudioProcessingExecutionReadyV1 } from '../../lib/avg/audio-production-brief'
+import { avgProcessedAudioArtifactKeyV1 } from '../../lib/avg/audio-production-contract'
 
 type View = Awaited<ReturnType<typeof readAvgAssemblyWorkspaceV1>>
 type DraftLine = AvgVoiceDraftLineV1 & { voiceId: string; rightsDeclaration: string; rightsReference: string; presetRevision: number }
@@ -131,7 +134,7 @@ function VoiceBatchEditor({ scope, view, workspace, disabled, canEdit, onPending
       <button className="lf-action" disabled={!pending || !rows.length || !model.trim()} onClick={() => void onAction(save)}>保存配音需求草稿</button>
       {workspace.voiceProduction && <button className="lf-action" disabled={pending} onClick={() => void onAction(async () => {
         await clearAvgVoiceProductionDraftV1({ scope, expectedDraftRevision: view.draft.revision }); await onReload(); onNotice('未使用的配音批次已移除，原制作和费用记录保留。')
-      })}>移除未使用的配音批次</button>}
+      })}>移除未使用的配音批次{workspace.voiceProcessing ? '与音量要求' : ''}</button>}
     </fieldset>
     {pending && <button className="lf-action" disabled={disabled} onClick={() => void onAction(async () => {
       setPending(false); await onReload()
@@ -150,16 +153,19 @@ export default function VoiceProductionPanel(props: PanelProps) {
   const { scope, view, workspace, disabled, canEdit, canAdopt, sourcesReady, declaration, visible, generating,
     onPending, onAction, onReload, onGenerate, onCancel, onNotice } = props
   const [formPending, setFormPending] = useState(false), [recoveryPending, setRecoveryPending] = useState(false), [reviews, setReviews] = useState<Record<string, boolean>>({})
+  const [processingPending, setProcessingPending] = useState(false)
   const [expanded, setExpanded] = useState(''), [discard, setDiscard] = useState(0)
   const reviewPending = Object.values(reviews).some(Boolean)
   const onReviewPending = useCallback((key: string, value: boolean) => setReviews(old => old[key] === value ? old : { ...old, [key]: value }), [])
-  useEffect(() => { onPending(formPending || reviewPending || recoveryPending); return () => onPending(false) }, [formPending, reviewPending, recoveryPending, onPending])
+  useEffect(() => { onPending(formPending || reviewPending || recoveryPending || processingPending); return () => onPending(false) }, [formPending, reviewPending, recoveryPending, processingPending, onPending])
   const stored = view.details?.executionBrief?.avgAssembly
   const assembly = stored?.version === 3 ? parseAvgStoredAssemblyBriefV3(stored).assembly : null
   const batch = assembly?.voice.batch, productionId = view.details?.production.id
   const accepted = (key: string) => view.artifacts.find(a => a.artifactKey === key && a.status === 'accepted')
   const pending = (key: string) => view.artifacts.find(a => a.artifactKey === key && a.status === 'pending')
   const outstanding = batch?.requirements.filter(r => !accepted(avgRawVoiceArtifactKeyV1(r.requirementKey))) ?? []
+  const processing = view.details?.executionBrief?.avgAudioProcessing?.entries.filter(e => e.domain === 'voice') ?? []
+  const unfinishedProcessing = processing.filter(e => !accepted(avgProcessedAudioArtifactKeyV1('voice', e.requirementKey)))
   const newRequests = outstanding.filter(r => !assembly?.voice.recovery?.retained.some(a => a.requirementKey === r.requirementKey)).length
   const allChoices = !!batch && batch.requirements.every(r => accepted(avgVoiceChoiceArtifactKeyV1(r.requirementKey)))
   const enabled = avgVoiceProductionEnabledV3()
@@ -171,12 +177,25 @@ export default function VoiceProductionPanel(props: PanelProps) {
   const stoppedBatch = !!view.details?.build && ['cancelled', 'failed', 'recovery-required'].includes(view.details.build.status)
   return <section className="lf-paper" aria-label="配音生产工作台">
     <VoiceBatchEditor key={`${scope.workId}:${workspace.voiceProduction?.contentHash ?? 'new'}:${discard}`} {...props}
-      disabled={disabled || reviewPending || recoveryPending || generating} canEdit={canEdit && !generating} onPending={setFormPending}
+      disabled={disabled || reviewPending || recoveryPending || processingPending || generating} canEdit={canEdit && !generating} onPending={setFormPending}
       onReload={async () => { await onReload(); setDiscard(n => n + 1) }} />
+    {editableVoice && (workspace.voiceProcessing || import.meta.env.VITE_STORYFORGE_AVG_AUDIO_PROCESSING === '1') && <VoiceProcessingDraftPanel
+      key={`${scope.workId}:${workspace.voiceProduction!.contentHash}:${canonicalStringify(workspace.voiceProcessing ?? null)}:${discard}`}
+      requirements={editableVoice.batch.requirements} saved={workspace.voiceProcessing} ready={avgAudioProcessingExecutionReadyV1()}
+      disabled={disabled || !canEdit || formPending || reviewPending || recoveryPending || generating} onPending={setProcessingPending}
+      onSave={async plan => {
+        let saved = false
+        await onAction(async () => {
+          await saveAvgVoiceProcessingDraftV1({ scope, expectedDraftRevision: view.draft.revision, plan })
+          await onReload(); saved = true
+          onNotice('音量调整要求已保存，原音频保留。请重新核对制作方案后另行明确开始。')
+        })
+        return saved
+      }} />}
     {!enabled && <p>实验性配音生产尚未开放；可以保存需求草稿并查看已有记录。</p>}
     {canFinishBatch && productionId && view.details?.build?.id
       && (view.details.build.previewHash || ['cancelled', 'failed', 'recovery-required'].includes(view.details.build.status)) && <button className="lf-action"
-        disabled={disabled || (!canEdit && !stoppedBatch) || formPending || reviewPending || recoveryPending || generating || pendingBrief}
+        disabled={disabled || (!canEdit && !stoppedBatch) || formPending || reviewPending || recoveryPending || processingPending || generating || pendingBrief}
         onClick={() => void onAction(async () => {
           await keepAvgGeneratedVoiceStageDraftV1({ scope, productionId, expectedDraftRevision: view.draft.revision,
             expectedBuildId: view.details!.build!.id! })
@@ -185,27 +204,28 @@ export default function VoiceProductionPanel(props: PanelProps) {
         })}>保留已采用配音，结束本批需求</button>}
     {batch && productionId && !pendingBrief && <>
       <h4>本批配音与审听</h4><p>共 {batch.requirements.length} 句，待接收 {outstanding.length} 句，本次至多 {newRequests} 次新配音请求。原始费用与失败记录保留。</p>
+      {!!processing.length && <p>另有 {unfinishedProcessing.length} 句待本地音量加工，不增加配音请求。</p>}
       {assembly?.image && <p>这是图音联合批次；继续执行也会处理本方案已确认的图片任务，最多 {assembly.image.mediaBatch.requirements.filter(r => !accepted(`avg.media.raw.${r.requirementKey}`) && !assembly.image!.imageRecovery?.retained.some(a => a.requirementKey === r.requirementKey)).length} 次新图片请求。</p>}
-      {generating ? <button className="lf-action" onClick={onCancel}>停止等待并保留本批记录</button> : <button className="lf-action" disabled={disabled || formPending || reviewPending || recoveryPending || !enabled || !canAdopt || !sourcesReady || !outstanding.length} onClick={() => void onGenerate()}>执行已确认的配音及联合媒资任务</button>}
+      {generating ? <button className="lf-action" onClick={onCancel}>停止等待并保留本批记录</button> : <button className="lf-action" disabled={disabled || formPending || reviewPending || recoveryPending || processingPending || !enabled || !canAdopt || !sourcesReady || (!outstanding.length && !unfinishedProcessing.length)} onClick={() => void onGenerate()}>执行已确认的配音及联合媒资任务</button>}
       {batch.requirements.map(r => { const raw = accepted(avgRawVoiceArtifactKeyV1(r.requirementKey)); return <article className="avg-assembly-candidate" key={r.requirementKey}>
-        <p>{r.text}</p>{raw ? <><button className="lf-action" disabled={formPending || reviewPending || recoveryPending} onClick={() => setExpanded(expanded === r.requirementKey ? '' : r.requirementKey)}>查看并审听此句</button>
+        <p>{r.text}</p>{raw ? <><button className="lf-action" disabled={formPending || reviewPending || recoveryPending || processingPending} onClick={() => setExpanded(expanded === r.requirementKey ? '' : r.requirementKey)}>查看并审听此句</button>
           {expanded === r.requirementKey && <VoiceCandidate scope={scope} productionId={productionId} row={raw}
             processed={accepted(`avg.voice.processed.${r.requirementKey}`)}
             review={accepted(avgVoiceReviewArtifactKeyV1(r.requirementKey))} pendingReview={pending(avgVoiceReviewArtifactKeyV1(r.requirementKey))}
             choice={accepted(avgVoiceChoiceArtifactKeyV1(r.requirementKey))} pendingChoice={pending(avgVoiceChoiceArtifactKeyV1(r.requirementKey))}
-            disabled={disabled || !visible || formPending || recoveryPending || generating} canAdopt={canAdopt} declaration={declaration}
+            disabled={disabled || !visible || formPending || recoveryPending || processingPending || generating} canAdopt={canAdopt} declaration={declaration}
             onReviewPending={onReviewPending} onAction={onAction} onReload={onReload} />}</> : <p>等待接收准确音频</p>}
       </article> })}
-      <button className="lf-action" disabled={disabled || formPending || reviewPending || recoveryPending || !canAdopt || !allChoices} onClick={() => void onAction(async () => {
+      <button className="lf-action" disabled={disabled || formPending || reviewPending || recoveryPending || processingPending || !canAdopt || !allChoices} onClick={() => void onAction(async () => {
         await configureAvgChosenVoiceDraftV3({ scope, productionId, expectedDraftRevision: view.draft.revision }); await onReload()
         onNotice('已采用配音已配置到准确句子。请回到制作页另外确认演出，再生成联合预览。')
       })}>将已采用配音配置到逐句阅读</button>
-      {canAdopt && <button className="lf-action" disabled={disabled || formPending || reviewPending || recoveryPending || generating} onClick={() => void onAction(async () => {
+      {canAdopt && <button className="lf-action" disabled={disabled || formPending || reviewPending || recoveryPending || processingPending || generating} onClick={() => void onAction(async () => {
         await stopProductProductionV1({ scope, production: view.details!.production }); await onReload()
         onNotice('本批已明确停止，原始结果和调用记录保留。请核对保留/重录清单后准备新版本。')
       })}>停止本批并选择保留或重录</button>}
     </>}
-    <VoiceRecoveryPanel scope={scope} view={view} disabled={disabled || formPending || reviewPending || generating} visible={visible}
+    <VoiceRecoveryPanel scope={scope} view={view} disabled={disabled || formPending || reviewPending || processingPending || generating} visible={visible}
       onPending={setRecoveryPending} onAction={onAction} onReload={onReload} onNotice={onNotice} />
   </section>
 }

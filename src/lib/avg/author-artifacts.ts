@@ -1335,6 +1335,40 @@ export async function readAvgAdoptedGeneratedVoiceChoiceV1(input: { scope: Works
   })
 }
 
+/** Explicit read-only successor for an adopted processed voice. The original
+ * V1 reader above remains strict; old receipts never grant a new adoption. */
+export async function readAvgAdoptedGeneratedVoiceChoiceV2(input: Parameters<typeof readAvgAdoptedGeneratedVoiceChoiceV1>[0]) {
+  const scope = await resolveScope({ scope: input.scope }), proofTables = await mediaProofTables(input.buildId)
+  return db.transaction('r', scopeTransactionTables(db.productProductions, db.productProductionBriefs, db.productProductionCommands,
+    db.productBuilds, db.productBuildArtifacts, db.avgDraftMedia, db.mediaBlobObjects, ...proofTables), async () => {
+    const context = await authority(scope, input.buildId, true, false, input.controlEpoch, 'voice')
+    const [row] = await acceptedInputs(scope, input.buildId, input.controlEpoch, [input.artifactKey])
+    if (row.version !== input.version || row.contentHash !== input.contentHash) throw new Error('[avg-voice-process] 沿用来源不是准确已采用的加工配音')
+    const choice = parseAvgAuthorVoiceChoice(row.payloadJson), voice = await readVoiceDefinition(context)
+    if (choice.version !== 2) throw new Error('[avg-voice-process] 加工配音沿用不能借用原音频选择')
+    const task = context.plan.tasks.find(t => t.taskKey === `avg.author.voice-choice.${choice.requirementKey}`)
+    if (!task || task.kind !== 'avg-author-voice-choice' || task.executionMode !== 'human-import' || task.skillId !== null
+      || row.kind !== 'presentation' || canonicalProductProductionJsonV2(task.outputArtifactKeys) !== canonicalProductProductionJsonV2([row.artifactKey])
+      || canonicalProductProductionJsonV2(task.inputArtifactKeys) !== canonicalProductProductionJsonV2([choice.raw.artifactKey, choice.review.artifactKey, choice.processed.artifactKey])) {
+      throw new Error('[avg-voice-process] 沿用来源不属于原冻结加工配音选择任务')
+    }
+    const selected = await readAvgFrozenChosenVoiceSourceV2({ scope, buildId: input.buildId, ...voice, choice,
+      frozen: { expectedBuildRevision: context.build.stateRevision, expectedBriefHash: context.build.briefHash,
+        expectedPlanHash: context.build.planHash, sourceControlEpoch: input.controlEpoch } })
+    const review = await readChoiceVoiceReview(context, scope, choice, selected, input.controlEpoch)
+    const candidate = await assertFrozenAuthorCandidateV1(context, row, task, [selected.raw, review.row, selected.processed], input.controlEpoch)
+    if (candidate.version !== 10 || canonicalProductProductionJsonV2(candidate.voiceChoiceValidation) !== canonicalProductProductionJsonV2(selected.validation)) {
+      throw new Error('[avg-voice-process] 加工配音沿用缺少原加工版本的独立审听与准确作者采用')
+    }
+    return { choice, artifact: ref(row), authorReceiptHash: String(JSON.parse(row.metadataJson).receiptHash),
+      review: { artifact: review.artifact, authorReceiptHash: review.authorReceiptHash },
+      rawProof: parseAvgRetainedVoiceProofV1(selected.rawProof), processingProof: selected.processingProof,
+      requirement: selected.payload.requirement, preset: selected.payload.preset, asset: selected.asset,
+      blobObjectId: selected.blobObjectId, productionKey: context.production.productionKey,
+      sourceWorldContentHash: context.brief.source.worldContentHash }
+  })
+}
+
 /** Read-only proof of the original author receipts on an immutable Build.
  * It deliberately grants no adoption or compilation authority to old Builds. */
 export function verifyFrozenAvgAuthorInputsV1(input: Omit<Parameters<typeof readAuthorInputs>[0], 'includeSceneScripts' | 'includeAuthorStage'>) {

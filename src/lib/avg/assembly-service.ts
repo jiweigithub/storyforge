@@ -60,6 +60,8 @@ import { parseAvgVoiceRecoveryV1, type AvgVoiceRecoveryV1 } from './voice-recove
 import { avgVisualPlanningExecutionReadyV5 } from './visual-planning-brief-v5'
 import type { AvgVisualPlanningDraftV4,AvgVisualPlanningDraftV5 } from './visual-planning-workspace'
 import { assertAvgVisualPlanningRestartKnownV4, assertAvgVisualStageRetentionKnownV4 } from './visual-planning-restart'
+import { avgAudioProcessingExecutionReadyV1, avgAudioProcessingGateIdsV1 } from './audio-production-brief'
+import { assertAvgVoiceProcessingDraftV1 } from './voice-processing-draft-contract'
 
 const commandId = (label: string) => `avg.assembly.${label}.${crypto.randomUUID()}`
 
@@ -186,6 +188,7 @@ export async function keepAvgGeneratedVoiceStageDraftV1(input: { scope: Workspac
   const consumed = current.voice.batch.requirements.filter(r => workspace.presentation.stage.assets.some(asset => asset.assetKey === r.assetKey))
   if (!consumed.length) throw new Error('[avg-voice] 没有可保留的本批演出配音；未使用的批次请明确移除')
   delete workspace.voiceProduction
+  delete workspace.voiceProcessing
   const next = await prepareAvgInheritedVoiceDraftV1({ scope: input.scope, workspace, build,
     productionKey: details.production.productionKey, targetBuildNumber: Math.max(...details.buildHistory.map(row => row.buildNumber)) + 1,
     worldContentHash: brief.source.worldContentHash })
@@ -721,6 +724,9 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
     ?{version:5 as const,configuration:await planningServices!.prepareAvgVisualPlanningConfigurationV5(input.scope,workspace,input.visualPlanning,visualAdapter)}
     :{version:4 as const,configuration:await planningServices!.prepareAvgVisualPlanningConfigurationV4(input.scope,workspace,input.visualPlanning,visualAdapter)}):null
   const voice = workspace.voiceProduction ? await validateAvgVoiceDraftSourcesV1(workspace.voiceProduction, workspace) : null
+  const voiceProcessing = workspace.voiceProcessing && voice
+    ? assertAvgVoiceProcessingDraftV1(workspace.voiceProcessing, voice.voice.batch.requirements) : undefined
+  if (voiceProcessing && !avgAudioProcessingExecutionReadyV1()) throw new Error('[avg-voice-process] 本地音量加工尚未开放；已保存要求继续保留')
   if (voice && (!avgVoiceProductionEnabledV3() || !avgMediaProductionEnabledV2())) throw new Error('[avg-voice] 配音生产尚未开放；已保存批次不能按零调用流程开始')
   if (voice && draft.productionId && !input.voiceRecovery) {
     const current = await readProductProductionDetailsV1(input.scope, draft.productionId, ['avg'])
@@ -894,7 +900,7 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
     return draftProductProductionBriefV3({ scope:input.scope,worldReleaseId:draft.worldReleaseId!,
       suggestionKey:suggestions.suggestions[0].suggestionKey,productType:'avg',scale:'scene',visualLevel:'none',audioLevel:'none',requiredFacts:[],forbiddenChanges:['源世界只读'] })
   })()
-  const { avgVisualPlanning: _priorVisual, avgSoundPlanning: _priorSound, ...sourceBrief } = sourceValue
+  const { avgVisualPlanning: _priorVisual, avgSoundPlanning: _priorSound, avgAudioProcessing: _priorProcessing, ...sourceBrief } = sourceValue
   const assets = workspace.presentation.stage.assets
   const baseAssembly = { schema: 'storyforge.avg.assembly-brief' as const, title: work.title,
     sceneKeys: workspace.systemPlan.scenes.map(scene => scene.key), mediaAssetKeys: runtimeMediaKeys(workspace), basePackageHash }
@@ -918,15 +924,16 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
     intent:{ ...sourceBrief.intent,openingSituation:'作者确认的系统、固定文本与合法媒资联合预览',coreExperience:['作者编辑、明确确认、确定性组装和试玩'] },
     ...(priorBrief?.evolution ? { evolution:priorBrief.evolution } : {}),
     avgAssembly,
+    ...(voiceProcessing ? { avgAudioProcessing: voiceProcessing } : {}),
     qualityProfile:'prototype',capabilityRequirements:[...(mediaCapability?[mediaCapability]:[]),...(voiceCapability?[voiceCapability]:[])],
     consultationBudget:{maximumModelCalls:0,maximumInputTokens:0,maximumOutputTokens:0,maximumCostUsd:0},
-    productionBudget:voiceAssembly ? avgVoiceProductionBudgetV3(voiceAssembly) : workspace.mediaBatch ? avgVisualProductionBudgetV2(workspace.mediaBatch.requirements.length,null,recovery?.retained.length??0,workspace.imageProcessing?.entries.length??0) : { ...sourceBrief.productionBudget,maximumModelCalls:0,maximumInputTokens:100_000,maximumOutputTokens:0,maximumMediaCalls:0,
+    productionBudget:voiceAssembly ? avgVoiceProductionBudgetV3(voiceAssembly, null, voiceProcessing) : workspace.mediaBatch ? avgVisualProductionBudgetV2(workspace.mediaBatch.requirements.length,null,recovery?.retained.length??0,workspace.imageProcessing?.entries.length??0) : { ...sourceBrief.productionBudget,maximumModelCalls:0,maximumInputTokens:100_000,maximumOutputTokens:0,maximumMediaCalls:0,
       maximumCostUsd:0,maximumDurationMs:180_000,maximumStorageBytes:64*1024*1024 },
     ...(workspace.mediaBatch || voiceAssembly ? { externalDataPolicy: { ...sourceBrief.externalDataPolicy,
       allowedDataClasses: voiceAssembly ? avgVoiceProductionDataClassesV3(voiceAssembly) : [...new Set([...sourceBrief.externalDataPolicy.allowedDataClasses, ...mediaCapability!.allowedDataClasses])],
       allowReferenceImages: workspace.mediaBatch?.requirements.some(r => r.references.length > 0) ?? false, allowVoiceScripts: !!voiceAssembly },
       fallbackPolicy: { allowTextOnly: false, allowExistingProjectMedia: true, allowProceduralAudio: false, onRequiredCapabilityMissing: 'pause' } } : {}),
-    completionContract:{ requiresPlayablePreview:true,requiredGateIds:voiceAssembly ? avgVoiceAssemblyGateIdsV3(voiceAssembly) : workspace.mediaBatch ? avgMediaAssemblyGateIdsV2(workspace.mediaBatch,workspace.imageProcessing) : [...AVG_ASSEMBLY_GATE_IDS_V1],minimumMediaCoverage:1,allowSoftWaivers:false },
+    completionContract:{ requiresPlayablePreview:true,requiredGateIds:voiceAssembly ? [...avgVoiceAssemblyGateIdsV3(voiceAssembly), ...(voiceProcessing ? avgAudioProcessingGateIdsV1(voiceProcessing) : [])] : workspace.mediaBatch ? avgMediaAssemblyGateIdsV2(workspace.mediaBatch,workspace.imageProcessing) : [...AVG_ASSEMBLY_GATE_IDS_V1],minimumMediaCoverage:1,allowSoftWaivers:false },
     unresolvedDecisionKeys:[] })
   if(visual)brief=parseProductProductionBriefV3(visual.version===5?planningServices!.completeAvgVisualPlanningBriefV5(brief,visual.configuration):planningServices!.completeAvgVisualPlanningBriefV4(brief,visual.configuration))
   if(sound)brief=soundServices!.completeAvgSoundPlanningBriefV1(brief,sound)
@@ -969,6 +976,10 @@ export async function startAvgAssemblyV1(input: { scope: WorkspaceScope; product
     }
   }
   if (workspace.voiceProduction && assembly.version !== 3) throw new Error('[avg-voice] 草稿已包含配音批次，请重新准备匹配的制作方案')
+  if (canonicalProductProductionJsonV2(workspace.voiceProcessing ?? null) !== canonicalProductProductionJsonV2(brief.avgAssembly?.version === 3 ? brief.avgAudioProcessing ?? null : null)) {
+    throw new Error('[avg-voice-process] 音量要求与制作方案不一致，请重新核对方案')
+  }
+  if (assembly.version === 3 && brief.avgAudioProcessing && !avgAudioProcessingExecutionReadyV1()) throw new Error('[avg-voice-process] 本地音量加工尚未开放')
   if (assembly.version === 3) {
     if (!avgVoiceProductionEnabledV3() || !avgMediaProductionEnabledV2()) throw new Error('[avg-voice] 配音生产尚未开放')
     if (!workspace.voiceProduction) throw new Error('[avg-voice] 草稿缺少冻结的准确配音批次')
