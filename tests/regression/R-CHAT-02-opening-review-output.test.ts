@@ -3,14 +3,14 @@ import Ajv from 'ajv'
 import {db} from '../../src/lib/db/schema'
 import {chatOpeningReviewOutputSchemaV1, chatOpeningReviewOutputSchemaV2} from '../../src/lib/character-interaction/opening-review-output'
 import {parseChatOpeningReviewDraftV1} from '../../src/lib/character-interaction/situation-production-review'
-import {chatOpeningContinuationReviewPromptV1, chatOpeningScopedReviewPromptV1, chatOpeningBackgroundProductionPromptV1, chatOpeningBackgroundReviewPromptV1} from '../../src/lib/character-interaction/opening-continuation'
+import {chatOpeningContinuationReviewPromptV1, chatOpeningScopedReviewPromptV1, chatOpeningBackgroundProductionPromptV2, chatOpeningBackgroundReviewPromptV2} from '../../src/lib/character-interaction/opening-continuation'
 import {executeProductProductionCommand} from '../../src/lib/product-production/commands'
 import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
 import {runProductProductionUntilBlockedV1} from '../../src/lib/product-production/scheduler'
 import {readProductProductionDetailsV1, retryProductProductionBlockerV1} from '../../src/lib/product-production/service'
 import {estimateTokens, trimMessagesToFit} from '../../src/lib/ai/context-budget'
 import {estimateChatRequestOptionsTokens} from '../../src/lib/ai/client'
-import {chatOpeningAgencyReviewFixture, chatSituationCandidatesFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatOpeningAgencyReviewFixture, chatOpeningDevelopmentReviewFixture, chatSituationCandidatesFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
 
 beforeEach(async () => {await db.delete(); await db.open()})
 afterEach(async () => {await db.delete()})
@@ -104,8 +104,8 @@ it.each(['accepted', 'provider-ignored-schema', 'semantic-rejection', 'schema-bu
           .filter(row => row.artifactKey === 'content.chat-candidates').last())!.payloadJson)
       let output = JSON.stringify(candidates)
       if (!isOpening) {
-        expect(request.jsonSchema?.name).toBe('chat_opening_review_v2')
-        expect(request.system).toBe(chatOpeningBackgroundReviewPromptV1())
+        expect(request.jsonSchema?.name).toBe('chat_opening_review_v3')
+        expect(request.system).toBe(chatOpeningBackgroundReviewPromptV2())
         expect(request.maximumOutputTokens).toBe(10_000)
         // A complete ~18k review fits the existing 32k Codex preset with the
         // v8 request cap; the former 15k output allocation would clip input.
@@ -117,7 +117,7 @@ it.each(['accepted', 'provider-ignored-schema', 'semantic-rejection', 'schema-bu
         expect(request.contextText).not.toContain('REJECTED_REVIEW_NOT_SOURCE')
         expect(request.contextText).not.toContain('storyforge.product-production.repair-feedback')
         reviewInputs.push({source, candidates})
-        const report = chatOpeningAgencyReviewFixture(candidates)
+        const report = chatOpeningDevelopmentReviewFixture(candidates)
         const check = report.options[0].checks.find(item => item.check === 'knowledge-and-player-boundaries')!
         if (scenario === 'provider-ignored-schema' || scenario === 'independent-retry' && reviewInputs.length === 1) {
           check.evidence = [{target: 'source', pointer: '/contentBoundaries', quote: source.settings.contentBoundaries}]
@@ -131,7 +131,7 @@ it.each(['accepted', 'provider-ignored-schema', 'semantic-rejection', 'schema-bu
         if (scenario !== 'provider-ignored-schema' && scenario !== 'independent-retry') expect(new Ajv().compile(request.jsonSchema!.schema)(report)).toBe(true)
         output = rawReview = JSON.stringify(report)
         rejectedReviews.push(rawReview)
-      } else expect(request.system).toBe(chatOpeningBackgroundProductionPromptV1())
+      } else expect(request.system).toBe(chatOpeningBackgroundProductionPromptV2())
       // Even a parseable body cannot override an observed truncated response.
       return {output, finishReason: !isOpening && scenario === 'output-limit' ? 'length' : 'stop',
         usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {
@@ -147,7 +147,7 @@ it.each(['accepted', 'provider-ignored-schema', 'semantic-rejection', 'schema-bu
         if (scenario !== 'schema-budget' || input.task.taskKey !== 'content.chat-opening-review') return configured(input)
         // The text alone fits exactly; the additional wire schema must stop before payment.
         return configured({...input, attemptBudgetReservation: {...input.attemptBudgetReservation!,
-          inputTokens: estimateTokens(input.contextText + chatOpeningBackgroundReviewPromptV1())}})
+          inputTokens: estimateTokens(input.contextText + chatOpeningBackgroundReviewPromptV2())}})
       },
     })
     await execute()

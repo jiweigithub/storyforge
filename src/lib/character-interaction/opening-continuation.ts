@@ -1,5 +1,6 @@
 import {chatOpeningReferencePromptV3} from './opening-option-repair'
 import {chatOpeningReviewPromptV1} from './situation-production-review'
+import {CHAT_OPENING_DEVELOPMENT_REVIEW_RULE_V3} from './opening-development'
 
 /** New frozen producer/reviewer policy, using the existing situation fields.
  * These instructions do not grant facts, permissions or predetermined results. */
@@ -54,4 +55,22 @@ export function chatOpeningBackgroundReviewPromptV1(): string {
 幕后事实可以作为背景完整性的证据，但不能作为角色当前知道或能行动的依据。检查它是否保留原真相、当前知情范围及获准发现条件；同一条隐情不得借助公开方向或收束条件提前扩散。发现不足时明确判不通过并引用具体缺口，不以“未来语气”“只是条件”免除知情检查。
 这不是要求所有故事都有隐情或每次行动都有发现。已具备实际条件的直接解决、日常互动、合理等待和自然收束同样成立；结合候选自身的目标与条件判断，不凑第二条路线或强制玩家合作。
 ` + chatOpeningIndependentReviewPromptV1()
+}
+
+/** v14 prepares usable circumstances before choosing dramatic directions. */
+export function chatOpeningBackgroundProductionPromptV2(): string {
+  return `先在原事项与创作权限内确定本段演绎所依赖的实质背景，再组织开场。背景可包括某件普通资源为何可用、已有资料中的相关内容、各方不同关切、一个需要取舍的实际条件或有原因的阻碍；不能只有空间位置、照明、空白记录与“可以试试看”。这些是此刻已存在的条件，不是角色未来必然成功的结果。
+对拟定首步做一次条件核对：它具体能处理原事项的哪一部分？后续所需的接触、使用、询问或发现条件是否真的有依据？能看到对象不等于能处置它，幕后藏有答案不等于角色有路抵达答案。若首步只是局部尝试，且当前没有真实阻碍要求等待，则在已有或获准新增的背景中准备一个有实质差异的后续办法。不同办法应改变待核实的问题、信息来源、取舍或关系需要；让玩家换个位置旁观、重复问许可或挪到相邻位置检查，不算另一种办法。
+把支持这些办法的当前条件写入 localFacts，把角色可考虑的行动写入 possibilities 并引用其实际已知依据。未知结果保持未知；既定隐情和发现条件不能因此公开、改写或被普通背景绕过。背景里已有完整真相时，也须分别准备合法可接触的条件，不能期待角色猜中答案或后来凭空得到许可。
+原事项若可直接处理、自然伴聊或已有依据支持等待，按实际需要准备，不强凑第二条路线。最终仍只交付背景、动机、问题和可能方向，由玩家与角色实际行动决定后果。
+已确认来源逐字保留，goals.desire 与 threads.question 保留原事项，不能被首步手段替换。新增事实只描述权限内尚未设定的普通条件；不得重新解释原作或将既定秘密复制成公开线索。角色已知内容给对应 audienceKeys；尚无人知道的背景用空 audienceKeys，只有原权限允许时才附 discovery，给出已知可接触前提和实际发现条件。所有标题、pitch、目标、猜测、方向和事项均按各自读者的知情范围书写。新增人物与人物回应仍受原权限约束，不预写玩家同意、他人合作、未来危机或时间流逝。
+` + chatOpeningReferencePromptV3()
+}
+
+/** v9 adds an explicit development witness; v7/v8 prompt bytes remain frozen. */
+export function chatOpeningBackgroundReviewPromptV2(): string {
+  return CHAT_OPENING_DEVELOPMENT_REVIEW_RULE_V3 + chatOpeningBackgroundReviewPromptV1()
+    .replace('输出字段与五项审查维度保持原样。', '五项审查维度保持原样，另按前述规则返回 development。')
+    .replace('"optionKey":"输入中的标识","agency"', '"optionKey":"输入中的标识","development":{"mode":"direct","possibilityIndex":0,"basisFactKeys":["事实"],"expectedChange":"现有条件怎样支持原事项","unresolved":"尚待核实或决定的条件"},"agency"')
+    .replace('每个 options 项还须包含前述 agency 字段，其余不得增添。', '每个 options 项还须包含前述 agency 与 development 字段，其余不得增添。')
 }

@@ -1,4 +1,4 @@
-import {CHAT_OPENING_REVIEW_KEY, assertChatOpeningReviewedV1} from '../character-interaction/situation-production-review'
+import {CHAT_OPENING_REVIEW_KEY, assertChatOpeningReviewedV1, minimumChatOpeningReviewVersionV1} from '../character-interaction/situation-production-review'
 import {CHAT_MEDIA_AUTHOR_GATE, readCurrentChatMediaReviewV1} from './chat-media-authority'
 import {confirmChatMediaSelectionV1} from '../character-interaction/media-selection'
 import {readChatConsultationLineageWitnessV1} from '../character-interaction/consultation-harness'
@@ -2050,11 +2050,13 @@ async function applyCommand(input: {
       const candidates = rows.filter(row => row.artifactKey === 'content.chat-candidates')
       if (source.length !== 1 || candidates.length !== 1) reject('invalid-state-transition', '初始情境来源或候选版本不唯一')
       try {
-        if (parseProductProductionPlanV3(build.planJson).tasks.find(task => task.taskKey === command.blockerKey)?.inputArtifactKeys.includes(CHAT_OPENING_REVIEW_KEY)) {
+        const authorTask = parseProductProductionPlanV3(build.planJson).tasks.find(task => task.taskKey === command.blockerKey)
+        if (authorTask && minimumChatOpeningReviewVersionV1(authorTask.acceptanceGateIds) > 1 && !authorTask.inputArtifactKeys.includes(CHAT_OPENING_REVIEW_KEY)) reject('invalid-state-transition', '开场审查依赖不完整')
+        if (authorTask?.inputArtifactKeys.includes(CHAT_OPENING_REVIEW_KEY)) {
           const reports = rows.filter(row => row.artifactKey === CHAT_OPENING_REVIEW_KEY)
           if (reports.length !== 1) reject('invalid-state-transition', '缺少唯一开场叙事审查')
           const input = JSON.parse(source[0].payloadJson) as ChatNarrativeProductionSourceV1
-          await assertChatOpeningReviewedV1(JSON.parse(reports[0].payloadJson), input, parseChatSituationCandidatesV1(JSON.parse(candidates[0].payloadJson), input), command.resolution.chatSituation.selectedOptionKey)
+          await assertChatOpeningReviewedV1(JSON.parse(reports[0].payloadJson), input, parseChatSituationCandidatesV1(JSON.parse(candidates[0].payloadJson), input), command.resolution.chatSituation.selectedOptionKey, minimumChatOpeningReviewVersionV1(authorTask.acceptanceGateIds))
         }
         await selectChatNarrativeCandidateV1({source: JSON.parse(source[0].payloadJson) as ChatNarrativeProductionSourceV1,
           candidates: JSON.parse(candidates[0].payloadJson), selection: {

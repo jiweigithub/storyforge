@@ -5,7 +5,7 @@ import {seedChatSourceUnitConfirmationFixture, sourceUnitAuthorizationReportFixt
 import {saveChatDraftV1, readChatDraftV1} from '../../src/lib/character-interaction/draft-service'
 import {reviewChatSourceUnitConfirmationV1, adoptChatSourceUnitConfirmationV1} from '../../src/lib/character-interaction/source-unit-confirmation-harness'
 import {chatRoleProfileCompilerInput} from '../helpers/chat-role-profile'
-import {chatSituationCandidatesFixture, chatSituationReferenceDraftFixture, chatOpeningAgencyReviewFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatSituationCandidatesFixture, chatSituationReferenceDraftFixture, chatOpeningDevelopmentReviewFixture} from '../helpers/chat-narrative-production-fixture'
 import type {ChatNarrativeProductionSourceV1} from '../../src/lib/character-interaction/narrative-production'
 import {executeProductProductionCommand} from '../../src/lib/product-production/commands'
 import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
@@ -62,7 +62,7 @@ it.each([false, true])('carries author-confirmed units through real production c
     // The author-confirmed units, including undiscoverable secrets, must survive
     // even when the model selects no world fact at all.
     if (references) for (const option of references.options) option.situation.worldFactKeys = []
-    const output = isGeneration ? references ?? candidates : isReview ? chatOpeningAgencyReviewFixture(candidates) : {schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: []}
+    const output = isGeneration ? references ?? candidates : isReview ? chatOpeningDevelopmentReviewFixture(candidates) : {schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: []}
     return {output: JSON.stringify(output), usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {
       schema: 'storyforge.provider-binding-receipt', version: 1, requirementKey, adapterId: 'configured-text.v1', adapterVersion: 1,
       provider: 'fixture', model: 'fixture-model', endpointOrigin: 'https://fixture.invalid', executionLocation: 'browser-direct',
@@ -83,7 +83,8 @@ it.each([false, true])('carries author-confirmed units through real production c
   expect(details.build!.status, details.build!.failureJson).toBe('release-ready')
   const completed = await listProductProductionReviewArtifactsV1({scope: f.scope, buildId: details.build!.id!}), runtime = parseProductRuntimePackageV1(completed.find(a => a.artifactKey === 'runtime.package')!.payload)
   const reviewPayload = completed.find(a => a.artifactKey === 'quality.chat-openings')!.payload
-  expect(reviewPayload).toMatchObject({version: 2, options: expect.arrayContaining([expect.objectContaining({agency: expect.objectContaining({mode: 'act'})})])})
+  expect(reviewPayload).toMatchObject({version: 3, options: expect.arrayContaining([expect.objectContaining({agency: expect.objectContaining({mode: 'act'})})])})
+  expect(JSON.stringify(runtime)).not.toContain('工程注入的背景依据')
   const source = runtime.interaction!.chatSource!, story = runtime.interaction!.chatNarrative!
   expect(source.version).toBe(6); expect(story.permissions.allowInquiryResults).toBe(true)
   expect(source.sourceUnits).toEqual(brief.characterChatSourceUnits)

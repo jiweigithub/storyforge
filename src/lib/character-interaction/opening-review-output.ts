@@ -80,6 +80,16 @@ export function chatOpeningReviewOutputSchemaV1(
 export function chatOpeningReviewOutputSchemaV2(
   source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1,
 ): NonNullable<ChatRequestOptions['jsonSchema']> {
+  return flatReviewSchema(source, candidates, 2)
+}
+
+export function chatOpeningReviewOutputSchemaV3(
+  source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1,
+): NonNullable<ChatRequestOptions['jsonSchema']> {
+  return flatReviewSchema(source, candidates, 3)
+}
+
+function flatReviewSchema(source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1, version: 2 | 3): NonNullable<ChatRequestOptions['jsonSchema']> {
   parseChatSituationCandidatesV1(candidates, source)
   const text = (maxLength: number) => ({type: 'string', minLength: 1, maxLength})
   const object = (properties: Record<string, unknown>) =>
@@ -99,13 +109,20 @@ export function chatOpeningReviewOutputSchemaV2(
       expectedChange: text(600), unresolved: text(600),
     }), type: ['object', 'null'],
   } : {type: 'null'}
+  const development = maximumPossibilities && facts.length ? {
+    ...object({mode: choice(['direct', 'adaptive', 'conversation', 'wait']),
+      possibilityIndex: {type: 'integer', minimum: 0, maximum: maximumPossibilities - 1},
+      basisFactKeys: array(choice(facts), 1, 3), expectedChange: text(600), unresolved: text(600),
+    }), type: ['object', 'null'],
+  } : {type: 'null'}
   const pointers = [
     ...stringPaths(source).filter(sourceCitationPath),
     ...options.flatMap(o => stringPaths(o).filter(optionCitationPath)),
   ]
-  return {name: 'chat_opening_review_v2', strict: true, schema: object({
+  return {name: `chat_opening_review_v${version}`, strict: true, schema: object({
     options: array(object({
       optionKey: choice(options.map(o => o.optionKey)), agency,
+      ...(version === 3 ? {development} : {}),
       checks: array(object({
         check: choice([...CHAT_OPENING_CHECKS]), passed: {type: 'boolean'}, reason: text(1000),
         evidence: array(object({target: choice(['source', 'option']), pointer: choice(pointers), quote: text(800)}), 1, 4),

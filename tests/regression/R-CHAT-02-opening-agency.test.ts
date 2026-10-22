@@ -90,13 +90,14 @@ it.each(['content.chat-author-gate', 'content.narrative', 'integration.package']
   const input = {task, inputArtifacts: Object.entries({'design.game': f.source, 'content.chat-candidates': f.candidates, 'quality.chat-openings': report, 'content.chat-selection': selection}).map(([artifactKey, value]) => ({artifactKey, payloadJson: JSON.stringify(value)}))} as unknown as ProductProductionTaskExecutionInputV1
   await expect(selectedChatProductionNarrativeV1(input)).rejects.toThrow('旧报告保持原样')
   await expect(selectedChatProductionNarrativeV1({...input, task: {...task, inputArtifactKeys: task.inputArtifactKeys.filter(k => k !== 'quality.chat-openings')}})).rejects.toThrow('缺少开场审查依赖')
-  await expect(selectedChatProductionNarrativeV1({...input, task: {...task, acceptanceGateIds: task.acceptanceGateIds.filter(g => g !== CHAT_OPENING_AGENCY_GATE_V2)}})).resolves.toMatchObject({initialSituation: f.candidates.options[0].situation})
+  await expect(selectedChatProductionNarrativeV1({...input, task: {...task, acceptanceGateIds: task.acceptanceGateIds.filter(g => g !== CHAT_OPENING_AGENCY_GATE_V2 && g !== 'chat.opening-development.v3')}})).resolves.toMatchObject({initialSituation: f.candidates.options[0].situation})
 })
 
 it('reads saved production/review bindings; rejects missing, foreign, unsupported or falsely upgraded contracts', async () => {
   const f = await seedChatNarrativeProductionFixture(), plan = await createProductProductionPlanV3({brief: f.brief, briefHash: await hashProductProductionValueV2(f.brief), buildNumber: 1})
   for (const [taskKey, oldVersion, newVersion] of [['content.product-module', 'chat-situation-production-v5', 'chat-situation-production-v6'], ['content.chat-opening-review', 'chat-opening-review-v1', 'chat-opening-review-v2']]) {
-    const originalTask = plan.tasks.find(t => t.taskKey === taskKey)!
+    const planned = plan.tasks.find(t => t.taskKey === taskKey)!
+    const originalTask = {...planned, acceptanceGateIds: planned.acceptanceGateIds.filter(g => g !== 'chat.opening-development.v3')}
     const input = {scope: f.scope, buildId: 7, buildNumber: 2, controlEpoch: 3, planHash: 'a'.repeat(64), taskRunId: 1,
       task: {...originalTask, acceptanceGateIds: originalTask.acceptanceGateIds.filter(id => !id.startsWith('chat.opening-targeted-repair.') && id !== 'chat.opening-source-references.v1' && id !== 'chat.opening-option-repair.v1' && id !== 'chat.opening-source-completeness.v1')}} as ProductProductionTaskExecutionInputV1
     const scope = {productBuildId: input.buildId, buildNumber: input.buildNumber, controlEpoch: input.controlEpoch, planHash: input.planHash, taskKey}
@@ -136,7 +137,7 @@ it('reads saved production/review bindings; rejects missing, foreign, unsupporte
     }
     binding.promptVersion = oldVersion
     await expect(readChatOpeningProductionVersionV1(input)).rejects.toThrow('不能自动换约')
-    const legacy = {...input, task: {...input.task, acceptanceGateIds: input.task.acceptanceGateIds.filter(g => g !== CHAT_OPENING_AGENCY_GATE_V2)}}
+    const legacy = {...input, task: {...input.task, acceptanceGateIds: input.task.acceptanceGateIds.filter(g => g !== CHAT_OPENING_AGENCY_GATE_V2 && g !== 'chat.opening-development.v3')}}
     await expect(readChatOpeningProductionVersionV1(legacy)).resolves.toEqual({groundedAgency: false})
     for (const unsupported of ['future-v999', 'chat-situation-production-v4']) {
       binding.promptVersion = unsupported

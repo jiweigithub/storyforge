@@ -1,4 +1,5 @@
-import {CHAT_OPENING_AGENCY_REVIEW_RULE_V2, parseChatOpeningAgencyV2, type ChatOpeningAgencyV2} from './opening-agency'
+import {CHAT_OPENING_AGENCY_GATE_V2, CHAT_OPENING_AGENCY_REVIEW_RULE_V2, parseChatOpeningAgencyV2, type ChatOpeningAgencyV2} from './opening-agency'
+import {CHAT_OPENING_DEVELOPMENT_GATE_V3, parseChatOpeningDevelopmentV3, type ChatOpeningDevelopmentV3} from './opening-development'
 import {hashProductProductionValueV2} from '../product-production/hash'
 import {parseChatSituationCandidatesV1, type ChatNarrativeProductionSourceV1, type ChatSituationCandidatesV1} from './narrative-production'
 
@@ -10,10 +11,10 @@ export const CHAT_OPENING_CHECK_LABELS: Record<typeof CHAT_OPENING_CHECKS[number
 }
 interface Evidence {target: 'source' | 'option'; pointer: string; quote: string}
 export interface ChatOpeningReviewDraftV1 {
-  options: Array<{optionKey: string; agency?: ChatOpeningAgencyV2 | null; checks: Array<{check: typeof CHAT_OPENING_CHECKS[number]; passed: boolean; reason: string; evidence: Evidence[]}>}>
+  options: Array<{optionKey: string; agency?: ChatOpeningAgencyV2 | null; development?: ChatOpeningDevelopmentV3 | null; checks: Array<{check: typeof CHAT_OPENING_CHECKS[number]; passed: boolean; reason: string; evidence: Evidence[]}>}>
 }
 export interface ChatOpeningReviewV1 extends ChatOpeningReviewDraftV1 {
-  schema: 'storyforge.chat-opening-review'; version: 1 | 2; sourceHash: string; candidatesHash: string
+  schema: 'storyforge.chat-opening-review'; version: 1 | 2 | 3; sourceHash: string; candidatesHash: string
 }
 function fail(message: string): never {throw new Error(`[chat-opening-review] ${message}`)}
 function record(value: unknown, fields: string): Record<string, unknown> {
@@ -34,13 +35,16 @@ function quoted(root: unknown, pointer: string): string {
   if (typeof value !== 'string') fail('引用必须定位到原文文字')
   return value
 }
-export function parseChatOpeningReviewDraftV1(value: unknown, source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1, version: 1 | 2 = 1): ChatOpeningReviewDraftV1 {
+export function minimumChatOpeningReviewVersionV1(gates: readonly string[]): 1 | 2 | 3 {
+  return gates.includes(CHAT_OPENING_DEVELOPMENT_GATE_V3) ? 3 : gates.includes(CHAT_OPENING_AGENCY_GATE_V2) ? 2 : 1
+}
+export function parseChatOpeningReviewDraftV1(value: unknown, source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1, version: 1 | 2 | 3 = 1): ChatOpeningReviewDraftV1 {
   parseChatSituationCandidatesV1(candidates, source)
   const body = record(value, 'options')
   if (!Array.isArray(body.options) || body.options.length !== candidates.options.length) fail('审查必须覆盖每个开场')
   const seen = new Set<string>()
   for (const raw of body.options) {
-    const item = record(raw, version === 2 ? 'optionKey,checks,agency' : 'optionKey,checks'), option = candidates.options.find(o => o.optionKey === item.optionKey)
+    const item = record(raw, version === 3 ? 'optionKey,checks,agency,development' : version === 2 ? 'optionKey,checks,agency' : 'optionKey,checks'), option = candidates.options.find(o => o.optionKey === item.optionKey)
     if (!option || seen.has(option.optionKey)) fail('开场审查身份缺失或重复')
     seen.add(option.optionKey)
     if (!Array.isArray(item.checks) || item.checks.length !== CHAT_OPENING_CHECKS.length) fail('开场审查维度不完整')
@@ -57,7 +61,7 @@ export function parseChatOpeningReviewDraftV1(value: unknown, source: ChatNarrat
         if (!quoted(evidence.target === 'source' ? source : option, evidence.pointer).includes(evidence.quote)) fail('审查引用不是对应原文的连续摘录')
       }
     }
-    if (version === 2) {
+    if (version >= 2) {
       const viable = (item.checks as ChatOpeningReviewDraftV1['options'][number]['checks']).find(c => c.check === 'viable-agency')!
       if (item.agency == null) {if (item.agency !== null || viable.passed) fail('通过行动能力审查必须有可核验的机会')}
       else {
@@ -66,23 +70,33 @@ export function parseChatOpeningReviewDraftV1(value: unknown, source: ChatNarrat
         if (pointers.some(pointer => !viable.evidence.some(e => e.target === 'option' && e.pointer === pointer))) fail('行动机会缺少对应方向或事实的原文引用')
       }
     }
+    if (version === 3) {
+      const developmentCheck = (item.checks as ChatOpeningReviewDraftV1['options'][number]['checks']).find(c => c.check === 'open-development')!
+      if (item.development === null) {if (developmentCheck.passed) fail('通过发展审查必须有可核验的背景依据')}
+      else {
+        if (!item.agency) fail('发展依据缺少该角色的首个行动机会')
+        const development = parseChatOpeningDevelopmentV3(item.development, option, item.agency as ChatOpeningAgencyV2)
+        const pointers = [`/situation/possibilities/${development.possibilityIndex}/text`, ...development.basisFactKeys.map(key => `/situation/facts/${option.situation.facts.findIndex(f => f.factKey === key)}/text`)]
+        if (pointers.some(pointer => !developmentCheck.evidence.some(e => e.target === 'option' && e.pointer === pointer))) fail('发展依据缺少对应方向或事实的原文引用')
+      }
+    }
   }
   return structuredClone(value) as ChatOpeningReviewDraftV1
 }
-export async function createChatOpeningReviewV1(value: unknown, source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1, version: 1 | 2 = 1): Promise<ChatOpeningReviewV1> {
+export async function createChatOpeningReviewV1(value: unknown, source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1, version: 1 | 2 | 3 = 1): Promise<ChatOpeningReviewV1> {
   const draft = parseChatOpeningReviewDraftV1(value, source, candidates, version)
   return {schema: 'storyforge.chat-opening-review', version, sourceHash: await hashProductProductionValueV2(source),
     candidatesHash: await hashProductProductionValueV2(candidates), ...draft}
 }
 export function readChatOpeningReviewV1(value: unknown, input: {source: ChatNarrativeProductionSourceV1; candidates: ChatSituationCandidatesV1; sourceHash: string; candidatesHash: string}): ChatOpeningReviewV1 {
   const row = record(value, 'schema,version,sourceHash,candidatesHash,options')
-  if (row.schema !== 'storyforge.chat-opening-review' || (row.version !== 1 && row.version !== 2) || row.sourceHash !== input.sourceHash || row.candidatesHash !== input.candidatesHash) fail('开场审查不属于当前来源和候选版本')
-  parseChatOpeningReviewDraftV1({options: row.options}, input.source, input.candidates, row.version as 1 | 2)
+  if (row.schema !== 'storyforge.chat-opening-review' || (row.version !== 1 && row.version !== 2 && row.version !== 3) || row.sourceHash !== input.sourceHash || row.candidatesHash !== input.candidatesHash) fail('开场审查不属于当前来源和候选版本')
+  parseChatOpeningReviewDraftV1({options: row.options}, input.source, input.candidates, row.version as 1 | 2 | 3)
   return structuredClone(value) as ChatOpeningReviewV1
 }
-export async function assertChatOpeningReviewedV1(value: unknown, source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1, selectedOptionKey: string, minimumVersion: 1 | 2 = 1) {
+export async function assertChatOpeningReviewedV1(value: unknown, source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1, selectedOptionKey: string, minimumVersion: 1 | 2 | 3 = 1) {
   const report = readChatOpeningReviewV1(value, {source, candidates, sourceHash: await hashProductProductionValueV2(source), candidatesHash: await hashProductProductionValueV2(candidates)})
-  if (report.version < minimumVersion) fail('当前制作需要带行动机会依据的新审查；旧报告保持原样，不能升级为新证据')
+  if (report.version < minimumVersion) fail('当前制作需要带行动机会与对应背景依据的新审查；旧报告保持原样，不能升级为新证据')
   const selected = report.options.find(o => o.optionKey === selectedOptionKey)
   if (!selected || selected.checks.some(c => !c.passed)) fail('选定开场尚有未通过的叙事审查，请调整设定后重新制作或选择其他开场')
   return report

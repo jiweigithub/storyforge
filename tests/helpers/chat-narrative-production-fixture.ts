@@ -125,6 +125,20 @@ export function chatOpeningAgencyReviewFixture(candidates: ChatSituationCandidat
   return draft
 }
 
+/** Injected v3 evidence for pipeline tests, not an independent quality verdict. */
+export function chatOpeningDevelopmentReviewFixture(candidates: ChatSituationCandidatesV1, rejectedOptionKey?: string): ChatOpeningReviewDraftV1 {
+  const draft = chatOpeningAgencyReviewFixture(candidates, rejectedOptionKey)
+  for (const row of draft.options) {
+    const check = row.checks.find(c => c.check === 'open-development')!
+    const agency = row.agency
+    row.development = agency ? {mode: 'direct', possibilityIndex: agency.possibilityIndex,
+      basisFactKeys: [...agency.basisFactKeys], expectedChange: '工程注入的背景依据，不代表真实模型认为故事可持续。', unresolved: agency.unresolved} : null
+    check.passed = !!agency
+    if (agency) check.evidence = structuredClone(row.checks.find(c => c.check === 'viable-agency')!.evidence)
+  }
+  return draft
+}
+
 /** Convert a known valid test draft into the v9 wire format. Production does
  * not use this helper, and its authored verdicts are not model-quality proof. */
 export async function chatSituationReferenceDraftFixture(source: ChatNarrativeProductionSourceV1, candidates = chatSituationCandidatesFixture(source)) {

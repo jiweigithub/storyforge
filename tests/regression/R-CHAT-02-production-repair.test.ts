@@ -4,7 +4,7 @@ import {executeProductProductionCommand} from '../../src/lib/product-production/
 import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
 import {runProductProductionUntilBlockedV1} from '../../src/lib/product-production/scheduler'
 import {readProductProductionDetailsV1, retryProductProductionBlockerV1} from '../../src/lib/product-production/service'
-import {chatOpeningAgencyReviewFixture, chatSituationCandidatesFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatOpeningDevelopmentReviewFixture, chatSituationCandidatesFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
 import type {ChatNarrativeProductionSourceV1} from '../../src/lib/character-interaction/narrative-production'
 
 beforeEach(async () => {await db.delete(); await db.open()})
@@ -46,7 +46,7 @@ it.each([false, true])('retains the rejected opening and its paid usage, then de
       // invent or substitute a source key to make this candidate pass.
       candidates.options[0].situation.facts[0].sourceKnowledgeKey = 'unknown-world-evidence'
     }
-    const output = JSON.stringify(isOpening ? candidates : chatOpeningAgencyReviewFixture(candidates))
+    const output = JSON.stringify(isOpening ? candidates : chatOpeningDevelopmentReviewFixture(candidates))
     if (calls.length === 1) rejectedOutput = output
     return {output, usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {
       schema: 'storyforge.provider-binding-receipt', version: 1, requirementKey, adapterId: 'configured-text.v1', adapterVersion: 1,

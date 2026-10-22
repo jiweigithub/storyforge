@@ -6,7 +6,7 @@ import {runProductProductionUntilBlockedV1} from '../../src/lib/product-producti
 import {readProductProductionDetailsV1, confirmChatSituationDecisionV1} from '../../src/lib/product-production/service'
 import {planChatOpeningRepairV1, validateChatOpeningRepairV1} from '../../src/lib/character-interaction/opening-repair'
 import {readChatOpeningAutomaticRepairFeedbackV1} from '../../src/lib/character-interaction/opening-repair-evidence'
-import {chatOpeningAgencyReviewFixture, chatSituationCandidatesFixture, chatSituationReferenceDraftFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatOpeningDevelopmentReviewFixture, chatSituationCandidatesFixture, chatSituationReferenceDraftFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
 import type {ChatNarrativeProductionSourceV1} from '../../src/lib/character-interaction/narrative-production'
 import * as plans from '../../src/lib/product-production/plan'
 import * as skills from '../../src/lib/agent/skill-registry'
@@ -118,6 +118,7 @@ it.each(['repair', 'missing', 'misplaced', 'repeat-error', 'rewrite', 'budget', 
       const createPlan = plans.createProductProductionPlanV3, readSkill = skills.getAgentSkillV1
       vi.spyOn(plans, 'createProductProductionPlanV3').mockImplementation(async input => {
         const plan = await createPlan(input), task = plan.tasks.find(item => item.taskKey === 'content.product-module')!
+        task.acceptanceGateIds = task.acceptanceGateIds.filter(id => id !== 'chat.opening-development.v3')
         for (const entry of plan.tasks) entry.acceptanceGateIds = entry.acceptanceGateIds.filter(id => id !== CHAT_OPENING_SOURCE_COMPLETENESS_GATE_V1)
         if (scenario === 'refs-private-v10') return plan
         task.acceptanceGateIds = task.acceptanceGateIds.filter(id => id !== CHAT_OPENING_OPTION_REPAIR_GATE_V1)
@@ -160,7 +161,7 @@ it.each(['repair', 'missing', 'misplaced', 'repeat-error', 'rewrite', 'budget', 
       const isOpening = request.system.includes('初始情境编辑')
       const legacy = ['legacy', 'legacy-v7', 'legacy-v8', 'refs-private-v9', 'refs-private-v10'].includes(scenario)
       if (isOpening && !calls.length && !legacy) expect(request.jsonSchema).toMatchObject({name: 'chat_opening_source_complete_v1', strict: true})
-      else if (!isOpening) expect(request.jsonSchema).toMatchObject({name: 'chat_opening_review_v2', strict: true})
+      else if (!isOpening) expect(request.jsonSchema).toMatchObject({name: 'chat_opening_review_v3', strict: true})
       else expect(request.jsonSchema).toBeUndefined()
       calls.push({kind: isOpening ? 'opening' : 'review', context: request.contextText, limit: request.maximumOutputTokens})
       if (scenario === 'transport') throw Object.assign(new Error('HTTP 403 forbidden'), {status: 403})
@@ -174,7 +175,7 @@ it.each(['repair', 'missing', 'misplaced', 'repeat-error', 'rewrite', 'budget', 
       if (scenario === 'rewrite' && calls.length === 2) candidates.options[0].title = '偷偷重写整个开场'
       const references = referenceWire ? await chatSituationReferenceDraftFixture(source, candidates) : null
       const reviewed = !isOpening ? JSON.parse((await db.productBuildArtifacts.filter(row => row.artifactKey === 'content.chat-candidates').last())!.payloadJson) : candidates
-      let payload: unknown = isOpening ? references ?? candidates : chatOpeningAgencyReviewFixture(reviewed, scenario === 'refs-private-review' ? reviewed.options[2].optionKey : undefined)
+      let payload: unknown = isOpening ? references ?? candidates : chatOpeningDevelopmentReviewFixture(reviewed, scenario === 'refs-private-review' ? reviewed.options[2].optionKey : undefined)
       if (references && isOpening && calls.length === 1) {
         if (scenario.startsWith('refs-private')) {
           references.options[2].situation.localFacts[0].audienceKeys = ['participant.001']

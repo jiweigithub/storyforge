@@ -461,7 +461,7 @@ test(`v3 production offers initial situations, retains them across refresh and f
         if (!created.ok) throw new Error(JSON.stringify(created));
         const saved = await execute({scope: f.scope, productionId: created.productionId, command: {type: 'save-brief-revision', commandId: 'e2e.chat-brief', expectedStateRevision: 0, parentRevision: null, brief: f.brief}});
         if (!saved.ok) throw new Error(JSON.stringify(saved));
-        return {scope: f.scope, productionId: created.productionId, candidates: f.candidates, review: (await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts')).chatOpeningAgencyReviewFixture(f.candidates, 'option-1')};
+        return {scope: f.scope, productionId: created.productionId, candidates: f.candidates, review: (await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts')).chatOpeningDevelopmentReviewFixture(f.candidates, 'option-1')};
     });
     response.candidateOutput = fixture.candidates;
     response.reviewOutput = fixture.review;
@@ -483,8 +483,11 @@ test(`v3 production offers initial situations, retains them across refresh and f
     await expect(page.getByTestId('chat-opening-agency')).toHaveCount(2);
     await expect(page.getByTestId('chat-opening-agency').first()).toContainText('可能带来的变化');
     await expect(page.getByTestId('chat-opening-agency').first()).toContainText('仍需核实');
+    await expect(page.getByTestId('chat-opening-development')).toHaveCount(2);
+    await expect(page.getByTestId('chat-opening-development').first()).toContainText('这段局面如何发展');
     await page.reload();
     await expect(page.getByRole('button', {name: '选择「旧账本」并继续', exact: true})).toBeEnabled();
+    await expect(page.getByTestId('chat-opening-development')).toHaveCount(2);
     expect(calls).toEqual(['situations', 'opening-review']);
     if (transfer) {
         fixture = await page.evaluate(async f => {
