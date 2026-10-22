@@ -14,7 +14,7 @@ test('native actor recall retains actual private evidence through one formal res
     const { readProductRuntimeState } = await importer('/storyforge/src/lib/product/runtime-core.ts')
     const { prepareTtrpgOpenIntentInputV1 } = await importer('/storyforge/src/lib/ttrpg/open-intent-input.ts')
     const { executeTtrpgOpenIntentRequestV1 } = await importer('/storyforge/src/lib/ttrpg/open-intent-harness.ts')
-    const f = await helper.readyOpenTtrpgSessionV1('Native memory recall', (p: any) => { p.ttrpg.campaign.runtimePolicy.enabled = true })
+    const f = await helper.readyOpenTtrpgSessionV1('Native memory recall', (p: any) => { p.ttrpg.campaign.runtimePolicy.enabled = true; p.ttrpg.campaign.runtimePolicy.maximumEpochTokens = 20000 })
     const viewerKey = helper.OPEN_HUMAN_VIEWER, rawInput = '调查旧港的记忆线索', summary = '我怀疑有人在旧港跟踪，仍然只是个人推测。'
     const record = async (key: string, gm: boolean) => {
       const e = await helper.openEnvelopeV1(f.sessionId, key)

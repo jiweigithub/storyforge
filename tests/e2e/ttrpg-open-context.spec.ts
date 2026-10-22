@@ -9,7 +9,7 @@ test('native context receipt survives refresh, stays read-only, and follows the 
     const api = await importer('/storyforge/src/lib/ttrpg/runtime-api.ts'), table = await importer('/storyforge/src/lib/ttrpg/open-table-service.ts')
     const inputs = await importer('/storyforge/src/lib/ttrpg/open-intent-input.ts'), { db } = await importer('/storyforge/src/lib/db/schema.ts')
     const f = await h.readyOpenTtrpgSessionV1('情境记录原生验收', (pkg: any) => {
-      pkg.ttrpg.campaign.title = '情境记录原生验收'; pkg.ttrpg.campaign.runtimePolicy.enabled = true
+      pkg.ttrpg.campaign.title = '情境记录原生验收'; pkg.ttrpg.campaign.runtimePolicy.enabled = true; pkg.ttrpg.campaign.runtimePolicy.maximumEpochTokens = 20000
       pkg.ttrpg.campaign.characterTemplates[1].controller = 'hybrid'
       const p = context.openContextPolicyFixtureV1()
       p.triggers[0].trigger = { ...p.triggers[0].trigger, logic: 'always', textPatterns: [], predicate: null,

@@ -12,7 +12,7 @@ test('refreshes after paid response receipt, then restores original output witho
     const inputs = await importer('/storyforge/src/lib/ttrpg/open-intent-input.ts')
     const events = await importer('/storyforge/src/lib/agent/run/event-store.ts')
     const artifacts = await importer('/storyforge/src/lib/memory/artifact-store.ts')
-    const f = await helpers.readyOpenTtrpgSessionV1('灯塔回复恢复', (pkg: any) => { pkg.ttrpg.campaign.title = '灯塔回复恢复'; pkg.ttrpg.campaign.runtimePolicy.enabled = true })
+    const f = await helpers.readyOpenTtrpgSessionV1('灯塔回复恢复', (pkg: any) => { pkg.ttrpg.campaign.title = '灯塔回复恢复'; pkg.ttrpg.campaign.runtimePolicy.enabled = true; pkg.ttrpg.campaign.runtimePolicy.maximumEpochTokens = 20000 })
     const input = { scope: f.scope, sessionId: f.sessionId, viewerKey: helpers.OPEN_HUMAN_VIEWER }
     await table.startTtrpgOpenTableV1({ ...input, acceptedItemKeys: [] })
     await api.startTtrpgOpenEpochV1({ ...await helpers.openEnvelopeV1(f.sessionId, 'native.response.epoch'), viewerKey: input.viewerKey, triggerKind: 'submit-action', rawInput: '调查河港' })

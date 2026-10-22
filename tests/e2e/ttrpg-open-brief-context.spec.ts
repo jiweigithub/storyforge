@@ -13,7 +13,7 @@ test('native stage recap source reads without a KP operation and retains semanti
     const { loadTtrpgOpenBriefContextV1 } = await importer('/storyforge/src/lib/ttrpg/open-brief-context.ts')
     const { CONTEXT_SOURCE_BY_KEY } = await importer('/storyforge/src/lib/registry/context-sources.ts')
     const { db } = await importer('/storyforge/src/lib/db/schema.ts')
-    const f = await helper.readyOpenTtrpgSessionV1('Native recap source', (p: any) => { p.ttrpg.campaign.runtimePolicy.enabled = true })
+    const f = await helper.readyOpenTtrpgSessionV1('Native recap source', (p: any) => { p.ttrpg.campaign.runtimePolicy.enabled = true; p.ttrpg.campaign.runtimePolicy.maximumEpochTokens = 20000 })
     const viewerKey = helper.OPEN_HUMAN_VIEWER, e = await helper.openEnvelopeV1(f.sessionId, 'native.brief.gm.note')
     await api.recordTtrpgOpenNarrativeMemoryV1({ ...e, viewerKey, draft: { revisionKey: 'native.brief.gm.note', observerKey: 'gm',
       reliability: 'observed', audience: 'gm-only', knownBy: [], summary: 'GM-BRIEF-PRIVATE-NOTE', fromEventSequence: 1, toEventSequence: e.baseSequence } })

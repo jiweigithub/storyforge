@@ -8,7 +8,7 @@ test('open player desk confirms identity, risk, persisted KP and handoff without
     const importer = new Function('path', 'return import(path)') as (path: string) => Promise<any>
     const helper = await importer('/storyforge/tests/helpers/open-ttrpg-session.ts'), api = await importer('/storyforge/src/lib/ttrpg/runtime-api.ts'), table = await importer('/storyforge/src/lib/ttrpg/open-table-service.ts')
     const f = await helper.readyOpenTtrpgSessionV1('灯塔下的冒险', (pkg: any) => {
-      pkg.ttrpg.campaign.title = '灯塔下的冒险';pkg.ttrpg.campaign.runtimePolicy.enabled = true;pkg.ttrpg.rulePack.content.actions[0].effects = []
+      pkg.ttrpg.campaign.title = '灯塔下的冒险';pkg.ttrpg.campaign.runtimePolicy.enabled = true;pkg.ttrpg.campaign.runtimePolicy.maximumEpochTokens = 40000;pkg.ttrpg.rulePack.content.actions[0].effects = []
       pkg.ttrpg.campaign.characterTemplates[0].playerProfile.secret = 'HERO-PRIVATE-BROWSER'
       pkg.ttrpg.campaign.characterTemplates[1].playerProfile.secret = 'OTHER-AI-PRIVATE-BROWSER'
     })
