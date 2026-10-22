@@ -1,3 +1,4 @@
+import { verifyTtrpgOpenReleaseContinuationRuntimeV1 } from './open-release-continuation-proof'
 import { verifyTtrpgOpenStageOpeningReceiptsV1 } from './open-stage-opening-contract'
 /** Prepare an open child from a verified cutpoint; no parent rows or gameplay owners are changed. */
 import type { ProductRuntimeSession, ProductRuntimeState, ProductRuntimeEvent } from '../types'
@@ -17,7 +18,8 @@ export async function consumePreparedTtrpgOpenBranchStateV1(state: ProductRuntim
     || preparedBranches.get(state) !== evidence || !preparedBranches.delete(state)) throw new Error('[ttrpg-open-branch] 分支必须来自未改写且未重复消费的真实切点准备')
   const runtime = parseTtrpgRuntimeStateV2(state.ttrpg)!
   await verifyTtrpgOpenBranchLineageV1(runtime.branchLineage!, runtime.sessionKey)
-  if (runtime.branchLineage!.ancestors.some(ancestor => ancestor.runtimeSourceHash !== runtimeSourceHash)) throw new Error('[ttrpg-open-branch] 祖先来源与子冻结来源不一致')
+  await verifyTtrpgOpenReleaseContinuationRuntimeV1({ runtime, runtimeSourceHash })
+  if (!runtime.openRun?.releaseContinuation && runtime.branchLineage!.ancestors.some(ancestor => ancestor.runtimeSourceHash !== runtimeSourceHash)) throw new Error('[ttrpg-open-branch] 祖先来源与子冻结来源不一致')
 }
 
 export async function prepareTtrpgOpenBranchStateV1(input: {
@@ -28,6 +30,7 @@ export async function prepareTtrpgOpenBranchStateV1(input: {
   if (!parentRuntime || input.parent.kind !== 'ttrpg' || !input.parent.runtimeSourceHash) throw new Error('[ttrpg-open-branch] 父实例没有冻结 open 来源')
   const childSessionKey = key(input.childSessionKey, 'child session key')
   if (childSessionKey === parentRuntime.sessionKey) throw new Error('[ttrpg-open-branch] 子分支必须拥有新稳定身份')
+  await verifyTtrpgOpenReleaseContinuationRuntimeV1({ runtime: parentRuntime, runtimeSourceHash: input.parent.runtimeSourceHash, seed: input.parent.seed, initialState: JSON.parse(input.parent.initialStateJson) })
   const { verifyTtrpgOpenSessionSituationHashesV1 } = await import('./open-session-situation-proof')
   await verifyTtrpgOpenSessionSituationHashesV1(parentRuntime.openRun?.situationReceipts ?? [])
   const { verifyTtrpgOpenMemoryReceiptsV1 } = await import('./open-memory-proof')
@@ -46,9 +49,16 @@ export async function prepareTtrpgOpenBranchStateV1(input: {
   const lineage = parseTtrpgOpenBranchLineageV1({ schema: 'storyforge.ttrpg-open-branch-lineage', version: 1,
     parentSessionKey: parentRuntime.sessionKey, ancestors: [...(parentRuntime.branchLineage?.ancestors ?? []), ancestor], recoveryTasks }, childSessionKey)
   await verifyTtrpgOpenBranchLineageV1(lineage, childSessionKey)
-  const child = structuredClone(input.state)
+  const child = projectTtrpgOpenBranchStateV1(input.state, childSessionKey, lineage)
+  preparedBranches.set(child, { hash: await sha256Text(JSON.stringify(child)), runtimeSourceHash: input.parent.runtimeSourceHash })
+  return child
+}
+
+/** Shared deterministic reset of local execution authority; business state remains inherited. */
+export function projectTtrpgOpenBranchStateV1(state: ProductRuntimeState, childSessionKey: string, lineage: NonNullable<ReturnType<typeof parseTtrpgRuntimeStateV2>>['branchLineage']): ProductRuntimeState {
+  const child = structuredClone(state)
   const runtime = parseTtrpgRuntimeStateV2(child.ttrpg)!
-  runtime.sessionKey = childSessionKey; runtime.branchLineage = lineage
+  runtime.sessionKey = childSessionKey; runtime.branchLineage = structuredClone(lineage)
   // Historical grants stay frozen in ancestor evidence. Child consent and all paid windows require explicit renewal.
   runtime.authorization = null
   runtime.product.sessionZero.completed = false; runtime.product.sessionZero.completedAtSequence = null
@@ -62,6 +72,5 @@ export async function prepareTtrpgOpenBranchStateV1(input: {
   }
   child.ttrpg = runtime; child.lastSequence = 0
   parseTtrpgRuntimeStateV2(child.ttrpg)
-  preparedBranches.set(child, { hash: await sha256Text(JSON.stringify(child)), runtimeSourceHash: input.parent.runtimeSourceHash })
   return child
 }

@@ -1,3 +1,4 @@
+import { parseTtrpgOpenReleaseContinuationV1, type TtrpgOpenReleaseContinuationV1 } from './open-release-continuation-contract'
 import { parseTtrpgOpenStageOpeningReceiptV1, type TtrpgOpenStageOpeningReceiptV1 } from './open-stage-opening-contract'
 import { assertTtrpgOpenVoiceJournalV1, parseTtrpgOpenVoiceRequestV1, type TtrpgOpenVoiceRequestV1 } from './open-voice-request-contract'
 import { assertTtrpgOpenAudioJournal, parseTtrpgOpenAudioReceipt, type TtrpgOpenAudioReceipt } from './open-audio-receipt'
@@ -19,7 +20,7 @@ import { assertTtrpgOpenNormalizationSourceV1, assertTtrpgOpenOracleRuntimeCallO
 import { parseTtrpgOpenOracleReviewV1, assertTtrpgOpenOracleReviewJournalV1, type TtrpgOpenOracleReviewV1 } from './open-oracle-review';
 import { parseTtrpgOpenKnowledgeV1, type TtrpgOpenKnowledgeEntryV1 } from './open-knowledge';
 import { parseTtrpgOpenOracleReceiptV1, type TtrpgOpenOracleReceiptV1 } from './open-oracle-contract';
-import { parseTtrpgOpenFactLedgerV1, assertTtrpgOpenModelFactApproverV1, assertTtrpgOpenFactModelCallV1, type TtrpgOpenFactLedgerV1 } from './open-fact-ledger';
+import { parseTtrpgOpenFactLedger, ttrpgOpenFactEntryBasis, assertTtrpgOpenModelFactApproverV1, assertTtrpgOpenFactModelCallV1, type TtrpgOpenFactLedger } from './open-fact-ledger';
 import { parseTtrpgOpenKnowledgeShareReceiptV1, type TtrpgOpenKnowledgeShareReceiptV1 } from './open-knowledge-share';
 import { assertTtrpgOpenIdentityKnowledgeJournalV1 } from './open-identity-knowledge';
 import { parseTtrpgOpenBranchLineageV1, ttrpgOpenAncestorSourceAllowedV1, type TtrpgOpenBranchLineageV1 } from './open-branch-contract';
@@ -149,7 +150,7 @@ export interface TtrpgOpenRunStateV1 {
   /** Absent on older states; first real consultation introduces the journal. */
   oracleReceipts?: TtrpgOpenOracleReceiptV1[];
   /** Introduced only by the first real semantic fact event. */
-  factLedger?: TtrpgOpenFactLedgerV1;
+  factLedger?: TtrpgOpenFactLedger;
   knowledgeShares?: TtrpgOpenKnowledgeShareReceiptV1[];
   oracleReviews?: TtrpgOpenOracleReviewV1[];
   tableMessages?: TtrpgOpenTableMessageV1[];
@@ -158,6 +159,7 @@ export interface TtrpgOpenRunStateV1 {
   narrations?: TtrpgOpenNarrationReceiptV1[];
   stageClosures?: TtrpgOpenStageClosureV1[];
   stageOpenings?: TtrpgOpenStageOpeningReceiptV1[];
+  releaseContinuation?: TtrpgOpenReleaseContinuationV1;
   terminalReceipts?: TtrpgOpenTerminalReceiptV1[];
   gateReceipts?: TtrpgOpenGateReceiptV1[];
   gateRecoveries?: TtrpgOpenGateRecoveryV1[];
@@ -590,6 +592,7 @@ export function parseTtrpgOpenRunStateV1(
       ...(Object.prototype.hasOwnProperty.call(row, "entityOperations") ? ["entityOperations"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "stageClosures") ? ["stageClosures"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "stageOpenings") ? ["stageOpenings"] : []),
+      ...(Object.prototype.hasOwnProperty.call(row, "releaseContinuation") ? ["releaseContinuation"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "terminalReceipts") ? ["terminalReceipts"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "gateReceipts") ? ["gateReceipts"] : []),
       ...(Object.prototype.hasOwnProperty.call(row, "gateRecoveries") ? ["gateRecoveries"] : []),
@@ -721,7 +724,7 @@ export function parseTtrpgOpenRunStateV1(
     } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "oracleReviews") ? { oracleReviews: Array.isArray(row.oracleReviews) && row.oracleReviews.length <= 100000
       ? row.oracleReviews.map(parseTtrpgOpenOracleReviewV1) : fail("oracleReviews 必须是有限数组") } : {}),
-    ...(Object.prototype.hasOwnProperty.call(row, "factLedger") ? { factLedger: parseTtrpgOpenFactLedgerV1(row.factLedger) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "factLedger") ? { factLedger: parseTtrpgOpenFactLedger(row.factLedger) } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "knowledgeShares") ? {
       knowledgeShares: Array.isArray(row.knowledgeShares) && row.knowledgeShares.length <= 100000
         ? row.knowledgeShares.map(parseTtrpgOpenKnowledgeShareReceiptV1) : fail("knowledgeShares 必须是有限数组"),
@@ -735,6 +738,7 @@ export function parseTtrpgOpenRunStateV1(
     ...(Object.prototype.hasOwnProperty.call(row, "memoryReceipts") ? { memoryReceipts: Array.isArray(row.memoryReceipts) && row.memoryReceipts.length <= 100000 ? row.memoryReceipts.map(parseTtrpgOpenMemoryReceipt) : fail("memoryReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "stageClosures") ? { stageClosures: Array.isArray(row.stageClosures) && row.stageClosures.length <= 100000 ? row.stageClosures.map(parseTtrpgOpenStageClosureV1) : fail("stageClosures 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "stageOpenings") ? { stageOpenings: Array.isArray(row.stageOpenings) && row.stageOpenings.length <= 100000 ? row.stageOpenings.map(parseTtrpgOpenStageOpeningReceiptV1) : fail("stageOpenings 必须有界") } : {}),
+    ...(Object.prototype.hasOwnProperty.call(row, "releaseContinuation") ? { releaseContinuation: parseTtrpgOpenReleaseContinuationV1(row.releaseContinuation) } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "terminalReceipts") ? { terminalReceipts: Array.isArray(row.terminalReceipts) && row.terminalReceipts.length <= 100000 ? row.terminalReceipts.map(parseTtrpgOpenTerminalReceiptV1) : fail("terminalReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "gateReceipts") ? { gateReceipts: Array.isArray(row.gateReceipts) && row.gateReceipts.length <= 100000 ? row.gateReceipts.map(parseTtrpgOpenGateReceiptV1) : fail("gateReceipts 必须有界") } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, "situationCycles") ? { situationCycles: Array.isArray(row.situationCycles) && row.situationCycles.length <= 100000
@@ -835,6 +839,31 @@ export function parseTtrpgRuntimeStateV2(
     if (recovery.action === 'evidence' && !openRun!.knowledge.some(k => k.knowledgeKey === recovery.recoveryKey && k.evidenceRef === recovery.targetRef && k.publicFieldsHash === recovery.publicFieldsHash && k.acquisitionRef.sessionKey === recovery.sourceRef.sessionKey && k.acquisitionRef.sequence === recovery.sourceRef.sequence && k.reliability === 'observed' && k.audience === 'private' && k.recipientActorKeys.length === 1 && k.recipientActorKeys[0] === recovery.actorKey)) fail("恢复线索没有真实定向知识记录");
     if (recovery.stoppedRef && recovery.sourceRef.sessionKey === sessionKey && !openRun!.coordination.epochs.some(e => e.epochKey === recovery.authorizationEpochKey && e.status === 'closed' && e.closedRef?.sequence === recovery.stoppedRef!.sequence && e.stopReason === recovery.stopReason)) fail("恢复停止必须闭合实际原授权窗口");
     if (recovery.failedEvaluationRefs.some(ref => !openRun!.gateReceipts?.some(g => g.sourceRef.sessionKey === ref.sessionKey && g.sourceRef.sequence === ref.sequence && g.authorizationEpochKey === recovery.authorizationEpochKey && !g.result.allApplicablePassed))) fail("恢复停止引用了不存在或并未失败的评估");
+  }
+  const continuedLedger = openRun?.factLedger;
+  if (continuedLedger?.version === 2) {
+    const continuation = openRun!.releaseContinuation;
+    if (!continuation || continuedLedger.basis.runtimeSourceHash !== continuation.plan.targetRuntimeSourceHash) fail("新版事实账本必须绑定明确的续团发布");
+    for (const entry of continuedLedger.entries) {
+      const basis = ttrpgOpenFactEntryBasis(continuedLedger, entry);
+      if (entry.sourceRef.sessionKey === sessionKey) {
+        if (basis.basisHash !== continuedLedger.basis.basisHash) fail("本地新事实不能冒用祖先确认基础");
+      } else {
+        const ancestor = branchLineage?.ancestors.find(a => a.sessionKey === entry.sourceRef.sessionKey && a.throughSequence >= entry.sourceRef.sequence);
+        const oldLedger = ancestor?.snapshot.openRun?.factLedger;
+        const old = oldLedger?.entries.find(e => e.fact.factKey === entry.fact.factKey);
+        const stripOrigin = (value: object) => Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'originBasisHash'));
+        if (!ancestor || ancestor.runtimeSourceHash !== basis.runtimeSourceHash || !oldLedger || !old
+          || stableProductRuntimeJsonV1(ttrpgOpenFactEntryBasis(oldLedger, old)) !== stableProductRuntimeJsonV1(basis)
+          || stableProductRuntimeJsonV1(stripOrigin(old)) !== stableProductRuntimeJsonV1(stripOrigin(entry))) fail("继承事实必须保持真实祖先的原确认、候选 hash 和来源");
+      }
+    }
+  }
+  for (const task of branchLineage?.recoveryTasks ?? []) {
+    if (task.status !== 'withdrawn') continue;
+    const interrupted = openRun?.releaseContinuation?.plan.interrupted.find(item => item.taskKey === task.taskKey);
+    if (!interrupted || interrupted.operationKey !== task.operation.operationKey || interrupted.ancestorSessionKey !== task.ancestorSessionKey
+      || stableProductRuntimeJsonV1(interrupted.remainingStepKeys) !== stableProductRuntimeJsonV1(task.remainingStepKeys)) fail("放弃后续步骤必须有明确续团中断记录");
   }
   const openings = openRun?.stageOpenings ?? [];
   if (new Set(openings.map(o => o.plan.openingKey)).size !== openings.length
@@ -982,8 +1011,10 @@ export function parseTtrpgRuntimeStateV2(
       || openRun.consultedThisWorldTurn > 2)) fail("Oracle 本世界轮咨询额度必须由真实结果派生");
     if (openRun.factLedger) {
       const ledger = openRun.factLedger;
+      const inheritedFactIdentity = (entry: object) => stableProductRuntimeJsonV1(ledger.version === 2
+        ? Object.fromEntries(Object.entries(entry).filter(([key]) => key !== 'originBasisHash')) : entry);
       const inheritedFacts = new Set(branchLineage?.ancestors.flatMap(ancestor =>
-        (ancestor.snapshot.openRun?.factLedger?.entries ?? []).map(entry => stableProductRuntimeJsonV1(entry))) ?? []);
+        (ancestor.snapshot.openRun?.factLedger?.entries ?? []).map(inheritedFactIdentity)) ?? []);
       const inheritedRetirements = new Set(branchLineage?.ancestors.flatMap(ancestor =>
         (ancestor.snapshot.openRun?.factLedger?.retirements ?? []).map(entry => stableProductRuntimeJsonV1(entry))) ?? []);
       const currentEpochAllows = (entry: { sourceRef: { sessionKey: string; sequence: number }; viewerKey: string; authorizationEpochKey: string }) =>
@@ -1011,7 +1042,7 @@ export function parseTtrpgRuntimeStateV2(
         || ledger.entries.some(entry => !factSourceAuthorityAllows(entry)
           || !openRun.oracleReceipts?.some(oracle => stableProductRuntimeJsonV1(oracle.sourceRef) === stableProductRuntimeJsonV1(entry.oracleSourceRef))
           || (entry.sourceRef.sessionKey === sessionKey ? !currentEpochAllows(entry)
-            : !ttrpgOpenAncestorSourceAllowedV1(branchLineage, entry.sourceRef, ['ttrpg.fact.asserted', 'ttrpg.open.oracle.reviewed']) || !inheritedFacts.has(stableProductRuntimeJsonV1(entry))))
+            : !ttrpgOpenAncestorSourceAllowedV1(branchLineage, entry.sourceRef, ['ttrpg.fact.asserted', 'ttrpg.open.oracle.reviewed']) || !inheritedFacts.has(inheritedFactIdentity(entry))))
         || ledger.retirements.some(entry => entry.sourceRef.sessionKey === sessionKey ? !currentEpochAllows(entry)
           : !ttrpgOpenAncestorSourceAllowedV1(branchLineage, entry.sourceRef, ['ttrpg.fact.asserted', 'ttrpg.fact.retired', 'ttrpg.open.oracle.reviewed']) || !inheritedRetirements.has(stableProductRuntimeJsonV1(entry)))) {
         fail("事实账本缺少冻结来源、真实 Oracle、授权窗口或精确祖先事件");

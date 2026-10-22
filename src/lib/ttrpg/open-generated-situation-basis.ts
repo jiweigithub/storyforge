@@ -2,7 +2,7 @@ import { ttrpgOpenSituationCatalogV1, ttrpgOpenSituationRuntimeReferenceCatalogV
 /** P9 deterministic human-GM preflight. This is not a registered model source, a Run or an acceptance command. */
 import type { WorkspaceScope } from '../types'
 import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
-import { verifyTtrpgOpenFactLedgerV1, ttrpgOpenSessionFactsV1 } from './open-fact-ledger'
+import { verifyTtrpgOpenFactLedger, ttrpgOpenSessionFactsV1 } from './open-fact-ledger'
 import { verifyTtrpgOpenOracleJournalV1 } from './open-oracle-contract'
 import { ttrpgOpenMechanicalStateHashV1 } from './open-rule-plan'
 import { hashProductProductionValueV2 as hash } from '../product-production/hash'
@@ -24,7 +24,7 @@ export async function buildTtrpgOpenSituationBasisFromVerifiedReadV1(loaded: Awa
   if (authorization.seats.some(s => !s.consent.sessionLoggingAllowed)) throw new Error('本桌尚未同意保存生成局势所需的来源记录。')
   if (run.stage.status !== 'open' || runtime.product.safety.status !== 'active') throw new Error('局势预检需要阶段进行中且本桌未暂停。')
   await verifyTtrpgOpenOracleJournalV1({ receipts: run.oracleReceipts ?? [], rulePack: content.rulePack.content, sessionKey: runtime.sessionKey, seed: loaded.session.seed, ancestors })
-  await verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash, oracleReceipts: run.oracleReceipts ?? [], entityOperations: run.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
+  await verifyTtrpgOpenFactLedger({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash, oracleReceipts: run.oracleReceipts ?? [], entityOperations: run.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
   const sessionFacts = ttrpgOpenSessionFactsV1(run.factLedger).filter(f => !f.retired)
   const referencePolicy = explicitReferencePolicy ?? run.coordination.epochs.find(e => e.epochKey === inputProposalKey)?.runtimeEntityReferencePolicy
   if (referencePolicy) {

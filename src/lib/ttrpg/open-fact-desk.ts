@@ -5,7 +5,7 @@ import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
 import { readTtrpgSessionParticipantsV2 } from './participants'
 import { verifyTtrpgOpenOracleJournalV1, type TtrpgOpenOracleReceiptV1 } from './open-oracle-contract'
 import { verifyTtrpgOpenOracleReviewHashesV1 } from './open-oracle-review'
-import { verifyTtrpgOpenFactLedgerV1,
+import { verifyTtrpgOpenFactLedger,
   ttrpgOpenSessionFactsV1, hashTtrpgOpenOracleFactCandidateV1, parseTtrpgOpenOracleFactProposalV1, type TtrpgOpenOracleFactProposalV1 } from './open-fact-ledger'
 import { isTtrpgOpenPassiveEpochV1, assertTtrpgOpenSituationWindowEventV1, parseTtrpgOpenSourceRefV1, type TtrpgOpenSourceRefV1 } from './open-coordination'
 import { ttrpgOpenEntityIdentityCatalogV1 } from './open-entity-catalog'
@@ -26,7 +26,7 @@ export async function loadTtrpgOpenFactDeskOwnerV1(input: TtrpgOpenFactDeskInput
   const { runtime, content, source } = loaded, run = runtime.openRun!
   await verifyTtrpgOpenOracleJournalV1({ receipts: run.oracleReceipts ?? [], rulePack: content.rulePack.content, sessionKey: runtime.sessionKey,
     seed: loaded.session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] })
-  await verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash,
+  await verifyTtrpgOpenFactLedger({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash,
     oracleReceipts: run.oracleReceipts ?? [], entityOperations: run.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
   await verifyTtrpgOpenOracleReviewHashesV1(run.oracleReviews ?? [])
   await loaded.assertCurrent()

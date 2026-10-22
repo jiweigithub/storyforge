@@ -1,3 +1,5 @@
+import { assertTtrpgOpenContinuationParentV1, assertTtrpgOpenContinuationBackupV1 } from '../ttrpg/open-release-continuation-backup'
+import { isTtrpgRuntimeContentV2 } from '../ttrpg/content-version'
 import { assertTtrpgStageOpeningBackupV1 } from '../ttrpg/stage-opening-backup'
 import { validateExtensionBackup } from '../extensions/portable'
 /**
@@ -577,6 +579,17 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
     if (!parentRelease || !childRelease || !parentManifest || !childManifest) {
       throw new Error('[deriveImport] v10 ProductRuntime 迁移Release缺失')
     }
+    if (parent.kind === 'ttrpg' && JSON.parse(session.initialStateJson).ttrpg?.openRun?.releaseContinuation) {
+      const parentContent = parentManifest.runtimePackage.ttrpg, targetContent = childManifest.runtimePackage.ttrpg
+      if (!parentContent || !targetContent || !isTtrpgRuntimeContentV2(parentContent) || !isTtrpgRuntimeContentV2(targetContent)
+        || parent.runtimeSourceHash !== parentManifest.packageHash || session.runtimeSourceHash !== childManifest.packageHash) {
+        throw new Error('[deriveImport] open 续团发布或冻结来源不一致')
+      }
+      await assertTtrpgOpenContinuationParentV1({ parent: parent as unknown as import('../types').ProductRuntimeSession,
+        child: session as unknown as import('../types').ProductRuntimeSession,
+        parentEvents: runtimeEventsBySession.get(parent._exportId) ?? [], throughSequence: parentThroughSequence, parentContent, targetContent, targetRuntimePackage: childManifest.runtimePackage })
+      continue
+    }
     try {
       const sourceStateHash = await replayTextOpenWorldMigrationSourceStateHashV1({
         session: parent as unknown as Pick<import('../types').ProductRuntimeSession, 'initialStateJson'>,
@@ -864,6 +877,7 @@ async function validateCurrentBackup(data: ProjectExportData): Promise<void> {
   await validateProductArchitectureBackup(value)
   await assertTtrpgNarrativeMemoryBackupV1(value)
   await assertTtrpgStageOpeningBackupV1(value)
+  await assertTtrpgOpenContinuationBackupV1(value)
   await validateIndependentCreationBackup(value)
   for (const spec of PROJECT_TABLES) {
     if (!spec.exportable || spec.name === 'projects' || spec.name === 'worlds' || spec.name === 'works') continue

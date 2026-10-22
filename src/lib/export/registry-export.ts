@@ -1,3 +1,5 @@
+import { assertTtrpgOpenContinuationParentV1 } from '../ttrpg/open-release-continuation-backup'
+import { isTtrpgRuntimeContentV2 } from '../ttrpg/content-version'
 /**
  * 注册表派生的项目导出引擎(AUDIT-1)
  *
@@ -166,6 +168,16 @@ async function assertProductRuntimeExportIntegrityV1(
     const childManifest = releaseManifestsById.get(session.productReleaseId)
     if (!parentRelease || !childRelease || !parentManifest || !childManifest) {
       throw new Error('[deriveExport] ProductRuntimeSession 迁移Release缺失')
+    }
+    if (parent.kind === 'ttrpg' && JSON.parse(session.initialStateJson).ttrpg?.openRun?.releaseContinuation) {
+      const parentContent = parentManifest.runtimePackage.ttrpg, targetContent = childManifest.runtimePackage.ttrpg
+      if (!parentContent || !targetContent || !isTtrpgRuntimeContentV2(parentContent) || !isTtrpgRuntimeContentV2(targetContent)
+        || parent.runtimeSourceHash !== parentManifest.packageHash || session.runtimeSourceHash !== childManifest.packageHash) {
+        throw new Error('[deriveExport] open 续团发布或冻结来源不一致')
+      }
+      await assertTtrpgOpenContinuationParentV1({ parent, child: session, parentEvents: eventsBySession.get(parent.id) ?? [],
+        throughSequence: session.parentThroughSequence, parentContent, targetContent, targetRuntimePackage: childManifest.runtimePackage })
+      continue
     }
     try {
       migrationContract ??= await import('../open-world/player-save-migration-contract')

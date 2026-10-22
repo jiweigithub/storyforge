@@ -1,7 +1,7 @@
 /** One read-only resolver. Its combined view is never a frozen Campaign/RuntimePackage. */
 import type { TtrpgCampaignContentV2, TtrpgSituationTemplateV1 } from './open-contract'
 import type { TtrpgOpenSessionSituationReceipt } from './open-session-situation-contract'
-import { ttrpgOpenSessionFactsV1, type TtrpgOpenFactLedgerV1 } from './open-fact-ledger'
+import { ttrpgOpenSessionFactsV1, type TtrpgOpenFactLedger } from './open-fact-ledger'
 import * as p from './open-contract-parse'
 import type { TtrpgOpenRuntimeEntityReferenceV1 } from './open-runtime-entity-references'
 
@@ -51,7 +51,7 @@ export function ttrpgOpenSituationCatalogSnapshotV1(campaign: TtrpgCampaignConte
   return refs.length ? { sessionSituationRefs: refs } : {}
 }
 
-export function ttrpgOpenSituationCatalogV1(campaign: TtrpgCampaignContentV2, run?: { situationReceipts?: readonly TtrpgOpenSessionSituationReceipt[]; factLedger?: TtrpgOpenFactLedgerV1 } | null) {
+export function ttrpgOpenSituationCatalogV1(campaign: TtrpgCampaignContentV2, run?: { situationReceipts?: readonly TtrpgOpenSessionSituationReceipt[]; factLedger?: TtrpgOpenFactLedger } | null) {
   const sessionTemplates = (run?.situationReceipts ?? []).map(r => r.template)
   const templates = [...campaign.situationTemplates, ...sessionTemplates]
   p.unique(templates.map(t => t.templateKey), 'frozen/session situation identity')

@@ -45,7 +45,7 @@ const TTRPG_REPLAY_CHUNK_MODULES = {
     'open-audio-runtime', 'open-audio-scope', 'open-audio-contract', 'open-voice-script-contract', 'open-voice-request-contract',
     'open-audio-receipt', 'open-generated-audio-contract',
     'open-voice-confirmed-reading-contract', 'open-voice-reading-contract', 'open-identity-knowledge',
-    'open-branch-contract', 'open-branch-recovery', 'open-companion-preauthorization', 'open-handoff', 'open-hosting-delegation',
+    'open-branch-contract', 'open-release-continuation-contract', 'open-release-compatibility', 'open-release-continuation-proof', 'open-release-continuation-start', 'open-branch-recovery', 'open-companion-preauthorization', 'open-handoff', 'open-hosting-delegation',
     'open-gate-recovery', 'open-knowledge-discovery', 'open-discovery-effect-templates', 'open-operation', 'open-oracle-review', 'open-pressure-cycle',
     'open-pressure-effect', 'open-table-conversation', 'open-table-conversation-reducer', 'open-turn-settlement', 'open-manual-action', 'open-manual-catalog', 'open-private-choice', 'open-table-risk', 'open-rule-plan', 'open-runtime-contract', 'open-situation-cycle',
     'open-situation-runtime', 'open-stage-opening-contract', 'open-stage-opening-plan', 'open-stage-close', 'open-terminal-gates', 'open-memory-proof', 'open-memory-reducer',

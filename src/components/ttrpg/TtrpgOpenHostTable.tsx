@@ -1,3 +1,4 @@
+import TtrpgOpenContinuationPanel from './TtrpgOpenContinuationPanel'
 import TtrpgOpenStageOpeningPanel from './TtrpgOpenStageOpeningPanel'
 import TtrpgOpenBriefPanel from './TtrpgOpenBriefPanel'
 import TtrpgOpenEntityPanel from './TtrpgOpenEntityPanel'
@@ -57,30 +58,31 @@ export default function TtrpgOpenHostTable(props: TtrpgPlayTablePropsV1 & { view
     {error && <div role="alert">{error}</div>}{notice && <p role="status">{notice}</p>}
     <button disabled={busy} onClick={() => { setError('');void refresh() }}>读取主持最新进度</button>
     {!view && !error && <p role="status">正在读取主持进度…</p>}
-    {view && !view.started && <fieldset className="sf-open-table-card" disabled={busy}><legend>主持确认开团</legend>
-      <p>{view.agreement.premise}</p><ul>{view.agreement.consentChecklist.map(s => <li key={s}>{s}</li>)}</ul>
+    {view && !view.started && <fieldset className="sf-open-table-card" disabled={busy}><legend>{view.continuationOpening ? '主持确认续团开局' : '主持确认开团'}</legend>
+      <p>{view.agreement.premise}</p>{view.continuationOpening && <p>承接到世界轮次 {view.continuationOpening.worldTurn}，保留 {view.continuationOpening.interruptedCount} 项中断行动及 {view.continuationOpening.unknownCount} 条未知结果。确认后按本桌新席位检查开局。</p>}<ul>{view.agreement.consentChecklist.map(s => <li key={s}>{s}</li>)}</ul>
       <p>不涉及：{view.agreement.lines.join('、') || '按本桌约定'}；淡出处理：{view.agreement.veils.join('、') || '按本桌约定'}；暂停信号：{view.agreement.pauseSignal}</p>
       <p>每位真人须分别认领并确认自己的席位。</p><label><input type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)} />我确认以上开团约定。</label>
-      <button disabled={!accepted} onClick={() => void perform(async () => { await startTtrpgOpenTableV1({ ...input(),acceptedItemKeys: view.requiredItemKeys }) })}>由真人主持开始冒险</button>
+      <button disabled={!accepted} onClick={() => void perform(async () => { await startTtrpgOpenTableV1({ ...input(),acceptedItemKeys: view.requiredItemKeys }) })}>{view.continuationOpening ? '确认续团开局' : '由真人主持开始冒险'}</button>
     </fieldset>}
     {host && <TtrpgOpenHistoricalResponses key={`history:${sessionId}:${viewerKey}:${props.state.lastSequence}`} input={input()} entries={host.historicalResponses ?? []} busy={busy} perform={perform} />}
-    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenMemoryPanel key={`memory:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
-    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenAudioPanel key={`audio:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} paused={props.state.ttrpg.product.safety.status !== 'active'} busy={busy} onChanged={async () => { await props.onChanged(); await refresh() }} />}
-    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenConsultationPanel key={`consultation:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
-    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenIdentityKnowledgePanel key={`identity:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} onChanged={async () => { await props.onChanged(); await refresh() }} />}
-    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenBriefPanel key={`brief:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
-    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenSituationPanel key={`situation:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
-    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenEntityPanel key={`entity:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
-    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenFactPanel key={`fact:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
-    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenOracleModelPanel key={`oracle-fact:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
-    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenNormalizationModelPanel key={`normalize-fact:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
-    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenWorldPatchPanel key={`patch:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
-    {props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenTableConversation key={`${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => { await job() })} />}
+    {view?.sessionZeroComplete && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenMemoryPanel key={`memory:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
+    {view?.sessionZeroComplete && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenAudioPanel key={`audio:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} paused={props.state.ttrpg.product.safety.status !== 'active'} busy={busy} onChanged={async () => { await props.onChanged(); await refresh() }} />}
+    {view?.sessionZeroComplete && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenConsultationPanel key={`consultation:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
+    {view?.sessionZeroComplete && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenIdentityKnowledgePanel key={`identity:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} onChanged={async () => { await props.onChanged(); await refresh() }} />}
+    {view?.sessionZeroComplete && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenBriefPanel key={`brief:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
+    {view?.sessionZeroComplete && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenSituationPanel key={`situation:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
+    {view?.sessionZeroComplete && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenEntityPanel key={`entity:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
+    {view?.sessionZeroComplete && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenFactPanel key={`fact:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
+    {view?.sessionZeroComplete && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenOracleModelPanel key={`oracle-fact:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
+    {view?.sessionZeroComplete && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenNormalizationModelPanel key={`normalize-fact:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
+    {view?.sessionZeroComplete && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenWorldPatchPanel key={`patch:${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={perform} />}
+    {view?.sessionZeroComplete && props.state.ttrpg && 'openRun' in props.state.ttrpg && Boolean(props.state.ttrpg.openRun) && <TtrpgOpenTableConversation key={`${sessionId}:${viewerKey}`} input={input()} sequence={props.state.lastSequence} busy={busy} perform={job => perform(async () => { await job() })} />}
     {host && <>
       <div className="sf-open-table-toolbar"><span>世界轮次 {host.worldTurn} · {host.stageStatus === 'closed' ? '阶段已收束' : '阶段进行中'}</span>
         <button disabled={busy} onClick={() => void perform(async () => { await changeTtrpgOpenTableSafetyV1({ ...input(),status: view.safetyStatus === 'paused' ? 'active' : 'paused',reason: view.safetyStatus === 'paused' ? '真人主持明确恢复' : '真人主持使用安全暂停' }) })}>{view.safetyStatus === 'paused' ? '主持恢复冒险' : '主持暂停冒险'}</button>
         <button disabled={busy} onClick={() => void perform(async () => { await props.onCheckpoint(`真人主持 · 世界轮次 ${host.worldTurn}`) })}>保存主持检查点</button>
       </div>
+      {props.session.productReleaseId != null && <TtrpgOpenContinuationPanel input={input()} sequence={view.sequence} busy={busy} perform={perform} />}
       {host.stageStatus === 'closed' && <TtrpgOpenStageOpeningPanel input={input()} sequence={view.sequence} busy={busy} perform={perform} />}
       {view.safetyStatus === 'paused' && <p role="status">冒险已暂停，现有进度保留。</p>}
       <section className="sf-open-table-card" aria-label="主持冒险记录"><h2>全队冒险记录</h2>{host.narrations.map(n => <article key={n.key}>{n.paragraphs.map((text,i) => <p key={i}>{text}</p>)}</article>)}</section>

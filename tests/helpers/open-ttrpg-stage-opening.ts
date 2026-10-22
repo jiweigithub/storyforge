@@ -8,8 +8,8 @@ import { resumeTtrpgOpenChecksV1 } from '../../src/lib/ttrpg/open-checks-coordin
 import { resumeTtrpgOpenPlayV1 } from '../../src/lib/ttrpg/open-play-coordinator'
 import { finishTtrpgOpenTableWindowV1 } from '../../src/lib/ttrpg/open-table-service'
 
-export async function setupClosedStageOpeningV1() {
-  const f = await setupChecksFixtureV1({ closure: true, ai: true })
+export async function setupClosedStageOpeningV1(released = false) {
+  const f = await setupChecksFixtureV1({ closure: true, ai: true, released })
   await resumeTtrpgOpenChecksV1(f.command)
   await closeTtrpgOpenStageV1({ ...await operationInput(f.command.sessionId, f.command.operationKey, 'stage.close'), summary: '确认第一阶段收束，保留原时间和线索' })
   await resumeTtrpgOpenChecksV1(f.command)

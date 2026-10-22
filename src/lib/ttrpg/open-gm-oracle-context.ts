@@ -15,7 +15,7 @@ import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { readTtrpgSessionParticipantsV2 } from './participants'
 import { assertTtrpgOpenAuthorizationRowsCurrentV1 } from './open-authorization'
 import { verifyTtrpgOpenOracleJournalV1 } from './open-oracle-contract'
-import { verifyTtrpgOpenFactLedgerV1, ttrpgOpenSessionFactsV1 } from './open-fact-ledger'
+import { verifyTtrpgOpenFactLedger, ttrpgOpenSessionFactsV1 } from './open-fact-ledger'
 import { ttrpgOpenMechanicalStateHashV1 } from './open-rule-plan'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 
@@ -34,7 +34,7 @@ export async function loadTtrpgOpenGmOracleContextV1(input: { scope: WorkspaceSc
   await verifyTtrpgOpenOracleJournalV1({ receipts: runtime.openRun.oracleReceipts ?? [], rulePack: content.rulePack.content,
     sessionKey: runtime.sessionKey, seed: session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] })
   await verifyTtrpgOpenOracleReviewHashesV1(runtime.openRun.oracleReviews ?? [])
-  await verifyTtrpgOpenFactLedgerV1({ ledger: runtime.openRun.factLedger, content, runtimeSourceHash: session.runtimeSourceHash,
+  await verifyTtrpgOpenFactLedger({ ledger: runtime.openRun.factLedger, content, runtimeSourceHash: session.runtimeSourceHash,
     oracleReceipts: runtime.openRun.oracleReceipts ?? [], entityOperations: runtime.openRun.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
   const epoch = runtime.openRun.coordination.epochs.find(row => row.epochKey === runtime.openRun!.coordination.activeEpochKey)
   const oracleRuntimeReferencePolicy = epoch?.oracleRuntimeReferencePolicy

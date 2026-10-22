@@ -24,12 +24,21 @@ export interface TtrpgOpenGateReceiptV1 {
   sourceRef: TtrpgOpenSourceRefV1; ruleSourceRef: TtrpgOpenSourceRefV1; terminalRef: TtrpgOpenSourceRefV1; authorizationEpochKey: string;
   actorKey: string; viewerKey: string; evaluationBasisJson: string; result: TtrpgOpenRuntimeGateEvaluationV1
 }
+function currentStageRevision(runtime: import('./open-runtime-contract').TtrpgRuntimeStateV2): string {
+  const run = runtime.openRun!, latest = run.stageOpenings?.[run.stageOpenings.length - 1]?.plan, continued = run.releaseContinuation;
+  if (!continued) return latest?.stageRevision ?? `stage.${run.stage.openedAtWorldTurn}`;
+  const origin = continued.confirmedRef;
+  const rank = (sessionKey: string) => sessionKey === runtime.sessionKey ? (runtime.branchLineage?.ancestors.length ?? 0) : (runtime.branchLineage?.ancestors.findIndex(a => a.sessionKey === sessionKey) ?? -1);
+  if (latest && origin && (rank(latest.sessionKey) > rank(origin.sessionKey)
+    || latest.sessionKey === origin.sessionKey && latest.plannedSourceRef.sequence > origin.sequence)) return latest.stageRevision;
+  return `stage.opening.${continued.plan.planHash}`;
+}
 export function evaluateTtrpgOpenTerminalV1(state: ProductRuntimeState, content: TtrpgRuntimeContentV2): TtrpgOpenTerminalDecisionV1 {
   const runtime = parseTtrpgRuntimeStateV2(state.ttrpg)!, run = runtime.openRun!, closure = evaluateTtrpgOpenStageClosureV1({ stageClosurePolicy: content.campaign.stageClosurePolicy,
     predicateContext: ttrpgOpenPredicateContextV1(state, content), worldTurn: run.worldTime.worldTurn })
   const status = run.stage.status === 'closed' ? 'stage-closed' : runtime.product.safety.status !== 'active' ? 'safety-paused'
     : closure.maximumReached ? 'maximum-reached' : closure.eligible ? 'closure-available' : 'actionable'
-  return { status, worldTurn: run.worldTime.worldTurn, stageRevision: run.stageOpenings?.[run.stageOpenings.length - 1]?.plan.stageRevision ?? `stage.${run.stage.openedAtWorldTurn}`, closure }
+  return { status, worldTurn: run.worldTime.worldTurn, stageRevision: currentStageRevision(runtime), closure }
 }
 export function parseTtrpgOpenTerminalReceiptV1(value: unknown): TtrpgOpenTerminalReceiptV1 {
   const r = p.record(value, ['sourceRef', 'ruleSourceRef', 'frozenContent', 'contentHash', 'runtimeSourceHash', 'decision'], 'terminal receipt')

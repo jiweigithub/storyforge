@@ -6,7 +6,7 @@ import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import { verifyProductReleaseManifestV1 } from '../product-production/runtime-package'
 import { portableWorldReferenceV1 } from '../world-engine/world-reference'
 import { loadTtrpgOpenMemoryReadStateV1 } from './open-memory-read-state'
-import { ttrpgOpenSessionFactsV1, verifyTtrpgOpenFactLedgerV1 } from './open-fact-ledger'
+import { ttrpgOpenSessionFactsV1, verifyTtrpgOpenFactLedger } from './open-fact-ledger'
 import { verifyTtrpgOpenOracleJournalV1 } from './open-oracle-contract'
 import { ttrpgOpenMemoryEventDigestV1 } from './open-memory-event-digest'
 import { MAX_TTRPG_WORLD_PATCH_BYTES_V1, parseTtrpgWorldPatchSourceV1, ttrpgWorldPatchConflictsV1, ttrpgWorldPatchFactVisibleV1, verifyTtrpgWorldPatchCandidateV1,
@@ -34,7 +34,7 @@ async function loadReview(input: TtrpgWorldPatchDeskInputV1) {
     lineageHash: lineage.lineageHash, buildManifestHash: manifest.productionProvenance.buildManifestHash, productInstanceKey: lineage.productInstanceKey,
     frozenIndexHash: content.campaign.frozenWorldPredicateIndex.indexHash, rulePackContentHash: content.rulePack.contentHash, sourceBundleHash: content.campaign.sourceWorld.bundleHash })
   await verifyTtrpgOpenOracleJournalV1({ receipts: run.oracleReceipts ?? [], rulePack: content.rulePack.content, sessionKey: runtime.sessionKey, seed: loaded.session.seed, ancestors })
-  await verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash, oracleReceipts: run.oracleReceipts ?? [], entityOperations: run.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
+  await verifyTtrpgOpenFactLedger({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash, oracleReceipts: run.oracleReceipts ?? [], entityOperations: run.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
   const visible = (audience: string, knownBy: readonly string[]) => audience === 'public' || audience === 'party'
     || audience === 'private' && Boolean(input.includePrivate) && (gmReader || Boolean(loaded.seat?.actorKey && knownBy.includes(loaded.seat.actorKey)))
     || audience === 'gm-only' && Boolean(input.includeGmOnly) && gmReader

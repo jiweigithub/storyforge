@@ -1,3 +1,4 @@
+import { ttrpgOpenFrozenSourceHashV1 } from './open-release-continuation-proof'
 import type { ProductRuntimeEvent } from '../types'
 import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
 import type { TtrpgOpenKnowledgeEntryV1 } from './open-knowledge'
@@ -21,7 +22,7 @@ export async function verifyTtrpgOpenIdentityKnowledgeV1(input: { runtime: Ttrpg
   for (const knowledge of entries) {
     const grant = knowledge.identityGrant!, ref = knowledge.acquisitionRef, source = runtime.openRun!.knowledge.find(row => row.knowledgeKey === grant.sourceKnowledgeKey)!
     const commandId = await ttrpgOpenScopedKeyV1(ref.sessionKey, 'identity-control', [grant.viewerKey, grant.submissionKey])
-    if (grant.runtimeSourceHash !== input.runtimeSourceHash || grant.sourceKnowledgeHash !== await hash(source)
+    if (grant.runtimeSourceHash !== ttrpgOpenFrozenSourceHashV1(runtime, ref, input.runtimeSourceHash) || grant.sourceKnowledgeHash !== await hash(source)
       || grant.confirmationHash !== await hashTtrpgOpenIdentityKnowledgeConfirmationV1(knowledge)
       || knowledge.knowledgeKey !== await ttrpgOpenScopedKeyV1(ref.sessionKey, 'identity-grant', [grant.viewerKey, grant.submissionKey])) p.fail('身份确认的冻结来源、原知识或审阅摘要已变化')
     const payload = ttrpgOpenIdentityKnowledgePayloadV1(knowledge), type = ttrpgOpenIdentityKnowledgeEventV1(grant.mode)
@@ -31,7 +32,7 @@ export async function verifyTtrpgOpenIdentityKnowledgeV1(input: { runtime: Ttrpg
         || stable(JSON.parse(event.payloadJson)) !== stable(payload)) p.fail('身份知识没有原准确正式事件')
     } else {
       const ancestor = runtime.branchLineage?.ancestors.find(row => row.sessionKey === ref.sessionKey), event = ancestor?.events[ref.sequence - 1]
-      if (!ancestor || ancestor.runtimeSourceHash !== input.runtimeSourceHash || event?.type !== type || event.payloadHash !== await hash(payload)
+      if (!ancestor || ancestor.runtimeSourceHash !== grant.runtimeSourceHash || event?.type !== type || event.payloadHash !== await hash(payload)
         || !ancestor.snapshot.openRun?.knowledge.some(row => stable(row) === stable(knowledge))) p.fail('身份知识没有原祖先切点内的准确事件')
     }
   }

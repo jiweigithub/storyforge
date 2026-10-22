@@ -1,3 +1,5 @@
+import { seedOpenFixtureReleaseV1 } from './open-ttrpg-release'
+import { createProductRuntimeInstanceFromSource } from '../../src/lib/product/runtime-instances'
 import { seedCurrentProductWorld } from './current-product-world'
 import { seedCurrentProductBuild } from './current-product-build'
 import { openRuntimePackageFixture } from './ttrpg-open-package'
@@ -11,7 +13,7 @@ import { hashProductProductionValueV2 } from '../../src/lib/product-production/h
 export const OPEN_HUMAN_VIEWER = 'viewer.seat.hero'
 
 /** Internal protocol-2 fixture, not evidence of normal author production. */
-export async function seedOpenTtrpgSessionV1(title = 'open foundation', configure?: (runtimePackage: ProductRuntimePackageWithTtrpgV2) => void) {
+export async function seedOpenTtrpgSessionV1(title = 'open foundation', configure?: (runtimePackage: ProductRuntimePackageWithTtrpgV2) => void, released = false) {
   const world = await seedCurrentProductWorld(title)
   const runtimePackage = await openRuntimePackageFixture()
   configure?.(runtimePackage)
@@ -25,7 +27,9 @@ export async function seedOpenTtrpgSessionV1(title = 'open foundation', configur
   runtimePackage.ttrpg!.rulePack.contentHash = await hashProductProductionValueV2(runtimePackage.ttrpg!.rulePack.content)
   const result = await seedCurrentProductBuild({ scope: world.scope, worldRelease: world.release,
     runtimePackage, title, seed: 'open.foundation.seed' }, { ttrpgProtocol: 2 })
-  return { ...result, scope: world.scope, runtimePackage, campaign, sessionId: result.session.id! }
+  const published = released ? await seedOpenFixtureReleaseV1(world.scope, runtimePackage) : null
+  const session = published ? await createProductRuntimeInstanceFromSource({ scope: world.scope, source: { kind: 'release', productReleaseId: published.id }, title, seed: 'open.foundation.seed' }) : result.session
+  return { ...result, session, published, scope: world.scope, runtimePackage, campaign, sessionId: session.id! }
 }
 
 export async function openEnvelopeV1(sessionId: number, commandId: string) {
@@ -43,8 +47,8 @@ export async function configureOpenSeatsV1(sessionId: number) {
   }
 }
 
-export async function readyOpenTtrpgSessionV1(title = 'ready open foundation', configure?: Parameters<typeof seedOpenTtrpgSessionV1>[1], selectedCharacterKeys = ['hero', 'companion.1', 'companion.2']) {
-  const fixture = await seedOpenTtrpgSessionV1(title, configure)
+export async function readyOpenTtrpgSessionV1(title = 'ready open foundation', configure?: Parameters<typeof seedOpenTtrpgSessionV1>[1], selectedCharacterKeys = ['hero', 'companion.1', 'companion.2'], released = false) {
+  const fixture = await seedOpenTtrpgSessionV1(title, configure, released)
   await configureOpenSeatsV1(fixture.sessionId)
   const state = await readProductRuntimeState(fixture.sessionId)
   const zero = await completeTtrpgOpenSessionZeroV1({ ...await openEnvelopeV1(fixture.sessionId, 'open.zero'),

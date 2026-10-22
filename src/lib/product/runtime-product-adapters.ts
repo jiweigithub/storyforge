@@ -1,3 +1,4 @@
+import { consumePreparedTtrpgOpenContinuationV1 } from '../ttrpg/open-release-continuation'
 /**
  * Composition root for product-owned runtime adapters.
  *
@@ -443,7 +444,9 @@ export async function prepareProductRuntimeStateForBranchV1(input: {
 }
 export async function consumeProductRuntimeBranchPreparationV1(state: ProductRuntimeState | undefined, runtimeSourceHash: string): Promise<void> {
   if (state?.ttrpg && 'runFormat' in state.ttrpg && state.ttrpg.runFormat === 'open') {
-    await consumePreparedTtrpgOpenBranchStateV1(state, runtimeSourceHash)
+    const runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
+    if (runtime?.openRun?.releaseContinuation?.plan.childSessionKey === runtime?.sessionKey && !runtime?.openRun?.releaseContinuation?.confirmedRef) await consumePreparedTtrpgOpenContinuationV1(state, runtimeSourceHash)
+    else await consumePreparedTtrpgOpenBranchStateV1(state, runtimeSourceHash)
   }
 }
 

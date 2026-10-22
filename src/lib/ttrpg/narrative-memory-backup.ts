@@ -53,7 +53,7 @@ export async function assertTtrpgNarrativeMemoryBackupV1(backup: Record<string, 
     if (_sourceSessionExportId != null) {
       const source = byId.get(_sourceSessionExportId)
       if (!source || source.kind !== 'ttrpg' || source._worldExportId !== owner._worldExportId || source._workExportId !== owner._workExportId
-        || source.runtimeSourceHash !== owner.runtimeSourceHash || JSON.parse(source.initialStateJson).ttrpg?.sessionKey !== receipt.sourceRef.sessionKey) throw new Error('[ttrpg-memory-backup] 本地来源定位与稳定原实例不一致')
+        || source.runtimeSourceHash !== receipt.runtimeSourceHash || JSON.parse(source.initialStateJson).ttrpg?.sessionKey !== receipt.sourceRef.sessionKey) throw new Error('[ttrpg-memory-backup] 本地来源定位与稳定原实例不一致')
     }
     const identity = `${row._productRuntimeSessionExportId}:${row.revisionKey}`
     if (identities.has(identity)) throw new Error('[ttrpg-memory-backup] 记忆版本重复')

@@ -171,14 +171,58 @@ export function parseTtrpgOpenFactLedgerV1(value: unknown): TtrpgOpenFactLedgerV
   }
   return { schema: 'storyforge.ttrpg-open-fact-ledger', version: 1, basis: parseBasis(r.basis), entries, retirements }
 }
-export function ttrpgOpenSessionFactsV1(ledger?: TtrpgOpenFactLedgerV1): TtrpgSessionFactV1[] {
+/** Explicit V2 keeps every inherited confirmation hash under its original basis. */
+export interface TtrpgOpenFactLedgerV2 extends Omit<TtrpgOpenFactLedgerV1, 'version' | 'entries'> {
+  version: 2; sourceBases: TtrpgOpenFactBasisV1[];
+  entries: Array<TtrpgOpenFactEntryV1 & { originBasisHash?: string }>;
+}
+export type TtrpgOpenFactLedger = TtrpgOpenFactLedgerV1 | TtrpgOpenFactLedgerV2;
+function factBasisSemantics(basis: TtrpgOpenFactBasisV1) {
+  const { runtimeSourceHash: _source, basisHash: _hash, ...semantics } = basis;
+  return semantics;
+}
+export function ttrpgOpenFactEntryBasis(ledger: TtrpgOpenFactLedger, entry: TtrpgOpenFactEntryV1): TtrpgOpenFactBasisV1 {
+  if (ledger.version !== 2 || !('originBasisHash' in entry)) return ledger.basis;
+  const key = p.hash(entry.originBasisHash, 'original fact basis');
+  return ledger.sourceBases.find(basis => basis.basisHash === key) ?? p.fail('继承事实没有原始确认基础');
+}
+export function parseTtrpgOpenFactLedger(value: unknown): TtrpgOpenFactLedger {
+  const raw = p.object(value, 'fact ledger version');
+  if (raw.version !== 2) return parseTtrpgOpenFactLedgerV1(value);
+  const r = p.record(raw, ['schema', 'version', 'basis', 'sourceBases', 'entries', 'retirements'], 'continued fact ledger');
+  const entries = p.list(r.entries, 'continued fact entries', value => {
+    const entry = p.object(value, 'continued fact entry'), { originBasisHash, ...original } = entry;
+    return { original, originBasisHash: Object.prototype.hasOwnProperty.call(entry, 'originBasisHash') ? p.hash(originBasisHash, 'original fact basis') : null };
+  }, 100000);
+  const legacy = parseTtrpgOpenFactLedgerV1({ schema: r.schema, version: 1, basis: r.basis,
+    entries: entries.map(e => e.original), retirements: r.retirements });
+  const sourceBases = p.list(r.sourceBases, 'original fact bases', parseBasis, 1000);
+  p.unique(sourceBases.map(b => b.basisHash), 'original fact bases');
+  if (sourceBases.some(b => b.basisHash === legacy.basis.basisHash || stable(factBasisSemantics(b)) !== stable(factBasisSemantics(legacy.basis)))) p.fail('兼容续团不能改变事实世界、规则、实体或不变量');
+  const result: TtrpgOpenFactLedgerV2 = { ...legacy, version: 2, sourceBases, entries: legacy.entries.map((entry, index) => ({ ...entry,
+    ...(entries[index].originBasisHash ? { originBasisHash: entries[index].originBasisHash! } : {}) })) };
+  for (const entry of result.entries) ttrpgOpenFactEntryBasis(result, entry);
+  return result;
+}
+export function continueTtrpgOpenFactLedger(ledger: TtrpgOpenFactLedger, basis: TtrpgOpenFactBasisV1): TtrpgOpenFactLedgerV2 {
+  const original = parseTtrpgOpenFactLedger(ledger), all = [...(original.version === 2 ? original.sourceBases : []), original.basis];
+  const sourceBases = all.filter((b, index) => b.basisHash !== basis.basisHash && all.findIndex(other => other.basisHash === b.basisHash) === index);
+  const continued = parseTtrpgOpenFactLedger({ ...original, version: 2, basis, sourceBases,
+    entries: original.entries.map(entry => {
+      const source = ttrpgOpenFactEntryBasis(original, entry), { originBasisHash: _old, ...body } = { originBasisHash: undefined, ...entry };
+      return { ...body, ...(source.basisHash !== basis.basisHash ? { originBasisHash: source.basisHash } : {}) };
+    }) });
+  if (continued.version !== 2) p.fail('续团事实必须为明确 V2 格式');
+  return continued;
+}
+export function ttrpgOpenSessionFactsV1(ledger?: TtrpgOpenFactLedger): TtrpgSessionFactV1[] {
   return (ledger?.entries ?? []).map(entry => {
     const retirement = ledger?.retirements.find(retirement => retirement.factKey === entry.fact.factKey)
     return retirement ? retireTtrpgSessionFactV1({ fact: entry.fact, retiredAtSequence: retirement.sourceRef.sequence }) : structuredClone(entry.fact)
   })
 }
 /** An old party audience is a frozen recipient grant; joining later does not reveal its history. */
-export function projectTtrpgOpenSessionFactsForActorV1(ledger: TtrpgOpenFactLedgerV1 | undefined, actorKey: string) {
+export function projectTtrpgOpenSessionFactsForActorV1(ledger: TtrpgOpenFactLedger | undefined, actorKey: string) {
   return ttrpgOpenSessionFactsV1(ledger).filter(fact => !fact.retired && fact.audience !== 'gm-only'
     && (fact.audience === 'public' || fact.knownBy.includes(actorKey))).map(fact => ({
       factKey: fact.factKey, kind: fact.kind, subjectRef: fact.subjectRef, predicateKey: fact.predicateKey, objectRef: fact.objectRef,
@@ -228,24 +272,28 @@ export function assertTtrpgOpenFactEntryGatesV1(input: {
   if (basis.frozenWorldPredicateIndex.entries.some(invariant => invariant.authority === 'invariant' && invariant.subjectRef === fact.subjectRef
     && invariant.predicateKey === fact.predicateKey && invariant.objectRef === fact.objectRef)) p.fail('会话事实不能占用冻结不变量槽位')
 }
-export async function verifyTtrpgOpenFactLedgerV1(input: {
-  ledger?: TtrpgOpenFactLedgerV1; content: TtrpgRuntimeContentV2; runtimeSourceHash: string;
+export async function verifyTtrpgOpenFactLedger(input: {
+  ledger?: TtrpgOpenFactLedger; content: TtrpgRuntimeContentV2; runtimeSourceHash: string;
   oracleReceipts: readonly TtrpgOpenOracleReceiptV1[]; storyFacts: Readonly<Record<string, string | number | boolean | null>>;
   entityOperations?: readonly TtrpgOpenEntityOperationV1[];
 }): Promise<void> {
   if (!input.ledger) return
-  const ledger = parseTtrpgOpenFactLedgerV1(input.ledger)
+  const ledger = parseTtrpgOpenFactLedger(input.ledger)
   if (stable(ledger.basis) !== stable(await createTtrpgOpenFactBasisV1(input.content, input.runtimeSourceHash))) p.fail('事实账本与实际冻结世界/规则/实体来源不一致')
+  for (const basis of ledger.version === 2 ? ledger.sourceBases : []) {
+    const { basisHash, ...body } = basis;
+    if (await hashProductProductionValueV2(body) !== basisHash) p.fail('原事实基础 hash 不一致');
+  }
   if (ledger.entries.some(entry => entry.runtimeEntityReferences)) await (await import('./open-entity-proof')).verifyTtrpgOpenEntityPlanHashesV1(input.entityOperations ?? [], input.content)
   for (const entry of ledger.entries) {
     if (entry.runtimeEntityReferences) {
       await verifyTtrpgOpenFactRuntimeReferenceHashV1(entry.runtimeEntityReferences)
-      entryEntityReferences(ledger.basis, entry, input.entityOperations ?? [])
+      entryEntityReferences(ttrpgOpenFactEntryBasis(ledger, entry), entry, input.entityOperations ?? [])
     }
     if (entry.fact.originRef !== await ttrpgOpenFactSourceEventRefV1(entry.oracleSourceRef)
       || entry.fact.factKey !== await ttrpgOpenFactIdentityV1(entry)
       || entry.candidateHash !== await hashTtrpgOpenOracleFactCandidateV1({ proposal: ttrpgOpenOracleFactProposalFromFactV1(entry.fact), oracleSourceRef: entry.oracleSourceRef,
-        runtimeSourceHash: ledger.basis.runtimeSourceHash, viewerKey: entry.viewerKey, baseStateHash: entry.confirmationStateHash })) p.fail('事实候选与真实来源或真人确认字节不一致')
+        runtimeSourceHash: ttrpgOpenFactEntryBasis(ledger, entry).runtimeSourceHash, viewerKey: entry.viewerKey, baseStateHash: entry.confirmationStateHash })) p.fail('事实候选与真实来源或真人确认字节不一致')
   }
   const active = ttrpgOpenSessionFactsV1(ledger).filter(fact => !fact.retired)
   const originalSources = ledger.entries.map(entry => entry.fact)
@@ -256,7 +304,13 @@ export async function verifyTtrpgOpenFactLedgerV1(input: {
     assertTtrpgSessionFactGatesV1({ fact: { ...fact, supersedes: null, supersedeReason: null }, existingFacts: active.filter(other => other.factKey !== fact.factKey),
       sourceFacts: originalSources, frozenWorldPredicateIndex: ledger.basis.frozenWorldPredicateIndex,
       canonInvariantPredicates: ledger.basis.canonInvariantPredicates, factPolicy: ledger.basis.factPolicy,
-      knownEntityRefs: entryEntityReferences(ledger.basis, entry, input.entityOperations ?? []).map(binding => binding.entityRef), effectLedgerStoryFacts: input.storyFacts,
+      knownEntityRefs: entryEntityReferences(ttrpgOpenFactEntryBasis(ledger, entry), entry, input.entityOperations ?? []).map(binding => binding.entityRef), effectLedgerStoryFacts: input.storyFacts,
       sourceEvents: [{ eventRef: fact.originRef!, facts: [], audience: oracle.audience, knownBy: [], kind: 'ordinary' }] })
   }
+}
+
+/** The explicit legacy verifier stays strict; runtime consumers use the dispatcher. */
+export async function verifyTtrpgOpenFactLedgerV1(input: Omit<Parameters<typeof verifyTtrpgOpenFactLedger>[0], 'ledger'> & { ledger?: TtrpgOpenFactLedgerV1 }): Promise<void> {
+  if (input.ledger) parseTtrpgOpenFactLedgerV1(input.ledger);
+  return verifyTtrpgOpenFactLedger(input);
 }

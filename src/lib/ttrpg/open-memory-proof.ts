@@ -1,3 +1,4 @@
+import { ttrpgOpenFrozenSourceHashV1 } from './open-release-continuation-proof'
 /** Exact event-window evidence and portable ancestor proof; no database IDs enter the memory receipt. */
 import type { ProductRuntimeEvent, ProductRuntimeSession } from '../types'
 import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
@@ -34,7 +35,7 @@ export async function verifyTtrpgOpenMemoryReceiptsV1(input: {
     const originIndex = ancestors.findIndex(a => a.sessionKey === receipt.sourceRef.sessionKey)
     const originAncestors = receipt.sourceRef.sessionKey === input.runtime.sessionKey ? ancestors : ancestors.slice(0, originIndex)
     if (receipt.sourceLineageHash !== await hash(ttrpgOpenMemoryLineageBodyV1(receipt.sourceRef.sessionKey, receipt.runtimeSourceHash, originAncestors))
-      || receipt.runtimeSourceHash !== input.runtimeSourceHash || receiptHash !== await hash(body)
+      || receipt.runtimeSourceHash !== ttrpgOpenFrozenSourceHashV1(input.runtime, receipt.sourceRef, input.runtimeSourceHash) || receiptHash !== await hash(body)
       || receipt.derivedFromHash !== await hash(receipt.version === 1 ? ttrpgOpenMemoryWindowBodyV1(receipt) : ttrpgOpenModelMemoryWindowBodyV2(receipt))) throw new Error('[ttrpg-memory] 记忆或真实区间来源 hash 不一致')
     if (receipt.version === 2) {
       let roots = prefixRoots.get(receipt.sourceRef.sessionKey)

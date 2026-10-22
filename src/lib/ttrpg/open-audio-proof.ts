@@ -1,3 +1,4 @@
+import { ttrpgOpenFrozenSourceHashV1 } from './open-release-continuation-proof'
 /** Real event bytes and immutable ancestor evidence, independent of media availability. */
 import type { ProductRuntimeEvent } from '../types'
 import type { TtrpgRuntimeStateV2 } from './open-runtime-contract'
@@ -22,7 +23,7 @@ export async function verifyTtrpgOpenAudioReceiptsV1(input: { runtime: TtrpgRunt
     }
     const ancestor = runtime.branchLineage?.ancestors.find(row => row.sessionKey === ref.sessionKey)
     const authority = ref.sessionKey === runtime.sessionKey ? runtime.authorization : ancestor?.snapshot.authorization
-    if (!authority || receipt.runtimeSourceHash !== input.runtimeSourceHash) p.fail('音频缺少准确原授权或冻结来源')
+    if (!authority || receipt.runtimeSourceHash !== ttrpgOpenFrozenSourceHashV1(runtime, ref, input.runtimeSourceHash)) p.fail('音频缺少准确原授权或冻结来源')
     if (receipt.request.media.kind === 'stop') {
       const stopRef = receipt.request.media.sourceRef, original = runtime.openRun?.audioReceipts?.find(row => ttrpgOpenAudioSourceEqualV1(row.envelope.sourceRef, stopRef))
       if (!original || stable(createTtrpgOpenAudioStopScopeV1(authority, original, receipt.envelope.scope.issuerViewerKey)) !== stable(receipt.envelope.scope)) p.fail('停止未保留原准确接收者和当前主持授权')

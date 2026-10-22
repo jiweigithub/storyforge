@@ -32,6 +32,12 @@ export async function cloneTtrpgRuntimeBranchExtensionsV1(input: {
       ? { parentSessionKey: parseTtrpgRuntimeStateV2(input.state.ttrpg)!.branchLineage!.parentSessionKey } : {}),
   })
 
+  await cloneTtrpgRuntimePreservedExtensionsV1(input)
+}
+
+/** Release continuation shares the same media/memory projection without cloning seats twice. */
+export async function cloneTtrpgRuntimePreservedExtensionsV1(input: Parameters<typeof cloneTtrpgRuntimeBranchExtensionsV1>[0]): Promise<void> {
+  if (input.parent.id == null || input.child.id == null) return
   const childRuntime = input.state.ttrpg && 'runFormat' in input.state.ttrpg && input.state.ttrpg.runFormat === 'open'
     ? parseTtrpgRuntimeStateV2(input.state.ttrpg) : null
   if (childRuntime) await cloneTtrpgOpenAudioMediaV1({ parent: input.parent, child: input.child, runtime: childRuntime })

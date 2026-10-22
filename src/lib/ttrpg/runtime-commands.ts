@@ -1,3 +1,6 @@
+import { assertTtrpgOpenKnowledgeSourceCompatibleV1 } from './open-release-compatibility'
+import { prepareTtrpgOpenContinuationStartV1 } from './open-release-continuation-start'
+import { verifyTtrpgOpenReleaseContinuationRuntimeV1 } from './open-release-continuation-proof'
 import { prepareTtrpgOpenNextStagePlanV1 } from './open-stage-opening-plan'
 import { parseTtrpgOpenStageOpeningReceiptV1 } from './open-stage-opening-contract'
 import type { TtrpgOpenVoiceRunSetWitnessV1 } from './open-voice-request-run'
@@ -127,7 +130,7 @@ import { reconcileTtrpgOpenOracleFactRunV1, TtrpgOpenOracleReceiptPendingError }
 import { loadTtrpgOpenPlayerContextV1 } from './open-player-context';
 import { resolveTtrpgOracleV1, verifyTtrpgOracleOutcomeV1, type TtrpgOracleOutcomeV1 } from './oracle';
 import { parseTtrpgOpenOracleReceiptV1, assertTtrpgOpenOracleCallerV1, verifyTtrpgOpenOracleJournalV1 } from './open-oracle-contract';
-import { createTtrpgOpenFactBasisV1, verifyTtrpgOpenFactLedgerV1, parseTtrpgOpenOracleFactProposalV1, hashTtrpgOpenOracleFactCandidateV1,
+import { createTtrpgOpenFactBasisV1, verifyTtrpgOpenFactLedger, parseTtrpgOpenOracleFactProposalV1, hashTtrpgOpenOracleFactCandidateV1,
   parseTtrpgOpenFactEntryV1, parseTtrpgOpenFactRetirementV1, ttrpgOpenFactSourceEventRefV1, assertTtrpgOpenFactEntryGatesV1,
   ttrpgOpenSessionFactsV1, ttrpgOpenFactIdentityV1, assertTtrpgOpenModelFactApproverV1, type TtrpgOpenFactModelCandidateV1, type TtrpgOpenOracleFactProposalV1 } from './open-fact-ledger';
 import { assertTtrpgOpenOracleRuntimeEpochAuthorityV1, TTRPG_OPEN_ORACLE_INSTANCE_INPUT_V1, TTRPG_OPEN_NORMALIZATION_INSTANCE_INPUT_V1 } from './open-coordination';
@@ -491,6 +494,9 @@ async function appendFormalTtrpgCommand(
       "[ttrpg] 战役已由安全工具暂停；恢复后才能继续规则、场景或 AI 主持。",
     );
   }
+  const continuationRuntime = parseTtrpgRuntimeStateV2(previewState.ttrpg);
+  if (continuationRuntime?.openRun?.releaseContinuation) await verifyTtrpgOpenReleaseContinuationRuntimeV1({ runtime: continuationRuntime,
+    runtimeSourceHash: previewSession.runtimeSourceHash, seed: previewSession.seed, initialState: JSON.parse(previewSession.initialStateJson) });
   // Preflight command-specific validation before opening the write transaction.
   const previewBuilt = await input.build({
     session: previewSession,
@@ -801,9 +807,10 @@ export async function completeTtrpgOpenSessionZeroV1(input: FormalTtrpgCommandEn
       }
       const authorization = createTtrpgOpenAuthorizationV1({ campaign: content.campaign, participants,
         selectedActorKeys: selectedCharacterKeys, viewerKey, sequence, sessionKey: runtime.sessionKey });
+      const continuationOpening = runtime.openRun?.releaseContinuation?.plan.childSessionKey === runtime.sessionKey && !runtime.openRun.releaseContinuation.confirmedRef ? await prepareTtrpgOpenContinuationStartV1({ state, authorization, content }) : null;
       return { actorKey: authorization.completedBySeatKey, targetKey: content.campaign.campaignKey,
         payload: { acceptedItemKeys, selectedCharacterKeys,
-          completedBy: authorization.completedBySeatKey, authorization } };
+          completedBy: authorization.completedBySeatKey, authorization, ...(continuationOpening ? { continuationOpening } : {}) } };
     },
     afterCommit: async ({ event }) => finalizeTtrpgSessionParticipantsV2({ sessionId: input.sessionId,
       selectedCharacterKeys, eventSequence: event.sequence, completedBy: viewerKey }),
@@ -825,7 +832,7 @@ async function prepareTtrpgOpenFactAuthorityV1(context: TtrpgFormalBuildContextV
     || runtime.branchLineage?.recoveryTasks.some(task => !['completed', 'withdrawn'].includes(task.status))) throw new Error('[ttrpg-fact] 请先完成行动或祖先结算，不能插入事实改写。');
   await verifyTtrpgOpenOracleJournalV1({ receipts: run.oracleReceipts ?? [], rulePack: content.rulePack.content,
     sessionKey: runtime.sessionKey, seed: context.session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] });
-  await verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content, runtimeSourceHash: context.session.runtimeSourceHash,
+  await verifyTtrpgOpenFactLedger({ ledger: run.factLedger, content, runtimeSourceHash: context.session.runtimeSourceHash,
     oracleReceipts: run.oracleReceipts ?? [], entityOperations: run.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts });
   await verifyTtrpgOpenOracleReviewHashesV1(run.oracleReviews ?? []);
   const basis = await createTtrpgOpenFactBasisV1(content, context.session.runtimeSourceHash);
@@ -2219,9 +2226,7 @@ export async function shareTtrpgOpenKnowledgeV1(input: FormalTtrpgCommandEnvelop
         throw new Error('[ttrpg-knowledge] 分享源、公开字段或确认内容已经 stale。');
       }
       const origin = ttrpgOpenKnowledgeDiscoveryOriginV1(runtime, source);
-      if (origin.contentHash !== await hashProductProductionValueV2(content) || stableJson(origin.frozenContent) !== stableJson(content)) {
-        throw new Error('[ttrpg-knowledge] 知识传播链没有同一真实冻结内容来源。');
-      }
+      await assertTtrpgOpenKnowledgeSourceCompatibleV1(runtime, origin, content);
       const knowledgeKey = `knowledge.${await hashProductProductionValueV2({ sessionKey: runtime.sessionKey, commandId: input.commandId, sourceKnowledgeKey: source.knowledgeKey })}`;
       const knowledge = createTtrpgOpenSharedKnowledgeV1({ request, source, authorization, knowledgeKey,
         acquisitionRef: { sessionKey: runtime.sessionKey, sequence: context.sequence }, privateChannelsAllowed: content.campaign.informationPolicy.interPlayerWhispers });
@@ -2256,7 +2261,7 @@ export async function confirmTtrpgOpenIdentityKnowledgeV1(input: FormalTtrpgComm
       const epoch = current.openRun.coordination.epochs.find(row => row.epochKey === current.openRun!.coordination.activeEpochKey)
       if (!source || epoch?.authorizationHash !== await hashProductProductionValueV2(current.authorization)) throw new Error('[ttrpg-knowledge] 原知识或本人窗口已变化')
       const origin = ttrpgOpenKnowledgeDiscoveryOriginV1(current, source)
-      if (stableJson(origin.frozenContent) !== stableJson(context.ttrpgContent) || origin.contentHash !== await hashProductProductionValueV2(context.ttrpgContent)) throw new Error('[ttrpg-knowledge] 识别源没有同一冻结内容')
+      await assertTtrpgOpenKnowledgeSourceCompatibleV1(current, origin, requireTtrpgOpenContent(context.ttrpgContent));
       const knowledge = createTtrpgOpenIdentityKnowledgeV1({ runtime: current, runtimeSourceHash: context.session.runtimeSourceHash, viewerKey, request,
         acquisitionRef: { sessionKey: current.sessionKey, sequence: context.sequence }, knowledgeKey, sourceKnowledgeHash: await hashProductProductionValueV2(source),
         submissionKey, baseStateHash: input.baseStateHash, confirmationHash })

@@ -1,3 +1,4 @@
+import { ttrpgOpenContinuationTaskInterruptedV1 } from './open-release-continuation-proof'
 /** Explicit next-stage preparation from the current frozen release.
  * Pure preparation only. A formal command must rebuild against verified current
  * source/state and commit a real opening event. This is never execution authority.
@@ -18,7 +19,7 @@ import { hashProductProductionValueV2 as hash } from '../product-production/hash
 import * as p from './open-contract-parse'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 
-type SelectedOpening = {
+export type SelectedOpening = {
   templateKey: string; definitionHash: string; instanceKey: string
   transition: 'activated' | 'continued' | 'promoted'
   origin: { kind: 'frozen-campaign' | 'adopted-session'; proofHash: string; sourceRef: TtrpgOpenSourceRefV1 | null }
@@ -64,7 +65,7 @@ function nextStageBasis(input: TtrpgOpenNextStageInputV1) {
     || run.stage.closedAtWorldTurn !== previous.atWorldTurn || previous.atWorldTurn !== run.worldTime.worldTurn
     || previous.ticks.some(t => !t.completedRef) || previous.work.some(w => !w.completedRef)
     || run.operations.some(o => o.status === 'executing' || o.status === 'awaiting-approval')
-    || runtime.branchLineage?.recoveryTasks.some(t => t.status !== 'completed')) {
+    || runtime.branchLineage?.recoveryTasks.some(t => t.status !== 'completed' && !ttrpgOpenContinuationTaskInterruptedV1(runtime, t.taskKey))) {
     p.fail('请先完成真实阶段收束和原结算；未完成行动或仅解析到放弃状态不能开启下一阶段')
   }
   if (run.coordination.activeEpochKey !== null || run.coordination.epochs.some(e => e.status === 'active'
@@ -84,7 +85,19 @@ function nextStageBasis(input: TtrpgOpenNextStageInputV1) {
 }
 
 export function projectTtrpgOpenNextStageOpeningV1(input: TtrpgOpenNextStageInputV1 & { openingKey: string; frozenContentHash: string }) {
-  const { state, runtime, run, seat, content, templateKeys } = nextStageBasis(input)
+  const { state, content } = nextStageBasis(input)
+  return projectTtrpgOpenSelectedSituationsV1({ ...input, state, content })
+}
+
+/** Shared deterministic admission only. Each caller owns its lifecycle boundary. */
+export function projectTtrpgOpenSelectedSituationsV1(input: TtrpgOpenNextStageInputV1 & { openingKey: string; frozenContentHash: string }) {
+  const state = structuredClone(input.state), runtime = parseTtrpgRuntimeStateV2(state.ttrpg) ?? p.fail('开局需要开放跑团状态')
+  state.ttrpg = runtime
+  const run = runtime.openRun ?? p.fail('开局需要已有运行状态')
+  const seat = assertTtrpgOpenPressureGmV1(runtime.authorization ?? p.fail('开局需要真人授权'), input.viewerKey)
+  const content = parseTtrpgOpenSituationFrozenContentV1(input.content)
+  const templateKeys = p.keys(input.templateKeys, 'opening templates', 20, 1)
+  if (new Set(templateKeys).size !== templateKeys.length) p.fail('开局素材不能重复选择')
   const openingKey = p.hash(input.openingKey, 'stage opening key')
   const frozenContentHash = p.hash(input.frozenContentHash, 'stage frozen content')
   const plannedSourceRef = { sessionKey: runtime.sessionKey, sequence: input.state.lastSequence + 1 }

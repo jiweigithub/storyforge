@@ -1,3 +1,6 @@
+import { verifyProductRuntimeSource } from '../product-production/preview-source'
+import { previewTtrpgOpenContinuationV1, createTtrpgOpenContinuationFromPlanV1 } from './continuity'
+import { verifyTtrpgOpenReleaseContinuationRuntimeV1 } from './open-release-continuation-proof'
 import { prepareTtrpgOpenNextStagePlanV1, type TtrpgOpenNextStagePlanV1 } from './open-stage-opening-plan'
 import { verifyTtrpgOpenStageOpeningReceiptsV1 } from './open-stage-opening-contract'
 import { openTtrpgNextStageV1 } from './runtime-commands'
@@ -185,6 +188,7 @@ async function sourceForTable(input: Pick<TtrpgOpenTableInputV1, 'scope' | 'sess
   if (session.kind !== 'ttrpg' || source.runtimeSourceHash !== session.runtimeSourceHash || !source.runtimePackage.ttrpg || !isTtrpgRuntimeContentV2(source.runtimePackage.ttrpg)) throw new Error('当前冒险的冻结来源无效')
   const state = await readProductRuntimeState(input.sessionId), runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
   if (!runtime || runtime.product.rulePackContentHash !== source.runtimePackage.ttrpg.rulePack.contentHash || runtime.product.campaignKey !== source.runtimePackage.ttrpg.campaign.campaignKey) throw new Error('当前冒险与冻结来源不一致')
+  await verifyTtrpgOpenReleaseContinuationRuntimeV1({ runtime, runtimeSourceHash: session.runtimeSourceHash, seed: session.seed, initialState: JSON.parse(session.initialStateJson) })
   await verifyTtrpgOpenSessionSituationHashesV1(runtime.openRun?.situationReceipts ?? [])
   await verifyTtrpgOpenStageOpeningReceiptsV1(runtime.openRun?.stageOpenings ?? [])
   await verifyTtrpgOpenEntityStateV1(state, source.runtimePackage.ttrpg)
@@ -241,7 +245,9 @@ export async function readTtrpgOpenTableV1(input: Pick<TtrpgOpenTableInputV1, 's
   const seats = f.seats.filter(s => s.role === 'player').map(s => ({ seatKey: s.seatKey, viewerKey: s.viewerKey, actorKey: s.actorKey!, controller: s.controller,
     name: f.content.campaign.characterTemplates.find(t => t.characterKey === s.actorKey)?.name ?? '冒险者', claimed: s.assignmentState === 'claimed' }))
   const hostSeats = f.seats.filter(s => s.role === 'gm' && ['human','hybrid'].includes(s.controller)).map(s => ({ seatKey: s.seatKey,viewerKey: s.viewerKey,claimed: s.assignmentState === 'claimed' }))
-  const bootstrap = { hostSeats, sequence: f.state.lastSequence, title: f.content.campaign.title, pitch: f.content.campaign.pitch, seats, sessionZeroComplete: Boolean(auth), started: Boolean(run),
+  const continuation = run?.releaseContinuation
+  const continuationOpening = continuation?.plan.childSessionKey === f.runtime.sessionKey && !continuation?.confirmedRef ? { worldTurn: continuation.plan.worldTurn, interruptedCount: continuation.plan.interrupted.length, unknownCount: continuation.plan.unknownCalls.length } : null
+  const bootstrap = { continuationOpening, hostSeats, sequence: f.state.lastSequence, title: f.content.campaign.title, pitch: f.content.campaign.pitch, seats, sessionZeroComplete: Boolean(auth), started: Boolean(run && auth),
     safetyStatus: f.runtime.product.safety.status, requiredItemKeys: [...f.runtime.product.sessionZero.requiredItemKeys], agreement: structuredClone(f.content.campaign.sessionZero) }
   if (!input.viewerKey) return { ...bootstrap, player: null }
   const current = await humanTable({ ...input, viewerKey: input.viewerKey })
@@ -541,11 +547,12 @@ export async function startTtrpgOpenTableV1(input: TtrpgOpenTableInputV1 & { acc
       expectedRevision: seat.revision, commandId: `open.ai-seat.${seat.seatKey}.${seat.revision}`, requestedByViewerKey: seat.viewerKey,
       assignmentState: 'assigned', consent: { aiIdentityDisclosed: true, aiAdviceAllowed: true } })
     await completeTtrpgOpenSessionZeroV1({ ...await envelope(input.sessionId, 'zero'), viewerKey: input.viewerKey,
-      acceptedItemKeys: input.acceptedItemKeys, selectedCharacterKeys: f.seats.filter(s => s.role === 'player' && s.controller !== 'vacant').map(s => s.actorKey!) })
+      acceptedItemKeys: input.acceptedItemKeys, selectedCharacterKeys: f.runtime.openRun?.releaseContinuation?.plan.selectedActorKeys ?? f.seats.filter(s => s.role === 'player' && s.controller !== 'vacant').map(s => s.actorKey!) })
   }
   const latest = await humanDesk(input)
   if (!latest.runtime.openRun) await startTtrpgOpenRunV1({ ...await envelope(input.sessionId, 'start'), viewerKey: input.viewerKey })
   const after = await humanDesk(input)
+  if (after.runtime.openRun?.releaseContinuation) return
   // Opening admission is a real, deduplicated event; reloading this reader never starts it.
   for (const templateKey of after.content.campaign.openingSituationKeys) {
     const commandId = await ttrpgOpenScopedKeyV1(after.runtime.sessionKey, 'table.opening', [templateKey])
@@ -816,4 +823,31 @@ export async function confirmTtrpgOpenTableStageOpeningV1(input: TtrpgOpenTableI
   if (input.preview.command.sessionId !== input.sessionId || input.preview.plan.viewerKey !== input.viewerKey) throw new Error('开局预览不属于当前桌面身份');
   return openTtrpgNextStageV1({ ...input.preview.command, viewerKey: input.viewerKey,
     templateKeys: input.preview.plan.selected.map(s => s.templateKey), expectedPlanHash: input.preview.plan.planHash });
+}
+
+export async function readTtrpgOpenTableContinuationTargetsV1(input: TtrpgOpenTableInputV1) {
+  const f = await humanHostTable(input);
+  if (f.session.productReleaseId == null) return null;
+  const rows = await db.productReleases.where('workId').equals(f.session.workId!).toArray();
+  return rows.filter(r => r.projectId === f.session.projectId && r.worldId === f.session.worldId && r.productType === 'ttrpg' && r.id !== f.session.productReleaseId)
+    .sort((a, b) => b.version - a.version || b.createdAt - a.createdAt).map(r => ({ id: r.id!, label: r.label, version: r.version }));
+}
+export async function readTtrpgOpenTableContinuationChoicesV1(input: TtrpgOpenTableInputV1 & { targetProductReleaseId: number }) {
+  const f = await humanHostTable(input);
+  const target = await verifyProductRuntimeSource({ scope: input.scope, source: { kind: 'release', productReleaseId: input.targetProductReleaseId }, ttrpgProtocol: 2 });
+  const content = target.runtimePackage.ttrpg;
+  if (!content || !isTtrpgRuntimeContentV2(content)) throw new Error('请选择开放跑团发布');
+  return { pitch: content.campaign.pitch, choices: ttrpgOpenSituationCatalogV1(content.campaign, f.runtime.openRun).templates
+    .filter(t => f.seat.role === 'gm' || ttrpgOpenSessionSituationActorAccessV1(f.runtime.openRun, t.templateKey, f.seat.actorKey!))
+    .map((t, index) => ({ templateKey: t.templateKey, title: f.seat.role === 'gm' ? t.title : `开局方案 ${index + 1}`,
+      selected: content.campaign.openingSituationKeys.includes(t.templateKey) })) };
+}
+export async function prepareTtrpgOpenTableContinuationV1(input: TtrpgOpenTableInputV1 & { targetProductReleaseId: number; reason: string; openingTemplateKeys: string[] }) {
+  await humanHostTable(input);
+  return previewTtrpgOpenContinuationV1({ ...input, parentSessionId: input.sessionId, approvedBy: input.viewerKey, transitionKey: `continue.${crypto.randomUUID()}` });
+}
+export async function confirmTtrpgOpenTableContinuationV1(input: TtrpgOpenTableInputV1 & { preview: Awaited<ReturnType<typeof previewTtrpgOpenContinuationV1>> }) {
+  const f = await humanHostTable(input);
+  if (input.preview.parentSessionId !== input.sessionId || input.preview.plan.approvedBy !== input.viewerKey) throw new Error('续团预览不属于当前桌面身份');
+  return createTtrpgOpenContinuationFromPlanV1({ scope: input.scope, preview: input.preview, title: `${f.session.title} · 续团`, worldGroupId: f.session.worldGroupId });
 }

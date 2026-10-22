@@ -3,8 +3,8 @@ import { settleOpenPaidTurnsV1 } from './open-ttrpg-paid-turns'
 import { setupPressureFixtureV1 } from './open-ttrpg-pressure'
 import { operationInput } from './open-ttrpg-branch-recovery'
 import { evaluateTtrpgOpenOperationTerminalV1 } from '../../src/lib/ttrpg/runtime-commands'
-export async function setupChecksFixtureV1(options: { closure?: boolean; maximum?: boolean; empty?: boolean; privatePoint?: boolean; noWarning?: boolean; privateDiscovery?: boolean; stageTick?: number; stageEffect?: boolean; stageMaximum?: number; multiHuman?: boolean; nearlyMaximum?: boolean; initiallyAlmostFull?: boolean; humanGm?: boolean; ai?: boolean; cooperative?: boolean; maximumCalls?: number } = {}, configure?: Parameters<typeof setupPressureFixtureV1>[1], beforeStart?: Parameters<typeof setupPressureFixtureV1>[2]) {
-  const f = await setupPressureFixtureV1({ turns: options.maximum ? 10 : options.nearlyMaximum ? 9 : options.noWarning ? 2 : 1, prewarn: !options.noWarning && !options.humanGm }, pkg => {
+export async function setupChecksFixtureV1(options: { released?: boolean; closure?: boolean; maximum?: boolean; empty?: boolean; privatePoint?: boolean; noWarning?: boolean; privateDiscovery?: boolean; stageTick?: number; stageEffect?: boolean; stageMaximum?: number; multiHuman?: boolean; nearlyMaximum?: boolean; initiallyAlmostFull?: boolean; humanGm?: boolean; ai?: boolean; cooperative?: boolean; maximumCalls?: number } = {}, configure?: Parameters<typeof setupPressureFixtureV1>[1], beforeStart?: Parameters<typeof setupPressureFixtureV1>[2]) {
+  const f = await setupPressureFixtureV1({ released: options.released, turns: options.maximum ? 10 : options.nearlyMaximum ? 9 : options.noWarning ? 2 : 1, prewarn: !options.noWarning && !options.humanGm }, pkg => {
     if (options.ai || options.cooperative) pkg.ttrpg!.campaign.runtimePolicy.enabled = true
     if (options.maximumCalls !== undefined) pkg.ttrpg!.campaign.runtimePolicy.maximumCallsPerEpoch = options.maximumCalls
     if (options.cooperative) pkg.ttrpg!.campaign.runtimePolicy.maximumEpochTokens = 50000

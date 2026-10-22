@@ -1,3 +1,9 @@
+import { cloneTtrpgRuntimePreservedExtensionsV1 } from '../ttrpg/runtime-branch'
+import { runtimeInstanceTablesV1, transactionTablesForReferenceCascade } from '../registry/lifecycle'
+import { buildTtrpgOpenReleaseContinuationV1, isTtrpgOpenContinuationRequestV1, type TtrpgOpenContinuationRequestV1 } from '../ttrpg/open-release-continuation'
+import { parseTtrpgRuntimeStateV2 } from '../ttrpg/open-runtime-contract'
+import { assertTtrpgOpenAuthorizationCurrentV1 } from '../ttrpg/open-authorization'
+import { readTtrpgSessionParticipantsV2 } from '../ttrpg/participants'
 import { db } from '../db/schema'
 import {
   applyProductRuntimeEvent,
@@ -80,7 +86,7 @@ export interface CreateProductRuntimeInstanceInput {
   productSource: ProductRuntimeSourceV1
   worldGroupId?: number | null
   seed?: string
-  ttrpgContinuation?: TtrpgContinuationRequestV2
+  ttrpgContinuation?: TtrpgContinuationRequestV2 | TtrpgOpenContinuationRequestV1
 }
 
 interface FrozenNarrativeDefinition {
@@ -364,6 +370,7 @@ export async function createProductRuntimeInstance(
   if (input.productSource.kind === 'build' && !productBuild) throw new Error('[instance] 产品 Build 不存在')
 
   const continuation = input.ttrpgContinuation ?? null
+  const openContinuation = isTtrpgOpenContinuationRequestV1(continuation) ? continuation : null
   if (continuation && (
     input.kind !== 'ttrpg'
     || input.productSource.kind !== 'release'
@@ -371,7 +378,7 @@ export async function createProductRuntimeInstance(
   )) {
     throw new Error('[instance] 跨发布续团只能创建绑定正式产品发布的 TTRPG Instance')
   }
-  if (continuation && runtimePackage.ttrpg && isTtrpgRuntimeContentV2(runtimePackage.ttrpg)) {
+  if (continuation && !openContinuation && runtimePackage.ttrpg && isTtrpgRuntimeContentV2(runtimePackage.ttrpg)) {
     throw new Error('[instance] open 跑团续团尚未进入 protocol-2 迁移路径')
   }
   const continuationParent = continuation
@@ -413,7 +420,7 @@ export async function createProductRuntimeInstance(
     throw new Error('[instance] 跨发布续团父产品发布不是 TTRPG')
   }
   if (
-    continuationParentPlayable?.runtimePackage.ttrpg
+    !openContinuation && continuationParentPlayable?.runtimePackage.ttrpg
     && isTtrpgRuntimeContentV2(continuationParentPlayable.runtimePackage.ttrpg)
   ) {
     throw new Error('[instance] open 跑团父 Instance 不能进入 scripted 续团路径')
@@ -425,6 +432,7 @@ export async function createProductRuntimeInstance(
   })
   if (
     continuation
+    && !openContinuation
     && continuationParent
     && continuationParentState
       && continuationParentPlayable?.runtimePackage.ttrpg
@@ -465,12 +473,30 @@ export async function createProductRuntimeInstance(
     initialState = continued.state
   }
 
+  if (openContinuation) {
+    if (openContinuation.compatibility !== 'compatible') throw new Error('[instance] 开放续团必须使用明确兼容计划');
+    const parentContent = continuationParentPlayable?.runtimePackage.ttrpg, targetContent = runtimePackage.ttrpg;
+    if (!continuationParent || !continuationParentState || !parentContent || !targetContent
+      || !isTtrpgRuntimeContentV2(parentContent) || !isTtrpgRuntimeContentV2(targetContent)) throw new Error('[instance] 开放续团必须同时绑定两个协议 2 发布');
+    const authorization = parseTtrpgRuntimeStateV2(continuationParentState.ttrpg)?.authorization;
+    if (!authorization) throw new Error('[instance] 原团局尚无当前真人授权');
+    assertTtrpgOpenAuthorizationCurrentV1({ authorization, participants: await readTtrpgSessionParticipantsV2(continuationParent.id!), viewerKey: openContinuation.approvedBy });
+    if (input.seed !== undefined && input.seed !== continuationParent.seed) throw new Error('[instance] 续团必须保留原随机种子');
+    const continued = await buildTtrpgOpenReleaseContinuationV1({ parent: continuationParent, parentState: continuationParentState,
+      parentStateHash: continuationParentStateHash!, events: await db.productRuntimeEvents.where('sessionId').equals(continuationParent.id!).sortBy('sequence'),
+      parentContent, targetContent, targetRuntimeSourceHash: playable.runtimeSourceHash, targetInitialState: initialState,
+      transitionKey: openContinuation.transitionKey, approvedBy: openContinuation.approvedBy,
+      reason: openContinuation.reason, openingTemplateKeys: openContinuation.openingTemplateKeys });
+    if (continued.plan.planHash !== openContinuation.expectedPlanHash) throw new Error('[instance] 续团预览已变化，请重新核对并明确确认');
+    initialState = continued.state;
+  }
+
   const sessionInput: CreateProductRuntimeSessionInput = {
     projectId: scope.projectId,
-    worldGroupId: input.worldGroupId ?? null,
+    worldGroupId: input.worldGroupId ?? (openContinuation ? continuationParent!.worldGroupId ?? null : null),
     kind: input.kind,
     title: input.title,
-    seed: input.seed,
+    seed: openContinuation ? continuationParent!.seed : input.seed,
     canonSnapshot: createProductRuntimeCanonSnapshotV1({
       runtimePackage: runtimePackage,
       runtimeSourceHash: playable.runtimeSourceHash,
@@ -501,6 +527,7 @@ export async function createProductRuntimeInstance(
       : (() => { throw new Error('[instance] 不支持的产品来源') })()
 
   return db.transaction('rw', scopeTransactionTables(
+    ...(openContinuation ? [...runtimeInstanceTablesV1(), ...transactionTablesForReferenceCascade('productRuntimeSessions'), ...transactionTablesForReferenceCascade('mediaBlobObjects')] : []),
     db.productRuntimeSessions,
     db.ttrpgSessionParticipants,
     db.productReleases,
@@ -523,6 +550,16 @@ export async function createProductRuntimeInstance(
         || currentSequence !== continuation.expectedParentSequence
       ) {
         throw new Error('[instance] 父战役在续团创建期间发生变化')
+      }
+    }
+    if (openContinuation && continuationParent && continuationParentState) {
+      const authorization = parseTtrpgRuntimeStateV2(continuationParentState.ttrpg)!.authorization!;
+      assertTtrpgOpenAuthorizationCurrentV1({ authorization, participants: await db.ttrpgSessionParticipants.where('sessionId').equals(continuationParent.id!).toArray(), viewerKey: openContinuation.approvedBy });
+      const existing = await db.productRuntimeSessions.where('parentSessionId').equals(continuationParent.id!).toArray();
+      const duplicate = existing.find(row => JSON.parse(row.initialStateJson).ttrpg?.openRun?.releaseContinuation?.plan.planHash === openContinuation.expectedPlanHash);
+      if (duplicate) {
+        if (duplicate.productReleaseId !== productRelease!.id) throw new Error('[instance] 此续团确认已绑定另一个发布，请重新预览');
+        return duplicate;
       }
     }
     if (productRelease) {
@@ -570,6 +607,9 @@ export async function createProductRuntimeInstance(
         })
       }
     }
+    if (openContinuation && continuationParent) await cloneTtrpgRuntimePreservedExtensionsV1({ parent: continuationParent, child: boundSession,
+      throughSequence: openContinuation.expectedParentSequence, state: initialState,
+      events: await db.productRuntimeEvents.where('sessionId').equals(continuationParent.id!).sortBy('sequence') })
     return boundSession
   })
 }

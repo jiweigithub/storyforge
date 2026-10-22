@@ -6,7 +6,7 @@ import { startTtrpgOpenEpochV1, startTtrpgOpenOperationV1, confirmTtrpgOpenOpera
 import { openEnvelopeV1, readyOpenTtrpgSessionV1, OPEN_HUMAN_VIEWER } from './open-ttrpg-session'
 
 const rt = (state: Awaited<ReturnType<typeof readProductRuntimeState>>) => parseTtrpgRuntimeStateV2(state.ttrpg)!
-export async function setup(options: { private?: boolean; generic?: boolean; failForward?: boolean; cost?: boolean } = {}, configure?: Parameters<typeof readyOpenTtrpgSessionV1>[1]) {
+export async function setup(options: { released?: boolean; private?: boolean; generic?: boolean; failForward?: boolean; cost?: boolean } = {}, configure?: Parameters<typeof readyOpenTtrpgSessionV1>[1]) {
   const fixture = await readyOpenTtrpgSessionV1('real knowledge path', pkg => {
     const content = pkg.ttrpg!, template = content.campaign.situationTemplates[0], evidence = template.evidence[0]
     evidence.discoveryPolicy.allowedAudience = options.private ? 'private' : 'party'
@@ -28,7 +28,7 @@ export async function setup(options: { private?: boolean; generic?: boolean; fai
       if (options.failForward) evidence.discoveryPolicy.failForwardEffectPlanRef = 'plan.discovery.cost'
     }
     configure?.(pkg)
-  })
+  }, undefined, options.released)
   await changeTtrpgSituationV1({ ...await openEnvelopeV1(fixture.sessionId, 'opening'), templateKey: fixture.campaign.openingSituationKeys[0], activationReason: 'opening', mode: 'activated' })
   await startTtrpgOpenEpochV1({ ...await openEnvelopeV1(fixture.sessionId, 'epoch'), viewerKey: OPEN_HUMAN_VIEWER, triggerKind: 'submit-action', rawInput: '在门口检查线索' })
   const state = await readProductRuntimeState(fixture.sessionId), template = fixture.campaign.situationTemplates[0]

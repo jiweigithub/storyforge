@@ -1,5 +1,5 @@
 import { verifyTtrpgOpenOracleJournalV1 } from './open-oracle-contract'
-import { verifyTtrpgOpenFactLedgerV1 } from './open-fact-ledger'
+import { verifyTtrpgOpenFactLedger } from './open-fact-ledger'
 import { readAgentRunArtifactExactV1 } from '../memory/artifact-store'
 import { verifyTtrpgOpenModelCallEvidenceV1 } from './open-model-call-evidence'
 import { readTtrpgOpenImportedCallOwnerV1 } from './open-run-portability'
@@ -74,7 +74,7 @@ async function owner(input: Input) {
   const { runtime, content, source } = loaded, run = runtime.openRun!
   await verifyTtrpgOpenOracleJournalV1({ receipts: run.oracleReceipts ?? [], rulePack: content.rulePack.content, sessionKey: runtime.sessionKey,
     seed: loaded.session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] })
-  await verifyTtrpgOpenFactLedgerV1({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash,
+  await verifyTtrpgOpenFactLedger({ ledger: run.factLedger, content, runtimeSourceHash: source.runtimeSourceHash,
     oracleReceipts: run.oracleReceipts ?? [], entityOperations: run.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
   await verifyTtrpgOpenOracleReviewHashesV1(run.oracleReviews ?? [])
   await loaded.assertCurrent()

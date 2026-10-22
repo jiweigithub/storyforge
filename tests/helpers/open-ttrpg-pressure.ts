@@ -11,8 +11,8 @@ import { ttrpgOpenScopedKeyV1 } from '../../src/lib/ttrpg/open-coordination'
 import { nextTtrpgOpenPressureActionV1 } from '../../src/lib/ttrpg/open-pressure-cycle'
 import { pressureActionKeyV1 } from '../../src/lib/ttrpg/open-pressure-reducer'
 
-export async function setupPressureFixtureV1(options: { turns?: number; generic?: boolean; maximum?: number; effect?: boolean; prewarn?: boolean; isolateSituations?: boolean } = {}, configure?: Parameters<typeof setup>[1], beforeStart?: (fixture: Awaited<ReturnType<typeof setup>>) => Promise<void>) {
-  const f = await setup({ generic: options.generic }, pkg => {
+export async function setupPressureFixtureV1(options: { released?: boolean; turns?: number; generic?: boolean; maximum?: number; effect?: boolean; prewarn?: boolean; isolateSituations?: boolean } = {}, configure?: Parameters<typeof setup>[1], beforeStart?: (fixture: Awaited<ReturnType<typeof setup>>) => Promise<void>) {
+  const f = await setup({ generic: options.generic, released: options.released }, pkg => {
     const c = pkg.ttrpg!
     c.rulePack.content.timePolicy.existingAction = options.turns ?? 3
     c.rulePack.content.genericChecks[0].timeCostWorldTurns = options.turns ?? 3

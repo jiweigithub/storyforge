@@ -5,7 +5,7 @@ import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { parseTtrpgOpenOracleReviewV1, parseTtrpgOpenOracleReviewedEntriesV1, parseTtrpgOpenOracleReviewedRetirementsV1 } from './open-oracle-review'
 import { assertTtrpgOpenModelFactApproverV1, assertTtrpgOpenFactModelCallV1, assertTtrpgOpenFactEntryGatesV1,
-  parseTtrpgOpenFactLedgerV1, ttrpgOpenSessionFactsV1, ttrpgOpenOracleFactProposalFromFactV1 } from './open-fact-ledger'
+  parseTtrpgOpenFactLedger, ttrpgOpenSessionFactsV1, ttrpgOpenOracleFactProposalFromFactV1 } from './open-fact-ledger'
 import { assertTtrpgOpenSemanticCallOriginV1 } from './open-model-calls'
 import * as p from './open-contract-parse'
 import { assertTtrpgOpenCommonOracleFactAudienceV1 } from './open-common-oracle-request'
@@ -43,7 +43,7 @@ export function applyTtrpgOpenOracleReviewEventV1(state: ProductRuntimeState, ev
     || stable(entries.map(entry => entry.fact.factKey)) !== stable(review.adoptedFactKeys)) p.fail('Oracle 审阅不能漏写、添加或部分提交事实')
   let ledger = run.factLedger
   if (entries.length) {
-    ledger ??= parseTtrpgOpenFactLedgerV1({ schema: 'storyforge.ttrpg-open-fact-ledger', version: 1, basis: payload.basis, entries: [], retirements: [] })
+    ledger ??= parseTtrpgOpenFactLedger({ schema: 'storyforge.ttrpg-open-fact-ledger', version: 1, basis: payload.basis, entries: [], retirements: [] })
     if ((run.factLedger && payload.basis !== null) || payload.basisHash !== ledger.basis.basisHash
       || ledger.basis.runtimeSourceHash !== review.runtimeSourceHash || ledger.basis.rulePackContentHash !== runtime.product.rulePackContentHash) p.fail('Oracle 批次缺少相同冻结事实基础')
     for (let index = 0; index < entries.length; index += 1) {
@@ -62,7 +62,7 @@ export function applyTtrpgOpenOracleReviewEventV1(state: ProductRuntimeState, ev
       if ((entry.fact.supersedes !== null && !retirement) || (retirement && (retirement.supersededByFactKey !== entry.fact.factKey
         || retirement.reason !== entry.fact.supersedeReason || stable(retirement.sourceRef) !== stable(review.sourceRef)
         || retirement.viewerKey !== review.viewerKey || retirement.authorizationEpochKey !== epoch.epochKey))) p.fail('Oracle 批次替代必须原子退休相同旧事实')
-      ledger = parseTtrpgOpenFactLedgerV1({ ...ledger, entries: [...ledger.entries,entry], retirements: [...ledger.retirements,...(retirement ? [retirement] : [])] })
+      ledger = parseTtrpgOpenFactLedger({ ...ledger, entries: [...ledger.entries,entry], retirements: [...ledger.retirements,...(retirement ? [retirement] : [])] })
     }
     run.factLedger = ledger
   } else if (payload.basis !== null || payload.basisHash !== null || retirements.length) p.fail('无事实审阅不能伪造事实基础或退休事件')

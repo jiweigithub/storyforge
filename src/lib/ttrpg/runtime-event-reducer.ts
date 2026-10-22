@@ -1,3 +1,4 @@
+import { applyTtrpgOpenContinuationStartV1 } from './open-release-continuation-start'
 import { applyTtrpgOpenStageOpeningEventV1 } from './open-stage-opening-reducer'
 import { applyTtrpgOpenVoiceRequestEventV1 } from './open-voice-request-reducer'
 import { applyTtrpgOpenAudioEventV1 } from './open-audio-reducer'
@@ -557,7 +558,10 @@ export function applyTtrpgRuntimeEventV1(
       if (!completedBy || completedBy !== event.actorKey)
         throw new Error("Session Zero 完成人身份无效。");
       if (Object.prototype.hasOwnProperty.call(ttrpg, "authorization")) {
-        if (Object.keys(payload).sort().join(",") !== "acceptedItemKeys,authorization,completedBy,intent,selectedCharacterKeys") {
+        const continuedRuntime = parseTtrpgRuntimeStateV2(state.ttrpg);
+        const continuedOpening = continuedRuntime?.openRun?.releaseContinuation?.plan.childSessionKey === continuedRuntime?.sessionKey && !continuedRuntime?.openRun?.releaseContinuation?.confirmedRef;
+        const expectedKeys = ['acceptedItemKeys', 'authorization', 'completedBy', 'intent', 'selectedCharacterKeys', ...(continuedOpening ? ['continuationOpening'] : [])].sort().join(',');
+        if (Object.keys(payload).sort().join(",") !== expectedKeys) {
           throw new Error("open Session Zero 必须携带完整授权回执。");
         }
         const authorization = parseTtrpgOpenAuthorizationV1(payload.authorization);
@@ -590,7 +594,7 @@ export function applyTtrpgRuntimeEventV1(
       const allPlayerKeys = Object.values(state.entities)
         .filter((entity) => entity.kind === "player")
         .map((entity) => entity.entityKey);
-      ttrpg.campaign.roster = allPlayerKeys.map((characterKey) => ({
+      if (!parseTtrpgRuntimeStateV2(state.ttrpg)?.openRun?.releaseContinuation) ttrpg.campaign.roster = allPlayerKeys.map((characterKey) => ({
         characterKey,
         status: selectedCharacterKeys.includes(characterKey)
           ? ("active" as const)
@@ -601,6 +605,8 @@ export function applyTtrpgRuntimeEventV1(
         reason: existingRoster.get(characterKey)?.reason ?? "",
         updatedSequence: event.sequence,
       }));
+      const pendingContinuation = parseTtrpgRuntimeStateV2(state.ttrpg);
+      if (pendingContinuation?.openRun?.releaseContinuation?.plan.childSessionKey === pendingContinuation?.sessionKey && !pendingContinuation?.openRun?.releaseContinuation?.confirmedRef) applyTtrpgOpenContinuationStartV1(state, event, payload);
       break;
     }
     case "ttrpg.safety.changed": {

@@ -1,3 +1,5 @@
+import { assertTtrpgOpenKnowledgeSourceCompatibleV1 } from './open-release-compatibility'
+import { verifyTtrpgOpenReleaseContinuationRuntimeV1 } from './open-release-continuation-proof'
 import { verifyTtrpgOpenCommonOracleEpochsV1 } from './open-common-oracle-request'
 import { ttrpgOpenEntityIdentityCatalogV1, ttrpgOpenEntityReferenceVisibleV1 } from './open-entity-catalog'
 import { verifyTtrpgOpenEntityStateV1 } from './open-entity-proof'
@@ -22,7 +24,7 @@ import { hashProductProductionValueV2 } from '../product-production/hash'
 import { ttrpgOpenMechanicalStateHashV1, ttrpgOpenPredicateContextV1 } from './open-rule-plan'
 import { projectTtrpgRulePackMechanicalCoreV1 } from './rule-pack-v2'
 import { verifyTtrpgOpenOracleJournalV1 } from './open-oracle-contract'
-import { verifyTtrpgOpenFactLedgerV1, projectTtrpgOpenSessionFactsForActorV1 } from './open-fact-ledger'
+import { verifyTtrpgOpenFactLedger, projectTtrpgOpenSessionFactsForActorV1 } from './open-fact-ledger'
 import { ttrpgOpenKnowledgeDiscoveryOriginV1 } from './open-knowledge-share'
 import { evaluateTtrpgPredicateV1 } from './predicate'
 import { canonicalStringify } from '../agent/run/hash'
@@ -110,6 +112,7 @@ async function loadOpenPlayerProjectionBasisV1(input: { scope: WorkspaceScope; s
   const runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
   if (!runtime?.authorization || !runtime.openRun || runtime.product.rulePackContentHash !== content.rulePack.contentHash
     || runtime.product.campaignKey !== content.campaign.campaignKey) throw new Error('[ttrpg-open-context] 团局没有有效冻结来源与授权')
+  await verifyTtrpgOpenReleaseContinuationRuntimeV1({ runtime, runtimeSourceHash: session.runtimeSourceHash, seed: session.seed, initialState: JSON.parse(session.initialStateJson) })
   const participants = await readTtrpgSessionParticipantsV2(input.sessionId)
   await verifyTtrpgOpenSessionSituationHashesV1(runtime.openRun.situationReceipts ?? [])
   await verifyTtrpgOpenEntityStateV1(state, content)
@@ -120,12 +123,12 @@ async function loadOpenPlayerProjectionBasisV1(input: { scope: WorkspaceScope; s
   await verifyTtrpgOpenOracleJournalV1({ receipts: runtime.openRun.oracleReceipts ?? [], rulePack: content.rulePack.content,
     sessionKey: runtime.sessionKey, seed: session.seed, ancestors: runtime.branchLineage?.ancestors ?? [] })
   await verifyTtrpgOpenOracleReviewHashesV1(runtime.openRun.oracleReviews ?? [])
-  await verifyTtrpgOpenFactLedgerV1({ ledger: runtime.openRun.factLedger, content, runtimeSourceHash: session.runtimeSourceHash,
+  await verifyTtrpgOpenFactLedger({ ledger: runtime.openRun.factLedger, content, runtimeSourceHash: session.runtimeSourceHash,
     oracleReceipts: runtime.openRun.oracleReceipts ?? [], entityOperations: runtime.openRun.entityOperations, storyFacts: runtime.product.effectLedger.storyFacts })
   const frozenContentHash = runtime.openRun.knowledge.length ? await hashProductProductionValueV2(content) : null
   for (const knowledge of runtime.openRun.knowledge) {
     const origin = ttrpgOpenKnowledgeDiscoveryOriginV1(runtime, knowledge)
-    if (origin.contentHash !== frozenContentHash) throw new Error('[ttrpg-open-context] 知识发现来源与当前冻结内容不一致')
+    await assertTtrpgOpenKnowledgeSourceCompatibleV1(runtime, origin, content, frozenContentHash ?? undefined)
   }
   const authorization = assertTtrpgOpenAuthorizationRowsCurrentV1({ authorization: runtime.authorization, participants })
   const admissionStateHash = await ttrpgOpenMechanicalStateHashV1(state), stateHash = await hashProductRuntimeStateV1(state)

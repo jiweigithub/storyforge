@@ -1,3 +1,4 @@
+import { assertTtrpgOpenKnowledgeSourceCompatibleV1 } from './open-release-compatibility'
 /** An explicit human review grants attributed clue text, never implicit identity or mechanical access. */
 import { db } from '../db/schema'
 import { hashProductProductionValueV2 as hash } from '../product-production/hash'
@@ -48,7 +49,7 @@ export async function prepareTtrpgOpenClueShareV1(input: TtrpgOpenConsultationIn
   const request = parseTtrpgOpenKnowledgeShareRequestV1({ actorKey: input.actorKey, sourceKnowledgeKey: input.sourceKnowledgeKey,
     audience: input.audience, recipientActorKeys: [...input.recipientActorKeys].sort(), publicFieldsHash: source.publicFieldsHash })
   const origin = ttrpgOpenKnowledgeDiscoveryOriginV1(loaded.runtime, source)
-  if (stable(origin.frozenContent) !== stable(loaded.content) || origin.contentHash !== await hash(loaded.content)) p.fail('线索缺少当前真实冻结来源')
+  await assertTtrpgOpenKnowledgeSourceCompatibleV1(loaded.runtime, origin, loaded.content)
   const shared = createTtrpgOpenSharedKnowledgeV1({ request, source, authorization: loaded.authorization, knowledgeKey: 'preview.clue-share',
     acquisitionRef: { sessionKey: loaded.runtime.sessionKey, sequence: loaded.state.lastSequence + 1 }, privateChannelsAllowed: page.privateAllowed })
   const envelope = await ttrpgOpenConsultationEnvelopeV1(input, loaded, 'clue.share.review', input.submissionKey)

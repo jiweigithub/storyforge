@@ -3,7 +3,7 @@ import type { ProductRuntimeEvent, ProductRuntimeState } from '../types'
 import type { ProductRuntimeJsonObjectV1 } from '../product/runtime-values'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
-import { parseTtrpgOpenFactLedgerV1, parseTtrpgOpenFactEntryV1, parseTtrpgOpenFactRetirementV1,
+import { parseTtrpgOpenFactLedger, parseTtrpgOpenFactEntryV1, parseTtrpgOpenFactRetirementV1,
   assertTtrpgOpenFactEntryGatesV1, assertTtrpgOpenModelFactApproverV1, assertTtrpgOpenFactModelCallV1,
   ttrpgOpenSessionFactsV1, parseTtrpgOpenOracleFactProposalV1, ttrpgOpenOracleFactProposalFromFactV1 } from './open-fact-ledger'
 import * as p from './open-contract-parse'
@@ -33,7 +33,7 @@ export function applyTtrpgOpenFactEventV1(state: ProductRuntimeState, event: Pro
     const entry = parseTtrpgOpenFactEntryV1(payload.entry)
     runtimeReferenceEntry = Boolean(entry.runtimeEntityReferences)
     if (entry.modelCandidate && run.oracleReviews?.some(review => review.requestKey === entry.modelCandidate!.requestKey)) p.fail('已完整审阅的候选不能另行采用弃用事实')
-    const ledger = run.factLedger ?? parseTtrpgOpenFactLedgerV1({ schema: 'storyforge.ttrpg-open-fact-ledger', version: 1, basis: payload.basis, entries: [], retirements: [] })
+    const ledger = run.factLedger ?? parseTtrpgOpenFactLedger({ schema: 'storyforge.ttrpg-open-fact-ledger', version: 1, basis: payload.basis, entries: [], retirements: [] })
     if ((run.factLedger && payload.basis !== null) || payload.basisHash !== ledger.basis.basisHash
       || ledger.basis.rulePackContentHash !== runtime.product.rulePackContentHash
       || stable(entry.sourceRef) !== stable(sourceRef) || entry.viewerKey !== viewerKey || entry.authorizationEpochKey !== epochKey
@@ -55,7 +55,7 @@ export function applyTtrpgOpenFactEventV1(state: ProductRuntimeState, event: Pro
     if ((entry.fact.supersedes === null) !== (retirement === null) || (retirement && (retirement.factKey !== entry.fact.supersedes
       || retirement.reason !== entry.fact.supersedeReason || retirement.supersededByFactKey !== entry.fact.factKey
       || stable(retirement.sourceRef) !== stable(sourceRef) || retirement.viewerKey !== viewerKey || retirement.authorizationEpochKey !== epochKey))) p.fail('事实替代必须同事件原子退休旧记录')
-    run.factLedger = parseTtrpgOpenFactLedgerV1({ ...ledger, entries: [...ledger.entries, entry], retirements: [...ledger.retirements, ...(retirement ? [retirement] : [])] })
+    run.factLedger = parseTtrpgOpenFactLedger({ ...ledger, entries: [...ledger.entries, entry], retirements: [...ledger.retirements, ...(retirement ? [retirement] : [])] })
   } else {
     p.exact(payload, ['viewerKey', 'authorizationEpochKey', 'retirement', 'intent'], 'fact retired')
     const ledger = run.factLedger ?? p.fail('只能退休已存在的会话事实')
@@ -64,7 +64,7 @@ export function applyTtrpgOpenFactEventV1(state: ProductRuntimeState, event: Pro
     if (stable(retirement.sourceRef) !== stable(sourceRef) || retirement.viewerKey !== viewerKey || retirement.authorizationEpochKey !== epochKey
       || retirement.supersededByFactKey !== null || intent.viewerKey !== viewerKey || intent.factKey !== retirement.factKey || intent.reason !== retirement.reason
       || event.targetKey !== retirement.factKey || !ttrpgOpenSessionFactsV1(ledger).some(fact => fact.factKey === retirement.factKey && !fact.retired)) p.fail('事实退休没有合法活动记录或真实原因')
-    run.factLedger = parseTtrpgOpenFactLedgerV1({ ...ledger, retirements: [...ledger.retirements, retirement] })
+    run.factLedger = parseTtrpgOpenFactLedger({ ...ledger, retirements: [...ledger.retirements, retirement] })
   }
   // New events freeze the parser layout explicitly; absence retains historical release-only bytes.
   // The first runtime-reference implementation already chose this layout through its own discriminator.
