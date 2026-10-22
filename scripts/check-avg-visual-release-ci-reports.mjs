@@ -18,6 +18,11 @@ function cases(suites, file, title) {
 const required = [
   { directory: 'all', file: 'avg-visual-planning-workbench.spec.ts', title: 'V5 native family images preserve policy2, local derivatives and five consumers through Source5/6 Preview and portable restore' },
   { directory: 'visual-frozen', file: 'avg-visual-prototype-read.spec.ts', title: 'original V5 published images and local derivative restore and play with both visual factories closed and no new provider/quality authority' },
+  { directory: 'all', file: 'avg-foreground-processing.spec.ts', title: 'native foreground Worker clears declared original pixels before fitting and preserves exact PNG lineage' },
+  { directory: 'all', file: 'avg-foreground-processing.spec.ts', title: 'native boundary unmix2 uses exact recomputation, cleans an encoded PNG edge and terminates cancellation during verification' },
+  { directory: 'all', file: 'avg-character-family.spec.ts', title: 'native ordinary family freezes both foreground requests and retains exact processed PNGs offline without regenerating the previous background' },
+  { directory: 'all', file: 'avg-visual-planning-workbench.spec.ts', title: 'V5 native declared foreground family removes both opaque backdrops through actual producer, Preview, reference provenance and portable restore' },
+  { directory: 'all', file: 'avg-visual-planning-workbench.spec.ts', title: 'V5 native boundary-unmix2 family preserves originals and clean edges through producer, Stage, Release, reference and portable restore' },
 ]
 const modes = required.map(mode => {
   const report = read(join(root, mode.directory, 'report.json'))

@@ -4,7 +4,8 @@ import { avgBoolean, avgEnum, avgHash, avgKey, avgList, avgNumber, avgProtocolBo
 import { parseAvgExecutableStageV1 } from './stage-contract'
 import { readAvgImageDefinitionV3 } from './media-production-definition'
 import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
-import { parseAvgForegroundPolicyV1, type AvgForegroundPolicyV1 } from './image-foreground-contract'
+import { parseAvgForegroundPolicy, compileAvgForegroundRequirement, assertAvgForegroundRequirementBinding,
+  AVG_RESERVED_MAGENTA_INVARIANT_V1, AVG_RESERVED_MAGENTA_FORBIDDEN_V1, type AvgForegroundPolicy } from './image-foreground-contract'
 export { parseAvgForegroundPolicyV1, compileAvgForegroundRequirementV1, assertAvgForegroundRequirementBindingV1 } from './image-foreground-contract'
 export type { AvgForegroundPolicyV1 } from './image-foreground-contract'
 
@@ -28,7 +29,7 @@ export interface AvgImageProcessingPlanV1 {
 /** Explicit foreground capability. V1 codecs remain strict and unchanged. */
 export interface AvgImageProcessingRecipeV2 extends Omit<AvgImageProcessingRecipeV1, 'version'> {
   version: 2
-  foreground: AvgForegroundPolicyV1
+  foreground: AvgForegroundPolicy
 }
 export type AvgImageProcessingRecipe = AvgImageProcessingRecipeV1 | AvgImageProcessingRecipeV2
 export interface AvgImageProcessingPlanV2 {
@@ -93,7 +94,7 @@ export function parseAvgImageProcessingRecipeV2(value: unknown): AvgImageProcess
   const { foreground, ...fields } = r
   const base = parseAvgImageProcessingRecipeV1({ ...fields, version: 1 })
   if (base.background !== null) throw new Error('[avg-process] 前景分离配方不能以画布底色覆盖实际 alpha')
-  return { ...base, version: 2, foreground: parseAvgForegroundPolicyV1(foreground) }
+  return { ...base, version: 2, foreground: parseAvgForegroundPolicy(foreground) }
 }
 export function parseAvgImageProcessingRecipe(value: unknown): AvgImageProcessingRecipe {
   const body = avgProtocolBody(value)
@@ -122,12 +123,49 @@ export function parseAvgImageProcessingPlan(value: unknown): AvgImageProcessingP
 /** The same physical output constraints for each actual product definition;
  * this is not a synthetic legacy Brief or any execution authority. */
 export function assertAvgImageProcessingRequirementsV1(plan:AvgImageProcessingPlanV1,requirements:ReadonlyArray<Pick<AvgVisualProductionRequirementV1,'requirementKey'|'width'|'height'|'alpha'>>){
+  assertAvgImageProcessingCanvasRequirements(plan,requirements)
+}
+function assertAvgImageProcessingCanvasRequirements(plan:AvgImageProcessingPlan,requirements:ReadonlyArray<Pick<AvgVisualProductionRequirementV1,'requirementKey'|'width'|'height'|'alpha'>>){
   for(const entry of plan.entries){
     const r=requirements.find(r=>r.requirementKey===entry.requirementKey),p=entry.recipe
     if(!r)throw new Error('[avg-process] 加工缺少准确冻结需求')
     if(p.width<r.width||p.height<r.height||Math.abs((p.width/p.height)/(r.width/r.height)-1)>0.02)throw new Error('[avg-process] 加工画布不满足冻结需求的最小尺寸或画幅，请先修订配方')
     if(r.alpha==='required'&&p.background?.alpha===255)throw new Error('[avg-process] 必需透明需求不能使用不透明底色填充')
   }
+}
+export type AvgImageProcessingRequirement = Pick<AvgVisualProductionRequirementV1,
+  'requirementKey'|'width'|'height'|'alpha'|'mediaKind'|'consumer'|'invariants'|'forbiddenDepictions'>
+
+/** Frozen readers validate the declaration; they never add it after a request. */
+export function assertAvgImageProcessingRequirements(plan:AvgImageProcessingPlan,requirements:ReadonlyArray<AvgImageProcessingRequirement>){
+  assertAvgImageProcessingCanvasRequirements(plan,requirements)
+  for(const {requirementKey,recipe} of plan.entries)if(recipe.version===2){
+    const requirement=requirements.find(r=>r.requirementKey===requirementKey)!
+    assertAvgForegroundRequirementBinding(recipe.foreground,requirement)
+  }
+}
+
+/** Explicit unstarted draft preparation only. Removal drops only canonical
+ * declarations belonging to the previous foreground recipe. All other author
+ * details remain exact. The caller reparses/freezes its real batch or scope;
+ * this helper grants no request, family approval or historical use authority. */
+export function compileAvgImageProcessingRequirementDeclarations<R extends AvgImageProcessingRequirement>(
+  requirements:ReadonlyArray<R>,nextPlan:AvgImageProcessingPlan|null,previousPlan?:AvgImageProcessingPlan,
+):R[]{
+  const next=nextPlan===null?null:parseAvgImageProcessingPlan(nextPlan)
+  const previous=previousPlan?parseAvgImageProcessingPlan(previousPlan):null
+  const result=requirements.map(value=>{
+    let requirement=structuredClone(value)
+    if(previous?.entries.some(e=>e.requirementKey===requirement.requirementKey&&e.recipe.version===2)){
+      requirement.invariants=requirement.invariants.filter(text=>text!==AVG_RESERVED_MAGENTA_INVARIANT_V1)
+      requirement.forbiddenDepictions=requirement.forbiddenDepictions.filter(text=>text!==AVG_RESERVED_MAGENTA_FORBIDDEN_V1)
+    }
+    const entry=next?.entries.find(e=>e.requirementKey===requirement.requirementKey)
+    if(entry?.recipe.version===2)requirement=compileAvgForegroundRequirement(entry.recipe.foreground,requirement)
+    return requirement
+  })
+  if(next)assertAvgImageProcessingRequirements(next,result)
+  return result
 }
 /** Integer, bounded source and destination rectangles. cover crops the source
  * instead of allocating or drawing an unbounded off-canvas intermediate. */
@@ -205,7 +243,9 @@ export function assertAvgImageProcessingSourceFieldsV1(source: AvgProcessedImage
 export type AvgProcessedImageArtifactFieldsV1=Pick<ProductBuildArtifactRecordV1,
   'artifactKey'|'kind'|'mediaKind'|'payloadJson'|'metadataJson'|'rightsJson'|'contentHash'|'mimeType'|'byteSize'|'blobObjectId'>
 export async function assertAvgProcessedImageArtifactV1(brief:ProductProductionBriefV3,row:AvgProcessedImageArtifactFieldsV1){
-  return assertAvgProcessedImageArtifactFromDefinitionV1(readAvgImageDefinitionV3(brief),row)
+  const definition=readAvgImageDefinitionV3(brief),plan=definition.imageProcessing
+  if(plan?.version===2)throw new Error('[avg-process] V1加工读取不能解释前景方案')
+  return assertAvgProcessedImageArtifactFromDefinitionV1({...definition,imageProcessing:plan},row)
 }
 /** Pure payload/recipe/metadata checks. The caller supplies a separately
  * proven definition and verifies producer authority and physical bytes. */

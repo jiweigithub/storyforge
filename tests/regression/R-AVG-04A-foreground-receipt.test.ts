@@ -8,10 +8,11 @@ import { AVG_IMAGE_PROCESSOR_V2, assertAvgImageProcessingReceiptV2, parseAvgImag
   parseAvgProcessedImagePayload, assertAvgProcessedImageArtifactFromDefinition, projectAvgForegroundCanvasRecipeV1,
   type AvgImageProcessingReceiptV2, type AvgProcessedImagePayloadV2 } from '../../src/lib/avg/image-processing-contract-v2'
 import type { AvgVisualProductionRequirementV1 } from '../../src/lib/avg/media-production-contract'
+import type { AvgForegroundPolicyV1 } from '../../src/lib/avg/image-foreground-contract'
 import { avgImageProcessingRecipeFixture, avgImageProcessingReceiptFixture } from '../helpers/avg-image-processing-fixture'
 
 async function fixture() {
-  const recipe: AvgImageProcessingRecipeV2 = { ...avgImageProcessingRecipeFixture(), version: 2,
+  const recipe: AvgImageProcessingRecipeV2 & { foreground: AvgForegroundPolicyV1 } = { ...avgImageProcessingRecipeFixture(), version: 2,
     foreground: { schema: 'storyforge.avg.foreground-policy', version: 1, method: 'reserved-magenta', reservedColor: '#FF00FF',
       subjectUsesReservedColor: false, algorithm: DECLARED_MAGENTA_ALPHA_MATTING_ID_V1, declaration: '明确保留底色；工程合同夹具不代表真实画面。' } }
   const requirement = compileAvgForegroundRequirementV1<AvgVisualProductionRequirementV1>(recipe.foreground, {

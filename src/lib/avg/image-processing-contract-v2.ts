@@ -2,8 +2,10 @@ import type { FrozenRuntimeMediaAssetV2, ProductProductionBriefV3 } from '../typ
 import { readAvgImageDefinitionV3 } from './media-production-definition'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { avgHash, avgNumber, avgProtocolBody, avgRecord } from './protocol-validation'
-import { assertAvgForegroundRequirementBindingV1 } from './image-foreground-contract'
+import { assertAvgForegroundRequirementBinding } from './image-foreground-contract'
 import { parseAvgForegroundPixelObservationV1, type AvgForegroundPixelObservationV1 } from './image-foreground-worker-protocol'
+import { AVG_FOREGROUND_OBSERVATION_KEYS_V2, parseAvgForegroundPixelObservationV2,
+  type AvgForegroundPixelObservationV2 } from './image-foreground-worker-protocol-v2'
 import { AVG_IMAGE_PROCESSOR_V1, parseAvgImageProcessingReceiptV1, assertAvgImageProcessingReceiptV1,
   parseAvgImageProcessingRecipeV1, parseAvgImageProcessingRecipeV2, parseAvgImageProcessingPlan,
   deriveAvgImageProcessingGeometryV1, parseAvgProcessedImagePayloadV1, parseAvgProcessedImageSourceFieldsV1,
@@ -18,10 +20,14 @@ export interface AvgForegroundProcessingObservationV1 extends AvgForegroundPixel
   width: number; height: number; policyHash: string
   sourcePixelHash: string; cutoutPixelHash: string; alphaPlaneHash: string
 }
+export type AvgForegroundProcessingObservation = (AvgForegroundPixelObservationV1 | AvgForegroundPixelObservationV2) & {
+  width: number; height: number; policyHash: string
+  sourcePixelHash: string; cutoutPixelHash: string; alphaPlaneHash: string
+}
 export interface AvgImageProcessingReceiptV2 extends Omit<AvgImageProcessingReceiptV1, 'version' | 'processor'> {
   version: 2
   processor: typeof AVG_IMAGE_PROCESSOR_V2
-  foreground: AvgForegroundProcessingObservationV1
+  foreground: AvgForegroundProcessingObservation
 }
 export type AvgImageProcessingReceipt = AvgImageProcessingReceiptV1 | AvgImageProcessingReceiptV2
 export interface AvgProcessedImagePayloadV2 extends Omit<AvgProcessedImagePayloadV1, 'version' | 'recipe' | 'receipt'> {
@@ -50,6 +56,16 @@ export function parseAvgForegroundProcessingObservationV1(value: unknown): AvgFo
     sourcePixelHash: avgHash(r.sourcePixelHash, 'foreground.sourcePixelHash'), cutoutPixelHash: avgHash(r.cutoutPixelHash, 'foreground.cutoutPixelHash'),
     alphaPlaneHash: avgHash(r.alphaPlaneHash, 'foreground.alphaPlaneHash') }
 }
+export function parseAvgForegroundProcessingObservation(value: unknown): AvgForegroundProcessingObservation {
+  if (!value || typeof value !== 'object' || !('version' in value) || value.version !== 2) return parseAvgForegroundProcessingObservationV1(value)
+  const r = avgRecord(value, [...AVG_FOREGROUND_OBSERVATION_KEYS_V2, 'width', 'height', 'policyHash',
+    'sourcePixelHash', 'cutoutPixelHash', 'alphaPlaneHash'], 'foreground boundary processing observation')
+  const width = avgNumber(r.width, 'foreground.width', 2, 10_000), height = avgNumber(r.height, 'foreground.height', 2, 10_000)
+  const observed = parseAvgForegroundPixelObservationV2(Object.fromEntries(AVG_FOREGROUND_OBSERVATION_KEYS_V2.map(key => [key, r[key]])), width, height)
+  return { ...observed, width, height, policyHash: avgHash(r.policyHash, 'foreground.policyHash'),
+    sourcePixelHash: avgHash(r.sourcePixelHash, 'foreground.sourcePixelHash'), cutoutPixelHash: avgHash(r.cutoutPixelHash, 'foreground.cutoutPixelHash'),
+    alphaPlaneHash: avgHash(r.alphaPlaneHash, 'foreground.alphaPlaneHash') }
+}
 export function parseAvgImageProcessingReceiptV2(value: unknown): AvgImageProcessingReceiptV2 {
   const r = avgRecord(avgProtocolBody(value), ['schema', 'version', 'processor', 'recipeHash', 'source', 'output',
     'geometry', 'renderer', 'foreground', 'receiptHash'], 'foreground processing receipt')
@@ -58,7 +74,7 @@ export function parseAvgImageProcessingReceiptV2(value: unknown): AvgImageProces
   // synthetic legacy producer is created; the actual V2 body is hashed below.
   const base = parseAvgImageProcessingReceiptV1({ schema: r.schema, version: 1, processor: AVG_IMAGE_PROCESSOR_V1,
     recipeHash: r.recipeHash, source: r.source, output: r.output, geometry: r.geometry, renderer: r.renderer, receiptHash: r.receiptHash })
-  const foreground = parseAvgForegroundProcessingObservationV1(r.foreground)
+  const foreground = parseAvgForegroundProcessingObservation(r.foreground)
   if (foreground.width !== base.source.width || foreground.height !== base.source.height || !base.output.hasAlpha) throw new Error('[avg-process] 前景来源尺寸或实际输出 alpha 不符')
   return { ...base, version: 2, processor: AVG_IMAGE_PROCESSOR_V2, foreground }
 }
@@ -101,7 +117,7 @@ export async function assertAvgProcessedImageArtifactFromDefinition<R extends Om
   const entry = plan?.entries.find(e => e.requirementKey === payload.requirementKey), requirement = a.mediaBatch.requirements.find(r => r.requirementKey === payload.requirementKey)
   if (payload.version === 2) {
     if (entry?.recipe.version !== 2 || !requirement) throw new Error('[avg-process] 缺少准确前景配方和冻结需求')
-    assertAvgForegroundRequirementBindingV1(entry.recipe.foreground, requirement)
+    assertAvgForegroundRequirementBinding(entry.recipe.foreground, requirement)
   }
   const metadata = assertAvgProcessedImageArtifactMetadataV1({ payload, entry, requirement, row, processor: payload.receipt.processor })
   return { payload, ...metadata }

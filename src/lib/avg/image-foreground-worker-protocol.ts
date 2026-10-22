@@ -3,6 +3,11 @@ import { DECLARED_MAGENTA_ALPHA_MATTING_ID_V1, DECLARED_MAGENTA_PIXEL_LIMIT_V1,
 import { parseAvgForegroundPolicyV1, type AvgForegroundPolicyV1 } from './image-foreground-contract'
 import { avgEnum, avgNumber, avgRecord, avgText } from './protocol-validation'
 
+// Separate numerical candidate only; neither the V1 transport nor a formal
+// production policy dispatches this new algorithm before its own acceptance.
+export { matteAvgForegroundBoundaryUnmixV2, iterateAvgForegroundBoundaryUnmixV2,
+  AVG_FOREGROUND_BOUNDARY_UNMIX_ID_V2 } from './image-foreground-boundary-unmix'
+
 export interface AvgForegroundWorkerRequestV1 {
   schema: 'storyforge.avg.foreground-worker-request'
   version: 1
