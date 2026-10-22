@@ -120,7 +120,7 @@ jobs:
 
   publish:
     if: github.event_name != 'pull_request'
-    needs: [package, clients]
+    needs: [package, clients, signed-upgrade]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -144,6 +144,8 @@ jobs:
           merge-multiple: true
       - name: Publish only after all target packages pass
         run: |
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main || { echo 'Release source must be merged into main before publication.'; exit 1; }
           if gh release view "${RELEASE_TAG}" --json isDraft --jq '.isDraft' > existing-release-state.txt 2>/dev/null; then
             test "$(cat existing-release-state.txt)" = true || { echo 'Published releases are immutable. Increment package.json and use a new tag.'; exit 1; }
           fi
@@ -169,3 +171,10 @@ jobs:
           args=(--draft=false --notes-file "$notes")
           if [ "$PRERELEASE" = true ]; then args+=(--prerelease --latest=false); else args+=(--prerelease=false --latest); fi
           gh release edit "${RELEASE_TAG}" "${args[@]}"
+
+  signed-upgrade:
+    permissions:
+      contents: write
+    if: github.event_name != 'pull_request'
+    needs: clients
+    uses: ./.github/workflows/client-release-upgrade.yml

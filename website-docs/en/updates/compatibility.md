@@ -2,9 +2,9 @@
 
 ## Which version these docs describe
 
-This incremental review covers **October 20, 2026, main baseline 38104e61**, checking user-visible changes since successful maintenance baseline `9e480ac7`. Product status follows each product guide.
+This incremental review covers **October 22, 2026, main baseline 463b6473**, checking user-visible changes since successful maintenance baseline `50062745`. Product status follows each product guide.
 
-The source package version is **4.0.2**; the [latest release page](https://github.com/yuanbw2025/storyforge/releases/latest) lists the fixed archives actually available for download. Version 4.0.2 adds Windows, Mac and Android installers, in-app updates and the unified User Agreement; see [installation](/en/getting-started/install). Builds of v4.0.1 include explicit failure feedback and the text-adventure recovery, image-preserving revisions, and standalone web export from [PR #119](https://github.com/yuanbw2025/storyforge/pull/119). See [troubleshooting and capture limits](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds).
+The source package version is **4.0.3**. [PR #184](https://github.com/yuanbw2025/storyforge/pull/184) is merged and the formal release workflow is still running; the [latest release page](https://github.com/yuanbw2025/storyforge/releases/latest) lists the fixed archives actually available for download. Version 4.0.2 adds Windows, Mac and Android installers, in-app updates and the unified User Agreement; see [installation](/en/getting-started/install). Builds of v4.0.1 include explicit failure feedback and the text-adventure recovery, image-preserving revisions, and standalone web export from [PR #119](https://github.com/yuanbw2025/storyforge/pull/119). See [troubleshooting and capture limits](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds).
 
 v4.0.2 was formally published on October 16, 2026 at fixed source `04de86d7`. Its release page provides a Windows EXE, Apple Silicon/Intel Mac DMGs, an Android APK, four Windows/Mac/Linux portable ZIP targets, and `SHA256SUMS.txt`. In-app problems and suggestions go to a private maintainer inbox; the fallback web form creates a public Issue. See [troubleshooting](/en/guides/troubleshooting#problems-and-failure-reports-in-downloaded-builds).
 
@@ -45,3 +45,5 @@ Reverting source or opening an old release does not guarantee the old program ca
 Continue: [Backup and recovery](/en/guides/backup-restore) · [Changelog](/en/updates/changelog).
 
 Implemented on a branch, merged into remote main, and successfully deployed are three separate states. [Pending development](/en/updates/development-status) records work not yet delivered. A documentation review date is not a product release date.
+
+[PR #171](https://github.com/yuanbw2025/storyforge/pull/171), merged on October 21, fixes missing detailed-outline snapshots and profile reading when style counts are absent. See [prose and chapter plans](/en/features/longform/writing) and [style learning](/en/features/longform/style-learning). The contract-snapshot budget repair in [PR #185](https://github.com/yuanbw2025/storyforge/pull/185) remains unmerged development.

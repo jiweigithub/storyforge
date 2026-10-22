@@ -22,11 +22,23 @@ describe('TTRPG-1D · server-authoritative verifiable dice', () => {
     expect(await verifyOnlineDiceReceiptV1({ commitments: engine.commitments, receipt: second })).toBe(true)
   })
 
-  it('任何种子、表达式、结果或承诺列表篡改都会验算失败', async () => {
-    const engine = await VerifiableOnlineDiceV1.create({
-      roomId: 'room.tamper', releaseHash: 'b'.repeat(64), maximumRolls: 2,
-    })
+  it.each([
+    { label: '随机承诺', seed: undefined },
+    { label: '合法全 8 结果', seed: 'c8'.padStart(64, '0') },
+  ])('任何种子、表达式、结果或承诺列表篡改都会验算失败（$label）', async ({ seed }) => {
+    const identity = { roomId: 'room.tamper', releaseHash: 'b'.repeat(64) }
+    const engine = seed
+      ? await VerifiableOnlineDiceV1.restore({
+        schema: 'storyforge.online-dice-server-checkpoint', version: 1,
+        ...identity, seeds: [seed, 'd'.repeat(64)], nextRollIndex: 0,
+      })
+      : await VerifiableOnlineDiceV1.create({ ...identity, maximumRolls: 2 })
     const receipt = await engine.roll('3d8')
+    if (seed) expect(receipt.dice).toEqual([8, 8, 8])
+    expect(await verifyOnlineDiceReceiptV1({ commitments: engine.commitments, receipt })).toBe(true)
+    // Keep the forged result valid for 3d8, but different even when the real roll is all 8s.
+    const tamperedDice = receipt.dice.map((value, index) => index === 0 ? value % 8 + 1 : value)
+    expect(tamperedDice).not.toEqual(receipt.dice)
     expect(await verifyOnlineDiceReceiptV1({
       commitments: engine.commitments,
       receipt: { ...receipt, seed: '0'.repeat(64) },
@@ -37,7 +49,7 @@ describe('TTRPG-1D · server-authoritative verifiable dice', () => {
     })).toBe(false)
     expect(await verifyOnlineDiceReceiptV1({
       commitments: engine.commitments,
-      receipt: { ...receipt, dice: [8, 8, 8], total: 24 },
+      receipt: { ...receipt, dice: tamperedDice, total: tamperedDice.reduce((total, value) => total + value, receipt.modifier) },
     })).toBe(false)
     expect(await verifyOnlineDiceReceiptV1({
       commitments: engine.commitments,

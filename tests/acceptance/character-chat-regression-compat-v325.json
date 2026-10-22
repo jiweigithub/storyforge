@@ -240,5 +240,260 @@
       }
     ]
   },
-  "unchangedGateInputs": "TypeScript includes only src. Production src, scripts, dependencies and execution configs remain byte-identical after the two E2E edits; prior required type/build/governance results retained. Added browser tests and changed-file lint passed separately."
+  "unchangedGateInputs": "TypeScript includes only src. Production src, scripts, dependencies and execution configs remain byte-identical after the two E2E edits; prior required type/build/governance results retained. Added browser tests and changed-file lint passed separately.",
+  "mainlineIntegration": {
+    "mainHead": "c5a1cab7d7d02eb4382d13ecb9b3de2785037d88",
+    "previousPrHead": "f20fac24923abf0d575405110a119d6e4fe20486",
+    "sourceIntegrationTree": "386d80634128333662fac860934c0f5ac54a668d",
+    "sourceIntegrationTreeBoundary": "Index tree after mechanical mainline conflict resolution, before plan and acceptance status closeout. Subsequent changes only update these two status documents; final commit and remote check IDs are recorded in repository-external receipts.",
+    "sourceRuntimePinnedHead": "26fd6e29c019f89162f7beb5c081b93a47c3593e",
+    "version": "4.0.3",
+    "previousPrHeadRemoteChecks": "Not scheduled because the pull request was merge-conflicting; no old-head run was restarted.",
+    "conflictResolution": [
+      "Retain all chat Skill bytes and only use the 36 latest non-chat lastVerifiedAt dates from main.",
+      "Regenerate docs/ARCHITECTURE.md using the official project metrics script.",
+      "Retain both Chinese and English changelog contents from both parents."
+    ],
+    "semanticReview": {
+      "path": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/merge-review.json",
+      "sha256": "f75cd305248131e9cfd921f306df331423f9666f07b4075bbb2084f430a43bce",
+      "protectedFilesCompared": 454,
+      "chatGovernanceAndTestsUnchangedFromPreviousPrHead": true,
+      "dependencyGraphsUnchanged": true
+    },
+    "localChecks": [
+      {
+        "name": "targeted-regressions",
+        "command": [
+          "npx",
+          "vitest",
+          "run",
+          "tests/regression/R-CHAT-02-situation-character-permissions.test.ts",
+          "tests/regression/R-CHAT-02-spoken-inquiry-review.test.ts",
+          "tests/regression/R-CHAT-04-fact-evidence-harness.test.ts",
+          "tests/regression/R-CHAT-04-history-audit.test.ts",
+          "tests/regression/R-SCREEN2-professional-pipeline.test.ts",
+          "tests/regression/R-COMIC2-professional-pipeline.test.ts",
+          "tests/regression/R-SHORT2-professional-production.test.ts",
+          "tests/regression/R-AITOWN2-director.test.ts",
+          "tests/regression/R-TTRPG4-ai-kp-director.test.ts",
+          "tests/regression/R-OPEN-WORLD3-source-curation.test.ts",
+          "tests/regression/R-OPEN-WORLD3-experience-design.test.ts",
+          "tests/regression/R-TEXTADV3-agent-team.test.ts",
+          "tests/regression/R-TEXTADV2-production.test.tsx",
+          "tests/regression/R-CLIENT-signed-upgrade-fixture.test.ts",
+          "tests/regression/R-ONLINE1-verifiable-dice.test.ts"
+        ],
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/targeted-regressions.log",
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 160.16,
+        "sha256": "045c6eebd1846f2177d6773fbbf5f5ed6c8b8af7fc9800df86e5603daf83fad6"
+      },
+      {
+        "name": "release-apk-upgrade",
+        "command": [
+          "node",
+          "--test",
+          "scripts/distribution/release-apk-upgrade.test.mjs"
+        ],
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/release-apk-upgrade.log",
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 3.43,
+        "sha256": "1667983d712c54c55c19380f042311086a615f3bce092a97980a4ff59f8f4be9"
+      },
+      {
+        "name": "architecture",
+        "command": [
+          "npm",
+          "run",
+          "check:architecture"
+        ],
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/architecture.log",
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 7.19,
+        "sha256": "23486d579737fc37398cd3cb43e9da946643d845c6948456591ea74125034e43"
+      },
+      {
+        "name": "required-tables",
+        "command": [
+          "npm",
+          "run",
+          "check:required-tables"
+        ],
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/required-tables.log",
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 0.15,
+        "sha256": "dfa44ee6399f2cf6fc926481d382fb1e8c3dde5998079094d746eb18ba5b5c23"
+      },
+      {
+        "name": "ai-manual",
+        "command": [
+          "npm",
+          "run",
+          "check:ai-manual"
+        ],
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/ai-manual.log",
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 0.52,
+        "sha256": "da0e1a7cfe4a41cdb0c20b5ada439f9146ae0d02d441f78fd556a04a1e948e0c"
+      },
+      {
+        "name": "ai-entry-registry",
+        "command": [
+          "npm",
+          "run",
+          "check:ai-entry-registry"
+        ],
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/ai-entry-registry.log",
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 0.89,
+        "sha256": "50ec410073f276d3bce9d7c96cd885a6a05afcc5aa7aed9032afebcdff52e1de"
+      },
+      {
+        "name": "agent-context",
+        "command": [
+          "npm",
+          "run",
+          "check:agent-context"
+        ],
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/agent-context.log",
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 0.15,
+        "sha256": "6f3392aaae0540e5489ce6aaf118f48e0aaa444b8794bf0c62d61ec76d986a9d"
+      },
+      {
+        "name": "agent-freshness",
+        "command": [
+          "npm",
+          "run",
+          "check:agent-freshness"
+        ],
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/agent-freshness.log",
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 0.7,
+        "sha256": "aafc4254d0a153fb7c5ee173a2b64b35e5de37e23236f52b092f57bd5cd91e48"
+      },
+      {
+        "name": "project-metrics",
+        "command": [
+          "npm",
+          "run",
+          "check:project-metrics"
+        ],
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/project-metrics.log",
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 0.45,
+        "sha256": "b0f6ccd8a091b3d35b98117c88d4c21bb25793ffbe6ec6ac71ba142f9ded42a4"
+      },
+      {
+        "name": "docs",
+        "command": [
+          "npm",
+          "run",
+          "check:docs"
+        ],
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/docs.log",
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 0.56,
+        "sha256": "682391277f2e8d6fe66953b62e31c5cd2468ef07a3b3d6774dbbd2aa13f5902b"
+      },
+      {
+        "name": "typescript",
+        "command": [
+          "npx",
+          "tsc",
+          "--noEmit"
+        ],
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/typescript.log",
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 39.26,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "build",
+        "command": [
+          "npm",
+          "run",
+          "build"
+        ],
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/build.log",
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 76.92,
+        "sha256": "289548c4010456026bff093a01852594687a5b1838e2b71d73a1fbadcddb5544"
+      }
+    ],
+    "fullDelivery": "New exact-head complete CI and browser validation pending remote terminal results. Historical failures and passes remain unchanged and do not substitute for this integration.",
+    "modelEvidenceBoundary": "Original V324 cohort, raw hashes and runtime source remain frozen. reading-r1 has three independently accepted openings and first eligible local test release; first weak guidance received after automatic opening; still running, not M1 passed.",
+    "statusCloseoutChecks": [
+      {
+        "name": "status-docs",
+        "command": [
+          "npm",
+          "run",
+          "check:docs"
+        ],
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 0.65,
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/status-docs.log",
+        "sha256": "84693a7149f2a66a76740a0c95070eb09019e2f2b793f07c00a8d7b2f02f1aad"
+      },
+      {
+        "name": "status-roadmap",
+        "command": [
+          "npm",
+          "run",
+          "check:roadmap"
+        ],
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 0.15,
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/status-roadmap.log",
+        "sha256": "07abeb8220e9621ba2bf0755fe0a5166ecdda367f15a14feae15f55a2fb120cf"
+      },
+      {
+        "name": "bundle-size",
+        "command": [
+          "npm",
+          "run",
+          "check:bundle-size"
+        ],
+        "status": "passed",
+        "exitCode": 0,
+        "elapsedSeconds": 0.49,
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/bundle-size.log",
+        "sha256": "9c005e458706b380262f9c525f825ee699138de7dca5b9b935c410f9671cbb2c"
+      },
+      {
+        "status": "passed",
+        "command": [
+          "npx",
+          "eslint",
+          "src/lib/agent/skill-registry.ts",
+          "tests/helpers/native-upgrade-fixture.ts",
+          "tests/regression/R-CLIENT-signed-upgrade-fixture.test.ts",
+          "tests/regression/R-ONLINE1-verifiable-dice.test.ts",
+          "--max-warnings=0"
+        ],
+        "exitCode": 0,
+        "elapsedSeconds": 0.96,
+        "log": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/merged-files-lint-r2.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "originalFailureRetained": "/Users/qinyingying/.local/share/storyforge-evaluations/character-chat-20261014/v325-regression-compat/merge-main-c5a1cab7/merged-files-lint.log",
+        "originalFailureReason": "The first invocation explicitly selected two scripts excluded by repository ESLint configuration; --max-warnings=0 rejected ignored-file warnings, with zero code errors. R2 covers all changed TypeScript files under the unchanged configured lint scope. No ignore rules or thresholds changed."
+      }
+    ]
+  }
 }

@@ -41,6 +41,9 @@ on:
         required: false
 permissions:
   contents: read
+env:
+  PREVIOUS_CLIENT_REF: 04de86d75e874fdf292f4f7766871c5f2b741c7e
+  PREVIOUS_CLIENT_VERSION: 4.0.2
 jobs:
   consent:
     runs-on: ubuntu-latest
@@ -79,7 +82,7 @@ jobs:
         run: node scripts/desktop/smoke.mjs release/windows/win-unpacked/StoryForge.exe
       - uses: actions/checkout@v7
         with:
-          ref: 800843b2ce7749e94f6a2961631459153b0e7c04
+          ref: ${{ env.PREVIOUS_CLIENT_REF }}
           path: previous-client
       - name: Build the previous Windows client for a real installer upgrade
         working-directory: previous-client
@@ -91,7 +94,7 @@ jobs:
         run: |
           node scripts/desktop/build-upgrade-fixture.mjs
           version=$(node -p "require('./package.json').version")
-          node scripts/desktop/upgrade-smoke.mjs previous-client/release/windows/StoryForge-4.0.1-windows-x64-setup.exe "release/windows/StoryForge-$version-windows-x64-setup.exe"
+          node scripts/desktop/upgrade-smoke.mjs "previous-client/release/windows/StoryForge-$PREVIOUS_CLIENT_VERSION-windows-x64-setup.exe" "release/windows/StoryForge-$version-windows-x64-setup.exe" "$PREVIOUS_CLIENT_VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: client-windows
@@ -125,7 +128,7 @@ jobs:
         run: node scripts/desktop/smoke.mjs release/macos/${{ matrix.directory }}/StoryForge.app/Contents/MacOS/StoryForge
       - uses: actions/checkout@v7
         with:
-          ref: 800843b2ce7749e94f6a2961631459153b0e7c04
+          ref: ${{ env.PREVIOUS_CLIENT_REF }}
           path: previous-client
       - name: Build a previous-version Mac application with the same storage identity
         working-directory: previous-client
@@ -138,7 +141,7 @@ jobs:
         run: |
           node scripts/desktop/build-upgrade-fixture.mjs
           version=$(node -p "require('./package.json').version")
-          node scripts/desktop/upgrade-smoke.mjs previous-client/release/windows/${{ matrix.directory }}/StoryForge.app "release/macos/StoryForge-$version-macos-${{ matrix.arch }}.dmg"
+          node scripts/desktop/upgrade-smoke.mjs previous-client/release/windows/${{ matrix.directory }}/StoryForge.app "release/macos/StoryForge-$version-macos-${{ matrix.arch }}.dmg" "$PREVIOUS_CLIENT_VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: client-macos-${{ matrix.arch }}
