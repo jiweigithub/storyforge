@@ -346,7 +346,9 @@ export async function prepareTtrpgBrief(
 /** Normal open S2 preparation: creates its own intent and SourcePlan without a scripted Brief. */
 export async function prepareTtrpgOpenProductionBriefV3(input: {
   scope: WorkspaceScope; revision: number; commandId?: string
+  stagePolicyRevision?: 'revise-pending-stage-policy'
 }): Promise<number> {
+  if (input.stagePolicyRevision !== undefined && input.stagePolicyRevision !== 'revise-pending-stage-policy') throw new Error('阶段条件修订需要本次明确选择')
   const scope = await resolveScope({ scope: input.scope }), draft = await readTtrpgDraft(scope)
   if (draft.revision !== input.revision) throw new Error('open 方案已变化，请刷新')
   const settings = settingsFromTtrpgDraft(draft)
@@ -375,8 +377,11 @@ export async function prepareTtrpgOpenProductionBriefV3(input: {
   const { parseProductProductionBriefV3 } = await import('../product-production/contracts')
   const priorEnvelope = priorBuilds.length > 0 && priorBrief ? parseProductProductionBriefV3(priorBrief.briefJson) : null
   if (priorEnvelope?.ttrpgOpen && prior?.status === 'producing') throw new Error('open 当前方案已开始制作，请先在原制作记录核对当前轮次')
+  const releaseRevision = priorEnvelope?.ttrpgOpen != null && priorEnvelope.evolution?.base.kind === 'release'
+  if (input.stagePolicyRevision && !releaseRevision) throw new Error('请先在原制作记录建立尚未开始的发布后新版本，再明确更新阶段条件')
   const rule = await readTtrpgRulePackVersionedV1({ scope, rulePackId: draft.savedRulePackId })
   if (rule.rulePack.version !== 2) throw new Error('open 制作不能使用旧 RulePack V1')
+  const rulePack = rule.rulePack
   const { draftTtrpgOpenProductionCommonBriefV3, suggestProductStartingPoints } = await import('../product-production/consultation')
   const { createProductProductionSourcePlanV1 } = await import('../product-production/source-contracts')
   const { createTtrpgOpenProductionBriefV3 } = await import('./open-production-brief')
@@ -392,7 +397,6 @@ export async function prepareTtrpgOpenProductionBriefV3(input: {
     suggestionKey: suggestion.suggestionKey, qualityProfile: settings.qualityProfile, scale: 'campaign',
     visualLevel: settings.wizard.maximumGeneratedAssets > 0 ? 'key-scenes' : 'none', audioLevel: 'none',
     playerRole: settings.playerRole, openingSituation: settings.openingSituation, sourceSelection: selection })
-  const releaseRevision = priorEnvelope?.ttrpgOpen != null && priorEnvelope.evolution?.base.kind === 'release'
   const reuse = prior && (!priorBuilds.length || releaseRevision) && prior.productType === 'ttrpg' && prior.worldId === scope.worldId
     && priorBrief?.sourceWorldReleaseId === draft.worldReleaseId
   const commandId = input.commandId ?? crypto.randomUUID()
@@ -403,14 +407,20 @@ export async function prepareTtrpgOpenProductionBriefV3(input: {
     : await createProductProductionSourcePlanV1({ scope, productionKey, brief: common })
   await verifyTtrpgOpenAuthoringSourceProvenanceV1({ sourcePlan, facts: settings.openAuthoring.factPolicy.map(item => item.fact) })
   const content = await createTtrpgProductionBriefContentV3({ settingsRevision: input.revision, settings,
-    rulePack: rule.rulePack, worldReference, sourcePlan })
+    rulePack, worldReference, sourcePlan })
   const brief = releaseRevision && prior && priorBrief
-    ? await (await import('./open-pending-runtime-brief')).reviseTtrpgOpenPendingRuntimeBriefV1({
-      scope, production: prior, row: priorBrief,
-      build: priorBuilds.find(item => item.buildNumber === prior.currentBuildNumber) ?? null,
-      release: prior.currentProductReleaseId ? await db.productReleases.get(prior.currentProductReleaseId) : undefined,
-      settingsRevision: input.revision, settings, rulePack: rule.rulePack, worldReference, common,
-    })
+    ? await (async () => {
+      const revisions = await import('./open-pending-runtime-brief')
+      const revisionInput = {
+        scope, production: prior, row: priorBrief,
+        build: priorBuilds.find(item => item.buildNumber === prior.currentBuildNumber) ?? null,
+        release: prior.currentProductReleaseId ? await db.productReleases.get(prior.currentProductReleaseId) : undefined,
+        settingsRevision: input.revision, settings, rulePack, worldReference, common,
+      }
+      return input.stagePolicyRevision
+        ? revisions.reviseTtrpgOpenPendingStagePolicyBriefV1({ ...revisionInput, decision: input.stagePolicyRevision })
+        : revisions.reviseTtrpgOpenPendingRuntimeBriefV1(revisionInput)
+    })()
     : await createTtrpgOpenProductionBriefV3({ common, content })
   if (JSON.stringify(await readTtrpgDraft(scope)) !== JSON.stringify(draft)
     || JSON.stringify((await readTtrpgRulePackVersionedV1({ scope, rulePackId: draft.savedRulePackId })).record) !== JSON.stringify(rule.record)) {

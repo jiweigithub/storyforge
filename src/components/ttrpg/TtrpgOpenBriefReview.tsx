@@ -27,11 +27,16 @@ export default function TtrpgOpenBriefReview({ brief, started, onProduction }: {
       </li>)}</ul></> : null}
     <p>队友 {settings.openAuthoring.companionPolicy?.minimumCompanions}～{settings.openAuthoring.companionPolicy?.maximumCompanions} 名；
       涉及不可逆后果、花费资源、队伍关系或秘密披露时，仍需相应真人确认。</p>
-    <p>每阶段最多 {settings.openAuthoring.stageClosurePolicy?.maximumWorldTurns} 个世界轮次。
+    <p>单局最多 {settings.openAuthoring.stageClosurePolicy?.maximumWorldTurns} 个世界轮次。
       每次授权窗口最多 {settings.openAuthoring.runtimePolicy?.maximumCallsPerEpoch} 次模型调用。</p>
     {settings.openAuthoring.contextPolicy && <p>已冻结情境策略：上下文上限 {settings.openAuthoring.contextPolicy.maximumContextTokens} tokens，
       {settings.openAuthoring.contextPolicy.triggers.length} 条作者指引；中文短语匹配{settings.openAuthoring.contextPolicy.cjkTextMatching === 'explicit-phrase' ? '已明确启用' : '未启用'}。
       指引只影响表达，不自动改变规则、事实或角色知识。</p>}
+    <h4>已冻结的阶段收束条件</h4>
+    <ul>{settings.openAuthoring.stageClosurePolicy?.triggers.map(trigger => <li key={trigger.triggerKey}>
+      {trigger.predicate.op === 'world-turn-at-least' ? '达到第 ' + trigger.predicate.value + ' 个世界回合' : '满足作者设置的内容条件'}：{trigger.summaryPrompt}
+      {trigger.predicate.op !== 'world-turn-at-least' && <details><summary>查看完整条件</summary><pre>{JSON.stringify(trigger.predicate, null, 2)}</pre></details>}
+    </li>)}</ul>
     <h4>制作投入上限</h4>
     <p>最多 {brief.productionBudget.maximumModelCalls} 次文本调用，
       输入 {brief.productionBudget.maximumInputTokens.toLocaleString()}、输出 {brief.productionBudget.maximumOutputTokens.toLocaleString()} tokens；

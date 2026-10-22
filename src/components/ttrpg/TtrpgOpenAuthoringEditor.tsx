@@ -70,8 +70,22 @@ export default function TtrpgOpenAuthoringEditor({ value, onChange }: {
         ] as const).map(([label, key, min, max]) => <label key={key}>{label}<input type="number" min={min} max={max} step={key === 'maximumEpochCostUsd' ? '0.01' : '1'}
           value={policy[key]} onChange={event => change({ ...value, runtimePolicy: { ...policy, [key]: Number(event.target.value) } })}/></label>)}
       </div>}
-      {value.stageClosurePolicy && <label>每阶段最多世界轮次<input type="number" min="10" max="1000" value={value.stageClosurePolicy.maximumWorldTurns}
+      {value.stageClosurePolicy && <label>单局最多世界轮次<input type="number" min="10" max="1000" value={value.stageClosurePolicy.maximumWorldTurns}
         onChange={event => change({ ...value, stageClosurePolicy: { ...value.stageClosurePolicy!, maximumWorldTurns: Number(event.target.value) } })}/></label>}
+      {value.stageClosurePolicy && <details><summary>阶段收束条件</summary>
+        <p>满足条件后由真人确认收束。请核对这些条件与开局局势的持续时间，并保存配置后更新审查方案。</p>
+        {value.stageClosurePolicy.triggers.map((trigger, index) => <div key={trigger.triggerKey}>
+          {trigger.predicate.op === 'world-turn-at-least'
+            ? <label>条件 {index + 1}：允许收束的世界回合<input type="number" min="1" max={value.stageClosurePolicy!.maximumWorldTurns}
+              value={trigger.predicate.value} onChange={event => change({ ...value, stageClosurePolicy: { ...value.stageClosurePolicy!,
+                triggers: value.stageClosurePolicy!.triggers.map((item, i) => i === index ? { ...item, predicate: { op: 'world-turn-at-least', value: Number(event.target.value) } } : item) } })}/></label>
+            : <details><summary>条件 {index + 1}：作者设置的内容条件</summary><pre>{JSON.stringify(trigger.predicate, null, 2)}</pre></details>}
+          <label>条件 {index + 1}：收束时需要整理的事项<textarea value={trigger.summaryPrompt}
+            onChange={event => change({ ...value, stageClosurePolicy: { ...value.stageClosurePolicy!,
+              triggers: value.stageClosurePolicy!.triggers.map((item, i) => i === index ? { ...item, summaryPrompt: event.target.value } : item) } })}/></label>
+        </div>)}
+        <p>其他内容条件可通过完整开放设计修改，并在应用前核对。</p>
+      </details>}
       {!!value.situationTemplates.length && <details><summary>局势与开场</summary>{value.situationTemplates.map((situation, index) => <div key={situation.templateKey}>
         <label>局势 {index + 1} 标题<input value={situation.title} onChange={event => change({ ...value, situationTemplates: value.situationTemplates.map((item, i) => i === index ? { ...item, title: event.target.value } : item) })}/></label>
         <label><input type="checkbox" checked={value.openingSituationKeys.includes(situation.templateKey)} onChange={event => change({ ...value,

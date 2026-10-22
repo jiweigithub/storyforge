@@ -14,7 +14,7 @@ function fail(message: string): never { throw Error(`[ttrpg-open-pending-brief] 
 const RUNTIME_BUDGET_FIELDS = ['enabled', 'maximumCallsPerEpoch', 'maxAiActions', 'maximumOutputTokens',
   'maximumEpochTokens', 'maximumEpochCostUsd', 'maximumRepairAttempts'] as const
 
-export async function reviseTtrpgOpenPendingRuntimeBriefV1(value: {
+interface PendingTtrpgOpenBriefRevisionInputV1 {
   scope: WorkspaceScope
   production: ProductProductionRecordV1
   row: ProductProductionBriefRecordV1
@@ -25,7 +25,22 @@ export async function reviseTtrpgOpenPendingRuntimeBriefV1(value: {
   rulePack: RulePackV2
   worldReference: WorldReferenceV1
   common: Omit<ProductProductionBriefV3, 'ttrpg' | 'ttrpgOpen'>
+}
+
+/** Retained V1 boundary: runtime budgets only, with identical frozen output. */
+export async function reviseTtrpgOpenPendingRuntimeBriefV1(value: PendingTtrpgOpenBriefRevisionInputV1): Promise<ProductProductionBriefV3> {
+  return revisePendingBrief(value, false)
+}
+
+/** A separate human S2 decision, never an amendment of a published release or save. */
+export async function reviseTtrpgOpenPendingStagePolicyBriefV1(value: PendingTtrpgOpenBriefRevisionInputV1 & {
+  decision: 'revise-pending-stage-policy'
 }): Promise<ProductProductionBriefV3> {
+  if (value.decision !== 'revise-pending-stage-policy') fail('阶段条件修订需要本次明确选择')
+  return revisePendingBrief(value, true)
+}
+
+async function revisePendingBrief(value: PendingTtrpgOpenBriefRevisionInputV1, stagePolicyRevision: boolean): Promise<ProductProductionBriefV3> {
   const input = structuredClone(value)
   const { scope, production, row, build, release } = input
   const sameOwner = (record: { projectId: number; worldId: number; workId: number }) =>
@@ -60,14 +75,23 @@ export async function reviseTtrpgOpenPendingRuntimeBriefV1(value: {
   if (!policy || !oldPolicy) fail('运行边界尚未完成')
   const changed = RUNTIME_BUDGET_FIELDS.some(key => policy[key] !== oldPolicy[key])
   Object.assign(oldPolicy, Object.fromEntries(RUNTIME_BUDGET_FIELDS.map(key => [key, policy[key]])))
+  if (stagePolicyRevision) {
+    const stage = settings.openAuthoring.stageClosurePolicy, oldStage = expectedSettings.openAuthoring.stageClosurePolicy
+    if (!stage || !oldStage) fail('新旧方案都需要完整的阶段条件')
+    if (canonical(stage) === canonical(oldStage)) fail('阶段条件未变化，请核对新版本的修订内容')
+    expectedSettings.openAuthoring.stageClosurePolicy = structuredClone(stage)
+  }
   if (canonical(settings) !== canonical(expectedSettings) || canonical(input.rulePack) !== canonical(old.rulePack)
     || canonical(input.common.source.selection) !== canonical(prior.source.selection)
     || canonical(input.common.source.startingPoint) !== canonical(prior.source.startingPoint)
     || input.common.source.worldContentHash !== prior.source.worldContentHash) {
-    fail('本次只支持调整待开始版本的运行额度；其他配置或来源变化须另行明确修订')
+    fail(stagePolicyRevision
+      ? '本次只支持调整待开始新版本的阶段条件和运行额度；其他配置或来源变化须另行明确修订'
+      : '本次只支持调整待开始版本的运行额度；其他配置或来源变化须另行明确修订')
   }
   const content = await createTtrpgProductionBriefContentV3({ settingsRevision: input.settingsRevision,
     settings: input.settings, rulePack: input.rulePack, worldReference: old.worldReference, sourcePlan: old.sourcePlan })
   return parseProductProductionBriefV3({ ...prior, ttrpgOpen: content,
-    evolution: { ...evolution, affectedLanes: changed ? [...new Set([...evolution.affectedLanes, 'runtime'])] : evolution.affectedLanes } })
+    evolution: { ...evolution, affectedLanes: [...new Set([...evolution.affectedLanes,
+      ...(changed ? ['runtime' as const] : []), ...(stagePolicyRevision ? ['content' as const, 'runtime' as const] : [])])] } })
 }
