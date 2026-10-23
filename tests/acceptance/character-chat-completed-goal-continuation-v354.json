@@ -205,5 +205,53 @@
     "browser": "browser.log",
     "checks": "checks.json",
     "manifest": "manifest-browser-after.json"
+  },
+  "mainlineIntegration": {
+    "sourceFixCommit": "0d7602c2aecbf357672ce762544eb05d5a0fb340",
+    "main": "8d757ddc35b73d6f39146e6f77cd1a669174061a",
+    "mergeChangedPaths": [
+      "data/traffic/clones.csv",
+      "data/traffic/release-assets.csv",
+      "data/traffic/views.csv",
+      "website-docs/en/updates/compatibility.md",
+      "website-docs/en/updates/development-status.md",
+      "website-docs/updates/compatibility.md",
+      "website-docs/updates/development-status.md"
+    ],
+    "executionManifestChanges": [
+      "data/traffic/clones.csv",
+      "data/traffic/release-assets.csv",
+      "data/traffic/views.csv"
+    ],
+    "productionSourceAndTestsUnchanged": true,
+    "fullDeliveryPending": true,
+    "mergeCommit": "29726e63e29d849bfa641f2674ae3033cac76560",
+    "diffChecks": {
+      "default-main-diff": {
+        "command": [
+          "git",
+          "diff",
+          "--check",
+          "0d7602c2aecbf357672ce762544eb05d5a0fb340",
+          "HEAD"
+        ],
+        "exitCode": 2
+      },
+      "crlf-main-diff": {
+        "command": [
+          "git",
+          "-c",
+          "core.whitespace=trailing-space,space-before-tab,cr-at-eol",
+          "diff",
+          "--check",
+          "0d7602c2aecbf357672ce762544eb05d5a0fb340",
+          "HEAD"
+        ],
+        "exitCode": 0
+      }
+    },
+    "diffCheckExplanation": "The default staged diff check reports the 65 CRLF CSV rows imported byte-for-byte from origin/main. No CSV data or newline bytes changed locally. A command-scoped check recognizing CRLF passes; no repository/global Git setting was changed. This qualifies the merge commit message: the default staged check did not pass.",
+    "docsCheck": "passed",
+    "roadmapCheck": "passed"
   }
 }
