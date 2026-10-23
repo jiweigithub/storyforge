@@ -826,8 +826,12 @@ export function parseTtrpgRuntimeStateV2(
       && a.snapshot.openRun?.situations.history?.some(h => stableProductRuntimeJsonV1(h) === stableProductRuntimeJsonV1(history)))) fail("局势终态缺少实际祖先处置记录");
   }
   for (const receipt of [...(openRun?.terminalReceipts ?? []), ...(openRun?.gateReceipts ?? [])]) {
-    if (receipt.sourceRef.sessionKey !== sessionKey && !branchLineage?.ancestors.some(a => a.sessionKey === receipt.sourceRef.sessionKey && a.throughSequence >= receipt.sourceRef.sequence
-      && [...(a.snapshot.openRun?.terminalReceipts ?? []), ...(a.snapshot.openRun?.gateReceipts ?? [])].some(r => stableProductRuntimeJsonV1(r) === stableProductRuntimeJsonV1(receipt)))) fail("终态/门缺少实际祖先评估记录");
+    if (receipt.sourceRef.sessionKey === sessionKey) continue;
+    const expected = stableProductRuntimeJsonV1(receipt);
+    // Equal receipts must share the exact source before their full canonical comparison.
+    if (!branchLineage?.ancestors.some(a => a.sessionKey === receipt.sourceRef.sessionKey && a.throughSequence >= receipt.sourceRef.sequence
+      && [...(a.snapshot.openRun?.terminalReceipts ?? []), ...(a.snapshot.openRun?.gateReceipts ?? [])].some(r => r.sourceRef.sessionKey === receipt.sourceRef.sessionKey
+        && r.sourceRef.sequence === receipt.sourceRef.sequence && stableProductRuntimeJsonV1(r) === expected))) fail("终态/门缺少实际祖先评估记录");
   }
   const recoveries = openRun?.gateRecoveries ?? [];
   if (new Set(recoveries.map(r => r.recoveryKey)).size !== recoveries.length || new Set(recoveries.map(r => `${r.operationKey}:${r.authorizationEpochKey}`)).size !== recoveries.length) fail("局部恢复只能按真实操作窗口执行一次");

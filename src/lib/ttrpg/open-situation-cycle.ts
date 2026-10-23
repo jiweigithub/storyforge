@@ -162,8 +162,10 @@ export function assertTtrpgOpenSituationCycleHistoryV1(runtime: ReturnType<typeo
       if (cycle.startedRef.sessionKey === runtime.sessionKey && sameTtrpgOpenPressureSourceV1(ref,cycle.ruleSourceRef)
         && runtime.openRun?.ruleReceipts.some(r => sameTtrpgOpenPressureSourceV1(ttrpgOpenPressureRuleSourceV1(r),ref))
         && ancestor?.snapshot.openRun?.ruleReceipts.some(r => sameTtrpgOpenPressureSourceV1(ttrpgOpenPressureRuleSourceV1(r),ref))) continue
-      if (!ancestor?.snapshot.openRun?.situationCycles?.some(c => c.cycleKey === cycle.cycleKey && (stable(c) === stable(cycle)
-        || [c.ruleSourceRef, c.startedRef, ...c.maintenanceRefs, ...c.queueRefs, ...c.work.flatMap(w => [w.causeRef, ...(w.completedRef ? [w.completedRef] : []), ...(w.effectReviews?.flatMap(review => review.decisions.map(d => d.sourceRef)) ?? [])]), ...(c.completedRef ? [c.completedRef] : [])].some(r => sameTtrpgOpenPressureSourceV1(r, ref))))) p.fail('局势周期缺少实际祖先依据')
+      // A parsed cycle's exact source refs avoid serializing its full frozen history on each ref.
+      if (!ancestor?.snapshot.openRun?.situationCycles?.some(c => c.cycleKey === cycle.cycleKey && (
+        [c.ruleSourceRef, c.startedRef, ...c.maintenanceRefs, ...c.queueRefs, ...c.work.flatMap(w => [w.causeRef, ...(w.completedRef ? [w.completedRef] : []), ...(w.effectReviews?.flatMap(review => review.decisions.map(d => d.sourceRef)) ?? [])]), ...(c.completedRef ? [c.completedRef] : [])].some(r => sameTtrpgOpenPressureSourceV1(r, ref))
+        || stable(c) === stable(cycle)))) p.fail('局势周期缺少实际祖先依据')
     }
   }
 }
