@@ -85,7 +85,7 @@ async function closedSession() {
   await store.getState().advanceNarrative({kind: 'scene-start', participantKey: 'guard', aiConfig: {} as never})
   spy.mockImplementation(i => generate({...i, runAI: withChatActionChoiceFixture(async messages => {
     const text = JSON.stringify(messages)
-    expect(text).toContain('没有 active/paused'); expect(text).not.toContain('柜台下')
+    expect(text).toContain('自身无 active/paused'); expect(text).not.toContain('柜台下')
     return JSON.stringify(reply)
   }), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}))
   return {...f, spy}

@@ -1,3 +1,4 @@
+import {CHAT_CONSOLIDATED_ACTION_PRODUCER_V1, chatConsolidatedActionPromptV1} from './action-instructions'
 import {chatSituationDevelopmentGenerationRulesV1} from './situation-development'
 import {chatActionRequestOptionsV1, boundedChatOutputTokensV1, chatActionOutputRulesV1} from './action-output-contract'
 import {assertChatControlHandoffBindingsV1, chatNarrativeOutcomeRulesV1, parseChatNarrativeOutcomeWireV1, supportsChatControlHandoffV1} from './control-handoff-wire'
@@ -365,6 +366,11 @@ function prompt(input: {
   producerVersion?: string
   audience?: readonly string[]
 }): ChatMessage[] {
+  if (input.skillId === 'character.chat-narrative-action' && input.producerVersion === CHAT_CONSOLIDATED_ACTION_PRODUCER_V1) {
+    return [{role: 'system', content: chatConsolidatedActionPromptV1(input.roleContext!, input.audience ?? [],
+      chatActionWireExampleV1(schemaInstruction(input.skillId, true, true, true), input.producerVersion))},
+    {role: 'user', content: `【目标】${input.objective}\n\n${input.context}`} ]
+  }
   const sceneTransition = supportsChatSceneTransitionPromptV1(input.producerVersion)
   const existingGoalPause = supportsChatExistingGoalPausePromptV1(input.producerVersion)
   const promiseRequest = supportsChatPromiseRequestPromptV1(input.producerVersion)

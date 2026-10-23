@@ -149,7 +149,7 @@ it.each([true, false])('requires reviewed consistency of retained plans, changed
       calls++; expect(messages[1].content).toContain('尚待本次行动核对的记忆修正')
       expect(messages[1].content).toContain('我只是暂借地图，没有答应帮忙寻找铜印。')
       expect(messages[1].content).not.toContain('旧的错误摘要')
-      expect(messages[0].content).toContain('保留相反打算不算处理')
+      expect(messages[0].content).toContain('不在正文承认却保留相反方向')
       return JSON.stringify(candidate)
     }), runReviewAI: async messages => {
       calls++; expect(messages[0].content).toContain('memoryChecks'); expect(messages[0].content).toContain('commitmentChecks')

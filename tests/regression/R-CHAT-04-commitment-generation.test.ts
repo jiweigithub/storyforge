@@ -34,9 +34,9 @@ it.each([false, true])('records the exact producer instructions while keeping th
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '未来条件约定的工程输入验证',
     runAI: withChatActionChoiceFixture(async messages => {
       calls++; rendered = JSON.stringify(messages)
-      expect(messages[0].content.includes('约定成立的时点与履行条件发生的时点不同')).toBe(!legacy)
+      expect(messages[0].content.includes('现在明确承担的未来义务或持续限制已成立')).toBe(!legacy)
       expect(messages[0].content.includes('commitmentEffects 默认 []')).toBe(legacy)
-      expect(messages[0].content.includes('示例空数组不等于本次无需登记')).toBe(!legacy)
+      expect(messages[0].content.includes('依据完整 text，确无变化才 []')).toBe(!legacy)
       expect(messages[1].content).not.toContain('柜台下')
       return JSON.stringify(a)
     }),
@@ -48,7 +48,7 @@ it.each([false, true])('records the exact producer instructions while keeping th
   })
   expect(generated.snapshot.contract.budget.maxModelCalls).toBe(legacy ? 2 : 3); expect(calls).toBe(2)
   expect(generated.snapshot.events.filter(event => event.type === 'model.requested')).toHaveLength(legacy ? 2 : 3)
-  expect(generated.snapshot.contract.executionBindings!.find(b => b.stepId === 'interaction:runtime-candidate')!.promptVersion).toBe(legacy ? 'chat-narrative-action-v30' : 'chat-narrative-action-v67')
+  expect(generated.snapshot.contract.executionBindings!.find(b => b.stepId === 'interaction:runtime-candidate')!.promptVersion).toBe(legacy ? 'chat-narrative-action-v30' : 'chat-narrative-action-v68')
   expect((await db.agentRunArtifacts.toArray()).some(a => a.artifactKind === 'rendered-request' && a.content === rendered)).toBe(true)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!

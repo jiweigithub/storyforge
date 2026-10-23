@@ -107,7 +107,7 @@ it('limits the clarification to new generators, using the same actor input and n
     expect(chatActionPromptRulesV1(view, {producerVersion}).join('\n')).toContain('不要求先有一条“已经做完”的历史记录')
     expect(chatActionPromptRulesV1(view, {producerVersion, preserveExpression: true}).join('\n')).not.toContain('不要求先有一条“已经做完”的历史记录')
   }
-  for (const producerVersion of ['chat-narrative-action-v62', 'chat-narrative-options-v38', 'chat-action-revision-v23', 'chat-narrative-action-v68']) {
+  for (const producerVersion of ['chat-narrative-action-v62', 'chat-narrative-options-v38', 'chat-action-revision-v23', 'chat-narrative-action-v69']) {
     expect(chatActionPromptRulesV1(view, {producerVersion}).join('\n')).not.toContain('不要求先有一条“已经做完”的历史记录')
   }
 })

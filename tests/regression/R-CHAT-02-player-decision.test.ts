@@ -57,7 +57,7 @@ it.each([false, true])('an unanswered saved invitation permits an independent re
     runAI: withChatActionChoiceFixture(async messages => {
       calls++; expect(messages[1].content).toContain(invitation); expect(messages[1].content).toContain(undecided)
       expect(messages[1].content).toContain('尚未同意前不视为同行'); expect(messages[1].content).not.toContain('柜台下')
-      expect(messages[0].content).toContain('旧邀请未答复不阻塞有依据且不依赖该决定的局部方向')
+      expect(messages[0].content).toContain(options ? '旧邀请未答复不阻塞有依据且不依赖该决定的局部方向' : '旧邀请未答不阻塞真正独立方向')
       expect(messages[0].content).not.toContain('玩家要求休息或等待决定时不提出')
       return JSON.stringify(options ? {options: [independent, alternative]} : independent)
     }), runReviewAI: async messages => {
@@ -110,7 +110,7 @@ it.each([false, true])('preserves a reviewer rejection of a false player depende
   await expect(generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard',
     skillId: options ? 'character.chat-narrative-options' : 'character.chat-narrative-action', objective: '工程反例，不能当作模型语义判断准确率',
     runAI: withChatActionChoiceFixture(async messages => {
-      calls++; expect(messages[0].content).toContain(CHAT_PLAYER_DECISION_ACTION_RULE_V1)
+      calls++; expect(messages[0].content).toContain(options ? CHAT_PLAYER_DECISION_ACTION_RULE_V1 : '等待仅绑定当前具体步骤确实需要的玩家许可、物品或参与')
       expect(messages[1].content).not.toContain('铜印在柜台下')
       return JSON.stringify(options ? {options: [action, {...action, text: '我自己先想别的办法，不用你参加。'}]} : action)
     }), runReviewAI: async messages => {
@@ -130,7 +130,7 @@ it.each([true, false])('keeps a real player decision blocking, while a reviewed 
     waitingForPlayer: waiting, newFacts: waiting ? [] : [{factKey: 'own-note', kind: 'observation', text, evidenceFactKeys: ['lost'], evidenceExcerpt: text}], disclosures: [], threadUpdates: [], goalStatus: null}
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '工程正例，不扩张行动权限',
     runAI: withChatActionChoiceFixture(async () => JSON.stringify(action)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
-  expect(generated.snapshot.contract.executionBindings!.map(binding => binding.promptVersion)).toEqual(expect.arrayContaining(['chat-narrative-action-v67', 'chat-narrative-action-review-v41']))
+  expect(generated.snapshot.contract.executionBindings!.map(binding => binding.promptVersion)).toEqual(expect.arrayContaining(['chat-narrative-action-v68', 'chat-narrative-action-review-v41']))
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!
   expect(state.chatNarrative!.triggers.at(-1)!.status).toBe(waiting ? 'waiting-player' : 'complete')

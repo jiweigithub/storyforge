@@ -64,7 +64,7 @@ it('sends required candidate shape, saves the exact schema request and preserves
     expect(actionShape.required).not.toContain('waitingForPlayer')
   }
   expect(JSON.stringify(options.jsonSchema?.schema)).toContain('目标原本 active 且继续保持 active 时必须填 null')
-  expect(call[0][0].content).toContain('pauseGoal 只保存自己的目标暂停')
+  expect(call[0][0].content).toContain('个人暂停不自动暂停整线')
   expect(call[1].maxTokens).toBe(4000)
   expect(chat.mock.calls[0][1].maxTokens).toBe(2000)
   expect(chat.mock.calls[2][1].maxTokens).toBe(8000)
@@ -159,7 +159,7 @@ it('binds each option to its own expression and commits only the reviewed select
 
 it('binds null only to the private turn, persists it, and never discloses the expression to a bystander', async () => {
   const chat = mockChat(wire(action, 'speech-awaiting-player')), f = await start(true), result = await generate(f)
-  expect(chat.mock.calls[1][0][0].content).toContain('本轮冻结听众 ["player","guard"]')
+  expect(chat.mock.calls[1][0][0].content).toContain('冻结听众 ["player","guard"]')
   expect(result.candidate).toMatchObject({action: {kind: 'speak', waitingForPlayer: true, audienceKeys: ['player', 'guard']}})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!

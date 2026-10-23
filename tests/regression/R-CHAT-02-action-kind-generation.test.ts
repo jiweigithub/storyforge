@@ -34,7 +34,7 @@ it.each([[false, false], [false, true], [true, false], [true, true]])('preserves
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId, objective: '核验普通询问与玩家决定的边界',
     runAI: withChatActionChoiceFixture(async messages => {
       calls++; rendered = JSON.stringify(messages)
-      expect(messages[0].content.includes(CHAT_ACTION_KIND_RULE_V1)).toBe(!legacy)
+      expect(messages[0].content.includes(options || legacy ? CHAT_ACTION_KIND_RULE_V1 : '等待环境结果或非玩家回答不等于等待玩家')).toBe(!legacy)
       if (legacy) expect(createHash('sha256').update(messages[0].content).digest('hex')).toBe(options
         ? 'cfdb2fdedc24df3e9c20b46d06104ba2272a27c3c98ca18cad40779072af65bd'
         : '339fafb4dc218595a12844d0d5639476f7b7dfb7b8355060e16d748598945df7')

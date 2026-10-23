@@ -52,14 +52,14 @@ it('keeps a reviewed first-person preference as speech without publishing its pr
   const f = await prepared(), before = (await readProductRuntimeState(f.sessionId)).interaction!
   const expression: ChatNarrativeActionV1 = {...action, kind: 'speak', newFacts: [],
     text: '叶岑说：“我更喜欢先仔细看看，也有点担心太着急会判断错。你可以先休息。”'}
-  const assertPolicy = (messages: Array<{content: string}>) => {
-    expect(messages[0].content).toContain('主观发言只作为该角色说过的话保留')
-    expect(messages[0].content).toContain('没有可用 factKey 不等于允许披露来源资料中的事实')
+  const assertPolicy = (messages: Array<{content: string}>, review = false) => {
+    expect(messages[0].content).toContain(review ? '主观发言只作为该角色说过的话保留' : '仅作为本次说过的话，无需 newFacts/disclosures')
+    expect(messages[0].content).toContain(review ? '没有可用 factKey 不等于允许披露来源资料中的事实' : '没有 factKey 也不授权披露或编造键、复制秘密')
   }
   const generated = await generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async messages => {
     assertPolicy(messages); return JSON.stringify(expression)
   }), runReviewAI: async messages => {
-    assertPolicy(messages); return JSON.stringify(chatActionReviewOutputFixture())
+    assertPolicy(messages, true); return JSON.stringify(chatActionReviewOutputFixture())
   }})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   db.close(); await db.open()

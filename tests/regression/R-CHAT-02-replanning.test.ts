@@ -81,7 +81,7 @@ it.each([false, true])('new frozen rules recover the same goal and preserve an u
   let calls = 0
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: options ? 'character.chat-narrative-options' : 'character.chat-narrative-action', objective: '工程夹具：同一未完成目标换办法',
     runAI: withChatActionChoiceFixture(async messages => {
-      calls++; for (const rule of CHAT_REPLANNING_ACTION_RULES_V2) expect(messages[0].content.split(rule)).toHaveLength(2)
+      calls++; for (const rule of options ? CHAT_REPLANNING_ACTION_RULES_V2 : ['一种办法受阻或最终原因未知不等于整个目标无法继续', '没有 playerPause 的自身暂停目标，有实际新方向可沿原 goalKey 用 goalStatus=active 恢复']) expect(messages[0].content.split(rule)).toHaveLength(2)
       for (const rule of CHAT_REPLANNING_ACTION_RULES_V1) expect(messages[0].content).not.toContain(rule)
       expect(messages[0].content).not.toContain('选择下一步前，对齐当前已知 facts')
       expect(messages[1].content).not.toContain('柜台下'); expect(messages[1].content).toContain('paused')
@@ -92,7 +92,7 @@ it.each([false, true])('new frozen rules recover the same goal and preserve an u
     }})
   expect(calls).toBe(2); expect(generated.snapshot.contract.budget.maxModelCalls).toBe(options ? 2 : 3)
   expect(generated.snapshot.events.filter(event => event.type === 'model.requested')).toHaveLength(options ? 2 : 3)
-  expect(generated.snapshot.contract.executionBindings!.map(b => b.promptVersion)).toContain(options ? 'chat-narrative-options-v40' : 'chat-narrative-action-v67')
+  expect(generated.snapshot.contract.executionBindings!.map(b => b.promptVersion)).toContain(options ? 'chat-narrative-options-v40' : 'chat-narrative-action-v68')
   expect(generated.snapshot.contract.executionBindings!.map(b => b.promptVersion)).toContain(options ? 'chat-narrative-options-review-v29' : 'chat-narrative-action-review-v41')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id, ...(options ? {optionKey: 'option-1'} : {})})
