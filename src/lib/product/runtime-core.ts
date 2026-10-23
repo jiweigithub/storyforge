@@ -1,5 +1,6 @@
 /** Product-neutral session, event-log, checkpoint and projection infrastructure. */
 import Dexie from "dexie";
+import { createProductRuntimeHeadParsingV1 } from "./runtime-head-parsing";
 import { assertProductReleaseUnchanged } from "./releases";
 import { cascadeRegisteredReferences } from "../workspace/lifecycle";
 import { db } from "../db/schema";
@@ -1292,6 +1293,11 @@ export async function completeProductRuntimeSessionV1(input: {
   );
 }
 
+const parseRuntimeHead = createProductRuntimeHeadParsingV1(
+  parseProductRuntimeState,
+  cloneState,
+);
+
 export async function readVerifiedProductRuntimeHeadV1(
   session: ProductRuntimeSession,
 ): Promise<ProductRuntimeHeadV1> {
@@ -1305,7 +1311,7 @@ export async function readVerifiedProductRuntimeHeadV1(
     /^[a-f0-9]{64}$/.test(cachedHash)
   ) {
     try {
-      const state = parseProductRuntimeState(cachedJson);
+      const state = parseRuntimeHead(cachedJson);
       if (
         state.lastSequence === latestSequence &&
         (await hashStateJson(cachedJson)) === cachedHash
