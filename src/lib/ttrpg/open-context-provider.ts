@@ -8,6 +8,7 @@ import { loadTtrpgOpenGmOracleContextV1 } from './open-gm-oracle-context'
 import { canonicalStringify, hashCanonicalValue } from '../agent/run/hash'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import { estimateTokens } from '../ai/context-budget'
+import type { TtrpgOpenKnowledgeDisplayV1 } from './open-knowledge'
 
 type SourceKey = 'ttrpgOpenAuthority' | 'ttrpgOpenKnowledge' | 'ttrpgOpenOracleHistory' | 'ttrpgOpenFacts' | 'ttrpgOpenGmOracleInput' | 'ttrpgOpenKpInput'
 type RuntimeResourceRow = { suffix: string; title: string; value: unknown; mandatory: boolean }
@@ -41,6 +42,11 @@ function playerRows(context: Awaited<ReturnType<typeof loadTtrpgOpenPlayerContex
       ...knowledge.map((entry, index) => ({ suffix: `knowledge.${index}`, title: entry.title, value: entry, mandatory: false })),
     ]
 }
+/** A knowledge record names evidence and reliability, not a globally unique fact title. */
+export async function ttrpgOpenKnowledgeResourceTitleV2(entry: TtrpgOpenKnowledgeDisplayV1): Promise<string> {
+  const identity = await hashCanonicalValue({ evidenceRef: entry.evidenceRef, reliability: entry.reliability })
+  return `${entry.title} · ${entry.reliability} · ${identity}`
+}
 async function catalog(scope: FrozenResourceScopeV1, sourceKey: SourceKey) {
   if (!scope.productRuntimeSessionId || !scope.worldId || !scope.workId || !scope.runtimeActorKey) throw new Error('[ttrpg-open-provider] 需要明确 instance、World/Work 与角色 POV')
   const workspace = await resolveScope({ scope: { projectId: scope.projectId, worldId: scope.worldId, workId: scope.workId } })
@@ -49,11 +55,15 @@ async function catalog(scope: FrozenResourceScopeV1, sourceKey: SourceKey) {
   const context = kpContext ?? ( sourceKey === 'ttrpgOpenGmOracleInput' ? await loadTtrpgOpenGmOracleContextV1(input) : await loadTtrpgOpenPlayerContextV1(input))
   const legacyRows = kpContext ? [...kpContext.resources, ...kpContext.legacyModernResources.slice(0, 2)]
     : 'resources' in context ? context.resources : playerRows(context, scope, sourceKey as Exclude<SourceKey, 'ttrpgOpenGmOracleInput' | 'ttrpgOpenKpInput'>)
-  const rows: RuntimeResourceRow[] = kpContext ? kpContext.modernResources : sourceKey === 'ttrpgOpenAuthority' && 'view' in context
+  let rows: RuntimeResourceRow[] = kpContext ? kpContext.modernResources : sourceKey === 'ttrpgOpenAuthority' && 'view' in context
     ? legacyRows.flatMap(row => row.suffix !== 'authority' ? [row] : [
       { ...row, suffix: 'authority.v3', value: Object.fromEntries(Object.entries(row.value as Record<string, unknown>).filter(([key]) => key !== 'pressureSignals')) },
       ...context.view.pressureSignals.map((value, index) => ({ suffix: `pressure.${index}`, title: `角色已知预警 · ${index}`, value, mandatory: false })),
     ]) : legacyRows
+  if (sourceKey === 'ttrpgOpenKnowledge') rows = await Promise.all(legacyRows.map(async row =>
+    /^knowledge\.(0|[1-9]\d*)$/.test(row.suffix) ? { ...row,
+      suffix: row.suffix.replace('knowledge.', 'knowledge.v2.'),
+      title: await ttrpgOpenKnowledgeResourceTitleV2(row.value as TtrpgOpenKnowledgeDisplayV1) } : row))
   const prefix = `fact:ttrpg-open:${context.readEvidence.sessionKey}:${scope.runtimeActorKey}`
   const fingerprint = await hashCanonicalValue({ scope, runtimeSourceHash: context.readEvidence.runtimeSourceHash,
     stateHash: context.readEvidence.stateHash, visibilityHash: context.visibilityHash })
@@ -64,11 +74,14 @@ async function catalog(scope: FrozenResourceScopeV1, sourceKey: SourceKey) {
   const normalizationPolicy = 'normalizationRuntimeReferencePolicy' in context ? context.normalizationRuntimeReferencePolicy : undefined
   const policyHash = await hashCanonicalValue({ sourceKey, actorKey: scope.runtimeActorKey, originalRead: false, fullIsAtomic: true,
     ...(oraclePolicy ? { oracleRuntimeReferencePolicy: oraclePolicy } : {}), ...(normalizationPolicy ? { normalizationRuntimeReferencePolicy: normalizationPolicy } : {}) })
+  const knowledgePolicyHash = sourceKey === 'ttrpgOpenKnowledge'
+    ? await hashCanonicalValue({ sourceKey, actorKey: scope.runtimeActorKey, originalRead: false, fullIsAtomic: true, knowledgeResourceIdentityVersion: 2 }) : undefined
   const materialize = (inputRows: typeof rows) => Promise.all(inputRows.map(async row => {
     const content = canonicalStringify(row.value), contentHash = await sha256Text(content), tokenCount = estimateTokens(content)
+    const qualifiedKnowledge = sourceKey === 'ttrpgOpenKnowledge' && /^knowledge\.v2\.(0|[1-9]\d*)$/.test(row.suffix)
     const descriptor: ContextResourceDescriptorV1 = { version: 1, resourceKey: `${prefix}:${row.suffix}`, sourceKey,
       kind: 'fact', title: row.title, shortSummary: row.title, authority: 'confirmed-evidence',
-      contentRevision: context.readEvidence.sequence, contentHash, policyRevision: oraclePolicy || normalizationPolicy ? 2 : 1, policyHash,
+      contentRevision: context.readEvidence.sequence, contentHash, policyRevision: qualifiedKnowledge || oraclePolicy || normalizationPolicy ? 2 : 1, policyHash: qualifiedKnowledge ? knowledgePolicyHash! : policyHash,
       scope: { projectId: scope.projectId, worldId: scope.worldId, workId: scope.workId,
         productRuntimeSessionId: scope.productRuntimeSessionId, runtimeActorKey: scope.runtimeActorKey }, relations: [],
       sourceRefs: [{ table: 'productRuntimeSessions', recordId: scope.productRuntimeSessionId!, field: 'runtimeHeadStateJson',
@@ -85,7 +98,7 @@ async function catalog(scope: FrozenResourceScopeV1, sourceKey: SourceKey) {
 
 function provider(sourceKey: SourceKey): ContextResourceProviderV1 {
   return createTtrpgOpenRuntimeResourceProviderV1({ sourceKey,
-    providerVersion: sourceKey === 'ttrpgOpenAuthority' ? 'ttrpg-open-actor-provider-v3' : sourceKey === 'ttrpgOpenKpInput' ? 'ttrpg-open-kp-provider-v3' : 'ttrpg-open-actor-provider-v1',
+    providerVersion: sourceKey === 'ttrpgOpenKnowledge' ? 'ttrpg-open-knowledge-provider-v2' : sourceKey === 'ttrpgOpenAuthority' ? 'ttrpg-open-actor-provider-v3' : sourceKey === 'ttrpgOpenKpInput' ? 'ttrpg-open-kp-provider-v3' : 'ttrpg-open-actor-provider-v1',
     normalizationVersion: 'ttrpg-open-actor-json-v1', kinds: ['fact'], catalog: scope => catalog(scope, sourceKey) })
 }
 export const TTRPG_OPEN_AUTHORITY_PROVIDER_V1 = provider('ttrpgOpenAuthority')

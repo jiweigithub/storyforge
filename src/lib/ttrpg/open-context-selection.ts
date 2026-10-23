@@ -130,7 +130,7 @@ export async function selectTtrpgOpenContextResourcesV1(input: {
     })
   }
   const selectedKnowledge = new Set([...known.values()].map(row => row.index))
-  const eligible = input.inventory.filter(row => (!identityGeneration || row.sourceKey !== 'ttrpgOpenKnowledge' || !/:knowledge\.(0|[1-9]\d*)$/.test(row.resourceKey)
+  const eligible = input.inventory.filter(row => (!identityGeneration || row.sourceKey !== 'ttrpgOpenKnowledge' || !/:knowledge\.(?:v2\.)?(0|[1-9]\d*)$/.test(row.resourceKey)
     || selectedKnowledge.has(Number(row.resourceKey.slice(row.resourceKey.lastIndexOf('.') + 1)))))
     .filter(row => row.sourceKey !== guidanceKey || !row.resourceKey.includes(':trigger.') || triggered.has(row.resourceKey.slice(row.resourceKey.lastIndexOf(':') + 1)))
   const ruleRows = eligible.filter(row => row.sourceKey === 'ttrpgOpenAuthority' && /:(action|check)\./.test(row.resourceKey))
