@@ -1,5 +1,10 @@
 # Pending development and branch audit
 
+## October 23, 2026 · Large-contract repair formally delivered
+
+This section updates release status only, without re-auditing the other development branches below. [PR #185](https://github.com/yuanbw2025/storyforge/pull/185) merged as `e4f2496d`, and [release preparation PR #190](https://github.com/yuanbw2025/storyforge/pull/190) merged as `8e82486a`. The independent [release workflow](https://github.com/yuanbw2025/storyforge/actions/runs/39873499281) passed every job, and formal **v4.0.4** is public at fixed source `d90961a2`. The large run-contract repair is no longer awaiting release and is not included in v4.0.3. Exact publication time, upgrade and data boundaries live in [version compatibility](/en/updates/compatibility). The complete October 22 branch review below remains a dated snapshot; this release does not establish completion of other issues or products.
+
+
 ## October 22, 2026 · Complete branch and worktree review
 
 Reviewed from the last successful baseline `50062745` through remote main `463b6473`. The inventory covers **186 local branches, including this maintenance branch, and 115 related worktrees**, including detached checkouts; 136 development heads are not ancestors of main. Commit and file counts are not feature counts. This is a dated snapshot; full paths, hashes, ancestry, patches, and working-file evidence are retained in the maintenance record.
