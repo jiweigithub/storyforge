@@ -19,7 +19,7 @@ for (const clarify of [false,true]) test(`an exact generic method survives ${cla
     const generated = await api.generateTtrpgOpenIntentCandidateV1({ ...await h.openEnvelopeV1(fixture.sessionId,'method.browser.candidate'),scope: fixture.scope,
       viewerKey: h.OPEN_HUMAN_VIEWER,actorKey: 'hero',rawInput,maximumOutputTokens: 800,maximumCostUsd: 0.1,
       runAI: async () => JSON.stringify({ goal: ambiguous ? '需要明确方式与对象' : goal,method: ambiguous ? null : check.checkKey,targetRefs: ambiguous ? [] : ['hero'],
-        declaredResources: [],declaredAssumptions: [],requestedOutcome: null }) })
+        declaredResources: [],declaredAssumptions: ['不读取未共享秘密，也不替其他角色支配个人资源。'],requestedOutcome: null }) })
     return { sessionId: fixture.sessionId,goal,checkKey: check.checkKey,candidate: generated.candidate,before: await api.readProductRuntimeState(fixture.sessionId) }
   },clarify)
   const enter = async () => {

@@ -293,7 +293,7 @@ function isRetreat(text: string): boolean {
   return containsAny(text, ['撤退', '退却', '逃跑', '逃离', '脱离战斗', 'retreat', 'withdraw', 'flee'])
 }
 
-function overreachReason(intent: TtrpgOpenIntentV1, actors: readonly ActorRecord[]): string | null {
+function overreachReason(intent: TtrpgOpenIntentV1, actors: readonly ActorRecord[], routingVersion: 1 | 2): string | null {
   const text = intentText(intent)
   if (containsAny(text, [
     '改规则',
@@ -319,7 +319,8 @@ function overreachReason(intent: TtrpgOpenIntentV1, actors: readonly ActorRecord
     '假扮真人',
     'pretend to be',
   ])) return '自由意图不能替其他真人作决定'
-  const humanTarget = intent.targetRefs.some(target => actors.some(actor =>
+  // V1 decisions stay frozen. In V2 the acting character is not another human.
+  const humanTarget = intent.targetRefs.some(target => (routingVersion === 1 || target !== intent.actorKey) && actors.some(actor =>
     actor.characterKey === target && (actor.controller === 'human' || actor.controller === 'hybrid')))
   if (humanTarget && containsAny(text, ['秘密', '私人物品', '个人资源', 'secret', 'private resource'])) {
     return '涉及其他真人的秘密或个人资源必须由该真人单独授权'
@@ -606,7 +607,7 @@ function routeWithSnapshot(intent: TtrpgOpenIntentV1, snapshot: TtrpgOpenIntentR
   const base = basePreview(intent, 'rejected')
   base.affectedActorKeys = uniqueLimited([intent.actorKey, ...intent.targetRefs.filter(target => actors.some(actor => actor.characterKey === target))], 16)
 
-  const overreach = overreachReason(intent, actors)
+  const overreach = overreachReason(intent, actors, routingVersion)
   if (overreach) return rejectedPreview(intent, overreach)
   if (sourceBinding.rejection) return rejectedPreview(intent, sourceBinding.rejection)
   if (companionLimitExceeded(intent, snapshot)) return rejectedPreview(intent, '同一 worldTurn 内每名 AI 队友最多执行一次行动')
