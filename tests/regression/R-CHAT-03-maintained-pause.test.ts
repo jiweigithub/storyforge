@@ -95,9 +95,9 @@ it('rejects forged marker history, extra writes, missing reviews and cross-versi
     {stepId: 'interaction:action-review', skillId: 'character.chat-narrative-action-review', promptVersion: r},
   ]})
   expect(() => assertChatControlHandoffBindingsV1(contract('chat-narrative-action-v66', 'chat-narrative-action-review-v41'), handoff)).not.toThrow()
-  for (const [p, r] of [['chat-narrative-action-v65', 'chat-narrative-action-review-v40'], ['chat-narrative-action-v66', 'chat-narrative-action-review-v40'], ['chat-narrative-action-v69', 'chat-narrative-action-review-v41']])
+  for (const [p, r] of [['chat-narrative-action-v65', 'chat-narrative-action-review-v40'], ['chat-narrative-action-v66', 'chat-narrative-action-review-v40'], ['chat-narrative-action-v70', 'chat-narrative-action-review-v41']])
     expect(() => assertChatControlHandoffBindingsV1(contract(p, r), handoff)).toThrow()
-  for (const p of [undefined, 'chat-narrative-action-v65', 'chat-narrative-action-v69']) {
+  for (const p of [undefined, 'chat-narrative-action-v65', 'chat-narrative-action-v70']) {
     expect(() => parseChatNarrativeOutcomeWireV1(wire, p)).toThrow()
     expect(JSON.stringify(chatNarrativeOutcomeSchemaV1({}, p))).not.toContain('maintain-existing-pause')
   }

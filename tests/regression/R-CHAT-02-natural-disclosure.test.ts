@@ -93,7 +93,7 @@ const input = (f: Awaited<ReturnType<typeof prepared>>) => ({scope: f.scope, pro
 it('recovers only the saved candidate review, adopts once and preserves canonical knowledge through branch and backup import', async () => {
   const f = await prepared(), before = await readProductRuntimeState(f.sessionId); let runId = 0, calls = 0
   await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async messages => {
-    calls++; expect(messages[0].content).toContain('wording="equivalent"'); expect(messages[1].content).not.toContain('柜台下')
+    calls++; expect(messages[0].content).toContain('wording:"equivalent"'); expect(messages[0].content).toContain('逐事实独立等义审查'); expect(messages[1].content).not.toContain('柜台下')
     return JSON.stringify(natural())
   }), onNarrativeActionSaved: id => {runId = id; throw new Error('saved-before-review')}})).rejects.toThrow('saved-before-review')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)

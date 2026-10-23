@@ -1,7 +1,7 @@
 /** Clarify the existing authority to narrate ordinary self-actions. No inferred
  * result, new permission, skipped review, or retroactive prompt replacement. */
 export function supportsChatOrdinarySelfActionV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-v63', 'chat-narrative-action-v64', 'chat-narrative-action-v65', 'chat-narrative-action-v66', 'chat-narrative-action-v67', 'chat-narrative-action-v68', 'chat-narrative-options-v39', 'chat-narrative-options-v40'].includes(version ?? '')
+  return ['chat-narrative-action-v63', 'chat-narrative-action-v64', 'chat-narrative-action-v65', 'chat-narrative-action-v66', 'chat-narrative-action-v67', 'chat-narrative-action-v68', 'chat-narrative-action-v69', 'chat-narrative-options-v39', 'chat-narrative-options-v40', 'chat-narrative-options-v41'].includes(version ?? '')
 }
 
 export const CHAT_ORDINARY_SELF_ACTION_SELECTION_RULE_V1 = '\n选择时区分具体的未决条件与泛泛的可能失败。unconfirmedConditions 只列确实影响本步的未知内容、真实阻碍、权限或他人决定；不能仅因动作尚未实施，就把“能否顺利做完尚待尝试”当成必须另开局面的条件。已有可见依据支持、权限明确且由角色自己控制的普通动作，可选择连贯完成这一局部目的，不必固定拆成尝试、确认是否成功、再复述结果。比如把自己手中的杯子放到已知可用的桌面上，可作为一次自身行动；未看过的容器内容、真实障碍、他人答复或玩家决定仍须保留各自判定边界。未写定失败不等于保证成功，不新增物件、许可或已完成结果；选择仍只是草稿，表达和独立审查决定能否采用。'

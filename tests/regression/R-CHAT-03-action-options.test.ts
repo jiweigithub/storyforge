@@ -229,7 +229,7 @@ it('explicitly develops the shared background before comparison and cancellation
 it('does not reveal a private known fact through an unchosen disclosure preview', async () => {
   const f = await prepared(), draft = options()
   draft[0] = {...draft[0], kind: 'speak', text: '叶岑曾误指控一位无辜旅人，始终后悔。', newFacts: [],
-    disclosures: [{factKey: 'regret', toParticipantKeys: ['player'], evidenceExcerpt: '叶岑曾误指控一位无辜旅人，始终后悔。'}]}
+    disclosures: [{factKey: 'regret', toParticipantKeys: ['player'], evidenceExcerpt: '叶岑曾误指控一位无辜旅人，始终后悔。', wording: 'equivalent'}]}
   const review = vi.fn(async () => JSON.stringify(reviews()))
   await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => JSON.stringify({options: draft})), runReviewAI: review})).rejects.toThrow('预览不能提前披露')
   expect(review).not.toHaveBeenCalled()

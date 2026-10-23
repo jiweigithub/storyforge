@@ -63,7 +63,7 @@ it('keeps the complete transport schema, reader, reviewer and explicit three-cal
   ], budget: {maxModelCalls: 3, maxAttemptsPerStep: 1}})
   expect(chatActionChoiceVersionForContractV1(binding())).toBe(1)
   expect(() => assertChatControlHandoffBindingsV1(binding())).not.toThrow()
-  for (const invalid of [binding('chat-narrative-action-v69'), binding(current, 'chat-narrative-action-review-v40'), binding(current, 'chat-narrative-action-review-v41', 'chat-narrative-action-v67')]) {
+  for (const invalid of [binding('chat-narrative-action-v70'), binding(current, 'chat-narrative-action-review-v40'), binding(current, 'chat-narrative-action-review-v41', 'chat-narrative-action-v67')]) {
     expect(() => chatActionChoiceVersionForContractV1(invalid)).toThrow()
     expect(() => assertChatControlHandoffBindingsV1(invalid)).toThrow()
   }
@@ -89,7 +89,9 @@ it('renders the saved v67 complete system request byte for byte through the prod
   expect(observed.replace('["player","guard"]', '["player","participant.001"]')).toBe(saved)
 })
 
-it.each([true, false])('uses the consolidated prompt while independent review acceptance=%s controls adoption and durable recovery', async accepted => {
+it.each(['chat-narrative-action-v68', 'chat-narrative-action-v69'].flatMap(producer => [true, false].map(accepted => ({producer, accepted}))))('keeps $producer independent review acceptance=$accepted in control of adoption and durable recovery', async ({producer, accepted}) => {
+  const originalSkill = skills.getAgentSkillV1
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action' ? {...originalSkill(id), promptVersion: producer} : originalSkill(id))
   const f = await start(), before = await readProductRuntimeState(f.sessionId), calls: string[] = []
   let runId = 0
   const request = {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '核对原审查与采用边界', onRunCreated: (id: number) => {runId = id},
@@ -101,7 +103,7 @@ it.each([true, false])('uses the consolidated prompt while independent review ac
   if (accepted) {
     const generated = await generateInteractionRuntimeCandidateV1(request)
     expect(generated.snapshot.contract.budget).toMatchObject({maxModelCalls: 3, maxInputTokens: 56000, maxOutputTokens: 14000, maxAttemptsPerStep: 1})
-    expect(generated.snapshot.contract.executionBindings?.map(b => b.promptVersion)).toEqual([current, current, 'chat-narrative-action-review-v41'])
+    expect(generated.snapshot.contract.executionBindings?.map(b => b.promptVersion)).toEqual([producer, producer, 'chat-narrative-action-review-v41'])
     expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
     await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
     db.close(); await db.open()

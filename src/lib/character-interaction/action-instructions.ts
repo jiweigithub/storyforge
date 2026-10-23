@@ -1,3 +1,4 @@
+import {CHAT_REVIEWED_DISCLOSURE_RULE_V1} from './natural-disclosure-output'
 import type {InteractionVisibilityView} from './runtime'
 import {chatActionPromptFeaturesV1} from './narrative-action-prompt'
 import {CHAT_BOUNDED_OBSERVATION_ACTION_RULE_V1} from './bounded-observation-prompt'
@@ -10,6 +11,8 @@ import {chatConversationEvidenceActionRuleV1} from './narrative-conversation-evi
 import {chatNarrativeOutcomeRulesV1} from './control-handoff-wire'
 
 export const CHAT_CONSOLIDATED_ACTION_PRODUCER_V1 = 'chat-narrative-action-v68'
+export const CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1 = 'chat-narrative-action-v69'
+const CHAT_LEGACY_CONSOLIDATED_DISCLOSURE_RULE_V1 = 'disclosures={factKey,toParticipantKeys,evidenceExcerpt,wording?} 只披露自己已知的既有事实，接收者属于本次听众且原先未知；双方已知的不重复登记。说话与展示物件/文字均须逐条登记实际知情变化，物理变化另记 newFacts。默认摘录含事实原文；wording="equivalent" 可完整等义转述，保留主体、否定、时地、不确定性和全部限制，不加推断或只传部分；独立审查通过才更新知情，无需先照抄再复述。展示位置不说明谁放、时间或动机；私下检查的未知内容不得出现在玩家正文，不能借旁白或候选预览绕过。'
 
 /** A new frozen expression prompt, not a rewrite of saved contracts. The actor
  * reader, choice, wire schema, domain validators and independent review retain
@@ -30,7 +33,7 @@ export function chatConsolidatedActionPromptV1(view: InteractionVisibilityView, 
     '【行动与后果】下文 kind/waitingForPlayer 是领域含义，输出只用 expressionMode。speak 是已说出的话/问题，不能登记完成事实；attempt 仅用于确需玩家决定的步骤，必须等待；complete 是本次完成的自身动作或有依据的事项收束，可含说话；pause 是停止/暂缓。等待环境结果或非玩家回答不等于等待玩家：可直接问话，不预写答复；请求玩家行动许可仍为 attempt。新增事实、fulfilled 目标或 resolved 事项仅 complete 且不等玩家，普通发言/尝试/暂停不冒充完成。',
     'newFacts={factKey,kind,text,evidenceFactKeys,evidenceExcerpt}，数量与 kind 限冻结权限，仅登记已完成实际变化；text 必须逐字出现于本次正文和摘录，引用可知依据。既有事实不改写、不复制，打算和猜测不成为事实。',
     '【表达与知情】可以自然说出当下偏好、感受、顾虑和意愿；若不披露未知既有事实，仅作为本次说过的话，无需 newFacts/disclosures，不自动成为履约、认可或权限。逐项检查明说与暗示的命题：身份、既往事件、位置和秘密仍受知情约束，不以第一人称、偏好或猜测泄露。motivation/voice/目标/人物背景不整类豁免，没有 factKey 也不授权披露或编造键、复制秘密；不能仅因表达偏好且 disclosures=[] 判错。',
-    'disclosures={factKey,toParticipantKeys,evidenceExcerpt,wording?} 只披露自己已知的既有事实，接收者属于本次听众且原先未知；双方已知的不重复登记。说话与展示物件/文字均须逐条登记实际知情变化，物理变化另记 newFacts。默认摘录含事实原文；wording="equivalent" 可完整等义转述，保留主体、否定、时地、不确定性和全部限制，不加推断或只传部分；独立审查通过才更新知情，无需先照抄再复述。展示位置不说明谁放、时间或动机；私下检查的未知内容不得出现在玩家正文，不能借旁白或候选预览绕过。',
+    CHAT_LEGACY_CONSOLIDATED_DISCLOSURE_RULE_V1,
     f.threadFollowup
       ? '【目标来源】可按下文 threadFollowupGoal 建立自己的接续目标；真实新玩家请求仍须独立 followupGoal/player-followup 授权，不混用来源。无有依据接续或自然暂缓时可 goalKey=null 普通回应，goalStatus=null、goalUpdates/threadUpdates=[]、nextPossibilities=null或[]、situationRequest=null，不凭空建立任务。'
       : f.postClosure
@@ -65,4 +68,9 @@ export function chatConsolidatedActionPromptV1(view: InteractionVisibilityView, 
     `严格输出 JSON：${wireExample}`,
     ...chatNarrativeOutcomeRulesV1(CHAT_CONSOLIDATED_ACTION_PRODUCER_V1),
   ].join('\n')
+}
+
+/** Keep the saved v68 instruction bytes while changing only the new disclosure contract. */
+export function chatReviewedDisclosureActionPromptV1(view: InteractionVisibilityView, audience: readonly string[], wireExample: string): string {
+  return chatConsolidatedActionPromptV1(view, audience, wireExample).replace(CHAT_LEGACY_CONSOLIDATED_DISCLOSURE_RULE_V1, CHAT_REVIEWED_DISCLOSURE_RULE_V1)
 }
