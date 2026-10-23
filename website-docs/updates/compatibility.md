@@ -46,4 +46,4 @@ v4.0.2 于 2026-10-16 正式发布，固定源码 `04de86d7`。发行页提供 W
 
 分支中已有实现、进入远程主干、官网部署成功是三个状态。[待合并开发记录](/updates/development-status)单独说明尚未交付的内容；知识库维护日期不是产品发布日期。
 
-2026-10-21 合入的 [PR #171](https://github.com/yuanbw2025/storyforge/pull/171) 修复精细章纲快照缺失与文风统计缺失时的页面读取；操作见[正文与章纲](/features/longform/writing)和[文风学习](/features/longform/style-learning)。[PR #185](https://github.com/yuanbw2025/storyforge/pull/185) 的合同快照预算修复仍为待合并开发。
+2026-10-21 合入的 [PR #171](https://github.com/yuanbw2025/storyforge/pull/171) 修复精细章纲快照缺失与文风统计缺失时的页面读取；操作见[正文与章纲](/features/longform/writing)和[文风学习](/features/longform/style-learning)。[PR #185](https://github.com/yuanbw2025/storyforge/pull/185) 的合同快照预算修复已于 2026-10-22 合入 main，正在准备 **v4.0.4**；该修复不在 v4.0.3 中，新的正式包尚未公开。

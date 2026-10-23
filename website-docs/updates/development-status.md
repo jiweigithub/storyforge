@@ -21,7 +21,7 @@
 | `feat/character-chat-optimization-20261006`、`fix/chat-regression-compat-20261022` · `26fd6e29` | 角色聊天行动依据、跨轮未答询问、开场审阅与可恢复制作链 | 已推送至[草稿 PR #172](https://github.com/yuanbw2025/storyforge/pull/172)，270 个主干外提交不能换算成功能数。两个分支同 head；作者工作区另有 2 项计划/验收材料，兼容核验工作区有 5 项历史读取/测试修改，未提交部分不据此宣称完成。 |
 | `feat/ttrpg-entity-ai-20261016` · `34fc430a`；同名工作区 | 显式方法与 Oracle 预算版本、线索分享、待确认阶段策略、冻结版本中的下一阶段和兼容版本会话保持 | 216 个主干外提交中，12 个提交未被 origin 包含；工作区另有 18 项待提交的开放制作/兼容开场及方案修改。沿用现有 owner 与候选边界，尚未合并，未替作者提交或推送。 |
 | `feat/text-open-world-productization-20261013` · `d330c653`；`open-world-productization/storyforge` | 三线生产、图片确认、网页分发与本地反馈；正在同步最新主干 | [PR #134](https://github.com/yuanbw2025/storyforge/pull/134)仍未合并；本地仅 1 个未被 origin 包含的 merge，无新增未推送非 merge 提交。工作区实际 `MERGE_HEAD=463b6473`，22 个状态条目中 16 个与最新 main 完全同 blob，其余含版本、指标和双方更新记录；不把主干同步文件重复计为开放世界新功能。 |
-| `fix/agent-contract-event-size-20261021` · `cd7f9df7` | 合法大合同与 accepted/revised 事件快照统一有限 UTF-8 字节预算 | 已推送[草稿 PR #185](https://github.com/yuanbw2025/storyforge/pull/185)，尚未合并，关联 [Issue #178](https://github.com/yuanbw2025/storyforge/issues/178)。本地定向和浏览器证据不代替最终树完整交付；不列为 v4.0.3 已包含修复。 |
+| `fix/agent-contract-event-size-20261021` · `9653011a` | 合法大合同与 accepted/revised 事件快照统一有限 UTF-8 字节预算 | 已于 2026-10-22 正常合并 [PR #185](https://github.com/yuanbw2025/storyforge/pull/185)，合并提交 `e4f2496d`；最终完整 CLI 4602 项、浏览器 311 通过/4 按环境跳过，常规 CI 成功。关联 [Issue #178](https://github.com/yuanbw2025/storyforge/issues/178)，待后续正式 v4.0.4 交付，不含于 v4.0.3。 |
 | `narrative-world-design`、`nw2e-retrieval-repair`、`nw-mainline-refresh-20261016` | 原有叙事投影、来源、检索及治理整合，附大量验收材料 | 原开发链仍未合并。`nw-mainline-refresh` 的实际 merge parent 为 `16b006fd`；大量未跟踪验收产物和同步文件不代表新增功能。与旧设计/备份的等价补丁、同 head 和祖先关系继续去重，不接管或清理工作区。 |
 
 ### 保留与去重

@@ -42,8 +42,8 @@ on:
 permissions:
   contents: read
 env:
-  PREVIOUS_CLIENT_REF: 04de86d75e874fdf292f4f7766871c5f2b741c7e
-  PREVIOUS_CLIENT_VERSION: 4.0.2
+  PREVIOUS_CLIENT_REF: eb1fb49d3d99d15f7c212960ba1b97e88afd0713
+  PREVIOUS_CLIENT_VERSION: 4.0.3
 jobs:
   consent:
     runs-on: ubuntu-latest
