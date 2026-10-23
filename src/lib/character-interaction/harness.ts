@@ -1,3 +1,4 @@
+import {chatSituationDevelopmentGenerationRulesV1} from './situation-development'
 import {chatActionRequestOptionsV1, boundedChatOutputTokensV1, chatActionOutputRulesV1} from './action-output-contract'
 import {assertChatControlHandoffBindingsV1, chatNarrativeOutcomeRulesV1, parseChatNarrativeOutcomeWireV1, supportsChatControlHandoffV1} from './control-handoff-wire'
 import {assertChatControlHandoffContextV1, previewChatControlHandoffV1, type ChatControlHandoffV1, type ChatControlHandoffReviewV1} from './control-handoff-contract'
@@ -386,6 +387,7 @@ function prompt(input: {
       ...(input.skillId === 'character.chat-situation-construction' ? [
         ...chatSituationResponseRulesV1(input.producerVersion),
         ...chatSituationCharacterRulesV1(input.producerVersion),
+        ...chatSituationDevelopmentGenerationRulesV1(input.producerVersion),
         '若 constructionRequest.origin 为 continued-thread，承接已审查 pendingSituation 中的自身未完成目标、剧情线与 direction；seedExcerpt 摘录 direction。只能补足当前时间地点中的局部条件，不能替玩家接受或移动，不能替其他角色设定目标或打算；已有事实和其他人的计划均保留。',
         '若 constructionRequest.origin=player-followup，pendingSituation 是针对新玩家请求的已审查承接意向，playerEventSequence/playerExcerpt 保留真实台词依据，direction 是待发展的方向。为该角色建立至少一个有已知依据、可完成的新目标和新问题，不能复活或复制已结束的目标/剧情线，不能替其他角色设定目标或打算；保持当前时地，旧结果与其它角色方向保留。新事实和问题的知情者不得超出原玩家消息听众，不替对话外的人承接新事项。可在冻结的创作权限内补足尚未写定的普通局部细节，为后续实际行动提供条件，不以“原文未提供”冒充故事内阻碍；不可改写已有书中文字、假托真实引文、提前完成未来调查或泄露既定隐情。新背景不等于玩家接受，也不预写整个故事或结果。',
         ...chatObservationScopeGenerationRulesV1(input.producerVersion),
@@ -757,7 +759,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       declaredSourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       assembled,
-      readerVersion: situation ? (executionBinding.promptVersion === 'chat-situation-construction-v18' ? 'chat-situation-runtime-view-v17' : executionBinding.promptVersion === 'chat-situation-construction-v17' ? 'chat-situation-runtime-view-v16' : 'chat-situation-runtime-view-v15') : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? chatActionContextVersionsV1(executionBinding.promptVersion).readerVersion : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? (['chat-situation-construction-v18', 'chat-situation-construction-v19'].includes(executionBinding.promptVersion) ? 'chat-situation-runtime-view-v17' : executionBinding.promptVersion === 'chat-situation-construction-v17' ? 'chat-situation-runtime-view-v16' : 'chat-situation-runtime-view-v15') : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? chatActionContextVersionsV1(executionBinding.promptVersion).readerVersion : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,

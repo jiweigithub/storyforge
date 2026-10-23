@@ -10,6 +10,7 @@ export function chatCoordinatorAudienceVersionV1(contract: Contract): 1 | 2 {
     ['interaction:action-review', 'character.chat-narrative-action-review', 'chat-narrative-action-review-v41'],
     ['interaction:runtime-candidate', 'character.chat-situation-construction', 'chat-situation-construction-v17'],
     ['interaction:runtime-candidate', 'character.chat-situation-construction', 'chat-situation-construction-v18'],
+    ['interaction:runtime-candidate', 'character.chat-situation-construction', 'chat-situation-construction-v19'],
     ['interaction:action-review', 'character.chat-narrative-action-review', 'chat-narrative-action-review-v38'],
     // V40's historical binding used v1; do not alter saved run reconstruction.
     ['interaction:action-review', 'character.chat-narrative-action-review', 'chat-narrative-action-review-v39'],

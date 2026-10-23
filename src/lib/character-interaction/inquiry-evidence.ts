@@ -22,6 +22,7 @@ export function chatInquiryEvidenceVersionForContractV1(contract: {
     ['chat-situation-construction-v16', 'chat-situation-review-v15', 3],
     ['chat-situation-construction-v17', 'chat-situation-review-v16', 3],
     ['chat-situation-construction-v18', 'chat-situation-review-v17', 4],
+    ['chat-situation-construction-v19', 'chat-situation-review-v18', 4],
   ] as const
   if (!bindings.some(b => pairs.some(pair => pair[0] === b.promptVersion || pair[1] === b.promptVersion))) return undefined
   const pair = pairs.find(pair => pair[0] === producers[0]?.promptVersion && pair[1] === reviewers[0]?.promptVersion)

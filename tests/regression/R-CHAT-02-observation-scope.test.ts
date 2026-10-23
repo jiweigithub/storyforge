@@ -59,8 +59,8 @@ it('keeps finite access results separate from further inspection, frozen truth a
     expect(messages[0].content).toContain('秘密仍按冻结发现条件处理')
     return JSON.stringify(review())
   }})
-  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === skillId)?.promptVersion).toBe('chat-situation-construction-v18')
-  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v17')
+  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === skillId)?.promptVersion).toBe('chat-situation-construction-v19')
+  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v18')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
   const after = await readProductRuntimeState(f.sessionId), story = after.interaction!.chatNarrative!

@@ -9,6 +9,7 @@ export const CHAT_SPOKEN_INQUIRY_REVIEW_RULES_V1 = [
 ]
 
 export function chatInquiryGenerationRulesV1(version: string | undefined): string[] {
+  if (version === 'chat-situation-construction-v19') return chatInquiryGenerationRulesV1('chat-situation-construction-v18')
   if (version === 'chat-situation-construction-v18') return chatInquiryGenerationRulesV1('chat-situation-construction-v17').map(rule =>
     rule.startsWith('audienceKeys 是实际听见答复者')
       ? 'audienceKeys 是实际听见答复者，必须含提问者并限于原问题听众及人物事实的知情者。私下答复可不含 player，公开答复须含 player。respondentFactKey 从所选 questionSequence 的 respondentEvidenceFactKeys 中选择，原文须确实证明同一人物在场可交谈；该列表只证明提问时已知，不证明每条都描述可答复人物。evidenceFactKeys 必须包含这个 respondentFactKey，并包含本次 discoveries 对应 targets 的全部 requiredEvidenceFactKeys；其它引用只能来自同一问题的 questionEvidenceFactKeys。不能把整份人物候选列表当成通用引用权限，不能引用以后才出现或才获知的事实。人物依据可以不在后来的 pendingSituation.evidenceFactKeys 中，不得因此省略正确依据或改用无人物信息的观察。omittedRespondentEvidenceCount 表示有未选入的细节，不表示无人可问；没有足够可读依据时不能编造人物。statementFactKey 是本次唯一说法记录身份，不复用旧身份。'
@@ -40,6 +41,7 @@ export function chatInquiryGenerationRulesV1(version: string | undefined): strin
   ]
 }
 export function chatInquiryReviewRulesV1(version?: string): string[] {
+  if (version === 'chat-situation-review-v18') return chatInquiryReviewRulesV1('chat-situation-review-v17')
   if (version === 'chat-situation-review-v17') return [
     ...chatInquiryReviewRulesV1('chat-situation-review-v16').map(rule => rule.replace('inquiryEvidence.version=3', 'inquiryEvidence.version=4')),
     'inquiryEvidence.version=4 的 respondentEvidenceFactKeys 只证明所选问题提出时角色已知且本次实际交付了原文；不证明人物确实在场、能答复、愿意答复或知道幕后真相。grounded-respondent 必须核对 respondentFactKey 的完整原文、respondentExcerpt、真实问题、当前接触条件和原权限。允许这一个正确人物依据未被后来的 pendingSituation.evidenceFactKeys 重复列出；不能据此拒绝已成立的交谈，也不能用候选清单中的其他事实扩张答复依据。原听众、私聊、秘密、发现前提及完整对话连续性均须独立成立。',

@@ -17,7 +17,7 @@ const reviewSkill = 'character.chat-situation-review' as const
 const direction = '只确认本次敲门后能听见什么，不预定有人回应。'
 const review = () => ({checks: CHAT_SITUATION_REVIEW_CHECKS_V1.map(check => ({check, passed: true, reason: '工程注入审查，不是真实模型质量证据'}))})
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
-const releasedSituationVersions = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] as const
+const releasedSituationVersions = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19] as const
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => {vi.restoreAllMocks(); db.close()})
 
@@ -136,7 +136,7 @@ it('accepts only exact released inquiry binding pairs, never cross-version or fu
     }
   }
   // Adjacent numbers do not grant future contracts permission; only released pairs do.
-  for (const [producer, reviewer] of [[7, 6], [7, 8], [19, 18], [999, 998], [999, 8], [9, 999]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).toThrow()
+  for (const [producer, reviewer] of [[7, 6], [7, 8], [20, 19], [999, 998], [999, 8], [9, 999]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).toThrow()
   expect(() => assertChatInquiryBindingV1(result, undefined, 'chat-situation-review-v17')).toThrow()
   expect(() => assertChatInquiryBindingV1(result, 'chat-situation-construction-v18', undefined)).toThrow()
   expect(() => assertChatInquiryBindingV1(result, 'chat-situation-review-v18', 'chat-situation-construction-v17')).toThrow()

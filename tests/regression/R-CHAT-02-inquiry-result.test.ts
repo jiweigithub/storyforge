@@ -119,7 +119,7 @@ it.each([false, true].flatMap(splitQuestion => [false, true].flatMap(privateAnsw
     reviewed++; expect(messages[0].content).toContain('actual-question'); expect(messages[0].content).toContain('对每个 discovery 单独复核')
     return JSON.stringify(chatInquiryReviewFixture(draft))
   }})
-  expect(reviewedResult.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v17')
+  expect(reviewedResult.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v18')
   await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId, onDurableBoundary: type => {if (type === 'runtime.candidate.adopted') throw new Error('host-after-commit')}})).rejects.toThrow('host-after-commit')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
   const version = await readProductRuntimeStateVersion(f.sessionId)

@@ -115,7 +115,7 @@ it.each([false, true])('settles a cross-turn answer exactly once through review,
     reviewed++; expect(messages[1].content).toContain('"version":4')
     return JSON.stringify(chatInquiryReviewFixture(draft))
   }})
-  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v17')
+  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion).toBe('chat-situation-review-v18')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
   const saved = await readProductRuntimeState(f.sessionId), version = await readProductRuntimeStateVersion(f.sessionId)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
