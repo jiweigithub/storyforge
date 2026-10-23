@@ -4,7 +4,7 @@ export const CHAT_SITUATION_DEVELOPMENT_PRODUCER_V1 = 'chat-situation-constructi
 export const CHAT_SITUATION_DEVELOPMENT_REVIEWER_V1 = 'chat-situation-review-v18'
 
 export function chatSituationDevelopmentGenerationRulesV1(version: string | undefined): string[] {
-  if (version !== CHAT_SITUATION_DEVELOPMENT_PRODUCER_V1 && version !== 'chat-situation-construction-v20') return []
+  if (version !== CHAT_SITUATION_DEVELOPMENT_PRODUCER_V1 && version !== 'chat-situation-construction-v20' && version !== 'chat-situation-construction-v21') return []
   return [
     '新情境背景准备：仅 constructionRequest.origin=player-request 或 player-followup 时，先确定原请求中的事情为何值得角色介入，以及目前哪些具体条件可供实际互动，再填写目标与可能方向。只复述种子中的现象，并附上“询问、检查、等待”的打算，不足以形成可演绎背景。可复用现有事实，也可在 allowedNewFactKinds 与数量限制内补足尚未写定的普通人物、物件或条件；不得重写原真相、把未知答案公开或另起无关危机。',
     '把支撑互动的当前条件写入 newFacts 或引用既有 facts，把角色尚未实施的办法写入 possibilities。若方向依赖与某人接触，应有受权限允许、角色可知的当前接触条件，不能把幕后存在、一个声音或未来肯定有人回应当成条件已经齐备；有 temporary-character 权限时，可在这次普通背景构建中明确登记合适的临时人物，不把人物藏入 observation。没有人物权限则依可用的既有条件安排方向，不暗增权限。此处准备接触条件不等于预写对方回答、合作或行动成功。',

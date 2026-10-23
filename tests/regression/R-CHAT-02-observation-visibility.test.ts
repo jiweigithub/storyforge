@@ -56,7 +56,7 @@ it.each([false, true])('preserves private canonical discovery with optional shar
     return JSON.stringify(report())
   }})
   vi.restoreAllMocks()
-  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === skillId)?.promptVersion).toBe('chat-situation-construction-v20')
+  expect(result.snapshot.contract.executionBindings?.find(b => b.skillId === skillId)?.promptVersion).toBe('chat-situation-construction-v21')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: result.snapshot.run.id})
   const after = await readProductRuntimeState(f.sessionId), state = after.interaction!, story = state.chatNarrative!

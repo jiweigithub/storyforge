@@ -20,7 +20,7 @@ const SCOPED_REVIEW = [
   'meaningful-direction 按本次实际检查范围审查：只测试可打开性、接触或运行响应时，具体开合、接触或响应结果可以成立，不能要求额外辨认内部、测试性能或发现线索；已明确查阅或辨认内容时，不能只确认动作完成、无依据重复未知或回避该范围内所得。不能凭单个动词机械判断范围。获准的未定普通可见细节由本步骤补足，已有具体所得可与未查部分未知并存；若以未知替代已经完成的内容检查，需要真实观察限制，输入未提供答案不算限制。拒绝改写真相、泄密、编造阻碍或追加动作，不强求成功。',
 ]
 export function chatObservationScopeGenerationRulesV1(version: string | undefined): string[] {
-  if ((version === 'chat-situation-construction-v19' || version === 'chat-situation-construction-v20')) return chatObservationScopeGenerationRulesV1('chat-situation-construction-v18')
+  if ((version === 'chat-situation-construction-v19' || version === 'chat-situation-construction-v20' || version === 'chat-situation-construction-v21')) return chatObservationScopeGenerationRulesV1('chat-situation-construction-v18')
   if ((version === 'chat-situation-construction-v16' || version === 'chat-situation-construction-v17' || version === 'chat-situation-construction-v18')) return [SCOPED_GENERATION[0].replace('实际完成的范围', '实际实施的有限范围（尝试本身已完成，成功及所得待判定）'), CHAT_BOUNDED_OBSERVATION_SITUATION_RULE_V1, SCOPED_GENERATION[2]]
   return [...(['chat-situation-construction-v10', 'chat-situation-construction-v11', 'chat-situation-construction-v12', 'chat-situation-construction-v13', 'chat-situation-construction-v14', 'chat-situation-construction-v15', 'chat-situation-construction-v16', 'chat-situation-construction-v17', 'chat-situation-construction-v18'].includes(version ?? '') ? SCOPED_GENERATION : LEGACY_GENERATION)]
 }

@@ -103,6 +103,6 @@ it('accepts only the exact new producer/reviewer pair for the existing inquiry e
     expect(() => chatInquiryEvidenceVersionForContractV1(bindings(producer, reviewer))).toThrow('不一致')
   }
   expect(chatInquiryEvidenceVersionForContractV1(bindings('chat-situation-construction-v20', 'chat-situation-review-v19'))).toBe(5)
-  expect(chatSituationDevelopmentGenerationRulesV1('chat-situation-construction-v21')).toEqual([])
+  expect(chatSituationDevelopmentGenerationRulesV1('chat-situation-construction-v22')).toEqual([])
   expect(chatSituationDevelopmentReviewRulesV1('chat-situation-review-v20')).toEqual([])
 })

@@ -1,7 +1,7 @@
 /** Generation guidance only. Saved producers retain their original text;
  * source authority, discovery conditions and independent review stay unchanged. */
 export function chatSituationResponseRulesV1(producerVersion: string | undefined): string[] {
-  if ((producerVersion === 'chat-situation-construction-v19' || producerVersion === 'chat-situation-construction-v20')) return chatSituationResponseRulesV1('chat-situation-construction-v18')
+  if ((producerVersion === 'chat-situation-construction-v19' || producerVersion === 'chat-situation-construction-v20' || producerVersion === 'chat-situation-construction-v21')) return chatSituationResponseRulesV1('chat-situation-construction-v18')
   if ((producerVersion === 'chat-situation-construction-v16' || producerVersion === 'chat-situation-construction-v17' || producerVersion === 'chat-situation-construction-v18')) return chatSituationResponseRulesV1('chat-situation-construction-v15')
   if (producerVersion === 'chat-situation-construction-v15') return chatSituationResponseRulesV1('chat-situation-construction-v14')
   if (producerVersion === 'chat-situation-construction-v14') return chatSituationResponseRulesV1('chat-situation-construction-v13')

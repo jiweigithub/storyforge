@@ -1,7 +1,7 @@
 /** These instructions apply only to new frozen bindings. They clarify semantic
  * checks; they do not grant creative permission or replace structural guards. */
 export function chatSituationCharacterRulesV1(version: string | undefined): string[] {
-  if (!['chat-situation-construction-v9', 'chat-situation-construction-v10', 'chat-situation-construction-v11', 'chat-situation-construction-v12', 'chat-situation-construction-v13', 'chat-situation-construction-v14', 'chat-situation-construction-v15', 'chat-situation-construction-v16', 'chat-situation-construction-v17', 'chat-situation-construction-v18', 'chat-situation-construction-v19', 'chat-situation-construction-v20'].includes(version ?? '')) return []
+  if (!['chat-situation-construction-v9', 'chat-situation-construction-v10', 'chat-situation-construction-v11', 'chat-situation-construction-v12', 'chat-situation-construction-v13', 'chat-situation-construction-v14', 'chat-situation-construction-v15', 'chat-situation-construction-v16', 'chat-situation-construction-v17', 'chat-situation-construction-v18', 'chat-situation-construction-v19', 'chat-situation-construction-v20', 'chat-situation-construction-v21'].includes(version ?? '')) return []
   return [
     '人物权限按实际语义判断，不按 newFacts.kind 标签判断。没有 temporary-character 权限时，不得在 observation 中新造伙计、路人、传话者或匿名应答者；听到某人说话、让其出现或行动，同样可能是在引入人物。物品的用途、招牌、摇铃或呼唤只证明条件或动作，不自动授予新增人物权限，也不保证有人回应。',
     '严格区分已确立的人物身份、此刻在场可接触、知情和愿意回答。来源中曾提及某人，只能证明原文实际确立的内容，不能据此补造其当前到场、行动、意愿或知识。幕后来源不能直接成为角色或玩家的可见人物依据；秘密与历史仍按冻结发现条件处理。已由当前可见事实确立在场且可交谈的背景人物可以承接真实互动，无须再创建人物，但不能替玩家或可调度角色作答。',

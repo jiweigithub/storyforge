@@ -9,6 +9,9 @@ export const CHAT_SPOKEN_INQUIRY_REVIEW_RULES_V1 = [
 ]
 
 export function chatInquiryGenerationRulesV1(version: string | undefined): string[] {
+  if (version === 'chat-situation-construction-v21') return chatInquiryGenerationRulesV1('chat-situation-construction-v20').map(rule => rule.startsWith('answerText 须直接承接问题')
+    ? 'answerText 先区分过去经过、通常做法和当前状态，回应原问题所问的同一范围。问本人过去做过什么、当时放在何处时，不能用现在是否仍在原处未知来推迟回答过去经历；问通常做法也不等于要求保证本次结果。对问题的各部分分别提供有依据的具体回应，已确认的部分直接说清，不让一项确认掩盖其余无依据的回避。输入没有预写全部答案不等于人物失忆；仅可在冻结 observation 权限及已成立的亲历、知情范围内补足未写定的普通细节，不能为答全而编造记忆、知识来源、永久障碍或泄露未授权秘密。确实未知、拒答或误导性陈述仍须有具体情境依据并标明范围；不凭空说忘了、不知道、稍后核对，也不把未来核对当成本次已完成回应。记录只证明说过，不自动把历史陈述、惯常安排或当前猜测当成真相；发现仍须逐项满足原冻结条件。'
+    : rule)
   if (version === 'chat-situation-construction-v20') return [...chatInquiryGenerationRulesV1('chat-situation-construction-v19').map(rule => rule.split('inquiryEvidence.version=4').join('inquiryEvidence.version=5')),
     'pendingSituation.purpose=inquiry-result 时只结算这一条已问出的问题：inquiryResult 必填，questionSequence=sourceEventSequence，questionExcerpt=evidenceExcerpt，respondentFactKey/respondentExcerpt/respondentName 与 pendingSituation 完全一致。逐字读原问题及其后的完整对话，只记录该对象本次有依据的有限答复、不确定或拒答；不要求预写答案，也不保证获得线索。不得改题、换人、继续主角色行动、新造背景或再次只写等待，原冻结秘密与发现条件仍逐项验证。保持标题与时地，所有 newFacts/newGoals/newThreads/possibilities 和顶层 discoveries 为空。']
   if (version === 'chat-situation-construction-v19') return chatInquiryGenerationRulesV1('chat-situation-construction-v18')
