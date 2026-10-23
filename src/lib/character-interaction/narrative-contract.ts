@@ -1,3 +1,4 @@
+import {assertChatInquiryRespondentReferenceV1} from './inquiry-settlement'
 import {chatTurnAudienceGuidanceV1} from './narrative-audience'
 import {parseChatControlHandoffRecordV1} from './control-handoff-state'
 import {CHAT_HISTORY_CAPACITY_V1, assertChatHistoryCapacityV1} from './history-capacity'
@@ -281,8 +282,13 @@ export function parseChatNarrativeStateV1(value: unknown, boundary: ChatNarrativ
   if (state.pendingSituation !== undefined) {
     const hasPurpose = Object.prototype.hasOwnProperty.call(state.pendingSituation, 'purpose')
     const followup = state.pendingSituation.purpose === 'player-followup'
-    const pending = row(state.pendingSituation, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt,actorKey,goalKey,sourceEventSequence' + (hasPurpose ? ',purpose' : '') + (followup ? ',playerEventSequence,playerExcerpt' : ''), '待推进事项')
-    if (hasPurpose && !['observation-result', 'player-followup'].includes(String(pending.purpose))) fail('待推进事项用途无效')
+    const inquiry = state.pendingSituation.purpose === 'inquiry-result'
+    const pending = row(state.pendingSituation, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt,actorKey,goalKey,sourceEventSequence' + (hasPurpose ? ',purpose' : '') + (followup ? ',playerEventSequence,playerExcerpt' : '') + (inquiry ? ',respondentFactKey,respondentExcerpt,respondentName' : ''), '待推进事项')
+    if (inquiry) {
+      assertChatInquiryRespondentReferenceV1(pending)
+      if (state.permissions.allowInquiryResults !== true) fail('待询问结果未经作品授权')
+    }
+    if (hasPurpose && !['observation-result', 'player-followup', 'inquiry-result'].includes(String(pending.purpose))) fail('待推进事项用途无效')
     key(pending.actorKey, '推进角色')
     if (followup) {
       if (pending.goalKey !== null || pending.threadKey !== null || state.permissions.allowPlayerFollowupSituations !== true

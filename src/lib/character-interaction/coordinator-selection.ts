@@ -22,7 +22,7 @@ const HEADER = '【角色聊天情境协调视角，仅供情境构建和审查�
 /** Selection is separate from the complete coordinator view used for stale
  * hashes. v1 keeps every accepted memory; v2 ranks unpinned summaries. Neither
  * may omit established facts, permissions or material delivered to the actor. */
-export function selectChatCoordinatorContextV1(state: CharacterInteractionRuntimeState, candidate: {text: string; actorKey?: string; retrievalVersion?: ChatRetrievalVersion; sourceUnits?: ChatSourceUnitSetV1; audienceVersion?: 1 | 2; discoveryEvidence?: boolean; inquiryEvidence?: 1 | 2 | 3 | 4} = {text: ''}) {
+export function selectChatCoordinatorContextV1(state: CharacterInteractionRuntimeState, candidate: {text: string; actorKey?: string; retrievalVersion?: ChatRetrievalVersion; sourceUnits?: ChatSourceUnitSetV1; audienceVersion?: 1 | 2; discoveryEvidence?: boolean; inquiryEvidence?: 1 | 2 | 3 | 4 | 5} = {text: ''}) {
   if (candidate.retrievalVersion === 'chat-relevance-v8' || candidate.retrievalVersion === 'chat-relevance-v9' || candidate.retrievalVersion === 'chat-relevance-v10' || (candidate.retrievalVersion === 'chat-relevance-v11' || candidate.retrievalVersion === 'chat-relevance-v12' || (candidate.retrievalVersion === 'chat-relevance-v13' || candidate.retrievalVersion === 'chat-relevance-v14'))) return selectChatHistoryCoordinatorContextV1(state, {...candidate, retrievalVersion: candidate.retrievalVersion})
   const corrections = supportsChatCorrectionContextV1(candidate.retrievalVersion ?? 'chat-relevance-v4')
   const memoryCorrections = corrections ? (candidate.actorKey ? [candidate.actorKey] : state.profiles.map(p => p.participantKey)).flatMap(key => chatMemoryCorrectionContextV1(state, key)) : []

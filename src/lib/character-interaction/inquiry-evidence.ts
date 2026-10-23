@@ -1,17 +1,18 @@
+import {chatInquirySettlementContextV1} from './inquiry-settlement'
 import {chatInquiryContactEvidenceContextV1} from './inquiry-contact-evidence'
 import type {CharacterInteractionRuntimeState} from '../types'
 import {isChatMessageRetrievableV1} from './narrative-retrieval'
 import {chatInquiryContinuityContextV1} from './inquiry-continuity'
 
-export function parseChatInquiryEvidenceVersionV1(value: unknown): 1 | 2 | 3 | 4 | undefined {
-  if (value === undefined || value === 1 || value === 2 || value === 3 || value === 4) return value
+export function parseChatInquiryEvidenceVersionV1(value: unknown): 1 | 2 | 3 | 4 | 5 | undefined {
+  if (value === undefined || value === 1 || value === 2 || value === 3 || value === 4 || value === 5) return value
   throw new Error('[chat-inquiry] 询问前提证据版本无效')
 }
 
 /** This version belongs to the frozen run and committed event, never the model. */
 export function chatInquiryEvidenceVersionForContractV1(contract: {
   executionBindings?: ReadonlyArray<{stepId: string; skillId: string; promptVersion: string}>
-}): 1 | 2 | 3 | 4 | undefined {
+}): 1 | 2 | 3 | 4 | 5 | undefined {
   const bindings = contract.executionBindings ?? []
   const producers = bindings.filter(b => b.stepId === 'interaction:runtime-candidate')
   const reviewers = bindings.filter(b => b.stepId === 'interaction:situation-review')
@@ -23,6 +24,7 @@ export function chatInquiryEvidenceVersionForContractV1(contract: {
     ['chat-situation-construction-v17', 'chat-situation-review-v16', 3],
     ['chat-situation-construction-v18', 'chat-situation-review-v17', 4],
     ['chat-situation-construction-v19', 'chat-situation-review-v18', 4],
+    ['chat-situation-construction-v20', 'chat-situation-review-v19', 5],
   ] as const
   if (!bindings.some(b => pairs.some(pair => pair[0] === b.promptVersion || pair[1] === b.promptVersion))) return undefined
   const pair = pairs.find(pair => pair[0] === producers[0]?.promptVersion && pair[1] === reviewers[0]?.promptVersion)
@@ -99,7 +101,12 @@ export function chatInquiryQuestionEvidenceContextV1(state: CharacterInteraction
     requestSequence: pending.sourceEventSequence, questions}
 }
 
-export function chatInquiryContextForVersionV1(state: CharacterInteractionRuntimeState, version: 1 | 2 | 3 | 4) {
+export function chatInquiryContextForVersionV1(state: CharacterInteractionRuntimeState, version: 1 | 2 | 3 | 4 | 5) {
+  if (version === 5) {
+    if (state.chatNarrative?.pendingSituation?.purpose === 'inquiry-result') return chatInquirySettlementContextV1(state)
+    const prior = chatInquiryContactEvidenceContextV1(state)
+    return prior ? {...prior, version: 5 as const} : null
+  }
   if (version === 4) return chatInquiryContactEvidenceContextV1(state)
   if (version === 3) return chatInquiryContinuityContextV1(state)
   return version === 2 ? chatInquiryQuestionEvidenceContextV1(state) : chatInquiryEvidenceContextV1(state)

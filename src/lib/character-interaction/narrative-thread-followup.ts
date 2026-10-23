@@ -34,7 +34,7 @@ export function applyChatThreadFollowupGoalV1(state: CharacterInteractionRuntime
   const pause = proposal.pauseRequest
   if (action.followupGoal != null || action.resumeGoal != null || action.goalKey !== proposal.goal.goalKey
     || !pause && (action.waitingForPlayer || ['attempt', 'pause'].includes(action.kind)) || !action.text.includes(proposal.evidenceExcerpt)
-    || action.situationRequest != null && (action.situationRequest.purpose !== 'observation-result' || action.situationRequest.threadKey !== proposal.threadKey)) fail('接续目标必须与自己的实际行动一起成立，不能代替新背景或玩家决定')
+    || action.situationRequest != null && (!['observation-result', 'inquiry-result'].includes(action.situationRequest.purpose ?? '') || action.situationRequest.threadKey !== proposal.threadKey)) fail('接续目标必须与自己的实际行动一起成立，不能代替新背景或玩家决定')
   if (story.situation.goals.some(g => g.goalKey === proposal.goal.goalKey || g.actorKey === actorKey && g.desire === proposal.goal.desire)) fail('接续不能复活、复制或覆盖旧目标')
   if (story.situation.goals.length >= CHAT_HISTORY_CAPACITY_V1.goals) fail('目标历史已达上限，请保存并停止演绎')
   if (!proposal.goal.evidenceFactKeys.length || proposal.goal.evidenceFactKeys.some(id => !story.situation.facts.some(f => f.factKey === id && f.audienceKeys.includes(actorKey)))) fail('接续目标缺少角色当前可知的事实依据')

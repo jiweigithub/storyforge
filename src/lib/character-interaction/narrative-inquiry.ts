@@ -67,9 +67,13 @@ export function applyChatInquiryResultV1(state: CharacterInteractionRuntimeState
   const story = state.chatNarrative!, scene = state.activeScene!, pending = story.pendingSituation
   if (story.permissions.allowInquiryResults !== true || story.permissions.allowActorSituationExpansion !== true
     || !story.permissions.allowedNewFactKinds.includes('observation') || story.permissions.maxNewFactsPerAction < 1) fail('作品未授权询问结果')
-  if (!pending || pending.purpose !== undefined || pending.actorKey !== result.actorKey
-    || (version === 2 || version === 3 || version === 4 ? !basis : pending.sourceEventSequence !== result.questionSequence)
+  const completed = pending?.purpose === 'inquiry-result'
+  if (!pending || pending.purpose !== undefined && !completed || pending.actorKey !== result.actorKey
+    || (version === 2 || version === 3 || version === 4 || version === 5 ? !basis : pending.sourceEventSequence !== result.questionSequence)
     || !scene.activeParticipantKeys.includes(result.actorKey)) fail('答复必须承接当前已审查方向中的实际询问')
+  if (completed && (version !== 5 || result.questionSequence !== pending.sourceEventSequence
+    || result.questionExcerpt !== pending.evidenceExcerpt || result.respondentFactKey !== pending.respondentFactKey
+    || result.respondentExcerpt !== pending.respondentExcerpt || result.respondentName !== pending.respondentName)) fail('答复必须匹配原已完成询问和答复对象，旧合同不能结算新标记')
   if ((story.inquiryHistory?.length ?? 0) >= 1000 || story.inquiryHistory?.some(row => row.questionSequence === result.questionSequence)) fail('询问已经回答或记录已达上限')
   const question = state.messages.find(row => row.role === 'character' && row.speakerKey === result.actorKey && row.eventSequence === result.questionSequence && row.supersededBySequence == null)
   if (!question || !isChatMessageRetrievableV1(state, question) || !question.text.includes(result.questionExcerpt)
@@ -82,13 +86,13 @@ export function applyChatInquiryResultV1(state: CharacterInteractionRuntimeState
     || question.audienceKeys != null && !question.audienceKeys.includes(key) || !respondent.audienceKeys.includes(key))) fail('答复听众超出实际对话或人物可知范围')
   const allowedEvidence = new Set(pending.evidenceFactKeys)
   if (version !== undefined) {
-    const contactAllowed = version === 4
+    const contactAllowed = version === 4 || version === 5
       ? basis && 'respondentEvidenceFactKeys' in basis && Array.isArray(basis.respondentEvidenceFactKeys)
         && basis.respondentEvidenceFactKeys.includes(result.respondentFactKey)
       : pending.evidenceFactKeys.includes(result.respondentFactKey)
     if (!basis || !contactAllowed) fail('询问前提证据缺少实际提问和人物依据')
     // Admit only the selected contact reference, never the entire candidate list.
-    if (version === 4) allowedEvidence.add(result.respondentFactKey)
+    if (version === 4 || version === 5) allowedEvidence.add(result.respondentFactKey)
     for (const discovery of result.discoveries) {
       const target = basis.targets.find(target => target.factKey === discovery.factKey)
       if (!target) fail('询问发现缺少提问时已知的冻结前提')
@@ -181,5 +185,6 @@ export function assertChatInquiryBindingV1(result: ChatInquiryResultV1 | undefin
     || (producerVersion === 'chat-situation-construction-v17' && reviewerVersion === 'chat-situation-review-v16')
     || (producerVersion === 'chat-situation-construction-v18' && reviewerVersion === 'chat-situation-review-v17')
     || (producerVersion === 'chat-situation-construction-v19' && reviewerVersion === 'chat-situation-review-v18')
+    || (producerVersion === 'chat-situation-construction-v20' && reviewerVersion === 'chat-situation-review-v19')
   if (result && !supportedPair) fail('旧情境合同不能取得询问结果权限，请保留原记录并明确发起新请求')
 }

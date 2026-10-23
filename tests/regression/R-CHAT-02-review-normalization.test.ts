@@ -16,6 +16,12 @@ import {readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarr
 import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-export'
 import type {ChatNarrativeActionV1} from '../../src/lib/types/chat-narrative'
 
+const originalSkill = skills.getAgentSkillV1
+function useSavedLiteralContract() {
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action'
+    ? {...originalSkill(id), promptVersion: 'chat-narrative-action-v68'} : id === 'character.chat-narrative-action-review'
+      ? {...originalSkill(id), promptVersion: 'chat-narrative-action-review-v41'} : originalSkill(id))
+}
 const version = 'chat-narrative-action-review-v24'
 function action(): ChatNarrativeActionV1 {
   const text = createInitialInteractionState(chatNarrativeFixture()).chatNarrative!.situation.facts.find(f => f.factKey === 'regret')!.text
@@ -144,7 +150,8 @@ describe('durable review normalization', () => {
   const input = (f: Awaited<ReturnType<typeof prepared>>) => ({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const,
     objective: '逐字披露审查冗余通过项的工程检查', runAI: withChatActionChoiceFixture(async () => JSON.stringify(action())), runReviewAI: async () => JSON.stringify(output())})
 
-  it('resumes the saved candidate, retains raw and conversion evidence, adopts once and restores after parent deletion', async () => {
+  it('saved v68: resumes the saved candidate, retains raw and conversion evidence, adopts once and restores after parent deletion', async () => {
+    useSavedLiteralContract()
     const f = await prepared(), before = await readProductRuntimeState(f.sessionId); let runId = 0, calls = 0
     await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(action())}),
       onNarrativeActionSaved: id => {runId = id; throw Error('saved')}})).rejects.toThrow('saved')
@@ -184,7 +191,8 @@ describe('durable review normalization', () => {
     expect(retained).toContain(report.content); expect(retained).toContain(JSON.stringify(row))
   })
 
-  it('keeps completed runtime and context history across three imports without restarting old calls', async () => {
+  it('saved v68: keeps completed runtime and context history across three imports without restarting old calls', async () => {
+    useSavedLiteralContract()
     const f = await prepared(), candidate = await generateInteractionRuntimeCandidateV1(input(f))
     await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: candidate.snapshot.run.id})
     const expected = (await readProductRuntimeState(f.sessionId)).interaction
@@ -211,13 +219,40 @@ describe('durable review normalization', () => {
       const original = skills.getAgentSkillV1
       vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action-review' ? {...original(id), promptVersion: 'chat-narrative-action-review-v23'} : id === 'character.chat-narrative-action' ? {...original(id), promptVersion: 'chat-narrative-action-v45'} : original(id))
     }
-    if (kind === 'literal-rejection') row.disclosureChecks[0].passed = false
+    if (kind === 'literal-rejection') {useSavedLiteralContract(); row.disclosureChecks[0].passed = false}
     if (kind === 'missing-paraphrase') {a.disclosures[0].wording = 'equivalent'; row.disclosureChecks = []}
     await expect(generateInteractionRuntimeCandidateV1({...input(f), runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(a)}), runReviewAI: async () => {calls++; return JSON.stringify(row)}, onRunCreated: id => {runId = id}})).rejects.toThrow()
     expect(calls).toBe(2); expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
     await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})).rejects.toThrow()
     expect((await db.agentRuns.get(runId))!.status).toBe('failed')
     expect((await db.agentRunArtifacts.toArray()).some(a => a.artifactKind === 'raw-response' && a.content === JSON.stringify(row))).toBe(true)
+  })
+
+  it.each([true, false])('keeps current full-equivalence review authoritative without removing its result (passed=%s)', async passed => {
+    const f = await prepared(), before = await readProductRuntimeState(f.sessionId), a = action(), row = output()
+    a.disclosures[0].wording = 'equivalent'; row.disclosureChecks[0].passed = passed
+    let runId = 0, calls = 0
+    const request = {...input(f), onRunCreated: (id: number) => {runId = id},
+      runAI: withChatActionChoiceFixture(async () => {calls++; return JSON.stringify(a)}),
+      runReviewAI: async () => {calls++; return JSON.stringify(row)}}
+    if (passed) {
+      const generated = await generateInteractionRuntimeCandidateV1(request)
+      expect(generated.snapshot.contract.executionBindings?.map(binding => binding.promptVersion))
+        .toEqual(['chat-narrative-action-v70', 'chat-narrative-action-v70', 'chat-narrative-action-review-v42'])
+      const retained = await readInteractionRuntimeCandidateV1(f.scope, runId)
+      expect(retained.candidate.kind === 'chat-narrative-action-candidate' && retained.candidate.review?.disclosureChecks).toEqual(row.disclosureChecks)
+      await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
+      expect((await readProductRuntimeState(f.sessionId)).interaction!.chatNarrative!.situation.facts.find(fact => fact.factKey === 'regret')!.audienceKeys).toEqual(['guard', 'player'])
+    } else {
+      await expect(generateInteractionRuntimeCandidateV1(request)).rejects.toThrow('语义审查未通过')
+      await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})).rejects.toThrow()
+      expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
+      expect((await db.agentRuns.get(runId))!.status).toBe('failed')
+    }
+    expect(calls).toBe(2)
+    const artifacts = await db.agentRunArtifacts.toArray()
+    expect(artifacts.some(artifact => artifact.artifactKind === 'raw-response' && artifact.content === JSON.stringify(row))).toBe(true)
+    expect(artifacts.filter(artifact => artifact.artifactKind === 'tool-result' && artifact.content?.includes('storyforge.chat-review-normalization'))).toEqual([])
   })
 
   it('allows only consequence-only revision after common-fact normalization', async () => {
@@ -228,7 +263,8 @@ describe('durable review normalization', () => {
     expect((await readProductRuntimeState(f.sessionId)).interaction!.messages).toHaveLength(0)
   })
 
-  it('retains consequence-only revision eligibility under the same new normalization contract', async () => {
+  it('saved v68: retains consequence-only revision eligibility under the same new normalization contract', async () => {
+    useSavedLiteralContract()
     const f = await prepared(), row = output(); let runId = 0
     row.checks.find(c => c.check === 'consequences')!.passed = false
     await expect(generateInteractionRuntimeCandidateV1({...input(f), runReviewAI: async () => JSON.stringify(row), onRunCreated: id => {runId = id}})).rejects.toThrow('语义审查未通过')

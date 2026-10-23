@@ -15,8 +15,8 @@ import {chatTurnEndRuntimeRequest, seedChatTurnEndRuntimeFixture} from '../helpe
 const originalSkill = skills.getAgentSkillV1
 beforeEach(async () => {
   db.close(); await db.delete(); await db.open()
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v68')
-  expect(originalSkill('character.chat-narrative-action-review').promptVersion).toBe('chat-narrative-action-review-v41')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v70')
+  expect(originalSkill('character.chat-narrative-action-review').promptVersion).toBe('chat-narrative-action-review-v42')
 })
 afterEach(() => {vi.restoreAllMocks(); db.close()})
 

@@ -3,6 +3,7 @@ import {assertChatTurnCompletionV1, parseChatTurnCompletionV1, validateChatTurnC
 import {requireChatPromiseRequestV1} from './narrative-promise-request'
 import {recordChatResolutionEvidenceV1} from './resolution-evidence'
 import {recordChatFactEvidenceV1} from './fact-evidence'
+import {assertChatInquiryRespondentReferenceV1, assertChatInquirySettlementActionV1} from './inquiry-settlement'
 import {chatHasPendingTurnSettlementV1} from './narrative-progression'
 import {assertChatTurnAudienceV1, chatTurnAudienceBoundaryV1, chatTurnHasPrivateSceneBoundaryV1} from './narrative-audience'
 import {chatConversationEvidenceV1} from './narrative-conversation-evidence'
@@ -97,8 +98,10 @@ export function parseChatNarrativeActionV1(value: unknown): ChatNarrativeActionV
   if (optional.includes('situationRequest') && row.situationRequest !== null) {
     const hasPurpose = typeof row.situationRequest === 'object' && Object.prototype.hasOwnProperty.call(row.situationRequest, 'purpose')
     const followup = hasPurpose && (row.situationRequest as {purpose: unknown}).purpose === 'player-followup'
-    const request = object(row.situationRequest, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt' + (hasPurpose ? ',purpose' : '') + (followup ? ',playerEventSequence,playerExcerpt' : ''))
-    if (hasPurpose) choice(request.purpose, ['observation-result', 'player-followup'])
+    const inquiry = hasPurpose && (row.situationRequest as {purpose: unknown}).purpose === 'inquiry-result'
+    const request = object(row.situationRequest, 'threadKey,direction,evidenceFactKeys,evidenceExcerpt' + (hasPurpose ? ',purpose' : '') + (followup ? ',playerEventSequence,playerExcerpt' : '') + (inquiry ? ',respondentFactKey,respondentExcerpt,respondentName' : ''))
+    if (inquiry) assertChatInquiryRespondentReferenceV1(request)
+    if (hasPurpose) choice(request.purpose, ['observation-result', 'player-followup', 'inquiry-result'])
     if (followup) {
       if (request.threadKey !== null || !Number.isSafeInteger(request.playerEventSequence) || request.playerEventSequence === 0) fail('新事项来源无效')
       text(request.playerExcerpt, 1200)
@@ -323,6 +326,7 @@ function applyActionBase(stateValue: CharacterInteractionRuntimeState, input: {
     const request = action.situationRequest
     if (story.permissions.allowActorSituationExpansion !== true || action.waitingForPlayer || action.kind === 'pause') fail('当前行动或作品权限不允许角色扩展情境')
     evidence(request.evidenceFactKeys); excerpt(request.evidenceExcerpt)
+    assertChatInquirySettlementActionV1(state, action, actorKey, input.sequence)
     if (request.purpose === 'player-followup') {
       const source = state.messages.find(m => m.role === 'player' && m.eventSequence === request.playerEventSequence)
       if (story.permissions.allowPlayerFollowupSituations !== true || action.goalKey !== null || !chatCanRespondAfterClosureV1(state, actorKey, trigger)

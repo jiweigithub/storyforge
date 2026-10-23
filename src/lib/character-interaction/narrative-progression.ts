@@ -32,7 +32,8 @@ export function chatSituationConstructionBlockedV1(state: CharacterInteractionRu
   if (!story || !trigger || story.situation.seed.sourceEventSequence !== trigger.requestedSequence
     || !['player-request', 'continued-thread', 'player-followup'].includes(story.situation.seed.origin)) return false
   const pending = story.pendingSituation
-  return pending?.purpose !== 'observation-result' || !trigger.actionSequences.includes(pending.sourceEventSequence)
+  const completedResult = pending?.purpose === 'observation-result' || pending?.purpose === 'inquiry-result'
+  return !completedResult || !pending || !trigger.actionSequences.includes(pending.sourceEventSequence)
     || pending.sourceEventSequence !== trigger.actionSequences.slice(-1)[0]
 }
 

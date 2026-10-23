@@ -155,6 +155,15 @@ it('binds the completion check to the exact action and cannot accept an old prod
   }
 })
 
+it.each([66, 67, 68, 69, 70])('retains the exact completion review pairing for action v%s', version => {
+  const bindings = (reviewVersion: number) => ({executionBindings: [
+    {stepId: 'interaction:runtime-candidate', skillId: 'character.chat-narrative-action', promptVersion: `chat-narrative-action-v${version}`},
+    {stepId: 'interaction:action-review', skillId: 'character.chat-narrative-action-review', promptVersion: `chat-narrative-action-review-v${reviewVersion}`},
+  ]})
+  expect(() => assertChatTurnCompletionBindingV1(action, bindings(version === 70 ? 42 : 41))).not.toThrow()
+  expect(() => assertChatTurnCompletionBindingV1(action, bindings(version === 70 ? 41 : 42))).toThrow('生成与审查版本不匹配')
+})
+
 it('retains a candidate after interruption but refuses adopting it over a new player message', async () => {
   const f = await prepared(), generated = await realGenerate(request(f)), base = await readProductRuntimeStateVersion(f.sessionId)
   await commitInteractionPlayerMessage({sessionId: f.sessionId, commandId: 'new-request', baseSequence: base.sequence,

@@ -136,6 +136,7 @@ export function previewChatSituationV1(stateValue: CharacterInteractionRuntimeSt
   if (request.origin === 'player-followup' && (draft.newFacts.some(f => f.audienceKeys.some(k => !request.audienceKeys.includes(k)))
     || draft.newThreads.some(t => t.audienceKeys.some(k => !request.audienceKeys.includes(k)) || t.participantKeys.some(k => k !== request.actorKey)))) fail('新事项不能向原对话之外传播请求或替其他角色承接')
   const observationResult = request.origin === 'continued-thread' && story.pendingSituation?.purpose === 'observation-result'
+  if (story.pendingSituation?.purpose === 'inquiry-result' && !draft.inquiryResult) fail('待询问结算只能提供同一实际问题的有限答复')
   if (observationResult && (draft.title !== story.situation.title || draft.newGoals.length || draft.newThreads.length || draft.possibilities.length
     || draft.newFacts.some(f => f.kind !== 'observation'))) fail('已完成观察的结果只能补充有限观察或授权发现，不能建立新目标、剧情线、计划或物件')
   if (draft.newFacts.length > story.permissions.maxNewFactsPerAction) fail('新增情境事实超出授权数量')

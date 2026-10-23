@@ -17,7 +17,7 @@ export function chatInquiryContactEvidenceContextV1(state: CharacterInteractionR
 
 /** Only advertise contact references whose full text was actually selected.
  * Keep omission counts visible; missing detail is never proof of no contact. */
-export function projectChatInquiryContactEvidenceV1(context: ReturnType<typeof chatInquiryContactEvidenceContextV1>, included: (key: string) => boolean) {
+export function projectChatInquiryContactEvidenceV1(context: (Omit<NonNullable<ReturnType<typeof chatInquiryContactEvidenceContextV1>>, 'version'> & {version: 4 | 5}) | null, included: (key: string) => boolean) {
   if (!context) return null
   return {...context, questions: context.questions.map(question => {
     const respondentEvidenceFactKeys = question.respondentEvidenceFactKeys.filter(included)

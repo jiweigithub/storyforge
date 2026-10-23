@@ -1,4 +1,4 @@
-import {CHAT_CONSOLIDATED_ACTION_PRODUCER_V1, CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1, chatConsolidatedActionPromptV1, chatReviewedDisclosureActionPromptV1} from './action-instructions'
+import {CHAT_INQUIRY_SETTLEMENT_ACTION_PRODUCER_V1, chatInquirySettlementActionPromptV1, CHAT_CONSOLIDATED_ACTION_PRODUCER_V1, CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1, chatConsolidatedActionPromptV1, chatReviewedDisclosureActionPromptV1} from './action-instructions'
 import {chatSituationDevelopmentGenerationRulesV1} from './situation-development'
 import {chatActionRequestOptionsV1, boundedChatOutputTokensV1, chatActionOutputRulesV1} from './action-output-contract'
 import {assertChatControlHandoffBindingsV1, chatNarrativeOutcomeRulesV1, parseChatNarrativeOutcomeWireV1, supportsChatControlHandoffV1} from './control-handoff-wire'
@@ -366,8 +366,8 @@ function prompt(input: {
   producerVersion?: string
   audience?: readonly string[]
 }): ChatMessage[] {
-  if (input.skillId === 'character.chat-narrative-action' && [CHAT_CONSOLIDATED_ACTION_PRODUCER_V1, CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1].includes(input.producerVersion ?? '')) {
-    const consolidated = input.producerVersion === CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1 ? chatReviewedDisclosureActionPromptV1 : chatConsolidatedActionPromptV1
+  if (input.skillId === 'character.chat-narrative-action' && [CHAT_CONSOLIDATED_ACTION_PRODUCER_V1, CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1, CHAT_INQUIRY_SETTLEMENT_ACTION_PRODUCER_V1].includes(input.producerVersion ?? '')) {
+    const consolidated = input.producerVersion === CHAT_INQUIRY_SETTLEMENT_ACTION_PRODUCER_V1 ? chatInquirySettlementActionPromptV1 : input.producerVersion === CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1 ? chatReviewedDisclosureActionPromptV1 : chatConsolidatedActionPromptV1
     return [{role: 'system', content: consolidated(input.roleContext!, input.audience ?? [],
       chatActionWireExampleV1(schemaInstruction(input.skillId, true, true, true), input.producerVersion))},
     {role: 'user', content: `【目标】${input.objective}\n\n${input.context}`} ]
@@ -766,7 +766,7 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
       worldGroupId: boundary.scope.worldGroupId,
       declaredSourceKeys: revision ? [sourceKey, 'chatActionRevision'] : [sourceKey],
       assembled,
-      readerVersion: situation ? (['chat-situation-construction-v18', 'chat-situation-construction-v19'].includes(executionBinding.promptVersion) ? 'chat-situation-runtime-view-v17' : executionBinding.promptVersion === 'chat-situation-construction-v17' ? 'chat-situation-runtime-view-v16' : 'chat-situation-runtime-view-v15') : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? chatActionContextVersionsV1(executionBinding.promptVersion).readerVersion : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
+      readerVersion: situation ? (executionBinding.promptVersion === 'chat-situation-construction-v20' ? 'chat-situation-runtime-view-v18' : ['chat-situation-construction-v18', 'chat-situation-construction-v19', 'chat-situation-construction-v20'].includes(executionBinding.promptVersion) ? 'chat-situation-runtime-view-v17' : executionBinding.promptVersion === 'chat-situation-construction-v17' ? 'chat-situation-runtime-view-v16' : 'chat-situation-runtime-view-v15') : sourceKey === 'interactionRuntime' && initialState.interaction?.chatNarrative ? chatActionContextVersionsV1(executionBinding.promptVersion).readerVersion : sourceKey === 'aiTownRuntime' ? 'ai-town-runtime-view-v1' : 'interaction-runtime-view-v1',
     })
     snapshot = await append(input.scope, snapshot, 'context.assembled', {
       stepId: INTERACTION_RUNTIME_STEP_ID_V1,
@@ -1012,7 +1012,7 @@ export async function readInteractionRuntimeCandidateV1(scope: WorkspaceScope, r
   return { snapshot: saved.snapshot, candidate }
 }
 
-async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSequence: number, optionKey?: string, evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1 | 2 | 3 | 4} = {}): Promise<ProductRuntimeEvent | null> {
+async function applyCandidate(candidate: InteractionRuntimeCandidateV1, runSequence: number, optionKey?: string, evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1 | 2 | 3 | 4 | 5} = {}): Promise<ProductRuntimeEvent | null> {
   if (candidate.kind === 'scene-director-candidate') return null
   const envelope = {
     sessionId: candidate.productRuntimeSessionId,
@@ -1160,7 +1160,7 @@ export async function adoptInteractionRuntimeCandidateV1(input: {
       candidateHash: candidate.candidateHash, decision: 'adopt', reviewItemId: optionKey!, reviewDecision: 'acknowledged', note: `玩家选定行动候选 ${optionKey}`})
     await input.onDurableBoundary?.('confirmation.recorded', snapshot)
   }
-  const evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1 | 2 | 3 | 4} = {}
+  const evidenceVersions: {factEvidenceVersion?: 1; resolutionEvidenceVersion?: 1; actionChoiceVersion?: 1; inquiryEvidenceVersion?: 1 | 2 | 3 | 4 | 5} = {}
   if (!adopted && ['chat-situation-candidate', 'chat-narrative-action-candidate', 'chat-narrative-options-candidate'].includes(candidate.kind)) {
     // Recovery may already have committed the command. Verify its producer
     // against the original state, never the current default reader or new head.

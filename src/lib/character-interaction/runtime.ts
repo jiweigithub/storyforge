@@ -2,6 +2,7 @@ import {chatTurnAudienceGuidanceV2} from './narrative-audience'
 import {selectChatHistoryActorContextV1} from './history-actor-context'
 import {validateFrozenChatSourceUnitsV1} from './source-unit-runtime'
 import {assertChatResolutionEvidenceSourcesV1} from './resolution-evidence'
+import {assertChatInquirySettlementSourcesV1} from './inquiry-settlement'
 import {assertChatInquirySourcesV1} from './narrative-inquiry'
 import {assertChatSceneTransitionSourcesV1} from './narrative-scene-transition'
 import {assertChatPlayerPauseSourcesV1} from './narrative-player-pause'
@@ -564,6 +565,7 @@ export function parseInteractionState(value: unknown): CharacterInteractionRunti
   assertChatCommitmentSourcesV1(result)
   assertChatMemoryReconciliationSourcesV1(result)
   assertChatInquirySourcesV1(result)
+  assertChatInquirySettlementSourcesV1(result)
   assertChatResolutionEvidenceSourcesV1(result)
   assertChatControlHandoffSourcesV1(result)
   return result

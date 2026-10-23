@@ -146,12 +146,12 @@ it('cuts knowledge disclosures, relationship changes, goals, beliefs and plans a
   const draft: ChatNarrativeActionV1 = {...action('铜印已经找到。寻找就此结束。我撤回借用猜测。我更愿意听取你的判断。叶岑曾误指控一位无辜旅人，始终后悔。'),
     newFacts: [{factKey: 'found', kind: 'observation', text: '铜印已经找到。', evidenceFactKeys: ['lost'], evidenceExcerpt: '铜印已经找到。'}],
     audienceKeys: ['guard', 'player', 'artisan'],
-    disclosures: [{factKey: 'regret', toParticipantKeys: ['player', 'artisan'], evidenceExcerpt: '叶岑曾误指控一位无辜旅人，始终后悔。'}],
+    disclosures: [{factKey: 'regret', toParticipantKeys: ['player', 'artisan'], evidenceExcerpt: '叶岑曾误指控一位无辜旅人，始终后悔。', wording: 'equivalent'}],
     goalStatus: 'fulfilled', threadUpdates: [{threadKey: 'investigate', status: 'resolved', evidenceExcerpt: '寻找就此结束。'}],
     nextPossibilities: [], beliefUpdates: [{beliefKey: 'borrowed', text: null, evidenceFactKeys: ['found']}],
     relationshipUpdates: [{dimensionKey: 'trust', delta: 1, sourceEventSequence: player.sequence, playerExcerpt: '先核对证据。', evidenceExcerpt: '我更愿意听取你的判断'}]}
   const run = await realGenerate({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action', objective: '原路径',
-    runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
+    runAI: withChatActionChoiceFixture(async () => JSON.stringify(draft)), runReviewAI: async () => JSON.stringify({...chatActionReviewOutputFixture(), disclosureChecks: [{factKey: 'regret', passed: true, reason: '工程披露复核，不代表真实语义质量。'}]})})
   await harness.adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: run.snapshot.run.id})
   const old = await readProductRuntimeState(f.sessionId)
   expect(project(old)).not.toEqual(before)

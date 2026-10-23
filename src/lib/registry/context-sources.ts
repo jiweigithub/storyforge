@@ -776,7 +776,7 @@ async function readChatSituationRuntimeProjection(input: AssembleContextInput) {
   if (!saved) {
     let discoveryEvidence = false
     let audienceVersion: 1 | 2 = 1
-    let inquiryEvidence: 1 | 2 | 3 | 4 | undefined
+    let inquiryEvidence: 1 | 2 | 3 | 4 | 5 | undefined
     const {usesChatDiscoveryEvidenceContextV1} = await import('../character-interaction/discovery-evidence-context')
     const {chatInquiryEvidenceVersionForContractV1} = await import('../character-interaction/inquiry-evidence')
     if (input.chatSituationConstructionRunId != null) {

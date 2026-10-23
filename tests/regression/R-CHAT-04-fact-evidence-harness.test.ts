@@ -109,14 +109,14 @@ it.each(['current', 'saved-v11'] as const)('records player situation facts only 
   expect(await runtime(f.sessionId)).toEqual(before)
   const saved = await readInstanceAgentRunV1(f.scope, runId)
   expect(saved.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-construction')?.promptVersion)
-    .toBe(reader === 'saved-v11' ? 'chat-situation-construction-v12' : 'chat-situation-construction-v19')
+    .toBe(reader === 'saved-v11' ? 'chat-situation-construction-v12' : 'chat-situation-construction-v20')
   expect(saved.contract.executionBindings?.find(b => b.skillId === 'character.chat-situation-review')?.promptVersion)
-    .toBe(reader === 'saved-v11' ? 'chat-situation-review-v11' : 'chat-situation-review-v18')
+    .toBe(reader === 'saved-v11' ? 'chat-situation-review-v11' : 'chat-situation-review-v19')
   const recorded = saved.events.find(e => e.type === 'evidence.artifact.recorded' && e.payload.artifactKind === 'context-packet' && e.payload.stepId === 'interaction:runtime-candidate')!
   if (recorded.type !== 'evidence.artifact.recorded') throw new Error('missing situation source packet')
   const packetText = await readAgentRunArtifactExactV1({projectId: f.scope.projectId, artifactKind: 'context-packet', contentHash: recorded.payload.contentHash})
   const packet = JSON.parse(packetText)
-  expect(packet.manifest.sources[0].readerVersion).toBe(reader === 'saved-v11' ? 'chat-situation-runtime-view-v11' : 'chat-situation-runtime-view-v17')
+  expect(packet.manifest.sources[0].readerVersion).toBe(reader === 'saved-v11' ? 'chat-situation-runtime-view-v11' : 'chat-situation-runtime-view-v18')
   expect(await readChatCandidateRetrievalVersion(saved, f.scope.projectId, 'chatSituationRuntime')).toBe(reader === 'saved-v11' ? 'chat-relevance-v5' : 'chat-relevance-v9')
   if (reader === 'saved-v11') {
     expect(packet.text).toBe(legacyText)

@@ -73,8 +73,8 @@ it('preserves all semantic prompt rules and the registered role reader', () => {
   expect(chatActionOutputRulesV1(current, ['player', 'guard'])).toEqual(chatActionOutputRulesV1(old, ['player', 'guard']))
   expect(chatNarrativeOutcomeRulesV1(current)).toEqual(chatNarrativeOutcomeRulesV1(old))
   expect(chatActionContextVersionsV1(current)).toEqual({readerVersion: 'chat-narrative-runtime-view-v18', retrievalVersion: 'chat-relevance-v14'})
-  expect(getAgentSkillV1('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v68')
-  expect(getAgentSkillV1('character.chat-narrative-action-review').promptVersion).toBe('chat-narrative-action-review-v41')
+  expect(getAgentSkillV1('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v70')
+  expect(getAgentSkillV1('character.chat-narrative-action-review').promptVersion).toBe('chat-narrative-action-review-v42')
 })
 
 it.each([old, current])('accepts retained action and each handoff shape for %s without weakening negative cases', version => {
@@ -116,7 +116,7 @@ it('keeps saved and current three-step contracts explicit and rejects mixed and 
     expect(chatActionChoiceVersionForContractV1(contract(producer))).toBe(1)
     expect(() => assertChatControlHandoffBindingsV1(contract(producer), handoff)).not.toThrow()
   }
-  for (const candidate of [contract(current, 'chat-narrative-action-review-v40'), contract(current, 'chat-narrative-action-review-v41', old), contract('chat-narrative-action-v69')]) {
+  for (const candidate of [contract(current, 'chat-narrative-action-review-v40'), contract(current, 'chat-narrative-action-review-v41', old), contract('chat-narrative-action-v71')]) {
     expect(() => chatActionChoiceVersionForContractV1(candidate)).toThrow()
     expect(() => assertChatControlHandoffBindingsV1(candidate, handoff)).toThrow()
   }

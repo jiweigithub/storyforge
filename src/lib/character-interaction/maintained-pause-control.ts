@@ -15,7 +15,7 @@ export interface ChatMaintainedPauseControlV1 {
 }
 export const CHAT_MAINTAINED_PAUSE_PRODUCER_V1 = 'chat-narrative-action-v66'
 export function supportsChatMaintainedPauseV1(version: string | undefined): boolean {
-  return version === CHAT_MAINTAINED_PAUSE_PRODUCER_V1 || (version === 'chat-narrative-action-v67' || (version === 'chat-narrative-action-v68' || version === 'chat-narrative-action-v69'))
+  return version === CHAT_MAINTAINED_PAUSE_PRODUCER_V1 || (version === 'chat-narrative-action-v67' || (version === 'chat-narrative-action-v68' || (version === 'chat-narrative-action-v69' || version === 'chat-narrative-action-v70')))
 }
 export const CHAT_MAINTAINED_PAUSE_REVIEWER_V1 = 'chat-narrative-action-review-v41'
 export const CHAT_MAINTAINED_PAUSE_CHECKS_V1 = [

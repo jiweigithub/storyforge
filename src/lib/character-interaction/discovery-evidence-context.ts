@@ -2,10 +2,10 @@ import type {CharacterInteractionRuntimeState} from '../types'
 import type {AgentRunSnapshotV1} from '../agent/run/event-store'
 
 export function supportsChatDiscoveryEvidenceProducerV1(version: string | undefined): boolean {
-  return ['chat-situation-construction-v11', 'chat-situation-construction-v12', 'chat-situation-construction-v13', 'chat-situation-construction-v14', 'chat-situation-construction-v15', 'chat-situation-construction-v16', 'chat-situation-construction-v17', 'chat-situation-construction-v18', 'chat-situation-construction-v19'].includes(version ?? '')
+  return ['chat-situation-construction-v11', 'chat-situation-construction-v12', 'chat-situation-construction-v13', 'chat-situation-construction-v14', 'chat-situation-construction-v15', 'chat-situation-construction-v16', 'chat-situation-construction-v17', 'chat-situation-construction-v18', 'chat-situation-construction-v19', 'chat-situation-construction-v20'].includes(version ?? '')
 }
 export function supportsChatDiscoveryEvidenceReviewerV1(version: string | undefined): boolean {
-  return ['chat-situation-review-v10', 'chat-situation-review-v11', 'chat-situation-review-v12', 'chat-situation-review-v13', 'chat-situation-review-v14', 'chat-situation-review-v15', 'chat-situation-review-v16', 'chat-situation-review-v17', 'chat-situation-review-v18'].includes(version ?? '')
+  return ['chat-situation-review-v10', 'chat-situation-review-v11', 'chat-situation-review-v12', 'chat-situation-review-v13', 'chat-situation-review-v14', 'chat-situation-review-v15', 'chat-situation-review-v16', 'chat-situation-review-v17', 'chat-situation-review-v18', 'chat-situation-review-v19'].includes(version ?? '')
 }
 
 /** This is an index into already committed facts, not a finding or permission.

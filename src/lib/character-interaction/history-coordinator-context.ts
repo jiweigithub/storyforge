@@ -24,7 +24,7 @@ const projectionCache = createChatHistoryProjectionCacheV1<CoordinatorProjection
 /** Current review must retain the actor's exact selected rows and every
  * existing candidate reference, then expand their original evidence closure. */
 export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteractionRuntimeState, candidate: {
-  text: string; actorKey?: string; retrievalVersion?: 'chat-relevance-v8' | 'chat-relevance-v9' | 'chat-relevance-v10' | 'chat-relevance-v11' | 'chat-relevance-v12' | 'chat-relevance-v13' | 'chat-relevance-v14'; sourceUnits?: ChatSourceUnitSetV1; audienceVersion?: 1 | 2; discoveryEvidence?: boolean; inquiryEvidence?: 1 | 2 | 3 | 4
+  text: string; actorKey?: string; retrievalVersion?: 'chat-relevance-v8' | 'chat-relevance-v9' | 'chat-relevance-v10' | 'chat-relevance-v11' | 'chat-relevance-v12' | 'chat-relevance-v13' | 'chat-relevance-v14'; sourceUnits?: ChatSourceUnitSetV1; audienceVersion?: 1 | 2; discoveryEvidence?: boolean; inquiryEvidence?: 1 | 2 | 3 | 4 | 5
 }) {
   const cacheKey = projectionCache.key([state, candidate])
   const cached = projectionCache.read(cacheKey)
@@ -35,6 +35,7 @@ export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteract
   const inquiryQuestions = inquiryEvidence && 'questions' in inquiryEvidence ? inquiryEvidence.questions : inquiryEvidence ? [inquiryEvidence] : []
   for (const question of inquiryQuestions) {
     for (const key of question.questionEvidenceFactKeys) plan.require('facts', key, 'inquiry-question-evidence')
+    if (inquiryEvidence?.version === 5 && full.pendingSituation?.purpose === 'inquiry-result') plan.require('facts', full.pendingSituation.respondentFactKey, 'inquiry-respondent-evidence')
     for (const target of question.targets) {
       for (const key of [target.factKey, ...target.requiredEvidenceFactKeys]) plan.require('facts', key, 'inquiry-discovery-prerequisite')
     }
@@ -68,7 +69,7 @@ export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteract
     plan.add('messages', m.messageId, m.text, reasons); plan.linkMessage(m)
   }
   if (inquiryEvidence && 'questions' in inquiryEvidence) for (const question of inquiryEvidence.questions) plan.require('messages', question.messageId, 'inquiry-question-message')
-  if (inquiryEvidence?.version === 3 || inquiryEvidence?.version === 4) for (const messageId of inquiryEvidence.dialogueMessageIds) plan.require('messages', messageId, 'inquiry-dialogue-continuity')
+  if (inquiryEvidence?.version === 3 || inquiryEvidence?.version === 4 || inquiryEvidence?.version === 5) for (const messageId of inquiryEvidence.dialogueMessageIds) plan.require('messages', messageId, 'inquiry-dialogue-continuity')
   if (candidate.retrievalVersion === 'chat-relevance-v10' || (candidate.retrievalVersion === 'chat-relevance-v11' || candidate.retrievalVersion === 'chat-relevance-v12' || (candidate.retrievalVersion === 'chat-relevance-v13' || candidate.retrievalVersion === 'chat-relevance-v14'))) {
     const actorCauses = new Set(delivered?.relationshipEvidence?.map(chatRelationshipHistoryKeyV1))
     for (const change of full.relationshipEvidence) {
@@ -120,7 +121,7 @@ export function buildChatHistoryCoordinatorProjectionV1(state: CharacterInteract
       knowledge: knowledge.filter(k => has('knowledge', k.knowledgeKey)), memories: memories.filter(m => has('memories', m.memoryId)),
       messages: dialogue.eligible.filter(m => has('messages', m.messageId)),
       ...(candidate.discoveryEvidence ? {discoveryEvidence: chatDiscoveryEvidenceContextV1(state)} : {}),
-      ...(candidate.inquiryEvidence ? {inquiryEvidence: inquiryEvidence?.version === 4
+      ...(candidate.inquiryEvidence ? {inquiryEvidence: inquiryEvidence?.version === 4 || inquiryEvidence?.version === 5
         ? projectChatInquiryContactEvidenceV1(inquiryEvidence, key => has('facts', key)) : inquiryEvidence} : {}),
       ...(candidate.sourceUnits ? {sourceInterpretationConstraints: chatSourceUnitConstraintsV1(candidate.sourceUnits)} : {}),
       historyContext: {version: 1, policy: (candidate.retrievalVersion === 'chat-relevance-v13' || candidate.retrievalVersion === 'chat-relevance-v14') ? CHAT_HISTORY_POLICY_V2 : CHAT_HISTORY_POLICY_V1, resolutions: plan.resolutions(selected)},

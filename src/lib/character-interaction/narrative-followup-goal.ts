@@ -20,7 +20,7 @@ export function applyChatOwnFollowupGoalV1(state: CharacterInteractionRuntimeSta
     || !source.text.includes(proposal.playerExcerpt) || source.audienceKeys != null && action.audienceKeys.some(k => k !== state.playerKey && !source.audienceKeys!.includes(k))) fail('新目标须引用本轮真实可见的玩家请求并保持对话范围')
   if (action.goalKey !== proposal.goal.goalKey || !action.text.includes(proposal.evidenceExcerpt)
     || action.waitingForPlayer || action.kind === 'pause' || action.kind === 'attempt'
-    || action.situationRequest != null && action.situationRequest.purpose !== 'observation-result') fail('新目标须与自身实际表达一起成立；新背景仍须先构建')
+    || action.situationRequest != null && !['observation-result', 'inquiry-result'].includes(action.situationRequest.purpose ?? '')) fail('新目标须与自身实际表达一起成立；新背景仍须先构建')
   if (story.situation.goals.some(g => g.goalKey === proposal.goal.goalKey || g.actorKey === actorKey && g.desire === proposal.goal.desire)
     || story.situation.threads.some(t => t.threadKey === proposal.thread.threadKey || t.question === proposal.thread.question)) fail('不得复活、复制或覆写旧目标与剧情线')
   const evidence = (ids: string[], audiences: string[]) => {

@@ -32,13 +32,11 @@ async function prepare() {
 const input = (f: Awaited<ReturnType<typeof prepare>>) => ({scope: f.scope, productRuntimeSessionId: f.sessionId,
   participantKey: 'player', skillId: 'character.chat-situation-construction' as const, narrativeTriggerSequence: f.triggerSequence, objective: '内化新的局部情境'})
 
-it.each(['historical', 'current'] as const)('preserves the exact retained V343 system requests and all existing rules under %s bindings', async mode => {
-  if (mode === 'historical') {
-    const original = skills.getAgentSkillV1
-    vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-situation-construction'
-      ? {...original(id), promptVersion: legacy.producerVersion} : id === 'character.chat-situation-review'
-        ? {...original(id), promptVersion: legacy.reviewerVersion} : original(id))
-  }
+it.each(['historical', 'development-v19'] as const)('preserves the exact retained V343 system requests and all existing rules under %s bindings', async mode => {
+  const original = skills.getAgentSkillV1
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-situation-construction'
+    ? {...original(id), promptVersion: mode === 'historical' ? legacy.producerVersion : 'chat-situation-construction-v19'} : id === 'character.chat-situation-review'
+      ? {...original(id), promptVersion: mode === 'historical' ? legacy.reviewerVersion : 'chat-situation-review-v18'} : original(id))
   const f = await prepare(), before = await readProductRuntimeState(f.sessionId)
   const prompts: string[] = []
   const generated = await generateInteractionRuntimeCandidateV1({...input(f), runAI: async messages => {
@@ -104,6 +102,7 @@ it('accepts only the exact new producer/reviewer pair for the existing inquiry e
   for (const [producer, reviewer] of [['chat-situation-construction-v19', 'chat-situation-review-v17'], ['chat-situation-construction-v18', 'chat-situation-review-v18']]) {
     expect(() => chatInquiryEvidenceVersionForContractV1(bindings(producer, reviewer))).toThrow('不一致')
   }
-  expect(chatSituationDevelopmentGenerationRulesV1('chat-situation-construction-v20')).toEqual([])
-  expect(chatSituationDevelopmentReviewRulesV1('chat-situation-review-v19')).toEqual([])
+  expect(chatInquiryEvidenceVersionForContractV1(bindings('chat-situation-construction-v20', 'chat-situation-review-v19'))).toBe(5)
+  expect(chatSituationDevelopmentGenerationRulesV1('chat-situation-construction-v21')).toEqual([])
+  expect(chatSituationDevelopmentReviewRulesV1('chat-situation-review-v20')).toEqual([])
 })

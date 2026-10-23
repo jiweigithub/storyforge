@@ -7,6 +7,9 @@ type Contract = {executionBindings?: ReadonlyArray<{stepId: string; skillId: str
  * the coordinator interpretation. Historical contracts retain their bytes. */
 export function chatCoordinatorAudienceVersionV1(contract: Contract): 1 | 2 {
   const pairs = [
+    ['interaction:action-review', 'character.chat-narrative-action-review', 'chat-narrative-action-review-v42'],
+    ['interaction:action-review', 'character.chat-narrative-options-review', 'chat-narrative-options-review-v30'],
+    ['interaction:runtime-candidate', 'character.chat-situation-construction', 'chat-situation-construction-v20'],
     ['interaction:action-review', 'character.chat-narrative-action-review', 'chat-narrative-action-review-v41'],
     ['interaction:runtime-candidate', 'character.chat-situation-construction', 'chat-situation-construction-v17'],
     ['interaction:runtime-candidate', 'character.chat-situation-construction', 'chat-situation-construction-v18'],

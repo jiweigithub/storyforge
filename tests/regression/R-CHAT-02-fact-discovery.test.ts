@@ -143,7 +143,7 @@ it('recovers a persisted discovery candidate, adopts once, and preserves causali
   const action = inspection()
   const inspected = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard',
     skillId: 'character.chat-narrative-action', objective: '独立调查已获准的木箱，不提前知道结果', narrativeTriggerSequence: trigger.sequence,
-    runAI: withChatActionChoiceFixture(async messages => {expect(JSON.stringify(messages)).not.toContain(truth); expect(JSON.stringify(messages)).toContain('说话与展示物件/文字均须逐条登记实际知情变化'); return JSON.stringify(action)}),
+    runAI: withChatActionChoiceFixture(async messages => {expect(JSON.stringify(messages)).not.toContain(truth); expect(JSON.stringify(messages)).toContain('所有披露统一进入逐事实独立等义审查'); return JSON.stringify(action)}),
     runReviewAI: async messages => {
       const request = JSON.stringify(messages)
       expect(request).toContain(truth); expect(request).toContain('物理观察发现分两阶段'); expect(request).toContain(investigated)
@@ -151,8 +151,8 @@ it('recovers a persisted discovery candidate, adopts once, and preserves causali
       return JSON.stringify(chatActionReviewOutputFixture())
     },
   })
-  expect(inspected.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-narrative-action-review')?.promptVersion).toBe('chat-narrative-action-review-v41')
-  expect(inspected.snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:runtime-candidate')?.promptVersion).toBe('chat-narrative-action-v68')
+  expect(inspected.snapshot.contract.executionBindings?.find(b => b.skillId === 'character.chat-narrative-action-review')?.promptVersion).toBe('chat-narrative-action-review-v42')
+  expect(inspected.snapshot.contract.executionBindings?.find(b => b.stepId === 'interaction:runtime-candidate')?.promptVersion).toBe('chat-narrative-action-v70')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: inspected.snapshot.run.id})
   v = await readProductRuntimeStateVersion(f.sessionId)
   const value = draft(v.sequence)

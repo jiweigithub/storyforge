@@ -353,6 +353,12 @@ export type ChatActorSituationRequestV1 = {
   purpose?: 'observation-result'
   threadKey: string
 } | {
+  purpose: 'inquiry-result'
+  threadKey: string
+  respondentFactKey: string
+  respondentExcerpt: string
+  respondentName: string
+} | {
   purpose: 'player-followup'
   threadKey: null
   playerEventSequence: number

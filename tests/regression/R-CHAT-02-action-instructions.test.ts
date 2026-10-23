@@ -79,7 +79,7 @@ async function start() {
 
 it('renders the saved v67 complete system request byte for byte through the production harness', async () => {
   const originalSkill = skills.getAgentSkillV1, originalView = runtime.buildInteractionContextWindow
-  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action' ? {...originalSkill(id), promptVersion: 'chat-narrative-action-v67'} : originalSkill(id))
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action' ? {...originalSkill(id), promptVersion: 'chat-narrative-action-v67'} : id === 'character.chat-narrative-action-review' ? {...originalSkill(id), promptVersion: 'chat-narrative-action-review-v41'} : originalSkill(id))
   vi.spyOn(runtime, 'buildInteractionContextWindow').mockImplementation((...args) => ({...originalView(...args), ...retained349.promptView}) as runtime.InteractionContextWindow)
   const f = await start()
   const saved = retained349.requests['interaction:runtime-candidate'].request.messages[0].content
@@ -91,7 +91,7 @@ it('renders the saved v67 complete system request byte for byte through the prod
 
 it.each(['chat-narrative-action-v68', 'chat-narrative-action-v69'].flatMap(producer => [true, false].map(accepted => ({producer, accepted}))))('keeps $producer independent review acceptance=$accepted in control of adoption and durable recovery', async ({producer, accepted}) => {
   const originalSkill = skills.getAgentSkillV1
-  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action' ? {...originalSkill(id), promptVersion: producer} : originalSkill(id))
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action' ? {...originalSkill(id), promptVersion: producer} : id === 'character.chat-narrative-action-review' ? {...originalSkill(id), promptVersion: 'chat-narrative-action-review-v41'} : originalSkill(id))
   const f = await start(), before = await readProductRuntimeState(f.sessionId), calls: string[] = []
   let runId = 0
   const request = {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const, objective: '核对原审查与采用边界', onRunCreated: (id: number) => {runId = id},

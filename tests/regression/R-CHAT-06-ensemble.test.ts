@@ -20,12 +20,12 @@ const basic = (actor: string): ChatNarrativeActionV1 => ({kind: 'speak', text: `
   goalKey: actor === 'guard' ? 'find-seal' : actor === 'artisan' ? 'fix-road' : `care-${actor}`,
   evidenceFactKeys: [actor === 'guard' ? 'lost' : actor === 'artisan' ? 'road' : `prepared-${actor}`], audienceKeys: ['player', actor],
   waitingForPlayer: false, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null})
-function mock(resolve: (actor: string, index: number) => ChatNarrativeActionV1) {
+function mock(resolve: (actor: string, index: number) => ChatNarrativeActionV1, review = () => chatActionReviewOutputFixture()) {
   let actions = 0, calls = 0
   const actors: string[] = [], requests: {actor: string; characters: number}[] = []
   vi.spyOn(harness, 'generateInteractionRuntimeCandidateV1').mockImplementation(input => generate({...input,
     runAI: withChatActionChoiceFixture(async messages => {calls++; actors.push(input.participantKey); requests.push({actor: input.participantKey, characters: JSON.stringify(messages).length}); return JSON.stringify(resolve(input.participantKey, actions++))}),
-    runReviewAI: async () => {calls++; return JSON.stringify(chatActionReviewOutputFixture())}}))
+    runReviewAI: async () => {calls++; return JSON.stringify(review())}}))
   return {actors, requests, count: () => calls}
 }
 
@@ -56,7 +56,8 @@ it('requires actual disclosed words for another role to learn a private fact, an
   const original = (await readProductRuntimeState(f.sessionId)).interaction!, secret = original.chatNarrative!.situation.facts.find(f => f.factKey === 'regret')!.text
   let audience = ['player', 'guard'], recipients = ['player']
   const model = mock(() => ({...basic('guard'), text: secret, evidenceFactKeys: ['regret'], audienceKeys: [...audience],
-    disclosures: [{factKey: 'regret', toParticipantKeys: [...recipients], evidenceExcerpt: secret}]}))
+    disclosures: [{factKey: 'regret', toParticipantKeys: [...recipients], evidenceExcerpt: secret, wording: 'equivalent'}]}),
+  () => ({...chatActionReviewOutputFixture(), disclosureChecks: [{factKey: 'regret', passed: true, reason: '工程披露复核，不代表真实语义质量。'}]}))
   const message = await commitInteractionPlayerMessage({...await command(f.sessionId), messageId: 'private-question', text: '可以只对我说说你为什么这么谨慎吗？', audienceKeys: ['guard']})
   await advanceChatNarrativeTurnV1({...f, kind: 'player-response', expectedSequence: message.sequence, replyToSequence: message.sequence, actionLimit: 1, aiConfig: {} as never})
   let state = (await readProductRuntimeState(f.sessionId)).interaction!

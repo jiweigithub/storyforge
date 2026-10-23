@@ -1,3 +1,4 @@
+import {CHAT_INQUIRY_SETTLEMENT_ACTION_RULE_V1, chatInquirySettlementFollowupRulesV1} from './inquiry-settlement'
 import {CHAT_REVIEWED_DISCLOSURE_RULE_V1} from './natural-disclosure-output'
 import type {InteractionVisibilityView} from './runtime'
 import {chatActionPromptFeaturesV1} from './narrative-action-prompt'
@@ -73,4 +74,9 @@ export function chatConsolidatedActionPromptV1(view: InteractionVisibilityView, 
 /** Keep the saved v68 instruction bytes while changing only the new disclosure contract. */
 export function chatReviewedDisclosureActionPromptV1(view: InteractionVisibilityView, audience: readonly string[], wireExample: string): string {
   return chatConsolidatedActionPromptV1(view, audience, wireExample).replace(CHAT_LEGACY_CONSOLIDATED_DISCLOSURE_RULE_V1, CHAT_REVIEWED_DISCLOSURE_RULE_V1)
+}
+
+export const CHAT_INQUIRY_SETTLEMENT_ACTION_PRODUCER_V1 = 'chat-narrative-action-v70'
+export function chatInquirySettlementActionPromptV1(view: InteractionVisibilityView, audience: readonly string[], wireExample: string): string {
+  return chatInquirySettlementFollowupRulesV1(chatReviewedDisclosureActionPromptV1(view, audience, wireExample)) + '\n' + CHAT_INQUIRY_SETTLEMENT_ACTION_RULE_V1
 }

@@ -128,15 +128,16 @@ it('rejects hidden-source evidence before independent review, retaining the comp
 
 it('accepts only exact released inquiry binding pairs, never cross-version or future identities', () => {
   const result = {} as ChatInquiryResultV1 // This guard checks capability only; full payload tests use actual inquiry fixtures.
-  for (const producer of releasedSituationVersions) {
-    for (const reviewProducer of releasedSituationVersions) {
+  const releasedInquiryVersions = [...releasedSituationVersions, 20]
+  for (const producer of releasedInquiryVersions) {
+    for (const reviewProducer of releasedInquiryVersions) {
       const check = () => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewProducer - 1}`)
       if (reviewProducer === producer) expect(check).not.toThrow()
       else expect(check).toThrow()
     }
   }
   // Adjacent numbers do not grant future contracts permission; only released pairs do.
-  for (const [producer, reviewer] of [[7, 6], [7, 8], [20, 19], [999, 998], [999, 8], [9, 999]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).toThrow()
+  for (const [producer, reviewer] of [[7, 6], [7, 8], [21, 20], [999, 998], [999, 8], [9, 999]]) expect(() => assertChatInquiryBindingV1(result, `chat-situation-construction-v${producer}`, `chat-situation-review-v${reviewer}`)).toThrow()
   expect(() => assertChatInquiryBindingV1(result, undefined, 'chat-situation-review-v17')).toThrow()
   expect(() => assertChatInquiryBindingV1(result, 'chat-situation-construction-v18', undefined)).toThrow()
   expect(() => assertChatInquiryBindingV1(result, 'chat-situation-review-v18', 'chat-situation-construction-v17')).toThrow()

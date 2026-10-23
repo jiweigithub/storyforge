@@ -99,7 +99,7 @@ it('uses frozen generation/review contexts after registry changes, with reviewed
     reviewed++; expect(messages[1].content).toContain(JSON.stringify(index)); expect(messages[0].content).toContain('不把出现在 targets 当作应当 discovered')
     return JSON.stringify(report())
   }})
-  expect(reviewedResult.snapshot.contract.executionBindings?.find(b => b.skillId === skillId)?.promptVersion).toBe('chat-situation-construction-v19')
+  expect(reviewedResult.snapshot.contract.executionBindings?.find(b => b.skillId === skillId)?.promptVersion).toBe('chat-situation-construction-v20')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId}); await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
   const after = await readProductRuntimeState(current.sessionId)
   expect(after.interaction!.chatNarrative!.discoveryHistory).toHaveLength(1)

@@ -88,7 +88,7 @@ it('shows only selected contact text references while retaining the full interve
   expect(chatInquiryGenerationRulesV1('chat-situation-construction-v18').join('\n')).not.toContain('必须含 pendingSituation 中的现场人物依据')
 })
 
-it.each([false, true])('keeps v4 evidence through durable review, adoption, branches and import (private answer=%s)', async privateAnswer => {
+it.each([false, true])('keeps current v5 evidence through durable review, adoption, branches and import (private answer=%s)', async privateAnswer => {
   // Deliberately omit the actual contact from the actor's request; the source
   // fact is still known. No source, authority or story text is patched later.
   const f = await prepareChatInquiryFixture({questionEvidenceFactKeys: ['lost', 'box'], playerInterjection: '嗯，我在听。'})
@@ -108,7 +108,7 @@ it.each([false, true])('keeps v4 evidence through durable review, adoption, bran
     reviewed++; expect(messages[0].content).toContain('不能用候选清单中的其他事实扩张答复依据')
     return JSON.stringify(chatInquiryReviewFixture(draft))
   }})
-  expect(chatInquiryEvidenceVersionForContractV1(result.snapshot.contract)).toBe(4)
+  expect(chatInquiryEvidenceVersionForContractV1(result.snapshot.contract)).toBe(5)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
   const saved = await readProductRuntimeState(f.sessionId), version = await readProductRuntimeStateVersion(f.sessionId)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})

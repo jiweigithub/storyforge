@@ -1,6 +1,6 @@
 /** New contracts alone describe typed replies. Historical prompt bytes stay intact. */
 export function supportsChatSpokenInquiryReviewV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-review-v30', 'chat-narrative-action-review-v31', 'chat-narrative-action-review-v32', 'chat-narrative-action-review-v33', 'chat-narrative-action-review-v34', 'chat-narrative-action-review-v35', 'chat-narrative-action-review-v36', 'chat-narrative-action-review-v37', 'chat-narrative-action-review-v38', 'chat-narrative-action-review-v39', 'chat-narrative-action-review-v40', 'chat-narrative-action-review-v41', 'chat-narrative-options-review-v24', 'chat-narrative-options-review-v25', 'chat-narrative-options-review-v26', 'chat-narrative-options-review-v27', 'chat-narrative-options-review-v28', 'chat-narrative-options-review-v29'].includes(version ?? '')
+  return ['chat-narrative-action-review-v30', 'chat-narrative-action-review-v31', 'chat-narrative-action-review-v32', 'chat-narrative-action-review-v33', 'chat-narrative-action-review-v34', 'chat-narrative-action-review-v35', 'chat-narrative-action-review-v36', 'chat-narrative-action-review-v37', 'chat-narrative-action-review-v38', 'chat-narrative-action-review-v39', 'chat-narrative-action-review-v40', 'chat-narrative-action-review-v41', 'chat-narrative-action-review-v42', 'chat-narrative-options-review-v24', 'chat-narrative-options-review-v25', 'chat-narrative-options-review-v26', 'chat-narrative-options-review-v27', 'chat-narrative-options-review-v28', 'chat-narrative-options-review-v29', 'chat-narrative-options-review-v30'].includes(version ?? '')
 }
 
 export const CHAT_SPOKEN_INQUIRY_REVIEW_RULES_V1 = [
@@ -9,6 +9,8 @@ export const CHAT_SPOKEN_INQUIRY_REVIEW_RULES_V1 = [
 ]
 
 export function chatInquiryGenerationRulesV1(version: string | undefined): string[] {
+  if (version === 'chat-situation-construction-v20') return [...chatInquiryGenerationRulesV1('chat-situation-construction-v19').map(rule => rule.split('inquiryEvidence.version=4').join('inquiryEvidence.version=5')),
+    'pendingSituation.purpose=inquiry-result 时只结算这一条已问出的问题：inquiryResult 必填，questionSequence=sourceEventSequence，questionExcerpt=evidenceExcerpt，respondentFactKey/respondentExcerpt/respondentName 与 pendingSituation 完全一致。逐字读原问题及其后的完整对话，只记录该对象本次有依据的有限答复、不确定或拒答；不要求预写答案，也不保证获得线索。不得改题、换人、继续主角色行动、新造背景或再次只写等待，原冻结秘密与发现条件仍逐项验证。保持标题与时地，所有 newFacts/newGoals/newThreads/possibilities 和顶层 discoveries 为空。']
   if (version === 'chat-situation-construction-v19') return chatInquiryGenerationRulesV1('chat-situation-construction-v18')
   if (version === 'chat-situation-construction-v18') return chatInquiryGenerationRulesV1('chat-situation-construction-v17').map(rule =>
     rule.startsWith('audienceKeys 是实际听见答复者')
@@ -41,6 +43,8 @@ export function chatInquiryGenerationRulesV1(version: string | undefined): strin
   ]
 }
 export function chatInquiryReviewRulesV1(version?: string): string[] {
+  if (version === 'chat-situation-review-v19') return [...chatInquiryReviewRulesV1('chat-situation-review-v18').map(rule => rule.split('inquiryEvidence.version=4').join('inquiryEvidence.version=5')),
+    'purpose=inquiry-result 只结算已提交问题，逐字核对 pendingSituation 的 sourceEventSequence/evidenceExcerpt 与原人物三字段，拒绝更换问题或对象、增加新背景、未来动作、玩家决定或无依据秘密。保持原标题时地和行动次数；无法确认或拒答须有具体依据，不能把“没有预写答案”当成人物失忆，也不能把任意等待当成 meaningful-result。角色或玩家在其后真正撤回/打断时拒绝过时答复。']
   if (version === 'chat-situation-review-v18') return chatInquiryReviewRulesV1('chat-situation-review-v17')
   if (version === 'chat-situation-review-v17') return [
     ...chatInquiryReviewRulesV1('chat-situation-review-v16').map(rule => rule.replace('inquiryEvidence.version=3', 'inquiryEvidence.version=4')),
