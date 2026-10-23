@@ -17,6 +17,17 @@ export function chatCanRespondAfterClosureV1(state: CharacterInteractionRuntimeS
   return trigger.kind === 'player-response' && trigger.actionSequences.length === 0 && !chatHasUnfinishedGoalV1(state, actorKey)
 }
 
+/** An explicit new turn can revisit a paused goal. Further automatic actions
+ * in that same turn need an active goal or an already authorized follow-up;
+ * an unrelated old pause is not a reason to fill the remaining action quota. */
+export function chatCanActInTurnV1(state: CharacterInteractionRuntimeState, actorKey: string,
+  trigger: Pick<ChatNarrativeTriggerStateV1, 'kind' | 'actionSequences'>): boolean {
+  const hasGoal = trigger.actionSequences.length === 0 ? chatHasUnfinishedGoalV1(state, actorKey)
+    : state.chatNarrative?.situation.goals.some(goal => goal.actorKey === actorKey && goal.status === 'active')
+  return !!hasGoal || chatHasPendingPlayerFollowupV1(state, actorKey)
+    || chatCanRespondAfterClosureV1(state, actorKey, trigger) || chatCanFollowThreadV1(state, actorKey, trigger)
+}
+
 /** Eligibility is authority, not a model suggestion. A private player message
  * freezes a private pool; selecting a mode never grants anybody new knowledge. */
 export function chatSchedulingPoolV1(state: CharacterInteractionRuntimeState, kind: ChatNarrativeTriggerV1, sourceSequence?: number) {

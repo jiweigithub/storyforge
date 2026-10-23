@@ -2,7 +2,7 @@ import {chatCanFollowThreadV1} from './narrative-thread-followup'
 import {chatNewTurnAllowanceV1, chatPreparedTurnAllowanceV1, chatSituationAndActionAllowanceV1} from './narrative-budget'
 import {resolveChatTurnAudienceV1} from './narrative-audience'
 import {chatTurnActionLimitV1} from './narrative-contract'
-import {chatCanRespondAfterClosureV1, chatHasUnfinishedGoalV1, createChatScheduledDirectionV1, nextChatScheduledActorV1, type ChatSchedulingModeV1} from './narrative-scheduling'
+import {chatCanActInTurnV1, chatCanRespondAfterClosureV1, chatHasUnfinishedGoalV1, createChatScheduledDirectionV1, nextChatScheduledActorV1, type ChatSchedulingModeV1} from './narrative-scheduling'
 import { assertInstanceBinding } from '../product/runtime-instances'
 import {db} from '../db/schema'
 import {readInstanceAgentRunV1} from '../agent/run/event-store'
@@ -43,10 +43,13 @@ export async function readChatNarrativeTurnResumeV1(scope: WorkspaceScope, sessi
   const actorKey = settlement ? story.pendingSituation!.actorKey : trigger.direction?.scheduling && !constructingSeed ? nextChatScheduledActorV1(state, trigger)
     : trigger.direction?.actorKey ?? (lastAction == null ? null : state.messages.find(m => m.eventSequence === lastAction && m.role === 'character')?.speakerKey ?? null)
   const remainingActions = Math.max(0, chatTurnActionLimitV1(story.permissions, trigger) - trigger.actionSequences.length)
+  const onlyPausedAfterAction = !trigger.direction?.scheduling && !settlement && !constructingSeed
+    && lastAction != null && !!actorKey && chatHasUnfinishedGoalV1(state, actorKey)
+    && !chatCanActInTurnV1(state, actorKey, trigger)
   const view = {triggerSequence: trigger.requestedSequence, actorKey, remainingActions, blockedReason: null as string | null,
     ...(settlement ? {pendingSituation: true as const} : {}),
     ...(trigger.direction?.scheduling ? {schedulingMode: trigger.direction.scheduling.mode} : {})}
-  if (!remainingActions && !settlement || state.remainingDirectorBudget < chatPreparedTurnAllowanceV1(state, actorKey)) return {...view, blockedReason: '本轮剩余额度不足，不能继续生成。'}
+  if (!onlyPausedAfterAction && (!remainingActions && !settlement || state.remainingDirectorBudget < chatPreparedTurnAllowanceV1(state, actorKey))) return {...view, blockedReason: '本轮剩余额度不足，不能继续生成。'}
   if (trigger.direction?.scheduling && !actorKey) return {...view, blockedReason: '本轮已没有可继续行动的角色，无需补齐。'}
   if (!trigger.direction?.scheduling && lastAction != null && !actorKey) return {...view, blockedReason: '本轮原角色消息不完整，不能推定由谁继续。'}
   if (!settlement && !constructingSeed && actorKey && !chatHasUnfinishedGoalV1(state, actorKey) && !chatHasPendingPlayerFollowupV1(state, actorKey) && !chatCanRespondAfterClosureV1(state, actorKey, trigger) && !chatCanFollowThreadV1(state, actorKey, trigger)) return {...view, blockedReason: '本轮角色的目标已经结束，无需补齐行动。'}
@@ -71,7 +74,9 @@ export async function readChatNarrativeTurnResumeV1(scope: WorkspaceScope, sessi
       ? `本轮调用结果未知（运行 #${row.id}），补齐不会重发。请先处理原运行；需要新尝试时明确开始下一轮，原调用可能已经计费。`
       : `本轮有尚未采用、失败或取消的运行 #${row.id}。请先恢复已有候选；需要新尝试时明确开始下一轮。`}
   }
-  return view
+  // Inspect durable runs first: an earlier extra call may still be failed,
+  // unknown or awaiting adoption. No-active-goal inference must not hide it.
+  return onlyPausedAfterAction ? null : view
 }
 
 /** Continue only the unspent part of the existing authorized turn. Failed or
@@ -207,7 +212,7 @@ async function performPreparedTurn(input: {
     const trigger = current.chatNarrative!.triggers.slice(-1)[0]!
     if (trigger.requestedSequence !== input.triggerSequence || trigger.status !== 'ready' || current.remainingDirectorBudget < 2) return
     let actor = trigger.direction?.scheduling ? nextChatScheduledActorV1(current, trigger) : input.actor
-    if (!actor || !chatHasUnfinishedGoalV1(current, actor) && !chatHasPendingPlayerFollowupV1(current, actor) && !chatCanRespondAfterClosureV1(current, actor, trigger) && !chatCanFollowThreadV1(current, actor, trigger)) return
+    if (!actor || !chatCanActInTurnV1(current, actor, trigger)) return
     const story = current.chatNarrative!
     if (story.pendingSituation && (trigger.direction?.scheduling || story.pendingSituation.actorKey === actor)
       && chatSituationConstructionBlockedV1(current)) return
