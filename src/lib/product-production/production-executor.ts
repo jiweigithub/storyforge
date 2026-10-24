@@ -1,3 +1,4 @@
+import {assertChatOpeningReviewReferencesDeliveredV1, chatOpeningReviewReferencePromptV1, chatOpeningReviewReferenceSchemaV1, parseChatOpeningReferenceReviewV1} from '../character-interaction/opening-review-references'
 import {assertChatVisualRequirementsV1, CHAT_PUBLIC_VISUAL_CONSTRAINTS_V1} from '../character-interaction/visual-intent'
 import {executeChatMediaDeterministicTaskV1} from './chat-media-tasks'
 import {createChatMediaReviewSourceV1} from '../character-interaction/media-selection'
@@ -6992,10 +6993,10 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
   const planOpeningRepair = (raw: string, error: string): Promise<ChatOpeningRepairPlanV5 | null> => chatOpeningVersion?.sourceReferences
     ? (chatOpeningVersion.completeSourceFacts ? planChatOpeningRepairV5 : chatOpeningVersion.optionRepair ? planChatOpeningRepairV4 : planChatOpeningRepairV3)(raw, chatProductionSourceV1(input), chatOpeningCatalog, error)
     : (chatOpeningVersion?.patchRepair ? planChatOpeningRepairV2 : planChatOpeningRepairV1)(raw, chatProductionSourceV1(input), error)
-  const system = options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.product-module'
+  let system = options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.product-module'
     ? chatOpeningVersion?.sourceReferences ? (chatOpeningVersion.developmentProof ? chatOpeningBackgroundProductionPromptV2() : chatOpeningVersion.authoredBackground ? chatOpeningBackgroundProductionPromptV1() : chatOpeningVersion.meaningfulContinuation ? chatOpeningContinuationProductionPromptV1() : chatOpeningVersion.completeSourceFacts ? chatOpeningReferencePromptV3() : chatOpeningVersion.optionRepair ? chatOpeningReferencePromptV2() : chatOpeningReferencePromptV1())
       : chatSituationProductionPromptV1(!!options.brief.characterChatSourceUnits?.bundles.length, chatOpeningVersion?.groundedAgency) + (chatOpeningVersion?.patchRepair ? CHAT_OPENING_REPAIR_PROMPT_V2 : chatOpeningVersion?.targetedRepair ? CHAT_OPENING_REPAIR_PROMPT_V1 : '') : options.brief.characterChat?.version === 3 && input.task.taskKey === 'content.chat-opening-review'
-      ? chatOpeningVersion?.compactReview ? chatOpeningBackgroundReviewPromptV3() : chatOpeningVersion?.developmentProof ? chatOpeningBackgroundReviewPromptV2() : chatOpeningVersion?.authoredBackground ? chatOpeningBackgroundReviewPromptV1() : chatOpeningVersion?.independentReview ? chatOpeningIndependentReviewPromptV1() : chatOpeningVersion?.scopedReview ? chatOpeningScopedReviewPromptV1() : chatOpeningVersion?.meaningfulContinuation ? chatOpeningContinuationReviewPromptV1() : chatOpeningReviewPromptV1(chatOpeningVersion?.groundedAgency ? 2 : 1) : textSystem(
+      ? chatOpeningVersion?.referenceReview ? chatOpeningReviewReferencePromptV1() : chatOpeningVersion?.compactReview ? chatOpeningBackgroundReviewPromptV3() : chatOpeningVersion?.developmentProof ? chatOpeningBackgroundReviewPromptV2() : chatOpeningVersion?.authoredBackground ? chatOpeningBackgroundReviewPromptV1() : chatOpeningVersion?.independentReview ? chatOpeningIndependentReviewPromptV1() : chatOpeningVersion?.scopedReview ? chatOpeningScopedReviewPromptV1() : chatOpeningVersion?.meaningfulContinuation ? chatOpeningContinuationReviewPromptV1() : chatOpeningReviewPromptV1(chatOpeningVersion?.groundedAgency ? 2 : 1) : textSystem(
     input.task.taskKey,
     options.brief,
     input.attempt,
@@ -7016,9 +7017,19 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
   const openingJsonSchema = chatOpeningVersion?.completeSourceFacts && input.attempt === 1 && !input.authorDraftJson
     ? await chatOpeningOutputSchemaV1(chatProductionSourceV1(input), chatOpeningCatalog)
     : chatOpeningVersion?.scopedReview && !input.authorDraftJson
-      ? (chatOpeningVersion.developmentProof ? chatOpeningReviewOutputSchemaV3 : chatOpeningVersion.flatReview ? chatOpeningReviewOutputSchemaV2 : chatOpeningReviewOutputSchemaV1)(chatProductionSourceV1(input),
+      ? (chatOpeningVersion.referenceReview ? chatOpeningReviewReferenceSchemaV1 : chatOpeningVersion.developmentProof ? chatOpeningReviewOutputSchemaV3 : chatOpeningVersion.flatReview ? chatOpeningReviewOutputSchemaV2 : chatOpeningReviewOutputSchemaV1)(chatProductionSourceV1(input),
         parseChatSituationCandidatesV1(chatProductionArtifactPayloadV1(input, 'content.chat-candidates'), chatProductionSourceV1(input)))
       : undefined
+  if (chatOpeningVersion?.referenceReview) {
+    const source = chatProductionSourceV1(input)
+    const candidates = parseChatSituationCandidatesV1(chatProductionArtifactPayloadV1(input, 'content.chat-candidates'), source)
+    try {assertChatOpeningReviewReferencesDeliveredV1(input, source, candidates)} catch (error) {
+      throw new ProductProductionDraftRejectedErrorV1(error instanceof Error ? error.message : String(error), zeroUsage(elapsed(startedAt)))
+    }
+    // Providers using the JSON-object fallback receive the same complete wire
+    // contract. Both inline and native-schema overhead count in the budget.
+    if (openingJsonSchema) system += '\n输出 JSON Schema：' + JSON.stringify(openingJsonSchema.schema)
+  }
   // Reserve the schema overhead even for providers using the JSON-object
   // fallback. This cannot increase the original task's authorized allowance.
   const openingSchemaTokens = openingJsonSchema ? estimateChatRequestOptionsTokens({jsonSchema: openingJsonSchema}) : 0
@@ -7521,7 +7532,9 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
     }
   } else if (input.task.taskKey === 'content.chat-opening-review') {
     const source = chatProductionSourceV1(input)
-    const report = await createChatOpeningReviewV1(raw, source, parseChatSituationCandidatesV1(chatProductionArtifactPayloadV1(input, 'content.chat-candidates'), source), chatOpeningVersion?.developmentProof ? 3 : chatOpeningVersion?.groundedAgency ? 2 : 1)
+    const candidates = parseChatSituationCandidatesV1(chatProductionArtifactPayloadV1(input, 'content.chat-candidates'), source)
+    const reviewed = chatOpeningVersion?.referenceReview && !input.authorDraftJson ? parseChatOpeningReferenceReviewV1(raw, source, candidates) : raw
+    const report = await createChatOpeningReviewV1(reviewed, source, candidates, chatOpeningVersion?.developmentProof ? 3 : chatOpeningVersion?.groundedAgency ? 2 : 1)
     payload = report; kind = 'quality-report'
     quality = {reviewedOptions: report.options.length, eligibleOptions: report.options.filter(option => option.checks.every(check => check.passed)).length}
   } else if (input.task.taskKey === 'media.requirements') {

@@ -26,13 +26,13 @@ it('preserves independently captured legacy prompt bytes and their repair/output
 
 it.each([
   ['content.product-module', 'character.chat-situation-production', 'chat-situation-production-v14', 'chat-situation-production-v11'],
-  ['content.chat-opening-review', 'character.chat-opening-review', 'chat-opening-review-v10', 'chat-opening-review-v2'],
+  ['content.chat-opening-review', 'character.chat-opening-review', 'chat-opening-review-v11', 'chat-opening-review-v2'],
 ])('selects continuation policy from the saved %s binding without upgrading historical runs', async (taskKey, skillId, current, previous) => {
   const f = await seedChatNarrativeProductionFixture()
   const plan = await createProductProductionPlanV3({brief: f.brief, briefHash: await hashProductProductionValueV2(f.brief), buildNumber: 1})
   const task = plan.tasks.find(t => t.taskKey === taskKey)!
   const input = {scope: f.scope, buildId: 7, buildNumber: 2, controlEpoch: 3, planHash: 'a'.repeat(64), taskRunId: 1, task} as ProductProductionTaskExecutionInputV1
-  const snapshot = {contract: {scope: {productProduction: {
+  const snapshot = {contract: {permissions: {contextSourceKeys: ['product-production.chat-opening-review-inputs']}, scope: {productProduction: {
     productBuildId: input.buildId, buildNumber: input.buildNumber, controlEpoch: input.controlEpoch, planHash: input.planHash, taskKey,
   }}, executionBindings: [{stepId: taskKey, skillId, promptVersion: current}]}} as runs.AgentRunSnapshotV1
   vi.spyOn(runs, 'readAgentRunV1').mockResolvedValue(snapshot)
@@ -43,8 +43,10 @@ it.each([
   await expect(readChatOpeningProductionVersionV1(legacyInput)).rejects.toThrow('不能自动换约')
   if (taskKey === 'content.chat-opening-review') {
     expect(selected.compactReview).toBe(true)
+    snapshot.contract.executionBindings![0].promptVersion = 'chat-opening-review-v10'
+    await expect(readChatOpeningProductionVersionV1(input)).resolves.toEqual(Object.fromEntries(Object.entries(selected).filter(([key]) => key !== 'referenceReview')))
     snapshot.contract.executionBindings![0].promptVersion = 'chat-opening-review-v9'
-    await expect(readChatOpeningProductionVersionV1(input)).resolves.toEqual(Object.fromEntries(Object.entries(selected).filter(([key]) => key !== 'compactReview')))
+    await expect(readChatOpeningProductionVersionV1(input)).resolves.toEqual(Object.fromEntries(Object.entries(selected).filter(([key]) => !['compactReview', 'referenceReview'].includes(key))))
     snapshot.contract.executionBindings![0].promptVersion = current
     expect(selected.scopedReview).toBe(true)
     expect(selected.independentReview).toBe(true)
@@ -74,6 +76,6 @@ it.each([
   snapshot.contract.executionBindings![0].promptVersion = previous
   await expect(readChatOpeningProductionVersionV1(input)).rejects.toThrow('不能自动换约')
   const historical = await readChatOpeningProductionVersionV1(legacyInput)
-  expect(historical).toEqual(Object.fromEntries(Object.entries(selected).filter(([key]) => !['meaningfulContinuation', 'scopedReview', 'independentReview', 'flatReview', 'authoredBackground', 'reviewOutputLimit', 'developmentProof', 'compactReview'].includes(key))))
+  expect(historical).toEqual(Object.fromEntries(Object.entries(selected).filter(([key]) => !['meaningfulContinuation', 'scopedReview', 'independentReview', 'flatReview', 'authoredBackground', 'reviewOutputLimit', 'developmentProof', 'compactReview', 'referenceReview'].includes(key))))
   expect(getAgentSkillV1(skillId)?.promptVersion).toBe(current)
 })

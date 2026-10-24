@@ -429,7 +429,7 @@ test('normal narrative chat opens, accepts refusal, continues and reloads withou
 for (const transfer of [false, true]) {
 test(`v3 production offers initial situations, retains them across refresh and freezes the author selection (transfer=${transfer})`, async ({page}, info) => {
     test.setTimeout(120000);
-    const response: {candidateOutput: unknown; reviewOutput: unknown; actor: string} = {candidateOutput: null, reviewOutput: null, actor: ''};
+    const response: {candidateOutput: unknown; actor: string} = {candidateOutput: null, actor: ''};
     const calls: string[] = [];
     await page.addInitScript(() => {
         localStorage.setItem('storyforge_guide_completed', 'e2e');
@@ -445,7 +445,14 @@ test(`v3 production offers initial situations, retains them across refresh and f
         const openingReview = prompt.includes('开场的语义审查者');
         const production = calls.length < 3;
         calls.push(initial ? 'situations' : openingReview ? 'opening-review' : production ? 'media' : reviewing ? 'review' : 'action');
-        const content = initial ? response.candidateOutput : openingReview ? response.reviewOutput : production
+        const reviewOutput = openingReview ? await page.evaluate(async () => {
+            const load = new Function('p', 'return import(p)'), {db} = await load('/storyforge/src/lib/db/schema.ts');
+            const source = JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'design.game').last()).payloadJson);
+            const candidates = JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'content.chat-candidates').last()).payloadJson);
+            const helper = await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts');
+            return helper.chatOpeningReferenceReviewFixture(source, candidates, helper.chatOpeningDevelopmentReviewFixture(candidates, 'option-1'));
+        }) : null;
+        const content = initial ? response.candidateOutput : openingReview ? reviewOutput : production
             ? {schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: []}
             : reviewing ? {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'].map(check => ({check, passed: true, reason: '工程夹具，不是质量验收'}))}
             : {kind: 'pause', text: '我先自己核对旧账本，你可以安心休息。', goalKey: 'repair', evidenceFactKeys: ['clock'], audienceKeys: ['player', response.actor], waitingForPlayer: false,
@@ -461,10 +468,9 @@ test(`v3 production offers initial situations, retains them across refresh and f
         if (!created.ok) throw new Error(JSON.stringify(created));
         const saved = await execute({scope: f.scope, productionId: created.productionId, command: {type: 'save-brief-revision', commandId: 'e2e.chat-brief', expectedStateRevision: 0, parentRevision: null, brief: f.brief}});
         if (!saved.ok) throw new Error(JSON.stringify(saved));
-        return {scope: f.scope, productionId: created.productionId, candidates: f.candidates, review: (await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts')).chatOpeningDevelopmentReviewFixture(f.candidates, 'option-1')};
+        return {scope: f.scope, productionId: created.productionId, candidates: f.candidates};
     });
     response.candidateOutput = fixture.candidates;
-    response.reviewOutput = fixture.review;
     response.actor = fixture.candidates.options[1].situation.goals[0].actorKey;
     let query = `project=${fixture.scope.projectId}&work=${fixture.scope.workId}&production=${fixture.productionId}`;
     await page.goto(`./chat/vision?${query}`);

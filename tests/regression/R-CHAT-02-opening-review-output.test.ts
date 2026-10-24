@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto'
 import budgetCase from '../fixtures/character-chat-opening-review-budget.json'
-import {afterEach, beforeEach, expect, it} from 'vitest'
+import {afterEach, beforeEach, expect, it, vi} from 'vitest'
+import * as skills from '../../src/lib/agent/skill-registry'
 import Ajv from 'ajv'
 import {db} from '../../src/lib/db/schema'
 import {chatOpeningReviewOutputSchemaV1, chatOpeningReviewOutputSchemaV2, chatOpeningReviewOutputSchemaV3} from '../../src/lib/character-interaction/opening-review-output'
@@ -14,8 +15,17 @@ import {estimateTokens, trimMessagesToFit} from '../../src/lib/ai/context-budget
 import {estimateChatRequestOptionsTokens} from '../../src/lib/ai/client'
 import {chatOpeningAgencyReviewFixture, chatOpeningDevelopmentReviewFixture, chatSituationCandidatesFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
 
-beforeEach(async () => {await db.delete(); await db.open()})
-afterEach(async () => {await db.delete()})
+beforeEach(async () => {
+  await db.delete(); await db.open()
+  // Freeze this suite's v10 transport and registered source as a historical contract.
+  const original = skills.getAgentSkillV1
+  vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-opening-review'
+    ? {...original(id), promptVersion: 'chat-opening-review-v10', contextSourceKeys: ['product-production.artifact-inputs'],
+      inputPolicy: {...original(id).inputPolicy, sourceKeys: ['product-production.artifact-inputs']},
+      contextCompression: {...original(id).contextCompression, sourceKeys: ['product-production.artifact-inputs']}}
+    : original(id))
+})
+afterEach(async () => {vi.restoreAllMocks(); await db.delete()})
 
 it('validates exact per-option pointers and visible opportunity identities without copying source prose into the transport schema', async () => {
   const f = await seedChatNarrativeProductionFixture({factDiscovery: true, privateCast: 'mixed'})

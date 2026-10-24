@@ -32,6 +32,15 @@ function optionCitationPath(path: string): boolean {
     || /^\/situation\/threads\/\d+\/(?:title|question|closureSignals\/\d+)$/u.test(path)
 }
 
+/** Shared citation surface; historical output schemas keep their exact bytes. */
+export function chatOpeningCitationPathsV1(source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1) {
+  parseChatSituationCandidatesV1(candidates, source)
+  return {
+    source: stringPaths(source).filter(sourceCitationPath),
+    options: candidates.options.map(option => ({optionKey: option.optionKey, paths: stringPaths(option).filter(optionCitationPath)})),
+  }
+}
+
 export function chatOpeningReviewOutputSchemaV1(
   source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1,
 ): NonNullable<ChatRequestOptions['jsonSchema']> {

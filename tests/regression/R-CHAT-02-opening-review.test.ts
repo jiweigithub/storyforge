@@ -55,7 +55,7 @@ it('registers the review between creation and author choice, and requires the sa
   expect(task.maxAttempts).toBe(1)
   expect(task.inputArtifactKeys).toEqual(['design.game', 'content.chat-candidates'])
   expect(productProductionTaskUsesWorldGatewayV1(task)).toBe(false)
-  expect(getAgentSkillV1(task.skillId!).contextSourceKeys).toEqual(['product-production.artifact-inputs'])
+  expect(getAgentSkillV1(task.skillId!).contextSourceKeys).toEqual(['product-production.chat-opening-review-inputs'])
   for (const key of ['content.chat-author-gate', 'content.narrative', 'integration.package']) expect(plan.tasks.find(t => t.taskKey === key)!.inputArtifactKeys).toContain('quality.chat-openings')
   const selection = {schema: 'storyforge.chat-situation-selection', version: 1, candidatesHash: await hashProductProductionValueV2(candidates), sourceHash: await hashProductProductionValueV2(f.source), selectedOptionKey: 'option-2', authorCommandId: 'test.author'}
   const artifacts = [{artifactKey: 'design.game', payloadJson: JSON.stringify(f.source)}, {artifactKey: 'content.chat-candidates', payloadJson: JSON.stringify(candidates)}, {artifactKey: 'content.chat-selection', payloadJson: JSON.stringify(selection)}]

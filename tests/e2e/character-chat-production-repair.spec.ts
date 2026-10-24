@@ -24,9 +24,9 @@ for (const failure of ['opening', 'review-output-limit'] as const) test(failure 
     const output = await page.evaluate(async ({first, review, limited}) => {
       const load = new Function('p', 'return import(p)'), db = (await load('/storyforge/src/lib/db/schema.ts')).db
       const source = JSON.parse((await db.productBuildArtifacts.filter((r: {artifactKey: string}) => r.artifactKey === 'design.game').last()).payloadJson)
-      const helper = await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts'), candidates = helper.chatSituationCandidatesFixture(source)
+      const helper = await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts'), candidates = review ? JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'content.chat-candidates').last()).payloadJson) : helper.chatSituationCandidatesFixture(source)
       if (first) {candidates.options[0].situation.facts[0].origin = 'author-private'; candidates.options[0].situation.facts[0].sourceKnowledgeKey = 'unknown-world-evidence'}
-      const result = review ? helper.chatOpeningDevelopmentReviewFixture(candidates) : candidates
+      const result = review ? helper.chatOpeningReferenceReviewFixture(source, candidates) : candidates
       if (limited) result.options[0].checks[0].reason = 'REJECTED_REVIEW_NOT_SOURCE'
       return JSON.stringify(result)
     }, {first: failure === 'opening' && requests.length === 1, review, limited})
@@ -137,7 +137,7 @@ for (const {rejectedRepair, referenceWire, invalidOption = false, privateKnownFa
     const body = route.request().postDataJSON()
     const prompt = body.messages.map((message: {content: string}) => message.content).join('\n')
     expect(body.response_format).toMatchObject(privateKnownFact && prompt.includes('开场的语义审查者')
-      ? {type: 'json_schema', json_schema: {name: 'chat_opening_review_v3', strict: true}}
+      ? {type: 'json_schema', json_schema: {name: 'chat_opening_review_references_v1', strict: true}}
       : privateKnownFact && requests.length === 0
         ? {type: 'json_schema', json_schema: {name: 'chat_opening_source_complete_v1', strict: true}}
         : {type: 'json_object'})
@@ -148,7 +148,7 @@ for (const {rejectedRepair, referenceWire, invalidOption = false, privateKnownFa
       const db = (await load('/storyforge/src/lib/db/schema.ts')).db
       const source = JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'design.game').last()).payloadJson)
       const helper = await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts')
-      const candidates = helper.chatSituationCandidatesFixture(source)
+      const candidates = review ? JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'content.chat-candidates').last()).payloadJson) : helper.chatSituationCandidatesFixture(source)
       const references = referenceWire ? await helper.chatSituationReferenceDraftFixture(source, candidates) : null
       const knowledge = source.source.knowledge.find((item: {source: {purpose: string}; audienceKeys: string[]}) => item.source.purpose === 'identity' && item.audienceKeys.includes('player'))
       candidates.options[0].situation.facts.push({
@@ -181,7 +181,7 @@ for (const {rejectedRepair, referenceWire, invalidOption = false, privateKnownFa
           ...(referenceWire ? {replacementOptions} : {})})
       }
       const accepted = JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'content.chat-candidates').last()).payloadJson)
-      return JSON.stringify(helper.chatOpeningDevelopmentReviewFixture(accepted))
+      return JSON.stringify(helper.chatOpeningReferenceReviewFixture(source, accepted))
     }, {reject: requests.length === 1 || rejectedRepair, review: prompt.includes('开场的语义审查者'), opening: prompt.includes('初始情境编辑'), attempt: requests.length, referenceWire, invalidOption})
     if (requests.length === 1) firstRaw = output
     await route.fulfill({contentType: 'application/json', body: JSON.stringify({

@@ -2,7 +2,7 @@ import {resolveProductMediaProviderAdapterV1, type RedactedMediaTransportRequest
 import type {ResolvedProductMediaCapabilityV1} from '../../src/lib/product-production/media-transport'
 import {afterEach, beforeEach, expect, it} from 'vitest'
 import {db} from '../../src/lib/db/schema'
-import {seedChatNarrativeProductionFixture, chatSituationCandidatesFixture, chatOpeningDevelopmentReviewFixture} from '../helpers/chat-narrative-production-fixture'
+import {seedChatNarrativeProductionFixture, chatSituationCandidatesFixture, chatOpeningDevelopmentReviewFixture, chatOpeningReferenceReviewFixture} from '../helpers/chat-narrative-production-fixture'
 import {seedIllustratedChatBriefFixture as illustrated, seedChatMediaConfirmationFixture} from '../helpers/chat-media-production-fixture'
 import {parseProductProductionBriefV3} from '../../src/lib/product-production/contracts'
 import {createProductProductionPlanV3} from '../../src/lib/product-production/plan'
@@ -78,8 +78,8 @@ it.each([undefined, 'only'] as const)('runs formal image production, author conf
     const isSituation = request.system.includes('初始情境编辑'), isReview = request.system.includes('开场的语义审查者')
     expect(isSituation || isReview).toBe(true); calls.push(isSituation ? 'situations' : 'review')
     const source = JSON.parse((await db.productBuildArtifacts.filter(row => row.artifactKey === 'design.game').last())!.payloadJson)
-    const candidates = chatSituationCandidatesFixture(source)
-    return {output: JSON.stringify(isSituation ? candidates : chatOpeningDevelopmentReviewFixture(candidates, 'option-1')),
+    const candidates = isSituation ? chatSituationCandidatesFixture(source) : JSON.parse((await db.productBuildArtifacts.filter(row => row.artifactKey === 'content.chat-candidates').last())!.payloadJson)
+    return {output: JSON.stringify(isSituation ? candidates : chatOpeningReferenceReviewFixture(source, candidates, chatOpeningDevelopmentReviewFixture(candidates, 'option-1'))),
       usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {schema: 'storyforge.provider-binding-receipt', version: 1,
         requirementKey, adapterId: 'configured-text.v1', adapterVersion: 1, provider: 'fixture', model: 'fixture-model',
         endpointOrigin: 'https://fixture.invalid', executionLocation: 'browser-direct', credentialSource: 'existing-ai-config',

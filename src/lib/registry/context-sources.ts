@@ -2158,6 +2158,14 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     read: readProductProductionArtifactInputs,
   },
   {
+    key: 'product-production.chat-opening-review-inputs',
+    label: '角色聊天开场审查来源与引用目录',
+    scope: 'project', layer: 'L1', ownerFrom: 'work', budgetTokens: 24_000,
+    protectedFromTrim: true,
+    enabled: input => Number.isInteger(input.productBuildId) && input.productProductionTaskKey === 'content.chat-opening-review',
+    read: async input => (await import('../character-interaction/opening-review-references')).readChatOpeningReviewReferenceContextV1(input),
+  },
+  {
     key: 'product-production.adventure-scene-script-inputs',
     label: '文字冒险单幕分场写作投影',
     scope: 'project',

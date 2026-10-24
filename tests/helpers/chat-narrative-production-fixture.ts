@@ -1,3 +1,4 @@
+import {buildChatOpeningReviewReferencesV1} from '../../src/lib/character-interaction/opening-review-references'
 import type {ChatExperienceInfoV1} from '../../src/lib/character-interaction/experience-info'
 import type {ChatCharacterCardOriginV1} from '../../src/lib/character-interaction/private-character'
 import {CHAT_OPENING_CHECKS, type ChatOpeningReviewDraftV1} from '../../src/lib/character-interaction/situation-production-review'
@@ -162,4 +163,17 @@ export async function chatSituationReferenceDraftFixture(source: ChatNarrativePr
       possibilities: s.possibilities.map(p => ({...p, evidenceFactKeys: remap(p.evidenceFactKeys)})),
     }}
   })}
+}
+
+/** Explicit injected wire fixture. Never converts model responses in production. */
+export function chatOpeningReferenceReviewFixture(source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1, draft = chatOpeningDevelopmentReviewFixture(candidates)) {
+  const references = buildChatOpeningReviewReferencesV1(source, candidates)
+  return {...draft, options: draft.options.map(option => ({...option, checks: option.checks.map(check => ({...check,
+    evidence: check.evidence.map(evidence => {
+      const ref = references.find(ref => ref.target === evidence.target && (ref.target === 'source' || ref.optionKey === option.optionKey)
+        && ref.pointer === evidence.pointer && ref.quote.includes(evidence.quote))
+      if (!ref) throw new Error('Engineering review fixture must select actual bounded evidence')
+      return {refId: ref.refId}
+    }),
+  }))}))}
 }

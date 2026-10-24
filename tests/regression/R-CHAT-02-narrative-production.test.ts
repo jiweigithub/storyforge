@@ -19,7 +19,7 @@ import {runProductProductionUntilBlockedV1, recoverImportedChatProductionPrefixV
 import {readProductProductionBuildWorldScopeV1} from '../../src/lib/product-production/world-binding'
 import {aggregateProductSourceManifestFromExactRunsV1} from '../../src/lib/product/source-contracts'
 import {readProductProductionDetailsV1, confirmChatSituationDecisionV1, listProductProductionReviewArtifactsV1, retryProductProductionBlockerV1, publishProductProductionV1} from '../../src/lib/product-production/service'
-import {chatSituationCandidatesFixture, chatSituationReferenceDraftFixture, chatOpeningDevelopmentReviewFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatSituationCandidatesFixture, chatSituationReferenceDraftFixture, chatOpeningDevelopmentReviewFixture, chatOpeningReferenceReviewFixture} from '../helpers/chat-narrative-production-fixture'
 import {CHAT_OPENING_FACT_CATALOG_KEY, buildChatOpeningFactCatalogV2} from '../../src/lib/character-interaction/opening-source-references'
 import type {ChatNarrativeProductionSourceV1} from '../../src/lib/character-interaction/narrative-production'
 import {verifyProductBuildTerminalArtifactSetV1} from '../../src/lib/product-production/artifact-store'
@@ -155,7 +155,7 @@ it.each([
     const source = JSON.parse(sourceRow!.payloadJson) as ChatNarrativeProductionSourceV1
     const candidatesRow = isReview ? await db.productBuildArtifacts.filter(row => row.artifactKey === 'content.chat-candidates').last() : undefined
     const candidates = candidatesRow ? JSON.parse(candidatesRow.payloadJson) : chatSituationCandidatesFixture(source)
-    const output = isSituation ? referenceWire ? await chatSituationReferenceDraftFixture(source, candidates) : candidates : isReview ? chatOpeningDevelopmentReviewFixture(candidates, 'option-1') : rejectMedia ? {invalid: 'bounded failure after author selection'} : {
+    const output = isSituation ? referenceWire ? await chatSituationReferenceDraftFixture(source, candidates) : candidates : isReview ? chatOpeningReferenceReviewFixture(source, candidates, chatOpeningDevelopmentReviewFixture(candidates, 'option-1')) : rejectMedia ? {invalid: 'bounded failure after author selection'} : {
       schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: [],
     }
     if (isSituation) {
