@@ -23,7 +23,7 @@ beforeEach(async () => {
     ? {...original(id), promptVersion: 'chat-opening-review-v10', contextSourceKeys: ['product-production.artifact-inputs'],
       inputPolicy: {...original(id).inputPolicy, sourceKeys: ['product-production.artifact-inputs']},
       contextCompression: {...original(id).contextCompression, sourceKeys: ['product-production.artifact-inputs']}}
-    : original(id))
+    : id === 'character.chat-situation-production' ? {...original(id), promptVersion: 'chat-situation-production-v14'} : original(id))
 })
 afterEach(async () => {vi.restoreAllMocks(); await db.delete()})
 

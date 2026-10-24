@@ -41,8 +41,8 @@ export async function readChatOpeningAutomaticRepairFeedbackV1(input: {
   const step = snapshot.projection.steps[input.taskKey]
   if (!step || step.attempt < 2) return null
   const binding = snapshot.contract.executionBindings?.find(item => item.stepId === input.taskKey)
-  if (!binding || !['chat-situation-production-v7', 'chat-situation-production-v8', 'chat-situation-production-v9', 'chat-situation-production-v10', 'chat-situation-production-v11', 'chat-situation-production-v12', 'chat-situation-production-v13', 'chat-situation-production-v14'].includes(binding.promptVersion)) return null
-  const completeSourceFacts = ['chat-situation-production-v11', 'chat-situation-production-v12', 'chat-situation-production-v13', 'chat-situation-production-v14'].includes(binding.promptVersion)
+  if (!binding || !['chat-situation-production-v7', 'chat-situation-production-v8', 'chat-situation-production-v9', 'chat-situation-production-v10', 'chat-situation-production-v11', 'chat-situation-production-v12', 'chat-situation-production-v13', 'chat-situation-production-v14', 'chat-situation-production-v15'].includes(binding.promptVersion)) return null
+  const completeSourceFacts = ['chat-situation-production-v11', 'chat-situation-production-v12', 'chat-situation-production-v13', 'chat-situation-production-v14', 'chat-situation-production-v15'].includes(binding.promptVersion)
   const optionRepair = completeSourceFacts || binding.promptVersion === 'chat-situation-production-v10'
   const sourceReferences = optionRepair || binding.promptVersion === 'chat-situation-production-v9'
   const patchRepair = sourceReferences || binding.promptVersion === 'chat-situation-production-v8'

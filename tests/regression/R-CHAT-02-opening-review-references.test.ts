@@ -1,3 +1,4 @@
+import {chatOpeningPerspectiveReviewPromptV1} from '../../src/lib/character-interaction/opening-perspectives'
 import {chatOpeningProofReviewPromptV1} from '../../src/lib/character-interaction/opening-review-proof-citations'
 import {chatOpeningRelationalReviewPromptV1} from '../../src/lib/character-interaction/opening-review-relations'
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
@@ -14,7 +15,7 @@ import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1
 import {runProductProductionUntilBlockedV1, type ProductProductionTaskExecutionInputV1} from '../../src/lib/product-production/scheduler'
 import {readProductProductionDetailsV1} from '../../src/lib/product-production/service'
 import {estimateTokens} from '../../src/lib/ai/context-budget'
-import {chatOpeningDevelopmentReviewFixture, chatOpeningKeyedReviewFixture, chatOpeningProofReviewFixture, chatOpeningReferenceReviewFixture, chatSituationCandidatesFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatOpeningDevelopmentReviewFixture, chatOpeningKeyedReviewFixture, chatOpeningProofReviewFixture, chatOpeningPerspectiveReviewFixture, chatOpeningReferenceReviewFixture, chatSituationCandidatesFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
 
 beforeEach(async () => {await db.delete(); await db.open()})
 afterEach(async () => {vi.restoreAllMocks(); await db.delete()})
@@ -53,13 +54,13 @@ it.each(['unknown', 'foreign-option', 'extra-quote', 'missing-check', 'missing-b
   expect(wire).toEqual(before)
 })
 
-it.each(([11, 12, 13, 14] as const).flatMap(version => (['accepted', 'semantic-rejection', 'invalid-reference', 'repeated-adaptive', 'missing-delivery', 'tampered-delivery', 'schema-budget'] as const).map(scenario => ({version, scenario}))))('runs the registered v$version boundary with $scenario and never retries a rejected review', async ({version, scenario}) => {
-  if (version < 14) {
+it.each(([11, 12, 13, 14, 15] as const).flatMap(version => ([...(['accepted', 'semantic-rejection', 'invalid-reference', 'repeated-adaptive', 'missing-delivery', 'tampered-delivery', 'schema-budget'] as const), ...(version === 15 ? ['perspective-mismatch', 'missing-perspectives'] as const : [])]).map(scenario => ({version, scenario}))))('runs the registered v$version boundary with $scenario and never retries a rejected review', async ({version, scenario}) => {
+  if (version < 15) {
     const original = skills.getAgentSkillV1
     vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-opening-review' ? {...original(id), promptVersion: `chat-opening-review-v${version}`} : original(id))
   }
-  const prompt = version === 14 ? chatOpeningRelationalReviewPromptV1 : version === 13 ? chatOpeningProofReviewPromptV1 : version === 11 ? chatOpeningReviewReferencePromptV1 : chatOpeningKeyedReviewPromptV1
-  const encode = version >= 13 ? chatOpeningProofReviewFixture : version === 11 ? chatOpeningReferenceReviewFixture : chatOpeningKeyedReviewFixture
+  const prompt = version === 15 ? chatOpeningPerspectiveReviewPromptV1 : version === 14 ? chatOpeningRelationalReviewPromptV1 : version === 13 ? chatOpeningProofReviewPromptV1 : version === 11 ? chatOpeningReviewReferencePromptV1 : chatOpeningKeyedReviewPromptV1
+  const encode = version === 15 ? chatOpeningPerspectiveReviewFixture : version >= 13 ? chatOpeningProofReviewFixture : version === 11 ? chatOpeningReferenceReviewFixture : chatOpeningKeyedReviewFixture
   const f = await seedChatNarrativeProductionFixture()
   const created = await executeProductProductionCommand({scope: f.scope, command: {type: 'create-intent', commandId: 'ref.create', productionKey: 'ref.chat',
     worldReleaseId: f.confirmed.worldReleaseId!, productType: 'character-interaction', userText: '引用审查工程夹具'}})
@@ -77,7 +78,7 @@ it.each(([11, 12, 13, 14] as const).flatMap(version => (['accepted', 'semantic-r
     const candidates = isOpening ? chatSituationCandidatesFixture(source) : JSON.parse((await db.productBuildArtifacts.where('projectId').equals(f.scope.projectId).filter(row => row.artifactKey === 'content.chat-candidates').last())!.payloadJson)
     let output = JSON.stringify(candidates)
     if (!isOpening) {
-      expect(request.jsonSchema?.name).toBe(version === 14 ? 'chat_opening_review_relations_v1' : version === 13 ? 'chat_opening_review_proof_citations_v1' : version === 11 ? 'chat_opening_review_references_v1' : 'chat_opening_review_keyed_v1')
+      expect(request.jsonSchema?.name).toBe(version === 15 ? 'chat_opening_review_perspectives_v1' : version === 14 ? 'chat_opening_review_relations_v1' : version === 13 ? 'chat_opening_review_proof_citations_v1' : version === 11 ? 'chat_opening_review_references_v1' : 'chat_opening_review_keyed_v1')
       expect(request.system).toBe(prompt() + (version === 11 ? '\n输出 JSON Schema：' + JSON.stringify(request.jsonSchema!.schema) : ''))
       expect(request.maximumOutputTokens).toBe(10_000)
       expect(request.contextText).toContain('storyforge.chat-opening-review-inputs')
@@ -87,8 +88,10 @@ it.each(([11, 12, 13, 14] as const).flatMap(version => (['accepted', 'semantic-r
       if (scenario === 'repeated-adaptive') draft.options[0].development!.mode = 'adaptive'
       const wire = encode(source, candidates, draft)
       if (scenario === 'invalid-reference') Object.values(Object.values(wire.options)[0].checks)[0].evidence = [{refId: 'not-in-catalog'}]
+      if (scenario === 'perspective-mismatch' && 'perspectives' in wire) Object.values(wire.perspectives)[0]['0'].initiatorKey = 'player'
+      if (scenario === 'missing-perspectives') Reflect.deleteProperty(wire, 'perspectives')
       output = rawReview = JSON.stringify(wire)
-      if (scenario !== 'invalid-reference') expect(new Ajv().compile(request.jsonSchema!.schema)(wire)).toBe(!(version >= 13 && scenario === 'repeated-adaptive'))
+      if (scenario !== 'invalid-reference') expect(new Ajv().compile(request.jsonSchema!.schema)(wire)).toBe(!(version >= 13 && scenario === 'repeated-adaptive') && scenario !== 'missing-perspectives')
       expect(() => assertChatOpeningReviewReferencesDeliveredV1(delivered!, source, candidates)).not.toThrow()
     }
     return {output, usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {schema: 'storyforge.provider-binding-receipt', version: 1,

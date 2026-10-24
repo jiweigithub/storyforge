@@ -1,0 +1,54 @@
+{
+  "schema": "storyforge.character-chat-action-attribution-diagnostic",
+  "version": 1,
+  "date": "2026-10-24",
+  "sourceHead": "1fb78633fbc8833ed530de640d8a41f514d60ec6",
+  "scope": "Two independent diagnostics with the same complete retained source and candidates, plus eight independent contrast cases. Original production and review failures remain unchanged.",
+  "modelCalls": 2,
+  "retries": 0,
+  "productWrites": 0,
+  "formalM1Credit": false,
+  "humanRating": null,
+  "comparisonBasis": "Development-agent interpretation of action ownership, not a blinded quality rating. Counts cover ownership judgments only.",
+  "results": [
+    {
+      "provider": "codex",
+      "transportStatus": "completed",
+      "usage": {
+        "totalTokens": 18303,
+        "inputTokens": 16639,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1664,
+        "reasoningOutputTokens": 249
+      },
+      "durationMs": 35090,
+      "originalAttributionAgreement": 7,
+      "originalDirections": 7,
+      "controlAttributionAgreement": 8,
+      "controls": 8
+    },
+    {
+      "provider": "agnes",
+      "transportStatus": 200,
+      "usage": {
+        "completion_tokens": 2036,
+        "prompt_tokens": 12799,
+        "total_tokens": 14835,
+        "completion_tokens_details": {
+          "reasoning_tokens": 765,
+          "text_tokens": 1271
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        }
+      },
+      "durationMs": 22813,
+      "originalAttributionAgreement": 5,
+      "originalDirections": 7,
+      "controlAttributionAgreement": 7,
+      "controls": 8
+    }
+  ],
+  "finding": "Codex identified all four original actor/player ownership mismatches. Agnes identified two, and still misattributed two other directions; one control misidentified the declared NPC. Both calls succeeded. This is a semantic reliability gap, not an API configuration or quota failure."
+}

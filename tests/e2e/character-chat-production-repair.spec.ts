@@ -26,7 +26,7 @@ for (const failure of ['opening', 'review-output-limit'] as const) test(failure 
       const source = JSON.parse((await db.productBuildArtifacts.filter((r: {artifactKey: string}) => r.artifactKey === 'design.game').last()).payloadJson)
       const helper = await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts'), candidates = review ? JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'content.chat-candidates').last()).payloadJson) : helper.chatSituationCandidatesFixture(source)
       if (first) {candidates.options[0].situation.facts[0].origin = 'author-private'; candidates.options[0].situation.facts[0].sourceKnowledgeKey = 'unknown-world-evidence'}
-      const result = review ? helper.chatOpeningProofReviewFixture(source, candidates) : candidates
+      const result = review ? helper.chatOpeningPerspectiveReviewFixture(source, candidates) : candidates
       if (limited) result.options[candidates.options[0].optionKey].checks['seed-purpose'].reason = 'REJECTED_REVIEW_NOT_SOURCE'
       return JSON.stringify(result)
     }, {first: failure === 'opening' && requests.length === 1, review, limited})
@@ -137,7 +137,7 @@ for (const {rejectedRepair, referenceWire, invalidOption = false, privateKnownFa
     const body = route.request().postDataJSON()
     const prompt = body.messages.map((message: {content: string}) => message.content).join('\n')
     expect(body.response_format).toMatchObject(privateKnownFact && prompt.includes('开场的语义审查者')
-      ? {type: 'json_schema', json_schema: {name: 'chat_opening_review_relations_v1', strict: true}}
+      ? {type: 'json_schema', json_schema: {name: 'chat_opening_review_perspectives_v1', strict: true}}
       : privateKnownFact && requests.length === 0
         ? {type: 'json_schema', json_schema: {name: 'chat_opening_source_complete_v1', strict: true}}
         : {type: 'json_object'})
@@ -181,7 +181,7 @@ for (const {rejectedRepair, referenceWire, invalidOption = false, privateKnownFa
           ...(referenceWire ? {replacementOptions} : {})})
       }
       const accepted = JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'content.chat-candidates').last()).payloadJson)
-      return JSON.stringify(helper.chatOpeningProofReviewFixture(source, accepted))
+      return JSON.stringify(helper.chatOpeningPerspectiveReviewFixture(source, accepted))
     }, {reject: requests.length === 1 || rejectedRepair, review: prompt.includes('开场的语义审查者'), opening: prompt.includes('初始情境编辑'), attempt: requests.length, referenceWire, invalidOption})
     if (requests.length === 1) firstRaw = output
     await route.fulfill({contentType: 'application/json', body: JSON.stringify({

@@ -196,3 +196,12 @@ export function chatOpeningProofReviewFixture(source: ChatNarrativeProductionSou
     })),
   }]))}
 }
+
+/** Explicit injected readings for engineering fixtures; never model evidence. */
+export function chatOpeningPerspectiveReviewFixture(source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1, draft = chatOpeningDevelopmentReviewFixture(candidates)) {
+  return {perspectives: Object.fromEntries(candidates.options.map(option => [option.optionKey,
+    Object.fromEntries(option.situation.possibilities.map((direction, index) => [String(index), {
+      initiatorKey: direction.actorKey, addresseeKey: 'none', reason: '工程夹具明确注入该角色自身行动；不代表模型语义判断。',
+    }])),
+  ])), ...chatOpeningProofReviewFixture(source, candidates, draft)}
+}
