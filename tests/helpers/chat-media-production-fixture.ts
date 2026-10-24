@@ -8,7 +8,7 @@ import {executeProductProductionCommand} from '../../src/lib/product-production/
 import {createBuiltInProductionCapabilityBindingV1, createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
 import {runProductProductionUntilBlockedV1} from '../../src/lib/product-production/scheduler'
 import {confirmChatSituationDecisionV1, readProductProductionDetailsV1} from '../../src/lib/product-production/service'
-import {seedChatNarrativeProductionFixture, chatSituationCandidatesFixture, chatOpeningDevelopmentReviewFixture, chatOpeningKeyedReviewFixture} from './chat-narrative-production-fixture'
+import {seedChatNarrativeProductionFixture, chatSituationCandidatesFixture, chatOpeningDevelopmentReviewFixture, chatOpeningProofReviewFixture} from './chat-narrative-production-fixture'
 
 export async function seedIllustratedChatBriefFixture(privateCast?: 'only', experienceInfo?: ChatExperienceInfoV1) {
   const cardOrigin = privateCast === 'only' ? (await previewChatCharacterCardV2({bytes: new TextEncoder().encode(JSON.stringify(chatCharacterCardFixture())).buffer, fileName: 'card.json'})).origin : undefined
@@ -48,7 +48,7 @@ export async function seedChatMediaConfirmationFixture(experienceInfo?: ChatExpe
     const buildId = (await db.productBuilds.where('[productionId+buildNumber]').equals([productionId, production.currentBuildNumber!]).first())!.id!
     const source = JSON.parse((await db.productBuildArtifacts.where('buildId').equals(buildId).filter(row => row.artifactKey === 'design.game').last())!.payloadJson)
     const candidates = situation ? chatSituationCandidatesFixture(source) : JSON.parse((await db.productBuildArtifacts.filter(row => row.artifactKey === 'content.chat-candidates').last())!.payloadJson)
-    return {output: JSON.stringify(situation ? candidates : chatOpeningKeyedReviewFixture(source, candidates, chatOpeningDevelopmentReviewFixture(candidates, 'option-1'))), usage: {inputTokens: 100, outputTokens: 100},
+    return {output: JSON.stringify(situation ? candidates : chatOpeningProofReviewFixture(source, candidates, chatOpeningDevelopmentReviewFixture(candidates, 'option-1'))), usage: {inputTokens: 100, outputTokens: 100},
       bindingReceipt: {schema: 'storyforge.provider-binding-receipt', version: 1, requirementKey, adapterId: 'configured-text.v1', adapterVersion: 1,
         provider: 'fixture', model: 'fixture-model', endpointOrigin: 'https://fixture.invalid', executionLocation: 'browser-direct', credentialSource: 'existing-ai-config',
         credentialPresent: true, capabilityHash: bindingHash, boundAt: 1, receiptHash: 'b'.repeat(64)}}

@@ -185,3 +185,14 @@ export function chatOpeningKeyedReviewFixture(source: ChatNarrativeProductionSou
     ...option, checks: Object.fromEntries(checks.map(({check, ...result}) => [check, result])),
   }]))}
 }
+
+/** Explicit v13 fixture; no model output is converted by this helper. */
+export function chatOpeningProofReviewFixture(source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1, draft = chatOpeningDevelopmentReviewFixture(candidates)) {
+  const wire = chatOpeningKeyedReviewFixture(source, candidates, draft)
+  return {options: Object.fromEntries(Object.entries(wire.options).map(([key, option]) => [key, {...option,
+    checks: Object.fromEntries(Object.entries(option.checks).map(([check, result]) => {
+      const proof = check === 'viable-agency' ? 'agency' : check === 'open-development' ? 'development' : null
+      return [check, {...result, evidence: proof ? option[proof] ? {proof} : {refs: result.evidence} : result.evidence}]
+    })),
+  }]))}
+}
