@@ -3957,7 +3957,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-gameplay-ruleset'],
   },
   {
@@ -3988,7 +3988,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-player-build'],
   },
   {
@@ -4019,7 +4019,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-story-architecture'],
   },
   {
@@ -4050,7 +4050,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-region-skeleton'],
   },
   {
@@ -4081,7 +4081,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-mainline'],
   },
   {
@@ -4112,7 +4112,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-significant-threads'],
   },
   {
@@ -4143,7 +4143,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-region-narrative-packs'],
   },
   {
@@ -4174,7 +4174,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-quest-skeletons'],
   },
   {
@@ -4205,7 +4205,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-progression-catalogs'],
   },
   {
@@ -4236,7 +4236,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-encounter-catalog'],
   },
   {
@@ -4267,7 +4267,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-item-reward-catalog'],
   },
   {
@@ -4298,7 +4298,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-crafting-economy'],
   },
   {
@@ -4329,7 +4329,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-npc-runtime'],
   },
   {
@@ -4360,7 +4360,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-map-interaction'],
   },
   {
@@ -4391,7 +4391,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-quest-finalize'],
   },
   {
@@ -4422,7 +4422,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-scene-scripts'],
   },
   {
@@ -4453,7 +4453,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-system-finalize'],
   },
   {
@@ -4484,7 +4484,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-system-finalize'],
   },
   {
@@ -4515,7 +4515,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson', 'qualityJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-quality-review'],
   },
   {
@@ -4546,7 +4546,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson', 'qualityJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-quality-review'],
   },
   {
@@ -4829,7 +4829,7 @@ export const AGENT_SKILLS = [
     ]),
     maxOutputTokens: 6_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-TEXTADV3-agent-team'],
   },
   {
@@ -5017,7 +5017,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(['product-production.brief', 'product-production.adventure-visual-direction-inputs']),
     maxOutputTokens: 12_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-TEXTADV3-agent-team'],
   },
   {
@@ -5039,7 +5039,7 @@ export const AGENT_SKILLS = [
     ]),
     maxOutputTokens: 4_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-10-23',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-TEXTADV3-agent-team', 'R-PRODUCTPROD1F-production-executor'],
   },
   {
