@@ -107,19 +107,25 @@ describe('R-TTRPGOPEN3 frozen no-roll interaction kernel', { timeout: 60000 },()
     expect(after.knowledge.find(k => k.evidenceRef === path.evidenceRef)).toMatchObject({ audience: 'private',recipientActorKeys: ['hero'],reliability: 'observed' })
     expect(after.ruleReceipts[0].result).toMatchObject({ outcome: 'automatic',check: null })
   })
-  it('keeps affordable alternatives available and refuses an unaffordable selection without consuming the choice',async () => {
+  it.each(['party','actor:hero'] as const)('keeps affordable %s alternatives available and refuses an unaffordable selection without consuming the choice',async audience => {
     const x = await seedOpenInteractionV1('assist',p => {
       const t = p.ttrpg!.campaign.effectPlanTemplates.find(t => t.planKey === 'interaction.cost')!
+      t.audience = audience
       t.alternatives = [{ alternativeKey: 'small',title: '支付一份资源',effects: t.effects },
         { alternativeKey: 'large',title: '支付九十九份资源',effects: t.effects.map(e => e.family === 'numeric' ? { ...e,amount: 99 } : e) }]
       t.effects = []
     }),{ command } = await propose(x)
     await settleOpenPaidTurnsV1(command)
     const locator = { operationKey: command.operationKey,kind: 'effect' as const,templateKey: 'interaction.cost' }
-    const prepared = await prepareTtrpgOpenTablePrivateChoiceV1({ ...x.input,...locator })
-    await discloseTtrpgOpenTablePrivateChoiceV1({ ...x.input,...locator,reviewHash: prepared.reviewHash })
+    let disclosureHash: string | undefined
+    if (audience === 'actor:hero') {
+      const prepared = await prepareTtrpgOpenTablePrivateChoiceV1({ ...x.input,...locator })
+      await discloseTtrpgOpenTablePrivateChoiceV1({ ...x.input,...locator,reviewHash: prepared.reviewHash })
+      disclosureHash = prepared.reviewHash
+    }
     const before = await readProductRuntimeState(x.f.sessionId),op = (await readTtrpgOpenTableV1(x.input)).player!.operation!
-    const selection = { ...x.input,...locator,riskHash: op.riskHash,disclosureHash: prepared.reviewHash }
+    expect(op.risk.privateRoll).toBe(audience === 'actor:hero')
+    const selection = { ...x.input,...locator,riskHash: op.riskHash,...(disclosureHash ? { disclosureHash } : {}) }
     await expect(chooseTtrpgOpenTableConsequenceV1({ ...selection,alternativeKey: 'large' })).rejects.toThrow(/费用|资源/)
     expect(await readProductRuntimeState(x.f.sessionId)).toEqual(before)
     const event = await chooseTtrpgOpenTableConsequenceV1({ ...selection,alternativeKey: 'small' })

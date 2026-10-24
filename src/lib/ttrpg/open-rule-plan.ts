@@ -292,14 +292,21 @@ export async function createTtrpgOpenRulePlanV1(input: {
   })
   const maximumWorldTurns = input.content.campaign.stageClosurePolicy.maximumWorldTurns
   if (run.worldTime.worldTurn >= maximumWorldTurns || run.worldTime.worldTurn + timeCostWorldTurns > maximumWorldTurns) fail('该阶段已达或将超过最大世界轮次；请明确收束/存档，不能继续耗时行动')
+  // Hidden-dice policy governs actual randomness. A public deterministic action
+  // has a public result; private consequences and explicit discovery keep their
+  // existing disclosure route. Stored plans are never re-derived here.
+  const action = request.route === 'existing-action' ? rulePack.actions.find(action => action.key === request.ruleKey) : null
+  const publicAutomaticAction = action !== null && action !== undefined
+    && !action.effects.some(effect => effect.kind === 'check' || effect.kind === 'damage')
+    && !discoveryPlan && effectTemplates.every(template => template.audience === 'public' || template.audience === 'party')
   return parseTtrpgOpenRulePlanV1({ schema: 'storyforge.ttrpg-open-rule-plan', version: 1, request,
     epochKey: epoch.epochKey, rulePackContentHash: input.content.rulePack.contentHash, runtimeSourceHash: input.runtimeSourceHash,
     authorizationHash: await hashProductProductionValueV2(auth), mechanicalStateHash: await ttrpgOpenMechanicalStateHashV1(input.state),
     ...(interaction ? { interaction } : {}),rulePack, genericCheck, effectTemplates, timeCostWorldTurns, affectedActorKeys: [...affected], requiredApprovals,
     stageTimeLimit: { openedAtWorldTurn: run.stage.openedAtWorldTurn, maximumWorldTurns },
     ...(discoveryPlan ? { discoveryPlan } : {}),
-    rollVisibility: runtime.product.hiddenDicePolicy === 'gm-only' || genericCheck?.audience === 'gm'
-      || genericCheck?.audience.startsWith('actor:') ? 'gm-only' : 'public',
+    rollVisibility: !publicAutomaticAction && (runtime.product.hiddenDicePolicy === 'gm-only' || genericCheck?.audience === 'gm'
+      || genericCheck?.audience.startsWith('actor:')) ? 'gm-only' : 'public',
     skillValues: Object.fromEntries([...new Set([request.actorKey, ...(request.targetKey ? [request.targetKey] : [])])].map(actorKey => {
       const template = input.content.campaign.characterTemplates.find(template => template.characterKey === actorKey)
       const custom = runtime.product.characterCustomizations.find(custom => custom.characterKey === actorKey)

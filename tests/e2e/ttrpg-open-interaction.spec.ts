@@ -19,6 +19,7 @@ for (const kind of ['move','retreat'] as const) test(`explicit ${kind} binding p
   await card.getByRole('button',{ name: '提出行动，查看风险',exact: true }).click()
   await expect(page.getByRole('region',{ name: '当前行动',exact: true })).toContainText(`明确的${kind}互动`)
   if (kind === 'retreat') await expect(page.getByRole('region',{ name: '当前行动',exact: true })).toContainText('撤退会使混乱值增加')
+  await expect(page.getByRole('region',{ name: '当前行动',exact: true })).not.toContainText('保密裁定')
   for (let i = 0;i < 3 && await page.getByRole('button',{ name: '同意以上风险与代价',exact: true }).count();i++) {
     const buttons = page.getByRole('button',{ name: '同意以上风险与代价',exact: true }),n = await buttons.count();await buttons.first().click();await expect(buttons).toHaveCount(n - 1)
   }
