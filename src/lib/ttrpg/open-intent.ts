@@ -481,9 +481,9 @@ function requiredTargetMissing(
   return false
 }
 
-function actionTargetInvalid(action: RuleActionDefinitionV1, targetRefs: readonly string[]): boolean {
+function actionTargetInvalid(action: RuleActionDefinitionV1, targetRefs: readonly string[], selfActorKey?: string): boolean {
   if (action.target === 'single-ally' || action.target === 'single-enemy') return targetRefs.length !== 1
-  if (action.target === 'self') return targetRefs.length > 0
+  if (action.target === 'self') return targetRefs.length > 0 && !(selfActorKey && targetRefs.length === 1 && targetRefs[0] === selfActorKey)
   return false
 }
 
@@ -668,7 +668,7 @@ function routeWithSnapshot(intent: TtrpgOpenIntentV1, snapshot: TtrpgOpenIntentR
     if (fullActor?.actionKeys && !fullActor.actionKeys.includes(action.key)) {
       return rejectedPreview(intent, '当前角色没有被授予该规则行动')
     }
-    if (actionTargetInvalid(action, intent.targetRefs)) {
+    if (actionTargetInvalid(action, intent.targetRefs, routingVersion === 2 ? actor.characterKey : undefined)) {
       return clarificationPreview(intent, requiredTargetMissing(action, null, intent.targetRefs) ? ['targetRefs'] : ['targetRefs'], '目标数量与规则行动不匹配')
     }
   }

@@ -198,6 +198,14 @@ export function applyTtrpgOpenOperationEventV1(state: ProductRuntimeState, event
     if (stable(causeRef) !== stable(receipt.sourceRef)) p.fail('效果因果不属于实际规则事件')
     if (step.kind === 'mechanics') {
       if (payload.effectPlan !== null) p.fail('基础机械步骤不能注入额外效果计划')
+      // Resolution already used the owner's existing conditions. Age them once,
+      // then apply fresh/refreshed statuses so they survive the granting action.
+      if (operation.plan.conditionTiming === 'actor-action-v1'
+        && (receipt.result.check !== null || operation.plan.timeCostWorldTurns > 0)) {
+        const actorKey = operation.plan.request.actorKey, conditions = runtime.product.conditions[actorKey]
+        if (conditions) runtime.product.conditions[actorKey] = conditions.flatMap(condition => condition.duration === null ? [condition]
+          : condition.duration > 1 ? [{ ...condition, duration: condition.duration - 1 }] : [])
+      }
       applyTtrpgMechanicalResultV1(state, receipt.result)
       if (operation.plan.request.controllerMode === 'ai') {
         const actorKey = operation.plan.request.actorKey
@@ -257,9 +265,12 @@ export function applyTtrpgOpenOperationEventV1(state: ProductRuntimeState, event
     const advanced = advanceOpenWorldTimeV1(run, reason, event.sequence)
     run.worldTime = advanced.worldTime
     run.consultedThisWorldTurn = 0
-    for (const [actorKey, conditions] of Object.entries(runtime.product.conditions)) {
-      runtime.product.conditions[actorKey] = conditions.flatMap(condition => condition.duration === null ? [condition]
-        : condition.duration > 1 ? [{ ...condition, duration: condition.duration - 1 }] : [])
+    // Plans without the explicit policy retain their original world-tick replay.
+    if (operation.plan.conditionTiming !== 'actor-action-v1') {
+      for (const [actorKey, conditions] of Object.entries(runtime.product.conditions)) {
+        runtime.product.conditions[actorKey] = conditions.flatMap(condition => condition.duration === null ? [condition]
+          : condition.duration > 1 ? [{ ...condition, duration: condition.duration - 1 }] : [])
+      }
     }
     if (Object.prototype.hasOwnProperty.call(payload, 'recordPressureTurn')) {
       p.literal(payload.recordPressureTurn, true, 'record pressure turn')

@@ -40,6 +40,7 @@ export interface TtrpgOpenRulePlanV1 {
   requiredApprovals: Array<{ actorKey: string; allowedSeatKeys: string[] }>
   skillValues: Record<string, number>
   rollVisibility: 'public' | 'gm-only'
+  conditionTiming?: 'actor-action-v1'
   discoveryPlan?: TtrpgOpenDiscoveryPlanV1
   interaction?: TtrpgOpenInteractionBindingV1
   stageTimeLimit?: { openedAtWorldTurn: number; maximumWorldTurns: number }
@@ -132,9 +133,10 @@ export function parseTtrpgOpenRulePlanV1(value: unknown): TtrpgOpenRulePlanV1 {
   const hasInteraction = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value,'interaction')
   const hasDiscovery = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'discoveryPlan')
   const hasStageLimit = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'stageTimeLimit')
+  const hasConditionTiming = value !== null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'conditionTiming')
   const r = p.record(value, ['schema', 'version', 'request', 'epochKey', 'rulePackContentHash', 'runtimeSourceHash',
     'authorizationHash', 'mechanicalStateHash', 'rulePack', 'genericCheck', 'effectTemplates', 'timeCostWorldTurns',
-    'affectedActorKeys', 'requiredApprovals', 'skillValues', 'rollVisibility', ...(hasDiscovery ? ['discoveryPlan'] : []), ...(hasStageLimit ? ['stageTimeLimit'] : []),...(hasInteraction ? ['interaction'] : [])], 'rule plan')
+    'affectedActorKeys', 'requiredApprovals', 'skillValues', 'rollVisibility', ...(hasDiscovery ? ['discoveryPlan'] : []), ...(hasStageLimit ? ['stageTimeLimit'] : []),...(hasConditionTiming ? ['conditionTiming'] : []),...(hasInteraction ? ['interaction'] : [])], 'rule plan')
   p.literal(r.schema, 'storyforge.ttrpg-open-rule-plan', 'schema'); p.literal(r.version, 1, 'version')
   const request = parseTtrpgOpenRuleRequestV1(r.request), rulePack = parseRulePackV1(r.rulePack)
   const interaction = hasInteraction ? parseTtrpgOpenInteractionBindingV1(r.interaction) : undefined
@@ -165,6 +167,7 @@ export function parseTtrpgOpenRulePlanV1(value: unknown): TtrpgOpenRulePlanV1 {
     mechanicalStateHash: p.hash(r.mechanicalStateHash, 'mechanical hash'),
     timeCostWorldTurns: p.integer(r.timeCostWorldTurns, 'time cost', 0, 10), affectedActorKeys, requiredApprovals,
     skillValues: p.numericRecord(r.skillValues, 'skillValues'), rollVisibility: p.oneOf(r.rollVisibility, ['public', 'gm-only'], 'roll visibility'),
+    ...(hasConditionTiming ? { conditionTiming: p.oneOf(r.conditionTiming, ['actor-action-v1'], 'condition timing') } : {}),
     ...(discoveryPlan ? { discoveryPlan } : {}), ...(stageTimeLimit ? { stageTimeLimit } : {}) }
 }
 
@@ -303,6 +306,7 @@ export async function createTtrpgOpenRulePlanV1(input: {
     epochKey: epoch.epochKey, rulePackContentHash: input.content.rulePack.contentHash, runtimeSourceHash: input.runtimeSourceHash,
     authorizationHash: await hashProductProductionValueV2(auth), mechanicalStateHash: await ttrpgOpenMechanicalStateHashV1(input.state),
     ...(interaction ? { interaction } : {}),rulePack, genericCheck, effectTemplates, timeCostWorldTurns, affectedActorKeys: [...affected], requiredApprovals,
+    conditionTiming: 'actor-action-v1',
     stageTimeLimit: { openedAtWorldTurn: run.stage.openedAtWorldTurn, maximumWorldTurns },
     ...(discoveryPlan ? { discoveryPlan } : {}),
     rollVisibility: !publicAutomaticAction && (runtime.product.hiddenDicePolicy === 'gm-only' || genericCheck?.audience === 'gm'

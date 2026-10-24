@@ -110,7 +110,7 @@ import { parseTtrpgOpenEpochV1, frozenTtrpgOpenEpochBudgetV1,
 import { key as openKey, text as openText, hash as openHash, list as openList } from "./open-contract-parse";
 import { hashProductProductionValueV2 } from "../product-production/hash";
 import { createTtrpgOpenRulePlanV1, ttrpgOpenMechanicalStateHashV1, parseTtrpgOpenRuleRequestV1, type TtrpgOpenRuleRequestV1 } from './open-rule-plan';
-import { resolveTtrpgOpenIntentTargetV1 } from './open-rule-request-contract';
+import { resolveTtrpgOpenIntentTargetV1, resolveTtrpgOpenIntentTargetV2 } from './open-rule-request-contract';
 import { parseTtrpgOpenOperationV1, parseTtrpgOpenRuleReceiptV1, ttrpgOpenOperationStepsV1, nextTtrpgOpenOperationStepV1, ttrpgOpenOperationRuleCauseV1 } from './open-operation';
 import { parseTtrpgOpenRulePlanV1 } from './open-rule-plan';
 import { ttrpgOpenRecoveryApprovalsV1, ttrpgOpenAncestorRuleReceiptForTaskV1, ttrpgOpenCoveredBusinessKeysV1 } from './open-branch-recovery';
@@ -1786,7 +1786,7 @@ async function startTtrpgOpenSemanticOperationV1(input: TtrpgOpenSemanticOperati
       if (Object.values(effectBindings).some(bindings => Object.values(bindings).some(ref => ref !== null && !allowedBindings.has(ref)))) {
         throw new Error('[ttrpg-open-intent] 后果绑定引用了当前角色不可见的对象');
       }
-      const target = resolveTtrpgOpenIntentTargetV1({ route: ruleRoute,actorKey: candidate.actorKey,targetRefs: intent.targetRefs,
+      const target = (routingVersion === 2 ? resolveTtrpgOpenIntentTargetV2 : resolveTtrpgOpenIntentTargetV1)({ route: ruleRoute,actorKey: candidate.actorKey,targetRefs: intent.targetRefs,
         actionTarget: view.view.rules.actions.find(action => action.actionKey === ruleKey)?.target,currentLocationRef: view.view.self.locationKey });
       const request = clarification?.request ?? parseTtrpgOpenRuleRequestV1({ route: ruleRoute, ruleKey, actorKey: candidate.actorKey,...(interactionKey ? { interactionKey } : {}),
         targetKey: target.targetKey, controllerMode: intent.source.startsWith('companion:') ? 'ai' : 'human', effectBindings });

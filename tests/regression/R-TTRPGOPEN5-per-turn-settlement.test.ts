@@ -1,5 +1,5 @@
 import { setupPerTurnConsequenceFixtureV1 } from '../helpers/open-ttrpg-per-turn'
-import { afterEach,beforeEach,describe,expect,it } from 'vitest'
+import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { readProductRuntimeState,parseProductRuntimeState,replayProductRuntimeEvents,applyProductRuntimeEvent } from '../../src/lib/product/runtime-core'
 import { setupPressureFixtureV1,nextPressureInputV1 } from '../helpers/open-ttrpg-pressure'
@@ -10,12 +10,20 @@ import { resumeTtrpgOpenPressureV1 } from '../../src/lib/ttrpg/open-pressure-coo
 import { prepareTtrpgOpenPressureEffectV1,proposeTtrpgOpenPressureEffectV1,confirmTtrpgOpenPressureEffectV1,applyTtrpgOpenPressureEffectV1,advanceTtrpgWorldTurnV1,advanceTtrpgOpenPressureV1 } from '../../src/lib/ttrpg/runtime-commands'
 import { exportProjectJSON,importProjectJSON } from '../../src/lib/export/json-export'
 import legacy from '../fixtures/ttrpg-open-paid-turn-legacy-v1.json'
+import * as plans from '../../src/lib/ttrpg/open-rule-plan'
 
 async function replay(sessionId: number) {
   const row = (await db.productRuntimeSessions.get(sessionId))!,events = await db.productRuntimeEvents.where('sessionId').equals(sessionId).sortBy('sequence')
   expect(replayProductRuntimeEvents(parseProductRuntimeState(row.initialStateJson),events)).toEqual(await readProductRuntimeState(sessionId))
 }
 const pendingEffect = setupPerTurnConsequenceFixtureV1
+function useLegacyConditionTiming(enabled: boolean) {
+  if (!enabled) return
+  const create = plans.createTtrpgOpenRulePlanV1
+  vi.spyOn(plans,'createTtrpgOpenRulePlanV1').mockImplementation(async input => {
+    const plan = await create(input);Reflect.deleteProperty(plan,'conditionTiming');return plan
+  })
+}
 
 async function applyActualEffect(x: Awaited<ReturnType<typeof pendingEffect>>) {
   const locator = { ...x.command,cycleKey: x.cycle.cycleKey,workKey: x.work.workKey },request = { bindings: { actor: 'hero' },alternativeKey: null }
@@ -27,7 +35,7 @@ async function applyActualEffect(x: Awaited<ReturnType<typeof pendingEffect>>) {
   expect((await applyTtrpgOpenPressureEffectV1(input)).sequence).toBe(event.sequence)
 }
 describe('R-TTRPGOPEN5 actual per-worldTurn settlement', { timeout: 60000 },() => {
-  beforeEach(async () => { await db.delete();await db.open() });afterEach(() => db.close())
+  beforeEach(async () => { await db.delete();await db.open() });afterEach(() => { vi.restoreAllMocks();db.close() })
   it('requires each real pressure and situation checkpoint before the next paid turn',async () => {
     const x = await setupPressureFixtureV1({ turns: 3,isolateSituations: true }),sessionId = x.f.sessionId
     await resumeTtrpgOpenOperationV1(x.command)
@@ -48,7 +56,8 @@ describe('R-TTRPGOPEN5 actual per-worldTurn settlement', { timeout: 60000 },() =
     for (let i = 1;i < ticks.length;i++) expect(run.situationCycles![i - 1].completedRef!.sequence).toBeLessThan(ticks[i].sequence)
     await replay(sessionId)
   })
-  it('stops on first-turn cost and applies its condition before evaluating the next turn',async () => {
+  it.each([true,false])('stops on first-turn cost and applies its condition before evaluating the next turn (legacy timing %s)',async legacyTiming => {
+    useLegacyConditionTiming(legacyTiming)
     const x = await pendingEffect(),sessionId = x.f.sessionId
     expect(rt(x.state).openRun!.worldTime.worldTurn).toBe(1)
     await resumeTtrpgOpenOperationV1(x.command);await resumeTtrpgOpenPressureV1(x.command)
@@ -56,12 +65,13 @@ describe('R-TTRPGOPEN5 actual per-worldTurn settlement', { timeout: 60000 },() =
     await applyActualEffect(x);await settleOpenPaidTurnsV1(x.command)
     const final = await readProductRuntimeState(sessionId),run = rt(final).openRun!
     expect(run.worldTime.worldTurn).toBe(3)
-    expect(run.clocks.find(c => c.clockKey === 'temporary.ability')!.value).toBe(1)
-    expect(run.operations[0].pressureTurnConditions!.map(t => (t.conditions.hero ?? []).length)).toEqual([0,1,0])
-    expect(run.pressureCycles!.flatMap(c => c.tickQueue).filter(t => t.clockKey === 'temporary.ability').map(t => t.atWorldTurn)).toEqual([2])
+    expect(run.clocks.find(c => c.clockKey === 'temporary.ability')!.value).toBe(legacyTiming ? 1 : 2)
+    expect(run.operations[0].pressureTurnConditions!.map(t => (t.conditions.hero ?? []).length)).toEqual(legacyTiming ? [0,1,0] : [0,1,1])
+    expect(run.pressureCycles!.flatMap(c => c.tickQueue).filter(t => t.clockKey === 'temporary.ability').map(t => t.atWorldTurn)).toEqual(legacyTiming ? [2] : [2,3])
     await replay(sessionId)
   })
-  it('resumes a real inherited partial first-turn consequence and a complete backup without replaying paid time',async () => {
+  it.each([true,false])('resumes a real inherited partial first-turn consequence and a complete backup without replaying paid time (legacy timing %s)',async legacyTiming => {
+    useLegacyConditionTiming(legacyTiming)
     const x = await pendingEffect();await applyActualEffect(x)
     const cut = await readProductRuntimeState(x.f.sessionId),child = await forkAndStart(x.f.sessionId)
     await approve(child.sessionId,child.op.operationKey)
@@ -70,7 +80,7 @@ describe('R-TTRPGOPEN5 actual per-worldTurn settlement', { timeout: 60000 },() =
     await settleOpenPaidTurnsV1(command)
     const final = await readProductRuntimeState(child.sessionId),run = rt(final).openRun!
     expect(run.worldTime.worldTurn).toBe(3)
-    expect(run.clocks.find(c => c.clockKey === 'temporary.ability')!.value).toBe(1)
+    expect(run.clocks.find(c => c.clockKey === 'temporary.ability')!.value).toBe(legacyTiming ? 1 : 2)
     expect((await db.productRuntimeEvents.where('sessionId').equals(child.sessionId).toArray()).filter(e => e.type === 'ttrpg.world-turn.advanced')).toHaveLength(2)
     expect(await readProductRuntimeState(x.f.sessionId)).toEqual(cut)
     const projectId = await importProjectJSON(await exportProjectJSON(x.f.scope.projectId)),rows = await db.productRuntimeSessions.where('projectId').equals(projectId).toArray()

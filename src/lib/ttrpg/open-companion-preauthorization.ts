@@ -9,7 +9,7 @@ import { parseTtrpgOpenSituationFrozenContentV1 } from './open-situation-runtime
 import { ttrpgOpenPredicateContextV1 } from './open-rule-plan'
 import * as p from './open-contract-parse'
 import { assertTtrpgOpenDelegatedCompanionProposalV1 } from './open-hosting-delegation'
-import { resolveTtrpgOpenIntentTargetV1 } from './open-rule-request-contract'
+import { resolveTtrpgOpenIntentTargetV1, resolveTtrpgOpenIntentTargetV2 } from './open-rule-request-contract'
 export interface TtrpgOpenCompanionPreauthorizationV1 {
   hostingDelegationRef?: TtrpgOpenSourceRefV1
   sourceRef: TtrpgOpenSourceRefV1; authorizationRef: TtrpgOpenSourceRefV1; candidateHash: string; actionKind: 'observe' | 'talk' | 'assist' | 'move' | 'low-risk-check'; basis: 'session-zero-policy'
@@ -29,7 +29,7 @@ export function previewTtrpgOpenCompanionPermissionV1(state: ProductRuntimeState
   const preview = (operation.intentEvidence?.routingVersion === 2 ? routeTtrpgOpenIntentV2 : routeTtrpgOpenIntentV1)(intent, { rulePack: content.rulePack.content, campaign: content.campaign, actors, predicateContext: context })
   const action = operation.plan.rulePack.actions.find(a => a.key === operation.plan.request.ruleKey)
   if (operation.intentEvidence?.sceneScope) {
-    const target = resolveTtrpgOpenIntentTargetV1({ route: operation.plan.request.route,actionTarget: action?.target,
+    const target = (operation.intentEvidence?.routingVersion === 2 ? resolveTtrpgOpenIntentTargetV2 : resolveTtrpgOpenIntentTargetV1)({ route: operation.plan.request.route,actionTarget: action?.target,
       actorKey,targetRefs: intent.targetRefs,currentLocationRef: state.entities[actorKey]?.locationKey ?? null })
     if (target.targetKey !== operation.plan.request.targetKey || stable(target.sceneScope ?? null) !== stable(operation.intentEvidence.sceneScope)) p.fail('队友预授权的原意图与当前场景范围不一致')
   }

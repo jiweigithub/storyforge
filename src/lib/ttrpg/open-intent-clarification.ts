@@ -13,7 +13,7 @@ import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import type { TtrpgOpenOperationV1 } from './open-operation'
 import type { TtrpgOpenModelCallV1 } from './open-model-calls'
 import type { TtrpgOpenIntentV1 } from './open-intent'
-import { resolveTtrpgOpenIntentTargetV1, type TtrpgOpenSceneScopeV1 } from './open-rule-request-contract'
+import { resolveTtrpgOpenIntentTargetV1, resolveTtrpgOpenIntentTargetV2, type TtrpgOpenSceneScopeV1 } from './open-rule-request-contract'
 
 type View = Awaited<ReturnType<typeof loadTtrpgOpenHumanViewV1>>['view']
 function knownRefs(view: View, actorKey: string) {
@@ -141,7 +141,7 @@ async function prepareClarifiedRuleRequest(input: ClarifiedRuleInput,routingVers
   const ruleKey = route === 'existing-action' ? preview.routeDetail.actionKey : route === 'generic-check' ? preview.routeDetail.checkKey : null
   if (!ruleKey || route !== 'existing-action' && route !== 'generic-check') return { request: null }
   const rule = inspected.review.catalog.rules.find(r => r.route === route && r.ruleKey === ruleKey && r.interactionKey === interactionKey)
-  const target = resolveTtrpgOpenIntentTargetV1({ route,actorKey: candidate.actorKey,targetRefs: selection.targetRefs,
+  const target = (routingVersion === 2 ? resolveTtrpgOpenIntentTargetV2 : resolveTtrpgOpenIntentTargetV1)({ route,actorKey: candidate.actorKey,targetRefs: selection.targetRefs,
     actionTarget: input.content.rulePack.content.actions.find(a => a.key === ruleKey)?.target,currentLocationRef: inspected.currentLocationRef })
   const request = parseTtrpgOpenRuleRequestV1({ route,ruleKey,actorKey: candidate.actorKey,targetKey: target.targetKey,
     controllerMode: candidate.intent!.source.startsWith('companion:') ? 'ai' : 'human',effectBindings: input.bindings,

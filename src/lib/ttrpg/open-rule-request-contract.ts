@@ -25,6 +25,13 @@ export function resolveTtrpgOpenIntentTargetV1(input: {
   return { targetKey: input.targetRefs[0] ?? null }
 }
 
+/** V2 may explicitly identify the acting character; V1's empty implicit self stays frozen. */
+export function resolveTtrpgOpenIntentTargetV2(input: Parameters<typeof resolveTtrpgOpenIntentTargetV1>[0]): ReturnType<typeof resolveTtrpgOpenIntentTargetV1> {
+  const ownSelf = input.route === 'existing-action' && input.actionTarget === 'self'
+    && input.targetRefs.length === 1 && input.targetRefs[0] === input.actorKey
+  return resolveTtrpgOpenIntentTargetV1(ownSelf ? { ...input,targetRefs: [] } : input)
+}
+
 export interface TtrpgOpenDiscoveryRequestV1 {
   situationKey: string; evidenceRef: string; interventionPointKey: string
   effectBindings: Record<string, Record<string, string | null>>
