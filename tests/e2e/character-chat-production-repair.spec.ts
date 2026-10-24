@@ -137,7 +137,7 @@ for (const {rejectedRepair, referenceWire, invalidOption = false, privateKnownFa
     const body = route.request().postDataJSON()
     const prompt = body.messages.map((message: {content: string}) => message.content).join('\n')
     expect(body.response_format).toMatchObject(privateKnownFact && prompt.includes('开场的语义审查者')
-      ? {type: 'json_schema', json_schema: {name: 'chat_opening_review_proof_citations_v1', strict: true}}
+      ? {type: 'json_schema', json_schema: {name: 'chat_opening_review_relations_v1', strict: true}}
       : privateKnownFact && requests.length === 0
         ? {type: 'json_schema', json_schema: {name: 'chat_opening_source_complete_v1', strict: true}}
         : {type: 'json_object'})

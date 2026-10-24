@@ -1,4 +1,4 @@
-import {chatOpeningProofReviewSchemaV1, chatOpeningProofReviewPromptV1} from '../../src/lib/character-interaction/opening-review-proof-citations'
+import {chatOpeningRelationalReviewSchemaV1, chatOpeningRelationalReviewPromptV1} from '../../src/lib/character-interaction/opening-review-relations'
 import {estimateTokens} from '../../src/lib/ai/context-budget'
 import {estimateChatRequestOptionsTokens} from '../../src/lib/ai/client'
 import {afterEach, beforeEach, expect, it} from 'vitest'
@@ -77,8 +77,8 @@ it.each([false, true])('carries author-confirmed units through real production c
       if (input.task.taskKey === 'content.chat-opening-review') {
         const source = JSON.parse((await db.productBuildArtifacts.filter(row => row.buildId === input.buildId && row.artifactKey === 'design.game').last())!.payloadJson)
         const candidates = JSON.parse((await db.productBuildArtifacts.filter(row => row.buildId === input.buildId && row.artifactKey === 'content.chat-candidates').last())!.payloadJson)
-        const schema = chatOpeningProofReviewSchemaV1(source, candidates)
-        const total = estimateTokens(input.contextText + chatOpeningProofReviewPromptV1()) + estimateChatRequestOptionsTokens({jsonSchema: schema})
+        const schema = chatOpeningRelationalReviewSchemaV1(source, candidates)
+        const total = estimateTokens(input.contextText + chatOpeningRelationalReviewPromptV1()) + estimateChatRequestOptionsTokens({jsonSchema: schema})
         expect(total, 'Complete author source, catalog and complete output schema must fit the original review input reservation').toBeLessThanOrEqual(input.task.budgetReservation.inputTokens)
       }
       return createConfiguredProductProductionExecutorV1({production: (await db.productProductions.get(productionId))!, brief, runText})(input)

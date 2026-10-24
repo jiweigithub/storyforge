@@ -161,7 +161,7 @@ it.each(['repair', 'missing', 'misplaced', 'repeat-error', 'rewrite', 'budget', 
       const isOpening = request.system.includes('初始情境编辑')
       const legacy = ['legacy', 'legacy-v7', 'legacy-v8', 'refs-private-v9', 'refs-private-v10'].includes(scenario)
       if (isOpening && !calls.length && !legacy) expect(request.jsonSchema).toMatchObject({name: 'chat_opening_source_complete_v1', strict: true})
-      else if (!isOpening) expect(request.jsonSchema).toMatchObject({name: 'chat_opening_review_proof_citations_v1', strict: true})
+      else if (!isOpening) expect(request.jsonSchema).toMatchObject({name: 'chat_opening_review_relations_v1', strict: true})
       else expect(request.jsonSchema).toBeUndefined()
       calls.push({kind: isOpening ? 'opening' : 'review', context: request.contextText, limit: request.maximumOutputTokens})
       if (scenario === 'transport') throw Object.assign(new Error('HTTP 403 forbidden'), {status: 403})

@@ -4737,14 +4737,14 @@ export const AGENT_SKILLS = [
   },
   {
     version: 1, id: 'character.chat-opening-review', agentId: 'outline', defaultForAgent: false,
-    label: '角色聊天开场叙事审查', owner: 'character-chat-product', promptVersion: 'chat-opening-review-v13',
+    label: '角色聊天开场叙事审查', owner: 'character-chat-product', promptVersion: 'chat-opening-review-v14',
     executionMode: 'product-production', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: ['product-production.chat-opening-review-inputs'], optionalContextSourceKeys: [],
     inputPolicy: productProductionInputPolicy(['product-production.chat-opening-review-inputs']),
     contextCompression: compressionPolicy(['product-production.chat-opening-review-inputs']),
     maxOutputTokens: 15_000,
     writeTargets: [{table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts'}],
-    lastVerifiedAt: '2026-10-24', regressionTests: ['R-CHAT-02-opening-proof-citations', 'R-CHAT-02-opening-review-keyed', 'R-CHAT-02-opening-review-references', 'R-CHAT-02-opening-development', 'R-CHAT-02-opening-review-output', 'R-CHAT-02-opening-continuation', 'R-CHAT-02-opening-agency', 'R-CHAT-02-opening-review', 'R-CHAT-02-narrative-production'],
+    lastVerifiedAt: '2026-10-24', regressionTests: ['R-CHAT-02-opening-review-relations', 'R-CHAT-02-opening-proof-citations', 'R-CHAT-02-opening-review-keyed', 'R-CHAT-02-opening-review-references', 'R-CHAT-02-opening-development', 'R-CHAT-02-opening-review-output', 'R-CHAT-02-opening-continuation', 'R-CHAT-02-opening-agency', 'R-CHAT-02-opening-review', 'R-CHAT-02-narrative-production'],
   },
   {
     version: 1,
