@@ -23,7 +23,7 @@ async function seed(page: Page) {
     const load = new Function('p', 'return import(p)')
     const fixture = await load('/storyforge/tests/helpers/chat-narrative-fixture.ts'), api = await load('/storyforge/src/lib/character-interaction/runtime-api.ts')
     const skills = await load('/storyforge/src/lib/agent/skill-registry.ts')
-    if (skills.getAgentSkillV1('character.chat-narrative-action').promptVersion !== 'chat-narrative-action-v71'
+    if (skills.getAgentSkillV1('character.chat-narrative-action').promptVersion !== 'chat-narrative-action-v72'
       || skills.getAgentSkillV1('character.chat-narrative-action-review').promptVersion !== 'chat-narrative-action-review-v42') throw Error('unexpected default control contract')
     const f = await fixture.seedChatNarrativeRuntimeFixture({directorBudget: 30})
     const version = await api.readProductRuntimeStateVersion(f.sessionId)
@@ -39,7 +39,7 @@ async function seed(page: Page) {
   }, permission)
 }
 
-async function provider(page: Page, handoff: {source: {messageId: string; sequence: number}}) {
+async function provider(page: Page, handoff: {version: number; source: {messageId: string; sequence: number}}) {
   const calls: string[] = []
   await page.route('https://control-handoff.invalid/**', async route => {
     const request = route.request().postDataJSON(), text = JSON.stringify(request.messages)
@@ -53,8 +53,13 @@ async function provider(page: Page, handoff: {source: {messageId: string; sequen
       expect(delivered).toMatchObject({messageId: handoff.source.messageId, sequence: handoff.source.sequence, speakerKey: 'guard', text: permission})
     }
     if (step === 'result') expect(request.messages[2].content).toContain('outcome/action/handoff')
+    if (step === 'review' && handoff.version === 4) {
+      expect(request.messages[0].content).toContain('latest-player-response')
+      expect(text).toContain('嗯，我在听。')
+    }
     const output = step === 'choice' ? choice : step === 'result' ? {outcome: 'handoff', action: null, handoff}
-      : {checks: ['current-decision', 'actual-dependency', 'available-direction', 'player-agency', 'visibility'].map(check => ({check, passed: true, reason: privateReason}))}
+      : {checks: ['current-decision', 'actual-dependency', 'available-direction', 'player-agency', 'visibility',
+        ...(handoff.version === 4 ? ['latest-player-response'] : [])].map(check => ({check, passed: true, reason: privateReason}))}
     await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   return calls
@@ -97,6 +102,32 @@ for (const width of [390, 1440]) test(`reviewed handoff adds no bubble and survi
   expect(calls).toEqual(['choice', 'result', 'review'])
   await expect(page.getByText(permission, {exact: true})).toHaveCount(1)
   await expect(page.getByText(privateReason, {exact: false})).toHaveCount(0)
+})
+
+test('sending a non-decision acknowledgement retains the player message without a repeated question after refresh', async ({page}) => {
+  await page.setViewportSize({width: 390, height: 900})
+  const f = await seed(page), calls = await provider(page, {...f.handoff, version: 4})
+  await open(page, f)
+  await page.getByLabel('本轮行动角色', {exact: true}).selectOption('guard')
+  const before = await read(page, f.sessionId)
+  await page.getByLabel('发送给角色的消息', {exact: true}).fill('嗯，我在听。')
+  await page.getByRole('button', {name: '发送并生成', exact: true}).click()
+  await expect.poll(async () => (await read(page, f.sessionId)).runs[0]?.status).toBe('completed')
+  const after = await read(page, f.sessionId)
+  expect(after.state.interaction.messages).toHaveLength(before.state.interaction.messages.length + 1)
+  expect(after.state.interaction.messages.slice(-1)[0]).toMatchObject({role: 'player', text: '嗯，我在听。'})
+  expect(after.state.interaction.chatNarrative.situation).toEqual(before.state.interaction.chatNarrative.situation)
+  expect(after.state.interaction.chatNarrative.triggers.slice(-1)[0]).toMatchObject({kind: 'player-response', status: 'waiting-player',
+    actionSequences: [], controlHandoff: {version: 4, sourceMessageId: 'permission'}})
+  expect(after.terminal).toHaveLength(1)
+  expect(calls).toEqual(['choice', 'result', 'review'])
+  await page.reload()
+  await expect(page.getByTestId('chat-narrative-controls')).toContainText('角色正在等你的回应')
+  await expect(page.getByText(permission, {exact: true})).toHaveCount(1)
+  await expect(page.getByText('嗯，我在听。', {exact: true})).toHaveCount(1)
+  await expect(page.getByText(privateReason, {exact: false})).toHaveCount(0)
+  expect((await read(page, f.sessionId)).state).toEqual(after.state)
+  expect(calls).toEqual(['choice', 'result', 'review'])
 })
 
 test('refresh resumes a saved control result through review without repeating selection or expression', async ({page}) => {

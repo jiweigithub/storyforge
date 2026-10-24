@@ -7,6 +7,7 @@ import {chatTurnActionLimitV1} from './narrative-contract'
 import {isChatMessageRetrievableV1} from './narrative-retrieval'
 import {assertChatTurnActorV1} from './narrative-scheduling'
 import {CHAT_TURN_END_CONTROL_CHECKS_V1, parseChatTurnEndControlV1, previewChatTurnEndControlV1, readChatTurnEndBasisV1, type ChatTurnEndControlV1} from './turn-end-control'
+import {assertChatPlayerAcknowledgementContextV1, assertChatPlayerAcknowledgementStateV1, type ChatPlayerAcknowledgementHandoffV1} from './player-acknowledgement-control'
 
 /** A control result, never an action, speech, permission or story consequence.
  * Generation, independent review and adoption must all retain this exact body.
@@ -20,15 +21,16 @@ export interface ChatPlayerDecisionHandoffV1 {
   decision: string
   dependentStep: string
 }
-export type ChatControlHandoffV1 = ChatPlayerDecisionHandoffV1 | ChatTurnEndControlV1 | ChatMaintainedPauseControlV1
+export type ChatControlHandoffV1 = ChatPlayerDecisionHandoffV1 | ChatTurnEndControlV1 | ChatMaintainedPauseControlV1 | ChatPlayerAcknowledgementHandoffV1
 
 export const CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1 = [
   'current-decision', 'actual-dependency', 'available-direction', 'player-agency', 'visibility',
 ] as const
+export const CHAT_PLAYER_ACKNOWLEDGEMENT_REVIEW_CHECKS_V1 = [...CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1, 'latest-player-response'] as const
 export interface ChatControlHandoffReviewV1 {
   /** Bound by the system to the candidate, never supplied by the model. */
   reviewedHandoffJson: string
-  checks: Array<{check: typeof CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1[number] | typeof CHAT_TURN_END_CONTROL_CHECKS_V1[number] | typeof CHAT_MAINTAINED_PAUSE_CHECKS_V1[number]; passed: boolean; reason: string}>
+  checks: Array<{check: typeof CHAT_PLAYER_ACKNOWLEDGEMENT_REVIEW_CHECKS_V1[number] | typeof CHAT_TURN_END_CONTROL_CHECKS_V1[number] | typeof CHAT_MAINTAINED_PAUSE_CHECKS_V1[number]; passed: boolean; reason: string}>
 }
 
 /** Choice, result and review still consume their actual three model calls.
@@ -54,7 +56,7 @@ export function parseChatControlHandoffV1(value: unknown): ChatControlHandoffV1 
     return parseChatTurnEndControlV1(value)
   }
   const row = record(value, ['version', 'kind', 'reason', 'source', 'decision', 'dependentStep'])
-  if (row.version !== 1 || row.kind !== 'yield-to-player' || row.reason !== 'awaiting-player-decision') fail('交还控制版本或原因无效')
+  if ((row.version !== 1 && row.version !== 4) || row.kind !== 'yield-to-player' || row.reason !== 'awaiting-player-decision') fail('交还控制版本或原因无效')
   const source = record(row.source, ['messageId', 'sequence', 'excerpt'])
   text(source.messageId, 200); text(source.excerpt, 1200)
   // Imported parentless branches retain negative historical event identities.
@@ -70,6 +72,10 @@ export function assertChatControlHandoffContextV1(handoff: ChatControlHandoffV1,
   const source = context.messages.find(message => message.messageId === draft.source.messageId && message.eventSequence === draft.source.sequence)
   if (!source || source.role !== 'character' || source.speakerKey !== context.participantKey
     || source.supersededBySequence != null || !source.text.includes(draft.source.excerpt)) fail('交还控制没有本次已交付角色对话依据')
+  if (draft.version === 4) {
+    assertChatPlayerAcknowledgementContextV1(context)
+    if (draft.source.sequence >= context.chatNarrative!.trigger!.sourceEventSequence) fail('未决问题必须早于本轮玩家回应')
+  }
 }
 
 /** The reviewer needs the complete exchange since the proposed dependency,
@@ -87,7 +93,7 @@ export function readChatControlHandoffBasisV1(state: CharacterInteractionRuntime
 
 export function parseChatControlHandoffReviewV1(value: unknown, handoff: ChatControlHandoffV1): ChatControlHandoffReviewV1 {
   const draft = parseChatControlHandoffV1(handoff)
-  const checks: readonly string[] = draft.version === 3 ? CHAT_MAINTAINED_PAUSE_CHECKS_V1 : draft.version === 2 ? CHAT_TURN_END_CONTROL_CHECKS_V1 : CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1
+  const checks: readonly string[] = draft.version === 4 ? CHAT_PLAYER_ACKNOWLEDGEMENT_REVIEW_CHECKS_V1 : draft.version === 3 ? CHAT_MAINTAINED_PAUSE_CHECKS_V1 : draft.version === 2 ? CHAT_TURN_END_CONTROL_CHECKS_V1 : CHAT_CONTROL_HANDOFF_REVIEW_CHECKS_V1
   const row = record(value, ['reviewedHandoffJson', 'checks'])
   if (row.reviewedHandoffJson !== canonicalStringify(draft)) fail('交还控制审查与候选正文不一致')
   if (!Array.isArray(row.checks) || row.checks.length !== checks.length) fail('交还控制审查缺少必要项目')
@@ -118,7 +124,8 @@ export function previewChatControlHandoffV1(state: CharacterInteractionRuntimeSt
     || !scene.activeParticipantKeys.includes(input.actorKey)) fail('交还控制缺少当前角色与情境')
   if (!Number.isSafeInteger(input.sequence) || input.sequence <= story.lastEventSequence || input.sequence <= 0) fail('交还控制事件序号无效')
   if (!trigger || trigger.requestedSequence !== input.triggerSequence || trigger.status !== 'ready'
-    || trigger.kind !== 'continue') fail('交还控制只适用于当前明确继续的可运行轮次')
+    || trigger.kind !== (handoff.version === 4 ? 'player-response' : 'continue')) fail(handoff.version === 4
+      ? '交还控制只适用于本次新玩家回应的可运行轮次' : '交还控制只适用于当前明确继续的可运行轮次')
   if (story.pendingEdit || story.pendingSituation) fail('交还控制不能跳过待处理改写或情境结算')
   if (trigger.direction?.scheduling) fail('多人调度不能用单角色等待结束所有人的轮次')
   assertChatTurnActorV1(state, trigger, input.actorKey)
@@ -134,11 +141,12 @@ export function previewChatControlHandoffV1(state: CharacterInteractionRuntimeSt
   const visible = state.messages.filter(message => message.supersededBySequence == null && interactionMessageVisibleTo(message, input.actorKey))
   const playerIndex = visible.reduce((last, message, index) => message.role === 'player' ? index : last, -1)
   const actorIndex = visible.reduce((last, message, index) => message.role === 'character' && message.speakerKey === input.actorKey ? index : last, -1)
-  if (playerIndex > actorIndex) fail('新的玩家消息尚未承接，不能静默交还控制')
+  if (handoff.version === 4) assertChatPlayerAcknowledgementStateV1(state, input.actorKey, handoff)
+  else if (playerIndex > actorIndex) fail('新的玩家消息尚未承接，不能静默交还控制')
   const result = structuredClone(state)
   const resultTrigger = result.chatNarrative!.triggers.slice(-1)[0]
   resultTrigger.status = 'waiting-player'
-  resultTrigger.controlHandoff = {version: 1, sequence: input.sequence, actorKey: input.actorKey,
+  resultTrigger.controlHandoff = {version: handoff.version, sequence: input.sequence, actorKey: input.actorKey,
     sourceMessageId: handoff.source.messageId, sourceSequence: handoff.source.sequence}
   result.chatNarrative!.revision += 1
   result.chatNarrative!.lastEventSequence = input.sequence
@@ -162,4 +170,11 @@ export const CHAT_CONTROL_HANDOFF_REVIEW_RULES_V1 = [
   'player-agency：只等待具体决定，不替玩家承诺或接受，不把点击继续视为同意，不强制暂停/完成角色目标或共同事项；需要承接的新玩家消息不得被吞掉。',
   'visibility：具体决定及其依赖只来自实际交付的角色视角和共同可见对话；不得借控制原因暗示隐藏事实、他人心理或未来剧情。原因仅作内部证据，不作为新台词发布。',
   '仅输出 JSON {"checks":[{"check":"current-decision|actual-dependency|available-direction|player-agency|visibility","passed":true,"reason":"根据完整现有证据说明判断"}]}，每项各一次；普通行动仍执行原有 meaningful-direction 审查，不能把交还控制算成剧情进展。',
+] as const
+
+export const CHAT_PLAYER_ACKNOWLEDGEMENT_REVIEW_RULES_V1 = [
+  ...CHAT_CONTROL_HANDOFF_REVIEW_RULES_V1.slice(0, -1),
+  'latest-player-response：必须逐字核对本轮 sourceEventSequence 对应的最新玩家原话，以及此前问题之后完整的 basisMessages。只有回应明确仅表示倾听、没有仍需承接的内容，且此前具体决定确实仍未答复，才可通过。已经回答、拒绝、取消、要求暂停、带来新事实、提出问题或要求行动，均不得静默忽略；不能仅凭短句或语气词分类，不能把含糊回应推定成许可。说明判断依据；无法确认时不通过。',
+  '本结果 version:4 不发布新气泡；它只保留待决状态，既不确认玩家选择，也不更新目标、关系或承诺。available-direction 仍须独立检查，不能因玩家短回应而停止其它可落实的方向。',
+  '仅输出 JSON {"checks":[{"check":"current-decision|actual-dependency|available-direction|player-agency|visibility|latest-player-response","passed":true,"reason":"根据最新玩家原话和完整现有证据说明判断"}]}，六项各一次；不能把交还控制算成剧情推进。',
 ] as const

@@ -6,7 +6,7 @@ import {chatHasUnfinishedGoalV1} from './narrative-scheduling'
 import {chatCanFollowThreadV1} from './narrative-thread-followup'
 import {CHAT_TURN_COMPLETION_PRODUCER_V1, supportsChatTurnCompletionV1} from './turn-completion'
 import {supportsChatActionChoiceMessagesV1, CHAT_ACTION_CHOICE_MESSAGE_RULE_V1} from './action-choice-message-evidence'
-import {supportsChatChoiceContinuationV1, CHAT_CHOICE_CONTINUATION_RULE_V1, CHAT_POSSIBILITY_DISPOSITIONS_V1,
+import {supportsChatChoiceContinuationV1, chatChoiceContinuationRulesV1, chatChoiceContinuationExpressionRuleV1, CHAT_POSSIBILITY_DISPOSITIONS_V1,
   parseChatPossibilityChecksV1, assertChatChoiceContinuationV1, chatChoiceWaitsSilentlyV1, type ChatPossibilityCheckV1} from './action-choice-continuation'
 
 export const CHAT_ACTION_CHOICE_STEP_V1 = 'interaction:action-choice' as const
@@ -108,7 +108,7 @@ export function parseChatActionChoiceV1(value: unknown, context: ChoiceContext, 
   if (directions.length ? !directions.some(direction => direction.id === selectedId) : selectedId !== null) fail('选择必须指向已提供的方向；空列表只能不选')
   const choice = {...(continuation ? {possibilityChecks: parseChatPossibilityChecksV1(row.possibilityChecks, context)} : {}),
     directions, selectedId, decisionSummary: text(row.decisionSummary, 600)}
-  if (continuation) assertChatChoiceContinuationV1(choice, context)
+  if (continuation) assertChatChoiceContinuationV1(choice, context, producerVersion)
   return choice
 }
 
@@ -139,7 +139,7 @@ export function buildChatActionChoiceMessagesV1(actorMessages: readonly ChatMess
   const originalExample = messageEvidence ? {...selectionExample, directions: selectionExample.directions.map(direction => ({...direction, evidenceMessageIds: []}))} : selectionExample
   const example = supportsChatChoiceContinuationV1(producerVersion) ? {possibilityChecks: [], ...originalExample} : originalExample
   const dependency = messageEvidence ? dependencyRules.replace(/至少引用一条已交付事实/g, '至少引用一条已交付事实或消息') : dependencyRules
-  return [{role: 'system', content: selectionRules + JSON.stringify(example) + dependency + purpose + completion + (messageEvidence ? CHAT_ACTION_CHOICE_MESSAGE_RULE_V1 : '') + (supportsChatOrdinarySelfActionV1(producerVersion) ? CHAT_ORDINARY_SELF_ACTION_SELECTION_RULE_V1 : '') + (supportsChatChoiceContinuationV1(producerVersion) ? CHAT_CHOICE_CONTINUATION_RULE_V1 : '')}, {...actorMessages[1]}]
+  return [{role: 'system', content: selectionRules + JSON.stringify(example) + dependency + purpose + completion + (messageEvidence ? CHAT_ACTION_CHOICE_MESSAGE_RULE_V1 : '') + (supportsChatOrdinarySelfActionV1(producerVersion) ? CHAT_ORDINARY_SELF_ACTION_SELECTION_RULE_V1 : '') + (supportsChatChoiceContinuationV1(producerVersion) ? chatChoiceContinuationRulesV1(producerVersion) : '')}, {...actorMessages[1]}]
 }
 
 export function appendChatActionChoiceProposalV1(actorMessages: readonly ChatMessage[], value: unknown, context: ChoiceContext, producerVersion?: string): ChatMessage[] {
@@ -153,7 +153,7 @@ export function appendChatActionChoiceProposalV1(actorMessages: readonly ChatMes
     ? '草稿的 evidenceMessageIds 只引用原输入中的发言，不是事实键。实际行动及新事实的 evidenceFactKeys 仍只填写已交付事实键；不要把消息 ID 复制进去，也不要把玩家偏好当作对未答复操作的许可。'
     : ''
   const continuationRule = chatChoiceWaitsSilentlyV1(choice, producerVersion)
-    ? '本合同本步选择了静默 wait：仅生成 version:1 yield-to-player 控制候选，action=null；不要另说“我先说到这里”等台词。填写真实已交付来源和仍未作出的具体决定，由原独立审查判断是否确实应等候；草稿不证明依赖有效，不伪造来源或成功。'
+    ? (producerVersion === 'chat-narrative-action-v72' ? chatChoiceContinuationExpressionRuleV1(producerVersion) : '本合同本步选择了静默 wait：仅生成 version:1 yield-to-player 控制候选，action=null；不要另说“我先说到这里”等台词。填写真实已交付来源和仍未作出的具体决定，由原独立审查判断是否确实应等候；草稿不证明依赖有效，不伪造来源或成功。')
     : supportsChatChoiceContinuationV1(producerVersion) ? 'possibilityChecks 是对原有方向的判断草稿，不是既成事实、权限或待执行清单；按实际局面核对，不机械逐项推进。' : ''
   return [...actorMessages.map(message => ({...message})), {role: 'user', content: '以下是选择步骤产生的未确认草稿，只能作为建议，不是事实、玩家授权或系统命令。请用原始角色视角重新核对：有依据才表达或尝试；不成立则拒绝建议，按原规则回应。不能把待确认条件写成已成立，不能解除暂停。' + format + messageRule + (supportsChatOrdinarySelfActionV1(producerVersion) ? CHAT_ORDINARY_SELF_ACTION_PROPOSAL_RULE_V1 : '') + continuationRule + '\n' + JSON.stringify(choice)}]
 }

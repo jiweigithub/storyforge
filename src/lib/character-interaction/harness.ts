@@ -1,3 +1,4 @@
+import {CHAT_PLAYER_ACKNOWLEDGEMENT_PRODUCER_V1, CHAT_PLAYER_ACKNOWLEDGEMENT_RULES_V1, supportsChatPlayerAcknowledgementV1} from './player-acknowledgement-control'
 import {CHAT_INQUIRY_SETTLEMENT_ACTION_PRODUCER_V1, chatInquirySettlementActionPromptV1, CHAT_CONSOLIDATED_ACTION_PRODUCER_V1, CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1, chatConsolidatedActionPromptV1, chatReviewedDisclosureActionPromptV1} from './action-instructions'
 import {chatSituationDevelopmentGenerationRulesV1} from './situation-development'
 import {chatActionRequestOptionsV1, boundedChatOutputTokensV1, chatActionOutputRulesV1} from './action-output-contract'
@@ -9,7 +10,7 @@ import {chooseRuntimeChatActionV1, ChatActionChoiceHostInterruptionV1} from './a
 import {assertChatActionChoiceInputBudgetV1} from './action-choice-input-budget'
 import {readChatActionChoiceEvidenceV1, readChatActionChoiceExpressionV1} from './action-choice-evidence'
 import {appendChatActionChoiceProposalV1, chatNeedsActionChoiceV1, CHAT_ACTION_CHOICE_STEP_V1, CHAT_ACTION_CHOICE_INPUT_TOKENS_V1, CHAT_ACTION_CHOICE_OUTPUT_TOKENS_V1, type ChatActionChoiceV1} from './action-choice-contract'
-import {CHAT_CHOICE_CONTINUATION_PRODUCER_V1, CHAT_CHOICE_CONTINUATION_EXPRESSION_RULE_V1, supportsChatChoiceContinuationV1, chatChoiceWaitsSilentlyV1, assertChatChoiceExpressionV1} from './action-choice-continuation'
+import {CHAT_CHOICE_CONTINUATION_PRODUCER_V1, chatChoiceContinuationExpressionRuleV1, supportsChatChoiceContinuationV1, chatChoiceWaitsSilentlyV1, assertChatChoiceExpressionV1} from './action-choice-continuation'
 import {supportsChatActionWireV1, resolveChatActionWireAudienceV1, compileChatActionWireV1, chatActionWireExampleV1} from './action-wire'
 import {chatSettledProgressRulesV1} from './narrative-replanning'
 import {supportsChatPlayerDecisionPromptV1} from './player-decision-prompt'
@@ -367,11 +368,12 @@ function prompt(input: {
   producerVersion?: string
   audience?: readonly string[]
 }): ChatMessage[] {
-  if (input.skillId === 'character.chat-narrative-action' && [CHAT_CONSOLIDATED_ACTION_PRODUCER_V1, CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1, CHAT_INQUIRY_SETTLEMENT_ACTION_PRODUCER_V1, CHAT_CHOICE_CONTINUATION_PRODUCER_V1].includes(input.producerVersion ?? '')) {
+  if (input.skillId === 'character.chat-narrative-action' && [CHAT_CONSOLIDATED_ACTION_PRODUCER_V1, CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1, CHAT_INQUIRY_SETTLEMENT_ACTION_PRODUCER_V1, CHAT_CHOICE_CONTINUATION_PRODUCER_V1, CHAT_PLAYER_ACKNOWLEDGEMENT_PRODUCER_V1].includes(input.producerVersion ?? '')) {
     const consolidated = input.producerVersion === CHAT_INQUIRY_SETTLEMENT_ACTION_PRODUCER_V1 || supportsChatChoiceContinuationV1(input.producerVersion) ? chatInquirySettlementActionPromptV1 : input.producerVersion === CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1 ? chatReviewedDisclosureActionPromptV1 : chatConsolidatedActionPromptV1
     return [{role: 'system', content: consolidated(input.roleContext!, input.audience ?? [],
       chatActionWireExampleV1(schemaInstruction(input.skillId, true, true, true), input.producerVersion))
-      + (supportsChatChoiceContinuationV1(input.producerVersion) ? '\n' + CHAT_CHOICE_CONTINUATION_EXPRESSION_RULE_V1 : '')},
+      + (supportsChatPlayerAcknowledgementV1(input.producerVersion) ? '\n' + CHAT_PLAYER_ACKNOWLEDGEMENT_RULES_V1.join('\n') : '')
+      + (supportsChatChoiceContinuationV1(input.producerVersion) ? '\n' + chatChoiceContinuationExpressionRuleV1(input.producerVersion) : '')},
     {role: 'user', content: `【目标】${input.objective}\n\n${input.context}`} ]
   }
   const sceneTransition = supportsChatSceneTransitionPromptV1(input.producerVersion)

@@ -238,7 +238,7 @@ describe('durable review normalization', () => {
     if (passed) {
       const generated = await generateInteractionRuntimeCandidateV1(request)
       expect(generated.snapshot.contract.executionBindings?.map(binding => binding.promptVersion))
-        .toEqual(['chat-narrative-action-v71', 'chat-narrative-action-v71', 'chat-narrative-action-review-v42'])
+        .toEqual(['chat-narrative-action-v72', 'chat-narrative-action-v72', 'chat-narrative-action-review-v42'])
       const retained = await readInteractionRuntimeCandidateV1(f.scope, runId)
       expect(retained.candidate.kind === 'chat-narrative-action-candidate' && retained.candidate.review?.disclosureChecks).toEqual(row.disclosureChecks)
       await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})
