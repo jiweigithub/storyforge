@@ -401,7 +401,7 @@ export default function TtrpgPage() {
       </button>
     </section>
   );
-  const compileRevision = (revisionChoice?: 'revise-pending-stage-policy' | 'revise-pending-compatible-opening') =>
+  const compileRevision = (revisionChoice?: 'revise-pending-stage-policy' | 'revise-pending-compatible-opening' | 'revise-pending-authoring') =>
     void run(async () => {
       await flushPendingEditsV1();
       const target = dirty || !row ? await save() : row;
@@ -416,7 +416,7 @@ export default function TtrpgPage() {
         throw new Error("需要一个世界引擎；配置已保存，请到世界引擎页选择版本");
       }
       const id = revisionChoice
-        ? await prepareTtrpgOpenProductionBriefV3({ scope: targetScope, revision: latest.revision, ...(revisionChoice === 'revise-pending-stage-policy' ? { stagePolicyRevision: revisionChoice } : { openingRevision: revisionChoice }) })
+        ? await prepareTtrpgOpenProductionBriefV3({ scope: targetScope, revision: latest.revision, ...(revisionChoice === 'revise-pending-stage-policy' ? { stagePolicyRevision: revisionChoice } : revisionChoice === 'revise-pending-authoring' ? { authoringRevision: revisionChoice } : { openingRevision: revisionChoice }) })
         : await prepareTtrpgBrief(targetScope, latest.revision);
       navigate(path("agent", target, `&production=${id}`));
       setNotice(settings.runFormat === 'open' ? '开放审查方案已保存，请核对并到制作页明确开始。' : '审查方案已保存，请比较提案并确认。尚未开始制作。');
@@ -424,6 +424,7 @@ export default function TtrpgPage() {
   const compile = () => compileRevision();
   const compileStagePolicyRevision = () => compileRevision('revise-pending-stage-policy');
   const compileCompatibleOpeningRevision = () => compileRevision('revise-pending-compatible-opening');
+  const compileAuthoringRevision = () => compileRevision('revise-pending-authoring');
   let handoffId: number | null = null,
     handoffError = "";
   try {
@@ -838,6 +839,10 @@ export default function TtrpgPage() {
                             </button>
                           )}
                           {step === 8 && settings.runFormat === 'open' && productionId && <button className="lf-action" onClick={compileCompatibleOpeningRevision}>为待开始的新版本保存兼容开局</button>}
+                          {step === 8 && settings.runFormat === 'open' && productionId && <div>
+                            <p>完整方案可更新规则、角色安排和其他制作设置，仍使用原冻结世界与读取范围。原发布和存档保留；新版本须另行开始，不能据此宣称旧存档可兼容续团。</p>
+                            <button className="lf-action" onClick={compileAuthoringRevision}>为待开始的新版本更新完整方案</button>
+                          </div>}
                         </div>
                       </fieldset>
                       {row && !row.draft && (

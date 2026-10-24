@@ -49,8 +49,16 @@ export async function reviseTtrpgOpenPendingCompatibleOpeningBriefV1(value: Pend
   return revisePendingBrief(value, 'opening')
 }
 
-async function revisePendingBrief(value: PendingTtrpgOpenBriefRevisionInputV1, mode: 'budget' | 'stage' | 'opening'): Promise<ProductProductionBriefV3> {
-  const stagePolicyRevision = mode === 'stage', openingRevision = mode === 'opening'
+/** Full same-source author revision is a separate decision; old narrow operations stay unchanged. */
+export async function reviseTtrpgOpenPendingAuthoringBriefV1(value: PendingTtrpgOpenBriefRevisionInputV1 & {
+  decision: 'revise-pending-authoring'
+}): Promise<ProductProductionBriefV3> {
+  if (value.decision !== 'revise-pending-authoring') fail('完整方案修订需要本次明确选择')
+  return revisePendingBrief(value, 'authoring')
+}
+
+async function revisePendingBrief(value: PendingTtrpgOpenBriefRevisionInputV1, mode: 'budget' | 'stage' | 'opening' | 'authoring'): Promise<ProductProductionBriefV3> {
+  const stagePolicyRevision = mode === 'stage', openingRevision = mode === 'opening', authoringRevision = mode === 'authoring'
 
   const input = structuredClone(value)
   const { scope, production, row, build, release } = input
@@ -78,11 +86,24 @@ async function revisePendingBrief(value: PendingTtrpgOpenBriefRevisionInputV1, m
     || manifest.productionProvenance.buildNumber !== build.buildNumber
     || manifest.productionProvenance.buildManifestHash !== build.manifestHash
     || manifest.productionProvenance.rootTerminalReceiptHash !== build.rootTerminalReceiptHash) fail('原发布版本与当前制作轮次不一致')
-  if (old.compatibleOpeningRevision?.baseReleaseHash === release.contentHash && !openingRevision) fail('兼容开局方案须沿兼容开局操作继续修订，不能改回普通额度方案')
+  if (old.compatibleOpeningRevision?.baseReleaseHash === release.contentHash && !openingRevision && !authoringRevision) fail('兼容开局方案须沿兼容开局操作继续修订，不能改回普通额度方案')
   let compatibleOpeningRevision: TtrpgCompatibleOpeningRevision | undefined
   const settings = structuredClone(input.settings)
   if (settings.runFormat !== 'open') fail('待开始方案只接受 open 配置')
   settings.wizard.savedRulePackId = null
+  if (authoringRevision) {
+    if (canonical(input.common.source.selection) !== canonical(prior.source.selection)
+      || canonical(input.common.source.startingPoint) !== canonical(prior.source.startingPoint)
+      || input.common.source.worldContentHash !== prior.source.worldContentHash) fail('完整方案修订须保留原冻结世界、起点与读取范围；世界来源变化须另行建立制作')
+    if (canonical(settings) === canonical(old.settings) && canonical(input.rulePack) === canonical(old.rulePack)) fail('完整方案未变化，请先保存本次作者修改')
+    const content = await createTtrpgProductionBriefContentV3({ settingsRevision: input.settingsRevision,
+      settings, rulePack: input.rulePack, worldReference: old.worldReference, sourcePlan: old.sourcePlan })
+    // A previous compatible opening may have disabled text requirements. A full
+    // new authoring revision needs the normal current capabilities and DAG.
+    return parseProductProductionBriefV3({ ...input.common, productionBudget: prior.productionBudget, ttrpgOpen: content,
+      evolution: { ...evolution, affectedLanes: [...new Set([...evolution.affectedLanes,
+        'content', 'product', 'visual', 'audio', 'runtime'])] } })
+  }
   const expectedSettings = structuredClone(old.settings)
   const policy = settings.openAuthoring.runtimePolicy, oldPolicy = expectedSettings.openAuthoring.runtimePolicy
   if (!policy || !oldPolicy) fail('运行边界尚未完成')
