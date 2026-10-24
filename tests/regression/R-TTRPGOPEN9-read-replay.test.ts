@@ -73,4 +73,31 @@ describe('R-TTRPGOPEN9 exact-input bounded pure replay reuse', { timeout: 30000 
     expect(replayTtrpgOpenReadEventsV1(session.initialStateJson, allEvents)).toEqual(expected)
   })
 
+  it('retains a long branch input and result above32MiB while keeping returned state independent', () => {
+    const initial = JSON.stringify({ version: 1, clock: 0, lastSequence: 0, memories: [], narratives: [],
+      entities: { large: { entityKey: 'large', kind: 'location', sourceId: null, name: 'Large replay input', locationKey: null,
+        lifecycleStatus: 'active', attributes: { note: 'x'.repeat(9 * 1024 * 1024) } } } })
+    expect(initial.length * 4).toBeGreaterThan(32 * 1024 * 1024)
+    expect(initial.length * 4).toBeLessThan(64 * 1024 * 1024)
+    const replay = vi.spyOn(core, 'replayProductRuntimeEvents')
+    const first = replayTtrpgOpenReadEventsV1(initial, [])
+    first.entities.large.name = 'CALLER-MUTATED-LARGE-STATE'
+    const second = replayTtrpgOpenReadEventsV1(initial, [])
+    expect(replay).toHaveBeenCalledTimes(1)
+    expect(second).not.toBe(first)
+    expect(second.entities.large.name).toBe('Large replay input')
+    expect(second.entities.large.attributes.note).toHaveLength(9 * 1024 * 1024)
+  })
+  it('falls back to full strict replay when the exact input and result exceed64MiB', () => {
+    const initial = JSON.stringify({ version: 1, clock: 0, lastSequence: 0, memories: [], narratives: [],
+      entities: { large: { entityKey: 'large', kind: 'location', sourceId: null, name: 'Beyond retention bound', locationKey: null,
+        lifecycleStatus: 'active', attributes: { note: 'y'.repeat(17 * 1024 * 1024) } } } })
+    expect(initial.length * 4).toBeGreaterThan(64 * 1024 * 1024)
+    const replay = vi.spyOn(core, 'replayProductRuntimeEvents')
+    const first = replayTtrpgOpenReadEventsV1(initial, []), second = replayTtrpgOpenReadEventsV1(initial, [])
+    expect(replay).toHaveBeenCalledTimes(2)
+    expect(second).not.toBe(first)
+    expect(second.entities.large.attributes.note).toHaveLength(17 * 1024 * 1024)
+  })
+
 })

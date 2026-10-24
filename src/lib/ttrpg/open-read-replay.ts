@@ -2,7 +2,9 @@
 import type { ProductRuntimeEvent } from '../types'
 import { parseProductRuntimeState, replayProductRuntimeEvents } from '../product/runtime-core'
 
-const MAX_REPLAY_BYTES = 32 * 1024 * 1024
+// Keep one exact input/result pair, including a long branch’s inherited snapshot.
+// This bound controls retained pure computation only; every consumer still checks current authority.
+const MAX_REPLAY_BYTES = 64 * 1024 * 1024
 type State = ReturnType<typeof replayProductRuntimeEvents>
 let previous: { initial: string; events: ProductRuntimeEvent[]; state: State } | undefined
 
