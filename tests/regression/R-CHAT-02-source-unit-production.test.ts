@@ -1,3 +1,6 @@
+import {chatOpeningKeyedReviewSchemaV1, chatOpeningKeyedReviewPromptV1} from '../../src/lib/character-interaction/opening-review-keyed'
+import {estimateTokens} from '../../src/lib/ai/context-budget'
+import {estimateChatRequestOptionsTokens} from '../../src/lib/ai/client'
 import {afterEach, beforeEach, expect, it} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import type {ProductReleaseManifestV1} from '../../src/lib/types/product-release'
@@ -5,7 +8,7 @@ import {seedChatSourceUnitConfirmationFixture, sourceUnitAuthorizationReportFixt
 import {saveChatDraftV1, readChatDraftV1} from '../../src/lib/character-interaction/draft-service'
 import {reviewChatSourceUnitConfirmationV1, adoptChatSourceUnitConfirmationV1} from '../../src/lib/character-interaction/source-unit-confirmation-harness'
 import {chatRoleProfileCompilerInput} from '../helpers/chat-role-profile'
-import {chatSituationCandidatesFixture, chatSituationReferenceDraftFixture, chatOpeningReferenceReviewFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatSituationCandidatesFixture, chatSituationReferenceDraftFixture, chatOpeningKeyedReviewFixture} from '../helpers/chat-narrative-production-fixture'
 import type {ChatNarrativeProductionSourceV1} from '../../src/lib/character-interaction/narrative-production'
 import {executeProductProductionCommand} from '../../src/lib/product-production/commands'
 import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
@@ -62,7 +65,7 @@ it.each([false, true])('carries author-confirmed units through real production c
     // The author-confirmed units, including undiscoverable secrets, must survive
     // even when the model selects no world fact at all.
     if (references) for (const option of references.options) option.situation.worldFactKeys = []
-    const output = isGeneration ? references ?? candidates : isReview ? chatOpeningReferenceReviewFixture(source, candidates) : {schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: []}
+    const output = isGeneration ? references ?? candidates : isReview ? chatOpeningKeyedReviewFixture(source, candidates) : {schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: []}
     return {output: JSON.stringify(output), usage: {inputTokens: 100, outputTokens: 100}, bindingReceipt: {
       schema: 'storyforge.provider-binding-receipt', version: 1, requirementKey, adapterId: 'configured-text.v1', adapterVersion: 1,
       provider: 'fixture', model: 'fixture-model', endpointOrigin: 'https://fixture.invalid', executionLocation: 'browser-direct',
@@ -70,7 +73,16 @@ it.each([false, true])('carries author-confirmed units through real production c
     }}
   }
   const execute = async () => runProductProductionUntilBlockedV1({scope: f.scope, productionId, capabilityBindings: [{requirementKey, adapterId: 'configured-text.v1', bindingHash}],
-    executor: createConfiguredProductProductionExecutorV1({production: (await db.productProductions.get(productionId))!, brief, runText})})
+    executor: async input => {
+      if (input.task.taskKey === 'content.chat-opening-review') {
+        const source = JSON.parse((await db.productBuildArtifacts.filter(row => row.buildId === input.buildId && row.artifactKey === 'design.game').last())!.payloadJson)
+        const candidates = JSON.parse((await db.productBuildArtifacts.filter(row => row.buildId === input.buildId && row.artifactKey === 'content.chat-candidates').last())!.payloadJson)
+        const schema = chatOpeningKeyedReviewSchemaV1(source, candidates)
+        const total = estimateTokens(input.contextText + chatOpeningKeyedReviewPromptV1()) + estimateChatRequestOptionsTokens({jsonSchema: schema})
+        expect(total, 'Complete author source, catalog and complete output schema must fit the original review input reservation').toBeLessThanOrEqual(input.task.budgetReservation.inputTokens)
+      }
+      return createConfiguredProductProductionExecutorV1({production: (await db.productProductions.get(productionId))!, brief, runText})(input)
+    }})
   await execute()
   let details = await readProductProductionDetailsV1(f.scope, productionId)
   expect(JSON.parse(details.build!.failureJson), details.build!.failureJson).toMatchObject({taskKey: 'content.chat-author-gate'})

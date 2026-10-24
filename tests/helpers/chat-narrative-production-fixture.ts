@@ -177,3 +177,11 @@ export function chatOpeningReferenceReviewFixture(source: ChatNarrativeProductio
     }),
   }))}))}
 }
+
+/** Explicit current keyed wire; the canonical judgment remains authored by the test. */
+export function chatOpeningKeyedReviewFixture(source: ChatNarrativeProductionSourceV1, candidates: ChatSituationCandidatesV1, draft = chatOpeningDevelopmentReviewFixture(candidates)) {
+  const wire = chatOpeningReferenceReviewFixture(source, candidates, draft)
+  return {options: Object.fromEntries(wire.options.map(({optionKey, checks, ...option}) => [optionKey, {
+    ...option, checks: Object.fromEntries(checks.map(({check, ...result}) => [check, result])),
+  }]))}
+}

@@ -450,7 +450,7 @@ test(`v3 production offers initial situations, retains them across refresh and f
             const source = JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'design.game').last()).payloadJson);
             const candidates = JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'content.chat-candidates').last()).payloadJson);
             const helper = await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts');
-            return helper.chatOpeningReferenceReviewFixture(source, candidates, helper.chatOpeningDevelopmentReviewFixture(candidates, 'option-1'));
+            return helper.chatOpeningKeyedReviewFixture(source, candidates, helper.chatOpeningDevelopmentReviewFixture(candidates, 'option-1'));
         }) : null;
         const content = initial ? response.candidateOutput : openingReview ? reviewOutput : production
             ? {schema: 'storyforge.product-media-requirements-artifact', version: 2, visual: [], audio: []}

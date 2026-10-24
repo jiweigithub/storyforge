@@ -1,5 +1,7 @@
-import {afterEach, beforeEach, expect, it} from 'vitest'
+import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import Ajv from 'ajv'
+import * as skills from '../../src/lib/agent/skill-registry'
+import {chatOpeningKeyedReviewPromptV1} from '../../src/lib/character-interaction/opening-review-keyed'
 import {db} from '../../src/lib/db/schema'
 import {CONTEXT_SOURCES} from '../../src/lib/registry/context-sources'
 import {buildChatOpeningReviewReferencesV1, chatOpeningReviewReferenceSchemaV1, chatOpeningReviewReferencePromptV1,
@@ -10,10 +12,10 @@ import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1
 import {runProductProductionUntilBlockedV1, type ProductProductionTaskExecutionInputV1} from '../../src/lib/product-production/scheduler'
 import {readProductProductionDetailsV1} from '../../src/lib/product-production/service'
 import {estimateTokens} from '../../src/lib/ai/context-budget'
-import {chatOpeningDevelopmentReviewFixture, chatOpeningReferenceReviewFixture, chatSituationCandidatesFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
+import {chatOpeningDevelopmentReviewFixture, chatOpeningKeyedReviewFixture, chatOpeningReferenceReviewFixture, chatSituationCandidatesFixture, seedChatNarrativeProductionFixture} from '../helpers/chat-narrative-production-fixture'
 
 beforeEach(async () => {await db.delete(); await db.open()})
-afterEach(async () => {await db.delete()})
+afterEach(async () => {vi.restoreAllMocks(); await db.delete()})
 
 it('selects exact original excerpts, handles long Unicode text without truncating the source, and preserves all review judgments', async () => {
   const f = await seedChatNarrativeProductionFixture({factDiscovery: true})
@@ -49,7 +51,13 @@ it.each(['unknown', 'foreign-option', 'extra-quote', 'missing-check', 'missing-b
   expect(wire).toEqual(before)
 })
 
-it.each(['accepted', 'semantic-rejection', 'invalid-reference', 'repeated-adaptive', 'missing-delivery', 'tampered-delivery', 'schema-budget'] as const)('runs the registered v11 production boundary with %s and never retries a rejected review', async scenario => {
+it.each(([11, 12] as const).flatMap(version => (['accepted', 'semantic-rejection', 'invalid-reference', 'repeated-adaptive', 'missing-delivery', 'tampered-delivery', 'schema-budget'] as const).map(scenario => ({version, scenario}))))('runs the registered v$version boundary with $scenario and never retries a rejected review', async ({version, scenario}) => {
+  if (version === 11) {
+    const original = skills.getAgentSkillV1
+    vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-opening-review' ? {...original(id), promptVersion: 'chat-opening-review-v11'} : original(id))
+  }
+  const prompt = version === 11 ? chatOpeningReviewReferencePromptV1 : chatOpeningKeyedReviewPromptV1
+  const encode = version === 11 ? chatOpeningReferenceReviewFixture : chatOpeningKeyedReviewFixture
   const f = await seedChatNarrativeProductionFixture()
   const created = await executeProductProductionCommand({scope: f.scope, command: {type: 'create-intent', commandId: 'ref.create', productionKey: 'ref.chat',
     worldReleaseId: f.confirmed.worldReleaseId!, productType: 'character-interaction', userText: '引用审查工程夹具'}})
@@ -67,16 +75,16 @@ it.each(['accepted', 'semantic-rejection', 'invalid-reference', 'repeated-adapti
     const candidates = isOpening ? chatSituationCandidatesFixture(source) : JSON.parse((await db.productBuildArtifacts.where('projectId').equals(f.scope.projectId).filter(row => row.artifactKey === 'content.chat-candidates').last())!.payloadJson)
     let output = JSON.stringify(candidates)
     if (!isOpening) {
-      expect(request.jsonSchema?.name).toBe('chat_opening_review_references_v1')
-      expect(request.system).toBe(chatOpeningReviewReferencePromptV1() + '\n输出 JSON Schema：' + JSON.stringify(request.jsonSchema!.schema))
+      expect(request.jsonSchema?.name).toBe(version === 11 ? 'chat_opening_review_references_v1' : 'chat_opening_review_keyed_v1')
+      expect(request.system).toBe(prompt() + (version === 11 ? '\n输出 JSON Schema：' + JSON.stringify(request.jsonSchema!.schema) : ''))
       expect(request.maximumOutputTokens).toBe(10_000)
       expect(request.contextText).toContain('storyforge.chat-opening-review-inputs')
       expect(request.contextText).not.toContain('product-production.repair-feedback')
       const draft = chatOpeningDevelopmentReviewFixture(candidates)
       if (scenario === 'semantic-rejection') draft.options[0].checks[0].passed = false
       if (scenario === 'repeated-adaptive') draft.options[0].development!.mode = 'adaptive'
-      const wire = chatOpeningReferenceReviewFixture(source, candidates, draft)
-      if (scenario === 'invalid-reference') wire.options[0].checks[0].evidence = [{refId: 'not-in-catalog'}]
+      const wire = encode(source, candidates, draft)
+      if (scenario === 'invalid-reference') Object.values(Object.values(wire.options)[0].checks)[0].evidence = [{refId: 'not-in-catalog'}]
       output = rawReview = JSON.stringify(wire)
       if (scenario !== 'invalid-reference') expect(new Ajv().compile(request.jsonSchema!.schema)(wire)).toBe(true)
       expect(() => assertChatOpeningReviewReferencesDeliveredV1(delivered!, source, candidates)).not.toThrow()
@@ -93,7 +101,7 @@ it.each(['accepted', 'semantic-rejection', 'invalid-reference', 'repeated-adapti
       if (scenario === 'missing-delivery') return configured({...input, contextText: ''})
       if (scenario === 'tampered-delivery') return configured({...input, contextText: input.contextText.replace('s.001', 's.not-original')})
       if (scenario === 'schema-budget') return configured({...input, attemptBudgetReservation: {...input.attemptBudgetReservation!,
-        inputTokens: estimateTokens(input.contextText + chatOpeningReviewReferencePromptV1())}})
+        inputTokens: estimateTokens(input.contextText + prompt())}})
       return configured(input)
     }})
   await execute()
