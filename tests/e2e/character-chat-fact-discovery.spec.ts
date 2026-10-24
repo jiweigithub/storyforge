@@ -75,7 +75,8 @@ for (const rejected of [false, true]) test(`a completed investigation only revea
     const construction = !situationReview && prompt.includes('你是 StoryForge 受治理的幕后情境构建器')
     calls.push(actionReview ? 'action-review' : situationReview ? 'situation-review' : construction ? 'construction' : 'action')
     let output: unknown
-    if (actionReview || situationReview) output = {checks: ['continuity', 'permissions', 'player-agency', 'visibility', ...(actionReview ? ['consequences'] : []), 'meaningful-direction'].map(check => ({check, passed: !(rejected && situationReview && check === 'permissions'), reason: '工程审查夹具，不是剧情质量验收'}))}
+    if (actionReview || situationReview) output = {checks: ['continuity', 'permissions', 'player-agency', 'visibility', ...(actionReview ? ['consequences'] : []), 'meaningful-direction'].map(check => ({check, passed: !(rejected && situationReview && check === 'permissions'), reason: '工程审查夹具，不是剧情质量验收'})),
+      ...(actionReview && actionCount === 2 ? {disclosureChecks: [{factKey: 'secret', passed: true, reason: '本次正文完整传达已获知的铜印位置，核验逐事实审查路径。'}]} : {})}
     else if (construction) {
       const pending = JSON.parse(prompt.match(/"pendingSituation":(\{[^}]+\})/)![1])
       expect(prompt).toContain(truth)
@@ -92,7 +93,7 @@ for (const rejected of [false, true]) test(`a completed investigation only revea
         expect(prompt).toContain(truth)
         expect(prompt).not.toContain('打算检查或只打开而未查看不足以发现')
         output = {kind: 'complete', text: truth, goalKey: 'find-seal', evidenceFactKeys: ['secret'], audienceKeys: ['guard', 'player'], waitingForPlayer: false,
-          newFacts: [], disclosures: [{factKey: 'secret', toParticipantKeys: ['player'], evidenceExcerpt: truth}], threadUpdates: [], goalStatus: 'fulfilled', nextPossibilities: []}
+          newFacts: [], disclosures: [{factKey: 'secret', toParticipantKeys: ['player'], evidenceExcerpt: truth, wording: 'equivalent'}], threadUpdates: [], goalStatus: 'fulfilled', nextPossibilities: []}
       }
     }
     await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
