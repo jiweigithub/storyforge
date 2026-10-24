@@ -1,4 +1,4 @@
-import {chatActionOutcomeFixture} from '../helpers/chat-action-outcome'
+import {chatActionOutcomeFixture, chatActionChoiceFixture} from '../helpers/chat-action-outcome'
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import * as skills from '../../src/lib/agent/skill-registry'
@@ -35,7 +35,7 @@ const choice = {directions: [{id: 'ask', action: '询问铜印最后出现的位
 const action = {kind: 'speak', text: '你记得最后一次见到铜印的地方吗？', goalKey: 'find-seal', evidenceFactKeys: ['lost'],
   audienceKeys: ['player', 'guard', 'artisan'], waitingForPlayer: true, newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
 beforeEach(async () => {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v70')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v71')
   db.close(); await db.delete(); await db.open()
 })
 afterEach(() => {vi.restoreAllMocks(); db.close()})
@@ -50,7 +50,7 @@ function input(f: Awaited<ReturnType<typeof start>>) {
   return {calls, reviews, request: {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const,
     objective: '由角色在自身可知范围选择并表达下一步', runAI: async (messages: ChatMessage[]) => {
       calls.push(messages)
-      return JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? choice : chatActionOutcomeFixture(messages, action))
+      return JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? chatActionChoiceFixture(messages, choice) : chatActionOutcomeFixture(messages, action))
     }, runReviewAI: reviews}}
 }
 async function current(f: Awaited<ReturnType<typeof start>>) {
@@ -133,7 +133,7 @@ function codexBudgetInput(f: Awaited<ReturnType<typeof start>>, outputTokens: nu
   const transport = vi.spyOn(ai, 'chat').mockImplementation(async (_messages, _config, _meta, _signal, result) => {
     const i = index++, tokens = outputTokens[i]
     if (i !== missingAt && result) result.usage = {inputTokens: 500, outputTokens: tokens, totalTokens: 500 + tokens}
-    return JSON.stringify(chatActionOutcomeFixture(_messages, [choice, action, chatActionReviewOutputFixture()][i]))
+    return JSON.stringify(chatActionOutcomeFixture(_messages, chatActionChoiceFixture(_messages, [choice, action, chatActionReviewOutputFixture()][i])))
   })
   const {runAI: _runAI, runReviewAI: _runReviewAI, ...request} = input(f).request
   return {transport, request: {...request, aiConfig: {provider: 'codex' as const, model: 'budget-test', baseUrl: '/storyforge/local-codex/v1', apiKey: '', maxTokens: 0, temperature: 0}}}
@@ -259,7 +259,7 @@ it.each(['raw-response.saved', 'choice.saved'] as const)('recovers %s from origi
   db.close(); await db.open()
   const noCall = vi.fn(async () => {throw Error('unexpected resend')})
   const resumed = await resumeChoice(f, noCall)
-  expect(resumed.choice).toEqual(choice); expect(noCall).not.toHaveBeenCalled()
+  expect(resumed.choice).toEqual(chatActionChoiceFixture(run.calls[0], choice)); expect(noCall).not.toHaveBeenCalled()
   const checkpoint = await readLatestVerifiedAgentRunCheckpointV1(f.scope, resumed.snapshot.run.id, {owner: 'instance'})
   expect(checkpoint!.resumePayload).toMatchObject({kind: CHAT_ACTION_CHOICE_CHECKPOINT_V1, participantKey: 'guard', choiceHash: resumed.choiceHash})
   const again = await resumeChoice(f, noCall)
@@ -402,13 +402,13 @@ it('rejects stale retained choice evidence before resuming without executing the
 it('uses the frozen choice output cap and strict provider schema on the existing real transport boundary', async () => {
   vi.spyOn(navigator, 'locks', 'get').mockReturnValue({request: async (_name: string, _options: unknown, callback: (lock: object) => unknown) => callback({})} as unknown as LockManager)
   const chat = vi.spyOn(ai, 'chat').mockImplementation(async messages => JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿')
-    ? choice : JSON.stringify(messages).includes('本次持久化行动候选') ? chatActionReviewOutputFixture() : chatActionOutcomeFixture(messages, action)))
+    ? chatActionChoiceFixture(messages, choice) : JSON.stringify(messages).includes('本次持久化行动候选') ? chatActionReviewOutputFixture() : chatActionOutcomeFixture(messages, action)))
   const f = await start(), run = input(f)
   const {runAI: _runAI, runReviewAI: _runReviewAI, ...request} = run.request
   const generated = await generateInteractionRuntimeCandidateV1({...request, aiConfig: {provider: 'agnes', baseUrl: 'https://invalid.example/v1', model: 'agnes-2.5-flash', apiKey: 'fixture-only', temperature: .2, maxTokens: 9000}})
   expect(chat).toHaveBeenCalledTimes(3)
   expect(chat.mock.calls.map(call => call[1].maxTokens)).toEqual([2000, 4000, 8000])
-  expect(chat.mock.calls[0][5]?.jsonSchema).toMatchObject({name: 'chat_action_choice_v3', strict: true})
+  expect(chat.mock.calls[0][5]?.jsonSchema).toMatchObject({name: 'chat_action_choice_v4', strict: true})
   const counted = (await readChatActionChoiceInputBudgetV1(f.scope, generated.snapshot))!
   for (const [index, call] of chat.mock.calls.entries()) {
     expect(counted.calls[index].estimatedInputTokens).toBe(estimateChatActionRequestInputV1(call[0], call[5]))
@@ -568,7 +568,7 @@ it.each(['raw-response.saved', 'choice.saved'] as const)('preserves evidence but
   const saved = await readInstanceAgentRunV1(scope, imported.id!)
   const raw = saved.events.find(event => event.type === 'evidence.artifact.recorded' && event.payload.stepId === CHAT_ACTION_CHOICE_STEP_V1 && event.payload.artifactKind === 'raw-response')!
   if (raw.type !== 'evidence.artifact.recorded') throw Error('missing imported raw')
-  expect(JSON.parse(await readAgentRunArtifactExactV1({projectId, artifactKind: 'raw-response', contentHash: raw.payload.contentHash}))).toEqual(choice)
+  expect(JSON.parse(await readAgentRunArtifactExactV1({projectId, artifactKind: 'raw-response', contentHash: raw.payload.contentHash}))).toEqual(chatActionChoiceFixture(run.calls[0], choice))
   expect((await current(f)).projection.lastSequence).toBe(original.projection.lastSequence)
   expect(run.calls).toHaveLength(1); expect(run.reviews).not.toHaveBeenCalled()
 })

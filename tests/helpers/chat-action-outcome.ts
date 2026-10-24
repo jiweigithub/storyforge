@@ -13,7 +13,14 @@ export function chatActionChoiceFixture(messages: ReadonlyArray<{content: string
   if (!messages[0]?.content.startsWith('这是尚未发生的角色行动选择草稿') || !value || typeof value !== 'object'
     || !('directions' in value) || !Array.isArray(value.directions)) return value
   const current = messages[0].content.includes('evidenceMessageIds')
-  return {...value, directions: value.directions.map((direction: Record<string, unknown>) => {
+  const continuation = messages[0].content.includes('possibilityChecks') && !('possibilityChecks' in value)
+  const roleLine = continuation ? messages[1]?.content.split('\n').find(line => line.startsWith('{"situationKey"')) : undefined
+  // Explicit engineering assumptions for old scripted fixtures, not a semantic
+  // classifier. New contract counterexamples supply their own checks directly.
+  const plans = roleLine ? JSON.parse(roleLine).possibilities as unknown[] : []
+  const checks = continuation ? {possibilityChecks: plans.map((_, index) => ({index, disposition: 'not-useful',
+    reason: '工程夹具假设此旧方向本轮不再有新增作用；不代表真实模型质量'}))} : {}
+  return {...checks, ...value, directions: value.directions.map((direction: Record<string, unknown>) => {
     const {evidenceMessageIds, ...old} = direction
     return current ? {...old, evidenceMessageIds: evidenceMessageIds ?? []} : old
   })}

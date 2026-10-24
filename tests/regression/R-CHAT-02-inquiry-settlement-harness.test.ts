@@ -13,7 +13,7 @@ import type {ChatNarrativeActionV1, ChatSituationDraftV1} from '../../src/lib/ty
 
 const generate = harness.generateInteractionRuntimeCandidateV1
 const getSkill = skills.getAgentSkillV1
-const versions: Record<string, string> = {'character.chat-narrative-action': 'chat-narrative-action-v70', 'character.chat-narrative-action-review': 'chat-narrative-action-review-v42',
+const versions: Record<string, string> = {'character.chat-narrative-action': 'chat-narrative-action-v71', 'character.chat-narrative-action-review': 'chat-narrative-action-review-v42',
   'character.chat-narrative-options': 'chat-narrative-options-v42', 'character.chat-narrative-options-review': 'chat-narrative-options-review-v30',
   'character.chat-action-revision': 'chat-action-revision-v25', 'character.chat-situation-construction': 'chat-situation-construction-v21', 'character.chat-situation-review': 'chat-situation-review-v19'}
 const config = {provider: 'openai' as const, model: 'isolated-fixture', apiKey: 'isolated-fixture', maxTokens: 4000, temperature: .2}

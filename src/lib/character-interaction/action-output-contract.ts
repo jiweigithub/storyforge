@@ -1,5 +1,6 @@
 import type {ChatRequestOptions} from '../ai/client'
 import type {AIProvider} from '../types/ai'
+import {supportsChatChoiceContinuationV1} from './action-choice-continuation'
 import {CHAT_THREAD_STATUSES_V1} from '../types/chat-narrative'
 import {supportsChatInquirySettlementV1} from './inquiry-settlement'
 import {requiresChatReviewedDisclosureV1} from './natural-disclosure-output'
@@ -167,7 +168,10 @@ function compactChatRepeatedSchemasV2(schema: Schema): Schema {
 
 /** Both transports have verified schema support. Other providers retain their
  * existing request contract; a rejected schema request is never auto-retried. */
-export function chatActionRequestOptionsV1(version: string | undefined, provider: AIProvider | undefined): ChatRequestOptions | undefined {
+export function chatActionRequestOptionsV1(version: string | undefined, provider: AIProvider | undefined, silentWait = false): ChatRequestOptions | undefined {
+  if (silentWait && supportsChatChoiceContinuationV1(version) && ['codex', 'agnes'].includes(provider ?? '')) {
+    return {jsonSchema: {name: 'chat_wait_outcome_v1', strict: true, schema: chatNarrativeOutcomeSchemaV1({}, version, true)}}
+  }
   if (!supportsChatActionOutputContractV1(version) || !['codex', 'agnes'].includes(provider ?? '')) return undefined
   const ownEvidence = supportsChatOwnEvidenceBindingV1(version)
   const action = ownEvidence ? chatActionOutputSchemaV3() : usesChangeDescriptions(version) ? chatActionOutputSchemaV2() : chatActionOutputSchemaV1()
@@ -199,15 +203,15 @@ export function chatActionRequestOptionsV1(version: string | undefined, provider
   }
   const completionVersions = ['chat-narrative-action-v59', 'chat-narrative-action-v60', 'chat-narrative-action-v61',
     'chat-narrative-action-v62', 'chat-narrative-action-v63', 'chat-narrative-action-v64', 'chat-narrative-action-v65',
-    'chat-narrative-action-v66', 'chat-narrative-action-v67', 'chat-narrative-action-v68', 'chat-narrative-action-v69', 'chat-narrative-action-v70']
+    'chat-narrative-action-v66', 'chat-narrative-action-v67', 'chat-narrative-action-v68', 'chat-narrative-action-v69', 'chat-narrative-action-v70', 'chat-narrative-action-v71']
   if (completionVersions.includes(version ?? '')) {
     const constrained = chatCompletionActionSchemaV1(action)
     const schema = {...chatNarrativeOutcomeSchemaV1(constrained.action, version), $defs: constrained.definitions}
     const compact = version !== 'chat-narrative-action-v59'
     const result = compact ? compactChatCompletionSchemaV1(schema) : schema
-    return {jsonSchema: {name: ['chat-narrative-action-v67', 'chat-narrative-action-v68', 'chat-narrative-action-v69', 'chat-narrative-action-v70'].includes(version ?? '') ? 'chat_narrative_outcome_v4'
+    return {jsonSchema: {name: ['chat-narrative-action-v67', 'chat-narrative-action-v68', 'chat-narrative-action-v69', 'chat-narrative-action-v70', 'chat-narrative-action-v71'].includes(version ?? '') ? 'chat_narrative_outcome_v4'
       : compact ? 'chat_narrative_outcome_v3' : 'chat_narrative_outcome_v2', strict: true,
-    schema: ['chat-narrative-action-v67', 'chat-narrative-action-v68', 'chat-narrative-action-v69', 'chat-narrative-action-v70'].includes(version ?? '') ? compactChatRepeatedSchemasV2(result) : result}}
+    schema: ['chat-narrative-action-v67', 'chat-narrative-action-v68', 'chat-narrative-action-v69', 'chat-narrative-action-v70', 'chat-narrative-action-v71'].includes(version ?? '') ? compactChatRepeatedSchemasV2(result) : result}}
   }
   const schema = ['chat-narrative-options-v28', 'chat-narrative-options-v29', 'chat-narrative-options-v30', 'chat-narrative-options-v31', 'chat-narrative-options-v32', 'chat-narrative-options-v33', 'chat-narrative-options-v34', 'chat-narrative-options-v35', 'chat-narrative-options-v36', 'chat-narrative-options-v37', 'chat-narrative-options-v38', 'chat-narrative-options-v39', 'chat-narrative-options-v40', 'chat-narrative-options-v41', 'chat-narrative-options-v42'].includes(version ?? '')
     ? object({options: {...array(action), minItems: 2, maxItems: 2}}) : action
@@ -226,7 +230,7 @@ export const CHAT_ACTION_OUTPUT_CHECK_V1 = '输出完整候选对象，不能省
 
 export function chatActionOutputRulesV1(version: string | undefined, audience?: readonly string[]): string[] {
   if (!supportsChatActionOutputContractV1(version)) return []
-  return [...(supportsChatTurnCompletionV1(version) ? [CHAT_TURN_COMPLETION_ACTION_RULE_V1] : []), ...(['chat-narrative-action-v59', 'chat-narrative-action-v60', 'chat-narrative-action-v61', 'chat-narrative-action-v62', 'chat-narrative-action-v63', 'chat-narrative-action-v64', 'chat-narrative-action-v65', 'chat-narrative-action-v66', 'chat-narrative-action-v67', 'chat-narrative-action-v68', 'chat-narrative-action-v69', 'chat-narrative-action-v70'].includes(version ?? '') ? [CHAT_TURN_COMPLETION_OUTPUT_RULE_V1] : []), CHAT_ACTION_OUTPUT_CHECK_V1 + (usesChangeDescriptions(version)
+  return [...(supportsChatTurnCompletionV1(version) ? [CHAT_TURN_COMPLETION_ACTION_RULE_V1] : []), ...(['chat-narrative-action-v59', 'chat-narrative-action-v60', 'chat-narrative-action-v61', 'chat-narrative-action-v62', 'chat-narrative-action-v63', 'chat-narrative-action-v64', 'chat-narrative-action-v65', 'chat-narrative-action-v66', 'chat-narrative-action-v67', 'chat-narrative-action-v68', 'chat-narrative-action-v69', 'chat-narrative-action-v70', 'chat-narrative-action-v71'].includes(version ?? '') ? [CHAT_TURN_COMPLETION_OUTPUT_RULE_V1] : []), CHAT_ACTION_OUTPUT_CHECK_V1 + (usesChangeDescriptions(version)
     ? '最后逐项对照行动前状态：goalStatus 是变更指令，不是状态描述；目标继续保持 active 必须填 null，不能填 active。goalUpdates 和 threadUpdates 仅列实际变化，无变化填 []；不能因正在处理事项就重复 open。不得删除原约束、自动补后果或改写原文来规避校验。'
     : '') + (supportsChatOwnEvidenceBindingV1(version)
     ? '本次表达的 evidenceExcerpt 可填 null，由系统逐字绑定完整 text。正文超过对应摘录上限时必须填写连续逐字片段，不能省略或改写：承诺1000字、情境请求1200字、目标/关系/后续目标/暂停/转场2000字、事实/披露/事项8000字。playerExcerpt、destinationExcerpt、历史与来源事实仍必须按各自合同提供原文，不能用 null 代替。绑定原文不代表事实、授权或后果已成立，仍需原校验和独立审查。'

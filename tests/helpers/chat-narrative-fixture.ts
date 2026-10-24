@@ -6,7 +6,7 @@ import { readProductRuntimeStateVersion, startInteractionScene } from '../../src
 import { seedCurrentProductBuild } from './current-product-build'
 import { currentProductSelection, loadCurrentProductWorldSourceCatalogV1, seedCurrentProductWorld } from './current-product-world'
 import {chatNarrativeShellV1} from '../../src/lib/character-interaction/narrative-production'
-import {chatActionOutcomeFixture} from './chat-action-outcome'
+import {chatActionOutcomeFixture, chatActionChoiceFixture} from './chat-action-outcome'
 
 /** Keep expression/review fixtures focused on the rule they exercise while
  * still running the real choice step, its evidence, budgets and recovery.
@@ -16,7 +16,7 @@ import {chatActionOutcomeFixture} from './chat-action-outcome'
 export function withChatActionChoiceFixture(runAI: (messages: ChatMessage[], signal?: AbortSignal) => Promise<string>) {
   return async (messages: ChatMessage[], signal?: AbortSignal): Promise<string> => {
     if (messages[0]?.content.startsWith('这是尚未发生的角色行动选择草稿')) {
-      return JSON.stringify({directions: [], selectedId: null, decisionSummary: '本工程用例不增加方向建议；表达仍须按原角色视角独立校验。'})
+      return JSON.stringify(chatActionChoiceFixture(messages, {directions: [], selectedId: null, decisionSummary: '本工程用例不增加方向建议；表达仍须按原角色视角独立校验。'}))
     }
     const output = await runAI(messages, signal)
     let parsed: unknown

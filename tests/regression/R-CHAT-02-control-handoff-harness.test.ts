@@ -29,7 +29,7 @@ async function start() {
   await requestChatNarrativeTrigger({sessionId: f.sessionId, commandId: 'open', baseSequence: base.sequence, baseStateHash: base.stateHash,
     kind: 'scene-start', sourceEventSequence: f.sceneSequence})
   const generated = await generateInteractionRuntimeCandidateV1({scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard',
-    skillId: 'character.chat-narrative-action', objective: '说明许可边界', runAI: async messages => JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? chatActionChoiceFixture(messages, choice) : chatActionOutcomeFixture(messages, action)),
+    skillId: 'character.chat-narrative-action', objective: '说明许可边界', runAI: async messages => JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? chatActionChoiceFixture(messages, {...choice, directions: [{...choice.directions[0], kind: 'question'}]}) : chatActionOutcomeFixture(messages, action)),
     runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())})
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   const state = await readProductRuntimeState(f.sessionId), source = state.interaction!.messages.slice(-1)[0]
@@ -41,7 +41,7 @@ async function start() {
   return {...f, trigger, handoff}
 }
 function enable() {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v70')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v71')
   expect(originalSkill('character.chat-narrative-action-review').promptVersion).toBe('chat-narrative-action-review-v42')
 }
 function legacy() {
@@ -70,7 +70,7 @@ it('uses the actual choice/result/review chain and one governed event with no du
   expect(generated.candidate.kind).toBe('chat-control-handoff-candidate')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   expect(run.reviews[0][1].content).toContain('basisMessages')
-  expect(run.reviews[0][1].content).toContain(`"actionChoice":${canonicalStringify(choice)}`)
+  expect(run.reviews[0][1].content).toContain(`"actionChoice":${canonicalStringify(chatActionChoiceFixture(run.calls[0], choice))}`)
   expect(run.reviews[0][1].content).toContain(action.text)
   expect(run.reviews[0][0].content).toContain('available-direction')
   await store.getState().load(f.scope, null, f.sessionId)
@@ -113,7 +113,7 @@ it('retains ordinary independent actions under the new producer', async () => {
   const f = await start(); enable()
   const independent = {...action, text: '叶岑走到门边，查看自己脚边能看清的地面。', kind: 'complete', waitingForPlayer: false}
   const run = request(f), input = {...run.input, runAI: async (messages: ChatMessage[]) => JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿')
-    ? chatActionChoiceFixture(messages, choice) : {outcome: 'action', action: independent, handoff: null}), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}
+    ? chatActionChoiceFixture(messages, {...choice, directions: [{...choice.directions[0], kind: 'own-action', playerDependency: null}]}) : {outcome: 'action', action: independent, handoff: null}), runReviewAI: async () => JSON.stringify(chatActionReviewOutputFixture())}
   const generated = await generateInteractionRuntimeCandidateV1(input)
   expect(generated.candidate.kind).toBe('chat-narrative-action-candidate')
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
@@ -125,7 +125,7 @@ it('still vetoes meaningless ordinary speech instead of reclassifying it as a ha
   const run = request(f), output = chatActionReviewOutputFixture(), before = await readProductRuntimeState(f.sessionId)
   output.checks.find(check => check.check === 'meaningful-direction')!.passed = false
   await expect(generateInteractionRuntimeCandidateV1({...run.input,
-    runAI: async messages => JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? chatActionChoiceFixture(messages, choice) : {outcome: 'action', action, handoff: null}),
+    runAI: async messages => JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? chatActionChoiceFixture(messages, {...choice, directions: [{...choice.directions[0], kind: 'question'}]}) : {outcome: 'action', action, handoff: null}),
     runReviewAI: async () => JSON.stringify(output)})).rejects.toThrow('审查未通过')
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
 })
@@ -254,7 +254,7 @@ it('retains a flat legacy expression as a failed raw response under the actual d
   await expect(generateInteractionRuntimeCandidateV1({...run.input, runAI: async messages => {
     calls++
     return messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? JSON.stringify(chatActionChoiceFixture(messages, choice)) : raw
-  }})).rejects.toThrow('运行结果字段')
+  }})).rejects.toThrow('静默等待必须交还控制')
   expect(calls).toBe(2); expect(run.reviews).toHaveLength(0)
   expect(await readProductRuntimeState(f.sessionId)).toEqual(before)
   const rows = await db.agentRunArtifacts.where('projectId').equals(f.scope.projectId).toArray()

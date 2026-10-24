@@ -15,6 +15,7 @@ import {appendChatActionChoiceProposalV1, buildChatActionChoiceMessagesV1, parse
   CHAT_ACTION_CHOICE_STEP_V1, CHAT_ACTION_CHOICE_INPUT_TOKENS_V1, CHAT_ACTION_CHOICE_OUTPUT_TOKENS_V1} from './action-choice-contract'
 import {formatInteractionRuntimeContextV1} from './context-format'
 import {chatActionContextVersionsV1} from './context-selection'
+import {assertChatChoiceExpressionV1} from './action-choice-continuation'
 import {buildInteractionContextWindow, interactionRetrievalView} from './runtime'
 import {readChatRuntimeStateAtSequenceV1} from './runtime-replay'
 import {compileChatActionWireV1, resolveChatActionWireAudienceV1} from './action-wire'
@@ -109,6 +110,7 @@ export async function readChatActionChoiceExpressionV1(input: {scope: WorkspaceS
     || responded.payload.outputHash !== await hashCanonicalValue(raw.content)
     || !(proof.choiceCompletedSequence < request.event.sequence && proof.expressionContextSequence < request.event.sequence
       && request.event.sequence < requested.sequence && requested.sequence < responded.sequence && responded.sequence < raw.event.sequence)) fail('表达没有绑定原选择草稿及实际响应')
+  assertChatChoiceExpressionV1(raw.content, proof.choice, snapshot.contract.executionBindings?.find(binding => binding.stepId === expressionStep)?.promptVersion)
   return {output: raw.content, rawSequence: raw.event.sequence}
 }
 

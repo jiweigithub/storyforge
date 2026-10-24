@@ -25,7 +25,7 @@ it('selects the clarification only for the three newly frozen producer versions'
   }
 })
 
-it.each([false, true])('records the exact producer instructions while keeping the independent review and two-call budget (legacy=%s)', async legacy => {
+it.each([false, true])('records the exact producer instructions while keeping the independent review and versioned call budget (legacy=%s)', async legacy => {
   if (legacy) {
     const original = skills.getAgentSkillV1
     vi.spyOn(skills, 'getAgentSkillV1').mockImplementation(id => id === 'character.chat-narrative-action' ? {...original(id), promptVersion: 'chat-narrative-action-v30'} : original(id))
@@ -48,7 +48,7 @@ it.each([false, true])('records the exact producer instructions while keeping th
   })
   expect(generated.snapshot.contract.budget.maxModelCalls).toBe(legacy ? 2 : 3); expect(calls).toBe(2)
   expect(generated.snapshot.events.filter(event => event.type === 'model.requested')).toHaveLength(legacy ? 2 : 3)
-  expect(generated.snapshot.contract.executionBindings!.find(b => b.stepId === 'interaction:runtime-candidate')!.promptVersion).toBe(legacy ? 'chat-narrative-action-v30' : 'chat-narrative-action-v70')
+  expect(generated.snapshot.contract.executionBindings!.find(b => b.stepId === 'interaction:runtime-candidate')!.promptVersion).toBe(legacy ? 'chat-narrative-action-v30' : 'chat-narrative-action-v71')
   expect((await db.agentRunArtifacts.toArray()).some(a => a.artifactKind === 'rendered-request' && a.content === rendered)).toBe(true)
   await adoptInteractionRuntimeCandidateV1({scope: f.scope, runId: generated.snapshot.run.id})
   const state = (await readProductRuntimeState(f.sessionId)).interaction!

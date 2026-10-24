@@ -18,7 +18,7 @@ export async function fulfillChatActionChoiceFixture(route: Route): Promise<bool
   if (typeof content !== 'string' || !content.startsWith('这是尚未发生的角色行动选择草稿')) return false
   const output = {directions: [], selectedId: null, decisionSummary: '本浏览器工程用例不增加方向建议；表达及后果仍须独立校验。'}
   await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{
-    message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop',
+    message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop',
   }]})})
   return true
 }

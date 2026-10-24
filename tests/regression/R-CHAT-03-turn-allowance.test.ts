@@ -8,7 +8,7 @@ import {readProductRuntimeState, readProductRuntimeStateVersion, requestChatNarr
 import {chatActionReviewOutputFixture, seedChatNarrativeRuntimeFixture} from '../helpers/chat-narrative-fixture'
 import {CHAT_SITUATION_REVIEW_CHECKS_V1} from '../../src/lib/types/chat-narrative'
 import type {ChatNarrativeActionV1, ChatSituationDraftV1} from '../../src/lib/types/chat-narrative'
-import {chatActionOutcomeFixture} from '../helpers/chat-action-outcome'
+import {chatActionOutcomeFixture, chatActionChoiceFixture} from '../helpers/chat-action-outcome'
 import {chatNextActionLimitV1} from '../../src/lib/character-interaction/narrative-pacing'
 import {DEFAULT_CHAT_NARRATIVE_SETUP_V1} from '../../src/lib/character-interaction/narrative-setup'
 
@@ -25,7 +25,7 @@ const directionBackground = (): ChatSituationDraftV1 => ({kind: 'chat-situation'
   newFacts: [{factKey: 'latch', kind: 'object', text: '后门门闩有一处松动。', audienceKeys: ['guard', 'player', 'artisan'], evidenceFactKeys: ['lost'], seedExcerpt: '检查后门门闩'}],
   newGoals: [], newThreads: [], possibilities: [{actorKey: 'guard', text: '可以查看门闩，也可以先询问修理师。', evidenceFactKeys: ['latch']}]})
 beforeEach(async () => {
-  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v70')
+  expect(originalSkill('character.chat-narrative-action').promptVersion).toBe('chat-narrative-action-v71')
   db.close(); await db.delete(); await db.open()
 })
 afterEach(() => {vi.restoreAllMocks(); db.close()})
@@ -47,7 +47,7 @@ function mockModels(value: (prompt: string) => ChatNarrativeActionV1 = action, b
       }
       const selecting = messages[0].content.startsWith('这是尚未发生的角色行动选择草稿')
       calls.push(selecting ? 'choice' : 'expression')
-      return JSON.stringify(selecting ? choice : chatActionOutcomeFixture(messages, value(messages.map(message => message.content).join('\n'))))
+      return JSON.stringify(selecting ? chatActionChoiceFixture(messages, choice) : chatActionOutcomeFixture(messages, value(messages.map(message => message.content).join('\n'))))
     },
     runReviewAI: async () => {
       calls.push('review')

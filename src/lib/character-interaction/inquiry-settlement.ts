@@ -3,7 +3,7 @@ import type {ChatActorSituationRequestV1, ChatNarrativeActionV1} from '../types/
 import {isChatMessageRetrievableV1} from './narrative-retrieval'
 
 export function supportsChatInquirySettlementV1(version: string | undefined): boolean {
-  return ['chat-narrative-action-v70', 'chat-narrative-options-v42', 'chat-action-revision-v25'].includes(version ?? '')
+  return ['chat-narrative-action-v70', 'chat-narrative-action-v71', 'chat-narrative-options-v42', 'chat-action-revision-v25'].includes(version ?? '')
 }
 
 export function assertChatInquirySettlementOutputV1(value: unknown, version: string | undefined): void {

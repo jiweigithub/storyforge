@@ -32,13 +32,14 @@ export function parseChatNarrativeOutcomeWireV1(value: unknown, producerVersion?
 }
 
 type Schema = Record<string, unknown>
-export function chatNarrativeOutcomeSchemaV1(action: Schema, producerVersion?: string): Schema {
+export function chatNarrativeOutcomeSchemaV1(action: Schema, producerVersion?: string, waitOnly = false): Schema {
   const text = {type: 'string'}, nullable = (value: Schema) => ({anyOf: [value, {type: 'null'}]})
   const object = (properties: Record<string, Schema>): Schema => ({type: 'object', properties, required: Object.keys(properties), additionalProperties: false})
   const original = object({
     version: {type: 'integer', enum: [1]}, kind: {type: 'string', enum: ['yield-to-player']}, reason: {type: 'string', enum: ['awaiting-player-decision']},
     source: object({messageId: text, sequence: {type: 'integer'}, excerpt: text}), decision: text, dependentStep: text,
   })
+  if (waitOnly) return object({outcome: {type: 'string', enum: ['handoff']}, action: {type: 'null'}, handoff: original})
   const previous = chatTurnEndReviewerForProducerV1(producerVersion) ? {anyOf: [original, object({
     version: {type: 'integer', enum: [2]}, kind: {type: 'string', enum: ['finish-current-turn']}, reason: {type: 'string', enum: ['local-purpose-completed']},
     source: object({messageId: text, sequence: {type: 'integer'}, excerpt: text}), purpose: text,

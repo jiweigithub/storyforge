@@ -1,3 +1,4 @@
+import {chatActionResponseFixture} from './helpers/character-chat-choice'
 import {expect, test, type Page} from '@playwright/test'
 
 // Exercise the actual application default with injected engineering responses.
@@ -22,7 +23,7 @@ async function seed(page: Page) {
     const load = new Function('p', 'return import(p)')
     const fixture = await load('/storyforge/tests/helpers/chat-narrative-fixture.ts'), api = await load('/storyforge/src/lib/character-interaction/runtime-api.ts')
     const skills = await load('/storyforge/src/lib/agent/skill-registry.ts')
-    if (skills.getAgentSkillV1('character.chat-narrative-action').promptVersion !== 'chat-narrative-action-v70'
+    if (skills.getAgentSkillV1('character.chat-narrative-action').promptVersion !== 'chat-narrative-action-v71'
       || skills.getAgentSkillV1('character.chat-narrative-action-review').promptVersion !== 'chat-narrative-action-review-v42') throw Error('unexpected default control contract')
     const f = await fixture.seedChatNarrativeRuntimeFixture({directorBudget: 30})
     const version = await api.readProductRuntimeStateVersion(f.sessionId)
@@ -54,7 +55,7 @@ async function provider(page: Page, handoff: {source: {messageId: string; sequen
     if (step === 'result') expect(request.messages[2].content).toContain('outcome/action/handoff')
     const output = step === 'choice' ? choice : step === 'result' ? {outcome: 'handoff', action: null, handoff}
       : {checks: ['current-decision', 'actual-dependency', 'available-direction', 'player-agency', 'visibility'].map(check => ({check, passed: true, reason: privateReason}))}
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   return calls
 }

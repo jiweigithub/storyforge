@@ -8,7 +8,8 @@ import {chatActionChoiceVersionForContractV1} from './action-choice-budget'
 import {chooseRuntimeChatActionV1, ChatActionChoiceHostInterruptionV1} from './action-choice-harness'
 import {assertChatActionChoiceInputBudgetV1} from './action-choice-input-budget'
 import {readChatActionChoiceEvidenceV1, readChatActionChoiceExpressionV1} from './action-choice-evidence'
-import {appendChatActionChoiceProposalV1, chatNeedsActionChoiceV1, CHAT_ACTION_CHOICE_STEP_V1, CHAT_ACTION_CHOICE_INPUT_TOKENS_V1, CHAT_ACTION_CHOICE_OUTPUT_TOKENS_V1} from './action-choice-contract'
+import {appendChatActionChoiceProposalV1, chatNeedsActionChoiceV1, CHAT_ACTION_CHOICE_STEP_V1, CHAT_ACTION_CHOICE_INPUT_TOKENS_V1, CHAT_ACTION_CHOICE_OUTPUT_TOKENS_V1, type ChatActionChoiceV1} from './action-choice-contract'
+import {CHAT_CHOICE_CONTINUATION_PRODUCER_V1, CHAT_CHOICE_CONTINUATION_EXPRESSION_RULE_V1, supportsChatChoiceContinuationV1, chatChoiceWaitsSilentlyV1, assertChatChoiceExpressionV1} from './action-choice-continuation'
 import {supportsChatActionWireV1, resolveChatActionWireAudienceV1, compileChatActionWireV1, chatActionWireExampleV1} from './action-wire'
 import {chatSettledProgressRulesV1} from './narrative-replanning'
 import {supportsChatPlayerDecisionPromptV1} from './player-decision-prompt'
@@ -366,10 +367,11 @@ function prompt(input: {
   producerVersion?: string
   audience?: readonly string[]
 }): ChatMessage[] {
-  if (input.skillId === 'character.chat-narrative-action' && [CHAT_CONSOLIDATED_ACTION_PRODUCER_V1, CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1, CHAT_INQUIRY_SETTLEMENT_ACTION_PRODUCER_V1].includes(input.producerVersion ?? '')) {
-    const consolidated = input.producerVersion === CHAT_INQUIRY_SETTLEMENT_ACTION_PRODUCER_V1 ? chatInquirySettlementActionPromptV1 : input.producerVersion === CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1 ? chatReviewedDisclosureActionPromptV1 : chatConsolidatedActionPromptV1
+  if (input.skillId === 'character.chat-narrative-action' && [CHAT_CONSOLIDATED_ACTION_PRODUCER_V1, CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1, CHAT_INQUIRY_SETTLEMENT_ACTION_PRODUCER_V1, CHAT_CHOICE_CONTINUATION_PRODUCER_V1].includes(input.producerVersion ?? '')) {
+    const consolidated = input.producerVersion === CHAT_INQUIRY_SETTLEMENT_ACTION_PRODUCER_V1 || supportsChatChoiceContinuationV1(input.producerVersion) ? chatInquirySettlementActionPromptV1 : input.producerVersion === CHAT_REVIEWED_DISCLOSURE_ACTION_PRODUCER_V1 ? chatReviewedDisclosureActionPromptV1 : chatConsolidatedActionPromptV1
     return [{role: 'system', content: consolidated(input.roleContext!, input.audience ?? [],
-      chatActionWireExampleV1(schemaInstruction(input.skillId, true, true, true), input.producerVersion))},
+      chatActionWireExampleV1(schemaInstruction(input.skillId, true, true, true), input.producerVersion))
+      + (supportsChatChoiceContinuationV1(input.producerVersion) ? '\n' + CHAT_CHOICE_CONTINUATION_EXPRESSION_RULE_V1 : '')},
     {role: 'user', content: `【目标】${input.objective}\n\n${input.context}`} ]
   }
   const sceneTransition = supportsChatSceneTransitionPromptV1(input.producerVersion)
@@ -788,15 +790,17 @@ async function generateRuntimeCandidate(input: InteractionRuntimeGenerationInput
     const audience = supportsChatActionWireV1(executionBinding.promptVersion)
       ? resolveChatActionWireAudienceV1(initialState.interaction!, participantKey, revision?.action.audienceKeys) : undefined
     let messages = prompt({ objective, skillId: input.skillId, context: assembled.text, roleContext, producerVersion: executionBinding.promptVersion, audience })
+    let choice: ChatActionChoiceV1 | undefined
     if (actionChoice) {
       const chosen = await chooseRuntimeChatActionV1({scope: input.scope, snapshot, participantKey, assembled, actorMessages: messages,
         aiConfig: input.aiConfig, runAI: input.runAI, signal: input.signal, onDurableBoundary: input.onActionChoiceBoundary})
       snapshot = chosen.snapshot
+      choice = chosen.choice
       messages = appendChatActionChoiceProposalV1(messages, chosen.choice, roleContext!, executionBinding.promptVersion)
       await assertRuntimeHarnessFreshV1({scope: input.scope, contractScope: snapshot.contract.scope, participantKey})
     }
     const expressed = await executeRuntimeExpressionV1({input, snapshot, messages, contextManifestHash: manifest.manifestHash,
-      promptVersion: executionBinding.promptVersion, maxOutputTokens: skill.maxOutputTokens})
+      promptVersion: executionBinding.promptVersion, maxOutputTokens: skill.maxOutputTokens, choice})
     snapshot = expressed.snapshot
     const output = expressed.output
     if (input.signal?.aborted) fail('运行已取消')
@@ -833,6 +837,7 @@ async function failRuntimeGenerationV1(input: InteractionRuntimeGenerationInputV
 async function executeRuntimeExpressionV1(args: {
   input: InteractionRuntimeGenerationInputV1; snapshot: AgentRunSnapshotV1; messages: ChatMessage[]; contextManifestHash: string
   promptVersion: string; maxOutputTokens: number; resumeProof?: Awaited<ReturnType<typeof readChatActionChoiceEvidenceV1>>
+  choice?: ChatActionChoiceV1
 }) {
   const {input, messages, contextManifestHash, promptVersion, maxOutputTokens, resumeProof} = args
   let {snapshot} = args
@@ -853,7 +858,8 @@ async function executeRuntimeExpressionV1(args: {
   }
   if (!input.runAI && !input.aiConfig) fail('缺少表达模型配置')
   if (input.signal?.aborted) fail('运行已取消')
-  const requestOptions = input.runAI ? undefined : chatActionRequestOptionsV1(promptVersion, input.aiConfig?.provider)
+  const choice = args.choice ?? resumeProof?.choice
+  const requestOptions = input.runAI ? undefined : chatActionRequestOptionsV1(promptVersion, input.aiConfig?.provider, chatChoiceWaitsSilentlyV1(choice, promptVersion))
   const deliveredRequest = requestOptions ? {version: 1, messages, requestOptions} : messages
   const priorRequests = snapshot.events.filter(event => event.type === 'evidence.artifact.recorded' && event.payload.stepId === stepId && event.payload.artifactKind === 'rendered-request')
   if (priorRequests.length) {
@@ -885,6 +891,7 @@ async function executeRuntimeExpressionV1(args: {
   snapshot = await recordChatActionOutputBudgetV1({scope: input.scope, snapshot, stepId, output, result, aiConfig: callConfig, injected: !!input.runAI})
   await boundary('raw-response.saved')
   await readChatActionOutputBudgetV1(input.scope, snapshot)
+  assertChatChoiceExpressionV1(output, choice, promptVersion)
   return {snapshot, output}
 }
 

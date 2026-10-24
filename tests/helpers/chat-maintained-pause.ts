@@ -52,6 +52,6 @@ export function maintainedPauseRuntimeRequest(f: Awaited<ReturnType<typeof seedC
   return {calls, reviews, input: {scope: f.scope, productRuntimeSessionId: f.sessionId, participantKey: 'guard', skillId: 'character.chat-narrative-action' as const,
     objective: '工程测试：核对当前机会', runAI: async (messages: ChatMessage[]) => {
       calls.push(messages); return JSON.stringify(messages[0].content.startsWith('这是尚未发生的角色行动选择草稿')
-        ? {directions: [], selectedId: null, decisionSummary: '工程空方向不是结束授权'} : {outcome: 'handoff', action: null, handoff: f.handoff})
+        ? chatActionChoiceFixture(messages, {directions: [], selectedId: null, decisionSummary: '工程空方向不是结束授权'}) : {outcome: 'handoff', action: null, handoff: f.handoff})
     }, runReviewAI: async (messages: ChatMessage[]) => {reviews.push(messages); return JSON.stringify({checks: maintainedPauseReview(f.handoff).checks})}}}
 }

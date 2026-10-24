@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto'
+import {chatActionChoiceFixture} from '../helpers/chat-action-outcome'
 import {afterEach, beforeEach, expect, it, vi} from 'vitest'
 import {db} from '../../src/lib/db/schema'
 import * as skills from '../../src/lib/agent/skill-registry'
@@ -61,7 +62,7 @@ it.each([false, true])('reviews the actual turn disposition and never commits th
     return {...skill, promptVersion: id === 'character.chat-narrative-action' ? 'chat-narrative-action-v64' : id === 'character.chat-narrative-action-review' ? 'chat-narrative-action-review-v39' : skill.promptVersion}
   })
   const choice = draftPause(f)
-  const generated = await generateInteractionRuntimeCandidateV1({...run.input, runAI: async messages => messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? JSON.stringify(choice) : run.input.runAI(messages)})
+  const generated = await generateInteractionRuntimeCandidateV1({...run.input, runAI: async messages => messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? JSON.stringify(chatActionChoiceFixture(messages, choice)) : run.input.runAI(messages)})
   const prompt = run.reviews[0][0].content
   expect(prompt).toBe(chatTurnEndControlReviewRulesV1(historical ? 'chat-narrative-action-review-v39' : 'chat-narrative-action-review-v40').join('\n'))
   expect(run.reviews[0][1].content).toContain(choice.decisionSummary)
@@ -85,7 +86,7 @@ it.each(CHAT_TURN_END_CONTROL_CHECKS_V1)('retains an independent %s rejection de
   const review = chatTurnEndReviewFixture(f.handoff); review.checks.find(c => c.check === check)!.passed = false
   let calls = 0, reviews = 0, runId = 0
   await expect(generateInteractionRuntimeCandidateV1({...run.input, onRunCreated: id => {runId = id}, runAI: async messages => {
-    calls++; return messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? JSON.stringify(draftPause(f)) : run.input.runAI(messages)
+    calls++; return messages[0].content.startsWith('这是尚未发生的角色行动选择草稿') ? JSON.stringify(chatActionChoiceFixture(messages, draftPause(f))) : run.input.runAI(messages)
   }, runReviewAI: async () => {reviews++; return JSON.stringify({checks: review.checks})}})).rejects.toThrow('审查未通过')
   expect((await db.agentRuns.get(runId))!.status).toBe('failed')
   await expect(adoptInteractionRuntimeCandidateV1({scope: f.scope, runId})).rejects.toThrow()
