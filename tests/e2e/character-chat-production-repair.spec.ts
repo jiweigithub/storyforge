@@ -205,7 +205,9 @@ for (const {rejectedRepair, referenceWire, invalidOption = false, privateKnownFa
     const build = await db.productBuilds.where('productionId').equals(f.productionId).last()
     const artifacts = await db.agentRunArtifacts.where('projectId').equals(f.scope.projectId).toArray()
     return {
-      failure: JSON.parse(build.failureJson), ledger: JSON.parse(build.budgetLedgerJson),
+      // Start authorization creates the build asynchronously; poll its actual
+      // failure instead of throwing before the build has been persisted.
+      failure: build ? JSON.parse(build.failureJson) : {}, ledger: build ? JSON.parse(build.budgetLedgerJson) : null,
       evidence: artifacts.map((row: {artifactKind: string; content: string}) => ({kind: row.artifactKind, content: row.content})),
       world: JSON.stringify(await db.worldReleases.toArray()), releases: await db.productReleases.count(), sessions: await db.productRuntimeSessions.count(),
     }
