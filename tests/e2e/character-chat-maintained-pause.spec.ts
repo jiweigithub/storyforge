@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test'
+import {chatActionResponseFixture} from './helpers/character-chat-choice'
 
 const firstReply = '我先暂缓寻找铜印。它还没找回，未查明的部分也不能算作谁的过错。'
 const nextReply = '铜印还没找回。我恢复寻找，先问清能从哪份现存记录核对。'
@@ -52,7 +53,7 @@ async function provider(page: Page, handoff: unknown, passed = true) {
         : {checks: (step === 'review-control' ? ['current-pause', 'current-opportunity', 'pending-obligations', 'available-direction', 'player-agency', 'visibility']
           : ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'])
           .map(check => ({check, passed: check === 'pending-obligations' ? passed : true, reason: privateReason}))}
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   return calls
 }

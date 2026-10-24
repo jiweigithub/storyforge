@@ -1,4 +1,5 @@
 import {expect, test, type Page} from '@playwright/test'
+import {chatActionResponseFixture} from './helpers/character-chat-choice'
 
 const firstReply = '我退回柜台外，将已经核实的线索按时间排好。'
 const nextReply = '整理的线索留着，我想先听听你更在意哪一条。'
@@ -53,7 +54,7 @@ async function provider(page: Page, handoff: unknown, passed = true, unadoptedPa
         : {checks: (step === 'review-control' ? ['current-turn-progress', 'local-purpose', 'pending-obligations', 'player-agency', 'visibility']
           : ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'])
           .map(check => ({check, passed: check === 'pending-obligations' ? passed : true, reason: privateReason}))}
-    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: JSON.stringify(output)}, finish_reason: 'stop'}]})})
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}]})})
   })
   return calls
 }
