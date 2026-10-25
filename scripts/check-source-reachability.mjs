@@ -91,6 +91,9 @@ const entrypoints = [
   // AVG R4b1 is the independently testable, headless versioned intent/compiler/request API.
   // It has no dispatch/adoption authority; the future formal Brief/producer/UI must register first.
   'src/lib/avg/media-production-v2.ts',
+  // AVG-04A.27a.1 is an experimental headless pixel/straight-PNG foundation.
+  // No formal Plan, producer/adoption or UI admission is enabled by this API.
+  'src/lib/avg/image-region-composite.ts',
   // AVG foreground processing starts this dedicated Worker through a fixed
   // new URL(..., import.meta.url), not a main-window module import.
   'src/lib/avg/image-foreground.worker.ts',
