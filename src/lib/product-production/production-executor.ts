@@ -7071,8 +7071,10 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
     durationMs: elapsed(startedAt),
     storageBytes: 0,
   } : zeroUsage(elapsed(startedAt))
+  let completeOpenModelDraft = false
   try {
   const parsedRaw = parseProductionModelJsonObjectV1(output, input.task.taskKey)
+  completeOpenModelDraft = openV3 && response !== null
   const repairMergedRaw = applyTextAdventureSceneRepairPatchV1(
     input.task.taskKey, input.contextText, parsedRaw, input.authorDraftJson ? 'author-draft' : 'model',
   )
@@ -7823,7 +7825,10 @@ async function executeModelTask(input: ProductProductionTaskExecutionInputV1, op
   }
   } catch (error) {
     const failure = error instanceof Error ? error : new Error(String(error))
-    if (input.authorDraftJson) {
+    if (input.authorDraftJson || completeOpenModelDraft) {
+      // A complete received V3 draft belongs in author review. Invalid stable
+      // references or mappings must not silently buy a second model response.
+      // Transport/unknown-result handling and historical profiles stay intact.
       throw new ProductProductionDraftRejectedErrorV1(failure.message, paidUsage)
     }
     Object.defineProperty(failure, 'productProductionUsage', {

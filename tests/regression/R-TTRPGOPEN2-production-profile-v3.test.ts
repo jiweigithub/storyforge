@@ -247,3 +247,23 @@ it('the entire framed wire estimate includes format, escaping-independent text a
     + estimateTtrpgOpenProductionTextV3(exactUser) + TTRPG_OPEN_WIRE_OVERHEAD_RESERVE_V3)
   expect(estimateTtrpgOpenProductionWireV3(system, context)).toBeGreaterThan(estimateTtrpgOpenProductionTextV3(context))
 })
+
+
+it('retains a complete invalid V3 model draft for author repair without buying an automatic second response', async () => {
+  const data = await fixture(), auth = await authorize(data)
+  const raw = JSON.stringify({ schema: 'storyforge.ttrpg-open-source-facts', version: 1, facts: [{ invalidStableReference: true }] })
+  const runText = vi.fn<ProductionTextRunnerV1>(async () => ({ output: raw, usage: { inputTokens: 90, outputTokens: 120 },
+    bindingReceipt: { schema: 'storyforge.provider-binding-receipt', version: 1, requirementKey: auth.requirementKey,
+      adapterId: 'configured-text.v1', adapterVersion: 1, provider: 'fixture', model: 'fixture-only', endpointOrigin: 'https://fixture.invalid',
+      executionLocation: 'browser-direct', credentialSource: 'existing-ai-config', credentialPresent: true,
+      capabilityHash: 'a'.repeat(64), boundAt: 1, receiptHash: 'a'.repeat(64) } }))
+  const executor = createConfiguredProductProductionExecutorV1({ brief: data.brief, production: (await db.productProductions.get(data.productionId))!, runText })
+  const result = await runProductProductionUntilBlockedV1({ scope: data.scope, productionId: data.productionId, capabilityBindings: auth.capabilityBindings, executor })
+  const build = (await db.productBuilds.get(result.buildId))!
+  expect(runText).toHaveBeenCalledTimes(1)
+  expect(JSON.parse(build.failureJson)).toMatchObject({ taskKey: 'ttrpg.open.source-facts', code: 'task-draft-rejected', attempt: 1 })
+  expect((await db.agentRunArtifacts.toArray()).some(a => a.artifactKind === 'raw-response' && a.content === raw)).toBe(true)
+  const events = await db.agentRunEvents.toArray()
+  expect(events.some(e => e.type === 'step.failed' && JSON.parse(e.payloadJson).retryable === false)).toBe(true)
+  expect(await db.productReleases.count()).toBe(0)
+})

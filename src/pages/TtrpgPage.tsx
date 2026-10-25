@@ -1,3 +1,4 @@
+import { saveTtrpgOpenPreviewEnabledV1, useTtrpgOpenPreviewEnabledV1 } from '../lib/ttrpg/open-preview-preferences'
 import BrandIcon from '../components/shared/BrandIcon'
 import { useDialog } from '../components/shared/Dialog';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -82,7 +83,7 @@ export default function TtrpgPage() {
     primary = ttrpgPrimary(page[0]);
   const projectId = Number(params.get("project")) || null,
     workId = Number(params.get("work")) || null;
-  const openPreview = import.meta.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW === '1';
+  const openPreview = useTtrpgOpenPreviewEnabledV1();
   const newOpen = openPreview && !projectId && !workId && params.get('format') === 'open';
   const [rows, setRows] = useState<Row[]>([]),
     [loading, setLoading] = useState(true),
@@ -658,6 +659,12 @@ export default function TtrpgPage() {
                         />
                       </div>
                       <p>先规划，再制作。作品版本与每一场冒险分别保存。</p>
+                      {import.meta.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW !== '1' && <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" aria-label="启用开放跑团试用" checked={openPreview} disabled={busy || draftConflict} onChange={event => {
+                          if (!saveTtrpgOpenPreviewEnabledV1(event.target.checked)) setError('未能保存试用偏好，请检查浏览器存储。');
+                        }} />启用开放跑团试用（实验性）
+                      </label>}
+                      <p className="text-xs text-text-muted">试用选择只在当前浏览器保存。开启后仍需确认制作方案和每次模型调用；长局体验与不同设备的配音效果待你实际试玩。</p>
                     </section>
                     <div className="lf-library-grid">
                       {rows

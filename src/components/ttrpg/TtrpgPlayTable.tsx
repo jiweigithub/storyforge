@@ -1,3 +1,4 @@
+import { useTtrpgOpenPreviewEnabledV1 } from '../../lib/ttrpg/open-preview-preferences'
 import TtrpgOpenPlayTable, { type TtrpgPlayTablePropsV1 } from './TtrpgOpenPlayTable'
 import { ttrpgCampaignNavigationV1 } from '../../lib/ttrpg/campaign-navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -18,7 +19,8 @@ const outcomeLabels: Record<string, string> = { automatic: '直接完成', succe
   'critical-success': '大成功', 'critical-failure': '大失败', 'hard-success': '困难成功', 'extreme-success': '极难成功', hidden: '暗骰' }
 
 export default function TtrpgPlayTable(props: TtrpgPlayTablePropsV1) {
-  if (props.state.ttrpg && 'runFormat' in props.state.ttrpg && props.state.ttrpg.runFormat === 'open') return import.meta.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW === '1'
+  const openPreview = useTtrpgOpenPreviewEnabledV1()
+  if (props.state.ttrpg && 'runFormat' in props.state.ttrpg && props.state.ttrpg.runFormat === 'open') return openPreview
     ? <TtrpgOpenPlayTable key={props.session.id} {...props} />
     : <section role="status"><h2>此冒险尚未开放游玩</h2><p>开放跑团仍在开发验证中，已有存档会保留。</p></section>
   return <ScriptedTtrpgPlayTable {...props} />

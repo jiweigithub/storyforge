@@ -75,6 +75,14 @@ describe('R-TTRPGOPEN10 normal original voice controls and local audition lifecy
   async function chooseOriginal(key:string){await select('原配音记录',key);await until(()=>!!button('准备原本机任务')||!!button('核对原音频候选'))}
   async function retainedCandidate(){const f=await setupVoiceCandidateFixtureV1();await api.prepareTtrpgOpenVoiceCandidateV1(f.review);await setup(f.owner,true);await chooseOriginal(f.input.requestKey)
     await click('核对原音频候选');await until(()=>!!button('准备这条候选试听')&&!button('准备这条候选试听').disabled);return f}
+  it('checks the selected installed voice without reserving a request, generating audio or changing the game',async()=>{
+    const f=await setupAudioRuntimeV1(true,'门口的灯。'),net=await network();await setup(f.owner)
+    const before=await readProductRuntimeState(f.owner.sessionId),runs=await db.agentRuns.count()
+    await click('检查所选声线');await until(()=>host.textContent!.includes('所选声线已就绪'))
+    expect(await readProductRuntimeState(f.owner.sessionId)).toEqual(before);expect(await db.agentRuns.count()).toBe(runs)
+    expect(net.counts()).toEqual({starts:0,previews:0,creates:0,cancelled:false})
+    expect(host.textContent).toContain('本机配音准备说明')
+  })
   it('a selected unavailable engine fails before reserving any voice intent or spending its session quota',async()=>{
     const f=await setupAudioRuntimeV1(true,'门口的灯。'),net=await network();await setup(f.owner)
     await select('配音原文',JSON.stringify(f.narrationSourceRef));await click('预览本机读法');await until(()=>!!host.querySelector('[aria-label="确认原文读法与范围"]'))

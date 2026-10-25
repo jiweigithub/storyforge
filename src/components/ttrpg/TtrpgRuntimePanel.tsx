@@ -1,3 +1,4 @@
+import { useTtrpgOpenPreviewEnabledV1 } from '../../lib/ttrpg/open-preview-preferences'
 import { Link } from 'react-router'
 import { useEffect, useMemo, useState } from 'react'
 import { Dices, ShieldCheck, Trash2 } from 'lucide-react'
@@ -54,7 +55,7 @@ export default function TtrpgRuntimePanel(props: {
   )), [props.workspaceScope, props.worldGroupId, store.sessions])
   const selected = sessions.find(session => session.id === store.selectedSessionId) ?? null
   const openRun = Boolean(store.runtimeState.ttrpg && 'runFormat' in store.runtimeState.ttrpg && store.runtimeState.ttrpg.runFormat === 'open')
-  const openPreview = import.meta.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW === '1'
+  const openPreview = useTtrpgOpenPreviewEnabledV1()
   const selectChild = async (job: Promise<number>) => {
     const id = await job
     props.onSessionSelected?.(id)
