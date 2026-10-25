@@ -4,10 +4,10 @@ import type { ProductBuildArtifactRecordV1, WorkspaceScope } from '../types'
 import { assertRecordInScope } from '../workspace/scope'
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
-import { assertAvgAudioProcessingWaveBytesV1 } from './audio-processing'
+import { assertAvgAudioProcessingWaveBytes } from './audio-processing-dispatch'
 import { avgHash, avgRecord } from './protocol-validation'
-import { assertAvgProcessedAudioArtifactV1, type AvgProcessedAudioArtifactFieldsV1,
-  type AvgAudioProcessingEntryV1 } from './processed-audio-contract'
+import { assertAvgProcessedAudioArtifact, type AvgProcessedAudioArtifactFieldsV1,
+  type AvgAudioProcessingEntry } from './processed-audio-contract'
 import { inspectAvgVoiceBytesV1 } from './voice-decoder'
 import { parseAvgVoiceByteMeasurementV1 } from './voice-raw-contract'
 import { inspectAvgVoiceWaveV1 } from './voice-wave'
@@ -22,12 +22,12 @@ const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) ===
  * actual current or explicitly frozen original, producer/Plan/context and
  * authority. This cannot select a historical mode, admit, audition or adopt. */
 export async function inspectAvgProcessedAudioSourceV1(input: {
-  scope: WorkspaceScope; entry: AvgAudioProcessingEntryV1; original: Original
+  scope: WorkspaceScope; entry: AvgAudioProcessingEntry; original: Original
   row: AvgProcessedAudioStoredFieldsV1; sourceContextHash: string
 }) {
   const frozen = structuredClone(input), { row, original, entry } = frozen
   const sourceContextHash = avgHash(frozen.sourceContextHash, 'processed context hash')
-  const parsed = await assertAvgProcessedAudioArtifactV1({ entry, row, source: {
+  const parsed = await assertAvgProcessedAudioArtifact({ entry, row, source: {
     raw: { artifactKey: original.row.artifactKey, version: original.row.version,
       contentHash: original.row.contentHash, producerReceiptHash: original.row.producerReceiptHash! },
     asset: original.asset, requestIdentityHash: original.requestIdentityHash,
@@ -59,7 +59,7 @@ export async function inspectAvgProcessedAudioSourceV1(input: {
     const [source, output] = await Promise.all([
       readVerifiedMediaBlobObjectData(originalBlob!), readVerifiedMediaBlobObjectData(outputBlob!),
     ])
-    await assertAvgAudioProcessingWaveBytesV1({ source, output, recipe: entry.recipe, receipt: parsed.payload.receipt })
+    await assertAvgAudioProcessingWaveBytes({ source, output, recipe: entry.recipe, receipt: parsed.payload.receipt })
     const decoded = entry.domain === 'voice'
       ? await inspectAvgVoiceBytesV1({ data: output, assetKey: parsed.asset.assetKey,
         contentHash: parsed.asset.contentHash, maximumDurationMs: entry.recipe.maximumDurationMs })

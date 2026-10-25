@@ -4,10 +4,10 @@ import type { WorkspaceScope } from '../types'
 import { assertRecordInScope, resolveScope } from '../workspace/scope'
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
-import { readAvgAdoptedGeneratedReferenceChoiceV1, readAvgAdoptedGeneratedReferenceChoiceV4,readAvgAdoptedRevalidatedImageChoiceV4,readAvgAdoptedProcessedVisualChoiceV4, readAvgAdoptedProcessedVisualChoiceV5,readAvgAdoptedGeneratedReferenceChoiceV5 } from './author-artifacts'
+import { readAvgAdoptedGeneratedReferenceChoiceV1, readAvgAdoptedGeneratedReferenceChoiceV4,readAvgAdoptedRevalidatedImageChoiceV4,readAvgAdoptedRevalidatedImageChoiceV5,readAvgAdoptedProcessedVisualChoiceV4, readAvgAdoptedProcessedVisualChoiceV5,readAvgAdoptedGeneratedReferenceChoiceV5 } from './author-artifacts'
 import { parseAvgAuthorMediaChoice } from './media-production-contract'
 import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
-import { parseAvgGeneratedReferenceSourceV1, parseAvgGeneratedReferenceSourceV2, parseAvgGeneratedReferenceSourceV3, parseAvgGeneratedReferenceSourceV5, parseAvgGeneratedReferenceSourceV6, parseAvgGeneratedImageSource,
+import { parseAvgGeneratedReferenceSourceV1, parseAvgGeneratedReferenceSourceV2, parseAvgGeneratedReferenceSourceV3, parseAvgGeneratedReferenceSourceV5, parseAvgGeneratedReferenceSourceV6,parseAvgGeneratedReferenceSourceV7,parseAvgGeneratedReferenceSourceV8,parseAvgGeneratedImageSource,
   type AvgGeneratedReferenceSourceV1, type AvgGeneratedImageSource } from './media-generated-reference-contract'
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V1, type AvgMediaReferenceV1 } from './media-reference-contract'
 import { parseAvgGeneratedReferenceSourceV4 } from './visual-processed-source-contract'
@@ -83,6 +83,14 @@ const sourceOfProcessedV5=(e:Awaited<ReturnType<typeof readAvgAdoptedProcessedVi
   schema:'storyforge.avg.generated-reference-source',version:6,productionKey:e.productionKey,requirementKey:e.choice.requirementKey,
   raw:e.rawProof,processing:e.processingProof,compilation:e.compilation,choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})
 
+const sourceOfRevalidatedV5=(e:Awaited<ReturnType<typeof readAvgAdoptedRevalidatedImageChoiceV5>>)=>parseAvgGeneratedReferenceSourceV7({
+  schema:'storyforge.avg.generated-reference-source',version:7,productionKey:e.productionKey,requirementKey:e.choice.requirementKey,
+  raw:e.rawProof,original:e.rawReuseSource,compilation:e.compilation,choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})
+const sourceOfProcessedRevalidatedV5=(e:Awaited<ReturnType<typeof readAvgAdoptedProcessedVisualChoiceV5>>)=>parseAvgGeneratedReferenceSourceV8({
+  schema:'storyforge.avg.generated-reference-source',version:8,productionKey:e.productionKey,requirementKey:e.choice.requirementKey,
+  raw:e.rawProof,original:e.rawReuseSource,processing:e.processingProof,compilation:e.compilation,
+  choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})
+
 const sourceOfRevalidatedV4=(e:Awaited<ReturnType<typeof readAvgAdoptedRevalidatedImageChoiceV4>>)=>parseAvgGeneratedReferenceSourceV3({
   schema:'storyforge.avg.generated-reference-source',version:3,productionKey:e.productionKey,requirementKey:e.choice.requirementKey,
   raw:e.rawProof,original:e.original,compilation:e.compilation,choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})
@@ -103,7 +111,13 @@ export async function prepareAvgAdoptedGeneratedImageV2(input:{scope:WorkspaceSc
     if(JSON.parse(brief.briefJson).avgVisualPlanning.imageProcessing?.entries.some((e:{requirementKey:string})=>row.artifactKey===`avg.media.choice.${e.requirementKey}`)){
       const evidence=await readAvgAdoptedProcessedVisualChoiceV5({scope,buildId:row.buildId,controlEpoch:row.controlEpoch,
         artifactKey:row.artifactKey,version:row.version,contentHash:row.contentHash})
-      return {asset:evidence.choice.asset,source:sourceOfProcessedV5(evidence),referenceOnly:evidence.choice.referenceOnly,sourceWorldContentHash:evidence.sourceWorldContentHash}
+      return {asset:evidence.choice.asset,source:evidence.rawReuseSource?sourceOfProcessedRevalidatedV5(evidence):sourceOfProcessedV5(evidence),
+        referenceOnly:evidence.choice.referenceOnly,sourceWorldContentHash:evidence.sourceWorldContentHash}
+    }
+    if(JSON.parse(brief.briefJson).avgVisualPlanning.rawReuse?.some((e:{requirementKey:string})=>row.artifactKey===`avg.media.choice.${e.requirementKey}`)){
+      const evidence=await readAvgAdoptedRevalidatedImageChoiceV5({scope,buildId:row.buildId,controlEpoch:row.controlEpoch,
+        artifactKey:row.artifactKey,version:row.version,contentHash:row.contentHash})
+      return {asset:evidence.choice.asset,source:sourceOfRevalidatedV5(evidence),referenceOnly:evidence.choice.referenceOnly,sourceWorldContentHash:evidence.sourceWorldContentHash}
     }
     const evidence=await readAvgAdoptedGeneratedReferenceChoiceV5({scope,buildId:row.buildId,controlEpoch:row.controlEpoch,
       artifactKey:row.artifactKey,version:row.version,contentHash:row.contentHash})
@@ -136,6 +150,8 @@ export async function readAvgAdoptedGeneratedImageV2(input:{scope:WorkspaceScope
   const boundary={scope,buildId:build.id,controlEpoch:source.raw.controlEpoch,...source.choice}
   const {evidence,proved}=await(async()=>{
     if(source.version===6){const e=await readAvgAdoptedProcessedVisualChoiceV5(boundary);return {evidence:e,proved:sourceOfProcessedV5(e)}}
+    if(source.version===8){const e=await readAvgAdoptedProcessedVisualChoiceV5(boundary);return {evidence:e,proved:sourceOfProcessedRevalidatedV5(e)}}
+    if(source.version===7){const e=await readAvgAdoptedRevalidatedImageChoiceV5(boundary);return {evidence:e,proved:sourceOfRevalidatedV5(e)}}
     if(source.version===5){const e=await readAvgAdoptedGeneratedReferenceChoiceV5(boundary);return {evidence:e,proved:sourceOfV5(e)}}
     if(source.version===4){const e=await readAvgAdoptedProcessedVisualChoiceV4(boundary);return {evidence:e,proved:sourceOfProcessedV4(e)}}
     if(source.version===3){const e=await readAvgAdoptedRevalidatedImageChoiceV4(boundary);return {evidence:e,proved:sourceOfRevalidatedV4(e)}}

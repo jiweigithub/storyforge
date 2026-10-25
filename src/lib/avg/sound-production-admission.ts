@@ -74,7 +74,8 @@ export async function readAvgSoundRawProducerSourceV1(input: AvgSoundRawProofInp
   return verifyAvgSoundRawProducerV1(input, brief, false)
 }
 async function verifyAvgSoundRawProducerV1(input: AvgSoundRawProofInputV1, brief: ProductProductionBriefV3, exactMeasurement: boolean) {
-  const planning = brief.avgSoundPlanning!, task = input.task, a = input.artifact
+  const planning = brief.avgSoundPlanning, task = input.task, a = input.artifact
+  if (planning?.version !== 1) throw new Error('[avg-sound] 原始响应生产证明只属于原V1调用，不能冒充本地复验')
   const assembled = await assembleContext({ projectId: input.scope.projectId, scope: input.scope, productProductionId: input.build.productionId,
     productBuildId: input.build.id, productProductionTaskKey: task.taskKey, productArtifactKeys: task.inputArtifactKeys,
     sourceKeys: [AVG_SOUND_CONTEXT_V1], inputBudgetTokens: task.budgetReservation.inputTokens, sourceTransformer: preserveProductProductionContextV1 })

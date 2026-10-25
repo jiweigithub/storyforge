@@ -27,7 +27,7 @@ import { assertAvgTaskHarnessClaimV1, hashAvgTaskRuntimeBindingV1 } from './task
 import { parseProductProductionPlanV3 } from '../product-production/plan'
 import { avgSoundProductionExecutionReadyV1 } from './sound-production-brief'
 import { readAvgSoundPlanningExecutionSourcesV1 } from './sound-planning-task-source'
-import { avgAudioProcessingExecutionReadyV1 } from './audio-production-brief'
+import { avgAudioProcessingExecutionReadyV1, avgAudioProcessingForVoiceV3, avgAudioProcessingGateIdsV1 } from './audio-production-brief'
 
 /** V1 remains zero-provider. Opt-in V2 image tasks use the media Harness;
  * human choices/stage stay separate from deterministic package compilation. */
@@ -119,7 +119,7 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
         } } : {}),
         requestIdentityHash: choice.payload.requestIdentityHash,
         audioReview: { artifact: choice.review.artifact, authorReceiptHash: choice.review.authorReceiptHash } })) } : {}),
-      ...(brief.avgSoundPlanning ? { soundPlan: compiled.source.soundPlan,
+      ...(brief.avgSoundPlanning ? { ...(compiled.source.soundPlan ? { soundPlan: compiled.source.soundPlan } : {}),
         soundChoices: (compiled.source.soundChoices ?? []).map(choice => ({ choice: choice.artifact, authorReceiptHash: choice.authorReceiptHash,
           raw: { artifactKey: choice.raw.artifactKey, version: choice.raw.version, contentHash: choice.raw.contentHash },
           rawProducerReceiptHash: choice.raw.producerReceiptHash, responseEvidenceHash: choice.validation.responseEvidenceHash,
@@ -161,7 +161,8 @@ export function createAvgAssemblyExecutorV1(options: { production: ProductProduc
         ...(module.systemPlan.version===2?module.systemPlan.inventory.items.flatMap(item=>[item,...item.variants].flatMap(view=>[view.iconAssetKey,view.detailAssetKey].filter((key):key is string=>key!==null))):[])])
       const unused=assets.filter(asset=>!usedAssets.has(asset.assetKey))
       const report: ProductBuildQualityReportV1 = { schema:'storyforge.product-build-quality-report',version:1,buildNumber:request.buildNumber,packageHash,
-        hardGateResults:(brief.avgVisualPlanning || brief.avgSoundPlanning?request.task.acceptanceGateIds:assembly.version === 3 ? avgVoiceAssemblyGateIdsV3(parseAvgStoredAssemblyBriefV3(assembly).assembly)
+        hardGateResults:(brief.avgVisualPlanning || brief.avgSoundPlanning?request.task.acceptanceGateIds:assembly.version === 3 ? [...avgVoiceAssemblyGateIdsV3(parseAvgStoredAssemblyBriefV3(assembly).assembly),
+          ...(brief.avgAudioProcessing ? avgAudioProcessingGateIdsV1(avgAudioProcessingForVoiceV3(brief.avgAudioProcessing, parseAvgStoredAssemblyBriefV3(assembly).assembly)) : [])]
           : assembly.version === 2 ? avgMediaAssemblyGateIdsV2(assembly.mediaBatch,assembly.imageProcessing) : AVG_ASSEMBLY_GATE_IDS_V1)
           .map(gateId => ({ gateId,passed:true,evidence:[canonicalProductProductionJsonV2(sourceProof)] })),
         softGateResults:[],mediaCoverage:assets.length?(assets.length-unused.length)/assets.length:1,playable:true,releaseReady:false,

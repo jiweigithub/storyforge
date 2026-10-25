@@ -1,4 +1,4 @@
-import { productProductionTaskExecutionIdentityHashV1, type ProductProductionTaskExecutionInputV1 } from '../product-production/scheduler'
+import { frozenProductProductionTaskExecutionIdentityHashV1, productProductionTaskExecutionIdentityHashV1, type ProductProductionTaskExecutionInputV1 } from '../product-production/scheduler'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { readAgentRunV1 } from '../agent/run/event-store'
 import { createAgentSkillExecutionBindingV1 } from '../agent/execution-binding'
@@ -7,10 +7,21 @@ import { getAgentSkillV1 } from '../agent/skill-registry'
 /** Mirrors the shared scheduler's task runtime identity, with exactly its
  * normalized, non-secret binding list. Read-only; creates no claim. */
 export async function hashAvgTaskRuntimeBindingV1(input: Pick<ProductProductionTaskExecutionInputV1, 'planHash' | 'task' | 'capabilityBindings'>) {
+  return hashAvgTaskRuntimeIdentity(input, await productProductionTaskExecutionIdentityHashV1(input.task))
+}
+
+/** Only a historical read uses the original sealed tool/Skill snapshot. New
+ * dispatch and admission keep the current-identity function above. */
+export async function hashAvgHistoricalTaskRuntimeBindingV1(input: Pick<ProductProductionTaskExecutionInputV1, 'planHash' | 'task' | 'capabilityBindings'>,
+  snapshot: Pick<Awaited<ReturnType<typeof readAgentRunV1>>, 'contract'>) {
+  return hashAvgTaskRuntimeIdentity(input, await frozenProductProductionTaskExecutionIdentityHashV1(input.task, snapshot))
+}
+
+async function hashAvgTaskRuntimeIdentity(input: Pick<ProductProductionTaskExecutionInputV1, 'planHash' | 'task' | 'capabilityBindings'>, executionIdentityHash: string) {
   return hashProductProductionValueV2({ schema: 'storyforge.product-production-task-runtime', version: 1,
     executor: 'product-production-scheduler', planHash: input.planHash, taskKey: input.task.taskKey, taskKind: input.task.kind,
     executionMode: input.task.executionMode, skillId: input.task.skillId ?? null,
-    executionIdentityHash: await productProductionTaskExecutionIdentityHashV1(input.task),
+    executionIdentityHash,
     capabilityBindingHash: input.capabilityBindings.length ? await hashProductProductionValueV2(input.capabilityBindings) : null })
 }
 

@@ -1,6 +1,7 @@
 import { AVG_LOCAL_VOICE_MODEL_V1, AVG_LOCAL_VOICE_REVISION_V1, AVG_LOCAL_VOICE_IDS_V1 } from '../../src/lib/avg/voice-local-profile'
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { confirmEngineeringVisualReview } from '../helpers/avg-visual-review-playwright'
 
 async function adopt(page: Page, label: string) {
@@ -61,7 +62,7 @@ async function fillVoicePresets(editor: Locator, count: number, declaration: str
   }
 }
 
-async function seedVoice(page: Page, unknown = false, withImage = false, batchSize = 1) {
+async function seedVoice(page: Page, unknown = false, withImage = false, batchSize = 1, processing?: 'v2') {
   await page.addInitScript(() => localStorage.setItem('storyforge_guide_completed', 'e2e'))
   await page.goto('./avg/library')
   const localOrigin = new URL(page.url()).origin
@@ -141,6 +142,17 @@ async function seedVoice(page: Page, unknown = false, withImage = false, batchSi
   await fillVoicePresets(editor, batchSize, '原创工程校准音；不签 TTS、人声、专业听感或商用许可', '本测试原创 PCM 控制值；实际供应商音色条款另验')
   await editor.getByRole('button', { name: '保存配音需求草稿', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: '准确配音需求已保存' })).toBeVisible()
+  if (processing === 'v2') {
+    const adjustment = page.getByRole('region', { name: '配音本地音量调整', exact: true })
+    await adjustment.getByRole('checkbox', { name: '调整此句音量', exact: true }).check()
+    await adjustment.getByRole('spinbutton', { name: '音量增减（dB）', exact: true }).fill('18')
+    await adjustment.getByRole('checkbox', { name: '缓和突出的音量尖峰', exact: true }).check()
+    await adjustment.getByRole('combobox', { name: '采样率', exact: true }).selectOption('explicit')
+    await adjustment.getByRole('spinbutton', { name: '指定采样率（Hz）', exact: true }).fill('48000')
+    await adjustment.getByRole('textbox', { name: '调整说明', exact: true }).fill('受控工程WAV明确调整到48k并缓和尖峰；不是实际供应商人声、听感或保真验收。')
+    await adjustment.getByRole('button', { name: '保存音量调整要求', exact: true }).click()
+    await expect(page.getByRole('status').filter({ hasText: '音量调整要求已保存' })).toBeVisible()
+  }
   await page.getByRole('button', { name: '制作与试玩', exact: true }).click()
   await page.getByRole('button', { name: '准备制作方案', exact: true }).click()
   await page.getByRole('button', { name: '确认方案并开始组装', exact: true }).click()
@@ -152,6 +164,7 @@ async function seedVoice(page: Page, unknown = false, withImage = false, batchSi
   if (unknown) await expect(page.getByRole('region', { name: '图音恢复方案', exact: true })).toBeVisible()
   else if (batchSize === 1) await expect(page.getByRole('button', { name: '查看并审听此句', exact: true })).toBeVisible()
   else await expect(page.getByRole('button', { name: '查看并审听此句', exact: true })).toHaveCount(batchSize)
+  if (processing === 'v2') await expect(page.getByText('另有 0 句待本地音量加工，不增加配音请求。', { exact: true })).toBeVisible()
   expect(bodies).toHaveLength(batchSize)
   expect(imageBodies).toHaveLength(withImage ? 1 : 0)
   return { seed, bodies, imageBodies }
@@ -187,9 +200,31 @@ async function reviewAndChoose(page: Page, configure = true, expectedCards = 1) 
   }
 }
 
-test('native voice production reaches real decoded audio, native ended, separate review/choice and an offline frozen Preview', async ({ page }, info) => {
+async function readVoiceRawFingerprint(page: Page, scope: { projectId: number; worldId: number; workId: number }) {
+  return page.evaluate(async scope => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    const [{ db }, blobs] = await Promise.all([load('/storyforge/src/lib/db/schema.ts'), load('/storyforge/src/lib/product-production/media-blob-store.ts')])
+    const raw = await db.productBuildArtifacts.where('workId').equals(scope.workId)
+      .filter((row: any) => row.artifactKey.startsWith('avg.voice.raw.') && row.status === 'accepted').first()
+    return { row: JSON.stringify(raw), contentHash: await blobs.sha256MediaData(await blobs.readMediaBlobObjectData({ scope, blobObjectId: raw.blobObjectId })) }
+  }, scope)
+}
+
+for (const variant of [
+  { title: 'native voice production reaches real decoded audio, native ended, separate review/choice and an offline frozen Preview', processing: undefined },
+  { title: 'native processed voice uses real V2 Workers, native ended and separate review/choice2 before an offline frozen Preview', processing: 'v2' },
+] as const) {
+test(variant.title, async ({ page }, info) => {
   test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION !== '1' || process.env.VITE_STORYFORGE_AVG_VOICE_PRODUCTION !== '1', 'Both default-off experiments must be explicit')
-  const s = await seedVoice(page)
+  test.skip(variant.processing === 'v2' && process.env.VITE_STORYFORGE_AVG_AUDIO_PROCESSING !== '1', 'Audio processing must be explicitly enabled')
+  const workers: string[] = []
+  if (variant.processing) page.on('worker', worker => workers.push(worker.url()))
+  const s = await seedVoice(page, false, false, 1, variant.processing)
+  const rawBefore = variant.processing ? await readVoiceRawFingerprint(page, s.seed.scope) : null
+  if (rawBefore) {
+    const returnedWave = Buffer.from(s.seed.wave, 'base64'); returnedWave[100] ^= 1
+    expect(rawBefore.contentHash).toBe(createHash('sha256').update(returnedWave).digest('hex'))
+  }
   await reviewAndChoose(page)
   await page.reload()
   await page.evaluate(async () => {
@@ -217,10 +252,83 @@ test('native voice production reaches real decoded audio, native ended, separate
   expect(proof.workspace.presentation.reading.voices[0]).toMatchObject({ lineKey: s.seed.lineKey, text: s.seed.text })
   expect(proof.audioReview.audioEvidence.audition).toMatchObject({ outcome: 'ended', playedMs: 1000, muted: false, playbackRate: 1, seeked: false })
   expect(proof.raw.provider.costUsd).toBe(0); expect(s.bodies).toHaveLength(1)
+  if (variant.processing) {
+    expect(await readVoiceRawFingerprint(page, s.seed.scope)).toEqual(rawBefore)
+    const processedProof = await page.evaluate(async scope => {
+      const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+      const [{ db }, drafts, blobs, previews] = await Promise.all([load('/storyforge/src/lib/db/schema.ts'), load('/storyforge/src/lib/avg/draft-service.ts'),
+        load('/storyforge/src/lib/product-production/media-blob-store.ts'), load('/storyforge/src/lib/product-production/preview-manifest.ts')])
+      const draft = await drafts.readAvgDraftV1(scope), production = await db.productProductions.get(draft.productionId)
+      const build = await db.productBuilds.where('[productionId+buildNumber]').equals([production.id, production.currentBuildNumber]).first()
+      const brief = await db.productProductionBriefs.where('[productionId+revision]').equals([production.id, build.briefRevision]).first()
+      const artifacts = await db.productBuildArtifacts.where('buildId').equals(build.id).filter((row: any) => row.status === 'accepted').toArray()
+      const processed = artifacts.find((row: any) => row.artifactKey.startsWith('avg.voice.processed.'))
+      const review = artifacts.find((row: any) => row.artifactKey.startsWith('avg.review.audio.'))
+      const choice = artifacts.find((row: any) => row.artifactKey.startsWith('avg.voice.choice.'))
+      const media = artifacts.find((row: any) => /^avg\.media\.\d+$/.test(row.artifactKey) && row.mediaKind === 'voice')
+      const preview = await previews.verifyStoredProductBuildPreview(build), asset = JSON.parse(processed.metadataJson)
+      return { ref: { artifactKey: processed.artifactKey, version: processed.version, contentHash: processed.contentHash },
+        payload: JSON.parse(processed.payloadJson), quality: JSON.parse(processed.qualityJson), producerRunId: processed.producerRunId,
+        producerReceiptHash: processed.producerReceiptHash, blobObjectId: processed.blobObjectId,
+        actualHash: await blobs.sha256MediaData(await blobs.readMediaBlobObjectData({ scope, blobObjectId: processed.blobObjectId })),
+        choice: JSON.parse(choice.payloadJson), choiceCandidate: JSON.parse(choice.metadataJson).candidate,
+        reviewInputs: JSON.parse(review.metadataJson).candidate.inputs,
+        media: { blobObjectId: media.blobObjectId, contentHash: media.contentHash },
+        frozenAsset: preview.runtimePackage.modules[0].stage.assets.find((row: any) => row.assetKey === asset.assetKey),
+        frozenBinding: preview.mediaBindings.find((row: any) => row.assetKey === asset.assetKey),
+        frozenReading: preview.runtimePackage.modules[0].reading,
+        frozenProcessing: JSON.parse(brief.briefJson).avgAudioProcessing }
+    }, s.seed.scope)
+    expect(processedProof.payload).toMatchObject({ version: 2, raw: { contentHash: rawBefore!.contentHash },
+      recipe: { version: 2, gainMilliDb: 18_000, sampleRatePolicy: 'explicit', targetSampleRateHz: 48_000,
+        dynamics: { ceilingMilliDbfs: -1500, lookaheadMs: 3, releaseMs: 80 } },
+      receipt: { version: 2, processor: 'storyforge.avg.pcm16-dynamics-resample.v2', source: { contentHash: rawBefore!.contentHash, sampleRateHz: 16_000, sampleCount: 16_000 },
+        output: { sampleRateHz: 48_000, sampleCount: 48_000, durationMs: 1000 } } })
+    expect(processedProof.payload.receipt.dynamicsObservation.limitedFrameCount).toBeGreaterThan(0)
+    expect(processedProof.quality).toMatchObject({ noProviderRequest: true, hearing: 'unobserved', authorAdopted: false })
+    expect(processedProof.producerReceiptHash).toBeTruthy()
+    expect(processedProof.actualHash).toBe(processedProof.ref.contentHash)
+    expect(processedProof.actualHash).toBe(processedProof.payload.receipt.output.contentHash)
+    expect(processedProof.actualHash).not.toBe(proof.raw.measurement.contentHash)
+    expect(processedProof.choice).toMatchObject({ version: 2, processed: { ...processedProof.ref,
+      recipeHash: processedProof.payload.receipt.recipeHash, receiptHash: processedProof.payload.receipt.receiptHash },
+      raw: { contentHash: proof.raw.measurement.contentHash }, asset: { contentHash: processedProof.actualHash, blobContentHash: processedProof.actualHash } })
+    expect(processedProof.choiceCandidate.version).toBe(10)
+    expect(processedProof.reviewInputs).toContainEqual(processedProof.ref)
+    expect(proof.audioReview.audioEvidence.audioHash).toBe(processedProof.actualHash)
+    expect(processedProof.media).toEqual({ blobObjectId: processedProof.blobObjectId, contentHash: processedProof.actualHash })
+    expect(processedProof.frozenAsset).toMatchObject({ contentHash: processedProof.actualHash, blobContentHash: processedProof.actualHash })
+    expect(processedProof.frozenBinding.blobContentHash).toBe(processedProof.actualHash)
+    const exactBinding = { lineKey: s.seed.lineKey, text: s.seed.text, assetKey: processedProof.choice.asset.assetKey,
+      textRevision: proof.raw.requirement.textRevision, speakerKey: proof.raw.requirement.speakerKey, locale: proof.raw.requirement.locale }
+    expect(proof.workspace.presentation.reading.voices).toEqual([exactBinding])
+    expect(processedProof.frozenReading.voices).toEqual([exactBinding])
+    expect(processedProof.frozenProcessing).toMatchObject({ version: 2, entries: [{ domain: 'voice', recipe: processedProof.payload.recipe }] })
+    expect(workers.some(url => url.includes('audio-dsp-compute-v2.worker'))).toBe(true)
+    expect(workers.some(url => url.includes('audio-dsp-verify-v2.worker'))).toBe(true)
+    await info.attach('native-processed-voice-preview-proof.json', { body: JSON.stringify({ ...processedProof, workers }, null, 2), contentType: 'application/json' })
+  }
   await page.getByRole('button', { name: '素材', exact: true }).click()
   await page.getByRole('button', { name: '查看并审听此句', exact: true }).click()
-  await page.getByRole('region', { name: '配音审听与选择', exact: true }).screenshot({ path: info.outputPath('avg-voice-native-adopted-offline.png') })
+  const reopened = page.getByRole('region', { name: '配音审听与选择', exact: true })
+  if (variant.processing) {
+    await expect(reopened.getByRole('button', { name: '从头开启新一轮审听', exact: true })).toBeEnabled()
+    await reopened.getByRole('button', { name: '从头开启新一轮审听', exact: true }).click()
+    await reopened.locator('audio').evaluate((audio: HTMLAudioElement) => audio.play())
+    await expect(reopened.locator('audio')).toHaveJSProperty('ended', true)
+    const frozenPlayback = await reopened.locator('audio').evaluate(async (audio: HTMLAudioElement) => {
+      const bytes = await (await fetch(audio.currentSrc)).arrayBuffer()
+      const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(value => value.toString(16).padStart(2, '0')).join('')
+      return { sourceProtocol: new URL(audio.currentSrc).protocol, contentHash: hash, durationMs: audio.duration * 1000, ended: audio.ended }
+    })
+    expect(frozenPlayback).toEqual({ sourceProtocol: 'blob:', contentHash: proof.audioReview.audioEvidence.audioHash, durationMs: 1000, ended: true })
+    expect(await readVoiceRawFingerprint(page, s.seed.scope)).toEqual(rawBefore)
+    expect(s.bodies).toHaveLength(1)
+    await info.attach('native-processed-voice-frozen-playback.json', { body: JSON.stringify(frozenPlayback, null, 2), contentType: 'application/json' })
+  }
+  await reopened.screenshot({ path: info.outputPath(variant.processing ? 'avg-processed-voice-native-adopted-offline.png' : 'avg-voice-native-adopted-offline.png') })
 })
+}
 
 test('pending voice retention can be explicitly rechecked with a new image scope without dispatch, hearing adoption or another Build', async ({ page }, info) => {
   test.setTimeout(120_000)

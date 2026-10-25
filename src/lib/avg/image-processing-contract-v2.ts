@@ -6,6 +6,11 @@ import { assertAvgForegroundRequirementBinding } from './image-foreground-contra
 import { parseAvgForegroundPixelObservationV1, type AvgForegroundPixelObservationV1 } from './image-foreground-worker-protocol'
 import { AVG_FOREGROUND_OBSERVATION_KEYS_V2, parseAvgForegroundPixelObservationV2,
   type AvgForegroundPixelObservationV2 } from './image-foreground-worker-protocol-v2'
+import { AVG_FOREGROUND_OBSERVATION_KEYS_V3, parseAvgForegroundPixelObservationV3,
+  type AvgForegroundPixelObservationV3 } from './image-foreground-worker-protocol-v2'
+import { parseAvgForegroundSam2ObservationV4, type AvgForegroundSam2ProcessingObservationV4 } from './image-foreground-sam2-v4'
+import { hashAvgSam2PromptManifestV5, parseAvgForegroundSam2ObservationV5, type AvgForegroundSam2ProcessingObservationV5 } from './image-foreground-sam2-v5'
+import { parseAvgForegroundSam2ObservationV6, type AvgForegroundSam2ProcessingObservationV6 } from './image-foreground-sam2-v6'
 import { AVG_IMAGE_PROCESSOR_V1, parseAvgImageProcessingReceiptV1, assertAvgImageProcessingReceiptV1,
   parseAvgImageProcessingRecipeV1, parseAvgImageProcessingRecipeV2, parseAvgImageProcessingPlan,
   deriveAvgImageProcessingGeometryV1, parseAvgProcessedImagePayloadV1, parseAvgProcessedImageSourceFieldsV1,
@@ -24,10 +29,15 @@ export type AvgForegroundProcessingObservation = (AvgForegroundPixelObservationV
   width: number; height: number; policyHash: string
   sourcePixelHash: string; cutoutPixelHash: string; alphaPlaneHash: string
 }
+export type AvgForegroundEstimatedProcessingObservationV3 = AvgForegroundPixelObservationV3 & {
+  width: number; height: number; policyHash: string
+  sourcePixelHash: string; cutoutPixelHash: string; alphaPlaneHash: string
+}
+export type AvgForegroundProcessingObservationAny = AvgForegroundProcessingObservation | AvgForegroundEstimatedProcessingObservationV3 | AvgForegroundSam2ProcessingObservationV4 | AvgForegroundSam2ProcessingObservationV5 | AvgForegroundSam2ProcessingObservationV6
 export interface AvgImageProcessingReceiptV2 extends Omit<AvgImageProcessingReceiptV1, 'version' | 'processor'> {
   version: 2
   processor: typeof AVG_IMAGE_PROCESSOR_V2
-  foreground: AvgForegroundProcessingObservation
+  foreground: AvgForegroundProcessingObservationAny
 }
 export type AvgImageProcessingReceipt = AvgImageProcessingReceiptV1 | AvgImageProcessingReceiptV2
 export interface AvgProcessedImagePayloadV2 extends Omit<AvgProcessedImagePayloadV1, 'version' | 'recipe' | 'receipt'> {
@@ -56,8 +66,21 @@ export function parseAvgForegroundProcessingObservationV1(value: unknown): AvgFo
     sourcePixelHash: avgHash(r.sourcePixelHash, 'foreground.sourcePixelHash'), cutoutPixelHash: avgHash(r.cutoutPixelHash, 'foreground.cutoutPixelHash'),
     alphaPlaneHash: avgHash(r.alphaPlaneHash, 'foreground.alphaPlaneHash') }
 }
-export function parseAvgForegroundProcessingObservation(value: unknown): AvgForegroundProcessingObservation {
-  if (!value || typeof value !== 'object' || !('version' in value) || value.version !== 2) return parseAvgForegroundProcessingObservationV1(value)
+export function parseAvgForegroundProcessingObservation(value: unknown): AvgForegroundProcessingObservationAny {
+  if (!value || typeof value !== 'object' || !('version' in value) || value.version === 1) return parseAvgForegroundProcessingObservationV1(value)
+  if (value.version === 3) {
+    const r = avgRecord(value, [...AVG_FOREGROUND_OBSERVATION_KEYS_V3, 'width', 'height', 'policyHash',
+      'sourcePixelHash', 'cutoutPixelHash', 'alphaPlaneHash'], 'estimated foreground processing observation')
+    const width = avgNumber(r.width, 'foreground.width', 2, 10_000), height = avgNumber(r.height, 'foreground.height', 2, 10_000)
+    const observed = parseAvgForegroundPixelObservationV3(Object.fromEntries(AVG_FOREGROUND_OBSERVATION_KEYS_V3.map(key => [key, r[key]])), width, height)
+    return { ...observed, width, height, policyHash: avgHash(r.policyHash, 'foreground.policyHash'),
+      sourcePixelHash: avgHash(r.sourcePixelHash, 'foreground.sourcePixelHash'), cutoutPixelHash: avgHash(r.cutoutPixelHash, 'foreground.cutoutPixelHash'),
+      alphaPlaneHash: avgHash(r.alphaPlaneHash, 'foreground.alphaPlaneHash') }
+  }
+  if (value.version === 4) return parseAvgForegroundSam2ObservationV4(value)
+  if (value.version === 5) return parseAvgForegroundSam2ObservationV5(value)
+  if (value.version === 6) return parseAvgForegroundSam2ObservationV6(value)
+  if (value.version !== 2) throw new Error('[avg-process] 未登记的前景观察版本')
   const r = avgRecord(value, [...AVG_FOREGROUND_OBSERVATION_KEYS_V2, 'width', 'height', 'policyHash',
     'sourcePixelHash', 'cutoutPixelHash', 'alphaPlaneHash'], 'foreground boundary processing observation')
   const width = avgNumber(r.width, 'foreground.width', 2, 10_000), height = avgNumber(r.height, 'foreground.height', 2, 10_000)
@@ -85,6 +108,10 @@ export async function assertAvgImageProcessingReceiptV2(recipeInput: AvgImagePro
     || receipt.foreground.algorithm !== recipe.foreground.algorithm || receipt.output.width !== recipe.width || receipt.output.height !== recipe.height
     || !same(receipt.geometry, deriveAvgImageProcessingGeometryV1(projectAvgForegroundCanvasRecipeV1(recipe), receipt.source.width, receipt.source.height))) {
     throw new Error('[avg-process] 前景配方、策略、几何或回执 hash 不一致')
+  }
+  if ('version' in receipt.foreground && (receipt.foreground.version === 5 || receipt.foreground.version === 6)
+    && receipt.foreground.promptSha256 !== await hashAvgSam2PromptManifestV5()) {
+    throw new Error('[avg-process] 分割回执没有使用冻结的提示集合')
   }
   return receipt
 }

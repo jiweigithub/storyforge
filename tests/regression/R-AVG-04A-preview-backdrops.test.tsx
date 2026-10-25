@@ -44,6 +44,32 @@ describe('AVG local image backdrop comparison without source or review authority
   expect(reader.mock.calls).toEqual([[{scope,productionId:9,requirementKey:'keeper.pose',version:1,contentHash:asset.contentHash}]])
   expect(URL.createObjectURL).toHaveBeenCalledTimes(1);expect(URL.revokeObjectURL).not.toHaveBeenCalled();expect(s.observed).toHaveBeenCalledTimes(1);expect(fetch).not.toHaveBeenCalled()
  })
+ it('shows estimated-magenta pixel measurements only beside the exact V5 processed bytes and clears them on decode failure',async()=>{
+  const evidence={contentHash:asset.contentHash,output:{width:576,height:768,hasAlpha:true},foreground:{version:3 as const,
+   algorithm:'storyforge.avg.foreground.estimated-magenta-edge-unmix.v3' as const,baseAlgorithm:'storyforge.avg.foreground.estimated-magenta-edge-mask.v3' as const,
+   removedPixelRatio:.22,algorithmMaskRatio:.22,backdropColor:{red:248,green:24,blue:246},backdropBorderCoverage:.91,
+   clearedPixelCount:1000,translucentPixelCount:200,opaquePixelCount:323232,correctedPixelCount:37,unsupportedBoundaryPixelCount:2,maxCompositeResidual:4}}
+  api.processed5.mockResolvedValueOnce({asset,data:new Uint8Array([1,2,3,4]).buffer,processingEvidence:evidence})
+  const s=await mount(true),summary=s.host.querySelector('[aria-label="本地图像加工测量"]')
+  expect(summary?.textContent).toContain(asset.contentHash.slice(0,12));expect(summary?.textContent).toContain('RGB(248, 24, 246)')
+  expect(summary?.textContent).toContain('边缘色系覆盖 91.0%');expect(summary?.textContent).toContain('最大合成残差 4')
+  expect(summary?.textContent).toContain('不能证明边缘自然');expect(s.observed).not.toHaveBeenCalled()
+  await act(async()=>s.host.querySelector('img')!.dispatchEvent(new Event('error')))
+  expect(s.host.querySelector('[role="alert"]')?.textContent).toContain('无法解码');expect(s.host.querySelector('[aria-label="本地图像加工测量"]')).toBeNull()
+  expect(s.observed).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled()
+ })
+ it('shows all SAM 2 V5 mask observations and the selected whole-subject candidate without granting review authority',async()=>{
+  const candidates=[0.81,0.99,0.98,0.92,0.80,0.86].map((score,index)=>({promptIndex:Math.floor(index/3),maskIndex:index%3,score,maskCoverage:index===0?0.6:0.4}))
+  api.processed5.mockResolvedValueOnce({asset,data:new Uint8Array([1,2,3,4]).buffer,processingEvidence:{contentHash:asset.contentHash,
+   output:{width:576,height:768,hasAlpha:true},foreground:{version:5,algorithm:'storyforge.avg.foreground.sam2.1-pymatting.v5',modelId:'sam2.1-hiera-tiny',
+    modelScore:0.81,maskCoverage:0.6,alphaCoverage:0.5,alphaThresholdCoverage:0.5,device:'cpu',selectedCandidateIndex:0,candidates,
+    clearedPixelCount:221184,translucentPixelCount:0,opaquePixelCount:221184}}})
+  const s=await mount(true),summary=s.host.querySelector('[aria-label="本地图像加工测量"]')!,rows=Array.from(summary.querySelectorAll('tbody tr'))
+  expect(rows).toHaveLength(6);expect(rows[0].textContent).toContain('人物框 · 1');expect(rows[0].textContent).toContain('当前候选')
+  expect(rows.slice(1).every(row=>row.textContent!.includes('未选'))).toBe(true)
+  expect(summary.textContent).toContain('掩模覆盖 60.0%');expect(summary.textContent).toContain('alpha 过半覆盖 50.0%')
+  expect(s.observed).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled()
+ })
  it('rechecks changed source identity and resets only the local comparison while revoking the previous URL',async()=>{
   const s=await mount(),next={...asset,version:2,contentHash:'b'.repeat(64),blobContentHash:'b'.repeat(64)}
   await s.select('深色');api.raw5.mockResolvedValueOnce({asset:next,data:new Uint8Array([5,6,7,8]).buffer})

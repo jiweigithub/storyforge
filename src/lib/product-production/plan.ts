@@ -7,7 +7,7 @@ import type {
 import { buildAvgNativeAssemblyPlan } from '../avg/assembly-plan'
 import { AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4, buildAvgVisualPlanningPlanV4 } from '../avg/visual-planning-plan'
 import { buildAvgVisualPlanningPlanV5 } from '../avg/visual-planning-plan-v5'
-import { buildAvgSoundProductionPlanV1 } from '../avg/sound-production-plan'
+import { buildAvgSoundProductionPlan } from '../avg/sound-production-plan'
 import { assertAvgAudioProcessingTaskShapeV1 } from '../avg/audio-production-topology'
 import { PRODUCTION_PRODUCT_KINDS_V1 } from '../types'
 import { parseTextAdventureContentRevisionV1, parseProductProductionBriefV3 } from './contracts'
@@ -351,18 +351,23 @@ export function parseProductProductionPlanV3(
       fail(`${task.taskKey} 上下文投影只用于准确 AVG 确定性任务`)
     }
     if (task.contextProfile === 'avg-sound-planning-v1' && (productType !== 'avg' || task.executionMode !== 'deterministic'
-      || !['avg-sound-requirements-compile', 'avg-sound-library-import', 'avg-assembly-integrate', 'avg-assembly-verify', 'avg-audio-process'].includes(task.kind))) {
+      || !['avg-sound-requirements-compile', 'avg-sound-library-import', 'avg-sound-requirements-reuse', 'avg-sound-raw-reuse', 'avg-assembly-integrate', 'avg-assembly-verify', 'avg-audio-process'].includes(task.kind))) {
       fail(`${task.taskKey} 声音投影只允许准确声音合同的确定性任务`)
     }
     if (task.kind === 'avg-audio-process') assertAvgAudioProcessingTaskShapeV1(task, tasks, productType)
     if(task.contextProfile==='avg-visual-planning-v5'&&(productType!=='avg'||task.executionMode!=='deterministic'
-      ||!['avg-v5-visual-requirements-compile','avg-media-image-process'].includes(task.kind)))fail(`${task.taskKey} V5 投影只用于准确新需求编译或加工`)
+      ||!['avg-v5-visual-requirements-compile','avg-v5-visual-proposal-reuse','avg-media-image-reuse','avg-media-image-process'].includes(task.kind)))fail(`${task.taskKey} V5 投影只用于准确新需求编译、方案复用、原图复验或加工`)
     if (task.contextProfile === 'avg-visual-planning-v4' && (productType !== 'avg' || task.executionMode !== 'deterministic'
       || !['avg-v4-visual-requirements-compile','avg-v4-visual-proposal-reuse','avg-media-image-reuse','avg-media-image-process'].includes(task.kind))) fail(`${task.taskKey} V4 投影只用于准确需求编译、复验或加工任务`)
     if (task.kind === 'avg-v4-visual-proposal-reuse' && (productType !== 'avg' || task.executionMode !== 'deterministic'
       || task.contextProfile !== 'avg-visual-planning-v4' || task.skillId !== null || task.capabilityRequirementKeys.length !== 0
       || task.budgetReservation.modelCalls !== 0 || task.budgetReservation.mediaCalls !== 0 || task.budgetReservation.maximumCostUsd !== 0
       || task.maxAttempts !== 1 || task.reuse !== null)) fail(`${task.taskKey} 方案复验必须为单次零调用任务，不能借用供应商或通用沿用权限`)
+    if(task.kind==='avg-v5-visual-proposal-reuse'&&(productType!=='avg'||task.executionMode!=='deterministic'
+      ||task.contextProfile!=='avg-visual-planning-v5'||task.skillId!==null||task.capabilityRequirementKeys.length!==0
+      ||task.budgetReservation.modelCalls!==0||task.budgetReservation.mediaCalls!==0||task.budgetReservation.maximumCostUsd!==0
+      ||task.maxAttempts!==1||task.reuse!==null||!task.taskKey.startsWith('avg.visual.propose.')||task.outputArtifactKeys.length!==1
+      ||!task.outputArtifactKeys[0].startsWith('avg.proposal.')))fail(`${task.taskKey} V5 历史方案复用必须为单次零调用专业任务`)
     if (task.kind === 'avg-media-image-reuse' && task.contextProfile === 'avg-visual-planning-v4') {
       const requirementKey = task.taskKey.startsWith('avg.media.generate.') ? task.taskKey.slice('avg.media.generate.'.length) : ''
       const compiler = tasks.find(owner => owner.outputArtifactKeys.includes(AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4))
@@ -467,7 +472,7 @@ export function parseProductProductionPlanV3(
     briefHash: row.briefHash, controlEpoch: integer(row.controlEpoch, 'controlEpoch'),
     concurrency: parsedConcurrency, tasks, terminalTaskKey,
   }
-  if (brief?.avgSoundPlanning && canonicalProductProductionJsonV2(parsed) !== canonicalProductProductionJsonV2(buildAvgSoundProductionPlanV1({
+  if (brief?.avgSoundPlanning && canonicalProductProductionJsonV2(parsed) !== canonicalProductProductionJsonV2(buildAvgSoundProductionPlan({
     brief, briefHash: parsed.briefHash, buildNumber: parsed.buildNumber, controlEpoch: parsed.controlEpoch,
   }))) fail('AVG 声音 Plan 必须等于准确候选、采用、真实音频与审听的固定拓扑')
   if (brief?.avgVisualPlanning?.version===5 && canonicalProductProductionJsonV2(parsed)!==canonicalProductProductionJsonV2(buildAvgVisualPlanningPlanV5({
@@ -517,7 +522,7 @@ export async function createProductProductionPlanV3(input: {
   const controlEpoch = input.controlEpoch ?? 0
   if (!Number.isInteger(controlEpoch) || controlEpoch < 0) fail('controlEpoch 无效')
 
-  if (brief.avgSoundPlanning) return parseProductProductionPlanV3(buildAvgSoundProductionPlanV1({ ...input, brief, controlEpoch }), brief, input.briefHash)
+  if (brief.avgSoundPlanning) return parseProductProductionPlanV3(buildAvgSoundProductionPlan({ ...input, brief, controlEpoch }), brief, input.briefHash)
   if (brief.avgVisualPlanning?.version===5)return parseProductProductionPlanV3(buildAvgVisualPlanningPlanV5({...input,brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning},controlEpoch}),brief,input.briefHash)
   if (brief.avgVisualPlanning?.version===4) return parseProductProductionPlanV3(buildAvgVisualPlanningPlanV4({ ...input, brief: { ...brief, avgVisualPlanning: brief.avgVisualPlanning }, controlEpoch }), brief, input.briefHash)
   if (brief.avgAssembly) return parseProductProductionPlanV3(buildAvgNativeAssemblyPlan({ ...input, brief, controlEpoch }), brief, input.briefHash)

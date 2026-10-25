@@ -40,8 +40,9 @@ async function fixture(kind: AvgAudioPcmKindV1 = 'voice', gainMilliDb = -6000) {
     entry: { domain, requirementKey: 'fixture.audio', recipe },
     source: { raw: payload.raw, asset: sourceAsset, requestIdentityHash: payload.requestIdentityHash, rights: sourceRights }, row } }
 }
-beforeEach(() => vi.stubGlobal('fetch', vi.fn(() => { throw new Error('No network permitted for candidate codecs') })))
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
+beforeEach(() => { vi.stubEnv('VITE_STORYFORGE_AVG_AUDIO_PROCESSING', '0')
+  vi.stubGlobal('fetch', vi.fn(() => { throw new Error('No network permitted for candidate codecs') })) })
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 describe('AVG exact processed audio candidate identity and unchanged raw rights', () => {
   it.each(['voice', 'bgm', 'sfx', 'ambience'] as const)('binds actual %s WAV bytes to distinct raw/processed versions without adopting', async kind => {

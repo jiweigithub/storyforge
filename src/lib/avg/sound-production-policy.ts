@@ -1,8 +1,8 @@
 import type { ProductProductionBriefV3, ProductProductionBudgetV3 } from '../types'
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
-import { buildAvgSoundProductionPlanV1, type AvgSoundTopologyInputV1 } from './sound-production-plan'
+import { buildAvgSoundProductionPlanV1, type AvgSoundTopologyInputV1, buildAvgSoundProductionPlan, type AvgSoundTopologyInput } from './sound-production-plan'
 import { AVG_SOUND_MUSIC_CAPABILITY_V1, AVG_SOUND_MUSIC_DATA_CLASS_V1, AVG_SOUND_TEXT_CAPABILITY_V1,
-  AVG_SOUND_TEXT_DATA_CLASS_V1, parseAvgSoundPlanningBriefV1 } from './sound-production-brief'
+  AVG_SOUND_TEXT_DATA_CLASS_V1, parseAvgSoundPlanningBriefV1, parseAvgSoundPlanningBrief } from './sound-production-brief'
 
 const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
 const topology = (brief: AvgSoundTopologyInputV1) => buildAvgSoundProductionPlanV1({ brief, briefHash: '0'.repeat(64), buildNumber: 1, controlEpoch: 0 })
@@ -46,4 +46,47 @@ export function assertAvgSoundProductionPolicyV1(brief: ProductProductionBriefV3
     || brief.fallbackPolicy.onRequiredCapabilityMissing !== 'pause' || !brief.completionContract.requiresPlayablePreview
     || brief.completionContract.minimumMediaCoverage !== 1 || brief.completionContract.allowSoftWaivers
     || !same([...brief.completionContract.requiredGateIds].sort(), avgSoundProductionGateIdsV1(brief).sort())) throw new Error('[avg-sound] 真实音频、独立审听采用与可玩终态门不可绕过')
+}
+
+/** Version dispatch preserves the original V1 budget and gate output exactly. */
+export function avgSoundProductionBudget(brief: AvgSoundTopologyInput): ProductProductionBudgetV3 {
+  const sound = parseAvgSoundPlanningBrief(brief.avgSoundPlanning)
+  if (sound.version === 1) return avgSoundProductionBudgetV1({ ...brief, avgSoundPlanning: sound })
+  const tasks = buildAvgSoundProductionPlan({ brief, briefHash: '0'.repeat(64), buildNumber: 1, controlEpoch: 0 }).tasks
+  const sum = (key: keyof typeof tasks[number]['budgetReservation']) => tasks.reduce((n, t) => n + Number(t.budgetReservation[key]), 0)
+  return { maximumModelCalls: sum('modelCalls'), maximumInputTokens: sum('inputTokens'), maximumOutputTokens: sum('outputTokens'),
+    maximumMediaCalls: sum('mediaCalls'), maximumDurationMs: sum('durationMs'), maximumStorageBytes: sum('storageBytes'), maximumCostUsd: 0 }
+}
+export function avgSoundProductionGateIds(brief: AvgSoundTopologyInput): string[] {
+  const sound = parseAvgSoundPlanningBrief(brief.avgSoundPlanning)
+  if (sound.version === 1) return avgSoundProductionGateIdsV1({ ...brief, avgSoundPlanning: sound })
+  const plan = buildAvgSoundProductionPlan({ brief, briefHash: '0'.repeat(64), buildNumber: 1, controlEpoch: 0 })
+  return [...new Set(plan.tasks.find(t => t.taskKey === plan.terminalTaskKey)!.acceptanceGateIds)]
+}
+
+export function assertAvgSoundProductionPolicy(brief: ProductProductionBriefV3): void {
+  const sound = parseAvgSoundPlanningBrief(brief.avgSoundPlanning)
+  if (sound.version === 1) return assertAvgSoundProductionPolicyV1({ ...brief, avgSoundPlanning: sound })
+  if (brief.intent.productType !== 'avg' || brief.avgAssembly || brief.avgVisualPlanning || brief.avgRevision
+    || brief.qualityProfile === 'commercial-candidate' || brief.capabilityRequirements.length) {
+    throw new Error('[avg-sound-repair] 本地返修须独立AVG prototype/internal合同且不声明供应商能力')
+  }
+  const input = { ...brief, avgSoundPlanning: sound }, kind = sound.repair.sourceAsset.kind
+  const budget = avgSoundProductionBudget(input)
+  if (brief.media.imageCount !== 0 || brief.media.visualLevel !== 'none' || brief.media.audioLevel !== 'music-sfx'
+    || brief.media.voiceLineCount !== 0 || brief.media.musicTrackCount !== (kind === 'bgm' ? 1 : 0)
+    || brief.media.sfxCount !== (kind === 'bgm' ? 0 : 1) || !same(brief.media.requiredMediaKinds, [kind])) {
+    throw new Error('[avg-sound-repair] 本次只包含所选一个声音槽，不能把原完整范围当作新生产批次')
+  }
+  if (brief.externalDataPolicy.allowedDataClasses.length || brief.externalDataPolicy.allowReferenceImages || brief.externalDataPolicy.allowVoiceScripts
+    || !same(brief.productionBudget, budget) || budget.maximumModelCalls !== 0 || budget.maximumMediaCalls !== 0 || budget.maximumCostUsd !== 0
+    || !same(brief.consultationBudget, { maximumModelCalls: 0, maximumInputTokens: 0, maximumOutputTokens: 0, maximumCostUsd: 0 })) {
+    throw new Error('[avg-sound-repair] 本地返修须保留零新增模型、媒资和费用及准确本地资源预算')
+  }
+  if (brief.fallbackPolicy.allowTextOnly || brief.fallbackPolicy.allowProceduralAudio || !brief.fallbackPolicy.allowExistingProjectMedia
+    || brief.fallbackPolicy.onRequiredCapabilityMissing !== 'pause' || !brief.completionContract.requiresPlayablePreview
+    || brief.completionContract.minimumMediaCoverage !== 1 || brief.completionContract.allowSoftWaivers
+    || !same([...brief.completionContract.requiredGateIds].sort(), avgSoundProductionGateIds(input).sort())) {
+    throw new Error('[avg-sound-repair] 本地返修不能跳过独立审听采用、作者演出和完整预览验收')
+  }
 }

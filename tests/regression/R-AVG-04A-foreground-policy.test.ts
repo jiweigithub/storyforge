@@ -121,6 +121,13 @@ describe('AVG explicit reserved-backdrop foreground foundation', () => {
     }
   })
 
+  it('reports the measured reserved-colour edge coverage when strict intake rejects an image', () => {
+    const input = raster()
+    for (let x = 0; x < input.width; x += 1) input.data.set([255, 255, 255, 255], x * 4)
+    expect(() => matteDeclaredMagentaCharacterBackdropV1(input))
+      .toThrow(/纯品红保留底色（边缘精确色键覆盖率 0\.7414，要求至少 0\.9500）/)
+  })
+
   it('refuses existing or padding-only alpha rather than presenting it as new foreground removal', () => {
     const input = raster(); input.data[3] = 0
     expect(() => matteDeclaredMagentaCharacterBackdropV1(input)).toThrow(/不透明原图/)

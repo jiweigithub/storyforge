@@ -5,6 +5,13 @@ import { parseAvgImageProcessingPlan,type AvgImageProcessingRecipe,type AvgImage
 import { supportsAvgForegroundRequirementV1 } from '../../lib/avg/image-foreground-contract'
 import { DECLARED_MAGENTA_ALPHA_MATTING_ID_V1 } from '../../lib/product-production/character-alpha-matting'
 import { AVG_FOREGROUND_BOUNDARY_UNMIX_ID_V2 } from '../../lib/avg/image-foreground-boundary-unmix'
+import { AVG_FOREGROUND_ESTIMATED_MAGENTA_ID_V3 } from '../../lib/avg/image-foreground-estimated-magenta-v3'
+import { AVG_FOREGROUND_SAM2_CHECKPOINT_SHA256_V4, AVG_FOREGROUND_SAM2_MATTING_ID_V4,
+  AVG_FOREGROUND_SAM2_MATTING_METHOD_V4, AVG_FOREGROUND_SAM2_MODEL_REVISION_V4,
+  AVG_FOREGROUND_SAM2_PROMPT_STRATEGY_V4, AVG_FOREGROUND_SAM2_MATTING_ID_V5,
+  AVG_FOREGROUND_SAM2_PROMPT_STRATEGY_V5, AVG_FOREGROUND_SAM2_QUALITY_GATE_V5, AVG_FOREGROUND_SAM2_MATTING_ID_V6,
+  AVG_FOREGROUND_SAM2_MATTING_METHOD_V6, AVG_FOREGROUND_SAM2_QUALITY_GATE_V6, AVG_FOREGROUND_SAM2_NEUTRAL_RULE_V6,
+  supportsAvgSam2ForegroundRequirementV4 } from '../../lib/avg/image-foreground-contract'
 import { saveAvgImageProcessingDraftV1 } from '../../lib/avg/assembly-service'
 import type { readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
 import type { AvgVisualProductionRequirementV1 } from '../../lib/avg/media-production-contract'
@@ -42,6 +49,7 @@ export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,
   const r=requirements.find(r=>r.requirementKey===key)
   if(!r)return <section aria-label="本地图像加工配方"><p role="alert">加工目标已变化，请撤销未保存的加工后重新核对。</p><button className="lf-action" onClick={()=>setDirty(false)}>撤销未保存的加工</button></section>
   const edit=(next:AvgImageProcessingRecipe)=>{if(!dirty){setEditRevision(revisionKey);setEditDraftRevision(draftRevision)}setRecipe(next);setDirty(true)}
+  const sam2=recipe.version===2&&(recipe.foreground.version===4||recipe.foreground.version===5||recipe.foreground.version===6)
   const save=(remove=false)=>void onAction(async()=>{
     if(dirty&&editRevision!==revisionKey)throw new Error('[avg-process] 编辑期间草稿或专业方案已变化，请撤销未保存的加工后重新核对')
     const entries:Array<AvgImageProcessingPlan['entries'][number]>=(plan?.entries??[]).filter(e=>e.requirementKey!==key)
@@ -63,15 +71,35 @@ export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,
         if(e.target.checked)edit({...recipe,version:2,background:null,foreground:{schema:'storyforge.avg.foreground-policy',version:1,
           method:'reserved-magenta',reservedColor:'#FF00FF',subjectUsesReservedColor:false,algorithm:DECLARED_MAGENTA_ALPHA_MATTING_ID_V1,declaration:''}})
         else if(recipe.version===2){const {foreground:_foreground,...canvas}=recipe;edit({...canvas,version:1})}
-      }}/>生成时使用纯品红底色，并在本地移除底色（实验性）</label>}
-      {recipe.version===2&&<><p>保存后会把纯品红底色和主体禁用该色的要求写入下次生成方案。仅处理符合该声明的不透明原图；旧图和复杂背景不会自动补声明或重新生成。结果仍须检查边缘、主体完整性并独立选用。</p>
+      }}/>{sam2?'对现有图片使用本机 SAM 2.1 分割并生成透明候选':'生成时使用纯品红底色，并在本地移除底色（实验性）'}</label>}
+      {recipe.version===2&&<>{sam2
+        ?<p>本机分割只处理同一作品中已冻结并保存的原图，不修改供应商请求、不上传参考、不触发生成。服务需单独启动；候选仍须对照原图查看、独立评审和选用。</p>
+        :<p>保存后会把纯品红底色和主体禁用该色的要求写入下次生成方案。仅处理符合该声明的不透明原图；旧图和复杂背景不会自动补声明或重新生成。结果仍须检查边缘、主体完整性并独立选用。</p>}
         <label>前景边缘处理<select value={recipe.foreground.version} onChange={e=>{
           if(recipe.version!==2)return
-          if(e.target.value==='1')edit({...recipe,foreground:{...recipe.foreground,version:1,algorithm:DECLARED_MAGENTA_ALPHA_MATTING_ID_V1}})
-          else if(e.target.value==='2')edit({...recipe,foreground:{...recipe.foreground,version:2,algorithm:AVG_FOREGROUND_BOUNDARY_UNMIX_ID_V2}})
-        }}><option value={1}>仅移除底色，保留颜色</option><option value={2}>移除底色并还原边缘颜色（实验性）</option></select></label>
+          const declaration=recipe.foreground.declaration
+          if(e.target.value==='1')edit({...recipe,foreground:{schema:'storyforge.avg.foreground-policy',version:1,method:'reserved-magenta',reservedColor:'#FF00FF',subjectUsesReservedColor:false,algorithm:DECLARED_MAGENTA_ALPHA_MATTING_ID_V1,declaration}})
+          else if(e.target.value==='2')edit({...recipe,foreground:{schema:'storyforge.avg.foreground-policy',version:2,method:'reserved-magenta',reservedColor:'#FF00FF',subjectUsesReservedColor:false,algorithm:AVG_FOREGROUND_BOUNDARY_UNMIX_ID_V2,declaration}})
+          else if(e.target.value==='3')edit({...recipe,foreground:{schema:'storyforge.avg.foreground-policy',version:3,method:'estimated-magenta-family',reservedColor:'#FF00FF',subjectUsesReservedColor:false,algorithm:AVG_FOREGROUND_ESTIMATED_MAGENTA_ID_V3,declaration}})
+          else if(e.target.value==='4')edit({...recipe,foreground:{schema:'storyforge.avg.foreground-policy',version:4,method:'local-sam2-box-matting',algorithm:AVG_FOREGROUND_SAM2_MATTING_ID_V4,
+            model:'sam2.1-hiera-tiny',modelRevision:AVG_FOREGROUND_SAM2_MODEL_REVISION_V4,checkpointSha256:AVG_FOREGROUND_SAM2_CHECKPOINT_SHA256_V4,
+            promptStrategy:AVG_FOREGROUND_SAM2_PROMPT_STRATEGY_V4,mattingMethod:AVG_FOREGROUND_SAM2_MATTING_METHOD_V4,declaration}})
+          else if(e.target.value==='5')edit({...recipe,foreground:{schema:'storyforge.avg.foreground-policy',version:5,method:'local-sam2-box-anchor-matting',algorithm:AVG_FOREGROUND_SAM2_MATTING_ID_V5,
+            model:'sam2.1-hiera-tiny',modelRevision:AVG_FOREGROUND_SAM2_MODEL_REVISION_V4,checkpointSha256:AVG_FOREGROUND_SAM2_CHECKPOINT_SHA256_V4,
+            promptStrategy:AVG_FOREGROUND_SAM2_PROMPT_STRATEGY_V5,mattingMethod:AVG_FOREGROUND_SAM2_MATTING_METHOD_V4,qualityGate:AVG_FOREGROUND_SAM2_QUALITY_GATE_V5,declaration}})
+          else if(e.target.value==='6')edit({...recipe,foreground:{schema:'storyforge.avg.foreground-policy',version:6,method:'local-sam2-neutral-background-matting',algorithm:AVG_FOREGROUND_SAM2_MATTING_ID_V6,
+            model:'sam2.1-hiera-tiny',modelRevision:AVG_FOREGROUND_SAM2_MODEL_REVISION_V4,checkpointSha256:AVG_FOREGROUND_SAM2_CHECKPOINT_SHA256_V4,
+            promptStrategy:AVG_FOREGROUND_SAM2_PROMPT_STRATEGY_V5,mattingMethod:AVG_FOREGROUND_SAM2_MATTING_METHOD_V6,qualityGate:AVG_FOREGROUND_SAM2_QUALITY_GATE_V6,backgroundRule:AVG_FOREGROUND_SAM2_NEUTRAL_RULE_V6,declaration}})
+        }}><option value={1}>精确品红：移除底色并保留边缘颜色</option><option value={2}>精确品红：移除底色并还原边缘颜色（实验性）</option>
+          <option value={3}>偏色品红：估算边缘底色并还原（实验性）</option><option value={4} disabled={!supportsAvgSam2ForegroundRequirementV4(r)}>本机 SAM 2.1 人物框分割（旧候选策略）</option>
+          <option value={5} disabled={!supportsAvgSam2ForegroundRequirementV4(r)}>本机 SAM 2.1 人物框与身体锚点（实验性候选）</option>
+          <option value={6} disabled={!supportsAvgSam2ForegroundRequirementV4(r)}>本机 SAM 2.1 均匀亮灰背景细化（实验性候选）</option></select></label>
         {recipe.foreground.version===2&&<p>边缘颜色还原会改变局部像素；无可靠邻近颜色时保留原处理结果。保存后仍须对照原图检查发丝、衣饰和主体细节，再独立选用。</p>}
-        <label>保留底色与主体用色声明<textarea maxLength={2000} value={recipe.foreground.declaration}
+        {recipe.foreground.version===3&&<p>此独立算法只接受边缘至少 85% 属于稳定品红色系的原图，记录估算底色与覆盖率，并对连通背景和狭窄边界做本地处理。它不会重写原生成要求；复杂或不稳定边缘会直接拒绝，结果仍是待评审候选。</p>}
+        {recipe.foreground.version===4&&<p>此策略调用你本机的 SAM 2.1 Hiera Tiny 与 PyMatting，不上传图片；服务须在本机 5278 端口运行，采用居中人物框提示和窄边缘 alpha 细化。仅适用于单张、居中的人物图；多人拼版、表情表或姿势表可能残留旁侧人物碎片或误删主体，应先拆成单张再处理。分割分数只描述模型输出，不是质量判定；头发、鞋底投影、遮挡或偏离画面中心的主体仍可能处理错误，输出必须与原图对照评审后再采用。</p>}
+        {recipe.foreground.version===5&&<p>此策略调用本机 SAM 2.1 Hiera Tiny 与 PyMatting，比较人物框和身体定位提示，按固定分数与面积挡板选择掩模，优先保留较完整的主体。已有透明像素的原图会拒绝重分割，请使用画布加工保留原始透明度。仅适用于单张、居中的不透明人物图，拼版、表情表和姿势表应先拆分。头发、衣饰、投影和偏离中心的主体仍可能处理错误，必须对照原图评审后再采用。</p>}
+        {recipe.foreground.version===6&&<p>仅适用于均匀亮灰底色、居中且不透明的单个人物。先检查原图背景，再将与画面外缘连通的亮灰区域从分割和边缘细化中排除；背景不稳定或需要削减过多主体时会拒绝加工并保留原件。肤色、发丝、白衣和镂空处仍须对照原图检查，评审通过后才能独立选用。</p>}
+        <label>{sam2?'本机模型处理与作者审阅声明':'保留底色与主体用色声明'}<textarea maxLength={2000} value={recipe.foreground.declaration}
           onChange={e=>{if(recipe.version===2)edit({...recipe,foreground:{...recipe.foreground,declaration:e.target.value}})}}/></label></>}
       <label>加工画布宽<input type="number" min={32} max={4096} value={recipe.width} onChange={e=>edit({...recipe,width:Number(e.target.value)})}/></label>
       <label>加工画布高<input type="number" min={32} max={4096} value={recipe.height} onChange={e=>edit({...recipe,height:Number(e.target.value)})}/></label>

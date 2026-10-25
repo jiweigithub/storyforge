@@ -1,3 +1,4 @@
+import Dexie from 'dexie'
 import { db } from '../db/schema'
 import type { ProductBuildArtifactRecordV1, ProductBuildRecordV1, ProductProductionPlanTaskV3, WorkspaceScope } from '../types'
 import { assertRecordInScope } from '../workspace/scope'
@@ -25,6 +26,11 @@ export async function assertAvgSoundPlanningProducerAdmissionV1(input: {
     || row.briefHash !== input.build.briefHash || row.authorizedAt !== input.build.authorizedAt) throw new Error('[avg-sound-plan] 缺少准确已授权声音Brief')
   const brief = parseProductProductionBriefV3(row.briefJson), planning = brief.avgSoundPlanning, a = input.artifact, task = input.task
   const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
+  if (planning?.version === 2) {
+    const load = () => import('./sound-reuse-admission')
+    const admission = await (Dexie.currentTransaction ? Dexie.waitFor(Dexie.ignoreTransaction(load)) : load())
+    return admission.assertAvgSoundReuseProducerV1(input, brief)
+  }
   if (a.artifactKey.startsWith('avg.sound.raw.')) {
     if (!planning || await hashProductProductionValueV2(brief) !== input.build.briefHash) throw new Error('[avg-sound] 原声音需要准确完整授权Brief')
     return assertAvgSoundRawProducerAdmissionV1(input, brief)

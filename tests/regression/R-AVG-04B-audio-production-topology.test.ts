@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { proposeAvgAudioProcessingTopologyV1 } from '../../src/lib/avg/audio-production-topology'
 import { buildAvgVoiceAssemblyPlanV3 } from '../../src/lib/avg/voice-assembly-plan'
 import { buildAvgSoundProductionPlanV1 } from '../../src/lib/avg/sound-production-plan'
@@ -34,6 +34,9 @@ async function fixture(domain: 'voice' | 'sound') {
   const targets = [{ domain, requirementKey: key, kind: domain === 'voice' ? 'voice' as const : 'bgm' as const, mimeType: 'audio/wav' as const }]
   return { sourcePlan, processing, targets, key }
 }
+
+beforeEach(() => vi.stubEnv('VITE_STORYFORGE_AVG_AUDIO_PROCESSING', '0'))
+afterEach(() => vi.unstubAllEnvs())
 
 describe('AVG exact production graph audio processing proposal', () => {
   it('captures the exact graph, recipe and targets before asynchronous shared-parser loading', async () => {

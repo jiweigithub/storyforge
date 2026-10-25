@@ -10,7 +10,10 @@ import { avgVisualPlanningExecutionReadyV5 } from './visual-planning-brief-v5'
 import { AVG_VISUAL_PLANNING_ROLES_V5,avgVisualPlanningMethodV5 } from './visual-planning-roles-v5'
 import { AVG_VISUAL_TEXT_CAPABILITY_V4 } from './visual-planning-roles'
 import { readAvgVisualPlanningExecutionSourcesV5 } from './visual-planning-task-source-v5'
-import { avgVisualRoleTargetV5,prepareAvgVisualRoleProposalV5 } from './visual-role-proposal-v5'
+import { avgVisualRoleTargetV5,prepareAvgVisualRoleProposalV5,isAvgVisualReuseTaskV5 } from './visual-role-proposal-v5'
+import { readAvgVisualReuseHistoryV5,assertAvgVisualReuseSemanticInputV5 } from './visual-planning-reuse-v5'
+import { validateAvgVisualSemanticV4 } from './visual-role-proposal'
+import { parseProductionModelJsonObjectV1 } from '../product-production/model-json-object'
 import { hashAvgVisualExactTextV1 } from './visual-planning-evidence'
 import { compileAvgVisualPlanningProposalV2 } from './media-source-v2'
 import { AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4 } from './visual-planning-plan'
@@ -28,6 +31,10 @@ export function createAvgVisualPlanningExecutorV5(options:{brief:ProductProducti
     try{
       if(!avgVisualPlanningExecutionReadyV5())throw new Error('[avg-visual-plan] 新专业执行尚未开放')
       if(input.signal.aborted)throw new DOMException('Aborted','AbortError')
+      if(input.task.kind==='avg-media-image-reuse'){
+        const {executeAvgVisualRawReuseTaskV5}=await import('./visual-image-revalidation-v5')
+        return executeAvgVisualRawReuseTaskV5(input,brief)
+      }
       if(input.task.kind==='avg-media-image-process'){
         const {executeAvgVisualImageProcessingTaskV5}=await import('./visual-image-processing-v5')
         return executeAvgVisualImageProcessingTaskV5(input,brief)
@@ -42,10 +49,13 @@ export function createAvgVisualPlanningExecutorV5(options:{brief:ProductProducti
         if(!production||build!.productionId!==input.productionId)throw new Error('[avg-visual-plan] 组装制作归属已变化')
         return createAvgAssemblyExecutorV1({brief,production})(input)
       }
-      if(input.task.executionMode!=='model'&&input.task.kind!=='avg-v5-visual-requirements-compile')throw new Error('[avg-visual-plan] 新图片消费执行尚未接通，未发送请求')
+      if(input.task.executionMode!=='model'&&input.task.kind!=='avg-v5-visual-requirements-compile'&&!isAvgVisualReuseTaskV5(input.task))throw new Error('[avg-visual-plan] 新图片消费执行尚未接通，未发送请求')
       source=await readAvgVisualPlanningExecutionSourcesV5(input,brief)
     }catch(error){throw new ProductProductionDraftRejectedErrorV1(error instanceof Error?error.message:'新专业视觉来源无效',zero())}
     if(input.task.kind==='avg-v5-visual-requirements-compile')return compileTask(input,source,started)
+    if(isAvgVisualReuseTaskV5(input.task)){
+      try{return await reuseTaskV5(input,source,brief,started)}catch(error){throw new ProductProductionDraftRejectedErrorV1(error instanceof Error?error.message:'V5 历史方案不闭合',zero())}
+    }
     const role = AVG_VISUAL_PLANNING_ROLES_V5.find(r => r.skillId === input.task.skillId)!
     const binding = input.capabilityBindings[0], targetArtifactKey = avgVisualRoleTargetV5(input.task, source.planning.scope)
     const system = avgVisualPlanningMethodV5(role.subjectKind), skill = getAgentSkillV1(input.task.skillId!)
@@ -97,6 +107,30 @@ export function createAvgVisualPlanningExecutorV5(options:{brief:ProductProducti
       return { artifacts: [artifact], passedGateIds: [...input.task.acceptanceGateIds], usage }
     } catch (error) { throw new ProductProductionDraftRejectedErrorV1(error instanceof Error ? error.message : '模型方案无效', usage) }
   }
+}
+
+async function reuseTaskV5(input:ProductProductionTaskExecutionInputV1,source:Awaited<ReturnType<typeof readAvgVisualPlanningExecutionSourcesV5>>,
+  brief:ProductProductionBriefV3,started:number){
+  const targetArtifactKey=avgVisualRoleTargetV5(input.task,source.planning.scope),selected=source.planning.proposalReuse?.find(r=>r.artifact.artifactKey===targetArtifactKey)
+  if(!selected||input.capabilityBindings.length||input.attempt!==1||input.authorDraftJson)throw new Error('[avg-visual-reuse] V5 本次零调用领取或冻结选择不准确')
+  const history=await readAvgVisualReuseHistoryV5({scope:input.scope,build:source.build,brief,task:input.task,source:selected})
+  assertAvgVisualReuseSemanticInputV5(input.contextText,history,selected)
+  const scopeHash=await hashProductProductionValueV2(source.planning.scope),snapshot=canonicalProductProductionJsonV2({schema:'storyforge.avg.visual-reuse-input',version:2,
+    taskKey:input.task.taskKey,targetArtifactKey,scopeHash,sourceInputHash:source.planning.scope.sourceInputHash,contextText:input.contextText,source:selected,
+    originalRequestHash:await hashAvgVisualExactTextV1(history.original.modelRequestText),rawResponseHash:selected.rawResponseHash})
+  const current=await readAgentRunV1(input.scope,input.taskRunId!)
+  await recordAgentRunArtifactV1({scope:input.scope,runId:input.taskRunId!,stepId:input.task.taskKey,attempt:1,artifactKind:'source-snapshot',content:snapshot,
+    expectedLastSequence:current.projection.lastSequence})
+  await readAvgVisualPlanningExecutionSourcesV5(input,brief)
+  await readAvgVisualReuseHistoryV5({scope:input.scope,build:source.build,brief,task:input.task,source:selected})
+  const payload={schema:'storyforge.avg.visual-role-proposal',version:4,targetArtifactKey,scopeHash,payload:history.payload,
+    modelPayload:validateAvgVisualSemanticV4(parseProductionModelJsonObjectV1(history.original.rawText,input.task.taskKey),source.planning.scope,targetArtifactKey)}
+  const artifact={artifactKey:input.task.outputArtifactKeys[0],kind:'narrative' as const,payload,metadata:{},
+    quality:{schema:'storyforge.avg.visual-proposal-reuse-evidence',version:2,requestSnapshotHash:await hashAvgVisualExactTextV1(snapshot),
+      rawResponseHash:selected.rawResponseHash,scopeHash,capabilityBindingHash:history.original.binding.bindingHash,source:selected},
+    rights:{origin:'history-reuse',commercialUse:null}}
+  return {artifacts:[artifact],passedGateIds:[...input.task.acceptanceGateIds],usage:{modelCalls:0,inputTokens:0,outputTokens:0,mediaCalls:0,costUsd:0,
+    durationMs:Date.now()-started,storageBytes:new TextEncoder().encode(snapshot+canonicalProductProductionJsonV2(artifact)).byteLength}}
 }
 
 async function compileTask(input: ProductProductionTaskExecutionInputV1, source: Awaited<ReturnType<typeof readAvgVisualPlanningExecutionSourcesV5>>, started: number) {

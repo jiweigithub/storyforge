@@ -19,7 +19,7 @@ export default function HistoricalImagePanel({scope,view,disabled=false,onAction
   const next=details.brief?parseProductProductionBriefV3(details.brief.briefJson):null
   const canSelect=!!onAction&&!!onReload&&details.production.status==='brief-ready'&&!!next?.avgVisualPlanning
     &&details.brief!.revision>build.briefRevision&&!build.previewHash
-  const initial=next?.avgVisualPlanning?.rawReuse??[]
+  const initial=next?.avgVisualPlanning?.version===4?next.avgVisualPlanning.rawReuse??[]:[]
   const [selected,setSelected]=useState<AvgVisualRawReuseSourceV4[]>(initial)
   const [sourceNumber,setSourceNumber]=useState(build.buildNumber)
   const sourceBuild=(details.buildHistory??[]).find(b=>b.buildNumber===sourceNumber)??build

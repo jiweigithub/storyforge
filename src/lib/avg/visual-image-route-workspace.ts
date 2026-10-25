@@ -1,4 +1,4 @@
-import { avgPendingVisualWorldSourceV4 } from './visual-pending-source'
+import { assertAvgPendingVisualParentV1,avgPendingVisualWorldSourceV4 } from './visual-pending-source'
 import type { WorkspaceScope } from '../types'
 import { readProductProductionDetailsV1 } from '../product-production/service'
 import { parseProductProductionBriefV3 } from '../product-production/contracts'
@@ -35,10 +35,12 @@ async function prepareVisualImageRoute(input:Parameters<typeof prepareAvgVisualI
   if(!(version===5?avgVisualPlanningExecutionReadyV5():avgVisualPlanningExecutionReadyV4())||brief?.avgVisualPlanning?.version!==version||details.production.status!=='brief-ready'
     ||details.brief!.briefHash!==input.expectedBriefHash||draft.revision!==input.expectedDraftRevision||draft.productionId!==input.productionId
     ||(build?(!input.expectedBuild||build.id!==input.expectedBuild.id||build.stateRevision!==input.expectedBuild.revision
-      ||!['cancelled','failed','recovery-required'].includes(build.status)||!!build.previewHash||details.brief!.revision<=build.briefRevision):input.expectedBuild!==null))throw new Error('[avg-visual-image] 尚未开始的方案、父版本或草稿已变化')
+      ||details.brief!.revision<=build.briefRevision):input.expectedBuild!==null))throw new Error('[avg-visual-image] 尚未开始的方案、父版本或草稿已变化')
+  const workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
+  await assertAvgPendingVisualParentV1({build,parentRecord:details.briefHistory.find(r=>r.revision===build?.briefRevision&&r.briefHash===build.briefHash),brief,workspace})
   if(build)await assertAvgVisualPlanningRestartKnownV4(input.scope,build)
   await assertAvgVisualPlanningOtherRequestsKnownV4(input.scope,build)
-  await (version===5?assertAvgVisualPlanningDraftMatchesV5:assertAvgVisualPlanningDraftMatchesV4)(input.scope,parseAvgAuthorWorkspaceV1(draft.editorJson),brief)
+  await (version===5?assertAvgVisualPlanningDraftMatchesV5:assertAvgVisualPlanningDraftMatchesV4)(input.scope,workspace,brief)
   const existing=brief.capabilityRequirements.find(c=>c.requirementKey==='avg.media.image')!
   const requirement={...existing,capabilityHash:await hashProductProductionValueV2(selected)}
   const configured=await resolveAvgImageExecutionCapabilityV4({projectId:input.scope.projectId,requirement,adapterId:selected.adapterId})
@@ -49,6 +51,8 @@ async function prepareVisualImageRoute(input:Parameters<typeof prepareAvgVisualI
   next.completionContract={...next.completionContract,requiredGateIds:(version===5?avgVisualPlanningGateIdsV5:avgVisualPlanningGateIdsV4)(next)}
   const parsed=parseProductProductionBriefV3(next)
   if(version===4)await assertAvgVisualProposalReuseSourcesV4(input.scope,input.productionId,parsed,1+Math.max(0,...details.buildHistory.map(b=>b.buildNumber)))
+  else await (await import('./visual-planning-reuse-workspace-v5')).assertAvgVisualProposalReuseSourcesV5(input.scope,input.productionId,parsed,
+    1+Math.max(0,...details.buildHistory.map(b=>b.buildNumber)))
   const current=await readProductProductionDetailsV1(input.scope,input.productionId,['avg']),currentDraft=await readAvgDraftV1(input.scope)
   const same=(a:unknown,b:unknown)=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(b)
   if(currentDraft.revision!==draft.revision||!same(current.build,build)||current.production.stateRevision!==details.production.stateRevision

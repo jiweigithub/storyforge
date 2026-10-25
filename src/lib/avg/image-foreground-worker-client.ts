@@ -93,5 +93,6 @@ export async function runAvgForegroundWorker(input: {
 }) {
   const policy = parseAvgForegroundPolicy(input.policy)
   if (policy.version === 1) return runAvgForegroundWorkerV1({ ...input, policy })
+  if (policy.version === 4 || policy.version === 5 || policy.version === 6) throw new Error('[avg-foreground] SAM 2 需通过受限本机服务执行，不能交给像素 Worker')
   return runAvgForegroundWorkerV2({ ...input, policy })
 }

@@ -1,12 +1,12 @@
-import { parseAvgForegroundPolicyV2, type AvgForegroundPolicyV2 } from './image-foreground-contract'
+import { parseAvgForegroundPolicy, type AvgForegroundPolicyV2, type AvgForegroundPolicyV3 } from './image-foreground-contract'
 import { assertAvgForegroundRasterV1 } from './image-foreground-worker-protocol'
 import { hashAvgForegroundPixelsV2, parseAvgForegroundWorkerReplyV2,
-  type AvgForegroundPixelObservationV2, type AvgForegroundWorkerRequestV2 } from './image-foreground-worker-protocol-v2'
+  type AvgForegroundPixelObservation, type AvgForegroundWorkerRequestV2 } from './image-foreground-worker-protocol-v2'
 
 export const AVG_FOREGROUND_WORKER_TIMEOUT_MS_V2 = 20_000
 export interface AvgForegroundWorkerResultV2 {
   rgba: Uint8ClampedArray
-  observation: AvgForegroundPixelObservationV2 & {
+    observation: AvgForegroundPixelObservation & {
     width: number; height: number; sourcePixelHash: string; cutoutPixelHash: string; alphaPlaneHash: string
   }
 }
@@ -19,11 +19,12 @@ const yieldHost = () => new Promise<void>(resolve => setTimeout(resolve, 0))
  * hashes, actual alpha and observation. V1's RGB-preserving path is unchanged.
  * This tool has no producer, DB, author-choice or retry authority. */
 export async function runAvgForegroundWorkerV2(input: {
-  width: number; height: number; rgba: Uint8ClampedArray; policy: AvgForegroundPolicyV2; signal?: AbortSignal
+  width: number; height: number; rgba: Uint8ClampedArray; policy: AvgForegroundPolicyV2 | AvgForegroundPolicyV3; signal?: AbortSignal
 }): Promise<AvgForegroundWorkerResultV2> {
   const started = performance.now(), { width, height, signal } = input
   if (signal?.aborted) throw aborted()
-  const policy = parseAvgForegroundPolicyV2(input.policy)
+  const policy = parseAvgForegroundPolicy(input.policy)
+  if (policy.version !== 2 && policy.version !== 3) throw new Error('[avg-foreground] 边缘复算 Worker 仅接受登记的本地像素算法')
   if (!(input.rgba instanceof Uint8ClampedArray) || !(input.rgba.buffer instanceof ArrayBuffer)) throw new Error('[avg-foreground] 边缘计算需要独立RGBA来源')
   assertAvgForegroundRasterV1(width, height, input.rgba.byteLength)
   if (typeof Worker !== 'function') throw new Error('[avg-foreground] 当前浏览器不支持可中止的边缘Worker')
@@ -32,7 +33,7 @@ export async function runAvgForegroundWorkerV2(input: {
     let worker: Worker | null = null, settled = false, sequence = 0
     const received = new Set<number>()
     let sourcePixelHash = '', cutoutPixelHash = '', alphaPlaneHash = ''
-    let pixels: Uint8ClampedArray | null = null, observation: AvgForegroundPixelObservationV2 | null = null
+    let pixels: Uint8ClampedArray | null = null, observation: AvgForegroundPixelObservation | null = null
     const stopWorker = () => {
       if (!worker) return
       const current = worker; worker = null
@@ -89,9 +90,15 @@ export async function runAvgForegroundWorkerV2(input: {
       assertActive()
       if (worker) throw new Error('[avg-foreground] 边缘计算不能并行或重入')
       const id = ++sequence
-      worker = request.phase === 'compute'
-        ? new Worker(new URL('./image-foreground.worker.ts', import.meta.url), { type: 'module', name: 'avg-foreground-v2-compute' })
-        : new Worker(new URL('./image-foreground.worker.ts', import.meta.url), { type: 'module', name: 'avg-foreground-v2-verify' })
+      // Vite also parses these options in the regression runner. Keep every
+      // constructor literal static while naming both independently verified phases.
+      worker = policy.version === 2
+        ? request.phase === 'compute'
+          ? new Worker(new URL('./image-foreground.worker.ts', import.meta.url), { type: 'module', name: 'avg-foreground-v2-compute' })
+          : new Worker(new URL('./image-foreground.worker.ts', import.meta.url), { type: 'module', name: 'avg-foreground-v2-verify' })
+        : request.phase === 'compute'
+          ? new Worker(new URL('./image-foreground.worker.ts', import.meta.url), { type: 'module', name: 'avg-foreground-v3-compute' })
+          : new Worker(new URL('./image-foreground.worker.ts', import.meta.url), { type: 'module', name: 'avg-foreground-v3-verify' })
       worker.onmessage = event => { void accept(id, request.phase, event.data) }
       worker.onerror = event => {
         if (settled || id !== sequence || received.has(id)) return

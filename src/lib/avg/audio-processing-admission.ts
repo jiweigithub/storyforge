@@ -10,8 +10,8 @@ import { assembleContext } from '../registry/assemble-context'
 import { preserveProductProductionContextV1 } from '../product-production/context'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import { assertAvgAudioProcessingBriefV1 } from './audio-production-brief'
-import { parseAvgProcessedAudioPayloadV1 } from './processed-audio-contract'
-import { parseAvgAudioProductionProcessingPlanV1 } from './audio-production-contract'
+import { parseAvgProcessedAudioPayload } from './processed-audio-contract'
+import { parseAvgAudioProductionProcessingPlan } from './audio-production-contract'
 import { assertAvgAudioProcessingTaskShapeV1 } from './audio-production-topology'
 import { readAvgAudioProcessingRawSourceV1 } from './audio-processing-raw-source'
 import { inspectAvgProcessedAudioSourceV1, type AvgProcessedAudioStoredFieldsV1 } from './processed-audio-source'
@@ -53,8 +53,8 @@ export async function assertAvgProcessedAudioProducerAdmissionV1(value: {
     || plan.buildNumber !== build.buildNumber || plan.controlEpoch !== build.controlEpoch) {
     throw new Error('[avg-audio-process] 加工producer不属于准确本地零调用Plan')
   }
-  const payload = await parseAvgProcessedAudioPayloadV1(input.artifact.payloadJson)
-  const processing = parseAvgAudioProductionProcessingPlanV1(brief.avgAudioProcessing)
+  const payload = await parseAvgProcessedAudioPayload(input.artifact.payloadJson)
+  const processing = parseAvgAudioProductionProcessingPlan(brief.avgAudioProcessing)
   const entry = processing.entries.find(e => e.domain === payload.domain && e.requirementKey === payload.requirementKey)
   if (!entry || task.outputArtifactKeys[0] !== input.artifact.artifactKey) throw new Error('[avg-audio-process] 加工接收不能替换冻结需求或输出')
   const original = await readAvgAudioProcessingRawSourceV1({ scope, buildId: build.id, brief, domain: entry.domain, raw: payload.raw })

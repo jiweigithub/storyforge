@@ -9,20 +9,20 @@ import { AVG_VOICE_CAPABILITY_REQUIREMENT_KEY_V1, assertAvgVoiceCapabilityDeclar
 import { AVG_VOICE_TASK_TIMEOUT_MS_V1 } from './voice-request-contract'
 import type { AvgStoredAssemblyBriefV3 } from './voice-assembly-storage'
 import { avgAudioProcessingForVoiceV3, addAvgAudioProcessingBudgetV1, avgAudioProcessingGateIdsV1 } from './audio-production-brief'
-import type { AvgAudioProductionProcessingPlanV1 } from './audio-production-contract'
+import type { AvgAudioProductionProcessingPlan } from './audio-production-contract'
 
 export type AvgVoiceProductionBriefV3 = Omit<ProductProductionBriefV3, 'avgAssembly'> & { avgAssembly: AvgStoredAssemblyBriefV3 }
 export type AvgVoiceProductionPolicyInputV3 = Omit<AvgVisualProductionPolicyInputV2, 'avgAssembly'> & {
   avgAssembly: AvgAssemblyBriefV3
   media: ProductProductionBriefV3['media']
-  avgAudioProcessing?: AvgAudioProductionProcessingPlanV1
+  avgAudioProcessing?: AvgAudioProductionProcessingPlan
 }
 const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
 
 /** Finite resources per batch even when the author has no total cash ceiling.
  * Image retention/processing keeps the established V2 resource accounting. */
 export function avgVoiceProductionBudgetV3(value: AvgAssemblyBriefV3, maximumCostUsd: number | null = null,
-  processing?: AvgAudioProductionProcessingPlanV1): ProductProductionBudgetV3 {
+  processing?: AvgAudioProductionProcessingPlan): ProductProductionBudgetV3 {
   const base = avgVoiceProductionBaseBudgetV3(value, maximumCostUsd)
   return processing ? addAvgAudioProcessingBudgetV1(base, avgAudioProcessingForVoiceV3(processing, value), 'voice') : base
 }
@@ -60,9 +60,15 @@ export function assertAvgVoiceProductionPolicyV3(brief: AvgVoiceProductionPolicy
   const budget = avgVoiceProductionBudgetV3(a, brief.productionBudget.maximumCostUsd, brief.avgAudioProcessing)
   if (a.voice.recovery) {
     const recovery = a.voice.recovery, base = brief.evolution?.base
-    if (base?.kind !== 'recovery-build' || base.buildNumber !== recovery.sourceBuildNumber
+    if (recovery.version === 1 && (base?.kind !== 'recovery-build' || base.buildNumber !== recovery.sourceBuildNumber
       || base.briefHash !== recovery.sourceBriefHash || base.planHash !== recovery.sourcePlanHash
-      || base.controlEpoch !== recovery.sourceControlEpoch) throw new Error('[avg-voice] 配音恢复必须绑定准确的作者版本谱系')
+      || base.controlEpoch !== recovery.sourceControlEpoch)) throw new Error('[avg-voice] 配音恢复必须绑定准确的作者版本谱系')
+    if (recovery.version === 2 && (!base || base.kind === 'recovery-build'
+      || base.kind === 'build' && (base.buildNumber !== recovery.parentBuildNumber || base.manifestHash !== recovery.parentManifestHash)
+      || a.image !== null || !brief.avgAudioProcessing || brief.avgAudioProcessing.entries.length !== 1
+      || brief.avgAudioProcessing.entries[0].domain !== 'voice' || brief.avgAudioProcessing.entries[0].requirementKey !== a.voice.batch.requirements[0].requirementKey)) {
+      throw new Error('[avg-voice-repair] 局部返修必须绑定准确已完成预览，只允许一句零新请求的本地加工')
+    }
   }
   if (!same(budget, brief.productionBudget) || !same(brief.consultationBudget,
     { maximumModelCalls: 0, maximumInputTokens: 0, maximumOutputTokens: 0, maximumCostUsd: 0 })) throw new Error('[avg-voice] 配音预算必须与有限批次闭合，不能夹带文本调用')

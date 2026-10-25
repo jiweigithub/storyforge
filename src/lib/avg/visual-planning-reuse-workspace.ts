@@ -42,6 +42,7 @@ export async function readAvgVisualReuseOptionsV4(input:{scope:WorkspaceScope;pr
     if(rows.length!==1){options.push({artifactKey,available:false as const,reason:'此岗位没有唯一已确认方案'});continue}
     try{
       const history=await sourceHistory(input.scope,build,{artifactKey,version:rows[0].version,contentHash:rows[0].contentHash})
+      if((history.candidate.version!==6&&history.candidate.version!==7)||!('visualProposalValidation' in history.candidate))throw new Error('[avg-visual-reuse] 作者版本缺少视觉采用回执')
       const source=avgVisualReuseDescriptorV4(history)
       options.push({artifactKey,available:true as const,source,payload:history.payload,
         modelPayload:parseProductionModelJsonObjectV1(history.original.rawText,String(history.original.modelRequest.taskKey)),authorEdited:history.candidate.visualProposalValidation.authorEdited,
@@ -54,11 +55,12 @@ export async function readAvgVisualReuseOptionsV4(input:{scope:WorkspaceScope;pr
 /** Re-read actual source records at start as well as at execution/admission.
  * This preflight creates neither a Run nor a current author adoption. */
 export async function assertAvgVisualProposalReuseSourcesV4(scope:WorkspaceScope,productionId:number,brief:ReturnType<typeof parseProductProductionBriefV3>,buildNumber:number){
-  if(!brief.avgVisualPlanning?.proposalReuse)return
+  const planning=brief.avgVisualPlanning
+  if(!planning||planning.version!==4||!planning.proposalReuse)return
   const details=await readProductProductionDetailsV1(scope,productionId,['avg'])
-  const plan=buildAvgVisualPlanningPlanV4({brief:{...brief,avgVisualPlanning:brief.avgVisualPlanning},briefHash:'0'.repeat(64),buildNumber,controlEpoch:details.production.controlEpoch})
+  const plan=buildAvgVisualPlanningPlanV4({brief:{...brief,avgVisualPlanning:planning},briefHash:'0'.repeat(64),buildNumber,controlEpoch:details.production.controlEpoch})
   const virtual={productionId,buildNumber} as ProductBuildRecordV1
-  for(const source of brief.avgVisualPlanning.proposalReuse){
+  for(const source of planning.proposalReuse??[]){
     const old=details.buildHistory.find(b=>b.buildNumber===source.buildNumber)
     if(!old)throw new Error('[avg-visual-reuse] 准确旧版本缺失')
     await assertAvgVisualPlanningRestartKnownV4(scope,old)

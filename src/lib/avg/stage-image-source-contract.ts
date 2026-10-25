@@ -11,7 +11,8 @@ export function parseAvgInheritedStageImagesV1(value:unknown,assets:FrozenRuntim
   return avgUnique(avgList(value,'inheritedImages',value=>{
     const r=avgRecord(value,['assetKey','source','declaration'],'inherited stage image'),assetKey=avgKey(r.assetKey,'inherited.assetKey')
     const source=parseAvgGeneratedImageSource(r.source),asset=assets.find(asset=>asset.assetKey===assetKey)
-    if(!asset?.mimeType.startsWith('image/')||asset.contentHash!==(source.processing?.contentHash??source.raw.contentHash))throw new Error('[avg-media] 演出继承必须指向目录中准确的原图或加工图字节')
+    const sourceContentHash='processing'in source&&source.processing?source.processing.contentHash:source.raw.contentHash
+    if(!asset?.mimeType.startsWith('image/')||asset.contentHash!==sourceContentHash)throw new Error('[avg-media] 演出继承必须指向目录中准确的原图或加工图字节')
     return {assetKey,source,declaration:avgText(r.declaration,'inherited.declaration',2000)}
   },128),r=>r.assetKey,'inherited stage images')
 }

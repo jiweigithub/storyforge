@@ -15,6 +15,7 @@ import { validateAvgVoiceProductionSourcesV1 } from './voice-production-source'
 import { assertAvgVoiceProducerResponseV1 } from './voice-response-proof'
 import { inspectAvgVoiceBytesV1 } from './voice-decoder'
 import { readAvgVoiceRecoverySourceV1, validateAvgVoiceRecoveryV1 } from './voice-recovery'
+import { avgVoiceRecoveryParentNumber } from './voice-local-repair-contract'
 
 /** AVG-only additional admission inside the existing sealed-producer write
  * transaction. No new writer, Skill, table, author pass or runtime binding. */
@@ -74,7 +75,7 @@ export async function assertAvgVoiceRawProducerAdmissionV3(input: {
   }
   let response: Awaited<ReturnType<typeof assertAvgVoiceProducerResponseV1>>
   if (retained) {
-    if (input.build.parentBuildNumber !== assembly.voice.recovery!.sourceBuildNumber) throw new Error('[avg-voice] 配音复验不属于准确父版本')
+    if (input.build.parentBuildNumber !== avgVoiceRecoveryParentNumber(assembly.voice.recovery!)) throw new Error('[avg-voice] 配音复验不属于准确父版本')
     const prior = await readAvgVoiceRecoverySourceV1({ scope: input.scope, productionId: input.build.productionId,
       assembly, requirementKey: r.requirementKey })
     if (quality.schema !== 'storyforge.avg.raw-voice-revalidation' || quality.version !== 1 || quality.noProviderRequest !== true

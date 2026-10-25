@@ -25,6 +25,7 @@ export async function executeAvgSoundProductionTaskV1(input: ProductProductionTa
   try {
     if (!avgSoundProductionExecutionReadyV1()) throw new Error('[avg-sound] 声音生产入口尚未开放')
     const source = () => readAvgSoundPlanningExecutionSourcesV1(input, brief), frozen = await source(), task = input.task
+    if (frozen.planning.version !== 1) throw new Error('[avg-sound] 返修不能进入原声音请求执行器')
     const compiled = await compileAvgSoundRequirementsV1(frozen.planning.scope, JSON.parse(input.inputArtifacts.find(r => r.artifactKey === AVG_SOUND_PLAN_KEY_V1)!.payloadJson))
     const req = compiled.requirements.find(r => task.taskKey === `avg.sound.generate.${r.template.requirementKey}`)
     if (!req || !input.taskRunId || input.attempt !== 1 || task.maxAttempts !== 1 || input.authorDraftJson || input.signal.aborted

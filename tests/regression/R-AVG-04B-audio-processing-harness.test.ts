@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
+import type { ProductRelease } from '../../src/lib/types'
 import { useAIConfigStore } from '../../src/stores/ai-config'
 import * as gates from '../../src/lib/avg/assembly-contract'
 import * as readiness from '../../src/lib/avg/audio-production-brief'
@@ -21,7 +22,7 @@ import { configuredAvgVoiceEndpointHashV1 } from '../../src/lib/avg/voice-transp
 import { avgVoiceRouteBindingHashV1 } from '../../src/lib/avg/voice-assembly-contract'
 import { encodeAvgVoiceDraftV1 } from '../../src/lib/avg/voice-draft-contract'
 import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
-import { stageAvgWorkspaceInputV1, confirmAvgWorkspaceInputV1, runAvgAssemblyV1, readAvgVoiceCandidateV3,
+import { stageAvgWorkspaceInputV1, confirmAvgWorkspaceInputV1, runAvgAssemblyV1, readAvgVoiceCandidateV3, readAvgRawVoiceCandidateV3,
   stageAvgAudioReviewV3, stageAvgVoiceChoiceV3, configureAvgChosenVoiceDraftV3, keepAvgGeneratedVoiceStageDraftV1,
   prepareAvgAssemblyBriefV1, startAvgAssemblyV1, prepareAvgVoiceRecoveryBriefV1 } from '../../src/lib/avg/assembly-service'
 import { assertAvgAudioProcessingWaveBytesV1 } from '../../src/lib/avg/audio-processing'
@@ -38,6 +39,25 @@ import { deleteWork } from '../../src/lib/workspace/lifecycle'
 import { saveAvgAuthorWorkspaceV1 } from '../../src/lib/avg/editor-service'
 import { readAvgAdoptedGeneratedVoice } from '../../src/lib/avg/generated-voice-source'
 import { saveAvgVoiceProcessingDraftV1 } from '../../src/lib/avg/voice-draft-service'
+import { saveAvgVoiceLocalRepairDraftV2, clearAvgVoiceLocalRepairDraftV2 } from '../../src/lib/avg/voice-local-repair-service'
+import { parseAvgStoredAssemblyBriefV3 } from '../../src/lib/avg/voice-assembly-storage'
+import { parseAvgVoiceRecoveryV1 } from '../../src/lib/avg/voice-recovery-contract'
+import { assertAvgVoiceLocalRepairSourcesV2 } from '../../src/lib/avg/voice-recovery'
+import { readAvgVoiceDraftV1 } from '../../src/lib/avg/voice-draft-contract'
+
+import { startProductProductionPreviewV1 } from '../../src/lib/product-production/service'
+import { prepareProductProductionAdoption, publishProductProductionBuild } from '../../src/lib/product-production/adoption'
+import { recordProductBuildMainRoutePlaythroughV1 } from '../../src/lib/product-production/quality-receipts'
+import { scanAvgPrototypeMediaV1 } from '../../src/lib/avg/prototype-media-scan'
+import { reachAvgPresentationBeat } from '../../src/lib/avg/runtime-commands'
+import { commitAvgVoiceCommandV1 } from '../../src/lib/avg/reading-commands'
+import { avgCurrentReadingLineV1 } from '../../src/lib/avg/reading-runtime'
+import { commitNarrativeChoice, readProductRuntimeState, readProductRuntimeStateVersion } from '../../src/lib/product/runtime-core'
+import { createProductRuntimeInstance } from '../../src/lib/product/runtime-instances'
+import { verifyProductReleaseManifest } from '../../src/lib/product-production/runtime-package'
+import { readProductReleaseMediaBytes } from '../../src/lib/product-production/release-media'
+import { avgRuntimeStage } from '../../src/lib/avg/executable-module'
+import { hashAvgSoundBytesV1 } from '../../src/lib/avg/sound-provider-contract'
 
 // Only the explicitly closed capability, external HTTP, Worker transport and
 // unavailable native analyzer are controlled. The authorized Brief, canonical
@@ -69,7 +89,7 @@ beforeEach(async () => {
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); db.close() })
 
-async function startProcessedVoice() {
+async function startProcessedVoice(withSecondLine = false) {
   let phase = 'prepare-assembly'
   try {
   const workspace = avgAuthorWorkspaceFixture()
@@ -77,6 +97,8 @@ async function startProcessedVoice() {
     voiceFailure: 'pause', maximumVoiceWaitMs: 30000, autoDelayMs: 800, voices: [] }
   const owner = await prepareNativeAvgAssembly(workspace)
   const policy = await avgVoicePolicyFixtureV3(false), assembly = policy.avgAssembly, protocol = assembly.voice.protocol
+  if (withSecondLine) assembly.voice.batch.requirements.push({ ...structuredClone(assembly.voice.batch.requirements[0]),
+    requirementKey: 'keeper.other', assetKey: 'voice.wait', sceneKey: 'wait', lineKey: 'line.wait' })
   protocol.provider = 'agnes'; protocol.endpointRouteHash = await configuredAvgVoiceEndpointHashV1({ baseUrl: config.baseUrl, model: protocol.model })
   const capabilityHash = await hashAvgSpeechProtocolV1(protocol)
   Object.assign(assembly.voice.batch.presets[0]!, { provider: protocol.provider, model: protocol.model,
@@ -112,7 +134,7 @@ async function startProcessedVoice() {
   const s = { ...owner, details, buildId: details.build!.id! }, audio = await avgReadingAudioFixture(500)
   const fetcher = vi.fn(async (target: RequestInfo | URL) => {
     if (!String(target).endsWith('/audio/speech')) throw new Error('Unexpected controlled processed-voice route')
-    return new Response(audio.data, { headers: { 'Content-Type': 'audio/wav', 'x-request-id': 'processed.harness.response.1' } })
+    return new Response(audio.data, { headers: { 'Content-Type': 'audio/wav', 'x-request-id': `processed.harness.response.${fetcher.mock.calls.length}` } })
   })
   vi.stubGlobal('fetch', fetcher)
   phase = 'first-author-input-run'
@@ -143,7 +165,289 @@ async function startProcessedVoice() {
   }
 }
 
+type VoiceOwner = Pick<Awaited<ReturnType<typeof startProcessedVoice>>, 'scope' | 'productionId'>
+async function confirmCurrentInputs(s: VoiceOwner, keys: string[]) {
+  for (const artifactKey of keys) {
+    const candidate = await stageAvgWorkspaceInputV1({ ...s, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision,
+      artifactKey, declaration: '确认原创工程输入；工程观察不代表文学、真人审听或商业质量通过。' })
+    await confirmAvgWorkspaceInputV1({ ...s, artifactKey: candidate.artifactKey, candidateVersion: candidate.version,
+      candidateHash: JSON.parse(candidate.metadataJson).candidateHash })
+  }
+}
+async function adoptCurrentVoices(s: VoiceOwner) {
+  const details = await readProductProductionDetailsV1(s.scope, s.productionId, ['avg'])
+  const assembly = parseAvgStoredAssemblyBriefV3(details.executionBrief!.avgAssembly).assembly
+  const rows = await db.productBuildArtifacts.where('buildId').equals(details.build!.id!).toArray()
+  for (const requirement of assembly.voice.batch.requirements) {
+    const raw = rows.find(r => r.status === 'accepted' && r.artifactKey === `avg.voice.raw.${requirement.requirementKey}`)!
+    const processed = rows.find(r => r.status === 'accepted' && r.artifactKey === `avg.voice.processed.${requirement.requirementKey}`)
+    if (!raw) throw new Error(details.build!.failureJson)
+    const target = { ...s, requirementKey: requirement.requirementKey, rawVersion: raw.version, rawContentHash: raw.contentHash,
+      ...(processed ? { processed: { version: processed.version, contentHash: processed.contentHash } } : {}) }
+    const selected = await readAvgVoiceCandidateV3({ ...target, version: raw.version, contentHash: raw.contentHash })
+    const report: AvgReviewIssuesV1 = { schema: 'storyforge.avg.review-issues', version: 1, targetKey: requirement.requirementKey,
+      observations: ['audio'], unobserved: [], issues: [], audioEvidence: { audioHash: selected.asset.contentHash,
+        requestIdentityHash: selected.payload.request.identityHash,
+        audition: { generation: 'audition.controlled-local-repair', outcome: 'ended', durationMs: 500, playedMs: 500, muted: false, volume: 1, playbackRate: 1, seeked: false },
+        checks: AVG_VOICE_REVIEW_CRITERIA_V1.map(criterion => ({ criterion, result: 'pass', note: '受控工程观察，非真人审听。' })), note: '独立工程观察，不签实际听感。' } }
+    const declaration = '仅确认受控工程候选，原音频和许可限制保留，真人审听和商业品质未知。'
+    const review = await stageAvgAudioReviewV3({ ...target, report, declaration })
+    await confirmAvgWorkspaceInputV1({ ...s, artifactKey: review.artifactKey, candidateVersion: review.version, candidateHash: JSON.parse(review.metadataJson).candidateHash })
+    const choice = await stageAvgVoiceChoiceV3({ ...target, declaration })
+    await confirmAvgWorkspaceInputV1({ ...s, artifactKey: choice.artifactKey, candidateVersion: choice.version, candidateHash: JSON.parse(choice.metadataJson).candidateHash })
+  }
+  await configureAvgChosenVoiceDraftV3({ ...s, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision })
+}
+
+
+async function publishVoicePreview(s: VoiceOwner) {
+  const build = (await readProductProductionDetailsV1(s.scope, s.productionId, ['avg'])).build!
+  const environment = { browserName: 'isolated-published-voice-repair', browserVersion: '1',
+    platform: 'controlled HTTP/Worker/decoder and transport observations; not native hearing', viewport: { width: 1280, height: 720 } }
+  const preview = await startProductProductionPreviewV1(s)
+  const command = async () => {
+    const state = await readProductRuntimeStateVersion(preview.sessionId)
+    return { sessionId: preview.sessionId, baseSequence: state.sequence, baseStateHash: state.stateHash, commandId: crypto.randomUUID() }
+  }
+  for (const lineKey of ['line.desk', 'line.wait']) {
+    const state = await readProductRuntimeState(preview.sessionId), line = avgCurrentReadingLineV1(state)!
+    expect(line.beat.beatKey).toBe(lineKey)
+    await commitAvgVoiceCommandV1({ ...await command(), type: 'start', lineKey, visit: line.visit })
+    const current = (await readProductRuntimeState(preview.sessionId)).avgReading!.current!
+    await commitAvgVoiceCommandV1({ ...await command(), type: 'observe', lineKey, visit: line.visit,
+      generation: current.generation, outcome: 'ended', reason: 'controlled engineering transport observation; not hearing', playedMs: 500 })
+    await reachAvgPresentationBeat({ ...await command(), beatKey: lineKey })
+    if (lineKey === 'line.desk') await commitNarrativeChoice({ ...await command(), choiceKey: 'wait' })
+  }
+  expect((await readProductRuntimeState(preview.sessionId)).narrative!.completed).toBe(true)
+  await recordProductBuildMainRoutePlaythroughV1({ scope: s.scope, productBuildId: build.id!, productRuntimeSessionId: preview.sessionId,
+    authorConfirmation: 'author-confirmed-main-route', environment })
+  const measured = await scanAvgPrototypeMediaV1({ scope: s.scope, buildId: build.id!, expectedPreviewHash: build.previewHash,
+    environment, signal: new AbortController().signal })
+  expect(measured!.evidence.passed).toBe(true)
+  const ready = (await db.productBuilds.get(build.id!))!, quality = JSON.parse(ready.qualityReportJson)
+  const brief = parseProductProductionBriefV3((await readProductProductionDetailsV1(s.scope, s.productionId, ['avg'])).executionBrief!)
+  const passed = new Set(quality.hardGateResults.filter((g: { passed: boolean }) => g.passed).map((g: { gateId: string }) => g.gateId))
+  expect(ready.status, JSON.stringify({ buildNumber: ready.buildNumber, playable: quality.playable, mediaCoverage: quality.mediaCoverage,
+    failedGates: quality.hardGateResults.filter((g: { passed: boolean }) => !g.passed),
+    missingGates: brief.completionContract.requiredGateIds.filter(g => !passed.has(g)) })).toBe('release-ready')
+  const adoption = await prepareProductProductionAdoption(s)
+  const published = await publishProductProductionBuild({ ...s, command: { type: 'publish',
+    commandId: `voice.repair.release.${crypto.randomUUID()}`, expectedStateRevision: adoption.intent.expectedStateRevision,
+    buildNumber: adoption.intent.buildNumber, expectedManifestHash: adoption.intent.manifestHash, adoptionIntentHash: adoption.adoptionIntentHash } })
+  const record: ProductRelease = (await db.productReleases.get(published.productReleaseId))!
+  const manifest = await verifyProductReleaseManifest(record.manifestJson), assets = avgRuntimeStage(manifest.runtimePackage)!.assets
+  for (const asset of assets) expect(await hashAvgSoundBytesV1(await readProductReleaseMediaBytes({ scope: s.scope,
+    productReleaseId: record.id!, asset }))).toBe(asset.blobContentHash)
+  return { record, manifest, assets, build: (await db.productBuilds.get(build.id!))! }
+}
+
 describe('AVG actual processed-voice producer with explicitly controlled incomplete capability', () => {
+  it('repairs one voice from a published release without another request and publishes a distinct portable release while preserving the old save', async () => {
+    const s = await startProcessedVoice(true)
+    await adoptCurrentVoices(s); await confirmCurrentInputs(s, ['avg.author.stage'])
+    expect((await runAvgAssemblyV1(s)).buildStatus).toBe('preview-ready')
+    const original = await publishVoicePreview(s), parent = original.build
+    expect(parent.status).toBe('released')
+    const oldSave = await createProductRuntimeInstance({ scope: s.scope, kind: 'avg', title: 'ENGINEERING original published voice save',
+      productSource: { kind: 'release', productReleaseId: original.record.id! } })
+    const oldState = await readProductRuntimeState(oldSave.id!)
+    const kept = await keepAvgGeneratedVoiceStageDraftV1({ ...s, expectedBuildId: parent.id!, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision })
+    const before = parseAvgAuthorWorkspaceV1(kept.editorJson)
+    const other = before.presentation.inheritedVoices!.find(v => v.source.requirementKey === 'keeper.other')!
+    const otherAsset = before.presentation.stage.assets.find(a => a.assetKey === other.assetKey)!
+    const selected = before.presentation.inheritedVoices!.find(v => v.source.requirementKey === 'keeper.line')!
+    useAIConfigStore.getState().setConfig({ ...config, apiKey: '', baseUrl: 'https://unused.fixture.invalid/v1' })
+    const saved = await saveAvgVoiceLocalRepairDraftV2({ ...s, expectedDraftRevision: kept.revision,
+      expectedBuildId: parent.id!, expectedBuildRevision: parent.stateRevision, expectedPreviewHash: parent.previewHash,
+      assetKey: selected.assetKey, recipe: { ...s.processing.entries[0].recipe, gainMilliDb: -3000,
+        declaration: 'ENGINEERING repair exactly one published voice locally; retain original release, other line, save and source rights.' } })
+    expect(await db.productReleases.get(original.record.id!)).toEqual(original.record)
+    expect(await readProductRuntimeState(oldSave.id!)).toEqual(oldState)
+    const prepared = await prepareAvgAssemblyBriefV1({ scope: s.scope, expectedDraftRevision: saved.revision })
+    const brief = parseProductProductionBriefV3(prepared.brief!.briefJson)
+    expect(brief.capabilityRequirements).toHaveLength(1)
+    expect(brief.capabilityRequirements[0]).toMatchObject({ requirementKey: 'avg.media.voice', mediaClass: 'voice', operation: 'speech',
+      capabilityHash: s.details.executionBrief!.capabilityRequirements[0].capabilityHash })
+    expect(parseAvgStoredAssemblyBriefV3(brief.avgAssembly).assembly.voice.recovery!.rerunRequirementKeys).toEqual([])
+    expect(brief.productionBudget).toMatchObject({ maximumModelCalls: 0, maximumMediaCalls: 0, maximumCostUsd: null })
+    const started = await startAvgAssemblyV1({ ...s, expectedBriefHash: prepared.brief!.briefHash })
+    const tasks = JSON.parse(started.build!.planJson).tasks as Array<{ kind: string;
+      budgetReservation: { modelCalls: number; mediaCalls: number; maximumCostUsd: number | null } }>
+    expect(tasks.every(t => t.budgetReservation.modelCalls === 0 && t.budgetReservation.mediaCalls === 0
+      && t.budgetReservation.maximumCostUsd === 0)).toBe(true)
+    expect(tasks.filter(t => t.kind === 'avg-media-voice-generate')).toHaveLength(0)
+    expect(tasks.filter(t => t.kind === 'avg-media-voice-reuse')).toHaveLength(1)
+    expect(tasks.filter(t => t.kind === 'avg-audio-process')).toHaveLength(1)
+    await confirmCurrentInputs(s, ['avg.system.plan', ...before.scripts.map(script => `avg.content.scene-script.${script.sceneKey}`)])
+    await runAvgAssemblyV1(s); await adoptCurrentVoices(s)
+    const configured = parseAvgAuthorWorkspaceV1((await readAvgDraftV1(s.scope)).editorJson)
+    expect(configured.presentation.stage.assets.find(a => a.assetKey === other.assetKey)).toEqual(otherAsset)
+    expect(configured.presentation.reading).toEqual(before.presentation.reading)
+    expect(configured.presentation.stage.assets.find(a => a.assetKey === selected.assetKey)!.contentHash)
+      .not.toBe(before.presentation.stage.assets.find(a => a.assetKey === selected.assetKey)!.contentHash)
+    await confirmCurrentInputs(s, ['avg.author.stage'])
+    expect((await runAvgAssemblyV1(s)).buildStatus).toBe('preview-ready')
+    expect(await db.productReleases.count()).toBe(1)
+    const repaired = await publishVoicePreview(s)
+    expect(repaired.record.id).not.toBe(original.record.id)
+    expect(repaired.manifest.lineage.releaseUid).not.toBe(original.manifest.lineage.releaseUid)
+    expect(repaired.manifest.releaseIdentityHash).not.toBe(original.manifest.releaseIdentityHash)
+    expect(repaired.manifest.lineage.parentRelease).toEqual({ releaseUid: original.manifest.lineage.releaseUid,
+      releaseHash: original.manifest.lineage.releaseHash })
+    expect(await db.productReleases.get(original.record.id!)).toEqual(original.record)
+    expect(await readProductRuntimeState(oldSave.id!)).toEqual(oldState)
+    for (const asset of original.assets) expect(await hashAvgSoundBytesV1(await readProductReleaseMediaBytes({ scope: s.scope,
+      productReleaseId: original.record.id!, asset }))).toBe(asset.blobContentHash)
+    expect(s.fetcher).toHaveBeenCalledTimes(2)
+    vi.mocked(readiness.avgAudioProcessingExecutionReadyV1).mockReturnValue(false)
+    vi.mocked(gates.avgVoiceProductionEnabledV3).mockReturnValue(false)
+    const projectId = await importProjectJSON(await exportProjectJSON(s.scope.projectId))
+    const restoredReleases: ProductRelease[] = await db.productReleases.where('projectId').equals(projectId).toArray()
+    expect(restoredReleases).toHaveLength(2)
+    for (const source of [original, repaired]) {
+      const restored = restoredReleases.find(r => r.contentHash === source.record.contentHash)!
+      expect(restored).toBeDefined()
+      const scope = { projectId, worldId: restored.worldId, workId: restored.workId }
+      expect(restored.version).toBe(source.record.version)
+      const manifest = await verifyProductReleaseManifest(restored.manifestJson)
+      expect(manifest.releaseIdentityHash).toBe(source.manifest.releaseIdentityHash)
+      for (const asset of avgRuntimeStage(manifest.runtimePackage)!.assets) expect(await hashAvgSoundBytesV1(await readProductReleaseMediaBytes({
+        scope, productReleaseId: restored.id!, asset }))).toBe(asset.blobContentHash)
+    }
+    await deleteWork(restoredReleases[0].workId)
+    expect(await db.productReleases.get(original.record.id!)).toEqual(original.record)
+    expect(await db.productReleases.get(repaired.record.id!)).toEqual(repaired.record)
+    expect(await readProductRuntimeState(oldSave.id!)).toEqual(oldState)
+    expect(s.fetcher).toHaveBeenCalledTimes(2)
+  }, 60_000)
+  it('preserves a pending completed-version repair across full remapping with processing closed, without acquiring start permission', async () => {
+    const s = await startProcessedVoice()
+    await adoptCurrentVoices(s); await confirmCurrentInputs(s, ['avg.author.stage'])
+    expect((await runAvgAssemblyV1(s)).buildStatus).toBe('preview-ready')
+    const parent = (await db.productBuilds.get(s.buildId))!
+    const kept = await keepAvgGeneratedVoiceStageDraftV1({ ...s, expectedBuildId: parent.id!, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision })
+    const saved = await saveAvgVoiceLocalRepairDraftV2({ scope: s.scope, expectedDraftRevision: kept.revision, expectedBuildId: parent.id!,
+      expectedBuildRevision: parent.stateRevision, expectedPreviewHash: parent.previewHash, assetKey: 'voice.desk',
+      recipe: { ...s.processing.entries[0].recipe, gainMilliDb: -2000, declaration: '本地待开始返修，导入后仍须明确准备并开始，不继承旧调用权限。' } })
+    const proposed = parseAvgAuthorWorkspaceV1(saved.editorJson)
+    vi.mocked(readiness.avgAudioProcessingExecutionReadyV1).mockReturnValue(false)
+    vi.mocked(gates.avgVoiceProductionEnabledV3).mockReturnValue(false)
+    useAIConfigStore.getState().setConfig({ ...config, apiKey: '' })
+    const projectId = await importProjectJSON(await exportProjectJSON(s.scope.projectId))
+    const build = (await db.productBuilds.where('projectId').equals(projectId).first())!
+    const scope = { projectId, workId: build.workId, worldId: build.worldId }, draft = await readAvgDraftV1(scope)
+    const imported = parseAvgAuthorWorkspaceV1(draft.editorJson)
+    expect(imported.voiceLocalRepair).toEqual(proposed.voiceLocalRepair)
+    expect(imported.voiceProduction).toEqual(proposed.voiceProduction)
+    expect(imported.presentation).toEqual(proposed.presentation)
+    const count = await db.productBuilds.count()
+    await expect(prepareAvgAssemblyBriefV1({ scope, expectedDraftRevision: draft.revision })).rejects.toThrow(/尚未开放/)
+    expect(await db.productBuilds.count()).toBe(count)
+    const cleared = await clearAvgVoiceLocalRepairDraftV2({ scope, expectedDraftRevision: draft.revision })
+    expect(parseAvgAuthorWorkspaceV1(cleared.editorJson)).not.toHaveProperty('voiceLocalRepair')
+    expect(parseAvgAuthorWorkspaceV1(cleared.editorJson).presentation).toEqual(proposed.presentation)
+    expect((await readAvgDraftV1(s.scope)).editorJson).toBe(saved.editorJson)
+    await deleteWork(scope.workId)
+    expect(await db.productBuilds.get(s.buildId)).toEqual(parent)
+    expect(s.fetcher).toHaveBeenCalledOnce()
+  }, 30_000)
+  it('repairs one adopted frozen voice from an older producer, leaves the other line intact, and restores all generations without another speech request', async () => {
+    const s = await startProcessedVoice(true)
+    await adoptCurrentVoices(s); await confirmCurrentInputs(s, ['avg.author.stage'])
+    expect((await runAvgAssemblyV1(s)).buildStatus).toBe('preview-ready')
+    const first = (await db.productBuilds.get(s.buildId))!
+    const draft = await readAvgDraftV1(s.scope), initial = parseAvgAuthorWorkspaceV1(draft.editorJson)
+    initial.basePreviewHash = first.previewHash
+    await saveAvgAuthorWorkspaceV1(s.scope, draft.revision, initial)
+    const kept = await keepAvgGeneratedVoiceStageDraftV1({ ...s, expectedBuildId: s.buildId, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision })
+    const next = await prepareAvgAssemblyBriefV1({ scope: s.scope, expectedDraftRevision: kept.revision })
+    await startAvgAssemblyV1({ ...s, expectedBriefHash: next.brief!.briefHash })
+    await confirmCurrentInputs(s, ['avg.system.plan', ...initial.scripts.map(script => `avg.content.scene-script.${script.sceneKey}`), 'avg.author.stage'])
+    expect((await runAvgAssemblyV1(s)).buildStatus).toBe('preview-ready')
+    const parent = (await readProductProductionDetailsV1(s.scope, s.productionId, ['avg'])).build!
+    const beforeDraft = await readAvgDraftV1(s.scope), before = parseAvgAuthorWorkspaceV1(beforeDraft.editorJson)
+    const selected = before.presentation.inheritedVoices!.find(v => v.source.requirementKey === 'keeper.line')!
+    const other = before.presentation.inheritedVoices!.find(v => v.source.requirementKey === 'keeper.other')!
+    const otherAsset = before.presentation.stage.assets.find(a => a.assetKey === other.assetKey)!
+    const reading = structuredClone(before.presentation.reading), recipe = { ...s.processing.entries[0].recipe, gainMilliDb: -3000,
+      declaration: '基于当前已确认预览，只从保留原音频把第一句调至负三分贝，其他句不重做。' }
+    useAIConfigStore.getState().setConfig({ ...config, apiKey: '', baseUrl: 'https://unused.fixture.invalid/v1' })
+    const request = { ...s, expectedDraftRevision: beforeDraft.revision, expectedBuildId: parent.id!, expectedBuildRevision: parent.stateRevision,
+      expectedPreviewHash: parent.previewHash, assetKey: selected.assetKey, recipe }
+    await expect(saveAvgVoiceLocalRepairDraftV2({ ...request, expectedPreviewHash: '0'.repeat(64) })).rejects.toThrow(/预览/)
+    const count = await db.productBuilds.count(), blobs = await db.mediaBlobObjects.count()
+    const saved = await saveAvgVoiceLocalRepairDraftV2(request), proposed = parseAvgAuthorWorkspaceV1(saved.editorJson)
+    expect(proposed.presentation).toEqual(before.presentation)
+    expect(proposed.voiceLocalRepair!.sourceBuildNumber).toBe(first.buildNumber)
+    expect(proposed.voiceLocalRepair!.parentBuildNumber).toBe(parent.buildNumber)
+    const voice = readAvgVoiceDraftV1(proposed.voiceProduction).voice
+    expect(voice.batch.requirements.map(r => r.requirementKey)).toEqual(['keeper.line'])
+    expect(() => parseAvgVoiceRecoveryV1(proposed.voiceLocalRepair, voice.batch)).toThrow()
+    const forged = structuredClone(proposed.voiceLocalRepair!); forged.adoptedChoice.authorReceiptHash = '0'.repeat(64)
+    await expect(assertAvgVoiceLocalRepairSourcesV2({ ...s, voice: { ...voice, recovery: forged } })).rejects.toThrow()
+    const parentStage = (await db.productBuildArtifacts.where('[buildId+artifactKey]').equals([parent.id!, 'avg.author.stage']).filter(r => r.status === 'accepted').first())!
+    await db.productBuildArtifacts.update(parentStage.id!, { payloadJson: '{}' })
+    await expect(assertAvgVoiceLocalRepairSourcesV2({ ...s, voice: { ...voice, recovery: proposed.voiceLocalRepair } })).rejects.toThrow()
+    await db.productBuildArtifacts.put(parentStage)
+    await db.productBuilds.update(parent.id!, { rootTerminalReceiptHash: '' })
+    await expect(assertAvgVoiceLocalRepairSourcesV2({ ...s, voice: { ...voice, recovery: proposed.voiceLocalRepair } })).rejects.toThrow()
+    await db.productBuilds.put(parent)
+    expect(await db.productBuilds.count()).toBe(count); expect(await db.mediaBlobObjects.count()).toBe(blobs)
+    const cleared = await clearAvgVoiceLocalRepairDraftV2({ scope: s.scope, expectedDraftRevision: saved.revision })
+    expect(parseAvgAuthorWorkspaceV1(cleared.editorJson).presentation).toEqual(before.presentation)
+    expect(parseAvgAuthorWorkspaceV1(cleared.editorJson)).not.toHaveProperty('voiceLocalRepair')
+    const again = await saveAvgVoiceLocalRepairDraftV2({ ...request, expectedDraftRevision: cleared.revision })
+    const prepared = await prepareAvgAssemblyBriefV1({ scope: s.scope, expectedDraftRevision: again.revision })
+    const brief = parseProductProductionBriefV3(prepared.brief!.briefJson)
+    expect(brief.productionBudget.maximumMediaCalls).toBe(0); expect(brief.productionBudget.maximumModelCalls).toBe(0)
+    const started = await startAvgAssemblyV1({ ...s, expectedBriefHash: prepared.brief!.briefHash }), childId = started.build!.id!
+    const tasks = JSON.parse(started.build!.planJson).tasks as Array<{ kind: string }>
+    expect(tasks.filter(t => t.kind === 'avg-media-voice-generate')).toHaveLength(0)
+    expect(tasks.filter(t => t.kind === 'avg-media-voice-reuse')).toHaveLength(1)
+    expect(tasks.filter(t => t.kind === 'avg-audio-process')).toHaveLength(1)
+    await expect(clearAvgVoiceLocalRepairDraftV2({ scope: s.scope, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision })).rejects.toThrow(/已开始/)
+    await confirmCurrentInputs(s, ['avg.system.plan', ...initial.scripts.map(script => `avg.content.scene-script.${script.sceneKey}`)])
+    await runAvgAssemblyV1(s)
+    const produced = await db.productBuildArtifacts.where('buildId').equals(childId).toArray()
+    const raw = produced.find(r => r.status === 'accepted' && r.artifactKey === 'avg.voice.raw.keeper.line')!
+    const processed = produced.find(r => r.status === 'accepted' && r.artifactKey === 'avg.voice.processed.keeper.line')!
+    if (!raw || !processed) throw new Error((await db.productBuilds.get(childId))!.failureJson)
+    expect(raw.contentHash).toBe(s.audio.asset.contentHash)
+    await assertAvgAudioProcessingWaveBytesV1({ source: await readMediaBlobObjectData({ scope: s.scope, blobObjectId: raw.blobObjectId! }),
+      output: await readMediaBlobObjectData({ scope: s.scope, blobObjectId: processed.blobObjectId! }), recipe,
+      receipt: (await parseAvgProcessedAudioPayloadV1(processed.payloadJson)).receipt })
+    await adoptCurrentVoices(s)
+    const configured = parseAvgAuthorWorkspaceV1((await readAvgDraftV1(s.scope)).editorJson)
+    expect(configured.presentation.stage.assets.find(a => a.assetKey === other.assetKey)).toEqual(otherAsset)
+    expect(configured.presentation.inheritedVoices).toEqual([other])
+    expect(configured.presentation.reading).toEqual(reading)
+    expect(configured.presentation.stage.assets.find(a => a.assetKey === selected.assetKey)!.contentHash)
+      .not.toBe(before.presentation.stage.assets.find(a => a.assetKey === selected.assetKey)!.contentHash)
+    await confirmCurrentInputs(s, ['avg.author.stage'])
+    expect((await runAvgAssemblyV1(s)).buildStatus).toBe('preview-ready')
+    const child = (await db.productBuilds.get(childId))!, preview = await verifyStoredProductBuildPreview(child)
+    await expect(clearAvgVoiceLocalRepairDraftV2({ scope: s.scope, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision })).rejects.toThrow(/已配置/)
+    const completed = await keepAvgGeneratedVoiceStageDraftV1({ ...s, expectedBuildId: childId, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision })
+    expect(parseAvgAuthorWorkspaceV1(completed.editorJson)).not.toHaveProperty('voiceLocalRepair')
+    expect(s.fetcher).toHaveBeenCalledTimes(2)
+    vi.mocked(readiness.avgAudioProcessingExecutionReadyV1).mockReturnValue(false)
+    vi.mocked(gates.avgVoiceProductionEnabledV3).mockReturnValue(false)
+    const projectId = await importProjectJSON(await exportProjectJSON(s.scope.projectId))
+    const restoredBuild = (await db.productBuilds.where('projectId').equals(projectId).filter(b => b.buildNumber === child.buildNumber).first())!
+    const scope = { projectId, workId: restoredBuild.workId, worldId: restoredBuild.worldId }
+    const input = { scope, buildId: restoredBuild.id!, expectedBuildRevision: restoredBuild.stateRevision, controlEpoch: restoredBuild.controlEpoch }
+    const restored = await verifyFrozenAvgAuthorInputsV1(input)
+    expect(restored.authorStage!.payload.inheritedVoices).toEqual([other])
+    expect(restored.voiceChoices![0].payload.asset).toEqual(configured.presentation.stage.assets.find(a => a.assetKey === selected.assetKey))
+    expect((await verifyStoredProductBuildPreview(restoredBuild))!.packageHash).toBe(preview!.packageHash)
+    const blob = (await db.mediaBlobObjects.get(restored.voiceChoices![0].blobObjectId))!, bytes = new Uint8Array(blob.data!.slice(0))
+    bytes[bytes.length - 1] ^= 1; await db.mediaBlobObjects.update(blob.id!, { data: bytes.buffer })
+    await expect(verifyFrozenAvgAuthorInputsV1(input)).rejects.toThrow()
+    await db.mediaBlobObjects.put(blob); await deleteWork(scope.workId)
+    expect(await db.productBuilds.get(childId)).toEqual(child)
+    expect(s.fetcher).toHaveBeenCalledTimes(2)
+  }, 30_000)
   it('repairs a stopped batch from explicitly retained raw audio with a changed gain and zero new provider requests', async () => {
     const s = await startProcessedVoice(), before = await readProductProductionDetailsV1(s.scope, s.productionId, ['avg'])
     const originalRows = await db.productBuildArtifacts.where('buildId').equals(s.buildId).toArray()
@@ -194,10 +498,24 @@ describe('AVG actual processed-voice producer with explicitly controlled incompl
     const target = { scope: s.scope, productionId: s.productionId, requirementKey: 'keeper.line',
       rawVersion: raw.version, rawContentHash: raw.contentHash,
       processed: { version: processed.version, contentHash: processed.contentHash } }
+    const evidence = async () => JSON.stringify(await Promise.all([db.productBuilds.toArray(), db.productBuildArtifacts.toArray(),
+      db.agentRuns.toArray(), db.agentRunEvents.toArray(), db.mediaBlobObjects.toArray()]))
+    const beforeComparison = await evidence()
+    const comparison = await readAvgRawVoiceCandidateV3({ ...target, version: raw.version, contentHash: raw.contentHash })
+    expect(comparison.asset.contentHash).toBe(raw.contentHash)
+    expect(new Uint8Array(comparison.data)).toEqual(new Uint8Array(s.audio.data))
+    expect(await evidence()).toBe(beforeComparison)
+    await expect(readAvgRawVoiceCandidateV3({ ...target, version: raw.version, contentHash: 'f'.repeat(64) })).rejects.toThrow()
+    await expect(readAvgRawVoiceCandidateV3({ ...target, scope: { ...s.scope, workId: s.scope.workId! + 1000 },
+      version: raw.version, contentHash: raw.contentHash })).rejects.toThrow()
+    expect(await evidence()).toBe(beforeComparison)
     await expect(readAvgVoiceCandidateV3({ ...target, version: raw.version, contentHash: raw.contentHash, processed: undefined })).rejects.toThrow(/加工版本/)
     const selected = await readAvgVoiceCandidateV3({ ...target, version: raw.version, contentHash: raw.contentHash })
     expect(new Uint8Array(selected.data)).not.toEqual(new Uint8Array(s.audio.data))
     expect(selected.asset.contentHash).toBe(processed.contentHash)
+    expect(selected.processedMeasurement?.contentHash).toBe(processed.contentHash)
+    expect(selected.processedMeasurement?.sourceSampleRateHz).toBe(selected.processing!.receipt.output.sampleRateHz)
+    expect(selected.processedMeasurement?.integratedLufs).toEqual(expect.any(Number))
     const report: AvgReviewIssuesV1 = { schema: 'storyforge.avg.review-issues', version: 1, targetKey: target.requirementKey,
       observations: ['audio'], unobserved: [], issues: [], audioEvidence: {
         audioHash: raw.contentHash, requestIdentityHash: selected.payload.request.identityHash,
@@ -235,6 +553,17 @@ describe('AVG actual processed-voice producer with explicitly controlled incompl
       candidateHash: JSON.parse(stage.metadataJson).candidateHash })
     expect((await runAvgAssemblyV1(s)).buildStatus).toBe('preview-ready')
     const readyBuild = (await db.productBuilds.get(s.buildId))!, preview = await verifyStoredProductBuildPreview(readyBuild)
+    // The same exact adopted processed clip remains readable after freezing.
+    // This read must not reopen production or silently return the raw clip.
+    const frozenClip = await readAvgVoiceCandidateV3({ ...target, version: raw.version, contentHash: raw.contentHash })
+    expect(frozenClip.asset).toEqual(selected.asset)
+    expect(new Uint8Array(frozenClip.data)).toEqual(new Uint8Array(selected.data))
+    await expect(readAvgVoiceCandidateV3({ ...target, version: raw.version, contentHash: raw.contentHash,
+      processed: { ...target.processed, contentHash: '0'.repeat(64) } })).rejects.toThrow()
+    expect(await db.productBuilds.get(s.buildId)).toEqual(readyBuild)
+    expect((await db.productBuildArtifacts.get(raw.id!))!.payloadJson).toBe(raw.payloadJson)
+    expect((await db.productBuildArtifacts.get(processed.id!))!.payloadJson).toBe(processed.payloadJson)
+    expect(s.fetcher).toHaveBeenCalledOnce()
     // The author explicitly chooses the displayed preview as the next edit's
     // baseline, through the same ordinary saved draft as the workbench button.
     const readyDraft = await readAvgDraftV1(s.scope), revisionWorkspace = parseAvgAuthorWorkspaceV1(readyDraft.editorJson)

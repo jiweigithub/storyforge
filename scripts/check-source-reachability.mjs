@@ -37,6 +37,8 @@ const entrypoints = [
   'src/lib/avg/sound-production.ts',
   // Fixed dedicated PCM Worker bootstrap, never imported into the main window.
   'src/lib/avg/audio-gain.worker.ts',
+  'src/lib/avg/audio-dsp-compute-v2.worker.ts',
+  'src/lib/avg/audio-dsp-verify-v2.worker.ts',
   // Text-open-world owns this headless durable expression Harness. It is an
   // internal capability boundary, never a product route or session identity.
   'src/lib/open-world/evolution-harness.ts',

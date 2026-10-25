@@ -29,11 +29,12 @@ function savedForegroundDeclaration(workspace:AvgAuthorWorkspaceV1){
   const entry=workspace.imageProcessing?.entries.find(e=>keys.has(e.requirementKey)&&e.recipe.version===2)
   return entry?.recipe.version===2?entry.recipe.foreground.declaration:''
 }
-function savedForegroundVersion(workspace:AvgAuthorWorkspaceV1):0|1|2{
+function savedForegroundVersion(workspace:AvgAuthorWorkspaceV1):0|1|2|3{
   const keys=new Set(workspace.mediaBatch?.characterFamily?workspace.mediaBatch.requirements.map(r=>r.requirementKey):[])
   const versions=new Set((workspace.imageProcessing?.entries??[]).filter(e=>keys.has(e.requirementKey)&&e.recipe.version===2)
     .map(e=>e.recipe.version===2?e.recipe.foreground.version:1))
   if(versions.size>1)return 0
+  if(versions.has(3))return 3
   return versions.has(2)?2:1
 }
 
@@ -48,7 +49,7 @@ export default function CharacterFamilyPanel({scope,view,workspace,disabled,visi
   const [proposal,setProposal]=useState<AvgCharacterFamilyProposalV1|null>(null),[external,setExternal]=useState(false),[derivative,setDerivative]=useState(false)
   const [preview,setPreview]=useState<FrozenRuntimeMediaAssetV2|null>(null),[declaration,setDeclaration]=useState('')
   const [foregroundDeclaration,setForegroundDeclaration]=useState(()=>savedForegroundDeclaration(workspace))
-  const [foregroundVersion,setForegroundVersion]=useState<0|1|2>(()=>savedForegroundVersion(workspace))
+  const [foregroundVersion,setForegroundVersion]=useState<0|1|2|3>(()=>savedForegroundVersion(workspace))
   useEffect(()=>{setForm(initial(workspace));setPending(false);setProposal(null);setExternal(false);setDerivative(false);setPreview(null);setForegroundDeclaration(savedForegroundDeclaration(workspace))},[savedJson,scope.workId]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{onPending(pending)},[pending,onPending])
   useEffect(()=>{if(!pending)setForegroundVersion(savedForegroundVersion(workspace))},[workspace,pending])
@@ -95,11 +96,13 @@ export default function CharacterFamilyPanel({scope,view,workspace,disabled,visi
         onChange={e=>change(setAvgCharacterFamilyReservedBackdropV1(form,e.target.checked))}/>为全部变体预留纯品红底色并准备本地前景加工（实验性）</label>
       {foreground&&<><p>主体、服装和道具不得使用品红及其相近色。底色要求会进入新的准确家族提案，须重新核对基准外发与衍生权限；全部变体各自保存同画布加工配方，结果仍须逐张检查和选用。</p>
         <label>家族前景边缘处理<select value={foregroundVersion} onChange={e=>{
-          if(e.target.value!=='1'&&e.target.value!=='2')return
-          setForegroundVersion(e.target.value==='2'?2:1);change({})
+          if(e.target.value!=='1'&&e.target.value!=='2'&&e.target.value!=='3')return
+          setForegroundVersion(Number(e.target.value) as 1|2|3);change({})
         }}>{foregroundVersion===0&&<option value={0}>当前各变体不同，请选择统一处理方式</option>}
-          <option value={1}>仅移除底色，保留颜色</option><option value={2}>移除底色并还原边缘颜色（实验性）</option></select></label>
+          <option value={1}>精确品红：移除底色并保留边缘颜色</option><option value={2}>精确品红：移除底色并还原边缘颜色（实验性）</option>
+          <option value={3}>偏色品红：估算边缘底色并还原（实验性）</option></select></label>
         {foregroundVersion===2&&<p>此方式会还原局部边缘颜色，原图与已有版本保留；每张结果仍须检查主体和细节后再选用。</p>}
+        {foregroundVersion===3&&<p>此独立算法要求至少 85% 的稳定品红系画布边缘，记录估算底色与覆盖率。背景连接与小范围边缘修正均由本地执行；不稳定或复杂背景会拒绝，处理结果仍须逐张评审。</p>}
         <label>家族保留底色与本地加工说明<textarea maxLength={2000} value={foregroundDeclaration}
           onChange={e=>{setForegroundDeclaration(e.target.value);change({})}}/></label></>}
       {!foreground&&workspace.imageProcessing?.entries.some(e=>e.recipe.version===2)&&workspace.mediaBatch?.characterFamily

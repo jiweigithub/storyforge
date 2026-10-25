@@ -124,6 +124,24 @@ describe('AVG exact reference-policy observations in the native review controls'
     expect(host.textContent).toContain('原图尚未显示');expect(host.textContent).toContain('原图无法解码')
     expect(api.confirm).not.toHaveBeenCalled();expect(api.stage2).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled()
   })
+  it('keeps the exact V5 source image inspectable while local processing is still pending, without opening review or selection',async()=>{
+    vi.spyOn(readiness,'avgVisualPlanningExecutionReadyV5').mockReturnValue(true)
+    const r=requirement(),workspace=avgVersionedPlanningFixture().source
+    const asset={assetKey:r.assetKey,version:1,kind:r.mediaKind,name:r.name,altText:r.altText,mimeType:'image/png',byteSize:4,width:r.width,height:r.height,contentHash:hash,source:'controlled-ui',license:'UI engineering only'}
+    api.raw5.mockResolvedValue({asset,data:new ArrayBuffer(4)})
+    const view={draft:{revision:1,worldReleaseId:1},details:{production:{id:8,status:'producing'},build:{id:1,status:'building',budgetLedgerJson:'{}'},executionBrief:{avgVisualPlanning:{version:5}}},
+      imageDefinition:{mediaBatch:{requirements:[r],visualReviewPolicy:'author-visual-v1'},imageProcessing:{entries:[{requirementKey:r.requirementKey}]}},
+      artifacts:[{artifactKey:`avg.media.raw.${r.requirementKey}`,status:'accepted',version:1,contentHash:hash,metadataJson:JSON.stringify(asset),payloadJson:'{}'}],media:{items:[]},processingTasks:[]}
+    const host=document.createElement('div');document.body.append(host);const root=createRoot(host);roots.push(root);const noop=vi.fn()
+    await act(async()=>root.render(<MediaProductionPanel scope={scope} view={view as never} workspace={workspace} disabled={false} canEdit={false} canImportReference={true} canPrepareProcessing={false} canAdopt={true} sourcesReady={true}
+      declaration="controlled UI" generating={false} visible={true} onPending={noop} onAction={task=>task()} onSave={noop} onClear={noop} onReload={noop} onNotice={noop} onGenerate={noop} onCancel={noop}/>))
+    const toggle=[...host.querySelectorAll('button')].find(button=>button.textContent?.includes('原图'))
+    expect(toggle,host.textContent).toBeDefined();expect(host.textContent).toContain('等待本地加工');expect(host.textContent).toContain('加工结果返回前不能提交视觉评审或选用')
+    expect(host.textContent).not.toContain('保存视觉评审候选');expect(host.textContent).not.toContain('保存选图候选')
+    if(toggle?.textContent?.includes('查看原图'))await act(async()=>toggle.click())
+    expect(api.raw5).toHaveBeenCalledWith({scope,productionId:8,requirementKey:r.requirementKey,version:1,contentHash:hash})
+    expect(host.querySelector('img')).not.toBeNull();expect(api.confirm).not.toHaveBeenCalled();expect(api.stage2).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled()
+  })
   it('keeps the legacy default on review1 without synthesizing policy observations',async()=>{
     const {host}=await mount(1)
     // A genuine legacy requirement exercises the unchanged default protocol.

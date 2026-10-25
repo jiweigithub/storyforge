@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { useAIConfigStore } from '../../src/stores/ai-config'
-import { prepareAvgAssemblyBriefV1, restartAvgVisualPlanningFromDraftV4, restartAvgVisualPlanningFromDraftV5, runAvgAssemblyV1, startAvgAssemblyV1 } from '../../src/lib/avg/assembly-service'
+import { prepareAvgAssemblyBriefV1, readAvgAssemblyWorkspaceV1, restartAvgVisualPlanningFromDraftV4, restartAvgVisualPlanningFromDraftV5, runAvgAssemblyV1, startAvgAssemblyV1 } from '../../src/lib/avg/assembly-service'
 import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
 import { authorizeProductProductionStartV1, readProductProductionDetailsV1, stopProductProductionV1 } from '../../src/lib/product-production/service'
 import { executeProductProductionCommand } from '../../src/lib/product-production/commands'
@@ -45,6 +45,35 @@ describe('AVG public preparation after a native ancestor and stopped professiona
     expect(JSON.parse(child.planJson).buildNumber).toBe(child.buildNumber)
     expect(await db.productBuildArtifacts.where('buildId').equals(child.id!).count()).toBe(0)
     expect(await db.productBuilds.get(parent.id!)).toEqual(parent)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('keeps the original Build scope for readonly artifacts while a smaller unstarted visual scope is reviewed', async () => {
+    const s = await nativeThenVisual(5), frozen = s.details.executionBrief!, oldBuild = s.details.build!
+    const { sourceInputHash: _hash, aspectRatio: _ratio, ...planning } = frozen.avgVisualPlanning!.scope
+    expect(planning.templates.some(t => t.subjectKind === 'prop')).toBe(true)
+    const smaller = { ...planning, templates: planning.templates.filter(t => t.subjectKind !== 'prop') }
+    expect(smaller.templates.length).toBeGreaterThan(0)
+    // Follow the actual UI: explicitly prepare the stopped parent's successor
+    // before editing its never-started scope. Only that pending intent can
+    // release an unused item display slot; the old authorized scope stays.
+    await restartAvgVisualPlanningFromDraftV5({ scope: s.scope, productionId: s.productionId,
+      expectedBuildId: oldBuild.id!, expectedBuildRevision: oldBuild.stateRevision,
+      expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision })
+    const prepared = await prepareAvgAssemblyBriefV1({ scope: s.scope, expectedDraftRevision: (await readAvgDraftV1(s.scope)).revision,
+      visualPlanning: { ...smaller, version: 2 } })
+    const reviewed = parseProductProductionBriefV3(prepared.brief!.briefJson)
+    expect(reviewed.avgVisualPlanning!.scope.templates.some(t => t.subjectKind === 'prop')).toBe(false)
+    const view = await readAvgAssemblyWorkspaceV1(s.scope, s.productionId)
+    expect(view.details!.executionBrief).toEqual(frozen)
+    expect(view.details!.brief!.briefHash).toBe(prepared.brief!.briefHash)
+    expect(parseProductProductionBriefV3(view.details!.brief!.briefJson)).toEqual(reviewed)
+    expect(await db.productBuilds.get(oldBuild.id!)).toEqual(oldBuild)
+    expect(fetch).not.toHaveBeenCalled()
+    const child = await startAvgAssemblyV1({ scope: s.scope, productionId: s.productionId, expectedBriefHash: prepared.brief!.briefHash })
+    const startedView = await readAvgAssemblyWorkspaceV1(s.scope, s.productionId)
+    expect(startedView.details!.executionBrief).toEqual(reviewed)
+    expect(startedView.details!.build!.id).toBe(child.build!.id)
     expect(fetch).not.toHaveBeenCalled()
   })
 

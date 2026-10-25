@@ -104,11 +104,12 @@ describe('AVG original sound stage inheritance through real governed commands', 
     const copy = (await db.productProductions.where('projectId').equals(copyId).first())!
     if (!copy.workId || !copy.worldId) throw new Error('missing imported owner')
     const scope = { projectId: copyId, workId: copy.workId, worldId: copy.worldId }
-    await expect(readAvgInheritedStageSoundsV1({ ...s.input, scope })).rejects.toThrow()
+    const beforeRecovery = await readAvgInheritedStageSoundsV1({ ...s.input, scope })
+    expect(beforeRecovery.size).toBe(2)
     await recoverImportedProductProductionProofsV1({ scope, productionId: copy.id! })
     const copied = parseAvgAuthorWorkspaceV1((await readAvgDraftV1(scope)).editorJson)
     expect(copied.presentation.inheritedSounds).toEqual(s.workspace.presentation.inheritedSounds)
-    expect((await readAvgInheritedStageSoundsV1({ ...s.input, scope, payload: copied.presentation })).size).toBe(2)
+    expect(await readAvgInheritedStageSoundsV1({ ...s.input, scope, payload: copied.presentation })).toEqual(beforeRecovery)
     await deleteWork(copy.workId)
     expect((await readAvgInheritedStageSoundsV1(s.input)).size).toBe(2)
   }, 90_000)

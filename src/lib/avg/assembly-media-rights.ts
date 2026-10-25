@@ -21,8 +21,10 @@ export function avgAssemblyMediaRightsV1(source: AuthorSource, asset: FrozenRunt
   const inheritedSound = stage.payload.inheritedSounds?.find(c => c.assetKey === asset.assetKey)
   if ([choice, voice, sound, inherited, inheritedVoice, inheritedSound].filter(Boolean).length > 1) throw new Error('[avg] 媒资存在冲突的采用来源')
   return {
-    origin: sound ? sound.raw.requirementKey === 'avg.media.music' ? 'author-selected-local-music' : 'author-selected-original-library'
-      : inheritedSound ? 'author-inherited-original-sound' : choice || voice ? 'author-selected-provider' : inherited || inheritedVoice ? 'author-inherited-provider' : 'author-import',
+    origin: sound ? sound.processed ? 'author-selected-processed-sound'
+      : sound.raw.requirementKey === 'avg.media.music' ? 'author-selected-local-music' : 'author-selected-original-library'
+      : inheritedSound ? inheritedSound.source.version === 2 ? 'author-inherited-processed-sound' : 'author-inherited-original-sound'
+      : choice || voice ? 'author-selected-provider' : inherited || inheritedVoice ? 'author-inherited-provider' : 'author-import',
     license: asset.license, source: asset.source, authorStageReceipt: stage.authorReceiptHash,
     ...(inherited ? { inheritedStageSource: inherited } : {}),
     ...(inheritedVoice ? { inheritedStageVoiceSource: inheritedVoice } : {}),
@@ -43,7 +45,11 @@ export function avgAssemblyMediaRightsV1(source: AuthorSource, asset: FrozenRunt
       rawSoundProducerReceiptHash: sound.raw.producerReceiptHash, responseEvidenceHash: sound.validation.responseEvidenceHash,
       requestSnapshotHash: sound.validation.requestSnapshotHash, requestIdentityHash: sound.payload.requestIdentityHash,
       compiledSound: sound.validation.compiled, originalRights: JSON.parse(sound.raw.rightsJson), rightsHash: sound.validation.rightsHash,
-      authorSoundDeclaration: sound.payload.declaration } : {}),
+      authorSoundDeclaration: sound.payload.declaration,
+      ...(sound.processed && sound.validation.version === 2 ? { processedSound: sound.validation.processed,
+        processedSoundProducerReceiptHash: sound.validation.processedProducerReceiptHash,
+        audioProcessingReceiptHash: sound.validation.processingReceiptHash, audioProcessingRecipeHash: sound.validation.recipeHash,
+        sourceSoundRightsHash: sound.validation.sourceRightsHash } : {}) } : {}),
   }
 }
 

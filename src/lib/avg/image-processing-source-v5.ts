@@ -12,7 +12,7 @@ export async function inspectAvgProcessedImageSourceV5(input:{scope:WorkspaceSco
   const raw=await assertAvgConsumedRawImageV5({...input,row:input.raw})
   const load=()=>import('./visual-image-processing-v5')
   const {inspectAvgVisualProcessedImageV5}=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
-  const image=await inspectAvgVisualProcessedImageV5({compiled:raw.compiled,raw:input.raw,artifact:input.processed})
+  const image=await inspectAvgVisualProcessedImageV5({scope:input.scope,compiled:raw.compiled,raw:input.raw,artifact:input.processed})
   return inspectAvgProcessedImageBytesV1({...input,image})
 }
 export async function readAvgProcessedImageSourceV5(input:{scope:WorkspaceScope;buildId:number;brief:ProductProductionBriefV3;raw:ProductBuildArtifactRecordV1;version?:number;contentHash?:string}){

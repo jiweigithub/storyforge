@@ -13,9 +13,16 @@ import { readAvgVisualProcessingEvidenceV5 } from './visual-image-processing-v5'
 import { avgRawMediaArtifactKeyV1 } from './media-production-contract'
 import type { AvgHistoricalVisualBoundary } from './visual-history-authority'
 import { avgProcessedImageArtifactKeyV1 } from './image-processing-contract'
+import { avgVisualRawReuseDescriptorV5 } from './visual-image-reuse-contract'
+import type { AvgForegroundProcessingObservationAny } from './image-processing-contract-v2'
 
 export type AvgV5PreviewBoundary=Omit<AvgHistoricalVisualBoundary,'scope'>
 type Selection={scope:WorkspaceScope;productionId:number;requirementKey:string;version:number;contentHash:string;historical?:AvgV5PreviewBoundary}
+export interface AvgV5ProcessedImageDisplayEvidence {
+  contentHash:string
+  foreground:AvgForegroundProcessingObservationAny|null
+  output:{width:number;height:number;hasAlpha:boolean}
+}
 async function originalBoundary(input:Pick<Selection,'scope'|'productionId'|'historical'>){
   const details=await readProductProductionDetailsV1(input.scope,input.productionId,['avg'])
   const build=input.historical?details.buildHistory.find(row=>row.id===input.historical!.buildId):details.build
@@ -47,12 +54,17 @@ export async function readAvgRawImageCandidateBytesV5(input:Selection){
   return bytes(input.scope,row,raw.asset)
 }
 export async function readAvgProcessedImageCandidateBytesV5(input:Selection){
+  const evidence=await readAvgProcessedImageCandidateEvidenceV5(input)
+  const foreground=evidence.image.payload.version===2?evidence.image.payload.receipt.foreground:null
+  return {...await bytes(input.scope,evidence.processing,evidence.image.asset),processingEvidence:{contentHash:evidence.processing.contentHash,
+    foreground,output:evidence.image.measured}}
+}
+async function readAvgProcessedImageCandidateEvidenceV5(input:Selection){
   const {brief,build,historical,boundary}=await originalBoundary(input)
   const compiled=historical?await readAvgHistoricalCompiledImageDefinitionV5(boundary)
     :await readAvgCompiledImageDefinitionV5({...boundary,expectedBrief:brief,purpose:build.packageHash||build.previewHash?'frozen-verification':'assembly'})
-  const original=await readAvgVisualProcessingEvidenceV5({scope:input.scope,compiled,artifact:{artifactKey:avgProcessedImageArtifactKeyV1(input.requirementKey),
+  return readAvgVisualProcessingEvidenceV5({scope:input.scope,compiled,artifact:{artifactKey:avgProcessedImageArtifactKeyV1(input.requirementKey),
     version:input.version,contentHash:input.contentHash}})
-  return bytes(input.scope,original.processing,original.image.asset)
 }
 
 /** Metadata/provenance inventory only. Individual display still verifies exact
@@ -76,7 +88,8 @@ export async function readAvgHistoricalImageCandidatesV5(input:{scope:WorkspaceS
           processed={row:evidence.processing,asset:evidence.image.asset}
         }catch(cause){processingIssue=String(cause)}
       }
-      return {requirement,available:true as const,raw:original.raw,asset:original.asset,processed,processingIssue}
+      return {requirement,available:true as const,raw:original.raw,asset:original.asset,
+        reuseSource:await avgVisualRawReuseDescriptorV5(original),processed,processingIssue}
     }catch(cause){return {requirement,available:false as const,issue:String(cause)}}
   }))
   await originalBoundary(input)

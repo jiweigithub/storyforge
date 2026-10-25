@@ -88,7 +88,8 @@ describe('AVG frozen audio processing declaration and closed execution boundary'
     if (invalid === 'other-product') next.intent = { ...next.intent, productType: 'text-adventure' }
     expect(() => parseProductProductionBriefV3(next)).toThrow(); expect(fetch).not.toHaveBeenCalled()
   })
-  it('keeps preparation, authorization readiness and executor creation closed while the producer/consumer slice is incomplete', async () => {
+  it('keeps preparation, authorization readiness and executor creation closed when processing is disabled', async () => {
+    vi.stubEnv('VITE_STORYFORGE_AVG_AUDIO_PROCESSING', '0')
     const s = await avgSoundProductionFixtureV1(), next = { ...s.brief, avgAudioProcessing: processing('sound', 'desk.bgm') }
     next.productionBudget = avgSoundProductionBudgetV1(next)
     next.completionContract = { ...next.completionContract, requiredGateIds: avgSoundProductionGateIdsV1(next) }
@@ -104,7 +105,17 @@ describe('AVG frozen audio processing declaration and closed execution boundary'
     expect(() => createConfiguredProductProductionExecutorV1({ production: s.owner.details.production, brief: parsed })).toThrow(/本地声音加工链/)
     expect(await db.productBuilds.count()).toBe(before); expect(await db.agentRuns.count()).toBe(runs); expect(fetch).not.toHaveBeenCalled()
   })
+  it('opens only for the exact explicit experimental opt-in', () => {
+    for (const disabled of [undefined, '', '0', 'true', 'enabled']) {
+      vi.stubEnv('VITE_STORYFORGE_AVG_AUDIO_PROCESSING', disabled)
+      expect(avgAudioProcessingExecutionReadyV1()).toBe(false)
+    }
+    vi.stubEnv('VITE_STORYFORGE_AVG_AUDIO_PROCESSING', '1')
+    expect(avgAudioProcessingExecutionReadyV1()).toBe(true)
+    expect(fetch).not.toHaveBeenCalled()
+  })
   it.each(['voice', 'sound'] as const)('reserves %s derived audio against the old generic artifact writer', async domain => {
+    vi.stubEnv('VITE_STORYFORGE_AVG_AUDIO_PROCESSING', '0')
     const s = await avgSoundProductionFixtureV1(), started = await startNativeAvgAssembly(s.owner)
     const before = await db.productBuildArtifacts.count()
     await expect(acceptProductBuildArtifact({ scope: s.owner.scope, buildId: started.buildId,

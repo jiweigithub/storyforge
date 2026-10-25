@@ -6,7 +6,7 @@ import { canonicalProductProductionJsonV2,hashProductProductionValueV2 } from '.
 import { preserveProductProductionContextV1 } from '../product-production/context'
 import { hashAvgTaskRuntimeBindingV1 } from './task-claim'
 import { AVG_VISUAL_PLANNING_CONTEXT_V5,AVG_VISUAL_PLANNING_ROLES_V5,avgVisualPlanningMethodV5 } from './visual-planning-roles-v5'
-import { assertAvgVisualRoleProposalV5 } from './visual-role-proposal-v5'
+import { assertAvgVisualRoleProposalV5,isAvgVisualReuseTaskV5 } from './visual-role-proposal-v5'
 import { readAvgVisualProposalEvidenceV5 } from './visual-planning-evidence'
 import { assertAvgVisualPlanningProposalV2 } from './media-source-v2'
 import { parseAvgProfessionalArtifactV1 } from './artifact-contract'
@@ -30,6 +30,13 @@ export async function assertAvgVisualPlanningProducerAdmissionV5(input:Parameter
   if(assembled.overBudgetAfterTrim||assembled.segments.length!==1||!same(assembled.included,[AVG_VISUAL_PLANNING_CONTEXT_V5])
     ||!assembled.sourceEvidence?.length||assembled.sourceEvidence.some(s=>s.status!=='included'||s.delivery!=='full'))throw new Error('[avg-visual-plan] 新方案接收来源不完整')
   if(a.artifactKey.startsWith('avg.proposal.')){
+    if(isAvgVisualReuseTaskV5(task)){
+      if(a.kind!=='narrative'||!same(JSON.parse(a.rightsJson),{origin:'history-reuse',commercialUse:null}))throw new Error('[avg-visual-reuse] V5 复用必须保留历史来源及未知商业权利')
+      const evidence=await readAvgVisualProposalEvidenceV5(input.scope,{...a,producerRunId:input.producerRunId})
+      if(!evidence.reused||evidence.request.contextText!==assembled.text||evidence.snapshot.contract.runtimeBindingHash!==await hashAvgTaskRuntimeBindingV1({planHash:input.build.planHash,task,capabilityBindings:[]}))
+        throw new Error('[avg-visual-reuse] V5 确定性复用输入不属于实际登记 Gateway')
+      return
+    }
     if(a.kind!=='narrative'||task.executionMode!=='model'||task.budgetReservation.modelCalls!==1||task.budgetReservation.mediaCalls!==0
       ||!same(JSON.parse(a.rightsJson),{origin:'model-proposal',commercialUse:null}))throw new Error('[avg-visual-plan] 新原始方案不是实际单次模型候选')
     const proposal=await assertAvgVisualRoleProposalV5(a.payloadJson,task,planning.scope),proof=await readAvgVisualProposalEvidenceV5(input.scope,{...a,producerRunId:input.producerRunId})

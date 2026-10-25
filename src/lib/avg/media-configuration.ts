@@ -80,7 +80,9 @@ function configureSlots(input:{workspace:AvgAuthorWorkspaceV1;batch:AvgVisualPro
     }
     const inherited=next.presentation.inheritedImages?.find(entry=>entry.assetKey===r.assetKey)
     if (existing && canonicalProductProductionJsonV2(existing) !== canonicalProductProductionJsonV2(choice.asset)) {
-      const inheritedHash=inherited?.source.processing?.contentHash??inherited?.source.raw.contentHash
+      const inheritedSource=inherited?.source
+      const inheritedHash=inheritedSource&&'processing'in inheritedSource&&inheritedSource.processing
+        ?inheritedSource.processing.contentHash:inheritedSource?.raw.contentHash
       if(inheritedHash!==existing.contentHash&&!input.replaceablePlaceholders?.some(p=>p.assetKey===existing.assetKey&&p.contentHash===existing.contentHash))throw new Error('[avg-media] 同 key 已有其他图像版本，请先明确修订')
       next.presentation.stage.assets[next.presentation.stage.assets.indexOf(existing)]=choice.asset
     }

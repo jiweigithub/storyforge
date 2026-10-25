@@ -11,6 +11,9 @@ import { AVG_IMAGE_PROCESSOR_V2, assertAvgImageProcessingReceiptV2, projectAvgFo
 import { assertAvgForegroundRequirementBinding, parseAvgForegroundPolicy, type AvgForegroundPolicy } from './image-foreground-contract'
 import { assertAvgForegroundRasterV1 } from './image-foreground-worker-protocol'
 import { runAvgForegroundWorker } from './image-foreground-worker-client'
+import { runAvgForegroundSam2V4, type AvgForegroundSam2ProcessingObservationV4 } from './image-foreground-sam2-v4'
+import { assertAvgSam2OpaqueSourceV5, runAvgForegroundSam2V5, type AvgForegroundSam2ProcessingObservationV5 } from './image-foreground-sam2-v5'
+import { runAvgForegroundSam2V6, type AvgForegroundSam2ProcessingObservationV6 } from './image-foreground-sam2-v6'
 export { runAvgForegroundWorkerV1, runAvgForegroundWorker } from './image-foreground-worker-client'
 
 const aborted = () => new DOMException('AVG image processing aborted', 'AbortError')
@@ -51,7 +54,7 @@ async function processAvgImagePixels(input: AvgImageByteInput & { recipe: AvgIma
   if (foreground) assertAvgForegroundRasterV1(source.width, source.height, source.width * source.height * 4)
   const bitmap = await bounded(() => createImageBitmap(new Blob([data], { type: source.mimeType }), { imageOrientation: 'none', premultiplyAlpha: 'default', colorSpaceConversion: 'default' }), signal, image => image.close())
   const canvas = document.createElement('canvas'); canvas.width = recipe.width; canvas.height = recipe.height
-  let foregroundCanvas: HTMLCanvasElement | null = null, foregroundObservation: Awaited<ReturnType<typeof runAvgForegroundWorker>>['observation'] | null = null
+  let foregroundCanvas: HTMLCanvasElement | null = null, foregroundObservation: Awaited<ReturnType<typeof runAvgForegroundWorker>>['observation'] | AvgForegroundSam2ProcessingObservationV4 | AvgForegroundSam2ProcessingObservationV5 | AvgForegroundSam2ProcessingObservationV6 | null = null
   let output: ArrayBuffer, pixelHash: string
   try {
     if (signal?.aborted) throw aborted()
@@ -63,7 +66,12 @@ async function processAvgImagePixels(input: AvgImageByteInput & { recipe: AvgIma
       if (!rawContext) throw new Error('[avg-process] 当前浏览器不支持原图像素读取')
       rawContext.drawImage(bitmap, 0, 0)
       const rawPixels = rawContext.getImageData(0, 0, source.width, source.height)
-      const cutout = await runAvgForegroundWorker({ width: source.width, height: source.height, rgba: rawPixels.data, policy: foreground, signal })
+      if (foreground.version === 5 || foreground.version === 6) assertAvgSam2OpaqueSourceV5(rawPixels.data)
+      const cutout = foreground.version === 4
+        ? await runAvgForegroundSam2V4({ data, source, policy: foreground, signal })
+        : foreground.version === 5 ? await runAvgForegroundSam2V5({ data, source, policy: foreground, signal })
+          : foreground.version === 6 ? await runAvgForegroundSam2V6({ data, source, policy: foreground, rgba: rawPixels.data, signal })
+            : await runAvgForegroundWorker({ width: source.width, height: source.height, rgba: rawPixels.data, policy: foreground, signal })
       if (signal?.aborted) throw aborted()
       foregroundObservation = cutout.observation
       rawContext.putImageData(new ImageData(new Uint8ClampedArray(cutout.rgba), source.width, source.height), 0, 0)

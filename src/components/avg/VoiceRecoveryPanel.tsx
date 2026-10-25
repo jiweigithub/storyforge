@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { WorkspaceScope } from '../../lib/types'
 import { avgVoiceProductionEnabledV3 } from '../../lib/avg/assembly-contract'
 import { parseAvgStoredAssemblyBriefV3 } from '../../lib/avg/voice-assembly-storage'
+import { parseProductProductionBriefV3 } from '../../lib/product-production/contracts'
 import { prepareAvgVoiceRecoveryBriefV1, readAvgRawVoiceCandidateV3, readAvgVoiceRecoveryOptionsV1, type readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
 import VoiceAuditionPlayer from './VoiceAuditionPlayer'
 import MediaAssetPreview from './MediaAssetPreview'
@@ -39,7 +40,11 @@ export default function VoiceRecoveryPanel({ scope, view, disabled, visible, onP
   const build = view.details?.build, productionId = view.details?.production.id, stored = view.details?.executionBrief?.avgAssembly
   const eligible = !!build && !build.previewHash && stored?.version === 3 && ['cancelled', 'failed', 'recovery-required'].includes(build.status)
   const pendingBrief = eligible && view.details?.production.status === 'brief-ready' && view.details.brief?.revision !== build?.briefRevision
-  const savedAssembly = useMemo(() => pendingBrief && stored?.version === 3 ? parseAvgStoredAssemblyBriefV3(stored).assembly : null, [pendingBrief, stored])
+  const pendingBriefJson = pendingBrief ? view.details?.brief?.briefJson : undefined
+  const savedAssembly = useMemo(() => {
+    const pending = pendingBriefJson ? parseProductProductionBriefV3(pendingBriefJson).avgAssembly : undefined
+    return pending?.version === 3 ? parseAvgStoredAssemblyBriefV3(pending).assembly : null
+  }, [pendingBriefJson])
   const [revising, setRevising] = useState(false)
   const [options, setOptions] = useState<Options | null>(null), [error, setError] = useState('')
   const [voices, setVoices] = useState<string[]>([]), [images, setImages] = useState<string[]>([])

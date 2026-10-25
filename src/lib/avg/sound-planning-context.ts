@@ -1,3 +1,4 @@
+import Dexie from 'dexie'
 import { db } from '../db/schema'
 import type { AssembleContextInput } from '../registry/types'
 import { assertRecordInScope } from '../workspace/scope'
@@ -7,10 +8,10 @@ import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '
 import { readAvgConfirmedSoundPlanV1, readAvgSystemPlanForCompilationV1, readAvgFrozenSoundSourceInputsV1 } from './author-artifacts'
 import type { AvgMediaSourceInputV1 } from './media-source'
 import { validateAvgSoundPlanningSourcesV1 } from './sound-source'
-import { parseAvgSoundPlanningBriefV1 } from './sound-production-brief'
+import { parseAvgSoundPlanningBriefV1, parseAvgSoundPlanningBrief } from './sound-production-brief'
 import { AVG_SOUND_COMPILED_KEY_V1, AVG_SOUND_PROPOSAL_KEY_V1 } from './sound-production-plan'
 import { compileAvgSoundRequirementsV1 } from './sound-requirements'
-import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/artifact-store'
+import { verifyAcceptedProductBuildArtifactV1, verifyHistoricalAvgSoundArtifactV1 } from '../product-production/artifact-store'
 import { avgAudioProcessingForSoundV1 } from './audio-production-brief'
 import { avgAudioProcessingTaskKeyV1 } from './audio-production-contract'
 
@@ -46,11 +47,21 @@ export async function readAvgSoundPlanningContextV1(input: AssembleContextInput)
   const row = await db.productProductionBriefs.where('[productionId+revision]').equals([production.id!, build.briefRevision]).first()
   if (!row || !await assertRecordInScope(scope, 'productProductionBriefs', row, { owner: 'work' }) || !(frozen ? ['authorized', 'superseded'] : ['authorized']).includes(row.status)
     || row.briefHash !== build.briefHash || row.authorizedAt !== build.authorizedAt) throw new Error('[avg-sound-context] 缺少准确授权Brief')
-  const brief = parseProductProductionBriefV3(row.briefJson)
-  if (!brief.avgSoundPlanning || await hashProductProductionValueV2(brief) !== build.briefHash) throw new Error('[avg-sound-context] 必须保留完整原始声音Brief/hash，不能借用旧图声合同')
-  const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash), task = plan.tasks.find(t => t.taskKey === input.productProductionTaskKey)
+  const parsedBrief = parseProductProductionBriefV3(row.briefJson)
+  if (!parsedBrief.avgSoundPlanning || await hashProductProductionValueV2(parsedBrief) !== build.briefHash) throw new Error('[avg-sound-context] 必须保留完整原始声音Brief/hash，不能借用旧图声合同')
+  const plan = parseProductProductionPlanV3(build.planJson, parsedBrief, build.briefHash), task = plan.tasks.find(t => t.taskKey === input.productProductionTaskKey)
   if (!task || await hashProductProductionValueV2(plan) !== build.planHash || plan.buildNumber !== build.buildNumber || plan.controlEpoch !== build.controlEpoch
     || canonicalProductProductionJsonV2(input.productArtifactKeys ?? []) !== canonicalProductProductionJsonV2(task.inputArtifactKeys)) throw new Error('[avg-sound-context] 任务及准确依赖已变化')
+  const declaration = parseAvgSoundPlanningBrief(parsedBrief.avgSoundPlanning)
+  if (declaration.version === 2) {
+    const load = () => import('./sound-local-repair-context')
+    const { readAvgSoundLocalRepairContextV1 } = await (Dexie.currentTransaction ? Dexie.waitFor(Dexie.ignoreTransaction(load)) : load())
+    return readAvgSoundLocalRepairContextV1({ input, scope, build, production, row, brief: parsedBrief, task, frozen })
+  }
+  const brief = { ...parsedBrief, avgSoundPlanning: declaration }
+  const exactSoundInput = (ref: { artifactKey: string; version: number; contentHash: string }) => frozen
+    ? verifyHistoricalAvgSoundArtifactV1({ scope, buildId: build.id!, expectedBuildRevision: build.stateRevision, expectedBriefHash: build.briefHash,
+      expectedPlanHash: build.planHash, sourceControlEpoch: build.controlEpoch, ...ref }) : verifyAcceptedProductBuildArtifactV1({ scope, buildId: build.id!, ...ref })
   const proposal = task.kind === 'avg-sound-plan-propose' && task.executionMode === 'model' && task.skillId === 'avg.sound-plan.v1'
     && canonicalProductProductionJsonV2(task.outputArtifactKeys) === canonicalProductProductionJsonV2([AVG_SOUND_PROPOSAL_KEY_V1])
   const compilation = task.kind === 'avg-sound-requirements-compile' && task.executionMode === 'deterministic' && task.skillId === null
@@ -92,7 +103,7 @@ export async function readAvgSoundPlanningContextV1(input: AssembleContextInput)
       .filter(r => r.status === 'accepted' && r.controlEpoch === build.controlEpoch).toArray()
     const row = rows[0]
     if (rows.length !== 1 || !row || canonicalProductProductionJsonV2(compiled) !== row.payloadJson) throw new Error('[avg-sound-context] 需要原producer的准确已编译声音需求')
-    await verifyAcceptedProductBuildArtifactV1({ scope, buildId: build.id!, artifactKey: row.artifactKey, version: row.version, contentHash: row.contentHash })
+    await exactSoundInput({ artifactKey: row.artifactKey, version: row.version, contentHash: row.contentHash })
     refs.push({ artifactKey: row.artifactKey, version: row.version, contentHash: row.contentHash })
     requirement = compiled.requirements.find(r => processingEntry ? processingEntry.requirementKey === r.template.requirementKey
       : task.taskKey === `avg.sound.generate.${r.template.requirementKey}`)

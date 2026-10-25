@@ -10,7 +10,7 @@ import { productProductionTaskUsesWorldGatewayV1 } from '../product-production/s
 import { assertAvgTaskHarnessClaimV1, hashAvgTaskRuntimeBindingV1 } from './task-claim'
 import { assertAvgAudioProcessingBriefV1 } from './audio-production-brief'
 import { assertAvgAudioProcessingTaskShapeV1 } from './audio-production-topology'
-import { parseAvgAudioProductionProcessingPlanV1, avgAudioProcessingTaskKeyV1 } from './audio-production-contract'
+import { parseAvgAudioProductionProcessingPlan, avgAudioProcessingTaskKeyV1 } from './audio-production-contract'
 import { AVG_TASK_CONTEXT_SOURCE_V1 } from './task-context'
 import { AVG_SOUND_CONTEXT_V1 } from './sound-production-brief'
 import { readAvgAudioProcessingRawSourceV1 } from './audio-processing-raw-source'
@@ -24,7 +24,7 @@ export async function readAvgAudioProcessingSourcesV1(input: ProductProductionTa
   assertAvgAudioProcessingBriefV1(brief)
   if (!brief.avgAudioProcessing || input.task.kind !== 'avg-audio-process' || input.capabilityBindings.length
     || input.signal.aborted || !input.contextText.trim()) throw new Error('[avg-audio-process] 缺少准确本地任务、冻结声明或登记上下文')
-  const processing = parseAvgAudioProductionProcessingPlanV1(brief.avgAudioProcessing)
+  const processing = parseAvgAudioProductionProcessingPlan(brief.avgAudioProcessing)
   const entry = processing.entries.find(e => avgAudioProcessingTaskKeyV1(e.domain, e.requirementKey) === input.task.taskKey)
   const build = await db.productBuilds.get(input.buildId), production = await db.productProductions.get(input.productionId)
   if (!entry || !build || !production

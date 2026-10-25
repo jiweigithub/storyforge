@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ComponentProps } from 'react'
 import type { WorkspaceScope } from '../../lib/types'
 import type { readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
 import { configureAvgChosenSoundDraftV1 } from '../../lib/avg/sound-author-service'
-import { avgSoundProductionExecutionReadyV1 } from '../../lib/avg/sound-production-brief'
+import { avgSoundProductionExecutionReadyV1, avgSoundProductionTemplates } from '../../lib/avg/sound-production-brief'
 import { AVG_SOUND_COMPILED_KEY_V1, AVG_SOUND_PLAN_KEY_V1, AVG_SOUND_PROPOSAL_KEY_V1 } from '../../lib/avg/sound-production-plan'
 import { stopProductProductionV1 } from '../../lib/product-production/service'
 import SoundPlanPanel from './SoundPlanPanel'
@@ -25,11 +25,15 @@ export default function SoundProductionPanel({ scope, view, disabled, canAdopt, 
   useEffect(() => { onPending(planPending || reviewPending); return () => onPending(false) }, [planPending, reviewPending, onPending])
   const details = view.details, planning = details?.executionBrief?.avgSoundPlanning, productionId = details?.production.id, build = details?.build
   if (!planning || !productionId || !build) return null
+  const templates = avgSoundProductionTemplates(planning)
   const accepted = (key: string) => view.artifacts.find(a => a.artifactKey === key && a.status === 'accepted')
   const pending = (key: string) => view.artifacts.find(a => a.artifactKey === key && a.status === 'pending')
   const proposal = accepted(AVG_SOUND_PROPOSAL_KEY_V1), plan = accepted(AVG_SOUND_PLAN_KEY_V1), compiled = accepted(AVG_SOUND_COMPILED_KEY_V1)
-  const allRaw = planning.scope.templates.every(t => accepted(`avg.sound.raw.${t.requirementKey}`))
-  const allChoices = planning.scope.templates.every(t => accepted(`avg.sound.choice.${t.requirementKey}`))
+  const processing = details.executionBrief?.avgAudioProcessing?.entries.filter(e => e.domain === 'sound') ?? []
+  const processingRequired = (key: string) => processing.some(e => e.requirementKey === key)
+  const allActualTargets = templates.every(t => accepted(`avg.sound.raw.${t.requirementKey}`)
+    && (!processingRequired(t.requirementKey) || accepted(`avg.sound.processed.${t.requirementKey}`)))
+  const allChoices = templates.every(t => accepted(`avg.sound.choice.${t.requirementKey}`))
   const enabled = avgSoundProductionExecutionReadyV1(), pendingBrief = details.production.status === 'brief-ready' && details.brief?.revision !== build.briefRevision
   let failures: string[] = []
   if (build.failureJson !== '{}') {
@@ -40,20 +44,22 @@ export default function SoundProductionPanel({ scope, view, disabled, canAdopt, 
     } catch { failures = ['本批失败记录无法读取，请保留原始记录并核对制作来源。'] }
   }
   return <section className="lf-paper avg-sound-production" aria-label="声音生产工作台"><h4>音乐、环境与音效制作（实验）</h4>
-    <p>本批 {planning.scope.templates.length} 项；至多1次声音方案模型调用、{planning.scope.templates.filter(t => t.source.kind === 'generate-music').length} 次本机音乐生成，其余为原库音效导入。以实际记录计量；未明请求不会自动重发。</p>
+    {planning.version === 2 ? <p>复用已采用声音的准确原件，仅重新加工所选一项；不调用模型或声音生成服务。原件、旧采用版和其他播放槽继续保留，新结果需要独立试听和采用。</p>
+      : <p>本批 {templates.length} 项；至多1次声音方案模型调用、{templates.filter(t => t.source.kind === 'generate-music').length} 次本机音乐生成，其余为原库音效导入。以实际记录计量；未明请求不会自动重发。</p>}
     {!enabled && <p role="status">声音制作入口关闭，已有来源与原始结果保留；只读审听不授予新的作者采用。</p>}
     {failures.length > 0 && <div role="alert"><p>声音制作已暂停，原始请求和结果记录保留。结果未明的任务不会自动重发。</p>{failures.map((text, i) => <p key={i}>{text}</p>)}</div>}
     {pendingBrief && <p role="status">已有待开始的新方案，当前版本只能查看，不能继续生产或采用。</p>}
     {generating ? <button className="lf-action" onClick={onCancel}>停止等待并保留声音记录</button>
-      : <button className="lf-action lf-action-primary" disabled={disabled || planPending || reviewPending || !enabled || !canAdopt || !sourcesReady || pendingBrief || !!proposal && !plan || allRaw}
-        onClick={() => void onGenerate()}>{proposal ? '继续本批声音制作' : '生成本批声音方案'}</button>}
-    {proposal && <SoundPlanPanel scope={scope} productionId={productionId} planning={planning.scope} proposal={proposal} adopted={plan} pending={pending(AVG_SOUND_PLAN_KEY_V1)}
+      : <button className="lf-action lf-action-primary" disabled={disabled || planPending || reviewPending || !enabled || !canAdopt || !sourcesReady || pendingBrief || !!proposal && !plan || allActualTargets}
+        onClick={() => void onGenerate()}>{planning.version === 2 ? '加工所选原声音' : proposal ? '继续本批声音制作' : '生成本批声音方案'}</button>}
+    {proposal && planning.version === 1 && <SoundPlanPanel scope={scope} productionId={productionId} planning={planning.scope} proposal={proposal} adopted={plan} pending={pending(AVG_SOUND_PLAN_KEY_V1)}
       disabled={disabled || reviewPending || generating || !visible || pendingBrief} canAdopt={canAdopt && enabled} compiled={!!compiled} declaration={declaration}
       onPending={setPlanPending} onAction={onAction} onReload={onReload}/>}
-    {planning.scope.templates.map(t => { const raw = accepted(`avg.sound.raw.${t.requirementKey}`); return <article key={t.requirementKey} className="avg-assembly-candidate" aria-label={`声音用途 ${t.requirementKey}`}>
+    {templates.map(t => { const raw = accepted(`avg.sound.raw.${t.requirementKey}`); return <article key={t.requirementKey} className="avg-assembly-candidate" aria-label={`声音用途 ${t.requirementKey}`}>
       <h5>{t.purpose}</h5><p>{t.channel} · {t.cue.phase} · 音量 {t.cue.volume} · {t.cue.loop ? '循环' : '一次'}；触发台词 {t.cue.beatKey}</p>
-      {raw ? <><button className="lf-action" disabled={planPending || reviewPending} onClick={() => setExpanded(expanded === t.requirementKey ? '' : t.requirementKey)}>查看并审听原声音</button>
+      {raw ? <><button className="lf-action" disabled={planPending || reviewPending} onClick={() => setExpanded(expanded === t.requirementKey ? '' : t.requirementKey)}>{processingRequired(t.requirementKey) || accepted(`avg.sound.processed.${t.requirementKey}`) ? '查看并审听加工声音' : '查看并审听原声音'}</button>
         {expanded === t.requirementKey && <SoundCandidate scope={scope} productionId={productionId} raw={raw}
+          processed={accepted(`avg.sound.processed.${t.requirementKey}`)} processingRequired={processingRequired(t.requirementKey)}
           review={accepted(`avg.review.audio.${t.requirementKey}`)} pendingReview={pending(`avg.review.audio.${t.requirementKey}`)}
           choice={accepted(`avg.sound.choice.${t.requirementKey}`)} pendingChoice={pending(`avg.sound.choice.${t.requirementKey}`)}
           disabled={disabled || planPending || generating || !visible || pendingBrief || Object.entries(reviews).some(([key, value]) => value && key !== raw.artifactKey)}

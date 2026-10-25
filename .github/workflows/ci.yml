@@ -96,6 +96,14 @@ jobs:
         if: steps.scope.outputs.enabled == 'true'
         run: npx playwright install --with-deps chromium
 
+      - name: 验证本地声音加工原生路径
+        id: avg-audio-processing
+        if: steps.scope.outputs.enabled == 'true'
+        env:
+          VITE_STORYFORGE_AVG_AUDIO_PROCESSING: '1'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: test-results/avg-media/audio-processing/report.json
+        run: npm run ci:e2e -- -- --project=chromium tests/e2e/avg-audio-processing.spec.ts tests/e2e/avg-voice-workbench.spec.ts tests/e2e/avg-voice-production.spec.ts --grep 'native PCM gain|native V2 audio resamples|explicit audio processing controls|native processed voice' --reporter=github,json --output test-results/avg-media/audio-processing
+
       - name: 验证声音需求默认关闭与明确清除
         id: avg-sound-closed
         if: steps.scope.outputs.enabled == 'true'

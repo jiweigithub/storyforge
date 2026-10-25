@@ -1,3 +1,4 @@
+import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { db } from '../db/schema'
 import type { WorkspaceScope } from '../types'
 import { resolveScope, scopeTransactionTables } from '../workspace/scope'
@@ -6,7 +7,7 @@ import { readAvgDraftV1 } from './draft-service'
 import { parseAvgAuthorWorkspaceV1 } from './author-workspace-contract'
 import { saveAvgAuthorWorkspaceV1 } from './editor-service'
 import { readAvgConfirmedSoundChoicesV1, readAvgConfirmedSoundPlanV1 } from './author-artifacts'
-import { applyAvgSoundChoicesToDraftV1 } from './sound-configuration'
+import { applyAvgSoundChoicesToDraftV1, applyAvgSoundLocalRepairChoiceToDraftV2 } from './sound-configuration'
 import { avgSoundProductionExecutionReadyV1 } from './sound-production-brief'
 
 /** Editable CAS proposal from actually adopted original sounds. This cannot
@@ -20,9 +21,17 @@ export async function configureAvgChosenSoundDraftV1(input: { scope: WorkspaceSc
   const details = await readProductProductionDetailsV1(scope, input.productionId, ['avg']), build = details.build, brief = details.executionBrief
   if (!build?.id || !brief?.avgSoundPlanning || build.previewHash) throw new Error('[avg-sound] 当前版本不能配置生成声音')
   const source = { scope, buildId: build.id, expectedBuildRevision: build.stateRevision, controlEpoch: build.controlEpoch }
-  const plan = await readAvgConfirmedSoundPlanV1(source), choices = await readAvgConfirmedSoundChoicesV1(source)
-  const next = await applyAvgSoundChoicesToDraftV1({ workspace, scope: brief.avgSoundPlanning.scope, plan: plan.payload,
-    choices: choices.map(c => c.payload) })
+  const choices = await readAvgConfirmedSoundChoicesV1(source)
+  let next
+  if (brief.avgSoundPlanning.version === 2) {
+    const repair = brief.avgSoundPlanning.repair
+    if (canonicalProductProductionJsonV2(workspace.soundLocalRepair ?? null) !== canonicalProductProductionJsonV2(repair)) throw new Error('[avg-sound-repair] 当前草稿与准确返修方案不一致')
+    await (await import('./sound-local-repair-evidence')).readAvgSoundLocalRepairEvidenceV1({ scope, productionId: input.productionId, repair })
+    next = await applyAvgSoundLocalRepairChoiceToDraftV2({ workspace, repair, choices: choices.map(c => c.payload) })
+  } else {
+    const plan = await readAvgConfirmedSoundPlanV1(source)
+    next = await applyAvgSoundChoicesToDraftV1({ workspace, scope: brief.avgSoundPlanning.scope, plan: plan.payload, choices: choices.map(c => c.payload) })
+  }
   return db.transaction('rw', scopeTransactionTables(db.avgAuthoringDrafts, db.productBuilds, db.productProductions), async () => {
     const current = await db.productBuilds.get(build.id!), production = await db.productProductions.get(input.productionId)
     if (!current || !production || current.stateRevision !== build.stateRevision || current.controlEpoch !== build.controlEpoch

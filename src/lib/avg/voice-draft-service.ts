@@ -7,8 +7,8 @@ import { readAvgDraftV1 } from './draft-service'
 import { saveAvgAuthorWorkspaceV1 } from './editor-service'
 import { prepareAvgVoiceDraftV1, readAvgVoiceDraftV1, validateAvgVoiceDraftSourcesV1 } from './voice-draft-contract'
 import { assertAvgMediaProductionDraftEditableV1 } from './production-draft-editability'
-import { assertAvgVoiceProcessingDraftV1 } from './voice-processing-draft-contract'
-import type { AvgAudioProductionProcessingPlanV1 } from './audio-production-contract'
+import { assertAvgVoiceProcessingDraft } from './voice-processing-draft-contract'
+import type { AvgAudioProductionProcessingPlan } from './audio-production-contract'
 
 /** Must run inside the final draft write transaction after expensive, DB-free
  * protocol/source compilation. Active starts cannot be raced by a late save.
@@ -36,8 +36,9 @@ export async function saveAvgVoiceProductionDraftV1(input: {
   if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg-voice] 已保存脚本或配音草稿已变化，请刷新后继续')
   const workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
   const packet = await prepareAvgVoiceDraftV1({ ...input, workspace })
-  if (workspace.voiceProcessing) assertAvgVoiceProcessingDraftV1(workspace.voiceProcessing, readAvgVoiceDraftV1(packet).voice.batch.requirements)
+  if (workspace.voiceProcessing) assertAvgVoiceProcessingDraft(workspace.voiceProcessing, readAvgVoiceDraftV1(packet).voice.batch.requirements)
   const same = canonicalProductProductionJsonV2(workspace.voiceProduction ?? null) === canonicalProductProductionJsonV2(packet)
+  if (workspace.voiceLocalRepair && !same) throw new Error('[avg-voice-repair] 局部音量返修不能改成重录请求，请先明确撤销返修要求')
   if (!same) assertUnconsumed(workspace)
   return db.transaction('rw', scopeTransactionTables(db.avgAuthoringDrafts, db.productProductions, db.productBuilds), async () => {
     const current = await readAvgDraftV1(input.scope)
@@ -57,20 +58,21 @@ export async function clearAvgVoiceProductionDraftV1(input: { scope: WorkspaceSc
     assertUnconsumed(workspace)
     delete workspace.voiceProduction
     delete workspace.voiceProcessing
+    delete workspace.voiceLocalRepair
     return saveAvgAuthorWorkspaceV1(input.scope, draft.revision, workspace)
   })
 }
 
 /** The same Work draft/CAS as voice requirements. No audio is generated or adopted. */
 export async function saveAvgVoiceProcessingDraftV1(input: {
-  scope: WorkspaceScope; expectedDraftRevision: number; plan: AvgAudioProductionProcessingPlanV1 | null
+  scope: WorkspaceScope; expectedDraftRevision: number; plan: AvgAudioProductionProcessingPlan | null
 }) {
   const draft = await readAvgDraftV1(input.scope)
   if (draft.revision !== input.expectedDraftRevision) throw new Error('[avg-voice-process] 配音或音量草稿已变化，请刷新后继续')
   const workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
   if (input.plan !== null && !workspace.voiceProduction) throw new Error('[avg-voice-process] 请先保存逐句配音需求')
   const voice = input.plan !== null ? await validateAvgVoiceDraftSourcesV1(workspace.voiceProduction, workspace) : null
-  const plan = voice ? assertAvgVoiceProcessingDraftV1(input.plan, voice.voice.batch.requirements) : null
+  const plan = voice ? assertAvgVoiceProcessingDraft(input.plan, voice.voice.batch.requirements) : null
   const same = canonicalProductProductionJsonV2(workspace.voiceProcessing ?? null) === canonicalProductProductionJsonV2(plan)
   if (!same) assertUnconsumed(workspace)
   if (plan) workspace.voiceProcessing = plan

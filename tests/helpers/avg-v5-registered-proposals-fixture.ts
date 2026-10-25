@@ -15,14 +15,14 @@ import { executeProductProductionCommand } from '../../src/lib/product-productio
 import { readProductProductionDetailsV1 } from '../../src/lib/product-production/service'
 import { runProductProductionSchedulerCycleV1 } from '../../src/lib/product-production/scheduler'
 import { stageAvgAuthorArtifactV1 } from '../../src/lib/avg/author-artifacts'
-import type { AvgImageProcessingPlanV1 } from '../../src/lib/avg/image-processing-contract'
+import type { AvgImageProcessingPlan } from '../../src/lib/avg/image-processing-contract'
 import type { ProductBuildArtifactRecordV1 } from '../../src/lib/types'
 
 /** All domain rows come from public author/production/Harness commands. The
  * caller opens only the closed feature fence in isolated fake-indexeddb data;
  * original model bytes travel through the real configured runner and HTTP. */
 export async function avgV5RegisteredProposalsFixture(options:{malformed?:boolean;missingGeneratedProof?:boolean;onResponse?:()=>Promise<void>;
-  imageResponse?:(body:Record<string,unknown>,index:number)=>Promise<Response>;imageAdapterId?:AvgImageAdapterIdV4;imageProcessing?:AvgImageProcessingPlanV1;progress?:(phase:string)=>void}={}){
+  imageResponse?:(body:Record<string,unknown>,index:number)=>Promise<Response>;imageAdapterId?:AvgImageAdapterIdV4;imageProcessing?:AvgImageProcessingPlan;progress?:(phase:string)=>void}={}){
   options.progress?.('owner:begin')
   const {owner,author,brief}=await avgV5FormalFixture(),calls:Array<{body:any;packet:any}>=[],imageCalls:Array<Record<string,unknown>>=[]
   options.progress?.('owner:ready')

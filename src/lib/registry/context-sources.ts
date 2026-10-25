@@ -1966,7 +1966,14 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     scope: 'project', layer: 'L0', ownerFrom: 'work',
     budgetTokens: 20_000, protectedFromTrim: true,
     enabled: input => Number.isInteger(input.productBuildId) && !!input.productProductionTaskKey,
-    read: async input => (await import('../avg/task-context')).readAvgTaskExecutionContextV1(input),
+    read: async input => {
+      // This reader is also used by sealed audio admission. Only module loading
+      // is transaction-free; all context/producer reads keep the caller's RW
+      // transaction and its exact scope/version fences.
+      const load = () => import('../avg/task-context')
+      const reader = await (Dexie.currentTransaction ? Dexie.waitFor(Dexie.ignoreTransaction(load)) : load())
+      return reader.readAvgTaskExecutionContextV1(input)
+    },
   },
   {
     key: 'product-production.avg-sound-planning-inputs',

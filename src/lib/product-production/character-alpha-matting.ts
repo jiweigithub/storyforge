@@ -254,7 +254,9 @@ export function matteDeclaredMagentaCharacterBackdropV1(input: RgbaRasterV1) {
   }
   const borders = borderOffsets(width, height)
   const reservedBorderRatio = borders.filter(offset => isDeclaredMagenta(data, offset)).length / borders.length
-  if (reservedBorderRatio < 0.95) fail('原图边缘不符合已声明的纯品红保留底色')
+  if (reservedBorderRatio < 0.95) {
+    fail(`原图边缘不符合已声明的纯品红保留底色（边缘精确色键覆盖率 ${reservedBorderRatio.toFixed(4)}，要求至少 0.9500）`)
+  }
   const result = matteCharacterBackdrop({ ...input, reservedMagentaBackdrop: true }, true)
   let clearedPixelCount = 0, translucentPixelCount = 0, opaquePixelCount = 0
   for (let offset = 3; offset < result.data.length; offset += 4) {

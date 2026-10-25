@@ -16,7 +16,7 @@ import type { AvgVoiceSpeechRequestV1 } from './voice-request-contract'
 import { stringifyAvgExactJsonV1 } from './voice-exact-storage'
 import { validateAvgVoiceRecoveryV1 } from './voice-recovery'
 import { avgAudioProcessingForVoiceV3 } from './audio-production-brief'
-import { avgAudioProcessingTaskKeyV1, type AvgAudioProductionProcessingPlanV1 } from './audio-production-contract'
+import { avgAudioProcessingTaskKeyV1, type AvgAudioProductionProcessingPlan } from './audio-production-contract'
 
 export const AVG_TASK_CONTEXT_SOURCE_V1 = 'product-production.avg-task-inputs'
 export const AVG_MEDIA_REQUEST_SKILL_V1 = 'avg.media-request.v1'
@@ -25,7 +25,7 @@ export const AVG_MEDIA_REQUEST_SKILL_V1 = 'avg.media-request.v1'
  * provider or adoption authority. The full frozen Brief remains authoritative. */
 export function projectAvgTaskRequirementV1(input: {
   assembly: AvgAssemblyBriefV3; task: ProductProductionPlanTaskV3; requests: AvgVoiceSpeechRequestV1[]
-  processing?: AvgAudioProductionProcessingPlanV1
+  processing?: AvgAudioProductionProcessingPlan
 }) {
   const { assembly, task } = input
   if (task.kind === 'avg-audio-process') {
@@ -50,6 +50,10 @@ export function projectAvgTaskRequirementV1(input: {
       requirement, preset, protocol: assembly.voice.protocol, binding: assembly.voice.binding, request: requestIdentity,
       ...(assembly.voice.recovery ? { recovery: { sourceBuildNumber: assembly.voice.recovery.sourceBuildNumber,
         sourceVoiceHash: assembly.voice.recovery.sourceVoiceHash, declaration: assembly.voice.recovery.declaration,
+        ...(assembly.voice.recovery.version === 2 ? { version: 2, sourceProductionKey: assembly.voice.recovery.sourceProductionKey,
+          targetVoiceHash: assembly.voice.recovery.targetVoiceHash, parentBuildNumber: assembly.voice.recovery.parentBuildNumber,
+          parentPreviewHash: assembly.voice.recovery.parentPreviewHash, parentManifestHash: assembly.voice.recovery.parentManifestHash,
+          adoptedChoice: assembly.voice.recovery.adoptedChoice } : {}),
         retained: assembly.voice.recovery.retained.find(r => r.requirementKey === requirement.requirementKey) ?? null } } : {}) }
   }
   if (task.kind === 'avg-media-image-generate' || task.kind === 'avg-media-image-reuse' || task.kind === 'avg-media-image-process') {

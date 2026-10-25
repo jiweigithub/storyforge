@@ -12,7 +12,10 @@ import { avgVisualPlanningTemplateRequirementsV2,parseAvgVisualPlanningScopeV2 }
 import { prepareAvgVisualPlanningConfigurationV5,completeAvgVisualPlanningBriefV5,assertAvgVisualPlanningDraftMatchesV5,
   assertAvgVisualPlanningDraftMatchesV4 } from '../../src/lib/avg/visual-planning-workspace'
 import { parseProductProductionBriefV3 } from '../../src/lib/product-production/contracts'
-import { prepareAvgAssemblyBriefV1,startAvgAssemblyV1,readAvgAssemblyWorkspaceV1 } from '../../src/lib/avg/assembly-service'
+import { prepareAvgAssemblyBriefV1,startAvgAssemblyV1,readAvgAssemblyWorkspaceV1,runAvgAssemblyV1 } from '../../src/lib/avg/assembly-service'
+import { createAvgAuthoringPresetV1 } from '../../src/lib/avg/authoring-presets'
+import { createAvgVisualFormTemplateV4 } from '../../src/lib/avg/visual-planning-form'
+import { prepareNativeAvgAssembly,startNativeAvgAssembly,confirmNativeAvgInputs } from '../helpers/avg-production-assembly-fixture'
 import { readAvgDraftV1 } from '../../src/lib/avg/draft-service'
 import { saveAvgAuthorWorkspaceV1,readAvgDraftReferenceImageV2,readAvgDraftReferenceBytesV2 } from '../../src/lib/avg/editor-service'
 import { readProductProductionDetailsV1 } from '../../src/lib/product-production/service'
@@ -198,6 +201,53 @@ describe('AVG V5 explicit workbench preparation, no provider or adoption authori
       expectedBuild:{id:after.build!.id!,revision:after.build!.stateRevision}})).rejects.toThrow()
     expect(fetch).not.toHaveBeenCalled()
   })
+  it('edits only a new visual Brief after a verified ordinary Preview, rejects a stale baseline or corrupt parent, and fences the next start',async()=>{
+    const workspace=createAvgAuthoringPresetV1('evidence')
+    const s=await startNativeAvgAssembly(await prepareNativeAvgAssembly(workspace))
+    await confirmNativeAvgInputs(s);await runAvgAssemblyV1(s)
+    const parent=(await db.productBuilds.get(s.buildId))!
+    expect(parent.status).toBe('preview-ready')
+    const originalRuns=await db.agentRuns.count()
+    workspace.basePreviewHash=parent.previewHash
+    let draft=await readAvgDraftV1(s.scope)
+    draft=await saveAvgAuthorWorkspaceV1(s.scope,draft.revision,workspace)
+    const template=createAvgVisualFormTemplateV4(workspace,'background')
+    template.requiredDetails=['原场景构图保留对白安全区']
+    const prepared=await prepareAvgAssemblyBriefV1({scope:s.scope,expectedDraftRevision:draft.revision,
+      visualPlanning:{schema:'storyforge.avg.visual-planning-scope',version:2,batchKey:'after.ordinary.preview',revision:1,templates:[template],referenceCatalog:[]}})
+    const selection=async()=>({scope:s.scope,productionId:s.productionId,expectedBriefHash:prepared.brief!.briefHash,
+      expectedDraftRevision:(await readAvgDraftV1(s.scope)).revision,expectedBuild:{id:parent.id!,revision:parent.stateRevision}})
+    const preparedDraft=await readAvgDraftV1(s.scope),currentWorkspace=JSON.parse(preparedDraft.editorJson!)
+    await saveAvgAuthorWorkspaceV1(s.scope,preparedDraft.revision,{...currentWorkspace,basePreviewHash:'f'.repeat(64)})
+    await expect(prepareAvgVisualImageRouteV5({...await selection(),adapterId:'agnes.image-2.5-flash.v1'})).rejects.toThrow(/基线/)
+    await expect(prepareAvgVisualImageProcessingV5({...await selection(),plan:null})).rejects.toThrow(/基线/)
+    await saveAvgAuthorWorkspaceV1(s.scope,(await readAvgDraftV1(s.scope)).revision,currentWorkspace)
+    await db.productBuilds.update(parent.id!,{previewManifestJson:'{}'})
+    await expect(prepareAvgVisualImageRouteV5({...await selection(),adapterId:'agnes.image-2.5-flash.v1'})).rejects.toThrow()
+    await expect(prepareAvgVisualImageProcessingV5({...await selection(),plan:null})).rejects.toThrow()
+    await db.productBuilds.update(parent.id!,{previewManifestJson:parent.previewManifestJson})
+    const pending=await readProductProductionDetailsV1(s.scope,s.productionId,['avg'])
+    expect(pending.brief!.briefHash).toBe(prepared.brief!.briefHash)
+    const parentBrief=parseProductProductionBriefV3(pending.briefHistory.find(r=>r.revision===parent.briefRevision&&r.briefHash===parent.briefHash)!.briefJson)
+    expect(parentBrief.avgAssembly).toBeDefined()
+    expect(parentBrief.avgVisualPlanning).toBeUndefined()
+    const pendingBrief=parseProductProductionBriefV3(pending.brief!.briefJson)
+    expect(pendingBrief.avgVisualPlanning?.assembly.basePackageHash).toBe(parent.packageHash)
+    expect(parentBrief.source.worldContentHash).toBe(pendingBrief.source.worldContentHash)
+    expect(JSON.parse((await readAvgDraftV1(s.scope)).editorJson!).basePreviewHash).toBe(parent.previewHash)
+    const routed=await prepareAvgVisualImageRouteV5({...await selection(),adapterId:'agnes.image-2.5-flash.v1'})
+    const plan={schema:'storyforge.avg.image-processing-plan' as const,version:1 as const,entries:[{requirementKey:template.parameters.requirementKey,recipe:avgImageProcessingRecipeFixture()}]}
+    const processed=await prepareAvgVisualImageProcessingV5({...await selection(),expectedBriefHash:routed.brief!.briefHash,plan})
+    const brief=parseProductProductionBriefV3(processed.brief!.briefJson)
+    expect(brief.avgVisualPlanning?.imageBinding.adapterId).toBe('agnes.image-2.5-flash.v1')
+    expect(brief.avgVisualPlanning?.imageProcessing).toEqual(plan)
+    expect(await db.productBuilds.get(parent.id!)).toEqual(parent)
+    expect(await db.agentRuns.count()).toBe(originalRuns);expect(fetch).not.toHaveBeenCalled()
+    const started=await startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:processed.brief!.briefHash})
+    const startedSelection={...await selection(),expectedBriefHash:processed.brief!.briefHash,expectedBuild:{id:started.build!.id!,revision:started.build!.stateRevision}}
+    await expect(prepareAvgVisualImageRouteV5({...startedSelection,adapterId:'agnes.image-2.1-flash.v1'})).rejects.toThrow()
+    await expect(prepareAvgVisualImageProcessingV5({...startedSelection,plan:null})).rejects.toThrow()
+  },30_000)
   it.each(['brief','draft','build'] as const)('rejects stale %s while editing an unstarted V5 route or recipe',async mode=>{
     vi.spyOn(readiness,'avgVisualPlanningExecutionReadyV5').mockReturnValue(true)
     const f=await avgV5WorkbenchPreparationFixture(),draft=await readAvgDraftV1(f.owner.scope)

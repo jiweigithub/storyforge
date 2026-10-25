@@ -10,13 +10,13 @@ import { avgV5RegisteredProposalsFixture,adoptAvgV5CompiledSources,type AvgV5Reg
 import { readAvgImageConsumptionDefinitionV5 } from '../../src/lib/avg/image-consumption-v5'
 import { AVG_VISUAL_REVIEW_CRITERIA_V1 } from '../../src/lib/avg/visual-review-contract'
 import type { AvgReviewIssuesV2 } from '../../src/lib/avg/visual-review-contract-v2'
-import type { AvgImageProcessingPlanV1 } from '../../src/lib/avg/image-processing-contract'
+import type { AvgImageProcessingPlan } from '../../src/lib/avg/image-processing-contract'
 import type { AvgVisualProductionRequirementV2 } from '../../src/lib/avg/media-production-contract-v2'
 
 /** All saved Work/Brief/Run/compiler/raw rows use the actual commands and
  * configured transport. Only unavailable Happy DOM decoder observations are
  * controlled; this is never actual art, alpha-edge or human acceptance. */
-export async function avgV5MediaReviewFixture(progress?:(phase:string)=>void,options:{imageProcessing?:AvgImageProcessingPlanV1;
+export async function avgV5MediaReviewFixture(progress?:(phase:string)=>void,options:{imageProcessing?:AvgImageProcessingPlan;
   beforeImages?:(s:AvgV5RegisteredFixture)=>Promise<void>;executor?:(s:AvgV5RegisteredFixture)=>AvgV5RegisteredFixture['executor']}={}){
   vi.spyOn(readiness,'avgVisualPlanningExecutionReadyV5').mockReturnValue(true)
   vi.spyOn(decoder,'inspectAvgImageBytesV1').mockImplementation(async input=>{

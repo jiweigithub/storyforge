@@ -85,3 +85,49 @@ test('voice draft preserves an actual concurrent saved revision and keeps the re
   expect(actual).toBe(changed); expect(JSON.parse(actual).voiceProduction).toBeUndefined(); expect(s.requests()).toBe(0)
   await page.screenshot({ path: info.outputPath('avg-voice-draft-stale-native-retained.png') })
 })
+
+
+// Native controls and durable draft only; actual DSP bytes are checked by the
+// dedicated native Worker case. No inference, adoption or author-data writes.
+test('explicit audio processing controls save the exact V2 requirement and survive native refresh without dispatch', async ({ page }, info) => {
+  test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION !== '1' || process.env.VITE_STORYFORGE_AVG_AUDIO_PROCESSING !== '1',
+    'Experimental media and audio processing are disabled by default')
+  const s = await openVoiceDraft(page)
+  await s.panel.getByRole('button', { name: '保存配音需求草稿', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: '准确配音需求已保存' })).toBeVisible()
+  const processing = page.getByRole('region', { name: '配音本地音量调整', exact: true })
+  await expect(processing.getByText('目前可以保存调整要求，正式加工尚未开放。保存不会生成或修改音频。', { exact: true })).not.toBeVisible()
+  await processing.getByRole('checkbox', { name: '调整此句音量', exact: true }).check()
+  await processing.getByRole('spinbutton', { name: '音量增减（dB）', exact: true }).fill('7')
+  await processing.getByRole('checkbox', { name: '缓和突出的音量尖峰', exact: true }).check()
+  await processing.getByRole('combobox', { name: '采样率', exact: true }).selectOption('explicit')
+  await processing.getByRole('spinbutton', { name: '指定采样率（Hz）', exact: true }).fill('48000')
+  await processing.getByRole('textbox', { name: '调整说明', exact: true }).fill('原生界面保存本地加工要求，原件保留，结果待独立试听。')
+  await expect(page.getByRole('button', { name: '制作与试玩', exact: true })).toBeDisabled()
+  await processing.getByRole('button', { name: '保存音量调整要求', exact: true }).click()
+  await expect(processing.getByRole('button', { name: '保存音量调整要求', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '制作与试玩', exact: true })).toBeEnabled()
+  await page.reload()
+  await page.getByRole('button', { name: '素材', exact: true }).click()
+  await expect(processing.getByRole('checkbox', { name: '调整此句音量', exact: true })).toBeChecked()
+  await expect(processing.getByRole('spinbutton', { name: '音量增减（dB）', exact: true })).toHaveValue('7')
+  await expect(processing.getByRole('checkbox', { name: '缓和突出的音量尖峰', exact: true })).toBeChecked()
+  await expect(processing.getByRole('combobox', { name: '采样率', exact: true })).toHaveValue('explicit')
+  await expect(processing.getByRole('spinbutton', { name: '指定采样率（Hz）', exact: true })).toHaveValue('48000')
+  const actual = await page.evaluate(async scope => {
+    const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
+    const [drafts, contract, schema] = await Promise.all([load('/storyforge/src/lib/avg/draft-service.ts'),
+      load('/storyforge/src/lib/avg/author-workspace-contract.ts'), load('/storyforge/src/lib/db/schema.ts')])
+    const draft = await drafts.readAvgDraftV1(scope), workspace = contract.parseAvgAuthorWorkspaceV1(draft.editorJson)
+    return { processing: workspace.voiceProcessing, scripts: workspace.scripts, systemPlan: workspace.systemPlan,
+      builds: await schema.db.productBuilds.count(), artifacts: await schema.db.productBuildArtifacts.count(),
+      blobs: await schema.db.mediaBlobObjects.count(), runs: await schema.db.agentRuns.count() }
+  }, s.seed.scope)
+  expect(actual.processing).toMatchObject({ schema: 'storyforge.avg.audio-production-processing-plan', version: 2,
+    entries: [{ domain: 'voice', recipe: { version: 2, gainMilliDb: 7000, maximumDurationMs: 10_000,
+      sampleRatePolicy: 'explicit', targetSampleRateHz: 48000,
+      dynamics: { processor: 'linked-lookahead-peak-limit.v1', ceilingMilliDbfs: -1500, lookaheadMs: 3, releaseMs: 80 } } }] })
+  expect(actual.scripts).toEqual(s.seed.scripts); expect(actual.systemPlan).toEqual(s.seed.systemPlan)
+  expect([actual.builds, actual.artifacts, actual.blobs, actual.runs, s.requests()]).toEqual([0, 0, 0, 0, 0])
+  await page.screenshot({ path: info.outputPath('avg-audio-processing-native-saved-v2.png') })
+})

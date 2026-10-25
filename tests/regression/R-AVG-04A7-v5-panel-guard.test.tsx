@@ -11,12 +11,33 @@ import VisualPlanningPanel from '../../src/components/avg/VisualPlanningPanel'
 import { avgV5FormalFixture } from '../helpers/avg-v5-formal-fixture'
 import { readAvgAssemblyWorkspaceV1 } from '../../src/lib/avg/assembly-service'
 import { hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
+import type { ProductBuildRecordV1 } from '../../src/lib/types'
 
 Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true})
 let mounted:Root|undefined
 beforeEach(async()=>{await db.delete();await db.open();vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION','1');vi.stubEnv('VITE_STORYFORGE_AVG_VISUAL_PLANNING','1')})
 afterEach(async()=>{if(mounted)await act(async()=>mounted!.unmount());mounted=undefined;document.body.innerHTML='';vi.restoreAllMocks();vi.unstubAllEnvs();vi.unstubAllGlobals();db.close()})
 describe('AVG connected workbench guard for gated versioned metadata',()=>{
+  it('shows new visual uses after an ordinary frozen Preview and requires the explicit revision baseline',async()=>{
+    const {owner,author}=await avgV5FormalFixture(),view=await readAvgAssemblyWorkspaceV1(owner.scope)
+    // UI-only parent metadata; the service regression separately freezes and
+    // verifies an actual ordinary Preview and rejects corrupt/stale parents.
+    const build={id:1,buildNumber:1,status:'preview-ready',previewHash:'a'.repeat(64),briefRevision:view.details!.brief!.revision} as ProductBuildRecordV1
+    const projected={...view,details:{...view.details!,build,executionBrief:parseProductProductionBriefV3(view.details!.brief!.briefJson)}}
+    const container=document.createElement('div');document.body.append(container);mounted=createRoot(container)
+    const prepare=vi.fn(),action=vi.fn()
+    const render=async(basePreviewHash:string|null)=>act(async()=>mounted!.render(<VisualPlanningPanel scope={owner.scope} view={projected}
+      workspace={{...author.source,basePreviewHash}} disabled={false} visible={true} activeBuild={false} sourcesReady={true}
+      declaration="工程验证" generating={false} onAction={action} onPrepare={prepare} onGenerate={vi.fn()} onCancel={vi.fn()}
+      onReload={vi.fn()} onNotice={vi.fn()} onPending={vi.fn()}/>))
+    await render(null)
+    expect(container.textContent).toContain('准备专业视觉用途与家族')
+    expect(container.textContent).toContain('以此预览开始修订')
+    expect(container.querySelector<HTMLFieldSetElement>('fieldset')!.disabled).toBe(true)
+    await render(build.previewHash)
+    expect(container.querySelector<HTMLFieldSetElement>('fieldset')!.disabled).toBe(false)
+    expect(prepare).not.toHaveBeenCalled();expect(action).not.toHaveBeenCalled()
+  })
   it.each(['media','visual'] as const)('preserves V5 metadata with %s disabled without offering an old form or an enabled editing action',async off=>{
     const {owner,author,brief}=await avgV5FormalFixture(),view=await readAvgAssemblyWorkspaceV1(owner.scope)
     vi.stubEnv(off==='media'?'VITE_STORYFORGE_AVG_MEDIA_PRODUCTION':'VITE_STORYFORGE_AVG_VISUAL_PLANNING','0')

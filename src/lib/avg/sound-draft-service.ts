@@ -8,6 +8,8 @@ import { saveAvgAuthorWorkspaceV1 } from './editor-service'
 import { freezeAvgSoundPlanningScopeV1, validateAvgSoundPlanningSourcesV1 } from './sound-source'
 import { parseAvgSoundProductionDraftV1, type AvgSoundPlanningDraftInputV1 } from './sound-draft-contract'
 import { assertAvgMediaProductionDraftEditableV1 } from './production-draft-editability'
+import { assertAvgSoundProcessingDraft } from './sound-processing-draft-contract'
+import type { AvgAudioProductionProcessingPlan } from './audio-production-contract'
 
 function assertUnconsumed(workspace: AvgAuthorWorkspaceV1) {
   const keys = new Set(workspace.soundProduction?.scope.templates.map(t => t.assetKey) ?? [])
@@ -24,6 +26,7 @@ export async function saveAvgSoundProductionDraftV1(input: {
   const workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
   const soundProduction = parseAvgSoundProductionDraftV1({ schema: 'storyforge.avg.sound-production-draft', version: 1,
     scope: await freezeAvgSoundPlanningScopeV1(input.planning, workspace) })
+  if (workspace.soundProcessing) assertAvgSoundProcessingDraft(workspace.soundProcessing, soundProduction.scope)
   const same = canonicalProductProductionJsonV2(workspace.soundProduction ?? null) === canonicalProductProductionJsonV2(soundProduction)
   if (!same) assertUnconsumed(workspace)
   return db.transaction('rw', scopeTransactionTables(db.avgAuthoringDrafts, db.productProductions, db.productBuilds), async () => {
@@ -41,7 +44,30 @@ export async function clearAvgSoundProductionDraftV1(input: { scope: WorkspaceSc
     const workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
     if (!workspace.soundProduction) return draft
     assertUnconsumed(workspace); delete workspace.soundProduction
+    delete workspace.soundProcessing
     return saveAvgAuthorWorkspaceV1(input.scope, draft.revision, workspace)
+  })
+}
+/** The existing Work draft/CAS owns local sound requirements. Saving or
+ * clearing this plan creates no Run, Blob, provider request or adoption. */
+export async function saveAvgSoundProcessingDraftV1(input: {
+  scope: WorkspaceScope; expectedDraftRevision: number; plan: AvgAudioProductionProcessingPlan | null
+}) {
+  const frozen = structuredClone(input), draft = await readAvgDraftV1(frozen.scope)
+  if (draft.revision !== frozen.expectedDraftRevision) throw new Error('[avg-sound-process] 声音或音量草稿已变化，请刷新后继续')
+  const workspace = parseAvgAuthorWorkspaceV1(draft.editorJson)
+  if (frozen.plan !== null && !workspace.soundProduction) throw new Error('[avg-sound-process] 请先保存声音需求')
+  const sound = frozen.plan !== null ? await validateAvgSoundDraftSourcesV1(workspace.soundProduction, workspace) : null
+  const plan = sound ? assertAvgSoundProcessingDraft(frozen.plan, sound.scope) : null
+  const same = canonicalProductProductionJsonV2(workspace.soundProcessing ?? null) === canonicalProductProductionJsonV2(plan)
+  if (!same) assertUnconsumed(workspace)
+  if (plan) workspace.soundProcessing = plan
+  else delete workspace.soundProcessing
+  return db.transaction('rw', scopeTransactionTables(db.avgAuthoringDrafts, db.productProductions, db.productBuilds), async () => {
+    const current = await readAvgDraftV1(frozen.scope)
+    if (current.revision !== draft.revision || current.productionId !== draft.productionId) throw new Error('[avg-sound-process] 保存音量要求期间草稿已变化')
+    await assertAvgMediaProductionDraftEditableV1(frozen.scope, current, 'sound')
+    return same ? current : saveAvgAuthorWorkspaceV1(frozen.scope, current.revision, workspace)
   })
 }
 export async function validateAvgSoundDraftSourcesV1(value: unknown, workspace: AvgAuthorWorkspaceV1) {

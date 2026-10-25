@@ -1,3 +1,4 @@
+import Dexie from 'dexie'
 import type { ProductBuildArtifactRecordV1, WorkspaceScope } from '../types'
 import { AVG_VISUAL_PLANNING_ROLES_V5 } from './visual-planning-roles-v5'
 import { readAgentRunV1 } from '../agent/run/event-store'
@@ -8,7 +9,7 @@ import { avgHash, avgKey, avgProtocolBody, avgRecord, avgText } from './protocol
 import { parseProductionModelJsonObjectV1 } from '../product-production/model-json-object'
 import { prepareAvgProfessionalArtifactV1 } from './artifact-contract'
 import { readAvgVisualReuseEvidenceV4 } from './visual-planning-reuse'
-import type { AvgVisualProposalReuseSourceV4, AvgVisualReusePathV4 } from './visual-planning-reuse-contract'
+import type { AvgVisualProposalReuseSourceV4,AvgVisualReusePathV4 } from './visual-planning-reuse-contract'
 
 export type AvgVisualProposalEvidenceV4 = {
   rawText:string;requestText:string;request:Record<string,unknown>;quality:Record<string,unknown>
@@ -16,6 +17,8 @@ export type AvgVisualProposalEvidenceV4 = {
   modelRequest:Record<string,unknown>;modelRequestText:string
   binding:{requirementKey:string;adapterId:string;bindingHash:string;provider?:string;model?:string}
 } & ({reused:false}|{reused:true;source:AvgVisualProposalReuseSourceV4})
+export type AvgVisualProposalEvidenceV5 = Extract<AvgVisualProposalEvidenceV4,{reused:false}>|
+  (Omit<Extract<AvgVisualProposalEvidenceV4,{reused:false}>,'reused'>&{reused:true;source:import('./visual-planning-reuse-contract').AvgVisualProposalReuseSourceV5})
 
 export const hashAvgVisualExactTextV1 = (text: string) => sha256MediaData(new TextEncoder().encode(text).buffer)
 
@@ -65,8 +68,15 @@ async function readAvgVisualFreshProposalEvidence(scope:WorkspaceScope,row:Pick<
 
 /** New evidence is explicit @2 and actual role proposal @3. Old V4 readers
  * remain strict; only current version-aware consumers use this dispatcher. */
-export async function readAvgVisualProposalEvidenceV5(scope:WorkspaceScope,row:Pick<ProductBuildArtifactRecordV1,'producerRunId'|'qualityJson'|'payloadJson'>){
-  const proposal=avgRecord(avgProtocolBody(row.payloadJson),['schema','version','targetArtifactKey','scopeHash','payload'],'V5 original proposal')
+export async function readAvgVisualProposalEvidenceV5(scope:WorkspaceScope,row:Pick<ProductBuildArtifactRecordV1,'producerRunId'|'qualityJson'|'payloadJson'>,path:readonly string[]=[]):Promise<AvgVisualProposalEvidenceV5>{
+  const evidence=avgProtocolBody(row.qualityJson) as {schema?:unknown;version?:unknown;source?:unknown}|null
+  const isReuse=evidence?.schema==='storyforge.avg.visual-proposal-reuse-evidence'&&evidence.version===2
+  const proposal=avgRecord(avgProtocolBody(row.payloadJson),['schema','version','targetArtifactKey','scopeHash','payload',...(isReuse?['modelPayload']:[])],'V5 original proposal')
+  if(isReuse){
+    const load=()=>import('./visual-planning-reuse-v5')
+    const {readAvgVisualReuseEvidenceV5}=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
+    return readAvgVisualReuseEvidenceV5(scope,{...row,producerRunId:row.producerRunId!},path)
+  }
   if(proposal.schema!=='storyforge.avg.visual-role-proposal'||proposal.version!==3)throw new Error('[avg-visual-plan] 新证据必须来自明确新版原始方案')
   const proof=await readAvgVisualFreshProposalEvidence(scope,row,2),binding=proof.snapshot.contract.executionBindings?.[0]
   if(!binding||!AVG_VISUAL_PLANNING_ROLES_V5.some(r=>r.skillId===binding.skillId))throw new Error('[avg-visual-plan] 新原始方案没有实际新版 Skill 快照')
@@ -74,5 +84,7 @@ export async function readAvgVisualProposalEvidenceV5(scope:WorkspaceScope,row:P
 }
 export function readAvgVisualProposalEvidence(scope:WorkspaceScope,row:Pick<ProductBuildArtifactRecordV1,'producerRunId'|'qualityJson'|'payloadJson'>){
   const q=avgProtocolBody(row.qualityJson) as {schema?:unknown;version?:unknown}|null
-  return q?.schema==='storyforge.avg.visual-proposal-evidence'&&q.version===2?readAvgVisualProposalEvidenceV5(scope,row):readAvgVisualProposalEvidenceV4(scope,row)
+  return q?.schema==='storyforge.avg.visual-proposal-evidence'&&q.version===2
+    ||q?.schema==='storyforge.avg.visual-proposal-reuse-evidence'&&q.version===2
+    ?readAvgVisualProposalEvidenceV5(scope,row):readAvgVisualProposalEvidenceV4(scope,row)
 }

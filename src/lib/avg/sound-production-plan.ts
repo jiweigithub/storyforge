@@ -1,9 +1,12 @@
 import type { ProductProductionBriefV3, ProductProductionPlanTaskV3, ProductProductionPlanV3 } from '../types'
 import { buildAvgAuthorAssemblyTopologyV1 } from './assembly-plan'
-import { AVG_SOUND_MUSIC_CAPABILITY_V1, AVG_SOUND_TEXT_CAPABILITY_V1, parseAvgSoundPlanningBriefV1 } from './sound-production-brief'
+import { AVG_SOUND_MUSIC_CAPABILITY_V1, AVG_SOUND_TEXT_CAPABILITY_V1, parseAvgSoundPlanningBriefV1,
+  parseAvgSoundPlanningBrief, parseAvgSoundPlanningBriefV2, type AvgSoundPlanningBrief } from './sound-production-brief'
 import { avgKey } from './protocol-validation'
 import { avgAudioProcessingForSoundV1, avgAudioProcessingSoundTargetsV1 } from './audio-production-brief'
 import { buildAvgAudioProcessingTopologyV1 } from './audio-production-topology'
+import { canonicalProductProductionJsonV2 } from '../product-production/hash'
+import { parseAvgAudioProductionProcessingPlan } from './audio-production-contract'
 
 export { proposeAvgAudioProcessingTopologyV1 } from './audio-production-topology'
 
@@ -79,4 +82,67 @@ function buildAvgSoundProductionBasePlanV1(input: { brief: AvgSoundTopologyInput
     ? { ...t, contextProfile: 'avg-sound-planning-v1' as const, budgetReservation: { ...t.budgetReservation, inputTokens: Math.max(24_000, t.budgetReservation.inputTokens) } } : t) }
   if (result.tasks.length > 100) throw new Error('[avg-sound] 声音生产超出共享任务上界')
   return result
+}
+
+/** Local successor input while the global Brief union is integrated serially.
+ * No caller may bypass shared Plan parsing/admission with this pure builder. */
+export type AvgSoundTopologyInput = Omit<AvgSoundTopologyInputV1, 'avgSoundPlanning'> & { avgSoundPlanning?: AvgSoundPlanningBrief }
+
+/** Two real deterministic revalidation tasks precede the existing processing,
+ * independent review/choice and author assembly joins. Original full scope and
+ * semantic plan are immutable source snapshots, not new model/HTTP tasks. */
+export function buildAvgSoundProductionPlanV2(input: { brief: AvgSoundTopologyInput;
+  briefHash: string; buildNumber: number; controlEpoch: number }): ProductProductionPlanV3 {
+  const declaration = parseAvgSoundPlanningBriefV2(input.brief.avgSoundPlanning), { repair } = declaration
+  const key = repair.source.requirementKey
+  const processing = parseAvgAudioProductionProcessingPlan({ schema: 'storyforge.avg.audio-production-processing-plan',
+    version: repair.recipe.version, entries: [{ domain: 'sound', requirementKey: key, recipe: repair.recipe }] })
+  if (input.brief.capabilityRequirements.length || !input.brief.avgAudioProcessing
+    || canonicalProductProductionJsonV2(parseAvgAudioProductionProcessingPlan(input.brief.avgAudioProcessing)) !== canonicalProductProductionJsonV2(processing)) {
+    throw new Error('[avg-sound-repair] 返修只允许准确单项原件配方及零供应商能力，不能回退原生产图')
+  }
+  const base = buildAvgAuthorAssemblyTopologyV1({ ...input, declaration: declaration.assembly })
+  const authors = base.tasks.filter(t => ['avg-author-rules', 'avg-author-script'].includes(t.kind))
+  const sources = authors.flatMap(t => t.outputArtifactKeys), parents = authors.map(t => t.taskKey)
+  const template = authors[0]!, tasks: ProductProductionPlanTaskV3[] = []
+  const add = (taskKey: string, kind: string, output: string, inputs: string[], dependencies: string[], gates: string[],
+    deterministic: boolean, storageBytes = 0) => tasks.push({ ...structuredClone(template), taskKey: avgKey(taskKey, 'sound repair task'), kind,
+    lane: kind.includes('review') ? 'qa' : 'audio', skillId: null, executionMode: deterministic ? 'deterministic' : 'human-import',
+    ...(deterministic ? { contextProfile: 'avg-sound-planning-v1' as const } : {}),
+    outputArtifactKeys: [avgKey(output, 'sound repair output')], inputArtifactKeys: [...inputs], dependsOn: [...dependencies],
+    requiredReceipts: dependencies.map(taskKey => ({ taskKey, receiptHash: null })), requirementKeys: [], capabilityRequirementKeys: [],
+    concurrencyGroup: 'avg-sound-production', subjectLockKeys: [output], maxAttempts: 1, timeoutMs: 90_000,
+    failurePolicy: 'pause', fallbackTaskKey: null, reuse: null, acceptanceGateIds: gates,
+    budgetReservation: { modelCalls: 0, mediaCalls: 0, inputTokens: deterministic ? 24_000 : 0, outputTokens: 0,
+      maximumCostUsd: 0, durationMs: deterministic ? 60_000 : 0, storageBytes } })
+  const compile = 'avg.sound.compile.requirements', produce = `avg.sound.generate.${key}`
+  const raw = `avg.sound.raw.${key}`, review = `avg.review.audio.${key}`, choice = `avg.sound.choice.${key}`
+  const observe = `avg.author.sound-review.${key}`, select = `avg.author.sound-choice.${key}`
+  add(compile, 'avg-sound-requirements-reuse', AVG_SOUND_COMPILED_KEY_V1, sources, parents,
+    ['avg.sound.requirements.reused'], true, 4 * 1024 * 1024)
+  add(produce, 'avg-sound-raw-reuse', raw, [...sources, AVG_SOUND_COMPILED_KEY_V1], [...parents, compile],
+    [`avg.sound.raw.received.${key}`], true, 36 * 1024 * 1024)
+  add(observe, 'avg-author-sound-review', review, [raw, AVG_SOUND_COMPILED_KEY_V1], [produce, compile],
+    [`avg.sound.review.recorded.${key}`], false)
+  add(select, 'avg-author-sound-choice', choice, [raw, review, AVG_SOUND_COMPILED_KEY_V1], [produce, observe, compile],
+    [`avg.sound.choice.confirmed.${key}`], false)
+  const soundGates = tasks.flatMap(t => t.acceptanceGateIds)
+  const joins = base.tasks.filter(t => !authors.some(a => a.taskKey === t.taskKey)).map(t => t.taskKey === 'avg.author.stage'
+    ? { ...t, inputArtifactKeys: [...t.inputArtifactKeys, choice], dependsOn: [...t.dependsOn, select],
+      requiredReceipts: [...t.requiredReceipts, { taskKey: select, receiptHash: null }] }
+    : t.taskKey === base.terminalTaskKey ? { ...t, acceptanceGateIds: [...t.acceptanceGateIds, ...soundGates] } : t)
+  const sourcePlan = { ...base, tasks: [...authors, ...tasks, ...joins].map(t => t.executionMode === 'deterministic'
+    ? { ...t, contextProfile: 'avg-sound-planning-v1' as const,
+      budgetReservation: { ...t.budgetReservation, inputTokens: Math.max(24_000, t.budgetReservation.inputTokens) } } : t) }
+  // The shared topology must explicitly admit avg-sound-raw-reuse. Do not
+  // relabel it as generation/library import to evade its structural checker.
+  return buildAvgAudioProcessingTopologyV1({ sourcePlan, processing, targets: [{ domain: 'sound', requirementKey: key,
+    kind: repair.sourceScope.templates.find(t => t.requirementKey === key)!.channel, mimeType: 'audio/wav' }] }).plan
+}
+
+export function buildAvgSoundProductionPlan(input: { brief: AvgSoundTopologyInput;
+  briefHash: string; buildNumber: number; controlEpoch: number }): ProductProductionPlanV3 {
+  const sound = parseAvgSoundPlanningBrief(input.brief.avgSoundPlanning)
+  return sound.version === 2 ? buildAvgSoundProductionPlanV2({ ...input, brief: { ...input.brief, avgSoundPlanning: sound } })
+    : buildAvgSoundProductionPlanV1({ ...input, brief: { ...input.brief, avgSoundPlanning: sound } })
 }

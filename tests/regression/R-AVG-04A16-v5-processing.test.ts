@@ -16,6 +16,7 @@ import { runProductProductionUntilBlockedV1 } from '../../src/lib/product-produc
 import * as processing from '../../src/lib/avg/image-processing'
 import { inspectAvgVisualProcessedImageV5 } from '../../src/lib/avg/visual-image-processing-v5'
 import { readAvgProcessedImageSourceV5 } from '../../src/lib/avg/image-processing-source-v5'
+import { readAvgProcessedImageCandidateBytesV5 } from '../../src/lib/avg/media-candidate-preview-v5'
 import { readAvgChosenMediaSourceV5 } from '../../src/lib/avg/media-choice-validation-v5'
 import { stageAvgVisualReviewV2,stageAvgMediaChoiceV5 } from '../../src/lib/avg/visual-review-service-v5'
 import { prepareAvgAssemblyBriefV1,readAvgAssemblyWorkspaceV1,configureAvgChosenMediaDraftV2,stageAvgWorkspaceInputV1,confirmAvgWorkspaceInputV1,runAvgAssemblyV1 } from '../../src/lib/avg/assembly-service'
@@ -32,7 +33,13 @@ import { parseAvgGeneratedReferenceSourceV4 } from '../../src/lib/avg/visual-pro
 import { exportProjectJSON,importProjectJSON } from '../../src/lib/export/json-export'
 import { deleteWork } from '../../src/lib/workspace/lifecycle'
 import { sha256MediaData } from '../../src/lib/product-production/media-blob-store'
-import type { AvgImageProcessingPlanV1 } from '../../src/lib/avg/image-processing-contract'
+import type { AvgImageProcessingPlan, AvgImageProcessingPlanV1 } from '../../src/lib/avg/image-processing-contract'
+import { AVG_IMAGE_PROCESSOR_V2, projectAvgForegroundCanvasRecipeV1, parseAvgForegroundProcessingObservation } from '../../src/lib/avg/image-processing-contract-v2'
+import { AVG_FOREGROUND_SAM2_CHECKPOINT_SHA256_V4, AVG_FOREGROUND_SAM2_MATTING_METHOD_V4, AVG_FOREGROUND_SAM2_MODEL_REVISION_V4,
+  AVG_FOREGROUND_SAM2_MATTING_ID_V5, AVG_FOREGROUND_SAM2_PROMPT_STRATEGY_V5, AVG_FOREGROUND_SAM2_QUALITY_GATE_V5,
+  parseAvgForegroundPolicyV5, parseAvgForegroundPolicyV6, AVG_FOREGROUND_SAM2_MATTING_ID_V6,
+  AVG_FOREGROUND_SAM2_MATTING_METHOD_V6, AVG_FOREGROUND_SAM2_QUALITY_GATE_V6, AVG_FOREGROUND_SAM2_NEUTRAL_RULE_V6 } from '../../src/lib/avg/image-foreground-contract'
+import { hashAvgSam2PromptManifestV5, parseAvgForegroundSam2ObservationV5 } from '../../src/lib/avg/image-foreground-sam2-v5'
 
 beforeEach(async()=>{
   await db.delete();await db.open()
@@ -46,10 +53,43 @@ function plan():AvgImageProcessingPlanV1{
   return {schema:'storyforge.avg.image-processing-plan',version:1,entries:[{requirementKey:r.requirementKey,
     recipe:{...avgImageProcessingRecipeFixture(),width:r.width,height:r.height,crop:{x:500,y:500,width:9000,height:9000}}}]}
 }
-async function controlledPixels(onPixels?:()=>Promise<void>){
+function sam2Plan(neutral=false):AvgImageProcessingPlan {
+  const r=avgVersionedPlanningFixture().versioned.templates.find(t=>t.subjectKind==='character'&&t.parameters.mediaKind==='character-pose'&&t.parameters.consumer.slot==='actor')!.parameters
+  const plan:AvgImageProcessingPlan={schema:'storyforge.avg.image-processing-plan',version:2,entries:[{requirementKey:r.requirementKey,recipe:{...avgImageProcessingRecipeFixture(),
+    version:2,width:r.width,height:r.height,foreground:parseAvgForegroundPolicyV5({schema:'storyforge.avg.foreground-policy',version:5,
+      method:'local-sam2-box-anchor-matting',algorithm:AVG_FOREGROUND_SAM2_MATTING_ID_V5,model:'sam2.1-hiera-tiny',modelRevision:AVG_FOREGROUND_SAM2_MODEL_REVISION_V4,
+      checkpointSha256:AVG_FOREGROUND_SAM2_CHECKPOINT_SHA256_V4,mattingMethod:AVG_FOREGROUND_SAM2_MATTING_METHOD_V4,
+      promptStrategy:AVG_FOREGROUND_SAM2_PROMPT_STRATEGY_V5,qualityGate:AVG_FOREGROUND_SAM2_QUALITY_GATE_V5,declaration:'隔离工程掩模与回执，不代表真实模型或美术。'})}}]}
+  const recipe=plan.entries[0].recipe
+  if(neutral&&recipe.version===2)recipe.foreground=parseAvgForegroundPolicyV6({...recipe.foreground,version:6,
+    method:'local-sam2-neutral-background-matting',algorithm:AVG_FOREGROUND_SAM2_MATTING_ID_V6,
+    mattingMethod:AVG_FOREGROUND_SAM2_MATTING_METHOD_V6,qualityGate:AVG_FOREGROUND_SAM2_QUALITY_GATE_V6,backgroundRule:AVG_FOREGROUND_SAM2_NEUTRAL_RULE_V6})
+  return plan
+}
+async function controlledPixels(onPixels?:()=>Promise<void>,sam2=false,neutral=false){
   // Controlled pixel receipt/decoder only. Actual native geometry and alpha
   // remain browser checks; this fixture grants no art/commercial acceptance.
-  const output=await deterministicRegionMapPngV1({width:576,height:324,palette:['#293021','#857456','#f1d390']})
+  const recipe=sam2?sam2Plan(neutral).entries[0].recipe:plan().entries[0].recipe
+  const output=await deterministicRegionMapPngV1({width:recipe.width,height:recipe.height,palette:['#293021','#857456','#f1d390']})
+  if(sam2)return vi.spyOn(processing,'processAvgImageBytesV2').mockImplementation(async input=>{
+    const base=await avgImageProcessingReceiptFixture({recipe:projectAvgForegroundCanvasRecipeV1(input.recipe),source:{...input.source,byteSize:input.data.byteLength},data:output,hasAlpha:true})
+    const pixels=input.source.width*input.source.height,opaquePixelCount=Math.floor(pixels/2),coverage=opaquePixelCount/pixels
+    const oldForeground=parseAvgForegroundSam2ObservationV5({version:5,algorithm:AVG_FOREGROUND_SAM2_MATTING_ID_V5,modelId:'sam2.1-hiera-tiny',modelRevision:AVG_FOREGROUND_SAM2_MODEL_REVISION_V4,
+      checkpointSha256:AVG_FOREGROUND_SAM2_CHECKPOINT_SHA256_V4,codeRevision:AVG_FOREGROUND_SAM2_MODEL_REVISION_V4,promptStrategy:AVG_FOREGROUND_SAM2_PROMPT_STRATEGY_V5,
+      qualityGate:AVG_FOREGROUND_SAM2_QUALITY_GATE_V5,promptSha256:await hashAvgSam2PromptManifestV5(),modelScore:0.92,maskCoverage:0.4,
+      selectedCandidateIndex:3,candidates:[0.65,0.99,0.98,0.92,0.80,0.86].map((score,i)=>({promptIndex:Math.floor(i/3),maskIndex:i%3,score,maskCoverage:i===1||i===2?0.02:0.4})),
+      alphaCoverage:coverage,alphaThresholdCoverage:coverage,mattingMethod:AVG_FOREGROUND_SAM2_MATTING_METHOD_V4,device:'cpu',
+      clearedPixelCount:pixels-opaquePixelCount,translucentPixelCount:0,opaquePixelCount,width:input.source.width,height:input.source.height,
+      policyHash:await hashProductProductionValueV2(input.recipe.foreground),sourcePixelHash:'b'.repeat(64),alphaPlaneHash:'c'.repeat(64),
+      cutoutPixelHash:'d'.repeat(64),serviceCutoutPixelHash:'e'.repeat(64),resultPngSha256:await sha256MediaData(output)})
+    const foreground=neutral?parseAvgForegroundProcessingObservation({...oldForeground,version:6,algorithm:AVG_FOREGROUND_SAM2_MATTING_ID_V6,
+      mattingMethod:AVG_FOREGROUND_SAM2_MATTING_METHOD_V6,qualityGate:AVG_FOREGROUND_SAM2_QUALITY_GATE_V6,
+      background:{rule:AVG_FOREGROUND_SAM2_NEUTRAL_RULE_V6,median:[229,228,229],borderP99Deviation:0,radius:8,borderCoverage:1,
+        floodPixelCount:pixels-opaquePixelCount,floodMaskSha256:'f'.repeat(64),removedMaskPixelCount:0}}):oldForeground
+    const {receiptHash:_old,...fields}=base;void _old
+    const body={...fields,version:2 as const,processor:AVG_IMAGE_PROCESSOR_V2,recipeHash:await hashProductProductionValueV2(input.recipe),foreground}
+    return {data:output,receipt:{...body,receiptHash:await hashProductProductionValueV2(body)}}
+  })
   return vi.spyOn(processing,'processAvgImageBytesV1').mockImplementation(async input=>{
     await onPixels?.()
     return {data:output,receipt:await avgImageProcessingReceiptFixture({recipe:input.recipe,source:{...input.source,byteSize:input.data.byteLength},data:output})}
@@ -72,15 +112,19 @@ describe('AVG actual V5 local derivative producer and author consumption',()=>{
     const topology=buildAvgVisualPlanningPlanV5({brief,briefHash,buildNumber:1,controlEpoch:0})
     expect(parseProductProductionPlanV3(topology,brief,briefHash)).toEqual(topology)
   })
-  it('processes exact raw2 once without provider calls and separately reviews/chooses the derivative through frozen Preview',async()=>{
-    const process=await controlledPixels(),imageProcessing=plan(),key=imageProcessing.entries[0].requirementKey
+  it.each(['canvas','sam2-v5','sam2-v6'] as const)('processes exact raw2 once using %s and separately reviews/chooses the derivative through frozen Preview',async mode=>{
+    const process=await controlledPixels(undefined,mode!=='canvas',mode==='sam2-v6'),imageProcessing=mode!=='canvas'?sam2Plan(mode==='sam2-v6'):plan(),key=imageProcessing.entries[0].requirementKey
     const s=await avgV5MediaReviewFixture(phase=>console.info('[v5-processing-positive]',phase),{imageProcessing}),raw=s.rows.find(r=>r.artifactKey===`avg.media.raw.${key}`)!
     const processed=(await avgV5Accepted(s,`avg.media.processed.${key}`))!
+    const display=await readAvgProcessedImageCandidateBytesV5({scope:s.scope,productionId:s.productionId,requirementKey:key,version:processed.version,contentHash:processed.contentHash})
+    expect(display.processingEvidence).toMatchObject({contentHash:processed.contentHash,output:{width:imageProcessing.entries[0].recipe.width,height:imageProcessing.entries[0].recipe.height}})
+    if(mode!=='canvas')expect(display.processingEvidence.foreground).toMatchObject({version:mode==='sam2-v6'?6:5,selectedCandidateIndex:3})
+    else expect(display.processingEvidence.foreground).toBeNull()
     expect(processed,(await db.productBuilds.get(s.buildId))!.failureJson).toBeDefined()
     expect(s.plan.tasks.filter(t=>['avg-media-image-generate','avg-media-image-process'].includes(t.kind)).every(t=>t.subjectLockKeys.includes('avg.media.compiled-visual-requirements'))).toBe(true)
     expect(process).toHaveBeenCalledTimes(1);expect(s.imageCalls).toHaveLength(5);expect(s.calls).toHaveLength(4)
     expect(processed.contentHash).not.toBe(raw.contentHash);expect(processed.requirementKey).toBeNull()
-    expect(JSON.parse(raw.payloadJson).version).toBe(2);expect(JSON.parse(processed.payloadJson).version).toBe(1)
+    expect(JSON.parse(raw.payloadJson).version).toBe(2);expect(JSON.parse(processed.payloadJson).version).toBe(mode!=='canvas'?2:1)
     expect(JSON.parse(processed.qualityJson)).toMatchObject({schema:'storyforge.avg.visual-image-processing-evidence',version:2,noProviderRequest:true,decoderVerified:true})
     const ledger=JSON.parse((await db.productBuilds.get(s.buildId))!.budgetLedgerJson).tasks[`avg.media.process.${key}`]
     expect(ledger).toMatchObject({status:'settled',usage:{modelCalls:0,mediaCalls:0,costUsd:0}})

@@ -17,6 +17,10 @@ import { DECLARED_MAGENTA_ALPHA_MATTING_ID_V1 } from '../../src/lib/product-prod
 import { AVG_RESERVED_MAGENTA_INVARIANT_V1,AVG_RESERVED_MAGENTA_FORBIDDEN_V1 } from '../../src/lib/avg/image-foreground-contract'
 import type { AvgImageProcessingPlanV2 } from '../../src/lib/avg/image-processing-contract'
 import { AVG_FOREGROUND_BOUNDARY_UNMIX_ID_V2 } from '../../src/lib/avg/image-foreground-boundary-unmix'
+import { AVG_FOREGROUND_SAM2_CHECKPOINT_SHA256_V4, AVG_FOREGROUND_SAM2_MATTING_ID_V4,
+  AVG_FOREGROUND_SAM2_MODEL_REVISION_V4, AVG_FOREGROUND_SAM2_PROMPT_STRATEGY_V4,
+  AVG_FOREGROUND_SAM2_MATTING_ID_V5, AVG_FOREGROUND_SAM2_PROMPT_STRATEGY_V5, AVG_FOREGROUND_SAM2_QUALITY_GATE_V5,
+  AVG_FOREGROUND_SAM2_MATTING_ID_V6, AVG_FOREGROUND_SAM2_QUALITY_GATE_V6, AVG_FOREGROUND_SAM2_NEUTRAL_RULE_V6 } from '../../src/lib/avg/image-foreground-contract'
 
 const roots:Root[]=[]
 beforeEach(async()=>{await db.delete();await db.open();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true)
@@ -67,6 +71,36 @@ describe('AVG explicit foreground preparation UI and ordinary Work draft',()=>{
   expect(entry.recipe.foreground).toMatchObject({version:2,algorithm:AVG_FOREGROUND_BOUNDARY_UNMIX_ID_V2})
   expect(planning.scope.templates.find(t=>t.parameters.requirementKey===s.target.parameters.requirementKey)!.requiredDetails).toContain(AVG_RESERVED_MAGENTA_INVARIANT_V1)
   expect(s.getView().draft).toEqual(before)
+  expect(await db.productBuilds.count()).toBe(0);expect(await db.agentRuns.count()).toBe(0);expect(fetch).not.toHaveBeenCalled()
+ })
+ it.each([
+  {version:4,algorithm:AVG_FOREGROUND_SAM2_MATTING_ID_V4,promptStrategy:AVG_FOREGROUND_SAM2_PROMPT_STRATEGY_V4},
+  {version:5,algorithm:AVG_FOREGROUND_SAM2_MATTING_ID_V5,promptStrategy:AVG_FOREGROUND_SAM2_PROMPT_STRATEGY_V5},
+  {version:6,algorithm:AVG_FOREGROUND_SAM2_MATTING_ID_V6,promptStrategy:AVG_FOREGROUND_SAM2_PROMPT_STRATEGY_V5},
+ ])('freezes local SAM 2 policy V$version without changing the producer request or starting a model task',async({version,algorithm,promptStrategy})=>{
+  const s=await panel()
+  await s.select(s.target.parameters.requirementKey)
+  await act(async()=>{(s.input('生成时使用纯品红底色') as HTMLInputElement).click()})
+  const policySelect=Array.from(s.host.querySelectorAll('label')).find(l=>l.textContent!.startsWith('前景边缘处理'))!.querySelector('select')!
+  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value')!.set!.call(policySelect,String(version));policySelect.dispatchEvent(new Event('change',{bubbles:true}))})
+  expect(s.host.textContent).toContain('本机分割只处理同一作品中已冻结并保存的原图')
+  if(version!==6){expect(s.host.textContent).toContain('SAM 2.1 Hiera Tiny');expect(s.host.textContent).toContain('仅适用于单张、居中的')}
+  if(version===5){expect(s.host.textContent).toContain('按固定分数与面积挡板选择掩模');expect(s.host.textContent).toContain('已有透明像素的原图会拒绝重分割')}
+  else if(version===6){expect(s.host.textContent).toContain('均匀亮灰底色');expect(s.host.textContent).toContain('保留原件')}
+  else expect(s.host.textContent).toContain('多人拼版、表情表或姿势表可能残留旁侧人物碎片或误删主体')
+  await s.text('允许的加工与用途说明','本机透明前景候选，作者逐张评审后采用')
+  await s.text('本机模型处理与作者审阅声明','本机 SAM 2.1 与 PyMatting 仅用于候选加工；不代替美术验收')
+  await s.click('保存本项加工配方');expect(s.errors).toEqual([])
+  const planning=parseProductProductionBriefV3(s.getView().details!.brief!.briefJson).avgVisualPlanning!
+  const entry=planning.imageProcessing!.entries.find(e=>e.requirementKey===s.target.parameters.requirementKey)!
+  if(entry.recipe.version!==2)throw new Error('Expected V2 processing recipe')
+  expect(entry.recipe.foreground).toMatchObject({version,algorithm,
+    modelRevision:AVG_FOREGROUND_SAM2_MODEL_REVISION_V4,checkpointSha256:AVG_FOREGROUND_SAM2_CHECKPOINT_SHA256_V4,
+    promptStrategy})
+  if(version===5)expect(entry.recipe.foreground).toHaveProperty('qualityGate',AVG_FOREGROUND_SAM2_QUALITY_GATE_V5)
+  if(version===6)expect(entry.recipe.foreground).toMatchObject({qualityGate:AVG_FOREGROUND_SAM2_QUALITY_GATE_V6,backgroundRule:AVG_FOREGROUND_SAM2_NEUTRAL_RULE_V6})
+  expect(planning.scope.templates.find(t=>t.parameters.requirementKey===s.target.parameters.requirementKey)!.requiredDetails)
+    .not.toContain(AVG_RESERVED_MAGENTA_INVARIANT_V1)
   expect(await db.productBuilds.count()).toBe(0);expect(await db.agentRuns.count()).toBe(0);expect(fetch).not.toHaveBeenCalled()
  })
  it('shows the experiment only for a supported target and requires a separate declaration before freezing it',async()=>{

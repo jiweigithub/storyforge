@@ -3056,8 +3056,16 @@ export async function verifyHistoricalAvgAudioProcessingProducerV1(input: AvgHis
   return { artifact: result.artifact, provenance: { ...provenance, proofHash: await hashProductProductionValueV2(provenance) } }
 }
 
-async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvidenceInputV1,mode:'visual'|'raw-image'|'image-revalidation'|'image-processing'|'audio-processing',visualVersion?:4|5) {
-  const rawImage=mode!=='visual',revalidation=mode==='image-revalidation',audio=mode==='audio-processing',processing=mode==='image-processing'||audio
+/** Frozen sound inputs only. Reuses intrinsic historical prefix, checkpoint,
+ * ledger and Blob verification; it grants no current acceptance or adoption.
+ * Product readers still prove the original HTTP/rights or local reuse chain. */
+export async function verifyHistoricalAvgSoundArtifactV1(input: AvgHistoricalMediaEvidenceInputV1) {
+  return (await readHistoricalAvgProducerEvidenceV1(input, 'sound')).artifact
+}
+
+async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvidenceInputV1,mode:'visual'|'raw-image'|'image-revalidation'|'image-processing'|'audio-processing'|'sound',visualVersion?:4|5) {
+  const sound=mode==='sound',rawSound=sound&&input.artifactKey.startsWith('avg.sound.raw.'),soundProposal=sound&&input.artifactKey==='avg.proposal.sound-plan'
+  const rawImage=mode!=='visual'&&!sound,revalidation=mode==='image-revalidation',audio=mode==='audio-processing',processing=mode==='image-processing'||audio
   const scope = await resolveScope({ scope: input.scope }), build = await db.productBuilds.get(input.buildId)
   if (!build?.id || !await assertRecordInScope(scope, 'productBuilds', build, { owner: 'work' })
     || build.stateRevision !== input.expectedBuildRevision || build.briefHash !== input.expectedBriefHash || build.planHash !== input.expectedPlanHash
@@ -3070,9 +3078,11 @@ async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvide
   const brief = parseProductProductionBriefV3(briefRow.briefJson)
   if(visualVersion!==undefined&&brief.avgVisualPlanning?.version!==visualVersion)throw new Error('[avg-visual-history] 历史 producer 必须保留准确原始视觉版本')
   const legacyLocal=(revalidation||processing)&&(brief.avgAssembly?.version===2||brief.avgAssembly?.version===3&&!!brief.avgAssembly.image)
-  if ((audio ? !brief.avgAudioProcessing : !brief.avgVisualPlanning&&!legacyLocal) || await hashProductProductionValueV2(brief) !== build.briefHash
-    || !(audio ? /^avg\.(voice|sound)\.processed\./.test(input.artifactKey) : rawImage?input.artifactKey.startsWith(processing?'avg.media.processed.':'avg.media.raw.'):
+  if ((sound ? !brief.avgSoundPlanning : audio ? !brief.avgAudioProcessing : !brief.avgVisualPlanning&&!legacyLocal) || await hashProductProductionValueV2(brief) !== build.briefHash
+    || !(sound ? rawSound || input.artifactKey === 'avg.media.compiled-sound-requirements' || soundProposal && brief.avgSoundPlanning?.version === 1 : audio ? /^avg\.(voice|sound)\.processed\./.test(input.artifactKey) : rawImage?input.artifactKey.startsWith(processing?'avg.media.processed.':'avg.media.raw.'):
       input.artifactKey.startsWith('avg.proposal.') || input.artifactKey === 'avg.media.compiled-visual-requirements')) throw new Error('[avg-visual-plan] 历史读取仅限准确 V4 直接 producer 工件')
+  if (sound && (!['validating', 'preview-ready', 'release-ready', 'released'].includes(build.status)
+    || !build.packageHash || !build.previewHash || !build.rootTerminalReceiptHash)) throw new Error('[avg-sound-history] 只读声音证明须属于准确已封存预览')
   if(rawImage&&!['building','integrating','validating','preview-ready','release-ready','released','paused','cancelled','failed','recovery-required'].includes(build.status))throw new Error('[avg-visual-image] 原图来源不属于已执行版本')
   const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash)
   if (plan.controlEpoch !== input.sourceControlEpoch) throw new Error('[avg-visual-plan] 历史方案 epoch 不一致')
@@ -3081,7 +3091,9 @@ async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvide
   const row = matches[0]
   if (matches.length !== 1 || !row?.id || !await assertRecordInScope(scope, 'productBuildArtifacts', row, { owner: 'work' })
     || row.status !== 'accepted' || row.contentHash !== input.contentHash || row.producerRunId == null || row.producerReceiptHash == null
-    || (audio ? row.blobObjectId==null||row.kind!=='audio'||row.mimeType!=='audio/wav'
+    || (sound ? rawSound ? row.kind !== 'audio' || row.blobObjectId === null || !['audio/wav', 'audio/ogg'].includes(row.mimeType ?? '')
+      || !['bgm', 'sfx', 'ambience'].includes(row.mediaKind ?? '') : row.kind !== (soundProposal ? 'narrative' : 'asset-manifest') || row.blobObjectId !== null || row.mediaKind !== null || row.mimeType !== null
+      : audio ? row.blobObjectId==null||row.kind!=='audio'||row.mimeType!=='audio/wav'
       || !['voice','bgm','sfx','ambience'].includes(row.mediaKind??'') : rawImage?row.blobObjectId==null||!row.mediaKind||!row.mimeType?.startsWith('image/')||row.kind!=='image':
       row.blobObjectId !== null || row.mediaKind !== null || row.mimeType !== null
       || row.kind !== (input.artifactKey.startsWith('avg.proposal.') ? 'narrative' : 'asset-manifest'))
@@ -3095,9 +3107,28 @@ async function readHistoricalAvgProducerEvidenceV1(input:AvgHistoricalMediaEvide
     || canonicalProductProductionJsonV2(ledger.usage) !== canonicalProductProductionJsonV2(proof.usage)
     || ledger.candidateHash !== proof.candidateHash || ledger.terminalReceiptHash !== row.producerReceiptHash
     || !samePreparedProducerArtifactV1({ expected: await preparedStoredArtifactV1(row), actual: proof.artifacts.get(row.artifactKey), importedScopeRebound: proof.importedScopeRebound })) throw new Error('[avg-visual-plan] 历史方案 checkpoint/ledger 不闭合')
-  const blobs=rawImage?await verifiedBlobProofsV1({scope,artifacts:[row],label:audio?'historical local audio':'historical V4 image'}):null
+  const blobs=rawImage||rawSound?await verifiedBlobProofsV1({scope,artifacts:[row],label:sound?'historical sound':audio?'historical local audio':'historical V4 image'}):null
   let responseEvidenceHash:string|null=null
-  if(revalidation||processing){
+  if (sound) {
+    const reuse = brief.avgSoundPlanning!.version === 2
+    const kinds = soundProposal ? ['avg-sound-plan-propose'] : rawSound ? reuse ? ['avg-sound-raw-reuse'] : ['avg-sound-music-generate', 'avg-sound-library-import']
+      : reuse ? ['avg-sound-requirements-reuse'] : ['avg-sound-requirements-compile']
+    if (!kinds.includes(proof.task.kind) || proof.attempt !== 1 || proof.task.maxAttempts !== 1
+      || proof.task.outputArtifactKeys.length !== 1 || proof.task.outputArtifactKeys[0] !== row.artifactKey) throw new Error('[avg-sound-history] 声音历史必须保留准确原始或复验任务身份')
+    if (soundProposal && (reuse || proof.task.executionMode !== 'model' || proof.task.skillId !== 'avg.sound-plan.v1'
+      || proof.task.budgetReservation.modelCalls !== 1 || proof.task.budgetReservation.mediaCalls !== 0)) throw new Error('[avg-sound-history] 声音策划须保留原单次模型身份')
+    if (reuse) {
+      const usage = proof.usage as { modelCalls?: number; mediaCalls?: number; costUsd?: number | null }
+      if (proof.task.executionMode !== 'deterministic' || proof.task.skillId !== null || proof.task.capabilityRequirementKeys.length
+        || proof.task.budgetReservation.modelCalls !== 0 || proof.task.budgetReservation.mediaCalls !== 0 || proof.task.budgetReservation.maximumCostUsd !== 0
+        || usage.modelCalls !== 0 || usage.mediaCalls !== 0 || usage.costUsd !== 0 || rawSound && row.mimeType !== 'audio/wav') {
+        throw new Error('[avg-sound-history] 本地声音复验必须保留单次零供应商调用与实际零费用')
+      }
+      const run = await readAgentRunV1(scope, row.producerRunId)
+      if (run.events.some(e => e.type === 'model.requested' || e.type === 'tool.called'
+        || e.type === 'evidence.artifact.recorded' && e.payload.artifactKind === 'raw-response')) throw new Error('[avg-sound-history] 本地复验不能冒充新的原始响应')
+    }
+  } else if(revalidation||processing){
     const usage=proof.usage as {modelCalls?:number;mediaCalls?:number;costUsd?:number|null}
     if(proof.task.kind!==(audio?'avg-audio-process':processing?'avg-media-image-process':'avg-media-image-reuse')||proof.task.executionMode!=='deterministic'||proof.task.skillId!==null
       ||proof.attempt!==1||proof.task.maxAttempts!==1||proof.task.outputArtifactKeys.length!==1||proof.task.outputArtifactKeys[0]!==row.artifactKey

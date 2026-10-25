@@ -3,6 +3,7 @@ import { AVG_RESERVED_MAGENTA_INVARIANT_V1, AVG_RESERVED_MAGENTA_FORBIDDEN_V1 } 
 import { composeAvgCharacterFamilyRequirementsV1, parseAvgCharacterFamilyPlanV1, type AvgCharacterFamilyPlanV1 } from './character-family-contract'
 import { assertAvgImageProcessingRequirements, parseAvgImageProcessingPlanV2, type AvgImageProcessingPlanV2 } from './image-processing-contract'
 import { AVG_FOREGROUND_BOUNDARY_UNMIX_ID_V2 } from './image-foreground-boundary-unmix'
+import { AVG_FOREGROUND_ESTIMATED_MAGENTA_ID_V3 } from './image-foreground-estimated-magenta-v3'
 
 type EditableFamily = Pick<AvgCharacterFamilyPlanV1,'alpha'|'identityInvariants'|'forbiddenDepictions'>
 export function hasAvgCharacterFamilyReservedBackdropV1(plan:EditableFamily):boolean {
@@ -39,12 +40,14 @@ export function buildAvgCharacterFamilyForegroundProcessingPlanV1(value:AvgChara
 /** Explicit editable proposal only. Shared canvas/reservation requirements
  * reuse the existing builder; no old Run, producer or author approval is
  * relabelled. The actual new policy is reparsed before any draft can freeze. */
-export function buildAvgCharacterFamilyForegroundProcessingPlan(value:AvgCharacterFamilyPlanV1,declaration:string,policyVersion:1|2):AvgImageProcessingPlanV2 {
+export function buildAvgCharacterFamilyForegroundProcessingPlan(value:AvgCharacterFamilyPlanV1,declaration:string,policyVersion:1|2|3):AvgImageProcessingPlanV2 {
   if(policyVersion===1)return buildAvgCharacterFamilyForegroundProcessingPlanV1(value,declaration)
-  if(policyVersion!==2)throw new Error('[avg-family] 未登记的前景策略版本')
+  if(policyVersion!==2&&policyVersion!==3)throw new Error('[avg-family] 未登记的前景策略版本')
   const base=buildAvgCharacterFamilyForegroundProcessingPlanV1(value,declaration)
   return parseAvgImageProcessingPlanV2({...base,entries:base.entries.map(entry=>{
     if(entry.recipe.version!==2)throw new Error('[avg-family] 家族缺少明确前景配方')
-    return {...entry,recipe:{...entry.recipe,foreground:{...entry.recipe.foreground,version:2,algorithm:AVG_FOREGROUND_BOUNDARY_UNMIX_ID_V2}}}
+    return {...entry,recipe:{...entry.recipe,foreground:policyVersion===2
+      ?{...entry.recipe.foreground,version:2,method:'reserved-magenta',algorithm:AVG_FOREGROUND_BOUNDARY_UNMIX_ID_V2}
+      :{...entry.recipe.foreground,version:3,method:'estimated-magenta-family',algorithm:AVG_FOREGROUND_ESTIMATED_MAGENTA_ID_V3}}}
   })})
 }

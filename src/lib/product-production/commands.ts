@@ -8,6 +8,7 @@ import { avgSoundProductionExecutionReadyV1 } from '../avg/sound-production-brie
 import { avgAudioProcessingExecutionReadyV1 } from '../avg/audio-production-brief'
 import { assertAvgNoUnresolvedVoiceRequestsV1 } from '../avg/voice-request-safety'
 import { avgPendingVoiceRequestsV1, resetAvgVoiceRecoveryForEvolutionV1, validateAvgVoiceRecoveryV1 } from '../avg/voice-recovery'
+import { avgVoiceRecoveryParentNumber } from '../avg/voice-local-repair-contract'
 import { canReviseTextContentBuildV1, createTextContentRevisionPlanV1 } from './text-content-revision'
 import Dexie from 'dexie'
 import { db } from '../db/schema'
@@ -152,7 +153,7 @@ async function assertVoicePacketForCommand(brief: ProductProductionBriefV3, scop
   } catch { reject('brief-not-authorized', '配音合同的精确字符、请求或能力绑定无效，请重新准备') }
   try {
     if (resolved.assembly.voice.recovery) {
-      if (resolved.assembly.voice.recovery.sourceBuildNumber !== expectedParentBuildNumber) throw new Error('[avg-voice] 配音恢复必须绑定当前准确父版本')
+      if (avgVoiceRecoveryParentNumber(resolved.assembly.voice.recovery) !== expectedParentBuildNumber) throw new Error('[avg-voice] 配音恢复必须绑定当前准确父版本')
       await validateAvgVoiceRecoveryV1({ scope, productionId, brief })
     }
     const pending = avgPendingVoiceRequestsV1(resolved.assembly, resolved.requests)
@@ -2931,6 +2932,10 @@ async function executeTransaction(input: {
     // received failure; it must share this transaction rather than lose that
     // proof or read outside the command's consistent snapshot.
     ...(command.type === 'adopt-avg-artifact' || command.type === 'evolve' && command.base.kind === 'recovery-build' ? [db.avgDraftMedia] : []),
+    // Single-line local voice repair proves the adopted parent stage in the
+    // same command snapshot; its manually imported companion media stay scoped.
+    ...(command.type === 'save-brief-revision' && command.brief.avgAssembly?.version === 3
+      || command.type === 'authorize-start' && input.preparedSourcePlan?.productType === 'avg' ? [db.avgDraftMedia] : []),
     db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts,
     ...(command.type === 'authorize-text-open-world-creator-start'
       // Creator source adapters expose only opaque transaction capabilities;

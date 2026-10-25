@@ -10,6 +10,15 @@ export interface AvgVisualProposalReuseSourceV4 {
   briefHash: string; planHash: string; artifact: AvgVisualArtifactRefV4; authorReceiptHash: string
   proposal: AvgVisualArtifactRefV4; producerReceiptHash: string; requestSnapshotHash: string; rawResponseHash: string
 }
+/** Original V5 producer and accepted author change remain bound to their
+ * own versioned proof. A successor may re-stage this payload, but never its
+ * old adoption or request authority. */
+export interface AvgVisualProposalReuseSourceV5 {
+  schema: 'storyforge.avg.visual-proposal-reuse-source'; version: 2
+  productionKey: string; buildNumber: number; buildRevision: number; controlEpoch: number
+  briefHash: string; planHash: string; artifact: AvgVisualArtifactRefV4; authorReceiptHash: string
+  proposal: AvgVisualArtifactRefV4; producerReceiptHash: string; requestSnapshotHash: string; rawResponseHash: string
+}
 export type AvgVisualReusePathV4 = readonly string[]
 
 export function parseAvgVisualArtifactRefV4(value: unknown): AvgVisualArtifactRefV4 {
@@ -33,6 +42,19 @@ export function parseAvgVisualProposalReuseSourceV4(value: unknown): AvgVisualPr
     producerReceiptHash:avgHash(r.producerReceiptHash,'source producerReceiptHash'),
     requestSnapshotHash:avgHash(r.requestSnapshotHash,'source requestSnapshotHash'),rawResponseHash:avgHash(r.rawResponseHash,'source rawResponseHash')}
 }
+export function parseAvgVisualProposalReuseSourceV5(value:unknown):AvgVisualProposalReuseSourceV5{
+  const r=avgRecord(avgProtocolBody(value),['schema','version','productionKey','buildNumber','buildRevision','controlEpoch',
+    'briefHash','planHash','artifact','authorReceiptHash','proposal','producerReceiptHash','requestSnapshotHash','rawResponseHash'],'V5 visual proposal reuse source')
+  if(r.schema!=='storyforge.avg.visual-proposal-reuse-source'||r.version!==2)throw new Error('[avg-visual-reuse] V5 来源版本无效')
+  const artifact=parseAvgVisualArtifactRefV4(r.artifact),proposal=parseAvgVisualArtifactRefV4(r.proposal)
+  if(!/^avg\.media\.(visual-bible|(?:environment|character|prop)-brief\.[A-Za-z0-9._:-]+)$/.test(artifact.artifactKey)
+    ||proposal.artifactKey!==artifact.artifactKey.replace(/^avg\.media\./,'avg.proposal.'))throw new Error('[avg-visual-reuse] V5 来源岗位与原始方案不一致')
+  return {schema:r.schema,version:2,productionKey:avgKey(r.productionKey,'V5 productionKey'),buildNumber:avgNumber(r.buildNumber,'V5 source buildNumber',1,Number.MAX_SAFE_INTEGER-1),
+    buildRevision:avgNumber(r.buildRevision,'V5 source buildRevision',0,Number.MAX_SAFE_INTEGER),controlEpoch:avgNumber(r.controlEpoch,'V5 source controlEpoch',0,Number.MAX_SAFE_INTEGER),
+    briefHash:avgHash(r.briefHash,'V5 source briefHash'),planHash:avgHash(r.planHash,'V5 source planHash'),artifact,
+    authorReceiptHash:avgHash(r.authorReceiptHash,'V5 authorReceiptHash'),proposal,producerReceiptHash:avgHash(r.producerReceiptHash,'V5 producerReceiptHash'),
+    requestSnapshotHash:avgHash(r.requestSnapshotHash,'V5 requestSnapshotHash'),rawResponseHash:avgHash(r.rawResponseHash,'V5 rawResponseHash')}
+}
 export function avgVisualPlanningTargetKeysV4(scope:Pick<AvgVisualPlanningScopeV1,'templates'>){
   return ['avg.media.visual-bible',...[...new Map(scope.templates.map(t=>[t.parameters.family.subjectKey,t.subjectKind])).entries()]
     .map(([subject,kind])=>avgMediaBriefArtifactKeyV1(kind,subject))]
@@ -41,5 +63,11 @@ export function parseAvgVisualProposalReuseSourcesV4(value:unknown,scope:AvgVisu
   const items=avgUnique(avgList(value,'proposal reuse',parseAvgVisualProposalReuseSourceV4,9),r=>r.artifact.artifactKey,'reuse target')
   const targets=avgVisualPlanningTargetKeysV4(scope)
   if(!items.length||items.some(r=>!targets.includes(r.artifact.artifactKey)))throw new Error('[avg-visual-reuse] 复用来源为空或超出本批准确岗位')
+  return items
+}
+export function parseAvgVisualProposalReuseSourcesV5(value:unknown,scope:Pick<AvgVisualPlanningScopeV1,'templates'>){
+  const items=avgUnique(avgList(value,'V5 proposal reuse',parseAvgVisualProposalReuseSourceV5,9),r=>r.artifact.artifactKey,'V5 reuse target')
+  const targets=avgVisualPlanningTargetKeysV4(scope)
+  if(!items.length||items.some(r=>!targets.includes(r.artifact.artifactKey)))throw new Error('[avg-visual-reuse] V5 复用来源为空或超出本批准确岗位')
   return items
 }

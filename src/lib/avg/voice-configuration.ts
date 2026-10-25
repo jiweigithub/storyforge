@@ -34,6 +34,9 @@ export async function applyAvgVoiceChoicesToDraftV1(input: {
     const oldVoice = reading.voices.find(item => item.lineKey === r.lineKey)
     if (oldVoice && canonicalStringify(oldVoice) !== canonicalStringify(voice)) throw new Error('[avg-voice] 当前句已有其他配音或文本绑定，请先明确修订')
     const oldAsset = next.presentation.stage.assets.find(asset => asset.assetKey === r.assetKey)
+    if (assembly.voice.recovery?.version === 2 && next.presentation.inheritedVoices) {
+      next.presentation.inheritedVoices = next.presentation.inheritedVoices.filter(entry => entry.assetKey !== r.assetKey)
+    }
     if (oldAsset && canonicalStringify(oldAsset) !== canonicalStringify(choice.asset)) {
       if (oldAsset.kind !== 'voice' || !input.replaceableAssets?.some(old => old.assetKey === oldAsset.assetKey && old.contentHash === oldAsset.contentHash)) {
         throw new Error('[avg-voice] 相同 key 已有其他媒资版本，请先明确修订来源')

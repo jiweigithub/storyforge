@@ -16,6 +16,8 @@ import { assertAvgNoUnresolvedVoiceRequestsV1 } from './voice-request-safety'
 import type { AvgVoiceSpeechRequestV1 } from './voice-request-contract'
 import { inspectAvgVoiceBytesV1 } from './voice-decoder'
 import { avgVoiceProductionBudgetV3 } from './voice-production-policy'
+import { avgVoiceRecoveryParentNumber, parseAvgVoiceRecovery } from './voice-local-repair-contract'
+import { readAvgVoiceLocalRepairAdoptionV2 } from './voice-local-repair-evidence'
 
 const same = (a: unknown, b: unknown) => stringifyAvgExactJsonV1(a) === stringifyAvgExactJsonV1(b)
 const MAXIMUM_VOICE_LINEAGE = 64
@@ -36,16 +38,25 @@ export function avgPendingVoiceRequestsV1(assembly: AvgAssemblyBriefV3, requests
 }
 
 async function voiceRecoveryBase(input: {
-  scope: WorkspaceScope; productionId: number; assembly: AvgAssemblyBriefV3
+  scope: WorkspaceScope; productionId: number; assembly: Pick<AvgAssemblyBriefV3, 'voice'>
 }) {
   const value = input.assembly.voice.recovery
   if (!value) throw new Error('[avg-voice] 缺少冻结的保留配音方案')
-  const recovery = parseAvgVoiceRecoveryV1(value, input.assembly.voice.batch)
-  const build = await db.productBuilds.where('[productionId+buildNumber]').equals([input.productionId, recovery.sourceBuildNumber]).first()
+  const recovery = parseAvgVoiceRecovery(value, input.assembly.voice.batch)
+  let sourceProductionId = input.productionId
+  if (recovery.version === 2) {
+    const rows = await db.productProductions.where('workId').equals(input.scope.workId)
+      .filter(p => p.productType === 'avg' && p.productionKey === recovery.sourceProductionKey).limit(2).toArray()
+    if (rows.length !== 1 || !rows[0].id || !await assertRecordInScope(input.scope, 'productProductions', rows[0], { owner: 'work' })) {
+      throw new Error('[avg-voice-repair] 原配音制作来源不存在、重复或跨作品')
+    }
+    sourceProductionId = rows[0].id
+  }
+  const build = await db.productBuilds.where('[productionId+buildNumber]').equals([sourceProductionId, recovery.sourceBuildNumber]).first()
   if (!build?.id || !await assertRecordInScope(input.scope, 'productBuilds', build, { owner: 'work' })
     || build.stateRevision !== recovery.sourceBuildRevision
     || !['cancelled', 'failed', 'recovery-required', 'paused', 'preview-ready', 'release-ready', 'released'].includes(build.status)) throw new Error('[avg-voice] 保留配音的来源版本已变化或仍在执行')
-  const row = await db.productProductionBriefs.where('[productionId+revision]').equals([input.productionId, build.briefRevision]).first()
+  const row = await db.productProductionBriefs.where('[productionId+revision]').equals([sourceProductionId, build.briefRevision]).first()
   if (!row || !await assertRecordInScope(input.scope, 'productProductionBriefs', row, { owner: 'work' })
     || row.briefHash !== recovery.sourceBriefHash || build.briefHash !== recovery.sourceBriefHash
     || build.planHash !== recovery.sourcePlanHash || !['authorized', 'superseded'].includes(row.status)
@@ -54,21 +65,34 @@ async function voiceRecoveryBase(input: {
   if (brief.avgAssembly?.version !== 3) throw new Error('[avg-voice] 保留配音必须来自真实 AVG V3 版本')
   const source = await pure(() => assertAvgStoredAssemblyBriefV3(brief.avgAssembly))
   if (await hashAvgVoiceDeclarationForRecoveryV1(source.assembly.voice) !== recovery.sourceVoiceHash
-    || await hashAvgVoiceDeclarationForRecoveryV1(input.assembly.voice) !== recovery.sourceVoiceHash
+    || await hashAvgVoiceDeclarationForRecoveryV1(input.assembly.voice) !== (recovery.version === 2 ? recovery.targetVoiceHash : recovery.sourceVoiceHash)
     || await hashProductProductionValueV2(brief) !== build.briefHash) {
     throw new Error('[avg-voice] 规范来源、台词、音色、演法或路由已改变，不能在同批恢复中复用旧音频')
   }
   const plan = parseProductProductionPlanV3(build.planJson, brief, build.briefHash)
   if (plan.controlEpoch !== recovery.sourceControlEpoch || await hashProductProductionValueV2(plan) !== recovery.sourcePlanHash) throw new Error('[avg-voice] 恢复来源的准确 Plan 已变化')
-  return { recovery, build: build as ProductBuildRecordV1 & { id: number }, brief, source }
+  let adoption: Awaited<ReturnType<typeof readAvgVoiceLocalRepairAdoptionV2>> | undefined
+  if (recovery.version === 2) {
+    const target = input.assembly.voice, original = source.assembly.voice
+    const r = target.batch.requirements[0], preset = target.batch.presets[0]
+    if (!same(r, original.batch.requirements.find(e => e.requirementKey === r.requirementKey))
+      || !same(preset, original.batch.presets.find(e => e.presetKey === r.presetKey))
+      || target.batch.sourceInputHash !== original.batch.sourceInputHash || !same(target.protocol, original.protocol) || !same(target.binding, original.binding)) {
+      throw new Error('[avg-voice-repair] 本地音量返修不能修改原句、演法、音色、请求或权利')
+    }
+    adoption = await readAvgVoiceLocalRepairAdoptionV2({ ...input, sourceBuildId: build.id, repair: recovery })
+    if (!same(adoption.requirement, r) || adoption.sourceWorldContentHash !== brief.source.worldContentHash) throw new Error('[avg-voice-repair] 原采用版本与准确返修句或世界来源不一致')
+  }
+  return { recovery, build: build as ProductBuildRecordV1 & { id: number }, brief, source, adoption }
 }
 
 interface VoiceRecoveryReadInput {
-  scope: WorkspaceScope; productionId: number; assembly: AvgAssemblyBriefV3; requirementKey: string
+  scope: WorkspaceScope; productionId: number; assembly: Pick<AvgAssemblyBriefV3, 'voice'>; requirementKey: string
 }
 
-async function readVoiceRecoveryRaw(input: VoiceRecoveryReadInput, expectedProof: AvgRetainedVoiceProofV1 | undefined, visited: number[]) {
-  const { recovery, build, brief, source } = await voiceRecoveryBase(input)
+async function readVoiceRecoveryRaw(input: VoiceRecoveryReadInput, expectedProof: AvgRetainedVoiceProofV1 | undefined, visited: number[],
+  verifiedBase?: Awaited<ReturnType<typeof voiceRecoveryBase>>) {
+  const { recovery, build, brief, source } = verifiedBase ?? await voiceRecoveryBase(input)
   if (visited.length >= MAXIMUM_VOICE_LINEAGE || visited.includes(recovery.sourceBuildNumber)) throw new Error('[avg-voice] 保留配音谱系缺失、成环或超限')
   const rows = expectedProof ? [] : await db.productBuildArtifacts.where('[buildId+artifactKey]')
     .equals([build.id, `avg.voice.raw.${input.requirementKey}`]).filter(r => r.status === 'accepted' && r.controlEpoch === recovery.sourceControlEpoch).toArray()
@@ -101,8 +125,22 @@ export function readAvgVoiceRecoverySourceV1(input: VoiceRecoveryReadInput, visi
 /** Read-only proof that a retake may replace this exact old draft asset.
  * The new clip must still have its own current author choice. */
 export function readAvgVoiceRecoveryReplacementV1(input: VoiceRecoveryReadInput) {
+  if (input.assembly.voice.recovery?.version === 2) return readLocalRepairReplacement(input)
   if (!input.assembly.voice.recovery?.rerunRequirementKeys.includes(input.requirementKey)) throw new Error('[avg-voice] 该句没有明确重做授权')
   return readVoiceRecoveryRaw(input, undefined, [])
+}
+
+async function readLocalRepairReplacement(input: VoiceRecoveryReadInput) {
+  const base = await voiceRecoveryBase(input)
+  if (base.recovery.version !== 2 || base.recovery.retained[0].requirementKey !== input.requirementKey || !base.adoption) throw new Error('[avg-voice-repair] 该句不属于准确局部返修')
+  return base.adoption
+}
+
+/** Prospective local-only preflight over an actual saved declaration. */
+export async function assertAvgVoiceLocalRepairSourcesV2(input: {
+  scope: WorkspaceScope; productionId: number; voice: AvgAssemblyBriefV3['voice']
+}) {
+  return voiceRecoveryBase({ ...input, assembly: { voice: input.voice } })
 }
 
 /** Follow real zero-call producer receipts to the original saved HTTP body.
@@ -114,8 +152,8 @@ export async function assertAvgRawVoiceOriginV1(input: {
   const recovery = input.assembly.voice.recovery
   const retained = recovery?.retained.some(r => r.requirementKey === input.raw.requirement.requirementKey)
   if (!retained) return assertAvgOriginalVoiceResponseV1(input)
-  if (input.row.buildId !== input.build.id || input.build.parentBuildNumber !== recovery!.sourceBuildNumber
-    || recovery!.sourceBuildNumber >= input.build.buildNumber) throw new Error('[avg-voice] 保留配音的父版本谱系不可验证')
+  if (input.row.buildId !== input.build.id || input.build.parentBuildNumber !== avgVoiceRecoveryParentNumber(recovery!)
+    || recovery!.version === 1 && recovery!.sourceBuildNumber >= input.build.buildNumber) throw new Error('[avg-voice] 保留配音的父版本谱系不可验证')
   const prior = await readAvgVoiceRecoverySourceV1({ scope: input.scope, productionId: input.build.productionId,
     assembly: input.assembly, requirementKey: input.raw.requirement.requirementKey }, visited)
   const quality = JSON.parse(input.row.qualityJson) as Record<string, unknown>
@@ -141,10 +179,17 @@ export async function validateAvgVoiceRecoveryV1(input: {
   const { maximumRequestCost: _priorRequestCost, maximumTotalCost: _priorTotalCost, ...priorIdentity } = priorCapability
   const { maximumRequestCost: _currentRequestCost, maximumTotalCost: _currentTotalCost, ...currentIdentity } = currentCapability
   if (!same(priorIdentity, currentIdentity)) throw new Error('[avg-voice] 同批恢复的能力、外发或权利策略已变化')
-  if (input.targetBuild && input.targetBuild.parentBuildNumber !== recovery.sourceBuildNumber) throw new Error('[avg-voice] 当前配音恢复的父版本不一致')
+  if (input.targetBuild && (input.targetBuild.parentBuildNumber !== avgVoiceRecoveryParentNumber(recovery)
+    || base.build.productionId === input.targetBuild.productionId && base.build.buildNumber >= input.targetBuild.buildNumber)) throw new Error('[avg-voice] 当前配音恢复的父版本不一致')
   const pending = avgPendingVoiceRequestsV1(assembly, requests)
   if (pending.length && input.checkProspectiveRequests !== false) await assertAvgNoUnresolvedVoiceRequestsV1({ scope: input.scope, requests: pending })
-  for (const retained of recovery.retained) await readAvgVoiceRecoverySourceV1({ ...input, assembly, requirementKey: retained.requirementKey })
+  for (const retained of recovery.retained) {
+    const sourceInput = { ...input, assembly, requirementKey: retained.requirementKey }
+    // Local repair has already proved this exact base in this invocation.
+    // Physical original/response checks still run; V1 keeps its old path.
+    if (recovery.version === 2) await readVoiceRecoveryRaw(sourceInput, retained.proof, [], base)
+    else await readAvgVoiceRecoverySourceV1(sourceInput)
+  }
 }
 
 export async function prepareAvgVoiceRecoveryV1(input: {
@@ -193,6 +238,6 @@ export async function resetAvgVoiceRecoveryForEvolutionV1(brief: ProductProducti
     delete assembly.voice.recovery
     if (assembly.image) delete assembly.image.imageRecovery
     return { avgAssembly: await encodeAvgStoredAssemblyBriefV3(assembly),
-      productionBudget: avgVoiceProductionBudgetV3(assembly, brief.productionBudget.maximumCostUsd) }
+      productionBudget: avgVoiceProductionBudgetV3(assembly, brief.productionBudget.maximumCostUsd, brief.avgAudioProcessing) }
   })
 }

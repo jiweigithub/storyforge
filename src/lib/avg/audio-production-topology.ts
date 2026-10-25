@@ -1,10 +1,10 @@
 import type { ProductProductionPlanTaskV3, ProductProductionPlanV3 } from '../types'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
-import { assertAvgAudioProcessingPlanTargetsV1, avgAudioProcessingTaskKeyV1, avgProcessedAudioArtifactKeyV1,
+import { assertAvgAudioProcessingPlanTargets, avgAudioProcessingTaskKeyV1, avgProcessedAudioArtifactKeyV1,
   avgAudioProcessingGateIdV1, type AvgAudioProcessingDomainV1 } from './audio-production-contract'
 import { AVG_AUDIO_PROCESSING_TASK_DURATION_MS_V1, AVG_AUDIO_PROCESSING_STORAGE_BYTES_V1, avgAudioProcessingInputTokensV1 } from './audio-production-brief'
 
-type Input = { sourcePlan: ProductProductionPlanV3; processing: unknown; targets: Parameters<typeof assertAvgAudioProcessingPlanTargetsV1>[1] }
+type Input = { sourcePlan: ProductProductionPlanV3; processing: unknown; targets: Parameters<typeof assertAvgAudioProcessingPlanTargets>[1] }
 
 /** Pure proposal on the existing voice/sound graph, never a second scheduler.
  * Shared task/context/admission and the exact authorized Brief must recognize
@@ -28,7 +28,7 @@ export async function proposeAvgAudioProcessingTopologyV1(input: Input) {
 export function buildAvgAudioProcessingTopologyV1(input: Input) {
   const source = input.sourcePlan
   if (source.productType !== 'avg') throw new Error('[avg-audio-process] 加工只属于准确AVG生产图')
-  const processing = assertAvgAudioProcessingPlanTargetsV1(input.processing, input.targets)
+  const processing = assertAvgAudioProcessingPlanTargets(input.processing, input.targets)
   const plan = structuredClone(source), addedTasks: ProductProductionPlanTaskV3[] = []
   for (const entry of processing.entries) {
     const { domain, requirementKey } = entry
@@ -37,7 +37,7 @@ export function buildAvgAudioProcessingTopologyV1(input: Input) {
     const raw = plan.tasks.find(t => t.taskKey === rawTaskKey)
     const review = plan.tasks.find(t => t.taskKey === `avg.author.${domain}-review.${requirementKey}`)
     const choice = plan.tasks.find(t => t.taskKey === `avg.author.${domain}-choice.${requirementKey}`)
-    const expectedKinds = domain === 'voice' ? ['avg-media-voice-generate', 'avg-media-voice-reuse'] : ['avg-sound-music-generate', 'avg-sound-library-import']
+    const expectedKinds = domain === 'voice' ? ['avg-media-voice-generate', 'avg-media-voice-reuse'] : ['avg-sound-music-generate', 'avg-sound-library-import', 'avg-sound-raw-reuse']
     if (!raw || !expectedKinds.includes(raw.kind) || raw.outputArtifactKeys.length !== 1 || raw.outputArtifactKeys[0] !== rawKey
       || raw.maxAttempts !== 1 || raw.executionMode !== (raw.kind === expectedKinds[0] ? 'media-provider' : 'deterministic')
       || !review || review.kind !== `avg-author-${domain}-review` || review.executionMode !== 'human-import'
@@ -66,7 +66,7 @@ export function buildAvgAudioProcessingTopologyV1(input: Input) {
 
 function processingTask(raw: ProductProductionPlanTaskV3, domain: AvgAudioProcessingDomainV1, key: string): ProductProductionPlanTaskV3 {
   const rawKey = `avg.${domain}.raw.${key}`, taskKey = avgAudioProcessingTaskKeyV1(domain, key), output = avgProcessedAudioArtifactKeyV1(domain, key)
-  const kinds = domain === 'voice' ? ['avg-media-voice-generate', 'avg-media-voice-reuse'] : ['avg-sound-music-generate', 'avg-sound-library-import']
+  const kinds = domain === 'voice' ? ['avg-media-voice-generate', 'avg-media-voice-reuse'] : ['avg-sound-music-generate', 'avg-sound-library-import', 'avg-sound-raw-reuse']
   if (raw.taskKey !== `avg.${domain}.generate.${key}` || !kinds.includes(raw.kind) || raw.maxAttempts !== 1
     || raw.executionMode !== (raw.kind === kinds[0] ? 'media-provider' : 'deterministic')
     || raw.outputArtifactKeys.length !== 1 || raw.outputArtifactKeys[0] !== rawKey) throw new Error('[avg-audio-process] 加工须绑定准确单次原音频producer')

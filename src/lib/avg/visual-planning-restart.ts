@@ -1,4 +1,5 @@
 import { readAvgHeldImageQueueFailureV4 } from './visual-held-image-failure'
+import { readAvgHeldVisualModelRejectionV2 } from './visual-held-model-auth-failure'
 import { db } from '../db/schema'
 import type { ProductBuildRecordV1, WorkspaceScope } from '../types'
 import { assertRecordInScope } from '../workspace/scope'
@@ -58,7 +59,9 @@ export async function assertAvgProductionRequestsKnownV1(scope:WorkspaceScope,so
       const observedFailures=new Set<string>()
       for(const attempt of ledger.attempts)if(!attempt.usageKnown){
         try{
-          await readAvgHeldImageQueueFailureV4({scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,
+          const readKnownFailure=plan.tasks.find(task=>task.taskKey===attempt.taskKey)?.executionMode==='model'
+            ?readAvgHeldVisualModelRejectionV2:readAvgHeldImageQueueFailureV4
+          await readKnownFailure({scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,
             expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,controlEpoch:plan.controlEpoch,
             taskKey:attempt.taskKey,runId:attempt.runId,attempt:attempt.attempt})
           observedFailures.add(`${attempt.runId}:${attempt.attempt}`)

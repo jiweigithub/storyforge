@@ -1,4 +1,4 @@
-import { avgPendingVisualWorldSourceV4 } from './visual-pending-source'
+import { assertAvgPendingVisualParentV1,avgPendingVisualWorldSourceV4 } from './visual-pending-source'
 import type { WorkspaceScope } from '../types'
 import { readProductProductionDetailsV1 } from '../product-production/service'
 import { executeProductProductionCommand } from '../product-production/commands'
@@ -32,8 +32,10 @@ async function prepareVisualProcessing(input:Parameters<typeof prepareAvgVisualI
     ||details.brief!.briefHash!==input.expectedBriefHash||draft.revision!==input.expectedDraftRevision||draft.productionId!==input.productionId
     ||(build?(!input.expectedBuild||build.id!==input.expectedBuild.id||build.stateRevision!==input.expectedBuild.revision
       ||details.brief!.revision<=build.briefRevision):input.expectedBuild!==null))throw new Error('[avg-process] 尚未开始的专业方案、父版本或草稿已变化')
+  const workspace=parseAvgAuthorWorkspaceV1(draft.editorJson)
+  await assertAvgPendingVisualParentV1({build,parentRecord:details.briefHistory.find(r=>r.revision===build?.briefRevision&&r.briefHash===build.briefHash),brief,workspace})
   if(build)await assertAvgVisualPlanningRestartKnownV4(input.scope,build)
-  await (version===5?assertAvgVisualPlanningDraftMatchesV5:assertAvgVisualPlanningDraftMatchesV4)(input.scope,parseAvgAuthorWorkspaceV1(draft.editorJson),brief)
+  await (version===5?assertAvgVisualPlanningDraftMatchesV5:assertAvgVisualPlanningDraftMatchesV4)(input.scope,workspace,brief)
   const {imageProcessing:_previous,...planning}=brief.avgVisualPlanning
   const nextPlan=input.plan===null?null:parseAvgImageProcessingPlan(input.plan)
   const requirements=compileAvgImageProcessingRequirementDeclarations(planning.scope.templates.map(t=>({

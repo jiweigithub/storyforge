@@ -877,7 +877,7 @@ export function evaluateProductProductionAuthorizationReadinessV1(input: {
   const visualTextNotRequired = !!input.brief.avgVisualPlanning && input.brief.capabilityRequirements.some(requirement => (
     requirement.requirementKey === AVG_VISUAL_TEXT_CAPABILITY_V4 && requirement.mediaClass === 'text' && !requirement.required
   ))
-  if (!input.brief.avgRevision && !input.brief.avgAssembly && !visualTextNotRequired && !input.readiness.text.ready) {
+  if (!input.brief.avgRevision && !input.brief.avgAssembly && input.brief.avgSoundPlanning?.version !== 2 && !visualTextNotRequired && !input.readiness.text.ready) {
     blockerMessages.push(input.readiness.text.issue || '设置中的文本生成能力尚未就绪。')
   }
   const requiredMediaRequirementKeys = input.brief.capabilityRequirements

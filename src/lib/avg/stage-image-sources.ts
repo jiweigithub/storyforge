@@ -14,7 +14,7 @@ import { avgProcessedImageArtifactKeyV1 } from './image-processing-contract'
 import { inspectAvgProcessedImageSourceV1 } from './image-processing-source'
 import { prepareAvgAdoptedGeneratedImageV2, readAvgAdoptedGeneratedImageV2 } from './media-generated-reference'
 import type { AvgInheritedStageImageV1 } from './stage-image-source-contract'
-import type { AvgVoiceRecoveryV1 } from './voice-recovery-contract'
+import type { AvgVoiceRecovery } from './voice-local-repair-contract'
 import { assertAvgVoiceDraftV1 } from './voice-draft-contract'
 import { assertAvgStoredAssemblyBriefV3 } from './voice-assembly-storage'
 import { readAvgVoiceRecoveryReplacementV1, readAvgVoiceRecoverySourceV1 } from './voice-recovery'
@@ -36,7 +36,7 @@ export async function readAvgInheritedStageImagesV1(input:{scope:WorkspaceScope;
 /** Adds reviewable source declarations to the editable stage only. No old
  * image or author choice becomes accepted in the new Build until stage adopt. */
 export async function prepareAvgInheritedStageDraftV1(input:{scope:WorkspaceScope;workspace:AvgAuthorWorkspaceV1;build:ProductBuildRecordV1;
-  productionKey:string;targetBuildNumber:number;worldContentHash:string;voiceRecovery?:AvgVoiceRecoveryV1}){
+  productionKey:string;targetBuildNumber:number;worldContentHash:string;voiceRecovery?:AvgVoiceRecovery}){
   const next=parseAvgAuthorWorkspaceV1(input.workspace),entries:AvgInheritedStageImageV1[]=[...(next.presentation.inheritedImages??[])]
   const oldChoices=await db.productBuildArtifacts.where('buildId').equals(input.build.id!).filter(row=>row.status==='accepted'&&row.artifactKey.startsWith('avg.media.choice.')).limit(9).toArray()
   if(oldChoices.length>8)throw new Error('[avg-media] 旧图片选择超出冻结批次范围')
@@ -48,6 +48,12 @@ export async function prepareAvgInheritedStageDraftV1(input:{scope:WorkspaceScop
       const { voice } = await assertAvgVoiceDraftV1(next.voiceProduction)
       const incoming = voice.batch.requirements.find(r => r.assetKey === asset.assetKey)
       if (incoming) {
+        if (input.voiceRecovery.version === 2) {
+          const proved = await readAvgVoiceRecoveryReplacementV1({ scope: input.scope, productionId: input.build.productionId,
+            assembly: { voice: { ...voice, recovery: input.voiceRecovery } }, requirementKey: incoming.requirementKey })
+          if (!same(proved.asset, asset)) throw new Error('[avg-voice-repair] 待返修配音不是原已采用版本')
+          continue
+        }
         const row = await db.productProductionBriefs.where('[productionId+revision]').equals([input.build.productionId, input.build.briefRevision]).first()
         if (!row || row.briefHash !== input.build.briefHash || !await assertRecordInScope(input.scope, 'productProductionBriefs', row, { owner: 'work' })) throw new Error('[avg-voice] 待重选配音缺少准确原始 Brief')
         const brief = parseProductProductionBriefV3(row.briefJson)

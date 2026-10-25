@@ -11,6 +11,7 @@ import { buildAvgVisualPlanningPlanV5,AVG_COMPILED_IMAGE_SKILL_V5 } from '../../
 import { parseProductProductionBriefV3 } from '../../src/lib/product-production/contracts'
 import { createProductProductionPlanV3,parseProductProductionPlanV3 } from '../../src/lib/product-production/plan'
 import { avgVisualPlanningBudgetV5,avgVisualPlanningGateIdsV5 } from '../../src/lib/avg/visual-planning-policy-v5'
+import { parseAvgVisualPlanningBriefV5 } from '../../src/lib/avg/visual-planning-brief-v5'
 import { avgVisualPlanningBudgetV4 } from '../../src/lib/avg/visual-planning-policy'
 import { executeProductProductionCommand } from '../../src/lib/product-production/commands'
 import { readProductProductionDetailsV1 } from '../../src/lib/product-production/service'
@@ -21,6 +22,8 @@ import { assertAvgVisualPlanningDraftMatchesV4,resolveAvgVisualPlanningExecution
 import { readAvgDraftReferenceBytesV2 } from '../../src/lib/avg/editor-service'
 import { createConfiguredProductProductionExecutorV1 } from '../../src/lib/product-production/production-executor'
 import { createAvgVisualPlanningExecutorV4 } from '../../src/lib/avg/visual-planning-executor'
+import { parseAvgGeneratedReferenceSourceV7,parseAvgGeneratedReferenceSourceV8 } from '../../src/lib/avg/media-generated-reference-contract'
+import { readAvgVisualReuseContextPacketV5 } from '../../src/lib/avg/visual-planning-reuse-v5'
 
 beforeEach(async()=>{await db.delete();await db.open();vi.stubGlobal('fetch',vi.fn(()=>{throw new Error('V5 foundation cannot make a network request')}))})
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();vi.unstubAllEnvs();db.close()})
@@ -45,6 +48,74 @@ describe('AVG V5 formal contract and strict legacy boundary',()=>{
     expect(brief.completionContract.requiredGateIds).toEqual(avgVisualPlanningGateIdsV5(brief))
     expect(planning.scope.referenceCatalog[0].reference.contentPolicy.excludedFeatures).toContain('蜡封信件')
     expect(()=>parseAvgVisualPlanningBriefV4(planning)).toThrow();expect(()=>avgVisualPlanningBudgetV4(brief)).toThrow()
+  })
+  it('reuses only an exact historical V5 proposal as a zero-call task with fresh author adoption',async()=>{
+    const {brief,planning,owner}=await avgV5FormalFixture(),hash=(c:string)=>c.repeat(64)
+    const source={schema:'storyforge.avg.visual-proposal-reuse-source',version:2,productionKey:owner.details.production.productionKey,
+      buildNumber:1,buildRevision:7,controlEpoch:0,briefHash:hash('1'),planHash:hash('2'),
+      artifact:{artifactKey:'avg.media.visual-bible',version:1,contentHash:hash('3')},authorReceiptHash:hash('4'),
+      proposal:{artifactKey:'avg.proposal.visual-bible',version:1,contentHash:hash('5')},producerReceiptHash:hash('6'),
+      requestSnapshotHash:hash('7'),rawResponseHash:hash('8')}
+    const avgVisualPlanning=parseAvgVisualPlanningBriefV5({...planning,proposalReuse:[source]}),draft={...brief,avgVisualPlanning}
+    const budget=avgVisualPlanningBudgetV5(draft),capabilityRequirements=draft.capabilityRequirements.map(c=>({...c,maximumTotalCost:budget.maximumCostUsd}))
+    const next=parseProductProductionBriefV3({...draft,capabilityRequirements,productionBudget:budget,
+      completionContract:{...draft.completionContract,requiredGateIds:avgVisualPlanningGateIdsV5({...draft,capabilityRequirements})}})
+    const plan=await createProductProductionPlanV3({brief:next,briefHash:await hashProductProductionValueV2(next),buildNumber:2,controlEpoch:0})
+    const reused=plan.tasks.find(t=>t.kind==='avg-v5-visual-proposal-reuse'),models=plan.tasks.filter(t=>t.executionMode==='model')
+    expect(reused).toMatchObject({taskKey:'avg.visual.propose.direction',executionMode:'deterministic',skillId:null,
+      capabilityRequirementKeys:[],maxAttempts:1,budgetReservation:{modelCalls:0,mediaCalls:0,maximumCostUsd:0}})
+    expect(models).toHaveLength(3);expect(next.productionBudget.maximumModelCalls).toBe(3)
+    expect(plan.tasks.find(t=>t.taskKey==='avg.author.visual-bible')?.dependsOn).toContain('avg.visual.propose.direction')
+    expect(plan.tasks.find(t=>t.taskKey==='avg.author.visual-bible')?.outputArtifactKeys).toEqual(['avg.media.visual-bible'])
+    expect(()=>parseAvgVisualPlanningBriefV5({...planning,proposalReuse:[{...source,version:1}]})).toThrow()
+  })
+  it('accepts the exact V5 historical reuse context shape and rejects unknown fields',()=>{
+    const packet={schema:'storyforge.avg.visual-planning-inputs',version:5,operation:'reuse-confirmed-visual-proposal',reuseSource:{artifactKey:'avg.media.visual-bible'},
+      sourceInputHash:'source',aspectRatio:'16:9',subjects:[],requirements:[],references:[],visualDirection:null,sourceWorldContentHash:'world',
+      taskKey:'avg.visual.propose.direction',productionKey:'avg-production',buildNumber:2,controlEpoch:0,planHash:'plan',briefRevision:3,briefHash:'brief',
+      sourcePlanHash:'source-plan',confirmedBriefHash:'confirmed-brief',artifacts:[],taskBudget:{modelCalls:0,mediaCalls:0,maximumCostUsd:0}}
+    expect(readAvgVisualReuseContextPacketV5(JSON.stringify(packet),true)).toEqual(packet)
+    expect(()=>readAvgVisualReuseContextPacketV5(JSON.stringify({...packet,unregistered:true}),true)).toThrow()
+  })
+  it('turns one exact V5 raw source into a zero-image-request local task while preserving the other media requests',async()=>{
+    const {brief,planning,owner}=await avgV5FormalFixture(),requirementKey=planning.scope.templates[0]!.parameters.requirementKey
+    const raw={schema:'storyforge.avg.visual-image-producer-proof',version:5,buildNumber:1,briefHash:'1'.repeat(64),planHash:'2'.repeat(64),controlEpoch:0,
+      taskKey:`avg.media.generate.${requirementKey}`,artifactKey:`avg.media.raw.${requirementKey}`,artifactVersion:1,contentHash:'3'.repeat(64),inputHash:'4'.repeat(64),
+      producerReceiptHash:'5'.repeat(64),candidateHash:'6'.repeat(64),responseEvidenceHash:'7'.repeat(64),proofHash:'8'.repeat(64)}
+    const source={schema:'storyforge.avg.visual-raw-reuse-source',version:2,productionKey:owner.details.production.productionKey,requirementKey,raw,
+      compilation:{artifactKey:'avg.media.compiled-visual-requirements',version:1,contentHash:'9'.repeat(64)},sourceWorldContentHash:brief.source.worldContentHash,
+      requirementHash:'a'.repeat(64),semanticRequirementHash:'b'.repeat(64)}
+    const avgVisualPlanning=parseAvgVisualPlanningBriefV5({...planning,rawReuse:[source]}),draft={...brief,avgVisualPlanning}
+    const budget=avgVisualPlanningBudgetV5(draft),capabilityRequirements=draft.capabilityRequirements.map(c=>({...c,maximumTotalCost:budget.maximumCostUsd}))
+    const next=parseProductProductionBriefV3({...draft,capabilityRequirements,productionBudget:budget,
+      completionContract:{...draft.completionContract,requiredGateIds:avgVisualPlanningGateIdsV5({...draft,capabilityRequirements})}})
+    const plan=await createProductProductionPlanV3({brief:next,briefHash:await hashProductProductionValueV2(next),buildNumber:2,controlEpoch:0})
+    const reused=plan.tasks.find(t=>t.kind==='avg-media-image-reuse'),providers=plan.tasks.filter(t=>t.executionMode==='media-provider')
+    expect(reused).toMatchObject({taskKey:`avg.media.generate.${requirementKey}`,executionMode:'deterministic',contextProfile:'avg-visual-planning-v5',
+      capabilityRequirementKeys:[],budgetReservation:{modelCalls:0,mediaCalls:0,maximumCostUsd:0}})
+    expect(reused?.inputArtifactKeys).toContain('avg.media.compiled-visual-requirements')
+    expect(providers).toHaveLength(4);expect(next.productionBudget.maximumMediaCalls).toBe(4)
+  })
+  it('keeps V5 original raw2, current local reuse, local processing and author receipts in separate source versions',()=>{
+    const requirementKey='req.avatar.base',hash=(n:string)=>n.repeat(64),raw={schema:'storyforge.avg.image-revalidation-producer-proof',version:1,noProviderRequest:true,
+      buildNumber:2,briefHash:hash('1'),planHash:hash('2'),controlEpoch:0,taskKey:`avg.media.generate.${requirementKey}`,artifactKey:`avg.media.raw.${requirementKey}`,
+      artifactVersion:1,contentHash:hash('3'),inputHash:hash('4'),producerReceiptHash:hash('5'),candidateHash:hash('6'),proofHash:hash('7'),revalidationEvidenceHash:hash('8')}
+    const original={schema:'storyforge.avg.visual-raw-reuse-source',version:2,productionKey:'avg-production',requirementKey,
+      raw:{schema:'storyforge.avg.visual-image-producer-proof',version:5,buildNumber:1,briefHash:hash('9'),planHash:hash('a'),controlEpoch:0,
+        taskKey:`avg.media.generate.${requirementKey}`,artifactKey:`avg.media.raw.${requirementKey}`,artifactVersion:1,contentHash:hash('3'),inputHash:hash('b'),
+        producerReceiptHash:hash('c'),candidateHash:hash('d'),responseEvidenceHash:hash('e'),proofHash:hash('f')},
+      compilation:{artifactKey:'avg.media.compiled-visual-requirements',version:1,contentHash:hash('a')},sourceWorldContentHash:hash('b'),
+      requirementHash:hash('c'),semanticRequirementHash:hash('d')}
+    const base={schema:'storyforge.avg.generated-reference-source',version:7,productionKey:'avg-production',requirementKey,raw,original,
+      compilation:{artifactKey:'avg.media.compiled-visual-requirements',version:1,contentHash:hash('e')},
+      choice:{artifactKey:`avg.media.choice.${requirementKey}`,version:1,contentHash:hash('f'),authorReceiptHash:hash('1')},
+      review:{artifactKey:`avg.review.visual.${requirementKey}`,version:1,contentHash:hash('2'),authorReceiptHash:hash('3')}}
+    expect(parseAvgGeneratedReferenceSourceV7(base)).toEqual(base)
+    const processing={schema:'storyforge.avg.image-processing-producer-proof',version:1,noProviderRequest:true,buildNumber:2,briefHash:raw.briefHash,planHash:raw.planHash,
+      controlEpoch:0,taskKey:`avg.media.process.${requirementKey}`,artifactKey:`avg.media.processed.${requirementKey}`,artifactVersion:1,contentHash:hash('4'),
+      inputHash:hash('5'),producerReceiptHash:hash('6'),candidateHash:hash('7'),proofHash:hash('8'),processingEvidenceHash:hash('9')}
+    expect(parseAvgGeneratedReferenceSourceV8({...base,version:8,processing})).toMatchObject({version:8,original,raw,processing})
+    expect(()=>parseAvgGeneratedReferenceSourceV7({...base,original:{...original,version:1}})).toThrow()
   })
   it.each(['old-scope','old-reference','false-consent','raw-reuse','proposal-reuse','wrong-product','assembly-mix','class-mismatch','waiver','budget','gate','voice','unknown-version'] as const)('refuses V5 %s without dispatch',async mode=>{
     const {brief}=await avgV5FormalFixture(),v=brief.avgVisualPlanning

@@ -20,6 +20,13 @@ export async function readAvgImageConsumptionDefinitionV5(input:{scope:Workspace
  * verifies the actual accepted producer, Work Blob and current Plan inputs. */
 export async function assertAvgConsumedRawImageV5(input:{scope:WorkspaceScope;brief:ProductProductionBriefV3;row:ProductBuildArtifactRecordV1}){
   const d=await readAvgImageConsumptionDefinitionV5({...input,buildId:input.row.buildId})
+  if(d.planning.rawReuse?.some(source=>source.requirementKey===input.row.artifactKey.slice('avg.media.raw.'.length))){
+    const load=()=>import('./visual-image-revalidation-v5')
+    const {readAvgVisualRawReuseEvidenceV5}=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
+    const evidence=await readAvgVisualRawReuseEvidenceV5({scope:input.scope,compiled:d,artifact:{artifactKey:input.row.artifactKey,
+      version:input.row.version,contentHash:input.row.contentHash}})
+    return {payload:evidence.payload,asset:evidence.asset,requirement:evidence.requirement,compiled:d,rawProof:evidence.provenance,original:evidence.original}
+  }
   const raw=await assertAvgRawImageArtifactFromDefinitionV2({...d.definition,capability:d.capability,qualityProfile:d.brief.qualityProfile},input.row)
   const q=assertAvgRawImageReceptionV2(input.row.qualityJson,{request:raw.payload.request,rule:d.source.artifact,
     scripts:d.source.scripts.map(s=>s.artifact),compilation:d.definition.compilation})

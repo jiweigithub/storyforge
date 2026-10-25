@@ -1333,7 +1333,7 @@ export async function productProductionTaskExecutionIdentityHashV1(
   return hashProductProductionValueV2(productProductionTaskExecutionIdentityPayloadV1(task))
 }
 
-async function frozenProductProductionTaskExecutionIdentityHashV1(
+export async function frozenProductProductionTaskExecutionIdentityHashV1(
   task: ProductProductionPlanTaskV3,
   snapshot: Pick<AgentRunSnapshotV1, 'contract'>,
 ): Promise<string> {

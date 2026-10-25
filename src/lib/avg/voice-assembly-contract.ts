@@ -5,7 +5,7 @@ import { AVG_ASSEMBLY_GATE_IDS_V1, avgMediaAssemblyGateIdsV2, parseAvgAssemblyBr
 import { avgHash, avgKey, avgProtocolBody, avgRecord } from './protocol-validation'
 import { parseAvgVoiceProductionBatchV1, type AvgVoiceProductionBatchV1 } from './voice-production-contract'
 import { compileAvgVoiceSpeechRequestV1, parseAvgSpeechProtocolV1, type AvgSpeechProtocolV1 } from './voice-request-contract'
-import { parseAvgVoiceRecoveryV1, type AvgVoiceRecoveryV1 } from './voice-recovery-contract'
+import { parseAvgVoiceRecovery, type AvgVoiceRecovery } from './voice-local-repair-contract'
 
 export const AVG_VOICE_CAPABILITY_REQUIREMENT_KEY_V1 = 'avg.media.voice' as const
 
@@ -24,7 +24,7 @@ export interface AvgAssemblyBriefV3 extends Omit<AvgAssemblyBriefV1, 'version'> 
     protocol: AvgSpeechProtocolV1
     binding: { requirementKey: typeof AVG_VOICE_CAPABILITY_REQUIREMENT_KEY_V1
       adapterId: 'storyforge.avg.compatible-speech.v1'; bindingHash: string; endpointRouteHash: string }
-    recovery?: AvgVoiceRecoveryV1
+    recovery?: AvgVoiceRecovery
   }
 }
 
@@ -94,7 +94,7 @@ export function parseAvgAssemblyBriefV3(value: unknown): AvgAssemblyBriefV3 {
   const { recovery: recoveryInput, ...voiceDeclaration } = avgRecord(voiceInput,
     ['batch', 'protocol', 'binding', ...(hasRecovery ? ['recovery'] : [])], 'AVG assembly voice')
   const declaration = parseAvgVoiceProductionDeclarationV1(voiceDeclaration), batch = declaration.batch
-  const voice = { ...declaration, ...(hasRecovery ? { recovery: parseAvgVoiceRecoveryV1(recoveryInput, batch) } : {}) }
+  const voice = { ...declaration, ...(hasRecovery ? { recovery: parseAvgVoiceRecovery(recoveryInput, batch) } : {}) }
   for (const r of batch.requirements) {
     avgRawVoiceArtifactKeyV1(r.requirementKey); avgVoiceReviewArtifactKeyV1(r.requirementKey); avgVoiceChoiceArtifactKeyV1(r.requirementKey)
     avgKey(`avg.author.voice-review.${r.requirementKey}`, 'voice review task')

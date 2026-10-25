@@ -4,18 +4,19 @@ import { createAvgSoundAuditionCaptureV1, type AvgSoundAuditionObservationV1 } f
 
 export type SoundObservation = { audioHash: string; requestIdentityHash: string; audition: AvgSoundAuditionObservationV1 }
 type Props = { sourceKey: string; data: ArrayBuffer; assetKey: string; contentHash: string; requestIdentityHash: string
-  durationMs: number; channelCount: number; loop: boolean; disabled: boolean; onObservation: (value: SoundObservation | null) => void }
+  durationMs: number; channelCount: number; loop: boolean; disabled: boolean; variant?: 'original' | 'processed'; onObservation: (value: SoundObservation | null) => void }
 type Engine = { context: AudioContext; source: AudioBufferSourceNode | null; gain: GainNode | null
   capture: ReturnType<typeof createAvgSoundAuditionCaptureV1> | null; timer: ReturnType<typeof setInterval> | null; deadline: ReturnType<typeof setTimeout> | null }
 
-/** Exactly one original native source per generation. Loops are scheduled in
+/** Exactly one verified native source per generation. Loops are scheduled in
  * the rendering graph, not by restarting an ended element. Device output time
  * and original source end are both required. No Blob/URL/store/model writes. */
 export default function SoundAuditionPlayer(props: Props) {
-  return <OriginalSoundAudition key={JSON.stringify([props.sourceKey, props.assetKey, props.contentHash, props.requestIdentityHash,
-    props.durationMs, props.channelCount, props.loop])} {...props} />
+  return <ExactSoundAudition key={JSON.stringify([props.sourceKey, props.assetKey, props.contentHash, props.requestIdentityHash,
+    props.durationMs, props.channelCount, props.loop, props.variant ?? 'original'])} {...props} />
 }
-function OriginalSoundAudition({ data, contentHash, requestIdentityHash, durationMs, channelCount, loop, disabled, onObservation }: Props) {
+function ExactSoundAudition({ data, contentHash, requestIdentityHash, durationMs, channelCount, loop, disabled, variant = 'original', onObservation }: Props) {
+  const versionName = variant === 'processed' ? '加工声音' : '原声音'
   const [playing, setPlaying] = useState(false), [error, setError] = useState('')
   const [observation, setObservation] = useState<AvgSoundAuditionObservationV1 | null>(null)
   const [muted, setMuted] = useState(false), [volume, setVolume] = useState(1)
@@ -106,7 +107,7 @@ function OriginalSoundAudition({ data, contentHash, requestIdentityHash, duratio
   return <section className="avg-sound-audition" aria-label="准确声音审听">
     <p>{loop ? '本轮连续原速播放两遍，观察循环接缝后自动结束。' : '本轮从头完整原速播放一次，结束后逐项记录观察。'}中断、切换页面或静音后须重新从头审听。</p>
     {error && <p role="alert">{error}</p>}
-    <div className="avg-actions"><button className="lf-action" disabled={disabled || playing || muted || volume <= 0} onClick={() => void start()}>从头审听原声音</button>
+    <div className="avg-actions"><button className="lf-action" disabled={disabled || playing || muted || volume <= 0} onClick={() => void start()}>从头审听{versionName}</button>
       <button className="lf-action" disabled={!playing} onClick={interrupt}>中断本轮审听</button></div>
     <label><input type="checkbox" checked={muted} onChange={event => {
       const next = event.target.checked; setMuted(next)
@@ -119,7 +120,7 @@ function OriginalSoundAudition({ data, contentHash, requestIdentityHash, duratio
     {playing && <p role="status">原生审听进行中；完整次数 {observation?.completedCycles ?? 0}，连续接缝 {observation?.continuousLoops ?? 0}。</p>}
     {playing && <progress aria-label="本轮原生播放进度" max={durationMs * (loop ? 2 : 1)} value={observation?.playedMs ?? 0}/>}
     {observation && !playing && <p role="status">{observation.outcome === 'ended'
-      ? `原声音已完整原速播放 ${observation.completedCycles} 遍；仍须作者逐项判断。`
+      ? `${versionName}已完整原速播放 ${observation.completedCycles} 遍；仍须作者逐项判断。`
       : `本轮已中断或改变播放条件，保留 ${observation.playedMs} 毫秒观察；不能据此签发通过。`}</p>}
   </section>
 }

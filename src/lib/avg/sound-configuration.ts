@@ -1,6 +1,6 @@
 import { canonicalProductProductionJsonV2 } from '../product-production/hash'
 import { parseAvgAuthorWorkspaceV1, type AvgAuthorWorkspaceV1 } from './author-workspace-contract'
-import { parseAvgAuthorSoundChoiceV1 } from './sound-choice-contract'
+import { parseAvgAuthorSoundChoice } from './audio-choice-dispatch'
 import { compileAvgSoundRequirementsV1 } from './sound-requirements'
 import { validateAvgSoundPlanningSourcesV1 } from './sound-source'
 import { parseAvgPresentationContent } from './runtime'
@@ -13,7 +13,7 @@ export async function applyAvgSoundChoicesToDraftV1(input: {
 }) {
   const next = parseAvgAuthorWorkspaceV1(input.workspace)
   const scope = await validateAvgSoundPlanningSourcesV1(input.scope, next)
-  const compiled = await compileAvgSoundRequirementsV1(scope, input.plan), choices = input.choices.map(parseAvgAuthorSoundChoiceV1)
+  const compiled = await compileAvgSoundRequirementsV1(scope, input.plan), choices = input.choices.map(parseAvgAuthorSoundChoice)
   if (choices.length !== compiled.requirements.length || new Set(choices.map(c => c.requirementKey)).size !== choices.length) {
     throw new Error('[avg-sound] 自动配置需要本批准确完整且唯一的声音选择')
   }
@@ -44,6 +44,39 @@ export async function applyAvgSoundChoicesToDraftV1(input: {
     }
     if (!existingAsset) next.presentation.stage.assets.push(choice.asset)
     if (!existingCue) next.presentation.stage.cues.push(cue)
+  }
+  return parseAvgAuthorWorkspaceV1(next)
+}
+
+/** One explicit replacement after service-side source and new adoption proof.
+ * Every other asset/cue and inherited source stays byte-for-byte in the draft. */
+export async function applyAvgSoundLocalRepairChoiceToDraftV2(input: {
+  workspace: AvgAuthorWorkspaceV1; repair: unknown; choices: unknown[]
+}) {
+  const { assertAvgSoundLocalRepairV1 } = await import('./sound-local-repair-contract')
+  const { hashProductProductionValueV2 } = await import('../product-production/hash')
+  const { repair, requirement } = await assertAvgSoundLocalRepairV1(input.repair), next = parseAvgAuthorWorkspaceV1(input.workspace)
+  const choices = input.choices.map(parseAvgAuthorSoundChoice), choice = choices[0], t = requirement.template
+  const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
+  const expectedCue = parseAvgPresentationContent({ version: 1, cues: [{ ...t.cue, type: 'play-audio', assetKey: t.assetKey, durationMs: 0, easing: 'linear' }] }).cues[0]!
+  if (!same(next.soundLocalRepair, repair) || choices.length !== 1 || choice?.version !== 2
+    || choice.requirementKey !== t.requirementKey || choice.requestIdentityHash !== requirement.identityHash
+    || choice.raw.contentHash !== repair.source.raw.contentHash || choice.processed.recipeHash !== await hashProductProductionValueV2(repair.recipe)
+    || choice.asset.assetKey !== t.assetKey || choice.asset.kind !== t.channel || choice.asset.sceneTag !== t.consumer.sceneKey
+    || choice.asset.characterTag !== '' || choice.asset.mimeType !== 'audio/wav'
+    || next.scripts.filter(s => s.sceneKey === t.consumer.sceneKey).flatMap(s => s.lines).filter(l => l.lineKey === t.cue.beatKey).length !== 1
+    || next.presentation.stage.cues.filter(c => c.assetKey === t.assetKey).length !== 1
+    || !same(next.presentation.stage.cues.find(c => c.assetKey === t.assetKey), expectedCue)) {
+    throw new Error('[avg-sound-repair] 局部配置必须是准确单项新加工选择、原播放用途和已保存配方')
+  }
+  const old = next.presentation.stage.assets.find(a => a.assetKey === t.assetKey)
+  const inherited = next.presentation.inheritedSounds?.find(e => e.assetKey === t.assetKey)
+  if (!old || !(same(old, repair.sourceAsset) && inherited && same(inherited.source, repair.source)
+    || same(old, choice.asset) && !inherited)) throw new Error('[avg-sound-repair] 原槽或旧采用来源已变化，不能覆盖其他版本')
+  next.presentation.stage.assets = next.presentation.stage.assets.map(a => a.assetKey === t.assetKey ? choice.asset : a)
+  if (next.presentation.inheritedSounds?.length) {
+    next.presentation.inheritedSounds = next.presentation.inheritedSounds.filter(e => e.assetKey !== t.assetKey)
+    if (!next.presentation.inheritedSounds.length) delete next.presentation.inheritedSounds
   }
   return parseAvgAuthorWorkspaceV1(next)
 }

@@ -9,7 +9,7 @@ import { parseAvgVisualPlanningBriefV5,type AvgVisualPlanningBriefV5 } from './v
 import { freezeAvgVisualPlanningScopeV2 } from './media-source-v2'
 import type { AvgMediaSourceInputV1 } from './media-source'
 import { parseAvgVisualBibleV1,type AvgVisualBibleV1 } from './visual-planning-contract'
-import { avgVisualRoleTargetV5 } from './visual-role-proposal-v5'
+import { avgVisualRoleTargetV5,isAvgVisualReuseTaskV5 } from './visual-role-proposal-v5'
 import { readAvgDraftReferenceBytesV2 } from './editor-service'
 import { readAvgCompiledImageDefinitionV5 } from './visual-planning-image-definition-v5'
 import { AVG_COMPILED_IMAGE_SKILL_V5 } from './visual-planning-plan-v5'
@@ -17,14 +17,16 @@ import { AVG_COMPILED_IMAGE_SKILL_V5 } from './visual-planning-plan-v5'
 /** Explicit projection, never a spread of a reference or its portable proof.
  * Raw story text, hidden facts, bytes, license packets and Run ids stay local. */
 export function projectAvgVisualPlanningTaskV5(input:{planning:AvgVisualPlanningBriefV5;task:ProductProductionPlanTaskV3;source:AvgMediaSourceInputV1;visualBible?:AvgVisualBibleV1}){
-  const planning=parseAvgVisualPlanningBriefV5(input.planning),scope=planning.scope,target=avgVisualRoleTargetV5(input.task,scope),direction=target==='avg.media.visual-bible'
+  const planning=parseAvgVisualPlanningBriefV5(input.planning),scope=planning.scope,target=avgVisualRoleTargetV5(input.task,scope),direction=target==='avg.media.visual-bible',reuse=isAvgVisualReuseTaskV5(input.task)
+  const reuseSource=reuse?planning.proposalReuse?.find(r=>r.artifact.artifactKey===target):undefined
+  if(reuse&&!reuseSource)throw new Error('[avg-visual-reuse] V5 准确岗位没有冻结来源')
   const selected=[...new Map(scope.templates.map(t=>[t.parameters.family.subjectKey,t.subjectKind])).entries()]
     .filter(([key,kind])=>direction||target===`avg.media.${kind}-brief.${key}`)
   const templates=scope.templates.filter(t=>selected.some(([key])=>key===t.parameters.family.subjectKey))
   const bible=input.visualBible?parseAvgVisualBibleV1(input.visualBible):null
   if(!direction&&(!bible||selected.some(([key,kind])=>!bible.subjects.some(s=>s.subjectKey===key&&s.subjectKind===kind))))throw new Error('[avg-visual-plan] 新主体方案缺少准确已确认视觉基准')
   const usedReferences=new Set(templates.flatMap(t=>t.allowedReferenceKeys))
-  return {schema:'storyforge.avg.visual-planning-inputs' as const,version:5 as const,sourceInputHash:scope.sourceInputHash,aspectRatio:scope.aspectRatio,
+  return {schema:'storyforge.avg.visual-planning-inputs' as const,version:5 as const,...(reuse?{operation:'reuse-confirmed-visual-proposal',reuseSource}:{}),sourceInputHash:scope.sourceInputHash,aspectRatio:scope.aspectRatio,
     subjects:selected.map(([subjectKey,subjectKind])=>({subjectKey,subjectKind,
       name:subjectKind==='character'?input.source.systemPlan.characters.find(c=>c.key===subjectKey)?.displayName
         :subjectKind==='environment'?input.source.systemPlan.scenes.find(s=>s.key===subjectKey)?.title
@@ -45,9 +47,10 @@ export async function readAvgVisualPlanningContextV5(input:AssembleContextInput)
   const authority=await readAvgVisualContextAuthority(input,5),{scope,build,production,row,brief,task,planning}=authority
   const compile=task.kind==='avg-v5-visual-requirements-compile'&&task.executionMode==='deterministic'&&task.contextProfile==='avg-visual-planning-v5'
   const imageTask=task.kind==='avg-media-image-generate'&&task.executionMode==='media-provider'&&task.skillId===AVG_COMPILED_IMAGE_SKILL_V5
+  const rawReuse=task.kind==='avg-media-image-reuse'&&task.executionMode==='deterministic'&&task.contextProfile==='avg-visual-planning-v5'
   const processing=task.kind==='avg-media-image-process'&&task.executionMode==='deterministic'&&task.contextProfile==='avg-visual-planning-v5'
-  if(!compile&&!imageTask&&!processing)avgVisualRoleTargetV5(task,planning.scope)
-  const image=imageTask||processing?await readAvgCompiledImageDefinitionV5({scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,controlEpoch:build.controlEpoch,expectedBrief:brief}):null
+  if(!compile&&!imageTask&&!rawReuse&&!processing)avgVisualRoleTargetV5(task,planning.scope)
+  const image=imageTask||rawReuse||processing?await readAvgCompiledImageDefinitionV5({scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,controlEpoch:build.controlEpoch,expectedBrief:brief}):null
   const source=image?.source??await readAvgSystemPlanForCompilationV1({scope,buildId:build.id!,expectedBuildRevision:build.stateRevision,controlEpoch:build.controlEpoch,includeSceneScripts:true})
   const canonicalSource={systemPlan:source.plan,scripts:source.scripts.map(s=>s.payload),presentation:{aspectRatio:planning.scope.aspectRatio}}
   const {sourceInputHash:_hash,aspectRatio:_ratio,...unhashed}=planning.scope
@@ -67,7 +70,9 @@ export async function readAvgVisualPlanningContextV5(input:AssembleContextInput)
   // No portable proof, license packet or Run id is disclosed in this context.
   // The full original requirement is still bound by its canonical hash.
   const packet=image?{schema:'storyforge.avg.visual-planning-inputs',version:5,sourceInputHash:checked.sourceInputHash,aspectRatio:checked.aspectRatio,
-    operation:processing?'process-compiled-image':'produce-compiled-image',...(processEntry?{processing:processEntry}:{}),requirementHash:await hashProductProductionValueV2(requirement),
+    operation:processing?'process-compiled-image':rawReuse?'revalidate-original-compiled-image':'produce-compiled-image',
+    ...(processEntry?{processing:processEntry}:{}),...(rawReuse?{rawReuseSource:planning.rawReuse?.find(r=>r.requirementKey===requirement!.requirementKey)}:{}),
+    requirementHash:await hashProductProductionValueV2(requirement),
     requirement:{requirementKey:requirement!.requirementKey,revision:requirement!.revision,name:requirement!.name,mediaKind:requirement!.mediaKind,
       family:requirement!.family,width:requirement!.width,height:requirement!.height,resolutionTier:requirement!.resolutionTier,alpha:requirement!.alpha,
       prompt:requirement!.prompt,negativePrompt:requirement!.negativePrompt,invariants:requirement!.invariants,forbiddenDepictions:requirement!.forbiddenDepictions,

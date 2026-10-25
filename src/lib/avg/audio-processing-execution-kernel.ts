@@ -7,14 +7,14 @@ import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import { ProductProductionDraftRejectedErrorV1, type ProductProductionTaskExecutionInputV1,
   type ProductProductionTaskExecutionResultV1, type ProductProductionTaskUsageV1 } from '../product-production/scheduler'
 import { avgEnum } from './protocol-validation'
-import { processAvgAudioPcmWaveWithWorkerV1, assertAvgAudioProcessingWaveBytesV1 } from './audio-processing'
+import { processAvgAudioPcmWaveWithWorker, assertAvgAudioProcessingWaveBytes } from './audio-processing-dispatch'
 import { AVG_AUDIO_PCM_KINDS_V1 } from './audio-processing-contract'
 import { avgAudioProcessingTaskKeyV1, avgProcessedAudioArtifactKeyV1,
-  parseAvgAudioProductionProcessingPlanV1 } from './audio-production-contract'
+  parseAvgAudioProductionProcessingPlan } from './audio-production-contract'
 import { AVG_AUDIO_PROCESSING_STORAGE_BYTES_V1, AVG_AUDIO_PROCESSING_TASK_DURATION_MS_V1,
   avgAudioProcessingInputTokensV1 } from './audio-production-brief'
-import { parseAvgProcessedAudioPayloadV1, deriveAvgProcessedAudioAssetV1, deriveAvgProcessedAudioRightsV1,
-  type AvgAudioProcessingEntryV1 } from './processed-audio-contract'
+import { parseAvgProcessedAudioPayload, deriveAvgProcessedAudioAssetV1, deriveAvgProcessedAudioRightsV1,
+  type AvgAudioProcessingEntry } from './processed-audio-contract'
 import { inspectAvgVoiceBytesV1 } from './voice-decoder'
 import { inspectAvgSoundBytesV1 } from './sound-decoder'
 import { inspectAvgVoiceWaveV1 } from './voice-wave'
@@ -29,15 +29,15 @@ export async function executeAvgBoundedAudioProcessingV1(input: {
   raw: { row: Pick<ProductBuildArtifactRecordV1, 'artifactKey' | 'version' | 'contentHash' | 'producerReceiptHash'
     | 'producerRunId' | 'buildId' | 'controlEpoch' | 'status' | 'blobObjectId' | 'kind' | 'mediaKind' | 'mimeType' | 'byteSize' | 'rightsJson'>;
     asset: FrozenRuntimeMediaAssetV2; requestIdentityHash: string }
-  entry: AvgAudioProcessingEntryV1
+  entry: AvgAudioProcessingEntry
   recheck: () => Promise<void>
 }): Promise<ProductProductionTaskExecutionResultV1> {
   const started = Date.now(), recheck = input.recheck
   const request = { ...input.request, scope: structuredClone(input.request.scope), task: structuredClone(input.request.task),
     inputArtifacts: structuredClone(input.request.inputArtifacts), capabilityBindings: structuredClone(input.request.capabilityBindings) }
   const raw = structuredClone(input.raw)
-  const entry = parseAvgAudioProductionProcessingPlanV1({ schema: 'storyforge.avg.audio-production-processing-plan',
-    version: 1, entries: [input.entry] }).entries[0]!
+  const entry = parseAvgAudioProductionProcessingPlan({ schema: 'storyforge.avg.audio-production-processing-plan',
+    version: input.entry.recipe.version === 2 ? 2 : 1, entries: [input.entry] }).entries[0]!
   let storedBytes = 0, candidateBytes = 0
   const usage = (): ProductProductionTaskUsageV1 => ({ modelCalls: 0, mediaCalls: 0, inputTokens: 0, outputTokens: 0,
     costUsd: 0, durationMs: Date.now() - started, storageBytes: storedBytes + candidateBytes })
@@ -80,9 +80,12 @@ export async function executeAvgBoundedAudioProcessingV1(input: {
     const kind = avgEnum(raw.asset.kind, AVG_AUDIO_PCM_KINDS_V1, 'processing audio kind')
     if ((entry.domain === 'voice') !== (kind === 'voice')) throw new Error('[avg-audio-process] 加工原音频不属于准确配音或声音域')
     stopped()
-    const result = await processAvgAudioPcmWaveWithWorkerV1({ data: original, recipe: entry.recipe,
+    const result = await processAvgAudioPcmWaveWithWorker({ data: original, recipe: entry.recipe,
       source: { contentHash: raw.asset.contentHash, mimeType: 'audio/wav', kind }, signal: request.signal })
-    await assertAvgAudioProcessingWaveBytesV1({ source: original, output: result.data, recipe: entry.recipe, receipt: result.receipt })
+    // V2 execution already completes an independent full verify Worker under
+    // the shared deadline. Sealed admission and later reads independently
+    // verify again; avoid a redundant third Worker before local persistence.
+    if (entry.recipe.version === 1) await assertAvgAudioProcessingWaveBytes({ source: original, output: result.data, recipe: entry.recipe, receipt: result.receipt })
     stopped()
     const inspected = kind === 'voice'
       ? await inspectAvgVoiceBytesV1({ data: result.data, contentHash: result.receipt.output.contentHash,
@@ -100,7 +103,7 @@ export async function executeAvgBoundedAudioProcessingV1(input: {
       || Math.abs(measured.durationMs - result.receipt.output.durationMs) > 1) {
       throw new Error('[avg-audio-process] 加工WAV的真实解码与处理回执不一致')
     }
-    const payload = await parseAvgProcessedAudioPayloadV1({ schema: 'storyforge.avg.processed-audio', version: 1,
+    const payload = await parseAvgProcessedAudioPayload({ schema: 'storyforge.avg.processed-audio', version: entry.recipe.version,
       domain: entry.domain, requirementKey: entry.requirementKey, requestIdentityHash: raw.requestIdentityHash,
       raw: { artifactKey: raw.row.artifactKey, version: raw.row.version, contentHash: raw.row.contentHash,
         producerReceiptHash: raw.row.producerReceiptHash }, sourceAsset: raw.asset, recipe: entry.recipe, receipt: result.receipt })

@@ -2,6 +2,7 @@ import { parseAvgVisualRawReuseSourceV4, type AvgVisualRawReuseSourceV4 } from '
 import { avgHash, avgKey, avgNumber, avgRecord } from './protocol-validation'
 import { parseAvgRetainedRawProofV1, type AvgRetainedRawProofV1 } from './media-recovery-contract'
 import { parseAvgGeneratedReferenceSourceV4,parseAvgLocalProcessingProducerProofV1,type AvgGeneratedReferenceSourceV4 } from './visual-processed-source-contract'
+import { parseAvgVisualRawReuseSourceV5,type AvgVisualRawReuseSourceV5 } from './visual-image-reuse-contract'
 
 /** Portable origin, never a host-local Build/Run/Blob locator. Outbound and
  * derivative consent still belong to each later reference request. */
@@ -68,7 +69,17 @@ export interface AvgGeneratedReferenceSourceV6 extends Omit<AvgGeneratedReferenc
   version:6
   processing:AvgGeneratedReferenceSourceV4['processing']
 }
-export type AvgGeneratedImageSource=AvgGeneratedReferenceSourceV1|AvgGeneratedReferenceSourceV2|AvgGeneratedReferenceSourceV3|AvgGeneratedReferenceSourceV4|AvgGeneratedReferenceSourceV5|AvgGeneratedReferenceSourceV6
+/** V5 raw reuse keeps the current Build's local receipt and original raw2
+ * source distinct. Its processed form adds the current local pixel receipt. */
+export interface AvgGeneratedReferenceSourceV7 {
+  schema:'storyforge.avg.generated-reference-source';version:7;productionKey:string;requirementKey:string
+  raw:AvgGeneratedReferenceSourceV3['raw'];original:AvgVisualRawReuseSourceV5
+  compilation:AvgGeneratedReferenceSourceV5['compilation'];choice:AvgGeneratedReferenceSourceV5['choice'];review:AvgGeneratedReferenceSourceV5['review']
+}
+export interface AvgGeneratedReferenceSourceV8 extends Omit<AvgGeneratedReferenceSourceV7,'version'> {
+  version:8;processing:AvgGeneratedReferenceSourceV4['processing']
+}
+export type AvgGeneratedImageSource=AvgGeneratedReferenceSourceV1|AvgGeneratedReferenceSourceV2|AvgGeneratedReferenceSourceV3|AvgGeneratedReferenceSourceV4|AvgGeneratedReferenceSourceV5|AvgGeneratedReferenceSourceV6|AvgGeneratedReferenceSourceV7|AvgGeneratedReferenceSourceV8
 
 /** Structural original HTTP proof only. Every consumer must independently
  * verify the actual portable producer and bytes; parsing grants no use. */
@@ -159,7 +170,37 @@ export function parseAvgGeneratedReferenceSourceV6(value:unknown):AvgGeneratedRe
     compilation:s.compilation,choice:s.choice,review:s.review}
 }
 
+export function parseAvgGeneratedReferenceSourceV7(value:unknown):AvgGeneratedReferenceSourceV7{
+  const r=avgRecord(value,['schema','version','productionKey','requirementKey','raw','original','compilation','choice','review'],'V5 reused visual source')
+  if(r.schema!=='storyforge.avg.generated-reference-source'||r.version!==7)throw new Error('[avg-visual-raw-reuse] V5 原图沿用消费来源版本无效')
+  const requirementKey=avgKey(r.requirementKey,'V5 reused requirementKey'),productionKey=avgKey(r.productionKey,'V5 reused productionKey')
+  const original=parseAvgVisualRawReuseSourceV5(r.original),raw=parseAvgImageRevalidationProducerProofV1(r.raw,requirementKey)
+  if(original.productionKey!==productionKey||original.requirementKey!==requirementKey||original.raw.contentHash!==raw.contentHash
+    ||original.raw.buildNumber>=raw.buildNumber)throw new Error('[avg-visual-raw-reuse] V5 原始图片与本版零调用来源不闭合')
+  const c=avgRecord(r.compilation,['artifactKey','version','contentHash'],'V5 reused compilation')
+  if(c.artifactKey!=='avg.media.compiled-visual-requirements')throw new Error('[avg-visual-raw-reuse] V5 当前编译来源不准确')
+  const author=(value:unknown,key:string)=>{
+    const a=avgRecord(value,['artifactKey','version','contentHash','authorReceiptHash'],'V5 reused author witness')
+    if(a.artifactKey!==key)throw new Error('[avg-visual-raw-reuse] V5 评审或采用来源不准确')
+    return {artifactKey:key,version:avgNumber(a.version,'V5 reused author version',1,1e9),contentHash:avgHash(a.contentHash,'V5 reused author hash'),authorReceiptHash:avgHash(a.authorReceiptHash,'V5 reused author receipt')}
+  }
+  return {schema:r.schema,version:7,productionKey,requirementKey,raw,original,
+    compilation:{artifactKey:c.artifactKey,version:avgNumber(c.version,'V5 reused compilation version',1,1e9),contentHash:avgHash(c.contentHash,'V5 reused compilation hash')},
+    choice:author(r.choice,`avg.media.choice.${requirementKey}`),review:author(r.review,`avg.review.visual.${requirementKey}`)}
+}
+
+export function parseAvgGeneratedReferenceSourceV8(value:unknown):AvgGeneratedReferenceSourceV8{
+  const r=avgRecord(value,['schema','version','productionKey','requirementKey','raw','original','compilation','choice','review','processing'],'V5 reused processed visual source')
+  if(r.schema!=='storyforge.avg.generated-reference-source'||r.version!==8)throw new Error('[avg-visual-raw-reuse] V5 加工沿用消费来源版本无效')
+  const {processing:_processing,...baseValue}=r
+  const base=parseAvgGeneratedReferenceSourceV7({...baseValue,version:7})
+  const processing=parseAvgLocalProcessingProducerProofV1(r.processing,base.requirementKey,base.raw)
+  return {...base,version:8,processing}
+}
+
 export function parseAvgGeneratedImageSource(value:unknown):AvgGeneratedImageSource {
+  if(value&&typeof value==='object'&&'version'in value&&value.version===8)return parseAvgGeneratedReferenceSourceV8(value)
+  if(value&&typeof value==='object'&&'version'in value&&value.version===7)return parseAvgGeneratedReferenceSourceV7(value)
   if(value&&typeof value==='object'&&'version'in value&&value.version===6)return parseAvgGeneratedReferenceSourceV6(value)
   if(value&&typeof value==='object'&&'version'in value&&value.version===5)return parseAvgGeneratedReferenceSourceV5(value)
   if(value&&typeof value==='object'&&'version'in value&&value.version===4)return parseAvgGeneratedReferenceSourceV4(value)

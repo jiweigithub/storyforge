@@ -4,7 +4,7 @@ import { avgVoiceProductionEnabledV3, parseAvgAssemblyBriefV2, type AvgAssemblyB
 import { assertAvgVisualProductionPolicyV2 } from './media-production-policy';
 import { parseAvgStoredAssemblyBriefV3 } from './voice-assembly-storage';
 import { assertAvgVoiceProductionPolicyV3 } from './voice-production-policy';
-import { assertAvgSoundProductionPolicyV1 } from './sound-production-policy';
+import { assertAvgSoundProductionPolicy } from './sound-production-policy';
 import { avgSoundProductionExecutionReadyV1 } from './sound-production-brief';
 import { parseAvgVisualPlanningBriefV5, avgVisualPlanningExecutionReadyV5 } from './visual-planning-brief-v5';
 import { assertAvgVisualPlanningPolicyV5 } from './visual-planning-policy-v5';
@@ -45,7 +45,7 @@ export function classifyAvgAuthorPrototypeBriefV1(brief: ProductProductionBriefV
     if (brief.avgSoundPlanning !== undefined) {
         if (brief.intent.productType !== 'avg' || brief.qualityProfile !== 'prototype') return null;
         try {
-            assertAvgSoundProductionPolicyV1(brief);
+            assertAvgSoundProductionPolicy(brief);
             return 'sound';
         } catch { return null; }
     }

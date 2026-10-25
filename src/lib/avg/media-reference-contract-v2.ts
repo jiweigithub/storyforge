@@ -39,7 +39,9 @@ export function parseAvgMediaReferencesV2(value: unknown): AvgMediaReferenceV2[]
     const permittedFeatures = features(policy.permittedFeatures, 'permittedFeatures'), excludedFeatures = features(policy.excludedFeatures, 'excludedFeatures')
     if (!permittedFeatures.length || permittedFeatures.some(f => excludedFeatures.includes(f))) throw new Error('[avg-reference] 必须明确允许的参考内容，且不能同时要求排除')
     const generatedSource = hasSource ? parseAvgGeneratedImageSource(r.generatedSource) : undefined
-    if (generatedSource && (generatedSource.processing?.contentHash ?? generatedSource.raw.contentHash) !== base.contentHash) {
+    const generatedContentHash=generatedSource&&'processing'in generatedSource&&generatedSource.processing
+      ?generatedSource.processing.contentHash:generatedSource?.raw.contentHash
+    if (generatedSource && generatedContentHash !== base.contentHash) {
       throw new Error('[avg-reference] 参考必须绑定准确已采用原图或衍生图字节')
     }
     return { schema: 'storyforge.avg.media-reference' as const, version: 2 as const, ...base, ...(generatedSource ? { generatedSource } : {}),

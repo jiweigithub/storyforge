@@ -1,3 +1,4 @@
+import Dexie from 'dexie'
 import type { ProductBuildArtifactRecordV1,ProductProductionBriefV3,WorkspaceScope } from '../types'
 import { canonicalProductProductionJsonV2,hashProductProductionValueV2 } from '../product-production/hash'
 import { verifyAcceptedProductBuildArtifactV1,verifyHistoricalAvgImageProcessingProducerV1,verifyHistoricalAvgVisualImageProducerV5 } from '../product-production/artifact-store'
@@ -10,25 +11,31 @@ import type { AvgProcessedImageArtifactFieldsV1 } from './image-processing-contr
 import { assertAvgProcessedImageArtifactFromDefinition } from './image-processing-contract-v2'
 import { inspectAvgProcessedImageBytesV1 } from './image-processing-source'
 import { avgVisualProcessingQuality,inspectAvgVisualProcessingBinding } from './visual-processing-binding'
+import type { AvgVisualRawReuseCompiledV5 } from './visual-image-revalidation-v5'
 
 type Definition=Awaited<ReturnType<typeof readAvgCompiledImageDefinitionV5>>
-export type AvgVerifiedCompiledImageDefinitionV5=Pick<Definition,'definition'|'planning'|'plan'|'build'|'brief'|'capability'>&{source:{
+export type AvgVerifiedCompiledImageDefinitionV5=Pick<Definition,'definition'|'planning'|'plan'|'build'|'brief'|'capability'|'production'>&{source:{
   artifact:Definition['source']['artifact'];scripts:Array<{artifact:Definition['source']['scripts'][number]['artifact']}>}}
 type Compiled=AvgVerifiedCompiledImageDefinitionV5
-type Raw=Parameters<typeof assertAvgRawImageArtifactFromDefinitionV2>[1]&Pick<ProductBuildArtifactRecordV1,'qualityJson'>
+type Raw=ProductBuildArtifactRecordV1
 type Processed=AvgProcessedImageArtifactFieldsV1&Pick<ProductBuildArtifactRecordV1,'qualityJson'|'requirementKey'>
 const binding=(d:Compiled)=>({compilation:d.definition.compilation,rule:d.source.artifact,scripts:d.source.scripts.map(s=>s.artifact)})
 const ref=(r:ProductBuildArtifactRecordV1)=>({artifactKey:r.artifactKey,version:r.version,contentHash:r.contentHash,producerReceiptHash:r.producerReceiptHash})
 
 /** Actual V5 request/policy semantics only; callers separately prove the
  * original durable producer and physical bytes, current or historical. */
-export async function inspectAvgCompiledRawImageV5(compiled:Compiled,artifact:Raw){
+export async function inspectAvgCompiledRawImageV5(compiled:Compiled,artifact:Raw,scope:WorkspaceScope){
+  if(compiled.planning.rawReuse?.some(source=>artifact.artifactKey===`avg.media.raw.${source.requirementKey}`)){
+    const load=()=>import('./visual-image-revalidation-v5')
+    const {inspectAvgRevalidatedRawImageV5}=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
+    return inspectAvgRevalidatedRawImageV5({scope,compiled:compiled as AvgVisualRawReuseCompiledV5,artifact})
+  }
   const raw=await assertAvgRawImageArtifactFromDefinitionV2({...compiled.definition,capability:compiled.capability,qualityProfile:compiled.brief.qualityProfile},artifact)
   assertAvgRawImageReceptionV2(artifact.qualityJson,{...binding(compiled),request:raw.payload.request})
   return {...raw,requirement:raw.payload.requirement}
 }
-export async function inspectAvgVisualProcessedImageV5(input:{compiled:Compiled;raw:ProductBuildArtifactRecordV1;artifact:Processed}){
-  const {compiled,raw,artifact}=input,original=await inspectAvgCompiledRawImageV5(compiled,raw)
+export async function inspectAvgVisualProcessedImageV5(input:{scope:WorkspaceScope;compiled:Compiled;raw:ProductBuildArtifactRecordV1;artifact:Processed}){
+  const {scope,compiled,raw,artifact}=input,original=await inspectAvgCompiledRawImageV5(compiled,raw,scope)
   return inspectAvgVisualProcessingBinding({version:2,definition:compiled.definition,binding:binding(compiled),raw,original:original.asset,artifact,
     task:compiled.plan.tasks.find(t=>t.outputArtifactKeys.includes(artifact.artifactKey))})
 }
@@ -49,7 +56,7 @@ export async function executeAvgVisualImageProcessingTaskV5(input:ProductProduct
       ||claim.packet.operation!=='process-compiled-image'||!same(claim.packet.processing,entry)||supplied.length!==1)throw new Error('[avg-process] 加工不属于准确冻结的新版本任务与登记输入')
     const readRaw=async()=>{
       const row=await verifyAcceptedProductBuildArtifactV1({scope:input.scope,buildId:input.buildId,...ref(supplied[0])})
-      return {row,...await inspectAvgCompiledRawImageV5(compiled,row)}
+      return {row,...await inspectAvgCompiledRawImageV5(compiled,row,input.scope)}
     }
     const raw=await readRaw(),sourceContextHash=await hashProductProductionValueV2(input.contextText)
     return await executeAvgBoundedImageProcessingV1({request:input,started,raw,entry,task,requirement:raw.requirement,
@@ -67,8 +74,17 @@ export async function readAvgVisualProcessingEvidenceV5(input:{scope:WorkspaceSc
     expectedPlanHash:build.planHash,sourceControlEpoch:compiled.plan.controlEpoch}
   const processing=await verifyHistoricalAvgImageProcessingProducerV1({...boundary,...input.artifact})
   const payload=await assertAvgProcessedImageArtifactFromDefinition(compiled.definition,processing.artifact)
-  const rawProof=await verifyHistoricalAvgVisualImageProducerV5({...boundary,...payload.payload.raw})
-  const checked=await inspectAvgVisualProcessedImageV5({compiled,raw:rawProof.artifact,artifact:processing.artifact})
-  const image=await inspectAvgProcessedImageBytesV1({scope:input.scope,raw:rawProof.artifact,processed:processing.artifact,image:checked})
-  return {raw:rawProof.artifact,rawProof:rawProof.provenance,processing:processing.artifact,processingProof:processing.provenance,image}
+  const reused=compiled.planning.rawReuse?.some(source=>source.requirementKey===payload.payload.requirementKey)
+  const rawProof=reused?await (async()=>{
+    // A cold browser module fetch must not commit the caller's proof snapshot.
+    // Load outside it; the raw-history reads still run inside that snapshot.
+    const load=()=>import('./visual-image-revalidation-v5')
+    const {readAvgVisualRawReuseEvidenceV5}=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
+    return readAvgVisualRawReuseEvidenceV5({scope:input.scope,compiled,artifact:payload.payload.raw})
+  })():await verifyHistoricalAvgVisualImageProducerV5({...boundary,...payload.payload.raw})
+  const rawRow='raw' in rawProof?rawProof.raw:rawProof.artifact
+  const checked=await inspectAvgVisualProcessedImageV5({scope:input.scope,compiled,raw:rawRow,artifact:processing.artifact})
+  const image=await inspectAvgProcessedImageBytesV1({scope:input.scope,raw:rawRow,processed:processing.artifact,image:checked})
+  return {raw:rawRow,rawProof:rawProof.provenance,...(reused&&'original'in rawProof?{originalReuseSource:rawProof.original}:{}),
+    processing:processing.artifact,processingProof:processing.provenance,image}
 }
