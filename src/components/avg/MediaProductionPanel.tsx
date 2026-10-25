@@ -266,7 +266,7 @@ export default function MediaProductionPanel({ scope, view, workspace, disabled,
     {currentBatch&&!visualPlanning&&assembly?.version!==3&&<MediaRecoveryPanel scope={scope} view={view} disabled={editDisabled||pending||familyPending||anyReviewPending} visible={visible} onAction={onAction} onReload={onReload} onNotice={onNotice}/>}
     {enabled&&visualPlanning&&build&&productionId&&(closed||build.previewHash)&&workspace.presentation.stage.assets.length>0
       &&(!pendingNextBrief||retainedVisualDraft)&&<section aria-label="保留专业演出图片">
-      <h5>保留已选图片，继续编辑演出</h5><p>核对原专业方案、作者评审、选图与图片，再准备零生成调用的新方案。到制作页明确开始，逐项确认系统、对白和演出。</p>
+      <h5>保留已选图片，继续编辑演出</h5><p>核对原专业方案、作者评审、选图与图片，再准备零生成调用的新方案。本批未采用的物件图占位会解除，已选图片与其他绑定保留。到制作页明确开始，逐项确认系统、对白和演出。</p>
       <p>已保存的旧图可以来自更早版本。本批未完成的用途、原结果和账单继续保留，新方案不会重试图片；配音需求可在新方案中另行准备。</p>
       {pendingNextBrief&&<p>当前有待开始方案。再次准备会核对是否为同一次图片沿用；其他方案请到制作页查看。</p>}
       {build.previewHash&&workspace.basePreviewHash!==build.previewHash&&<p>请先在制作页选择“以此预览开始修订”，保存草稿后再准备新方案。</p>}

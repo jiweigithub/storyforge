@@ -888,9 +888,18 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
         if(workspace.mediaBatch&&!recovery)await assertAvgKnownImageRetriesV1(input.scope,details.build,workspace.mediaBatch.requirements.map(r=>r.requirementKey))
         basePackageHash = await expectedBaselinePackageHash(details)
       }
-      const inherited=old.avgVisualPlanning&&!input.visualStageContinuation?workspace:await prepareAvgInheritedStageDraftV1({scope:input.scope,workspace,build:details.build,
+      let inherited=old.avgVisualPlanning&&!input.visualStageContinuation?workspace:await prepareAvgInheritedStageDraftV1({scope:input.scope,workspace,build:details.build,
         productionKey:details.production.productionKey,targetBuildNumber:Math.max(...details.buildHistory.map(row=>row.buildNumber))+1,
         worldContentHash:old.source.worldContentHash,...(voiceRecovery ? { voiceRecovery } : {})})
+      if(input.visualStageContinuation){
+        // Retire only the exact terminal batch's unused item-slot proposals.
+        // Keep workspace as the saved comparison baseline until the guarded
+        // transaction persists the complete inherited draft.
+        const retired=parseProductProductionBriefV3(frozenSource.briefJson).avgVisualPlanning
+        if(!retired||retired.version!==old.avgVisualPlanning?.version)throw new Error('[avg-visual-retain] 原批次的冻结物件声明不匹配')
+        const source=await import('./visual-planning-scope-draft')
+        inherited=source.clearUnusedAvgVisualConsumerSlotsV1(inherited,retired.scope)
+      }
       // A later stopped batch may have no selected output of its own. The
       // source reader above still proves every saved older choice and pixel.
       if(input.visualStageContinuation&&!inherited.presentation.inheritedImages?.some(entry=>(entry.source.version===2||entry.source.version===3||entry.source.version===4||entry.source.version===5||entry.source.version===6||entry.source.version===7||entry.source.version===8)

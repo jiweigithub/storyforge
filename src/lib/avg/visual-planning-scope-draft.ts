@@ -13,7 +13,7 @@ export async function prepareAvgVisualPlanningSourceDraftV4(input: {
 }) {
   let workspace=parseAvgAuthorWorkspaceV1(input.workspace)
   const scope=parseAvgVisualPlanningScopeV1({...input.planning,aspectRatio:workspace.presentation.aspectRatio,sourceInputHash:await hashAvgMediaSourceInputV1(workspace)})
-  workspace=clearUnusedSlots(workspace,input.previous)
+  workspace=clearUnusedAvgVisualConsumerSlotsV1(workspace,input.previous)
   workspace=prepareAvgMediaConsumerDeclarationsV1(workspace,avgVisualPlanningTemplateRequirementsV1(scope))
   return {workspace,scope:await freezeAvgVisualPlanningScopeV1(input.planning,workspace)}
 }
@@ -24,11 +24,12 @@ export async function prepareAvgVisualPlanningSourceDraftV5(input:{workspace:Avg
   previous?:Pick<AvgVisualPlanningScopeV1,'templates'>|Array<Pick<AvgVisualPlanningScopeV1,'templates'>>}){
   let workspace=parseAvgAuthorWorkspaceV1(input.workspace)
   const scope=parseAvgVisualPlanningScopeV2({...input.planning,aspectRatio:workspace.presentation.aspectRatio,sourceInputHash:await hashAvgMediaSourceInputV1(workspace)})
-  workspace=clearUnusedSlots(workspace,input.previous)
+  workspace=clearUnusedAvgVisualConsumerSlotsV1(workspace,input.previous)
   workspace=prepareAvgMediaConsumerDeclarationsV2(workspace,avgVisualPlanningTemplateRequirementsV2(scope))
   return {workspace,scope:await freezeAvgVisualPlanningScopeV2(input.planning,workspace)}
 }
-function clearUnusedSlots(workspace:AvgAuthorWorkspaceV1,previousScopes?:Pick<AvgVisualPlanningScopeV1,'templates'>|Array<Pick<AvgVisualPlanningScopeV1,'templates'>>){
+export function clearUnusedAvgVisualConsumerSlotsV1(value:AvgAuthorWorkspaceV1,previousScopes?:Pick<AvgVisualPlanningScopeV1,'templates'>|Array<Pick<AvgVisualPlanningScopeV1,'templates'>>){
+  const workspace=parseAvgAuthorWorkspaceV1(value)
   // Revise only exact unused proposals from this Production's saved history.
   // A Brief may have been saved before its consumer draft write failed.
   // Selected media and unrelated

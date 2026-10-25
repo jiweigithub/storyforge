@@ -1009,6 +1009,12 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       template.parameters.consumer={...template.parameters.consumer,consumerKey:template.parameters.consumer.consumerKey+'.later',sceneKey:scene.key,subjectKey:scene.key}
       template.parameters.family={...template.parameters.family,familyKey:template.parameters.family.familyKey+'.later',subjectKey:scene.key}
       template.parameters.triggerBeatKey=script.lines[0].lineKey
+      // A stopped later batch may have declared physical item slots before
+      // it produced any image. Explicit retention must retire these too.
+      const itemTemplates=structuredClone(avgProfessionalFamilyScopeFixtureV4('later.unconsumed').planning.templates.filter(t=>t.subjectKind==='prop'))
+      if(s.source.systemPlan.version!==2)throw new Error('Expected native inventory source')
+      itemTemplates[1].parameters.itemVariantKey=s.source.systemPlan.inventory.items[0].variants[0].key
+      planning.templates.push(...itemTemplates)
       const ready=await prepareAvgAssemblyBriefV1({scope:s.scope,expectedDraftRevision:(await readAvgDraftV1(s.scope)).revision,visualPlanning:planning})
       const started=await startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:ready.brief!.briefHash})
       expect(started.build).toMatchObject({buildNumber:3,status:'building',planRevision:1})
@@ -1031,6 +1037,10 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
         expect(brief.evolution!.base).toMatchObject({kind:'recovery-build',buildNumber:3,briefHash:parent.briefHash,planHash:parent.planHash})
         expect(brief.capabilityRequirements).toEqual([]);expect(brief.productionBudget).toMatchObject({maximumMediaCalls:0,maximumModelCalls:0})
         expect(brief.media.imageCount).toBe(1)
+        const cleared=parseAvgAuthorWorkspaceV1((await readAvgDraftV1(s.scope)).editorJson)
+        if(cleared.systemPlan.version!==2)throw new Error('Expected native inventory source')
+        expect(cleared.systemPlan.inventory.items[0].iconAssetKey).toBeNull()
+        expect(cleared.systemPlan.inventory.items[0].variants[0].detailAssetKey).toBeNull()
         expect(await db.productBuilds.toArray()).toEqual(beforeBuilds);expect(await db.agentRuns.toArray()).toEqual(beforeRuns)
         const next=await startAvgAssemblyV1({scope:s.scope,productionId:s.productionId,expectedBriefHash:prepared.brief!.briefHash})
         expect(next.build).toMatchObject({buildNumber:4,parentBuildNumber:3,status:'building',planRevision:1})

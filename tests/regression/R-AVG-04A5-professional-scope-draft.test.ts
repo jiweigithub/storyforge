@@ -1,5 +1,5 @@
 import { describe,expect,it } from 'vitest'
-import { prepareAvgVisualPlanningSourceDraftV4 } from '../../src/lib/avg/visual-planning-scope-draft'
+import { clearUnusedAvgVisualConsumerSlotsV1,prepareAvgVisualPlanningSourceDraftV4 } from '../../src/lib/avg/visual-planning-scope-draft'
 import { avgVisualPlanningTemplateRequirementsV1 } from '../../src/lib/avg/visual-planning-contract'
 import { assertAvgMediaConsumerDeclarationsV1,validateAvgVisualProductionBatchSourceV1 } from '../../src/lib/avg/media-source'
 import { avgProfessionalFamilyScopeFixtureV4 } from '../helpers/avg-professional-family-scope-fixture'
@@ -57,5 +57,32 @@ describe('AVG professional family source draft prepares only exact prospective c
     input.planning.templates[3].parameters.consumer.subjectKey='undeclared-item'
     await expect(prepareAvgVisualPlanningSourceDraftV4(input)).rejects.toThrow()
     expect(input.workspace).toEqual(snapshot)
+  })
+})
+
+
+describe('retiring an exact visual scope clears only its unused item proposals',()=>{
+  it('clears base and conditional display proposals without mutating inputs or gameplay',async()=>{
+    const input=avgProfessionalFamilyScopeFixtureV4('retire')
+    if(input.workspace.systemPlan.version!==2)throw new Error('Expected native inventory')
+    const key=input.workspace.systemPlan.inventory.items[0].variants[0].key
+    input.planning.templates[4].parameters.itemVariantKey=key
+    const original=structuredClone(input.workspace),prepared=await prepareAvgVisualPlanningSourceDraftV4(input),before=structuredClone(prepared.workspace)
+    const next=clearUnusedAvgVisualConsumerSlotsV1(prepared.workspace,prepared.scope)
+    expect(next).toEqual(original);expect(prepared.workspace).toEqual(before)
+    expect(clearUnusedAvgVisualConsumerSlotsV1(prepared.workspace)).toEqual(before)
+  })
+  it('preserves selected pixels and a changed author binding while clearing an unused sibling',async()=>{
+    const prepared=await prepareAvgVisualPlanningSourceDraftV4(avgProfessionalFamilyScopeFixtureV4('keep'))
+    if(prepared.workspace.systemPlan.version!==2)throw new Error('Expected native inventory')
+    const item=prepared.workspace.systemPlan.inventory.items[0],icon=item.iconAssetKey
+    prepared.workspace.presentation.stage.assets.push({...((await avgInventoryMediaFixture())[0].asset),assetKey:icon!})
+    item.variants[0].detailAssetKey='author.unrelated.detail'
+    const before=structuredClone(prepared.workspace),next=clearUnusedAvgVisualConsumerSlotsV1(prepared.workspace,prepared.scope)
+    if(next.systemPlan.version!==2)throw new Error('Expected native inventory')
+    expect(next.systemPlan.inventory.items[0]).toMatchObject({iconAssetKey:icon,detailAssetKey:null})
+    expect(next.systemPlan.inventory.items[0].variants[0].detailAssetKey).toBe('author.unrelated.detail')
+    expect(next.presentation.stage.assets).toEqual(before.presentation.stage.assets)
+    expect(prepared.workspace).toEqual(before)
   })
 })
