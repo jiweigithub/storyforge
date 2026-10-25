@@ -16,6 +16,7 @@ import { saveAvgImageProcessingDraftV1 } from '../../lib/avg/assembly-service'
 import type { readAvgAssemblyWorkspaceV1 } from '../../lib/avg/assembly-service'
 import type { AvgVisualProductionRequirementV1 } from '../../lib/avg/media-production-contract'
 import { parseProductProductionBriefV3 } from '../../lib/product-production/contracts'
+import RegionCompositeRecipeEditor from './RegionCompositeRecipeEditor'
 
 type Requirement=Pick<AvgVisualProductionRequirementV1,'requirementKey'|'name'|'width'|'height'|'alpha'|'mediaKind'|'consumer'>
 function initial(requirements:Requirement[],plan:AvgImageProcessingPlan|undefined,key:string):AvgImageProcessingRecipe{
@@ -36,6 +37,7 @@ export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,
   const [key,setKey]=useState(requirements[0]?.requirementKey??''),[recipe,setRecipe]=useState<AvgImageProcessingRecipe|null>(null)
   const [dirty,setDirty]=useState(false),[editRevision,setEditRevision]=useState(revisionKey)
   const [editDraftRevision,setEditDraftRevision]=useState(draftRevision)
+  const [regionValid,setRegionValid]=useState(false),[regionPending,setRegionPending]=useState(false)
   const savedJson=JSON.stringify(plan??null),batchJson=JSON.stringify(requirements)
   useEffect(()=>{
     if(dirty)return
@@ -43,12 +45,13 @@ export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,
     const r=list.find(r=>r.requirementKey===key)??list[0]
     setKey(r?.requirementKey??'');setRecipe(r?initial(list,saved??undefined,r.requirementKey):null);setEditRevision(revisionKey);setEditDraftRevision(draftRevision)
   },[key,savedJson,batchJson,revisionKey,dirty,draftRevision])
-  useEffect(()=>{onPending(dirty)},[dirty,onPending])
+  useEffect(()=>{onPending(dirty||regionPending)},[dirty,regionPending,onPending])
   useEffect(()=>()=>onPending(false),[onPending])
   if(!requirements.length||!recipe)return null
   const r=requirements.find(r=>r.requirementKey===key)
   if(!r)return <section aria-label="本地图像加工配方"><p role="alert">加工目标已变化，请撤销未保存的加工后重新核对。</p><button className="lf-action" onClick={()=>setDirty(false)}>撤销未保存的加工</button></section>
   const edit=(next:AvgImageProcessingRecipe)=>{if(!dirty){setEditRevision(revisionKey);setEditDraftRevision(draftRevision)}setRecipe(next);setDirty(true)}
+  const regionTemplate=visual?.version===5?visual.scope.templates.find(t=>t.parameters.requirementKey===key&&t.parameters.mediaKind==='character-expression'):undefined
   const sam2=recipe.version===2&&(recipe.foreground.version===4||recipe.foreground.version===5||recipe.foreground.version===6)
   const save=(remove=false)=>void onAction(async()=>{
     if(dirty&&editRevision!==revisionKey)throw new Error('[avg-process] 编辑期间草稿或专业方案已变化，请撤销未保存的加工后重新核对')
@@ -67,6 +70,12 @@ export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,
     {!editAllowed&&<p>当前制作方案已冻结。修改配方前请先保留当前版本，并在制作页明确准备新版本。</p>}
     <fieldset className="avg-form" disabled={disabled||!editAllowed}>
       <label>加工目标<select aria-label="加工目标" value={key} disabled={dirty} onChange={e=>setKey(e.target.value)}>{requirements.map(r=><option key={r.requirementKey} value={r.requirementKey}>{r.name}</option>)}</select></label>
+      {regionTemplate&&<label style={{gridColumn:'1 / -1'}}>允许的加工与用途说明<textarea aria-label="允许的加工与用途说明" value={recipe.declaration} maxLength={2000} onChange={e=>edit({...recipe,declaration:e.target.value})}/></label>}
+      {visual?.version===5&&regionTemplate&&<RegionCompositeRecipeEditor key={key} scope={scope}
+        references={visual.scope.referenceCatalog.filter(entry=>regionTemplate.allowedReferenceKeys.includes(entry.referenceKey)).map(entry=>entry.reference)}
+        source={visual.rawReuse?.find(source=>source.requirementKey===key)} recipe={recipe.version===3?recipe:null}
+        disabled={disabled||!editAllowed} onChange={edit} onValid={setRegionValid} onPending={setRegionPending}/>}
+      {recipe.version===3&&<button className="lf-action" onClick={()=>edit({...initial(requirements,undefined,key),declaration:recipe.declaration})}>改用裁切或透明留边</button>}
       {recipe.version!==3&&(canEdit||recipe.version===2)&&supportsAvgForegroundRequirementV1(r)&&<label><input type="checkbox" checked={recipe.version===2} onChange={e=>{
         if(e.target.checked)edit({...recipe,version:2,background:null,foreground:{schema:'storyforge.avg.foreground-policy',version:1,
           method:'reserved-magenta',reservedColor:'#FF00FF',subjectUsesReservedColor:false,algorithm:DECLARED_MAGENTA_ALPHA_MATTING_ID_V1,declaration:''}})
@@ -112,9 +121,9 @@ export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,
       <label><input type="checkbox" checked={!!recipe.background} disabled={recipe.version===2} onChange={e=>edit({...recipe,background:e.target.checked?{red:255,green:255,blue:255,alpha:255}:null})}/>明确填充画布底色</label>
       {recipe.background&&(['red','green','blue','alpha'] as const).map((field,index)=><label key={field}>{['底色红','底色绿','底色蓝','底色不透明度（0～255）'][index]}<input type="number" min={0} max={255} value={recipe.background![field]} onChange={e=>edit({...recipe,background:{...recipe.background!,[field]:Number(e.target.value)}})}/></label>)}
       </>}
-      <label>允许的加工与用途说明<textarea value={recipe.declaration} maxLength={2000} onChange={e=>edit({...recipe,declaration:e.target.value})}/></label>
+      {!regionTemplate&&<label>允许的加工与用途说明<textarea aria-label="允许的加工与用途说明" value={recipe.declaration} maxLength={2000} onChange={e=>edit({...recipe,declaration:e.target.value})}/></label>}
       <p>最终选图仍须满足该需求的 {r.width} × {r.height} 最小尺寸、画幅和透明要求；裁掉主体或放大变糊须记录返修。</p>
-      <button className="lf-action" disabled={!dirty||!recipe.declaration.trim()||recipe.version===2&&!recipe.foreground.declaration.trim()} onClick={()=>save()}>保存本项加工配方</button>
+      <button className="lf-action" disabled={!dirty||!recipe.declaration.trim()||recipe.version===2&&!recipe.foreground.declaration.trim()||recipe.version===3&&!regionValid} onClick={()=>save()}>保存本项加工配方</button>
       <button className="lf-action" disabled={dirty||!plan?.entries.some(e=>e.requirementKey===key)} onClick={()=>save(true)}>移除此项加工配方</button>
       <button className="lf-action" disabled={!dirty} onClick={()=>{setDirty(false);setRecipe(initial(requirements,plan,key))}}>撤销未保存的加工</button>
     </fieldset>
